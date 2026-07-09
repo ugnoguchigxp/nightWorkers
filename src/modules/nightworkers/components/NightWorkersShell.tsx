@@ -697,6 +697,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		},
 		[props.onNavigate],
 	);
+	const handleProjectDetailTasksCreated = useCallback(async (tasks: Task[]) => {
+		if (tasks.length === 0) return;
+		await workspaceRef.current.refreshProjectList();
+	}, []);
 
 	const waitForQuestionnaireWorkspaceReady = useCallback(
 		async (message: TaskMessage) => {
@@ -932,6 +936,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 							}
 							onOpenSession={(sessionId) => handleSelectSession(sessionId)}
 							onEvaluationTasksCreated={handleProjectEvaluationTasksCreated}
+							onMissionTaskCandidatesCreated={handleProjectDetailTasksCreated}
 						/>
 					) : showQueueScreen ? (
 						<ImplementationQueueScreen

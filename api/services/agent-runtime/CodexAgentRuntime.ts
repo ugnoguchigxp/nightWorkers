@@ -19,6 +19,7 @@ import {
 	normalizeRetryLimit,
 	persistCodexProviderThreadIfPresent,
 	readCodexRuntimeExecutionMode,
+	readCurrentTodoEvidence,
 	readPromptPartObservabilityEnabled,
 	sleep,
 	toContractWarningEvent,
@@ -128,7 +129,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		try {
 			for (let attemptIndex = 0; ; attemptIndex += 1) {
 				let finalText = "";
-				let terminalState: AgentRuntimeResult["terminalState"] = "completed";
+				let terminalState = "completed" as AgentRuntimeResult["terminalState"];
 				let stoppedBy: AgentRuntimeResult["stoppedBy"] = "decision";
 				let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
 				const mapperState = createCodexEventMapperState();
@@ -144,132 +145,161 @@ export class CodexAgentRuntime implements AgentRuntime {
 					const runtimePromptParts = buildCodexRuntimePromptParts(context);
 					const promptPartObservabilityEnabled =
 						readPromptPartObservabilityEnabled(context);
-					const { events } = await thread.runStreamed(
-						runtimePromptParts.prompt,
-						{
+					let nextPrompt = runtimePromptParts.prompt;
+					let checkpointPromptsSent = 0;
+					let isCheckpointPrompt = false;
+					for (;;) {
+						const { events } = await thread.runStreamed(nextPrompt, {
 							signal: controller.signal,
-						},
-					);
+						});
 
-					for await (const event of events) {
-						if (this.cancelledRunIds.has(context.runId)) {
-							controller.abort();
-							return this.toCancelled(logs.join("\n"));
-						}
-						const mappedEvents = mapCodexThreadEvent(event, mapperState);
-						for (const mapped of mappedEvents) {
-							const auditedEvents = await auditCodexMappedEvent(
-								context,
-								auditState,
-								mapped,
-							);
-							for (const audited of auditedEvents) {
-								logs.push(audited.message);
-								await sink.emit(audited);
-								if (this.persistRuntimeSessionState) {
-									await persistCodexProviderThreadIfPresent(
-										this.runtimeSessionStore,
+						for await (const event of events) {
+							if (this.cancelledRunIds.has(context.runId)) {
+								controller.abort();
+								return this.toCancelled(logs.join("\n"));
+							}
+							const mappedEvents = mapCodexThreadEvent(event, mapperState);
+							for (const mapped of mappedEvents) {
+								const auditedEvents = await auditCodexMappedEvent(
+									context,
+									auditState,
+									mapped,
+								);
+								for (const audited of auditedEvents) {
+									logs.push(audited.message);
+									await sink.emit(audited);
+									if (this.persistRuntimeSessionState) {
+										await persistCodexProviderThreadIfPresent(
+											this.runtimeSessionStore,
+											context,
+											audited,
+										);
+									}
+								}
+								const importOutcome = getProjectImportOutcome(mapped);
+								if (importOutcome?.kind === "cancelled") {
+									addContractWarning(auditState, {
+										code: "codex_import_project_cancelled",
+										severity: "error",
+										message:
+											"nightworkers.import_project was cancelled. Fallback implementation is forbidden.",
+										providerItemId: importOutcome.providerItemId,
+										toolName: importOutcome.toolName,
+									});
+									return this.finishRun(context, sink, logs, {
+										terminalState: "cancelled",
+										finalReport:
+											buildProjectImportCancelledReport(importOutcome),
+										stoppedBy: "cancelled",
+										riskLevel: "medium",
+										collectDiff: false,
+										auditState,
+									});
+								}
+								if (importOutcome?.kind === "failed") {
+									addContractWarning(auditState, {
+										code: "codex_import_project_failed",
+										severity: "error",
+										message:
+											"nightworkers.import_project failed. Fallback implementation is forbidden.",
+										providerItemId: importOutcome.providerItemId,
+										toolName: importOutcome.toolName,
+									});
+									if (importOutcome.retryableTransportCancel) {
+										const diagnosticMessage =
+											"[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.";
+										logs.push(diagnosticMessage);
+										await sink.emit({
+											type: "runtime_error",
+											message: diagnosticMessage,
+											payload: {
+												provider: "codex",
+												toolName: importOutcome.toolName,
+												error: importOutcome.error,
+												reason: "project_import_transport_cancelled",
+												providerItemId: importOutcome.providerItemId,
+											},
+										});
+									}
+									finalText = buildProjectImportFailureReport(importOutcome);
+									return this.finishRun(context, sink, logs, {
+										terminalState: "needs_human",
+										finalReport: finalText,
+										stoppedBy: "tool_failure",
+										riskLevel: "high",
+										collectDiff: false,
+										auditState,
+									});
+								}
+								if (mapped.type === "model_response_finished") {
+									const payload = mapped.payload as
+										| { text?: unknown }
+										| undefined;
+									if (!isCheckpointPrompt && typeof payload?.text === "string")
+										finalText = payload.text;
+									await recordCodexRuntimeUsageIfPresent({
 										context,
-										audited,
+										payload: mapped.payload,
+										persistRuntimeUsage: this.persistRuntimeUsage,
+										usageRecorder: this.usageRecorder,
+										durationMs: Date.now() - attemptStartedAt,
+										promptPartObservabilityEnabled,
+										promptPartTokenEstimates: promptPartObservabilityEnabled
+											? {
+													latestUserMessageTokens:
+														context.contextSnapshot.conversationContext?.usage
+															?.latestUserMessageTokens,
+													stateCardTokens:
+														context.contextSnapshot.conversationContext?.usage
+															?.stateCardTokens,
+													userPromptTokens:
+														runtimePromptParts.estimates.requestTokens,
+													systemPromptTokens:
+														runtimePromptParts.estimates.runtimeContractTokens,
+												}
+											: undefined,
+									});
+								}
+								if (mapped.type === "runtime_error") {
+									terminalState = "failed";
+									stoppedBy = "llm_error";
+									lastRuntimeError = readRuntimeFailureEvidence(mapped);
+									finalText = buildCodexFailureReport({
+										terminalError: lastRuntimeError,
+										execExitError: null,
+										completedFileChanges,
+									}).summary;
+								}
+								if (mapped.type === "diff_collected") {
+									completedFileChanges.push(
+										...readCompletedFileChanges(mapped),
 									);
 								}
 							}
-							const importOutcome = getProjectImportOutcome(mapped);
-							if (importOutcome?.kind === "cancelled") {
-								addContractWarning(auditState, {
-									code: "codex_import_project_cancelled",
-									severity: "error",
-									message:
-										"nightworkers.import_project was cancelled. Fallback implementation is forbidden.",
-									providerItemId: importOutcome.providerItemId,
-									toolName: importOutcome.toolName,
-								});
-								return this.finishRun(context, sink, logs, {
-									terminalState: "cancelled",
-									finalReport: buildProjectImportCancelledReport(importOutcome),
-									stoppedBy: "cancelled",
-									riskLevel: "medium",
-									collectDiff: false,
-									auditState,
-								});
-							}
-							if (importOutcome?.kind === "failed") {
-								addContractWarning(auditState, {
-									code: "codex_import_project_failed",
-									severity: "error",
-									message:
-										"nightworkers.import_project failed. Fallback implementation is forbidden.",
-									providerItemId: importOutcome.providerItemId,
-									toolName: importOutcome.toolName,
-								});
-								if (importOutcome.retryableTransportCancel) {
-									const diagnosticMessage =
-										"[System] nightworkers.import_project was cancelled before the MCP server returned a tool result. Automatic retry is disabled.";
-									logs.push(diagnosticMessage);
-									await sink.emit({
-										type: "runtime_error",
-										message: diagnosticMessage,
-										payload: {
-											provider: "codex",
-											toolName: importOutcome.toolName,
-											error: importOutcome.error,
-											reason: "project_import_transport_cancelled",
-											providerItemId: importOutcome.providerItemId,
-										},
-									});
-								}
-								finalText = buildProjectImportFailureReport(importOutcome);
-								return this.finishRun(context, sink, logs, {
-									terminalState: "needs_human",
-									finalReport: finalText,
-									stoppedBy: "tool_failure",
-									riskLevel: "high",
-									collectDiff: false,
-									auditState,
-								});
-							}
-							if (mapped.type === "model_response_finished") {
-								const payload = mapped.payload as
-									| { text?: unknown }
-									| undefined;
-								if (typeof payload?.text === "string") finalText = payload.text;
-								await recordCodexRuntimeUsageIfPresent({
-									context,
-									payload: mapped.payload,
-									persistRuntimeUsage: this.persistRuntimeUsage,
-									usageRecorder: this.usageRecorder,
-									durationMs: Date.now() - attemptStartedAt,
-									promptPartObservabilityEnabled,
-									promptPartTokenEstimates: promptPartObservabilityEnabled
-										? {
-												latestUserMessageTokens:
-													context.contextSnapshot.conversationContext?.usage
-														?.latestUserMessageTokens,
-												stateCardTokens:
-													context.contextSnapshot.conversationContext?.usage
-														?.stateCardTokens,
-												userPromptTokens:
-													runtimePromptParts.estimates.requestTokens,
-												systemPromptTokens:
-													runtimePromptParts.estimates.runtimeContractTokens,
-											}
-										: undefined,
-								});
-							}
-							if (mapped.type === "runtime_error") {
-								terminalState = "failed";
-								stoppedBy = "llm_error";
-								lastRuntimeError = readRuntimeFailureEvidence(mapped);
-								finalText = buildCodexFailureReport({
-									terminalError: lastRuntimeError,
-									execExitError: null,
-									completedFileChanges,
-								}).summary;
-							}
-							if (mapped.type === "diff_collected") {
-								completedFileChanges.push(...readCompletedFileChanges(mapped));
-							}
 						}
+
+						if (terminalState !== "completed") break;
+						const checkpointPrompt = await buildCurrentTodoCheckpointPrompt(
+							context,
+							auditState,
+							checkpointPromptsSent,
+						);
+						if (!checkpointPrompt) break;
+						checkpointPromptsSent += 1;
+						isCheckpointPrompt = true;
+						nextPrompt = checkpointPrompt;
+						const message =
+							"[System] Codex current Todo checkpoint prompt queued.";
+						logs.push(message);
+						await sink.emit({
+							type: "supervisor_decision",
+							message,
+							payload: {
+								provider: "codex",
+								reason: "current_todo_checkpoint",
+								prompt: checkpointPrompt,
+							},
+						});
 					}
 
 					if (
@@ -730,4 +760,33 @@ export class CodexAgentRuntime implements AgentRuntime {
 		});
 		return result.payload.diff;
 	}
+}
+
+async function buildCurrentTodoCheckpointPrompt(
+	context: AgentRunContext,
+	auditState: CodexRuntimeAuditState,
+	checkpointPromptsSent: number,
+) {
+	if (checkpointPromptsSent > 0) return null;
+	if (auditState.lastFileChangeSequence === null) return null;
+	if (
+		auditState.lastProgressValidSequence !== null &&
+		auditState.lastProgressValidSequence >= auditState.lastFileChangeSequence
+	) {
+		return null;
+	}
+	const staleBroadVerification = auditState.verificationEvidence.some(
+		(evidence) =>
+			evidence.commandClass === "broad_verification" &&
+			evidence.sequence > (auditState.lastFileChangeSequence ?? 0),
+	);
+	if (!staleBroadVerification) return null;
+	const todoEvidence = await readCurrentTodoEvidence(context);
+	const currentTodo = todoEvidence.todo;
+	if (!currentTodo) return null;
+	return [
+		"[NightWorkers Current Todo Checkpoint]",
+		`Current Todo #${currentTodo.seq}: ${currentTodo.title}`,
+		`この Todo は完了済みですか？完了済みなら nightworkers.todo_list operation=done seq=${currentTodo.seq}。未完了なら作業を続けてください。`,
+	].join("\n");
 }

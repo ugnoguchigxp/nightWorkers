@@ -12,6 +12,7 @@ export type ProjectDetailScreenProps = {
 	onActiveTabChange: (tab: ProjectDetailTab) => void;
 	onOpenSession: (sessionId: string) => void;
 	onEvaluationTasksCreated?: (tasks: Task[]) => Promise<void> | void;
+	onMissionTaskCandidatesCreated?: (tasks: Task[]) => Promise<void> | void;
 };
 
 export type ProjectDetailTab =

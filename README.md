@@ -4,9 +4,12 @@
 
 NightWorkers is a local-first autonomous development control plane. It coordinates project-scoped work sessions, runs supervisor-worker executions, and records verifiable run evidence such as events, logs, diffs, todos, test results, and final reports.
 
+![NightWorkers workbench screenshot](assets/screenshot.webp)
+
 ## Table of Contents
 - [What NightWorkers Is](#what-nightworkers-is)
 - [Why NightWorkers](#why-nightworkers)
+- [Good Fit / Not Good Fit](#good-fit--not-good-fit)
 - [Current Capabilities](#current-capabilities)
 - [Current Limits](#current-limits)
 - [Architecture](#architecture)
@@ -33,6 +36,15 @@ The main adoption question is whether you want autonomous coding work to be
 operated through durable local state: Project, Session, Queue, run events,
 artifacts, diffs, todos, settings, and provider usage records.
 
+If you are evaluating the project for the first time, start with:
+
+1. [Feature Tour](./spec/feature-tour.md) to see the major surfaces and evidence
+   each one creates.
+2. [First Run Orientation](./spec/first-run-orientation.md) for the first
+   throwaway-repo workflow.
+3. [Adoption Checklist](./spec/adoption-checklist.md) before connecting real
+   provider credentials, MCP servers, hooks, or a sensitive repository.
+
 ## Why NightWorkers
 - Local-first operation with SQLite/libSQL by default, with desktop runtime
   state stored outside the repo checkout
@@ -48,6 +60,21 @@ artifacts, diffs, todos, settings, and provider usage records.
 - Clear current limits: no automatic PR/merge/deploy, no parallel multi-agent
   orchestration, no required external memory service, and no bundled demo
   project or fixed seed transcript yet
+
+## Good Fit / Not Good Fit
+NightWorkers is a good fit when you want:
+- Local-first autonomous coding runs with inspectable SQLite-backed state.
+- Explicit approval before work enters an Implementation Queue.
+- Evidence for what happened: tool calls, policy blocks, todos, diffs, tests,
+  provider usage, artifacts, and final reports.
+- A single-user desktop/local control plane for provider settings, MCP servers,
+  Agent Hooks, and repo-scoped runs.
+
+NightWorkers is not a good fit when you need:
+- Hosted team collaboration or browser-only SaaS onboarding.
+- Automatic PR creation, merge, release, or deploy as the default workflow.
+- Parallel multi-agent orchestration over the same repository state.
+- A turnkey demo transcript before installing the app locally.
 
 ## Current Capabilities
 - Project Folder registration and per-project Session/Task management
@@ -91,11 +118,11 @@ Details: [Architecture and Module Boundaries](./spec/architecture.md)
 - Rust toolchain and target OS build tools for desktop packaging
 
 ## Quick Start
-1. Prepare local dependencies, environment, migrations, and seed data
+1. Prepare local dependencies, environment, migrations, and seed data:
 ```bash
 bun run setup
 ```
-2. Start the app
+2. Start the app:
 ```bash
 bun run dev
 ```
@@ -105,9 +132,29 @@ exist, then applies migrations and seeds the local database.
 
 Default URL: `http://localhost:39174`
 
-After startup, use the [First Run Orientation](./spec/first-run-orientation.md)
-if you are trying NightWorkers against an existing local repository for the
-first time.
+After startup, use the [First Run Orientation](./spec/first-run-orientation.md).
+The recommended first message is read-only:
+
+```text
+Inspect the repository structure and summarize the available test commands. Do
+not edit files.
+```
+
+For the first run, prefer a throwaway repository or a repository where you can
+review and discard changes before committing.
+
+## What Happens When You Run Work
+NightWorkers keeps chat, queue admission, execution, and review as separate
+states:
+
+1. Register a Project Folder.
+2. Create or select a Workbench Session.
+3. Send chat, planning, Blueprint, or direct execution requests.
+4. Admit implementation-ready work into the Implementation Queue when you want
+   automation to proceed.
+5. Inspect the Run Timeline for state changes, tool calls, policy blocks, todo
+   updates, diffs, test results, usage events, and final reports.
+6. Review artifacts and diffs before committing anything in the target repo.
 
 ## Five-Minute Orientation
 1. Open `http://localhost:39174` and confirm the Overview loads.

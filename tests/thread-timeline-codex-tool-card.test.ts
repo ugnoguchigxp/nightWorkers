@@ -1,8 +1,12 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { buildNormalTranscriptItems } from "../src/modules/nightworkers/components/ThreadTimeline";
 import {
+	CodexToolCard,
 	getCodexToolCardModel,
 	hasCodexToolCard,
+	NormalCodexToolCard,
 } from "../src/modules/nightworkers/components/ThreadTimelineCodexToolCard";
 
 describe("ThreadTimeline Codex tool cards", () => {
@@ -122,6 +126,62 @@ describe("ThreadTimeline Codex tool cards", () => {
 		expect(card?.outputPreview).not.toContain("[2K");
 		expect(card?.outputPreview).not.toContain("[32m");
 		expect(card?.outputPreview).not.toContain("[39m");
+	});
+
+	it("renders compact Codex command result blocks 104px shorter than before", () => {
+		const markup = renderToStaticMarkup(
+			createElement(NormalCodexToolCard, {
+				event: {
+					kind: "tool.result",
+					status: "completed",
+					payloadJson: {
+						payload: {
+							provider: "codex",
+							providerEventType: "item.completed",
+							providerItemId: "cmd-test",
+							toolName: "command_execution",
+							command: "bun run test",
+							commandClass: "verification",
+							aggregatedOutput: ["line 1", "line 2", "line 3", "line 4"].join(
+								"\n",
+							),
+							exitCode: 0,
+							status: "completed",
+						},
+					},
+				},
+			}),
+		);
+
+		expect(markup).toContain("command result");
+		expect(markup).toContain("max-height:116px");
+	});
+
+	it("renders expanded Codex MCP result blocks 104px shorter than before", () => {
+		const markup = renderToStaticMarkup(
+			createElement(CodexToolCard, {
+				event: {
+					kind: "tool.result",
+					status: "completed",
+					payloadJson: {
+						payload: {
+							provider: "codex",
+							providerEventType: "item.completed",
+							providerItemId: "item_118",
+							mcpServer: "nightworkers",
+							mcpTool: "todo_list",
+							toolName: "nightworkers.todo_list",
+							arguments: { operation: "done", runId: "run-1", seq: 4 },
+							result: { ok: true },
+							status: "completed",
+						},
+					},
+				},
+			}),
+		);
+
+		expect(markup).toContain("nightworkers.todo_list.txt");
+		expect(markup).toContain("max-height:216px");
 	});
 
 	it("renders sed in-place commands as Codex edit diff previews", () => {

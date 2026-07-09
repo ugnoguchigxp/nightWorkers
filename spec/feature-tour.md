@@ -4,6 +4,21 @@ This tour describes NightWorkers surfaces from an adoption perspective: what
 they do, where to find them, why they matter, the evidence they create, and the
 current limits.
 
+## Thirty-Second Value Tour
+NightWorkers is easiest to evaluate as an evidence system:
+
+1. A Project Folder fixes the target repository.
+2. A Workbench Session keeps chat, planning, artifacts, and run review together.
+3. The Implementation Queue separates approved automation from ordinary chat.
+4. A run records tool calls, policy blocks, todos, diffs, tests, usage events,
+   and final reports.
+5. Artifacts such as Blueprint Preview and Data Model give the user something to
+   inspect before adopting generated work.
+
+If you only want a transient chat assistant, NightWorkers is heavier than you
+need. If you want autonomous coding work to leave local, reviewable evidence,
+these are the surfaces to inspect first.
+
 ## Workbench
 What it does:
 - Provides the chat-first workspace for a Project Folder Session.
@@ -70,6 +85,17 @@ Current limits:
 - Evidence describes what NightWorkers recorded locally; external provider or
   tool systems still have their own logs and policies.
 
+Example first-run evidence to look for:
+
+| Evidence | What it proves |
+| --- | --- |
+| `state_change` event | The run lifecycle advanced through a known state. |
+| `tool_call` / `tool_result` | The worker used a concrete tool and recorded the result. |
+| Todo update | Progress was tracked as structured work, not just prose. |
+| Diff metadata | File changes can be reviewed before commit. |
+| Test or check result | Verification was attempted and its result is visible. |
+| Final report | The run ended with a reviewable conclusion. |
+
 ## Activity Transcript
 What it does:
 - Presents chat and run activity as a readable timeline inside the Workbench.
@@ -111,6 +137,13 @@ Current limits:
 - Visual preview settings do not apply physical database migrations.
 - Normal App Blueprint generation should not invent DB tables or DDL.
 
+Example adoption question:
+- Does the Blueprint describe screens, sections, states, and visual intent well
+  enough to guide implementation?
+- Are data model decisions kept in the Data Model view instead of being hidden
+  inside visual UI copy?
+- Is the artifact worth adopting as planning input, or should it remain a draft?
+
 ## Data Model
 What it does:
 - Captures canonical data structures, storage contracts, and API-facing data
@@ -130,6 +163,11 @@ Evidence it creates:
 Current limits:
 - It does not create physical tables, columns, relations, or migrations by
   itself.
+
+Example adoption question:
+- Does the Data Model capture canonical entities and API-facing assumptions?
+- Is it specific enough to guide an implementation plan?
+- Does it avoid applying physical database changes before review?
 
 ## Design Token Adoption
 What it does:
@@ -230,3 +268,17 @@ Current limits:
 - DMG creation and signing are separate release gates.
 - Desktop state is local to the resolved runtime directory; set
   `NIGHTWORKERS_RUNTIME_DIR` to override it.
+
+## Sample Final Report Shape
+A useful NightWorkers run should leave a final report that lets you review the
+work without reconstructing the whole transcript. A good report usually answers:
+
+- What changed or was investigated.
+- Which files or artifacts matter.
+- Which checks ran and whether they passed.
+- Which risks, failures, or manual follow-ups remain.
+- Whether the target repository should be committed, retried, or left for human
+  review.
+
+Treat the final report as one piece of evidence, not the only one. It should be
+read together with the recorded diff, tool results, and verification events.

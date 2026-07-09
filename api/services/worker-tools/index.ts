@@ -13,6 +13,7 @@ export * from "./path-policy";
 export * from "./read-current-specification";
 export * from "./read-file";
 export * from "./replace-content";
+export * from "./reviewer-evaluation";
 export * from "./run-background-command";
 export * from "./run-check";
 export * from "./run-command";

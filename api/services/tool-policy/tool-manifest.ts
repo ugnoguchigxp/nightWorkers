@@ -132,6 +132,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
+	reviewer_evaluation: {
+		name: "reviewer_evaluation",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
 	mcp_call_tool: {
 		name: "mcp_call_tool",
 		mutatesWorkspace: false,

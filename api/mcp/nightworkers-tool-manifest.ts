@@ -84,6 +84,17 @@ export const nightWorkersCompletionCheckInputSchema = z.object({
 	verificationDocumentId: z.string().trim().optional(),
 });
 
+export const nightWorkersReviewerEvaluationInputSchema = z.object({
+	runId: z
+		.string()
+		.trim()
+		.optional()
+		.describe("NightWorkers run id. Defaults to request context."),
+	rubricId: z.string().trim().optional(),
+	mode: z.enum(["deterministic_only", "llm_assisted"]).optional(),
+	persist: z.boolean().optional(),
+});
+
 export const nightWorkersTodoListInputSchema = z.object({
 	runId: z
 		.string()
@@ -423,7 +434,7 @@ export const nightWorkersCodexToolManifest = {
 	completion_check: {
 		title: "Completion Check",
 		description:
-			"Check required Verification Checklist items from managed NightWorkers evidence before closeout.",
+			"Check required Verification Checklist items against managed NightWorkers test evidence before closeout.",
 		annotations: {
 			readOnlyHint: true,
 			destructiveHint: false,
@@ -431,6 +442,18 @@ export const nightWorkersCodexToolManifest = {
 		},
 		approvalMode: "approve",
 		inputSchema: nightWorkersCompletionCheckInputSchema,
+	},
+	reviewer_evaluation: {
+		title: "Reviewer Evaluation",
+		description:
+			"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded.",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersReviewerEvaluationInputSchema,
 	},
 	import_project: {
 		title: "Import Project",

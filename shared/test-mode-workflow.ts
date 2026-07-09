@@ -6,16 +6,16 @@ export const TEST_MODE_WORKFLOW_STEPS = [
 		todoTitle: "テスト実装を開始する",
 	},
 	{
-		id: "implementation_complete",
-		todoTitle: "テスト実装を完了する",
-	},
-	{
 		id: "unit_test",
 		todoTitle: "ユニットテストを実行する",
 	},
 	{
 		id: "evidence_check",
 		todoTitle: "証跡テストチェックを行う",
+	},
+	{
+		id: "llm_code_review",
+		todoTitle: "LLM コードレビューを行う",
 	},
 ] as const;
 

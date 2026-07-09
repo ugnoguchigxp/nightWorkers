@@ -2,9 +2,20 @@
 
 NightWorkers を既存のローカル repository に対して使い始める前の確認項目。
 
+## Before Deciding to Try It
+
+- [ ] README の Good Fit / Not Good Fit を読み、自分の用途が local-first
+  control plane に合っている。
+- [ ] [Feature Tour](./feature-tour.md) で Workbench、Implementation Queue、
+  Run Evidence、Artifact Pane の役割を確認した。
+- [ ] 現時点では hosted demo、固定 demo seed、サンプル Project Folder がないことを
+  理解している。
+- [ ] 最初の評価は、本番 repository ではなく throwaway repository または戻せる
+  repository で行う。
+
 ## Before First Run
 
-- [ ] `bun install`、`.env` 作成、`bun run db:migrate`、`bun run db:seed` が完了している。
+- [ ] `bun run setup` が完了している。
 - [ ] `bun run dev` で Overview が開ける。
 - [ ] 最初に登録する Project Folder は、throwaway repo か、変更を review して戻せる repo である。
 - [ ] Provider credentials を入れる前に Settings の現在値を確認した。
@@ -18,6 +29,7 @@ NightWorkers を既存のローカル repository に対して使い始める前�
 - [ ] Implementation Queue へ入れる前に、plan と expected changes を確認する。
 - [ ] Run が始まった場合、todos、tool outcomes、diff、test/final-report events を確認する。
 - [ ] Artifact Pane に出た Blueprint / Plan Mode Workspace は adoption 前に確認する。
+- [ ] Final report を単独で信じず、diff、tool results、verification evidence と合わせて確認する。
 
 ## Before Real Work
 

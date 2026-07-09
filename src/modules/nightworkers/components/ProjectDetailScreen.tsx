@@ -118,6 +118,7 @@ export function ProjectDetailScreen({
 	onActiveTabChange,
 	onOpenSession,
 	onEvaluationTasksCreated,
+	onMissionTaskCandidatesCreated,
 }: ProjectDetailScreenProps) {
 	const { t } = useTranslation();
 	const [metrics, setMetrics] = useState<ProjectDetailMetrics>(emptyMetrics);
@@ -433,9 +434,9 @@ export function ProjectDetailScreen({
 				createdTasks.push(...payload.tasks);
 			}
 			if (createdTasks.length > 0)
-				await onEvaluationTasksCreated?.(createdTasks);
+				await onMissionTaskCandidatesCreated?.(createdTasks);
 		},
-		[onEvaluationTasksCreated, project.id],
+		[onMissionTaskCandidatesCreated, project.id],
 	);
 
 	const dismissUnifiedCandidate = (candidate: UnifiedTaskCandidate) =>

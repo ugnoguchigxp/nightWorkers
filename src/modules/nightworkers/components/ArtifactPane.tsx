@@ -988,30 +988,53 @@ function readLatestTestModeCheckResults(
 			payload.result,
 			asRecord(payload.payload).result,
 		);
+		const rawResultRecord = asRecord(rawResult.result);
+		const structuredContent = firstRecord(
+			rawResult.structuredContent,
+			rawResult.structured_content,
+			rawResultRecord.structuredContent,
+			rawResultRecord.structured_content,
+		);
 		const resultPayload = firstRecord(
 			rawResult.payload,
-			asRecord(rawResult.result).payload,
+			rawResultRecord.payload,
+			asRecord(structuredContent.payload),
 			rawResult.result,
+			rawResult,
 			asRecord(payload.payload).payload,
 		);
 		const toolName = readFirstString(
+			runEventData.mcpTool,
 			runEventData.toolName,
 			rawResult.toolName,
 			payload.toolName,
 			asRecord(payload.payload).toolName,
 		);
-		if (toolName !== "run_check" && toolName !== "completion_check") continue;
+		const normalizedToolName = toolName ? normalizeToolName(toolName) : null;
+		if (
+			normalizedToolName !== "run_check" &&
+			normalizedToolName !== "completion_check"
+		)
+			continue;
 		const checkKind =
-			toolName === "run_check"
+			normalizedToolName === "run_check"
 				? readRecordString(resultPayload, "checkKind") || "other"
 				: "completion_check";
-		const key = `${toolName}:${checkKind}`;
+		const key = `${normalizedToolName}:${checkKind}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		results.push({
 			key,
 			label: formatTestModeCheckLabel(checkKind),
-			status: readCheckResultStatus(rawResult, readOptionalEventStatus(event)),
+			status: readCheckResultStatus(
+				rawResult,
+				readFirstBoolean(rawResult.ok, runEventData.ok, payload.ok),
+				readFirstString(
+					rawResult.status,
+					runEventData.status,
+					payload.status,
+				) || readOptionalEventStatus(event),
+			),
 			summary: formatTestModeCheckSummary(resultPayload, rawResult),
 		});
 	}
@@ -1040,12 +1063,21 @@ function readFirstString(...values: unknown[]) {
 	return null;
 }
 
+function readFirstBoolean(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "boolean") return value;
+	}
+	return undefined;
+}
+
 function readCheckResultStatus(
 	result: Record<string, unknown>,
+	ok?: boolean,
 	eventStatus?: string | null,
 ): TestModeCheckResult["status"] {
-	if (result.ok === true) return "passed";
-	if (result.ok === false) return "failed";
+	if (result.ok === true || ok === true) return "passed";
+	if (result.ok === false || ok === false) return "failed";
+	if (eventStatus === "completed") return "passed";
 	return eventStatus === "running" || eventStatus === "started"
 		? "running"
 		: "failed";
@@ -1075,6 +1107,12 @@ function formatTestModeCheckSummary(
 	const error = asRecord(result.error);
 	const errorMessage = readRecordString(error, "message");
 	return errorMessage || "結果の要約がありません。";
+}
+
+function normalizeToolName(toolName: string) {
+	return toolName.startsWith("nightworkers.")
+		? toolName.slice("nightworkers.".length)
+		: toolName;
 }
 
 function TestModeWorkflowStatusIcon({

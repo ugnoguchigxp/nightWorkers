@@ -550,6 +550,76 @@ describe("CodexAgentRuntime Todo contract warnings", () => {
 		);
 	});
 
+	it("asks a short current-Todo checkpoint after stale file-change progress", async () => {
+		const runStreamed = vi.fn(async (prompt: string) => ({
+			events: (async function* () {
+				if (prompt.includes("[NightWorkers Current Todo Checkpoint]")) {
+					yield {
+						type: "item.completed",
+						item: {
+							id: "checkpoint-msg",
+							type: "agent_message",
+							text: "未完了なら続行します。",
+						},
+					};
+					return;
+				}
+				yield {
+					type: "item.completed",
+					item: {
+						id: "file-without-todo-progress",
+						type: "file_change",
+						status: "completed",
+						changes: [{ path: "src/app.ts" }],
+					},
+				};
+				yield {
+					type: "item.completed",
+					item: {
+						id: "verify-before-todo-progress",
+						type: "command_execution",
+						command: "bun run verify",
+						status: "completed",
+						exit_code: 0,
+						aggregated_output: "",
+					},
+				};
+				yield {
+					type: "item.completed",
+					item: { id: "msg-1", type: "agent_message", text: "done" },
+				};
+			})(),
+		}));
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }) as never,
+		});
+
+		const result = await runtime.start(
+			buildContext({
+				currentTodo: {
+					id: "todo-2",
+					seq: 2,
+					title: "API を実装する",
+					taskType: "implementation",
+					status: "running",
+				},
+			}),
+			{ emit: async () => {} },
+		);
+
+		expect(runStreamed).toHaveBeenCalledTimes(2);
+		const checkpointPrompt = runStreamed.mock.calls[1]?.[0] ?? "";
+		expect(checkpointPrompt).toContain(
+			"[NightWorkers Current Todo Checkpoint]",
+		);
+		expect(checkpointPrompt).toContain("Current Todo #2: API を実装する");
+		expect(checkpointPrompt).toContain("operation=done seq=2");
+		expect(checkpointPrompt).not.toContain("[Native API Runner Todo Snapshot]");
+		expect(checkpointPrompt).not.toContain("seq=1");
+		expect(checkpointPrompt).not.toContain("seq=3");
+		expect(result.finalReport).toBe("done");
+	});
+
 	it("treats todo_list list as diagnostics instead of progress evidence", async () => {
 		const runtime = new CodexAgentRuntime({
 			threadFactory: () =>

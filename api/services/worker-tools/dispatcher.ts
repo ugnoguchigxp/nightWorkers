@@ -17,6 +17,7 @@ import {
 	readCurrentSpecificationTool,
 	readFileTool,
 	replaceContentTool,
+	reviewerEvaluationTool,
 	runBackgroundCommandTool,
 	runCheckTool,
 	runCommandTool,
@@ -351,6 +352,17 @@ export async function executeWorkerTool(
 				verificationDocumentId: args.verificationDocumentId as
 					| string
 					| undefined,
+			}),
+		};
+	}
+
+	if (toolName === "reviewer_evaluation") {
+		return {
+			result: await reviewerEvaluationTool({
+				runId: (args.runId as string | undefined) || input.runId || "",
+				rubricId: args.rubricId as string | undefined,
+				mode: args.mode as "deterministic_only" | "llm_assisted" | undefined,
+				persist: args.persist as boolean | undefined,
 			}),
 		};
 	}

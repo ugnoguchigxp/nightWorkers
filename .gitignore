@@ -45,6 +45,9 @@ blob-report/
 # Drizzle ORM
 drizzle/*
 !drizzle/migrations/
+!drizzle/seeds/
+!drizzle/seeds/conditions/
+!drizzle/seeds/**/*.sql
 !drizzle/seed.ts
 
 # OS & Editor

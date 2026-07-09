@@ -13,9 +13,11 @@ import { ProjectDetailScreen } from "../src/modules/nightworkers/components/Proj
 import { emptyMetrics } from "../src/modules/nightworkers/components/project-detail/data";
 import { ProjectDetailOverview } from "../src/modules/nightworkers/components/project-detail/ProjectDetailOverview";
 import { StackProfilePanel } from "../src/modules/nightworkers/components/project-detail/ProjectDetailStack";
+import { TranscriptItemView } from "../src/modules/nightworkers/components/ThreadTimelineActivityTranscript";
 import { MessagePayload } from "../src/modules/nightworkers/components/ThreadTimelineMessagePayload";
 import type {
 	ActivityArtifact,
+	ActivityEvent,
 	ProjectFileContent,
 	Repository,
 	TaskMessage,
@@ -51,6 +53,23 @@ function project(): Repository {
 		maxConcurrentSessions: 1,
 		createdAt: "2026-07-08T00:00:00Z",
 		updatedAt: "2026-07-08T00:00:00Z",
+	};
+}
+
+function activityEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
+	return {
+		id: "activity-1",
+		taskId: "task-1",
+		runId: "run-1",
+		seq: 1,
+		kind: "system.info",
+		source: "system",
+		status: "completed",
+		text: null,
+		payloadJson: {},
+		visibility: "debug",
+		createdAt: "2026-07-08T00:00:00Z",
+		...overrides,
 	};
 }
 
@@ -452,6 +471,38 @@ describe("frontend utility components", () => {
 		expect(stackMarkup).toContain("React");
 		expect(stackMarkup).toContain("Hono");
 		expect(stackMarkup).toContain("package.json");
+	});
+
+	it("renders LLM usage activity cards with separated token counts", () => {
+		const markup = renderToStaticMarkup(
+			<TranscriptItemView
+				item={{
+					kind: "activity",
+					id: "activity:usage-1",
+					event: activityEvent({
+						id: "usage-1",
+						kind: "llm.usage",
+						source: "provider",
+						status: "completed",
+						seq: 3,
+						text: "LLM usage recorded. i:15915 o:727",
+						payloadJson: {
+							inputTokens: 15_915,
+							cachedInputTokens: 12_000,
+							outputTokens: 727,
+						},
+					}),
+				}}
+				onOpenArtifact={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("Input:");
+		expect(markup).toContain("15,915");
+		expect(markup).toContain("Cached input:");
+		expect(markup).toContain("12,000");
+		expect(markup).toContain("Output:");
+		expect(markup).toContain("727");
 	});
 
 	it("renders project detail screen tab surfaces without fetching during SSR", () => {

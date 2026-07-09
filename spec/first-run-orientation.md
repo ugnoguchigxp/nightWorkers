@@ -6,14 +6,19 @@ or a provider-backed demo transcript.
 
 ## 1. Install and Start
 ```bash
-bun install
-cp .env.example .env
-bun run db:migrate
-bun run db:seed
+bun run setup
 bun run dev
 ```
 
 Open `http://localhost:39174`.
+
+Expected result:
+- The Overview route loads.
+- The local SQLite database has been migrated and seeded.
+- Settings, Project Folder registration, and Workbench navigation are available.
+
+If setup fails, check the failing phase first: dependency install, `.env`
+creation, migration, seed, API startup, or Vite startup.
 
 ## 2. Register Project Folder
 Register a local repository that you are comfortable using for investigation.
@@ -40,6 +45,12 @@ not edit files.
 This keeps the first experience focused on evidence and routing before asking
 NightWorkers to change code.
 
+This first request should prove three things before you trust write automation:
+- NightWorkers is using the Project Folder you intended.
+- The Workbench can separate normal chat/intake from execution runs.
+- Any execution evidence is visible in the timeline instead of disappearing into
+  a transient chat response.
+
 ## 5. Confirm Chat-Only vs Execution Run
 A Workbench message may stay as normal chat/intake or start an execution run.
 The distinction matters:
@@ -64,6 +75,14 @@ When a run starts, inspect the timeline for:
 - LLM usage events when provider calls are made.
 
 The timeline is persisted in SQLite and can be replayed after reconnect.
+
+For a successful first execution run, you should be able to answer:
+- Which Project Folder and Session were used?
+- Which tools were called?
+- Were any commands blocked by policy?
+- Was a diff created?
+- Which verification command or test result was recorded?
+- What did the final report conclude?
 
 ## 7. Inspect Artifact Pane
 Open the Artifact Pane when artifacts exist. Depending on the Session, it can
@@ -91,6 +110,10 @@ Use the Workbench and Queue state to decide what happens next:
 - Review diffs and final reports before committing changes.
 - Retry only after you understand the failed event or tool output.
 
+Do not treat a run as adoption-ready just because the final response sounds
+confident. Adoption should be based on the recorded diff, verification evidence,
+and final report together.
+
 ## 10. Where to Look When Nothing Happens
 - Overview: broad workspace status, warnings, queue state, and usage summary.
 - Project Sidebar: Project Folder and Session selection.
@@ -104,3 +127,7 @@ Use the Workbench and Queue state to decide what happens next:
 
 For security and local execution boundaries, read
 [Trust Model](./trust-model.md).
+
+For a broader adoption view, read:
+- [Feature Tour](./feature-tour.md)
+- [Adoption Checklist](./adoption-checklist.md)

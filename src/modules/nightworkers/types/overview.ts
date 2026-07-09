@@ -93,6 +93,7 @@ export type OverviewExpensiveCall = {
 	model: string | null;
 	label: string;
 	inputTokens: number;
+	cachedInputTokens: number;
 	outputTokens: number;
 	stateCardTokens: number;
 	totalTokens: number;

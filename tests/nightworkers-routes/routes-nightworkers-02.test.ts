@@ -77,6 +77,9 @@ describe("NightWorkers task routes", () => {
 		expect(body.recentExpensiveCalls[0]).toEqual(
 			expect.objectContaining({
 				taskId: task.id,
+				inputTokens: 1000,
+				cachedInputTokens: 100,
+				outputTokens: 500,
 				outputTokensPerSecond: 500,
 			}),
 		);

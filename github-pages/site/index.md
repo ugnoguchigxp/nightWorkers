@@ -32,7 +32,11 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
           <img src="{{ '/assets/img/favicon.svg' | relative_url }}" alt="" width="32" height="32">
           <span>NightWorkers</span>
         </a>
-        <div class="chip">local-first / queue / evidence</div>
+        <nav class="topnav" aria-label="Primary links">
+          <a href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/feature-tour.md">Feature Tour</a>
+          <a href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/first-run-orientation.md">First Run</a>
+          <a href="https://github.com/ugnoguchigxp/nightWorkers">GitHub</a>
+        </nav>
       </header>
 
       <div class="hero-copy">
@@ -49,7 +53,7 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHubで見る</a>
-          <a class="btn btn-secondary" href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/README.md">READMEを読む</a>
+          <a class="btn btn-secondary" href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/first-run-orientation.md">5分で試す</a>
         </div>
       </div>
 
@@ -57,6 +61,24 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
         <div><strong>Project Workbench</strong><span>chat, planning, artifacts, review</span></div>
         <div><strong>Implementation Queue</strong><span>explicit admission, processor lanes</span></div>
         <div><strong>Evidence Ledger</strong><span>events, diffs, todos, reports</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-evaluate">
+    <div class="shell evaluate-grid">
+      <div class="section-heading">
+        <p class="section-kicker">Evaluate Before Installing</p>
+        <h2>まず見るべきものを、3つに絞る。</h2>
+        <p class="section-copy">
+          NightWorkers の価値は「AI が何か返すこと」ではなく、ローカルの Project / Session / Queue / Run / Artifact
+          として証跡が残ることです。初回評価では、機能一覧より先にこの導線を確認してください。
+        </p>
+      </div>
+      <div class="read-next" aria-label="Recommended reading order">
+        <a href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/feature-tour.md"><strong>01 Feature Tour</strong><span>主要画面と evidence path を確認</span></a>
+        <a href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/first-run-orientation.md"><strong>02 First Run Orientation</strong><span>throwaway repo で read-only 評価</span></a>
+        <a href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/spec/adoption-checklist.md"><strong>03 Adoption Checklist</strong><span>provider / MCP / hooks 前の確認</span></a>
       </div>
     </div>
   </section>
@@ -151,6 +173,25 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
     </div>
   </section>
 
+  <section class="section section-evidence">
+    <div class="shell evidence-grid">
+      <div class="section-heading">
+        <p class="section-kicker">Evidence First</p>
+        <h2>最初の成功条件は、返答のうまさではなく証跡です。</h2>
+        <p class="section-copy">
+          初回は read-only 調査で、Project Folder、tool call、policy、todo、diff/test/final report の出方を確認します。
+          変更を伴う run は、final report だけでなく diff と verification evidence を合わせて判断します。
+        </p>
+      </div>
+      <div class="evidence-list" aria-label="Run evidence examples">
+        <div><strong>tool_call / tool_result</strong><span>どの tool が使われ、何が返ったか</span></div>
+        <div><strong>policy block</strong><span>危険な操作や境界違反が止まったか</span></div>
+        <div><strong>diff + tests</strong><span>変更と検証が review 可能か</span></div>
+        <div><strong>final report</strong><span>結論、残リスク、次の判断が読めるか</span></div>
+      </div>
+    </div>
+  </section>
+
   <section class="section">
     <div class="shell">
       <div class="section-heading">
@@ -172,6 +213,33 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
             <li>PR 作成、merge、deploy は自動化しない</li>
             <li>並列 multi-agent orchestration ではない</li>
             <li>外部 memory service や hosted demo を前提にしない</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-fit">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="section-kicker">Fit</p>
+        <h2>向いている用途と、向いていない用途を分けて判断する。</h2>
+      </div>
+      <div class="compare">
+        <article class="compare-box active">
+          <h3>Good fit</h3>
+          <ul>
+            <li>local-first で自律 coding run を管理したい</li>
+            <li>Queue admission と run evidence を明示したい</li>
+            <li>Provider、MCP、Agent Hooks をひとつの操作面で扱いたい</li>
+          </ul>
+        </article>
+        <article class="compare-box">
+          <h3>Not a fit</h3>
+          <ul>
+            <li>hosted team SaaS としてすぐ使いたい</li>
+            <li>PR 作成、merge、deploy まで自動で完了させたい</li>
+            <li>固定 demo seed だけで試用を完結したい</li>
           </ul>
         </article>
       </div>
@@ -207,7 +275,10 @@ og_image_alt: NightWorkers のローカル開発コントロールプレーン�
         <p>
           NightWorkers は、Project、Session、Queue、Run、Artifact、Settings をローカルで扱う control plane です。
         </p>
-        <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHub プロジェクトを見る</a>
+        <div class="hero-actions cta-actions">
+          <a class="btn btn-primary" href="https://github.com/ugnoguchigxp/nightWorkers">GitHub プロジェクトを見る</a>
+          <a class="btn btn-secondary" href="https://github.com/ugnoguchigxp/nightWorkers/blob/main/README.md">README を読む</a>
+        </div>
       </div>
     </div>
   </section>

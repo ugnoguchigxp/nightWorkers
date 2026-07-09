@@ -368,15 +368,22 @@ describe("ProjectDetailScreen action coverage", () => {
 			const { ProjectDetailScreen } = await import(
 				"../src/modules/nightworkers/components/ProjectDetailScreen"
 			);
+			const onEvaluationTasksCreated = vi.fn();
+			const onMissionTaskCandidatesCreated = vi.fn();
 			const element = ProjectDetailScreen({
 				project: project(),
 				sessionViews: [],
 				activeTab: tab,
 				onActiveTabChange: vi.fn(),
 				onOpenSession: vi.fn(),
-				onEvaluationTasksCreated: vi.fn(),
+				onEvaluationTasksCreated,
+				onMissionTaskCandidatesCreated,
 			});
 			await triggerCallbacks(element);
+			if (tab === "mission") {
+				expect(onMissionTaskCandidatesCreated).toHaveBeenCalled();
+				expect(onEvaluationTasksCreated).not.toHaveBeenCalled();
+			}
 			expect(element).toBeTruthy();
 		}
 	});

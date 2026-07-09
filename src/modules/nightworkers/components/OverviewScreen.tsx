@@ -67,6 +67,21 @@ const primaryTextStyle = {
 	color: "var(--nw-primary)",
 } satisfies React.CSSProperties;
 
+const tokenSegmentStyles = {
+	input: {
+		background: "var(--nw-primary)",
+		color: "var(--nw-primary)",
+	},
+	cachedInput: {
+		background: "var(--nw-success)",
+		color: "var(--nw-success)",
+	},
+	output: {
+		background: "var(--nw-warning)",
+		color: "var(--nw-warning)",
+	},
+} satisfies Record<string, React.CSSProperties>;
+
 const tableBorderStyle = {
 	borderColor: "var(--nw-border)",
 } satisfies React.CSSProperties;
@@ -118,11 +133,14 @@ export function OverviewScreen({
 
 	const maxBucketTokens = Math.max(
 		1,
-		...(dashboard?.dailyUsage || []).map((p) => p.totalTokens),
+		...(dashboard?.dailyUsage || []).map(getSeparatedTokenTotal),
 	);
 	const hasDailyUsageData = (dashboard?.dailyUsage || []).some(
-		(bucket) => bucket.totalTokens > 0,
+		(bucket) => getSeparatedTokenTotal(bucket) > 0,
 	);
+	const uncachedInputTokens = dashboard
+		? getUncachedInputTokens(dashboard.usage)
+		: 0;
 
 	return (
 		<div
@@ -226,19 +244,22 @@ export function OverviewScreen({
 					<>
 						<section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
 							<KpiCard
-								label={t("overview.kpi.totalTokens")}
-								value={formatTokenCount(dashboard.usage.totalTokens)}
-								sub={t("overview.kpi.callCount", {
+								label={t("overview.kpi.calls")}
+								value={dashboard.usage.callCount.toLocaleString()}
+								sub={t("overview.kpi.callDetails", {
 									count: dashboard.usage.callCount,
+									tokens: formatTokenCount(dashboard.usage.totalTokens),
 								})}
 							/>
 							<KpiCard
 								label={t("overview.kpi.input")}
-								value={formatTokenCount(dashboard.usage.inputTokens)}
-								sub={t("overview.kpi.inputDetails", {
-									prompt: formatTokenCount(dashboard.usage.promptInputTokens),
-									cached: formatTokenCount(dashboard.usage.cachedInputTokens),
-								})}
+								value={formatTokenCount(uncachedInputTokens)}
+								sub={t("overview.kpi.inputDetails")}
+							/>
+							<KpiCard
+								label={t("overview.kpi.cachedInput")}
+								value={formatTokenCount(dashboard.usage.cachedInputTokens)}
+								sub={t("overview.kpi.cachedInputDetails")}
 							/>
 							<KpiCard
 								label={t("overview.kpi.output")}
@@ -257,11 +278,6 @@ export function OverviewScreen({
 								sub={t("overview.kpi.outputSpeedDetails", {
 									count: dashboard.usage.measuredDurationCallCount,
 								})}
-							/>
-							<KpiCard
-								label={t("overview.kpi.stateCard")}
-								value={formatTokenCount(dashboard.usage.stateCardTokens)}
-								sub={t("overview.kpi.inputBreakdown")}
 							/>
 							<KpiCard
 								label={t("overview.kpi.cost")}
@@ -286,32 +302,58 @@ export function OverviewScreen({
 								{!hasDailyUsageData ? (
 									<EmptyState text={t("overview.empty")} />
 								) : (
-									<div className="mt-4 flex h-48 items-end gap-1">
-										{dashboard.dailyUsage.map((bucket) => (
-											<div
-												key={bucket.key}
-												className="flex min-w-0 flex-1 flex-col items-center gap-1"
-											>
-												<div
-													className="w-full rounded-t"
-													style={{
-														background: "var(--nw-primary)",
-														height: `${Math.max(4, (bucket.totalTokens / maxBucketTokens) * 170)}px`,
-													}}
-													title={t("overview.chart.bucketTokens", {
-														bucket: bucket.key,
-														tokens: formatTokenCount(bucket.totalTokens),
-													})}
-												/>
-												<span
-													className="max-w-full truncate text-[9px]"
-													style={subtleTextStyle}
-												>
-													{bucket.key}
-												</span>
-											</div>
-										))}
-									</div>
+									<>
+										<TokenLegend />
+										<div className="mt-4 flex h-48 items-end gap-1">
+											{dashboard.dailyUsage.map((bucket) => {
+												const uncached = getUncachedInputTokens(bucket);
+												const cached = bucket.cachedInputTokens;
+												const output = bucket.outputTokens;
+												const total = getSeparatedTokenTotal(bucket);
+												return (
+													<div
+														key={bucket.key}
+														className="flex min-w-0 flex-1 flex-col items-center gap-1"
+													>
+														<div
+															className="flex w-full flex-col justify-end overflow-hidden rounded-t"
+															style={{
+																height: `${Math.max(4, (total / maxBucketTokens) * 170)}px`,
+															}}
+															title={t("overview.chart.bucketTokenParts", {
+																bucket: bucket.key,
+																input: formatTokenCount(uncached),
+																cached: formatTokenCount(cached),
+																output: formatTokenCount(output),
+															})}
+														>
+															<TokenSegment
+																value={output}
+																total={total}
+																tone="output"
+															/>
+															<TokenSegment
+																value={cached}
+																total={total}
+																tone="cachedInput"
+															/>
+															<TokenSegment
+																value={uncached}
+																total={total}
+																tone="input"
+															/>
+														</div>
+														<span
+															className="max-w-full truncate text-[9px]"
+															style={subtleTextStyle}
+														>
+															{bucket.key}
+														</span>
+													</div>
+												);
+											})}
+										</div>
+									</>
 								)}
 							</div>
 
@@ -420,7 +462,13 @@ export function OverviewScreen({
 											{t("overview.table.model")}
 										</th>
 										<th className="py-2 text-right">
-											{t("overview.table.tokens")}
+											{t("overview.table.input")}
+										</th>
+										<th className="py-2 text-right">
+											{t("overview.table.cachedInput")}
+										</th>
+										<th className="py-2 text-right">
+											{t("overview.table.output")}
 										</th>
 										<th className="py-2 text-right">
 											{t("overview.table.outputSpeed")}
@@ -452,7 +500,13 @@ export function OverviewScreen({
 												</div>
 											</td>
 											<td className="py-2 text-right">
-												{formatTokenCount(item.totalTokens)}
+												{formatTokenCount(getUncachedInputTokens(item))}
+											</td>
+											<td className="py-2 text-right">
+												{formatTokenCount(item.cachedInputTokens)}
+											</td>
+											<td className="py-2 text-right">
+												{formatTokenCount(item.outputTokens)}
 											</td>
 											<td className="py-2 text-right">
 												{formatTokensPerSecond(item.outputTokensPerSecond)}
@@ -476,7 +530,13 @@ export function OverviewScreen({
 											{t("overview.table.call")}
 										</th>
 										<th className="py-2 text-right">
-											{t("overview.table.tokens")}
+											{t("overview.table.input")}
+										</th>
+										<th className="py-2 text-right">
+											{t("overview.table.cachedInput")}
+										</th>
+										<th className="py-2 text-right">
+											{t("overview.table.output")}
 										</th>
 										<th className="py-2 text-right">
 											{t("overview.table.outputSpeed")}
@@ -520,7 +580,13 @@ export function OverviewScreen({
 												</div>
 											</td>
 											<td className="py-2 text-right">
-												{formatTokenCount(call.totalTokens)}
+												{formatTokenCount(getUncachedInputTokens(call))}
+											</td>
+											<td className="py-2 text-right">
+												{formatTokenCount(call.cachedInputTokens)}
+											</td>
+											<td className="py-2 text-right">
+												{formatTokenCount(call.outputTokens)}
 											</td>
 											<td className="py-2 text-right">
 												{formatTokensPerSecond(call.outputTokensPerSecond)}
@@ -608,6 +674,51 @@ function OverviewTable({
 	);
 }
 
+function TokenLegend() {
+	const { t } = useTranslation();
+	const items = [
+		{ key: "input", label: t("overview.table.input") },
+		{ key: "cachedInput", label: t("overview.table.cachedInput") },
+		{ key: "output", label: t("overview.table.output") },
+	] as const;
+	return (
+		<div
+			className="mt-3 flex flex-wrap gap-3 text-[10px]"
+			style={subtleTextStyle}
+		>
+			{items.map((item) => (
+				<span key={item.key} className="inline-flex items-center gap-1.5">
+					<span
+						className="h-2 w-2 rounded-full"
+						style={tokenSegmentStyles[item.key]}
+					/>
+					{item.label}
+				</span>
+			))}
+		</div>
+	);
+}
+
+function TokenSegment({
+	value,
+	total,
+	tone,
+}: {
+	value: number;
+	total: number;
+	tone: keyof typeof tokenSegmentStyles;
+}) {
+	if (value <= 0 || total <= 0) return null;
+	return (
+		<div
+			style={{
+				...tokenSegmentStyles[tone],
+				flexBasis: `${Math.max(1, (value / total) * 100)}%`,
+			}}
+		/>
+	);
+}
+
 function EmptyState({ text }: { text: string }) {
 	return (
 		<div
@@ -621,6 +732,22 @@ function EmptyState({ text }: { text: string }) {
 		>
 			{text}
 		</div>
+	);
+}
+
+type TokenBreakdown = {
+	inputTokens: number;
+	cachedInputTokens: number;
+	outputTokens: number;
+};
+
+function getUncachedInputTokens(usage: TokenBreakdown) {
+	return Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+}
+
+function getSeparatedTokenTotal(usage: TokenBreakdown) {
+	return (
+		getUncachedInputTokens(usage) + usage.cachedInputTokens + usage.outputTokens
 	);
 }
 

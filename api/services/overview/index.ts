@@ -458,6 +458,7 @@ async function buildRecentExpensiveCalls(input: {
 			model: row.model,
 			label: row.label,
 			inputTokens: row.inputTokens ?? 0,
+			cachedInputTokens: row.cachedInputTokens ?? 0,
 			outputTokens: row.outputTokens ?? 0,
 			stateCardTokens: row.stateCardTokens ?? 0,
 			totalTokens: normalizeTotal(row),

@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
+import { formatTokenCount } from "../../../i18n/format";
 import type { TranscriptChild, TranscriptItem } from "../activityTranscript";
 import type {
 	ActivityEvent,
@@ -605,6 +606,10 @@ function activityDisplayTitle(event: ActivityEvent, fallback: string): string {
 function activityDisplaySummary(event: ActivityEvent): string {
 	const payload = toDeepRecord(event.payloadJson);
 	const data = payload?.payload || payload?.runEvent?.data || payload || {};
+	if (event.kind === "llm.usage") {
+		const usageSummary = formatLlmUsageSummary(data);
+		if (usageSummary) return usageSummary;
+	}
 	const workRecordCard = getWorkRecordCard(event);
 	if (workRecordCard) {
 		const command = stringValue(data.command || payload.command);
@@ -671,6 +676,39 @@ function activityDisplaySummary(event: ActivityEvent): string {
 		return event.text || "prompt built";
 	}
 	return event.text || event.ingestError || event.status || event.kind;
+}
+
+function formatLlmUsageSummary(data: Record<string, unknown>): string {
+	const inputTokens = tokenValue(data.inputTokens);
+	const cachedInputTokens = tokenValue(data.cachedInputTokens);
+	const outputTokens = tokenValue(data.outputTokens);
+	if (
+		inputTokens === null &&
+		cachedInputTokens === null &&
+		outputTokens === null
+	) {
+		return "";
+	}
+	return [
+		`Input: ${formatLlmUsageToken(inputTokens)}`,
+		`Cached input: ${formatLlmUsageToken(cachedInputTokens)}`,
+		`Output: ${formatLlmUsageToken(outputTokens)}`,
+	].join("\n");
+}
+
+function tokenValue(value: unknown): number | null {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return Math.max(0, Math.floor(value));
+	}
+	if (typeof value === "string" && value.trim()) {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
+	}
+	return null;
+}
+
+function formatLlmUsageToken(value: number | null): string {
+	return value === null ? "N/A" : formatTokenCount(value);
 }
 
 function getWorkRecordCard(

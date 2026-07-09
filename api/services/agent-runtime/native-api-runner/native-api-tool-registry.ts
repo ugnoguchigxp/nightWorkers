@@ -244,10 +244,29 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "completion_check",
 			description:
-				"Check whether required Verification Checklist items are complete from NightWorkers-managed evidence. If this fails, continue fixing failed or unknown required conditions.",
+				"Check whether required Verification Checklist items are matched by NightWorkers-managed test evidence. If this fails, continue fixing failed or unknown required conditions.",
 			inputSchema: objectSchema({
 				taskId: { type: "string" },
 				verificationDocumentId: { type: "string" },
+			}),
+		},
+	},
+	{
+		name: "reviewer_evaluation",
+		kind: "worker",
+		workerToolName: "reviewer_evaluation",
+		definition: {
+			name: "reviewer_evaluation",
+			description:
+				"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded.",
+			inputSchema: objectSchema({
+				runId: { type: "string" },
+				rubricId: { type: "string" },
+				mode: {
+					type: "string",
+					enum: ["deterministic_only", "llm_assisted"],
+				},
+				persist: { type: "boolean" },
 			}),
 		},
 	},
@@ -486,6 +505,7 @@ const nativeApiToolNamesByMode: Record<
 		"run_check",
 		"run_verification",
 		"completion_check",
+		"reviewer_evaluation",
 		"git_status",
 		"git_diff",
 		"context_initial_instructions",

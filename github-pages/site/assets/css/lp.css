@@ -104,14 +104,27 @@ a {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
-.chip {
-  font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
-  font-size: 0.72rem;
-  color: #dbe8e0;
+.topnav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topnav a {
   border: 1px solid rgba(219, 232, 224, 0.32);
+  border-radius: var(--radius);
+  color: #dbe8e0;
   background: rgba(16, 25, 31, 0.54);
   padding: 6px 10px;
-  border-radius: var(--radius);
+  text-decoration: none;
+  font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.topnav a:hover {
+  background: rgba(20, 121, 111, 0.5);
 }
 
 .hero-copy {
@@ -224,6 +237,11 @@ h1 {
   padding: 70px 0;
 }
 
+.section-evaluate {
+  padding: 54px 0;
+  background: #ffffff;
+}
+
 .intro {
   padding-top: 50px;
 }
@@ -258,6 +276,56 @@ h1 {
   margin: 16px 0 0;
   color: var(--ink-soft);
   font-size: 1.02rem;
+}
+
+.evaluate-grid,
+.evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 42px;
+  align-items: center;
+}
+
+.read-next,
+.evidence-list {
+  display: grid;
+  gap: 12px;
+}
+
+.read-next a,
+.evidence-list div {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fbf8;
+  padding: 14px 16px;
+  text-decoration: none;
+}
+
+.read-next a:hover {
+  border-color: rgba(20, 121, 111, 0.48);
+  background: #eef8f4;
+}
+
+.read-next strong,
+.read-next span,
+.evidence-list strong,
+.evidence-list span {
+  display: block;
+}
+
+.read-next strong,
+.evidence-list strong {
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.read-next span,
+.evidence-list span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
 }
 
 .cards {
@@ -497,6 +565,10 @@ h1 {
   color: #edf5ef;
 }
 
+.section-evidence {
+  background: #ffffff;
+}
+
 .compare {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -531,6 +603,11 @@ h1 {
 
 .section-roadmap {
   padding-top: 18px;
+}
+
+.section-fit {
+  padding-top: 18px;
+  background: #ffffff;
 }
 
 .pills {
@@ -576,6 +653,10 @@ h1 {
   color: #d8e7de;
 }
 
+.cta-actions {
+  justify-content: center;
+}
+
 .footer {
   border-top: 1px solid var(--line);
   padding: 16px 0 44px;
@@ -605,6 +686,8 @@ h1 {
 
   .section-grid,
   .spec-grid,
+  .evaluate-grid,
+  .evidence-grid,
   .compare {
     grid-template-columns: 1fr;
   }
@@ -656,7 +739,7 @@ h1 {
     align-items: flex-start;
   }
 
-  .chip {
+  .topnav {
     display: none;
   }
 

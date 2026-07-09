@@ -19,6 +19,7 @@ import {
 	listRecentSpecificationsTool,
 	readCurrentSpecificationTool,
 } from "../services/worker-tools/read-current-specification";
+import { reviewerEvaluationTool } from "../services/worker-tools/reviewer-evaluation";
 import {
 	completionCheckTool,
 	runCheckTool,
@@ -185,6 +186,30 @@ export function createNightWorkersCodexMcpServer(
 						process.env.NIGHTWORKERS_TASK_ID,
 					),
 					verificationDocumentId,
+				}),
+			);
+		},
+	);
+
+	server.registerTool(
+		"reviewer_evaluation",
+		{
+			...nightWorkersCodexToolManifest.reviewer_evaluation,
+		},
+		async ({ runId, rubricId, mode, persist }) => {
+			if (isToolDisabledForExecutionMode("reviewer_evaluation", context)) {
+				return toolResultToMcp(disabledToolResult("reviewer_evaluation"));
+			}
+			return toolResultToMcp(
+				await reviewerEvaluationTool({
+					runId: firstNonEmpty(
+						runId,
+						context.runId,
+						process.env.NIGHTWORKERS_RUN_ID,
+					),
+					rubricId,
+					mode,
+					persist,
 				}),
 			);
 		},

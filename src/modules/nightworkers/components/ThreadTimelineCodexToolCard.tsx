@@ -16,6 +16,7 @@ import {
 
 type CodexToolLifecycle = "started" | "progress" | "result" | "failed";
 type CodexToolStatus = "started" | "running" | "ok" | "failed";
+const CODEX_TOOL_RESULT_HEIGHT_REDUCTION = 104;
 
 export type CodexToolCardModel = {
 	lifecycle: CodexToolLifecycle;
@@ -204,7 +205,7 @@ function CodexToolCardBody({
 							code={card.outputPreview}
 							filename={card.detailsFilename || `${card.toolName}.output.txt`}
 							language="text"
-							maxHeight={debug ? 240 : 140}
+							maxHeight={codexToolCodeBlockMaxHeight(card, debug, "output")}
 							syntaxHighlighting={false}
 						/>
 					) : null}
@@ -214,12 +215,25 @@ function CodexToolCardBody({
 					code={blocks.join("\n\n")}
 					filename={card.detailsFilename || `${card.toolName}.txt`}
 					language="text"
-					maxHeight={debug ? 320 : 220}
+					maxHeight={codexToolCodeBlockMaxHeight(card, debug, "details")}
 					syntaxHighlighting={false}
 				/>
 			)}
 		</div>
 	);
+}
+
+function codexToolCodeBlockMaxHeight(
+	card: CodexToolCardModel,
+	debug: boolean,
+	block: "details" | "output",
+) {
+	const baseHeight =
+		block === "output" ? (debug ? 240 : 140) : debug ? 320 : 220;
+	if (card.lifecycle === "result") {
+		return baseHeight - CODEX_TOOL_RESULT_HEIGHT_REDUCTION;
+	}
+	return baseHeight;
 }
 
 function buildMcpCard(input: {

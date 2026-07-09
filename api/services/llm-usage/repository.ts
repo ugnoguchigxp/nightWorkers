@@ -87,7 +87,7 @@ export async function recordLlmUsage(input: {
 			kind: "llm.usage",
 			source: "provider",
 			status: "completed",
-			text: `LLM usage recorded. i:${record.inputTokens ?? 0} o:${record.outputTokens ?? 0}`,
+			text: `LLM usage recorded. input:${formatUsageToken(record.inputTokens)} cached_input:${formatUsageToken(record.cachedInputTokens)} output:${formatUsageToken(record.outputTokens)}`,
 			visibility: "debug",
 			externalId: record.id,
 			dedupeKey: `llm_usage:${record.id}`,
@@ -112,6 +112,10 @@ export async function recordLlmUsage(input: {
 	}
 
 	return record;
+}
+
+function formatUsageToken(value: number | null | undefined) {
+	return value === null || value === undefined ? "n/a" : String(value);
 }
 
 export async function listLlmUsageRecordsForTask(taskId: string) {

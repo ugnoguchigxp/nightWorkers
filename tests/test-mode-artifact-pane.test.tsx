@@ -79,9 +79,10 @@ describe("Test Mode artifact pane", () => {
 
 		expect(markup).toContain("テスト実装ワークフロー開始");
 		expect(markup).toContain("実装開始");
-		expect(markup).toContain("実装完了");
 		expect(markup).toContain("証跡テストチェック");
+		expect(markup).toContain("LLM コードレビュー");
 		expect(markup).toContain("ユニットテスト実行");
+		expect(markup).not.toContain("実装完了");
 		expect(markup).toContain("待機中");
 		expect(markup).not.toContain(
 			"通常の実装実行とは独立して、検証チェックリストに沿ったテスト実行を開始します。",
@@ -128,6 +129,7 @@ describe("Test Mode artifact pane", () => {
 		expect(activeMarkup).toContain("実装開始");
 		expect(archivedMarkup).toContain("テスト実装ワークフロー開始");
 		expect(archivedMarkup).toContain("ユニットテスト実行");
+		expect(archivedMarkup).toContain("LLM コードレビュー");
 	});
 
 	it("shows workflow progress from the latest Test Mode run", () => {
@@ -164,27 +166,15 @@ describe("Test Mode artifact pane", () => {
 					},
 				}),
 				buildTaskEvent({
-					id: "apply-patch-event",
-					payloadJson: {
-						runEvent: {
-							data: {
-								toolName: "apply_patch",
-								result: { ok: true, payload: {} },
-							},
-						},
-					},
-				}),
-				buildTaskEvent({
 					id: "run-check-event",
 					payloadJson: {
 						runEvent: {
 							data: {
 								toolName: "run_check",
+								ok: false,
+								status: "failed",
 								result: {
-									ok: false,
-									payload: {
-										checkKind: "test",
-									},
+									checkKind: "test",
 								},
 							},
 						},
@@ -200,11 +190,89 @@ describe("Test Mode artifact pane", () => {
 
 		expect(markup).toContain("実装開始");
 		expect(markup).toContain("完了");
-		expect(markup).toContain("実装完了");
+		expect(markup).not.toContain("実装完了");
 		expect(markup).toContain("ユニットテスト実行");
 		expect(markup).toContain("失敗");
 		expect(markup).toContain("証跡テストチェック");
+		expect(markup).toContain("LLM コードレビュー");
 		expect(markup).toContain("待機中");
+	});
+
+	it("marks LLM code review progress from reviewer events", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				"- [AC-001] API が成功する",
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			},
+		});
+		const latestRun = buildTaskRun({
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+			events: [
+				buildTaskEvent({
+					id: "run-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "run_check",
+								ok: true,
+								status: "completed",
+								result: {
+									checkKind: "test",
+								},
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "completion-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "completion_check",
+								ok: true,
+								status: "completed",
+								result: {
+									llmSummary: "OK completion_check",
+								},
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "llm-review-event",
+					eventType: "review.llm_finished",
+					payloadJson: {
+						runEvent: {
+							type: "review.llm_finished",
+							data: {
+								status: "completed",
+							},
+						},
+					},
+				}),
+			],
+		});
+
+		const markup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			latestRun,
+		});
+
+		expect(markup).toContain("LLM コードレビュー");
+		expect(markup).not.toContain("実装完了");
+		expect(markup.match(/完了/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
 	});
 
 	it("shows managed check results from the latest Test Mode run", () => {
@@ -235,12 +303,11 @@ describe("Test Mode artifact pane", () => {
 						runEvent: {
 							data: {
 								toolName: "run_check",
+								ok: true,
+								status: "completed",
 								result: {
-									ok: true,
-									payload: {
-										checkKind: "test",
-										llmSummary: "OK test\nexitCode=0\nstdoutArtifact=stdout-1",
-									},
+									checkKind: "test",
+									llmSummary: "OK test\nexitCode=0\nstdoutArtifact=stdout-1",
 								},
 							},
 						},
@@ -252,11 +319,10 @@ describe("Test Mode artifact pane", () => {
 						runEvent: {
 							data: {
 								toolName: "completion_check",
+								ok: true,
+								status: "completed",
 								result: {
-									ok: true,
-									payload: {
-										llmSummary: "OK completion_check",
-									},
+									llmSummary: "OK completion_check",
 								},
 							},
 						},
@@ -274,6 +340,97 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("OK test");
 		expect(markup).toContain("証跡テストチェック結果");
 		expect(markup).toContain("OK completion_check");
+	});
+
+	it("reads prefixed NightWorkers MCP check events from structured content", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				"- [AC-001] API が成功する",
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			},
+		});
+		const latestRun = buildTaskRun({
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+			events: [
+				buildTaskEvent({
+					id: "verify-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "nightworkers.run_check",
+								mcpTool: "run_check",
+								status: "completed",
+								result: {
+									structured_content: {
+										payload: {
+											checkKind: "verify",
+											llmSummary: "OK verify",
+										},
+									},
+								},
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "completion-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "nightworkers.completion_check",
+								mcpTool: "completion_check",
+								status: "completed",
+								result: {
+									structured_content: {
+										payload: {
+											llmSummary: "OK completion_check",
+										},
+									},
+								},
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "llm-review-event",
+					eventType: "review.llm_finished",
+					payloadJson: {
+						runEvent: {
+							type: "review.llm_finished",
+							data: {
+								status: "degraded",
+							},
+						},
+					},
+				}),
+			],
+		});
+
+		const markup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			latestRun,
+		});
+
+		expect(markup).toContain("verify 実行結果");
+		expect(markup).toContain("OK verify");
+		expect(markup).toContain("証跡テストチェック結果");
+		expect(markup).toContain("OK completion_check");
+		expect(markup).toContain("確認待ち");
+		const unitStepStart = markup.indexOf("ユニットテスト実行");
+		const evidenceStepStart = markup.indexOf("証跡テストチェック");
+		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
 	});
 });
 

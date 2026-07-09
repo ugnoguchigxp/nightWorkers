@@ -76,48 +76,42 @@ function applyToolEventProgress(
 ) {
 	if (!run) return;
 	const firstStep = steps.find((step) => step.id === "implementation_start");
-	const implementationStep = steps.find(
-		(step) => step.id === "implementation_complete",
-	);
 	const unitStep = steps.find((step) => step.id === "unit_test");
 	const evidenceStep = steps.find((step) => step.id === "evidence_check");
+	const reviewStep = steps.find((step) => step.id === "llm_code_review");
 	for (const event of run.events ?? []) {
 		const toolEvent = readManagedToolEvent(event);
+		const reviewEvent = readReviewerEvent(event);
+		if (reviewEvent) {
+			markPassedIfNotTerminal(firstStep);
+			markPassedIfNotTerminal(unitStep);
+			markPassedIfNotTerminal(evidenceStep);
+			if (reviewStep) reviewStep.status = reviewEventStatus(reviewEvent);
+			continue;
+		}
 		if (!toolEvent) continue;
 		if (toolEvent.toolName === "read_current_specification") {
-			if (firstStep) firstStep.status = toolEventStatus(toolEvent);
+			const status = toolEventStatus(toolEvent);
+			if (firstStep)
+				firstStep.status = status === "passed" ? "running" : status;
 			continue;
 		}
-		if (isTestImplementationTool(toolEvent.toolName)) {
-			if (firstStep && firstStep.status === "pending") {
-				firstStep.status = "passed";
-			}
-			if (implementationStep) {
-				implementationStep.status = toolEventStatus(toolEvent);
-			}
-			continue;
-		}
-		if (toolEvent.toolName === "run_check" && toolEvent.checkKind === "test") {
-			if (firstStep && firstStep.status === "pending") {
-				firstStep.status = "passed";
-			}
-			if (implementationStep && implementationStep.status === "pending") {
-				implementationStep.status = "passed";
-			}
+		if (toolEvent.toolName === "run_check" && isTestRunCheckKind(toolEvent)) {
+			markPassedIfNotTerminal(firstStep);
 			if (unitStep) unitStep.status = toolEventStatus(toolEvent);
 			continue;
 		}
 		if (toolEvent.toolName === "completion_check") {
-			if (firstStep && firstStep.status === "pending") {
-				firstStep.status = "passed";
-			}
-			if (implementationStep && implementationStep.status === "pending") {
-				implementationStep.status = "passed";
-			}
-			if (unitStep && unitStep.status === "pending") {
-				unitStep.status = "passed";
-			}
+			markPassedIfNotTerminal(firstStep);
+			markPassedIfNotTerminal(unitStep);
 			if (evidenceStep) evidenceStep.status = toolEventStatus(toolEvent);
+			continue;
+		}
+		if (isLlmReviewTool(toolEvent.toolName)) {
+			markPassedIfNotTerminal(firstStep);
+			markPassedIfNotTerminal(unitStep);
+			markPassedIfNotTerminal(evidenceStep);
+			if (reviewStep) reviewStep.status = reviewerToolEventStatus(toolEvent);
 		}
 	}
 	if (
@@ -133,10 +127,23 @@ function isObservedStep(step: TestModeWorkflowStepView) {
 	return step.status !== "pending";
 }
 
+function markPassedIfNotTerminal(step?: TestModeWorkflowStepView) {
+	if (!step) return;
+	if (step.status === "failed" || step.status === "needs_human") return;
+	step.status = "passed";
+}
+
 type ManagedToolEvent = {
 	toolName: string;
 	checkKind?: string | null;
 	ok?: boolean;
+	status?: string | null;
+};
+
+type ReviewerEvent = {
+	type: string;
+	ok?: boolean;
+	status?: string | null;
 };
 
 function readManagedToolEvent(
@@ -152,13 +159,23 @@ function readManagedToolEvent(
 		payload.result,
 		payloadPayload.result,
 	);
+	const rawResultRecord = toDeepRecord(rawResult.result);
+	const structuredContent = firstRecord(
+		rawResult.structuredContent,
+		rawResult.structured_content,
+		rawResultRecord.structuredContent,
+		rawResultRecord.structured_content,
+	);
 	const resultPayload = firstRecord(
 		rawResult.payload,
-		toDeepRecord(rawResult.result).payload,
+		rawResultRecord.payload,
+		toDeepRecord(structuredContent.payload),
 		rawResult.result,
+		rawResult,
 		payloadPayload.payload,
 	);
 	const toolName = readFirstString(
+		runEventData.mcpTool,
 		runEventData.toolName,
 		rawResult.toolName,
 		payload.toolName,
@@ -166,9 +183,46 @@ function readManagedToolEvent(
 	);
 	if (!toolName) return null;
 	return {
-		toolName,
+		toolName: normalizeToolName(toolName),
 		checkKind: readRecordString(resultPayload, "checkKind"),
-		ok: typeof rawResult.ok === "boolean" ? rawResult.ok : undefined,
+		ok: readFirstBoolean(rawResult.ok, runEventData.ok, payload.ok),
+		status: readFirstString(
+			rawResult.status,
+			runEventData.status,
+			payload.status,
+		),
+	};
+}
+
+function readReviewerEvent(
+	event: NonNullable<TaskRun["events"]>[number],
+): ReviewerEvent | null {
+	const payload = toDeepRecord(event.payloadJson);
+	const runEvent = toDeepRecord(payload.runEvent);
+	const runEventData = toDeepRecord(runEvent.data);
+	const type = readFirstString(
+		runEvent.type,
+		payload.type,
+		event.eventType,
+		event.type,
+	);
+	if (!type?.startsWith("review.")) return null;
+	if (
+		type !== "review.llm_started" &&
+		type !== "review.llm_finished" &&
+		type !== "review.evaluation_finished"
+	) {
+		return null;
+	}
+	if (type === "review.evaluation_finished") {
+		const reviewer = toDeepRecord(runEventData.reviewer);
+		const reviewerKind = readRecordString(reviewer, "kind");
+		if (!runEventData.llmVerdict && reviewerKind !== "combined") return null;
+	}
+	return {
+		type,
+		ok: readFirstBoolean(runEventData.ok, payload.ok),
+		status: readFirstString(runEventData.status, payload.status),
 	};
 }
 
@@ -187,14 +241,59 @@ function readFirstString(...values: unknown[]) {
 	return null;
 }
 
+function readFirstBoolean(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "boolean") return value;
+	}
+	return undefined;
+}
+
 function toolEventStatus(event: ManagedToolEvent): TestModeWorkflowStepStatus {
 	if (event.ok === true) return "passed";
 	if (event.ok === false) return "failed";
+	if (event.status === "failed") return "failed";
+	if (event.status === "completed") return "passed";
 	return "running";
 }
 
-function isTestImplementationTool(toolName: string) {
-	return toolName === "apply_patch" || toolName === "replace_content";
+function reviewEventStatus(event: ReviewerEvent): TestModeWorkflowStepStatus {
+	if (event.status === "degraded") return "needs_human";
+	if (event.ok === true) return "passed";
+	if (event.ok === false) return "failed";
+	if (event.status === "failed") return "failed";
+	if (event.status === "completed" || event.type === "review.llm_finished") {
+		return "passed";
+	}
+	return "running";
+}
+
+function reviewerToolEventStatus(
+	event: ManagedToolEvent,
+): TestModeWorkflowStepStatus {
+	if (event.status === "degraded") return "needs_human";
+	return toolEventStatus(event);
+}
+
+function isTestRunCheckKind(event: ManagedToolEvent) {
+	return (
+		event.checkKind === "test" ||
+		event.checkKind === "coverage" ||
+		event.checkKind === "verify"
+	);
+}
+
+function isLlmReviewTool(toolName: string) {
+	return (
+		toolName === "llm_code_review" ||
+		toolName === "reviewer_evaluation" ||
+		toolName === "reviewer-evaluation"
+	);
+}
+
+function normalizeToolName(toolName: string) {
+	return toolName.startsWith("nightworkers.")
+		? toolName.slice("nightworkers.".length)
+		: toolName;
 }
 
 function isActiveTestModeWorkflowRun(run?: TaskRun | null) {
