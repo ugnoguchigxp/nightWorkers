@@ -49,10 +49,12 @@ export function FinalReportCard({
 	latestRun,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	latestRun?: TaskRun;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	if (!latestRun?.finalReport?.trim()) return null;
 	return (
@@ -64,6 +66,7 @@ export function FinalReportCard({
 				content={formatVisibleAssistantText(latestRun.finalReport)}
 				onOpenProjectFile={onOpenProjectFile}
 				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		</ThreadMessage>
 	);

@@ -71,6 +71,10 @@ export type ReviewEvidencePack = {
 	runId: string;
 	taskId: string;
 	status: string;
+	context?: {
+		executionMode?: string;
+		inRunReview?: boolean;
+	};
 	outcome?: {
 		status: string;
 		reason?: string;

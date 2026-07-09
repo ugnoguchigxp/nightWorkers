@@ -295,6 +295,7 @@ export function NightWorkersShellThreadPanel(
 						taskMessages={workspace.taskMessages}
 						activityArtifacts={workspace.activityArtifacts}
 						latestRun={workspace.latestRun}
+						latestRunEvents={workspace.latestRunEvents}
 						fileEntries={workspace.projectFileEntries}
 						fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
 						expandedDirectories={workspace.expandedProjectDirectories}
@@ -351,6 +352,7 @@ export function NightWorkersShellThreadPanel(
 						activeReviewSession={workspace.activeReviewSession}
 						gitCloseout={workspace.activeGitCloseout}
 						onStartReviewRun={workspace.startReviewRun}
+						onOpenReviewArtifact={props.onOpenReviewArtifact}
 						onCommitGitCloseout={workspace.commitRunGitCloseout}
 						activeTaskStatus={workspace.activeSession?.status ?? null}
 						onCompleteAndArchiveTask={(taskId) =>

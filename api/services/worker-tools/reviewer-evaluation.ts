@@ -31,7 +31,11 @@ export async function reviewerEvaluationTool(input: {
 			mode: input.mode || "llm_assisted",
 			persist: input.persist,
 		});
-		const ok = evaluation.status === "completed";
+		const hasActionableReviewResult = Boolean(
+			evaluation.reviewResult &&
+				evaluation.finalReviewerVerdict === "changes_requested",
+		);
+		const ok = evaluation.status === "completed" || hasActionableReviewResult;
 		return {
 			ok,
 			toolName: "reviewer_evaluation",

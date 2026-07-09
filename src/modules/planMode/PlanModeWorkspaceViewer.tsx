@@ -1195,6 +1195,7 @@ function FeaturePlanVerificationBar({
 		latestRun,
 		localStatus: status,
 	});
+	const conditionStatuses = readLatestFeaturePlanConditionStatuses(latestRun);
 	const workflowInProgress =
 		workflowActionStatus === "starting" ||
 		isTestModeWorkflowInProgress(workflowSteps);
@@ -1223,24 +1224,30 @@ function FeaturePlanVerificationBar({
 			<FeaturePlanTestModeWorkflowProgress steps={workflowSteps} />
 			{model.conditions.length > 0 ? (
 				<div className="mt-2 grid gap-1">
-					{model.conditions.slice(0, 3).map((condition) => (
-						<div
-							key={condition.id}
-							className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
-						>
-							<span className="font-mono leading-5 text-slate-400">
-								{condition.id}
-							</span>
-							<span className="whitespace-nowrap leading-5 text-slate-400">
-								{t(`testMode.conditionStatus.${condition.status}`, {
-									defaultValue: condition.status,
-								})}
-							</span>
-							<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
-								{condition.text}
-							</span>
-						</div>
-					))}
+					{model.conditions.slice(0, 3).map((condition) => {
+						const displayStatus = resolveFeaturePlanConditionStatus(
+							condition,
+							conditionStatuses,
+						);
+						return (
+							<div
+								key={condition.id}
+								className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
+							>
+								<span className="font-mono leading-5 text-slate-400">
+									{condition.id}
+								</span>
+								<span className="whitespace-nowrap leading-5 text-slate-400">
+									{t(`testMode.conditionStatus.${displayStatus}`, {
+										defaultValue: displayStatus,
+									})}
+								</span>
+								<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+									{condition.text}
+								</span>
+							</div>
+						);
+					})}
 				</div>
 			) : null}
 		</div>
@@ -1276,6 +1283,229 @@ function FeaturePlanTestModeWorkflowProgress({
 			))}
 		</div>
 	);
+}
+
+type FeaturePlanConditionStatuses = {
+	completionOk: boolean | null;
+	statuses: Map<string, string>;
+	hasPassedBroadVerification: boolean;
+};
+
+function readLatestFeaturePlanConditionStatuses(
+	latestRun?: TaskRun | null,
+): FeaturePlanConditionStatuses {
+	const events = latestRun?.events ?? [];
+	const completion = readLatestCompletionCheckConditionStatuses(events);
+	return {
+		completionOk: completion?.ok ?? null,
+		statuses: completion?.statuses ?? new Map<string, string>(),
+		hasPassedBroadVerification: hasPassedBroadVerificationEvent(events),
+	};
+}
+
+function resolveFeaturePlanConditionStatus(
+	condition: FeaturePlanVerificationModel["conditions"][number],
+	conditionStatuses: FeaturePlanConditionStatuses,
+) {
+	const explicitStatus = conditionStatuses.statuses.get(condition.id);
+	if (explicitStatus) return explicitStatus;
+	if (conditionStatuses.completionOk === true && condition.required) {
+		return "covered";
+	}
+	if (
+		conditionStatuses.hasPassedBroadVerification &&
+		isVerificationGateConditionText(condition.text)
+	) {
+		return "verified_by_gate";
+	}
+	return condition.status;
+}
+
+function readLatestCompletionCheckConditionStatuses(
+	events: NonNullable<TaskRun["events"]>,
+) {
+	for (const event of [...events].reverse()) {
+		const payload = toDeepRecord(event.payloadJson);
+		const runEvent = toDeepRecord(payload.runEvent);
+		const runEventData = toDeepRecord(runEvent.data);
+		const rawResult = firstRecord(
+			runEventData.result,
+			runEventData.toolResult,
+			payload.result,
+			toDeepRecord(payload.payload).result,
+		);
+		const parsedTextResult = parseToolTextResult(rawResult);
+		const rawResultRecord = toDeepRecord(rawResult.result);
+		const structuredContent = firstRecord(
+			rawResult.structuredContent,
+			rawResult.structured_content,
+			rawResultRecord.structuredContent,
+			rawResultRecord.structured_content,
+		);
+		const resultPayload = firstRecord(
+			parsedTextResult.payload,
+			rawResult.payload,
+			rawResultRecord.payload,
+			toDeepRecord(structuredContent.payload),
+			rawResult.result,
+			rawResult,
+			toDeepRecord(payload.payload).payload,
+		);
+		const toolName = readFirstString(
+			runEventData.mcpTool,
+			runEventData.toolName,
+			parsedTextResult.toolName,
+			rawResult.toolName,
+			payload.toolName,
+			toDeepRecord(payload.payload).toolName,
+		);
+		if (!toolName || normalizeToolName(toolName) !== "completion_check") {
+			continue;
+		}
+		const completionResult = firstRecord(resultPayload.result, resultPayload);
+		const statuses = new Map<string, string>();
+		const conditions = Array.isArray(completionResult.conditions)
+			? completionResult.conditions
+			: [];
+		for (const condition of conditions) {
+			const record = toDeepRecord(condition);
+			const conditionId = readFirstString(record.conditionId, record.id);
+			const status = readRecordString(record, "status");
+			if (conditionId && status) statuses.set(conditionId, status);
+		}
+		for (const failed of readConditionIdList(completionResult.failedRequired)) {
+			statuses.set(failed, "failed");
+		}
+		for (const unknown of readConditionIdList(
+			completionResult.unknownRequired,
+		)) {
+			if (statuses.get(unknown) !== "failed") statuses.set(unknown, "unknown");
+		}
+		return {
+			ok:
+				readFirstBoolean(
+					completionResult.ok,
+					parsedTextResult.ok,
+					rawResult.ok,
+					runEventData.ok,
+					payload.ok,
+				) ?? null,
+			statuses,
+		};
+	}
+	return null;
+}
+
+function hasPassedBroadVerificationEvent(
+	events: NonNullable<TaskRun["events"]>,
+) {
+	return events.some((event) => {
+		const payload = toDeepRecord(event.payloadJson);
+		const runEvent = toDeepRecord(payload.runEvent);
+		const runEventData = toDeepRecord(runEvent.data);
+		const eventType = readFirstString(
+			readRecordString(runEvent, "type"),
+			event.eventType,
+			event.type,
+		);
+		if (eventType !== "tool.call_finished") return false;
+		const commandClass = readRecordString(runEventData, "commandClass");
+		if (commandClass === "broad_verification") {
+			return readFirstNumber(runEventData.exitCode) === 0;
+		}
+		const rawResult = firstRecord(
+			runEventData.result,
+			runEventData.toolResult,
+			payload.result,
+			toDeepRecord(payload.payload).result,
+		);
+		const parsedTextResult = parseToolTextResult(rawResult);
+		const rawResultRecord = toDeepRecord(rawResult.result);
+		const resultPayload = firstRecord(
+			parsedTextResult.payload,
+			rawResult.payload,
+			rawResultRecord.payload,
+			rawResult.result,
+			rawResult,
+		);
+		const toolName = readFirstString(
+			runEventData.mcpTool,
+			runEventData.toolName,
+			parsedTextResult.toolName,
+			rawResult.toolName,
+		);
+		if (!toolName || normalizeToolName(toolName) !== "run_check") return false;
+		return (
+			readRecordString(resultPayload, "checkKind") === "verify" &&
+			readFirstBoolean(parsedTextResult.ok, rawResult.ok, runEventData.ok) ===
+				true
+		);
+	});
+}
+
+function parseToolTextResult(result: Record<string, unknown>) {
+	const content = result.content;
+	if (!Array.isArray(content)) return {};
+	for (const item of content) {
+		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+		const record = item as Record<string, unknown>;
+		if (record.type !== "text" || typeof record.text !== "string") continue;
+		try {
+			return toDeepRecord(JSON.parse(record.text));
+		} catch {
+			return {};
+		}
+	}
+	return {};
+}
+
+function readConditionIdList(value: unknown) {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((entry) => {
+			const record = toDeepRecord(entry);
+			return readFirstString(record.conditionId, record.id);
+		})
+		.filter((conditionId): conditionId is string => Boolean(conditionId));
+}
+
+function isVerificationGateConditionText(text: string) {
+	return /\b(?:verify|typecheck|lint|test|coverage|build)\b/i.test(text);
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> {
+	for (const value of values) {
+		const record = toDeepRecord(value);
+		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function readFirstString(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return null;
+}
+
+function readFirstBoolean(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "boolean") return value;
+	}
+	return undefined;
+}
+
+function readFirstNumber(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	return undefined;
+}
+
+function normalizeToolName(toolName: string) {
+	return toolName.startsWith("nightworkers.")
+		? toolName.slice("nightworkers.".length)
+		: toolName;
 }
 
 function FeaturePlanTestModeWorkflowStatusIcon({

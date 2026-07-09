@@ -30,7 +30,9 @@ import {
 	buildActivityArtifact,
 	buildBlueprintMessage,
 	buildTask,
+	buildTaskEvent,
 	buildTaskMessage,
+	buildTaskRun,
 } from "./helpers/nightworkers-fixtures";
 
 describe("buildArtifactVersions", () => {
@@ -600,9 +602,10 @@ describe("PlanModeWorkspaceViewer", () => {
 
 		expect(markup).toContain("テスト実装ワークフロー開始");
 		expect(markup).toContain("実装開始");
-		expect(markup).toContain("実装完了");
-		expect(markup).toContain("証跡テストチェック");
 		expect(markup).toContain("ユニットテスト実行");
+		expect(markup).toContain("証跡テストチェック");
+		expect(markup).toContain("LLM コードレビュー");
+		expect(markup).not.toContain("実装完了");
 		expect(markup).not.toContain("件の条件");
 		expect(markup).toContain("AC-001");
 		expect(markup).toContain(
@@ -610,6 +613,106 @@ describe("PlanModeWorkspaceViewer", () => {
 		);
 		expect(markup).toContain("whitespace-normal break-words");
 		expect(markup).not.toContain("truncate text-slate-200");
+	});
+
+	it("uses latest run events on the feature plan test mode panel", () => {
+		const featurePlan = buildTaskMessage({
+			id: "feature-plan-message",
+			content:
+				"# Feature Plan\n\n## 完了条件\n- [AC-001] `/` で一覧中心の本体画面が開く\n- [AC-005] `verify` によって、build / typecheck / lint / test が通る",
+			messageType: "markdown_document",
+			metadataJson: {
+				intent: "feature_plan",
+				title: "Feature Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+				verificationSidecarMessageId: "verification-message",
+				markdownDocumentData: {
+					title: "Feature Plan",
+				},
+			},
+		});
+		const verificationSidecar = buildTaskMessage({
+			id: "verification-message",
+			content: "{}",
+			messageType: "verification_json",
+			metadataJson: {
+				intent: "feature_plan_verification",
+				verificationDocument: {
+					conditions: [
+						{
+							id: "AC-001",
+							text: "`/` で一覧中心の本体画面が開く",
+							status: "pending",
+							required: true,
+						},
+						{
+							id: "AC-005",
+							text: "`verify` によって、build / typecheck / lint / test が通る",
+							status: "pending",
+							required: true,
+						},
+					],
+				},
+			},
+		});
+		const latestRun = buildTaskRun({
+			status: "completed",
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+			events: [
+				buildTaskEvent({
+					id: "verify-started",
+					payloadJson: {
+						runEvent: {
+							type: "tool.call_started",
+							data: {
+								toolName: "command_execution",
+								commandClass: "broad_verification",
+								command: "/bin/zsh -lc 'bun run verify'",
+								status: "in_progress",
+							},
+						},
+					},
+				}),
+				buildTaskEvent({
+					id: "verify-passed",
+					payloadJson: {
+						runEvent: {
+							type: "tool.call_finished",
+							data: {
+								toolName: "command_execution",
+								commandClass: "broad_verification",
+								command: "/bin/zsh -lc 'bun run verify'",
+								status: "completed",
+								exitCode: 0,
+								aggregatedOutput: "OK verify complete",
+							},
+						},
+					},
+				}),
+			],
+		});
+
+		const markup = renderToStaticMarkup(
+			createElement(PlanModeWorkspaceViewer, {
+				sessionId: "11111111-1111-4111-8111-111111111111",
+				taskMessages: [featurePlan, verificationSidecar],
+				activityArtifacts: [],
+				initialTab: "feature-plan",
+				latestRun,
+				onStartTestModeRun: async () => true,
+			}),
+		);
+		const unitStepStart = markup.indexOf("ユニットテスト実行");
+		const evidenceStepStart = markup.indexOf("証跡テストチェック");
+		const ac005 = markup.slice(markup.indexOf("AC-005"));
+
+		expect(markup).toContain("実装開始");
+		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
+		expect(markup).not.toContain("実行中");
+		expect(ac005).toContain("ゲート確認済み");
 	});
 
 	it("hides test actions on locked Plan Mode workspaces", () => {

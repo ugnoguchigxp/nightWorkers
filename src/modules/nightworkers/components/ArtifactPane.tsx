@@ -23,6 +23,7 @@ import { logArtifactPaneRendered } from "../artifactPerformance";
 import { startTestModeRun } from "../nightWorkersCommands";
 import {
 	buildTestModeWorkflowSteps,
+	isTestModeWorkflowComplete,
 	isTestModeWorkflowInProgress,
 	readTestModeWorkflowActionStatus,
 	type TestModeWorkflowStepStatus,
@@ -37,6 +38,7 @@ import type {
 	Repository,
 	ReviewRunOptions,
 	ReviewSessionDetail,
+	TaskEvent,
 	TaskMessage,
 	TaskRun,
 	WorkbenchArtifactContext,
@@ -62,6 +64,7 @@ type ArtifactPaneProps = {
 	activeProject: Repository | null;
 	activeSessionId: string | null;
 	latestRun?: TaskRun;
+	latestRunEvents?: TaskEvent[];
 	focusType: "project_tree" | "artifact";
 	selectedArtifact: WorkbenchArtifactRef | null;
 	taskMessages: TaskMessage[];
@@ -94,6 +97,7 @@ type ArtifactPaneProps = {
 		reviewSessionId: string,
 		options: Partial<ReviewRunOptions>,
 	) => Promise<ReviewSessionDetail>;
+	onOpenReviewArtifact?: () => Promise<void>;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskStatus?: string | null;
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
@@ -150,6 +154,7 @@ export function ArtifactPane({
 	activeProject,
 	activeSessionId,
 	latestRun,
+	latestRunEvents,
 	focusType,
 	selectedArtifact,
 	taskMessages,
@@ -177,6 +182,7 @@ export function ArtifactPane({
 	activeReviewSession,
 	gitCloseout,
 	onStartReviewRun,
+	onOpenReviewArtifact,
 	onCommitGitCloseout,
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
@@ -344,6 +350,13 @@ export function ArtifactPane({
 				: null,
 		[showTestMode, taskMessages],
 	);
+	const latestRunForTestMode = useMemo(
+		() =>
+			latestRun && latestRunEvents
+				? { ...latestRun, events: latestRunEvents }
+				: latestRun,
+		[latestRun, latestRunEvents],
+	);
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
@@ -476,7 +489,7 @@ export function ArtifactPane({
 							initialTab={workspaceInitialTab(
 								displayArtifact?.metadata?.initialTab,
 							)}
-							latestRun={latestRun}
+							latestRun={latestRunForTestMode}
 							onTabChange={onPlanWorkspaceTabChange}
 							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
 							onQueueSession={onQueueSession}
@@ -515,7 +528,7 @@ export function ArtifactPane({
 							model={testModePanel}
 							projectId={activeProject?.id || null}
 							taskId={activeSessionId}
-							latestRun={latestRun}
+							latestRun={latestRunForTestMode}
 							status={testModeStatus}
 							canStartRun={true}
 							onStart={async (action, rerun) => {
@@ -578,9 +591,10 @@ export function ArtifactPane({
 									model={verificationPanel}
 									projectId={activeProject?.id || null}
 									taskId={activeSessionId}
-									latestRun={latestRun}
+									latestRun={latestRunForTestMode}
 									status={testModeStatus}
 									canStartRun={true}
+									onOpenReviewArtifact={onOpenReviewArtifact}
 									onStart={async (action, rerun) => {
 										if (
 											!activeProject?.id ||
@@ -781,6 +795,7 @@ function TestModeArtifactViewer({
 	status,
 	canStartRun,
 	onStart,
+	onOpenReviewArtifact,
 }: {
 	model: VerificationPanelModel | null;
 	projectId: string | null;
@@ -789,6 +804,7 @@ function TestModeArtifactViewer({
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
+	onOpenReviewArtifact?: () => Promise<void>;
 }) {
 	const { t } = useTranslation();
 	return (
@@ -802,6 +818,7 @@ function TestModeArtifactViewer({
 						latestRun={latestRun}
 						status={status}
 						canStartRun={canStartRun}
+						onOpenReviewArtifact={onOpenReviewArtifact}
 						onStart={onStart}
 					/>
 				) : (
@@ -822,6 +839,7 @@ function VerificationChecklistPanel({
 	status,
 	canStartRun,
 	onStart,
+	onOpenReviewArtifact,
 }: {
 	model: VerificationPanelModel;
 	projectId: string | null;
@@ -830,6 +848,7 @@ function VerificationChecklistPanel({
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
+	onOpenReviewArtifact?: () => Promise<void>;
 }) {
 	const { t } = useTranslation();
 	const canShowStartButton = Boolean(model.specArtifactId);
@@ -838,6 +857,7 @@ function VerificationChecklistPanel({
 		latestRun,
 		localStatus: status,
 	});
+	const canEnterMaintenanceMode = isTestModeWorkflowComplete(workflowSteps);
 	const workflowInProgress =
 		workflowActionStatus === "starting" ||
 		isTestModeWorkflowInProgress(workflowSteps);
@@ -847,7 +867,10 @@ function VerificationChecklistPanel({
 		!taskId ||
 		!model.specArtifactId ||
 		workflowInProgress;
-	const checkResults = readLatestTestModeCheckResults(latestRun);
+	const checkResults = readLatestTestModeCheckResults(latestRun).filter(
+		(result) => result.checkKind !== "completion_check",
+	);
+	const completionCheck = readLatestCompletionCheckConditionStatuses(latestRun);
 	return (
 		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
 			<div>
@@ -857,6 +880,12 @@ function VerificationChecklistPanel({
 					</div>
 				) : null}
 				<TestModeWorkflowProgress steps={workflowSteps} />
+				{canEnterMaintenanceMode ? (
+					<TestModeMaintenanceTransition
+						taskId={taskId}
+						onOpenReviewArtifact={onOpenReviewArtifact}
+					/>
+				) : null}
 				<TestModeCheckResults results={checkResults} />
 				{canShowStartButton ? (
 					<div className="mt-3 flex flex-wrap gap-1.5">
@@ -872,26 +901,63 @@ function VerificationChecklistPanel({
 			</div>
 			{model.conditions.length > 0 ? (
 				<div className="mt-3 grid gap-1.5">
-					{model.conditions.slice(0, 5).map((condition) => (
-						<div
-							key={condition.id}
-							className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
-						>
-							<span className="font-mono leading-5 text-slate-400">
-								{condition.id}
-							</span>
-							<span className="whitespace-nowrap leading-5 text-slate-400">
-								{t(`testMode.conditionStatus.${condition.status}`, {
-									defaultValue: condition.status,
-								})}
-							</span>
-							<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
-								{condition.text}
-							</span>
-						</div>
-					))}
+					{model.conditions.slice(0, 5).map((condition) => {
+						const displayStatus = resolveConditionDisplayStatus(
+							condition,
+							completionCheck,
+						);
+						return (
+							<div
+								key={condition.id}
+								className="grid grid-cols-[4.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
+							>
+								<span className="font-mono leading-5 text-slate-400">
+									{condition.id}
+								</span>
+								<span className="flex h-5 items-center">
+									<TestModeConditionStatusIcon status={displayStatus} />
+								</span>
+								<span className="whitespace-nowrap leading-5 text-slate-400">
+									{t(`testMode.conditionStatus.${displayStatus}`, {
+										defaultValue: displayStatus,
+									})}
+								</span>
+								<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+									{condition.text}
+								</span>
+							</div>
+						);
+					})}
 				</div>
 			) : null}
+		</div>
+	);
+}
+
+function TestModeMaintenanceTransition({
+	taskId,
+	onOpenReviewArtifact,
+}: {
+	taskId: string | null;
+	onOpenReviewArtifact?: () => Promise<void>;
+}) {
+	const { t } = useTranslation();
+	if (!taskId) return null;
+	const href = `/sessions/${encodeURIComponent(taskId)}?artifact=review_status`;
+	return (
+		<div className="mt-2">
+			<a
+				href={href}
+				className="inline-flex h-8 items-center gap-2 rounded-md border border-cyan-500/45 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-200 transition hover:border-cyan-300/70 hover:bg-cyan-500/15"
+				onClick={(event) => {
+					if (!onOpenReviewArtifact) return;
+					event.preventDefault();
+					void onOpenReviewArtifact();
+				}}
+			>
+				<GitCompare className="h-3.5 w-3.5" />
+				{t("testMode.action.enterMaintenanceMode")}
+			</a>
 		</div>
 	);
 }
@@ -929,9 +995,15 @@ function TestModeWorkflowProgress({
 
 type TestModeCheckResult = {
 	key: string;
+	checkKind: string;
 	label: string;
-	status: "passed" | "failed" | "running";
+	status: "passed" | "failed" | "running" | "needs_action";
 	summary: string;
+};
+
+type TestModeCompletionConditionStatuses = {
+	ok: boolean | null;
+	statuses: Map<string, string>;
 };
 
 function TestModeCheckResults({ results }: { results: TestModeCheckResult[] }) {
@@ -951,16 +1023,20 @@ function TestModeCheckResults({ results }: { results: TestModeCheckResult[] }) {
 							className={
 								result.status === "passed"
 									? "shrink-0 text-emerald-300"
-									: result.status === "failed"
+									: result.status === "needs_action"
 										? "shrink-0 text-amber-300"
-										: "shrink-0 text-cyan-300"
+										: result.status === "failed"
+											? "shrink-0 text-amber-300"
+											: "shrink-0 text-cyan-300"
 							}
 						>
 							{result.status === "passed"
 								? "OK"
-								: result.status === "failed"
-									? "ERROR"
-									: "RUNNING"}
+								: result.status === "needs_action"
+									? "改善点あり"
+									: result.status === "failed"
+										? "ERROR"
+										: "RUNNING"}
 						</span>
 					</div>
 					<div className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-400">
@@ -982,12 +1058,31 @@ function readLatestTestModeCheckResults(
 		const payload = asRecord(event.payloadJson);
 		const runEvent = asRecord(payload.runEvent);
 		const runEventData = asRecord(runEvent.data);
+		const commandExecutionCheck = readCommandExecutionCheckResult(
+			event,
+			runEvent,
+			runEventData,
+		);
+		if (commandExecutionCheck) {
+			if (seen.has(commandExecutionCheck.key)) continue;
+			seen.add(commandExecutionCheck.key);
+			results.push(commandExecutionCheck);
+			continue;
+		}
+		const reviewEventCheck = readReviewerEvaluationEventResult(event, runEvent);
+		if (reviewEventCheck) {
+			if (seen.has(reviewEventCheck.key)) continue;
+			seen.add(reviewEventCheck.key);
+			results.push(reviewEventCheck);
+			continue;
+		}
 		const rawResult = firstRecord(
 			runEventData.result,
 			runEventData.toolResult,
 			payload.result,
 			asRecord(payload.payload).result,
 		);
+		const parsedTextResult = parseToolTextResult(rawResult);
 		const rawResultRecord = asRecord(rawResult.result);
 		const structuredContent = firstRecord(
 			rawResult.structuredContent,
@@ -996,6 +1091,7 @@ function readLatestTestModeCheckResults(
 			rawResultRecord.structured_content,
 		);
 		const resultPayload = firstRecord(
+			parsedTextResult.payload,
 			rawResult.payload,
 			rawResultRecord.payload,
 			asRecord(structuredContent.payload),
@@ -1006,6 +1102,7 @@ function readLatestTestModeCheckResults(
 		const toolName = readFirstString(
 			runEventData.mcpTool,
 			runEventData.toolName,
+			parsedTextResult.toolName,
 			rawResult.toolName,
 			payload.toolName,
 			asRecord(payload.payload).toolName,
@@ -1013,23 +1110,67 @@ function readLatestTestModeCheckResults(
 		const normalizedToolName = toolName ? normalizeToolName(toolName) : null;
 		if (
 			normalizedToolName !== "run_check" &&
-			normalizedToolName !== "completion_check"
+			normalizedToolName !== "completion_check" &&
+			normalizedToolName !== "reviewer_evaluation"
 		)
 			continue;
+		if (normalizedToolName === "reviewer_evaluation") {
+			const key = "check:llm_code_review";
+			if (seen.has(key)) continue;
+			seen.add(key);
+			results.push({
+				key,
+				checkKind: "llm_code_review",
+				label: formatTestModeCheckLabel("llm_code_review"),
+				status: readReviewerCheckStatus(
+					resultPayload,
+					readFirstBoolean(
+						parsedTextResult.ok,
+						rawResult.ok,
+						runEventData.ok,
+						payload.ok,
+					),
+				),
+				summary: formatReviewerEvaluationSummary(resultPayload),
+			});
+			continue;
+		}
+		const argumentsPayload = asRecord(runEventData.arguments);
 		const checkKind =
 			normalizedToolName === "run_check"
-				? readRecordString(resultPayload, "checkKind") || "other"
+				? readFirstString(
+						readRecordString(resultPayload, "checkKind"),
+						readRecordString(argumentsPayload, "checkKind"),
+					) || "other"
 				: "completion_check";
-		const key = `${normalizedToolName}:${checkKind}`;
+		if (
+			normalizedToolName === "run_check" &&
+			checkKind === "other" &&
+			Object.keys(resultPayload).length === 0
+		) {
+			continue;
+		}
+		const key =
+			normalizedToolName === "completion_check"
+				? "check:completion_check"
+				: `check:${checkKind}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		results.push({
 			key,
+			checkKind,
 			label: formatTestModeCheckLabel(checkKind),
 			status: readCheckResultStatus(
-				rawResult,
-				readFirstBoolean(rawResult.ok, runEventData.ok, payload.ok),
+				parsedTextResult,
+				readFirstBoolean(
+					parsedTextResult.ok,
+					rawResult.ok,
+					runEventData.ok,
+					payload.ok,
+				),
 				readFirstString(
+					readRecordString(resultPayload, "status"),
+					parsedTextResult.status,
 					rawResult.status,
 					runEventData.status,
 					payload.status,
@@ -1039,6 +1180,161 @@ function readLatestTestModeCheckResults(
 		});
 	}
 	return results.reverse();
+}
+
+function readReviewerEvaluationEventResult(
+	event: NonNullable<TaskRun["events"]>[number],
+	runEvent: Record<string, unknown>,
+): TestModeCheckResult | null {
+	const type = readFirstString(runEvent.type, event.eventType, event.type);
+	if (type !== "review.evaluation_finished") return null;
+	const data = asRecord(runEvent.data);
+	return {
+		key: "check:llm_code_review",
+		checkKind: "llm_code_review",
+		label: formatTestModeCheckLabel("llm_code_review"),
+		status: readReviewerCheckStatus(data),
+		summary: formatReviewerEvaluationSummary(data),
+	};
+}
+
+function readCommandExecutionCheckResult(
+	event: NonNullable<TaskRun["events"]>[number],
+	runEvent: Record<string, unknown>,
+	runEventData: Record<string, unknown>,
+): TestModeCheckResult | null {
+	const toolName = readRecordString(runEventData, "toolName");
+	if (toolName !== "command_execution") return null;
+	const eventType = readFirstString(
+		readRecordString(runEvent, "type"),
+		event.eventType,
+		event.type,
+	);
+	if (eventType !== "tool.call_finished") return null;
+	const commandClass = readRecordString(runEventData, "commandClass");
+	if (
+		commandClass !== "verification" &&
+		commandClass !== "broad_verification"
+	) {
+		return null;
+	}
+	const command = readRecordString(runEventData, "command") || "";
+	const checkKind = inferCommandExecutionCheckKind(command, commandClass);
+	if (checkKind === "other") return null;
+	const exitCode = readFirstNumber(runEventData.exitCode);
+	const status = readCheckResultStatus(
+		{},
+		typeof exitCode === "number" ? exitCode === 0 : undefined,
+		readFirstString(
+			readRecordString(runEventData, "status"),
+			readOptionalEventStatus(event),
+		),
+	);
+	return {
+		key: `check:${checkKind}`,
+		checkKind,
+		label: formatTestModeCheckLabel(checkKind),
+		status,
+		summary: formatCommandExecutionCheckSummary({
+			checkKind,
+			command,
+			exitCode,
+			output: readRecordString(runEventData, "aggregatedOutput") || "",
+		}),
+	};
+}
+
+function readLatestCompletionCheckConditionStatuses(
+	latestRun?: TaskRun | null,
+): TestModeCompletionConditionStatuses | null {
+	const events = latestRun?.events ?? [];
+	for (const event of [...events].reverse()) {
+		const payload = asRecord(event.payloadJson);
+		const runEvent = asRecord(payload.runEvent);
+		const runEventData = asRecord(runEvent.data);
+		const rawResult = firstRecord(
+			runEventData.result,
+			runEventData.toolResult,
+			payload.result,
+			asRecord(payload.payload).result,
+		);
+		const parsedTextResult = parseToolTextResult(rawResult);
+		const rawResultRecord = asRecord(rawResult.result);
+		const structuredContent = firstRecord(
+			rawResult.structuredContent,
+			rawResult.structured_content,
+			rawResultRecord.structuredContent,
+			rawResultRecord.structured_content,
+		);
+		const resultPayload = firstRecord(
+			parsedTextResult.payload,
+			rawResult.payload,
+			rawResultRecord.payload,
+			asRecord(structuredContent.payload),
+			rawResult.result,
+			rawResult,
+			asRecord(payload.payload).payload,
+		);
+		const toolName = readFirstString(
+			runEventData.mcpTool,
+			runEventData.toolName,
+			parsedTextResult.toolName,
+			rawResult.toolName,
+			payload.toolName,
+			asRecord(payload.payload).toolName,
+		);
+		if (!toolName || normalizeToolName(toolName) !== "completion_check")
+			continue;
+		const completionResult = firstRecord(resultPayload.result, resultPayload);
+		const statuses = new Map<string, string>();
+		const conditions = Array.isArray(completionResult.conditions)
+			? completionResult.conditions
+			: [];
+		for (const condition of conditions) {
+			const record = asRecord(condition);
+			const conditionId = readFirstString(record.conditionId, record.id);
+			const status = readRecordString(record, "status");
+			if (conditionId && status) statuses.set(conditionId, status);
+		}
+		for (const failed of readConditionList(completionResult.failedRequired)) {
+			statuses.set(failed, "failed");
+		}
+		for (const unknown of readConditionList(completionResult.unknownRequired)) {
+			if (statuses.get(unknown) !== "failed") statuses.set(unknown, "unknown");
+		}
+		return {
+			ok:
+				readFirstBoolean(
+					completionResult.ok,
+					parsedTextResult.ok,
+					rawResult.ok,
+					runEventData.ok,
+					payload.ok,
+				) ?? null,
+			statuses,
+		};
+	}
+	return null;
+}
+
+function readConditionList(value: unknown) {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((entry) => {
+			const record = asRecord(entry);
+			return readFirstString(record.conditionId, record.id);
+		})
+		.filter((conditionId): conditionId is string => Boolean(conditionId));
+}
+
+function resolveConditionDisplayStatus(
+	condition: VerificationPanelModel["conditions"][number],
+	completionCheck: TestModeCompletionConditionStatuses | null,
+) {
+	const explicitStatus = completionCheck?.statuses.get(condition.id);
+	if (explicitStatus) return explicitStatus;
+	if (completionCheck?.ok === true && condition.required) return "covered";
+	return condition.status;
 }
 
 function readOptionalEventStatus(
@@ -1052,6 +1348,21 @@ function firstRecord(...values: unknown[]): Record<string, unknown> {
 	for (const value of values) {
 		const record = asRecord(value);
 		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function parseToolTextResult(result: Record<string, unknown>) {
+	const content = result.content;
+	if (!Array.isArray(content)) return {};
+	for (const item of content) {
+		const record = asRecord(item);
+		if (record.type !== "text" || typeof record.text !== "string") continue;
+		try {
+			return asRecord(JSON.parse(record.text));
+		} catch {
+			return {};
+		}
 	}
 	return {};
 }
@@ -1070,6 +1381,13 @@ function readFirstBoolean(...values: unknown[]) {
 	return undefined;
 }
 
+function readFirstNumber(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	return undefined;
+}
+
 function readCheckResultStatus(
 	result: Record<string, unknown>,
 	ok?: boolean,
@@ -1078,7 +1396,9 @@ function readCheckResultStatus(
 	if (result.ok === true || ok === true) return "passed";
 	if (result.ok === false || ok === false) return "failed";
 	if (eventStatus === "completed") return "passed";
-	return eventStatus === "running" || eventStatus === "started"
+	return eventStatus === "running" ||
+		eventStatus === "started" ||
+		eventStatus === "in_progress"
 		? "running"
 		: "failed";
 }
@@ -1087,6 +1407,7 @@ function formatTestModeCheckLabel(checkKind: string) {
 	if (checkKind === "test") return "ユニットテスト実行結果";
 	if (checkKind === "verify") return "verify 実行結果";
 	if (checkKind === "completion_check") return "証跡テストチェック結果";
+	if (checkKind === "llm_code_review") return "LLM コードレビュー実行結果";
 	if (checkKind === "typecheck") return "typecheck 実行結果";
 	if (checkKind === "lint") return "lint 実行結果";
 	if (checkKind === "build") return "build 実行結果";
@@ -1107,6 +1428,131 @@ function formatTestModeCheckSummary(
 	const error = asRecord(result.error);
 	const errorMessage = readRecordString(error, "message");
 	return errorMessage || "結果の要約がありません。";
+}
+
+function readReviewerCheckStatus(
+	payload: Record<string, unknown>,
+	ok?: boolean,
+): TestModeCheckResult["status"] {
+	if (ok === false) return "failed";
+	const status = readRecordString(payload, "status");
+	const verdict = readRecordString(payload, "finalReviewerVerdict");
+	const reviewResult = asRecord(payload.reviewResult);
+	const reviewVerdict = readRecordString(reviewResult, "verdict");
+	const blockingFindingCount = readFirstNumber(payload.blockingFindingCount);
+	if (
+		verdict === "changes_requested" ||
+		reviewVerdict === "changes_requested" ||
+		(typeof blockingFindingCount === "number" && blockingFindingCount > 0)
+	) {
+		return "needs_action";
+	}
+	if (
+		ok === true &&
+		status === "completed" &&
+		(verdict === "approved" || reviewVerdict === "approved") &&
+		(!blockingFindingCount || blockingFindingCount === 0)
+	) {
+		return "passed";
+	}
+	if (
+		status === "running" ||
+		status === "started" ||
+		status === "in_progress"
+	) {
+		return "running";
+	}
+	return status === "completed" &&
+		(verdict === "approved" || reviewVerdict === "approved") &&
+		(!blockingFindingCount || blockingFindingCount === 0)
+		? "passed"
+		: "failed";
+}
+
+function formatReviewerEvaluationSummary(payload: Record<string, unknown>) {
+	const reviewResult = asRecord(payload.reviewResult);
+	const llm = asRecord(payload.llm);
+	const lines = [
+		readRecordString(payload, "status")
+			? `status=${readRecordString(payload, "status")}`
+			: null,
+		readRecordString(payload, "finalReviewerVerdict")
+			? `verdict=${readRecordString(payload, "finalReviewerVerdict")}`
+			: readRecordString(reviewResult, "verdict")
+				? `verdict=${readRecordString(reviewResult, "verdict")}`
+				: null,
+		readRecordString(llm, "provider") || readRecordString(llm, "model")
+			? `llm=${[readRecordString(llm, "provider"), readRecordString(llm, "model")].filter(Boolean).join("/")}`
+			: null,
+		...readStringArray(payload.degradedReasons).map(
+			(reason) => `degraded=${reason}`,
+		),
+		...readReviewerFindings(reviewResult, payload).map(
+			(finding) =>
+				`${finding.severity ? `${finding.severity}: ` : ""}${finding.title}${finding.body ? `\n${finding.body}` : ""}`,
+		),
+	];
+	return lines.filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function readStringArray(value: unknown) {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === "string")
+		: [];
+}
+
+function readReviewerFindings(
+	reviewResult: Record<string, unknown>,
+	payload: Record<string, unknown>,
+) {
+	const source = Array.isArray(reviewResult.findings)
+		? reviewResult.findings
+		: Array.isArray(payload.findings)
+			? payload.findings
+			: [];
+	return source
+		.map((item) => asRecord(item))
+		.map((finding) => ({
+			severity: readRecordString(finding, "severity") || "",
+			title: readRecordString(finding, "title") || "",
+			body: readRecordString(finding, "body") || "",
+		}))
+		.filter((finding) => finding.title)
+		.slice(0, 5);
+}
+
+function formatCommandExecutionCheckSummary(input: {
+	checkKind: string;
+	command: string;
+	exitCode?: number;
+	output: string;
+}) {
+	const lines = [
+		input.exitCode === 0 ? `OK ${input.checkKind}` : `ERROR ${input.checkKind}`,
+		typeof input.exitCode === "number" ? `exitCode=${input.exitCode}` : null,
+		input.command ? `command=${input.command}` : null,
+		...input.output
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter(Boolean)
+			.slice(0, 8),
+	];
+	return lines.filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function inferCommandExecutionCheckKind(
+	command: string,
+	commandClass?: string | null,
+) {
+	if (commandClass === "broad_verification") return "verify";
+	const normalized = command.toLowerCase();
+	if (/\b(?:typecheck|tsc)\b/.test(normalized)) return "typecheck";
+	if (/\b(?:lint|eslint)\b/.test(normalized)) return "lint";
+	if (/\b(?:format|biome\s+check)\b/.test(normalized)) return "format_check";
+	if (/\bcoverage\b/.test(normalized)) return "coverage";
+	if (/\bbuild\b/.test(normalized)) return "build";
+	if (/\b(?:test|vitest|jest|playwright)\b/.test(normalized)) return "test";
+	return "other";
 }
 
 function normalizeToolName(toolName: string) {
@@ -1132,6 +1578,33 @@ function TestModeWorkflowStatusIcon({
 		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
 	}
 	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
+}
+
+function TestModeConditionStatusIcon({ status }: { status: string }) {
+	if (isCompleteConditionStatus(status)) {
+		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
+	}
+	if (status === "failed" || status === "missing") {
+		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
+	}
+	if (status === "running") {
+		return (
+			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+		);
+	}
+	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
+}
+
+function isCompleteConditionStatus(status: string) {
+	return (
+		status === "covered" ||
+		status === "passed" ||
+		status === "verified_by_gate" ||
+		status === "manual" ||
+		status === "not_applicable" ||
+		status === "completed" ||
+		status === "done"
+	);
 }
 
 function TestModeActionButton({

@@ -65,22 +65,24 @@ export async function runCheckTool(
 	input: RunCheckInput,
 ): Promise<WorkerToolResult<RunCheckOutput>> {
 	const startedAt = new Date().toISOString();
+	const command = await resolveRunCheckCommand(input);
 	const commandResult = await runCommandTool({
 		...input,
+		command,
 		compressionMode: "off",
 	});
 	const finishedAt = commandResult.finishedAt;
 	const payload = commandResult.payload;
 	const rawStdoutArtifactId = await writeRawCheckArtifact({
 		stream: "stdout",
-		command: input.command,
+		command,
 		content: payload.stdout,
 		startedAt,
 		finishedAt,
 	});
 	const rawStderrArtifactId = await writeRawCheckArtifact({
 		stream: "stderr",
-		command: input.command,
+		command,
 		content: payload.stderr,
 		startedAt,
 		finishedAt,
@@ -96,11 +98,11 @@ export async function runCheckTool(
 			? parseJUnitXmlCases(`${payload.stdout}\n${payload.stderr}`)
 			: [];
 	const evidence =
-		input.taskId && input.runId
+		input.taskId && input.runId && shouldRecordRunCheckEvidence(commandResult)
 			? buildCommandLevelEvidence({
 					runId: input.runId,
 					taskId: input.taskId,
-					command: input.command,
+					command,
 					cwd: input.cwd || ".",
 					startedAt,
 					finishedAt,
@@ -134,8 +136,7 @@ export async function runCheckTool(
 		exitCode: payload.exitCode,
 		stdout: payload.stdout,
 		stderr: payload.stderr,
-		rawStdoutArtifactId,
-		rawStderrArtifactId,
+		error: commandResult.error,
 	});
 	return {
 		ok: commandResult.ok,
@@ -206,16 +207,10 @@ function formatRunCheckSummary(input: {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
-	rawStdoutArtifactId: string;
-	rawStderrArtifactId: string;
+	error?: WorkerToolResult<RunCommandOutput>["error"];
 }) {
 	if (input.exitCode === 0) {
-		return [
-			`OK ${input.checkKind}`,
-			`exitCode=0`,
-			`stdoutArtifact=${input.rawStdoutArtifactId}`,
-			`stderrArtifact=${input.rawStderrArtifactId}`,
-		].join("\n");
+		return [`OK ${input.checkKind}`, `exitCode=0`].join("\n");
 	}
 	const excerpt = `${input.stderr}\n${input.stdout}`
 		.split("\n")
@@ -226,8 +221,8 @@ function formatRunCheckSummary(input: {
 	return [
 		`ERROR ${input.checkKind}`,
 		`exitCode=${input.exitCode}`,
-		`stdoutArtifact=${input.rawStdoutArtifactId}`,
-		`stderrArtifact=${input.rawStderrArtifactId}`,
+		input.error?.code ? `errorCode=${input.error.code}` : null,
+		input.error?.message ? `error=${input.error.message}` : null,
 		excerpt,
 	]
 		.filter(Boolean)
@@ -259,4 +254,75 @@ async function writeRawCheckArtifact(input: {
 	const filePath = path.join(dir, `${digest}.${input.stream}.log`);
 	await fs.writeFile(filePath, input.content, "utf-8");
 	return filePath;
+}
+
+async function resolveRunCheckCommand(input: RunCheckInput) {
+	const command = input.command.trim();
+	const scriptName = resolveRunCheckScriptName(command, input.checkKind);
+	if (!scriptName) return command;
+	const packageJson = await readPackageJson(input.repoRoot, input.cwd);
+	if (!packageJson?.scripts?.[scriptName]) return command;
+	const packageManager = await detectPackageManager(input.repoRoot, input.cwd);
+	return `${packageManager} run ${scriptName}`;
+}
+
+function resolveRunCheckScriptName(command: string, checkKind: RunCheckKind) {
+	if (command === checkKind) return command;
+	if (command === "format" && checkKind === "format_check") return "format";
+	if (command === "format_check" && checkKind === "format_check")
+		return "format";
+	if (
+		["test", "typecheck", "lint", "build", "coverage", "verify"].includes(
+			command,
+		)
+	) {
+		return command;
+	}
+	return null;
+}
+
+async function readPackageJson(repoRoot: string, cwd?: string) {
+	const packageJsonPath = path.join(
+		path.resolve(repoRoot, cwd || ""),
+		"package.json",
+	);
+	const raw = await fs.readFile(packageJsonPath, "utf-8").catch(() => null);
+	if (!raw) return null;
+	try {
+		return JSON.parse(raw) as { scripts?: Record<string, string> };
+	} catch {
+		return null;
+	}
+}
+
+async function detectPackageManager(repoRoot: string, cwd?: string) {
+	const root = path.resolve(repoRoot, cwd || "");
+	const candidates: Array<[string, string]> = [
+		["bun.lock", "bun"],
+		["bun.lockb", "bun"],
+		["pnpm-lock.yaml", "pnpm"],
+		["yarn.lock", "yarn"],
+		["package-lock.json", "npm"],
+	];
+	for (const [lockfile, manager] of candidates) {
+		if (await fileExists(path.join(root, lockfile))) return manager;
+	}
+	return "bun";
+}
+
+async function fileExists(filePath: string) {
+	return fs
+		.stat(filePath)
+		.then((stat) => stat.isFile())
+		.catch(() => false);
+}
+
+function shouldRecordRunCheckEvidence(
+	result: WorkerToolResult<RunCommandOutput>,
+) {
+	if (result.ok) return true;
+	return (
+		result.error?.code === "COMMAND_FAILED" ||
+		result.error?.code === "COMMAND_TIMEOUT"
+	);
 }

@@ -91,6 +91,7 @@ type ThreadTimelineProps = {
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 	onGrantExternalPath?: (path: string) => Promise<void>;
 };
 
@@ -127,6 +128,7 @@ export function ThreadTimeline({
 	onOpenArtifact,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 	onGrantExternalPath,
 }: ThreadTimelineProps) {
 	const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
@@ -389,6 +391,7 @@ export function ThreadTimeline({
 					latestRun={latestRun}
 					onOpenProjectFile={onOpenProjectFile}
 					onOpenTestModeArtifact={onOpenTestModeArtifact}
+					onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 				/>
 			) : null}
 		</div>

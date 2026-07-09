@@ -138,12 +138,18 @@ type ManagedToolEvent = {
 	checkKind?: string | null;
 	ok?: boolean;
 	status?: string | null;
+	finalReviewerVerdict?: string | null;
+	reviewVerdict?: string | null;
+	blockingFindingCount?: number;
 };
 
 type ReviewerEvent = {
 	type: string;
 	ok?: boolean;
 	status?: string | null;
+	finalReviewerVerdict?: string | null;
+	reviewVerdict?: string | null;
+	blockingFindingCount?: number;
 };
 
 function readManagedToolEvent(
@@ -152,6 +158,12 @@ function readManagedToolEvent(
 	const payload = toDeepRecord(event.payloadJson);
 	const runEvent = toDeepRecord(payload.runEvent);
 	const runEventData = toDeepRecord(runEvent.data);
+	const commandExecutionEvent = readCommandExecutionToolEvent(
+		event,
+		runEvent,
+		runEventData,
+	);
+	if (commandExecutionEvent) return commandExecutionEvent;
 	const payloadPayload = toDeepRecord(payload.payload);
 	const rawResult = firstRecord(
 		runEventData.result,
@@ -159,6 +171,7 @@ function readManagedToolEvent(
 		payload.result,
 		payloadPayload.result,
 	);
+	const parsedTextResult = parseToolTextResult(rawResult);
 	const rawResultRecord = toDeepRecord(rawResult.result);
 	const structuredContent = firstRecord(
 		rawResult.structuredContent,
@@ -167,6 +180,7 @@ function readManagedToolEvent(
 		rawResultRecord.structured_content,
 	);
 	const resultPayload = firstRecord(
+		parsedTextResult.payload,
 		rawResult.payload,
 		rawResultRecord.payload,
 		toDeepRecord(structuredContent.payload),
@@ -177,20 +191,84 @@ function readManagedToolEvent(
 	const toolName = readFirstString(
 		runEventData.mcpTool,
 		runEventData.toolName,
+		parsedTextResult.toolName,
 		rawResult.toolName,
 		payload.toolName,
 		payloadPayload.toolName,
 	);
 	if (!toolName) return null;
+	const argumentsPayload = toDeepRecord(runEventData.arguments);
 	return {
 		toolName: normalizeToolName(toolName),
-		checkKind: readRecordString(resultPayload, "checkKind"),
-		ok: readFirstBoolean(rawResult.ok, runEventData.ok, payload.ok),
+		checkKind:
+			readRecordString(resultPayload, "checkKind") ||
+			readRecordString(argumentsPayload, "checkKind"),
+		ok: readFirstBoolean(
+			parsedTextResult.ok,
+			rawResult.ok,
+			runEventData.ok,
+			payload.ok,
+		),
 		status: readFirstString(
+			readRecordString(resultPayload, "status"),
+			parsedTextResult.status,
 			rawResult.status,
 			runEventData.status,
 			payload.status,
 		),
+		finalReviewerVerdict: readFirstString(
+			readRecordString(resultPayload, "finalReviewerVerdict"),
+			readRecordString(rawResult, "finalReviewerVerdict"),
+			readRecordString(runEventData, "finalReviewerVerdict"),
+			readRecordString(payload, "finalReviewerVerdict"),
+		),
+		reviewVerdict: readFirstString(
+			readRecordString(toDeepRecord(resultPayload.reviewResult), "verdict"),
+			readRecordString(toDeepRecord(rawResult.reviewResult), "verdict"),
+			readRecordString(toDeepRecord(runEventData.reviewResult), "verdict"),
+			readRecordString(toDeepRecord(payload.reviewResult), "verdict"),
+		),
+		blockingFindingCount: readFirstNumber(
+			resultPayload.blockingFindingCount,
+			rawResult.blockingFindingCount,
+			runEventData.blockingFindingCount,
+			payload.blockingFindingCount,
+		),
+	};
+}
+
+function readCommandExecutionToolEvent(
+	event: NonNullable<TaskRun["events"]>[number],
+	runEvent: Record<string, unknown>,
+	runEventData: Record<string, unknown>,
+): ManagedToolEvent | null {
+	if (readRecordString(runEventData, "toolName") !== "command_execution") {
+		return null;
+	}
+	const eventType = readFirstString(
+		readRecordString(runEvent, "type"),
+		event.eventType,
+		event.type,
+	);
+	if (eventType !== "tool.call_finished") return null;
+	const commandClass = readRecordString(runEventData, "commandClass");
+	if (
+		commandClass !== "verification" &&
+		commandClass !== "broad_verification"
+	) {
+		return null;
+	}
+	const checkKind = inferCommandExecutionCheckKind(
+		readRecordString(runEventData, "command") || "",
+		commandClass,
+	);
+	if (checkKind === "other") return null;
+	const exitCode = readFirstNumber(runEventData.exitCode);
+	return {
+		toolName: "run_check",
+		checkKind,
+		ok: typeof exitCode === "number" ? exitCode === 0 : undefined,
+		status: readRecordString(runEventData, "status"),
 	};
 }
 
@@ -223,6 +301,15 @@ function readReviewerEvent(
 		type,
 		ok: readFirstBoolean(runEventData.ok, payload.ok),
 		status: readFirstString(runEventData.status, payload.status),
+		finalReviewerVerdict: readFirstString(
+			runEventData.finalReviewerVerdict,
+			payload.finalReviewerVerdict,
+		),
+		reviewVerdict: readFirstString(
+			toDeepRecord(runEventData.reviewResult).verdict,
+			toDeepRecord(payload.reviewResult).verdict,
+		),
+		blockingFindingCount: readFirstNumber(runEventData.blockingFindingCount),
 	};
 }
 
@@ -230,6 +317,22 @@ function firstRecord(...values: unknown[]): Record<string, unknown> {
 	for (const value of values) {
 		const record = toDeepRecord(value);
 		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function parseToolTextResult(result: Record<string, unknown>) {
+	const content = result.content;
+	if (!Array.isArray(content)) return {};
+	for (const item of content) {
+		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+		const record = item as Record<string, unknown>;
+		if (record.type !== "text" || typeof record.text !== "string") continue;
+		try {
+			return toDeepRecord(JSON.parse(record.text));
+		} catch {
+			return {};
+		}
 	}
 	return {};
 }
@@ -248,6 +351,13 @@ function readFirstBoolean(...values: unknown[]) {
 	return undefined;
 }
 
+function readFirstNumber(...values: unknown[]) {
+	for (const value of values) {
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+	}
+	return undefined;
+}
+
 function toolEventStatus(event: ManagedToolEvent): TestModeWorkflowStepStatus {
 	if (event.ok === true) return "passed";
 	if (event.ok === false) return "failed";
@@ -257,6 +367,14 @@ function toolEventStatus(event: ManagedToolEvent): TestModeWorkflowStepStatus {
 }
 
 function reviewEventStatus(event: ReviewerEvent): TestModeWorkflowStepStatus {
+	if (
+		event.finalReviewerVerdict === "changes_requested" ||
+		event.reviewVerdict === "changes_requested" ||
+		(typeof event.blockingFindingCount === "number" &&
+			event.blockingFindingCount > 0)
+	) {
+		return "needs_human";
+	}
 	if (event.status === "degraded") return "needs_human";
 	if (event.ok === true) return "passed";
 	if (event.ok === false) return "failed";
@@ -270,6 +388,14 @@ function reviewEventStatus(event: ReviewerEvent): TestModeWorkflowStepStatus {
 function reviewerToolEventStatus(
 	event: ManagedToolEvent,
 ): TestModeWorkflowStepStatus {
+	if (
+		event.finalReviewerVerdict === "changes_requested" ||
+		event.reviewVerdict === "changes_requested" ||
+		(typeof event.blockingFindingCount === "number" &&
+			event.blockingFindingCount > 0)
+	) {
+		return "needs_human";
+	}
 	if (event.status === "degraded") return "needs_human";
 	return toolEventStatus(event);
 }
@@ -288,6 +414,21 @@ function isLlmReviewTool(toolName: string) {
 		toolName === "reviewer_evaluation" ||
 		toolName === "reviewer-evaluation"
 	);
+}
+
+function inferCommandExecutionCheckKind(
+	command: string,
+	commandClass?: string | null,
+) {
+	if (commandClass === "broad_verification") return "verify";
+	const normalized = command.toLowerCase();
+	if (/\b(?:typecheck|tsc)\b/.test(normalized)) return "typecheck";
+	if (/\b(?:lint|eslint)\b/.test(normalized)) return "lint";
+	if (/\b(?:format|biome\s+check)\b/.test(normalized)) return "format_check";
+	if (/\bcoverage\b/.test(normalized)) return "coverage";
+	if (/\bbuild\b/.test(normalized)) return "build";
+	if (/\b(?:test|vitest|jest|playwright)\b/.test(normalized)) return "test";
+	return "other";
 }
 
 function normalizeToolName(toolName: string) {

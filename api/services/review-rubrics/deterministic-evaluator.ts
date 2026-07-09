@@ -215,6 +215,18 @@ function shouldFail(
 	return !matched;
 }
 
+function shouldSkipCriterionForPack(
+	criterion: RubricCriterion,
+	pack: ReviewEvidencePack,
+) {
+	if (pack.context?.executionMode !== "test" || !pack.context.inRunReview) {
+		return false;
+	}
+	return criterion.evidenceSelectors.some(
+		(selector) => selector.kind === "diff" || selector.kind === "final_report",
+	);
+}
+
 export function evaluateDeterministicRubric(
 	rubric: RubricDefinition,
 	pack: ReviewEvidencePack,
@@ -227,6 +239,15 @@ export function evaluateDeterministicRubric(
 
 	for (const criterion of rubric.criteria) {
 		if (criterion.evaluationMode !== "deterministic") continue;
+		if (shouldSkipCriterionForPack(criterion, pack)) {
+			criterionResults.push({
+				criterionId: criterion.id,
+				passed: true,
+				evidenceRefs: [],
+				message: `${criterion.title}: skipped for in-run Test Mode review`,
+			});
+			continue;
+		}
 
 		const selectorResults = criterion.evidenceSelectors.map((selector) =>
 			selectorPasses(selector, pack),

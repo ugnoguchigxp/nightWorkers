@@ -325,7 +325,7 @@ export async function executeWorkerTool(
 				command: args.command as string,
 				repoRoot,
 				taskId: input.taskId,
-				runId: args.runId as string | undefined,
+				runId: (args.runId as string | undefined) || input.runId,
 				verificationDocumentId: args.verificationDocumentId as
 					| string
 					| undefined,

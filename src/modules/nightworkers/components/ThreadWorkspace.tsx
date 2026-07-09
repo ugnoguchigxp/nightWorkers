@@ -208,6 +208,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 	const openTestModeArtifactWithCooldown = useCallback(() => {
 		runArtifactButtonAction(props.onOpenTestModeArtifact);
 	}, [props.onOpenTestModeArtifact, runArtifactButtonAction]);
+	const openReviewModeArtifactWithCooldown = useCallback(() => {
+		runArtifactButtonAction(() => void props.onOpenReviewArtifact());
+	}, [props.onOpenReviewArtifact, runArtifactButtonAction]);
 	const commitScrollState = useCallback(
 		(snapshot: ScrollSnapshot) => {
 			const state = buildPersistedScrollState(snapshot);
@@ -594,6 +597,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 							onOpenArtifact={openArtifactWithCooldown}
 							onOpenProjectFile={props.onOpenProjectFile}
 							onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
+							onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
 							onClearArtifactContext={props.onClearArtifactContext}
 							canStopActiveRun={props.canStopActiveRun}
 							onSubmitInitialPrompt={props.onSubmitInitialPrompt}
@@ -638,6 +642,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 						onOpenArtifact={openArtifactWithCooldown}
 						onOpenProjectFile={props.onOpenProjectFile}
 						onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
+						onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
 						onClearArtifactContext={props.onClearArtifactContext}
 						canStopActiveRun={props.canStopActiveRun}
 						onSubmitInitialPrompt={props.onSubmitInitialPrompt}

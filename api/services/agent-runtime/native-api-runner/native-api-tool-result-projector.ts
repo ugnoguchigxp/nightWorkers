@@ -59,7 +59,44 @@ function compactWorkerPayload(toolName: string, payload: unknown): unknown {
 	if (toolName === "read_current_specification")
 		return compactSpecificationPayload(payload);
 	if (toolName === "git_diff") return compactGitDiffPayload(payload);
+	if (toolName === "reviewer_evaluation")
+		return compactReviewerEvaluationPayload(payload);
 	return payload;
+}
+
+function compactReviewerEvaluationPayload(payload: unknown) {
+	const record = toRecord(payload);
+	const reviewResult = toRecord(record.reviewResult);
+	const findings = toArray(reviewResult.findings).map(toRecord);
+	const finalReviewerVerdict =
+		readString(record.finalReviewerVerdict) ?? readString(reviewResult.verdict);
+	const blockingFindingCount =
+		readNumber(record.blockingFindingCount) ??
+		findings.filter((finding) => readString(finding.severity) === "blocking")
+			.length;
+	return {
+		status: readString(record.status),
+		finalReviewerVerdict,
+		blockingFindingCount,
+		requiresImmediateFix:
+			finalReviewerVerdict === "changes_requested" || blockingFindingCount > 0,
+		systemContext:
+			finalReviewerVerdict === "changes_requested" || blockingFindingCount > 0
+				? "コードレビューをしてください。改善するべき点が無くなるまで改善してください"
+				: undefined,
+		degradedReasons: toArray(record.degradedReasons).filter(
+			(reason): reason is string => typeof reason === "string",
+		),
+		findings: findings.slice(0, 8).map((finding) => ({
+			severity: readString(finding.severity),
+			title: readString(finding.title),
+			body: readString(finding.body),
+		})),
+		nextAction:
+			finalReviewerVerdict === "changes_requested" || blockingFindingCount > 0
+				? "この reviewer_evaluation は tool failure ではありません。指摘を改善作業として即座に修正し、必要な run_check / completion_check の後、reviewer_evaluation を再実行してください。approved になるまで最終報告しないでください。"
+				: "レビュー指摘は残っていません。",
+	};
 }
 
 function compactTodoPayload(payload: unknown) {
@@ -317,6 +354,10 @@ function toArray(value: unknown): unknown[] {
 
 function readNumber(value: unknown) {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readString(value: unknown) {
+	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 export function capNativeApiToolResultContent(

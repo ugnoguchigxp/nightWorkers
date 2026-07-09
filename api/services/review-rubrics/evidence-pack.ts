@@ -54,6 +54,87 @@ function boolFrom(value: unknown): boolean | undefined {
 	return typeof value === "boolean" ? value : undefined;
 }
 
+function stringFrom(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function recordFrom(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> {
+	for (const value of values) {
+		const record = recordFrom(value);
+		if (Object.keys(record).length > 0) return record;
+	}
+	return {};
+}
+
+function parseToolTextResult(result: Record<string, unknown>) {
+	const content = result.content;
+	if (!Array.isArray(content)) return {};
+	for (const item of content) {
+		const record = recordFrom(item);
+		if (record.type !== "text" || typeof record.text !== "string") continue;
+		try {
+			return recordFrom(JSON.parse(record.text));
+		} catch {
+			return {};
+		}
+	}
+	return {};
+}
+
+function normalizeToolName(toolName?: string) {
+	return toolName?.startsWith("nightworkers.")
+		? toolName.slice("nightworkers.".length)
+		: toolName;
+}
+
+function readManagedCheckResult(event: RunEventBase) {
+	if (event.type !== "tool.call_finished") return null;
+	const data = eventData(event);
+	const toolName = normalizeToolName(
+		stringFrom(data.mcpTool) || stringFrom(data.toolName),
+	);
+	if (toolName !== "run_check" && toolName !== "completion_check") return null;
+	const rawResult = firstRecord(data.result, data.toolResult);
+	const parsedTextResult = parseToolTextResult(rawResult);
+	const structuredContent = firstRecord(
+		rawResult.structuredContent,
+		rawResult.structured_content,
+		recordFrom(rawResult.result).structuredContent,
+		recordFrom(rawResult.result).structured_content,
+	);
+	const payload = firstRecord(
+		parsedTextResult.payload,
+		rawResult.payload,
+		recordFrom(rawResult.result).payload,
+		recordFrom(structuredContent.payload),
+		rawResult.result,
+		rawResult,
+	);
+	const argumentsPayload = recordFrom(data.arguments);
+	const checkKind =
+		toolName === "run_check"
+			? stringFrom(payload.checkKind) ||
+				stringFrom(argumentsPayload.checkKind) ||
+				"run_check"
+			: "completion_check";
+	const passed = boolFrom(parsedTextResult.ok) ?? boolFrom(rawResult.ok);
+	return {
+		eventId: event.id,
+		command: checkKind,
+		passed:
+			passed ??
+			(data.status === "completed" ||
+				stringFrom(payload.status) === "completed"),
+		summary: redactedString(payload.llmSummary ?? event.message),
+	};
+}
+
 function changedFilesFromDiff(diffPatch?: string | null): string[] {
 	if (!diffPatch) return [];
 	const files = new Set<string>();
@@ -109,7 +190,7 @@ function selectedEventsFrom(
 function buildVerification(
 	events: RunEventBase[],
 ): ReviewEvidencePack["verification"] {
-	return events
+	const canonicalVerification = events
 		.filter((event) => event.type === "verification.finished")
 		.map((event) => {
 			const data = eventData(event);
@@ -120,6 +201,10 @@ function buildVerification(
 				summary: redactedString(data.summary ?? event.message),
 			};
 		});
+	const managedVerification = events
+		.map(readManagedCheckResult)
+		.filter((item): item is NonNullable<typeof item> => Boolean(item));
+	return [...canonicalVerification, ...managedVerification];
 }
 
 function buildPolicy(events: RunEventBase[]): ReviewEvidencePack["policy"] {
@@ -214,6 +299,7 @@ export function buildReviewEvidencePackFromRun(
 	eventRows: EventRow[],
 ): ReviewEvidencePack {
 	const events = eventRows.map((event) => canonicalizeTaskEvent(event, run));
+	const contextSnapshot = recordFrom(run.contextSnapshot);
 	const diffBytes =
 		Buffer.byteLength(run.diffPatch || "", "utf8") ||
 		diffBytesFromEvents(events);
@@ -223,6 +309,10 @@ export function buildReviewEvidencePackFromRun(
 		runId: run.id,
 		taskId: run.taskId,
 		status: run.status,
+		context: {
+			executionMode: stringFrom(contextSnapshot.executionMode),
+			inRunReview: run.status === "running",
+		},
 		outcome: terminalFromEvents(events),
 		finalReport:
 			redactedString(run.finalReport, 4_000) ?? finalReportFromEvents(events),

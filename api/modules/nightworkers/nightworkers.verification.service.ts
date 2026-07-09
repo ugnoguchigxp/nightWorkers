@@ -24,6 +24,13 @@ export type CompletionCheckResult = {
 		text: string;
 		reason?: string;
 	}>;
+	conditions: Array<{
+		conditionId: string;
+		text: string;
+		required: boolean;
+		status: string;
+		reason?: string;
+	}>;
 	reason?: string;
 };
 
@@ -92,6 +99,7 @@ export async function runCompletionCheck(input: {
 			},
 			failedRequired: [],
 			unknownRequired: [],
+			conditions: [],
 			reason: "missing_verification_document",
 		};
 	}
@@ -117,6 +125,13 @@ export async function runCompletionCheck(input: {
 		},
 		failedRequired: summary.failedRequired.map(formatCondition),
 		unknownRequired: summary.unknownRequired.map(formatCondition),
+		conditions: items.map((item) => ({
+			conditionId: item.conditionId,
+			text: item.text,
+			required: item.required,
+			status: item.status,
+			reason: item.reason,
+		})),
 		reason: summary.complete ? undefined : "required_conditions_incomplete",
 	};
 }

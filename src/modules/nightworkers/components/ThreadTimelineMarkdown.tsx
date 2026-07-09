@@ -159,10 +159,25 @@ function isTestModeArtifactLink(href: string | undefined): boolean {
 	}
 }
 
+function isReviewModeArtifactLink(href: string | undefined): boolean {
+	if (!href) return false;
+	try {
+		const url = new URL(href, "http://nightworkers.local");
+		return (
+			url.pathname.startsWith("/sessions/") &&
+			url.searchParams.get("artifact") === "review_status"
+		);
+	} catch {
+		return false;
+	}
+}
+
 function buildChatMarkdownComponents(
 	onOpenProjectFile?: (path: string) => void,
 	onOpenTestModeArtifact?: () => void,
+	onOpenReviewModeArtifact?: () => void,
 	testModeArtifactTitle?: string,
+	reviewModeArtifactTitle?: string,
 ): Components {
 	return {
 		...baseChatMarkdownComponents,
@@ -171,30 +186,39 @@ function buildChatMarkdownComponents(
 				normalizeProjectFileLinkTarget(href) ||
 				normalizeProjectFileLinkTarget(markdownChildrenText(children));
 			const testModeArtifactLink = isTestModeArtifactLink(href);
+			const reviewModeArtifactLink = isReviewModeArtifactLink(href);
+			const workbenchArtifactLink =
+				testModeArtifactLink || reviewModeArtifactLink;
 			return (
 				<a
 					{...props}
 					className={cn(
 						"text-cyan-200 underline underline-offset-2 hover:text-cyan-100",
-						testModeArtifactLink && "mt-1 block w-fit",
+						workbenchArtifactLink && "mt-1 block w-fit",
 					)}
 					href={href}
 					target={
-						projectFilePath || testModeArtifactLink ? undefined : "_blank"
+						projectFilePath || workbenchArtifactLink ? undefined : "_blank"
 					}
 					rel={
-						projectFilePath || testModeArtifactLink ? undefined : "noreferrer"
+						projectFilePath || workbenchArtifactLink ? undefined : "noreferrer"
 					}
 					data-project-file-link={projectFilePath || undefined}
 					data-workbench-artifact-link={
-						testModeArtifactLink ? "test_mode" : undefined
+						testModeArtifactLink
+							? "test_mode"
+							: reviewModeArtifactLink
+								? "review_status"
+								: undefined
 					}
 					title={
 						projectFilePath
 							? "ソースコードを開く"
 							: testModeArtifactLink
 								? testModeArtifactTitle
-								: props.title
+								: reviewModeArtifactLink
+									? reviewModeArtifactTitle
+									: props.title
 					}
 					onClick={
 						projectFilePath && onOpenProjectFile
@@ -207,7 +231,12 @@ function buildChatMarkdownComponents(
 										event.preventDefault();
 										onOpenTestModeArtifact();
 									}
-								: props.onClick
+								: reviewModeArtifactLink && onOpenReviewModeArtifact
+									? (event) => {
+											event.preventDefault();
+											onOpenReviewModeArtifact();
+										}
+									: props.onClick
 					}
 				>
 					{children}
@@ -221,21 +250,32 @@ export function ChatMarkdown({
 	content,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	content: string;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	const { t } = useTranslation();
 	const testModeArtifactTitle = t("testMode.openArtifact");
+	const reviewModeArtifactTitle = t("reviewStatus.title");
 	const markdownComponents = useMemo(
 		() =>
 			buildChatMarkdownComponents(
 				onOpenProjectFile,
 				onOpenTestModeArtifact,
+				onOpenReviewModeArtifact,
 				testModeArtifactTitle,
+				reviewModeArtifactTitle,
 			),
-		[onOpenProjectFile, onOpenTestModeArtifact, testModeArtifactTitle],
+		[
+			onOpenProjectFile,
+			onOpenTestModeArtifact,
+			onOpenReviewModeArtifact,
+			testModeArtifactTitle,
+			reviewModeArtifactTitle,
+		],
 	);
 
 	return (

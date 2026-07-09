@@ -446,7 +446,7 @@ export const nightWorkersCodexToolManifest = {
 	reviewer_evaluation: {
 		title: "Reviewer Evaluation",
 		description:
-			"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded.",
+			"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded. changes_requested is actionable review feedback, not a tool error: fix the findings, rerun required checks, and rerun reviewer_evaluation until approved.",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,

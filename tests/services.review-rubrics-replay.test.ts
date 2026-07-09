@@ -1,6 +1,19 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { runReviewReplayEvaluationFromJsonl } from "../api/services/review-rubrics/replay-evaluation";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	callStructuredJsonLLM: vi.fn(),
+}));
+
+vi.mock("../api/services/structured-llm", () => ({
+	callStructuredJsonLLM: mocks.callStructuredJsonLLM,
+}));
+
+import { buildReviewEvidencePackFromRun } from "../api/services/review-rubrics/evidence-pack";
+import {
+	runReviewerEvaluationFromPack,
+	runReviewReplayEvaluationFromJsonl,
+} from "../api/services/review-rubrics/replay-evaluation";
 import { parseRunJsonl } from "../api/services/run-events/jsonl-parse";
 import { replayRunJsonl } from "../api/services/run-events/replay";
 
@@ -105,6 +118,10 @@ function buildJsonl(options: {
 }
 
 describe("review rubric replay evaluation", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it("keeps JSONL regression fixtures wired into deterministic replay", async () => {
 		const approved = await runReviewReplayEvaluationFromJsonl({
 			jsonl: fixture("basic-approved.jsonl"),
@@ -158,6 +175,10 @@ describe("review rubric replay evaluation", () => {
 	});
 
 	it("blocks missing verification and policy violation regardless of LLM availability", async () => {
+		mocks.callStructuredJsonLLM.mockRejectedValueOnce(
+			new Error("No structured LLM route candidates were available."),
+		);
+
 		const result = await runReviewReplayEvaluationFromJsonl({
 			jsonl: buildJsonl({ verification: false, policy: true, diffBytes: 42 }),
 			rubricId: "basic-coding-run",
@@ -230,4 +251,142 @@ describe("review rubric replay evaluation", () => {
 		expect(replay.evidence.hasReviewResult).toBe(true);
 		expect(replay.reviewResults).toHaveLength(1);
 	});
+
+	it("treats managed Test Mode checks as in-run reviewer evidence", async () => {
+		const run = {
+			id: runId,
+			taskId,
+			status: "running",
+			diffPatch: "",
+			finalReport: null,
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+		};
+		const events = [
+			buildEventRow(1, {
+				type: "tool.call_finished",
+				severity: "info",
+				message: "run_check finished",
+				data: {
+					mcpTool: "run_check",
+					status: "completed",
+					result: {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									ok: true,
+									toolName: "run_check",
+									payload: {
+										checkKind: "verify",
+										llmSummary: "OK verify",
+									},
+								}),
+							},
+						],
+					},
+				},
+			}),
+			buildEventRow(2, {
+				type: "tool.call_finished",
+				severity: "info",
+				message: "completion_check finished",
+				data: {
+					mcpTool: "completion_check",
+					status: "completed",
+					result: {
+						structured_content: {
+							payload: {
+								llmSummary: "OK completion_check",
+							},
+						},
+					},
+				},
+			}),
+		];
+		const pack = buildReviewEvidencePackFromRun(run as never, events as never);
+		const result = await runReviewerEvaluationFromPack({
+			pack,
+			rubricId: "basic-coding-run",
+			mode: "deterministic_only",
+			run,
+		});
+
+		expect(pack.context).toMatchObject({
+			executionMode: "test",
+			inRunReview: true,
+		});
+		expect(pack.verification.map((item) => item.command)).toEqual([
+			"verify",
+			"completion_check",
+		]);
+		expect(result.finalReviewerVerdict).toBe("approved");
+		expect(
+			result.reviewResult.findings.map((finding) => finding.title),
+		).not.toEqual(
+			expect.arrayContaining([
+				"Diff evidence is present",
+				"Final report is present",
+				"Verification result is present",
+			]),
+		);
+	});
+
+	it("keeps final report and diff requirements outside in-run Test Mode review", async () => {
+		const run = {
+			id: runId,
+			taskId,
+			status: "running",
+			diffPatch: "",
+			finalReport: null,
+			contextSnapshot: {
+				executionMode: "implementation",
+			},
+		};
+		const pack = buildReviewEvidencePackFromRun(run as never, []);
+		const result = await runReviewerEvaluationFromPack({
+			pack,
+			rubricId: "basic-coding-run",
+			mode: "deterministic_only",
+			run,
+		});
+
+		expect(result.finalReviewerVerdict).toBe("changes_requested");
+		expect(
+			result.reviewResult.findings.map((finding) => finding.title),
+		).toEqual(
+			expect.arrayContaining([
+				"Diff evidence is present",
+				"Final report is present",
+				"Verification result is present",
+			]),
+		);
+	});
 });
+
+function buildEventRow(seq: number, event: Record<string, unknown>) {
+	return {
+		id: `event-${seq}`,
+		taskRunId: runId,
+		type: "info",
+		message: event.message || "",
+		timestamp: new Date("2026-06-02T00:00:00.000Z"),
+		seq,
+		actor: "worker",
+		eventType: "tool_result",
+		payloadJson: {
+			runEvent: {
+				version: 1,
+				id: `run-event-${seq}`,
+				runId,
+				taskId,
+				seq,
+				timestamp: "2026-06-02T00:00:00.000Z",
+				actor: "worker",
+				...event,
+			},
+		},
+	};
+}

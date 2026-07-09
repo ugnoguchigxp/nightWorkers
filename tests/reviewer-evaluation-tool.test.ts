@@ -70,6 +70,40 @@ describe("reviewer_evaluation worker tool", () => {
 		});
 	});
 
+	it("returns actionable review findings without marking the tool call as failed", async () => {
+		mocks.createReviewerEvaluation.mockResolvedValueOnce({
+			status: "degraded",
+			finalReviewerVerdict: "changes_requested",
+			reviewResult: {
+				verdict: "changes_requested",
+				findings: [
+					{
+						severity: "blocking",
+						title: "Final report is present",
+						body: "Rubric criterion failed: Final report is present",
+					},
+				],
+			},
+			events: [],
+			degradedReasons: ["llm_approved_despite_deterministic_blocking"],
+		});
+
+		const result = await reviewerEvaluationTool({
+			runId: "run-3",
+			mode: "llm_assisted",
+		});
+
+		expect(result).toMatchObject({
+			ok: true,
+			toolName: "reviewer_evaluation",
+			payload: {
+				status: "degraded",
+				finalReviewerVerdict: "changes_requested",
+			},
+		});
+		expect(result.error).toBeUndefined();
+	});
+
 	it("fails clearly when no run id is available", async () => {
 		const result = await reviewerEvaluationTool({ runId: "" });
 

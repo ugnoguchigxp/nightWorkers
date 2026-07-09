@@ -49,6 +49,18 @@ describe("project file links", () => {
 		expect(markup).not.toContain('target="_blank"');
 	});
 
+	it("marks chat markdown Review Mode links for workbench artifact navigation", () => {
+		const markup = renderToStaticMarkup(
+			<ChatMarkdown
+				content="[レビューモードに移行する](/sessions/task-1?artifact=review_status)"
+				onOpenReviewModeArtifact={() => undefined}
+			/>,
+		);
+
+		expect(markup).toContain('data-workbench-artifact-link="review_status"');
+		expect(markup).not.toContain('target="_blank"');
+	});
+
 	it("renders Test Mode links as a standalone line inside list items", () => {
 		const markup = renderToStaticMarkup(
 			<ChatMarkdown

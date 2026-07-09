@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	analyzeCommand,
 	gitDiffTool,
+	runCheckTool,
 	runCommandTool,
 	runVerificationTool,
 } from "../../api/services/worker-tools";
@@ -40,6 +41,10 @@ describe("Worker Tools Unit Tests", () => {
 
 	it("allows package verify scripts as build/test commands", () => {
 		for (const command of [
+			"bun run test",
+			"bun run typecheck",
+			"bun run lint",
+			"bun run build",
 			"bun run verify",
 			"bun run verify:base",
 			"bun verify:strict",
@@ -106,6 +111,56 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.stdout).toContain("OK verify");
 		expect(result.payload.reason).toBe("large verification output fixture");
 		expect(result.payload.logArtifactPath).toBeTruthy();
+	});
+
+	it("resolves bare run_check script names and keeps artifact paths out of the model summary", async () => {
+		await fs.writeFile(
+			path.join(dummyRepoDir, "package.json"),
+			JSON.stringify(
+				{
+					type: "module",
+					scripts: {
+						test: "node -e \"console.log('unit ok')\"",
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const result = await runCheckTool({
+			command: "test",
+			checkKind: "test",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.command).toBe("bun run test");
+		expect(result.payload.llmSummary).toBe("OK test\nexitCode=0");
+		expect(result.payload.llmSummary).not.toContain("stdoutArtifact=");
+		expect(result.payload.llmSummary).not.toContain("stderrArtifact=");
+	});
+
+	it("reports policy rejections directly instead of artifact paths", async () => {
+		const result = await runCheckTool({
+			command: "unknown-quality-command",
+			checkKind: "test",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.error?.code).toBe("DESTRUCTIVE_COMMAND");
+		expect(result.payload.managedEvidence).toBe(false);
+		expect(result.payload.llmSummary).toContain("ERROR test");
+		expect(result.payload.llmSummary).toContain(
+			"errorCode=DESTRUCTIVE_COMMAND",
+		);
+		expect(result.payload.llmSummary).toContain(
+			"error=Unknown command is denied by default.",
+		);
+		expect(result.payload.llmSummary).not.toContain("stdoutArtifact=");
+		expect(result.payload.llmSummary).not.toContain("stderrArtifact=");
 	});
 });
 

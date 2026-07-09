@@ -51,11 +51,25 @@ const READ_ONLY_COMMANDS = [
 ];
 
 const BUILD_TEST_COMMANDS = [
+	"bun test",
+	"bun run test",
+	"bun run typecheck",
+	"bun run lint",
+	"bun run build",
 	"pnpm test",
 	"pnpm typecheck",
 	"pnpm lint",
 	"pnpm build",
 	"pnpm test run",
+	"npm test",
+	"npm run test",
+	"npm run typecheck",
+	"npm run lint",
+	"npm run build",
+	"yarn test",
+	"yarn typecheck",
+	"yarn lint",
+	"yarn build",
 ];
 
 const BACKGROUND_COMMANDS = [
@@ -85,6 +99,12 @@ function isPackageVerifyCommand(command: string): boolean {
 			command,
 		) ||
 		/^bun\s+(?:run\s+)?scripts\/verify\.(?:ts|js|mjs)(?:\s|$)/.test(command)
+	);
+}
+
+function isPackageQualityCommand(command: string): boolean {
+	return /^(?:bun\s+run\s+|npm\s+run\s+|pnpm\s+(?:run\s+)?|yarn\s+(?:run\s+)?)(?:test|typecheck|lint|build|coverage)(?::[\w-]+)?(?:\s|$)/.test(
+		command,
 	);
 }
 
@@ -157,6 +177,7 @@ export function analyzeCommand(
 		classification = "read_only";
 	} else if (
 		BUILD_TEST_COMMANDS.some((cmd) => startsWithCommand(trimmedCmd, cmd)) ||
+		isPackageQualityCommand(trimmedCmd) ||
 		isPackageVerifyCommand(trimmedCmd)
 	) {
 		classification = "build_test";

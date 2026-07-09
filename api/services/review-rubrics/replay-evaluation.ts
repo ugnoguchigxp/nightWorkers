@@ -54,6 +54,10 @@ export async function runReviewerEvaluationFromPack(
 		llm = await callLlmReviewer({
 			rubric: loaded.rubric,
 			evidencePack: input.pack,
+			mockDraft:
+				input.mockLlmOutput === undefined
+					? undefined
+					: (input.mockLlmOutput as string | Record<string, unknown>),
 		});
 		degradedReasons.push(...llm.degradedReasons);
 		const rawLlmOutput = input.mockLlmOutput ?? llm.rawOutput ?? llm.draft;
