@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildVulnWorkbenchCliEnv,
 	findingForVulnWorkbenchResult,
 	readVulnWorkbenchCliSettings,
 	runVulnWorkbenchSecurityDiagnostic,
@@ -12,7 +13,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 			NIGHTWORKERS_VULNWORKBENCH_ENABLED: "false",
 		} as NodeJS.ProcessEnv);
 		const result = await runVulnWorkbenchSecurityDiagnostic({
-			target: { repositoryId: "repo-1", targetFiles: [] },
+			target: { repoRoot: "/workspace/project", targetFiles: [] },
 			artifactDir: "/tmp",
 			settings,
 		});
@@ -26,21 +27,37 @@ describe("Review vulnWorkbench diagnostic", () => {
 		});
 	});
 
-	it("reads project mappings from environment JSON", () => {
+	it("reads path-based oracle settings without scan profile tuning", () => {
 		const settings = readVulnWorkbenchCliSettings({
-			NIGHTWORKERS_VULNWORKBENCH_PROJECTS: JSON.stringify({
-				"repo-1": "vw-project-1",
-			}),
-			NIGHTWORKERS_VULNWORKBENCH_PROFILE: "detailed-security",
+			NIGHTWORKERS_VULNWORKBENCH_PROFILE: "agent-output",
 			NIGHTWORKERS_VULNWORKBENCH_TIMEOUT_SECONDS: "1200",
 		} as NodeJS.ProcessEnv);
 
-		expect(settings.projectIdByRepositoryId["repo-1"]).toBe("vw-project-1");
-		expect(settings.defaultProfile).toBe("detailed-security");
+		expect("defaultProfile" in settings).toBe(false);
 		expect(settings.timeoutSeconds).toBe(1200);
 	});
 
-	it("runs configured scan and review commands with bounded detailed timeout", async () => {
+	it("passes only minimal process environment to the vulnWorkbench CLI", () => {
+		const env = buildVulnWorkbenchCliEnv({
+			DATABASE_URL: "file:/Users/y.noguchi/Code/nightWorkers/sqlite.db",
+			PATH: "/usr/bin",
+			TMPDIR: "/tmp",
+			HOME: "/Users/y.noguchi",
+			OPENAI_API_KEY: "host-api-key",
+			AZURE_OPENAI_API_KEY: "host-azure-key",
+			NIGHTWORKERS_VULNWORKBENCH_PROFILE: "agent-output",
+		} as NodeJS.ProcessEnv);
+
+		expect(env.DATABASE_URL).toBeUndefined();
+		expect(env.PATH).toBe("/usr/bin");
+		expect(env.TMPDIR).toBe("/tmp");
+		expect(env.HOME).toBeUndefined();
+		expect(env.OPENAI_API_KEY).toBeUndefined();
+		expect(env.AZURE_OPENAI_API_KEY).toBeUndefined();
+		expect(env.NIGHTWORKERS_VULNWORKBENCH_PROFILE).toBeUndefined();
+	});
+
+	it("runs path-based oracle command and maps scanner-backed findings", async () => {
 		const calls: Array<{
 			cwd: string;
 			args: string[];
@@ -48,7 +65,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 		}> = [];
 		const result = await runVulnWorkbenchSecurityDiagnostic({
 			target: {
-				repositoryId: "repo-1",
+				repoRoot: "/workspace/project",
 				targetFiles: [
 					{
 						path: "api/routes/auth.ts",
@@ -64,42 +81,61 @@ describe("Review vulnWorkbench diagnostic", () => {
 			settings: {
 				enabled: true,
 				cwd: "/workspace/vulnWorkbench",
-				projectIdByRepositoryId: { "repo-1": "vw-project-1" },
-				defaultProfile: "baseline",
 				timeoutSeconds: 600,
 			},
 			runCommand: async (cwd, args, timeoutSeconds) => {
 				calls.push({ cwd, args, timeoutSeconds });
-				if (args[1] === "scan:profile") {
-					return {
-						command: {
-							command: `bun ${args.join(" ")}`,
-							exitCode: 0,
-							summary: "scan complete",
-						},
-						output: "scanRunId scan-1",
-						scanRunId: "scan-1",
-					};
-				}
 				return {
 					command: {
 						command: `bun ${args.join(" ")}`,
-						exitCode: 0,
-						summary: "review complete",
+						exitCode: 3,
+						summary: "security action required",
 					},
-					output: "findingCount: 2 highOrCriticalCount: 1",
-					scanRunId: null,
+					output: JSON.stringify({
+						ok: false,
+						status: "security_action_required",
+						project: {
+							id: "vw-project-1",
+							repoPath: "/workspace/project",
+							created: true,
+						},
+						scan: {
+							scanRunId: "scan-1",
+							profile: "agent-output",
+							findingCount: 2,
+							highOrCriticalCount: 1,
+							reportPath: "/tmp/vuln-report.md",
+						},
+						review: {
+							status: "completed",
+							reviewId: "review-1",
+							improvementRequest: "認可境界の回帰テストを追加してください。",
+						},
+						nextAction: "apply_security_fix",
+					}),
+					scanRunId: "scan-1",
 				};
 			},
 		});
 
 		expect(result.ok).toBe(true);
-		expect(result.profile).toBe("detailed-security");
-		expect(calls).toHaveLength(2);
+		expect(result.projectId).toBe("vw-project-1");
+		expect(result.projectPath).toBe("/workspace/project");
+		expect(result.profile).toBe("agent-output");
+		expect(result.scanRunId).toBe("scan-1");
+		expect(result.findingCount).toBe(2);
+		expect(result.highOrCriticalCount).toBe(1);
+		expect(result.improvementRequest).toContain("認可境界");
+		expect(calls).toHaveLength(1);
 		expect(calls[0]?.cwd).toBe("/workspace/vulnWorkbench");
-		expect(calls[0]?.args).toContain("detailed-security");
-		expect(calls[0]?.timeoutSeconds).toBe(1200);
-		expect(calls[1]?.args).toContain("scan-1");
+		expect(calls[0]?.args).toEqual([
+			"run",
+			"oracle:security",
+			"--",
+			"--project-path",
+			"/workspace/project",
+		]);
+		expect(calls[0]?.timeoutSeconds).toBe(600);
 		expect(findingForVulnWorkbenchResult(result)).toMatchObject({
 			severity: "warning",
 			title:

@@ -1,24 +1,23 @@
 import { execFile } from "node:child_process";
-import path from "node:path";
 import { promisify } from "node:util";
 import type { ReviewTarget } from "./nightworkers.review-mode.model";
 import { toErrorMessage } from "./run-orchestration/utils";
 
 const execFileAsync = promisify(execFile);
+const ORACLE_PROFILE = "agent-output";
 
 export type VulnWorkbenchCliSettings = {
 	enabled: boolean;
 	cwd: string;
-	projectIdByRepositoryId: Record<string, string>;
-	defaultProfile: "baseline" | "detailed-security";
 	timeoutSeconds: number;
 };
 
 export type VulnWorkbenchSecurityResult = {
 	ok: boolean;
 	projectId: string | null;
+	projectPath: string | null;
 	scanRunId: string | null;
-	profile: "baseline" | "detailed-security";
+	profile: string;
 	commandsRun: Array<{
 		command: string;
 		exitCode: number | null;
@@ -37,11 +36,39 @@ type BunCommandResult = {
 	scanRunId: string | null;
 };
 
+type OracleSecurityPayload = {
+	ok?: unknown;
+	status?: unknown;
+	project?: unknown;
+	scan?: unknown;
+	review?: unknown;
+	nextAction?: unknown;
+	error?: unknown;
+};
+
 export type VulnWorkbenchCommandRunner = (
 	cwd: string,
 	args: string[],
 	timeoutSeconds: number,
 ) => Promise<BunCommandResult>;
+
+export function buildVulnWorkbenchCliEnv(
+	baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+	const allowedKeys = [
+		"PATH",
+		"TMPDIR",
+		"TMP",
+		"TEMP",
+		"LANG",
+		"LC_ALL",
+	] as const;
+	const env: NodeJS.ProcessEnv = {};
+	for (const key of allowedKeys) {
+		if (baseEnv[key]) env[key] = baseEnv[key];
+	}
+	return env;
+}
 
 export function readVulnWorkbenchCliSettings(
 	env: NodeJS.ProcessEnv = process.env,
@@ -51,13 +78,6 @@ export function readVulnWorkbenchCliSettings(
 		cwd:
 			env.NIGHTWORKERS_VULNWORKBENCH_CWD ||
 			"/Users/y.noguchi/Code/vulnWorkbench",
-		projectIdByRepositoryId: parseProjectMap(
-			env.NIGHTWORKERS_VULNWORKBENCH_PROJECTS,
-		),
-		defaultProfile:
-			env.NIGHTWORKERS_VULNWORKBENCH_PROFILE === "detailed-security"
-				? "detailed-security"
-				: "baseline",
 		timeoutSeconds: readPositiveInt(
 			env.NIGHTWORKERS_VULNWORKBENCH_TIMEOUT_SECONDS,
 			600,
@@ -66,107 +86,67 @@ export function readVulnWorkbenchCliSettings(
 }
 
 export async function runVulnWorkbenchSecurityDiagnostic(input: {
-	target: Pick<ReviewTarget, "repositoryId" | "targetFiles">;
+	target: Pick<ReviewTarget, "repoRoot" | "targetFiles">;
 	artifactDir: string;
 	settings?: VulnWorkbenchCliSettings;
 	runCommand?: VulnWorkbenchCommandRunner;
 }): Promise<VulnWorkbenchSecurityResult> {
 	const settings = input.settings ?? readVulnWorkbenchCliSettings();
-	const profile = resolveProfile(settings, input.target);
-	const timeoutSeconds = resolveTimeoutSeconds(settings, profile);
+	const profile = ORACLE_PROFILE;
+	const timeoutSeconds = settings.timeoutSeconds;
 	const runCommand = input.runCommand ?? runBunCommand;
-	const projectId =
-		settings.projectIdByRepositoryId[input.target.repositoryId] ?? null;
 	if (!settings.enabled) {
 		return unconfiguredResult(
 			profile,
+			null,
 			"vulnWorkbench security diagnostic is disabled.",
 		);
 	}
-	if (!projectId) {
+	if (!input.target.repoRoot.trim()) {
 		return unconfiguredResult(
 			profile,
-			"vulnWorkbench project id is not configured for this repository.",
+			null,
+			"Repository path is not available for vulnWorkbench security diagnostic.",
 		);
 	}
-	const reportPath = path.join(
-		input.artifactDir,
-		profile === "detailed-security"
-			? "vulnworkbench-detailed-report.md"
-			: "vulnworkbench-report.md",
-	);
+
 	const commandsRun: VulnWorkbenchSecurityResult["commandsRun"] = [];
-	const scanArgs = [
+	const oracleArgs = [
 		"run",
-		"scan:profile",
+		"oracle:security",
 		"--",
-		"--project-id",
-		projectId,
-		"--profile",
-		profile,
-		"--timeout-sec",
-		String(timeoutSeconds),
-		"--report-output",
-		reportPath,
+		"--project-path",
+		input.target.repoRoot,
 	];
-	const scan = await runCommand(settings.cwd, scanArgs, timeoutSeconds);
-	commandsRun.push(scan.command);
-	if (scan.command.exitCode !== 0) {
+	const oracle = await runCommand(settings.cwd, oracleArgs, timeoutSeconds);
+	commandsRun.push(oracle.command);
+
+	const payload = parseOracleSecurityPayload(oracle.output);
+	if (!payload) {
 		return {
 			ok: false,
-			projectId,
-			scanRunId: scan.scanRunId,
+			projectId: null,
+			projectPath: input.target.repoRoot,
+			scanRunId: oracle.scanRunId,
 			profile,
 			commandsRun,
-			reportPath,
+			reportPath: null,
 			findingCount: 0,
 			highOrCriticalCount: 0,
 			improvementRequest: null,
-			error: scan.command.summary,
+			error:
+				oracle.command.summary || "vulnWorkbench did not return JSON output.",
 		};
 	}
-	if (!scan.scanRunId) {
-		return {
-			ok: false,
-			projectId,
-			scanRunId: null,
-			profile,
-			commandsRun,
-			reportPath,
-			findingCount: 0,
-			highOrCriticalCount: 0,
-			improvementRequest: null,
-			error: "vulnWorkbench scan did not return a scan run id.",
-		};
-	}
-	const reviewArgs = [
-		"run",
-		"review:scan",
-		"--",
-		"--scan-run-id",
-		scan.scanRunId,
-		"--task",
-		"scan_review",
-	];
-	const review = await runCommand(
-		settings.cwd,
-		reviewArgs,
-		settings.timeoutSeconds,
-	);
-	commandsRun.push(review.command);
-	const parsed = parseSecurityOutput([scan.output, review.output].join("\n"));
-	return {
-		ok: review.command.exitCode === 0,
-		projectId,
-		scanRunId: scan.scanRunId || review.scanRunId,
-		profile,
+
+	return resultFromOraclePayload(payload, {
 		commandsRun,
-		reportPath,
-		findingCount: parsed.findingCount,
-		highOrCriticalCount: parsed.highOrCriticalCount,
-		improvementRequest: parsed.improvementRequest,
-		error: review.command.exitCode === 0 ? null : review.command.summary,
-	};
+		fallbackProfile: profile,
+		fallbackProjectPath: input.target.repoRoot,
+		fallbackScanRunId: oracle.scanRunId,
+		fallbackError:
+			oracle.command.exitCode === 0 ? null : oracle.command.summary,
+	});
 }
 
 export function warningFindingForVulnWorkbenchResult(
@@ -175,7 +155,7 @@ export function warningFindingForVulnWorkbenchResult(
 	if (result.ok) return null;
 	return {
 		severity: "warning" as const,
-		title: result.projectId
+		title: result.projectPath
 			? "vulnWorkbench security diagnostic could not complete"
 			: "vulnWorkbench security diagnostic was not configured",
 		body:
@@ -200,6 +180,7 @@ export function findingForVulnWorkbenchResult(
 				: "vulnWorkbench security diagnostic completed",
 		body: [
 			`profile: ${result.profile}`,
+			result.projectPath ? `projectPath: ${result.projectPath}` : null,
 			`scanRunId: ${result.scanRunId ?? "(unknown)"}`,
 			`findingCount: ${result.findingCount}`,
 			`highOrCriticalCount: ${result.highOrCriticalCount}`,
@@ -215,29 +196,6 @@ export function findingForVulnWorkbenchResult(
 	};
 }
 
-function resolveProfile(
-	settings: VulnWorkbenchCliSettings,
-	target: Pick<ReviewTarget, "targetFiles">,
-): "baseline" | "detailed-security" {
-	if (settings.defaultProfile === "detailed-security")
-		return "detailed-security";
-	const sensitive = target.targetFiles.some((file) =>
-		/(auth|security|secret|token|password|permission|middleware|api\/)/i.test(
-			file.path,
-		),
-	);
-	return sensitive ? "detailed-security" : "baseline";
-}
-
-function resolveTimeoutSeconds(
-	settings: VulnWorkbenchCliSettings,
-	profile: VulnWorkbenchSecurityResult["profile"],
-) {
-	return profile === "detailed-security"
-		? Math.max(settings.timeoutSeconds, 1200)
-		: settings.timeoutSeconds;
-}
-
 async function runBunCommand(
 	cwd: string,
 	args: string[],
@@ -247,6 +205,7 @@ async function runBunCommand(
 	try {
 		const result = await execFileAsync("bun", args, {
 			cwd,
+			env: buildVulnWorkbenchCliEnv(),
 			timeout: Math.max(1, timeoutSeconds) * 1000,
 			maxBuffer: 20 * 1024 * 1024,
 		});
@@ -281,11 +240,13 @@ async function runBunCommand(
 
 function unconfiguredResult(
 	profile: VulnWorkbenchSecurityResult["profile"],
+	projectPath: string | null,
 	error: string,
 ): VulnWorkbenchSecurityResult {
 	return {
 		ok: false,
 		projectId: null,
+		projectPath,
 		scanRunId: null,
 		profile,
 		commandsRun: [],
@@ -295,23 +256,6 @@ function unconfiguredResult(
 		improvementRequest: null,
 		error,
 	};
-}
-
-function parseProjectMap(value: string | undefined) {
-	if (!value?.trim()) return {};
-	try {
-		const parsed = JSON.parse(value);
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-			return {};
-		return Object.fromEntries(
-			Object.entries(parsed).filter(
-				(entry): entry is [string, string] =>
-					typeof entry[0] === "string" && typeof entry[1] === "string",
-			),
-		);
-	} catch {
-		return {};
-	}
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {
@@ -325,6 +269,89 @@ function extractScanRunId(output: string) {
 			output,
 		)?.[1] ?? null
 	);
+}
+
+function parseOracleSecurityPayload(
+	output: string,
+): OracleSecurityPayload | null {
+	const trimmed = output.trim();
+	if (!trimmed) return null;
+	const lines = trimmed
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+	for (const candidate of [...lines].reverse()) {
+		try {
+			const parsed = JSON.parse(candidate);
+			return isRecord(parsed) ? parsed : null;
+		} catch {}
+	}
+	try {
+		const parsed = JSON.parse(trimmed);
+		return isRecord(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+function resultFromOraclePayload(
+	payload: OracleSecurityPayload,
+	fallbacks: {
+		commandsRun: VulnWorkbenchSecurityResult["commandsRun"];
+		fallbackProfile: string;
+		fallbackProjectPath: string;
+		fallbackScanRunId: string | null;
+		fallbackError: string | null;
+	},
+): VulnWorkbenchSecurityResult {
+	const project = isRecord(payload.project) ? payload.project : null;
+	const scan = isRecord(payload.scan) ? payload.scan : null;
+	const review = isRecord(payload.review) ? payload.review : null;
+	const error = isRecord(payload.error) ? payload.error : null;
+	const status = typeof payload.status === "string" ? payload.status : null;
+	const diagnosticCompleted =
+		status === "completed" ||
+		status === "security_action_required" ||
+		status === "inconclusive";
+	const parsed = parseSecurityOutput(JSON.stringify(payload));
+	const projectPath =
+		(typeof project?.repoPath === "string" ? project.repoPath : null) ??
+		fallbacks.fallbackProjectPath;
+	const scanRunId =
+		(typeof scan?.scanRunId === "string" ? scan.scanRunId : null) ??
+		fallbacks.fallbackScanRunId;
+	const errorMessage =
+		typeof error?.message === "string"
+			? error.message
+			: typeof review?.error === "string"
+				? review.error
+				: diagnosticCompleted
+					? null
+					: fallbacks.fallbackError;
+	return {
+		ok: diagnosticCompleted && !!scan,
+		projectId: typeof project?.id === "string" ? project.id : null,
+		projectPath,
+		scanRunId,
+		profile:
+			(typeof scan?.profile === "string" ? scan.profile : null) ??
+			fallbacks.fallbackProfile,
+		commandsRun: fallbacks.commandsRun,
+		reportPath: typeof scan?.reportPath === "string" ? scan.reportPath : null,
+		findingCount:
+			typeof scan?.findingCount === "number"
+				? scan.findingCount
+				: parsed.findingCount,
+		highOrCriticalCount:
+			typeof scan?.highOrCriticalCount === "number"
+				? scan.highOrCriticalCount
+				: parsed.highOrCriticalCount,
+		improvementRequest:
+			(typeof review?.improvementRequest === "string"
+				? review.improvementRequest
+				: null) ?? parsed.improvementRequest,
+		error: errorMessage,
+	};
 }
 
 function parseSecurityOutput(output: string) {
@@ -345,4 +372,8 @@ function readFirstNumber(output: string, pattern: RegExp) {
 
 function summarizeOutput(output: string) {
 	return output.replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
 }

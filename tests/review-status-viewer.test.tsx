@@ -342,11 +342,13 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 			result: {
 				ok: true,
 				projectId: "vw-project-1",
+				projectPath: "/workspace/project",
 				scanRunId: "scan-1",
-				profile: "detailed-security",
+				profile: "agent-output",
 				commandsRun: [
 					{
-						command: "bun run scan:profile -- --project-id vw-project-1",
+						command:
+							"bun run oracle:security -- --project-path /workspace/project",
 						exitCode: 0,
 						summary: "scan complete",
 					},
@@ -597,11 +599,11 @@ describe("ReviewStatusViewer", () => {
 		);
 
 		expect(text).toContain("vulnWorkbench 実行結果");
-		expect(text).toContain("detailed-security");
+		expect(text).toContain("agent-output");
 		expect(text).toContain("scan-1");
 		expect(text).toContain("findings: 2");
 		expect(text).toContain("high/critical: 1");
-		expect(text).toContain("bun run scan:profile");
+		expect(text).toContain("bun run oracle:security");
 	});
 
 	it("hides the required review badge after ReviewRun completes", async () => {
