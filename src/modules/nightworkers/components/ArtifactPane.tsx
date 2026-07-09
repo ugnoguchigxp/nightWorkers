@@ -19,13 +19,18 @@ import { toDeepRecord } from "../../../../shared/json-record";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
-import { logArtifactPaneRendered } from "../artifactPerformance";
+import {
+	logArtifactPaneRendered,
+	measureArtifactPerf,
+} from "../artifactPerformance";
 import { startTestModeRun } from "../nightWorkersCommands";
 import {
 	buildTestModeWorkflowSteps,
 	isTestModeWorkflowComplete,
 	isTestModeWorkflowInProgress,
+	isTestModeWorkflowRun,
 	readTestModeWorkflowActionStatus,
+	selectTestModeWorkflowSteps,
 	type TestModeWorkflowStepStatus,
 	type TestModeWorkflowStepView,
 } from "../testModeWorkflowView";
@@ -105,6 +110,12 @@ type ArtifactPaneProps = {
 	isImplementationLocked?: boolean;
 };
 
+type FrozenTestModeWorkflow = {
+	taskId: string;
+	signature: string;
+	steps: TestModeWorkflowStepView[];
+};
+
 type ProjectArtifactMode = "tree" | "diff";
 type TestModeAction =
 	| "discover_tests"
@@ -144,6 +155,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: {};
+}
+
+function cloneTestModeWorkflowSteps(steps: TestModeWorkflowStepView[]) {
+	return steps.map((step) => ({ ...step }));
+}
+
+function testModeWorkflowSignature(steps: TestModeWorkflowStepView[]) {
+	return steps.map((step) => `${step.id}:${step.status}`).join("|");
 }
 
 function isMockBlueprintCandidate(value: unknown) {
@@ -195,6 +214,8 @@ export function ArtifactPane({
 	);
 	const [isFullscreen, setIsFullscreen] = useState(false);
 	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
+	const [frozenTestModeWorkflow, setFrozenTestModeWorkflow] =
+		useState<FrozenTestModeWorkflow | null>(null);
 	const [bodyRenderArtifactId, setBodyRenderArtifactId] = useState<
 		string | null
 	>(null);
@@ -212,7 +233,20 @@ export function ArtifactPane({
 	const showProjectDiff = showProjectTree && projectArtifactMode === "diff";
 	const artifactVersions = useMemo(
 		() =>
-			buildArtifactVersions(selectedArtifact, taskMessages, activityArtifacts),
+			measureArtifactPerf(
+				"artifactPane.buildArtifactVersions",
+				() =>
+					buildArtifactVersions(
+						selectedArtifact,
+						taskMessages,
+						activityArtifacts,
+					),
+				{
+					artifactId: selectedArtifact?.id || null,
+					taskMessageCount: taskMessages.length,
+					activityArtifactCount: activityArtifacts.length,
+				},
+			),
 		[activityArtifacts, selectedArtifact, taskMessages],
 	);
 	useEffect(() => {
@@ -299,15 +333,42 @@ export function ArtifactPane({
 				: null,
 		[activityArtifacts, artifactRowId],
 	);
-	const selectedActivityArtifactContent = parseArtifactContentJson(
-		selectedActivityArtifact?.contentText,
+	const selectedActivityArtifactContent = useMemo(
+		() =>
+			measureArtifactPerf(
+				"artifactPane.parseActivityArtifactContent",
+				() => parseArtifactContentJson(selectedActivityArtifact?.contentText),
+				{
+					artifactRowId,
+					contentLength: selectedActivityArtifact?.contentText?.length || 0,
+				},
+			),
+		[artifactRowId, selectedActivityArtifact?.contentText],
 	);
-	const activityArtifactMetadata = {
-		...asRecord(selectedActivityArtifactContent),
-		...toDeepRecord(selectedActivityArtifact?.metadataJson),
-		...asRecord(selectedArtifact?.metadata),
-		...asRecord(displayArtifact?.metadata),
-	};
+	const activityArtifactMetadata = useMemo(
+		() =>
+			measureArtifactPerf(
+				"artifactPane.mergeArtifactMetadata",
+				() => ({
+					...asRecord(selectedActivityArtifactContent),
+					...toDeepRecord(selectedActivityArtifact?.metadataJson),
+					...asRecord(selectedArtifact?.metadata),
+					...asRecord(displayArtifact?.metadata),
+				}),
+				{
+					artifactId: displayArtifact?.id || selectedArtifact?.id || null,
+					hasActivityArtifact: Boolean(selectedActivityArtifact),
+				},
+			),
+		[
+			displayArtifact?.id,
+			displayArtifact?.metadata,
+			selectedActivityArtifact,
+			selectedActivityArtifactContent,
+			selectedArtifact?.id,
+			selectedArtifact?.metadata,
+		],
+	);
 	const artifactBlueprint =
 		activityArtifactMetadata.appBlueprint ||
 		(!isMockBlueprintCandidate(selectedActivityArtifactContent)
@@ -357,6 +418,42 @@ export function ArtifactPane({
 				: latestRun,
 		[latestRun, latestRunEvents],
 	);
+	const liveTestModeWorkflowSteps = useMemo(
+		() =>
+			buildTestModeWorkflowSteps({
+				latestRun: latestRunForTestMode,
+				localStatus: testModeStatus,
+			}),
+		[latestRunForTestMode, testModeStatus],
+	);
+	const activeFrozenTestModeSteps =
+		frozenTestModeWorkflow?.taskId === activeSessionId
+			? frozenTestModeWorkflow.steps
+			: null;
+	const displayedTestModeWorkflowSteps = selectTestModeWorkflowSteps({
+		liveSteps: liveTestModeWorkflowSteps,
+		frozenSteps: activeFrozenTestModeSteps,
+		latestRun: latestRunForTestMode,
+	});
+	useEffect(() => {
+		if (!activeSessionId) return;
+		if (!isTestModeWorkflowRun(latestRunForTestMode)) return;
+		if (!isTestModeWorkflowComplete(liveTestModeWorkflowSteps)) return;
+		const signature = testModeWorkflowSignature(liveTestModeWorkflowSteps);
+		setFrozenTestModeWorkflow((current) => {
+			if (
+				current?.taskId === activeSessionId &&
+				current.signature === signature
+			) {
+				return current;
+			}
+			return {
+				taskId: activeSessionId,
+				signature,
+				steps: cloneTestModeWorkflowSteps(liveTestModeWorkflowSteps),
+			};
+		});
+	}, [activeSessionId, latestRunForTestMode, liveTestModeWorkflowSteps]);
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
@@ -529,6 +626,7 @@ export function ArtifactPane({
 							projectId={activeProject?.id || null}
 							taskId={activeSessionId}
 							latestRun={latestRunForTestMode}
+							workflowSteps={displayedTestModeWorkflowSteps}
 							status={testModeStatus}
 							canStartRun={true}
 							onStart={async (action, rerun) => {
@@ -592,6 +690,7 @@ export function ArtifactPane({
 									projectId={activeProject?.id || null}
 									taskId={activeSessionId}
 									latestRun={latestRunForTestMode}
+									workflowSteps={displayedTestModeWorkflowSteps}
 									status={testModeStatus}
 									canStartRun={true}
 									onOpenReviewArtifact={onOpenReviewArtifact}
@@ -792,6 +891,7 @@ function TestModeArtifactViewer({
 	projectId,
 	taskId,
 	latestRun,
+	workflowSteps,
 	status,
 	canStartRun,
 	onStart,
@@ -801,6 +901,7 @@ function TestModeArtifactViewer({
 	projectId: string | null;
 	taskId: string | null;
 	latestRun?: TaskRun | null;
+	workflowSteps: TestModeWorkflowStepView[];
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
@@ -816,6 +917,7 @@ function TestModeArtifactViewer({
 						projectId={projectId}
 						taskId={taskId}
 						latestRun={latestRun}
+						workflowSteps={workflowSteps}
 						status={status}
 						canStartRun={canStartRun}
 						onOpenReviewArtifact={onOpenReviewArtifact}
@@ -836,6 +938,7 @@ function VerificationChecklistPanel({
 	projectId,
 	taskId,
 	latestRun,
+	workflowSteps,
 	status,
 	canStartRun,
 	onStart,
@@ -845,6 +948,7 @@ function VerificationChecklistPanel({
 	projectId: string | null;
 	taskId: string | null;
 	latestRun?: TaskRun | null;
+	workflowSteps: TestModeWorkflowStepView[];
 	status: string | null;
 	canStartRun: boolean;
 	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
@@ -853,10 +957,6 @@ function VerificationChecklistPanel({
 	const { t } = useTranslation();
 	const canShowStartButton = Boolean(model.specArtifactId);
 	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
-	const workflowSteps = buildTestModeWorkflowSteps({
-		latestRun,
-		localStatus: status,
-	});
 	const canEnterMaintenanceMode = isTestModeWorkflowComplete(workflowSteps);
 	const workflowInProgress =
 		workflowActionStatus === "starting" ||
@@ -1069,13 +1169,6 @@ function readLatestTestModeCheckResults(
 			results.push(commandExecutionCheck);
 			continue;
 		}
-		const reviewEventCheck = readReviewerEvaluationEventResult(event, runEvent);
-		if (reviewEventCheck) {
-			if (seen.has(reviewEventCheck.key)) continue;
-			seen.add(reviewEventCheck.key);
-			results.push(reviewEventCheck);
-			continue;
-		}
 		const rawResult = firstRecord(
 			runEventData.result,
 			runEventData.toolResult,
@@ -1110,31 +1203,9 @@ function readLatestTestModeCheckResults(
 		const normalizedToolName = toolName ? normalizeToolName(toolName) : null;
 		if (
 			normalizedToolName !== "run_check" &&
-			normalizedToolName !== "completion_check" &&
-			normalizedToolName !== "reviewer_evaluation"
+			normalizedToolName !== "completion_check"
 		)
 			continue;
-		if (normalizedToolName === "reviewer_evaluation") {
-			const key = "check:llm_code_review";
-			if (seen.has(key)) continue;
-			seen.add(key);
-			results.push({
-				key,
-				checkKind: "llm_code_review",
-				label: formatTestModeCheckLabel("llm_code_review"),
-				status: readReviewerCheckStatus(
-					resultPayload,
-					readFirstBoolean(
-						parsedTextResult.ok,
-						rawResult.ok,
-						runEventData.ok,
-						payload.ok,
-					),
-				),
-				summary: formatReviewerEvaluationSummary(resultPayload),
-			});
-			continue;
-		}
 		const argumentsPayload = asRecord(runEventData.arguments);
 		const checkKind =
 			normalizedToolName === "run_check"
@@ -1180,22 +1251,6 @@ function readLatestTestModeCheckResults(
 		});
 	}
 	return results.reverse();
-}
-
-function readReviewerEvaluationEventResult(
-	event: NonNullable<TaskRun["events"]>[number],
-	runEvent: Record<string, unknown>,
-): TestModeCheckResult | null {
-	const type = readFirstString(runEvent.type, event.eventType, event.type);
-	if (type !== "review.evaluation_finished") return null;
-	const data = asRecord(runEvent.data);
-	return {
-		key: "check:llm_code_review",
-		checkKind: "llm_code_review",
-		label: formatTestModeCheckLabel("llm_code_review"),
-		status: readReviewerCheckStatus(data),
-		summary: formatReviewerEvaluationSummary(data),
-	};
 }
 
 function readCommandExecutionCheckResult(
@@ -1407,7 +1462,6 @@ function formatTestModeCheckLabel(checkKind: string) {
 	if (checkKind === "test") return "ユニットテスト実行結果";
 	if (checkKind === "verify") return "verify 実行結果";
 	if (checkKind === "completion_check") return "証跡テストチェック結果";
-	if (checkKind === "llm_code_review") return "LLM コードレビュー実行結果";
 	if (checkKind === "typecheck") return "typecheck 実行結果";
 	if (checkKind === "lint") return "lint 実行結果";
 	if (checkKind === "build") return "build 実行結果";
@@ -1428,97 +1482,6 @@ function formatTestModeCheckSummary(
 	const error = asRecord(result.error);
 	const errorMessage = readRecordString(error, "message");
 	return errorMessage || "結果の要約がありません。";
-}
-
-function readReviewerCheckStatus(
-	payload: Record<string, unknown>,
-	ok?: boolean,
-): TestModeCheckResult["status"] {
-	if (ok === false) return "failed";
-	const status = readRecordString(payload, "status");
-	const verdict = readRecordString(payload, "finalReviewerVerdict");
-	const reviewResult = asRecord(payload.reviewResult);
-	const reviewVerdict = readRecordString(reviewResult, "verdict");
-	const blockingFindingCount = readFirstNumber(payload.blockingFindingCount);
-	if (
-		verdict === "changes_requested" ||
-		reviewVerdict === "changes_requested" ||
-		(typeof blockingFindingCount === "number" && blockingFindingCount > 0)
-	) {
-		return "needs_action";
-	}
-	if (
-		ok === true &&
-		status === "completed" &&
-		(verdict === "approved" || reviewVerdict === "approved") &&
-		(!blockingFindingCount || blockingFindingCount === 0)
-	) {
-		return "passed";
-	}
-	if (
-		status === "running" ||
-		status === "started" ||
-		status === "in_progress"
-	) {
-		return "running";
-	}
-	return status === "completed" &&
-		(verdict === "approved" || reviewVerdict === "approved") &&
-		(!blockingFindingCount || blockingFindingCount === 0)
-		? "passed"
-		: "failed";
-}
-
-function formatReviewerEvaluationSummary(payload: Record<string, unknown>) {
-	const reviewResult = asRecord(payload.reviewResult);
-	const llm = asRecord(payload.llm);
-	const lines = [
-		readRecordString(payload, "status")
-			? `status=${readRecordString(payload, "status")}`
-			: null,
-		readRecordString(payload, "finalReviewerVerdict")
-			? `verdict=${readRecordString(payload, "finalReviewerVerdict")}`
-			: readRecordString(reviewResult, "verdict")
-				? `verdict=${readRecordString(reviewResult, "verdict")}`
-				: null,
-		readRecordString(llm, "provider") || readRecordString(llm, "model")
-			? `llm=${[readRecordString(llm, "provider"), readRecordString(llm, "model")].filter(Boolean).join("/")}`
-			: null,
-		...readStringArray(payload.degradedReasons).map(
-			(reason) => `degraded=${reason}`,
-		),
-		...readReviewerFindings(reviewResult, payload).map(
-			(finding) =>
-				`${finding.severity ? `${finding.severity}: ` : ""}${finding.title}${finding.body ? `\n${finding.body}` : ""}`,
-		),
-	];
-	return lines.filter((line): line is string => Boolean(line)).join("\n");
-}
-
-function readStringArray(value: unknown) {
-	return Array.isArray(value)
-		? value.filter((item): item is string => typeof item === "string")
-		: [];
-}
-
-function readReviewerFindings(
-	reviewResult: Record<string, unknown>,
-	payload: Record<string, unknown>,
-) {
-	const source = Array.isArray(reviewResult.findings)
-		? reviewResult.findings
-		: Array.isArray(payload.findings)
-			? payload.findings
-			: [];
-	return source
-		.map((item) => asRecord(item))
-		.map((finding) => ({
-			severity: readRecordString(finding, "severity") || "",
-			title: readRecordString(finding, "title") || "",
-			body: readRecordString(finding, "body") || "",
-		}))
-		.filter((finding) => finding.title)
-		.slice(0, 5);
 }
 
 function formatCommandExecutionCheckSummary(input: {

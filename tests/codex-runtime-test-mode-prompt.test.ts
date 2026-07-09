@@ -3,7 +3,7 @@ import { buildCodexRuntimePromptParts } from "../api/services/agent-runtime/code
 import type { AgentRunContext } from "../api/services/agent-runtime/types";
 
 describe("Codex runtime Test Mode prompt", () => {
-	it("instructs the agent to immediately fix LLM review findings until none remain", () => {
+	it("keeps Test Mode focused on test implementation and evidence checks", () => {
 		const prompt = buildCodexRuntimePromptParts({
 			runId: "run-1",
 			taskId: "task-1",
@@ -23,10 +23,12 @@ describe("Codex runtime Test Mode prompt", () => {
 		} satisfies AgentRunContext).runtimeContract;
 
 		expect(prompt).toContain(
-			"LLM コードレビュー SystemContext: コードレビューをしてください。改善するべき点が無くなるまで改善してください",
+			"実装開始 -> ユニットテスト実行 -> 証跡テストチェック",
 		);
-		expect(prompt).toContain(
-			"reviewer_evaluation が changes_requested / blocking finding を返した直後は、ユーザーへの完了報告や次ステップ提案を書かず、返された findings を修正する",
-		);
+		expect(prompt).toContain("nightworkers.completion_check");
+		expect(prompt).not.toContain("LLM コードレビュー");
+		expect(prompt).not.toContain("コードレビューをしてください");
+		expect(prompt).toContain("Test Mode では TodoList を使わない");
+		expect(prompt).not.toContain("reviewer_evaluation");
 	});
 });

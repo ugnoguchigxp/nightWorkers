@@ -326,6 +326,7 @@ function modeGuidance(
 			"- 必要に応じて git_diff、read_file、run_verification、context_compile を使って根拠を確認してください。",
 			"- Review Todo が表示されている場合は、各確認段階の完了時に todo_list operation=done を使い、未完了なら block/fail で状態を残してください。",
 			"- 修正が必要で明確な場合は、Todo を更新して実装修正 tool を使って構いません。",
+			"- findings 保存用の別ファイルを作成しない。finalReport には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は finalReport と Review Status artifact に残してください。",
 			"",
 		];
 	}

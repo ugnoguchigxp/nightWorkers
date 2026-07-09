@@ -33,7 +33,6 @@ type ReviewStatusViewerProps = {
 
 const defaultReviewRunOptions: ReviewRunOptions = {
 	codeReview: true,
-	testEvidenceReview: true,
 	securityReview: false,
 	applyFixes: true,
 	commitChanges: false,
@@ -51,12 +50,6 @@ const reviewRunOptionDescriptions: Array<{
 			"実装計画、対象 diff、変更ファイルを照合し、仕様漏れ・副作用・設計上の危険箇所を確認します。既存の個別レビュー項目を横断する基本チェックです。",
 	},
 	{
-		key: "testEvidenceReview",
-		label: "テスト証跡確認",
-		description:
-			"受け入れ条件に対応するテスト、実行結果、証跡を確認します。テストが不足している場合はレビュー結果に不足内容を記録します。",
-	},
-	{
 		key: "securityReview",
 		label: "セキュリティレビュー",
 		description:
@@ -66,7 +59,7 @@ const reviewRunOptionDescriptions: Array<{
 		key: "applyFixes",
 		label: "修正を適用",
 		description:
-			"ReviewRun が安全に自動修正できる内容だけをその場で反映します。テスト証跡の不足は、既存テスト名を完了条件の観点に寄せるか、足りない focused unit test を追加して通します。",
+			"ReviewRun がコードレビューまたはセキュリティレビューで安全に自動修正できる内容だけをその場で反映します。",
 	},
 	{
 		key: "commitChanges",

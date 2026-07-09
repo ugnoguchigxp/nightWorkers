@@ -165,7 +165,6 @@ export function startReviewRun(
 	input: {
 		options?: {
 			codeReview?: boolean;
-			testEvidenceReview?: boolean;
 			securityReview?: boolean;
 			applyFixes?: boolean;
 			commitChanges?: boolean;

@@ -1,10 +1,11 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { CodeBlockData } from "@/components/ui/CodeBlock";
 import {
 	buildTranscriptItems,
 	type TranscriptItem,
 } from "../activityTranscript";
+import { measureArtifactPerf } from "../artifactPerformance";
 import { isUserVisibleChatMessage } from "../messageVisibility";
 import type {
 	ActivityArtifact,
@@ -138,44 +139,103 @@ export function ThreadTimeline({
 	const [grantExternalPathError, setGrantExternalPathError] = useState<
 		string | null
 	>(null);
-	const transcriptItems = buildTranscriptItems({
-		events: activityEvents,
-		artifacts: activityArtifacts,
-	});
-	const visibleTranscriptItems = showDebugEvents
-		? transcriptItems
-		: buildNormalTranscriptItems(transcriptItems);
+	const transcriptItems = useMemo(
+		() =>
+			measureArtifactPerf(
+				"threadTimeline.buildTranscriptItems",
+				() =>
+					buildTranscriptItems({
+						events: activityEvents,
+						artifacts: activityArtifacts,
+					}),
+				{
+					activityEventCount: activityEvents.length,
+					activityArtifactCount: activityArtifacts.length,
+				},
+			),
+		[activityArtifacts, activityEvents],
+	);
+	const visibleTranscriptItems = useMemo(
+		() =>
+			showDebugEvents
+				? transcriptItems
+				: measureArtifactPerf(
+						"threadTimeline.buildNormalTranscriptItems",
+						() => buildNormalTranscriptItems(transcriptItems),
+						{ transcriptItemCount: transcriptItems.length },
+					),
+		[showDebugEvents, transcriptItems],
+	);
 	const hasActivityTranscript = transcriptItems.length > 0;
-	const chatMessages = taskMessages.filter(isUserVisibleChatMessage);
-	const timelineItems = [
-		...chatMessages.map((message) => ({
-			kind: "message" as const,
-			id: `msg-${message.id}`,
-			ts: toMs(message.createdAt),
-			message,
-		})),
-		...latestRunEvents.map((event) => ({
-			kind: "event" as const,
-			id: `evt-${event.id}`,
-			ts: toMs(event.timestamp || event.createdAt),
-			event,
-		})),
-	].sort((a, b) => a.ts - b.ts);
+	const chatMessages = useMemo(
+		() => taskMessages.filter(isUserVisibleChatMessage),
+		[taskMessages],
+	);
+	const timelineItems = useMemo(
+		() =>
+			measureArtifactPerf(
+				"threadTimeline.buildTimelineItems",
+				() =>
+					[
+						...chatMessages.map((message) => ({
+							kind: "message" as const,
+							id: `msg-${message.id}`,
+							ts: toMs(message.createdAt),
+							message,
+						})),
+						...latestRunEvents.map((event) => ({
+							kind: "event" as const,
+							id: `evt-${event.id}`,
+							ts: toMs(event.timestamp || event.createdAt),
+							event,
+						})),
+					].sort((a, b) => a.ts - b.ts),
+				{
+					chatMessageCount: chatMessages.length,
+					latestRunEventCount: latestRunEvents.length,
+				},
+			),
+		[chatMessages, latestRunEvents],
+	);
 
 	const latestEvent = latestRunEvents[latestRunEvents.length - 1];
-	const streamingPreview = isAgentWorking
-		? buildStreamingResponsePreview({
-				events: latestRunEvents,
-				activeStreamingResponse,
-			})
-		: null;
-	const persistedStreamingPreview = !isAgentWorking
-		? buildPersistedStreamingResponsePreview({
-				events: latestRunEvents,
-				taskMessages,
-				runId: latestRun?.id,
-			})
-		: null;
+	const streamingPreview = useMemo(
+		() =>
+			isAgentWorking
+				? measureArtifactPerf(
+						"threadTimeline.buildStreamingResponsePreview",
+						() =>
+							buildStreamingResponsePreview({
+								events: latestRunEvents,
+								activeStreamingResponse,
+							}),
+						{
+							latestRunEventCount: latestRunEvents.length,
+							streamingLength: activeStreamingResponse.length,
+						},
+					)
+				: null,
+		[activeStreamingResponse, isAgentWorking, latestRunEvents],
+	);
+	const persistedStreamingPreview = useMemo(
+		() =>
+			!isAgentWorking
+				? measureArtifactPerf(
+						"threadTimeline.buildPersistedStreamingResponsePreview",
+						() =>
+							buildPersistedStreamingResponsePreview({
+								events: latestRunEvents,
+								taskMessages,
+								runId: latestRun?.id,
+							}),
+						{
+							latestRunEventCount: latestRunEvents.length,
+							taskMessageCount: taskMessages.length,
+						},
+					)
+				: null,
+		[isAgentWorking, latestRun?.id, latestRunEvents, taskMessages],
+	);
 	const runtimeSnapshotTranscriptAnchorId =
 		showDebugEvents && hasActivityTranscript
 			? findRuntimePromptSnapshotTranscriptAnchorId(

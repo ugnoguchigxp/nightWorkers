@@ -13,10 +13,6 @@ export const TEST_MODE_WORKFLOW_STEPS = [
 		id: "evidence_check",
 		todoTitle: "証跡テストチェックを行う",
 	},
-	{
-		id: "llm_code_review",
-		todoTitle: "LLM コードレビューを行う",
-	},
 ] as const;
 
 export type TestModeWorkflowStepId =

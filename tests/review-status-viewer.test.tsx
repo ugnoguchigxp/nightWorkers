@@ -294,7 +294,6 @@ function reviewRunArtifact(
 			repositoryId: "44444444-4444-4444-8444-444444444444",
 			options: {
 				codeReview: true,
-				testEvidenceReview: true,
 				securityReview: false,
 				applyFixes: true,
 				commitChanges: false,
@@ -333,14 +332,14 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("Review Run");
 		expect(text).toContain("コードレビュー");
 		expect(text).toContain("実装計画、対象 diff、変更ファイルを照合");
-		expect(text).toContain("テスト証跡確認");
-		expect(text).toContain("受け入れ条件に対応するテスト、実行結果、証跡");
+		expect(text).not.toContain("テスト証跡確認");
+		expect(text).not.toContain("受け入れ条件に対応するテスト、実行結果、証跡");
 		expect(text).toContain("セキュリティレビュー");
 		expect(text).toContain("vulnWorkbench を使って Semgrep");
 		expect(text).toContain("DAST、reproduction、dynamic verification");
 		expect(text).toContain("修正を適用");
-		expect(text).toContain("既存テスト名を完了条件の観点に寄せる");
-		expect(text).toContain("focused unit test を追加して通します");
+		expect(text).not.toContain("既存テスト名を完了条件の観点に寄せる");
+		expect(text).not.toContain("focused unit test を追加して通します");
 		expect(text).toContain("コミット");
 		expect(text).toContain("対象抽出が人の確認待ち");
 		expect(text).not.toContain("理由");

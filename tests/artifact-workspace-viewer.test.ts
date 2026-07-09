@@ -604,7 +604,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).toContain("実装開始");
 		expect(markup).toContain("ユニットテスト実行");
 		expect(markup).toContain("証跡テストチェック");
-		expect(markup).toContain("LLM コードレビュー");
+		expect(markup).not.toContain("LLM コードレビュー");
 		expect(markup).not.toContain("実装完了");
 		expect(markup).not.toContain("件の条件");
 		expect(markup).toContain("AC-001");

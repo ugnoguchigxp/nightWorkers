@@ -683,7 +683,6 @@ export const jaDictionary = {
 	"testMode.action.runUnitTests": "ユニットテストを実行",
 	"testMode.workflow.step.implementation_start": "実装開始",
 	"testMode.workflow.step.evidence_check": "証跡テストチェック",
-	"testMode.workflow.step.llm_code_review": "LLM コードレビュー",
 	"testMode.workflow.step.unit_test": "ユニットテスト実行",
 	"testMode.workflow.status.pending": "待機中",
 	"testMode.workflow.status.running": "実行中",

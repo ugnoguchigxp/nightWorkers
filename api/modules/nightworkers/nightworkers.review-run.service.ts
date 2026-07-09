@@ -13,10 +13,6 @@ import {
 } from "./nightworkers.review-mode.model";
 import * as reviewRepo from "./nightworkers.review-mode.repository";
 import {
-	runReviewRunUnitTestCoverageCheck,
-	type UnitTestCoverageReview,
-} from "./nightworkers.review-run-test-evidence.service";
-import {
 	buildReviewTarget,
 	findLatestPlanArtifact,
 } from "./nightworkers.review-targets.service";
@@ -30,9 +26,13 @@ import { startTaskRun } from "./run-orchestration/start-task-run";
 export function normalizeReviewRunOptions(
 	value: Partial<ReviewRunOptions> | null | undefined,
 ): ReviewRunOptions {
+	const { testEvidenceReview: _legacyTestEvidenceReview, ...supportedOptions } =
+		(value ?? {}) as Partial<ReviewRunOptions> & {
+			testEvidenceReview?: boolean;
+		};
 	return {
 		...DEFAULT_REVIEW_RUN_OPTIONS,
-		...(value ?? {}),
+		...supportedOptions,
 	};
 }
 
@@ -70,17 +70,6 @@ export function buildReviewRunTodos(input: {
 			dependsOn: [previous - 1],
 		});
 	}
-	if (input.options.testEvidenceReview) {
-		previous += 1;
-		todos.push({
-			title: "受け入れ条件ごとのテスト証跡を確認する",
-			description:
-				"Plan 仕様書の受け入れ条件ごとに、テストファイル・テスト名・コマンド実行結果・本文証跡を分けて確認する。",
-			taskType: "focused_verification",
-			procedureId: "review.test_evidence",
-			dependsOn: [previous - 1],
-		});
-	}
 	if (input.options.securityReview) {
 		previous += 1;
 		todos.push({
@@ -96,7 +85,7 @@ export function buildReviewRunTodos(input: {
 	todos.push({
 		title: "findings を統合して artifact に保存する",
 		description:
-			"code review、test evidence、security review の結果を統合し、Review Mode findings と Review Run artifact の材料を整理する。",
+			"code review、security review の結果を統合し、Review Mode findings と Review Run artifact の材料を整理する。",
 		taskType: "documentation",
 		procedureId: "review.consolidate_findings",
 		dependsOn: [previous - 1],
@@ -222,27 +211,12 @@ export async function startReviewRunForSession(
 		return { reviewRun: null, target, planSpec, todos };
 	}
 
-	const unitTestCoverageReview = options.testEvidenceReview
-		? await runReviewRunUnitTestCoverageCheck({
-				reviewSessionId,
-				taskId: session.taskId,
-				repositoryId: session.repositoryId,
-				target,
-				planSpec,
-			})
-		: null;
-	const unitTestCoverageFindingCount =
-		unitTestCoverageReview?.criteria.filter(
-			(item) => item.status === "missing" || item.status === "unclear",
-		).length ?? 0;
-
 	const reviewPrompt = buildReviewRunPrompt({
 		session,
 		options,
 		target,
 		planSpec,
 		todos,
-		unitTestCoverageReview,
 	});
 	await repo.createTaskMessage({
 		taskId: session.taskId,
@@ -284,8 +258,7 @@ export async function startReviewRunForSession(
 			todos,
 			status: "running",
 			reviewRunId: reviewRun.id,
-			initialFindingCount:
-				initialFindings.length + unitTestCoverageFindingCount,
+			initialFindingCount: initialFindings.length,
 		}),
 		sourceEvidenceRefsJson: [],
 	});
@@ -358,18 +331,6 @@ async function createInitialReviewRunFindings(input: {
 		input.target.warnings
 			.filter((warning) => warning.severity !== "info")
 			.map((warning) => warningToFinding(input.session, warning));
-	if (!input.planSpec.body && input.options.testEvidenceReview) {
-		rows.push({
-			reviewSessionId: input.session.id,
-			runId: input.session.runId,
-			taskId: input.session.taskId,
-			severity: "warning",
-			title: "Plan specification was not found for review",
-			body: "Acceptance criteria could not be read, so test evidence review needs human confirmation.",
-			evidenceRefsJson: [],
-			sourceSection: "review_run",
-		});
-	}
 	if (input.options.securityReview) {
 		const settings = readVulnWorkbenchCliSettings();
 		const artifactDir = await fs.mkdtemp(
@@ -476,7 +437,6 @@ function buildReviewRunPrompt(input: {
 	target: ReviewTarget;
 	planSpec: ReviewPlanSpec;
 	todos: ImplementationTodoInput[];
-	unitTestCoverageReview?: UnitTestCoverageReview | null;
 }) {
 	const targetLines = input.target.targetFiles
 		.map((file) => `- ${file.path} (${file.status}, ${file.diffBytes} bytes)`)
@@ -487,22 +447,6 @@ function buildReviewRunPrompt(input: {
 				`- [${warning.severity}] ${warning.code}: ${warning.message}`,
 		)
 		.join("\n");
-	const unitTestCoverageLines = input.unitTestCoverageReview
-		? input.unitTestCoverageReview.criteria
-				.map((item) => {
-					const tests = item.matchedTests
-						.slice(0, 3)
-						.map(
-							(match) =>
-								`${match.filePath}:${match.lineNumber} ${match.testName}`,
-						)
-						.join("; ");
-					return `- [${item.status}] ${item.criterion}: ${item.reason}${
-						tests ? ` (${tests})` : ""
-					}`;
-				})
-				.join("\n")
-		: "(not run)";
 	return [
 		"Review Run を開始してください。",
 		"",
@@ -527,9 +471,6 @@ function buildReviewRunPrompt(input: {
 		"Target warnings:",
 		warningLines || "(none)",
 		"",
-		"Unit test coverage review:",
-		unitTestCoverageLines || "(none)",
-		"",
 		"Required Review Run TODOs:",
 		input.todos.map((todo, index) => `${index + 1}. ${todo.title}`).join("\n"),
 		"",
@@ -537,13 +478,12 @@ function buildReviewRunPrompt(input: {
 		"- Required Review Run TODOs は TodoList pane の進捗 source of truth です。各段階が終わったら todo_list operation=done で次へ進み、未完了なら block/fail で理由を残す。",
 		"- レビュー主対象は Review target files に限定する。必要な文脈読み取りは可。",
 		"- Findings は重大度、file/line、根拠、推奨アクションを分けて報告する。",
-		"- test evidence は command/file/test-name/body evidence を分ける。",
-		"- Unit test coverage review がある場合は、完了条件ごとの covered/missing/unclear と対応テストを最終報告に含める。",
+		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",
 		input.options.securityReview
 			? "- security review は vulnWorkbench CLI output を主根拠にする。"
 			: "- security review option は off。",
 		input.options.applyFixes
-			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。Unit test coverage review の missing/unclear は、既存テストが同じ観点を検証しているなら test / it / describe 名を完了条件の観点に寄せ、観点が不足しているなら focused unit test を追加して対象テストを通す。"
+			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。"
 			: "- applyFixes=false のため、ファイルを編集しない。",
 		input.options.commitChanges
 			? "- commitChanges=true のため、verify 成功後に対象差分だけ commit する。"

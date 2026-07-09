@@ -56,7 +56,6 @@ export type ReviewFindingDisposition =
 
 export type ReviewRunOptions = {
 	codeReview: boolean;
-	testEvidenceReview: boolean;
 	securityReview: boolean;
 	applyFixes: boolean;
 	commitChanges: boolean;
@@ -64,7 +63,6 @@ export type ReviewRunOptions = {
 
 export const DEFAULT_REVIEW_RUN_OPTIONS: ReviewRunOptions = {
 	codeReview: true,
-	testEvidenceReview: true,
 	securityReview: false,
 	applyFixes: true,
 	commitChanges: false,
@@ -147,7 +145,6 @@ export type SectionPlan = {
 };
 
 export const SECTION_ORDER: ReviewSectionKind[] = [
-	"test_coverage",
 	"security_review",
 	"findings",
 	"prompt_suggestions",
@@ -312,13 +309,6 @@ export function planSections(
 		reason: string,
 	): SectionPlan => ({ kind, requirement, reason });
 	return [
-		section(
-			"test_coverage",
-			recommendation.level === "none" ? "omitted" : "optional",
-			recommendation.level === "none"
-				? "No test evidence review is needed."
-				: "Review Run replaces the old required test evidence section.",
-		),
 		section(
 			"security_review",
 			recommendation.level === "none" ? "omitted" : "optional",

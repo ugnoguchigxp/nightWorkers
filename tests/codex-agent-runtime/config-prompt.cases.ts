@@ -593,6 +593,9 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(reviewParts.runtimeContract).toContain(
 			"実装中の会話履歴を前提にしない",
 		);
+		expect(reviewParts.runtimeContract).toContain(
+			"repoRoot 外のローカルファイルパス",
+		);
 		expect(reviewParts.runtimeContract).not.toContain(
 			"Minimal implementation behavior:",
 		);

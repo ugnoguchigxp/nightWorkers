@@ -360,7 +360,6 @@ export const reviewArtifactKindSchema = z
 export const reviewRunOptionsSchema = z
 	.object({
 		codeReview: z.boolean().default(true),
-		testEvidenceReview: z.boolean().default(true),
 		securityReview: z.boolean().default(false),
 		applyFixes: z.boolean().default(true),
 		commitChanges: z.boolean().default(false),

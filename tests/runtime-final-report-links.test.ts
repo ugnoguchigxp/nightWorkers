@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	appendTestModeNextStepLink,
-	appendTestModeReviewFixRequired,
-	findUnresolvedTestModeReviewFeedback,
+	sanitizeReviewFinalReportLinks,
 } from "../api/modules/nightworkers/run-orchestration/runtime-execution";
 
 describe("runtime final report links", () => {
@@ -116,105 +115,23 @@ describe("runtime final report links", () => {
 		expect(report).not.toContain("Plan Mode");
 	});
 
-	it("detects unresolved Test Mode review findings from the latest review evaluation", () => {
-		const feedback = findUnresolvedTestModeReviewFeedback([
-			{
-				payloadJson: {
-					runEvent: {
-						type: "review.evaluation_finished",
-						data: {
-							status: "completed",
-							finalReviewerVerdict: "changes_requested",
-							blockingFindingCount: 1,
-							reviewResult: {
-								verdict: "changes_requested",
-								findings: [
-									{
-										severity: "blocking",
-										title: "Final report is present",
-										body: "Rubric criterion failed: Final report is present",
-									},
-								],
-							},
-						},
-					},
-				},
-			},
-		]);
-
-		expect(feedback).toMatchObject({
-			verdict: "changes_requested",
-			blockingFindingCount: 1,
-			findings: [
-				{
-					severity: "blocking",
-					title: "Final report is present",
-				},
-			],
-		});
-	});
-
-	it("clears unresolved Test Mode review findings after a later approval", () => {
-		const feedback = findUnresolvedTestModeReviewFeedback([
-			{
-				payloadJson: {
-					runEvent: {
-						type: "review.evaluation_finished",
-						data: {
-							status: "completed",
-							finalReviewerVerdict: "changes_requested",
-							blockingFindingCount: 1,
-						},
-					},
-				},
-			},
-			{
-				payloadJson: {
-					runEvent: {
-						type: "review.evaluation_finished",
-						data: {
-							status: "completed",
-							finalReviewerVerdict: "approved",
-							blockingFindingCount: 0,
-						},
-					},
-				},
-			},
-		]);
-
-		expect(feedback).toBeNull();
-	});
-
-	it("does not expose internal SystemContext in user-facing Test Mode review closeout reports", () => {
-		const report = appendTestModeReviewFixRequired({
-			finalReport: [
-				"レビュー指摘が残りました。",
-				"SystemContext: コードレビューをしてください。改善するべき点が無くなるまで改善してください",
-				"Action: 指摘を即座に修正し、必要な run_check / completion_check の後、reviewer_evaluation を再実行してください。approved になるまで最終報告しないでください。",
+	it("removes review final report links to local files outside the project tree", () => {
+		const report = sanitizeReviewFinalReportLinks(
+			[
+				"確認した主な点:",
+				"- 修正対象: [`api/routes/todo.route.ts`]( /Users/y.noguchi/Code/todolist/api/routes/todo.route.ts#L26 )",
+				"- Findings 保存先: [`/private/tmp/todolist-review-findings.md`]( /private/tmp/todolist-review-findings.md )",
 			].join("\n"),
-			feedback: {
-				verdict: "changes_requested",
-				status: "completed",
-				blockingFindingCount: 1,
-				findings: [
-					{
-						severity: "blocking",
-						title: "Verification result is present",
-						body: "Rubric criterion failed: Verification result is present",
-					},
-				],
-			},
-		});
+			"/Users/y.noguchi/Code/todolist",
+		);
 
 		expect(report).toContain(
-			"Test Mode reviewer_evaluation returned unresolved review findings.",
+			"[`api/routes/todo.route.ts`]( /Users/y.noguchi/Code/todolist/api/routes/todo.route.ts#L26 )",
 		);
-		expect(report).toContain("blocking: Verification result is present");
-		expect(report).toContain("レビュー指摘が残りました。");
-		expect(report).not.toContain("SystemContext:");
-		expect(report).not.toContain("Action:");
-		expect(report).not.toContain(
-			"コードレビューをしてください。改善するべき点が無くなるまで改善してください",
+		expect(report).toContain(
+			"- Findings 保存先: `外部ファイルへのリンクは省略しました`",
 		);
+		expect(report).not.toContain("](/private/tmp");
+		expect(report).not.toContain("todolist-review-findings.md");
 	});
 });

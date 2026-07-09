@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { logger } from "../../../lib/logger";
 import { createLedgerSink } from "../../../services/agent-runtime/ledger-sink";
 import {
@@ -58,10 +60,6 @@ type RuntimeOptions = Parameters<
 const TEST_MODE_NEXT_STEP_LABEL =
 	"テストモードに入り、完了条件テストの構築をする";
 const REVIEW_MODE_NEXT_STEP_LABEL = "レビューモードに移行する";
-const TEST_MODE_REVIEW_FIX_SYSTEM_CONTEXT =
-	"コードレビューをしてください。改善するべき点が無くなるまで改善してください";
-const TEST_MODE_REVIEW_UNRESOLVED_MARKER =
-	"Test Mode reviewer_evaluation returned unresolved review findings.";
 
 type LaunchRuntimeExecutionInput = {
 	taskId: string;
@@ -94,8 +92,12 @@ export function appendTestModeNextStepLink(input: {
 	taskId: string;
 	executionMode?: RuntimePromptSnapshot["executionMode"] | null;
 	status: AgentRuntimeResult["terminalState"];
+	repoRoot?: string | null;
 }) {
 	let report = input.finalReport.trim();
+	if (input.executionMode === "review") {
+		return sanitizeReviewFinalReportLinks(report, input.repoRoot);
+	}
 	if (input.executionMode === "test") {
 		if (input.status !== "completed" && input.status !== "needs_review") {
 			return report;
@@ -119,6 +121,75 @@ export function appendTestModeNextStepLink(input: {
 	return [report, "", `[${TEST_MODE_NEXT_STEP_LABEL}](${href})`]
 		.filter(Boolean)
 		.join("\n");
+}
+
+export function sanitizeReviewFinalReportLinks(
+	report: string,
+	repoRoot?: string | null,
+) {
+	const root = repoRoot ? path.resolve(repoRoot) : null;
+	return report.replace(
+		/\[([^\]\n]+)\]\(\s*([^)]+?)\s*\)/g,
+		(match, label: string, href: string) => {
+			const localPath = localFilesystemPathFromHref(href);
+			if (!localPath) return match;
+			if (root && isPathInsideRoot(localPath, root)) return match;
+			return outsideProjectLinkReplacement(label);
+		},
+	);
+}
+
+function outsideProjectLinkReplacement(label: string) {
+	const text = label.trim();
+	const comparableText = text.replace(/^`+|`+$/g, "");
+	if (!text) return "`外部ファイルへのリンクは省略しました`";
+	if (looksLikeLocalPath(comparableText)) {
+		return "`外部ファイルへのリンクは省略しました`";
+	}
+	return text;
+}
+
+function localFilesystemPathFromHref(href: string) {
+	const raw = href.trim().replace(/^<|>$/g, "");
+	if (!raw) return null;
+	if (raw.startsWith("file://")) {
+		try {
+			return path.resolve(fileURLToPath(raw));
+		} catch {
+			return null;
+		}
+	}
+	if (/^https?:\/\//i.test(raw)) {
+		try {
+			const url = new URL(raw);
+			if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname)) {
+				return null;
+			}
+			return path.isAbsolute(url.pathname)
+				? path.resolve(decodeURIComponent(url.pathname))
+				: null;
+		} catch {
+			return null;
+		}
+	}
+	const withoutFragment = raw.split("#")[0]?.split("?")[0] ?? "";
+	return path.isAbsolute(withoutFragment)
+		? path.resolve(decodeURIComponent(withoutFragment))
+		: null;
+}
+
+function isPathInsideRoot(candidate: string, root: string) {
+	const resolved = path.resolve(candidate);
+	return resolved === root || resolved.startsWith(`${root}${path.sep}`);
+}
+
+function looksLikeLocalPath(value: string) {
+	const trimmed = value.trim();
+	if (trimmed.startsWith("file://")) return true;
+	if (/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i.test(trimmed)) {
+		return true;
+	}
+	return path.isAbsolute(trimmed);
 }
 
 function stripTestModeFollowUpSuggestions(report: string) {
@@ -152,127 +223,6 @@ function removeReviewModeNextStepLinks(report: string) {
 		.join("\n")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();
-}
-
-export type TestModeReviewFeedback = {
-	verdict: string;
-	status: string | null;
-	blockingFindingCount: number;
-	findings: Array<{
-		severity: string | null;
-		title: string;
-		body: string | null;
-	}>;
-};
-
-export function findUnresolvedTestModeReviewFeedback(
-	events: Array<{ payloadJson?: unknown }>,
-): TestModeReviewFeedback | null {
-	let latestReview: TestModeReviewFeedback | null = null;
-	for (const event of events) {
-		const payload = asRecord(event.payloadJson);
-		const runEvent = asRecord(payload.runEvent);
-		if (readString(runEvent.type) !== "review.evaluation_finished") continue;
-		const data = asRecord(runEvent.data);
-		const reviewResult = asRecord(data.reviewResult);
-		const verdict =
-			readString(data.finalReviewerVerdict) ||
-			readString(reviewResult.verdict) ||
-			"";
-		const findings = readFindings(reviewResult.findings);
-		const blockingFindingCount =
-			readNumber(data.blockingFindingCount) ??
-			findings.filter((finding) => finding.severity === "blocking").length;
-		latestReview = {
-			verdict,
-			status: readString(data.status),
-			blockingFindingCount,
-			findings,
-		};
-	}
-	if (!latestReview) return null;
-	if (
-		latestReview.verdict === "changes_requested" ||
-		latestReview.blockingFindingCount > 0
-	) {
-		return latestReview;
-	}
-	return null;
-}
-
-export function appendTestModeReviewFixRequired(input: {
-	finalReport: string;
-	feedback: TestModeReviewFeedback;
-}) {
-	const report = sanitizeTestModeReviewFinalReport(input.finalReport);
-	if (report.includes(TEST_MODE_REVIEW_UNRESOLVED_MARKER)) return report;
-	const findingLines = input.feedback.findings
-		.slice(0, 5)
-		.map((finding) =>
-			[
-				`- ${finding.severity || "finding"}: ${finding.title}`,
-				finding.body ? `  ${finding.body}` : null,
-			]
-				.filter(Boolean)
-				.join("\n"),
-		);
-	return [
-		report,
-		"",
-		`${TEST_MODE_REVIEW_UNRESOLVED_MARKER} This run is not complete.`,
-		"未解決のレビュー指摘が残っています。修正後に必要な run_check / completion_check を再実行し、reviewer_evaluation が approved になるまで完了扱いにしません。",
-		...findingLines,
-	]
-		.filter(Boolean)
-		.join("\n");
-}
-
-function sanitizeTestModeReviewFinalReport(finalReport: string) {
-	return finalReport
-		.split(/\r?\n/)
-		.filter((line) => {
-			const trimmed = line.trim();
-			if (trimmed.startsWith("SystemContext:")) return false;
-			if (trimmed.includes(TEST_MODE_REVIEW_FIX_SYSTEM_CONTEXT)) return false;
-			if (
-				trimmed.startsWith("Action:") &&
-				(trimmed.includes("reviewer_evaluation") ||
-					trimmed.includes("指摘を即座に修正") ||
-					trimmed.includes("approved になるまで"))
-			) {
-				return false;
-			}
-			return true;
-		})
-		.join("\n")
-		.trim();
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
-}
-
-function readString(value: unknown) {
-	return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function readNumber(value: unknown) {
-	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function readFindings(value: unknown) {
-	return Array.isArray(value)
-		? value.map((item) => {
-				const finding = asRecord(item);
-				return {
-					severity: readString(finding.severity),
-					title: readString(finding.title) || "Untitled review finding",
-					body: readString(finding.body),
-				};
-			})
-		: [];
 }
 
 export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
@@ -577,44 +527,31 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				outcome.status === "completed" &&
 				openTodos.length > 0 &&
 				!isPlanningOnlyRun(finalTodos);
-			const testModeReviewFeedback =
-				runtimeContextSnapshot.executionMode === "test" &&
-				outcome.status === "completed"
-					? findUnresolvedTestModeReviewFeedback(
-							await repo.listTaskEventsForRun(run.id),
-						)
-					: null;
-			const testModeReviewCloseoutBlocked = Boolean(testModeReviewFeedback);
 			const openTodoWarning = todoFinalizationBlocked
 				? buildOpenTodoRuntimeContractWarning(openTodos)
 				: null;
 			const finalContractWarnings = openTodoWarning
 				? [...runtimeContractWarnings, openTodoWarning]
 				: runtimeContractWarnings;
-			const guardedStatus =
-				todoFinalizationBlocked || testModeReviewCloseoutBlocked
-					? "needs_human"
-					: outcome.status;
-			const baseFinalReport = testModeReviewFeedback
-				? appendTestModeReviewFixRequired({
-						finalReport: runtimeResult.finalReport || outcome.summary,
-						feedback: testModeReviewFeedback,
-					})
-				: todoFinalizationBlocked
-					? [
-							runtimeResult.finalReport || outcome.summary,
-							"",
-							`Todo closeout incomplete: ${openTodos.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`).join(", ")}`,
-							"Codex contract warning: codex_open_todos_before_completion.",
-						]
-							.filter(Boolean)
-							.join("\n")
-					: runtimeResult.finalReport || outcome.summary;
+			const guardedStatus = todoFinalizationBlocked
+				? "needs_human"
+				: outcome.status;
+			const baseFinalReport = todoFinalizationBlocked
+				? [
+						runtimeResult.finalReport || outcome.summary,
+						"",
+						`Todo closeout incomplete: ${openTodos.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`).join(", ")}`,
+						"Codex contract warning: codex_open_todos_before_completion.",
+					]
+						.filter(Boolean)
+						.join("\n")
+				: runtimeResult.finalReport || outcome.summary;
 			const finalReport = appendTestModeNextStepLink({
 				finalReport: baseFinalReport,
 				taskId,
 				executionMode: runtimeContextSnapshot.executionMode,
 				status: guardedStatus,
+				repoRoot: repoInfo.localPath,
 			});
 			const statusBeforeOutcome = enteredFinalizing
 				? "finalizing"
@@ -657,26 +594,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 							title: todo.title,
 							status: todo.status,
 						})),
-					},
-				});
-			}
-			if (testModeReviewFeedback) {
-				await repo.createRunEvent({
-					version: 1,
-					runId: run.id,
-					taskId,
-					timestamp: new Date().toISOString(),
-					type: "run.outcome_decided",
-					severity: "warning",
-					actor: "system",
-					message:
-						"Test Mode reviewer feedback remains unresolved; run cannot be marked completed.",
-					data: {
-						warningCode: "test_mode_review_findings_unresolved",
-						systemContext: TEST_MODE_REVIEW_FIX_SYSTEM_CONTEXT,
-						terminalState: outcome.status,
-						nextStatus: guardedStatus,
-						reviewerFeedback: testModeReviewFeedback,
 					},
 				});
 			}

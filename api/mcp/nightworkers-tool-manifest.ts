@@ -446,7 +446,7 @@ export const nightWorkersCodexToolManifest = {
 	reviewer_evaluation: {
 		title: "Reviewer Evaluation",
 		description:
-			"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded. changes_requested is actionable review feedback, not a tool error: fix the findings, rerun required checks, and rerun reviewer_evaluation until approved.",
+			"Run the final NightWorkers reviewer evaluation for a Review Mode run. changes_requested is actionable review feedback, not a tool error: fix the findings, rerun required checks, and rerun reviewer_evaluation until approved.",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
@@ -627,6 +627,7 @@ export function isNightWorkersCodexToolAllowedForMode(
 	ontologyMcpEnabled = false,
 ) {
 	if (!ontologyMcpEnabled && ONTOLOGY_CODEX_TOOLS.has(tool)) return false;
+	if (executionMode === "test" && tool === "reviewer_evaluation") return false;
 	if (executionMode !== "planning") return true;
 	return PLAN_MODE_READ_ONLY_CODEX_TOOLS.has(tool);
 }

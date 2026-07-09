@@ -164,13 +164,10 @@ function buildTestModeContract(
 		"Test Mode behavior:",
 		"- 最初に nightworkers.read_current_specification view=verification を読み、verification JSON / Verification Checklist の完了条件を検証観点の正本にする。",
 		"- Test Mode agent は Implementation agent とは別 session で動く。Implementation run の thread/history を引き継がず、この run 内で必要な仕様・ファイル・テストを読み直す。",
-		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> ユニットテスト実行 -> 証跡テストチェック -> LLM コードレビューを進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
+		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> ユニットテスト実行 -> 証跡テストチェックを進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
 		"- テストは完了条件観点を中心に追加・修正し、production code の変更は明確な defect を証明できる場合の最小修正に限る。",
 		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
 		"- nightworkers.completion_check は、managed evidence が Verification Checklist の項目と一致しているかを確認する証跡テストチェックとして実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
-		"- LLM コードレビュー SystemContext: コードレビューをしてください。改善するべき点が無くなるまで改善してください",
-		"- completion_check が合格した後、最後のチェックとして nightworkers.reviewer_evaluation mode=llm_assisted を実行し、review.llm_finished / review.evaluation_finished evidence を残す。reviewer が changes_requested または blocking finding を返した場合、それは tool error ではなく改善作業の入力である。指摘を即座に修正し、必要な run_check / completion_check の後、reviewer_evaluation を再実行する。改善点が無くなり approved になるまで最終報告しない。",
-		"- reviewer_evaluation が changes_requested / blocking finding を返した直後は、ユーザーへの完了報告や次ステップ提案を書かず、返された findings を修正する。修正不能な指摘だけ、具体的な理由と証跡を添えて block する。",
 		"- Test Mode では TodoList を使わない。Verification Checklist の状態は backend の deterministic evidence 更新に任せ、画面進捗はこの run の managed tool 実行イベントから表現される。",
 	].join("\n");
 }
@@ -214,6 +211,7 @@ function buildReviewContract(
 			? "- commitChanges=true の Review Run では、verify 成功後に対象差分だけ commit してよい。"
 			: "- commitChanges=false の Review Run では、commit しない。",
 		"- Implementation Queue 投入、import_project、Plan Mode artifact 更新を開始しない。",
+		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",
 		"- 指摘は重大度順に、具体的な file/line と再現・検証根拠を添える。問題がなければその旨と残リスクだけを短く返す。",
 	].join("\n");
 }

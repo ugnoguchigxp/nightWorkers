@@ -21,7 +21,6 @@ describe("Review Run workflow", () => {
 			"review.read_plan_spec",
 			"review.inspect_targets",
 			"review.code_findings",
-			"review.test_evidence",
 			"review.consolidate_findings",
 			"review.apply_fixes",
 			"review.verify_after_fixes",
@@ -32,7 +31,6 @@ describe("Review Run workflow", () => {
 		const base = buildReviewRunTodos({
 			options: normalizeReviewRunOptions({
 				codeReview: true,
-				testEvidenceReview: false,
 				securityReview: false,
 				applyFixes: false,
 				commitChanges: false,
@@ -60,7 +58,6 @@ describe("Review Run workflow", () => {
 			"review.read_plan_spec",
 			"review.inspect_targets",
 			"review.code_findings",
-			"review.test_evidence",
 			"review.security_vulnworkbench",
 			"review.consolidate_findings",
 			"review.apply_fixes",

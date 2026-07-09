@@ -688,7 +688,6 @@ export const enDictionary = {
 	"testMode.action.runUnitTests": "Run unit tests",
 	"testMode.workflow.step.implementation_start": "Implementation start",
 	"testMode.workflow.step.evidence_check": "Evidence test check",
-	"testMode.workflow.step.llm_code_review": "LLM code review",
 	"testMode.workflow.step.unit_test": "Unit test run",
 	"testMode.workflow.status.pending": "Waiting",
 	"testMode.workflow.status.running": "Running",

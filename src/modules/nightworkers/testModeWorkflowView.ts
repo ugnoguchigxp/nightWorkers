@@ -55,6 +55,17 @@ export function buildTestModeWorkflowSteps(input: {
 	return steps;
 }
 
+export function selectTestModeWorkflowSteps(input: {
+	liveSteps: TestModeWorkflowStepView[];
+	frozenSteps?: TestModeWorkflowStepView[] | null;
+	latestRun?: TaskRun | null;
+}): TestModeWorkflowStepView[] {
+	if (input.frozenSteps?.length && !isTestModeWorkflowRun(input.latestRun)) {
+		return input.frozenSteps;
+	}
+	return input.liveSteps;
+}
+
 export function readTestModeWorkflowActionStatus(status?: string | null) {
 	const prefix = `${TEST_MODE_WORKFLOW_ACTION}:`;
 	return status?.startsWith(prefix) ? status.slice(prefix.length) : null;
@@ -75,20 +86,12 @@ function applyToolEventProgress(
 	run?: TaskRun | null,
 ) {
 	if (!run) return;
+	if (!isTestModeWorkflowRun(run)) return;
 	const firstStep = steps.find((step) => step.id === "implementation_start");
 	const unitStep = steps.find((step) => step.id === "unit_test");
 	const evidenceStep = steps.find((step) => step.id === "evidence_check");
-	const reviewStep = steps.find((step) => step.id === "llm_code_review");
 	for (const event of run.events ?? []) {
 		const toolEvent = readManagedToolEvent(event);
-		const reviewEvent = readReviewerEvent(event);
-		if (reviewEvent) {
-			markPassedIfNotTerminal(firstStep);
-			markPassedIfNotTerminal(unitStep);
-			markPassedIfNotTerminal(evidenceStep);
-			if (reviewStep) reviewStep.status = reviewEventStatus(reviewEvent);
-			continue;
-		}
 		if (!toolEvent) continue;
 		if (toolEvent.toolName === "read_current_specification") {
 			const status = toolEventStatus(toolEvent);
@@ -105,13 +108,6 @@ function applyToolEventProgress(
 			markPassedIfNotTerminal(firstStep);
 			markPassedIfNotTerminal(unitStep);
 			if (evidenceStep) evidenceStep.status = toolEventStatus(toolEvent);
-			continue;
-		}
-		if (isLlmReviewTool(toolEvent.toolName)) {
-			markPassedIfNotTerminal(firstStep);
-			markPassedIfNotTerminal(unitStep);
-			markPassedIfNotTerminal(evidenceStep);
-			if (reviewStep) reviewStep.status = reviewerToolEventStatus(toolEvent);
 		}
 	}
 	if (
@@ -138,18 +134,6 @@ type ManagedToolEvent = {
 	checkKind?: string | null;
 	ok?: boolean;
 	status?: string | null;
-	finalReviewerVerdict?: string | null;
-	reviewVerdict?: string | null;
-	blockingFindingCount?: number;
-};
-
-type ReviewerEvent = {
-	type: string;
-	ok?: boolean;
-	status?: string | null;
-	finalReviewerVerdict?: string | null;
-	reviewVerdict?: string | null;
-	blockingFindingCount?: number;
 };
 
 function readManagedToolEvent(
@@ -216,24 +200,6 @@ function readManagedToolEvent(
 			runEventData.status,
 			payload.status,
 		),
-		finalReviewerVerdict: readFirstString(
-			readRecordString(resultPayload, "finalReviewerVerdict"),
-			readRecordString(rawResult, "finalReviewerVerdict"),
-			readRecordString(runEventData, "finalReviewerVerdict"),
-			readRecordString(payload, "finalReviewerVerdict"),
-		),
-		reviewVerdict: readFirstString(
-			readRecordString(toDeepRecord(resultPayload.reviewResult), "verdict"),
-			readRecordString(toDeepRecord(rawResult.reviewResult), "verdict"),
-			readRecordString(toDeepRecord(runEventData.reviewResult), "verdict"),
-			readRecordString(toDeepRecord(payload.reviewResult), "verdict"),
-		),
-		blockingFindingCount: readFirstNumber(
-			resultPayload.blockingFindingCount,
-			rawResult.blockingFindingCount,
-			runEventData.blockingFindingCount,
-			payload.blockingFindingCount,
-		),
 	};
 }
 
@@ -269,47 +235,6 @@ function readCommandExecutionToolEvent(
 		checkKind,
 		ok: typeof exitCode === "number" ? exitCode === 0 : undefined,
 		status: readRecordString(runEventData, "status"),
-	};
-}
-
-function readReviewerEvent(
-	event: NonNullable<TaskRun["events"]>[number],
-): ReviewerEvent | null {
-	const payload = toDeepRecord(event.payloadJson);
-	const runEvent = toDeepRecord(payload.runEvent);
-	const runEventData = toDeepRecord(runEvent.data);
-	const type = readFirstString(
-		runEvent.type,
-		payload.type,
-		event.eventType,
-		event.type,
-	);
-	if (!type?.startsWith("review.")) return null;
-	if (
-		type !== "review.llm_started" &&
-		type !== "review.llm_finished" &&
-		type !== "review.evaluation_finished"
-	) {
-		return null;
-	}
-	if (type === "review.evaluation_finished") {
-		const reviewer = toDeepRecord(runEventData.reviewer);
-		const reviewerKind = readRecordString(reviewer, "kind");
-		if (!runEventData.llmVerdict && reviewerKind !== "combined") return null;
-	}
-	return {
-		type,
-		ok: readFirstBoolean(runEventData.ok, payload.ok),
-		status: readFirstString(runEventData.status, payload.status),
-		finalReviewerVerdict: readFirstString(
-			runEventData.finalReviewerVerdict,
-			payload.finalReviewerVerdict,
-		),
-		reviewVerdict: readFirstString(
-			toDeepRecord(runEventData.reviewResult).verdict,
-			toDeepRecord(payload.reviewResult).verdict,
-		),
-		blockingFindingCount: readFirstNumber(runEventData.blockingFindingCount),
 	};
 }
 
@@ -366,53 +291,11 @@ function toolEventStatus(event: ManagedToolEvent): TestModeWorkflowStepStatus {
 	return "running";
 }
 
-function reviewEventStatus(event: ReviewerEvent): TestModeWorkflowStepStatus {
-	if (
-		event.finalReviewerVerdict === "changes_requested" ||
-		event.reviewVerdict === "changes_requested" ||
-		(typeof event.blockingFindingCount === "number" &&
-			event.blockingFindingCount > 0)
-	) {
-		return "needs_human";
-	}
-	if (event.status === "degraded") return "needs_human";
-	if (event.ok === true) return "passed";
-	if (event.ok === false) return "failed";
-	if (event.status === "failed") return "failed";
-	if (event.status === "completed" || event.type === "review.llm_finished") {
-		return "passed";
-	}
-	return "running";
-}
-
-function reviewerToolEventStatus(
-	event: ManagedToolEvent,
-): TestModeWorkflowStepStatus {
-	if (
-		event.finalReviewerVerdict === "changes_requested" ||
-		event.reviewVerdict === "changes_requested" ||
-		(typeof event.blockingFindingCount === "number" &&
-			event.blockingFindingCount > 0)
-	) {
-		return "needs_human";
-	}
-	if (event.status === "degraded") return "needs_human";
-	return toolEventStatus(event);
-}
-
 function isTestRunCheckKind(event: ManagedToolEvent) {
 	return (
 		event.checkKind === "test" ||
 		event.checkKind === "coverage" ||
 		event.checkKind === "verify"
-	);
-}
-
-function isLlmReviewTool(toolName: string) {
-	return (
-		toolName === "llm_code_review" ||
-		toolName === "reviewer_evaluation" ||
-		toolName === "reviewer-evaluation"
 	);
 }
 
@@ -437,14 +320,19 @@ function normalizeToolName(toolName: string) {
 		: toolName;
 }
 
-function isActiveTestModeWorkflowRun(run?: TaskRun | null) {
-	if (!run || !ACTIVE_RUN_STATUSES.has(run.status)) return false;
+export function isTestModeWorkflowRun(run?: TaskRun | null) {
+	if (!run) return false;
 	const snapshot = toDeepRecord(run.contextSnapshot);
 	const testMode = toDeepRecord(snapshot.testMode);
 	const action = readRecordString(testMode, "action");
 	return readRecordString(snapshot, "executionMode") === "test"
 		? action === TEST_MODE_WORKFLOW_ACTION || action === undefined
 		: false;
+}
+
+function isActiveTestModeWorkflowRun(run?: TaskRun | null) {
+	if (!run || !ACTIVE_RUN_STATUSES.has(run.status)) return false;
+	return isTestModeWorkflowRun(run);
 }
 
 function readRecordString(record: Record<string, unknown>, key: string) {

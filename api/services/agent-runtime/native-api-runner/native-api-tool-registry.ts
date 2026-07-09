@@ -258,7 +258,7 @@ const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "reviewer_evaluation",
 			description:
-				"Run the final NightWorkers reviewer evaluation for this run. In Test Mode, use mode=llm_assisted after completion_check passes so review.llm_finished and review.evaluation_finished evidence are recorded. If the reviewer returns changes_requested or blocking findings, fix them, rerun the needed checks, and run reviewer_evaluation again until no unresolved findings remain.",
+				"Run the final NightWorkers reviewer evaluation for a Review Mode run. If the reviewer returns changes_requested or blocking findings, fix them, rerun the needed checks, and run reviewer_evaluation again until no unresolved findings remain.",
 			inputSchema: objectSchema({
 				runId: { type: "string" },
 				rubricId: { type: "string" },
@@ -505,7 +505,6 @@ const nativeApiToolNamesByMode: Record<
 		"run_check",
 		"run_verification",
 		"completion_check",
-		"reviewer_evaluation",
 		"git_status",
 		"git_diff",
 		"context_initial_instructions",

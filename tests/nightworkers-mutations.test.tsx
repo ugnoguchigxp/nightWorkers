@@ -285,7 +285,7 @@ describe("useNightWorkersMutations", () => {
 		await mutations.startReviewSessionMutation.mutateAsync("run-started");
 		await mutations.startReviewRunMutation.mutateAsync({
 			reviewSessionId: "review-1",
-			options: { codeReview: true, testEvidenceReview: true },
+			options: { codeReview: true },
 		});
 		await mutations.commitRunGitCloseoutMutation.mutateAsync("run-started");
 

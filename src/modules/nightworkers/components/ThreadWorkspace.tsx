@@ -13,11 +13,13 @@ import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
+import { logArtifactPerf } from "../artifactPerformance";
 import type {
 	ActivityArtifact,
 	ActivityEvent,
@@ -154,8 +156,18 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		clientHeight: number;
 		scrollHeight: number;
 	} | null>(null);
-	const layoutMode = props.splitPanel ? "split" : "single";
+	const hasSplitPanel = Boolean(props.splitPanel);
+	const layoutMode = hasSplitPanel ? "split" : "single";
 	const previousLayoutModeRef = useRef(layoutMode);
+	const threadPanelLayout = useMemo<Layout>(() => {
+		const layout: Layout = {
+			"nightworkers-thread-main": hasSplitPanel ? 50 : 100,
+		};
+		if (hasSplitPanel) {
+			layout["nightworkers-artifact"] = 50;
+		}
+		return layout;
+	}, [hasSplitPanel]);
 	const activeSessionId = props.activeSession?.id ?? null;
 	const forceLatestFocus = props.isAgentThinking;
 	const latestRunEvent =
@@ -349,6 +361,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		const node = scrollContainerRef.current;
 		if (!node) return;
 		if (previousLayoutModeRef.current !== layoutMode) {
+			logArtifactPerf("threadWorkspace.layoutModeChanged", {
+				from: previousLayoutModeRef.current,
+				to: layoutMode,
+				scrollHeight: node.scrollHeight,
+				clientHeight: node.clientHeight,
+			});
 			applyBestEffortRestore(node);
 			previousLayoutModeRef.current = layoutMode;
 		}
@@ -362,6 +380,45 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 			onRequeueQueueEntry={props.onRequeueQueueEntry}
 		/>
 	) : null;
+	const threadBody = (
+		<ThreadBody
+			activeSession={props.activeSession}
+			activeStreamingResponse={props.activeStreamingResponse}
+			activityArtifacts={props.activityArtifacts}
+			activeArtifactContext={props.activeArtifactContext}
+			activityEvents={props.activityEvents}
+			backgroundProcesses={props.backgroundProcesses}
+			isAgentThinking={props.isAgentThinking}
+			isAgentWorking={props.isAgentWorking}
+			latestRun={props.latestRun}
+			latestRunEvents={props.latestRunEvents}
+			injectedPrompt={props.injectedPrompt}
+			model={props.model}
+			modelOptions={props.modelOptions}
+			onGrantExternalPath={props.onGrantExternalPath}
+			onModelChange={props.onModelChange}
+			onOpenArtifact={openArtifactWithCooldown}
+			onOpenProjectFile={props.onOpenProjectFile}
+			onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
+			onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
+			onClearArtifactContext={props.onClearArtifactContext}
+			canStopActiveRun={props.canStopActiveRun}
+			onSubmitInitialPrompt={props.onSubmitInitialPrompt}
+			onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
+			onStopActiveRun={props.onStopActiveRun}
+			onStopBackgroundProcess={props.onStopBackgroundProcess}
+			onThinkingDepthChange={props.onThinkingDepthChange}
+			realtimeStatus={props.realtimeStatus}
+			runs={props.runs}
+			onScroll={handleScroll}
+			scrollContainerRef={handleScrollContainerRef}
+			showDebugEvents={showDebugEvents}
+			taskMessages={props.taskMessages}
+			thinkingDepth={props.thinkingDepth}
+			thinkingDepthOptions={props.thinkingDepthOptions}
+			workbenchBanner={workbenchBanner}
+		/>
+	);
 	return (
 		<div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#111827]">
 			<div className="shrink-0 border-b border-slate-700/70 bg-[#0f172a] px-6 py-3 pr-16">
@@ -568,100 +625,27 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 					</div>
 				)}
 			</div>
-			{props.splitPanel ? (
-				<Group
-					className="nightworkers-thread-split-layout min-h-0 flex-1"
-					defaultLayout={{
-						"nightworkers-thread-main": 50,
-						"nightworkers-artifact": 50,
-					}}
-					orientation="horizontal"
+			<Group
+				className="nightworkers-thread-split-layout min-h-0 flex-1"
+				defaultLayout={threadPanelLayout}
+				orientation="horizontal"
+			>
+				<Panel
+					id="nightworkers-thread-main"
+					defaultSize={hasSplitPanel ? "50%" : "100%"}
+					minSize={hasSplitPanel ? "38%" : "100%"}
 				>
-					<Panel id="nightworkers-thread-main" minSize="38%">
-						<ThreadBody
-							activeSession={props.activeSession}
-							activeStreamingResponse={props.activeStreamingResponse}
-							activityArtifacts={props.activityArtifacts}
-							activeArtifactContext={props.activeArtifactContext}
-							activityEvents={props.activityEvents}
-							backgroundProcesses={props.backgroundProcesses}
-							isAgentThinking={props.isAgentThinking}
-							isAgentWorking={props.isAgentWorking}
-							latestRun={props.latestRun}
-							latestRunEvents={props.latestRunEvents}
-							injectedPrompt={props.injectedPrompt}
-							model={props.model}
-							modelOptions={props.modelOptions}
-							onGrantExternalPath={props.onGrantExternalPath}
-							onModelChange={props.onModelChange}
-							onOpenArtifact={openArtifactWithCooldown}
-							onOpenProjectFile={props.onOpenProjectFile}
-							onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
-							onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
-							onClearArtifactContext={props.onClearArtifactContext}
-							canStopActiveRun={props.canStopActiveRun}
-							onSubmitInitialPrompt={props.onSubmitInitialPrompt}
-							onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
-							onStopActiveRun={props.onStopActiveRun}
-							onStopBackgroundProcess={props.onStopBackgroundProcess}
-							onThinkingDepthChange={props.onThinkingDepthChange}
-							realtimeStatus={props.realtimeStatus}
-							runs={props.runs}
-							onScroll={handleScroll}
-							scrollContainerRef={handleScrollContainerRef}
-							showDebugEvents={showDebugEvents}
-							taskMessages={props.taskMessages}
-							thinkingDepth={props.thinkingDepth}
-							thinkingDepthOptions={props.thinkingDepthOptions}
-							workbenchBanner={workbenchBanner}
-						/>
-					</Panel>
+					{threadBody}
+				</Panel>
+				{hasSplitPanel ? (
 					<Separator className="nightworkers-panel-resize-handle" />
-					<Panel id="nightworkers-artifact" minSize="28%">
+				) : null}
+				{hasSplitPanel ? (
+					<Panel id="nightworkers-artifact" defaultSize="50%" minSize="28%">
 						{props.splitPanel}
 					</Panel>
-				</Group>
-			) : (
-				<div className="nightworkers-thread-layout flex min-h-0 flex-1 items-start overflow-hidden">
-					<ThreadBody
-						activeSession={props.activeSession}
-						activeStreamingResponse={props.activeStreamingResponse}
-						activityArtifacts={props.activityArtifacts}
-						activeArtifactContext={props.activeArtifactContext}
-						activityEvents={props.activityEvents}
-						backgroundProcesses={props.backgroundProcesses}
-						isAgentThinking={props.isAgentThinking}
-						isAgentWorking={props.isAgentWorking}
-						latestRun={props.latestRun}
-						latestRunEvents={props.latestRunEvents}
-						injectedPrompt={props.injectedPrompt}
-						model={props.model}
-						modelOptions={props.modelOptions}
-						onGrantExternalPath={props.onGrantExternalPath}
-						onModelChange={props.onModelChange}
-						onOpenArtifact={openArtifactWithCooldown}
-						onOpenProjectFile={props.onOpenProjectFile}
-						onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
-						onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
-						onClearArtifactContext={props.onClearArtifactContext}
-						canStopActiveRun={props.canStopActiveRun}
-						onSubmitInitialPrompt={props.onSubmitInitialPrompt}
-						onSubmitWorkbenchMessage={props.onSubmitWorkbenchMessage}
-						onStopActiveRun={props.onStopActiveRun}
-						onStopBackgroundProcess={props.onStopBackgroundProcess}
-						onThinkingDepthChange={props.onThinkingDepthChange}
-						realtimeStatus={props.realtimeStatus}
-						runs={props.runs}
-						onScroll={handleScroll}
-						scrollContainerRef={handleScrollContainerRef}
-						showDebugEvents={showDebugEvents}
-						taskMessages={props.taskMessages}
-						thinkingDepth={props.thinkingDepth}
-						thinkingDepthOptions={props.thinkingDepthOptions}
-						workbenchBanner={workbenchBanner}
-					/>
-				</div>
-			)}
+				) : null}
+			</Group>
 		</div>
 	);
 }

@@ -153,7 +153,6 @@ export type ReviewSectionProgress =
 
 export type ReviewRunOptions = {
 	codeReview: boolean;
-	testEvidenceReview: boolean;
 	securityReview: boolean;
 	applyFixes: boolean;
 	commitChanges: boolean;

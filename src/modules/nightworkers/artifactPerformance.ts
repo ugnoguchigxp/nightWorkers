@@ -52,6 +52,34 @@ export function logArtifactPaneRendered(
 	if (pending) pendingArtifactOpen = null;
 }
 
+export function measureArtifactPerf<T>(
+	label: string,
+	fn: () => T,
+	metadata?: Record<string, unknown>,
+): T {
+	if (!isArtifactPerfLoggingEnabled()) return fn();
+	const startedAt = nowMs();
+	const result = fn();
+	const durationMs = Math.round((nowMs() - startedAt) * 100) / 100;
+	console.info("[nightworkers:artifact-perf]", {
+		label,
+		durationMs,
+		...metadata,
+	});
+	return result;
+}
+
+export function logArtifactPerf(
+	label: string,
+	metadata?: Record<string, unknown>,
+) {
+	if (!isArtifactPerfLoggingEnabled()) return;
+	console.info("[nightworkers:artifact-perf]", {
+		label,
+		...metadata,
+	});
+}
+
 function nowMs() {
 	return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
