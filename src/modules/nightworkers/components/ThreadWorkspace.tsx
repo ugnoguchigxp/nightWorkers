@@ -18,7 +18,13 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Group, type Layout, Panel, Separator } from "react-resizable-panels";
+import {
+	Group,
+	type Layout,
+	Panel,
+	Separator,
+	useGroupRef,
+} from "react-resizable-panels";
 import { logArtifactPerf } from "../artifactPerformance";
 import type {
 	ActivityArtifact,
@@ -159,14 +165,12 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 	const hasSplitPanel = Boolean(props.splitPanel);
 	const layoutMode = hasSplitPanel ? "split" : "single";
 	const previousLayoutModeRef = useRef(layoutMode);
+	const threadPanelGroupRef = useGroupRef();
 	const threadPanelLayout = useMemo<Layout>(() => {
-		const layout: Layout = {
+		return {
 			"nightworkers-thread-main": hasSplitPanel ? 50 : 100,
+			"nightworkers-artifact": hasSplitPanel ? 50 : 0,
 		};
-		if (hasSplitPanel) {
-			layout["nightworkers-artifact"] = 50;
-		}
-		return layout;
 	}, [hasSplitPanel]);
 	const activeSessionId = props.activeSession?.id ?? null;
 	const forceLatestFocus = props.isAgentThinking;
@@ -361,16 +365,24 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		const node = scrollContainerRef.current;
 		if (!node) return;
 		if (previousLayoutModeRef.current !== layoutMode) {
+			const appliedLayout =
+				threadPanelGroupRef.current?.setLayout(threadPanelLayout);
 			logArtifactPerf("threadWorkspace.layoutModeChanged", {
 				from: previousLayoutModeRef.current,
 				to: layoutMode,
 				scrollHeight: node.scrollHeight,
 				clientHeight: node.clientHeight,
+				appliedLayout,
 			});
 			applyBestEffortRestore(node);
 			previousLayoutModeRef.current = layoutMode;
 		}
-	}, [applyBestEffortRestore, layoutMode]);
+	}, [
+		applyBestEffortRestore,
+		layoutMode,
+		threadPanelGroupRef,
+		threadPanelLayout,
+	]);
 
 	const workbenchBanner = props.activeSession ? (
 		<WorkbenchStateBanner
@@ -628,23 +640,32 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 			<Group
 				className="nightworkers-thread-split-layout min-h-0 flex-1"
 				defaultLayout={threadPanelLayout}
+				groupRef={threadPanelGroupRef}
 				orientation="horizontal"
 			>
 				<Panel
 					id="nightworkers-thread-main"
 					defaultSize={hasSplitPanel ? "50%" : "100%"}
-					minSize={hasSplitPanel ? "38%" : "100%"}
+					minSize="38%"
 				>
 					{threadBody}
 				</Panel>
-				{hasSplitPanel ? (
-					<Separator className="nightworkers-panel-resize-handle" />
-				) : null}
-				{hasSplitPanel ? (
-					<Panel id="nightworkers-artifact" defaultSize="50%" minSize="28%">
-						{props.splitPanel}
-					</Panel>
-				) : null}
+				<Separator
+					className="nightworkers-panel-resize-handle"
+					disabled={!hasSplitPanel}
+					style={
+						hasSplitPanel ? undefined : { width: 0, pointerEvents: "none" }
+					}
+				/>
+				<Panel
+					id="nightworkers-artifact"
+					collapsedSize="0%"
+					collapsible={true}
+					defaultSize={hasSplitPanel ? "50%" : "0%"}
+					minSize={hasSplitPanel ? "28%" : "0%"}
+				>
+					{hasSplitPanel ? props.splitPanel : null}
+				</Panel>
 			</Group>
 		</div>
 	);

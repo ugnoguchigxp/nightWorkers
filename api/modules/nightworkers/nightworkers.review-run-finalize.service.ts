@@ -1,4 +1,5 @@
 import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
+import * as repo from "./nightworkers.repository";
 import * as reviewRepo from "./nightworkers.review-mode.repository";
 
 type ReviewRunSnapshot = {
@@ -67,8 +68,28 @@ export async function finalizeReviewRunFromRuntime(input: {
 			finalReport:
 				input.runtimeResult.finalReport || input.runtimeResult.summary,
 			findings,
+			fixesApplied: Boolean(input.runtimeResult.diffPatch?.trim()),
 		},
 		sourceEvidenceRefsJson: [],
+	});
+	await repo.createRunEvent({
+		version: 1,
+		runId: session.runId,
+		taskId: session.taskId,
+		timestamp: new Date().toISOString(),
+		type: "review.run_completed",
+		severity:
+			reviewArtifactStatus(input.status) === "done" ? "info" : "warning",
+		actor: "system",
+		message: `Review Run finished with status: ${reviewArtifactStatus(input.status)}.`,
+		data: {
+			reviewSessionId: session.id,
+			reviewRunId: input.runId,
+			reviewedRunId: reviewRun.reviewedRunId,
+			status: reviewArtifactStatus(input.status),
+			findingCount: findings.length,
+			fixesApplied: Boolean(input.runtimeResult.diffPatch?.trim()),
+		},
 	});
 }
 

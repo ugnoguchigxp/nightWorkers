@@ -23,12 +23,38 @@ vi.mock("react-resizable-panels", () => ({
 	Group: ({ children }: { children?: ReactNode }) => (
 		<div className="mock-resizable-group">{children}</div>
 	),
-	Panel: ({ children, id }: { children?: ReactNode; id?: string }) => (
-		<div className="mock-resizable-panel" id={id}>
+	Panel: ({
+		children,
+		disabled,
+		id,
+		minSize,
+	}: {
+		children?: ReactNode;
+		disabled?: boolean;
+		id?: string;
+		minSize?: string;
+	}) => (
+		<div
+			className="mock-resizable-panel"
+			data-disabled={disabled ? "true" : "false"}
+			data-min-size={minSize}
+			id={id}
+		>
 			{children}
 		</div>
 	),
-	Separator: () => <div className="mock-resizable-separator" />,
+	Separator: ({ disabled }: { disabled?: boolean }) => (
+		<div
+			className="mock-resizable-separator"
+			data-disabled={disabled ? "true" : "false"}
+		/>
+	),
+	useGroupRef: () => ({
+		current: {
+			getLayout: () => ({}),
+			setLayout: () => ({}),
+		},
+	}),
 }));
 
 // Mock child components
@@ -119,6 +145,9 @@ describe("ThreadWorkspace component & helpers", () => {
 	it("renders empty prompt when activeSession is null", () => {
 		const markup = renderToStaticMarkup(<ThreadWorkspace {...defaultProps} />);
 		expect(markup).toContain("thread.emptyPrompt");
+		expect(markup).toContain('id="nightworkers-artifact"');
+		expect(markup).toContain('data-min-size="0%"');
+		expect(markup).not.toContain("split-content");
 	});
 
 	it("renders task headers and tools when activeSession is set", () => {
@@ -144,6 +173,9 @@ describe("ThreadWorkspace component & helpers", () => {
 
 		const markup = renderToStaticMarkup(<ThreadWorkspace {...props} />);
 		expect(markup).toContain("mock-resizable-group");
+		expect(markup).toContain('id="nightworkers-thread-main"');
+		expect(markup).toContain('id="nightworkers-artifact"');
+		expect(markup).toContain('data-min-size="28%"');
 		expect(markup).toContain("split-content");
 	});
 

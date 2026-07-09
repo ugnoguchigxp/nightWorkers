@@ -273,8 +273,43 @@ function gitCloseoutState(
 
 function reviewRunArtifact(
 	status: "not_started" | "running" | "needs_human" | "done" | "failed",
+	override: Partial<
+		NonNullable<ReviewSessionDetail["artifacts"][number]["artifact"]>
+	> = {},
 ): ReviewSessionDetail["artifacts"][number] {
 	const now = "2026-07-06T00:00:00.000Z";
+	const artifact = {
+		version: 1,
+		kind: "review_run",
+		runId: "22222222-2222-4222-8222-222222222222",
+		reviewRunId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		taskId: "33333333-3333-4333-8333-333333333333",
+		repositoryId: "44444444-4444-4444-8444-444444444444",
+		options: {
+			codeReview: true,
+			securityReview: false,
+			applyFixes: true,
+			commitChanges: false,
+		},
+		status,
+		target: {
+			targetFiles: [
+				{ path: "src/app.ts", status: "modified", diffBytes: 120 },
+				{ path: "src/app.test.ts", status: "modified", diffBytes: 80 },
+			],
+			excludedDirtyFiles: [],
+		},
+		todos: [
+			{
+				seq: 1,
+				title: "Review Plan 仕様書を読む",
+				taskType: "inspection",
+				procedureId: "review.read_plan_spec",
+			},
+		],
+		warnings: [],
+		...override,
+	};
 	return {
 		id: "99999999-9999-4999-8999-999999999999",
 		reviewSessionId: "11111111-1111-4111-8111-111111111111",
@@ -285,36 +320,43 @@ function reviewRunArtifact(
 		createdAt: now,
 		updatedAt: now,
 		sourceEvidenceRefs: [],
+		artifact,
+	};
+}
+
+function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
+	const now = "2026-07-06T00:00:00.000Z";
+	return {
+		id: "77777777-7777-4777-8777-777777777777",
+		reviewSessionId: "11111111-1111-4111-8111-111111111111",
+		runId: "22222222-2222-4222-8222-222222222222",
+		taskId: "33333333-3333-4333-8333-333333333333",
+		kind: "security_review",
+		status: "done",
+		createdAt: now,
+		updatedAt: now,
+		sourceEvidenceRefs: [],
 		artifact: {
 			version: 1,
-			kind: "review_run",
-			runId: "22222222-2222-4222-8222-222222222222",
-			reviewRunId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-			taskId: "33333333-3333-4333-8333-333333333333",
-			repositoryId: "44444444-4444-4444-8444-444444444444",
-			options: {
-				codeReview: true,
-				securityReview: false,
-				applyFixes: true,
-				commitChanges: false,
-			},
-			status,
-			target: {
-				targetFiles: [
-					{ path: "src/app.ts", status: "modified", diffBytes: 120 },
-					{ path: "src/app.test.ts", status: "modified", diffBytes: 80 },
+			kind: "vulnworkbench_security_diagnostic",
+			result: {
+				ok: true,
+				projectId: "vw-project-1",
+				scanRunId: "scan-1",
+				profile: "detailed-security",
+				commandsRun: [
+					{
+						command: "bun run scan:profile -- --project-id vw-project-1",
+						exitCode: 0,
+						summary: "scan complete",
+					},
 				],
-				excludedDirtyFiles: [],
+				reportPath: "/tmp/nightworkers-review/vulnworkbench-report.md",
+				findingCount: 2,
+				highOrCriticalCount: 1,
+				improvementRequest: "認可境界の回帰テストを追加してください。",
+				error: null,
 			},
-			todos: [
-				{
-					seq: 1,
-					title: "Review Plan 仕様書を読む",
-					taskType: "inspection",
-					procedureId: "review.read_plan_spec",
-				},
-			],
-			warnings: [],
 		},
 	};
 }
@@ -397,6 +439,42 @@ describe("ReviewStatusViewer", () => {
 		expect(runButton).toContain("animate-spin");
 	});
 
+	it("stops the Review Run loading state when the backing review run has already completed", async () => {
+		await i18next.changeLanguage("ja");
+		const detail = {
+			...reviewSessionDetail(),
+			artifacts: [
+				...reviewSessionDetail().artifacts,
+				reviewRunArtifact("running"),
+			],
+		};
+
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={detail}
+				latestRun={{
+					id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+					taskId: "33333333-3333-4333-8333-333333333333",
+					repositoryId: "44444444-4444-4444-8444-444444444444",
+					status: "completed",
+					workerKind: "codex",
+					timeoutSeconds: 600,
+					startedAt: "2026-07-06T00:00:00.000Z",
+					createdAt: "2026-07-06T00:00:00.000Z",
+					updatedAt: "2026-07-06T00:02:00.000Z",
+				}}
+				onStartReviewRun={async () => detail}
+			/>,
+		);
+		const runButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("Run"));
+
+		expect(runButton).toBeTruthy();
+		expect(runButton).not.toContain('disabled=""');
+		expect(runButton).not.toContain("animate-spin");
+	});
+
 	it("renders a manual commit button for the reviewed run", async () => {
 		await i18next.changeLanguage("ja");
 		const detail = reviewSessionDetail();
@@ -438,6 +516,92 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("targets 2");
 		expect(text).toContain("todos 1");
 		expect(text).not.toContain("needs_human");
+	});
+
+	it("renders review findings without a fixed report when apply fixes is off", async () => {
+		await i18next.changeLanguage("ja");
+		const base = reviewSessionDetail();
+		const detail = {
+			...base,
+			artifacts: [
+				...base.artifacts,
+				reviewRunArtifact("done", {
+					options: {
+						codeReview: true,
+						securityReview: false,
+						applyFixes: false,
+						commitChanges: false,
+					},
+					finalReport: "指摘事項を確認しました。修正は適用していません。",
+				}),
+			],
+		};
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={detail} />),
+		);
+
+		expect(text).toContain("実行結果");
+		expect(text).toContain("指摘事項");
+		expect(text).toContain("修正適用なし");
+		expect(text).toContain("ルート B が削除される");
+		expect(text).not.toContain("修正済み");
+	});
+
+	it("renders findings and fixed report when apply fixes is on", async () => {
+		await i18next.changeLanguage("ja");
+		const base = reviewSessionDetail();
+		const detail = {
+			...base,
+			artifacts: [
+				...base.artifacts,
+				reviewRunArtifact("done", {
+					fixesApplied: true,
+					finalReport:
+						"指摘事項を表示したうえで、対象のテスト名を追加して修正しました。",
+				}),
+			],
+		};
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={detail} />),
+		);
+
+		expect(text).toContain("指摘事項と修正結果");
+		expect(text).toContain("修正済み");
+		expect(text).toContain("対象のテスト名を追加して修正しました");
+		expect(text).toContain("ルート B が削除される");
+	});
+
+	it("renders vulnWorkbench diagnostic output in the review result area", async () => {
+		await i18next.changeLanguage("ja");
+		const base = reviewSessionDetail();
+		const detail = {
+			...base,
+			artifacts: [
+				...base.artifacts,
+				reviewRunArtifact("done", {
+					options: {
+						codeReview: true,
+						securityReview: true,
+						applyFixes: false,
+						commitChanges: false,
+					},
+				}),
+				securityReviewArtifact(),
+			],
+		};
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={detail} />),
+		);
+
+		expect(text).toContain("vulnWorkbench 実行結果");
+		expect(text).toContain("detailed-security");
+		expect(text).toContain("scan-1");
+		expect(text).toContain("findings: 2");
+		expect(text).toContain("high/critical: 1");
+		expect(text).toContain("bun run scan:profile");
 	});
 
 	it("hides the required review badge after ReviewRun completes", async () => {
@@ -542,7 +706,7 @@ describe("ReviewStatusViewer", () => {
 		expect(text).not.toContain("Test Evidence Review");
 		expect(text).not.toContain("Implementation plan: Feature Plan");
 		expect(text).not.toContain("Git closeout");
-		expect(text).not.toContain(
+		expect(text).toContain(
 			"Test evidence not confirmed for acceptance criterion",
 		);
 		expect(text).not.toContain("テスト名を追加する");

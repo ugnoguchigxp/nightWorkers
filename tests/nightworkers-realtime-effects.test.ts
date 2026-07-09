@@ -134,6 +134,7 @@ describe("useNightWorkersRealtime effect", () => {
 				mutations: { retry: false },
 			},
 		});
+		const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 		const wsRef = { current: null as WebSocket | null };
 		const latestRunSubscriptionRef = {
 			current: { runId: "run-1", afterSeq: 3 },
@@ -303,6 +304,12 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: {
 				run: {
 					...run("run-1", "completed"),
+					contextSnapshot: {
+						reviewRun: {
+							reviewSessionId: "review-session-1",
+							reviewedRunId: "reviewed-run-1",
+						},
+					},
 					updatedAt: "2026-07-08T00:01:00.000Z",
 				},
 			},
@@ -357,6 +364,12 @@ describe("useNightWorkersRealtime effect", () => {
 		expect(queryClient.getQueryData<Task[]>(["sessions"])?.[0]).toMatchObject({
 			id: "task-1",
 			status: "ready",
+		});
+		expect(invalidateSpy).toHaveBeenCalledWith({
+			queryKey: ["reviewSession", "task-1"],
+		});
+		expect(invalidateSpy).toHaveBeenCalledWith({
+			queryKey: ["gitCloseout", "reviewed-run-1"],
 		});
 		expect(projectFileEntriesByDirectory).toEqual({});
 		expect(isChatSubmitting).toBe(false);

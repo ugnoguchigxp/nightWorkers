@@ -69,6 +69,27 @@ function isTerminalRunStatus(status: string | undefined): boolean {
 	);
 }
 
+function readReviewRunSnapshot(contextSnapshot: unknown): {
+	reviewSessionId?: string;
+	reviewedRunId?: string;
+} | null {
+	const reviewRun = toDeepRecord(contextSnapshot).reviewRun;
+	if (!reviewRun || typeof reviewRun !== "object" || Array.isArray(reviewRun)) {
+		return null;
+	}
+	const record = reviewRun as Record<string, unknown>;
+	return {
+		reviewSessionId:
+			typeof record.reviewSessionId === "string"
+				? record.reviewSessionId
+				: undefined,
+		reviewedRunId:
+			typeof record.reviewedRunId === "string"
+				? record.reviewedRunId
+				: undefined,
+	};
+}
+
 export function useNightWorkersRealtime({
 	activeSessionId,
 	queryClient,
@@ -377,6 +398,21 @@ export function useNightWorkersRealtime({
 							queryClient.removeQueries({
 								queryKey: ["projectFile", incomingRun.repositoryId],
 							});
+						}
+						if (isTerminalRunStatus(incomingRun.status)) {
+							const reviewRun = readReviewRunSnapshot(
+								incomingRun.contextSnapshot,
+							);
+							if (reviewRun?.reviewSessionId) {
+								void queryClient.invalidateQueries({
+									queryKey: ["reviewSession", incomingRun.taskId],
+								});
+							}
+							if (reviewRun?.reviewedRunId) {
+								void queryClient.invalidateQueries({
+									queryKey: ["gitCloseout", reviewRun.reviewedRunId],
+								});
+							}
 						}
 					}
 					if (msg.type === "task_run_updated" && msg.payload?.todo) {

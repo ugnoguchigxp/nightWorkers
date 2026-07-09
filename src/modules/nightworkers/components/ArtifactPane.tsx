@@ -19,6 +19,7 @@ import { toDeepRecord } from "../../../../shared/json-record";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
+import { TodoRailList, type TodoRailListStatus } from "../../todo/TodoRailList";
 import {
 	logArtifactPaneRendered,
 	measureArtifactPerf,
@@ -31,7 +32,6 @@ import {
 	isTestModeWorkflowRun,
 	readTestModeWorkflowActionStatus,
 	selectTestModeWorkflowSteps,
-	type TestModeWorkflowStepStatus,
 	type TestModeWorkflowStepView,
 } from "../testModeWorkflowView";
 import type {
@@ -613,6 +613,7 @@ export function ArtifactPane({
 									| undefined) ||
 								null
 							}
+							latestRun={latestRun}
 							onStartReviewRun={onStartReviewRun}
 							gitCloseout={gitCloseout}
 							onCommitGitCloseout={onCommitGitCloseout}
@@ -1069,28 +1070,29 @@ function TestModeWorkflowProgress({
 }) {
 	const { t } = useTranslation();
 	return (
-		<div className="mt-3 grid gap-2">
-			{steps.map((step, index) => (
-				<div
-					key={step.id}
-					className="grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
-				>
-					<div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
-						{index + 1}
-					</div>
-					<div className="flex min-w-0 items-center gap-2">
-						<TestModeWorkflowStatusIcon status={step.status} />
-						<span className="min-w-0 whitespace-normal break-words text-xs font-medium text-slate-100">
-							{t(`testMode.workflow.step.${step.id}`)}
-						</span>
-					</div>
-					<div className="text-right text-[11px] text-slate-400">
-						{t(`testMode.workflow.status.${step.status}`)}
-					</div>
-				</div>
-			))}
-		</div>
+		<TodoRailList
+			variant="embedded"
+			className="mt-3"
+			items={steps.map((step, index) => ({
+				id: step.id,
+				seq: index + 1,
+				title: t(`testMode.workflow.step.${step.id}`),
+				status: toTodoRailListStatus(step.status),
+				statusLabel: t(`testMode.workflow.status.${step.status}`),
+				activeLabel:
+					step.status === "running"
+						? t(`testMode.workflow.status.${step.status}`)
+						: null,
+				instruction: step.todoTitle,
+			}))}
+		/>
 	);
+}
+
+function toTodoRailListStatus(
+	status: TestModeWorkflowStepView["status"],
+): TodoRailListStatus {
+	return status;
 }
 
 type TestModeCheckResult = {
@@ -1522,25 +1524,6 @@ function normalizeToolName(toolName: string) {
 	return toolName.startsWith("nightworkers.")
 		? toolName.slice("nightworkers.".length)
 		: toolName;
-}
-
-function TestModeWorkflowStatusIcon({
-	status,
-}: {
-	status: TestModeWorkflowStepStatus;
-}) {
-	if (status === "passed") {
-		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
-	}
-	if (status === "running") {
-		return (
-			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
-		);
-	}
-	if (status === "failed" || status === "needs_human") {
-		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
-	}
-	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
 }
 
 function TestModeConditionStatusIcon({ status }: { status: string }) {

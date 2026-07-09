@@ -182,6 +182,15 @@ export type ReviewRunArtifactPayload = {
 		taskType: string;
 		procedureId: string | null;
 	}>;
+	findings?: Array<{
+		severity: "info" | "warning" | "blocking";
+		title: string;
+		body?: string | null;
+		path?: string | null;
+	}>;
+	initialFindingCount?: number;
+	fixesApplied?: boolean;
+	finalReport?: string | null;
 	warnings: Array<{
 		code: string;
 		severity: "info" | "warning" | "blocking";

@@ -1,13 +1,6 @@
-import {
-	AlertTriangle,
-	CheckCircle2,
-	Circle,
-	LoaderCircle,
-	PauseCircle,
-	XCircle,
-} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { TaskRunTodo, TodoStatus } from "../nightworkers/types";
+import type { TaskRunTodo } from "../nightworkers/types";
+import { TodoRailList } from "./TodoRailList";
 
 type TodoListPaneProps = {
 	todos: TaskRunTodo[];
@@ -22,7 +15,7 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
 	const nextTodo = todos.find((todo) => todo.status === "pending");
 	const blockedTodo = todos.find((todo) => todo.status === "needs_human");
 	const headerSubtitle = currentTodo
-		? `#${currentTodo.seq} ${currentTodo.title}`
+		? `running #${currentTodo.seq} ${currentTodo.title}`
 		: blockedTodo
 			? `blocked: #${blockedTodo.seq} ${blockedTodo.title}`
 			: nextTodo
@@ -46,70 +39,27 @@ export function TodoListPane({ todos }: TodoListPaneProps) {
 					</span>
 				</div>
 			</div>
-			<div className="px-1">
-				<ol>
-					{todos.map((todo) => {
-						const style = todoStatusStyle(todo.status);
-						const Icon = style.icon;
-						return (
-							<li key={todo.id} className="nightworkers-todo-item px-1 py-1">
-								<div className="flex min-w-0 items-center gap-2.5">
-									<Icon
-										aria-hidden="true"
-										className={`h-4 w-4 shrink-0 ${style.iconClass} ${
-											todo.status === "running" ? "animate-spin" : ""
-										}`}
-									/>
-									<span className="nightworkers-todo-pane-subtitle shrink-0 text-[10px]">
-										#{todo.seq}
-									</span>
-									<span className="nightworkers-todo-pane-title min-w-0 truncate text-xs font-medium leading-5">
-										{todo.title}
-									</span>
-								</div>
-							</li>
-						);
-					})}
-				</ol>
+			<div className="nightworkers-todo-list-scroll min-h-0 flex-1 overflow-y-auto px-2 py-2">
+				<TodoRailList
+					items={todos.map((todo) => ({
+						id: todo.id,
+						seq: todo.seq,
+						title: todo.title,
+						status: todo.status,
+						instruction: todoInstructionPreview(todo),
+						activeLabel: todo.status === "running" ? "running" : null,
+					}))}
+				/>
 			</div>
 		</aside>
 	);
 }
 
-function todoStatusStyle(status: TodoStatus): {
-	icon: typeof Circle;
-	iconClass: string;
-} {
-	switch (status) {
-		case "passed":
-			return {
-				icon: CheckCircle2,
-				iconClass: "nightworkers-todo-status-success",
-			};
-		case "running":
-			return {
-				icon: LoaderCircle,
-				iconClass: "nightworkers-todo-status-running",
-			};
-		case "failed":
-			return {
-				icon: XCircle,
-				iconClass: "nightworkers-todo-status-danger",
-			};
-		case "skipped":
-			return {
-				icon: PauseCircle,
-				iconClass: "nightworkers-todo-pane-muted",
-			};
-		case "needs_human":
-			return {
-				icon: AlertTriangle,
-				iconClass: "nightworkers-todo-status-warning",
-			};
-		case "pending":
-			return {
-				icon: Circle,
-				iconClass: "nightworkers-todo-pane-muted",
-			};
-	}
+function todoInstructionPreview(todo: TaskRunTodo) {
+	const candidates = [todo.description, todo.statusReason].map((value) =>
+		typeof value === "string" ? value.trim() : "",
+	);
+	const source = candidates.find(Boolean);
+	if (!source) return null;
+	return source.replace(/\s+/g, " ");
 }

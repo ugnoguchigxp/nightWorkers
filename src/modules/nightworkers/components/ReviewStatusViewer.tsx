@@ -16,6 +16,7 @@ import type {
 	ReviewRunArtifactPayload,
 	ReviewRunOptions,
 	ReviewSessionDetail,
+	TaskRun,
 } from "../types";
 
 type ReviewStatusViewerProps = {
@@ -29,6 +30,7 @@ type ReviewStatusViewerProps = {
 	activeTaskStatus?: string | null;
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
+	latestRun?: TaskRun;
 };
 
 const defaultReviewRunOptions: ReviewRunOptions = {
@@ -100,6 +102,88 @@ function reviewRunPayload(
 	return artifact.artifact as ReviewRunArtifactPayload;
 }
 
+const terminalReviewRunStatuses = new Set([
+	"completed",
+	"needs_review",
+	"needs_human",
+	"failed",
+	"blocked",
+	"timed_out",
+	"cancelled",
+]);
+
+function reviewRunResolvedStatus(
+	payload: ReviewRunArtifactPayload | null,
+	latestRun?: TaskRun,
+) {
+	if (!payload) return null;
+	if (
+		payload.status === "running" &&
+		payload.reviewRunId &&
+		latestRun?.id === payload.reviewRunId &&
+		terminalReviewRunStatuses.has(latestRun.status)
+	) {
+		if (
+			latestRun.status === "completed" ||
+			latestRun.status === "needs_review"
+		) {
+			return "done";
+		}
+		if (latestRun.status === "needs_human" || latestRun.status === "blocked") {
+			return "needs_human";
+		}
+		return "failed";
+	}
+	return payload.status;
+}
+
+function severityClass(severity: string) {
+	if (severity === "blocking")
+		return "border-red-800/80 bg-red-950/30 text-red-100";
+	if (severity === "warning")
+		return "border-amber-800/80 bg-amber-950/30 text-amber-100";
+	return "border-slate-700 bg-slate-950/40 text-slate-200";
+}
+
+function compactText(value: string | null | undefined, maxLength = 900) {
+	const text = value?.trim() || "";
+	if (text.length <= maxLength) return text;
+	return `${text.slice(0, maxLength).trimEnd()}...`;
+}
+
+function securityDiagnosticResult(artifact: ReviewArtifact | undefined) {
+	const payload = isRecord(artifact?.artifact) ? artifact.artifact : null;
+	const result = isRecord(payload?.result) ? payload.result : null;
+	if (!result) return null;
+	const commandsRun = Array.isArray(result.commandsRun)
+		? result.commandsRun.filter(isRecord)
+		: [];
+	return {
+		ok: result.ok === true,
+		profile: typeof result.profile === "string" ? result.profile : "unknown",
+		projectId: typeof result.projectId === "string" ? result.projectId : null,
+		scanRunId: typeof result.scanRunId === "string" ? result.scanRunId : null,
+		findingCount:
+			typeof result.findingCount === "number" ? result.findingCount : 0,
+		highOrCriticalCount:
+			typeof result.highOrCriticalCount === "number"
+				? result.highOrCriticalCount
+				: 0,
+		reportPath:
+			typeof result.reportPath === "string" ? result.reportPath : null,
+		improvementRequest:
+			typeof result.improvementRequest === "string"
+				? result.improvementRequest
+				: null,
+		error: typeof result.error === "string" ? result.error : null,
+		commandsRun: commandsRun.map((command) => ({
+			command: typeof command.command === "string" ? command.command : "",
+			exitCode: typeof command.exitCode === "number" ? command.exitCode : null,
+			summary: typeof command.summary === "string" ? command.summary : "",
+		})),
+	};
+}
+
 const reviewActionButtonBaseClass =
 	"inline-flex h-8 items-center justify-center gap-1.5 rounded border px-3 text-xs font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:shadow-none";
 const reviewPrimaryActionButtonClass = `${reviewActionButtonBaseClass} nightworkers-primary-action-button`;
@@ -113,6 +197,7 @@ export function ReviewStatusViewer({
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
+	latestRun,
 }: ReviewStatusViewerProps) {
 	const { t } = useTranslation();
 	const [busySection, setBusySection] = useState<string | null>(null);
@@ -138,13 +223,46 @@ export function ReviewStatusViewer({
 	const latestReviewRun = reviewRunPayload(
 		latestArtifactByKind(detail.artifacts, "review_run"),
 	);
+	const resolvedReviewRunStatus = reviewRunResolvedStatus(
+		latestReviewRun,
+		latestRun,
+	);
 	const reviewRunInProgress =
-		busySection === "review_run" || latestReviewRun?.status === "running";
+		busySection === "review_run" || resolvedReviewRunStatus === "running";
 	const reviewCompleted =
-		latestReviewRun?.status === "done" ||
+		resolvedReviewRunStatus === "done" ||
 		["approved", "changes_requested", "cancelled"].includes(
 			detail.session.status,
 		);
+	const latestSecurityReview = latestArtifactByKind(
+		detail.artifacts,
+		"security_review",
+	);
+	const securityResult = securityDiagnosticResult(latestSecurityReview);
+	const reviewRunFindings =
+		latestReviewRun?.findings?.map((finding) => ({
+			id: `${finding.severity}-${finding.title}-${finding.path ?? ""}`,
+			severity: finding.severity,
+			title: finding.title,
+			body: finding.body ?? null,
+			filePath: finding.path ?? null,
+		})) ?? [];
+	const visibleFindings =
+		detail.findings.length > 0
+			? detail.findings.map((finding) => ({
+					id: finding.id,
+					severity: finding.severity,
+					title: finding.title,
+					body: finding.body,
+					filePath: null,
+				}))
+			: reviewRunFindings;
+	const fixesWereRequested = latestReviewRun?.options.applyFixes === true;
+	const fixesWereApplied = latestReviewRun?.fixesApplied === true;
+	const hasReviewResultContent =
+		Boolean(latestReviewRun?.finalReport?.trim()) ||
+		visibleFindings.length > 0 ||
+		Boolean(securityResult);
 	const latestTargets = latestArtifactByKind(
 		detail.artifacts,
 		"review_targets",
@@ -301,6 +419,131 @@ export function ReviewStatusViewer({
 									{warning.message}
 								</div>
 							))}
+						</div>
+					) : null}
+					{hasReviewResultContent ? (
+						<div className="grid gap-3 rounded border border-slate-800 bg-slate-950/45 p-3">
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div className="min-w-0">
+									<div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+										実行結果
+									</div>
+									<div className="mt-1 text-sm font-semibold text-slate-100">
+										{fixesWereRequested ? "指摘事項と修正結果" : "指摘事項"}
+									</div>
+								</div>
+								<span
+									className={`rounded border px-2 py-0.5 text-[11px] ${
+										fixesWereRequested
+											? fixesWereApplied
+												? "border-emerald-700 bg-emerald-950/30 text-emerald-100"
+												: "border-cyan-800 bg-cyan-950/30 text-cyan-100"
+											: "border-slate-700 bg-slate-900 text-slate-300"
+									}`}
+								>
+									{fixesWereRequested
+										? fixesWereApplied
+											? "修正済み"
+											: "修正適用あり"
+										: "修正適用なし"}
+								</span>
+							</div>
+							{visibleFindings.length > 0 ? (
+								<div className="grid gap-2">
+									{visibleFindings.slice(0, 8).map((finding) => (
+										<div
+											key={finding.id}
+											className={`grid gap-1 rounded border px-3 py-2 text-xs ${severityClass(finding.severity)}`}
+										>
+											<div className="flex flex-wrap items-center gap-2">
+												<span className="font-semibold">{finding.title}</span>
+												<span className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] uppercase opacity-80">
+													{finding.severity}
+												</span>
+											</div>
+											{finding.filePath ? (
+												<div className="font-mono text-[11px] opacity-80">
+													{finding.filePath}
+												</div>
+											) : null}
+											{finding.body ? (
+												<div className="whitespace-pre-wrap leading-5 opacity-90">
+													{compactText(finding.body, 500)}
+												</div>
+											) : null}
+										</div>
+									))}
+								</div>
+							) : (
+								<div className="rounded border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+									表示対象の指摘事項はありません。
+								</div>
+							)}
+							{latestReviewRun?.finalReport?.trim() ? (
+								<div className="grid gap-1">
+									<div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+										Review Run 報告
+									</div>
+									<pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/70 p-3 text-xs leading-5 text-slate-200">
+										{compactText(latestReviewRun.finalReport, 2200)}
+									</pre>
+								</div>
+							) : null}
+							{securityResult ? (
+								<div className="grid gap-2 rounded border border-slate-800 bg-slate-900/45 p-3 text-xs text-slate-300">
+									<div className="flex flex-wrap items-center gap-2">
+										<ShieldAlert className="h-3.5 w-3.5 text-amber-300" />
+										<span className="font-semibold text-slate-100">
+											vulnWorkbench 実行結果
+										</span>
+										<span
+											className={`rounded border px-2 py-0.5 text-[11px] ${
+												securityResult.ok
+													? "border-emerald-700 bg-emerald-950/30 text-emerald-100"
+													: "border-amber-800 bg-amber-950/30 text-amber-100"
+											}`}
+										>
+											{securityResult.ok ? "completed" : "needs attention"}
+										</span>
+									</div>
+									<div className="grid gap-1 sm:grid-cols-2">
+										<div>profile: {securityResult.profile}</div>
+										<div>scanRunId: {securityResult.scanRunId ?? "-"}</div>
+										<div>findings: {securityResult.findingCount}</div>
+										<div>
+											high/critical: {securityResult.highOrCriticalCount}
+										</div>
+									</div>
+									{securityResult.error ? (
+										<div className="rounded border border-amber-800/70 bg-amber-950/30 px-2 py-1 text-amber-100">
+											{securityResult.error}
+										</div>
+									) : null}
+									{securityResult.improvementRequest ? (
+										<div className="whitespace-pre-wrap leading-5">
+											{securityResult.improvementRequest}
+										</div>
+									) : null}
+									{securityResult.commandsRun.length > 0 ? (
+										<div className="grid gap-1">
+											{securityResult.commandsRun.map((command) => (
+												<div
+													key={`${command.command}-${command.summary}`}
+													className="rounded border border-slate-800 bg-slate-950/50 px-2 py-1"
+												>
+													<div className="font-mono text-[11px] text-slate-200">
+														{command.command}
+													</div>
+													<div className="mt-1 text-slate-500">
+														exit {command.exitCode ?? "-"} ·{" "}
+														{compactText(command.summary, 220)}
+													</div>
+												</div>
+											))}
+										</div>
+									) : null}
+								</div>
+							) : null}
 						</div>
 					) : null}
 					<div className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
