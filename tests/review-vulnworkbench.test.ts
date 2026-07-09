@@ -49,7 +49,8 @@ describe("Review vulnWorkbench diagnostic", () => {
 		} as NodeJS.ProcessEnv);
 
 		expect(env.DATABASE_URL).toBeUndefined();
-		expect(env.PATH).toBe("/usr/bin");
+		expect(env.PATH?.split(":")).toContain("/usr/bin");
+		expect(env.PATH?.split(":")).toContain("/opt/homebrew/bin");
 		expect(env.TMPDIR).toBe("/tmp");
 		expect(env.HOME).toBeUndefined();
 		expect(env.OPENAI_API_KEY).toBeUndefined();
@@ -130,8 +131,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 		expect(calls[0]?.cwd).toBe("/workspace/vulnWorkbench");
 		expect(calls[0]?.args).toEqual([
 			"run",
-			"oracle:security",
-			"--",
+			"api/cli/oracle-security.ts",
 			"--project-path",
 			"/workspace/project",
 		]);

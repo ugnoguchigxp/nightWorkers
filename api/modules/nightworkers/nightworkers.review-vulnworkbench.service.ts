@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 import type { ReviewTarget } from "./nightworkers.review-mode.model";
 import { toErrorMessage } from "./run-orchestration/utils";
@@ -67,6 +68,7 @@ export function buildVulnWorkbenchCliEnv(
 	for (const key of allowedKeys) {
 		if (baseEnv[key]) env[key] = baseEnv[key];
 	}
+	env.PATH = buildVulnWorkbenchToolPath(baseEnv.PATH);
 	return env;
 }
 
@@ -113,8 +115,7 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 	const commandsRun: VulnWorkbenchSecurityResult["commandsRun"] = [];
 	const oracleArgs = [
 		"run",
-		"oracle:security",
-		"--",
+		"api/cli/oracle-security.ts",
 		"--project-path",
 		input.target.repoRoot,
 	];
@@ -203,7 +204,7 @@ async function runBunCommand(
 ): Promise<BunCommandResult> {
 	const commandText = `bun ${args.join(" ")}`;
 	try {
-		const result = await execFileAsync("bun", args, {
+		const result = await execFileAsync(process.execPath, args, {
 			cwd,
 			env: buildVulnWorkbenchCliEnv(),
 			timeout: Math.max(1, timeoutSeconds) * 1000,
@@ -261,6 +262,19 @@ function unconfiguredResult(
 function readPositiveInt(value: string | undefined, fallback: number) {
 	const parsed = Number.parseInt(value || "", 10);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildVulnWorkbenchToolPath(basePath: string | undefined): string {
+	const entries = [
+		...(basePath?.split(":").filter(Boolean) ?? []),
+		path.dirname(process.execPath),
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+	];
+	return [...new Set(entries)].join(":");
 }
 
 function extractScanRunId(output: string) {

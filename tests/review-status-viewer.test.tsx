@@ -348,7 +348,7 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 				commandsRun: [
 					{
 						command:
-							"bun run oracle:security -- --project-path /workspace/project",
+							"bun run api/cli/oracle-security.ts --project-path /workspace/project",
 						exitCode: 0,
 						summary: "scan complete",
 					},
@@ -603,7 +603,7 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("scan-1");
 		expect(text).toContain("findings: 2");
 		expect(text).toContain("high/critical: 1");
-		expect(text).toContain("bun run oracle:security");
+		expect(text).toContain("bun run api/cli/oracle-security.ts");
 	});
 
 	it("hides the required review badge after ReviewRun completes", async () => {
