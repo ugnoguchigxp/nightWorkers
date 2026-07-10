@@ -482,7 +482,7 @@ describe("Desktop security configuration", () => {
 		vi.stubEnv("API_AUTH_REQUIRED", undefined);
 		vi.stubEnv("DATABASE_URL", undefined);
 		vi.stubEnv("JWT_SECRET", undefined);
-		vi.stubEnv("CORS_ORIGIN", undefined);
+		vi.stubEnv("CORS_ORIGIN", "");
 		vi.stubEnv("APP_URL", undefined);
 		return runtimeDir;
 	}
@@ -499,7 +499,6 @@ describe("Desktop security configuration", () => {
 			"http://127.0.0.1:41234",
 			"http://tauri.localhost",
 			"tauri://localhost",
-			"http://localhost:39174",
 		]);
 		expect(config.DATABASE_URL).toContain("/sqlite.db");
 		expect(config.JWT_SECRET.length).toBeGreaterThanOrEqual(32);

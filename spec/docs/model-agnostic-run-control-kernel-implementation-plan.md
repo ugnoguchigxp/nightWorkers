@@ -2,7 +2,35 @@
 
 ## Status
 
-planning
+implemented-awaiting-operational-validation
+
+## Implementation Progress
+
+2026-07-10 時点で、モデル品質に依存しない実行制御の中核を実装した。
+
+### Implemented
+
+- `task_run_control_states` と `task_run_action_records` による永続 Run state / action ledger
+- schema migration と runtime bootstrap の双方へのDB定義追加
+- stable action identity、引数のsecret redaction、workspace-aware dedupe
+- observationの結果再利用、verificationのworkspace revision基準再利用、2回反復時のrecovery遷移
+- transport status と domain outcome の分離
+- MCP `content` / `structuredContent` のcanonical bounded projection
+- Todo一覧、import context、diff、generic structured payloadのmodel-visible上限制御
+- Native API worker dispatchとCodex NightWorkers MCPへの共通Run Control接続
+- Native/Codex共通finalize guardとimmutable terminal state
+- Codex recovery時のfresh thread、Run State Card rehydration、context epoch記録
+- Todo evidence requirement / evidence refのobserve・managed・enforce契約
+- run detailにおけるRun Control metrics
+- 実装前DBと現行DBを比較する `run-control:compare` CLI
+
+### Operational Validation Remaining
+
+- 実装後の新しい実タスクを、strong hosted model、5.4 mini相当、local Qwenで同一acceptance条件により実行する
+- 保存されたaction reuse、model-visible chars、input token、false completionの実測を実装前DBと比較する
+- 実測結果を用いてno-progress閾値とcontext epoch発火条件を調整する
+
+これらはコード未実装ではなく、実装後runを必要とする運用評価である。モデルごとの完遂率と、共通evidence gateを通過した品質は分けて報告する。
 
 ## Purpose
 

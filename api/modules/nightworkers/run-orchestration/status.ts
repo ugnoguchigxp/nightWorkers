@@ -10,6 +10,7 @@ export const runStatusTransitionTable = {
 		"failed",
 		"needs_human",
 		"cancelled",
+		"timed_out",
 	],
 	needs_review: ["completed", "failed", "needs_human"],
 	completed: [],

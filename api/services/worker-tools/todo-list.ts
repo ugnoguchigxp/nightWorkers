@@ -1,5 +1,10 @@
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
 import {
+	normalizeEvidenceRequirements,
+	readEvidenceTodoMode,
+} from "../run-control/evidence";
+import { RunControlRepository } from "../run-control/run-control-repository";
+import {
 	buildStandardImplementationTodoList,
 	type ImplementationTodoInput,
 	type TodoVerificationPolicy,
@@ -33,6 +38,8 @@ export type TodoListPayloadTodo = {
 	dependsOn?: Array<string | number> | null;
 	startedAt?: Date | string | null;
 	completedAt?: Date | string | null;
+	evidenceRequirementsJson?: unknown;
+	evidenceRefsJson?: string[] | null;
 };
 
 export type TodoActionDiagnostics = {
@@ -83,6 +90,7 @@ export async function todoListTool(input: {
 	todos?: ImplementationTodoInput[];
 	startFirst?: boolean;
 	todoListReplaceReason?: TodoListReplaceReason;
+	evidenceRefs?: string[];
 }): Promise<WorkerToolResult<TodoActionPayload>> {
 	if (input.operation === "list") {
 		return withTodoMutationContext(
@@ -178,6 +186,7 @@ export async function todoListTool(input: {
 			seq: input.seq,
 			status: "passed",
 			startNext: true,
+			evidenceRefs: input.evidenceRefs,
 		});
 	}
 
@@ -322,6 +331,7 @@ async function completeTodo(input: {
 	seq?: number;
 	status: "passed" | "failed" | "needs_human";
 	startNext: boolean;
+	evidenceRefs?: string[];
 }): Promise<WorkerToolResult<TodoActionPayload>> {
 	return withTodoMutationContext(
 		input.action,
@@ -365,6 +375,50 @@ async function completeTodo(input: {
 			}
 
 			const current = currentValidation.todo;
+			const evidenceRequirements = normalizeEvidenceRequirements(
+				current.evidenceRequirementsJson,
+			);
+			const evidenceRefs = [...new Set(input.evidenceRefs ?? [])];
+			const evidenceMode = readEvidenceTodoMode();
+			const evidenceValidation =
+				input.status === "passed" &&
+				(evidenceRequirements.length > 0 || evidenceRefs.length > 0) &&
+				evidenceMode !== "off"
+					? await new RunControlRepository()
+							.validateEvidenceRefs({
+								runId: context.runId,
+								evidenceRefs,
+								requirements: evidenceRequirements,
+								todoStartedAt: current.startedAt
+									? new Date(String(current.startedAt))
+									: null,
+							})
+							.catch(() => ({
+								valid: false,
+								acceptedRefs: [] as string[],
+								unknownRefs: evidenceRefs,
+								missingRequirements: evidenceRequirements.map(
+									(requirement) => ({
+										...requirement,
+										minimumCount: requirement.minimumCount ?? 1,
+										foundCount: 0,
+									}),
+								),
+								workspaceRevision: null,
+							}))
+					: null;
+			const enforceEvidence =
+				evidenceMode === "enforce" ||
+				(evidenceMode === "managed" && Boolean(current.procedureId));
+			if (enforceEvidence && evidenceValidation && !evidenceValidation.valid) {
+				return failedTodoAction(
+					context,
+					input.action,
+					input.operation,
+					"TODO_EVIDENCE_NOT_MET",
+					{ seq: current.seq },
+				);
+			}
 			const now = new Date();
 			await repo.updateTaskRunTodo(
 				current.id,
@@ -374,6 +428,16 @@ async function completeTodo(input: {
 					startedAt: current.startedAt
 						? new Date(String(current.startedAt))
 						: now,
+					evidenceRefsJson: evidenceRefs,
+					completionGateResult: {
+						...toRecord(current.completionGateResult),
+						runControlEvidence: {
+							mode: evidenceMode,
+							requirements: evidenceRequirements,
+							refs: evidenceRefs,
+							validation: evidenceValidation,
+						},
+					},
 				},
 				{ notifyTaskId: context.taskId, notifyRunId: context.runId },
 			);
@@ -687,6 +751,8 @@ function buildErrorMessage(action: TodoToolName, errorCode: string) {
 		return "todo_list operation=replace is structural replanning. A running Todo exists, so provide todoListReplaceReason. If the current Todo is complete, use todo_list operation=done seq=<current>.";
 	if (errorCode === "INVALID_TODO_LIST_REPLACE_REASON")
 		return "todoListReplaceReason must be one of initial_plan, scope_changed, estimate_changed, newly_required_work, or blocked_replan.";
+	if (errorCode === "TODO_EVIDENCE_NOT_MET")
+		return "Todo completion evidence requirements are not satisfied. Use evidenceRefs returned by NightWorkers tool outcomes.";
 	return `${action} failed.`;
 }
 
@@ -770,6 +836,12 @@ function isFinalCloseoutTodo(
 	);
 }
 
+function toRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
 function toPayloadTodo(
 	todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number],
 ): TodoListPayloadTodo {
@@ -784,5 +856,7 @@ function toPayloadTodo(
 		dependsOn: todo.dependsOn,
 		startedAt: todo.startedAt,
 		completedAt: todo.completedAt,
+		evidenceRequirementsJson: todo.evidenceRequirementsJson,
+		evidenceRefsJson: todo.evidenceRefsJson,
 	};
 }

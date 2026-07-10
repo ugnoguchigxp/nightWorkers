@@ -41,6 +41,7 @@ export async function createCodexRuntimeThread(input: {
 	threadFactory?: CodexThreadFactory;
 	codexClient?: CodexRuntimeClient;
 	onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
+	forceFresh?: boolean;
 }): Promise<CodexRuntimeThread> {
 	if (input.threadFactory) return input.threadFactory(input.context);
 	const codexOptions = buildCodexRuntimeSdkOptions({
@@ -57,7 +58,9 @@ export async function createCodexRuntimeThread(input: {
 	});
 	const codex = input.codexClient ?? new Codex(codexOptions);
 	const threadOptions = buildCodexRuntimeThreadOptions(input.context);
-	const resumeState = readCodexResumeState(input.context);
+	const resumeState = input.forceFresh
+		? null
+		: readCodexResumeState(input.context);
 	if (resumeState?.providerThreadId) {
 		try {
 			const thread = await codex.resumeThread(

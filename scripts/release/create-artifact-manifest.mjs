@@ -15,17 +15,17 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
 	const args = parseArgs(argv);
-	if (!args.artifact || args["verification-status"] !== "passed") {
+	if (!args.artifact || !args.attestation) {
 		throw new Error(
-			"Usage: bun run release:manifest -- --artifact <path> --verification-status passed [--output <path>]",
+			"Usage: bun run release:manifest -- --artifact <path> --attestation <path> [--output <path>]",
 		);
 	}
 	const result = await createArtifactManifest({
 		artifactPath: args.artifact,
+		attestationPath: args.attestation,
 		outputPath: args.output,
 		signing: args.signing,
 		notarization: args.notarization,
-		verificationStatus: args["verification-status"],
 	});
 	const verified = await verifyReleaseMetadata({
 		manifestPath: path.relative(verifiedRoot(), result.outputPath),

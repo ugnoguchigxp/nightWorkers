@@ -294,6 +294,23 @@ export async function materializeTemplateTool(
 
 		const cloneDir = path.join(tempDir, "repo");
 		const gitOperations: MaterializeTemplateGitOperationOutput[] = [];
+		if (selectedRef.includes("/")) {
+			const latestCheck = await runGit(
+				[
+					"ls-remote",
+					"--heads",
+					resolved.template.repoUrl,
+					`refs/heads/${selectedRef}`,
+				],
+				tempDir,
+			);
+			if (!latestCheck.stdout) {
+				throw new Error(
+					`Selected template variant branch was not found: ${selectedRef}`,
+				);
+			}
+			gitOperations.push(latestCheck);
+		}
 		gitOperations.push(
 			await runGit(
 				[

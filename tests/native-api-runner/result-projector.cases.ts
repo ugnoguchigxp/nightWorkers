@@ -72,7 +72,8 @@ describe("NativeApiRunner result projection", () => {
 		const todoContent = JSON.parse(todoResult.content);
 
 		expect(todoContent.modelVisiblePayload).toBe("compact");
-		expect(todoContent.payload.todos).toBeUndefined();
+		expect(todoContent.payload.todos).toHaveLength(24);
+		expect(todoContent.payload.omittedTodoCount).toBe(1);
 		expect(todoContent.payload.counts).toMatchObject({
 			total: 25,
 			pending: 22,
@@ -82,9 +83,7 @@ describe("NativeApiRunner result projection", () => {
 			seq: 3,
 			title: "Todo 3",
 		});
-		expect(todoContent.payload.fullListAvailableVia).toBe(
-			"todo_list operation=list",
-		);
+		expect(todoContent.payload.listIsCanonicalSummary).toBe(false);
 		expect(todoResult.payload).toMatchObject({ todos });
 		const todoStructuredPayload =
 			projectWorkerResultToMcpStructuredPayload(workerTodoResult);
@@ -94,9 +93,9 @@ describe("NativeApiRunner result projection", () => {
 			counts: { total: 25, pending: 22, running: 1 },
 			currentTodo: { seq: 3, title: "Todo 3" },
 		});
-		expect(
-			(todoStructuredPayload as { todos?: unknown[] }).todos,
-		).toBeUndefined();
+		expect((todoStructuredPayload as { todos?: unknown[] }).todos).toHaveLength(
+			24,
+		);
 
 		const replacePayload = {
 			runId: "run-1",
@@ -115,7 +114,14 @@ describe("NativeApiRunner result projection", () => {
 			payload: replacePayload,
 		});
 
-		expect(replaceStructuredPayload).toBe(replacePayload);
+		expect(replaceStructuredPayload).toMatchObject({
+			operation: "replace",
+			listIsCanonicalSummary: true,
+			omittedTodoCount: 1,
+		});
+		expect(
+			(replaceStructuredPayload as { todos?: unknown[] }).todos,
+		).toHaveLength(24);
 
 		const longSpec = `# Feature Plan\n${Array.from(
 			{ length: 900 },
@@ -201,7 +207,7 @@ describe("NativeApiRunner result projection", () => {
 			"[git-diff-compact-view]",
 		);
 		expect(diffContent.payload.hunkCount).toBe(900);
-		expect(diffContent.payload.fullDiffRetainedInPayload).toBe(true);
+		expect(diffContent.payload.fullDiffRetainedInAuditPayload).toBe(true);
 		expect(diffResult.payload).toMatchObject({ diff: longDiff });
 	});
 });

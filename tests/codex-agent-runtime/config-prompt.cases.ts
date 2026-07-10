@@ -165,6 +165,32 @@ describe("CodexAgentRuntime config and prompt", () => {
 		]);
 	});
 
+	it("starts a fresh context epoch without resuming a previous Codex thread", async () => {
+		const freshThread = fakeThread([]);
+		const codexClient = {
+			resumeThread: vi.fn(),
+			startThread: vi.fn(() => freshThread),
+		};
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...buildContext(),
+				contextSnapshot: {
+					...buildContext().contextSnapshot,
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "codex-thread-previous-epoch",
+					},
+				},
+			},
+			codexClient,
+			forceFresh: true,
+		});
+
+		expect(thread).toBe(freshThread);
+		expect(codexClient.resumeThread).not.toHaveBeenCalled();
+		expect(codexClient.startThread).toHaveBeenCalledOnce();
+	});
+
 	it("starts a fresh Codex SDK thread when runtime resume is disabled", async () => {
 		const freshThread = fakeThread([]);
 		const codexClient = {

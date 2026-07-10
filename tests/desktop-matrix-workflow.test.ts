@@ -10,11 +10,15 @@ describe("desktop OS matrix workflow", () => {
 		expect(workflow).toContain("fail-fast: false");
 		for (const value of [
 			"platform: macos",
+			"target: darwin:arm64",
 			"platform: linux",
 			"platform: windows",
+			"collect-diagnostics.mjs preflight",
+			"build:frontend",
 			"desktop:prepare-sidecar",
 			"desktop:smoke-sidecar",
 			"desktop:smoke",
+			"collect-diagnostics.mjs postmortem",
 			"actions/upload-artifact@v4",
 		]) {
 			expect(workflow).toContain(value);

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { desktopSidecarTargets } from './platform-targets.mjs';
 
@@ -61,6 +62,45 @@ function expectSchemaSupportsTargets(tauriSchema, targets) {
   checks.push(`Tauri schema bundle targets: ${targets.join(',')}`);
 }
 
+function repoRelativePath(filePath) {
+  return path.relative(repoRoot, filePath).split(path.sep).join('/');
+}
+
+function trackedFilesUnder(relativePath) {
+  const result = spawnSync('git', ['ls-files', '--', relativePath], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `Unable to inspect tracked desktop resource ${relativePath}: ${result.stderr || result.stdout}`,
+    );
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function expectTrackedBundleResources(resources) {
+  const values = Array.isArray(resources) ? resources : [];
+  if (values.length === 0) {
+    throw new Error('Tauri bundle resources must not be empty');
+  }
+  for (const resource of values) {
+    const absolutePath = path.resolve(repoRoot, 'src-tauri', resource);
+    const relativePath = repoRelativePath(absolutePath);
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(`Tauri bundle resource is missing: ${relativePath}`);
+    }
+    const trackedFiles = trackedFilesUnder(relativePath);
+    if (trackedFiles.length === 0) {
+      throw new Error(`Tauri bundle resource has no tracked files: ${relativePath}`);
+    }
+    checks.push(`Tauri bundle resource: ${relativePath} (${trackedFiles.length} tracked)`);
+  }
+}
+
 const packageJson = readJson('package.json');
 const tauriConfig = readJson('src-tauri/tauri.conf.json');
 const linuxConfig = readJson('src-tauri/tauri.linux.conf.json');
@@ -68,6 +108,7 @@ const windowsConfig = readJson('src-tauri/tauri.windows.conf.json');
 const tauriSchema = readJson('node_modules/@tauri-apps/cli/config.schema.json');
 
 expectArray('default bundle targets', tauriConfig.bundle?.targets, ['app']);
+expectTrackedBundleResources(tauriConfig.bundle?.resources);
 expectArray('Linux bundle targets', linuxConfig.bundle?.targets, ['deb', 'rpm', 'appimage']);
 expectArray('Windows bundle targets', windowsConfig.bundle?.targets, ['nsis', 'msi']);
 expectSchemaSupportsTargets(tauriSchema, ['app', 'deb', 'rpm', 'appimage', 'nsis', 'msi']);

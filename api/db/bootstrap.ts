@@ -611,6 +611,8 @@ export async function ensureNightWorkersSchema() {
       procedure_snapshot text,
       context_snapshot text,
       completion_gate_result text,
+	  evidence_requirements_json text,
+	  evidence_refs_json text,
       depends_on text,
       status_reason text,
       started_at integer,
@@ -618,6 +620,16 @@ export async function ensureNightWorkersSchema() {
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
     )
   `);
+	await ensureColumn(
+		"task_run_todos",
+		"evidence_requirements_json",
+		"evidence_requirements_json text",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"evidence_refs_json",
+		"evidence_refs_json text",
+	);
 
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_run_todos_run_id_idx ON task_run_todos (run_id)",

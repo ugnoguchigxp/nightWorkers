@@ -1,6 +1,7 @@
 name: Desktop matrix
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - ".github/workflows/desktop-matrix.yml"
@@ -27,15 +28,18 @@ jobs:
         include:
           - platform: macos
             os: macos-14
-            target: darwin:x64
+            target: darwin:arm64
+            check_id: desktop-macos
             packaged_smoke: true
           - platform: linux
             os: ubuntu-24.04
             target: linux:x64
+            check_id: desktop-linux
             packaged_smoke: false
           - platform: windows
             os: windows-latest
             target: win32:x64
+            check_id: desktop-windows
             packaged_smoke: false
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +54,12 @@ jobs:
           libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Capture desktop preflight
+        run: node scripts/desktop/collect-diagnostics.mjs preflight --expected-target ${{ matrix.target }}
       - name: Verify platform configuration
         run: bun run desktop:check:cross-platform
+      - name: Build frontend staging input
+        run: bun run build:frontend
       - name: Prepare sidecar
         run: bun run desktop:prepare-sidecar
       - name: Verify target manifest
@@ -64,6 +72,21 @@ jobs:
       - name: Packaged app smoke
         if: matrix.packaged_smoke
         run: bun run desktop:smoke
+      - name: Record release check evidence
+        run: >-
+          node scripts/release/release-check-evidence.mjs
+          --id ${{ matrix.check_id }}
+          --output artifacts/release-check-${{ matrix.check_id }}.json
+      - name: Upload release check evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-check-${{ matrix.check_id }}
+          path: artifacts/release-check-${{ matrix.check_id }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Capture desktop postmortem
+        if: always()
+        run: node scripts/desktop/collect-diagnostics.mjs postmortem --expected-target ${{ matrix.target }}
       - name: Upload diagnostics and packages
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,6 +94,7 @@ jobs:
           name: desktop-${{ matrix.platform }}-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
+            artifacts/**
             scripts/desktop/staged/manifest.json
             src-tauri/target/release/bundle/**
             *.log

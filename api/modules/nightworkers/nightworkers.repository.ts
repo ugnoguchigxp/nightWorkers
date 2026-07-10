@@ -7,6 +7,7 @@ import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers
 import {
 	appendActivityArtifact,
 	enqueueActivityEvent,
+	flushActivityEventQueue,
 	getToolDiffActivityKind,
 	taskMessageRoleToActivityKind,
 	taskMessageRoleToActivitySource,
@@ -147,6 +148,9 @@ export async function updateRepositoryProjectMeta(
 }
 
 export async function deleteRepository(id: string) {
+	// A repository delete cascades through tasks, so drain their queued ledger
+	// entries before those foreign-key targets disappear.
+	await flushActivityEventQueue();
 	const [repo] = await db
 		.delete(repositories)
 		.where(eq(repositories.id, id))
@@ -530,6 +534,9 @@ export async function updateTask(
 }
 
 export async function deleteTask(id: string) {
+	// Persist queued ledger entries while their task foreign keys still exist.
+	// The task delete then removes them through the schema cascade.
+	await flushActivityEventQueue();
 	return db.transaction(async (tx) => {
 		const existing = await tx
 			.select()

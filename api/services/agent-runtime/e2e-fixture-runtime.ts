@@ -12,7 +12,8 @@ export async function runE2eFixtureRuntime(
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
 ): Promise<AgentRuntimeResult> {
-	if (context.latestUserMessage.includes("[fixture:policy-block]")) {
+	const fixtureBehavior = readFixtureBehavior(context.compiledPrompt);
+	if (fixtureBehavior === "policy-block") {
 		await sink.emit({
 			type: "runtime_warning",
 			message: "Deterministic fixture policy block.",
@@ -29,6 +30,75 @@ export async function runE2eFixtureRuntime(
 			stoppedBy: "policy",
 			riskLevel: "medium",
 			testResults: { fixture: true, policyBlocked: true },
+		};
+	}
+	if (fixtureBehavior === "hold_until_stopped") {
+		await sink.emit({
+			type: "runtime_started",
+			message: "Deterministic fixture is holding until stopped.",
+			payload: { fixture: true, behavior: fixtureBehavior },
+		});
+		while (true) {
+			const run = await repo.getTaskRun(context.runId);
+			if (!run || run.status === "cancelled") break;
+			await new Promise((resolve) => setTimeout(resolve, 25));
+		}
+		return {
+			terminalState: "cancelled",
+			summary: "Deterministic fixture stopped by request.",
+			finalReport: "Deterministic fixture stopped by request.",
+			stoppedBy: "cancelled",
+			riskLevel: "low",
+			testResults: { fixture: true, behavior: fixtureBehavior },
+		};
+	}
+	if (fixtureBehavior === "timeout") {
+		await sink.emit({
+			type: "runtime_started",
+			message: "Deterministic fixture is waiting for its run timeout.",
+			payload: { fixture: true, behavior: fixtureBehavior },
+		});
+		await new Promise((resolve) =>
+			setTimeout(resolve, Math.max(1, context.timeoutSeconds) * 1000),
+		);
+		return {
+			terminalState: "timed_out",
+			summary: "Deterministic fixture timed out.",
+			finalReport: `Deterministic fixture timed out after ${context.timeoutSeconds}s.`,
+			stoppedBy: "budget",
+			riskLevel: "medium",
+			testResults: { fixture: true, behavior: fixtureBehavior },
+		};
+	}
+	if (fixtureBehavior === "tool_failure") {
+		await sink.emit({
+			type: "runtime_error",
+			message: "Deterministic fixture tool failure.",
+			payload: { fixture: true, behavior: fixtureBehavior },
+		});
+		return {
+			terminalState: "failed",
+			summary: "Deterministic fixture tool failure.",
+			finalReport:
+				"Deterministic fixture tool failure before any workspace mutation.",
+			stoppedBy: "tool_failure",
+			riskLevel: "medium",
+			testResults: { fixture: true, behavior: fixtureBehavior },
+		};
+	}
+	if (fixtureBehavior === "verification_failure") {
+		await sink.emit({
+			type: "verification_finished",
+			message: "Deterministic verification failed.",
+			payload: { command: "fixture verify", exitCode: 1, ok: false },
+		});
+		return {
+			terminalState: "needs_human",
+			summary: "Deterministic verification requires follow-up.",
+			finalReport: "Required deterministic verification failed.",
+			stoppedBy: "tool_failure",
+			riskLevel: "medium",
+			testResults: { fixture: true, behavior: fixtureBehavior },
 		};
 	}
 
@@ -97,4 +167,13 @@ export async function runE2eFixtureRuntime(
 		},
 		logContent: finalReport,
 	};
+}
+
+function readFixtureBehavior(message: string) {
+	const matches = [
+		...message.matchAll(
+			/\[fixture:(policy-block|hold_until_stopped|timeout|tool_failure|verification_failure|success)\]/g,
+		),
+	];
+	return matches.at(-1)?.[1] ?? null;
 }

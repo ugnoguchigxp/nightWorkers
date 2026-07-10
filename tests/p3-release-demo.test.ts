@@ -6,6 +6,12 @@ import { checkDocsConsistency } from "../scripts/check-docs-consistency.mjs";
 import { resetDemo, smokeDemo } from "../scripts/demo/support-ops-crm.mjs";
 import { executeRelease } from "../scripts/release/create-release.mjs";
 import {
+	createReleaseAttestation,
+	requiredReleaseCheckIds,
+	verifyReleaseAttestation,
+} from "../scripts/release/release-attestation.mjs";
+import { createReleaseCheckEvidence } from "../scripts/release/release-check-evidence.mjs";
+import {
 	createArtifactManifest,
 	verifyReleaseMetadata,
 } from "../scripts/release/release-metadata.mjs";
@@ -43,6 +49,51 @@ async function releaseFixture() {
 	return root;
 }
 
+async function attestationFixture(options: {
+	root: string;
+	artifactPath: string;
+	omitCheck?: string;
+	mismatchedCheck?: string;
+}) {
+	const checksDirectory = path.join(options.root, "checks");
+	await mkdir(checksDirectory, { recursive: true });
+	const commitSha = "a".repeat(40);
+	for (const id of requiredReleaseCheckIds) {
+		if (id === options.omitCheck) continue;
+		await createReleaseCheckEvidence({
+			root: options.root,
+			id,
+			outputPath: path.join(checksDirectory, `${id}.json`),
+			commitSha: id === options.mismatchedCheck ? "b".repeat(40) : commitSha,
+			workflowRunId: "123",
+			workflowRunAttempt: 1,
+			jobId: `job-${id}`,
+			runnerOs: id === "package" ? "macOS" : "Linux",
+			runnerArch: id === "package" ? "ARM64" : "X64",
+			toolVersions: {
+				node: "v22.0.0",
+				bun: "1.3.14",
+				rustc: "rustc 1.90.0",
+				cargo: "cargo 1.90.0",
+				tauriCli: "2.11.2",
+			},
+			now: new Date("2026-07-10T00:00:00.000Z"),
+		});
+	}
+	return createReleaseAttestation({
+		root: options.root,
+		artifactPath: options.artifactPath,
+		checksDirectory,
+		outputPath: "release-attestation-1.2.3.json",
+		sourceSha: commitSha,
+		workflowRunId: "123",
+		workflowRunAttempt: 1,
+		workflowName: "fixture-release",
+		repository: "fixture/nightworkers",
+		now: new Date("2026-07-10T00:01:00.000Z"),
+	});
+}
+
 describe("P3 release discipline", () => {
 	it("rejects package and Tauri version drift", async () => {
 		const root = await releaseFixture();
@@ -59,13 +110,25 @@ describe("P3 release discipline", () => {
 	it("creates and validates versioned checksum metadata", async () => {
 		const root = await releaseFixture();
 		await writeFile(path.join(root, "NightWorkers-1.2.3.zip"), "artifact");
+		const attestation = await attestationFixture({
+			root,
+			artifactPath: "NightWorkers-1.2.3.zip",
+		});
 		const { outputPath, manifest } = await createArtifactManifest({
 			root,
 			artifactPath: "NightWorkers-1.2.3.zip",
+			attestationPath: attestation.outputPath,
 			outputPath: "manifest.json",
-			verificationStatus: "passed",
 			signing: "verified",
 			notarization: "verified",
+		});
+		expect(manifest.schemaVersion).toBe("nightworkers.release-artifacts/v2");
+		expect(manifest.source.commitSha).toBe("a".repeat(40));
+		expect(manifest.build).toMatchObject({
+			runnerOs: "macOS",
+			runnerArch: "ARM64",
+			target: "darwin:arm64",
+			toolVersions: { bun: "1.3.14", tauriCli: "2.11.2" },
 		});
 		expect(manifest.artifacts[0]?.sha256).toMatch(/^[a-f0-9]{64}$/);
 		const result = await verifyReleaseMetadata({
@@ -80,11 +143,12 @@ describe("P3 release discipline", () => {
 		const root = await releaseFixture();
 		const artifactPath = path.join(root, "NightWorkers-1.2.3.zip");
 		await writeFile(artifactPath, "verified artifact");
+		const attestation = await attestationFixture({ root, artifactPath });
 		await createArtifactManifest({
 			root,
 			artifactPath,
+			attestationPath: attestation.outputPath,
 			outputPath: "manifest.json",
-			verificationStatus: "passed",
 		});
 		await writeFile(artifactPath, "tampered artifact with additional bytes");
 
@@ -111,10 +175,87 @@ describe("P3 release discipline", () => {
 				root,
 				artifactPath,
 				outputPath: "NightWorkers-1.2.3.zip",
-				verificationStatus: "passed",
 			}),
 		).rejects.toThrow("must not overwrite the artifact");
 		expect(await readFile(artifactPath, "utf8")).toBe("artifact");
+	});
+
+	it("does not accept a passed artifact manifest without attestation", async () => {
+		const root = await releaseFixture();
+		await writeFile(path.join(root, "NightWorkers-1.2.3.zip"), "artifact");
+
+		await expect(
+			createArtifactManifest({
+				root,
+				artifactPath: "NightWorkers-1.2.3.zip",
+				outputPath: "manifest.json",
+			}),
+		).rejects.toThrow("requires a verified release attestation");
+	});
+
+	it("rejects attestation when a required check is missing", async () => {
+		const root = await releaseFixture();
+		await writeFile(path.join(root, "NightWorkers-1.2.3.zip"), "artifact");
+
+		await expect(
+			attestationFixture({
+				root,
+				artifactPath: "NightWorkers-1.2.3.zip",
+				omitCheck: "accessibility",
+			}),
+		).rejects.toThrow("missing required check: accessibility");
+	});
+
+	it("rejects check evidence from a different source SHA", async () => {
+		const root = await releaseFixture();
+		await writeFile(path.join(root, "NightWorkers-1.2.3.zip"), "artifact");
+
+		await expect(
+			attestationFixture({
+				root,
+				artifactPath: "NightWorkers-1.2.3.zip",
+				mismatchedCheck: "desktop-windows",
+			}),
+		).rejects.toThrow("check SHA mismatch: desktop-windows");
+	});
+
+	it("detects a tampered verification status in persisted attestation", async () => {
+		const root = await releaseFixture();
+		const artifactPath = path.join(root, "NightWorkers-1.2.3.zip");
+		await writeFile(artifactPath, "artifact");
+		const created = await attestationFixture({ root, artifactPath });
+		const attestation = JSON.parse(await readFile(created.outputPath, "utf8"));
+		attestation.verification.status = "not_recorded";
+		await writeFile(created.outputPath, `${JSON.stringify(attestation)}\n`);
+
+		const verified = await verifyReleaseAttestation({
+			root,
+			attestationPath: created.outputPath,
+			artifactPath,
+		});
+
+		expect(verified.errors).toContain(
+			"release attestation verification is not passed",
+		);
+	});
+
+	it("publishes only the attested workflow artifact without rebuilding", async () => {
+		const root = path.resolve(import.meta.dirname, "..");
+		const workflow = await readFile(
+			path.join(root, ".github/workflows/release.yml"),
+			"utf8",
+		);
+		const publishSection = workflow.slice(workflow.indexOf("  publish:"));
+
+		expect(workflow).toContain(
+			"needs: [release-core, accessibility, desktop-matrix]",
+		);
+		expect(workflow).toContain("release-attestation.mjs");
+		expect(workflow).toContain('--attestation "$ATTESTATION"');
+		expect(workflow).toContain("environment: release");
+		expect(publishSection).toContain("actions/download-artifact@v4");
+		expect(publishSection).not.toContain("verify:release");
+		expect(publishSection).not.toContain("desktop:build");
 	});
 
 	it("never creates a tag after a failed release gate", () => {

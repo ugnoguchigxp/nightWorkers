@@ -554,7 +554,9 @@ async function appendActivityEventBatch(batch: AppendActivityEventInput[]) {
 type AppendActivityEventInput = Parameters<typeof appendActivityEvent>[0];
 
 const ACTIVITY_EVENT_FLUSH_INTERVAL_MS = 250;
-const ACTIVITY_EVENT_FLUSH_BATCH_SIZE = 64;
+// Each activity row currently binds 19 SQLite parameters. Keep a batch below
+// SQLite builds that retain the conservative 999-variable limit.
+const ACTIVITY_EVENT_FLUSH_BATCH_SIZE = 32;
 const ACTIVITY_EVENT_MAX_RETRY_DELAY_MS = 5_000;
 
 const activityEventQueue: AppendActivityEventInput[] = [];

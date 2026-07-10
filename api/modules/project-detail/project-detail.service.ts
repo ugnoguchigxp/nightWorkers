@@ -57,6 +57,7 @@ const E2E_ARTIFACT_PATHS = [
 	path.join("playwright-report", "results.json"),
 	path.join("playwright-report", "test-results.json"),
 ];
+const activeQualityProcesses = new Map<string, ReturnType<typeof spawn>>();
 
 type PlaywrightSuiteSummary = E2ESummary["suites"][number] & {
 	failedTests: number;
@@ -996,6 +997,7 @@ async function runShellCommand(input: {
 	command: string;
 	cwd: string;
 	timeoutSeconds: number;
+	onSpawn?: (child: ReturnType<typeof spawn>) => void;
 }) {
 	return new Promise<{
 		exitCode: number | null;
@@ -1005,33 +1007,58 @@ async function runShellCommand(input: {
 		const child = spawn(input.command, {
 			cwd: input.cwd,
 			shell: true,
+			detached: process.platform !== "win32",
 			env: { ...process.env, CI: process.env.CI ?? "1" },
 		});
+		input.onSpawn?.(child);
 		let output = "";
+		let settled = false;
+		let timer: ReturnType<typeof setTimeout>;
+		const finish = (result: {
+			exitCode: number | null;
+			output: string;
+			timedOut: boolean;
+		}) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(result);
+		};
 		const append = (chunk: Buffer) => {
 			output += chunk.toString("utf8");
 			if (output.length > MAX_OUTPUT_CHARS)
 				output = output.slice(-MAX_OUTPUT_CHARS);
 		};
-		const timer = setTimeout(() => {
-			child.kill("SIGTERM");
-			resolve({ exitCode: null, output, timedOut: true });
+		timer = setTimeout(() => {
+			stopQualityProcess(child);
+			finish({ exitCode: null, output, timedOut: true });
 		}, input.timeoutSeconds * 1000);
 		child.stdout.on("data", append);
 		child.stderr.on("data", append);
 		child.on("close", (exitCode) => {
-			clearTimeout(timer);
-			resolve({ exitCode, output, timedOut: false });
+			finish({ exitCode, output, timedOut: false });
 		});
 		child.on("error", (error) => {
-			clearTimeout(timer);
-			resolve({
+			finish({
 				exitCode: null,
 				output: `${output}\n${error.message}`,
 				timedOut: false,
 			});
 		});
 	});
+}
+
+function stopQualityProcess(child: ReturnType<typeof spawn> | undefined) {
+	if (!child || child.killed) return;
+	if (process.platform !== "win32" && child.pid) {
+		try {
+			process.kill(-child.pid, "SIGTERM");
+			return;
+		} catch {
+			// The process group may already have exited.
+		}
+	}
+	child.kill("SIGTERM");
 }
 
 function readCoverageArtifacts(repositoryRoot: string) {
@@ -1312,7 +1339,11 @@ export async function createProjectQualityRun(input: {
 		command,
 		cwd: repository.localPath,
 		timeoutSeconds,
+		onSpawn: (child) => activeQualityProcesses.set(run.id, child),
 	});
+	activeQualityProcesses.delete(run.id);
+	const current = await repo.getProjectQualityRun(run.id);
+	if (current?.status === "cancelled") return current;
 	const needsCoverage = input.runType === "unit" || input.runType === "all";
 	const needsE2e = input.runType === "e2e" || input.runType === "all";
 	const coverage = needsCoverage
@@ -1343,8 +1374,13 @@ export async function createProjectQualityRun(input: {
 		coverageGate: coverage.coverageGate,
 		e2eSummary: e2e.e2eSummary,
 		errorMessage: errorMessage || null,
+		onlyIfRunning: true,
 	});
-	if (!completed) throw new NotFoundError("Project quality run not found");
+	if (!completed) {
+		const latest = await repo.getProjectQualityRun(run.id);
+		if (latest) return latest;
+		throw new NotFoundError("Project quality run not found");
+	}
 	return completed;
 }
 
@@ -1358,6 +1394,8 @@ export async function cancelProjectQualityRun(
 	if (run.repositoryId !== repositoryId)
 		throw new NotFoundError("Project quality run not found");
 	if (run.status !== "running" && run.status !== "queued") return run;
+	stopQualityProcess(activeQualityProcesses.get(runId));
+	activeQualityProcesses.delete(runId);
 	const cancelled = await repo.completeProjectQualityRun({
 		runId,
 		status: "cancelled",

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyReleaseAttestation } from "./release-attestation.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const releaseHeadings = ["Added", "Changed", "Fixed", "Removed"];
@@ -98,7 +99,7 @@ export async function verifyReleaseMetadata(options = {}) {
 	if (options.manifestPath) {
 		const manifestPath = path.resolve(metadata.root, options.manifestPath);
 		const manifest = await readJson(manifestPath);
-		if (manifest.schemaVersion !== "nightworkers.release-artifacts/v1") {
+		if (manifest.schemaVersion !== "nightworkers.release-artifacts/v2") {
 			errors.push(`unsupported artifact manifest schema: ${manifest.schemaVersion}`);
 		}
 		if (manifest.version !== metadata.version) {
@@ -109,6 +110,31 @@ export async function verifyReleaseMetadata(options = {}) {
 		}
 		if (manifest.verification?.status !== "passed") {
 			errors.push("artifact manifest must record a passed verify:release result");
+		}
+		if (
+			String(manifest.verification?.workflowRunId) !==
+				String(manifest.source?.workflowRunId) ||
+			manifest.verification?.workflowRunAttempt !== manifest.source?.workflowRunAttempt
+		) {
+			errors.push("artifact manifest verification workflow does not match source");
+		}
+		if (!/^[a-f0-9]{40}$/.test(String(manifest.source?.commitSha ?? ""))) {
+			errors.push("artifact manifest source commitSha must be a full SHA");
+		}
+		if (!manifest.source?.workflowRunId || !Number.isInteger(manifest.source?.workflowRunAttempt)) {
+			errors.push("artifact manifest workflow provenance is incomplete");
+		}
+		if (
+			manifest.build?.target !== "darwin:arm64" ||
+			!manifest.build?.runnerOs ||
+			!manifest.build?.runnerArch
+		) {
+			errors.push("artifact manifest build target provenance is incomplete");
+		}
+		for (const tool of ["node", "bun", "rustc", "cargo", "tauriCli"]) {
+			if (!manifest.build?.toolVersions?.[tool]) {
+				errors.push(`artifact manifest tool version is missing: ${tool}`);
+			}
 		}
 		if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
 			errors.push("artifact manifest must contain at least one artifact");
@@ -124,6 +150,9 @@ export async function verifyReleaseMetadata(options = {}) {
 				}
 				if (!/^[a-f0-9]{64}$/.test(String(artifact.sha256 ?? ""))) {
 					errors.push(`artifact sha256 is invalid: ${filename}`);
+				}
+				if (artifact.target !== "darwin:arm64") {
+					errors.push(`artifact target is not releasable: ${artifact.target}`);
 				}
 				for (const field of ["signing", "notarization"]) {
 					if (!["verified", "not_requested"].includes(artifact[field])) {
@@ -142,6 +171,36 @@ export async function verifyReleaseMetadata(options = {}) {
 				} catch {
 					errors.push(`artifact file is missing beside manifest: ${filename}`);
 				}
+			}
+		}
+
+		const attestationFilename = String(manifest.attestation?.filename ?? "");
+		if (!attestationFilename || path.basename(attestationFilename) !== attestationFilename) {
+			errors.push(`artifact manifest attestation filename is invalid: ${attestationFilename}`);
+		} else {
+			const attestationPath = path.join(path.dirname(manifestPath), attestationFilename);
+			try {
+				const attestationBytes = await readFile(attestationPath);
+				if (manifest.attestation?.sha256 !== sha256(attestationBytes)) {
+					errors.push("artifact manifest attestation sha256 does not match file");
+				}
+				const artifactFilename = manifest.artifacts?.[0]?.filename;
+				if (artifactFilename) {
+					const verifiedAttestation = await verifyReleaseAttestation({
+						root: metadata.root,
+						attestationPath,
+						artifactPath: path.join(path.dirname(manifestPath), artifactFilename),
+					});
+					errors.push(...verifiedAttestation.errors);
+					if (
+						verifiedAttestation.attestation.source?.commitSha !==
+						manifest.source?.commitSha
+					) {
+						errors.push("artifact manifest source SHA does not match attestation");
+					}
+				}
+			} catch {
+				errors.push(`artifact manifest attestation file is missing: ${attestationFilename}`);
 			}
 		}
 	}
@@ -167,20 +226,52 @@ export async function createArtifactManifest(options) {
 	if (path.dirname(outputPath) !== path.dirname(artifactPath)) {
 		throw new Error("Artifact manifest must be written beside the artifact");
 	}
+	if (!options.attestationPath) {
+		throw new Error("Artifact manifest requires a verified release attestation");
+	}
+	const attestationPath = path.resolve(metadata.root, options.attestationPath);
+	if (path.dirname(attestationPath) !== path.dirname(artifactPath)) {
+		throw new Error("Release attestation must be written beside the artifact");
+	}
+	const verifiedAttestation = await verifyReleaseAttestation({
+		root: metadata.root,
+		attestationPath,
+		artifactPath,
+	});
+	if (verifiedAttestation.errors.length > 0) {
+		throw new Error(verifiedAttestation.errors.join("\n"));
+	}
+	const attestationBytes = await readFile(attestationPath);
+	const attestation = verifiedAttestation.attestation;
+	const packageCheck = attestation.checks.find((check) => check.id === "package");
 	const manifest = {
-		schemaVersion: "nightworkers.release-artifacts/v1",
+		schemaVersion: "nightworkers.release-artifacts/v2",
 		version: metadata.version,
 		tag: metadata.expectedTag,
 		generatedAt: new Date().toISOString(),
+		source: attestation.source,
+		build: {
+			runnerOs: packageCheck?.runnerOs ?? null,
+			runnerArch: packageCheck?.runnerArch ?? null,
+			target: attestation.artifact.target,
+			toolVersions: packageCheck?.toolVersions ?? {},
+		},
 		verification: {
 			command: "bun run verify:release",
-			status: options.verificationStatus ?? "not_recorded",
+			status: "passed",
+			workflowRunId: attestation.source.workflowRunId,
+			workflowRunAttempt: attestation.source.workflowRunAttempt,
+		},
+		attestation: {
+			filename: path.basename(attestationPath),
+			sha256: sha256(attestationBytes),
 		},
 		artifacts: [
 			{
 				filename,
 				sha256: sha256(bytes),
 				size: bytes.byteLength,
+				target: attestation.artifact.target,
 				signing: options.signing ?? "not_requested",
 				notarization: options.notarization ?? "not_requested",
 			},

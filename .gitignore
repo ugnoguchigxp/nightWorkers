@@ -37,6 +37,7 @@ coverage-frontend/
 playwright-report/
 test-results/
 blob-report/
+artifacts/
 .tanstack/tmp/
 .nightworkers-e2e/
 

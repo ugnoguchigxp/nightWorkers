@@ -639,6 +639,7 @@ export async function completeProjectQualityRun(input: {
 	coverageGate?: unknown;
 	e2eSummary?: unknown;
 	errorMessage?: string | null;
+	onlyIfRunning?: boolean;
 }) {
 	const [row] = await db
 		.update(projectQualityRuns)
@@ -653,7 +654,14 @@ export async function completeProjectQualityRun(input: {
 			completedAt: new Date(),
 			updatedAt: new Date(),
 		})
-		.where(eq(projectQualityRuns.id, input.runId))
+		.where(
+			input.onlyIfRunning
+				? and(
+						eq(projectQualityRuns.id, input.runId),
+						eq(projectQualityRuns.status, "running"),
+					)
+				: eq(projectQualityRuns.id, input.runId),
+		)
 		.returning();
 	return row ? mapQualityRun(row) : null;
 }

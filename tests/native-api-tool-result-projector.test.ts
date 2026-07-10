@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectWorkerResultToNativeApiToolResult } from "../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
 
 describe("projectWorkerResultToNativeApiToolResult", () => {
-	it("keeps full LLM_CONTEXT content visible after import_project", () => {
+	it("keeps imported LLM context in audit payload without exposing it to the model", () => {
 		const llmContext = `# LLM Context
 
 ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
@@ -43,23 +43,21 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 			payload: {
 				postImport: {
 					llmContext: {
-						rawContent: string;
 						rawContentDigest: string;
-						preview?: string;
 					};
 				};
 			};
 		};
 
-		expect(modelVisible.payload.postImport.llmContext.rawContent).toBe(
-			llmContext,
-		);
 		expect(modelVisible.payload.postImport.llmContext.rawContentDigest).toBe(
 			`chars:${llmContext.length}`,
 		);
 		expect(modelVisible.payload.postImport.llmContext).not.toHaveProperty(
-			"preview",
+			"rawContent",
 		);
+		expect(result.payload).toMatchObject({
+			postImport: { llmContext: { rawContent: llmContext } },
+		});
 		expect(result.modelVisibleSummary?.truncated).toBe(false);
 	});
 });

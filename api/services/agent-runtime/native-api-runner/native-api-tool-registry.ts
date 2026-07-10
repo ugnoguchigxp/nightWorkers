@@ -439,6 +439,12 @@ const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
 					seq: { type: "number" },
 					todos: { type: "array" },
 					startFirst: { type: "boolean" },
+					evidenceRefs: {
+						type: "array",
+						items: { type: "string" },
+						description:
+							"Evidence references returned by NightWorkers tool outcomes. Use with operation=done when required.",
+					},
 					todoListReplaceReason: {
 						type: "string",
 						enum: [

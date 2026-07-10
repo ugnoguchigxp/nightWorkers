@@ -1,6 +1,7 @@
 name: Accessibility
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]
@@ -26,6 +27,18 @@ jobs:
       - run: bunx playwright install --with-deps chromium
       - name: Run required accessibility gate
         run: node scripts/verify.mjs accessibility
+      - name: Record release check evidence
+        run: >-
+          node scripts/release/release-check-evidence.mjs
+          --id accessibility
+          --output artifacts/release-check-accessibility.json
+      - name: Upload release check evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-check-accessibility
+          path: artifacts/release-check-accessibility.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload accessibility evidence
         if: always()
         uses: actions/upload-artifact@v4

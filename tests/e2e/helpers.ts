@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, Page } from "@playwright/test";
@@ -83,4 +84,49 @@ export async function createE2eWorkspaceDirectory(prefix: string) {
 	}
 	await mkdir(workspaceRoot, { recursive: true });
 	return mkdtemp(path.join(workspaceRoot, prefix));
+}
+
+export async function createDisposableGitWorkspace(options: {
+	prefix: string;
+	dirty?: boolean;
+	withBareRemote?: boolean;
+}) {
+	const workspace = await createE2eWorkspaceDirectory(options.prefix);
+	await mkdir(path.join(workspace, "src"), { recursive: true });
+	await writeFile(path.join(workspace, "src", "greeting.txt"), "TODO\n");
+	execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+	execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+	execFileSync(
+		"git",
+		[
+			"-c",
+			"user.email=e2e@example.test",
+			"-c",
+			"user.name=NightWorkers E2E",
+			"commit",
+			"-m",
+			"initial fixture",
+		],
+		{ cwd: workspace, stdio: "ignore" },
+	);
+	let remotePath: string | null = null;
+	if (options.withBareRemote) {
+		remotePath = await createE2eWorkspaceDirectory("bare-remote-");
+		execFileSync("git", ["init", "--bare"], {
+			cwd: remotePath,
+			stdio: "ignore",
+		});
+		execFileSync("git", ["remote", "add", "origin", remotePath], {
+			cwd: workspace,
+			stdio: "ignore",
+		});
+		execFileSync("git", ["push", "-u", "origin", "HEAD"], {
+			cwd: workspace,
+			stdio: "ignore",
+		});
+	}
+	if (options.dirty) {
+		await writeFile(path.join(workspace, "pre-existing.txt"), "dirty\n");
+	}
+	return { workspace, remotePath };
 }

@@ -109,6 +109,7 @@ describe("LLM pricing calculation", () => {
 	it("seeds official Codex credit pricing rows", async () => {
 		const rows = await seedCodexPricingRows();
 
+		expect(rows).toHaveLength(3);
 		expect(rows).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -119,16 +120,9 @@ describe("LLM pricing calculation", () => {
 					cachedInputPer1m: 1.875,
 					outputPer1m: 113,
 				}),
-				expect.objectContaining({
-					provider: "codex",
-					model: "gpt-5.3-codex",
-					currencyCode: "CREDITS",
-					inputPer1m: 43.75,
-					cachedInputPer1m: 4.375,
-					outputPer1m: 350,
-				}),
 			]),
 		);
+		expect(rows.some((row) => row.model === "gpt-5.3-codex")).toBe(false);
 	});
 
 	it("imports covered public pricing rows from LiteLLM JSON", async () => {
@@ -150,6 +144,11 @@ describe("LLM pricing calculation", () => {
 						output_cost_per_token: 0.0000045,
 						cache_read_input_token_cost: 0.000000075,
 					},
+					"gpt-5.2": {
+						litellm_provider: "openai",
+						input_cost_per_token: 0.00000175,
+						output_cost_per_token: 0.000014,
+					},
 					"claude-opus-4-8": {
 						litellm_provider: "anthropic",
 						input_cost_per_token: 0.000005,
@@ -159,6 +158,11 @@ describe("LLM pricing calculation", () => {
 						litellm_provider: "anthropic",
 						input_cost_per_token: 0.00001,
 						output_cost_per_token: 0.00005,
+					},
+					"claude-opus-4-1": {
+						litellm_provider: "anthropic",
+						input_cost_per_token: 0.000015,
+						output_cost_per_token: 0.000075,
 					},
 					"gemini/gemini-3.5-flash": {
 						litellm_provider: "gemini",
@@ -170,10 +174,25 @@ describe("LLM pricing calculation", () => {
 						input_cost_per_token: 0.000003,
 						output_cost_per_token: 0.000015,
 					},
+					"gemini/gemini-3-flash-preview": {
+						litellm_provider: "gemini",
+						input_cost_per_token: 0.0000005,
+						output_cost_per_token: 0.000003,
+					},
 					"deepseek/deepseek-v3.2": {
 						litellm_provider: "deepseek",
 						input_cost_per_token: 0.00000028,
 						output_cost_per_token: 0.0000004,
+					},
+					"fireworks_ai/deepseek-v4-pro": {
+						litellm_provider: "fireworks_ai",
+						input_cost_per_token: 0.0000006,
+						output_cost_per_token: 0.0000018,
+					},
+					"fireworks_ai/deepseek-v4-flash": {
+						litellm_provider: "fireworks_ai",
+						input_cost_per_token: 0.0000003,
+						output_cost_per_token: 0.0000009,
 					},
 					"openrouter/z-ai/glm-5.1": {
 						litellm_provider: "openrouter",
@@ -184,6 +203,26 @@ describe("LLM pricing calculation", () => {
 						litellm_provider: "bedrock",
 						input_cost_per_token: 0.0000005,
 						output_cost_per_token: 0.0000012,
+					},
+					"openrouter/qwen/qwen3.6-plus": {
+						litellm_provider: "openrouter",
+						input_cost_per_token: 0.0000004,
+						output_cost_per_token: 0.0000012,
+					},
+					"dashscope/qwen3.5-plus": {
+						litellm_provider: "dashscope",
+						input_cost_per_token: 0.0000003,
+						output_cost_per_token: 0.0000009,
+					},
+					"openrouter/qwen/qwen-2.5-coder-32b-instruct": {
+						litellm_provider: "openrouter",
+						input_cost_per_token: 0.0000002,
+						output_cost_per_token: 0.0000008,
+					},
+					"openrouter/deepseek/deepseek-v3.1": {
+						litellm_provider: "openrouter",
+						input_cost_per_token: 0.0000002,
+						output_cost_per_token: 0.0000008,
 					},
 					"vercel-only-model": {
 						litellm_provider: "vercel",
@@ -199,19 +238,15 @@ describe("LLM pricing calculation", () => {
 			sourceUrl: "https://example.test/model_prices_and_context_window.json",
 		});
 
-		expect(result.imported).toBeGreaterThanOrEqual(13);
-		expect(result.skipped).toBe(2);
-		expect(result.providers).toEqual(
-			expect.arrayContaining([
-				"anthropic",
-				"deepseek",
-				"google",
-				"openai",
-				"qwen",
-				"xai",
-				"z-ai",
-			]),
-		);
+		expect(result.imported).toBe(11);
+		expect(result.skipped).toBe(9);
+		expect(result.providers).toEqual([
+			"anthropic",
+			"deepseek",
+			"google",
+			"openai",
+			"qwen",
+		]);
 		expect(result.rows).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -241,18 +276,25 @@ describe("LLM pricing calculation", () => {
 					outputPer1m: 50,
 				}),
 				expect.objectContaining({
-					provider: "z-ai",
-					model: "glm-5.1",
-					sourceLabel:
-						"LiteLLM model_prices_and_context_window.json (openrouter)",
-				}),
-				expect.objectContaining({
 					provider: "qwen",
 					model: "qwen3-coder-next",
 					sourceLabel: "LiteLLM model_prices_and_context_window.json (bedrock)",
 				}),
 			]),
 		);
+		expect(result.rows.map((row) => row.model).sort()).toEqual([
+			"claude-fable-5",
+			"claude-opus-4-8",
+			"deepseek-v3.2",
+			"deepseek-v4-flash",
+			"deepseek-v4-pro",
+			"gemini-3.5-flash",
+			"gpt-5.4-mini",
+			"gpt-5.5",
+			"qwen3-coder-next",
+			"qwen3.5-plus",
+			"qwen3.6-plus",
+		]);
 
 		const qwenPricing = await findPricingForUsage({
 			provider: "openai",
@@ -267,6 +309,21 @@ describe("LLM pricing calculation", () => {
 				outputPer1m: 1.2,
 			}),
 		);
+
+		await upsertPricingRow({
+			provider: "openai",
+			model: "gpt-5.5-2026-04-23",
+			inputPer1m: 5,
+			outputPer1m: 30,
+			effectiveFrom: "2026-04-23T00:00:00.000Z",
+			fetchedAt: new Date().toISOString(),
+			manualOverride: false,
+		});
+		const visibleOpenAiRows = await listPricingRowsPage({
+			provider: "openai",
+			model: "gpt-5.5",
+		});
+		expect(visibleOpenAiRows.rows.map((row) => row.model)).toEqual(["gpt-5.5"]);
 	});
 
 	it("matches pricing when model names differ by spacing and punctuation", async () => {

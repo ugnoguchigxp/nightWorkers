@@ -388,6 +388,12 @@ export const taskRunTodos = sqliteTable(
 		procedureSnapshot: text("procedure_snapshot", { mode: "json" }),
 		contextSnapshot: text("context_snapshot", { mode: "json" }),
 		completionGateResult: text("completion_gate_result", { mode: "json" }),
+		evidenceRequirementsJson: text("evidence_requirements_json", {
+			mode: "json",
+		}),
+		evidenceRefsJson: text("evidence_refs_json", { mode: "json" }).$type<
+			string[]
+		>(),
 		dependsOn: text("depends_on", { mode: "json" }).$type<
 			Array<string | number>
 		>(),
@@ -428,6 +434,75 @@ export const taskEvents = sqliteTable(
 		taskRunSeqUniqueIdx: uniqueIndex("task_events_task_run_seq_uidx").on(
 			table.taskRunId,
 			table.seq,
+		),
+	}),
+);
+
+export const taskRunControlStates = sqliteTable("task_run_control_states", {
+	runId: text("run_id")
+		.primaryKey()
+		.references(() => taskRuns.id, { onDelete: "cascade" }),
+	version: integer("version").default(1).notNull(),
+	phase: text("phase").default("active").notNull(),
+	progressRevision: integer("progress_revision").default(0).notNull(),
+	workspaceRevision: integer("workspace_revision").default(0).notNull(),
+	workflowRevision: integer("workflow_revision").default(0).notNull(),
+	todoRevision: integer("todo_revision").default(0).notNull(),
+	evidenceRevision: integer("evidence_revision").default(0).notNull(),
+	contextEpoch: integer("context_epoch").default(0).notNull(),
+	lastMutationSequence: integer("last_mutation_sequence"),
+	lastEvidenceSequence: integer("last_evidence_sequence"),
+	consecutiveNoProgressTurns: integer("consecutive_no_progress_turns")
+		.default(0)
+		.notNull(),
+	terminalReason: text("terminal_reason"),
+	stateVersion: integer("state_version").default(0).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.$defaultFn(() => new Date())
+		.notNull(),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.$defaultFn(() => new Date())
+		.$onUpdateFn(() => new Date())
+		.notNull(),
+});
+
+export const taskRunActionRecords = sqliteTable(
+	"task_run_action_records",
+	{
+		...commonColumns,
+		runId: text("run_id")
+			.notNull()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		sequence: integer("sequence").notNull(),
+		toolName: text("tool_name").notNull(),
+		normalizedArgsDigest: text("normalized_args_digest").notNull(),
+		actionKey: text("action_key").notNull(),
+		progressRevision: integer("progress_revision").notNull(),
+		dedupeRevision: integer("dedupe_revision").notNull(),
+		executionStatus: text("execution_status").default("pending").notNull(),
+		transportStatus: text("transport_status"),
+		domainOutcome: text("domain_outcome"),
+		effect: text("effect").notNull(),
+		resultDigest: text("result_digest"),
+		evidenceRefsJson: text("evidence_refs_json", { mode: "json" }).$type<
+			string[]
+		>(),
+		artifactRefsJson: text("artifact_refs_json", { mode: "json" }).$type<
+			string[]
+		>(),
+		modelViewJson: text("model_view_json", { mode: "json" }),
+		repeatCount: integer("repeat_count").default(0).notNull(),
+	},
+	(table) => ({
+		runSequenceUniqueIdx: uniqueIndex(
+			"task_run_action_records_run_sequence_uidx",
+		).on(table.runId, table.sequence),
+		runActionRevisionUniqueIdx: uniqueIndex(
+			"task_run_action_records_run_action_revision_uidx",
+		).on(table.runId, table.actionKey, table.dedupeRevision),
+		runCreatedIdx: index("task_run_action_records_run_created_idx").on(
+			table.runId,
+			table.createdAt,
 		),
 	}),
 );

@@ -43,7 +43,6 @@
     ],
     "resources": [
       "../api/services/supervisor/skills",
-      "../api/services/procedures/builtin",
       "../scripts/desktop/staged"
     ],
     "macOS": {

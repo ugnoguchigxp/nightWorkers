@@ -89,7 +89,7 @@
 			"title": "needs_humanから再実行して復帰できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "task-events"]
 		},
 		{
@@ -97,7 +97,7 @@
 			"title": "実行中のRunをcancelできる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		},
 		{
@@ -105,7 +105,7 @@
 			"title": "timeoutしたRunが終端状態と証跡を保存する",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "task-events"]
 		},
 		{
@@ -113,7 +113,7 @@
 			"title": "needs_reviewのRunをReviewで完了できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -121,7 +121,7 @@
 			"title": "Test Mode完了後にReview Mode artifactへ遷移できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		},
 		{
@@ -129,7 +129,7 @@
 			"title": "Review完了後にcommit closeoutを完了できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "git"]
 		},
 		{
@@ -137,7 +137,7 @@
 			"title": "tool failureでfailed終端となりproduction diffを残さない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "task-events", "git-diff"]
 		},
 		{
@@ -145,7 +145,7 @@
 			"title": "同じTaskのactive Runが重複作成されない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue"]
 		},
 		{
@@ -153,7 +153,7 @@
 			"title": "Test Modeが別Runで起動しTodoを使わずmanaged evidenceを残す",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		},
 		{
@@ -161,7 +161,7 @@
 			"title": "verification documentなしではTest Modeを開始しない",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -169,7 +169,7 @@
 			"title": "required verification失敗時にTest Modeを完了扱いにしない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "task-events"]
 		},
 		{
@@ -177,7 +177,7 @@
 			"title": "Review finding dispositionとprompt suggestionを再読込後も保持する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -185,7 +185,7 @@
 			"title": "HEAD移動またはownership外stageを検出して誤commitを防ぐ",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "git"]
 		},
 		{
@@ -193,7 +193,7 @@
 			"title": "commit済みRunをlocal bare remoteへpushできる",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "git"]
 		},
 		{
@@ -201,7 +201,7 @@
 			"title": "ArchiveしたTaskがactive listから消えRestore後にreadyで戻る",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -209,7 +209,7 @@
 			"title": "processorCount=2でnormal Taskを異なるslotへ割り当てる",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue", "task-events"]
 		},
 		{
@@ -217,7 +217,7 @@
 			"title": "exclusive Taskがactive normal完了まで開始しない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue", "task-events"]
 		},
 		{
@@ -225,7 +225,7 @@
 			"title": "sequence groupをorder順に実行する",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue", "task-events"]
 		},
 		{
@@ -233,7 +233,7 @@
 			"title": "sequence predecessor失敗時に後続を開始しない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue", "task-events"]
 		},
 		{
@@ -241,7 +241,7 @@
 			"title": "needs_human Queue entryをpriority保持でrecover/requeueできる",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "queue"]
 		},
 		{
@@ -249,7 +249,7 @@
 			"title": "Project DetailのOverviewとQualityへ実データを表示する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -257,7 +257,7 @@
 			"title": "fixture repositoryのunit coverage E2E結果をQuality履歴へ表示する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "quality-artifact"]
 		},
 		{
@@ -265,7 +265,7 @@
 			"title": "実行中のQuality Runをcancelして再実行できる",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "process"]
 		},
 		{
@@ -273,7 +273,7 @@
 			"title": "Repositoryのtest quality settingsを保存しreload後も保持する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -281,7 +281,7 @@
 			"title": "Repository root外のfile pathを読めない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["api", "security", "audit"]
 		},
 		{
@@ -289,7 +289,7 @@
 			"title": "afterSeq replayでTask activity eventを重複欠落なく取得する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "task-events"]
 		},
 		{
@@ -297,7 +297,7 @@
 			"title": "Test Review artifactのdeep linkをreloadと履歴移動後も維持する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "url", "api"]
 		},
 		{
@@ -305,7 +305,7 @@
 			"title": "Project Quality Test Mode Review Modeの実データ状態にseriousなaxe違反がない",
 			"priority": "P1",
 			"suite": "accessibility",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "accessibility"]
 		},
 		{
@@ -313,7 +313,7 @@
 			"title": "Mission goalからapproved candidateだけをTask化する",
 			"priority": "P2",
 			"suite": "regression",
-			"gateStatus": "planned",
+			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database"]
 		}
 	]

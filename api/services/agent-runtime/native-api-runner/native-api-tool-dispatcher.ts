@@ -9,6 +9,9 @@ import {
 	evaluateCoverageAutonomyGate,
 	formatCoverageAutonomyFinalReport,
 } from "../../quality/coverage-autonomy-gate";
+import { runFinalizeController } from "../../run-control/finalize-controller";
+import { runControlService } from "../../run-control/run-control-service";
+import { readRunControlKernelMode } from "../../run-control/settings";
 import type { ProviderToolCall } from "../../structured-llm/tool-calls";
 import { executeWorkerTool } from "../../worker-tools/dispatcher";
 import {
@@ -28,6 +31,7 @@ import {
 } from "./native-api-tool-registry";
 import {
 	capNativeApiToolResultContent,
+	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "./native-api-tool-result-projector";
 
@@ -118,6 +122,7 @@ export async function dispatchNativeApiToolCall(input: {
 	}
 
 	if (registration.kind === "context_window") {
+		await runControlService.rotateContext(input.context.runId);
 		return continueWith(successfulNewContextWindow(), {
 			...input.state,
 			newContextWindowRequested: true,
@@ -131,6 +136,41 @@ export async function dispatchNativeApiToolCall(input: {
 				"TOOL_NOT_DISPATCHABLE",
 				`${input.toolCall.name} is not dispatchable.`,
 			),
+			input.state,
+		);
+	}
+	const prepared = await runControlService.prepare({
+		runId: input.context.runId,
+		toolName: workerToolName,
+		arguments: input.toolCall.arguments,
+		workspaceIdentity: input.context.repoRoot,
+	});
+	if (prepared.kind === "terminal") {
+		return continueWith(
+			failedToolResult(
+				"RUN_ALREADY_TERMINAL",
+				`Run is already terminal (${prepared.state.terminalReason ?? "unknown"}).`,
+			),
+			input.state,
+		);
+	}
+	if (prepared.kind === "reuse") {
+		return continueWith(
+			capNativeApiToolResultContent({
+				ok: prepared.action.domainOutcome === "succeeded",
+				content: JSON.stringify({
+					control: "reused_result",
+					domainOutcome: prepared.action.domainOutcome,
+					progressRevision: prepared.state.progressRevision,
+					phase: prepared.state.phase,
+					recoveryRequirement:
+						prepared.state.phase === "recovery"
+							? "新しい観測、workspace/workflow変更、新しい証跡、またはblocker提示のいずれかを一つ行う"
+							: null,
+					payload: prepared.action.modelView,
+				}),
+				payload: prepared.action.modelView,
+			}),
 			input.state,
 		);
 	}
@@ -153,6 +193,20 @@ export async function dispatchNativeApiToolCall(input: {
 		safetyPolicy: input.context.safetyPolicy,
 		readFiles: input.state.readFiles,
 	});
+	const modelView = projectWorkerResultToMcpStructuredPayload(dispatch.result);
+	const outcome = await runControlService.completeWorkerAction({
+		prepared: {
+			state: prepared.state,
+			action: prepared.action,
+			persisted: prepared.persisted,
+		},
+		result: dispatch.result,
+		modelView,
+		evidenceRefs:
+			prepared.action.effect === "verification"
+				? [`verification:${input.context.runId}:${prepared.action.id}`]
+				: [],
+	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({
 		type: "tool_call_finished",
@@ -162,6 +216,13 @@ export async function dispatchNativeApiToolCall(input: {
 			toolName: workerToolName,
 			arguments: input.toolCall.arguments,
 			ok: dispatch.result.ok,
+			outcome: {
+				transportStatus: outcome.transportStatus,
+				domainOutcome: outcome.domainOutcome,
+				effect: outcome.effect,
+				progressRevisionBefore: outcome.progressRevisionBefore,
+				progressRevisionAfter: outcome.progressRevisionAfter,
+			},
 			result: dispatch.result.payload,
 			error: dispatch.result.error,
 		},
@@ -306,6 +367,11 @@ async function dispatchTodoTool(input: {
 			typeof input.toolCall.arguments.todoListReplaceReason === "string"
 				? (input.toolCall.arguments.todoListReplaceReason as never)
 				: undefined,
+		evidenceRefs: Array.isArray(input.toolCall.arguments.evidenceRefs)
+			? input.toolCall.arguments.evidenceRefs.filter(
+					(value): value is string => typeof value === "string",
+				)
+			: undefined,
 	});
 	return projectWorkerResultToNativeApiToolResult(result);
 }
@@ -445,6 +511,24 @@ async function finalizeAnswer(input: {
 			failedToolResult(guard.code, guard.message),
 			input.state,
 		);
+	}
+	if (readRunControlKernelMode(input.context) === "enforce") {
+		const controlGuard = await runFinalizeController.evaluateCandidate({
+			runId: input.context.runId,
+			allowedOpenTodoProcedureIds: ["final_completion_report"],
+		});
+		if (!controlGuard.allowFinalize) {
+			return continueWith(
+				failedToolResult(
+					controlGuard.code,
+					[controlGuard.message, controlGuard.recoveryCard]
+						.filter(Boolean)
+						.join("\n\n"),
+					{ missingConditions: controlGuard.missingConditions },
+				),
+				input.state,
+			);
+		}
 	}
 
 	const openTodos = (

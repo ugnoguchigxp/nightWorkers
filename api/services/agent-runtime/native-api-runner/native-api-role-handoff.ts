@@ -381,6 +381,7 @@ function requireNativeApiExecutionMode(
 	if (
 		value !== "planning" &&
 		value !== "implementation" &&
+		value !== "test" &&
 		value !== "review" &&
 		value !== "general_answer"
 	) {

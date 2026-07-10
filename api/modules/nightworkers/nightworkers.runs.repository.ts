@@ -47,6 +47,9 @@ type ReplaceTaskRunTodoInput = {
 	procedureSnapshot?: unknown;
 	contextSnapshot?: unknown;
 	completionGateResult?: unknown;
+	evidenceRequirementsJson?: unknown;
+	evidenceRequirements?: unknown;
+	evidenceRefsJson?: string[] | null;
 	dependsOn?: Array<string | number> | null;
 	statusReason?: string | null;
 	startedAt?: Date | null;
@@ -83,6 +86,9 @@ function normalizeReplacementTodoInput(
 		procedureSnapshot: todo.procedureSnapshot ?? null,
 		contextSnapshot: todo.contextSnapshot ?? null,
 		completionGateResult: todo.completionGateResult ?? null,
+		evidenceRequirementsJson:
+			todo.evidenceRequirementsJson ?? todo.evidenceRequirements ?? null,
+		evidenceRefsJson: todo.evidenceRefsJson ?? [],
 		dependsOn: todo.dependsOn ?? [],
 		statusReason: todo.statusReason ?? null,
 		startedAt: todo.startedAt ?? null,
@@ -388,6 +394,8 @@ export async function createTaskRunTodo(data: {
 	procedureSnapshot?: unknown;
 	contextSnapshot?: unknown;
 	completionGateResult?: unknown;
+	evidenceRequirementsJson?: unknown;
+	evidenceRefsJson?: string[] | null;
 	dependsOn?: Array<string | number> | null;
 	statusReason?: string | null;
 	startedAt?: Date | null;
@@ -397,6 +405,7 @@ export async function createTaskRunTodo(data: {
 		.insert(taskRunTodos)
 		.values({
 			...data,
+			evidenceRefsJson: data.evidenceRefsJson ?? [],
 			dependsOn: data.dependsOn ?? [],
 		})
 		.returning();
@@ -517,6 +526,8 @@ export async function updateTaskRunTodo(
 		procedureSnapshot?: unknown;
 		contextSnapshot?: unknown;
 		completionGateResult?: unknown;
+		evidenceRequirementsJson?: unknown;
+		evidenceRefsJson?: string[] | null;
 		dependsOn?: Array<string | number> | null;
 		statusReason?: string | null;
 		startedAt?: Date | null;
@@ -531,6 +542,10 @@ export async function updateTaskRunTodo(
 			.update(taskRunTodos)
 			.set({
 				...data,
+				evidenceRefsJson:
+					data.evidenceRefsJson === undefined
+						? undefined
+						: (data.evidenceRefsJson ?? []),
 				dependsOn:
 					data.dependsOn === undefined ? undefined : (data.dependsOn ?? []),
 				updatedAt: new Date(),

@@ -145,6 +145,26 @@ export const nightWorkersTodoListInputSchema = z.object({
 					)
 					.nullable()
 					.optional(),
+				evidenceRequirements: z
+					.array(
+						z.object({
+							kind: z.enum([
+								"observation",
+								"workspace_mutation",
+								"verification",
+								"decision",
+								"approval",
+							]),
+							freshness: z.enum([
+								"after_todo_start",
+								"after_last_mutation",
+								"any",
+							]),
+							minimumCount: z.number().int().positive().optional(),
+						}),
+					)
+					.nullable()
+					.optional(),
 			}),
 		)
 		.optional()
@@ -166,6 +186,12 @@ export const nightWorkersTodoListInputSchema = z.object({
 		.optional()
 		.describe(
 			"Required with todo_list operation=replace when a Todo is already running. Do not use this with todo_list operation=start/done/block/fail.",
+		),
+	evidenceRefs: z
+		.array(z.string().trim().min(1))
+		.optional()
+		.describe(
+			"Evidence references returned by NightWorkers tool outcomes. Used with operation=done when the Todo declares evidence requirements.",
 		),
 });
 

@@ -17,8 +17,10 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	/* Retry on CI only */
 	retries: process.env.CI ? 2 : 0,
-	/* opt out of parallel tests on CI. */
-	workers: process.env.CI ? 1 : undefined,
+	// The deterministic suite shares one isolated API process and SQLite queue.
+	// Queue processor settings and leases are process-global, so file-level serial
+	// suites alone cannot prevent cross-worker scheduling interference.
+	workers: 1,
 	/* Reporter to use. See https://playwright.dev/docs/test-reporters */
 	reporter: "html",
 	/* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, like } from "drizzle-orm";
+import { and, asc, desc, eq, like } from "drizzle-orm";
 import { db } from "../../db/client";
 import { llmModelPricing } from "../../db/schema";
 
@@ -30,10 +30,18 @@ const PUBLIC_PRICING_COVERED_PROVIDERS = new Set([
 	"openai",
 	"anthropic",
 	"google",
-	"xai",
 	"deepseek",
-	"z-ai",
 	"qwen",
+]);
+const QWEN_CODING_MODELS = new Set([
+	"qwen3-coder-next",
+	"qwen3.6-plus",
+	"qwen3.5-plus",
+]);
+const DEEPSEEK_CODING_MODELS = new Set([
+	"deepseek-v4-pro",
+	"deepseek-v4-flash",
+	"deepseek-v3.2",
 ]);
 
 type PricingFetch = (url: string) => Promise<{
@@ -84,21 +92,14 @@ const CODEX_PRICING_SEED: LlmPricingInput[] = [
 		cachedInputPer1m: 1.875,
 		outputPer1m: 113,
 	},
-	{
-		provider: "codex",
-		model: "gpt-5.3-codex",
-		currencyCode: "CREDITS",
-		inputPer1m: 43.75,
-		cachedInputPer1m: 4.375,
-		outputPer1m: 350,
-	},
 ];
 
 export async function listPricingRows() {
-	return db
+	const rows = await db
 		.select()
 		.from(llmModelPricing)
 		.orderBy(llmModelPricing.provider, llmModelPricing.model);
+	return currentVisiblePricingRows(rows);
 }
 
 export type PricingPageInput = {
@@ -126,9 +127,8 @@ export async function listPricingRowsPage(
 	if (model) filters.push(like(llmModelPricing.model, `%${model}%`));
 	const where = and(...filters);
 
-	const [[total], rows] = await Promise.all([
-		db.select({ value: count() }).from(llmModelPricing).where(where),
-		db
+	const matchingRows = currentVisiblePricingRows(
+		await db
 			.select()
 			.from(llmModelPricing)
 			.where(where)
@@ -136,11 +136,10 @@ export async function listPricingRowsPage(
 				asc(llmModelPricing.provider),
 				asc(llmModelPricing.model),
 				asc(llmModelPricing.id),
-			)
-			.limit(limit)
-			.offset(offset),
-	]);
-	const totalCount = total?.value ?? 0;
+			),
+	);
+	const totalCount = matchingRows.length;
+	const rows = matchingRows.slice(offset, offset + limit);
 	const nextOffset = offset + rows.length;
 	return {
 		rows,
@@ -436,23 +435,127 @@ function mapLiteLlmPriceRow(
 	const sourceLabel = sourceProvider
 		? `${LITELLM_PRICING_SOURCE_LABEL} (${sourceProvider})`
 		: LITELLM_PRICING_SOURCE_LABEL;
-	const models = pricingModelAliases(model);
+	const canonicalModel = canonicalPublicPricingModel(provider, model);
+	if (!canonicalModel) return [];
 
-	return [...models].map((modelName) => ({
-		provider,
-		model: modelName,
-		currencyCode: "USD",
-		inputPer1m,
-		cachedInputPer1m,
-		outputPer1m,
-		reasoningOutputPer1m: null,
-		sourceUrl: context.sourceUrl,
-		sourceLabel,
-		effectiveFrom: context.effectiveFrom,
-		fetchedAt: context.fetchedAt,
-		manualOverride: false,
-		enabled: true,
-	}));
+	return [
+		{
+			provider,
+			model: canonicalModel,
+			currencyCode: "USD",
+			inputPer1m,
+			cachedInputPer1m,
+			outputPer1m,
+			reasoningOutputPer1m: null,
+			sourceUrl: context.sourceUrl,
+			sourceLabel,
+			effectiveFrom: context.effectiveFrom,
+			fetchedAt: context.fetchedAt,
+			manualOverride: false,
+			enabled: true,
+		},
+	];
+}
+
+function isVisiblePricingRow(row: LlmPricingRow) {
+	if (row.manualOverride) return true;
+	const provider = row.provider === "codex" ? "openai" : row.provider;
+	const canonicalModel = canonicalPublicPricingModel(provider, row.model);
+	return canonicalModel === row.model;
+}
+
+function currentVisiblePricingRows(rows: LlmPricingRow[]) {
+	const currentRows = new Map<string, LlmPricingRow>();
+	for (const row of rows) {
+		if (!isVisiblePricingRow(row)) continue;
+		const key = `${row.provider}\u0000${row.model}\u0000${row.currencyCode}`;
+		const existing = currentRows.get(key);
+		if (!existing || isNewerPricingRow(row, existing))
+			currentRows.set(key, row);
+	}
+	return [...currentRows.values()];
+}
+
+function isNewerPricingRow(candidate: LlmPricingRow, existing: LlmPricingRow) {
+	if (candidate.manualOverride !== existing.manualOverride) {
+		return candidate.manualOverride;
+	}
+	if (candidate.effectiveFrom.getTime() !== existing.effectiveFrom.getTime()) {
+		return candidate.effectiveFrom.getTime() > existing.effectiveFrom.getTime();
+	}
+	return (
+		(candidate.fetchedAt?.getTime() ?? 0) > (existing.fetchedAt?.getTime() ?? 0)
+	);
+}
+
+function canonicalPublicPricingModel(provider: string, model: string) {
+	const candidates = [...pricingModelAliases(model)]
+		.flatMap(publicPricingModelCandidates)
+		.map((candidate) => candidate.toLowerCase());
+	for (const candidate of candidates) {
+		if (provider === "openai") {
+			const match = candidate.match(
+				/^(gpt-(\d+)\.(\d+)(?:-(?:pro|mini|nano|sol|terra|luna))?)(?:-\d{4}-\d{2}-\d{2})?$/,
+			);
+			if (
+				match &&
+				(Number(match[2]) > 5 ||
+					(Number(match[2]) === 5 && Number(match[3]) >= 4))
+			) {
+				return match[1];
+			}
+		}
+		if (provider === "anthropic") {
+			const match = candidate.match(
+				/^(claude-(?:fable|sonnet|opus|haiku)-(\d+)(?:-(\d{1,2}))?)(?:-\d{8})?(?:-v\d(?::\d)?)?$/,
+			);
+			if (
+				match &&
+				(Number(match[2]) > 4 ||
+					(Number(match[2]) === 4 && Number(match[3] ?? 0) >= 5))
+			) {
+				return match[1];
+			}
+		}
+		if (provider === "google") {
+			const match = candidate.match(
+				/^(gemini-(\d+)\.(\d+)-(?:pro|flash-lite|flash))(?:-(preview|latest))?$/,
+			);
+			if (
+				match &&
+				(Number(match[2]) > 3 ||
+					(Number(match[2]) === 3 && Number(match[3]) >= 1))
+			) {
+				if (match[4] === "preview" && match[1].endsWith("-pro")) {
+					return `${match[1]}-preview`;
+				}
+				if (!match[4]) return match[1];
+			}
+		}
+		if (provider === "qwen" && QWEN_CODING_MODELS.has(candidate)) {
+			return candidate;
+		}
+		if (provider === "deepseek" && DEEPSEEK_CODING_MODELS.has(candidate)) {
+			return candidate;
+		}
+	}
+	return null;
+}
+
+function publicPricingModelCandidates(model: string) {
+	const normalized = model.trim().toLowerCase();
+	const candidates = new Set([normalized]);
+	for (const marker of ["claude-", "gemini-", "gpt-", "deepseek-", "qwen"]) {
+		const markerIndex = normalized.lastIndexOf(marker);
+		if (markerIndex >= 0) candidates.add(normalized.slice(markerIndex));
+	}
+	if (normalized.startsWith("deepseek.")) {
+		candidates.add(`deepseek-${normalized.slice("deepseek.".length)}`);
+	}
+	if (normalized.startsWith("qwen.")) {
+		candidates.add(normalized.slice("qwen.".length));
+	}
+	return [...candidates];
 }
 
 function normalizeLiteLlmProvider(provider: string, model: string) {

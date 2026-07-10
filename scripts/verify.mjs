@@ -26,6 +26,11 @@ const desktopLintTask = task('desktop-lint', 'desktop lint', [
   'run',
   'desktop:lint',
 ]);
+const desktopBackendBuildTask = task(
+  'desktop-backend-build',
+  'desktop backend bundle build',
+  ['--silent', 'run', 'build:backend:desktop'],
+);
 const desktopBuildTask = task('desktop-build', 'desktop build', [
   '--silent',
   'run',
@@ -155,7 +160,12 @@ const desktopPhases = [
     id: 'desktop-build-smoke',
     label: 'desktop build and smoke',
     mode: 'serial',
-    tasks: [desktopBuildTask, desktopSidecarSmokeTask, desktopPackagedSmokeTask],
+    tasks: [
+      desktopBackendBuildTask,
+      desktopBuildTask,
+      desktopSidecarSmokeTask,
+      desktopPackagedSmokeTask,
+    ],
   },
 ];
 const deterministicFullPhases = [

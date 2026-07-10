@@ -511,9 +511,13 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 				headers: sameOriginHeaders,
 				data: { status: "ready" },
 			});
-			await request.post(`/api/workbench/sessions/${taskId}/queue`, {
-				headers: sameOriginHeaders,
-			});
+			const runRes = await request.post(
+				`/api/workbench/sessions/${taskId}/run`,
+				{
+					headers: sameOriginHeaders,
+				},
+			);
+			expect(runRes.status(), await runRes.text()).toBe(201);
 			const terminal = await waitForTerminalRun(request, taskId);
 			expect(terminal.status).toBe("needs_human");
 			const eventsRes = await request.get(`/api/runs/${terminal.id}/events`, {

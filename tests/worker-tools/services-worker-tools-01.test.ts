@@ -987,18 +987,126 @@ describe("Worker Tools Unit Tests", () => {
 
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) throw new Error("expected rag variant to resolve");
-		expect(resolved.variant.ref).toBe("rag-v1.4.0");
+		expect(resolved.variant.ref).toBe("variant/rag");
+	});
+
+	it("checks the selected hono-standard variant branch before downloading", async () => {
+		const templateRepo = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-latest-template-repo-"),
+		);
+		const targetDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-latest-template-target-"),
+		);
+		try {
+			await fs.writeFile(
+				path.join(templateRepo, "version.txt"),
+				"old\n",
+				"utf-8",
+			);
+			await execFileAsync("git", ["init", "-b", "main"], {
+				cwd: templateRepo,
+			});
+			await execFileAsync("git", ["add", "."], { cwd: templateRepo });
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"user.name=Test User",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"-m",
+					"old",
+				],
+				{ cwd: templateRepo },
+			);
+			await execFileAsync("git", ["checkout", "-b", "variant/sqlite"], {
+				cwd: templateRepo,
+			});
+			await fs.writeFile(
+				path.join(templateRepo, "version.txt"),
+				"latest\n",
+				"utf-8",
+			);
+			await execFileAsync("git", ["add", "."], { cwd: templateRepo });
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"user.name=Test User",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"-m",
+					"latest",
+				],
+				{ cwd: templateRepo },
+			);
+
+			const result = await materializeTemplateTool({
+				templateId: "hono-standard",
+				variant: "sqlite",
+				repoRoot: targetDir,
+				registry: {
+					"hono-standard": {
+						id: "hono-standard",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "variant/sqlite",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+					"python-standard": {
+						id: "python-standard",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "sqlite-v1.0.0",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+				},
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload?.commit).toBeTruthy();
+			expect(result.payload?.gitOperations[0]).toMatchObject({
+				command: expect.stringContaining("git ls-remote --heads"),
+				exitCode: 0,
+			});
+			expect(result.payload?.gitOperations[1]).toMatchObject({
+				command: expect.stringContaining(
+					"git clone --depth 1 --branch variant/sqlite",
+				),
+				exitCode: 0,
+			});
+			await expect(
+				fs.readFile(path.join(targetDir, "version.txt"), "utf-8"),
+			).resolves.toBe("latest\n");
+		} finally {
+			await fs.rm(templateRepo, { recursive: true, force: true });
+			await fs.rm(targetDir, { recursive: true, force: true });
+		}
 	});
 
 	it("resolves current hono-standard starter snapshot refs", () => {
 		const expectedRefs = {
-			sqlite: "sqlite-v1.4.0",
-			baseline: "baseline-v1.4.0",
-			postgres: "postgres-v1.4.0",
-			pgvector: "pgvector-v1.4.0",
-			rag: "rag-v1.4.0",
-			turso: "turso-v1.4.0",
-			cloudflare: "cloudflare-v1.4.0",
+			sqlite: "variant/sqlite",
+			baseline: "variant/sqlite",
+			postgres: "variant/postgres",
+			pgvector: "variant/pgvector",
+			rag: "variant/rag",
+			turso: "variant/turso",
+			cloudflare: "variant/cloudflare",
 		};
 
 		for (const [variant, expectedRef] of Object.entries(expectedRefs)) {
@@ -1006,10 +1114,10 @@ describe("Worker Tools Unit Tests", () => {
 			expect(resolved.ok && resolved.variant.ref).toBe(expectedRef);
 		}
 		expect(standardTemplateRegistry["hono-standard"].overlays.ssr.ref).toBe(
-			"overlay-ssr-v1.4.0",
+			"overlay/ssr",
 		);
 		expect(standardTemplateRegistry["hono-standard"].overlays.ssg.ref).toBe(
-			"overlay-ssg-v1.4.0",
+			"overlay/ssg",
 		);
 	});
 

@@ -14,6 +14,9 @@ import {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "../services/agent-runtime/native-api-runner/native-api-tool-result-projector";
+import type { ToolOutcomeEnvelope } from "../services/run-control/contracts";
+import { runControlService } from "../services/run-control/run-control-service";
+import { deriveWorkerDomainOutcome } from "../services/run-control/tool-outcome-envelope";
 import { importProjectTool } from "../services/worker-tools/import-project";
 import {
 	listRecentSpecificationsTool,
@@ -51,18 +54,34 @@ export function createNightWorkersCodexMcpServer(
 		{
 			...nightWorkersCodexToolManifest.read_current_specification,
 		},
-		async ({ taskId, view, includeDesignContext }) =>
-			toolResultToMcp(
-				await readCurrentSpecificationTool({
-					taskId: firstNonEmpty(
-						taskId,
-						context.taskId,
-						process.env.NIGHTWORKERS_TASK_ID,
-					),
-					view,
-					includeDesignContext,
-				}),
-			),
+		async ({ taskId, view, includeDesignContext }) => {
+			const resolvedTaskId = firstNonEmpty(
+				taskId,
+				context.taskId,
+				process.env.NIGHTWORKERS_TASK_ID,
+			);
+			const args = {
+				taskId: resolvedTaskId,
+				view,
+				includeDesignContext,
+			};
+			return controlledToolResult({
+				context,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+				toolName: "read_current_specification",
+				arguments: args,
+				execute: () =>
+					readCurrentSpecificationTool({
+						taskId: firstNonEmpty(
+							taskId,
+							context.taskId,
+							process.env.NIGHTWORKERS_TASK_ID,
+						),
+						view,
+						includeDesignContext,
+					}),
+			});
+		},
 	);
 
 	server.registerTool(
@@ -71,7 +90,13 @@ export function createNightWorkersCodexMcpServer(
 			...nightWorkersCodexToolManifest.list_recent_specifications,
 		},
 		async ({ limit }) =>
-			toolResultToMcp(await listRecentSpecificationsTool({ limit })),
+			controlledToolResult({
+				context,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+				toolName: "list_recent_specifications",
+				arguments: { limit },
+				execute: () => listRecentSpecificationsTool({ limit }),
+			}),
 	);
 
 	server.registerTool(
@@ -86,24 +111,32 @@ export function createNightWorkersCodexMcpServer(
 			todos,
 			startFirst,
 			todoListReplaceReason,
+			evidenceRefs,
 		}) => {
 			if (isToolDisabledForExecutionMode("todo_list", context)) {
 				return toolResultToMcp(disabledToolResult("todo_list"));
 			}
-			return toolResultToMcp(
-				await todoListTool({
-					runId: firstNonEmpty(
-						runId,
-						context.runId,
-						process.env.NIGHTWORKERS_RUN_ID,
-					),
-					operation,
-					seq,
-					todos,
-					startFirst,
-					todoListReplaceReason,
-				}),
+			const resolvedRunId = firstNonEmpty(
+				runId,
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
 			);
+			const args = {
+				runId: resolvedRunId,
+				operation,
+				seq,
+				todos,
+				startFirst,
+				todoListReplaceReason,
+				evidenceRefs,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "todo_list",
+				arguments: args,
+				execute: () => todoListTool(args),
+			});
 		},
 	);
 
@@ -148,24 +181,31 @@ export function createNightWorkersCodexMcpServer(
 					},
 				});
 			}
-			return toolResultToMcp(
-				await runCheckTool({
-					taskId: task.id,
-					runId: resolvedRunId,
-					verificationDocumentId,
-					command,
-					cwd,
-					checkKind,
-					conditionIds,
-					timeoutSeconds,
-					displayMode,
-					repoRoot: repository.localPath,
-					allowedPaths: repository.safetyPolicy?.allowedPaths,
-					deniedPaths: repository.safetyPolicy?.deniedPaths,
-					blockedCommands: repository.safetyPolicy?.blockedCommands,
-					maxCommandSeconds: repository.safetyPolicy?.maxCommandSeconds,
-				}),
-			);
+			const args = {
+				taskId: task.id,
+				runId: resolvedRunId,
+				verificationDocumentId,
+				command,
+				cwd,
+				checkKind,
+				conditionIds,
+				timeoutSeconds,
+				displayMode,
+				repoRoot: repository.localPath,
+				allowedPaths: repository.safetyPolicy?.allowedPaths,
+				deniedPaths: repository.safetyPolicy?.deniedPaths,
+				blockedCommands: repository.safetyPolicy?.blockedCommands,
+				maxCommandSeconds: repository.safetyPolicy?.maxCommandSeconds,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "run_check",
+				arguments: args,
+				workspaceIdentity: repository.localPath,
+				evidenceKind: "verification",
+				execute: () => runCheckTool(args),
+			});
 		},
 	);
 
@@ -178,16 +218,20 @@ export function createNightWorkersCodexMcpServer(
 			if (isToolDisabledForExecutionMode("completion_check", context)) {
 				return toolResultToMcp(disabledToolResult("completion_check"));
 			}
-			return toolResultToMcp(
-				await completionCheckTool({
-					taskId: firstNonEmpty(
-						taskId,
-						context.taskId,
-						process.env.NIGHTWORKERS_TASK_ID,
-					),
-					verificationDocumentId,
-				}),
+			const resolvedTaskId = firstNonEmpty(
+				taskId,
+				context.taskId,
+				process.env.NIGHTWORKERS_TASK_ID,
 			);
+			const args = { taskId: resolvedTaskId, verificationDocumentId };
+			return controlledToolResult({
+				context,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+				toolName: "completion_check",
+				arguments: args,
+				evidenceKind: "completion-check",
+				execute: () => completionCheckTool(args),
+			});
 		},
 	);
 
@@ -200,18 +244,25 @@ export function createNightWorkersCodexMcpServer(
 			if (isToolDisabledForExecutionMode("reviewer_evaluation", context)) {
 				return toolResultToMcp(disabledToolResult("reviewer_evaluation"));
 			}
-			return toolResultToMcp(
-				await reviewerEvaluationTool({
-					runId: firstNonEmpty(
-						runId,
-						context.runId,
-						process.env.NIGHTWORKERS_RUN_ID,
-					),
-					rubricId,
-					mode,
-					persist,
-				}),
+			const resolvedRunId = firstNonEmpty(
+				runId,
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
 			);
+			const args = {
+				runId: resolvedRunId,
+				rubricId,
+				mode,
+				persist,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "reviewer_evaluation",
+				arguments: args,
+				evidenceKind: "reviewer-evaluation",
+				execute: () => reviewerEvaluationTool(args),
+			});
 		},
 	);
 
@@ -265,25 +316,36 @@ export function createNightWorkersCodexMcpServer(
 					},
 				});
 			}
-			return toolResultToMcp(
-				await importProjectTool({
-					source,
-					stack,
-					repoUrl,
-					variant,
-					overlays,
-					targetPath,
-					overwrite,
-					exclude,
-					ref,
-					depth,
-					stripGitDir,
-					initialize,
-					repoRoot: repository.localPath,
-					allowedPaths: repository.safetyPolicy?.allowedPaths,
-					deniedPaths: repository.safetyPolicy?.deniedPaths,
-				}),
+			const resolvedRunId = firstNonEmpty(
+				runId,
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
 			);
+			const args = {
+				source,
+				stack,
+				repoUrl,
+				variant,
+				overlays,
+				targetPath,
+				overwrite,
+				exclude,
+				ref,
+				depth,
+				stripGitDir,
+				initialize,
+				repoRoot: repository.localPath,
+				allowedPaths: repository.safetyPolicy?.allowedPaths,
+				deniedPaths: repository.safetyPolicy?.deniedPaths,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "import_project",
+				arguments: args,
+				workspaceIdentity: repository.localPath,
+				execute: () => importProjectTool(args),
+			});
 		},
 	);
 
@@ -586,13 +648,139 @@ function readSearchParam(url: URL, key: keyof NightWorkersMcpRequestContext) {
 	return value?.trim() || undefined;
 }
 
-function toolResultToMcp(result: WorkerToolResult<unknown>) {
+function toolResultToMcp(
+	result: WorkerToolResult<unknown>,
+	outcome?: ToolOutcomeEnvelope,
+) {
 	const text = projectWorkerResultToNativeApiToolResult(result).content;
+	const domainOutcome =
+		outcome?.domainOutcome ?? deriveWorkerDomainOutcome(result);
+	const transportStatus = outcome?.transportStatus ?? "completed";
 	return {
-		isError: !result.ok,
-		structuredContent: result.ok
-			? { payload: projectWorkerResultToMcpStructuredPayload(result) }
-			: { error: result.error },
+		isError: transportStatus !== "completed",
+		structuredContent: {
+			outcome: {
+				transportStatus,
+				domainOutcome,
+				effect: outcome?.effect ?? "unknown",
+				retryPolicy: outcome?.retryPolicy ?? "after_progress",
+				progressRevisionBefore: outcome?.progressRevisionBefore ?? null,
+				progressRevisionAfter: outcome?.progressRevisionAfter ?? null,
+				actionKey: outcome?.actionKey ?? null,
+				evidenceRefs: outcome?.evidenceRefs ?? [],
+				artifactRefs: outcome?.artifactRefs ?? [],
+			},
+			payload: projectWorkerResultToMcpStructuredPayload(result),
+			...(result.error ? { error: result.error } : {}),
+		},
 		content: [{ type: "text" as const, text }],
 	};
+}
+
+async function controlledToolResult(input: {
+	context: NightWorkersMcpRequestContext;
+	runId: string;
+	toolName: string;
+	arguments: unknown;
+	workspaceIdentity?: string | null;
+	evidenceKind?: string;
+	execute: () => Promise<WorkerToolResult<unknown>>;
+}) {
+	const prepared = await runControlService.prepare({
+		runId: input.runId,
+		toolName: input.toolName,
+		arguments: input.arguments,
+		workspaceIdentity: input.workspaceIdentity,
+	});
+	if (prepared.kind === "terminal") {
+		return {
+			isError: false,
+			structuredContent: {
+				outcome: {
+					transportStatus: "completed",
+					domainOutcome: "blocked",
+					effect: "none",
+					retryPolicy: "never",
+				},
+				control: {
+					terminal: true,
+					terminalReason: prepared.state.terminalReason,
+				},
+			},
+			content: [
+				{
+					type: "text" as const,
+					text: JSON.stringify({
+						ok: false,
+						code: "RUN_ALREADY_TERMINAL",
+						terminalReason: prepared.state.terminalReason,
+					}),
+				},
+			],
+		};
+	}
+	if (prepared.kind === "reuse") {
+		return {
+			isError: prepared.action.transportStatus !== "completed",
+			structuredContent: {
+				outcome: {
+					transportStatus: prepared.action.transportStatus,
+					domainOutcome: prepared.action.domainOutcome,
+					effect: prepared.action.effect,
+					retryPolicy:
+						prepared.action.domainOutcome === "failed"
+							? "after_progress"
+							: "immediate",
+					progressRevisionBefore: prepared.action.progressRevision,
+					progressRevisionAfter: prepared.state.progressRevision,
+				},
+				control: {
+					reused: true,
+					actionKey: prepared.action.actionKey,
+					repeatCount: prepared.action.repeatCount,
+					phase: prepared.state.phase,
+					recoveryRequired: prepared.state.phase === "recovery",
+					recoveryCard:
+						prepared.state.phase === "recovery"
+							? {
+									progressRevision: prepared.state.progressRevision,
+									workspaceRevision: prepared.state.workspaceRevision,
+									lastResultDigest: prepared.action.resultDigest,
+									required:
+										"新しい観測、workspace/workflow変更、新しい証跡、またはblocker提示のいずれかを一つ行う",
+								}
+							: null,
+				},
+				payload: prepared.action.modelView,
+			},
+			content: [
+				{
+					type: "text" as const,
+					text: JSON.stringify({
+						control: "reused_result",
+						domainOutcome: prepared.action.domainOutcome,
+						progressRevision: prepared.state.progressRevision,
+						payload: prepared.action.modelView,
+					}),
+				},
+			],
+		};
+	}
+
+	const result = await input.execute();
+	const modelView = projectWorkerResultToMcpStructuredPayload(result);
+	const evidenceRefs = input.evidenceKind
+		? [`${input.evidenceKind}:${input.runId}:${prepared.action.id}`]
+		: [];
+	const outcome = await runControlService.completeWorkerAction({
+		prepared: {
+			state: prepared.state,
+			action: prepared.action,
+			persisted: prepared.persisted,
+		},
+		result,
+		modelView,
+		evidenceRefs,
+	});
+	return toolResultToMcp(result, outcome);
 }

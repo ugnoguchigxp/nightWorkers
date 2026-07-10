@@ -167,7 +167,12 @@ export function QualityReportPanel({
 						</div>
 					</div>
 				</div>
-				<div className="nightworkers-scrollbar overflow-auto">
+				<section
+					className="nightworkers-scrollbar overflow-auto"
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: Scrollable report regions must be keyboard focusable.
+					tabIndex={0}
+					aria-label={t("projectDetail.quality.coverageReport")}
+				>
 					<table className="w-full min-w-[1040px] border-collapse font-mono text-xs">
 						<thead>
 							<tr style={subtleTextStyle}>
@@ -251,7 +256,7 @@ export function QualityReportPanel({
 							)}
 						</tbody>
 					</table>
-				</div>
+				</section>
 			</div>
 
 			<div className="overflow-hidden border" style={panelStyle}>
@@ -261,7 +266,12 @@ export function QualityReportPanel({
 						title={t("projectDetail.quality.e2eResults")}
 					/>
 				</div>
-				<div className="nightworkers-scrollbar overflow-auto">
+				<section
+					className="nightworkers-scrollbar overflow-auto"
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: Scrollable report regions must be keyboard focusable.
+					tabIndex={0}
+					aria-label={t("projectDetail.quality.e2eResults")}
+				>
 					<table className="w-full min-w-[720px] text-xs">
 						<thead style={subtleTextStyle}>
 							<tr>
@@ -307,7 +317,7 @@ export function QualityReportPanel({
 							)}
 						</tbody>
 					</table>
-				</div>
+				</section>
 			</div>
 		</section>
 	);

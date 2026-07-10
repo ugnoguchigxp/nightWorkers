@@ -183,6 +183,13 @@
       "when": 1783501200000,
       "tag": "0025_llm_usage_task_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1783657200000,
+      "tag": "0026_run_control_kernel",
+      "breakpoints": true
     }
   ]
 }

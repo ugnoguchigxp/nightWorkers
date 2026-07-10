@@ -35,15 +35,21 @@ jobs:
           key: desktop-${{ runner.os }}-${{ hashFiles('bun.lock', 'src-tauri/Cargo.lock') }}
           restore-keys: desktop-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      - name: Capture desktop preflight
+        run: node scripts/desktop/collect-diagnostics.mjs preflight --expected-target darwin:arm64
       - name: Run desktop verification
         run: |
           mkdir -p artifacts
           set -o pipefail
           bun run verify:desktop 2>&1 | tee artifacts/verify-desktop.log
-      - name: Upload desktop verification log
+      - name: Capture desktop postmortem
+        if: always()
+        run: node scripts/desktop/collect-diagnostics.mjs postmortem --expected-target darwin:arm64
+      - name: Upload desktop verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verification-log
-          path: artifacts/verify-desktop.log
+          if-no-files-found: error
+          path: artifacts/**
           retention-days: 7

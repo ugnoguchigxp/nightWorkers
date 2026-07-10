@@ -114,15 +114,7 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
     let sidecar_stderr = sidecar_stdout.try_clone()?;
     append_file_line(&sidecar_log_path, "sidecar process starting");
 
-    let mut cors_origins = vec![
-        api_origin.clone(),
-        "http://tauri.localhost".to_string(),
-        "tauri://localhost".to_string(),
-    ];
-    if cfg!(debug_assertions) {
-        cors_origins.push("http://127.0.0.1:39174".to_string());
-        cors_origins.push("http://localhost:39174".to_string());
-    }
+    let cors_origins = desktop_cors_origins(&api_origin, cfg!(debug_assertions));
 
     let mut command = Command::new(&node_binary);
     command
@@ -191,6 +183,19 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
     *config_slot = Some(config);
 
     Ok(())
+}
+
+fn desktop_cors_origins(api_origin: &str, debug: bool) -> Vec<String> {
+    let mut origins = vec![
+        api_origin.to_string(),
+        "http://tauri.localhost".to_string(),
+        "tauri://localhost".to_string(),
+    ];
+    if debug {
+        origins.push("http://127.0.0.1:39174".to_string());
+        origins.push("http://localhost:39174".to_string());
+    }
+    origins
 }
 
 fn stop_backend_sidecar(state: &SidecarState) {
@@ -360,6 +365,37 @@ fn resolve_frontend_dist(resource_root: &Path) -> PathBuf {
         return staged;
     }
     resource_root.join("dist")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::desktop_cors_origins;
+
+    #[test]
+    fn packaged_origins_exclude_vite_development_hosts() {
+        assert_eq!(
+            desktop_cors_origins("http://127.0.0.1:40123", false),
+            vec![
+                "http://127.0.0.1:40123",
+                "http://tauri.localhost",
+                "tauri://localhost",
+            ]
+        );
+    }
+
+    #[test]
+    fn debug_origins_include_both_vite_loopback_hosts() {
+        assert_eq!(
+            desktop_cors_origins("http://127.0.0.1:40123", true),
+            vec![
+                "http://127.0.0.1:40123",
+                "http://tauri.localhost",
+                "tauri://localhost",
+                "http://127.0.0.1:39174",
+                "http://localhost:39174",
+            ]
+        );
+    }
 }
 
 fn resolve_node_binary(resource_root: &Path) -> PathBuf {

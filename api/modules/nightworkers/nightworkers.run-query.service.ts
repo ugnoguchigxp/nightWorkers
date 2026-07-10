@@ -1,5 +1,6 @@
 import { NotFoundError } from "../../lib/errors";
 import type { ReviewResult } from "../../services/review-results/types";
+import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
 import { digestText } from "../../services/text-digest";
 import * as repo from "./nightworkers.repository";
@@ -136,6 +137,7 @@ export async function getTaskRun(runId: string) {
 	const todos = await repo.listTaskRunTodosForRun(runId);
 	const events = await repo.listTaskEventsForRun(runId);
 	const commitRecord = await repo.getTaskRunCommitRecord(runId);
+	const runControl = await getRunControlMetrics(runId);
 	const reviews = events
 		.map(
 			(event) =>
@@ -145,7 +147,14 @@ export async function getTaskRun(runId: string) {
 		.filter((reviewResult): reviewResult is ReviewResult =>
 			Boolean(reviewResult),
 		);
-	return { ...run, todos, events, reviews, commitRecord };
+	return {
+		...run,
+		todos,
+		events,
+		reviews,
+		...(commitRecord ? { commitRecord } : {}),
+		...(runControl ? { runControl } : {}),
+	};
 }
 
 export async function getOntologyRunDebugReport(runId: string) {

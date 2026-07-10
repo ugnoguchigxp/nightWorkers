@@ -87,4 +87,86 @@ describe("nightworkers activity repository", () => {
 			},
 		});
 	});
+
+	it("flushes large activity queues within SQLite's bind-variable limit", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Activity Queue Batch ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: Activity queue batch target",
+			description: "Persist a queue larger than one safe SQLite insert batch",
+			status: "draft",
+		});
+
+		for (let index = 0; index < 64; index += 1) {
+			enqueueActivityEvent({
+				taskId: task.id,
+				kind: "system.info",
+				source: "system",
+				text: `queued batch event ${index}`,
+				dedupeKey: `batch:${task.id}:${index}`,
+			});
+		}
+
+		await flushActivityEventQueue();
+		const events = await listActivityEventsForTask(task.id);
+		expect(
+			events.filter((event) => event.text?.startsWith("queued batch event ")),
+		).toHaveLength(64);
+	});
+
+	it("flushes queued activity before deleting its task", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Activity Delete Flush ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: Activity delete flush target",
+			description: "Delete only after the queued ledger entry is durable",
+			status: "draft",
+		});
+		enqueueActivityEvent({
+			taskId: task.id,
+			kind: "system.info",
+			source: "system",
+			text: "queued before delete",
+			dedupeKey: `delete:${task.id}`,
+		});
+
+		await expect(repo.deleteTask(task.id)).resolves.toMatchObject({
+			id: task.id,
+		});
+		await expect(flushActivityEventQueue()).resolves.toBeUndefined();
+	});
+
+	it("flushes queued task activity before deleting its repository", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Repository Activity Delete Flush ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: Repository activity delete flush target",
+			description: "Drain task activity before repository cascade deletion",
+			status: "draft",
+		});
+		enqueueActivityEvent({
+			taskId: task.id,
+			kind: "system.info",
+			source: "system",
+			text: "queued before repository delete",
+			dedupeKey: `repository-delete:${task.id}`,
+		});
+
+		await expect(repo.deleteRepository(createdRepo.id)).resolves.toMatchObject({
+			id: createdRepo.id,
+		});
+		await expect(flushActivityEventQueue()).resolves.toBeUndefined();
+	});
 });

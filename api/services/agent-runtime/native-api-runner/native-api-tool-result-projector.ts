@@ -10,10 +10,6 @@ export function projectWorkerResultToNativeApiToolResult(
 	options: { contentLimitChars?: number } = {},
 ): NativeApiToolResult {
 	const content = buildWorkerModelVisibleContent(result);
-	const contentLimitChars =
-		result.toolName === "import_project"
-			? Math.max(options.contentLimitChars ?? 0, content.length)
-			: options.contentLimitChars;
 	return capNativeApiToolResultContent(
 		{
 			ok: result.ok,
@@ -28,21 +24,21 @@ export function projectWorkerResultToNativeApiToolResult(
 					}
 				: {}),
 		},
-		{ ...options, contentLimitChars },
+		options,
 	);
 }
 
 export function projectWorkerResultToMcpStructuredPayload(
 	result: WorkerToolResult<unknown>,
 ): unknown {
-	if (result.toolName === "todo_list") {
-		return compactWorkerPayload(result.toolName, result.payload);
-	}
-	return result.payload;
+	return boundStructuredPayload(
+		compactWorkerPayload(result.toolName, result.payload),
+		result.toolName,
+	);
 }
 
 function buildWorkerModelVisibleContent(result: WorkerToolResult<unknown>) {
-	const compactPayload = compactWorkerPayload(result.toolName, result.payload);
+	const compactPayload = projectWorkerResultToMcpStructuredPayload(result);
 	return JSON.stringify({
 		ok: result.ok,
 		toolName: result.toolName,
@@ -104,7 +100,6 @@ function compactTodoPayload(payload: unknown) {
 	const todos = toArray(record.todos).map(toRecord);
 	const operation =
 		typeof record.operation === "string" ? record.operation : undefined;
-	if (operation === "list" || operation === "replace") return payload;
 	const transition = toRecord(record.transition);
 	const diagnostics = toRecord(record.diagnostics);
 	const changedSeq =
@@ -123,9 +118,11 @@ function compactTodoPayload(payload: unknown) {
 		currentTodo: compactTodo(record.currentTodo),
 		nextTodo: compactTodo(record.nextTodo),
 		counts: countTodos(todos),
+		todos: todos.slice(0, 24).map(compactTodo),
+		omittedTodoCount: Math.max(0, todos.length - 24),
 		transition: record.transition,
 		diagnostics: record.diagnostics,
-		fullListAvailableVia: "todo_list operation=list",
+		listIsCanonicalSummary: operation === "list" || operation === "replace",
 	};
 }
 
@@ -188,7 +185,6 @@ function compactImportProjectPayload(payload: unknown) {
 										typeof llmContext.rawContent === "string"
 											? `chars:${llmContext.rawContent.length}`
 											: null,
-									rawContent: llmContext.rawContent,
 									errorMessage: llmContext.errorMessage,
 								}
 							: null,
@@ -203,7 +199,7 @@ function compactImportProjectPayload(payload: unknown) {
 							skippedReason: initialization.skippedReason,
 							errorMessage: initialization.errorMessage,
 						},
-						fullPostImportRetainedInPayload: true,
+						fullPostImportRetainedInAuditPayload: true,
 					}
 				: null,
 	};
@@ -336,7 +332,28 @@ function compactGitDiffPayload(payload: unknown) {
 						diff.slice(0, 3000),
 						diff.slice(-3000),
 					].join("\n"),
-		fullDiffRetainedInPayload: true,
+		fullDiffRetainedInAuditPayload: true,
+	};
+}
+
+function boundStructuredPayload(payload: unknown, toolName: string) {
+	const serialized = JSON.stringify(payload);
+	const limitChars = 12_000;
+	if (serialized.length <= limitChars) return payload;
+	const projection = compactModelVisibleText({
+		content: serialized,
+		limitChars,
+		strategy: "json_summary",
+		omittedReason: `large_${toolName}_structured_payload`,
+	});
+	return {
+		modelVisiblePayload: "compact",
+		toolName,
+		truncated: true,
+		originalChars: projection.summary.originalChars,
+		returnedChars: projection.summary.returnedChars,
+		contentHash: projection.summary.contentHash,
+		excerpt: projection.content,
 	};
 }
 

@@ -1,4 +1,8 @@
 import { recordLlmUsage } from "../llm-usage";
+import { runStateCardProjector } from "../run-control/context-projector";
+import { runFinalizeController } from "../run-control/finalize-controller";
+import { runControlService } from "../run-control/run-control-service";
+import { readRunControlKernelMode } from "../run-control/settings";
 import { gitDiffTool } from "../worker-tools/git";
 import { auditCodexMappedEvent } from "./codex-runtime-audit";
 import {
@@ -141,12 +145,13 @@ export class CodexAgentRuntime implements AgentRuntime {
 				}
 
 				try {
-					const thread = await this.createThread(context, sink);
+					let thread = await this.createThread(context, sink);
 					const runtimePromptParts = buildCodexRuntimePromptParts(context);
 					const promptPartObservabilityEnabled =
 						readPromptPartObservabilityEnabled(context);
 					let nextPrompt = runtimePromptParts.prompt;
 					let checkpointPromptsSent = 0;
+					let finalizeRecoveryPromptsSent = 0;
 					let isCheckpointPrompt = false;
 					for (;;) {
 						const { events } = await thread.runStreamed(nextPrompt, {
@@ -175,6 +180,11 @@ export class CodexAgentRuntime implements AgentRuntime {
 											audited,
 										);
 									}
+									await observeCodexRunControlEvent(
+										context,
+										audited,
+										auditState.eventSequence,
+									);
 								}
 								const importOutcome = getProjectImportOutcome(mapped);
 								if (importOutcome?.kind === "cancelled") {
@@ -279,6 +289,67 @@ export class CodexAgentRuntime implements AgentRuntime {
 						}
 
 						if (terminalState !== "completed") break;
+						if (
+							readRunControlKernelMode(context) === "enforce" &&
+							finalText.trim()
+						) {
+							const finalizeGuard =
+								await runFinalizeController.evaluateCandidate({
+									runId: context.runId,
+								});
+							if (!finalizeGuard.allowFinalize) {
+								if (
+									finalizeRecoveryPromptsSent === 0 &&
+									finalizeGuard.recoveryCard
+								) {
+									finalizeRecoveryPromptsSent += 1;
+									isCheckpointPrompt = false;
+									const stateCard = await runStateCardProjector
+										.build(context)
+										.catch(() => null);
+									nextPrompt = [
+										finalizeGuard.recoveryCard,
+										stateCard?.content
+											? `[Current Run State Card]\n${stateCard.content}`
+											: null,
+									]
+										.filter(Boolean)
+										.join("\n\n");
+									const rotatedState = await runControlService.rotateContext(
+										context.runId,
+									);
+									thread = await this.createThread(context, sink, {
+										forceFresh: true,
+									});
+									const message =
+										"[System] Run Control finalize recovery prompt queued.";
+									logs.push(message);
+									await sink.emit({
+										type: "supervisor_decision",
+										message,
+										payload: {
+											provider: "codex",
+											reason: "run_control_finalize_recovery",
+											code: finalizeGuard.code,
+											missingConditions: finalizeGuard.missingConditions,
+											contextEpoch: rotatedState?.contextEpoch ?? null,
+											providerSession: "fresh",
+										},
+									});
+									continue;
+								}
+								terminalState = "needs_human";
+								stoppedBy = "tool_failure";
+								finalText = [
+									finalText,
+									finalizeGuard.message,
+									finalizeGuard.recoveryCard,
+								]
+									.filter(Boolean)
+									.join("\n\n");
+								break;
+							}
+						}
 						const checkpointPrompt = await buildCurrentTodoCheckpointPrompt(
 							context,
 							auditState,
@@ -338,6 +409,12 @@ export class CodexAgentRuntime implements AgentRuntime {
 							riskLevel: terminalState === "completed" ? "medium" : "high",
 						},
 					);
+					if (readRunControlKernelMode(context) === "enforce") {
+						await runFinalizeController.terminalize(
+							context.runId,
+							toRunTerminalReason(terminalPolicy.terminalState),
+						);
+					}
 					return this.finishRun(context, sink, logs, {
 						terminalState: terminalPolicy.terminalState,
 						finalReport: terminalPolicy.finalReport,
@@ -586,10 +663,15 @@ export class CodexAgentRuntime implements AgentRuntime {
 		};
 	}
 
-	private async createThread(context: AgentRunContext, sink: AgentRuntimeSink) {
+	private async createThread(
+		context: AgentRunContext,
+		sink: AgentRuntimeSink,
+		options: { forceFresh?: boolean } = {},
+	) {
 		return createCodexRuntimeThread({
 			context,
 			threadFactory: this.threadFactory,
+			forceFresh: options.forceFresh,
 			onResumeEvent: async (event) => {
 				if (event.status === "reused") {
 					await sink.emit({
@@ -760,6 +842,50 @@ export class CodexAgentRuntime implements AgentRuntime {
 		});
 		return result.payload.diff;
 	}
+}
+
+async function observeCodexRunControlEvent(
+	context: AgentRunContext,
+	event: Parameters<AgentRuntimeSink["emit"]>[0],
+	sequence: number,
+) {
+	if (readRunControlKernelMode(context) === "disabled") return;
+	const payload =
+		event.payload &&
+		typeof event.payload === "object" &&
+		!Array.isArray(event.payload)
+			? (event.payload as Record<string, unknown>)
+			: {};
+	if (event.type === "diff_collected" && Array.isArray(payload.changedFiles)) {
+		await runControlService.observeProgress({
+			runId: context.runId,
+			effect: "workspace_mutation",
+			sequence,
+		});
+		return;
+	}
+	if (
+		event.type === "tool_call_finished" &&
+		payload.toolName === "command_execution" &&
+		(payload.commandClass === "verification" ||
+			payload.commandClass === "broad_verification")
+	) {
+		await runControlService.observeProgress({
+			runId: context.runId,
+			effect: "verification",
+			sequence,
+		});
+	}
+}
+
+function toRunTerminalReason(
+	state: AgentRuntimeResult["terminalState"],
+): "completed" | "blocked" | "cancelled" | "needs_human" | "runtime_failed" {
+	if (state === "completed") return "completed";
+	if (state === "cancelled") return "cancelled";
+	if (state === "needs_human") return "needs_human";
+	if (state === "blocked" || state === "timed_out") return "blocked";
+	return "runtime_failed";
 }
 
 async function buildCurrentTodoCheckpointPrompt(

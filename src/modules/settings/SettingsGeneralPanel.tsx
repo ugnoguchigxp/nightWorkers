@@ -8,12 +8,11 @@ import { SelectField } from "./SettingsFields";
 import { fetchPricingRows, importPublicPricingRows } from "./settingsCommands";
 
 const pricingProviderFilter = new Set([
+	"codex",
 	"openai",
 	"anthropic",
 	"google",
-	"xai",
 	"deepseek",
-	"z-ai",
 	"qwen",
 ]);
 const pricingPageSize = 50;
@@ -48,8 +47,7 @@ type LlmPricingPageView = {
 };
 
 function pricingProviderLabel(provider: string) {
-	if (provider === "xai") return "xAI / SpaceX";
-	if (provider === "z-ai") return "Z.ai";
+	if (provider === "codex") return "OpenAI Codex";
 	if (provider === "qwen") return "Qwen";
 	return provider;
 }
@@ -259,7 +257,8 @@ export function GeneralSettingsPanel({
 					<div>
 						<div className="text-xs font-semibold text-zinc-100">API使用料</div>
 						<p className="mt-1 text-[10px] text-zinc-500">
-							取得した価格表は Overview の LLM 使用料見積もりに使われます。
+							コーディングエージェント向けの現行モデルだけを取得し、Overview の
+							LLM 使用料見積もりに使います。
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">

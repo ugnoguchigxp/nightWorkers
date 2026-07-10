@@ -16,6 +16,7 @@ describe("run orchestration status transitions", () => {
 				"failed",
 				"needs_human",
 				"cancelled",
+				"timed_out",
 			],
 			needs_review: ["completed", "failed", "needs_human"],
 			completed: [],

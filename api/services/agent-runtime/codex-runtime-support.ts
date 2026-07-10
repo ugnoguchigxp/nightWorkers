@@ -642,6 +642,19 @@ export function isFailedToolPayload(payload: Record<string, unknown>) {
 	);
 }
 
+export function isTransportFailedToolPayload(payload: Record<string, unknown>) {
+	const result = readRecord(payload.result);
+	const structuredContent = readRecord(result?.structuredContent) ?? result;
+	const outcome = readRecord(structuredContent?.outcome);
+	const transportStatus = readString(outcome?.transportStatus);
+	if (transportStatus) return transportStatus !== "completed";
+	return (
+		payload.status === "error" ||
+		payload.status === "cancelled" ||
+		typeof payload.error === "string"
+	);
+}
+
 export function isMcpToolPayload(payload: Record<string, unknown>) {
 	return (
 		typeof payload.mcpServer === "string" && typeof payload.mcpTool === "string"

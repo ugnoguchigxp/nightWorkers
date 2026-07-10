@@ -1,3 +1,4 @@
+import type { TodoEvidenceRequirement } from "../run-control/evidence";
 import { normalizeTodoTaskTypeForStorage } from "./task-types";
 
 export type ImplementationTodoInput = {
@@ -7,6 +8,7 @@ export type ImplementationTodoInput = {
 	taskType?: string;
 	procedureId?: string | null;
 	dependsOn?: Array<string | number> | null;
+	evidenceRequirements?: TodoEvidenceRequirement[] | null;
 };
 
 export type TodoVerificationPolicy = {
@@ -23,6 +25,7 @@ export type BuiltTodoInput = {
 	status: "pending" | "running";
 	procedureId: string | null;
 	dependsOn: Array<string | number>;
+	evidenceRequirements?: TodoEvidenceRequirement[];
 	startedAt: Date | null;
 };
 
@@ -65,6 +68,9 @@ const FINAL_GATES: StandardGate[] = [
 		taskType: "verification",
 		procedureId: "quality_gate_verify",
 		dependsOn: [],
+		evidenceRequirements: [
+			{ kind: "verification", freshness: "after_last_mutation" },
+		],
 	},
 	{
 		title: "完了報告を行う",
@@ -190,6 +196,9 @@ function normalizeImplementationTodos(
 			procedureId:
 				typeof todo.procedureId === "string" ? todo.procedureId : null,
 			dependsOn: normalizeDependsOn(todo.dependsOn, seqMap),
+			...(todo.evidenceRequirements?.length
+				? { evidenceRequirements: todo.evidenceRequirements }
+				: {}),
 		};
 	});
 }

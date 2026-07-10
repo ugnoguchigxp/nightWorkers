@@ -1,5 +1,7 @@
 import * as repo from "../../../modules/nightworkers/nightworkers.repository";
 import { recordLlmUsage } from "../../llm-usage";
+import { runFinalizeController } from "../../run-control/finalize-controller";
+import { readRunControlKernelMode } from "../../run-control/settings";
 import { callProviderToolTurn } from "../../structured-llm/providers";
 import type {
 	AgentRunContext,
@@ -728,6 +730,12 @@ export class NativeApiRunner {
 								providerRequest,
 							),
 						});
+						if (readRunControlKernelMode(context) === "enforce") {
+							await runFinalizeController.terminalize(
+								context.runId,
+								"completed",
+							);
+						}
 						return {
 							terminalState: "completed",
 							summary: dispatch.summary,

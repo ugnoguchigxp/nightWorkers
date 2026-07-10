@@ -520,8 +520,12 @@ describe("NightWorkers Codex MCP integration", () => {
 				{ timeout: 30_000 },
 			);
 
-			expect(callResult.isError).toBe(true);
+			expect(callResult.isError).toBe(false);
 			expect(callResult.structuredContent).toMatchObject({
+				outcome: {
+					transportStatus: "completed",
+					domainOutcome: "blocked",
+				},
 				error: {
 					code: "PLAN_MODE_TOOL_DISABLED",
 				},

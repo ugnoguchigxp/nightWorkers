@@ -6,6 +6,7 @@ import {
 	isFailedToolPayload,
 	isMcpToolPayload,
 	isTodoProgressMutationOperation,
+	isTransportFailedToolPayload,
 	isValidTodoProgressOperation,
 	readChangedFiles,
 	readCodexRuntimeExecutionMode,
@@ -134,7 +135,10 @@ export async function auditCodexMappedEvent(
 				toolName,
 			});
 		}
-		if (event.type === "tool_call_finished" && isFailedToolPayload(payload)) {
+		if (
+			event.type === "tool_call_finished" &&
+			isTransportFailedToolPayload(payload)
+		) {
 			auditState.mcpDegraded = true;
 			warnings.push({
 				code: "codex_mcp_degraded",
