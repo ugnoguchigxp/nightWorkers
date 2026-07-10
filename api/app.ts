@@ -19,7 +19,6 @@ import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { blueprintRouter } from "./modules/blueprint/blueprint.routes";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
-import { missionPilotRouter } from "./modules/mission-pilot/mission-pilot.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
@@ -48,7 +47,6 @@ const apiRoutes = createOpenApiRouter()
 	.route("/settings", hooksSettingsRouter)
 	.route("/", projectEvaluationRouter)
 	.route("/", missionPlannerRouter)
-	.route("/", missionPilotRouter)
 	.route("/", queueRouter)
 	.route("/", questionnaireRouter)
 	.route("/", blueprintRouter)

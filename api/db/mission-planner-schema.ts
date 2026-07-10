@@ -33,12 +33,6 @@ export const missions = sqliteTable(
 		nonGoalsJson: text("non_goals_json", { mode: "json" }).notNull(),
 		status: text("status").default("draft").notNull(),
 		sourceGoalIdsJson: text("source_goal_ids_json", { mode: "json" }).notNull(),
-		source: text("source").default("user").notNull(),
-		sourceRefId: text("source_ref_id"),
-		sourceEvaluationId: text("source_evaluation_id"),
-		pausedAt: integer("paused_at", { mode: "timestamp" }),
-		abandonedAt: integer("abandoned_at", { mode: "timestamp" }),
-		completedAt: integer("completed_at", { mode: "timestamp" }),
 		latestPlanningResultId: text("latest_planning_result_id"),
 		statusReason: text("status_reason"),
 	},
@@ -46,9 +40,6 @@ export const missions = sqliteTable(
 		repositoryStatusCreatedIdx: index(
 			"missions_repository_status_created_idx",
 		).on(table.repositoryId, table.status, table.createdAt),
-		repositorySourceUniqueIdx: uniqueIndex(
-			"missions_repository_source_ref_uidx",
-		).on(table.repositoryId, table.source, table.sourceRefId),
 	}),
 );
 

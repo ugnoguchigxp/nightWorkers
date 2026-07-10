@@ -77,17 +77,4 @@ describe("ImprovementIdeaCard", () => {
 		expect(markup).toContain("+6");
 		expect(markup).not.toContain("expected score gain");
 	});
-
-	it("offers one-improvement-to-one-Mission creation independently from selection", () => {
-		const markup = renderToStaticMarkup(
-			<ImprovementIdeaCard
-				dimensions={dimensions}
-				idea={idea}
-				onCreateMission={vi.fn()}
-				onToggle={vi.fn()}
-				selected={false}
-			/>,
-		);
-		expect(markup).toContain("Missionを作成");
-	});
 });

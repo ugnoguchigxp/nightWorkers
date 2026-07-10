@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { CreateMissionFromImprovementResponse } from "../../../../shared/schemas/mission-pilot.schema";
 import type { Task } from "../../nightworkers/types";
 import { useProjectEvaluationController } from "../hooks/useProjectEvaluationController";
 import type { ProjectEvaluationProject } from "../model/projectEvaluationTypes";
@@ -17,17 +16,12 @@ type EvaluationTab = "result" | "activity";
 export function ProjectEvaluationScreen({
 	project,
 	onTasksCreated,
-	onMissionCreated,
 }: {
 	project: ProjectEvaluationProject;
 	onTasksCreated?: (tasks: Task[]) => Promise<void> | void;
-	onMissionCreated?: (
-		result: CreateMissionFromImprovementResponse,
-	) => Promise<void> | void;
 }) {
 	const controller = useProjectEvaluationController(project.id, {
 		onTasksCreated,
-		onMissionCreated,
 	});
 	const detail = controller.detail;
 	const [activeTab, setActiveTab] = useState<EvaluationTab>("result");
@@ -142,10 +136,8 @@ export function ProjectEvaluationScreen({
 										dimensions={detail.evaluation.dimensions}
 										ideas={detail.improvements}
 										isCreatingTasks={controller.isCreatingTasks}
-										creatingMissionIdeaId={controller.creatingMissionIdeaId}
 										isGenerating={controller.isGenerating}
 										onCreateTasks={controller.createTasks}
-										onCreateMission={controller.createMission}
 										onGenerate={controller.generateIdeas}
 										onToggleIdea={controller.toggleIdea}
 										selectedIdeaIds={controller.selectedIdeaIds}

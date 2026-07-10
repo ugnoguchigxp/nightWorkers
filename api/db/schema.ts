@@ -1105,7 +1105,6 @@ export const blueprintDesignSettings = sqliteTable(
 	}),
 );
 
-export * from "./mission-pilot-schema";
 export * from "./mission-planner-schema";
 export * from "./project-evaluation-schema";
 

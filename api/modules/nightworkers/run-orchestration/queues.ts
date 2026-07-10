@@ -177,81 +177,8 @@ export async function completeImplementationQueueEntryForRun(
 		) {
 			void runImplementationQueue();
 		}
-		await requestMissionPilotLifecycleTick({
-			runId,
-			runStatus: status,
-			taskId: entry.taskId,
-		});
 	} catch {
 		// Queue bookkeeping must not change the run outcome.
-	}
-}
-
-async function requestMissionPilotLifecycleTick(input: {
-	runId: string;
-	runStatus: string;
-	taskId: string;
-}) {
-	const missionPilotRepo = await import(
-		"../../mission-pilot/mission-pilot.repository"
-	);
-	const missionTask = await missionPilotRepo.findMissionTaskByNightworkersTask(
-		input.taskId,
-	);
-	if (!missionTask) return;
-	try {
-		const { syncMissionExecution } = await import(
-			"../../mission-pilot/mission-pilot-evaluation"
-		);
-		await syncMissionExecution({
-			missionId: missionTask.missionId,
-			missionTaskId: missionTask.id,
-			idempotencyKey: `lifecycle:${input.runId}:${input.runStatus}:sync`,
-		});
-		const grant = await missionPilotRepo.getActiveAutopilotGrant(
-			missionTask.missionId,
-		);
-		if (grant) {
-			const { tickMissionAutopilot } = await import(
-				"../../mission-pilot/mission-pilot-autopilot"
-			);
-			await tickMissionAutopilot({
-				missionId: missionTask.missionId,
-				idempotencyKey: `lifecycle:${input.runId}:${input.runStatus}:tick`,
-			});
-		}
-	} catch (cause) {
-		const message = cause instanceof Error ? cause.message : String(cause);
-		const existing = await missionPilotRepo.findOpenAttention({
-			missionId: missionTask.missionId,
-			type: "lifecycle_hook_failed",
-			targetType: "mission_task",
-			targetId: missionTask.id,
-		});
-		if (!existing)
-			await missionPilotRepo.createAttention({
-				missionId: missionTask.missionId,
-				repositoryId: missionTask.repositoryId,
-				targetType: "mission_task",
-				targetId: missionTask.id,
-				type: "lifecycle_hook_failed",
-				severity: "warning",
-				title: missionTask.title,
-				summary: message,
-				actionSchema: { actions: ["sync_execution"] },
-				sourceRef: { type: "run", id: input.runId },
-			});
-		await repo.createRunEvent({
-			version: 1,
-			runId: input.runId,
-			taskId: input.taskId,
-			timestamp: new Date().toISOString(),
-			type: "system.warning",
-			severity: "warning",
-			actor: "system",
-			message: "Mission Pilot lifecycle sync failed.",
-			data: { source: "mission_pilot", error: message },
-		});
 	}
 }
 

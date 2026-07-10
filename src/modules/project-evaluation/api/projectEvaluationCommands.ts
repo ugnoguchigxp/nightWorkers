@@ -1,4 +1,3 @@
-import type { CreateMissionFromImprovementRequest } from "../../../../shared/schemas/mission-pilot.schema";
 import type {
 	CreateTasksFromProjectImprovementsRequest,
 	GenerateProjectImprovementsRequest,
@@ -58,16 +57,6 @@ export function createProjectEvaluationTasks(
 ) {
 	return apiFetch(
 		`/api/project-evaluations/${evaluationId}/tasks`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function createMissionFromProjectEvaluationImprovement(
-	repositoryId: string,
-	input: CreateMissionFromImprovementRequest,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/missions/from-project-evaluation-improvement`,
 		jsonRequest("POST", input),
 	);
 }

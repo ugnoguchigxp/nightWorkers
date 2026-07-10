@@ -1,8 +1,5 @@
 import { AppError, NotFoundError } from "../../lib/errors";
 import { isAutoQueueDrainEnabled } from "../../services/runtime-env";
-import * as missionPilotRepo from "../mission-pilot/mission-pilot.repository";
-import { buildMissionTaskCandidateSnapshot } from "../mission-pilot/mission-pilot-approval";
-import * as missionPlannerRepo from "../mission-planner/mission-planner.repository";
 import {
 	assertTaskDraftComplete,
 	getTaskDraftMissingFields,
@@ -61,94 +58,6 @@ function latestMissionProposalMetadata(messages: TaskMessageRows) {
 	return null;
 }
 
-function latestMissionPilotMetadata(messages: TaskMessageRows) {
-	for (const message of [...messages].reverse()) {
-		const metadata = toRecord(message.metadataJson);
-		const missionPilot = toRecord(metadata?.missionPilot);
-		if (missionPilot?.source === "mission_pilot") return missionPilot;
-	}
-	return null;
-}
-
-async function ensureMissionPilotQueueApproval(
-	taskId: string,
-	messages: TaskMessageRows,
-) {
-	const metadata = latestMissionPilotMetadata(messages);
-	if (!metadata) return messages;
-	const approvalId =
-		typeof metadata.approvalId === "string" ? metadata.approvalId : "";
-	const candidateId =
-		typeof metadata.taskCandidateId === "string"
-			? metadata.taskCandidateId
-			: "";
-	const missionTaskId =
-		typeof metadata.missionTaskId === "string" ? metadata.missionTaskId : "";
-	const expectedHash =
-		typeof metadata.approvalSnapshotHash === "string"
-			? metadata.approvalSnapshotHash
-			: "";
-	const [approval, proposal, missionTask] = await Promise.all([
-		missionPilotRepo.getApproval(approvalId),
-		missionPlannerRepo.getTaskProposal(candidateId),
-		missionPilotRepo.getMissionTask(missionTaskId),
-	]);
-	const mission = missionTask
-		? await missionPlannerRepo.getMission(missionTask.missionId)
-		: null;
-	if (
-		!approval ||
-		!proposal ||
-		!missionTask ||
-		!mission ||
-		approval.status !== "approved" ||
-		approval.targetId !== proposal.id ||
-		approval.id !== missionTask.approvalId ||
-		missionTask.taskCandidateId !== proposal.id ||
-		proposal.missionId !== mission.id ||
-		proposal.planningResultId !== missionTask.planningResultId ||
-		["completed", "cancelled", "paused", "abandoned"].includes(
-			mission.status,
-		) ||
-		missionTask.nightworkersTaskId !== taskId ||
-		approval.snapshotHash !== expectedHash ||
-		buildMissionTaskCandidateSnapshot(proposal).hash !== approval.snapshotHash
-	) {
-		throw new AppError(
-			409,
-			"MISSION_APPROVAL_REQUIRED",
-			"Mission Pilot Task requires a current snapshot-bound approval.",
-		);
-	}
-	const alreadyAttached = messages.some((message) => {
-		const record = toRecord(message.metadataJson);
-		const value = toRecord(record?.missionProposalApproval);
-		return (
-			record?.source === "mission_proposal_approval" &&
-			value?.missionApprovalId === approval.id &&
-			value?.snapshotHash === approval.snapshotHash
-		);
-	});
-	if (alreadyAttached) return messages;
-	await nightworkersRepo.createTaskMessage({
-		taskId,
-		role: "system",
-		content: "Mission Pilot snapshot approval verified for Queue admission.",
-		messageType: "text",
-		payloadJson: {
-			source: "mission_proposal_approval",
-			missionProposalApproval: {
-				proposalId: proposal.id,
-				approved: true,
-				approvedAt: new Date().toISOString(),
-				missionApprovalId: approval.id,
-				snapshotHash: approval.snapshotHash,
-			},
-		},
-	});
-	return nightworkersRepo.listTaskMessages(taskId);
-}
-
 function hasExplicitMissionProposalApproval(
 	messages: TaskMessageRows,
 	proposalId: unknown,
@@ -187,7 +96,6 @@ async function ensureMissionProposalQueueApproval(
 	messages: TaskMessageRows,
 	options: QueueSideEffectOptions,
 ) {
-	if (latestMissionPilotMetadata(messages)) return messages;
 	const missionProposal = latestMissionProposalMetadata(messages);
 	if (
 		!options.approveMissionProposal ||
@@ -784,7 +692,6 @@ export async function createImplementationQueueEntry(
 			"Create or mark an implementation plan before adding this session to the Queue.",
 		);
 	}
-	messages = await ensureMissionPilotQueueApproval(taskId, messages);
 	messages = await ensureMissionProposalQueueApproval(
 		taskId,
 		messages,

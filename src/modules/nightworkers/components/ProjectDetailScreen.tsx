@@ -43,10 +43,10 @@ import {
 	buildUnifiedTaskCandidates,
 	pruneExpandedTaskGenerationState,
 } from "./project-detail/mission-model";
-import { MissionPilotDetailModal } from "./project-detail/mission-pilot/MissionPilotDetailModal";
 import {
 	GoalDetailModal,
 	GoalEditorDialog,
+	MissionCandidateModal,
 	TaskCandidateDetailModal,
 } from "./project-detail/ProjectDetailDialogs";
 import { TaskGenerationTreeTable } from "./project-detail/ProjectDetailMissionTree";
@@ -702,12 +702,6 @@ export function ProjectDetailScreen({
 						<ProjectEvaluationScreen
 							project={project}
 							onTasksCreated={onEvaluationTasksCreated}
-							onMissionCreated={async (result) => {
-								await loadProjectDetail();
-								onActiveTabChange("mission");
-								if (result?.mission?.id)
-									setDetailModal({ kind: "mission", id: result.mission.id });
-							}}
 						/>
 					</section>
 				) : null}
@@ -826,9 +820,32 @@ export function ProjectDetailScreen({
 				/>
 			) : null}
 			{detailMission ? (
-				<MissionPilotDetailModal
-					missionId={detailMission.id}
+				<MissionCandidateModal
+					mission={detailMission}
+					goals={goals}
+					taskCandidateCount={
+						unifiedTaskCandidates.filter(
+							(candidate) => candidate.missionId === detailMission.id,
+						).length
+					}
+					busy={busyAction === `mission:decompose:${detailMission.id}`}
 					onClose={() => setDetailModal(null)}
+					onDecompose={(mission) =>
+						void runAction(`mission:decompose:${mission.id}`, async () => {
+							await readJsonResponse(await decomposeMission(mission.id));
+							setExpandedRows((current) => ({
+								...current,
+								missionIds: new Set([...current.missionIds, mission.id]),
+							}));
+							setDetailModal(null);
+						})
+					}
+					onDelete={(mission) =>
+						void runAction(`mission:delete:${mission.id}`, async () => {
+							await readJsonResponse(await deleteMission(mission.id));
+							setDetailModal(null);
+						})
+					}
 				/>
 			) : null}
 		</div>

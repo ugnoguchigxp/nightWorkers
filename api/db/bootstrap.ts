@@ -1,6 +1,5 @@
 import { ensureBaseNightWorkersTables } from "./base-schema-bootstrap";
 import { client } from "./client";
-import { ensureMissionPilotTables } from "./mission-pilot-schema-bootstrap";
 import {
 	ensureMissionPlannerTables,
 	ensureProjectDetailTables,
@@ -87,7 +86,6 @@ export async function ensureNightWorkersSchema() {
 	await ensureProjectEvaluationTables();
 	await ensureProjectDetailTables();
 	await ensureMissionPlannerTables();
-	await ensureMissionPilotTables();
 	await ensureReviewModeTables();
 	await ensureVerificationTables();
 

@@ -1,4 +1,4 @@
-import { Check, Loader2, Route } from "lucide-react";
+import { Check } from "lucide-react";
 import type {
 	ProjectEvaluationDimensionScore,
 	ProjectImprovementIdea,
@@ -9,15 +9,11 @@ export function ImprovementIdeaCard({
 	dimensions,
 	selected,
 	onToggle,
-	onCreateMission,
-	isCreatingMission = false,
 }: {
 	idea: ProjectImprovementIdea;
 	dimensions: ProjectEvaluationDimensionScore[];
 	selected: boolean;
 	onToggle: () => void;
-	onCreateMission?: () => void;
-	isCreatingMission?: boolean;
 }) {
 	const dimensionByKey = new Map(
 		dimensions.map((dimension) => [dimension.key, dimension]),
@@ -103,21 +99,6 @@ export function ImprovementIdeaCard({
 					</span>
 				</span>
 			</button>
-			{onCreateMission ? (
-				<button
-					type="button"
-					onClick={onCreateMission}
-					disabled={isCreatingMission}
-					className="ml-2 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-[var(--nw-primary)] bg-[var(--nw-surface-soft)] px-3 font-semibold text-[var(--nw-primary)] text-xs disabled:opacity-50"
-				>
-					{isCreatingMission ? (
-						<Loader2 className="h-3.5 w-3.5 animate-spin" />
-					) : (
-						<Route className="h-3.5 w-3.5" />
-					)}
-					{isCreatingMission ? "作成中" : "Missionを作成"}
-				</button>
-			) : null}
 		</div>
 	);
 }

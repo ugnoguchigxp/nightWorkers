@@ -203,36 +203,13 @@ export async function ensureMissionPlannerTables() {
       non_goals_json text DEFAULT '[]' NOT NULL,
       status text DEFAULT 'draft' NOT NULL,
       source_goal_ids_json text DEFAULT '[]' NOT NULL,
-	  source text DEFAULT 'user' NOT NULL,
-	  source_ref_id text,
-	  source_evaluation_id text,
-	  paused_at integer,
-	  abandoned_at integer,
-	  completed_at integer,
       latest_planning_result_id text,
       status_reason text,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
-	await ensureColumn(
-		"missions",
-		"source",
-		"source text DEFAULT 'user' NOT NULL",
-	);
-	await ensureColumn("missions", "source_ref_id", "source_ref_id text");
-	await ensureColumn(
-		"missions",
-		"source_evaluation_id",
-		"source_evaluation_id text",
-	);
-	await ensureColumn("missions", "paused_at", "paused_at integer");
-	await ensureColumn("missions", "abandoned_at", "abandoned_at integer");
-	await ensureColumn("missions", "completed_at", "completed_at integer");
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS missions_repository_status_created_idx ON missions (repository_id, status, created_at)",
-	);
-	await client.execute(
-		"CREATE UNIQUE INDEX IF NOT EXISTS missions_repository_source_ref_uidx ON missions (repository_id, source, source_ref_id)",
 	);
 
 	await client.execute(`

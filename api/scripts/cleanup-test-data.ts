@@ -316,17 +316,6 @@ export async function deleteRepositories(repositoryIds: string[]) {
 	}
 	for (const ids of chunks(repositoryIds, chunkSize)) {
 		const list = sqlIn(ids);
-		// Plan revisions intentionally use RESTRICT to prevent production history
-		// rewrites. Test repository cleanup must remove that history explicitly.
-		statements.push(
-			`DELETE FROM mission_replan_suggestions WHERE repository_id IN (${list});`,
-		);
-		statements.push(
-			`UPDATE mission_plan_revisions SET base_revision_id = NULL WHERE repository_id IN (${list});`,
-		);
-		statements.push(
-			`DELETE FROM mission_plan_revisions WHERE repository_id IN (${list});`,
-		);
 		statements.push(
 			`DELETE FROM llm_usage_summary_warnings WHERE repository_key IN (${list});`,
 		);
