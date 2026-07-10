@@ -1,0 +1,320 @@
+{
+	"version": 1,
+	"thresholds": {
+		"p0CoverageMinimum": 100,
+		"weightedCoverageMinimum": 80,
+		"executedPassRateMinimum": 100,
+		"p0FlakeMaximum": 0
+	},
+	"weights": {
+		"P0": 5,
+		"P1": 3,
+		"P2": 1
+	},
+	"scenarios": [
+		{
+			"id": "NW-E2E-A11Y-001",
+			"title": "主要ワークベンチ画面にcriticalまたはseriousなaxe違反がない",
+			"priority": "P1",
+			"suite": "accessibility",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "accessibility"]
+		},
+		{
+			"id": "NW-E2E-A11Y-002",
+			"title": "keyboard focusが可視でreduced motionが反映される",
+			"priority": "P1",
+			"suite": "accessibility",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "accessibility"]
+		},
+		{
+			"id": "NW-E2E-A11Y-003",
+			"title": "日本語と英語で主要なaccessible nameが維持される",
+			"priority": "P1",
+			"suite": "accessibility",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "accessibility"]
+		},
+		{
+			"id": "NW-E2E-A11Y-004",
+			"title": "modalがfocusをtrapしEscape後にtriggerへ戻す",
+			"priority": "P1",
+			"suite": "accessibility",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "accessibility"]
+		},
+		{
+			"id": "NW-E2E-UI-001",
+			"title": "Task detailでAgent Terminal ConsoleとReview Diffsを表示できる",
+			"priority": "P1",
+			"suite": "smoke",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api"]
+		},
+		{
+			"id": "NW-E2E-UI-002",
+			"title": "1回のprompt送信でuser messageが重複作成されない",
+			"priority": "P0",
+			"suite": "smoke",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-RUN-001",
+			"title": "Project登録からRun完了、Review、Archiveまで進める",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database", "task-events", "git-diff"]
+		},
+		{
+			"id": "NW-E2E-RUN-002",
+			"title": "policy blockでneeds_humanになり証跡が保存される",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["api", "database", "task-events", "git-diff"]
+		},
+		{
+			"id": "NW-E2E-LIVE-001",
+			"title": "live LLM runがworkspace、Todo、verification evidenceを生成する",
+			"priority": "P1",
+			"suite": "live",
+			"gateStatus": "observational",
+			"requiredEvidence": ["api", "provider", "task-events", "git-diff"]
+		},
+		{
+			"id": "NW-E2E-RUN-003",
+			"title": "needs_humanから再実行して復帰できる",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-RUN-004",
+			"title": "実行中のRunをcancelできる",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-RUN-005",
+			"title": "timeoutしたRunが終端状態と証跡を保存する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-REVIEW-001",
+			"title": "needs_reviewのRunをReviewで完了できる",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-REVIEW-002",
+			"title": "Test Mode完了後にReview Mode artifactへ遷移できる",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-GIT-001",
+			"title": "Review完了後にcommit closeoutを完了できる",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "git"]
+		},
+		{
+			"id": "NW-E2E-RUN-006",
+			"title": "tool failureでfailed終端となりproduction diffを残さない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "task-events", "git-diff"]
+		},
+		{
+			"id": "NW-E2E-RUN-007",
+			"title": "同じTaskのactive Runが重複作成されない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "queue"]
+		},
+		{
+			"id": "NW-E2E-TEST-001",
+			"title": "Test Modeが別Runで起動しTodoを使わずmanaged evidenceを残す",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-TEST-002",
+			"title": "verification documentなしではTest Modeを開始しない",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-TEST-003",
+			"title": "required verification失敗時にTest Modeを完了扱いにしない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-REVIEW-003",
+			"title": "Review finding dispositionとprompt suggestionを再読込後も保持する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-GIT-002",
+			"title": "HEAD移動またはownership外stageを検出して誤commitを防ぐ",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "git"]
+		},
+		{
+			"id": "NW-E2E-GIT-003",
+			"title": "commit済みRunをlocal bare remoteへpushできる",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "git"]
+		},
+		{
+			"id": "NW-E2E-ARCHIVE-001",
+			"title": "ArchiveしたTaskがactive listから消えRestore後にreadyで戻る",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-QUEUE-001",
+			"title": "processorCount=2でnormal Taskを異なるslotへ割り当てる",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "queue", "task-events"]
+		},
+		{
+			"id": "NW-E2E-QUEUE-002",
+			"title": "exclusive Taskがactive normal完了まで開始しない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "queue", "task-events"]
+		},
+		{
+			"id": "NW-E2E-QUEUE-003",
+			"title": "sequence groupをorder順に実行する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "queue", "task-events"]
+		},
+		{
+			"id": "NW-E2E-QUEUE-004",
+			"title": "sequence predecessor失敗時に後続を開始しない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "queue", "task-events"]
+		},
+		{
+			"id": "NW-E2E-QUEUE-005",
+			"title": "needs_human Queue entryをpriority保持でrecover/requeueできる",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "queue"]
+		},
+		{
+			"id": "NW-E2E-PROJECT-001",
+			"title": "Project DetailのOverviewとQualityへ実データを表示する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-QUALITY-001",
+			"title": "fixture repositoryのunit coverage E2E結果をQuality履歴へ表示する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "quality-artifact"]
+		},
+		{
+			"id": "NW-E2E-QUALITY-002",
+			"title": "実行中のQuality Runをcancelして再実行できる",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database", "process"]
+		},
+		{
+			"id": "NW-E2E-SETTINGS-001",
+			"title": "Repositoryのtest quality settingsを保存しreload後も保持する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-REPO-001",
+			"title": "Repository root外のfile pathを読めない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "security", "audit"]
+		},
+		{
+			"id": "NW-E2E-ACTIVITY-001",
+			"title": "afterSeq replayでTask activity eventを重複欠落なく取得する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "task-events"]
+		},
+		{
+			"id": "NW-E2E-NAV-001",
+			"title": "Test Review artifactのdeep linkをreloadと履歴移動後も維持する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "url", "api"]
+		},
+		{
+			"id": "NW-E2E-A11Y-005",
+			"title": "Project Quality Test Mode Review Modeの実データ状態にseriousなaxe違反がない",
+			"priority": "P1",
+			"suite": "accessibility",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "accessibility"]
+		},
+		{
+			"id": "NW-E2E-MISSION-001",
+			"title": "Mission goalからapproved candidateだけをTask化する",
+			"priority": "P2",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["ui", "api", "database"]
+		}
+	]
+}

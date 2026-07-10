@@ -80,7 +80,6 @@ export function DedicatedViewPanel({
 					<MermaidDiagram
 						chart={chart}
 						idPrefix={`dedicated-${viewKind || "view"}`}
-						downloadName={`${viewKind || "dedicated-view"}-mermaid.svg`}
 					/>
 				</div>
 				{notes ? <MarkdownViewer content={notes} /> : null}

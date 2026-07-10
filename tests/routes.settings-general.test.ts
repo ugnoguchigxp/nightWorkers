@@ -70,6 +70,9 @@ vi.mock("../api/services/structured-llm/provider-health", () => ({
 }));
 
 const codexStatusMocks = vi.hoisted(() => ({
+	mergeCodexModelOptionsIntoEndpoints: vi
+		.fn()
+		.mockImplementation((endpoints) => endpoints),
 	readCodexSdkStatus: vi.fn(),
 	readCodexModelOptions: vi
 		.fn()
@@ -77,6 +80,8 @@ const codexStatusMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/services/codex-global-config/status", () => ({
+	mergeCodexModelOptionsIntoEndpoints:
+		codexStatusMocks.mergeCodexModelOptionsIntoEndpoints,
 	readCodexSdkStatus: codexStatusMocks.readCodexSdkStatus,
 	readCodexModelOptions: codexStatusMocks.readCodexModelOptions,
 }));

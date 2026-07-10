@@ -133,10 +133,9 @@ function gitDiff(workspaceDir: string) {
 test.describe("NightWorkers Agent Debug @regression", () => {
 	test.describe.configure({ mode: "serial" });
 
-	test("debug panel is available on a task detail page @smoke", async ({
-		page,
-		request,
-	}) => {
+	test("debug panel is available on a task detail page @smoke", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-UI-001"],
+	}, async ({ page, request }) => {
 		const workspaceDir = await createDisposableGitWorkspace();
 		let repositoryId: string | null = null;
 		let taskId: string | null = null;
@@ -191,10 +190,9 @@ test.describe("NightWorkers Agent Debug @regression", () => {
 		}
 	});
 
-	test("single prompt creates exactly one user message bubble @smoke", async ({
-		page,
-		request,
-	}) => {
+	test("single prompt creates exactly one user message bubble @smoke", {
+		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-UI-002"],
+	}, async ({ page, request }) => {
 		const workspaceDir = await createDisposableGitWorkspace();
 		let repositoryId: string | null = null;
 		let taskId: string | null = null;
@@ -269,9 +267,9 @@ test.describe("NightWorkers Agent Debug @regression", () => {
 });
 
 test.describe("NightWorkers Agent Live @agent-live", () => {
-	test("agent live run produces run, workspace, Todo, and verification evidence", async ({
-		request,
-	}) => {
+	test("agent live run produces run, workspace, Todo, and verification evidence", {
+		tag: ["@live", "@p1", "@scenario:NW-E2E-LIVE-001"],
+	}, async ({ request }) => {
 		test.skip(
 			process.env.NIGHTWORKERS_LIVE_LLM_E2E !== "1",
 			"Set NIGHTWORKERS_LIVE_LLM_E2E=1 to run live LLM evidence E2E.",
@@ -379,10 +377,9 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 test.describe("NightWorkers deterministic core workflow @regression", () => {
 	test.describe.configure({ mode: "serial" });
 
-	test("project to run, review, and archive works without provider credentials", async ({
-		page,
-		request,
-	}) => {
+	test("project to run, review, and archive works without provider credentials", {
+		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-RUN-001"],
+	}, async ({ page, request }) => {
 		const workspaceDir = await createDisposableGitWorkspace();
 		let repositoryId: string | null = null;
 		let taskId: string | null = null;
@@ -480,9 +477,9 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 		}
 	});
 
-	test("policy block persists needs_human evidence for retry", async ({
-		request,
-	}) => {
+	test("policy block persists needs_human evidence for retry", {
+		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-RUN-002"],
+	}, async ({ request }) => {
 		const workspaceDir = await createDisposableGitWorkspace();
 		let repositoryId: string | null = null;
 		let taskId: string | null = null;

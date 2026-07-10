@@ -927,6 +927,71 @@ describe("NightWorkers workbench routes", () => {
 		).toBe(true);
 	});
 
+	it("applies a composer model override to one run only", async () => {
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValue(
+			mockPlanModeGate(false, "question only", "general_answer"),
+		);
+		const { task } = await createWorkbenchTask({
+			title: "One-shot model override",
+			status: "completed",
+			objective: "Confirm the active model route",
+		});
+		await repo.createTaskMessage({
+			taskId: task.id,
+			role: "assistant",
+			content: "## 仕様\nモデル選択は送信単位で適用する。",
+			messageType: "markdown_document",
+			payloadJson: { intent: "feature_plan", source: "status" },
+		});
+
+		const firstResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "この送信だけ別モデルで確認してください。",
+					providerEndpointId: "local-qwen",
+					model: "qwen3-coder",
+					thinkingDepth: "medium",
+				}),
+			},
+		);
+
+		expect(firstResponse.status).toBe(200);
+		const firstBody = await firstResponse.json();
+		const firstRun = await repo.getTaskRun(firstBody.run.id);
+		expect(firstRun?.contextSnapshot).toMatchObject({
+			effectiveLlmRouting: {
+				override: {
+					providerEndpointId: "local-qwen",
+					model: "qwen3-coder",
+					thinkingDepth: "medium",
+				},
+			},
+		});
+
+		await flushPendingWorkbenchTasks();
+
+		const secondResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "次の送信はRole Routingに戻してください。",
+				}),
+			},
+		);
+
+		expect(secondResponse.status).toBe(200);
+		const secondBody = await secondResponse.json();
+		const secondRun = await repo.getTaskRun(secondBody.run.id);
+		expect(secondRun?.contextSnapshot).toMatchObject({
+			effectiveLlmRouting: { override: null },
+		});
+	});
+
 	it("passes recent answer and prior implementation run context to intake for continue requests", async () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
 			mockPlanModeGate(

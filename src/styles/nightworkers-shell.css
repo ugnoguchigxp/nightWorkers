@@ -15,6 +15,80 @@
 	--nw-danger: hsl(350 88% 68%);
 	--nw-border: hsl(218 24% 30% / 0.78);
 	--nw-strong-border: hsl(218 28% 44% / 0.88);
+	--nw-artifact-markdown-background: var(--nw-panel);
+	--nw-artifact-markdown-text: var(--nw-text);
+	--nw-artifact-markdown-muted-text: color-mix(
+		in srgb,
+		var(--nw-muted-text) 75%,
+		var(--nw-text)
+	);
+	--nw-artifact-markdown-accent: color-mix(
+		in srgb,
+		var(--nw-primary) 58%,
+		var(--nw-text)
+	);
+	--nw-artifact-markdown-border: color-mix(
+		in srgb,
+		var(--nw-border) 58%,
+		var(--nw-text)
+	);
+	--nw-artifact-markdown-code-background: color-mix(
+		in srgb,
+		var(--nw-surface-soft) 88%,
+		var(--nw-panel)
+	);
+	--nw-artifact-structured-background: var(--nw-panel);
+	--nw-artifact-structured-card-background: color-mix(
+		in srgb,
+		var(--nw-surface-soft) 72%,
+		var(--nw-panel)
+	);
+	--nw-artifact-structured-text: var(--nw-text);
+	--nw-artifact-structured-muted-text: color-mix(
+		in srgb,
+		var(--nw-muted-text) 60%,
+		var(--nw-text)
+	);
+	--nw-artifact-structured-accent-text: color-mix(
+		in srgb,
+		var(--nw-primary) 50%,
+		var(--nw-text)
+	);
+	--nw-artifact-structured-border: color-mix(
+		in srgb,
+		var(--nw-border) 58%,
+		var(--nw-text)
+	);
+	--nw-artifact-structured-success-background: color-mix(
+		in srgb,
+		var(--nw-success) 10%,
+		var(--nw-panel)
+	);
+	--nw-artifact-structured-success-text: color-mix(
+		in srgb,
+		var(--nw-success) 68%,
+		var(--nw-text)
+	);
+	--nw-artifact-structured-success-border: color-mix(
+		in srgb,
+		var(--nw-success) 58%,
+		var(--nw-border)
+	);
+	--nw-artifact-structured-warning-text: color-mix(
+		in srgb,
+		var(--nw-warning) 50%,
+		var(--nw-text)
+	);
+	--nw-artifact-structured-warning-background: color-mix(
+		in srgb,
+		var(--nw-warning) 10%,
+		var(--nw-panel)
+	);
+	--nw-artifact-structured-warning-border: color-mix(
+		in srgb,
+		var(--nw-warning) 55%,
+		var(--nw-border)
+	);
 	--nw-radius: 0.5rem;
 	--nw-control-radius: calc(var(--nw-radius) - 0.125rem);
 	--nw-control-height: 2rem;

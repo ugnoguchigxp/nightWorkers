@@ -6,20 +6,29 @@ import {
 	Circle,
 	Copy,
 	Download,
+	FileText,
 	FlaskConical,
 	FolderTree,
 	GitCompare,
+	Image as ImageIcon,
 	LoaderCircle,
 	Maximize2,
 	Minimize2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { PlanModeWorkspaceViewer } from "../../planMode";
 import type { PlanWorkspaceTab } from "../../specification";
 import { TodoRailList, type TodoRailListStatus } from "../../todo/TodoRailList";
+import {
+	type ArtifactExportDescriptor,
+	artifactFileStem,
+	buildMarkdownFromValue,
+	downloadElementAsPng,
+	markdownCodeBlock,
+} from "../artifactExport";
 import {
 	logArtifactPaneRendered,
 	measureArtifactPerf,
@@ -67,7 +76,6 @@ import {
 	ProjectDiffContent,
 } from "./ArtifactPaneContentViewers";
 import {
-	artifactFileName,
 	buildArtifactVersions,
 	buildExportedArtifactContent,
 	copyText,
@@ -183,6 +191,11 @@ export function ArtifactPane({
 	>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
 		useState<ProjectArtifactMode>("tree");
+	const [planModeExportDescriptor, setPlanModeExportDescriptor] =
+		useState<ArtifactExportDescriptor | null>(null);
+	const [isExportingImage, setIsExportingImage] = useState(false);
+	const [exportError, setExportError] = useState<string | null>(null);
+	const artifactCaptureRef = useRef<HTMLElement | null>(null);
 	const projectArtifactMode =
 		controlledProjectArtifactMode ?? localProjectArtifactMode;
 	const setProjectArtifactMode = (mode: ProjectArtifactMode) => {
@@ -231,6 +244,7 @@ export function ArtifactPane({
 	const displayArtifactId = displayArtifact?.id || null;
 	useEffect(() => {
 		setBodyRenderArtifactId(null);
+		setExportError(null);
 		if (!displayArtifactId) return;
 		const frame = requestAnimationFrame(() => {
 			setBodyRenderArtifactId(displayArtifactId);
@@ -411,15 +425,77 @@ export function ArtifactPane({
 					: showBlueprintWorkspace
 						? t("thread.planModeWorkspace")
 						: displayArtifact?.title || selectedArtifact.title;
-	const buildCurrentExportedContent = () =>
-		buildExportedArtifactContent({
-			showDiff,
-			latestRun,
-			selectedMessage,
-			selectedActivityArtifact,
-			selectedFile,
-			selectedArtifact: displayArtifact,
-		});
+	const activeReviewDetail =
+		activeReviewSession ||
+		(displayArtifact?.metadata?.reviewSession as
+			| ReviewSessionDetail
+			| undefined) ||
+		null;
+	const defaultExportedMarkdown = buildExportedArtifactContent({
+		showDiff,
+		latestRun,
+		selectedMessage,
+		selectedActivityArtifact,
+		selectedFile,
+		selectedArtifact: displayArtifact,
+	});
+	const currentExportDescriptor: ArtifactExportDescriptor =
+		showBlueprintWorkspace &&
+		planModeExportDescriptor &&
+		planModeExportDescriptor.scopeId === activeSessionId
+			? planModeExportDescriptor
+			: {
+					title: artifactTitle,
+					fileStem: artifactFileStem(artifactTitle),
+					markdown: showReviewStatus
+						? buildMarkdownFromValue(artifactTitle, activeReviewDetail || {})
+						: showTestMode
+							? buildTestModeExportMarkdown({
+									title: artifactTitle,
+									model: testModePanel,
+									workflowSteps: displayedTestModeWorkflowSteps,
+									latestRun: latestRunForTestMode,
+								})
+							: defaultExportedMarkdown,
+				};
+	const handleCopyMarkdown = async () => {
+		try {
+			await copyText(currentExportDescriptor.markdown);
+			setExportError(null);
+		} catch {
+			setExportError(t("artifact.exportCopyFailed"));
+		}
+	};
+	const handleDownloadMarkdown = () => {
+		try {
+			saveTextFile(
+				currentExportDescriptor.markdown,
+				`${currentExportDescriptor.fileStem}.md`,
+			);
+			setExportError(null);
+		} catch {
+			setExportError(t("artifact.exportMarkdownFailed"));
+		}
+	};
+	const handleDownloadImage = async () => {
+		if (!artifactCaptureRef.current || isExportingImage) return;
+		setIsExportingImage(true);
+		setExportError(null);
+		try {
+			await downloadElementAsPng(
+				artifactCaptureRef.current,
+				`${currentExportDescriptor.fileStem}.png`,
+			);
+		} catch (error) {
+			setExportError(
+				error instanceof Error && error.message === "artifact_image_too_large"
+					? t("artifact.exportImageTooLarge")
+					: t("artifact.exportImageFailed"),
+			);
+		} finally {
+			setIsExportingImage(false);
+		}
+	};
 	const artifactFrameClass = isFullscreen
 		? "fixed inset-3 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e2e] shadow-2xl"
 		: "nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden";
@@ -441,7 +517,11 @@ export function ArtifactPane({
 		taskMessages.length,
 	]);
 	return (
-		<aside className={artifactFrameClass}>
+		<aside
+			ref={artifactCaptureRef}
+			className={artifactFrameClass}
+			data-artifact-export-root
+		>
 			<div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[#313244] bg-[#1e1e2e] px-3 pr-12">
 				<div className="flex min-w-0 items-center gap-2 text-sm">
 					<span className="truncate font-medium text-cyan-200">
@@ -470,18 +550,16 @@ export function ArtifactPane({
 								artifactVersions[currentVersionIndex + 1]?.id || null,
 							)
 						}
-						onCopy={() => void copyText(buildCurrentExportedContent())}
-						onSave={() =>
-							saveTextFile(
-								buildCurrentExportedContent(),
-								artifactFileName(displayArtifact),
-							)
-						}
+						onCopyMarkdown={() => void handleCopyMarkdown()}
+						onDownloadMarkdown={handleDownloadMarkdown}
+						onDownloadImage={() => void handleDownloadImage()}
+						isExportingImage={isExportingImage}
+						exportError={exportError}
 						onToggleFullscreen={() => setIsFullscreen((value) => !value)}
 					/>
 				) : null}
 			</div>
-			<div className="flex min-h-0 flex-1">
+			<div className="flex min-h-0 flex-1" data-artifact-export-expand>
 				{shouldDeferArtifactBody ? (
 					<div className="flex min-h-0 flex-1 items-center justify-center text-xs text-slate-500">
 						{t("artifact.loading")}
@@ -500,7 +578,10 @@ export function ArtifactPane({
 						/>
 					</div>
 				) : null}
-				<div className="min-w-0 flex-1 overflow-hidden bg-[#1e1e2e]">
+				<div
+					className="min-w-0 flex-1 overflow-hidden bg-[#1e1e2e]"
+					data-artifact-export-expand
+				>
 					{showProjectDiff ? (
 						<ProjectDiffContent
 							diff={projectDiff?.diff || ""}
@@ -525,6 +606,7 @@ export function ArtifactPane({
 							latestRun={latestRunForTestMode}
 							onTabChange={onPlanWorkspaceTabChange}
 							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
+							onExportDescriptorChange={setPlanModeExportDescriptor}
 							onQueueSession={onQueueSession}
 							onAddToQueue={onAddToQueue}
 							onStartTestModeRun={async (input) => {
@@ -542,13 +624,7 @@ export function ArtifactPane({
 						/>
 					) : showReviewStatus ? (
 						<ReviewStatusViewer
-							detail={
-								activeReviewSession ||
-								(displayArtifact?.metadata?.reviewSession as
-									| ReviewSessionDetail
-									| undefined) ||
-								null
-							}
+							detail={activeReviewDetail}
 							latestRun={latestRun}
 							onStartReviewRun={onStartReviewRun}
 							gitCloseout={gitCloseout}
@@ -696,6 +772,53 @@ type VerificationPanelModel = {
 		required: boolean;
 	}>;
 };
+
+function buildTestModeExportMarkdown(input: {
+	title: string;
+	model: VerificationPanelModel | null;
+	workflowSteps: TestModeWorkflowStepView[];
+	latestRun?: TaskRun | null;
+}) {
+	const sections = [`# ${input.title}`];
+	const completionCheck = readLatestCompletionCheckConditionStatuses(
+		input.latestRun,
+	);
+	if (input.model?.conditions.length) {
+		sections.push(
+			"## Completion Conditions",
+			...input.model.conditions.map((condition) => {
+				const status = resolveConditionDisplayStatus(
+					condition,
+					completionCheck,
+				);
+				const checked = isCompleteConditionStatus(status) ? "x" : " ";
+				return `- [${checked}] \`${condition.id}\` ${condition.text} (${status})`;
+			}),
+		);
+	}
+	if (input.workflowSteps.length) {
+		sections.push(
+			"## Workflow",
+			...input.workflowSteps.map(
+				(step, index) => `${index + 1}. ${step.id}: ${step.status}`,
+			),
+		);
+	}
+	if (input.latestRun?.testResults) {
+		const testResults =
+			typeof input.latestRun.testResults === "string"
+				? input.latestRun.testResults
+				: markdownCodeBlock(
+						JSON.stringify(input.latestRun.testResults, null, 2),
+						"json",
+					);
+		sections.push("## Test Results", testResults);
+	}
+	if (input.latestRun?.finalReport?.trim()) {
+		sections.push("## Final Report", input.latestRun.finalReport.trim());
+	}
+	return `${sections.join("\n\n")}\n`;
+}
 
 function buildVerificationPanelModel(input: {
 	message: TaskMessage | null;
@@ -846,7 +969,10 @@ function TestModeArtifactViewer({
 }) {
 	const { t } = useTranslation();
 	return (
-		<div className="h-full overflow-auto bg-slate-950 p-5 text-slate-100">
+		<div
+			className="nightworkers-structured-artifact h-full overflow-auto p-5"
+			data-artifact-export-expand
+		>
 			<div className="mx-auto grid max-w-5xl gap-4">
 				{model ? (
 					<VerificationChecklistPanel
@@ -861,7 +987,7 @@ function TestModeArtifactViewer({
 						onStart={onStart}
 					/>
 				) : (
-					<div className="rounded-md border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-400">
+					<div className="nightworkers-structured-artifact-card nightworkers-structured-artifact-muted rounded-md border p-4 text-xs">
 						{t("testMode.emptyConditions")}
 					</div>
 				)}
@@ -909,10 +1035,10 @@ function VerificationChecklistPanel({
 	);
 	const completionCheck = readLatestCompletionCheckConditionStatuses(latestRun);
 	return (
-		<div className="border-b border-slate-800 bg-slate-950/50 px-4 py-3">
+		<div className="nightworkers-structured-artifact nightworkers-structured-artifact-section border-b px-4 py-3">
 			<div>
 				{workflowActionStatus === "failed" ? (
-					<div className="text-[11px] text-amber-300">
+					<div className="nightworkers-structured-artifact-warning text-[11px]">
 						{t("testMode.status.planFailed")}
 					</div>
 				) : null}
@@ -946,20 +1072,20 @@ function VerificationChecklistPanel({
 						return (
 							<div
 								key={condition.id}
-								className="grid grid-cols-[4.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
+								className="nightworkers-structured-artifact-row grid grid-cols-[4.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs"
 							>
-								<span className="font-mono leading-5 text-slate-400">
+								<span className="nightworkers-structured-artifact-muted font-mono leading-5">
 									{condition.id}
 								</span>
 								<span className="flex h-5 items-center">
 									<TestModeConditionStatusIcon status={displayStatus} />
 								</span>
-								<span className="whitespace-nowrap leading-5 text-slate-400">
+								<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
 									{t(`testMode.conditionStatus.${displayStatus}`, {
 										defaultValue: displayStatus,
 									})}
 								</span>
-								<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+								<span className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words leading-5">
 									{condition.text}
 								</span>
 							</div>
@@ -985,7 +1111,7 @@ function TestModeMaintenanceTransition({
 		<div className="mt-2">
 			<a
 				href={href}
-				className="inline-flex h-8 items-center gap-2 rounded-md border border-cyan-500/45 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-200 transition hover:border-cyan-300/70 hover:bg-cyan-500/15"
+				className="nightworkers-structured-artifact-action inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition"
 				onClick={(event) => {
 					if (!onOpenReviewArtifact) return;
 					event.preventDefault();
@@ -1051,21 +1177,21 @@ function TestModeCheckResults({ results }: { results: TestModeCheckResult[] }) {
 			{results.map((result) => (
 				<div
 					key={result.key}
-					className="rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2 text-xs"
+					className="nightworkers-structured-artifact-row rounded-md border px-2.5 py-2 text-xs"
 				>
 					<div className="flex min-w-0 items-center justify-between gap-2">
-						<span className="min-w-0 whitespace-normal break-words font-medium text-slate-100">
+						<span className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words font-medium">
 							{result.label}
 						</span>
 						<span
 							className={
 								result.status === "passed"
-									? "shrink-0 text-emerald-300"
+									? "nightworkers-structured-artifact-success shrink-0"
 									: result.status === "needs_action"
-										? "shrink-0 text-amber-300"
+										? "nightworkers-structured-artifact-warning shrink-0"
 										: result.status === "failed"
-											? "shrink-0 text-amber-300"
-											: "shrink-0 text-cyan-300"
+											? "nightworkers-structured-artifact-warning shrink-0"
+											: "nightworkers-structured-artifact-accent shrink-0"
 							}
 						>
 							{result.status === "passed"
@@ -1077,7 +1203,7 @@ function TestModeCheckResults({ results }: { results: TestModeCheckResult[] }) {
 										: "RUNNING"}
 						</span>
 					</div>
-					<div className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-400">
+					<div className="nightworkers-structured-artifact-muted mt-1 whitespace-pre-wrap break-words text-[11px] leading-5">
 						{result.summary}
 					</div>
 				</div>
@@ -1464,17 +1590,23 @@ function normalizeToolName(toolName: string) {
 
 function TestModeConditionStatusIcon({ status }: { status: string }) {
 	if (isCompleteConditionStatus(status)) {
-		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
+		return (
+			<CheckCircle2 className="nightworkers-structured-artifact-success h-3.5 w-3.5 shrink-0" />
+		);
 	}
 	if (status === "failed" || status === "missing") {
-		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
+		return (
+			<AlertTriangle className="nightworkers-structured-artifact-warning h-3.5 w-3.5 shrink-0" />
+		);
 	}
 	if (status === "running") {
 		return (
-			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+			<LoaderCircle className="nightworkers-structured-artifact-accent h-3.5 w-3.5 shrink-0 animate-spin" />
 		);
 	}
-	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
+	return (
+		<Circle className="nightworkers-structured-artifact-muted h-3.5 w-3.5 shrink-0" />
+	);
 }
 
 function isCompleteConditionStatus(status: string) {
@@ -1507,7 +1639,7 @@ function TestModeActionButton({
 	return (
 		<button
 			type="button"
-			className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+			className="nightworkers-structured-artifact-action inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed"
 			disabled={isDisabled}
 			onClick={() => void onStart(action, false)}
 			title={label}
@@ -1540,8 +1672,11 @@ function ArtifactHeaderActions({
 	isFullscreen,
 	onPrevious,
 	onNext,
-	onCopy,
-	onSave,
+	onCopyMarkdown,
+	onDownloadMarkdown,
+	onDownloadImage,
+	isExportingImage,
+	exportError,
 	onToggleFullscreen,
 }: {
 	currentVersionIndex: number;
@@ -1549,13 +1684,19 @@ function ArtifactHeaderActions({
 	isFullscreen: boolean;
 	onPrevious: () => void;
 	onNext: () => void;
-	onCopy: () => void;
-	onSave: () => void;
+	onCopyMarkdown: () => void;
+	onDownloadMarkdown: () => void;
+	onDownloadImage: () => void;
+	isExportingImage: boolean;
+	exportError: string | null;
 	onToggleFullscreen: () => void;
 }) {
 	const { t } = useTranslation();
 	return (
-		<div className="flex shrink-0 items-center gap-1">
+		<div
+			className="flex shrink-0 items-center gap-1"
+			data-artifact-export-exclude
+		>
 			<button
 				type="button"
 				className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
@@ -1582,24 +1723,13 @@ function ArtifactHeaderActions({
 			>
 				<ChevronRight className="h-3.5 w-3.5" />
 			</button>
-			<button
-				type="button"
-				className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
-				onClick={onCopy}
-				aria-label={t("artifact.copyVersion")}
-				title={t("artifact.copyVersion")}
-			>
-				<Copy className="h-3.5 w-3.5" />
-			</button>
-			<button
-				type="button"
-				className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
-				onClick={onSave}
-				aria-label={t("artifact.saveVersion")}
-				title={t("artifact.saveVersion")}
-			>
-				<Download className="h-3.5 w-3.5" />
-			</button>
+			<ArtifactExportMenu
+				onCopyMarkdown={onCopyMarkdown}
+				onDownloadMarkdown={onDownloadMarkdown}
+				onDownloadImage={onDownloadImage}
+				isExportingImage={isExportingImage}
+				exportError={exportError}
+			/>
 			<button
 				type="button"
 				className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-slate-500"
@@ -1618,6 +1748,163 @@ function ArtifactHeaderActions({
 				)}
 			</button>
 		</div>
+	);
+}
+
+export function ArtifactExportMenu({
+	onCopyMarkdown,
+	onDownloadMarkdown,
+	onDownloadImage,
+	isExportingImage,
+	exportError,
+}: {
+	onCopyMarkdown: () => void;
+	onDownloadMarkdown: () => void;
+	onDownloadImage: () => void;
+	isExportingImage: boolean;
+	exportError: string | null;
+}) {
+	const { t } = useTranslation();
+	const [isOpen, setIsOpen] = useState(false);
+	const menuRef = useRef<HTMLDivElement | null>(null);
+	const triggerRef = useRef<HTMLButtonElement | null>(null);
+	useEffect(() => {
+		if (!isOpen) return;
+		const focusFrame = requestAnimationFrame(() => {
+			menuRef.current
+				?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+				?.focus();
+		});
+		const closeOnOutsideClick = (event: MouseEvent) => {
+			if (!menuRef.current?.contains(event.target as Node)) setIsOpen(false);
+		};
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			setIsOpen(false);
+			triggerRef.current?.focus();
+		};
+		document.addEventListener("mousedown", closeOnOutsideClick);
+		document.addEventListener("keydown", closeOnEscape);
+		return () => {
+			cancelAnimationFrame(focusFrame);
+			document.removeEventListener("mousedown", closeOnOutsideClick);
+			document.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [isOpen]);
+	const select = (action: () => void) => {
+		setIsOpen(false);
+		action();
+		requestAnimationFrame(() => triggerRef.current?.focus());
+	};
+	return (
+		<div ref={menuRef} className="relative">
+			<button
+				ref={triggerRef}
+				type="button"
+				className={`nightworkers-artifact-export-trigger inline-flex h-7 w-7 items-center justify-center rounded border ${
+					exportError ? "nightworkers-artifact-export-trigger-error" : ""
+				}`}
+				onClick={() => setIsOpen((value) => !value)}
+				aria-label={t("artifact.exportMenu")}
+				aria-haspopup="menu"
+				aria-expanded={isOpen}
+				title={exportError || t("artifact.exportMenu")}
+			>
+				{isExportingImage ? (
+					<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+				) : (
+					<Download className="h-3.5 w-3.5" />
+				)}
+			</button>
+			{isOpen ? (
+				<div
+					role="menu"
+					className="nightworkers-artifact-export-menu absolute right-0 top-8 z-50 grid w-56 gap-1 rounded-md border p-1.5 text-xs"
+					onKeyDown={(event) => {
+						if (
+							event.key !== "ArrowDown" &&
+							event.key !== "ArrowUp" &&
+							event.key !== "Home" &&
+							event.key !== "End"
+						)
+							return;
+						const items = Array.from(
+							menuRef.current?.querySelectorAll<HTMLButtonElement>(
+								'[role="menuitem"]:not(:disabled)',
+							) || [],
+						);
+						if (!items.length) return;
+						event.preventDefault();
+						const currentIndex = items.indexOf(
+							document.activeElement as HTMLButtonElement,
+						);
+						const nextIndex =
+							event.key === "Home"
+								? 0
+								: event.key === "End"
+									? items.length - 1
+									: event.key === "ArrowUp"
+										? (currentIndex - 1 + items.length) % items.length
+										: (currentIndex + 1) % items.length;
+						items[nextIndex]?.focus();
+					}}
+				>
+					<ArtifactExportMenuItem
+						icon={<ImageIcon className="h-3.5 w-3.5" />}
+						label={
+							isExportingImage
+								? t("artifact.exportingImage")
+								: t("artifact.downloadImage")
+						}
+						disabled={isExportingImage}
+						onSelect={() => select(onDownloadImage)}
+					/>
+					<ArtifactExportMenuItem
+						icon={<FileText className="h-3.5 w-3.5" />}
+						label={t("artifact.downloadMarkdown")}
+						onSelect={() => select(onDownloadMarkdown)}
+					/>
+					<ArtifactExportMenuItem
+						icon={<Copy className="h-3.5 w-3.5" />}
+						label={t("artifact.copyMarkdown")}
+						onSelect={() => select(onCopyMarkdown)}
+					/>
+					{exportError ? (
+						<div
+							role="alert"
+							className="nightworkers-artifact-export-error px-2 py-1 text-[11px]"
+						>
+							{exportError}
+						</div>
+					) : null}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function ArtifactExportMenuItem({
+	icon,
+	label,
+	disabled = false,
+	onSelect,
+}: {
+	icon: ReactNode;
+	label: string;
+	disabled?: boolean;
+	onSelect: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitem"
+			className="nightworkers-artifact-export-menu-item flex w-full items-center gap-2 rounded px-2 py-1.5 text-left disabled:cursor-not-allowed"
+			disabled={disabled}
+			onClick={onSelect}
+		>
+			{icon}
+			<span>{label}</span>
+		</button>
 	);
 }
 

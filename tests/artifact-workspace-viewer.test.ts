@@ -12,6 +12,7 @@ import {
 } from "../src/modules/nightworkers/workbenchSelectors";
 import {
 	buildPlanModeArtifactContext,
+	buildPlanModeExportDescriptor,
 	buildVisiblePlanWorkspaceTabs,
 	extractViewDecisions,
 	getPlanWorkspaceTabLabel,
@@ -316,6 +317,46 @@ describe("buildPlanModeArtifactContext", () => {
 	});
 });
 
+describe("buildPlanModeExportDescriptor", () => {
+	it("exports the currently selected Plan Mode tab", () => {
+		const featurePlanMessage = buildTaskMessage({
+			content: "# Feature Plan\n\nSelected feature plan",
+			messageType: "markdown_document",
+		});
+		const apiMessage = buildTaskMessage({
+			id: "api-contract-message",
+			content: '{"openapi":"3.1.0"}',
+			messageType: "api_contract",
+			metadataJson: {
+				apiContract: { title: "Tasks API", openapi: { openapi: "3.1.0" } },
+			},
+		});
+		const common = {
+			scopeId: "task-1",
+			workspace: null,
+			viewDecisions: [],
+			activeQuestionnaireSession: null,
+			featurePlanMessage,
+			activeBlueprintMessage: null,
+			activeDataModelMessage: null,
+			activeDedicatedMessage: apiMessage,
+		};
+
+		expect(
+			buildPlanModeExportDescriptor({
+				...common,
+				activeTab: "feature-plan",
+			}).markdown,
+		).toContain("Selected feature plan");
+		const apiExport = buildPlanModeExportDescriptor({
+			...common,
+			activeTab: "api-io-contract",
+		});
+		expect(apiExport.fileStem).toBe("plan-mode-api-contract");
+		expect(apiExport.markdown).toContain('"title": "Tasks API"');
+	});
+});
+
 describe("Blueprint message classification", () => {
 	it("keeps Data Model messages out of normal Blueprint surfaces", () => {
 		const createdAt = new Date().toISOString();
@@ -546,6 +587,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		);
 
 		expect(markup).toContain(">Questionnaire</button>");
+		expect(markup).toContain("nightworkers-plan-workspace-tab-active");
 		expect(markup).toContain("No questionnaire session.");
 		const additionalButton = markup.match(
 			/<button[^>]*>追加確認<\/button>/,

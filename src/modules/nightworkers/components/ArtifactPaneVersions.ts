@@ -1,4 +1,10 @@
 import { toDeepRecord } from "../../../../shared/json-record";
+import {
+	artifactFileStem,
+	buildMarkdownFromValue,
+	downloadBlob,
+	markdownCodeBlock,
+} from "../artifactExport";
 import type {
 	ActivityArtifact,
 	ProjectFileContent,
@@ -46,13 +52,42 @@ export function buildExportedArtifactContent(input: {
 	selectedFile: ProjectFileContent | null;
 	selectedArtifact: WorkbenchArtifactRef | null;
 }) {
-	if (input.showDiff) return input.latestRun?.diffPatch || "";
+	if (input.showDiff) {
+		return `# ${input.selectedArtifact?.title || "Code Diff"}\n\n${markdownCodeBlock(input.latestRun?.diffPatch || "", "diff")}\n`;
+	}
+	if (
+		input.selectedArtifact?.kind === "test_result" &&
+		input.latestRun?.testResults
+	) {
+		return buildMarkdownFromValue(
+			input.selectedArtifact.title,
+			input.latestRun.testResults,
+		);
+	}
 	if (input.selectedActivityArtifact?.contentText)
-		return input.selectedActivityArtifact.contentText;
-	if (input.selectedMessage?.content) return input.selectedMessage.content;
+		return markdownFromTextOrJson(
+			input.selectedArtifact?.title || input.selectedActivityArtifact.kind,
+			input.selectedActivityArtifact.contentText,
+		);
+	if (input.selectedMessage?.content) {
+		if (input.selectedMessage.messageType === "api_contract") {
+			return buildMarkdownFromValue(
+				input.selectedArtifact?.title || "API Contract",
+				toDeepRecord(input.selectedMessage.metadataJson).apiContract ||
+					parseJson(input.selectedMessage.content),
+			);
+		}
+		if (input.selectedMessage.messageType === "zod_schema") {
+			return `# ${input.selectedArtifact?.title || "Zod Schema"}\n\n${markdownCodeBlock(input.selectedMessage.content, "typescript")}\n`;
+		}
+		return input.selectedMessage.content;
+	}
 	if (input.selectedFile?.content) return input.selectedFile.content;
 	return input.selectedArtifact
-		? JSON.stringify(input.selectedArtifact.metadata || {}, null, 2)
+		? buildMarkdownFromValue(
+				input.selectedArtifact.title,
+				input.selectedArtifact.metadata || {},
+			)
 		: "";
 }
 
@@ -67,27 +102,34 @@ export async function copyText(content: string) {
 	textarea.style.position = "fixed";
 	textarea.style.left = "-9999px";
 	document.body.appendChild(textarea);
-	textarea.select();
-	document.execCommand("copy");
-	document.body.removeChild(textarea);
+	try {
+		textarea.select();
+		if (!document.execCommand("copy")) throw new Error("clipboard_copy_failed");
+	} finally {
+		textarea.remove();
+	}
 }
 
 export function saveTextFile(content: string, filename: string) {
 	const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement("a");
-	anchor.href = url;
-	anchor.download = filename;
-	anchor.click();
-	setTimeout(() => URL.revokeObjectURL(url), 0);
+	downloadBlob(blob, filename);
 }
 
 export function artifactFileName(artifact: WorkbenchArtifactRef) {
-	const slug = artifact.title
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "");
-	return `${slug || "artifact"}.md`;
+	return `${artifactFileStem(artifact.title)}.md`;
+}
+
+function markdownFromTextOrJson(title: string, content: string) {
+	const parsed = parseJson(content);
+	return parsed === null ? content : buildMarkdownFromValue(title, parsed);
+}
+
+function parseJson(content: string) {
+	try {
+		return JSON.parse(content) as unknown;
+	} catch {
+		return null;
+	}
 }
 
 function taskMessageToArtifactRef(

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import {
 	type APIRequestContext,
@@ -64,10 +65,9 @@ async function createWorkspaceFixture(request: APIRequestContext) {
 test.describe("NightWorkers accessibility @accessibility", () => {
 	test.describe.configure({ mode: "serial", timeout: 120_000 });
 
-	test("major workbench surfaces have no serious axe violations", async ({
-		page,
-		request,
-	}) => {
+	test("major workbench surfaces have no serious axe violations", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-A11Y-001"],
+	}, async ({ page, request }) => {
 		const fixture = await createWorkspaceFixture(request);
 		try {
 			for (const route of [
@@ -94,9 +94,9 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 		}
 	});
 
-	test("keyboard focus is visible and reduced motion is honored", async ({
-		page,
-	}) => {
+	test("keyboard focus is visible and reduced motion is honored", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-A11Y-002"],
+	}, async ({ page }) => {
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		await page.goto("/overview");
 		const settingsLink = page.getByRole("link", { name: "Settings" });
@@ -123,9 +123,9 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 		expect(Number.parseFloat(animationDuration)).toBeLessThanOrEqual(0.001);
 	});
 
-	test("major accessible names remain available in Japanese and English", async ({
-		page,
-	}) => {
+	test("major accessible names remain available in Japanese and English", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-A11Y-003"],
+	}, async ({ page }) => {
 		await page.goto("/settings/general");
 		const languageSelect = page.locator("#general-language");
 		await languageSelect.selectOption("ja");
@@ -136,9 +136,9 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 		await expect(languageSelect).toHaveAccessibleName("UI 表示言語");
 	});
 
-	test("modal traps focus, closes with Escape, and restores its trigger", async ({
-		page,
-	}) => {
+	test("modal traps focus, closes with Escape, and restores its trigger", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-A11Y-004"],
+	}, async ({ page }) => {
 		await page.goto("/overview");
 		const trigger = page.getByRole("button", {
 			name: /Register project folder|Project folder を登録/,

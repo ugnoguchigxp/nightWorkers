@@ -20,7 +20,10 @@ export function BlueprintArtifactViewer({
 	const issues = isObject(validation) ? toObjectArray(validation.issues) : [];
 	const llmUsage = getLlmUsageSnapshot(generation);
 	return (
-		<div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
+		<div
+			className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100"
+			data-artifact-export-expand
+		>
 			<div className="grid gap-4">
 				<BlueprintSection title={t("artifact.designPreview")}>
 					<BlueprintPreview
@@ -134,7 +137,10 @@ export function ComponentDesignArtifactViewer({
 		? artifact.discussionPrompts.map(String)
 		: [];
 	return (
-		<div className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100">
+		<div
+			className="h-full overflow-y-auto px-6 py-5 text-sm text-slate-100"
+			data-artifact-export-expand
+		>
 			<div className="mb-5 border-slate-700 border-b pb-4">
 				<div className="text-xs font-semibold uppercase text-cyan-200">
 					{t("artifact.componentDesign")}

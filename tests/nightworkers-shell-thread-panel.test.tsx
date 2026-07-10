@@ -134,6 +134,7 @@ describe("NightWorkersShellThreadPanel component", () => {
 		onThinkingDepthChange: vi.fn(),
 		onSubmitPrompt: vi.fn(async () => undefined),
 		buildComposerLlmSelection: vi.fn(),
+		onComposerLlmSelectionSubmitted: vi.fn(),
 		openQuestionnaireWorkspace: vi.fn(async () => undefined),
 		selectedArtifactContext: null,
 		selectedArtifact: null,

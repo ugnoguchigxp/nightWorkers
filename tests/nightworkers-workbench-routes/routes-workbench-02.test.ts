@@ -274,6 +274,9 @@ describe("NightWorkers workbench routes", () => {
 				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
 				body: JSON.stringify({
 					prompt,
+					providerEndpointId: "local-qwen",
+					model: "qwen3-coder",
+					thinkingDepth: "high",
 					artifactContext: {
 						artifactId: `plan-mode-workspace-${task.id}:blueprint`,
 						kind: "plan_mode_workspace",
@@ -306,6 +309,13 @@ describe("NightWorkers workbench routes", () => {
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.schemaName,
 		).toBe("mock_blueprint");
+		expect(
+			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2]?.routeOverride,
+		).toEqual({
+			providerEndpointId: "local-qwen",
+			model: "qwen3-coder",
+			thinkingDepth: "high",
+		});
 		const blueprintPrompt = vi.mocked(llm.callStructuredJsonLLM).mock
 			.calls[0]?.[1] as string;
 		expect(blueprintPrompt).toContain("## User Regeneration Request");

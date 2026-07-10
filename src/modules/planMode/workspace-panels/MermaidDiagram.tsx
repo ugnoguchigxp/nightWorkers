@@ -1,15 +1,11 @@
-import { Download } from "lucide-react";
-import type React from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export function MermaidDiagram({
 	chart,
 	idPrefix = "data-model",
-	downloadName = "data-model-mermaid.svg",
 }: {
 	chart: string;
 	idPrefix?: string;
-	downloadName?: string;
 }) {
 	const rawId = useId();
 	const diagramId = useMemo(
@@ -69,45 +65,13 @@ export function MermaidDiagram({
 		}
 	}, [isFullscreen, renderedSvg]);
 
-	const handleDownload = (event: React.MouseEvent<HTMLButtonElement>) => {
-		event.stopPropagation();
-		if (!renderedSvg) return;
-		const blob = new Blob([renderedSvg], {
-			type: "image/svg+xml;charset=utf-8",
-		});
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement("a");
-		link.href = url;
-		link.download = downloadName;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		URL.revokeObjectURL(url);
-	};
-
-	const renderDownloadButton = () => (
-		<button
-			type="button"
-			className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/90 text-slate-200 shadow hover:border-cyan-400/70 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
-			title="Download Mermaid SVG"
-			aria-label="Download Mermaid SVG"
-			disabled={!renderedSvg}
-			onClick={handleDownload}
-		>
-			<Download className="h-3.5 w-3.5" />
-		</button>
-	);
-
 	return (
 		<div className="grid gap-2">
 			<div className="relative">
-				<div className="absolute right-2 top-2 z-10">
-					{renderDownloadButton()}
-				</div>
 				<button
 					type="button"
 					ref={containerRef}
-					className={`w-full overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3 pr-12 text-left [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full ${
+					className={`w-full overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3 text-left [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full ${
 						rendered ? "cursor-zoom-in" : "hidden"
 					}`}
 					onClick={() => {
@@ -136,10 +100,10 @@ export function MermaidDiagram({
 				</pre>
 			</details>
 			{isFullscreen && renderedSvg ? (
-				<div className="fixed inset-0 z-50 grid bg-slate-950/95 p-4">
-					<div className="absolute right-4 top-4 z-10">
-						{renderDownloadButton()}
-					</div>
+				<div
+					className="fixed inset-0 z-50 grid bg-slate-950/95 p-4"
+					data-artifact-export-exclude
+				>
 					<button
 						type="button"
 						ref={fullscreenContainerRef}

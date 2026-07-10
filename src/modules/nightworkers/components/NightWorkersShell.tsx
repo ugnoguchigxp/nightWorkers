@@ -53,6 +53,7 @@ import {
 	parseModelTargetKey,
 	projectEvaluationDraftStorageKey,
 	projectEvaluationTaskPromptDrafts,
+	resolveActiveComposerRouteTarget,
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
 	resolvePlanWorkspaceInitialTab,
@@ -80,6 +81,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const openedQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
 	const openingQuestionnaireMessageIdsRef = useRef<Set<string>>(new Set());
 	const previousActiveSessionIdRef = useRef<string | null>(null);
+	const preserveComposerOverrideSessionIdRef = useRef<string | null>(null);
 	const userSelectedComposerModelRef = useRef(false);
 	const [selectedPath, setSelectedPath] = useState("");
 	const [model, setModel] = useState("");
@@ -172,7 +174,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 
 	if (previousActiveSessionIdRef.current !== activeSessionId) {
 		previousActiveSessionIdRef.current = activeSessionId;
-		userSelectedComposerModelRef.current = false;
+		const preserveOverride =
+			Boolean(activeSessionId) &&
+			preserveComposerOverrideSessionIdRef.current === activeSessionId;
+		preserveComposerOverrideSessionIdRef.current = null;
+		if (!preserveOverride) userSelectedComposerModelRef.current = false;
 	}
 
 	useEffect(() => {
@@ -214,12 +220,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	]);
 
 	const currentProviderModel = resolveCurrentProviderModel(workspace);
+	const activeComposerRouteTarget = useMemo(
+		() =>
+			resolveActiveComposerRouteTarget({
+				activeSessionId: workspace.activeSessionId,
+				latestRun: workspace.latestRun,
+				latestRunEvents: workspace.latestRunEvents,
+			}),
+		[workspace.activeSessionId, workspace.latestRun, workspace.latestRunEvents],
+	);
 	const composerModelOptions = useMemo(() => {
 		const endpoints = workspace.llmSettings?.providerEndpoints || [];
-		const options = endpoints
+		const endpointOptions = endpoints
 			.filter((endpoint) =>
 				endpoint.kind === "codex"
-					? workspace.llmSettings?.CODEX_ENABLED
+					? workspace.llmSettings?.CODEX_ENABLED && endpoint.enabled
 					: endpoint.enabled,
 			)
 			.flatMap((endpoint) =>
@@ -233,19 +248,50 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 						`${endpointModel} (${endpoint.name})`,
 				})),
 			);
-		return options.length ? options : workspace.providerModelOptions;
-	}, [workspace.llmSettings, workspace.providerModelOptions]);
+		const options = endpointOptions.length
+			? endpointOptions
+			: workspace.providerModelOptions;
+		if (!activeComposerRouteTarget) return options;
+		const activeKey = modelTargetKey(activeComposerRouteTarget);
+		if (options.some((option) => option.value === activeKey)) return options;
+		const activeEndpoint = endpoints.find(
+			(endpoint) =>
+				endpoint.id === activeComposerRouteTarget.providerEndpointId,
+		);
+		return [
+			...options,
+			{
+				value: activeKey,
+				label:
+					activeEndpoint?.modelDisplayNames?.[
+						activeComposerRouteTarget.model
+					]?.trim() ||
+					(activeEndpoint
+						? `${activeComposerRouteTarget.model} (${activeEndpoint.name})`
+						: activeComposerRouteTarget.model),
+			},
+		];
+	}, [
+		activeComposerRouteTarget,
+		workspace.llmSettings,
+		workspace.providerModelOptions,
+	]);
 	const composerModelOptionKeys = useMemo(
 		() => new Set(composerModelOptions.map((option) => option.value)),
 		[composerModelOptions],
 	);
 	const preferredRouteTarget = useMemo(
 		() =>
+			activeComposerRouteTarget ||
 			resolveComposerRouteTarget(
 				workspace.llmSettings?.roleRoutes,
 				composerModelOptionKeys,
 			),
-		[composerModelOptionKeys, workspace.llmSettings?.roleRoutes],
+		[
+			activeComposerRouteTarget,
+			composerModelOptionKeys,
+			workspace.llmSettings?.roleRoutes,
+		],
 	);
 	const selectedModelTarget = parseModelTargetKey(model);
 	const selectedComposerModel =
@@ -270,7 +316,12 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			return;
 		}
 		const currentModelIsAvailable = composerModelOptionKeys.has(model);
-		if (userSelectedComposerModelRef.current && currentModelIsAvailable) return;
+		if (
+			userSelectedComposerModelRef.current &&
+			currentModelIsAvailable &&
+			!activeComposerRouteTarget
+		)
+			return;
 		if (!currentModelIsAvailable) userSelectedComposerModelRef.current = false;
 		const nextModel = preferredRouteTarget
 			? modelTargetKey(preferredRouteTarget)
@@ -283,6 +334,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		if (thinkingDepth !== nextThinkingDepth)
 			setThinkingDepth(nextThinkingDepth);
 	}, [
+		activeComposerRouteTarget,
 		composerModelOptionKeys,
 		composerModelOptions,
 		currentProviderModel,
@@ -309,8 +361,19 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				: undefined,
 		};
 	};
+	const clearComposerLlmSelectionOverride = useCallback(() => {
+		userSelectedComposerModelRef.current = false;
+		if (!preferredRouteTarget) return;
+		setModel(modelTargetKey(preferredRouteTarget));
+		setThinkingDepth(
+			isThinkingModel(preferredRouteTarget.model)
+				? (preferredRouteTarget.thinkingDepth ?? "")
+				: "",
+		);
+	}, [preferredRouteTarget]);
 	const handleComposerModelChange = useCallback(
 		(nextModel: string) => {
+			if (activeComposerRouteTarget) return;
 			userSelectedComposerModelRef.current = true;
 			setModel(nextModel);
 			const routeTarget = findComposerRouteTargetByKey(
@@ -326,14 +389,15 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 					: "";
 			setThinkingDepth(nextThinkingDepth);
 		},
-		[workspace.llmSettings?.roleRoutes],
+		[activeComposerRouteTarget, workspace.llmSettings?.roleRoutes],
 	);
 	const handleComposerThinkingDepthChange = useCallback(
 		(nextThinkingDepth: ComposerThinkingDepth) => {
+			if (activeComposerRouteTarget) return;
 			userSelectedComposerModelRef.current = true;
 			setThinkingDepth(nextThinkingDepth);
 		},
-		[],
+		[activeComposerRouteTarget],
 	);
 
 	const submitPrompt = async (
@@ -357,9 +421,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				objective: "",
 				acceptanceCriteria: "",
 			});
-			workspace.setActiveSessionId(session.id);
 			const llmSelection = buildComposerLlmSelection();
-			userSelectedComposerModelRef.current = false;
+			preserveComposerOverrideSessionIdRef.current = llmSelection
+				? session.id
+				: null;
+			workspace.setActiveSessionId(session.id);
 			await workspace.sendWorkbenchMessage(
 				session.id,
 				prompt,
@@ -367,6 +433,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				null,
 				llmSelection,
 			);
+			if (llmSelection) clearComposerLlmSelectionOverride();
 			return;
 		}
 		await workspace.sendWorkbenchMessage(
@@ -968,6 +1035,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 							onThinkingDepthChange={handleComposerThinkingDepthChange}
 							onSubmitPrompt={submitPrompt}
 							buildComposerLlmSelection={buildComposerLlmSelection}
+							onComposerLlmSelectionSubmitted={
+								clearComposerLlmSelectionOverride
+							}
 							openQuestionnaireWorkspace={openQuestionnaireWorkspace}
 							selectedArtifactContext={selectedArtifactContext}
 							selectedArtifact={selectedArtifact}

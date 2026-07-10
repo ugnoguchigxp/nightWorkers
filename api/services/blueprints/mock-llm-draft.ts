@@ -25,6 +25,7 @@ import {
 	type JsonFixWrapperResult,
 	jsonFixWrapper,
 } from "../structured-llm/json";
+import type { StructuredLlmModelTarget } from "../structured-llm/settings";
 
 export type GeneratedMockBlueprintDraft = {
 	mockBlueprint: MockBlueprint;
@@ -72,6 +73,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 	projectStackContext?: string | null;
 	specContext?: string | null;
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
+	routeOverride?: StructuredLlmModelTarget | null;
 }): Promise<GeneratedMockBlueprintDraft> {
 	const schema = buildMockBlueprintStructuredOutputJsonSchema();
 	const systemPrompt = buildMockBlueprintSystemPrompt({
@@ -102,6 +104,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		taskId: input.taskId,
 		runId: null,
 		role: "plan",
+		routeOverride: input.routeOverride || null,
 		allowRawOutputOnJsonParseFailure: true,
 	});
 

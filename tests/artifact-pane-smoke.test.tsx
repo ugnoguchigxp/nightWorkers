@@ -107,6 +107,9 @@ describe("ArtifactPane", () => {
 		expect(markup).not.toContain("Plan Mode Workspace");
 		expect(markup.match(/Plan モードワークスペース/g)).toHaveLength(1);
 		expect(markup).toContain("text-cyan-200");
+		expect(markup).toContain('aria-label="アーティファクトをダウンロード"');
+		expect(markup).not.toContain('aria-label="表示中の版をコピー"');
+		expect(markup).not.toContain('aria-label="表示中の版を保存"');
 	});
 
 	it("passes live latest run events into the Plan Mode test panel", () => {

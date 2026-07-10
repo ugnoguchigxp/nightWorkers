@@ -279,6 +279,245 @@
 	color: var(--nw-text);
 }
 
+.nightworkers-artifact-markdown {
+	background: var(--nw-artifact-markdown-background);
+	color: var(--nw-artifact-markdown-text);
+}
+
+.nightworkers-artifact-markdown-heading,
+.nightworkers-artifact-markdown-cell,
+.nightworkers-artifact-markdown-header-cell {
+	color: var(--nw-artifact-markdown-text);
+}
+
+.nightworkers-artifact-markdown-heading,
+.nightworkers-artifact-markdown-blockquote,
+.nightworkers-artifact-markdown-cell,
+.nightworkers-artifact-markdown-header-cell {
+	border-color: var(--nw-artifact-markdown-border);
+}
+
+.nightworkers-artifact-markdown-blockquote {
+	color: var(--nw-artifact-markdown-muted-text);
+}
+
+.nightworkers-artifact-markdown-link,
+.nightworkers-artifact-markdown-code {
+	color: var(--nw-artifact-markdown-accent);
+}
+
+.nightworkers-artifact-markdown-link:hover {
+	color: var(--nw-artifact-markdown-text);
+}
+
+.nightworkers-artifact-markdown-code,
+.nightworkers-artifact-markdown-pre,
+.nightworkers-artifact-markdown-header-cell {
+	background: var(--nw-artifact-markdown-code-background);
+}
+
+.nightworkers-artifact-markdown-pre {
+	border: 1px solid var(--nw-artifact-markdown-border);
+	color: var(--nw-artifact-markdown-text);
+}
+
+.nightworkers-artifact-markdown-pre .nightworkers-artifact-markdown-code {
+	background: transparent;
+	color: inherit;
+}
+
+.nightworkers-shell .nightworkers-structured-artifact {
+	background: var(--nw-artifact-structured-background);
+	color: var(--nw-artifact-structured-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-section {
+	border-color: var(--nw-artifact-structured-border);
+	background: var(--nw-artifact-structured-background);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-card,
+.nightworkers-shell .nightworkers-structured-artifact-row,
+.nightworkers-shell .nightworkers-structured-artifact-neutral-pill {
+	border-color: var(--nw-artifact-structured-border);
+	background: var(--nw-artifact-structured-card-background);
+	color: var(--nw-artifact-structured-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-text {
+	color: var(--nw-artifact-structured-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-muted,
+.nightworkers-shell .nightworkers-structured-artifact-neutral-pill {
+	color: var(--nw-artifact-structured-muted-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-accent {
+	color: var(--nw-artifact-structured-accent-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-success {
+	color: var(--nw-artifact-structured-success-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-warning {
+	color: var(--nw-artifact-structured-warning-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-success-pill {
+	border-color: var(--nw-artifact-structured-success-border);
+	background: var(--nw-artifact-structured-success-background);
+	color: var(--nw-artifact-structured-success-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-warning-pill {
+	border-color: var(--nw-artifact-structured-warning-border);
+	background: var(--nw-artifact-structured-warning-background);
+	color: var(--nw-artifact-structured-warning-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-action {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary) 58%,
+		var(--nw-artifact-structured-border)
+	);
+	background: color-mix(
+		in srgb,
+		var(--nw-primary) 8%,
+		var(--nw-artifact-structured-background)
+	);
+	color: var(--nw-artifact-structured-accent-text);
+}
+
+.nightworkers-shell .nightworkers-structured-artifact-action:disabled {
+	border-color: var(--nw-artifact-structured-border);
+	background: var(--nw-artifact-structured-card-background);
+	color: var(--nw-artifact-structured-muted-text);
+	opacity: 0.75;
+}
+
+.nightworkers-shell .nightworkers-plan-workspace-tab {
+	border-color: var(--nw-artifact-structured-border);
+	background: var(--nw-artifact-structured-background);
+	color: var(--nw-artifact-structured-muted-text);
+}
+
+.nightworkers-shell .nightworkers-plan-workspace-tab:hover {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary) 48%,
+		var(--nw-artifact-structured-border)
+	);
+	color: var(--nw-artifact-structured-text);
+}
+
+.nightworkers-shell .nightworkers-plan-workspace-tab-active {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary) 58%,
+		var(--nw-artifact-structured-border)
+	);
+	background: color-mix(
+		in srgb,
+		var(--nw-primary) 10%,
+		var(--nw-artifact-structured-background)
+	);
+	color: var(--nw-artifact-structured-accent-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-trigger {
+	background: var(--nw-panel);
+	border-color: var(--nw-border);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-trigger:hover,
+.nightworkers-shell
+	.nightworkers-artifact-export-trigger[aria-expanded="true"] {
+	background: color-mix(in srgb, var(--nw-primary) 10%, var(--nw-panel));
+	border-color: color-mix(in srgb, var(--nw-primary) 62%, var(--nw-border));
+	color: var(--nw-primary);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-trigger:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--nw-primary) 78%, var(--nw-text));
+	outline-offset: 2px;
+}
+
+.nightworkers-shell .nightworkers-artifact-export-trigger-error {
+	border-color: color-mix(in srgb, var(--nw-danger) 68%, var(--nw-border));
+	color: var(--nw-danger);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-menu {
+	background: var(--nw-panel);
+	border-color: var(--nw-strong-border);
+	border-radius: var(--nw-radius);
+	box-shadow: var(--nw-shadow);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-menu-item {
+	background: transparent;
+	border-radius: var(--nw-control-radius);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-menu-item:hover,
+.nightworkers-shell .nightworkers-artifact-export-menu-item:focus-visible {
+	background: color-mix(in srgb, var(--nw-primary) 12%, var(--nw-panel));
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-export-menu-item:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--nw-primary) 72%, var(--nw-text));
+	outline-offset: -2px;
+}
+
+.nightworkers-shell .nightworkers-artifact-export-menu-item:disabled {
+	color: var(--nw-subtle-text);
+	opacity: 0.65;
+}
+
+.nightworkers-shell .nightworkers-artifact-export-error {
+	color: var(--nw-danger);
+}
+
+.nightworkers-shell
+	.nightworkers-structured-artifact
+	.nightworkers-todo-rail-list {
+	--nw-todo-node-background: var(--nw-artifact-structured-background);
+	--nw-todo-node-ring: var(--nw-artifact-structured-background);
+	--nw-todo-node-pending-background: var(--nw-artifact-structured-background);
+	--nw-todo-row-background: var(--nw-artifact-structured-card-background);
+	--nw-todo-row-background-hover: color-mix(
+		in srgb,
+		var(--nw-primary) 8%,
+		var(--nw-artifact-structured-card-background)
+	);
+	--nw-todo-row-background-quiet: var(--nw-artifact-structured-card-background);
+	--nw-todo-row-border: var(--nw-artifact-structured-border);
+	--nw-todo-seq-divider: var(--nw-artifact-structured-border);
+}
+
+.nightworkers-shell
+	.nightworkers-structured-artifact
+	.nightworkers-todo-pane-title,
+.nightworkers-shell .nightworkers-structured-artifact .nightworkers-todo-seq {
+	color: var(--nw-artifact-structured-accent-text);
+}
+
+.nightworkers-shell
+	.nightworkers-structured-artifact
+	.nightworkers-todo-instruction,
+.nightworkers-shell
+	.nightworkers-structured-artifact
+	.nightworkers-todo-status-label {
+	color: var(--nw-artifact-structured-muted-text);
+}
+
 .nightworkers-code-block {
 	--nw-code-bg: #111827;
 	--nw-code-header-bg: #1f2937;

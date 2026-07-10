@@ -66,7 +66,7 @@ describe("ThreadWorkspace header", () => {
 		);
 
 		expect(shellSource).toMatch(
-			/void openQuestionnaireWorkspace\(latestQuestionnaireMessage, ['"]status['"]\);/,
+			/void openQuestionnaireWorkspace\(\s*latestQuestionnaireMessage,\s*['"]status['"],/,
 		);
 		expect(panelSource).toContain("existingQuestionnaireMessageIds");
 		expect(panelSource).toContain(

@@ -39,6 +39,7 @@ export function nativeApiRoleForExecutionMode(
 	mode: NativeApiExecutionMode,
 ): StructuredLlmRole {
 	if (mode === "planning" || mode === "general_answer") return "plan";
+	if (mode === "test") return "test";
 	if (mode === "review") return "review";
 	return "implementation";
 }

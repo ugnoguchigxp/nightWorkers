@@ -12,6 +12,12 @@ import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mo
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../shared/test-mode-workflow";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
+import {
+	type ArtifactExportDescriptor,
+	artifactFileStem,
+	buildMarkdownFromValue,
+	markdownCodeBlock,
+} from "../nightworkers/artifactExport";
 import { MarkdownViewer } from "../nightworkers/components/ArtifactFileViewers";
 import {
 	buildTestModeWorkflowSteps,
@@ -202,6 +208,74 @@ export function getPlanWorkspaceTabLabel(tab: PlanWorkspaceTab) {
 	return tabLabels[tab];
 }
 
+function planModeMessageMarkdown(title: string, message: TaskMessage | null) {
+	if (!message) return `# ${title}\n`;
+	const metadata = toDeepRecord(message.metadataJson);
+	if (message.messageType === "api_contract") {
+		return buildMarkdownFromValue(
+			title,
+			metadata.apiContract ||
+				metadata.artifactPayload ||
+				parseJson(message.content),
+		);
+	}
+	if (message.messageType === "zod_schema") {
+		return `# ${title}\n\n${markdownCodeBlock(message.content, "typescript")}\n`;
+	}
+	const parsed = parseJson(message.content);
+	return parsed === null
+		? message.content || `# ${title}\n`
+		: buildMarkdownFromValue(title, parsed);
+}
+
+function parseJson(value: string) {
+	try {
+		return JSON.parse(value) as unknown;
+	} catch {
+		return null;
+	}
+}
+
+export function buildPlanModeExportDescriptor(input: {
+	scopeId: string | null;
+	activeTab: PlanWorkspaceTab;
+	workspace: PlanModeWorkspace | null;
+	viewDecisions: PlanViewDecision[];
+	activeQuestionnaireSession: DesignQuestionnaireSession | null;
+	featurePlanMessage: TaskMessage | null;
+	activeBlueprintMessage: TaskMessage | null;
+	activeDataModelMessage: TaskMessage | null;
+	activeDedicatedMessage: TaskMessage | null;
+}): ArtifactExportDescriptor {
+	const title = getPlanWorkspaceTabLabel(input.activeTab);
+	let markdown: string;
+	if (input.activeTab === "status") {
+		markdown = buildMarkdownFromValue(title, {
+			workspace: input.workspace,
+			viewDecisions: input.viewDecisions,
+		});
+	} else if (input.activeTab === "questionnaire") {
+		markdown = buildMarkdownFromValue(
+			title,
+			input.activeQuestionnaireSession || { status: "not_started" },
+		);
+	} else if (input.activeTab === "feature-plan") {
+		markdown = input.featurePlanMessage?.content || `# ${title}\n`;
+	} else if (input.activeTab === "blueprint") {
+		markdown = planModeMessageMarkdown(title, input.activeBlueprintMessage);
+	} else if (input.activeTab === "data-model") {
+		markdown = planModeMessageMarkdown(title, input.activeDataModelMessage);
+	} else {
+		markdown = planModeMessageMarkdown(title, input.activeDedicatedMessage);
+	}
+	return {
+		title,
+		fileStem: artifactFileStem(`plan-mode-${title}`),
+		markdown,
+		...(input.scopeId ? { scopeId: input.scopeId } : {}),
+	};
+}
+
 export function shouldShowQuestionnaireStartAction(input: {
 	sessionId: string | null;
 	questionnaireComplete: boolean;
@@ -302,6 +376,7 @@ export function PlanModeWorkspaceViewer({
 	initialTab,
 	onTabChange,
 	onArtifactContextChange,
+	onExportDescriptorChange,
 	onQueueSession,
 	onAddToQueue,
 	onStartTestModeRun,
@@ -314,6 +389,9 @@ export function PlanModeWorkspaceViewer({
 	initialTab?: PlanWorkspaceTab;
 	onTabChange?: (tab: PlanWorkspaceTab) => void;
 	onArtifactContextChange?: (context: WorkbenchArtifactContext | null) => void;
+	onExportDescriptorChange?: (
+		descriptor: ArtifactExportDescriptor | null,
+	) => void;
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
 	onStartTestModeRun?: (input: {
@@ -839,15 +917,48 @@ export function PlanModeWorkspaceViewer({
 			readyQuestionnaireSession,
 			sessionId,
 		]);
+	const activeExportDescriptor = useMemo<ArtifactExportDescriptor>(() => {
+		return buildPlanModeExportDescriptor({
+			scopeId: sessionId,
+			activeTab,
+			workspace,
+			viewDecisions,
+			activeQuestionnaireSession,
+			featurePlanMessage,
+			activeBlueprintMessage,
+			activeDataModelMessage,
+			activeDedicatedMessage,
+		});
+	}, [
+		activeBlueprintMessage,
+		activeDataModelMessage,
+		activeDedicatedMessage,
+		activeQuestionnaireSession,
+		activeTab,
+		featurePlanMessage,
+		sessionId,
+		viewDecisions,
+		workspace,
+	]);
 
 	useEffect(() => {
 		onArtifactContextChange?.(activePlanModeArtifactContext);
 		return () => onArtifactContextChange?.(null);
 	}, [activePlanModeArtifactContext, onArtifactContextChange]);
+	useEffect(() => {
+		onExportDescriptorChange?.(activeExportDescriptor);
+		return () => onExportDescriptorChange?.(null);
+	}, [activeExportDescriptor, onExportDescriptorChange]);
 
 	return (
-		<div className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100">
-			<div className="shrink-0 border-slate-800 border-b px-5 py-3">
+		<div
+			className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100"
+			data-artifact-export-expand
+		>
+			<div
+				className="shrink-0 border-slate-800 border-b px-5 py-3"
+				data-artifact-export-exclude
+			>
 				<div className="flex flex-wrap gap-1">
 					{visibleTabs.map((id) => (
 						<button
@@ -855,8 +966,8 @@ export function PlanModeWorkspaceViewer({
 							type="button"
 							className={`rounded border px-2 py-1 text-xs ${
 								activeTab === id
-									? "border-cyan-400/70 bg-cyan-950/40 text-cyan-100"
-									: "border-slate-700 bg-slate-950/20 text-slate-300 hover:border-slate-500"
+									? "nightworkers-plan-workspace-tab nightworkers-plan-workspace-tab-active"
+									: "nightworkers-plan-workspace-tab"
 							}`}
 							onClick={() => selectActiveTab(id)}
 						>
@@ -868,6 +979,7 @@ export function PlanModeWorkspaceViewer({
 			<div
 				ref={workspaceScrollRef}
 				className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4"
+				data-artifact-export-expand
 			>
 				{activeTab === "feature-plan" ? (
 					<div className="grid gap-3">
@@ -1174,9 +1286,9 @@ function FeaturePlanVerificationBar({
 		workflowActionStatus === "starting" ||
 		isTestModeWorkflowInProgress(workflowSteps);
 	return (
-		<div className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2">
+		<div className="nightworkers-structured-artifact nightworkers-structured-artifact-section rounded-md border px-3 py-2">
 			{workflowActionStatus === "failed" ? (
-				<div className="text-[11px] text-amber-300">
+				<div className="nightworkers-structured-artifact-warning text-[11px]">
 					{t("testMode.status.planFailed")}
 				</div>
 			) : null}
@@ -1202,17 +1314,17 @@ function FeaturePlanVerificationBar({
 						return (
 							<div
 								key={condition.id}
-								className="grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-start gap-2 rounded-md border border-slate-800/80 bg-slate-900/35 px-2.5 py-1.5 text-xs"
+								className="nightworkers-structured-artifact-row grid grid-cols-[4.5rem_6rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs"
 							>
-								<span className="font-mono leading-5 text-slate-400">
+								<span className="nightworkers-structured-artifact-muted font-mono leading-5">
 									{condition.id}
 								</span>
-								<span className="whitespace-nowrap leading-5 text-slate-400">
+								<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
 									{t(`testMode.conditionStatus.${displayStatus}`, {
 										defaultValue: displayStatus,
 									})}
 								</span>
-								<span className="min-w-0 whitespace-normal break-words leading-5 text-slate-100">
+								<span className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words leading-5">
 									{condition.text}
 								</span>
 							</div>
@@ -1235,18 +1347,18 @@ function FeaturePlanTestModeWorkflowProgress({
 			{steps.map((step, index) => (
 				<div
 					key={step.id}
-					className="grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md border border-slate-800 bg-slate-900/35 px-2.5 py-2"
+					className="nightworkers-structured-artifact-row grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md border px-2.5 py-2"
 				>
-					<div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+					<div className="nightworkers-structured-artifact-muted flex items-center gap-2 text-[11px] font-medium">
 						{index + 1}
 					</div>
 					<div className="flex min-w-0 items-center gap-2">
 						<FeaturePlanTestModeWorkflowStatusIcon status={step.status} />
-						<span className="min-w-0 whitespace-normal break-words text-xs font-medium text-slate-100">
+						<span className="nightworkers-structured-artifact-accent min-w-0 whitespace-normal break-words text-xs font-medium">
 							{t(`testMode.workflow.step.${step.id}`)}
 						</span>
 					</div>
-					<div className="text-right text-[11px] text-slate-400">
+					<div className="nightworkers-structured-artifact-muted text-right text-[11px]">
 						{t(`testMode.workflow.status.${step.status}`)}
 					</div>
 				</div>
@@ -1484,17 +1596,23 @@ function FeaturePlanTestModeWorkflowStatusIcon({
 	status: TestModeWorkflowStepStatus;
 }) {
 	if (status === "passed") {
-		return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />;
+		return (
+			<CheckCircle2 className="nightworkers-structured-artifact-success h-3.5 w-3.5 shrink-0" />
+		);
 	}
 	if (status === "running") {
 		return (
-			<LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+			<LoaderCircle className="nightworkers-structured-artifact-accent h-3.5 w-3.5 shrink-0 animate-spin" />
 		);
 	}
 	if (status === "failed" || status === "needs_human") {
-		return <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" />;
+		return (
+			<AlertTriangle className="nightworkers-structured-artifact-warning h-3.5 w-3.5 shrink-0" />
+		);
 	}
-	return <Circle className="h-3.5 w-3.5 shrink-0 text-slate-500" />;
+	return (
+		<Circle className="nightworkers-structured-artifact-muted h-3.5 w-3.5 shrink-0" />
+	);
 }
 
 function FeaturePlanTestModeActionButton({
@@ -1515,7 +1633,7 @@ function FeaturePlanTestModeActionButton({
 	return (
 		<button
 			type="button"
-			className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-medium text-cyan-100 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-500"
+			className="nightworkers-structured-artifact-action inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed"
 			disabled={isDisabled}
 			onClick={() => void onStart(action)}
 			title={label}

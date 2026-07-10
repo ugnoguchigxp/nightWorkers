@@ -3,7 +3,10 @@ import path from "node:path";
 import { z } from "@hono/zod-openapi";
 import { ValidationError } from "../lib/errors";
 import { getRuntimePaths } from "../runtime/paths";
-import { readCodexModelOptions } from "../services/codex-global-config/status";
+import {
+	mergeCodexModelOptionsIntoEndpoints,
+	readCodexModelOptions,
+} from "../services/codex-global-config/status";
 import { migrateStructuredLlmEndpointIds } from "../services/structured-llm/endpoint-id-migration";
 
 const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
@@ -347,7 +350,8 @@ export const getCurrentSettings = (): LlmSettings => {
 	);
 	const providerEndpointsChanged =
 		Array.isArray(persisted.providerEndpoints) &&
-		persisted.providerEndpoints.length !== providerEndpoints.length;
+		JSON.stringify(persisted.providerEndpoints) !==
+			JSON.stringify(providerEndpoints);
 	const roleRoutesChanged =
 		Array.isArray(persisted.roleRoutes) &&
 		JSON.stringify(persisted.roleRoutes) !== JSON.stringify(roleRoutes);
@@ -466,7 +470,10 @@ function normalizeProviderEndpoints(
 		if (defaultKey && defaultEndpointKeys.has(defaultKey)) continue;
 		if (!endpointById.has(endpoint.id)) endpointById.set(endpoint.id, endpoint);
 	}
-	return dedupeProviderEndpoints([...endpointById.values()]).map((endpoint) => {
+	return mergeCodexModelOptionsIntoEndpoints(
+		dedupeProviderEndpoints([...endpointById.values()]),
+		{ configuredModel: legacySettings.CODEX_MODEL },
+	).map((endpoint) => {
 		const models = uniqueNonEmpty(endpoint.models);
 		return {
 			...endpoint,

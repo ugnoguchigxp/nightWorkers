@@ -55,7 +55,8 @@ const variantClassName: Record<ButtonVariant, string> = {
 };
 
 const sizeClassName: Record<ButtonSize, string> = {
-	default: "h-ui min-h-ui-touch px-ui-button py-ui-button text-ui",
+	default:
+		"h-ui min-h-ui-touch px-ui-button py-ui-button text-[length:var(--ui-font-size-base)]/[1.5]",
 	sm: "h-8 rounded-md px-3 text-xs",
 	lg: "h-10 rounded-md px-8",
 	icon: "h-ui min-h-ui-touch w-[var(--ui-component-height)] min-w-[var(--ui-touch-target-min)]",

@@ -1,4 +1,3 @@
-import { Download } from "lucide-react";
 import type { PlanModeWorkspaceArtifact } from "../../nightworkers/types";
 import {
 	firstRecord,
@@ -27,42 +26,15 @@ export function ApiContractViewer({
 	const operations = apiContractOperations(paths);
 	const rawJson = JSON.stringify(apiContract, null, 2);
 
-	function handleDownload() {
-		const blob = new Blob([rawJson], {
-			type: "application/json;charset=utf-8",
-		});
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement("a");
-		link.href = url;
-		link.download = `${slugFileName(title)}.openapi.json`;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		URL.revokeObjectURL(url);
-	}
-
 	return (
 		<div className="grid gap-3 text-xs">
 			<div className="rounded border border-slate-800 bg-slate-950/20 p-3">
-				<div className="flex flex-wrap items-start justify-between gap-2">
-					<div>
-						<div className="font-semibold text-slate-100">{title}</div>
-						<div className="mt-1 text-slate-500">
-							{artifact?.kind || "api_io_contract"}{" "}
-							{artifact?.sourceMessageId
-								? `message ${artifact.sourceMessageId.slice(0, 8)}`
-								: ""}
-						</div>
-					</div>
-					<button
-						type="button"
-						className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-950/90 text-slate-200 hover:border-cyan-400/70 hover:text-cyan-100"
-						title="Download OpenAPI JSON"
-						aria-label="Download OpenAPI JSON"
-						onClick={handleDownload}
-					>
-						<Download className="h-3.5 w-3.5" />
-					</button>
+				<div className="font-semibold text-slate-100">{title}</div>
+				<div className="mt-1 text-slate-500">
+					{artifact?.kind || "api_io_contract"}{" "}
+					{artifact?.sourceMessageId
+						? `message ${artifact.sourceMessageId.slice(0, 8)}`
+						: ""}
 				</div>
 				{summary ? <p className="mt-2 text-slate-400">{summary}</p> : null}
 			</div>
@@ -412,15 +384,5 @@ function schemaType(schema: Record<string, unknown> | null): string {
 	}
 	return (
 		type || stringValue(schema.$ref).replace(/^#\/components\/schemas\//, "")
-	);
-}
-
-function slugFileName(value: string) {
-	return (
-		value
-			.trim()
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-+|-+$/g, "") || "api-contract"
 	);
 }

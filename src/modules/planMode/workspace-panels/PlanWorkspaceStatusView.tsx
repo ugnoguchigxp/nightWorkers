@@ -270,11 +270,13 @@ export function PlanWorkspaceStatusView({
 	}
 
 	return (
-		<div className="grid gap-3 text-xs">
+		<div className="nightworkers-structured-artifact grid gap-3 text-xs">
 			<div>
 				<div className="flex flex-wrap items-center justify-between gap-3">
-					<h2 className="text-base font-semibold text-slate-100">Status</h2>
-					<label className="inline-flex items-center gap-2 text-[11px] text-slate-300">
+					<h2 className="nightworkers-structured-artifact-text text-base font-semibold">
+						Status
+					</h2>
+					<label className="nightworkers-structured-artifact-muted inline-flex items-center gap-2 text-[11px]">
 						<input
 							type="checkbox"
 							checked={sequentialAutoGenerate}
@@ -285,7 +287,7 @@ export function PlanWorkspaceStatusView({
 						順次自動生成
 					</label>
 				</div>
-				<p className="mt-1 text-slate-400">
+				<p className="nightworkers-structured-artifact-muted mt-1">
 					必要なArtifactを確認し、仕様書を作成します。
 				</p>
 			</div>
@@ -296,15 +298,15 @@ export function PlanWorkspaceStatusView({
 					return (
 						<div
 							key={`${step.number}-${step.title}`}
-							className="grid gap-3 rounded border border-slate-800 bg-slate-950/20 p-3 md:grid-cols-[1fr_auto] md:items-center"
+							className="nightworkers-structured-artifact-card grid gap-3 rounded border p-3 md:grid-cols-[1fr_auto] md:items-center"
 						>
 							<div className="flex gap-3">
 								<div className="flex flex-col items-center">
 									<div
 										className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${
 											step.done
-												? "border-emerald-400/70 bg-emerald-950/40 text-emerald-100"
-												: "border-slate-700 bg-slate-900 text-slate-300"
+												? "nightworkers-structured-artifact-success-pill"
+												: "nightworkers-structured-artifact-neutral-pill"
 										}`}
 									>
 										{step.done ? (
@@ -318,10 +320,12 @@ export function PlanWorkspaceStatusView({
 									) : null}
 								</div>
 								<div className="min-w-0">
-									<div className="text-sm font-semibold text-slate-100">
+									<div className="nightworkers-structured-artifact-text text-sm font-semibold">
 										{displayNumber}. {step.title}
 									</div>
-									<div className="mt-1 text-slate-400">{step.detail}</div>
+									<div className="nightworkers-structured-artifact-muted mt-1">
+										{step.detail}
+									</div>
 									{step.badges?.length ? (
 										<div className="mt-2 flex flex-wrap gap-1">
 											{step.badges.map((badge) => (
@@ -329,8 +333,8 @@ export function PlanWorkspaceStatusView({
 													key={badge}
 													className={`rounded border px-2 py-0.5 text-[10px] ${
 														badge === "要回答"
-															? "border-amber-500/50 bg-amber-950/30 text-amber-100"
-															: "border-cyan-500/40 bg-cyan-950/30 text-cyan-100"
+															? "nightworkers-structured-artifact-warning-pill"
+															: "nightworkers-structured-artifact-action"
 													}`}
 												>
 													{badge}
@@ -339,7 +343,7 @@ export function PlanWorkspaceStatusView({
 										</div>
 									) : null}
 									{step.disabledReason ? (
-										<div className="mt-1 text-[11px] text-amber-300">
+										<div className="nightworkers-structured-artifact-warning mt-1 text-[11px]">
 											{step.disabledReason}
 										</div>
 									) : null}
@@ -394,16 +398,18 @@ export function ViewDecisionSummary({
 }) {
 	if (decisions.length === 0) return null;
 	return (
-		<div className="grid gap-2 rounded border border-slate-800 bg-slate-950/20 p-3 text-xs">
-			<div className="font-semibold text-slate-100">View decisions</div>
+		<div className="nightworkers-structured-artifact-card grid gap-2 rounded border p-3 text-xs">
+			<div className="nightworkers-structured-artifact-text font-semibold">
+				View decisions
+			</div>
 			<div className="flex flex-wrap gap-2">
 				{decisions.map((decision) => (
 					<span
 						key={`${decision.view}-${decision.decision}`}
 						className={`rounded border px-2 py-1 ${
 							decision.decision === "include"
-								? "border-emerald-500/40 bg-emerald-950/30 text-emerald-100"
-								: "border-slate-700 bg-slate-900/60 text-slate-300"
+								? "nightworkers-structured-artifact-success-pill"
+								: "nightworkers-structured-artifact-neutral-pill"
 						}`}
 					>
 						{formatViewLabel(decision.view)}: {decision.decision}
@@ -431,7 +437,7 @@ function StatusActionButton({
 	return (
 		<button
 			type="button"
-			className={`inline-flex items-center gap-1.5 rounded border border-cyan-500/60 bg-cyan-950/30 text-cyan-100 disabled:cursor-not-allowed disabled:opacity-45 ${
+			className={`nightworkers-structured-artifact-action inline-flex items-center gap-1.5 rounded border disabled:cursor-not-allowed disabled:opacity-45 ${
 				size === "lg" ? "px-4 py-2 text-sm font-semibold" : "px-2 py-1 text-xs"
 			}`}
 			disabled={busy || disabled}

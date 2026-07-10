@@ -83,7 +83,7 @@ describe("WorkspaceDataModelPanel", () => {
 		);
 
 		expect(markup).toContain("Mermaid ER diagram");
-		expect(markup).toContain("Download Mermaid SVG");
+		expect(markup).not.toContain("Download Mermaid SVG");
 		expect(markup).toContain("erDiagram");
 		expect(markup).toContain("projects");
 		expect(markup).toContain("tasks");
@@ -163,7 +163,7 @@ describe("DedicatedViewPanel", () => {
 		);
 
 		expect(markup).toContain("Mermaid diagram");
-		expect(markup).toContain("Download Mermaid SVG");
+		expect(markup).not.toContain("Download Mermaid SVG");
 		expect(markup).toContain("flowchart TD");
 		expect(markup).toContain("OpenCheckout");
 		expect(markup).not.toContain("language-mermaid");
@@ -343,7 +343,7 @@ describe("DedicatedViewPanel", () => {
 		expect(markup).toContain("draft -&gt; generating_tasks");
 		expect(markup).toContain("CreateMissionTasksRequest");
 		expect(markup).toContain("missing mission id");
-		expect(markup).toContain("Download OpenAPI JSON");
+		expect(markup).not.toContain("Download OpenAPI JSON");
 	});
 
 	it("renders Zod schema artifacts as form fields, rules, and schema source", () => {
@@ -908,6 +908,10 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain("追加Viewを生成");
 		expect(markup).toContain("User Flow: include - flow changes");
 		expect(markup).toContain("API Contract: include - API changes");
+		expect(markup).toContain("nightworkers-structured-artifact-card");
+		expect(markup).toContain("nightworkers-structured-artifact-success-pill");
+		expect(markup).toContain("nightworkers-structured-artifact-neutral-pill");
+		expect(markup).not.toContain("bg-slate-900/60");
 	});
 
 	it("shows only API Contract when Zod is omitted into the API contract", () => {

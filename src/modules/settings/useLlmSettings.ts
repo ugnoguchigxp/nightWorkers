@@ -16,8 +16,8 @@ export function useLlmSettings() {
 			if (!res.ok) throw new Error("Failed to fetch llm settings");
 			return (await res.json()) as LlmSettings;
 		},
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
+		refetchOnWindowFocus: true,
+		refetchOnReconnect: true,
 	});
 	const activeProvider = (llmSettings?.ACTIVE_LLM_PROVIDER ||
 		"azure") as LlmProvider;

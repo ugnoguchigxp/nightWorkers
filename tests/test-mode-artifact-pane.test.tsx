@@ -101,6 +101,10 @@ describe("Test Mode artifact pane", () => {
 		);
 		expect(markup).toContain("whitespace-normal break-words");
 		expect(markup).not.toContain("truncate text-slate-200");
+		expect(markup).toContain("nightworkers-structured-artifact");
+		expect(markup).toContain("nightworkers-structured-artifact-row");
+		expect(markup).toContain("nightworkers-structured-artifact-muted");
+		expect(markup).not.toContain("bg-slate-900/35");
 		expect(markup).toContain("AC-010");
 		expect(markup).toContain("UI が状態を表示する");
 	});

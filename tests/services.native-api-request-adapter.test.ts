@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nativeApiRoleForExecutionMode } from "../api/services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiProviderRequest } from "../api/services/agent-runtime/native-api-runner/native-api-request-adapter";
 import {
 	buildInitialNativeApiHistory,
@@ -128,6 +129,21 @@ describe("NativeApiRunner request adapter", () => {
 			"description=対象 DB と migration command の evidence を確認する。",
 		);
 		expect(request.tools).toHaveLength(1);
+	});
+
+	it("routes Test Mode through the test role", () => {
+		expect(nativeApiRoleForExecutionMode("test")).toBe("test");
+		const request = buildNativeApiProviderRequest({
+			context: buildContext({
+				runtimeOptions: { executionMode: "test" },
+			}),
+			history: [
+				{ type: "system", content: "test system" },
+				{ type: "user", source: "user", content: "run tests" },
+			],
+		});
+
+		expect(request.options.role).toBe("test");
 	});
 
 	it("routes native/API planning mode through the plan role", () => {

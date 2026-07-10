@@ -334,7 +334,10 @@ export function ReviewStatusViewer({
 				run: () => onCompleteAndArchiveTask?.(detail.session.taskId),
 			};
 	return (
-		<div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
+		<div
+			className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100"
+			data-artifact-export-expand
+		>
 			<div className="mx-auto grid max-w-5xl gap-5">
 				<div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
 					<div>

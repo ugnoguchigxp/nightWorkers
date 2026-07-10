@@ -1,4 +1,7 @@
-import { toDeepRecord } from "../../../../shared/json-record";
+import {
+	getDeepRecordString,
+	toDeepRecord,
+} from "../../../../shared/json-record";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../routing/workbench-route-state";
 import type {
@@ -6,7 +9,9 @@ import type {
 	LlmRoleRoute,
 	ProjectSafetyPolicy,
 	Task,
+	TaskEvent,
 	TaskMessage,
+	TaskRun,
 	ThinkingDepthOption,
 	WorkbenchArtifactRef,
 } from "../types";
@@ -84,6 +89,87 @@ export function resolveComposerRouteTarget(
 		}
 	}
 	return null;
+}
+
+const ACTIVE_COMPOSER_RUN_STATUSES = new Set([
+	"running",
+	"context_compiling",
+	"compiling_context",
+	"finalizing",
+]);
+const COMPOSER_THINKING_DEPTHS = new Set([
+	"low",
+	"medium",
+	"high",
+	"very_high",
+]);
+
+export function resolveActiveComposerRouteTarget(input: {
+	activeSessionId: string | null;
+	latestRun?: TaskRun;
+	latestRunEvents?: TaskEvent[];
+}): LlmModelTarget | null {
+	const { activeSessionId, latestRun } = input;
+	if (
+		!activeSessionId ||
+		!latestRun ||
+		latestRun.taskId !== activeSessionId ||
+		!ACTIVE_COMPOSER_RUN_STATUSES.has(latestRun.status)
+	) {
+		return null;
+	}
+
+	for (
+		let index = (input.latestRunEvents?.length || 0) - 1;
+		index >= 0;
+		index -= 1
+	) {
+		const event = input.latestRunEvents?.[index];
+		if (!event) continue;
+		if (event.runId && event.runId !== latestRun.id) continue;
+		const payload = toDeepRecord(event.payloadJson);
+		const runEvent = toDeepRecord(payload.runEvent);
+		const data = toDeepRecord(runEvent.data);
+		const eventType = String(
+			runEvent.type || event.eventType || event.type || "",
+		);
+		if (String(data.action || "") === "provider_route_fallback_started") {
+			const fallbackTarget = composerRouteTargetFromRecord(data.to);
+			if (fallbackTarget) return fallbackTarget;
+		}
+		if (eventType === "turn.started") {
+			const turnTarget = composerRouteTargetFromRecord(data);
+			if (turnTarget) return turnTarget;
+		}
+		if (eventType === "model.request_started") {
+			const requestTarget = composerRouteTargetFromRecord(data);
+			if (requestTarget) return requestTarget;
+		}
+		const eventRouting = toDeepRecord(data.effectiveLlmRouting);
+		const eventTarget = composerRouteTargetFromRecord(eventRouting.active);
+		if (eventTarget) return eventTarget;
+	}
+
+	const snapshot = toDeepRecord(latestRun.contextSnapshot);
+	const effectiveLlmRouting = toDeepRecord(snapshot.effectiveLlmRouting);
+	return composerRouteTargetFromRecord(effectiveLlmRouting.active);
+}
+
+function composerRouteTargetFromRecord(value: unknown): LlmModelTarget | null {
+	const providerEndpointId =
+		getDeepRecordString(value, "providerEndpointId")?.trim() || "";
+	const model = getDeepRecordString(value, "model")?.trim() || "";
+	if (!providerEndpointId || !model) return null;
+	const rawThinkingDepth = getDeepRecordString(value, "thinkingDepth");
+	const thinkingDepth =
+		rawThinkingDepth && COMPOSER_THINKING_DEPTHS.has(rawThinkingDepth)
+			? (rawThinkingDepth as LlmModelTarget["thinkingDepth"])
+			: undefined;
+	return {
+		providerEndpointId,
+		model,
+		...(thinkingDepth ? { thinkingDepth } : {}),
+	};
 }
 
 export function findComposerRouteTargetByKey(

@@ -34,6 +34,38 @@ export function readCodexModelOptions(input?: {
 	]);
 }
 
+export function mergeCodexModelOptionsIntoEndpoints<
+	T extends {
+		kind: string;
+		models: string[];
+		modelDisplayNames?: Record<string, string>;
+	},
+>(
+	endpoints: T[],
+	input?: { configuredModel?: string; codexHome?: string },
+): T[] {
+	const options = readCodexModelOptions(input);
+	const displayNames = Object.fromEntries(
+		options.map((option) => [option.value, option.label]),
+	);
+	return endpoints.map((endpoint) => {
+		if (endpoint.kind !== "codex") return endpoint;
+		return {
+			...endpoint,
+			models: [
+				...new Set([
+					...endpoint.models,
+					...options.map((option) => option.value),
+				]),
+			],
+			modelDisplayNames: {
+				...displayNames,
+				...endpoint.modelDisplayNames,
+			},
+		};
+	});
+}
+
 export function readCodexSdkStatus(input?: {
 	accessToken?: string;
 	configuredModel?: string;

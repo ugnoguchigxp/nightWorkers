@@ -26,7 +26,10 @@ import {
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
 import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
-import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
+import {
+	readStructuredLlmProviderSettings,
+	type StructuredLlmModelTarget,
+} from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import {
@@ -47,7 +50,6 @@ import {
 	IMPLEMENTATION_PHASE_PREAMBLE,
 	loadCodexRuntimeResumeState,
 	maybeLoadConversationStateCard,
-	readMessageLlmRouteOverride,
 	resolveExecutionModeFromMessages,
 	resolveLatestJobTypeFromMessages,
 	resolveRuntimeLaneForRoleRoute,
@@ -69,6 +71,7 @@ export type StartTaskRunOptions = {
 		| "explicit";
 	initialTodos?: ImplementationTodoInput[];
 	runtimeOptionsPatch?: Record<string, unknown>;
+	routeOverride?: StructuredLlmModelTarget | null;
 };
 
 export async function startTaskRun(
@@ -135,7 +138,7 @@ export async function startTaskRunInProcess(
 	const lastUserMessage = [...messages]
 		.reverse()
 		.find((message) => message.role === "user");
-	const llmRouteOverride = readMessageLlmRouteOverride(lastUserMessage);
+	const llmRouteOverride = options.routeOverride ?? null;
 	const jobType = resolveLatestJobTypeFromMessages(messages);
 	const executionMode =
 		options.executionMode ?? resolveExecutionModeFromMessages(messages);

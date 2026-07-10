@@ -14,6 +14,7 @@ import {
 	parseModelTargetKey,
 	projectEvaluationDraftStorageKey,
 	projectEvaluationTaskPromptDrafts,
+	resolveActiveComposerRouteTarget,
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
 	resolvePlanWorkspaceInitialTab,
@@ -22,7 +23,9 @@ import type { NightWorkersWorkspaceState } from "../src/modules/nightworkers/hoo
 import type { WorkbenchRouteState } from "../src/modules/nightworkers/routing/workbench-route-state";
 import type {
 	Task,
+	TaskEvent,
 	TaskMessage,
+	TaskRun,
 	WorkbenchArtifactRef,
 } from "../src/modules/nightworkers/types";
 
@@ -76,6 +79,201 @@ describe("nightworkers-shell-utils", () => {
 			model: "m2",
 		});
 		expect(resolveComposerRouteTarget(routes, new Set())).toBeNull();
+	});
+
+	it("resolves the active run model from effective routing", () => {
+		const latestRun = {
+			id: "run-1",
+			taskId: "task-1",
+			status: "running",
+			contextSnapshot: {
+				effectiveLlmRouting: {
+					active: {
+						providerEndpointId: "codex-main",
+						model: "gpt-5.6-sol",
+						thinkingDepth: "high",
+					},
+				},
+			},
+		} as TaskRun;
+
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-1",
+				latestRun,
+			}),
+		).toEqual({
+			providerEndpointId: "codex-main",
+			model: "gpt-5.6-sol",
+			thinkingDepth: "high",
+		});
+	});
+
+	it("prefers a runtime fallback target over the run-start route", () => {
+		const latestRun = {
+			id: "run-1",
+			taskId: "task-1",
+			status: "running",
+			contextSnapshot: {
+				effectiveLlmRouting: {
+					active: {
+						providerEndpointId: "codex-main",
+						model: "gpt-5.4-mini",
+					},
+				},
+			},
+		} as TaskRun;
+		const latestRunEvents = [
+			{
+				id: "event-1",
+				message: "fallback",
+				payloadJson: {
+					runEvent: {
+						type: "tool.call_progress",
+						data: {
+							action: "provider_route_fallback_started",
+							to: {
+								providerEndpointId: "codex-fallback",
+								model: "gpt-5.6-sol",
+								thinkingDepth: "very_high",
+							},
+						},
+					},
+				},
+			},
+		] as TaskEvent[];
+
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-1",
+				latestRun,
+				latestRunEvents,
+			}),
+		).toEqual({
+			providerEndpointId: "codex-fallback",
+			model: "gpt-5.6-sol",
+			thinkingDepth: "very_high",
+		});
+	});
+
+	it("uses a newer turn start instead of a stale fallback", () => {
+		const latestRun = {
+			id: "run-1",
+			taskId: "task-1",
+			status: "running",
+			contextSnapshot: {},
+		} as TaskRun;
+		const latestRunEvents = [
+			{
+				id: "event-fallback",
+				payloadJson: {
+					runEvent: {
+						type: "tool.call_progress",
+						data: {
+							action: "provider_route_fallback_started",
+							to: {
+								providerEndpointId: "fallback",
+								model: "gpt-5.6-sol",
+							},
+						},
+					},
+				},
+			},
+			{
+				id: "event-next-turn",
+				payloadJson: {
+					runEvent: {
+						type: "turn.started",
+						data: {
+							providerEndpointId: "primary",
+							model: "gpt-5.4-mini",
+						},
+					},
+				},
+			},
+		] as TaskEvent[];
+
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-1",
+				latestRun,
+				latestRunEvents,
+			}),
+		).toEqual({
+			providerEndpointId: "primary",
+			model: "gpt-5.4-mini",
+		});
+	});
+
+	it("does not expose a completed or unrelated run as the active model", () => {
+		const latestRun = {
+			id: "run-1",
+			taskId: "task-1",
+			status: "completed",
+			contextSnapshot: {
+				effectiveLlmRouting: {
+					active: {
+						providerEndpointId: "codex-main",
+						model: "gpt-5.6-sol",
+					},
+				},
+			},
+		} as TaskRun;
+
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-1",
+				latestRun,
+			}),
+		).toBeNull();
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-2",
+				latestRun: { ...latestRun, status: "running" },
+			}),
+		).toBeNull();
+	});
+
+	it("ignores events belonging to an older run for the same task", () => {
+		const latestRun = {
+			id: "run-current",
+			taskId: "task-1",
+			status: "running",
+			contextSnapshot: {
+				effectiveLlmRouting: {
+					active: {
+						providerEndpointId: "current-endpoint",
+						model: "gpt-5.6-sol",
+					},
+				},
+			},
+		} as TaskRun;
+		const latestRunEvents = [
+			{
+				id: "event-old-run",
+				runId: "run-previous",
+				payloadJson: {
+					runEvent: {
+						type: "turn.started",
+						data: {
+							providerEndpointId: "stale-endpoint",
+							model: "gpt-5.4-mini",
+						},
+					},
+				},
+			},
+		] as TaskEvent[];
+
+		expect(
+			resolveActiveComposerRouteTarget({
+				activeSessionId: "task-1",
+				latestRun,
+				latestRunEvents,
+			}),
+		).toEqual({
+			providerEndpointId: "current-endpoint",
+			model: "gpt-5.6-sol",
+		});
 	});
 
 	it("findComposerRouteTargetByKey finds targets correctly", () => {

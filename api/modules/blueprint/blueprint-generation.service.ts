@@ -6,6 +6,7 @@ import {
 	MockBlueprintDraftGenerationError,
 } from "../../services/blueprints/mock-llm-draft";
 import { listLlmUsageRecordsForTask } from "../../services/llm-usage";
+import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
 import {
 	createPlanModeMockBlueprintActivityArtifact,
 	createPlanModeTaskMessage,
@@ -26,6 +27,7 @@ export async function generateBlueprintArtifact(
 		prompt?: string;
 		questionnaireSessionId?: string | null;
 		sourceBlueprintMessageId?: string | null;
+		routeOverride?: StructuredLlmModelTarget | null;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -61,6 +63,7 @@ export async function generateBlueprintArtifact(
 					: null,
 				projectStackContext,
 				specContext,
+				routeOverride: input.routeOverride || null,
 			});
 		const generationWithUsage = {
 			...generation,

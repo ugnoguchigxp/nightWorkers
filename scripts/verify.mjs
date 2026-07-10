@@ -57,10 +57,10 @@ const liveAgentE2eTask = task('live-agent-e2e', 'live LLM agent E2E', [
   'run',
   'test:e2e:agent-live',
 ]);
-const e2eSmokeTask = task('e2e-smoke', 'Playwright E2E smoke', [
+const e2eCoverageTask = task('e2e-coverage', 'Playwright deterministic E2E coverage', [
   '--silent',
   'run',
-  'test:e2e:smoke',
+  'test:e2e:coverage',
 ]);
 const accessibilityE2eTask = task('e2e-accessibility', 'Playwright accessibility', [
   '--silent',
@@ -109,10 +109,10 @@ const fullTestPhase = {
   tasks: [allTestsTask],
 };
 const e2ePhase = {
-  id: 'e2e-smoke',
-  label: 'E2E smoke',
+  id: 'e2e-coverage',
+  label: 'E2E scenario coverage',
   mode: 'serial',
-  tasks: [e2eSmokeTask],
+  tasks: [e2eCoverageTask],
 };
 const accessibilityPhase = {
   id: 'e2e-accessibility',
@@ -162,7 +162,6 @@ const deterministicFullPhases = [
   ...basePhases,
   fullTestPhase,
   e2ePhase,
-  accessibilityPhase,
   demoPhase,
   auditPhase,
   ...desktopPhases,

@@ -3,7 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
 import { DevErrorPanel } from "../src/components/DevErrorPanel";
+import { Button } from "../src/components/ui/Button";
 import { CodeBlock } from "../src/components/ui/CodeBlock";
+import {
+	artifactFileStem,
+	buildMarkdownFromValue,
+} from "../src/modules/nightworkers/artifactExport";
 import {
 	artifactFileName,
 	buildArtifactVersions,
@@ -104,6 +109,15 @@ function sessionView(
 }
 
 describe("frontend utility components", () => {
+	it("keeps the default button foreground color with a custom text size", () => {
+		const markup = renderToStaticMarkup(
+			<Button className="h-9 px-4 text-xs">Save</Button>,
+		);
+
+		expect(markup).toContain("text-primary-foreground");
+		expect(markup).toContain("text-xs");
+	});
+
 	it("renders developer error diagnostics with route and stack hints", () => {
 		const error = new Error("Broken render");
 		error.stack = [
@@ -346,6 +360,16 @@ describe("frontend utility components", () => {
 			}),
 		).toBe("Activity blueprint");
 		expect(artifactFileName(selectedArtifact)).toBe("selected-blueprint.md");
+	});
+
+	it("builds portable Markdown for structured artifact exports", () => {
+		expect(artifactFileStem("API 契約 / v2")).toBe("api-契約-v2");
+		expect(
+			buildMarkdownFromValue("API Contract", {
+				openapi: "3.1.0",
+				paths: { "/tasks": {} },
+			}),
+		).toContain('```json\n{\n  "openapi": "3.1.0"');
 	});
 
 	it("renders project detail overview and stack panels with populated metrics", () => {

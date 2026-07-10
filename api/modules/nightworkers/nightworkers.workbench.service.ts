@@ -291,6 +291,7 @@ export async function appendWorkbenchMessage(
 		const run = await startTaskRun(id, {
 			executionMode: "implementation",
 			executionModeSource: "workbench_run_task",
+			routeOverride: llmRouteOverride,
 		});
 		return {
 			task: await repo.getTask(id),
@@ -301,7 +302,10 @@ export async function appendWorkbenchMessage(
 
 	if (intent === "design_blueprint_data") {
 		await appendTaskMessage(id, prompt, messageMetadata);
-		await generateDataModelArtifact(id, { prompt });
+		await generateDataModelArtifact(id, {
+			prompt,
+			routeOverride: llmRouteOverride,
+		});
 		const updated = await repo.updateTask(id, {
 			objective: task.objective || prompt,
 			status: task.status === "draft" ? "ready" : task.status,
@@ -322,6 +326,7 @@ export async function appendWorkbenchMessage(
 			id,
 			prompt,
 			artifactContext,
+			llmRouteOverride,
 		);
 		return {
 			task: (await repo.getTask(id)) || task,
@@ -437,6 +442,7 @@ async function regeneratePlanModeArtifactFromWorkbenchContext(
 	taskId: string,
 	prompt: string,
 	artifactContext: WorkbenchArtifactContext,
+	routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget>,
 ) {
 	const metadata = artifactContext.metadata || {};
 	const questionnaireSessionId = metadata.questionnaireSessionId ?? null;
@@ -452,12 +458,14 @@ async function regeneratePlanModeArtifactFromWorkbenchContext(
 				prompt,
 				questionnaireSessionId,
 				sourceBlueprintMessageId,
+				routeOverride,
 			});
 		case "blueprint":
 			return generateBlueprintArtifact(taskId, {
 				prompt,
 				questionnaireSessionId,
 				sourceBlueprintMessageId,
+				routeOverride,
 			});
 		case "data_model":
 			return generateDataModelArtifact(taskId, {
@@ -465,6 +473,7 @@ async function regeneratePlanModeArtifactFromWorkbenchContext(
 				questionnaireSessionId,
 				featurePlanMessageId,
 				sourceBlueprintMessageId,
+				routeOverride,
 			});
 		case "user_flow":
 		case "api_io_contract":
@@ -477,6 +486,7 @@ async function regeneratePlanModeArtifactFromWorkbenchContext(
 				featurePlanMessageId,
 				sourceBlueprintMessageId,
 				sourceDataModelMessageId,
+				routeOverride,
 			});
 		default:
 			throw new AppError(
@@ -839,6 +849,7 @@ async function handleWorkbenchIntakeMessage(
 				const run = await startTaskRun(taskId, {
 					executionMode: "planning",
 					executionModeSource: "workbench_intake",
+					routeOverride: options.llmRouteOverride || null,
 				});
 				return {
 					task: (await repo.getTask(taskId)) || runnable,
@@ -902,6 +913,7 @@ async function handleWorkbenchIntakeMessage(
 			const run = await startTaskRun(taskId, {
 				executionMode,
 				executionModeSource: "workbench_intake",
+				routeOverride: options.llmRouteOverride || null,
 			});
 			return {
 				task: (await repo.getTask(taskId)) || runnable,

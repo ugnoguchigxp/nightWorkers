@@ -21,7 +21,7 @@ describe("release verification plan", () => {
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining([
 				"all-tests",
-				"e2e-smoke",
+				"e2e-coverage",
 				"live-llm",
 				"desktop-build",
 				"desktop-sidecar-smoke",
@@ -30,7 +30,7 @@ describe("release verification plan", () => {
 		);
 	});
 
-	it("keeps slow, smoke, and desktop checks deterministic in the full gate", () => {
+	it("keeps slow, full E2E, and desktop checks deterministic in the full gate", () => {
 		const taskIds = taskSets.full.flatMap((phase) =>
 			phase.tasks.map((task) => task.id),
 		);
@@ -38,8 +38,7 @@ describe("release verification plan", () => {
 		expect(taskIds).toEqual(
 			expect.arrayContaining([
 				"all-tests",
-				"e2e-smoke",
-				"e2e-accessibility",
+				"e2e-coverage",
 				"demo-smoke",
 				"dependency-audit",
 				"desktop-runtime",
@@ -52,6 +51,7 @@ describe("release verification plan", () => {
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining(["live-llm", "live-agent-e2e"]),
 		);
+		expect(taskIds).not.toContain("e2e-accessibility");
 	});
 
 	it("isolates external LLM canaries to the live target", () => {
@@ -95,7 +95,7 @@ describe("release verification plan", () => {
 			"lint",
 			"supervisor-regression",
 			"all-tests",
-			"e2e-smoke",
+			"e2e-coverage",
 			"dependency-audit",
 			"desktop-runtime",
 			"desktop-lint",
@@ -115,20 +115,20 @@ describe("release verification plan", () => {
 	it("stops after the first failed serial task and reports its phase", async () => {
 		const runner = vi.fn(async (task: { id: string; label: string }) => ({
 			task,
-			code: task.id === "e2e-smoke" ? 1 : 0,
+			code: task.id === "e2e-coverage" ? 1 : 0,
 			duration: "0.1s",
 			stdout: "",
-			stderr: task.id === "e2e-smoke" ? "failed" : "",
+			stderr: task.id === "e2e-coverage" ? "failed" : "",
 		}));
 		const phases = taskSets.release.filter((phase) =>
-			["e2e-smoke", "dependency-audit", "desktop-build-smoke"].includes(
+			["e2e-coverage", "dependency-audit", "desktop-build-smoke"].includes(
 				phase.id,
 			),
 		);
 
 		const result = await executeVerificationPhases(phases, runner);
 
-		expect(result.failure?.phase.id).toBe("e2e-smoke");
+		expect(result.failure?.phase.id).toBe("e2e-coverage");
 		expect(runner).toHaveBeenCalledTimes(1);
 		expect(formatVerificationSummary("release", result.results)).toContain(
 			"FAIL",

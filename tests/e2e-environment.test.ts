@@ -104,7 +104,15 @@ describe("isolated E2E environment", () => {
 		for (const [name, command] of Object.entries(packageJson.scripts).filter(
 			([name]) => name.startsWith("test:e2e"),
 		)) {
-			expect(command, name).toContain("scripts/run-playwright.mjs");
+			const wrapperPath = command.match(/scripts\/[\w-]+\.mjs/)?.[0];
+			const wrapperSource = wrapperPath
+				? fs.readFileSync(path.resolve(wrapperPath), "utf8")
+				: "";
+			expect(
+				command.includes("scripts/run-playwright.mjs") ||
+					wrapperSource.includes("scripts/run-playwright.mjs"),
+				name,
+			).toBe(true);
 		}
 		const playwrightConfig = fs.readFileSync(
 			path.resolve("playwright.config.ts"),

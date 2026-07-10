@@ -327,7 +327,7 @@ export function SettingsScreen({
 									<span className="block font-semibold">
 										{t(section.labelKey)}
 									</span>
-									<span className="block truncate text-[10px] opacity-70">
+									<span className="block truncate text-[10px] text-zinc-500">
 										{t(section.descriptionKey)}
 									</span>
 								</span>

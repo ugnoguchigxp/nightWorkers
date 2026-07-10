@@ -55,6 +55,7 @@ type NightWorkersShellThreadPanelProps = {
 		intent?: WorkbenchChatIntent,
 	) => Promise<void>;
 	buildComposerLlmSelection: () => WorkbenchLlmSelection | undefined;
+	onComposerLlmSelectionSubmitted: () => void;
 	openQuestionnaireWorkspace: (
 		message: TaskMessage,
 		initialTab?: "questionnaire" | "status",
@@ -162,13 +163,15 @@ export function NightWorkersShellThreadPanel(
 					const existingQuestionnaireMessageIds = designQuestionnaireMessageIds(
 						workspace.taskMessages,
 					);
+					const llmSelection = buildComposerLlmSelection();
 					const result = await workspace.sendWorkbenchMessage(
 						workspace.activeSession.id,
 						prompt,
 						intent,
 						effectiveArtifactContext,
-						buildComposerLlmSelection(),
+						llmSelection,
 					);
+					if (llmSelection && result) props.onComposerLlmSelectionSubmitted();
 					if (!result?.run) {
 						const latestQuestionnaireMessage = [...(result?.messages || [])]
 							.reverse()

@@ -17,27 +17,27 @@ const artifactCodeBlockThemes = {
 const markdownRemarkPlugins = [remarkGfm];
 const baseMarkdownComponents: Components = {
 	blockquote: ({ children }) => (
-		<blockquote className="border-[#45475a] border-l-2 pl-4 text-[#bac2de]">
+		<blockquote className="nightworkers-artifact-markdown-blockquote border-l-2 pl-4">
 			{children}
 		</blockquote>
 	),
 	code: ({ children }) => (
-		<code className="rounded bg-[#181825] px-1 py-0.5 font-mono text-[#f5c2e7] text-[0.92em]">
+		<code className="nightworkers-artifact-markdown-code rounded px-1 py-0.5 font-mono text-[0.92em]">
 			{children}
 		</code>
 	),
 	h1: ({ children }) => (
-		<h1 className="mt-0 mb-4 border-[#313244] border-b pb-2 text-2xl font-semibold text-[#f5e0dc]">
+		<h1 className="nightworkers-artifact-markdown-heading mt-0 mb-4 border-b pb-2 text-2xl font-semibold">
 			{children}
 		</h1>
 	),
 	h2: ({ children }) => (
-		<h2 className="mt-8 mb-3 border-[#313244] border-b pb-1 text-xl font-semibold text-[#f5e0dc]">
+		<h2 className="nightworkers-artifact-markdown-heading mt-8 mb-3 border-b pb-1 text-xl font-semibold">
 			{children}
 		</h2>
 	),
 	h3: ({ children }) => (
-		<h3 className="mt-6 mb-2 text-lg font-semibold text-[#f5e0dc]">
+		<h3 className="nightworkers-artifact-markdown-heading mt-6 mb-2 text-lg font-semibold">
 			{children}
 		</h3>
 	),
@@ -47,7 +47,7 @@ const baseMarkdownComponents: Components = {
 	),
 	p: ({ children }) => <p className="my-3 leading-7">{children}</p>,
 	pre: ({ children }) => (
-		<pre className="my-4 overflow-x-hidden whitespace-pre-wrap break-words rounded bg-[#181825] p-3 font-mono text-sm text-[#cdd6f4]">
+		<pre className="nightworkers-artifact-markdown-pre my-4 overflow-x-hidden whitespace-pre-wrap break-words rounded p-3 font-mono text-sm">
 			{children}
 		</pre>
 	),
@@ -59,12 +59,12 @@ const baseMarkdownComponents: Components = {
 		</div>
 	),
 	td: ({ children }) => (
-		<td className="break-words border border-[#313244] px-2 py-1 align-top">
+		<td className="nightworkers-artifact-markdown-cell break-words border px-2 py-1 align-top">
 			{children}
 		</td>
 	),
 	th: ({ children }) => (
-		<th className="break-words border border-[#313244] bg-[#181825] px-2 py-1 text-left font-medium">
+		<th className="nightworkers-artifact-markdown-header-cell break-words border px-2 py-1 text-left font-medium">
 			{children}
 		</th>
 	),
@@ -95,7 +95,7 @@ function buildMarkdownComponents(
 			return (
 				<a
 					{...props}
-					className="text-[#89b4fa] underline underline-offset-2"
+					className="nightworkers-artifact-markdown-link underline underline-offset-2"
 					href={href}
 					data-project-file-link={projectFilePath || undefined}
 					title={projectFilePath ? "ソースコードを開く" : props.title}
@@ -168,7 +168,10 @@ export const MarkdownViewer = memo(function MarkdownViewer({
 	);
 
 	return (
-		<div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#1e1e2e] px-8 py-6 text-[#cdd6f4]">
+		<div
+			className="nightworkers-artifact-markdown min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-8 py-6"
+			data-artifact-export-expand
+		>
 			<ReactMarkdown
 				remarkPlugins={markdownRemarkPlugins}
 				components={markdownComponents}

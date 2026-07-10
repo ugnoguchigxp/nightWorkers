@@ -26,6 +26,129 @@ afterEach(() => {
 });
 
 describe("LLM settings secret hardening", () => {
+	it("exposes fresh Codex cache models to runtime routing without a settings GET", async () => {
+		const settingsPath = isolatedSettingsPath();
+		const codexHome = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-runtime-codex-models-"),
+		);
+		fs.writeFileSync(
+			path.join(codexHome, "models_cache.json"),
+			JSON.stringify({
+				models: [{ slug: "gpt-5.6-sol", display_name: "GPT-5.6-Sol" }],
+			}),
+		);
+		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+		fs.writeFileSync(
+			settingsPath,
+			JSON.stringify({
+				CODEX_MODEL: "gpt-5.4-mini",
+				providerEndpoints: [
+					{
+						id: "codex-default",
+						name: "Codex SDK",
+						kind: "codex",
+						enabled: true,
+						models: ["gpt-5.4-mini"],
+					},
+				],
+			}),
+		);
+		vi.stubEnv("NIGHTWORKERS_LLM_SETTINGS_PATH", settingsPath);
+		vi.stubEnv("NIGHTWORKERS_CODEX_HOME", codexHome);
+		const { readStructuredLlmProviderSettings } = await import(
+			"../api/services/structured-llm/settings"
+		);
+
+		const runtimeSettings = readStructuredLlmProviderSettings();
+		const codexEndpoint = runtimeSettings.providerEndpoints?.find(
+			(endpoint) => endpoint.kind === "codex",
+		);
+		expect(codexEndpoint?.models).toContain("gpt-5.6-sol");
+		expect(codexEndpoint?.modelDisplayNames?.["gpt-5.6-sol"]).toBe(
+			"GPT-5.6-Sol",
+		);
+	});
+
+	it("merges fresh Codex cache models into persisted Codex endpoints", async () => {
+		const settingsPath = isolatedSettingsPath();
+		const codexHome = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-codex-models-"),
+		);
+		fs.writeFileSync(
+			path.join(codexHome, "models_cache.json"),
+			JSON.stringify({
+				models: [{ slug: "gpt-5.6-sol", display_name: "GPT-5.6-Sol" }],
+			}),
+		);
+		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+		fs.writeFileSync(
+			settingsPath,
+			JSON.stringify({
+				ACTIVE_LLM_PROVIDER: "codex",
+				CODEX_ENABLED: true,
+				CODEX_MODEL: "gpt-5.4-mini",
+				providerEndpoints: [
+					{
+						id: "codex-default",
+						name: "Codex SDK",
+						kind: "codex",
+						enabled: true,
+						models: ["gpt-5.4-mini"],
+						modelDisplayNames: {},
+					},
+				],
+				roleRoutes: [
+					{
+						role: "implementation",
+						primary: {
+							providerEndpointId: "codex-default",
+							model: "gpt-5.6-sol",
+						},
+						fallbacks: [],
+					},
+				],
+			}),
+		);
+		vi.stubEnv("NIGHTWORKERS_CODEX_HOME", codexHome);
+		const { getCurrentSettings } =
+			await importSettingsRuntimeWithPath(settingsPath);
+
+		const settings = getCurrentSettings();
+		const codexEndpoint = settings.providerEndpoints.find(
+			(endpoint) => endpoint.kind === "codex",
+		);
+		const implementationRoute = settings.roleRoutes.find(
+			(route) => route.role === "implementation",
+		);
+
+		expect(codexEndpoint?.models).toContain("gpt-5.6-sol");
+		expect(codexEndpoint?.modelDisplayNames?.["gpt-5.6-sol"]).toBe(
+			"GPT-5.6-Sol",
+		);
+		expect(implementationRoute?.primary.model).toBe("gpt-5.6-sol");
+		expect(implementationRoute?.primary.providerEndpointId).toBe(
+			codexEndpoint?.id,
+		);
+		const persistedSettings = JSON.parse(
+			fs.readFileSync(settingsPath, "utf8"),
+		) as {
+			providerEndpoints?: Array<{ kind?: string; models?: string[] }>;
+		};
+		expect(
+			persistedSettings.providerEndpoints?.find(
+				(endpoint) => endpoint.kind === "codex",
+			)?.models,
+		).toContain("gpt-5.6-sol");
+		const { readStructuredLlmProviderSettings } = await import(
+			"../api/services/structured-llm/settings"
+		);
+		expect(
+			readStructuredLlmProviderSettings().providerEndpoints?.find(
+				(endpoint) => endpoint.kind === "codex",
+			)?.models,
+		).toContain("gpt-5.6-sol");
+	});
+
 	it("persists endpoint id migration when an existing settings file is loaded", async () => {
 		const settingsPath = isolatedSettingsPath();
 		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

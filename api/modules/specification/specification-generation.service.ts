@@ -8,6 +8,7 @@ import {
 	buildSpecificationDocumentUserPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
+import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -43,6 +44,7 @@ export async function generateFeaturePlanArtifact(
 		questionnaireSessionId?: string | null;
 		sourceBlueprintMessageId?: string | null;
 		proceedWithUnansweredBlocking?: boolean;
+		routeOverride?: StructuredLlmModelTarget | null;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -96,6 +98,7 @@ export async function generateFeaturePlanArtifact(
 	const rawOutput = await generateSpecificationDesignDocumentRawOutput(
 		taskId,
 		context,
+		input.routeOverride || null,
 	);
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
@@ -218,6 +221,7 @@ function hasValidQuestions(
 async function generateSpecificationDesignDocumentRawOutput(
 	taskId: string,
 	context: ReturnType<typeof buildSpecificationDocumentContext>,
+	routeOverride: StructuredLlmModelTarget | null,
 ) {
 	try {
 		return await callStructuredJsonLLM(
@@ -228,6 +232,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 				schema: z.toJSONSchema(specificationDocumentDraftSchema),
 				taskId,
 				role: "plan",
+				routeOverride,
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
 			},
 		);

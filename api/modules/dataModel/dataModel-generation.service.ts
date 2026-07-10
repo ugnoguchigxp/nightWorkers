@@ -14,6 +14,7 @@ import {
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
+import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -37,6 +38,7 @@ export type DataModelGenerationInput = {
 	questionnaireSessionId?: string | null;
 	featurePlanMessageId?: string | null;
 	sourceBlueprintMessageId?: string | null;
+	routeOverride?: StructuredLlmModelTarget | null;
 };
 
 export class DataModelGenerationError extends Error {
@@ -91,6 +93,7 @@ export async function generateDataModelArtifact(
 			: "Questionnaire は未生成です。",
 		blueprint: sourceBlueprintMessage?.content || "Blueprint は未生成です。",
 		prompt,
+		routeOverride: input.routeOverride || null,
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -184,6 +187,7 @@ async function generateArtifactFromLlm(input: {
 	questionnaire: string;
 	blueprint: string;
 	prompt: string;
+	routeOverride: StructuredLlmModelTarget | null;
 }) {
 	try {
 		const schema = buildDataModelResponseJsonSchema();
@@ -203,6 +207,7 @@ async function generateArtifactFromLlm(input: {
 					taskId: input.taskId,
 					runId: null,
 					role: "plan",
+					routeOverride: input.routeOverride,
 				},
 			);
 			try {

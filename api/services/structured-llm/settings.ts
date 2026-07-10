@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getRuntimePaths } from "../../runtime/paths";
+import { mergeCodexModelOptionsIntoEndpoints } from "../codex-global-config/status";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
 
 export type StructuredLlmProviderSettings = {
@@ -130,9 +131,15 @@ export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettin
 	merged.ACTIVE_LLM_PROVIDER = normalizeStructuredLlmProviderSetting(
 		merged.ACTIVE_LLM_PROVIDER,
 	);
-	return sanitizeStructuredLlmRoleRoutes(
-		migrateStructuredLlmEndpointIds(merged).settings,
+	const migrated = migrateStructuredLlmEndpointIds(merged).settings;
+	const providerEndpoints = mergeCodexModelOptionsIntoEndpoints(
+		migrated.providerEndpoints || [],
+		{ configuredModel: migrated.CODEX_MODEL },
 	);
+	return sanitizeStructuredLlmRoleRoutes({
+		...migrated,
+		providerEndpoints,
+	});
 }
 
 export function normalizeStructuredLlmProviderSetting(

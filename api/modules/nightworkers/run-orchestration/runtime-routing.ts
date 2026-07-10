@@ -17,7 +17,6 @@ import {
 	resolveStructuredLlmRoleRouteCandidates,
 	structuredLlmRouteKey,
 } from "../../../services/structured-llm/role-routing";
-import { normalizeStructuredLlmModelTarget } from "../../../services/structured-llm/selection";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmProviderSettings,
@@ -46,20 +45,6 @@ function executionPhasePreambleForMode(
 	return mode === "implementation"
 		? injectImplementationPhaseContext(latestUserMessage)
 		: latestUserMessage.trim();
-}
-
-export function readMessageLlmRouteOverride(
-	message:
-		| Awaited<ReturnType<typeof repo.listTaskMessages>>[number]
-		| undefined,
-): StructuredLlmModelTarget | null {
-	const metadata =
-		message?.metadataJson &&
-		typeof message.metadataJson === "object" &&
-		!Array.isArray(message.metadataJson)
-			? (message.metadataJson as Record<string, unknown>)
-			: {};
-	return normalizeStructuredLlmModelTarget(metadata.llmSelection);
 }
 
 export function resolveRuntimeLaneForRoleRoute(

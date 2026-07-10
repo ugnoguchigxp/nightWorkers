@@ -30,6 +30,7 @@ import {
 } from "../../services/structured-generation/prompts/plan-zod-schema";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
+import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -91,6 +92,7 @@ export type PlanViewGenerationInput = {
 	featurePlanMessageId?: string | null;
 	sourceBlueprintMessageId?: string | null;
 	sourceDataModelMessageId?: string | null;
+	routeOverride?: StructuredLlmModelTarget | null;
 };
 
 const planApiContractDraftSchema = z.object({
@@ -254,6 +256,7 @@ export async function generatePlanViewArtifact(
 			blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
 			dataModel: dataModelMessage?.content || "Data Model は未生成です。",
 			prompt,
+			routeOverride: input.routeOverride || null,
 		});
 		const message = await createPlanModeTaskMessage({
 			taskId,
@@ -293,6 +296,7 @@ export async function generatePlanViewArtifact(
 			blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
 			dataModel: dataModelMessage?.content || "Data Model は未生成です。",
 			prompt,
+			routeOverride: input.routeOverride || null,
 		});
 		const message = await createPlanModeTaskMessage({
 			taskId,
@@ -332,6 +336,7 @@ export async function generatePlanViewArtifact(
 		blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
 		dataModel: dataModelMessage?.content || "Data Model は未生成です。",
 		prompt,
+		routeOverride: input.routeOverride || null,
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -480,6 +485,7 @@ async function generateArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	routeOverride: StructuredLlmModelTarget | null;
 }) {
 	try {
 		let repairContext: string | null = null;
@@ -498,6 +504,7 @@ async function generateArtifactFromLlm(input: {
 					taskId: input.taskId,
 					runId: null,
 					role: "plan",
+					routeOverride: input.routeOverride,
 				},
 			);
 			try {
@@ -537,6 +544,7 @@ async function generateApiContractArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	routeOverride: StructuredLlmModelTarget | null;
 }) {
 	try {
 		const rawOutput = await callStructuredJsonLLM(
@@ -548,6 +556,7 @@ async function generateApiContractArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: "plan",
+				routeOverride: input.routeOverride,
 			},
 		);
 		return parsePlanApiContractOutput(rawOutput);
@@ -570,6 +579,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	routeOverride: StructuredLlmModelTarget | null;
 }) {
 	try {
 		const rawOutput = await callStructuredJsonLLM(
@@ -581,6 +591,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: "plan",
+				routeOverride: input.routeOverride,
 			},
 		);
 		return parsePlanZodSchemaOutput(rawOutput, {
