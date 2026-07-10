@@ -63,6 +63,22 @@ describe("NightWorkers task routes", () => {
 		expect(body.usage.inputTokens).toBeGreaterThanOrEqual(1000);
 		expect(body.usage.outputTokensPerSecond).toBe(500);
 		expect(body.usage.promptInputTokens).toBeGreaterThanOrEqual(0);
+		expect(body.runs).toMatchObject({
+			total: expect.any(Number),
+			completed: expect.any(Number),
+			failed: expect.any(Number),
+			active: expect.any(Number),
+		});
+		expect(body.projectContext).toMatchObject({
+			repository: {
+				id: createdRepo.id,
+				name: createdRepo.name,
+				branch: createdRepo.branch,
+			},
+			latestSnapshot: {
+				coverageAxes: expect.any(Array),
+			},
+		});
 		expect(body.cost.estimatedTotal).toBeGreaterThan(0);
 		expect(body.modelBreakdown).toEqual(
 			expect.arrayContaining([
@@ -83,6 +99,21 @@ describe("NightWorkers task routes", () => {
 				outputTokensPerSecond: 500,
 			}),
 		);
+	});
+
+	it("keeps all-project context empty and rejects an unknown project scope", async () => {
+		const allScopeRes = await app.request(
+			"http://localhost/api/overview?range=24h&currency=JPY",
+		);
+		expect(allScopeRes.status).toBe(200);
+		const allScopeBody = await allScopeRes.json();
+		expect(allScopeBody.scope.repositoryId).toBeNull();
+		expect(allScopeBody.projectContext).toBeNull();
+
+		const missingRes = await app.request(
+			`http://localhost/api/overview?repositoryId=${crypto.randomUUID()}`,
+		);
+		expect(missingRes.status).toBe(404);
 	});
 
 	it("builds overview aggregate metrics from summary buckets without raw rows", async () => {

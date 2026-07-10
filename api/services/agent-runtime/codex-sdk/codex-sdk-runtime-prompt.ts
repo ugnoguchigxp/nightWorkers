@@ -1,9 +1,9 @@
 import { getNightWorkersCodexToolNames } from "../../../mcp/nightworkers-tool-manifest";
-import { estimateTokens } from "../../conversation-context/token-budget";
 import {
 	formatOntologyCloseoutRequirementsForPrompt,
 	formatOntologyRuntimeContextForPrompt,
-} from "../ontology-runtime-context";
+} from "../../../modules/ontology";
+import { estimateTokens } from "../../conversation-context/token-budget";
 import type { AgentRunContext } from "../types";
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {

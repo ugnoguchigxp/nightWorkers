@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "id": "overview",
+  "label": "Overview",
+  "summary": "Owns the NightWorkers-wide and project-scoped Overview dashboard, its API aggregation, compact metric presentation, and scope navigation contract.",
+  "ubiquitousLanguage": [
+    {
+      "name": "OverviewScope",
+      "meaning": "The all-projects or single-project target selected for the shared dashboard."
+    },
+    {
+      "name": "PeriodAggregate",
+      "meaning": "Usage, cost, run, model, and recent-call metrics filtered by scope and range."
+    },
+    {
+      "name": "ProjectSnapshot",
+      "meaning": "Latest project metadata, stack, evaluation, and coverage shown independently from the selected range."
+    }
+  ],
+  "responsibilities": [
+    "Expose the shared Overview API contract and aggregation.",
+    "Render all-projects and project scopes through one dashboard component tree.",
+    "Own compact K/M/G/T/P metric formatting for Overview.",
+    "Provide the canonical project Overview navigation boundary."
+  ],
+  "ownedPaths": [
+    "api/modules/overview/**",
+    "src/modules/overview/**",
+    "shared/schemas/overview.schema.ts",
+    "tests/overview-*.test.ts",
+    "spec/archive/unified-overview-dashboard-implementation-plan.md"
+  ],
+  "readMostlyPaths": [
+    "api/services/pricing/**",
+    "api/services/settings/**",
+    "api/modules/project-detail/**",
+    "api/modules/project-evaluation/**",
+    "api/modules/quality/**",
+    "api/modules/techStack/**",
+    "src/modules/nightworkers/routing/**",
+    "src/i18n/dictionaries/**"
+  ],
+  "ownedData": {
+    "tables": [],
+    "files": []
+  },
+  "invariants": [
+    {
+      "id": "single-dashboard-tree",
+      "statement": "All-projects and project scopes render through one Overview dashboard component tree.",
+      "check": "Overview component and route tests cover both scopes."
+    },
+    {
+      "id": "canonical-aggregation",
+      "statement": "LLM usage and cost aggregation is owned only by api/modules/overview.",
+      "check": "Overview module boundary tests reject old NightWorkers and api/services ownership paths."
+    },
+    {
+      "id": "compact-display-exact-source",
+      "statement": "Compact display never rounds the API or stored source value and preserves exact accessible text.",
+      "check": "Overview formatter and component tests cover compact and exact values."
+    },
+    {
+      "id": "currency-credit-separation",
+      "statement": "Credit-denominated pricing is never added to or rendered as JPY, USD, or EUR cost.",
+      "check": "Overview pricing semantics and component tests cover credit-only and mixed values."
+    },
+    {
+      "id": "bounded-module-files",
+      "statement": "Overview TypeScript implementation files remain at or below 600 lines.",
+      "check": "Overview module boundary tests enumerate frontend and backend implementation files."
+    }
+  ],
+  "allowedMutations": [
+    "Overview API aggregation",
+    "Overview dashboard rendering",
+    "Overview scope routing integration",
+    "Overview metric formatting"
+  ],
+  "forbiddenMutations": [
+    "provider pricing source policy",
+    "Project Detail non-overview feature behavior",
+    "quality runner execution",
+    "worker execution lifecycle"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "project-detail",
+      "paths": ["api/modules/project-detail/**", "src/modules/nightworkers/components/project-detail/types.ts"],
+      "reason": "Overview reads project metadata and links to non-overview Project Detail tabs."
+    },
+    {
+      "module": "settings",
+      "paths": ["api/services/settings/**", "src/modules/settings/**"],
+      "reason": "Overview consumes currency, timezone, preflight, and provider settings."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "bunx vitest run tests/nightworkers-routes/routes-nightworkers-02.test.ts tests/workbench-route-state.test.ts",
+        "expect": "Existing Overview API and route behavior pass before migration."
+      }
+    ],
+    "focused": [
+      {
+        "command": "bunx vitest run tests/overview-number-format.test.ts tests/overview-view-model.test.ts tests/overview-usage-aggregation.test.ts tests/overview-components.test.tsx tests/overview-pricing-semantics.test.ts tests/overview-module-boundary.test.ts tests/nightworkers-routes/routes-nightworkers-02.test.ts tests/workbench-route-state.test.ts",
+        "expect": "Overview formatting, scope safety, pricing semantics, ownership, API, and routes pass."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify",
+        "expect": "Repository verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}

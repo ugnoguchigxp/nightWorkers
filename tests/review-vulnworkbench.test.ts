@@ -5,7 +5,7 @@ import {
 	readVulnWorkbenchCliSettings,
 	runVulnWorkbenchSecurityDiagnostic,
 	warningFindingForVulnWorkbenchResult,
-} from "../api/modules/nightworkers/nightworkers.review-vulnworkbench.service";
+} from "../api/modules/review/review-vulnworkbench.service";
 
 describe("Review vulnWorkbench diagnostic", () => {
 	it("builds disabled/unconfigured warning results without scanner-backed claims", async () => {
@@ -105,10 +105,12 @@ describe("Review vulnWorkbench diagnostic", () => {
 							profile: "agent-output",
 							findingCount: 2,
 							highOrCriticalCount: 1,
-							reportPath: "/outside/vulnWorkbench/report.md",
+							findingsTruncated: false,
+							blockingFingerprints: ["fingerprint-1"],
 							findings: [
 								{
 									id: "finding-1",
+									fingerprint: "fingerprint-1",
 									severity: "high",
 									tool: "semgrep",
 									ruleId: "dockerfile.security.missing-user.missing-user",

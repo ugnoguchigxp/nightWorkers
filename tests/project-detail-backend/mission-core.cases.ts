@@ -35,8 +35,8 @@ describe("Project Detail backend mission core", () => {
 			);
 			expect(metricsRes.status).toBe(200);
 			await expect(metricsRes.json()).resolves.toMatchObject({
-				runs: { total: 0, completed: 0, failed: 0 },
-				health: { latestEvaluationScore: null, coverageAverage: null },
+				stackProfile: { manifestStatus: "found" },
+				codeSizeSnapshot: null,
 			});
 
 			const presetsRes = await app.request(
@@ -86,7 +86,7 @@ describe("Project Detail backend mission core", () => {
 		}
 	});
 
-	it("returns project detail LLM usage input and output breakdowns", async () => {
+	it("returns project-scoped LLM usage from the canonical Overview API", async () => {
 		const repoRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "nightworkers-detail-usage-"),
 		);
@@ -138,14 +138,14 @@ describe("Project Detail backend mission core", () => {
 				},
 				durationMs: 1000,
 			});
-			const metricsRes = await app.request(
-				`http://localhost/api/repositories/${project.id}/project-detail/metrics`,
+			const overviewRes = await app.request(
+				`http://localhost/api/overview?range=all&repositoryId=${project.id}&currency=USD`,
 			);
 
-			expect(metricsRes.status).toBe(200);
-			const metrics = await metricsRes.json();
-			expect(metrics).toMatchObject({
-				llmUsage: {
+			expect(overviewRes.status).toBe(200);
+			const overview = await overviewRes.json();
+			expect(overview).toMatchObject({
+				usage: {
 					totalTokens: 1245,
 					promptInputTokens: 330,
 					inputTokens: 1200,
@@ -155,39 +155,27 @@ describe("Project Detail backend mission core", () => {
 					stateCardTokens: 30,
 					outputTokensPerSecond: 45,
 					callCount: 1,
-					totalCost: expect.any(Number),
-					modelMix: [
-						expect.objectContaining({
-							provider: "fixture-provider",
-							model: "gpt-test",
-							calls: 1,
-							tokens: 1245,
-							inputTokens: 1200,
-							outputTokens: 45,
-							cachedInputTokens: 300,
-							reasoningOutputTokens: 6,
-							outputTokensPerSecond: 45,
-							cost: expect.any(Number),
-						}),
-					],
-					topTokenTasks: [
-						expect.objectContaining({
-							taskId: task.id,
-							title: "TEST: Token-heavy BBS implementation",
-							tokens: 1245,
-							inputTokens: 1200,
-							outputTokens: 45,
-							cachedInputTokens: 300,
-							reasoningOutputTokens: 6,
-							outputTokensPerSecond: 45,
-							cost: expect.any(Number),
-						}),
-					],
 				},
+				cost: { estimatedTotal: expect.any(Number) },
+				modelBreakdown: [
+					expect.objectContaining({
+						provider: "fixture-provider",
+						model: "gpt-test",
+						callCount: 1,
+						inputTokens: 1200,
+						outputTokens: 45,
+						cachedInputTokens: 300,
+						reasoningOutputTokens: 6,
+						outputTokensPerSecond: 45,
+						estimatedCost: expect.any(Number),
+					}),
+				],
 			});
-			expect(metrics.llmUsage.totalCost).toBeCloseTo(0.0102);
-			expect(metrics.llmUsage.modelMix[0].cost).toBeCloseTo(0.0102);
-			expect(metrics.llmUsage.topTokenTasks[0].cost).toBeCloseTo(0.0102);
+			expect(overview.cost.estimatedTotal).toBeCloseTo(0.0102);
+			expect(overview.modelBreakdown[0].estimatedCost).toBeCloseTo(0.0102);
+			expect(overview.recentExpensiveCalls[0].estimatedCost).toBeCloseTo(
+				0.0102,
+			);
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}
@@ -370,17 +358,30 @@ describe("Project Detail backend mission core", () => {
 			};
 			expect(generated.candidates).toHaveLength(1);
 
-			const createTasksRes = await app.request(
-				`http://localhost/api/repositories/${project.id}/mission-task-candidates/create-tasks`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						candidateIds: [generated.candidates[0].id],
-						mode: "draft",
-					}),
-				},
+			const createRequest = () =>
+				app.request(
+					`http://localhost/api/repositories/${project.id}/mission-task-candidates/create-tasks`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							candidateIds: [generated.candidates[0].id],
+							mode: "draft",
+						}),
+					},
+				);
+			const createResponses = await Promise.all([
+				createRequest(),
+				createRequest(),
+			]);
+			expect(createResponses.map((response) => response.status).sort()).toEqual(
+				[201, 400],
 			);
+			const createTasksRes = createResponses.find(
+				(response) => response.status === 201,
+			);
+			expect(createTasksRes).toBeDefined();
+			if (!createTasksRes) throw new Error("Expected one successful response");
 			expect(createTasksRes.status).toBe(201);
 			const created = await createTasksRes.json();
 			expect(created.tasks[0]).toMatchObject({

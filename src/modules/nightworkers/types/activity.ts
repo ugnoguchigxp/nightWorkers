@@ -1,6 +1,25 @@
+import type { ReviewResult } from "../../review";
 import type { TaskRunTodo } from "./blueprint";
 import type { TaskRun } from "./core";
-import type { ReviewResult } from "./review";
+
+export type TaskLlmUsageSummary = {
+	taskId: string;
+	promptInputTokens: number;
+	inputTokens: number;
+	outputTokens: number;
+	stateCardTokens: number;
+	cachedInputTokens: number;
+	nonCachedInputTokens: number;
+	reasoningOutputTokens: number;
+	totalTokens: number;
+	totalDurationMs: number;
+	averageDurationMs: number | null;
+	usageMode: "measured" | "estimated" | "mixed" | "unavailable";
+	callCount: number;
+	measuredCallCount: number;
+	estimatedCallCount: number;
+	lastUpdatedAt?: unknown | null;
+};
 
 export type ActivityArtifact = {
 	id: string;

@@ -1,17 +1,10 @@
-import fs from "node:fs/promises";
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { getCurrentSettings } from "../../../routes/settings";
 import {
-	type NativeApiExecutionMode,
 	nativeApiRoleForExecutionMode,
 	stateCardRoleForExecutionMode,
 } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
-import {
-	buildOntologyRuntimeContextDisabledSnapshot,
-	buildOntologyRuntimeContextSnapshot,
-	ontologySnapshotEventSeverity,
-} from "../../../services/agent-runtime/ontology-runtime-context";
 import { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
 import {
 	readRuntimeLaneConfigFromEnv,
@@ -26,54 +19,33 @@ import {
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
 import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
-import {
-	readStructuredLlmProviderSettings,
-	type StructuredLlmModelTarget,
-} from "../../../services/structured-llm/settings";
+import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
+import { buildStandardImplementationTodoList } from "../../../services/todo-runtime";
 import {
-	buildStandardImplementationTodoList,
-	deriveTodoVerificationPolicyFromPromptText,
-	type ImplementationTodoInput,
-} from "../../../services/todo-runtime";
-import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
+	buildOntologyRuntimeContextDisabledSnapshot,
+	buildOntologyRuntimeContextSnapshot,
+	ontologySnapshotEventSeverity,
+} from "../../ontology";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
-import { resolveTaskExecutionRoot } from "../nightworkers.worktrees.service";
 import { readGitBaseline } from "./git-ownership";
 import { launchRuntimeExecution } from "./runtime-execution";
 import {
-	buildCompiledPromptText,
 	buildEffectiveLlmRoutingSnapshot,
 	buildLatestRuntimeUserMessage,
-	findLatestImplementationHandoffMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
 	loadCodexRuntimeResumeState,
 	maybeLoadConversationStateCard,
-	resolveExecutionModeFromMessages,
-	resolveLatestJobTypeFromMessages,
 	resolveRuntimeLaneForRoleRoute,
 } from "./runtime-routing";
+import { prepareTaskRunStart } from "./start-task-run-preparation";
+import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toAgentRuntimeTodoContext } from "./todo-closeout";
 import { toErrorMessage } from "./utils";
 
-export type StartTaskRunOptions = {
-	executionMode?: NativeApiExecutionMode;
-	executionModeSource?:
-		| "message_history"
-		| "workbench_intake"
-		| "workbench_run"
-		| "workbench_run_task"
-		| "implementation_queue"
-		| "session_queue"
-		| "review_run"
-		| "test_mode"
-		| "explicit";
-	initialTodos?: ImplementationTodoInput[];
-	runtimeOptionsPatch?: Record<string, unknown>;
-	routeOverride?: StructuredLlmModelTarget | null;
-};
+export type { StartTaskRunOptions } from "./start-task-run-types";
 
 export async function startTaskRun(
 	taskId: string,
@@ -107,68 +79,22 @@ export async function startTaskRunInProcess(
 	// 1. Mark the task as running while the runtime prompt is prepared.
 	await repo.updateTaskStatus(taskId, "running");
 
-	// 2. Fetch repo information and create the run before compiling context.
-	const repoInfo = await repo.getRepository(task.repositoryId);
-	if (!repoInfo?.localPath) {
-		throw new AppError(
-			422,
-			"REPO_PATH_INVALID",
-			"Repository path is not configured",
-		);
-	}
-	const executionRoot = await resolveTaskExecutionRoot({
-		repositoryId: task.repositoryId,
-		repositoryPath: repoInfo.localPath,
-		worktreePath: task.worktreePath,
-	});
-	let stat: Awaited<ReturnType<typeof fs.stat>>;
-	try {
-		stat = await fs.stat(executionRoot);
-	} catch {
-		throw new AppError(
-			422,
-			"REPO_PATH_INVALID",
-			"Repository path does not exist",
-		);
-	}
-	if (!stat.isDirectory()) {
-		throw new AppError(
-			422,
-			"REPO_PATH_INVALID",
-			"Repository path is not a directory",
-		);
-	}
-	const projectMeta = await getFreshProjectMeta(repoInfo);
-	const ontologyMcpEnabled = isOntologyMcpEnabledForProjectMeta(projectMeta);
-	const messages = await repo.listTaskMessages(taskId);
-	const lastUserMessage = [...messages]
-		.reverse()
-		.find((message) => message.role === "user");
-	const llmRouteOverride = options.routeOverride ?? null;
-	const jobType = resolveLatestJobTypeFromMessages(messages);
-	const executionMode =
-		options.executionMode ?? resolveExecutionModeFromMessages(messages);
-	const executionModeSource = options.executionMode
-		? (options.executionModeSource ?? "explicit")
-		: "message_history";
-	const implementationHandoffMessage =
-		executionMode === "implementation"
-			? findLatestImplementationHandoffMessage(messages)
-			: undefined;
-	const compiledPromptText = buildCompiledPromptText({
-		task,
+	// 2. Fetch repo information and compile the deterministic run inputs.
+	const {
+		repoInfo,
+		executionRoot,
+		projectMeta,
+		securityIntelligence,
 		lastUserMessage,
+		llmRouteOverride,
+		jobType,
+		executionMode,
+		executionModeSource,
 		implementationHandoffMessage,
-	});
-	if (!compiledPromptText.trim()) {
-		throw new AppError(
-			400,
-			"EMPTY_PROMPT",
-			"No user message found to start a run",
-		);
-	}
-	const verificationPolicy =
-		deriveTodoVerificationPolicyFromPromptText(compiledPromptText);
+		compiledPromptText,
+		verificationPolicy,
+	} = await prepareTaskRunStart({ task, options });
+	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
 	const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
 	const blueprintReadiness =
 		executionMode === "general_answer"
@@ -264,9 +190,23 @@ export async function startTaskRunInProcess(
 		planModeSettingsSnapshot,
 		llmUsageSettingsSnapshot,
 	};
-	const runtimeOptions = {
+	const runtimeOptions: Record<string, unknown> & {
+		securityOracle: {
+			enabled: true;
+			maxIterations: number;
+			ontologyToolProfile: "standard" | "ontology_extended";
+		};
+		testMode?: unknown;
+		reviewRun?: unknown;
+		runtimeResume?: unknown;
+	} = {
 		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
 		...(options.runtimeOptionsPatch ?? {}),
+		securityOracle: {
+			enabled: true,
+			maxIterations: securityIntelligence.settings.securityMaxIterations,
+			ontologyToolProfile: securityIntelligence.ontology.toolProfile,
+		},
 	};
 	const initialTodos =
 		executionMode === "test"
@@ -354,11 +294,12 @@ export async function startTaskRunInProcess(
 		projectMeta,
 		ontologyMcp: {
 			enabled: ontologyMcpEnabled,
-			source: "project_meta_file_scale",
+			source: "project_code_size_tool_profile",
 			fileScale: projectMeta?.fileScale.value ?? null,
-			reason: ontologyMcpEnabled
-				? "Project file scale is large or huge."
-				: "Project file scale is below large; ontology MCP is disabled.",
+			toolProfile: securityIntelligence.ontology.toolProfile,
+			measuredSourceLoc: securityIntelligence.ontology.measuredSourceLoc,
+			thresholdSourceLoc: securityIntelligence.ontology.thresholdSourceLoc,
+			reason: securityIntelligence.ontology.reason,
 		},
 		request: {
 			repositoryPath: executionRoot,
@@ -445,7 +386,10 @@ export async function startTaskRunInProcess(
 				taskId,
 				runId: run.id,
 				runtimeLane: runtimeLaneResolution.lane,
-				fileScale: projectMeta?.fileScale.value ?? null,
+				toolProfile: securityIntelligence.ontology.toolProfile,
+				reason: securityIntelligence.ontology.reason,
+				measuredSourceLoc: securityIntelligence.ontology.measuredSourceLoc,
+				thresholdSourceLoc: securityIntelligence.ontology.thresholdSourceLoc,
 			});
 	runtimeContextSnapshot = {
 		...runtimeContextSnapshot,
@@ -653,17 +597,4 @@ export async function startTaskRunInProcess(
 	});
 
 	return compiledRun ?? run;
-}
-
-function isOntologyMcpEnabledForProjectMeta(projectMeta: unknown) {
-	if (
-		!projectMeta ||
-		typeof projectMeta !== "object" ||
-		Array.isArray(projectMeta)
-	) {
-		return false;
-	}
-	const fileScale = (projectMeta as { fileScale?: { value?: unknown } })
-		.fileScale?.value;
-	return fileScale === "large" || fileScale === "huge";
 }

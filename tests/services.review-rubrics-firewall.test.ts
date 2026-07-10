@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { evaluateDeterministicRubric } from "../api/services/review-rubrics/deterministic-evaluator";
-import { applyReviewerFirewall } from "../api/services/review-rubrics/firewall";
-import { loadRubric } from "../api/services/review-rubrics/loader";
-import type { ReviewEvidencePack } from "../api/services/review-rubrics/types";
+import { evaluateDeterministicRubric } from "../api/modules/review/rubrics/deterministic-evaluator";
+import { applyReviewerFirewall } from "../api/modules/review/rubrics/firewall";
+import { loadRubric } from "../api/modules/review/rubrics/loader";
+import type { ReviewEvidencePack } from "../api/modules/review/rubrics/types";
 
 const pack: ReviewEvidencePack = {
 	version: 1,

@@ -1,19 +1,14 @@
 import path from "node:path";
 import { NotFoundError } from "../../lib/errors";
-import { getCurrentSettings } from "../../routes/settings";
 import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
-import {
-	buildOverviewDashboard,
-	type OverviewRange,
-} from "../../services/overview";
+import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
 import {
 	buildBlueprintPlanningReadiness,
 	isBlueprintMessage,
 } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import { runSessionQueueForRepository } from "./nightworkers.run-orchestration.service";
-import { resolveWorktreePath } from "./nightworkers.worktrees.service";
 
 type RepositorySafetyPolicy = Parameters<
 	typeof repo.createRepository
@@ -233,31 +228,6 @@ export async function getTaskLlmUsageSummary(taskId: string) {
 	const task = await repo.getTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	return summarizeLlmUsageForTask(taskId);
-}
-
-export async function getOverviewDashboard(input: {
-	range?: OverviewRange;
-	repositoryId?: string | null;
-	timezone?: string | null;
-	currency?: "JPY" | "USD" | "EUR" | null;
-}) {
-	const settings = getCurrentSettings();
-	const activeProvider = settings.ACTIVE_LLM_PROVIDER || null;
-	const activeModel =
-		activeProvider === "openai"
-			? settings.OPENAI_MODEL
-			: activeProvider === "azure"
-				? settings.AZURE_OPENAI_DEPLOYMENT_NAME
-				: activeProvider === "bedrock"
-					? settings.AWS_BEDROCK_MODEL
-					: activeProvider === "codex"
-						? settings.CODEX_MODEL
-						: null;
-	return buildOverviewDashboard({
-		...input,
-		activeProvider,
-		activeModel: activeModel || null,
-	});
 }
 
 export async function listTaskActivityEvents(

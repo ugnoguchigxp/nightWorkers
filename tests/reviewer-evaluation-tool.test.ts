@@ -4,12 +4,9 @@ const mocks = vi.hoisted(() => ({
 	createReviewerEvaluation: vi.fn(),
 }));
 
-vi.mock(
-	"../api/modules/nightworkers/nightworkers.review-files.service",
-	() => ({
-		createReviewerEvaluation: mocks.createReviewerEvaluation,
-	}),
-);
+vi.mock("../api/modules/review/review-files.service", () => ({
+	createReviewerEvaluation: mocks.createReviewerEvaluation,
+}));
 
 import { executeWorkerTool } from "../api/services/worker-tools/dispatcher";
 import { reviewerEvaluationTool } from "../api/services/worker-tools/reviewer-evaluation";

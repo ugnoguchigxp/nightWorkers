@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "id": "gitworktree",
+  "label": "Git Worktree",
+  "summary": "Owns Git CLI worktree discovery and mutation, worktree safety evaluation, advisory summaries, and the Project Detail worktree surface.",
+  "ubiquitousLanguage": [
+    {
+      "name": "Worktree",
+      "meaning": "A Git linked working tree belonging to the registered repository common directory."
+    },
+    {
+      "name": "ExecutionRoot",
+      "meaning": "The canonical worktree path fixed for a Task Run and reused by runtime, Review, diff, and git closeout."
+    },
+    {
+      "name": "RemovalBlocker",
+      "meaning": "A deterministic safety condition that prevents worktree removal without force behavior."
+    }
+  ],
+  "responsibilities": [
+    "Probe and invoke the installed Git executable without a fallback implementation.",
+    "List, create, diff, remove, and prune repository worktrees.",
+    "Evaluate removal blockers from Git state and NightWorkers usage records.",
+    "Resolve Task and Run execution roots without silently falling back from a missing target.",
+    "Render and operate the Project Detail Worktree tab.",
+    "Provide read-only LLM worktree advice without executing suggested mutations."
+  ],
+  "ownedPaths": [
+    "api/modules/gitworktree/**",
+    "src/modules/gitworktree/**",
+    "shared/schemas/gitworktree.schema.ts",
+    "tests/gitworktree/**"
+  ],
+  "readMostlyPaths": [
+    "api/modules/nightworkers/nightworkers.basic.service.ts",
+    "api/modules/nightworkers/run-orchestration/start-task-run.ts",
+    "api/modules/nightworkers/nightworkers.git-closeout.service.ts",
+    "api/modules/nightworkers/nightworkers.review-targets.service.ts",
+    "src/modules/nightworkers/components/ProjectDetailScreen.tsx",
+    "src/i18n/dictionaries/**"
+  ],
+  "ownedData": {
+    "tables": [],
+    "files": []
+  },
+  "invariants": [
+    {
+      "id": "git-cli-only",
+      "statement": "Worktree operations use the installed Git executable with argument arrays and never use a fallback implementation or shell interpolation.",
+      "check": "Gitworktree CLI tests cover ENOENT, bounded output, porcelain parsing, and paths containing spaces."
+    },
+    {
+      "id": "base-and-in-use-protected",
+      "statement": "Base, dirty, conflicted, locked, prunable, or in-use worktrees cannot be removed and force removal is not exposed.",
+      "check": "Gitworktree service and route tests cover every deterministic removal blocker."
+    },
+    {
+      "id": "execution-root-stable",
+      "statement": "A selected Task worktree becomes the Run execution root used by runtime, Review, diff, and closeout; a missing selected worktree does not fall back to the base repository.",
+      "check": "Execution-root regression tests cover target persistence, missing targets, Review, and closeout."
+    }
+  ],
+  "allowedMutations": [
+    "Git worktree list/create/diff/remove/prune implementation",
+    "Worktree safety policy",
+    "Worktree advisory prompt and schema",
+    "Project Detail Worktree UI",
+    "Worktree-focused tests"
+  ],
+  "forbiddenMutations": [
+    "Task or Run lifecycle redesign",
+    "Review or git closeout workflow redesign",
+    "provider routing policy",
+    "Git force removal or branch deletion",
+    "unrelated Project Detail UI redesign"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "project-detail",
+      "paths": ["src/modules/nightworkers/components/ProjectDetailScreen.tsx", "src/modules/nightworkers/components/project-detail/types.ts"],
+      "reason": "Project Detail owns tab routing and hosts the Gitworktree surface."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "node scripts/run-vitest.mjs run tests/gitworktree/gitworktree-cli.test.ts --config vitest.backend.config.ts",
+        "expect": "Git CLI boundary and porcelain parser tests pass."
+      }
+    ],
+    "focused": [
+      {
+        "command": "node scripts/run-vitest.mjs run tests/gitworktree --config vitest.backend.config.ts",
+        "expect": "Gitworktree backend behavior passes."
+      },
+      {
+        "command": "node scripts/run-vitest.mjs run tests/project-detail-screen.test.tsx tests/frontend-project-detail-actions.test.tsx --config vitest.frontend.config.ts",
+        "expect": "Project Detail integration remains compatible."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify:base",
+        "expect": "Repository base verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}

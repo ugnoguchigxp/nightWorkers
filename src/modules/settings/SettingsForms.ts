@@ -5,6 +5,7 @@ import {
 	Palette,
 	PlugZap,
 	type Settings,
+	ShieldCheck,
 	TestTube2,
 	Workflow,
 } from "lucide-react";
@@ -17,6 +18,7 @@ export type SettingsSectionId =
 	| "llm-providers"
 	| "llm-routing"
 	| "test"
+	| "security-intelligence"
 	| "hooks"
 	| "mcp";
 
@@ -113,6 +115,12 @@ export const settingsSections: Array<{
 		labelKey: "settings.section.test",
 		descriptionKey: "settings.section.testDescription",
 		icon: TestTube2,
+	},
+	{
+		id: "security-intelligence",
+		labelKey: "settings.section.securityIntelligence",
+		descriptionKey: "settings.section.securityIntelligenceDescription",
+		icon: ShieldCheck,
 	},
 	{
 		id: "hooks",

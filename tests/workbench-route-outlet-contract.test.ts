@@ -33,28 +33,31 @@ describe("workbench nested route outlet contract", () => {
 		);
 
 		expect(source).toMatch(/kind: ['"]overview['"]/);
-		expect(source).toMatch(/kind: ['"]project_detail['"]/);
 		expect(source).toMatch(/kind: ['"]project_queue['"]/);
 		expect(source).toMatch(/kind: ['"]session['"]/);
-		expect(source).toMatch(/tab: ['"]overview['"]/);
 		expect(source).toContain("handleWorkbenchAnchorClick");
 		expect(source).not.toContain("handleSidebarAnchorClick");
 	});
 
 	it("renders routable workbench controls as real URL links", () => {
-		const projectDetailSource = readRoute(
-			"src/modules/nightworkers/components/ProjectDetailScreen.tsx",
+		const projectNavigationSource = readRoute(
+			"src/modules/overview/components/ProjectScopeNavigation.tsx",
 		);
-		const overviewSource = readRoute(
-			"src/modules/nightworkers/components/OverviewScreen.tsx",
-		);
+		const overviewSource = [
+			"src/modules/overview/OverviewScreen.tsx",
+			"src/modules/overview/components/OverviewHeader.tsx",
+			"src/modules/overview/components/OverviewTables.tsx",
+		]
+			.map(readRoute)
+			.join("\n");
 		const settingsSource = readRoute("src/modules/settings/SettingsScreen.tsx");
 		const projectQueueSource = readRoute(
 			"src/modules/queue/ProjectQueueScreen.tsx",
 		);
 
-		expect(projectDetailSource).toMatch(/kind: ['"]project_detail['"]/);
-		expect(projectDetailSource).toContain("handleWorkbenchAnchorClick");
+		expect(projectNavigationSource).toMatch(/kind: ['"]project_detail['"]/);
+		expect(projectNavigationSource).toMatch(/kind: ['"]overview['"]/);
+		expect(projectNavigationSource).toContain("handleWorkbenchAnchorClick");
 		expect(overviewSource).toMatch(/kind: ['"]overview['"]/);
 		expect(overviewSource).toMatch(/kind: ['"]session['"]/);
 		expect(settingsSource).toMatch(/kind: ['"]settings['"]/);

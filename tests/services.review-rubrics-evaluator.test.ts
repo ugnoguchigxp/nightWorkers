@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { evaluateDeterministicRubric } from "../api/services/review-rubrics/deterministic-evaluator";
-import { loadRubric } from "../api/services/review-rubrics/loader";
-import type { ReviewEvidencePack } from "../api/services/review-rubrics/types";
+import { evaluateDeterministicRubric } from "../api/modules/review/rubrics/deterministic-evaluator";
+import { loadRubric } from "../api/modules/review/rubrics/loader";
+import type { ReviewEvidencePack } from "../api/modules/review/rubrics/types";
 
 const basePack: ReviewEvidencePack = {
 	version: 1,

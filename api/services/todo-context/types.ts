@@ -65,8 +65,11 @@ export type RuntimePromptSnapshot = {
 	projectMeta?: unknown;
 	ontologyMcp?: {
 		enabled: boolean;
-		source: "project_meta_file_scale";
+		source: "project_meta_file_scale" | "project_code_size_tool_profile";
 		fileScale?: string | null;
+		toolProfile?: string;
+		measuredSourceLoc?: number | null;
+		thresholdSourceLoc?: number;
 		reason?: string | null;
 	};
 	ontologyContext?: unknown;

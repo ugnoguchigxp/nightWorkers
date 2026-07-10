@@ -23,8 +23,8 @@ import type {
 	StructuredLlmRole,
 } from "../../../services/structured-llm/settings";
 import { type JobType, jobTypes } from "../../../services/supervisor/prompt";
+import { getOrCreateReviewRecommendation } from "../../review";
 import * as repo from "../nightworkers.repository";
-import { getOrCreateReviewRecommendation } from "../nightworkers.review-mode.service";
 import { toErrorMessage, toRecord } from "./utils";
 
 export const IMPLEMENTATION_PHASE_PREAMBLE = [

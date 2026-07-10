@@ -1,4 +1,4 @@
-import { createReviewerEvaluation } from "../../modules/nightworkers/nightworkers.review-files.service";
+import { createReviewerEvaluation } from "../../modules/review/review-files.service";
 import type { WorkerToolResult } from "./types";
 
 export type ReviewerEvaluationToolOutput = Awaited<

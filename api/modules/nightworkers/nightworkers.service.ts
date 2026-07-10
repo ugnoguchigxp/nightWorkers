@@ -1,11 +1,11 @@
 import { toDeepRecord } from "../../../shared/json-record";
 import { NotFoundError } from "../../lib/errors";
 import type { RuntimeLaneResult } from "../../services/agent-runtime/shared/contracts";
-import { buildReviewResult } from "../../services/review-results/build-review-result";
-import { collectDefaultReviewEvidence } from "../../services/review-results/evidence-collector";
-import type { ReviewRunRequest } from "../../services/review-results/types";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
+import { buildReviewResult } from "../review/results/build-review-result";
+import { collectDefaultReviewEvidence } from "../review/results/evidence-collector";
+import type { ReviewRunRequest } from "../review/results/types";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { createTask } from "./nightworkers.basic.service";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
@@ -58,7 +58,6 @@ export {
 	createRepository,
 	createTask,
 	deleteRepository,
-	getOverviewDashboard,
 	getRepository,
 	getTask,
 	getTaskLlmUsageSummary,
@@ -83,16 +82,6 @@ export {
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,
 } from "./nightworkers.workbench.service";
-export {
-	adviseRepositoryWorktrees,
-	createRepositoryWorktree,
-	listRepositoryWorktrees,
-	previewRepositoryWorktreePrune,
-	pruneRepositoryWorktrees,
-	readRepositoryWorktreeDiff,
-	removeRepositoryWorktree,
-} from "./nightworkers.worktrees.service";
-
 export async function startWorkbenchTaskRun(taskId: string) {
 	const task = await repo.getTask(taskId);
 	const messages = await repo.listTaskMessages(taskId);
@@ -373,7 +362,6 @@ export {
 
 export {
 	getActiveTaskRun,
-	getOntologyRunDebugReport,
 	getTaskRun,
 	getTaskRunsForTask,
 	listTaskRunActivityEvents,
@@ -488,11 +476,6 @@ function toRuntimeTerminalState(
 }
 
 export {
-	commitRunGitCloseout,
-	getRunGitCloseout,
-	pushRunGitCloseout,
-} from "./nightworkers.git-closeout.service";
-export {
 	browseLocalFolders,
 	createLocalFolder,
 	createReviewerEvaluation,
@@ -502,16 +485,23 @@ export {
 	listProjectFiles,
 	readProjectFile,
 	readRepositoryDiff,
-} from "./nightworkers.review-files.service";
+} from "../review/review-files.service";
+export {
+	createReviewPromptSuggestions,
+	setReviewFindingDisposition,
+	updateReviewPromptSuggestion,
+	useReviewPromptSuggestion,
+} from "../review/review-finding-actions.service";
 export {
 	autoStartReviewSessionForRun,
-	createReviewPromptSuggestions,
 	getLatestReviewSessionDetailForTask,
 	getOrCreateReviewRecommendation,
 	getReviewSessionDetail,
-	setReviewFindingDisposition,
 	startReviewRun,
 	startReviewSessionForRun,
-	updateReviewPromptSuggestion,
-	useReviewPromptSuggestion,
-} from "./nightworkers.review-mode.service";
+} from "../review/review-mode.service";
+export {
+	commitRunGitCloseout,
+	getRunGitCloseout,
+	pushRunGitCloseout,
+} from "./nightworkers.git-closeout.service";

@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { runAgenticTestEvidenceReview } from "../api/modules/nightworkers/nightworkers.review-mode.test-evidence-agent";
-import type { AcceptanceTestCoverageResult } from "../api/modules/nightworkers/nightworkers.review-mode.test-evidence-precheck";
+import { runAgenticTestEvidenceReview } from "../api/modules/review/review-mode.test-evidence-agent";
+import type { AcceptanceTestCoverageResult } from "../api/modules/review/review-mode.test-evidence-precheck";
 import type { ProviderToolTurnResult } from "../api/services/structured-llm";
 
 beforeAll(async () => {

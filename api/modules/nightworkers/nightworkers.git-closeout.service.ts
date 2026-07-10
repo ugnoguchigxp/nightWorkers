@@ -5,8 +5,8 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import * as queueRepo from "../queue/queue.repository";
+import * as reviewRepo from "../review/review-mode.repository";
 import * as repo from "./nightworkers.repository";
-import * as reviewRepo from "./nightworkers.review-mode.repository";
 import { toErrorMessage } from "./run-orchestration/utils";
 
 const execFileAsync = promisify(execFile);

@@ -19,16 +19,25 @@ import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { blueprintRouter } from "./modules/blueprint/blueprint.routes";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
+import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
-import { worktreeRouter } from "./modules/nightworkers/worktree.routes";
+import {
+	configureOntologyTaskGenerationEvidenceLoader,
+	ontologyRouter,
+} from "./modules/ontology";
+import { overviewRouter } from "./modules/overview/overview.routes";
 import { planViewRouter } from "./modules/planViews/planView.routes";
 import { projectDetailRouter } from "./modules/project-detail/project-detail.routes";
 import { projectEvaluationRouter } from "./modules/project-evaluation/project-evaluation.routes";
+import { qualityRouter } from "./modules/quality/quality.routes";
 import { questionnaireRouter } from "./modules/questionnaire/questionnaire.routes";
 import { queueRouter } from "./modules/queue/queue.routes";
 import { specificationRouter } from "./modules/specification/specification.routes";
+import { taskGenerationRouter } from "./modules/taskGeneration/task-generation.routes";
+import { buildTaskGenerationEvidence } from "./modules/taskGeneration/task-generation-evidence.service";
+import { techStackRouter } from "./modules/techStack/tech-stack.routes";
 import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
 import { hooksSettingsRouter } from "./routes/hooks-settings";
@@ -37,6 +46,8 @@ import { oauthRouter } from "./routes/oauth";
 import { settingsRouter } from "./routes/settings";
 import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
+
+configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)
@@ -53,10 +64,15 @@ const apiRoutes = createOpenApiRouter()
 	.route("/", dataModelRouter)
 	.route("/", planViewRouter)
 	.route("/", specificationRouter)
+	.route("/", taskGenerationRouter)
+	.route("/", qualityRouter)
 	.route("/", projectDetailRouter)
+	.route("/", ontologyRouter)
+	.route("/", techStackRouter)
+	.route("/", overviewRouter)
 	.route("/", nightworkersRouter);
 
-apiRoutes.route("/", worktreeRouter);
+apiRoutes.route("/", gitworktreeRouter);
 
 const app = createOpenApiRouter();
 const isProduction = config.NODE_ENV === "production";

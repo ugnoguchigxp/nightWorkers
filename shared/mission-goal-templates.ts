@@ -1,4 +1,4 @@
-import type { ProjectStackProfile } from "./schemas/project-detail.schema";
+import type { ProjectStackProfile } from "./schemas/tech-stack.schema";
 
 export const missionGoalTemplates = [
 	{

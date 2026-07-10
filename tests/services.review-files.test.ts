@@ -29,15 +29,15 @@ vi.mock("@api/modules/nightworkers/nightworkers.repository", () => ({
 	listTaskRunTodosForRun: mocks.listTaskRunTodosForRun,
 }));
 
-vi.mock("@api/services/review-rubrics/evidence-pack", () => ({
+vi.mock("@api/modules/review/rubrics/evidence-pack", () => ({
 	buildReviewEvidencePackFromRun: mocks.buildReviewEvidencePackFromRun,
 }));
 
-vi.mock("@api/services/review-rubrics/loader", () => ({
+vi.mock("@api/modules/review/rubrics/loader", () => ({
 	listRubrics: mocks.listRubrics,
 }));
 
-vi.mock("@api/services/review-rubrics/replay-evaluation", () => ({
+vi.mock("@api/modules/review/rubrics/replay-evaluation", () => ({
 	runReviewerEvaluationFromPack: mocks.runReviewerEvaluationFromPack,
 	runReviewReplayEvaluation: mocks.runReviewReplayEvaluation,
 	runReviewReplayEvaluationFromJsonl: mocks.runReviewReplayEvaluationFromJsonl,
@@ -61,7 +61,7 @@ import {
 	listProjectFiles,
 	readProjectFile,
 	readRepositoryDiff,
-} from "@api/modules/nightworkers/nightworkers.review-files.service";
+} from "@api/modules/review/review-files.service";
 
 describe("review-files.service", () => {
 	let tempDir: string;

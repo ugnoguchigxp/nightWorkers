@@ -5,7 +5,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { buildReviewTarget } from "../api/modules/nightworkers/nightworkers.review-targets.service";
+import { buildReviewTarget } from "../api/modules/review/review-targets.service";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();

@@ -19,7 +19,11 @@ export function resolveNightWorkersShellRouteModel(input: {
 	const projectQueueProjectId =
 		routeState.kind === "project_queue" ? routeState.projectId : null;
 	const projectDetailProjectId =
-		routeState.kind === "project_detail" ? routeState.projectId : null;
+		routeState.kind === "project_detail"
+			? routeState.projectId
+			: routeState.kind === "overview"
+				? routeState.projectId
+				: null;
 	const projectQueueProject = projectQueueProjectId
 		? workspace.projects.find(
 				(project) => project.id === projectQueueProjectId,

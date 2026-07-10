@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "id": "task-generation",
+  "label": "Task Generation",
+  "summary": "Owns Mission Goal inputs, project generation signals, scale estimation, direct task-candidate generation, large-work Mission delegation, candidate lifecycle, and Task materialization.",
+  "ubiquitousLanguage": [
+    {
+      "name": "MissionGoal",
+      "meaning": "Repository-scoped input that defines the outcome Task Generation must achieve."
+    },
+    {
+      "name": "TaskGenerationEstimate",
+      "meaning": "Structured estimate that selects direct generation below 2,000 changed lines and Mission decomposition at or above 2,000 lines."
+    },
+    {
+      "name": "TaskCandidate",
+      "meaning": "Reviewable generated work unit that is not a Task until explicit materialization."
+    }
+  ],
+  "responsibilities": [
+    "Manage Mission Goal and TaskCandidate lifecycle.",
+    "Build repository signal and ontology evidence for generation.",
+    "Estimate work size and choose direct generation or Mission decomposition.",
+    "Present Goal / Mission / TaskCandidate as one Project Detail panel.",
+    "Materialize explicitly selected candidates into Tasks."
+  ],
+  "ownedPaths": [
+    "api/modules/taskGeneration/**",
+    "api/db/task-generation-schema.ts",
+    "api/db/task-generation-schema-bootstrap.ts",
+    "shared/schemas/task-generation.schema.ts",
+    "src/modules/taskGeneration/**",
+    "tests/services.task-generation-orchestrator.test.ts",
+    "tests/services.mission-task-candidates.test.ts",
+    "tests/routes.task-generation.test.ts"
+  ],
+  "readMostlyPaths": [
+    "api/modules/mission-planner/**",
+    "api/modules/nightworkers/**",
+    "api/modules/project-detail/**",
+    "api/modules/project-evaluation/**",
+    "src/modules/nightworkers/components/ProjectDetailScreen.tsx"
+  ],
+  "ownedData": {
+    "tables": [
+      "mission_goals",
+      "mission_task_candidate_batches",
+      "mission_task_candidates"
+    ],
+    "files": []
+  },
+  "invariants": [
+    {
+      "id": "single-generation-entrypoint",
+      "statement": "The primary generation API estimates work size before choosing direct candidates or Mission decomposition.",
+      "check": "Orchestrator and route tests cover both generation paths."
+    },
+    {
+      "id": "large-work-threshold",
+      "statement": "Estimated work at or above 2,000 changed lines is generated as Missions and decomposed into Task Proposals.",
+      "check": "Scale-classification tests cover the 1,999 and 2,000 boundaries."
+    },
+    {
+      "id": "candidate-not-task",
+      "statement": "A TaskCandidate remains outside the Task queue until explicit materialization.",
+      "check": "Candidate service tests cover status transitions and Task creation."
+    },
+    {
+      "id": "stable-external-contracts",
+      "statement": "Refactoring the domain does not change existing HTTP paths or database table names.",
+      "check": "Route tests and schema bootstrap tests exercise the existing contracts."
+    }
+  ],
+  "allowedMutations": [
+    "Mission Goal CRUD",
+    "Task generation prompt and estimate contract",
+    "TaskCandidate lifecycle",
+    "Task Generation panel",
+    "Task materialization integration"
+  ],
+  "forbiddenMutations": [
+    "Mission Planner decomposition internals",
+    "worker execution lifecycle",
+    "Project Detail quality and metrics behavior",
+    "provider routing policy"
+  ],
+  "allowedCrossModule": [
+    {
+      "module": "mission-planner",
+      "paths": ["api/modules/mission-planner/**", "shared/schemas/mission-planner.schema.ts"],
+      "reason": "Large work is delegated to Mission generation and decomposition."
+    },
+    {
+      "module": "project-detail",
+      "paths": ["api/modules/project-detail/**", "src/modules/nightworkers/components/ProjectDetailScreen.tsx"],
+      "reason": "Project Detail composes the Task Generation panel and supplies project metrics."
+    }
+  ],
+  "verification": {
+    "baseline": [
+      {
+        "command": "bunx vitest run tests/services.task-generation-orchestrator.test.ts tests/services.mission-task-candidates.test.ts tests/routes.task-generation.test.ts",
+        "expect": "Task generation behavior passes before edits."
+      }
+    ],
+    "focused": [
+      {
+        "command": "bunx vitest run tests/services.task-generation-orchestrator.test.ts tests/services.mission-task-candidates.test.ts tests/routes.task-generation.test.ts tests/project-detail-screen.test.tsx",
+        "expect": "Backend generation and Project Detail composition pass."
+      }
+    ],
+    "full": [
+      {
+        "command": "bun run verify",
+        "expect": "Repository verification passes."
+      }
+    ]
+  },
+  "completionReport": {
+    "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"]
+  }
+}

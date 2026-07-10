@@ -7,6 +7,8 @@ import {
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
 import { ensureColumn } from "./schema-bootstrap-utils";
+import { ensureTaskGenerationTables } from "./task-generation-schema-bootstrap";
+import { ensureTechStackTables } from "./tech-stack-schema-bootstrap";
 import { ensureVerificationTables } from "./verification-schema-bootstrap";
 
 async function ensureNullableDesignQuestionnaireBlueprintSource() {
@@ -82,9 +84,11 @@ export async function ensureNightWorkersSchema() {
 	await client.execute("DROP TABLE IF EXISTS threads");
 
 	await ensureBaseNightWorkersTables();
+	await ensureTaskGenerationTables();
 	await ensureNullableDesignQuestionnaireBlueprintSource();
 	await ensureProjectEvaluationTables();
 	await ensureProjectDetailTables();
+	await ensureTechStackTables();
 	await ensureMissionPlannerTables();
 	await ensureReviewModeTables();
 	await ensureVerificationTables();
@@ -124,6 +128,14 @@ export async function ensureNightWorkersSchema() {
 	if (repositoryColumns.rows.length > 0 && !hasProjectMetaColumn) {
 		await client.execute(
 			"ALTER TABLE repositories ADD COLUMN project_meta text",
+		);
+	}
+	const hasFeatureSettingsColumn = repositoryColumns.rows.some(
+		(row) => row.name === "feature_settings",
+	);
+	if (repositoryColumns.rows.length > 0 && !hasFeatureSettingsColumn) {
+		await client.execute(
+			"ALTER TABLE repositories ADD COLUMN feature_settings text",
 		);
 	}
 

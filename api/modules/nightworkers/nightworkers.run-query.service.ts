@@ -1,8 +1,8 @@
 import { NotFoundError } from "../../lib/errors";
-import type { ReviewResult } from "../../services/review-results/types";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
 import { digestText } from "../../services/text-digest";
+import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
 
 export async function getActiveTaskRun(taskId: string) {

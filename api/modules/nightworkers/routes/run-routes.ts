@@ -6,8 +6,6 @@ import {
 	createReviewerEvaluationRequestSchema,
 	createReviewerReplayEvaluationRequestSchema,
 	gitCloseoutStateSchema,
-	ontologyRunDebugReportSchema,
-	overviewDashboardSchema,
 	reviewActionSchema,
 	reviewEvidenceRefSchema,
 	reviewerEvaluationSchema,
@@ -26,7 +24,6 @@ import {
 	taskRunDetailSchema,
 	taskRunSchema,
 } from "../../../../shared/schemas/nightworkers.schema";
-import { validateTimezone } from "../../../services/settings/general-settings";
 
 export const listTaskMessagesRoute = createRoute({
 	method: "get",
@@ -74,35 +71,6 @@ export const getTaskLlmUsageRoute = createRoute({
 	},
 });
 
-export const getOverviewDashboardRoute = createRoute({
-	method: "get",
-	path: "/overview",
-	request: {
-		query: z.object({
-			range: z.enum(["24h", "7d", "30d", "all"]).optional(),
-			repositoryId: z.string().uuid().optional(),
-			timezone: z
-				.string()
-				.refine(validateTimezone, "Invalid timezone")
-				.optional(),
-			currency: z.enum(["JPY", "USD", "EUR"]).optional(),
-		}),
-	},
-	responses: {
-		200: {
-			content: {
-				"application/json": {
-					schema: overviewDashboardSchema,
-				},
-			},
-			description: "NightWorkers overview dashboard",
-		},
-		404: {
-			description: "Repository not found",
-		},
-	},
-});
-
 export const listTaskActivityEventsRoute = createRoute({
 	method: "get",
 	path: "/tasks/:id/activity-events",
@@ -146,30 +114,6 @@ export const getTaskRunRoute = createRoute({
 				},
 			},
 			description: "Task run details and log events",
-		},
-		404: {
-			description: "Run not found",
-		},
-	},
-});
-
-export const getOntologyRunDebugReportRoute = createRoute({
-	method: "get",
-	path: "/runs/:id/ontology-debug",
-	request: {
-		params: z.object({
-			id: z.string().uuid().openapi({ example: "run-uuid" }),
-		}),
-	},
-	responses: {
-		200: {
-			content: {
-				"application/json": {
-					schema: ontologyRunDebugReportSchema,
-				},
-			},
-			description:
-				"Read-only ontology runtime snapshot and boundary audit debug report",
 		},
 		404: {
 			description: "Run not found",

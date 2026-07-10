@@ -4,8 +4,8 @@ import {
 	classifyTaskGenerationScale,
 	generateTaskCandidates,
 	TASK_GENERATION_LARGE_THRESHOLD_LINES,
-} from "../api/modules/project-detail/task-generation-orchestrator.service";
-import { generateTaskCandidatesResponseSchema } from "../shared/schemas/project-detail.schema";
+} from "../api/modules/taskGeneration/task-generation-orchestrator.service";
+import { generateTaskCandidatesResponseSchema } from "../shared/schemas/task-generation.schema";
 
 function goal() {
 	return {

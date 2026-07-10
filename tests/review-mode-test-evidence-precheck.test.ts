@@ -5,7 +5,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { buildTestEvidencePrecheck } from "../api/modules/nightworkers/nightworkers.review-mode.test-evidence-precheck";
+import { buildTestEvidencePrecheck } from "../api/modules/review/review-mode.test-evidence-precheck";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();

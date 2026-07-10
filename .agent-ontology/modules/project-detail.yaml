@@ -2,7 +2,7 @@
   "version": 1,
   "id": "project-detail",
   "label": "Project Detail",
-  "summary": "Owns repository detail projections, Project Detail API contracts, Mission tab task-candidate display, Quality tab data projection, and related backend aggregation.",
+  "summary": "Owns repository detail projections, Project Detail API contracts, page composition, Quality tab data projection, and related backend aggregation.",
   "ubiquitousLanguage": [
     {
       "name": "MissionGoal",
@@ -19,8 +19,8 @@
   ],
   "responsibilities": [
     "Expose Project Detail API contracts.",
-    "Project repository signals into detail views and generation inputs.",
-    "Render Goal / Mission / TaskCandidate hierarchy in the Project Detail surface.",
+    "Project repository signals into detail views.",
+    "Compose the Task Generation panel in the Project Detail surface.",
     "Project Quality run artifacts into UI-ready overview data."
   ],
   "ownedPaths": [
@@ -38,9 +38,6 @@
   ],
   "ownedData": {
     "tables": [
-      "mission_goals",
-      "mission_task_candidate_batches",
-      "mission_task_candidates",
       "project_quality_runs"
     ],
     "files": []
@@ -65,8 +62,7 @@
   "allowedMutations": [
     "Project Detail API projection",
     "Project Detail UI rendering",
-    "Mission Goal CRUD projection",
-    "TaskCandidate display and task materialization wiring",
+    "Task Generation panel composition",
     "Quality overview projection"
   ],
   "forbiddenMutations": [
@@ -76,6 +72,11 @@
     "unrelated settings UI redesign"
   ],
   "allowedCrossModule": [
+    {
+      "module": "task-generation",
+      "paths": ["api/modules/taskGeneration/**", "src/modules/taskGeneration/**"],
+      "reason": "Project Detail composes the Task Generation feature surface."
+    },
     {
       "module": "mission-planner",
       "paths": ["api/modules/mission-planner/**", "tests/mission-planner.test.ts"],

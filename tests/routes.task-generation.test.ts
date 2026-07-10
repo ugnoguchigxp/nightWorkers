@@ -8,15 +8,15 @@ const taskGenerationMocks = vi.hoisted(() => ({
 }));
 
 vi.mock(
-	"../api/modules/project-detail/task-generation-orchestrator.service",
+	"../api/modules/taskGeneration/task-generation-orchestrator.service",
 	() => taskGenerationMocks,
 );
 
-import { projectDetailRouter } from "../api/modules/project-detail/project-detail.routes";
+import { taskGenerationRouter } from "../api/modules/taskGeneration/task-generation.routes";
 
 const createApp = () => {
 	const app = new OpenAPIHono<AppEnv>();
-	app.route("/api", projectDetailRouter);
+	app.route("/api", taskGenerationRouter);
 	app.onError(errorHandler);
 	return app;
 };

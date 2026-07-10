@@ -8,19 +8,36 @@ import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {
 	applyMissionTaskCandidateSemantics,
 	buildMissionTaskCandidatesResponseJsonSchema,
-} from "../api/modules/project-detail/project-detail.service";
-import { buildProjectSignalSnapshot } from "../api/modules/project-detail/project-signal-snapshot.service";
+	selectMissionGoalsForGeneration,
+} from "../api/modules/taskGeneration/task-generation.service";
+import { buildProjectSignalSnapshot } from "../api/modules/taskGeneration/task-generation-signal.service";
 import {
 	type MissionGoal,
 	type MissionGoalInterpretation,
 	missionTaskCandidatesResultSchema,
-} from "../shared/schemas/project-detail.schema";
+} from "../shared/schemas/task-generation.schema";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
 });
 
 describe("Mission task candidate generation helpers", () => {
+	it("rejects unknown requested Goal ids instead of silently using a partial selection", () => {
+		const knownGoal = missionGoalFixture({
+			id: crypto.randomUUID(),
+			title: "Known Goal",
+			scope: "unknown",
+			source: "unknown",
+		});
+		const unknownGoalId = crypto.randomUUID();
+
+		expect(() =>
+			selectMissionGoalsForGeneration([knownGoal], {
+				goalIds: [knownGoal.id, unknownGoalId],
+			}),
+		).toThrow("Mission goal not found");
+	});
+
 	it("builds a structured-output compatible mission task candidate response schema", () => {
 		const schema = buildMissionTaskCandidatesResponseJsonSchema();
 		expect(JSON.stringify(schema)).not.toContain('"$schema"');

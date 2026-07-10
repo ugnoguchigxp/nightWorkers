@@ -1,5 +1,9 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { AppEnv } from "../../lib/types";
+import {
+	getOntologyRunDebugReport,
+	type getOntologyRunDebugReportRoute,
+} from "../ontology";
 import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
@@ -12,7 +16,6 @@ import {
 	type exportTaskRunJsonlRoute,
 	type getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
-	type getOntologyRunDebugReportRoute,
 	getReviewRecommendationRoute,
 	getReviewSessionRoute,
 	getRunGitCloseoutRoute,
@@ -86,7 +89,7 @@ export const getOntologyRunDebugReportHandler: NightWorkersRouteHandler<
 	typeof getOntologyRunDebugReportRoute
 > = async (c) => {
 	const id = c.req.param("id");
-	const report = await service.getOntologyRunDebugReport(id);
+	const report = await getOntologyRunDebugReport(id);
 	if (!report) return routeNotFound(c, "Run not found");
 	return c.json(report, 200);
 };

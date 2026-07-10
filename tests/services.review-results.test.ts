@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildReviewResult } from "../api/services/review-results/build-review-result";
-import { collectDefaultReviewEvidence } from "../api/services/review-results/evidence-collector";
+import { buildReviewResult } from "../api/modules/review/results/build-review-result";
+import { collectDefaultReviewEvidence } from "../api/modules/review/results/evidence-collector";
 
 describe("review-results builder", () => {
 	it("maps actions to review verdicts", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildReviewEvidencePackFromRun } from "../api/services/review-rubrics/evidence-pack";
-import { listRubrics, loadRubric } from "../api/services/review-rubrics/loader";
+import { buildReviewEvidencePackFromRun } from "../api/modules/review/rubrics/evidence-pack";
+import { listRubrics, loadRubric } from "../api/modules/review/rubrics/loader";
 import {
 	reviewEvidencePackSchema,
 	reviewerDraftSchema,

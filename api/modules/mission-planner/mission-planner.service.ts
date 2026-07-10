@@ -16,8 +16,8 @@ import { type DbTransaction, db } from "../../db/client";
 import { tasks } from "../../db/schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import * as projectDetailRepo from "../project-detail/project-detail.repository";
-import { buildProjectSignalSnapshot } from "../project-detail/project-signal-snapshot.service";
+import * as taskGenerationRepo from "../taskGeneration/task-generation.repository";
+import { buildProjectSignalSnapshot } from "../taskGeneration/task-generation-signal.service";
 import {
 	buildMissionCandidatesSystemPrompt,
 	buildMissionCandidatesUserPrompt,
@@ -81,7 +81,7 @@ function normalizeMissionTitle(title: string) {
 }
 
 async function sourceGoalsForMission(mission: Mission) {
-	const goals = await projectDetailRepo.listMissionGoals(mission.repositoryId);
+	const goals = await taskGenerationRepo.listMissionGoals(mission.repositoryId);
 	const selected = mission.sourceGoalIds.length
 		? goals.filter((goal) => mission.sourceGoalIds.includes(goal.id))
 		: goals.filter((goal) => goal.active);
@@ -133,7 +133,7 @@ export async function createMission(input: {
 	await requireRepository(input.repositoryId);
 	const sourceGoalIds = [...new Set(input.sourceGoalIds ?? [])];
 	if (sourceGoalIds.length) {
-		const goals = await projectDetailRepo.listMissionGoals(input.repositoryId);
+		const goals = await taskGenerationRepo.listMissionGoals(input.repositoryId);
 		const goalIds = new Set(goals.map((goal) => goal.id));
 		const missing = sourceGoalIds.filter((id) => !goalIds.has(id));
 		if (missing.length)
@@ -155,7 +155,7 @@ export async function generateMissionCandidatesFromGoals(input: {
 	includeInactiveGoals?: boolean;
 }) {
 	const repository = await requireRepository(input.repositoryId);
-	const allGoals = await projectDetailRepo.listMissionGoals(repository.id);
+	const allGoals = await taskGenerationRepo.listMissionGoals(repository.id);
 	const sourceGoals = allGoals.filter((goal) => {
 		if (input.goalIds?.length && !input.goalIds.includes(goal.id)) return false;
 		return input.includeInactiveGoals || goal.active;

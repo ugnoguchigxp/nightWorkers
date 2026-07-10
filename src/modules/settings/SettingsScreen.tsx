@@ -17,6 +17,12 @@ import {
 	type Repository,
 	type TestQualitySettings,
 } from "../nightworkers/types";
+import {
+	fetchProjectSecurityIntelligenceSettings,
+	type ProjectSecurityIntelligenceSettingsResponse,
+	SettingsOntologyPanel,
+	saveProjectSecurityIntelligenceSettings,
+} from "../ontology";
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
 import { SettingsLlmPanel } from "./SettingsLlmPanel";
 import { SettingsPlanModePanel } from "./SettingsPlanModePanel";
@@ -96,6 +102,16 @@ export function SettingsScreen({
 	const [testQualityMessageStatus, setTestQualityMessageStatus] =
 		useState<SaveFeedbackStatus>("idle");
 	const [testQualityBusy, setTestQualityBusy] = useState(false);
+	const [securityIntelligence, setSecurityIntelligence] =
+		useState<ProjectSecurityIntelligenceSettingsResponse | null>(null);
+	const [securityIntelligenceMessage, setSecurityIntelligenceMessage] =
+		useState("");
+	const [
+		securityIntelligenceMessageStatus,
+		setSecurityIntelligenceMessageStatus,
+	] = useState<SaveFeedbackStatus>("idle");
+	const [securityIntelligenceBusy, setSecurityIntelligenceBusy] =
+		useState(false);
 	const { settings: appearanceSettings } = useWorkspaceAppearanceState();
 	const { setAppearanceSettings, resetAppearanceSettings } =
 		useWorkspaceAppearanceActions();
@@ -168,6 +184,40 @@ export function SettingsScreen({
 			cancelled = true;
 		};
 	}, [activeProject, t]);
+
+	useEffect(() => {
+		if (!activeProject) {
+			setSecurityIntelligence(null);
+			setSecurityIntelligenceMessage("");
+			setSecurityIntelligenceMessageStatus("idle");
+			return;
+		}
+		let cancelled = false;
+		setSecurityIntelligenceBusy(true);
+		fetchProjectSecurityIntelligenceSettings(activeProject.id)
+			.then(async (res) => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return (await res.json()) as ProjectSecurityIntelligenceSettingsResponse;
+			})
+			.then((value) => {
+				if (!cancelled) setSecurityIntelligence(value);
+			})
+			.catch((error) => {
+				if (!cancelled) {
+					setSecurityIntelligence(null);
+					setSecurityIntelligenceMessage(
+						error instanceof Error ? error.message : String(error),
+					);
+					setSecurityIntelligenceMessageStatus("error");
+				}
+			})
+			.finally(() => {
+				if (!cancelled) setSecurityIntelligenceBusy(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [activeProject]);
 
 	const handleSave = async () => {
 		setIsSaving(true);
@@ -271,6 +321,34 @@ export function SettingsScreen({
 			setTestQualityMessageStatus("error");
 		} finally {
 			setTestQualityBusy(false);
+		}
+	};
+
+	const saveSecurityIntelligence = async () => {
+		if (!activeProject || !securityIntelligence) return;
+		setSecurityIntelligenceBusy(true);
+		setSecurityIntelligenceMessage("");
+		setSecurityIntelligenceMessageStatus("idle");
+		try {
+			const res = await saveProjectSecurityIntelligenceSettings(
+				activeProject.id,
+				securityIntelligence.settings,
+			);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			setSecurityIntelligence(
+				(await res.json()) as ProjectSecurityIntelligenceSettingsResponse,
+			);
+			setSecurityIntelligenceMessage(
+				t("settings.securityIntelligence.saveSucceeded"),
+			);
+			setSecurityIntelligenceMessageStatus("success");
+		} catch (error) {
+			setSecurityIntelligenceMessage(
+				error instanceof Error ? error.message : String(error),
+			);
+			setSecurityIntelligenceMessageStatus("error");
+		} finally {
+			setSecurityIntelligenceBusy(false);
 		}
 	};
 
@@ -415,6 +493,22 @@ export function SettingsScreen({
 								setTestQualityMessageStatus("idle");
 							}}
 							onSave={() => void saveTestQualitySettings()}
+						/>
+					) : null}
+
+					{activeSection === "security-intelligence" ? (
+						<SettingsOntologyPanel
+							activeProject={activeProject}
+							value={securityIntelligence}
+							message={securityIntelligenceMessage}
+							messageStatus={securityIntelligenceMessageStatus}
+							isSaving={securityIntelligenceBusy}
+							onChange={(value) => {
+								setSecurityIntelligence(value);
+								setSecurityIntelligenceMessage("");
+								setSecurityIntelligenceMessageStatus("idle");
+							}}
+							onSave={() => void saveSecurityIntelligence()}
 						/>
 					) : null}
 

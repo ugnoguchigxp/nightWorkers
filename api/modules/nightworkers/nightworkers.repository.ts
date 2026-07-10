@@ -1,6 +1,5 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
-import { missionTaskCandidates } from "../../db/project-detail-schema";
 import type { TaskStatus } from "../../db/schema";
 import { repositories, taskMessages, tasks } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
@@ -125,11 +124,24 @@ export async function updateRepository(
 		maxConcurrentSessions?: number;
 		safetyPolicy?: RepositorySafetyPolicy;
 		projectMeta?: Record<string, unknown> | null;
+		featureSettings?: Record<string, unknown> | null;
 	},
 ) {
 	const [repo] = await db
 		.update(repositories)
 		.set({ ...data, updatedAt: new Date() })
+		.where(eq(repositories.id, id))
+		.returning();
+	return repo;
+}
+
+export async function updateRepositoryFeatureSettings(
+	id: string,
+	featureSettings: Record<string, unknown> | null,
+) {
+	const [repo] = await db
+		.update(repositories)
+		.set({ featureSettings, updatedAt: new Date() })
 		.where(eq(repositories.id, id))
 		.returning();
 	return repo;
@@ -546,12 +558,6 @@ export async function deleteTask(id: string) {
 			.limit(1);
 		const task = existing[0];
 		if (!task) return undefined;
-		if (!["completed", "needs_review"].includes(task.status)) {
-			await tx
-				.update(missionTaskCandidates)
-				.set({ status: "candidate", taskId: null, updatedAt: new Date() })
-				.where(eq(missionTaskCandidates.taskId, id));
-		}
 		const [deleted] = await tx
 			.delete(tasks)
 			.where(eq(tasks.id, id))

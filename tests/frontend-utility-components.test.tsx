@@ -16,8 +16,6 @@ import {
 } from "../src/modules/nightworkers/components/ArtifactPaneVersions";
 import { ProjectDetailScreen } from "../src/modules/nightworkers/components/ProjectDetailScreen";
 import { emptyMetrics } from "../src/modules/nightworkers/components/project-detail/data";
-import { ProjectDetailOverview } from "../src/modules/nightworkers/components/project-detail/ProjectDetailOverview";
-import { StackProfilePanel } from "../src/modules/nightworkers/components/project-detail/ProjectDetailStack";
 import { TranscriptItemView } from "../src/modules/nightworkers/components/ThreadTimelineActivityTranscript";
 import { MessagePayload } from "../src/modules/nightworkers/components/ThreadTimelineMessagePayload";
 import type {
@@ -30,6 +28,7 @@ import type {
 	WorkbenchArtifactRef,
 	WorkbenchSessionView,
 } from "../src/modules/nightworkers/types";
+import { TechStackPanel } from "../src/modules/techStack";
 
 function message(
 	overrides: Partial<TaskMessage> & { metadataJson?: unknown },
@@ -372,7 +371,7 @@ describe("frontend utility components", () => {
 		).toContain('```json\n{\n  "openapi": "3.1.0"');
 	});
 
-	it("renders project detail overview and stack panels with populated metrics", () => {
+	it("renders the project detail stack panel with populated metrics", () => {
 		const metrics = {
 			...emptyMetrics,
 			stackProfile: {
@@ -399,99 +398,18 @@ describe("frontend utility components", () => {
 					},
 				],
 			},
-			projectMeta: {
-				version: 1,
-				scannedAt: "2026-07-08T00:00:00Z",
-				scanDurationMs: 120,
-				git: {
-					head: "abcdef123456",
-					shortHead: "abcdef1",
-					displayHead: "main@abcdef1",
-					committedAt: "2026-07-08T00:00:00Z",
-					status: "available",
-				},
-				files: {
-					total: 120,
-					source: 80,
-					tests: 40,
-					sourceLoc: 12_000,
-				},
-				ontology: {
-					moduleCount: 12,
-					available: true,
-				},
-				fileScale: {
-					value: "medium",
-					score: 3,
-				},
-			},
-			runs: { total: 12, completed: 8, failed: 1 },
-			llmUsage: {
-				...emptyMetrics.llmUsage,
-				totalTokens: 120_000,
-				inputTokens: 80_000,
-				outputTokens: 40_000,
-				cachedInputTokens: 10_000,
-				reasoningOutputTokens: 2_000,
-				stateCardTokens: 3_000,
-				promptInputTokens: 5_000,
-				outputTokensPerSecond: 24.5,
-				totalCost: 12.34,
-				averageTokensPerRun: 10_000,
-				averageCostPerRun: 1.23,
-			},
-			health: { latestEvaluationScore: 82, coverageAverage: 80.1 },
 		};
-		const overviewMarkup = renderToStaticMarkup(
-			<ProjectDetailOverview
-				metrics={metrics}
-				totalRuns={12}
-				completedCount={8}
-				modelUsageRows={[
-					{
-						model: "gpt-test",
-						role: "implementation",
-						calls: 4,
-						tokens: 12_000,
-						inputTokens: 8_000,
-						outputTokens: 4_000,
-						cachedInputTokens: 1_000,
-						reasoningOutputTokens: 200,
-						outputTokensPerSecond: 24.5,
-						cost: "$1.23",
-					},
-				]}
-				topTokenTasks={[
-					{
-						title: "Coverage task",
-						phase: "task-1",
-						tokens: 12_000,
-						inputTokens: 8_000,
-						outputTokens: 4_000,
-						cachedInputTokens: 1_000,
-						reasoningOutputTokens: 200,
-						outputTokensPerSecond: 24.5,
-						cost: "$1.23",
-						sessionId: "task-1",
-					},
-				]}
-				coverageAxes={[
-					{ labelKey: "projectDetail.coverage.statements", value: 80.06 },
-					{ labelKey: "projectDetail.coverage.lines", value: 82.61 },
-				]}
-				onOpenSession={vi.fn()}
-			/>,
-		);
 		const stackMarkup = renderToStaticMarkup(
-			<StackProfilePanel
+			<TechStackPanel
 				stackProfile={metrics.stackProfile}
 				projectPath="/Users/y.noguchi/Code/nightWorkers"
+				codeSizeSnapshot={null}
+				currentGitHead={null}
+				measurementBusy={false}
+				onMeasureCodeSize={vi.fn()}
 			/>,
 		);
 
-		expect(overviewMarkup).toContain("React + Hono");
-		expect(overviewMarkup).toContain("gpt-test");
-		expect(overviewMarkup).toContain("Coverage task");
 		expect(stackMarkup).toContain("React");
 		expect(stackMarkup).toContain("Hono");
 		expect(stackMarkup).toContain("package.json");

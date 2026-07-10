@@ -104,7 +104,9 @@ test.describe("Project Quality @regression", () => {
 		const fixture = await createCompletedQualityFixture(request);
 		try {
 			await page.goto(`/projects/${fixture.repositoryId}/detail/overview`);
-			await expect(page.getByText("プロジェクト指標")).toBeVisible();
+			await expect(
+				page.getByText("最新プロジェクトスナップショット"),
+			).toBeVisible();
 			await expect(page.getByText("91%").first()).toBeVisible();
 		} finally {
 			await cleanupQualityFixture(request, fixture);

@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import type {
 	ReviewPlanSpec,
 	ReviewTarget,
-} from "../api/modules/nightworkers/nightworkers.review-mode.model";
+} from "../api/modules/review/review-mode.model";
 import {
 	buildReviewRunPrompt,
 	buildReviewRunTodos,
 	normalizeReviewRunOptions,
-} from "../api/modules/nightworkers/nightworkers.review-run.service";
-import { parseReviewRunFindings } from "../api/modules/nightworkers/nightworkers.review-run-finalize.service";
+} from "../api/modules/review/review-run.service";
+import { parseReviewRunFindings } from "../api/modules/review/review-run-finalize.service";
 
 describe("Review Run workflow", () => {
 	it("defaults apply fixes on when review run options are omitted", () => {

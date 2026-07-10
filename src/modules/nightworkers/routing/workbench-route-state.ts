@@ -34,6 +34,7 @@ const settingsSections = [
 	"llm-providers",
 	"llm-routing",
 	"test",
+	"security-intelligence",
 	"hooks",
 	"mcp",
 ] as const;
@@ -158,7 +159,14 @@ export function shouldCanonicalizeWorkbenchRoute(
 	const parts = pathname.split("/").filter(Boolean).map(decodePathPart);
 	switch (state.kind) {
 		case "overview":
-			return false;
+			return Boolean(
+				state.projectId &&
+					parts[0] === "projects" &&
+					parts[1] === state.projectId &&
+					parts[2] === "detail" &&
+					(parts.length === 3 ||
+						(parts.length === 4 && parts[3] === "overview")),
+			);
 		case "settings":
 			return pathname === "/settings";
 		case "global_queue":

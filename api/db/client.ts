@@ -8,6 +8,7 @@ import * as projectEvaluationSchema from "./project-evaluation-schema";
 import * as reviewModeSchema from "./review-mode-schema";
 import * as baseSchema from "./schema";
 import { wrapClientWithBusyRetry } from "./sqlite-client-wrapper";
+import * as taskGenerationSchema from "./task-generation-schema";
 
 export { wrapClientWithBusyRetry };
 
@@ -27,6 +28,7 @@ export const db = drizzle(client, {
 		...projectDetailSchema,
 		...projectEvaluationSchema,
 		...reviewModeSchema,
+		...taskGenerationSchema,
 	},
 });
 

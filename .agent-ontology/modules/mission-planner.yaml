@@ -30,9 +30,9 @@
     "tests/mission-planner.test.ts"
   ],
   "readMostlyPaths": [
-    "api/modules/project-detail/**",
-    "api/db/project-detail-schema.ts",
-    "shared/schemas/project-detail.schema.ts"
+    "api/modules/taskGeneration/**",
+    "api/db/task-generation-schema.ts",
+    "shared/schemas/task-generation.schema.ts"
   ],
   "ownedData": {
     "tables": [
@@ -73,9 +73,9 @@
   ],
   "allowedCrossModule": [
     {
-      "module": "project-detail",
-      "paths": ["api/modules/project-detail/**", "tests/project-detail-backend.test.ts"],
-      "reason": "Mission Planner consumes Project Detail signal snapshots and Goal seeds."
+      "module": "task-generation",
+      "paths": ["api/modules/taskGeneration/**", "tests/services.task-generation-orchestrator.test.ts"],
+      "reason": "Mission Planner consumes Task Generation signal snapshots and Goal seeds."
     }
   ],
   "verification": {

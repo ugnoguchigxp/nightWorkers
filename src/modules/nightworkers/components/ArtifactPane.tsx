@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { PlanModeWorkspaceViewer } from "../../planMode";
+import { ReviewStatusViewer } from "../../review";
 import type { PlanWorkspaceTab } from "../../specification";
 import { TodoRailList, type TodoRailListStatus } from "../../todo/TodoRailList";
 import {
@@ -81,7 +82,6 @@ import {
 	copyText,
 	saveTextFile,
 } from "./ArtifactPaneVersions";
-import { ReviewStatusViewer } from "./ReviewStatusViewer";
 
 type ArtifactPaneProps = {
 	activeProject: Repository | null;

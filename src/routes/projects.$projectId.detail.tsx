@@ -11,7 +11,7 @@ function ProjectDetailDefaultRoute() {
 	if (location.pathname !== `/projects/${projectId}/detail`) return <Outlet />;
 	return (
 		<WorkbenchRoutePage
-			routeState={{ kind: "project_detail", projectId, tab: "overview" }}
+			routeState={{ kind: "overview", projectId, range: "30d" }}
 		/>
 	);
 }

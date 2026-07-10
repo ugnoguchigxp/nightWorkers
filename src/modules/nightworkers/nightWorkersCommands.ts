@@ -44,10 +44,6 @@ export {
 	updateTodoWorkflowSettings,
 } from "../todo/todoCommands";
 
-export function fetchOverview(query: string) {
-	return apiFetch(`/api/overview?${query}`);
-}
-
 export function fetchTaskMessages(sessionId: string) {
 	return apiFetch(`/api/tasks/${sessionId}/messages`);
 }
@@ -214,58 +210,6 @@ export function fetchRepositoryDiff(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/diff`);
 }
 
-export function fetchRepositoryWorktrees(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/worktrees`);
-}
-
-export function createRepositoryWorktree(repositoryId: string, input: unknown) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/worktrees`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function fetchRepositoryWorktreeDiff(
-	repositoryId: string,
-	worktreeId: string,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/worktrees/diff`,
-		jsonRequest("POST", { worktreeId }),
-	);
-}
-
-export function removeRepositoryWorktree(
-	repositoryId: string,
-	input: { worktreeId: string; expectedHead: string },
-) {
-	return apiFetch(`/api/repositories/${repositoryId}/worktrees`, {
-		method: "DELETE",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-}
-
-export function previewRepositoryWorktreePrune(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/worktrees/prune-preview`);
-}
-
-export function pruneRepositoryWorktrees(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/worktrees/prune`, {
-		method: "POST",
-	});
-}
-
-export function adviseRepositoryWorktrees(
-	repositoryId: string,
-	input: unknown,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/worktrees/advice`,
-		jsonRequest("POST", input),
-	);
-}
-
 export function createTask(input: unknown) {
 	return apiFetch("/api/tasks", jsonRequest("POST", input));
 }
@@ -274,170 +218,24 @@ export function fetchProjectDetailMetrics(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/project-detail/metrics`);
 }
 
-export function fetchMissionGoals(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/mission-goals`);
-}
-
-export function createMissionGoal(repositoryId: string, input: unknown) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-goals`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function updateMissionGoal(
-	repositoryId: string,
-	goalId: string,
-	input: unknown,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-goals/${goalId}`,
-		jsonRequest("PATCH", input),
-	);
-}
-
-export function deleteMissionGoal(repositoryId: string, goalId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/mission-goals/${goalId}`, {
-		method: "DELETE",
-	});
-}
-
-export function fetchMissionTaskCandidates(
-	repositoryId: string,
-	status = "candidate",
-) {
-	const params = new URLSearchParams();
-	if (status) params.set("status", status);
-	const query = params.toString();
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-task-candidates${query ? `?${query}` : ""}`,
-	);
-}
-
-/** @deprecated Use generateTaskCandidates so scale estimation selects the generation path. */
-export function generateMissionTaskCandidates(
-	repositoryId: string,
-	input: unknown = {},
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-task-candidates/generate`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function generateTaskCandidates(
-	repositoryId: string,
-	input: unknown = {},
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/task-candidates/generate`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function updateMissionTaskCandidate(
-	candidateId: string,
-	input: unknown,
-) {
-	return apiFetch(
-		`/api/mission-task-candidates/${candidateId}`,
-		jsonRequest("PATCH", input),
-	);
-}
-
-export function createTasksFromMissionCandidates(
-	repositoryId: string,
-	input: unknown,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-task-candidates/create-tasks`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function fetchMissions(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/missions`);
-}
-
-export function createMission(repositoryId: string, input: unknown) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/missions`,
-		jsonRequest("POST", input),
-	);
-}
-
-/** @deprecated Use generateTaskCandidates so Mission generation is selected automatically. */
-export function generateMissionCandidatesFromGoals(
-	repositoryId: string,
-	input: unknown = {},
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/missions/generate-candidates`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function fetchRepositoryMissionTaskProposals(
-	repositoryId: string,
-	status = "proposed",
-) {
-	const params = new URLSearchParams();
-	if (status) params.set("status", status);
-	const query = params.toString();
-	return apiFetch(
-		`/api/repositories/${repositoryId}/mission-task-proposals${query ? `?${query}` : ""}`,
-	);
-}
-
-export function fetchMissionDetail(missionId: string) {
-	return apiFetch(`/api/missions/${missionId}`);
-}
-
-export function deleteMission(missionId: string) {
-	return apiFetch(`/api/missions/${missionId}`, { method: "DELETE" });
-}
-
-export function decomposeMission(missionId: string, input: unknown = {}) {
-	return apiFetch(
-		`/api/missions/${missionId}/decompose`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function requestMissionPlanningRevision(
-	resultId: string,
-	input: { reason: string },
-) {
-	return apiFetch(
-		`/api/mission-planning-results/${resultId}/request-revision`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function dismissMissionTaskProposal(proposalId: string) {
-	return apiFetch(
-		`/api/mission-task-proposals/${proposalId}/dismiss`,
-		jsonRequest("POST", {}),
-	);
-}
-
-export function createTasksFromMissionTaskProposals(input: unknown) {
-	return apiFetch(
-		`/api/mission-task-proposals/create-tasks`,
-		jsonRequest("POST", input),
-	);
-}
-
-export function fetchProjectQuality(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/quality`);
-}
-
-export function createProjectQualityRun(
-	repositoryId: string,
-	input: { runType: "unit" | "e2e" | "all" },
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/quality/runs`,
-		jsonRequest("POST", input),
-	);
-}
+export {
+	createMission,
+	createMissionGoal,
+	createTasksFromMissionCandidates,
+	createTasksFromMissionTaskProposals,
+	decomposeMission,
+	deleteMission,
+	deleteMissionGoal,
+	dismissMissionTaskProposal,
+	fetchMissionDetail,
+	fetchMissionGoals,
+	fetchMissions,
+	fetchMissionTaskCandidates,
+	fetchRepositoryMissionTaskProposals,
+	generateMissionCandidatesFromGoals,
+	generateMissionTaskCandidates,
+	generateTaskCandidates,
+	requestMissionPlanningRevision,
+	updateMissionGoal,
+	updateMissionTaskCandidate,
+} from "../taskGeneration/api/taskGenerationCommands";

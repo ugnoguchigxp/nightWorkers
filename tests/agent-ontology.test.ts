@@ -82,9 +82,12 @@ describe("agent ontology helpers", () => {
 		const validation = core.validateAllManifests(process.cwd());
 		expect(validation.ok).toBe(true);
 		expect(validation.modules.map((module) => module.id).sort()).toEqual([
+			"gitworktree",
 			"mission-planner",
+			"overview",
 			"project-detail",
 			"settings",
+			"task-generation",
 		]);
 
 		const modules = core.listModules(process.cwd());
@@ -92,6 +95,12 @@ describe("agent ontology helpers", () => {
 			modules.modules.find((module) => module.id === "project-detail"),
 		).toMatchObject({
 			label: "Project Detail",
+			manifestDigest: expect.stringMatching(/^sha256:/),
+		});
+		expect(
+			modules.modules.find((module) => module.id === "task-generation"),
+		).toMatchObject({
+			label: "Task Generation",
 			manifestDigest: expect.stringMatching(/^sha256:/),
 		});
 	});

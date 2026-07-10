@@ -8,13 +8,14 @@ export const Route = createFileRoute("/projects/$projectId/detail/$tab")({
 
 function ProjectDetailTabRoute() {
 	const { projectId, tab } = Route.useParams();
+	const normalizedTab = normalizeProjectDetailTab(tab);
 	return (
 		<WorkbenchRoutePage
-			routeState={{
-				kind: "project_detail",
-				projectId,
-				tab: normalizeProjectDetailTab(tab),
-			}}
+			routeState={
+				normalizedTab === "overview"
+					? { kind: "overview", range: "30d", projectId }
+					: { kind: "project_detail", projectId, tab: normalizedTab }
+			}
 		/>
 	);
 }

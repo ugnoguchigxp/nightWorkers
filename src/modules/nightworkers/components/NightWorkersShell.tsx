@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Group, Panel, Separator } from "react-resizable-panels";
+import { OverviewScreen } from "@/modules/overview";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { fetchDesignQuestionnaireSession } from "../../questionnaire";
 import {
@@ -59,7 +60,6 @@ import {
 	resolveCurrentProviderModel,
 	resolvePlanWorkspaceInitialTab,
 } from "./nightworkers-shell-utils";
-import { OverviewScreen } from "./OverviewScreen";
 import { ProjectDetailScreen } from "./ProjectDetailScreen";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { BlueprintShowcaseButton, SettingsButton } from "./SettingsButton";
@@ -734,7 +734,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const handleOpenProjectDetail = useCallback(
 		(projectId: string) => {
 			setArtifactFocus({ type: "closed" });
-			props.onNavigate({ kind: "project_detail", projectId, tab: "overview" });
+			props.onNavigate(buildOverviewRoute("30d", projectId));
 		},
 		[props.onNavigate],
 	);
@@ -958,6 +958,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 									projectId,
 								})
 							}
+							onOpenProjectDetailTab={(projectId, tab) =>
+								props.onNavigate({ kind: "project_detail", projectId, tab })
+							}
 							onOpenSession={(sessionId) => handleSelectSession(sessionId)}
 						/>
 					) : missingProjectRoute ? (
@@ -1011,6 +1014,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 									projectId: projectDetailProject.id,
 									tab,
 								})
+							}
+							onOpenProjectOverview={() =>
+								props.onNavigate(
+									buildOverviewRoute("30d", projectDetailProject.id),
+								)
 							}
 							onOpenSession={(sessionId) => handleSelectSession(sessionId)}
 							onEvaluationTasksCreated={handleProjectEvaluationTasksCreated}

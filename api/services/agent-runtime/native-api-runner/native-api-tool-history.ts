@@ -1,12 +1,12 @@
+import {
+	formatOntologyCloseoutRequirementsForPrompt,
+	formatOntologyRuntimeContextForPrompt,
+} from "../../../modules/ontology";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
 } from "../../structured-llm/tool-calls";
 import type { ModelVisiblePayloadSummary } from "../model-visible-payload";
-import {
-	formatOntologyCloseoutRequirementsForPrompt,
-	formatOntologyRuntimeContextForPrompt,
-} from "../ontology-runtime-context";
 import type { AgentRunContext } from "../types";
 import { readNativeApiExecutionMode } from "./native-api-mode";
 import { readNativeApiRoleWorkingContextText } from "./native-api-role-context-events";

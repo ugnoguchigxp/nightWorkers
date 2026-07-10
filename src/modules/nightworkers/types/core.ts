@@ -1,6 +1,6 @@
+import type { ReviewResult } from "../../review";
 import type { TaskEvent } from "./activity";
 import type { TaskRunTodo } from "./blueprint";
-import type { ReviewResult } from "./review";
 
 export type Repository = {
 	id: string;

@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { i18next } from "../src/i18n/setup";
-import { ReviewStatusViewer } from "../src/modules/nightworkers/components/ReviewStatusViewer";
 import type {
 	GitCloseoutState,
 	ReviewSessionDetail,
 } from "../src/modules/nightworkers/types";
+import { ReviewStatusViewer } from "../src/modules/review/components/ReviewStatusViewer";
 
 function visibleText(markup: string) {
 	return markup.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
@@ -341,6 +341,7 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 			kind: "vulnworkbench_security_diagnostic",
 			result: {
 				ok: true,
+				status: "security_action_required",
 				projectId: "vw-project-1",
 				projectPath: "/workspace/project",
 				scanRunId: "scan-1",
@@ -626,6 +627,7 @@ describe("ReviewStatusViewer", () => {
 		);
 
 		expect(text).toContain("vulnWorkbench 実行結果");
+		expect(text).toContain("security_action_required");
 		expect(text).toContain("agent-output");
 		expect(text).toContain("scan-1");
 		expect(text).toContain("findings: 2");

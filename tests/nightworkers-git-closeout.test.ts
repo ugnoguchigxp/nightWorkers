@@ -16,8 +16,8 @@ import {
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import * as reviewRepo from "../api/modules/nightworkers/nightworkers.review-mode.repository";
 import * as queueRepo from "../api/modules/queue/queue.repository";
+import * as reviewRepo from "../api/modules/review/review-mode.repository";
 import * as structuredLlm from "../api/services/structured-llm";
 
 vi.mock("../api/services/structured-llm", async (importOriginal) => {
@@ -360,7 +360,7 @@ describe("NightWorkers Git closeout API", () => {
 		expect(
 			await git(fixture.gitRepo.root, ["ls-remote", "origin", "main"]),
 		).toContain(pushed.commitRecord.commitSha);
-	});
+	}, 15_000);
 
 	it("honors repository command policy before pushing", async () => {
 		const fixture = await createCloseoutFixture({

@@ -9,7 +9,7 @@ import {
 	getModuleOntology,
 	getOntologyVerificationPlan,
 	listOntologyModules,
-} from "../services/agent-ontology/agent-ontology.service";
+} from "../modules/ontology";
 import {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,

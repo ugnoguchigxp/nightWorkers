@@ -6,7 +6,7 @@ import type {
 import type {
 	MissionGoal,
 	ProjectSignalSnapshot,
-} from "../../../shared/schemas/project-detail.schema";
+} from "../../../shared/schemas/task-generation.schema";
 
 export function buildMissionPlannerInputBundle(input: {
 	mission: Mission;

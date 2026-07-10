@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getNightWorkersCodexToolNames } from "../../api/mcp/nightworkers-tool-manifest";
+import { buildOntologyBoundaryAuditSnapshot } from "../../api/modules/ontology/runtime/ontology-runtime-context";
 import {
 	buildCodexRuntimePrompt,
 	buildCodexRuntimePromptParts,
@@ -11,7 +12,6 @@ import {
 	resolveCodexRuntimeMcpConfigState,
 } from "../../api/services/agent-runtime/codex-runtime-config";
 import { createCodexRuntimeThread } from "../../api/services/agent-runtime/codex-sdk/codex-sdk-client";
-import { buildOntologyBoundaryAuditSnapshot } from "../../api/services/agent-runtime/ontology-runtime-context";
 import { buildContext, fakeThread } from "./helpers";
 import "./setup";
 

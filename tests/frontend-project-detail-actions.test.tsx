@@ -151,7 +151,8 @@ function metrics() {
 			packageManager: "bun",
 			technologies: [{ name: "React", category: "frontend", confidence: 1 }],
 		},
-		projectMeta: { lineCount: 1000, fileCount: 50 },
+		projectMeta: null,
+		codeSizeSnapshot: null,
 		runs: { total: 3, completed: 2, failed: 1 },
 		llmUsage: {
 			totalTokens: 1000,
@@ -287,14 +288,16 @@ async function triggerCallbacks(element: unknown) {
 	await visit(element);
 }
 
-function stateValuesFor(detailModal: unknown = null) {
+function stateValuesFor(_detailModal: unknown = null) {
+	return [metrics(), quality(), null, ""];
+}
+
+function taskGenerationStateValues(detailModal: unknown = null) {
 	return [
-		metrics(),
 		[goal()],
 		[mission()],
 		[candidate()],
 		[proposal()],
-		quality(),
 		{ id: "goal-1", title: "Draft", goalText: "Draft text", active: true },
 		["mission_task_candidate:candidate-1", "mission_task_proposal:proposal-1"],
 		{ goalIds: new Set(["goal-1"]), missionIds: new Set(["mission-1"]) },
@@ -355,6 +358,37 @@ describe("ProjectDetailScreen action coverage", () => {
 		vi.doMock("@/modules/project-evaluation", () => ({
 			ProjectEvaluationScreen: () => null,
 		}));
+		vi.doMock("@/modules/quality/api/qualityCommands", () => ({
+			createProjectQualityRun: vi.fn(async () => jsonResponse({ ok: true })),
+			fetchProjectQuality: vi.fn(async () => jsonResponse(quality())),
+		}));
+		vi.doMock("../src/modules/taskGeneration/api/taskGenerationCommands", () =>
+			Object.fromEntries(
+				commandNames
+					.filter((name) => !name.includes("ProjectQuality"))
+					.map((name) => [
+						name,
+						vi.fn(async () => {
+							if (name.includes("createTasks"))
+								return jsonResponse({
+									tasks: [buildTask({ id: "created-1" })],
+								});
+							if (name === "fetchMissionGoals") return jsonResponse([goal()]);
+							if (name === "fetchMissions") return jsonResponse([mission()]);
+							if (name === "fetchMissionTaskCandidates")
+								return jsonResponse([candidate()]);
+							if (name === "fetchRepositoryMissionTaskProposals")
+								return jsonResponse([proposal()]);
+							if (name === "generateTaskCandidates")
+								return jsonResponse({
+									status: "completed",
+									decompositionFailures: [],
+								});
+							return jsonResponse({ ok: true });
+						}),
+					]),
+			),
+		);
 		const tabs = [
 			"overview",
 			"mission",
@@ -390,5 +424,18 @@ describe("ProjectDetailScreen action coverage", () => {
 			}
 			expect(element).toBeTruthy();
 		}
+
+		mockReact(taskGenerationStateValues({ kind: "goal", id: "goal-1" }));
+		const { TaskGenerationPanel } = await import(
+			"../src/modules/taskGeneration/TaskGenerationPanel"
+		);
+		const onTasksCreated = vi.fn();
+		const taskGenerationElement = TaskGenerationPanel({
+			repositoryId: "repo-1",
+			stackProfile: metrics().stackProfile,
+			onTasksCreated,
+		});
+		await triggerCallbacks(taskGenerationElement);
+		expect(onTasksCreated).toHaveBeenCalled();
 	});
 });

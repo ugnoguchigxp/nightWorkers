@@ -141,6 +141,10 @@ export const repositories = sqliteTable("repositories", {
 		string,
 		unknown
 	> | null>(),
+	featureSettings: text("feature_settings", { mode: "json" }).$type<Record<
+		string,
+		unknown
+	> | null>(),
 });
 
 export const tasks = sqliteTable(

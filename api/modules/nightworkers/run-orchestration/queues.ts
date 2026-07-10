@@ -14,6 +14,10 @@ export function shouldContinueSessionQueue(status: string) {
 
 let implementationQueueDrainPromise: Promise<void> | null = null;
 export const IMPLEMENTATION_QUEUE_LEASE_TTL_MS = 30 * 60 * 1000;
+export const IMPLEMENTATION_QUEUE_HEARTBEAT_INTERVAL_MS = Math.min(
+	60_000,
+	Math.floor(IMPLEMENTATION_QUEUE_LEASE_TTL_MS / 3),
+);
 const implementationQueueLeaseOwnerRole =
 	process.env.NIGHTWORKERS_EXECUTION_ROLE === "worker"
 		? "worker-process"

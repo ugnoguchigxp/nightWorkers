@@ -6,7 +6,7 @@ import {
 	type MissionDeterministicCheckReport,
 	missionDecompositionEvaluationSchema,
 } from "../../../shared/schemas/mission-planner.schema";
-import type { ProjectSignalSnapshot } from "../../../shared/schemas/project-detail.schema";
+import type { ProjectSignalSnapshot } from "../../../shared/schemas/task-generation.schema";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import {
 	buildNormalizedSupervisorLlmRequest,

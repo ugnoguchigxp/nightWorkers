@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import * as reviewRepo from "../api/modules/nightworkers/nightworkers.review-mode.repository";
+import * as reviewRepo from "../api/modules/review/review-mode.repository";
 
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
 const originalSecurityPluginIntegration =

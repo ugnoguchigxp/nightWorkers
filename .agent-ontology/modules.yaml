@@ -2,10 +2,28 @@
   "version": 1,
   "modules": [
     {
+      "id": "overview",
+      "label": "Overview",
+      "manifest": "modules/overview.yaml",
+      "aliases": ["overview", "dashboard", "project overview", "概要"]
+    },
+    {
+      "id": "task-generation",
+      "label": "Task Generation",
+      "manifest": "modules/task-generation.yaml",
+      "aliases": ["task generation", "task candidate", "mission goal", "タスク生成"]
+    },
+    {
       "id": "project-detail",
       "label": "Project Detail",
       "manifest": "modules/project-detail.yaml",
-      "aliases": ["project detail", "quality", "mission tab", "task candidate"]
+      "aliases": ["project detail", "quality", "project metrics"]
+    },
+    {
+      "id": "gitworktree",
+      "label": "Git Worktree",
+      "manifest": "modules/gitworktree.yaml",
+      "aliases": ["git worktree", "worktree", "worktree management"]
     },
     {
       "id": "mission-planner",

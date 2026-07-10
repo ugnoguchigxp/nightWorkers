@@ -159,9 +159,9 @@ export const ProjectSidebar = memo(function ProjectSidebar(
 										</Button>
 										<a
 											href={serializeWorkbenchRoute({
-												kind: "project_detail",
+												kind: "overview",
 												projectId: project.id,
-												tab: "overview",
+												range: "30d",
 											})}
 											className={`nightworkers-sidebar-control inline-flex h-7 w-7 items-center justify-center rounded-md p-0 ${
 												isProjectDetailActive

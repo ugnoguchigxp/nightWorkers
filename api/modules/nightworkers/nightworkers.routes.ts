@@ -1,10 +1,11 @@
-import { AppError, ValidationError } from "../../lib/errors";
+import { ValidationError } from "../../lib/errors";
 import { logEvent } from "../../lib/logger";
 import { createOpenApiRouter } from "../../lib/openapi";
 import {
 	readTestQualitySettingsFile,
 	writeTestQualitySettingsFile,
 } from "../../services/settings/test-quality-settings";
+import { getOntologyRunDebugReportRoute } from "../ontology";
 import {
 	commitRunGitCloseoutHandler,
 	createReviewerEvaluationHandler,
@@ -36,10 +37,7 @@ import {
 	updateReviewPromptSuggestionHandler,
 	useReviewPromptSuggestionHandler,
 } from "./nightworkers.route-handlers";
-import {
-	routeErrorResponse,
-	withOpenApiRouteError,
-} from "./nightworkers.route-utils";
+import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
 	archiveWorkbenchSessionRoute,
@@ -68,8 +66,6 @@ import {
 	exportTaskRunJsonlRoute,
 	getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
-	getOntologyRunDebugReportRoute,
-	getOverviewDashboardRoute,
 	getReviewRecommendationRoute,
 	getReviewSessionRoute,
 	getRunGitCloseoutRoute,
@@ -106,19 +102,6 @@ import {
 import { browseFoldersRoute, createFolderRoute } from "./routes/util-routes";
 
 const router = createOpenApiRouter()
-	.openapi(getOverviewDashboardRoute, async (c) => {
-		try {
-			const dashboard = await service.getOverviewDashboard(
-				c.req.valid("query"),
-			);
-			return c.json(dashboard, 200);
-		} catch (err) {
-			if (err instanceof AppError && err.statusCode === 404) {
-				return c.json({ error: "Repository not found" }, 404);
-			}
-			return routeErrorResponse(c, err);
-		}
-	})
 	.openapi(listRepositoriesRoute, async (c) => {
 		const list = await service.listRepositories();
 		return c.json(list, 200);

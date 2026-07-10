@@ -21,7 +21,7 @@ import {
 	deleteRepository,
 	deleteTask,
 } from "../api/modules/nightworkers/nightworkers.repository";
-import * as projectDetailRepo from "../api/modules/project-detail/project-detail.repository";
+import * as taskGenerationRepo from "../api/modules/taskGeneration/task-generation.repository";
 
 let tempDir = "";
 
@@ -375,7 +375,7 @@ describe("NightWorkers Codex MCP integration", () => {
 			workerKind: "codex-agent",
 			startedAt: new Date(),
 		});
-		const batch = await projectDetailRepo.createRunningMissionBatch({
+		const batch = await taskGenerationRepo.createRunningMissionBatch({
 			repositoryId: repository.id,
 			requestedGoalIds: [],
 			signalSnapshot: {
@@ -404,7 +404,7 @@ describe("NightWorkers Codex MCP integration", () => {
 				},
 			},
 		});
-		const [candidate] = await projectDetailRepo.createMissionCandidates([
+		const [candidate] = await taskGenerationRepo.createMissionCandidates([
 			{
 				batchId: batch.id,
 				repositoryId: repository.id,

@@ -1,6 +1,5 @@
 import type React from "react";
 import { useTranslation } from "react-i18next";
-import type { ProjectDetailMetrics } from "../../../../../shared/schemas/project-detail.schema";
 import {
 	controlStyle,
 	mutedTextStyle,
@@ -31,160 +30,6 @@ export function KpiTile({
 			<div className="mt-1 truncate text-[11px]" style={subtleTextStyle}>
 				{sub}
 			</div>
-		</div>
-	);
-}
-
-export function TokenBreakdownBand({
-	metrics,
-}: {
-	metrics: ProjectDetailMetrics;
-}) {
-	const { t } = useTranslation();
-	const uncachedInputTokens = Math.max(
-		metrics.llmUsage.inputTokens - metrics.llmUsage.cachedInputTokens,
-		0,
-	);
-	const items = [
-		{
-			key: "total-input",
-			label: t("projectDetail.usage.input"),
-			value: metrics.llmUsage.inputTokens,
-		},
-		{
-			key: "input",
-			label: t("projectDetail.usage.uncachedInput"),
-			value: uncachedInputTokens,
-		},
-		{
-			key: "output",
-			label: t("projectDetail.usage.output"),
-			value: metrics.llmUsage.outputTokens,
-		},
-		{
-			key: "cached",
-			label: t("projectDetail.usage.cachedInput"),
-			value: metrics.llmUsage.cachedInputTokens,
-		},
-		{
-			key: "reasoning",
-			label: t("projectDetail.usage.reasoningOutput"),
-			value: metrics.llmUsage.reasoningOutputTokens,
-		},
-		{
-			key: "state",
-			label: t("projectDetail.usage.stateCard"),
-			value: metrics.llmUsage.stateCardTokens,
-		},
-		{
-			key: "prompt",
-			label: t("projectDetail.usage.promptParts"),
-			value: metrics.llmUsage.promptInputTokens,
-		},
-	];
-
-	return (
-		<div
-			className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7"
-			style={panelStyle}
-		>
-			{items.map((item) => (
-				<div key={item.key} className="min-w-0">
-					<div
-						className="truncate text-[10px] font-semibold uppercase"
-						style={subtleTextStyle}
-					>
-						{item.label}
-					</div>
-					<div className="mt-1 truncate text-sm font-bold">
-						{item.value.toLocaleString()}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-}
-
-export function CompactHealthTile({
-	icon,
-	label,
-	value,
-	tone,
-	compact = false,
-}: {
-	icon: React.ReactNode;
-	label: string;
-	value: React.ReactNode;
-	tone: "primary" | "warning";
-	compact?: boolean;
-}) {
-	const accent =
-		tone === "warning"
-			? "color-mix(in srgb, var(--nw-warning) 82%, var(--nw-text))"
-			: "var(--nw-primary)";
-	return (
-		<div className={`border ${compact ? "p-2.5" : "p-4"}`} style={panelStyle}>
-			<div
-				className={
-					compact
-						? "flex h-full min-w-0 flex-col items-center justify-center"
-						: "min-w-0"
-				}
-			>
-				<div
-					className={
-						compact
-							? "flex flex-col items-center gap-1 text-center text-[10px] font-semibold leading-tight"
-							: "flex items-center gap-2 text-xs font-semibold"
-					}
-					style={mutedTextStyle}
-				>
-					<span style={{ color: accent }}>{icon}</span>
-					{label}
-				</div>
-				<div className={compact ? "mt-1" : "mt-2"}>
-					{typeof value === "string" ? (
-						<span className="text-2xl font-bold" style={{ color: accent }}>
-							{value}
-						</span>
-					) : (
-						value
-					)}
-				</div>
-			</div>
-		</div>
-	);
-}
-
-export function CoverageBreakdown({
-	axes,
-}: {
-	axes: { labelKey: string; value: number }[];
-}) {
-	const { t } = useTranslation();
-	if (axes.length === 0) {
-		return (
-			<span
-				className="text-2xl font-bold"
-				style={{ color: "var(--nw-muted-text)" }}
-			>
-				—
-			</span>
-		);
-	}
-	return (
-		<div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-			{axes.map((axis) => (
-				<div
-					key={axis.labelKey}
-					className="flex min-w-0 items-baseline justify-between gap-1 text-[10px]"
-				>
-					<span className="truncate" style={subtleTextStyle}>
-						{t(axis.labelKey)}
-					</span>
-					<span className="font-semibold">{axis.value}%</span>
-				</div>
-			))}
 		</div>
 	);
 }
@@ -391,9 +236,4 @@ export function ActiveChip({ active }: { active: boolean }) {
 				: t("projectDetail.status.inactive")}
 		</span>
 	);
-}
-
-export function formatCompactTokens(tokens: number) {
-	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-	return `${Math.round(tokens / 1_000)}K`;
 }

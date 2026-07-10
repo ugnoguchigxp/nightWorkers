@@ -5,9 +5,9 @@ import path from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import type { ReviewPlanSpec } from "../api/modules/nightworkers/nightworkers.review-mode.model";
-import * as reviewRepo from "../api/modules/nightworkers/nightworkers.review-mode.repository";
-import { runReviewRunUnitTestCoverageCheck } from "../api/modules/nightworkers/nightworkers.review-run-test-evidence.service";
+import type { ReviewPlanSpec } from "../api/modules/review/review-mode.model";
+import * as reviewRepo from "../api/modules/review/review-mode.repository";
+import { runReviewRunUnitTestCoverageCheck } from "../api/modules/review/review-run-test-evidence.service";
 
 const tempRoots: string[] = [];
 

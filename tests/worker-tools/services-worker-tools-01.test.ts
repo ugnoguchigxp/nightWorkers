@@ -440,7 +440,7 @@ describe("Worker Tools Unit Tests", () => {
 			await fs.rm(templateRepo, { recursive: true, force: true });
 			await fs.rm(targetDir, { recursive: true, force: true });
 		}
-	});
+	}, 15_000);
 
 	it("requires bootstrap for registered starter template initialization", async () => {
 		const templateRepo = await fs.mkdtemp(

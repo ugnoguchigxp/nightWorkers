@@ -8,13 +8,13 @@ vi.mock("../api/services/structured-llm", () => ({
 	callStructuredJsonLLM: mocks.callStructuredJsonLLM,
 }));
 
-import { callLlmReviewer } from "../api/services/review-rubrics/llm-reviewer";
-import { loadRubric } from "../api/services/review-rubrics/loader";
-import { runReviewerEvaluationFromPack } from "../api/services/review-rubrics/replay-evaluation";
+import { callLlmReviewer } from "../api/modules/review/rubrics/llm-reviewer";
+import { loadRubric } from "../api/modules/review/rubrics/loader";
+import { runReviewerEvaluationFromPack } from "../api/modules/review/rubrics/replay-evaluation";
 import type {
 	ReviewEvidencePack,
 	ReviewerDraft,
-} from "../api/services/review-rubrics/types";
+} from "../api/modules/review/rubrics/types";
 
 const pack: ReviewEvidencePack = {
 	version: 1,

@@ -65,6 +65,11 @@ export async function ensureBaseNightWorkersTables() {
       safety_policy text
     )
   `);
+	await ensureColumn(
+		"repositories",
+		"feature_settings",
+		"feature_settings text",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -85,6 +90,7 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
+	await ensureColumn("tasks", "worktree_path", "worktree_path text");
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS tasks_repository_id_idx ON tasks (repository_id)",
 	);
@@ -115,6 +121,7 @@ export async function ensureBaseNightWorkersTables() {
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
+	await ensureColumn("task_runs", "worktree_path", "worktree_path text");
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_runs_task_id_idx ON task_runs (task_id)",
 	);

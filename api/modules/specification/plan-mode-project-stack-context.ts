@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import {
 	detectProjectStackProfile,
 	renderProjectStackContext,
-} from "../../services/project-stack-context";
-import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+} from "../techStack";
 
 export async function resolvePlanModeProjectStackContext(repositoryId: string) {
 	const repository = await nightworkersRepo.getRepository(repositoryId);

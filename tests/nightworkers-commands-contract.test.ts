@@ -7,7 +7,6 @@ import {
 	createFolder,
 	createMission,
 	createMissionGoal,
-	createProjectQualityRun,
 	createTasksFromMissionCandidates,
 	createTasksFromMissionTaskProposals,
 	createWorkbenchSession,
@@ -22,9 +21,7 @@ import {
 	fetchMissionGoals,
 	fetchMissions,
 	fetchMissionTaskCandidates,
-	fetchOverview,
 	fetchProjectDetailMetrics,
-	fetchProjectQuality,
 	fetchRepositoryDiff,
 	fetchRepositoryFile,
 	fetchRepositoryFiles,
@@ -50,6 +47,7 @@ import {
 	updateMissionGoal,
 	updateMissionTaskCandidate,
 } from "../src/modules/nightworkers/nightWorkersCommands";
+import { fetchOverview } from "../src/modules/overview/overviewCommands";
 
 function stubFetch() {
 	const fetchMock = vi.fn<typeof fetch>(() =>
@@ -205,7 +203,7 @@ describe("nightWorkersCommands", () => {
 		);
 	});
 
-	it("routes mission planning, proposals, and quality commands", async () => {
+	it("routes mission planning and proposal commands", async () => {
 		const fetchMock = stubFetch();
 
 		await fetchMissions("repo-1");
@@ -219,8 +217,6 @@ describe("nightWorkersCommands", () => {
 		await requestMissionPlanningRevision("result-1", { reason: "too broad" });
 		await dismissMissionTaskProposal("proposal-1");
 		await createTasksFromMissionTaskProposals({ proposalIds: ["proposal-1"] });
-		await fetchProjectQuality("repo-1");
-		await createProjectQualityRun("repo-1", { runType: "unit" });
 
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			3,
@@ -243,11 +239,6 @@ describe("nightWorkersCommands", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			9,
 			"/api/mission-planning-results/result-1/request-revision",
-			expect.objectContaining({ method: "POST" }),
-		);
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			13,
-			"/api/repositories/repo-1/quality/runs",
 			expect.objectContaining({ method: "POST" }),
 		);
 	});

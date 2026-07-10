@@ -9,11 +9,11 @@ vi.mock("../api/services/structured-llm", () => ({
 	callStructuredJsonLLM: mocks.callStructuredJsonLLM,
 }));
 
-import { buildReviewEvidencePackFromRun } from "../api/services/review-rubrics/evidence-pack";
+import { buildReviewEvidencePackFromRun } from "../api/modules/review/rubrics/evidence-pack";
 import {
 	runReviewerEvaluationFromPack,
 	runReviewReplayEvaluationFromJsonl,
-} from "../api/services/review-rubrics/replay-evaluation";
+} from "../api/modules/review/rubrics/replay-evaluation";
 import { parseRunJsonl } from "../api/services/run-events/jsonl-parse";
 import { replayRunJsonl } from "../api/services/run-events/replay";
 
