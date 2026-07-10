@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS llm_usage_summary_task_buckets (
   estimated_cost real DEFAULT 0 NOT NULL,
   FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
-);
+);--> statement-breakpoint
 
 CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_summary_task_buckets_uidx
   ON llm_usage_summary_task_buckets (
@@ -34,10 +34,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_summary_task_buckets_uidx
     task_id,
     pricing_currency_key,
     pricing_status
-  );
+  );--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS llm_usage_summary_task_buckets_repository_idx
-  ON llm_usage_summary_task_buckets (repository_key, task_id);
+  ON llm_usage_summary_task_buckets (repository_key, task_id);--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS llm_usage_summary_task_buckets_hour_idx
   ON llm_usage_summary_task_buckets (bucket_hour_utc);

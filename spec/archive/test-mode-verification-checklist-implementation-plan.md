@@ -1,5 +1,9 @@
 # Test Mode Verification Checklist Implementation Plan
 
+## Status
+
+implemented
+
 ## Purpose
 
 NightWorkers に、実装 run とは分離した **Test Mode** と **Verification Checklist 自動照合**を追加する。

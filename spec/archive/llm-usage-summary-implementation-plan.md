@@ -1,5 +1,9 @@
 # LLM Usage Summary Implementation Plan
 
+## Status
+
+implemented
+
 ## Goal
 
 Overview の LLM usage / cost 集計を、表示のたびに `llm_usage_records` 全行を読み込んでメモリ上で集計する構造から、保存時に更新される summary table を優先して読む構造へ移行する。

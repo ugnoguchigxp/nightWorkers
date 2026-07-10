@@ -2,7 +2,7 @@
 
 ## Status
 
-implemented-awaiting-operational-validation
+implemented-with-operational-validation-remaining
 
 ## Implementation Progress
 

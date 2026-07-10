@@ -1,9 +1,134 @@
 import { describe, expect, it, vi } from "vitest";
 import { CodexAgentRuntime } from "../../api/services/agent-runtime/CodexAgentRuntime";
+import { runFinalizeController } from "../../api/services/run-control/finalize-controller";
 import { buildContext, fakeThread, fakeThreadThatThrows } from "./helpers";
 import "./setup";
 
 describe("CodexAgentRuntime usage and failure handling", () => {
+	it("allows the final completion report Todo without starting recovery", async () => {
+		const evaluateCandidate = vi
+			.spyOn(runFinalizeController, "evaluateCandidate")
+			.mockResolvedValue({
+				allowFinalize: true,
+				code: "FINALIZE_ALLOWED",
+				message: "allowed",
+				missingConditions: [],
+				recoveryCard: null,
+				state: null,
+				idempotent: false,
+			});
+		const terminalize = vi
+			.spyOn(runFinalizeController, "terminalize")
+			.mockResolvedValue(undefined as never);
+		const threadFactory = vi.fn(() =>
+			fakeThread([
+				{
+					type: "item.completed",
+					item: {
+						id: "report",
+						type: "agent_message",
+						text: "Run全体の正しい最終報告",
+					},
+				},
+			] as never),
+		);
+
+		try {
+			const result = await new CodexAgentRuntime({ threadFactory }).start(
+				buildContext({
+					runtimeOptions: { runControlKernelMode: "enforce" },
+				}),
+				{ emit: async () => {} },
+			);
+
+			expect(evaluateCandidate).toHaveBeenCalledWith({
+				runId: "run-codex",
+				allowedOpenTodoProcedureIds: ["final_completion_report"],
+			});
+			expect(threadFactory).toHaveBeenCalledOnce();
+			expect(result).toMatchObject({
+				terminalState: "completed",
+				finalReport: "Run全体の正しい最終報告",
+			});
+		} finally {
+			evaluateCandidate.mockRestore();
+			terminalize.mockRestore();
+		}
+	});
+
+	it("preserves the original report when a real finalize recovery is needed", async () => {
+		const evaluateCandidate = vi
+			.spyOn(runFinalizeController, "evaluateCandidate")
+			.mockResolvedValueOnce({
+				allowFinalize: false,
+				code: "FINALIZE_GUARD_NOT_MET",
+				message: "blocked",
+				missingConditions: ["open_todos:2"],
+				recoveryCard: "[NightWorkers Run Control Recovery]",
+				state: null,
+				idempotent: false,
+			})
+			.mockResolvedValueOnce({
+				allowFinalize: true,
+				code: "FINALIZE_ALLOWED",
+				message: "allowed",
+				missingConditions: [],
+				recoveryCard: null,
+				state: null,
+				idempotent: false,
+			});
+		const terminalize = vi
+			.spyOn(runFinalizeController, "terminalize")
+			.mockResolvedValue(undefined as never);
+		const originalThread = fakeThread([
+			{
+				type: "item.completed",
+				item: {
+					id: "original-report",
+					type: "agent_message",
+					text: "import_projectを実行し、実装を完了しました。",
+				},
+			},
+		] as never);
+		const recoveryThread = fakeThread([
+			{
+				type: "item.completed",
+				item: {
+					id: "recovery-report",
+					type: "agent_message",
+					text: "不足Todo #2を解消しました。",
+				},
+			},
+		] as never);
+		const threadFactory = vi
+			.fn()
+			.mockReturnValueOnce(originalThread)
+			.mockReturnValueOnce(recoveryThread);
+
+		try {
+			const result = await new CodexAgentRuntime({ threadFactory }).start(
+				buildContext({
+					runtimeOptions: { runControlKernelMode: "enforce" },
+				}),
+				{ emit: async () => {} },
+			);
+
+			expect(threadFactory).toHaveBeenCalledTimes(2);
+			expect(recoveryThread.runStreamed).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"Run全体の最終報告を作り直すターンではありません",
+				),
+				expect.any(Object),
+			);
+			expect(result.finalReport).toBe(
+				"import_projectを実行し、実装を完了しました。\n\nリカバリ追記:\n不足Todo #2を解消しました。",
+			);
+		} finally {
+			evaluateCandidate.mockRestore();
+			terminalize.mockRestore();
+		}
+	});
+
 	it("records Codex turn usage through the shared LLM usage recorder", async () => {
 		const usageRecorder = vi.fn(
 			async (input) => ({ id: "usage-record", ...input }) as never,

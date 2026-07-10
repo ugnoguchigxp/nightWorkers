@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS task_run_control_states (
   created_at integer NOT NULL,
   updated_at integer NOT NULL,
   FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
-);
+);--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS task_run_action_records (
   id text PRIMARY KEY NOT NULL,
@@ -39,14 +39,14 @@ CREATE TABLE IF NOT EXISTS task_run_action_records (
   model_view_json text,
   repeat_count integer DEFAULT 0 NOT NULL,
   FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
-);
+);--> statement-breakpoint
 
 CREATE UNIQUE INDEX IF NOT EXISTS task_run_action_records_run_sequence_uidx
-  ON task_run_action_records (run_id, sequence);
+  ON task_run_action_records (run_id, sequence);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS task_run_action_records_run_action_revision_uidx
-  ON task_run_action_records (run_id, action_key, dedupe_revision);
+  ON task_run_action_records (run_id, action_key, dedupe_revision);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS task_run_action_records_run_created_idx
-  ON task_run_action_records (run_id, created_at);
+  ON task_run_action_records (run_id, created_at);--> statement-breakpoint
 
-ALTER TABLE task_run_todos ADD COLUMN evidence_requirements_json text;
+ALTER TABLE task_run_todos ADD COLUMN evidence_requirements_json text;--> statement-breakpoint
 ALTER TABLE task_run_todos ADD COLUMN evidence_refs_json text;

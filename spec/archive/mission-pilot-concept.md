@@ -1,5 +1,9 @@
 # Mission Pilot Concept and First-Step MVP Plan
 
+## Status
+
+superseded-by-mission-pilot-mvp-remaining-work
+
 ## 目的
 
 NightWorkers に、広いゴールを受け取り、ミッション化、タスク分解、計画、承認、実行キュー投入、レビュー、評価、再計画までを統括する上位制御レイヤーを追加する。

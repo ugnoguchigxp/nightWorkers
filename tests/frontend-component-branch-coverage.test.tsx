@@ -768,7 +768,7 @@ describe("frontend component branch coverage", () => {
 
 		expect(setArtifactFocus).toHaveBeenCalled();
 		expect(workspace.openProjectFile).toHaveBeenCalledWith("src/current.ts");
-		expect(workspace.setActiveSessionId).toHaveBeenCalledWith("missing");
+		expect(workspace.setActiveSessionId).not.toHaveBeenCalledWith("missing");
 	});
 
 	it("keeps the current artifact open while a review route is resolving", async () => {

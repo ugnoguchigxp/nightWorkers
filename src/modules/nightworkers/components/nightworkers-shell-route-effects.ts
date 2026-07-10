@@ -32,12 +32,21 @@ export function useNightWorkersRouteArtifactSync(input: {
 	} = input;
 	const routeSessionId =
 		routeState.kind === "session" ? routeState.sessionId : null;
+	const routeSessionExists = Boolean(
+		routeSessionId &&
+			workspace.sessions.some((session) => session.id === routeSessionId),
+	);
 
 	useEffect(() => {
-		if (!routeSessionId) return;
+		if (!routeSessionId || !routeSessionExists) return;
 		if (workspace.activeSessionId === routeSessionId) return;
 		workspace.setActiveSessionId(routeSessionId);
-	}, [routeSessionId, workspace]);
+	}, [
+		routeSessionExists,
+		routeSessionId,
+		workspace.activeSessionId,
+		workspace.setActiveSessionId,
+	]);
 
 	useEffect(() => {
 		if (routeState.kind !== "session") {

@@ -2,11 +2,13 @@
 
 ## Status
 
-implementation
+implemented-release-deferred
 
 ## Implementation Progress
 
-2026-07-10 時点で、repository内の実装は完了し、local verificationとCI待ちの段階にある。
+2026-07-10 時点でrepository内の実装とlocal verificationは完了した。
+0.1.0 release自体は当面実施しない方針となったため、CI / repository設定 / publish validationは
+release再開時の運用作業として延期し、本計画をarchiveへ移動した。
 
 ### Implemented
 
@@ -32,13 +34,13 @@ implementation
 - `actionlint`: 成功
 - Activity ledger: Task / Repository cascade削除前のqueue flushと大量batchの回帰テストが成功
 
-### Validation Remaining
+### Deferred Release Validation
 
 - GitHubへpushしていないため、macOS / Linux / Windows runnerのsame-SHA attestationは未実行である。
 - `release` environmentのapproval ruleとmain branch protectionはrepository外部設定として未適用である。
 
-上記は本計画のコード未実装ではない。CI実行とrepository設定が完了するまで
-本計画をarchiveへ移動しない。
+上記は本計画のコード未実装ではない。release再開時は、このarchiveをbaselineとして
+candidate SHAを改めて確定し、CI実行とrepository設定を最新状態で検証する。
 
 ## Purpose
 
@@ -677,4 +679,4 @@ branch protectionの外部設定はコードcommitと混同せず、適用結果
 - 巨大UI componentの責務分割。
 - release latencyの最適化とartifact cacheの共有。
 
-完了後、本計画書は検証結果と最終SHAを追記して `spec/archive/` へ移動する。
+repository内の実装完了とrelease延期の判断を記録し、2026-07-10に `spec/archive/` へ移動した。

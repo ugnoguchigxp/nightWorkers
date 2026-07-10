@@ -2,7 +2,7 @@
 
 ## Status
 
-planning
+superseded-by-mission-pilot-mvp-remaining-work
 
 ## Purpose
 

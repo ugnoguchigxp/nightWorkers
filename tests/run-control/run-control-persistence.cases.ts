@@ -7,11 +7,13 @@ import {
 	deleteRepository,
 	updateTaskRunTodo,
 } from "../../api/modules/nightworkers/nightworkers.repository";
+import { RunStateCardProjector } from "../../api/services/run-control/context-projector";
 import { RunFinalizeController } from "../../api/services/run-control/finalize-controller";
 import { RunControlRepository } from "../../api/services/run-control/run-control-repository";
 import { RunControlService } from "../../api/services/run-control/run-control-service";
 import { todoListTool } from "../../api/services/worker-tools/todo-list";
 import type { WorkerToolResult } from "../../api/services/worker-tools/types";
+import { buildContext } from "../codex-agent-runtime/helpers";
 
 const repositoryIds: string[] = [];
 
@@ -168,6 +170,71 @@ describe("run control persistence", () => {
 			allowFinalize: true,
 			code: "RUN_ALREADY_TERMINAL",
 			idempotent: true,
+		});
+	});
+
+	it("allows only the final completion report Todo during finalization", async () => {
+		const { run } = await createRunFixture();
+		await createTaskRunTodo({
+			runId: run.id,
+			seq: 5,
+			title: "完了報告を行う",
+			taskType: "completion_report",
+			procedureId: "final_completion_report",
+			status: "pending",
+		});
+		const controller = new RunFinalizeController(new RunControlRepository());
+
+		const allowed = await controller.evaluateCandidate({
+			runId: run.id,
+			allowedOpenTodoProcedureIds: ["final_completion_report"],
+		});
+
+		expect(allowed).toMatchObject({
+			allowFinalize: true,
+			code: "FINALIZE_ALLOWED",
+		});
+	});
+
+	it("projects the latest persisted Todo instead of the launch snapshot", async () => {
+		const { repository, task, run } = await createRunFixture();
+		await createTaskRunTodo({
+			runId: run.id,
+			seq: 1,
+			title: "コーディング準備を行う",
+			taskType: "coding_preparation",
+			status: "passed",
+			completedAt: new Date(),
+		});
+		await createTaskRunTodo({
+			runId: run.id,
+			seq: 5,
+			title: "完了報告を行う",
+			taskType: "completion_report",
+			procedureId: "final_completion_report",
+			status: "pending",
+		});
+		const context = {
+			...buildContext({
+				currentTodo: {
+					id: "stale-todo-1",
+					seq: 1,
+					title: "コーディング準備を行う",
+					taskType: "coding_preparation",
+					status: "running",
+				},
+			}),
+			runId: run.id,
+			taskId: task.id,
+			repositoryId: repository.id,
+		};
+
+		const result = await new RunStateCardProjector().build(context);
+
+		expect(result.card.activeTodoSummary).toMatchObject({
+			seq: 5,
+			status: "pending",
+			procedureId: "final_completion_report",
 		});
 	});
 

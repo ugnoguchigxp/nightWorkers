@@ -1,5 +1,9 @@
 # vulnWorkbench CLI Security Oracle 連携実装計画
 
+## Status
+
+partially-implemented-superseded-by-remaining-work
+
 ## 目的
 
 NightWorkers が生成、修正、検証した Project 成果物を、vulnWorkbench の CLI 診断に渡し、scanner evidence から agent が実行可能な改善依頼を生成し、NightWorkers の修正ループへ戻す。

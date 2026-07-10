@@ -133,6 +133,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		try {
 			for (let attemptIndex = 0; ; attemptIndex += 1) {
 				let finalText = "";
+				let preRecoveryFinalText: string | null = null;
 				let terminalState = "completed" as AgentRuntimeResult["terminalState"];
 				let stoppedBy: AgentRuntimeResult["stoppedBy"] = "decision";
 				let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
@@ -245,8 +246,14 @@ export class CodexAgentRuntime implements AgentRuntime {
 									const payload = mapped.payload as
 										| { text?: unknown }
 										| undefined;
-									if (!isCheckpointPrompt && typeof payload?.text === "string")
-										finalText = payload.text;
+									if (
+										!isCheckpointPrompt &&
+										typeof payload?.text === "string"
+									) {
+										finalText = preRecoveryFinalText
+											? mergeRecoveryReport(preRecoveryFinalText, payload.text)
+											: payload.text;
+									}
 									await recordCodexRuntimeUsageIfPresent({
 										context,
 										payload: mapped.payload,
@@ -296,6 +303,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 							const finalizeGuard =
 								await runFinalizeController.evaluateCandidate({
 									runId: context.runId,
+									allowedOpenTodoProcedureIds: ["final_completion_report"],
 								});
 							if (!finalizeGuard.allowFinalize) {
 								if (
@@ -304,11 +312,13 @@ export class CodexAgentRuntime implements AgentRuntime {
 								) {
 									finalizeRecoveryPromptsSent += 1;
 									isCheckpointPrompt = false;
+									preRecoveryFinalText = finalText.trim() || null;
 									const stateCard = await runStateCardProjector
 										.build(context)
 										.catch(() => null);
 									nextPrompt = [
 										finalizeGuard.recoveryCard,
+										"[NightWorkers リカバリ報告契約]\nこれはRun全体の最終報告を作り直すターンではありません。不足条件の解消と、このリカバリで新しく得た事実だけを短く報告してください。既存の最終報告候補はruntime側で保持されます。",
 										stateCard?.content
 											? `[Current Run State Card]\n${stateCard.content}`
 											: null,
@@ -842,6 +852,14 @@ export class CodexAgentRuntime implements AgentRuntime {
 		});
 		return result.payload.diff;
 	}
+}
+
+function mergeRecoveryReport(candidate: string, recoveryUpdate: string) {
+	const base = candidate.trim();
+	const update = recoveryUpdate.trim();
+	if (!base) return update;
+	if (!update || update === base) return base;
+	return `${base}\n\nリカバリ追記:\n${update}`;
 }
 
 async function observeCodexRunControlEvent(

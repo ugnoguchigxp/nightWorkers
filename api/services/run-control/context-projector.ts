@@ -1,3 +1,4 @@
+import * as repo from "../../modules/nightworkers/nightworkers.repository";
 import { compactModelVisibleText } from "../agent-runtime/model-visible-payload";
 import type { AgentRunContext } from "../agent-runtime/types";
 import { digestJson } from "./action-identity";
@@ -33,9 +34,10 @@ export class RunStateCardProjector {
 		card: RunStateCard;
 		content: string;
 	}> {
-		const [state, actions] = await Promise.all([
+		const [state, actions, latestTodos] = await Promise.all([
 			this.repository.getOrCreateState(context.runId),
 			this.repository.listRecentActions(context.runId, 12),
+			repo.listTaskRunTodosForRun(context.runId).catch(() => null),
 		]);
 		const changedPaths = new Set<string>();
 		const evidenceRefs = new Set<string>();
@@ -56,7 +58,10 @@ export class RunStateCardProjector {
 			specificationRefs: collectSpecificationRefs(context),
 			constraints: collectConstraints(context),
 			phase: state.phase,
-			activeTodoSummary: context.currentTodo ?? null,
+			activeTodoSummary:
+				latestTodos === null
+					? (context.currentTodo ?? null)
+					: summarizeActiveTodo(latestTodos),
 			revisions: {
 				progress: state.progressRevision,
 				workspace: state.workspaceRevision,
@@ -82,6 +87,24 @@ export class RunStateCardProjector {
 		}).content;
 		return { card, content };
 	}
+}
+
+function summarizeActiveTodo(
+	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
+) {
+	const todo =
+		todos.find((candidate) => candidate.status === "running") ??
+		todos.find((candidate) => candidate.status === "pending") ??
+		null;
+	if (!todo) return null;
+	return {
+		id: todo.id,
+		seq: todo.seq,
+		title: todo.title,
+		taskType: todo.taskType,
+		status: todo.status,
+		procedureId: todo.procedureId,
+	};
 }
 
 function collectSpecificationRefs(context: AgentRunContext) {

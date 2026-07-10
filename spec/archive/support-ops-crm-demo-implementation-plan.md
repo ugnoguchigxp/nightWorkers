@@ -1,6 +1,10 @@
 # Support Ops Mini CRM Demo Implementation Plan
 
-## Status: planning
+## Status: superseded-by-deterministic-lifecycle-demo
+
+Support Ops Mini CRMのフルアプリ案は採用せず、credential-freeな固定fixtureによる
+deterministic lifecycle demoへ方針変更した。現行demoは
+`demo/support-ops-crm/README.md` と `scripts/demo/support-ops-crm.mjs` を正本とする。
 
 ## 目的
 
