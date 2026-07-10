@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -29,7 +29,7 @@ jobs:
           bun run verify:audit
       - name: Open or refresh advisory issue
         if: steps.audit.outcome == 'failure'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const title = "Dependency audit requires attention";
@@ -64,7 +64,7 @@ jobs:
             }
       - name: Upload dependency report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: weekly-dependency-audit
           path: artifacts/dependency-audit.json

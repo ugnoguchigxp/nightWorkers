@@ -18,14 +18,14 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.bun/install/cache
@@ -42,7 +42,7 @@ jobs:
           bun run verify:desktop 2>&1 | tee artifacts/verify-desktop.log
       - name: Upload desktop verification log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-verification-log
           path: artifacts/verify-desktop.log
