@@ -39,14 +39,14 @@ const defaultLlmUsageSettings = {
 };
 
 const pricingMocks = vi.hoisted(() => ({
-	listPricingRows: vi.fn(),
+	listPricingRowsPage: vi.fn(),
 	upsertPricingRow: vi.fn(),
 	seedCodexPricingRows: vi.fn(),
 	importPublicPricingRows: vi.fn(),
 }));
 
 vi.mock("../api/services/pricing", () => ({
-	listPricingRows: pricingMocks.listPricingRows,
+	listPricingRowsPage: pricingMocks.listPricingRowsPage,
 	upsertPricingRow: pricingMocks.upsertPricingRow,
 	seedCodexPricingRows: pricingMocks.seedCodexPricingRows,
 	importPublicPricingRows: pricingMocks.importPublicPricingRows,
@@ -514,7 +514,11 @@ describe("general and LLM settings routes", () => {
 	});
 
 	it("GET /api/settings/pricing lists pricing rows", async () => {
-		pricingMocks.listPricingRows.mockResolvedValue([{ model: "gpt-4o" }]);
+		pricingMocks.listPricingRowsPage.mockResolvedValue({
+			rows: [{ model: "gpt-4o" }],
+			totalCount: 1,
+			nextCursor: null,
+		});
 
 		const app = new OpenAPIHono<AppEnv>();
 		app.onError(errorHandler);
@@ -523,7 +527,17 @@ describe("general and LLM settings routes", () => {
 		const res = await app.request("/api/settings/pricing", { method: "GET" });
 		expect(res.status).toBe(200);
 		const json = await res.json();
-		expect(json).toEqual([{ model: "gpt-4o" }]);
+		expect(json).toEqual({
+			rows: [{ model: "gpt-4o" }],
+			totalCount: 1,
+			nextCursor: null,
+		});
+		expect(pricingMocks.listPricingRowsPage).toHaveBeenCalledWith({
+			provider: undefined,
+			model: undefined,
+			limit: 50,
+			offset: 0,
+		});
 	});
 
 	it("POST /api/settings/pricing saves pricing row", async () => {

@@ -1,6 +1,7 @@
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
 import { ensureDesktopRuntimeBootstrap } from "./runtime/bootstrap";
+import { isLoopbackHost } from "./security/listen-security";
 
 const configuredDatabaseUrlBeforeDotenv = process.env.DATABASE_URL?.trim();
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
@@ -16,6 +17,7 @@ const envSchema = z
 			.enum(["development", "production", "test"])
 			.default("development"),
 		PORT: z.coerce.number().default(39173),
+		HOST: z.string().trim().min(1).default("127.0.0.1"),
 		NIGHTWORKERS_DESKTOP: z.enum(["1", "true", "0", "false"]).optional(),
 		NIGHTWORKERS_RUNTIME_DIR: z.string().trim().optional(),
 		NIGHTWORKERS_RESOURCE_DIR: z.string().trim().optional(),
@@ -43,6 +45,10 @@ const envSchema = z
 			.transform((value) =>
 				value === undefined ? undefined : value === "true",
 			),
+		ALLOW_INSECURE_NON_LOOPBACK: z
+			.enum(["true", "false"])
+			.default("false")
+			.transform((value) => value === "true"),
 		SUPERVISOR_REFERENCES_DIR: z.string().trim().optional(),
 		SUPERVISOR_SKILLS_DIR: z.string().trim().optional(),
 		LOG_LEVEL: z.string().default("info"),
@@ -66,6 +72,18 @@ const envSchema = z
 				message: desktopMode
 					? "JWT_SECRET should be generated during desktop runtime bootstrap."
 					: "JWT_SECRET is required.",
+			});
+		}
+		if (
+			env.NODE_ENV === "production" &&
+			!isLoopbackHost(env.HOST) &&
+			!(env.API_AUTH_REQUIRED ?? false)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["API_AUTH_REQUIRED"],
+				message:
+					"Non-loopback production binding requires API_AUTH_REQUIRED=true. Bind HOST to 127.0.0.1/::1 or enable authentication.",
 			});
 		}
 

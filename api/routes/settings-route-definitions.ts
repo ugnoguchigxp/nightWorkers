@@ -137,6 +137,12 @@ const pricingInputSchema = z.object({
 	enabled: z.boolean().optional(),
 });
 
+const pricingPageSchema = z.object({
+	rows: z.array(pricingRowSchema),
+	totalCount: z.number().int().nonnegative(),
+	nextCursor: z.string().nullable(),
+});
+
 const publicPricingImportSchema = z.object({
 	sourceUrl: z.string(),
 	fetchedAt: z.string(),
@@ -147,7 +153,7 @@ const publicPricingImportSchema = z.object({
 });
 
 const startupPreflightSchema = z.object({
-	mode: z.enum(["desktop", "development"]),
+	mode: z.enum(["desktop", "development", "production"]),
 	runtimeRoot: z.string(),
 	resourceRoot: z.string(),
 	checks: z.array(
@@ -304,9 +310,17 @@ export const getStartupPreflightRoute = createRoute({
 export const listPricingRoute = createRoute({
 	method: "get",
 	path: "/pricing",
+	request: {
+		query: z.object({
+			provider: z.string().trim().min(1).optional(),
+			model: z.string().trim().optional(),
+			limit: z.coerce.number().int().min(1).max(100).default(50),
+			cursor: z.string().regex(/^\d+$/).optional(),
+		}),
+	},
 	responses: {
 		200: {
-			content: { "application/json": { schema: z.array(pricingRowSchema) } },
+			content: { "application/json": { schema: pricingPageSchema } },
 			description: "List LLM model pricing",
 		},
 	},

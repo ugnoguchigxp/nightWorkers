@@ -1,0 +1,76 @@
+name: Desktop matrix
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-matrix.yml"
+      - "api/**"
+      - "src/**"
+      - "src-tauri/**"
+      - "scripts/desktop/**"
+      - "package.json"
+      - "bun.lock"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: desktop-${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            os: macos-14
+            target: darwin:x64
+            packaged_smoke: true
+          - platform: linux
+            os: ubuntu-24.04
+            target: linux:x64
+            packaged_smoke: false
+          - platform: windows
+            os: windows-latest
+            target: win32:x64
+            packaged_smoke: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify platform configuration
+        run: bun run desktop:check:cross-platform
+      - name: Prepare sidecar
+        run: bun run desktop:prepare-sidecar
+      - name: Verify target manifest
+        run: node scripts/desktop/verify-target-manifest.mjs ${{ matrix.target }}
+      - name: Sidecar readiness smoke
+        run: bun run desktop:smoke-sidecar
+      - name: Build macOS package
+        if: matrix.packaged_smoke
+        run: bun run desktop:build:dmg
+      - name: Packaged app smoke
+        if: matrix.packaged_smoke
+        run: bun run desktop:smoke
+      - name: Upload diagnostics and packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            scripts/desktop/staged/manifest.json
+            src-tauri/target/release/bundle/**
+            *.log

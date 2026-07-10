@@ -38,6 +38,18 @@ describe("Auth Middleware & Protected Routes", () => {
 		expect(res.status).toBe(401);
 	});
 
+	it("should reject valid tokens sent with a non-Bearer authorization scheme", async () => {
+		const token = await generateAccessToken({
+			userId: "test-uuid",
+			email: "test@example.com",
+		});
+		const res = await app.request("/api/auth/me", {
+			headers: { Authorization: `Basic ${token}` },
+		});
+
+		expect(res.status).toBe(401);
+	});
+
 	it("should return 200 OK when valid token is provided", async () => {
 		// Generate a valid token for testing
 		// Note: This doesn't require a real DB for basic token validation in authMiddleware

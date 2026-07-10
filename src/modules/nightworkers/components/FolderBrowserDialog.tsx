@@ -2,6 +2,7 @@ import { Folder, FolderOpen, FolderPlus } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { useModalFocus } from "@/hooks/useModalFocus";
 
 type FolderBrowserDialogProps = {
 	open: boolean;
@@ -23,6 +24,10 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
 	const [newFolderName, setNewFolderName] = useState("");
 	const [isCreateSubmitting, setIsCreateSubmitting] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
+	const dialogRef = useModalFocus<HTMLDivElement>({
+		open: props.open,
+		onClose: props.onClose,
+	});
 
 	const handleCreateFolder = async () => {
 		const folderName = newFolderName.trim();
@@ -43,9 +48,19 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
 	if (!props.open) return null;
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-			<div className="flex h-[400px] w-full max-w-md flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="folder-browser-title"
+				tabIndex={-1}
+				className="flex h-[400px] w-full max-w-md flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900"
+			>
 				<div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/40 px-4 py-3">
-					<span className="text-xs font-bold text-zinc-300">
+					<span
+						id="folder-browser-title"
+						className="text-xs font-bold text-zinc-300"
+					>
 						{t("folderBrowser.title")}
 					</span>
 					<button
@@ -128,7 +143,10 @@ export function FolderBrowserDialog(props: FolderBrowserDialogProps) {
 							</Button>
 						</div>
 						{createError ? (
-							<div className="mt-2 break-all text-[10px] text-red-300">
+							<div
+								className="mt-2 break-all text-[10px] text-red-300"
+								role="alert"
+							>
 								{createError}
 							</div>
 						) : null}

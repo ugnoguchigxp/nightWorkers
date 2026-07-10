@@ -537,84 +537,7 @@ const workbenchPlanModeGateSchema = z
 
 type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
 	action: "plan_mode" | "general_answer" | "implementation" | "review";
-	planSignal?: WorkbenchPlanSignal;
 };
-
-type WorkbenchPlanSignal = {
-	detected: boolean;
-	cues: string[];
-	sources: Array<"current_message" | "task_context" | "recent_conversation">;
-};
-
-const PLAN_SIGNAL_CUES = [
-	"Plan Mode",
-	"Planで確認",
-	"Planで決める",
-	"Planで確認すること",
-	"Planで決めること",
-	"計画",
-	"実装計画",
-	"仕様",
-	"仕様策定",
-	"実装方針",
-	"設計方針",
-	"Questionnaire",
-	"Blueprint",
-] as const;
-
-function detectWorkbenchPlanSignal(input: {
-	prompt: string;
-	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
-}): WorkbenchPlanSignal {
-	const cues = new Set<string>();
-	const sources = new Set<WorkbenchPlanSignal["sources"][number]>();
-	collectPlanSignal(input.prompt, "current_message", cues, sources);
-	collectPlanSignal(
-		[
-			input.task.title,
-			input.task.objective,
-			input.task.description,
-			input.task.acceptanceCriteria,
-		]
-			.filter(
-				(value): value is string =>
-					typeof value === "string" && value.trim().length > 0,
-			)
-			.join("\n"),
-		"task_context",
-		cues,
-		sources,
-	);
-	collectPlanSignal(
-		input.messages
-			.slice(-6)
-			.map((message) => message.content)
-			.join("\n"),
-		"recent_conversation",
-		cues,
-		sources,
-	);
-	return {
-		detected: cues.size > 0,
-		cues: [...cues],
-		sources: [...sources],
-	};
-}
-
-function collectPlanSignal(
-	value: string,
-	source: WorkbenchPlanSignal["sources"][number],
-	cues: Set<string>,
-	sources: Set<WorkbenchPlanSignal["sources"][number]>,
-) {
-	const lower = value.toLowerCase();
-	for (const cue of PLAN_SIGNAL_CUES) {
-		if (!value.includes(cue) && !lower.includes(cue.toLowerCase())) continue;
-		cues.add(cue);
-		sources.add(source);
-	}
-}
 
 async function decideWorkbenchPlanModeGate(input: {
 	projectRoot: string;
@@ -626,10 +549,9 @@ async function decideWorkbenchPlanModeGate(input: {
 	emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
 	taskId: string;
 }): Promise<WorkbenchPlanModeGate> {
-	const planSignal = detectWorkbenchPlanSignal(input);
 	const raw = await callStructuredJsonLLM(
 		buildWorkbenchPlanModeGatePrompt(input.projectRoot),
-		buildWorkbenchPlanModeGateUserPrompt({ ...input, planSignal }),
+		buildWorkbenchPlanModeGateUserPrompt(input),
 		{
 			schemaName: "workbench_plan_mode_gate",
 			schema: {
@@ -711,7 +633,6 @@ async function decideWorkbenchPlanModeGate(input: {
 		action: parsed.shouldStartPlanMode
 			? "plan_mode"
 			: (parsed.action ?? "implementation"),
-		planSignal,
 	};
 }
 
@@ -720,7 +641,6 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 		"Workbench intake で次の処理を1つだけ判定してください。",
 		"現在のユーザー文だけでなく、提示された Task context / Recent conversation / Latest non-general run を判断材料にしてください。",
 		"jobType、作業種別、難易度、実装規模、レビュー種別、調査種別は分類しないでください。",
-		"Plan Signal は、実装前の計画・仕様整理が必要そうな文脈を事前抽出した補助情報です。Plan Signal だけで確定せず、Task context / Recent conversation / Current User Message と合わせて判断してください。",
 		"shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を依頼している、または Task context 上で Plan Mode で確認する論点が明示されていて現在の依頼がその開始に該当する場合に true にしてください。",
 		'質問、確認、説明依頼、状態確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
 		'ただし、直前の可否回答や状態確認に続いてユーザーが作業の続行、再開、実行を求めている場合は状態確認ではありません。Latest non-general run があればその executionMode を優先し、なければ action="implementation" にしてください。',
@@ -749,7 +669,6 @@ function buildWorkbenchPlanModeGateUserPrompt(input: {
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
 	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
 	runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
-	planSignal: WorkbenchPlanSignal;
 }) {
 	const recentMessages = input.messages.slice(-6).map((message) => {
 		const metadata = toRecord(message.metadataJson);
@@ -801,11 +720,6 @@ function buildWorkbenchPlanModeGateUserPrompt(input: {
 			: null,
 		...latestRunLines,
 		...latestNonGeneralRunLines,
-		"",
-		"[Plan Signal]",
-		`detected: ${input.planSignal.detected ? "true" : "false"}`,
-		`sources: ${input.planSignal.sources.length ? input.planSignal.sources.join(", ") : "none"}`,
-		`cues: ${input.planSignal.cues.length ? input.planSignal.cues.join(", ") : "none"}`,
 		"",
 		"[Recent Conversation]",
 		recentMessages.length ? recentMessages.join("\n") : "- none",

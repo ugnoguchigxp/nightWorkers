@@ -9,6 +9,8 @@ const devReloadDirs = [
 	path.resolve(__dirname, "./src"),
 ];
 const desktopDev = process.env.NIGHTWORKERS_DESKTOP_DEV === "1";
+const webPort = Number(process.env.NIGHTWORKERS_WEB_PORT || 39174);
+const apiPort = Number(process.env.NIGHTWORKERS_API_PORT || 39173);
 
 function isApiOrSrcPath(file: string) {
 	const resolved = path.resolve(file);
@@ -36,7 +38,7 @@ export default defineConfig({
 		},
 	},
 	server: {
-		port: 39174,
+		port: webPort,
 		strictPort: true,
 		hmr: false,
 		watch: {
@@ -44,7 +46,7 @@ export default defineConfig({
 		},
 		proxy: {
 			"/api": {
-				target: "http://localhost:39173",
+				target: `http://localhost:${apiPort}`,
 				changeOrigin: true,
 				ws: true,
 			},

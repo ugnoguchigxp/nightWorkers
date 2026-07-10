@@ -1,3 +1,5 @@
+import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
+import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
 import * as repo from "../nightworkers.repository";
 import { startTaskRun } from "./start-task-run";
@@ -12,9 +14,26 @@ export function shouldContinueSessionQueue(status: string) {
 
 let implementationQueueDrainPromise: Promise<void> | null = null;
 export const IMPLEMENTATION_QUEUE_LEASE_TTL_MS = 30 * 60 * 1000;
-const IMPLEMENTATION_QUEUE_LEASE_OWNER_ID = `api-process:${process.pid}`;
+const implementationQueueLeaseOwnerRole =
+	process.env.NIGHTWORKERS_EXECUTION_ROLE === "worker"
+		? "worker-process"
+		: "api-process";
+const IMPLEMENTATION_QUEUE_LEASE_OWNER_ID = `${implementationQueueLeaseOwnerRole}:${process.pid}`;
+
+export function shouldAutoDrainImplementationQueue(
+	environment: NodeJS.ProcessEnv = process.env,
+) {
+	return environment.NIGHTWORKERS_QUEUE_WORKER !== "1";
+}
 
 export async function runImplementationQueue() {
+	if (shouldUseIsolatedTaskExecutor()) {
+		return runImplementationQueueInWorker();
+	}
+	return runImplementationQueueInProcess();
+}
+
+export async function runImplementationQueueInProcess() {
 	if (implementationQueueDrainPromise) {
 		await implementationQueueDrainPromise;
 		return [];
@@ -152,7 +171,10 @@ export async function completeImplementationQueueEntryForRun(
 			runStatus: status,
 		});
 		const finalStatus = completed?.status ?? entry.status;
-		if (["execution_completed", "cancelled", "failed"].includes(finalStatus)) {
+		if (
+			["execution_completed", "cancelled", "failed"].includes(finalStatus) &&
+			shouldAutoDrainImplementationQueue()
+		) {
 			void runImplementationQueue();
 		}
 	} catch {

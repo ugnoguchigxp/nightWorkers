@@ -150,7 +150,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 				});
 			} else {
 				setArtifactFocus((current) =>
-					current.type === "closed" ? current : { type: "closed" },
+					current.type === "closed" ? current : current,
 				);
 			}
 			return;

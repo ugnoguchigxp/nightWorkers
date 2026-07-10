@@ -19,6 +19,8 @@ import {
 } from "../../../services/agent-runtime/runtime-lane";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
+import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
+import { startTaskRunInWorker } from "../../../services/execution/worker-process-manager";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
@@ -70,6 +72,18 @@ export type StartTaskRunOptions = {
 };
 
 export async function startTaskRun(
+	taskId: string,
+	options: StartTaskRunOptions = {},
+) {
+	if (shouldUseIsolatedTaskExecutor()) {
+		return startTaskRunInWorker<
+			Awaited<ReturnType<typeof startTaskRunInProcess>>
+		>(taskId, options);
+	}
+	return startTaskRunInProcess(taskId, options);
+}
+
+export async function startTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {

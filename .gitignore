@@ -71,6 +71,7 @@ github-pages/reports/
 github-pages/vendor/
 scratch/
 !scratch/.gitkeep
+.nightworkers-demo/
 scripts/desktop/staged/*
 !scripts/desktop/staged/.gitkeep
 src-tauri/gen/

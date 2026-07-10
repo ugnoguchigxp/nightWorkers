@@ -10,11 +10,13 @@ export function MessagePayload({
 	onOpenArtifact,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	message: TaskMessage;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	const { t } = useTranslation();
 	const metadata = toDeepRecord(message.metadataJson);
@@ -393,6 +395,7 @@ export function MessagePayload({
 				content={String(markdownDocumentData.content)}
 				onOpenProjectFile={onOpenProjectFile}
 				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		);
 	}
@@ -402,6 +405,7 @@ export function MessagePayload({
 				content={message.content}
 				onOpenProjectFile={onOpenProjectFile}
 				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		);
 	}

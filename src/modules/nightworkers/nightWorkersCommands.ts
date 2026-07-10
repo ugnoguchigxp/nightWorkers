@@ -25,12 +25,12 @@ export {
 	updateImplementationQueueEntry,
 	updateImplementationQueueSettings,
 } from "../queue/queueCommands";
-
 export {
 	fetchCodexSdkStatus,
 	fetchGeneralSettings,
 	fetchLlmModelOptions,
 	fetchLlmSettings,
+	fetchStartupPreflight,
 	fetchTestQualitySettings,
 	refreshFxRates,
 	runLlmSmokeTest,

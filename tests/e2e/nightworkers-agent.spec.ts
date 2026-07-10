@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
 
-const sameOriginHeaders = { Origin: "http://localhost:39174" };
+const sameOriginHeaders = {
+	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+};
 
 async function createDisposableGitWorkspace(): Promise<string> {
 	const workspaceDir = await fs.mkdtemp(
@@ -239,13 +241,23 @@ test.describe("NightWorkers Agent Debug @regression", () => {
 			await input.fill(prompt);
 			await input.press("Meta+Enter");
 
-			const userBubbles = page.locator('[data-testid="message-user"]', {
-				hasText: prompt,
-			});
-			await expect(userBubbles).toHaveCount(1);
-
-			await page.waitForTimeout(1200);
-			await expect(userBubbles).toHaveCount(1);
+			await expect
+				.poll(async () => {
+					const messagesRes = await request.get(
+						`/api/tasks/${taskId}/messages`,
+						{
+							headers: sameOriginHeaders,
+						},
+					);
+					const messages = (await messagesRes.json()) as Array<{
+						role: string;
+						content: string;
+					}>;
+					return messages.filter(
+						(message) => message.role === "user" && message.content === prompt,
+					).length;
+				})
+				.toBe(1);
 		} finally {
 			if (taskId)
 				await request.delete(`/api/tasks/${taskId}`, {
@@ -307,11 +319,24 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 			});
 			expect(taskRes.status(), await taskRes.text()).toBe(201);
 			taskId = ((await taskRes.json()) as { id: string }).id;
-
-			const runRes = await request.post(`/api/tasks/${taskId}/run`, {
+			const readyRes = await request.patch(`/api/tasks/${taskId}`, {
 				headers: sameOriginHeaders,
+				data: { status: "ready" },
 			});
-			expect(runRes.status(), await runRes.text()).toBe(202);
+			expect(readyRes.status(), await readyRes.text()).toBe(200);
+
+			const queueRes = await request.post(
+				`/api/workbench/sessions/${taskId}/queue`,
+				{ headers: sameOriginHeaders },
+			);
+			expect(queueRes.status(), await queueRes.text()).toBe(200);
+			const runRes = await request.post(
+				`/api/workbench/sessions/${taskId}/run`,
+				{
+					headers: sameOriginHeaders,
+				},
+			);
+			expect(runRes.status(), await runRes.text()).toBe(201);
 			const startedRun = (await runRes.json()) as { id: string };
 			const terminalRun = await waitForTerminalRun(request, taskId);
 
@@ -341,6 +366,168 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 			expect(eventText).toContain("command_execution");
 			expect(eventText).toContain("npm test");
 			expect(events.some((event) => event.type === "run.created")).toBe(true);
+		} finally {
+			if (taskId)
+				await request.delete(`/api/tasks/${taskId}`, {
+					headers: sameOriginHeaders,
+				});
+			if (repositoryId)
+				await request.delete(`/api/repositories/${repositoryId}`, {
+					headers: sameOriginHeaders,
+				});
+			await fs.rm(workspaceDir, { recursive: true, force: true });
+		}
+	});
+});
+
+test.describe("NightWorkers deterministic core workflow @regression", () => {
+	test.describe.configure({ mode: "serial" });
+
+	test("project to run, review, and archive works without provider credentials", async ({
+		page,
+		request,
+	}) => {
+		const workspaceDir = await createDisposableGitWorkspace();
+		let repositoryId: string | null = null;
+		let taskId: string | null = null;
+		try {
+			const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			const repositoryRes = await request.post("/api/repositories", {
+				headers: sameOriginHeaders,
+				data: {
+					name: `E2E deterministic ${suffix}`,
+					localPath: workspaceDir,
+					branch: "main",
+					allowed: true,
+				},
+			});
+			expect(repositoryRes.status(), await repositoryRes.text()).toBe(201);
+			repositoryId = ((await repositoryRes.json()) as { id: string }).id;
+
+			const taskRes = await request.post("/api/tasks", {
+				headers: sameOriginHeaders,
+				data: {
+					repositoryId,
+					title: `Deterministic workflow ${suffix}`,
+					description:
+						"Implement the deterministic E2E greeting and verify it.",
+					objective: "Exercise the core workflow without external credentials.",
+					acceptanceCriteria:
+						"Diff, Todo, verification, review and archive evidence exist.",
+					timeoutSeconds: 60,
+				},
+			});
+			expect(taskRes.status(), await taskRes.text()).toBe(201);
+			taskId = ((await taskRes.json()) as { id: string }).id;
+			const readyRes = await request.patch(`/api/tasks/${taskId}`, {
+				headers: sameOriginHeaders,
+				data: { status: "ready" },
+			});
+			expect(readyRes.status(), await readyRes.text()).toBe(200);
+
+			const queueRes = await request.post(
+				`/api/workbench/sessions/${taskId}/queue`,
+				{ headers: sameOriginHeaders },
+			);
+			expect(queueRes.status(), await queueRes.text()).toBe(200);
+			const terminal = await waitForTerminalRun(request, taskId);
+			const run = terminal;
+			expect(terminal.status).toBe("completed");
+			expect(gitDiff(workspaceDir)).toContain("Hello from NightWorkers E2E");
+
+			const detailRes = await request.get(`/api/runs/${run.id}`, {
+				headers: sameOriginHeaders,
+			});
+			expect(detailRes.status(), await detailRes.text()).toBe(200);
+			const detail = (await detailRes.json()) as {
+				todos: Array<{ status: string }>;
+				events: Array<{ type: string }>;
+				testResults?: unknown;
+			};
+			expect(detail.todos.length).toBeGreaterThan(0);
+			expect(detail.todos.every((todo) => todo.status === "passed")).toBe(true);
+			expect(JSON.stringify(detail.events)).toContain("git.diff_collected");
+			expect(JSON.stringify(detail.testResults)).toContain("fixture verify");
+
+			const reviewRes = await request.post(`/api/runs/${run.id}/reviews`, {
+				headers: sameOriginHeaders,
+				data: { action: "complete", note: "Deterministic review accepted." },
+			});
+			expect(reviewRes.status(), await reviewRes.text()).toBe(200);
+			expect((await reviewRes.json()) as { status: string }).toMatchObject({
+				status: "completed",
+			});
+
+			await page.goto(`/sessions/${taskId}`);
+			await expect(
+				page.getByText("Deterministic E2E implementation").first(),
+			).toBeVisible();
+
+			const archiveRes = await request.patch(
+				`/api/workbench/sessions/${taskId}/archive`,
+				{ headers: sameOriginHeaders },
+			);
+			expect(archiveRes.status(), await archiveRes.text()).toBe(200);
+			expect(["completed", "cancelled"]).toContain(
+				((await archiveRes.json()) as { status: string }).status,
+			);
+		} finally {
+			if (taskId)
+				await request.delete(`/api/tasks/${taskId}`, {
+					headers: sameOriginHeaders,
+				});
+			if (repositoryId)
+				await request.delete(`/api/repositories/${repositoryId}`, {
+					headers: sameOriginHeaders,
+				});
+			await fs.rm(workspaceDir, { recursive: true, force: true });
+		}
+	});
+
+	test("policy block persists needs_human evidence for retry", async ({
+		request,
+	}) => {
+		const workspaceDir = await createDisposableGitWorkspace();
+		let repositoryId: string | null = null;
+		let taskId: string | null = null;
+		try {
+			const repositoryRes = await request.post("/api/repositories", {
+				headers: sameOriginHeaders,
+				data: {
+					name: `E2E blocked ${Date.now()}`,
+					localPath: workspaceDir,
+					branch: "main",
+					allowed: true,
+				},
+			});
+			repositoryId = ((await repositoryRes.json()) as { id: string }).id;
+			const taskRes = await request.post("/api/tasks", {
+				headers: sameOriginHeaders,
+				data: {
+					repositoryId,
+					title: "Deterministic policy block",
+					description:
+						"[fixture:policy-block] Persist a retryable policy failure.",
+					objective: "[fixture:policy-block]",
+					acceptanceCriteria: "needs_human evidence is persisted.",
+					timeoutSeconds: 60,
+				},
+			});
+			taskId = ((await taskRes.json()) as { id: string }).id;
+			await request.patch(`/api/tasks/${taskId}`, {
+				headers: sameOriginHeaders,
+				data: { status: "ready" },
+			});
+			await request.post(`/api/workbench/sessions/${taskId}/queue`, {
+				headers: sameOriginHeaders,
+			});
+			const terminal = await waitForTerminalRun(request, taskId);
+			expect(terminal.status).toBe("needs_human");
+			const eventsRes = await request.get(`/api/runs/${terminal.id}/events`, {
+				headers: sameOriginHeaders,
+			});
+			expect(await eventsRes.text()).toContain("e2e_fixture_policy_block");
+			expect(gitDiff(workspaceDir)).toBe("");
 		} finally {
 			if (taskId)
 				await request.delete(`/api/tasks/${taskId}`, {

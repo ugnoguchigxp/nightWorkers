@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, like } from "drizzle-orm";
 import { db } from "../../db/client";
 import { llmModelPricing } from "../../db/schema";
 
@@ -99,6 +99,54 @@ export async function listPricingRows() {
 		.select()
 		.from(llmModelPricing)
 		.orderBy(llmModelPricing.provider, llmModelPricing.model);
+}
+
+export type PricingPageInput = {
+	provider?: string;
+	model?: string;
+	limit?: number;
+	offset?: number;
+};
+
+export type PricingPage = {
+	rows: LlmPricingRow[];
+	totalCount: number;
+	nextCursor: string | null;
+};
+
+export async function listPricingRowsPage(
+	input: PricingPageInput = {},
+): Promise<PricingPage> {
+	const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 100);
+	const offset = Math.max(Math.trunc(input.offset ?? 0), 0);
+	const provider = input.provider?.trim();
+	const model = input.model?.trim().toLowerCase();
+	const filters = [eq(llmModelPricing.enabled, true)];
+	if (provider) filters.push(eq(llmModelPricing.provider, provider));
+	if (model) filters.push(like(llmModelPricing.model, `%${model}%`));
+	const where = and(...filters);
+
+	const [[total], rows] = await Promise.all([
+		db.select({ value: count() }).from(llmModelPricing).where(where),
+		db
+			.select()
+			.from(llmModelPricing)
+			.where(where)
+			.orderBy(
+				asc(llmModelPricing.provider),
+				asc(llmModelPricing.model),
+				asc(llmModelPricing.id),
+			)
+			.limit(limit)
+			.offset(offset),
+	]);
+	const totalCount = total?.value ?? 0;
+	const nextOffset = offset + rows.length;
+	return {
+		rows,
+		totalCount,
+		nextCursor: nextOffset < totalCount ? String(nextOffset) : null,
+	};
 }
 
 export async function upsertPricingRow(input: LlmPricingInput) {

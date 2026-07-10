@@ -1,8 +1,19 @@
 # First Run Orientation
 
-This walkthrough assumes you are trying NightWorkers against an existing local
-repository. It does not require a sample Project Folder, fixed demo seed data,
-or a provider-backed demo transcript.
+This walkthrough can use either an existing disposable repository or the bundled
+fixed-seed [Support Ops CRM demo](../demo/support-ops-crm/README.md). The demo
+requires no provider credential and never reads a production repository.
+
+To reproduce Project registration, Plan, Queue, implementation, verification,
+Review, and evidence capture before connecting a provider, run:
+
+```bash
+bun run demo:setup
+bun run demo:run
+```
+
+Use `.nightworkers-demo/project` as the Project Folder and reset it afterward
+with `bun run demo:reset`.
 
 ## 1. Install and Start
 ```bash

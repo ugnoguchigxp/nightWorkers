@@ -8,6 +8,7 @@ import type {
 	WorkbenchArtifactRef,
 } from "../types";
 import { formatFinishedTime } from "../utils/time";
+import { LazyDetails } from "./LazyDetails";
 import { ThreadMessage } from "./ThreadMessage";
 import {
 	formatCodexToolActivitySummary,
@@ -49,11 +50,13 @@ export function TranscriptItemView({
 	onOpenArtifact,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	if (item.kind === "user_turn") {
 		const timestamp = item.events.at(-1)?.createdAt;
@@ -66,6 +69,7 @@ export function TranscriptItemView({
 					content={item.text || fallbackEventText(item.events.at(-1))}
 					onOpenProjectFile={onOpenProjectFile}
 					onOpenTestModeArtifact={onOpenTestModeArtifact}
+					onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 				/>
 			</ThreadMessage>
 		);
@@ -87,12 +91,14 @@ export function TranscriptItemView({
 							onOpenArtifact={onOpenArtifact}
 							onOpenProjectFile={onOpenProjectFile}
 							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : visibleText.trim() ? (
 						<ChatMarkdown
 							content={visibleText}
 							onOpenProjectFile={onOpenProjectFile}
 							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : null}
 					{item.children.map((child, _index) => (
@@ -289,17 +295,22 @@ function TranscriptActivityBlock({
 	}
 
 	return (
-		<details className={`rounded border ${borderClass}`} open={defaultOpen}>
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs">
-				<span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">
-					{displayTitle}
-				</span>
-				<span className="text-current/80">{event.source}</span>
-				{event.status ? (
-					<span className="ml-2 text-current/70">{event.status}</span>
-				) : null}
-				<span className="ml-2 text-current/50">#{event.seq}</span>
-			</summary>
+		<LazyDetails
+			className={`rounded border ${borderClass}`}
+			defaultOpen={defaultOpen}
+			summary={
+				<summary className="cursor-pointer list-none px-3 py-2 text-xs">
+					<span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">
+						{displayTitle}
+					</span>
+					<span className="text-current/80">{event.source}</span>
+					{event.status ? (
+						<span className="ml-2 text-current/70">{event.status}</span>
+					) : null}
+					<span className="ml-2 text-current/50">#{event.seq}</span>
+				</summary>
+			}
+		>
 			<div className="space-y-2 border-current/10 border-t px-3 py-2 text-xs">
 				{showSummary && summary ? (
 					<div className="whitespace-pre-wrap break-words">{summary}</div>
@@ -319,7 +330,7 @@ function TranscriptActivityBlock({
 					</pre>
 				) : null}
 			</div>
-		</details>
+		</LazyDetails>
 	);
 }
 

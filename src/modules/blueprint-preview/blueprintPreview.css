@@ -272,6 +272,16 @@
 	--ring: hsl(25 96% 62%);
 }
 
+@media (prefers-reduced-motion: reduce) {
+	.blueprint-preview,
+	.blueprint-preview * {
+		scroll-behavior: auto;
+		transition-duration: 0.01ms;
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+	}
+}
+
 .blueprint-preview[data-motion="reduced"],
 .blueprint-preview[data-motion="reduced"] * {
 	scroll-behavior: auto;

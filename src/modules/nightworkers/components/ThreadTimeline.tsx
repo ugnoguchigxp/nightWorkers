@@ -51,6 +51,8 @@ import {
 	buildNormalTranscriptItems,
 	NormalTranscriptItemView,
 } from "./ThreadTimelineNormalTranscript";
+import { useExternalPathPermissionController } from "./ThreadTimelinePermission.controller";
+import { ThreadTimelinePermissionDialog } from "./ThreadTimelinePermissionDialog";
 import {
 	buildPersistedStreamingResponsePreview,
 	buildStreamingResponsePreview,
@@ -96,25 +98,38 @@ type ThreadTimelineProps = {
 	onGrantExternalPath?: (path: string) => Promise<void>;
 };
 
-function findExternalPathPermissionRequest(events: TaskEvent[]): string | null {
-	for (const event of [...events].reverse()) {
-		const payload = asRecord(event.payloadJson);
-		if (payload.agentEventType !== "run.needs_human") continue;
-		const data = asRecord(payload.payload);
-		if (data.reason !== "path_access_denied") continue;
-		const args = asRecord(data.arguments);
-		const candidate =
-			typeof args.sourcePath === "string"
-				? args.sourcePath
-				: typeof args.filePath === "string"
-					? args.filePath
-					: typeof args.relativePath === "string"
-						? args.relativePath
-						: null;
-		if (candidate && (candidate.startsWith("/") || candidate.startsWith("..")))
-			return candidate;
+const timelineWindowSize = 100;
+
+export function sliceTimelineWindow<T>(
+	items: T[],
+	input: { count?: number; end?: number | null } = {},
+) {
+	const count = Math.max(1, input.count ?? timelineWindowSize);
+	const end = Math.min(Math.max(input.end ?? items.length, 0), items.length);
+	const start = Math.max(0, end - count);
+	return { items: items.slice(start, end), start, end, total: items.length };
+}
+
+export function findUnprojectedUserMessages(
+	messages: TaskMessage[],
+	transcriptItems: TranscriptItem[],
+) {
+	const projectedCounts = new Map<string, number>();
+	for (const item of transcriptItems) {
+		if (item.kind !== "user_turn") continue;
+		const key = item.text.trim();
+		if (!key) continue;
+		projectedCounts.set(key, (projectedCounts.get(key) ?? 0) + 1);
 	}
-	return null;
+
+	return messages.filter((message) => {
+		if (message.role !== "user") return false;
+		const key = message.content.trim();
+		const projectedCount = projectedCounts.get(key) ?? 0;
+		if (projectedCount === 0) return true;
+		projectedCounts.set(key, projectedCount - 1);
+		return false;
+	});
 }
 
 export function ThreadTimeline({
@@ -132,13 +147,13 @@ export function ThreadTimeline({
 	onOpenReviewModeArtifact,
 	onGrantExternalPath,
 }: ThreadTimelineProps) {
-	const [isGrantingExternalPath, setIsGrantingExternalPath] = useState(false);
-	const [dismissedPermissionPath, setDismissedPermissionPath] = useState<
-		string | null
-	>(null);
-	const [grantExternalPathError, setGrantExternalPathError] = useState<
-		string | null
-	>(null);
+	const externalPathPermission = useExternalPathPermissionController({
+		events: latestRunEvents,
+		onGrant: onGrantExternalPath,
+	});
+	const [historyWindowCount, setHistoryWindowCount] =
+		useState(timelineWindowSize);
+	const [historyWindowEnd, setHistoryWindowEnd] = useState<number | null>(null);
 	const transcriptItems = useMemo(
 		() =>
 			measureArtifactPerf(
@@ -155,7 +170,7 @@ export function ThreadTimeline({
 			),
 		[activityArtifacts, activityEvents],
 	);
-	const visibleTranscriptItems = useMemo(
+	const filteredTranscriptItems = useMemo(
 		() =>
 			showDebugEvents
 				? transcriptItems
@@ -170,6 +185,10 @@ export function ThreadTimeline({
 	const chatMessages = useMemo(
 		() => taskMessages.filter(isUserVisibleChatMessage),
 		[taskMessages],
+	);
+	const unprojectedUserMessages = useMemo(
+		() => findUnprojectedUserMessages(chatMessages, transcriptItems),
+		[chatMessages, transcriptItems],
 	);
 	const timelineItems = useMemo(
 		() =>
@@ -197,6 +216,31 @@ export function ThreadTimeline({
 			),
 		[chatMessages, latestRunEvents],
 	);
+	const transcriptHistoryWindow = useMemo(
+		() =>
+			sliceTimelineWindow(filteredTranscriptItems, {
+				count: historyWindowCount,
+				end: historyWindowEnd,
+			}),
+		[filteredTranscriptItems, historyWindowCount, historyWindowEnd],
+	);
+	const timelineHistoryWindow = useMemo(
+		() =>
+			sliceTimelineWindow(timelineItems, {
+				count: historyWindowCount,
+				end: historyWindowEnd,
+			}),
+		[timelineItems, historyWindowCount, historyWindowEnd],
+	);
+	const historyWindow = hasActivityTranscript
+		? transcriptHistoryWindow
+		: timelineHistoryWindow;
+	const visibleTranscriptItems = hasActivityTranscript
+		? transcriptHistoryWindow.items
+		: [];
+	const visibleTimelineItems = !hasActivityTranscript
+		? timelineHistoryWindow.items
+		: [];
 
 	const latestEvent = latestRunEvents[latestRunEvents.length - 1];
 	const streamingPreview = useMemo(
@@ -245,74 +289,58 @@ export function ThreadTimeline({
 			: null;
 	const runtimeSnapshotTimelineAnchorId =
 		showDebugEvents && !hasActivityTranscript
-			? findRuntimePromptSnapshotTimelineAnchorId(timelineItems, latestRun)
+			? findRuntimePromptSnapshotTimelineAnchorId(
+					visibleTimelineItems,
+					latestRun,
+				)
 			: null;
 	const shouldRenderTrailingRuntimeSnapshot =
 		showDebugEvents &&
 		Boolean(latestRun?.contextSnapshot) &&
 		!runtimeSnapshotTranscriptAnchorId &&
 		!runtimeSnapshotTimelineAnchorId;
-	const permissionPath = findExternalPathPermissionRequest(latestRunEvents);
-	const showPermissionDialog =
-		Boolean(permissionPath) &&
-		permissionPath !== dismissedPermissionPath &&
-		Boolean(onGrantExternalPath);
-
 	return (
-		<div className="nightworkers-chat-window space-y-5 p-6">
-			{showPermissionDialog && permissionPath ? (
-				<ThreadMessage messageRole="assistant">
-					<div className="max-w-2xl rounded-lg border border-slate-700 bg-slate-950/80 p-4">
-						<div className="text-sm font-semibold text-slate-100">
-							外部フォルダへのアクセス許可
-						</div>
-						<div className="mt-2 text-xs leading-5 text-slate-300">
-							続行するには、このフォルダの読み取り許可が必要です。
-						</div>
-						<div className="mt-3 break-all rounded-md border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-200">
-							{permissionPath}
-						</div>
-						<div className="mt-4 flex justify-end gap-2">
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={() => setDismissedPermissionPath(permissionPath)}
-							>
-								閉じる
-							</Button>
-							<Button
-								type="button"
-								size="sm"
-								disabled={isGrantingExternalPath}
-								onClick={async () => {
-									if (!onGrantExternalPath) return;
-									setIsGrantingExternalPath(true);
-									setGrantExternalPathError(null);
-									try {
-										await onGrantExternalPath(permissionPath);
-										setDismissedPermissionPath(permissionPath);
-									} catch (error) {
-										setGrantExternalPathError(
-											error instanceof Error
-												? error.message
-												: "外部フォルダの許可に失敗しました。",
-										);
-									} finally {
-										setIsGrantingExternalPath(false);
-									}
-								}}
-							>
-								フォルダを許可
-							</Button>
-						</div>
-						{grantExternalPathError ? (
-							<div className="mt-3 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-200">
-								{grantExternalPathError}
-							</div>
-						) : null}
-					</div>
-				</ThreadMessage>
+		<div
+			className="nightworkers-chat-window space-y-5 p-6"
+			data-timeline-mounted-count={historyWindow.items.length}
+			data-timeline-total-count={historyWindow.total}
+		>
+			{historyWindow.start > 0 ? (
+				<div className="flex justify-center">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => {
+							setHistoryWindowEnd((end) => end ?? historyWindow.total);
+							setHistoryWindowCount((count) => count + timelineWindowSize);
+						}}
+					>
+						過去の履歴をさらに表示
+					</Button>
+				</div>
+			) : null}
+			{historyWindowEnd !== null && historyWindow.end < historyWindow.total ? (
+				<div className="flex justify-center">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => {
+							setHistoryWindowEnd(null);
+							setHistoryWindowCount(timelineWindowSize);
+						}}
+					>
+						最新の履歴へ戻る
+					</Button>
+				</div>
+			) : null}
+			{externalPathPermission.isOpen && externalPathPermission.path ? (
+				<ThreadTimelinePermissionDialog
+					path={externalPathPermission.path}
+					isGranting={externalPathPermission.isGranting}
+					error={externalPathPermission.error}
+					onDismiss={externalPathPermission.dismiss}
+					onGrant={externalPathPermission.grant}
+				/>
 			) : null}
 			{showDebugEvents && isAgentWorking && latestEvent ? (
 				<div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
@@ -335,6 +363,7 @@ export function ThreadTimeline({
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
 									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</TimelineDebugFragment>
 						) : (
@@ -344,10 +373,11 @@ export function ThreadTimeline({
 								onOpenArtifact={onOpenArtifact}
 								onOpenProjectFile={onOpenProjectFile}
 								onOpenTestModeArtifact={onOpenTestModeArtifact}
+								onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 							/>
 						),
 					)
-				: timelineItems.map((item) =>
+				: visibleTimelineItems.map((item) =>
 						item.kind === "message" ? (
 							<ThreadMessage
 								key={item.id}
@@ -365,6 +395,7 @@ export function ThreadTimeline({
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
 									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</ThreadMessage>
 						) : (showDebugEvents &&
@@ -420,6 +451,23 @@ export function ThreadTimeline({
 							</TimelineDebugFragment>
 						) : null,
 					)}
+			{hasActivityTranscript
+				? unprojectedUserMessages.map((message) => (
+						<ThreadMessage
+							key={`unprojected-${message.id}`}
+							messageRole="user"
+							timestamp={formatFinishedTime(message.createdAt)}
+						>
+							<MessagePayload
+								message={message}
+								onOpenArtifact={onOpenArtifact}
+								onOpenProjectFile={onOpenProjectFile}
+								onOpenTestModeArtifact={onOpenTestModeArtifact}
+								onOpenReviewModeArtifact={onOpenReviewModeArtifact}
+							/>
+						</ThreadMessage>
+					))
+				: null}
 			{shouldRenderTrailingRuntimeSnapshot ? (
 				<RuntimePromptSnapshotCard latestRun={latestRun} />
 			) : null}
@@ -429,6 +477,7 @@ export function ThreadTimeline({
 						preview={streamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
 						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 				</ThreadMessage>
 			) : null}
@@ -438,6 +487,7 @@ export function ThreadTimeline({
 						preview={persistedStreamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
 						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 				</ThreadMessage>
 			) : null}

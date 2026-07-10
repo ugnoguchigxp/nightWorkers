@@ -27,8 +27,20 @@ export function refreshFxRates() {
 	return apiFetch("/api/settings/fx/refresh", { method: "POST" });
 }
 
-export function fetchPricingRows() {
-	return apiFetch("/api/settings/pricing");
+export function fetchPricingRows(
+	input: {
+		provider?: string;
+		model?: string;
+		limit?: number;
+		cursor?: string | null;
+	} = {},
+) {
+	const query = new URLSearchParams();
+	if (input.provider) query.set("provider", input.provider);
+	if (input.model) query.set("model", input.model);
+	query.set("limit", String(input.limit ?? 50));
+	if (input.cursor) query.set("cursor", input.cursor);
+	return apiFetch(`/api/settings/pricing?${query.toString()}`);
 }
 
 export function importPublicPricingRows() {
@@ -55,6 +67,10 @@ export function fetchLlmModelOptions() {
 
 export function fetchCodexSdkStatus() {
 	return apiFetch("/api/settings/codex/status");
+}
+
+export function fetchStartupPreflight() {
+	return apiFetch("/api/settings/preflight/startup");
 }
 
 export function runLlmSmokeTest() {

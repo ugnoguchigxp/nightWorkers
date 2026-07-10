@@ -1,5 +1,5 @@
-import sanitizeHtml from "sanitize-html";
 import { unknownErrorMessage } from "../../../shared/json-record";
+import { sanitizePlainText } from "../../../shared/sanitize-plain-text";
 import type { WorkerToolResult } from "./types";
 
 export interface FetchContentInput {
@@ -52,19 +52,31 @@ function extractMetaContent(html: string, name: string): string | undefined {
 		"i",
 	);
 	const match = html.match(pattern);
-	return match?.[1] ? decodeHtmlEntities(match[1]) : undefined;
+	if (!match?.[1]) return undefined;
+	const content = sanitizePlainText(decodeHtmlEntities(match[1])).trim();
+	return content || undefined;
 }
 
 function extractTitle(html: string): string | undefined {
 	const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-	return match?.[1] ? decodeHtmlEntities(match[1]).trim() : undefined;
+	if (!match?.[1]) return undefined;
+	const title = sanitizePlainText(decodeHtmlEntities(match[1])).trim();
+	return title || undefined;
+}
+
+function discardRawTextElements(value: string): string {
+	return value
+		.replace(/<xmp[\s\S]*?<\/xmp>/gi, " ")
+		.replace(/<script[\s\S]*?<\/script>/gi, " ")
+		.replace(/<style[\s\S]*?<\/style>/gi, " ")
+		.replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
 }
 
 function htmlToText(html: string): string {
-	const withoutNoise = html
-		.replace(/<script[\s\S]*?<\/script>/gi, " ")
-		.replace(/<style[\s\S]*?<\/style>/gi, " ")
-		.replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+	const withoutNoise = discardRawTextElements(html)
+		.replace(/<head[\s\S]*?<\/head>/gi, " ")
+		.replace(/<title[\s\S]*?<\/title>/gi, " ")
+		.replace(/<meta\b[^>]*>/gi, " ")
 		.replace(/<(?:br|hr)\s*\/?>/gi, "\n")
 		.replace(
 			/<\/(?:p|div|section|article|header|footer|li|h[1-6]|tr|table|blockquote)>/gi,
@@ -72,11 +84,7 @@ function htmlToText(html: string): string {
 		)
 		.replace(/<li[^>]*>/gi, "\n- ");
 
-	const stripped = sanitizeHtml(withoutNoise, {
-		allowedTags: [],
-		allowedAttributes: {},
-		disallowedTagsMode: "discard",
-	});
+	const stripped = sanitizePlainText(withoutNoise);
 	return normalizeWhitespace(decodeHtmlEntities(stripped));
 }
 
@@ -101,7 +109,7 @@ function isLowSignalText(
 	description?: string,
 ): boolean {
 	if (text.trim().length < 250) return true;
-	const alphaCount = (text.match(/[A-Za-z0-9\u00C0-\u024F]/g) ?? []).length;
+	const alphaCount = (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
 	const signalRatio = alphaCount / Math.max(1, text.length);
 	return (!title && !description) || signalRatio < 0.2;
 }
@@ -117,8 +125,10 @@ function extractReaderMirrorContent(raw: string): {
 			? raw.slice(markdownIndex + "Markdown Content:".length).trim()
 			: raw.trim();
 	return {
-		...(titleMatch?.[1] ? { title: titleMatch[1].trim() } : {}),
-		text: normalizeWhitespace(body),
+		...(titleMatch?.[1]
+			? { title: sanitizePlainText(titleMatch[1]).trim() }
+			: {}),
+		text: normalizeWhitespace(sanitizePlainText(discardRawTextElements(body))),
 	};
 }
 

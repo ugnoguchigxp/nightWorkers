@@ -23,6 +23,16 @@ describe("auth schemas", () => {
 		).toThrow();
 	});
 
+	it("removes raw-text and nested executable markup from registration names", () => {
+		const payload = registerSchema.parse({
+			email: "safe@example.com",
+			password: "password123",
+			name: "利用者<xmp><img src=x onerror=alert(1)></xmp>🚀",
+		});
+
+		expect(payload.name).toBe("利用者🚀");
+	});
+
 	it("validates login payload", () => {
 		expect(
 			loginSchema.parse({

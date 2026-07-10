@@ -6,6 +6,7 @@ import { client } from "./db/client";
 import { logEvent } from "./lib/logger";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
+import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
 import { mcpClientManager } from "./services/mcp/mcp-client-manager";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 
@@ -118,7 +119,7 @@ export async function createNightWorkersServer(
 	options: NightWorkersServerOptions = {},
 ): Promise<NightWorkersServerHandle> {
 	const port = options.port ?? config.PORT;
-	const host = options.host ?? "127.0.0.1";
+	const host = options.host ?? config.HOST;
 	const shutdownTimeoutMs =
 		options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
 
@@ -188,6 +189,13 @@ export async function createNightWorkersServer(
 
 		try {
 			const errors: Error[] = [];
+			collectCleanupError(
+				errors,
+				"Isolated task workers shutdown",
+				await Promise.allSettled([shutdownIsolatedTaskWorkers()]).then(
+					([result]) => result,
+				),
+			);
 			collectCleanupError(
 				errors,
 				"HTTP server close",

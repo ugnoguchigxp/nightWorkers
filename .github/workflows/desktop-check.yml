@@ -1,0 +1,49 @@
+name: Desktop Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-check:
+    name: macOS desktop verification
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: desktop-${{ runner.os }}-${{ hashFiles('bun.lock', 'src-tauri/Cargo.lock') }}
+          restore-keys: desktop-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Run desktop verification
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          bun run verify:desktop 2>&1 | tee artifacts/verify-desktop.log
+      - name: Upload desktop verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-verification-log
+          path: artifacts/verify-desktop.log
+          retention-days: 7

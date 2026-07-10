@@ -103,6 +103,18 @@ describe("Project Detail backend mission core", () => {
 				status: "completed",
 			});
 
+			await upsertPricingRow({
+				provider: "fixture-provider",
+				model: "gpt-test",
+				inputPer1m: 10,
+				cachedInputPer1m: 1,
+				outputPer1m: 20,
+				effectiveFrom: "1970-01-01T00:00:00.000Z",
+				fetchedAt: new Date().toISOString(),
+				manualOverride: false,
+				enabled: true,
+			});
+
 			await recordLlmUsage({
 				taskId: task.id,
 				runId: null,
@@ -126,18 +138,6 @@ describe("Project Detail backend mission core", () => {
 				},
 				durationMs: 1000,
 			});
-			await upsertPricingRow({
-				provider: "fixture-provider",
-				model: "gpt-test",
-				inputPer1m: 10,
-				cachedInputPer1m: 1,
-				outputPer1m: 20,
-				effectiveFrom: "1970-01-01T00:00:00.000Z",
-				fetchedAt: new Date().toISOString(),
-				manualOverride: false,
-				enabled: true,
-			});
-
 			const metricsRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/project-detail/metrics`,
 			);

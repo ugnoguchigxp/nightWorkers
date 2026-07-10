@@ -19,3 +19,37 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
   repository evaluation, and evidence-based adoption checks.
 - Refined GitHub Pages landing-page copy and navigation for first-time
   evaluation.
+
+### Fixed
+- Release metadata and documentation drift are now rejected by automated gates.
+
+### Removed
+- Nothing.
+
+## [0.1.0] - 2026-07-10
+
+### Added
+- Local-first Project, Workbench, Implementation Queue, Plan Mode, Test Mode,
+  Review Mode, and evidence inspection workflows.
+- Tauri desktop packaging with a managed backend sidecar and packaged smoke
+  verification.
+- A fixed-seed Support Ops CRM demo that performs a real disposable repository
+  change and records verification and review evidence without credentials.
+- Release metadata, checksum manifest, documentation consistency, and unified
+  release verification commands.
+
+### Changed
+- Package metadata is the canonical release version; Tauri, Git tags,
+  changelog sections, release notes, and artifact manifests must match it.
+- Release readiness now requires the full tests, E2E smoke, dependency policy,
+  desktop build/smoke, metadata checks, and deterministic demo smoke.
+
+### Fixed
+- Version drift between package and desktop configuration is detected before a
+  release tag can be created.
+- Completed implementation plans are linked from `spec/archive/` instead of
+  remaining in the active plan directory.
+
+### Removed
+- Reliance on live provider credentials or production repositories for the
+  documented first demo lifecycle.

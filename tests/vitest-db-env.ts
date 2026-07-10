@@ -1,10 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 
-export const testDatabasePath = path.join(
-	os.tmpdir(),
-	"nightworkers-vitest.sqlite",
-);
+export const testDatabasePath =
+	process.env.NIGHTWORKERS_VITEST_DB_PATH ||
+	path.join(os.tmpdir(), "nightworkers-vitest.sqlite");
 
 export function applyVitestDatabaseEnv() {
 	process.env.NODE_ENV = "test";

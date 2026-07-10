@@ -269,6 +269,18 @@ Current limits:
 - Desktop state is local to the resolved runtime directory; set
   `NIGHTWORKERS_RUNTIME_DIR` to override it.
 
+## Credential-Free Demo and Release Evidence
+
+The [Support Ops CRM demo](../demo/support-ops-crm/README.md) uses a fixed seed
+and disposable Git Project to execute Project registration, Plan, Queue,
+implementation, verification, Review, and evidence capture without provider
+credentials. `bun run demo:smoke` verifies and resets the whole lifecycle.
+
+Release evidence is gated by `bun run verify:release`. Package version is the
+canonical source for Tauri config, CHANGELOG, release notes, tag, artifact name,
+and checksum manifest. See the [0.1.0 release notes](./release-notes/0.1.0.md)
+for migration, rollback, limitations, and the desktop support matrix.
+
 ## Sample Final Report Shape
 A useful NightWorkers run should leave a final report that lets you review the
 work without reconstructing the whole transcript. A good report usually answers:

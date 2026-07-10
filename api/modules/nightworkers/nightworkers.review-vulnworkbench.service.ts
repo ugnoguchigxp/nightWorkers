@@ -25,7 +25,6 @@ export type VulnWorkbenchSecurityResult = {
 		exitCode: number | null;
 		summary: string;
 	}>;
-	reportPath: string | null;
 	findingCount: number;
 	highOrCriticalCount: number;
 	improvementRequest: string | null;
@@ -146,7 +145,6 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 			profile,
 			topFindings: [],
 			commandsRun,
-			reportPath: null,
 			findingCount: 0,
 			highOrCriticalCount: 0,
 			improvementRequest: null,
@@ -205,7 +203,6 @@ export function findingForVulnWorkbenchResult(
 			`- scanRunId: ${result.scanRunId ?? "(unknown)"}`,
 			`- findingCount: ${result.findingCount}`,
 			`- highOrCriticalCount: ${result.highOrCriticalCount}`,
-			result.reportPath ? `- reportPath: ${result.reportPath}` : null,
 			result.improvementRequest
 				? `- improvementRequest: ${result.improvementRequest}`
 				: null,
@@ -272,7 +269,6 @@ function unconfiguredResult(
 		profile,
 		topFindings: [],
 		commandsRun: [],
-		reportPath: null,
 		findingCount: 0,
 		highOrCriticalCount: 0,
 		improvementRequest: null,
@@ -373,7 +369,6 @@ function resultFromOraclePayload(
 			fallbacks.fallbackProfile,
 		topFindings: parseTopFindings(scan?.findings),
 		commandsRun: fallbacks.commandsRun,
-		reportPath: typeof scan?.reportPath === "string" ? scan.reportPath : null,
 		findingCount:
 			typeof scan?.findingCount === "number"
 				? scan.findingCount
@@ -422,14 +417,7 @@ function parseTopFindings(value: unknown): VulnWorkbenchTopFinding[] {
 
 function formatActionableFindings(result: VulnWorkbenchSecurityResult) {
 	if (result.topFindings.length === 0) {
-		return [
-			"対応が必要な検出がありますが、詳細要約は取得できませんでした。",
-			result.reportPath
-				? `詳細 report を確認してください: ${result.reportPath}`
-				: null,
-		]
-			.filter(Boolean)
-			.join("\n");
+		return "対応が必要な検出がありますが、vulnWorkbench から finding 本文を取得できませんでした。";
 	}
 	const lines = ["対応が必要な検出:"];
 	for (const [index, finding] of result.topFindings.entries()) {
@@ -445,7 +433,7 @@ function formatActionableFindings(result: VulnWorkbenchSecurityResult) {
 	}
 	if (result.findingCount > result.topFindings.length) {
 		lines.push(
-			`ほか ${result.findingCount - result.topFindings.length} 件は reportPath の詳細 report を確認してください。`,
+			`ほか ${result.findingCount - result.topFindings.length} 件は、この出力には含まれていません。`,
 		);
 	}
 	return lines.join("\n");

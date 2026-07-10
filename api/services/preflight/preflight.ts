@@ -5,6 +5,7 @@ import {
 	getRuntimePaths,
 	isDesktopMode,
 } from "../../runtime/paths";
+import { assessListenSecurity } from "../../security/listen-security";
 
 export type PreflightCheckStatus = "pass" | "warn" | "fail";
 
@@ -16,7 +17,7 @@ export type PreflightCheck = {
 };
 
 export type StartupPreflightResult = {
-	mode: "desktop" | "development";
+	mode: "desktop" | "development" | "production";
 	runtimeRoot: string;
 	resourceRoot: string;
 	checks: PreflightCheck[];
@@ -25,7 +26,38 @@ export type StartupPreflightResult = {
 export function runStartupPreflight(): StartupPreflightResult {
 	const paths = getRuntimePaths();
 	const resourceRoot = getResourceRoot();
+	const listenSecurity = assessListenSecurity({
+		nodeEnv: config.NODE_ENV,
+		host: config.HOST,
+		authRequired: config.API_AUTH_REQUIRED,
+		corsOrigins: config.CORS_ORIGINS,
+		trustProxy: config.TRUST_PROXY,
+		allowInsecureNonLoopback: config.ALLOW_INSECURE_NON_LOOPBACK,
+	});
 	const checks: PreflightCheck[] = [
+		{
+			id: "listen-security",
+			label: "Listen host and API authentication are safe",
+			status: listenSecurity.status,
+			detail: listenSecurity.detail,
+		},
+		{
+			id: "cors-origins",
+			label: "CORS uses explicit origins",
+			status:
+				config.CORS_ORIGINS.length > 0 && !config.CORS_ORIGINS.includes("*")
+					? "pass"
+					: "fail",
+			detail: config.CORS_ORIGINS.join(", ") || "No CORS origin configured.",
+		},
+		{
+			id: "proxy-trust",
+			label: "Proxy header trust is explicit",
+			status: config.TRUST_PROXY ? "warn" : "pass",
+			detail: config.TRUST_PROXY
+				? "TRUST_PROXY=true; ensure only the trusted reverse proxy can reach this listener."
+				: "Proxy forwarding headers are not trusted.",
+		},
 		checkDirectory(
 			"runtime-root",
 			"Runtime root is writable",
@@ -63,7 +95,11 @@ export function runStartupPreflight(): StartupPreflightResult {
 	];
 
 	return {
-		mode: isDesktopMode() ? "desktop" : "development",
+		mode: isDesktopMode()
+			? "desktop"
+			: config.NODE_ENV === "production"
+				? "production"
+				: "development",
 		runtimeRoot: paths.runtimeRoot,
 		resourceRoot,
 		checks,

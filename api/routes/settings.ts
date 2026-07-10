@@ -3,7 +3,7 @@ import { readCodexSdkStatus } from "../services/codex-global-config/status";
 import { runStartupPreflight } from "../services/preflight/preflight";
 import {
 	importPublicPricingRows,
-	listPricingRows,
+	listPricingRowsPage,
 	seedCodexPricingRows,
 	upsertPricingRow,
 } from "../services/pricing";
@@ -110,8 +110,14 @@ export const settingsRouter = createOpenApiRouter()
 		return c.json(runStartupPreflight(), 200);
 	})
 	.openapi(listPricingRoute, async (c) => {
-		const rows = await listPricingRows();
-		return c.json(rows, 200);
+		const query = c.req.valid("query");
+		const page = await listPricingRowsPage({
+			provider: query.provider,
+			model: query.model,
+			limit: query.limit,
+			offset: query.cursor ? Number(query.cursor) : 0,
+		});
+		return c.json(page, 200);
 	})
 	.openapi(savePricingRoute, async (c) => {
 		const row = await upsertPricingRow(c.req.valid("json"));

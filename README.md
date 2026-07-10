@@ -15,6 +15,7 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 - [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+- [Credential-Free Demo](#credential-free-demo)
 - [Five-Minute Orientation](#five-minute-orientation)
 - [What You Should See First](#what-you-should-see-first)
 - [Trust and Local-First Model](#trust-and-local-first-model)
@@ -58,8 +59,7 @@ If you are evaluating the project for the first time, start with:
 - Chat-first workbench flow with explicit Implementation Queue admission and run execution
 - App Blueprint review with governed preview settings plus Plan Mode Workspace artifacts
 - Clear current limits: no automatic PR/merge/deploy, no parallel multi-agent
-  orchestration, no required external memory service, and no bundled demo
-  project or fixed seed transcript yet
+  orchestration, and no required external memory service
 
 ## Good Fit / Not Good Fit
 NightWorkers is a good fit when you want:
@@ -74,7 +74,7 @@ NightWorkers is not a good fit when you need:
 - Hosted team collaboration or browser-only SaaS onboarding.
 - Automatic PR creation, merge, release, or deploy as the default workflow.
 - Parallel multi-agent orchestration over the same repository state.
-- A turnkey demo transcript before installing the app locally.
+- A hosted browser-only demo without installing the app locally.
 
 ## Current Capabilities
 - Project Folder registration and per-project Session/Task management
@@ -99,8 +99,6 @@ NightWorkers is not a good fit when you need:
 - No automatic PR creation/merge/deploy
 - No multi-agent orchestration in parallel
 - No mandatory external memory service requirement
-- No bundled sample Project Folder, fixed demo seed data, or `demo:*`
-  workflow yet
 - No hosted demo GIF/video in the repository docs yet
 
 ## Architecture
@@ -126,6 +124,22 @@ bun run setup
 ```bash
 bun run dev
 ```
+
+## Credential-Free Demo
+
+The [Support Ops CRM deterministic demo](./demo/support-ops-crm/README.md)
+creates a disposable Git Project, records Plan and Queue state, applies a fixed
+implementation, runs real tests, and writes Review evidence without provider
+credentials or a production repository:
+
+```bash
+bun run demo:setup
+bun run demo:run
+```
+
+Inspect `.nightworkers-demo/evidence/review.json`, then clean up with
+`bun run demo:reset`. CI uses `bun run demo:smoke` for the complete setup, run,
+assertion, and reset lifecycle.
 
 `setup` creates `.env` from `.env.example` only when `.env` does not already
 exist, then applies migrations and seeds the local database.
@@ -298,6 +312,14 @@ Detailed runtime configuration:
 | `bun run desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
 | `bun run desktop:smoke` | Launch the packaged `.app` and verify API, WebSocket, logs, and shutdown |
 | `bun run desktop:sign` | Sign/verify an app path when Developer ID credentials are available |
+| `bun run demo:setup` | Create and register the disposable fixed-seed demo Project |
+| `bun run demo:run` | Execute implementation, verification, Review, and evidence capture |
+| `bun run demo:reset` | Remove all generated demo Project and runtime data |
+| `bun run demo:smoke` | Run the credential-free demo lifecycle and reset it |
+| `bun run release:check` | Check package, Tauri, CHANGELOG, release-note, tag, and optional manifest consistency |
+| `bun run release:manifest` | After release verification, generate SHA-256 and signing/notarization artifact metadata |
+| `bun run release:create` | Run release verification before a dry-run or explicit annotated tag creation |
+| `bun run check:docs` | Check documented commands, local links/anchors, and completed-plan archive links |
 | `bun run lint` | Run Biome checks |
 | `bun run typecheck` | Run TypeScript checks |
 | `bun run test` | Run Vitest |
@@ -314,17 +336,22 @@ Detailed runtime configuration:
 | `bun run verify:desktop` | Run desktop runtime tests and lint in parallel, then build the `.app` and run sidecar/packaged smoke |
 | `bun run verify` | Run the same lightweight base gate as `verify:base` |
 | `bun run verify:fast` | Alias for `verify:base` |
-| `bun run verify:full` | Run the base gate plus `bun run test run` |
+| `bun run verify:full` | Run the complete slow suite: all tests, E2E/accessibility, audit, desktop build/smoke, and opt-in live LLM checks |
+| `bun run verify:e2e` | Run the credential-free Playwright smoke gate |
+| `bun run verify:audit` | Enforce the High/Critical dependency audit policy |
+| `bun run verify:release` | Run metadata/docs, full tests, E2E, demo, dependency, and desktop release gates |
 
 ## Testing
 - Default gate: `bun run verify` runs the lightweight base gate: tracked-artifact check, TypeScript, and Biome first in parallel, then supervisor regression tests serially.
 - Fast gate: `bun run verify:fast` is an alias for `verify:base`.
 - Desktop gate: `bun run verify:desktop` remains separate. It runs desktop runtime tests and desktop lint first in parallel, then current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke serially.
-- Full gate: `bun run verify:full` runs the base gate plus `bun run test run` at the end serially, which is the full non-E2E/non-live Vitest suite selected by `vitest.config.ts` (`tests/**/*.{test,spec}.{ts,tsx}` excluding `tests/e2e/**` and `tests/live/**`). It does not run desktop build or smoke; use `bun run verify:desktop` when a change touches desktop packaging or sidecar behavior.
+- Full gate: `bun run verify:full` is intentionally slow and opt-in. It runs the base gate, the full non-live Vitest suite, Playwright smoke/accessibility, deterministic demo, dependency audit, desktop runtime/lint/build/smoke, then live LLM Vitest and agent E2E. Live checks still skip unless `NIGHTWORKERS_LIVE_LLM_VITEST=1` or `NIGHTWORKERS_LIVE_LLM_E2E=1` and credentials are configured.
+- Dependency gate: `bun run verify:audit` fails on every unallowlisted High/Critical advisory. Temporary exceptions require an advisory ID, owner, reason, mitigation, and expiry in `config/dependency-audit-allowlist.json`.
+- Release gate: `bun run verify:release` is the only release-ready entrypoint. It checks release metadata and docs and runs the deterministic full profile. Opt-in live-provider checks remain exclusive to `verify:full` / `verify:live` so release reproducibility does not depend on an external provider.
 - Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
 - Packaged desktop smoke: `bun run desktop:smoke` can also be run directly as the release/adoption smoke for launching the built `.app` and verifying API, WebSocket, logs, and shutdown.
 - Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
-- Husky hooks: `pre-commit` and `pre-push` both run `bun run verify`.
+- Husky hooks: `pre-commit` and `pre-push` both run only the fast `bun run verify` gate; they never run E2E, desktop build/smoke, or live LLM calls.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)
 - Agent outcome E2E: `bun run test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
@@ -334,10 +361,10 @@ Detailed runtime configuration:
 - Recommended pre-PR validation:
 ```bash
 bun run verify
-bun run verify:full
-bun run test:e2e:smoke
 ```
-For desktop packaging or sidecar changes, also run `bun run verify:desktop`.
+Run `bun run verify:full` explicitly when the complete slow suite is warranted. Targeted `verify:e2e`, `verify:desktop`, `verify:audit`, and `verify:live` commands remain available. Release candidates must pass `bun run verify:release`.
+Before a release, run `bun run verify:release`; tag creation through
+`bun run release:create -- --execute` is blocked unless that command succeeds.
 
 ## Documentation Map
 This repository uses the following documentation layout.
@@ -355,6 +382,8 @@ This repository uses the following documentation layout.
   - [`Feature Tour`](./spec/feature-tour.md)
   - [`Adoption Checklist`](./spec/adoption-checklist.md)
   - [`Documentation Maintenance Checklist`](./spec/archive/documentation-maintenance-checklist.md)
+  - [`Credential-Free Demo`](./demo/support-ops-crm/README.md)
+  - [`0.1.0 Release Notes`](./spec/release-notes/0.1.0.md)
 - Engineering specs and internal references:
   - `spec/docs/` (primary specification/reference docs)
   - [`Architecture and Module Boundaries`](./spec/architecture.md)

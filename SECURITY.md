@@ -1,7 +1,9 @@
 # Security Policy
 
 ## Supported Versions
-Security fixes are applied to the latest mainline state of this repository.
+Security fixes are applied to the latest mainline state and the latest published
+release. The desktop platform matrix and known limitations are recorded in the
+versioned release notes, starting with [0.1.0](./spec/release-notes/0.1.0.md).
 
 ## Reporting a Vulnerability
 Please do not open a public issue for vulnerabilities.

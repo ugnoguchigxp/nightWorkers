@@ -108,6 +108,31 @@ describe("fetchContentTool", () => {
 		expect(result.payload.description).toBe("A short example description.");
 		expect(result.payload.text).toContain("First paragraph.");
 	});
+
+	it("removes executable markup from fetched titles and HTML content", async () => {
+		vi.spyOn(global, "fetch").mockResolvedValue({
+			ok: true,
+			status: 200,
+			url: "https://example.com/untrusted",
+			headers: { get: () => "text/html; charset=utf-8" },
+			text: async () => `
+				<title>安全な題名<img src=x onerror=alert(1)></title>
+				<meta name="description" content="説明">
+				<main>${"通常の本文です。".repeat(80)}</main>
+				<xmp><img src=x onerror=alert(1)></xmp>
+				<script><script>alert(1)</script></script>
+			`,
+		} as Response);
+
+		const result = await fetchContentTool({
+			url: "https://example.com/untrusted",
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.title).toBe("安全な題名");
+		expect(result.payload.text).not.toMatch(/<(?:script|img|xmp)\b/i);
+		expect(result.payload.text).not.toContain("onerror=");
+	});
 });
 
 describe("listDirTool", () => {

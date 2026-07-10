@@ -54,6 +54,7 @@ import {
 	getUnansweredQuestions,
 	QuestionnaireForm,
 } from "./PlanModeQuestionnaire";
+import { usePlanWorkspaceActions } from "./PlanModeWorkspace.controller";
 import {
 	DedicatedViewPanel,
 	type PlanViewDecision,
@@ -263,10 +264,6 @@ export function resetPlanWorkspaceScrollToTop(
 }
 
 type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
-type PlanWorkspaceActionResult =
-	| { focusTab?: PlanWorkspaceTab | null }
-	| undefined;
-
 export function buildVisiblePlanWorkspaceTabs(input: {
 	questionnaireGateLocked: boolean;
 	hasFeaturePlan: boolean;
@@ -582,38 +579,15 @@ export function PlanModeWorkspaceViewer({
 		questionnaireComplete,
 	});
 
-	async function runAction(
-		action: string,
-		fn: () => Promise<PlanWorkspaceActionResult>,
-	) {
-		setBusyAction(action);
-		setActionError(null);
-		setActionNotice(null);
-		try {
-			const result = await fn();
-			const focusTab = result?.focusTab ?? null;
-			await refresh({
-				preserveGeneratedBlueprintFocus: focusTab === "blueprint",
-			});
-			if (focusTab) {
-				selectActiveTab(focusTab);
-				resetWorkspaceScrollTop();
-			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			setActionError(message);
-		} finally {
-			setBusyAction(null);
-		}
-	}
-
-	async function runSessionAction(action: string, fn?: () => Promise<void>) {
-		if (!fn || isImplementationLocked) return;
-		await runAction(action, async () => {
-			await fn();
-			return undefined;
-		});
-	}
+	const { runAction, runSessionAction } = usePlanWorkspaceActions({
+		isImplementationLocked,
+		refresh,
+		selectActiveTab,
+		resetWorkspaceScrollTop,
+		setBusyAction,
+		setActionError,
+		setActionNotice,
+	});
 
 	const planModeDisabledReason =
 		"Plan Mode capability is disabled in Settings.";
@@ -1201,27 +1175,23 @@ function FeaturePlanVerificationBar({
 		isTestModeWorkflowInProgress(workflowSteps);
 	return (
 		<div className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2">
-			<div className="flex items-center justify-between gap-3">
-				{workflowActionStatus === "failed" ? (
-					<div className="min-w-0 text-[11px] text-amber-300">
-						{t("testMode.status.planFailed")}
-					</div>
-				) : (
-					<div />
-				)}
-				{canShowStartButton ? (
-					<div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-						<FeaturePlanTestModeActionButton
-							action={TEST_MODE_WORKFLOW_ACTION}
-							label={t("testMode.action.startWorkflow")}
-							status={workflowActionStatus}
-							disabled={workflowInProgress}
-							onStart={onStart}
-						/>
-					</div>
-				) : null}
-			</div>
+			{workflowActionStatus === "failed" ? (
+				<div className="text-[11px] text-amber-300">
+					{t("testMode.status.planFailed")}
+				</div>
+			) : null}
 			<FeaturePlanTestModeWorkflowProgress steps={workflowSteps} />
+			{canShowStartButton ? (
+				<div className="mt-2 flex flex-wrap gap-1.5">
+					<FeaturePlanTestModeActionButton
+						action={TEST_MODE_WORKFLOW_ACTION}
+						label={t("testMode.action.startWorkflow")}
+						status={workflowActionStatus}
+						disabled={workflowInProgress}
+						onStart={onStart}
+					/>
+				</div>
+			) : null}
 			{model.conditions.length > 0 ? (
 				<div className="mt-2 grid gap-1">
 					{model.conditions.slice(0, 3).map((condition) => {

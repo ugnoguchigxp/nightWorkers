@@ -1,169 +1,229 @@
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
 
-const trackedArtifactTask = {
-  label: 'tracked artifact check',
-  command: 'bun',
-  args: ['--silent', 'run', 'check:tracked-artifacts'],
-};
+const task = (id, label, args) => ({ id, label, command: 'bun', args });
 
-const typecheckTask = {
-  label: 'typecheck',
-  command: 'bun',
-  args: ['--silent', 'run', 'typecheck'],
-};
-
-const lintTask = {
-  label: 'lint',
-  command: 'bun',
-  args: ['--silent', 'run', 'lint'],
-};
-
-const supervisorRegressionTask = {
-  label: 'supervisor regression tests',
-  command: 'bun',
-  args: ['--silent', 'run', 'test:supervisor-regression'],
-};
-
-const desktopRuntimeTask = {
-  label: 'desktop runtime tests',
-  command: 'bun',
-  args: ['--silent', 'run', 'test:desktop-runtime'],
-};
-
-const desktopLintTask = {
-  label: 'desktop lint',
-  command: 'bun',
-  args: ['--silent', 'run', 'desktop:lint'],
-};
-
-const desktopBuildTask = {
-  label: 'desktop build',
-  command: 'bun',
-  args: ['--silent', 'run', 'desktop:build'],
-};
-
-const desktopSidecarSmokeTask = {
-  label: 'desktop sidecar smoke',
-  command: 'bun',
-  args: ['--silent', 'run', 'desktop:smoke-sidecar'],
-};
-
-const desktopPackagedSmokeTask = {
-  label: 'desktop packaged smoke',
-  command: 'bun',
-  args: ['--silent', 'run', 'desktop:smoke'],
-};
-
-const allTestsTask = {
-  label: 'all vitest tests',
-  command: 'bun',
-  args: ['--silent', 'run', 'test', 'run'],
-};
+const trackedArtifactTask = task('tracked-artifacts', 'tracked artifact check', [
+  '--silent',
+  'run',
+  'check:tracked-artifacts',
+]);
+const typecheckTask = task('typecheck', 'typecheck', ['--silent', 'run', 'typecheck']);
+const lintTask = task('lint', 'lint', ['--silent', 'run', 'lint']);
+const supervisorRegressionTask = task(
+  'supervisor-regression',
+  'supervisor regression tests',
+  ['--silent', 'run', 'test:supervisor-regression'],
+);
+const desktopRuntimeTask = task('desktop-runtime', 'desktop runtime tests', [
+  '--silent',
+  'run',
+  'test:desktop-runtime',
+]);
+const desktopLintTask = task('desktop-lint', 'desktop lint', [
+  '--silent',
+  'run',
+  'desktop:lint',
+]);
+const desktopBuildTask = task('desktop-build', 'desktop build', [
+  '--silent',
+  'run',
+  'desktop:build',
+]);
+const desktopSidecarSmokeTask = task('desktop-sidecar-smoke', 'desktop sidecar smoke', [
+  '--silent',
+  'run',
+  'desktop:smoke-sidecar',
+]);
+const desktopPackagedSmokeTask = task('desktop-packaged-smoke', 'desktop packaged smoke', [
+  '--silent',
+  'run',
+  'desktop:smoke',
+]);
+const allTestsTask = task('all-tests', 'all vitest tests', [
+  '--silent',
+  'run',
+  'test',
+  'run',
+]);
+const liveLlmTask = task('live-llm', 'live LLM provider tests', [
+  '--silent',
+  'run',
+  'test:live:llm',
+]);
+const liveAgentE2eTask = task('live-agent-e2e', 'live LLM agent E2E', [
+  '--silent',
+  'run',
+  'test:e2e:agent-live',
+]);
+const e2eSmokeTask = task('e2e-smoke', 'Playwright E2E smoke', [
+  '--silent',
+  'run',
+  'test:e2e:smoke',
+]);
+const accessibilityE2eTask = task('e2e-accessibility', 'Playwright accessibility', [
+  '--silent',
+  'run',
+  'test:e2e:a11y',
+]);
+const dependencyAuditTask = task('dependency-audit', 'High/Critical dependency audit', [
+  '--silent',
+  'run',
+  'audit:dependencies',
+]);
+const releaseMetadataTask = task('release-metadata', 'release metadata', [
+  '--silent',
+  'run',
+  'release:check',
+]);
+const docsConsistencyTask = task('docs-consistency', 'documentation consistency', [
+  '--silent',
+  'run',
+  'check:docs',
+]);
+const demoSmokeTask = task('demo-smoke', 'deterministic demo smoke', [
+  '--silent',
+  'run',
+  'demo:smoke',
+]);
 
 const basePhases = [
   {
+    id: 'base-static',
     label: 'base static checks',
     mode: 'parallel',
     tasks: [trackedArtifactTask, typecheckTask, lintTask],
   },
   {
+    id: 'base-supervisor',
     label: 'base serial tests',
     mode: 'serial',
     tasks: [supervisorRegressionTask],
   },
 ];
-
+const fullTestPhase = {
+  id: 'full-tests',
+  label: 'full serial tests',
+  mode: 'serial',
+  tasks: [allTestsTask],
+};
+const e2ePhase = {
+  id: 'e2e-smoke',
+  label: 'E2E smoke',
+  mode: 'serial',
+  tasks: [e2eSmokeTask],
+};
+const accessibilityPhase = {
+  id: 'e2e-accessibility',
+  label: 'Accessibility E2E',
+  mode: 'serial',
+  tasks: [accessibilityE2eTask],
+};
+const auditPhase = {
+  id: 'dependency-audit',
+  label: 'dependency policy',
+  mode: 'serial',
+  tasks: [dependencyAuditTask],
+};
+const releaseMetadataPhase = {
+  id: 'release-metadata',
+  label: 'release metadata and documentation',
+  mode: 'parallel',
+  tasks: [releaseMetadataTask, docsConsistencyTask],
+};
+const demoPhase = {
+  id: 'deterministic-demo',
+  label: 'credential-free demo',
+  mode: 'serial',
+  tasks: [demoSmokeTask],
+};
+const livePhase = {
+  id: 'live-provider',
+  label: 'opt-in live provider checks',
+  mode: 'serial',
+  tasks: [liveLlmTask, liveAgentE2eTask],
+};
 const desktopPhases = [
   {
+    id: 'desktop-independent',
     label: 'desktop independent checks',
     mode: 'parallel',
     tasks: [desktopRuntimeTask, desktopLintTask],
   },
   {
+    id: 'desktop-build-smoke',
     label: 'desktop build and smoke',
     mode: 'serial',
-    tasks: [
-      desktopBuildTask,
-      desktopSidecarSmokeTask,
-      desktopPackagedSmokeTask,
-    ],
+    tasks: [desktopBuildTask, desktopSidecarSmokeTask, desktopPackagedSmokeTask],
   },
 ];
+const deterministicFullPhases = [
+  ...basePhases,
+  fullTestPhase,
+  e2ePhase,
+  accessibilityPhase,
+  demoPhase,
+  auditPhase,
+  ...desktopPhases,
+];
 
-const taskSets = {
+export const taskSets = {
   base: basePhases,
   desktop: desktopPhases,
   verify: basePhases,
-  full: [
-    ...basePhases,
-    {
-      label: 'full serial tests',
-      mode: 'serial',
-      tasks: [allTestsTask],
-    },
-  ],
+  full: [...deterministicFullPhases, livePhase],
+  e2e: [e2ePhase],
+  accessibility: [accessibilityPhase],
+  audit: [auditPhase],
+  live: [livePhase],
+  release: [releaseMetadataPhase, ...deterministicFullPhases],
 };
 
-const target = process.argv[2] || 'verify';
-const tasks = taskSets[target];
+const formatDuration = (startedAt) =>
+  `${((performance.now() - startedAt) / 1000).toFixed(1)}s`;
 
-if (!tasks) {
-  console.error(`Unknown verify target: ${target}`);
-  console.error(`Expected one of: ${Object.keys(taskSets).join(', ')}`);
-  process.exit(1);
-}
-
-const formatDuration = (startedAt) => {
-  const seconds = (performance.now() - startedAt) / 1000;
-  return `${seconds.toFixed(1)}s`;
-};
-
-const runTask = (task) =>
+const runTask = (taskDefinition) =>
   new Promise((resolve) => {
     const startedAt = performance.now();
-    console.log(`[verify] ${task.label} ...`);
+    console.log(`[verify] ${taskDefinition.label} ...`);
 
-    const child = spawn(task.command, task.args, {
+    const child = spawn(taskDefinition.command, taskDefinition.args, {
       cwd: process.cwd(),
       env: process.env,
       shell: false,
       stdio: ['inherit', 'pipe', 'pipe'],
     });
-
     const stdout = [];
     const stderr = [];
+    let settled = false;
 
-    child.stdout.on('data', (chunk) => stdout.push(chunk));
-    child.stderr.on('data', (chunk) => stderr.push(chunk));
-
-    child.on('error', (error) => {
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
       resolve({
-        task,
-        code: 1,
-        duration: formatDuration(startedAt),
-        stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: `${Buffer.concat(stderr).toString('utf8')}${error.message}\n`,
-      });
-    });
-
-    child.on('close', (code, signal) => {
-      resolve({
-        task,
-        code: code ?? 1,
-        signal,
+        task: taskDefinition,
         duration: formatDuration(startedAt),
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: Buffer.concat(stderr).toString('utf8'),
+        ...result,
       });
+    };
+
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', (error) => {
+      stderr.push(Buffer.from(`${error.message}\n`));
+      finish({ code: 1 });
     });
+    child.on('close', (code, signal) => finish({ code: code ?? 1, signal }));
   });
+
+const hasFailed = (result) => result.code !== 0 || result.signal;
 
 const printCapturedOutput = (result) => {
   console.error(`[verify] ${result.task.label} failed (${result.duration})`);
-  if (result.signal) {
-    console.error(`[verify] signal: ${result.signal}`);
-  }
+  if (result.signal) console.error(`[verify] signal: ${result.signal}`);
   if (result.stdout.trim()) {
     console.error(`\n--- ${result.task.label} stdout ---`);
     console.error(result.stdout.trimEnd());
@@ -174,51 +234,101 @@ const printCapturedOutput = (result) => {
   }
 };
 
-const hasFailed = (result) => result.code !== 0 || result.signal;
-
-const printSuccess = (result) => {
+const printResult = (result) => {
+  if (hasFailed(result)) {
+    printCapturedOutput(result);
+    return;
+  }
   console.log(`[verify] ${result.task.label} ok (${result.duration})`);
 };
 
-const runSerialPhase = async (phase) => {
-  for (const task of phase.tasks) {
-    const result = await runTask(task);
-    if (hasFailed(result)) {
-      printCapturedOutput(result);
-      process.exit(result.code || 1);
-    }
-    printSuccess(result);
-  }
-};
-
-const runParallelPhase = async (phase) => {
-  const results = await Promise.all(phase.tasks.map((task) => runTask(task)));
-  const failures = results.filter(hasFailed);
-
+export function formatVerificationSummary(target, results) {
+  const lines = [
+    '',
+    `[verify] summary target=${target}`,
+    'status  phase                   task                          duration',
+  ];
   for (const result of results) {
-    if (!hasFailed(result)) {
-      printSuccess(result);
+    lines.push(
+      `${hasFailed(result) ? 'FAIL' : 'PASS'}    ${result.phase.label.padEnd(23)} ${result.task.label.padEnd(29)} ${result.duration}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+export async function executeVerificationPhases(phases, taskRunner = runTask) {
+  const results = [];
+  for (const phase of phases) {
+    console.log(`[verify] ${phase.label} (${phase.mode})`);
+    const phaseResults =
+      phase.mode === 'parallel'
+        ? await Promise.all(phase.tasks.map((item) => taskRunner(item)))
+        : phase.mode === 'serial'
+          ? await runSerialTasks(phase.tasks, taskRunner)
+          : null;
+    if (!phaseResults) {
+      throw new Error(`Unknown verify phase mode: ${phase.mode}`);
     }
+    const annotatedResults = phaseResults.map((result) => ({ ...result, phase }));
+    results.push(...annotatedResults);
+    for (const result of annotatedResults) printResult(result);
+    const failure = annotatedResults.find(hasFailed);
+    if (failure) return { results, failure };
+  }
+  return { results, failure: null };
+}
+
+async function runSerialTasks(tasks, taskRunner) {
+  const results = [];
+  for (const item of tasks) {
+    const result = await taskRunner(item);
+    results.push(result);
+    if (hasFailed(result)) break;
+  }
+  return results;
+}
+
+async function main() {
+  const target = process.argv[2] || 'verify';
+  const phases = taskSets[target];
+  if (!phases) {
+    console.error(`Unknown verify target: ${target}`);
+    console.error(`Expected one of: ${Object.keys(taskSets).join(', ')}`);
+    return 1;
+  }
+  if (process.argv.includes('--list')) {
+    console.log(
+      JSON.stringify(
+        phases.map((phase) => ({
+          id: phase.id,
+          label: phase.label,
+          mode: phase.mode,
+          tasks: phase.tasks.map(({ id, label }) => ({ id, label })),
+        })),
+        null,
+        2,
+      ),
+    );
+    return 0;
   }
 
-  if (failures.length > 0) {
-    for (const result of failures) {
-      printCapturedOutput(result);
-    }
-    process.exit(failures[0].code || 1);
+  const { results, failure } = await executeVerificationPhases(phases);
+  const summary = formatVerificationSummary(target, results);
+  console.log(summary);
+  if (failure) {
+    console.error(
+      `[verify] blocked at phase=${failure.phase.id} task=${failure.task.id}`,
+    );
+    return failure.code || 1;
   }
-};
+  if (target === 'release') {
+    console.log('[verify] release-ready: all required gates passed');
+  } else {
+    console.log(`[verify] ${target} verification passed`);
+  }
+  return 0;
+}
 
-for (const phase of tasks) {
-  console.log(`[verify] ${phase.label} (${phase.mode})`);
-  if (phase.mode === 'parallel') {
-    await runParallelPhase(phase);
-    continue;
-  }
-  if (phase.mode === 'serial') {
-    await runSerialPhase(phase);
-    continue;
-  }
-  console.error(`Unknown verify phase mode: ${phase.mode}`);
-  process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await main();
 }

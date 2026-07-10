@@ -38,14 +38,12 @@ import {
 	type ArtifactPaneFocus,
 	useNightWorkersRouteArtifactSync,
 } from "./nightworkers-shell-route-effects";
+import { resolveNightWorkersShellRouteModel } from "./nightworkers-shell-route-model";
 import {
 	COMPOSER_THINKING_DEPTH_OPTIONS,
-	collectProjectSessionViews,
 	findComposerRouteTargetByKey,
 	isDesignQuestionnaireReadyMessage,
 	isImplementationLockedStatus,
-	isMissingProjectRoute,
-	isMissingSessionRoute,
 	isMissionProposalApprovalRequiredError,
 	isThinkingModel,
 	modelTargetKey,
@@ -89,44 +87,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const [clearedArtifactContextId, setClearedArtifactContextId] = useState<
 		string | null
 	>(null);
-	const showSettings = routeState.kind === "settings";
-	const isOverviewActive = routeState.kind === "overview";
-	const showQueueScreen = routeState.kind === "global_queue";
-	const queueProjectFilterId =
-		routeState.kind === "global_queue" ? routeState.projectId : null;
-	const projectQueueProjectId =
-		routeState.kind === "project_queue" ? routeState.projectId : null;
-	const projectDetailProjectId =
-		routeState.kind === "project_detail" ? routeState.projectId : null;
-	const projectQueueProject = projectQueueProjectId
-		? workspace.projects.find(
-				(project) => project.id === projectQueueProjectId,
-			) || null
-		: null;
-	const projectDetailProject = projectDetailProjectId
-		? workspace.projects.find(
-				(project) => project.id === projectDetailProjectId,
-			) || null
-		: null;
-	const projectQueueSessionViews = projectQueueProject
-		? collectProjectSessionViews(
-				workspace.groupedSessionViews,
-				projectQueueProject.id,
-			)
-		: [];
-	const projectDetailSessionViews = projectDetailProject
-		? collectProjectSessionViews(
-				workspace.groupedSessionViews,
-				projectDetailProject.id,
-			)
-		: [];
-	const missingProjectRoute = isMissingProjectRoute(
-		routeState,
-		workspace,
+	const {
+		showSettings,
+		isOverviewActive,
+		showQueueScreen,
+		queueProjectFilterId,
+		projectQueueProjectId,
+		projectDetailProjectId,
 		projectQueueProject,
 		projectDetailProject,
-	);
-	const missingSessionRoute = isMissingSessionRoute(routeState, workspace);
+		projectQueueSessionViews,
+		projectDetailSessionViews,
+		missingProjectRoute,
+		missingSessionRoute,
+	} = resolveNightWorkersShellRouteModel({ routeState, workspace });
 	const createImplementationQueueEntryWithMissionApproval = useCallback(
 		async (sessionId: string) => {
 			try {

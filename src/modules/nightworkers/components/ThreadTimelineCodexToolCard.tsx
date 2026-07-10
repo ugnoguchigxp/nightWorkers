@@ -1,4 +1,5 @@
 import type { ActivityEvent, TaskEvent } from "../types";
+import { LazyDetails } from "./LazyDetails";
 import {
 	asRecord,
 	asString,
@@ -145,27 +146,31 @@ export function NormalCodexToolCard({
 	if (!card) return null;
 
 	return (
-		<details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] text-sm text-slate-200">
-			<summary className="cursor-pointer list-none px-4 py-3">
-				<div className="flex items-baseline justify-between gap-4">
-					<span className="min-w-0 truncate text-slate-200">
-						{card.summary}
-					</span>
-					<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
-						{card.title}
-					</span>
-				</div>
-				<div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-					<span>{statusLabel(card)}</span>
-					{card.metadata.slice(0, 3).map((item) => (
-						<span key={`${item.label}:${item.value}`}>
-							{item.label}: {item.value}
+		<LazyDetails
+			className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] text-sm text-slate-200"
+			summary={
+				<summary className="cursor-pointer list-none px-4 py-3">
+					<div className="flex items-baseline justify-between gap-4">
+						<span className="min-w-0 truncate text-slate-200">
+							{card.summary}
 						</span>
-					))}
-				</div>
-			</summary>
+						<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+							{card.title}
+						</span>
+					</div>
+					<div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+						<span>{statusLabel(card)}</span>
+						{card.metadata.slice(0, 3).map((item) => (
+							<span key={`${item.label}:${item.value}`}>
+								{item.label}: {item.value}
+							</span>
+						))}
+					</div>
+				</summary>
+			}
+		>
 			<CodexToolCardBody card={card} />
-		</details>
+		</LazyDetails>
 	);
 }
 

@@ -1,11 +1,14 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 import { testDatabasePath } from "./tests/vitest-db-env";
+import { frontendCoverage } from "./vitest.coverage";
 
 export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
+		testTimeout: 20_000,
+		hookTimeout: 20_000,
 		setupFiles: ["./tests/setup-vitest-db.ts"],
 		env: {
 			NODE_ENV: "test",
@@ -16,6 +19,7 @@ export default defineConfig({
 			APP_URL: "http://localhost:39174",
 			CORS_ORIGIN: "http://localhost:39174",
 			NIGHTWORKERS_DESKTOP: "0",
+			NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: "coverage",
 		},
 		fileParallelism: false,
 		globalSetup: ["./tests/global-cleanup-after-tests.ts"],
@@ -24,18 +28,9 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "html", "lcov", "json-summary"],
-			reportsDirectory: "./coverage-frontend",
-			include: ["src/**/*.ts", "src/**/*.tsx"],
-			exclude: [
-				"**/*.d.ts",
-				"src/main.tsx",
-				"src/App.tsx",
-				"src/routeTree.gen.ts",
-				"src/mocks/**",
-				"src/routes/**",
-				"src/**/*.test.{ts,tsx}",
-				"src/**/*.spec.{ts,tsx}",
-			],
+			reportsDirectory: frontendCoverage.reportsDirectory,
+			include: frontendCoverage.include,
+			exclude: frontendCoverage.exclude,
 		},
 		alias: {
 			"@": path.resolve(__dirname, "./src"),

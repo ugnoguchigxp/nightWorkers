@@ -10,11 +10,36 @@
 .nightworkers-shell [class~="bg-slate-900/30"],
 .nightworkers-shell [class~="bg-slate-950/45"],
 .nightworkers-shell [class~="bg-slate-950/55"],
+.nightworkers-shell [class~="bg-slate-950"],
+.nightworkers-shell [class~="bg-slate-950/20"],
+.nightworkers-shell [class~="bg-slate-950/25"],
+.nightworkers-shell [class~="bg-slate-950/30"],
+.nightworkers-shell [class~="bg-slate-950/35"],
+.nightworkers-shell [class~="bg-slate-950/40"],
 .nightworkers-shell [class~="bg-zinc-950"],
 .nightworkers-shell [class~="bg-zinc-950/30"],
 .nightworkers-shell [class~="bg-zinc-950/40"],
 .nightworkers-shell [class~="bg-zinc-950/60"] {
 	background-color: var(--nw-panel);
+}
+
+.nightworkers-shell [class~="bg-emerald-950/25"],
+.nightworkers-shell [class~="bg-emerald-950/40"] {
+	background-color: color-mix(in srgb, var(--nw-success) 12%, var(--nw-panel));
+}
+
+.nightworkers-shell [class~="text-emerald-100"],
+.nightworkers-shell [class~="text-emerald-200"],
+.nightworkers-shell [class~="text-emerald-300"] {
+	color: var(--nw-success);
+}
+
+.nightworkers-shell [class~="bg-secondary"] {
+	background-color: var(--nw-surface-soft);
+}
+
+.nightworkers-shell [class~="text-secondary-foreground"] {
+	color: var(--nw-text);
 }
 
 .nightworkers-shell [class~="bg-slate-800"],

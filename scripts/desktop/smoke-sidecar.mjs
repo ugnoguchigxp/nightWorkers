@@ -49,6 +49,7 @@ try {
     child.kill('SIGTERM');
     await new Promise((resolve) => child.once('exit', resolve));
   }
+  await waitForPortClosed('127.0.0.1', port, 10_000);
   fs.rmSync(runtimeDir, { recursive: true, force: true });
 }
 
@@ -90,5 +91,29 @@ function getStatus(url) {
     });
     req.on('error', reject);
     req.setTimeout(2000, () => req.destroy(new Error('health request timed out')));
+  });
+}
+
+async function waitForPortClosed(host, port, timeoutMs) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (!(await canConnect(host, port))) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Sidecar port remained open after shutdown: ${host}:${port}`);
+}
+
+function canConnect(host, port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+    socket.setTimeout(1_000, () => {
+      socket.destroy();
+      resolve(false);
+    });
   });
 }

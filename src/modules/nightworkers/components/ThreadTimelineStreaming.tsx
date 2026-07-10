@@ -76,10 +76,12 @@ export function StreamingResponsePreview({
 	preview,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	return (
 		<div className="space-y-2" aria-live="polite">
@@ -93,6 +95,7 @@ export function StreamingResponsePreview({
 						content={preview.visibleText}
 						onOpenProjectFile={onOpenProjectFile}
 						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 					<span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
 				</div>
@@ -107,16 +110,19 @@ export function PersistedStreamingResponse({
 	preview,
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
+	onOpenReviewModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
+	onOpenReviewModeArtifact?: () => void;
 }) {
 	return (
 		<ChatMarkdown
 			content={preview.visibleText || preview.statusText}
 			onOpenProjectFile={onOpenProjectFile}
 			onOpenTestModeArtifact={onOpenTestModeArtifact}
+			onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 		/>
 	);
 }

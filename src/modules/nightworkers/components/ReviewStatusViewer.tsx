@@ -172,8 +172,6 @@ function securityDiagnosticResult(artifact: ReviewArtifact | undefined) {
 			typeof result.highOrCriticalCount === "number"
 				? result.highOrCriticalCount
 				: 0,
-		reportPath:
-			typeof result.reportPath === "string" ? result.reportPath : null,
 		improvementRequest:
 			typeof result.improvementRequest === "string"
 				? result.improvementRequest

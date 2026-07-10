@@ -1,0 +1,25 @@
+{
+	"schemaVersion": "nightworkers.demo-provider/v1",
+	"seed": 3102,
+	"project": {
+		"name": "Support Ops CRM Demo",
+		"branch": "main"
+	},
+	"plan": {
+		"objective": "Prioritize open support tickets without mutating source data.",
+		"acceptanceCriteria": [
+			"Closed tickets are excluded.",
+			"Urgent and high priority tickets appear before normal tickets.",
+			"node --test passes."
+		]
+	},
+	"queue": {
+		"status": "approved",
+		"workKind": "implementation"
+	},
+	"implementation": {
+		"source": "fixture/implementation/tickets.mjs",
+		"target": "src/tickets.mjs",
+		"verify": ["node", "--test"]
+	}
+}

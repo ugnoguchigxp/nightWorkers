@@ -470,8 +470,8 @@ describe("NightWorkers workbench routes", () => {
 		const gateUserPrompt = String(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] || "",
 		);
-		expect(gateUserPrompt).toContain("[Plan Signal]");
-		expect(gateUserPrompt).toContain("detected: true");
+		expect(gateUserPrompt).not.toContain("[Plan Signal]");
+		expect(gateUserPrompt).toContain("[Task Context]");
 		expect(gateUserPrompt).toContain("実装計画");
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2],
@@ -573,9 +573,8 @@ describe("NightWorkers workbench routes", () => {
 		const gateUserPrompt = String(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1] || "",
 		);
-		expect(gateUserPrompt).toContain("[Plan Signal]");
-		expect(gateUserPrompt).toContain("detected: true");
-		expect(gateUserPrompt).toContain("sources: task_context");
+		expect(gateUserPrompt).not.toContain("[Plan Signal]");
+		expect(gateUserPrompt).toContain("[Task Context]");
 		expect(gateUserPrompt).toContain("Planで確認");
 		expect(body.messages).toEqual(
 			expect.arrayContaining([
@@ -584,10 +583,6 @@ describe("NightWorkers workbench routes", () => {
 						intent: "design_questionnaire_ready",
 						planModeGate: expect.objectContaining({
 							shouldStartPlanMode: true,
-							planSignal: expect.objectContaining({
-								detected: true,
-								sources: expect.arrayContaining(["task_context"]),
-							}),
 						}),
 					}),
 				}),

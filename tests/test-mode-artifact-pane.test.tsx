@@ -82,6 +82,12 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("証跡テストチェック");
 		expect(markup).not.toContain("LLM コードレビュー");
 		expect(markup).toContain("ユニットテスト実行");
+		expect(markup.indexOf("テスト実装ワークフロー開始")).toBeGreaterThan(
+			markup.indexOf("証跡テストチェック"),
+		);
+		expect(markup.indexOf("テスト実装ワークフロー開始")).toBeLessThan(
+			markup.lastIndexOf("AC-001"),
+		);
 		expect(markup).not.toContain("実装完了");
 		expect(markup).toContain("待機中");
 		expect(markup).not.toContain(

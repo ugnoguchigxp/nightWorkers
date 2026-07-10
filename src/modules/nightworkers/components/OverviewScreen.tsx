@@ -14,7 +14,7 @@ import {
 	formatDateTime,
 	formatTokenCount,
 } from "../../../i18n/format";
-import { fetchOverview } from "../nightWorkersCommands";
+import { fetchOverview, fetchStartupPreflight } from "../nightWorkersCommands";
 import { handleWorkbenchAnchorClick } from "../routing/workbench-link-click";
 import {
 	type OverviewRange,
@@ -33,6 +33,15 @@ type OverviewScreenProps = {
 	onRangeChange: (range: OverviewRange) => void;
 	onProjectFilterChange: (projectId: string | null) => void;
 	onOpenSession: (sessionId: string) => void;
+};
+
+type StartupPreflightView = {
+	checks: Array<{
+		id: string;
+		label: string;
+		status: "pass" | "warn" | "fail";
+		detail: string;
+	}>;
 };
 
 const overviewShellStyle = {
@@ -97,6 +106,8 @@ export function OverviewScreen({
 	const [dashboard, setDashboard] = useState<OverviewDashboard | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [startupPreflight, setStartupPreflight] =
+		useState<StartupPreflightView | null>(null);
 	const { t } = useTranslation();
 
 	const language = dashboard?.settings.language || "ja";
@@ -113,11 +124,19 @@ export function OverviewScreen({
 		setIsLoading(true);
 		setError(null);
 		try {
-			const res = await fetchOverview(query);
+			const [res, preflightRes] = await Promise.all([
+				fetchOverview(query),
+				fetchStartupPreflight(),
+			]);
 			if (!res.ok)
 				throw new Error(t("overview.error.loadFailed", { status: res.status }));
 			const data = (await res.json()) as OverviewDashboard;
 			setDashboard(data);
+			if (preflightRes.ok) {
+				setStartupPreflight(
+					(await preflightRes.json()) as StartupPreflightView,
+				);
+			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -141,6 +160,8 @@ export function OverviewScreen({
 	const uncachedInputTokens = dashboard
 		? getUncachedInputTokens(dashboard.usage)
 		: 0;
+	const startupWarnings =
+		startupPreflight?.checks.filter((check) => check.status !== "pass") ?? [];
 
 	return (
 		<div
@@ -163,6 +184,7 @@ export function OverviewScreen({
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<select
+							aria-label={t("overview.filter.allProjects")}
 							value={projectFilterId || "all"}
 							onChange={(event) =>
 								onProjectFilterChange(
@@ -239,6 +261,28 @@ export function OverviewScreen({
 						{error}
 					</div>
 				) : null}
+
+				{startupWarnings.map((warning) => (
+					<div
+						key={warning.id}
+						role="alert"
+						className="flex items-start gap-3 border p-3 text-xs"
+						style={{
+							background:
+								"color-mix(in srgb, var(--nw-warning) 10%, var(--nw-panel))",
+							borderColor:
+								"color-mix(in srgb, var(--nw-warning) 45%, var(--nw-border))",
+							borderRadius: "var(--nw-radius)",
+							color: "var(--nw-warning)",
+						}}
+					>
+						<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+						<div>
+							<div className="font-semibold">{warning.label}</div>
+							<div className="mt-1 opacity-90">{warning.detail}</div>
+						</div>
+					</div>
+				))}
 
 				{dashboard ? (
 					<>

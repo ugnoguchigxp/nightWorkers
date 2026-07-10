@@ -11,10 +11,10 @@
 	--nw-surface-soft: hsl(210 24% 93%);
 	--nw-text: hsl(215 25% 14%);
 	--nw-muted-text: hsl(215 13% 42%);
-	--nw-subtle-text: hsl(215 11% 54%);
-	--nw-primary: hsl(210 62% 49%);
+	--nw-subtle-text: hsl(215 13% 40%);
+	--nw-primary: hsl(210 68% 44%);
 	--nw-primary-foreground: hsl(0 0% 100%);
-	--nw-success: hsl(152 48% 34%);
+	--nw-success: hsl(152 52% 28%);
 	--nw-warning: hsl(39 88% 40%);
 	--nw-danger: hsl(350 72% 48%);
 	--nw-border: hsl(214 18% 78% / 0.9);
@@ -29,6 +29,7 @@
 	--nw-surface-soft: hsl(245 38% 76%);
 	--nw-text: hsl(241 62% 16%);
 	--nw-muted-text: hsl(240 23% 32%);
+	--nw-subtle-text: hsl(240 18% 38%);
 	--nw-primary: hsl(248 30% 45%);
 	--nw-primary-foreground: hsl(0 0% 100%);
 	--nw-success: hsl(152 38% 32%);
@@ -45,6 +46,7 @@
 	--nw-surface-soft: hsl(0 0% 86%);
 	--nw-text: hsl(215 20% 12%);
 	--nw-muted-text: hsl(215 12% 38%);
+	--nw-subtle-text: hsl(215 12% 38%);
 	--nw-primary: hsl(210 85% 45%);
 	--nw-primary-foreground: hsl(0 0% 100%);
 	--nw-success: hsl(152 48% 32%);
@@ -79,6 +81,7 @@
 	--nw-surface-soft: hsl(156 34% 82%);
 	--nw-text: hsl(160 38% 18%);
 	--nw-muted-text: hsl(158 22% 42%);
+	--nw-subtle-text: hsl(158 24% 36%);
 	--nw-primary: hsl(158 42% 40%);
 	--nw-primary-foreground: hsl(0 0% 100%);
 	--nw-success: hsl(152 46% 32%);
@@ -95,6 +98,7 @@
 	--nw-surface-soft: hsl(350 84% 87%);
 	--nw-text: hsl(327 34% 18%);
 	--nw-muted-text: hsl(325 18% 45%);
+	--nw-subtle-text: hsl(325 24% 38%);
 	--nw-primary: hsl(338 68% 63%);
 	--nw-primary-foreground: hsl(0 0% 100%);
 	--nw-success: hsl(152 42% 34%);
@@ -111,6 +115,7 @@
 	--nw-surface-soft: hsl(31 34% 80%);
 	--nw-text: hsl(24 32% 18%);
 	--nw-muted-text: hsl(24 18% 42%);
+	--nw-subtle-text: hsl(24 22% 36%);
 	--nw-primary: hsl(188 58% 36%);
 	--nw-primary-foreground: hsl(38 54% 96%);
 	--nw-success: hsl(152 42% 32%);

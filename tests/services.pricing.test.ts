@@ -3,11 +3,47 @@ import {
 	calculateUsageCost,
 	findPricingForUsage,
 	importPublicPricingRows,
+	listPricingRowsPage,
 	seedCodexPricingRows,
 	upsertPricingRow,
 } from "../api/services/pricing";
 
 describe("LLM pricing calculation", () => {
+	it("pages filtered pricing rows with a stable cursor and bounded page size", async () => {
+		const provider = `paging-${Date.now()}`;
+		for (let index = 54; index >= 0; index -= 1) {
+			await upsertPricingRow({
+				provider,
+				model: `model-${String(index).padStart(3, "0")}`,
+			});
+		}
+		const first = await listPricingRowsPage({ provider, limit: 50 });
+		const second = await listPricingRowsPage({
+			provider,
+			limit: 50,
+			offset: Number(first.nextCursor),
+		});
+		expect(first.rows).toHaveLength(50);
+		expect(first.totalCount).toBe(55);
+		expect(first.nextCursor).toBe("50");
+		expect(second.rows).toHaveLength(5);
+		expect(second.nextCursor).toBeNull();
+		expect([...first.rows, ...second.rows].map((row) => row.model)).toEqual(
+			Array.from(
+				{ length: 55 },
+				(_, index) => `model-${String(index).padStart(3, "0")}`,
+			),
+		);
+		const filtered = await listPricingRowsPage({
+			provider,
+			model: "model-01",
+			limit: 10_000,
+		});
+		expect(filtered.rows).toHaveLength(10);
+		expect(filtered.rows.every((row) => row.model.includes("model-01"))).toBe(
+			true,
+		);
+	});
 	it("separates uncached and cached input tokens without double counting", () => {
 		const result = calculateUsageCost({
 			inputTokens: 1000,

@@ -196,10 +196,15 @@ desktop build or smoke. It runs tracked-artifact check, TypeScript, and Biome in
 parallel first, then runs supervisor regression tests serially. Use
 `bun run verify:desktop` when rechecking desktop runtime tests, Linux/Windows
 packaging readiness checks, Rust lint, desktop build, staged sidecar smoke, and
-packaged app smoke; desktop runtime tests and desktop lint run in parallel before
-the build/smoke sequence. `bun run verify:full` adds `bun run test run` after the
-base gate; that command is the full non-E2E/non-live Vitest suite selected by
-`vitest.config.ts` and also does not run desktop build or smoke.
+packaged app smoke. `bun run verify:full` is the explicit slow gate: it adds the
+full non-live Vitest suite, E2E/accessibility, dependency audit, desktop
+build/smoke, and opt-in live LLM tests. Live tests skip unless their enable flags
+and credentials are configured.
+`bun run verify:audit` applies the machine-readable High/Critical dependency
+policy in `config/dependency-audit-allowlist.json`, and `bun run verify:e2e`
+runs the credential-free Playwright smoke tests. `bun run verify:release`
+combines the full Vitest, E2E, dependency policy, and desktop gates in one
+ordered command and prints `release-ready` only after all required phases pass.
 
 Linux and Windows packaging is configured through platform-specific Tauri
 config files:

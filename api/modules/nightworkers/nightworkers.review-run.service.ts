@@ -41,84 +41,85 @@ export function buildReviewRunTodos(input: {
 	target: ReviewTarget;
 	planSpec: ReviewPlanSpec;
 }): ImplementationTodoInput[] {
-	const todos: ImplementationTodoInput[] = [
-		{
+	const todos: ImplementationTodoInput[] = [];
+	const appendTodo = (
+		todo: Omit<ImplementationTodoInput, "dependsOn">,
+	): void => {
+		const previousSeq = todos.length;
+		todos.push({
+			...todo,
+			...(previousSeq > 0 ? { dependsOn: [previousSeq] } : {}),
+		});
+	};
+
+	if (input.options.codeReview) {
+		appendTodo({
 			title: "Review Plan 仕様書を読む",
 			description: input.planSpec.body
 				? "Plan 仕様書を source of truth として読み、受け入れ条件・検証観点・security notes を確認する。"
 				: "Plan 仕様書が見つからないため、missing warning を確認して code review path に限定する。",
 			taskType: "inspection",
 			procedureId: "review.read_plan_spec",
-		},
-		{
+		});
+		appendTodo({
 			title: "この run の編集対象と diff を確認する",
 			description: `対象ファイル ${input.target.targetFiles.length} 件、除外 dirty file ${input.target.excludedDirtyFiles.length} 件、warning ${input.target.warnings.length} 件を確認する。`,
 			taskType: "inspection",
 			procedureId: "review.inspect_targets",
-			dependsOn: [1],
-		},
-	];
-	let previous = 2;
-	if (input.options.codeReview) {
-		previous += 1;
-		todos.push({
+		});
+		appendTodo({
 			title: "Plan 仕様と対象 diff を照合し、コードレビュー findings を作る",
 			description:
 				"対象ファイルだけを主対象に、バグ・回帰・責務境界・低品質な修正を重大度付き finding として整理する。",
 			taskType: "inspection",
 			procedureId: "review.code_findings",
-			dependsOn: [previous - 1],
 		});
 	}
 	if (input.options.securityReview) {
-		previous += 1;
-		todos.push({
-			title: "vulnWorkbench CLI でセキュリティ診断を実行する",
+		appendTodo({
+			title: "vulnWorkbench CLI のセキュリティ診断結果を確認する",
 			description:
-				"vulnWorkbench の scanner-backed evidence と scan review output を主根拠にし、LLM-only concern を confirmed vulnerability として扱わない。",
+				"NightWorkers が事前実行した vulnWorkbench の scanner-backed evidence を確認し、LLM-only concern を confirmed vulnerability として扱わない。対象 repository 内で CLI を再実行しない。",
 			taskType: "focused_verification",
 			procedureId: "review.security_vulnworkbench",
-			dependsOn: [previous - 1],
 		});
 	}
-	previous += 1;
-	todos.push({
+	const enabledReviewSources = [
+		input.options.codeReview ? "code review" : null,
+		input.options.securityReview ? "security review" : null,
+	].filter((value): value is string => value !== null);
+	appendTodo({
 		title: "findings を統合して artifact に保存する",
 		description:
-			"code review、security review の結果を統合し、Review Mode findings と Review Run artifact の材料を整理する。",
+			enabledReviewSources.length > 0
+				? `${enabledReviewSources.join("、")} の結果を統合し、Review Mode findings と Review Run artifact の材料を整理する。`
+				: "選択された review option がないことを確認し、Review Run artifact の材料を整理する。",
 		taskType: "documentation",
 		procedureId: "review.consolidate_findings",
-		dependsOn: [previous - 1],
 	});
 	if (input.options.applyFixes) {
-		previous += 1;
-		todos.push({
+		appendTodo({
 			title: "accepted findings を修正する",
 			description:
 				"Review Run で見つけた修正対象を最小差分で直し、対象外 dirty file を巻き込まない。",
 			taskType: "code_edit",
 			procedureId: "review.apply_fixes",
-			dependsOn: [previous - 1],
 		});
-		previous += 1;
-		todos.push({
+		appendTodo({
 			title: "修正後に verify を実行する",
 			description:
 				"修正後に package.json の verify script または代表ゲートを実行し、失敗時は commit へ進まない。",
 			taskType: "verification",
 			procedureId: "review.verify_after_fixes",
-			dependsOn: [previous - 1],
 		});
 	}
 	if (input.options.commitChanges) {
-		previous += 1;
-		todos.push({
+		appendTodo({
 			title: "review 対象差分を commit する",
 			description:
 				"verify 成功後に Review Run 対象/fix file だけを stage し、除外 dirty file は stage しない。",
 			taskType: "git",
 			procedureId: "review.commit_changes",
-			dependsOn: [previous - 1],
 		});
 	}
 	return todos;
@@ -217,6 +218,7 @@ export async function startReviewRunForSession(
 		target,
 		planSpec,
 		todos,
+		initialFindings,
 	});
 	await repo.createTaskMessage({
 		taskId: session.taskId,
@@ -431,12 +433,17 @@ function buildReviewRunArtifact(input: {
 	};
 }
 
-function buildReviewRunPrompt(input: {
+export function buildReviewRunPrompt(input: {
 	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
 	options: ReviewRunOptions;
 	target: ReviewTarget;
 	planSpec: ReviewPlanSpec;
 	todos: ImplementationTodoInput[];
+	initialFindings: Array<{
+		severity: string;
+		title: string;
+		body: string | null;
+	}>;
 }) {
 	const targetLines = input.target.targetFiles
 		.map((file) => `- ${file.path} (${file.status}, ${file.diffBytes} bytes)`)
@@ -447,6 +454,26 @@ function buildReviewRunPrompt(input: {
 				`- [${warning.severity}] ${warning.code}: ${warning.message}`,
 		)
 		.join("\n");
+	const initialFindingLines = input.initialFindings
+		.map((finding, index) =>
+			[
+				`${index + 1}. [${finding.severity}] ${finding.title}`,
+				finding.body?.trim() || "(本文なし)",
+			].join("\n"),
+		)
+		.join("\n\n");
+	const planSpecification = input.options.codeReview
+		? input.planSpec.body || "(missing)"
+		: "(codeReview=false のため、コードレビュー用 Plan 本文は省略)";
+	const acceptanceCriteria = input.options.codeReview
+		? input.planSpec.acceptanceCriteria.map((item) => `- ${item}`).join("\n") ||
+			"(none)"
+		: "(codeReview=false のため省略)";
+	const codeReviewRule = input.options.codeReview
+		? "- codeReview=true。レビュー主対象は Review target files に限定し、Plan と対象 diff を根拠にコードレビューする。"
+		: input.options.applyFixes
+			? "- codeReview=false。機能・仕様の一般コードレビューや全体 diff 取得は行わない。applyFixes=true のため、accepted finding が直接参照するファイルだけを読み、必要な最小差分だけを編集する。"
+			: "- codeReview=false。Review target boundary はスコープ表示専用であり、機能・仕様のコードレビューを行わない。git diff を取得せず、source / test / schema / migration の内容を個別に読まない。事前取得済み Review evidence だけを使用する。";
 	return [
 		"Review Run を開始してください。",
 		"",
@@ -455,13 +482,14 @@ function buildReviewRunPrompt(input: {
 		`options: ${JSON.stringify(input.options)}`,
 		"",
 		"Plan specification:",
-		input.planSpec.body || "(missing)",
+		planSpecification,
 		"",
 		"Acceptance criteria:",
-		input.planSpec.acceptanceCriteria.map((item) => `- ${item}`).join("\n") ||
-			"(none)",
+		acceptanceCriteria,
 		"",
-		"Review target files:",
+		input.options.codeReview
+			? "Review target files:"
+			: "Review target boundary (metadata only):",
 		targetLines || "(none)",
 		"",
 		"Excluded dirty files:",
@@ -471,16 +499,19 @@ function buildReviewRunPrompt(input: {
 		"Target warnings:",
 		warningLines || "(none)",
 		"",
+		"NightWorkers が事前取得した Review evidence:",
+		initialFindingLines || "(none)",
+		"",
 		"Required Review Run TODOs:",
 		input.todos.map((todo, index) => `${index + 1}. ${todo.title}`).join("\n"),
 		"",
 		"Rules:",
 		"- Required Review Run TODOs は TodoList pane の進捗 source of truth です。各段階が終わったら todo_list operation=done で次へ進み、未完了なら block/fail で理由を残す。",
-		"- レビュー主対象は Review target files に限定する。必要な文脈読み取りは可。",
+		codeReviewRule,
 		"- Findings は重大度、file/line、根拠、推奨アクションを分けて報告する。",
 		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",
 		input.options.securityReview
-			? "- security review は vulnWorkbench CLI output を主根拠にする。"
+			? "- security review の vulnWorkbench CLI 実行は NightWorkers 側で完了済み。上記 Review evidence の finding 本文を主根拠にし、対象 repository 内で vulnWorkbench を検索・再実行しない。"
 			: "- security review option は off。",
 		input.options.applyFixes
 			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。"

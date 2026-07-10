@@ -1,12 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import sanitizeHtml from "sanitize-html";
-
-const sanitize = (val: string) =>
-	sanitizeHtml(val, {
-		allowedTags: [],
-		allowedAttributes: {},
-		disallowedTagsMode: "discard",
-	});
+import { sanitizePlainText } from "../sanitize-plain-text";
 
 export const loginSchema = z
 	.object({
@@ -22,7 +15,7 @@ export const registerSchema = z
 		name: z
 			.string()
 			.min(1)
-			.transform(sanitize)
+			.transform(sanitizePlainText)
 			.openapi({ example: "John Doe" }),
 	})
 	.openapi("RegisterInput");

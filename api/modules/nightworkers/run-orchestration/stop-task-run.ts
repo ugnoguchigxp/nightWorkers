@@ -1,5 +1,6 @@
 import { NotFoundError } from "../../../lib/errors";
 import { resolveAgentRuntime } from "../../../services/agent-runtime/registry";
+import { stopIsolatedTaskRun } from "../../../services/execution/worker-process-manager";
 import * as repo from "../nightworkers.repository";
 import { completeImplementationQueueEntryForRun } from "./queues";
 import { assertRunStatusTransition } from "./status";
@@ -20,6 +21,9 @@ export async function stopTaskRun(runId: string) {
 		].includes(run.status)
 	) {
 		return run;
+	}
+	if (await stopIsolatedTaskRun(runId)) {
+		return (await repo.getTaskRun(runId)) ?? run;
 	}
 
 	const runtime = resolveAgentRuntime(

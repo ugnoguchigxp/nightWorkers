@@ -88,6 +88,7 @@ export function ImplementationQueueScreen(
 				</div>
 				<div className="flex items-center gap-2">
 					<select
+						aria-label={t("queue.allProjects")}
 						className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
 						value={props.activeProjectFilterId || ""}
 						onChange={(event) =>

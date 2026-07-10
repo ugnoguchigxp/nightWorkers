@@ -16,6 +16,7 @@ const pricingProviderFilter = new Set([
 	"z-ai",
 	"qwen",
 ]);
+const pricingPageSize = 50;
 
 type LlmPricingRowView = {
 	id: string;
@@ -38,6 +39,12 @@ type PublicPricingImportView = {
 	rows: LlmPricingRowView[];
 	fetchedAt: string;
 	sourceUrl: string;
+};
+
+type LlmPricingPageView = {
+	rows: LlmPricingRowView[];
+	totalCount: number;
+	nextCursor: string | null;
 };
 
 function pricingProviderLabel(provider: string) {
@@ -81,33 +88,40 @@ export function GeneralSettingsPanel({
 }) {
 	const { t } = useTranslation();
 	const [pricingRows, setPricingRows] = useState<LlmPricingRowView[]>([]);
+	const [pricingTotalCount, setPricingTotalCount] = useState(0);
+	const [pricingNextCursor, setPricingNextCursor] = useState<string | null>(
+		null,
+	);
+	const [pricingProvider, setPricingProvider] = useState("");
+	const [pricingModelQuery, setPricingModelQuery] = useState("");
+	const [pricingPage, setPricingPage] = useState(0);
 	const [pricingLoading, setPricingLoading] = useState(false);
 	const [pricingImporting, setPricingImporting] = useState(false);
 	const [pricingMessage, setPricingMessage] = useState("");
 	const [pricingMessageKind, setPricingMessageKind] = useState<
 		"success" | "error"
 	>("success");
-	const visiblePricingRows = pricingRows
-		.filter((row) => row.enabled && pricingProviderFilter.has(row.provider))
-		.slice()
-		.sort((a, b) => {
-			const providerCompare = a.provider.localeCompare(b.provider);
-			return providerCompare || a.model.localeCompare(b.model);
-		});
-
 	const loadPricingRows = useCallback(async () => {
 		setPricingLoading(true);
 		try {
-			const res = await fetchPricingRows();
+			const res = await fetchPricingRows({
+				provider: pricingProvider || undefined,
+				model: pricingModelQuery.trim() || undefined,
+				limit: pricingPageSize,
+				cursor: pricingPage > 0 ? String(pricingPage * pricingPageSize) : null,
+			});
 			if (!res.ok) throw new Error(await res.text());
-			setPricingRows((await res.json()) as LlmPricingRowView[]);
+			const page = (await res.json()) as LlmPricingPageView;
+			setPricingRows(page.rows);
+			setPricingTotalCount(page.totalCount);
+			setPricingNextCursor(page.nextCursor);
 		} catch (err) {
 			setPricingMessageKind("error");
 			setPricingMessage(err instanceof Error ? err.message : String(err));
 		} finally {
 			setPricingLoading(false);
 		}
-	}, []);
+	}, [pricingModelQuery, pricingPage, pricingProvider]);
 
 	useEffect(() => {
 		void loadPricingRows();
@@ -120,7 +134,6 @@ export function GeneralSettingsPanel({
 			const res = await importPublicPricingRows();
 			if (!res.ok) throw new Error(await res.text());
 			const result = (await res.json()) as PublicPricingImportView;
-			setPricingRows(result.rows);
 			setPricingMessageKind("success");
 			setPricingMessage(
 				`API使用料を ${result.imported} 件取得しました: ${result.providers.join(", ")}`,
@@ -288,6 +301,40 @@ export function GeneralSettingsPanel({
 					</div>
 				) : null}
 				<div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950/30">
+					<div className="flex flex-wrap gap-2 border-zinc-800 border-b p-3">
+						<label className="space-y-1 text-[10px] text-zinc-500">
+							<span className="block">Provider</span>
+							<select
+								aria-label="Pricing provider"
+								value={pricingProvider}
+								onChange={(event) => {
+									setPricingProvider(event.target.value);
+									setPricingPage(0);
+								}}
+								className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200"
+							>
+								<option value="">すべて</option>
+								{[...pricingProviderFilter].map((provider) => (
+									<option key={provider} value={provider}>
+										{pricingProviderLabel(provider)}
+									</option>
+								))}
+							</select>
+						</label>
+						<label className="min-w-56 flex-1 space-y-1 text-[10px] text-zinc-500">
+							<span className="block">Model</span>
+							<input
+								aria-label="Pricing model search"
+								value={pricingModelQuery}
+								onChange={(event) => {
+									setPricingModelQuery(event.target.value);
+									setPricingPage(0);
+								}}
+								placeholder="モデル名を検索"
+								className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200"
+							/>
+						</label>
+					</div>
 					<table className="min-w-[760px] w-full text-left text-xs">
 						<thead className="border-zinc-800 border-b text-[11px] uppercase text-zinc-500">
 							<tr>
@@ -316,8 +363,8 @@ export function GeneralSettingsPanel({
 										価格表を読み込み中...
 									</td>
 								</tr>
-							) : visiblePricingRows.length ? (
-								visiblePricingRows.map((row) => (
+							) : pricingRows.length ? (
+								pricingRows.map((row) => (
 									<tr
 										key={row.id}
 										className="border-zinc-900 border-b last:border-0"
@@ -361,9 +408,32 @@ export function GeneralSettingsPanel({
 						</tbody>
 					</table>
 				</div>
-				<div className="text-[11px] text-zinc-500">
-					対象 provider {visiblePricingRows.length} 件 / 保存済み価格行{" "}
-					{pricingRows.length} 件
+				<div className="flex items-center justify-between gap-3 text-[11px] text-zinc-500">
+					<span>
+						{pricingTotalCount === 0
+							? "0 件"
+							: `${pricingPage * pricingPageSize + 1}〜${pricingPage * pricingPageSize + pricingRows.length} 件 / ${pricingTotalCount} 件`}
+					</span>
+					<div className="flex gap-2">
+						<Button
+							type="button"
+							variant="ghost"
+							disabled={pricingLoading || pricingPage === 0}
+							onClick={() => setPricingPage((page) => Math.max(0, page - 1))}
+							className="h-8 px-3 text-xs"
+						>
+							前へ
+						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							disabled={pricingLoading || !pricingNextCursor}
+							onClick={() => setPricingPage((page) => page + 1)}
+							className="h-8 px-3 text-xs"
+						>
+							次へ
+						</Button>
+					</div>
 				</div>
 			</div>
 			{message ? (

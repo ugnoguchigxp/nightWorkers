@@ -105,7 +105,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 							profile: "agent-output",
 							findingCount: 2,
 							highOrCriticalCount: 1,
-							reportPath: "/tmp/vuln-report.md",
+							reportPath: "/outside/vulnWorkbench/report.md",
 							findings: [
 								{
 									id: "finding-1",
@@ -142,6 +142,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 		expect(result.scanRunId).toBe("scan-1");
 		expect(result.findingCount).toBe(2);
 		expect(result.highOrCriticalCount).toBe(1);
+		expect("reportPath" in result).toBe(false);
 		expect(result.topFindings).toHaveLength(1);
 		expect(result.topFindings[0]).toMatchObject({
 			severity: "high",
@@ -170,5 +171,7 @@ describe("Review vulnWorkbench diagnostic", () => {
 		expect(reviewFinding.body).toContain(
 			"semgrep / dockerfile.security.missing-user.missing-user",
 		);
+		expect(reviewFinding.body).not.toContain("reportPath");
+		expect(reviewFinding.body).not.toContain("/outside/vulnWorkbench");
 	});
 });

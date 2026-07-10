@@ -13,7 +13,7 @@ import {
 	Maximize2,
 	Minimize2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
@@ -50,6 +50,16 @@ import type {
 	WorkbenchArtifactRef,
 } from "../types";
 import { DiffViewer, FileViewer, MarkdownViewer } from "./ArtifactFileViewers";
+import {
+	asArtifactRecord as asRecord,
+	cloneTestModeWorkflowSteps,
+	isMockBlueprintCandidate,
+	type ProjectArtifactMode,
+	parseArtifactContentJson,
+	resolveArtifactWorkspaceInitialTab,
+	testModeWorkflowSignature,
+	useProjectArtifactRefresh,
+} from "./ArtifactPane.controller";
 import {
 	BlueprintViewer,
 	ComponentDesignViewer,
@@ -116,58 +126,10 @@ type FrozenTestModeWorkflow = {
 	steps: TestModeWorkflowStepView[];
 };
 
-type ProjectArtifactMode = "tree" | "diff";
 type TestModeAction =
 	| "discover_tests"
 	| "plan_and_implement_tests"
 	| "run_unit_tests";
-
-function workspaceInitialTab(value: unknown): PlanWorkspaceTab | undefined {
-	if (value === "design-doc" || value === "specification")
-		return "feature-plan";
-	if (value === "specification-status") return "status";
-	if (value === "blueprints") return "blueprint";
-	if (value === "db-design") return "data-model";
-	return value === "feature-plan" ||
-		value === "blueprint" ||
-		value === "data-model" ||
-		value === "user-flow" ||
-		value === "api-io-contract" ||
-		value === "activity-flow" ||
-		value === "sequence-flow" ||
-		value === "zod-schema-design" ||
-		value === "questionnaire" ||
-		value === "status"
-		? value
-		: undefined;
-}
-
-function parseArtifactContentJson(content: string | null | undefined): unknown {
-	if (!content?.trim()) return null;
-	try {
-		return JSON.parse(content);
-	} catch {
-		return null;
-	}
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
-}
-
-function cloneTestModeWorkflowSteps(steps: TestModeWorkflowStepView[]) {
-	return steps.map((step) => ({ ...step }));
-}
-
-function testModeWorkflowSignature(steps: TestModeWorkflowStepView[]) {
-	return steps.map((step) => `${step.id}:${step.status}`).join("|");
-}
-
-function isMockBlueprintCandidate(value: unknown) {
-	return asRecord(value).artifactKind === "mock_blueprint";
-}
 
 export function ArtifactPane({
 	activeProject,
@@ -227,8 +189,6 @@ export function ArtifactPane({
 		if (!controlledProjectArtifactMode) setLocalProjectArtifactMode(mode);
 		onProjectArtifactModeChange?.(mode);
 	};
-	const refreshProjectFilesRef = useRef(onRefreshFiles);
-	const refreshProjectDiffRef = useRef(onRefreshDiff);
 	const showProjectTree = focusType === "project_tree";
 	const showProjectDiff = showProjectTree && projectArtifactMode === "diff";
 	const artifactVersions = useMemo(
@@ -254,36 +214,12 @@ export function ArtifactPane({
 		setIsFullscreen(false);
 		setTestModeStatus(null);
 	}, [selectedArtifact?.id]);
-	useEffect(() => {
-		refreshProjectFilesRef.current = onRefreshFiles;
-	}, [onRefreshFiles]);
-	useEffect(() => {
-		refreshProjectDiffRef.current = onRefreshDiff;
-	}, [onRefreshDiff]);
-	useEffect(() => {
-		if (!showProjectTree) return;
-		const refreshCurrentProjectArtifact = () => {
-			if (document.visibilityState === "hidden") return;
-			if (projectArtifactMode === "diff") {
-				void refreshProjectDiffRef.current();
-				return;
-			}
-			void refreshProjectFilesRef.current();
-		};
-		refreshCurrentProjectArtifact();
-		window.addEventListener("focus", refreshCurrentProjectArtifact);
-		document.addEventListener(
-			"visibilitychange",
-			refreshCurrentProjectArtifact,
-		);
-		return () => {
-			window.removeEventListener("focus", refreshCurrentProjectArtifact);
-			document.removeEventListener(
-				"visibilitychange",
-				refreshCurrentProjectArtifact,
-			);
-		};
-	}, [projectArtifactMode, showProjectTree]);
+	useProjectArtifactRefresh({
+		isProjectTreeVisible: showProjectTree,
+		mode: projectArtifactMode,
+		onRefreshFiles,
+		onRefreshDiff,
+	});
 	const currentVersionIndex = Math.max(
 		0,
 		artifactVersions.findIndex(
@@ -583,7 +519,7 @@ export function ArtifactPane({
 							sessionId={activeSessionId}
 							taskMessages={taskMessages}
 							activityArtifacts={activityArtifacts}
-							initialTab={workspaceInitialTab(
+							initialTab={resolveArtifactWorkspaceInitialTab(
 								displayArtifact?.metadata?.initialTab,
 							)}
 							latestRun={latestRunForTestMode}
@@ -981,15 +917,8 @@ function VerificationChecklistPanel({
 					</div>
 				) : null}
 				<TestModeWorkflowProgress steps={workflowSteps} />
-				{canEnterMaintenanceMode ? (
-					<TestModeMaintenanceTransition
-						taskId={taskId}
-						onOpenReviewArtifact={onOpenReviewArtifact}
-					/>
-				) : null}
-				<TestModeCheckResults results={checkResults} />
 				{canShowStartButton ? (
-					<div className="mt-3 flex flex-wrap gap-1.5">
+					<div className="mt-2 flex flex-wrap gap-1.5">
 						<TestModeActionButton
 							action={TEST_MODE_WORKFLOW_ACTION}
 							label={t("testMode.action.startWorkflow")}
@@ -999,6 +928,13 @@ function VerificationChecklistPanel({
 						/>
 					</div>
 				) : null}
+				{canEnterMaintenanceMode ? (
+					<TestModeMaintenanceTransition
+						taskId={taskId}
+						onOpenReviewArtifact={onOpenReviewArtifact}
+					/>
+				) : null}
+				<TestModeCheckResults results={checkResults} />
 			</div>
 			{model.conditions.length > 0 ? (
 				<div className="mt-3 grid gap-1.5">

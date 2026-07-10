@@ -8,6 +8,7 @@ import {
 	buildOpenAIChatCompletionBody,
 	readOpenAIChatCompletionStream,
 } from "./openai";
+import { dispatchStructuredLlmProvider } from "./provider-dispatch";
 import { providerAdapterKey } from "./request";
 import {
 	getStructuredLlmBoolSetting,
@@ -76,18 +77,19 @@ export async function callProvider(input: {
 		input.options.normalizedRequest?.providerId ?? input.provider,
 	);
 
-	if (provider === "azure")
-		return callAzureProvider(input, isEnabled, settings);
-	if (provider === "openai")
-		return callOpenAIProvider(input, isEnabled, settings);
-	if (provider === "bedrock")
-		return callBedrockProvider(input, isEnabled, settings);
-	if (provider === "codex")
-		return callCodexProvider(input, isEnabled, settings);
-	if (provider === "fixture" || provider === "test")
-		return callFixtureProvider(input);
-
-	throw new Error(`Unsupported LLM provider: ${input.provider}`);
+	return dispatchStructuredLlmProvider({
+		provider,
+		adapters: {
+			azure: () => callAzureProvider(input, isEnabled, settings),
+			openai: () => callOpenAIProvider(input, isEnabled, settings),
+			bedrock: () => callBedrockProvider(input, isEnabled, settings),
+			codex: () => callCodexProvider(input, isEnabled, settings),
+			fixture: async () => callFixtureProvider(input),
+		},
+		onUnsupported: () => {
+			throw new Error(`Unsupported LLM provider: ${input.provider}`);
+		},
+	});
 }
 
 export async function callProviderToolTurn(input: {
@@ -109,26 +111,28 @@ export async function callProviderToolTurn(input: {
 		input.options.normalizedRequest.providerId ?? input.provider,
 	);
 
-	if (provider === "openai") {
-		return callOpenAIProviderToolTurn(input, isEnabled, settings);
-	}
-	if (provider === "azure") {
-		return callAzureProviderToolTurn(input, isEnabled, settings);
-	}
-
-	const providerDebug = {
+	return dispatchStructuredLlmProvider({
 		provider,
-		providerEndpointId:
-			input.options.normalizedRequest.providerEndpointId ?? null,
-		mode: "provider_native_tools",
-		supported: false,
-	};
-	input.setProviderDebug(providerDebug);
-	return {
-		type: "unsupported",
-		reason: `Provider does not support native tool turn runtime yet: ${provider}`,
-		providerDebug,
-	};
+		adapters: {
+			openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
+			azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
+		},
+		onUnsupported: async (unsupportedProvider) => {
+			const providerDebug = {
+				provider: unsupportedProvider,
+				providerEndpointId:
+					input.options.normalizedRequest.providerEndpointId ?? null,
+				mode: "provider_native_tools",
+				supported: false,
+			};
+			input.setProviderDebug(providerDebug);
+			return {
+				type: "unsupported",
+				reason: `Provider does not support native tool turn runtime yet: ${unsupportedProvider}`,
+				providerDebug,
+			};
+		},
+	});
 }
 
 function callFixtureProvider(

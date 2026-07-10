@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logger } from "../../../lib/logger";
+import { runE2eFixtureRuntime } from "../../../services/agent-runtime/e2e-fixture-runtime";
 import { createLedgerSink } from "../../../services/agent-runtime/ledger-sink";
 import {
 	boundaryAuditEventSeverity,
@@ -262,26 +263,49 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					runId: run.id,
 					leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 				});
-				runtimeResult = await runtime.start(
-					{
-						runId: run.id,
-						taskId,
-						repositoryId: task.repositoryId,
-						repoRoot: repoInfo.localPath,
-						compiledPrompt: compiledPromptText,
-						latestUserMessage: runtimeLatestUserMessage,
-						timeoutSeconds: task.timeoutSeconds ?? 3600,
-						safetyPolicy: repoInfo.safetyPolicy || undefined,
-						contextSnapshot: runtimeContextSnapshot,
-						runtimeOptions,
-						todoPlan: runtimeTodosBeforeStart.map(toAgentRuntimeTodoContext),
-						currentTodo: runtimeTodosBeforeStart
-							.filter((todo) => todo.status === "running")
-							.sort((a, b) => a.seq - b.seq)
-							.map(toAgentRuntimeTodoContext)[0],
-					},
-					sink,
-				);
+				runtimeResult =
+					process.env.NIGHTWORKERS_E2E === "1" &&
+					process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE === "1"
+						? await runE2eFixtureRuntime(
+								{
+									runId: run.id,
+									taskId,
+									repositoryId: task.repositoryId,
+									repoRoot: repoInfo.localPath,
+									compiledPrompt: compiledPromptText,
+									latestUserMessage: runtimeLatestUserMessage,
+									timeoutSeconds: task.timeoutSeconds ?? 3600,
+									safetyPolicy: repoInfo.safetyPolicy || undefined,
+									contextSnapshot: runtimeContextSnapshot,
+									runtimeOptions,
+									todoPlan: runtimeTodosBeforeStart.map(
+										toAgentRuntimeTodoContext,
+									),
+								},
+								sink,
+							)
+						: await runtime.start(
+								{
+									runId: run.id,
+									taskId,
+									repositoryId: task.repositoryId,
+									repoRoot: repoInfo.localPath,
+									compiledPrompt: compiledPromptText,
+									latestUserMessage: runtimeLatestUserMessage,
+									timeoutSeconds: task.timeoutSeconds ?? 3600,
+									safetyPolicy: repoInfo.safetyPolicy || undefined,
+									contextSnapshot: runtimeContextSnapshot,
+									runtimeOptions,
+									todoPlan: runtimeTodosBeforeStart.map(
+										toAgentRuntimeTodoContext,
+									),
+									currentTodo: runtimeTodosBeforeStart
+										.filter((todo) => todo.status === "running")
+										.sort((a, b) => a.seq - b.seq)
+										.map(toAgentRuntimeTodoContext)[0],
+								},
+								sink,
+							);
 			} finally {
 				clearInterval(heartbeatTimer);
 			}

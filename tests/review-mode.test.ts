@@ -29,6 +29,62 @@ afterEach(() => {
 });
 
 describe("Review Mode", () => {
+	it("refreshes an existing system finding with the latest diagnostic text", async () => {
+		const { task } = await createTask();
+		const run = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "completed",
+			workerKind: "native-local",
+			summary: "Security diagnostic fixture",
+			finalReport: "Security diagnostic fixture",
+			startedAt: new Date(),
+			endedAt: new Date(),
+			finishedAt: new Date(),
+		});
+		const session = await reviewRepo.createOrStartReviewSession({
+			runId: run.id,
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			recommendationId: null,
+		});
+		const title = `vulnWorkbench diagnostic ${crypto.randomUUID()}`;
+		const [first] = await reviewRepo.createReviewFindings([
+			{
+				reviewSessionId: session.id,
+				runId: run.id,
+				taskId: task.id,
+				severity: "warning",
+				title,
+				body: "findingCount: 6\nreportPath: old-report.md",
+				evidenceRefsJson: [],
+				sourceSection: "review_run",
+			},
+		]);
+		const [refreshed] = await reviewRepo.createReviewFindings([
+			{
+				reviewSessionId: session.id,
+				runId: run.id,
+				taskId: task.id,
+				severity: "blocking",
+				title,
+				body: "[high] Container runs as root\n場所: Dockerfile:18\n対応: USER を設定する",
+				evidenceRefsJson: [
+					{ kind: "artifact", artifactKind: "security_review" },
+				],
+				sourceSection: "review_run",
+			},
+		]);
+
+		expect(refreshed.id).toBe(first.id);
+		expect(refreshed.severity).toBe("blocking");
+		expect(refreshed.body).toContain("Container runs as root");
+		expect(refreshed.body).not.toContain("reportPath");
+		expect(refreshed.evidenceRefsJson).toEqual([
+			{ kind: "artifact", artifactKind: "security_review" },
+		]);
+	});
+
 	it("creates a required recommendation for schema changes without mutating run status", async () => {
 		const { task } = await createTask();
 		const run = await repo.createTaskRun({

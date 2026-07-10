@@ -128,7 +128,7 @@ describe("ThreadTimeline Codex tool cards", () => {
 		expect(card?.outputPreview).not.toContain("[39m");
 	});
 
-	it("renders compact Codex command result blocks 104px shorter than before", () => {
+	it("defers compact Codex command result DOM until the card is expanded", () => {
 		const markup = renderToStaticMarkup(
 			createElement(NormalCodexToolCard, {
 				event: {
@@ -153,8 +153,9 @@ describe("ThreadTimeline Codex tool cards", () => {
 			}),
 		);
 
-		expect(markup).toContain("command result");
-		expect(markup).toContain("max-height:116px");
+		expect(markup).toContain("command_execution | bun run test");
+		expect(markup).not.toContain("command result");
+		expect(markup).not.toContain("max-height:116px");
 	});
 
 	it("renders expanded Codex MCP result blocks 104px shorter than before", () => {

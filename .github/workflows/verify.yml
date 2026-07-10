@@ -1,0 +1,72 @@
+name: Verify Base and Dependencies
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  base:
+    name: Fast commit verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Run fast commit verification
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          bun run verify 2>&1 | tee artifacts/verify.log
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-log
+          path: artifacts/verify.log
+          retention-days: 7
+
+  dependency-audit:
+    name: High Critical dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: Run dependency policy
+        env:
+          NIGHTWORKERS_AUDIT_REPORT: ${{ github.workspace }}/artifacts/dependency-audit.json
+        run: |
+          mkdir -p artifacts
+          bun run verify:audit
+      - name: Upload dependency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-report
+          path: artifacts/dependency-audit.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -8,13 +8,15 @@ NightWorkers を既存のローカル repository に対して使い始める前�
   control plane に合っている。
 - [ ] [Feature Tour](./feature-tour.md) で Workbench、Implementation Queue、
   Run Evidence、Artifact Pane の役割を確認した。
-- [ ] 現時点では hosted demo、固定 demo seed、サンプル Project Folder がないことを
-  理解している。
+- [ ] hosted demo はないが、credential 不要の固定 seed demo を
+  `bun run demo:smoke` で再現できることを確認した。
 - [ ] 最初の評価は、本番 repository ではなく throwaway repository または戻せる
   repository で行う。
 
 ## Before First Run
 
+- [ ] 本番 repository を登録する前に `bun run demo:setup` と
+  `bun run demo:run` で evidence 導線を確認し、`bun run demo:reset` した。
 - [ ] `bun run setup` が完了している。
 - [ ] `bun run dev` で Overview が開ける。
 - [ ] 最初に登録する Project Folder は、throwaway repo か、変更を review して戻せる repo である。

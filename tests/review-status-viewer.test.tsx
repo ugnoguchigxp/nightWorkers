@@ -623,6 +623,9 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("/workspace/project/Dockerfile:18");
 		expect(text).toContain("Dockerfile に non-root");
 		expect(text).toContain("bun run api/cli/oracle-security.ts");
+		expect(text).not.toContain(
+			"/tmp/nightworkers-review/vulnworkbench-report.md",
+		);
 	});
 
 	it("hides the required review badge after ReviewRun completes", async () => {

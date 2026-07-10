@@ -4,6 +4,7 @@ import type {
 	ReviewTarget,
 } from "../api/modules/nightworkers/nightworkers.review-mode.model";
 import {
+	buildReviewRunPrompt,
 	buildReviewRunTodos,
 	normalizeReviewRunOptions,
 } from "../api/modules/nightworkers/nightworkers.review-run.service";
@@ -64,6 +65,121 @@ describe("Review Run workflow", () => {
 			"review.verify_after_fixes",
 			"review.commit_changes",
 		]);
+		expect(full[3]?.title).toBe(
+			"vulnWorkbench CLI のセキュリティ診断結果を確認する",
+		);
+	});
+
+	it("limits security-only runs to precomputed evidence and consolidation", () => {
+		const todos = buildReviewRunTodos({
+			options: normalizeReviewRunOptions({
+				codeReview: false,
+				securityReview: true,
+				applyFixes: false,
+				commitChanges: false,
+			}),
+			target: reviewTarget(),
+			planSpec: reviewPlanSpec(),
+		});
+
+		expect(todos.map((todo) => todo.procedureId)).toEqual([
+			"review.security_vulnworkbench",
+			"review.consolidate_findings",
+		]);
+		expect(todos[0]?.dependsOn).toBeUndefined();
+		expect(todos[1]?.dependsOn).toEqual([1]);
+		expect(todos.map((todo) => todo.procedureId)).not.toContain(
+			"review.inspect_targets",
+		);
+	});
+
+	it("keeps fixes finding-scoped when code review is disabled", () => {
+		const todos = buildReviewRunTodos({
+			options: normalizeReviewRunOptions({
+				codeReview: false,
+				securityReview: true,
+				applyFixes: true,
+				commitChanges: false,
+			}),
+			target: reviewTarget(),
+			planSpec: reviewPlanSpec(),
+		});
+
+		expect(todos.map((todo) => todo.procedureId)).toEqual([
+			"review.security_vulnworkbench",
+			"review.consolidate_findings",
+			"review.apply_fixes",
+			"review.verify_after_fixes",
+		]);
+		expect(todos.map((todo) => todo.procedureId)).not.toContain(
+			"review.inspect_targets",
+		);
+	});
+
+	it("injects precomputed vulnWorkbench findings as text and forbids CLI reruns", () => {
+		const prompt = buildReviewRunPrompt({
+			session: {
+				id: "session-1",
+				runId: "run-1",
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				recommendationId: null,
+				status: "in_progress",
+				startedAt: new Date(),
+				completedAt: null,
+				finalAction: null,
+				finalNote: null,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			},
+			options: normalizeReviewRunOptions({
+				codeReview: false,
+				securityReview: true,
+				applyFixes: false,
+				commitChanges: false,
+			}),
+			target: reviewTarget(),
+			planSpec: reviewPlanSpec(),
+			todos: buildReviewRunTodos({
+				options: normalizeReviewRunOptions({
+					codeReview: false,
+					securityReview: true,
+					applyFixes: false,
+					commitChanges: false,
+				}),
+				target: reviewTarget(),
+				planSpec: reviewPlanSpec(),
+			}),
+			initialFindings: [
+				{
+					severity: "warning",
+					title:
+						"vulnWorkbench security diagnostic reported scanner-backed findings",
+					body: [
+						"対応が必要な検出:",
+						"1. [high] Container runs as root",
+						"   場所: Dockerfile:18",
+						"   根拠: semgrep / dockerfile.security.missing-user",
+						"   対応: non-root USER を設定してください。",
+					].join("\n"),
+				},
+			],
+		});
+
+		expect(prompt).toContain("NightWorkers が事前取得した Review evidence");
+		expect(prompt).toContain("Container runs as root");
+		expect(prompt).toContain("Dockerfile:18");
+		expect(prompt).toContain("non-root USER を設定してください");
+		expect(prompt).toContain("vulnWorkbench を検索・再実行しない");
+		expect(prompt).toContain(
+			"(codeReview=false のため、コードレビュー用 Plan 本文は省略)",
+		);
+		expect(prompt).toContain("Review target boundary (metadata only)");
+		expect(prompt).toContain("git diff を取得せず");
+		expect(prompt).toContain(
+			"source / test / schema / migration の内容を個別に読まない",
+		);
+		expect(prompt).not.toContain("# Feature Plan");
 	});
 
 	it("keeps missing plan as a review todo instead of crashing code review setup", () => {

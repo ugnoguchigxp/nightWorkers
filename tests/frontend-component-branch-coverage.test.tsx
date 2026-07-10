@@ -761,11 +761,62 @@ describe("frontend component branch coverage", () => {
 				setClearedArtifactContextId,
 				reviewStatusTitle: "Review",
 				formatReviewStatusSummary: (level, count) => `${level}:${count}`,
+				testModeTitle: "Test Mode",
+				testModeArtifactSummary: "Test workflow",
 			});
 		}
 
 		expect(setArtifactFocus).toHaveBeenCalled();
 		expect(workspace.openProjectFile).toHaveBeenCalledWith("src/current.ts");
 		expect(workspace.setActiveSessionId).toHaveBeenCalledWith("missing");
+	});
+
+	it("keeps the current artifact open while a review route is resolving", async () => {
+		const currentFocus = {
+			type: "artifact" as const,
+			artifact: {
+				id: "test-mode-task-1",
+				taskId: "task-1",
+				kind: "test_mode" as const,
+				title: "Test Mode",
+				summary: "Test workflow",
+				source: { type: "test_mode" as const },
+				createdAt: "2026-07-08T00:00:00.000Z",
+			},
+		};
+		const focusUpdates: unknown[] = [];
+		const setArtifactFocus = vi.fn((next) => {
+			if (typeof next === "function") focusUpdates.push(next(currentFocus));
+		});
+		const setClearedArtifactContextId = vi.fn();
+		const baseWorkspace = createWorkspace();
+		const workspace = createWorkspace({
+			activeReviewSession: null,
+			activeArtifactRefs: baseWorkspace.activeArtifactRefs.filter(
+				(ref) => ref.kind !== "review_status",
+			),
+		});
+		resetHookMocks([], "run");
+		const { useNightWorkersRouteArtifactSync: syncRouteArtifact } =
+			await import(
+				"../src/modules/nightworkers/components/nightworkers-shell-route-effects"
+			);
+
+		syncRouteArtifact({
+			routeState: {
+				kind: "session",
+				sessionId: "task-1",
+				artifact: { kind: "review_status" },
+			},
+			workspace,
+			setArtifactFocus,
+			setClearedArtifactContextId,
+			reviewStatusTitle: "Review",
+			formatReviewStatusSummary: (level, count) => `${level}:${count}`,
+			testModeTitle: "Test Mode",
+			testModeArtifactSummary: "Test workflow",
+		});
+
+		expect(focusUpdates).toEqual([currentFocus]);
 	});
 });

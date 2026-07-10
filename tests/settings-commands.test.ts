@@ -40,7 +40,12 @@ describe("settingsCommands", () => {
 
 		await fetchLlmSettings();
 		await fetchGeneralSettings(init);
-		await fetchPricingRows();
+		await fetchPricingRows({
+			provider: "openai",
+			model: "gpt 5",
+			limit: 100,
+			cursor: "200",
+		});
 		await fetchTestQualitySettings("repo-123");
 		await fetchLlmModelOptions();
 		await fetchCodexSdkStatus();
@@ -53,7 +58,7 @@ describe("settingsCommands", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/settings/general", init);
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			3,
-			"/api/settings/pricing",
+			"/api/settings/pricing?provider=openai&model=gpt+5&limit=100&cursor=200",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(

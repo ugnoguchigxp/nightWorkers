@@ -83,4 +83,17 @@ const x = 42;
 
 		expect(markup).toContain('data-workbench-artifact-link="test_mode"');
 	});
+
+	it("identifies review mode artifact links", () => {
+		const onOpenReviewModeArtifact = vi.fn();
+		const markdown = `Go to [Review](http://localhost:3000/sessions/sess-1?artifact=review_status).`;
+		const markup = renderToStaticMarkup(
+			<ChatMarkdown
+				content={markdown}
+				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
+			/>,
+		);
+
+		expect(markup).toContain('data-workbench-artifact-link="review_status"');
+	});
 });

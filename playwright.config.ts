@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
+const e2eApiPort = Number(process.env.NIGHTWORKERS_E2E_API_PORT || 39273);
+const e2eBaseUrl = `http://localhost:${e2eWebPort}`;
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -18,7 +22,7 @@ export default defineConfig({
 	/* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
 	use: {
 		/* Base URL to use in actions like `await page.goto('/')`. */
-		baseURL: "http://localhost:39174",
+		baseURL: e2eBaseUrl,
 		extraHTTPHeaders: {
 			"x-nightworkers-e2e": "1",
 		},
@@ -58,8 +62,8 @@ export default defineConfig({
 
 	/* Run your local dev server before starting the tests */
 	webServer: {
-		command: "cross-env NIGHTWORKERS_E2E=1 bun run dev",
-		url: "http://localhost:39174",
+		command: `cross-env NIGHTWORKERS_E2E=1 NIGHTWORKERS_E2E_RUNTIME_FIXTURE=1 PORT=${e2eApiPort} APP_URL=${e2eBaseUrl} CORS_ORIGIN=${e2eBaseUrl} NIGHTWORKERS_API_PORT=${e2eApiPort} NIGHTWORKERS_WEB_PORT=${e2eWebPort} bun run dev`,
+		url: e2eBaseUrl,
 		reuseExistingServer: !process.env.CI,
 	},
 });

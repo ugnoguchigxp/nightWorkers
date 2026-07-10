@@ -109,6 +109,16 @@
 	--nw-border: hsl(210 18% 42% / 0.96);
 }
 
+@media (prefers-reduced-motion: reduce) {
+	.nightworkers-shell,
+	.nightworkers-shell * {
+		scroll-behavior: auto;
+		transition-duration: 0.01ms;
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+	}
+}
+
 .nightworkers-shell[data-motion="reduced"],
 .nightworkers-shell[data-motion="reduced"] * {
 	scroll-behavior: auto;

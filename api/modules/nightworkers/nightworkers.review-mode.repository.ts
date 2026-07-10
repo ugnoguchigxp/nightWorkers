@@ -200,7 +200,17 @@ export async function createReviewFindings(
 				),
 			);
 		if (existing) {
-			inserted.push(existing);
+			const [updated] = await db
+				.update(reviewFindings)
+				.set({
+					severity: row.severity,
+					body: row.body ?? null,
+					evidenceRefsJson: row.evidenceRefsJson,
+					updatedAt: now,
+				})
+				.where(eq(reviewFindings.id, existing.id))
+				.returning();
+			inserted.push(updated ?? existing);
 			continue;
 		}
 		const [created] = await db
