@@ -380,6 +380,17 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 }
 
 describe("ReviewStatusViewer", () => {
+	it("shows a loading state while Review Mode is being prepared", async () => {
+		await i18next.changeLanguage("ja");
+
+		const text = visibleText(
+			renderToStaticMarkup(<ReviewStatusViewer detail={null} loading={true} />),
+		);
+
+		expect(text).toContain("レビューモードを準備中...");
+		expect(text).not.toContain("レビューモードは利用できません。");
+	});
+
 	it("renders Review Run options with detailed descriptions in Japanese", async () => {
 		await i18next.changeLanguage("ja");
 

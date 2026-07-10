@@ -21,6 +21,7 @@ import type {
 
 type ReviewStatusViewerProps = {
 	detail: ReviewSessionDetail | null;
+	loading?: boolean;
 	onStartReviewRun?: (
 		reviewSessionId: string,
 		options: Partial<ReviewRunOptions>,
@@ -218,6 +219,7 @@ const reviewSuccessActionButtonClass = `${reviewActionButtonBaseClass} nightwork
 
 export function ReviewStatusViewer({
 	detail,
+	loading = false,
 	onStartReviewRun,
 	gitCloseout,
 	onCommitGitCloseout,
@@ -235,7 +237,7 @@ export function ReviewStatusViewer({
 	if (!detail) {
 		return (
 			<div className="flex h-full items-center justify-center text-xs text-slate-500">
-				{t("reviewStatus.unavailable")}
+				{loading ? t("reviewStatus.loading") : t("reviewStatus.unavailable")}
 			</div>
 		);
 	}

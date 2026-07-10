@@ -25,6 +25,7 @@ import type {
 	Task,
 	TaskMessage,
 	ThinkingDepthOption,
+	WorkbenchArtifactRef,
 	WorkbenchChatIntent,
 } from "../types";
 import {
@@ -503,6 +504,28 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		);
 		let artifact = existing;
 		if (!artifact && current.latestRun?.id) {
+			const pendingArtifact: WorkbenchArtifactRef = {
+				id: `review-status-pending-${current.latestRun.id}`,
+				taskId: sessionId,
+				runId: current.latestRun.id,
+				kind: "review_status",
+				title: reviewStatusTitle,
+				summary: reviewStatusTitle,
+				source: {
+					type: "review_result",
+					reviewId: `pending-${current.latestRun.id}`,
+				},
+				createdAt: new Date().toISOString(),
+				metadata: { reviewSessionLoading: true },
+			};
+			markArtifactOpenStart(pendingArtifact);
+			setClearedArtifactContextId(null);
+			setArtifactFocus({ type: "artifact", artifact: pendingArtifact });
+			props.onNavigate({
+				kind: "session",
+				sessionId,
+				artifact: { kind: "review_status" },
+			});
 			const detail = await current.startReviewSession(current.latestRun.id);
 			artifact = {
 				id: `review-status-${detail.session.id}`,

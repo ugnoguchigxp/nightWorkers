@@ -431,6 +431,9 @@ export function ArtifactPane({
 			| ReviewSessionDetail
 			| undefined) ||
 		null;
+	const isReviewSessionLoading = Boolean(
+		displayArtifact?.metadata?.reviewSessionLoading,
+	);
 	const defaultExportedMarkdown = buildExportedArtifactContent({
 		showDiff,
 		latestRun,
@@ -625,6 +628,7 @@ export function ArtifactPane({
 					) : showReviewStatus ? (
 						<ReviewStatusViewer
 							detail={activeReviewDetail}
+							loading={isReviewSessionLoading}
 							latestRun={latestRun}
 							onStartReviewRun={onStartReviewRun}
 							gitCloseout={gitCloseout}
@@ -1020,7 +1024,7 @@ function VerificationChecklistPanel({
 	const { t } = useTranslation();
 	const canShowStartButton = Boolean(model.specArtifactId);
 	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
-	const canEnterMaintenanceMode = isTestModeWorkflowComplete(workflowSteps);
+	const canEnterReviewMode = isTestModeWorkflowComplete(workflowSteps);
 	const workflowInProgress =
 		workflowActionStatus === "starting" ||
 		isTestModeWorkflowInProgress(workflowSteps);
@@ -1054,8 +1058,8 @@ function VerificationChecklistPanel({
 						/>
 					</div>
 				) : null}
-				{canEnterMaintenanceMode ? (
-					<TestModeMaintenanceTransition
+				{canEnterReviewMode ? (
+					<TestModeReviewTransition
 						taskId={taskId}
 						onOpenReviewArtifact={onOpenReviewArtifact}
 					/>
@@ -1097,7 +1101,7 @@ function VerificationChecklistPanel({
 	);
 }
 
-function TestModeMaintenanceTransition({
+function TestModeReviewTransition({
 	taskId,
 	onOpenReviewArtifact,
 }: {
@@ -1119,7 +1123,7 @@ function TestModeMaintenanceTransition({
 				}}
 			>
 				<GitCompare className="h-3.5 w-3.5" />
-				{t("testMode.action.enterMaintenanceMode")}
+				{t("testMode.action.enterReviewMode")}
 			</a>
 		</div>
 	);

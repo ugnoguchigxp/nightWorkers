@@ -748,7 +748,8 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).not.toContain("証跡テストチェック結果");
 		expect(markup).not.toContain("OK completion_check");
 		expect(markup).not.toContain("確認待ち");
-		expect(markup).toContain("メンテナンスモードに移行");
+		expect(markup).toContain("レビューモードに移行");
+		expect(markup).toContain("artifact=review_status");
 		const unitStepStart = markup.indexOf("ユニットテスト実行");
 		const evidenceStepStart = markup.indexOf("証跡テストチェック");
 		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
