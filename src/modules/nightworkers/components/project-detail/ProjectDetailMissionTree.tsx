@@ -54,7 +54,6 @@ export function TaskGenerationTreeTable({
 	onAddGoal,
 	onCreateSelected,
 	onGenerateTaskCandidates,
-	onGenerateMissionCandidates,
 	onExpandAll,
 	onCollapseAll,
 	onToggleGoal,
@@ -80,7 +79,6 @@ export function TaskGenerationTreeTable({
 	onAddGoal: () => void;
 	onCreateSelected: () => void;
 	onGenerateTaskCandidates: () => void;
-	onGenerateMissionCandidates: () => void;
 	onExpandAll: () => void;
 	onCollapseAll: () => void;
 	onToggleGoal: (goalId: string) => void;
@@ -148,20 +146,6 @@ export function TaskGenerationTreeTable({
 							style={controlStyle}
 						>
 							{t("projectDetail.mission.createTasks", { count: selectedCount })}
-						</Button>
-						<Button
-							type="button"
-							onClick={onGenerateMissionCandidates}
-							disabled={busy}
-							className="h-8 px-3 text-xs font-semibold"
-							style={controlStyle}
-						>
-							{busyAction === "goal:generate-mission-candidates" ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<Sparkles className="h-3.5 w-3.5" />
-							)}
-							{t("projectDetail.mission.generateMissionCandidates")}
 						</Button>
 						<Button
 							type="button"

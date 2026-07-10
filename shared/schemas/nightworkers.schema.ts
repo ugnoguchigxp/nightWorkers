@@ -1,3 +1,4 @@
+export * from "./git-worktree.schema";
 export * from "./nightworkers/activity-message.schema";
 export * from "./nightworkers/detail.schema";
 export * from "./nightworkers/overview.schema";

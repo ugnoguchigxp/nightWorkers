@@ -322,8 +322,7 @@ describe("ProjectDetailScreen action coverage", () => {
 			"fetchProjectDetailMetrics",
 			"fetchProjectQuality",
 			"fetchRepositoryMissionTaskProposals",
-			"generateMissionCandidatesFromGoals",
-			"generateMissionTaskCandidates",
+			"generateTaskCandidates",
 			"updateMissionGoal",
 			"updateMissionTaskCandidate",
 		];
@@ -343,6 +342,11 @@ describe("ProjectDetailScreen action coverage", () => {
 							return jsonResponse([candidate()]);
 						if (name === "fetchRepositoryMissionTaskProposals")
 							return jsonResponse([proposal()]);
+						if (name === "generateTaskCandidates")
+							return jsonResponse({
+								status: "completed",
+								decompositionFailures: [],
+							});
 						return jsonResponse({ ok: true });
 					}),
 				]),

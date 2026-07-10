@@ -165,6 +165,7 @@ export async function createTask(data: {
 	description?: string | null;
 	objective?: string | null;
 	acceptanceCriteria?: string | null;
+	worktreePath?: string | null;
 	status?: TaskStatus;
 	timeoutSeconds?: number;
 	priority?: number;

@@ -53,6 +53,7 @@ const listMissionsRoute = createRoute({
 const generateMissionCandidatesRoute = createRoute({
 	method: "post",
 	path: "/repositories/:repositoryId/missions/generate-candidates",
+	deprecated: true,
 	request: {
 		params: repositoryParams,
 		body: {

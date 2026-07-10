@@ -83,6 +83,15 @@ export {
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,
 } from "./nightworkers.workbench.service";
+export {
+	adviseRepositoryWorktrees,
+	createRepositoryWorktree,
+	listRepositoryWorktrees,
+	previewRepositoryWorktreePrune,
+	pruneRepositoryWorktrees,
+	readRepositoryWorktreeDiff,
+	removeRepositoryWorktree,
+} from "./nightworkers.worktrees.service";
 
 export async function startWorkbenchTaskRun(taskId: string) {
 	const task = await repo.getTask(taskId);

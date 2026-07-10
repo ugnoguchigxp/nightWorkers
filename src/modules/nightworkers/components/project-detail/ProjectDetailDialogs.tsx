@@ -184,7 +184,6 @@ export function GoalDetailModal({
 	onToggle,
 	onDelete,
 	onGenerateTaskCandidates,
-	onGenerateMissionCandidates,
 }: {
 	goal: MissionGoal;
 	missionCount: number;
@@ -195,7 +194,6 @@ export function GoalDetailModal({
 	onToggle: (goal: MissionGoal) => void;
 	onDelete: (goal: MissionGoal) => void;
 	onGenerateTaskCandidates: (goal: MissionGoal) => void;
-	onGenerateMissionCandidates: (goal: MissionGoal) => void;
 }) {
 	const { t } = useTranslation();
 	return (
@@ -266,15 +264,6 @@ export function GoalDetailModal({
 					>
 						<Trash2 className="h-3.5 w-3.5" />
 						{t("projectDetail.goals.delete")}
-					</Button>
-					<Button
-						type="button"
-						onClick={() => onGenerateMissionCandidates(goal)}
-						disabled={busy}
-						style={controlStyle}
-					>
-						<Sparkles className="h-3.5 w-3.5" />
-						{t("projectDetail.mission.generateMissionCandidates")}
 					</Button>
 					<Button
 						type="button"

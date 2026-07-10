@@ -188,6 +188,10 @@ async function loadCloseoutContext(runId: string) {
 	if (!repositoryId) throw new NotFoundError("Repository not found");
 	const repository = await repo.getRepository(repositoryId);
 	if (!repository?.localPath) throw new NotFoundError("Repository not found");
+	const executionRepository = {
+		...repository,
+		localPath: run.worktreePath || repository.localPath,
+	};
 	const [commitRecord, reviewSession] = await Promise.all([
 		repo.getTaskRunCommitRecord(runId),
 		reviewRepo.getReviewSessionByRun(runId),
@@ -208,10 +212,10 @@ async function loadCloseoutContext(runId: string) {
 		(testCoverage?.status as ReviewProgress | undefined) ?? null;
 	const reviewRunStatus =
 		(reviewRunArtifact?.status as ReviewProgress | undefined) ?? null;
-	const gitState = await readGitState(repository.localPath);
+	const gitState = await readGitState(executionRepository.localPath);
 	return {
 		run,
-		repository,
+		repository: executionRepository,
 		commitRecord,
 		reviewSession,
 		testCoverageStatus,

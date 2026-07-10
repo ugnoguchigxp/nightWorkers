@@ -32,6 +32,7 @@ export type Task = {
 	description?: string | null;
 	objective?: string | null;
 	acceptanceCriteria?: string | null;
+	worktreePath?: string | null;
 	status: string;
 	compiledPrompt?: string | null;
 	timeoutSeconds: number;

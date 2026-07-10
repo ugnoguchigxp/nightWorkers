@@ -13,6 +13,7 @@ import {
 } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import { runSessionQueueForRepository } from "./nightworkers.run-orchestration.service";
+import { resolveWorktreePath } from "./nightworkers.worktrees.service";
 
 type RepositorySafetyPolicy = Parameters<
 	typeof repo.createRepository
@@ -189,12 +190,18 @@ export async function createTask(data: {
 	description?: string | null;
 	objective?: string | null;
 	acceptanceCriteria?: string | null;
+	worktreeId?: string;
 	timeoutSeconds?: number;
 	priority?: number;
 	createdBy?: string | null;
 }) {
+	const { worktreeId, ...taskData } = data;
+	const worktreePath = worktreeId
+		? await resolveWorktreePath(data.repositoryId, worktreeId)
+		: null;
 	const task = await repo.createTask({
-		...data,
+		...taskData,
+		worktreePath,
 		status: "draft",
 	});
 	if (data.description?.trim()) {

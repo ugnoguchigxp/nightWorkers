@@ -40,6 +40,7 @@ import {
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
+import { resolveTaskExecutionRoot } from "../nightworkers.worktrees.service";
 import { readGitBaseline } from "./git-ownership";
 import { launchRuntimeExecution } from "./runtime-execution";
 import {
@@ -115,9 +116,14 @@ export async function startTaskRunInProcess(
 			"Repository path is not configured",
 		);
 	}
+	const executionRoot = await resolveTaskExecutionRoot({
+		repositoryId: task.repositoryId,
+		repositoryPath: repoInfo.localPath,
+		worktreePath: task.worktreePath,
+	});
 	let stat: Awaited<ReturnType<typeof fs.stat>>;
 	try {
-		stat = await fs.stat(repoInfo.localPath);
+		stat = await fs.stat(executionRoot);
 	} catch {
 		throw new AppError(
 			422,
@@ -212,13 +218,14 @@ export async function startTaskRunInProcess(
 		activeRoute: runtimeLlmRoute,
 		override: llmRouteOverride,
 	});
-	const gitBaseline = await readGitBaseline(repoInfo.localPath);
+	const gitBaseline = await readGitBaseline(executionRoot);
 	const run = await repo.createTaskRun({
 		taskId,
 		repositoryId: task.repositoryId,
 		status: "running",
 		workerKind: runtimeLaneResolution.workerKind,
 		baseRef: gitBaseline.baselineHead,
+		worktreePath: task.worktreePath ? executionRoot : null,
 		timeoutSeconds: task.timeoutSeconds,
 		contextSnapshot: {
 			compiledPrompt: compiledPromptText,
@@ -354,7 +361,7 @@ export async function startTaskRunInProcess(
 				: "Project file scale is below large; ontology MCP is disabled.",
 		},
 		request: {
-			repositoryPath: repoInfo.localPath,
+			repositoryPath: executionRoot,
 			taskTitle: task.title,
 			taskDescriptionDigest: digestText(
 				lastUserMessage?.content || task.description || task.objective || "",
@@ -428,7 +435,7 @@ export async function startTaskRunInProcess(
 	};
 	const ontologyContext = ontologyMcpEnabled
 		? await buildOntologyRuntimeContextSnapshot({
-				repoRoot: repoInfo.localPath,
+				repoRoot: executionRoot,
 				goal: runtimeLatestUserMessage || compiledPromptText,
 				taskId,
 				runId: run.id,
@@ -468,7 +475,7 @@ export async function startTaskRunInProcess(
 					runId: run.id,
 					taskId,
 					repositoryId: task.repositoryId,
-					repoRoot: repoInfo.localPath,
+					repoRoot: executionRoot,
 					compiledPrompt: compiledPromptText,
 					latestUserMessage: runtimeLatestUserMessage,
 					timeoutSeconds: task.timeoutSeconds ?? 3600,
@@ -636,7 +643,7 @@ export async function startTaskRunInProcess(
 		taskId,
 		task,
 		run,
-		repoInfo,
+		repoInfo: { ...repoInfo, localPath: executionRoot },
 		compiledPromptText,
 		runtimeLatestUserMessage,
 		runtimeContextSnapshot,

@@ -214,6 +214,62 @@ export function fetchRepositoryDiff(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/diff`);
 }
 
+export function fetchRepositoryWorktrees(repositoryId: string) {
+	return apiFetch(`/api/repositories/${repositoryId}/worktrees`);
+}
+
+export function createRepositoryWorktree(repositoryId: string, input: unknown) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/worktrees`,
+		jsonRequest("POST", input),
+	);
+}
+
+export function fetchRepositoryWorktreeDiff(
+	repositoryId: string,
+	worktreeId: string,
+) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/worktrees/diff`,
+		jsonRequest("POST", { worktreeId }),
+	);
+}
+
+export function removeRepositoryWorktree(
+	repositoryId: string,
+	input: { worktreeId: string; expectedHead: string },
+) {
+	return apiFetch(`/api/repositories/${repositoryId}/worktrees`, {
+		method: "DELETE",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export function previewRepositoryWorktreePrune(repositoryId: string) {
+	return apiFetch(`/api/repositories/${repositoryId}/worktrees/prune-preview`);
+}
+
+export function pruneRepositoryWorktrees(repositoryId: string) {
+	return apiFetch(`/api/repositories/${repositoryId}/worktrees/prune`, {
+		method: "POST",
+	});
+}
+
+export function adviseRepositoryWorktrees(
+	repositoryId: string,
+	input: unknown,
+) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/worktrees/advice`,
+		jsonRequest("POST", input),
+	);
+}
+
+export function createTask(input: unknown) {
+	return apiFetch("/api/tasks", jsonRequest("POST", input));
+}
+
 export function fetchProjectDetailMetrics(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/project-detail/metrics`);
 }
@@ -258,12 +314,23 @@ export function fetchMissionTaskCandidates(
 	);
 }
 
+/** @deprecated Use generateTaskCandidates so scale estimation selects the generation path. */
 export function generateMissionTaskCandidates(
 	repositoryId: string,
 	input: unknown = {},
 ) {
 	return apiFetch(
 		`/api/repositories/${repositoryId}/mission-task-candidates/generate`,
+		jsonRequest("POST", input),
+	);
+}
+
+export function generateTaskCandidates(
+	repositoryId: string,
+	input: unknown = {},
+) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/task-candidates/generate`,
 		jsonRequest("POST", input),
 	);
 }
@@ -299,6 +366,7 @@ export function createMission(repositoryId: string, input: unknown) {
 	);
 }
 
+/** @deprecated Use generateTaskCandidates so Mission generation is selected automatically. */
 export function generateMissionCandidatesFromGoals(
 	repositoryId: string,
 	input: unknown = {},

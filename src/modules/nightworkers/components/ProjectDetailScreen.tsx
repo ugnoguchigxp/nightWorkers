@@ -6,6 +6,7 @@ import type {
 	MissionTaskProposal,
 } from "../../../../shared/schemas/mission-planner.schema";
 import type {
+	GenerateTaskCandidatesResponse,
 	MissionGoal,
 	MissionTaskCandidate,
 	ProjectDetailMetrics,
@@ -27,8 +28,7 @@ import {
 	fetchProjectDetailMetrics,
 	fetchProjectQuality,
 	fetchRepositoryMissionTaskProposals,
-	generateMissionCandidatesFromGoals,
-	generateMissionTaskCandidates,
+	generateTaskCandidates,
 	updateMissionGoal,
 	updateMissionTaskCandidate,
 } from "../nightWorkersCommands";
@@ -57,6 +57,7 @@ import {
 	QualityReportPanel,
 } from "./project-detail/ProjectDetailQuality";
 import { StackProfilePanel } from "./project-detail/ProjectDetailStack";
+import { ProjectDetailWorktrees } from "./project-detail/ProjectDetailWorktrees";
 import {
 	controlStyle,
 	panelStyle,
@@ -382,6 +383,23 @@ export function ProjectDetailScreen({
 		[loadProjectDetail],
 	);
 
+	const requestTaskCandidateGeneration = useCallback(
+		async (goalIds?: string[]) => {
+			const result = await readJsonResponse<GenerateTaskCandidatesResponse>(
+				await generateTaskCandidates(project.id, goalIds ? { goalIds } : {}),
+			);
+			if (result.status === "needs_attention") {
+				setMessage(
+					result.decompositionFailures
+						.map((failure) => failure.message)
+						.join("\n"),
+				);
+			}
+			return result;
+		},
+		[project.id],
+	);
+
 	const saveGoalDraft = () =>
 		goalDraft
 			? runAction("goal:save", async () => {
@@ -590,16 +608,7 @@ export function ProjectDetailScreen({
 							}
 							onGenerateTaskCandidates={() =>
 								void runAction("goal:generate-task-candidates", async () => {
-									await readJsonResponse(
-										await generateMissionTaskCandidates(project.id),
-									);
-								})
-							}
-							onGenerateMissionCandidates={() =>
-								void runAction("goal:generate-mission-candidates", async () => {
-									await readJsonResponse(
-										await generateMissionCandidatesFromGoals(project.id),
-									);
+									await requestTaskCandidateGeneration();
 								})
 							}
 							onExpandAll={expandAllTaskGenerationRows}
@@ -719,6 +728,13 @@ export function ProjectDetailScreen({
 						projectPath={project.localPath}
 					/>
 				) : null}
+
+				{activeTab === "worktrees" ? (
+					<ProjectDetailWorktrees
+						repositoryId={project.id}
+						onTaskCreated={(task) => onMissionTaskCandidatesCreated?.([task])}
+					/>
+				) : null}
 			</div>
 			{goalDraft ? (
 				<GoalEditorDialog
@@ -775,27 +791,7 @@ export function ProjectDetailScreen({
 						void runAction(
 							`goal:generate-task-candidates:${goal.id}`,
 							async () => {
-								await readJsonResponse(
-									await generateMissionTaskCandidates(project.id, {
-										goalIds: [goal.id],
-									}),
-								);
-								setExpandedRows((current) => ({
-									...current,
-									goalIds: new Set([...current.goalIds, goal.id]),
-								}));
-							},
-						)
-					}
-					onGenerateMissionCandidates={(goal) =>
-						void runAction(
-							`goal:generate-mission-candidates:${goal.id}`,
-							async () => {
-								await readJsonResponse(
-									await generateMissionCandidatesFromGoals(project.id, {
-										goalIds: [goal.id],
-									}),
-								);
+								await requestTaskCandidateGeneration([goal.id]);
 								setExpandedRows((current) => ({
 									...current,
 									goalIds: new Set([...current.goalIds, goal.id]),

@@ -20,7 +20,8 @@ export type ProjectDetailTab =
 	| "mission"
 	| "evaluation"
 	| "quality"
-	| "stack";
+	| "stack"
+	| "worktrees";
 
 export const projectDetailTabs = [
 	{ id: "overview", labelKey: "projectDetail.tab.overview" },
@@ -28,6 +29,7 @@ export const projectDetailTabs = [
 	{ id: "evaluation", labelKey: "projectDetail.tab.evaluation" },
 	{ id: "quality", labelKey: "projectDetail.tab.quality" },
 	{ id: "stack", labelKey: "projectDetail.tab.stack" },
+	{ id: "worktrees", labelKey: "projectDetail.tab.worktrees" },
 ] satisfies { id: ProjectDetailTab; labelKey: string }[];
 
 export type ModelUsageRow = {

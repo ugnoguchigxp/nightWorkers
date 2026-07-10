@@ -279,6 +279,11 @@ const router = createOpenApiRouter()
 							rawJson.createdBy ||
 							rawJson.created_by ||
 							undefined,
+						worktreeId:
+							data?.worktreeId ||
+							rawJson.worktreeId ||
+							rawJson.worktree_id ||
+							undefined,
 					};
 				}
 			} catch (_e) {}

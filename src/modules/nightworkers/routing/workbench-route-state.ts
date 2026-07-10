@@ -43,6 +43,7 @@ const projectDetailTabs = [
 	"evaluation",
 	"quality",
 	"stack",
+	"worktrees",
 ] as const;
 const projectQueueViewModes = ["board", "table"] as const;
 const planWorkspaceTabs = [

@@ -32,7 +32,7 @@ export async function buildReviewTarget(input: {
 	if (!repositoryId) throw new NotFoundError("Repository not found for run");
 	const repository = await repo.getRepository(repositoryId);
 	if (!repository?.localPath) throw new NotFoundError("Repository not found");
-	const repoRoot = path.resolve(repository.localPath);
+	const repoRoot = path.resolve(run.worktreePath || repository.localPath);
 	const events = await repo.listTaskEventsForRun(input.runId);
 	const accumulators = new Map<string, TargetAccumulator>();
 	const warnings: ReviewTargetWarning[] = [];

@@ -76,6 +76,7 @@ export async function ensureBaseNightWorkersTables() {
       description text,
       objective text,
       acceptance_criteria text,
+      worktree_path text,
       status text DEFAULT 'draft' NOT NULL,
       compiled_prompt text,
       timeout_seconds integer DEFAULT 3600 NOT NULL,

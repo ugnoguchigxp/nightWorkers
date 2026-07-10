@@ -190,6 +190,13 @@
       "when": 1783657200000,
       "tag": "0026_run_control_kernel",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1783699200000,
+      "tag": "0027_task_worktree_path",
+      "breakpoints": true
     }
   ]
 }

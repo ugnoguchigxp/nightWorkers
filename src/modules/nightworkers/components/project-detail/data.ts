@@ -35,16 +35,19 @@ export const emptyMetrics: ProjectDetailMetrics = {
 export async function readJsonResponse<T>(response: Response): Promise<T> {
 	const payload = (await response.json().catch(() => null)) as unknown;
 	if (!response.ok) {
+		const errorValue =
+			payload && typeof payload === "object" && "error" in payload
+				? payload.error
+				: null;
 		const message =
-			payload &&
-			typeof payload === "object" &&
-			"error" in payload &&
-			payload.error &&
-			typeof payload.error === "object" &&
-			"message" in payload.error &&
-			typeof payload.error.message === "string"
-				? payload.error.message
-				: `Request failed: ${response.status}`;
+			typeof errorValue === "string"
+				? errorValue
+				: errorValue &&
+						typeof errorValue === "object" &&
+						"message" in errorValue &&
+						typeof errorValue.message === "string"
+					? errorValue.message
+					: `Request failed: ${response.status}`;
 		throw new Error(message);
 	}
 	return payload as T;

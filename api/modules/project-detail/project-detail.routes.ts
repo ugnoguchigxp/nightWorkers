@@ -7,6 +7,8 @@ import {
 	createTasksFromMissionCandidatesResponseSchema,
 	generateMissionTaskCandidatesRequestSchema,
 	generateMissionTaskCandidatesResponseSchema,
+	generateTaskCandidatesRequestSchema,
+	generateTaskCandidatesResponseSchema,
 	missionGoalPresetSchema,
 	missionGoalSchema,
 	missionTaskCandidateSchema,
@@ -19,6 +21,7 @@ import {
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./project-detail.service";
+import * as taskGenerationService from "./task-generation-orchestrator.service";
 
 const repositoryParams = z.object({ id: z.string().uuid() });
 const goalParams = z.object({
@@ -156,6 +159,7 @@ const listMissionTaskCandidatesRoute = createRoute({
 const generateMissionTaskCandidatesRoute = createRoute({
 	method: "post",
 	path: "/repositories/:id/mission-task-candidates/generate",
+	deprecated: true,
 	request: {
 		params: repositoryParams,
 		body: {
@@ -174,6 +178,27 @@ const generateMissionTaskCandidatesRoute = createRoute({
 				},
 			},
 			description: "Mission task candidates generated",
+		},
+	},
+});
+
+const generateTaskCandidatesRoute = createRoute({
+	method: "post",
+	path: "/repositories/:id/task-candidates/generate",
+	request: {
+		params: repositoryParams,
+		body: {
+			content: {
+				"application/json": { schema: generateTaskCandidatesRequestSchema },
+			},
+		},
+	},
+	responses: {
+		201: {
+			content: {
+				"application/json": { schema: generateTaskCandidatesResponseSchema },
+			},
+			description: "Task candidates generated after scale estimation",
 		},
 	},
 });
@@ -377,6 +402,18 @@ export const projectDetailRouter = createOpenApiRouter()
 					status: c.req.valid("query").status,
 				}),
 				200,
+			),
+		),
+	)
+	.openapi(
+		generateTaskCandidatesRoute,
+		withOpenApiRouteError(generateTaskCandidatesRoute, async (c) =>
+			c.json(
+				await taskGenerationService.generateTaskCandidates({
+					repositoryId: c.req.param("id"),
+					...c.req.valid("json"),
+				}),
+				201,
 			),
 		),
 	)

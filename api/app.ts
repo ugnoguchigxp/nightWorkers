@@ -22,6 +22,7 @@ import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
+import { worktreeRouter } from "./modules/nightworkers/worktree.routes";
 import { planViewRouter } from "./modules/planViews/planView.routes";
 import { projectDetailRouter } from "./modules/project-detail/project-detail.routes";
 import { projectEvaluationRouter } from "./modules/project-evaluation/project-evaluation.routes";
@@ -54,6 +55,8 @@ const apiRoutes = createOpenApiRouter()
 	.route("/", specificationRouter)
 	.route("/", projectDetailRouter)
 	.route("/", nightworkersRouter);
+
+apiRoutes.route("/", worktreeRouter);
 
 const app = createOpenApiRouter();
 const isProduction = config.NODE_ENV === "production";

@@ -36,6 +36,7 @@ import {
 	fetchTaskMessages,
 	generateMissionCandidatesFromGoals,
 	generateMissionTaskCandidates,
+	generateTaskCandidates,
 	patchTask,
 	queueWorkbenchSession,
 	requestMissionPlanningRevision,
@@ -247,6 +248,17 @@ describe("nightWorkersCommands", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			13,
 			"/api/repositories/repo-1/quality/runs",
+			expect.objectContaining({ method: "POST" }),
+		);
+	});
+
+	it("routes unified task candidate generation", async () => {
+		const fetchMock = stubFetch();
+
+		await generateTaskCandidates("repo-1", { goalIds: ["goal-1"] });
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/repositories/repo-1/task-candidates/generate",
 			expect.objectContaining({ method: "POST" }),
 		);
 	});

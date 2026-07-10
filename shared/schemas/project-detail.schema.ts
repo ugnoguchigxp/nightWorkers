@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+	missionSchema,
+	missionTaskProposalSchema,
+} from "./mission-planner.schema";
 import { taskSchema } from "./nightworkers.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
@@ -304,6 +308,46 @@ export const generateMissionTaskCandidatesResponseSchema = z.object({
 	candidates: z.array(missionTaskCandidateSchema),
 	errorMessage: z.string().nullable().optional(),
 });
+
+export const taskGenerationScaleSchema = z.enum(["small", "medium", "large"]);
+export type TaskGenerationScale = z.infer<typeof taskGenerationScaleSchema>;
+
+export const taskGenerationEstimateSchema = z.object({
+	estimatedChangedLines: z.number().int().nonnegative(),
+	estimatedFileCount: z.number().int().nonnegative(),
+	estimatedTaskCount: z.number().int().nonnegative(),
+	confidencePercent: z.number().int().min(0).max(100),
+	rationale: z.string().min(1),
+	assumptions: z.array(z.string().min(1)),
+	scale: taskGenerationScaleSchema,
+});
+export type TaskGenerationEstimate = z.infer<
+	typeof taskGenerationEstimateSchema
+>;
+
+export const generateTaskCandidatesRequestSchema =
+	generateMissionTaskCandidatesRequestSchema;
+export type GenerateTaskCandidatesRequest = z.infer<
+	typeof generateTaskCandidatesRequestSchema
+>;
+
+export const generateTaskCandidatesResponseSchema = z.object({
+	status: z.enum(["completed", "needs_attention"]),
+	generationPath: z.enum(["direct_task_candidates", "mission_decomposition"]),
+	estimate: taskGenerationEstimateSchema,
+	candidates: z.array(missionTaskCandidateSchema),
+	missions: z.array(missionSchema),
+	proposals: z.array(missionTaskProposalSchema),
+	decompositionFailures: z.array(
+		z.object({
+			missionId: z.string().uuid(),
+			message: z.string().min(1),
+		}),
+	),
+});
+export type GenerateTaskCandidatesResponse = z.infer<
+	typeof generateTaskCandidatesResponseSchema
+>;
 
 export const updateMissionTaskCandidateRequestSchema = z.object({
 	status: missionTaskCandidateStatusSchema.optional(),

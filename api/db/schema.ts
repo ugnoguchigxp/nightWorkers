@@ -154,6 +154,7 @@ export const tasks = sqliteTable(
 		description: text("description"),
 		objective: text("objective"),
 		acceptanceCriteria: text("acceptance_criteria"),
+		worktreePath: text("worktree_path"),
 		status: text("status").$type<TaskStatus>().default("draft").notNull(), // draft | ready | context_compiling | queued | running | verifying | needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
 		compiledPrompt: text("compiled_prompt"),
 		timeoutSeconds: integer("timeout_seconds").default(3600).notNull(),
