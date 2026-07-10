@@ -80,7 +80,17 @@ export async function checkDocsConsistency(options = {}) {
 			const targetPath = pathname
 				? path.normalize(path.join(path.dirname(relativePath), decodeURIComponent(pathname)))
 				: relativePath;
-			if (!(await exists(path.join(root, targetPath)))) {
+			const absoluteTargetPath = path.resolve(root, targetPath);
+			const rootRelativeTarget = path.relative(root, absoluteTargetPath);
+			if (
+				rootRelativeTarget === ".." ||
+				rootRelativeTarget.startsWith(`..${path.sep}`) ||
+				path.isAbsolute(rootRelativeTarget)
+			) {
+				errors.push(`${relativePath}: link escapes repository root ${target}`);
+				continue;
+			}
+			if (!(await exists(absoluteTargetPath))) {
 				errors.push(`${relativePath}: broken link ${target}`);
 				continue;
 			}

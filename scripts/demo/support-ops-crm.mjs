@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const demoRoot = path.join(repoRoot, "demo/support-ops-crm");
+const demoRootMarker = ".nightworkers-demo-root";
+const demoRootMarkerContent = "nightworkers.support-ops-demo/v1\n";
 
 const run = (command, args, cwd) =>
 	execFileSync(command, args, { cwd, encoding: "utf8", env: process.env });
@@ -13,6 +15,12 @@ function runtimePaths(options = {}) {
 	const root = path.resolve(
 		options.root ?? process.env.NIGHTWORKERS_DEMO_ROOT ?? path.join(repoRoot, ".nightworkers-demo"),
 	);
+	const rootName = path.basename(root);
+	if (rootName !== ".nightworkers-demo" && !rootName.startsWith("nightworkers-demo-")) {
+		throw new Error(
+			`Refusing unsafe demo root. Use .nightworkers-demo or nightworkers-demo-*: ${root}`,
+		);
+	}
 	return {
 		root,
 		project: path.join(root, "project"),
@@ -21,14 +29,50 @@ function runtimePaths(options = {}) {
 	};
 }
 
+async function pathExists(filePath) {
+	try {
+		await stat(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function assertOwnedDemoRoot(root, allowEmpty = false) {
+	if (!(await pathExists(root))) return;
+	const entries = await readdir(root);
+	if (allowEmpty && entries.length === 0) return;
+	let marker = null;
+	try {
+		marker = await readFile(path.join(root, demoRootMarker), "utf8");
+	} catch {
+		// The explicit error below is intentionally stable for CLI and tests.
+	}
+	if (marker !== demoRootMarkerContent) {
+		throw new Error(`Refusing to delete unowned demo root: ${root}`);
+	}
+}
+
+function resolveWithin(basePath, relativePath, label) {
+	const resolved = path.resolve(basePath, relativePath);
+	const relative = path.relative(basePath, resolved);
+	if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+		throw new Error(`${label} escapes its allowed root: ${relativePath}`);
+	}
+	return resolved;
+}
+
 export async function resetDemo(options = {}) {
-	await rm(runtimePaths(options).root, { recursive: true, force: true });
+	const { root } = runtimePaths(options);
+	await assertOwnedDemoRoot(root, true);
+	await rm(root, { recursive: true, force: true });
 }
 
 export async function setupDemo(options = {}) {
 	const paths = runtimePaths(options);
 	await resetDemo(options);
 	await mkdir(paths.root, { recursive: true });
+	await writeFile(path.join(paths.root, demoRootMarker), demoRootMarkerContent, "utf8");
 	await cp(path.join(demoRoot, "starter"), paths.project, { recursive: true });
 	await mkdir(paths.runtime, { recursive: true });
 	await mkdir(paths.evidence, { recursive: true });
@@ -63,12 +107,13 @@ export async function setupDemo(options = {}) {
 
 export async function runDemo(options = {}) {
 	const paths = runtimePaths(options);
+	await assertOwnedDemoRoot(paths.root);
 	const fixture = JSON.parse(
 		await readFile(path.join(demoRoot, "fixture/provider-actions.json"), "utf8"),
 	);
 	await cp(
-		path.join(demoRoot, fixture.implementation.source),
-		path.join(paths.project, fixture.implementation.target),
+		resolveWithin(demoRoot, fixture.implementation.source, "Demo fixture source"),
+		resolveWithin(paths.project, fixture.implementation.target, "Demo fixture target"),
 	);
 	const verificationOutput = run(
 		fixture.implementation.verify[0],

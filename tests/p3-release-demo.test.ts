@@ -76,12 +76,103 @@ describe("P3 release discipline", () => {
 		expect(result.errors).toEqual([]);
 	});
 
+	it("rejects an artifact that changed after its manifest was created", async () => {
+		const root = await releaseFixture();
+		const artifactPath = path.join(root, "NightWorkers-1.2.3.zip");
+		await writeFile(artifactPath, "verified artifact");
+		await createArtifactManifest({
+			root,
+			artifactPath,
+			outputPath: "manifest.json",
+			verificationStatus: "passed",
+		});
+		await writeFile(artifactPath, "tampered artifact with additional bytes");
+
+		const result = await verifyReleaseMetadata({
+			root,
+			manifestPath: "manifest.json",
+		});
+
+		expect(result.errors).toEqual(
+			expect.arrayContaining([
+				"artifact size does not match file: NightWorkers-1.2.3.zip",
+				"artifact sha256 does not match file: NightWorkers-1.2.3.zip",
+			]),
+		);
+	});
+
+	it("does not overwrite an artifact with its own manifest", async () => {
+		const root = await releaseFixture();
+		const artifactPath = path.join(root, "NightWorkers-1.2.3.zip");
+		await writeFile(artifactPath, "artifact");
+
+		await expect(
+			createArtifactManifest({
+				root,
+				artifactPath,
+				outputPath: "NightWorkers-1.2.3.zip",
+				verificationStatus: "passed",
+			}),
+		).rejects.toThrow("must not overwrite the artifact");
+		expect(await readFile(artifactPath, "utf8")).toBe("artifact");
+	});
+
 	it("never creates a tag after a failed release gate", () => {
-		const run = vi.fn(() => ({ status: 1 }));
+		const run = vi.fn((command: string, args: string[]) => {
+			if (command === "git" && args[0] === "status") {
+				return { status: 0, stdout: "" };
+			}
+			if (command === "git" && args[0] === "rev-parse") {
+				return { status: 0, stdout: "abc123\n" };
+			}
+			if (command === "git" && args[0] === "show-ref") {
+				return { status: 1, stdout: "" };
+			}
+			return { status: 1, stdout: "" };
+		});
 		expect(() => executeRelease({ execute: true, tag: "v1.2.3", run })).toThrow(
 			"tag was not created",
 		);
+		expect(run).not.toHaveBeenCalledWith(
+			"git",
+			expect.arrayContaining(["tag"]),
+		);
+	});
+
+	it("rejects a dirty worktree before running the release gate", () => {
+		const run = vi.fn(() => ({ status: 0, stdout: " M package.json\n" }));
+
+		expect(() => executeRelease({ execute: true, tag: "v1.2.3", run })).toThrow(
+			"requires a clean worktree",
+		);
 		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("tags the exact HEAD that passed release verification", () => {
+		const run = vi.fn((command: string, args: string[]) => {
+			if (command === "git" && args[0] === "status") {
+				return { status: 0, stdout: "" };
+			}
+			if (command === "git" && args[0] === "rev-parse") {
+				return { status: 0, stdout: "abc123\n" };
+			}
+			if (command === "git" && args[0] === "show-ref") {
+				return { status: 1, stdout: "" };
+			}
+			return { status: 0, stdout: "" };
+		});
+
+		const result = executeRelease({ execute: true, tag: "v1.2.3", run });
+
+		expect(result).toEqual({ tagged: true, verifiedHead: "abc123" });
+		expect(run).toHaveBeenCalledWith("git", [
+			"tag",
+			"-a",
+			"v1.2.3",
+			"abc123",
+			"-m",
+			"NightWorkers v1.2.3",
+		]);
 	});
 });
 
@@ -107,6 +198,18 @@ describe("P3 deterministic demo and docs", () => {
 		await expect(
 			readFile(path.join(root, "evidence/review.json")),
 		).rejects.toThrow();
+	});
+
+	it("refuses to reset a nonempty directory without demo ownership", async () => {
+		const root = await mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-demo-unowned-"),
+		);
+		temporaryPaths.push(root);
+		const userFile = path.join(root, "keep.txt");
+		await writeFile(userFile, "keep");
+
+		await expect(resetDemo({ root })).rejects.toThrow("unowned demo root");
+		expect(await readFile(userFile, "utf8")).toBe("keep");
 	});
 
 	it("keeps documented commands, links, and archived P3 plans consistent", async () => {

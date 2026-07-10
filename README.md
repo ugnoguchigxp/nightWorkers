@@ -336,21 +336,24 @@ Detailed runtime configuration:
 | `bun run verify:desktop` | Run desktop runtime tests and lint in parallel, then build the `.app` and run sidecar/packaged smoke |
 | `bun run verify` | Run the same lightweight base gate as `verify:base` |
 | `bun run verify:fast` | Alias for `verify:base` |
-| `bun run verify:full` | Run the complete slow suite: all tests, E2E/accessibility, audit, desktop build/smoke, and opt-in live LLM checks |
+| `bun run verify:full` | Run the complete deterministic slow suite: all tests, E2E/accessibility, audit, and desktop build/smoke |
 | `bun run verify:e2e` | Run the credential-free Playwright smoke gate |
 | `bun run verify:audit` | Enforce the High/Critical dependency audit policy |
+| `bun run verify:live` | Explicitly run the external-provider LLM canaries |
 | `bun run verify:release` | Run metadata/docs, full tests, E2E, demo, dependency, and desktop release gates |
 
 ## Testing
 - Default gate: `bun run verify` runs the lightweight base gate: tracked-artifact check, TypeScript, and Biome first in parallel, then supervisor regression tests serially.
 - Fast gate: `bun run verify:fast` is an alias for `verify:base`.
 - Desktop gate: `bun run verify:desktop` remains separate. It runs desktop runtime tests and desktop lint first in parallel, then current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke serially.
-- Full gate: `bun run verify:full` is intentionally slow and opt-in. It runs the base gate, the full non-live Vitest suite, Playwright smoke/accessibility, deterministic demo, dependency audit, desktop runtime/lint/build/smoke, then live LLM Vitest and agent E2E. Live checks still skip unless `NIGHTWORKERS_LIVE_LLM_VITEST=1` or `NIGHTWORKERS_LIVE_LLM_E2E=1` and credentials are configured.
+- Full gate: `bun run verify:full` is intentionally slow and opt-in, but remains deterministic and credential-free. It runs the base gate, the full non-live Vitest suite, Playwright smoke/accessibility, deterministic demo, dependency audit, and desktop runtime/lint/build/smoke.
+- Live gate: `bun run verify:live` is the only verification target that can call an external LLM. It retains minimal provider and agent canaries and skips unless `NIGHTWORKERS_LIVE_LLM_VITEST=1` or `NIGHTWORKERS_LIVE_LLM_E2E=1` and credentials are configured.
 - Dependency gate: `bun run verify:audit` fails on every unallowlisted High/Critical advisory. Temporary exceptions require an advisory ID, owner, reason, mitigation, and expiry in `config/dependency-audit-allowlist.json`.
-- Release gate: `bun run verify:release` is the only release-ready entrypoint. It checks release metadata and docs and runs the deterministic full profile. Opt-in live-provider checks remain exclusive to `verify:full` / `verify:live` so release reproducibility does not depend on an external provider.
+- Release gate: `bun run verify:release` is the only release-ready entrypoint. It checks release metadata and docs and runs the deterministic full profile. Opt-in live-provider checks remain exclusive to `verify:live` so release reproducibility does not depend on an external provider.
 - Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
 - Packaged desktop smoke: `bun run desktop:smoke` can also be run directly as the release/adoption smoke for launching the built `.app` and verifying API, WebSocket, logs, and shutdown.
 - Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
+- E2E isolation: every `test:e2e:*` command creates a disposable `.nightworkers-e2e/<run-id>/` containing its own SQLite DB, runtime, settings, ports, and fixture repositories. Existing dev servers are never reused, and the run directory is reset after success or failure.
 - Husky hooks: `pre-commit` and `pre-push` both run only the fast `bun run verify` gate; they never run E2E, desktop build/smoke, or live LLM calls.
 - Unit/integration: Vitest
 - End-to-end: Playwright (`@smoke`, `@regression` tags)

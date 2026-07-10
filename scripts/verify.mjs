@@ -172,7 +172,7 @@ export const taskSets = {
   base: basePhases,
   desktop: desktopPhases,
   verify: basePhases,
-  full: [...deterministicFullPhases, livePhase],
+  full: deterministicFullPhases,
   e2e: [e2ePhase],
   accessibility: [accessibilityPhase],
   audit: [auditPhase],

@@ -198,13 +198,21 @@ parallel first, then runs supervisor regression tests serially. Use
 packaging readiness checks, Rust lint, desktop build, staged sidecar smoke, and
 packaged app smoke. `bun run verify:full` is the explicit slow gate: it adds the
 full non-live Vitest suite, E2E/accessibility, dependency audit, desktop
-build/smoke, and opt-in live LLM tests. Live tests skip unless their enable flags
-and credentials are configured.
+build/smoke, and never calls an external LLM. External-provider canaries are
+isolated to `bun run verify:live` and skip unless their enable flags and
+credentials are configured.
 `bun run verify:audit` applies the machine-readable High/Critical dependency
 policy in `config/dependency-audit-allowlist.json`, and `bun run verify:e2e`
 runs the credential-free Playwright smoke tests. `bun run verify:release`
 combines the full Vitest, E2E, dependency policy, and desktop gates in one
 ordered command and prints `release-ready` only after all required phases pass.
+
+All `test:e2e:*` package commands run through the isolated Playwright wrapper.
+Each invocation uses `.nightworkers-e2e/<run-id>/` for its SQLite database,
+runtime files, settings, Codex home, and fixture repositories. Direct Playwright
+execution without this isolation metadata is rejected, existing dev servers are
+not reused, and the dedicated database and run root are reset when the command
+finishes. `.nightworkers-e2e/` is ignored by Git.
 
 Linux and Windows packaging is configured through platform-specific Tauri
 config files:

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, Page } from "@playwright/test";
@@ -72,4 +72,15 @@ const testsDir = path.resolve(e2eDir, "..");
 
 export async function readTestFixture(...segments: string[]) {
 	return readFile(path.join(testsDir, "fixtures", ...segments), "utf8");
+}
+
+export async function createE2eWorkspaceDirectory(prefix: string) {
+	const workspaceRoot = process.env.NIGHTWORKERS_E2E_WORKSPACE_ROOT?.trim();
+	if (!workspaceRoot) {
+		throw new Error(
+			"NIGHTWORKERS_E2E_WORKSPACE_ROOT is required. Run E2E through the package script.",
+		);
+	}
+	await mkdir(workspaceRoot, { recursive: true });
+	return mkdtemp(path.join(workspaceRoot, prefix));
 }

@@ -1,3 +1,4 @@
+import type { WorkbenchRouteState } from "./routing/workbench-route-state";
 import type { Task, TaskRun, WorkbenchSessionView } from "./types";
 
 type PlanArtifactVisibilityInput = {
@@ -9,6 +10,17 @@ type PlanArtifactVisibilityInput = {
 };
 
 const PLAN_CREATION_STATUSES = new Set(["draft", "ready"]);
+
+export function isActiveSessionWorkbenchRoute(
+	routeState: WorkbenchRouteState,
+	activeSessionId: string | null,
+): boolean {
+	return (
+		routeState.kind === "session" &&
+		Boolean(activeSessionId) &&
+		routeState.sessionId === activeSessionId
+	);
+}
 
 export function shouldAutoOpenPlanArtifact(
 	input: PlanArtifactVisibilityInput,

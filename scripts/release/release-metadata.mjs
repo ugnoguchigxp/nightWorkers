@@ -13,9 +13,14 @@ const noteHeadings = [
 ];
 
 const readJson = async (filePath) => JSON.parse(await readFile(filePath, "utf8"));
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+function escapeRegExp(value) {
+	return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function sectionBody(markdown, heading) {
-	const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const escaped = escapeRegExp(heading);
 	const match = markdown.match(
 		new RegExp(`^## ${escaped}\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m"),
 	);
@@ -23,8 +28,11 @@ function sectionBody(markdown, heading) {
 }
 
 function hasSubheading(body, heading) {
-	const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	return new RegExp(`^### ${escaped}\\s*$`, "m").test(body);
+	const escaped = escapeRegExp(heading);
+	const match = body.match(
+		new RegExp(`^### ${escaped}\\s*$([\\s\\S]*?)(?=^### |(?![\\s\\S]))`, "m"),
+	);
+	return Boolean(match?.[1]?.trim());
 }
 
 export async function collectReleaseMetadata(options = {}) {
@@ -64,7 +72,7 @@ export async function verifyReleaseMetadata(options = {}) {
 
 	const releaseSectionMatch = metadata.changelog.match(
 		new RegExp(
-			`^## \\[${metadata.version.replace(/\./g, "\\.")}\\] - (\\d{4}-\\d{2}-\\d{2})\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`,
+			`^## \\[${escapeRegExp(metadata.version)}\\] - (\\d{4}-\\d{2}-\\d{2})\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`,
 			"m",
 		),
 	);
@@ -88,7 +96,11 @@ export async function verifyReleaseMetadata(options = {}) {
 	}
 
 	if (options.manifestPath) {
-		const manifest = await readJson(path.resolve(metadata.root, options.manifestPath));
+		const manifestPath = path.resolve(metadata.root, options.manifestPath);
+		const manifest = await readJson(manifestPath);
+		if (manifest.schemaVersion !== "nightworkers.release-artifacts/v1") {
+			errors.push(`unsupported artifact manifest schema: ${manifest.schemaVersion}`);
+		}
 		if (manifest.version !== metadata.version) {
 			errors.push(`artifact manifest version ${manifest.version} does not match ${metadata.version}`);
 		}
@@ -102,15 +114,37 @@ export async function verifyReleaseMetadata(options = {}) {
 			errors.push("artifact manifest must contain at least one artifact");
 		} else {
 			for (const artifact of manifest.artifacts) {
-				if (!String(artifact.filename ?? "").includes(metadata.version)) {
+				const filename = String(artifact.filename ?? "");
+				if (path.basename(filename) !== filename) {
+					errors.push(`artifact filename must not contain a path: ${filename}`);
+					continue;
+				}
+				if (!filename.includes(metadata.version)) {
 					errors.push(`artifact filename must include ${metadata.version}: ${artifact.filename}`);
 				}
-					if (!/^[a-f0-9]{64}$/.test(String(artifact.sha256 ?? ""))) {
-						errors.push(`artifact sha256 is invalid: ${artifact.filename}`);
+				if (!/^[a-f0-9]{64}$/.test(String(artifact.sha256 ?? ""))) {
+					errors.push(`artifact sha256 is invalid: ${filename}`);
+				}
+				for (const field of ["signing", "notarization"]) {
+					if (!["verified", "not_requested"].includes(artifact[field])) {
+						errors.push(`artifact ${field} status is not releasable: ${artifact[field]}`);
 					}
+				}
+				const artifactPath = path.join(path.dirname(manifestPath), filename);
+				try {
+					const bytes = await readFile(artifactPath);
+					if (artifact.size !== bytes.byteLength) {
+						errors.push(`artifact size does not match file: ${filename}`);
+					}
+					if (artifact.sha256 !== sha256(bytes)) {
+						errors.push(`artifact sha256 does not match file: ${filename}`);
+					}
+				} catch {
+					errors.push(`artifact file is missing beside manifest: ${filename}`);
 				}
 			}
 		}
+	}
 
 	return { ...metadata, errors };
 }
@@ -123,6 +157,16 @@ export async function createArtifactManifest(options) {
 		throw new Error(`Artifact filename must include ${metadata.version}: ${filename}`);
 	}
 	const bytes = await readFile(artifactPath);
+	const outputPath = path.resolve(
+		metadata.root,
+		options.outputPath ?? `release-artifacts-${metadata.version}.json`,
+	);
+	if (outputPath === artifactPath) {
+		throw new Error("Artifact manifest output must not overwrite the artifact");
+	}
+	if (path.dirname(outputPath) !== path.dirname(artifactPath)) {
+		throw new Error("Artifact manifest must be written beside the artifact");
+	}
 	const manifest = {
 		schemaVersion: "nightworkers.release-artifacts/v1",
 		version: metadata.version,
@@ -135,17 +179,13 @@ export async function createArtifactManifest(options) {
 		artifacts: [
 			{
 				filename,
-				sha256: createHash("sha256").update(bytes).digest("hex"),
+				sha256: sha256(bytes),
 				size: bytes.byteLength,
 				signing: options.signing ?? "not_requested",
 				notarization: options.notarization ?? "not_requested",
 			},
 		],
 	};
-	const outputPath = path.resolve(
-		metadata.root,
-		options.outputPath ?? `release-artifacts-${metadata.version}.json`,
-	);
 	await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	return { manifest, outputPath };
 }

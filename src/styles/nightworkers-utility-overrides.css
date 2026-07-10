@@ -38,6 +38,14 @@
 	background-color: var(--nw-surface-soft);
 }
 
+.nightworkers-shell [class~="bg-primary"] {
+	background-color: var(--nw-primary);
+}
+
+.nightworkers-shell [class~="text-primary-foreground"] {
+	color: var(--nw-primary-foreground);
+}
+
 .nightworkers-shell [class~="text-secondary-foreground"] {
 	color: var(--nw-text);
 }

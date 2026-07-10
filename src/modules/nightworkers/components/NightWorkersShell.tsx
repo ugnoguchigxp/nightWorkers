@@ -15,7 +15,10 @@ import {
 	useWorkspaceLayoutActions,
 	useWorkspaceLayoutState,
 } from "../contexts/WorkspaceLayoutContext";
-import { shouldAutoOpenPlanArtifact } from "../planArtifactVisibility";
+import {
+	isActiveSessionWorkbenchRoute,
+	shouldAutoOpenPlanArtifact,
+} from "../planArtifactVisibility";
 import { buildOverviewRoute } from "../routing/workbench-route-state";
 import type {
 	ComposerThinkingDepth,
@@ -702,12 +705,13 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		async (
 			message: TaskMessage,
 			initialTab: "questionnaire" | "status" = "questionnaire",
+			shouldOpen: () => boolean = () => true,
 		) => {
 			if (openingQuestionnaireMessageIdsRef.current.has(message.id)) return;
 			openingQuestionnaireMessageIdsRef.current.add(message.id);
 			try {
 				const ready = await waitForQuestionnaireWorkspaceReady(message);
-				if (!ready) return;
+				if (!ready || !shouldOpen()) return;
 				openedQuestionnaireMessageIdsRef.current.add(message.id);
 				setClearedArtifactContextId(null);
 				setArtifactFocus({
@@ -727,7 +731,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	);
 
 	useEffect(() => {
-		if (!workspace.activeSessionId) return;
+		if (!isActiveSessionWorkbenchRoute(routeState, workspace.activeSessionId))
+			return;
 		const latestQuestionnaireMessage = [...workspace.taskMessages]
 			.reverse()
 			.find(
@@ -753,9 +758,18 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			)
 		)
 			return;
-		void openQuestionnaireWorkspace(latestQuestionnaireMessage, "status");
+		let cancelled = false;
+		void openQuestionnaireWorkspace(
+			latestQuestionnaireMessage,
+			"status",
+			() => !cancelled,
+		);
+		return () => {
+			cancelled = true;
+		};
 	}, [
 		openQuestionnaireWorkspace,
+		routeState,
 		workspace.activeSession,
 		workspace.activeSessionId,
 		workspace.activeSessionView,

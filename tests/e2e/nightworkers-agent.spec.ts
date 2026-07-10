@@ -1,17 +1,15 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
+import { createE2eWorkspaceDirectory } from "./helpers";
 
 const sameOriginHeaders = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
 };
 
 async function createDisposableGitWorkspace(): Promise<string> {
-	const workspaceDir = await fs.mkdtemp(
-		path.join(os.tmpdir(), "nightworkers-e2e-coding-"),
-	);
+	const workspaceDir = await createE2eWorkspaceDirectory("coding-");
 	await fs.mkdir(path.join(workspaceDir, "src"), { recursive: true });
 	await fs.writeFile(
 		path.join(workspaceDir, "README.md"),
@@ -42,9 +40,7 @@ async function createDisposableGitWorkspace(): Promise<string> {
 }
 
 async function createDisposableLiveWorkspace(): Promise<string> {
-	const workspaceDir = await fs.mkdtemp(
-		path.join(os.tmpdir(), "nightworkers-e2e-live-"),
-	);
+	const workspaceDir = await createE2eWorkspaceDirectory("live-");
 	await fs.mkdir(path.join(workspaceDir, "src"), { recursive: true });
 	await fs.writeFile(
 		path.join(workspaceDir, "README.md"),

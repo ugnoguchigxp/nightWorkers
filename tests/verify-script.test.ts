@@ -4,6 +4,7 @@ import {
 	formatVerificationSummary,
 	taskSets,
 } from "../scripts/verify.mjs";
+import vitestConfig from "../vitest.config";
 
 describe("release verification plan", () => {
 	it("keeps the default verify gate free of expensive and live checks", () => {
@@ -29,7 +30,7 @@ describe("release verification plan", () => {
 		);
 	});
 
-	it("keeps slow, smoke, desktop, and opt-in live checks in the full gate", () => {
+	it("keeps slow, smoke, and desktop checks deterministic in the full gate", () => {
 		const taskIds = taskSets.full.flatMap((phase) =>
 			phase.tasks.map((task) => task.id),
 		);
@@ -46,10 +47,42 @@ describe("release verification plan", () => {
 				"desktop-build",
 				"desktop-sidecar-smoke",
 				"desktop-packaged-smoke",
-				"live-llm",
-				"live-agent-e2e",
 			]),
 		);
+		expect(taskIds).not.toEqual(
+			expect.arrayContaining(["live-llm", "live-agent-e2e"]),
+		);
+	});
+
+	it("isolates external LLM canaries to the live target", () => {
+		const liveTaskIds = taskSets.live.flatMap((phase) =>
+			phase.tasks.map((task) => task.id),
+		);
+		const nonLiveTaskIds = Object.entries(taskSets)
+			.filter(([target]) => target !== "live")
+			.flatMap(([, phases]) =>
+				phases.flatMap((phase) => phase.tasks.map((task) => task.id)),
+			);
+
+		expect(liveTaskIds).toEqual(["live-llm", "live-agent-e2e"]);
+		expect(nonLiveTaskIds).not.toEqual(expect.arrayContaining(liveTaskIds));
+	});
+
+	it("excludes live and E2E files from regular Vitest", () => {
+		const config = vitestConfig as unknown as {
+			test?: { exclude?: string[] };
+		};
+		expect(config.test?.exclude).toEqual(
+			expect.arrayContaining(["tests/e2e/**", "tests/live/**"]),
+		);
+	});
+
+	it("blocks external LLM fetches from regular Vitest", async () => {
+		await expect(
+			fetch("https://api.openai.com/v1/chat/completions", {
+				method: "POST",
+			}),
+		).rejects.toThrow("Unexpected live LLM fetch in regular Vitest");
 	});
 
 	it("keeps full tests, E2E, audit, and desktop smoke in release order", () => {

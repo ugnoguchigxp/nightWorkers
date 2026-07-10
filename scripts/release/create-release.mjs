@@ -6,13 +6,56 @@ import { collectReleaseMetadata } from "./release-metadata.mjs";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 export function executeRelease(options = {}) {
-	const run = options.run ?? ((command, args) => spawnSync(command, args, { cwd: options.root ?? repoRoot, stdio: "inherit" }));
+	const run =
+		options.run ??
+		((command, args) =>
+			spawnSync(command, args, {
+				cwd: options.root ?? repoRoot,
+				encoding: "utf8",
+				stdio: command === "bun" ? "inherit" : ["ignore", "pipe", "pipe"],
+			}));
+	const output = (result) => String(result.stdout ?? "").trim();
+	const worktreeBefore = run("git", ["status", "--porcelain=v1"]);
+	if (worktreeBefore.status !== 0) throw new Error("Unable to inspect release worktree");
+	if (output(worktreeBefore)) {
+		throw new Error("Release requires a clean worktree before verification");
+	}
+	const headBefore = run("git", ["rev-parse", "--verify", "HEAD"]);
+	if (headBefore.status !== 0 || !output(headBefore)) {
+		throw new Error("Unable to resolve release HEAD");
+	}
+	const verifiedHead = output(headBefore);
+	const existingTag = run("git", [
+		"show-ref",
+		"--verify",
+		"--quiet",
+		`refs/tags/${options.tag}`,
+	]);
+	if (existingTag.status === 0) throw new Error(`Git tag already exists: ${options.tag}`);
+	if (existingTag.status !== 1) throw new Error(`Unable to inspect Git tag ${options.tag}`);
 	const verify = run("bun", ["run", "verify:release"]);
 	if (verify.status !== 0) throw new Error("verify:release failed; tag was not created");
-	if (!options.execute) return { tagged: false };
-	const tagged = run("git", ["tag", "-a", options.tag, "-m", `NightWorkers ${options.tag}`]);
+	const headAfter = run("git", ["rev-parse", "--verify", "HEAD"]);
+	const worktreeAfter = run("git", ["status", "--porcelain=v1"]);
+	if (
+		headAfter.status !== 0 ||
+		output(headAfter) !== verifiedHead ||
+		worktreeAfter.status !== 0 ||
+		output(worktreeAfter)
+	) {
+		throw new Error("Repository changed during verify:release; tag was not created");
+	}
+	if (!options.execute) return { tagged: false, verifiedHead };
+	const tagged = run("git", [
+		"tag",
+		"-a",
+		options.tag,
+		verifiedHead,
+		"-m",
+		`NightWorkers ${options.tag}`,
+	]);
 	if (tagged.status !== 0) throw new Error(`Failed to create Git tag ${options.tag}`);
-	return { tagged: true };
+	return { tagged: true, verifiedHead };
 }
 
 export async function main(argv = process.argv.slice(2)) {

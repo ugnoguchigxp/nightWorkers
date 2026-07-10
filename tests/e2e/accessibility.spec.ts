@@ -1,6 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import {
 	type APIRequestContext,
@@ -8,6 +6,7 @@ import {
 	type Page,
 	test,
 } from "@playwright/test";
+import { createE2eWorkspaceDirectory } from "./helpers";
 
 const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
 const sameOriginHeaders = { Origin: `http://localhost:${e2eWebPort}` };
@@ -28,9 +27,7 @@ async function createWorkspaceFixture(request: APIRequestContext) {
 			timeout: 10_000,
 		})
 		.toBe(200);
-	const workspace = await fs.mkdtemp(
-		path.join(os.tmpdir(), "nightworkers-a11y-"),
-	);
+	const workspace = await createE2eWorkspaceDirectory("accessibility-");
 	await fs.writeFile(
 		path.join(workspace, "README.md"),
 		"# Accessibility fixture\n",
@@ -65,8 +62,7 @@ async function createWorkspaceFixture(request: APIRequestContext) {
 }
 
 test.describe("NightWorkers accessibility @accessibility", () => {
-	test.describe.configure({ mode: "serial" });
-	test.setTimeout(90_000);
+	test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 	test("major workbench surfaces have no serious axe violations", async ({
 		page,
@@ -86,12 +82,14 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 				await assertNoSeriousAccessibilityViolations(page);
 			}
 		} finally {
-			await request.delete(`/api/tasks/${fixture.taskId}`, {
-				headers: sameOriginHeaders,
-			});
-			await request.delete(`/api/repositories/${fixture.repositoryId}`, {
-				headers: sameOriginHeaders,
-			});
+			await Promise.allSettled([
+				request.delete(`/api/tasks/${fixture.taskId}`, {
+					headers: sameOriginHeaders,
+				}),
+				request.delete(`/api/repositories/${fixture.repositoryId}`, {
+					headers: sameOriginHeaders,
+				}),
+			]);
 			await fs.rm(fixture.workspace, { recursive: true, force: true });
 		}
 	});
@@ -101,11 +99,24 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 	}) => {
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		await page.goto("/overview");
+		const settingsLink = page.getByRole("link", { name: "Settings" });
+		await expect(settingsLink).toBeVisible();
+		await settingsLink.focus();
 		await page.keyboard.press("Tab");
-		const activeElement = page.locator(":focus");
-		await expect(activeElement).toBeVisible();
-		const tagName = await activeElement.evaluate((element) => element.tagName);
-		expect(tagName).not.toBe("BODY");
+		const focusState = await page.evaluate(() => {
+			const activeElement = document.activeElement;
+			return activeElement instanceof HTMLElement
+				? {
+						tagName: activeElement.tagName,
+						focusVisible: activeElement.matches(":focus-visible"),
+						visible:
+							activeElement.getClientRects().length > 0 &&
+							getComputedStyle(activeElement).visibility !== "hidden",
+					}
+				: null;
+		});
+		expect(focusState).toMatchObject({ focusVisible: true, visible: true });
+		expect(focusState?.tagName).not.toBe("BODY");
 		const animationDuration = await page
 			.locator(".nightworkers-shell")
 			.evaluate((element) => getComputedStyle(element).animationDuration);

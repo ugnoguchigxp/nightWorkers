@@ -1,7 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { shouldAutoOpenPlanArtifact } from "../src/modules/nightworkers/planArtifactVisibility";
+import {
+	isActiveSessionWorkbenchRoute,
+	shouldAutoOpenPlanArtifact,
+} from "../src/modules/nightworkers/planArtifactVisibility";
 
 describe("plan artifact visibility", () => {
+	it("only auto-opens from the route of the active session", () => {
+		const activeSessionId = "session-1";
+
+		expect(
+			isActiveSessionWorkbenchRoute(
+				{ kind: "session", sessionId: activeSessionId, artifact: null },
+				activeSessionId,
+			),
+		).toBe(true);
+		expect(
+			isActiveSessionWorkbenchRoute(
+				{ kind: "session", sessionId: "session-2", artifact: null },
+				activeSessionId,
+			),
+		).toBe(false);
+		expect(
+			isActiveSessionWorkbenchRoute(
+				{ kind: "settings", section: "general" },
+				activeSessionId,
+			),
+		).toBe(false);
+		expect(
+			isActiveSessionWorkbenchRoute(
+				{ kind: "overview", range: "30d", projectId: null },
+				activeSessionId,
+			),
+		).toBe(false);
+	});
+
 	it("auto-opens while plan generation is actively submitting", () => {
 		expect(
 			shouldAutoOpenPlanArtifact({

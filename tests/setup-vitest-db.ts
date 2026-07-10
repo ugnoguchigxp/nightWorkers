@@ -7,13 +7,7 @@ await ensureNightWorkersSchema();
 
 function installRegularVitestLlmFetchGuard() {
 	const originalFetch = globalThis.fetch;
-	if (
-		!originalFetch ||
-		process.env.NIGHTWORKERS_ALLOW_LIVE_LLM_VITEST === "1" ||
-		process.env.NIGHTWORKERS_LIVE_LLM_VITEST === "1"
-	) {
-		return;
-	}
+	if (!originalFetch) return;
 
 	globalThis.fetch = async (input, init) => {
 		const url = readFetchUrl(input);

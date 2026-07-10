@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { assertIsolatedE2eEnvironment } from "./scripts/e2e-environment.mjs";
+
+assertIsolatedE2eEnvironment();
 
 const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
-const e2eApiPort = Number(process.env.NIGHTWORKERS_E2E_API_PORT || 39273);
 const e2eBaseUrl = `http://localhost:${e2eWebPort}`;
 
 /**
@@ -62,8 +64,8 @@ export default defineConfig({
 
 	/* Run your local dev server before starting the tests */
 	webServer: {
-		command: `cross-env NIGHTWORKERS_E2E=1 NIGHTWORKERS_E2E_RUNTIME_FIXTURE=1 PORT=${e2eApiPort} APP_URL=${e2eBaseUrl} CORS_ORIGIN=${e2eBaseUrl} NIGHTWORKERS_API_PORT=${e2eApiPort} NIGHTWORKERS_WEB_PORT=${e2eWebPort} bun run dev`,
+		command: "bun run dev",
 		url: e2eBaseUrl,
-		reuseExistingServer: !process.env.CI,
+		reuseExistingServer: false,
 	},
 });

@@ -19,6 +19,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
   repository evaluation, and evidence-based adoption checks.
 - Refined GitHub Pages landing-page copy and navigation for first-time
   evaluation.
+- Kept `verify` and `verify:full` credential-free by isolating external LLM
+  canaries to the explicit `verify:live` target.
 
 ### Fixed
 - Release metadata and documentation drift are now rejected by automated gates.

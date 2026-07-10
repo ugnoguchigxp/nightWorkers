@@ -16,7 +16,8 @@ bun run verify
 
 Use `bun run verify:full` only when you explicitly need the slow suite: all
 non-live Vitest tests, E2E and accessibility, dependency audit, desktop
-build/smoke, plus opt-in live LLM checks. Release changes must pass
+build/smoke, all without provider credentials. External-provider canaries run
+only through explicit `bun run verify:live`. Release changes must pass
 `bun run verify:release`.
 
 Dependabot groups Bun runtime and development updates separately from Tauri/Rust
