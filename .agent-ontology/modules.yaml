@@ -14,6 +14,12 @@
       "aliases": ["mission", "mission planning", "decomposition", "task proposal"]
     },
     {
+      "id": "mission-pilot",
+      "label": "Mission Pilot",
+      "manifest": "modules/mission-pilot.yaml",
+      "aliases": ["mission pilot", "mission control", "mission approval", "autopilot"]
+    },
+    {
       "id": "settings",
       "label": "Settings",
       "manifest": "modules/settings.yaml",

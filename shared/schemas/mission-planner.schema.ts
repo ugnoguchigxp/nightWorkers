@@ -11,6 +11,8 @@ export const missionStatusSchema = z.enum([
 	"review_pending",
 	"active",
 	"blocked",
+	"paused",
+	"abandoned",
 	"completed",
 	"cancelled",
 ]);
@@ -210,6 +212,14 @@ export const missionSchema = z
 		nonGoals: z.array(z.string()).default([]),
 		status: missionStatusSchema,
 		sourceGoalIds: z.array(z.string().uuid()).default([]),
+		source: z
+			.enum(["user", "mission_goal", "project_evaluation"])
+			.default("user"),
+		sourceRefId: z.string().nullable().default(null),
+		sourceEvaluationId: z.string().uuid().nullable().default(null),
+		pausedAt: dateLikeSchema.nullable().default(null),
+		abandonedAt: dateLikeSchema.nullable().default(null),
+		completedAt: dateLikeSchema.nullable().default(null),
 		latestPlanningResultId: z.string().uuid().nullable(),
 		statusReason: z.string().nullable(),
 		createdAt: dateLikeSchema,

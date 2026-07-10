@@ -35,6 +35,12 @@ function mapMission(row: typeof missions.$inferSelect): Mission {
 		nonGoals: stringArray(row.nonGoalsJson),
 		status: row.status,
 		sourceGoalIds: stringArray(row.sourceGoalIdsJson),
+		source: row.source,
+		sourceRefId: row.sourceRefId ?? null,
+		sourceEvaluationId: row.sourceEvaluationId ?? null,
+		pausedAt: row.pausedAt ?? null,
+		abandonedAt: row.abandonedAt ?? null,
+		completedAt: row.completedAt ?? null,
 		latestPlanningResultId: row.latestPlanningResultId ?? null,
 		statusReason: row.statusReason ?? null,
 		createdAt: row.createdAt,
@@ -108,16 +114,22 @@ function mapProposal(
 	});
 }
 
-export async function createMission(input: {
-	repositoryId: string;
-	title: string;
-	goalText: string;
-	nonGoals: string[];
-	sourceGoalIds: string[];
-	statusReason?: string | null;
-}) {
+export async function createMission(
+	input: {
+		repositoryId: string;
+		title: string;
+		goalText: string;
+		nonGoals: string[];
+		sourceGoalIds: string[];
+		statusReason?: string | null;
+		source?: "user" | "mission_goal" | "project_evaluation";
+		sourceRefId?: string | null;
+		sourceEvaluationId?: string | null;
+	},
+	database: Db = db,
+) {
 	const now = new Date();
-	const [row] = await db
+	const [row] = await database
 		.insert(missions)
 		.values({
 			repositoryId: input.repositoryId,
@@ -125,6 +137,9 @@ export async function createMission(input: {
 			goalText: input.goalText,
 			nonGoalsJson: input.nonGoals,
 			sourceGoalIdsJson: input.sourceGoalIds,
+			source: input.source ?? "user",
+			sourceRefId: input.sourceRefId ?? null,
+			sourceEvaluationId: input.sourceEvaluationId ?? null,
 			status: "draft",
 			statusReason: input.statusReason ?? null,
 			createdAt: now,
@@ -132,6 +147,28 @@ export async function createMission(input: {
 		})
 		.returning();
 	return mapMission(row);
+}
+
+export async function findMissionBySource(
+	input: {
+		repositoryId: string;
+		source: "user" | "mission_goal" | "project_evaluation";
+		sourceRefId: string;
+	},
+	database: Db = db,
+) {
+	const [row] = await database
+		.select()
+		.from(missions)
+		.where(
+			and(
+				eq(missions.repositoryId, input.repositoryId),
+				eq(missions.source, input.source),
+				eq(missions.sourceRefId, input.sourceRefId),
+			),
+		)
+		.limit(1);
+	return row ? mapMission(row) : null;
 }
 
 export async function listMissions(repositoryId: string) {
@@ -185,6 +222,9 @@ export async function updateMission(
 		title?: string;
 		goalText?: string;
 		nonGoals?: string[];
+		pausedAt?: Date | null;
+		abandonedAt?: Date | null;
+		completedAt?: Date | null;
 	},
 	database: Db = db,
 ) {
@@ -201,6 +241,13 @@ export async function updateMission(
 			...(input.title !== undefined ? { title: input.title } : {}),
 			...(input.goalText !== undefined ? { goalText: input.goalText } : {}),
 			...(input.nonGoals !== undefined ? { nonGoalsJson: input.nonGoals } : {}),
+			...(input.pausedAt !== undefined ? { pausedAt: input.pausedAt } : {}),
+			...(input.abandonedAt !== undefined
+				? { abandonedAt: input.abandonedAt }
+				: {}),
+			...(input.completedAt !== undefined
+				? { completedAt: input.completedAt }
+				: {}),
 			updatedAt: new Date(),
 		})
 		.where(eq(missions.id, missionId))

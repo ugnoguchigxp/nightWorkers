@@ -15,6 +15,8 @@ import {
 import { type DbTransaction, db } from "../../db/client";
 import { tasks } from "../../db/schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
+import * as missionPilotRepo from "../mission-pilot/mission-pilot.repository";
+import { ensureCurrentPlanRevision } from "../mission-pilot/mission-pilot-replan";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as projectDetailRepo from "../project-detail/project-detail.repository";
 import { buildProjectSignalSnapshot } from "../project-detail/project-signal-snapshot.service";
@@ -571,8 +573,31 @@ export async function decomposeMission(input: {
 					{ mission: currentMission, planningResult: updatedResult },
 					tx,
 				);
+				await missionPilotRepo.upsertObjectivesFromPlanningResult(
+					{
+						missionId: currentMission.id,
+						repositoryId: currentMission.repositoryId,
+						planningResult: updatedResult,
+					},
+					tx,
+				);
+				await missionPilotRepo.appendMissionEvent(
+					{
+						missionId: currentMission.id,
+						repositoryId: currentMission.repositoryId,
+						eventType: "mission_decomposed",
+						summary: "Mission decompositionがreview-readyになりました。",
+						actor: { type: "system", id: null, displayName: "Mission Planner" },
+						payload: { planningResultId: updatedResult.id },
+						sourceKind: "planning_result",
+						sourceId: updatedResult.id,
+					},
+					tx,
+				);
 			}
 		});
+		if (finalStatus.resultStatus === "review_pending")
+			await ensureCurrentPlanRevision(currentMission.id);
 		const updated = await repo.getMission(currentMission.id);
 		if (!updated) throw new NotFoundError("Mission not found");
 		return missionDetail(updated);
@@ -671,9 +696,32 @@ export async function evaluatePlanningResult(resultId: string) {
 				{ mission, planningResult: updatedResult },
 				tx,
 			);
+			await missionPilotRepo.upsertObjectivesFromPlanningResult(
+				{
+					missionId: mission.id,
+					repositoryId: mission.repositoryId,
+					planningResult: updatedResult,
+				},
+				tx,
+			);
+			await missionPilotRepo.appendMissionEvent(
+				{
+					missionId: mission.id,
+					repositoryId: mission.repositoryId,
+					eventType: "mission_decomposed",
+					summary: "Mission decompositionがreview-readyになりました。",
+					actor: { type: "system", id: null, displayName: "Mission Planner" },
+					payload: { planningResultId: updatedResult.id },
+					sourceKind: "planning_result",
+					sourceId: updatedResult.id,
+				},
+				tx,
+			);
 		}
 		return updatedResult;
 	});
+	if (updated.status === "review_pending")
+		await ensureCurrentPlanRevision(mission.id);
 	return updated;
 }
 
@@ -730,7 +778,7 @@ export async function dismissTaskProposal(proposalId: string) {
 	return updated;
 }
 
-function workPackageForProposal(
+export function workPackageForProposal(
 	planningResult: MissionPlanningResult,
 	proposal: MissionTaskProposal,
 ) {
@@ -739,7 +787,7 @@ function workPackageForProposal(
 	);
 }
 
-function buildTaskObjective(input: {
+export function buildTaskObjective(input: {
 	proposal: MissionTaskProposal;
 	planningResult: MissionPlanningResult;
 }) {
@@ -757,7 +805,7 @@ function buildTaskObjective(input: {
 	].join("\n");
 }
 
-function buildTaskDescription(input: {
+export function buildTaskDescription(input: {
 	mission: Mission;
 	proposal: MissionTaskProposal;
 	planningResult: MissionPlanningResult;
@@ -786,7 +834,7 @@ function buildTaskDescription(input: {
 		.join("\n");
 }
 
-function buildAcceptanceCriteria(proposal: MissionTaskProposal) {
+export function buildAcceptanceCriteria(proposal: MissionTaskProposal) {
 	return [
 		...proposal.acceptanceCriteria,
 		"",
@@ -795,7 +843,7 @@ function buildAcceptanceCriteria(proposal: MissionTaskProposal) {
 	].join("\n");
 }
 
-function metadataForProposal(
+export function metadataForProposal(
 	proposal: MissionTaskProposal,
 ): MissionProposalTaskMetadata {
 	return missionProposalTaskMetadataSchema.parse({

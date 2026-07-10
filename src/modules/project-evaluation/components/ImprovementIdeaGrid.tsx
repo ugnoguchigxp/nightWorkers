@@ -16,6 +16,8 @@ export function ImprovementIdeaGrid({
 	onGenerate,
 	onToggleIdea,
 	onCreateTasks,
+	onCreateMission,
+	creatingMissionIdeaId,
 }: {
 	dimensions: ProjectEvaluationDimensionScore[];
 	ideas: ProjectImprovementIdea[];
@@ -26,6 +28,8 @@ export function ImprovementIdeaGrid({
 	onGenerate: () => void;
 	onToggleIdea: (id: string) => void;
 	onCreateTasks: () => void | Promise<void>;
+	onCreateMission: (ideaId: string) => void | Promise<void>;
+	creatingMissionIdeaId: string | null;
 }) {
 	const selectedLabels = dimensions
 		.filter((dimension) => selectedKeys.has(dimension.key))
@@ -101,6 +105,8 @@ export function ImprovementIdeaGrid({
 									idea={idea}
 									key={idea.id}
 									onToggle={() => onToggleIdea(idea.id as string)}
+									onCreateMission={() => onCreateMission(idea.id as string)}
+									isCreatingMission={creatingMissionIdeaId === idea.id}
 									selected={selectedIdeaIds.has(idea.id)}
 								/>
 							) : null,

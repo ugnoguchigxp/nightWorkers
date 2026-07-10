@@ -82,6 +82,7 @@ describe("agent ontology helpers", () => {
 		const validation = core.validateAllManifests(process.cwd());
 		expect(validation.ok).toBe(true);
 		expect(validation.modules.map((module) => module.id).sort()).toEqual([
+			"mission-pilot",
 			"mission-planner",
 			"project-detail",
 			"settings",
@@ -93,6 +94,25 @@ describe("agent ontology helpers", () => {
 		).toMatchObject({
 			label: "Project Detail",
 			manifestDigest: expect.stringMatching(/^sha256:/),
+		});
+		expect(
+			modules.modules.find((module) => module.id === "mission-pilot"),
+		).toMatchObject({
+			label: "Mission Pilot",
+			manifestDigest: expect.stringMatching(/^sha256:/),
+		});
+	});
+
+	it("routes Mission Pilot work to the Mission Control boundary", async () => {
+		const core = await loadCore();
+
+		expect(
+			core.classifyGoal({
+				repoRoot: process.cwd(),
+				goal: "Mission Pilot approval snapshot and Mission Control evidence",
+			}),
+		).toMatchObject({
+			primaryModule: "mission-pilot",
 		});
 	});
 

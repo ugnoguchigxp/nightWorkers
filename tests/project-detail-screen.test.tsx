@@ -329,7 +329,7 @@ describe("TaskGenerationTreeTable", () => {
 		expect(markup).toContain("品質ゲート整備");
 		expect(markup).toContain("verify gate を接続");
 		expect(markup).toContain("制約整備");
-		expect(markup).toContain("Mission候補生成");
+		expect(markup).toContain("タスク候補生成");
 		expect(markup).not.toContain("生成候補を作成");
 		expect(markup).not.toContain("ゴール / シグナル");
 		expect(markup.match(/type="checkbox"/g)).toHaveLength(2);

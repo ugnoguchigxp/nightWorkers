@@ -9,6 +9,7 @@ NightWorkers is a local-first autonomous development control plane. It coordinat
 ## Table of Contents
 - [What NightWorkers Is](#what-nightworkers-is)
 - [Why NightWorkers](#why-nightworkers)
+- [Mission Pilot](#mission-pilot)
 - [Good Fit / Not Good Fit](#good-fit--not-good-fit)
 - [Current Capabilities](#current-capabilities)
 - [Current Limits](#current-limits)
@@ -61,6 +62,47 @@ If you are evaluating the project for the first time, start with:
 - Clear current limits: no automatic PR/merge/deploy, no parallel multi-agent
   orchestration, and no required external memory service
 
+## Mission Pilot
+
+Mission Pilot is the central mission-control layer for turning a project-level
+improvement goal into approved, inspectable implementation work. It builds on
+the existing Mission Planner, Project Evaluation, Implementation Queue, and run
+evidence instead of creating a separate execution runtime.
+
+The currently implemented control loop is:
+
+1. Create a source-linked Mission from one Project Evaluation improvement.
+2. Decompose the Mission into Objectives and Task Candidates, then inspect the
+   current state in the Project Detail Mission cockpit.
+3. Request a human decision against a canonical Task Candidate snapshot. If the
+   candidate changes, the approval becomes stale instead of silently applying
+   to the new content.
+4. Materialize only an approved candidate as a MissionTask and NightWorkers
+   Task, then admit it to the existing Implementation Queue.
+5. Inspect Objectives, approvals, Attention items, MissionTasks, Queue state,
+   and audit events from the Mission cockpit.
+6. Start a human-approved Level 1 Autopilot grant and advance at most one
+   allowlisted deterministic action per tick, with pause, resume, expiry, and
+   revoke controls.
+7. Synchronize Queue, Run, Review, and Verification evidence, then evaluate
+   Objective progress with deterministic completion vetoes. A completed Run
+   alone is not sufficient evidence of completion.
+8. Turn failed or blocked evaluations into a typed TaskGraph diff, review the
+   affected scope, and apply a new plan revision only after a snapshot-bound
+   human approval.
+
+Mission Pilot does not bypass Queue admission. Mission Pilot Tasks carry
+structured source and approval metadata, and Queue admission revalidates the
+persisted approval and current snapshot. The legacy Mission proposal approval
+boolean cannot approve a Mission Pilot Task by itself.
+
+The Mission Pilot MVP (Phases 0–8) is implemented. Its credential-free
+integration coverage exercises the Project Evaluation entry point, approval,
+Queue admission, Run evidence, Mission evaluation, completion, and approved
+replan revision path. See the canonical
+[Mission Pilot MVP implementation plan](./spec/docs/mission-pilot-mvp-remaining-work.md)
+for the contracts, safety invariants, and verification record.
+
 ## Good Fit / Not Good Fit
 NightWorkers is a good fit when you want:
 - Local-first autonomous coding runs with inspectable SQLite-backed state.
@@ -77,6 +119,23 @@ NightWorkers is not a good fit when you need:
 - A hosted browser-only demo without installing the app locally.
 
 ## Current Capabilities
+- Mission Pilot cockpit for Objectives, proposal-backed Task Candidates,
+  approvals, Attention items, MissionTasks, execution summaries, and audit
+  events
+- Project Evaluation improvement to source-linked Mission creation with a
+  source uniqueness constraint and command receipts
+- Snapshot-bound Task Candidate approval, rejection, and stale detection before
+  MissionTask materialization
+- Approved MissionTask materialization and guarded admission to the existing
+  Implementation Queue with Mission scheduling metadata
+- Human-approved Level 1 Autopilot grants with an explicit allowlist,
+  one-action ticks, pause/resume/revoke controls, and human-Attention stops
+- Evidence synchronization across Queue, Run, Review findings, task events,
+  and verification evidence, with auditable MissionEvaluation records
+- Deterministic completion vetoes for failed verification, blocking findings,
+  terminal failed Runs, and missing required success evidence
+- Typed replan suggestions, dependency-cycle and active-task mutation guards,
+  stale-base detection, human approval, and immutable plan revision history
 - Project Folder registration and per-project Session/Task management
 - Dedicated Implementation Queue screen with Processor lanes, queued work, and not-queued plan-ready Sessions
 - Global Processor capacity controls plus TODO Workflow gates for implementation runs
@@ -96,6 +155,8 @@ NightWorkers is not a good fit when you need:
 - Health/readiness endpoints and API docs UI
 
 ## Current Limits
+- Mission Pilot automation is Level 1 and command/event driven; it does not
+  include an always-on scheduler, automatic approval, or Level 2+ autonomy
 - No automatic PR creation/merge/deploy
 - No multi-agent orchestration in parallel
 - No mandatory external memory service requirement

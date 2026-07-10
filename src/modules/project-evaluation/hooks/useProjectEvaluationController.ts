@@ -1,7 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CreateMissionFromImprovementResponse } from "../../../../shared/schemas/mission-pilot.schema";
 import type { Task } from "../../nightworkers/types";
 import {
+	createMissionFromProjectEvaluationImprovement,
 	createProjectEvaluationTasks,
 	fetchProjectEvaluationActivityEvents,
 	fetchProjectEvaluationDetail,
@@ -66,9 +68,14 @@ export function mergeCreatedProjectEvaluationTasks(
 
 export function useProjectEvaluationController(
 	repositoryId: string,
-	options: { onTasksCreated?: (tasks: Task[]) => Promise<void> | void } = {},
+	options: {
+		onTasksCreated?: (tasks: Task[]) => Promise<void> | void;
+		onMissionCreated?: (
+			result: CreateMissionFromImprovementResponse,
+		) => Promise<void> | void;
+	} = {},
 ) {
-	const { onTasksCreated } = options;
+	const { onMissionCreated, onTasksCreated } = options;
 	const queryClient = useQueryClient();
 	const [history, setHistory] = useState<ProjectEvaluationRun[]>([]);
 	const [detail, setDetail] = useState<ProjectEvaluationDetail | null>(null);
@@ -85,6 +92,10 @@ export function useProjectEvaluationController(
 	const [isRunning, setIsRunning] = useState(false);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isCreatingTasks, setIsCreatingTasks] = useState(false);
+	const [creatingMissionIdeaId, setCreatingMissionIdeaId] = useState<
+		string | null
+	>(null);
+	const missionCreationInFlightRef = useRef<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	const loadDetail = useCallback(async (evaluationId: string) => {
@@ -287,6 +298,32 @@ export function useProjectEvaluationController(
 		}
 	}, [detail, onTasksCreated, queryClient, selectedIdeaIds]);
 
+	const createMission = useCallback(
+		async (ideaId: string) => {
+			if (!detail || missionCreationInFlightRef.current) return;
+			missionCreationInFlightRef.current = ideaId;
+			setCreatingMissionIdeaId(ideaId);
+			setError(null);
+			try {
+				const result =
+					await parseJsonResponse<CreateMissionFromImprovementResponse>(
+						await createMissionFromProjectEvaluationImprovement(repositoryId, {
+							evaluationId: detail.evaluation.id,
+							improvementIdeaId: ideaId,
+							idempotencyKey: crypto.randomUUID(),
+						}),
+					);
+				await onMissionCreated?.(result);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+			} finally {
+				missionCreationInFlightRef.current = null;
+				setCreatingMissionIdeaId(null);
+			}
+		},
+		[detail, onMissionCreated, repositoryId],
+	);
+
 	const previousEvaluation = useMemo(() => {
 		if (!detail) return null;
 		const index = history.findIndex((item) => item.id === detail.evaluation.id);
@@ -306,6 +343,7 @@ export function useProjectEvaluationController(
 		),
 		isGenerating,
 		isCreatingTasks,
+		creatingMissionIdeaId,
 		activityEvents: detail?.activityEvents ?? [],
 		error,
 		setSelectedKeys,
@@ -313,6 +351,7 @@ export function useProjectEvaluationController(
 		selectEvaluation,
 		generateIdeas,
 		createTasks,
+		createMission,
 		toggleIdea(id: string) {
 			setSelectedIdeaIds((current) => {
 				const next = new Set(current);
