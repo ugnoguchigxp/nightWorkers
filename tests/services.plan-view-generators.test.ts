@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildClientMermaidRepairPrompt,
 	normalizePlanViewMermaidArtifact,
 	parseGenericDedicatedViewOutput,
 	parsePlanApiContractOutput,
 	parsePlanZodSchemaOutput,
 	validatePlanViewMermaidArtifact,
 } from "../api/modules/planViews/planView-generation.service";
+import { planViewGenerateRequestSchema } from "../api/modules/planViews/planView-route-definitions";
 import {
 	buildPlanApiContractUserPrompt,
 	planApiContractStructuredOutputSchema,
@@ -57,6 +59,38 @@ describe("Plan View generation helpers", () => {
 		expect(prompt).toContain("## Mermaid Parse Repair");
 		expect(prompt).toContain("Parse error on line 2");
 		expect(prompt).toContain("最小修正");
+	});
+
+	it("builds a client render repair prompt with the error and previous chart", () => {
+		const prompt = buildClientMermaidRepairPrompt({
+			sourceMessageId: "9785b143-06a6-4b72-b285-14f1e8a4f9d5",
+			stage: "chart_render",
+			error: "Parse error on line 3",
+			chart: 'flowchart TD\n  A["User"] --> B["Details"]',
+		});
+
+		expect(prompt).toContain("失敗段階: chart_render");
+		expect(prompt).toContain("Parse error on line 3");
+		expect(prompt).toContain('A["User"] --> B["Details"]');
+		expect(prompt).toContain("最小修正");
+	});
+
+	it("accepts chart failures and rejects UI-only failures in the repair contract", () => {
+		const baseRepair = {
+			sourceMessageId: "9785b143-06a6-4b72-b285-14f1e8a4f9d5",
+			error: "render failed",
+			chart: "flowchart TD\n  A --> B",
+		};
+		expect(
+			planViewGenerateRequestSchema.safeParse({
+				mermaidRenderRepair: { ...baseRepair, stage: "chart_render" },
+			}).success,
+		).toBe(true);
+		expect(
+			planViewGenerateRequestSchema.safeParse({
+				mermaidRenderRepair: { ...baseRepair, stage: "svg_import" },
+			}).success,
+		).toBe(false);
 	});
 
 	it("accepts User Flow Mermaid flowchart artifacts", () => {

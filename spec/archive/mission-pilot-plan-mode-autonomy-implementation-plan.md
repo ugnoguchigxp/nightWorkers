@@ -2,15 +2,15 @@
 
 ## Status
 
-- Plan status: `reviewed-ready-for-implementation`
+- Plan status: `completed`
 - Document review completed: 2026-07-10
-- Implementation status: `in_progress` — Questionnaire回答案、証跡、20秒介入窓、server-authoritative自動確定まで実装済み
-- Implementation update: 2026-07-11。Artifact順次生成、self-review、Queue admissionは未実装
+- Implementation status: `completed` — Questionnaire確定後のArtifact順次生成、self-review、Queue admission、実provider E2E、API process restart recoveryまで確認済み
+- Implementation update: 2026-07-11。`13b2e49b`のQuestionnaire自律化をaccepted baselineとして維持し、shared execution step planner、DB-wide pipeline lease、永続step/review evidence、restart可能なbackend coordinator、ArtifactごとのatomicなContext revision、review roleによる最大3回のself-review / 対象Artifact改訂、latest pass review gate、既存Implementation Queue委譲を追加した。実Codex providerでのlive E2Eと、同一SQLite上でArtifact生成済み・step `running`の状態から新API processがContext/evidenceを冪等採用して`queued`まで復元することを確認した
 - MVP slice: `2/3` — Session / Context・Plan Mode・Questionnaire・Artifact・Queue admission
-- Canonical plan for this phase: this document
+- Completed plan archive: this document
 - Previous phase: `spec/docs/mission-pilot-task-entry-design.md`
 - Follow-up canonical plan: `spec/docs/mission-pilot-test-review-archive-implementation-plan.md`
-- Baseline reviewed: 2026-07-10, `main` at `d08c7355bf88c6dc9e46152aae7f7be0dbcd7740`
+- Baseline reviewed: 2026-07-11, `main` at `13b2e49b`
 - Target domain: `src/modules/missionPilot` / `api/modules/missionPilot`
 - Target runtime span: Mission Pilot Task作成後からImplementation Queue投入まで
 
@@ -181,6 +181,37 @@ Mission Pilot Task作成
 - 通常Plan ModeのlocalStorage順次生成設定の削除。
 
 ## 5. 現在の実装状態
+
+### 5.0 2026-07-11 accepted baselineと残存境界
+
+この節を以後の実装判断の正本とする。既存実装を計画初版へ合わせて作り直さず、`13b2e49b`で成立しているQuestionnaire自律化をaccepted implementationとして維持する。
+
+実装済みとして固定するもの:
+
+- Mission Pilot Task / Session / initial Context snapshotのatomic作成。
+- Play authorization、初期Prompt dispatch、Stop / retry。
+- Questionnaire ready service boundaryからのMission Pilot起動。
+- schema-validな回答draft作成、既存Questionnaire UIへの仮適用、user edit同期。
+- server-authoritativeな20秒deadline。
+- pause、manual submit、Play resume、timeoutが同じidempotent submit処理へ収束すること。
+- API再起動後のdeadline scanと自動確定。
+
+今回再実装しないもの:
+
+- Questionnaire回答生成方式の再設計。
+- Questionnaire dependency loop、contextStill fallback、回答evidence形式の全面変更。
+- Task entry / Play / Stop UIの再設計。
+- 初期Context schemaの全面移行。
+
+残存実装はQuestionnaireが`review_ready|accepted`になった後だけを対象とし、次の順で進める。
+
+1. frontend Statusとbackendが共有するPlan Mode execution step planner。
+2. browser非依存で1 stepずつ進めるMission Pilot後段coordinatorと永続step evidence。
+3. Artifact永続化確認後のContext revision更新。
+4. latest Contextを入力にしたFeature Plan self-reviewと限定改訂。
+5. latest pass reviewを必須にするQueue admissionと既存Queue serviceへの委譲。
+
+初版が想定した汎用event outbox、Chat signal cursor、全role共通Context基盤は、上記後段の正しさに必要な範囲だけ実装する。今回のQueue投入までに使われない汎用化を先行させない。
 
 ### 5.1 Plan Mode entry
 
@@ -1132,60 +1163,53 @@ integration changes:
 
 ### Phase 1: Session / Context foundation
 
-1. shared schemaを追加する。
-2. DB tables / migration / bootstrapを追加する。
-3. Task作成transactionへSession / Context v1作成を接続する。
-4. Goal / Tech Stack / Task initial prompt collectorを実装する。
-5. Chat非包含を型とtestで固定する。
-6. Session summary APIを追加する。
+Status: `accepted-baseline`。Task / Session / Context v1作成は実装済み。後段で必要になるContext appendとArtifact / review情報だけをPhase 4 / 5で追加する。初期Context全体の再構築は行わない。
 
-完了gate:
+accepted baseline:
 
-- Task、Session、Contextがatomicに作成される。
-- initial event rowも同じtransactionで作成される。
-- Context debug fixtureにChat本文が存在しない。
-- candidate / proposalのGoal解決が正しい。
+1. Task / Session / Context v1のatomic作成。
+2. sourceRef、Task initial prompt、acceptance criteriaのsnapshot。
+3. Session summary APIとPlay / Stop projection。
+4. Chat本文を初期Contextへ取り込まないbuilder。
+
+初版にあった汎用Context schema、initial event row、Goal / Tech Stack collectorの追加は、Questionnaire後段の開始条件にしない。後続sliceで実装対象になる場合は、現在のContext revision chainから独立したmigrationとして計画する。
 
 ### Phase 2: coordinator / events / Role Context
 
-1. typed domain eventと`mission_pilot_events` outbox repositoryを追加する。
-2. durable event claim / step / lease / schedulerを実装する。
-3. Plan Mode / Questionnaire / Artifact serviceへevent emissionを追加する。
-4. Context revision appendを実装する。
-5. Role Router callへContext envelopeを接続する。
-6. stale revision rejectionを実装する。
+Status: `superseded-by-minimal-downstream-coordinator`。汎用outbox一式を先に完成させるのではなく、Questionnaire確定後のstep claim、restart recovery、Context revision整合性に必要な永続状態だけをPhase 4で実装する。
 
-完了gate:
+今回必要な最小基盤:
 
-- 異なるplan model fallbackでも同じContext digestが記録される。
-- duplicate eventでstepが重複しない。
-- domain mutation commit後・publish前にprocessを停止してもeventが再送される。
-- process restartでpending stepが再開する。
+1. `(session_id, step_key)` uniqueな永続step claim。
+2. Artifact永続化後のimmutable Context revision append。
+3. API process restart時のrunning step回収とpending pipeline再開。
+4. review / Queue直前のlatest revision / digest照合。
+
+汎用`mission_pilot_events` outbox、Chat signal cursor、全LLM call共通envelopeはこのsliceでは追加しない。Questionnaire readyは既存service listener、後段開始はQuestionnaire submit成功境界、restart recoveryはSession phaseとstep rowを正本にする。
 
 ### Phase 3: Questionnaire autonomy / intervention
 
-1. answer proposal schema / prompt / validatorを実装する。
-2. dependency loopを実装する。
-3. contextStill decision portを実装する。
-4. draft persistenceを実装する。
-5. UI仮適用とedit syncを実装する。
-6. server deadline / scheduler submitを実装する。
-7. pause / manual submit / Play submitを統合する。
+Status: `accepted-baseline` at `13b2e49b`。既存focused testsを回帰gateとして維持し、このphaseの設計拡張は今回の残タスクに含めない。
 
-完了gate:
+accepted baseline:
 
-- 4種類以上のanswerTypeを自動回答できる。
-- uncertain answerがcontextStillへ行く。
-- 20秒、pause、resume、manual submit、timeoutが同じdraftへ収束する。
-- Questionnaire answer mutationが1回だけである。
+1. schema-valid draft persistence。
+2. 既存Questionnaire UIへの仮適用とedit sync。
+3. server-authoritative deadlineとstartup scan。
+4. pause / manual submit / Play / timeoutのidempotent submit統合。
+
+初版にあったPlan-role LLM dependency loopとcontextStill fallbackは、現在のQuestionnaire実装を置換する残タスクとして扱わない。
 
 ### Phase 4: Artifact順次生成
 
-1. shared execution step plannerを抽出する。
-2. backend coordinatorへgenerator portsを接続する。
-3. 1件ずつ生成、evidence確認、Context updateを実装する。
-4. omitted / disabled / failed handlingを実装する。
-5. frontend localStorage flowとの回帰testを追加する。
+Status: `implemented`。Status UIとbackend coordinatorは`shared/plan-mode-execution.ts`の同じstep plannerを使用する。stepは`mission_pilot_steps`へ永続化し、generatorが返したTaskMessageとContext revisionを確認してからcompletedにする。
+
+1. shared execution step plannerを抽出し、frontend Statusとbackendで同じ順序・include / omit判定を使う。
+2. Mission Pilot step rowと後段schedulerを追加し、Questionnaire確定済みSessionだけをclaimする。
+3. backend coordinatorへ既存generator portsを接続する。
+4. 1件ずつ生成し、TaskMessage / Artifact schema / source message IDを確認してからContext revisionとstep statusを更新する。
+5. omitted / disabled / failed handlingを実装する。
+6. frontend localStorage flowとの回帰testを追加する。
 
 完了gate:
 
@@ -1195,12 +1219,16 @@ integration changes:
 
 ### Phase 5: self-review / Queue
 
+Status: `implemented`。review evidenceは`mission_pilot_plan_reviews`へ保存し、latest Context revision / digestと一致するpassだけをQueue admissionへ使用する。Task Context変更、未完了step、authorization不一致、active Queue entryをgateで再確認する。
+
 1. plan review schema / promptを実装する。
 2. review role routingを接続する。
 3. revise target generationと最大attemptを実装する。
 4. latest Context pass gateを実装する。
 5. stored authorizationとexisting queue approvalを接続する。
 6. queueTask portを呼び、queue evidenceを確認する。
+
+Phase 5はPhase 4で永続化したstep evidenceとContext revisionを入力にする。Queue admission専用に別のArtifact探索規則を作らず、同じexecution planとlatest Contextを使う。
 
 完了gate:
 
@@ -1356,6 +1384,26 @@ integration changes:
 - 通常非Pilot Taskの手動Plan Mode回帰。
 
 ## 27. Verification evidence
+
+2026-07-11 implementation evidence:
+
+- `tests/mission-pilot-plan-coordinator.test.ts`: Questionnaire完了後のFeature Plan生成、Queue直前にTask Contextが変わった場合の自動再レビュー、既存Queue service委譲、Session `queued`を検証。
+- `tests/mission-pilot-plan-pipeline.test.ts`: DB-wide leaseの排他・dead owner回収、Artifact evidence後のContext revision、digest divergence時のtransaction rollback、既存Artifactの冪等採用、review revision / digest保存を検証。
+- `tests/plan-mode-execution.test.ts`: Status順序、include / omit、disabled、既存Artifact判定、additional view decisionの重複排除を検証。
+- Mission Pilot / Plan Mode / Queue focused suite: 13 files、91 tests pass。
+- `bun run typecheck`: pass。
+- `bun run verify:base`: pass。
+- `bun run verify`: pass。
+- `bun run check:docs`: 11 documents consistent。
+- fresh SQLite DBに`bun run db:migrate`: pass。`mission_pilot_steps` / `mission_pilot_plan_reviews`、Session lease columns / indexを確認。
+- live structured-output provider smoke: pass (`plan` role, `{"status":"ok"}`)。
+- `NIGHTWORKERS_LIVE_MISSION_PILOT=1` live E2E: pass。実Codex providerでFeature Plan生成、blocking finding改訂、warning-only reviewのpass正規化、active Queue entry、Session `queued`を確認（242.00秒）。
+- live E2E内のAPI process restart: pass。同一SQLiteのArtifact生成済み・step `running`状態を新processが読み、ArtifactをContextとstep evidenceへ冪等採用し、重複Queue entryを作らず`queued`へ復元。
+- `bun run test:e2e -- tests/e2e/mission-pilot-entry.spec.ts`: 1 passed。
+- final focused Mission Pilot / Plan Mode / Queue suite: 13 files、92 tests pass。
+- review hardening後のfocused regression suite: 8 files、65 tests pass。
+
+deterministic gate、live provider gate、実process restart gateがすべて成功したため、このphaseをcompletedとし`spec/archive`へ移動した。
 
 DB:
 

@@ -606,23 +606,11 @@ export function ArtifactPane({
 							initialTab={resolveArtifactWorkspaceInitialTab(
 								displayArtifact?.metadata?.initialTab,
 							)}
-							latestRun={latestRunForTestMode}
 							onTabChange={onPlanWorkspaceTabChange}
 							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
 							onExportDescriptorChange={setPlanModeExportDescriptor}
 							onQueueSession={onQueueSession}
 							onAddToQueue={onAddToQueue}
-							onStartTestModeRun={async (input) => {
-								if (!activeProject?.id || !activeSessionId) return false;
-								const response = await startTestModeRun(activeSessionId, {
-									projectId: activeProject.id,
-									specArtifactId: input.specArtifactId,
-									verificationDocumentId: input.verificationDocumentId,
-									mode: "test",
-									action: input.action,
-								});
-								return response.ok;
-							}}
 							isImplementationLocked={isImplementationLocked}
 						/>
 					) : showReviewStatus ? (

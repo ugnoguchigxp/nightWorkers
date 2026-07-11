@@ -1,6 +1,11 @@
 export { DedicatedViewPanel } from "./workspace-panels/DedicatedViewPanel";
 export { buildMermaidErDiagram } from "./workspace-panels/data-model-utils";
 export { buildFlowchartFromMarkdown } from "./workspace-panels/flowchart";
+export type {
+	MermaidRenderFailure,
+	MermaidRenderFailureStage,
+} from "./workspace-panels/MermaidDiagram";
+export { replaceMermaidSvg } from "./workspace-panels/MermaidDiagram";
 export {
 	PlanWorkspaceStatusView,
 	ViewDecisionSummary,

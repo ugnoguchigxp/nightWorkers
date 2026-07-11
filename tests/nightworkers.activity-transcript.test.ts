@@ -68,6 +68,25 @@ describe("activity transcript reducer", () => {
 		]);
 	});
 
+	it("keeps Plan Mode screen generation output in the task transcript", () => {
+		const items = buildTranscriptItems({
+			events: [
+				event({
+					id: "view-generation-1",
+					kind: "llm.response_delta",
+					seq: 1,
+					source: "dedicated-view-generator",
+					text: "User Flowを生成しています。",
+				}),
+			],
+		});
+
+		expect(items).toHaveLength(1);
+		expect(items[0]?.kind).toBe("assistant_turn");
+		if (items[0]?.kind !== "assistant_turn") return;
+		expect(items[0].text).toBe("User Flowを生成しています。");
+	});
+
 	it("keeps tool and diff events as assistant children", () => {
 		const items = buildTranscriptItems({
 			events: [

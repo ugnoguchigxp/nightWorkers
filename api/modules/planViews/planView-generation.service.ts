@@ -1,6 +1,7 @@
 import mermaid from "mermaid";
 import ts from "typescript";
 import { z } from "zod";
+import type { MermaidRenderRepair } from "../../../shared/schemas/plan-mode-artifact.schema";
 import {
 	type DedicatedDesignView,
 	type PlanApiContractArtifact,
@@ -92,6 +93,7 @@ export type PlanViewGenerationInput = {
 	featurePlanMessageId?: string | null;
 	sourceBlueprintMessageId?: string | null;
 	sourceDataModelMessageId?: string | null;
+	mermaidRenderRepair?: MermaidRenderRepair;
 	routeOverride?: StructuredLlmModelTarget | null;
 };
 
@@ -215,6 +217,26 @@ export async function generatePlanViewArtifact(
 	assertPlanModeMutable(task);
 
 	const messages = await listPlanModeTaskMessages(taskId);
+	const mermaidRepairSourceMessage = input.mermaidRenderRepair
+		? messages.find(
+				(message) => message.id === input.mermaidRenderRepair?.sourceMessageId,
+			) || null
+		: null;
+	if (input.mermaidRenderRepair) {
+		const repairMetadata = (mermaidRepairSourceMessage?.metadataJson ||
+			{}) as Record<string, unknown>;
+		if (
+			!mermaidRepairSourceMessage ||
+			repairMetadata.artifactKind !== "plan_mode_dedicated_view" ||
+			repairMetadata.view !== parsedView.data
+		) {
+			throw new AppError(
+				422,
+				"INVALID_MERMAID_REPAIR_SOURCE",
+				"Mermaid repair source must belong to the requested Plan Mode view.",
+			);
+		}
+	}
 	const featurePlanMessage = resolveMessage(
 		messages,
 		input.featurePlanMessageId,
@@ -230,12 +252,13 @@ export async function generatePlanViewArtifact(
 		input.sourceDataModelMessageId,
 		"data_model",
 	);
-	const prompt =
-		input.prompt?.trim() ||
-		task.objective ||
-		task.description ||
-		task.title ||
-		"No additional prompt.";
+	const prompt = input.mermaidRenderRepair
+		? buildClientMermaidRepairPrompt(input.mermaidRenderRepair)
+		: input.prompt?.trim() ||
+			task.objective ||
+			task.description ||
+			task.title ||
+			"No additional prompt.";
 	const projectStackContext = await resolvePlanModeProjectStackContext(
 		task.repositoryId,
 	);
@@ -243,6 +266,7 @@ export async function generatePlanViewArtifact(
 		featurePlanMessage?.id,
 		blueprintMessage?.id,
 		dataModelMessage?.id,
+		mermaidRepairSourceMessage?.id,
 	].filter((id): id is string => Boolean(id));
 	if (parsedView.data === "api_io_contract") {
 		const artifact = await generateApiContractArtifactFromLlm({
@@ -358,6 +382,15 @@ export async function generatePlanViewArtifact(
 			sourceMessageIds,
 			generation: {
 				promptVersion: PLAN_DEDICATED_VIEW_PROMPT_VERSION,
+				...(input.mermaidRenderRepair
+					? {
+							repair: {
+								source: "client_mermaid_render" as const,
+								sourceMessageId: input.mermaidRenderRepair.sourceMessageId,
+								stage: input.mermaidRenderRepair.stage,
+							},
+						}
+					: {}),
 			},
 		},
 	});
@@ -473,6 +506,21 @@ function resolveMessage(
 		[...messages].reverse().find((message) => isMessageKind(message, kind)) ||
 		null
 	);
+}
+
+export function buildClientMermaidRepairPrompt(input: MermaidRenderRepair) {
+	return [
+		"ブラウザで Mermaid 図の表示に失敗しました。意味と画面遷移を維持し、エラー箇所だけを最小修正してください。",
+		"",
+		`失敗段階: ${input.stage}`,
+		"エラー:",
+		input.error,
+		"",
+		"前回の Mermaid source:",
+		"```mermaid",
+		input.chart.trim(),
+		"```",
+	].join("\n");
 }
 
 async function generateArtifactFromLlm(input: {

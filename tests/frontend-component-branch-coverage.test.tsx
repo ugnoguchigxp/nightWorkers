@@ -616,7 +616,6 @@ function planViewerStateValues(activeTab: PlanWorkspaceTab) {
 		null,
 		null,
 		null,
-		null,
 		{
 			planMode: {
 				questionnaire: true,
@@ -692,7 +691,6 @@ describe("frontend component branch coverage", () => {
 				onArtifactContextChange: artifactContextChange,
 				onQueueSession: vi.fn(async () => undefined),
 				onAddToQueue: vi.fn(async () => undefined),
-				onStartTestModeRun: vi.fn(async () => true),
 			});
 
 			await triggerElementCallbacks(element);

@@ -1,3 +1,4 @@
+import type { MermaidRenderRepair } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { apiFetch } from "../../lib/api-base";
 import { jsonRequest } from "../../lib/api-request";
 
@@ -14,6 +15,7 @@ type PlanViewGenerationInput = {
 	featurePlanMessageId?: string | null;
 	sourceBlueprintMessageId?: string | null;
 	sourceDataModelMessageId?: string | null;
+	mermaidRenderRepair?: MermaidRenderRepair;
 };
 
 export function generatePlanViewArtifact(

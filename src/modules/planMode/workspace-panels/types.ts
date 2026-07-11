@@ -19,6 +19,7 @@ const ADDITIONAL_PLAN_VIEWS: readonly AdditionalPlanView[] = [
 export type PlanViewDecision = PlanModeViewDecision;
 
 export type PlanWorkspaceStatusStep = {
+	progressKey: string;
 	number: number;
 	title: string;
 	detail: string;
@@ -37,6 +38,8 @@ export type PlanWorkspaceStatusStep = {
 	} | null;
 	autoGenerate: boolean;
 	autoGenerateKey: string;
+	progressStatus?: "pending" | "running" | "completed" | "failed" | "skipped";
+	progressError?: string | null;
 };
 
 export const PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY =
@@ -49,6 +52,7 @@ export function isAdditionalView(value: string): value is AdditionalPlanView {
 export function formatViewLabel(value: string) {
 	const labels: Record<string, string> = {
 		questionnaire: "Questionnaire",
+		feature_plan: "仕様書",
 		blueprint: "Blueprint",
 		data_model: "Data Model",
 		api_io_contract: "API Contract",

@@ -70,6 +70,7 @@ async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 		.where(
 			eq(missionPilotQuestionnaireDrafts.questionnaireSessionId, session.id),
 		);
+	if (existing?.state === "submitted") return;
 	const now = new Date();
 	const deadlineAt = new Date(now.getTime() + QUESTIONNAIRE_INTERVENTION_MS);
 	const generated = buildMissionPilotQuestionnaireDraft(session, now);
@@ -304,7 +305,11 @@ async function submitDraftRow(
 			taskId,
 			claimed.questionnaireSessionId,
 			claimed.answersJson,
+			{ completionPolicy: "finalize_current_questions" },
 		);
+		if (!["review_ready", "accepted"].includes(questionnaire.status)) {
+			throw new Error("Mission Pilot Questionnaire remained incomplete");
+		}
 		const now = new Date();
 		const [submitted] = await db
 			.update(missionPilotQuestionnaireDrafts)
@@ -356,6 +361,11 @@ async function submitDraftRow(
 			},
 			dedupeKey: `mission-pilot:questionnaire:submitted:${claimed.id}:${claimed.version}`,
 		});
+		void import("./mission-pilot-plan-coordinator.service")
+			.then(({ runMissionPilotPlanPipeline }) =>
+				runMissionPilotPlanPipeline(taskId),
+			)
+			.catch(() => undefined);
 		return {
 			draft: submitted ? toView(submitted, taskId) : null,
 			questionnaire,

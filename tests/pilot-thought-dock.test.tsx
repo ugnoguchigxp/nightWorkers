@@ -3,23 +3,37 @@ import { describe, expect, it, vi } from "vitest";
 import { PilotThoughtDock } from "../src/modules/missionPilot/components/PilotThoughtDock";
 
 describe("PilotThoughtDock", () => {
-	it("renders persisted Pilot decisions and tool events in a chat dock", () => {
+	it("renders Pilot decisions without task execution or screen generation logs", () => {
 		const markup = renderToStaticMarkup(
 			<PilotThoughtDock
 				session={{
-					id: "task-1",
-					repositoryId: "repo-1",
+					id: "11111111-1111-4111-8111-111111111111",
+					repositoryId: "22222222-2222-4222-8222-222222222222",
 					title: "Mission Pilot task",
 					status: "running",
 					timeoutSeconds: 3600,
 					priority: 0,
 					createdAt: new Date(),
 					updatedAt: new Date(),
+					missionPilot: {
+						taskId: "11111111-1111-4111-8111-111111111111",
+						desiredState: "playing",
+						activityState: "running",
+						phase: "running",
+						authorizationVersion: 2,
+						initialPromptState: "sent",
+						initialPromptMessageId: null,
+						activeRunId: "33333333-3333-4333-8333-333333333333",
+						nextWakeAt: null,
+						version: 1,
+						lastError: null,
+						updatedAt: new Date(),
+					},
 				}}
 				activityEvents={[
 					{
 						id: "activity-1",
-						taskId: "task-1",
+						taskId: "11111111-1111-4111-8111-111111111111",
 						seq: 1,
 						kind: "runtime.decision",
 						source: "mission_pilot",
@@ -28,15 +42,35 @@ describe("PilotThoughtDock", () => {
 						visibility: "visible",
 						createdAt: new Date("2026-07-11T10:00:00Z"),
 					},
+					{
+						id: "activity-2",
+						taskId: "11111111-1111-4111-8111-111111111111",
+						seq: 2,
+						kind: "llm.response_delta",
+						source: "dedicated-view-generator",
+						text: "User Flowを生成しています。",
+						payloadJson: {},
+						visibility: "visible",
+						createdAt: new Date("2026-07-11T10:00:00Z"),
+					},
 				]}
 				runEvents={[
 					{
 						id: "event-1",
+						runId: "33333333-3333-4333-8333-333333333333",
 						eventType: "tool.call",
 						actor: "tool",
 						message: "repositoryを確認しています",
 						payloadJson: { toolName: "exec_command" },
 						createdAt: new Date("2026-07-11T10:00:01Z"),
+					},
+					{
+						id: "event-2",
+						eventType: "runtime.decision",
+						actor: "mission_pilot",
+						message: "設計判断を確定しました。",
+						payloadJson: { decision: "continue" },
+						createdAt: new Date("2026-07-11T10:00:02Z"),
 					},
 				]}
 				onClose={vi.fn()}
@@ -51,7 +85,9 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("<details open");
 		expect(markup).toContain("Pilot thought");
 		expect(markup).toContain("20秒間、ユーザーの変更を待ちます。");
-		expect(markup).toContain("repositoryを確認しています");
-		expect(markup).toContain("exec_command");
+		expect(markup).toContain("設計判断を確定しました。");
+		expect(markup).not.toContain("repositoryを確認しています");
+		expect(markup).not.toContain("exec_command");
+		expect(markup).not.toContain("User Flowを生成しています。");
 	});
 });

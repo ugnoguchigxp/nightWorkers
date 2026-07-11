@@ -15,7 +15,7 @@ import {
 	isFlowchartPlanView,
 	stripMermaidBlocks,
 } from "./flowchart";
-import { MermaidDiagram } from "./MermaidDiagram";
+import { MermaidDiagram, type MermaidRenderFailure } from "./MermaidDiagram";
 import { isRecord } from "./record-utils";
 import { formatViewLabel } from "./types";
 import { ZodSchemaViewer } from "./ZodSchemaViewer";
@@ -23,9 +23,11 @@ import { ZodSchemaViewer } from "./ZodSchemaViewer";
 export function DedicatedViewPanel({
 	artifact,
 	message,
+	onMermaidRenderFailure,
 }: {
 	artifact: PlanModeWorkspaceArtifact | null;
 	message: TaskMessage | null;
+	onMermaidRenderFailure?: (failure: MermaidRenderFailure) => void;
 }) {
 	if (!artifact && !message)
 		return <MarkdownViewer content="No plan view artifact." />;
@@ -80,6 +82,7 @@ export function DedicatedViewPanel({
 					<MermaidDiagram
 						chart={chart}
 						idPrefix={`dedicated-${viewKind || "view"}`}
+						onRenderFailure={onMermaidRenderFailure}
 					/>
 				</div>
 				{notes ? <MarkdownViewer content={notes} /> : null}

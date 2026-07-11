@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	findUnprojectedUserMessages,
+	mergeUnprojectedMessagesChronologically,
 	sliceTimelineWindow,
 } from "../src/modules/nightworkers/components/ThreadTimeline";
 
@@ -63,6 +64,64 @@ describe("ThreadTimeline bounded history window", () => {
 
 		expect(findUnprojectedUserMessages(messages, transcriptItems)).toEqual([
 			messages[1],
+		]);
+	});
+
+	it("places user and Mission Pilot prompts at their actual creation time", () => {
+		const event = (id: string, createdAt: string) => ({
+			id,
+			taskId: "task-1",
+			seq: Number(id.slice(-1)),
+			kind: "assistant.message",
+			source: "agent",
+			visibility: "normal",
+			createdAt,
+		});
+		const transcriptItems = [
+			{
+				kind: "assistant_turn" as const,
+				id: "assistant:turn-1",
+				turnId: "turn-1",
+				events: [event("event-1", "2026-07-10T00:00:10.000Z")],
+				text: "first response",
+				children: [],
+			},
+			{
+				kind: "assistant_turn" as const,
+				id: "assistant:turn-2",
+				turnId: "turn-2",
+				events: [event("event-2", "2026-07-10T00:00:30.000Z")],
+				text: "second response",
+				children: [],
+			},
+		];
+		const messages = [
+			{
+				id: "mission-pilot-prompt",
+				taskId: "task-1",
+				role: "user" as const,
+				content: "pilot prompt",
+				messageType: "mission_pilot_initial_prompt" as const,
+				createdAt: "2026-07-10T00:00:20.000Z",
+			},
+			{
+				id: "original-user-prompt",
+				taskId: "task-1",
+				role: "user" as const,
+				content: "original prompt",
+				createdAt: "2026-07-10T00:00:00.000Z",
+			},
+		];
+
+		expect(
+			mergeUnprojectedMessagesChronologically(transcriptItems, messages).map(
+				(item) => item.id,
+			),
+		).toEqual([
+			"unprojected-original-user-prompt",
+			"assistant:turn-1",
+			"unprojected-mission-pilot-prompt",
+			"assistant:turn-2",
 		]);
 	});
 });

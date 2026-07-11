@@ -1,11 +1,25 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+export type MermaidRenderFailureStage =
+	| "module_load"
+	| "chart_parse"
+	| "chart_render"
+	| "svg_import";
+
+export type MermaidRenderFailure = {
+	stage: MermaidRenderFailureStage;
+	message: string;
+	chart: string;
+};
+
 export function MermaidDiagram({
 	chart,
 	idPrefix = "data-model",
+	onRenderFailure,
 }: {
 	chart: string;
 	idPrefix?: string;
+	onRenderFailure?: (failure: MermaidRenderFailure) => void;
 }) {
 	const rawId = useId();
 	const diagramId = useMemo(
@@ -17,7 +31,11 @@ export function MermaidDiagram({
 	const [rendered, setRendered] = useState(false);
 	const [renderedSvg, setRenderedSvg] = useState("");
 	const [error, setError] = useState("");
+	const [errorStage, setErrorStage] =
+		useState<MermaidRenderFailureStage | null>(null);
 	const [isFullscreen, setIsFullscreen] = useState(false);
+	const renderFailureHandlerRef = useRef(onRenderFailure);
+	renderFailureHandlerRef.current = onRenderFailure;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -25,9 +43,24 @@ export function MermaidDiagram({
 		setRendered(false);
 		setRenderedSvg("");
 		setError("");
+		setErrorStage(null);
 		setIsFullscreen(false);
-		import("mermaid")
-			.then(async ({ default: mermaid }) => {
+		const reportFailure = (stage: MermaidRenderFailureStage, err: unknown) => {
+			if (cancelled) return;
+			const message = err instanceof Error ? err.message : String(err);
+			setError(message);
+			setErrorStage(stage);
+			renderFailureHandlerRef.current?.({ stage, message, chart });
+		};
+		void (async () => {
+			let mermaid: typeof import("mermaid")["default"];
+			try {
+				({ default: mermaid } = await import("mermaid"));
+			} catch (err) {
+				reportFailure("module_load", err);
+				return;
+			}
+			try {
 				mermaid.initialize({
 					startOnLoad: false,
 					securityLevel: "strict",
@@ -42,18 +75,27 @@ export function MermaidDiagram({
 						textColor: "#e2e8f0",
 					},
 				});
+				await mermaid.parse(chart);
+			} catch (err) {
+				reportFailure("chart_parse", err);
+				return;
+			}
+			try {
 				const rendered = await mermaid.render(diagramId, chart);
-				if (cancelled || !containerRef.current) return;
+				if (cancelled) return;
 				if (!replaceMermaidSvg(containerRef.current, rendered.svg)) {
-					throw new Error("Mermaid did not return SVG output.");
+					reportFailure(
+						"svg_import",
+						new Error("Mermaid SVG could not be imported into the document."),
+					);
+					return;
 				}
 				setRenderedSvg(rendered.svg);
 				setRendered(true);
-			})
-			.catch((err: unknown) => {
-				if (!cancelled)
-					setError(err instanceof Error ? err.message : String(err));
-			});
+			} catch (err) {
+				reportFailure("chart_render", err);
+			}
+		})().catch((err: unknown) => reportFailure("chart_render", err));
 		return () => {
 			cancelled = true;
 		};
@@ -87,8 +129,11 @@ export function MermaidDiagram({
 				</pre>
 			) : null}
 			{error ? (
-				<div className="text-[11px] text-amber-300">
-					Mermaid render failed: {error}
+				<div
+					className="text-[11px] text-amber-300"
+					data-mermaid-error-stage={errorStage || undefined}
+				>
+					Mermaid {formatMermaidFailureStage(errorStage)} failed: {error}
 				</div>
 			) : null}
 			<details className="text-[11px] text-slate-400">
@@ -118,11 +163,19 @@ export function MermaidDiagram({
 	);
 }
 
-function replaceMermaidSvg(target: Element | null, svg: string) {
+export function replaceMermaidSvg(target: Element | null, svg: string) {
 	if (!target) return false;
-	const parsedSvg = new DOMParser().parseFromString(svg, "image/svg+xml");
-	const svgElement = parsedSvg.documentElement;
-	if (svgElement.nodeName.toLowerCase() !== "svg") return false;
+	const parsedSvg = new DOMParser().parseFromString(svg, "text/html");
+	const svgElement = parsedSvg.querySelector("svg");
+	if (!svgElement) return false;
 	target.replaceChildren(document.importNode(svgElement, true));
 	return true;
+}
+
+function formatMermaidFailureStage(stage: MermaidRenderFailureStage | null) {
+	if (stage === "chart_parse") return "parse";
+	if (stage === "chart_render") return "render";
+	if (stage === "svg_import") return "SVG import";
+	if (stage === "module_load") return "module load";
+	return "render";
 }

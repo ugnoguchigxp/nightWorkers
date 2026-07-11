@@ -48,6 +48,15 @@ export const planModeRegenerationTargetSchema = z.enum([
 	"zod_schema_design",
 ]);
 
+export const mermaidRenderRepairSchema = z.object({
+	sourceMessageId: z.string().uuid(),
+	stage: z.enum(["chart_parse", "chart_render"]),
+	error: z.string().min(1).max(4_000),
+	chart: z.string().min(1).max(50_000),
+});
+
+export type MermaidRenderRepair = z.infer<typeof mermaidRenderRepairSchema>;
+
 export const specificationLensSchema = z.enum([
 	"target_users_or_actors",
 	"functional_requirements",
@@ -136,6 +145,13 @@ export const dedicatedViewArtifactMetadataSchema = z.object({
 		provider: z.string().optional(),
 		model: z.string().optional(),
 		promptVersion: z.string().min(1),
+		repair: z
+			.object({
+				source: z.literal("client_mermaid_render"),
+				sourceMessageId: z.string().uuid(),
+				stage: z.enum(["chart_parse", "chart_render"]),
+			})
+			.optional(),
 	}),
 });
 

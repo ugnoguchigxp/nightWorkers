@@ -187,6 +187,9 @@ describe("useNightWorkersRealtime effect", () => {
 			["backgroundProcesses", "task-1"],
 			[],
 		);
+		queryClient.setQueryData(["planModeWorkspace", "task-1"], {
+			taskId: "task-1",
+		});
 
 		useNightWorkersRealtime({
 			activeSessionId: "task-1",
@@ -282,6 +285,24 @@ describe("useNightWorkersRealtime effect", () => {
 			},
 		});
 		socket.emit("message", {
+			type: "mission_pilot.plan_progress_updated",
+			payload: {
+				taskId: "task-1",
+				progress: {
+					taskId: "task-1",
+					sessionId: "session-1",
+					phase: "generating_artifacts",
+					desiredState: "playing",
+					version: 1,
+					contextRevision: 1,
+					currentStepKey: "view:user_flow",
+					steps: [],
+					lastError: null,
+					updatedAt: now,
+				},
+			},
+		});
+		socket.emit("message", {
 			type: "task_message_created",
 			payload: {
 				message: {
@@ -290,7 +311,11 @@ describe("useNightWorkersRealtime effect", () => {
 					runId: "run-1",
 					role: "assistant",
 					content: "done",
-					messageType: "text",
+					messageType: "markdown_document",
+					metadataJson: {
+						artifactKind: "plan_mode_dedicated_view",
+						view: "user_flow",
+					},
 					createdAt: now,
 				},
 			},
@@ -371,6 +396,12 @@ describe("useNightWorkersRealtime effect", () => {
 		expect(invalidateSpy).toHaveBeenCalledWith({
 			queryKey: ["gitCloseout", "reviewed-run-1"],
 		});
+		expect(invalidateSpy).toHaveBeenCalledWith({
+			queryKey: ["planModeWorkspace", "task-1"],
+		});
+		expect(
+			queryClient.getQueryData(["missionPilotPlanProgress", "task-1"]),
+		).toMatchObject({ currentStepKey: "view:user_flow" });
 		expect(projectFileEntriesByDirectory).toEqual({});
 		expect(isChatSubmitting).toBe(false);
 		expect(pendingChatRunId).toBeNull();

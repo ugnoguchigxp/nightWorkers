@@ -8,9 +8,11 @@ import {
 	submitMissionPilotQuestionnaireDraftSchema,
 	updateMissionPilotQuestionnaireDraftSchema,
 } from "../../../shared/schemas/mission-pilot.schema";
+import { missionPilotPlanProgressSchema } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./mission-pilot.service";
+import * as planProgressService from "./mission-pilot-plan-progress.service";
 import * as questionnaireService from "./mission-pilot-questionnaire.service";
 
 const taskParams = z.object({ taskId: z.string().uuid() });
@@ -85,6 +87,21 @@ const getQuestionnaireDraftRoute = createRoute({
 				},
 			},
 			description: "Current Mission Pilot questionnaire draft",
+		},
+	},
+});
+const getPlanProgressRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/tasks/:taskId/plan-progress",
+	request: { params: taskParams },
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: missionPilotPlanProgressSchema.nullable(),
+				},
+			},
+			description: "Current Mission Pilot Plan Mode progress",
 		},
 	},
 });
@@ -173,6 +190,17 @@ export const missionPilotRouter = createOpenApiRouter()
 		withOpenApiRouteError(getQuestionnaireDraftRoute, async (c) =>
 			c.json(
 				await questionnaireService.getQuestionnaireDraft(c.req.param("taskId")),
+				200,
+			),
+		),
+	)
+	.openapi(
+		getPlanProgressRoute,
+		withOpenApiRouteError(getPlanProgressRoute, async (c) =>
+			c.json(
+				await planProgressService.getMissionPilotPlanProgress(
+					c.req.param("taskId"),
+				),
 				200,
 			),
 		),

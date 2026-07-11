@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -31,10 +32,20 @@ import {
 	buildActivityArtifact,
 	buildBlueprintMessage,
 	buildTask,
-	buildTaskEvent,
 	buildTaskMessage,
-	buildTaskRun,
 } from "./helpers/nightworkers-fixtures";
+
+function renderPlanModeViewer(
+	props: Parameters<typeof PlanModeWorkspaceViewer>[0],
+) {
+	return renderToStaticMarkup(
+		createElement(
+			QueryClientProvider,
+			{ client: new QueryClient() },
+			createElement(PlanModeWorkspaceViewer, props),
+		),
+	);
+}
 
 describe("buildArtifactVersions", () => {
 	it("does not scan message-backed versions for synthetic Test Mode artifacts", () => {
@@ -451,7 +462,6 @@ describe("PlanModeWorkspaceViewer", () => {
 
 	it("keeps Status before the spec tab when a feature plan exists", () => {
 		const tabs = buildVisiblePlanWorkspaceTabs({
-			questionnaireGateLocked: false,
 			hasFeaturePlan: true,
 			hasQuestionnaire: true,
 			hasBlueprint: true,
@@ -489,7 +499,6 @@ describe("PlanModeWorkspaceViewer", () => {
 
 	it("does not show transition tabs for included plan views before artifacts exist", () => {
 		const tabs = buildVisiblePlanWorkspaceTabs({
-			questionnaireGateLocked: false,
 			hasFeaturePlan: false,
 			hasQuestionnaire: false,
 			hasBlueprint: false,
@@ -514,7 +523,6 @@ describe("PlanModeWorkspaceViewer", () => {
 
 	it("shows transition tabs for plan views after artifacts exist", () => {
 		const tabs = buildVisiblePlanWorkspaceTabs({
-			questionnaireGateLocked: false,
 			hasFeaturePlan: false,
 			hasQuestionnaire: false,
 			hasBlueprint: false,
@@ -549,9 +557,8 @@ describe("PlanModeWorkspaceViewer", () => {
 		]);
 	});
 
-	it("locks visible tabs to Questionnaire while questionnaire gate is active", () => {
+	it("keeps workspace tabs available while Questionnaire is incomplete", () => {
 		const tabs = buildVisiblePlanWorkspaceTabs({
-			questionnaireGateLocked: true,
 			hasFeaturePlan: true,
 			hasQuestionnaire: true,
 			hasBlueprint: true,
@@ -573,31 +580,31 @@ describe("PlanModeWorkspaceViewer", () => {
 			],
 		});
 
-		expect(tabs).toEqual(["questionnaire"]);
+		expect(tabs).toEqual([
+			"status",
+			"feature-plan",
+			"questionnaire",
+			"blueprint",
+			"data-model",
+			"user-flow",
+		]);
 	});
 
-	it("starts on Questionnaire and withholds Status until questionnaire answers are ready", () => {
-		const markup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "task-1",
-				taskMessages: [],
-				activityArtifacts: [],
-				initialTab: "status",
-			}),
-		);
+	it("respects Status as the initial tab before questionnaire answers are ready", () => {
+		const markup = renderPlanModeViewer({
+			sessionId: "task-1",
+			taskMessages: [],
+			activityArtifacts: [],
+			initialTab: "status",
+		});
 
-		expect(markup).toContain(">Questionnaire</button>");
+		expect(markup).toContain(">Status</button>");
 		expect(markup).toContain("nightworkers-plan-workspace-tab-active");
-		expect(markup).toContain("No questionnaire session.");
-		const additionalButton = markup.match(
-			/<button[^>]*>追加確認<\/button>/,
-		)?.[0];
-		expect(additionalButton).not.toContain('disabled=""');
-		expect(markup).not.toContain(">Status</button>");
+		expect(markup).not.toContain("No questionnaire session.");
 		expect(markup).not.toContain(">spec</button>");
 	});
 
-	it("shows separate test search and unit test actions on the feature plan tab", () => {
+	it("shows verification definitions without Test Mode workflow controls", () => {
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
 			content:
@@ -632,26 +639,17 @@ describe("PlanModeWorkspaceViewer", () => {
 			},
 		});
 
-		const markup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "11111111-1111-4111-8111-111111111111",
-				taskMessages: [featurePlan, verificationSidecar],
-				activityArtifacts: [],
-				initialTab: "feature-plan",
-				onStartTestModeRun: async () => true,
-			}),
-		);
+		const markup = renderPlanModeViewer({
+			sessionId: "11111111-1111-4111-8111-111111111111",
+			taskMessages: [featurePlan, verificationSidecar],
+			activityArtifacts: [],
+			initialTab: "feature-plan",
+		});
 
-		expect(markup).toContain("テスト実装ワークフロー開始");
-		expect(markup).toContain("実装開始");
-		expect(markup).toContain("ユニットテスト実行");
-		expect(markup).toContain("証跡テストチェック");
-		expect(markup.indexOf("テスト実装ワークフロー開始")).toBeGreaterThan(
-			markup.indexOf("証跡テストチェック"),
-		);
-		expect(markup.indexOf("テスト実装ワークフロー開始")).toBeLessThan(
-			markup.lastIndexOf("AC-001"),
-		);
+		expect(markup).not.toContain("テスト実装ワークフロー開始");
+		expect(markup).not.toContain("実装開始");
+		expect(markup).not.toContain("ユニットテスト実行");
+		expect(markup).not.toContain("証跡テストチェック");
 		expect(markup).not.toContain("LLM コードレビュー");
 		expect(markup).not.toContain("実装完了");
 		expect(markup).not.toContain("件の条件");
@@ -663,107 +661,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).not.toContain("truncate text-slate-200");
 	});
 
-	it("uses latest run events on the feature plan test mode panel", () => {
-		const featurePlan = buildTaskMessage({
-			id: "feature-plan-message",
-			content:
-				"# Feature Plan\n\n## 完了条件\n- [AC-001] `/` で一覧中心の本体画面が開く\n- [AC-005] `verify` によって、build / typecheck / lint / test が通る",
-			messageType: "markdown_document",
-			metadataJson: {
-				intent: "feature_plan",
-				title: "Feature Plan",
-				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
-				verificationSidecarMessageId: "verification-message",
-				markdownDocumentData: {
-					title: "Feature Plan",
-				},
-			},
-		});
-		const verificationSidecar = buildTaskMessage({
-			id: "verification-message",
-			content: "{}",
-			messageType: "verification_json",
-			metadataJson: {
-				intent: "feature_plan_verification",
-				verificationDocument: {
-					conditions: [
-						{
-							id: "AC-001",
-							text: "`/` で一覧中心の本体画面が開く",
-							status: "pending",
-							required: true,
-						},
-						{
-							id: "AC-005",
-							text: "`verify` によって、build / typecheck / lint / test が通る",
-							status: "pending",
-							required: true,
-						},
-					],
-				},
-			},
-		});
-		const latestRun = buildTaskRun({
-			status: "completed",
-			contextSnapshot: {
-				executionMode: "test",
-				testMode: { action: "plan_and_implement_tests" },
-			},
-			events: [
-				buildTaskEvent({
-					id: "verify-started",
-					payloadJson: {
-						runEvent: {
-							type: "tool.call_started",
-							data: {
-								toolName: "command_execution",
-								commandClass: "broad_verification",
-								command: "/bin/zsh -lc 'bun run verify'",
-								status: "in_progress",
-							},
-						},
-					},
-				}),
-				buildTaskEvent({
-					id: "verify-passed",
-					payloadJson: {
-						runEvent: {
-							type: "tool.call_finished",
-							data: {
-								toolName: "command_execution",
-								commandClass: "broad_verification",
-								command: "/bin/zsh -lc 'bun run verify'",
-								status: "completed",
-								exitCode: 0,
-								aggregatedOutput: "OK verify complete",
-							},
-						},
-					},
-				}),
-			],
-		});
-
-		const markup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "11111111-1111-4111-8111-111111111111",
-				taskMessages: [featurePlan, verificationSidecar],
-				activityArtifacts: [],
-				initialTab: "feature-plan",
-				latestRun,
-				onStartTestModeRun: async () => true,
-			}),
-		);
-		const unitStepStart = markup.indexOf("ユニットテスト実行");
-		const evidenceStepStart = markup.indexOf("証跡テストチェック");
-		const ac005 = markup.slice(markup.indexOf("AC-005"));
-
-		expect(markup).toContain("実装開始");
-		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
-		expect(markup).not.toContain("実行中");
-		expect(ac005).toContain("ゲート確認済み");
-	});
-
-	it("hides test actions on locked Plan Mode workspaces", () => {
+	it("keeps verification definitions visible on locked Plan Mode workspaces", () => {
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
 			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
@@ -778,16 +676,13 @@ describe("PlanModeWorkspaceViewer", () => {
 			},
 		});
 
-		const markup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "11111111-1111-4111-8111-111111111111",
-				taskMessages: [featurePlan],
-				activityArtifacts: [],
-				initialTab: "feature-plan",
-				onStartTestModeRun: async () => true,
-				isImplementationLocked: true,
-			}),
-		);
+		const markup = renderPlanModeViewer({
+			sessionId: "11111111-1111-4111-8111-111111111111",
+			taskMessages: [featurePlan],
+			activityArtifacts: [],
+			initialTab: "feature-plan",
+			isImplementationLocked: true,
+		});
 
 		expect(markup).toContain("AC-001");
 		expect(markup).not.toContain("テスト実装ワークフロー開始");
@@ -815,22 +710,18 @@ describe("PlanModeWorkspaceViewer", () => {
 			},
 		});
 
-		const blueprintMarkup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "task-1",
-				taskMessages: [blueprint, dataModel],
-				activityArtifacts: [],
-				initialTab: "blueprint",
-			}),
-		);
-		const dataModelMarkup = renderToStaticMarkup(
-			createElement(PlanModeWorkspaceViewer, {
-				sessionId: "task-1",
-				taskMessages: [blueprint, dataModel],
-				activityArtifacts: [],
-				initialTab: "data-model",
-			}),
-		);
+		const blueprintMarkup = renderPlanModeViewer({
+			sessionId: "task-1",
+			taskMessages: [blueprint, dataModel],
+			activityArtifacts: [],
+			initialTab: "blueprint",
+		});
+		const dataModelMarkup = renderPlanModeViewer({
+			sessionId: "task-1",
+			taskMessages: [blueprint, dataModel],
+			activityArtifacts: [],
+			initialTab: "data-model",
+		});
 
 		expect(blueprintMarkup).toContain('data-blueprint-preview="true"');
 		expect(dataModelMarkup).toContain("Data Model");
@@ -838,16 +729,9 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(dataModelMarkup).toContain("tasks");
 	});
 
-	it("does not reapply the Questionnaire initial tab after the gate unlocks", () => {
-		expect(resolveInitialPlanWorkspaceTabUpdate("questionnaire", true)).toBe(
-			"questionnaire",
-		);
-		expect(
-			resolveInitialPlanWorkspaceTabUpdate("questionnaire", false),
-		).toBeNull();
-		expect(resolveInitialPlanWorkspaceTabUpdate("status", false)).toBe(
-			"status",
-		);
+	it("does not reapply Questionnaire over a user-selected tab", () => {
+		expect(resolveInitialPlanWorkspaceTabUpdate("questionnaire")).toBeNull();
+		expect(resolveInitialPlanWorkspaceTabUpdate("status")).toBe("status");
 	});
 
 	it("keeps generated Blueprint focus from being pushed back to Questionnaire", () => {

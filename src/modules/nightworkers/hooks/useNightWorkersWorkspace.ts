@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../../../lib/api";
-import { fetchPlanModeWorkspace } from "../../specification";
+import { planModeWorkspaceQueryOptions } from "../../specification";
 import {
 	fetchBackgroundProcessesForTask,
 	fetchImplementationQueue,
@@ -217,18 +217,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnReconnect: false,
 	});
 
-	const { data: activePlanModeWorkspace = null } = useQuery({
-		queryKey: ["planModeWorkspace", activeSessionId],
-		queryFn: async () => {
-			if (!activeSessionId) return null;
-			const res = await fetchPlanModeWorkspace(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch Plan Mode workspace");
-			return (await res.json()) as PlanModeWorkspace;
-		},
-		enabled: !!activeSessionId,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-	});
+	const { data: activePlanModeWorkspace = null } = useQuery(
+		planModeWorkspaceQueryOptions(activeSessionId),
+	);
 
 	const { data: llmUsageSummary = null } = useQuery({
 		queryKey: ["llmUsage", activeSessionId],

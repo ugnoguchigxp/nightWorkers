@@ -12,6 +12,14 @@ type PilotThoughtItem = {
 	event: TaskEvent;
 };
 
+export function isMissionPilotActivityEvent(event: ActivityEvent) {
+	return event.source === "mission_pilot";
+}
+
+export function isMissionPilotRunEvent(event: TaskEvent) {
+	return event.actor === "mission_pilot";
+}
+
 function eventTimestamp(value: unknown) {
 	const time = new Date(value as string | number | Date).getTime();
 	return Number.isFinite(time) ? time : 0;
@@ -92,12 +100,12 @@ export function PilotThoughtDock({
 						},
 					]
 				: []),
-			...activityEvents.map((event) => ({
+			...activityEvents.filter(isMissionPilotActivityEvent).map((event) => ({
 				id: `activity:${event.id}`,
 				createdAt: event.createdAt,
 				event: activityToTaskEvent(event),
 			})),
-			...runEvents.map((event) => ({
+			...runEvents.filter(isMissionPilotRunEvent).map((event) => ({
 				id: `run:${event.id}`,
 				createdAt: event.timestamp ?? event.createdAt,
 				event,

@@ -153,6 +153,9 @@ export async function saveDesignQuestionnaireAnswers(
 	taskId: string,
 	sessionId: string,
 	answers: DesignQuestionnaireAnswer[],
+	options: {
+		completionPolicy?: "assess_follow_up" | "finalize_current_questions";
+	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -215,6 +218,13 @@ export async function saveDesignQuestionnaireAnswers(
 		taskId,
 		sessionId,
 	);
+	if (options.completionPolicy === "finalize_current_questions") {
+		await repo.updateDesignQuestionnaireSessionStatus(
+			sessionId,
+			"review_ready",
+		);
+		return getDesignQuestionnaireSession(taskId, sessionId);
+	}
 	return assessDesignQuestionnaireNextStep(taskId, completedSession);
 }
 

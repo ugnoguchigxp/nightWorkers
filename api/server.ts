@@ -6,6 +6,7 @@ import { client } from "./db/client";
 import { logEvent } from "./lib/logger";
 import {
 	reconcileMissionPilotStartup,
+	resumeMissionPilotPlanPipelines,
 	submitDueQuestionnaireDrafts,
 } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
@@ -161,6 +162,31 @@ export async function createNightWorkersServer(
 		});
 	}, 1_000);
 	missionPilotQuestionnaireTimer.unref?.();
+	const missionPilotPlanTimer = setInterval(() => {
+		void resumeMissionPilotPlanPipelines().catch((error) => {
+			logEvent({
+				channel: "api",
+				level: "error",
+				message: "mission pilot plan pipeline scheduler failed",
+				meta: {
+					errorMessage: error instanceof Error ? error.message : String(error),
+				},
+			});
+		});
+	}, 5_000);
+	missionPilotPlanTimer.unref?.();
+	void resumeMissionPilotPlanPipelines({ recoverInterrupted: true }).catch(
+		(error) => {
+			logEvent({
+				channel: "api",
+				level: "error",
+				message: "mission pilot startup plan recovery failed",
+				meta: {
+					errorMessage: error instanceof Error ? error.message : String(error),
+				},
+			});
+		},
+	);
 
 	logEvent({
 		channel: "api",
@@ -174,6 +200,7 @@ export async function createNightWorkersServer(
 		if (closed) return;
 		closed = true;
 		clearInterval(missionPilotQuestionnaireTimer);
+		clearInterval(missionPilotPlanTimer);
 		logEvent({
 			channel: "api",
 			level: "info",

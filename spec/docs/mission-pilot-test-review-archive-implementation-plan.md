@@ -7,7 +7,7 @@
 - Implementation status: `not_started`
 - MVP slice: `3/3` — Implementation・Test Mode・Review Mode・Git closeout・true Task Archive
 - Canonical plan for this phase: this document
-- Previous phase: `spec/docs/mission-pilot-plan-mode-autonomy-implementation-plan.md`
+- Previous phase: `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md` (completed)
 - Entry design: `spec/docs/mission-pilot-task-entry-design.md`
 - Baseline reviewed: 2026-07-10, `main` at `d08c7355bf88c6dc9e46152aae7f7be0dbcd7740`
 - Current working tree reviewed: 2026-07-10。Review domainの`api/modules/review` / `src/modules/review`移行中状態を含む

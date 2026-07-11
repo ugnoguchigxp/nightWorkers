@@ -1,20 +1,15 @@
-import {
-	AlertTriangle,
-	CheckCircle2,
-	Circle,
-	FlaskConical,
-	LoaderCircle,
-} from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../shared/json-record";
 import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
-import { TEST_MODE_WORKFLOW_ACTION } from "../../../shared/test-mode-workflow";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
 import {
 	fetchMissionPilotQuestionnaireDraft,
+	missionPilotPlanProgressQueryOptions,
 	submitMissionPilotQuestionnaireDraft,
 	updateMissionPilotQuestionnaireDraft,
 } from "../missionPilot";
@@ -25,13 +20,6 @@ import {
 	markdownCodeBlock,
 } from "../nightworkers/artifactExport";
 import { MarkdownViewer } from "../nightworkers/components/ArtifactFileViewers";
-import {
-	buildTestModeWorkflowSteps,
-	isTestModeWorkflowInProgress,
-	readTestModeWorkflowActionStatus,
-	type TestModeWorkflowStepStatus,
-	type TestModeWorkflowStepView,
-} from "../nightworkers/testModeWorkflowView";
 import type {
 	ActivityArtifact,
 	DesignQuestionnaireAnswer,
@@ -39,7 +27,6 @@ import type {
 	GeneralSettings,
 	PlanModeWorkspace,
 	TaskMessage,
-	TaskRun,
 	WorkbenchArtifactContext,
 } from "../nightworkers/types";
 import {
@@ -50,10 +37,11 @@ import {
 } from "../questionnaire";
 import { fetchGeneralSettings } from "../settings";
 import {
-	fetchPlanModeWorkspace,
 	generateFeaturePlanArtifact,
 	getPlanModeCapabilities,
 	type PlanWorkspaceTab,
+	planModeWorkspaceQueryKey,
+	planModeWorkspaceQueryOptions,
 	resolvePlanWorkspaceViewDecisions,
 	selectPlanModeWorkspaceMessages,
 } from "../specification";
@@ -69,6 +57,7 @@ import {
 import { usePlanWorkspaceActions } from "./PlanModeWorkspace.controller";
 import {
 	DedicatedViewPanel,
+	type MermaidRenderFailure,
 	type PlanViewDecision,
 	PlanWorkspaceStatusView,
 	ViewDecisionSummary,
@@ -79,11 +68,6 @@ import {
 	type GenericPlanView,
 	generatePlanViewArtifact,
 } from "./planViewCommands";
-
-type TestModeAction =
-	| "discover_tests"
-	| "plan_and_implement_tests"
-	| "run_unit_tests";
 
 const additionalPlanViewTabs = [
 	"user-flow",
@@ -291,10 +275,8 @@ export function shouldShowQuestionnaireStartAction(input: {
 
 export function resolveInitialPlanWorkspaceTabUpdate(
 	initialTab: PlanWorkspaceTab | undefined,
-	questionnaireGateLocked: boolean,
 ): PlanWorkspaceTab | null {
 	if (!initialTab) return null;
-	if (questionnaireGateLocked) return "questionnaire";
 	return initialTab === "questionnaire" ? null : initialTab;
 }
 
@@ -345,7 +327,6 @@ export function resetPlanWorkspaceScrollToTop(
 
 type PlanModeCapabilities = ReturnType<typeof getPlanModeCapabilities>;
 export function buildVisiblePlanWorkspaceTabs(input: {
-	questionnaireGateLocked: boolean;
 	hasFeaturePlan: boolean;
 	hasQuestionnaire: boolean;
 	hasBlueprint: boolean;
@@ -356,7 +337,6 @@ export function buildVisiblePlanWorkspaceTabs(input: {
 		| PlanModeWorkspace["dedicatedViewArtifacts"]
 		| undefined;
 }): PlanWorkspaceTab[] {
-	if (input.questionnaireGateLocked) return ["questionnaire"];
 	const additionalTabs = additionalPlanViewTabs.filter((tab) => {
 		const view = tabToPlanView[tab];
 		return input.dedicatedViewArtifacts?.some(
@@ -385,8 +365,6 @@ export function PlanModeWorkspaceViewer({
 	onExportDescriptorChange,
 	onQueueSession,
 	onAddToQueue,
-	onStartTestModeRun,
-	latestRun,
 	isImplementationLocked = false,
 }: {
 	sessionId: string | null;
@@ -400,18 +378,18 @@ export function PlanModeWorkspaceViewer({
 	) => void;
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
-	onStartTestModeRun?: (input: {
-		specArtifactId: string;
-		verificationDocumentId?: string | null;
-		action: TestModeAction;
-	}) => Promise<boolean>;
-	latestRun?: TaskRun | null;
 	isImplementationLocked?: boolean;
 }) {
-	const [workspace, setWorkspace] = useState<PlanModeWorkspace | null>(null);
+	const queryClient = useQueryClient();
+	const { data: workspace = null, refetch: refetchWorkspace } = useQuery(
+		planModeWorkspaceQueryOptions(sessionId),
+	);
+	const { data: missionPilotPlanProgress = null } = useQuery(
+		missionPilotPlanProgressQueryOptions(sessionId),
+	);
 	const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
 	const [activeTab, setActiveTab] = useState<PlanWorkspaceTab>(
-		initialTab === "status" ? "questionnaire" : initialTab || "questionnaire",
+		initialTab || "questionnaire",
 	);
 	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 	const [answers, setAnswers] = useState<
@@ -420,7 +398,6 @@ export function PlanModeWorkspaceViewer({
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [actionNotice, setActionNotice] = useState<string | null>(null);
-	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
 	const [generalSettings, setGeneralSettings] =
 		useState<GeneralSettings | null>(null);
 	const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
@@ -498,16 +475,14 @@ export function PlanModeWorkspaceViewer({
 				isCompletedStatus(session.status),
 			),
 		);
-	const questionnaireGateLocked =
-		planModeCapabilities.questionnaire && !questionnaireComplete;
 	const didSelectUnlockedDefaultTab = useRef(false);
+	const attemptedMermaidRenderRepairs = useRef(new Set<string>());
 	const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef(activeTab);
 	const onTabChangeRef = useRef(onTabChange);
 	onTabChangeRef.current = onTabChange;
 	const visibleTabs = useMemo<PlanWorkspaceTab[]>(() => {
 		return buildVisiblePlanWorkspaceTabs({
-			questionnaireGateLocked,
 			hasFeaturePlan,
 			hasQuestionnaire,
 			hasBlueprint,
@@ -523,12 +498,8 @@ export function PlanModeWorkspaceViewer({
 		hasQuestionnaire,
 		includedViews,
 		planModeCapabilities,
-		questionnaireGateLocked,
 		workspace?.dedicatedViewArtifacts,
 	]);
-	const defaultTab: PlanWorkspaceTab = questionnaireGateLocked
-		? "questionnaire"
-		: "status";
 	const selectActiveTab = useCallback((tab: PlanWorkspaceTab) => {
 		if (activeTabRef.current === tab) return;
 		activeTabRef.current = tab;
@@ -542,11 +513,7 @@ export function PlanModeWorkspaceViewer({
 	const refresh = useCallback(
 		async (options?: { preserveGeneratedBlueprintFocus?: boolean }) => {
 			if (!sessionId) return;
-			const workspaceRes = await fetchPlanModeWorkspace(sessionId);
-			const nextWorkspace = workspaceRes.ok
-				? ((await workspaceRes.json()) as PlanModeWorkspace)
-				: null;
-			if (nextWorkspace) setWorkspace(nextWorkspace);
+			const nextWorkspace = (await refetchWorkspace()).data ?? null;
 			const sessionsRes = await fetchDesignQuestionnaireSessions(sessionId);
 			if (sessionsRes.ok) {
 				const nextSessions =
@@ -578,7 +545,13 @@ export function PlanModeWorkspaceViewer({
 				}
 			}
 		},
-		[activeSessionId, blueprintMessages.length, selectActiveTab, sessionId],
+		[
+			activeSessionId,
+			blueprintMessages.length,
+			refetchWorkspace,
+			selectActiveTab,
+			sessionId,
+		],
 	);
 
 	useEffect(() => {
@@ -603,40 +576,19 @@ export function PlanModeWorkspaceViewer({
 	}, []);
 
 	useEffect(() => {
-		const nextTab = resolveInitialPlanWorkspaceTabUpdate(
-			initialTab,
-			questionnaireGateLocked,
-		);
+		const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab);
 		if (nextTab) selectActiveTab(nextTab);
-	}, [initialTab, questionnaireGateLocked, selectActiveTab]);
+	}, [initialTab, selectActiveTab]);
 
 	useEffect(() => {
-		if (questionnaireGateLocked) {
-			didSelectUnlockedDefaultTab.current = false;
-			if (activeTab !== "questionnaire") selectActiveTab("questionnaire");
-			return;
-		}
-		if (missionPilotDraft) {
-			didSelectUnlockedDefaultTab.current = false;
-			if (activeTab !== "questionnaire") selectActiveTab("questionnaire");
-			return;
-		}
 		if (initialTab) return;
 		if (!didSelectUnlockedDefaultTab.current && activeTab === "questionnaire") {
 			didSelectUnlockedDefaultTab.current = true;
-			selectActiveTab(defaultTab);
+			selectActiveTab("status");
 			return;
 		}
-		if (!visibleTabs.includes(activeTab)) selectActiveTab(defaultTab);
-	}, [
-		activeTab,
-		defaultTab,
-		initialTab,
-		missionPilotDraft,
-		questionnaireGateLocked,
-		selectActiveTab,
-		visibleTabs,
-	]);
+		if (!visibleTabs.includes(activeTab)) selectActiveTab("status");
+	}, [activeTab, initialTab, selectActiveTab, visibleTabs]);
 
 	const activeQuestionnaireSession =
 		sessions.find((session) => session.id === activeSessionId) ||
@@ -665,7 +617,6 @@ export function PlanModeWorkspaceViewer({
 					draft.questionnaireSessionId !== activeQuestionnaireSession.id
 				) {
 					setActiveSessionId(draft.questionnaireSessionId);
-					selectActiveTab("questionnaire");
 					return;
 				}
 				if (!draft) {
@@ -673,7 +624,6 @@ export function PlanModeWorkspaceViewer({
 					return;
 				}
 				setMissionPilotDraft(draft);
-				selectActiveTab("questionnaire");
 				setAnswers(
 					Object.fromEntries(
 						draft.answers.map((answer) => [answer.questionId, answer]),
@@ -682,7 +632,7 @@ export function PlanModeWorkspaceViewer({
 			})
 			.catch(() => undefined);
 		return () => controller.abort();
-	}, [activeQuestionnaireSession?.id, selectActiveTab, sessionId]);
+	}, [activeQuestionnaireSession?.id, sessionId]);
 
 	useEffect(() => {
 		if (missionPilotDraft?.state !== "waiting_user") return;
@@ -1000,7 +950,11 @@ export function PlanModeWorkspaceViewer({
 			if (generatedMessage) {
 				setGeneratedMessages((prev) => [...prev, generatedMessage]);
 			}
-			if (result.workspace) setWorkspace(result.workspace);
+			if (result.workspace)
+				queryClient.setQueryData(
+					planModeWorkspaceQueryKey(sessionId),
+					result.workspace,
+				);
 			return { focusTab: nextTab };
 		});
 	}
@@ -1031,7 +985,11 @@ export function PlanModeWorkspaceViewer({
 			}
 			if (generated.length > 0)
 				setGeneratedMessages((prev) => [...prev, ...generated]);
-			if (latestWorkspace) setWorkspace(latestWorkspace);
+			if (latestWorkspace)
+				queryClient.setQueryData(
+					planModeWorkspaceQueryKey(sessionId),
+					latestWorkspace,
+				);
 			const firstTab = planViewToTab[targetViews[0]];
 			if (firstTab) return { focusTab: firstTab };
 		});
@@ -1052,6 +1010,60 @@ export function PlanModeWorkspaceViewer({
 				(message) => message.id === activeDedicatedArtifact.sourceMessageId,
 			) || null
 		: null;
+
+	async function repairDedicatedViewAfterMermaidFailure(
+		failure: MermaidRenderFailure,
+	) {
+		if (
+			(failure.stage !== "chart_parse" && failure.stage !== "chart_render") ||
+			!sessionId ||
+			isImplementationLocked ||
+			!activeDedicatedView ||
+			!isGenericPlanView(activeDedicatedView) ||
+			!activeDedicatedMessage
+		) {
+			return;
+		}
+		const repairKey = `${sessionId}:${activeDedicatedView}`;
+		if (attemptedMermaidRenderRepairs.current.has(repairKey)) return;
+		attemptedMermaidRenderRepairs.current.add(repairKey);
+		await runAction(`view:${activeDedicatedView}:mermaid-repair`, async () => {
+			const res = await generatePlanViewArtifact(
+				sessionId,
+				activeDedicatedView,
+				{
+					questionnaireSessionId: readyQuestionnaireSession?.id ?? null,
+					featurePlanMessageId: featurePlanMessage?.id ?? null,
+					sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
+					sourceDataModelMessageId: activeDataModelMessage?.id ?? null,
+					mermaidRenderRepair: {
+						sourceMessageId: activeDedicatedMessage.id,
+						stage: failure.stage,
+						error: failure.message,
+						chart: failure.chart,
+					},
+				},
+			);
+			if (!res.ok) throw new Error(await res.text());
+			const result = (await res.json()) as {
+				message?: TaskMessage;
+				workspace?: PlanModeWorkspace;
+			};
+			if (result.message) {
+				setGeneratedMessages((prev) => [
+					...prev,
+					result.message as TaskMessage,
+				]);
+			}
+			if (result.workspace) {
+				queryClient.setQueryData(
+					planModeWorkspaceQueryKey(sessionId),
+					result.workspace,
+				);
+			}
+			return { focusTab: planViewToTab[activeDedicatedView] };
+		});
+	}
 	const activePlanModeArtifactContext =
 		useMemo<WorkbenchArtifactContext | null>(() => {
 			return buildPlanModeArtifactContext({
@@ -1143,27 +1155,7 @@ export function PlanModeWorkspaceViewer({
 				{activeTab === "feature-plan" ? (
 					<div className="grid gap-3">
 						{featurePlanVerification ? (
-							<FeaturePlanVerificationBar
-								model={featurePlanVerification}
-								latestRun={latestRun}
-								canStart={
-									Boolean(onStartTestModeRun) && !isImplementationLocked
-								}
-								status={testModeStatus}
-								onStart={async (action) => {
-									if (!onStartTestModeRun) return;
-									setTestModeStatus(`${action}:starting`);
-									const ok = await onStartTestModeRun({
-										specArtifactId: featurePlanVerification.specArtifactId,
-										verificationDocumentId:
-											featurePlanVerification.verificationDocumentId,
-										action,
-									});
-									setTestModeStatus(
-										ok ? `${action}:started` : `${action}:failed`,
-									);
-								}}
-							/>
+							<FeaturePlanVerificationBar model={featurePlanVerification} />
 						) : null}
 						<MarkdownViewer
 							content={
@@ -1339,6 +1331,7 @@ export function PlanModeWorkspaceViewer({
 				) : activeTab === "status" ? (
 					<PlanWorkspaceStatusView
 						workspace={workspace}
+						missionPilotPlanProgress={missionPilotPlanProgress}
 						questionnaireSession={activeQuestionnaireSession}
 						questionnaireSummary={activeQuestionnaireSummary}
 						busyAction={busyAction}
@@ -1376,6 +1369,9 @@ export function PlanModeWorkspaceViewer({
 					<DedicatedViewPanel
 						artifact={activeDedicatedArtifact}
 						message={activeDedicatedMessage}
+						onMermaidRenderFailure={(failure) => {
+							void repairDedicatedViewAfterMermaidFailure(failure);
+						}}
 					/>
 				) : (
 					<div className="grid gap-4">
@@ -1402,22 +1398,12 @@ export function PlanModeWorkspaceViewer({
 }
 
 type FeaturePlanVerificationModel = {
-	specArtifactId: string;
-	verificationDocumentId: string | null;
 	conditions: Array<{
 		id: string;
 		text: string;
 		status: string;
 		required: boolean;
 	}>;
-};
-
-type FeaturePlanVerificationBarProps = {
-	model: FeaturePlanVerificationModel;
-	latestRun?: TaskRun | null;
-	canStart: boolean;
-	status: string | null;
-	onStart: (action: TestModeAction) => Promise<void>;
 };
 
 function buildFeaturePlanVerificationModel(input: {
@@ -1428,8 +1414,6 @@ function buildFeaturePlanVerificationModel(input: {
 	if (!message) return null;
 	const metadata = toDeepRecord(message.metadataJson);
 	if (readRecordString(metadata, "intent") !== "feature_plan") return null;
-	const verificationDocumentId =
-		readRecordString(metadata, "verificationDocumentId") ?? null;
 	const sidecarMessageId =
 		readRecordString(metadata, "verificationSidecarMessageId") ?? null;
 	const sidecarMessage = sidecarMessageId
@@ -1448,58 +1432,20 @@ function buildFeaturePlanVerificationModel(input: {
 				}))
 				.filter((condition) => condition.id && condition.text)
 		: [];
-	if (!verificationDocumentId && conditions.length === 0) return null;
-	return {
-		specArtifactId: `feature-plan-${message.id}`,
-		verificationDocumentId,
-		conditions,
-	};
+	return conditions.length > 0 ? { conditions } : null;
 }
 
 function FeaturePlanVerificationBar({
 	model,
-	latestRun,
-	canStart,
-	status,
-	onStart,
-}: FeaturePlanVerificationBarProps) {
+}: {
+	model: FeaturePlanVerificationModel;
+}) {
 	const { t } = useTranslation();
-	const canShowStartButton = canStart && Boolean(model.specArtifactId);
-	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
-	const workflowSteps = buildTestModeWorkflowSteps({
-		latestRun,
-		localStatus: status,
-	});
-	const conditionStatuses = readLatestFeaturePlanConditionStatuses(latestRun);
-	const workflowInProgress =
-		workflowActionStatus === "starting" ||
-		isTestModeWorkflowInProgress(workflowSteps);
 	return (
 		<div className="nightworkers-structured-artifact nightworkers-structured-artifact-section rounded-md border px-3 py-2">
-			{workflowActionStatus === "failed" ? (
-				<div className="nightworkers-structured-artifact-warning text-[11px]">
-					{t("testMode.status.planFailed")}
-				</div>
-			) : null}
-			<FeaturePlanTestModeWorkflowProgress steps={workflowSteps} />
-			{canShowStartButton ? (
-				<div className="mt-2 flex flex-wrap gap-1.5">
-					<FeaturePlanTestModeActionButton
-						action={TEST_MODE_WORKFLOW_ACTION}
-						label={t("testMode.action.startWorkflow")}
-						status={workflowActionStatus}
-						disabled={workflowInProgress}
-						onStart={onStart}
-					/>
-				</div>
-			) : null}
 			{model.conditions.length > 0 ? (
-				<div className="mt-2 grid gap-1">
+				<div className="grid gap-1">
 					{model.conditions.slice(0, 3).map((condition) => {
-						const displayStatus = resolveFeaturePlanConditionStatus(
-							condition,
-							conditionStatuses,
-						);
 						return (
 							<div
 								key={condition.id}
@@ -1509,8 +1455,8 @@ function FeaturePlanVerificationBar({
 									{condition.id}
 								</span>
 								<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
-									{t(`testMode.conditionStatus.${displayStatus}`, {
-										defaultValue: displayStatus,
+									{t(`testMode.conditionStatus.${condition.status}`, {
+										defaultValue: condition.status,
 									})}
 								</span>
 								<span className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words leading-5">
@@ -1522,314 +1468,6 @@ function FeaturePlanVerificationBar({
 				</div>
 			) : null}
 		</div>
-	);
-}
-
-function FeaturePlanTestModeWorkflowProgress({
-	steps,
-}: {
-	steps: TestModeWorkflowStepView[];
-}) {
-	const { t } = useTranslation();
-	return (
-		<div className="mt-2 grid gap-2">
-			{steps.map((step, index) => (
-				<div
-					key={step.id}
-					className="nightworkers-structured-artifact-row grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md border px-2.5 py-2"
-				>
-					<div className="nightworkers-structured-artifact-muted flex items-center gap-2 text-[11px] font-medium">
-						{index + 1}
-					</div>
-					<div className="flex min-w-0 items-center gap-2">
-						<FeaturePlanTestModeWorkflowStatusIcon status={step.status} />
-						<span className="nightworkers-structured-artifact-accent min-w-0 whitespace-normal break-words text-xs font-medium">
-							{t(`testMode.workflow.step.${step.id}`)}
-						</span>
-					</div>
-					<div className="nightworkers-structured-artifact-muted text-right text-[11px]">
-						{t(`testMode.workflow.status.${step.status}`)}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-}
-
-type FeaturePlanConditionStatuses = {
-	completionOk: boolean | null;
-	statuses: Map<string, string>;
-	hasPassedBroadVerification: boolean;
-};
-
-function readLatestFeaturePlanConditionStatuses(
-	latestRun?: TaskRun | null,
-): FeaturePlanConditionStatuses {
-	const events = latestRun?.events ?? [];
-	const completion = readLatestCompletionCheckConditionStatuses(events);
-	return {
-		completionOk: completion?.ok ?? null,
-		statuses: completion?.statuses ?? new Map<string, string>(),
-		hasPassedBroadVerification: hasPassedBroadVerificationEvent(events),
-	};
-}
-
-function resolveFeaturePlanConditionStatus(
-	condition: FeaturePlanVerificationModel["conditions"][number],
-	conditionStatuses: FeaturePlanConditionStatuses,
-) {
-	const explicitStatus = conditionStatuses.statuses.get(condition.id);
-	if (explicitStatus) return explicitStatus;
-	if (conditionStatuses.completionOk === true && condition.required) {
-		return "covered";
-	}
-	if (
-		conditionStatuses.hasPassedBroadVerification &&
-		isVerificationGateConditionText(condition.text)
-	) {
-		return "verified_by_gate";
-	}
-	return condition.status;
-}
-
-function readLatestCompletionCheckConditionStatuses(
-	events: NonNullable<TaskRun["events"]>,
-) {
-	for (const event of [...events].reverse()) {
-		const payload = toDeepRecord(event.payloadJson);
-		const runEvent = toDeepRecord(payload.runEvent);
-		const runEventData = toDeepRecord(runEvent.data);
-		const rawResult = firstRecord(
-			runEventData.result,
-			runEventData.toolResult,
-			payload.result,
-			toDeepRecord(payload.payload).result,
-		);
-		const parsedTextResult = parseToolTextResult(rawResult);
-		const rawResultRecord = toDeepRecord(rawResult.result);
-		const structuredContent = firstRecord(
-			rawResult.structuredContent,
-			rawResult.structured_content,
-			rawResultRecord.structuredContent,
-			rawResultRecord.structured_content,
-		);
-		const resultPayload = firstRecord(
-			parsedTextResult.payload,
-			rawResult.payload,
-			rawResultRecord.payload,
-			toDeepRecord(structuredContent.payload),
-			rawResult.result,
-			rawResult,
-			toDeepRecord(payload.payload).payload,
-		);
-		const toolName = readFirstString(
-			runEventData.mcpTool,
-			runEventData.toolName,
-			parsedTextResult.toolName,
-			rawResult.toolName,
-			payload.toolName,
-			toDeepRecord(payload.payload).toolName,
-		);
-		if (!toolName || normalizeToolName(toolName) !== "completion_check") {
-			continue;
-		}
-		const completionResult = firstRecord(resultPayload.result, resultPayload);
-		const statuses = new Map<string, string>();
-		const conditions = Array.isArray(completionResult.conditions)
-			? completionResult.conditions
-			: [];
-		for (const condition of conditions) {
-			const record = toDeepRecord(condition);
-			const conditionId = readFirstString(record.conditionId, record.id);
-			const status = readRecordString(record, "status");
-			if (conditionId && status) statuses.set(conditionId, status);
-		}
-		for (const failed of readConditionIdList(completionResult.failedRequired)) {
-			statuses.set(failed, "failed");
-		}
-		for (const unknown of readConditionIdList(
-			completionResult.unknownRequired,
-		)) {
-			if (statuses.get(unknown) !== "failed") statuses.set(unknown, "unknown");
-		}
-		return {
-			ok:
-				readFirstBoolean(
-					completionResult.ok,
-					parsedTextResult.ok,
-					rawResult.ok,
-					runEventData.ok,
-					payload.ok,
-				) ?? null,
-			statuses,
-		};
-	}
-	return null;
-}
-
-function hasPassedBroadVerificationEvent(
-	events: NonNullable<TaskRun["events"]>,
-) {
-	return events.some((event) => {
-		const payload = toDeepRecord(event.payloadJson);
-		const runEvent = toDeepRecord(payload.runEvent);
-		const runEventData = toDeepRecord(runEvent.data);
-		const eventType = readFirstString(
-			readRecordString(runEvent, "type"),
-			event.eventType,
-			event.type,
-		);
-		if (eventType !== "tool.call_finished") return false;
-		const commandClass = readRecordString(runEventData, "commandClass");
-		if (commandClass === "broad_verification") {
-			return readFirstNumber(runEventData.exitCode) === 0;
-		}
-		const rawResult = firstRecord(
-			runEventData.result,
-			runEventData.toolResult,
-			payload.result,
-			toDeepRecord(payload.payload).result,
-		);
-		const parsedTextResult = parseToolTextResult(rawResult);
-		const rawResultRecord = toDeepRecord(rawResult.result);
-		const resultPayload = firstRecord(
-			parsedTextResult.payload,
-			rawResult.payload,
-			rawResultRecord.payload,
-			rawResult.result,
-			rawResult,
-		);
-		const toolName = readFirstString(
-			runEventData.mcpTool,
-			runEventData.toolName,
-			parsedTextResult.toolName,
-			rawResult.toolName,
-		);
-		if (!toolName || normalizeToolName(toolName) !== "run_check") return false;
-		return (
-			readRecordString(resultPayload, "checkKind") === "verify" &&
-			readFirstBoolean(parsedTextResult.ok, rawResult.ok, runEventData.ok) ===
-				true
-		);
-	});
-}
-
-function parseToolTextResult(result: Record<string, unknown>) {
-	const content = result.content;
-	if (!Array.isArray(content)) return {};
-	for (const item of content) {
-		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-		const record = item as Record<string, unknown>;
-		if (record.type !== "text" || typeof record.text !== "string") continue;
-		try {
-			return toDeepRecord(JSON.parse(record.text));
-		} catch {
-			return {};
-		}
-	}
-	return {};
-}
-
-function readConditionIdList(value: unknown) {
-	if (!Array.isArray(value)) return [];
-	return value
-		.map((entry) => {
-			const record = toDeepRecord(entry);
-			return readFirstString(record.conditionId, record.id);
-		})
-		.filter((conditionId): conditionId is string => Boolean(conditionId));
-}
-
-function isVerificationGateConditionText(text: string) {
-	return /\b(?:verify|typecheck|lint|test|coverage|build)\b/i.test(text);
-}
-
-function firstRecord(...values: unknown[]): Record<string, unknown> {
-	for (const value of values) {
-		const record = toDeepRecord(value);
-		if (Object.keys(record).length > 0) return record;
-	}
-	return {};
-}
-
-function readFirstString(...values: unknown[]) {
-	for (const value of values) {
-		if (typeof value === "string" && value.length > 0) return value;
-	}
-	return null;
-}
-
-function readFirstBoolean(...values: unknown[]) {
-	for (const value of values) {
-		if (typeof value === "boolean") return value;
-	}
-	return undefined;
-}
-
-function readFirstNumber(...values: unknown[]) {
-	for (const value of values) {
-		if (typeof value === "number" && Number.isFinite(value)) return value;
-	}
-	return undefined;
-}
-
-function normalizeToolName(toolName: string) {
-	return toolName.startsWith("nightworkers.")
-		? toolName.slice("nightworkers.".length)
-		: toolName;
-}
-
-function FeaturePlanTestModeWorkflowStatusIcon({
-	status,
-}: {
-	status: TestModeWorkflowStepStatus;
-}) {
-	if (status === "passed") {
-		return (
-			<CheckCircle2 className="nightworkers-structured-artifact-success h-3.5 w-3.5 shrink-0" />
-		);
-	}
-	if (status === "running") {
-		return (
-			<LoaderCircle className="nightworkers-structured-artifact-accent h-3.5 w-3.5 shrink-0 animate-spin" />
-		);
-	}
-	if (status === "failed" || status === "needs_human") {
-		return (
-			<AlertTriangle className="nightworkers-structured-artifact-warning h-3.5 w-3.5 shrink-0" />
-		);
-	}
-	return (
-		<Circle className="nightworkers-structured-artifact-muted h-3.5 w-3.5 shrink-0" />
-	);
-}
-
-function FeaturePlanTestModeActionButton({
-	action,
-	label,
-	status,
-	disabled = false,
-	onStart,
-}: {
-	action: TestModeAction;
-	label: string;
-	status: string | null;
-	disabled?: boolean;
-	onStart: (action: TestModeAction) => Promise<void>;
-}) {
-	const { t } = useTranslation();
-	const isDisabled = disabled || status === "starting";
-	return (
-		<button
-			type="button"
-			className="nightworkers-structured-artifact-action inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed"
-			disabled={isDisabled}
-			onClick={() => void onStart(action)}
-			title={label}
-		>
-			<FlaskConical className="h-3.5 w-3.5" />
-			{status === "starting" ? t("testMode.status.starting") : label}
-		</button>
 	);
 }
 

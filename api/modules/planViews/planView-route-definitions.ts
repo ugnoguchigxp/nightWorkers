@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { mermaidRenderRepairSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { genericPlanViewSchema } from "./planView-generation.service";
 
 export const planViewGenerateRequestSchema = z.object({
@@ -7,6 +8,7 @@ export const planViewGenerateRequestSchema = z.object({
 	featurePlanMessageId: z.string().uuid().nullable().optional(),
 	sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
 	sourceDataModelMessageId: z.string().uuid().nullable().optional(),
+	mermaidRenderRepair: mermaidRenderRepairSchema.optional(),
 });
 
 export const generatePlanViewRoute = createRoute({

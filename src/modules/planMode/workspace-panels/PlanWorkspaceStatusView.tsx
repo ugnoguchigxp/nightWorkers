@@ -1,5 +1,7 @@
-import { Check, LoaderCircle } from "lucide-react";
+import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { buildPlanModeExecutionSteps } from "../../../../shared/plan-mode-execution";
+import type { MissionPilotPlanProgress } from "../../../../shared/schemas/mission-pilot-plan-progress.schema";
 import type {
 	DesignQuestionnaireSession,
 	PlanModeSettings,
@@ -19,6 +21,7 @@ import { formatViewLabel, isAdditionalView } from "./types";
 
 export function PlanWorkspaceStatusView({
 	workspace,
+	missionPilotPlanProgress,
 	questionnaireSession,
 	questionnaireSummary,
 	busyAction,
@@ -37,6 +40,7 @@ export function PlanWorkspaceStatusView({
 	onAddToQueue,
 }: {
 	workspace: PlanModeWorkspace | null;
+	missionPilotPlanProgress?: MissionPilotPlanProgress | null;
 	questionnaireSession: DesignQuestionnaireSession | null;
 	questionnaireSummary?:
 		| PlanModeWorkspace["questionnaireSessions"][number]
@@ -78,24 +82,6 @@ export function PlanWorkspaceStatusView({
 		questionnaireSummary?.nonBlockingUnansweredCount ?? 0;
 	const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
 	const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
-	const hasRoutingDecisions = viewDecisions.length > 0;
-	const decisionByView = new Map(
-		viewDecisions.map((item) => [item.view, item]),
-	);
-	const isIncluded = (view: string) =>
-		decisionByView.get(view)?.decision === "include";
-	const isOmitted = (view: string) =>
-		decisionByView.get(view)?.decision === "omit";
-	const shouldShowDefault = (
-		view: string,
-		enabled: boolean,
-		exists: boolean,
-		defaultWhenUnrouted = false,
-	) =>
-		!isOmitted(view) &&
-		(exists ||
-			isIncluded(view) ||
-			(!hasRoutingDecisions && defaultWhenUnrouted && enabled));
 	const capabilities = planModeSettings?.capabilities ?? {
 		feature_plan: true,
 		questionnaire: true,
@@ -122,14 +108,25 @@ export function PlanWorkspaceStatusView({
 			(questionnaireSession.status === "review_ready" ||
 				questionnaireSession.status === "accepted"),
 	);
+	const executionSteps = buildPlanModeExecutionSteps({
+		capabilities,
+		viewDecisions,
+		questionnaireExists: Boolean(questionnaireSession),
+		questionnaireComplete: questionnaireDone,
+		existingArtifactKinds: [
+			...(hasBlueprint ? (["blueprint"] as const) : []),
+			...(hasDataModel ? (["data_model"] as const) : []),
+			...generatedAdditionalViews,
+			...(hasFeaturePlan ? (["feature_plan"] as const) : []),
+		],
+	});
+	const executionStepByKey = new Map(
+		executionSteps.map((step) => [step.key, step]),
+	);
 	const rawSteps: Array<PlanWorkspaceStatusStep | null> = [
-		shouldShowDefault(
-			"questionnaire",
-			capabilities.questionnaire,
-			Boolean(questionnaireSession),
-			true,
-		)
+		executionStepByKey.has("questionnaire")
 			? {
+					progressKey: "questionnaire",
 					number: 1,
 					title: "仕様に関する質問を回答してください",
 					detail:
@@ -163,8 +160,9 @@ export function PlanWorkspaceStatusView({
 					autoGenerateKey: "questionnaire",
 				}
 			: null,
-		shouldShowDefault("blueprint", capabilities.blueprint, hasBlueprint)
+		executionStepByKey.has("blueprint")
 			? {
+					progressKey: "blueprint",
 					number: 2,
 					title: "インスタントMockUpを作成し、大筋UIの方向性を決めます",
 					detail: hasBlueprint
@@ -180,8 +178,9 @@ export function PlanWorkspaceStatusView({
 					autoGenerateKey: "blueprint",
 				}
 			: null,
-		shouldShowDefault("data_model", capabilities.data_model, hasDataModel)
+		executionStepByKey.has("data_model")
 			? {
+					progressKey: "data_model",
 					number: 3,
 					title: "どの様なデータモデルが必要になるかプレビュー出来ます",
 					detail: hasDataModel
@@ -200,28 +199,32 @@ export function PlanWorkspaceStatusView({
 					autoGenerateKey: "data-model",
 				}
 			: null,
-		...includedAdditionalViews.map((item, index) => {
-			const view = item.view;
-			const label = formatViewLabel(view);
-			const generated = generatedAdditionalViews.has(view);
-			const enabled = capabilities[view];
-			return {
-				number: 4 + index,
-				title: `${label}を作成します`,
-				detail: generated
-					? `${label}が作成済みです。`
-					: item.reason || `${label}をPlan Mode Artifactとして作成します。`,
-				done: generated,
-				buttonLabel: generated ? `${label}を再生成` : `${label}作成`,
-				busy: busyAction === `view:${view}`,
-				disabled: isImplementationLocked || !enabled,
-				disabledReason: enabled ? null : disabledReason,
-				onClick: () => onGenerateDedicatedViews([view]),
-				autoGenerate: true,
-				autoGenerateKey: `view:${view}`,
-			};
-		}),
+		...includedAdditionalViews
+			.filter((item) => executionStepByKey.has(`view:${item.view}`))
+			.map((item, index) => {
+				const view = item.view;
+				const label = formatViewLabel(view);
+				const generated = generatedAdditionalViews.has(view);
+				const enabled = capabilities[view];
+				return {
+					progressKey: `view:${view}`,
+					number: 4 + index,
+					title: `${label}を作成します`,
+					detail: generated
+						? `${label}が作成済みです。`
+						: item.reason || `${label}をPlan Mode Artifactとして作成します。`,
+					done: generated,
+					buttonLabel: generated ? `${label}を再生成` : `${label}作成`,
+					busy: busyAction === `view:${view}`,
+					disabled: isImplementationLocked || !enabled,
+					disabledReason: enabled ? null : disabledReason,
+					onClick: () => onGenerateDedicatedViews([view]),
+					autoGenerate: true,
+					autoGenerateKey: `view:${view}`,
+				};
+			}),
 		{
+			progressKey: "feature_plan",
 			number: 5,
 			title: "仕様書を作成します",
 			detail: hasFeaturePlan
@@ -237,9 +240,32 @@ export function PlanWorkspaceStatusView({
 			autoGenerateKey: "feature-plan",
 		},
 	];
-	const steps = rawSteps.filter(
-		(step): step is PlanWorkspaceStatusStep => step !== null,
+	const persistedStepByKey = new Map(
+		(missionPilotPlanProgress?.steps || []).map((step) => [step.key, step]),
 	);
+	const missionPilotIsRunning =
+		missionPilotPlanProgress?.desiredState === "playing";
+	const steps = rawSteps
+		.filter((step): step is PlanWorkspaceStatusStep => step !== null)
+		.map((step) => {
+			const persisted = persistedStepByKey.get(step.progressKey);
+			if (!persisted) return step;
+			const running = persisted.status === "running";
+			const failed = persisted.status === "failed";
+			return {
+				...step,
+				done: persisted.status === "completed",
+				busy: running || step.busy,
+				disabled: step.disabled || Boolean(missionPilotIsRunning),
+				detail: running
+					? `${formatViewLabel(persisted.view || persisted.kind)}を生成中です。`
+					: failed
+						? persisted.lastError || "生成に失敗しました。"
+						: step.detail,
+				progressStatus: persisted.status,
+				progressError: persisted.lastError,
+			};
+		});
 	const allStepsDone = steps.every((step) => step.done);
 	const nextAutoGenerateStep = steps.find(
 		(step) => step.autoGenerate && !step.done && !step.disabled,
@@ -292,6 +318,9 @@ export function PlanWorkspaceStatusView({
 				</p>
 			</div>
 			<ViewDecisionSummary decisions={viewDecisions} />
+			{missionPilotPlanProgress ? (
+				<MissionPilotPlanPhase progress={missionPilotPlanProgress} />
+			) : null}
 			<div className="grid gap-3">
 				{steps.map((step, index) => {
 					const displayNumber = index + 1;
@@ -304,12 +333,18 @@ export function PlanWorkspaceStatusView({
 								<div className="flex flex-col items-center">
 									<div
 										className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${
-											step.done
-												? "nightworkers-structured-artifact-success-pill"
-												: "nightworkers-structured-artifact-neutral-pill"
+											step.progressStatus === "failed"
+												? "nightworkers-structured-artifact-warning-pill"
+												: step.done
+													? "nightworkers-structured-artifact-success-pill"
+													: "nightworkers-structured-artifact-neutral-pill"
 										}`}
 									>
-										{step.done ? (
+										{step.progressStatus === "running" ? (
+											<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+										) : step.progressStatus === "failed" ? (
+											<CircleAlert className="h-3.5 w-3.5" />
+										) : step.done ? (
 											<Check className="h-3.5 w-3.5" />
 										) : (
 											displayNumber
@@ -386,6 +421,36 @@ export function PlanWorkspaceStatusView({
 						size="lg"
 					/>
 				</div>
+			) : null}
+		</div>
+	);
+}
+
+function MissionPilotPlanPhase({
+	progress,
+}: {
+	progress: MissionPilotPlanProgress;
+}) {
+	const labels: Record<string, string> = {
+		generating_artifacts: "Plan Artifactを生成しています",
+		reviewing_plan: "実装計画をレビューしています",
+		revising_plan: "レビュー指摘を反映しています",
+		attention: "確認が必要です",
+		queued: "Implementation Queueへ追加済みです",
+	};
+	const label = labels[progress.phase];
+	if (!label && !progress.lastError) return null;
+	return (
+		<div
+			className={`nightworkers-structured-artifact-card rounded border p-3 ${
+				progress.phase === "attention"
+					? "nightworkers-structured-artifact-warning"
+					: "nightworkers-structured-artifact-muted"
+			}`}
+		>
+			<div className="font-semibold">{label || progress.phase}</div>
+			{progress.lastError ? (
+				<div className="mt-1">{progress.lastError}</div>
 			) : null}
 		</div>
 	);

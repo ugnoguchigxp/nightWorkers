@@ -2,10 +2,91 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
+import { saveDesignQuestionnaireAnswers } from "../../../api/modules/questionnaire/questionnaire.service";
 import { sameOriginHeaders } from "./helpers";
 import "./setup";
 
 describe("NightWorkers task routes follow-up questionnaire", () => {
+	it("lets Mission Pilot finalize the current questions without another follow-up page", async () => {
+		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
+		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
+		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+		process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
+		process.env.ACTIVE_LLM_PROVIDER = "fixture";
+
+		try {
+			const createdRepo = await repo.createRepository({
+				name: `TEST: Mission Pilot Questionnaire ${crypto.randomUUID()}`,
+				localPath: "/Users/y.noguchi/Code/nightWorkers",
+				branch: "main",
+			});
+			const task = await repo.createTask({
+				repositoryId: createdRepo.id,
+				title: "TEST: Mission Pilot current-page finalization",
+				description: "Do not generate the legacy follow-up page",
+				status: "draft",
+			});
+			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+				title: "最初の確認",
+				questions: [
+					{
+						text: "初期スコープはどれですか？",
+						type: "radio",
+						options: ["最小", "標準"],
+					},
+				],
+			});
+			const createRes = await app.request(
+				`http://localhost/api/tasks/${task.id}/design-questionnaire`,
+				{
+					method: "POST",
+					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
+					body: JSON.stringify({}),
+				},
+			);
+			const session = await createRes.json();
+			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+				action: "follow_up",
+				rationale: "This must not be consumed by Mission Pilot finalization.",
+				questionnaire: {
+					title: "不要な追質問",
+					questions: [
+						{
+							text: "さらに回答しますか？",
+							type: "radio",
+							options: ["はい", "いいえ"],
+						},
+					],
+				},
+			});
+			const completed = await saveDesignQuestionnaireAnswers(
+				task.id,
+				session.id,
+				[
+					{
+						questionId: "q1",
+						selectedOptionIds: ["q1-o1"],
+						rankedOptionIds: [],
+						deferred: false,
+					},
+				],
+				{ completionPolicy: "finalize_current_questions" },
+			);
+			expect(completed.status).toBe("review_ready");
+			expect(completed.questionSets).toHaveLength(1);
+		} finally {
+			if (originalProvider === undefined)
+				delete process.env.ACTIVE_LLM_PROVIDER;
+			else process.env.ACTIVE_LLM_PROVIDER = originalProvider;
+			if (originalFixture === undefined)
+				delete process.env.SUPERVISOR_FIXTURE_OUTPUT;
+			else process.env.SUPERVISOR_FIXTURE_OUTPUT = originalFixture;
+			if (originalSettingsPath === undefined)
+				delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+			else process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = originalSettingsPath;
+		}
+	});
+
 	it("continues Design Questionnaire with LLM follow-up questions before Design Assembly", async () => {
 		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
 		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;

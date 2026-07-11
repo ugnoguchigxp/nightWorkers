@@ -2,8 +2,13 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
 import { toDeepRecord } from "../../../../shared/json-record";
+import type { MissionPilotPlanProgress } from "../../../../shared/schemas/mission-pilot-plan-progress.schema";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
-import { mergeTaskPreservingMissionPilot } from "../../missionPilot";
+import {
+	mergeTaskPreservingMissionPilot,
+	missionPilotPlanProgressQueryKey,
+} from "../../missionPilot";
+import { planModeWorkspaceQueryKey } from "../../specification";
 import { dedupeAndSortActivityEvents } from "../activityTranscript";
 import {
 	dedupeAndSortRunEvents,
@@ -91,6 +96,22 @@ function readReviewRunSnapshot(contextSnapshot: unknown): {
 	};
 }
 
+export function isPlanModeWorkspaceMessage(message: TaskMessage) {
+	const metadata = toDeepRecord(message.metadataJson);
+	const intent = String(metadata.intent || "");
+	const artifactKind = String(metadata.artifactKind || "");
+	return (
+		intent === "design_questionnaire_ready" ||
+		intent === "mock_blueprint" ||
+		intent === "feature_plan" ||
+		intent === "design_decision_review" ||
+		intent === "implementation_plan" ||
+		artifactKind === "plan_mode_dedicated_view" ||
+		artifactKind === "plan_mode_api_contract" ||
+		artifactKind === "plan_mode_zod_schema"
+	);
+}
+
 export function useNightWorkersRealtime({
 	activeSessionId,
 	queryClient,
@@ -141,6 +162,15 @@ export function useNightWorkersRealtime({
 				setIsRealtimeConnected(true);
 				setRealtimeStatus("connected");
 				if (activeSessionId) {
+					void queryClient.invalidateQueries({
+						queryKey: ["taskMessages", activeSessionId],
+					});
+					void queryClient.invalidateQueries({
+						queryKey: planModeWorkspaceQueryKey(activeSessionId),
+					});
+					void queryClient.invalidateQueries({
+						queryKey: missionPilotPlanProgressQueryKey(activeSessionId),
+					});
 					const subscription = latestRunSubscriptionRef.current;
 					ws?.send(
 						JSON.stringify({
@@ -188,6 +218,7 @@ export function useNightWorkersRealtime({
 							todo?: TaskRunTodo;
 							taskId?: string;
 							missionPilot?: NonNullable<Task["missionPilot"]>;
+							progress?: MissionPilotPlanProgress;
 						};
 						event?: {
 							id: string;
@@ -296,12 +327,9 @@ export function useNightWorkersRealtime({
 						void queryClient.invalidateQueries({
 							queryKey: ["llmUsage", incoming.taskId],
 						});
-						if (
-							String(toDeepRecord(incoming.metadataJson).intent) ===
-							"design_questionnaire_ready"
-						) {
+						if (isPlanModeWorkspaceMessage(incoming)) {
 							void queryClient.invalidateQueries({
-								queryKey: ["planModeWorkspace", incoming.taskId],
+								queryKey: planModeWorkspaceQueryKey(incoming.taskId),
 							});
 						}
 						queryClient.setQueryData<TaskMessage[]>(
@@ -446,6 +474,16 @@ export function useNightWorkersRealtime({
 						});
 					}
 					if (
+						msg.type === "mission_pilot.plan_progress_updated" &&
+						msg.payload?.progress &&
+						typeof msg.payload.taskId === "string"
+					) {
+						queryClient.setQueryData(
+							missionPilotPlanProgressQueryKey(msg.payload.taskId),
+							msg.payload.progress,
+						);
+					}
+					if (
 						msg.type === "mission_pilot.updated" &&
 						msg.payload?.missionPilot &&
 						typeof msg.payload.taskId === "string"
@@ -462,6 +500,9 @@ export function useNightWorkersRealtime({
 										: { ...task, missionPilot: incoming },
 								),
 							);
+						void queryClient.invalidateQueries({
+							queryKey: missionPilotPlanProgressQueryKey(missionPilotTaskId),
+						});
 					}
 				} catch {
 					// ignore malformed payload

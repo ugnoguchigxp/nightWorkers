@@ -16,12 +16,12 @@
 - Target domain: `src/modules/missionPilot` / `api/modules/missionPilot`
 - Previous `mission-pilot-mvp` plan: discarded; do not use as implementation input
 - Follow-up canonical plans:
-  - `spec/docs/mission-pilot-plan-mode-autonomy-implementation-plan.md`
+  - `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`
   - `spec/docs/mission-pilot-test-review-archive-implementation-plan.md`
 
 この文書は、Mission Pilot をタスク生成画面から開始し、既存タスク一覧の Mission Pilot variant から Play / Stop を操作し、最初のプロンプトを既存 Chat 処理へ送信するところまでの実装正本とする。
 
-この文書が扱うのは Mission Pilot 全体の最初の縦切りである。Task作成時のMission Pilot Session、一貫Context、Questionnaire自動回答、Plan Artifact順次生成、Queue直前セルフレビュー、Queue投入は後続正本 `spec/docs/mission-pilot-plan-mode-autonomy-implementation-plan.md` が所有する。Queue後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveは `spec/docs/mission-pilot-test-review-archive-implementation-plan.md` が所有する。入口だけを実装した状態を「Mission Pilot MVP 全体が完成した」と表現してはならない。
+この文書が扱うのは Mission Pilot 全体の最初の縦切りである。Task作成時のMission Pilot Session、一貫Context、Questionnaire自動回答、Plan Artifact順次生成、Queue直前セルフレビュー、Queue投入は完了済み正本 `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md` が所有する。Queue後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveは `spec/docs/mission-pilot-test-review-archive-implementation-plan.md` が所有する。入口だけを実装した状態を「Mission Pilot MVP 全体が完成した」と表現してはならない。
 
 `mission_pilot_sessions` が本書のcontrol stateを統合して所有する。独立 `mission_pilot_controls` tableは作成しない。UIで使う`MissionPilotControlSummary`はSession rowから作るread projectionであり、永続entityではない。
 
@@ -30,7 +30,7 @@
 Mission Pilot MVPの実装正本は次の3文書だけとする。
 
 1. 本書: Task生成入口、Task row variant、Play / Stop、初期Prompt exactly-once。
-2. `spec/docs/mission-pilot-plan-mode-autonomy-implementation-plan.md`: Session / canonical Context、Plan Mode、Questionnaire、Artifact、自動plan review、Queue admission。
+2. `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`: 完了済みのSession / canonical Context、Plan Mode、Questionnaire、Artifact、自動plan review、Queue admission。
 3. `spec/docs/mission-pilot-test-review-archive-implementation-plan.md`: Implementation、Test Mode、Review Mode、修正loop、Git closeout、Task completed、真のTask Archive。
 
 文書間の所有境界:

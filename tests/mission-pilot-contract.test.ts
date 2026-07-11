@@ -6,6 +6,7 @@ import {
 	missionPilotControlSummarySchema,
 	missionPilotSourceRefSchema,
 } from "../shared/schemas/mission-pilot.schema";
+import { missionPilotPlanProgressSchema } from "../shared/schemas/mission-pilot-plan-progress.schema";
 import { formatCountdown } from "../src/modules/missionPilot/components/MissionPilotControlPanel";
 import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
 import {
@@ -36,6 +37,36 @@ function summary(version = 0, desiredState: "stopped" | "playing" = "stopped") {
 }
 
 describe("Mission Pilot contract", () => {
+	it("parses typed Plan Mode progress updates", () => {
+		expect(
+			missionPilotPlanProgressSchema.parse({
+				taskId,
+				sessionId,
+				phase: "generating_artifacts",
+				desiredState: "playing",
+				version: 1,
+				contextRevision: 2,
+				currentStepKey: "view:user_flow",
+				steps: [
+					{
+						key: "view:user_flow",
+						ordinal: 4,
+						kind: "dedicated_view",
+						view: "user_flow",
+						status: "running",
+						attempt: 1,
+						artifactMessageId: null,
+						lastError: null,
+						startedAt: "2026-07-11T13:00:00.000Z",
+						finishedAt: null,
+					},
+				],
+				lastError: null,
+				updatedAt: "2026-07-11T13:00:00.000Z",
+			}),
+		).toMatchObject({ currentStepKey: "view:user_flow" });
+	});
+
 	it("accepts both task candidate source kinds and rejects unknown kinds", () => {
 		expect(
 			missionPilotSourceRefSchema.parse({

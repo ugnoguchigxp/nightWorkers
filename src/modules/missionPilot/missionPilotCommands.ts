@@ -23,6 +23,9 @@ export function stopMissionPilotTask(taskId: string, expectedVersion: number) {
 export function fetchMissionPilotQuestionnaireDraft(taskId: string) {
 	return apiFetch(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`);
 }
+export function fetchMissionPilotPlanProgress(taskId: string) {
+	return apiFetch(`/api/mission-pilot/tasks/${taskId}/plan-progress`);
+}
 export function updateMissionPilotQuestionnaireDraft(
 	taskId: string,
 	expectedVersion: number,

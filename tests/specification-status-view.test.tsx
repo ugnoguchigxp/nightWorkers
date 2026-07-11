@@ -499,6 +499,79 @@ describe("DedicatedViewPanel", () => {
 });
 
 describe("PlanWorkspaceStatusView", () => {
+	it("uses persisted Mission Pilot progress for running and completed steps", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={
+					{
+						blueprintArtifacts: [{ id: "blueprint-1", title: "Blueprint" }],
+						dataModelArtifacts: [],
+						dedicatedViewArtifacts: [
+							{ id: "blueprint-1", kind: "blueprint", title: "Blueprint" },
+						],
+					} as never
+				}
+				missionPilotPlanProgress={
+					{
+						taskId: "11111111-1111-4111-8111-111111111111",
+						sessionId: "22222222-2222-4222-8222-222222222222",
+						phase: "generating_artifacts",
+						desiredState: "playing",
+						version: 4,
+						contextRevision: 3,
+						currentStepKey: "data_model",
+						steps: [
+							{
+								key: "blueprint",
+								ordinal: 2,
+								kind: "blueprint",
+								view: "blueprint",
+								status: "completed",
+								attempt: 1,
+								artifactMessageId: "33333333-3333-4333-8333-333333333333",
+								lastError: null,
+								startedAt: "2026-07-11T13:00:00.000Z",
+								finishedAt: "2026-07-11T13:01:00.000Z",
+							},
+							{
+								key: "data_model",
+								ordinal: 3,
+								kind: "data_model",
+								view: "data_model",
+								status: "running",
+								attempt: 1,
+								artifactMessageId: null,
+								lastError: null,
+								startedAt: "2026-07-11T13:01:00.000Z",
+								finishedAt: null,
+							},
+						],
+						lastError: null,
+						updatedAt: "2026-07-11T13:01:00.000Z",
+					} as never
+				}
+				questionnaireSession={null}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={false}
+				viewDecisions={[
+					{ view: "blueprint", decision: "include" },
+					{ view: "data_model", decision: "include" },
+				]}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("Plan Artifactを生成しています");
+		expect(markup).toContain("Data Modelを生成中です。");
+		expect(markup).toContain("animate-spin");
+		expect(markup).toContain("Blueprintを再生成");
+	});
+
 	it("persists the sequential auto-generate preference in localStorage", () => {
 		const values = new Map<string, string>();
 		const storage = {

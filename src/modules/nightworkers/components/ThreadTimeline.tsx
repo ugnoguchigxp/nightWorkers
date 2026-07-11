@@ -132,6 +132,34 @@ export function findUnprojectedUserMessages(
 	});
 }
 
+export type ChronologicalTranscriptItem =
+	| { kind: "transcript"; id: string; item: TranscriptItem }
+	| { kind: "message"; id: string; message: TaskMessage };
+
+export function mergeUnprojectedMessagesChronologically(
+	transcriptItems: TranscriptItem[],
+	messages: TaskMessage[],
+): ChronologicalTranscriptItem[] {
+	return [
+		...transcriptItems.map((item, index) => ({
+			kind: "transcript" as const,
+			id: item.id,
+			item,
+			ts: transcriptItemTimestamp(item),
+			order: index,
+		})),
+		...messages.map((message, index) => ({
+			kind: "message" as const,
+			id: `unprojected-${message.id}`,
+			message,
+			ts: toMs(message.createdAt),
+			order: transcriptItems.length + index,
+		})),
+	]
+		.sort((a, b) => a.ts - b.ts || a.order - b.order)
+		.map(({ ts: _ts, order: _order, ...item }) => item);
+}
+
 export function ThreadTimeline({
 	latestRun,
 	taskMessages,
@@ -190,6 +218,14 @@ export function ThreadTimeline({
 		() => findUnprojectedUserMessages(chatMessages, transcriptItems),
 		[chatMessages, transcriptItems],
 	);
+	const chronologicalTranscriptItems = useMemo(
+		() =>
+			mergeUnprojectedMessagesChronologically(
+				filteredTranscriptItems,
+				unprojectedUserMessages,
+			),
+		[filteredTranscriptItems, unprojectedUserMessages],
+	);
 	const timelineItems = useMemo(
 		() =>
 			measureArtifactPerf(
@@ -218,11 +254,11 @@ export function ThreadTimeline({
 	);
 	const transcriptHistoryWindow = useMemo(
 		() =>
-			sliceTimelineWindow(filteredTranscriptItems, {
+			sliceTimelineWindow(chronologicalTranscriptItems, {
 				count: historyWindowCount,
 				end: historyWindowEnd,
 			}),
-		[filteredTranscriptItems, historyWindowCount, historyWindowEnd],
+		[chronologicalTranscriptItems, historyWindowCount, historyWindowEnd],
 	);
 	const timelineHistoryWindow = useMemo(
 		() =>
@@ -236,7 +272,9 @@ export function ThreadTimeline({
 		? transcriptHistoryWindow
 		: timelineHistoryWindow;
 	const visibleTranscriptItems = hasActivityTranscript
-		? transcriptHistoryWindow.items
+		? transcriptHistoryWindow.items.flatMap((item) =>
+				item.kind === "transcript" ? [item.item] : [],
+			)
 		: [];
 	const visibleTimelineItems = !hasActivityTranscript
 		? timelineHistoryWindow.items
@@ -349,17 +387,31 @@ export function ThreadTimeline({
 				</div>
 			) : null}
 			{hasActivityTranscript
-				? visibleTranscriptItems.map((item) =>
-						showDebugEvents ? (
-							<TimelineDebugFragment
+				? transcriptHistoryWindow.items.map((item) =>
+						item.kind === "message" ? (
+							<ThreadMessage
 								key={item.id}
+								messageRole="user"
+								timestamp={formatFinishedTime(item.message.createdAt)}
+							>
+								<MessagePayload
+									message={item.message}
+									onOpenArtifact={onOpenArtifact}
+									onOpenProjectFile={onOpenProjectFile}
+									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
+								/>
+							</ThreadMessage>
+						) : showDebugEvents ? (
+							<TimelineDebugFragment
+								key={item.item.id}
 								insertRuntimeSnapshot={
-									item.id === runtimeSnapshotTranscriptAnchorId
+									item.item.id === runtimeSnapshotTranscriptAnchorId
 								}
 								latestRun={latestRun}
 							>
 								<TranscriptItemView
-									item={item}
+									item={item.item}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
 									onOpenTestModeArtifact={onOpenTestModeArtifact}
@@ -368,8 +420,8 @@ export function ThreadTimeline({
 							</TimelineDebugFragment>
 						) : (
 							<NormalTranscriptItemView
-								key={item.id}
-								item={item}
+								key={item.item.id}
+								item={item.item}
 								onOpenArtifact={onOpenArtifact}
 								onOpenProjectFile={onOpenProjectFile}
 								onOpenTestModeArtifact={onOpenTestModeArtifact}
@@ -451,23 +503,6 @@ export function ThreadTimeline({
 							</TimelineDebugFragment>
 						) : null,
 					)}
-			{hasActivityTranscript
-				? unprojectedUserMessages.map((message) => (
-						<ThreadMessage
-							key={`unprojected-${message.id}`}
-							messageRole="user"
-							timestamp={formatFinishedTime(message.createdAt)}
-						>
-							<MessagePayload
-								message={message}
-								onOpenArtifact={onOpenArtifact}
-								onOpenProjectFile={onOpenProjectFile}
-								onOpenTestModeArtifact={onOpenTestModeArtifact}
-								onOpenReviewModeArtifact={onOpenReviewModeArtifact}
-							/>
-						</ThreadMessage>
-					))
-				: null}
 			{shouldRenderTrailingRuntimeSnapshot ? (
 				<RuntimePromptSnapshotCard latestRun={latestRun} />
 			) : null}
@@ -1179,6 +1214,13 @@ export function parseUnifiedDiffSections(
 function normalizeDiffPath(path: string): string {
 	if (path.startsWith("a/") || path.startsWith("b/")) return path.slice(2);
 	return path;
+}
+
+function transcriptItemTimestamp(item: TranscriptItem): number {
+	if (item.kind === "user_turn" || item.kind === "assistant_turn") {
+		return toMs(item.events[0]?.createdAt);
+	}
+	return toMs(item.event.createdAt);
 }
 
 function toMs(value: unknown): number {

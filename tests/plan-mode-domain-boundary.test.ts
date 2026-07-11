@@ -157,6 +157,8 @@ describe("Plan Mode domain boundaries", () => {
 		expect(workspaceShell).toContain("selectPlanModeWorkspaceMessages");
 		expect(workspaceShell).not.toContain("mergeWorkspaceTaskMessages");
 		expect(workspaceShell).not.toContain("isReviewedSpecificationMessage");
+		expect(workspaceShell).not.toContain("onStartTestModeRun");
+		expect(workspaceShell).not.toContain("buildTestModeWorkflowSteps");
 	});
 
 	it("allows Plan Mode Questionnaire creation without a Blueprint source", () => {

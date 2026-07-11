@@ -1,0 +1,331 @@
+import crypto from "node:crypto";
+import { count, eq } from "drizzle-orm";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { db } from "../api/db/client";
+import {
+	missionPilotContextSnapshots,
+	missionPilotSessions,
+} from "../api/db/mission-pilot-schema";
+import { repositories, taskMessages, tasks } from "../api/db/schema";
+import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
+import * as planRepo from "../api/modules/missionPilot/mission-pilot-plan.repository";
+import { normalizeMissionPilotPlanReview } from "../shared/schemas/mission-pilot-plan-review.schema";
+
+const repositoryIds: string[] = [];
+
+beforeAll(() => ensureNightWorkersSchema());
+afterEach(async () => {
+	for (const id of repositoryIds.splice(0)) {
+		await db.delete(repositories).where(eq(repositories.id, id));
+	}
+});
+
+async function createFixture() {
+	const repositoryId = crypto.randomUUID();
+	const taskId = crypto.randomUUID();
+	repositoryIds.push(repositoryId);
+	return db.transaction(async (tx) => {
+		await tx.insert(repositories).values({
+			id: repositoryId,
+			name: "Mission Pilot plan pipeline",
+			localPath: "/tmp/mission-pilot-plan-pipeline",
+			branch: "main",
+		});
+		const [task] = await tx
+			.insert(tasks)
+			.values({
+				id: taskId,
+				repositoryId,
+				title: "Generate and review plan",
+				objective: "Generate required artifacts and queue the task",
+				acceptanceCriteria: "A passing review exists before queue admission",
+				status: "ready",
+			})
+			.returning();
+		const session = await createSession(
+			{
+				task,
+				sourceKind: "mission_task_candidate",
+				sourceId: crypto.randomUUID(),
+			},
+			tx,
+		);
+		return { task, session };
+	});
+}
+
+describe("Mission Pilot plan pipeline persistence", () => {
+	it("does not let warning-only findings block Queue admission", () => {
+		const review = normalizeMissionPilotPlanReview({
+			verdict: "revise",
+			summary: "Minor verification detail remains.",
+			coverage: {
+				goal: "pass",
+				scope: "pass",
+				acceptanceCriteria: "pass",
+				implementationSteps: "pass",
+				verification: "pass",
+				artifactConsistency: "pass",
+				riskAndSafety: "pass",
+			},
+			findings: [
+				{
+					severity: "warning",
+					artifactKind: "feature_plan",
+					sourceId: "plan-1",
+					issue: "Optional detail",
+					recommendation: "Clarify when convenient",
+				},
+			],
+			revisionTargets: [
+				{
+					artifactKind: "feature_plan",
+					sourceId: "plan-1",
+					instruction: "Clarify the optional detail",
+				},
+			],
+		});
+		expect(review).toMatchObject({
+			verdict: "pass",
+			revisionTargets: [],
+			coverage: {
+				goal: "pass",
+				scope: "pass",
+				acceptanceCriteria: "pass",
+				implementationSteps: "pass",
+				verification: "pass",
+				artifactConsistency: "pass",
+				riskAndSafety: "pass",
+			},
+		});
+	});
+
+	it("allows only one database-backed pipeline lease owner", async () => {
+		const fixture = await createFixture();
+		const firstOwner = `${process.pid}:owner-1`;
+		const secondOwner = `${process.pid}:owner-2`;
+		await db
+			.update(missionPilotSessions)
+			.set({ desiredState: "playing" })
+			.where(eq(missionPilotSessions.id, fixture.session.id));
+		const first = await planRepo.claimPipelineLease({
+			taskId: fixture.task.id,
+			owner: firstOwner,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const second = await planRepo.claimPipelineLease({
+			taskId: fixture.task.id,
+			owner: secondOwner,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		expect(first?.leaseOwner).toBe(firstOwner);
+		expect(second).toBeNull();
+		expect(await planRepo.recoverPipelineLeases()).toEqual([]);
+		await planRepo.releasePipelineLease(fixture.session.id, firstOwner);
+		expect(
+			await planRepo.claimPipelineLease({
+				taskId: fixture.task.id,
+				owner: secondOwner,
+				expiresAt: new Date(Date.now() + 60_000),
+			}),
+		).toMatchObject({ leaseOwner: secondOwner });
+		await planRepo.releasePipelineLease(fixture.session.id, secondOwner);
+		await planRepo.claimPipelineLease({
+			taskId: fixture.task.id,
+			owner: "2147483647:dead-owner",
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		expect(await planRepo.recoverPipelineLeases()).toEqual([
+			fixture.session.id,
+		]);
+	});
+
+	it("keeps Artifact Context append idempotent by source message", async () => {
+		const fixture = await createFixture();
+		const sourceMessageId = crypto.randomUUID();
+		const first = await planRepo.appendPlanContext(
+			fixture.session.id,
+			"artifact",
+			{ stepKey: "feature_plan", sourceMessageId },
+		);
+		const second = await planRepo.appendPlanContext(
+			fixture.session.id,
+			"artifact",
+			{ stepKey: "feature_plan", sourceMessageId },
+		);
+		const [snapshotCount] = await db
+			.select({ value: count() })
+			.from(missionPilotContextSnapshots)
+			.where(eq(missionPilotContextSnapshots.sessionId, fixture.session.id));
+		expect(first.contextRevision).toBe(2);
+		expect(second.contextRevision).toBe(2);
+		expect(snapshotCount.value).toBe(2);
+	});
+
+	it("rejects a divergent Session without committing an orphan Context snapshot", async () => {
+		const fixture = await createFixture();
+		await db
+			.update(missionPilotSessions)
+			.set({ contextDigest: "diverged" })
+			.where(eq(missionPilotSessions.id, fixture.session.id));
+		await expect(
+			planRepo.appendPlanContext(fixture.session.id, "artifact", {
+				stepKey: "feature_plan",
+				sourceMessageId: crypto.randomUUID(),
+			}),
+		).rejects.toThrow("diverged");
+		const [snapshotCount] = await db
+			.select({ value: count() })
+			.from(missionPilotContextSnapshots)
+			.where(eq(missionPilotContextSnapshots.sessionId, fixture.session.id));
+		expect(snapshotCount.value).toBe(1);
+	});
+
+	it("turns a failed step into skipped when routing disables it", async () => {
+		const fixture = await createFixture();
+		const [step] = await planRepo.synchronizePlanSteps(fixture.session.id, [
+			{
+				key: "data_model",
+				kind: "data_model",
+				view: "data_model",
+				ordinal: 1,
+				required: true,
+				enabled: true,
+				decision: "include",
+				status: "pending",
+			},
+		]);
+		await planRepo.failPlanStep(step.id, "provider unavailable");
+		const [skipped] = await planRepo.synchronizePlanSteps(fixture.session.id, [
+			{
+				key: "data_model",
+				kind: "data_model",
+				view: "data_model",
+				ordinal: 1,
+				required: true,
+				enabled: false,
+				decision: "include",
+				status: "skipped",
+			},
+		]);
+		expect(skipped).toMatchObject({ status: "skipped" });
+	});
+
+	it("reconciles a failed step to completed when its Artifact already exists", async () => {
+		const fixture = await createFixture();
+		const pendingStep = {
+			key: "feature_plan",
+			kind: "feature_plan" as const,
+			view: "feature_plan" as const,
+			ordinal: 1,
+			required: true,
+			enabled: true,
+			decision: "include" as const,
+			status: "pending" as const,
+		};
+		const [step] = await planRepo.synchronizePlanSteps(fixture.session.id, [
+			pendingStep,
+		]);
+		await planRepo.failPlanStep(step.id, "response lost after persistence");
+		const [completed] = await planRepo.synchronizePlanSteps(
+			fixture.session.id,
+			[{ ...pendingStep, status: "completed" }],
+		);
+		expect(completed).toMatchObject({ status: "completed" });
+	});
+
+	it("claims each step once and advances Context after persisted evidence", async () => {
+		const fixture = await createFixture();
+		const [message] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Feature Plan",
+				messageType: "markdown_document",
+				metadataJson: { intent: "feature_plan" },
+			})
+			.returning();
+		const [step] = await planRepo.synchronizePlanSteps(fixture.session.id, [
+			{
+				key: "feature_plan",
+				kind: "feature_plan",
+				view: "feature_plan",
+				ordinal: 1,
+				required: true,
+				enabled: true,
+				decision: "include",
+				status: "pending",
+			},
+		]);
+		const claimed = await planRepo.claimPlanStep(step.id);
+		expect(claimed).toMatchObject({ status: "running", attempt: 1 });
+		expect(await planRepo.claimPlanStep(step.id)).toBeNull();
+
+		const context = await planRepo.appendPlanContext(
+			fixture.session.id,
+			"artifact",
+			{ stepKey: "feature_plan", sourceMessageId: message.id },
+		);
+		expect(context).toMatchObject({ contextRevision: 2 });
+		await planRepo.completePlanStep(step.id, {
+			artifactMessageId: message.id,
+			evidence: {
+				sourceMessageId: message.id,
+				contextRevision: context?.contextRevision,
+			},
+		});
+		expect(await planRepo.listPlanSteps(fixture.session.id)).toEqual([
+			expect.objectContaining({
+				status: "completed",
+				artifactMessageId: message.id,
+			}),
+		]);
+	});
+
+	it("stores review evidence against the exact Context revision", async () => {
+		const fixture = await createFixture();
+		const [message] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Feature Plan",
+				messageType: "markdown_document",
+				metadataJson: { intent: "feature_plan" },
+			})
+			.returning();
+		await planRepo.createPlanReview({
+			sessionId: fixture.session.id,
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+			featurePlanMessageId: message.id,
+			attempt: 1,
+			review: {
+				verdict: "pass",
+				summary: "Implementation-ready",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "pass",
+					verification: "pass",
+					artifactConsistency: "pass",
+					riskAndSafety: "pass",
+				},
+				findings: [],
+				revisionTargets: [],
+			},
+		});
+		expect(
+			await planRepo.getLatestPlanReview(fixture.session.id),
+		).toMatchObject({
+			verdict: "pass",
+			contextRevision: 1,
+			contextDigest: fixture.session.contextDigest,
+		});
+	});
+});
