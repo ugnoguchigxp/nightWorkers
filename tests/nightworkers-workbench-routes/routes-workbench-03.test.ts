@@ -404,6 +404,65 @@ describe("NightWorkers workbench routes", () => {
 		expect(body.task.status).toBe("ready");
 	});
 
+	it("regenerates a Mermaid view from a structured browser render failure", async () => {
+		const { task } = await createWorkbenchTask({
+			title: "Mermaid repair task",
+		});
+		const sourceMessage = await repo.createTaskMessage({
+			taskId: task.id,
+			role: "assistant",
+			content:
+				'```mermaid\nflowchart TD\n  A["User"] --> B["Details\\\\n/threads/42"]\n```',
+			messageType: "markdown_document",
+			payloadJson: {
+				artifactKind: "plan_mode_dedicated_view",
+				view: "user_flow",
+				source: "dedicated-view-generator",
+				title: "User Flow",
+				diagramKind: "flowchart",
+			},
+		});
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+			JSON.stringify({
+				artifactKind: "plan_mode_dedicated_view",
+				view: "user_flow",
+				title: "Repaired User Flow",
+				markdown: '```mermaid\nflowchart TD\n  A["User"] --> B["Details"]\n```',
+				diagramKind: "flowchart",
+			}),
+		);
+
+		const res = await app.request(
+			`http://localhost/api/tasks/${task.id}/plan-mode/views/user_flow/generate`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					mermaidRenderRepair: {
+						sourceMessageId: sourceMessage.id,
+						stage: "chart_render",
+						error: "Render failed on line 2",
+						chart: 'flowchart TD\n  A["User"] --> B["Details"]',
+					},
+				}),
+			},
+		);
+
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		const prompt = vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[1];
+		expect(prompt).toContain("Render failed on line 2");
+		expect(prompt).toContain('A["User"] --> B["Details"]');
+		expect(body.message.metadataJson.generation.repair).toEqual({
+			source: "client_mermaid_render",
+			sourceMessageId: sourceMessage.id,
+			stage: "chart_render",
+		});
+		expect(body.message.metadataJson.sourceMessageIds).toContain(
+			sourceMessage.id,
+		);
+	});
+
 	it("returns a validation error instead of changing task status for incomplete drafts", async () => {
 		const { task } = await createWorkbenchTask({ title: "New Session" });
 

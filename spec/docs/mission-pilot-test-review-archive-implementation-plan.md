@@ -2,26 +2,43 @@
 
 ## Status
 
-- Plan status: `reviewed-ready-for-implementation`
-- Document review completed: 2026-07-10
+- Plan status: `reviewed-blocked-by-pre-queue-remediation`
+- Document review completed: 2026-07-11
 - Implementation status: `not_started`
 - MVP slice: `3/3` — Implementation・Test Mode・Review Mode・Git closeout・true Task Archive
-- Canonical plan for this phase: this document
+- Canonical plan for post-Queue remaining work: this document
+- Required prerequisite: `spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`
 - Previous phase: `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md` (completed)
-- Entry design: `spec/docs/mission-pilot-task-entry-design.md`
-- Baseline reviewed: 2026-07-10, `main` at `d08c7355bf88c6dc9e46152aae7f7be0dbcd7740`
-- Current working tree reviewed: 2026-07-10。Review domainの`api/modules/review` / `src/modules/review`移行中状態を含む
-- Runtime evidence reviewed: 2026-07-10 local `sqlite.db`
+- Entry design: `spec/archive/mission-pilot-task-entry-design.md` (completed)
+- Baseline reviewed: 2026-07-11, `main` at `c597bdd522ef7e4594157131c9d1865ce9ea148b`
+- Current working tree reviewed: 2026-07-11。既存の未commit test変更は本計画の変更対象・baseline evidenceへ含めない
+- Runtime evidence reviewed: 2026-07-11 local `sqlite.db`
 - Target domain: `api/modules/missionPilot` / `src/modules/missionPilot`
 - Target runtime span: Implementation Queue claim後から、Implementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveまで
 
-この文書を、Mission PilotがImplementation Queueへ投入された後も同じMission Pilot Sessionとcanonical Context chainを維持し、実装、独立Test Mode、独立Review Mode、修正loop、Git closeout、Task完了、Task Archiveまで自律進行するための実装正本とする。
+この文書を、Mission PilotがImplementation Queueへ正常に引き渡された後も同じMission Pilot Sessionとcanonical Context chainを維持し、実装、独立Test Mode、独立Review Mode、修正loop、Git closeout、Task完了、Task Archiveまで自律進行するための実装正本とする。
 
 Mission Pilot専用画面は作らない。既存Task Chat、Test Mode artifact、Review Status artifact、Task rowへ進捗と停止機会を投影する。ただし、自動進行の正本はbrowser UI、Chat本文、リンククリック、React stateではなく、`api/modules/missionPilot`のdurable coordinatorと永続state machineである。
 
 本書の「Archive」はQueue entryの`execution_archived`だけでも、Taskの`cancelled`流用でもない。Taskが完了条件、Test evidence、Review pass、Git closeoutを満たした後に、Task自身を明示的な`archived`終端状態へ移すことを指す。
 
-本書は3文書で構成するMission Pilot MVPの最終sliceである。前2文書のTask生成、Play、Session / Context、Plan Mode、Questionnaire、Artifact、Queue admissionを入力契約とし、本書のTask `archived`までを同一Sessionで完了する統合E2EがMVP全体の最終acceptance gateとなる。Project Evaluation再実行と評価結果からの次Task生成はMVP後続であり、このgateへ含めない。
+本書は3文書で構成するMission Pilot MVPの最終sliceである。前2文書のTask生成、Play、Session / Context、Plan Mode、Questionnaire、Artifact、Queue admissionを入力契約とする。ただし、完了済みSlice 1/2に確認されたpre-Queue runtime handoff不整合は独立したremediation planで修正し、本書の実装scopeへ混ぜない。
+
+remediation plan完了後、本書のTask `archived`までを同一Sessionで完了する統合E2EをMVP全体の最終acceptance gateとする。Project Evaluation再実行と評価結果からの次Task生成はMVP後続であり、このgateへ含めない。
+
+### 0.1 Prerequisite boundary
+
+本書の実装開始条件は、`spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`が完了し、次のhandoff contractがfocused testとE2Eで確認済みであることとする。
+
+- Session `desired_state === playing`。
+- Session `phase === queued`。
+- active Implementation Queue entryがexactly one。
+- Queue pass済みlatest Context revision / digestが固定済み。
+- exact Feature Plan / Verification Document / Plan review refsが取得可能。
+- Queue admission前のImplementation / Test / Review runが存在しない。
+- Taskがnon-terminal。
+
+本書は初回Play、汎用WorkBench intake、Questionnaire生成、Plan Artifact生成、Plan self-review、Queue entry作成の修正を行わない。これらを変更する必要が判明した場合はremediation planを更新し、本書へ実装を混在させない。
 
 ## 1. 今回の計画が受け止める現状の失敗
 
@@ -44,9 +61,9 @@ Mission Pilot専用画面は作らない。既存Task Chat、Test Mode artifact�
 15. Queue entryのArchiveとTaskのArchiveが別概念として契約化されていない。
 16. Mission Pilotのcanonical ContextはQueueまで計画済みだが、Implementation / Test / Review / closeout evidenceを継続して追加するschemaが未定義である。
 
-### 1.1 2026-07-10 local runtime snapshot
+### 1.1 2026-07-10 historical post-run snapshot
 
-`sqlite.db`の現在値では、同一Taskについて次の分断を確認した。
+2026-07-10時点の`sqlite.db`では、同一Taskについて次の分断を確認した。
 
 ```text
 Task: cancelled
@@ -62,6 +79,12 @@ Review commit record: needs_human
 ```
 
 これは「各runが終了した」ことと「Mission PilotがTaskを完了しArchiveした」ことが同義ではない証拠である。本書ではこの状態を正常完了として扱わない。
+
+### 1.2 2026-07-11 pre-Queue runtime failureの扱い
+
+2026-07-11 local runtimeでは、Queue entryなしのまま`workbench_intake` Implementation runが完了し、Task `completed` / Mission Pilot Session `attention`へ分断した状態を確認した。このfailureは本書のpost-Queue state machineへ取り込まず、prerequisite remediation planの修正・回帰fixtureとして扱う。
+
+本書は、そのfailureをTask status rollback、Queue entry backfill、initial Play変更によって修復しない。remediation完了後に新規または明示的にreconciledされたhealthy handoffだけを入力として受け付ける。
 
 ## 2. 目的
 
@@ -251,6 +274,9 @@ Queue admission済みContext
 
 ### 5.2 含まない
 
+- initial Play / generic WorkBench intakeのrouting修正。
+- Questionnaire / Plan Artifact / Plan self-review / Queue admissionのhandoff修正。
+- Queue admission前にterminal化した既存Sessionのreconcile / rollback。
 - Mission Pilot専用page / modal / wizard。
 - Chat transcript summarization。
 - Chat contentをContextへ取り込むこと。
@@ -266,6 +292,8 @@ Queue admission済みContext
 ## 6. 現在の実装状態と再利用境界
 
 ### 6.1 Queue / Implementation
+
+`api/modules/missionPilot/mission-pilot-plan-coordinator.service.ts`は前段Artifact生成、Plan self-review、Queue admissionまで実装済みである。ただし、初回PlayからQueue admissionまでのruntime handoff修正はprerequisite remediation planが所有する。本書はその修正を再実装しない。
 
 `api/modules/nightworkers/run-orchestration/queues.ts`はImplementation Queue entryをclaimし、`startTaskRun(..., executionMode: "implementation")`を開始する。capacity、lease、processor slot、sequenceを既に持つため、Mission Pilotはこのschedulerを迂回しない。
 
@@ -670,6 +698,35 @@ unique `(session_id, attempt)`。Session `active_closeout_id`がcurrent attempt�
 
 active archive recordはTaskごとに最大1件とする。Restore時にrowを削除しない。
 
+### 9.7 `mission_pilot_events`
+
+前段実装では汎用outboxが意図的に見送られ、現在のDBに`mission_pilot_events`は存在しない。本phaseではRun、Review、Git closeout、Task completion、Archiveを跨ぐexactly-once progressionとresponse-loss recoveryに必要なため、post-Queue state machineのfoundationとして追加する。
+
+| column | type | rule |
+| --- | --- | --- |
+| `id` | text PK | event ID |
+| `session_id` | text FK | Mission owner |
+| `task_id` | text FK | Task boundary |
+| `event_type` | text | typed event name |
+| `phase` | text | phase at emission |
+| `cycle` | integer nullable | phase cycle |
+| `context_revision` | integer | exact Context revision |
+| `context_digest` | text | stale-response check |
+| `dedupe_key` | text | source-domain exactly-once key |
+| `source_kind` | text | queue / task_run / verification / review / git / task_archive / coordinator |
+| `source_id` | text nullable | source row/event/run ID |
+| `payload_json` | JSON | refs and normalized decision only |
+| `process_status` | text | pending / processing / processed / failed |
+| `attempt_count` | integer | durable retry count |
+| `available_at` | timestamp | retry scheduling |
+| `processed_at` | timestamp nullable | consumer completion |
+| `last_error` | text nullable | stable diagnostic |
+| `created_at` / `updated_at` | timestamp | audit |
+
+unique `(session_id, dedupe_key)`。domain mutationと同一transactionにできるeventは同時insertする。TaskRun / Review / Git等の別transaction境界はsource rowとdedupe keyからreconcile可能にし、publish成功だけをevent発生証拠にしない。
+
+pre-Queue remediationはこのtableを必須としない。最初のeventはhealthy Queue handoffを読み取って作る`queue.entry_claimed`またはpost-Queue coordinatorのassociation eventとし、過去のpre-Queue step履歴をmigrationで擬似event化しない。
+
 ## 10. Canonical Context extension
 
 前段`MissionPilotContext`へpost-Queue sectionを追加する。
@@ -753,7 +810,7 @@ raw artifactは既存artifact store / event ledgerに置き、ContextはID、dig
 
 ## 11. Typed domain events
 
-前段event schemaへ次を追加する。
+本phaseで追加するevent schemaへ次を定義する。
 
 ```text
 queue.entry_claimed
@@ -785,11 +842,13 @@ mission_pilot.attention_required
 
 event payloadは少なくとも`eventId`, `sessionId`, `taskId`, `phase`, `cycle`, `contextRevision`, `contextDigest`, `occurredAt`を持つ。
 
-すべて前段`mission_pilot_events` ledgerへappendする。post-Queue専用の第二event tableを作らない。TaskRun / Review / Git domain event adapterも、Mission eventのdedupe keyを作ってledgerへtransactionalまたはreconcilableに記録する。
+すべて本phaseの`mission_pilot_events` ledgerへappendする。TaskRun / Review / Git domain event adapterも、Mission eventのdedupe keyを作ってledgerへtransactionalまたはreconcilableに記録する。
 
 TaskRunのgeneric eventをMission eventへ変換するadapterは、run IDを`mission_pilot_phase_runs`で照合する。Task title、message本文、final report文字列のregexでMission eventを作らない。
 
 ## 12. Queue claimからImplementation開始
+
+このsectionはprerequisite handoff contractを満たすSession / Queue entryだけを入力として受け付ける。Queue entryがない、Taskがterminal、Queue前unexpected runがある、またはContext / Verification / review refsが欠ける場合はpost-Queue coordinatorで補修せず`attention`へ停止し、remediation境界のfailureとして扱う。
 
 ### 12.1 Association
 
@@ -1458,6 +1517,7 @@ API handlerはstate machineを再実装せずapplication serviceへ委譲する�
 - `mission-pilot-archive.service.ts`
 - `mission-pilot-recovery.service.ts`
 - `mission-pilot-post-queue-events.ts`
+- `mission-pilot-event.repository.ts`
 - `ports/mission-pilot-run.port.ts`
 - `ports/mission-pilot-verification.port.ts`
 - `ports/mission-pilot-review.port.ts`
@@ -1477,11 +1537,13 @@ shared:
 - `shared/schemas/mission-pilot-review.schema.ts`
 - `shared/schemas/mission-pilot-closeout.schema.ts`
 - `shared/schemas/task-archive.schema.ts`
-- existing mission-pilot context / event schema extension。
+- `shared/schemas/mission-pilot-event.schema.ts`。
+- existing mission-pilot context schema extension。
 
 DB:
 
 - `api/db/mission-pilot-schema.ts` extension。
+- `api/db/mission-pilot-event-schema.ts`。
 - `api/db/task-archive-schema.ts`。
 - bootstrap registration。
 - formal Drizzle migration。
@@ -1501,31 +1563,35 @@ integration changes:
 
 ### Phase 1: Schema / lifecycle foundation
 
-1. shared execution / test / review / closeout / archive schemaを追加する。
+1. shared execution / test / review / closeout / archive / event schemaを追加する。
 2. Mission Pilot phase enumを拡張する。
-3. phase run、test snapshot、review decision、closeout、archive record tableを追加する。
-4. Task `archived`, `completed_at`, `archived_at` migrationを追加する。
-5. current cancelled-as-archive semanticsをfeature flag下で分離する。
-6. repository / service / transaction helperを追加する。
+3. `mission_pilot_events` ledgerとdedupe / process status repositoryを追加する。
+4. phase run、test snapshot、review decision、closeout、archive record tableを追加する。
+5. Task `archived`, `completed_at`, `archived_at` migrationを追加する。
+6. current cancelled-as-archive semanticsをfeature flag下で分離する。
+7. repository / service / transaction helperを追加する。
 
 完了gate:
 
 - fresh DB / existing DB migration成功。
+- duplicate event / response lossをdedupeできる。
 - archived / cancelled / failedが区別される。
 - old queue rowsを破壊しない。
 
 ### Phase 2: Queue / Implementation continuation
 
-1. Queue claimへMission Pilot portを接続する。
-2. phase run relationを作る。
-3. Implementation Context projectionを接続する。
-4. parent Task status projectionをexecution mode別に分ける。
-5. implementation completion gateを実装する。
-6. Context revision appendを実装する。
+1. prerequisite handoff contractをpreflightで検証する。
+2. Queue claimへMission Pilot portを接続する。
+3. phase run relationを作る。
+4. Implementation Context projectionを接続する。
+5. parent Task status projectionをexecution mode別に分ける。
+6. implementation completion gateを実装する。
+7. Context revision appendを実装する。
 
 完了gate:
 
 - Queueからexisting schedulerでImplementationが始まる。
+- Queue前failureをbackfill / rollbackせずattentionへ停止する。
 - implementation run completedだけでTask completedにならない。
 - open Todo / security failureでTestが始まらない。
 
@@ -1607,6 +1673,8 @@ integration changes:
 5. Role Router別model Context continuity evidenceを確認する。
 6. internal module boundaryを検査する。
 7. docs / READMEの利用説明を最終実装へ合わせる。
+
+full Mission Pilot E2EはTask生成からArchiveまで通すが、本phaseの実装変更としてpre-Queue codeを修正しない。pre-Queue failureが再発した場合はprerequisite remediationの回帰として切り分け、本phaseへ修正scopeを移さない。
 
 ## 31. Test plan
 
@@ -1829,24 +1897,24 @@ raw Chat contentをlog / metric labelへ入れない。
 ## 36. Verification commands
 
 ```bash
-bun run test run <mission-pilot-post-queue-state-tests>
-bun run test run <mission-pilot-implementation-gate-tests>
-bun run test run <mission-pilot-test-mode-tests>
-bun run test run <mission-pilot-test-rework-tests>
-bun run test run <mission-pilot-review-target-tests>
-bun run test run <mission-pilot-review-gate-tests>
-bun run test run <mission-pilot-closeout-tests>
-bun run test run <task-archive-lifecycle-tests>
-bun run test run <mission-pilot-recovery-tests>
-bun run test run <manual-workflow-regression-tests>
+bun run test run tests/mission-pilot-post-queue-state.test.ts
+bun run test run tests/mission-pilot-implementation-gate.test.ts
+bun run test run tests/mission-pilot-test-mode.test.ts
+bun run test run tests/mission-pilot-test-rework.test.ts
+bun run test run tests/mission-pilot-review-target.test.ts
+bun run test run tests/mission-pilot-review-gate.test.ts
+bun run test run tests/mission-pilot-closeout.test.ts
+bun run test run tests/task-archive-lifecycle.test.ts
+bun run test run tests/mission-pilot-post-queue-recovery.test.ts
+bun run test run tests/mission-pilot-manual-workflow-regression.test.ts
 bun run typecheck
 bun run check:docs
 bun run verify:base
-bun run test:e2e -- <mission-pilot-through-archive-spec>
+bun run test:e2e -- tests/e2e/mission-pilot-through-archive.spec.ts
 git diff --check
 ```
 
-実装時は`package.json`と`scripts/verify.mjs`の最新gateを再確認する。代表verifyがformat / typecheck / lint / testを含む場合は、closeout evidenceとして重複実行しない。
+上記の新規test fileは対応phaseで追加する。実装時は`package.json`と`scripts/verify.mjs`の最新gateを再確認する。代表verifyがformat / typecheck / lint / testを含む場合は、closeout evidenceとして重複実行しない。
 
 ## 37. Rollout strategy
 
@@ -1914,7 +1982,9 @@ git diff --check
 
 ## 40. 前後phaseとの接続
 
-前段 `mission-pilot-plan-mode-autonomy-implementation-plan.md` のQueue admissionで作られたlatest pass Context revisionが本書のinitial inputとなる。
+completed baselineは`spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`である。その実装後に確認されたpre-Queue handoff不整合は`spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`が所有する。
+
+remediation planのQueue handoff acceptanceが成功し、active Queue entryとlatest pass Context revisionが揃った時点を本書のinitial inputとする。本書は前段修正を再実装しない。
 
 本書完了時のfinal Contextは次を持つ。
 
