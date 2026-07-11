@@ -14,6 +14,7 @@ import type {
 	MissionGoal,
 	MissionTaskCandidate,
 } from "../../../../shared/schemas/task-generation.schema";
+import { MissionPilotCreateButton } from "../../missionPilot";
 import {
 	ActiveChip,
 	ComplexityChip,
@@ -38,6 +39,7 @@ export type TaskGenerationTreeRowProps = {
 	expanded: ExpandedState;
 	selectedIds: string[];
 	busy: boolean;
+	busyAction: string | null;
 	onToggleGoal: (goalId: string) => void;
 	onToggleMission: (missionId: string) => void;
 	onToggleSelected: (candidateId: string) => void;
@@ -50,6 +52,7 @@ export type TaskGenerationTreeRowProps = {
 	onDecomposeMission: (mission: Mission) => void;
 	onDeleteMission: (mission: Mission) => void;
 	onCreateCandidate: (candidate: UnifiedTaskCandidate) => void;
+	onCreateMissionPilot: (candidate: UnifiedTaskCandidate) => void;
 	onDismissCandidate: (candidate: UnifiedTaskCandidate) => void;
 };
 
@@ -58,6 +61,7 @@ export function TaskGenerationTreeRowView({
 	expanded,
 	selectedIds,
 	busy,
+	busyAction,
 	onToggleGoal,
 	onToggleMission,
 	onToggleSelected,
@@ -70,6 +74,7 @@ export function TaskGenerationTreeRowView({
 	onDecomposeMission,
 	onDeleteMission,
 	onCreateCandidate,
+	onCreateMissionPilot,
 	onDismissCandidate,
 }: TaskGenerationTreeRowProps) {
 	const { t } = useTranslation();
@@ -235,9 +240,11 @@ export function TaskGenerationTreeRowView({
 			emptyCell={emptyCell}
 			selected={selectedIds.includes(row.candidate.id)}
 			busy={busy}
+			busyAction={busyAction}
 			onToggleSelected={onToggleSelected}
 			onOpenCandidate={onOpenCandidate}
 			onCreateCandidate={onCreateCandidate}
+			onCreateMissionPilot={onCreateMissionPilot}
 			onDismissCandidate={onDismissCandidate}
 		/>
 	);
@@ -268,9 +275,11 @@ function CandidateRow({
 	emptyCell,
 	selected,
 	busy,
+	busyAction,
 	onToggleSelected,
 	onOpenCandidate,
 	onCreateCandidate,
+	onCreateMissionPilot,
 	onDismissCandidate,
 }: {
 	candidate: UnifiedTaskCandidate;
@@ -278,9 +287,11 @@ function CandidateRow({
 	emptyCell: ReactNode;
 	selected: boolean;
 	busy: boolean;
+	busyAction: string | null;
 	onToggleSelected: (candidateId: string) => void;
 	onOpenCandidate: (candidate: UnifiedTaskCandidate) => void;
 	onCreateCandidate: (candidate: UnifiedTaskCandidate) => void;
+	onCreateMissionPilot: (candidate: UnifiedTaskCandidate) => void;
 	onDismissCandidate: (candidate: UnifiedTaskCandidate) => void;
 }) {
 	const { t } = useTranslation();
@@ -362,6 +373,11 @@ function CandidateRow({
 					>
 						<ClipboardCheck className="h-3.5 w-3.5" />
 					</IconActionButton>
+					<MissionPilotCreateButton
+						disabled={busy || candidate.status !== "candidate"}
+						busy={busyAction === `candidate:mission-pilot:${candidate.id}`}
+						onClick={() => onCreateMissionPilot(candidate)}
+					/>
 					<IconActionButton
 						label={t("projectDetail.mission.deleteCandidate")}
 						onClick={() => onDismissCandidate(candidate)}

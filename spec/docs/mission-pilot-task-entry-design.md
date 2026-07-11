@@ -4,7 +4,10 @@
 
 - Design status: `reviewed-ready-for-implementation`
 - Document review completed: 2026-07-10
-- Implementation status: `not_started`
+- Implementation status: `implemented`
+- Deterministic verification completed: 2026-07-11
+- Browser verification completed: `NW-E2E-MISSION-PILOT-001`でTask作成、同一画面維持、Sidebar / Composer controls、全8 themeのplaying token smoke、Stop、reload復元
+- Live LLM verification: 未実行（`verify:live` と実provider Playはdeterministic gateから分離）
 - MVP slice: `1/3` — Task生成入口・Play / Stop・初期Prompt exactly-once
 - Canonical document for this slice: this document
 - Baseline reviewed: 2026-07-10, `main` at `d08c7355bf88c6dc9e46152aae7f7be0dbcd7740`
@@ -94,7 +97,7 @@ slice 1だけを先に実装する場合も、独立control table、別Session�
 - Mission Pilot variant だけ、タイトル上へ Play / Stop の操作を重ねる。
 - 再生中はタスク行全体を緑色にし、緑の Glow を出す。
 - タスクタイトルをクリックした場合は、既存の Chat 画面へフォーカスする。
-- フォーカス中の Mission Pilot タスクでは、Composer toolbar の中央に Play / Stop を並べる。
+- フォーカス中の Mission Pilot タスクでは、Composer左上のWebSocket health indicator隣へ単一のMission Pilot control panelを置く。
 
 ## 3. 成功条件
 
@@ -112,7 +115,7 @@ slice 1だけを先に実装する場合も、独立control table、別Session�
 10. Play を押すと、Task に保存済みの初期プロンプトが user message として一度だけ保存される。
 11. Play は既存 Workbench Chat intake と同じ routing / Plan Mode gate を通る。
 12. 初期プロンプトの送信後、タスクをクリックすると既存 Chat timeline に user message と LLM の応答または開始済み run が表示される。
-13. Composer の中央操作には Play と Stop が横並びで表示され、現在状態に合わない側は disabled になる。
+13. Composer左上にはSidebarと同じ単一controlが表示され、stopped=Play、starting/playing=running indicator、hover/focus=Pause、stopping=spinnerへ切り替わる。
 14. Sidebar と Composer の操作は同じ backend command と永続状態を使用する。
 15. Stop は Pilot の継続意図を停止し、active run が存在する場合は既存 run stop を呼ぶ。
 16. Stop 後の Play で初期プロンプトが二重に user message 化されない。
@@ -148,7 +151,7 @@ slice 1だけを先に実装する場合も、独立control table、別Session�
 18. Play は sidebar / Composer のどちらから押しても同じ API を呼ぶ。
 19. Sidebar の Play / Stop はタスク選択を兼ねない。操作クリックでは現在の画面を維持する。
 20. タイトル領域のクリックだけが既存 session route へ遷移する。
-21. Composer では Play と Stop を両方表示する。Sidebar では1つの操作スロット内で入れ替える。
+21. ComposerとSidebarは同じ単一controlを使い、状態に応じてPlay / running / Pause / stoppingを入れ替える。
 22. 緑色は単一 run の状態ではなく、Mission Pilot の `desiredState === "playing"` を表す。
 23. Stop を押した時点で新しい Pilot step の開始を禁止する。
 24. active run があれば既存 `stopTaskRun()` を再利用する。別の run cancellation 実装を作らない。
@@ -169,7 +172,7 @@ slice 1だけを先に実装する場合も、独立control table、別Session�
 - 同じタスク一覧内の Task row variant。
 - Sidebar の Play / Stop 交換表示。
 - 再生中の緑色背景と Glow。
-- Composer 中央の Play / Stop。
+- Composer左上connection panelの単一controlとoptional countdown。
 - 初回 Play による初期プロンプトの自動 Chat 送信。
 - 同じ Task Chat へのフォーカス。
 - Stop による継続停止と active run stop。
@@ -274,12 +277,12 @@ Mission Pilot Stop は先に Pilot の desired state を `stopped` にして新�
 
 Mission Pilot / stopped
 ┌──────────────────────────────┐
-│ タスクタイトル          [Play] │
+│ タスクタイトル   (Play)    3m │
 └──────────────────────────────┘
 
 Mission Pilot / playing
 ╔══════════════════════════════╗  <- green background + green glow
-║ タスクタイトル          [Stop] ║
+║ タスクタイトル   (Stop)    ●  ║
 ╚══════════════════════════════╝
 ```
 
@@ -289,13 +292,13 @@ Mission Pilot / playing
 - row link は従来どおり title と route を所有する。
 - control button を `<a>` の中へ入れない。interactive element の nest を避ける。
 - `<li className="relative">` 内で link と control slot を sibling にする。
-- link 側へ右 padding を追加し、長い title が control の下へ潜らないようにする。
-- control slot は右端へ absolute overlay する。
+- control slot はrow中央へ absolute overlayする。Playは背景、border、円形containerを表示せず、濃いgrayの三角iconだけをfloating表示する。control iconは通常のtrailing indicatorより大きく表示する。
+- controlは背景をblurし、titleの上に重なっても独立した操作だと視認できるようにする。
 - control click は `preventDefault()` と `stopPropagation()` を行い、Task focus を変えない。
 - stopped / attention は Play を表示する。
-- starting / playing / stopping は Stop slot を表示する。starting / stopping 中は spinner とし、重複操作を禁止する。
+- starting は通常spinnerを表示し、hover / focus中は赤い角丸borderのPause iconへ切り替える。Pauseを押すと進行中のPlayをStopする。playingはStop、stoppingはspinnerを表示する。
 - active session の選択表現は維持する。Mission Pilot Glow と active selection が重なった場合、Pilot background を維持し、focus / selection は outline または inset ring で表す。
-- trailing timestamp / status dot は Mission Pilot control と同時表示しない。Pilot variant の trailing slot は Pilot control が所有する。
+- trailing timestamp / status dot は通常Taskと同じ右端slotに残し、Mission Pilot controlと同時表示する。
 
 ### 7.3 タスククリック
 
@@ -305,26 +308,26 @@ Mission Pilot / playing
 - Play 済みなら、初期 user message と LLM 応答、questionnaire、planning run、または run event が既存 timeline に見える。
 - Mission Pilot 専用 Chat component は作らない。
 
-### 7.4 Composer 中央 controls
+### 7.4 Composer connection controls
 
 ```text
 ┌──────────────────────────────────────────────────────┐
-│ Prompt                                               │
+│ ● [▶] [00:30] Prompt                                 │
 ├──────────────────────────────────────────────────────┤
-│ [Model] [Thinking]      [Play] [Stop]          [Send] │
+│ [Model] [Thinking]                               [Send] │
 └──────────────────────────────────────────────────────┘
 ```
 
-- Mission Pilot Task がフォーカス中のときだけ中央 controls を表示する。
-- Play と Stop は常に横並びで表示する。
-- stopped では Play enabled / Stop disabled。
-- playing では Play disabled / Stop enabled。
-- starting / stopping では両方 disabled、対象ボタンへ spinner を出す。
+- Mission Pilot Task がフォーカス中のときだけWebSocket health indicator隣へ小型panelを表示する。
+- controlは1つだけ表示し、Sidebarのcontrolと同じstate/icon/action contractを共有する。
+- stoppedではPlay、starting/playingではrunning indicator、hover/focus中は赤borderのPause、stoppingではspinnerを表示する。
+- `nextWakeAt`が未来の場合だけcontrol右隣へcountdown timerを表示し、期限がない時はtimer領域自体を描画しない。
+- countdown timerもbuttonとし、クリックするとMission Pilot Stopを実行する。
 - attention では Play enabled、Stop disabled。error の詳細は button title だけに閉じず accessible status として表示できるようにする。
-- generic `Composer` には `centerControls?: ReactNode` slot だけを追加する。
+- generic `Composer` には `connectionControls?: ReactNode` slotだけを追加する。
 - `Composer` が Mission Pilot schema、command、state machine を import してはならない。
 - `MissionPilotComposerControls` は `src/modules/missionPilot` が所有する。
-- 右端の既存 send / active-run stop は残す。Pilot playing 中に手動 user message を送れるかは既存 Chat behavior を維持する。
+- toolbar右端の既存send / active-run stopは残す。Pilot playing中に手動user messageを送れるかは既存Chat behaviorを維持する。
 
 ## 8. Design tokens
 
@@ -377,7 +380,7 @@ box-shadow:
 
 - `prefers-reduced-motion: reduce` では pulse animation を使わない。
 - 初期実装は常時 static Glow とし、点滅 animation は追加しない。
-- high contrast では Glow だけに依存せず、2px border と Play / Stop の accessible label で状態を示す。
+- high contrast ではGlowだけに依存せず、2px row borderとPlay / Pauseのaccessible labelで状態を示す。
 
 ## 9. Domain ownership
 
@@ -403,7 +406,7 @@ NightWorkers 側は次だけを行う。
 - `ProjectDetailScreen.tsx`: Task Generation hostとsession refresh callbackの接続。
 - `ProjectSidebar.tsx`: `SessionRow` の variant slot へ `MissionPilotTaskControl` を配置。
 - `ThreadWorkspaceBody.tsx`: focused Task の control summary を Composer slot へ渡す。
-- `Composer.tsx`: generic `centerControls` slot の描画。
+- `Composer.tsx`: generic `connectionControls` slotをWebSocket health隣へ描画。
 
 NightWorkers component 内に `if (createdBy === "...")` を増やして Pilot 判定しない。
 
@@ -579,7 +582,8 @@ version = 0
 
 | command / event | before | after | UI |
 | --- | --- | --- | --- |
-| create | none | stopped + idle + pending | Play、Glowなし |
+| 候補から開始（Task作成） | none | stopped + idle + pending | 飛行機アイコンをspinner表示 |
+| 候補から開始（Play受付） | stopped + idle + pending | playing + starting | 緑Glow、spinner |
 | Play受付 | stopped + idle/attention | playing + starting | 緑Glow、spinner |
 | prompt claim | pending | dispatching | 緑Glow、spinner |
 | user message保存 | dispatching | sent、messageId設定 | 緑Glow |
@@ -737,7 +741,7 @@ Stop は idempotent にする。既にstoppedなら最新Session summaryを`200`
 ## 14. Task作成 sequence
 
 ```text
-MissionPilotCreateButton
+MissionPilotCreateButton（飛行機アイコン）
   -> POST /api/mission-pilot/tasks
     -> missionPilot.service.createFromSourceRef()
       -> taskization port が source を検証
@@ -748,9 +752,13 @@ MissionPilotCreateButton
         -> mission_pilot_sessions とinitial Contextをstopped/pending、authorization未activationでinsert
       -> source status/taskIdを更新
     -> transaction commit
-  -> sessions query refresh
+  -> 作成済みTaskをTask一覧へ即時反映
+  -> POST /api/mission-pilot/tasks/:taskId/play(expectedVersion=作成結果のversion)
+  -> Play成功後のSession summaryをTask一覧へ反映
   -> Project Detail に留まる
 ```
+
+Task候補の主操作は「Mission Pilot Taskを作る」だけではなく、「Mission Pilotで開始する」までを1クリックで行う。Task作成後にPlayが失敗した場合もTaskを失わず、Sidebar / ComposerのPlayから再試行できる。候補行では通常のタスク化ボタンと同じoutline icon controlを使い、Mission PilotはLucideの飛行機アイコンで区別する。名称はtooltip / accessible labelに残し、行内に追加文言を表示しない。
 
 通常タスク化と差が生まれるのは `onTaskCreated()` でSessionとinitial Contextを付ける点だけである。Task 本体の生成ロジックを Mission Pilot module にコピーしない。
 
@@ -762,6 +770,8 @@ MissionPilotCreateButton
 
 ```text
 Sidebar or Composer Play
+  -> frontendはinitialPromptSnapshotと同値のTask objectiveを通常送信と同じuser bubbleとして楽観表示
+  -> Composer draftを消去し、Mission Pilot activity=startingの間はassistant thinking indicatorを表示
   -> POST /api/mission-pilot/tasks/:taskId/play(expectedVersion)
     -> Sessionをcompare-and-setでplaying/startingへclaim
     -> authorization version 2を同じtransactionでactivation
@@ -773,6 +783,7 @@ Sidebar or Composer Play
        metadata.intent = initial_prompt
        metadata.controlVersion = claimed version
     -> initialPromptMessageId と sent を保存
+    -> task_message_created realtime eventを通常送信と同じshapeでpublish
     -> Workbench intake port を同じ prompt / intent=intake で実行
     -> runができれば activeRunId を保存
     -> Session summaryをrunningまたはidleへ更新
@@ -871,7 +882,7 @@ LLM が本文を返した場合、schema parse の失敗を理由に固定エラ
 5. playing state は色だけで表さず、button icon / label と optional `aria-live` status を持つ。
 6. Enter on title は Chat focus、Enter / Space on control は play / stop とする。
 7. mutation 中は `aria-busy="true"` を control に付ける。
-8. Composer 中央 controls の tab order は Model -> Thinking -> Play -> Stop -> Send とする。
+8. Composer connection controls のtab orderはWebSocket health -> Mission Pilot control -> countdown -> prompt -> Model -> Thinking -> Sendとする。
 9. disabled button に理由が必要な場合は visually hidden text または status text で補う。
 10. Glow は focus ring を隠さない。
 
@@ -945,7 +956,7 @@ LLM が本文を返した場合、schema parse の失敗を理由に固定エラ
 - `src/modules/nightworkers/components/ProjectDetailScreen.tsx`: session refresh callback connection。
 - `src/modules/nightworkers/components/ProjectSidebar.tsx`: `SessionRow` variant / sibling overlay slot。
 - `src/modules/nightworkers/components/ThreadWorkspaceBody.tsx`: focused control と Composer slot。
-- `src/modules/nightworkers/components/Composer.tsx`: generic `centerControls` prop。
+- `src/modules/nightworkers/components/Composer.tsx`: generic `connectionControls` prop。
 - `src/modules/nightworkers/hooks/useNightWorkersRealtime.ts`: event cache sync。
 - `src/i18n/dictionaries/ja.ts` / `en.ts`。
 - `src/index.css`: Mission Pilot CSS import。
@@ -1044,7 +1055,7 @@ LLM が本文を返した場合、schema parse の失敗を理由に固定エラ
 8. Task title をクリックする。
 9. 既存 Chat timeline に初期 user message が1件だけ存在することを確認する。
 10. LLM応答、questionnaire、またはplanning run開始 evidence が見えることを確認する。
-11. Composer中央にPlay / Stopが並び、Play disabled / Stop enabledであることを確認する。
+11. Composer左上に単一running controlがあり、`nextWakeAt`設定時だけcountdownが表示されることを確認する。
 12. Composer Stopを押す。
 13. Glowが消え、Sidebar操作がPlayへ戻ることを確認する。
 14. 再Playしても初期 user message が1件のままであることを確認する。
@@ -1089,7 +1100,7 @@ bun run db:init:empty
 1. Mission Pilot Task作成の transaction test。
 2. 初期prompt exactly-onceの並行request test。
 3. Sidebar variantのcomponent test。
-4. Composer中央controlsのcomponent test。
+4. Composer connection controlとoptional countdownのcomponent test。
 5. Play -> Chat intakeのservice integration test。
 6. Stop -> existing run stopのintegration test。
 7. reload復元を含むE2E evidence。

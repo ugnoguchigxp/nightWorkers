@@ -6,7 +6,7 @@ import {
 	missionTaskCandidatesResultSchema,
 	type ProjectSignalSnapshot,
 } from "../../../shared/schemas/task-generation.schema";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import { tasks } from "../../db/schema";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
@@ -334,6 +334,10 @@ export async function createTasksFromMissionCandidates(input: {
 	repositoryId: string;
 	candidateIds: string[];
 	mode: "draft" | "ready";
+	onTaskCreated?: (
+		task: typeof tasks.$inferSelect,
+		tx: DbTransaction,
+	) => Promise<void>;
 }) {
 	await requireRepository(input.repositoryId);
 	return db.transaction(async (tx) => {
@@ -357,6 +361,7 @@ export async function createTasksFromMissionCandidates(input: {
 				input.mode,
 				tx,
 			);
+			await input.onTaskCreated?.(task, tx);
 			const updated = await repo.updateMissionCandidate(
 				candidate.id,
 				{ status: "task_created", taskId: task.id },

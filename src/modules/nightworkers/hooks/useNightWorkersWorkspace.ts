@@ -79,6 +79,15 @@ export function resolveNextActiveSessionId(
 	return sessions[0]?.id ?? null;
 }
 
+export function isMissionPilotChatPending(task: Task | null) {
+	const missionPilot = task?.missionPilot;
+	if (!missionPilot || missionPilot.desiredState !== "playing") return false;
+	return (
+		missionPilot.activityState === "starting" ||
+		missionPilot.initialPromptState === "dispatching"
+	);
+}
+
 export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const queryClient = useQueryClient();
 	const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -363,6 +372,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const isAgentThinking =
 		isInitialSessionCreating ||
 		isChatSubmitting ||
+		isMissionPilotChatPending(activeSession) ||
 		startRunMutation.isPending ||
 		Boolean(pendingChatRunId) ||
 		Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||

@@ -6,6 +6,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { MissionPilotComposerControls } from "../../missionPilot";
 import type {
 	ActivityArtifact,
 	ActivityEvent,
@@ -154,8 +155,10 @@ export function projectEvaluationComposerDraftState(
 	taskMessages: TaskMessage[],
 ) {
 	const usesGeneratedInitialPrompt =
+		Boolean(activeSession?.missionPilot) ||
 		activeSession?.createdBy === "project-evaluation" ||
-		activeSession?.createdBy === "mission-task-candidate";
+		activeSession?.createdBy === "mission-task-candidate" ||
+		activeSession?.createdBy === "mission-task-proposal";
 	const hasSentUserPrompt = taskMessages.some(
 		(message) => message.role === "user",
 	);
@@ -163,7 +166,7 @@ export function projectEvaluationComposerDraftState(
 		discardStoredDraft: usesGeneratedInitialPrompt && hasSentUserPrompt,
 		initialPrompt:
 			usesGeneratedInitialPrompt && !hasSentUserPrompt
-				? activeSession.objective?.trim() || ""
+				? activeSession?.objective?.trim() || ""
 				: "",
 	};
 }
@@ -312,6 +315,15 @@ export function ThreadBody({
 						onThinkingDepthChange={onThinkingDepthChange}
 						onClearArtifactContext={onClearArtifactContext}
 						onStop={onStopActiveRun}
+						connectionControls={
+							activeSession?.missionPilot ? (
+								<MissionPilotComposerControls
+									taskId={activeSession.id}
+									summary={activeSession.missionPilot}
+									initialPrompt={activeSession.objective}
+								/>
+							) : undefined
+						}
 						onSubmit={async (prompt, intent) => {
 							if (!activeSession) {
 								await onSubmitInitialPrompt(prompt);

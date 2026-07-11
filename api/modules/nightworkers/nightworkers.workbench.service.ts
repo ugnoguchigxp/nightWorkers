@@ -372,6 +372,37 @@ export async function appendWorkbenchMessage(
 	};
 }
 
+export async function resumeWorkbenchIntakeMessage(
+	id: string,
+	prompt: string,
+	options?: { waitForIntake?: boolean },
+) {
+	const task = await repo.getTask(id);
+	if (!task) throw new NotFoundError("Task not found");
+	const waitForIntake =
+		options?.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
+	if (waitForIntake) {
+		return handleWorkbenchIntakeMessage(id, task, prompt, {
+			failureMode: "throw",
+			intent: "intake",
+			artifactContext: null,
+			llmRouteOverride: null,
+		});
+	}
+	const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
+	void handleWorkbenchIntakeMessage(id, task, prompt, {
+		failureMode: "record",
+		intent: "intake",
+		artifactContext: null,
+		llmRouteOverride: null,
+	});
+	return {
+		task: updated,
+		run: null,
+		messages: await repo.listTaskMessages(id),
+	};
+}
+
 function renderArtifactContextualPrompt(
 	prompt: string,
 	artifactContext: WorkbenchArtifactContext | null,

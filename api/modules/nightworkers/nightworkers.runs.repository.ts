@@ -37,6 +37,22 @@ const TERMINAL_TODO_STATUSES = [
 const OPEN_TODO_STATUSES = ["pending", "running"] as const;
 
 type TaskRunTodoRow = typeof taskRunTodos.$inferSelect;
+type TaskRunRow = typeof taskRuns.$inferSelect;
+type TaskRunUpdatedListener = (run: TaskRunRow) => Promise<void> | void;
+const taskRunUpdatedListeners = new Set<TaskRunUpdatedListener>();
+
+export function registerTaskRunUpdatedListener(
+	listener: TaskRunUpdatedListener,
+) {
+	taskRunUpdatedListeners.add(listener);
+	return () => taskRunUpdatedListeners.delete(listener);
+}
+
+async function notifyTaskRunUpdatedListeners(run: TaskRunRow) {
+	await Promise.allSettled(
+		[...taskRunUpdatedListeners].map((listener) => listener(run)),
+	);
+}
 type ReplaceTaskRunTodoInput = {
 	seq: number;
 	title: string;
@@ -378,6 +394,7 @@ export async function updateTaskRun(
 			runId: run.id,
 			payload: { run },
 		});
+		await notifyTaskRunUpdatedListeners(run);
 	}
 	return run;
 }

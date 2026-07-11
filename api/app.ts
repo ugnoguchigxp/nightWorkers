@@ -21,6 +21,7 @@ import { blueprintRouter } from "./modules/blueprint/blueprint.routes";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
+import { missionPilotRouter } from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
 import {
@@ -58,6 +59,7 @@ const apiRoutes = createOpenApiRouter()
 	.route("/settings", hooksSettingsRouter)
 	.route("/", projectEvaluationRouter)
 	.route("/", missionPlannerRouter)
+	.route("/", missionPilotRouter)
 	.route("/", queueRouter)
 	.route("/", questionnaireRouter)
 	.route("/", blueprintRouter)

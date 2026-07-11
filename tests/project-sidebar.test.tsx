@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import "../src/i18n/setup";
@@ -108,5 +109,85 @@ describe("ProjectSidebar", () => {
 		expect(markup).toContain("Active implementation");
 		expect(markup).toContain("Ready implementation");
 		expect(markup).not.toContain("Archived implementation");
+	});
+
+	it("renders Mission Pilot as a sibling control with playing semantics", () => {
+		const project = repository();
+		const session = sessionView(
+			"55555555-5555-4555-8555-555555555555",
+			"Mission Pilot task",
+			"processing",
+		);
+		session.task.missionPilot = {
+			taskId: session.task.id,
+			desiredState: "playing",
+			activityState: "running",
+			phase: "running",
+			authorizationVersion: 2,
+			initialPromptState: "sent",
+			initialPromptMessageId: null,
+			activeRunId: null,
+			nextWakeAt: null,
+			version: 3,
+			lastError: null,
+			updatedAt: "2026-07-11T00:00:00.000Z",
+		};
+		const timestampSession = sessionView(
+			"66666666-6666-4666-8666-666666666666",
+			"Mission Pilot idle task",
+			"processing",
+		);
+		timestampSession.emailState = "idle";
+		timestampSession.task.missionPilot = {
+			...session.task.missionPilot,
+			taskId: timestampSession.task.id,
+			desiredState: "playing",
+			activityState: "starting",
+			phase: "starting",
+		};
+		const markup = renderToStaticMarkup(
+			<QueryClientProvider client={new QueryClient()}>
+				<ProjectSidebar
+					projects={[project]}
+					groupedSessions={{
+						[project.id]: {
+							processing: [session, timestampSession],
+							queue: [],
+							archive: [],
+						},
+					}}
+					isProjectsLoading={false}
+					activeSessionId={session.task.id}
+					expandedProjects={{ [project.id]: true }}
+					onSelectSession={() => undefined}
+					onCreateSession={() => undefined}
+					onDeleteProject={() => undefined}
+					onToggleProject={() => undefined}
+					onOpenProjectQueue={() => undefined}
+					activeProjectQueueId={null}
+					onOpenProjectDetail={() => undefined}
+					activeProjectDetailId={null}
+					onOpenOverview={() => undefined}
+					isOverviewActive={false}
+					onOpenFolderBrowser={() => undefined}
+					onRefreshProjects={() => undefined}
+					isProjectListRefreshing={false}
+				/>
+			</QueryClientProvider>,
+		);
+
+		expect(markup).toContain("mission-pilot-task-row-playing");
+		expect(markup).toContain('aria-label="Mission Pilotを一時停止"');
+		expect(markup).toContain('aria-label="設計完了、実装開始待ち"');
+		expect(markup).toContain(
+			"nightworkers-sidebar-subtle shrink-0 text-[11px]",
+		);
+		expect(markup).toContain('aria-label="Mission Pilotを一時停止"');
+		expect(markup).toContain("mission-pilot-starting-spinner");
+		expect(markup).toContain("mission-pilot-starting-pause");
+		const controlIndex = markup.indexOf('aria-label="Mission Pilotを一時停止"');
+		expect(markup.lastIndexOf("</a>", controlIndex)).toBeGreaterThan(
+			markup.lastIndexOf("<a", controlIndex),
+		);
 	});
 });

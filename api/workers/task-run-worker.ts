@@ -1,4 +1,5 @@
 import { ensureNightWorkersSchema } from "../db/bootstrap";
+import { initializeMissionPilotRunSync } from "../modules/missionPilot";
 import {
 	type StartTaskRunOptions,
 	startTaskRunInProcess,
@@ -12,6 +13,8 @@ import {
 
 let activeRunId: string | null = null;
 let shuttingDown = false;
+
+initializeMissionPilotRunSync();
 
 async function shutdown() {
 	if (shuttingDown) return;

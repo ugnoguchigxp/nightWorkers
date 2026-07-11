@@ -4,6 +4,7 @@ import { config } from "./config";
 import { ensureNightWorkersSchema } from "./db/bootstrap";
 import { client } from "./db/client";
 import { logEvent } from "./lib/logger";
+import { reconcileMissionPilotStartup } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
@@ -124,6 +125,7 @@ export async function createNightWorkersServer(
 		options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
 
 	await ensureNightWorkersSchema();
+	await reconcileMissionPilotStartup();
 	void reconcileImplementationQueue({ apply: true, reason: "startup" }).catch(
 		(error) => {
 			logEvent({

@@ -12,6 +12,7 @@ import {
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { MissionPilotTaskControl } from "../../missionPilot";
 import type { ProjectSessionGroups } from "../hooks/useNightWorkersWorkspace";
 import { handleWorkbenchAnchorClick } from "../routing/workbench-link-click";
 import { serializeWorkbenchRoute } from "../routing/workbench-route-state";
@@ -287,8 +288,10 @@ function SessionRow({
 	active: boolean;
 	onSelectSession: () => void;
 }) {
+	const missionPilot = session.task.missionPilot;
+	const playing = missionPilot?.desiredState === "playing";
 	return (
-		<li className="min-w-0 overflow-hidden px-1">
+		<li className="relative min-w-0 px-1">
 			<a
 				href={serializeWorkbenchRoute({
 					kind: "session",
@@ -296,7 +299,7 @@ function SessionRow({
 					artifact: null,
 				})}
 				onClick={(event) => handleWorkbenchAnchorClick(event, onSelectSession)}
-				className={`nightworkers-sidebar-session-row flex min-h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
+				className={`nightworkers-sidebar-session-row ${missionPilot ? "mission-pilot-task-row" : ""} ${playing ? "mission-pilot-task-row-playing" : ""} flex min-h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg px-3 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 ${
 					active ? "nightworkers-sidebar-session-row-active" : ""
 				}`}
 				aria-current={active ? "page" : undefined}
@@ -306,6 +309,13 @@ function SessionRow({
 				</span>
 				<SessionTrailingIndicator session={session} />
 			</a>
+			{missionPilot ? (
+				<MissionPilotTaskControl
+					taskId={session.task.id}
+					summary={missionPilot}
+					initialPrompt={session.task.objective}
+				/>
+			) : null}
 		</li>
 	);
 }

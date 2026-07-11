@@ -1,3 +1,4 @@
+import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
 import type { ReviewResult } from "../../review";
 import type { TaskEvent } from "./activity";
 import type { TaskRunTodo } from "./blueprint";
@@ -40,6 +41,7 @@ export type Task = {
 	createdBy?: string | null;
 	createdAt: unknown;
 	updatedAt: unknown;
+	missionPilot?: MissionPilotControlSummary | null;
 };
 
 export type TaskRun = {

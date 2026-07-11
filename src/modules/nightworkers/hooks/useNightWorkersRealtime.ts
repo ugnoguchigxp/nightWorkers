@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
 import { toDeepRecord } from "../../../../shared/json-record";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
+import { mergeTaskPreservingMissionPilot } from "../../missionPilot";
 import { dedupeAndSortActivityEvents } from "../activityTranscript";
 import {
 	dedupeAndSortRunEvents,
@@ -185,6 +186,8 @@ export function useNightWorkersRealtime({
 							task?: Task;
 							text?: string;
 							todo?: TaskRunTodo;
+							taskId?: string;
+							missionPilot?: NonNullable<Task["missionPilot"]>;
 						};
 						event?: {
 							id: string;
@@ -309,7 +312,7 @@ export function useNightWorkersRealtime({
 								if (incoming.role === "user") {
 									const optimisticIndex = next.findIndex(
 										(m) =>
-											m.id.startsWith("optimistic-user-") &&
+											m.id.startsWith("optimistic-") &&
 											m.role === "user" &&
 											m.content === incoming.content,
 									);
@@ -429,7 +432,10 @@ export function useNightWorkersRealtime({
 							const next = [...prev];
 							const idx = next.findIndex((t) => t.id === incomingTask.id);
 							if (idx >= 0) {
-								next[idx] = incomingTask;
+								next[idx] = mergeTaskPreservingMissionPilot(
+									next[idx],
+									incomingTask,
+								);
 							} else {
 								next.unshift(incomingTask);
 							}
@@ -438,6 +444,24 @@ export function useNightWorkersRealtime({
 						queryClient.invalidateQueries({
 							queryKey: ["implementationQueue"],
 						});
+					}
+					if (
+						msg.type === "mission_pilot.updated" &&
+						msg.payload?.missionPilot &&
+						typeof msg.payload.taskId === "string"
+					) {
+						const incoming = msg.payload.missionPilot as Task["missionPilot"];
+						const missionPilotTaskId = msg.payload.taskId;
+						if (incoming)
+							queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+								prev.map((task) =>
+									task.id !== missionPilotTaskId ||
+									(task.missionPilot &&
+										task.missionPilot.version > incoming.version)
+										? task
+										: { ...task, missionPilot: incoming },
+								),
+							);
 					}
 				} catch {
 					// ignore malformed payload

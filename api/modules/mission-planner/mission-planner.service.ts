@@ -812,9 +812,88 @@ function metadataForProposal(
 	});
 }
 
+type MissionPlannerDb = typeof db | DbTransaction;
+
+async function persistMissionProposalTasks(input: {
+	mode: "draft" | "ready";
+	proposals: MissionTaskProposal[];
+	planningResults: Map<string, MissionPlanningResult>;
+	missions: Map<string, Mission>;
+	database: MissionPlannerDb;
+	transaction?: DbTransaction;
+	onTaskCreated?: (
+		task: typeof tasks.$inferSelect,
+		tx: DbTransaction,
+	) => Promise<void>;
+}) {
+	const created = [];
+	const updatedProposals = [];
+	for (let index = 0; index < input.proposals.length; index += 1) {
+		const proposal = input.proposals[index];
+		const planningResult = input.planningResults.get(proposal.planningResultId);
+		const mission = input.missions.get(proposal.missionId);
+		if (!planningResult || !mission) continue;
+		const task = await nightworkersRepo.createTask(
+			{
+				repositoryId: proposal.repositoryId,
+				title: proposal.title,
+				description: buildTaskDescription({
+					mission,
+					proposal,
+					planningResult,
+				}),
+				objective: buildTaskObjective({ proposal, planningResult }),
+				acceptanceCriteria: buildAcceptanceCriteria(proposal),
+				status: input.mode,
+				priority: input.proposals.length - index,
+				createdBy: "mission-task-proposal",
+			},
+			input.database,
+		);
+		if (input.onTaskCreated) {
+			if (!input.transaction) {
+				throw new Error("Task creation hook requires a database transaction");
+			}
+			await input.onTaskCreated(task, input.transaction);
+		}
+		await nightworkersRepo.createTaskMessage(
+			{
+				taskId: task.id,
+				role: "system",
+				content: "Mission task proposal metadata attached.",
+				messageType: "text",
+				payloadJson: {
+					source: "mission_task_proposal",
+					missionProposal: metadataForProposal(proposal),
+				},
+			},
+			input.database,
+		);
+		const updated = await repo.updateTaskProposal(
+			proposal.id,
+			{ status: "task_created", taskId: task.id },
+			input.database,
+		);
+		created.push(task);
+		if (updated) updatedProposals.push(updated);
+		if (mission.status === "review_pending") {
+			await repo.updateMission(
+				mission.id,
+				{ status: "active", statusReason: null },
+				input.database,
+			);
+		}
+	}
+	return { tasks: created, proposals: updatedProposals };
+}
+
 export async function createTasksFromMissionTaskProposals(input: {
 	proposalIds: string[];
 	mode: "draft" | "ready";
+	onTaskCreated?: (
+		task: typeof tasks.$inferSelect,
+		tx: DbTransaction,
+	) => Promise<void>;
 }): Promise<CreateTasksFromMissionTaskProposalsResponse> {
 	const uniqueProposalIds = [...new Set(input.proposalIds)];
 	const foundProposals = await repo.getTaskProposalsByIds(uniqueProposalIds);
@@ -887,45 +966,21 @@ export async function createTasksFromMissionTaskProposals(input: {
 		missions.set(mission.id, mission);
 	}
 
-	const created = [];
-	const updatedProposals = [];
-	for (let index = 0; index < proposals.length; index += 1) {
-		const proposal = proposals[index];
-		const planningResult = planningResults.get(proposal.planningResultId);
-		const mission = missions.get(proposal.missionId);
-		if (!planningResult || !mission) continue;
-		const task = await nightworkersRepo.createTask({
-			repositoryId: proposal.repositoryId,
-			title: proposal.title,
-			description: buildTaskDescription({ mission, proposal, planningResult }),
-			objective: buildTaskObjective({ proposal, planningResult }),
-			acceptanceCriteria: buildAcceptanceCriteria(proposal),
-			status: input.mode,
-			priority: proposals.length - index,
-			createdBy: "mission-task-proposal",
-		});
-		await nightworkersRepo.createTaskMessage({
-			taskId: task.id,
-			role: "system",
-			content: "Mission task proposal metadata attached.",
-			messageType: "text",
-			payloadJson: {
-				source: "mission_task_proposal",
-				missionProposal: metadataForProposal(proposal),
-			},
-		});
-		const updated = await repo.updateTaskProposal(proposal.id, {
-			status: "task_created",
-			taskId: task.id,
-		});
-		created.push(task);
-		if (updated) updatedProposals.push(updated);
-		if (mission.status === "review_pending") {
-			await repo.updateMission(mission.id, {
-				status: "active",
-				statusReason: null,
-			});
-		}
+	const persistInput = {
+		mode: input.mode,
+		proposals,
+		planningResults,
+		missions,
+		onTaskCreated: input.onTaskCreated,
+	};
+	if (!input.onTaskCreated) {
+		return persistMissionProposalTasks({ ...persistInput, database: db });
 	}
-	return { tasks: created, proposals: updatedProposals };
+	return db.transaction((tx) =>
+		persistMissionProposalTasks({
+			...persistInput,
+			database: tx,
+			transaction: tx,
+		}),
+	);
 }

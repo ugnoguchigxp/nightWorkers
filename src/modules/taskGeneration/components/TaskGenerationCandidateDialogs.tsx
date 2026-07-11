@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import type { Mission } from "../../../../shared/schemas/mission-planner.schema";
 import type { MissionGoal } from "../../../../shared/schemas/task-generation.schema";
+import { MissionPilotCreateButton } from "../../missionPilot";
 import {
 	IconActionButton,
 	KpiTile,
@@ -164,15 +165,19 @@ export function TaskCandidateDetailModal({
 	candidate,
 	goals,
 	busy,
+	missionPilotBusy,
 	onClose,
 	onCreateTask,
+	onCreateMissionPilot,
 	onDismiss,
 }: {
 	candidate: UnifiedTaskCandidate;
 	goals: MissionGoal[];
 	busy: boolean;
+	missionPilotBusy: boolean;
 	onClose: () => void;
 	onCreateTask: (candidate: UnifiedTaskCandidate) => void;
+	onCreateMissionPilot: (candidate: UnifiedTaskCandidate) => void;
 	onDismiss: (candidate: UnifiedTaskCandidate) => void;
 }) {
 	const { t } = useTranslation();
@@ -343,6 +348,11 @@ export function TaskCandidateDetailModal({
 						>
 							{t("projectDetail.mission.deleteCandidate")}
 						</Button>
+						<MissionPilotCreateButton
+							disabled={busy || candidate.status !== "candidate"}
+							busy={missionPilotBusy}
+							onClick={() => onCreateMissionPilot(candidate)}
+						/>
 						<Button
 							type="button"
 							onClick={() => onCreateTask(candidate)}

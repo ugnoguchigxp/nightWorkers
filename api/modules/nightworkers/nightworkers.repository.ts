@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import type { TaskStatus } from "../../db/schema";
 import { repositories, taskMessages, tasks } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
@@ -14,6 +14,7 @@ import {
 import { isJsonRecord, toJsonRecord } from "./nightworkers.json-adapters";
 
 type RepositoryInsert = typeof repositories.$inferInsert;
+type Db = typeof db | DbTransaction;
 type RepositorySafetyPolicy = RepositoryInsert["safetyPolicy"];
 
 const _ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
@@ -171,19 +172,22 @@ export async function deleteRepository(id: string) {
 }
 
 // --- Tasks ---
-export async function createTask(data: {
-	repositoryId: string;
-	title: string;
-	description?: string | null;
-	objective?: string | null;
-	acceptanceCriteria?: string | null;
-	worktreePath?: string | null;
-	status?: TaskStatus;
-	timeoutSeconds?: number;
-	priority?: number;
-	createdBy?: string | null;
-}) {
-	const [task] = await db.insert(tasks).values(data).returning();
+export async function createTask(
+	data: {
+		repositoryId: string;
+		title: string;
+		description?: string | null;
+		objective?: string | null;
+		acceptanceCriteria?: string | null;
+		worktreePath?: string | null;
+		status?: TaskStatus;
+		timeoutSeconds?: number;
+		priority?: number;
+		createdBy?: string | null;
+	},
+	database: Db = db,
+) {
+	const [task] = await database.insert(tasks).values(data).returning();
 	return task;
 }
 
@@ -204,16 +208,19 @@ export async function listTaskMessages(taskId: string) {
 		.orderBy(taskMessages.createdAt);
 }
 
-export async function createTaskMessage(data: {
-	taskId: string;
-	runId?: string | null;
-	role: "user" | "assistant" | "system" | "tool";
-	content: string;
-	messageType?: string | null;
-	payloadJson?: unknown;
-}) {
+export async function createTaskMessage(
+	data: {
+		taskId: string;
+		runId?: string | null;
+		role: "user" | "assistant" | "system" | "tool";
+		content: string;
+		messageType?: string | null;
+		payloadJson?: unknown;
+	},
+	database: Db = db,
+) {
 	const metadata = toJsonRecord(data.payloadJson);
-	const [message] = await db
+	const [message] = await database
 		.insert(taskMessages)
 		.values({
 			taskId: data.taskId,
@@ -224,7 +231,7 @@ export async function createTaskMessage(data: {
 			metadataJson: data.payloadJson ?? null,
 		})
 		.returning();
-	if (message) {
+	if (message && database === db) {
 		await enqueueActivityEvent({
 			taskId: data.taskId,
 			runId: data.runId ?? null,

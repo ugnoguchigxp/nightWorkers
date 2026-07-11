@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { taskWithMissionPilotSchema } from "../../../../shared/schemas/mission-pilot.schema";
 import {
 	createTaskSchema,
 	taskRunSchema,
@@ -13,7 +14,7 @@ export const listTasksRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: z.array(taskSchema),
+					schema: z.array(taskWithMissionPilotSchema),
 				},
 			},
 			description: "List of all tasks",

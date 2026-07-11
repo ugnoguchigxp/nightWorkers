@@ -22,6 +22,7 @@ const REPLAYABLE_MESSAGE_TYPES = new Set([
 	"task_event_created",
 	"task_run_updated",
 	"task_status_updated",
+	"mission_pilot.updated",
 ]);
 const MAX_REPLAY_MESSAGES_PER_TASK = 240;
 const REPLAY_TTL_MS = 10 * 60 * 1000;

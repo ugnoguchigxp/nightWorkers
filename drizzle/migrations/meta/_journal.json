@@ -211,6 +211,13 @@
       "when": 1783706400000,
       "tag": "0029_security_intelligence_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1783738800000,
+      "tag": "0030_mission_pilot_sessions",
+      "breakpoints": true
     }
   ]
 }

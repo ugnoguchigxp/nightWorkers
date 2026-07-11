@@ -1,5 +1,12 @@
 import { ArrowUp, CircleStop, LoaderCircle, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	type ReactNode,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	ComposerThinkingDepth,
@@ -31,6 +38,7 @@ type ComposerProps = {
 	onSubmit: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
 	onClearArtifactContext?: () => void;
 	onStop?: () => Promise<void>;
+	connectionControls?: ReactNode;
 };
 
 const COMPOSER_TEXTAREA_MIN_HEIGHT = 58;
@@ -84,6 +92,7 @@ export function Composer({
 	onSubmit,
 	onClearArtifactContext,
 	onStop,
+	connectionControls,
 }: ComposerProps) {
 	const { t } = useTranslation();
 	const [prompt, setPrompt] = useState("");
@@ -198,9 +207,16 @@ export function Composer({
 	return (
 		<div className="bg-transparent px-3 py-2">
 			<div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/55 bg-[#1e293b] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)]">
-				<div
-					className={`absolute -top-[5px] left-4 h-3 w-3 rounded-full ${wsStatusDotClass}`}
-				/>
+				<div className="absolute -top-3 left-4 z-10 flex h-6 items-center gap-1.5">
+					<span
+						className={`h-3 w-3 shrink-0 rounded-full ${wsStatusDotClass}`}
+						aria-label={t("composer.realtimeStatus", {
+							status: realtimeStatus,
+						})}
+						role="status"
+					/>
+					{connectionControls}
+				</div>
 				{diffSummary ? (
 					<div className="nightworkers-composer-badge absolute -top-3 right-4 rounded-full border border-slate-600/80 bg-slate-800 px-3 py-1 text-[11px]">
 						<span className="text-slate-200">
