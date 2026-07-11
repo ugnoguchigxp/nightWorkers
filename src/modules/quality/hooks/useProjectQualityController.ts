@@ -241,6 +241,7 @@ export function useProjectQualityController(input: {
 	]);
 
 	return {
+		repositoryId: input.repositoryId,
 		quality,
 		coverageRows,
 		e2eRows,

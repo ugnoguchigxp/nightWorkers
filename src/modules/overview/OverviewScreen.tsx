@@ -156,6 +156,7 @@ function OverviewContent({
 			<OverviewUsageSections
 				dashboard={dashboard}
 				viewModel={viewModel}
+				range={range}
 				language={language}
 				timezone={timezone}
 				currency={currency}

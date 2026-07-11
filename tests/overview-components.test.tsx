@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
 import { OverviewHeader } from "../src/modules/overview/components/OverviewHeader";
 import { CompactCostValue } from "../src/modules/overview/components/OverviewPrimitives";
+import { OverviewUsageSections } from "../src/modules/overview/components/OverviewUsageSections";
 
 describe("Overview components", () => {
 	it("keeps a URL-selected project visible while the project list is loading", () => {
@@ -61,4 +62,53 @@ describe("Overview components", () => {
 		expect(markup).toContain("￥337");
 		expect(markup).not.toContain("クレジット");
 	});
+
+	it("limits usage chart details for long ranges", () => {
+		const renderUsage = (range: "7d" | "30d" | "all") =>
+			renderToStaticMarkup(
+				<OverviewUsageSections
+					dashboard={usageDashboard as never}
+					viewModel={usageViewModel as never}
+					range={range}
+					language="ja"
+					timezone="Asia/Tokyo"
+					currency="JPY"
+				/>,
+			);
+
+		const sevenDays = renderUsage("7d");
+		const thirtyDays = renderUsage("30d");
+		const allTime = renderUsage("all");
+
+		expect(sevenDays).toContain("max-w-full truncate text-[9px]");
+		expect(thirtyDays).toContain("日別使用量");
+		expect(thirtyDays).not.toContain("max-w-full truncate text-[9px]");
+		expect(allTime).not.toContain("日別使用量");
+		expect(allTime).toContain("コスト概要");
+	});
 });
+
+const usageDashboard = {
+	generatedAt: "2026-07-11T00:00:00.000Z",
+	dailyUsage: [
+		{
+			key: "2026-07-11",
+			inputTokens: 10,
+			cachedInputTokens: 2,
+			outputTokens: 1,
+		},
+	],
+	cost: {
+		inputCost: 1,
+		cachedInputCost: 1,
+		outputCost: 1,
+		creditTotal: null,
+		fxRate: null,
+	},
+	warnings: [],
+};
+
+const usageViewModel = {
+	maxBucketTokens: 9,
+	hasDailyUsageData: true,
+};

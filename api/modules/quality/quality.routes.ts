@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
+	coverageFileReportSchema,
 	createCoverageImprovementTaskRequestSchema,
 	createCoverageImprovementTaskResponseSchema,
 	createProjectQualityRunRequestSchema,
@@ -12,6 +13,7 @@ import * as service from "./quality.service";
 
 const repositoryParams = z.object({ id: z.string().uuid() });
 const runParams = z.object({ id: z.string().uuid(), runId: z.string().uuid() });
+const coverageFileReportQuery = z.object({ fileKey: z.string().min(1) });
 
 const getProjectQualityRoute = createRoute({
 	method: "get",
@@ -78,6 +80,18 @@ const cancelProjectQualityRunRoute = createRoute({
 		200: {
 			content: { "application/json": { schema: projectQualityRunSchema } },
 			description: "Project quality run cancelled",
+		},
+	},
+});
+
+const getCoverageFileReportRoute = createRoute({
+	method: "get",
+	path: "/repositories/:id/quality/runs/:runId/coverage-report",
+	request: { params: runParams, query: coverageFileReportQuery },
+	responses: {
+		200: {
+			content: { "application/json": { schema: coverageFileReportSchema } },
+			description: "Latest single-directory HTML coverage report for a file",
 		},
 	},
 });
@@ -152,6 +166,19 @@ export const qualityRouter = createOpenApiRouter()
 					c.req.param("id"),
 					c.req.param("runId"),
 				),
+				200,
+			),
+		),
+	)
+	.openapi(
+		getCoverageFileReportRoute,
+		withOpenApiRouteError(getCoverageFileReportRoute, async (c) =>
+			c.json(
+				await service.getCoverageFileReport({
+					repositoryId: c.req.param("id"),
+					runId: c.req.param("runId"),
+					fileKey: c.req.valid("query").fileKey,
+				}),
 				200,
 			),
 		),

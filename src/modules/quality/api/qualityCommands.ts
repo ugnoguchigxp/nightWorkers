@@ -26,3 +26,14 @@ export function createCoverageImprovementTask(
 		jsonRequest("POST", input),
 	);
 }
+
+export function fetchCoverageFileReport(
+	repositoryId: string,
+	runId: string,
+	fileKey: string,
+) {
+	const params = new URLSearchParams({ fileKey });
+	return apiFetch(
+		`/api/repositories/${repositoryId}/quality/runs/${runId}/coverage-report?${params.toString()}`,
+	);
+}

@@ -311,6 +311,25 @@ export const jaDictionary = {
 	"projectDetail.quality.coverageSubtitle": "Jestカバレッジ一覧",
 	"projectDetail.quality.select": "選択",
 	"projectDetail.quality.selectCoverageFile": "{{file}} を選択",
+	"projectDetail.quality.openCoverageViewer": "{{file}} をViewerで開く",
+	"projectDetail.quality.coverageViewer": "カバレッジファイルViewer",
+	"projectDetail.quality.coverageViewerClose": "Viewerを閉じる",
+	"projectDetail.quality.coverageViewerTabs": "Viewer表示切替",
+	"projectDetail.quality.coverageViewerLoading": "Viewerを読み込んでいます",
+	"projectDetail.quality.sourceViewerTab": "Source",
+	"projectDetail.quality.coverageViewerTab": "Coverage report",
+	"projectDetail.quality.sourceLoadFailed":
+		"ソースコードを読み込めませんでした",
+	"projectDetail.quality.coverageReportLoadFailed":
+		"カバレッジレポートを読み込めませんでした",
+	"projectDetail.quality.coverageReportUnavailable.not_single_report":
+		"分割されたカバレッジレポートはこのViewerの対象外です",
+	"projectDetail.quality.coverageReportUnavailable.report_missing":
+		"このrunにはHTMLカバレッジレポートがありません",
+	"projectDetail.quality.coverageReportUnavailable.report_stale":
+		"HTMLレポートとsummaryの生成時刻が一致しません。カバレッジを再実行してください",
+	"projectDetail.quality.coverageReportUnavailable.file_report_missing":
+		"このファイルのHTMLカバレッジレポートがありません",
 	"projectDetail.quality.createCoverageTask":
 		"選択ファイルからTask作成（{{count}}）",
 	"projectDetail.quality.coverageTaskCreating": "Task作成中",

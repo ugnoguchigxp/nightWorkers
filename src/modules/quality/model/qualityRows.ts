@@ -26,10 +26,7 @@ export function coverageRowsFromSummary(
 		return [];
 	const record = summary as Record<string, unknown>;
 	return Object.entries(record)
-		.filter(
-			([, entry]) =>
-				entry && typeof entry === "object" && !Array.isArray(entry),
-		)
+		.filter(([, entry]) => isCoverageEntry(entry))
 		.sort(([left], [right]) => {
 			if (left === "total") return -1;
 			if (right === "total") return 1;
@@ -45,6 +42,12 @@ export function coverageRowsFromSummary(
 			uncovered: uncoveredFromCoverageEntry(entry),
 			summary: file === "total",
 		}));
+}
+
+function isCoverageEntry(entry: unknown) {
+	return coverageMetrics.some(
+		(metric) => percentFromCoverageEntry(entry, metric) !== null,
+	);
 }
 
 function displayCoverageFilePath(file: string, projectRoot?: string) {

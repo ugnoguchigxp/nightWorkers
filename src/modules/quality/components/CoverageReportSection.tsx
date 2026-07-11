@@ -1,4 +1,9 @@
-import { ClipboardCheck, ClipboardPlus, Loader2 } from "lucide-react";
+import {
+	ClipboardCheck,
+	ClipboardPlus,
+	FileCode2,
+	Loader2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import type { ProjectQualityRun } from "../../../../shared/schemas/quality.schema";
@@ -23,6 +28,7 @@ export function CoverageReportSection({
 	creatingTask,
 	notice,
 	onToggleFile,
+	onOpenFile,
 	onCreateTask,
 }: {
 	coverageRun: ProjectQualityRun | null;
@@ -32,6 +38,7 @@ export function CoverageReportSection({
 	creatingTask: boolean;
 	notice: string;
 	onToggleFile?: (fileKey: string) => void;
+	onOpenFile?: (row: CoverageFileRow) => void;
 	onCreateTask?: () => void;
 }) {
 	const { t } = useTranslation();
@@ -132,56 +139,73 @@ export function CoverageReportSection({
 					</thead>
 					<tbody>
 						{coverageRows.length > 0 ? (
-							coverageRows.map((row) => (
-								<tr
-									key={row.key}
-									className={row.summary ? "font-bold" : undefined}
-									style={
-										row.summary
-											? {
-													background:
-														"color-mix(in srgb, var(--nw-primary) 7%, var(--nw-panel))",
-												}
-											: undefined
-									}
-								>
-									<td className="border-b py-2 pl-4" style={tableBorderStyle}>
-										{row.summary ? null : (
-											<input
-												type="checkbox"
-												checked={selectedFileKeys.includes(row.key)}
-												disabled={
-													busy ||
-													(selectionLimitReached &&
-														!selectedFileKeys.includes(row.key))
-												}
-												aria-label={t(
-													"projectDetail.quality.selectCoverageFile",
-													{ file: row.file },
-												)}
-												onChange={() => onToggleFile?.(row.key)}
-											/>
-										)}
-									</td>
-									<td className="border-b py-2" style={tableBorderStyle}>
-										<span className="block max-w-[360px] truncate">
-											{row.file}
-										</span>
-									</td>
-									<CoverageCell value={row.statements} />
-									<CoverageCell value={row.branches} />
-									<CoverageCell value={row.functions} />
-									<CoverageCell value={row.lines} />
-									<td className="border-b py-2 pr-4" style={tableBorderStyle}>
-										<span
-											className="block max-w-[360px] truncate"
-											style={subtleTextStyle}
-										>
-											{row.uncovered}
-										</span>
-									</td>
-								</tr>
-							))
+							coverageRows.map((row) => {
+								const selected = selectedFileKeys.includes(row.key);
+								const rowSelectionDisabled =
+									busy || (selectionLimitReached && !selected);
+
+								return (
+									<tr
+										key={row.key}
+										className={row.summary ? "font-bold" : undefined}
+										style={
+											row.summary
+												? {
+														background:
+															"color-mix(in srgb, var(--nw-primary) 7%, var(--nw-panel))",
+													}
+												: undefined
+										}
+									>
+										<td className="border-b py-2 pl-4" style={tableBorderStyle}>
+											{row.summary ? null : (
+												<input
+													type="checkbox"
+													checked={selected}
+													disabled={rowSelectionDisabled}
+													aria-label={t(
+														"projectDetail.quality.selectCoverageFile",
+														{ file: row.file },
+													)}
+													onChange={() => onToggleFile?.(row.key)}
+												/>
+											)}
+										</td>
+										<td className="border-b py-2" style={tableBorderStyle}>
+											{row.summary ? (
+												<span className="block max-w-[360px] truncate">
+													{row.file}
+												</span>
+											) : (
+												<button
+													type="button"
+													className="inline-flex max-w-[360px] cursor-pointer items-center gap-1.5 truncate rounded-sm px-1 py-0.5 text-left font-semibold underline decoration-current underline-offset-4 hover:bg-[color-mix(in_srgb,var(--nw-primary)_12%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nw-primary)]"
+													title={t("projectDetail.quality.openCoverageViewer", {
+														file: row.file,
+													})}
+													onClick={() => onOpenFile?.(row)}
+													style={{ color: "var(--nw-primary)" }}
+												>
+													<FileCode2 className="h-3.5 w-3.5 shrink-0" />
+													<span className="truncate">{row.file}</span>
+												</button>
+											)}
+										</td>
+										<CoverageCell value={row.statements} />
+										<CoverageCell value={row.branches} />
+										<CoverageCell value={row.functions} />
+										<CoverageCell value={row.lines} />
+										<td className="border-b py-2 pr-4" style={tableBorderStyle}>
+											<span
+												className="block max-w-[360px] truncate"
+												style={subtleTextStyle}
+											>
+												{row.uncovered}
+											</span>
+										</td>
+									</tr>
+								);
+							})
 						) : (
 							<EmptyTableRow
 								colSpan={7}

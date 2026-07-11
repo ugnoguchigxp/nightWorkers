@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect } from "vitest";
 import app from "../../api/app";
+import { coverageCommandWithSummaryReporter } from "../../api/modules/quality/quality-artifacts";
+import type { ProjectQualityCapabilities } from "../../shared/schemas/quality.schema";
 import {
 	createRepository,
 	writeCoverageSummary,
@@ -11,6 +13,21 @@ import {
 import "../project-detail-backend/setup";
 
 describe("Quality backend", () => {
+	it("appends missing coverage reporters without duplicating a Bun argument separator", () => {
+		const capabilities = {
+			coverage: {
+				runnable: true,
+				missingCapabilities: [],
+				command: "bun run test:coverage -- --coverage.reporter=json-summary",
+			},
+		} as ProjectQualityCapabilities;
+		const command = coverageCommandWithSummaryReporter(capabilities);
+
+		expect(command?.match(/ -- /g)).toHaveLength(1);
+		expect(command).toContain("--coverage.reporter=text");
+		expect(command).toContain("--coverage.reporter=html");
+	});
+
 	it("rejects quality runs when required capability is missing", async () => {
 		const repoRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "nightworkers-detail-quality-"),
@@ -150,10 +167,123 @@ describe("Quality backend", () => {
 			const run = await runRes.json();
 			expect(run.status).toBe("completed");
 			expect(run.command).toContain("--coverage.reporter=json-summary");
+			expect(run.command).toContain("--coverage.reporter=html");
 			expect(run.errorMessage).toBeNull();
 			expect(run.coverageSummary.total.lines.pct).toBe(93);
 			expect(run.coverageGate).toMatchObject({
 				passed: true,
+			});
+		} finally {
+			fs.rmSync(repoRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("serves a sanitized fresh single-directory HTML coverage report", async () => {
+		const repoRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-detail-coverage-html-"),
+		);
+		try {
+			writeCoverageSummary(repoRoot);
+			fs.mkdirSync(path.join(repoRoot, "coverage", "src"), { recursive: true });
+			fs.mkdirSync(path.join(repoRoot, "src"), { recursive: true });
+			fs.writeFileSync(
+				path.join(repoRoot, "src", "checkout.ts"),
+				"export const checkout = true;\n",
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "coverage", "index.html"),
+				"<html><body>index</body></html>",
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "coverage", "src", "checkout.ts.html"),
+				'<html><body><span class="cline-any cline-no">0x</span><pre>checkout</pre><img src="x" onerror="globalThis.pwned=true"><script>globalThis.pwned=true</script></body></html>',
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "package.json"),
+				JSON.stringify({
+					scripts: { test: "echo unit", "test:coverage": "echo coverage" },
+				}),
+			);
+			const project = await createRepository(repoRoot);
+			const runRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ runType: "unit" }),
+				},
+			);
+			const run = (await runRes.json()) as { id: string };
+			const reportRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${run.id}/coverage-report?fileKey=${encodeURIComponent("src/checkout.ts")}`,
+			);
+
+			expect(reportRes.status).toBe(200);
+			const report = await reportRes.json();
+			expect(report).toMatchObject({ available: true, reason: null });
+			expect(report.html).toContain("cline-any cline-no");
+			expect(report.html).not.toContain("<script");
+			expect(report.html).not.toContain("onerror");
+			expect(report.html).toContain(
+				"table.coverage td span.cline-any { display: inline-block;",
+			);
+			expect(report.html).not.toContain(".cline-any { display: block;");
+
+			const future = new Date(Date.now() + 10 * 60 * 1000);
+			fs.utimesSync(
+				path.join(repoRoot, "coverage", "src", "checkout.ts.html"),
+				future,
+				future,
+			);
+			const staleReportRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${run.id}/coverage-report?fileKey=${encodeURIComponent("src/checkout.ts")}`,
+			);
+			expect(await staleReportRes.json()).toMatchObject({
+				available: false,
+				reason: "report_stale",
+			});
+		} finally {
+			fs.rmSync(repoRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("does not expose split coverage reports through the file viewer", async () => {
+		const repoRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-detail-coverage-split-"),
+		);
+		try {
+			writeCoverageSummary(repoRoot);
+			fs.mkdirSync(path.join(repoRoot, "coverage-backend"));
+			fs.writeFileSync(
+				path.join(repoRoot, "coverage-backend", "coverage-summary.json"),
+				JSON.stringify({ total: { lines: { pct: 80 } } }),
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "coverage", "index.html"),
+				"<html><body>index</body></html>",
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "package.json"),
+				JSON.stringify({
+					scripts: { test: "echo unit", "test:coverage": "echo coverage" },
+				}),
+			);
+			const project = await createRepository(repoRoot);
+			const runRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ runType: "unit" }),
+				},
+			);
+			const run = (await runRes.json()) as { id: string };
+			const reportRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${run.id}/coverage-report?fileKey=${encodeURIComponent("src/checkout.ts")}`,
+			);
+			expect(await reportRes.json()).toMatchObject({
+				available: false,
+				reason: "not_single_report",
 			});
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });

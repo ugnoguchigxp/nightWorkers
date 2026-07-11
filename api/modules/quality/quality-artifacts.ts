@@ -12,8 +12,7 @@ import {
 } from "../../services/quality/coverage-gate";
 import { readTestQualitySettingsFile } from "../../services/settings/test-quality-settings";
 
-const COVERAGE_SUMMARY_REPORTER_ARGS =
-	"--coverage.reporter=json-summary --coverage.reporter=text";
+const COVERAGE_REPORTERS = ["json-summary", "text", "html"] as const;
 const E2E_JSON_OUTPUT_PATH = path.join("test-results", "e2e-results.json");
 const PLAYWRIGHT_JSON_REPORTER_ARGS = "--reporter=list,json";
 const E2E_ARTIFACT_PATHS = [
@@ -31,10 +30,18 @@ export function coverageCommandWithSummaryReporter(
 ) {
 	const command = capabilities.coverage.command;
 	if (!command) return undefined;
-	if (command.includes("--coverage.reporter=json-summary")) return command;
-	if (/\bbun\s+run\b/.test(command))
-		return `${command} -- ${COVERAGE_SUMMARY_REPORTER_ARGS}`;
-	return `${command} ${COVERAGE_SUMMARY_REPORTER_ARGS}`;
+	const missingReporterArgs = COVERAGE_REPORTERS.filter(
+		(reporter) =>
+			!new RegExp(`--coverage\\.reporter(?:=|\\s+)${reporter}(?:\\s|$)`).test(
+				command,
+			),
+	)
+		.map((reporter) => `--coverage.reporter=${reporter}`)
+		.join(" ");
+	if (!missingReporterArgs) return command;
+	if (/\bbun\s+run\b/.test(command) && !/\s--\s/.test(command))
+		return `${command} -- ${missingReporterArgs}`;
+	return `${command} ${missingReporterArgs}`;
 }
 
 export function e2eCommandWithJsonReporter(command: string) {

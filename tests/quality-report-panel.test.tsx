@@ -252,4 +252,22 @@ describe("coverageRowsFromSummary", () => {
 			"api/app/env.ts",
 		]);
 	});
+
+	it("ignores combined-report metadata that is not a coverage file", () => {
+		const rows = coverageRowsFromSummary({
+			total: {
+				statements: { pct: 90 },
+				branches: { pct: 80 },
+				functions: { pct: 85 },
+				lines: { pct: 88 },
+			},
+			segments: {
+				backend: { lines: { pct: 90 } },
+				frontend: { lines: { pct: 80 } },
+			},
+			scope: { backendFiles: 10, frontendFiles: 8 },
+		});
+
+		expect(rows.map((row) => row.file)).toEqual(["total"]);
+	});
 });

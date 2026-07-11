@@ -3,6 +3,7 @@ import { AlertTriangle, BarChart3, CircleDollarSign } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { OverviewDashboard } from "../../../../shared/schemas/overview.schema";
 import { formatDateTime } from "../../../i18n/format";
+import type { OverviewRange } from "../../nightworkers/routing/workbench-route-state";
 import type { NightWorkersCurrency } from "../../settings/settingsTypes";
 import {
 	formatCompactCurrency,
@@ -30,12 +31,14 @@ import {
 export function OverviewUsageSections({
 	dashboard,
 	viewModel,
+	range,
 	language,
 	timezone,
 	currency,
 }: {
 	dashboard: OverviewDashboard;
 	viewModel: OverviewViewModel;
+	range: OverviewRange;
 	language: "ja" | "en";
 	timezone: string;
 	currency: NightWorkersCurrency;
@@ -43,69 +46,79 @@ export function OverviewUsageSections({
 	const { t } = useTranslation();
 	return (
 		<>
-			<section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-				<div className="border p-4" style={panelStyle}>
-					<SectionTitle
-						icon={<BarChart3 className="h-4 w-4" />}
-						title={t("overview.section.daily")}
-					/>
-					{!viewModel.hasDailyUsageData ? (
-						<EmptyState text={t("overview.empty")} />
-					) : (
-						<>
-							<TokenLegend />
-							<div className="mt-4 flex h-48 items-end gap-1">
-								{dashboard.dailyUsage.map((bucket) => {
-									const uncached = getUncachedInputTokens(bucket);
-									const cached = bucket.cachedInputTokens;
-									const output = bucket.outputTokens;
-									const total = getSeparatedTokenTotal(bucket);
-									return (
-										<div
-											key={bucket.key}
-											className="flex min-w-0 flex-1 flex-col items-center gap-1"
-										>
+			<section
+				className={
+					range === "all"
+						? "grid gap-4"
+						: "grid gap-4 xl:grid-cols-[1.2fr_0.8fr]"
+				}
+			>
+				{range === "all" ? null : (
+					<div className="border p-4" style={panelStyle}>
+						<SectionTitle
+							icon={<BarChart3 className="h-4 w-4" />}
+							title={t("overview.section.daily")}
+						/>
+						{!viewModel.hasDailyUsageData ? (
+							<EmptyState text={t("overview.empty")} />
+						) : (
+							<>
+								<TokenLegend />
+								<div className="mt-4 flex h-48 items-end gap-1">
+									{dashboard.dailyUsage.map((bucket) => {
+										const uncached = getUncachedInputTokens(bucket);
+										const cached = bucket.cachedInputTokens;
+										const output = bucket.outputTokens;
+										const total = getSeparatedTokenTotal(bucket);
+										return (
 											<div
-												className="flex w-full flex-col justify-end overflow-hidden rounded-t"
-												style={{
-													height: `${Math.max(4, (total / viewModel.maxBucketTokens) * 170)}px`,
-												}}
-												title={t("overview.chart.bucketTokenParts", {
-													bucket: bucket.key,
-													input: formatExactNumber(uncached, language),
-													cached: formatExactNumber(cached, language),
-													output: formatExactNumber(output, language),
-												})}
+												key={bucket.key}
+												className="flex min-w-0 flex-1 flex-col items-center gap-1"
 											>
-												<TokenSegment
-													value={output}
-													total={total}
-													tone="output"
-												/>
-												<TokenSegment
-													value={cached}
-													total={total}
-													tone="cachedInput"
-												/>
-												<TokenSegment
-													value={uncached}
-													total={total}
-													tone="input"
-												/>
+												<div
+													className="flex w-full flex-col justify-end overflow-hidden rounded-t"
+													style={{
+														height: `${Math.max(4, (total / viewModel.maxBucketTokens) * 170)}px`,
+													}}
+													title={t("overview.chart.bucketTokenParts", {
+														bucket: bucket.key,
+														input: formatExactNumber(uncached, language),
+														cached: formatExactNumber(cached, language),
+														output: formatExactNumber(output, language),
+													})}
+												>
+													<TokenSegment
+														value={output}
+														total={total}
+														tone="output"
+													/>
+													<TokenSegment
+														value={cached}
+														total={total}
+														tone="cachedInput"
+													/>
+													<TokenSegment
+														value={uncached}
+														total={total}
+														tone="input"
+													/>
+												</div>
+												{range === "30d" ? null : (
+													<span
+														className="max-w-full truncate text-[9px]"
+														style={subtleTextStyle}
+													>
+														{bucket.key}
+													</span>
+												)}
 											</div>
-											<span
-												className="max-w-full truncate text-[9px]"
-												style={subtleTextStyle}
-											>
-												{bucket.key}
-											</span>
-										</div>
-									);
-								})}
-							</div>
-						</>
-					)}
-				</div>
+										);
+									})}
+								</div>
+							</>
+						)}
+					</div>
+				)}
 
 				<div className="border p-4" style={panelStyle}>
 					<SectionTitle

@@ -317,6 +317,24 @@ export const enDictionary = {
 	"projectDetail.quality.coverageSubtitle": "Jest coverage table",
 	"projectDetail.quality.select": "Select",
 	"projectDetail.quality.selectCoverageFile": "Select {{file}}",
+	"projectDetail.quality.openCoverageViewer": "Open {{file}} in viewer",
+	"projectDetail.quality.coverageViewer": "Coverage file viewer",
+	"projectDetail.quality.coverageViewerClose": "Close viewer",
+	"projectDetail.quality.coverageViewerTabs": "Viewer display",
+	"projectDetail.quality.coverageViewerLoading": "Loading viewer",
+	"projectDetail.quality.sourceViewerTab": "Source",
+	"projectDetail.quality.coverageViewerTab": "Coverage report",
+	"projectDetail.quality.sourceLoadFailed": "Failed to load source code",
+	"projectDetail.quality.coverageReportLoadFailed":
+		"Failed to load the coverage report",
+	"projectDetail.quality.coverageReportUnavailable.not_single_report":
+		"Split coverage reports are not supported by this viewer",
+	"projectDetail.quality.coverageReportUnavailable.report_missing":
+		"This run does not have an HTML coverage report",
+	"projectDetail.quality.coverageReportUnavailable.report_stale":
+		"The HTML report and summary have different generation times. Run coverage again",
+	"projectDetail.quality.coverageReportUnavailable.file_report_missing":
+		"This file does not have an HTML coverage report",
 	"projectDetail.quality.createCoverageTask":
 		"Create task from selected files ({{count}})",
 	"projectDetail.quality.coverageTaskCreating": "Creating task",

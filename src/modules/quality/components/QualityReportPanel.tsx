@@ -80,6 +80,7 @@ export function QualityReportPanel({
 	notice = "",
 	onRun,
 	onToggleFile,
+	onOpenCoverageFile,
 	onCreateTask,
 }: {
 	quality: ProjectQualityOverview | null;
@@ -91,6 +92,7 @@ export function QualityReportPanel({
 	notice?: string;
 	onRun: (runType: "unit" | "e2e" | "all") => void;
 	onToggleFile?: (fileKey: string) => void;
+	onOpenCoverageFile?: (row: CoverageFileRow) => void;
 	onCreateTask?: () => void;
 }) {
 	const { t } = useTranslation();
@@ -166,6 +168,7 @@ export function QualityReportPanel({
 				creatingTask={creatingTask}
 				notice={notice}
 				onToggleFile={onToggleFile}
+				onOpenFile={onOpenCoverageFile}
 				onCreateTask={onCreateTask}
 			/>
 			<E2EResultsSection rows={e2eRows} />

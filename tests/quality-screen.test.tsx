@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
+import { CoverageFileDrawer } from "../src/modules/quality/components/CoverageFileDrawer";
 import { QualityReportPanel } from "../src/modules/quality/components/QualityReportPanel";
 import { coverageRowsFromSummary } from "../src/modules/quality/model/qualityRows";
 
@@ -45,6 +46,9 @@ describe("Quality screen coverage selection", () => {
 		expect(markup).toContain("src/example.ts を選択");
 		expect(markup.match(/type="checkbox"/g)).toHaveLength(1);
 		expect(markup).toContain("checked");
+		expect(markup).toContain("src/example.ts をViewerで開く");
+		expect(markup).toContain("color:var(--nw-primary)");
+		expect(markup).toContain("cursor-pointer");
 	});
 
 	it("renders a polite success notice", () => {
@@ -124,5 +128,31 @@ describe("Quality screen coverage selection", () => {
 		);
 
 		expect(markup.match(/UNIQUE_QUALITY_OUTPUT/g)).toHaveLength(1);
+	});
+
+	it("renders the coverage drawer with source and coverage report viewer tabs", () => {
+		const markup = renderToStaticMarkup(
+			<CoverageFileDrawer
+				repositoryId="00000000-0000-4000-8000-000000000001"
+				runId="00000000-0000-4000-8000-000000000002"
+				row={{
+					key: "/repo/src/example.ts",
+					file: "src/example.ts",
+					statements: 80,
+					branches: 70,
+					functions: 90,
+					lines: 82,
+					uncovered: "12",
+				}}
+				onClose={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain('role="dialog"');
+		expect(markup).toContain("src/example.ts");
+		expect(markup).toContain("Source");
+		expect(markup).toContain("Coverage report");
+		expect(markup).toContain("md:w-1/2");
+		expect(markup).toContain("Viewerを読み込んでいます");
 	});
 });

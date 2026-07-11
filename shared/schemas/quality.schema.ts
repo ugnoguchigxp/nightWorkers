@@ -125,3 +125,24 @@ export const createCoverageImprovementTaskResponseSchema = z.object({
 export type CreateCoverageImprovementTaskResponse = z.infer<
 	typeof createCoverageImprovementTaskResponseSchema
 >;
+
+export const coverageFileReportSchema = z.discriminatedUnion("available", [
+	z.object({
+		available: z.literal(true),
+		html: z.string(),
+		reason: z.null(),
+		generatedAt: z.string(),
+	}),
+	z.object({
+		available: z.literal(false),
+		html: z.null(),
+		reason: z.enum([
+			"not_single_report",
+			"report_missing",
+			"report_stale",
+			"file_report_missing",
+		]),
+		generatedAt: z.null(),
+	}),
+]);
+export type CoverageFileReport = z.infer<typeof coverageFileReportSchema>;
