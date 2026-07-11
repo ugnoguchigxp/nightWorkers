@@ -5,6 +5,7 @@ import {
 	FolderTree,
 	ListTodo,
 	LoaderCircle,
+	MessageCircleMore,
 	NotebookPen,
 	Trash2,
 } from "lucide-react";
@@ -132,6 +133,8 @@ type ThreadWorkspaceProps = {
 	onClearArtifactContext?: () => void;
 	isProjectFilesOpen: boolean;
 	onOpenProjectFiles: () => void;
+	isPilotThoughtDockOpen?: boolean;
+	onTogglePilotThoughtDock?: () => void;
 	onGrantExternalPath: (path: string) => Promise<void>;
 	splitPanel?: ReactNode;
 };
@@ -194,6 +197,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		: t("reviewStatus.start");
 	const testModeArtifactLabel = t("thread.testModeArtifact");
 	const debugModeTooltipLabel = t("thread.tooltip.debugMode");
+	const pilotThoughtTooltipLabel = t("thread.tooltip.pilotThought");
 	const planModeTooltipLabel = t("thread.tooltip.planMode");
 	const testModeTooltipLabel = t("thread.tooltip.testMode");
 	const reviewModeTooltipLabel = t("thread.tooltip.reviewMode");
@@ -492,6 +496,23 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 								>
 									<Bug className="h-3.5 w-3.5" />
 								</button>
+								{props.activeSession.missionPilot &&
+								props.onTogglePilotThoughtDock ? (
+									<button
+										type="button"
+										className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
+											props.isPilotThoughtDockOpen
+												? "border-slate-400 bg-slate-800/80 text-slate-100"
+												: "border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400"
+										}`}
+										onClick={props.onTogglePilotThoughtDock}
+										aria-label={pilotThoughtTooltipLabel}
+										aria-pressed={props.isPilotThoughtDockOpen}
+										title={pilotThoughtTooltipLabel}
+									>
+										<MessageCircleMore className="h-4 w-4" />
+									</button>
+								) : null}
 								<button
 									type="button"
 									className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${

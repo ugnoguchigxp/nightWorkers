@@ -26,6 +26,7 @@ import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.pl
 import { isBlueprintMessage } from "../nightworkers/nightworkers.planning-helpers.service";
 import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
 import * as repo from "./questionnaire.repository";
+import { publishQuestionnaireReady } from "./questionnaire-events";
 import {
 	buildDesignQuestionnaireSessionView,
 	designDecisionReviewJsonSchema,
@@ -124,7 +125,9 @@ export async function createDesignQuestionnaire(
 		});
 		await repo.updateDesignQuestionnaireSessionStatus(session.id, "needs_edit");
 	}
-	return getDesignQuestionnaireSession(taskId, session.id);
+	const created = await getDesignQuestionnaireSession(taskId, session.id);
+	if (created.status === "answering") await publishQuestionnaireReady(created);
+	return created;
 }
 
 export async function listDesignQuestionnaires(taskId: string) {
@@ -254,7 +257,9 @@ export async function generateDesignQuestionnaireFollowUp(
 		sessionId,
 		parsed.ok ? "answering" : "needs_edit",
 	);
-	return getDesignQuestionnaireSession(taskId, sessionId);
+	const updated = await getDesignQuestionnaireSession(taskId, sessionId);
+	if (updated.status === "answering") await publishQuestionnaireReady(updated);
+	return updated;
 }
 
 async function assessDesignQuestionnaireNextStep(
@@ -331,7 +336,9 @@ async function assessDesignQuestionnaireNextStep(
 		validationStatus: "valid",
 	});
 	await repo.updateDesignQuestionnaireSessionStatus(session.id, "answering");
-	return getDesignQuestionnaireSession(taskId, session.id);
+	const updated = await getDesignQuestionnaireSession(taskId, session.id);
+	await publishQuestionnaireReady(updated);
+	return updated;
 }
 
 export async function generateDesignQuestionnaireReview(

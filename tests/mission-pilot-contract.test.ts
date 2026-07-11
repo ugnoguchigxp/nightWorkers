@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildMissionPilotQuestionnaireDraft } from "../api/modules/missionPilot/mission-pilot-questionnaire-draft";
+import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import {
 	missionPilotAuthorizationV2Schema,
 	missionPilotControlSummarySchema,
@@ -147,5 +149,78 @@ describe("Mission Pilot contract", () => {
 		expect(formatCountdown(65_000)).toBe("01:05");
 		expect(formatCountdown(3_661_000)).toBe("1:01:01");
 		expect(formatCountdown(0)).toBe("00:00");
+	});
+
+	it("builds auditable answers from questionnaire recommendations", () => {
+		const questionnaireSessionId = "44444444-4444-4444-8444-444444444444";
+		const now = new Date("2026-07-11T10:00:00.000Z");
+		const questionnaire = designQuestionnaireSessionSchema.parse({
+			id: questionnaireSessionId,
+			taskId,
+			repositoryId: sourceId,
+			sourceBlueprintMessageId: null,
+			status: "answering",
+			createdAt: now,
+			updatedAt: now,
+			questionSets: [
+				{
+					id: "55555555-5555-4555-8555-555555555555",
+					sequence: 1,
+					validationStatus: "valid",
+					rawOutput: null,
+					createdAt: now,
+					questionnaire: {
+						version: 1,
+						source: {
+							taskId,
+							repositoryId: sourceId,
+							sourceKind: "plan_mode_intake",
+						},
+						title: "方針確認",
+						summary: "実装方針を選ぶ",
+						questionSets: [
+							{
+								id: "architecture",
+								title: "構成",
+								category: "architecture",
+								purpose: "実装方針を決める",
+								questions: [
+									{
+										id: "api-style",
+										topic: "API",
+										question: "どの方式にしますか",
+										why: "契約を固定するため",
+										answerType: "single_choice",
+										recommendedAnswerId: "rest",
+										options: [
+											{ id: "rpc", label: "RPC", tradeoff: "密結合" },
+											{
+												id: "rest",
+												label: "REST",
+												tradeoff: "既存規約に合う",
+												recommended: true,
+											},
+										],
+										blocks: ["implementation"],
+										outputSection: "API",
+									},
+								],
+							},
+						],
+						openQuestions: [],
+						dataModelHandoffNotes: [],
+					},
+				},
+			],
+			answers: [],
+			reviews: [],
+		});
+		const draft = buildMissionPilotQuestionnaireDraft(questionnaire, now);
+		expect(draft.answers[0]?.selectedOptionIds).toEqual(["rest"]);
+		expect(draft.answerEvidence["api-style"]).toMatchObject({
+			source: "mission_pilot",
+			updatedAt: now,
+		});
+		expect(draft.answerEvidence["api-style"]?.reason).toContain("REST");
 	});
 });

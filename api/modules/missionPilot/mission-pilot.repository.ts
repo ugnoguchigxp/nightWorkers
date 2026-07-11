@@ -273,7 +273,11 @@ export async function finishPlay(taskId: string, activeRunId: string | null) {
 	const [updated] = await db
 		.update(missionPilotSessions)
 		.set({
-			phase: activeRunId ? "running" : "initial_intake",
+			phase: row.nextWakeAt
+				? "waiting_intervention"
+				: activeRunId
+					? "running"
+					: "initial_intake",
 			resumePhase: null,
 			activeRunId,
 			version: row.version + 1,

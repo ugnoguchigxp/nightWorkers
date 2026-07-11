@@ -8,10 +8,16 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../shared/json-record";
+import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { TEST_MODE_WORKFLOW_ACTION } from "../../../shared/test-mode-workflow";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
+import {
+	fetchMissionPilotQuestionnaireDraft,
+	submitMissionPilotQuestionnaireDraft,
+	updateMissionPilotQuestionnaireDraft,
+} from "../missionPilot";
 import {
 	type ArtifactExportDescriptor,
 	artifactFileStem,
@@ -419,6 +425,13 @@ export function PlanModeWorkspaceViewer({
 		useState<GeneralSettings | null>(null);
 	const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
 	const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
+	const [missionPilotDraft, setMissionPilotDraft] =
+		useState<MissionPilotQuestionnaireDraft | null>(null);
+	const [countdownNow, setCountdownNow] = useState(() => Date.now());
+	const missionPilotDraftRef = useRef<MissionPilotQuestionnaireDraft | null>(
+		null,
+	);
+	const draftUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
 	const workspaceMessages = useMemo(
 		() =>
 			selectPlanModeWorkspaceMessages({
@@ -603,6 +616,11 @@ export function PlanModeWorkspaceViewer({
 			if (activeTab !== "questionnaire") selectActiveTab("questionnaire");
 			return;
 		}
+		if (missionPilotDraft) {
+			didSelectUnlockedDefaultTab.current = false;
+			if (activeTab !== "questionnaire") selectActiveTab("questionnaire");
+			return;
+		}
 		if (initialTab) return;
 		if (!didSelectUnlockedDefaultTab.current && activeTab === "questionnaire") {
 			didSelectUnlockedDefaultTab.current = true;
@@ -614,6 +632,7 @@ export function PlanModeWorkspaceViewer({
 		activeTab,
 		defaultTab,
 		initialTab,
+		missionPilotDraft,
 		questionnaireGateLocked,
 		selectActiveTab,
 		visibleTabs,
@@ -623,6 +642,120 @@ export function PlanModeWorkspaceViewer({
 		sessions.find((session) => session.id === activeSessionId) ||
 		sessions[0] ||
 		null;
+
+	useEffect(() => {
+		missionPilotDraftRef.current = missionPilotDraft;
+	}, [missionPilotDraft]);
+
+	useEffect(() => {
+		if (!sessionId || !activeQuestionnaireSession?.id) {
+			setMissionPilotDraft(null);
+			return;
+		}
+		const controller = new AbortController();
+		void fetchMissionPilotQuestionnaireDraft(sessionId)
+			.then(async (response) => {
+				if (!response.ok) return null;
+				return (await response.json()) as MissionPilotQuestionnaireDraft | null;
+			})
+			.then((draft) => {
+				if (controller.signal.aborted) return;
+				if (
+					draft &&
+					draft.questionnaireSessionId !== activeQuestionnaireSession.id
+				) {
+					setActiveSessionId(draft.questionnaireSessionId);
+					selectActiveTab("questionnaire");
+					return;
+				}
+				if (!draft) {
+					setMissionPilotDraft(null);
+					return;
+				}
+				setMissionPilotDraft(draft);
+				selectActiveTab("questionnaire");
+				setAnswers(
+					Object.fromEntries(
+						draft.answers.map((answer) => [answer.questionId, answer]),
+					),
+				);
+			})
+			.catch(() => undefined);
+		return () => controller.abort();
+	}, [activeQuestionnaireSession?.id, selectActiveTab, sessionId]);
+
+	useEffect(() => {
+		if (missionPilotDraft?.state !== "waiting_user") return;
+		const timer = window.setInterval(() => setCountdownNow(Date.now()), 250);
+		return () => window.clearInterval(timer);
+	}, [missionPilotDraft?.state]);
+
+	const missionPilotSecondsRemaining = missionPilotDraft
+		? Math.max(
+				0,
+				Math.ceil(
+					(new Date(missionPilotDraft.deadlineAt).getTime() - countdownNow) /
+						1000,
+				),
+			)
+		: null;
+	const missionPilotDraftState = missionPilotDraft?.state;
+
+	useEffect(() => {
+		if (
+			!sessionId ||
+			(missionPilotDraftState !== "waiting_user" &&
+				missionPilotDraftState !== "submitting") ||
+			missionPilotSecondsRemaining !== 0
+		)
+			return;
+		const poll = () => {
+			void fetchMissionPilotQuestionnaireDraft(sessionId)
+				.then(async (response) =>
+					response.ok
+						? ((await response.json()) as MissionPilotQuestionnaireDraft | null)
+						: null,
+				)
+				.then((draft) => {
+					if (draft) setMissionPilotDraft(draft);
+					if (draft?.state === "submitted") void refresh();
+				});
+		};
+		const timer = window.setInterval(poll, 1_000);
+		poll();
+		return () => window.clearInterval(timer);
+	}, [
+		missionPilotDraftState,
+		missionPilotSecondsRemaining,
+		refresh,
+		sessionId,
+	]);
+
+	const handleQuestionnaireAnswersChange = useCallback(
+		(nextAnswers: Record<string, DesignQuestionnaireAnswer>) => {
+			setAnswers(nextAnswers);
+			if (!sessionId || missionPilotDraftRef.current?.state !== "waiting_user")
+				return;
+			const snapshot = Object.values(nextAnswers);
+			draftUpdateQueueRef.current = draftUpdateQueueRef.current.then(
+				async () => {
+					const current = missionPilotDraftRef.current;
+					if (!current || current.state !== "waiting_user") return;
+					const response = await updateMissionPilotQuestionnaireDraft(
+						sessionId,
+						current.version,
+						snapshot,
+					);
+					if (!response.ok) return;
+					const updated =
+						(await response.json()) as MissionPilotQuestionnaireDraft;
+					missionPilotDraftRef.current = updated;
+					setMissionPilotDraft(updated);
+				},
+			);
+		},
+		[sessionId],
+	);
 	const activeQuestionnaireSummary =
 		workspace?.questionnaireSessions.find(
 			(session) => session.id === activeQuestionnaireSession?.id,
@@ -694,6 +827,32 @@ export function PlanModeWorkspaceViewer({
 		if (unansweredQuestions.length > 0) return;
 		if (isImplementationLocked) return;
 		await runAction("submit-answers", async () => {
+			if (missionPilotDraft?.state === "waiting_user") {
+				await draftUpdateQueueRef.current;
+				const current = missionPilotDraftRef.current;
+				if (current?.state === "waiting_user") {
+					const response = await submitMissionPilotQuestionnaireDraft(
+						sessionId,
+						current.version,
+						buildSubmittableQuestionnaireAnswers(questionGroups, answers),
+					);
+					if (!response.ok) throw new Error(await response.text());
+					const payload = (await response.json()) as {
+						draft: MissionPilotQuestionnaireDraft | null;
+						questionnaire: DesignQuestionnaireSession;
+					};
+					setMissionPilotDraft(payload.draft);
+					setSessions((prev) =>
+						prev.map((item) =>
+							item.id === payload.questionnaire.id
+								? payload.questionnaire
+								: item,
+						),
+					);
+					await refresh();
+					return;
+				}
+			}
 			const answersRes = await submitDesignQuestionnaireAnswers(
 				sessionId,
 				activeQuestionnaireSession.id,
@@ -1102,9 +1261,39 @@ export function PlanModeWorkspaceViewer({
 								<QuestionnaireForm
 									questionGroups={questionGroups}
 									answers={answers}
-									onChange={setAnswers}
+									onChange={handleQuestionnaireAnswersChange}
 									readOnly={questionnaireSubmissionState.readOnly}
+									answerEvidence={missionPilotDraft?.answerEvidence}
 								/>
+								{missionPilotDraft?.state === "waiting_user" ? (
+									<div
+										className="flex items-center gap-2 rounded bg-slate-800/55 px-3 py-2 text-xs text-slate-300"
+										data-mission-pilot-questionnaire-countdown
+									>
+										<span>Mission Pilotの回答案を表示中</span>
+										<span className="font-mono font-semibold text-slate-100">
+											{missionPilotSecondsRemaining}秒
+										</span>
+										<span className="text-slate-500">
+											未操作ならこの内容で自動確定します
+										</span>
+									</div>
+								) : null}
+								{missionPilotDraft?.state === "failed" ? (
+									<div className="rounded bg-red-950/35 px-3 py-2 text-xs text-red-200">
+										自動確定に失敗しました。回答案は保持されています。Mission
+										Pilotを再開して再試行してください。
+									</div>
+								) : null}
+								{missionPilotDraft?.state === "submitted" ? (
+									<div
+										className="rounded bg-emerald-950/35 px-3 py-2 text-xs text-emerald-200"
+										data-mission-pilot-questionnaire-submitted
+									>
+										Mission Pilotが{missionPilotDraft.answers.length}
+										件の回答を確定しました。選択内容と根拠はこの画面に証跡として保持されています。
+									</div>
+								) : null}
 								<div className="flex flex-wrap items-center gap-2">
 									<ActionButton
 										label={questionnaireSubmissionState.label}

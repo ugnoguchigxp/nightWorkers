@@ -427,6 +427,91 @@
 	color: var(--nw-artifact-structured-accent-text);
 }
 
+.nightworkers-shell .nightworkers-questionnaire-evidence {
+	border: 1px solid color-mix(in srgb, var(--nw-primary) 38%, var(--nw-border));
+	background: color-mix(in srgb, var(--nw-primary) 9%, var(--nw-panel));
+	color: var(--nw-text);
+	line-height: 1.45;
+}
+
+.nightworkers-shell .nightworkers-questionnaire-evidence-label {
+	background: color-mix(in srgb, var(--nw-primary) 14%, transparent);
+	color: var(--nw-primary);
+}
+
+.nightworkers-shell .nightworkers-pilot-thought-event {
+	background: var(--nw-panel);
+	border-color: var(--nw-border);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-review-result {
+	background: var(--nw-primary);
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary-foreground) 42%,
+		transparent
+	);
+	color: var(--nw-primary-foreground);
+}
+
+.nightworkers-shell .nightworkers-review-result * {
+	color: inherit;
+}
+
+.nightworkers-shell .nightworkers-review-result-label {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary-foreground) 55%,
+		transparent
+	);
+	background: color-mix(in srgb, var(--nw-primary-foreground) 12%, transparent);
+}
+
+.nightworkers-shell .nightworkers-debug-payload {
+	border-color: var(--nw-border);
+	background: var(--nw-surface-soft);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-debug-payload-summary {
+	background: var(--nw-surface-soft);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-debug-payload-content {
+	border-color: var(--nw-border);
+}
+
+.nightworkers-shell .nightworkers-debug-copy {
+	border-color: var(--nw-border);
+	background: var(--nw-panel);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-debug-json {
+	background: var(--nw-background);
+	color: var(--nw-muted-text);
+}
+
+.nightworkers-shell
+	.nightworkers-questionnaire-evidence[data-answer-evidence="user"],
+.nightworkers-shell
+	.nightworkers-questionnaire-evidence[data-answer-evidence="user_confirmed"] {
+	border-color: color-mix(in srgb, var(--nw-success) 38%, var(--nw-border));
+	background: color-mix(in srgb, var(--nw-success) 9%, var(--nw-panel));
+}
+
+.nightworkers-shell
+	.nightworkers-questionnaire-evidence[data-answer-evidence="user"]
+	.nightworkers-questionnaire-evidence-label,
+.nightworkers-shell
+	.nightworkers-questionnaire-evidence[data-answer-evidence="user_confirmed"]
+	.nightworkers-questionnaire-evidence-label {
+	background: color-mix(in srgb, var(--nw-success) 14%, transparent);
+	color: var(--nw-success);
+}
+
 .nightworkers-shell .nightworkers-artifact-export-trigger {
 	background: var(--nw-panel);
 	border-color: var(--nw-border);

@@ -80,6 +80,8 @@ type NightWorkersShellThreadPanelProps = {
 	queueActiveSessionAndFocusTodo: () => Promise<void>;
 	addActiveSessionToQueue: () => Promise<void>;
 	isActiveImplementationLocked: boolean;
+	isPilotThoughtDockOpen: boolean;
+	onTogglePilotThoughtDock: () => void;
 };
 
 export function NightWorkersShellThreadPanel(
@@ -249,6 +251,8 @@ export function NightWorkersShellThreadPanel(
 				if (selectedArtifact) setClearedArtifactContextId(selectedArtifact.id);
 			}}
 			isProjectFilesOpen={artifactFocus.type === "project_tree"}
+			isPilotThoughtDockOpen={props.isPilotThoughtDockOpen}
+			onTogglePilotThoughtDock={props.onTogglePilotThoughtDock}
 			onOpenProjectFiles={() => {
 				const sessionId = workspace.activeSessionId;
 				if (!sessionId) return;

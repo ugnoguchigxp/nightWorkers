@@ -320,7 +320,7 @@ export function ThreadBody({
 								<MissionPilotComposerControls
 									taskId={activeSession.id}
 									summary={activeSession.missionPilot}
-									initialPrompt={activeSession.objective}
+									initialPrompt={activeSession.objective ?? undefined}
 								/>
 							) : undefined
 						}

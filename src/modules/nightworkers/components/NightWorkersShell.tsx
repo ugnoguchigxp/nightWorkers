@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { OverviewScreen } from "@/modules/overview";
 import { toDeepRecord } from "../../../../shared/json-record";
+import { PilotThoughtDock } from "../../missionPilot";
 import { fetchDesignQuestionnaireSession } from "../../questionnaire";
 import {
 	ImplementationQueueScreen,
@@ -93,6 +94,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const [clearedArtifactContextId, setClearedArtifactContextId] = useState<
 		string | null
 	>(null);
+	const [pilotThoughtDockSessionId, setPilotThoughtDockSessionId] = useState<
+		string | null
+	>(null);
 	const {
 		showSettings,
 		isOverviewActive,
@@ -131,6 +135,9 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		projectDetailProject
 			? null
 			: workspace.activeSessionId;
+	const isPilotThoughtDockOpen =
+		Boolean(workspace.activeSessionId) &&
+		pilotThoughtDockSessionId === workspace.activeSessionId;
 	const selectedArtifact =
 		artifactFocus.type === "artifact" ? artifactFocus.artifact : null;
 	const selectedArtifactContext =
@@ -894,26 +901,35 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 					minSize="18%"
 					maxSize="42%"
 				>
-					<ProjectSidebar
-						projects={workspace.projects}
-						groupedSessions={workspace.groupedSessionViews}
-						isProjectsLoading={workspace.isProjectsLoading}
-						activeSessionId={visibleActiveSessionId}
-						expandedProjects={workspace.expandedProjects}
-						onSelectSession={handleSelectSession}
-						onCreateSession={handleCreateSession}
-						onDeleteProject={handleDeleteProject}
-						onToggleProject={handleToggleProject}
-						onOpenProjectQueue={handleOpenProjectQueue}
-						activeProjectQueueId={projectQueueProjectId}
-						onOpenProjectDetail={handleOpenProjectDetail}
-						activeProjectDetailId={projectDetailProjectId}
-						onOpenOverview={handleOpenOverview}
-						isOverviewActive={isOverviewActive}
-						onOpenFolderBrowser={handleOpenFolderBrowser}
-						onRefreshProjects={() => void workspace.refreshProjectList()}
-						isProjectListRefreshing={workspace.isProjectListRefreshing}
-					/>
+					{isPilotThoughtDockOpen && workspace.activeSession?.missionPilot ? (
+						<PilotThoughtDock
+							session={workspace.activeSession}
+							activityEvents={workspace.activityEvents}
+							runEvents={workspace.latestRunEvents}
+							onClose={() => setPilotThoughtDockSessionId(null)}
+						/>
+					) : (
+						<ProjectSidebar
+							projects={workspace.projects}
+							groupedSessions={workspace.groupedSessionViews}
+							isProjectsLoading={workspace.isProjectsLoading}
+							activeSessionId={visibleActiveSessionId}
+							expandedProjects={workspace.expandedProjects}
+							onSelectSession={handleSelectSession}
+							onCreateSession={handleCreateSession}
+							onDeleteProject={handleDeleteProject}
+							onToggleProject={handleToggleProject}
+							onOpenProjectQueue={handleOpenProjectQueue}
+							activeProjectQueueId={projectQueueProjectId}
+							onOpenProjectDetail={handleOpenProjectDetail}
+							activeProjectDetailId={projectDetailProjectId}
+							onOpenOverview={handleOpenOverview}
+							isOverviewActive={isOverviewActive}
+							onOpenFolderBrowser={handleOpenFolderBrowser}
+							onRefreshProjects={() => void workspace.refreshProjectList()}
+							isProjectListRefreshing={workspace.isProjectListRefreshing}
+						/>
+					)}
 				</Panel>
 				<Separator className="nightworkers-panel-resize-handle" />
 				<Panel
@@ -1090,6 +1106,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 							queueActiveSessionAndFocusTodo={queueActiveSessionAndFocusTodo}
 							addActiveSessionToQueue={addActiveSessionToQueue}
 							isActiveImplementationLocked={isActiveImplementationLocked}
+							isPilotThoughtDockOpen={isPilotThoughtDockOpen}
+							onTogglePilotThoughtDock={() =>
+								setPilotThoughtDockSessionId((current) =>
+									current === workspace.activeSessionId
+										? null
+										: workspace.activeSessionId,
+								)
+							}
 						/>
 					)}
 				</Panel>

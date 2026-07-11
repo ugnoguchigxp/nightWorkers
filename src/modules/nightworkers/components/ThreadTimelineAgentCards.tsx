@@ -132,7 +132,15 @@ export function hasAgentEditSummary(event: TaskEvent): boolean {
 	return getAgentEditSummary(event) !== null;
 }
 
-export function AgentDebugEventCard({ event }: { event: TaskEvent }) {
+export function AgentDebugEventCard({
+	event,
+	variant = "default",
+	timestamp,
+}: {
+	event: TaskEvent;
+	variant?: "default" | "dock";
+	timestamp?: string;
+}) {
 	const { t } = useTranslation();
 	const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
 	const payload = asRecord(event.payloadJson);
@@ -148,7 +156,13 @@ export function AgentDebugEventCard({ event }: { event: TaskEvent }) {
 		typeof patchContent === "string" ? patchContent.split("\n") : [];
 
 	return (
-		<div className="rounded border border-slate-700/80 bg-slate-900/30 p-3">
+		<div
+			className={
+				variant === "dock"
+					? "nightworkers-pilot-thought-event w-full border-slate-700/80 border-b px-3 py-2"
+					: "rounded border border-slate-700/80 bg-slate-900/30 p-3"
+			}
+		>
 			<div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
 				<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-200">
 					{runEventType || event.eventType || event.type || "event"}
@@ -172,6 +186,9 @@ export function AgentDebugEventCard({ event }: { event: TaskEvent }) {
 					<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
 						{t("timeline.toolLabel", { tool: toolName })}
 					</span>
+				) : null}
+				{timestamp ? (
+					<span className="ml-auto text-slate-500">{timestamp}</span>
 				) : null}
 			</div>
 			<div className="mb-2 text-xs text-slate-100">{event.message}</div>
@@ -203,42 +220,47 @@ export function AgentDebugEventCard({ event }: { event: TaskEvent }) {
 				</div>
 			) : null}
 			{payload ? (
-				<div className="mt-2">
-					<div className="mb-1 flex justify-end">
-						<button
-							type="button"
-							className="inline-flex items-center gap-1 rounded border border-slate-600/80 bg-slate-900/40 px-2 py-1 text-[10px] text-slate-200 hover:bg-slate-800/50"
-							onClick={async () => {
-								const text = JSON.stringify(payload, null, 2);
-								await navigator.clipboard.writeText(text);
-								setCopiedEventId(event.id);
-								setTimeout(
-									() =>
-										setCopiedEventId((current) =>
-											current === event.id ? null : current,
-										),
-									1200,
-								);
-							}}
-							aria-label={t("timeline.copyDebugJson")}
-						>
-							{copiedEventId === event.id ? (
-								<>
-									<Check className="h-3 w-3" />
-									{t("timeline.copied")}
-								</>
-							) : (
-								<>
-									<Copy className="h-3 w-3" />
-									{t("timeline.copy")}
-								</>
-							)}
-						</button>
+				<details className="nightworkers-debug-payload mt-2 overflow-hidden rounded border">
+					<summary className="nightworkers-debug-payload-summary cursor-pointer list-none px-2 py-1.5 text-[11px] font-medium">
+						{t("timeline.debugDetails")}
+					</summary>
+					<div className="nightworkers-debug-payload-content border-t px-2 py-2">
+						<div className="mb-2 flex justify-end">
+							<button
+								type="button"
+								className="nightworkers-debug-copy inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px]"
+								onClick={async () => {
+									const text = JSON.stringify(payload, null, 2);
+									await navigator.clipboard.writeText(text);
+									setCopiedEventId(event.id);
+									setTimeout(
+										() =>
+											setCopiedEventId((current) =>
+												current === event.id ? null : current,
+											),
+										1200,
+									);
+								}}
+								aria-label={t("timeline.copyDebugJson")}
+							>
+								{copiedEventId === event.id ? (
+									<>
+										<Check className="h-3 w-3" />
+										{t("timeline.copied")}
+									</>
+								) : (
+									<>
+										<Copy className="h-3 w-3" />
+										{t("timeline.copy")}
+									</>
+								)}
+							</button>
+						</div>
+						<pre className="nightworkers-debug-json max-h-80 overflow-auto whitespace-pre-wrap break-all rounded p-2 text-[10px]">
+							{JSON.stringify(payload, null, 2)}
+						</pre>
 					</div>
-					<pre className="whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 text-[10px] text-slate-300">
-						{JSON.stringify(payload, null, 2)}
-					</pre>
-				</div>
+				</details>
 			) : null}
 		</div>
 	);
@@ -250,20 +272,20 @@ export function ReviewResultSummary({
 	reviewResult: ReviewResult;
 }) {
 	return (
-		<div className="mt-2 rounded border border-cyan-700/60 bg-cyan-950/25 px-3 py-2 text-[11px] text-cyan-50">
+		<div className="nightworkers-review-result mt-2 rounded border px-3 py-2 text-[11px]">
 			<div className="flex flex-wrap items-center gap-2">
-				<span className="rounded border border-cyan-700/70 px-1.5 py-0.5 text-cyan-100">
+				<span className="nightworkers-review-result-label rounded border px-1.5 py-0.5">
 					review_result
 				</span>
-				<span className="text-cyan-100">{reviewResult.action}</span>
-				<span className="text-cyan-300">→ {reviewResult.verdict}</span>
-				<span className="text-cyan-300">status {reviewResult.statusAfter}</span>
+				<span>{reviewResult.action}</span>
+				<span>→ {reviewResult.verdict}</span>
+				<span>status {reviewResult.statusAfter}</span>
 			</div>
 			{reviewResult.note ? (
-				<div className="mt-1 text-cyan-100">{reviewResult.note}</div>
+				<div className="mt-1">{reviewResult.note}</div>
 			) : null}
 			{reviewResult.outcome?.summary ? (
-				<div className="mt-1 text-cyan-200">{reviewResult.outcome.summary}</div>
+				<div className="mt-1">{reviewResult.outcome.summary}</div>
 			) : null}
 		</div>
 	);

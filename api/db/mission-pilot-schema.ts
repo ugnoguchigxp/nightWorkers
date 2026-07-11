@@ -5,7 +5,12 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { MissionPilotAuthorizationV2 } from "../../shared/schemas/mission-pilot.schema";
+import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
+import type {
+	MissionPilotAnswerEvidence,
+	MissionPilotAuthorizationV2,
+} from "../../shared/schemas/mission-pilot.schema";
+import { designQuestionnaireSessions } from "./design-questionnaire-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "./schema";
 
 export const missionPilotSessions = sqliteTable(
@@ -83,5 +88,40 @@ export const missionPilotContextSnapshots = sqliteTable(
 		revisionUidx: uniqueIndex(
 			"mission_pilot_context_snapshots_revision_uidx",
 		).on(table.sessionId, table.revision),
+	}),
+);
+
+export const missionPilotQuestionnaireDrafts = sqliteTable(
+	"mission_pilot_questionnaire_drafts",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		questionnaireSessionId: text("questionnaire_session_id")
+			.notNull()
+			.references(() => designQuestionnaireSessions.id, {
+				onDelete: "cascade",
+			}),
+		answersJson: text("answers_json", { mode: "json" })
+			.$type<DesignQuestionnaireAnswer[]>()
+			.notNull(),
+		answerEvidenceJson: text("answer_evidence_json", { mode: "json" })
+			.$type<Record<string, MissionPilotAnswerEvidence>>()
+			.notNull(),
+		state: text("state").notNull().default("waiting_user"),
+		deadlineAt: integer("deadline_at", { mode: "timestamp" }).notNull(),
+		version: integer("version").notNull().default(0),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		questionnaireUidx: uniqueIndex(
+			"mission_pilot_questionnaire_drafts_questionnaire_uidx",
+		).on(table.questionnaireSessionId),
+		deadlineIdx: index("mission_pilot_questionnaire_drafts_deadline_idx").on(
+			table.state,
+			table.deadlineAt,
+		),
 	}),
 );

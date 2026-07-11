@@ -55,6 +55,7 @@ export type TaskMessage = {
 		| "markdown_document"
 		| "api_contract"
 		| "zod_schema"
+		| "mission_pilot_initial_prompt"
 		| null;
 	metadataJson?: unknown;
 	createdAt: unknown;

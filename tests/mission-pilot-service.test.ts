@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
+import { missionPilotSessions } from "../api/db/mission-pilot-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
 import {
 	createSession,
@@ -170,6 +171,31 @@ describe("Mission Pilot service", () => {
 					),
 				),
 		).toHaveLength(1);
+	});
+
+	it("treats Questionnaire intervention as a successful intake handoff", async () => {
+		const fixture = await createPilotFixture();
+		workbenchMocks.resume.mockImplementationOnce(async () => {
+			const current = await getSessionByTaskId(fixture.taskId);
+			if (!current) throw new Error("missing Mission Pilot session");
+			await db
+				.update(missionPilotSessions)
+				.set({
+					phase: "waiting_intervention",
+					nextWakeAt: new Date(Date.now() + 20_000),
+					version: current.version + 1,
+					updatedAt: new Date(),
+				})
+				.where(eq(missionPilotSessions.id, current.id));
+			throw new Error("plan mode worker handed off to Questionnaire");
+		});
+
+		const played = await service.play(fixture.taskId, 0);
+		expect(played.missionPilot).toMatchObject({
+			desiredState: "playing",
+			phase: "waiting_intervention",
+		});
+		expect(played.run).toBeNull();
 	});
 
 	it("preserves an unstopped run and allows Stop to be retried", async () => {

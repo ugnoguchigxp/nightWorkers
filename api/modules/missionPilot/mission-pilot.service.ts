@@ -7,6 +7,10 @@ import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
 import {
+	initializeMissionPilotQuestionnaireAutonomy,
+	resumeQuestionnaireCountdown,
+} from "./mission-pilot-questionnaire.service";
+import {
 	publishMissionPilotInitialPrompt,
 	publishMissionPilotUpdated,
 } from "./mission-pilot-realtime";
@@ -42,6 +46,7 @@ export function initializeMissionPilotRunSync() {
 }
 
 initializeMissionPilotRunSync();
+initializeMissionPilotQuestionnaireAutonomy();
 
 export async function reconcileMissionPilotStartup() {
 	const recovered = await repo.recoverInterruptedStartingSessions();
@@ -129,8 +134,10 @@ export async function play(taskId: string, expectedVersion: number) {
 			"MISSION_PILOT_VERSION_CONFLICT",
 			"Mission Pilot state changed; refresh and retry",
 		);
-	publishMissionPilotUpdated(taskId, repo.toControlSummary(claimed));
-	let intakeVersion = claimed.version;
+	const resumed = await resumeQuestionnaireCountdown(taskId);
+	const activeClaim = resumed ?? claimed;
+	publishMissionPilotUpdated(taskId, repo.toControlSummary(activeClaim));
+	let intakeVersion = activeClaim.version;
 	try {
 		const promptEvidence = await repo.ensureInitialPromptMessage(taskId);
 		if (!promptEvidence) throw new Error("Initial prompt could not be claimed");
@@ -140,7 +147,7 @@ export async function play(taskId: string, expectedVersion: number) {
 		intakeVersion = promptEvidence.row.version;
 		const result = await resumeWorkbenchIntakeMessage(
 			taskId,
-			claimed.initialPromptSnapshot,
+			activeClaim.initialPromptSnapshot,
 			{ waitForIntake: true },
 		);
 		const runId =
@@ -166,6 +173,12 @@ export async function play(taskId: string, expectedVersion: number) {
 				"MISSION_PILOT_VERSION_CONFLICT",
 				error.message,
 			);
+		}
+		const current = await repo.getSessionByTaskId(taskId);
+		if (current?.phase === "waiting_intervention" && current.nextWakeAt) {
+			const missionPilot = repo.toControlSummary(current);
+			publishMissionPilotUpdated(taskId, missionPilot);
+			return { missionPilot, run: null, messages: [] };
 		}
 		const message = error instanceof Error ? error.message : String(error);
 		const failed = await repo.markAttention(

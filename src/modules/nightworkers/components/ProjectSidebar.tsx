@@ -313,7 +313,7 @@ function SessionRow({
 				<MissionPilotTaskControl
 					taskId={session.task.id}
 					summary={missionPilot}
-					initialPrompt={session.task.objective}
+					initialPrompt={session.task.objective ?? undefined}
 				/>
 			) : null}
 		</li>

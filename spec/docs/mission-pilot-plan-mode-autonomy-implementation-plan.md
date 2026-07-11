@@ -4,7 +4,8 @@
 
 - Plan status: `reviewed-ready-for-implementation`
 - Document review completed: 2026-07-10
-- Implementation status: `not_started`
+- Implementation status: `in_progress` — Questionnaire回答案、証跡、20秒介入窓、server-authoritative自動確定まで実装済み
+- Implementation update: 2026-07-11。Artifact順次生成、self-review、Queue admissionは未実装
 - MVP slice: `2/3` — Session / Context・Plan Mode・Questionnaire・Artifact・Queue admission
 - Canonical plan for this phase: this document
 - Previous phase: `spec/docs/mission-pilot-task-entry-design.md`

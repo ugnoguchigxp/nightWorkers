@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { designQuestionnaireAnswerSchema } from "./design-questionnaire.schema";
 import { taskSchema } from "./nightworkers/repository-task.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
@@ -66,6 +67,35 @@ export const missionPilotControlSummarySchema = z.object({
 	lastError: z.string().nullable(),
 	updatedAt: dateLikeSchema,
 });
+export const missionPilotAnswerEvidenceSchema = z.object({
+	source: z.enum(["mission_pilot", "user", "user_confirmed"]),
+	reason: z.string().min(1),
+	updatedAt: dateLikeSchema,
+});
+export const missionPilotQuestionnaireDraftStateSchema = z.enum([
+	"waiting_user",
+	"submitting",
+	"submitted",
+	"failed",
+]);
+export const missionPilotQuestionnaireDraftSchema = z.object({
+	id: z.string().uuid(),
+	taskId: z.string().uuid(),
+	questionnaireSessionId: z.string().uuid(),
+	answers: z.array(designQuestionnaireAnswerSchema),
+	answerEvidence: z.record(z.string(), missionPilotAnswerEvidenceSchema),
+	state: missionPilotQuestionnaireDraftStateSchema,
+	deadlineAt: dateLikeSchema,
+	version: z.number().int().nonnegative(),
+	createdAt: dateLikeSchema,
+	updatedAt: dateLikeSchema,
+});
+export const updateMissionPilotQuestionnaireDraftSchema = z.object({
+	expectedVersion: z.number().int().nonnegative(),
+	answers: z.array(designQuestionnaireAnswerSchema).min(1),
+});
+export const submitMissionPilotQuestionnaireDraftSchema =
+	updateMissionPilotQuestionnaireDraftSchema;
 export const taskWithMissionPilotSchema = taskSchema.extend({
 	missionPilot: missionPilotControlSummarySchema.nullable(),
 });
@@ -93,4 +123,10 @@ export type MissionPilotAuthorizationV2 = z.infer<
 >;
 export type MissionPilotControlSummary = z.infer<
 	typeof missionPilotControlSummarySchema
+>;
+export type MissionPilotAnswerEvidence = z.infer<
+	typeof missionPilotAnswerEvidenceSchema
+>;
+export type MissionPilotQuestionnaireDraft = z.infer<
+	typeof missionPilotQuestionnaireDraftSchema
 >;

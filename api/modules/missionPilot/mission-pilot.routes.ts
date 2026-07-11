@@ -4,10 +4,14 @@ import {
 	createMissionPilotTaskResponseSchema,
 	missionPilotCommandRequestSchema,
 	missionPilotCommandResponseSchema,
+	missionPilotQuestionnaireDraftSchema,
+	submitMissionPilotQuestionnaireDraftSchema,
+	updateMissionPilotQuestionnaireDraftSchema,
 } from "../../../shared/schemas/mission-pilot.schema";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./mission-pilot.service";
+import * as questionnaireService from "./mission-pilot-questionnaire.service";
 
 const taskParams = z.object({ taskId: z.string().uuid() });
 const createRouteDefinition = createRoute({
@@ -69,6 +73,70 @@ const stopRoute = createRoute({
 		},
 	},
 });
+const getQuestionnaireDraftRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/tasks/:taskId/questionnaire-draft",
+	request: { params: taskParams },
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: missionPilotQuestionnaireDraftSchema.nullable(),
+				},
+			},
+			description: "Current Mission Pilot questionnaire draft",
+		},
+	},
+});
+const updateQuestionnaireDraftRoute = createRoute({
+	method: "patch",
+	path: "/mission-pilot/tasks/:taskId/questionnaire-draft",
+	request: {
+		params: taskParams,
+		body: {
+			content: {
+				"application/json": {
+					schema: updateMissionPilotQuestionnaireDraftSchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: missionPilotQuestionnaireDraftSchema },
+			},
+			description: "Mission Pilot questionnaire draft updated",
+		},
+	},
+});
+const submitQuestionnaireDraftRoute = createRoute({
+	method: "post",
+	path: "/mission-pilot/tasks/:taskId/questionnaire-draft/submit",
+	request: {
+		params: taskParams,
+		body: {
+			content: {
+				"application/json": {
+					schema: submitMissionPilotQuestionnaireDraftSchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						draft: missionPilotQuestionnaireDraftSchema.nullable(),
+						questionnaire: z.unknown(),
+					}),
+				},
+			},
+			description: "Mission Pilot questionnaire draft submitted",
+		},
+	},
+});
 export const missionPilotRouter = createOpenApiRouter()
 	.openapi(
 		createRouteDefinition,
@@ -99,4 +167,41 @@ export const missionPilotRouter = createOpenApiRouter()
 				200,
 			),
 		),
+	)
+	.openapi(
+		getQuestionnaireDraftRoute,
+		withOpenApiRouteError(getQuestionnaireDraftRoute, async (c) =>
+			c.json(
+				await questionnaireService.getQuestionnaireDraft(c.req.param("taskId")),
+				200,
+			),
+		),
+	)
+	.openapi(
+		updateQuestionnaireDraftRoute,
+		withOpenApiRouteError(updateQuestionnaireDraftRoute, async (c) => {
+			const input = c.req.valid("json");
+			return c.json(
+				await questionnaireService.updateQuestionnaireDraft(
+					c.req.param("taskId"),
+					input.expectedVersion,
+					input.answers,
+				),
+				200,
+			);
+		}),
+	)
+	.openapi(
+		submitQuestionnaireDraftRoute,
+		withOpenApiRouteError(submitQuestionnaireDraftRoute, async (c) => {
+			const input = c.req.valid("json");
+			return c.json(
+				await questionnaireService.submitQuestionnaireDraft(
+					c.req.param("taskId"),
+					input.expectedVersion,
+					input.answers,
+				),
+				200,
+			);
+		}),
 	);
