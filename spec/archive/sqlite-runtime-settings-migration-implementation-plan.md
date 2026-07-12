@@ -2,9 +2,15 @@
 
 ## Status
 
-- Plan status: `proposed`
+- Plan status: `implemented`
 - Document created: 2026-07-12
-- Implementation status: `not-started`
+- Implementation status: `completed`
+- Implementation completed: 2026-07-12
+- Verification:
+  - focused settings/runtime/E2E tests: passed (82 tests)
+  - `bun run typecheck`: passed
+  - `bun run check:docs`: passed
+  - `bun run verify`: passed
 - Target: 通常運用における環境変数およびruntime JSONファイルを、SQLiteを正本とする設定管理へ移行する
 
 ## 1. 背景と問題
