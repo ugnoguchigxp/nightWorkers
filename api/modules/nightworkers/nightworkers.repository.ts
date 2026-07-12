@@ -508,9 +508,15 @@ function getBlueprintDocumentTitle(payloadJson: Record<string, unknown>) {
 }
 
 export async function updateTaskStatus(id: string, status: TaskStatus) {
+	const now = new Date();
 	const [task] = await db
 		.update(tasks)
-		.set({ status, updatedAt: new Date() })
+		.set({
+			status,
+			updatedAt: now,
+			...(status === "completed" ? { completedAt: now } : {}),
+			...(status === "archived" ? { archivedAt: now } : {}),
+		})
 		.where(eq(tasks.id, id))
 		.returning();
 	if (task) {

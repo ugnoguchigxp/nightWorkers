@@ -8,7 +8,9 @@ import {
 import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
 import type {
 	MissionPilotAnswerEvidence,
-	MissionPilotAuthorizationV2,
+	MissionPilotAuthorization,
+	MissionPilotPreQueueDiagnostic,
+	MissionPilotQueueHandoff,
 } from "../../shared/schemas/mission-pilot.schema";
 import type { MissionPilotPlanReview } from "../../shared/schemas/mission-pilot-plan-review.schema";
 import { designQuestionnaireSessions } from "./design-questionnaire-schema";
@@ -29,7 +31,7 @@ export const missionPilotSessions = sqliteTable(
 		authorizationVersion: integer("authorization_version"),
 		authorizationJson: text("authorization_json", {
 			mode: "json",
-		}).$type<MissionPilotAuthorizationV2 | null>(),
+		}).$type<MissionPilotAuthorization | null>(),
 		desiredState: text("desired_state").notNull().default("stopped"),
 		phase: text("phase").notNull().default("created"),
 		resumePhase: text("resume_phase"),
@@ -44,6 +46,16 @@ export const missionPilotSessions = sqliteTable(
 		activeRunId: text("active_run_id").references(() => taskRuns.id, {
 			onDelete: "set null",
 		}),
+		activePhaseRunId: text("active_phase_run_id"),
+		activeTestSnapshotId: text("active_test_snapshot_id"),
+		activeReviewDecisionId: text("active_review_decision_id"),
+		activeCloseoutId: text("active_closeout_id"),
+		implementationCycle: integer("implementation_cycle").notNull().default(1),
+		testCycle: integer("test_cycle").notNull().default(0),
+		reviewCycle: integer("review_cycle").notNull().default(0),
+		totalCorrectionCycle: integer("total_correction_cycle")
+			.notNull()
+			.default(0),
 		version: integer("version").notNull().default(0),
 		contextRevision: integer("context_revision").notNull().default(1),
 		contextDigest: text("context_digest").notNull(),
@@ -52,6 +64,12 @@ export const missionPilotSessions = sqliteTable(
 		leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
 		lastErrorCode: text("last_error_code"),
 		lastErrorMessage: text("last_error_message"),
+		queueHandoffJson: text("queue_handoff_json", {
+			mode: "json",
+		}).$type<MissionPilotQueueHandoff | null>(),
+		preQueueDiagnosticJson: text("pre_queue_diagnostic_json", {
+			mode: "json",
+		}).$type<MissionPilotPreQueueDiagnostic | null>(),
 		startedAt: integer("started_at", { mode: "timestamp" }),
 		stoppedAt: integer("stopped_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -197,6 +215,240 @@ export const missionPilotPlanReviews = sqliteTable(
 		contextIdx: index("mission_pilot_plan_reviews_context_idx").on(
 			table.sessionId,
 			table.contextRevision,
+		),
+	}),
+);
+
+export const missionPilotPhaseRuns = sqliteTable(
+	"mission_pilot_phase_runs",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		phase: text("phase").notNull(),
+		cycle: integer("cycle").notNull(),
+		attempt: integer("attempt").notNull(),
+		runId: text("run_id")
+			.notNull()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		parentPhaseRunId: text("parent_phase_run_id"),
+		inputContextRevision: integer("input_context_revision").notNull(),
+		inputContextDigest: text("input_context_digest").notNull(),
+		outputContextRevision: integer("output_context_revision"),
+		status: text("status").notNull().default("starting"),
+		verdict: text("verdict"),
+		evidenceJson: text("evidence_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+		finishedAt: integer("finished_at", { mode: "timestamp" }),
+	},
+	(table) => ({
+		runUidx: uniqueIndex("mission_pilot_phase_runs_run_uidx").on(table.runId),
+		attemptUidx: uniqueIndex("mission_pilot_phase_runs_attempt_uidx").on(
+			table.sessionId,
+			table.phase,
+			table.cycle,
+			table.attempt,
+		),
+	}),
+);
+
+export const missionPilotTestSnapshots = sqliteTable(
+	"mission_pilot_test_snapshots",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		phaseRunId: text("phase_run_id")
+			.notNull()
+			.references(() => missionPilotPhaseRuns.id, { onDelete: "cascade" }),
+		verificationDocumentId: text("verification_document_id").notNull(),
+		contextRevision: integer("context_revision").notNull(),
+		contextDigest: text("context_digest").notNull(),
+		checklistDigest: text("checklist_digest").notNull(),
+		requiredTotal: integer("required_total").notNull(),
+		requiredComplete: integer("required_complete").notNull(),
+		failedRequired: integer("failed_required").notNull(),
+		unknownRequired: integer("unknown_required").notNull(),
+		evidenceRunIdsJson: text("evidence_run_ids_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+		completionCheckEventId: text("completion_check_event_id").notNull(),
+		testChangedPathsJson: text("test_changed_paths_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+		verdict: text("verdict").notNull(),
+		snapshotJson: text("snapshot_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		phaseRunUidx: uniqueIndex("mission_pilot_test_snapshots_phase_run_uidx").on(
+			table.phaseRunId,
+		),
+	}),
+);
+
+export const missionPilotReviewDecisions = sqliteTable(
+	"mission_pilot_review_decisions",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		reviewSessionId: text("review_session_id").notNull(),
+		reviewPhaseRunId: text("review_phase_run_id")
+			.notNull()
+			.references(() => missionPilotPhaseRuns.id, { onDelete: "cascade" }),
+		contextRevision: integer("context_revision").notNull(),
+		contextDigest: text("context_digest").notNull(),
+		testSnapshotId: text("test_snapshot_id")
+			.notNull()
+			.references(() => missionPilotTestSnapshots.id, { onDelete: "restrict" }),
+		targetManifestDigest: text("target_manifest_digest").notNull(),
+		verdict: text("verdict").notNull(),
+		blockingCount: integer("blocking_count").notNull(),
+		warningCount: integer("warning_count").notNull(),
+		infoCount: integer("info_count").notNull(),
+		findingIdsJson: text("finding_ids_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+		decisionJson: text("decision_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		phaseRunUidx: uniqueIndex(
+			"mission_pilot_review_decisions_phase_run_uidx",
+		).on(table.reviewPhaseRunId),
+	}),
+);
+
+export const missionPilotCloseouts = sqliteTable(
+	"mission_pilot_closeouts",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		attempt: integer("attempt").notNull(),
+		repositoryId: text("repository_id")
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		baselineHead: text("baseline_head").notNull(),
+		reviewDecisionId: text("review_decision_id")
+			.notNull()
+			.references(() => missionPilotReviewDecisions.id, {
+				onDelete: "restrict",
+			}),
+		reviewedContextDigest: text("reviewed_context_digest").notNull(),
+		ownedPhaseRunIdsJson: text("owned_phase_run_ids_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+		stageableOwnedPathsJson: text("stageable_owned_paths_json", {
+			mode: "json",
+		})
+			.$type<string[]>()
+			.notNull(),
+		excludedPathsJson: text("excluded_paths_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+		status: text("status").notNull(),
+		commitSha: text("commit_sha"),
+		commitMessage: text("commit_message"),
+		pushPolicy: text("push_policy").notNull(),
+		pushStatus: text("push_status").notNull(),
+		pushRemote: text("push_remote"),
+		pushBranch: text("push_branch"),
+		statusReason: text("status_reason"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		attemptUidx: uniqueIndex("mission_pilot_closeouts_attempt_uidx").on(
+			table.sessionId,
+			table.attempt,
+		),
+	}),
+);
+
+export const missionPilotEvents = sqliteTable(
+	"mission_pilot_events",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		eventType: text("event_type").notNull(),
+		phase: text("phase").notNull(),
+		cycle: integer("cycle"),
+		contextRevision: integer("context_revision").notNull(),
+		contextDigest: text("context_digest").notNull(),
+		dedupeKey: text("dedupe_key").notNull(),
+		sourceKind: text("source_kind").notNull(),
+		sourceId: text("source_id"),
+		payloadJson: text("payload_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		processStatus: text("process_status").notNull().default("pending"),
+		attemptCount: integer("attempt_count").notNull().default(0),
+		availableAt: integer("available_at", { mode: "timestamp" }).notNull(),
+		processedAt: integer("processed_at", { mode: "timestamp" }),
+		lastError: text("last_error"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		dedupeUidx: uniqueIndex("mission_pilot_events_dedupe_uidx").on(
+			table.sessionId,
+			table.dedupeKey,
+		),
+		pendingIdx: index("mission_pilot_events_pending_idx").on(
+			table.processStatus,
+			table.availableAt,
+		),
+	}),
+);
+
+export const taskArchiveRecords = sqliteTable(
+	"task_archive_records",
+	{
+		id: text("id").primaryKey(),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		missionPilotSessionId: text("mission_pilot_session_id").references(
+			() => missionPilotSessions.id,
+			{ onDelete: "set null" },
+		),
+		sourceRunId: text("source_run_id").references(() => taskRuns.id, {
+			onDelete: "set null",
+		}),
+		previousStatus: text("previous_status").notNull(),
+		reason: text("reason").notNull(),
+		evidenceJson: text("evidence_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		archivedAt: integer("archived_at", { mode: "timestamp" }).notNull(),
+		restoredAt: integer("restored_at", { mode: "timestamp" }),
+		restoredToStatus: text("restored_to_status"),
+		restoredBy: text("restored_by"),
+	},
+	(table) => ({
+		taskIdx: index("task_archive_records_task_idx").on(
+			table.taskId,
+			table.archivedAt,
 		),
 	}),
 );

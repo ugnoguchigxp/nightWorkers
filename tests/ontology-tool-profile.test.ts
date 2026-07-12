@@ -1,68 +1,108 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
-	resolveOntologyToolProfile,
+	readProjectSecurityIntelligenceSettings,
+	resolveSecurityIntelligenceProfile,
 } from "../api/modules/ontology";
 import { projectSecurityIntelligenceSettingsSchema } from "../shared/schemas/ontology.schema";
 
-describe("ontology tool profile eligibility", () => {
+describe("security intelligence eligibility", () => {
 	it.each([
-		[49_999, "standard", false, "below_threshold"],
-		[50_000, "ontology_extended", true, "enabled"],
-		[50_001, "ontology_extended", true, "enabled"],
-	] as const)("uses measured source LOC %s for profile selection", (sourceLoc, profile, eligible, reason) => {
-		const result = resolveOntologyToolProfile({
+		[49_999, false, "standard", "below_threshold"],
+		[50_000, true, "ontology_extended", "enabled"],
+		[50_001, true, "ontology_extended", "enabled"],
+	] as const)("uses measured source LOC %s for both Security Oracle and ontology", (sourceLoc, enabled, profile, reason) => {
+		const result = resolveSecurityIntelligenceProfile({
 			settings: DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
 			measuredSourceLoc: sourceLoc,
+			configured: true,
 		});
-		expect(result).toMatchObject({
+		expect(result.eligibility).toMatchObject({
 			measuredSourceLoc: sourceLoc,
-			toolProfile: profile,
-			eligible,
+			eligible: enabled,
 			reason,
 		});
-	});
-
-	it("keeps standard tools when an eligible project disables ontology tools", () => {
-		expect(
-			resolveOntologyToolProfile({
-				settings: {
-					...DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
-					ontologyToolsEnabled: false,
-				},
-				measuredSourceLoc: 50_000,
-			}),
-		).toMatchObject({
-			eligible: true,
-			effectiveEnabled: false,
-			toolProfile: "standard",
-			reason: "user_disabled",
+		expect(result.securityOracle.effectiveEnabled).toBe(enabled);
+		expect(result.ontology).toMatchObject({
+			effectiveEnabled: enabled,
+			toolProfile: profile,
 		});
 	});
 
-	it("fails closed to standard when measurement is unavailable", () => {
-		expect(
-			resolveOntologyToolProfile({
-				settings: DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
-				measuredSourceLoc: Number.NaN,
-			}),
-		).toMatchObject({
+	it("disables ontology when an eligible Project disables Security Oracle", () => {
+		const result = resolveSecurityIntelligenceProfile({
+			settings: {
+				...DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
+				securityOracleEnabled: false,
+			},
+			measuredSourceLoc: 50_000,
+			configured: true,
+		});
+		expect(result.securityOracle).toMatchObject({
+			effectiveEnabled: false,
+			reason: "user_disabled",
+		});
+		expect(result.ontology).toMatchObject({
+			effectiveEnabled: false,
+			toolProfile: "standard",
+			reason: "oracle_disabled",
+		});
+	});
+
+	it("keeps the eligible policy enabled but reports an unavailable installation", () => {
+		const result = resolveSecurityIntelligenceProfile({
+			settings: DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
+			measuredSourceLoc: 50_000,
+			configured: false,
+		});
+		expect(result.securityOracle).toMatchObject({
+			configured: false,
+			effectiveEnabled: true,
+			reason: "installation_unavailable",
+		});
+	});
+
+	it("fails closed when measurement is unavailable", () => {
+		const result = resolveSecurityIntelligenceProfile({
+			settings: DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
+			measuredSourceLoc: Number.NaN,
+			configured: true,
+		});
+		expect(result.eligibility).toMatchObject({
 			measuredSourceLoc: null,
 			eligible: false,
-			toolProfile: "standard",
 			reason: "measurement_unavailable",
+		});
+		expect(result.securityOracle.effectiveEnabled).toBe(false);
+		expect(result.ontology.toolProfile).toBe("standard");
+	});
+
+	it("reads the legacy settings shape with Security Oracle enabled", () => {
+		expect(
+			readProjectSecurityIntelligenceSettings({
+				securityIntelligence: {
+					ontologyToolsEnabled: false,
+					securityMaxIterations: 2,
+				},
+			}),
+		).toEqual({
+			securityOracleEnabled: true,
+			ontologyToolsEnabled: false,
+			securityMaxIterations: 2,
 		});
 	});
 
 	it("rejects unknown and invalid project settings", () => {
 		expect(
 			projectSecurityIntelligenceSettingsSchema.safeParse({
+				securityOracleEnabled: true,
 				ontologyToolsEnabled: true,
 				securityMaxIterations: 0,
 			}).success,
 		).toBe(false);
 		expect(
 			projectSecurityIntelligenceSettingsSchema.safeParse({
+				securityOracleEnabled: true,
 				ontologyToolsEnabled: true,
 				securityMaxIterations: 3,
 				apiKey: "must-not-be-accepted",

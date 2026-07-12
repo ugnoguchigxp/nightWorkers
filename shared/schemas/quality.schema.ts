@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { taskSchema } from "./nightworkers/repository-task.schema";
+import { taskWithMissionPilotSchema } from "./mission-pilot.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema: z.ZodType<unknown> = z.unknown();
@@ -120,7 +120,7 @@ export type CreateCoverageImprovementTaskRequest = z.infer<
 >;
 
 export const createCoverageImprovementTaskResponseSchema = z.object({
-	task: taskSchema,
+	task: taskWithMissionPilotSchema,
 });
 export type CreateCoverageImprovementTaskResponse = z.infer<
 	typeof createCoverageImprovementTaskResponseSchema

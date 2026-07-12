@@ -1,23 +1,24 @@
-import {
-	type MissionPilotSourceRef,
-	missionPilotAuthorizationV2Schema,
-} from "../../../shared/schemas/mission-pilot.schema";
 import type { TaskRunStatus } from "../../db/schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
+import { startOrResumeMissionPilotPlanIntake } from "./mission-pilot-plan-intake.port";
+import {
+	markMissionPilotPreQueueAttention,
+	reconcileMissionPilotPreQueueSessions,
+} from "./mission-pilot-pre-queue-recovery.service";
 import {
 	initializeMissionPilotQuestionnaireAutonomy,
 	resumeQuestionnaireCountdown,
 } from "./mission-pilot-questionnaire.service";
+import { MissionPilotPreQueueError } from "./mission-pilot-queue-handoff.service";
 import {
 	publishMissionPilotInitialPrompt,
 	publishMissionPilotUpdated,
 } from "./mission-pilot-realtime";
-import { createMissionPilotTask } from "./mission-pilot-taskization.port";
+import { recoverMissionPilotPostQueueSessions } from "./mission-pilot-recovery.service";
 import {
 	registerTaskRunUpdatedListener,
-	resumeWorkbenchIntakeMessage,
 	stopTaskRun,
 } from "./mission-pilot-workbench.port";
 
@@ -49,85 +50,58 @@ initializeMissionPilotRunSync();
 initializeMissionPilotQuestionnaireAutonomy();
 
 export async function reconcileMissionPilotStartup() {
+	const provisioned = await repo.backfillMissingTaskSessions();
+	const classified = await reconcileMissionPilotPreQueueSessions();
 	const recovered = await repo.recoverInterruptedStartingSessions();
+	const postQueueRecovered = await recoverMissionPilotPostQueueSessions();
 	for (const session of recovered) {
 		publishMissionPilotUpdated(session.taskId, repo.toControlSummary(session));
 	}
-	return recovered.length;
-}
-
-export async function createFromSourceRef(input: {
-	repositoryId: string;
-	sourceRef: MissionPilotSourceRef;
-}) {
-	try {
-		const task = await createMissionPilotTask(
-			input.repositoryId,
-			input.sourceRef,
-		);
-		if (!task)
-			throw new MissionPilotError(
-				409,
-				"MISSION_PILOT_CREATE_CONFLICT",
-				"Mission Pilot task was not created",
-			);
-		const session = await repo.getSessionByTaskId(task.id);
-		if (!session)
-			throw new MissionPilotError(
-				409,
-				"MISSION_PILOT_CREATE_CONFLICT",
-				"Mission Pilot session was not created",
-			);
-		const missionPilot = repo.toControlSummary(session);
-		publishMissionPilotUpdated(task.id, missionPilot);
-		return { task: { ...task, missionPilot } };
-	} catch (error) {
-		if (error instanceof MissionPilotError) throw error;
-		throw new MissionPilotError(
-			409,
-			"MISSION_PILOT_CREATE_CONFLICT",
-			"Mission Pilot task creation conflicted with current source state",
-		);
-	}
+	return provisioned + classified + recovered.length + postQueueRecovered;
 }
 
 export async function play(taskId: string, expectedVersion: number) {
-	const session = await repo.getSessionByTaskId(taskId);
+	const [session, task] = await Promise.all([
+		repo.getSessionByTaskId(taskId),
+		nightworkersRepo.getTask(taskId),
+	]);
 	if (!session)
 		throw new MissionPilotError(
 			404,
 			"MISSION_PILOT_NOT_FOUND",
 			"Mission Pilot session not found",
 		);
-	if (!session.initialPromptSnapshot.trim())
+	if (!task)
+		throw new MissionPilotError(404, "TASK_NOT_FOUND", "Task not found");
+	if (!(task.objective ?? "").trim())
 		throw new MissionPilotError(
 			400,
 			"MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
 			"Mission Pilot requires a non-empty initial prompt",
 		);
-	const authorization =
-		session.authorizationJson ??
-		missionPilotAuthorizationV2Schema.parse({
-			version: 2,
-			sessionId: session.id,
+	if (
+		["paused", "attention"].includes(session.phase) &&
+		session.resumePhase &&
+		!session.resumePhase.startsWith("initial_") &&
+		!session.resumePhase.startsWith("plan_")
+	) {
+		const resumedPostQueue = await repo.claimPostQueueResume(
 			taskId,
-			sourceRef: { source: session.sourceKind, id: session.sourceId },
-			grantedByAction: "mission_pilot_play",
-			grantedAt: new Date().toISOString(),
-			scopes: {
-				plan: true,
-				queue: true,
-				implementation: true,
-				testMutation: true,
-				review: true,
-				localCommit: true,
-				taskComplete: true,
-				taskArchive: true,
-				push: false,
-			},
-			pushPolicy: "never",
-		});
-	const claimed = await repo.claimPlay(taskId, expectedVersion, authorization);
+			expectedVersion,
+		);
+		if (!resumedPostQueue)
+			throw new MissionPilotError(
+				409,
+				"MISSION_PILOT_VERSION_CONFLICT",
+				"Mission Pilot state changed; refresh and retry",
+			);
+		await recoverMissionPilotPostQueueSessions();
+		const current = (await repo.getSessionByTaskId(taskId)) ?? resumedPostQueue;
+		const missionPilot = repo.toControlSummary(current);
+		publishMissionPilotUpdated(taskId, missionPilot);
+		return { missionPilot, run: null, messages: [] };
+	}
+	const claimed = await repo.claimPlay(taskId, expectedVersion);
 	if (!claimed)
 		throw new MissionPilotError(
 			409,
@@ -145,24 +119,31 @@ export async function play(taskId: string, expectedVersion: number) {
 			publishMissionPilotInitialPrompt(promptEvidence.message);
 		}
 		intakeVersion = promptEvidence.row.version;
-		const result = await resumeWorkbenchIntakeMessage(
+		const initialized = await repo.finishPlay(taskId, null);
+		if (!initialized)
+			throw new Error("Mission Pilot state changed during Plan intake");
+		intakeVersion = initialized.version;
+		await startOrResumeMissionPilotPlanIntake({
 			taskId,
-			activeClaim.initialPromptSnapshot,
-			{ waitForIntake: true },
-		);
-		const runId =
-			result.run &&
-			typeof result.run === "object" &&
-			"id" in result.run &&
-			typeof result.run.id === "string"
-				? result.run.id
-				: null;
-		const finished = await repo.finishPlay(taskId, runId);
+			initialPrompt: activeClaim.initialPromptSnapshot,
+		});
+		const finished = await repo.getSessionByTaskId(taskId);
 		if (!finished) throw new Error("Mission Pilot state changed during intake");
 		const missionPilot = repo.toControlSummary(finished);
 		publishMissionPilotUpdated(taskId, missionPilot);
-		return { missionPilot, ...result };
+		return {
+			missionPilot,
+			run: null,
+			messages: [],
+		};
 	} catch (error) {
+		if (error instanceof MissionPilotPreQueueError) {
+			const failed = await markMissionPilotPreQueueAttention(taskId, error);
+			if (failed) {
+				publishMissionPilotUpdated(taskId, repo.toControlSummary(failed));
+			}
+			throw new MissionPilotError(409, error.code, error.message);
+		}
 		if (error instanceof repo.MissionPilotStateConflictError) {
 			const current = await repo.getSessionByTaskId(taskId);
 			if (current) {
@@ -173,6 +154,18 @@ export async function play(taskId: string, expectedVersion: number) {
 				"MISSION_PILOT_VERSION_CONFLICT",
 				error.message,
 			);
+		}
+		if (error instanceof MissionPilotError) {
+			const failed = await repo.markAttention(
+				taskId,
+				intakeVersion,
+				error.code,
+				error.message,
+			);
+			if (failed) {
+				publishMissionPilotUpdated(taskId, repo.toControlSummary(failed));
+			}
+			throw error;
 		}
 		const current = await repo.getSessionByTaskId(taskId);
 		if (current?.phase === "waiting_intervention" && current.nextWakeAt) {
@@ -237,8 +230,15 @@ export async function listTasksWithMissionPilot() {
 	const summaries = await repo.listSessionSummariesByTaskIds(
 		tasks.map((task) => task.id),
 	);
-	return tasks.map((task) => ({
-		...task,
-		missionPilot: summaries.get(task.id) ?? null,
-	}));
+	return tasks.map((task) => {
+		const missionPilot = summaries.get(task.id);
+		if (!missionPilot) {
+			throw new MissionPilotError(
+				500,
+				"MISSION_PILOT_INTEGRITY_ERROR",
+				`Task ${task.id} is missing its Mission Pilot session`,
+			);
+		}
+		return { ...task, missionPilot };
+	});
 }

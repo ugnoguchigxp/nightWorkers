@@ -1,14 +1,20 @@
 import path from "node:path";
+import { db } from "../../db/client";
 import { NotFoundError } from "../../lib/errors";
 import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
 import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
+import {
+	getSessionByTaskId,
+	toControlSummary,
+} from "../missionPilot/mission-pilot.repository";
 import {
 	buildBlueprintPlanningReadiness,
 	isBlueprintMessage,
 } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import { runSessionQueueForRepository } from "./nightworkers.run-orchestration.service";
+import { createTaskWithMissionPilot } from "./nightworkers.task-creation.service";
 
 type RepositorySafetyPolicy = Parameters<
 	typeof repo.createRepository
@@ -194,24 +200,37 @@ export async function createTask(data: {
 	const worktreePath = worktreeId
 		? await resolveWorktreePath(data.repositoryId, worktreeId)
 		: null;
-	const task = await repo.createTask({
-		...taskData,
-		worktreePath,
-		status: "draft",
+	return db.transaction(async (tx) => {
+		const task = await createTaskWithMissionPilot(
+			{
+				...taskData,
+				worktreePath,
+				status: "draft",
+			},
+			tx,
+		);
+		if (data.description?.trim()) {
+			await repo.createTaskMessage(
+				{
+					taskId: task.id,
+					role: "user",
+					content: data.description.trim(),
+					messageType: "text",
+				},
+				tx,
+			);
+		}
+		return task;
 	});
-	if (data.description?.trim()) {
-		await repo.createTaskMessage({
-			taskId: task.id,
-			role: "user",
-			content: data.description.trim(),
-			messageType: "text",
-		});
-	}
-	return task;
 }
 
 export async function getTask(id: string) {
-	return repo.getTask(id);
+	const task = await repo.getTask(id);
+	if (!task) return task;
+	const session = await getSessionByTaskId(id);
+	if (!session)
+		throw new Error(`Task ${id} is missing its Mission Pilot session`);
+	return { ...task, missionPilot: toControlSummary(session) };
 }
 
 export async function listTasks() {
@@ -288,5 +307,9 @@ export async function updateTask(id: string, data: UpdateTaskData) {
 	if (updated?.status === "ready") {
 		void runSessionQueueForRepository(updated.repositoryId);
 	}
-	return updated;
+	if (!updated) return updated;
+	const session = await getSessionByTaskId(id);
+	if (!session)
+		throw new Error(`Task ${id} is missing its Mission Pilot session`);
+	return { ...updated, missionPilot: toControlSummary(session) };
 }

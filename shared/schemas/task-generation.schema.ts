@@ -1,9 +1,9 @@
 import { z } from "@hono/zod-openapi";
+import { taskWithMissionPilotSchema } from "./mission-pilot.schema";
 import {
 	missionSchema,
 	missionTaskProposalSchema,
 } from "./mission-planner.schema";
-import { taskSchema } from "./nightworkers.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema: z.ZodType<unknown> = z.unknown();
@@ -356,7 +356,7 @@ export type CreateTasksFromMissionCandidatesRequest = z.infer<
 >;
 
 export const createTasksFromMissionCandidatesResponseSchema = z.object({
-	tasks: z.array(taskSchema),
+	tasks: z.array(taskWithMissionPilotSchema),
 	candidates: z.array(missionTaskCandidateSchema),
 });
 

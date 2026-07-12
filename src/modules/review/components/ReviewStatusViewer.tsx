@@ -232,14 +232,13 @@ export function ReviewStatusViewer({
 	const commitButtonTitle = commitAlreadyDone
 		? "この run は既にコミット済みです。"
 		: gitCloseout?.blockingReason;
-	const isArchivedTask =
-		activeTaskStatus === "cancelled" || activeTaskStatus === "failed";
+	const isArchivedTask = activeTaskStatus === "archived";
 	const taskArchiveBusy = busySection === "task_archive";
 	const taskArchiveAction = isArchivedTask
 		? {
 				label: "アクティブタスクに戻す",
 				description:
-					"このタスクを ready に戻し、通常のアクティブタスクとして再開できる状態にします。",
+					"このタスクを以前の完了状態へ戻します。実装の再開は別の Reopen 操作で行います。",
 				icon: <ArchiveRestore className="h-3.5 w-3.5" />,
 				buttonClass: reviewPrimaryActionButtonClass,
 				disabled: !onRestoreArchivedTask || taskArchiveBusy,

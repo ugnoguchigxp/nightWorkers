@@ -76,36 +76,36 @@ describe("Mission Pilot repository", () => {
 		expect(snapshots[0]?.digest).toBe(session?.contextDigest);
 	});
 
-	it("rolls the Task back when the initial prompt is empty", async () => {
+	it("provisions a stopped Session when the draft prompt is empty", async () => {
 		const repositoryId = await insertRepository();
 		const taskId = crypto.randomUUID();
-		await expect(
-			db.transaction(async (tx) => {
-				const [task] = await tx
-					.insert(tasks)
-					.values({
-						id: taskId,
-						repositoryId,
-						title: "Invalid",
-						objective: "",
-						status: "draft",
-					})
-					.returning();
-				await createSession(
-					{
-						task,
-						sourceKind: "mission_task_candidate",
-						sourceId: crypto.randomUUID(),
-					},
-					tx,
-				);
-			}),
-		).rejects.toMatchObject({
-			code: "MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
+		await db.transaction(async (tx) => {
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					id: taskId,
+					repositoryId,
+					title: "Invalid",
+					objective: "",
+					status: "draft",
+				})
+				.returning();
+			await createSession(
+				{
+					task,
+					sourceKind: "mission_task_candidate",
+					sourceId: crypto.randomUUID(),
+				},
+				tx,
+			);
 		});
 		expect(
 			await db.select().from(tasks).where(eq(tasks.id, taskId)),
-		).toHaveLength(0);
+		).toHaveLength(1);
+		expect(await getSessionByTaskId(taskId)).toMatchObject({
+			desiredState: "stopped",
+			initialPromptSnapshot: "",
+		});
 	});
 
 	it("persists the initial user message exactly once", async () => {

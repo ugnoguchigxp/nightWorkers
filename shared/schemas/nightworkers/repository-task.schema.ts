@@ -12,6 +12,7 @@ export const taskStatusSchema = z.enum([
 	"verifying",
 	"needs_review",
 	"completed",
+	"archived",
 	"blocked",
 	"failed",
 	"timed_out",
@@ -74,6 +75,8 @@ export const taskSchema = z
 		createdBy: z.string().nullable().optional(),
 		createdAt: dateLikeSchema,
 		updatedAt: dateLikeSchema,
+		completedAt: dateLikeSchema.nullable().optional(),
+		archivedAt: dateLikeSchema.nullable().optional(),
 	})
 	.openapi("Task");
 

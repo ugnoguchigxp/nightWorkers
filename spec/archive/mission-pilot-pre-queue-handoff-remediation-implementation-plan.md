@@ -2,20 +2,24 @@
 
 ## Status
 
-- Plan status: `reviewed-ready-for-implementation`
+- Plan status: `completed-verified`
 - Document created: 2026-07-11
-- Implementation status: `not_started`
+- Plan revised: 2026-07-12
+- Implementation status: `completed`
+- Implementation started: 2026-07-12
+- Implementation completed: 2026-07-12
+- Post-implementation code review completed: 2026-07-12
 - Remediation target: completed MVP Slice 1/2 implementation
 - Baseline reviewed: 2026-07-11, `main` at `c597bdd522ef7e4594157131c9d1865ce9ea148b`
 - Input designs:
   - `spec/archive/mission-pilot-task-entry-design.md`
   - `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`
-- Downstream plan: `spec/docs/mission-pilot-test-review-archive-implementation-plan.md`
+- Completed downstream plan: `spec/archive/mission-pilot-test-review-archive-implementation-plan.md`
 - Target runtime span: initial PlayからPlan Mode、Questionnaire、Artifact、self-review、Implementation Queue admission完了まで
 
 この文書は、実装済みMission Pilot MVP Slice 1/2に残るpre-Queue handoff不整合だけを修正するための独立した実装正本である。Task生成、Mission Pilot Session、Play / Stop、Questionnaire autonomy、Artifact生成、Plan self-review、Queue admissionの完成済み設計を作り直さない。
 
-本書の完了条件は、Mission Pilotの初回PlayがQueue前にImplementation runを開始せず、最新Context revisionとVerification Documentを持つTaskをImplementation Queueへexactly-onceで引き渡せることである。Queue claim後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、Task Archiveはdownstream planの責務であり、本書には含めない。
+本書の完了条件は、Mission Pilotの初回PlayがQueue前にImplementation runを開始せず、review pass済みのimmutable Context revisionとVerification Documentを持つTaskをImplementation Queueへexactly-onceで引き渡せることである。Queue claim後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、Task Archiveはdownstream planの責務であり、本書には含めない。
 
 ## 1. 現在確認できる不整合
 
@@ -90,6 +94,11 @@ Queue admission前にはImplementation/Test/Review runを開始しない。初�
 18. remediation後、新規Mission Pilotの最初のImplementation runはQueue claim後にだけ作られる。
 19. 通常TaskのWorkBench intake routingに回帰がない。
 20. downstream planが要求するQueue handoff contractをAPI / DB testで固定する。
+21. Mission Pilot Queue admissionは`autoDrain: false`で行い、本書の実装だけではQueue claimを開始しない。
+22. Queue row、Task status、Queue作成message、Session handoff projectionは同一DB transactionで確定する。
+23. retry / concurrent admissionは永続unique admission keyから同じQueue rowを返す。
+24. review pass後にcanonical Context revision / digestを変更しない。
+25. structured corruption diagnosticはDB、API、Pilot Thoughtイベント一覧から確認できる。
 
 ## 4. Locked Decisions
 
@@ -113,6 +122,11 @@ Queue admission前にはImplementation/Test/Review runを開始しない。初�
 18. Restore / Reopen / Task Archive lifecycleはこの計画に追加しない。
 19. 汎用`mission_pilot_events` ledgerはこのremediationの必須条件にしない。post-Queue exactly-once event基盤はdownstream planで追加する。
 20. completed remediation planは検証後に`spec/archive`へ移す。
+21. 既存Queue serviceのcheck-then-insertをMission Pilotのexactly-once根拠にしない。
+22. `implementation_queue_entries`へMission Pilot handoff用nullable unique admission keyを追加する。通常Queue entryはnullのまま既存contractを維持する。
+23. reviewed ContextはQueue admissionのimmutable input evidenceとし、Queue entry ID等のoutput refsをContextへappendしない。
+24. Queue handoff outputは`mission_pilot_sessions`のtyped projectionへ保存し、第二control rowを作らない。
+25. Queue admission transaction commit後も本remediationからdrain triggerを呼ばない。claim開始はdownstream plan導入後の責務とする。
 
 ## 5. Scope
 
@@ -162,9 +176,11 @@ handoff完了時は次をすべて満たす。
 type MissionPilotQueueHandoff = {
   sessionId: string;
   taskId: string;
+  admissionKey: string;
   queueEntryId: string;
-  contextRevision: number;
-  contextDigest: string;
+  queueEntryStatus: "queued";
+  reviewedContextRevision: number;
+  reviewedContextDigest: string;
   featurePlanMessageId: string;
   verificationDocumentId: string;
   planReviewId: string;
@@ -173,7 +189,11 @@ type MissionPilotQueueHandoff = {
 };
 ```
 
-このpayloadはSession/Context/plan review/Queue entryから再構築可能にする。Queue handoff専用の第二control rowは作らない。必要なrefはlatest Context snapshotまたはSession projectionへ保存する。
+このpayloadはSession/Context/plan review/Queue entryから再構築可能にする。Queue handoff専用の第二control rowは作らず、`mission_pilot_sessions.queue_handoff_json`へtyped projectionとして保存する。
+
+`reviewedContextRevision` / `reviewedContextDigest`はplan reviewがpassしたimmutable inputである。Queue entry IDや`queuedAt`をcanonical Contextへappendしてrevisionを進めてはならない。Sessionのcurrent Context refsもreviewed refsと一致した状態でhandoffを確定する。
+
+`admissionKey`は少なくとも`sessionId + reviewedContextDigest + planReviewId`から決定的に構築する。同じreview evidenceのretryは同じkeyを使い、異なるreview revisionは異なるkeyになる。
 
 ### 6.3 Invalid handoff
 
@@ -185,6 +205,7 @@ type MissionPilotQueueHandoff = {
 - Plan reviewがpassでない。
 - reviewed Context digestとlatest digestが不一致。
 - active Queue entryが複数存在する。
+- 同じadmission keyが異なるTask / Session / review evidenceを参照する。
 - pre-Queue段階でImplementation/Test/Review runが存在する。
 - Session authorization / sourceRef不整合。
 
@@ -201,8 +222,10 @@ MissionPilotService.play
             -> existing Artifact generators
             -> existing Plan self-review
             -> QueueHandoffGate
-                 -> existing Queue service
-                 -> persist queued projection
+                 -> Mission Pilot Queue admission transaction
+                      -> Queue row / Task status / system message
+                      -> Session handoff projection / phase queued
+                 -> autoDrain false
   -> UI realtime projection
 ```
 
@@ -242,17 +265,24 @@ LLM本文がある場合に固定本文へ置換する用途では使わない�
 
 ### 8.3 Queue admission transaction boundary
 
-Queue serviceの既存active-entry unique/reuse契約を利用する。
+現行Queue serviceはactive rowをcheckしてからinsertし、既存rowがあれば`QUEUE_ENTRY_EXISTS`を返す。DBにもTask単位のactive unique制約はないため、この既存contractだけをexactly-once根拠にしない。
 
-1. latest Session / Context / review / verification evidenceを読む。
-2. handoff gateを評価する。
-3. existing active Queue entryがあればそのrowを採用する。
-4. なければ`createImplementationQueueEntry()`を呼ぶ。
-5. returned rowとDB上active rowを照合する。
-6. Queue entry IDとfrozen Context refsをContextへappendする。
-7. Sessionを`queued`へ更新する。
+Mission Pilot用に`admitMissionPilotQueueHandoff()`を追加し、次を一つのDB transactionで行う。既存scheduler / lease / capacityは維持し、claim対象だけを明示する汎用`claim_ready` gateを追加する。
 
-Context append後・Session update前にprocessが落ちても、reconcileはQueue entry ID / Context reason / digestを読んで同じentryを採用する。重複Queue entryを作らない。
+1. latest Session / Task / Context / review / Feature Plan / Verification evidenceとTaskのactive Queue rowsをtransaction内で再読する。
+2. handoff gateを評価し、reviewed Context revision / digestをfreezeする。
+3. 決定的な`admissionKey`を構築する。
+4. Sessionがすでに`queued`なら、既存handoff projectionと同じ`admissionKey`の場合だけ同じoutputを返す。projection不一致はcorruptionとして拒否する。
+5. active Queue rowが同じ`admissionKey`であれば、Task / Session / review refs一致を検証してそのrowを再利用する。異なるkeyのactive rowまたは複数rowは`MISSION_PILOT_QUEUE_HANDOFF_DUPLICATE`として拒否する。
+6. rowがなければ`implementation_queue_entries.mission_pilot_admission_key`のunique制約下で、`claim_ready = false`のQueue rowをinsertする。unique競合時はrowを再読して同一性を検証する。
+7. Task statusを`queued`へ更新する。
+8. Queue作成system messageを`admissionKey`でidempotentに保存する。
+9. Session version / phaseをCAS条件にし、`mission_pilot_sessions.queue_handoff_json`へtyped handoff projectionを保存してphaseを`queued`へ更新する。
+10. transaction commit後にQueue row、Session projection、Task statusを再読して一致を確認する。
+
+Queue作成は`autoDrain: false`かつ`claim_ready = false`固定とし、transaction commit後も本remediationからdrain triggerを呼ばない。claim query / CASは`claim_ready = true`を必須とし、held rowは通常Taskのscheduling lock判定にも含めない。これにより、別Task由来のgeneric drainが同時に走っても、post-Queue coordinatorなしにMission Pilot Implementationを開始できない。downstream planはhealthy `queued` handoffを検証してcoordinatorを登録した後、同一transactionで`claim_ready = true`へ解放し、その後にclaim / drainを開始する。
+
+response lossまたはprocess crashがtransaction commit後に起きた場合、retry / startup reconcileは同じ`admissionKey`から同じQueue rowとSession projectionを復元する。transaction commit前の失敗ならいずれのrowも完了扱いにしない。
 
 ### 8.4 Existing corrupt Session classification
 
@@ -269,6 +299,33 @@ startup reconcileはpre-Queue Sessionを次に分類する。
 
 corrupt Sessionを再開する操作は将来の明示reopen/reconcile計画へ委ねる。本remediationのmigrationやstartup処理でrepo変更・Task status・run statusを巻き戻さない。
 
+structured diagnosticは`mission_pilot_sessions.pre_queue_diagnostic_json`へ次のtyped shapeで保存する。汎用error本文やLLM本文の代替には使わない。
+
+```ts
+type MissionPilotPreQueueDiagnostic = {
+  code:
+    | "MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL"
+    | "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN"
+    | "MISSION_PILOT_QUEUE_HANDOFF_STALE_CONTEXT"
+    | "MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING"
+    | "MISSION_PILOT_QUEUE_HANDOFF_DUPLICATE";
+  detectedAt: string;
+  taskStatus: string;
+  sessionPhase: string;
+  queueEntryIds: string[];
+  runIds: string[];
+  runSourceRefs: Array<{ runId: string; executionMode: string | null; executionModeSource: string | null }>;
+  commitRecordIds: string[];
+  diffEventIds: string[];
+  contextRevision: number;
+  contextDigest: string;
+  reviewedContextRevision: number | null;
+  reviewedContextDigest: string | null;
+};
+```
+
+APIのMission Pilot summaryはdiagnostic code、detectedAt、関連row IDを返す。Pilot Thoughtイベント一覧にはattention時のdiagnostic eventを追加し、停止したこと、自動再開されないこと、codeを常時表示する。Task status、run ID、Queue row ID、検出時刻は同イベントのdetailsで確認可能にする。operatorがDBを直接読まなくても自動再開されない理由を既存の実行証跡と同じ時系列で確認できるようにし、新しい管理画面は作らない。
+
 ## 9. 実装ファイル計画
 
 ### 9.1 `api/modules/missionPilot`
@@ -282,7 +339,7 @@ corrupt Sessionを再開する操作は将来の明示reopen/reconcile計画へ�
 - `mission-pilot-plan-coordinator.service.ts`
   - Task lifecycle guardとQueue handoff gate接続。
 - `mission-pilot-plan.repository.ts`
-  - queued projection / frozen handoff refsのidempotent persistence。
+  - reviewed Contextを変更しないqueued projection persistence。
 - `mission-pilot-pre-queue-recovery.service.ts`（新規）
   - startup classificationとsafe recovery。
 - `mission-pilot.errors.ts`
@@ -293,15 +350,31 @@ corrupt Sessionを再開する操作は将来の明示reopen/reconcile計画へ�
 ### 9.2 Existing domain integration
 
 - Questionnaire serviceは既存public serviceを再利用する。
-- Queue serviceは`createImplementationQueueEntry()`とactive-entry queryを再利用する。
+- Queue serviceのdraft / proposal approval / scheduling validationを共通関数として再利用する。
+- Queue repositoryへtransaction-awareなMission Pilot admission primitiveとadmission-key queryを追加する。
 - WorkBench serviceの通常Task contractは変更しない。
 - API startupへpre-Queue recovery scanを追加する。
 
 ### 9.3 Shared / DB
 
-原則として新tableは追加しない。Queue handoff refsをContext snapshotへ追加するschemaが必要な場合だけshared schemaを拡張する。
+新tableは追加しない。次の最小column / typed schemaを追加し、bootstrapとformal Drizzle migrationを同時に更新する。
 
-Session column追加が必要な場合は、既存Contextから再構築できない最小refに限定し、bootstrapとformal Drizzle migrationを同時に追加する。
+- `implementation_queue_entries.mission_pilot_admission_key`: nullable text / unique。通常Queue entryはnull。
+- `implementation_queue_entries.claim_ready`: non-null boolean / default true。通常Queue entryはtrue、pre-Queue Mission Pilot handoffはfalse。
+- `mission_pilot_sessions.queue_handoff_json`: nullable typed JSON。
+- `mission_pilot_sessions.pre_queue_diagnostic_json`: nullable typed JSON。
+- shared Mission Pilot schema: handoff / diagnostic payloadとAPI projectionをstrict schema化する。
+
+`queue_handoff_json`はQueue admission output projectionであり、canonical Context snapshotではない。既存Session rowを唯一のlong-lived control/state ownerとして維持する。
+
+### 9.4 Frontend projection
+
+- `src/modules/missionPilot/components/PilotThoughtDock.tsx`
+  - `activityState === "attention"`かつdiagnosticありの場合の時系列event表示。
+- `src/modules/missionPilot/missionPilotPresentation.ts`
+  - attention / diagnostic presentation state。
+- `src/i18n/dictionaries/ja.ts` / `en.ts`
+  - diagnostic label。運用ルール本文は日本語を正本とし、UI辞書は既存i18n contractに合わせる。
 
 ## 10. 実装フェーズ
 
@@ -322,27 +395,32 @@ Session column追加が必要な場合は、既存Contextから再構築でき�
 
 1. terminal Task / unexpected run guardを追加する。
 2. Feature Plan / Verification / review / Context digestを検証する。
-3. Queue entry exactly-onceを固定する。
-4. queued projectionへhandoff refsを保存する。
+3. unique admission keyとtransaction-aware Queue admissionを追加する。
+4. Queue entry / Task status / message / Session projectionを同一transactionで保存する。
+5. `autoDrain: false`と`claim_ready = false`を固定し、canonical Contextを変更しない。
 
 完了gate:
 
 - valid evidenceだけがQueueへ入る。
 - response loss retryでentryが増えない。
 - Session queuedとQueue rowが一致する。
+- handoff後もreviewed Context revision / digestが不変。
+- remediation単体ではQueue claim / Implementation runが開始されない。
 
 ### Phase 3: Recovery / diagnostics
 
 1. startup pre-Queue scanを追加する。
 2. known corrupt Sessionをattentionへ分類する。
 3. terminal Taskを自動rollbackしないtestを追加する。
-4. operator-visible diagnosticへrun/source/diff/commit refsを保存する。
+4. typed diagnosticへrun/source/diff/commit refsを保存する。
+5. Mission Pilot API summaryとPilot Thoughtイベント一覧へattention diagnostic projectionを追加する。
 
 完了gate:
 
 - restart後にcompleted stepを再生成しない。
 - corrupt Sessionが自動実装を再開しない。
 - healthy Sessionはmissing next stepから再開する。
+- operatorがPilot Thought / APIから停止理由と関連row IDを確認できる。
 
 ### Phase 4: Integration / E2E / archive
 
@@ -365,8 +443,12 @@ Session column追加が必要な場合は、既存Contextから再構築でき�
 - unexpected pre-Queue runを検出する。
 - stale Context reviewを再利用しない。
 - Feature PlanとVerification Document不一致を拒否する。
-- active Queue entryを再利用する。
+- same admission keyのconcurrent insertが同じQueue rowへ収束する。
 - Queue entry response loss retryで重複しない。
+- Queue row / Task queued / system message / Session projectionの一部だけがcommitされない。
+- Queue handoff後もreviewed Context revision / digestが変わらない。
+- Mission Pilot admissionがdrain triggerを呼ばない。
+- 別Task由来のdrainを明示実行してもheld Mission rowをclaimせず、通常Queue rowを妨げない。
 
 ### 11.2 Recovery
 
@@ -374,7 +456,8 @@ Session column追加が必要な場合は、既存Contextから再構築でき�
 - Artifact保存後・Context append前restart。
 - Context append後・step complete前restart。
 - review pass後・Queue create前restart。
-- Queue create後・Session queued前restart。
+- Queue admission transaction commit後・response返却前restart。
+- admission transaction commit直前 / commit直後のresponse loss。
 - terminal corrupt Session startup。
 - dead lease recovery。
 
@@ -384,7 +467,8 @@ Session column追加が必要な場合は、既存Contextから再構築でき�
 - manual Plan Modeがterminal Taskでread-onlyのまま。
 - Mission Pilot Stopが新stepを開始させない。
 - Play resumeがinitial promptを重複保存しない。
-- Queue scheduler / lease / capacity contractを変更しない。
+- Queue scheduler / lease / capacity contractを維持し、通常entryの`claim_ready = true`既定値を回帰確認する。
+- 通常TaskのQueue作成は従来どおり設定に応じてauto-drainする。
 
 ## 12. End-to-End Scenarios
 
@@ -400,6 +484,9 @@ Session column追加が必要な場合は、既存Contextから再構築でき�
 8. Queue entryが1件作成される。
 9. Sessionが`queued`になる。
 10. frozen Context digestとQueue handoff refsを確認する。
+11. Queue entryがまだ`queued`で、TaskRun countが0のままであることを確認する。
+
+このscenarioはPlay API、Questionnaire API、Queue APIをroute interceptionで置換せず、実API processと分離SQLite DBを使って実行する。既存`mission-pilot-entry.spec.ts`のPlay mockはUI表示契約用として残してよいが、本handoff完了の証拠には使わない。
 
 ### 12.2 Wrong routing prevention
 
@@ -409,7 +496,24 @@ Plan Modeを明示しない実装要求に見えるinitial promptでも、Missio
 
 `completed Task + attention Session + workbench_intake implementation run + Queueなし` fixtureを起動する。startup reconcileはTask statusやrepoを変更せず、structured attention diagnosticを保存して停止する。
 
-## 13. Verification Commands
+API responseとPilot Thoughtイベントでdiagnostic code、Task status、run ID、Queue row数、detectedAtが確認できることまでをE2Eの完了条件とする。
+
+## 13. Value Metrics / Baseline
+
+実装前baselineと実装後結果を同じquery / test evidenceで比較し、本書のverification evidenceへ記録する。
+
+| metric | current baseline | remediation target | observation |
+| --- | --- | --- | --- |
+| first PlayからQueue admission前に作られたImplementation run | local fixtureで1件 | 0件 | `task_events.run.created`の`executionMode` / `executionModeSource`とTaskRun count |
+| healthy first Play -> queued handoff成功率 | local fixture 0/1 | deterministic fixture / E2Eで100% | Session phase、Queue row、handoff projection |
+| 同一admission keyのactive Queue row数 | unique制約なし | exactly 1 | DB queryとconcurrent retry test |
+| restart / response loss後の重複Artifact・review・Queue row | 未固定 | 0件 | step / review / Queue row count |
+| attention Sessionのstructured diagnostic取得率 | 0% | corruption fixturesで100% | API responseとPilot Thoughtイベント |
+| normal WorkBench / Queue regression | focused baseline success | 既存suite 100%維持 | repo-native focused tests |
+
+PlayからqueuedまでのlatencyもE2E artifactへ記録する。ただし外部LLM応答時間を含むため固定時間を合否条件にせず、timeout / stalled phaseの診断用baselineとする。
+
+## 14. Verification Commands
 
 実装時に実ファイル名を確定し、次の形で実行する。
 
@@ -419,19 +523,33 @@ bun run test run tests/mission-pilot-plan-coordinator.test.ts
 bun run test run tests/mission-pilot-plan-pipeline.test.ts
 bun run test run tests/mission-pilot-pre-queue-handoff.test.ts
 bun run test run tests/mission-pilot-pre-queue-recovery.test.ts
-bun run test run tests/nightworkers-workbench-intake.test.ts
+bun run test run tests/services.queue-management.test.ts
+bun run test run tests/nightworkers-workbench-routes/routes-workbench-01.test.ts
 bun run typecheck
 bun run check:docs
 bun run verify:base
-bun run test:e2e -- tests/e2e/mission-pilot-entry.spec.ts
+bun run test:e2e -- tests/e2e/mission-pilot-pre-queue-handoff.spec.ts
 git diff --check
 ```
 
-存在しないtest fileは実装phaseで計画どおり追加する。実際のWorkBench regression file名が異なる場合は既存suiteへ合わせ、本書のcommandも同じ変更で更新する。
+存在しないpre-Queue test fileは実装phaseで計画どおり追加する。実E2EはPlay APIをmockせず、分離DBと実API processを使用する。既存suiteの分割に伴いfile名が変わった場合は現行suiteへ合わせ、本書のcommandも同じ変更で更新する。
 
 変更前から存在するunrelated failureは、対象command、error、baseline SHA、対象外理由を記録する。remediationが触れたpathまたはcontractに関係するfailureは対象外扱いにしない。
 
-## 14. Definition of Done
+期待結果:
+
+- focused testは全件passし、first PlayからQueue admission完了までTaskRun count 0を示す。
+- typecheck / docs / verify:baseはexit 0。
+- E2EはPlay APIをmockせず、Session `queued`、Queue row exactly one、reviewed Context不変、Queue未claimを同時に示す。
+- corruption E2EはTask / repo / runを巻き戻さず、API / UI diagnosticを示す。
+
+失敗時の扱い:
+
+- admission key重複、partial persistence、Context digest変化、Queue claim先行はrelease blockerとし、対象外扱いしない。
+- E2Eのprovider / infrastructure failureはログ、DB state、process exitを分離して記録し、同じfixtureで再実行する。product stateが途中までmutationされていればinfra failureだけで片付けない。
+- baselineから存在するunrelated failureだけを上記provenance付きで除外できる。
+
+## 15. Definition of Done
 
 1. Mission Pilot first Playからgeneric WorkBench intake implementation routeが除去されている。
 2. Queue前Implementation/Test/Review runが作られない。
@@ -439,24 +557,62 @@ git diff --check
 4. Queue handoff gateがFeature Plan / Verification / review / Contextを検証する。
 5. Queue entryがexactly-onceで作成・再利用される。
 6. Session queued projectionがQueue rowと一致する。
-7. process restartでArtifact / review / Queue entryを重複作成しない。
-8. existing corrupt Sessionを自動rollback / rerunしない。
-9. normal WorkBench intake / manual Plan Mode / Queue schedulerに回帰がない。
-10. focused tests、typecheck、docs、verify、restart E2Eが成功する。
-11. downstream planのprecondition contract testが成功する。
-12. 実装commitとverification evidenceを本書へ記録する。
-13. 完了後、本書を`spec/archive`へ移す。
+7. Queue row / Task status / message / Session projectionが同一transactionで確定する。
+8. handoff後もreviewed Context revision / digestが不変である。
+9. remediation単体ではQueue claim / Implementation runを開始しない。
+10. process restartでArtifact / review / Queue entryを重複作成しない。
+11. existing corrupt Sessionを自動rollback / rerunしない。
+12. structured diagnosticをDB / API / attention UIで確認できる。
+13. normal WorkBench intake / manual Plan Mode / Queue schedulerに回帰がない。
+14. focused tests、typecheck、docs、verify、unmocked restart E2Eが成功する。
+15. Value Metricsのtargetを満たす。
+16. downstream planのprecondition contract testが成功する。
+17. 実装commitとverification evidenceを本書へ記録する。
+18. 完了後、本書を`spec/archive`へ移す。
 
-## 15. Downstream Handoff
+## 16. Verification Evidence
 
-本書完了後、`spec/docs/mission-pilot-test-review-archive-implementation-plan.md`は次を入力前提として開始できる。
+実装完了時の証跡:
+
+| gate | result | evidence |
+| --- | --- | --- |
+| focused / integration | pass | Mission Pilot / Queue対象11 files、52 tests pass。parallel retry、claim-ready hold、通常Queue非阻害を含む |
+| normal WorkBench regression | pass | WorkBench route 4 files、46 tests pass |
+| fresh migration | pass | `0033_mission_pilot_pre_queue_handoff.sql`適用後、2 Session columns、admission key / claim-ready columns、unique indexを確認 |
+| real Play E2E | pass | `mission-pilot-pre-queue-handoff.spec.ts` 1/1。Play API mockなし、Session queued、Queue exactly one / unclaimed、TaskRun 0、reviewed Context不変、明示drain後も`started: 0`、Pilot Thought diagnostic操作成功 |
+| tracked artifacts | pass | `bun run check:tracked-artifacts` |
+| lint | pass | `bun run lint`、1270 files |
+| supervisor regression | pass | 5 files、54 tests |
+| docs | pass | `bun run check:docs`、11 documents consistent |
+| diff hygiene | pass | `git diff --check` |
+| typecheck / verify:base | baseline blocked | 対象外の既存`src/modules/planMode/PlanModeWorkspaceViewer.tsx:1041`で`MermaidRenderFailureStage`の`module_load`型不一致。Mission Pilot変更由来のtype errorは0 |
+| full Vitest | baseline blocked | 288 files / 1955 testsを実行。Mission Pilot Plan intakeの4 failuresはguard mock追加後4/4 pass。残る既存failureはPlanMode QueryClient周辺3 files / 4 tests |
+
+Value Metrics結果:
+
+- first PlayからQueue admission前に作られたImplementation run: 0件。
+- deterministic healthy first Play -> queued handoff: 1/1成功。
+- 同一admission keyのactive Queue row: exactly 1。
+- retry / CAS failure / startup recovery後の重複Queue row: 0件。
+- concurrent retry 2件は同じadmission key / Queue row / handoff projectionへ収束。
+- handoff後の明示drainによるclaim / TaskRun開始: 0件。
+- handoff後のContext revision / digest変化: 0件。
+- corruption fixtureのstructured diagnostic取得: service / API projection / Pilot Thoughtで100%。
+- normal WorkBench intake routing: 4 files / 46 testsを維持。
+- real Play E2E所要時間: 4.5秒。固定performance gateではなくstalled診断baselineとして記録。
+
+## 17. Downstream Handoff
+
+本書完了後、`spec/archive/mission-pilot-test-review-archive-implementation-plan.md`は次を入力前提として開始し、完了した。
 
 - Session desired state `playing`。
 - Session phase `queued`。
 - active Implementation Queue entryがexactly one。
-- Queue pass済みlatest Context revision / digest。
+- Queue entry status `queued`、active run / claimなし。
+- Queue entry `claim_ready = false`。
+- Queue pass済みreviewed Context revision / digest。
 - exact Feature Plan / Verification Document / Plan review refs。
 - Queue前Implementation/Test/Review runなし。
 - Task non-terminal。
 
-downstream planはこの入力を再構築・修正せず、Queue claim後のrun associationから開始する。
+downstream planはこの入力を再構築・修正せず、post-Queue coordinatorとMission event ledgerを登録し、preflightと同一transactionでQueue entryを`claim_ready = true`へ解放してからQueue claim / drainを開始し、run associationへ進む。

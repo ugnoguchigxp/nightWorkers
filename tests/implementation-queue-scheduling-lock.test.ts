@@ -36,6 +36,7 @@ async function createEntry(input: {
 	executionType?: TaskExecutionType;
 	sequenceGroupId?: string | null;
 	sequenceOrder?: number | null;
+	claimReady?: boolean;
 }) {
 	const priority = 1_500_000_000 + (input.priority ?? 0);
 	const task = await nightworkersRepo.createTask({
@@ -56,6 +57,7 @@ async function createEntry(input: {
 		sequenceGroupId: input.sequenceGroupId ?? null,
 		sequenceOrder: input.sequenceOrder ?? null,
 		schedulingReason: "test fixture",
+		claimReady: input.claimReady,
 	});
 	return { task, entry };
 }
@@ -77,6 +79,27 @@ function expectClaimed(result: Awaited<ReturnType<typeof claim>>) {
 }
 
 describe("Implementation Queue scheduling locks", () => {
+	it("keeps held Mission work unclaimed without blocking ready normal work", async () => {
+		const repository = await createRepository();
+		const held = await createEntry({
+			repositoryId: repository.id,
+			priority: 100,
+			executionType: "exclusive",
+			claimReady: false,
+		});
+		const normal = await createEntry({
+			repositoryId: repository.id,
+			priority: 1,
+		});
+
+		expect(expectClaimed(await claim("claim-ready-normal")).id).toBe(
+			normal.entry.id,
+		);
+		await expect(
+			queueRepo.getImplementationQueueEntrySchedulingHealth(held.entry),
+		).resolves.toMatchObject({ schedulingBlockedReason: "claim_not_ready" });
+	});
+
 	it("claims multiple normal tasks from the same repository within processor capacity", async () => {
 		const repository = await createRepository();
 		const first = await createEntry({

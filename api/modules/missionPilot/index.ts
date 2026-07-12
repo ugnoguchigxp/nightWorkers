@@ -5,6 +5,13 @@ export {
 	reconcileMissionPilotStartup,
 } from "./mission-pilot.service";
 export {
+	getLatestMissionPilotCloseout,
+	getLatestMissionPilotReviewDecision,
+	getLatestMissionPilotTestSnapshot,
+	getMissionPilotExecution,
+	reconcileMissionPilotExecution,
+} from "./mission-pilot-execution-query.service";
+export {
 	resumeMissionPilotPlanPipelines,
 	runMissionPilotPlanPipeline,
 } from "./mission-pilot-plan-coordinator.service";
@@ -15,3 +22,4 @@ export {
 	submitQuestionnaireDraft,
 	updateQuestionnaireDraft,
 } from "./mission-pilot-questionnaire.service";
+export { recoverMissionPilotPostQueueSessions } from "./mission-pilot-recovery.service";

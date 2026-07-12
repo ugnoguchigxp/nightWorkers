@@ -1,6 +1,10 @@
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
+import {
+	associateMissionPilotImplementationRun,
+	getMissionPilotImplementationEnvelope,
+} from "../../missionPilot/mission-pilot-run-association.service";
 import * as repo from "../nightworkers.repository";
 import { startTaskRun } from "./start-task-run";
 
@@ -66,9 +70,17 @@ async function drainImplementationQueue(
 		if (claimed.kind !== "claimed") break;
 		const claimedEntry = claimed.entry;
 		try {
+			const missionPilot = await getMissionPilotImplementationEnvelope(
+				claimedEntry.taskId,
+			);
 			const run = await startTaskRun(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
+				...(missionPilot ? { runtimeOptionsPatch: { missionPilot } } : {}),
+			});
+			await associateMissionPilotImplementationRun({
+				taskId: claimedEntry.taskId,
+				runId: run.id,
 			});
 			started.push(run);
 			const processingEntry = await repo.markImplementationQueueEntryProcessing(

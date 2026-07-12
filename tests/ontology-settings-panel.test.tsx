@@ -15,24 +15,42 @@ const project = {
 	updatedAt: "2026-07-10T00:00:00.000Z",
 };
 
-function render(sourceLoc: number | null, eligible: boolean) {
+function render(sourceLoc: number | null, securityOracleEnabled = true) {
+	const eligible = sourceLoc !== null && sourceLoc >= 50_000;
+	const securityEffective = eligible && securityOracleEnabled;
 	return renderToStaticMarkup(
 		<SettingsOntologyPanel
 			activeProject={project}
 			value={{
 				settings: {
+					securityOracleEnabled,
 					ontologyToolsEnabled: true,
 					securityMaxIterations: 3,
 				},
-				securityOracle: { alwaysEnabled: true, configured: true },
-				ontology: {
+				eligibility: {
 					thresholdSourceLoc: 50_000,
 					measuredSourceLoc: sourceLoc,
 					eligible,
-					effectiveEnabled: eligible,
-					toolProfile: eligible ? "ontology_extended" : "standard",
 					reason: eligible ? "enabled" : "below_threshold",
 					scannedAt: "2026-07-10T00:00:00.000Z",
+				},
+				securityOracle: {
+					configured: true,
+					effectiveEnabled: securityEffective,
+					reason: securityEffective
+						? "enabled"
+						: eligible
+							? "user_disabled"
+							: "below_threshold",
+				},
+				ontology: {
+					effectiveEnabled: securityEffective,
+					toolProfile: securityEffective ? "ontology_extended" : "standard",
+					reason: securityEffective
+						? "enabled"
+						: eligible
+							? "oracle_disabled"
+							: "below_threshold",
 				},
 			}}
 			message=""
@@ -45,18 +63,25 @@ function render(sourceLoc: number | null, eligible: boolean) {
 }
 
 describe("SettingsOntologyPanel", () => {
-	it("shows Security Oracle as always on and disables ontology below threshold", () => {
-		const markup = render(49_999, false);
-		expect(markup).toContain("Security Oracle");
+	it("shows both controls as disabled below the threshold", () => {
+		const markup = render(49_999);
+		expect(markup).toContain("Security Oracle: OFF");
 		expect(markup).toContain("standard");
-		expect(markup).toContain("disabled");
+		expect(markup.match(/type="checkbox"[^>]*disabled/g)).toHaveLength(2);
 		expect(markup).toContain("49,999");
 	});
 
-	it("exposes the ontology toggle at exactly 50,000 LOC", () => {
-		const markup = render(50_000, true);
+	it("exposes both controls at exactly 50,000 LOC", () => {
+		const markup = render(50_000);
+		expect(markup).toContain("Security Oracle: ON");
 		expect(markup).toContain("ontology_extended");
 		expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
-		expect(markup).toContain("50,000");
+	});
+
+	it("disables the ontology control while Security Oracle is off", () => {
+		const markup = render(50_000, false);
+		expect(markup).toContain("Security Oracle: OFF");
+		expect(markup.match(/type="checkbox"[^>]*disabled/g)).toHaveLength(1);
+		expect(markup).toContain("Security Oracle が OFF");
 	});
 });

@@ -186,6 +186,11 @@ describe("NightWorkers workbench routes", () => {
 		expect(res.status).toBe(201);
 		const task = await res.json();
 		expect(task.status).toBe("draft");
+		expect(task.missionPilot).toMatchObject({
+			taskId: task.id,
+			desiredState: "stopped",
+			phase: "created",
+		});
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
 	});
 

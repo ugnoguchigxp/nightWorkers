@@ -37,7 +37,7 @@ export const createTaskRoute = createRoute({
 		201: {
 			content: {
 				"application/json": {
-					schema: taskSchema,
+					schema: taskWithMissionPilotSchema,
 				},
 			},
 			description: "Task created successfully",
@@ -56,7 +56,7 @@ export const getTaskRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: taskSchema,
+					schema: taskWithMissionPilotSchema,
 				},
 			},
 			description: "Task detail",
@@ -114,7 +114,7 @@ export const updateTaskRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: taskSchema,
+					schema: taskWithMissionPilotSchema,
 				},
 			},
 			description: "Task updated successfully",
@@ -317,7 +317,9 @@ export const createWorkbenchSessionRoute = createRoute({
 	},
 	responses: {
 		201: {
-			content: { "application/json": { schema: taskSchema } },
+			content: {
+				"application/json": { schema: taskWithMissionPilotSchema },
+			},
 			description: "Workbench session created",
 		},
 	},

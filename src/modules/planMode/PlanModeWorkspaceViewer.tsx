@@ -1024,6 +1024,7 @@ export function PlanModeWorkspaceViewer({
 		) {
 			return;
 		}
+		const repairStage = failure.stage;
 		const repairKey = `${sessionId}:${activeDedicatedView}`;
 		if (attemptedMermaidRenderRepairs.current.has(repairKey)) return;
 		attemptedMermaidRenderRepairs.current.add(repairKey);
@@ -1038,7 +1039,7 @@ export function PlanModeWorkspaceViewer({
 					sourceDataModelMessageId: activeDataModelMessage?.id ?? null,
 					mermaidRenderRepair: {
 						sourceMessageId: activeDedicatedMessage.id,
-						stage: failure.stage,
+						stage: repairStage,
 						error: failure.message,
 						chart: failure.chart,
 					},

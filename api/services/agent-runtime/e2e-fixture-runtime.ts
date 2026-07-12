@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import { completionCheckTool, runCheckTool } from "../worker-tools/run-check";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -13,6 +14,79 @@ export async function runE2eFixtureRuntime(
 	sink: AgentRuntimeSink,
 ): Promise<AgentRuntimeResult> {
 	const fixtureBehavior = readFixtureBehavior(context.compiledPrompt);
+	const executionMode = String(context.contextSnapshot.executionMode ?? "");
+	const missionPilot = readRecord(
+		context.runtimeOptions?.missionPilot ??
+			context.contextSnapshot.missionPilot,
+	);
+	if (missionPilot && executionMode === "test") {
+		const testMode = readRecord(context.runtimeOptions?.testMode);
+		const verificationDocumentId = String(
+			testMode?.verificationDocumentId ??
+				context.runtimeOptions?.verificationDocumentId ??
+				"",
+		);
+		const check = await runCheckTool({
+			taskId: context.taskId,
+			runId: context.runId,
+			verificationDocumentId,
+			checkKind: "verify",
+			conditionIds: ["mission-pilot-archive"],
+			command: "git diff --check",
+			cwd: context.repoRoot,
+			repoRoot: context.repoRoot,
+		});
+		await sink.emit({
+			type: "tool_call_finished",
+			message: "Mission Pilot fixture managed verification finished.",
+			payload: { toolName: "run_check", result: check },
+		});
+		const completion = await completionCheckTool({
+			taskId: context.taskId,
+			verificationDocumentId,
+		});
+		await sink.emit({
+			type: "tool_call_finished",
+			message: "Mission Pilot fixture completion_check finished.",
+			payload: { result: completion },
+		});
+		const finalReport = JSON.stringify({
+			verdict: completion.ok ? "pass" : "attention",
+			defectOwner: completion.ok ? "test" : "unknown",
+			failedConditionIds: [],
+			evidenceRunIds: check.payload.evidenceRunId
+				? [check.payload.evidenceRunId]
+				: [],
+			affectedPaths: [],
+			summary: completion.ok
+				? "Deterministic Mission Pilot Test passed."
+				: "Deterministic Mission Pilot Test needs attention.",
+			implementationRework: null,
+		});
+		return {
+			terminalState: completion.ok ? "completed" : "needs_human",
+			summary: finalReport,
+			finalReport,
+			stoppedBy: "decision",
+			riskLevel: "low",
+			testResults: { fixture: true, managedEvidence: true },
+		};
+	}
+	if (missionPilot && executionMode === "review") {
+		const finalReport = JSON.stringify({
+			verdict: "pass",
+			summary: "Deterministic Mission Pilot Review passed.",
+			findings: [],
+		});
+		return {
+			terminalState: "completed",
+			summary: finalReport,
+			finalReport,
+			stoppedBy: "decision",
+			riskLevel: "low",
+			testResults: { fixture: true, review: true },
+		};
+	}
 	if (fixtureBehavior === "policy-block") {
 		await sink.emit({
 			type: "runtime_warning",
@@ -176,4 +250,10 @@ function readFixtureBehavior(message: string) {
 		),
 	];
 	return matches.at(-1)?.[1] ?? null;
+}
+
+function readRecord(value: unknown) {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }

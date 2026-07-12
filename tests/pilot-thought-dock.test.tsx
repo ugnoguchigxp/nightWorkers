@@ -27,6 +27,21 @@ describe("PilotThoughtDock", () => {
 						nextWakeAt: null,
 						version: 1,
 						lastError: null,
+						preQueueDiagnostic: {
+							code: "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",
+							detectedAt: new Date("2026-07-11T10:00:03Z"),
+							taskStatus: "queued",
+							sessionPhase: "queueing",
+							queueEntryIds: [],
+							runIds: ["44444444-4444-4444-8444-444444444444"],
+							runSourceRefs: [],
+							commitRecordIds: [],
+							diffEventIds: [],
+							contextRevision: 1,
+							contextDigest: "context-digest",
+							reviewedContextRevision: null,
+							reviewedContextDigest: null,
+						},
 						updatedAt: new Date(),
 					},
 				}}
@@ -86,6 +101,11 @@ describe("PilotThoughtDock", () => {
 		expect(markup).toContain("Pilot thought");
 		expect(markup).toContain("20秒間、ユーザーの変更を待ちます。");
 		expect(markup).toContain("設計判断を確定しました。");
+		expect(markup).toContain(
+			"Mission Pilotを停止しました。自動再開されません。",
+		);
+		expect(markup).toContain("MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN");
+		expect(markup).toContain("44444444-4444-4444-8444-444444444444");
 		expect(markup).not.toContain("repositoryを確認しています");
 		expect(markup).not.toContain("exec_command");
 		expect(markup).not.toContain("User Flowを生成しています。");

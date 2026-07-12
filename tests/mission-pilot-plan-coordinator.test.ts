@@ -30,7 +30,6 @@ const mocks = vi.hoisted(() => ({
 	saveQuestionnaireAnswers: vi.fn(),
 	callLlm: vi.fn(),
 	createQueueEntry: vi.fn(),
-	hasActiveQueueEntry: vi.fn(),
 	getVerificationDocument: vi.fn(),
 }));
 
@@ -66,12 +65,13 @@ vi.mock(
 vi.mock("../api/services/structured-llm", () => ({
 	callStructuredJsonLLM: mocks.callLlm,
 }));
-vi.mock("../api/modules/queue/queue-management.service", () => ({
-	createImplementationQueueEntry: mocks.createQueueEntry,
-}));
-vi.mock("../api/modules/queue/queue.repository", () => ({
-	hasActiveImplementationQueueEntry: mocks.hasActiveQueueEntry,
-}));
+vi.mock(
+	"../api/modules/missionPilot/mission-pilot-queue-handoff.service",
+	() => ({
+		admitMissionPilotQueueHandoff: mocks.createQueueEntry,
+		MissionPilotPreQueueError: class MissionPilotPreQueueError extends Error {},
+	}),
+);
 vi.mock(
 	"../api/modules/nightworkers/nightworkers.verification.repository",
 	() => ({
@@ -88,7 +88,6 @@ const repositoryIds: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());
 beforeEach(() => {
 	for (const mock of Object.values(mocks)) mock.mockReset();
-	mocks.hasActiveQueueEntry.mockResolvedValue(false);
 	mocks.generateAdditionalQuestionnaire.mockImplementation(async () => ({
 		session: await mocks.getQuestionnaire(),
 		result: {
@@ -220,6 +219,7 @@ describe("Mission Pilot plan coordinator", () => {
 			.where(eq(missionPilotSessions.id, session.id));
 
 		let featurePlanMessageId: string | null = null;
+		const verificationDocumentId = crypto.randomUUID();
 		mocks.getWorkspace.mockImplementation(async () => ({
 			taskId,
 			repositoryId,
@@ -341,6 +341,7 @@ describe("Mission Pilot plan coordinator", () => {
 			return { message, workspace: await mocks.getWorkspace() };
 		});
 		mocks.getVerificationDocument.mockImplementation(async () => ({
+			id: verificationDocumentId,
 			specMessageId: featurePlanMessageId,
 			status: "active",
 		}));
@@ -372,13 +373,13 @@ describe("Mission Pilot plan coordinator", () => {
 				revisionTargets: [],
 			});
 		});
-		mocks.createQueueEntry.mockResolvedValue({
-			id: crypto.randomUUID(),
-			taskId,
+		mocks.createQueueEntry.mockImplementation(async () => {
+			await db
+				.update(missionPilotSessions)
+				.set({ phase: "queued", updatedAt: new Date() })
+				.where(eq(missionPilotSessions.id, session.id));
+			return { taskId };
 		});
-		mocks.hasActiveQueueEntry
-			.mockResolvedValueOnce(false)
-			.mockResolvedValueOnce(true);
 
 		await runMissionPilotPlanPipeline(taskId);
 
@@ -408,9 +409,15 @@ describe("Mission Pilot plan coordinator", () => {
 			expect.objectContaining({ role: "review", taskId }),
 		);
 		expect(mocks.callLlm).toHaveBeenCalledTimes(2);
-		expect(mocks.createQueueEntry).toHaveBeenCalledWith(taskId, {
-			approveMissionProposal: false,
-		});
+		expect(mocks.createQueueEntry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				taskId,
+				sessionId: session.id,
+				featurePlanMessageId,
+				verificationDocumentId,
+				leaseOwner: expect.any(String),
+			}),
+		);
 		expect(await planRepo.getLatestPlanReview(session.id)).toMatchObject({
 			verdict: "pass",
 			attempt: 2,

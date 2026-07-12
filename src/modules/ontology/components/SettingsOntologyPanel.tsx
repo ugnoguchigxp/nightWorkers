@@ -22,8 +22,13 @@ export function SettingsOntologyPanel({
 	onSave: () => void;
 }) {
 	const { t } = useTranslation();
+	const eligibility = value?.eligibility;
+	const securityOracle = value?.securityOracle;
 	const ontology = value?.ontology;
-	const toggleDisabled = !activeProject || isSaving || !ontology?.eligible;
+	const securityToggleDisabled =
+		!activeProject || isSaving || !eligibility?.eligible;
+	const ontologyToggleDisabled =
+		securityToggleDisabled || !value?.settings.securityOracleEnabled;
 	return (
 		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
 			<div className="flex items-start justify-between gap-4">
@@ -49,14 +54,17 @@ export function SettingsOntologyPanel({
 			</div>
 
 			<div className="grid gap-3 md:grid-cols-2">
-				<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
-					<div className="text-xs font-semibold text-emerald-200">
-						{t("settings.securityIntelligence.oracleAlwaysOn")}
+				<div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+					<div className="text-xs font-semibold text-zinc-100">
+						{t("settings.securityIntelligence.securityOracle")}:{" "}
+						{securityOracle?.effectiveEnabled ? "ON" : "OFF"}
 					</div>
 					<div className="mt-1 text-[10px] text-zinc-400">
-						{value?.securityOracle.configured
+						{securityOracle?.configured
 							? t("settings.securityIntelligence.configured")
 							: t("settings.securityIntelligence.notConfigured")}
+						{" · "}
+						{securityOracle?.reason ?? "measurement_unavailable"}
 					</div>
 				</div>
 				<div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
@@ -65,9 +73,9 @@ export function SettingsOntologyPanel({
 					</div>
 					<div className="mt-1 text-[10px] text-zinc-500">
 						{t("settings.securityIntelligence.size", {
-							loc: ontology?.measuredSourceLoc?.toLocaleString() ?? "—",
+							loc: eligibility?.measuredSourceLoc?.toLocaleString() ?? "—",
 							threshold:
-								ontology?.thresholdSourceLoc.toLocaleString() ?? "50,000",
+								eligibility?.thresholdSourceLoc.toLocaleString() ?? "50,000",
 						})}
 					</div>
 				</div>
@@ -76,8 +84,43 @@ export function SettingsOntologyPanel({
 			<label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
 				<input
 					type="checkbox"
-					checked={Boolean(ontology?.effectiveEnabled)}
-					disabled={toggleDisabled}
+					checked={Boolean(value?.settings.securityOracleEnabled)}
+					disabled={securityToggleDisabled}
+					onChange={(event) => {
+						if (!value) return;
+						onChange({
+							...value,
+							settings: {
+								...value.settings,
+								securityOracleEnabled: event.target.checked,
+							},
+						});
+					}}
+					className="mt-0.5 h-4 w-4 rounded border-zinc-700 bg-zinc-900"
+				/>
+				<span>
+					<span className="block text-xs font-semibold text-zinc-100">
+						{t("settings.securityIntelligence.securityOracle")}
+					</span>
+					<span className="mt-1 block text-[10px] text-zinc-500">
+						{eligibility?.eligible
+							? t("settings.securityIntelligence.securityOracleHelp")
+							: t("settings.securityIntelligence.belowThreshold")}
+					</span>
+					<span className="mt-1 block text-[10px] text-zinc-600">
+						{t("settings.securityIntelligence.storedPreference", {
+							value: value?.settings.securityOracleEnabled ? "ON" : "OFF",
+							effective: securityOracle?.effectiveEnabled ? "ON" : "OFF",
+						})}
+					</span>
+				</span>
+			</label>
+
+			<label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+				<input
+					type="checkbox"
+					checked={Boolean(value?.settings.ontologyToolsEnabled)}
+					disabled={ontologyToggleDisabled}
 					onChange={(event) => {
 						if (!value) return;
 						onChange({
@@ -85,14 +128,6 @@ export function SettingsOntologyPanel({
 							settings: {
 								...value.settings,
 								ontologyToolsEnabled: event.target.checked,
-							},
-							ontology: {
-								...value.ontology,
-								effectiveEnabled: event.target.checked,
-								toolProfile: event.target.checked
-									? "ontology_extended"
-									: "standard",
-								reason: event.target.checked ? "enabled" : "user_disabled",
 							},
 						});
 					}}
@@ -103,9 +138,11 @@ export function SettingsOntologyPanel({
 						{t("settings.securityIntelligence.ontologyTools")}
 					</span>
 					<span className="mt-1 block text-[10px] text-zinc-500">
-						{ontology?.eligible
+						{eligibility?.eligible && value?.settings.securityOracleEnabled
 							? t("settings.securityIntelligence.ontologyToolsHelp")
-							: t("settings.securityIntelligence.belowThreshold")}
+							: eligibility?.eligible
+								? t("settings.securityIntelligence.oracleDisabled")
+								: t("settings.securityIntelligence.belowThreshold")}
 					</span>
 					<span className="mt-1 block text-[10px] text-zinc-600">
 						{t("settings.securityIntelligence.storedPreference", {

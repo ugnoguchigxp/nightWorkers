@@ -31,6 +31,7 @@ export type TaskStatus =
 	| "verifying"
 	| "needs_review"
 	| "completed"
+	| "archived"
 	| "blocked"
 	| "failed"
 	| "timed_out"
@@ -160,6 +161,8 @@ export const tasks = sqliteTable(
 		acceptanceCriteria: text("acceptance_criteria"),
 		worktreePath: text("worktree_path"),
 		status: text("status").$type<TaskStatus>().default("draft").notNull(), // draft | ready | context_compiling | queued | running | verifying | needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
+		completedAt: integer("completed_at", { mode: "timestamp" }),
+		archivedAt: integer("archived_at", { mode: "timestamp" }),
 		compiledPrompt: text("compiled_prompt"),
 		timeoutSeconds: integer("timeout_seconds").default(3600).notNull(),
 		priority: integer("priority").default(0).notNull(),
@@ -241,6 +244,10 @@ export const implementationQueueEntries = sqliteTable(
 		sequenceOrder: integer("sequence_order"),
 		sequenceDependsOnEntryId: text("sequence_depends_on_entry_id"),
 		schedulingReason: text("scheduling_reason"),
+		missionPilotAdmissionKey: text("mission_pilot_admission_key"),
+		claimReady: integer("claim_ready", { mode: "boolean" })
+			.default(true)
+			.notNull(),
 	},
 	(table) => ({
 		taskIdIdx: index("implementation_queue_entries_task_id_idx").on(
@@ -276,6 +283,9 @@ export const implementationQueueEntries = sqliteTable(
 			table.sequenceGroupId,
 			table.sequenceOrder,
 		),
+		missionPilotAdmissionUidx: uniqueIndex(
+			"implementation_queue_entries_mission_pilot_admission_uidx",
+		).on(table.missionPilotAdmissionKey),
 	}),
 );
 

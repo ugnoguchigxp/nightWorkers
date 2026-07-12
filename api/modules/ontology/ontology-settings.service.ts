@@ -9,7 +9,7 @@ import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { getRepositoryTechStackOverview } from "../techStack";
 import {
 	DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
-	resolveOntologyToolProfile,
+	resolveSecurityIntelligenceProfile,
 } from "./eligibility/tool-profile";
 
 export async function getProjectSecurityIntelligenceSettings(
@@ -22,17 +22,15 @@ export async function getProjectSecurityIntelligenceSettings(
 	);
 	const overview = await getRepositoryTechStackOverview(repositoryId);
 	const snapshot = overview.codeSizeSnapshot;
+	const resolution = resolveSecurityIntelligenceProfile({
+		settings,
+		measuredSourceLoc: snapshot?.totals.sourceEffectiveLines,
+		scannedAt: snapshot?.measuredAt ?? null,
+		configured: isVulnWorkbenchCliConfigured(),
+	});
 	return {
 		settings,
-		securityOracle: {
-			alwaysEnabled: true,
-			configured: isVulnWorkbenchCliConfigured(),
-		},
-		ontology: resolveOntologyToolProfile({
-			settings,
-			measuredSourceLoc: snapshot?.totals.sourceEffectiveLines,
-			scannedAt: snapshot?.measuredAt ?? null,
-		}),
+		...resolution,
 	};
 }
 
@@ -60,9 +58,16 @@ export function readProjectSecurityIntelligenceSettings(
 		? featureSettings.securityIntelligence
 		: null;
 	const parsed = projectSecurityIntelligenceSettingsSchema.safeParse(raw);
-	return parsed.success
-		? parsed.data
-		: { ...DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS };
+	if (parsed.success) return parsed.data;
+	if (isRecord(raw)) {
+		const legacy = projectSecurityIntelligenceSettingsSchema.safeParse({
+			securityOracleEnabled: true,
+			ontologyToolsEnabled: raw.ontologyToolsEnabled,
+			securityMaxIterations: raw.securityMaxIterations,
+		});
+		if (legacy.success) return legacy.data;
+	}
+	return { ...DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

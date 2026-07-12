@@ -13,6 +13,7 @@ import {
 	listTaskRunEventsForReplay,
 	startTaskRun,
 } from "../../api/modules/nightworkers/nightworkers.service";
+import * as taskArchiveService from "../../api/modules/nightworkers/task-archive.service";
 import * as runtimeRegistry from "../../api/services/agent-runtime/registry";
 
 const repoRoot = fs.mkdtempSync(
@@ -62,6 +63,28 @@ vi.mock("../../api/modules/nightworkers/nightworkers.repository", () => ({
 	updateTask: vi.fn(),
 	deleteTask: vi.fn(),
 	createTask: vi.fn(),
+}));
+
+vi.mock("../../api/modules/missionPilot/mission-pilot.repository", () => ({
+	createSession: vi.fn(async ({ task }: { task: { id: string } }) => ({
+		id: "pilot-1",
+		taskId: task.id,
+		desiredState: "stopped",
+		phase: "created",
+	})),
+	getSessionByTaskId: vi.fn(),
+	toControlSummary: vi.fn((session: { taskId: string }) => ({
+		taskId: session.taskId,
+		desiredState: "stopped",
+		phase: "created",
+		version: 0,
+	})),
+}));
+
+vi.mock("../../api/modules/nightworkers/task-archive.service", () => ({
+	archiveCompletedTask: vi.fn(),
+	restoreArchivedTask: vi.fn(),
+	reopenCompletedTask: vi.fn(),
 }));
 
 vi.mock("../../api/routes/settings", () => ({
@@ -959,26 +982,24 @@ describe("NightWorkers service", () => {
 
 	describe("archiveTask", () => {
 		it("throws NotFoundError if task does not exist", async () => {
-			vi.mocked(repo.getTask).mockResolvedValueOnce(null);
+			vi.mocked(taskArchiveService.archiveCompletedTask).mockRejectedValueOnce(
+				new Error("Task not found"),
+			);
 			await expect(archiveTask("invalid-id")).rejects.toThrow("Task not found");
 		});
 
-		it("returns task immediately if already completed, cancelled or failed", async () => {
-			const completedTask = { id: "t1", status: "completed" } as RepoTask;
-			vi.mocked(repo.getTask).mockResolvedValueOnce(completedTask);
+		it("returns the true archived task", async () => {
+			const archivedTask = { id: "t1", status: "archived" } as RepoTask;
+			vi.mocked(taskArchiveService.archiveCompletedTask).mockResolvedValueOnce({
+				task: archivedTask,
+				archiveRecord: null,
+				duplicate: false,
+			} as never);
 			const result = await archiveTask("t1");
-			expect(result).toBe(completedTask);
-		});
-
-		it("updates task status to cancelled", async () => {
-			const activeTask = { id: "t1", status: "running" } as RepoTask;
-			const archivedTask = { id: "t1", status: "cancelled" } as RepoTask;
-			vi.mocked(repo.getTask).mockResolvedValueOnce(activeTask);
-			vi.mocked(repo.updateTask).mockResolvedValueOnce(archivedTask);
-			const result = await archiveTask("t1");
-			expect(result.status).toBe("cancelled");
-			expect(repo.updateTask).toHaveBeenCalledWith("t1", {
-				status: "cancelled",
+			expect(result).toBe(archivedTask);
+			expect(taskArchiveService.archiveCompletedTask).toHaveBeenCalledWith({
+				taskId: "t1",
+				reason: "manual",
 			});
 		});
 	});
@@ -1004,12 +1025,20 @@ describe("NightWorkers service", () => {
 			const result = await createWorkbenchSession({
 				repositoryId: "repo-1",
 			});
-			expect(result).toBe(dummySession);
+			expect(result).toMatchObject({
+				...dummySession,
+				missionPilot: {
+					taskId: "s1",
+					desiredState: "stopped",
+					phase: "created",
+				},
+			});
 			expect(repo.createTask).toHaveBeenCalledWith(
 				expect.objectContaining({
 					repositoryId: "repo-1",
 					title: "New Session",
 				}),
+				expect.anything(),
 			);
 		});
 	});

@@ -4,9 +4,11 @@ import type {
 	ProjectEvaluationRun,
 	ProjectImprovementIdea,
 } from "../../../shared/schemas/project-evaluation.schema";
+import { db } from "../../db/client";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./project-evaluation.repository";
 import { buildProjectEvaluationBundle } from "./project-evaluation-bundle.service";
 import {
@@ -406,20 +408,29 @@ export async function createTasksFromProjectImprovements(input: {
 			0,
 			...idea.scoreImpacts.map((impact) => impact.expectedScoreGain),
 		);
-		const task = await nightworkersRepo.createTask({
-			repositoryId: evaluation.repositoryId,
-			title: idea.title,
-			description: buildTaskDescription(evaluation, idea),
-			objective: buildPlanFirstObjective(idea),
-			acceptanceCriteria: buildAcceptanceCriteria(idea),
-			status: input.mode,
-			priority: maxGain * 10 + (ideas.length - index),
-			createdBy: "project-evaluation",
-		});
-		await repo.createProjectEvaluationTaskLink({
-			evaluationId: evaluation.id,
-			ideaId: idea.id,
-			taskId: task.id,
+		const task = await db.transaction(async (tx) => {
+			const createdTask = await createTaskWithMissionPilot(
+				{
+					repositoryId: evaluation.repositoryId,
+					title: idea.title,
+					description: buildTaskDescription(evaluation, idea),
+					objective: buildPlanFirstObjective(idea),
+					acceptanceCriteria: buildAcceptanceCriteria(idea),
+					status: input.mode,
+					priority: maxGain * 10 + (ideas.length - index),
+					createdBy: "project-evaluation",
+				},
+				tx,
+			);
+			await repo.createProjectEvaluationTaskLink(
+				{
+					evaluationId: evaluation.id,
+					ideaId: idea.id,
+					taskId: createdTask.id,
+				},
+				tx,
+			);
+			return createdTask;
 		});
 		created.push(task);
 	}

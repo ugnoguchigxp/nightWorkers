@@ -67,6 +67,25 @@ beforeEach(() => {
 });
 
 describe("NightWorkers queue management side effects", () => {
+	it("rejects approval-required Mission metadata without a proposal id", () => {
+		expect(() =>
+			queueService.prepareImplementationQueueAdmission({
+				task: task as never,
+				messages: [
+					{
+						metadataJson: {
+							missionProposal: {
+								source: "mission_task_proposal",
+								approvalRequired: true,
+							},
+						},
+					},
+				] as never,
+				approveMissionProposal: true,
+			}),
+		).toThrow("Mission proposal approval requires a valid proposal id.");
+	});
+
 	it("does not auto-drain when createImplementationQueueEntry receives autoDrain false", async () => {
 		const entry = await queueService.createImplementationQueueEntry(task.id, {
 			autoDrain: false,

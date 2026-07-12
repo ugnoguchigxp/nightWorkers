@@ -9,6 +9,14 @@ import {
 } from "../../../services/agent-runtime/shared";
 import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
 import {
+	continueMissionPilotAfterRun,
+	resolveMissionPilotParentTaskStatus,
+} from "../../missionPilot/mission-pilot-post-queue-coordinator.service";
+import {
+	executeMissionPilotContinuation,
+	markMissionPilotContinuationFailed,
+} from "../../missionPilot/mission-pilot-runtime-continuation.service";
+import {
 	boundaryAuditEventSeverity,
 	buildOntologyBoundaryAuditSnapshot,
 } from "../../ontology";
@@ -379,13 +387,15 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				taskId,
 				repositoryId: repoInfo.id,
 				repoRoot: repoInfo.localPath,
-				executionMode: runtimeContextSnapshot.executionMode,
+				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
 				outcomeStatus: outcome.status,
 				finalTodos,
 				skipSecurityOracle: usesE2eFixture,
 			});
 			finalTodos = securityCloseout.finalTodos;
 			const securityGate = securityCloseout.securityGate;
+			const securityOracleSkipped =
+				securityCloseout.securityOracleSkipped;
 			const openTodos = listOpenTodos(finalTodos);
 			const todoFinalizationBlocked =
 				outcome.status === "completed" &&
@@ -401,6 +411,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				outcome.status === "completed" &&
 				runtimeContextSnapshot.executionMode === "implementation" &&
 				!usesE2eFixture &&
+				!securityOracleSkipped &&
 				securityGate?.allowFinalize !== true;
 			const guardedStatus =
 				todoFinalizationBlocked || securityFinalizationBlocked
@@ -427,7 +438,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const finalReport = appendTestModeNextStepLink({
 				finalReport: baseFinalReport,
 				taskId,
-				executionMode: runtimeContextSnapshot.executionMode,
+				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
 				status: guardedStatus,
 				repoRoot: repoInfo.localPath,
 			});
@@ -477,7 +488,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					},
 				});
 			}
-			await repo.updateTaskStatus(taskId, guardedStatus);
+			const parentTaskStatus = await resolveMissionPilotParentTaskStatus({
+				runId: run.id,
+				runStatus: guardedStatus,
+				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
+			});
+			await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, guardedStatus);
 			await finalizeReviewRunFromRuntime({
 				runId: run.id,
@@ -511,6 +527,21 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
+			try {
+				const missionContinuation = await continueMissionPilotAfterRun({
+					taskId,
+					runId: run.id,
+					executionMode:
+						runtimeContextSnapshot.executionMode ?? "implementation",
+				});
+				await executeMissionPilotContinuation(missionContinuation);
+			} catch (error) {
+				await markMissionPilotContinuationFailed(run.id, error);
+				logger.error(
+					{ error: toErrorMessage(error), runId: run.id },
+					"Mission Pilot continuation failed after the run was finalized",
+				);
+			}
 			if (guardedStatus === "needs_review") {
 				try {
 					await autoStartReviewSessionForRun(run.id);

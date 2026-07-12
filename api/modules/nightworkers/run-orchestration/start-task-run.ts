@@ -23,6 +23,7 @@ import { readStructuredLlmProviderSettings } from "../../../services/structured-
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { buildStandardImplementationTodoList } from "../../../services/todo-runtime";
+import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
 	buildOntologyRuntimeContextSnapshot,
@@ -192,7 +193,9 @@ export async function startTaskRunInProcess(
 	};
 	const runtimeOptions: Record<string, unknown> & {
 		securityOracle: {
-			enabled: true;
+			enabled: boolean;
+			configured: boolean;
+			reason: string;
 			maxIterations: number;
 			ontologyToolProfile: "standard" | "ontology_extended";
 		};
@@ -203,7 +206,9 @@ export async function startTaskRunInProcess(
 		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
 		...(options.runtimeOptionsPatch ?? {}),
 		securityOracle: {
-			enabled: true,
+			enabled: securityIntelligence.securityOracle.effectiveEnabled,
+			configured: securityIntelligence.securityOracle.configured,
+			reason: securityIntelligence.securityOracle.reason,
 			maxIterations: securityIntelligence.settings.securityMaxIterations,
 			ontologyToolProfile: securityIntelligence.ontology.toolProfile,
 		},
@@ -291,14 +296,24 @@ export async function startTaskRunInProcess(
 		...(runtimeOptions.reviewRun
 			? { reviewRun: runtimeOptions.reviewRun }
 			: {}),
+		...(runtimeOptions.missionPilot
+			? { missionPilot: runtimeOptions.missionPilot }
+			: {}),
 		projectMeta,
+		securityOracle: {
+			enabled: securityIntelligence.securityOracle.effectiveEnabled,
+			configured: securityIntelligence.securityOracle.configured,
+			reason: securityIntelligence.securityOracle.reason,
+			measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
+			thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
+		},
 		ontologyMcp: {
 			enabled: ontologyMcpEnabled,
 			source: "project_code_size_tool_profile",
 			fileScale: projectMeta?.fileScale.value ?? null,
 			toolProfile: securityIntelligence.ontology.toolProfile,
-			measuredSourceLoc: securityIntelligence.ontology.measuredSourceLoc,
-			thresholdSourceLoc: securityIntelligence.ontology.thresholdSourceLoc,
+			measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
+			thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
 			reason: securityIntelligence.ontology.reason,
 		},
 		request: {
@@ -388,8 +403,8 @@ export async function startTaskRunInProcess(
 				runtimeLane: runtimeLaneResolution.lane,
 				toolProfile: securityIntelligence.ontology.toolProfile,
 				reason: securityIntelligence.ontology.reason,
-				measuredSourceLoc: securityIntelligence.ontology.measuredSourceLoc,
-				thresholdSourceLoc: securityIntelligence.ontology.thresholdSourceLoc,
+				measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
+				thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
 			});
 	runtimeContextSnapshot = {
 		...runtimeContextSnapshot,
@@ -582,6 +597,20 @@ export async function startTaskRunInProcess(
 			runtimeRole,
 		},
 	});
+	const missionPilot = readMissionPilotEnvelope(runtimeOptions.missionPilot);
+	if (
+		missionPilot &&
+		(executionMode === "implementation" ||
+			executionMode === "test" ||
+			executionMode === "review")
+	) {
+		await associateMissionPilotChildRun({
+			taskId,
+			runId: run.id,
+			phase: executionMode,
+			missionPilot,
+		});
+	}
 
 	launchRuntimeExecution({
 		taskId,
@@ -597,4 +626,22 @@ export async function startTaskRunInProcess(
 	});
 
 	return compiledRun ?? run;
+}
+
+function readMissionPilotEnvelope(value: unknown) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const candidate = value as Record<string, unknown>;
+	if (
+		typeof candidate.sessionId !== "string" ||
+		typeof candidate.cycle !== "number" ||
+		typeof candidate.contextRevision !== "number" ||
+		typeof candidate.contextDigest !== "string"
+	)
+		return null;
+	return {
+		sessionId: candidate.sessionId,
+		cycle: candidate.cycle,
+		contextRevision: candidate.contextRevision,
+		contextDigest: candidate.contextDigest,
+	};
 }

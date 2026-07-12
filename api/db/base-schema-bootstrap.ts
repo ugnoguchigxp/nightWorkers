@@ -83,6 +83,8 @@ export async function ensureBaseNightWorkersTables() {
       acceptance_criteria text,
       worktree_path text,
       status text DEFAULT 'draft' NOT NULL,
+	  completed_at integer,
+	  archived_at integer,
       compiled_prompt text,
       timeout_seconds integer DEFAULT 3600 NOT NULL,
       priority integer DEFAULT 0 NOT NULL,
@@ -91,6 +93,8 @@ export async function ensureBaseNightWorkersTables() {
     )
   `);
 	await ensureColumn("tasks", "worktree_path", "worktree_path text");
+	await ensureColumn("tasks", "completed_at", "completed_at integer");
+	await ensureColumn("tasks", "archived_at", "archived_at integer");
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS tasks_repository_id_idx ON tasks (repository_id)",
 	);

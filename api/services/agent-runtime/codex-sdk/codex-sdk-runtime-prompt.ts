@@ -147,6 +147,7 @@ function buildTestModeContract(
 	nightWorkersToolList: string,
 ) {
 	const testModeAction = readTestModeAction(context);
+	const missionPilotRun = Boolean(context.runtimeOptions?.missionPilot);
 	return [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
@@ -169,6 +170,12 @@ function buildTestModeContract(
 		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
 		"- nightworkers.completion_check は、managed evidence が Verification Checklist の項目と一致しているかを確認する証跡テストチェックとして実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
 		"- Test Mode では TodoList を使わない。Verification Checklist の状態は backend の deterministic evidence 更新に任せ、画面進捗はこの run の managed tool 実行イベントから表現される。",
+		...(missionPilotRun
+			? [
+					"- 最終回答は verdict(pass|rework|attention), defectOwner(test|implementation|environment|unknown), failedConditionIds, evidenceRunIds, affectedPaths, summary, implementationRework を持つJSON objectだけを返す。",
+					"- production defectはdefectOwner=implementationとし、implementationReworkへobjective、acceptanceCriteria、evidenceRefsを設定する。Test role自身でproduction修正を抱え込まない。",
+				]
+			: []),
 	].join("\n");
 }
 

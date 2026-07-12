@@ -50,7 +50,12 @@ describe("workbench selectors", () => {
 			"processing",
 		);
 		expect(getSessionGroup({ ...baseTask, status: "queued" })).toBe("queue");
-		expect(getSessionGroup({ ...baseTask, status: "failed" })).toBe("archive");
+		expect(getSessionGroup({ ...baseTask, status: "failed" })).toBe(
+			"processing",
+		);
+		expect(getSessionGroup({ ...baseTask, status: "archived" })).toBe(
+			"archive",
+		);
 		expect(
 			getSessionGroup(
 				{ ...baseTask, status: "completed", updatedAt: "2026-06-02T12:00:00Z" },
@@ -64,7 +69,7 @@ describe("workbench selectors", () => {
 				undefined,
 				{ now: "2026-06-03T12:00:00Z" },
 			),
-		).toBe("archive");
+		).toBe("processing");
 		expect(
 			getSessionGroup(
 				{ ...baseTask, status: "draft" },
@@ -75,13 +80,13 @@ describe("workbench selectors", () => {
 
 	it("keeps archived sessions archived even when the latest run still has review evidence", () => {
 		const view = buildWorkbenchSessionView(
-			{ ...baseTask, status: "cancelled" },
+			{ ...baseTask, status: "archived" },
 			{ latestRun: baseRun },
 		);
 
 		expect(view.group).toBe("archive");
 		expect(view.phase).toBe("Archived");
-		expect(view.emailState).toBe("failed");
+		expect(view.emailState).toBe("done");
 	});
 
 	it("returns progress basis and blockers from evidence instead of model self report", () => {
@@ -125,7 +130,7 @@ describe("workbench selectors", () => {
 		);
 	});
 
-	it("keeps completed sessions active for 24 hours, then sorts archive by latest activity", () => {
+	it("keeps completed sessions active until true Archive, then sorts archived tasks by latest activity", () => {
 		const grouped = groupWorkbenchSessions([
 			view({
 				...baseTask,
@@ -145,7 +150,7 @@ describe("workbench selectors", () => {
 				{
 					...baseTask,
 					id: "c",
-					status: "completed",
+					status: "archived",
 					updatedAt: "2026-06-02T00:00:01Z",
 				},
 				"2026-06-03T00:00:01Z",
@@ -154,7 +159,7 @@ describe("workbench selectors", () => {
 				{
 					...baseTask,
 					id: "d",
-					status: "completed",
+					status: "archived",
 					updatedAt: "2026-06-02T00:00:03Z",
 				},
 				"2026-06-03T00:00:04Z",

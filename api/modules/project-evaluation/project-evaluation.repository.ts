@@ -10,7 +10,7 @@ import {
 	projectEvaluationRunSchema,
 	projectImprovementIdeaSchema,
 } from "../../../shared/schemas/project-evaluation.schema";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import {
 	projectEvaluationActivityEvents,
 	projectEvaluationDimensions,
@@ -422,12 +422,15 @@ export async function getProjectImprovementIdeasByIds(
 	return ideas.filter((idea) => idea.id && wanted.has(idea.id));
 }
 
-export async function createProjectEvaluationTaskLink(input: {
-	evaluationId: string;
-	ideaId: string;
-	taskId: string;
-}) {
-	const [link] = await db
+export async function createProjectEvaluationTaskLink(
+	input: {
+		evaluationId: string;
+		ideaId: string;
+		taskId: string;
+	},
+	database: typeof db | DbTransaction = db,
+) {
+	const [link] = await database
 		.insert(projectEvaluationTaskLinks)
 		.values({
 			id: randomUUID(),

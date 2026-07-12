@@ -10,6 +10,7 @@ import type {
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import { readCoverageSummaryFile } from "../../services/quality/coverage-gate";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./quality.repository";
 import {
 	coverageCommandWithSummaryReporter,
@@ -601,7 +602,7 @@ export async function createCoverageImprovementTask(input: {
 		fileKeys: input.request.fileKeys,
 		projectRoot: repository.localPath,
 	});
-	const task = await nightworkersRepo.createTask({
+	const task = await createTaskWithMissionPilot({
 		repositoryId: repository.id,
 		title:
 			entries.length === 1

@@ -27,14 +27,21 @@ import {
 	saveDesignQuestionnaireAnswers,
 } from "../questionnaire/questionnaire.service";
 import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire/questionnaire-additional.service";
-import * as queueRepo from "../queue/queue.repository";
-import { createImplementationQueueEntry } from "../queue/queue-management.service";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 import { getMissionPilotPlanProgress } from "./mission-pilot-plan-progress.service";
+import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
+import {
+	assertMissionPilotPreQueueMutable,
+	markMissionPilotPreQueueAttention,
+} from "./mission-pilot-pre-queue-recovery.service";
 import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
+import {
+	admitMissionPilotQueueHandoff,
+	MissionPilotPreQueueError,
+} from "./mission-pilot-queue-handoff.service";
 import {
 	publishMissionPilotPlanProgressUpdated,
 	publishMissionPilotUpdated,
@@ -147,6 +154,7 @@ async function generateStepArtifact(
 	questionnaireSessionId: string,
 	step: Awaited<ReturnType<typeof planRepo.listPlanSteps>>[number],
 ): Promise<GeneratedArtifact> {
+	await assertMissionPilotPreQueueMutable(taskId);
 	const evidence = step.evidenceJson;
 	const kind = String(evidence.kind || "");
 	const view = String(evidence.view || "");
@@ -209,6 +217,7 @@ async function answerPreFeaturePlanQuestionnaire(
 	featurePlanStep: Awaited<ReturnType<typeof planRepo.listPlanSteps>>[number],
 	leaseOwner: string,
 ) {
+	await assertMissionPilotPreQueueMutable(taskId);
 	let questionnaire = await getDesignQuestionnaireSession(
 		taskId,
 		questionnaireSessionId,
@@ -277,6 +286,7 @@ async function executeArtifactSteps(
 	questionnaireSessionId: string,
 	leaseOwner: string,
 ) {
+	await assertMissionPilotPreQueueMutable(taskId);
 	await updatePhase(taskId, leaseOwner, "generating_artifacts");
 	const workspace = await getPlanModeWorkspace(taskId);
 	const questionnaire = await getDesignQuestionnaireSession(
@@ -461,6 +471,7 @@ async function reviewCurrentPlan(
 	contextRevision: number;
 	contextDigest: string;
 }> {
+	await assertMissionPilotPreQueueMutable(taskId);
 	const [session, context, workspace, messages, task] = await Promise.all([
 		missionPilotRepo.getSessionByTaskId(taskId),
 		latestContext(sessionId),
@@ -520,6 +531,7 @@ async function reviseArtifacts(
 	questionnaireSessionId: string,
 	review: MissionPilotPlanReview,
 ) {
+	await assertMissionPilotPreQueueMutable(taskId);
 	const revisionInstructions = new Map<string, string[]>();
 	for (const target of review.revisionTargets) {
 		const artifactKind =
@@ -646,9 +658,11 @@ function taskContextValue(
 ) {
 	return {
 		title: task.title,
-		initialPrompt: task.objective,
+		initialPrompt: task.objective ?? "",
 		description: task.description,
 		acceptanceCriteria: task.acceptanceCriteria,
+		worktreePath: task.worktreePath,
+		repositoryId: task.repositoryId,
 	};
 }
 
@@ -693,15 +707,7 @@ async function admitToQueue(
 	if (!session || session.desiredState !== "playing")
 		throw new Error("Mission Pilot is not playing");
 	await assertTaskContextCurrent(taskId, sessionId);
-	const authorization = session.authorizationJson;
-	if (
-		session.authorizationVersion !== 2 ||
-		!authorization ||
-		authorization.taskId !== taskId ||
-		authorization.sessionId !== session.id ||
-		authorization.sourceRef.source !== session.sourceKind ||
-		authorization.sourceRef.id !== session.sourceId
-	)
+	if (!missionPilotRepo.hasValidAuthorization(session))
 		throw new Error("Mission Pilot queue authorization is invalid");
 	if (
 		!review ||
@@ -730,23 +736,17 @@ async function admitToQueue(
 		verificationDocument.specMessageId !== featurePlan.sourceMessageId
 	)
 		throw new Error("Latest Feature Plan verification document is missing");
-	if (await queueRepo.hasActiveImplementationQueueEntry(taskId)) {
-		await updatePhase(taskId, leaseOwner, "queued");
-		return;
-	}
 	await updatePhase(taskId, leaseOwner, "queueing");
 	await renewPipelineLease(sessionId, leaseOwner);
-	const entry = await createImplementationQueueEntry(taskId, {
-		approveMissionProposal:
-			authorization.sourceRef.source === "mission_task_proposal",
+	await admitMissionPilotQueueHandoff({
+		taskId,
+		sessionId,
+		planReviewId: review.id,
+		featurePlanMessageId: featurePlan.sourceMessageId,
+		verificationDocumentId: verificationDocument.id,
+		leaseOwner,
 	});
-	if (
-		entry.taskId !== taskId ||
-		!(await queueRepo.hasActiveImplementationQueueEntry(taskId))
-	) {
-		throw new Error("Implementation Queue entry evidence is missing");
-	}
-	await updatePhase(taskId, leaseOwner, "queued");
+	await releaseMissionPilotQueueHandoff(taskId);
 }
 
 export async function runMissionPilotPlanPipeline(taskId: string) {
@@ -804,7 +804,11 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		if (current?.desiredState === "stopped" && current.phase !== "attention") {
 			return;
 		}
-		if (leasedSessionId) {
+		if (leasedSessionId && error instanceof MissionPilotPreQueueError) {
+			await markMissionPilotPreQueueAttention(taskId, error, leaseOwner).catch(
+				() => undefined,
+			);
+		} else if (leasedSessionId) {
 			await updatePhase(taskId, leaseOwner, "attention", {
 				desiredState: "stopped",
 				error: errorMessage(error),

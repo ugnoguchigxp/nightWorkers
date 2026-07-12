@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { taskSchema } from "../../../shared/schemas/nightworkers.schema";
+import { taskWithMissionPilotSchema } from "../../../shared/schemas/mission-pilot.schema";
 import {
 	createProjectEvaluationRequestSchema,
 	createTasksFromProjectImprovementsRequestSchema,
@@ -178,7 +178,7 @@ const createProjectEvaluationTasksRoute = createRoute({
 			content: {
 				"application/json": {
 					schema: z.object({
-						tasks: z.array(taskSchema),
+						tasks: z.array(taskWithMissionPilotSchema),
 						taskLinks: z.array(projectEvaluationTaskLinkSchema),
 					}),
 				},

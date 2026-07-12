@@ -5,6 +5,7 @@ import { NotFoundError } from "../../lib/errors";
 import type { ImplementationTodoInput } from "../../services/todo-runtime";
 import * as repo from "../nightworkers/nightworkers.repository";
 import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
+import { getProjectSecurityIntelligenceSettings } from "../ontology";
 import {
 	DEFAULT_REVIEW_RUN_OPTIONS,
 	type ReviewPlanSpec,
@@ -128,11 +129,18 @@ export function buildReviewRunTodos(input: {
 export async function startReviewRunForSession(
 	reviewSessionId: string,
 	optionsInput?: Partial<ReviewRunOptions> | null,
+	missionInput?: {
+		targetRunIds?: string[];
+		missionPilot?: Record<string, unknown>;
+	} | null,
 ) {
 	const session = await reviewRepo.getReviewSession(reviewSessionId);
 	if (!session) throw new NotFoundError("Review session not found");
 	const options = normalizeReviewRunOptions(optionsInput);
-	const target = await buildReviewTarget({ runId: session.runId });
+	const target = await buildReviewTarget({
+		runId: session.runId,
+		runIds: missionInput?.targetRunIds,
+	});
 	const planSpec = await readReviewPlanSpec(session.taskId);
 	const todos = buildReviewRunTodos({ options, target, planSpec });
 	const initialFindings = await createInitialReviewRunFindings({
@@ -219,6 +227,7 @@ export async function startReviewRunForSession(
 		planSpec,
 		todos,
 		initialFindings,
+		missionPilot: Boolean(missionInput?.missionPilot),
 	});
 	await repo.createTaskMessage({
 		taskId: session.taskId,
@@ -239,6 +248,9 @@ export async function startReviewRunForSession(
 		executionModeSource: "review_run",
 		initialTodos: todos,
 		runtimeOptionsPatch: {
+			...(missionInput?.missionPilot
+				? { missionPilot: missionInput.missionPilot }
+				: {}),
 			reviewRun: {
 				reviewSessionId,
 				reviewedRunId: session.runId,
@@ -334,6 +346,44 @@ async function createInitialReviewRunFindings(input: {
 			.filter((warning) => warning.severity !== "info")
 			.map((warning) => warningToFinding(input.session, warning));
 	if (input.options.securityReview) {
+		const securityIntelligence = await getProjectSecurityIntelligenceSettings(
+			input.session.repositoryId,
+		);
+		if (!securityIntelligence.securityOracle.effectiveEnabled) {
+			const reason = securityIntelligence.securityOracle.reason;
+			const artifact = await reviewRepo.upsertReviewArtifact({
+				reviewSessionId: input.session.id,
+				runId: input.session.runId,
+				taskId: input.session.taskId,
+				kind: "security_review",
+				status: "done",
+				artifactJson: {
+					version: 1,
+					kind: "vulnworkbench_security_diagnostic_skipped",
+					status: "skipped",
+					reason,
+					eligibility: securityIntelligence.eligibility,
+				},
+				sourceEvidenceRefsJson: [],
+			});
+			rows.push({
+				reviewSessionId: input.session.id,
+				runId: input.session.runId,
+				taskId: input.session.taskId,
+				severity: "info",
+				title: "Security review was skipped by the effective Project policy",
+				body: `vulnWorkbench CLI was not executed (${reason}).`,
+				evidenceRefsJson: [
+					{
+						kind: "artifact",
+						artifactId: artifact.id,
+						artifactKind: "security_review",
+					},
+				],
+				sourceSection: "security_review",
+			});
+			return reviewRepo.createReviewFindings(rows);
+		}
 		const settings = readVulnWorkbenchCliSettings();
 		const artifactDir = await fs.mkdtemp(
 			path.join(os.tmpdir(), "nightworkers-review-"),
@@ -444,6 +494,7 @@ export function buildReviewRunPrompt(input: {
 		title: string;
 		body: string | null;
 	}>;
+	missionPilot?: boolean;
 }) {
 	const targetLines = input.target.targetFiles
 		.map((file) => `- ${file.path} (${file.status}, ${file.diffBytes} bytes)`)
@@ -511,7 +562,7 @@ export function buildReviewRunPrompt(input: {
 		"- Findings は重大度、file/line、根拠、推奨アクションを分けて報告する。",
 		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",
 		input.options.securityReview
-			? "- security review の vulnWorkbench CLI 実行は NightWorkers 側で完了済み。上記 Review evidence の finding 本文を主根拠にし、対象 repository 内で vulnWorkbench を検索・再実行しない。"
+			? "- security review は NightWorkers 側で実行またはProject policyによるskip判定が完了済み。上記 Review evidence を主根拠にし、対象 repository 内で vulnWorkbench を検索・再実行しない。"
 			: "- security review option は off。",
 		input.options.applyFixes
 			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。"
@@ -519,6 +570,13 @@ export function buildReviewRunPrompt(input: {
 		input.options.commitChanges
 			? "- commitChanges=true のため、verify 成功後に対象差分だけ commit する。"
 			: "- commitChanges=false のため、commit しない。",
+		...(input.missionPilot
+			? [
+					"- Mission Pilot Review の最終回答は説明文ではなく、次の構造だけを持つJSON objectにする: verdict(pass|rework|attention), summary, findings。",
+					"- findingsの各要素は severity(blocking|warning|info), category, file, line, evidence, recommendedAction, blockingReason を持つ。指摘がなければ空配列にする。",
+					"- blocking findingが1件でもあればverdict=passにしない。",
+				]
+			: []),
 	].join("\n");
 }
 

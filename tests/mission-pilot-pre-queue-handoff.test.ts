@@ -1,0 +1,298 @@
+import crypto from "node:crypto";
+import { eq } from "drizzle-orm";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { db } from "../api/db/client";
+import {
+	missionPilotContextSnapshots,
+	missionPilotSessions,
+} from "../api/db/mission-pilot-schema";
+import {
+	implementationQueueEntries,
+	repositories,
+	taskMessages,
+	taskRuns,
+	tasks,
+} from "../api/db/schema";
+import { verificationDocuments } from "../api/db/verification-schema";
+import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
+import { createPlanReview } from "../api/modules/missionPilot/mission-pilot-plan.repository";
+import { reconcileMissionPilotPreQueueSessions } from "../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service";
+import { admitMissionPilotQueueHandoff } from "../api/modules/missionPilot/mission-pilot-queue-handoff.service";
+import { claimNextImplementationQueueEntry } from "../api/modules/queue/queue.repository";
+import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
+
+const repositoryIds: string[] = [];
+
+beforeAll(() => ensureNightWorkersSchema());
+afterEach(async () => {
+	for (const id of repositoryIds.splice(0)) {
+		await db.delete(repositories).where(eq(repositories.id, id));
+	}
+});
+
+async function createHandoffFixture() {
+	const repositoryId = crypto.randomUUID();
+	const taskId = crypto.randomUUID();
+	const sourceId = crypto.randomUUID();
+	const leaseOwner = `test:${crypto.randomUUID()}`;
+	repositoryIds.push(repositoryId);
+	const { session, featurePlanMessage } = await db.transaction(async (tx) => {
+		await tx.insert(repositories).values({
+			id: repositoryId,
+			name: "Mission Pilot Queue handoff",
+			localPath: `/tmp/${repositoryId}`,
+			branch: "main",
+		});
+		const [task] = await tx
+			.insert(tasks)
+			.values({
+				id: taskId,
+				repositoryId,
+				title: "Queue reviewed Mission Pilot plan",
+				objective: "Create a reviewed plan and queue it",
+				acceptanceCriteria: "Exactly one Queue entry is created",
+				status: "ready",
+			})
+			.returning();
+		const session = await createSession(
+			{
+				task,
+				sourceKind: "mission_task_candidate",
+				sourceId,
+			},
+			tx,
+		);
+		const [featurePlanMessage] = await tx
+			.insert(taskMessages)
+			.values({
+				taskId,
+				role: "assistant",
+				content: "# Feature Plan\n\n## Verification\n- Run tests",
+				messageType: "markdown_document",
+				metadataJson: { intent: "feature_plan", title: "Feature Plan" },
+			})
+			.returning();
+		await tx
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "queueing",
+				authorizationVersion: 2,
+				authorizationJson: {
+					version: 2,
+					sessionId: session.id,
+					taskId,
+					sourceRef: { source: "mission_task_candidate", id: sourceId },
+					grantedByAction: "mission_pilot_play",
+					grantedAt: new Date().toISOString(),
+					scopes: {
+						plan: true,
+						queue: true,
+						implementation: true,
+						testMutation: true,
+						review: true,
+						localCommit: true,
+						taskComplete: true,
+						taskArchive: true,
+						push: false,
+					},
+					pushPolicy: "never",
+				},
+				leaseOwner,
+				leaseExpiresAt: new Date(Date.now() + 60_000),
+				version: session.version + 1,
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.id, session.id));
+		return { session, featurePlanMessage };
+	});
+	const current = await db.query.missionPilotSessions.findFirst({
+		where: eq(missionPilotSessions.id, session.id),
+	});
+	if (!current) throw new Error("Mission Pilot Session missing");
+	const review = await createPlanReview({
+		sessionId: session.id,
+		contextRevision: current.contextRevision,
+		contextDigest: current.contextDigest,
+		featurePlanMessageId: featurePlanMessage.id,
+		attempt: 1,
+		review: {
+			verdict: "pass",
+			summary: "Ready for implementation",
+			coverage: {
+				goal: "pass",
+				scope: "pass",
+				acceptanceCriteria: "pass",
+				implementationSteps: "pass",
+				verification: "pass",
+				artifactConsistency: "pass",
+				riskAndSafety: "pass",
+			},
+			findings: [],
+			revisionTargets: [],
+		},
+	});
+	const [verificationDocument] = await db
+		.insert(verificationDocuments)
+		.values({
+			taskId,
+			specMessageId: featurePlanMessage.id,
+			sourceSpecPath: "task-message",
+			documentJson: {},
+			generatedAt: new Date(),
+		})
+		.returning();
+	return {
+		repositoryId,
+		taskId,
+		sessionId: session.id,
+		leaseOwner,
+		featurePlanMessageId: featurePlanMessage.id,
+		verificationDocumentId: verificationDocument.id,
+		planReviewId: review.id,
+		contextRevision: current.contextRevision,
+		contextDigest: current.contextDigest,
+	};
+}
+
+describe("Mission Pilot pre-Queue handoff", () => {
+	it("persists one immutable reviewed handoff and reuses it on retry", async () => {
+		const publishSpy = vi.spyOn(nightWorkersRealtimeBroker, "publish");
+		const fixture = await createHandoffFixture();
+		const input = {
+			taskId: fixture.taskId,
+			sessionId: fixture.sessionId,
+			planReviewId: fixture.planReviewId,
+			featurePlanMessageId: fixture.featurePlanMessageId,
+			verificationDocumentId: fixture.verificationDocumentId,
+			leaseOwner: fixture.leaseOwner,
+		};
+		const [first, second] = await Promise.all([
+			admitMissionPilotQueueHandoff(input),
+			admitMissionPilotQueueHandoff(input),
+		]);
+		expect(second).toEqual(first);
+		const [session, task, queueEntries, contextSnapshots, runs, messages] =
+			await Promise.all([
+				db.query.missionPilotSessions.findFirst({
+					where: eq(missionPilotSessions.id, fixture.sessionId),
+				}),
+				db.query.tasks.findFirst({ where: eq(tasks.id, fixture.taskId) }),
+				db
+					.select()
+					.from(implementationQueueEntries)
+					.where(eq(implementationQueueEntries.taskId, fixture.taskId)),
+				db
+					.select()
+					.from(missionPilotContextSnapshots)
+					.where(eq(missionPilotContextSnapshots.sessionId, fixture.sessionId)),
+				db.select().from(taskRuns).where(eq(taskRuns.taskId, fixture.taskId)),
+				db
+					.select()
+					.from(taskMessages)
+					.where(eq(taskMessages.taskId, fixture.taskId)),
+			]);
+		expect(session).toMatchObject({
+			phase: "queued",
+			contextRevision: fixture.contextRevision,
+			contextDigest: fixture.contextDigest,
+			queueHandoffJson: expect.objectContaining({
+				queueEntryId: first.queueEntryId,
+				admissionKey: first.admissionKey,
+			}),
+		});
+		expect(task?.status).toBe("queued");
+		expect(queueEntries).toHaveLength(1);
+		expect(queueEntries[0]).toMatchObject({
+			status: "queued",
+			claimReady: false,
+			activeRunId: null,
+			missionPilotAdmissionKey: first.admissionKey,
+		});
+		expect(contextSnapshots).toHaveLength(1);
+		expect(runs).toHaveLength(0);
+		expect(
+			await claimNextImplementationQueueEntry({
+				processorCount: 1,
+				leaseOwnerId: "unrelated-drain",
+				leaseTtlMs: 60_000,
+			}),
+		).toMatchObject({ kind: "not_claimed", reason: "empty" });
+		expect(
+			messages.filter(
+				(message) =>
+					(message.metadataJson as { missionPilotAdmissionKey?: string } | null)
+						?.missionPilotAdmissionKey === first.admissionKey,
+			),
+		).toHaveLength(1);
+		await db
+			.update(missionPilotSessions)
+			.set({ phase: "queueing", updatedAt: new Date() })
+			.where(eq(missionPilotSessions.id, fixture.sessionId));
+		expect(await reconcileMissionPilotPreQueueSessions()).toBe(1);
+		expect(
+			await db.query.missionPilotSessions.findFirst({
+				where: eq(missionPilotSessions.id, fixture.sessionId),
+			}),
+		).toMatchObject({
+			phase: "queued",
+			queueHandoffJson: expect.objectContaining({
+				queueEntryId: first.queueEntryId,
+			}),
+		});
+		expect(publishSpy).toHaveBeenCalledWith(
+			fixture.taskId,
+			expect.objectContaining({
+				type: "mission_pilot.updated",
+				payload: expect.objectContaining({
+					missionPilot: expect.objectContaining({ phase: "queued" }),
+				}),
+			}),
+		);
+		publishSpy.mockRestore();
+	});
+
+	it("rolls back every Queue mutation when the Session CAS fails", async () => {
+		const fixture = await createHandoffFixture();
+		await expect(
+			admitMissionPilotQueueHandoff({
+				taskId: fixture.taskId,
+				sessionId: fixture.sessionId,
+				planReviewId: fixture.planReviewId,
+				featurePlanMessageId: fixture.featurePlanMessageId,
+				verificationDocumentId: fixture.verificationDocumentId,
+				leaseOwner: "wrong-owner",
+			}),
+		).rejects.toMatchObject({
+			code: "MISSION_PILOT_QUEUE_HANDOFF_STALE_CONTEXT",
+		});
+		const [task, queueEntries, session, messages] = await Promise.all([
+			db.query.tasks.findFirst({ where: eq(tasks.id, fixture.taskId) }),
+			db
+				.select()
+				.from(implementationQueueEntries)
+				.where(eq(implementationQueueEntries.taskId, fixture.taskId)),
+			db.query.missionPilotSessions.findFirst({
+				where: eq(missionPilotSessions.id, fixture.sessionId),
+			}),
+			db
+				.select()
+				.from(taskMessages)
+				.where(eq(taskMessages.taskId, fixture.taskId)),
+		]);
+		expect(task?.status).toBe("ready");
+		expect(queueEntries).toHaveLength(0);
+		expect(session).toMatchObject({
+			phase: "queueing",
+			queueHandoffJson: null,
+		});
+		expect(
+			messages.filter(
+				(message) =>
+					(message.metadataJson as { source?: string } | null)?.source ===
+					"implementation_queue",
+			),
+		).toHaveLength(0);
+	});
+});

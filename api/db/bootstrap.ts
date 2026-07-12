@@ -736,6 +736,8 @@ export async function ensureNightWorkersSchema() {
       sequence_order integer,
       sequence_depends_on_entry_id text,
       scheduling_reason text,
+	  mission_pilot_admission_key text,
+	  claim_ready integer DEFAULT true NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
       FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null
@@ -811,6 +813,16 @@ export async function ensureNightWorkersSchema() {
 		"scheduling_reason",
 		"scheduling_reason text",
 	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"mission_pilot_admission_key",
+		"mission_pilot_admission_key text",
+	);
+	await ensureColumn(
+		"implementation_queue_entries",
+		"claim_ready",
+		"claim_ready integer DEFAULT true NOT NULL",
+	);
 	await client.execute(`
     UPDATE implementation_queue_entries
     SET execution_lock_key = 'repository:' || repository_id
@@ -839,6 +851,9 @@ export async function ensureNightWorkersSchema() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_sequence_idx ON implementation_queue_entries (sequence_group_id, sequence_order)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS implementation_queue_entries_mission_pilot_admission_uidx ON implementation_queue_entries (mission_pilot_admission_key)",
 	);
 
 	await client.execute(`

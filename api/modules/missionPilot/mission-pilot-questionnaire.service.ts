@@ -63,7 +63,12 @@ function toView(row: DraftRow, taskId: string) {
 
 async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 	const pilot = await missionPilotRepo.getSessionByTaskId(session.taskId);
-	if (!pilot || pilot.authorizationVersion !== 2) return;
+	if (
+		!pilot ||
+		pilot.desiredState !== "playing" ||
+		!missionPilotRepo.hasValidAuthorization(pilot)
+	)
+		return;
 	const [existing] = await db
 		.select()
 		.from(missionPilotQuestionnaireDrafts)

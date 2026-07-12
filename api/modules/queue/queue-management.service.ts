@@ -242,6 +242,70 @@ function resolveSchedulingDecisionFromMessages(messages: TaskMessageRows): {
 	};
 }
 
+export function prepareImplementationQueueAdmission(input: {
+	task: NonNullable<Awaited<ReturnType<typeof nightworkersRepo.getTask>>>;
+	messages: TaskMessageRows;
+	approveMissionProposal?: boolean;
+}) {
+	if (
+		["completed", "cancelled", "failed", "timed_out"].includes(
+			input.task.status,
+		)
+	) {
+		throw new AppError(
+			409,
+			"TASK_TERMINAL",
+			"Terminal sessions cannot enter the Implementation Queue.",
+		);
+	}
+	assertTaskDraftComplete(input.task, input.messages);
+	if (
+		!hasImplementationPlanEvidence(input.messages) &&
+		!["ready", "queued"].includes(input.task.status)
+	) {
+		throw new AppError(
+			422,
+			"IMPLEMENTATION_PLAN_REQUIRED",
+			"Create or mark an implementation plan before adding this session to the Queue.",
+		);
+	}
+	const missionProposal = latestMissionProposalMetadata(input.messages);
+	const proposalId =
+		typeof missionProposal?.proposalId === "string"
+			? missionProposal.proposalId.trim()
+			: "";
+	const needsApproval =
+		missionProposal?.approvalRequired === true &&
+		!hasExplicitMissionProposalApproval(input.messages, proposalId);
+	if (missionProposal?.approvalRequired === true && !proposalId) {
+		throw new AppError(
+			422,
+			"MISSION_PROPOSAL_APPROVAL_REQUIRED",
+			"Mission proposal approval requires a valid proposal id.",
+		);
+	}
+	if (needsApproval && !input.approveMissionProposal) {
+		assertMissionProposalQueueApproval(input.messages);
+	}
+	const approvalMessage = needsApproval
+		? {
+				content:
+					"Mission proposal explicitly approved for Implementation Queue admission.",
+				payloadJson: {
+					source: "mission_proposal_approval",
+					missionProposalApproval: {
+						proposalId,
+						approved: true,
+					},
+				},
+			}
+		: null;
+	return {
+		scheduling: resolveSchedulingDecisionFromMessages(input.messages),
+		approvalMessage,
+	};
+}
+
 function shouldAutoDrain(options: QueueSideEffectOptions = {}) {
 	return options.autoDrain ?? isAutoQueueDrainEnabled();
 }

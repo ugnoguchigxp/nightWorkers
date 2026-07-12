@@ -137,6 +137,12 @@ export function archiveWorkbenchSession(sessionId: string) {
 	});
 }
 
+export function restoreWorkbenchSessionArchive(sessionId: string) {
+	return apiFetch(`/api/workbench/sessions/${sessionId}/archive/restore`, {
+		method: "POST",
+	});
+}
+
 export function submitRunReview(
 	runId: string,
 	input: { action: "complete" | "cancel"; note?: string },

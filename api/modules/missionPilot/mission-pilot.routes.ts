@@ -1,7 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
-	createMissionPilotTaskRequestSchema,
-	createMissionPilotTaskResponseSchema,
 	missionPilotCommandRequestSchema,
 	missionPilotCommandResponseSchema,
 	missionPilotQuestionnaireDraftSchema,
@@ -12,26 +10,64 @@ import { missionPilotPlanProgressSchema } from "../../../shared/schemas/mission-
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./mission-pilot.service";
+import * as executionQueryService from "./mission-pilot-execution-query.service";
 import * as planProgressService from "./mission-pilot-plan-progress.service";
 import * as questionnaireService from "./mission-pilot-questionnaire.service";
 
 const taskParams = z.object({ taskId: z.string().uuid() });
-const createRouteDefinition = createRoute({
-	method: "post",
-	path: "/mission-pilot/tasks",
-	request: {
-		body: {
-			content: {
-				"application/json": { schema: createMissionPilotTaskRequestSchema },
-			},
+const sessionParams = z.object({ id: z.string().uuid() });
+const getExecutionRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/sessions/:id/execution",
+	request: { params: sessionParams },
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Mission Pilot post-Queue execution state",
 		},
 	},
+});
+const getTestSnapshotRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/sessions/:id/test-snapshot",
+	request: { params: sessionParams },
 	responses: {
-		201: {
-			content: {
-				"application/json": { schema: createMissionPilotTaskResponseSchema },
-			},
-			description: "Mission Pilot task created",
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Latest frozen Test snapshot",
+		},
+	},
+});
+const getReviewDecisionRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/sessions/:id/review-decision",
+	request: { params: sessionParams },
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Latest structured Review decision",
+		},
+	},
+});
+const getCloseoutRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/sessions/:id/closeout",
+	request: { params: sessionParams },
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Latest aggregate Git closeout",
+		},
+	},
+});
+const reconcileExecutionRoute = createRoute({
+	method: "post",
+	path: "/mission-pilot/sessions/:id/reconcile",
+	request: { params: sessionParams },
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Reconciled Mission Pilot execution state",
 		},
 	},
 });
@@ -156,9 +192,56 @@ const submitQuestionnaireDraftRoute = createRoute({
 });
 export const missionPilotRouter = createOpenApiRouter()
 	.openapi(
-		createRouteDefinition,
-		withOpenApiRouteError(createRouteDefinition, async (c) =>
-			c.json(await service.createFromSourceRef(c.req.valid("json")), 201),
+		getExecutionRoute,
+		withOpenApiRouteError(getExecutionRoute, async (c) =>
+			c.json(
+				await executionQueryService.getMissionPilotExecution(c.req.param("id")),
+				200,
+			),
+		),
+	)
+	.openapi(
+		getTestSnapshotRoute,
+		withOpenApiRouteError(getTestSnapshotRoute, async (c) =>
+			c.json(
+				await executionQueryService.getLatestMissionPilotTestSnapshot(
+					c.req.param("id"),
+				),
+				200,
+			),
+		),
+	)
+	.openapi(
+		getReviewDecisionRoute,
+		withOpenApiRouteError(getReviewDecisionRoute, async (c) =>
+			c.json(
+				await executionQueryService.getLatestMissionPilotReviewDecision(
+					c.req.param("id"),
+				),
+				200,
+			),
+		),
+	)
+	.openapi(
+		getCloseoutRoute,
+		withOpenApiRouteError(getCloseoutRoute, async (c) =>
+			c.json(
+				await executionQueryService.getLatestMissionPilotCloseout(
+					c.req.param("id"),
+				),
+				200,
+			),
+		),
+	)
+	.openapi(
+		reconcileExecutionRoute,
+		withOpenApiRouteError(reconcileExecutionRoute, async (c) =>
+			c.json(
+				await executionQueryService.reconcileMissionPilotExecution(
+					c.req.param("id"),
+				),
+				200,
+			),
 		),
 	)
 	.openapi(

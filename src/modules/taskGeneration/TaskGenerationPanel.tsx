@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
 import type {
 	Mission,
 	MissionTaskProposal,
@@ -11,7 +9,6 @@ import type {
 	MissionTaskCandidate,
 } from "../../../shared/schemas/task-generation.schema";
 import type { ProjectStackProfile } from "../../../shared/schemas/tech-stack.schema";
-import { createMissionPilotTask, playMissionPilotTask } from "../missionPilot";
 import { readJsonResponse } from "../nightworkers/components/project-detail/data";
 import type { Task } from "../nightworkers/types";
 import {
@@ -62,7 +59,6 @@ export function TaskGenerationPanel({
 	stackProfile,
 	onTasksCreated,
 }: TaskGenerationPanelProps) {
-	const { t } = useTranslation();
 	const [goals, setGoals] = useState<MissionGoal[]>([]);
 	const [missions, setMissions] = useState<Mission[]>([]);
 	const [candidates, setCandidates] = useState<MissionTaskCandidate[]>([]);
@@ -317,40 +313,6 @@ export function TaskGenerationPanel({
 			}
 		});
 
-	const createMissionPilotFromCandidate = (
-		candidate: UnifiedTaskCandidate,
-		onSuccess?: () => void,
-	) =>
-		runAction(`candidate:mission-pilot:${candidate.id}`, async () => {
-			const response = await createMissionPilotTask({
-				repositoryId,
-				sourceRef: candidate.sourceRef,
-			});
-			const payload = await readJsonResponse<{ task: Task }>(response);
-			await onTasksCreated?.([payload.task]);
-			const expectedVersion = payload.task.missionPilot?.version;
-			if (expectedVersion === undefined || expectedVersion === null) {
-				throw new Error(t("missionPilot.startFailed"));
-			}
-			const playPayload = await readJsonResponse<{
-				missionPilot: MissionPilotControlSummary;
-				task?: Task;
-			}>(await playMissionPilotTask(payload.task.id, expectedVersion));
-			await onTasksCreated?.([
-				{
-					...payload.task,
-					...playPayload.task,
-					missionPilot: playPayload.missionPilot,
-				},
-			]);
-			setMessage(t("missionPilot.startedFromCandidate"));
-			setMessageKind("success");
-			setSelectedCandidateIds((current) =>
-				current.filter((id) => id !== candidate.id),
-			);
-			onSuccess?.();
-		});
-
 	const toggleExpandedGoal = (goalId: string) => {
 		setExpansionPreference("custom");
 		setExpandedRows((current) => {
@@ -503,9 +465,6 @@ export function TaskGenerationPanel({
 							);
 						})
 					}
-					onCreateMissionPilot={(candidate) =>
-						void createMissionPilotFromCandidate(candidate)
-					}
 					onDismissCandidate={(candidate) =>
 						void dismissUnifiedCandidate(candidate)
 					}
@@ -577,9 +536,6 @@ export function TaskGenerationPanel({
 					candidate={detailCandidate}
 					goals={goals}
 					busy={Boolean(busyAction)}
-					missionPilotBusy={
-						busyAction === `candidate:mission-pilot:${detailCandidate.id}`
-					}
 					onClose={() => setDetailModal(null)}
 					onCreateTask={(candidate) =>
 						void runAction("candidate:create-tasks", async () => {
@@ -590,11 +546,6 @@ export function TaskGenerationPanel({
 							setDetailModal(null);
 						})
 					}
-					onCreateMissionPilot={(candidate) => {
-						void createMissionPilotFromCandidate(candidate, () =>
-							setDetailModal(null),
-						);
-					}}
 					onDismiss={(candidate) => void dismissUnifiedCandidate(candidate)}
 				/>
 			) : null}

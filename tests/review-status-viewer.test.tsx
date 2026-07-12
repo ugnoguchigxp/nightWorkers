@@ -715,7 +715,7 @@ describe("ReviewStatusViewer", () => {
 		const markup = renderToStaticMarkup(
 			<ReviewStatusViewer
 				detail={reviewSessionDetail()}
-				activeTaskStatus="cancelled"
+				activeTaskStatus="archived"
 				onCompleteAndArchiveTask={async () => null}
 				onRestoreArchivedTask={async () => null}
 			/>,

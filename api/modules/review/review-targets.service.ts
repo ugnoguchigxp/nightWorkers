@@ -24,6 +24,7 @@ type TargetAccumulator = {
 
 export async function buildReviewTarget(input: {
 	runId: string;
+	runIds?: string[];
 }): Promise<ReviewTarget> {
 	const run = await repo.getTaskRun(input.runId);
 	if (!run) throw new NotFoundError("Run not found");
@@ -33,28 +34,32 @@ export async function buildReviewTarget(input: {
 	const repository = await repo.getRepository(repositoryId);
 	if (!repository?.localPath) throw new NotFoundError("Repository not found");
 	const repoRoot = path.resolve(run.worktreePath || repository.localPath);
-	const events = await repo.listTaskEventsForRun(input.runId);
 	const accumulators = new Map<string, TargetAccumulator>();
 	const warnings: ReviewTargetWarning[] = [];
-
-	for (const row of events) {
-		const event = canonicalizeTaskEvent(row, run);
-		if (event.type !== "git.diff_collected") continue;
-		const data = isRecord(event.data) ? event.data : {};
-		for (const filePath of extractPathsFromDiffEvent(data)) {
+	const targetRunIds = [...new Set([input.runId, ...(input.runIds ?? [])])];
+	for (const targetRunId of targetRunIds) {
+		const targetRun =
+			targetRunId === run.id ? run : await repo.getTaskRun(targetRunId);
+		if (!targetRun || targetRun.taskId !== run.taskId) continue;
+		const events = await repo.listTaskEventsForRun(targetRunId);
+		for (const row of events) {
+			const event = canonicalizeTaskEvent(row, targetRun);
+			if (event.type !== "git.diff_collected") continue;
+			const data = isRecord(event.data) ? event.data : {};
+			for (const filePath of extractPathsFromDiffEvent(data)) {
+				const normalized = normalizeRepoRelativePath(repoRoot, filePath);
+				if (!normalized) continue;
+				const source = resolveDiffEventSource(data);
+				const item = ensureAccumulator(accumulators, normalized);
+				item.sources.add(source);
+				if (event.id) item.eventIds.add(event.id);
+			}
+		}
+		for (const filePath of parseChangedPathsFromDiff(targetRun.diffPatch)) {
 			const normalized = normalizeRepoRelativePath(repoRoot, filePath);
 			if (!normalized) continue;
-			const source = resolveDiffEventSource(data);
-			const item = ensureAccumulator(accumulators, normalized);
-			item.sources.add(source);
-			if (event.id) item.eventIds.add(event.id);
+			ensureAccumulator(accumulators, normalized).sources.add("run_diff_patch");
 		}
-	}
-
-	for (const filePath of parseChangedPathsFromDiff(run.diffPatch)) {
-		const normalized = normalizeRepoRelativePath(repoRoot, filePath);
-		if (!normalized) continue;
-		ensureAccumulator(accumulators, normalized).sources.add("run_diff_patch");
 	}
 
 	if (accumulators.size === 0) {

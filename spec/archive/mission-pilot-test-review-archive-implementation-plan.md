@@ -2,12 +2,12 @@
 
 ## Status
 
-- Plan status: `reviewed-blocked-by-pre-queue-remediation`
+- Plan status: `completed-archived` (2026-07-12)
 - Document review completed: 2026-07-11
-- Implementation status: `not_started`
+- Implementation status: `completed` (2026-07-12)
 - MVP slice: `3/3` — Implementation・Test Mode・Review Mode・Git closeout・true Task Archive
 - Canonical plan for post-Queue remaining work: this document
-- Required prerequisite: `spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`
+- Completed prerequisite: `spec/archive/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`
 - Previous phase: `spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md` (completed)
 - Entry design: `spec/archive/mission-pilot-task-entry-design.md` (completed)
 - Baseline reviewed: 2026-07-11, `main` at `c597bdd522ef7e4594157131c9d1865ce9ea148b`
@@ -15,6 +15,18 @@
 - Runtime evidence reviewed: 2026-07-11 local `sqlite.db`
 - Target domain: `api/modules/missionPilot` / `src/modules/missionPilot`
 - Target runtime span: Implementation Queue claim後から、Implementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveまで
+
+### 0.2 Implementation evidence
+
+- Post-Queue state machine、phase run / event ledger、Test snapshot、Review decision、aggregate closeout、Task archive recordを実装した。
+- Queue handoff release後、既存schedulerからImplementationを開始し、managed Test、structured Review、local commit、Task `completed`、Task `archived`までbackend coordinatorが自動進行する。
+- Test / Review defectはbounded Implementation reworkへ戻し、Stop / Play / startup recoveryは永続phaseから再開する。
+- `0034_mission_pilot_post_queue` migrationはisolated fresh SQLite DBへ適用成功。
+- focused / integration: Mission Pilot・Review・Archive関連17 files / 67 tests pass。closeout response-loss reconciliation、unrelated dirty file保護、implementation rework restart recoveryを含む。
+- browser E2E: `tests/e2e/mission-pilot-through-archive.spec.ts`とpre-Queue handoff continuity E2Eの計2件がpass。前者はcommit hook mutationを発生させ、旧evidence invalidation、Implementation rework、fresh Test、fresh Review、2回目closeout、true Archiveを検証する。final ContextにはImplementation・Test・Review・closeout・Archive evidenceとinvalidated evidence履歴が残る。
+- `bun run verify`、`bun run typecheck`、focused tests、isolated browser E2E、`git diff --check`は成功。
+- reviewで、後続Run関連付け競合、完了Runの後続起動失敗による上書き、startup recoveryのaction未実行、Review契約の汎用Runへの漏出、Test内retry / Review cycle上限、Review Session終端、commit response-loss、final Context chainを修正した。
+- commit hook mutation後のTest / Review evidence invalidation、fresh rerun、closeout attempt更新、restart recoveryを実装し、最後のarchive blockerを解消した。本書は`spec/archive`へ移動する。
 
 この文書を、Mission PilotがImplementation Queueへ正常に引き渡された後も同じMission Pilot Sessionとcanonical Context chainを維持し、実装、独立Test Mode、独立Review Mode、修正loop、Git closeout、Task完了、Task Archiveまで自律進行するための実装正本とする。
 
@@ -28,7 +40,7 @@ remediation plan完了後、本書のTask `archived`までを同一Sessionで完
 
 ### 0.1 Prerequisite boundary
 
-本書の実装開始条件は、`spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`が完了し、次のhandoff contractがfocused testとE2Eで確認済みであることとする。
+本書の実装開始条件は、`spec/archive/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`が完了し、次のhandoff contractがfocused testとE2Eで確認済みであることとする。
 
 - Session `desired_state === playing`。
 - Session `phase === queued`。
@@ -850,6 +862,8 @@ TaskRunのgeneric eventをMission eventへ変換するadapterは、run IDを`mis
 
 このsectionはprerequisite handoff contractを満たすSession / Queue entryだけを入力として受け付ける。Queue entryがない、Taskがterminal、Queue前unexpected runがある、またはContext / Verification / review refsが欠ける場合はpost-Queue coordinatorで補修せず`attention`へ停止し、remediation境界のfailureとして扱う。
 
+prerequisite Queue entryは`claim_ready = false`で保持される。post-Queue coordinatorはpreflight、最初のMission event / association準備、`claim_ready = true`への解放を同一transactionで行い、commit後にexisting drainを起動する。単なるgeneric drainやscheduler scanがheld rowを先行claimすることはない。
+
 ### 12.1 Association
 
 Queue schedulerがMission Pilot Taskをclaimしたら、`startTaskRun()`前後にMission Pilot portを呼ぶ。
@@ -1581,7 +1595,7 @@ integration changes:
 ### Phase 2: Queue / Implementation continuation
 
 1. prerequisite handoff contractをpreflightで検証する。
-2. Queue claimへMission Pilot portを接続する。
+2. coordinator準備と同一transactionでQueue rowを`claim_ready = true`へ解放し、Queue claimへMission Pilot portを接続する。
 3. phase run relationを作る。
 4. Implementation Context projectionを接続する。
 5. parent Task status projectionをexecution mode別に分ける。
@@ -1982,7 +1996,7 @@ git diff --check
 
 ## 40. 前後phaseとの接続
 
-completed baselineは`spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`である。その実装後に確認されたpre-Queue handoff不整合は`spec/docs/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`が所有する。
+completed baselineは`spec/archive/mission-pilot-plan-mode-autonomy-implementation-plan.md`である。その実装後に確認されたpre-Queue handoff不整合は`spec/archive/mission-pilot-pre-queue-handoff-remediation-implementation-plan.md`で解消済みである。
 
 remediation planのQueue handoff acceptanceが成功し、active Queue entryとlatest pass Context revisionが揃った時点を本書のinitial inputとする。本書は前段修正を再実装しない。
 

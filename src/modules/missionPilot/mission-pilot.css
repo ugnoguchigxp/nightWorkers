@@ -97,6 +97,7 @@
 	display: inline-flex;
 }
 .mission-pilot-composer-panel {
+	position: relative;
 	display: flex;
 	height: 1.75rem;
 	align-items: center;

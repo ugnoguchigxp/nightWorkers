@@ -600,7 +600,9 @@ export const jaDictionary = {
 	"settings.securityIntelligence.save": "設定を保存",
 	"settings.securityIntelligence.saveSucceeded":
 		"Security / Ontology 設定を保存しました",
-	"settings.securityIntelligence.oracleAlwaysOn": "Security Oracle は常時 ON",
+	"settings.securityIntelligence.securityOracle": "Security Oracle",
+	"settings.securityIntelligence.securityOracleHelp":
+		"対象規模を満たす Project で scanner-backed 診断と closeout gate を有効にします。",
 	"settings.securityIntelligence.configured":
 		"vulnWorkbench CLI を利用できます。",
 	"settings.securityIntelligence.notConfigured":
@@ -612,7 +614,9 @@ export const jaDictionary = {
 	"settings.securityIntelligence.ontologyToolsHelp":
 		"OFF にすると standard tool set に戻ります。",
 	"settings.securityIntelligence.belowThreshold":
-		"50,000 source LOC 未満または未計測のため standard tool set を使用します。",
+		"50,000 source LOC 未満または未計測のため利用できません。",
+	"settings.securityIntelligence.oracleDisabled":
+		"Security Oracle が OFF のため Ontology tools も無効です。",
 	"settings.securityIntelligence.storedPreference":
 		"保存値 {{value}} / 実効値 {{effective}}",
 	"settings.securityIntelligence.maxIterations": "Security fix 最大反復回数",
@@ -986,12 +990,6 @@ export const jaDictionary = {
 	"timeline.flow": "Flow",
 	"timeline.playwright": "Playwright",
 	"timeline.referencedArtifact": "参照",
-	"missionPilot.create": "Mission Pilot",
-	"missionPilot.created": "Mission Pilot タスクを作成しました",
-	"missionPilot.startFromCandidate": "Mission Pilotを開始",
-	"missionPilot.startingFromCandidate": "開始中…",
-	"missionPilot.startedFromCandidate": "Mission Pilotを開始しました",
-	"missionPilot.startFailed": "Mission Pilotを開始できませんでした",
 	"missionPilot.play": "Mission Pilotを再生",
 	"missionPilot.pause": "Mission Pilotを一時停止",
 	"missionPilot.pauseCountdown": "Mission Pilotを一時停止（再開まで {{time}}）",
@@ -1002,7 +1000,6 @@ export const jaDictionary = {
 	"missionPilot.playing": "再生中",
 	"missionPilot.stopped": "停止中",
 	"missionPilot.attention": "確認が必要です",
-	"missionPilot.createFailed": "Mission Pilot タスクを作成できませんでした",
 	"missionPilot.playFailed": "Mission Pilotを再生できませんでした",
 	"missionPilot.stopFailed": "Mission Pilotを停止できませんでした",
 } as const;

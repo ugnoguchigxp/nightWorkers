@@ -8,12 +8,12 @@ import {
 	missionTaskCandidateSchema,
 } from "../../../shared/schemas/task-generation.schema";
 import { type DbTransaction, db } from "../../db/client";
-import { tasks } from "../../db/schema";
 import {
 	missionGoals,
 	missionTaskCandidateBatches,
 	missionTaskCandidates,
 } from "../../db/task-generation-schema";
+import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import { buildMissionCandidateTaskObjective } from "./mission-task-objective";
 
 type Db = typeof db | DbTransaction;
@@ -471,11 +471,10 @@ export async function claimMissionCandidate(
 export async function createTaskFromMissionCandidate(
 	candidate: MissionTaskCandidate,
 	status: "draft" | "ready",
-	database: Db = db,
+	database: DbTransaction,
 ) {
-	const [task] = await database
-		.insert(tasks)
-		.values({
+	return createTaskWithMissionPilot(
+		{
 			repositoryId: candidate.repositoryId,
 			title: candidate.title,
 			description: [
@@ -491,7 +490,11 @@ export async function createTaskFromMissionCandidate(
 			acceptanceCriteria: `${candidate.acceptanceCriteria}\n\nVerification:\n${candidate.verificationPlan}`,
 			status,
 			createdBy: "mission-task-candidate",
-		})
-		.returning();
-	return task;
+			missionPilotSourceRef: {
+				source: "mission_task_candidate",
+				id: candidate.id,
+			},
+		},
+		database,
+	);
 }

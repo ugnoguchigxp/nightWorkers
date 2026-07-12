@@ -181,12 +181,34 @@ function normalizeFinding(value: unknown) {
 		record.severity === "info"
 			? record.severity
 			: null;
-	const title = typeof record.title === "string" ? record.title.trim() : "";
+	const title =
+		typeof record.title === "string"
+			? record.title.trim()
+			: typeof record.category === "string"
+				? record.category.trim()
+				: "";
 	if (!severity || !title) return null;
 	return {
 		severity,
 		title,
-		body: typeof record.body === "string" ? record.body : null,
-		path: typeof record.path === "string" ? record.path : null,
+		body:
+			typeof record.body === "string"
+				? record.body
+				: typeof record.evidence === "string"
+					? [
+							record.evidence,
+							typeof record.recommendedAction === "string"
+								? record.recommendedAction
+								: null,
+						]
+							.filter(Boolean)
+							.join("\n")
+					: null,
+		path:
+			typeof record.path === "string"
+				? record.path
+				: typeof record.file === "string"
+					? record.file
+					: null,
 	};
 }

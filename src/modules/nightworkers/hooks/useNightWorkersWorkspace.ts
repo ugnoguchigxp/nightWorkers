@@ -316,6 +316,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
 		updateSessionStatusMutation,
+		archiveCompletedSessionMutation,
+		restoreArchivedSessionMutation,
 		reorderQueueSessionsMutation,
 		moveWorkbenchSessionMutation,
 	} = useNightWorkersMutations({
@@ -575,6 +577,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			commitRunGitCloseoutMutation.mutateAsync(runId),
 		updateSessionStatus: (sessionId, status) =>
 			updateSessionStatusMutation.mutateAsync({ sessionId, status }),
+		archiveCompletedSession: (sessionId: string) =>
+			archiveCompletedSessionMutation.mutateAsync(sessionId),
+		restoreArchivedSession: (sessionId: string) =>
+			restoreArchivedSessionMutation.mutateAsync(sessionId),
 		reorderQueueSessions: (sessionIds) =>
 			reorderQueueSessionsMutation.mutateAsync(sessionIds),
 		moveWorkbenchSession: (input) =>

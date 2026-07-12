@@ -115,6 +115,8 @@ export type NightWorkersWorkspaceState = {
 		sessionId: string,
 		status: "draft" | "ready" | "cancelled",
 	) => Promise<Task>;
+	archiveCompletedSession: (sessionId: string) => Promise<Task>;
+	restoreArchivedSession: (sessionId: string) => Promise<Task>;
 	reorderQueueSessions: (sessionIds: string[]) => Promise<Task[]>;
 	moveWorkbenchSession: (input: {
 		sessionId: string;

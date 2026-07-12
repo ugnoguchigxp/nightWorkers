@@ -8,6 +8,7 @@ export type OntologyToolProfile = z.infer<typeof ontologyToolProfileSchema>;
 
 export const projectSecurityIntelligenceSettingsSchema = z
 	.object({
+		securityOracleEnabled: z.boolean(),
 		ontologyToolsEnabled: z.boolean(),
 		securityMaxIterations: z.number().int().min(1).max(10),
 	})
@@ -19,17 +20,34 @@ export type ProjectSecurityIntelligenceSettings = z.infer<
 export const projectSecurityIntelligenceSettingsResponseSchema = z
 	.object({
 		settings: projectSecurityIntelligenceSettingsSchema,
-		securityOracle: z
-			.object({
-				alwaysEnabled: z.literal(true),
-				configured: z.boolean(),
-			})
-			.strict(),
-		ontology: z
+		eligibility: z
 			.object({
 				thresholdSourceLoc: z.literal(50_000),
 				measuredSourceLoc: z.number().int().nonnegative().nullable(),
 				eligible: z.boolean(),
+				scannedAt: z.union([z.string(), z.date()]).nullable(),
+				reason: z.enum([
+					"enabled",
+					"below_threshold",
+					"measurement_unavailable",
+				]),
+			})
+			.strict(),
+		securityOracle: z
+			.object({
+				configured: z.boolean(),
+				effectiveEnabled: z.boolean(),
+				reason: z.enum([
+					"enabled",
+					"user_disabled",
+					"below_threshold",
+					"measurement_unavailable",
+					"installation_unavailable",
+				]),
+			})
+			.strict(),
+		ontology: z
+			.object({
 				effectiveEnabled: z.boolean(),
 				toolProfile: ontologyToolProfileSchema,
 				reason: z.enum([
@@ -37,8 +55,8 @@ export const projectSecurityIntelligenceSettingsResponseSchema = z
 					"user_disabled",
 					"below_threshold",
 					"measurement_unavailable",
+					"oracle_disabled",
 				]),
-				scannedAt: z.union([z.string(), z.date()]).nullable(),
 			})
 			.strict(),
 	})

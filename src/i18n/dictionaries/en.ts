@@ -605,8 +605,9 @@ export const enDictionary = {
 	"settings.securityIntelligence.save": "Save settings",
 	"settings.securityIntelligence.saveSucceeded":
 		"Security / Ontology settings saved",
-	"settings.securityIntelligence.oracleAlwaysOn":
-		"Security Oracle is always on",
+	"settings.securityIntelligence.securityOracle": "Security Oracle",
+	"settings.securityIntelligence.securityOracleHelp":
+		"Enable scanner-backed diagnostics and the closeout gate for Projects that meet the size threshold.",
 	"settings.securityIntelligence.configured":
 		"The vulnWorkbench CLI is available.",
 	"settings.securityIntelligence.notConfigured":
@@ -618,7 +619,9 @@ export const enDictionary = {
 	"settings.securityIntelligence.ontologyToolsHelp":
 		"Turn this off to use the standard tool set.",
 	"settings.securityIntelligence.belowThreshold":
-		"The standard tool set is used below 50,000 source LOC or before measurement.",
+		"Unavailable below 50,000 source LOC or before measurement.",
+	"settings.securityIntelligence.oracleDisabled":
+		"Ontology tools are disabled while Security Oracle is off.",
 	"settings.securityIntelligence.storedPreference":
 		"Saved preference {{value}} / effective {{effective}}",
 	"settings.securityIntelligence.maxIterations":
@@ -993,12 +996,6 @@ export const enDictionary = {
 	"timeline.flow": "Flow",
 	"timeline.playwright": "Playwright",
 	"timeline.referencedArtifact": "Reference",
-	"missionPilot.create": "Mission Pilot",
-	"missionPilot.created": "Mission Pilot task created",
-	"missionPilot.startFromCandidate": "Start Mission Pilot",
-	"missionPilot.startingFromCandidate": "Starting…",
-	"missionPilot.startedFromCandidate": "Mission Pilot started",
-	"missionPilot.startFailed": "Could not start Mission Pilot",
 	"missionPilot.play": "Play Mission Pilot",
 	"missionPilot.pause": "Pause Mission Pilot",
 	"missionPilot.pauseCountdown": "Pause Mission Pilot (resumes in {{time}})",
@@ -1009,7 +1006,6 @@ export const enDictionary = {
 	"missionPilot.playing": "Playing",
 	"missionPilot.stopped": "Stopped",
 	"missionPilot.attention": "Attention required",
-	"missionPilot.createFailed": "Could not create Mission Pilot task",
 	"missionPilot.playFailed": "Could not play Mission Pilot",
 	"missionPilot.stopFailed": "Could not stop Mission Pilot",
 } as const;

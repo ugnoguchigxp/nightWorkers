@@ -42,6 +42,8 @@ import * as service from "./nightworkers.service";
 import {
 	archiveWorkbenchSessionRoute,
 	queueWorkbenchSessionRoute,
+	reopenWorkbenchSessionRoute,
+	restoreWorkbenchSessionArchiveRoute,
 	runWorkbenchSessionRoute,
 } from "./routes/queue-routes";
 import {
@@ -350,6 +352,18 @@ const router = createOpenApiRouter()
 			const task = await service.archiveTask(c.req.param("id"));
 			return c.json(task, 200);
 		}),
+	)
+	.openapi(
+		restoreWorkbenchSessionArchiveRoute,
+		withOpenApiRouteError(restoreWorkbenchSessionArchiveRoute, async (c) =>
+			c.json(await service.restoreTaskArchive(c.req.param("id")), 200),
+		),
+	)
+	.openapi(
+		reopenWorkbenchSessionRoute,
+		withOpenApiRouteError(reopenWorkbenchSessionRoute, async (c) =>
+			c.json(await service.reopenTask(c.req.param("id")), 200),
+		),
 	)
 	.openapi(
 		listTaskMessagesRoute,

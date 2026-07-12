@@ -20,6 +20,11 @@ import {
 } from "./nightworkers.run-orchestration.service";
 import { getVerificationDocument } from "./nightworkers.verification.repository";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
+import {
+	archiveCompletedTask,
+	reopenCompletedTask,
+	restoreArchivedTask,
+} from "./task-archive.service";
 
 configureQueueDrainRunner(runImplementationQueue);
 
@@ -100,6 +105,12 @@ export async function startTestModeRunFromArtifact(input: {
 	mode: "test";
 	action?: "discover_tests" | "plan_and_implement_tests" | "run_unit_tests";
 	rerun?: boolean;
+	missionPilot?: {
+		sessionId: string;
+		cycle: number;
+		contextRevision: number;
+		contextDigest: string;
+	};
 }) {
 	const task = await repo.getTask(input.taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -134,6 +145,7 @@ export async function startTestModeRunFromArtifact(input: {
 		executionModeSource: "test_mode",
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
+			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),
 			testMode: {
 				action: input.action ?? "run_unit_tests",
 				specArtifactId: input.specArtifactId,
@@ -325,12 +337,15 @@ export async function createWorkbenchSession(data: {
 }
 
 export async function archiveTask(id: string) {
-	const task = await repo.getTask(id);
-	if (!task) throw new NotFoundError("Task not found");
-	if (["completed", "cancelled", "failed"].includes(task.status)) return task;
-	const archived = await repo.updateTask(id, { status: "cancelled" });
-	if (!archived) throw new NotFoundError("Task not found");
-	return archived;
+	return (await archiveCompletedTask({ taskId: id, reason: "manual" })).task;
+}
+
+export async function restoreTaskArchive(id: string) {
+	return restoreArchivedTask(id);
+}
+
+export async function reopenTask(id: string) {
+	return reopenCompletedTask(id);
 }
 
 export async function deleteTask(id: string) {

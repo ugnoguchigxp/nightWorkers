@@ -3,6 +3,7 @@ import { buildMissionPilotQuestionnaireDraft } from "../api/modules/missionPilot
 import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import {
 	missionPilotAuthorizationV2Schema,
+	missionPilotAuthorizationV3Schema,
 	missionPilotControlSummarySchema,
 	missionPilotSourceRefSchema,
 } from "../shared/schemas/mission-pilot.schema";
@@ -25,7 +26,7 @@ function summary(version = 0, desiredState: "stopped" | "playing" = "stopped") {
 		desiredState,
 		activityState: desiredState === "playing" ? "running" : "idle",
 		phase: desiredState === "playing" ? "running" : "created",
-		authorizationVersion: desiredState === "playing" ? 2 : null,
+		authorizationVersion: desiredState === "playing" ? 3 : null,
 		initialPromptState: desiredState === "playing" ? "sent" : "pending",
 		initialPromptMessageId: null,
 		activeRunId: null,
@@ -67,7 +68,7 @@ describe("Mission Pilot contract", () => {
 		).toMatchObject({ currentStepKey: "view:user_flow" });
 	});
 
-	it("accepts both task candidate source kinds and rejects unknown kinds", () => {
+	it("accepts historical source refs and the universal Task control ref", () => {
 		expect(
 			missionPilotSourceRefSchema.parse({
 				source: "mission_task_candidate",
@@ -80,6 +81,9 @@ describe("Mission Pilot contract", () => {
 				id: sourceId,
 			}).source,
 		).toBe("mission_task_proposal");
+		expect(
+			missionPilotSourceRefSchema.parse({ source: "task", id: taskId }).source,
+		).toBe("task");
 		expect(() =>
 			missionPilotSourceRefSchema.parse({ source: "other", id: sourceId }),
 		).toThrow();
@@ -107,6 +111,33 @@ describe("Mission Pilot contract", () => {
 			pushPolicy: "never",
 		});
 		expect(authorization.scopes.push).toBe(false);
+	});
+
+	it("locks version 3 authorization to the activation Task Context", () => {
+		const authorization = missionPilotAuthorizationV3Schema.parse({
+			version: 3,
+			sessionId,
+			taskId,
+			taskRef: { source: "task", id: taskId },
+			activationContextRevision: 2,
+			activationContextDigest: "digest",
+			grantedByAction: "mission_pilot_play",
+			grantedAt: new Date().toISOString(),
+			scopes: {
+				plan: true,
+				queue: true,
+				implementation: true,
+				testMutation: true,
+				review: true,
+				localCommit: true,
+				taskComplete: true,
+				taskArchive: true,
+				push: false,
+			},
+			pushPolicy: "never",
+		});
+		expect(authorization.taskRef.id).toBe(taskId);
+		expect(authorization.activationContextRevision).toBe(2);
 	});
 
 	it("maps stopped and playing states and ignores stale cache updates", () => {

@@ -232,6 +232,20 @@
       "when": 1783774800000,
       "tag": "0032_mission_pilot_plan_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1783868400000,
+      "tag": "0033_mission_pilot_pre_queue_handoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1783900800000,
+      "tag": "0034_mission_pilot_post_queue",
+      "breakpoints": true
     }
   ]
 }

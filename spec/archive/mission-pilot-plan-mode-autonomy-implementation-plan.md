@@ -9,7 +9,7 @@
 - MVP slice: `2/3` — Session / Context・Plan Mode・Questionnaire・Artifact・Queue admission
 - Completed plan archive: this document
 - Previous phase: `spec/docs/mission-pilot-task-entry-design.md`
-- Follow-up canonical plan: `spec/docs/mission-pilot-test-review-archive-implementation-plan.md`
+- Completed follow-up: `spec/archive/mission-pilot-test-review-archive-implementation-plan.md`
 - Baseline reviewed: 2026-07-11, `main` at `13b2e49b`
 - Target domain: `src/modules/missionPilot` / `api/modules/missionPilot`
 - Target runtime span: Mission Pilot Task作成後からImplementation Queue投入まで
@@ -18,7 +18,7 @@
 
 Mission Pilot専用画面は作らない。Mission Pilotはbackend runtimeであり、既存Task、既存Chat、既存Questionnaire、既存Plan Mode、既存Queueの各surfaceへ状態と操作機会だけを投影する。
 
-このphaseはQueue投入までを扱う。Queue投入後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveは後続正本 `spec/docs/mission-pilot-test-review-archive-implementation-plan.md` が扱う。評価と新規Task生成loopはさらに後続の別計画で扱う。
+このphaseはQueue投入までを扱う。Queue投入後のImplementation、Test Mode、Review Mode、Git closeout、Task completion、真のTask Archiveは完了済み正本 `spec/archive/mission-pilot-test-review-archive-implementation-plan.md` が扱う。評価と新規Task生成loopはさらに後続の別計画で扱う。
 
 本書は3文書で構成するMission Pilot MVPのslice 2/3である。本書単体のQueue投入成功をMVP完成としない。入口のPlayでactivationした同じMission Pilot Session / authorization / Context chainを引き継ぎ、後続sliceがTask `archived`まで完了して初めてMVP完成とする。
 
@@ -1480,7 +1480,7 @@ DB migrationはfresh DBと既存DBで検証する。破壊的resetは隔離test 
 
 Queue投入後も同じMission Pilot Session / Context chainを引き継ぐ。
 
-Queue投入後からTask Archiveまでの実装正本は `spec/docs/mission-pilot-test-review-archive-implementation-plan.md` とする。
+Queue投入後からTask Archiveまでの完了済み実装正本は `spec/archive/mission-pilot-test-review-archive-implementation-plan.md` とする。
 
 後続LLMは新しいChat transcriptを丸ごと渡されるのではなく、Queue直前にpassしたContext revisionを起点にする。
 

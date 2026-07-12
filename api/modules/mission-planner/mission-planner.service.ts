@@ -16,6 +16,7 @@ import { type DbTransaction, db } from "../../db/client";
 import { tasks } from "../../db/schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as taskGenerationRepo from "../taskGeneration/task-generation.repository";
 import { buildProjectSignalSnapshot } from "../taskGeneration/task-generation-signal.service";
 import {
@@ -820,11 +821,7 @@ async function persistMissionProposalTasks(input: {
 	planningResults: Map<string, MissionPlanningResult>;
 	missions: Map<string, Mission>;
 	database: MissionPlannerDb;
-	transaction?: DbTransaction;
-	onTaskCreated?: (
-		task: typeof tasks.$inferSelect,
-		tx: DbTransaction,
-	) => Promise<void>;
+	transaction: DbTransaction;
 }) {
 	const created = [];
 	const updatedProposals = [];
@@ -833,7 +830,7 @@ async function persistMissionProposalTasks(input: {
 		const planningResult = input.planningResults.get(proposal.planningResultId);
 		const mission = input.missions.get(proposal.missionId);
 		if (!planningResult || !mission) continue;
-		const task = await nightworkersRepo.createTask(
+		const task = await createTaskWithMissionPilot(
 			{
 				repositoryId: proposal.repositoryId,
 				title: proposal.title,
@@ -847,15 +844,13 @@ async function persistMissionProposalTasks(input: {
 				status: input.mode,
 				priority: input.proposals.length - index,
 				createdBy: "mission-task-proposal",
+				missionPilotSourceRef: {
+					source: "mission_task_proposal",
+					id: proposal.id,
+				},
 			},
-			input.database,
+			input.transaction,
 		);
-		if (input.onTaskCreated) {
-			if (!input.transaction) {
-				throw new Error("Task creation hook requires a database transaction");
-			}
-			await input.onTaskCreated(task, input.transaction);
-		}
 		await nightworkersRepo.createTaskMessage(
 			{
 				taskId: task.id,
@@ -890,10 +885,6 @@ async function persistMissionProposalTasks(input: {
 export async function createTasksFromMissionTaskProposals(input: {
 	proposalIds: string[];
 	mode: "draft" | "ready";
-	onTaskCreated?: (
-		task: typeof tasks.$inferSelect,
-		tx: DbTransaction,
-	) => Promise<void>;
 }): Promise<CreateTasksFromMissionTaskProposalsResponse> {
 	const uniqueProposalIds = [...new Set(input.proposalIds)];
 	const foundProposals = await repo.getTaskProposalsByIds(uniqueProposalIds);
@@ -966,19 +957,12 @@ export async function createTasksFromMissionTaskProposals(input: {
 		missions.set(mission.id, mission);
 	}
 
-	const persistInput = {
-		mode: input.mode,
-		proposals,
-		planningResults,
-		missions,
-		onTaskCreated: input.onTaskCreated,
-	};
-	if (!input.onTaskCreated) {
-		return persistMissionProposalTasks({ ...persistInput, database: db });
-	}
 	return db.transaction((tx) =>
 		persistMissionProposalTasks({
-			...persistInput,
+			mode: input.mode,
+			proposals,
+			planningResults,
+			missions,
 			database: tx,
 			transaction: tx,
 		}),

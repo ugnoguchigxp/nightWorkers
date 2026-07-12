@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
-	type MissionPilotAuthorizationV2,
+	type MissionPilotAuthorizationV3,
 	type MissionPilotSourceRef,
 	missionPilotControlSummarySchema,
 } from "../../../shared/schemas/mission-pilot.schema";
@@ -10,8 +10,7 @@ import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
-import { taskMessages } from "../../db/schema";
-import { MissionPilotError } from "./mission-pilot.errors";
+import { taskMessages, tasks } from "../../db/schema";
 
 type Db = typeof db | DbTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
@@ -41,8 +40,30 @@ export function toControlSummary(row: SessionRow) {
 		nextWakeAt: row.nextWakeAt ?? null,
 		version: row.version,
 		lastError: row.lastErrorMessage ?? null,
+		queueHandoff: row.queueHandoffJson ?? null,
+		preQueueDiagnostic: row.preQueueDiagnosticJson ?? null,
 		updatedAt: row.updatedAt,
 	});
+}
+
+export function hasValidAuthorization(row: SessionRow) {
+	const authorization = row.authorizationJson;
+	if (!authorization || authorization.sessionId !== row.id) return false;
+	if (authorization.taskId !== row.taskId) return false;
+	if (authorization.version === 2) {
+		return (
+			row.authorizationVersion === 2 &&
+			authorization.sourceRef.source === row.sourceKind &&
+			authorization.sourceRef.id === row.sourceId
+		);
+	}
+	return (
+		row.authorizationVersion === 3 &&
+		authorization.taskRef.source === "task" &&
+		authorization.taskRef.id === row.taskId &&
+		authorization.activationContextRevision <= row.contextRevision &&
+		Boolean(authorization.activationContextDigest)
+	);
 }
 
 export async function createSession(
@@ -54,19 +75,14 @@ export async function createSession(
 			description: string | null;
 			objective: string | null;
 			acceptanceCriteria: string | null;
+			worktreePath?: string | null;
 		};
 		sourceKind: MissionPilotSourceRef["source"];
 		sourceId: string;
 	},
 	tx: DbTransaction,
 ) {
-	const objective = input.task.objective;
-	if (!objective?.trim())
-		throw new MissionPilotError(
-			400,
-			"MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
-			"Mission Pilot requires a non-empty initial prompt",
-		);
+	const objective = input.task.objective ?? "";
 	const id = crypto.randomUUID();
 	const context = {
 		version: 1,
@@ -81,6 +97,8 @@ export async function createSession(
 			initialPrompt: objective,
 			description: input.task.description,
 			acceptanceCriteria: input.task.acceptanceCriteria,
+			worktreePath: input.task.worktreePath ?? null,
+			repositoryId: input.task.repositoryId,
 		},
 	};
 	const serialized = JSON.stringify(context);
@@ -120,6 +138,31 @@ export async function getSessionByTaskId(taskId: string, database: Db = db) {
 		.where(eq(missionPilotSessions.taskId, taskId));
 	return row ?? null;
 }
+
+export async function backfillMissingTaskSessions() {
+	const missingTasks = await db
+		.select({ task: tasks })
+		.from(tasks)
+		.leftJoin(missionPilotSessions, eq(missionPilotSessions.taskId, tasks.id))
+		.where(isNull(missionPilotSessions.id));
+	let created = 0;
+	for (const { task } of missingTasks) {
+		const inserted = await db.transaction(async (tx) => {
+			if (await getSessionByTaskId(task.id, tx)) return false;
+			await createSession(
+				{
+					task,
+					sourceKind: "task",
+					sourceId: task.id,
+				},
+				tx,
+			);
+			return true;
+		});
+		if (inserted) created++;
+	}
+	return created;
+}
 export async function listSessionSummariesByTaskIds(taskIds: string[]) {
 	if (!taskIds.length) return new Map();
 	const rows = await db
@@ -128,35 +171,164 @@ export async function listSessionSummariesByTaskIds(taskIds: string[]) {
 		.where(inArray(missionPilotSessions.taskId, taskIds));
 	return new Map(rows.map((row) => [row.taskId, toControlSummary(row)]));
 }
-export async function claimPlay(
+export async function claimPlay(taskId: string, expectedVersion: number) {
+	return db.transaction(async (tx) => {
+		const [session] = await tx
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.taskId, taskId));
+		const [task] = await tx.select().from(tasks).where(eq(tasks.id, taskId));
+		if (
+			!session ||
+			!task ||
+			session.version !== expectedVersion ||
+			session.desiredState !== "stopped" ||
+			session.activeRunId
+		) {
+			return null;
+		}
+		const [currentContext] = await tx
+			.select()
+			.from(missionPilotContextSnapshots)
+			.where(
+				and(
+					eq(missionPilotContextSnapshots.sessionId, session.id),
+					eq(missionPilotContextSnapshots.revision, session.contextRevision),
+				),
+			);
+		const previousContext =
+			currentContext?.contextJson &&
+			typeof currentContext.contextJson === "object" &&
+			!Array.isArray(currentContext.contextJson)
+				? currentContext.contextJson
+				: {};
+		const context = {
+			...previousContext,
+			version: 1,
+			session: {
+				id: session.id,
+				taskId,
+				repositoryId: task.repositoryId,
+				sourceRef: { source: session.sourceKind, id: session.sourceId },
+			},
+			task: {
+				title: task.title,
+				initialPrompt: task.objective ?? "",
+				description: task.description,
+				acceptanceCriteria: task.acceptanceCriteria,
+				worktreePath: task.worktreePath,
+				repositoryId: task.repositoryId,
+			},
+		};
+		const serialized = JSON.stringify(context);
+		const digest = crypto.createHash("sha256").update(serialized).digest("hex");
+		const currentAuthorization = session.authorizationJson;
+		const reuseActivation =
+			currentAuthorization?.version === 3 &&
+			currentAuthorization.activationContextDigest === digest;
+		const revision = reuseActivation
+			? currentAuthorization.activationContextRevision
+			: session.contextRevision + 1;
+		const now = new Date();
+		if (!reuseActivation) {
+			await tx.insert(missionPilotContextSnapshots).values({
+				id: crypto.randomUUID(),
+				sessionId: session.id,
+				revision,
+				reason: "play_activation",
+				contextJson: context,
+				digest,
+				tokenEstimate: Math.ceil(serialized.length / 4),
+				createdAt: now,
+			});
+		}
+		const authorization: MissionPilotAuthorizationV3 = {
+			version: 3,
+			sessionId: session.id,
+			taskId,
+			taskRef: { source: "task", id: taskId },
+			activationContextRevision: revision,
+			activationContextDigest: digest,
+			grantedByAction: "mission_pilot_play",
+			grantedAt: now.toISOString(),
+			scopes: {
+				plan: true,
+				queue: true,
+				implementation: true,
+				testMutation: true,
+				review: true,
+				localCommit: true,
+				taskComplete: true,
+				taskArchive: true,
+				push: false,
+			},
+			pushPolicy: "never",
+		};
+		const [row] = await tx
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "starting",
+				authorizationVersion: 3,
+				authorizationJson: authorization,
+				initialPromptSnapshot: task.objective ?? "",
+				contextRevision: revision,
+				contextDigest: digest,
+				startedAt: now,
+				lastErrorCode: null,
+				lastErrorMessage: null,
+				version: expectedVersion + 1,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(missionPilotSessions.id, session.id),
+					eq(missionPilotSessions.version, expectedVersion),
+					eq(missionPilotSessions.desiredState, "stopped"),
+					isNull(missionPilotSessions.activeRunId),
+				),
+			)
+			.returning();
+		return row ?? null;
+	});
+}
+
+export async function claimPostQueueResume(
 	taskId: string,
 	expectedVersion: number,
-	authorization: MissionPilotAuthorizationV2,
 ) {
-	const now = new Date();
-	const [row] = await db
+	const row = await getSessionByTaskId(taskId);
+	if (
+		!row ||
+		row.version !== expectedVersion ||
+		row.desiredState !== "stopped" ||
+		row.activeRunId ||
+		!row.resumePhase
+	)
+		return null;
+	const [updated] = await db
 		.update(missionPilotSessions)
 		.set({
 			desiredState: "playing",
-			phase: "starting",
-			authorizationVersion: 2,
-			authorizationJson: authorization,
-			startedAt: now,
+			phase: row.resumePhase,
+			resumePhase: null,
+			startedAt: new Date(),
+			stoppedAt: null,
 			lastErrorCode: null,
 			lastErrorMessage: null,
-			version: expectedVersion + 1,
-			updatedAt: now,
+			version: row.version + 1,
+			updatedAt: new Date(),
 		})
 		.where(
 			and(
-				eq(missionPilotSessions.taskId, taskId),
+				eq(missionPilotSessions.id, row.id),
 				eq(missionPilotSessions.version, expectedVersion),
 				eq(missionPilotSessions.desiredState, "stopped"),
 				isNull(missionPilotSessions.activeRunId),
 			),
 		)
 		.returning();
-	return row ?? null;
+	return updated ?? null;
 }
 
 export async function claimInitialPromptDispatch(taskId: string) {

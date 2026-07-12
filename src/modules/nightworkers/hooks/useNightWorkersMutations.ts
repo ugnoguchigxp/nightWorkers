@@ -8,6 +8,7 @@ import {
 	deleteTask,
 	patchTask as patchTaskCommand,
 	queueWorkbenchSession,
+	restoreWorkbenchSessionArchive,
 	startReviewRun,
 	startReviewSession,
 	startWorkbenchRun,
@@ -417,6 +418,34 @@ export function useNightWorkersMutations({
 		},
 	});
 
+	const archiveCompletedSessionMutation = useMutation({
+		mutationFn: async (sessionId: string) => {
+			const response = await archiveWorkbenchSession(sessionId);
+			if (!response.ok) throw new Error(await response.text());
+			return (await response.json()) as Task;
+		},
+		onSuccess: (task) => {
+			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+				prev.map((session) => (session.id === task.id ? task : session)),
+			);
+		},
+		onSettled: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+	});
+
+	const restoreArchivedSessionMutation = useMutation({
+		mutationFn: async (sessionId: string) => {
+			const response = await restoreWorkbenchSessionArchive(sessionId);
+			if (!response.ok) throw new Error(await response.text());
+			return (await response.json()) as Task;
+		},
+		onSuccess: (task) => {
+			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+				prev.map((session) => (session.id === task.id ? task : session)),
+			);
+		},
+		onSettled: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+	});
+
 	const reorderQueueSessionsMutation = useMutation({
 		mutationFn: async (sessionIds: string[]) => {
 			const updates = buildPriorityUpdates(
@@ -557,6 +586,8 @@ export function useNightWorkersMutations({
 		queueSessionMutation,
 		submitRunReviewMutation,
 		updateSessionStatusMutation,
+		archiveCompletedSessionMutation,
+		restoreArchivedSessionMutation,
 		reorderQueueSessionsMutation,
 		moveWorkbenchSessionMutation,
 		startReviewSessionMutation,

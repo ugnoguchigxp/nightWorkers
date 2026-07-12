@@ -363,10 +363,10 @@ export function NightWorkersShellThreadPanel(
 						onCommitGitCloseout={workspace.commitRunGitCloseout}
 						activeTaskStatus={workspace.activeSession?.status ?? null}
 						onCompleteAndArchiveTask={(taskId) =>
-							workspace.updateSessionStatus(taskId, "cancelled")
+							workspace.archiveCompletedSession(taskId)
 						}
 						onRestoreArchivedTask={(taskId) =>
-							workspace.updateSessionStatus(taskId, "ready")
+							workspace.restoreArchivedSession(taskId)
 						}
 						isImplementationLocked={isActiveImplementationLocked}
 					/>

@@ -63,6 +63,13 @@ export type RuntimePromptSnapshot = {
 	runtimeLaneResolution?: RuntimeLaneSnapshot;
 	runtimeResume?: unknown;
 	projectMeta?: unknown;
+	securityOracle?: {
+		enabled: boolean;
+		configured: boolean;
+		reason: string;
+		measuredSourceLoc: number | null;
+		thresholdSourceLoc: number;
+	};
 	ontologyMcp?: {
 		enabled: boolean;
 		source: "project_meta_file_scale" | "project_code_size_tool_profile";

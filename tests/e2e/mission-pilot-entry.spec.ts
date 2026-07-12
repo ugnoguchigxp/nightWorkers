@@ -8,7 +8,7 @@ const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
 };
 
-test("creates and restores the Mission Pilot Task variant without live LLM calls", {
+test("creates every Task with a stopped Mission Pilot without a variant action", {
 	tag: ["@deterministic", "@p1", "@scenario:NW-E2E-MISSION-PILOT-001"],
 }, async ({ page, request }) => {
 	const { workspace } = await createDisposableGitWorkspace({
@@ -67,49 +67,6 @@ test("creates and restores the Mission Pilot Task variant without live LLM calls
 			"Create, reload, and stop are verified",
 		);
 		db.close();
-		await page.route("**/api/mission-pilot/tasks/*/play", async (route) => {
-			const taskId = route
-				.request()
-				.url()
-				.match(/tasks\/([^/]+)\/play$/)?.[1];
-			if (!taskId) throw new Error("Mission Pilot task id is required");
-			const playingDb = new Database(databasePath);
-			const session = playingDb
-				.prepare("select version from mission_pilot_sessions where task_id = ?")
-				.get(taskId) as { version: number };
-			const now = Date.now();
-			const nextWakeAt = now + 60_000;
-			const nextWakeAtSeconds = Math.floor(nextWakeAt / 1000);
-			playingDb
-				.prepare(
-					"update mission_pilot_sessions set desired_state = 'playing', phase = 'initial_intake', authorization_version = 2, initial_prompt_state = 'sent', next_wake_at = ?, version = version + 1, updated_at = ? where task_id = ?",
-				)
-				.run(nextWakeAtSeconds, now, taskId);
-			playingDb.close();
-			await route.fulfill({
-				status: 200,
-				contentType: "application/json",
-				body: JSON.stringify({
-					missionPilot: {
-						taskId,
-						desiredState: "playing",
-						activityState: "idle",
-						phase: "initial_intake",
-						authorizationVersion: 2,
-						initialPromptState: "sent",
-						initialPromptMessageId: null,
-						activeRunId: null,
-						nextWakeAt: new Date(nextWakeAt).toISOString(),
-						version: session.version + 1,
-						lastError: null,
-						updatedAt: new Date(now).toISOString(),
-					},
-					run: null,
-					messages: [],
-				}),
-			});
-		});
-
 		await page.goto(`/projects/${repositoryId}/detail/mission`);
 		const candidateRow = page.getByRole("row", {
 			name: /Mission Pilot browser task/,
@@ -123,10 +80,8 @@ test("creates and restores the Mission Pilot Task variant without live LLM calls
 				name: "Mission Pilotを開始",
 				exact: true,
 			}),
-		).toBeVisible();
-		await candidateRow
-			.getByRole("button", { name: "Mission Pilotを開始", exact: true })
-			.click();
+		).toHaveCount(0);
+		await candidateRow.getByRole("button", { name: "タスク化" }).click();
 		await expect(page).toHaveURL(
 			new RegExp(`/projects/${repositoryId}/detail/mission$`),
 		);
@@ -134,19 +89,23 @@ test("creates and restores the Mission Pilot Task variant without live LLM calls
 			name: "Mission Pilot browser task",
 		});
 		await expect(taskLink).toBeVisible();
-		await expect(
-			page.getByRole("button", { name: "Mission Pilotを一時停止" }),
-		).toBeVisible();
 
 		const tasksResponse = await request.get("/api/tasks", { headers });
 		const task = (
 			(await tasksResponse.json()) as Array<{
 				id: string;
 				title: string;
-				missionPilot: { version: number } | null;
+				missionPilot: {
+					version: number;
+					desiredState: string;
+					phase: string;
+				};
 			}>
 		).find((item) => item.title === "Mission Pilot browser task");
-		expect(task?.missionPilot).not.toBeNull();
+		expect(task?.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			phase: "created",
+		});
 		if (!task) throw new Error("Mission Pilot task was not created");
 
 		await taskLink.click({ position: { x: 20, y: 10 } });
@@ -154,55 +113,19 @@ test("creates and restores the Mission Pilot Task variant without live LLM calls
 		const composerControls = page.locator(".mission-pilot-composer-controls");
 		await expect(
 			composerControls.getByRole("button", {
-				name: "Mission Pilotを一時停止",
+				name: "Mission Pilotを再生",
 				exact: true,
 			}),
-		).toBeEnabled();
-		const countdown = composerControls.locator(".mission-pilot-countdown");
-		await expect(countdown).toBeVisible();
-		const playingRow = page.locator(".mission-pilot-task-row-playing");
-		await expect(playingRow).toBeVisible();
-		for (const theme of [
-			"light",
-			"dark",
-			"eclipse",
-			"macosclassic",
-			"campfire",
-			"mint",
-			"bloom",
-			"mocha",
-		]) {
-			await page.locator(".nightworkers-shell").evaluate((element, value) => {
-				element.setAttribute("data-theme", value);
-			}, theme);
-			const style = await playingRow.evaluate((element) => {
-				const computed = window.getComputedStyle(element);
-				return {
-					backgroundColor: computed.backgroundColor,
-					borderColor: computed.borderColor,
-					color: computed.color,
-				};
-			});
-			expect(style.backgroundColor, theme).not.toBe("rgba(0, 0, 0, 0)");
-			expect(style.borderColor, theme).not.toBe("rgba(0, 0, 0, 0)");
-			expect(style.color, theme).not.toBe("");
-		}
-		await countdown.click();
-		await expect(
-			composerControls.getByRole("button", { name: "Mission Pilotを再生" }),
 		).toBeEnabled();
 		await page.reload();
 		await expect(page.locator(".mission-pilot-task-row-playing")).toHaveCount(
 			0,
 		);
-		const stoppedDb = new Database(databasePath, { readonly: true });
-		const state = stoppedDb
-			.prepare(
-				"select desired_state as desiredState, phase from mission_pilot_sessions where task_id = ?",
-			)
-			.get(task.id) as { desiredState: string; phase: string };
-		stoppedDb.close();
-		expect(state).toEqual({ desiredState: "stopped", phase: "paused" });
+		await expect(
+			page
+				.locator(".mission-pilot-composer-controls")
+				.getByRole("button", { name: "Mission Pilotを再生" }),
+		).toBeEnabled();
 	} finally {
 		await Promise.allSettled([
 			request.delete(`/api/repositories/${repositoryId}`, { headers }),

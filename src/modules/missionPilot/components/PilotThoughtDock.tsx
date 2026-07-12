@@ -74,7 +74,30 @@ export function PilotThoughtDock({
 		return () => controller.abort();
 	}, [session?.id]);
 	const items = useMemo(() => {
+		const diagnostic = session?.missionPilot?.preQueueDiagnostic;
 		const merged: PilotThoughtItem[] = [
+			...(diagnostic
+				? [
+						{
+							id: `diagnostic:${diagnostic.code}:${new Date(diagnostic.detectedAt).toISOString()}`,
+							createdAt: diagnostic.detectedAt,
+							event: {
+								id: `diagnostic:${diagnostic.code}`,
+								eventType: "runtime.attention",
+								actor: "mission_pilot",
+								message: `Mission Pilotを停止しました。自動再開されません。理由: ${diagnostic.code}`,
+								payloadJson: {
+									diagnosticCode: diagnostic.code,
+									taskStatus: diagnostic.taskStatus,
+									runIds: diagnostic.runIds,
+									queueEntryIds: diagnostic.queueEntryIds,
+									detectedAt: diagnostic.detectedAt,
+								},
+								createdAt: diagnostic.detectedAt,
+							},
+						},
+					]
+				: []),
 			...(questionnaireDraft
 				? [
 						{
@@ -114,7 +137,7 @@ export function PilotThoughtDock({
 		return merged.sort(
 			(a, b) => eventTimestamp(a.createdAt) - eventTimestamp(b.createdAt),
 		);
-	}, [activityEvents, questionnaireDraft, runEvents]);
+	}, [activityEvents, questionnaireDraft, runEvents, session?.missionPilot]);
 
 	return (
 		<aside className="nightworkers-chat-dock flex h-full min-h-0 flex-col border-r border-slate-700/80 bg-[#0f172a]">

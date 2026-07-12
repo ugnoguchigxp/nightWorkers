@@ -10,7 +10,7 @@ import {
 	todoWorkflowSettings,
 } from "../../db/schema";
 
-const ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
+export const ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
 	"queued",
 	"claimed",
 	"processing",
@@ -38,6 +38,7 @@ type ClaimNextImplementationQueueEntryInput = {
 export type TaskExecutionType = "normal" | "exclusive" | "sequence";
 type QueueSchedulingBlockedReason =
 	| "none"
+	| "claim_not_ready"
 	| "exclusive_waiting_for_active_tasks"
 	| "normal_blocked_by_ready_non_normal"
 	| "normal_blocked_by_active_non_normal"
@@ -280,21 +281,57 @@ export async function hasActiveImplementationQueueEntry(taskId: string) {
 	return Boolean(entry);
 }
 
-export async function createImplementationQueueEntry(data: {
-	taskId: string;
-	repositoryId: string;
-	priority?: number;
-	queuePosition?: number | null;
-	executionType?: TaskExecutionType;
-	executionLockKey?: string | null;
-	sequenceGroupId?: string | null;
-	sequenceOrder?: number | null;
-	sequenceDependsOnEntryId?: string | null;
-	schedulingReason?: string | null;
-}) {
+export async function listActiveImplementationQueueEntriesForTask(
+	taskId: string,
+	database: QueueDb = db,
+) {
+	return database
+		.select()
+		.from(implementationQueueEntries)
+		.where(
+			and(
+				eq(implementationQueueEntries.taskId, taskId),
+				inArray(implementationQueueEntries.status, [
+					...ACTIVE_IMPLEMENTATION_QUEUE_STATUSES,
+				]),
+			),
+		);
+}
+
+export async function getImplementationQueueEntryByMissionPilotAdmissionKey(
+	admissionKey: string,
+	database: QueueDb = db,
+) {
+	const [entry] = await database
+		.select()
+		.from(implementationQueueEntries)
+		.where(
+			eq(implementationQueueEntries.missionPilotAdmissionKey, admissionKey),
+		)
+		.limit(1);
+	return entry ?? null;
+}
+
+export async function createImplementationQueueEntry(
+	data: {
+		taskId: string;
+		repositoryId: string;
+		priority?: number;
+		queuePosition?: number | null;
+		executionType?: TaskExecutionType;
+		executionLockKey?: string | null;
+		sequenceGroupId?: string | null;
+		sequenceOrder?: number | null;
+		sequenceDependsOnEntryId?: string | null;
+		schedulingReason?: string | null;
+		missionPilotAdmissionKey?: string | null;
+		claimReady?: boolean;
+	},
+	database: QueueDb = db,
+) {
 	const now = new Date();
 	const executionType = data.executionType ?? "normal";
-	const [entry] = await db
+	const [entry] = await database
 		.insert(implementationQueueEntries)
 		.values({
 			taskId: data.taskId,
@@ -314,6 +351,8 @@ export async function createImplementationQueueEntry(data: {
 					? (data.sequenceDependsOnEntryId ?? null)
 					: null,
 			schedulingReason: data.schedulingReason ?? null,
+			missionPilotAdmissionKey: data.missionPilotAdmissionKey ?? null,
+			claimReady: data.claimReady ?? true,
 			status: "queued",
 			createdAt: now,
 			updatedAt: now,
@@ -689,6 +728,7 @@ async function resolveSchedulingLockState(
 	for (const entry of rows) {
 		if (entry.id === candidateId) continue;
 		if (entry.status !== "queued") continue;
+		if (!entry.claimReady) continue;
 		if (normalizeExecutionType(entry.executionType) === "normal") continue;
 		const sequenceReadiness = await resolveSequenceReadiness(tx, entry);
 		if (sequenceReadiness.ready) readyNonNormal.push(entry);
@@ -710,6 +750,8 @@ function canClaimCandidate(
 	lockState: QueueSchedulingLockState,
 ): { claimable: boolean; reason: QueueSchedulingBlockedReason } {
 	const executionType = normalizeExecutionType(candidate.executionType);
+	if (!candidate.claimReady)
+		return { claimable: false, reason: "claim_not_ready" };
 	if (!sequenceState.ready)
 		return { claimable: false, reason: sequenceState.reason };
 	if (executionType !== "normal" && lockState.activeCount > 0) {
@@ -816,14 +858,20 @@ export async function claimNextImplementationQueueEntry(
 			.where(
 				input.allowExpiredClaimRecovery
 					? or(
-							eq(implementationQueueEntries.status, "queued"),
+							and(
+								eq(implementationQueueEntries.status, "queued"),
+								eq(implementationQueueEntries.claimReady, true),
+							),
 							and(
 								eq(implementationQueueEntries.status, "claimed"),
 								lt(implementationQueueEntries.leaseExpiresAt, now),
 								isNull(implementationQueueEntries.activeRunId),
 							),
 						)
-					: eq(implementationQueueEntries.status, "queued"),
+					: and(
+							eq(implementationQueueEntries.status, "queued"),
+							eq(implementationQueueEntries.claimReady, true),
+						),
 			)
 			.orderBy(
 				desc(implementationQueueEntries.priority),
@@ -870,6 +918,7 @@ export async function claimNextImplementationQueueEntry(
 				: and(
 						eq(implementationQueueEntries.id, candidate.id),
 						eq(implementationQueueEntries.status, "queued"),
+						eq(implementationQueueEntries.claimReady, true),
 					);
 			const [claimed] = await tx
 				.update(implementationQueueEntries)

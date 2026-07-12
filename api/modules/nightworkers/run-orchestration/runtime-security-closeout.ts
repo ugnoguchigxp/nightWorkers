@@ -22,11 +22,16 @@ export async function resolveRuntimeSecurityCloseout(input: {
 }) {
 	let finalTodos = input.finalTodos;
 	if (input.skipSecurityOracle) {
-		return { finalTodos, securityGate: null };
+		return { finalTodos, securityGate: null, securityOracleSkipped: true };
 	}
+	let securityOracleSkipped = false;
 	let securityGate =
 		input.executionMode === "implementation"
 			? await readLatestSecurityGateResult(input.runId)
+			: null;
+	const securitySettings =
+		input.executionMode === "implementation"
+			? await getProjectSecurityIntelligenceSettings(input.repositoryId)
 			: null;
 	if (
 		input.outcomeStatus === "completed" &&
@@ -34,26 +39,25 @@ export async function resolveRuntimeSecurityCloseout(input: {
 		!securityGate &&
 		!hasOpenTodos(finalTodos)
 	) {
-		const securitySettings = await getProjectSecurityIntelligenceSettings(
-			input.repositoryId,
-		);
-		securityGate = await runSecurityOracleGate({
-			runId: input.runId,
-			taskId: input.taskId,
-			repoRoot: input.repoRoot,
-			maxIterations: securitySettings.settings.securityMaxIterations,
-		});
-		finalTodos = await repo.listTaskRunTodosForRun(input.runId);
+		if (!securitySettings?.securityOracle.effectiveEnabled) {
+			await persistSecurityOracleSkipped(input, securitySettings);
+			securityOracleSkipped = true;
+		} else {
+			securityGate = await runSecurityOracleGate({
+				runId: input.runId,
+				taskId: input.taskId,
+				repoRoot: input.repoRoot,
+				maxIterations: securitySettings.settings.securityMaxIterations,
+			});
+			finalTodos = await repo.listTaskRunTodosForRun(input.runId);
+		}
 	}
 	if (
 		securityGate?.allowFinalize &&
 		securityGate.scanRunId &&
 		input.executionMode === "implementation"
 	) {
-		const securitySettings = await getProjectSecurityIntelligenceSettings(
-			input.repositoryId,
-		);
-		if (securitySettings.ontology.toolProfile === "ontology_extended") {
+		if (securitySettings?.ontology.toolProfile === "ontology_extended") {
 			await collectVulnWorkbenchOntologyHandoff({
 				runId: input.runId,
 				taskId: input.taskId,
@@ -61,7 +65,33 @@ export async function resolveRuntimeSecurityCloseout(input: {
 			});
 		}
 	}
-	return { finalTodos, securityGate };
+	return { finalTodos, securityGate, securityOracleSkipped };
+}
+
+async function persistSecurityOracleSkipped(
+	input: { runId: string; taskId: string },
+	settings: Awaited<
+		ReturnType<typeof getProjectSecurityIntelligenceSettings>
+	> | null,
+) {
+	const reason = settings?.securityOracle.reason ?? "measurement_unavailable";
+	await repo.createRunEvent({
+		version: 1,
+		runId: input.runId,
+		taskId: input.taskId,
+		timestamp: new Date().toISOString(),
+		type: "system.info",
+		severity: "info",
+		actor: "system",
+		message: `Security Oracle was skipped by the effective Project policy (${reason}).`,
+		data: {
+			action: "security.oracle_gate_skipped",
+			status: "skipped",
+			reason,
+			eligibility: settings?.eligibility ?? null,
+			storedEnabled: settings?.settings.securityOracleEnabled ?? null,
+		},
+	});
 }
 
 function hasOpenTodos(

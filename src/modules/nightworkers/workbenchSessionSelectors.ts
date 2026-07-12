@@ -44,8 +44,7 @@ const PROCESSING_TASK_STATUSES = new Set([
 	"timed_out",
 ]);
 const QUEUE_TASK_STATUSES = new Set(["ready", "queued"]);
-const ARCHIVE_TASK_STATUSES = new Set(["cancelled", "failed"]);
-const COMPLETED_SESSION_ARCHIVE_DELAY_MS = 24 * 60 * 60 * 1000;
+const ARCHIVE_TASK_STATUSES = new Set(["archived"]);
 const ACTIVE_RUN_STATUSES = new Set([
 	"context_compiling",
 	"compiling_context",
@@ -70,17 +69,13 @@ type SessionGroupOptions = {
 export function getSessionGroup(
 	task: Task,
 	latestRun?: TaskRun,
-	options: SessionGroupOptions = {},
+	_options: SessionGroupOptions = {},
 ): WorkbenchSessionGroup {
 	if (latestRun && ACTIVE_RUN_STATUSES.has(latestRun.status))
 		return "processing";
 	if (PROCESSING_TASK_STATUSES.has(task.status)) return "processing";
 	if (QUEUE_TASK_STATUSES.has(task.status)) return "queue";
-	if (task.status === "completed") {
-		return isCompletedSessionArchiveReady(task, options.now)
-			? "archive"
-			: "processing";
-	}
+	if (task.status === "completed") return "processing";
 	if (ARCHIVE_TASK_STATUSES.has(task.status)) return "archive";
 	return "processing";
 }
@@ -107,8 +102,9 @@ export function getSessionPhase(
 	) {
 		return "Needs Attention";
 	}
+	if (task.status === "archived") return "Archived";
 	if (task.status === "cancelled" || task.status === "failed")
-		return "Archived";
+		return "Needs Attention";
 	if (isReviewNeededSession(task, evidence)) return "Reviewing";
 	if (task.status === "completed") return "Completed";
 	if (task.status === "queued" || task.status === "ready") return "Queued";
@@ -146,6 +142,7 @@ export function getSessionEmailState(
 ): WorkbenchSessionView["emailState"] {
 	const latestRun = evidence.latestRun;
 	const queueStatus = evidence.queueEntry?.status;
+	if (task.status === "archived") return "done";
 	if (
 		task.status === "needs_human" ||
 		task.status === "blocked" ||
@@ -165,8 +162,7 @@ export function getSessionEmailState(
 		return "failed";
 	}
 	if (isReviewNeededSession(task, evidence)) return "review_needed";
-	if (task.status === "completed" || queueStatus === "execution_archived")
-		return "done";
+	if (task.status === "completed") return "done";
 	if (
 		ACTIVE_RUN_STATUSES.has(latestRun?.status || "") ||
 		PROCESSING_TASK_STATUSES.has(task.status) ||
@@ -637,11 +633,4 @@ function hasFailedVerification(event: TaskEvent): boolean {
 		: {};
 	const data = Object.keys(runEventData).length > 0 ? runEventData : payload;
 	return data.passed === false || data.status === "failed";
-}
-
-function isCompletedSessionArchiveReady(task: Task, now: unknown = Date.now()) {
-	const completedAtMs = toMs(task.updatedAt);
-	const nowMs = toMs(now);
-	if (!completedAtMs || !nowMs) return false;
-	return nowMs - completedAtMs >= COMPLETED_SESSION_ARCHIVE_DELAY_MS;
 }

@@ -47,7 +47,6 @@ export type TaskGenerationTreeTableProps = {
 	onDecomposeMission: (mission: Mission) => void;
 	onDeleteMission: (mission: Mission) => void;
 	onCreateCandidate: (candidate: UnifiedTaskCandidate) => void;
-	onCreateMissionPilot: (candidate: UnifiedTaskCandidate) => void;
 	onDismissCandidate: (candidate: UnifiedTaskCandidate) => void;
 };
 
@@ -75,7 +74,6 @@ export function TaskGenerationTreeTable({
 	onDecomposeMission,
 	onDeleteMission,
 	onCreateCandidate,
-	onCreateMissionPilot,
 	onDismissCandidate,
 }: TaskGenerationTreeTableProps) {
 	const { t } = useTranslation();
@@ -207,7 +205,6 @@ export function TaskGenerationTreeTable({
 										expanded={expanded}
 										selectedIds={selectedIds}
 										busy={busy}
-										busyAction={busyAction}
 										onToggleGoal={onToggleGoal}
 										onToggleMission={onToggleMission}
 										onToggleSelected={onToggleSelected}
@@ -220,7 +217,6 @@ export function TaskGenerationTreeTable({
 										onDecomposeMission={onDecomposeMission}
 										onDeleteMission={onDeleteMission}
 										onCreateCandidate={onCreateCandidate}
-										onCreateMissionPilot={onCreateMissionPilot}
 										onDismissCandidate={onDismissCandidate}
 									/>
 								))

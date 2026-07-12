@@ -41,7 +41,9 @@ export type Task = {
 	createdBy?: string | null;
 	createdAt: unknown;
 	updatedAt: unknown;
-	missionPilot?: MissionPilotControlSummary | null;
+	completedAt?: unknown | null;
+	archivedAt?: unknown | null;
+	missionPilot: MissionPilotControlSummary;
 };
 
 export type TaskRun = {

@@ -21,6 +21,7 @@ export const implementationQueueEntryStatusSchema = z.enum([
 ]);
 const schedulingBlockedReasonSchema = z.enum([
 	"none",
+	"claim_not_ready",
 	"exclusive_waiting_for_active_tasks",
 	"normal_blocked_by_ready_non_normal",
 	"normal_blocked_by_active_non_normal",
@@ -446,5 +447,29 @@ export const archiveWorkbenchSessionRoute = createRoute({
 			description: "Workbench session archived",
 		},
 		404: { description: "Task not found" },
+	},
+});
+
+export const restoreWorkbenchSessionArchiveRoute = createRoute({
+	method: "post",
+	path: "/workbench/sessions/:id/archive/restore",
+	request: { params: z.object({ id: z.string().uuid() }) },
+	responses: {
+		200: {
+			content: { "application/json": { schema: taskSchema } },
+			description: "Workbench session restored to its previous terminal state",
+		},
+	},
+});
+
+export const reopenWorkbenchSessionRoute = createRoute({
+	method: "post",
+	path: "/workbench/sessions/:id/reopen",
+	request: { params: z.object({ id: z.string().uuid() }) },
+	responses: {
+		200: {
+			content: { "application/json": { schema: taskSchema } },
+			description: "Completed workbench session reopened as ready",
+		},
 	},
 });
