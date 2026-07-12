@@ -245,7 +245,7 @@ module A -> module B public API or explicit port
 - [ ] NW-LF-42 `api/services/agent-runtime/codex-runtime-support.ts` (771): config、prompt support、failure mapping、environment supportを分ける。
 - [ ] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (925): runtime loopをuse case coordinatorに縮小する。
 - [ ] NW-LF-44 `api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts` (1019): startup state、request preparation、provider attempt、session recoveryを分ける。
-- [ ] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677): manifest、policy、handler bindingを分ける。
+- [x] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677 → 208): tool manifestを`native-api-tool-manifest.ts`へ分離し、policy/handler binding facadeと公開契約を維持した。
 - [ ] NW-LF-46 `api/services/worker-tools/todo-list.ts` (862): Todo state transition、repository operation、tool response mappingを分ける。
 - [ ] NW-LF-47 `api/services/worker-tools/project-post-import.ts` (737): import検証、Project登録、post-import workflowをProject Registryへ分ける。
 - [ ] NW-LF-48 `api/mcp/nightworkers-codex-mcp.ts` (786): MCP transport、tool routing、response adapterを分け、application APIへ委譲する。

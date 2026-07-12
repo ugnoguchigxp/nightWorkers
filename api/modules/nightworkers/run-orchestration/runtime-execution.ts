@@ -557,6 +557,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				task,
 				run,
 				runtimeLaneResolution,
+				runtimeContextSnapshot: input.runtimeContextSnapshot,
 			});
 		}
 	})();

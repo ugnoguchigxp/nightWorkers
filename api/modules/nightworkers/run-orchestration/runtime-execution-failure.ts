@@ -19,6 +19,7 @@ export async function handleRuntimeExecutionFailure(input: {
 	task: LaunchRuntimeExecutionInput["task"];
 	run: LaunchRuntimeExecutionInput["run"];
 	runtimeLaneResolution: LaunchRuntimeExecutionInput["runtimeLaneResolution"];
+	runtimeContextSnapshot: LaunchRuntimeExecutionInput["runtimeContextSnapshot"];
 }) {
 	const { error: err, taskId, task, run, runtimeLaneResolution } = input;
 	const errorMessage = toErrorMessage(err);

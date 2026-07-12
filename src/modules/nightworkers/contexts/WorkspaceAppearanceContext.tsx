@@ -94,9 +94,8 @@ export function WorkspaceAppearanceProvider({
 }) {
 	const [savedSettings, setSavedSettings] =
 		useState<BlueprintPreviewDesignSettings>(readStoredAppearanceSettings);
-	const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(
-		savedSettings,
-	);
+	const [settings, setSettings] =
+		useState<BlueprintPreviewDesignSettings>(savedSettings);
 
 	const applyAppearanceSettings = useCallback(
 		(nextSettings: BlueprintPreviewDesignSettings) => {
