@@ -1,3 +1,4 @@
+import type { Input } from "@openai/codex-sdk";
 import { getNightWorkersCodexToolNames } from "../../../mcp/nightworkers-tool-manifest";
 import {
 	formatOntologyCloseoutRequirementsForPrompt,
@@ -8,6 +9,28 @@ import type { AgentRunContext } from "../types";
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
 	return buildCodexRuntimePromptParts(context).prompt;
+}
+
+export function buildCodexRuntimeInput(
+	context: AgentRunContext,
+	prompt: string,
+): Input {
+	if (!context.imageAttachments?.length) return prompt;
+	return [
+		{ type: "text", text: prompt },
+		...context.imageAttachments.map((image) => ({
+			type: "local_image" as const,
+			path: image.path,
+		})),
+	];
+}
+
+export function buildCodexRuntimeTurnInput(
+	context: AgentRunContext,
+	prompt: string,
+	imageInputSent: boolean,
+): Input {
+	return imageInputSent ? prompt : buildCodexRuntimeInput(context, prompt);
 }
 
 export type CodexRuntimePromptParts = {

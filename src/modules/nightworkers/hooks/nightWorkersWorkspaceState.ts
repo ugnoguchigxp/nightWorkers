@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import type {
 	ActivityArtifact,
 	ActivityEvent,
@@ -133,6 +134,7 @@ export type NightWorkersWorkspaceState = {
 		intent: WorkbenchChatIntent,
 		artifactContext?: WorkbenchArtifactContext | null,
 		llmSelection?: WorkbenchLlmSelection,
+		images?: PromptImageInput[],
 	) => Promise<WorkbenchMessageResult | undefined>;
 	cancelChatSubmit: () => Promise<void>;
 	refreshWorkspace: () => void;

@@ -1,4 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import {
+	PROMPT_IMAGE_MAX_COUNT,
+	PROMPT_IMAGE_MEDIA_TYPES,
+} from "../../../../shared/prompt-image";
 import { taskWithMissionPilotSchema } from "../../../../shared/schemas/mission-pilot.schema";
 import {
 	createTaskSchema,
@@ -260,6 +264,18 @@ export const appendWorkbenchMessageRoute = createRoute({
 				"application/json": {
 					schema: z.object({
 						prompt: z.string().min(1),
+						images: z
+							.array(
+								z.object({
+									id: z.string().min(1).max(128),
+									name: z.string().min(1).max(240),
+									mediaType: z.enum(PROMPT_IMAGE_MEDIA_TYPES),
+									size: z.number().int().positive(),
+									dataUrl: z.string().min(1).max(5_100_000),
+								}),
+							)
+							.max(PROMPT_IMAGE_MAX_COUNT)
+							.optional(),
 						waitForIntake: z.boolean().optional(),
 						artifactContext: workbenchArtifactContextSchema
 							.nullable()

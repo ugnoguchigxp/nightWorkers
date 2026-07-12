@@ -1,3 +1,4 @@
+import type { Input } from "@openai/codex-sdk";
 import { Codex } from "@openai/codex-sdk";
 import type { AgentRunContext } from "../types";
 import {
@@ -7,7 +8,7 @@ import {
 
 export type CodexRuntimeThread = {
 	runStreamed(
-		prompt: string,
+		prompt: Input,
 		options: { signal: AbortSignal },
 	): Promise<{ events: AsyncIterable<unknown> }>;
 };

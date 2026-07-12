@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import { mergeTaskPreservingMissionPilot } from "../../missionPilot";
 import { appendWorkbenchMessage } from "../nightWorkersCommands";
 import type {
@@ -42,12 +43,14 @@ function appendOptimisticUserMessage(
 	lastSubmitRef: ChatActionsInput["lastSubmitRef"],
 	queryClient: QueryClient,
 	artifactContext?: WorkbenchArtifactContext | null,
+	images: PromptImageInput[] = [],
 ): boolean {
 	const now = Date.now();
 	const lastSubmit = lastSubmitRef.current;
-	const contextKey = artifactContext
+	const artifactContextKey = artifactContext
 		? `${artifactContext.kind}:${artifactContext.artifactId}`
 		: "";
+	const contextKey = `${artifactContextKey}:${images.map((image) => image.id).join(",")}`;
 	if (
 		lastSubmit &&
 		lastSubmit.taskId === sessionId &&
@@ -68,13 +71,27 @@ function appendOptimisticUserMessage(
 		role: "user",
 		content,
 		messageType: "text",
-		metadataJson: artifactContext
-			? {
-					intent: "artifact_context_instruction",
-					source: "workbench",
-					artifactContext,
-				}
-			: undefined,
+		metadataJson:
+			artifactContext || images.length > 0
+				? {
+						...(artifactContext
+							? { intent: "artifact_context_instruction", artifactContext }
+							: {}),
+						source: "workbench",
+						...(images.length > 0
+							? {
+									imageAttachments: images.map(
+										({ id, name, mediaType, size }) => ({
+											id,
+											name,
+											mediaType,
+											size,
+										}),
+									),
+								}
+							: {}),
+					}
+				: undefined,
 		createdAt: new Date().toISOString(),
 	};
 	queryClient.setQueryData<TaskMessage[]>(
@@ -159,6 +176,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 			intent: WorkbenchChatIntent,
 			artifactContext?: WorkbenchArtifactContext | null,
 			llmSelection?: WorkbenchLlmSelection,
+			images: PromptImageInput[] = [],
 		) => {
 			const content = prompt.trim();
 			if (!content) return;
@@ -169,6 +187,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 					lastSubmitRef,
 					queryClient,
 					artifactContext,
+					images,
 				)
 			)
 				return;
@@ -204,6 +223,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 							? { thinkingDepth: llmSelection.thinkingDepth }
 							: {}),
 						...(artifactContext ? { artifactContext } : {}),
+						...(images.length > 0 ? { images } : {}),
 					},
 					{ signal: abortController.signal },
 				);

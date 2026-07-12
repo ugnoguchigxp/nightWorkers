@@ -5,6 +5,7 @@ import {
 	useCallback,
 	useState,
 } from "react";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import type { useImplementationQueue } from "../../queue";
 import { markArtifactOpenStart } from "../artifactPerformance";
 import type { WorkbenchLlmSelection } from "../hooks/nightWorkersWorkspaceState";
@@ -53,6 +54,7 @@ type NightWorkersShellThreadPanelProps = {
 	onSubmitPrompt: (
 		prompt: string,
 		intent?: WorkbenchChatIntent,
+		images?: PromptImageInput[],
 	) => Promise<void>;
 	buildComposerLlmSelection: () => WorkbenchLlmSelection | undefined;
 	onComposerLlmSelectionSubmitted: () => void;
@@ -159,8 +161,10 @@ export function NightWorkersShellThreadPanel(
 			onModelChange={props.onModelChange}
 			onThinkingDepthChange={props.onThinkingDepthChange}
 			thinkingDepthOptions={props.thinkingDepthOptions}
-			onSubmitInitialPrompt={props.onSubmitPrompt}
-			onSubmitWorkbenchMessage={async (prompt, intent) => {
+			onSubmitInitialPrompt={(prompt, images) =>
+				props.onSubmitPrompt(prompt, undefined, images)
+			}
+			onSubmitWorkbenchMessage={async (prompt, intent, images) => {
 				if (workspace.activeSession) {
 					const existingQuestionnaireMessageIds = designQuestionnaireMessageIds(
 						workspace.taskMessages,
@@ -172,6 +176,7 @@ export function NightWorkersShellThreadPanel(
 						intent,
 						effectiveArtifactContext,
 						llmSelection,
+						images,
 					);
 					if (llmSelection && result) props.onComposerLlmSelectionSubmitted();
 					if (!result?.run) {
@@ -191,7 +196,7 @@ export function NightWorkersShellThreadPanel(
 					}
 					return;
 				}
-				await props.onSubmitPrompt(prompt, intent);
+				await props.onSubmitPrompt(prompt, intent, images);
 			}}
 			canStopActiveRun={workspace.isChatSubmitting || canStopLatestRun}
 			onStopActiveRun={async () => {

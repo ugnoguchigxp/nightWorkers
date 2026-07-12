@@ -1,10 +1,14 @@
 import { normalizeProviderUsage } from "../llm-usage";
 import { callAzureProvider } from "./azure-provider";
-import { callBedrockProvider } from "./bedrock-provider";
+import {
+	callBedrockProvider,
+	callBedrockProviderToolTurn,
+} from "./bedrock-provider";
 import { callCodexProvider } from "./codex-provider";
 import { emitSupervisorLlmDebugEvent } from "./events";
 import { callFixtureProvider } from "./fixture-provider";
 import { callOpenAIProvider } from "./openai-provider";
+import { toOpenAIToolMessages } from "./openai-tool-messages";
 import { dispatchStructuredLlmProvider } from "./provider-dispatch";
 import { providerAdapterKey } from "./request";
 import {
@@ -110,6 +114,7 @@ export async function callProviderToolTurn(input: {
 		adapters: {
 			openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
 			azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
+			bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
 		},
 		onUnsupported: async (unsupportedProvider) => {
 			const providerDebug = {
@@ -326,40 +331,6 @@ async function callOpenAIProviderToolTurn(
 		model,
 		providerDebug,
 	};
-}
-
-function toOpenAIToolMessages(messages: ProviderToolMessage[]) {
-	return messages.map((message) => {
-		if (message.role === "assistant") {
-			return {
-				role: "assistant",
-				content: message.content || null,
-				...(message.toolCalls?.length
-					? {
-							tool_calls: message.toolCalls.map((toolCall) => ({
-								id: toolCall.id,
-								type: "function",
-								function: {
-									name: toolCall.name,
-									arguments: JSON.stringify(toolCall.arguments ?? {}),
-								},
-							})),
-						}
-					: {}),
-			};
-		}
-		if (message.role === "tool") {
-			return {
-				role: "tool",
-				tool_call_id: message.toolCallId,
-				content: message.content,
-			};
-		}
-		return {
-			role: message.role,
-			content: message.content,
-		};
-	});
 }
 
 function toOpenAIToolDefinition(tool: ProviderToolDefinition) {

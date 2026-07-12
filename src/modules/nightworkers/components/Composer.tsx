@@ -1,6 +1,7 @@
 import { ArrowUp, CircleStop, LoaderCircle, X } from "lucide-react";
 import {
 	type ReactNode,
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
@@ -8,6 +9,12 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
+import {
+	isPromptImageMediaType,
+	PROMPT_IMAGE_MAX_BYTES,
+	PROMPT_IMAGE_MAX_COUNT,
+} from "../../../../shared/prompt-image";
 import type {
 	ComposerThinkingDepth,
 	ModelOption,
@@ -35,7 +42,11 @@ type ComposerProps = {
 	isStopping?: boolean;
 	onModelChange: (model: string) => void;
 	onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
-	onSubmit: (prompt: string, intent: WorkbenchChatIntent) => Promise<void>;
+	onSubmit: (
+		prompt: string,
+		intent: WorkbenchChatIntent,
+		images: PromptImageInput[],
+	) => Promise<void>;
 	onClearArtifactContext?: () => void;
 	onStop?: () => Promise<void>;
 	connectionControls?: ReactNode;
@@ -96,9 +107,14 @@ export function Composer({
 }: ComposerProps) {
 	const { t } = useTranslation();
 	const [prompt, setPrompt] = useState("");
+	const [images, setImages] = useState<PromptImageInput[]>([]);
+	const [imageError, setImageError] = useState<string | null>(null);
+	const [isDraggingImage, setIsDraggingImage] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const dragDepthRef = useRef(0);
+	const imagesRef = useRef<PromptImageInput[]>([]);
 	const intent: WorkbenchChatIntent = "intake";
-	const canSubmit = !disabled && !!prompt.trim();
+	const canSubmit = !disabled && (!!prompt.trim() || images.length > 0);
 	const canStop = isStopMode && !!onStop && !isStopping;
 	const diffSummary = useMemo(() => {
 		if (!latestDiffPatch.trim()) return null;
@@ -119,6 +135,72 @@ export function Composer({
 		typeof artifactContext?.metadata?.displayKind === "string"
 			? artifactContext.metadata.displayKind
 			: artifactContext?.kind;
+
+	const updateImages = useCallback(
+		(
+			next:
+				| PromptImageInput[]
+				| ((current: PromptImageInput[]) => PromptImageInput[]),
+		) => {
+			const value = typeof next === "function" ? next(imagesRef.current) : next;
+			imagesRef.current = value;
+			setImages(value);
+		},
+		[],
+	);
+
+	const addImageFiles = useCallback(
+		async (files: File[]) => {
+			const supported = files.filter((file) =>
+				isPromptImageMediaType(file.type),
+			);
+			let nextError =
+				supported.length !== files.length
+					? t("composer.imageUnsupported")
+					: null;
+			const sized = supported.filter((file) => {
+				if (file.size <= PROMPT_IMAGE_MAX_BYTES) return true;
+				nextError = t("composer.imageSizeLimit", {
+					megabytes: (PROMPT_IMAGE_MAX_BYTES / 1_000_000).toFixed(2),
+				});
+				return false;
+			});
+			if (sized.length === 0) {
+				setImageError(nextError);
+				return;
+			}
+
+			try {
+				const decoded = await Promise.all(
+					sized.slice(0, PROMPT_IMAGE_MAX_COUNT).map(async (file) => ({
+						id: createPromptImageId(),
+						name: file.name,
+						mediaType: file.type as PromptImageInput["mediaType"],
+						size: file.size,
+						dataUrl: await readFileAsDataUrl(file),
+					})),
+				);
+				const available = Math.max(
+					0,
+					PROMPT_IMAGE_MAX_COUNT - imagesRef.current.length,
+				);
+				if (sized.length > available) {
+					nextError = t("composer.imageCountLimit", {
+						count: PROMPT_IMAGE_MAX_COUNT,
+					});
+				}
+				const accepted = decoded.slice(0, available);
+				if (accepted.length > 0) {
+					updateImages((current) => [...current, ...accepted]);
+					textareaRef.current?.focus();
+				}
+				setImageError(nextError);
+			} catch {
+				setImageError(t("composer.imageReadFailed"));
+			}
+		},
+		[t, updateImages],
+	);
 
 	useEffect(() => {
 		if (!draftStorageKey) {
@@ -171,6 +253,50 @@ export function Composer({
 		return () => window.removeEventListener("resize", handleResize);
 	}, []);
 
+	useEffect(() => {
+		const containsFiles = (event: DragEvent) =>
+			Array.from(event.dataTransfer?.types ?? []).includes("Files");
+		const onDragEnter = (event: DragEvent) => {
+			if (!containsFiles(event)) return;
+			event.preventDefault();
+			dragDepthRef.current += 1;
+			setIsDraggingImage(true);
+		};
+		const onDragOver = (event: DragEvent) => {
+			if (!containsFiles(event)) return;
+			event.preventDefault();
+			if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+		};
+		const onDragLeave = (_event: DragEvent) => {
+			if (dragDepthRef.current === 0) return;
+			dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+			if (dragDepthRef.current === 0) setIsDraggingImage(false);
+		};
+		const resetDragState = () => {
+			dragDepthRef.current = 0;
+			setIsDraggingImage(false);
+		};
+		const onDrop = (event: DragEvent) => {
+			if (!containsFiles(event)) return;
+			event.preventDefault();
+			dragDepthRef.current = 0;
+			setIsDraggingImage(false);
+			void addImageFiles(Array.from(event.dataTransfer?.files ?? []));
+		};
+		window.addEventListener("dragenter", onDragEnter);
+		window.addEventListener("dragover", onDragOver);
+		window.addEventListener("dragleave", onDragLeave);
+		window.addEventListener("drop", onDrop);
+		window.addEventListener("dragend", resetDragState);
+		return () => {
+			window.removeEventListener("dragenter", onDragEnter);
+			window.removeEventListener("dragover", onDragOver);
+			window.removeEventListener("dragleave", onDragLeave);
+			window.removeEventListener("drop", onDrop);
+			window.removeEventListener("dragend", resetDragState);
+		};
+	}, [addImageFiles]);
+
 	function clearDraft() {
 		if (!draftStorageKey) return;
 		try {
@@ -191,14 +317,17 @@ export function Composer({
 
 	async function submitCurrentPrompt() {
 		if (!canSubmit) return;
-		const text = prompt.trim();
+		const text = prompt.trim() || t("composer.imageOnlyPrompt");
+		const submittedImages = imagesRef.current;
 		setPrompt("");
+		updateImages([]);
 		clearDraft();
 		try {
-			await onSubmit(text, intent);
+			await onSubmit(text, intent, submittedImages);
 		} catch (error) {
 			if (isAbortError(error)) return;
 			setPrompt(text);
+			updateImages(submittedImages);
 			restoreDraft(text);
 			throw error;
 		}
@@ -206,6 +335,11 @@ export function Composer({
 
 	return (
 		<div className="bg-transparent px-3 py-2">
+			{isDraggingImage ? (
+				<div className="pointer-events-none fixed inset-3 z-[100] flex items-center justify-center rounded-2xl border-2 border-dashed border-cyan-300/80 bg-slate-950/70 text-sm font-medium text-cyan-50 backdrop-blur-sm">
+					{t("composer.dropImages")}
+				</div>
+			) : null}
 			<div className="nightworkers-composer relative mx-auto max-w-4xl rounded-2xl border border-slate-600/55 bg-[#1e293b] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)]">
 				<div className="absolute -top-3 left-4 z-10 flex h-6 items-center gap-1.5">
 					<span
@@ -246,6 +380,43 @@ export function Composer({
 								<X className="h-3.5 w-3.5" />
 							</button>
 						) : null}
+					</div>
+				) : null}
+				{images.length > 0 ? (
+					<fieldset
+						className="mb-3 flex flex-wrap gap-2 border-0 p-0"
+						aria-label={t("composer.attachedImages")}
+					>
+						{images.map((image) => (
+							<div
+								key={image.id}
+								className="group relative h-20 w-20 overflow-hidden rounded-xl border border-slate-500/70 bg-slate-950/50"
+							>
+								<img
+									src={image.dataUrl}
+									alt={image.name}
+									className="h-full w-full object-cover"
+								/>
+								<button
+									type="button"
+									className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-900 shadow hover:bg-white"
+									onClick={() =>
+										updateImages((current) =>
+											current.filter((item) => item.id !== image.id),
+										)
+									}
+									aria-label={t("composer.removeImage", { name: image.name })}
+									title={t("composer.removeImage", { name: image.name })}
+								>
+									<X className="h-3.5 w-3.5" />
+								</button>
+							</div>
+						))}
+					</fieldset>
+				) : null}
+				{imageError ? (
+					<div className="mb-2 text-xs text-amber-300" role="alert">
+						{imageError}
 					</div>
 				) : null}
 				<textarea
@@ -321,4 +492,21 @@ function isAbortError(error: unknown) {
 	return error instanceof DOMException
 		? error.name === "AbortError"
 		: error instanceof Error && error.name === "AbortError";
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result || ""));
+		reader.onerror = () =>
+			reject(reader.error ?? new Error("Image read failed"));
+		reader.readAsDataURL(file);
+	});
+}
+
+function createPromptImageId() {
+	return (
+		globalThis.crypto?.randomUUID?.() ??
+		`prompt-image-${Date.now()}-${Math.random().toString(36).slice(2)}`
+	);
 }

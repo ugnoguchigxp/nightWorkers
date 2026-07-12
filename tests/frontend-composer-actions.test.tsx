@@ -1,26 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 
-let stateValue = "";
+let _stateValue = "";
 
 function mockReact(prompt: string) {
-	stateValue = prompt;
+	_stateValue = prompt;
+	const stateSlots: unknown[] = [prompt, [], null, false];
+	let stateIndex = 0;
 	vi.resetModules();
 	vi.doMock("react", async () => {
 		const actual = await vi.importActual<typeof import("react")>("react");
 		return {
 			...actual,
+			useCallback: <T extends (...args: never[]) => unknown>(callback: T) =>
+				callback,
 			useEffect: (callback: () => void) => callback(),
 			useLayoutEffect: (callback: () => void) => callback(),
 			useMemo: <T,>(factory: () => T) => factory(),
 			useRef: <T,>(initial: T) => ({ current: initial }),
-			useState: () =>
-				[
-					stateValue,
-					vi.fn((next: string | ((current: string) => string)) => {
-						if (typeof next === "function") stateValue = next(stateValue);
-						else stateValue = next;
+			useState: <T,>(initial: T) => {
+				const index = stateIndex++;
+				if (stateSlots[index] === undefined) stateSlots[index] = initial;
+				return [
+					stateSlots[index] as T,
+					vi.fn((next: T | ((current: T) => T)) => {
+						stateSlots[index] =
+							typeof next === "function"
+								? (next as (current: T) => T)(stateSlots[index] as T)
+								: next;
+						if (index === 0) _stateValue = String(stateSlots[index]);
 					}),
-				] as const,
+				] as const;
+			},
 		};
 	});
 	vi.doMock("react-i18next", async () => ({

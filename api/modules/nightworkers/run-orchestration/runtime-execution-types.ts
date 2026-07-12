@@ -1,3 +1,4 @@
+import type { PromptImageAttachment } from "../../../../shared/prompt-image";
 import type { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
 import type { RuntimeLaneResolution } from "../../../services/agent-runtime/runtime-lane";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
@@ -16,6 +17,7 @@ export type LaunchRuntimeExecutionInput = {
 	repoInfo: NonNullable<Awaited<ReturnType<typeof repo.getRepository>>>;
 	compiledPromptText: string;
 	runtimeLatestUserMessage: string;
+	runtimeImageAttachments: PromptImageAttachment[];
 	runtimeContextSnapshot: RuntimePromptSnapshot;
 	runtimeOptions: RuntimeOptions;
 	runtimeLaneDefinition: RuntimeLaneDefinition;

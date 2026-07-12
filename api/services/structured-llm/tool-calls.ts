@@ -1,3 +1,4 @@
+import type { PromptImageAttachment } from "../../../shared/prompt-image";
 import type { NormalizedLlmUsage } from "../llm-usage/types";
 import type {
 	CallSupervisorOptions,
@@ -26,7 +27,15 @@ export type ProviderToolChoice =
 
 export type ProviderToolMessage =
 	| { role: "system"; content: string }
-	| { role: "user"; content: string }
+	| {
+			role: "user";
+			content:
+				| string
+				| Array<
+						| { type: "text"; text: string }
+						| { type: "image"; image: PromptImageAttachment }
+				  >;
+	  }
 	| { role: "assistant"; content: string; toolCalls?: ProviderToolCall[] }
 	| { role: "tool"; toolCallId: string; content: string };
 

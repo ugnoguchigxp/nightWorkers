@@ -1,3 +1,4 @@
+import type { PromptImageInput } from "../../../shared/prompt-image";
 import { apiFetch } from "../../lib/api-base";
 import { jsonRequest } from "../../lib/api-request";
 
@@ -69,6 +70,7 @@ export function appendWorkbenchMessage(
 		providerEndpointId?: string;
 		thinkingDepth?: string;
 		waitForIntake?: boolean;
+		images?: PromptImageInput[];
 	},
 	init?: RequestInit,
 ) {

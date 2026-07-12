@@ -52,7 +52,10 @@ import {
 	type CodexRuntimeAuditState,
 	createCodexRuntimeAuditState,
 } from "./codex-sdk/codex-sdk-mcp-audit";
-import { buildCodexRuntimePromptParts } from "./codex-sdk/codex-sdk-runtime-prompt";
+import {
+	buildCodexRuntimePromptParts,
+	buildCodexRuntimeTurnInput,
+} from "./codex-sdk/codex-sdk-runtime-prompt";
 import {
 	type RuntimeUsageRecorder,
 	recordCodexRuntimeUsageIfPresent,
@@ -141,7 +144,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 
 				if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
 					controller.abort();
-					return this.toCancelled(attemptIndex === 0 ? "" : logs.join("\n"));
+					return toCancelled(attemptIndex === 0 ? "" : logs.join("\n"));
 				}
 
 				try {
@@ -153,15 +156,22 @@ export class CodexAgentRuntime implements AgentRuntime {
 					let checkpointPromptsSent = 0;
 					let finalizeRecoveryPromptsSent = 0;
 					let isCheckpointPrompt = false;
+					let imageInputSent = false;
 					for (;;) {
-						const { events } = await thread.runStreamed(nextPrompt, {
+						const turnInput = buildCodexRuntimeTurnInput(
+							context,
+							nextPrompt,
+							imageInputSent,
+						);
+						imageInputSent ||= typeof turnInput !== "string";
+						const { events } = await thread.runStreamed(turnInput, {
 							signal: controller.signal,
 						});
 
 						for await (const event of events) {
 							if (this.cancelledRunIds.has(context.runId)) {
 								controller.abort();
-								return this.toCancelled(logs.join("\n"));
+								return toCancelled(logs.join("\n"));
 							}
 							const mappedEvents = mapCodexThreadEvent(event, mapperState);
 							for (const mapped of mappedEvents) {
@@ -397,12 +407,12 @@ export class CodexAgentRuntime implements AgentRuntime {
 							controller.signal.aborted ||
 							this.cancelledRunIds.has(context.runId)
 						) {
-							return this.toCancelled(logs.join("\n"));
+							return toCancelled(logs.join("\n"));
 						}
 						continue;
 					}
 
-					await this.emitMissingImportVerificationWarningIfNeeded(
+					await emitMissingImportVerificationWarningIfNeeded(
 						sink,
 						logs,
 						auditState,
@@ -436,7 +446,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 						controller.signal.aborted ||
 						this.cancelledRunIds.has(context.runId)
 					) {
-						return this.toCancelled(logs.join("\n"));
+						return toCancelled(logs.join("\n"));
 					}
 					const message = err instanceof Error ? err.message : String(err);
 					const execExitError = parseCodexExecExitError(message);
@@ -460,7 +470,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 							controller.signal.aborted ||
 							this.cancelledRunIds.has(context.runId)
 						) {
-							return this.toCancelled(logs.join("\n"));
+							return toCancelled(logs.join("\n"));
 						}
 						continue;
 					}
@@ -533,14 +543,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 		);
 	}
 
-	private async emitMissingImportVerificationWarningIfNeeded(
-		sink: AgentRuntimeSink,
-		logs: string[],
-		auditState: CodexRuntimeAuditState,
-	) {
-		return emitMissingImportVerificationWarningIfNeeded(sink, logs, auditState);
-	}
-
 	private async resolveCodexTerminalPolicy(
 		sink: AgentRuntimeSink,
 		logs: string[],
@@ -561,10 +563,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 		options: { forceFresh?: boolean } = {},
 	) {
 		return createThread(this.closeoutHost(), context, sink, options);
-	}
-
-	private toCancelled(logContent: string): AgentRuntimeResult {
-		return toCancelled(logContent);
 	}
 
 	private async finishRun(

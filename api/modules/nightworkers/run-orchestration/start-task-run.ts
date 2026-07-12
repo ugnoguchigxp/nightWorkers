@@ -56,13 +56,13 @@ export async function startTaskRunInProcess(
 	options: StartTaskRunOptions = {},
 ) {
 	const task = await prepareStartableTask(taskId);
-	// 2. Fetch repo information and compile the deterministic run inputs.
 	const {
 		repoInfo,
 		executionRoot,
 		projectMeta,
 		securityIntelligence,
 		lastUserMessage,
+		runtimeImageAttachments,
 		llmRouteOverride,
 		jobType,
 		executionMode,
@@ -73,14 +73,12 @@ export async function startTaskRunInProcess(
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
 	const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
-	const blueprintReadiness =
-		executionMode === "general_answer"
-			? null
-			: await resolveBlueprintPlanningReadiness(taskId);
 	const blueprintPlanningSnapshot =
 		executionMode === "general_answer"
 			? {}
-			: { blueprintPlanning: blueprintReadiness };
+			: {
+					blueprintPlanning: await resolveBlueprintPlanningReadiness(taskId),
+				};
 	const runtimeRoleLabel =
 		executionMode === "general_answer"
 			? "general_answer"
@@ -411,6 +409,7 @@ export async function startTaskRunInProcess(
 					repoRoot: executionRoot,
 					compiledPrompt: compiledPromptText,
 					latestUserMessage: runtimeLatestUserMessage,
+					imageAttachments: runtimeImageAttachments,
 					timeoutSeconds: task.timeoutSeconds ?? 3600,
 					safetyPolicy: repoInfo.safetyPolicy || undefined,
 					contextSnapshot: runtimeContextSnapshot,
@@ -590,6 +589,7 @@ export async function startTaskRunInProcess(
 		repoInfo: { ...repoInfo, localPath: executionRoot },
 		compiledPromptText,
 		runtimeLatestUserMessage,
+		runtimeImageAttachments,
 		runtimeContextSnapshot,
 		runtimeOptions,
 		runtimeLaneDefinition,

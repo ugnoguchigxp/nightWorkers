@@ -21,6 +21,13 @@
   - `src/modules/gitworktree`
   - `src/modules/nightworkers`
   - `shared/schemas`
+- Review corrections applied:
+  - held handoff v2を`planned` / `ready` unionへ分離し、provision前のbase SHA / path必須矛盾を解消。
+  - Project Git設定とmerge recordへversion CASを追加。
+  - workspace `expected_head_sha`を追加し、同一Taskを理由に未知のbranch進行を許容しない。
+  - Plan target provenanceとReview時effective targetを分離。
+  - workspaceとmerge recordの状態所有を分離し、transition tableを追加。
+  - already-integrated、target drift、unrelated history、defer再開、pending closeout blockerを追加。
 
 この文書を、NightWorkers の実装 Task を Plan 確定時に専用 Git branch / worktree へ割り当て、Review Mode でその branch に commit し、Plan 時に固定した target branch への merge を明示判断するための実装正本とする。
 
@@ -123,6 +130,7 @@ Plan Mode
 23. migration 前から running の Task は現在の root で完走でき、新規契約へ途中移動しない。
 24. Project Detail、Plan Status、Queue、Review Mode に同じ workspace / target 状態が表示される。
 25. focused tests、migration test、typecheck、Biome、docs check、repo verify が成功する。
+26. staleなProject settings writeとstaleなmerge actionはversion CASで拒否され、二重mergeを作らない。
 
 ## 4. Locked Decisions
 
@@ -152,16 +160,17 @@ Plan Mode
 24. commit 成功後も merge decision が未確定なら Git lifecycle は未完了とする。
 25. merge target は Plan snapshot を既定表示し、Review Mode で dropdown の初期選択をやり直さない。
 26. target 変更は独立した明示操作とし、変更後に merge preview / CI evidence をすべて stale にする。
-27. merge source は `task_run_commit_records.commit_sha` を使う。source branch の現在 HEAD が異なる場合は block する。
-28. merge target は local branch に限定する。remote ref を直接 target にしない。
-29. merge 前に automatic fetch / pull は行わない。local target と upstream の差は警告として表示する。
-30. 初期実装では hosted PR / MR API を呼ばない。source push と external CI は観測可能な handoff として保持し、provider integration は拡張 seam にする。
-31. CI 必須 Project では `external_ci_required` policy を設定できるが、verified CI result がない限り NightWorkers の local merge を許可しない。
-32. CI provider integration 未設定時、`external_ci_required` は `merge_blocked` を返し、成功を推測しない。
-33. merge は利用者の明示操作だけで開始する。条件付き auto-merge は本計画に含めない。
-34. merge conflict を agent に自動修正させない。source workspace を保持し、rework Task / Run へ戻せる状態にする。
-35. merge 後の source branch 削除、worktree 削除は別 cleanup action とし、自動実行しない。
-36. prompt 文言とユーザー向け運用説明は日本語を維持する。
+27. target変更はmerge recordのeffective targetだけを変え、workspaceのPlan target provenanceを変更しない。
+28. merge source は `task_run_commit_records.commit_sha` を使う。source branch の現在 HEAD が異なる場合は block する。
+29. merge target は local branch に限定する。remote ref を直接 target にしない。
+30. merge 前に automatic fetch / pull は行わない。local target と upstream の差は警告として表示する。
+31. 初期実装では hosted PR / MR API を呼ばない。source push と external CI は観測可能な handoff として保持し、provider integration は拡張 seam にする。
+32. CI 必須 Project では `external_ci_required` policy を設定できるが、verified CI result がない限り NightWorkers の local merge を許可しない。
+33. CI provider integration 未設定時、`external_ci_required` は `merge_blocked` を返し、成功を推測しない。
+34. merge は利用者の明示操作だけで開始する。条件付き auto-merge は本計画に含めない。
+35. merge conflict を agent に自動修正させない。source workspace を保持し、rework Task / Run へ戻せる状態にする。
+36. merge 後の source branch 削除、worktree 削除は別 cleanup action とし、自動実行しない。
+37. prompt 文言とユーザー向け運用説明は日本語を維持する。
 
 ## 5. Scope
 
@@ -265,10 +274,12 @@ task_git_workspaces
   worktree_path text null
   worktree_id text null
   allocation_version integer not null default 1
+  expected_head_sha text null
   provision_attempt integer not null default 0
   lease_owner text null
   lease_expires_at integer null
   last_verified_head text null
+  attention_resume_status text null
   last_error_code text null
   last_error_message text null
   provisioned_at integer null
@@ -287,7 +298,6 @@ provisioning
 ready
 active
 reviewing
-committed
 integration_pending
 merged
 provision_failed
@@ -311,6 +321,7 @@ Indexes / constraints:
 - non-null `worktree_path` は canonicalize 後に repository 内で一意。
 - Queue row から `workspace_id` を参照する一方向 FK とし、workspace tableからQueueへの循環FKは作らない。
 - `ready` 以降は `target_base_sha`、`worktree_path`、`worktree_id` が必須。
+- `ready`以降は`expected_head_sha`も必須とし、source branch HEADを許可済みlifecycle mutationごとに更新する。
 
 SQLite の partial unique index を migration に直接定義する。
 
@@ -336,18 +347,22 @@ Workspace status transition:
 | `planned` | `provisioning` | target local branch / HEAD確認済み |
 | `waiting_for_repository_initialization` | `provisioning` | bootstrap baseline commit確認済み |
 | `waiting_for_repository_initialization` | `provision_failed` / `attention` | bounded retry失敗 / conflicting evidence |
+| `provision_failed` | `waiting_for_repository_initialization` / `provisioning` | 明示retry、intent / Git probe再検証済み |
 | `provisioning` | `ready` | Git / DB / Task projectionの一致確認済み |
 | `provisioning` | `provision_failed` / `attention` | Git command failure / partial mutation |
 | `ready` | `active` | workspace-required Run作成と同一transaction |
+| `ready` | `retired` | Run開始前Task取消、clean workspaceの明示cleanup完了 |
 | `active` | `reviewing` | Implementation / Test完了後にReview開始 |
-| `reviewing` | `committed` | owned-path commit SHA確認済み |
-| `committed` | `integration_pending` | decision requiredまたはdefer |
+| `reviewing` | `integration_pending` | owned-path commit SHA確認とmerge record `decision_required`作成済み |
 | `integration_pending` | `active` | rework cycle開始 |
 | `integration_pending` | `merged` | merge recordとtarget HEAD確認済み |
-| non-terminal | `attention` | ownership / Git state不整合 |
+| non-terminal | `attention` | ownership / Git state不整合。遷移元を`attention_resume_status`へ保存 |
+| `attention` | `waiting_for_repository_initialization` / `provisioning` / `ready` / `active` / `integration_pending` | 明示retryまたはrecoveryで元状態の全invariantを再検証 |
 | `merged` | `retired` | 明示cleanup完了 |
 
 merge conflict / CI block / target driftの詳細状態は`task_run_merge_records`だけが所有する。workspaceへ同じ詳細状態を複製しない。
+
+`attention`からは保存済み`attention_resume_status`以外へ直接戻さない。resume成功時にfieldをnullへ戻し、active以降のresumeはReview / reworkなど該当domain serviceからだけ許可する。
 
 ### 6.3 Repository Git mutation lease
 
@@ -446,6 +461,7 @@ task_run_merge_records
   ci_evidence_json text null
   preview_evidence_json text null
   conflict_paths_json text null
+  merge_origin text null
   merge_commit_sha text null
   target_head_after text null
   target_push_status text null
@@ -492,7 +508,22 @@ failed
 unavailable
 ```
 
+Target push status:
+
+```text
+not_required
+not_started
+pushing
+pushed
+failed
+blocked
+```
+
+`targetPushPolicy=manual`は`not_required`、`after_merge`はmerge成功時に`not_started -> pushing -> pushed|failed|blocked`と遷移する。target push失敗はmerge statusを巻き戻さない。
+
 `ci_evidence_json` は将来の provider adapter 用 envelope とし、初期 local 実装で成功を捏造しない。
+
+`merge_origin`は`local` / `already_ancestor` / `provider`。初期実装がwriteするのは`local`と`already_ancestor`だけとする。
 
 `plan_target_branch` / `plan_target_base_sha`はworkspace snapshotからコピーしたimmutable provenanceである。`target_branch` / `target_selected_sha`はReview時のeffective targetであり、初期値はPlan snapshotと同じにする。明示overrideはeffective fieldsだけを更新し、Plan provenanceを書き換えない。
 
@@ -501,8 +532,9 @@ Merge record transition:
 | From | To | 条件 |
 |---|---|---|
 | rowなし | `decision_required` | source commit作成・SHA再検証済み |
-| `decision_required` / `merge_blocked` / `merge_conflicted` | `previewing` | expected record version一致 |
+| `decision_required` / `deferred` / `merge_blocked` / `merge_conflicted` | `previewing` | expected record version一致。defer再開を含む |
 | `previewing` | `merge_ready` | source / target / CI / worktree gate通過 |
+| `previewing` | `merged` | source commitがtargetのancestorで既統合を確認 |
 | `previewing` | `merge_blocked` / `merge_conflicted` | typed blockerまたはpreview conflict |
 | `merge_ready` | `merging` | expected record / source / target SHA一致 |
 | `merging` | `merged` | target HEADとDB result確認済み |
@@ -613,7 +645,7 @@ Path は既存 `branchSlug()` と同じ canonicalization を使い、別実装�
 7. 完全一致する既存 worktree があれば idempotent success とする。
 8. 存在しなければ既存 `createRepositoryWorktree()` の内部 typed primitive を呼ぶ。
 9. `git worktree list --porcelain -z`、status、HEAD を再検証。
-10. DB transaction で workspace `ready`、Queue `workspace_id`、Task `worktree_path` を更新。
+10. DB transaction でworkspace `ready`、`expected_head_sha=target_base_sha`、Queue `workspace_id`、Task `worktree_path`を更新。
 11. transaction commit 後にもう一度再読込し、一致した場合だけ release 可能とする。
 
 generic shell string や worker `run_command` は使わない。Git CLI adapter に検証済み args array を渡す。
@@ -677,7 +709,7 @@ retry は bounded にし、同じ failure を無限再実行しない。last err
 - Queue row workspace id と一致。
 - canonical path が `tasks.worktree_path` と一致。
 - Git worktree branch が `source_branch` と一致。
-- HEAD が `target_base_sha` と一致するか、同じ Task の prior implementation commit と一致。
+- HEADがworkspace `expected_head_sha`と完全一致する。first Runでは`expected_head_sha == target_base_sha`でなければならない。
 - first implementation Run では clean。
 - active Task / Run ownership が同じ Task 以外にない。
 
@@ -687,6 +719,8 @@ Run 作成時:
 - `task_runs.base_ref = current HEAD`。
 - `contextSnapshot.gitWorkspace` に workspace id、source branch、target branch、Plan base SHA、allocation version を保存。
 - workspace status を `active` にする。
+
+`expected_head_sha`を更新できるのは、workspace provision完了、Review closeout commit成功、明示rework baseline確定の3経路だけとする。単にbranch HEADが進んでいることを「同じTaskの変更」と推測しない。
 
 Test Mode / Review Mode は同じ workspace を引き継ぎ、新しい branch / worktree を作らない。
 
@@ -795,7 +829,7 @@ processor slot は `claim_ready=true` になるまで消費しない。
 - workspace id / source branch が Run snapshot と一致。
 - current branch が source branch。
 - commit 後 `commitSha` と source branch HEAD が一致。
-- commit 成功後、workspace status を `committed` にする。
+- commit成功後、workspace statusを`integration_pending`、`expected_head_sha=commitSha`へ更新し、merge record `decision_required`作成と同じtransactionで確定する。
 - merge record を `decision_required` で作成する。
 - Queue processor lifecycle 完了と Git integration lifecycle 完了を別に表示する。
 - auto-created source branchにupstreamがなく、pushが要求された場合は、保存済み`remoteName`を検証して`git push --set-upstream <remote> <sourceBranch>`を使う。remote未設定時はpushをblockする。
@@ -837,6 +871,8 @@ target を変更する場合:
 
 Project default とworkspaceのPlan target snapshotは変更しない。merge recordのeffective targetだけをTask例外として記録し、Review summaryでは「Plan時target」と「今回の統合先」を別行で表示する。
 
+target overrideでsource branch自身を選ぶこと、source worktreeと同じpathをtarget worktreeとして使うこと、共通historyのないbranchを選ぶことは禁止する。
+
 ### 11.4 Merge preview
 
 `previewRunMerge(runId, expectedRecordVersion)`:
@@ -844,11 +880,12 @@ Project default とworkspaceのPlan target snapshotは変更しない。merge re
 1. repository mutation lock を取得しない read phase で snapshotを取得。
 2. source commit が保存 commit SHA と一致することを確認。
 3. target local ref と current SHA を取得。
-4. `git merge-base --is-ancestor` で relation を確認。
-5. `git merge-tree --write-tree <targetSha> <sourceSha>` を実行し、exit status と conflict pathsを取得。
-6. strategy-specific eligibility を判定。
-7. target worktree の clean / blocker / usage を取得。
-8. expected record versionをCAS条件に、merge recordへ`observed_target_sha`とpreview evidenceを保存してversionをincrement。
+4. source / targetが同じbranchでないこと、共通merge baseがあることを確認する。
+5. `git merge-base --is-ancestor <sourceSha> <targetSha>`で既統合を確認する。ancestorの場合はrepository Git mutation lock取得後にtarget SHAとancestryを再確認し、変化がなければGit mutationなしでmerge record、workspace、Taskを同一transactionで`merged` / `completed`へ更新し、`merge_origin=already_ancestor`へ収束する。targetが変化していれば完了せずpreviewを再実行する。
+6. 未統合なら`git merge-tree --write-tree --name-only -z <targetSha> <sourceSha>`を実行し、exit statusとNUL区切りconflict pathsを専用parserで取得。
+7. strategy-specific eligibility を判定する。`fast_forward_only`は`targetSha`が`sourceSha`のancestorの場合だけready、`merge_commit` / `squash`はmerge-tree conflictなしの場合だけreadyとする。
+8. target worktree の clean / blocker / usage を取得。
+9. expected record versionをCAS条件に、merge recordへ`observed_target_sha`とpreview evidenceを保存してversionをincrement。
 
 `git merge-tree --write-tree` が利用できない Git version は capability unavailable として merge を block する。文字列 output の曖昧な parse fallback は追加しない。
 
@@ -857,14 +894,14 @@ Project default とworkspaceのPlan target snapshotは変更しない。merge re
 `mergeRunGitCloseout(runId, expectedRecordVersion, expectedSourceSha, expectedTargetSha)`:
 
 1. repository Git mutation lock を取得。
-2. merge record を CAS で `merge_ready -> merging`。
-3. source commit、target branch、target SHA、CI gate、target worktree blockers を再検証。
+2. `expectedRecordVersion`を含むCASで`decision=merge`、`decided_at=now`、status `merge_ready -> merging`を同時更新。
+3. source commit、target branch、target SHA、source push policy、CI gate、target worktree blockers を再検証。
 4. `expectedTargetSha` と current target SHA が異なれば mutationせず `TARGET_MOVED`。
 5. target branch を checkout 中の worktree を `git worktree list` から解決。
 6. target worktree がなければ mutationせず `TARGET_WORKTREE_MISSING` を返す。Worktree tabでexisting branch worktreeを作成してから再実行する。
 7. strategy に応じて source commit SHA を merge。
 8. target HEAD と clean status を再検証。
-9. merge record と workspace を transaction で `merged` に更新。
+9. merge record version / statusとworkspace statusをCAS条件に、transactionで`merged`へ更新。
 10. target push policy が `after_merge` の場合だけ、safety policyとupstreamを確認してpush。
 11. event を保存し、frontend queryをinvalidate。
 
@@ -924,6 +961,11 @@ processor slotとTask lifecycleを分離する。
 - `integration_pending`はProject task listとReview surfaceに表示し、通常のImplementation Queue claim対象にはしない。
 - archiveは`completed`後だけ許可し、未統合Taskをarchiveで隠さない。
 
+defer / rework endpointはmerge recordの`decision`、`decided_at`、status、versionとTask / workspace stateを同一transactionで更新する。片方だけ成功した状態を許可しない。
+- `gitworktree.repository.readUsage()`のactive Task statusesに`integration_pending`を追加する。
+- merge recordが`decision_required` / `previewing` / `merge_ready` / `merging` / `deferred` / `merge_blocked` / `merge_conflicted`の間は`pendingCloseoutCount`へ加算し、source worktree削除をblockする。
+- `merged`または明示rework後に古いmerge recordがterminalになった場合だけpending closeout blockerを外す。
+
 `integration_pending`追加時は`TaskStatus`、route validator、Queue mapper、Project list、archive gate、Mission Pilot post-Queue stateを同じsliceで更新する。
 
 ## 12. API Contract
@@ -933,7 +975,8 @@ processor slotとTask lifecycleを分離する。
 - `PATCH /api/repositories/:id`
   - `branch?: string`
   - `gitIntegrationPolicy?: ProjectGitIntegrationPolicy`
-- responseに `gitIntegration` validation summaryを追加。
+  - `expectedGitIntegrationVersion: number`
+- responseに`gitIntegrationVersion`と`gitIntegration` validation summaryを追加。
 
 ### 12.2 Task workspace
 
@@ -953,12 +996,15 @@ processor slotとTask lifecycleを分離する。
 - `POST /api/runs/:id/git-closeout/commit`
 - `POST /api/runs/:id/git-closeout/push`
 - `POST /api/runs/:id/git-closeout/merge-preview`
+  - body: `expectedRecordVersion`。
 - `POST /api/runs/:id/git-closeout/merge`
-  - body: `expectedSourceSha`, `expectedTargetSha`。
+  - body: `expectedRecordVersion`, `expectedSourceSha`, `expectedTargetSha`。
 - `POST /api/runs/:id/git-closeout/defer`
+  - body: `expectedRecordVersion`。
 - `POST /api/runs/:id/git-closeout/rework`
+  - body: `expectedRecordVersion`。
 - `PATCH /api/runs/:id/git-closeout/target`
-  - body: `targetBranch`, `expectedCurrentTargetBranch`。
+  - body: `targetBranch`, `expectedCurrentTargetBranch`, `expectedRecordVersion`。
 
 すべて route schema を `shared/schemas/nightworkers/run.schema.ts` に集約する。
 
@@ -985,8 +1031,10 @@ integration: {
   workspaceId: string;
   sourceBranch: string;
   sourceCommitSha: string | null;
-  targetBranch: string;
+  planTargetBranch: string;
   planTargetBaseSha: string;
+  targetBranch: string;
+  targetSelectedSha: string;
   observedTargetSha: string | null;
   targetAdvanced: boolean;
   strategy: MergeStrategy;
@@ -996,8 +1044,10 @@ integration: {
   canMerge: boolean;
   ciStatus: CiStatus;
   conflictPaths: string[];
+  mergeOrigin: "local" | "already_ancestor" | "provider" | null;
   mergeCommitSha: string | null;
   targetPushStatus: string | null;
+  recordVersion: number;
 }
 ```
 
@@ -1008,14 +1058,18 @@ GIT_WORKSPACE_MISSING
 GIT_WORKSPACE_NOT_READY
 SOURCE_BRANCH_MISMATCH
 SOURCE_COMMIT_MISMATCH
+SOURCE_TARGET_IDENTICAL
 TARGET_BRANCH_INVALID
 TARGET_WORKTREE_MISSING
 TARGET_WORKTREE_DIRTY
 TARGET_WORKTREE_IN_USE
 TARGET_STATUS_UNAVAILABLE
 TARGET_MOVED
+MERGE_RECORD_CHANGED
 MERGE_PREVIEW_REQUIRED
+MERGE_PREVIEW_UNAVAILABLE
 MERGE_CONFLICT
+UNRELATED_HISTORIES
 MERGE_STRATEGY_BLOCKED
 CI_EVIDENCE_REQUIRED
 CI_EVIDENCE_FAILED
@@ -1245,6 +1299,7 @@ TARGET_PUSH_POLICY_BLOCKED
 - merge record one-per-run。
 - fresh DB bootstrapとexisting migration。
 - handoff v1 / v2 parse。
+- handoff v2 plannedはready-only fieldsを要求せず、v2 readyはbase SHA / path / worktree idを必須にする。
 
 Candidate tests:
 
@@ -1276,6 +1331,7 @@ Extend:
 - held handoff -> provision -> release順序。
 - plan Context drift中はrelease不可。
 - duplicate handoffは同じworkspace id。
+- planned handoffはprovision完了までreleaseされず、readyへのCAS競合は片方だけ成功する。
 - provisioning失敗はattention。
 - legacy workspaceRequired=false rowは互換維持。
 
@@ -1307,11 +1363,14 @@ Extend:
 - target base drift before first Run。
 - prior same-Task implementation commitの継続。
 - another Task ownership conflict。
+- `expected_head_sha`以外へ進んだsource branchを同一Task由来と推測せずblockする。
 
 ### 15.6 Review / merge
 
 - commit creates decision-required record。
 - source branch mismatch / source SHA mismatch。
+- source == target、unrelated historyをmutation前にblock。
+- source commitがtargetのancestorなら`already_ancestor`としてidempotentにmergedへ収束。
 - target advanced preview。
 - target moved between preview and merge。
 - dirty / in-use target worktree。
@@ -1321,8 +1380,12 @@ Extend:
 - conflict rollback and conflict paths。
 - defer / rework。
 - target override invalidates preview / CI evidence。
+- target override後もPlan target provenanceがimmutableである。
+- stale `recordVersion`のpreview / defer / rework / target overrideを409で拒否する。
+- 同じexpected SHA / versionによるmerge再送が二重mergeを作らない。
 - external CI required / unavailable / failed / passed。
 - target push success / failure / policy block。
+- integration pending / deferred / conflicted merge recordがsource worktree削除をblockし、merged後にblockerが外れる。
 
 Candidate tests:
 
@@ -1333,6 +1396,7 @@ Candidate tests:
 ### 15.7 Frontend
 
 - settings load / save / validation。
+- stale `gitIntegrationVersion`の保存を409として再読込表示する。
 - default target badge。
 - selected-worktree Task CTA absent。
 - Plan Status provisioning states。
@@ -1417,7 +1481,9 @@ active_workspace_duplicate_path = 0
 ### Review / merge
 
 - `SOURCE_COMMIT_MISMATCH`: Review後のsource変更としてre-review要求。
+- `MERGE_RECORD_CHANGED`: 別Review操作が先に状態更新したため最新state再読込。
 - `TARGET_MOVED`: repreview要求。
+- `SOURCE_TARGET_IDENTICAL` / `UNRELATED_HISTORIES`: target再選択要求。
 - `TARGET_WORKTREE_DIRTY`: user cleanup待ち。
 - `TARGET_WORKTREE_IN_USE`: active Task / Run完了待ち。
 - `CI_EVIDENCE_REQUIRED`: provider evidence待ち。

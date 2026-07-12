@@ -6,6 +6,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import { MissionPilotComposerControls } from "../../missionPilot";
 import type {
 	ActivityArtifact,
@@ -50,10 +51,14 @@ type ThreadBodyProps = {
 	onOpenReviewModeArtifact?: () => void;
 	onClearArtifactContext?: () => void;
 	canStopActiveRun?: boolean;
-	onSubmitInitialPrompt: (prompt: string) => Promise<void>;
+	onSubmitInitialPrompt: (
+		prompt: string,
+		images?: PromptImageInput[],
+	) => Promise<void>;
 	onSubmitWorkbenchMessage: (
 		prompt: string,
 		intent: WorkbenchChatIntent,
+		images?: PromptImageInput[],
 	) => Promise<void>;
 	onStopActiveRun?: () => Promise<void>;
 	onStopBackgroundProcess?: (processId: string) => Promise<BackgroundProcess>;
@@ -324,12 +329,12 @@ export function ThreadBody({
 								/>
 							) : undefined
 						}
-						onSubmit={async (prompt, intent) => {
+						onSubmit={async (prompt, intent, images) => {
 							if (!activeSession) {
-								await onSubmitInitialPrompt(prompt);
+								await onSubmitInitialPrompt(prompt, images);
 								return;
 							}
-							await onSubmitWorkbenchMessage(prompt, intent);
+							await onSubmitWorkbenchMessage(prompt, intent, images);
 						}}
 					/>
 				</div>

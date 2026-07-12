@@ -1,4 +1,5 @@
 import { toDeepRecord } from "../../../shared/json-record";
+import type { PromptImageInput } from "../../../shared/prompt-image";
 import {
 	type PlanModeWorkspace,
 	planModeRegenerationTargetSchema,
@@ -20,6 +21,10 @@ import {
 	prepareWorkbenchIntakeTask,
 } from "./nightworkers.workbench.service";
 import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing";
+import {
+	deletePromptImageAttachmentFiles,
+	persistPromptImageAttachments,
+} from "./prompt-image-attachments";
 
 export async function createPlanningArtifactMessageIfNeeded(input: {
 	taskId: string;
@@ -240,6 +245,7 @@ export async function appendWorkbenchMessage(
 		providerEndpointId?: string;
 		model?: string;
 		thinkingDepth?: "low" | "medium" | "high" | "very_high";
+		images?: PromptImageInput[];
 	},
 ) {
 	const intent = input.intent || "intake";
@@ -259,20 +265,35 @@ export async function appendWorkbenchMessage(
 			: null;
 	const llmRouteOverride = normalizeStructuredLlmModelTarget(llmSelection);
 	const existingMessages = await repo.listTaskMessages(id);
+	if (intent === "run_task") {
+		assertRunnableWorkbenchTask(task, existingMessages);
+	}
+	const imageAttachments = await persistPromptImageAttachments({
+		taskId: id,
+		images: input.images,
+	});
 	const messageMetadata =
-		artifactContext || llmSelection
+		artifactContext || llmSelection || imageAttachments.length > 0
 			? {
 					...(artifactContext
 						? { intent: "artifact_context_instruction", artifactContext }
 						: {}),
 					source: "workbench",
 					...(llmSelection ? { llmSelection } : {}),
+					...(imageAttachments.length > 0 ? { imageAttachments } : {}),
 				}
 			: undefined;
+	const appendWorkbenchTaskMessage = async () => {
+		try {
+			await appendTaskMessage(id, prompt, messageMetadata);
+		} catch (error) {
+			await deletePromptImageAttachmentFiles(imageAttachments);
+			throw error;
+		}
+	};
 
 	if (intent === "run_task") {
-		assertRunnableWorkbenchTask(task, existingMessages);
-		await appendTaskMessage(id, prompt, messageMetadata);
+		await appendWorkbenchTaskMessage();
 		const run = await startTaskRun(id, {
 			executionMode: "implementation",
 			executionModeSource: "workbench_run_task",
@@ -286,7 +307,7 @@ export async function appendWorkbenchMessage(
 	}
 
 	if (intent === "design_blueprint_data") {
-		await appendTaskMessage(id, prompt, messageMetadata);
+		await appendWorkbenchTaskMessage();
 		await generateDataModelArtifact(id, {
 			prompt,
 			routeOverride: llmRouteOverride,
@@ -306,7 +327,7 @@ export async function appendWorkbenchMessage(
 		intent === "intake" &&
 		isPlanModeArtifactRegenerationContext(artifactContext)
 	) {
-		await appendTaskMessage(id, prompt, messageMetadata);
+		await appendWorkbenchTaskMessage();
 		const metadata = artifactContext.metadata || {};
 		const result = await executePlanModeArtifactCorrection({
 			taskId: id,
@@ -328,7 +349,7 @@ export async function appendWorkbenchMessage(
 		};
 	}
 
-	await appendTaskMessage(id, prompt, messageMetadata);
+	await appendWorkbenchTaskMessage();
 
 	if (intent === "queue" || intent === "create_task") {
 		const queued = await queueTask(id);

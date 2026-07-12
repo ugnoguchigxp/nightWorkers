@@ -1,3 +1,4 @@
+import type { PromptImageAttachment } from "../../../shared/prompt-image";
 import type {
 	RuntimeContractWarning,
 	RuntimeContractWarningSeverity,
@@ -29,6 +30,7 @@ export interface AgentRunContext {
 	repoRoot: string;
 	compiledPrompt: string;
 	latestUserMessage: string;
+	imageAttachments?: PromptImageAttachment[];
 	timeoutSeconds: number;
 	safetyPolicy?: AgentSafetyPolicy;
 	contextSnapshot: {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import { useImplementationQueue } from "../../queue";
 import { markArtifactOpenStart } from "../artifactPerformance";
 import { useWorkspaceAppearanceState } from "../contexts/WorkspaceAppearanceContext";
@@ -184,6 +185,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const submitPrompt = async (
 		prompt: string,
 		intent: WorkbenchChatIntent = "intake",
+		images: PromptImageInput[] = [],
 	) => {
 		if (!workspace.activeProject && workspace.projects[0]) {
 			workspace.setActiveSessionId(
@@ -213,6 +215,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				intent,
 				null,
 				llmSelection,
+				images,
 			);
 			if (llmSelection) clearComposerLlmSelectionOverride();
 			return;
@@ -223,6 +226,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			intent,
 			null,
 			buildComposerLlmSelection(),
+			images,
 		);
 	};
 	const handleOpenBlueprintArtifact = useCallback(async () => {

@@ -1,5 +1,6 @@
 import { toDeepRecord } from "../../../shared/json-record";
 import { NotFoundError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import type { RuntimeLaneResult } from "../../services/agent-runtime/shared/contracts";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
@@ -20,6 +21,7 @@ import {
 } from "./nightworkers.run-orchestration.service";
 import { getVerificationDocument } from "./nightworkers.verification.repository";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
+import { deletePromptImageAttachments } from "./prompt-image-attachments";
 import {
 	archiveCompletedTask,
 	reopenCompletedTask,
@@ -349,7 +351,16 @@ export async function reopenTask(id: string) {
 }
 
 export async function deleteTask(id: string) {
-	return repo.deleteTask(id);
+	const deleted = await repo.deleteTask(id);
+	if (deleted) {
+		await deletePromptImageAttachments(id).catch((error) => {
+			logger.warn(
+				{ taskId: id, error },
+				"Failed to clean up prompt image attachments after task deletion",
+			);
+		});
+	}
+	return deleted;
 }
 
 export {

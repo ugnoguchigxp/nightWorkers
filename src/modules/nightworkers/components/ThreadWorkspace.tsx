@@ -15,6 +15,7 @@ import {
 	Separator,
 	useGroupRef,
 } from "react-resizable-panels";
+import type { PromptImageInput } from "../../../../shared/prompt-image";
 import { logArtifactPerf } from "../artifactPerformance";
 import type {
 	ActivityArtifact,
@@ -88,10 +89,14 @@ export type ThreadWorkspaceProps = {
 	onModelChange: (model: string) => void;
 	modelOptions: ModelOption[];
 	onThinkingDepthChange: (depth: ComposerThinkingDepth) => void;
-	onSubmitInitialPrompt: (prompt: string) => Promise<void>;
+	onSubmitInitialPrompt: (
+		prompt: string,
+		images?: PromptImageInput[],
+	) => Promise<void>;
 	onSubmitWorkbenchMessage: (
 		prompt: string,
 		intent: WorkbenchChatIntent,
+		images?: PromptImageInput[],
 	) => Promise<void>;
 	canStopActiveRun?: boolean;
 	onStopActiveRun?: () => Promise<void>;

@@ -5,6 +5,7 @@ import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service"
 import { getProjectSecurityIntelligenceSettings } from "../../ontology";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import * as repo from "../nightworkers.repository";
+import { readPromptImageAttachments } from "../prompt-image-attachments";
 import {
 	buildCompiledPromptText,
 	findLatestImplementationHandoffMessage,
@@ -84,6 +85,9 @@ export async function prepareTaskRunStart(input: {
 		securityIntelligence,
 		messages,
 		lastUserMessage,
+		runtimeImageAttachments: readPromptImageAttachments(
+			lastUserMessage?.metadataJson,
+		),
 		llmRouteOverride: input.options.routeOverride ?? null,
 		jobType,
 		executionMode,

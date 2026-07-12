@@ -1,3 +1,5 @@
+import type { PromptImageAttachment } from "../../../../shared/prompt-image";
+import { isPromptImageMediaType } from "../../../../shared/prompt-image";
 import {
 	formatOntologyCloseoutRequirementsForPrompt,
 	formatOntologyRuntimeContextForPrompt,
@@ -27,7 +29,12 @@ export type NativeApiToolResult = {
 
 export type NativeApiHistoryItem =
 	| { type: "system"; content: string }
-	| { type: "user"; content: string; source: NativeApiUserSource }
+	| {
+			type: "user";
+			content: string;
+			source: NativeApiUserSource;
+			imageAttachments?: PromptImageAttachment[];
+	  }
 	| { type: "assistant"; content: string; toolCalls?: ProviderToolCall[] }
 	| {
 			type: "tool_result";
@@ -44,7 +51,14 @@ export function buildInitialNativeApiHistory(
 	const items: NativeApiHistoryItem[] = [
 		{ type: "system", content: buildNativeApiSystemPrompt(context) },
 		...(options.resumeHistory ?? []),
-		{ type: "user", source: "user", content: userMessage },
+		{
+			type: "user",
+			source: "user",
+			content: userMessage,
+			...(context.imageAttachments?.length
+				? { imageAttachments: context.imageAttachments }
+				: {}),
+		},
 	];
 	const currentTodo = context.currentTodo;
 	if (currentTodo) {
@@ -96,7 +110,15 @@ export function sanitizeNativeApiResumeHistory(
 			if (record.source !== "user") continue;
 			const content = readNonEmptyString(record.content);
 			if (!content) continue;
-			sanitized.push({ type: "user", source: "user", content });
+			const imageAttachments = readNativeApiImageAttachments(
+				record.imageAttachments,
+			);
+			sanitized.push({
+				type: "user",
+				source: "user",
+				content,
+				...(imageAttachments.length > 0 ? { imageAttachments } : {}),
+			});
 			continue;
 		}
 		if (record.type === "assistant") {
@@ -135,6 +157,35 @@ export function sanitizeNativeApiResumeHistory(
 	return trimSanitizedResumeHistory(sanitized, maxItems);
 }
 
+function readNativeApiImageAttachments(
+	value: unknown,
+): PromptImageAttachment[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((item) => {
+		if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+		const record = item as Record<string, unknown>;
+		if (
+			typeof record.id !== "string" ||
+			typeof record.name !== "string" ||
+			typeof record.path !== "string" ||
+			typeof record.size !== "number" ||
+			typeof record.mediaType !== "string" ||
+			!isPromptImageMediaType(record.mediaType)
+		) {
+			return [];
+		}
+		return [
+			{
+				id: record.id,
+				name: record.name,
+				path: record.path,
+				size: record.size,
+				mediaType: record.mediaType,
+			},
+		];
+	});
+}
+
 export function projectNativeApiHistoryToProviderMessages(
 	history: readonly NativeApiHistoryItem[],
 ): ProviderToolMessage[] {
@@ -153,7 +204,18 @@ export function projectNativeApiHistoryToProviderMessages(
 	for (const item of history) {
 		if (item.type === "system") continue;
 		if (item.type === "user") {
-			messages.push({ role: "user", content: item.content });
+			messages.push({
+				role: "user",
+				content: item.imageAttachments?.length
+					? [
+							{ type: "text", text: item.content },
+							...item.imageAttachments.map((image) => ({
+								type: "image" as const,
+								image,
+							})),
+						]
+					: item.content,
+			});
 			continue;
 		}
 		if (item.type === "assistant") {
