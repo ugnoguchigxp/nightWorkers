@@ -424,5 +424,8 @@ describe("miscellaneous frontend components", () => {
 		expect(markup).toContain("rounded");
 		expect(markup).toContain("blueprint-design-theme-mint");
 		expect(markup).toContain("blueprint-design-option-preview-compact");
+		expect(markup).toContain("nightworkers-appearance-settings");
+		expect(markup).toContain("nightworkers-appearance-options");
+		expect(markup).toContain('data-theme="mint"');
 	});
 });

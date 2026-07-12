@@ -4,7 +4,22 @@
 	background: color-mix(in srgb, var(--nw-panel) 88%, var(--nw-background) 12%);
 }
 
-.nightworkers-shell[data-theme="light"] {
+.nightworkers-appearance-theme-preview[data-theme="dark"] {
+	--nw-background: hsl(222 42% 10%);
+	--nw-panel: hsl(222 47% 11%);
+	--nw-surface: hsl(222 34% 14%);
+	--nw-surface-soft: hsl(222 32% 17%);
+	--nw-text: hsl(0 0% 98%);
+	--nw-muted-text: hsl(210 24% 82%);
+	--nw-subtle-text: hsl(215 14% 55%);
+	--nw-primary: hsl(188 86% 58%);
+	--nw-primary-foreground: hsl(222 44% 6%);
+	--nw-border: hsl(218 24% 30% / 0.78);
+	color-scheme: dark;
+}
+
+.nightworkers-shell[data-theme="light"],
+.nightworkers-appearance-theme-preview[data-theme="light"] {
 	--nw-background: hsl(210 24% 96%);
 	--nw-panel: hsl(0 0% 100%);
 	--nw-surface: hsl(210 24% 98%);
@@ -22,7 +37,8 @@
 	color-scheme: light;
 }
 
-.nightworkers-shell[data-theme="eclipse"] {
+.nightworkers-shell[data-theme="eclipse"],
+.nightworkers-appearance-theme-preview[data-theme="eclipse"] {
 	--nw-background: hsl(245 46% 90%);
 	--nw-panel: hsl(245 44% 84%);
 	--nw-surface: hsl(245 42% 80%);
@@ -39,7 +55,8 @@
 	color-scheme: light;
 }
 
-.nightworkers-shell[data-theme="macosclassic"] {
+.nightworkers-shell[data-theme="macosclassic"],
+.nightworkers-appearance-theme-preview[data-theme="macosclassic"] {
 	--nw-background: hsl(0 0% 89%);
 	--nw-panel: hsl(0 0% 96%);
 	--nw-surface: hsl(0 0% 92%);
@@ -56,7 +73,8 @@
 	color-scheme: light;
 }
 
-.nightworkers-shell[data-theme="campfire"] {
+.nightworkers-shell[data-theme="campfire"],
+.nightworkers-appearance-theme-preview[data-theme="campfire"] {
 	--nw-background: hsl(24 38% 8%);
 	--nw-panel: hsl(24 34% 13%);
 	--nw-surface: hsl(25 30% 18%);
@@ -74,7 +92,8 @@
 	color-scheme: dark;
 }
 
-.nightworkers-shell[data-theme="mint"] {
+.nightworkers-shell[data-theme="mint"],
+.nightworkers-appearance-theme-preview[data-theme="mint"] {
 	--nw-background: hsl(154 30% 96%);
 	--nw-panel: hsl(150 34% 91%);
 	--nw-surface: hsl(152 30% 92%);
@@ -91,7 +110,8 @@
 	color-scheme: light;
 }
 
-.nightworkers-shell[data-theme="bloom"] {
+.nightworkers-shell[data-theme="bloom"],
+.nightworkers-appearance-theme-preview[data-theme="bloom"] {
 	--nw-background: hsl(344 76% 96%);
 	--nw-panel: hsl(337 68% 92%);
 	--nw-surface: hsl(333 52% 91%);
@@ -108,7 +128,8 @@
 	color-scheme: light;
 }
 
-.nightworkers-shell[data-theme="mocha"] {
+.nightworkers-shell[data-theme="mocha"],
+.nightworkers-appearance-theme-preview[data-theme="mocha"] {
 	--nw-background: hsl(38 38% 94%);
 	--nw-panel: hsl(34 34% 88%);
 	--nw-surface: hsl(36 30% 86%);

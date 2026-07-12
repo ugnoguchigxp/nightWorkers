@@ -7,4 +7,5 @@
 @import "./styles/nightworkers-themes.css";
 @import "./styles/nightworkers-variants.css";
 @import "./styles/nightworkers-utility-overrides.css";
+@import "./styles/nightworkers-appearance-settings.css";
 @import "./modules/missionPilot/mission-pilot.css";

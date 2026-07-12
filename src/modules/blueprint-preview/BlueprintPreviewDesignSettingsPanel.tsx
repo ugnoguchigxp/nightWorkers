@@ -202,16 +202,44 @@ export function VisualSettingsGroup({
 	title,
 	summary,
 	children,
+	tone = "preview",
 }: {
 	title: string;
 	summary: string;
 	children: ReactNode;
+	tone?: "preview" | "workspace";
 }) {
 	return (
-		<section className="rounded-lg border border-border bg-card p-2.5">
-			<div className="mb-3 flex items-center justify-between gap-3">
-				<span className="font-semibold text-foreground">{title}</span>
-				<span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+		<section
+			className={
+				tone === "workspace"
+					? "nightworkers-appearance-group"
+					: "rounded-lg border border-border bg-card p-2.5"
+			}
+		>
+			<div
+				className={
+					tone === "workspace"
+						? "nightworkers-appearance-group-header"
+						: "mb-3 flex items-center justify-between gap-3"
+				}
+			>
+				<span
+					className={
+						tone === "workspace"
+							? "nightworkers-appearance-group-title"
+							: "font-semibold text-foreground"
+					}
+				>
+					{title}
+				</span>
+				<span
+					className={
+						tone === "workspace"
+							? "nightworkers-appearance-group-summary"
+							: "rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground"
+					}
+				>
 					{labelForOption(summary)}
 				</span>
 			</div>
@@ -225,19 +253,21 @@ export function VisualOptionGrid<const T extends readonly string[]>({
 	options,
 	value,
 	onSelect,
+	tone = "preview",
 }: {
 	kind: VisualOptionKind;
 	options: T;
 	value: T[number];
 	onSelect: (value: T[number]) => void;
+	tone?: "preview" | "workspace";
 }) {
 	return (
 		<div
-			className={
+			className={`${
 				kind === "theme"
 					? "grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4"
 					: "flex flex-wrap gap-1.5"
-			}
+			} ${tone === "workspace" ? "nightworkers-appearance-options" : ""}`}
 		>
 			{options.map((option) => {
 				const selected = option === value;
@@ -258,6 +288,7 @@ export function VisualOptionGrid<const T extends readonly string[]>({
 							compact={kind !== "theme"}
 							kind={kind}
 							option={option}
+							tone={tone}
 						/>
 						<span
 							className={`${kind === "theme" ? "mt-2 block" : "min-w-0"} truncate text-[11px] font-semibold text-foreground`}
@@ -286,12 +317,14 @@ function OptionVisual({
 	compact,
 	kind,
 	option,
+	tone,
 }: {
 	compact: boolean;
 	kind: VisualOptionKind;
 	option: string;
+	tone: "preview" | "workspace";
 }) {
-	if (kind === "theme") return <ThemeVisual theme={option} />;
+	if (kind === "theme") return <ThemeVisual theme={option} tone={tone} />;
 	if (kind === "density")
 		return <DensityVisual compact={compact} density={option} />;
 	if (kind === "shape") return <ShapeVisual compact={compact} shape={option} />;
@@ -300,10 +333,19 @@ function OptionVisual({
 	return <FontVisual compact={compact} font={option} />;
 }
 
-function ThemeVisual({ theme }: { theme: string }) {
+function ThemeVisual({
+	theme,
+	tone,
+}: {
+	theme: string;
+	tone: "preview" | "workspace";
+}) {
 	return (
 		<div
-			className={`blueprint-design-option-preview blueprint-design-theme-${theme}`}
+			className={`blueprint-design-option-preview blueprint-design-theme-${theme} ${
+				tone === "workspace" ? "nightworkers-appearance-theme-preview" : ""
+			}`}
+			data-theme={tone === "workspace" ? theme : undefined}
 		>
 			<div className="blueprint-design-option-sidebar" />
 			<div className="blueprint-design-option-main">

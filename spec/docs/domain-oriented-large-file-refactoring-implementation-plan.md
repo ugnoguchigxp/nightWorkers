@@ -216,7 +216,7 @@ module A -> module B public API or explicit port
 
 ### Phase 5: Workbench frontend — 15 files
 
-- [ ] NW-LF-22 `src/modules/nightworkers/components/ArtifactPane.tsx` (1962): Artifact controller、viewer registry、version UI、actionsをArtifact moduleへ分ける。
+- [x] NW-LF-22 `src/modules/nightworkers/components/ArtifactPane.tsx` (1962 → 600): ArtifactPaneをselection、Test Mode表示、export actions、header actionsへ分割し、Artifact module内の責務境界を明確化。
 - [ ] NW-LF-23 `src/modules/nightworkers/components/ThreadTimeline.tsx` (1230): event grouping、windowing、card routing、timeline presentationを分ける。
 - [ ] NW-LF-24 `src/modules/nightworkers/components/NightWorkersShell.tsx` (1141): route composition、project/session selection、layoutを薄いshellへ分ける。
 - [x] NW-LF-25 `src/modules/nightworkers/components/ThreadTimelineActivityTranscript.tsx` (760 -> 362): activity projection/formatting helperを`ThreadTimelineActivityModel.ts`へ分離し、rendererと公開helperを維持した。
@@ -350,7 +350,7 @@ bun test tests/review-mode.test.ts tests/nightworkers-git-closeout.test.ts
 
 Artifact、timeline、Task Execution projection、Workbench shellを分離する。既存の小さいcontroller、renderer、panelを再利用し、同じ役割の第二実装を作らない。route、root CSS、root dictionaryは合成だけを行う。
 
-進捗: NW-LF-25〜NW-LF-34完了。NW-LF-22〜NW-LF-24、NW-LF-35〜NW-LF-36が未完了。
+進捗: NW-LF-22、NW-LF-25〜NW-LF-34完了。NW-LF-23〜NW-LF-24、NW-LF-35〜NW-LF-36が未完了。
 
 Focused verification:
 

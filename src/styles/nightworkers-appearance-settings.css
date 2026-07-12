@@ -1,0 +1,185 @@
+.nightworkers-shell .nightworkers-appearance-settings {
+	display: grid;
+	gap: var(--nw-gap);
+	border: 1px solid var(--nw-border);
+	border-radius: var(--nw-radius);
+	background: var(--nw-panel);
+	padding: var(--nw-page-padding);
+	color: var(--nw-text);
+	box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-shell .nightworkers-appearance-group {
+	border: 1px solid var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	background: var(--nw-surface);
+	padding: calc(var(--nw-gap) * 1.15);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-appearance-group-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--nw-gap);
+	margin-bottom: var(--nw-gap);
+}
+
+.nightworkers-shell .nightworkers-appearance-group-title {
+	font-size: 0.875rem;
+	font-weight: 700;
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-appearance-group-summary {
+	border: 1px solid var(--nw-border);
+	border-radius: 999px;
+	background: var(--nw-panel);
+	padding: 0.125rem 0.5rem;
+	font-size: 0.6875rem;
+	color: var(--nw-muted-text);
+}
+
+.nightworkers-shell .nightworkers-appearance-options button,
+.nightworkers-shell .nightworkers-appearance-option {
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	background: var(--nw-panel);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-appearance-options button:hover,
+.nightworkers-shell .nightworkers-appearance-option:hover {
+	border-color: color-mix(in srgb, var(--nw-primary) 56%, var(--nw-border));
+	background: color-mix(in srgb, var(--nw-primary) 8%, var(--nw-panel));
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	button[aria-pressed="true"],
+.nightworkers-shell .nightworkers-appearance-option[aria-pressed="true"] {
+	border-color: var(--nw-primary);
+	background: color-mix(in srgb, var(--nw-primary) 14%, var(--nw-panel));
+	color: var(--nw-text);
+	box-shadow: inset 0 0 0 1px var(--nw-primary);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-option-preview {
+	border-color: var(--nw-border);
+	border-radius: var(--nw-control-radius);
+	background: var(--nw-surface-soft);
+	color: var(--nw-muted-text);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-option-sidebar {
+	background: color-mix(in srgb, var(--nw-surface) 76%, var(--nw-border));
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-option-main,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-density-compact,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-density-default,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-density-comfortable,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-sharp,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-default,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-rounded,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-pill,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-font-system,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-font-geist,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-font-serif,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-font-mono {
+	color: var(--nw-muted-text);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-avatar,
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shape-button {
+	background: color-mix(in srgb, var(--nw-muted-text) 22%, transparent);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shadow-card {
+	border-color: var(--nw-border);
+	background: var(--nw-panel);
+	color: var(--nw-muted-text);
+	box-shadow: none;
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shadow-none
+	.blueprint-design-shadow-card {
+	box-shadow: none;
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shadow-subtle
+	.blueprint-design-shadow-card {
+	box-shadow: 0 2px 5px color-mix(in srgb, var(--nw-text) 16%, transparent);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shadow-medium
+	.blueprint-design-shadow-card {
+	box-shadow: 0 5px 11px color-mix(in srgb, var(--nw-text) 24%, transparent);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
+	.blueprint-design-shadow-strong
+	.blueprint-design-shadow-card {
+	box-shadow: 0 8px 16px color-mix(in srgb, var(--nw-text) 34%, transparent);
+}
+
+.nightworkers-shell .nightworkers-appearance-legacy-options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--nw-gap) * 0.5);
+}
+
+.nightworkers-shell .nightworkers-appearance-option {
+	min-height: var(--nw-control-height);
+	padding: 0.25rem 0.625rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.nightworkers-shell .nightworkers-appearance-variant-label {
+	font-size: 0.625rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--nw-subtle-text);
+}

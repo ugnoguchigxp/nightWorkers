@@ -19,48 +19,55 @@ export function AppearanceSettings({
 	const { t } = useTranslation();
 
 	return (
-		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
+		<section className="nightworkers-appearance-settings">
 			<div className="grid gap-3">
 				<VisualSettingsGroup
 					title={t("settings.appearance.theme")}
 					summary={value.theme}
+					tone="workspace"
 				>
 					<VisualOptionGrid
 						kind="theme"
 						options={blueprintPreviewDesignOptions.theme}
 						value={value.theme}
 						onSelect={(theme) => onChange({ ...value, theme })}
+						tone="workspace"
 					/>
 				</VisualSettingsGroup>
 				<VisualSettingsGroup
 					title={t("settings.appearance.density")}
 					summary={value.density}
+					tone="workspace"
 				>
 					<VisualOptionGrid
 						kind="density"
 						options={blueprintPreviewDesignOptions.density}
 						value={value.density}
 						onSelect={(density) => onChange({ ...value, density })}
+						tone="workspace"
 					/>
 				</VisualSettingsGroup>
 				<VisualSettingsGroup
 					title={t("settings.appearance.shape")}
 					summary={value.shape}
+					tone="workspace"
 				>
 					<VisualOptionGrid
 						kind="shape"
 						options={blueprintPreviewDesignOptions.shape}
 						value={value.shape}
 						onSelect={(shape) => onChange({ ...value, shape })}
+						tone="workspace"
 					/>
 				</VisualSettingsGroup>
 				<VisualSettingsGroup
 					title={t("settings.appearance.shadow")}
 					summary={`${value.shadow} / ${value.shadowDirection}`}
+					tone="workspace"
 				>
 					<div className="grid gap-3">
 						<div className="grid gap-1.5">
-							<div className="text-[10px] font-semibold uppercase text-zinc-500">
+							<div className="nightworkers-appearance-variant-label">
 								{t("settings.appearance.strength")}
 							</div>
 							<VisualOptionGrid
@@ -68,6 +75,7 @@ export function AppearanceSettings({
 								options={blueprintPreviewDesignOptions.shadow}
 								value={value.shadow}
 								onSelect={(shadow) => onChange({ ...value, shadow })}
+								tone="workspace"
 							/>
 						</div>
 						<AppearanceVariantRow
@@ -83,12 +91,14 @@ export function AppearanceSettings({
 				<VisualSettingsGroup
 					title={t("settings.appearance.font")}
 					summary={value.font}
+					tone="workspace"
 				>
 					<VisualOptionGrid
 						kind="font"
 						options={blueprintPreviewDesignOptions.font}
 						value={value.font}
 						onSelect={(font) => onChange({ ...value, font })}
+						tone="workspace"
 					/>
 				</VisualSettingsGroup>
 				<AppearanceGroup
@@ -177,10 +187,10 @@ function AppearanceGroup({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className="rounded-xl border border-zinc-800 bg-zinc-950/30 p-3">
-			<div className="mb-2 flex items-center justify-between gap-3 text-xs">
-				<span className="font-semibold text-zinc-200">{label}</span>
-				<span className="text-zinc-500">{summary}</span>
+		<div className="nightworkers-appearance-group">
+			<div className="nightworkers-appearance-group-header">
+				<span className="nightworkers-appearance-group-title">{label}</span>
+				<span className="nightworkers-appearance-group-summary">{summary}</span>
 			</div>
 			{children}
 		</div>
@@ -197,16 +207,13 @@ function AppearanceOptionRow<const T extends readonly string[]>({
 	onSelect: (value: T[number]) => void;
 }) {
 	return (
-		<div className="flex flex-wrap gap-1.5">
+		<div className="nightworkers-appearance-legacy-options">
 			{options.map((option) => (
 				<button
 					type="button"
 					key={option}
-					className={`rounded-lg border px-2.5 py-1 text-[11px] capitalize ${
-						option === value
-							? "border-indigo-400 bg-indigo-500 text-white"
-							: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500"
-					}`}
+					aria-pressed={option === value}
+					className="nightworkers-appearance-option"
 					onClick={() => onSelect(option)}
 				>
 					{option.replace(/-/g, " ")}
@@ -229,9 +236,7 @@ function AppearanceVariantRow<const T extends readonly string[]>({
 }) {
 	return (
 		<div className="grid gap-1">
-			<div className="text-[10px] font-semibold uppercase text-zinc-500">
-				{label}
-			</div>
+			<div className="nightworkers-appearance-variant-label">{label}</div>
 			<AppearanceOptionRow
 				options={options}
 				value={value}
