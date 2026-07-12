@@ -364,6 +364,8 @@ bun test tests/nightworkers-shell-smoke.test.tsx tests/frontend-workbench-route-
 
 対象: `NW-LF-37`〜`NW-LF-39`。
 
+進捗: NW-LF-37〜NW-LF-39完了。Workbench message/Plan intake、activity persistence、Run event/todo supportを分離済み。
+
 Workbench intake、会話、Artifact activity、Run queryを分ける。Plan cue判断はcurrent message、Task context、recent conversation、既存Plan Artifactをまとめて扱う現在契約を維持し、文字列keyword分類へ退行しない。
 
 Focused verification:
