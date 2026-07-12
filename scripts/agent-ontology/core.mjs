@@ -34,30 +34,14 @@ import {
   arrayOfStrings,
   arrayOfObjects,
 } from './core-support.mjs';
-
 export const ONTOLOGY_DIR = '.agent-ontology';
 export const MODULE_INDEX_PATH = path.join(ONTOLOGY_DIR, 'modules.yaml');
-
-const REQUIRED_MANIFEST_FIELDS = [
-  'version',
-  'id',
-  'summary',
-  'ubiquitousLanguage',
-  'responsibilities',
-  'ownedPaths',
-  'invariants',
-  'forbiddenMutations',
-  'verification',
-];
-
 export function resolveRepoRoot(input = {}) {
   return path.resolve(input.repoRoot || process.cwd());
 }
-
 export function hashText(text) {
   return `sha256:${crypto.createHash('sha256').update(text, 'utf8').digest('hex')}`;
 }
-
 export function readJsonCompatibleYaml(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8');
   try {
@@ -68,7 +52,6 @@ export function readJsonCompatibleYaml(filePath) {
     );
   }
 }
-
 export function readModuleIndex(repoRoot = process.cwd()) {
   const resolvedRoot = resolveRepoRoot({ repoRoot });
   const indexPath = path.join(resolvedRoot, MODULE_INDEX_PATH);
@@ -86,11 +69,9 @@ export function readModuleIndex(repoRoot = process.cwd()) {
     index: value,
   };
 }
-
 export function moduleIndexExists(repoRoot = process.cwd()) {
   return fs.existsSync(path.join(resolveRepoRoot({ repoRoot }), MODULE_INDEX_PATH));
 }
-
 export function validateAllManifests(repoRoot = process.cwd()) {
   const startedAt = new Date().toISOString();
   const errors = [];
@@ -143,7 +124,6 @@ export function validateAllManifests(repoRoot = process.cwd()) {
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
   }
-
   return {
     ok: errors.length === 0,
     startedAt,
@@ -153,7 +133,6 @@ export function validateAllManifests(repoRoot = process.cwd()) {
     errors,
   };
 }
-
 export function listModules(repoRoot = process.cwd()) {
   if (!moduleIndexExists(repoRoot)) {
     return {
@@ -182,7 +161,6 @@ export function listModules(repoRoot = process.cwd()) {
     modules,
   };
 }
-
 export function readManifestById(repoRoot = process.cwd(), moduleId) {
   const result = readModuleIndex(repoRoot);
   const entry = result.index.modules.find((candidate) => candidate.id === moduleId);
@@ -206,7 +184,6 @@ export function readManifestById(repoRoot = process.cwd(), moduleId) {
     digest: hashText(raw),
   };
 }
-
 export function classifyGoal(input = {}) {
   const repoRoot = resolveRepoRoot(input);
   const goal = String(input.goal || '').trim();
@@ -247,7 +224,6 @@ export function classifyGoal(input = {}) {
       };
     })
     .sort((a, b) => b.score.total - a.score.total);
-
   const top = candidates[0];
   if (!top || top.score.total <= 0) {
     return {
@@ -260,14 +236,12 @@ export function classifyGoal(input = {}) {
       candidates,
     };
   }
-
   const secondaryModules = candidates
     .slice(1)
     .filter((candidate) => candidate.score.total > 0 && candidate.score.total >= top.score.total * 0.45)
     .map((candidate) => candidate.module)
     .slice(0, 3);
   const confidence = Math.min(0.95, Number((0.35 + top.score.total / 20).toFixed(2)));
-
   return {
     primaryModule: top.module,
     secondaryModules,
@@ -278,7 +252,6 @@ export function classifyGoal(input = {}) {
     candidates,
   };
 }
-
 export function compileModuleContext(input = {}) {
   const repoRoot = resolveRepoRoot(input);
   const goal = String(input.goal || '').trim();
@@ -295,7 +268,6 @@ export function compileModuleContext(input = {}) {
           source: 'explicit',
         }
       : classifyGoal({ repoRoot, goal });
-
   if (routing.primaryModule === 'unknown' || routing.primaryModule === 'emerging') {
     const warnings = [
       'module routing is low confidence',
@@ -366,7 +338,6 @@ export function compileModuleContext(input = {}) {
       warnings,
     };
   }
-
   const loaded = readManifestById(repoRoot, routing.primaryModule);
   const manifest = loaded.manifest;
   const likelyFiles = collectLikelyFiles(repoRoot, manifest, 12);
@@ -394,7 +365,6 @@ export function compileModuleContext(input = {}) {
   const canonicalDomainSummary = manifest.summary;
   const domainSummary = `${manifest.summary}${crossingText}`;
   const summaryType = input.summaryType || (taskEvidence.available ? 'task_scoped' : 'canonical');
-
   return {
     module: manifest.id,
     summaryType,
@@ -459,7 +429,6 @@ export function compileModuleContext(input = {}) {
     warnings,
   };
 }
-
 export function getVerificationPlan(input = {}) {
   const repoRoot = resolveRepoRoot(input);
   const primary = String(input.primaryModule || input.module || '').trim();
@@ -494,7 +463,6 @@ export function getVerificationPlan(input = {}) {
     secondary,
   };
 }
-
 export function checkBoundary(input = {}) {
   const repoRoot = resolveRepoRoot(input);
   const primary = String(input.primaryModule || input.module || '').trim();
@@ -521,7 +489,6 @@ export function checkBoundary(input = {}) {
   const forbiddenTouched = [];
   const needsConfirmation = [];
   const allowed = [];
-
   for (const file of plannedFiles) {
     if (!file) continue;
     if (matchesAny(file, manifest.ownedPaths)) {
@@ -552,7 +519,6 @@ export function checkBoundary(input = {}) {
     }
     needsConfirmation.push({ path: file, reason: 'unknown module path' });
   }
-
   const decision =
     forbiddenTouched.length > 0
       ? 'reject'
@@ -561,7 +527,6 @@ export function checkBoundary(input = {}) {
         : crossings.length > 0
           ? 'allow_with_crossing'
           : 'allow';
-
   return {
     decision,
     primaryModule: primary,
@@ -571,7 +536,6 @@ export function checkBoundary(input = {}) {
     needsConfirmation,
   };
 }
-
 export function cliArgs(argv = process.argv.slice(2)) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -596,12 +560,10 @@ export function cliArgs(argv = process.argv.slice(2)) {
   }
   return args;
 }
-
 export function printJsonAndExit(payload, exitCode = 0) {
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   process.exitCode = exitCode;
 }
-
 export function runCli(importMetaUrl, handler) {
   if (import.meta.url !== importMetaUrl) return;
   try {
@@ -620,7 +582,6 @@ export function runCli(importMetaUrl, handler) {
     );
   }
 }
-
 export function isMain(importMetaUrl) {
   return process.argv[1] && importMetaUrl === pathToFileURL(process.argv[1]).href;
 }
