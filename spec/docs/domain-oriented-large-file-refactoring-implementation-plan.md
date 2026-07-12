@@ -251,7 +251,7 @@ module A -> module B public API or explicit port
 - [ ] NW-LF-48 `api/mcp/nightworkers-codex-mcp.ts` (786): MCP transport、tool routing、response adapterを分け、application APIへ委譲する。
 - [ ] NW-LF-49 `api/mcp/nightworkers-tool-manifest.ts` (665): manifest data、schema builder、availability policyを分ける。
 - [x] NW-LF-50 `api/modules/nightworkers/run-orchestration/start-task-run.ts` (647 → 599): start entry / startable-task preparationを`start-task-run-entry.ts`へ分離し、既存startTaskRun APIと状態遷移を維持した。
-- [ ] NW-LF-51 `api/modules/nightworkers/run-orchestration/runtime-execution.ts` (642): runtime selection、execution、ledger projection、closeout handoffを分ける。
+- [x] NW-LF-51 `api/modules/nightworkers/run-orchestration/runtime-execution.ts` (642 → 563): runtime execution failure/closeoutを`runtime-execution-failure.ts`へ分離し、runtime/ledger/closeout契約を維持した。
 - [ ] NW-LF-52 `api/modules/nightworkers/routes/run-routes.ts` (769): route validationとTask Execution application API呼び出しだけを残す。
 - [ ] NW-LF-53 `scripts/agent-ontology/core.mjs` (1028): manifest parser、goal routing、boundary matcher、verification plannerをscript内の明示的moduleへ分ける。
 

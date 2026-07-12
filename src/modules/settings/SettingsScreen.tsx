@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { applyAppLanguage } from "../../i18n/I18nProvider";
-import { AppearanceSettings } from "../blueprint-preview";
+import {
+	AppearanceSettings,
+	createBlueprintPreviewDesignSettings,
+} from "../blueprint-preview";
 import { SettingsHooksPanel } from "../hooks/SettingsHooksPanel";
 import { SettingsMcpPanel } from "../mcp/SettingsMcpPanel";
 import {
@@ -79,17 +82,23 @@ export function SettingsScreen({
 	] = useState<SaveFeedbackStatus>("idle");
 	const [securityIntelligenceBusy, setSecurityIntelligenceBusy] =
 		useState(false);
-	const { settings: appearanceSettings } = useWorkspaceAppearanceState();
+	const {
+		settings: appearanceSettings,
+		savedSettings: savedAppearanceSettings,
+	} = useWorkspaceAppearanceState();
 	const [appearanceDraft, setAppearanceDraft] = useState(appearanceSettings);
 	const [appearanceMessage, setAppearanceMessage] = useState("");
 	const [appearanceMessageStatus, setAppearanceMessageStatus] =
 		useState<SaveFeedbackStatus>("idle");
-	const { setAppearanceSettings, resetAppearanceSettings } =
-		useWorkspaceAppearanceActions();
+	const {
+		applyAppearanceSettings,
+		saveAppearanceSettings: persistAppearanceSettings,
+	} = useWorkspaceAppearanceActions();
 
 	useEffect(() => {
+		if (activeSection === "appearance") return;
 		setAppearanceDraft(appearanceSettings);
-	}, [appearanceSettings]);
+	}, [activeSection, appearanceSettings]);
 
 	const activeSectionMeta =
 		settingsSections.find((section) => section.id === activeSection) ||
@@ -263,10 +272,47 @@ export function SettingsScreen({
 	};
 
 	const saveAppearanceSettings = () => {
-		setAppearanceSettings(appearanceDraft);
+		persistAppearanceSettings(appearanceDraft);
 		setAppearanceMessage(t("settings.saveSucceeded"));
 		setAppearanceMessageStatus("success");
 	};
+
+	const updateAppearanceDraft = (next: typeof appearanceDraft) => {
+		setAppearanceDraft(next);
+		applyAppearanceSettings(next);
+		setAppearanceMessage("");
+		setAppearanceMessageStatus("idle");
+	};
+
+	const cancelAppearanceSettings = () => {
+		applyAppearanceSettings(savedAppearanceSettings);
+		setAppearanceDraft(savedAppearanceSettings);
+		setAppearanceMessage("");
+		setAppearanceMessageStatus("idle");
+	};
+
+	const resetAppearanceDraft = () => {
+		updateAppearanceDraft(createBlueprintPreviewDesignSettings(undefined));
+	};
+
+	const renderAppearanceSecondaryActions = () => (
+		<>
+			<button
+				type="button"
+				className="rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
+				onClick={resetAppearanceDraft}
+			>
+				{t("settings.appearance.reset")}
+			</button>
+			<button
+				type="button"
+				className="rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
+				onClick={cancelAppearanceSettings}
+			>
+				{t("settings.appearance.cancel")}
+			</button>
+		</>
+	);
 
 	if (isLoading) {
 		return (
@@ -392,32 +438,17 @@ export function SettingsScreen({
 								onSave={saveAppearanceSettings}
 								saveStatus={appearanceMessageStatus}
 								saveMessage={appearanceMessage}
-								secondaryAction={
-									<button
-										type="button"
-										className="rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
-										onClick={() => {
-											resetAppearanceSettings();
-											setAppearanceMessage(t("settings.saved"));
-											setAppearanceMessageStatus("success");
-										}}
-									>
-										{t("settings.appearance.reset")}
-									</button>
-								}
+								secondaryAction={renderAppearanceSecondaryActions()}
 							/>
 							<AppearanceSettings
 								value={appearanceDraft}
-								onChange={(next) => {
-									setAppearanceDraft(next);
-									setAppearanceMessage("");
-									setAppearanceMessageStatus("idle");
-								}}
+								onChange={updateAppearanceDraft}
 							/>
 							<SettingsSaveActions
 								onSave={saveAppearanceSettings}
 								saveStatus={appearanceMessageStatus}
 								saveMessage={appearanceMessage}
+								secondaryAction={renderAppearanceSecondaryActions()}
 							/>
 						</>
 					) : null}

@@ -15,11 +15,13 @@ const STORAGE_KEY = "nightworkers.workspaceAppearance.v1";
 
 type WorkspaceAppearanceState = {
 	settings: BlueprintPreviewDesignSettings;
+	savedSettings: BlueprintPreviewDesignSettings;
 	attributes: WorkspaceAppearanceAttributes;
 };
 
 type WorkspaceAppearanceActions = {
-	setAppearanceSettings: (settings: BlueprintPreviewDesignSettings) => void;
+	applyAppearanceSettings: (settings: BlueprintPreviewDesignSettings) => void;
+	saveAppearanceSettings: (settings: BlueprintPreviewDesignSettings) => void;
 	resetAppearanceSettings: () => void;
 };
 
@@ -90,14 +92,25 @@ export function WorkspaceAppearanceProvider({
 }: {
 	children: ReactNode;
 }) {
+	const [savedSettings, setSavedSettings] =
+		useState<BlueprintPreviewDesignSettings>(readStoredAppearanceSettings);
 	const [settings, setSettings] = useState<BlueprintPreviewDesignSettings>(
-		readStoredAppearanceSettings,
+		savedSettings,
 	);
 
-	const setAppearanceSettings = useCallback(
+	const applyAppearanceSettings = useCallback(
 		(nextSettings: BlueprintPreviewDesignSettings) => {
 			const normalized = createBlueprintPreviewDesignSettings(nextSettings);
 			setSettings(normalized);
+		},
+		[],
+	);
+
+	const saveAppearanceSettings = useCallback(
+		(nextSettings: BlueprintPreviewDesignSettings) => {
+			const normalized = createBlueprintPreviewDesignSettings(nextSettings);
+			setSettings(normalized);
+			setSavedSettings(normalized);
 			storeAppearanceSettings(normalized);
 		},
 		[],
@@ -106,6 +119,7 @@ export function WorkspaceAppearanceProvider({
 	const resetAppearanceSettings = useCallback(() => {
 		const defaults = createBlueprintPreviewDesignSettings(undefined);
 		setSettings(defaults);
+		setSavedSettings(defaults);
 		clearStoredAppearanceSettings();
 	}, []);
 
@@ -114,12 +128,16 @@ export function WorkspaceAppearanceProvider({
 		[settings],
 	);
 	const state = useMemo<WorkspaceAppearanceState>(
-		() => ({ settings, attributes }),
-		[attributes, settings],
+		() => ({ settings, savedSettings, attributes }),
+		[attributes, savedSettings, settings],
 	);
 	const actions = useMemo<WorkspaceAppearanceActions>(
-		() => ({ setAppearanceSettings, resetAppearanceSettings }),
-		[resetAppearanceSettings, setAppearanceSettings],
+		() => ({
+			applyAppearanceSettings,
+			saveAppearanceSettings,
+			resetAppearanceSettings,
+		}),
+		[applyAppearanceSettings, resetAppearanceSettings, saveAppearanceSettings],
 	);
 
 	return (

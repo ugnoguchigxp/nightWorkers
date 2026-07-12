@@ -176,6 +176,7 @@ export const enSettings = {
 	"settings.appearance.description":
 		"Apply the same Design Token axes as Blueprint Preview to NightWorkers itself.",
 	"settings.appearance.reset": "Reset",
+	"settings.appearance.cancel": "Cancel",
 	"settings.appearance.theme": "Theme",
 	"settings.appearance.density": "Density",
 	"settings.appearance.shape": "Shape",

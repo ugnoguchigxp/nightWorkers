@@ -177,6 +177,7 @@ export const jaSettings = {
 	"settings.appearance.description":
 		"Blueprint Preview と同じ Design Token 軸を NightWorkers 本体に適用します。",
 	"settings.appearance.reset": "初期値に戻す",
+	"settings.appearance.cancel": "キャンセル",
 	"settings.appearance.theme": "テーマ",
 	"settings.appearance.density": "密度",
 	"settings.appearance.shape": "形状",
