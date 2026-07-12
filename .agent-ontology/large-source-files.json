@@ -3,8 +3,6 @@
   "lineLimit": 600,
   "entries": [
     { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
-    { "id": "NW-LF-35", "path": "src/i18n/dictionaries/ja.ts", "maxLines": 1091, "targetModule": "workbench", "phase": 5 },
-    { "id": "NW-LF-36", "path": "src/i18n/dictionaries/en.ts", "maxLines": 1098, "targetModule": "workbench", "phase": 5 },
     { "id": "NW-LF-37", "path": "api/modules/nightworkers/nightworkers.workbench.service.ts", "maxLines": 1073, "targetModule": "workbench", "phase": 6 },
     { "id": "NW-LF-38", "path": "api/modules/nightworkers/nightworkers.activity.repository.ts", "maxLines": 748, "targetModule": "artifact", "phase": 6 },
     { "id": "NW-LF-39", "path": "api/modules/nightworkers/nightworkers.runs.repository.ts", "maxLines": 864, "targetModule": "task-execution", "phase": 6 },

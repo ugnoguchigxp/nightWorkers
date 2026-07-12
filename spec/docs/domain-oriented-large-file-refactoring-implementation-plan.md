@@ -229,8 +229,8 @@ module A -> module B public API or explicit port
 - [x] NW-LF-32 `src/routes/tasks.$id.tsx` (619 -> 11): TaskConsole presentation/query compositionを`TaskConsolePage.tsx`へ移し、routeはparam受け渡しだけの薄いFacadeにした。
 - [x] NW-LF-33 `src/styles/nightworkers-shell.css` (758 -> 447): Workbench shell layoutをrootに残し、Todo rail/domain component styleを`nightworkers-todo.css`へ分離した。
 - [x] NW-LF-34 `src/styles/nightworkers-utility-overrides.css` (1095 -> 572): Artifact/code/diff component style群を`nightworkers-utility-artifact.css`へ分離し、root utility overrideを縮小した。
-- [ ] NW-LF-35 `src/i18n/dictionaries/ja.ts` (1005): domain別辞書を合成するroot dictionaryへ縮小する。
-- [ ] NW-LF-36 `src/i18n/dictionaries/en.ts` (1011): 日本語辞書と同一key構造のdomain別辞書へ分ける。
+- [x] NW-LF-35 `src/i18n/dictionaries/ja.ts` (1074 → 38): 17 domainの日本語辞書ファイルを分離し、root dictionaryはspread合成へ縮小した。
+- [x] NW-LF-36 `src/i18n/dictionaries/en.ts` (1082 → 38): 日本語辞書と同一key構造で英語辞書を分離し、root dictionaryの公開importを維持した。
 
 ### Phase 6: Workbench backend — 3 files
 
@@ -350,7 +350,7 @@ bun test tests/review-mode.test.ts tests/nightworkers-git-closeout.test.ts
 
 Artifact、timeline、Task Execution projection、Workbench shellを分離する。既存の小さいcontroller、renderer、panelを再利用し、同じ役割の第二実装を作らない。route、root CSS、root dictionaryは合成だけを行う。
 
-進捗: NW-LF-22〜NW-LF-23、NW-LF-25〜NW-LF-34完了。NW-LF-24、NW-LF-35〜NW-LF-36が未完了。
+進捗: NW-LF-22〜NW-LF-23、NW-LF-25〜NW-LF-36完了。NW-LF-24が未完了。
 
 Focused verification:
 

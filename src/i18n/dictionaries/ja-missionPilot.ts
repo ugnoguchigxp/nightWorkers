@@ -1,0 +1,13 @@
+export const jaMissionPilot = {
+	"missionPilot.play": "Mission Pilotを再生",
+	"missionPilot.pause": "Mission Pilotを一時停止",
+	"missionPilot.pauseCountdown": "Mission Pilotを一時停止（再開まで {{time}}）",
+	"missionPilot.stop": "Mission Pilotを停止",
+	"missionPilot.starting": "Mission Pilotを開始中",
+	"missionPilot.stopping": "Mission Pilotを停止中",
+	"missionPilot.playing": "再生中",
+	"missionPilot.stopped": "停止中",
+	"missionPilot.attention": "確認が必要です",
+	"missionPilot.playFailed": "Mission Pilotを再生できませんでした",
+	"missionPilot.stopFailed": "Mission Pilotを停止できませんでした",
+} as const;

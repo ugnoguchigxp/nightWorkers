@@ -1,0 +1,18 @@
+export const jaReviewStatus = {
+	"reviewStatus.title": "レビューモード",
+	"reviewStatus.start": "レビューモード開始",
+	"reviewStatus.loading": "レビューモードを準備中...",
+	"reviewStatus.unavailable": "レビューモードは利用できません。",
+	"reviewStatus.runRemains": "Run は",
+	"reviewStatus.sessionState.approved": "レビュー承認済み",
+	"reviewStatus.sessionState.executionUnchanged": "実行状態を維持",
+	"reviewStatus.securityHandoffs": "セキュリティ連携",
+	"reviewStatus.artifact.summary": "{{level}} · セクション {{count}} 件",
+	"reviewStatus.level.none": "レビュー不要",
+	"reviewStatus.level.optional": "任意レビュー",
+	"reviewStatus.level.recommended": "レビュー推奨",
+	"reviewStatus.level.required": "レビュー必須",
+	"reviewStatus.securityHandoffStatus.needs_configuration": "設定が必要",
+	"reviewStatus.securityHandoffStatus.requested": "依頼済み",
+	"reviewStatus.securityHandoffStatus.deferred": "保留",
+} as const;
