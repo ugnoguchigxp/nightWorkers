@@ -359,6 +359,39 @@ describe("Mission Pilot plan coordinator", () => {
 		mocks.callLlm.mockImplementation(async () => {
 			reviewCallCount += 1;
 			if (reviewCallCount === 1) {
+				return JSON.stringify({
+					verdict: "revise",
+					summary: "Feature Plan correction is required.",
+					coverage: {
+						goal: "pass",
+						scope: "fail",
+						acceptanceCriteria: "pass",
+						implementationSteps: "fail",
+						verification: "pass",
+						artifactConsistency: "fail",
+						riskAndSafety: "pass",
+					},
+					findings: [
+						{
+							severity: "blocking",
+							artifactKind: "feature_plan",
+							sourceId: featurePlanMessageId,
+							issue: "Verification is incomplete",
+							recommendation: "Clarify verification",
+						},
+					],
+					revisionTargets: [
+						{
+							target: "feature_plan",
+							sourceMessageId: featurePlanMessageId,
+							focus: { kind: "artifact" },
+							instruction: "検証手順を具体化してください。",
+							preserveUnfocusedContent: true,
+						},
+					],
+				});
+			}
+			if (reviewCallCount === 2) {
 				await db
 					.update(tasks)
 					.set({
@@ -409,9 +442,18 @@ describe("Mission Pilot plan coordinator", () => {
 			.where(eq(missionPilotSessions.id, session.id));
 		await runMissionPilotPlanPipeline(taskId);
 
-		expect(mocks.generateFeaturePlan).toHaveBeenCalledWith(taskId, {
+		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(1, taskId, {
 			questionnaireSessionId: questionnaireId,
 		});
+		expect(mocks.generateFeaturePlan).toHaveBeenCalledTimes(2);
+		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(
+			2,
+			taskId,
+			expect.objectContaining({
+				questionnaireSessionId: questionnaireId,
+				prompt: expect.stringContaining("検証手順を具体化してください"),
+			}),
+		);
 		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledTimes(1);
 		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledWith(taskId, {
 			source: "pre_feature_plan_gate",
@@ -424,7 +466,7 @@ describe("Mission Pilot plan coordinator", () => {
 			expect.any(String),
 			expect.objectContaining({ role: "review", taskId }),
 		);
-		expect(mocks.callLlm).toHaveBeenCalledTimes(2);
+		expect(mocks.callLlm).toHaveBeenCalledTimes(3);
 		expect(mocks.createQueueEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
 				taskId,
@@ -436,8 +478,15 @@ describe("Mission Pilot plan coordinator", () => {
 		);
 		expect(await planRepo.getLatestPlanReview(session.id)).toMatchObject({
 			verdict: "pass",
-			attempt: 2,
+			attempt: 3,
 		});
+		expect(await planRepo.listArtifactCorrectionRuns(session.id)).toEqual([
+			expect.objectContaining({
+				target: "feature_plan",
+				status: "applied",
+				resultMessageId: featurePlanMessageId,
+			}),
+		]);
 		const planSteps = await planRepo.listPlanSteps(session.id);
 		expect(planSteps).toEqual([
 			expect.objectContaining({

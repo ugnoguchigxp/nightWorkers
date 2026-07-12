@@ -118,7 +118,12 @@ Open Settings before connecting real credentials. Confirm:
 Use the Workbench and Queue state to decide what happens next:
 - Leave the Session in chat if you only needed investigation.
 - Queue implementation only after you trust the plan.
-- Review diffs and final reports before committing changes.
+- Run Test Mode and confirm managed evidence plus `completion_check`.
+- Complete Review Run and resolve blocking findings.
+- Rerun Test Mode after Review applies fixes.
+- Confirm the implementation Security Oracle pass or explicit policy skip.
+- Review server-side closeout evidence, diff, and final report before explicit
+  commit or push.
 - Retry only after you understand the failed event or tool output.
 
 Do not treat a run as adoption-ready just because the final response sounds

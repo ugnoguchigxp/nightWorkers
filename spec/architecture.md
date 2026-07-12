@@ -15,8 +15,10 @@ NightWorkers manages Project Folder sessions through a chat-first task lifecycle
 3. Optional explicit admission into the global Implementation Queue
 4. Processor claim and run creation
 5. Event append (state changes, tool outcomes, todos, diffs, and decisions)
-6. Final report and archived/completed state
-7. Queue execution archive, while the Session remains available for normal chat
+6. Implementation finalization and Security Oracle pass or explicit policy skip
+7. Test Mode managed verification and Review Run completion
+8. Explicit evidence-gated Git commit/push closeout
+9. Queue execution archive, while the Session remains available for normal chat
 
 Run observation is ledger-first. Task events are persisted in SQLite and then
 projected to WebSocket clients. Workbench reattach uses `runId` plus an optional
@@ -142,7 +144,20 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
   under a parent task/run, not as multiple agents racing to update the same
   shared run status and Todo rows.
 
+## Review and Git Closeout Boundary
+- Test Mode owns the active verification checklist, latest managed evidence,
+  and successful `completion_check` from a completed Test Mode run.
+- Review Mode owns Review Run completion, findings, and dispositions. Only a
+  `done` artifact with a matching `review.run_completed` event satisfies it.
+- Review-applied fixes make older Test evidence stale. Mission Pilot uses its
+  active passing Test snapshot and matching Review decision.
+- The implementation Security Oracle is separate from optional Review Security
+  Review. A saved pass or explicit policy skip is required.
+- Blocking findings stop closeout; accepted risk and dismissal require a note.
+- Commit re-evaluates persisted evidence before staging runtime-owned paths.
+
 ## Write Tool And Proposal Boundary
+
 - Direct repository writes are centralized in worker tools such as
   `apply_patch`, `replace_content`, and `copy_directory`, reached through the
   worker-tool dispatcher. Keep new write capabilities behind this boundary.

@@ -96,6 +96,17 @@ Example first-run evidence to look for:
 | Test or check result | Verification was attempted and its result is visible. |
 | Final report | The run ended with a reviewable conclusion. |
 
+## Test, Review, and Git Closeout
+- Test Mode owns verification documents, required checklist items, managed
+  evidence, and `completion_check`.
+- Review Mode owns Review Run completion, findings, and dispositions.
+- Review-applied fixes invalidate older Test evidence. Mission Pilot uses its
+  active passing Test snapshot and matching Review decision.
+- Optional Review Security Review is separate from the implementation Security
+  Oracle pass or explicit policy skip required for closeout.
+- Commit and push remain explicit and open only after all server-side evidence
+  gates pass.
+
 ## Activity Transcript
 What it does:
 - Presents chat and run activity as a readable timeline inside the Workbench.

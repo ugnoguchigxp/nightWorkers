@@ -34,5 +34,9 @@ NightWorkers は local-first の自律開発 control plane であり、信頼境
 - [ ] Sensitive repository を登録する前に、Provider、MCP、Hooks の設定を確認した。
 - [ ] `API_AUTH_REQUIRED=false` のまま localhost 以外へ露出していない。
 - [ ] MCP / Hooks に secret-like headers や env values を入れていない。
-- [ ] 変更を伴う run は diff と final report を確認してから commit する。
+- [ ] Test Mode の managed evidence と `completion_check` を確認した。
+- [ ] Review Run が `done` で、未処置 blocking finding がない。
+- [ ] Review が修正した場合、Test Mode を再実行した。
+- [ ] implementation Security Oracle の pass または理由付き skip を確認した。
+- [ ] closeout evidence、diff、final reportを確認してからcommit/pushする。
 - [ ] Desktop release/adoption readiness では `desktop:smoke` を別途確認する。

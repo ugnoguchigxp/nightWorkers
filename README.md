@@ -2,6 +2,8 @@
 
 <img src="assets/brand/nightworkers-logo-icon-64.png" alt="NightWorkers logo" width="64" height="64" />
 
+[English](./README.md) | [日本語](./README.ja.md)
+
 NightWorkers is a local-first autonomous development control plane. It coordinates project-scoped work sessions, runs supervisor-worker executions, and records verifiable run evidence such as events, logs, diffs, todos, test results, and final reports.
 
 ![NightWorkers workbench screenshot](assets/screenshot.webp)
@@ -80,6 +82,7 @@ NightWorkers is not a good fit when you need:
 - Project Folder registration and per-project Session/Task management
 - Dedicated Implementation Queue screen with Processor lanes, queued work, and not-queued plan-ready Sessions
 - Global Processor capacity controls plus TODO Workflow gates for implementation runs
+- Separate Test Mode and Review Mode runs with evidence-gated Git closeout
 - Chat timeline inspection with run events, todo state, context output, diffs, and final reports
 - DB-backed run event replay for Workbench WebSocket reattach through `runId` / `afterSeq` cursors
 - Cursor-based run event API at `/api/runs/:id/events?afterSeq=...`
@@ -168,7 +171,10 @@ states:
    automation to proceed.
 5. Inspect the Run Timeline for state changes, tool calls, policy blocks, todo
    updates, diffs, test results, usage events, and final reports.
-6. Review artifacts and diffs before committing anything in the target repo.
+6. Run Test Mode and confirm managed evidence plus `completion_check`.
+7. Complete Review Run and resolve blocking findings. Rerun Test Mode if Review applies fixes.
+8. Confirm the implementation Security Oracle passed or recorded an explicit policy skip.
+9. Commit or push explicitly only after server-side closeout reports all gates complete.
 
 ## Five-Minute Orientation
 1. Open `http://localhost:39174` and confirm the Overview loads.
@@ -373,6 +379,7 @@ Before a release, run `bun run verify:release`; tag creation through
 This repository uses the following documentation layout.
 
 - GitHub-rendered OSS documents (root):
+  - [`README.ja.md`](./README.ja.md) (Japanese)
   - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
   - [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
   - [`SECURITY.md`](./SECURITY.md)

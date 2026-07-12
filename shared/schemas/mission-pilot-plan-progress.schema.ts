@@ -1,4 +1,6 @@
 import { z } from "@hono/zod-openapi";
+import { planModeRegenerationTargetSchema } from "./plan-mode-artifact.schema";
+import { planModeArtifactFocusSchema } from "./plan-mode-artifact-correction.schema";
 
 export const missionPilotPlanStepProgressSchema = z.object({
 	key: z.string().min(1),
@@ -28,6 +30,35 @@ export const missionPilotPlanProgressSchema = z.object({
 	contextRevision: z.number().int().positive(),
 	currentStepKey: z.string().nullable(),
 	steps: z.array(missionPilotPlanStepProgressSchema),
+	review: z
+		.object({
+			status: z.enum([
+				"pending",
+				"running",
+				"passed",
+				"revision_required",
+				"failed",
+			]),
+			attempt: z.number().int().nonnegative(),
+			reviewId: z.string().uuid().nullable(),
+		})
+		.default({ status: "pending", attempt: 0, reviewId: null }),
+	activeCorrection: z
+		.object({
+			id: z.string().uuid(),
+			target: planModeRegenerationTargetSchema,
+			focus: planModeArtifactFocusSchema,
+			status: z.string().min(1),
+			instruction: z.string().min(1),
+			sourceMessageId: z.string().uuid(),
+		})
+		.nullable()
+		.default(null),
+	queueAdmission: z
+		.object({
+			status: z.enum(["blocked", "ready", "admitting", "admitted"]),
+		})
+		.default({ status: "blocked" }),
 	lastError: z.string().nullable(),
 	updatedAt: z.string().datetime(),
 });

@@ -7,6 +7,7 @@ import {
 	taskStatusSchema,
 } from "../../../../shared/schemas/nightworkers.schema";
 import { planModeRegenerationTargetSchema } from "../../../../shared/schemas/plan-mode-artifact.schema";
+import { planModeArtifactFocusSchema } from "../../../../shared/schemas/plan-mode-artifact-correction.schema";
 export const listTasksRoute = createRoute({
 	method: "get",
 	path: "/tasks",
@@ -237,6 +238,8 @@ const workbenchArtifactContextSchema = z.object({
 			blueprintCount: z.number().optional(),
 			instructionMode: z.literal("regenerate_artifact").optional(),
 			planModeTarget: planModeRegenerationTargetSchema.optional(),
+			planModeFocus: planModeArtifactFocusSchema.optional(),
+			correlationId: z.string().uuid().nullable().optional(),
 			displayKind: z.string().optional(),
 			questionnaireSessionId: z.string().uuid().nullable().optional(),
 			featurePlanMessageId: z.string().uuid().nullable().optional(),

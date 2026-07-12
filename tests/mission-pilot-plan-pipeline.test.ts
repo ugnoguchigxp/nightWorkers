@@ -11,6 +11,7 @@ import { repositories, taskMessages, tasks } from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import * as planRepo from "../api/modules/missionPilot/mission-pilot-plan.repository";
 import { normalizeMissionPilotPlanReview } from "../shared/schemas/mission-pilot-plan-review.schema";
+import { planModeArtifactCorrectionTargetSchema } from "../shared/schemas/plan-mode-artifact-correction.schema";
 
 const repositoryIds: string[] = [];
 
@@ -56,6 +57,27 @@ async function createFixture() {
 }
 
 describe("Mission Pilot plan pipeline persistence", () => {
+	it("limits screen focus to Blueprint corrections", () => {
+		expect(
+			planModeArtifactCorrectionTargetSchema.safeParse({
+				target: "blueprint",
+				sourceMessageId: crypto.randomUUID(),
+				focus: { kind: "screen", screenIds: ["main"] },
+				instruction: "Fix the main screen",
+				preserveUnfocusedContent: true,
+			}).success,
+		).toBe(true);
+		expect(
+			planModeArtifactCorrectionTargetSchema.safeParse({
+				target: "feature_plan",
+				sourceMessageId: crypto.randomUUID(),
+				focus: { kind: "screen", screenIds: ["main"] },
+				instruction: "Invalid focus",
+				preserveUnfocusedContent: true,
+			}).success,
+		).toBe(false);
+	});
+
 	it("does not let warning-only findings block Queue admission", () => {
 		const review = normalizeMissionPilotPlanReview({
 			verdict: "revise",
@@ -80,9 +102,11 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			],
 			revisionTargets: [
 				{
-					artifactKind: "feature_plan",
-					sourceId: "plan-1",
+					target: "feature_plan",
+					sourceMessageId: "00000000-0000-4000-8000-000000000001",
+					focus: { kind: "artifact" },
 					instruction: "Clarify the optional detail",
+					preserveUnfocusedContent: true,
 				},
 			],
 		});
@@ -326,6 +350,92 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			verdict: "pass",
 			contextRevision: 1,
 			contextDigest: fixture.session.contextDigest,
+		});
+	});
+
+	it("persists and advances an idempotent Artifact correction run", async () => {
+		const fixture = await createFixture();
+		const [source] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Blueprint",
+				messageType: "markdown_document",
+				metadataJson: { intent: "mock_blueprint" },
+			})
+			.returning();
+		const review = await planRepo.createPlanReview({
+			sessionId: fixture.session.id,
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+			featurePlanMessageId: source.id,
+			attempt: 1,
+			review: {
+				verdict: "revise",
+				summary: "Blueprint correction required",
+				coverage: {
+					goal: "pass",
+					scope: "fail",
+					acceptanceCriteria: "pass",
+					implementationSteps: "fail",
+					verification: "pass",
+					artifactConsistency: "fail",
+					riskAndSafety: "pass",
+				},
+				findings: [
+					{
+						severity: "blocking",
+						artifactKind: "blueprint",
+						sourceId: source.id,
+						issue: "Wrong screen placement",
+						recommendation: "Integrate the screen",
+					},
+				],
+				revisionTargets: [
+					{
+						target: "blueprint",
+						sourceMessageId: source.id,
+						focus: { kind: "artifact" },
+						instruction: "Integrate the screen",
+						preserveUnfocusedContent: true,
+					},
+				],
+			},
+		});
+		const input = {
+			sessionId: fixture.session.id,
+			taskId: fixture.task.id,
+			planReviewId: review.id,
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+			targets: review.reviewJson.revisionTargets,
+		};
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(1);
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(1);
+		const [run] = await planRepo.listArtifactCorrectionRunsForReview(review.id);
+		expect(await planRepo.claimArtifactCorrectionRun(run.id)).toMatchObject({
+			status: "running",
+			attempt: 1,
+		});
+		const [result] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Corrected Blueprint",
+				messageType: "markdown_document",
+			})
+			.returning();
+		await planRepo.recordArtifactCorrectionResult(run.id, {
+			resultMessageId: result.id,
+		});
+		await planRepo.markArtifactCorrectionValidating(run.id);
+		expect(await planRepo.applyArtifactCorrectionRun(run.id, 2)).toMatchObject({
+			status: "applied",
+			outputContextRevision: 2,
 		});
 	});
 });

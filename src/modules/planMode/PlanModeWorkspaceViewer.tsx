@@ -109,6 +109,20 @@ const planWorkspaceRegenerationTargets = {
 	"zod-schema-design": "zod_schema_design",
 } as const satisfies Record<string, PlanModeRegenerationTarget>;
 
+const correctionTargetTabs: Record<
+	PlanModeRegenerationTarget,
+	PlanWorkspaceTab
+> = {
+	feature_plan: "feature-plan",
+	blueprint: "blueprint",
+	data_model: "data-model",
+	user_flow: "user-flow",
+	api_io_contract: "api-io-contract",
+	activity_flow: "activity-flow",
+	sequence_flow: "sequence-flow",
+	zod_schema_design: "zod-schema-design",
+};
+
 type PlanWorkspaceRegenerationTab =
 	keyof typeof planWorkspaceRegenerationTargets;
 
@@ -182,6 +196,7 @@ export function buildPlanModeArtifactContext(input: {
 			initialTab: input.activeTab,
 			instructionMode: "regenerate_artifact",
 			planModeTarget: target,
+			planModeFocus: { kind: "artifact" },
 			displayKind: planWorkspaceDisplayKind(target),
 			questionnaireSessionId: input.readyQuestionnaireSessionId ?? null,
 			featurePlanMessageId: input.featurePlanMessage?.id ?? null,
@@ -476,6 +491,7 @@ export function PlanModeWorkspaceViewer({
 			),
 		);
 	const didSelectUnlockedDefaultTab = useRef(false);
+	const focusedCorrectionIdRef = useRef<string | null>(null);
 	const attemptedMermaidRenderRepairs = useRef(new Set<string>());
 	const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef(activeTab);
@@ -579,6 +595,19 @@ export function PlanModeWorkspaceViewer({
 		const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab);
 		if (nextTab) selectActiveTab(nextTab);
 	}, [initialTab, selectActiveTab]);
+
+	useEffect(() => {
+		const correction = missionPilotPlanProgress?.activeCorrection;
+		if (!correction || focusedCorrectionIdRef.current === correction.id) return;
+		const targetTab = correctionTargetTabs[correction.target];
+		if (!visibleTabs.includes(targetTab)) return;
+		focusedCorrectionIdRef.current = correction.id;
+		selectActiveTab(targetTab);
+	}, [
+		missionPilotPlanProgress?.activeCorrection,
+		selectActiveTab,
+		visibleTabs,
+	]);
 
 	useEffect(() => {
 		if (initialTab) return;

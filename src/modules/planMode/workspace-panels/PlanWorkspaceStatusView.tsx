@@ -267,6 +267,10 @@ export function PlanWorkspaceStatusView({
 			};
 		});
 	const allStepsDone = steps.every((step) => step.done);
+	const planReady =
+		allStepsDone &&
+		(!missionPilotPlanProgress ||
+			missionPilotPlanProgress.review?.status === "passed");
 	const nextAutoGenerateStep = steps.find(
 		(step) => step.autoGenerate && !step.done && !step.disabled,
 	);
@@ -404,7 +408,7 @@ export function PlanWorkspaceStatusView({
 					);
 				})}
 			</div>
-			{allStepsDone ? (
+			{planReady ? (
 				<div className="mt-4 flex flex-wrap justify-center gap-3">
 					<StatusActionButton
 						label="今すぐ実装開始"
@@ -435,6 +439,10 @@ function MissionPilotPlanPhase({
 		generating_artifacts: "Plan Artifactを生成しています",
 		reviewing_plan: "実装計画をレビューしています",
 		revising_plan: "レビュー指摘を反映しています",
+		awaiting_artifact_correction: "Artifact修正の準備をしています",
+		correcting_artifact: "Plan Mode agentがArtifactを修正しています",
+		validating_artifact: "Artifact修正結果を確認しています",
+		revising_dependencies: "依存Artifactを最新状態へ揃えています",
 		attention: "確認が必要です",
 		queued: "Implementation Queueへ追加済みです",
 	};
@@ -451,6 +459,17 @@ function MissionPilotPlanPhase({
 			<div className="font-semibold">{label || progress.phase}</div>
 			{progress.lastError ? (
 				<div className="mt-1">{progress.lastError}</div>
+			) : null}
+			{progress.activeCorrection ? (
+				<div className="mt-1">
+					対象: {formatViewLabel(progress.activeCorrection.target)} /{" "}
+					{progress.activeCorrection.status}
+				</div>
+			) : null}
+			{progress.review && progress.review.status !== "pending" ? (
+				<div className="mt-1">
+					Self-review: {progress.review.status}（{progress.review.attempt}回目）
+				</div>
 			) : null}
 		</div>
 	);

@@ -7,8 +7,11 @@ import {
 	missionPilotPlanReviewSchema,
 	normalizeMissionPilotPlanReview,
 } from "../../../shared/schemas/mission-pilot-plan-review.schema";
-import type { PlanModeArtifactKind } from "../../../shared/schemas/plan-mode-artifact.schema";
-import { dedicatedDesignViewSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
+import {
+	type PlanModeArtifactKind,
+	planModeRegenerationTargetSchema,
+} from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -27,6 +30,7 @@ import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
+import { executeMissionPilotArtifactCorrection } from "./mission-pilot-artifact-correction.service";
 import * as planRepo from "./mission-pilot-plan.repository";
 import { getMissionPilotPlanProgress } from "./mission-pilot-plan-progress.service";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
@@ -518,7 +522,10 @@ async function reviewCurrentPlan(
 			"Goal、確定Questionnaire、生成Artifact、Feature Plan、受け入れ条件、検証の整合性を審査してください。",
 			"確定QuestionnaireとTask acceptance criteriaは不変の入力であり、実装詳細をすべて列挙する文書ではありません。回答と矛盾しない型、値、取得元、コマンド、検証詳細はFeature Planが具体化します。",
 			"QuestionnaireまたはTask acceptance criteriaの変更を要求せず、不足する派生仕様はfeature_planのrevisionTargetとして返してください。",
-			"revisionTargetsのartifactKindは生成済みで改訂可能なPlan Artifactに限定してください。",
+			"revisionTargetsは、指摘が書かれている場所ではなく矛盾を導入した生成済みArtifactをtargetにしてください。",
+			"QuestionnaireとBlueprintが矛盾する場合はBlueprintをtargetにし、sourceMessageIdへ対象Artifact messageのUUIDを指定してください。",
+			"Blueprintの特定画面またはSectionを特定できる場合はfocusをscreenまたはsectionにし、構造化Artifact内のIDを指定してください。",
+			"上流Artifactを直す場合は、その結果へ追随させるFeature Planも別revisionTargetとして含めてください。",
 			"追加質問なしで実装可能で、blocking findingがない場合だけpassにしてください。",
 			"warningだけの場合はcoverageをpassとしてverdict=passを返してください。warningを理由にreviseを返さないでください。",
 			"修正可能ならreviseとし、revisionTargetsへ具体的な再生成指示を入れてください。",
@@ -550,81 +557,107 @@ async function reviewCurrentPlan(
 	};
 }
 
-async function reviseArtifacts(
-	taskId: string,
-	sessionId: string,
-	questionnaireSessionId: string,
-	review: MissionPilotPlanReview,
-) {
-	await assertMissionPilotPreQueueMutable(taskId);
-	const revisionInstructions = new Map<string, string[]>();
-	for (const target of review.revisionTargets) {
-		const artifactKind =
-			target.artifactKind === "questionnaire" ||
-			target.artifactKind === "acceptance_criteria"
-				? "feature_plan"
-				: target.artifactKind;
-		const current = revisionInstructions.get(artifactKind) ?? [];
-		current.push(target.instruction);
-		revisionInstructions.set(artifactKind, current);
-	}
-	for (const [artifactKind, targetInstructions] of revisionInstructions) {
-		if (artifactKind === "feature_plan") continue;
-		const prompt = [
-			"Mission Pilotのセルフレビュー指摘を反映して再生成してください。",
-			...targetInstructions,
-		].join("\n");
-		let result: GeneratedArtifact;
-		if (artifactKind === "blueprint") {
-			result = await generateBlueprintArtifact(taskId, {
-				questionnaireSessionId,
-				prompt,
-			});
-		} else if (artifactKind === "data_model") {
-			result = await generateDataModelArtifact(taskId, {
-				questionnaireSessionId,
-				prompt,
-			});
-		} else {
-			const view = dedicatedDesignViewSchema.safeParse(artifactKind);
-			if (!view.success || view.data === "questionnaire") continue;
-			result = await generatePlanViewArtifact(taskId, view.data, {
-				questionnaireSessionId,
-				prompt,
-			});
-		}
-		await persistArtifactContext(
-			sessionId,
-			`${artifactKind}:revision:${Date.now()}`,
-			result,
-		);
-	}
-	const instructions = review.revisionTargets
-		.map((target) => {
-			if (target.artifactKind === "questionnaire") {
-				return `feature_plan: 確定Questionnaireは変更せず、次の不足を回答と矛盾しない明示的な実装判断としてFeature Plan内で具体化する。Questionnaireを更新済みとは記載しない。${target.instruction}`;
-			}
-			if (target.artifactKind === "acceptance_criteria") {
-				return `feature_plan: Task acceptance criteriaは変更せず、次の内容を派生する検証可能な完了条件としてFeature Planへ追加する。Task側を更新済みとは記載しない。${target.instruction}`;
-			}
-			return `${target.artifactKind}: ${target.instruction}`;
-		})
-		.join("\n");
-	const result = await generateFeaturePlanArtifact(taskId, {
-		questionnaireSessionId,
-		prompt: [
-			"Mission Pilotのセルフレビュー指摘を反映して改訂してください。",
-			"確定QuestionnaireとTask acceptance criteriaは変更せず、それらと矛盾しない派生仕様、実装手順、検証手順をFeature Plan内で確定してください。",
-			"QuestionnaireやTaskを更新したという未確認の記述、実装時に確認するという先送り、条件付きの検証gateを残さないでください。",
-			instructions,
-		].join("\n"),
-	});
-	const updated = await persistArtifactContext(
-		sessionId,
-		`feature_plan:revision:${Date.now()}`,
-		result,
+async function executeArtifactCorrections(input: {
+	taskId: string;
+	sessionId: string;
+	questionnaireSessionId: string;
+	reviewId: string;
+	targets: PlanModeArtifactCorrectionTarget[];
+	contextRevision: number;
+	contextDigest: string;
+	leaseOwner: string;
+}) {
+	await assertMissionPilotPreQueueMutable(input.taskId);
+	const workspace = await getPlanModeWorkspace(input.taskId);
+	const targets = [...input.targets];
+	const targetKeys = new Set(
+		targets.map((target) => `${target.target}:${target.sourceMessageId}`),
 	);
-	if (!updated) throw new Error("Revised Context persistence failed");
+	const appendDependency = (
+		target: PlanModeArtifactCorrectionTarget["target"],
+		sourceMessageId: string,
+		instruction: string,
+	) => {
+		const key = `${target}:${sourceMessageId}`;
+		if (targetKeys.has(key)) return;
+		targetKeys.add(key);
+		targets.push({
+			target,
+			sourceMessageId,
+			focus: { kind: "artifact" },
+			instruction,
+			preserveUnfocusedContent: true,
+		});
+	};
+	for (const target of input.targets) {
+		for (const artifact of workspace.dedicatedViewArtifacts) {
+			if (
+				artifact.kind === "blueprint" ||
+				artifact.kind === "feature_plan" ||
+				artifact.sourceMessageId === target.sourceMessageId
+			)
+				continue;
+			const dependsOnTarget =
+				(target.target === "blueprint" &&
+					artifact.sourceBlueprintMessageId === target.sourceMessageId) ||
+				(target.target === "data_model" &&
+					artifact.sourceDataModelMessageId === target.sourceMessageId);
+			if (!dependsOnTarget) continue;
+			const parsedTarget = planModeRegenerationTargetSchema.safeParse(
+				artifact.kind,
+			);
+			if (!parsedTarget.success) continue;
+			appendDependency(
+				parsedTarget.data,
+				artifact.sourceMessageId,
+				"上流Plan Artifactの修正結果を正として再生成し、古いsourceに基づく内容を残さないでください。",
+			);
+		}
+	}
+	if (
+		targets.some((target) => target.target !== "feature_plan") &&
+		!targets.some((target) => target.target === "feature_plan")
+	) {
+		const featurePlan = workspace.featurePlanArtifacts.at(-1);
+		if (featurePlan) {
+			appendDependency(
+				"feature_plan",
+				featurePlan.sourceMessageId,
+				"上流Plan Artifactの修正結果を正としてFeature Planを再生成し、古いsourceに基づく記述を残さないでください。",
+			);
+		}
+	}
+	const rank: Record<PlanModeArtifactCorrectionTarget["target"], number> = {
+		blueprint: 10,
+		data_model: 20,
+		user_flow: 30,
+		api_io_contract: 30,
+		activity_flow: 30,
+		sequence_flow: 30,
+		zod_schema_design: 30,
+		feature_plan: 40,
+	};
+	targets.sort((left, right) => rank[left.target] - rank[right.target]);
+	const runs = await planRepo.createArtifactCorrectionRuns({
+		sessionId: input.sessionId,
+		taskId: input.taskId,
+		planReviewId: input.reviewId,
+		contextRevision: input.contextRevision,
+		contextDigest: input.contextDigest,
+		targets,
+	});
+	for (const run of runs) {
+		if (run.status === "applied" || run.status === "superseded") continue;
+		await updatePhase(input.taskId, input.leaseOwner, "correcting_artifact");
+		await renewPipelineLease(input.sessionId, input.leaseOwner);
+		await executeMissionPilotArtifactCorrection({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+			questionnaireSessionId: input.questionnaireSessionId,
+			run,
+		});
+		await publishCurrentPlanProgress(input.taskId);
+	}
 }
 
 async function executeReview(
@@ -665,14 +698,18 @@ async function executeReview(
 			throw new Error(`Plan review rejected: ${result.review.summary}`);
 		}
 		if (attempt >= firstAttempt + MAX_REVIEW_ATTEMPTS - 1) break;
-		await updatePhase(taskId, leaseOwner, "revising_plan");
+		await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
 		await renewPipelineLease(sessionId, leaseOwner);
-		await reviseArtifacts(
+		await executeArtifactCorrections({
 			taskId,
 			sessionId,
 			questionnaireSessionId,
-			result.review,
-		);
+			reviewId: latest.id,
+			targets: result.review.revisionTargets,
+			contextRevision: result.contextRevision,
+			contextDigest: result.contextDigest,
+			leaseOwner,
+		});
 		await updatePhase(taskId, leaseOwner, "reviewing_plan");
 	}
 	throw new Error("Plan review did not pass within three attempts");
@@ -745,6 +782,19 @@ async function admitToQueue(
 		);
 	if (steps.some((step) => !["completed", "skipped"].includes(step.status)))
 		throw new Error("Plan execution steps are incomplete");
+	const correctionRuns = await planRepo.listArtifactCorrectionRuns(sessionId);
+	if (
+		correctionRuns.some((run) =>
+			[
+				"pending",
+				"dispatching",
+				"running",
+				"result_received",
+				"validating",
+			].includes(run.status),
+		)
+	)
+		throw new Error("Plan Artifact correction is still active");
 	const [workspace, verificationDocument] = await Promise.all([
 		getPlanModeWorkspace(taskId),
 		getLatestVerificationDocumentForTask(taskId),
@@ -868,6 +918,10 @@ export async function resumeMissionPilotPlanPipelines(
 					"generating_artifacts",
 					"reviewing_plan",
 					"revising_plan",
+					"awaiting_artifact_correction",
+					"correcting_artifact",
+					"validating_artifact",
+					"revising_dependencies",
 					"queueing",
 				]),
 			),
@@ -880,6 +934,7 @@ export async function resumeMissionPilotPlanPipelines(
 				(!pilot.leaseOwner || recoveredLeaseSessionIds.has(pilot.id))
 			) {
 				await planRepo.recoverRunningPlanSteps(pilot.id);
+				await planRepo.recoverArtifactCorrectionRuns(pilot.id);
 			}
 		}
 		await runMissionPilotPlanPipeline(session.taskId).catch(() => undefined);

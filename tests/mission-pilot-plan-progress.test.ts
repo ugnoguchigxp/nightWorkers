@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	getSessionByTaskId: vi.fn(),
 	listPlanSteps: vi.fn(),
+	getLatestPlanReview: vi.fn(),
+	listArtifactCorrectionRuns: vi.fn(),
 }));
 
 vi.mock("../api/modules/missionPilot/mission-pilot.repository", () => ({
@@ -10,6 +12,8 @@ vi.mock("../api/modules/missionPilot/mission-pilot.repository", () => ({
 }));
 vi.mock("../api/modules/missionPilot/mission-pilot-plan.repository", () => ({
 	listPlanSteps: mocks.listPlanSteps,
+	getLatestPlanReview: mocks.getLatestPlanReview,
+	listArtifactCorrectionRuns: mocks.listArtifactCorrectionRuns,
 }));
 
 const { getMissionPilotPlanProgress } = await import(
@@ -20,6 +24,10 @@ describe("Mission Pilot Plan progress projection", () => {
 	beforeEach(() => {
 		mocks.getSessionByTaskId.mockReset();
 		mocks.listPlanSteps.mockReset();
+		mocks.getLatestPlanReview.mockReset();
+		mocks.listArtifactCorrectionRuns.mockReset();
+		mocks.getLatestPlanReview.mockResolvedValue(null);
+		mocks.listArtifactCorrectionRuns.mockResolvedValue([]);
 	});
 
 	it("returns null for a normal task", async () => {

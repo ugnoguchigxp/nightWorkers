@@ -160,6 +160,17 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
   `maxConcurrentSessions` may exist for migration compatibility, but they are
   no longer the visible Implementation Queue control surface.
 
+## Closeout Evidence and Security Oracle
+- Closeout has no environment-variable bypass. It reads persisted Test Mode,
+  Review Run, Security Oracle, finding, ownership, and Git evidence.
+- Test settings are Project-scoped at
+  `/api/repositories/:id/settings/test-quality`.
+- Security Intelligence settings are Project-scoped at
+  `/api/repositories/:id/settings/security-intelligence`.
+- Missing Security Oracle evidence is not a policy skip. Optional Review Run
+  Security Review does not replace the implementation Oracle.
+- Commit and push are explicit and commit does not start a new security scan.
+
 ## Run Event Reattach
 - Workbench WebSocket `subscribe_task` accepts optional `runId` and `afterSeq`
   fields. When present, the API verifies the run belongs to the task and

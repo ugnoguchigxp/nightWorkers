@@ -94,6 +94,8 @@ export const planModeWorkspaceArtifactSchema = z.object({
 	createdAt: dateLikeSchema,
 	adoptionState: z.enum(["adopted", "not_adopted", "unknown"]).optional(),
 	sourceArtifactMessageId: z.string().uuid().optional(),
+	sourceBlueprintMessageId: z.string().uuid().optional(),
+	sourceDataModelMessageId: z.string().uuid().optional(),
 });
 
 export const planModeWorkspaceQuestionnaireSchema = z.object({

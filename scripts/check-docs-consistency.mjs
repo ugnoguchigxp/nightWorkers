@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const baseDocumentPaths = [
 	"README.md",
+	"README.ja.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
 	"SECURITY.md",

@@ -13,6 +13,11 @@ import type {
 	MissionPilotQueueHandoff,
 } from "../../shared/schemas/mission-pilot.schema";
 import type { MissionPilotPlanReview } from "../../shared/schemas/mission-pilot-plan-review.schema";
+import type { PlanModeRegenerationTarget } from "../../shared/schemas/plan-mode-artifact.schema";
+import type {
+	MissionPilotArtifactCorrectionStatus,
+	PlanModeArtifactFocus,
+} from "../../shared/schemas/plan-mode-artifact-correction.schema";
 import { designQuestionnaireSessions } from "./design-questionnaire-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "./schema";
 
@@ -215,6 +220,67 @@ export const missionPilotPlanReviews = sqliteTable(
 		contextIdx: index("mission_pilot_plan_reviews_context_idx").on(
 			table.sessionId,
 			table.contextRevision,
+		),
+	}),
+);
+
+export const missionPilotArtifactCorrectionRuns = sqliteTable(
+	"mission_pilot_artifact_correction_runs",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		planReviewId: text("plan_review_id")
+			.notNull()
+			.references(() => missionPilotPlanReviews.id, { onDelete: "cascade" }),
+		ordinal: integer("ordinal").notNull(),
+		target: text("target").$type<PlanModeRegenerationTarget>().notNull(),
+		focusJson: text("focus_json", { mode: "json" })
+			.$type<PlanModeArtifactFocus>()
+			.notNull(),
+		instruction: text("instruction").notNull(),
+		preserveUnfocusedContent: integer("preserve_unfocused_content", {
+			mode: "boolean",
+		})
+			.notNull()
+			.default(true),
+		sourceMessageId: text("source_message_id")
+			.notNull()
+			.references(() => taskMessages.id, { onDelete: "cascade" }),
+		sourceContextRevision: integer("source_context_revision").notNull(),
+		sourceContextDigest: text("source_context_digest").notNull(),
+		status: text("status")
+			.$type<MissionPilotArtifactCorrectionStatus>()
+			.notNull()
+			.default("pending"),
+		dispatchKey: text("dispatch_key").notNull(),
+		resultMessageId: text("result_message_id").references(
+			() => taskMessages.id,
+			{ onDelete: "set null" },
+		),
+		resultArtifactId: text("result_artifact_id"),
+		outputContextRevision: integer("output_context_revision"),
+		attempt: integer("attempt").notNull().default(0),
+		lastError: text("last_error"),
+		startedAt: integer("started_at", { mode: "timestamp" }),
+		finishedAt: integer("finished_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		reviewOrdinalUidx: uniqueIndex(
+			"mission_pilot_artifact_correction_runs_review_ordinal_uidx",
+		).on(table.sessionId, table.planReviewId, table.ordinal),
+		dispatchUidx: uniqueIndex(
+			"mission_pilot_artifact_correction_runs_dispatch_uidx",
+		).on(table.dispatchKey),
+		statusIdx: index("mission_pilot_artifact_correction_runs_status_idx").on(
+			table.status,
+			table.updatedAt,
 		),
 	}),
 );

@@ -1,4 +1,5 @@
 import type { PlanModeRegenerationTarget } from "../../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeArtifactFocus } from "../../../../shared/schemas/plan-mode-artifact-correction.schema";
 import type { ImplementationQueueEntry, Task, TaskRun } from "./core";
 
 export type WorkbenchSessionGroup = "processing" | "queue" | "archive";
@@ -146,6 +147,8 @@ export type WorkbenchArtifactContext = {
 		blueprintCount?: number;
 		instructionMode?: "regenerate_artifact";
 		planModeTarget?: PlanModeRegenerationTarget;
+		planModeFocus?: PlanModeArtifactFocus;
+		correlationId?: string | null;
 		displayKind?: string;
 		questionnaireSessionId?: string | null;
 		featurePlanMessageId?: string | null;

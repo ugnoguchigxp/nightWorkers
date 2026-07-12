@@ -70,6 +70,10 @@ export async function getPlanModeWorkspace(
 					typeof metadata.sourceBlueprintMessageId === "string"
 						? metadata.sourceBlueprintMessageId
 						: undefined,
+				sourceBlueprintMessageId:
+					typeof metadata.sourceBlueprintMessageId === "string"
+						? metadata.sourceBlueprintMessageId
+						: undefined,
 			};
 			blueprintArtifacts.push(artifact);
 			dedicatedViewArtifacts.push(artifact);
@@ -91,6 +95,14 @@ export async function getPlanModeWorkspace(
 				sourceArtifactMessageId:
 					typeof metadata.sourceBlueprintMessageId === "string"
 						? metadata.sourceBlueprintMessageId
+						: undefined,
+				sourceBlueprintMessageId:
+					typeof metadata.sourceBlueprintMessageId === "string"
+						? metadata.sourceBlueprintMessageId
+						: undefined,
+				sourceDataModelMessageId:
+					typeof metadata.sourceDataModelMessageId === "string"
+						? metadata.sourceDataModelMessageId
 						: undefined,
 			};
 			if (view === "data_model") dataModelArtifacts.push(artifact);

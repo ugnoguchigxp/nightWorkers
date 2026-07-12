@@ -243,6 +243,7 @@ describe("buildPlanModeArtifactContext", () => {
 			metadata: {
 				instructionMode: "regenerate_artifact",
 				planModeTarget: "blueprint",
+				planModeFocus: { kind: "artifact" },
 				displayKind: "PLAN_MODE:BLUEPRINT",
 				initialTab: "blueprint",
 				questionnaireSessionId: "questionnaire-1",

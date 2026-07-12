@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { planModeArtifactCorrectionTargetSchema } from "./plan-mode-artifact-correction.schema";
 
 export const missionPilotPlanReviewSchema = z
 	.object({
@@ -22,13 +23,7 @@ export const missionPilotPlanReviewSchema = z
 				recommendation: z.string().min(1),
 			}),
 		),
-		revisionTargets: z.array(
-			z.object({
-				artifactKind: z.string().min(1),
-				sourceId: z.string().min(1),
-				instruction: z.string().min(1),
-			}),
-		),
+		revisionTargets: z.array(planModeArtifactCorrectionTargetSchema),
 	})
 	.superRefine((review, context) => {
 		const hasBlocking = review.findings.some(

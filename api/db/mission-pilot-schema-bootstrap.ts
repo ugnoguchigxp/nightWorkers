@@ -114,6 +114,18 @@ export async function ensureMissionPilotTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS mission_pilot_plan_reviews_context_idx ON mission_pilot_plan_reviews (session_id, context_revision)",
 	);
+	await client.execute(
+		`CREATE TABLE IF NOT EXISTS mission_pilot_artifact_correction_runs (id text PRIMARY KEY NOT NULL, session_id text NOT NULL, task_id text NOT NULL, plan_review_id text NOT NULL, ordinal integer NOT NULL, target text NOT NULL, focus_json text NOT NULL, instruction text NOT NULL, preserve_unfocused_content integer DEFAULT true NOT NULL, source_message_id text NOT NULL, source_context_revision integer NOT NULL, source_context_digest text NOT NULL, status text DEFAULT 'pending' NOT NULL, dispatch_key text NOT NULL, result_message_id text, result_artifact_id text, output_context_revision integer, attempt integer DEFAULT 0 NOT NULL, last_error text, started_at integer, finished_at integer, created_at integer NOT NULL, updated_at integer NOT NULL, FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade, FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade, FOREIGN KEY (plan_review_id) REFERENCES mission_pilot_plan_reviews(id) ON DELETE cascade, FOREIGN KEY (source_message_id) REFERENCES task_messages(id) ON DELETE cascade, FOREIGN KEY (result_message_id) REFERENCES task_messages(id) ON DELETE set null)`,
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_artifact_correction_runs_review_ordinal_uidx ON mission_pilot_artifact_correction_runs (session_id, plan_review_id, ordinal)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_artifact_correction_runs_dispatch_uidx ON mission_pilot_artifact_correction_runs (dispatch_key)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS mission_pilot_artifact_correction_runs_status_idx ON mission_pilot_artifact_correction_runs (status, updated_at)",
+	);
 	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_phase_runs (
 		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, task_id text NOT NULL,
 		phase text NOT NULL, cycle integer NOT NULL, attempt integer NOT NULL,

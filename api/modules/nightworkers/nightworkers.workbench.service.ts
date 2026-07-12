@@ -16,11 +16,9 @@ import {
 	type SupervisorLlmDebugEvent,
 } from "../../services/structured-llm";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
-import { generateBlueprintArtifact } from "../blueprint/blueprint-generation.service";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
+import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createDesignQuestionnaire } from "../questionnaire/questionnaire.service";
-import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import {
 	assertRunnableWorkbenchTask,
@@ -322,12 +320,19 @@ export async function appendWorkbenchMessage(
 		isPlanModeArtifactRegenerationContext(artifactContext)
 	) {
 		await appendTaskMessage(id, prompt, messageMetadata);
-		const result = await regeneratePlanModeArtifactFromWorkbenchContext(
-			id,
+		const metadata = artifactContext.metadata || {};
+		const result = await executePlanModeArtifactCorrection({
+			taskId: id,
 			prompt,
-			artifactContext,
-			llmRouteOverride,
-		);
+			target: planModeRegenerationTargetSchema.parse(metadata.planModeTarget),
+			focus: metadata.planModeFocus,
+			correlationId: metadata.correlationId,
+			questionnaireSessionId: metadata.questionnaireSessionId ?? null,
+			featurePlanMessageId: metadata.featurePlanMessageId ?? null,
+			sourceBlueprintMessageId: metadata.sourceBlueprintMessageId ?? null,
+			sourceDataModelMessageId: metadata.sourceDataModelMessageId ?? null,
+			routeOverride: llmRouteOverride,
+		});
 		return {
 			task: (await repo.getTask(id)) || task,
 			run: null,
@@ -467,65 +472,6 @@ function isPlanModeArtifactRegenerationContext(
 		artifactContext.metadata?.instructionMode === "regenerate_artifact" &&
 		planModeRegenerationTargetSchema.safeParse(target).success
 	);
-}
-
-async function regeneratePlanModeArtifactFromWorkbenchContext(
-	taskId: string,
-	prompt: string,
-	artifactContext: WorkbenchArtifactContext,
-	routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget>,
-) {
-	const metadata = artifactContext.metadata || {};
-	const questionnaireSessionId = metadata.questionnaireSessionId ?? null;
-	const featurePlanMessageId = metadata.featurePlanMessageId ?? null;
-	const sourceBlueprintMessageId = metadata.sourceBlueprintMessageId ?? null;
-	const sourceDataModelMessageId = metadata.sourceDataModelMessageId ?? null;
-	const target = planModeRegenerationTargetSchema.parse(
-		metadata.planModeTarget,
-	);
-	switch (target) {
-		case "feature_plan":
-			return generateFeaturePlanArtifact(taskId, {
-				prompt,
-				questionnaireSessionId,
-				sourceBlueprintMessageId,
-				routeOverride,
-			});
-		case "blueprint":
-			return generateBlueprintArtifact(taskId, {
-				prompt,
-				questionnaireSessionId,
-				sourceBlueprintMessageId,
-				routeOverride,
-			});
-		case "data_model":
-			return generateDataModelArtifact(taskId, {
-				prompt,
-				questionnaireSessionId,
-				featurePlanMessageId,
-				sourceBlueprintMessageId,
-				routeOverride,
-			});
-		case "user_flow":
-		case "api_io_contract":
-		case "activity_flow":
-		case "sequence_flow":
-		case "zod_schema_design":
-			return generatePlanViewArtifact(taskId, target, {
-				prompt,
-				questionnaireSessionId,
-				featurePlanMessageId,
-				sourceBlueprintMessageId,
-				sourceDataModelMessageId,
-				routeOverride,
-			});
-		default:
-			throw new AppError(
-				400,
-				"UNSUPPORTED_PLAN_MODE_REGENERATION_TARGET",
-				`Unsupported Plan Mode regeneration target: ${String(target || "")}`,
-			);
-	}
 }
 
 const workbenchPlanModeGateSchema = z
