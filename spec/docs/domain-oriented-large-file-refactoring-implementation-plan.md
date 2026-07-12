@@ -248,7 +248,7 @@ module A -> module B public API or explicit port
 - [x] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677 → 208): tool manifestを`native-api-tool-manifest.ts`へ分離し、policy/handler binding facadeと公開契約を維持した。
 - [x] NW-LF-46 `api/services/worker-tools/todo-list.ts` (862 → 515): Todo context/repository境界を`todo-list-context.ts`、response mappingを`todo-list-response.ts`へ分離し、schema/state/DB契約を維持した。
 - [x] NW-LF-47 `api/services/worker-tools/project-post-import.ts` (737 → 588): import manifest/LLM context検証を`project-post-import-inspection.ts`へ分離し、Project登録・workflow契約を維持した。
-- [ ] NW-LF-48 `api/mcp/nightworkers-codex-mcp.ts` (786): MCP transport、tool routing、response adapterを分け、application APIへ委譲する。
+- [x] NW-LF-48 `api/mcp/nightworkers-codex-mcp.ts` (786 → 471): MCP transport/context/response adapterを`nightworkers-codex-mcp-support.ts`へ分離し、既存path/tool/payload/auth契約を維持した。
 - [x] NW-LF-49 `api/mcp/nightworkers-tool-manifest.ts` (665 → 275): schema群を`nightworkers-tool-schemas.ts`へ分離し、manifest/availability公開APIを維持した。
 - [x] NW-LF-50 `api/modules/nightworkers/run-orchestration/start-task-run.ts` (647 → 599): start entry / startable-task preparationを`start-task-run-entry.ts`へ分離し、既存startTaskRun APIと状態遷移を維持した。
 - [x] NW-LF-51 `api/modules/nightworkers/run-orchestration/runtime-execution.ts` (642 → 563): runtime execution failure/closeoutを`runtime-execution-failure.ts`へ分離し、runtime/ledger/closeout契約を維持した。

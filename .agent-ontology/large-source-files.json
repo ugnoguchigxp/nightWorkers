@@ -8,7 +8,6 @@
     { "id": "NW-LF-42", "path": "api/services/agent-runtime/codex-runtime-support.ts", "maxLines": 771, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-43", "path": "api/services/agent-runtime/native-api-runner/native-api-runner.ts", "maxLines": 925, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-44", "path": "api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts", "maxLines": 1019, "targetModule": "task-execution", "phase": 7 },
-    { "id": "NW-LF-48", "path": "api/mcp/nightworkers-codex-mcp.ts", "maxLines": 786, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-53", "path": "scripts/agent-ontology/core.mjs", "maxLines": 1028, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-54", "path": "api/db/schema.ts", "maxLines": 1167, "targetModule": "persistence", "phase": 8 },
     { "id": "NW-LF-55", "path": "api/db/bootstrap.ts", "maxLines": 1041, "targetModule": "persistence", "phase": 8 }
