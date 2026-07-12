@@ -3,6 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	readApplicationSettingSecrets,
+	writeApplicationSettingBundle,
+} from "../../api/services/settings/application-settings-store";
+import {
 	resolveStructuredLlmRoleRoute,
 	structuredLlmRouteKey,
 	validateStructuredLlmRoleRoutes,
@@ -67,6 +71,40 @@ function createDummySettings(): StructuredLlmProviderSettings {
 }
 
 describe("Structured LLM Role Routing", () => {
+	it("restores top-level and endpoint secrets from SQLite", () => {
+		writeApplicationSettingBundle(
+			"llm",
+			{
+				OPENAI_ENABLED: true,
+				providerEndpoints: [
+					{
+						id: "secret-endpoint",
+						name: "Secret endpoint",
+						kind: "openai",
+						enabled: true,
+						apiKey: "",
+						models: ["gpt-test"],
+					},
+				],
+			},
+			{
+				OPENAI_API_KEY: "top-level-secret",
+				providerEndpointApiKeys: {
+					"secret-endpoint": "endpoint-secret",
+				},
+			},
+		);
+		expect(readApplicationSettingSecrets("llm")).toMatchObject({
+			OPENAI_API_KEY: "top-level-secret",
+		});
+
+		const settings = readStructuredLlmProviderSettings();
+
+		expect(settings.OPENAI_API_KEY).toBe("top-level-secret");
+		expect(settings.providerEndpoints?.[0]?.apiKey).toBe("endpoint-secret");
+		expect(settings).not.toHaveProperty("providerEndpointApiKeys");
+	});
+
 	it("structuredLlmRouteKey returns correctly formatted key string", () => {
 		const key = structuredLlmRouteKey({
 			providerEndpointId: "ep-1",

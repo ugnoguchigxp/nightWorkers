@@ -25,6 +25,7 @@ function ensureSettingsTables() {
 	fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
 	execFileSync("sqlite3", [target], {
 		input: `
+	PRAGMA busy_timeout = 10000;
     CREATE TABLE IF NOT EXISTS application_settings (
       scope TEXT PRIMARY KEY NOT NULL,
       value_json TEXT NOT NULL,
@@ -56,14 +57,10 @@ function sqlString(value: string) {
 
 function readJsonRow(table: string, scope: ApplicationSettingsScope) {
 	ensureSettingsTables();
-	return execFileSync(
-		"sqlite3",
-		[
-			databasePath(),
-			`SELECT value_json FROM ${table} WHERE scope = ${sqlString(scope)}`,
-		],
-		{ encoding: "utf8" },
-	).trim();
+	return execFileSync("sqlite3", [databasePath()], {
+		input: `.timeout 10000\nSELECT value_json FROM ${table} WHERE scope = ${sqlString(scope)};\n`,
+		encoding: "utf8",
+	}).trim();
 }
 
 function writeJsonRow(
@@ -75,6 +72,7 @@ function writeJsonRow(
 	const now = Math.floor(Date.now() / 1000);
 	execFileSync("sqlite3", [databasePath()], {
 		input: `
+			PRAGMA busy_timeout = 10000;
       BEGIN IMMEDIATE;
       INSERT INTO ${table} (scope, value_json, revision, created_at, updated_at)
       VALUES (${sqlString(scope)}, ${sqlString(JSON.stringify(value))}, 1, ${now}, ${now})
@@ -90,12 +88,8 @@ function writeJsonRow(
 export function readApplicationSetting<T>(
 	scope: ApplicationSettingsScope,
 ): T | null {
-	try {
-		const value = readJsonRow("application_settings", scope);
-		return value ? (JSON.parse(value) as T) : null;
-	} catch {
-		return null;
-	}
+	const value = readJsonRow("application_settings", scope);
+	return value ? (JSON.parse(value) as T) : null;
 }
 
 export function writeApplicationSetting<T>(
@@ -109,12 +103,8 @@ export function writeApplicationSetting<T>(
 export function readApplicationSettingSecrets<T>(
 	scope: ApplicationSettingsScope,
 ): T | null {
-	try {
-		const value = readJsonRow("application_setting_secrets", scope);
-		return value ? (JSON.parse(value) as T) : null;
-	} catch {
-		return null;
-	}
+	const value = readJsonRow("application_setting_secrets", scope);
+	return value ? (JSON.parse(value) as T) : null;
 }
 
 export function writeApplicationSettingSecrets<T>(
@@ -125,6 +115,32 @@ export function writeApplicationSettingSecrets<T>(
 	return value;
 }
 
+export function writeApplicationSettingBundle<TPublic, TSecrets>(
+	scope: ApplicationSettingsScope,
+	publicValue: TPublic,
+	secretValue: TSecrets,
+): { publicValue: TPublic; secretValue: TSecrets } {
+	ensureSettingsTables();
+	const now = Math.floor(Date.now() / 1000);
+	const upsert = (table: string, value: unknown) => `
+		INSERT INTO ${table} (scope, value_json, revision, created_at, updated_at)
+		VALUES (${sqlString(scope)}, ${sqlString(JSON.stringify(value))}, 1, ${now}, ${now})
+		ON CONFLICT(scope) DO UPDATE SET
+			value_json = excluded.value_json,
+			revision = ${table}.revision + 1,
+			updated_at = excluded.updated_at;`;
+	execFileSync("sqlite3", [databasePath()], {
+		input: `
+			PRAGMA busy_timeout = 10000;
+			BEGIN IMMEDIATE;
+			${upsert("application_settings", publicValue)}
+			${upsert("application_setting_secrets", secretValue)}
+			COMMIT;
+		`,
+	});
+	return { publicValue, secretValue };
+}
+
 export function archiveLegacySettingsFile(filePath: string) {
 	if (process.env.NODE_ENV === "test" || !fs.existsSync(filePath)) return;
 	const stat = fs.statSync(filePath);
@@ -133,7 +149,8 @@ export function archiveLegacySettingsFile(filePath: string) {
 	const now = Math.floor(Date.now() / 1000);
 	ensureSettingsTables();
 	execFileSync("sqlite3", [databasePath()], {
-		input: `INSERT OR REPLACE INTO application_setting_migrations
+		input: `PRAGMA busy_timeout = 10000;
+		INSERT OR REPLACE INTO application_setting_migrations
       (source, source_fingerprint, imported_at, completed_at, result_json)
       VALUES (
         ${sqlString(filePath)},

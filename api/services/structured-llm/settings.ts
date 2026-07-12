@@ -8,7 +8,10 @@ import {
 } from "../../../shared/llm-role";
 import { getRuntimePaths } from "../../runtime/paths";
 import { mergeCodexModelOptionsIntoEndpoints } from "../codex-global-config/status";
-import { readApplicationSetting } from "../settings/application-settings-store";
+import {
+	readApplicationSetting,
+	readApplicationSettingSecrets,
+} from "../settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
 
 export type StructuredLlmProviderSettings = {
@@ -178,7 +181,25 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 		const sqliteSettings = testSettingsPath
 			? null
 			: readApplicationSetting<StructuredLlmProviderSettings>("llm");
-		if (sqliteSettings) return sqliteSettings;
+		if (sqliteSettings) {
+			const secrets =
+				readApplicationSettingSecrets<
+					Partial<StructuredLlmProviderSettings> & {
+						providerEndpointApiKeys?: Record<string, string>;
+					}
+				>("llm") ?? {};
+			const { providerEndpointApiKeys, ...topLevelSecrets } = secrets;
+			return {
+				...sqliteSettings,
+				...topLevelSecrets,
+				providerEndpoints: (sqliteSettings.providerEndpoints || []).map(
+					(endpoint) => ({
+						...endpoint,
+						apiKey: providerEndpointApiKeys?.[endpoint.id] || "",
+					}),
+				),
+			};
+		}
 		const runtimeSettingsPath =
 			testSettingsPath ||
 			path.join(getRuntimePaths().settingsDir, "llm-settings.json");

@@ -1,5 +1,7 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { getRuntimePaths, isDesktopMode } from "./paths";
 
 const JWT_SECRET_BYTES = 48;
@@ -79,6 +81,7 @@ export function ensureDesktopRuntimeBootstrap(
 
 export function ensureRuntimeDatabasePath(
 	env: NodeJS.ProcessEnv = process.env,
+	options: { legacyDatabaseUrl?: string } = {},
 ) {
 	if (
 		env.NODE_ENV === "test" ||
@@ -89,5 +92,28 @@ export function ensureRuntimeDatabasePath(
 	}
 	const paths = getRuntimePaths(env);
 	fs.mkdirSync(paths.runtimeRoot, { recursive: true, mode: 0o700 });
+	const legacyPath = localDatabasePath(
+		options.legacyDatabaseUrl ?? env.DATABASE_URL,
+	);
+	if (
+		legacyPath &&
+		path.resolve(legacyPath) !== path.resolve(paths.databasePath) &&
+		fs.existsSync(legacyPath) &&
+		!fs.existsSync(paths.databasePath)
+	) {
+		const escapedTarget = paths.databasePath.replaceAll("'", "''");
+		execFileSync("sqlite3", [legacyPath], {
+			input: `.timeout 10000\n.backup '${escapedTarget}'\n`,
+		});
+		fs.chmodSync(paths.databasePath, 0o600);
+	}
 	env.DATABASE_URL = `file:${paths.databasePath}`;
+}
+
+function localDatabasePath(databaseUrl?: string) {
+	const value = databaseUrl?.trim();
+	if (!value) return null;
+	if (value.startsWith("file:")) return value.slice("file:".length);
+	if (value.includes(":")) return null;
+	return value;
 }

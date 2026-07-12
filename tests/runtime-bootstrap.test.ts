@@ -1,8 +1,12 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureDesktopRuntimeBootstrap } from "../api/runtime/bootstrap";
+import {
+	ensureDesktopRuntimeBootstrap,
+	ensureRuntimeDatabasePath,
+} from "../api/runtime/bootstrap";
 import { getRuntimePaths } from "../api/runtime/paths";
 
 const tempDirs: string[] = [];
@@ -97,5 +101,61 @@ describe("desktop runtime bootstrap", () => {
 		ensureDesktopRuntimeBootstrap(secondEnv);
 
 		expect(secondEnv.JWT_SECRET).toBe(firstEnv.JWT_SECRET);
+	});
+});
+
+describe("runtime database path", () => {
+	it("backs up an existing configured SQLite database into the fixed runtime path", () => {
+		const root = makeRuntimeDir();
+		const source = path.join(root, "legacy.db");
+		const runtimeDir = path.join(root, "runtime");
+		execFileSync("sqlite3", [source], {
+			input:
+				"CREATE TABLE marker (value TEXT); INSERT INTO marker VALUES ('preserved');",
+		});
+		const env: NodeJS.ProcessEnv = {
+			NODE_ENV: "development",
+			NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
+			DATABASE_URL: `file:${source}`,
+		};
+
+		ensureRuntimeDatabasePath(env);
+
+		const target = path.join(runtimeDir, "sqlite.db");
+		expect(env.DATABASE_URL).toBe(`file:${target}`);
+		expect(
+			execFileSync("sqlite3", [target, "SELECT value FROM marker"], {
+				encoding: "utf8",
+			}).trim(),
+		).toBe("preserved");
+	});
+
+	it("does not overwrite an existing fixed runtime database", () => {
+		const root = makeRuntimeDir();
+		const source = path.join(root, "legacy.db");
+		const runtimeDir = path.join(root, "runtime");
+		const target = path.join(runtimeDir, "sqlite.db");
+		fs.mkdirSync(runtimeDir);
+		execFileSync("sqlite3", [source], {
+			input:
+				"CREATE TABLE marker (value TEXT); INSERT INTO marker VALUES ('legacy');",
+		});
+		execFileSync("sqlite3", [target], {
+			input:
+				"CREATE TABLE marker (value TEXT); INSERT INTO marker VALUES ('current');",
+		});
+		const env: NodeJS.ProcessEnv = {
+			NODE_ENV: "development",
+			NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
+			DATABASE_URL: `file:${source}`,
+		};
+
+		ensureRuntimeDatabasePath(env);
+
+		expect(
+			execFileSync("sqlite3", [target, "SELECT value FROM marker"], {
+				encoding: "utf8",
+			}).trim(),
+		).toBe("current");
 	});
 });

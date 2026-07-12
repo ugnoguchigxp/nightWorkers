@@ -17,8 +17,7 @@ import {
 	archiveLegacySettingsFile,
 	readApplicationSetting,
 	readApplicationSettingSecrets,
-	writeApplicationSetting,
-	writeApplicationSettingSecrets,
+	writeApplicationSettingBundle,
 } from "../services/settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "../services/structured-llm/endpoint-id-migration";
 
@@ -146,8 +145,7 @@ const writeRuntimeSettings = (settings: LlmSettings) => {
 	publicSettings.providerEndpoints = (settings.providerEndpoints || []).map(
 		({ apiKey: _apiKey, ...endpoint }) => ({ ...endpoint, apiKey: "" }),
 	);
-	writeApplicationSetting("llm", publicSettings);
-	writeApplicationSettingSecrets("llm", {
+	writeApplicationSettingBundle("llm", publicSettings, {
 		...secrets,
 		providerEndpointApiKeys: endpointApiKeys,
 	});

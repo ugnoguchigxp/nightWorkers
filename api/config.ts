@@ -16,15 +16,16 @@ import {
 	writeApplicationSettingSecrets,
 } from "./services/settings/application-settings-store";
 
-const configuredDatabaseUrlBeforeDotenv = process.env.DATABASE_URL?.trim();
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
+const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
 isolateDirectTestDatabase(process.env);
 ensureDesktopRuntimeBootstrap(process.env, {
 	preserveConfiguredDatabaseUrl:
-		Boolean(configuredDatabaseUrlBeforeDotenv) ||
-		process.env.NODE_ENV !== "production",
+		Boolean(configuredDatabaseUrl) || process.env.NODE_ENV !== "production",
 });
-ensureRuntimeDatabasePath(process.env);
+ensureRuntimeDatabasePath(process.env, {
+	legacyDatabaseUrl: configuredDatabaseUrl,
+});
 applyPersistedBootstrapSettings(process.env);
 
 function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
