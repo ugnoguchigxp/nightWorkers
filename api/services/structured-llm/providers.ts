@@ -1,9 +1,9 @@
 import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
-import { estimateLlmUsage, normalizeProviderUsage } from "../llm-usage";
+import { normalizeProviderUsage } from "../llm-usage";
 import { shouldOmitCodexOutputSchema } from "./codex-output-schema";
 import { emitSupervisorLlmDebugEvent, rejectProviderActivity } from "./events";
-import { readSchemaFirstFixtureOutput } from "./fixture";
+import { callFixtureProvider } from "./fixture-provider";
 import {
 	buildOpenAIChatCompletionBody,
 	readOpenAIChatCompletionStream,
@@ -133,51 +133,6 @@ export async function callProviderToolTurn(input: {
 			};
 		},
 	});
-}
-
-function callFixtureProvider(
-	input: Parameters<typeof callProvider>[0],
-): ProviderCallResult {
-	if (process.env.NODE_ENV === "production") {
-		throw new Error("Fixture/test provider is not available in production.");
-	}
-	const providerDebug = {
-		provider: input.provider,
-		round: input.options.round ?? null,
-	};
-	input.setProviderDebug(providerDebug);
-	if (input.options.schemaFirst) {
-		return buildFixtureProviderResult(
-			readSchemaFirstFixtureOutput(input.options.round),
-			input,
-			providerDebug,
-		);
-	}
-
-	const output = process.env.SUPERVISOR_FIXTURE_OUTPUT;
-	if (!output?.trim()) {
-		throw new Error(
-			"Fixture provider requires SUPERVISOR_FIXTURE_OUTPUT to be set.",
-		);
-	}
-	return buildFixtureProviderResult(output, input, providerDebug);
-}
-
-function buildFixtureProviderResult(
-	content: string,
-	input: Parameters<typeof callProvider>[0],
-	providerDebug: Record<string, unknown>,
-): ProviderCallResult {
-	return {
-		content,
-		usage: estimateLlmUsage({
-			systemPrompt: input.systemPrompt,
-			userPrompt: input.userPrompt,
-			responseText: content,
-		}),
-		model: null,
-		providerDebug,
-	};
 }
 
 function buildCodexStructuredExecutionMode(input: {
