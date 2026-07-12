@@ -281,7 +281,7 @@ function buildOntologyGuidance(context: AgentRunContext) {
 	];
 }
 
-function readOntologyMcpEnabled(context: AgentRunContext) {
+export function readOntologyMcpEnabled(context: AgentRunContext) {
 	const snapshot = context.contextSnapshot as Record<string, unknown>;
 	const ontologyMcp = snapshot.ontologyMcp;
 	if (

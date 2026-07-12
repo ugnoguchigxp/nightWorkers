@@ -243,7 +243,7 @@ module A -> module B public API or explicit port
 - [x] NW-LF-40 `api/services/structured-llm/providers.ts` (596): fixture、Codex、Azure、OpenAI、Bedrock adapterを分離し、provider dispatch/retry/互換正規化をfacadeに維持した。
 - [x] NW-LF-41 `api/services/agent-runtime/CodexAgentRuntime.ts` (584): session lifecycleのfacadeを維持し、closeout/retry/terminal policyとrun-loop supportを分離した。
 - [x] NW-LF-42 `api/services/agent-runtime/codex-runtime-support.ts` (455): config、prompt support、failure mapping、environment supportとread evidenceを分ける。`codex-runtime-evidence.ts`へ監査・読取証跡を抽出。
-- [ ] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (211 facade + 761 coordinator): runtime loopをuse case coordinatorへ抽出済み。coordinator本体のturn/tool loop分割を継続する。
+- [x] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (211 facade + 563 coordinator): runtime loop facadeを維持し、route/context budget preparationを専用use caseへ分離した。coordinatorを600行以下に抑え、turn/tool/closeout契約を維持した。
 - [x] NW-LF-44 `api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts` (565): startup履歴/仕様補助、Todo alignment、failure/route resolutionをsupport moduleへ分離し、startup gate契約を維持した。
 - [x] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677 → 208): tool manifestを`native-api-tool-manifest.ts`へ分離し、policy/handler binding facadeと公開契約を維持した。
 - [x] NW-LF-46 `api/services/worker-tools/todo-list.ts` (862 → 515): Todo context/repository境界を`todo-list-context.ts`、response mappingを`todo-list-response.ts`へ分離し、schema/state/DB契約を維持した。
@@ -381,7 +381,7 @@ bun test tests/nightworkers-workbench-routes/routes-workbench-04.test.ts
 
 対象: `NW-LF-40`〜`NW-LF-53`。
 
-進捗: NW-LF-40〜NW-LF-42、NW-LF-44〜NW-LF-53（NW-LF-50〜NW-LF-53を含む）完了。NW-LF-43が継続中。
+進捗: NW-LF-40〜NW-LF-53（NW-LF-50〜NW-LF-53を含む）完了。
 
 最も高リスクのPhaseとする。Run state、runtime loop、provider transport、tool、Todo、MCPを個別port/adapterへ分ける。Supervisorのworkflow判断はpromptとskill routing側に維持する。LLM本文が返った場合にprovider側の固定文へ差し替える挙動は導入しない。
 

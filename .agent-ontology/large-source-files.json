@@ -2,7 +2,6 @@
   "version": 1,
   "lineLimit": 600,
   "entries": [
-    { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
-    { "id": "NW-LF-43", "path": "api/services/agent-runtime/native-api-runner/native-api-run-coordinator.ts", "maxLines": 761, "targetModule": "task-execution", "phase": 7 }
+    { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 }
   ]
 }
