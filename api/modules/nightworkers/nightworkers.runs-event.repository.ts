@@ -1,0 +1,227 @@
+import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { db } from "../../db/client";
+import { withSqliteBusyRetry } from "../../db/retry";
+import { artifacts, taskEvents, taskRuns } from "../../db/schema";
+import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
+import { normalizeRunEventToLegacy } from "../../services/run-events/normalizer";
+import type { RunEventBase } from "../../services/run-events/types";
+import {
+	enqueueActivityEvent,
+	runEventToActivityKind,
+	runEventToActivityStatus,
+	runEventToActivityText,
+	runEventToActivityTurnId,
+	schemaFirstAgentEventType,
+	schemaFirstPayload,
+	shouldProjectRunEventToActivity,
+} from "./nightworkers.activity.repository";
+import type { JsonRecord } from "./nightworkers.json-adapters";
+import { readRunEventPayload } from "./nightworkers.json-adapters";
+import { isSqliteUniqueConstraintError } from "./nightworkers.runs.repository";
+
+export async function createTaskEvent(data: {
+	taskRunId: string;
+	type: string;
+	message: string;
+	seq?: number;
+	actor?: string;
+	eventType?: string | null;
+	payloadJson?: unknown;
+	timestamp?: Date;
+}) {
+	const maxAttempts = data.seq === undefined ? 5 : 1;
+	let lastError: unknown;
+	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		try {
+			return await withSqliteBusyRetry(() =>
+				db.transaction(async (tx) => {
+					let seq = data.seq;
+					if (seq === undefined) {
+						const result = await tx
+							.select({
+								maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)`,
+							})
+							.from(taskEvents)
+							.where(eq(taskEvents.taskRunId, data.taskRunId));
+						seq = (result[0]?.maxSeq || 0) + 1;
+					}
+					const [event] = await tx
+						.insert(taskEvents)
+						.values({ ...data, seq })
+						.returning();
+					return event;
+				}),
+			);
+		} catch (error) {
+			lastError = error;
+			if (data.seq !== undefined || !isSqliteUniqueConstraintError(error))
+				throw error;
+		}
+	}
+	throw lastError;
+}
+
+export async function createRunEvent(
+	event: RunEventBase,
+	options?: { legacyPayload?: unknown; payloadJson?: Record<string, unknown> },
+) {
+	if (event.type === "model.response_delta") return null;
+
+	const normalized = normalizeRunEventToLegacy({
+		event,
+		legacyPayload: options?.legacyPayload,
+	});
+	const payloadJson = {
+		...normalized.payloadJson,
+		...(options?.payloadJson || {}),
+	};
+	const created = await createTaskEvent({
+		taskRunId: event.runId,
+		actor: normalized.actor,
+		type: normalized.type,
+		eventType: normalized.eventType,
+		message: normalized.message,
+		payloadJson,
+		timestamp: normalized.timestamp,
+	});
+	if (!created) return created;
+
+	const { payload, runEvent: currentRunEvent } = readRunEventPayload(
+		created.payloadJson,
+	);
+	if (!currentRunEvent) return created;
+
+	const patchedPayload = {
+		...payload,
+		...(options?.payloadJson || {}),
+		runEvent: {
+			...currentRunEvent,
+			id: created.id,
+			seq: created.seq,
+			runId: currentRunEvent.runId || created.taskRunId,
+		},
+	};
+
+	const [updated] = await withSqliteBusyRetry(() =>
+		db
+			.update(taskEvents)
+			.set({ payloadJson: patchedPayload })
+			.where(eq(taskEvents.id, created.id))
+			.returning(),
+	);
+	const finalEvent = updated ?? { ...created, payloadJson: patchedPayload };
+	const patchedRunEvent =
+		patchedPayload.runEvent && typeof patchedPayload.runEvent === "object"
+			? (patchedPayload.runEvent as JsonRecord)
+			: {};
+	let taskId =
+		event.taskId ||
+		(typeof patchedRunEvent.taskId === "string"
+			? patchedRunEvent.taskId
+			: null);
+	if (!taskId) {
+		const [run] = await withSqliteBusyRetry(() =>
+			db.select().from(taskRuns).where(eq(taskRuns.id, event.runId)),
+		);
+		taskId = run?.taskId;
+	}
+	if (taskId) {
+		const agentEventType = schemaFirstAgentEventType(patchedPayload);
+		const projectToActivity = shouldProjectRunEventToActivity({
+			eventType: event.type,
+			agentEventType,
+		});
+		if (!projectToActivity) {
+			nightWorkersRealtimeBroker.publish(taskId, {
+				type: "task_event_created",
+				runId: event.runId,
+				event: finalEvent,
+			});
+			return finalEvent;
+		}
+		await enqueueActivityEvent({
+			taskId,
+			runId: event.runId,
+			turnId: runEventToActivityTurnId({
+				runId: event.runId,
+				eventType: event.type,
+				agentEventType,
+			}),
+			runSeq: finalEvent.seq,
+			kind: runEventToActivityKind(event.type, finalEvent.type, agentEventType),
+			source:
+				event.actor === "worker"
+					? "worker"
+					: event.actor === "tool"
+						? "tool"
+						: event.actor === "supervisor"
+							? "supervisor"
+							: event.actor === "runtime"
+								? "runtime"
+								: event.actor === "human"
+									? "user"
+									: "system",
+			status: runEventToActivityStatus({
+				eventType: event.type,
+				legacyType: finalEvent.type,
+				agentEventType,
+			}),
+			text: runEventToActivityText({
+				eventType: event.type,
+				agentEventType,
+				message: event.message,
+				payload: patchedPayload,
+			}),
+			payloadJson: {
+				runEvent: patchedPayload.runEvent,
+				legacyEvent: finalEvent,
+				legacyPayload: options?.legacyPayload ?? null,
+				agentEventType,
+				payload: schemaFirstPayload(patchedPayload),
+			},
+			externalId: finalEvent.id,
+			dedupeKey: `task_event:${finalEvent.id}`,
+			createdAt: finalEvent.timestamp,
+		});
+		nightWorkersRealtimeBroker.publish(taskId, {
+			type: "task_event_created",
+			runId: event.runId,
+			event: finalEvent,
+		});
+	}
+	return finalEvent;
+}
+
+export async function listTaskEventsForRun(
+	taskRunId: string,
+	options?: { afterSeq?: number },
+) {
+	const predicates = [eq(taskEvents.taskRunId, taskRunId)];
+	if (typeof options?.afterSeq === "number") {
+		predicates.push(gt(taskEvents.seq, options.afterSeq));
+	}
+	return db
+		.select()
+		.from(taskEvents)
+		.where(and(...predicates))
+		.orderBy(taskEvents.seq, taskEvents.timestamp);
+}
+
+// --- Artifacts ---
+export async function createArtifact(data: {
+	runId: string;
+	kind: string;
+	path: string;
+	metadataJson?: unknown;
+}) {
+	const [artifact] = await db.insert(artifacts).values(data).returning();
+	return artifact;
+}
+
+export async function listArtifactsForRun(runId: string) {
+	return db
+		.select()
+		.from(artifacts)
+		.where(eq(artifacts.runId, runId))
+		.orderBy(desc(artifacts.createdAt));
+}

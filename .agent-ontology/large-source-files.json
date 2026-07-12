@@ -3,7 +3,6 @@
   "lineLimit": 600,
   "entries": [
     { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
-    { "id": "NW-LF-39", "path": "api/modules/nightworkers/nightworkers.runs.repository.ts", "maxLines": 864, "targetModule": "task-execution", "phase": 6 },
     { "id": "NW-LF-40", "path": "api/services/structured-llm/providers.ts", "maxLines": 1341, "targetModule": "llm-gateway", "phase": 7 },
     { "id": "NW-LF-41", "path": "api/services/agent-runtime/CodexAgentRuntime.ts", "maxLines": 936, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-42", "path": "api/services/agent-runtime/codex-runtime-support.ts", "maxLines": 771, "targetModule": "task-execution", "phase": 7 },

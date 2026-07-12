@@ -236,7 +236,7 @@ module A -> module B public API or explicit port
 
 - [x] NW-LF-37 `api/modules/nightworkers/nightworkers.workbench.service.ts` (1073 → 600): message command、Plan intake/handoff、gate/supportを分離し、既存service exportを互換維持した。
 - [x] NW-LF-38 `api/modules/nightworkers/nightworkers.activity.repository.ts` (748 → 371): persistence queue/append/queryを`nightworkers.activity-persistence.repository.ts`へ分離し、既存exportをfacadeで維持した。
-- [ ] NW-LF-39 `api/modules/nightworkers/nightworkers.runs.repository.ts` (864): Run command、Run query、event replay、row mappingをTask Executionへ分ける。
+- [x] NW-LF-39 `api/modules/nightworkers/nightworkers.runs.repository.ts` (864 → 561): event replay/artifactを`nightworkers.runs-event.repository.ts`、todo/state supportを`nightworkers.runs-support.ts`へ分離し、既存repository exportを維持した。
 
 ### Phase 7: Task Execution, LLM and MCP — 14 files
 

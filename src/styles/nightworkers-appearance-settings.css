@@ -66,6 +66,13 @@
 
 .nightworkers-shell
 	.nightworkers-appearance-options
+	button
+	> span.text-foreground {
+	color: var(--nw-text);
+}
+
+.nightworkers-shell
+	.nightworkers-appearance-options
 	.blueprint-design-option-preview {
 	border-color: var(--nw-border);
 	border-radius: var(--nw-control-radius);

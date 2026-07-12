@@ -568,3 +568,5 @@
 }
 
 .nightworkers-shell .nightworkers-artifact-export-error {
+	color: var(--nw-danger);
+}
