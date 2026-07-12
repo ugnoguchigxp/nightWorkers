@@ -257,8 +257,8 @@ module A -> module B public API or explicit port
 
 ### Phase 8: Persistence compatibility facade — 2 files
 
-- [ ] NW-LF-54 `api/db/schema.ts` (1167): domain固有tableを所有moduleのpersistence schemaへ寄せ、既存pathをre-export facadeにする。
-- [ ] NW-LF-55 `api/db/bootstrap.ts` (1041): domain bootstrap registration、legacy compatibility migration、startup orderを分ける。
+- [x] NW-LF-54 `api/db/schema.ts` (8 facade): base/task-execution/activity/llm-usage/blueprint persistence schemaへ分割し、既存pathをre-export facadeにした。
+- [x] NW-LF-55 `api/db/bootstrap.ts` (311): runtime/usage、task workflow、blueprint bootstrapを専用moduleへ分割し、startup orderをfacadeで維持した。
 
 ## 8. Implementation Phases
 
