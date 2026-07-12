@@ -43,7 +43,7 @@ describe("Overview module boundary", () => {
 		).toBe(false);
 		expect(exists("src/modules/nightworkers/types/overview.ts")).toBe(false);
 		expect(
-			read("src/modules/nightworkers/components/NightWorkersShell.tsx"),
+			read("src/modules/nightworkers/components/NightWorkersShellLayout.tsx"),
 		).toContain('from "@/modules/overview"');
 		expect(
 			read("src/modules/nightworkers/nightWorkersCommands.ts"),

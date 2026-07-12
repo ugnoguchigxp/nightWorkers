@@ -1,7 +1,5 @@
 {
   "version": 1,
   "lineLimit": 600,
-  "entries": [
-    { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 }
-  ]
+  "entries": []
 }
