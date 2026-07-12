@@ -58,6 +58,53 @@ export const taskRunCommitRecordSchema = z
 	})
 	.openapi("TaskRunCommitRecord");
 
+export const taskRunMergeRecordSchema = z.object({
+	id: z.string().uuid(),
+	runId: z.string().uuid(),
+	taskId: z.string().uuid(),
+	repositoryId: z.string().uuid(),
+	workspaceId: z.string().uuid(),
+	sourceBranch: z.string(),
+	sourceCommitSha: z.string(),
+	planTargetBranch: z.string(),
+	planTargetBaseSha: z.string(),
+	targetBranch: z.string(),
+	targetSelectedSha: z.string(),
+	observedTargetSha: z.string().nullable().optional(),
+	strategy: z.enum(["merge_commit", "squash", "fast_forward_only"]),
+	decision: z.enum(["undecided", "merge", "defer", "rework"]),
+	status: z.enum([
+		"decision_required",
+		"previewing",
+		"merge_ready",
+		"merging",
+		"merged",
+		"deferred",
+		"rework_requested",
+		"merge_blocked",
+		"merge_conflicted",
+		"failed",
+	]),
+	recordVersion: z.number().int().nonnegative(),
+	ciStatus: z.enum([
+		"not_required",
+		"pending",
+		"passed",
+		"failed",
+		"unavailable",
+	]),
+	mergeOrigin: z
+		.enum(["local", "already_ancestor", "provider"])
+		.nullable()
+		.optional(),
+	mergeCommitSha: z.string().nullable().optional(),
+	targetHeadAfter: z.string().nullable().optional(),
+	lastErrorCode: z.string().nullable().optional(),
+	lastErrorMessage: z.string().nullable().optional(),
+	createdAt: dateLikeSchema,
+	updatedAt: dateLikeSchema,
+});
+
 export const gitCloseoutBlockingCodeSchema = z
 	.enum([
 		"RUN_NOT_FOUND",
@@ -99,6 +146,15 @@ export const gitCloseoutUiStateSchema = z
 		"pushed",
 		"needs_human",
 		"failed",
+		"integration_decision_required",
+		"merge_preview_running",
+		"merge_ready",
+		"merge_running",
+		"merged",
+		"integration_deferred",
+		"rework_requested",
+		"merge_blocked",
+		"merge_conflicted",
 	])
 	.openapi("GitCloseoutUiState");
 
@@ -113,6 +169,7 @@ export const gitCloseoutStateSchema = z
 		blockingReason: z.string().nullable(),
 		nextAction: z.string().nullable(),
 		commitRecord: taskRunCommitRecordSchema.nullable(),
+		mergeRecord: taskRunMergeRecordSchema.nullable(),
 		requiredReview: z.object({
 			reviewSessionId: z.string().uuid().nullable(),
 			testCoverageStatus: z

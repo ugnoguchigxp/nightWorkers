@@ -3,6 +3,10 @@ import path from "node:path";
 import type { PlanModeCapability } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { getRuntimePaths } from "../../runtime/paths";
 import {
+	DEFAULT_RUNTIME_LOG_RETENTION,
+	type RuntimeLogRetentionConfig,
+} from "../../runtime/runtime-log-writer";
+import {
 	archiveLegacySettingsFile,
 	readApplicationSetting,
 	writeApplicationSetting,
@@ -29,6 +33,12 @@ export type LlmUsageSettings = {
 	promptPartObservabilityEnabled: boolean;
 };
 
+export type DataRetentionSettings = RuntimeLogRetentionConfig & {
+	usageDataDays: number;
+	auditEventDays: number;
+	sweepIntervalMinutes: number;
+};
+
 export type GeneralSettings = {
 	timezone: string;
 	language: NightWorkersLanguage;
@@ -40,6 +50,7 @@ export type GeneralSettings = {
 	};
 	planMode: PlanModeSettings;
 	llmUsage: LlmUsageSettings;
+	dataRetention: DataRetentionSettings;
 };
 
 export type FxRateCache = {
@@ -92,6 +103,12 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
 	},
 	llmUsage: {
 		promptPartObservabilityEnabled: true,
+	},
+	dataRetention: {
+		...DEFAULT_RUNTIME_LOG_RETENTION,
+		usageDataDays: 30,
+		auditEventDays: 90,
+		sweepIntervalMinutes: 60,
 	},
 };
 
@@ -231,7 +248,45 @@ export function normalizeGeneralSettings(
 		},
 		planMode: normalizePlanModeSettings(input.planMode),
 		llmUsage: normalizeLlmUsageSettings(input.llmUsage),
+		dataRetention: normalizeDataRetentionSettings(input.dataRetention),
 	};
+}
+
+export function normalizeDataRetentionSettings(
+	input: unknown,
+): DataRetentionSettings {
+	const record = isRecord(input) ? input : {};
+	const defaults = DEFAULT_GENERAL_SETTINGS.dataRetention;
+	const positiveInt = (key: keyof DataRetentionSettings, max: number) => {
+		const value = record[key];
+		return typeof value === "number" &&
+			Number.isSafeInteger(value) &&
+			value > 0 &&
+			value <= max
+			? value
+			: defaults[key];
+	};
+	const result: DataRetentionSettings = {
+		apiLogDays: positiveInt("apiLogDays", 7),
+		llmRawLogDays: positiveInt("llmRawLogDays", 3),
+		usageDataDays: positiveInt("usageDataDays", 30),
+		auditEventDays: positiveInt("auditEventDays", 90),
+		apiLogMaxBytes: positiveInt("apiLogMaxBytes", 128 * 1024 * 1024),
+		llmRawLogsMaxBytes: positiveInt("llmRawLogsMaxBytes", 256 * 1024 * 1024),
+		runtimeLogsMaxBytes: positiveInt("runtimeLogsMaxBytes", 512 * 1024 * 1024),
+		apiSegmentMaxBytes: positiveInt("apiSegmentMaxBytes", 32 * 1024 * 1024),
+		llmSegmentMaxBytes: positiveInt("llmSegmentMaxBytes", 64 * 1024 * 1024),
+		sweepIntervalMinutes: positiveInt("sweepIntervalMinutes", 24 * 60),
+	};
+	if (result.apiLogMaxBytes > result.runtimeLogsMaxBytes)
+		result.apiLogMaxBytes = defaults.apiLogMaxBytes;
+	if (result.llmRawLogsMaxBytes > result.runtimeLogsMaxBytes)
+		result.llmRawLogsMaxBytes = defaults.llmRawLogsMaxBytes;
+	if (result.apiSegmentMaxBytes > result.apiLogMaxBytes)
+		result.apiSegmentMaxBytes = defaults.apiSegmentMaxBytes;
+	if (result.llmSegmentMaxBytes > result.llmRawLogsMaxBytes)
+		result.llmSegmentMaxBytes = defaults.llmSegmentMaxBytes;
+	return result;
 }
 
 export function normalizeLlmUsageSettings(input: unknown): LlmUsageSettings {

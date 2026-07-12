@@ -423,6 +423,15 @@ function QueueItem({
 			<div className="mt-1 text-slate-500 text-xs">
 				{getRelativeTimestamp(entry.createdAt)}
 			</div>
+			{entry.workspaceRequired && !entry.claimReady ? (
+				<div className="mt-2 text-amber-300 text-xs">
+					Git workspace を準備中
+				</div>
+			) : entry.workspaceRequired && entry.workspaceId ? (
+				<div className="mt-2 text-emerald-300 text-xs">
+					専用 Git workspace 確定済み
+				</div>
+			) : null}
 		</button>
 	);
 }

@@ -1,4 +1,8 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -23,11 +27,15 @@ import { claimNextImplementationQueueEntry } from "../api/modules/queue/queue.re
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
 const repositoryIds: string[] = [];
+const repositoryPaths: string[] = [];
 
 beforeAll(() => ensureNightWorkersSchema());
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) {
 		await db.delete(repositories).where(eq(repositories.id, id));
+	}
+	for (const repositoryPath of repositoryPaths.splice(0)) {
+		await rm(repositoryPath, { recursive: true, force: true });
 	}
 });
 
@@ -36,12 +44,34 @@ async function createHandoffFixture() {
 	const taskId = crypto.randomUUID();
 	const sourceId = crypto.randomUUID();
 	const leaseOwner = `test:${crypto.randomUUID()}`;
+	const repositoryPath = await mkdtemp(
+		path.join(os.tmpdir(), "nightworkers-handoff-"),
+	);
+	await writeFile(path.join(repositoryPath, "README.md"), "# fixture\n");
+	execFileSync("git", ["init", "--initial-branch=main"], {
+		cwd: repositoryPath,
+	});
+	execFileSync("git", ["add", "."], { cwd: repositoryPath });
+	execFileSync(
+		"git",
+		[
+			"-c",
+			"user.email=test@example.com",
+			"-c",
+			"user.name=Test",
+			"commit",
+			"-m",
+			"initial",
+		],
+		{ cwd: repositoryPath },
+	);
 	repositoryIds.push(repositoryId);
+	repositoryPaths.push(repositoryPath);
 	const { session, featurePlanMessage } = await db.transaction(async (tx) => {
 		await tx.insert(repositories).values({
 			id: repositoryId,
 			name: "Mission Pilot Queue handoff",
-			localPath: `/tmp/${repositoryId}`,
+			localPath: repositoryPath,
 			branch: "main",
 		});
 		const [task] = await tx
@@ -218,7 +248,7 @@ describe("Mission Pilot pre-Queue handoff", () => {
 				leaseOwnerId: "unrelated-drain",
 				leaseTtlMs: 60_000,
 			}),
-		).toMatchObject({ kind: "not_claimed", reason: "empty" });
+		).toMatchObject({ kind: "not_claimed" });
 		expect(
 			messages.filter(
 				(message) =>

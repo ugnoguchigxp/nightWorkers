@@ -45,7 +45,7 @@ describe("desktop runtime bootstrap", () => {
 		expect(fs.existsSync(path.join(paths.secretsDir, "jwt-secret"))).toBe(true);
 	});
 
-	it("defaults desktop runtime files under the resource root data directory", () => {
+	it("defaults desktop runtime files under the resource root .nightworkers directory", () => {
 		const resourceDir = makeRuntimeDir();
 		const env: NodeJS.ProcessEnv = {
 			NIGHTWORKERS_DESKTOP: "1",
@@ -56,9 +56,9 @@ describe("desktop runtime bootstrap", () => {
 		ensureDesktopRuntimeBootstrap(env);
 		const paths = getRuntimePaths(env);
 
-		expect(paths.runtimeRoot).toBe(path.join(resourceDir, "data"));
+		expect(paths.runtimeRoot).toBe(path.join(resourceDir, ".nightworkers"));
 		expect(env.DATABASE_URL).toBe(
-			`file:${path.join(resourceDir, "data/sqlite.db")}`,
+			`file:${path.join(resourceDir, ".nightworkers/sqlite.db")}`,
 		);
 		expect(fs.existsSync(paths.runtimeRoot)).toBe(true);
 		expect(fs.existsSync(paths.settingsDir)).toBe(true);

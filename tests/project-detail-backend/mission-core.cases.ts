@@ -268,7 +268,7 @@ describe("Project Detail backend mission core", () => {
 				"import { answer } from '../src/app';\nvoid answer;\n",
 				"utf8",
 			);
-			git(repoRoot, ["init"]);
+			git(repoRoot, ["init", "-b", "main"]);
 			git(repoRoot, ["config", "user.email", "test@example.com"]);
 			git(repoRoot, ["config", "user.name", "Test User"]);
 			git(repoRoot, ["add", "."]);

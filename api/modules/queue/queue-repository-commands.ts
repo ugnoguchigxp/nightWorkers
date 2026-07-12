@@ -19,6 +19,7 @@ import {
 	SEQUENCE_TERMINAL_BLOCKER_STATUSES,
 	type TaskExecutionType,
 } from "./queue-repository-row-mapper";
+import { workspaceClaimSkipEvidence } from "./queue-workspace-claim-gate";
 
 export async function createImplementationQueueEntry(
 	data: {
@@ -508,6 +509,11 @@ export async function claimNextImplementationQueueEntry(
 			return { kind: "not_claimed", reason: "empty", skipped };
 
 		for (const candidate of candidates) {
+			const workspaceSkip = await workspaceClaimSkipEvidence(tx, candidate);
+			if (workspaceSkip) {
+				skipped.push(workspaceSkip);
+				continue;
+			}
 			const lockKey = resolveImplementationQueueExecutionLockKey(candidate);
 			const sequenceState = await resolveSequenceReadiness(tx, candidate);
 			const lockState = await resolveSchedulingLockState(

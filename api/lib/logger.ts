@@ -1,7 +1,11 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import pino from "pino";
 import { getRuntimePaths } from "../runtime/paths";
+import {
+	DEFAULT_RUNTIME_LOG_RETENTION,
+	type RuntimeLogRetentionConfig,
+	RuntimeLogWriter,
+} from "../runtime/runtime-log-writer";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -52,11 +56,82 @@ const API_LOG_PATH = path.join(LOG_DIR, "api.log");
 const TRACE_LOG_PATH = path.join(LOG_DIR, "supervisor-trace.log");
 const LLM_TRACE_LOG_PATH = path.join(LOG_DIR, "llm-trace.jsonl");
 
+let runtimeLogRetention: RuntimeLogRetentionConfig = {
+	...DEFAULT_RUNTIME_LOG_RETENTION,
+};
+const runtimeLogWriter = new RuntimeLogWriter(
+	LOG_DIR,
+	() => runtimeLogRetention,
+);
+
+export function configureRuntimeLogRetention(
+	settings: RuntimeLogRetentionConfig,
+) {
+	runtimeLogRetention = { ...settings };
+}
+
+export function sweepRuntimeLogs() {
+	return runtimeLogWriter.sweep();
+}
+
+export function flushRuntimeLogs() {
+	return runtimeLogWriter.flush();
+}
+
 function appendLogFile(filePath: string, line: string) {
-	void fs
-		.mkdir(path.dirname(filePath), { recursive: true })
-		.then(() => fs.appendFile(filePath, `${line}\n`, "utf-8"))
-		.catch(() => {});
+	const kind =
+		filePath === API_LOG_PATH
+			? "api"
+			: filePath === TRACE_LOG_PATH
+				? "supervisor"
+				: "llm";
+	void runtimeLogWriter.append(kind, line).catch(() => {});
+}
+
+function boundedText(value: string, maxBytes: number) {
+	if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+	const suffix = "\n...[truncated]...\n";
+	const available = Math.max(0, maxBytes - Buffer.byteLength(suffix, "utf8"));
+	const headBytes = Math.floor(available / 2);
+	const tailBytes = available - headBytes;
+	const bytes = Buffer.from(value, "utf8");
+	return `${bytes.subarray(0, headBytes).toString("utf8")}${suffix}${bytes.subarray(Math.max(0, bytes.length - tailBytes)).toString("utf8")}`;
+}
+
+function boundedLlmTraceLine(event: string, payload: Record<string, unknown>) {
+	const original = { timestamp: new Date().toISOString(), event, ...payload };
+	const record: Record<string, unknown> = { ...original };
+	for (const key of ["systemPrompt", "userPrompt", "rawContent"] as const) {
+		if (typeof record[key] !== "string") continue;
+		const originalBytes = Buffer.byteLength(record[key], "utf8");
+		if (originalBytes <= 512 * 1024) continue;
+		record[key] = boundedText(record[key] as string, 512 * 1024);
+		record[`${key}Truncated`] = true;
+		record[`${key}OriginalBytes`] = originalBytes;
+	}
+	let line = JSON.stringify(record);
+	if (Buffer.byteLength(line, "utf8") <= 2 * 1024 * 1024) return line;
+	if (record.providerDebug !== undefined) {
+		record.providerDebug = { truncated: true };
+		record.providerDebugTruncated = true;
+		line = JSON.stringify(record);
+	}
+	if (Buffer.byteLength(line, "utf8") <= 2 * 1024 * 1024) return line;
+	for (const key of ["systemPrompt", "userPrompt", "rawContent"] as const) {
+		if (typeof record[key] === "string")
+			record[key] = boundedText(record[key] as string, 128 * 1024);
+	}
+	line = JSON.stringify(record);
+	if (Buffer.byteLength(line, "utf8") <= 2 * 1024 * 1024) return line;
+	return JSON.stringify({
+		timestamp: original.timestamp,
+		event,
+		callId: payload.callId ?? null,
+		provider: payload.provider ?? null,
+		label: payload.label ?? null,
+		truncated: true,
+		originalBytes: Buffer.byteLength(line, "utf8"),
+	});
 }
 
 export function logHttpEvent(params: {
@@ -113,10 +188,6 @@ export function appendLlmTrace(
 	event: string,
 	payload: Record<string, unknown>,
 ) {
-	const line = JSON.stringify({
-		timestamp: new Date().toISOString(),
-		event,
-		...payload,
-	});
+	const line = boundedLlmTraceLine(event, payload);
 	appendLogFile(LLM_TRACE_LOG_PATH, line);
 }

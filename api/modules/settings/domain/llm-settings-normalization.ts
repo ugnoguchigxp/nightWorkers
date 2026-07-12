@@ -43,7 +43,10 @@ export const getStructuredProviderSetting = (
 	return "azure";
 };
 
-export function normalizeRawLlmSettings(input: RawLlmSettings): LlmSettings {
+export function normalizeRawLlmSettings(
+	input: RawLlmSettings,
+	options: { validateExplicitRoleRoutes?: boolean } = {},
+): LlmSettings {
 	const {
 		providerEndpoints: rawProviderEndpoints,
 		roleRoutes: rawRoleRoutes,
@@ -63,14 +66,20 @@ export function normalizeRawLlmSettings(input: RawLlmSettings): LlmSettings {
 		rawProviderEndpoints,
 		legacySettings,
 	);
-	validateExplicitRoleRoutesOrThrow(rawRoleRoutes, providerEndpoints);
+	const synchronizedLegacySettings = synchronizeLegacyProviderEnablement(
+		legacySettings,
+		providerEndpoints,
+	);
+	if (options.validateExplicitRoleRoutes !== false) {
+		validateExplicitRoleRoutesOrThrow(rawRoleRoutes, providerEndpoints);
+	}
 	const normalized = {
-		...legacySettings,
+		...synchronizedLegacySettings,
 		providerEndpoints,
 		roleRoutes: normalizeRoleRoutes(
 			rawRoleRoutes,
 			providerEndpoints,
-			legacySettings.ACTIVE_LLM_PROVIDER,
+			synchronizedLegacySettings.ACTIVE_LLM_PROVIDER,
 		),
 	};
 	return migrateStructuredLlmEndpointIds(normalized).settings;
@@ -107,6 +116,23 @@ export function normalizeProviderEndpoints(
 			),
 		};
 	});
+}
+
+export function synchronizeLegacyProviderEnablement(
+	legacySettings: Omit<LlmSettings, "providerEndpoints" | "roleRoutes">,
+	providerEndpoints: LlmProviderEndpoint[],
+): Omit<LlmSettings, "providerEndpoints" | "roleRoutes"> {
+	const isEnabled = (kind: LlmProviderEndpoint["kind"]) =>
+		providerEndpoints.some(
+			(endpoint) => endpoint.kind === kind && endpoint.enabled,
+		);
+	return {
+		...legacySettings,
+		AZURE_OPENAI_ENABLED: isEnabled("azure"),
+		OPENAI_ENABLED: isEnabled("openai"),
+		AWS_BEDROCK_ENABLED: isEnabled("bedrock"),
+		CODEX_ENABLED: isEnabled("codex"),
+	};
 }
 
 function dedupeProviderEndpoints(endpoints: LlmProviderEndpoint[]) {
@@ -328,7 +354,7 @@ function mergeRoleRoutes(
 	);
 	const targets = uniqueModelTargets([
 		...[normalized.primary, ...normalized.fallbacks].filter((target) =>
-			isValidModelTarget(target, providerEndpoints),
+			isConfiguredModelTarget(target, providerEndpoints),
 		),
 		...additionalRoutes.flatMap((route) => {
 			const additional = normalizeRoleRoute(
@@ -337,7 +363,7 @@ function mergeRoleRoutes(
 				providerEndpoints,
 			);
 			return [additional.primary, ...additional.fallbacks].filter((target) =>
-				isValidModelTarget(target, providerEndpoints),
+				isConfiguredModelTarget(target, providerEndpoints),
 			);
 		}),
 	]);
@@ -378,9 +404,9 @@ function normalizeRoleRoute(
 		};
 	}
 	const validFallbacks = fallbacks.filter((target) =>
-		isValidModelTarget(target, providerEndpoints),
+		isConfiguredModelTarget(target, providerEndpoints),
 	);
-	const primary = isValidModelTarget(normalizedPrimary, providerEndpoints)
+	const primary = isConfiguredModelTarget(normalizedPrimary, providerEndpoints)
 		? normalizedPrimary
 		: validFallbacks.shift() || defaultTarget;
 	return {
@@ -413,7 +439,7 @@ function uniqueModelTargets(targets: LlmModelTarget[]) {
 	});
 }
 
-function isValidModelTarget(
+function isConfiguredModelTarget(
 	target: LlmModelTarget,
 	providerEndpoints: LlmProviderEndpoint[],
 ) {
@@ -421,7 +447,7 @@ function isValidModelTarget(
 	const endpoint = providerEndpoints.find(
 		(item) => item.id === target.providerEndpointId,
 	);
-	return Boolean(endpoint?.enabled && endpoint.models.includes(target.model));
+	return Boolean(endpoint?.models.includes(target.model));
 }
 
 function findDefaultEndpointForProvider(
@@ -517,10 +543,6 @@ function validateRouteTarget(input: {
 	};
 	if (!endpoint) {
 		input.issues.push({ ...baseIssue, reason: "missing_endpoint" });
-		return;
-	}
-	if (!endpoint.enabled) {
-		input.issues.push({ ...baseIssue, reason: "disabled_endpoint" });
 		return;
 	}
 	if (!endpoint.models.includes(input.target.model)) {

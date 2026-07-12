@@ -187,6 +187,45 @@ export function commitRunGitCloseout(runId: string) {
 	return apiFetch(`/api/runs/${runId}/git/commit`, jsonRequest("POST", {}));
 }
 
+export function previewRunGitMerge(runId: string, expectedVersion: number) {
+	return apiFetch(
+		`/api/runs/${runId}/git/merge/preview`,
+		jsonRequest("POST", { expectedVersion }),
+	);
+}
+
+export function deferRunGitMerge(runId: string, expectedVersion: number) {
+	return apiFetch(
+		`/api/runs/${runId}/git/merge/defer`,
+		jsonRequest("POST", { expectedVersion }),
+	);
+}
+
+export function reworkRunGitMerge(runId: string, expectedVersion: number) {
+	return apiFetch(
+		`/api/runs/${runId}/git/merge/rework`,
+		jsonRequest("POST", { expectedVersion }),
+	);
+}
+
+export function overrideRunGitMergeTarget(
+	runId: string,
+	targetBranch: string,
+	expectedVersion: number,
+) {
+	return apiFetch(
+		`/api/runs/${runId}/git/merge/target`,
+		jsonRequest("PATCH", { targetBranch, expectedVersion }),
+	);
+}
+
+export function executeRunGitMerge(runId: string, expectedVersion: number) {
+	return apiFetch(
+		`/api/runs/${runId}/git/merge`,
+		jsonRequest("POST", { expectedVersion }),
+	);
+}
+
 export function browseFolders(targetPath?: string) {
 	const path = targetPath ? `?path=${encodeURIComponent(targetPath)}` : "";
 	return apiFetch(`/api/utils/browse-folders${path}`);

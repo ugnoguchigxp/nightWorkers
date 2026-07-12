@@ -134,6 +134,16 @@ export function SettingsLlmPanel({
 		);
 	};
 
+	const updateCodexEnabled = (enabled: boolean) => {
+		onChange("CODEX_ENABLED", enabled);
+		onChange(
+			"providerEndpoints",
+			settings.providerEndpoints.map((endpoint) =>
+				endpoint.kind === "codex" ? { ...endpoint, enabled } : endpoint,
+			),
+		);
+	};
+
 	const addEndpoint = () => {
 		const id = createEndpointId();
 		onChange("providerEndpoints", [
@@ -473,9 +483,7 @@ export function SettingsLlmPanel({
 								<input
 									type="checkbox"
 									checked={settings.CODEX_ENABLED}
-									onChange={(event) =>
-										onChange("CODEX_ENABLED", event.target.checked)
-									}
+									onChange={(event) => updateCodexEnabled(event.target.checked)}
 								/>
 								{t("settings.llm.codex.enable")}
 							</label>

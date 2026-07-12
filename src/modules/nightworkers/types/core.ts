@@ -112,7 +112,16 @@ export type GitCloseoutState = {
 		| "push_running"
 		| "pushed"
 		| "needs_human"
-		| "failed";
+		| "failed"
+		| "integration_decision_required"
+		| "merge_preview_running"
+		| "merge_ready"
+		| "merge_running"
+		| "merged"
+		| "integration_deferred"
+		| "rework_requested"
+		| "merge_blocked"
+		| "merge_conflicted";
 	blockingCode:
 		| "RUN_NOT_FOUND"
 		| "REPOSITORY_NOT_FOUND"
@@ -143,6 +152,34 @@ export type GitCloseoutState = {
 	blockingReason?: string | null;
 	nextAction?: string | null;
 	commitRecord: TaskRun["commitRecord"];
+	mergeRecord: {
+		id: string;
+		runId: string;
+		sourceBranch: string;
+		sourceCommitSha: string;
+		planTargetBranch: string;
+		planTargetBaseSha: string;
+		targetBranch: string;
+		targetSelectedSha: string;
+		observedTargetSha?: string | null;
+		strategy: "merge_commit" | "squash" | "fast_forward_only";
+		decision: "undecided" | "merge" | "defer" | "rework";
+		status:
+			| "decision_required"
+			| "previewing"
+			| "merge_ready"
+			| "merging"
+			| "merged"
+			| "deferred"
+			| "rework_requested"
+			| "merge_blocked"
+			| "merge_conflicted"
+			| "failed";
+		recordVersion: number;
+		ciStatus: "not_required" | "pending" | "passed" | "failed" | "unavailable";
+		lastErrorCode?: string | null;
+		lastErrorMessage?: string | null;
+	} | null;
 	requiredReview: {
 		reviewSessionId?: string | null;
 		testCoverageStatus?:
@@ -248,6 +285,9 @@ export type ImplementationQueueEntry = {
 	sequenceOrder?: number | null;
 	sequenceDependsOnEntryId?: string | null;
 	schedulingReason?: string | null;
+	claimReady?: boolean;
+	workspaceId?: string | null;
+	workspaceRequired?: boolean;
 	createdAt: unknown;
 	updatedAt: unknown;
 };

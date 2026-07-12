@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import { repositoryMaterializationIntentSchema } from "../../../shared/schemas/git-integration.schema";
 import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotQueueHandoffSchema,
@@ -16,6 +17,10 @@ import {
 	tasks,
 } from "../../db/schema";
 import { verificationDocuments } from "../../db/verification-schema";
+import {
+	ensureTaskGitWorkspace,
+	provisionTaskGitWorkspace,
+} from "../gitworktree/task-git-workspace.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as queueRepo from "../queue/queue.repository";
 import { prepareImplementationQueueAdmission } from "../queue/queue-management.service";
@@ -397,6 +402,42 @@ export async function admitMissionPilotQueueHandoff(input: {
 			"Committed Mission Pilot Queue handoff could not be verified",
 		);
 	}
+	const workspace = await ensureTaskGitWorkspace({
+		taskId: input.taskId,
+		planReviewId: input.planReviewId,
+		admissionKey: committedHandoff.admissionKey,
+		materializationIntent: repositoryMaterializationIntentSchema.safeParse(
+			record(
+				(
+					await db
+						.select()
+						.from(missionPilotContextSnapshots)
+						.where(eq(missionPilotContextSnapshots.sessionId, input.sessionId))
+						.orderBy(desc(missionPilotContextSnapshots.revision))
+						.limit(1)
+				)[0]?.contextJson,
+			)?.repositoryMaterializationIntent,
+		).data,
+	});
+	const provisionedWorkspace = await provisionTaskGitWorkspace(input.taskId);
+	if (
+		provisionedWorkspace.status !== "ready" &&
+		provisionedWorkspace.status !== "active"
+	) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"Dedicated Git workspace could not be provisioned",
+		);
+	}
+	await db
+		.update(implementationQueueEntries)
+		.set({
+			workspaceId: workspace.id,
+			workspaceRequired: true,
+			claimReady: false,
+			updatedAt: new Date(),
+		})
+		.where(eq(implementationQueueEntries.id, committedHandoff.queueEntryId));
 	publishMissionPilotUpdated(
 		input.taskId,
 		missionPilotRepo.toControlSummary(persistedSession),

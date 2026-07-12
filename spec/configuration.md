@@ -21,7 +21,7 @@ isolated testなど、SQLiteを開く前に必要なbootstrap値だけに限定�
 `DATABASE_URL`の指定は不要です。desktop modeではTauriが上記のdesktop変数を注入し、
 backendは`${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`を使用します。
 When `NIGHTWORKERS_RUNTIME_DIR` is not explicitly set, it defaults to
-`${NIGHTWORKERS_RESOURCE_DIR}/data`. If `JWT_SECRET` is not set, the backend
+`${NIGHTWORKERS_RESOURCE_DIR}/.nightworkers`. If `JWT_SECRET` is not set, the backend
 generates and stores one at `${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
 
 Desktop settings are stored under `${NIGHTWORKERS_RUNTIME_DIR}/settings`.
@@ -30,7 +30,7 @@ Desktop shell startup diagnostics are written to `desktop.log`, bundled Node
 sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
 `api.log`.
 Development mode stores runtime state under `.nightworkers`; desktop sidecar mode stores state under
-`${NIGHTWORKERS_RUNTIME_DIR}`, defaulting to `${NIGHTWORKERS_RESOURCE_DIR}/data`
+`${NIGHTWORKERS_RUNTIME_DIR}`, defaulting to `${NIGHTWORKERS_RESOURCE_DIR}/.nightworkers`
 when no override is set.
 
 Runtime hygiene:

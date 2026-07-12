@@ -1,9 +1,11 @@
 import path from "node:path";
+import type { ProjectGitIntegrationPolicy } from "../../../shared/schemas/git-integration.schema";
 import { db } from "../../db/client";
-import { NotFoundError } from "../../lib/errors";
+import { AppError, NotFoundError } from "../../lib/errors";
 import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
 import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
+import { runGitCommand } from "../gitworktree/gitworktree-cli";
 import {
 	getSessionByTaskId,
 	toControlSummary,
@@ -94,9 +96,47 @@ export async function createRepository(data: {
 	maxConcurrentSessions?: number;
 	safetyPolicy?: RepositorySafetyPolicy;
 }) {
+	let branch = data.branch?.trim() || "main";
+	try {
+		await runGitCommand(["-C", data.localPath, "rev-parse", "--git-dir"]);
+		if (!data.branch?.trim()) {
+			branch = (
+				await runGitCommand([
+					"-C",
+					data.localPath,
+					"symbolic-ref",
+					"--short",
+					"HEAD",
+				])
+			).stdout.trim();
+		}
+		await runGitCommand(["check-ref-format", "--branch", branch]);
+		await runGitCommand([
+			"-C",
+			data.localPath,
+			"show-ref",
+			"--verify",
+			`refs/heads/${branch}`,
+		]);
+	} catch (_error) {
+		const isGitRepository = await runGitCommand([
+			"-C",
+			data.localPath,
+			"rev-parse",
+			"--git-dir",
+		])
+			.then(() => true)
+			.catch(() => false);
+		if (isGitRepository)
+			throw new AppError(
+				400,
+				"GIT_INTEGRATION_TARGET_INVALID",
+				"指定したlocal branchを確認できません",
+			);
+	}
 	return repo.createRepository({
 		...data,
-		branch: data.branch || "main",
+		branch,
 		safetyPolicy: normalizeSafetyPolicyForRepository(
 			data.localPath,
 			data.safetyPolicy,
@@ -118,12 +158,60 @@ export async function updateRepository(
 		queueEnabled?: boolean;
 		maxConcurrentSessions?: number;
 		safetyPolicy?: RepositorySafetyPolicy;
+		branch?: string;
+		gitIntegrationPolicy?: ProjectGitIntegrationPolicy;
+		expectedGitIntegrationVersion?: number;
 	},
 ) {
+	const gitSettingsRequested =
+		data.branch !== undefined || data.gitIntegrationPolicy !== undefined;
 	const existing =
-		data.safetyPolicy !== undefined ? await repo.getRepository(id) : null;
-	if (data.safetyPolicy !== undefined && !existing)
+		data.safetyPolicy !== undefined || gitSettingsRequested
+			? await repo.getRepository(id)
+			: null;
+	if ((data.safetyPolicy !== undefined || gitSettingsRequested) && !existing)
 		throw new NotFoundError("Repository not found");
+	if (gitSettingsRequested) {
+		if (
+			data.branch === undefined ||
+			data.gitIntegrationPolicy === undefined ||
+			data.expectedGitIntegrationVersion === undefined
+		)
+			throw new AppError(
+				400,
+				"GIT_INTEGRATION_SETTINGS_INCOMPLETE",
+				"Git integration settings must be saved together",
+			);
+		try {
+			await runGitCommand(["check-ref-format", "--branch", data.branch]);
+			await runGitCommand([
+				"-C",
+				existing?.localPath ?? "",
+				"show-ref",
+				"--verify",
+				`refs/heads/${data.branch}`,
+			]);
+			if (data.gitIntegrationPolicy.remoteName) {
+				const remotes = await runGitCommand([
+					"-C",
+					existing?.localPath ?? "",
+					"remote",
+				]);
+				if (
+					!remotes.stdout
+						.split("\n")
+						.includes(data.gitIntegrationPolicy.remoteName)
+				)
+					throw new Error("remote missing");
+			}
+		} catch {
+			throw new AppError(
+				400,
+				"GIT_INTEGRATION_TARGET_INVALID",
+				"指定したlocal branchまたはremoteを確認できません",
+			);
+		}
+	}
 	const safetyPolicy =
 		data.safetyPolicy !== undefined && existing
 			? normalizeSafetyPolicyForRepository(
@@ -132,15 +220,32 @@ export async function updateRepository(
 				)
 			: undefined;
 	const normalized = {
-		...data,
+		queueEnabled: data.queueEnabled,
+		branch: data.branch,
+		gitIntegrationPolicyJson: data.gitIntegrationPolicy,
+		gitIntegrationVersion: gitSettingsRequested
+			? (data.expectedGitIntegrationVersion ?? 0) + 1
+			: undefined,
 		safetyPolicy,
 		maxConcurrentSessions:
 			data.maxConcurrentSessions === undefined
 				? undefined
 				: Math.max(1, Math.floor(data.maxConcurrentSessions)),
 	};
-	const updated = await repo.updateRepository(id, normalized);
-	if (!updated) throw new NotFoundError("Repository not found");
+	const updated = await repo.updateRepository(
+		id,
+		normalized,
+		gitSettingsRequested ? data.expectedGitIntegrationVersion : undefined,
+	);
+	if (!updated) {
+		if (gitSettingsRequested)
+			throw new AppError(
+				409,
+				"GIT_INTEGRATION_SETTINGS_CHANGED",
+				"Git integration settings changed; refresh and retry",
+			);
+		throw new NotFoundError("Repository not found");
+	}
 	if (updated.queueEnabled) {
 		void runSessionQueueForRepository(updated.id);
 	}

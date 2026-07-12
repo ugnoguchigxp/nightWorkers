@@ -17,6 +17,7 @@ import {
 } from "./services/settings/application-settings-store";
 
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
+normalizeListenPort(process.env);
 const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
 isolateDirectTestDatabase(process.env);
 ensureDesktopRuntimeBootstrap(process.env, {
@@ -90,6 +91,7 @@ function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 		persistedIntegrations ?? {},
 		persistedSecrets ?? {},
 	);
+	normalizeListenPort(env);
 	if (!env.JWT_SECRET)
 		env.JWT_SECRET = crypto.randomBytes(48).toString("base64url");
 	if (!persisted)
@@ -105,6 +107,13 @@ function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 		);
 	if (!persistedSecrets)
 		writeApplicationSettingSecrets("auth", pickEnvironment(env, secretKeys));
+}
+
+function normalizeListenPort(env: NodeJS.ProcessEnv) {
+	const port = Number(env.PORT);
+	if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+		delete env.PORT;
+	}
 }
 
 function pickEnvironment(

@@ -6,6 +6,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { ProjectGitIntegrationPolicy } from "../../shared/schemas/git-integration.schema";
 
 export const commonColumns = {
 	id: text("id")
@@ -75,6 +76,7 @@ export type TaskStatus =
 	| "finalizing"
 	| "verifying"
 	| "needs_review"
+	| "integration_pending"
 	| "completed"
 	| "archived"
 	| "blocked"
@@ -167,6 +169,12 @@ export const repositories = sqliteTable("repositories", {
 	name: text("name").notNull(),
 	localPath: text("local_path").notNull(),
 	branch: text("branch").default("main").notNull(),
+	gitIntegrationPolicyJson: text("git_integration_policy_json", {
+		mode: "json",
+	}).$type<ProjectGitIntegrationPolicy | null>(),
+	gitIntegrationVersion: integer("git_integration_version")
+		.default(0)
+		.notNull(),
 	allowed: integer("allowed", { mode: "boolean" }).default(true).notNull(),
 	queueEnabled: integer("queue_enabled", { mode: "boolean" })
 		.default(false)

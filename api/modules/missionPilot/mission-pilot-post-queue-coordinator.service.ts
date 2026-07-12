@@ -10,6 +10,7 @@ import {
 import {
 	implementationQueueEntries,
 	type TaskStatus,
+	taskGitWorkspaces,
 	taskRunCommitRecords,
 	taskRuns,
 	taskRunTodos,
@@ -17,6 +18,7 @@ import {
 } from "../../db/schema";
 import { logger } from "../../lib/logger";
 import { digestText } from "../../services/text-digest";
+import { listRepositoryWorktrees } from "../gitworktree/gitworktree.service";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import {
 	continueAfterReviewRun,
@@ -67,6 +69,39 @@ export async function releaseMissionPilotQueueHandoff(taskId: string) {
 			.where(eq(implementationQueueEntries.id, handoff.queueEntryId))
 			.limit(1);
 		if (!entry || entry.status !== "queued") return null;
+		if (entry.workspaceRequired) {
+			if (!entry.workspaceId) return null;
+			const [workspace] = await tx
+				.select()
+				.from(taskGitWorkspaces)
+				.where(eq(taskGitWorkspaces.id, entry.workspaceId))
+				.limit(1);
+			if (!workspace || !["ready", "active"].includes(workspace.status))
+				return null;
+			const [task] = await tx
+				.select({ worktreePath: tasks.worktreePath })
+				.from(tasks)
+				.where(eq(tasks.id, taskId))
+				.limit(1);
+			if (
+				!workspace.worktreePath ||
+				!workspace.worktreeId ||
+				!workspace.targetBaseSha ||
+				!workspace.expectedHeadSha ||
+				task?.worktreePath !== workspace.worktreePath
+			)
+				return null;
+			const actual = (
+				await listRepositoryWorktrees(entry.repositoryId)
+			).worktrees.find((item) => item.id === workspace.worktreeId);
+			if (
+				!actual ||
+				actual.canonicalPath !== workspace.worktreePath ||
+				actual.branch !== workspace.sourceBranch ||
+				actual.head !== workspace.expectedHeadSha
+			)
+				return null;
+		}
 		if (!entry.claimReady) {
 			await tx
 				.update(implementationQueueEntries)

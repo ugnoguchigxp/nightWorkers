@@ -253,6 +253,7 @@ function gitCloseoutState(
 			pushBranch: null,
 			statusReason: null,
 		},
+		mergeRecord: null,
 		requiredReview: {
 			reviewSessionId: "11111111-1111-4111-8111-111111111111",
 			testCoverageStatus: null,
@@ -381,6 +382,40 @@ function securityReviewArtifact(): ReviewSessionDetail["artifacts"][number] {
 }
 
 describe("ReviewStatusViewer", () => {
+	it("shows fixed source/target provenance and explicit merge decisions", async () => {
+		const text = visibleText(
+			renderToStaticMarkup(
+				<ReviewStatusViewer
+					detail={reviewSessionDetail()}
+					gitCloseout={gitCloseoutState({
+						mergeRecord: {
+							id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+							runId: "22222222-2222-4222-8222-222222222222",
+							sourceBranch: "nightworkers/task",
+							sourceCommitSha: "1111111111111111111111111111111111111111",
+							planTargetBranch: "main",
+							planTargetBaseSha: "2222222222222222222222222222222222222222",
+							targetBranch: "main",
+							targetSelectedSha: "2222222222222222222222222222222222222222",
+							observedTargetSha: "3333333333333333333333333333333333333333",
+							strategy: "merge_commit",
+							decision: "undecided",
+							status: "merge_ready",
+							recordVersion: 1,
+							ciStatus: "not_required",
+						},
+					})}
+				/>,
+			),
+		);
+		expect(text).toContain("Source: nightworkers/task @ 1111111111");
+		expect(text).toContain("Target: main @ 3333333333");
+		expect(text).toContain("再評価");
+		expect(text).toContain("マージ");
+		expect(text).toContain("後で判断");
+		expect(text).toContain("再作業");
+		expect(text).toContain("統合先を変更");
+	});
 	it("shows a loading state while Review Mode is being prepared", async () => {
 		await i18next.changeLanguage("ja");
 

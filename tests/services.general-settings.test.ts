@@ -89,6 +89,9 @@ describe("general-settings service", () => {
 			});
 			expect(settings.planMode).toEqual(DEFAULT_GENERAL_SETTINGS.planMode);
 			expect(settings.llmUsage).toEqual(DEFAULT_GENERAL_SETTINGS.llmUsage);
+			expect(settings.dataRetention).toEqual(
+				DEFAULT_GENERAL_SETTINGS.dataRetention,
+			);
 		});
 
 		it("returns defaults if file contains invalid JSON", () => {
@@ -117,10 +120,12 @@ describe("general-settings service", () => {
 			expect(result).toEqual({
 				...input,
 				planMode: DEFAULT_GENERAL_SETTINGS.planMode,
+				dataRetention: DEFAULT_GENERAL_SETTINGS.dataRetention,
 			});
 			expect(readGeneralSettings()).toEqual({
 				...input,
 				planMode: DEFAULT_GENERAL_SETTINGS.planMode,
+				dataRetention: DEFAULT_GENERAL_SETTINGS.dataRetention,
 			});
 		});
 	});
@@ -136,6 +141,23 @@ describe("general-settings service", () => {
 				llmUsage: { promptPartObservabilityEnabled: false },
 			});
 			expect(settings.llmUsage.promptPartObservabilityEnabled).toBe(false);
+		});
+
+		it("keeps the fixed retention periods and rejects invalid capacity relationships", () => {
+			const settings = normalizeGeneralSettings({
+				dataRetention: {
+					...DEFAULT_GENERAL_SETTINGS.dataRetention,
+					apiLogMaxBytes: 100,
+					runtimeLogsMaxBytes: 50,
+				},
+			});
+			expect(settings.dataRetention.apiLogDays).toBe(7);
+			expect(settings.dataRetention.llmRawLogDays).toBe(3);
+			expect(settings.dataRetention.usageDataDays).toBe(30);
+			expect(settings.dataRetention.auditEventDays).toBe(90);
+			expect(settings.dataRetention.apiLogMaxBytes).toBe(
+				DEFAULT_GENERAL_SETTINGS.dataRetention.apiLogMaxBytes,
+			);
 		});
 	});
 

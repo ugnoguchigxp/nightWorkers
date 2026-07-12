@@ -37,6 +37,8 @@ export const overviewDashboardSchema = z
 		scope: z.object({
 			repositoryId: z.string().uuid().nullable(),
 			range: z.enum(["24h", "7d", "30d", "all"]),
+			effectiveRange: z.enum(["24h", "7d", "30d"]).optional(),
+			retentionCutoff: z.string().optional(),
 			timezone: z.string(),
 			currency: overviewCurrencySchema,
 		}),

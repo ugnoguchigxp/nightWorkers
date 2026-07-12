@@ -28,6 +28,20 @@ export function fetchRepositoryWorktrees(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/worktrees`);
 }
 
+export function fetchRepositoryGitIntegration(repositoryId: string) {
+	return apiFetch(`/api/repositories/${repositoryId}`);
+}
+
+export function updateRepositoryGitIntegration(
+	repositoryId: string,
+	input: unknown,
+) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}`,
+		jsonRequest("PATCH", input),
+	);
+}
+
 export function createRepositoryWorktree(repositoryId: string, input: unknown) {
 	return apiFetch(
 		`/api/repositories/${repositoryId}/worktrees`,

@@ -5,7 +5,9 @@ import type { WorktreeUsage } from "../../../shared/schemas/gitworktree.schema";
 import { db } from "../../db/client";
 import {
 	repositories,
+	taskGitWorkspaces,
 	taskRunCommitRecords,
+	taskRunMergeRecords,
 	taskRuns,
 	tasks,
 } from "../../db/schema";
@@ -19,6 +21,7 @@ const ACTIVE_TASK_STATUSES = [
 	"finalizing",
 	"verifying",
 	"needs_review",
+	"integration_pending",
 	"blocked",
 	"needs_human",
 ] as const;
@@ -41,7 +44,7 @@ export async function getRepository(id: string) {
 }
 
 export async function readUsage(repositoryId: string) {
-	const [taskRows, runRows, closeoutRows] = await Promise.all([
+	const [taskRows, runRows, closeoutRows, mergeRows] = await Promise.all([
 		db
 			.select({ id: tasks.id, status: tasks.status, path: tasks.worktreePath })
 			.from(tasks)
@@ -76,6 +79,31 @@ export async function readUsage(repositoryId: string) {
 					eq(taskRuns.repositoryId, repositoryId),
 					isNotNull(taskRuns.worktreePath),
 					inArray(taskRunCommitRecords.status, [...PENDING_CLOSEOUT_STATUSES]),
+				),
+			),
+		db
+			.select({
+				runId: taskRunMergeRecords.runId,
+				path: taskGitWorkspaces.worktreePath,
+			})
+			.from(taskRunMergeRecords)
+			.innerJoin(
+				taskGitWorkspaces,
+				eq(taskRunMergeRecords.workspaceId, taskGitWorkspaces.id),
+			)
+			.where(
+				and(
+					eq(taskGitWorkspaces.repositoryId, repositoryId),
+					isNotNull(taskGitWorkspaces.worktreePath),
+					inArray(taskRunMergeRecords.status, [
+						"decision_required",
+						"previewing",
+						"merge_ready",
+						"merging",
+						"deferred",
+						"merge_blocked",
+						"merge_conflicted",
+					]),
 				),
 			),
 	]);
@@ -126,6 +154,12 @@ export async function readUsage(repositoryId: string) {
 		usage.activeRunCount += 1;
 	}
 	for (const row of closeoutRows) {
+		if (!row.path) continue;
+		const usage = await get(row.path);
+		if (!usage.runIds.includes(row.runId)) usage.runIds.push(row.runId);
+		usage.pendingCloseoutCount += 1;
+	}
+	for (const row of mergeRows) {
 		if (!row.path) continue;
 		const usage = await get(row.path);
 		if (!usage.runIds.includes(row.runId)) usage.runIds.push(row.runId);

@@ -10,7 +10,17 @@ const devReloadDirs = [
 ];
 const desktopDev = process.env.NIGHTWORKERS_DESKTOP_DEV === "1";
 const webPort = Number(process.env.NIGHTWORKERS_WEB_PORT || 39174);
-const apiPort = Number(process.env.NIGHTWORKERS_API_PORT || 39173);
+const defaultApiPort = 39173;
+
+function resolveApiPort() {
+	for (const value of [process.env.NIGHTWORKERS_API_PORT, process.env.PORT]) {
+		const port = Number(value);
+		if (Number.isInteger(port) && port > 0 && port <= 65_535) return port;
+	}
+	return defaultApiPort;
+}
+
+const apiPort = resolveApiPort();
 
 function isApiOrSrcPath(file: string) {
 	const resolved = path.resolve(file);

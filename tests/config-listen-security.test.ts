@@ -10,7 +10,7 @@ function loadConfig(input: {
 		"bun",
 		[
 			"-e",
-			"const { config } = await import('./api/config.ts'); process.stdout.write(config.DATABASE_URL)",
+			"const { config } = await import('./api/config.ts'); process.stdout.write(config.DATABASE_URL + '|' + config.PORT)",
 		],
 		{
 			cwd: process.cwd(),
@@ -41,6 +41,7 @@ describe("production listen config", () => {
 		const result = loadConfig({ host, authRequired: false });
 		expect(result.status, result.stderr).toBe(0);
 		expect(result.stdout).toContain(".nightworkers/sqlite.db");
+		expect(result.stdout).toContain("|39173");
 	});
 
 	it.each([

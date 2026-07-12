@@ -22,6 +22,7 @@ export const implementationQueueEntryStatusSchema = z.enum([
 const schedulingBlockedReasonSchema = z.enum([
 	"none",
 	"claim_not_ready",
+	"workspace_not_ready",
 	"exclusive_waiting_for_active_tasks",
 	"normal_blocked_by_ready_non_normal",
 	"normal_blocked_by_active_non_normal",
@@ -58,6 +59,9 @@ export const implementationQueueEntrySchema = z.object({
 	sequenceOrder: z.number().int().nullable().optional(),
 	sequenceDependsOnEntryId: z.string().uuid().nullable().optional(),
 	schedulingReason: z.string().nullable().optional(),
+	claimReady: z.boolean().default(true),
+	workspaceId: z.string().uuid().nullable().optional(),
+	workspaceRequired: z.boolean().default(false),
 	createdAt: dateLikeSchema,
 	updatedAt: dateLikeSchema,
 });

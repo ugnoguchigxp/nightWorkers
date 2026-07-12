@@ -18,6 +18,7 @@ import {
 	defaultCreateDraft,
 	type WorktreeDiff,
 } from "../model/gitworktreeViewModel";
+import { GitIntegrationSettings } from "./GitIntegrationSettings";
 import { GitworktreeCreateForm } from "./GitworktreeCreateForm";
 import { GitworktreeDetail } from "./GitworktreeDetail";
 import { GitworktreeList } from "./GitworktreeList";
@@ -41,7 +42,6 @@ type ProjectDetailWorktreesProps = {
 
 export function ProjectDetailWorktrees({
 	repositoryId,
-	onCreateTask,
 }: ProjectDetailWorktreesProps) {
 	const { t } = useTranslation();
 	const controller = useGitworktreeController(repositoryId);
@@ -56,10 +56,6 @@ export function ProjectDetailWorktrees({
 		setShowCreate,
 		createDraft,
 		setCreateDraft,
-		showTask,
-		setShowTask,
-		taskTitle,
-		setTaskTitle,
 		diff,
 		setDiff,
 		advice,
@@ -148,20 +144,6 @@ export function ProjectDetailWorktrees({
 			await load();
 		});
 	};
-	const createTask = () => {
-		if (!selected) return;
-		void runAction("task", async () => {
-			await onCreateTask({
-				repositoryId,
-				title: taskTitle,
-				description: taskTitle,
-				worktreeId: selected.id,
-			});
-			setTaskTitle("");
-			setShowTask(false);
-			await load();
-		});
-	};
 	const prune = () =>
 		void runAction("prune", async () => {
 			const preview = await readGitworktreeResponse<{ entries: string[] }>(
@@ -184,6 +166,7 @@ export function ProjectDetailWorktrees({
 
 	return (
 		<section className="space-y-4">
+			<GitIntegrationSettings repositoryId={repositoryId} />
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="flex flex-wrap items-center gap-2 text-xs">
 					<span className="nightworkers-chip">
@@ -257,22 +240,15 @@ export function ProjectDetailWorktrees({
 						setSelectedId(id);
 						setDiff(null);
 						setAdvice(null);
-						setShowTask(false);
-						setTaskTitle("");
 					}}
 				/>
 				<GitworktreeDetail
 					selected={selected}
 					busy={interactionDisabled}
-					showTask={showTask}
-					taskTitle={taskTitle}
 					advice={advice}
 					onViewDiff={viewDiff}
 					onRequestAdvice={requestAdvice}
-					onToggleTask={() => setShowTask((value) => !value)}
 					onRemove={remove}
-					onTaskTitleChange={setTaskTitle}
-					onSubmitTask={createTask}
 				/>
 			</div>
 

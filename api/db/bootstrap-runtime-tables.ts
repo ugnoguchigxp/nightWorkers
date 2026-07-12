@@ -362,4 +362,25 @@ export async function ensureRuntimeAndUsageTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS llm_usage_summary_task_buckets_hour_idx ON llm_usage_summary_task_buckets (bucket_hour_utc)",
 	);
+
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS runtime_retention_audit_events (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      event_type text NOT NULL,
+      status text NOT NULL,
+      started_at integer NOT NULL,
+      finished_at integer,
+      settings_snapshot_json text,
+      rows_deleted_json text,
+      error_summary text
+    )
+  `);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_retention_audit_events_created_idx ON runtime_retention_audit_events (created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_retention_audit_events_type_created_idx ON runtime_retention_audit_events (event_type, created_at)",
+	);
 }

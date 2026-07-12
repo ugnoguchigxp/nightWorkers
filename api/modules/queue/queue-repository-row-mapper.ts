@@ -33,6 +33,7 @@ export type TaskExecutionType = "normal" | "exclusive" | "sequence";
 export type QueueSchedulingBlockedReason =
 	| "none"
 	| "claim_not_ready"
+	| "workspace_not_ready"
 	| "exclusive_waiting_for_active_tasks"
 	| "normal_blocked_by_ready_non_normal"
 	| "normal_blocked_by_active_non_normal"

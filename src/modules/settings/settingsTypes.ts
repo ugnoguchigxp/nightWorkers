@@ -20,6 +20,19 @@ export type LlmUsageSettings = {
 	promptPartObservabilityEnabled: boolean;
 };
 
+export type DataRetentionSettings = {
+	apiLogDays: number;
+	llmRawLogDays: number;
+	usageDataDays: number;
+	auditEventDays: number;
+	apiLogMaxBytes: number;
+	llmRawLogsMaxBytes: number;
+	runtimeLogsMaxBytes: number;
+	apiSegmentMaxBytes: number;
+	llmSegmentMaxBytes: number;
+	sweepIntervalMinutes: number;
+};
+
 export type GeneralSettings = {
 	timezone: string;
 	language: NightWorkersLanguage;
@@ -31,4 +44,5 @@ export type GeneralSettings = {
 	};
 	planMode: PlanModeSettings;
 	llmUsage: LlmUsageSettings;
+	dataRetention: DataRetentionSettings;
 };

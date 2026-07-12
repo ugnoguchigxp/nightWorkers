@@ -37,7 +37,7 @@
   ],
   "ownedData": {
     "tables": [],
-    "files": ["data/nightworkers-settings.json", "data/nightworkers-mcp-settings.json"]
+    "files": [".nightworkers/settings/general-settings.json", ".nightworkers/settings/mcp-servers.json"]
   },
   "invariants": [
     {

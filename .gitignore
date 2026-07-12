@@ -67,7 +67,6 @@ drizzle/*
 # AI & Other
 .gemini/
 api/.runtime/
-data/
 github-pages/.preview/
 github-pages/reports/
 github-pages/vendor/

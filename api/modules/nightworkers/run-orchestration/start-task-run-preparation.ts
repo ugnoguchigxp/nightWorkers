@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
 import { deriveTodoVerificationPolicyFromPromptText } from "../../../services/todo-runtime";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
+import { runGitCommand } from "../../gitworktree/gitworktree-cli";
+import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
 import { getProjectSecurityIntelligenceSettings } from "../../ontology";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import * as repo from "../nightworkers.repository";
@@ -59,6 +61,43 @@ export async function prepareTaskRunStart(input: {
 	const jobType = resolveLatestJobTypeFromMessages(messages);
 	const executionMode =
 		input.options.executionMode ?? resolveExecutionModeFromMessages(messages);
+	if (executionMode === "implementation") {
+		const workspace = await getTaskGitWorkspace(input.task.id);
+		if (workspace) {
+			if (
+				!input.task.worktreePath ||
+				workspace.worktreePath !== executionRoot
+			) {
+				throw new AppError(
+					409,
+					"workspace_execution_root_mismatch",
+					"実装は割り当て済みの Git workspace でのみ開始できます",
+				);
+			}
+			if (!["ready", "active"].includes(workspace.status)) {
+				throw new AppError(
+					409,
+					"workspace_not_ready",
+					"割り当て済み Git workspace はまだ実行可能ではありません",
+				);
+			}
+			const [branch, head] = await Promise.all([
+				runGitCommand(["-C", executionRoot, "branch", "--show-current"]),
+				runGitCommand(["-C", executionRoot, "rev-parse", "HEAD"]),
+			]);
+			if (
+				branch.stdout.trim() !== workspace.sourceBranch ||
+				(workspace.expectedHeadSha &&
+					head.stdout.trim() !== workspace.expectedHeadSha)
+			) {
+				throw new AppError(
+					409,
+					"workspace_head_mismatch",
+					"実行開始前に割り当て済み Git workspace の branch または HEAD が変化しました",
+				);
+			}
+		}
+	}
 	const executionModeSource = input.options.executionMode
 		? (input.options.executionModeSource ?? "explicit")
 		: "message_history";

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
 	getRuntimeLaneSetting,
 	getStructuredProviderSetting,
@@ -11,6 +12,7 @@ import {
 	providerModelOptions,
 	type RawLlmSettings,
 	SECRET_SETTING_KEYS,
+	synchronizeLegacyProviderEnablement,
 } from "../modules/settings";
 import { getRuntimePaths } from "../runtime/paths";
 import {
@@ -107,7 +109,9 @@ const readRuntimeSettings = (): {
 		const text = fs.readFileSync(RUNTIME_SETTINGS_PATH, "utf-8");
 		const settings = JSON.parse(text) as Partial<RawLlmSettings>;
 		writeRuntimeSettings(
-			normalizeRawLlmSettings(llmSettingsSchema.parse(settings)),
+			normalizeRawLlmSettings(llmSettingsSchema.parse(settings), {
+				validateExplicitRoleRoutes: false,
+			}),
 		);
 		archiveLegacySettingsFile(RUNTIME_SETTINGS_PATH);
 		return {
@@ -213,26 +217,40 @@ export const getCurrentSettings = (): LlmSettings => {
 		persisted.providerEndpoints,
 		legacySettings,
 	);
+	const synchronizedLegacySettings = synchronizeLegacyProviderEnablement(
+		legacySettings,
+		providerEndpoints,
+	);
 	const roleRoutes = normalizeRoleRoutes(
 		persisted.roleRoutes,
 		providerEndpoints,
-		legacySettings.ACTIVE_LLM_PROVIDER,
+		synchronizedLegacySettings.ACTIVE_LLM_PROVIDER,
 	);
+	const legacyProviderEnablementChanged =
+		legacySettings.AZURE_OPENAI_ENABLED !==
+			synchronizedLegacySettings.AZURE_OPENAI_ENABLED ||
+		legacySettings.OPENAI_ENABLED !==
+			synchronizedLegacySettings.OPENAI_ENABLED ||
+		legacySettings.AWS_BEDROCK_ENABLED !==
+			synchronizedLegacySettings.AWS_BEDROCK_ENABLED ||
+		legacySettings.CODEX_ENABLED !== synchronizedLegacySettings.CODEX_ENABLED;
 	const providerEndpointsChanged =
 		Array.isArray(persisted.providerEndpoints) &&
-		JSON.stringify(persisted.providerEndpoints) !==
-			JSON.stringify(providerEndpoints);
+		!isDeepStrictEqual(persisted.providerEndpoints, providerEndpoints);
 	const roleRoutesChanged =
 		Array.isArray(persisted.roleRoutes) &&
-		JSON.stringify(persisted.roleRoutes) !== JSON.stringify(roleRoutes);
+		!isDeepStrictEqual(persisted.roleRoutes, roleRoutes);
 	const normalized = {
-		...legacySettings,
+		...synchronizedLegacySettings,
 		providerEndpoints,
 		roleRoutes,
 	};
 	const migration = migrateStructuredLlmEndpointIds(normalized);
 	if (
-		(migration.changed || providerEndpointsChanged || roleRoutesChanged) &&
+		(migration.changed ||
+			providerEndpointsChanged ||
+			roleRoutesChanged ||
+			legacyProviderEnablementChanged) &&
 		persistedRead.exists &&
 		persistedRead.loaded
 	) {

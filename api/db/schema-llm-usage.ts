@@ -248,3 +248,29 @@ export const llmUsageSummaryTaskBuckets = sqliteTable(
 		),
 	}),
 );
+
+export const runtimeRetentionAuditEvents = sqliteTable(
+	"runtime_retention_audit_events",
+	{
+		...commonColumns,
+		eventType: text("event_type").notNull(),
+		status: text("status").notNull(),
+		startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+		finishedAt: integer("finished_at", { mode: "timestamp" }),
+		settingsSnapshotJson: text("settings_snapshot_json", {
+			mode: "json",
+		}).$type<Record<string, unknown>>(),
+		rowsDeletedJson: text("rows_deleted_json", { mode: "json" }).$type<
+			Record<string, number>
+		>(),
+		errorSummary: text("error_summary"),
+	},
+	(table) => ({
+		createdAtIdx: index("runtime_retention_audit_events_created_idx").on(
+			table.createdAt,
+		),
+		eventTypeCreatedAtIdx: index(
+			"runtime_retention_audit_events_type_created_idx",
+		).on(table.eventType, table.createdAt),
+	}),
+);

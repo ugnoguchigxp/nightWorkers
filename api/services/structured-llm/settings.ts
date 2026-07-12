@@ -264,10 +264,10 @@ function sanitizeStructuredLlmRoleRoutes(
 		const role = resolveLlmRole(sourceRole);
 		if (!role) continue;
 		const validFallbacks = (route.fallbacks || []).filter((target) =>
-			isValidStructuredLlmModelTarget(target, endpoints),
+			isConfiguredStructuredLlmModelTarget(target, endpoints),
 		);
 		let sanitized: StructuredLlmRoleRoute | null = null;
-		if (isValidStructuredLlmModelTarget(route.primary, endpoints)) {
+		if (isConfiguredStructuredLlmModelTarget(route.primary, endpoints)) {
 			sanitized = { role, primary: route.primary, fallbacks: validFallbacks };
 		} else {
 			const promotedPrimary = validFallbacks.shift();
@@ -315,7 +315,7 @@ function uniqueStructuredLlmModelTargets(
 	});
 }
 
-function isValidStructuredLlmModelTarget(
+function isConfiguredStructuredLlmModelTarget(
 	target: StructuredLlmModelTarget | undefined,
 	endpoints: StructuredLlmProviderEndpoint[],
 ) {
@@ -323,5 +323,5 @@ function isValidStructuredLlmModelTarget(
 	const endpoint = endpoints.find(
 		(item) => item.id === target.providerEndpointId,
 	);
-	return Boolean(endpoint?.enabled && endpoint.models.includes(target.model));
+	return Boolean(endpoint?.models.includes(target.model));
 }

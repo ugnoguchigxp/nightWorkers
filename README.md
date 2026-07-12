@@ -278,6 +278,13 @@ The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`
 for the bundled Node process stdout/stderr, and `api.log` for API request and
 runtime events.
 
+Runtime API logs rotate daily and by size, and are retained for 7 days. Raw LLM
+request/response traces and JSON parse-failure previews are retained for 3 days.
+Usage summaries are retained for 30 days and retention-operation audit entries
+for 90 days. The managed runtime log directory is capped at 80 MiB; older closed
+segments may therefore be removed before their time limit. Raw LLM traces can
+contain sensitive project context and are not an archive mechanism.
+
 The default desktop build on macOS currently produces a verified `.app` artifact.
 DMG creation is kept as a separate release gate via `bun run desktop:build:dmg`
 because create-dmg can fail on local mount/Finder state. Signing requires

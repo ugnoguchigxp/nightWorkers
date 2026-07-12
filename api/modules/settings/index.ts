@@ -16,6 +16,7 @@ export {
 	normalizeProviderEndpoints,
 	normalizeRawLlmSettings,
 	normalizeRoleRoutes,
+	synchronizeLegacyProviderEnablement,
 } from "./domain/llm-settings-normalization";
 export * from "./presentation/agent-hook-settings-route-definitions";
 export * from "./presentation/mcp-settings-route-definitions";

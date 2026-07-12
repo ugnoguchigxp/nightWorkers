@@ -1,3 +1,4 @@
+import { configureRuntimeLogRetention } from "../lib/logger";
 import { createOpenApiRouter } from "../lib/openapi";
 import { readCodexSdkStatus } from "../services/codex-global-config/status";
 import { runStartupPreflight } from "../services/preflight/preflight";
@@ -90,6 +91,7 @@ export const settingsRouter = createOpenApiRouter()
 		const settings = writeGeneralSettings(
 			c.req.valid("json") as GeneralSettings,
 		);
+		configureRuntimeLogRetention(settings.dataRetention);
 		return c.json(settings, 200);
 	})
 	.openapi(getFxRatesRoute, (c) => {

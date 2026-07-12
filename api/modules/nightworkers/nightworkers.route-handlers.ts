@@ -13,6 +13,8 @@ import {
 	createReviewPromptSuggestionsRoute,
 	createReviewSessionRoute,
 	createRunReviewRoute,
+	deferRunGitMergeRoute,
+	executeRunGitMergeRoute,
 	type exportTaskRunJsonlRoute,
 	type getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
@@ -25,7 +27,10 @@ import {
 	listTaskRunActivityEventsRoute,
 	listTaskRunEventsRoute,
 	type listTaskRunsRoute,
+	overrideRunGitMergeTargetRoute,
+	previewRunGitMergeRoute,
 	pushRunGitCloseoutRoute,
+	reworkRunGitMergeRoute,
 	startBackgroundProcessRoute,
 	startReviewRunRoute,
 	stopBackgroundProcessRoute,
@@ -128,6 +133,65 @@ export const pushRunGitCloseoutHandler = withOpenApiRouteError(
 		const result = await service.pushRunGitCloseout(c.req.param("id"));
 		return c.json(result, 200);
 	},
+);
+
+export const previewRunGitMergeHandler = withOpenApiRouteError(
+	previewRunGitMergeRoute,
+	async (c) =>
+		c.json(
+			await service.previewTaskRunMerge({
+				runId: c.req.param("id"),
+				expectedVersion: c.req.valid("json").expectedVersion,
+			}),
+			200,
+		),
+);
+export const deferRunGitMergeHandler = withOpenApiRouteError(
+	deferRunGitMergeRoute,
+	async (c) =>
+		c.json(
+			await service.deferTaskRunMerge({
+				runId: c.req.param("id"),
+				expectedVersion: c.req.valid("json").expectedVersion,
+			}),
+			200,
+		),
+);
+export const reworkRunGitMergeHandler = withOpenApiRouteError(
+	reworkRunGitMergeRoute,
+	async (c) =>
+		c.json(
+			await service.requestTaskRunRework({
+				runId: c.req.param("id"),
+				expectedVersion: c.req.valid("json").expectedVersion,
+			}),
+			200,
+		),
+);
+export const overrideRunGitMergeTargetHandler = withOpenApiRouteError(
+	overrideRunGitMergeTargetRoute,
+	async (c) => {
+		const input = c.req.valid("json");
+		return c.json(
+			await service.overrideTaskRunMergeTarget({
+				runId: c.req.param("id"),
+				targetBranch: input.targetBranch,
+				expectedVersion: input.expectedVersion,
+			}),
+			200,
+		);
+	},
+);
+export const executeRunGitMergeHandler = withOpenApiRouteError(
+	executeRunGitMergeRoute,
+	async (c) =>
+		c.json(
+			await service.executeTaskRunMerge({
+				runId: c.req.param("id"),
+				expectedVersion: c.req.valid("json").expectedVersion,
+			}),
+			200,
+		),
 );
 
 export const listTaskRunEventsHandler = withOpenApiRouteError(

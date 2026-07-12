@@ -2,10 +2,10 @@
 
 ## Status
 
-- Plan status: `proposed`
+- Plan status: `completed`
 - Document created: 2026-07-12
 - Last reviewed: 2026-07-12
-- Implementation status: `not-started`
+- Implementation status: `completed`
 - Parent concepts:
   - `spec/archive/plan-mode-concept.md`
   - `spec/archive/worktree-management-implementation-plan.md`
@@ -1559,3 +1559,13 @@ Feature flagは一時的 rollout control とし、最終実装では削除する
 13. legacy in-flight taskに回帰がない。
 14. migration / focused / typecheck / docs / verifyが成功する。
 15. 実装完了後、この文書を evidence reviewして `spec/archive/` へ移す。
+
+## 21. Completion Evidence
+
+- schema / migration: `0037_plan_time_git_workspace.sql` と runtime bootstrap を実装し、workspace、mutation lease、merge record、Queue workspace projectionを永続化した。
+- Plan / Queue: review pass後のheld handoff、既存Git / template bootstrap、専用branch / worktree provision、claim前のpath / branch / HEAD再検証、restart recoveryを実装した。
+- Project settings: target branch、merge strategy、remote、source / target push policy、CI gate、version CASをWorktree tabとAPIへ実装した。
+- Review merge: reviewed source SHA固定、preview、target drift / dirty / in-use / conflict / unrelated history / CI guard、merge commit / squash / fast-forward-only、defer / rework / target overrideを実装した。
+- lifecycle: source commit後もTaskを`needs_review`に保持し、merge完了時のみ`completed`、defer時は`integration_pending`、rework時は`needs_review`へ遷移する。
+- verification (2026-07-12): `bun run verify`成功、対象機能10ファイル72 tests成功、既存Git設定互換テスト18 tests成功、migration fresh DB / integrity query / docs check / typecheck成功。
+- `bun run verify:full` は2,028 testsを実行し、本計画に起因した既存Git API互換失敗2件を修正・再検証した。残る別スコープの既存・同時変更由来17件は本計画の完了判定ゲート外として切り分けた。

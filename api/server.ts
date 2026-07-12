@@ -3,7 +3,11 @@ import app, { nodeWebSocket } from "./app";
 import { config } from "./config";
 import { ensureNightWorkersSchema } from "./db/bootstrap";
 import { client } from "./db/client";
-import { logEvent } from "./lib/logger";
+import {
+	configureRuntimeLogRetention,
+	flushRuntimeLogs,
+	logEvent,
+} from "./lib/logger";
 import {
 	reconcileMissionPilotStartup,
 	resumeMissionPilotPlanPipelines,
@@ -14,6 +18,8 @@ import { reconcileImplementationQueue } from "./modules/queue/queue-management.s
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
 import { mcpClientManager } from "./services/mcp/mcp-client-manager";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
+import { runRuntimeRetentionSweep } from "./services/runtime-retention/runtime-retention.service";
+import { readGeneralSettings } from "./services/settings/general-settings";
 
 export type NightWorkersServerOptions = {
 	port?: number;
@@ -129,6 +135,17 @@ export async function createNightWorkersServer(
 		options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
 
 	await ensureNightWorkersSchema();
+	configureRuntimeLogRetention(readGeneralSettings().dataRetention);
+	await runRuntimeRetentionSweep({ forceUsageCleanup: true }).catch((error) => {
+		logEvent({
+			channel: "api",
+			level: "warn",
+			message: "runtime retention startup cleanup failed",
+			meta: {
+				errorMessage: error instanceof Error ? error.message : String(error),
+			},
+		});
+	});
 	await reconcileMissionPilotStartup();
 	void reconcileImplementationQueue({ apply: true, reason: "startup" }).catch(
 		(error) => {
@@ -175,6 +192,23 @@ export async function createNightWorkersServer(
 		});
 	}, 5_000);
 	missionPilotPlanTimer.unref?.();
+	const retentionTimer = setInterval(
+		() => {
+			void runRuntimeRetentionSweep().catch((error) => {
+				logEvent({
+					channel: "api",
+					level: "warn",
+					message: "runtime retention scheduled cleanup failed",
+					meta: {
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					},
+				});
+			});
+		},
+		readGeneralSettings().dataRetention.sweepIntervalMinutes * 60 * 1000,
+	);
+	retentionTimer.unref?.();
 	void resumeMissionPilotPlanPipelines({ recoverInterrupted: true }).catch(
 		(error) => {
 			logEvent({
@@ -201,6 +235,7 @@ export async function createNightWorkersServer(
 		closed = true;
 		clearInterval(missionPilotQuestionnaireTimer);
 		clearInterval(missionPilotPlanTimer);
+		clearInterval(retentionTimer);
 		logEvent({
 			channel: "api",
 			level: "info",
@@ -251,6 +286,13 @@ export async function createNightWorkersServer(
 				errors,
 				"Activity event queue flush",
 				await Promise.allSettled([flushActivityEventQueue()]).then(
+					([result]) => result,
+				),
+			);
+			collectCleanupError(
+				errors,
+				"Runtime log writer flush",
+				await Promise.allSettled([flushRuntimeLogs()]).then(
 					([result]) => result,
 				),
 			);

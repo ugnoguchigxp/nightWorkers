@@ -1,9 +1,27 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import {
+	getTaskGitWorkspace,
+	updateTaskGitWorkspace,
+} from "../../gitworktree/task-git-workspace.repository";
 import * as repo from "../nightworkers.repository";
 import { toErrorMessage } from "./utils";
 
 const execFileAsync = promisify(execFile);
+
+export async function activateWorkspace(
+	taskId: string,
+	executionMode: string,
+	baselineHead: string | null,
+) {
+	if (executionMode !== "implementation") return;
+	const workspace = await getTaskGitWorkspace(taskId);
+	if (workspace?.status !== "ready") return;
+	await updateTaskGitWorkspace(workspace.id, {
+		status: "active",
+		lastVerifiedHead: baselineHead,
+	});
+}
 
 function parseGitPorcelainZ(output: string) {
 	const entries: Array<{ status: string; path: string }> = [];

@@ -118,24 +118,6 @@ export async function listRepositories() {
 	return db.select().from(repositories).orderBy(desc(repositories.createdAt));
 }
 
-export async function updateRepository(
-	id: string,
-	data: {
-		queueEnabled?: boolean;
-		maxConcurrentSessions?: number;
-		safetyPolicy?: RepositorySafetyPolicy;
-		projectMeta?: Record<string, unknown> | null;
-		featureSettings?: Record<string, unknown> | null;
-	},
-) {
-	const [repo] = await db
-		.update(repositories)
-		.set({ ...data, updatedAt: new Date() })
-		.where(eq(repositories.id, id))
-		.returning();
-	return repo;
-}
-
 export async function updateRepositoryFeatureSettings(
 	id: string,
 	featureSettings: Record<string, unknown> | null,
@@ -584,4 +566,5 @@ export * from "./nightworkers.activity.repository";
 export * from "./nightworkers.blueprint-adoption.repository";
 export * from "./nightworkers.design-questionnaire.repository";
 export * from "./nightworkers.queue.repository";
+export { updateRepository } from "./nightworkers.repository-settings";
 export * from "./nightworkers.runs.repository";

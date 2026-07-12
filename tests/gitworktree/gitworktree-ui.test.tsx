@@ -118,6 +118,8 @@ describe("ProjectDetailWorktrees", () => {
 		);
 
 		expect(markup).toContain("main");
+		expect(markup).toContain("既定のマージ先");
+		expect(markup).not.toContain("projectDetail.worktrees.createTask");
 		expect(markup).toContain(
 			"projectDetail.worktrees.blocker.base_worktree_protected",
 		);

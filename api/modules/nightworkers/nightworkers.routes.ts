@@ -9,6 +9,8 @@ import {
 	createReviewPromptSuggestionsHandler,
 	createReviewSessionHandler,
 	createRunReviewHandler,
+	deferRunGitMergeHandler,
+	executeRunGitMergeHandler,
 	exportTaskRunJsonlHandler,
 	getBackgroundProcessHandler,
 	getLatestTaskReviewSessionHandler,
@@ -22,7 +24,10 @@ import {
 	listTaskRunActivityEventsHandler,
 	listTaskRunEventsHandler,
 	listTaskRunsHandler,
+	overrideRunGitMergeTargetHandler,
+	previewRunGitMergeHandler,
 	pushRunGitCloseoutHandler,
+	reworkRunGitMergeHandler,
 	startBackgroundProcessHandler,
 	startReviewRunHandler,
 	startTaskRunHandler,
@@ -59,6 +64,8 @@ import {
 	createReviewPromptSuggestionsRoute,
 	createReviewSessionRoute,
 	createRunReviewRoute,
+	deferRunGitMergeRoute,
+	executeRunGitMergeRoute,
 	exportTaskRunJsonlRoute,
 	getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
@@ -74,7 +81,10 @@ import {
 	listTaskRunActivityEventsRoute,
 	listTaskRunEventsRoute,
 	listTaskRunsRoute,
+	overrideRunGitMergeTargetRoute,
+	previewRunGitMergeRoute,
 	pushRunGitCloseoutRoute,
+	reworkRunGitMergeRoute,
 	startBackgroundProcessRoute,
 	startReviewRunRoute,
 	stopBackgroundProcessRoute,
@@ -113,7 +123,7 @@ const router = createOpenApiRouter()
 						name: data?.name || rawJson.name || "",
 						localPath:
 							data?.localPath || rawJson.localPath || rawJson.local_path || "",
-						branch: data?.branch || rawJson.branch || "main",
+						branch: data?.branch || rawJson.branch || undefined,
 						allowed:
 							data?.allowed !== undefined
 								? data.allowed
@@ -376,6 +386,11 @@ const router = createOpenApiRouter()
 	.openapi(getRunGitCloseoutRoute, getRunGitCloseoutHandler)
 	.openapi(commitRunGitCloseoutRoute, commitRunGitCloseoutHandler)
 	.openapi(pushRunGitCloseoutRoute, pushRunGitCloseoutHandler)
+	.openapi(previewRunGitMergeRoute, previewRunGitMergeHandler)
+	.openapi(deferRunGitMergeRoute, deferRunGitMergeHandler)
+	.openapi(reworkRunGitMergeRoute, reworkRunGitMergeHandler)
+	.openapi(overrideRunGitMergeTargetRoute, overrideRunGitMergeTargetHandler)
+	.openapi(executeRunGitMergeRoute, executeRunGitMergeHandler)
 	.openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
 	.openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
 	.openapi(getReviewRecommendationRoute, getReviewRecommendationHandler)

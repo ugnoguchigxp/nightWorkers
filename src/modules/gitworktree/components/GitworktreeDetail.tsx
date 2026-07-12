@@ -9,36 +9,25 @@ import {
 	controlStyle,
 	mutedTextStyle,
 	panelStyle,
-	primaryButtonStyle,
 	tableBorderStyle,
 } from "./gitworktreeStyles";
 
 type GitworktreeDetailProps = {
 	selected: WorktreeSummary | null;
 	busy: boolean;
-	showTask: boolean;
-	taskTitle: string;
 	advice: WorktreeAdviceResponse | null;
 	onViewDiff: () => void;
 	onRequestAdvice: () => void;
-	onToggleTask: () => void;
 	onRemove: () => void;
-	onTaskTitleChange: (value: string) => void;
-	onSubmitTask: () => void;
 };
 
 export function GitworktreeDetail({
 	selected,
 	busy,
-	showTask,
-	taskTitle,
 	advice,
 	onViewDiff,
 	onRequestAdvice,
-	onToggleTask,
 	onRemove,
-	onTaskTitleChange,
-	onSubmitTask,
 }: GitworktreeDetailProps) {
 	const { t } = useTranslation();
 	if (!selected) {
@@ -137,15 +126,6 @@ export function GitworktreeDetail({
 					</button>
 					<button
 						type="button"
-						className="h-8 border px-3 text-xs"
-						style={controlStyle}
-						disabled={busy}
-						onClick={onToggleTask}
-					>
-						{t("projectDetail.worktrees.createTask")}
-					</button>
-					<button
-						type="button"
 						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
 						style={{ ...controlStyle, color: "var(--nw-danger)" }}
 						disabled={busy || !selected.canRemove || !selected.head}
@@ -155,33 +135,6 @@ export function GitworktreeDetail({
 						{t("projectDetail.worktrees.remove")}
 					</button>
 				</div>
-				{showTask ? (
-					<form
-						className="flex flex-wrap gap-2"
-						onSubmit={(event) => {
-							event.preventDefault();
-							onSubmitTask();
-						}}
-					>
-						<input
-							className="h-8 min-w-[220px] flex-1 border px-2 text-xs"
-							style={controlStyle}
-							disabled={busy}
-							required
-							value={taskTitle}
-							placeholder={t("projectDetail.worktrees.taskTitlePlaceholder")}
-							onChange={(event) => onTaskTitleChange(event.target.value)}
-						/>
-						<button
-							type="submit"
-							className="h-8 border px-3 text-xs"
-							style={primaryButtonStyle}
-							disabled={busy}
-						>
-							{t("projectDetail.worktrees.confirmTask")}
-						</button>
-					</form>
-				) : null}
 				{advice ? (
 					<div className="border p-3 text-xs" style={controlStyle}>
 						{advice.summary}

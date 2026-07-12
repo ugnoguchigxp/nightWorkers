@@ -531,3 +531,10 @@ export {
 	getRunGitCloseout,
 	pushRunGitCloseout,
 } from "./nightworkers.git-closeout.service";
+export {
+	deferTaskRunMerge,
+	executeTaskRunMerge,
+	overrideTaskRunMergeTarget,
+	previewTaskRunMerge,
+	requestTaskRunRework,
+} from "./nightworkers.git-merge.service";

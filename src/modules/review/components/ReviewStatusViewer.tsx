@@ -17,6 +17,7 @@ import type {
 	ReviewRunOptions,
 	ReviewSessionDetail,
 } from "../types";
+import { ReviewGitIntegrationPanel } from "./ReviewGitIntegrationPanel";
 import { ReviewRunResultPanel } from "./ReviewRunResultPanel";
 
 type ReviewStatusViewerProps = {
@@ -221,6 +222,7 @@ export function ReviewStatusViewer({
 			(warning) => warning.severity === "blocking",
 		);
 	const commitAlreadyDone =
+		Boolean(gitCloseout?.mergeRecord) ||
 		gitCloseout?.state === "committed" ||
 		gitCloseout?.state === "push_ready" ||
 		gitCloseout?.state === "pushed";
@@ -433,6 +435,10 @@ export function ReviewStatusViewer({
 							{commitAlreadyDone ? "コミット済み" : "LLMメッセージでコミット"}
 						</button>
 					</div>
+					<ReviewGitIntegrationPanel
+						mergeRecord={gitCloseout?.mergeRecord ?? null}
+						onError={setError}
+					/>
 				</div>
 
 				{detail.securityHandoffs.length > 0 ? (

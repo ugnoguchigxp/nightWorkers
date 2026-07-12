@@ -20,7 +20,7 @@ export function getRuntimeRoot(env: NodeJS.ProcessEnv = process.env): string {
 		return path.resolve(env.NIGHTWORKERS_RUNTIME_DIR);
 	}
 	if (isDesktopMode(env)) {
-		return path.join(getResourceRoot(env), "data");
+		return path.join(getResourceRoot(env), ".nightworkers");
 	}
 	return path.resolve(process.cwd(), ".nightworkers");
 }

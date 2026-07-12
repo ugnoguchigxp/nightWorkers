@@ -3,7 +3,9 @@ import {
 	createRepositorySchema,
 	repositorySchema,
 	safetyPolicySchema,
+	updateRepositoryGitIntegrationSchema,
 } from "../../../../shared/schemas/nightworkers.schema";
+import { projectGitIntegrationPolicySchema } from "../../../../shared/schemas/git-integration.schema";
 
 export const listRepositoriesRoute = createRoute({
 	method: "get",
@@ -81,6 +83,12 @@ export const updateRepositoryRoute = createRoute({
 						queueEnabled: z.boolean().optional(),
 						maxConcurrentSessions: z.number().int().positive().optional(),
 						safetyPolicy: safetyPolicySchema.optional(),
+						branch:
+							updateRepositoryGitIntegrationSchema.shape.branch.optional(),
+						gitIntegrationPolicy:
+							projectGitIntegrationPolicySchema.optional(),
+						expectedGitIntegrationVersion:
+							updateRepositoryGitIntegrationSchema.shape.expectedGitIntegrationVersion.optional(),
 					}),
 				},
 			},

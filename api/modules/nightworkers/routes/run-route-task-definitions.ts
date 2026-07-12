@@ -201,6 +201,114 @@ export const pushRunGitCloseoutRoute = createRoute({
 	},
 });
 
+const mergeRecordResponseSchema = z.object({
+	id: z.string().uuid(),
+	runId: z.string().uuid(),
+	status: z.string(),
+	decision: z.string(),
+	recordVersion: z.number().int(),
+});
+const mergeRecordRequestSchema = z.object({
+	expectedVersion: z.number().int().nonnegative(),
+});
+
+export const previewRunGitMergeRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/merge/preview",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: { "application/json": { schema: mergeRecordRequestSchema } },
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: mergeRecordResponseSchema.nullable() },
+			},
+			description: "Merge preview result",
+		},
+	},
+});
+
+export const deferRunGitMergeRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/merge/defer",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: { "application/json": { schema: mergeRecordRequestSchema } },
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: mergeRecordResponseSchema.nullable() },
+			},
+			description: "Merge deferred",
+		},
+	},
+});
+
+export const reworkRunGitMergeRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/merge/rework",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: { "application/json": { schema: mergeRecordRequestSchema } },
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: mergeRecordResponseSchema.nullable() },
+			},
+			description: "Rework requested",
+		},
+	},
+});
+
+export const overrideRunGitMergeTargetRoute = createRoute({
+	method: "patch",
+	path: "/runs/:id/git/merge/target",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: {
+				"application/json": {
+					schema: mergeRecordRequestSchema.extend({
+						targetBranch: z.string().min(1),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: { "application/json": { schema: mergeRecordResponseSchema } },
+			description: "Merge target overridden",
+		},
+	},
+});
+
+export const executeRunGitMergeRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/git/merge",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: { "application/json": { schema: mergeRecordRequestSchema } },
+		},
+	},
+	responses: {
+		200: {
+			content: { "application/json": { schema: mergeRecordResponseSchema } },
+			description: "Merge executed",
+		},
+	},
+});
+
 export const listTaskRunEventsRoute = createRoute({
 	method: "get",
 	path: "/runs/:id/events",

@@ -22,6 +22,8 @@ import {
 	readOwnedDiff,
 	withRepositoryCloseoutLock,
 } from "./git-closeout-support";
+import { getTaskRunMergeRecord } from "./nightworkers.git-merge.repository";
+import { createMergeRecordForCommittedRun } from "./nightworkers.git-merge.service";
 import * as repo from "./nightworkers.repository";
 import { toErrorMessage } from "./run-orchestration/utils";
 
@@ -67,9 +69,10 @@ async function loadCloseoutContext(runId: string) {
 		...repository,
 		localPath: run.worktreePath || repository.localPath,
 	};
-	const [commitRecord, reviewSession] = await Promise.all([
+	const [commitRecord, reviewSession, mergeRecord] = await Promise.all([
 		repo.getTaskRunCommitRecord(runId),
 		reviewRepo.getReviewSessionByRun(runId),
+		getTaskRunMergeRecord(runId),
 	]);
 	const artifacts = reviewSession
 		? await reviewRepo.listReviewArtifacts(reviewSession.id)
@@ -101,6 +104,7 @@ async function loadCloseoutContext(runId: string) {
 		run,
 		repository: executionRepository,
 		commitRecord,
+		mergeRecord,
 		reviewSession,
 		testCoverageStatus,
 		reviewRunStatus,
@@ -272,15 +276,30 @@ export async function getRunGitCloseout(runId: string) {
 		dirtyPaths: context.gitState.dirtyPaths,
 		stagedPaths: context.gitState.stagedPaths,
 	});
+	const integrationState = context.mergeRecord
+		? ({
+				decision_required: "integration_decision_required",
+				previewing: "merge_preview_running",
+				merge_ready: "merge_ready",
+				merging: "merge_running",
+				merged: "merged",
+				deferred: "integration_deferred",
+				rework_requested: "rework_requested",
+				merge_blocked: "merge_blocked",
+				merge_conflicted: "merge_conflicted",
+				failed: "failed",
+			}[context.mergeRecord.status] ?? decision.state)
+		: decision.state;
 	return {
 		runId: context.run.id,
 		repositoryId: context.repository.id,
 		canCommit: decision.state === "commit_ready",
 		canPush: decision.state === "push_ready",
-		state: decision.state,
+		state: integrationState,
 		blockingCode: decision.code,
 		blockingReason: decision.reason,
 		commitRecord: context.commitRecord,
+		mergeRecord: context.mergeRecord,
 		requiredReview: {
 			reviewSessionId: context.reviewSession?.id ?? null,
 			testCoverageStatus: context.testCoverageStatus,
@@ -464,10 +483,22 @@ async function commitRunGitCloseoutLocked(
 			message: `Committed runtime-owned paths: ${commitSha}`,
 			data: { commitSha, message, paths: stageablePaths },
 		});
-		await queueRepo.completeImplementationQueueEntryForRunId({
-			runId,
-			runStatus: "completed",
-		});
+		const taskWorkspace = await (
+			await import("../gitworktree/task-git-workspace.repository")
+		).getTaskGitWorkspace(context.run.taskId);
+		if (taskWorkspace) {
+			await createMergeRecordForCommittedRun(runId);
+			await queueRepo.completeImplementationQueueEntryForRunId({
+				runId,
+				runStatus: "completed",
+			});
+			await repo.updateTask(context.run.taskId, { status: "needs_review" });
+		} else {
+			await queueRepo.completeImplementationQueueEntryForRunId({
+				runId,
+				runStatus: "completed",
+			});
+		}
 		return getRunGitCloseout(runId);
 	} catch (error) {
 		await repo.updateTaskRunCommitRecord(runId, {

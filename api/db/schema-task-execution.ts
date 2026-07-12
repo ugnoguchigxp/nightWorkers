@@ -87,6 +87,12 @@ export const implementationQueueEntries = sqliteTable(
 		claimReady: integer("claim_ready", { mode: "boolean" })
 			.default(true)
 			.notNull(),
+		workspaceId: text("workspace_id").references(() => taskGitWorkspaces.id, {
+			onDelete: "set null",
+		}),
+		workspaceRequired: integer("workspace_required", { mode: "boolean" })
+			.default(false)
+			.notNull(),
 	},
 	(table) => ({
 		taskIdIdx: index("implementation_queue_entries_task_id_idx").on(
@@ -126,6 +132,69 @@ export const implementationQueueEntries = sqliteTable(
 			"implementation_queue_entries_mission_pilot_admission_uidx",
 		).on(table.missionPilotAdmissionKey),
 	}),
+);
+
+export const taskGitWorkspaces = sqliteTable(
+	"task_git_workspaces",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.unique()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		repositoryId: text("repository_id")
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		planReviewId: text("plan_review_id"),
+		admissionKey: text("admission_key"),
+		status: text("status").default("planned").notNull(),
+		materializationKind: text("materialization_kind").notNull(),
+		materializationIntentJson: text("materialization_intent_json", {
+			mode: "json",
+		}),
+		bootstrapEvidenceJson: text("bootstrap_evidence_json", { mode: "json" }),
+		integrationPolicySnapshotJson: text("integration_policy_snapshot_json", {
+			mode: "json",
+		}).notNull(),
+		sourceBranch: text("source_branch").notNull(),
+		targetBranch: text("target_branch").notNull(),
+		targetBaseSha: text("target_base_sha"),
+		worktreePath: text("worktree_path"),
+		worktreeId: text("worktree_id"),
+		allocationVersion: integer("allocation_version").default(1).notNull(),
+		expectedHeadSha: text("expected_head_sha"),
+		provisionAttempt: integer("provision_attempt").default(0).notNull(),
+		leaseOwner: text("lease_owner"),
+		leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
+		lastVerifiedHead: text("last_verified_head"),
+		attentionResumeStatus: text("attention_resume_status"),
+		lastErrorCode: text("last_error_code"),
+		lastErrorMessage: text("last_error_message"),
+		provisionedAt: integer("provisioned_at", { mode: "timestamp" }),
+		releasedAt: integer("released_at", { mode: "timestamp" }),
+		retiredAt: integer("retired_at", { mode: "timestamp" }),
+	},
+	(table) => ({
+		repositoryStatusIdx: index("task_git_workspaces_repository_status_idx").on(
+			table.repositoryId,
+			table.status,
+		),
+	}),
+);
+
+export const repositoryGitMutationLeases = sqliteTable(
+	"repository_git_mutation_leases",
+	{
+		repositoryId: text("repository_id")
+			.primaryKey()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		ownerId: text("owner_id").notNull(),
+		operation: text("operation").notNull(),
+		leaseVersion: integer("lease_version").default(0).notNull(),
+		acquiredAt: integer("acquired_at", { mode: "timestamp" }).notNull(),
+		expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
 );
 
 export const taskRunCommitRecords = sqliteTable(
@@ -174,6 +243,55 @@ export const taskRunCommitRecords = sqliteTable(
 		),
 		repositoryStatusIdx: index(
 			"task_run_commit_records_repository_status_idx",
+		).on(table.repositoryId, table.status),
+	}),
+);
+
+export const taskRunMergeRecords = sqliteTable(
+	"task_run_merge_records",
+	{
+		...commonColumns,
+		runId: text("run_id")
+			.notNull()
+			.unique()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		repositoryId: text("repository_id")
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		workspaceId: text("workspace_id")
+			.notNull()
+			.references(() => taskGitWorkspaces.id, { onDelete: "cascade" }),
+		sourceBranch: text("source_branch").notNull(),
+		sourceCommitSha: text("source_commit_sha").notNull(),
+		planTargetBranch: text("plan_target_branch").notNull(),
+		planTargetBaseSha: text("plan_target_base_sha").notNull(),
+		targetBranch: text("target_branch").notNull(),
+		targetSelectedSha: text("target_selected_sha").notNull(),
+		observedTargetSha: text("observed_target_sha"),
+		strategy: text("strategy").notNull(),
+		decision: text("decision").default("undecided").notNull(),
+		status: text("status").default("decision_required").notNull(),
+		recordVersion: integer("record_version").default(0).notNull(),
+		ciStatus: text("ci_status").default("not_required").notNull(),
+		ciEvidenceJson: text("ci_evidence_json", { mode: "json" }),
+		previewEvidenceJson: text("preview_evidence_json", { mode: "json" }),
+		conflictPathsJson: text("conflict_paths_json", { mode: "json" }),
+		mergeOrigin: text("merge_origin"),
+		mergeCommitSha: text("merge_commit_sha"),
+		targetHeadAfter: text("target_head_after"),
+		targetPushStatus: text("target_push_status"),
+		targetPushedAt: integer("target_pushed_at", { mode: "timestamp" }),
+		decidedAt: integer("decided_at", { mode: "timestamp" }),
+		mergedAt: integer("merged_at", { mode: "timestamp" }),
+		lastErrorCode: text("last_error_code"),
+		lastErrorMessage: text("last_error_message"),
+	},
+	(table) => ({
+		repositoryStatusIdx: index(
+			"task_run_merge_records_repository_status_idx",
 		).on(table.repositoryId, table.status),
 	}),
 );

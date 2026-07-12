@@ -342,7 +342,7 @@ fn resolve_runtime_dir(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::e
     if !cfg!(debug_assertions) {
         return Ok(app.path().app_data_dir()?);
     }
-    Ok(resolve_resource_root(app)?.join("data"))
+    Ok(resolve_resource_root(app)?.join(".nightworkers"))
 }
 
 fn resolve_backend_entry(resource_root: &Path) -> Result<PathBuf, String> {

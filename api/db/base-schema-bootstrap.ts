@@ -70,6 +70,16 @@ export async function ensureBaseNightWorkersTables() {
 		"feature_settings",
 		"feature_settings text",
 	);
+	await ensureColumn(
+		"repositories",
+		"git_integration_policy_json",
+		"git_integration_policy_json text",
+	);
+	await ensureColumn(
+		"repositories",
+		"git_integration_version",
+		"git_integration_version integer DEFAULT 0 NOT NULL",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (

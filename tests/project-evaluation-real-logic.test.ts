@@ -7,7 +7,11 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import { buildProjectEvaluationBundle } from "../api/modules/project-evaluation/project-evaluation-bundle.service";
-import { normalizeRoleRoutes } from "../api/modules/settings";
+import {
+	llmSettingsSchema,
+	normalizeRawLlmSettings,
+	normalizeRoleRoutes,
+} from "../api/modules/settings";
 import { LLM_ROLE_ORDER, llmRoleSchema } from "../api/routes/settings-runtime";
 import {
 	defaultProjectEvaluationDimensions,
@@ -215,6 +219,76 @@ describe("project evaluation real logic", () => {
 			providerEndpointId: "quality",
 			model: "quality-model",
 		});
+	});
+
+	it("preserves configured routes while their endpoint is disabled", () => {
+		const endpoints = [
+			{
+				id: "openai-main",
+				name: "OpenAI",
+				kind: "openai" as const,
+				enabled: true,
+				apiKey: "",
+				baseUrl: "",
+				endpoint: "",
+				apiVersion: "",
+				region: "",
+				models: ["gpt-5-mini"],
+				modelDisplayNames: {},
+			},
+			{
+				id: "codex-main",
+				name: "Codex SDK",
+				kind: "codex" as const,
+				enabled: false,
+				apiKey: "",
+				baseUrl: "",
+				endpoint: "",
+				apiVersion: "",
+				region: "",
+				models: ["gpt-5.4-mini"],
+				modelDisplayNames: {},
+			},
+		];
+		const routes = normalizeRoleRoutes(
+			[
+				{
+					role: "plan",
+					primary: {
+						providerEndpointId: "codex-main",
+						model: "gpt-5.4-mini",
+					},
+					fallbacks: [],
+				},
+			],
+			endpoints,
+			"codex",
+		);
+
+		expect(routes.find((route) => route.role === "plan")?.primary).toEqual({
+			providerEndpointId: "codex-main",
+			model: "gpt-5.4-mini",
+			thinkingDepth: "",
+		});
+
+		const normalized = normalizeRawLlmSettings(
+			llmSettingsSchema.parse({
+				ACTIVE_LLM_PROVIDER: "codex",
+				CODEX_ENABLED: true,
+				CODEX_MODEL: "gpt-5.4-mini",
+				providerEndpoints: endpoints,
+				roleRoutes: routes,
+			}),
+		);
+		expect(
+			normalized.roleRoutes.find((route) => route.role === "plan")?.primary,
+		).toEqual({
+			providerEndpointId: "codex-main",
+			model: "gpt-5.4-mini",
+			thinkingDepth: "",
+		});
+		expect(normalized.CODEX_ENABLED).toBe(false);
+		expect(normalized.OPENAI_ENABLED).toBe(true);
 	});
 
 	it("parses evaluation and improvement structured outputs", () => {

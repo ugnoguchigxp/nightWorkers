@@ -134,6 +134,8 @@ Linuxは`.deb`、`.rpm`、AppImage、Windowsはx64 NSISとMSIを対象にしま�
 
 Desktop runtime stateとdiagnosticsは`NIGHTWORKERS_RUNTIME_DIR`配下に保存されます。主なlogは`desktop.log`、`sidecar.log`、`api.log`です。
 
+runtime API logは日次かつサイズでローテーションし、7日保持します。LLMの生request／response traceとJSON解析失敗previewは3日、usage集計は30日、保持処理の監査記録は90日保持します。管理対象のruntime log directoryは80 MiB上限であり、容量上限に達した場合は期間内でも古いclosed segmentから削除されます。LLM生logは機微なProject contextを含み得るため、archive用途には使いません。
+
 ## 設定
 
 主な環境変数:

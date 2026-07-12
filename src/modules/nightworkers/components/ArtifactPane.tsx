@@ -159,9 +159,6 @@ export function ArtifactPane({
 	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
 	const [frozenTestModeWorkflow, setFrozenTestModeWorkflow] =
 		useState<FrozenTestModeWorkflow | null>(null);
-	const [bodyRenderArtifactId, _setBodyRenderArtifactId] = useState<
-		string | null
-	>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
 		useState<ProjectArtifactMode>("tree");
 	const [planModeExportDescriptor, setPlanModeExportDescriptor] =
@@ -192,7 +189,6 @@ export function ArtifactPane({
 		artifactVersions,
 		currentVersionIndex,
 		displayArtifact,
-		displayArtifactId,
 		showDiff,
 		showBlueprintWorkspace,
 		showReviewStatus,
@@ -348,11 +344,6 @@ export function ArtifactPane({
 	const artifactFrameClass = isFullscreen
 		? "fixed inset-3 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#1e1e2e] shadow-2xl"
 		: "nightworkers-artifact-pane flex min-h-0 min-w-0 flex-col overflow-hidden";
-	const shouldDeferArtifactBody =
-		typeof window !== "undefined" &&
-		Boolean(displayArtifact) &&
-		!showProjectTree &&
-		bodyRenderArtifactId !== displayArtifactId;
 	useEffect(() => {
 		logArtifactPaneRendered(displayArtifact, {
 			activityArtifactCount: activityArtifacts.length,
@@ -409,11 +400,7 @@ export function ArtifactPane({
 				) : null}
 			</div>
 			<div className="flex min-h-0 flex-1" data-artifact-export-expand>
-				{shouldDeferArtifactBody ? (
-					<div className="flex min-h-0 flex-1 items-center justify-center text-xs text-slate-500">
-						{t("artifact.loading")}
-					</div>
-				) : showProjectTree && !showProjectDiff ? (
+				{showProjectTree && !showProjectDiff ? (
 					<div className="min-h-0 w-56 shrink-0 overflow-auto border-r border-slate-800 p-2">
 						<FilesOutline
 							isFilesLoading={isFilesLoading}

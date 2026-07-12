@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+	defaultProjectGitIntegrationPolicy,
+	projectGitIntegrationPolicySchema,
+} from "../git-integration.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
@@ -11,6 +15,7 @@ export const taskStatusSchema = z.enum([
 	"finalizing",
 	"verifying",
 	"needs_review",
+	"integration_pending",
 	"completed",
 	"archived",
 	"blocked",
@@ -38,6 +43,10 @@ export const repositorySchema = z
 		name: z.string(),
 		localPath: z.string(),
 		branch: z.string(),
+		gitIntegrationPolicyJson: projectGitIntegrationPolicySchema
+			.nullable()
+			.optional(),
+		gitIntegrationVersion: z.number().int().nonnegative().default(0),
 		allowed: z.boolean(),
 		queueEnabled: z.boolean().default(false),
 		maxConcurrentSessions: z.number().int().positive().default(1),
@@ -51,13 +60,24 @@ export const createRepositorySchema = z
 	.object({
 		name: z.string().min(1, "Name is required"),
 		localPath: z.string().min(1, "Local path is required"),
-		branch: z.string().optional().default("main"),
+		branch: z.string().optional(),
 		allowed: z.boolean().default(true),
 		queueEnabled: z.boolean().default(false),
 		maxConcurrentSessions: z.number().int().positive().default(1),
 		safetyPolicy: safetyPolicySchema.optional(),
 	})
 	.openapi("CreateRepository");
+
+export const updateRepositoryGitIntegrationSchema = z
+	.object({
+		branch: z.string().trim().min(1).max(240),
+		gitIntegrationPolicy: projectGitIntegrationPolicySchema.default(
+			defaultProjectGitIntegrationPolicy,
+		),
+		expectedGitIntegrationVersion: z.number().int().nonnegative(),
+	})
+	.strict()
+	.openapi("UpdateRepositoryGitIntegration");
 
 export const taskSchema = z
 	.object({

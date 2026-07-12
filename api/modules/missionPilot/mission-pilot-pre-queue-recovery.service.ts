@@ -191,6 +191,7 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				"validating_artifact",
 				"revising_dependencies",
 				"queueing",
+				"queued",
 				"attention",
 			]),
 		);
@@ -237,6 +238,43 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				session.contextRevision === handoff.data.reviewedContextRevision &&
 				session.contextDigest === handoff.data.reviewedContextDigest
 			) {
+				try {
+					const { ensureTaskGitWorkspace, provisionTaskGitWorkspace } =
+						await import("../gitworktree/task-git-workspace.service");
+					const workspace = await ensureTaskGitWorkspace({
+						taskId: session.taskId,
+						planReviewId: handoff.data.planReviewId,
+						admissionKey: handoff.data.admissionKey,
+					});
+					const ready = await provisionTaskGitWorkspace(session.taskId);
+					if (!["ready", "active"].includes(ready.status))
+						throw new Error("workspace not ready");
+					await db
+						.update(implementationQueueEntries)
+						.set({
+							workspaceId: workspace.id,
+							workspaceRequired: true,
+							updatedAt: new Date(),
+						})
+						.where(eq(implementationQueueEntries.id, entry.id));
+				} catch (error) {
+					await db
+						.update(missionPilotSessions)
+						.set({
+							desiredState: "stopped",
+							phase: "attention",
+							lastErrorCode: "MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+							lastErrorMessage:
+								error instanceof Error
+									? error.message
+									: "Workspace recovery failed",
+							version: session.version + 1,
+							updatedAt: new Date(),
+						})
+						.where(eq(missionPilotSessions.id, session.id));
+					classified++;
+					continue;
+				}
 				const [restored] = await db
 					.update(missionPilotSessions)
 					.set({

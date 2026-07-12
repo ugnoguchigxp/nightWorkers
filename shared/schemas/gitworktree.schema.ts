@@ -1,5 +1,7 @@
 import { z } from "@hono/zod-openapi";
 
+export * from "./git-integration.schema";
+
 export const gitCapabilityReasonSchema = z
 	.enum(["git_not_found", "git_probe_timed_out", "git_probe_failed"])
 	.nullable();

@@ -45,6 +45,18 @@ export const defaultGeneralSettings: GeneralSettings = {
 	llmUsage: {
 		promptPartObservabilityEnabled: true,
 	},
+	dataRetention: {
+		apiLogDays: 7,
+		llmRawLogDays: 3,
+		usageDataDays: 30,
+		auditEventDays: 90,
+		apiLogMaxBytes: 16 * 1024 * 1024,
+		llmRawLogsMaxBytes: 64 * 1024 * 1024,
+		runtimeLogsMaxBytes: 80 * 1024 * 1024,
+		apiSegmentMaxBytes: 4 * 1024 * 1024,
+		llmSegmentMaxBytes: 8 * 1024 * 1024,
+		sweepIntervalMinutes: 60,
+	},
 };
 
 export function mergeGeneralSettings(
@@ -68,6 +80,10 @@ export function mergeGeneralSettings(
 		llmUsage: {
 			...defaultGeneralSettings.llmUsage,
 			...input.llmUsage,
+		},
+		dataRetention: {
+			...defaultGeneralSettings.dataRetention,
+			...input.dataRetention,
 		},
 	};
 }

@@ -70,10 +70,14 @@ export async function buildOverviewDashboard(input: {
 	activeModel?: string | null;
 }) {
 	const general = readGeneralSettings();
-	const range = input.range || "30d";
+	const requestedRange = input.range || "30d";
+	const range = requestedRange === "all" ? "30d" : requestedRange;
 	const timezone = input.timezone || general.timezone;
 	const currency = input.currency || general.currency;
-	const cutoff = getRangeCutoff(range);
+	const retentionCutoff = new Date(
+		Date.now() - general.dataRetention.usageDataDays * 24 * 60 * 60 * 1000,
+	);
+	const cutoff = getRangeCutoff(range) || retentionCutoff;
 
 	if (input.repositoryId) {
 		if (!(await overviewRepositoryExists(input.repositoryId))) {
@@ -282,7 +286,9 @@ export async function buildOverviewDashboard(input: {
 		generatedAt: new Date().toISOString(),
 		scope: {
 			repositoryId: input.repositoryId || null,
-			range,
+			range: requestedRange,
+			effectiveRange: range,
+			retentionCutoff: retentionCutoff.toISOString(),
 			timezone,
 			currency,
 		},

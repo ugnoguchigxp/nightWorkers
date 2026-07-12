@@ -135,6 +135,61 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 		});
 	});
 
+	it("preserves disabled role routes without falling back to the active provider", () => {
+		fs.writeFileSync(
+			llmSettingsPath(),
+			JSON.stringify({
+				ACTIVE_LLM_PROVIDER: "openai",
+				OPENAI_ENABLED: true,
+				providerEndpoints: [
+					{
+						id: "openai-main",
+						name: "OpenAI Main",
+						kind: "openai",
+						enabled: true,
+						models: ["gpt-5-mini"],
+					},
+					{
+						id: "codex-disabled",
+						name: "Codex Disabled",
+						kind: "codex",
+						enabled: false,
+						models: ["gpt-5.6-luna"],
+					},
+				],
+				roleRoutes: [
+					{
+						role: "mission_task_generation",
+						primary: {
+							providerEndpointId: "codex-disabled",
+							model: "gpt-5.6-luna",
+						},
+						fallbacks: [],
+					},
+				],
+			}),
+		);
+
+		const settings = readStructuredLlmProviderSettings();
+		const requests = buildNormalizedSupervisorLlmRequestCandidates({
+			systemPrompt: "system text",
+			userPrompt: "user text",
+			label: "mission_task_generation",
+			role: "mission_task_generation",
+			settings,
+		});
+
+		expect(
+			settings.roleRoutes?.find(
+				(route) => route.role === "mission_task_generation",
+			)?.primary,
+		).toMatchObject({
+			providerEndpointId: "codex-disabled",
+			model: "gpt-5.6-luna",
+		});
+		expect(requests).toEqual([]);
+	});
+
 	it("resolves role routing to provider endpoint and model when role is specified", () => {
 		const request = buildNormalizedSupervisorLlmRequest({
 			systemPrompt: "system text",

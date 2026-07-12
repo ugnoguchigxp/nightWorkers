@@ -28,7 +28,7 @@ import {
 } from "../../ontology";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
-import { readGitBaseline } from "./git-ownership";
+import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import { launchRuntimeExecution } from "./runtime-execution";
 import {
 	buildEffectiveLlmRoutingSnapshot,
@@ -146,6 +146,7 @@ export async function startTaskRunInProcess(
 		},
 		startedAt: new Date(),
 	});
+	await activateWorkspace(taskId, executionMode, gitBaseline.baselineHead);
 	await repo.createTaskRunCommitRecord({
 		runId: run.id,
 		repositoryId: task.repositoryId,

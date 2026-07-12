@@ -74,6 +74,56 @@ const generalSettingsSchema = z.object({
 			promptPartObservabilityEnabled: z.boolean(),
 		})
 		.optional(),
+	dataRetention: z
+		.object({
+			apiLogDays: z
+				.number()
+				.int()
+				.refine((value): boolean => value === 7),
+			llmRawLogDays: z
+				.number()
+				.int()
+				.refine((value): boolean => value === 3),
+			usageDataDays: z
+				.number()
+				.int()
+				.refine((value): boolean => value === 30),
+			auditEventDays: z
+				.number()
+				.int()
+				.refine((value): boolean => value === 90),
+			apiLogMaxBytes: z
+				.number()
+				.int()
+				.positive()
+				.max(128 * 1024 * 1024),
+			llmRawLogsMaxBytes: z
+				.number()
+				.int()
+				.positive()
+				.max(256 * 1024 * 1024),
+			runtimeLogsMaxBytes: z
+				.number()
+				.int()
+				.positive()
+				.max(512 * 1024 * 1024),
+			apiSegmentMaxBytes: z
+				.number()
+				.int()
+				.positive()
+				.max(32 * 1024 * 1024),
+			llmSegmentMaxBytes: z
+				.number()
+				.int()
+				.positive()
+				.max(64 * 1024 * 1024),
+			sweepIntervalMinutes: z
+				.number()
+				.int()
+				.positive()
+				.max(24 * 60),
+		})
+		.optional(),
 });
 
 const fxRateCacheSchema = z
