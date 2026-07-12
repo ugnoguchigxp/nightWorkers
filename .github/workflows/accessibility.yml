@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -33,7 +33,7 @@ jobs:
           --id accessibility
           --output artifacts/release-check-accessibility.json
       - name: Upload release check evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-check-accessibility
           path: artifacts/release-check-accessibility.json
@@ -41,7 +41,7 @@ jobs:
           retention-days: 14
       - name: Upload accessibility evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: accessibility-evidence
           path: |

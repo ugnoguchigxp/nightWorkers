@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -52,14 +52,14 @@ jobs:
               --output "artifacts/release-check-${CHECK_ID}.json"
           done
       - name: Upload release-core check evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-check-core
           path: artifacts/release-check-*.json
           if-no-files-found: error
           retention-days: 14
       - name: Upload candidate artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightworkers-candidate-macos-arm64
           path: NightWorkers-*-macos-arm64.zip
@@ -70,7 +70,7 @@ jobs:
         run: node scripts/desktop/collect-diagnostics.mjs postmortem --expected-target darwin:arm64
       - name: Upload release diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-desktop-diagnostics
           path: artifacts/**
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -99,13 +99,13 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - name: Download required check evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-check-*
           path: release-checks
           merge-multiple: true
       - name: Download candidate artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightworkers-candidate-macos-arm64
           path: release-output
@@ -133,7 +133,7 @@ jobs:
           format: cyclonedx-json
           output-file: release-output/nightworkers-sbom.cdx.json
       - name: Upload attested release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightworkers-attested-${{ github.sha }}
           path: release-output/**
@@ -147,9 +147,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download attested release bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nightworkers-attested-${{ github.sha }}
           path: release-output
@@ -158,7 +158,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "RELEASE_NOTES_PATH=spec/release-notes/${VERSION}.md" >> "$GITHUB_ENV"
       - name: Publish GitHub release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |

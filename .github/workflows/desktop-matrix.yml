@@ -42,7 +42,7 @@ jobs:
             check_id: desktop-windows
             packaged_smoke: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -78,7 +78,7 @@ jobs:
           --id ${{ matrix.check_id }}
           --output artifacts/release-check-${{ matrix.check_id }}.json
       - name: Upload release check evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-check-${{ matrix.check_id }}
           path: artifacts/release-check-${{ matrix.check_id }}.json
@@ -89,7 +89,7 @@ jobs:
         run: node scripts/desktop/collect-diagnostics.mjs postmortem --expected-target ${{ matrix.target }}
       - name: Upload diagnostics and packages
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.platform }}-${{ github.run_attempt }}
           if-no-files-found: warn
