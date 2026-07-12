@@ -1,13 +1,11 @@
 # Runtime Configuration Reference
 
-## Core Variables
-- `DATABASE_URL`: SQLite/libSQL target
-- `AUTH_MODE`: `local`, `oauth`, `both`
-- `API_AUTH_REQUIRED`: opt-in protection for product APIs and the NightWorkers
-  WebSocket with `authMiddleware`. Defaults to `false` for local personal use;
-  set `true` when intentionally exposing the app beyond localhost.
-- `APP_URL`: base URL for auth callbacks and cookie behavior
-- `TRUST_PROXY`: set `true` when proxy headers should be trusted
+## Bootstrap Variables
+
+Server、認証、OAuth、LLM provider、runtime設定はSettings画面から変更し、
+通常開発では`.nightworkers/sqlite.db`へ保存します。環境変数はdesktop packagingや
+isolated testなど、SQLiteを開く前に必要なbootstrap値だけに限定します。
+
 - `NIGHTWORKERS_DESKTOP`: set by the Tauri shell for desktop sidecar mode
 - `NIGHTWORKERS_RUNTIME_DIR`: writable desktop runtime root for DB, settings,
   logs, secrets, and artifacts
@@ -19,8 +17,9 @@
   backend static server
 
 ## Desktop Runtime
-In desktop mode, Tauri injects the desktop variables above. If `DATABASE_URL` is
-not set, the backend uses `file:${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`.
+通常のbrowser開発では、backendは固定パス`.nightworkers/sqlite.db`を使用します。
+`DATABASE_URL`の指定は不要です。desktop modeではTauriが上記のdesktop変数を注入し、
+backendは`${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`を使用します。
 When `NIGHTWORKERS_RUNTIME_DIR` is not explicitly set, it defaults to
 `${NIGHTWORKERS_RESOURCE_DIR}/data`. If `JWT_SECRET` is not set, the backend
 generates and stores one at `${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
@@ -30,8 +29,7 @@ Desktop logs are stored under `${NIGHTWORKERS_RUNTIME_DIR}/logs`.
 Desktop shell startup diagnostics are written to `desktop.log`, bundled Node
 sidecar stdout/stderr is written to `sidecar.log`, and API events are written to
 `api.log`.
-Development mode keeps the existing repo-local defaults, including `api/.runtime`
-and `logs`; desktop sidecar mode stores state under
+Development mode stores runtime state under `.nightworkers`; desktop sidecar mode stores state under
 `${NIGHTWORKERS_RUNTIME_DIR}`, defaulting to `${NIGHTWORKERS_RESOURCE_DIR}/data`
 when no override is set.
 
@@ -56,10 +54,10 @@ GET /api/settings/preflight/startup
 This endpoint separates app startup problems from Project execution environment
 problems.
 
-## OAuth Variables
-Enable as needed:
-- Google: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
-- GitHub: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`
+## OAuth Settings
+
+Google/GitHub OAuthのclient IDとsecretはSettings画面から登録し、SQLiteの公開設定と
+秘密設定へ分離して保存します。
 
 ## Optional Integration
 
@@ -76,8 +74,7 @@ Enable as needed:
 - Codex SDK in provider settings means schema-first provider access for
   structured decisions. `codex-agent` is the runtime lane for repository work
   execution. Do not document or expose them as interchangeable choices.
-- Runtime settings can override environment defaults for local development
-  without requiring `.env` edits.
+- Runtime settings are persisted in SQLite and do not require `.env` edits.
 - Secret fields are masked in `GET /api/settings/llm` responses. Saving a masked
   value keeps the existing secret instead of persisting the mask.
 - LLM runtime settings are written with owner-only file permissions where the
