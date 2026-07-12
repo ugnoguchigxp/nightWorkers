@@ -11,8 +11,8 @@ import {
 	controlStyle,
 	mutedTextStyle,
 	primaryTextStyle,
-	tableBorderStyle,
 } from "../overviewStyles";
+import { ProjectScopeNavigation } from "./ProjectScopeNavigation";
 
 export function OverviewHeader({
 	projects,
@@ -22,6 +22,7 @@ export function OverviewHeader({
 	isLoading,
 	onRangeChange,
 	onProjectFilterChange,
+	onOpenProjectDetailTab,
 	onRefresh,
 }: {
 	projects: Repository[];
@@ -31,6 +32,9 @@ export function OverviewHeader({
 	isLoading: boolean;
 	onRangeChange: (range: OverviewRange) => void;
 	onProjectFilterChange: (projectId: string | null) => void;
+	onOpenProjectDetailTab: (
+		tab: "mission" | "evaluation" | "quality" | "stack" | "worktrees",
+	) => void;
 	onRefresh: () => void;
 }) {
 	const { t } = useTranslation();
@@ -38,21 +42,28 @@ export function OverviewHeader({
 		? projects.some((project) => project.id === projectFilterId)
 		: true;
 	return (
-		<header
-			className="flex flex-wrap items-start justify-between gap-4 border-b pb-4"
-			style={tableBorderStyle}
-		>
-			<div>
-				<h1 className="flex items-center gap-2 text-xl font-bold">
-					<BarChart3 className="h-5 w-5" style={primaryTextStyle} />
-					{projectName
-						? t("overview.projectTitle", { name: projectName })
-						: t("overview.title")}
-				</h1>
-				<p className="mt-1 text-xs" style={mutedTextStyle}>
-					{projectName ? t("overview.projectSubtitle") : t("overview.subtitle")}
-				</p>
-			</div>
+		<header className="flex flex-wrap items-center justify-between gap-4">
+			{projectFilterId ? (
+				<ProjectScopeNavigation
+					projectId={projectFilterId}
+					activeTab="overview"
+					range={range}
+					showDivider={false}
+					onTabChange={(tab) => {
+						if (tab !== "overview") onOpenProjectDetailTab(tab);
+					}}
+				/>
+			) : (
+				<div>
+					<h1 className="flex items-center gap-2 text-xl font-bold">
+						<BarChart3 className="h-5 w-5" style={primaryTextStyle} />
+						{t("overview.title")}
+					</h1>
+					<p className="mt-1 text-xs" style={mutedTextStyle}>
+						{t("overview.subtitle")}
+					</p>
+				</div>
+			)}
 			<div className="flex flex-wrap items-center gap-2">
 				<select
 					aria-label={t("overview.filter.allProjects")}

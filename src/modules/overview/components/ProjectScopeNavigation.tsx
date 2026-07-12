@@ -13,18 +13,20 @@ export function ProjectScopeNavigation({
 	projectId,
 	activeTab,
 	range = "30d",
+	showDivider = true,
 	onTabChange,
 }: {
 	projectId: string;
 	activeTab: ProjectDetailTab;
 	range?: OverviewRange;
+	showDivider?: boolean;
 	onTabChange: (tab: ProjectDetailTab) => void;
 }) {
 	const { t } = useTranslation();
 	return (
 		<nav
-			className="flex flex-wrap gap-1 border-b pb-2 text-xs"
-			style={{ borderColor: "var(--nw-border)" }}
+			className={`flex flex-wrap gap-1 text-xs${showDivider ? " border-b pb-2" : ""}`}
+			style={showDivider ? { borderColor: "var(--nw-border)" } : undefined}
 			aria-label={t("overview.projectNavigation")}
 		>
 			{projectDetailTabs.map((tab) => {

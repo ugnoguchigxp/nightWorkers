@@ -16,12 +16,33 @@ describe("Overview components", () => {
 				isLoading={false}
 				onRangeChange={vi.fn()}
 				onProjectFilterChange={vi.fn()}
+				onOpenProjectDetailTab={vi.fn()}
 				onRefresh={vi.fn()}
 			/>,
 		);
 		expect(markup).toContain(
 			'<option value="23d6c7d1-9780-4906-a074-0ea8a066f774" selected="">todolist</option>',
 		);
+	});
+
+	it("puts project navigation in the header without the project title or dividers", () => {
+		const markup = renderToStaticMarkup(
+			<OverviewHeader
+				projects={[]}
+				range="30d"
+				projectFilterId="23d6c7d1-9780-4906-a074-0ea8a066f774"
+				projectName="todolist"
+				isLoading={false}
+				onRangeChange={vi.fn()}
+				onProjectFilterChange={vi.fn()}
+				onOpenProjectDetailTab={vi.fn()}
+				onRefresh={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("タスク生成");
+		expect(markup).not.toContain("todolist の概要");
+		expect(markup).not.toContain("border-bottom");
 	});
 
 	it("renders credits without presenting them as configured currency", () => {

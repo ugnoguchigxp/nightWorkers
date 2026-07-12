@@ -13,7 +13,6 @@ import { OverviewMetrics } from "./components/OverviewMetrics";
 import { EmptyState } from "./components/OverviewPrimitives";
 import { OverviewTables } from "./components/OverviewTables";
 import { OverviewUsageSections } from "./components/OverviewUsageSections";
-import { ProjectScopeNavigation } from "./components/ProjectScopeNavigation";
 import { overviewShellStyle } from "./overviewStyles";
 import { buildOverviewViewModel } from "./overviewViewModel";
 import {
@@ -79,20 +78,11 @@ export function OverviewDashboard({
 					isLoading={isLoading}
 					onRangeChange={onRangeChange}
 					onProjectFilterChange={onProjectFilterChange}
+					onOpenProjectDetailTab={(tab) => {
+						if (projectFilterId) onOpenProjectDetailTab(projectFilterId, tab);
+					}}
 					onRefresh={() => void refresh()}
 				/>
-
-				{projectFilterId ? (
-					<ProjectScopeNavigation
-						projectId={projectFilterId}
-						activeTab="overview"
-						range={range}
-						onTabChange={(tab) => {
-							if (tab !== "overview")
-								onOpenProjectDetailTab(projectFilterId, tab);
-						}}
-					/>
-				) : null}
 
 				{error ? <OverviewError message={error} /> : null}
 				{startupWarnings.map((warning) => (
