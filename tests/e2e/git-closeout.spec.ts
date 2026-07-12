@@ -1,11 +1,70 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { type APIRequestContext, expect, test } from "@playwright/test";
+import Database from "better-sqlite3";
 import { createDisposableGitWorkspace } from "./helpers";
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
 };
+
+function seedSpec(taskId: string) {
+	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
+	if (!databasePath) throw new Error("E2E database path is required");
+	const db = new Database(databasePath);
+	const id = randomUUID();
+	db.prepare(
+		"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, created_at) values (?, ?, null, 'assistant', ?, 'markdown_document', ?, ?)",
+	).run(
+		id,
+		taskId,
+		[
+			"# E2E closeout verification plan",
+			"",
+			"## 完了条件",
+			"- managed test evidence が成功すること。 (test command: `git diff --check`)",
+		].join("\n"),
+		JSON.stringify({ intent: "implementation_plan" }),
+		Date.now(),
+	);
+	db.close();
+	return `implementation-plan-${id}`;
+}
+
+function readTestEvidence(taskId: string) {
+	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
+	if (!databasePath) throw new Error("E2E database path is required");
+	const db = new Database(databasePath, { readonly: true });
+	const counts = db
+		.prepare(
+			"select (select count(*) from verification_documents where task_id = ?) as documents, (select group_concat(status) from verification_documents where task_id = ?) as documentStatuses, (select count(*) from verification_evidence_runs where task_id = ?) as evidenceRuns, (select count(*) from verification_checklist_items where task_id = ?) as checklistItems, (select group_concat(status) from verification_checklist_items where task_id = ?) as checklistStatuses, (select count(*) from verification_checklist_items where task_id = ? and required = 1 and status in ('passed', 'covered', 'verified_by_gate', 'manual', 'not_applicable')) as completedItems",
+		)
+		.get(taskId, taskId, taskId, taskId, taskId, taskId) as {
+		documents: number;
+		documentStatuses: string | null;
+		evidenceRuns: number;
+		checklistItems: number;
+		checklistStatuses: string | null;
+		completedItems: number;
+	};
+	db.close();
+	return counts;
+}
+
+async function waitForRun(
+	request: APIRequestContext,
+	runId: string,
+	status: string,
+) {
+	for (let index = 0; index < 200; index += 1) {
+		const detail = await request.get(`/api/runs/${runId}`, { headers });
+		const current = (await detail.json()) as { status: string };
+		if (current.status === status) return;
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+	throw new Error(`Fixture run did not reach ${status}`);
+}
 
 async function createCompletedRun(
 	request: APIRequestContext,
@@ -46,8 +105,23 @@ async function createCompletedRun(
 	for (let index = 0; index < 200; index += 1) {
 		const detail = await request.get(`/api/runs/${run.id}`, { headers });
 		const current = (await detail.json()) as { status: string };
-		if (current.status === "completed")
+		if (current.status === "completed") {
+			const testMode = await request.post(
+				`/api/tasks/${taskId}/test-mode-run`,
+				{
+					headers,
+					data: {
+						projectId: repositoryId,
+						specArtifactId: seedSpec(taskId),
+						mode: "test",
+					},
+				},
+			);
+			expect(testMode.status(), await testMode.text()).toBe(201);
+			const testRun = (await testMode.json()) as { id: string };
+			await waitForRun(request, testRun.id, "completed");
 			return { repositoryId, taskId, runId: run.id };
+		}
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
 	throw new Error("Fixture run did not complete");
@@ -71,7 +145,12 @@ test.describe("Git closeout @regression", () => {
 	test.describe.configure({ mode: "serial", timeout: 60_000 });
 
 	test("commits only the runtime-owned diff and persists its SHA", {
-		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-GIT-001"],
+		tag: [
+			"@deterministic",
+			"@p0",
+			"@scenario:NW-E2E-GIT-001",
+			"@scenario:NW-E2E-GIT-004",
+		],
 	}, async ({ request }) => {
 		const { workspace } = await createDisposableGitWorkspace({
 			prefix: "git-commit-",
@@ -86,6 +165,35 @@ test.describe("Git closeout @regression", () => {
 			const reviewSession = (await review.json()) as {
 				session: { id: string };
 			};
+			expect(readTestEvidence(value.taskId)).toMatchObject({
+				documents: 1,
+				documentStatuses: "active",
+				evidenceRuns: 1,
+			});
+			const beforeReview = await request.get(
+				`/api/runs/${value.runId}/git/closeout`,
+				{ headers },
+			);
+			const beforeReviewState = await beforeReview.json();
+			if (
+				(beforeReviewState as { evidence?: { test?: { status?: string } } })
+					.evidence?.test?.status !== "passed"
+			) {
+				throw new Error(
+					`Managed Test evidence was not connected: ${JSON.stringify({
+						database: readTestEvidence(value.taskId),
+						closeout: beforeReviewState,
+					})}`,
+				);
+			}
+			expect(beforeReviewState).toMatchObject({
+				canCommit: false,
+				blockingCode: "REVIEW_RUN_NOT_STARTED",
+				evidence: {
+					test: { status: "passed" },
+					security: { status: "skipped" },
+				},
+			});
 			const reviewRun = await request.post(
 				`/api/review-sessions/${reviewSession.session.id}/run`,
 				{ headers },
@@ -226,7 +334,7 @@ test.describe("Git closeout @regression", () => {
 			);
 			expect(archive.status(), await archive.text()).toBe(200);
 			expect(((await archive.json()) as { status: string }).status).toBe(
-				"completed",
+				"archived",
 			);
 			const restore = await request.patch(`/api/tasks/${value.taskId}`, {
 				headers,

@@ -54,6 +54,17 @@ describe("Questionnaire decision layer services", () => {
 				blocking: true,
 				decisionKeys: ["api.todo.delete_response"],
 			});
+			const readyMessage = (
+				await nightworkersRepo.listTaskMessages(task.id)
+			).find(
+				(message) =>
+					message.metadataJson?.intent === "design_questionnaire_ready" &&
+					message.metadataJson?.questionnaireSessionId === created.session?.id,
+			);
+			expect(readyMessage?.metadataJson).toMatchObject({
+				questionnaireStatus: "answering",
+				questionSetCount: 1,
+			});
 
 			const duplicate = await generateAdditionalDesignQuestionnaireQuestions(
 				task.id,

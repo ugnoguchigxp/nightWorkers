@@ -197,6 +197,14 @@
 			"requiredEvidence": ["api", "database", "git"]
 		},
 		{
+			"id": "NW-E2E-GIT-004",
+			"title": "Review・Test・Security証跡が揃うまでcommit closeoutを開かない",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["api", "database", "task-events", "git"]
+		},
+		{
 			"id": "NW-E2E-ARCHIVE-001",
 			"title": "ArchiveしたTaskがactive listから消えRestore後にreadyで戻る",
 			"priority": "P1",

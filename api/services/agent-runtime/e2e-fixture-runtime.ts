@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import * as verificationRepo from "../../modules/nightworkers/nightworkers.verification.repository";
 import { completionCheckTool, runCheckTool } from "../worker-tools/run-check";
 import type {
 	AgentRunContext,
@@ -19,26 +20,35 @@ export async function runE2eFixtureRuntime(
 		context.runtimeOptions?.missionPilot ??
 			context.contextSnapshot.missionPilot,
 	);
-	if (missionPilot && executionMode === "test") {
+	if (executionMode === "test") {
 		const testMode = readRecord(context.runtimeOptions?.testMode);
 		const verificationDocumentId = String(
 			testMode?.verificationDocumentId ??
 				context.runtimeOptions?.verificationDocumentId ??
 				"",
 		);
+		const checklist = verificationDocumentId
+			? await verificationRepo.listVerificationChecklistItems(
+					verificationDocumentId,
+				)
+			: [];
+		const conditionIds = checklist
+			.filter((item) => item.required)
+			.map((item) => item.conditionId);
 		const check = await runCheckTool({
 			taskId: context.taskId,
 			runId: context.runId,
 			verificationDocumentId,
 			checkKind: "verify",
-			conditionIds: ["mission-pilot-archive"],
+			conditionIds:
+				conditionIds.length > 0 ? conditionIds : ["mission-pilot-archive"],
 			command: "git diff --check",
 			cwd: context.repoRoot,
 			repoRoot: context.repoRoot,
 		});
 		await sink.emit({
 			type: "tool_call_finished",
-			message: "Mission Pilot fixture managed verification finished.",
+			message: "Test Mode fixture managed verification finished.",
 			payload: { toolName: "run_check", result: check },
 		});
 		const completion = await completionCheckTool({
@@ -47,8 +57,8 @@ export async function runE2eFixtureRuntime(
 		});
 		await sink.emit({
 			type: "tool_call_finished",
-			message: "Mission Pilot fixture completion_check finished.",
-			payload: { result: completion },
+			message: "Test Mode fixture completion_check finished.",
+			payload: { toolName: "completion_check", result: completion },
 		});
 		const finalReport = JSON.stringify({
 			verdict: completion.ok ? "pass" : "attention",
@@ -59,8 +69,8 @@ export async function runE2eFixtureRuntime(
 				: [],
 			affectedPaths: [],
 			summary: completion.ok
-				? "Deterministic Mission Pilot Test passed."
-				: "Deterministic Mission Pilot Test needs attention.",
+				? "Deterministic Test Mode passed."
+				: "Deterministic Test Mode needs attention.",
 			implementationRework: null,
 		});
 		return {

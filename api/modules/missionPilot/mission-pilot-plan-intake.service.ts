@@ -1,11 +1,9 @@
 import { logEvent } from "../../lib/logger";
-import {
-	createDesignQuestionnaire,
-	listDesignQuestionnaires,
-} from "../questionnaire/questionnaire.service";
+import { listDesignQuestionnaires } from "../questionnaire/questionnaire.service";
 import { publishQuestionnaireReady } from "../questionnaire/questionnaire-events";
 import { MissionPilotError } from "./mission-pilot.errors";
 import { assertMissionPilotPreQueueMutable } from "./mission-pilot-pre-queue-recovery.service";
+import { prepareMissionPilotPlanModeIntake } from "./mission-pilot-workbench.port";
 
 export type MissionPilotPlanIntakeResult = {
 	questionnaireSessionId: string;
@@ -45,10 +43,20 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 	const existing = (await listDesignQuestionnaires(input.taskId))[0];
 	if (existing) {
 		if (existing.status === "answering") {
+			await prepareMissionPilotPlanModeIntake({
+				taskId: input.taskId,
+				prompt: input.initialPrompt,
+				questionnaireSession: existing,
+			});
 			await publishQuestionnaireReady(existing);
 			return resultForQuestionnaire(existing);
 		}
 		if (["review_ready", "accepted"].includes(existing.status)) {
+			await prepareMissionPilotPlanModeIntake({
+				taskId: input.taskId,
+				prompt: input.initialPrompt,
+				questionnaireSession: existing,
+			});
 			schedulePlanPipeline(input.taskId);
 			return resultForQuestionnaire(existing);
 		}
@@ -59,11 +67,10 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 		);
 	}
 
-	const created = await createDesignQuestionnaire(
-		input.taskId,
-		null,
-		input.initialPrompt,
-	);
+	const created = await prepareMissionPilotPlanModeIntake({
+		taskId: input.taskId,
+		prompt: input.initialPrompt,
+	});
 	if (created.status === "answering") {
 		return resultForQuestionnaire(created);
 	}

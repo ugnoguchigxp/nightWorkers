@@ -60,6 +60,7 @@ import {
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
 	resolvePlanWorkspaceInitialTab,
+	resolveQuestionnaireReadyInitialTab,
 } from "./nightworkers-shell-utils";
 import { ProjectDetailScreen } from "./ProjectDetailScreen";
 import { ProjectSidebar } from "./ProjectSidebar";
@@ -858,7 +859,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		let cancelled = false;
 		void openQuestionnaireWorkspace(
 			latestQuestionnaireMessage,
-			"status",
+			resolveQuestionnaireReadyInitialTab(latestQuestionnaireMessage),
 			() => !cancelled,
 		);
 		return () => {

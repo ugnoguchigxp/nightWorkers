@@ -232,6 +232,8 @@ async function loadCloseoutContext(runId: string) {
 				runId: run.id,
 				taskId: run.taskId,
 				reviewSessionId: reviewSession.id,
+				implementationFinishedAt:
+					run.finishedAt ?? run.endedAt ?? run.updatedAt,
 			})
 		: null;
 	const gitState = await readGitState(executionRepository.localPath);

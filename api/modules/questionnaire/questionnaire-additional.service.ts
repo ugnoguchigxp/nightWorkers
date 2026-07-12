@@ -11,6 +11,7 @@ import {
 } from "../../services/structured-generation/prompts/design-questionnaire";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import {
+	createPlanModeTaskMessage,
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 	type PlanModeTaskMessage,
@@ -19,6 +20,7 @@ import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.pl
 import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 import * as repo from "./questionnaire.repository";
+import { publishQuestionnaireReady } from "./questionnaire-events";
 import {
 	additionalQuestionnaireDraftJsonSchema,
 	buildDesignQuestionnaireSessionView,
@@ -151,6 +153,38 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 	});
 	await repo.updateDesignQuestionnaireSessionStatus(session.id, "answering");
 	const updatedSession = await buildDesignQuestionnaireSessionView(session.id);
+	await publishQuestionnaireReady(updatedSession);
+	const previousReadyMessage = [...messages].reverse().find((message) => {
+		const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
+		return metadata.intent === "design_questionnaire_ready";
+	});
+	const previousReadyMetadata = isRecord(previousReadyMessage?.metadataJson)
+		? previousReadyMessage.metadataJson
+		: {};
+	const totalQuestionCount = updatedSession.questionSets.reduce(
+		(total, set) =>
+			total +
+			(set.questionnaire?.questionSets || []).reduce(
+				(groupTotal, group) => groupTotal + group.questions.length,
+				0,
+			),
+		0,
+	);
+	await createPlanModeTaskMessage({
+		taskId,
+		role: "system",
+		content: `Design Questionnaire に${questions.length}件の追加質問を生成しました。`,
+		messageType: "text",
+		payloadJson: {
+			...previousReadyMetadata,
+			intent: "design_questionnaire_ready",
+			source: input.source,
+			questionnaireSessionId: updatedSession.id,
+			questionnaireStatus: updatedSession.status,
+			totalQuestionCount,
+			questionSetCount: updatedSession.questionSets.length,
+		},
+	});
 	const blockingCount = questions.filter(
 		(question) => question.blocking !== false,
 	).length;

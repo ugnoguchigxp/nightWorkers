@@ -233,6 +233,15 @@ export function isDesignQuestionnaireReadyMessage(message: TaskMessage) {
 	);
 }
 
+export function resolveQuestionnaireReadyInitialTab(message: TaskMessage) {
+	const status = String(
+		toDeepRecord(message.metadataJson).questionnaireStatus || "",
+	);
+	return status === "review_ready" || status === "accepted"
+		? ("status" as const)
+		: ("questionnaire" as const);
+}
+
 export function designQuestionnaireMessageIds(messages: TaskMessage[]) {
 	return new Set(
 		messages

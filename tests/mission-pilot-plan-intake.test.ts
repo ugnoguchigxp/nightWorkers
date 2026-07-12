@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	createQuestionnaire: vi.fn(),
+	preparePlanIntake: vi.fn(),
 	listQuestionnaires: vi.fn(),
 	publishReady: vi.fn(),
 	runPipeline: vi.fn(),
@@ -9,11 +9,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/modules/questionnaire/questionnaire.service", () => ({
-	createDesignQuestionnaire: mocks.createQuestionnaire,
 	listDesignQuestionnaires: mocks.listQuestionnaires,
 }));
 vi.mock("../api/modules/questionnaire/questionnaire-events", () => ({
 	publishQuestionnaireReady: mocks.publishReady,
+}));
+vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
+	prepareMissionPilotPlanModeIntake: mocks.preparePlanIntake,
 }));
 vi.mock(
 	"../api/modules/missionPilot/mission-pilot-plan-coordinator.service",
@@ -38,7 +40,7 @@ beforeEach(() => {
 describe("Mission Pilot typed Plan intake", () => {
 	it("creates a Questionnaire directly without starting a TaskRun", async () => {
 		mocks.listQuestionnaires.mockResolvedValue([]);
-		mocks.createQuestionnaire.mockResolvedValue({
+		mocks.preparePlanIntake.mockResolvedValue({
 			id: "questionnaire-1",
 			status: "answering",
 		});
@@ -52,31 +54,35 @@ describe("Mission Pilot typed Plan intake", () => {
 			questionnaireSessionId: "questionnaire-1",
 			questionnaireStatus: "answering",
 		});
-		expect(mocks.createQuestionnaire).toHaveBeenCalledWith(
-			"task-1",
-			null,
-			"計画を作成する",
-		);
+		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
+			taskId: "task-1",
+			prompt: "計画を作成する",
+		});
 		expect(mocks.runPipeline).not.toHaveBeenCalled();
 	});
 
 	it("reuses an answering Questionnaire and republishes its ready event", async () => {
 		const questionnaire = { id: "questionnaire-2", status: "answering" };
 		mocks.listQuestionnaires.mockResolvedValue([questionnaire]);
+		mocks.preparePlanIntake.mockResolvedValue(questionnaire);
 
 		await startOrResumeMissionPilotPlanIntake({
 			taskId: "task-2",
 			initialPrompt: "既存Questionnaireを再利用する",
 		});
 
-		expect(mocks.createQuestionnaire).not.toHaveBeenCalled();
+		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
+			taskId: "task-2",
+			prompt: "既存Questionnaireを再利用する",
+			questionnaireSession: questionnaire,
+		});
 		expect(mocks.publishReady).toHaveBeenCalledWith(questionnaire);
 	});
 
 	it("schedules the Plan pipeline for reviewed Questionnaire evidence", async () => {
-		mocks.listQuestionnaires.mockResolvedValue([
-			{ id: "questionnaire-3", status: "review_ready" },
-		]);
+		const questionnaire = { id: "questionnaire-3", status: "review_ready" };
+		mocks.listQuestionnaires.mockResolvedValue([questionnaire]);
+		mocks.preparePlanIntake.mockResolvedValue(questionnaire);
 		mocks.runPipeline.mockResolvedValue(undefined);
 
 		await startOrResumeMissionPilotPlanIntake({
@@ -86,6 +92,11 @@ describe("Mission Pilot typed Plan intake", () => {
 		await vi.waitFor(() =>
 			expect(mocks.runPipeline).toHaveBeenCalledWith("task-3"),
 		);
+		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
+			taskId: "task-3",
+			prompt: "review済み計画を再開する",
+			questionnaireSession: questionnaire,
+		});
 	});
 
 	it("stops at an invalid Questionnaire instead of bypassing it", async () => {
@@ -102,7 +113,7 @@ describe("Mission Pilot typed Plan intake", () => {
 			statusCode: 409,
 			code: "MISSION_PILOT_PLAN_INTAKE_NEEDS_EDIT",
 		});
-		expect(mocks.createQuestionnaire).not.toHaveBeenCalled();
+		expect(mocks.preparePlanIntake).not.toHaveBeenCalled();
 		expect(mocks.runPipeline).not.toHaveBeenCalled();
 	});
 });

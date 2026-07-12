@@ -22,10 +22,7 @@ import { generateDataModelArtifact } from "../dataModel/dataModel-generation.ser
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { getLatestVerificationDocumentForTask } from "../nightworkers/nightworkers.verification.repository";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
-import {
-	getDesignQuestionnaireSession,
-	saveDesignQuestionnaireAnswers,
-} from "../questionnaire/questionnaire.service";
+import { getDesignQuestionnaireSession } from "../questionnaire/questionnaire.service";
 import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire/questionnaire-additional.service";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
@@ -37,7 +34,6 @@ import {
 	assertMissionPilotPreQueueMutable,
 	markMissionPilotPreQueueAttention,
 } from "./mission-pilot-pre-queue-recovery.service";
-import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
 import {
 	admitMissionPilotQueueHandoff,
 	MissionPilotPreQueueError,
@@ -53,6 +49,7 @@ const MAX_QUEUE_STABILIZATION_ATTEMPTS = 3;
 const PIPELINE_LEASE_MS = 15 * 60 * 1000;
 
 class MissionPilotPlanReviewStaleError extends Error {}
+class MissionPilotQuestionnaireInterventionError extends Error {}
 
 async function publishCurrentPlanProgress(taskId: string) {
 	try {
@@ -256,23 +253,51 @@ async function answerPreFeaturePlanQuestionnaire(
 		if (generated.session) questionnaire = generated.session;
 	}
 	if (questionnaire.status === "answering") {
-		const draft = buildMissionPilotQuestionnaireDraft(questionnaire);
-		questionnaire = await saveDesignQuestionnaireAnswers(
-			taskId,
-			questionnaire.id,
-			draft.answers,
-			{ completionPolicy: "finalize_current_questions" },
+		const intervention = await missionPilotRepo.getSessionByTaskId(taskId);
+		if (
+			!intervention ||
+			intervention.desiredState !== "playing" ||
+			intervention.phase !== "waiting_intervention" ||
+			!intervention.nextWakeAt
+		) {
+			throw new Error(
+				"Pre-Feature Plan Questionnaire intervention window was not armed",
+			);
+		}
+		const waiting = await planRepo.updatePlanStepEvidence(featurePlanStep.id, {
+			preFeaturePlanQuestionnaireStatus: "waiting_intervention",
+			preFeaturePlanQuestionnaireAddedCount: addedCount,
+			preFeaturePlanQuestionnaireSkippedDuplicateCount: skippedDuplicateCount,
+		});
+		if (!waiting) {
+			throw new Error("Pre-Feature Plan Questionnaire wait state conflicted");
+		}
+		throw new MissionPilotQuestionnaireInterventionError(
+			"Pre-Feature Plan Questionnaire is in the user intervention window",
 		);
 	}
 	if (!["review_ready", "accepted"].includes(questionnaire.status)) {
 		throw new Error("Pre-Feature Plan Questionnaire remained incomplete");
 	}
 	await ensureQuestionnaireContext(sessionId, questionnaire);
+	const recordedAddedCount = Number(
+		featurePlanStep.evidenceJson.preFeaturePlanQuestionnaireAddedCount ?? 0,
+	);
+	const recordedSkippedCount = Number(
+		featurePlanStep.evidenceJson
+			.preFeaturePlanQuestionnaireSkippedDuplicateCount ?? 0,
+	);
 	const completed = await planRepo.updatePlanStepEvidence(featurePlanStep.id, {
 		preFeaturePlanQuestionnaireStatus: "completed",
 		preFeaturePlanQuestionnaireCompletedAt: new Date().toISOString(),
-		preFeaturePlanQuestionnaireAddedCount: addedCount,
-		preFeaturePlanQuestionnaireSkippedDuplicateCount: skippedDuplicateCount,
+		preFeaturePlanQuestionnaireAddedCount: Math.max(
+			addedCount,
+			recordedAddedCount,
+		),
+		preFeaturePlanQuestionnaireSkippedDuplicateCount: Math.max(
+			skippedDuplicateCount,
+			recordedSkippedCount,
+		),
 	});
 	if (!completed) {
 		throw new Error("Pre-Feature Plan Questionnaire completion conflicted");
@@ -801,6 +826,7 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		}
 	} catch (error) {
 		const current = await missionPilotRepo.getSessionByTaskId(taskId);
+		if (error instanceof MissionPilotQuestionnaireInterventionError) return;
 		if (current?.desiredState === "stopped" && current.phase !== "attention") {
 			return;
 		}

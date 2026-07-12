@@ -262,6 +262,45 @@ describe("Review Mode", () => {
 		});
 	});
 
+	it("requires a human note before dismissing a finding", async () => {
+		const { sessionId } = await createSessionWithManualFindings(1);
+		const [finding] = await reviewRepo.listReviewFindings(sessionId);
+		if (!finding) throw new Error("Review finding was not created");
+		const findingId = finding.id;
+		const withoutNote = await app.request(
+			`http://localhost/api/review-sessions/${sessionId}/findings/${findingId}/disposition`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ disposition: "ignored" }),
+			},
+		);
+		expect(withoutNote.status).toBe(400);
+
+		const withNote = await app.request(
+			`http://localhost/api/review-sessions/${sessionId}/findings/${findingId}/disposition`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					disposition: "ignored",
+					note: "Reviewed by a human and intentionally dismissed.",
+				}),
+			},
+		);
+		expect(withNote.status).toBe(200);
+		const detail = await withNote.json();
+		expect(
+			detail.findings.find(
+				(finding: { id: string }) => finding.id === findingId,
+			),
+		).toMatchObject({
+			disposition: "ignored",
+			dispositionStatus: "dismissed",
+			dispositionNote: "Reviewed by a human and intentionally dismissed.",
+		});
+	});
+
 	it("caps generated prompt suggestions to five active cards", async () => {
 		const { sessionId } = await createSessionWithManualFindings(6);
 

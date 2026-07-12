@@ -22,6 +22,12 @@ export async function resolveRuntimeSecurityCloseout(input: {
 }) {
 	let finalTodos = input.finalTodos;
 	if (input.skipSecurityOracle) {
+		if (
+			input.outcomeStatus === "completed" &&
+			input.executionMode === "implementation"
+		) {
+			await persistSecurityOracleSkipped(input, null, "runtime_fixture");
+		}
 		return { finalTodos, securityGate: null, securityOracleSkipped: true };
 	}
 	let securityOracleSkipped = false;
@@ -89,8 +95,12 @@ async function persistSecurityOracleSkipped(
 	settings: Awaited<
 		ReturnType<typeof getProjectSecurityIntelligenceSettings>
 	> | null,
+	reasonOverride?: string,
 ) {
-	const reason = settings?.securityOracle.reason ?? "measurement_unavailable";
+	const reason =
+		reasonOverride ??
+		settings?.securityOracle.reason ??
+		"measurement_unavailable";
 	await repo.createRunEvent({
 		version: 1,
 		runId: input.runId,

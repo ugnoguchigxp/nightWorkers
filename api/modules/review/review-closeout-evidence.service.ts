@@ -57,6 +57,12 @@ function eventData(event: { payloadJson?: unknown }) {
 	return record(record(payload.runEvent).data);
 }
 
+function eventCanonicalType(event: { payloadJson?: unknown }) {
+	const payload = record(event.payloadJson);
+	const type = record(payload.runEvent).type;
+	return typeof type === "string" ? type : null;
+}
+
 function artifactPayload(artifact: { artifactJson: unknown } | undefined) {
 	return record(artifact?.artifactJson);
 }
@@ -91,9 +97,11 @@ async function resolveReviewEvidence(input: {
 		const matchingCompletion = [...input.events].reverse().find((event) => {
 			const data = eventData(event);
 			return (
+				eventCanonicalType(event) === "review.run_completed" &&
 				data.reviewedRunId === input.runId &&
 				data.status === "done" &&
-				(!reviewRunId || data.reviewRunId === reviewRunId)
+				Boolean(reviewRunId) &&
+				data.reviewRunId === reviewRunId
 			);
 		});
 		const artifactStatus = reviewProgress(reviewRunArtifact.status);
@@ -106,7 +114,8 @@ async function resolveReviewEvidence(input: {
 			: null;
 		const status =
 			artifactStatus !== payloadStatus ||
-			(artifactStatus === "done" && completionStatus !== "done")
+			(artifactStatus === "done" &&
+				(!reviewRunId || completionStatus !== "done"))
 				? "failed"
 				: artifactStatus;
 		return {
@@ -136,18 +145,54 @@ async function resolveReviewEvidence(input: {
 	};
 }
 
-async function findCompletionCheck(taskId: string) {
-	const runs = await nightworkersRepo.listTaskRunsForTask(taskId);
-	for (const run of runs) {
+async function findCompletionCheck(input: {
+	testRuns: Awaited<ReturnType<typeof nightworkersRepo.listTaskRunsForTask>>;
+	allowedRunIds: Set<string>;
+	verificationDocumentId: string;
+	minimumCompletedAt: Date;
+}) {
+	for (const run of input.testRuns) {
+		if (!input.allowedRunIds.has(run.id)) continue;
 		const events = await nightworkersRepo.listTaskEventsForRun(run.id);
 		const match = [...events].reverse().find((event) => {
+			if (
+				eventCanonicalType(event) !== "tool.call_finished" ||
+				event.timestamp < input.minimumCompletedAt
+			) {
+				return false;
+			}
 			const data = eventData(event);
 			const result = record(data.result);
+			const nestedPayload = record(result.payload);
+			const completionResult = record(nestedPayload.result);
+			const structuredPayload = record(
+				record(result.structured_content).payload,
+			);
+			const structuredResult = record(structuredPayload.result);
+			const explicitOkValues = [
+				data.ok,
+				result.ok,
+				completionResult.ok,
+				structuredPayload.ok,
+				structuredResult.ok,
+			].filter((value): value is boolean => typeof value === "boolean");
+			const resultDocumentIds = [
+				result.verificationDocumentId,
+				completionResult.verificationDocumentId,
+				structuredPayload.verificationDocumentId,
+				structuredResult.verificationDocumentId,
+			].filter((value): value is string => typeof value === "string");
 			return (
 				(data.mcpTool === "completion_check" ||
-					data.toolName === "completion_check") &&
+					data.toolName === "completion_check" ||
+					result.toolName === "completion_check") &&
 				data.status !== "failed" &&
-				result.ok !== false
+				explicitOkValues.includes(true) &&
+				!explicitOkValues.includes(false) &&
+				(resultDocumentIds.length === 0 ||
+					resultDocumentIds.every(
+						(documentId) => documentId === input.verificationDocumentId,
+					))
 			);
 		});
 		if (match) return match;
@@ -157,13 +202,31 @@ async function findCompletionCheck(taskId: string) {
 
 async function resolveTestEvidence(input: {
 	taskId: string;
+	implementationFinishedAt: Date;
 	artifacts: Awaited<ReturnType<typeof reviewRepo.listReviewArtifacts>>;
 }): Promise<ReviewCloseoutEvidence["test"]> {
+	const reviewRunArtifact = input.artifacts.find(
+		(artifact) => artifact.kind === "review_run",
+	);
+	const reviewRunPayload = artifactPayload(reviewRunArtifact);
+	const requiresPostReviewRetest = reviewRunPayload.fixesApplied === true;
+	const evidenceFreshnessFloor =
+		requiresPostReviewRetest &&
+		reviewRunArtifact &&
+		reviewRunArtifact.updatedAt > input.implementationFinishedAt
+			? reviewRunArtifact.updatedAt
+			: input.implementationFinishedAt;
 	const [missionSession] = await db
 		.select()
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.taskId, input.taskId));
-	if (missionSession) {
+	const missionManaged = Boolean(
+		missionSession &&
+			(missionSession.desiredState === "running" ||
+				missionSession.activeTestSnapshotId ||
+				missionSession.activeReviewDecisionId),
+	);
+	if (missionSession && missionManaged) {
 		const snapshotId = missionSession.activeTestSnapshotId;
 		const [snapshot] = snapshotId
 			? await db
@@ -183,9 +246,12 @@ async function resolveTestEvidence(input: {
 		}
 		const passed =
 			snapshot.verdict === "pass" &&
+			snapshot.requiredTotal > 0 &&
 			snapshot.requiredComplete === snapshot.requiredTotal &&
 			snapshot.failedRequired === 0 &&
-			snapshot.unknownRequired === 0;
+			snapshot.unknownRequired === 0 &&
+			snapshot.evidenceRunIdsJson.length > 0 &&
+			Boolean(snapshot.completionCheckEventId);
 		const [reviewDecision] = missionSession.activeReviewDecisionId
 			? await db
 					.select()
@@ -218,6 +284,15 @@ async function resolveTestEvidence(input: {
 		input.taskId,
 	);
 	if (document?.status === "active") {
+		const taskRuns = await nightworkersRepo.listTaskRunsForTask(input.taskId);
+		const completedTestRuns = taskRuns.filter((run) => {
+			const snapshot = record(run.contextSnapshot);
+			return run.status === "completed" && snapshot.executionMode === "test";
+		});
+		const testRuns = completedTestRuns.filter(
+			(run) => run.startedAt >= evidenceFreshnessFloor,
+		);
+		const testRunIds = new Set(testRuns.map((run) => run.id));
 		const items = await verificationRepo.listVerificationChecklistItems(
 			document.id,
 		);
@@ -233,19 +308,66 @@ async function resolveTestEvidence(input: {
 			(item) => !completeStatuses.has(item.status),
 		);
 		const evidenceRunIds = [
-			...new Set(required.flatMap((item) => item.evidenceIds)),
+			...new Set(
+				required.flatMap((item) => {
+					const latestEvidenceId = item.evidenceIds.at(-1);
+					return latestEvidenceId ? [latestEvidenceId] : [];
+				}),
+			),
 		];
+		if (
+			requiresPostReviewRetest &&
+			completedTestRuns.length > 0 &&
+			testRuns.length === 0
+		) {
+			return {
+				source: "verification_checklist",
+				status: "stale",
+				verificationDocumentId: document.id,
+				evidenceRunIds,
+				completionCheckEventId: null,
+				reason: "Review Run が修正を適用した後の Test Mode 証跡がありません。",
+			};
+		}
 		const evidenceRuns =
 			await verificationRepo.listVerificationEvidenceRuns(evidenceRunIds);
 		const linkedEvidenceRequired = required.filter(
 			(item) => !["manual", "not_applicable"].includes(item.status),
 		);
 		const missingLinkedEvidence =
-			linkedEvidenceRequired.some((item) => item.evidenceIds.length === 0) ||
-			evidenceRuns.length !== evidenceRunIds.length;
+			evidenceRunIds.length === 0 ||
+			linkedEvidenceRequired.some((item) => !item.evidenceIds.at(-1)) ||
+			evidenceRuns.length !== evidenceRunIds.length ||
+			evidenceRuns.some(
+				(run) =>
+					run.taskId !== input.taskId ||
+					run.verificationDocumentId !== document.id ||
+					!run.runId ||
+					!testRunIds.has(run.runId) ||
+					run.finishedAt < evidenceFreshnessFloor,
+			);
 		const failedEvidence = evidenceRuns.some((run) => run.exitCode !== 0);
-		const completion = await findCompletionCheck(input.taskId);
+		const latestEvidenceFinishedAt = evidenceRuns.reduce(
+			(latest, run) => (run.finishedAt > latest ? run.finishedAt : latest),
+			evidenceFreshnessFloor,
+		);
+		const minimumCompletedAt = [
+			document.generatedAt,
+			evidenceFreshnessFloor,
+			latestEvidenceFinishedAt,
+		].reduce((latest, date) => (date > latest ? date : latest));
+		const completion = await findCompletionCheck({
+			testRuns,
+			allowedRunIds: new Set(
+				evidenceRuns
+					.map((run) => run.runId)
+					.filter((runId): runId is string => Boolean(runId)),
+			),
+			verificationDocumentId: document.id,
+			minimumCompletedAt,
+		});
 		const passed =
+			required.length > 0 &&
 			incomplete.length === 0 &&
 			!missingLinkedEvidence &&
 			!failedEvidence &&
@@ -298,16 +420,23 @@ function resolveSecurityEvidence(
 ): ReviewCloseoutEvidence["security"] {
 	for (const event of [...events].reverse()) {
 		const data = eventData(event);
-		if (data.action === "security.oracle_gate_skipped") {
+		if (
+			eventCanonicalType(event) === "system.info" &&
+			data.action === "security.oracle_gate_skipped"
+		) {
+			const reason = typeof data.reason === "string" ? data.reason.trim() : "";
 			return {
 				source: "policy_skip",
-				status: "skipped",
+				status: reason ? "skipped" : "failed",
 				scanRunId: null,
 				eventId: event.id,
-				reason: typeof data.reason === "string" ? data.reason : null,
+				reason: reason || "Security Oracle policy skip reason is missing.",
 			};
 		}
-		if (data.action === "security.oracle_gate_finished") {
+		if (
+			eventCanonicalType(event) === "system.info" &&
+			data.action === "security.oracle_gate_finished"
+		) {
 			const gate = record(data.securityGate);
 			const passed = gate.allowFinalize === true && gate.status === "passed";
 			return {
@@ -332,10 +461,31 @@ function resolveSecurityEvidence(
 	};
 }
 
+function isUnresolvedBlockingFinding(
+	finding: Awaited<ReturnType<typeof reviewRepo.listReviewFindings>>[number],
+) {
+	if (finding.severity !== "blocking") return false;
+	if (finding.dispositionStatus === "unresolved") return true;
+	const note = finding.dispositionNote?.trim() ?? "";
+	if (finding.dispositionStatus === "dismissed") return note.length === 0;
+	if (
+		finding.dispositionStatus === "accepted" &&
+		finding.disposition === "accepted_risk"
+	) {
+		return (
+			note.length === 0 ||
+			!Array.isArray(finding.evidenceRefsJson) ||
+			finding.evidenceRefsJson.length === 0
+		);
+	}
+	return false;
+}
+
 export async function resolveReviewCloseoutEvidence(input: {
 	runId: string;
 	taskId: string;
 	reviewSessionId: string;
+	implementationFinishedAt: Date;
 }): Promise<ReviewCloseoutEvidence> {
 	const [artifacts, findings, events] = await Promise.all([
 		reviewRepo.listReviewArtifacts(input.reviewSessionId),
@@ -344,7 +494,11 @@ export async function resolveReviewCloseoutEvidence(input: {
 	]);
 	const [review, test] = await Promise.all([
 		resolveReviewEvidence({ runId: input.runId, artifacts, events }),
-		resolveTestEvidence({ taskId: input.taskId, artifacts }),
+		resolveTestEvidence({
+			taskId: input.taskId,
+			implementationFinishedAt: input.implementationFinishedAt,
+			artifacts,
+		}),
 	]);
 	return {
 		review,
@@ -352,11 +506,7 @@ export async function resolveReviewCloseoutEvidence(input: {
 		security: resolveSecurityEvidence(events),
 		findings: {
 			unresolvedBlockingIds: findings
-				.filter(
-					(finding) =>
-						finding.severity === "blocking" &&
-						finding.dispositionStatus === "unresolved",
-				)
+				.filter(isUnresolvedBlockingFinding)
 				.map((finding) => finding.id),
 		},
 	};

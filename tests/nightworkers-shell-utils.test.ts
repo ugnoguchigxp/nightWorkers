@@ -18,6 +18,7 @@ import {
 	resolveComposerRouteTarget,
 	resolveCurrentProviderModel,
 	resolvePlanWorkspaceInitialTab,
+	resolveQuestionnaireReadyInitialTab,
 } from "../src/modules/nightworkers/components/nightworkers-shell-utils";
 import type { NightWorkersWorkspaceState } from "../src/modules/nightworkers/hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../src/modules/nightworkers/routing/workbench-route-state";
@@ -327,6 +328,25 @@ describe("nightworkers-shell-utils", () => {
 		} as unknown as TaskMessage;
 		expect(isDesignQuestionnaireReadyMessage(msg1)).toBe(true);
 		expect(isDesignQuestionnaireReadyMessage(msg2)).toBe(false);
+	});
+
+	it("opens incomplete Questionnaire ready messages on the Questionnaire tab", () => {
+		const answering = {
+			metadataJson: {
+				intent: "design_questionnaire_ready",
+				questionnaireStatus: "answering",
+			},
+		} as unknown as TaskMessage;
+		const completed = {
+			metadataJson: {
+				intent: "design_questionnaire_ready",
+				questionnaireStatus: "review_ready",
+			},
+		} as unknown as TaskMessage;
+		expect(resolveQuestionnaireReadyInitialTab(answering)).toBe(
+			"questionnaire",
+		);
+		expect(resolveQuestionnaireReadyInitialTab(completed)).toBe("status");
 	});
 
 	it("designQuestionnaireMessageIds returns message ids", () => {
