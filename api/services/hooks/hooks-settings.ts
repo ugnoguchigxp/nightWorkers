@@ -4,6 +4,11 @@ import path from "node:path";
 import { ValidationError } from "../../lib/errors";
 import { getRuntimePaths } from "../../runtime/paths";
 import {
+	archiveLegacySettingsFile,
+	readApplicationSetting,
+	writeApplicationSetting,
+} from "../settings/application-settings-store";
+import {
 	type AgentHookInputConfig,
 	type AgentHookUpdateInput,
 	agentHookConfigSchema,
@@ -22,9 +27,7 @@ type PersistedAgentHooksSettings = {
 };
 
 function getHooksSettingsPath() {
-	return (
-		process.env.NIGHTWORKERS_HOOKS_SETTINGS_PATH || DEFAULT_HOOKS_SETTINGS_PATH
-	);
+	return DEFAULT_HOOKS_SETTINGS_PATH;
 }
 
 function parsePersistedSettings(value: unknown): PersistedAgentHooksSettings {
@@ -40,25 +43,25 @@ function parsePersistedSettings(value: unknown): PersistedAgentHooksSettings {
 }
 
 export function readAgentHooksSettings(): PersistedAgentHooksSettings {
+	const sqliteSettings =
+		readApplicationSetting<PersistedAgentHooksSettings>("agent-hooks");
+	if (sqliteSettings) return parsePersistedSettings(sqliteSettings);
 	try {
 		const settingsPath = getHooksSettingsPath();
 		if (!fs.existsSync(settingsPath)) return { hooks: [] };
-		return parsePersistedSettings(
+		const settings = parsePersistedSettings(
 			JSON.parse(fs.readFileSync(settingsPath, "utf-8")),
 		);
+		writeApplicationSetting("agent-hooks", settings);
+		archiveLegacySettingsFile(settingsPath);
+		return settings;
 	} catch {
 		return { hooks: [] };
 	}
 }
 
 function writeAgentHooksSettings(settings: PersistedAgentHooksSettings) {
-	const settingsPath = getHooksSettingsPath();
-	fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-	fs.writeFileSync(
-		settingsPath,
-		`${JSON.stringify(settings, null, 2)}\n`,
-		"utf-8",
-	);
+	writeApplicationSetting("agent-hooks", settings);
 }
 
 export function listAgentHooks(): AgentHookConfig[] {

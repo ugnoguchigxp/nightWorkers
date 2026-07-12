@@ -7,11 +7,17 @@ import {
 } from "../api/runtime/paths";
 
 describe("runtime paths", () => {
-	it("keeps development settings under api/.runtime by default", () => {
+	it("keeps development runtime state under the fixed .nightworkers root", () => {
 		const paths = getRuntimePaths({});
-		expect(paths.runtimeRoot).toBe(path.resolve(process.cwd()));
-		expect(paths.settingsDir).toBe(path.resolve(process.cwd(), "api/.runtime"));
-		expect(paths.logsDir).toBe(path.resolve(process.cwd(), "logs"));
+		expect(paths.runtimeRoot).toBe(
+			path.resolve(process.cwd(), ".nightworkers"),
+		);
+		expect(paths.settingsDir).toBe(
+			path.resolve(process.cwd(), ".nightworkers/settings"),
+		);
+		expect(paths.logsDir).toBe(
+			path.resolve(process.cwd(), ".nightworkers/logs"),
+		);
 	});
 
 	it("uses desktop runtime root for writable state", () => {

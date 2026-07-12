@@ -11,6 +11,10 @@ import {
 	listMcpServers,
 	updateMcpServer,
 } from "../api/services/mcp/mcp-settings";
+import {
+	readApplicationSetting,
+	writeApplicationSetting,
+} from "../api/services/settings/application-settings-store";
 
 let tempDir: string;
 let codexHome: string;
@@ -291,11 +295,9 @@ describe("MCP server settings", () => {
 	});
 
 	it("returns diagnostics for invalid persisted settings without erasing the file", async () => {
-		fs.writeFileSync(
-			process.env.NIGHTWORKERS_MCP_SETTINGS_PATH as string,
-			JSON.stringify({ servers: [{ id: "not-a-uuid", name: "broken" }] }),
-			"utf-8",
-		);
+		writeApplicationSetting("mcp", {
+			servers: [{ id: "not-a-uuid", name: "broken" }],
+		});
 
 		const listRes = await app.request(
 			"http://localhost/api/settings/mcp/servers",
@@ -305,12 +307,9 @@ describe("MCP server settings", () => {
 			servers: [],
 			diagnostics: [{ level: "error", path: "servers", index: 0 }],
 		});
-		expect(
-			fs.readFileSync(
-				process.env.NIGHTWORKERS_MCP_SETTINGS_PATH as string,
-				"utf-8",
-			),
-		).toContain("not-a-uuid");
+		expect(readApplicationSetting("mcp")).toMatchObject({
+			servers: [{ id: "not-a-uuid" }],
+		});
 	});
 
 	it("exposes CRUD routes under settings/mcp", async () => {

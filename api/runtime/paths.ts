@@ -22,16 +22,14 @@ export function getRuntimeRoot(env: NodeJS.ProcessEnv = process.env): string {
 	if (isDesktopMode(env)) {
 		return path.join(getResourceRoot(env), "data");
 	}
-	return path.resolve(process.cwd());
+	return path.resolve(process.cwd(), ".nightworkers");
 }
 
 export function getRuntimePaths(
 	env: NodeJS.ProcessEnv = process.env,
 ): NightWorkersRuntimePaths {
 	const runtimeRoot = getRuntimeRoot(env);
-	const settingsDir = isDesktopMode(env)
-		? path.join(runtimeRoot, "settings")
-		: path.join(runtimeRoot, "api/.runtime");
+	const settingsDir = path.join(runtimeRoot, "settings");
 	return {
 		runtimeRoot,
 		databasePath: path.join(runtimeRoot, "sqlite.db"),

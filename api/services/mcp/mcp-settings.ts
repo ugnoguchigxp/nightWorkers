@@ -4,6 +4,11 @@ import path from "node:path";
 import { ValidationError } from "../../lib/errors";
 import { getRuntimePaths } from "../../runtime/paths";
 import {
+	archiveLegacySettingsFile,
+	readApplicationSetting,
+	writeApplicationSetting,
+} from "../settings/application-settings-store";
+import {
 	type McpServerConfig,
 	type McpServerInput,
 	type McpServerSettingsDiagnostic,
@@ -24,9 +29,7 @@ type PersistedMcpSettings = {
 };
 
 function getMcpSettingsPath() {
-	return (
-		process.env.NIGHTWORKERS_MCP_SETTINGS_PATH || DEFAULT_MCP_SETTINGS_PATH
-	);
+	return DEFAULT_MCP_SETTINGS_PATH;
 }
 
 function parsePersistedSettings(value: unknown): PersistedMcpSettings {
@@ -67,12 +70,17 @@ function parsePersistedSettings(value: unknown): PersistedMcpSettings {
 }
 
 export function readMcpServerSettings(): PersistedMcpSettings {
+	const sqliteSettings = readApplicationSetting<PersistedMcpSettings>("mcp");
+	if (sqliteSettings) return parsePersistedSettings(sqliteSettings);
 	const settingsPath = getMcpSettingsPath();
 	try {
 		if (!fs.existsSync(settingsPath)) return { servers: [] };
-		return parsePersistedSettings(
+		const settings = parsePersistedSettings(
 			JSON.parse(fs.readFileSync(settingsPath, "utf-8")),
 		);
+		writeApplicationSetting("mcp", settings);
+		archiveLegacySettingsFile(settingsPath);
+		return settings;
 	} catch (err) {
 		return {
 			servers: [],
@@ -88,13 +96,7 @@ export function readMcpServerSettings(): PersistedMcpSettings {
 }
 
 function writeMcpServerSettings(settings: PersistedMcpSettings) {
-	const settingsPath = getMcpSettingsPath();
-	fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-	fs.writeFileSync(
-		settingsPath,
-		`${JSON.stringify({ servers: settings.servers }, null, 2)}\n`,
-		"utf-8",
-	);
+	writeApplicationSetting("mcp", { servers: settings.servers });
 }
 
 export function listMcpServers(): McpServerConfig[] {

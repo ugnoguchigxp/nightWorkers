@@ -9,6 +9,8 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { client } from "../api/db/client";
+import { writeApplicationSetting } from "../api/services/settings/application-settings-store";
 
 // Define custom setting paths inside the workspace directory
 const TEMP_DIR = path.resolve(process.cwd(), "tests/temp-settings-test");
@@ -35,8 +37,11 @@ import {
 } from "../api/services/settings/general-settings";
 
 describe("general-settings service", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.stubGlobal("fetch", vi.fn());
+		await client.execute(
+			"DELETE FROM application_settings WHERE scope IN ('general', 'fx-cache')",
+		);
 		// Ensure clean directory
 		if (fs.existsSync(TEMP_DIR)) {
 			fs.rmSync(TEMP_DIR, { recursive: true, force: true });
@@ -63,19 +68,16 @@ describe("general-settings service", () => {
 		});
 
 		it("reads and normalizes persisted settings", () => {
-			fs.writeFileSync(
-				GENERAL_SETTINGS_FILE,
-				JSON.stringify({
-					timezone: "America/New_York",
-					language: "en",
-					currency: "USD",
-					fx: {
-						source: "manual",
-						autoRefresh: false,
-						lastRefreshedAt: "2026-06-10T12:00:00Z",
-					},
-				}),
-			);
+			writeApplicationSetting("general", {
+				timezone: "America/New_York",
+				language: "en",
+				currency: "USD",
+				fx: {
+					source: "manual",
+					autoRefresh: false,
+					lastRefreshedAt: "2026-06-10T12:00:00Z",
+				},
+			});
 			const settings = readGeneralSettings();
 			expect(settings.timezone).toBe("America/New_York");
 			expect(settings.language).toBe("en");
@@ -97,7 +99,7 @@ describe("general-settings service", () => {
 	});
 
 	describe("writeGeneralSettings", () => {
-		it("normalizes and writes settings to the JSON file", () => {
+		it("normalizes and writes settings to SQLite", () => {
 			const input = {
 				timezone: "Europe/Paris",
 				language: "en" as const,
@@ -116,9 +118,7 @@ describe("general-settings service", () => {
 				...input,
 				planMode: DEFAULT_GENERAL_SETTINGS.planMode,
 			});
-			expect(fs.existsSync(GENERAL_SETTINGS_FILE)).toBe(true);
-			const saved = JSON.parse(fs.readFileSync(GENERAL_SETTINGS_FILE, "utf-8"));
-			expect(saved).toEqual({
+			expect(readGeneralSettings()).toEqual({
 				...input,
 				planMode: DEFAULT_GENERAL_SETTINGS.planMode,
 			});
@@ -353,30 +353,6 @@ describe("general-settings service", () => {
 				autoRefresh: DEFAULT_GENERAL_SETTINGS.fx.autoRefresh,
 				lastRefreshedAt: null,
 			});
-		});
-	});
-
-	describe("fs.chmodSync error coverage", () => {
-		it("gracefully handles chmod failures on writeJsonFile", () => {
-			// Mock chmodSync to throw error
-			const chmodSpy = vi.spyOn(fs, "chmodSync").mockImplementation(() => {
-				throw new Error("Not supported");
-			});
-
-			const input = {
-				timezone: "Asia/Tokyo",
-				language: "ja" as const,
-				currency: "JPY" as const,
-				fx: {
-					source: "ecb" as const,
-					autoRefresh: true,
-					lastRefreshedAt: null,
-				},
-			};
-
-			// writing should succeed without throwing error
-			expect(() => writeGeneralSettings(input)).not.toThrow();
-			expect(chmodSpy).toHaveBeenCalled();
 		});
 	});
 });

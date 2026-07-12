@@ -2,16 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PlanModeCapability } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { getRuntimePaths } from "../../runtime/paths";
+import {
+	archiveLegacySettingsFile,
+	readApplicationSetting,
+	writeApplicationSetting,
+} from "./application-settings-store";
 
 export type { PlanModeCapability } from "../../../shared/schemas/plan-mode-artifact.schema";
 
 const RUNTIME_SETTINGS_DIR = getRuntimePaths().settingsDir;
-const GENERAL_SETTINGS_PATH =
-	process.env.NIGHTWORKERS_GENERAL_SETTINGS_PATH ||
-	path.join(RUNTIME_SETTINGS_DIR, "general-settings.json");
-const FX_CACHE_PATH =
-	process.env.NIGHTWORKERS_FX_RATES_PATH ||
-	path.join(RUNTIME_SETTINGS_DIR, "fx-rates.json");
+const GENERAL_SETTINGS_PATH = path.join(
+	RUNTIME_SETTINGS_DIR,
+	"general-settings.json",
+);
+const FX_CACHE_PATH = path.join(RUNTIME_SETTINGS_DIR, "fx-rates.json");
 
 export type NightWorkersLanguage = "ja" | "en";
 export type NightWorkersCurrency = "JPY" | "USD" | "EUR";
@@ -92,25 +96,43 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
 };
 
 export function readGeneralSettings(): GeneralSettings {
-	const persisted =
-		readJsonFile<Partial<GeneralSettings>>(GENERAL_SETTINGS_PATH) ?? {};
-	return normalizeGeneralSettings(persisted);
+	const persisted = readApplicationSetting<Partial<GeneralSettings>>("general");
+	if (persisted) return normalizeGeneralSettings(persisted);
+	const migrated = normalizeGeneralSettings(
+		readJsonFile<Partial<GeneralSettings>>(GENERAL_SETTINGS_PATH) ?? {},
+	);
+	try {
+		writeApplicationSetting("general", migrated);
+		archiveLegacySettingsFile(GENERAL_SETTINGS_PATH);
+	} catch {
+		// Schema bootstrap can precede the first settings read in lightweight tools.
+	}
+	return migrated;
 }
 
 export function writeGeneralSettings(
 	input: Partial<GeneralSettings>,
 ): GeneralSettings {
 	const settings = normalizeGeneralSettings(input);
-	writeJsonFile(GENERAL_SETTINGS_PATH, settings);
-	return settings;
+	return writeApplicationSetting("general", settings);
 }
 
 export function readFxRateCache(): FxRateCache | null {
-	return readJsonFile<FxRateCache>(FX_CACHE_PATH);
+	const persisted = readApplicationSetting<FxRateCache>("fx-cache");
+	if (persisted) return persisted;
+	const migrated = readJsonFile<FxRateCache>(FX_CACHE_PATH);
+	if (!migrated) return null;
+	try {
+		writeApplicationSetting("fx-cache", migrated);
+		archiveLegacySettingsFile(FX_CACHE_PATH);
+	} catch {
+		// Schema bootstrap can precede the first settings read in lightweight tools.
+	}
+	return migrated;
 }
 
 export function writeFxRateCache(cache: FxRateCache) {
-	writeJsonFile(FX_CACHE_PATH, cache);
+	writeApplicationSetting("fx-cache", cache);
 	const current = readGeneralSettings();
 	writeGeneralSettings({
 		...current,
@@ -283,19 +305,5 @@ function readJsonFile<T>(filePath: string): T | null {
 		return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
 	} catch {
 		return null;
-	}
-}
-
-function writeJsonFile(filePath: string, value: unknown) {
-	fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-	fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
-		encoding: "utf-8",
-		mode: 0o600,
-	});
-	try {
-		fs.chmodSync(path.dirname(filePath), 0o700);
-		fs.chmodSync(filePath, 0o600);
-	} catch {
-		// Best-effort hardening; unsupported filesystems should not block local settings updates.
 	}
 }

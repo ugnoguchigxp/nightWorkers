@@ -1,10 +1,20 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
-import { ensureDesktopRuntimeBootstrap } from "./runtime/bootstrap";
+import {
+	ensureDesktopRuntimeBootstrap,
+	ensureRuntimeDatabasePath,
+} from "./runtime/bootstrap";
 import { isLoopbackHost } from "./security/listen-security";
+import {
+	readApplicationSetting,
+	readApplicationSettingSecrets,
+	writeApplicationSetting,
+	writeApplicationSettingSecrets,
+} from "./services/settings/application-settings-store";
 
 const configuredDatabaseUrlBeforeDotenv = process.env.DATABASE_URL?.trim();
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
@@ -14,6 +24,98 @@ ensureDesktopRuntimeBootstrap(process.env, {
 		Boolean(configuredDatabaseUrlBeforeDotenv) ||
 		process.env.NODE_ENV !== "production",
 });
+ensureRuntimeDatabasePath(process.env);
+applyPersistedBootstrapSettings(process.env);
+
+function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
+	if (
+		env.NODE_ENV === "test" ||
+		env.NIGHTWORKERS_E2E_ISOLATED === "1" ||
+		env.NIGHTWORKERS_CONFIG_TEST === "1"
+	) {
+		return;
+	}
+	const serverKeys = [
+		"PORT",
+		"HOST",
+		"APP_URL",
+		"CORS_ORIGIN",
+		"COOKIE_SAME_SITE",
+		"TRUST_PROXY",
+		"API_AUTH_REQUIRED",
+		"ALLOW_INSECURE_NON_LOOPBACK",
+		"LOG_LEVEL",
+	] as const;
+	const authKeys = [
+		"AUTH_MODE",
+		"JWT_ACCESS_EXPIRES_IN",
+		"JWT_REFRESH_EXPIRES_IN",
+		"GOOGLE_CLIENT_ID",
+		"GITHUB_CLIENT_ID",
+	] as const;
+	const secretKeys = [
+		"JWT_SECRET",
+		"GOOGLE_CLIENT_SECRET",
+		"GITHUB_CLIENT_SECRET",
+	] as const;
+	const runtimeKeys = [
+		"ACTIVE_LLM_PROVIDER",
+		"CODEX_ENABLED",
+		"IMPLEMENTATION_RUNTIME_LANE",
+		"SESSION_QUEUE_MAX_CONCURRENCY",
+		"NIGHTWORKERS_RUN_CONTROL_KERNEL_MODE",
+		"NIGHTWORKERS_EVIDENCE_TODO_MODE",
+	] as const;
+	const integrationKeys = [
+		"NIGHTWORKERS_VULNWORKBENCH_ENABLED",
+		"NIGHTWORKERS_VULNWORKBENCH_CWD",
+		"NIGHTWORKERS_VULNWORKBENCH_TIMEOUT_SECONDS",
+		"NIGHTWORKERS_VULNWORKBENCH_HANDOFF_TIMEOUT_SECONDS",
+		"NIGHTWORKERS_SECURITY_PLUGIN_INTEGRATION",
+	] as const;
+	const persisted = readApplicationSetting<Record<string, string>>("server");
+	const persistedAuth = readApplicationSetting<Record<string, string>>("auth");
+	const persistedRuntime =
+		readApplicationSetting<Record<string, string>>("runtime");
+	const persistedIntegrations =
+		readApplicationSetting<Record<string, string>>("integrations");
+	const persistedSecrets =
+		readApplicationSettingSecrets<Record<string, string>>("auth");
+	Object.assign(
+		env,
+		persisted ?? {},
+		persistedAuth ?? {},
+		persistedRuntime ?? {},
+		persistedIntegrations ?? {},
+		persistedSecrets ?? {},
+	);
+	if (!env.JWT_SECRET)
+		env.JWT_SECRET = crypto.randomBytes(48).toString("base64url");
+	if (!persisted)
+		writeApplicationSetting("server", pickEnvironment(env, serverKeys));
+	if (!persistedAuth)
+		writeApplicationSetting("auth", pickEnvironment(env, authKeys));
+	if (!persistedRuntime)
+		writeApplicationSetting("runtime", pickEnvironment(env, runtimeKeys));
+	if (!persistedIntegrations)
+		writeApplicationSetting(
+			"integrations",
+			pickEnvironment(env, integrationKeys),
+		);
+	if (!persistedSecrets)
+		writeApplicationSettingSecrets("auth", pickEnvironment(env, secretKeys));
+}
+
+function pickEnvironment(
+	env: NodeJS.ProcessEnv,
+	keys: readonly string[],
+): Record<string, string> {
+	return Object.fromEntries(
+		keys.flatMap((key) =>
+			env[key] === undefined ? [] : [[key, env[key] as string]],
+		),
+	);
+}
 
 function isolateDirectTestDatabase(env: NodeJS.ProcessEnv) {
 	if (env.NODE_ENV !== "test" || env.NIGHTWORKERS_E2E_ISOLATED === "1") return;

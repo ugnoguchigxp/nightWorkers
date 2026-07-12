@@ -18,6 +18,7 @@ function loadConfig(input: {
 			env: {
 				...process.env,
 				NIGHTWORKERS_VITEST_DB_PATH: undefined,
+				NIGHTWORKERS_CONFIG_TEST: "1",
 				NODE_ENV: input.nodeEnv ?? "production",
 				HOST: input.host,
 				PORT: "0",
@@ -39,7 +40,7 @@ describe("production listen config", () => {
 	])("loads unauthenticated loopback host %s", (host) => {
 		const result = loadConfig({ host, authRequired: false });
 		expect(result.status, result.stderr).toBe(0);
-		expect(result.stdout).toContain("nightworkers-config-security.sqlite");
+		expect(result.stdout).toContain(".nightworkers/sqlite.db");
 	});
 
 	it.each([

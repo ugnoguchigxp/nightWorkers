@@ -1,9 +1,17 @@
+import { afterEach } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { client } from "../api/db/client";
 import { applyVitestDatabaseEnv } from "./vitest-db-env";
 
 applyVitestDatabaseEnv();
 installRegularVitestLlmFetchGuard();
 await ensureNightWorkersSchema();
+
+afterEach(async () => {
+	await client.execute("DELETE FROM application_setting_secrets");
+	await client.execute("DELETE FROM application_settings");
+	await client.execute("DELETE FROM application_setting_migrations");
+});
 
 function installRegularVitestLlmFetchGuard() {
 	const originalFetch = globalThis.fetch;

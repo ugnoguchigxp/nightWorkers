@@ -76,3 +76,18 @@ export function ensureDesktopRuntimeBootstrap(
 		}
 	}
 }
+
+export function ensureRuntimeDatabasePath(
+	env: NodeJS.ProcessEnv = process.env,
+) {
+	if (
+		env.NODE_ENV === "test" ||
+		env.NIGHTWORKERS_E2E_ISOLATED === "1" ||
+		env.NIGHTWORKERS_VITEST_DB_PATH?.trim()
+	) {
+		return;
+	}
+	const paths = getRuntimePaths(env);
+	fs.mkdirSync(paths.runtimeRoot, { recursive: true, mode: 0o700 });
+	env.DATABASE_URL = `file:${paths.databasePath}`;
+}

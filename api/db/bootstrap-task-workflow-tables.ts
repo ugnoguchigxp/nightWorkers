@@ -1,4 +1,5 @@
 import { client } from "./client";
+import { ensureColumn } from "./schema-bootstrap-utils";
 
 export async function ensureTaskWorkflowTables() {
 	await client.execute(`

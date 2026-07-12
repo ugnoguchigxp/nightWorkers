@@ -8,6 +8,7 @@ import {
 } from "../../../shared/llm-role";
 import { getRuntimePaths } from "../../runtime/paths";
 import { mergeCodexModelOptionsIntoEndpoints } from "../codex-global-config/status";
+import { readApplicationSetting } from "../settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
 
 export type StructuredLlmProviderSettings = {
@@ -170,8 +171,16 @@ export function getStructuredLlmBoolSetting(
 
 function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> {
 	try {
+		const testSettingsPath =
+			process.env.NODE_ENV === "test"
+				? process.env.NIGHTWORKERS_LLM_SETTINGS_PATH
+				: undefined;
+		const sqliteSettings = testSettingsPath
+			? null
+			: readApplicationSetting<StructuredLlmProviderSettings>("llm");
+		if (sqliteSettings) return sqliteSettings;
 		const runtimeSettingsPath =
-			process.env.NIGHTWORKERS_LLM_SETTINGS_PATH ||
+			testSettingsPath ||
 			path.join(getRuntimePaths().settingsDir, "llm-settings.json");
 		if (!fs.existsSync(runtimeSettingsPath)) return {};
 		const raw = JSON.parse(fs.readFileSync(runtimeSettingsPath, "utf-8"));
