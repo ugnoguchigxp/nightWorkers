@@ -2,17 +2,6 @@ import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as repo from "./queue.repository";
 import { runImplementationQueueWhenEnabled } from "./queue-admission.service";
 
-type QueueSideEffectOptions = {
-	autoDrain?: boolean;
-	approveMissionProposal?: boolean;
-};
-
-type QueueRecoveryAction =
-	| "retry"
-	| "mark_needs_human"
-	| "cancel"
-	| "archive"
-	| "complete";
 type QueueHealthClassification =
 	| "normal"
 	| "stale_claim"
@@ -24,10 +13,6 @@ type QueueHealthClassification =
 
 const DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
-
-type TaskMessageRows = Awaited<
-	ReturnType<typeof nightworkersRepo.listTaskMessages>
->;
 
 export function isRunningRunStatus(status: string | null | undefined) {
 	return Boolean(

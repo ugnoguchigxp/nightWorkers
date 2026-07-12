@@ -19,15 +19,6 @@ export type QueueRecoveryAction =
 	| "cancel"
 	| "archive"
 	| "complete";
-type QueueHealthClassification =
-	| "normal"
-	| "stale_claim"
-	| "stale_processing"
-	| "terminal_run_pending_completion"
-	| "orphaned_active_run"
-	| "needs_human"
-	| "failed";
-
 const _DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
 const _DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
 
