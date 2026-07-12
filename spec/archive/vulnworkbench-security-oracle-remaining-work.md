@@ -2,7 +2,7 @@
 
 ## Status
 
-remediation-planned
+completed (2026-07-12)
 
 ## 背景
 
@@ -230,3 +230,15 @@ bun run verify
 - 既存Project設定を破壊せず新shapeへ移行できる。
 - actionable finding、fingerprint rerun、`security_fix`、Ontology handoffの既存契約が維持される。
 - focused testsと `bun run verify` が成功する。
+
+## Completion Record
+
+- Security Oracle / Ontology の共通50,000 source LOC境界を実装した。
+- Project設定へ `securityOracleEnabled` を追加し、stored intentと実効状態を分離した。
+- 規模条件またはProject設定による無効化はnon-blocking skipとして保存し、finalizeを妨げない。
+- eligibleかつ有効な状態でのCLI未設定・診断失敗は従来どおりblockする。
+- Review Run、implementation closeout、runtime snapshot、Settings UIを共通resolverへ統一した。
+- legacy settings shapeの互換読み取りとstrict API schemaを維持した。
+- focused regression: 9 files / 66 tests passed。
+- skip finalization regressionを含む focused regression: 4 files / 27 tests passed。
+- `bun run verify`、`bun run check:docs`、`git diff --check` passed。

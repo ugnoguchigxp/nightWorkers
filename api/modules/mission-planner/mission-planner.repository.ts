@@ -108,16 +108,19 @@ function mapProposal(
 	});
 }
 
-export async function createMission(input: {
-	repositoryId: string;
-	title: string;
-	goalText: string;
-	nonGoals: string[];
-	sourceGoalIds: string[];
-	statusReason?: string | null;
-}) {
+export async function createMission(
+	input: {
+		repositoryId: string;
+		title: string;
+		goalText: string;
+		nonGoals: string[];
+		sourceGoalIds: string[];
+		statusReason?: string | null;
+	},
+	database: Db = db,
+) {
 	const now = new Date();
-	const [row] = await db
+	const [row] = await database
 		.insert(missions)
 		.values({
 			repositoryId: input.repositoryId,
@@ -185,6 +188,7 @@ export async function updateMission(
 		title?: string;
 		goalText?: string;
 		nonGoals?: string[];
+		sourceGoalIds?: string[];
 	},
 	database: Db = db,
 ) {
@@ -201,6 +205,9 @@ export async function updateMission(
 			...(input.title !== undefined ? { title: input.title } : {}),
 			...(input.goalText !== undefined ? { goalText: input.goalText } : {}),
 			...(input.nonGoals !== undefined ? { nonGoalsJson: input.nonGoals } : {}),
+			...(input.sourceGoalIds !== undefined
+				? { sourceGoalIdsJson: input.sourceGoalIds }
+				: {}),
 			updatedAt: new Date(),
 		})
 		.where(eq(missions.id, missionId))
@@ -208,13 +215,16 @@ export async function updateMission(
 	return row ? mapMission(row) : null;
 }
 
-export async function createRunningDecompositionRun(input: {
-	missionId: string;
-	repositoryId: string;
-	inputBundle: unknown;
-}) {
+export async function createRunningDecompositionRun(
+	input: {
+		missionId: string;
+		repositoryId: string;
+		inputBundle: unknown;
+	},
+	database: Db = db,
+) {
 	const now = new Date();
-	const [row] = await db
+	const [row] = await database
 		.insert(missionDecompositionRuns)
 		.values({
 			missionId: input.missionId,

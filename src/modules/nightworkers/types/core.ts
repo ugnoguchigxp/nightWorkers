@@ -118,6 +118,16 @@ export type GitCloseoutState = {
 		| "REPOSITORY_NOT_FOUND"
 		| "REVIEW_SESSION_MISSING"
 		| "REQUIRED_REVIEW_NOT_DONE"
+		| "REVIEW_RUN_NOT_STARTED"
+		| "REVIEW_RUN_IN_PROGRESS"
+		| "REVIEW_RUN_NOT_SUCCESSFUL"
+		| "TEST_EVIDENCE_MISSING"
+		| "TEST_EVIDENCE_INCOMPLETE"
+		| "TEST_EVIDENCE_FAILED"
+		| "TEST_EVIDENCE_STALE"
+		| "SECURITY_EVIDENCE_MISSING"
+		| "SECURITY_GATE_BLOCKED"
+		| "BLOCKING_FINDINGS_UNRESOLVED"
 		| "COMMIT_RECORD_MISSING"
 		| "COMMIT_RECORD_NOT_READY"
 		| "NO_STAGEABLE_PATHS"
@@ -131,6 +141,7 @@ export type GitCloseoutState = {
 		| "GIT_COMMAND_FAILED"
 		| null;
 	blockingReason?: string | null;
+	nextAction?: string | null;
 	commitRecord: TaskRun["commitRecord"];
 	requiredReview: {
 		reviewSessionId?: string | null;
@@ -140,6 +151,7 @@ export type GitCloseoutState = {
 			| "done"
 			| "blocked"
 			| "needs_human"
+			| "failed"
 			| null;
 		reviewRunStatus?:
 			| "not_started"
@@ -147,9 +159,44 @@ export type GitCloseoutState = {
 			| "done"
 			| "blocked"
 			| "needs_human"
+			| "failed"
 			| null;
 		complete: boolean;
 	};
+	evidence: {
+		review: {
+			source: "review_run" | "legacy_test_coverage" | "missing";
+			status:
+				| "not_started"
+				| "running"
+				| "done"
+				| "blocked"
+				| "needs_human"
+				| "failed";
+			reviewRunId: string | null;
+			completedAt: string | null;
+		};
+		test: {
+			source:
+				| "mission_pilot_snapshot"
+				| "verification_checklist"
+				| "legacy_test_coverage"
+				| "missing";
+			status: "passed" | "missing" | "incomplete" | "failed" | "stale";
+			verificationDocumentId: string | null;
+			evidenceRunIds: string[];
+			completionCheckEventId: string | null;
+			reason: string | null;
+		};
+		security: {
+			source: "security_oracle" | "policy_skip" | "missing";
+			status: "passed" | "skipped" | "blocked" | "failed" | "missing";
+			scanRunId: string | null;
+			eventId: string | null;
+			reason: string | null;
+		};
+		findings: { unresolvedBlockingIds: string[] };
+	} | null;
 	git: {
 		head?: string | null;
 		branch?: string | null;

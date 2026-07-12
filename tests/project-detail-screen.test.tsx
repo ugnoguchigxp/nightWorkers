@@ -17,6 +17,7 @@ import {
 	TaskGenerationTreeTable,
 	toggleMissionGoalTemplate,
 } from "../src/modules/nightworkers/components/ProjectDetailScreen";
+import { TaskGenerationTreeRowView } from "../src/modules/taskGeneration/components/TaskGenerationTreeRow";
 import { countMissionsForGoal } from "../src/modules/taskGeneration/taskGenerationModel";
 
 const stackProfile = (
@@ -353,6 +354,80 @@ describe("TaskGenerationTreeTable", () => {
 		expect(markup).toContain("w-[116px]");
 		expect(markup).toContain("shrink-0");
 		expect(markup).not.toContain("min-w-[1160px]");
+	});
+
+	it("only renders expand controls for Goal and Mission rows that have children", () => {
+		const noop = vi.fn();
+		const commonProps = {
+			expanded: { goalIds: new Set<string>(), missionIds: new Set<string>() },
+			selectedIds: [],
+			busy: false,
+			onToggleGoal: noop,
+			onToggleMission: noop,
+			onToggleSelected: noop,
+			onOpenGoal: noop,
+			onOpenMission: noop,
+			onOpenCandidate: noop,
+			onEditGoal: noop,
+			onToggleGoalActive: noop,
+			onDeleteGoal: noop,
+			onDecomposeMission: noop,
+			onDeleteMission: noop,
+			onCreateCandidate: noop,
+			onDismissCandidate: noop,
+		};
+		const emptyGoalMarkup = renderToStaticMarkup(
+			<table>
+				<tbody>
+					<TaskGenerationTreeRowView
+						{...commonProps}
+						row={{
+							kind: "goal",
+							id: goal.id,
+							depth: 0,
+							goal,
+							childCounts: { missions: 0, taskCandidates: 0 },
+						}}
+					/>
+				</tbody>
+			</table>,
+		);
+		const emptyMissionMarkup = renderToStaticMarkup(
+			<table>
+				<tbody>
+					<TaskGenerationTreeRowView
+						{...commonProps}
+						row={{
+							kind: "mission",
+							id: mission.id,
+							depth: 1,
+							mission,
+							childCounts: { taskCandidates: 0 },
+						}}
+					/>
+				</tbody>
+			</table>,
+		);
+		const populatedMissionMarkup = renderToStaticMarkup(
+			<table>
+				<tbody>
+					<TaskGenerationTreeRowView
+						{...commonProps}
+						row={{
+							kind: "mission",
+							id: mission.id,
+							depth: 1,
+							mission,
+							childCounts: { taskCandidates: 1 },
+						}}
+					/>
+				</tbody>
+			</table>,
+		);
+
+		expect(emptyGoalMarkup).not.toContain('aria-label="展開"');
+		expect(emptyMissionMarkup).not.toContain('aria-label="展開"');
+		expect(populatedMissionMarkup).toContain('aria-label="展開"');
 	});
 
 	it("sorts feature entrypoint candidates before follow-up candidates within the same Goal", () => {

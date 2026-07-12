@@ -84,11 +84,12 @@ export function TaskGenerationTreeRowView({
 		return (
 			<tr className="border-t" style={tableBorderStyle}>
 				<td className="py-3 pl-4">
-					<TreeToggle
-						expanded={isExpanded}
-						disabled={!hasChildren}
-						onClick={() => onToggleGoal(row.id)}
-					/>
+					{hasChildren ? (
+						<TreeToggle
+							expanded={isExpanded}
+							onClick={() => onToggleGoal(row.id)}
+						/>
+					) : null}
 				</td>
 				<td className="py-3">{emptyCell}</td>
 				<td className={`min-w-0 overflow-hidden py-3 ${indent}`}>
@@ -167,11 +168,12 @@ export function TaskGenerationTreeRowView({
 		return (
 			<tr className="border-t" style={tableBorderStyle}>
 				<td className="py-3 pl-4">
-					<TreeToggle
-						expanded={isExpanded}
-						disabled={!hasChildren}
-						onClick={() => onToggleMission(row.id)}
-					/>
+					{hasChildren ? (
+						<TreeToggle
+							expanded={isExpanded}
+							onClick={() => onToggleMission(row.id)}
+						/>
+					) : null}
 				</td>
 				<td className="py-3">{emptyCell}</td>
 				<td className={`min-w-0 overflow-hidden py-3 ${indent}`}>
@@ -377,11 +379,9 @@ function CandidateRow({
 
 function TreeToggle({
 	expanded,
-	disabled,
 	onClick,
 }: {
 	expanded: boolean;
-	disabled: boolean;
 	onClick: () => void;
 }) {
 	const { t } = useTranslation();
@@ -393,7 +393,6 @@ function TreeToggle({
 					: t("projectDetail.mission.expandRow")
 			}
 			onClick={onClick}
-			disabled={disabled}
 		>
 			{expanded ? (
 				<ChevronDown className="h-3.5 w-3.5" />

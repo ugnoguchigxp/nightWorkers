@@ -52,7 +52,10 @@ export {
 } from "./runtime-final-report";
 
 import { safelyCreateReviewRecommendation } from "./runtime-routing";
-import { resolveRuntimeSecurityCloseout } from "./runtime-security-closeout";
+import {
+	isSecurityOracleFinalizationBlocked,
+	resolveRuntimeSecurityCloseout,
+} from "./runtime-security-closeout";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
 import {
 	closeOpenTodosForCancelledRun,
@@ -394,8 +397,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			});
 			finalTodos = securityCloseout.finalTodos;
 			const securityGate = securityCloseout.securityGate;
-			const securityOracleSkipped =
-				securityCloseout.securityOracleSkipped;
+			const securityOracleSkipped = securityCloseout.securityOracleSkipped;
 			const openTodos = listOpenTodos(finalTodos);
 			const todoFinalizationBlocked =
 				outcome.status === "completed" &&
@@ -407,12 +409,13 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const finalContractWarnings = openTodoWarning
 				? [...runtimeContractWarnings, openTodoWarning]
 				: runtimeContractWarnings;
-			const securityFinalizationBlocked =
-				outcome.status === "completed" &&
-				runtimeContextSnapshot.executionMode === "implementation" &&
-				!usesE2eFixture &&
-				!securityOracleSkipped &&
-				securityGate?.allowFinalize !== true;
+			const securityFinalizationBlocked = isSecurityOracleFinalizationBlocked({
+				outcomeStatus: outcome.status,
+				executionMode: runtimeContextSnapshot.executionMode,
+				usesE2eFixture,
+				securityOracleSkipped,
+				allowFinalize: securityGate?.allowFinalize,
+			});
 			const guardedStatus =
 				todoFinalizationBlocked || securityFinalizationBlocked
 					? "needs_human"

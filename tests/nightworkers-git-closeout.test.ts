@@ -15,6 +15,12 @@ import {
 } from "vitest";
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { db } from "../api/db/client";
+import {
+	verificationChecklistItems,
+	verificationDocuments,
+	verificationEvidenceRuns,
+} from "../api/db/verification-schema";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import * as queueRepo from "../api/modules/queue/queue.repository";
 import * as reviewRepo from "../api/modules/review/review-mode.repository";
@@ -89,6 +95,10 @@ async function createCloseoutFixture(
 		safetyPolicy?: unknown;
 		withTestCoverage?: boolean;
 		withReviewRun?: boolean;
+		reviewRunStatus?: "running" | "done" | "failed" | "needs_human";
+		withSecurityEvidence?: boolean;
+		withBlockingFinding?: boolean;
+		withManagedTestEvidence?: boolean;
 	} = {},
 ) {
 	const gitRepo = await createGitRepo({ withRemote: input.withRemote });
@@ -141,6 +151,64 @@ async function createCloseoutFixture(
 		repositoryId: project.id,
 		recommendationId: recommendation.id,
 	});
+	if (input.withManagedTestEvidence) {
+		const [document] = await db
+			.insert(verificationDocuments)
+			.values({
+				taskId: task.id,
+				runId: run.id,
+				sourceSpecPath: "spec/docs/test.md",
+				status: "active",
+				documentJson: {},
+				generatedAt: new Date(),
+			})
+			.returning();
+		if (!document) throw new Error("Verification document was not created");
+		const [evidence] = await db
+			.insert(verificationEvidenceRuns)
+			.values({
+				taskId: task.id,
+				runId: run.id,
+				verificationDocumentId: document.id,
+				checkKind: "unit",
+				command: "bun run test",
+				cwd: gitRepo.root,
+				exitCode: 0,
+				runner: "nightworkers",
+				rawStdoutArtifactId: crypto.randomUUID(),
+				rawStderrArtifactId: crypto.randomUUID(),
+				summaryJson: {},
+				commandLevelConditionIdsJson: ["condition-1"],
+				startedAt: new Date(),
+				finishedAt: new Date(),
+			})
+			.returning();
+		if (!evidence) throw new Error("Verification evidence was not created");
+		await db.insert(verificationChecklistItems).values({
+			verificationDocumentId: document.id,
+			taskId: task.id,
+			conditionId: "condition-1",
+			text: "Unit tests pass",
+			required: true,
+			status: "passed",
+			evidenceIdsJson: [evidence.id],
+		});
+		await repo.createRunEvent({
+			version: 1,
+			runId: run.id,
+			taskId: task.id,
+			timestamp: new Date().toISOString(),
+			type: "tool.call_finished",
+			severity: "info",
+			actor: "tool",
+			message: "completion_check finished",
+			data: {
+				mcpTool: "completion_check",
+				status: "completed",
+				result: { ok: true },
+			},
+		});
+	}
 	if (input.withTestCoverage !== false) {
 		await reviewRepo.upsertReviewArtifact({
 			reviewSessionId: session.id,
@@ -158,22 +226,73 @@ async function createCloseoutFixture(
 		});
 	}
 	if (input.withReviewRun) {
+		const reviewRunId = crypto.randomUUID();
+		const reviewRunStatus = input.reviewRunStatus ?? "running";
 		await reviewRepo.upsertReviewArtifact({
 			reviewSessionId: session.id,
 			runId: run.id,
 			taskId: task.id,
 			kind: "review_run",
-			status: "running",
+			status: reviewRunStatus,
 			artifactJson: {
 				version: 1,
 				kind: "review_run",
-				status: "running",
+				status: reviewRunStatus,
+				reviewRunId,
 				todos: [],
 				target: { targetFiles: [{ path: "owned.txt" }] },
 				warnings: [],
 			},
 			sourceEvidenceRefsJson: [],
 		});
+		if (reviewRunStatus === "done") {
+			await repo.createRunEvent({
+				version: 1,
+				runId: run.id,
+				taskId: task.id,
+				timestamp: new Date().toISOString(),
+				type: "review.run_completed",
+				severity: "info",
+				actor: "system",
+				message: "Review Run finished with status: done.",
+				data: {
+					reviewSessionId: session.id,
+					reviewRunId,
+					reviewedRunId: run.id,
+					status: "done",
+				},
+			});
+		}
+	}
+	if (input.withSecurityEvidence !== false) {
+		await repo.createRunEvent({
+			version: 1,
+			runId: run.id,
+			taskId: task.id,
+			timestamp: new Date().toISOString(),
+			type: "system.info",
+			severity: "info",
+			actor: "system",
+			message: "Security Oracle was skipped by policy.",
+			data: {
+				action: "security.oracle_gate_skipped",
+				status: "skipped",
+				reason: "project_policy_disabled",
+			},
+		});
+	}
+	if (input.withBlockingFinding) {
+		await reviewRepo.createReviewFindings([
+			{
+				reviewSessionId: session.id,
+				runId: run.id,
+				taskId: task.id,
+				severity: "blocking",
+				title: "Blocking closeout finding",
+				evidenceRefsJson: [],
+				sourceSection: "review_run",
+			},
+		]);
 	}
 	const entry = await queueRepo.createImplementationQueueEntry({
 		taskId: task.id,
@@ -294,10 +413,15 @@ describe("NightWorkers Git closeout API", () => {
 		);
 	});
 
-	it("allows commit readiness from ReviewRun evidence without the legacy test coverage section", async () => {
+	it.each([
+		"running",
+		"needs_human",
+		"failed",
+	] as const)("does not treat ReviewRun status %s as completed evidence", async (reviewRunStatus) => {
 		const fixture = await createCloseoutFixture({
 			withTestCoverage: false,
 			withReviewRun: true,
+			reviewRunStatus,
 		});
 
 		const stateRes = await app.request(
@@ -308,13 +432,37 @@ describe("NightWorkers Git closeout API", () => {
 		const state = await stateRes.json();
 
 		expect(state).toMatchObject({
-			canCommit: true,
-			state: "commit_ready",
+			canCommit: false,
+			state: "review_required",
+			blockingCode:
+				reviewRunStatus === "running"
+					? "REVIEW_RUN_IN_PROGRESS"
+					: "REVIEW_RUN_NOT_SUCCESSFUL",
 			requiredReview: {
 				testCoverageStatus: null,
-				reviewRunStatus: "running",
-				complete: true,
+				reviewRunStatus,
+				complete: false,
 			},
+		});
+	});
+
+	it("accepts a terminal ReviewRun only when its completion event matches", async () => {
+		const fixture = await createCloseoutFixture({
+			withReviewRun: true,
+			reviewRunStatus: "done",
+			withManagedTestEvidence: true,
+		});
+
+		const stateRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
+			{ headers: sameOriginHeaders },
+		);
+		const state = await stateRes.json();
+
+		expect(state).toMatchObject({
+			canCommit: true,
+			state: "commit_ready",
+			evidence: { review: { source: "review_run", status: "done" } },
 		});
 	});
 
@@ -420,7 +568,37 @@ describe("NightWorkers Git closeout API", () => {
 		expect(state).toMatchObject({
 			canCommit: false,
 			state: "review_required",
-			blockingCode: "REQUIRED_REVIEW_NOT_DONE",
+			blockingCode: "REVIEW_RUN_NOT_STARTED",
 		});
+	});
+
+	it("blocks closeout when implementation Security Oracle evidence is missing", async () => {
+		const fixture = await createCloseoutFixture({
+			withSecurityEvidence: false,
+		});
+		const stateRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
+			{ headers: sameOriginHeaders },
+		);
+		const state = await stateRes.json();
+		expect(state).toMatchObject({
+			canCommit: false,
+			blockingCode: "SECURITY_EVIDENCE_MISSING",
+			evidence: { security: { source: "missing", status: "missing" } },
+		});
+	});
+
+	it("blocks closeout while a blocking review finding is unresolved", async () => {
+		const fixture = await createCloseoutFixture({ withBlockingFinding: true });
+		const stateRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
+			{ headers: sameOriginHeaders },
+		);
+		const state = await stateRes.json();
+		expect(state).toMatchObject({
+			canCommit: false,
+			blockingCode: "BLOCKING_FINDINGS_UNRESOLVED",
+		});
+		expect(state.evidence.findings.unresolvedBlockingIds).toHaveLength(1);
 	});
 });

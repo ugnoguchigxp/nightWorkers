@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { ValidationError } from "../api/lib/errors";
 import {
 	classifyTaskGenerationScale,
 	generateTaskCandidates,
@@ -108,19 +107,10 @@ function dependencies(changedLines: number) {
 			status: "completed" as const,
 			candidates: [],
 		})),
-		generateMissionCandidatesFromGoals: vi.fn(async () => ({
+		generateMissionPlansFromGoals: vi.fn(async () => ({
 			status: "completed" as const,
 			missions: [mission()],
-		})),
-		decomposeMission: vi.fn(async () => ({
-			mission: mission(),
-			latestPlanningResult: null,
-			taskProposals: [proposal()],
-		})),
-		getMissionDetail: vi.fn(async () => ({
-			mission: { ...mission(), status: "blocked" as const },
-			latestPlanningResult: null,
-			taskProposals: [],
+			proposals: [proposal()],
 		})),
 	};
 }
@@ -151,8 +141,7 @@ describe("task generation orchestrator", () => {
 			goalIds: [goal().id],
 			includeInactiveGoals: true,
 		});
-		expect(deps.generateMissionCandidatesFromGoals).not.toHaveBeenCalled();
-		expect(deps.decomposeMission).not.toHaveBeenCalled();
+		expect(deps.generateMissionPlansFromGoals).not.toHaveBeenCalled();
 		expect(generateTaskCandidatesResponseSchema.parse(result)).toEqual(result);
 	});
 
@@ -166,11 +155,11 @@ describe("task generation orchestrator", () => {
 		expect(result.estimate.estimatedTaskCount).toBe(0);
 		expect(result.candidates).toEqual([]);
 		expect(deps.generateMissionTaskCandidates).not.toHaveBeenCalled();
-		expect(deps.generateMissionCandidatesFromGoals).not.toHaveBeenCalled();
+		expect(deps.generateMissionPlansFromGoals).not.toHaveBeenCalled();
 		expect(generateTaskCandidatesResponseSchema.parse(result)).toEqual(result);
 	});
 
-	it("generates Missions and decomposes them at 2,000 lines or more", async () => {
+	it("generates Missions and Task Candidates together at 2,000 lines or more", async () => {
 		const deps = dependencies(2_000);
 		const result = await generateTaskCandidates(
 			{ repositoryId: goal().repositoryId },
@@ -180,64 +169,21 @@ describe("task generation orchestrator", () => {
 		expect(result.generationPath).toBe("mission_decomposition");
 		expect(result.estimate.scale).toBe("large");
 		expect(deps.generateMissionTaskCandidates).not.toHaveBeenCalled();
-		expect(deps.generateMissionCandidatesFromGoals).toHaveBeenCalledWith({
+		expect(deps.generateMissionPlansFromGoals).toHaveBeenCalledWith({
 			repositoryId: goal().repositoryId,
 			goalIds: [goal().id],
 			includeInactiveGoals: true,
 		});
-		expect(deps.decomposeMission).toHaveBeenCalledWith({
-			missionId: "44444444-4444-4444-8444-444444444444",
-		});
+		expect(deps.generateMissionPlansFromGoals).toHaveBeenCalledTimes(1);
 		expect(result.missions).toHaveLength(1);
 		expect(result.proposals).toHaveLength(1);
 		expect(result.decompositionFailures).toEqual([]);
 		expect(generateTaskCandidatesResponseSchema.parse(result)).toEqual(result);
 	});
 
-	it("returns successful proposals and blocked Missions together after a partial decomposition failure", async () => {
+	it("does not hide combined generation failures", async () => {
 		const deps = dependencies(2_500);
-		const blockedMission = mission("77777777-7777-4777-8777-777777777777");
-		deps.generateMissionCandidatesFromGoals.mockResolvedValue({
-			status: "completed",
-			missions: [mission(), blockedMission],
-		});
-		deps.decomposeMission
-			.mockResolvedValueOnce({
-				mission: mission(),
-				latestPlanningResult: null,
-				taskProposals: [proposal()],
-			})
-			.mockRejectedValueOnce(
-				new ValidationError("Mission decomposition failed", {
-					message: "provider returned invalid task proposal schema",
-				}),
-			);
-		deps.getMissionDetail.mockResolvedValueOnce({
-			mission: { ...blockedMission, status: "blocked" },
-			latestPlanningResult: null,
-			taskProposals: [],
-		});
-
-		const result = await generateTaskCandidates(
-			{ repositoryId: goal().repositoryId },
-			deps as never,
-		);
-
-		expect(result.status).toBe("needs_attention");
-		expect(result.missions).toHaveLength(2);
-		expect(result.proposals).toHaveLength(1);
-		expect(result.decompositionFailures).toEqual([
-			{
-				missionId: blockedMission.id,
-				message: "provider returned invalid task proposal schema",
-			},
-		]);
-		expect(generateTaskCandidatesResponseSchema.parse(result)).toEqual(result);
-	});
-
-	it("does not hide unexpected decomposition failures", async () => {
-		const deps = dependencies(2_500);
-		deps.decomposeMission.mockRejectedValueOnce(
+		deps.generateMissionPlansFromGoals.mockRejectedValueOnce(
 			new Error("database connection lost"),
 		);
 
@@ -247,6 +193,5 @@ describe("task generation orchestrator", () => {
 				deps as never,
 			),
 		).rejects.toThrow("database connection lost");
-		expect(deps.getMissionDetail).not.toHaveBeenCalled();
 	});
 });

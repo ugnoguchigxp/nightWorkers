@@ -5,6 +5,10 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import * as queueRepo from "../queue/queue.repository";
+import {
+	type ReviewCloseoutEvidence,
+	resolveReviewCloseoutEvidence,
+} from "../review/review-closeout-evidence.service";
 import * as reviewRepo from "../review/review-mode.repository";
 import * as repo from "./nightworkers.repository";
 import { toErrorMessage } from "./run-orchestration/utils";
@@ -20,6 +24,16 @@ type GitCloseoutBlockingCode =
 	| "REPOSITORY_NOT_FOUND"
 	| "REVIEW_SESSION_MISSING"
 	| "REQUIRED_REVIEW_NOT_DONE"
+	| "REVIEW_RUN_NOT_STARTED"
+	| "REVIEW_RUN_IN_PROGRESS"
+	| "REVIEW_RUN_NOT_SUCCESSFUL"
+	| "TEST_EVIDENCE_MISSING"
+	| "TEST_EVIDENCE_INCOMPLETE"
+	| "TEST_EVIDENCE_FAILED"
+	| "TEST_EVIDENCE_STALE"
+	| "SECURITY_EVIDENCE_MISSING"
+	| "SECURITY_GATE_BLOCKED"
+	| "BLOCKING_FINDINGS_UNRESOLVED"
 	| "COMMIT_RECORD_MISSING"
 	| "COMMIT_RECORD_NOT_READY"
 	| "NO_STAGEABLE_PATHS"
@@ -46,7 +60,8 @@ type ReviewProgress =
 	| "running"
 	| "done"
 	| "blocked"
-	| "needs_human";
+	| "needs_human"
+	| "failed";
 
 const commitMessageDraftSchema = z.object({
 	message: z.string().trim().min(1).max(240),
@@ -212,6 +227,13 @@ async function loadCloseoutContext(runId: string) {
 		(testCoverage?.status as ReviewProgress | undefined) ?? null;
 	const reviewRunStatus =
 		(reviewRunArtifact?.status as ReviewProgress | undefined) ?? null;
+	const closeoutEvidence = reviewSession
+		? await resolveReviewCloseoutEvidence({
+				runId: run.id,
+				taskId: run.taskId,
+				reviewSessionId: reviewSession.id,
+			})
+		: null;
 	const gitState = await readGitState(executionRepository.localPath);
 	return {
 		run,
@@ -220,6 +242,7 @@ async function loadCloseoutContext(runId: string) {
 		reviewSession,
 		testCoverageStatus,
 		reviewRunStatus,
+		closeoutEvidence,
 		gitState,
 	};
 }
@@ -237,6 +260,7 @@ function decideCloseout(input: {
 	reviewSessionId: string | null;
 	testCoverageStatus: ReviewProgress | null;
 	reviewRunStatus: ReviewProgress | null;
+	closeoutEvidence: ReviewCloseoutEvidence | null;
 	head: string | null;
 	upstream: string | null;
 	dirtyPaths: string[];
@@ -244,8 +268,6 @@ function decideCloseout(input: {
 }) {
 	const { commitRecord } = input;
 	const stageablePaths = list(commitRecord?.stageableOwnedPathsJson);
-	const reviewComplete =
-		input.testCoverageStatus === "done" || Boolean(input.reviewRunStatus);
 	if (!input.reviewSessionId) {
 		return blocking(
 			"REVIEW_SESSION_MISSING",
@@ -253,10 +275,47 @@ function decideCloseout(input: {
 			"review_required",
 		);
 	}
-	if (!reviewComplete) {
+	if (input.closeoutEvidence?.review.status !== "done") {
+		const reviewStatus = input.closeoutEvidence?.review.status ?? "not_started";
 		return blocking(
-			"REQUIRED_REVIEW_NOT_DONE",
-			"Required review evidence is not complete.",
+			reviewStatus === "not_started"
+				? "REVIEW_RUN_NOT_STARTED"
+				: reviewStatus === "running"
+					? "REVIEW_RUN_IN_PROGRESS"
+					: "REVIEW_RUN_NOT_SUCCESSFUL",
+			`Review evidence is not complete: ${reviewStatus}.`,
+			"review_required",
+		);
+	}
+	if (input.closeoutEvidence.test.status !== "passed") {
+		const testStatus = input.closeoutEvidence.test.status;
+		return blocking(
+			testStatus === "missing"
+				? "TEST_EVIDENCE_MISSING"
+				: testStatus === "failed"
+					? "TEST_EVIDENCE_FAILED"
+					: testStatus === "stale"
+						? "TEST_EVIDENCE_STALE"
+						: "TEST_EVIDENCE_INCOMPLETE",
+			input.closeoutEvidence.test.reason ||
+				`Test evidence is not passed: ${input.closeoutEvidence.test.status}.`,
+			"review_required",
+		);
+	}
+	if (!["passed", "skipped"].includes(input.closeoutEvidence.security.status)) {
+		return blocking(
+			input.closeoutEvidence.security.status === "missing"
+				? "SECURITY_EVIDENCE_MISSING"
+				: "SECURITY_GATE_BLOCKED",
+			input.closeoutEvidence.security.reason ||
+				`Security Oracle evidence is not passed: ${input.closeoutEvidence.security.status}.`,
+			"review_required",
+		);
+	}
+	if (input.closeoutEvidence.findings.unresolvedBlockingIds.length > 0) {
+		return blocking(
+			"BLOCKING_FINDINGS_UNRESOLVED",
+			`Unresolved blocking findings remain: ${input.closeoutEvidence.findings.unresolvedBlockingIds.join(", ")}`,
 			"review_required",
 		);
 	}
@@ -353,6 +412,7 @@ export async function getRunGitCloseout(runId: string) {
 		reviewSessionId: context.reviewSession?.id ?? null,
 		testCoverageStatus: context.testCoverageStatus,
 		reviewRunStatus: context.reviewRunStatus,
+		closeoutEvidence: context.closeoutEvidence,
 		head: context.gitState.head,
 		upstream: context.gitState.upstream,
 		dirtyPaths: context.gitState.dirtyPaths,
@@ -372,9 +432,15 @@ export async function getRunGitCloseout(runId: string) {
 			testCoverageStatus: context.testCoverageStatus,
 			reviewRunStatus: context.reviewRunStatus,
 			complete:
-				context.testCoverageStatus === "done" ||
-				Boolean(context.reviewRunStatus),
+				context.closeoutEvidence?.review.status === "done" &&
+				context.closeoutEvidence.test.status === "passed" &&
+				["passed", "skipped"].includes(
+					context.closeoutEvidence.security.status,
+				) &&
+				context.closeoutEvidence.findings.unresolvedBlockingIds.length === 0,
 		},
+		evidence: context.closeoutEvidence,
+		nextAction: decision.reason,
 		git: context.gitState,
 		counts: {
 			stageablePaths: stageablePaths.length,

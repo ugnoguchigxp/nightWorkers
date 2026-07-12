@@ -108,6 +108,52 @@ export function buildMissionCandidatesUserPrompt(input: {
 	);
 }
 
+export function buildMissionPlansSystemPrompt() {
+	return [
+		"設定済み Mission Goal と repository signal から、Mission とその配下の Task Candidate を一度の応答で生成してください。",
+		"各 Mission は review 可能な中間目標、各 Task Candidate は Plan Mode がそのまま開始できる実行単位にしてください。",
+		"Objective、Work Package、scheduling、replanning の内部構造はサーバー側で組み立てるため返さないでください。",
+		"情報が不足していても Task Candidate 生成を打ち切らず、安全な前提と確認事項を initialPrompt、acceptanceCriteria、verificationGate に明記してください。",
+		"repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。",
+		"既存 Mission や既存 Task と重複する候補は返さないでください。",
+		"Task Candidate の id と dependsOnCandidateIds は、同じ Mission 内で整合させてください。",
+		"プロンプト文言と出力本文は日本語を維持してください。",
+	].join("\n");
+}
+
+export function buildMissionPlansUserPrompt(input: {
+	inputBundle: unknown;
+	existingMissions: Array<{
+		id: string;
+		title: string;
+		status: string;
+		hasTaskCandidates: boolean;
+	}>;
+	existingTaskTitles: string[];
+}) {
+	return JSON.stringify(
+		{
+			instruction:
+				"Mission と、各 Mission に属する Task Candidate を同時に生成してください。Mission だけを返してはいけません。",
+			requiredOutput: "nightworkers.mission-plans/v1",
+			generationRules: [
+				"各 plan の mission を Mission として保存する。",
+				"各 Mission に taskCandidates を1件以上含める。",
+				"sourceGoalIds は inputBundle.sourceGoals に含まれる id だけを使う。",
+				"不明点は候補生成の停止理由にせず、Task Candidate の Plan Mode で確認する事項として書く。",
+				"existingMissions に同名 Mission があっても hasTaskCandidates が false なら、その Mission を候補付きに回復する plan を返してよい。",
+				"hasTaskCandidates が true の既存 Mission と同じ title の plan は返さない。",
+				"initialPrompt には目的、対象範囲、非目標、実装方針、完了条件、検証、注意点を含める。",
+			],
+			existingMissions: input.existingMissions,
+			existingTaskTitles: input.existingTaskTitles,
+			inputBundle: input.inputBundle,
+		},
+		null,
+		2,
+	);
+}
+
 export function buildMissionStructureSystemPrompt() {
 	return [
 		"Mission draft を Objective、Work Package、Replanning Unit に分解してください。",

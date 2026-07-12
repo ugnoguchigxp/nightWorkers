@@ -384,6 +384,24 @@ export function ReviewStatusViewer({
 								{gitCloseout?.counts.excludedPaths ?? 0} 件 /{" "}
 								{gitCloseout?.state ?? "未確認"}
 							</div>
+							{gitCloseout?.evidence ? (
+								<div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+									<span>Review: {gitCloseout.evidence.review.status}</span>
+									<span>Test: {gitCloseout.evidence.test.status}</span>
+									<span>
+										Security Oracle: {gitCloseout.evidence.security.status}
+									</span>
+									<span>
+										Blocking findings:{" "}
+										{gitCloseout.evidence.findings.unresolvedBlockingIds.length}
+									</span>
+								</div>
+							) : null}
+							{gitCloseout?.blockingReason ? (
+								<div className="mt-1 text-[11px] text-amber-200">
+									{gitCloseout.blockingReason}
+								</div>
+							) : null}
 						</div>
 						<button
 							type="button"

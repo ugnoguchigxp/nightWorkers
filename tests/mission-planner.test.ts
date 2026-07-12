@@ -252,6 +252,37 @@ describe("Mission Planner schemas and validation", () => {
 			),
 		).toBe(true);
 	});
+
+	it("does not treat ordinary item deletion as destructive infrastructure work", () => {
+		const fixture = planningResultFixture();
+		fixture.taskProposals[0].risk = "low";
+		fixture.taskProposals[0].approvalRequired = false;
+		fixture.taskProposals[0].summary = "Todo 項目を削除できるようにする。";
+		fixture.taskProposals[0].initialPrompt =
+			"Todo 項目の通常の削除操作を実装する。";
+		const report = validateMissionPlanningResult(fixture);
+
+		expect(
+			report.checks.find(
+				(check) => check.key === "approval_required_for_high_risk",
+			)?.status,
+		).toBe("pass");
+	});
+
+	it("still requires approval for migration work", () => {
+		const fixture = planningResultFixture();
+		fixture.taskProposals[0].risk = "low";
+		fixture.taskProposals[0].approvalRequired = false;
+		fixture.taskProposals[0].initialPrompt =
+			"database migration で既存 schema を移行する。";
+		const report = validateMissionPlanningResult(fixture);
+
+		expect(
+			report.checks.find(
+				(check) => check.key === "approval_required_for_high_risk",
+			)?.status,
+		).toBe("fail");
+	});
 });
 
 describe("Mission Planner service and routes", () => {
@@ -309,6 +340,95 @@ describe("Mission Planner service and routes", () => {
 				statusReason: "package scripts と quality signal から先に整備が必要。",
 			},
 		]);
+	});
+
+	it("generates and persists each Mission with Task Candidates in one LLM response", async () => {
+		const repository = await createRepository();
+		const goalRes = await app.request(
+			`http://localhost/api/repositories/${repository.id}/mission-goals`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					title: "Queue quality",
+					goalText: "Queue 実行の信頼性を改善する。",
+					active: true,
+				}),
+			},
+		);
+		expect(goalRes.status).toBe(201);
+		const goal = (await goalRes.json()) as { id: string };
+		const staleMission = await missionPlannerService.createMission({
+			repositoryId: repository.id,
+			title: planningResultFixture().mission.title,
+			goalText: "確認待ちで Task Candidate が作られなかった Mission。",
+			sourceGoalIds: [goal.id],
+		});
+		await missionPlannerRepo.updateMission(staleMission.id, {
+			status: "needs_clarification",
+			statusReason: "追加確認が必要",
+		});
+		structuredLlmFixture.outputs = [
+			{
+				schemaVersion: "nightworkers.mission-plans/v1",
+				plans: [
+					{
+						sourceGoalIds: [goal.id],
+						rationale: "Mission と Task Candidate を同時にレビューする。",
+						mission: planningResultFixture().mission,
+						taskCandidates: planningResultFixture().taskProposals.map(
+							(proposal) => ({
+								id: proposal.id,
+								title: proposal.title,
+								summary: proposal.summary,
+								initialPrompt: proposal.initialPrompt,
+								expectedOutcome: proposal.expectedOutcome,
+								implementationFocus: proposal.implementationFocus,
+								acceptanceCriteria: proposal.acceptanceCriteria,
+								verificationGate: proposal.verificationGate,
+								targetFilesOrModules: proposal.targetFilesOrModules,
+								risk: proposal.risk,
+								approvalRequired: proposal.approvalRequired,
+								dependsOnCandidateIds: proposal.dependencies,
+							}),
+						),
+					},
+				],
+			},
+		];
+
+		const generated = await missionPlannerService.generateMissionPlansFromGoals(
+			{
+				repositoryId: repository.id,
+				goalIds: [goal.id],
+			},
+		);
+
+		expect(structuredLlmFixture.outputs).toHaveLength(0);
+		expect(generated.missions).toHaveLength(1);
+		expect(generated.proposals).toHaveLength(1);
+		expect(generated.missions[0].id).toBe(staleMission.id);
+		expect(generated.missions[0]).toMatchObject({
+			status: "review_pending",
+			sourceGoalIds: [goal.id],
+		});
+		expect(generated.proposals[0]).toMatchObject({
+			missionId: generated.missions[0].id,
+			status: "proposed",
+			title: "Mission proposal Task 化 contract を実装する",
+		});
+
+		const detail = await missionPlannerService.getMissionDetail(
+			generated.missions[0].id,
+		);
+		expect(detail.latestPlanningResult).toMatchObject({
+			status: "review_pending",
+			statusReason: "single_pass_review_ready",
+		});
+		expect(detail.taskProposals).toHaveLength(1);
+		expect(
+			await missionPlannerService.listMissions(repository.id),
+		).toHaveLength(1);
 	});
 
 	it("rejects Mission candidates that are not linked to a configured Goal", async () => {

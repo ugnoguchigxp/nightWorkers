@@ -68,6 +68,22 @@ export async function resolveRuntimeSecurityCloseout(input: {
 	return { finalTodos, securityGate, securityOracleSkipped };
 }
 
+export function isSecurityOracleFinalizationBlocked(input: {
+	outcomeStatus: AgentRuntimeResult["terminalState"];
+	executionMode?: RuntimePromptSnapshot["executionMode"] | null;
+	usesE2eFixture: boolean;
+	securityOracleSkipped: boolean;
+	allowFinalize: boolean | null | undefined;
+}) {
+	return (
+		input.outcomeStatus === "completed" &&
+		input.executionMode === "implementation" &&
+		!input.usesE2eFixture &&
+		!input.securityOracleSkipped &&
+		input.allowFinalize !== true
+	);
+}
+
 async function persistSecurityOracleSkipped(
 	input: { runId: string; taskId: string },
 	settings: Awaited<

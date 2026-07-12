@@ -26,7 +26,7 @@ function hasManualConfirmation(gates: string[]) {
 }
 
 function detectsDestructiveWork(text: string) {
-	return /delete|drop|truncate|destroy|remove|migration|migrate|destructive|削除|破壊|移行|マイグレーション/i.test(
+	return /drop|truncate|destroy|migration|migrate|destructive|破壊|移行|マイグレーション/i.test(
 		text,
 	);
 }

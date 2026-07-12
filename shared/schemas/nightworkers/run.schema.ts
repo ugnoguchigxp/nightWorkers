@@ -64,6 +64,16 @@ export const gitCloseoutBlockingCodeSchema = z
 		"REPOSITORY_NOT_FOUND",
 		"REVIEW_SESSION_MISSING",
 		"REQUIRED_REVIEW_NOT_DONE",
+		"REVIEW_RUN_NOT_STARTED",
+		"REVIEW_RUN_IN_PROGRESS",
+		"REVIEW_RUN_NOT_SUCCESSFUL",
+		"TEST_EVIDENCE_MISSING",
+		"TEST_EVIDENCE_INCOMPLETE",
+		"TEST_EVIDENCE_FAILED",
+		"TEST_EVIDENCE_STALE",
+		"SECURITY_EVIDENCE_MISSING",
+		"SECURITY_GATE_BLOCKED",
+		"BLOCKING_FINDINGS_UNRESOLVED",
 		"COMMIT_RECORD_MISSING",
 		"COMMIT_RECORD_NOT_READY",
 		"NO_STAGEABLE_PATHS",
@@ -101,18 +111,79 @@ export const gitCloseoutStateSchema = z
 		state: gitCloseoutUiStateSchema,
 		blockingCode: gitCloseoutBlockingCodeSchema.nullable(),
 		blockingReason: z.string().nullable(),
+		nextAction: z.string().nullable(),
 		commitRecord: taskRunCommitRecordSchema.nullable(),
 		requiredReview: z.object({
 			reviewSessionId: z.string().uuid().nullable(),
 			testCoverageStatus: z
-				.enum(["not_started", "running", "done", "blocked", "needs_human"])
+				.enum([
+					"not_started",
+					"running",
+					"done",
+					"blocked",
+					"needs_human",
+					"failed",
+				])
 				.nullable(),
 			reviewRunStatus: z
-				.enum(["not_started", "running", "done", "blocked", "needs_human"])
+				.enum([
+					"not_started",
+					"running",
+					"done",
+					"blocked",
+					"needs_human",
+					"failed",
+				])
 				.nullable()
 				.optional(),
 			complete: z.boolean(),
 		}),
+		evidence: z
+			.object({
+				review: z.object({
+					source: z.enum(["review_run", "legacy_test_coverage", "missing"]),
+					status: z.enum([
+						"not_started",
+						"running",
+						"done",
+						"blocked",
+						"needs_human",
+						"failed",
+					]),
+					reviewRunId: z.string().nullable(),
+					completedAt: z.string().nullable(),
+				}),
+				test: z.object({
+					source: z.enum([
+						"mission_pilot_snapshot",
+						"verification_checklist",
+						"legacy_test_coverage",
+						"missing",
+					]),
+					status: z.enum([
+						"passed",
+						"missing",
+						"incomplete",
+						"failed",
+						"stale",
+					]),
+					verificationDocumentId: z.string().nullable(),
+					evidenceRunIds: z.array(z.string()),
+					completionCheckEventId: z.string().nullable(),
+					reason: z.string().nullable(),
+				}),
+				security: z.object({
+					source: z.enum(["security_oracle", "policy_skip", "missing"]),
+					status: z.enum(["passed", "skipped", "blocked", "failed", "missing"]),
+					scanRunId: z.string().nullable(),
+					eventId: z.string().nullable(),
+					reason: z.string().nullable(),
+				}),
+				findings: z.object({
+					unresolvedBlockingIds: z.array(z.string()),
+				}),
+			})
+			.nullable(),
 		git: z.object({
 			head: z.string().nullable(),
 			branch: z.string().nullable(),

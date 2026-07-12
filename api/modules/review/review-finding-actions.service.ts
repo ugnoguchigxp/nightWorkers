@@ -18,14 +18,16 @@ export async function setReviewFindingDisposition(
 ) {
 	const finding = await reviewRepo.getReviewFinding(reviewSessionId, findingId);
 	if (!finding) throw new NotFoundError("Review finding not found");
-	if (input.disposition === "accepted_risk") {
+	if (["accepted_risk", "ignored"].includes(input.disposition)) {
 		if (!input.note?.trim()) {
 			throw new AppError(
 				400,
-				"ACCEPTED_RISK_NOTE_REQUIRED",
-				"Accepted risk requires a note",
+				"FINDING_DISPOSITION_NOTE_REQUIRED",
+				"Accepted risk and dismissed findings require a note",
 			);
 		}
+	}
+	if (input.disposition === "accepted_risk") {
 		const refs = input.evidenceRefs?.length
 			? input.evidenceRefs
 			: finding.evidenceRefsJson;

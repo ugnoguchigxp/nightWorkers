@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isSecurityOracleFinalizationBlocked } from "../api/modules/nightworkers/run-orchestration/runtime-security-closeout";
 import type { VulnWorkbenchSecurityResult } from "../api/modules/review";
 import {
 	blockingScopedSecurityFindings,
@@ -51,6 +52,27 @@ function previous(fingerprints: string[]): SecurityGateResult {
 }
 
 describe("Security Oracle closeout gate", () => {
+	it("treats an intentional policy skip as non-blocking", () => {
+		expect(
+			isSecurityOracleFinalizationBlocked({
+				outcomeStatus: "completed",
+				executionMode: "implementation",
+				usesE2eFixture: false,
+				securityOracleSkipped: true,
+				allowFinalize: null,
+			}),
+		).toBe(false);
+		expect(
+			isSecurityOracleFinalizationBlocked({
+				outcomeStatus: "completed",
+				executionMode: "implementation",
+				usesE2eFixture: false,
+				securityOracleSkipped: false,
+				allowFinalize: null,
+			}),
+		).toBe(true);
+	});
+
 	it("only treats a complete scan without blocking findings as clean", () => {
 		expect(isCleanSecurityDiagnostic(diagnostic())).toBe(true);
 		expect(

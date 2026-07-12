@@ -33,9 +33,7 @@ type TaskGenerationDependencies = {
 	buildProjectSignalSnapshot: typeof buildProjectSignalSnapshot;
 	callStructuredJsonLLM: typeof callStructuredJsonLLM;
 	generateMissionTaskCandidates: typeof taskGenerationService.generateMissionTaskCandidates;
-	generateMissionCandidatesFromGoals: typeof missionPlannerService.generateMissionCandidatesFromGoals;
-	decomposeMission: typeof missionPlannerService.decomposeMission;
-	getMissionDetail: typeof missionPlannerService.getMissionDetail;
+	generateMissionPlansFromGoals: typeof missionPlannerService.generateMissionPlansFromGoals;
 };
 
 const defaultDependencies: TaskGenerationDependencies = {
@@ -45,10 +43,8 @@ const defaultDependencies: TaskGenerationDependencies = {
 	callStructuredJsonLLM,
 	generateMissionTaskCandidates:
 		taskGenerationService.generateMissionTaskCandidates,
-	generateMissionCandidatesFromGoals:
-		missionPlannerService.generateMissionCandidatesFromGoals,
-	decomposeMission: missionPlannerService.decomposeMission,
-	getMissionDetail: missionPlannerService.getMissionDetail,
+	generateMissionPlansFromGoals:
+		missionPlannerService.generateMissionPlansFromGoals,
 };
 
 export function classifyTaskGenerationScale(
@@ -94,11 +90,6 @@ function buildTaskGenerationEstimateUserPrompt(input: {
 		null,
 		2,
 	);
-}
-
-function decompositionFailureMessage(error: ValidationError) {
-	const cause = error.details?.message;
-	return typeof cause === "string" && cause.trim() ? cause : error.message;
 }
 
 async function estimateTaskGenerationScale(
@@ -188,35 +179,15 @@ export async function generateTaskCandidates(
 		};
 	}
 
-	const generatedMissions =
-		await dependencies.generateMissionCandidatesFromGoals(generationInput);
-	const missions = [];
-	const proposals = [];
-	const decompositionFailures = [];
-	for (const mission of generatedMissions.missions) {
-		try {
-			const detail = await dependencies.decomposeMission({
-				missionId: mission.id,
-			});
-			missions.push(detail.mission);
-			proposals.push(...detail.taskProposals);
-		} catch (error) {
-			if (!(error instanceof ValidationError)) throw error;
-			decompositionFailures.push({
-				missionId: mission.id,
-				message: decompositionFailureMessage(error),
-			});
-			const detail = await dependencies.getMissionDetail(mission.id);
-			missions.push(detail.mission);
-		}
-	}
+	const generated =
+		await dependencies.generateMissionPlansFromGoals(generationInput);
 	return {
-		status: decompositionFailures.length > 0 ? "needs_attention" : "completed",
+		status: "completed",
 		generationPath: "mission_decomposition",
 		estimate,
 		candidates: [],
-		missions,
-		proposals,
-		decompositionFailures,
+		missions: generated.missions,
+		proposals: generated.proposals,
+		decompositionFailures: [],
 	};
 }

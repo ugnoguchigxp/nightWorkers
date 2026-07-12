@@ -82,6 +82,7 @@ export async function callMissionPlannerJson<T>(input: {
 	userPrompt: string;
 	schemaName: string;
 	schema: z.ZodType<T>;
+	thinkingDepthOverride?: "low" | "medium" | "high" | "very_high";
 	onSelection?: (selection: MissionPlannerLlmSelection) => void;
 }): Promise<{
 	parsed: T;
@@ -96,12 +97,23 @@ export async function callMissionPlannerJson<T>(input: {
 		schemaName: input.schemaName,
 		schema: jsonSchema,
 	});
+	const routeOverride =
+		input.thinkingDepthOverride &&
+		selectedModel.providerEndpointId &&
+		selectedModel.modelOrDeployment
+			? {
+					providerEndpointId: selectedModel.providerEndpointId,
+					model: selectedModel.modelOrDeployment,
+					thinkingDepth: input.thinkingDepthOverride,
+				}
+			: null;
 	const raw = await callStructuredJsonLLM(
 		input.systemPrompt,
 		input.userPrompt,
 		{
 			role:
 				input.stage === "evaluation" ? "evaluation" : "mission_task_generation",
+			routeOverride,
 			schemaName: input.schemaName,
 			schema: jsonSchema,
 			emitEvent: async (event) => {

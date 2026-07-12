@@ -12,7 +12,6 @@ export * from "./review-mode.test-evidence-agent.schema";
 export * from "./review-mode.test-evidence-precheck";
 export * from "./review-run.service";
 export * from "./review-run-finalize.service";
-export * from "./review-run-test-evidence.service";
 export * from "./review-targets.service";
 export * from "./review-vulnworkbench.service";
 export * from "./rubrics/deterministic-evaluator";
