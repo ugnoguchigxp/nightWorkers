@@ -242,7 +242,7 @@ module A -> module B public API or explicit port
 
 - [ ] NW-LF-40 `api/services/structured-llm/providers.ts` (1341): provider transport別adapter、usage mapper、retry、最小互換正規化へ分ける。
 - [ ] NW-LF-41 `api/services/agent-runtime/CodexAgentRuntime.ts` (936): session lifecycle、event mapping、request execution、closeoutを分ける。
-- [ ] NW-LF-42 `api/services/agent-runtime/codex-runtime-support.ts` (771): config、prompt support、failure mapping、environment supportを分ける。
+- [x] NW-LF-42 `api/services/agent-runtime/codex-runtime-support.ts` (455): config、prompt support、failure mapping、environment supportとread evidenceを分ける。`codex-runtime-evidence.ts`へ監査・読取証跡を抽出。
 - [ ] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (925): runtime loopをuse case coordinatorに縮小する。
 - [ ] NW-LF-44 `api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts` (1019): startup state、request preparation、provider attempt、session recoveryを分ける。
 - [x] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677 → 208): tool manifestを`native-api-tool-manifest.ts`へ分離し、policy/handler binding facadeと公開契約を維持した。
@@ -381,7 +381,7 @@ bun test tests/nightworkers-workbench-routes/routes-workbench-04.test.ts
 
 対象: `NW-LF-40`〜`NW-LF-53`。
 
-進捗: NW-LF-45〜NW-LF-53（NW-LF-50〜NW-LF-53を含む）完了。NW-LF-40〜NW-LF-44が未完了。
+進捗: NW-LF-42、NW-LF-45〜NW-LF-53（NW-LF-50〜NW-LF-53を含む）完了。NW-LF-40〜NW-LF-41、NW-LF-43〜NW-LF-44が未完了。
 
 最も高リスクのPhaseとする。Run state、runtime loop、provider transport、tool、Todo、MCPを個別port/adapterへ分ける。Supervisorのworkflow判断はpromptとskill routing側に維持する。LLM本文が返った場合にprovider側の固定文へ差し替える挙動は導入しない。
 

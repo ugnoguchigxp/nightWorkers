@@ -5,7 +5,6 @@
     { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
     { "id": "NW-LF-40", "path": "api/services/structured-llm/providers.ts", "maxLines": 1341, "targetModule": "llm-gateway", "phase": 7 },
     { "id": "NW-LF-41", "path": "api/services/agent-runtime/CodexAgentRuntime.ts", "maxLines": 936, "targetModule": "task-execution", "phase": 7 },
-    { "id": "NW-LF-42", "path": "api/services/agent-runtime/codex-runtime-support.ts", "maxLines": 771, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-43", "path": "api/services/agent-runtime/native-api-runner/native-api-runner.ts", "maxLines": 925, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-44", "path": "api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts", "maxLines": 1019, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-54", "path": "api/db/schema.ts", "maxLines": 1167, "targetModule": "persistence", "phase": 8 },
