@@ -381,6 +381,8 @@ bun test tests/nightworkers-workbench-routes/routes-workbench-04.test.ts
 
 対象: `NW-LF-40`〜`NW-LF-53`。
 
+進捗: NW-LF-45〜NW-LF-53（NW-LF-50〜NW-LF-53を含む）完了。NW-LF-40〜NW-LF-44が未完了。
+
 最も高リスクのPhaseとする。Run state、runtime loop、provider transport、tool、Todo、MCPを個別port/adapterへ分ける。Supervisorのworkflow判断はpromptとskill routing側に維持する。LLM本文が返った場合にprovider側の固定文へ差し替える挙動は導入しない。
 
 Focused verification:
