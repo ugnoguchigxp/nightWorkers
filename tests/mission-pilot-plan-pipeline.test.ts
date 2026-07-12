@@ -78,38 +78,50 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		).toBe(false);
 	});
 
-	it("does not let warning-only findings block Queue admission", () => {
-		const review = normalizeMissionPilotPlanReview({
-			verdict: "revise",
-			summary: "Minor verification detail remains.",
-			coverage: {
-				goal: "pass",
-				scope: "pass",
-				acceptanceCriteria: "pass",
-				implementationSteps: "pass",
-				verification: "pass",
-				artifactConsistency: "pass",
-				riskAndSafety: "pass",
+	it("uses the Artifact score instead of finding severity for Queue admission", () => {
+		const sourceMessageId = "00000000-0000-4000-8000-000000000001";
+		const review = normalizeMissionPilotPlanReview(
+			{
+				verdict: "revise",
+				summary: "Minor verification detail remains.",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "pass",
+					verification: "pass",
+					artifactConsistency: "pass",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId,
+						score: 80,
+						rationale: "実装直結Artifactの合格点を満たしています。",
+					},
+				],
+				findings: [
+					{
+						severity: "warning",
+						artifactKind: "feature_plan",
+						sourceId: "plan-1",
+						issue: "Optional detail",
+						recommendation: "Clarify when convenient",
+					},
+				],
+				revisionTargets: [
+					{
+						target: "feature_plan",
+						sourceMessageId,
+						focus: { kind: "artifact" },
+						instruction: "Clarify the optional detail",
+						preserveUnfocusedContent: true,
+					},
+				],
 			},
-			findings: [
-				{
-					severity: "warning",
-					artifactKind: "feature_plan",
-					sourceId: "plan-1",
-					issue: "Optional detail",
-					recommendation: "Clarify when convenient",
-				},
-			],
-			revisionTargets: [
-				{
-					target: "feature_plan",
-					sourceMessageId: "00000000-0000-4000-8000-000000000001",
-					focus: { kind: "artifact" },
-					instruction: "Clarify the optional detail",
-					preserveUnfocusedContent: true,
-				},
-			],
-		});
+			[{ artifactKind: "feature_plan", sourceMessageId }],
+		);
 		expect(review).toMatchObject({
 			verdict: "pass",
 			revisionTargets: [],
@@ -123,6 +135,69 @@ describe("Mission Pilot plan pipeline persistence", () => {
 				riskAndSafety: "pass",
 			},
 		});
+	});
+
+	it("accepts conceptual Artifacts at 70 and revises implementation Artifacts below 80", () => {
+		const featurePlanId = "00000000-0000-4000-8000-000000000011";
+		const blueprintId = "00000000-0000-4000-8000-000000000012";
+		const review = normalizeMissionPilotPlanReview(
+			{
+				verdict: "revise",
+				summary: "Artifact種別ごとの基準で判定します。",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "fail",
+					verification: "pass",
+					artifactConsistency: "pass",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: featurePlanId,
+						score: 79,
+						rationale: "実装手順が不足しています。",
+					},
+					{
+						artifactKind: "blueprint",
+						sourceMessageId: blueprintId,
+						score: 70,
+						rationale: "概念図として必要十分です。",
+					},
+				],
+				findings: [],
+				revisionTargets: [
+					{
+						target: "feature_plan",
+						sourceMessageId: featurePlanId,
+						focus: { kind: "artifact" },
+						instruction: "実装手順を具体化してください。",
+						preserveUnfocusedContent: true,
+					},
+					{
+						target: "blueprint",
+						sourceMessageId: blueprintId,
+						focus: { kind: "artifact" },
+						instruction: "任意の改善をしてください。",
+						preserveUnfocusedContent: true,
+					},
+				],
+			},
+			[
+				{ artifactKind: "feature_plan", sourceMessageId: featurePlanId },
+				{ artifactKind: "blueprint", sourceMessageId: blueprintId },
+			],
+		);
+
+		expect(review.verdict).toBe("revise");
+		expect(review.revisionTargets).toEqual([
+			expect.objectContaining({
+				target: "feature_plan",
+				sourceMessageId: featurePlanId,
+			}),
+		]);
 	});
 
 	it("allows only one database-backed pipeline lease owner", async () => {

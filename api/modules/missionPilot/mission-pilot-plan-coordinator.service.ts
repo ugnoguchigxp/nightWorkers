@@ -4,6 +4,8 @@ import { z } from "zod";
 import { buildPlanModeExecutionSteps } from "../../../shared/plan-mode-execution";
 import {
 	type MissionPilotPlanReview,
+	type MissionPilotReviewedArtifact,
+	missionPilotArtifactScoreThreshold,
 	missionPilotPlanReviewSchema,
 	normalizeMissionPilotPlanReview,
 } from "../../../shared/schemas/mission-pilot-plan-review.schema";
@@ -35,7 +37,6 @@ import {
 	MAX_QUEUE_STABILIZATION_ATTEMPTS,
 	MAX_REVIEW_ATTEMPTS,
 	MissionPilotPlanReviewStaleError,
-	MissionPilotQuestionnaireInterventionError,
 	PIPELINE_LEASE_MS,
 	persistArtifactContext,
 	publishCurrentPlanProgress,
@@ -204,19 +205,21 @@ async function reviewCurrentPlan(
 		(message) => message.id === featurePlan.sourceMessageId,
 	);
 	if (!featurePlanMessage) throw new Error("Feature Plan message is missing");
+	const reviewArtifacts = collectCurrentReviewArtifacts(workspace);
 	const raw = await callStructuredJsonLLM(
 		[
-			"あなたはMission Pilotの実装計画レビュアーです。",
-			"Goal、確定Questionnaire、生成Artifact、Feature Plan、受け入れ条件、検証の整合性を審査してください。",
+			"あなたはMission PilotのQueue投入前・一括実装計画レビュアーです。",
+			"全Plan Artifactの生成完了後に、Goal、確定Questionnaire、現行Artifact一式、受け入れ条件、検証の整合性を一度に審査してください。Artifact生成途中の個別レビューは行いません。",
+			"artifactScoresにはreviewArtifactsの各ArtifactをsourceMessageId単位で重複なく1件ずつ含め、0〜100点で採点してください。",
+			"feature_plan、data_model、api_io_contract、zod_schema_designは実装直結Artifactとして80点以上を合格とします。",
+			"blueprint、user_flow、activity_flow、sequence_flowは概念・可視化Artifactとして70点以上を合格とします。",
+			"全Artifactが種別ごとの基準点以上ならverdict=pass、1件でも基準未満ならverdict=reviseとしてください。findingのseverityだけで合否を決めないでください。",
 			"確定QuestionnaireとTask acceptance criteriaは不変の入力であり、実装詳細をすべて列挙する文書ではありません。回答と矛盾しない型、値、取得元、コマンド、検証詳細はFeature Planが具体化します。",
 			"QuestionnaireまたはTask acceptance criteriaの変更を要求せず、不足する派生仕様はfeature_planのrevisionTargetとして返してください。",
-			"revisionTargetsは、指摘が書かれている場所ではなく矛盾を導入した生成済みArtifactをtargetにしてください。",
+			"revisionTargetsは基準点未満のArtifactだけに限定し、基準点以上のArtifactを修正対象に含めないでください。",
 			"QuestionnaireとBlueprintが矛盾する場合はBlueprintをtargetにし、sourceMessageIdへ対象Artifact messageのUUIDを指定してください。",
 			"Blueprintの特定画面またはSectionを特定できる場合はfocusをscreenまたはsectionにし、構造化Artifact内のIDを指定してください。",
-			"上流Artifactを直す場合は、その結果へ追随させるFeature Planも別revisionTargetとして含めてください。",
-			"追加質問なしで実装可能で、blocking findingがない場合だけpassにしてください。",
-			"warningだけの場合はcoverageをpassとしてverdict=passを返してください。warningを理由にreviseを返さないでください。",
-			"修正可能ならreviseとし、revisionTargetsへ具体的な再生成指示を入れてください。",
+			"基準点未満の各Artifactには、同じtargetとsourceMessageIdを持つrevisionTargetをちょうど1件返してください。",
 		].join("\n"),
 		JSON.stringify({
 			reviewAttempt: attempt,
@@ -229,6 +232,10 @@ async function reviewCurrentPlan(
 			contextDigest: session.contextDigest,
 			canonicalContext: context.contextJson,
 			featurePlan: featurePlanMessage.content,
+			reviewArtifacts: reviewArtifacts.map((artifact) => ({
+				...artifact,
+				threshold: missionPilotArtifactScoreThreshold(artifact.artifactKind),
+			})),
 		}),
 		{
 			taskId,
@@ -238,11 +245,31 @@ async function reviewCurrentPlan(
 		},
 	);
 	return {
-		review: normalizeMissionPilotPlanReview(JSON.parse(raw)),
+		review: normalizeMissionPilotPlanReview(JSON.parse(raw), reviewArtifacts),
 		featurePlanMessageId: featurePlanMessage.id,
 		contextRevision: session.contextRevision,
 		contextDigest: session.contextDigest,
 	};
+}
+
+export function collectCurrentReviewArtifacts(
+	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
+) {
+	const byKind = new Map<string, MissionPilotReviewedArtifact>();
+	for (const artifact of [
+		...workspace.blueprintArtifacts,
+		...workspace.dataModelArtifacts,
+		...workspace.dedicatedViewArtifacts,
+		...workspace.featurePlanArtifacts,
+	]) {
+		const parsed = planModeRegenerationTargetSchema.safeParse(artifact.kind);
+		if (!parsed.success) continue;
+		byKind.set(parsed.data, {
+			artifactKind: parsed.data,
+			sourceMessageId: artifact.sourceMessageId,
+		});
+	}
+	return [...byKind.values()];
 }
 
 export function buildMissionPilotPlanReviewResponseJsonSchema() {
@@ -262,65 +289,7 @@ async function executeArtifactCorrections(input: {
 	leaseOwner: string;
 }) {
 	await assertMissionPilotPreQueueMutable(input.taskId);
-	const workspace = await getPlanModeWorkspace(input.taskId);
 	const targets = [...input.targets];
-	const targetKeys = new Set(
-		targets.map((target) => `${target.target}:${target.sourceMessageId}`),
-	);
-	const appendDependency = (
-		target: PlanModeArtifactCorrectionTarget["target"],
-		sourceMessageId: string,
-		instruction: string,
-	) => {
-		const key = `${target}:${sourceMessageId}`;
-		if (targetKeys.has(key)) return;
-		targetKeys.add(key);
-		targets.push({
-			target,
-			sourceMessageId,
-			focus: { kind: "artifact" },
-			instruction,
-			preserveUnfocusedContent: true,
-		});
-	};
-	for (const target of input.targets) {
-		for (const artifact of workspace.dedicatedViewArtifacts) {
-			if (
-				artifact.kind === "blueprint" ||
-				artifact.kind === "feature_plan" ||
-				artifact.sourceMessageId === target.sourceMessageId
-			)
-				continue;
-			const dependsOnTarget =
-				(target.target === "blueprint" &&
-					artifact.sourceBlueprintMessageId === target.sourceMessageId) ||
-				(target.target === "data_model" &&
-					artifact.sourceDataModelMessageId === target.sourceMessageId);
-			if (!dependsOnTarget) continue;
-			const parsedTarget = planModeRegenerationTargetSchema.safeParse(
-				artifact.kind,
-			);
-			if (!parsedTarget.success) continue;
-			appendDependency(
-				parsedTarget.data,
-				artifact.sourceMessageId,
-				"上流Plan Artifactの修正結果を正として再生成し、古いsourceに基づく内容を残さないでください。",
-			);
-		}
-	}
-	if (
-		targets.some((target) => target.target !== "feature_plan") &&
-		!targets.some((target) => target.target === "feature_plan")
-	) {
-		const featurePlan = workspace.featurePlanArtifacts.at(-1);
-		if (featurePlan) {
-			appendDependency(
-				"feature_plan",
-				featurePlan.sourceMessageId,
-				"上流Plan Artifactの修正結果を正としてFeature Planを再生成し、古いsourceに基づく記述を残さないでください。",
-			);
-		}
-	}
 	const rank: Record<PlanModeArtifactCorrectionTarget["target"], number> = {
 		blueprint: 10,
 		data_model: 20,
@@ -362,21 +331,45 @@ async function executeReview(
 ) {
 	await updatePhase(taskId, leaseOwner, "reviewing_plan");
 	await synchronizeTaskContext(taskId, sessionId);
-	let latest = await planRepo.getLatestPlanReview(sessionId);
+	const existingReviews = await planRepo.listPlanReviews(sessionId);
+	let latest = existingReviews.at(-1) ?? null;
 	const currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
 	if (
 		latest?.verdict === "pass" &&
+		(latest.reviewJson.artifactScores?.length ?? 0) > 0 &&
 		currentSession &&
 		latest.contextRevision === currentSession.contextRevision &&
 		latest.contextDigest === currentSession.contextDigest
 	)
 		return latest;
+	if (latest?.verdict === "revise") {
+		if ((latest.reviewJson.artifactScores?.length ?? 0) === 0) {
+			await planRepo.supersedeArtifactCorrectionRunsForReview(latest.id);
+		} else {
+			await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
+			await executeArtifactCorrections({
+				taskId,
+				sessionId,
+				questionnaireSessionId,
+				reviewId: latest.id,
+				targets: latest.reviewJson.revisionTargets,
+				contextRevision: latest.contextRevision,
+				contextDigest: latest.contextDigest,
+				leaseOwner,
+			});
+			await updatePhase(taskId, leaseOwner, "reviewing_plan");
+		}
+	}
 	const firstAttempt = (latest?.attempt ?? 0) + 1;
+	const completedScoredReviews = existingReviews.filter(
+		(review) => (review.reviewJson.artifactScores?.length ?? 0) > 0,
+	).length;
 	for (
-		let attempt = firstAttempt;
-		attempt < firstAttempt + MAX_REVIEW_ATTEMPTS;
-		attempt++
+		let offset = 0;
+		offset < MAX_REVIEW_ATTEMPTS - completedScoredReviews;
+		offset++
 	) {
+		const attempt = firstAttempt + offset;
 		await renewPipelineLease(sessionId, leaseOwner);
 		const result = await reviewCurrentPlan(taskId, sessionId, attempt);
 		latest = await planRepo.createPlanReview({
@@ -391,7 +384,7 @@ async function executeReview(
 		if (result.review.verdict === "reject") {
 			throw new Error(`Plan review rejected: ${result.review.summary}`);
 		}
-		if (attempt >= firstAttempt + MAX_REVIEW_ATTEMPTS - 1) break;
+		if (completedScoredReviews + offset + 1 >= MAX_REVIEW_ATTEMPTS) break;
 		await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
 		await renewPipelineLease(sessionId, leaseOwner);
 		await executeArtifactCorrections({
@@ -530,7 +523,6 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		}
 	} catch (error) {
 		const current = await missionPilotRepo.getSessionByTaskId(taskId);
-		if (error instanceof MissionPilotQuestionnaireInterventionError) return;
 		if (current?.desiredState === "stopped" && current.phase !== "attention") {
 			return;
 		}

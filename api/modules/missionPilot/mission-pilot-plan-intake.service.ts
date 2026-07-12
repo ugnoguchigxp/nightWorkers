@@ -17,6 +17,20 @@ function resultForQuestionnaire(questionnaire: { id: string; status: string }) {
 	} satisfies MissionPilotPlanIntakeResult;
 }
 
+function hasPreFeaturePlanQuestionSet(questionnaire: {
+	questionSets?: Array<{
+		questionnaire?: {
+			questionSets: Array<{ metadata?: { source?: string } }>;
+		} | null;
+	}>;
+}) {
+	return (questionnaire.questionSets ?? []).some((set) =>
+		set.questionnaire?.questionSets.some(
+			(group) => group.metadata?.source === "pre_feature_plan_gate",
+		),
+	);
+}
+
 function schedulePlanPipeline(taskId: string) {
 	void import("./mission-pilot-plan-coordinator.service")
 		.then(({ runMissionPilotPlanPipeline }) =>
@@ -48,6 +62,10 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 				prompt: input.initialPrompt,
 				questionnaireSession: existing,
 			});
+			if (hasPreFeaturePlanQuestionSet(existing)) {
+				schedulePlanPipeline(input.taskId);
+				return resultForQuestionnaire(existing);
+			}
 			await publishQuestionnaireReady(existing);
 			return resultForQuestionnaire(existing);
 		}

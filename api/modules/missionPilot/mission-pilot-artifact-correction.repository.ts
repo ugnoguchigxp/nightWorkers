@@ -189,3 +189,28 @@ export async function recoverArtifactCorrectionRuns(sessionId: string) {
 			),
 		);
 }
+
+export async function supersedeArtifactCorrectionRunsForReview(
+	planReviewId: string,
+) {
+	await db
+		.update(missionPilotArtifactCorrectionRuns)
+		.set({
+			status: "superseded",
+			finishedAt: new Date(),
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(missionPilotArtifactCorrectionRuns.planReviewId, planReviewId),
+				inArray(missionPilotArtifactCorrectionRuns.status, [
+					"pending",
+					"dispatching",
+					"running",
+					"result_received",
+					"validating",
+					"failed",
+				]),
+			),
+		);
+}

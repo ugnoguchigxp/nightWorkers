@@ -79,6 +79,33 @@ describe("Mission Pilot typed Plan intake", () => {
 		expect(mocks.publishReady).toHaveBeenCalledWith(questionnaire);
 	});
 
+	it("resumes the pipeline without rearming intervention for pre-Feature Plan questions", async () => {
+		const questionnaire = {
+			id: "questionnaire-pre-feature",
+			status: "answering",
+			questionSets: [
+				{
+					questionnaire: {
+						questionSets: [{ metadata: { source: "pre_feature_plan_gate" } }],
+					},
+				},
+			],
+		};
+		mocks.listQuestionnaires.mockResolvedValue([questionnaire]);
+		mocks.preparePlanIntake.mockResolvedValue(questionnaire);
+		mocks.runPipeline.mockResolvedValue(undefined);
+
+		await startOrResumeMissionPilotPlanIntake({
+			taskId: "task-pre-feature",
+			initialPrompt: "Feature Plan直前から再開する",
+		});
+
+		await vi.waitFor(() =>
+			expect(mocks.runPipeline).toHaveBeenCalledWith("task-pre-feature"),
+		);
+		expect(mocks.publishReady).not.toHaveBeenCalled();
+	});
+
 	it("schedules the Plan pipeline for reviewed Questionnaire evidence", async () => {
 		const questionnaire = { id: "questionnaire-3", status: "review_ready" };
 		mocks.listQuestionnaires.mockResolvedValue([questionnaire]);

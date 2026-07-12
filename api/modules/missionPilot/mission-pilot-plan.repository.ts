@@ -34,6 +34,7 @@ export {
 	markArtifactCorrectionValidating,
 	recordArtifactCorrectionResult,
 	recoverArtifactCorrectionRuns,
+	supersedeArtifactCorrectionRunsForReview,
 } from "./mission-pilot-artifact-correction.repository";
 
 export async function claimPipelineLease(input: {
@@ -531,4 +532,12 @@ export async function getLatestPlanReview(sessionId: string) {
 		.orderBy(desc(missionPilotPlanReviews.attempt))
 		.limit(1);
 	return row ?? null;
+}
+
+export function listPlanReviews(sessionId: string) {
+	return db
+		.select()
+		.from(missionPilotPlanReviews)
+		.where(eq(missionPilotPlanReviews.sessionId, sessionId))
+		.orderBy(asc(missionPilotPlanReviews.attempt));
 }

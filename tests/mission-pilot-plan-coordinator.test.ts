@@ -281,6 +281,35 @@ describe("Mission Pilot plan coordinator", () => {
 			questionSets: [
 				{
 					id: crypto.randomUUID(),
+					sequence: 1,
+					validationStatus: "valid",
+					createdAt: new Date(),
+					rawOutput: "initial questionnaire",
+					questionnaire: {
+						questionSets: [
+							{
+								metadata: { source: "initial" },
+								questions: [
+									{
+										id: "initial-q1",
+										topic: "scope",
+										question: "初期スコープはどれですか？",
+										answerType: "single_choice",
+										options: [
+											{
+												id: "user-selected",
+												label: "User selected scope",
+												tradeoff: "Preserve user choice",
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+				},
+				{
+					id: crypto.randomUUID(),
 					sequence: 2,
 					validationStatus: "valid",
 					createdAt: new Date(),
@@ -309,17 +338,21 @@ describe("Mission Pilot plan coordinator", () => {
 					},
 				},
 			],
-			answers: [],
+			answers: [
+				{
+					id: crypto.randomUUID(),
+					questionId: "initial-q1",
+					answer: {
+						questionId: "initial-q1",
+						selectedOptionIds: ["user-selected"],
+						rankedOptionIds: [],
+						deferred: false,
+					},
+					answeredAt: new Date(),
+				},
+			],
 		};
 		mocks.generateAdditionalQuestionnaire.mockImplementation(async () => {
-			await db
-				.update(missionPilotSessions)
-				.set({
-					phase: "waiting_intervention",
-					nextWakeAt: new Date(Date.now() + 20_000),
-					updatedAt: new Date(),
-				})
-				.where(eq(missionPilotSessions.id, session.id));
 			return {
 				session: preFeaturePlanQuestionnaire,
 				result: {
@@ -336,6 +369,7 @@ describe("Mission Pilot plan coordinator", () => {
 			...preFeaturePlanQuestionnaire,
 			status: "review_ready",
 			answers: [
+				...preFeaturePlanQuestionnaire.answers,
 				{
 					id: crypto.randomUUID(),
 					questionId: "additional-2-q1",
@@ -349,6 +383,9 @@ describe("Mission Pilot plan coordinator", () => {
 				},
 			],
 		};
+		mocks.saveQuestionnaireAnswers.mockResolvedValue(
+			completedPreFeaturePlanQuestionnaire,
+		);
 		mocks.generateFeaturePlan.mockImplementation(async () => {
 			const [message] = await db
 				.insert(taskMessages)
@@ -385,6 +422,14 @@ describe("Mission Pilot plan coordinator", () => {
 						artifactConsistency: "fail",
 						riskAndSafety: "pass",
 					},
+					artifactScores: [
+						{
+							artifactKind: "feature_plan",
+							sourceMessageId: featurePlanMessageId,
+							score: 79,
+							rationale: "Verification is incomplete.",
+						},
+					],
 					findings: [
 						{
 							severity: "blocking",
@@ -426,6 +471,14 @@ describe("Mission Pilot plan coordinator", () => {
 					artifactConsistency: "pass",
 					riskAndSafety: "pass",
 				},
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: featurePlanMessageId,
+						score: 80,
+						rationale: "実装に必要な詳細を満たしています。",
+					},
+				],
 				findings: [],
 				revisionTargets: [],
 			});
@@ -438,22 +491,6 @@ describe("Mission Pilot plan coordinator", () => {
 			return { taskId };
 		});
 
-		await runMissionPilotPlanPipeline(taskId);
-		expect(mocks.generateFeaturePlan).not.toHaveBeenCalled();
-		expect(mocks.saveQuestionnaireAnswers).not.toHaveBeenCalled();
-		expect(
-			await db.query.missionPilotSessions.findFirst({
-				where: eq(missionPilotSessions.id, session.id),
-			}),
-		).toMatchObject({ phase: "waiting_intervention", desiredState: "playing" });
-
-		mocks.getQuestionnaire.mockResolvedValue(
-			completedPreFeaturePlanQuestionnaire,
-		);
-		await db
-			.update(missionPilotSessions)
-			.set({ phase: "generating_artifacts", nextWakeAt: null })
-			.where(eq(missionPilotSessions.id, session.id));
 		await runMissionPilotPlanPipeline(taskId);
 
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(1, taskId, {
@@ -477,7 +514,18 @@ describe("Mission Pilot plan coordinator", () => {
 			maxQuestions: 5,
 			role: "mission_pilot",
 		});
-		expect(mocks.saveQuestionnaireAnswers).not.toHaveBeenCalled();
+		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledTimes(1);
+		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledWith(
+			taskId,
+			questionnaireId,
+			[
+				expect.objectContaining({
+					questionId: "additional-2-q1",
+					selectedOptionIds: ["focused"],
+				}),
+			],
+			{ completionPolicy: "finalize_current_questions" },
+		);
 		expect(mocks.callLlm).toHaveBeenCalledWith(
 			expect.any(String),
 			expect.any(String),

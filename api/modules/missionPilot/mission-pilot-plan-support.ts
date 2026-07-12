@@ -11,7 +11,10 @@ import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
-import { getDesignQuestionnaireSession } from "../questionnaire/questionnaire.service";
+import {
+	getDesignQuestionnaireSession,
+	saveDesignQuestionnaireAnswers,
+} from "../questionnaire/questionnaire.service";
 import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire/questionnaire-additional.service";
 import type { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
@@ -19,6 +22,7 @@ import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 import { getMissionPilotPlanProgress } from "./mission-pilot-plan-progress.service";
 import { assertMissionPilotPreQueueMutable } from "./mission-pilot-pre-queue-recovery.service";
+import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
 import {
 	publishMissionPilotPlanProgressUpdated,
 	publishMissionPilotUpdated,
@@ -29,7 +33,6 @@ export const MAX_REVIEW_ATTEMPTS = 3;
 export const MAX_QUEUE_STABILIZATION_ATTEMPTS = 3;
 export const PIPELINE_LEASE_MS = 15 * 60 * 1000;
 export class MissionPilotPlanReviewStaleError extends Error {}
-export class MissionPilotQuestionnaireInterventionError extends Error {}
 export async function publishCurrentPlanProgress(taskId: string) {
 	try {
 		const progress = await getMissionPilotPlanProgress(taskId);
@@ -238,27 +241,17 @@ export async function answerPreFeaturePlanQuestionnaire(
 		if (generated.session) questionnaire = generated.session;
 	}
 	if (questionnaire.status === "answering") {
-		const intervention = await missionPilotRepo.getSessionByTaskId(taskId);
-		if (
-			!intervention ||
-			intervention.desiredState !== "playing" ||
-			intervention.phase !== "waiting_intervention" ||
-			!intervention.nextWakeAt
-		) {
-			throw new Error(
-				"Pre-Feature Plan Questionnaire intervention window was not armed",
-			);
-		}
-		const waiting = await planRepo.updatePlanStepEvidence(featurePlanStep.id, {
-			preFeaturePlanQuestionnaireStatus: "waiting_intervention",
-			preFeaturePlanQuestionnaireAddedCount: addedCount,
-			preFeaturePlanQuestionnaireSkippedDuplicateCount: skippedDuplicateCount,
-		});
-		if (!waiting) {
-			throw new Error("Pre-Feature Plan Questionnaire wait state conflicted");
-		}
-		throw new MissionPilotQuestionnaireInterventionError(
-			"Pre-Feature Plan Questionnaire is in the user intervention window",
+		const existingAnswerIds = new Set(
+			questionnaire.answers.map((answer) => answer.questionId),
+		);
+		const generated = buildMissionPilotQuestionnaireDraft(questionnaire);
+		questionnaire = await saveDesignQuestionnaireAnswers(
+			taskId,
+			questionnaireSessionId,
+			generated.answers.filter(
+				(answer) => !existingAnswerIds.has(answer.questionId),
+			),
+			{ completionPolicy: "finalize_current_questions" },
 		);
 	}
 	if (!["review_ready", "accepted"].includes(questionnaire.status)) {
