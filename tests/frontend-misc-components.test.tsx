@@ -422,5 +422,7 @@ describe("miscellaneous frontend components", () => {
 		expect(markup).toContain("mint");
 		expect(markup).toContain("compact");
 		expect(markup).toContain("rounded");
+		expect(markup).toContain("blueprint-design-theme-mint");
+		expect(markup).toContain("blueprint-design-option-preview-compact");
 	});
 });

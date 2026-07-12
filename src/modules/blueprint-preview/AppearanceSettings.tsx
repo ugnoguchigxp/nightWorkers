@@ -1,8 +1,13 @@
 import { useTranslation } from "react-i18next";
 import {
+	VisualOptionGrid,
+	VisualSettingsGroup,
+} from "./BlueprintPreviewDesignSettingsPanel";
+import {
 	type BlueprintPreviewDesignSettings,
 	blueprintPreviewDesignOptions,
 } from "./designSettings";
+import "./blueprintPreview.css";
 
 export function AppearanceSettings({
 	value,
@@ -16,47 +21,55 @@ export function AppearanceSettings({
 	return (
 		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
 			<div className="grid gap-3">
-				<AppearanceGroup
-					label={t("settings.appearance.theme")}
+				<VisualSettingsGroup
+					title={t("settings.appearance.theme")}
 					summary={value.theme}
 				>
-					<AppearanceOptionRow
+					<VisualOptionGrid
+						kind="theme"
 						options={blueprintPreviewDesignOptions.theme}
 						value={value.theme}
 						onSelect={(theme) => onChange({ ...value, theme })}
 					/>
-				</AppearanceGroup>
-				<AppearanceGroup
-					label={t("settings.appearance.density")}
+				</VisualSettingsGroup>
+				<VisualSettingsGroup
+					title={t("settings.appearance.density")}
 					summary={value.density}
 				>
-					<AppearanceOptionRow
+					<VisualOptionGrid
+						kind="density"
 						options={blueprintPreviewDesignOptions.density}
 						value={value.density}
 						onSelect={(density) => onChange({ ...value, density })}
 					/>
-				</AppearanceGroup>
-				<AppearanceGroup
-					label={t("settings.appearance.shape")}
+				</VisualSettingsGroup>
+				<VisualSettingsGroup
+					title={t("settings.appearance.shape")}
 					summary={value.shape}
 				>
-					<AppearanceOptionRow
+					<VisualOptionGrid
+						kind="shape"
 						options={blueprintPreviewDesignOptions.shape}
 						value={value.shape}
 						onSelect={(shape) => onChange({ ...value, shape })}
 					/>
-				</AppearanceGroup>
-				<AppearanceGroup
-					label={t("settings.appearance.shadow")}
+				</VisualSettingsGroup>
+				<VisualSettingsGroup
+					title={t("settings.appearance.shadow")}
 					summary={`${value.shadow} / ${value.shadowDirection}`}
 				>
-					<div className="grid gap-2 md:grid-cols-2">
-						<AppearanceVariantRow
-							label={t("settings.appearance.strength")}
-							options={blueprintPreviewDesignOptions.shadow}
-							value={value.shadow}
-							onSelect={(shadow) => onChange({ ...value, shadow })}
-						/>
+					<div className="grid gap-3">
+						<div className="grid gap-1.5">
+							<div className="text-[10px] font-semibold uppercase text-zinc-500">
+								{t("settings.appearance.strength")}
+							</div>
+							<VisualOptionGrid
+								kind="shadow"
+								options={blueprintPreviewDesignOptions.shadow}
+								value={value.shadow}
+								onSelect={(shadow) => onChange({ ...value, shadow })}
+							/>
+						</div>
 						<AppearanceVariantRow
 							label={t("settings.appearance.direction")}
 							options={blueprintPreviewDesignOptions.shadowDirection}
@@ -66,17 +79,18 @@ export function AppearanceSettings({
 							}
 						/>
 					</div>
-				</AppearanceGroup>
-				<AppearanceGroup
-					label={t("settings.appearance.font")}
+				</VisualSettingsGroup>
+				<VisualSettingsGroup
+					title={t("settings.appearance.font")}
 					summary={value.font}
 				>
-					<AppearanceOptionRow
+					<VisualOptionGrid
+						kind="font"
 						options={blueprintPreviewDesignOptions.font}
 						value={value.font}
 						onSelect={(font) => onChange({ ...value, font })}
 					/>
-				</AppearanceGroup>
+				</VisualSettingsGroup>
 				<AppearanceGroup
 					label={t("settings.appearance.contrast")}
 					summary={value.contrast}

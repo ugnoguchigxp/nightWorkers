@@ -220,7 +220,7 @@ module A -> module B public API or explicit port
 - [ ] NW-LF-23 `src/modules/nightworkers/components/ThreadTimeline.tsx` (1230): event grouping、windowing、card routing、timeline presentationを分ける。
 - [ ] NW-LF-24 `src/modules/nightworkers/components/NightWorkersShell.tsx` (1141): route composition、project/session selection、layoutを薄いshellへ分ける。
 - [x] NW-LF-25 `src/modules/nightworkers/components/ThreadTimelineActivityTranscript.tsx` (760 -> 362): activity projection/formatting helperを`ThreadTimelineActivityModel.ts`へ分離し、rendererと公開helperを維持した。
-- [ ] NW-LF-26 `src/modules/nightworkers/components/ThreadWorkspace.tsx` (693): composer、timeline、pending state、scroll coordinationを分ける。
+- [x] NW-LF-26 `src/modules/nightworkers/components/ThreadWorkspace.tsx` (693 -> 475): header/pending presentationを`ThreadWorkspaceHeader.tsx`へ分離し、workspace本体を合成層へ縮小した。
 - [x] NW-LF-27 `src/modules/nightworkers/components/ThreadTimelineCodexToolCard.tsx` (641 -> 128): tool result model/parserを`ThreadTimelineCodexToolCardModel.tsx`へ分離し、既存Card rendererとpublic helper exportを維持した。
 - [x] NW-LF-28 `src/modules/nightworkers/components/ThreadTimelineNormalTranscript.tsx` (626 -> 221): normal transcript projection/summaryを`ThreadTimelineNormalTranscriptModel.tsx`へ分離し、既存renderer exportを互換維持した。
 - [x] NW-LF-29 `src/modules/nightworkers/workbenchArtifactSelectors.ts` (691 -> 452): Artifact selection policy/helper群を`workbenchArtifactSelectionPolicy.ts`へ分離し、selector公開APIを維持した。
@@ -350,7 +350,7 @@ bun test tests/review-mode.test.ts tests/nightworkers-git-closeout.test.ts
 
 Artifact、timeline、Task Execution projection、Workbench shellを分離する。既存の小さいcontroller、renderer、panelを再利用し、同じ役割の第二実装を作らない。route、root CSS、root dictionaryは合成だけを行う。
 
-進捗: NW-LF-27〜NW-LF-34完了。NW-LF-22〜NW-LF-26、NW-LF-35〜NW-LF-36が未完了。
+進捗: NW-LF-25〜NW-LF-34完了。NW-LF-22〜NW-LF-24、NW-LF-35〜NW-LF-36が未完了。
 
 Focused verification:
 

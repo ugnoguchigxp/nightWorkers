@@ -198,7 +198,7 @@ export function DesignSettingsPanel({
 
 type VisualOptionKind = "theme" | "density" | "shape" | "shadow" | "font";
 
-function VisualSettingsGroup({
+export function VisualSettingsGroup({
 	title,
 	summary,
 	children,
@@ -220,7 +220,7 @@ function VisualSettingsGroup({
 	);
 }
 
-function VisualOptionGrid<const T extends readonly string[]>({
+export function VisualOptionGrid<const T extends readonly string[]>({
 	kind,
 	options,
 	value,
