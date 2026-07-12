@@ -8,12 +8,16 @@ function loadConfig(input: {
 }) {
 	return spawnSync(
 		"bun",
-		["-e", "await import('./api/config.ts'); process.stdout.write('loaded')"],
+		[
+			"-e",
+			"const { config } = await import('./api/config.ts'); process.stdout.write(config.DATABASE_URL)",
+		],
 		{
 			cwd: process.cwd(),
 			encoding: "utf8",
 			env: {
 				...process.env,
+				NIGHTWORKERS_VITEST_DB_PATH: undefined,
 				NODE_ENV: input.nodeEnv ?? "production",
 				HOST: input.host,
 				PORT: "0",
@@ -35,7 +39,7 @@ describe("production listen config", () => {
 	])("loads unauthenticated loopback host %s", (host) => {
 		const result = loadConfig({ host, authRequired: false });
 		expect(result.status, result.stderr).toBe(0);
-		expect(result.stdout).toContain("loaded");
+		expect(result.stdout).toContain("nightworkers-config-security.sqlite");
 	});
 
 	it.each([
@@ -53,5 +57,16 @@ describe("production listen config", () => {
 	it("loads authenticated non-loopback host with explicit CORS", () => {
 		const result = loadConfig({ host: "0.0.0.0", authRequired: true });
 		expect(result.status, result.stderr).toBe(0);
+	});
+
+	it("isolates a direct Bun test from the working DATABASE_URL", () => {
+		const result = loadConfig({
+			host: "127.0.0.1",
+			authRequired: false,
+			nodeEnv: "test",
+		});
+		expect(result.status, result.stderr).toBe(0);
+		expect(result.stdout).toContain("nightworkers-bun-test-");
+		expect(result.stdout).not.toContain("nightworkers-config-security.sqlite");
 	});
 });

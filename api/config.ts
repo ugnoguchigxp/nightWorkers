@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
 import { ensureDesktopRuntimeBootstrap } from "./runtime/bootstrap";
@@ -5,11 +8,30 @@ import { isLoopbackHost } from "./security/listen-security";
 
 const configuredDatabaseUrlBeforeDotenv = process.env.DATABASE_URL?.trim();
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
+isolateDirectTestDatabase(process.env);
 ensureDesktopRuntimeBootstrap(process.env, {
 	preserveConfiguredDatabaseUrl:
 		Boolean(configuredDatabaseUrlBeforeDotenv) ||
 		process.env.NODE_ENV !== "production",
 });
+
+function isolateDirectTestDatabase(env: NodeJS.ProcessEnv) {
+	if (env.NODE_ENV !== "test" || env.NIGHTWORKERS_E2E_ISOLATED === "1") return;
+
+	const databasePath = env.NIGHTWORKERS_VITEST_DB_PATH?.trim();
+	if (databasePath) {
+		env.DATABASE_URL = `file:${databasePath}`;
+		return;
+	}
+
+	const testRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "nightworkers-bun-test-"),
+	);
+	env.DATABASE_URL = `file:${path.join(testRoot, "sqlite.db")}`;
+	process.once("exit", () =>
+		fs.rmSync(testRoot, { recursive: true, force: true }),
+	);
+}
 
 const envSchema = z
 	.object({

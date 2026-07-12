@@ -7,9 +7,28 @@ import { RunControlRepository } from "../run-control/run-control-repository";
 import {
 	buildStandardImplementationTodoList,
 	type ImplementationTodoInput,
-	type TodoVerificationPolicy,
 } from "../todo-runtime";
 import type { WorkerToolResult } from "./types";
+
+export * from "./todo-list-response";
+
+import {
+	currentSeqOrNull,
+	failedTodoAction,
+	failedTodoActionResult,
+	isFinalCloseoutTodo,
+	okTodoAction,
+	resolveTargetTodo,
+	toRecord,
+	validateTodoListReplaceReason,
+} from "./todo-list-response";
+
+export * from "./todo-list-context";
+
+import {
+	requireDataMigrationGatesForContext,
+	withTodoMutationContext,
+} from "./todo-list-context";
 
 export type TodoToolName = "todo_list";
 
@@ -75,11 +94,11 @@ export type TodoActionPayload = {
 	diagnostics?: TodoActionDiagnostics;
 };
 
-type TodoMutationContext = {
+export type TodoMutationContext = {
 	runId: string;
 	taskId: string;
 	requireDataMigrationGates: boolean;
-	verificationPolicy: TodoVerificationPolicy | null;
+	verificationPolicy: import("../todo-runtime").TodoVerificationPolicy | null;
 	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
 };
 
@@ -482,146 +501,7 @@ async function completeTodo(input: {
 	);
 }
 
-async function withRunContext(
-	action: TodoToolName,
-	rawRunId: string,
-	operation: TodoListOperation,
-	attemptedAction: {
-		seq?: number;
-		todoListReplaceReason?: TodoListReplaceReason;
-	},
-	fn: (context: {
-		runId: string;
-		taskId: string;
-		requireDataMigrationGates: boolean;
-		verificationPolicy: TodoVerificationPolicy | null;
-	}) => Promise<WorkerToolResult<TodoActionPayload>>,
-) {
-	const runId = String(rawRunId || "").trim();
-	const startedAt = new Date().toISOString();
-	if (!runId) {
-		return failedTodoActionResult(
-			startedAt,
-			action,
-			operation,
-			"",
-			"",
-			"INVALID_TOOL_ARGS",
-			[],
-			attemptedAction,
-		);
-	}
-	try {
-		const run = await repo.getTaskRun(runId);
-		if (!run) {
-			return failedTodoActionResult(
-				startedAt,
-				action,
-				operation,
-				runId,
-				"",
-				"RUN_NOT_FOUND",
-				[],
-				attemptedAction,
-			);
-		}
-		return await fn({
-			runId,
-			taskId: run.taskId,
-			requireDataMigrationGates: requiresDataMigrationFromRun(run),
-			verificationPolicy: readVerificationPolicyFromRun(run),
-		});
-	} catch (error) {
-		return {
-			ok: false,
-			toolName: action,
-			startedAt,
-			finishedAt: new Date().toISOString(),
-			payload: {
-				runId,
-				taskId: "",
-				action,
-				operation,
-				todos: [],
-				diagnostics: {
-					errorCode: "TODO_ACTION_FAILED",
-				},
-			},
-			error: {
-				code: "TODO_ACTION_FAILED",
-				message: error instanceof Error ? error.message : String(error),
-			},
-		};
-	}
-}
-
-async function withTodoMutationContext(
-	action: TodoToolName,
-	runId: string,
-	operation: TodoListOperation,
-	attemptedAction: {
-		seq?: number;
-		todoListReplaceReason?: TodoListReplaceReason;
-	},
-	fn: (
-		context: TodoMutationContext,
-	) => Promise<WorkerToolResult<TodoActionPayload>>,
-) {
-	return withRunContext(
-		action,
-		runId,
-		operation,
-		attemptedAction,
-		async (base) => {
-			const todos = await repo.listTaskRunTodosForRun(base.runId);
-			return fn({ ...base, todos });
-		},
-	);
-}
-
-function requireDataMigrationGatesForContext(input: {
-	contextRequiresDataMigration: boolean;
-	todos: ImplementationTodoInput[];
-}) {
-	return (
-		input.contextRequiresDataMigration ||
-		input.todos.some(hasDataMigrationMarker)
-	);
-}
-
-function requiresDataMigrationFromRun(run: { contextSnapshot?: unknown }) {
-	const snapshot =
-		run.contextSnapshot &&
-		typeof run.contextSnapshot === "object" &&
-		!Array.isArray(run.contextSnapshot)
-			? (run.contextSnapshot as Record<string, unknown>)
-			: null;
-	return snapshot?.jobType === "data_migration";
-}
-
-function readVerificationPolicyFromRun(run: {
-	contextSnapshot?: unknown;
-}): TodoVerificationPolicy | null {
-	const snapshot =
-		run.contextSnapshot &&
-		typeof run.contextSnapshot === "object" &&
-		!Array.isArray(run.contextSnapshot)
-			? (run.contextSnapshot as Record<string, unknown>)
-			: null;
-	const value = snapshot?.verificationPolicy;
-	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-	const policy = value as Record<string, unknown>;
-	return {
-		suppressE2eTodos: policy.suppressE2eTodos === true,
-		source:
-			policy.source === "questionnaire_unit_primary"
-				? "questionnaire_unit_primary"
-				: "default",
-		reason: typeof policy.reason === "string" ? policy.reason : null,
-	};
-}
-
-function hasDataMigrationMarker(todo: ImplementationTodoInput) {
+export function hasDataMigrationMarker(todo: ImplementationTodoInput) {
 	const taskType =
 		typeof todo.taskType === "string" ? todo.taskType.trim() : "";
 	const procedureId =
@@ -632,231 +512,4 @@ function hasDataMigrationMarker(todo: ImplementationTodoInput) {
 		procedureId === "data_migration" ||
 		procedureId.startsWith("data_migration.")
 	);
-}
-
-function okTodoAction(
-	action: TodoToolName,
-	operation: TodoListOperation,
-	runId: string,
-	taskId: string,
-	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
-	options: {
-		transition?: TodoActionTransition;
-	} = {},
-): WorkerToolResult<TodoActionPayload> {
-	const currentTodo = todos.find((todo) => todo.status === "running") ?? null;
-	const nextTodo = todos.find((todo) => todo.status === "pending") ?? null;
-	return {
-		ok: true,
-		toolName: action,
-		startedAt: new Date().toISOString(),
-		finishedAt: new Date().toISOString(),
-		payload: {
-			runId,
-			taskId,
-			action,
-			operation,
-			todos: todos.map(toPayloadTodo),
-			currentTodo: currentTodo ? toPayloadTodo(currentTodo) : null,
-			nextTodo: nextTodo ? toPayloadTodo(nextTodo) : null,
-			transition: options.transition,
-		},
-	};
-}
-
-function failedTodoAction(
-	context: TodoMutationContext,
-	action: TodoToolName,
-	operation: TodoListOperation,
-	errorCode: string,
-	attemptedAction: {
-		seq?: number;
-		todoListReplaceReason?: TodoListReplaceReason;
-	},
-): WorkerToolResult<TodoActionPayload> {
-	return failedTodoActionResult(
-		new Date().toISOString(),
-		action,
-		operation,
-		context.runId,
-		context.taskId,
-		errorCode,
-		context.todos,
-		attemptedAction,
-	);
-}
-
-function failedTodoActionResult(
-	startedAt: string,
-	action: TodoToolName,
-	operation: TodoListOperation,
-	runId: string,
-	taskId: string,
-	errorCode: string,
-	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>> = [],
-	attemptedAction: {
-		seq?: number;
-		todoListReplaceReason?: TodoListReplaceReason;
-	} = {},
-): WorkerToolResult<TodoActionPayload> {
-	const runningTodos = todos.filter((todo) => todo.status === "running");
-	return {
-		ok: false,
-		toolName: action,
-		startedAt,
-		finishedAt: new Date().toISOString(),
-		payload: {
-			runId,
-			taskId,
-			action,
-			operation,
-			todos: todos.map(toPayloadTodo),
-			currentTodo:
-				runningTodos.length === 1 ? toPayloadTodo(runningTodos[0]) : null,
-			nextTodo: null,
-			diagnostics: {
-				errorCode,
-				attemptedAction: { action, operation, ...attemptedAction },
-				currentSnapshot: {
-					runningCount: runningTodos.length,
-					runningSeqs: runningTodos.map((todo) => todo.seq),
-					pendingSeqs: todos
-						.filter((todo) => todo.status === "pending")
-						.map((todo) => todo.seq),
-				},
-			},
-		},
-		error: {
-			code: errorCode,
-			message: buildErrorMessage(action, errorCode),
-		},
-	};
-}
-
-function buildErrorMessage(action: TodoToolName, errorCode: string) {
-	if (errorCode === "INVALID_TOOL_ARGS")
-		return `${action} requires valid arguments.`;
-	if (errorCode === "RUN_NOT_FOUND") return "Run context not found.";
-	if (errorCode === "CURRENT_TODO_MISSING")
-		return "No running Todo exists for the current run.";
-	if (errorCode === "CURRENT_TODO_NOT_UNIQUE")
-		return "Multiple running Todos exist; current Todo is not unique.";
-	if (errorCode === "TODO_SEQ_NOT_FOUND")
-		return "Requested Todo seq was not found.";
-	if (errorCode === "TODO_NOT_STARTABLE")
-		return "Requested Todo is already closed and cannot be started.";
-	if (errorCode === "PREVIOUS_TODO_OPEN")
-		return "Previous Todo is still pending or running; close it before starting a later Todo.";
-	if (errorCode === "TODO_LIST_REPLACE_REASON_REQUIRED")
-		return "todo_list operation=replace is structural replanning. A running Todo exists, so provide todoListReplaceReason. If the current Todo is complete, use todo_list operation=done seq=<current>.";
-	if (errorCode === "INVALID_TODO_LIST_REPLACE_REASON")
-		return "todoListReplaceReason must be one of initial_plan, scope_changed, estimate_changed, newly_required_work, or blocked_replan.";
-	if (errorCode === "TODO_EVIDENCE_NOT_MET")
-		return "Todo completion evidence requirements are not satisfied. Use evidenceRefs returned by NightWorkers tool outcomes.";
-	return `${action} failed.`;
-}
-
-function validateTodoListReplaceReason(input: {
-	currentTodos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
-	todoListReplaceReason?: TodoListReplaceReason;
-}): { ok: true } | { ok: false; errorCode: string } {
-	if (
-		input.todoListReplaceReason !== undefined &&
-		!isTodoListReplaceReason(input.todoListReplaceReason)
-	) {
-		return { ok: false, errorCode: "INVALID_TODO_LIST_REPLACE_REASON" };
-	}
-
-	const hasRunningTodo = input.currentTodos.some(
-		(todo) => todo.status === "running",
-	);
-	if (hasRunningTodo && !input.todoListReplaceReason) {
-		return { ok: false, errorCode: "TODO_LIST_REPLACE_REASON_REQUIRED" };
-	}
-
-	return { ok: true };
-}
-
-function isTodoListReplaceReason(
-	value: unknown,
-): value is TodoListReplaceReason {
-	return (
-		value === "initial_plan" ||
-		value === "scope_changed" ||
-		value === "estimate_changed" ||
-		value === "newly_required_work" ||
-		value === "blocked_replan"
-	);
-}
-
-function resolveCurrentTodo(
-	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
-) {
-	const runningTodos = todos.filter((todo) => todo.status === "running");
-	if (runningTodos.length === 0) {
-		return { ok: false as const, errorCode: "CURRENT_TODO_MISSING" };
-	}
-	if (runningTodos.length > 1) {
-		return { ok: false as const, errorCode: "CURRENT_TODO_NOT_UNIQUE" };
-	}
-	return { ok: true as const, todo: runningTodos[0] };
-}
-
-function resolveTargetTodo(
-	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
-	seq?: number,
-) {
-	if (seq === undefined) return resolveCurrentTodo(todos);
-	if (!Number.isInteger(seq) || seq < 1) {
-		return { ok: false as const, errorCode: "INVALID_TOOL_ARGS" };
-	}
-	const todo = todos.find((candidate) => candidate.seq === seq);
-	if (!todo) return { ok: false as const, errorCode: "TODO_SEQ_NOT_FOUND" };
-	if (todo.status !== "running")
-		return { ok: false as const, errorCode: "CURRENT_TODO_MISSING" };
-	return { ok: true as const, todo };
-}
-
-function currentSeqOrNull(
-	todos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>,
-) {
-	const current = todos.find((todo) => todo.status === "running");
-	return current?.seq ?? null;
-}
-
-function isFinalCloseoutTodo(
-	todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number],
-) {
-	return (
-		(todo.taskType === "knowledge_capture" &&
-			todo.procedureId === "contextstill.register_candidates") ||
-		(todo.taskType === "completion_report" &&
-			todo.procedureId === "final_completion_report") ||
-		todo.procedureId === "contextstill_closeout"
-	);
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
-}
-
-function toPayloadTodo(
-	todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number],
-): TodoListPayloadTodo {
-	return {
-		id: todo.id,
-		seq: todo.seq,
-		title: todo.title,
-		description: todo.description,
-		taskType: todo.taskType,
-		status: todo.status,
-		procedureId: todo.procedureId,
-		dependsOn: todo.dependsOn,
-		startedAt: todo.startedAt,
-		completedAt: todo.completedAt,
-		evidenceRequirementsJson: todo.evidenceRequirementsJson,
-		evidenceRefsJson: todo.evidenceRefsJson,
-	};
 }
