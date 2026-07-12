@@ -10,51 +10,26 @@ import {
 	resolveReviewCloseoutEvidence,
 } from "../review/review-closeout-evidence.service";
 import * as reviewRepo from "../review/review-mode.repository";
+import {
+	blocking,
+	defaultCommitMessage,
+	exclusions,
+	git,
+	list,
+	normalizePushStatus,
+	pushBlockedByPolicy,
+	readGitState,
+	readOwnedDiff,
+	withRepositoryCloseoutLock,
+} from "./git-closeout-support";
 import * as repo from "./nightworkers.repository";
 import { toErrorMessage } from "./run-orchestration/utils";
 
 const execFileAsync = promisify(execFile);
-const repositoryCloseoutLocks = new Map<string, Promise<void>>();
 
 type CommitRecord = NonNullable<
 	Awaited<ReturnType<typeof repo.getTaskRunCommitRecord>>
 >;
-type GitCloseoutBlockingCode =
-	| "RUN_NOT_FOUND"
-	| "REPOSITORY_NOT_FOUND"
-	| "REVIEW_SESSION_MISSING"
-	| "REQUIRED_REVIEW_NOT_DONE"
-	| "REVIEW_RUN_NOT_STARTED"
-	| "REVIEW_RUN_IN_PROGRESS"
-	| "REVIEW_RUN_NOT_SUCCESSFUL"
-	| "TEST_EVIDENCE_MISSING"
-	| "TEST_EVIDENCE_INCOMPLETE"
-	| "TEST_EVIDENCE_FAILED"
-	| "TEST_EVIDENCE_STALE"
-	| "SECURITY_EVIDENCE_MISSING"
-	| "SECURITY_GATE_BLOCKED"
-	| "BLOCKING_FINDINGS_UNRESOLVED"
-	| "COMMIT_RECORD_MISSING"
-	| "COMMIT_RECORD_NOT_READY"
-	| "NO_STAGEABLE_PATHS"
-	| "HEAD_MOVED"
-	| "DIRTY_PATHS_MISSING"
-	| "STAGED_PATHS_OUTSIDE_OWNERSHIP"
-	| "COMMIT_ALREADY_CREATED"
-	| "UPSTREAM_MISSING"
-	| "PUSH_HEAD_MISMATCH"
-	| "PUSH_POLICY_BLOCKED"
-	| "GIT_COMMAND_FAILED";
-type GitCloseoutUiState =
-	| "review_required"
-	| "commit_ready"
-	| "commit_running"
-	| "committed"
-	| "push_ready"
-	| "push_running"
-	| "pushed"
-	| "needs_human"
-	| "failed";
 type ReviewProgress =
 	| "not_started"
 	| "running"
@@ -79,121 +54,6 @@ const commitMessageJsonSchema = {
 		},
 	},
 };
-
-async function withRepositoryCloseoutLock<T>(
-	repositoryId: string,
-	fn: () => Promise<T>,
-): Promise<T> {
-	const previous =
-		repositoryCloseoutLocks.get(repositoryId) ?? Promise.resolve();
-	let releaseCurrent: () => void = () => {};
-	const current = new Promise<void>((resolve) => {
-		releaseCurrent = resolve;
-	});
-	const tail = previous.catch(() => undefined).then(() => current);
-	repositoryCloseoutLocks.set(repositoryId, tail);
-	await previous.catch(() => undefined);
-	try {
-		return await fn();
-	} finally {
-		releaseCurrent();
-		if (repositoryCloseoutLocks.get(repositoryId) === tail) {
-			repositoryCloseoutLocks.delete(repositoryId);
-		}
-	}
-}
-
-function parseGitPorcelainZ(output: string) {
-	const entries: Array<{ status: string; path: string }> = [];
-	const tokens = output.split("\0").filter(Boolean);
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index] ?? "";
-		const status = token.slice(0, 2);
-		const filePath = token.slice(2).trimStart();
-		if (!filePath) continue;
-		entries.push({ status, path: filePath });
-		if (status.includes("R") || status.includes("C")) {
-			const nextPath = tokens[index + 1];
-			if (nextPath) entries.push({ status, path: nextPath });
-			index += 1;
-		}
-	}
-	return entries;
-}
-
-async function git(
-	repoRoot: string,
-	args: string[],
-	options: { allowFailure?: boolean } = {},
-) {
-	try {
-		const result = await execFileAsync("git", args, {
-			cwd: repoRoot,
-			maxBuffer: 1024 * 1024 * 8,
-		});
-		return result.stdout.trim();
-	} catch (error) {
-		if (options.allowFailure) return null;
-		throw error;
-	}
-}
-
-async function readGitState(repoRoot: string) {
-	const [head, branch, upstream, porcelain, staged] = await Promise.all([
-		git(repoRoot, ["rev-parse", "--verify", "HEAD"], { allowFailure: true }),
-		git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"], {
-			allowFailure: true,
-		}),
-		git(
-			repoRoot,
-			["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-			{
-				allowFailure: true,
-			},
-		),
-		git(repoRoot, ["status", "--porcelain=v1", "-z"], { allowFailure: true }),
-		git(repoRoot, ["diff", "--cached", "--name-only"], {
-			allowFailure: true,
-		}),
-	]);
-	return {
-		head,
-		branch,
-		upstream,
-		dirtyPaths: parseGitPorcelainZ(porcelain ?? "")
-			.map((entry) => entry.path)
-			.sort(),
-		stagedPaths: (staged ?? "")
-			.split("\n")
-			.map((line) => line.trim())
-			.filter(Boolean)
-			.sort(),
-	};
-}
-
-function list(value: unknown): string[] {
-	return Array.isArray(value)
-		? value.filter((item): item is string => typeof item === "string")
-		: [];
-}
-
-function exclusions(value: unknown): Array<{ path: string; reason: string }> {
-	return Array.isArray(value)
-		? value.filter((item): item is { path: string; reason: string } =>
-				Boolean(
-					item &&
-						typeof item === "object" &&
-						typeof (item as { path?: unknown }).path === "string" &&
-						typeof (item as { reason?: unknown }).reason === "string",
-				),
-			)
-		: [];
-}
-
-function normalizePushStatus(record: CommitRecord | null) {
-	if (record?.pushStatus) return String(record.pushStatus);
-	return record?.status === "committed" ? "not_pushed" : "blocked";
-}
 
 async function loadCloseoutContext(runId: string) {
 	const run = await repo.getTaskRun(runId);
@@ -247,14 +107,6 @@ async function loadCloseoutContext(runId: string) {
 		closeoutEvidence,
 		gitState,
 	};
-}
-
-function blocking(
-	code: GitCloseoutBlockingCode,
-	reason: string,
-	state: GitCloseoutUiState = "needs_human",
-) {
-	return { code, reason, state };
 }
 
 function decideCloseout(input: {
@@ -451,31 +303,6 @@ export async function getRunGitCloseout(runId: string) {
 	};
 }
 
-function defaultCommitMessage(input: {
-	taskTitle?: string | null;
-	runId: string;
-	message?: string;
-}) {
-	const message = input.message?.trim();
-	if (message) return message;
-	const title = input.taskTitle?.trim();
-	if (title) return `Implement ${title}`;
-	return `Complete NightWorkers run ${input.runId.slice(0, 8)}`;
-}
-
-async function readOwnedDiff(input: {
-	repoRoot: string;
-	stageablePaths: string[];
-}) {
-	if (input.stageablePaths.length === 0) return "";
-	const diff = await git(
-		input.repoRoot,
-		["diff", "--", ...input.stageablePaths],
-		{ allowFailure: true },
-	);
-	return (diff ?? "").slice(0, 20_000);
-}
-
 async function generateCommitMessage(input: {
 	repoRoot: string;
 	runId: string;
@@ -515,7 +342,7 @@ async function generateCommitMessage(input: {
 			{
 				schemaName: "git_commit_message",
 				schema: commitMessageJsonSchema,
-				role: "completion",
+				role: "review",
 				workingDirectory: input.repoRoot,
 				runId: input.runId,
 				timeoutMs: 30_000,
@@ -660,29 +487,6 @@ async function commitRunGitCloseoutLocked(
 		});
 		return getRunGitCloseout(runId);
 	}
-}
-
-function pushBlockedByPolicy(safetyPolicy: unknown) {
-	const blockedCommands = Array.isArray(
-		(safetyPolicy as { blockedCommands?: unknown })?.blockedCommands,
-	)
-		? ((safetyPolicy as { blockedCommands: unknown[] }).blockedCommands.filter(
-				(item): item is string => typeof item === "string",
-			) ?? [])
-		: [];
-	const command = "git push";
-	return blockedCommands.some((blocked) => {
-		const normalized = blocked.trim();
-		if (!normalized) return false;
-		return (
-			command.includes(normalized) ||
-			new RegExp(`\\b${escapeRegExp(normalized)}\\b`).test(command)
-		);
-	});
-}
-
-function escapeRegExp(value: string) {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export async function pushRunGitCloseout(runId: string) {

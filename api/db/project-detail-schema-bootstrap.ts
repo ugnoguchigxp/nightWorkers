@@ -16,7 +16,6 @@ export async function ensureProjectDetailTables() {
       output_artifact_id text,
       latest_output text,
       coverage_summary_json text,
-      coverage_gate_json text,
       e2e_summary_json text,
       error_message text,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade

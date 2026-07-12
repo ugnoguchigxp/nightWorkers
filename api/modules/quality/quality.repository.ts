@@ -21,7 +21,6 @@ function mapQualityRun(
 		outputArtifactId: row.outputArtifactId ?? null,
 		latestOutput: row.latestOutput ?? null,
 		coverageSummary: row.coverageSummaryJson ?? null,
-		coverageGate: row.coverageGateJson ?? null,
 		e2eSummary: row.e2eSummaryJson ?? null,
 		errorMessage: row.errorMessage ?? null,
 		createdAt: row.createdAt,
@@ -56,7 +55,6 @@ export async function completeProjectQualityRun(input: {
 	exitCode?: number | null;
 	latestOutput?: string | null;
 	coverageSummary?: unknown;
-	coverageGate?: unknown;
 	e2eSummary?: unknown;
 	errorMessage?: string | null;
 	onlyIfRunning?: boolean;
@@ -68,7 +66,6 @@ export async function completeProjectQualityRun(input: {
 			exitCode: input.exitCode ?? null,
 			latestOutput: input.latestOutput ?? null,
 			coverageSummaryJson: input.coverageSummary ?? null,
-			coverageGateJson: input.coverageGate ?? null,
 			e2eSummaryJson: input.e2eSummary ?? null,
 			errorMessage: input.errorMessage ?? null,
 			completedAt: new Date(),

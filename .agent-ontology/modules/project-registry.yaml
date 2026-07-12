@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "project-registry",
+  "label": "Project Registry",
+  "summary": "Owns repository path registration, imported Project validation, repository metadata, and post-import setup coordination.",
+  "ubiquitousLanguage": [{ "name": "RegisteredProject", "meaning": "A repository root approved for NightWorkers operations." }],
+  "responsibilities": ["Register and validate Project roots.", "Project repository metadata.", "Coordinate deterministic post-import setup through ports."],
+  "ownedPaths": ["api/modules/project-registry/**", "src/modules/project-registry/**"],
+  "readMostlyPaths": ["api/services/worker-tools/project-post-import.ts", "api/modules/nightworkers/nightworkers.repository.ts"],
+  "ownedData": { "tables": ["repositories"], "files": [] },
+  "invariants": [{ "id": "registered-root-is-workspace", "statement": "Repository work uses the registered Project root and never treats a temporary decision directory as the workspace.", "check": "Project import and runtime execution-root tests cover path ownership." }],
+  "allowedMutations": ["Project registration", "repository metadata", "post-import setup"],
+  "forbiddenMutations": ["Task Run runtime loop", "Git worktree mutation policy", "provider routing"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/services.native-api-runner-import-project.test.ts", "expect": "Project import passes." }], "focused": [{ "command": "bun test tests/services.native-api-runner-import-project.test.ts", "expect": "Project import behavior passes." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

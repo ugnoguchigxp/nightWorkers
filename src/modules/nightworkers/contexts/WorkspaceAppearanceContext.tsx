@@ -9,7 +9,7 @@ import {
 import {
 	type BlueprintPreviewDesignSettings,
 	createBlueprintPreviewDesignSettings,
-} from "../../blueprint-preview/designSettings";
+} from "../../blueprint-preview";
 
 const STORAGE_KEY = "nightworkers.workspaceAppearance.v1";
 

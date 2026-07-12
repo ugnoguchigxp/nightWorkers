@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "artifact",
+  "label": "Artifact",
+  "summary": "Owns persisted Artifact identity, version selection, activity projection, and Artifact viewer routing.",
+  "ubiquitousLanguage": [{ "name": "Artifact", "meaning": "A persisted or projected work product attached to a Session or Run." }],
+  "responsibilities": ["Select canonical Artifact sources.", "Project Artifact versions and activity evidence.", "Route Artifact content to the correct viewer."],
+  "ownedPaths": ["api/modules/artifact/**", "src/modules/artifact/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.activity.repository.ts", "src/modules/nightworkers/components/ArtifactPane.tsx", "src/modules/nightworkers/workbenchArtifactSelectors.ts"],
+  "ownedData": { "tables": ["artifacts", "activity_artifacts", "activity_events"], "files": [] },
+  "invariants": [{ "id": "canonical-artifact-source", "statement": "Persisted Artifact rows outrank compatibility message projections.", "check": "Artifact selector and workspace tests cover source precedence." }],
+  "allowedMutations": ["Artifact projection", "Artifact version selection", "Artifact viewer routing"],
+  "forbiddenMutations": ["Task Run state transitions", "Plan generation policy", "provider routing"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/artifact-workspace-viewer.test.ts", "expect": "Artifact workspace behavior passes." }], "focused": [{ "command": "bun test tests/artifact-workspace-viewer.test.ts tests/artifact-blueprint-viewers.test.tsx", "expect": "Artifact projections pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

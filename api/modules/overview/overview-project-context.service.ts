@@ -2,7 +2,7 @@ import { projectMetaSchema } from "../../../shared/schemas/project-detail.schema
 import type { ProjectQualityRun } from "../../../shared/schemas/quality.schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as projectEvaluationRepo from "../project-evaluation/project-evaluation.repository";
-import * as qualityRepo from "../quality/quality.repository";
+import { listProjectQualityRuns } from "../quality";
 import { detectProjectStackProfile } from "../techStack";
 import { coverageAxesFromQualityRun } from "./overview-coverage";
 
@@ -11,7 +11,7 @@ export async function buildProjectOverviewContext(repositoryId: string) {
 	if (!repository) return null;
 	const [latestEvaluation, qualityRuns] = await Promise.all([
 		projectEvaluationRepo.getLatestProjectEvaluation(repositoryId),
-		qualityRepo.listProjectQualityRuns(repositoryId),
+		listProjectQualityRuns(repositoryId),
 	]);
 	const parsedProjectMeta = projectMetaSchema.safeParse(repository.projectMeta);
 	const projectMeta = parsedProjectMeta.success ? parsedProjectMeta.data : null;
@@ -39,7 +39,7 @@ export async function buildProjectOverviewContext(repositoryId: string) {
 
 function selectLatestCoverageRun(runs: ProjectQualityRun[]) {
 	return (
-		runs.find((run) => Boolean(run.coverageGate || run.coverageSummary)) ?? null
+		runs.find((run) => Boolean(run.coverageSummary)) ?? null
 	);
 }
 

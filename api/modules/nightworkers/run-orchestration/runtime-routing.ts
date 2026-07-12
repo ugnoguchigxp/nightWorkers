@@ -1,3 +1,4 @@
+import { LLM_ROLE_ORDER } from "../../../../shared/llm-role";
 import { logger } from "../../../lib/logger";
 import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import type { RuntimeLaneResolution } from "../../../services/agent-runtime/runtime-lane";
@@ -109,15 +110,7 @@ function summarizeResolvedRoute(route: ResolvedStructuredLlmRoute) {
 	};
 }
 
-const STRUCTURED_LLM_ROLES: StructuredLlmRole[] = [
-	"plan",
-	"evaluation",
-	"implementation",
-	"test",
-	"review",
-	"quality_gate",
-	"completion",
-];
+const STRUCTURED_LLM_ROLES: StructuredLlmRole[] = [...LLM_ROLE_ORDER];
 
 export function buildEffectiveLlmRoutingSnapshot(input: {
 	activeRole: StructuredLlmRole;

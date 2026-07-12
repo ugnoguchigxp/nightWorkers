@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "blueprint",
+  "label": "Blueprint",
+  "summary": "Owns App Blueprint draft generation, validation, design settings, preview models, and preview rendering.",
+  "ubiquitousLanguage": [{ "name": "AppBlueprint", "meaning": "A visual application structure artifact without canonical database design authority." }],
+  "responsibilities": ["Generate and validate Blueprint drafts.", "Persist Blueprint adoption and design settings.", "Render Blueprint previews."],
+  "ownedPaths": ["api/modules/blueprint/**", "src/modules/blueprint/**", "src/modules/blueprint-preview/**"],
+  "readMostlyPaths": ["api/services/blueprints/**"],
+  "ownedData": { "tables": ["blueprint_design_settings", "blueprint_artifact_adoptions"], "files": [] },
+  "invariants": [{ "id": "blueprint-no-canonical-ddl", "statement": "Blueprint generation does not invent canonical tables, relations, or DDL.", "check": "Blueprint schema and preview tests cover the content boundary." }],
+  "allowedMutations": ["Blueprint generation", "Blueprint validation", "Blueprint preview"],
+  "forbiddenMutations": ["canonical Data Model decisions", "Task Run execution", "Queue policy"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/services.blueprints.test.ts", "expect": "Blueprint service passes." }], "focused": [{ "command": "bun test tests/services.blueprints.test.ts tests/mock-blueprint.test.ts tests/blueprint-preview-model.test.ts", "expect": "Blueprint generation and preview pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

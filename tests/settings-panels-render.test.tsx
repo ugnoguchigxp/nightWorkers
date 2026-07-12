@@ -9,12 +9,10 @@ import type {
 	LlmSettings,
 	McpServerConfig,
 	Repository,
-	TestQualitySettings,
 } from "../src/modules/nightworkers/types";
 import { GeneralSettingsPanel } from "../src/modules/settings/SettingsGeneralPanel";
 import { SettingsLlmPanel } from "../src/modules/settings/SettingsLlmPanel";
 import { SettingsPlanModePanel } from "../src/modules/settings/SettingsPlanModePanel";
-import { SettingsTestPanel } from "../src/modules/settings/SettingsTestPanel";
 
 let mockMcpServers: McpServerConfig[] = [];
 let mockAgentHooks: AgentHookConfig[] = [];
@@ -65,12 +63,6 @@ const generalSettings: GeneralSettings = {
 	llmUsage: {
 		promptPartObservabilityEnabled: true,
 	},
-};
-
-const testQualitySettings: TestQualitySettings = {
-	coverageGateEnabled: true,
-	coverageMinimumPercent: 80,
-	coverageMaxIterations: 5,
 };
 
 const llmSettings: LlmSettings = {
@@ -257,44 +249,23 @@ describe("settings panels", () => {
 		expect(markup).toContain("hook-env");
 	});
 
-	it("renders general, plan-mode, and test quality panels", () => {
+	it("renders general and plan-mode panels", () => {
 		const generalMarkup = renderToStaticMarkup(
 			<GeneralSettingsPanel
 				value={generalSettings}
-				message="saved"
-				messageStatus="success"
 				isRefreshingFx={false}
 				onChange={() => undefined}
-				onSave={() => undefined}
 				onRefreshFx={() => undefined}
 			/>,
 		);
 		const planModeMarkup = renderToStaticMarkup(
 			<SettingsPlanModePanel
 				value={generalSettings}
-				message="failed"
-				messageStatus="error"
 				onChange={() => undefined}
-				onSave={() => undefined}
 			/>,
 		);
-		const testMarkup = renderToStaticMarkup(
-			<SettingsTestPanel
-				activeProject={activeProject}
-				value={testQualitySettings}
-				message="coverage saved"
-				messageStatus="success"
-				isSaving={false}
-				onChange={() => undefined}
-				onSave={() => undefined}
-			/>,
-		);
-
 		expect(generalMarkup).toContain("Asia/Tokyo");
-		expect(generalMarkup).toContain("saved");
-		expect(planModeMarkup).toContain("failed");
-		expect(testMarkup).toContain("NightWorkers");
-		expect(testMarkup).toContain("coverage saved");
+		expect(planModeMarkup).toContain('type="checkbox"');
 	});
 
 	it("renders LLM provider endpoints and role routing", () => {
@@ -321,16 +292,16 @@ describe("settings panels", () => {
 			/>,
 		);
 
-		expect(providersMarkup).toContain("Provider Endpoints");
+		expect(providersMarkup).toContain("プロバイダーエンドポイント");
 		expect(providersMarkup).toContain("OpenAI Main");
 		expect(providersMarkup).toContain("Azure Eval");
 		expect(providersMarkup).toContain("Bedrock Review");
 		expect(providersMarkup).toContain("Codex SDK");
 		expect(providersMarkup).toContain("saved");
-		expect(routingMarkup).toContain("Role Routing");
+		expect(routingMarkup).toContain("ロールルーティング");
 		expect(routingMarkup).toContain("Plan");
 		expect(routingMarkup).toContain("Reasoning");
-		expect(routingMarkup).toContain("Fallback 1");
-		expect(routingMarkup).toContain("保存中");
+		expect(routingMarkup).toContain("フォールバック 1");
+		expect(routingMarkup).toContain("設定を保存");
 	});
 });

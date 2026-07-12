@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "review",
+  "label": "Review",
+  "summary": "Owns Review execution, findings, evidence, verdict adoption, and closeout eligibility decisions.",
+  "ubiquitousLanguage": [{ "name": "ReviewFinding", "meaning": "A persisted, evidence-backed issue or approval produced by Review Mode." }],
+  "responsibilities": ["Prepare and execute Review runs.", "Persist findings and evidence.", "Decide closeout eligibility and request Git operations through ports."],
+  "ownedPaths": ["api/modules/review/**", "src/modules/review/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.git-closeout.service.ts"],
+  "ownedData": { "tables": ["review_runs", "review_findings"], "files": [] },
+  "invariants": [{ "id": "evidence-before-closeout", "statement": "Closeout decisions use persisted verification and Review evidence.", "check": "Review Mode and Git closeout tests cover evidence gates." }],
+  "allowedMutations": ["Review lifecycle", "Review evidence", "closeout eligibility"],
+  "forbiddenMutations": ["Git command implementation", "Task Run runtime loop", "Queue claim policy"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/review-mode.test.ts", "expect": "Review Mode passes." }], "focused": [{ "command": "bun test tests/review-mode.test.ts tests/nightworkers-git-closeout.test.ts", "expect": "Review and closeout pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

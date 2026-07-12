@@ -2,8 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Boxes, Section } from "lucide-react";
 import { blueprintCatalog } from "../../../../shared/blueprint-catalog";
 import type { BlueprintComponentDefinition } from "../../../../shared/schemas/blueprint-catalog.schema";
-import { BlueprintPreviewSection } from "../../blueprint-preview/BlueprintPreviewSection";
-import "../../blueprint-preview/blueprintPreview.css";
+import { BlueprintPreviewSection } from "../../blueprint-preview";
 import { sampleSectionProps } from "../section-samples";
 
 const navigationComponentNames = new Set([

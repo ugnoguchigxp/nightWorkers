@@ -10,20 +10,6 @@ export type OverviewCoverageAxis = {
 export function coverageAxesFromQualityRun(
 	run: ProjectQualityRun | null | undefined,
 ): OverviewCoverageAxis[] {
-	const gateMetrics = run?.coverageGate?.metrics ?? [];
-	if (gateMetrics.length > 0) {
-		return gateMetrics.flatMap((metric) =>
-			COVERAGE_AXES.includes(metric.metric as OverviewCoverageAxis["key"])
-				? [
-						{
-							key: metric.metric as OverviewCoverageAxis["key"],
-							actualPercent: metric.actualPercent,
-						},
-					]
-				: [],
-		);
-	}
-
 	const total = coverageSummaryTotal(run?.coverageSummary);
 	if (!total) return [];
 	return COVERAGE_AXES.flatMap((key) => {

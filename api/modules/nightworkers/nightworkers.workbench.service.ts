@@ -16,6 +16,7 @@ import {
 	type SupervisorLlmDebugEvent,
 } from "../../services/structured-llm";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
+import type { StructuredLlmRole } from "../../services/structured-llm/settings";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createDesignQuestionnaire } from "../questionnaire/questionnaire.service";
@@ -29,7 +30,6 @@ import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing";
-
 export async function createPlanningArtifactMessageIfNeeded(input: {
 	taskId: string;
 	runId: string;
@@ -99,7 +99,6 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
 		baseMetadata: toDeepRecord(message.metadataJson),
 	});
 }
-
 async function attachImplementationPlanVerificationMetadata(input: {
 	taskId: string;
 	runId: string;
@@ -170,7 +169,6 @@ async function attachImplementationPlanVerificationMetadata(input: {
 		sourceImplementationPlanMessageId: input.specMessageId,
 	});
 }
-
 function buildImplementationPlanVerificationWorkspace(input: {
 	taskId: string;
 	repositoryId: string;
@@ -199,7 +197,6 @@ function buildImplementationPlanVerificationWorkspace(input: {
 		],
 	};
 }
-
 export async function appendTaskMessage(
 	id: string,
 	prompt: string,
@@ -229,7 +226,6 @@ export async function appendTaskMessage(
 	if (!latestTask) throw new NotFoundError("Task not found");
 	return latestTask;
 }
-
 export type WorkbenchChatIntent =
 	| "intake"
 	| "draft"
@@ -589,6 +585,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		routeOverride: null,
 		emitEvent: createWorkbenchLlmDebugEventEmitter(input.taskId),
 		taskId: input.taskId,
+		role: "mission_pilot",
 	});
 	const planModeGate = {
 		...originalGate,
@@ -609,7 +606,9 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 	}
 	const questionnaireSession =
 		input.questionnaireSession ??
-		(await createDesignQuestionnaire(input.taskId, null, input.prompt));
+		(await createDesignQuestionnaire(input.taskId, null, input.prompt, {
+			role: "mission_pilot",
+		}));
 	await ensureDesignQuestionnaireReadyMessage({
 		taskId: input.taskId,
 		questionnaireSession,
@@ -629,6 +628,7 @@ async function decideWorkbenchPlanModeGate(input: {
 	routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget> | null;
 	emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
 	taskId: string;
+	role?: StructuredLlmRole;
 }): Promise<WorkbenchPlanModeGate> {
 	const raw = await callStructuredJsonLLM(
 		buildWorkbenchPlanModeGatePrompt(input.projectRoot),
@@ -699,7 +699,7 @@ async function decideWorkbenchPlanModeGate(input: {
 					},
 				},
 			},
-			role: "plan",
+			role: input.role ?? "plan",
 			routeOverride: input.routeOverride,
 			tolerateSchemaFailure: false,
 			emitEvent: input.emitEvent,

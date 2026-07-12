@@ -1,3 +1,4 @@
+@import "./blueprintPreview-motion.css";
 .blueprint-preview {
 	--background: hsl(0 0% 100%);
 	--foreground: hsl(210 20% 10%);
@@ -272,154 +273,277 @@
 	--ring: hsl(25 96% 62%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.blueprint-preview,
-	.blueprint-preview * {
-		scroll-behavior: auto;
-		transition-duration: 0.01ms;
-		animation-duration: 0.01ms;
-		animation-iteration-count: 1;
-	}
+.blueprint-design-option-preview {
+	display: flex;
+	min-height: 3.6rem;
+	overflow: hidden;
+	border: 1px solid rgb(15 23 42 / 0.12);
+	border-radius: 0.4rem;
+	background: #f8fafc;
 }
 
-.blueprint-preview[data-motion="reduced"],
-.blueprint-preview[data-motion="reduced"] * {
-	scroll-behavior: auto;
-	transition-duration: 0ms;
-	animation-duration: 0ms;
+.blueprint-design-option-preview-compact {
+	width: 2.9rem;
+	min-height: 1.45rem;
+	flex: none;
 }
 
-.blueprint-preview-card {
-	background: var(--card);
-	border-color: var(--border);
-	border-radius: var(--blueprint-preview-surface-radius);
-	box-shadow: var(--blueprint-preview-shadow);
-	color: var(--card-foreground);
+.blueprint-design-option-preview i,
+.blueprint-design-option-preview b,
+.blueprint-design-option-preview span {
+	display: block;
+	border-radius: 999px;
+	background: currentColor;
+	opacity: 0.24;
 }
 
-.blueprint-preview.bg-background,
-.blueprint-preview .bg-background {
-	background-color: var(--background);
+.blueprint-design-option-sidebar {
+	width: 27%;
+	background: rgb(15 23 42 / 0.08);
 }
 
-.blueprint-preview.bg-card,
-.blueprint-preview .bg-card {
-	background-color: var(--card);
+.blueprint-design-option-main {
+	display: grid;
+	align-content: center;
+	flex: 1;
+	gap: 0.3rem;
+	padding: 0.55rem;
+	color: #334155;
 }
 
-.blueprint-preview.bg-primary,
-.blueprint-preview .bg-primary {
-	background-color: var(--primary);
+.blueprint-design-option-main i {
+	width: 36%;
+	height: 0.22rem;
+}
+.blueprint-design-option-main b {
+	width: 84%;
+	height: 0.25rem;
+}
+.blueprint-design-option-main span {
+	width: 64%;
+	height: 0.25rem;
 }
 
-.blueprint-preview.bg-secondary,
-.blueprint-preview .bg-secondary {
-	background-color: var(--secondary);
+.blueprint-design-theme-dark {
+	color: #e2e8f0;
+	background: #15202b;
+	border-color: #334155;
+}
+.blueprint-design-theme-dark .blueprint-design-option-sidebar {
+	background: rgb(255 255 255 / 0.1);
+}
+.blueprint-design-theme-eclipse {
+	color: #312e81;
+	background: #e9e7fa;
+	border-color: #a5a0cd;
+}
+.blueprint-design-theme-macosclassic {
+	color: #1e293b;
+	background: #e5e5e5;
+	border-color: #a3a3a3;
+}
+.blueprint-design-theme-campfire {
+	color: #ffedd5;
+	background: #29120c;
+	border-color: #8c4527;
+}
+.blueprint-design-theme-mint {
+	color: #135b4a;
+	background: #e3f4ed;
+	border-color: #99cbb9;
+}
+.blueprint-design-theme-bloom {
+	color: #76224c;
+	background: #fde8f1;
+	border-color: #e9abc5;
+}
+.blueprint-design-theme-mocha {
+	color: #533121;
+	background: #f2e5d3;
+	border-color: #c9aa86;
 }
 
-.blueprint-preview.bg-muted,
-.blueprint-preview .bg-muted {
-	background-color: var(--muted);
+.blueprint-design-density-compact,
+.blueprint-design-density-default,
+.blueprint-design-density-comfortable {
+	display: grid;
+	align-content: center;
+	gap: 0.25rem;
+	padding: 0.45rem 0.55rem;
+	color: #475569;
 }
 
-.blueprint-preview.border-border,
-.blueprint-preview .border-border {
-	border-color: var(--border);
+.blueprint-design-density-row {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+.blueprint-design-density-row i {
+	width: 0.35rem;
+	height: 0.35rem;
+}
+.blueprint-design-density-row span {
+	width: 70%;
+	height: 0.24rem;
+}
+.blueprint-design-density-compact {
+	gap: 0.12rem;
+	padding-top: 0.3rem;
+	padding-bottom: 0.3rem;
+}
+.blueprint-design-density-comfortable {
+	gap: 0.42rem;
+	padding-top: 0.7rem;
+	padding-bottom: 0.7rem;
 }
 
-.blueprint-preview.border-primary,
-.blueprint-preview .border-primary {
-	border-color: var(--primary);
+.blueprint-design-option-preview-compact.blueprint-design-density-compact,
+.blueprint-design-option-preview-compact.blueprint-design-density-default,
+.blueprint-design-option-preview-compact.blueprint-design-density-comfortable {
+	gap: 0.09rem;
+	padding: 0.24rem 0.35rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-density-row {
+	gap: 0.16rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-density-row i {
+	width: 0.22rem;
+	height: 0.22rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-density-row span {
+	height: 0.12rem;
 }
 
-.blueprint-preview.border-input,
-.blueprint-preview .border-input {
-	border-color: var(--input);
+.blueprint-design-shape-sharp,
+.blueprint-design-shape-default,
+.blueprint-design-shape-rounded,
+.blueprint-design-shape-pill {
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.55rem;
+	color: #475569;
 }
 
-.blueprint-preview.text-foreground,
-.blueprint-preview .text-foreground {
-	color: var(--foreground);
+.blueprint-design-shape-avatar {
+	width: 1.2rem;
+	height: 1.2rem;
+	background: rgb(71 85 105 / 0.25);
 }
-
-.blueprint-preview.text-card-foreground,
-.blueprint-preview .text-card-foreground {
-	color: var(--card-foreground);
+.blueprint-design-shape-copy {
+	display: grid;
+	flex: 1;
+	gap: 0.28rem;
 }
-
-.blueprint-preview.text-muted-foreground,
-.blueprint-preview .text-muted-foreground {
-	color: var(--muted-foreground);
+.blueprint-design-shape-copy i {
+	width: 88%;
+	height: 0.25rem;
 }
-
-.blueprint-preview.text-primary,
-.blueprint-preview .text-primary {
-	color: var(--primary);
+.blueprint-design-shape-copy span {
+	width: 58%;
+	height: 0.22rem;
 }
-
-.blueprint-preview.text-primary-foreground,
-.blueprint-preview .text-primary-foreground {
-	color: var(--primary-foreground);
+.blueprint-design-shape-button {
+	width: 1.5rem;
+	height: 0.75rem;
+	background: rgb(71 85 105 / 0.18);
 }
-
-.blueprint-preview-field {
-	min-height: var(--blueprint-preview-control-height);
-	border-radius: var(--blueprint-preview-control-radius);
-}
-
-.blueprint-preview-button {
-	min-height: var(--blueprint-preview-control-height);
-	border-radius: var(--blueprint-preview-control-radius);
-	background: var(--primary);
-	border-color: var(--primary);
-	color: var(--primary-foreground);
-}
-
-.blueprint-preview-option {
-	border-radius: var(--blueprint-preview-control-radius);
-}
-
-.blueprint-preview[data-button-variant="soft"] .blueprint-preview-button {
-	background: color-mix(in srgb, var(--primary) 14%, transparent);
-	color: var(--foreground);
-}
-
-.blueprint-preview[data-button-variant="outline"] .blueprint-preview-button {
-	background: transparent;
-	border: 1px solid var(--border);
-	color: var(--foreground);
-}
-
-.blueprint-preview-option[aria-pressed="true"] {
-	background: var(--primary);
-	border-color: var(--primary);
-	color: var(--primary-foreground);
-}
-
-.blueprint-preview[data-card-variant="plain"] .blueprint-preview-card {
-	box-shadow: none;
-}
-
-.blueprint-preview[data-card-variant="elevated"] .blueprint-preview-card {
-	box-shadow: var(--blueprint-preview-shadow);
-}
-
-.blueprint-preview[data-table-variant="dense-grid"] .blueprint-preview-table th,
-.blueprint-preview[data-table-variant="dense-grid"]
-	.blueprint-preview-table
-	td {
-	border-right: 1px solid var(--border);
-	padding-block: 0.375rem;
-}
-
-.blueprint-preview[data-input-variant="filled"] .blueprint-preview-field {
-	background: var(--muted);
-}
-
-.blueprint-preview[data-input-variant="underline"] .blueprint-preview-field {
-	border-top: 0;
-	border-right: 0;
-	border-left: 0;
+.blueprint-design-shape-sharp,
+.blueprint-design-shape-sharp * {
 	border-radius: 0;
-	background: transparent;
 }
+.blueprint-design-shape-default,
+.blueprint-design-shape-default * {
+	border-radius: 0.25rem;
+}
+.blueprint-design-shape-rounded,
+.blueprint-design-shape-rounded * {
+	border-radius: 0.7rem;
+}
+.blueprint-design-shape-pill .blueprint-design-shape-button {
+	border-radius: 999px;
+}
+.blueprint-design-shape-pill .blueprint-design-shape-avatar {
+	border-radius: 0.3rem;
+}
+
+.blueprint-design-option-preview-compact.blueprint-design-shape-sharp,
+.blueprint-design-option-preview-compact.blueprint-design-shape-default,
+.blueprint-design-option-preview-compact.blueprint-design-shape-rounded,
+.blueprint-design-option-preview-compact.blueprint-design-shape-pill {
+	gap: 0.2rem;
+	padding: 0.3rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shape-avatar {
+	width: 0.7rem;
+	height: 0.7rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shape-copy {
+	gap: 0.12rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shape-copy i,
+.blueprint-design-option-preview-compact .blueprint-design-shape-copy span {
+	height: 0.12rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shape-button {
+	display: none;
+}
+
+.blueprint-design-shadow-none,
+.blueprint-design-shadow-subtle,
+.blueprint-design-shadow-medium,
+.blueprint-design-shadow-strong {
+	align-items: center;
+	justify-content: center;
+	padding: 0.7rem;
+}
+.blueprint-design-shadow-card {
+	width: 82%;
+	height: 1.7rem;
+	padding: 0.45rem;
+	border: 1px solid rgb(15 23 42 / 0.1);
+	border-radius: 0.35rem;
+	background: white;
+	color: #64748b;
+}
+.blueprint-design-shadow-card i {
+	width: 65%;
+	height: 0.24rem;
+}
+.blueprint-design-shadow-card span {
+	width: 42%;
+	height: 0.2rem;
+	margin-top: 0.3rem;
+}
+.blueprint-design-shadow-subtle .blueprint-design-shadow-card {
+	box-shadow: 0 2px 5px rgb(15 23 42 / 0.14);
+}
+.blueprint-design-shadow-medium .blueprint-design-shadow-card {
+	box-shadow: 0 5px 11px rgb(15 23 42 / 0.22);
+}
+.blueprint-design-shadow-strong .blueprint-design-shadow-card {
+	box-shadow: 0 8px 16px rgb(15 23 42 / 0.32);
+}
+
+.blueprint-design-option-preview-compact.blueprint-design-shadow-none,
+.blueprint-design-option-preview-compact.blueprint-design-shadow-subtle,
+.blueprint-design-option-preview-compact.blueprint-design-shadow-medium,
+.blueprint-design-option-preview-compact.blueprint-design-shadow-strong {
+	padding: 0.3rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shadow-card {
+	width: 86%;
+	height: 0.85rem;
+	padding: 0.22rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shadow-card i,
+.blueprint-design-option-preview-compact .blueprint-design-shadow-card span {
+	height: 0.1rem;
+}
+.blueprint-design-option-preview-compact .blueprint-design-shadow-card span {
+	margin-top: 0.14rem;
+}
+
+.blueprint-design-font-system,
+.blueprint-design-font-geist,
+.blueprint-design-font-serif,
+

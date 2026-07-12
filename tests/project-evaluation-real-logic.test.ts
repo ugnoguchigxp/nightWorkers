@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import { buildProjectEvaluationBundle } from "../api/modules/project-evaluation/project-evaluation-bundle.service";
+import { normalizeRoleRoutes } from "../api/modules/settings";
 import { LLM_ROLE_ORDER, llmRoleSchema } from "../api/routes/settings-runtime";
 import {
 	defaultProjectEvaluationDimensions,
@@ -120,10 +121,100 @@ describe("project evaluation real logic", () => {
 			"implementation",
 			"test",
 			"review",
+			"mission_pilot",
 			"mission_task_generation",
-			"quality_gate",
-			"completion",
 		]);
+	});
+
+	it("migrates legacy quality and completion routes without losing targets", () => {
+		const endpoints = ["primary", "quality", "completion"].map((id) => ({
+			id,
+			name: id,
+			kind: "openai" as const,
+			enabled: true,
+			apiKey: "",
+			baseUrl: "",
+			endpoint: "",
+			apiVersion: "",
+			region: "",
+			models: [`${id}-model`],
+			modelDisplayNames: {},
+		}));
+		const target = (id: string) => ({
+			providerEndpointId: id,
+			model: `${id}-model`,
+			thinkingDepth: "" as const,
+		});
+		const routes = normalizeRoleRoutes(
+			[
+				{ role: "test", primary: target("primary"), fallbacks: [] },
+				{ role: "quality_gate", primary: target("quality"), fallbacks: [] },
+				{
+					role: "completion",
+					primary: target("completion"),
+					fallbacks: [],
+				},
+			],
+			endpoints,
+			"openai",
+		);
+
+		expect(routes.find((route) => route.role === "test")).toMatchObject({
+			primary: target("primary"),
+			fallbacks: [target("quality")],
+		});
+		expect(routes.find((route) => route.role === "review")).toMatchObject({
+			primary: target("completion"),
+		});
+		expect(routes.map((route) => route.role)).not.toContain("quality_gate");
+		expect(routes.map((route) => route.role)).not.toContain("completion");
+	});
+
+	it("promotes a valid legacy target when the canonical route is invalid", () => {
+		const endpoints = [
+			{
+				id: "quality",
+				name: "quality",
+				kind: "openai" as const,
+				enabled: true,
+				apiKey: "",
+				baseUrl: "",
+				endpoint: "",
+				apiVersion: "",
+				region: "",
+				models: ["quality-model"],
+				modelDisplayNames: {},
+			},
+		];
+		const routes = normalizeRoleRoutes(
+			[
+				{
+					role: "test",
+					primary: {
+						providerEndpointId: "missing",
+						model: "missing-model",
+					},
+					fallbacks: [],
+				},
+				{
+					role: "quality_gate",
+					primary: {
+						providerEndpointId: "quality",
+						model: "quality-model",
+					},
+					fallbacks: [],
+				},
+			],
+			endpoints,
+			"openai",
+		);
+
+		expect(
+			routes.find((route) => route.role === "test")?.primary,
+		).toMatchObject({
+			providerEndpointId: "quality",
+			model: "quality-model",
+		});
 	});
 
 	it("parses evaluation and improvement structured outputs", () => {

@@ -3,7 +3,6 @@ import type {
 	GeneralSettings,
 	LlmProviderEndpoint,
 	LlmSettings,
-	TestQualitySettings,
 } from "../src/modules/nightworkers/types";
 import {
 	fetchCodexSdkStatus,
@@ -11,13 +10,11 @@ import {
 	fetchLlmModelOptions,
 	fetchLlmSettings,
 	fetchPricingRows,
-	fetchTestQualitySettings,
 	importPublicPricingRows,
 	refreshFxRates,
 	runLlmSmokeTest,
 	saveGeneralSettings,
 	saveLlmSettings,
-	saveTestQualitySettings,
 	testLlmProviderHealth,
 } from "../src/modules/settings/settingsCommands";
 
@@ -46,7 +43,6 @@ describe("settingsCommands", () => {
 			limit: 100,
 			cursor: "200",
 		});
-		await fetchTestQualitySettings("repo-123");
 		await fetchLlmModelOptions();
 		await fetchCodexSdkStatus();
 
@@ -63,16 +59,11 @@ describe("settingsCommands", () => {
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			4,
-			"/api/repositories/repo-123/settings/test-quality",
-			undefined,
-		);
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			5,
 			"/api/settings/llm/models",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			6,
+			5,
 			"/api/settings/codex/status",
 			undefined,
 		);
@@ -86,13 +77,8 @@ describe("settingsCommands", () => {
 		const generalSettings = {
 			WORKSPACE_APPEARANCE: "system",
 		} as unknown as GeneralSettings;
-		const qualitySettings = {
-			autonomy: { enabled: true },
-		} as unknown as TestQualitySettings;
-
 		await saveLlmSettings(llmSettings);
 		await saveGeneralSettings(generalSettings);
-		await saveTestQualitySettings("repo-456", qualitySettings);
 		await refreshFxRates();
 		await importPublicPricingRows();
 		await runLlmSmokeTest();
@@ -113,23 +99,15 @@ describe("settingsCommands", () => {
 				body: JSON.stringify(generalSettings),
 			}),
 		);
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			3,
-			"/api/repositories/repo-456/settings/test-quality",
-			expect.objectContaining({
-				method: "PUT",
-				body: JSON.stringify(qualitySettings),
-			}),
-		);
-		expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/settings/fx/refresh", {
+		expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/settings/fx/refresh", {
 			method: "POST",
 		});
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			5,
+			4,
 			"/api/settings/pricing/import-public",
 			{ method: "POST" },
 		);
-		expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/settings/llm/smoke", {
+		expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/settings/llm/smoke", {
 			method: "POST",
 		});
 	});

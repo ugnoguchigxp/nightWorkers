@@ -1,10 +1,6 @@
 import * as repo from "../../../modules/nightworkers/nightworkers.repository";
 import { collectVulnWorkbenchOntologyHandoff } from "../../../modules/ontology/handoff/vulnworkbench-handoff.service";
 import { runSecurityOracleGate } from "../../../modules/review/security-gate.service";
-import {
-	evaluateCoverageAutonomyGate,
-	formatCoverageAutonomyFinalReport,
-} from "../../quality/coverage-autonomy-gate";
 import { runFinalizeController } from "../../run-control/finalize-controller";
 import { readRunControlKernelMode } from "../../run-control/settings";
 import type { ProviderToolCall } from "../../structured-llm/tool-calls";
@@ -72,41 +68,6 @@ export async function finalizeAnswer(input: {
 		return continueWith(openTodosRemainToolResult(openTodos), input.state);
 	}
 
-	const coverageGate = await evaluateCoverageAutonomyGate({
-		repoRoot: input.context.repoRoot,
-		state: input.state.coverageAutonomy,
-		safetyPolicy: input.context.safetyPolicy,
-	});
-	const stateWithCoverageGate: NativeApiDispatchState = {
-		...input.state,
-		coverageAutonomy: coverageGate.nextState,
-		lastCoverageAutonomyGate: coverageGate.result,
-	};
-	await input.sink.emit({
-		type: "verification_finished",
-		message: `[NativeApiRunner] coverage autonomy gate ${coverageGate.result.status}.`,
-		payload: coverageGate.result,
-	});
-	if (!coverageGate.result.allowFinalize) {
-		return continueWith(
-			failedToolResult(
-				"COVERAGE_GATE_NOT_MET",
-				[
-					coverageGate.result.message,
-					`attempt=${coverageGate.result.attempt}/${coverageGate.result.maxIterations}`,
-					"Continue by adding or repairing focused unit tests. Do not change production logic only to satisfy tests.",
-					coverageGate.result.coverage
-						? `failedMetrics=${coverageGate.result.coverage.failedMetrics.join(",")}`
-						: null,
-				]
-					.filter(Boolean)
-					.join("\n"),
-				coverageGate.result,
-			),
-			stateWithCoverageGate,
-		);
-	}
-
 	let securityGateReport = "";
 	const securityOracle = readSecurityOracleRuntimeOptions(input.context);
 	if (
@@ -128,7 +89,7 @@ export async function finalizeAnswer(input: {
 					securityGate.message,
 					securityGate,
 				),
-				stateWithCoverageGate,
+				input.state,
 			);
 		}
 		securityGateReport = [
@@ -174,19 +135,14 @@ export async function finalizeAnswer(input: {
 		if (remainingOpenTodos.length > 0) {
 			return continueWith(
 				openTodosRemainToolResult(remainingOpenTodos),
-				stateWithCoverageGate,
+				input.state,
 			);
 		}
 	}
 
-	const coverageReport = formatCoverageAutonomyFinalReport(coverageGate.result);
-	const finalReportWithCoverage =
-		coverageGate.result.status === "disabled"
-			? finalReport
-			: `${finalReport}\n\n${coverageReport}`;
 	const finalReportWithSecurityGate = securityGateReport
-		? `${finalReportWithCoverage}\n\n${securityGateReport}`
-		: finalReportWithCoverage;
+		? `${finalReport}\n\n${securityGateReport}`
+		: finalReport;
 	const summary =
 		typeof input.toolCall.arguments.summary === "string" &&
 		input.toolCall.arguments.summary.trim()
@@ -206,11 +162,9 @@ export async function finalizeAnswer(input: {
 			payload: {
 				summary,
 				finalReport: finalReportWithSecurityGate,
-				coverageGate: coverageGate.result,
 			},
 		},
-		coverageAutonomyGate: coverageGate.result,
-		state: stateWithCoverageGate,
+		state: input.state,
 	};
 }
 

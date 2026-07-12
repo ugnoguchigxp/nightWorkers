@@ -10,6 +10,7 @@ import {
 	buildAdditionalDesignQuestionnaireUserPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
+import type { StructuredLlmRole } from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -40,6 +41,7 @@ export type GenerateAdditionalQuestionsInput = {
 	>;
 	reason?: string;
 	maxQuestions?: number;
+	role?: StructuredLlmRole;
 };
 
 export type GenerateAdditionalQuestionsResult = {
@@ -87,7 +89,7 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 			schemaName: "design_questionnaire_additional",
 			schema: additionalQuestionnaireDraftJsonSchema,
 			taskId,
-			role: "plan",
+			role: input.role ?? "plan",
 		},
 	);
 	const parsed = parseAdditionalQuestionnaireDraftRaw(rawOutput);

@@ -10,12 +10,10 @@ import {
 } from "../nightworkers/contexts/WorkspaceAppearanceContext";
 import { handleWorkbenchAnchorClick } from "../nightworkers/routing/workbench-link-click";
 import { serializeWorkbenchRoute } from "../nightworkers/routing/workbench-route-state";
-import {
-	defaultTestQualitySettings,
-	type GeneralSettings,
-	type LlmSettings,
-	type Repository,
-	type TestQualitySettings,
+import type {
+	GeneralSettings,
+	LlmSettings,
+	Repository,
 } from "../nightworkers/types";
 import {
 	fetchProjectSecurityIntelligenceSettings,
@@ -26,41 +24,15 @@ import {
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
 import { SettingsLlmPanel } from "./SettingsLlmPanel";
 import { SettingsPlanModePanel } from "./SettingsPlanModePanel";
-import { SettingsTestPanel } from "./SettingsTestPanel";
+import { SettingsSaveActions } from "./SettingsSaveActions";
+import { defaultSettings } from "./settings-defaults";
 import {
 	fetchGeneralSettings,
 	fetchLlmSettings,
-	fetchTestQualitySettings,
 	refreshFxRates as refreshFxRatesCommand,
 	saveGeneralSettings as saveGeneralSettingsCommand,
 	saveLlmSettings,
-	saveTestQualitySettings as saveTestQualitySettingsCommand,
 } from "./settingsCommands";
-
-const defaultSettings: LlmSettings = {
-	ACTIVE_LLM_PROVIDER: "azure",
-	OPENAI_ENABLED: true,
-	AZURE_OPENAI_ENABLED: false,
-	AZURE_OPENAI_API_KEY: "",
-	AZURE_OPENAI_ENDPOINT: "",
-	AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-5-mini",
-	AZURE_OPENAI_API_VERSION: "2024-05-01-preview",
-	AWS_BEDROCK_ENABLED: false,
-	AWS_ACCESS_KEY_ID: "",
-	AWS_SECRET_ACCESS_KEY: "",
-	AWS_REGION: "us-east-1",
-	AWS_BEDROCK_MODEL: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-	OPENAI_API_KEY: "",
-	OPENAI_BASE_URL: "https://api.openai.com/v1",
-	OPENAI_MODEL: "gpt-4o-mini",
-	CODEX_ENABLED: false,
-	CODEX_ACCESS_TOKEN: "",
-	CODEX_MODEL: "gpt-5.4-mini",
-	IMPLEMENTATION_RUNTIME_LANE: "",
-	SESSION_QUEUE_MAX_CONCURRENCY: 2,
-	providerEndpoints: [],
-	roleRoutes: [],
-};
 
 type SaveFeedbackStatus = "idle" | "success" | "error";
 
@@ -96,12 +68,7 @@ export function SettingsScreen({
 	const [generalMessageStatus, setGeneralMessageStatus] =
 		useState<SaveFeedbackStatus>("idle");
 	const [isRefreshingFx, setIsRefreshingFx] = useState(false);
-	const [testQualitySettings, setTestQualitySettings] =
-		useState<TestQualitySettings>(defaultTestQualitySettings);
-	const [testQualityMessage, setTestQualityMessage] = useState("");
-	const [testQualityMessageStatus, setTestQualityMessageStatus] =
-		useState<SaveFeedbackStatus>("idle");
-	const [testQualityBusy, setTestQualityBusy] = useState(false);
+	const [isSavingGeneral, setIsSavingGeneral] = useState(false);
 	const [securityIntelligence, setSecurityIntelligence] =
 		useState<ProjectSecurityIntelligenceSettingsResponse | null>(null);
 	const [securityIntelligenceMessage, setSecurityIntelligenceMessage] =
@@ -113,8 +80,16 @@ export function SettingsScreen({
 	const [securityIntelligenceBusy, setSecurityIntelligenceBusy] =
 		useState(false);
 	const { settings: appearanceSettings } = useWorkspaceAppearanceState();
+	const [appearanceDraft, setAppearanceDraft] = useState(appearanceSettings);
+	const [appearanceMessage, setAppearanceMessage] = useState("");
+	const [appearanceMessageStatus, setAppearanceMessageStatus] =
+		useState<SaveFeedbackStatus>("idle");
 	const { setAppearanceSettings, resetAppearanceSettings } =
 		useWorkspaceAppearanceActions();
+
+	useEffect(() => {
+		setAppearanceDraft(appearanceSettings);
+	}, [appearanceSettings]);
 
 	const activeSectionMeta =
 		settingsSections.find((section) => section.id === activeSection) ||
@@ -137,53 +112,6 @@ export function SettingsScreen({
 			)
 			.finally(() => setIsLoading(false));
 	}, []);
-
-	useEffect(() => {
-		if (!activeProject) {
-			setTestQualitySettings(defaultTestQualitySettings);
-			setTestQualityMessage("");
-			setTestQualityMessageStatus("idle");
-			return;
-		}
-
-		let cancelled = false;
-		setTestQualityBusy(true);
-		setTestQualityMessage("");
-		setTestQualityMessageStatus("idle");
-		fetchTestQualitySettings(activeProject.id)
-			.then(async (res) => {
-				if (!res.ok) {
-					throw new Error(
-						t("settings.test.loadFailed", { status: res.status }),
-					);
-				}
-				return (await res.json()) as TestQualitySettings;
-			})
-			.then((settingsData) => {
-				if (!cancelled) {
-					setTestQualitySettings({
-						...defaultTestQualitySettings,
-						...settingsData,
-					});
-				}
-			})
-			.catch((err) => {
-				if (!cancelled) {
-					setTestQualitySettings(defaultTestQualitySettings);
-					setTestQualityMessage(
-						err instanceof Error ? err.message : String(err),
-					);
-					setTestQualityMessageStatus("error");
-				}
-			})
-			.finally(() => {
-				if (!cancelled) setTestQualityBusy(false);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [activeProject, t]);
 
 	useEffect(() => {
 		if (!activeProject) {
@@ -251,21 +179,33 @@ export function SettingsScreen({
 	};
 
 	const saveGeneralSettings = async () => {
+		setIsSavingGeneral(true);
 		setGeneralMessage("");
 		setGeneralMessageStatus("idle");
-		const res = await saveGeneralSettingsCommand(generalSettings);
-		if (!res.ok) {
-			setGeneralMessage(t("settings.general.saveFailed"));
+		try {
+			const res = await saveGeneralSettingsCommand(generalSettings);
+			if (!res.ok) {
+				setGeneralMessage(t("settings.general.saveFailed"));
+				setGeneralMessageStatus("error");
+				return;
+			}
+			const saved = mergeGeneralSettings(
+				(await res.json()) as Partial<GeneralSettings>,
+			);
+			setGeneralSettings(saved);
+			void applyAppLanguage(saved.language);
+			setGeneralMessage(t("settings.general.saveSucceeded"));
+			setGeneralMessageStatus("success");
+		} catch (error) {
+			setGeneralMessage(
+				error instanceof Error
+					? error.message
+					: t("settings.general.saveFailed"),
+			);
 			setGeneralMessageStatus("error");
-			return;
+		} finally {
+			setIsSavingGeneral(false);
 		}
-		const saved = mergeGeneralSettings(
-			(await res.json()) as Partial<GeneralSettings>,
-		);
-		setGeneralSettings(saved);
-		void applyAppLanguage(saved.language);
-		setGeneralMessage(t("settings.general.saveSucceeded"));
-		setGeneralMessageStatus("success");
 	};
 
 	const refreshFxRates = async () => {
@@ -291,36 +231,6 @@ export function SettingsScreen({
 			setGeneralMessageStatus("error");
 		} finally {
 			setIsRefreshingFx(false);
-		}
-	};
-
-	const saveTestQualitySettings = async () => {
-		if (!activeProject) {
-			setTestQualityMessage(t("settings.test.noProject"));
-			setTestQualityMessageStatus("error");
-			return;
-		}
-
-		setTestQualityBusy(true);
-		setTestQualityMessage("");
-		setTestQualityMessageStatus("idle");
-		try {
-			const res = await saveTestQualitySettingsCommand(
-				activeProject.id,
-				testQualitySettings,
-			);
-			if (!res.ok) {
-				throw new Error(t("settings.test.saveFailed", { status: res.status }));
-			}
-			const saved = (await res.json()) as TestQualitySettings;
-			setTestQualitySettings({ ...defaultTestQualitySettings, ...saved });
-			setTestQualityMessage(t("settings.test.saveSucceeded"));
-			setTestQualityMessageStatus("success");
-		} catch (err) {
-			setTestQualityMessage(err instanceof Error ? err.message : String(err));
-			setTestQualityMessageStatus("error");
-		} finally {
-			setTestQualityBusy(false);
 		}
 	};
 
@@ -350,6 +260,12 @@ export function SettingsScreen({
 		} finally {
 			setSecurityIntelligenceBusy(false);
 		}
+	};
+
+	const saveAppearanceSettings = () => {
+		setAppearanceSettings(appearanceDraft);
+		setAppearanceMessage(t("settings.saveSucceeded"));
+		setAppearanceMessageStatus("success");
 	};
 
 	if (isLoading) {
@@ -415,8 +331,8 @@ export function SettingsScreen({
 				</nav>
 			</aside>
 			<main className="min-w-0 flex-1 overflow-y-auto p-8">
-				<div className="mx-auto max-w-4xl space-y-6">
-					<div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+				<div className="mx-auto max-w-4xl space-y-4">
+					<div className="flex items-center justify-between">
 						<h1 className="flex items-center gap-2 text-xl font-bold text-zinc-100">
 							<ActiveSectionIcon className="h-5 w-5 text-indigo-400" />
 							{t(activeSectionMeta.labelKey)}
@@ -427,33 +343,83 @@ export function SettingsScreen({
 					</div>
 
 					{activeSection === "general" ? (
-						<GeneralSettingsPanel
-							value={generalSettings}
-							message={generalMessage}
-							messageStatus={generalMessageStatus}
-							isRefreshingFx={isRefreshingFx}
-							onChange={setGeneralSettings}
-							onSave={() => void saveGeneralSettings()}
-							onRefreshFx={() => void refreshFxRates()}
-						/>
+						<>
+							<SettingsSaveActions
+								onSave={() => void saveGeneralSettings()}
+								isSaving={isSavingGeneral}
+								saveStatus={generalMessageStatus}
+								saveMessage={generalMessage}
+							/>
+							<GeneralSettingsPanel
+								value={generalSettings}
+								isRefreshingFx={isRefreshingFx}
+								onChange={setGeneralSettings}
+								onRefreshFx={() => void refreshFxRates()}
+							/>
+							<SettingsSaveActions
+								onSave={() => void saveGeneralSettings()}
+								isSaving={isSavingGeneral}
+								saveStatus={generalMessageStatus}
+								saveMessage={generalMessage}
+							/>
+						</>
 					) : null}
 
 					{activeSection === "plan-mode" ? (
-						<SettingsPlanModePanel
-							value={generalSettings}
-							message={generalMessage}
-							messageStatus={generalMessageStatus}
-							onChange={setGeneralSettings}
-							onSave={() => void saveGeneralSettings()}
-						/>
+						<>
+							<SettingsSaveActions
+								onSave={() => void saveGeneralSettings()}
+								isSaving={isSavingGeneral}
+								saveStatus={generalMessageStatus}
+								saveMessage={generalMessage}
+							/>
+							<SettingsPlanModePanel
+								value={generalSettings}
+								onChange={setGeneralSettings}
+							/>
+							<SettingsSaveActions
+								onSave={() => void saveGeneralSettings()}
+								isSaving={isSavingGeneral}
+								saveStatus={generalMessageStatus}
+								saveMessage={generalMessage}
+							/>
+						</>
 					) : null}
 
 					{activeSection === "appearance" ? (
-						<AppearanceSettings
-							value={appearanceSettings}
-							onChange={setAppearanceSettings}
-							onReset={resetAppearanceSettings}
-						/>
+						<>
+							<SettingsSaveActions
+								onSave={saveAppearanceSettings}
+								saveStatus={appearanceMessageStatus}
+								saveMessage={appearanceMessage}
+								secondaryAction={
+									<button
+										type="button"
+										className="rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
+										onClick={() => {
+											resetAppearanceSettings();
+											setAppearanceMessage(t("settings.saved"));
+											setAppearanceMessageStatus("success");
+										}}
+									>
+										{t("settings.appearance.reset")}
+									</button>
+								}
+							/>
+							<AppearanceSettings
+								value={appearanceDraft}
+								onChange={(next) => {
+									setAppearanceDraft(next);
+									setAppearanceMessage("");
+									setAppearanceMessageStatus("idle");
+								}}
+							/>
+							<SettingsSaveActions
+								onSave={saveAppearanceSettings}
+								saveStatus={appearanceMessageStatus}
+								saveMessage={appearanceMessage}
+							/>
+						</>
 					) : null}
 
 					{activeSection === "llm-providers" ? (
@@ -480,36 +446,33 @@ export function SettingsScreen({
 						/>
 					) : null}
 
-					{activeSection === "test" ? (
-						<SettingsTestPanel
-							activeProject={activeProject}
-							value={testQualitySettings}
-							message={testQualityMessage}
-							messageStatus={testQualityMessageStatus}
-							isSaving={testQualityBusy}
-							onChange={(next) => {
-								setTestQualitySettings(next);
-								setTestQualityMessage("");
-								setTestQualityMessageStatus("idle");
-							}}
-							onSave={() => void saveTestQualitySettings()}
-						/>
-					) : null}
-
 					{activeSection === "security-intelligence" ? (
-						<SettingsOntologyPanel
-							activeProject={activeProject}
-							value={securityIntelligence}
-							message={securityIntelligenceMessage}
-							messageStatus={securityIntelligenceMessageStatus}
-							isSaving={securityIntelligenceBusy}
-							onChange={(value) => {
-								setSecurityIntelligence(value);
-								setSecurityIntelligenceMessage("");
-								setSecurityIntelligenceMessageStatus("idle");
-							}}
-							onSave={() => void saveSecurityIntelligence()}
-						/>
+						<>
+							<SettingsSaveActions
+								onSave={() => void saveSecurityIntelligence()}
+								isSaving={securityIntelligenceBusy}
+								disabled={!activeProject || !securityIntelligence}
+								saveStatus={securityIntelligenceMessageStatus}
+								saveMessage={securityIntelligenceMessage}
+							/>
+							<SettingsOntologyPanel
+								activeProject={activeProject}
+								value={securityIntelligence}
+								isSaving={securityIntelligenceBusy}
+								onChange={(value) => {
+									setSecurityIntelligence(value);
+									setSecurityIntelligenceMessage("");
+									setSecurityIntelligenceMessageStatus("idle");
+								}}
+							/>
+							<SettingsSaveActions
+								onSave={() => void saveSecurityIntelligence()}
+								isSaving={securityIntelligenceBusy}
+								disabled={!activeProject || !securityIntelligence}
+								saveStatus={securityIntelligenceMessageStatus}
+								saveMessage={securityIntelligenceMessage}
+							/>
+						</>
 					) : null}
 
 					{activeSection === "hooks" ? <SettingsHooksPanel /> : null}

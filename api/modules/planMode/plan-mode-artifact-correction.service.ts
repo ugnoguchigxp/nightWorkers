@@ -1,7 +1,10 @@
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type { PlanModeArtifactFocus } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
-import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
-import { generateBlueprintArtifact } from "../blueprint/blueprint-generation.service";
+import type {
+	StructuredLlmModelTarget,
+	StructuredLlmRole,
+} from "../../services/structured-llm/settings";
+import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
@@ -17,6 +20,7 @@ export type PlanModeArtifactCorrectionInput = {
 	sourceBlueprintMessageId?: string | null;
 	sourceDataModelMessageId?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
+	role?: StructuredLlmRole;
 };
 
 function renderCorrectionPrompt(input: PlanModeArtifactCorrectionInput) {
@@ -52,6 +56,7 @@ export async function executePlanModeArtifactCorrection(
 				questionnaireSessionId: input.questionnaireSessionId,
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
+				role: input.role,
 			});
 		case "blueprint":
 			return generateBlueprintArtifact(input.taskId, {
@@ -59,6 +64,7 @@ export async function executePlanModeArtifactCorrection(
 				questionnaireSessionId: input.questionnaireSessionId,
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
+				role: input.role,
 			});
 		case "data_model":
 			return generateDataModelArtifact(input.taskId, {
@@ -67,6 +73,7 @@ export async function executePlanModeArtifactCorrection(
 				featurePlanMessageId: input.featurePlanMessageId,
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
+				role: input.role,
 			});
 		case "user_flow":
 		case "api_io_contract":
@@ -80,6 +87,7 @@ export async function executePlanModeArtifactCorrection(
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				sourceDataModelMessageId: input.sourceDataModelMessageId,
 				routeOverride: input.routeOverride,
+				role: input.role,
 			});
 	}
 }

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "quality",
+  "label": "Quality",
+  "summary": "Owns quality capability detection, verification run coordination, coverage and E2E artifact projection, and Quality UI contracts.",
+  "ubiquitousLanguage": [{ "name": "QualityRun", "meaning": "A persisted verification execution and its projected quality evidence." }],
+  "responsibilities": ["Detect quality capabilities.", "Coordinate explicit quality runs.", "Project coverage and E2E evidence."],
+  "ownedPaths": ["api/modules/quality/**", "src/modules/quality/**"],
+  "readMostlyPaths": ["api/modules/project-detail/**"],
+  "ownedData": { "tables": ["project_quality_runs"], "files": [] },
+  "invariants": [{ "id": "quality-explicit-projection", "statement": "Quality UI consumes explicit backend projections instead of guessing run types.", "check": "Quality backend and screen tests cover the projection." }],
+  "allowedMutations": ["Quality capability", "Quality run", "Quality projection"],
+  "forbiddenMutations": ["Task Run general lifecycle", "provider routing", "Project Detail unrelated UI"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/quality-backend.test.ts", "expect": "Quality backend passes." }], "focused": [{ "command": "bun test tests/quality-backend.test.ts tests/quality-screen.test.tsx", "expect": "Quality backend and UI pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

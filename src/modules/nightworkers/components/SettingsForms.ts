@@ -16,4 +16,4 @@ export {
 	mergeGeneralSettings,
 	type SettingsSectionId,
 	settingsSections,
-} from "../../settings/SettingsForms";
+} from "../../settings";

@@ -3,7 +3,7 @@ import type { OverviewDashboard } from "../../../../shared/schemas/overview.sche
 import { formatDateTime } from "../../../i18n/format";
 import { handleWorkbenchAnchorClick } from "../../nightworkers/routing/workbench-link-click";
 import { serializeWorkbenchRoute } from "../../nightworkers/routing/workbench-route-state";
-import type { NightWorkersCurrency } from "../../settings/settingsTypes";
+import type { NightWorkersCurrency } from "../../settings";
 import {
 	primaryTextStyle,
 	subtleTextStyle,

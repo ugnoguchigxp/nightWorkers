@@ -1,1 +1,1 @@
-export { SettingsLlmPanel } from "../../settings/SettingsLlmPanel";
+export { SettingsLlmPanel } from "../../settings";

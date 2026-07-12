@@ -444,6 +444,7 @@ describe("Mission Pilot plan coordinator", () => {
 
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(1, taskId, {
 			questionnaireSessionId: questionnaireId,
+			role: "mission_pilot",
 		});
 		expect(mocks.generateFeaturePlan).toHaveBeenCalledTimes(2);
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(
@@ -451,6 +452,7 @@ describe("Mission Pilot plan coordinator", () => {
 			taskId,
 			expect.objectContaining({
 				questionnaireSessionId: questionnaireId,
+				role: "mission_pilot",
 				prompt: expect.stringContaining("検証手順を具体化してください"),
 			}),
 		);
@@ -459,12 +461,13 @@ describe("Mission Pilot plan coordinator", () => {
 			source: "pre_feature_plan_gate",
 			reason: expect.stringContaining("Feature Plan生成直前"),
 			maxQuestions: 5,
+			role: "mission_pilot",
 		});
 		expect(mocks.saveQuestionnaireAnswers).not.toHaveBeenCalled();
 		expect(mocks.callLlm).toHaveBeenCalledWith(
 			expect.any(String),
 			expect.any(String),
-			expect.objectContaining({ role: "review", taskId }),
+			expect.objectContaining({ role: "mission_pilot", taskId }),
 		);
 		expect(mocks.callLlm).toHaveBeenCalledTimes(3);
 		expect(mocks.createQueueEntry).toHaveBeenCalledWith(

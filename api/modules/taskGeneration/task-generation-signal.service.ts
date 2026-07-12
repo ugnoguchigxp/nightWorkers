@@ -9,8 +9,10 @@ import type {
 import { db } from "../../db/client";
 import { llmUsageRecords, taskRuns, tasks } from "../../db/schema";
 import * as projectEvaluationRepo from "../project-evaluation/project-evaluation.repository";
-import * as qualityRepo from "../quality/quality.repository";
-import { detectQualityCapabilities } from "../quality/quality-capabilities";
+import {
+	detectQualityCapabilities,
+	getLatestProjectQualityRun,
+} from "../quality";
 
 type RepositorySignalInput = {
 	id: string;
@@ -365,7 +367,7 @@ export async function buildProjectSignalSnapshot(input: {
 }): Promise<ProjectSignalSnapshot> {
 	const latestEvaluation =
 		await projectEvaluationRepo.getLatestProjectEvaluation(input.repository.id);
-	const latestQuality = await qualityRepo.getLatestProjectQualityRun({
+	const latestQuality = await getLatestProjectQualityRun({
 		repositoryId: input.repository.id,
 	});
 	return {
@@ -396,7 +398,7 @@ export async function buildProjectSignalSnapshot(input: {
 				}
 			: null,
 		latestQuality: {
-			coverage: latestQuality?.coverageGate ?? null,
+			coverage: latestQuality?.coverageSummary ?? null,
 			e2e: latestQuality?.e2eSummary ?? null,
 		},
 		repositorySnapshot: buildRepositorySnapshot(input.repository.localPath),

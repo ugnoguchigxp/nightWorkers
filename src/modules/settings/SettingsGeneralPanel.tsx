@@ -1,4 +1,4 @@
-import { CheckCircle2, Globe, RefreshCw, XCircle } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
@@ -69,19 +69,13 @@ function formatPricingDate(value: LlmPricingRowView["fetchedAt"]) {
 
 export function GeneralSettingsPanel({
 	value,
-	message,
-	messageStatus,
 	isRefreshingFx,
 	onChange,
-	onSave,
 	onRefreshFx,
 }: {
 	value: GeneralSettings;
-	message: string;
-	messageStatus: "idle" | "success" | "error";
 	isRefreshingFx: boolean;
 	onChange: (next: GeneralSettings) => void;
-	onSave: () => void;
 	onRefreshFx: () => void;
 }) {
 	const { t } = useTranslation();
@@ -134,7 +128,10 @@ export function GeneralSettingsPanel({
 			const result = (await res.json()) as PublicPricingImportView;
 			setPricingMessageKind("success");
 			setPricingMessage(
-				`API使用料を ${result.imported} 件取得しました: ${result.providers.join(", ")}`,
+				t("settings.general.pricing.importSucceeded", {
+					count: result.imported,
+					providers: result.providers.join(", "),
+				}),
 			);
 			await loadPricingRows();
 		} catch (err) {
@@ -147,20 +144,6 @@ export function GeneralSettingsPanel({
 
 	return (
 		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<h2 className="flex items-center gap-2 text-sm font-bold text-zinc-100">
-						<Globe className="h-4 w-4 text-cyan-400" />
-						{t("settings.general.title")}
-					</h2>
-					<p className="mt-1 text-xs text-zinc-500">
-						{t("settings.general.panelDescription")}
-					</p>
-				</div>
-				<Button type="button" onClick={onSave} className="h-9 px-4 text-xs">
-					{t("settings.general.save")}
-				</Button>
-			</div>
 			<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 				<SelectField
 					id="general-timezone"
@@ -211,8 +194,11 @@ export function GeneralSettingsPanel({
 						{t("settings.general.fx")}
 					</div>
 					<p className="mt-1 text-[10px] text-zinc-500">
-						Source: {value.fx.source} / Last refresh:{" "}
-						{value.fx.lastRefreshedAt || "N/A"}
+						{t("settings.general.fxStatus", {
+							source: value.fx.source,
+							updatedAt:
+								value.fx.lastRefreshedAt || t("settings.general.notAvailable"),
+						})}
 					</p>
 				</div>
 				<Button
@@ -255,10 +241,11 @@ export function GeneralSettingsPanel({
 			<div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
-						<div className="text-xs font-semibold text-zinc-100">API使用料</div>
+						<div className="text-xs font-semibold text-zinc-100">
+							{t("settings.general.pricing.title")}
+						</div>
 						<p className="mt-1 text-[10px] text-zinc-500">
-							コーディングエージェント向けの現行モデルだけを取得し、Overview の
-							LLM 使用料見積もりに使います。
+							{t("settings.general.pricing.description")}
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
@@ -272,7 +259,7 @@ export function GeneralSettingsPanel({
 							{pricingLoading ? (
 								<RefreshCw className="h-3 w-3 animate-spin" />
 							) : null}
-							表を更新
+							{t("settings.general.pricing.refresh")}
 						</Button>
 						<Button
 							type="button"
@@ -283,7 +270,7 @@ export function GeneralSettingsPanel({
 							{pricingImporting ? (
 								<RefreshCw className="h-3 w-3 animate-spin" />
 							) : null}
-							API使用料を取得
+							{t("settings.general.pricing.import")}
 						</Button>
 					</div>
 				</div>
@@ -300,11 +287,13 @@ export function GeneralSettingsPanel({
 					</div>
 				) : null}
 				<div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950/30">
-					<div className="flex flex-wrap gap-2 border-zinc-800 border-b p-3">
+					<div className="flex flex-wrap gap-2 p-3">
 						<label className="space-y-1 text-[10px] text-zinc-500">
-							<span className="block">Provider</span>
+							<span className="block">
+								{t("settings.general.pricing.provider")}
+							</span>
 							<select
-								aria-label="Pricing provider"
+								aria-label={t("settings.general.pricing.provider")}
 								value={pricingProvider}
 								onChange={(event) => {
 									setPricingProvider(event.target.value);
@@ -312,7 +301,9 @@ export function GeneralSettingsPanel({
 								}}
 								className="h-8 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200"
 							>
-								<option value="">すべて</option>
+								<option value="">
+									{t("settings.general.pricing.allProviders")}
+								</option>
 								{[...pricingProviderFilter].map((provider) => (
 									<option key={provider} value={provider}>
 										{pricingProviderLabel(provider)}
@@ -321,35 +312,45 @@ export function GeneralSettingsPanel({
 							</select>
 						</label>
 						<label className="min-w-56 flex-1 space-y-1 text-[10px] text-zinc-500">
-							<span className="block">Model</span>
+							<span className="block">
+								{t("settings.general.pricing.model")}
+							</span>
 							<input
-								aria-label="Pricing model search"
+								aria-label={t("settings.general.pricing.modelSearch")}
 								value={pricingModelQuery}
 								onChange={(event) => {
 									setPricingModelQuery(event.target.value);
 									setPricingPage(0);
 								}}
-								placeholder="モデル名を検索"
+								placeholder={t("settings.general.pricing.modelSearch")}
 								className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200"
 							/>
 						</label>
 					</div>
 					<table className="min-w-[760px] w-full text-left text-xs">
-						<thead className="border-zinc-800 border-b text-[11px] uppercase text-zinc-500">
+						<thead className="text-[11px] uppercase text-zinc-500">
 							<tr>
-								<th className="px-3 py-2 font-semibold">Provider</th>
-								<th className="px-3 py-2 font-semibold">Model</th>
-								<th className="px-3 py-2 text-right font-semibold">
-									Input / 1M
+								<th className="px-3 py-2 font-semibold">
+									{t("settings.general.pricing.provider")}
+								</th>
+								<th className="px-3 py-2 font-semibold">
+									{t("settings.general.pricing.model")}
 								</th>
 								<th className="px-3 py-2 text-right font-semibold">
-									Cached / 1M
+									{t("settings.general.pricing.inputPerMillion")}
 								</th>
 								<th className="px-3 py-2 text-right font-semibold">
-									Output / 1M
+									{t("settings.general.pricing.cachedInputPerMillion")}
 								</th>
-								<th className="px-3 py-2 font-semibold">Source</th>
-								<th className="px-3 py-2 font-semibold">Fetched</th>
+								<th className="px-3 py-2 text-right font-semibold">
+									{t("settings.general.pricing.outputPerMillion")}
+								</th>
+								<th className="px-3 py-2 font-semibold">
+									{t("settings.general.pricing.source")}
+								</th>
+								<th className="px-3 py-2 font-semibold">
+									{t("settings.general.pricing.fetchedAt")}
+								</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -359,15 +360,12 @@ export function GeneralSettingsPanel({
 										colSpan={7}
 										className="px-3 py-6 text-center text-zinc-500"
 									>
-										価格表を読み込み中...
+										{t("settings.general.pricing.loading")}
 									</td>
 								</tr>
 							) : pricingRows.length ? (
 								pricingRows.map((row) => (
-									<tr
-										key={row.id}
-										className="border-zinc-900 border-b last:border-0"
-									>
+									<tr key={row.id}>
 										<td className="whitespace-nowrap px-3 py-2 font-medium text-zinc-200">
 											{pricingProviderLabel(row.provider)}
 										</td>
@@ -387,7 +385,10 @@ export function GeneralSettingsPanel({
 											{formatPerMillionPrice(row.outputPer1m, row.currencyCode)}
 										</td>
 										<td className="max-w-[14rem] truncate px-3 py-2 text-zinc-500">
-											{row.sourceLabel || (row.manualOverride ? "Manual" : "-")}
+											{row.sourceLabel ||
+												(row.manualOverride
+													? t("settings.general.pricing.manual")
+													: "-")}
 										</td>
 										<td className="whitespace-nowrap px-3 py-2 text-zinc-500">
 											{formatPricingDate(row.fetchedAt)}
@@ -400,7 +401,7 @@ export function GeneralSettingsPanel({
 										colSpan={7}
 										className="px-3 py-6 text-center text-zinc-500"
 									>
-										まだ価格表は取得されていません。
+										{t("settings.general.pricing.empty")}
 									</td>
 								</tr>
 							)}
@@ -410,8 +411,12 @@ export function GeneralSettingsPanel({
 				<div className="flex items-center justify-between gap-3 text-[11px] text-zinc-500">
 					<span>
 						{pricingTotalCount === 0
-							? "0 件"
-							: `${pricingPage * pricingPageSize + 1}〜${pricingPage * pricingPageSize + pricingRows.length} 件 / ${pricingTotalCount} 件`}
+							? t("settings.general.pricing.countEmpty")
+							: t("settings.general.pricing.count", {
+									from: pricingPage * pricingPageSize + 1,
+									to: pricingPage * pricingPageSize + pricingRows.length,
+									total: pricingTotalCount,
+								})}
 					</span>
 					<div className="flex gap-2">
 						<Button
@@ -421,7 +426,7 @@ export function GeneralSettingsPanel({
 							onClick={() => setPricingPage((page) => Math.max(0, page - 1))}
 							className="h-8 px-3 text-xs"
 						>
-							前へ
+							{t("settings.general.pricing.previous")}
 						</Button>
 						<Button
 							type="button"
@@ -430,28 +435,11 @@ export function GeneralSettingsPanel({
 							onClick={() => setPricingPage((page) => page + 1)}
 							className="h-8 px-3 text-xs"
 						>
-							次へ
+							{t("settings.general.pricing.next")}
 						</Button>
 					</div>
 				</div>
 			</div>
-			{message ? (
-				<p
-					role={messageStatus === "error" ? "alert" : "status"}
-					className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-						messageStatus === "success"
-							? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-							: "border-rose-500/40 bg-rose-500/10 text-rose-200"
-					}`}
-				>
-					{messageStatus === "success" ? (
-						<CheckCircle2 className="h-4 w-4 shrink-0" />
-					) : (
-						<XCircle className="h-4 w-4 shrink-0" />
-					)}
-					<span>{message}</span>
-				</p>
-			) : null}
 		</section>
 	);
 }

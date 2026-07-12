@@ -36,6 +36,72 @@
       "label": "Settings",
       "manifest": "modules/settings.yaml",
       "aliases": ["settings", "configuration", "provider settings", "runtime settings"]
+    },
+    {
+      "id": "workbench",
+      "label": "Workbench",
+      "manifest": "modules/workbench.yaml",
+      "aliases": ["workbench", "session chat", "timeline", "composer"]
+    },
+    {
+      "id": "artifact",
+      "label": "Artifact",
+      "manifest": "modules/artifact.yaml",
+      "aliases": ["artifact", "artifact pane", "artifact version", "成果物"]
+    },
+    {
+      "id": "task-execution",
+      "label": "Task Execution",
+      "manifest": "modules/task-execution.yaml",
+      "aliases": ["task execution", "task run", "runtime", "todo", "tool execution"]
+    },
+    {
+      "id": "implementation-queue",
+      "label": "Implementation Queue",
+      "manifest": "modules/implementation-queue.yaml",
+      "aliases": ["implementation queue", "queue entry", "queue drain", "processor"]
+    },
+    {
+      "id": "plan-mode",
+      "label": "Plan Mode",
+      "manifest": "modules/plan-mode.yaml",
+      "aliases": ["plan mode", "specification", "plan view", "questionnaire"]
+    },
+    {
+      "id": "mission-pilot",
+      "label": "Mission Pilot",
+      "manifest": "modules/mission-pilot.yaml",
+      "aliases": ["mission pilot", "pilot session", "resume phase"]
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "manifest": "modules/review.yaml",
+      "aliases": ["review", "review mode", "closeout", "finding"]
+    },
+    {
+      "id": "blueprint",
+      "label": "Blueprint",
+      "manifest": "modules/blueprint.yaml",
+      "aliases": ["blueprint", "blueprint preview", "app blueprint"]
+    },
+    {
+      "id": "quality",
+      "label": "Quality",
+      "manifest": "modules/quality.yaml",
+      "aliases": ["quality", "coverage", "e2e", "quality run"]
+    },
+    {
+      "id": "llm-gateway",
+      "label": "LLM Gateway",
+      "manifest": "modules/llm-gateway.yaml",
+      "aliases": ["llm gateway", "provider transport", "structured llm", "llm usage"]
+    },
+    {
+      "id": "project-registry",
+      "label": "Project Registry",
+      "manifest": "modules/project-registry.yaml",
+      "aliases": ["project registry", "repository registration", "project import"]
     }
   ]
 }

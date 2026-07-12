@@ -1,3 +1,7 @@
+import type { LlmRole } from "../../../../shared/llm-role";
+
+export type { LlmRole };
+
 export type ThinkingDepth = "low" | "medium" | "high" | "very_high";
 export type ComposerThinkingDepth = ThinkingDepth | "";
 
@@ -32,15 +36,6 @@ export type LlmProviderEndpointKind =
 	| "bedrock"
 	| "codex"
 	| "local";
-export type LlmRole =
-	| "plan"
-	| "evaluation"
-	| "implementation"
-	| "test"
-	| "review"
-	| "mission_task_generation"
-	| "quality_gate"
-	| "completion";
 export type ImplementationRuntimeLane =
 	| ""
 	| "native-supervisor"

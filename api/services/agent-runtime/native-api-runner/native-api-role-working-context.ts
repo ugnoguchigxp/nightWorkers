@@ -1,3 +1,4 @@
+import { isLlmRole } from "../../../../shared/llm-role";
 import type { AgentRunContext } from "../types";
 import {
 	type NativeApiExecutionMode,
@@ -336,15 +337,7 @@ function requireStructuredLlmRole(
 	label: string,
 	errors: string[],
 ) {
-	if (
-		value !== "plan" &&
-		value !== "implementation" &&
-		value !== "test" &&
-		value !== "review" &&
-		value !== "mission_task_generation" &&
-		value !== "quality_gate" &&
-		value !== "completion"
-	) {
+	if (!isLlmRole(value)) {
 		errors.push(`${label} is invalid`);
 	}
 }

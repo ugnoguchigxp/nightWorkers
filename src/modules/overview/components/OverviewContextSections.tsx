@@ -117,7 +117,7 @@ export function ProjectSnapshotPanel({
 				<div className="border p-3" style={controlStyle}>
 					<div className="flex items-center gap-2 text-xs font-semibold">
 						<TestTube2 className="h-4 w-4" style={primaryTextStyle} />
-						{t("projectDetail.health.coverageGate")}
+						{t("projectDetail.health.coverage")}
 					</div>
 					{snapshot.coverageAxes.length > 0 ? (
 						<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">

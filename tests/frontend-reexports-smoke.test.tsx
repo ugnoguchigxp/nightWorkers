@@ -19,7 +19,6 @@ import { SettingsLlmPanel } from "../src/modules/nightworkers/components/Setting
 import { SettingsMcpPanel } from "../src/modules/nightworkers/components/SettingsMcpPanel";
 import { SettingsPlanModePanel } from "../src/modules/nightworkers/components/SettingsPlanModePanel";
 import { SettingsScreen } from "../src/modules/nightworkers/components/SettingsScreen";
-import { SettingsTestPanel } from "../src/modules/nightworkers/components/SettingsTestPanel";
 import { TodoListPane } from "../src/modules/nightworkers/components/TodoListPane";
 
 describe("Frontend components re-exports smoke tests", () => {
@@ -37,7 +36,6 @@ describe("Frontend components re-exports smoke tests", () => {
 		expect(SettingsLlmPanel).toBeDefined();
 		expect(SettingsMcpPanel).toBeDefined();
 		expect(SettingsPlanModePanel).toBeDefined();
-		expect(SettingsTestPanel).toBeDefined();
 		expect(QuestionnaireForm).toBeDefined();
 		expect(WorkspaceBlueprintPreview).toBeDefined();
 		expect(PlanModeWorkspaceViewer).toBeDefined();

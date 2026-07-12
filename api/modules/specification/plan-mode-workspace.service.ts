@@ -3,7 +3,7 @@ import {
 	planModeArtifactKindSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { NotFoundError } from "../../lib/errors";
-import { getBlueprintArtifactAdoption } from "../blueprint/blueprint-adoption.service";
+import { getBlueprintArtifactAdoption } from "../blueprint";
 import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,

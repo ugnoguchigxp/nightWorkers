@@ -5,14 +5,6 @@ import {
 	safetyPolicySchema,
 } from "../../../../shared/schemas/nightworkers.schema";
 
-export const testQualitySettingsSchema = z
-	.object({
-		coverageGateEnabled: z.boolean(),
-		coverageMinimumPercent: z.number().int().min(1).max(100),
-		coverageMaxIterations: z.number().int().min(1).max(20),
-	})
-	.strict();
-
 export const listRepositoriesRoute = createRoute({
 	method: "get",
 	path: "/repositories",
@@ -190,56 +182,6 @@ export const readRepositoryDiffRoute = createRoute({
 			},
 			description: "Current repository git diff",
 		},
-		404: { description: "Repository not found" },
-	},
-});
-
-export const getRepositoryTestQualitySettingsRoute = createRoute({
-	method: "get",
-	path: "/repositories/:id/settings/test-quality",
-	request: {
-		params: z.object({
-			id: z.string().uuid().openapi({ example: "repo-uuid" }),
-		}),
-	},
-	responses: {
-		200: {
-			content: {
-				"application/json": {
-					schema: testQualitySettingsSchema,
-				},
-			},
-			description: "Repository test quality settings",
-		},
-		404: { description: "Repository not found" },
-	},
-});
-
-export const saveRepositoryTestQualitySettingsRoute = createRoute({
-	method: "put",
-	path: "/repositories/:id/settings/test-quality",
-	request: {
-		params: z.object({
-			id: z.string().uuid().openapi({ example: "repo-uuid" }),
-		}),
-		body: {
-			content: {
-				"application/json": {
-					schema: testQualitySettingsSchema,
-				},
-			},
-		},
-	},
-	responses: {
-		200: {
-			content: {
-				"application/json": {
-					schema: testQualitySettingsSchema,
-				},
-			},
-			description: "Repository test quality settings saved successfully",
-		},
-		400: { description: "Invalid test quality settings" },
 		404: { description: "Repository not found" },
 	},
 });

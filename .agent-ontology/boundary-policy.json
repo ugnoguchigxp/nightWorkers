@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "enforcedPublicApiRoots": [
+    "api/modules/quality",
+	"api/modules/blueprint",
+	"src/modules/blueprint-preview",
+	"api/modules/settings",
+	"api/modules/llm-gateway",
+	"src/modules/settings",
+    "src/modules/quality"
+  ],
+  "domainForbiddenImports": [
+    "react",
+    "react-dom",
+    "hono",
+    "drizzle-orm",
+    "@libsql/client",
+    "openai",
+    "@aws-sdk/client-bedrock-runtime"
+  ]
+}

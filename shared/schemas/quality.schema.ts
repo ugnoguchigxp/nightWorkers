@@ -13,27 +13,6 @@ export const projectQualityRunStatusSchema = z.enum([
 	"cancelled",
 ]);
 
-export const coverageMetricResultSchema = z.object({
-	metric: z.enum(["statements", "branches", "functions", "lines"]),
-	actualPercent: z.number(),
-	targetPercent: z.number(),
-	deltaPercent: z.number(),
-	passed: z.boolean(),
-});
-
-export const coverageGateResultSchema = z.object({
-	enabled: z.boolean(),
-	passed: z.boolean(),
-	targetPercent: z.number(),
-	metrics: z.array(coverageMetricResultSchema),
-	failedMetrics: z.array(
-		z.enum(["statements", "branches", "functions", "lines"]),
-	),
-	summaryPath: z.string().optional(),
-	measuredAt: z.string(),
-	reason: z.string().optional(),
-});
-
 export const qualityCapabilitySchema = z.object({
 	runnable: z.boolean(),
 	missingCapabilities: z.array(z.string()),
@@ -85,7 +64,6 @@ export const projectQualityRunSchema = z
 		outputArtifactId: z.string().nullable(),
 		latestOutput: z.string().nullable().optional(),
 		coverageSummary: jsonValueSchema.nullable(),
-		coverageGate: coverageGateResultSchema.nullable(),
 		e2eSummary: e2eSummarySchema.nullable(),
 		errorMessage: z.string().nullable(),
 		createdAt: dateLikeSchema,

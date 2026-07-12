@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "plan-mode",
+  "label": "Plan Mode",
+  "summary": "Owns Questionnaire decisions, Specification rendering, Plan View generation, and Plan Mode workspace projection.",
+  "ubiquitousLanguage": [{ "name": "PlanArtifact", "meaning": "A reviewable design artifact produced or revised during Plan Mode." }],
+  "responsibilities": ["Collect and apply Questionnaire decisions.", "Generate and render Plan artifacts.", "Project Plan Mode workspace status and views."],
+  "ownedPaths": ["api/modules/planMode/**", "api/modules/planViews/**", "api/modules/specification/**", "api/modules/questionnaire/**", "src/modules/planMode/**", "src/modules/specification/**", "src/modules/questionnaire/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.plan-mode-core.port.ts", "api/modules/missionPilot/**"],
+  "ownedData": { "tables": ["design_questionnaire_sessions"], "files": [] },
+  "invariants": [{ "id": "plan-artifact-not-source-edit", "statement": "Plan Mode updates design artifacts and does not treat temporary generation directories as repository workspaces.", "check": "Plan Mode and Artifact workspace tests cover generation and projection." }],
+  "allowedMutations": ["Questionnaire lifecycle", "Plan artifact generation", "Plan workspace projection"],
+  "forbiddenMutations": ["Implementation Run source edits", "Queue claim policy", "provider transport policy"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/services.plan-view-generators.test.ts", "expect": "Plan View generation passes." }], "focused": [{ "command": "bun test tests/services.plan-view-generators.test.ts tests/plan-mode-questionnaire.test.tsx tests/artifact-workspace-viewer.test.ts", "expect": "Plan Mode behavior passes." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

@@ -14,7 +14,6 @@ const baseRun = projectQualityRunSchema.parse({
 	outputArtifactId: null,
 	latestOutput: null,
 	coverageSummary: null,
-	coverageGate: null,
 	e2eSummary: null,
 	errorMessage: null,
 	createdAt: "2026-07-10T00:00:00.000Z",
@@ -22,30 +21,6 @@ const baseRun = projectQualityRunSchema.parse({
 });
 
 describe("Overview coverage snapshot", () => {
-	it("prefers normalized coverage gate metrics", () => {
-		expect(
-			coverageAxesFromQualityRun({
-				...baseRun,
-				coverageGate: {
-					enabled: true,
-					passed: true,
-					targetPercent: 80,
-					metrics: [
-						{
-							metric: "branches",
-							actualPercent: 82.44,
-							targetPercent: 80,
-							deltaPercent: 2.44,
-							passed: true,
-						},
-					],
-					failedMetrics: [],
-					measuredAt: "2026-07-10T00:01:00.000Z",
-				},
-			}),
-		).toEqual([{ key: "branches", actualPercent: 82.44 }]);
-	});
-
 	it("falls back to the coverage summary total", () => {
 		expect(
 			coverageAxesFromQualityRun({

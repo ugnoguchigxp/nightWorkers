@@ -82,12 +82,23 @@ describe("agent ontology helpers", () => {
 		const validation = core.validateAllManifests(process.cwd());
 		expect(validation.ok).toBe(true);
 		expect(validation.modules.map((module) => module.id).sort()).toEqual([
+			"artifact",
+			"blueprint",
 			"gitworktree",
+			"implementation-queue",
+			"llm-gateway",
+			"mission-pilot",
 			"mission-planner",
 			"overview",
+			"plan-mode",
 			"project-detail",
+			"project-registry",
+			"quality",
+			"review",
 			"settings",
+			"task-execution",
 			"task-generation",
+			"workbench",
 		]);
 
 		const modules = core.listModules(process.cwd());
@@ -128,6 +139,7 @@ describe("agent ontology helpers", () => {
 				verificationHints: ["Run focused ontology tests."],
 			},
 		});
+		const taskScopedSummary = context.summary.taskScopedSummary;
 		expect(context).toMatchObject({
 			module: "project-detail",
 			summaryType: "task_scoped",
@@ -162,10 +174,10 @@ describe("agent ontology helpers", () => {
 				"goal-mission-taskcandidate-tree",
 			]),
 		});
-		expect(context.summary.taskScopedSummary).toContain(
+		expect(taskScopedSummary).toContain(
 			"Acceptance criteria: TaskCandidate evidence is preserved.",
 		);
-		expect(context.summary.taskScopedSummary).toContain(
+		expect(taskScopedSummary).toContain(
 			"Task verification hints: Run focused ontology tests.",
 		);
 

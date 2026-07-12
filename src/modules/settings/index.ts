@@ -1,4 +1,9 @@
+export * from "./SettingsFields";
 export * from "./SettingsForms";
+export * from "./SettingsGeneralPanel";
+export * from "./SettingsLlmPanel";
+export * from "./SettingsPlanModePanel";
+export * from "./SettingsSaveActions";
 export * from "./SettingsScreen";
 export * from "./settingsCommands";
 export type * from "./settingsTypes";

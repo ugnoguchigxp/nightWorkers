@@ -1,0 +1,220 @@
+.blueprint-design-font-mono {
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.45rem 0.55rem;
+	color: #334155;
+}
+.blueprint-design-font-system {
+	font-family: system-ui, sans-serif;
+}
+.blueprint-design-font-geist {
+	font-family: "Geist Variable", system-ui, sans-serif;
+}
+.blueprint-design-font-serif {
+	font-family: Georgia, serif;
+}
+.blueprint-design-font-mono {
+	font-family: "SFMono-Regular", Consolas, monospace;
+}
+.blueprint-design-font-system strong,
+.blueprint-design-font-geist strong,
+.blueprint-design-font-serif strong,
+.blueprint-design-font-mono strong {
+	font-size: 1.25rem;
+	letter-spacing: -0.08em;
+}
+.blueprint-design-font-system div,
+.blueprint-design-font-geist div,
+.blueprint-design-font-serif div,
+.blueprint-design-font-mono div {
+	display: grid;
+	min-width: 0;
+	gap: 0.2rem;
+}
+.blueprint-design-font-system i,
+.blueprint-design-font-geist i,
+.blueprint-design-font-serif i,
+.blueprint-design-font-mono i {
+	overflow: hidden;
+	color: inherit;
+	font-size: 0.54rem;
+	font-style: normal;
+	white-space: nowrap;
+}
+.blueprint-design-font-system span,
+.blueprint-design-font-geist span,
+.blueprint-design-font-serif span,
+.blueprint-design-font-mono span {
+	width: 76%;
+	height: 0.2rem;
+}
+
+.blueprint-design-option-preview-compact.blueprint-design-font-system,
+.blueprint-design-option-preview-compact.blueprint-design-font-geist,
+.blueprint-design-option-preview-compact.blueprint-design-font-serif,
+.blueprint-design-option-preview-compact.blueprint-design-font-mono {
+	justify-content: center;
+	padding: 0.15rem;
+}
+.blueprint-design-option-preview-compact strong {
+	font-size: 0.85rem;
+}
+.blueprint-design-option-preview-compact.blueprint-design-font-system div,
+.blueprint-design-option-preview-compact.blueprint-design-font-geist div,
+.blueprint-design-option-preview-compact.blueprint-design-font-serif div,
+.blueprint-design-option-preview-compact.blueprint-design-font-mono div {
+	display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.blueprint-preview,
+	.blueprint-preview * {
+		scroll-behavior: auto;
+		transition-duration: 0.01ms;
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+	}
+}
+
+.blueprint-preview[data-motion="reduced"],
+.blueprint-preview[data-motion="reduced"] * {
+	scroll-behavior: auto;
+	transition-duration: 0ms;
+	animation-duration: 0ms;
+}
+
+.blueprint-preview-card {
+	background: var(--card);
+	border-color: var(--border);
+	border-radius: var(--blueprint-preview-surface-radius);
+	box-shadow: var(--blueprint-preview-shadow);
+	color: var(--card-foreground);
+}
+
+.blueprint-preview.bg-background,
+.blueprint-preview .bg-background {
+	background-color: var(--background);
+}
+
+.blueprint-preview.bg-card,
+.blueprint-preview .bg-card {
+	background-color: var(--card);
+}
+
+.blueprint-preview.bg-primary,
+.blueprint-preview .bg-primary {
+	background-color: var(--primary);
+}
+
+.blueprint-preview.bg-secondary,
+.blueprint-preview .bg-secondary {
+	background-color: var(--secondary);
+}
+
+.blueprint-preview.bg-muted,
+.blueprint-preview .bg-muted {
+	background-color: var(--muted);
+}
+
+.blueprint-preview.border-border,
+.blueprint-preview .border-border {
+	border-color: var(--border);
+}
+
+.blueprint-preview.border-primary,
+.blueprint-preview .border-primary {
+	border-color: var(--primary);
+}
+
+.blueprint-preview.border-input,
+.blueprint-preview .border-input {
+	border-color: var(--input);
+}
+
+.blueprint-preview.text-foreground,
+.blueprint-preview .text-foreground {
+	color: var(--foreground);
+}
+
+.blueprint-preview.text-card-foreground,
+.blueprint-preview .text-card-foreground {
+	color: var(--card-foreground);
+}
+
+.blueprint-preview.text-muted-foreground,
+.blueprint-preview .text-muted-foreground {
+	color: var(--muted-foreground);
+}
+
+.blueprint-preview.text-primary,
+.blueprint-preview .text-primary {
+	color: var(--primary);
+}
+
+.blueprint-preview.text-primary-foreground,
+.blueprint-preview .text-primary-foreground {
+	color: var(--primary-foreground);
+}
+
+.blueprint-preview-field {
+	min-height: var(--blueprint-preview-control-height);
+	border-radius: var(--blueprint-preview-control-radius);
+}
+
+.blueprint-preview-button {
+	min-height: var(--blueprint-preview-control-height);
+	border-radius: var(--blueprint-preview-control-radius);
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-foreground);
+}
+
+.blueprint-preview-option {
+	border-radius: var(--blueprint-preview-control-radius);
+}
+
+.blueprint-preview[data-button-variant="soft"] .blueprint-preview-button {
+	background: color-mix(in srgb, var(--primary) 14%, transparent);
+	color: var(--foreground);
+}
+
+.blueprint-preview[data-button-variant="outline"] .blueprint-preview-button {
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--foreground);
+}
+
+.blueprint-preview-option[aria-pressed="true"] {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-foreground);
+}
+
+.blueprint-preview[data-card-variant="plain"] .blueprint-preview-card {
+	box-shadow: none;
+}
+
+.blueprint-preview[data-card-variant="elevated"] .blueprint-preview-card {
+	box-shadow: var(--blueprint-preview-shadow);
+}
+
+.blueprint-preview[data-table-variant="dense-grid"] .blueprint-preview-table th,
+.blueprint-preview[data-table-variant="dense-grid"]
+	.blueprint-preview-table
+	td {
+	border-right: 1px solid var(--border);
+	padding-block: 0.375rem;
+}
+
+.blueprint-preview[data-input-variant="filled"] .blueprint-preview-field {
+	background: var(--muted);
+}
+
+.blueprint-preview[data-input-variant="underline"] .blueprint-preview-field {
+	border-top: 0;
+	border-right: 0;
+	border-left: 0;
+	border-radius: 0;
+	background: transparent;
+}
+

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "lineLimit": 600,
+  "entries": [
+    { "id": "NW-LF-22", "path": "src/modules/nightworkers/components/ArtifactPane.tsx", "maxLines": 1962, "targetModule": "artifact", "phase": 5 },
+    { "id": "NW-LF-23", "path": "src/modules/nightworkers/components/ThreadTimeline.tsx", "maxLines": 1230, "targetModule": "workbench", "phase": 5 },
+    { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
+    { "id": "NW-LF-35", "path": "src/i18n/dictionaries/ja.ts", "maxLines": 1091, "targetModule": "workbench", "phase": 5 },
+    { "id": "NW-LF-36", "path": "src/i18n/dictionaries/en.ts", "maxLines": 1098, "targetModule": "workbench", "phase": 5 },
+    { "id": "NW-LF-37", "path": "api/modules/nightworkers/nightworkers.workbench.service.ts", "maxLines": 1073, "targetModule": "workbench", "phase": 6 },
+    { "id": "NW-LF-38", "path": "api/modules/nightworkers/nightworkers.activity.repository.ts", "maxLines": 748, "targetModule": "artifact", "phase": 6 },
+    { "id": "NW-LF-39", "path": "api/modules/nightworkers/nightworkers.runs.repository.ts", "maxLines": 864, "targetModule": "task-execution", "phase": 6 },
+    { "id": "NW-LF-40", "path": "api/services/structured-llm/providers.ts", "maxLines": 1341, "targetModule": "llm-gateway", "phase": 7 },
+    { "id": "NW-LF-41", "path": "api/services/agent-runtime/CodexAgentRuntime.ts", "maxLines": 936, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-42", "path": "api/services/agent-runtime/codex-runtime-support.ts", "maxLines": 771, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-43", "path": "api/services/agent-runtime/native-api-runner/native-api-runner.ts", "maxLines": 925, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-44", "path": "api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts", "maxLines": 1019, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-45", "path": "api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts", "maxLines": 677, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-46", "path": "api/services/worker-tools/todo-list.ts", "maxLines": 862, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-47", "path": "api/services/worker-tools/project-post-import.ts", "maxLines": 737, "targetModule": "project-registry", "phase": 7 },
+    { "id": "NW-LF-48", "path": "api/mcp/nightworkers-codex-mcp.ts", "maxLines": 786, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-49", "path": "api/mcp/nightworkers-tool-manifest.ts", "maxLines": 665, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-50", "path": "api/modules/nightworkers/run-orchestration/start-task-run.ts", "maxLines": 647, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-51", "path": "api/modules/nightworkers/run-orchestration/runtime-execution.ts", "maxLines": 642, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-52", "path": "api/modules/nightworkers/routes/run-routes.ts", "maxLines": 769, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-53", "path": "scripts/agent-ontology/core.mjs", "maxLines": 1028, "targetModule": "task-execution", "phase": 7 },
+    { "id": "NW-LF-54", "path": "api/db/schema.ts", "maxLines": 1167, "targetModule": "persistence", "phase": 8 },
+    { "id": "NW-LF-55", "path": "api/db/bootstrap.ts", "maxLines": 1041, "targetModule": "persistence", "phase": 8 }
+  ]
+}

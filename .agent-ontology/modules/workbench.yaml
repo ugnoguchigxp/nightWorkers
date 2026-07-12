@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "workbench",
+  "label": "Workbench",
+  "summary": "Owns Session conversation, message intake, timeline projection, composer actions, and Workbench composition without owning Task Run execution.",
+  "ubiquitousLanguage": [{ "name": "Session", "meaning": "A persistent user conversation and planning workspace for one repository task." }],
+  "responsibilities": ["Handle Session conversation and message intake.", "Project messages and events into the Workbench timeline.", "Compose Workbench surfaces through explicit module APIs."],
+  "ownedPaths": ["api/modules/workbench/**", "src/modules/workbench/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/**", "src/modules/nightworkers/**"],
+  "ownedData": { "tables": ["tasks", "task_messages"], "files": [] },
+  "invariants": [{ "id": "workbench-not-executor", "statement": "Workbench intake does not directly implement Task Run execution or Queue draining.", "check": "Workbench boundary and route tests cover the delegation path." }],
+  "allowedMutations": ["Session conversation", "Workbench projection", "Composer actions"],
+  "forbiddenMutations": ["provider transport", "Queue claim policy", "Task Run runtime loop"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/nightworkers-workbench-routes/routes-workbench-01.test.ts", "expect": "Workbench routes pass." }], "focused": [{ "command": "bun test tests/nightworkers-workbench-routes", "expect": "Workbench behavior passes." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

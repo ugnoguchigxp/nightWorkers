@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "llm-gateway",
+  "label": "LLM Gateway",
+  "summary": "Owns provider transport calls, JSON extraction, schema validation, usage mapping, retry transport behavior, and minimal compatibility normalization.",
+  "ubiquitousLanguage": [{ "name": "ProviderCall", "meaning": "One transport-level request to a configured LLM provider." }],
+  "responsibilities": ["Call configured providers.", "Extract and validate structured responses.", "Map usage and transport errors without owning workflow decisions."],
+  "ownedPaths": ["api/modules/llm-gateway/**"],
+  "readMostlyPaths": ["api/services/structured-llm/**", "api/services/llm-usage/**", "api/services/pricing/**"],
+  "ownedData": { "tables": ["llm_usage_records", "llm_model_pricing"], "files": [] },
+  "invariants": [{ "id": "provider-transport-only", "statement": "Provider adapters do not classify user intent or replace returned LLM text with fixed workflow messages.", "check": "Structured LLM provider and schema tests cover transport behavior." }],
+  "allowedMutations": ["provider transport", "structured response extraction", "usage mapping"],
+  "forbiddenMutations": ["Supervisor workflow policy", "user-text keyword routing", "Task Run state policy"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun run test:supervisor-regression", "expect": "Structured LLM regression passes." }], "focused": [{ "command": "bun run test:supervisor-regression", "expect": "Provider and Supervisor contracts pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

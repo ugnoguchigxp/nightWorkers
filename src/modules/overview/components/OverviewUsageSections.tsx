@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { OverviewDashboard } from "../../../../shared/schemas/overview.schema";
 import { formatDateTime } from "../../../i18n/format";
 import type { OverviewRange } from "../../nightworkers/routing/workbench-route-state";
-import type { NightWorkersCurrency } from "../../settings/settingsTypes";
+import type { NightWorkersCurrency } from "../../settings";
 import {
 	formatCompactCurrency,
 	formatCompactNumber,

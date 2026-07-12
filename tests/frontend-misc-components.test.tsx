@@ -257,7 +257,6 @@ describe("miscellaneous frontend components", () => {
 			<AppearanceSettings
 				value={defaultBlueprintPreviewDesignSettings}
 				onChange={vi.fn()}
-				onReset={vi.fn()}
 			/>,
 		);
 		const workspaceListMarkup = renderToStaticMarkup(
@@ -282,7 +281,7 @@ describe("miscellaneous frontend components", () => {
 		);
 		const navMarkup = renderToStaticMarkup(<DesktopNavigationBar />);
 
-		expect(appearanceMarkup).toContain("外観設定");
+		expect(appearanceMarkup).toContain("テーマ");
 		expect(workspaceListMarkup).toContain("User Flow");
 		expect(showcaseMarkup).toContain("Blueprint sections");
 		expect(errorMarkup).toContain("failed to render");
@@ -415,18 +414,11 @@ describe("miscellaneous frontend components", () => {
 		};
 
 		const onChange = vi.fn();
-		const onReset = vi.fn();
 
 		const markup = renderToStaticMarkup(
-			<AppearanceSettings
-				value={designSettings}
-				onChange={onChange}
-				onReset={onReset}
-			/>,
+			<AppearanceSettings value={designSettings} onChange={onChange} />,
 		);
 
-		expect(markup).toContain("外観設定");
-		expect(markup).toContain("Theme");
 		expect(markup).toContain("mint");
 		expect(markup).toContain("compact");
 		expect(markup).toContain("rounded");

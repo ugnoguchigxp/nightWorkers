@@ -1,0 +1,26 @@
+import type { LlmSettings } from "../nightworkers/types";
+
+export const defaultSettings: LlmSettings = {
+	ACTIVE_LLM_PROVIDER: "azure",
+	OPENAI_ENABLED: true,
+	AZURE_OPENAI_ENABLED: false,
+	AZURE_OPENAI_API_KEY: "",
+	AZURE_OPENAI_ENDPOINT: "",
+	AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-5-mini",
+	AZURE_OPENAI_API_VERSION: "2024-05-01-preview",
+	AWS_BEDROCK_ENABLED: false,
+	AWS_ACCESS_KEY_ID: "",
+	AWS_SECRET_ACCESS_KEY: "",
+	AWS_REGION: "us-east-1",
+	AWS_BEDROCK_MODEL: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+	OPENAI_API_KEY: "",
+	OPENAI_BASE_URL: "https://api.openai.com/v1",
+	OPENAI_MODEL: "gpt-4o-mini",
+	CODEX_ENABLED: false,
+	CODEX_ACCESS_TOKEN: "",
+	CODEX_MODEL: "gpt-5.4-mini",
+	IMPLEMENTATION_RUNTIME_LANE: "",
+	SESSION_QUEUE_MAX_CONCURRENCY: 2,
+	providerEndpoints: [],
+	roleRoutes: [],
+};

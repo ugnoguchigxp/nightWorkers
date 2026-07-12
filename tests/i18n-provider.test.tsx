@@ -23,9 +23,17 @@ vi.mock("react", async () => {
 	};
 });
 
+import { enDictionary } from "../src/i18n/dictionaries/en";
+import { jaDictionary } from "../src/i18n/dictionaries/ja";
 import { AppI18nProvider, applyAppLanguage } from "../src/i18n/I18nProvider";
 
 describe("AppI18nProvider", () => {
+	it("keeps Japanese and English translation keys aligned", () => {
+		expect(Object.keys(enDictionary).sort()).toEqual(
+			Object.keys(jaDictionary).sort(),
+		);
+	});
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		effectMode = "run";

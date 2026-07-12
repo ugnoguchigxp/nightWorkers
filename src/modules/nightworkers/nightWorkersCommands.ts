@@ -31,14 +31,12 @@ export {
 	fetchLlmModelOptions,
 	fetchLlmSettings,
 	fetchStartupPreflight,
-	fetchTestQualitySettings,
 	refreshFxRates,
 	runLlmSmokeTest,
 	saveGeneralSettings,
 	saveLlmSettings,
-	saveTestQualitySettings,
 	testLlmProviderHealth,
-} from "../settings/settingsCommands";
+} from "../settings";
 export {
 	fetchTodoWorkflowSettings,
 	updateTodoWorkflowSettings,

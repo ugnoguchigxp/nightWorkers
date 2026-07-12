@@ -187,6 +187,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 					: (workspace.blueprintArtifacts.at(-1)?.sourceMessageId ?? null),
 			sourceDataModelMessageId:
 				workspace.dataModelArtifacts.at(-1)?.sourceMessageId ?? null,
+			role: "mission_pilot",
 		});
 		if (!result.message?.id) {
 			throw new Error("Correction agent result message is missing");

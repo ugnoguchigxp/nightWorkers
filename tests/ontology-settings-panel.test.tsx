@@ -53,35 +53,35 @@ function render(sourceLoc: number | null, securityOracleEnabled = true) {
 							: "below_threshold",
 				},
 			}}
-			message=""
-			messageStatus="idle"
 			isSaving={false}
 			onChange={vi.fn()}
-			onSave={vi.fn()}
 		/>,
 	);
 }
 
 describe("SettingsOntologyPanel", () => {
-	it("shows both controls as disabled below the threshold", () => {
+	it("keeps both preferences editable below the threshold", () => {
 		const markup = render(49_999);
-		expect(markup).toContain("Security Oracle: OFF");
-		expect(markup).toContain("standard");
-		expect(markup.match(/type="checkbox"[^>]*disabled/g)).toHaveLength(2);
+		expect(markup).toContain("Security Oracle: 無効");
+		expect(markup).toContain("標準ツールセット");
+		expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
 		expect(markup).toContain("49,999");
+		expect(markup).toContain(
+			"設定は保存できます。実行時はソースコード行数が 50,000 行以上のプロジェクトにだけ適用されます。",
+		);
 	});
 
 	it("exposes both controls at exactly 50,000 LOC", () => {
 		const markup = render(50_000);
-		expect(markup).toContain("Security Oracle: ON");
-		expect(markup).toContain("ontology_extended");
+		expect(markup).toContain("Security Oracle: 有効");
+		expect(markup).toContain("オントロジー拡張ツールセット");
 		expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
 	});
 
-	it("disables the ontology control while Security Oracle is off", () => {
+	it("keeps the ontology preference editable while Security Oracle is off", () => {
 		const markup = render(50_000, false);
-		expect(markup).toContain("Security Oracle: OFF");
-		expect(markup.match(/type="checkbox"[^>]*disabled/g)).toHaveLength(1);
-		expect(markup).toContain("Security Oracle が OFF");
+		expect(markup).toContain("Security Oracle: 無効");
+		expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
+		expect(markup).toContain("Security Oracle がオフ");
 	});
 });

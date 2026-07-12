@@ -14,7 +14,10 @@ import {
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
-import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
+import type {
+	StructuredLlmModelTarget,
+	StructuredLlmRole,
+} from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -39,6 +42,7 @@ export type DataModelGenerationInput = {
 	featurePlanMessageId?: string | null;
 	sourceBlueprintMessageId?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
+	role?: StructuredLlmRole;
 };
 
 export class DataModelGenerationError extends Error {
@@ -94,6 +98,7 @@ export async function generateDataModelArtifact(
 		blueprint: sourceBlueprintMessage?.content || "Blueprint は未生成です。",
 		prompt,
 		routeOverride: input.routeOverride || null,
+		role: input.role ?? "plan",
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -188,6 +193,7 @@ async function generateArtifactFromLlm(input: {
 	blueprint: string;
 	prompt: string;
 	routeOverride: StructuredLlmModelTarget | null;
+	role: StructuredLlmRole;
 }) {
 	try {
 		const schema = buildDataModelResponseJsonSchema();
@@ -206,7 +212,7 @@ async function generateArtifactFromLlm(input: {
 					schema,
 					taskId: input.taskId,
 					runId: null,
-					role: "plan",
+					role: input.role,
 					routeOverride: input.routeOverride,
 				},
 			);

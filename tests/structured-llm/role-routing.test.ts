@@ -1,10 +1,16 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	resolveStructuredLlmRoleRoute,
 	structuredLlmRouteKey,
 	validateStructuredLlmRoleRoutes,
 } from "../../api/services/structured-llm/role-routing";
-import type { StructuredLlmProviderSettings } from "../../api/services/structured-llm/settings";
+import {
+	readStructuredLlmProviderSettings,
+	type StructuredLlmProviderSettings,
+} from "../../api/services/structured-llm/settings";
 
 function createDummySettings(): StructuredLlmProviderSettings {
 	return {
@@ -81,6 +87,99 @@ describe("Structured LLM Role Routing", () => {
 		expect(result?.model).toBe("gpt-4");
 		expect(result?.providerEndpointId).toBe("openai-endpoint");
 		expect(result?.providerId).toBe("openai");
+	});
+
+	it("resolves the dedicated Mission Pilot route", () => {
+		const settings = createDummySettings();
+		settings.roleRoutes?.push({
+			role: "mission_pilot",
+			primary: { providerEndpointId: "azure-endpoint", model: "gpt-4-azure" },
+			fallbacks: [],
+		});
+
+		const result = resolveStructuredLlmRoleRoute({
+			role: "mission_pilot",
+			settings,
+		});
+
+		expect(result?.providerEndpointId).toBe("azure-endpoint");
+		expect(result?.role).toBe("mission_pilot");
+	});
+
+	it("canonicalizes persisted legacy roles for direct structured LLM reads", () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-role-routing-"));
+		const settingsPath = path.join(tempDir, "llm-settings.json");
+		const previousPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+		try {
+			fs.writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					providerEndpoints: [
+						{
+							id: "test-endpoint",
+							name: "Test",
+							kind: "openai",
+							enabled: true,
+							models: ["test-model"],
+						},
+						{
+							id: "quality-endpoint",
+							name: "Quality",
+							kind: "openai",
+							enabled: true,
+							models: ["quality-model"],
+						},
+					],
+					roleRoutes: [
+						{
+							role: "test",
+							primary: {
+								providerEndpointId: "test-endpoint",
+								model: "test-model",
+							},
+							fallbacks: [],
+						},
+						{
+							role: "quality_gate",
+							primary: {
+								providerEndpointId: "quality-endpoint",
+								model: "quality-model",
+							},
+							fallbacks: [],
+						},
+					],
+				}),
+			);
+			process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+
+			const settings = readStructuredLlmProviderSettings();
+			const testRoute = settings.roleRoutes?.find(
+				(route) => route.role === "test",
+			);
+
+			expect(testRoute).toMatchObject({
+				primary: {
+					providerEndpointId: "test-endpoint",
+					model: "test-model",
+				},
+				fallbacks: [
+					{
+						providerEndpointId: "quality-endpoint",
+						model: "quality-model",
+					},
+				],
+			});
+			expect(settings.roleRoutes?.map((route) => route.role)).not.toContain(
+				"quality_gate",
+			);
+		} finally {
+			if (previousPath === undefined) {
+				delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+			} else {
+				process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = previousPath;
+			}
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	it("resolveStructuredLlmRoleRoute returns fallback when primary is disallowed by policy", () => {

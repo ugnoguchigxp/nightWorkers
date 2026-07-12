@@ -1,4 +1,3 @@
-import { Palette } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
 	type BlueprintPreviewDesignSettings,
@@ -8,34 +7,14 @@ import {
 export function AppearanceSettings({
 	value,
 	onChange,
-	onReset,
 }: {
 	value: BlueprintPreviewDesignSettings;
 	onChange: (next: BlueprintPreviewDesignSettings) => void;
-	onReset: () => void;
 }) {
 	const { t } = useTranslation();
 
 	return (
 		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<h2 className="flex items-center gap-2 text-sm font-bold text-zinc-100">
-						<Palette className="h-4 w-4 text-indigo-400" />
-						{t("settings.appearance.title")}
-					</h2>
-					<p className="mt-1 text-xs leading-5 text-zinc-400">
-						{t("settings.appearance.description")}
-					</p>
-				</div>
-				<button
-					type="button"
-					className="rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
-					onClick={onReset}
-				>
-					{t("settings.appearance.reset")}
-				</button>
-			</div>
 			<div className="grid gap-3">
 				<AppearanceGroup
 					label={t("settings.appearance.theme")}

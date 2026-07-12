@@ -34,22 +34,6 @@ describe("QualityReportPanel", () => {
 				uncoveredLines: [12, 18],
 			},
 		},
-		coverageGate: {
-			enabled: true,
-			passed: true,
-			targetPercent: 80,
-			metrics: [
-				{
-					metric: "lines" as const,
-					actualPercent: 87.5,
-					targetPercent: 80,
-					deltaPercent: 7.5,
-					passed: true,
-				},
-			],
-			failedMetrics: [],
-			measuredAt: "2026-07-04T00:00:02.000Z",
-		},
 		e2eSummary: {
 			status: "passed" as const,
 			total: 1,
@@ -124,23 +108,11 @@ describe("QualityReportPanel", () => {
 		expect(markup).toContain("—");
 		expect(markup).toContain("checkout.spec.ts");
 		expect(markup).toContain("bun run test &amp;&amp; bun run test:coverage");
-		expect(markup).toContain("Coverage Gate: PASS / target 80%");
 		expect(markup).toContain("コマンド出力");
 	});
 
-	it("builds overview coverage gate axes from coverage summary when the gate is disabled", () => {
-		const axes = coverageAxesFromQualityRun({
-			...allRun,
-			coverageGate: {
-				enabled: false,
-				passed: true,
-				targetPercent: 80,
-				metrics: [],
-				failedMetrics: [],
-				measuredAt: "2026-07-04T00:00:02.000Z",
-				reason: "coverage_gate_disabled",
-			},
-		});
+	it("builds overview coverage axes from the coverage summary", () => {
+		const axes = coverageAxesFromQualityRun(allRun);
 
 		expect(axes).toEqual([
 			{ labelKey: "projectDetail.coverage.statements", value: 88.2 },

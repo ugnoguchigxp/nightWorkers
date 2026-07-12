@@ -170,9 +170,6 @@ describe("Quality backend", () => {
 			expect(run.command).toContain("--coverage.reporter=html");
 			expect(run.errorMessage).toBeNull();
 			expect(run.coverageSummary.total.lines.pct).toBe(93);
-			expect(run.coverageGate).toMatchObject({
-				passed: true,
-			});
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}

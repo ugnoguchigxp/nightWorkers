@@ -96,7 +96,6 @@ describe("Quality screen coverage selection", () => {
 			outputArtifactId: null,
 			latestOutput: "UNIQUE_QUALITY_OUTPUT",
 			coverageSummary: null,
-			coverageGate: null,
 			e2eSummary: null,
 			errorMessage: null,
 			createdAt: "2026-07-10T00:00:00.000Z",

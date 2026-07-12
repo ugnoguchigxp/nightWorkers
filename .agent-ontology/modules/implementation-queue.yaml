@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "implementation-queue",
+  "label": "Implementation Queue",
+  "summary": "Owns explicit Queue admission, entry state transitions, claim, drain, completion, and execution archive.",
+  "ubiquitousLanguage": [{ "name": "QueueEntry", "meaning": "A user-approved request for automated implementation execution." }],
+  "responsibilities": ["Admit and remove Queue entries.", "Claim and drain eligible entries.", "Complete or archive entries after Run finalization."],
+  "ownedPaths": ["api/modules/queue/**", "src/modules/queue/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.queue-management.service.ts", "api/modules/nightworkers/nightworkers.queue.repository.ts"],
+  "ownedData": { "tables": ["implementation_queue_entries", "implementation_queue_settings"], "files": [] },
+  "invariants": [{ "id": "explicit-queue-admission", "statement": "Queue execution requires an explicit admitted QueueEntry.", "check": "Queue management and Mission Pilot handoff tests cover admission." }],
+  "allowedMutations": ["Queue entry lifecycle", "Queue scheduling", "Queue archive"],
+  "forbiddenMutations": ["Session chat behavior", "runtime provider selection", "Review verdict generation"],
+  "allowedCrossModule": [],
+  "verification": { "baseline": [{ "command": "bun test tests/services.queue-management.test.ts", "expect": "Queue behavior passes." }], "focused": [{ "command": "bun test tests/services.queue-management.test.ts tests/queue-repository-branch-coverage.test.ts", "expect": "Queue service and persistence pass." }], "full": [{ "command": "bun run verify", "expect": "Repository verification passes." }] },
+  "completionReport": { "require": ["primaryModule", "boundaryCrossings", "invariantsChecked", "verification"] }
+}

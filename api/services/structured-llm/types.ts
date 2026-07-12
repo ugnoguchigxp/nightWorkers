@@ -1,3 +1,4 @@
+import type { LlmRole as StructuredLlmRole } from "../../../shared/llm-role";
 import type { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import type {
 	LlmPromptPartTokenEstimates,
@@ -59,15 +60,7 @@ export type StructuredLlmPromptBudgetMetadata = {
 	recoveryDirectiveCount?: number;
 };
 
-export type StructuredLlmRole =
-	| "plan"
-	| "evaluation"
-	| "implementation"
-	| "test"
-	| "review"
-	| "mission_task_generation"
-	| "quality_gate"
-	| "completion";
+export type { StructuredLlmRole };
 
 export type SupervisorProviderId =
 	| "openai"

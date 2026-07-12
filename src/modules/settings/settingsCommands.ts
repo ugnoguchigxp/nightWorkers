@@ -4,7 +4,6 @@ import type {
 	GeneralSettings,
 	LlmProviderEndpoint,
 	LlmSettings,
-	TestQualitySettings,
 } from "../nightworkers/types";
 
 export function fetchLlmSettings() {
@@ -45,20 +44,6 @@ export function fetchPricingRows(
 
 export function importPublicPricingRows() {
 	return apiFetch("/api/settings/pricing/import-public", { method: "POST" });
-}
-
-export function fetchTestQualitySettings(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/settings/test-quality`);
-}
-
-export function saveTestQualitySettings(
-	repositoryId: string,
-	settings: TestQualitySettings,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/settings/test-quality`,
-		jsonRequest("PUT", settings),
-	);
 }
 
 export function fetchLlmModelOptions() {

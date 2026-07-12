@@ -1,12 +1,11 @@
 import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { renderMockBlueprintMarkdown } from "../../services/blueprints/mock-draft";
-import {
-	generatePlanModeMockBlueprintDraft,
-	MockBlueprintDraftGenerationError,
-} from "../../services/blueprints/mock-llm-draft";
 import { listLlmUsageRecordsForTask } from "../../services/llm-usage";
-import type { StructuredLlmModelTarget } from "../../services/structured-llm/settings";
+import type {
+	StructuredLlmModelTarget,
+	StructuredLlmRole,
+} from "../../services/structured-llm/settings";
 import {
 	createPlanModeMockBlueprintActivityArtifact,
 	createPlanModeTaskMessage,
@@ -20,6 +19,10 @@ import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.servi
 import { renderQuestionnaireAnswerMarkdown } from "../specification/specification-document-renderer";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 import { resolveOptionalReadyQuestionnaireSession } from "../specification/specification-questionnaire-session";
+import {
+	generatePlanModeMockBlueprintDraft,
+	MockBlueprintDraftGenerationError,
+} from "./mock-blueprint-generation.service";
 
 export async function generateBlueprintArtifact(
 	taskId: string,
@@ -28,6 +31,7 @@ export async function generateBlueprintArtifact(
 		questionnaireSessionId?: string | null;
 		sourceBlueprintMessageId?: string | null;
 		routeOverride?: StructuredLlmModelTarget | null;
+		role?: StructuredLlmRole;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -64,6 +68,7 @@ export async function generateBlueprintArtifact(
 				projectStackContext,
 				specContext,
 				routeOverride: input.routeOverride || null,
+				role: input.role,
 			});
 		const generationWithUsage = {
 			...generation,

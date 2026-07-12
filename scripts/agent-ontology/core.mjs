@@ -702,7 +702,6 @@ function listRepoFiles(repoRoot, maxFiles) {
   const results = [];
   const ignored = new Set(['.git', 'node_modules', 'dist', 'dist-api', 'coverage', '.turbo']);
   function walk(dir) {
-    if (results.length >= maxFiles) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (ignored.has(entry.name)) continue;
       const fullPath = path.join(dir, entry.name);
@@ -712,11 +711,10 @@ function listRepoFiles(repoRoot, maxFiles) {
       } else {
         results.push(relative);
       }
-      if (results.length >= maxFiles) return;
     }
   }
   if (fs.existsSync(repoRoot)) walk(repoRoot);
-  return results.sort();
+  return results.sort().slice(0, maxFiles);
 }
 
 function verificationCommands(items) {

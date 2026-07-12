@@ -9,6 +9,11 @@ const trackedArtifactTask = task('tracked-artifacts', 'tracked artifact check', 
   'run',
   'check:tracked-artifacts',
 ]);
+const architectureTask = task('architecture', 'architecture boundary checks', [
+  '--silent',
+  'run',
+  'check:architecture',
+]);
 const typecheckTask = task('typecheck', 'typecheck', ['--silent', 'run', 'typecheck']);
 const lintTask = task('lint', 'lint', ['--silent', 'run', 'lint']);
 const supervisorRegressionTask = task(
@@ -98,7 +103,7 @@ const basePhases = [
     id: 'base-static',
     label: 'base static checks',
     mode: 'parallel',
-    tasks: [trackedArtifactTask, typecheckTask, lintTask],
+    tasks: [trackedArtifactTask, architectureTask, typecheckTask, lintTask],
   },
   {
     id: 'base-supervisor',

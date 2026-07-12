@@ -4,6 +4,8 @@ export {
 	ComponentDesignArtifactViewer,
 } from "./ArtifactBlueprintViewers";
 export { BlueprintPreview } from "./BlueprintPreview";
+export * from "./BlueprintPreviewPrimitives";
+export { BlueprintPreviewSection } from "./BlueprintPreviewSection";
 export {
 	type BlueprintDesignReference,
 	type BlueprintPreviewDesignSettings,

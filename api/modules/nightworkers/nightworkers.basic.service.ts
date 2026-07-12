@@ -65,19 +65,6 @@ export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
 	reason: string;
 	summary: string;
 } {
-	const coverageAutonomy = readCoverageAutonomyStatus(
-		runtimeResult.testResults,
-	);
-	if (coverageAutonomy === "needs_human" || coverageAutonomy === "continue") {
-		return {
-			status: "needs_human",
-			reason: "coverage_gate_failed",
-			summary:
-				runtimeResult.finalReport ||
-				runtimeResult.summary ||
-				"Coverage autonomy gate did not pass.",
-		};
-	}
 	const status = runtimeResult.terminalState;
 	const reason =
 		runtimeResult.stoppedBy === "policy"
@@ -95,26 +82,6 @@ export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
 			runtimeResult.summary ||
 			`Runtime finished: ${status}`,
 	};
-}
-
-function readCoverageAutonomyStatus(testResults: unknown): string | null {
-	if (
-		!testResults ||
-		typeof testResults !== "object" ||
-		Array.isArray(testResults)
-	)
-		return null;
-	const coverageAutonomy = (testResults as Record<string, unknown>)
-		.coverageAutonomy;
-	if (
-		!coverageAutonomy ||
-		typeof coverageAutonomy !== "object" ||
-		Array.isArray(coverageAutonomy)
-	) {
-		return null;
-	}
-	const status = (coverageAutonomy as Record<string, unknown>).status;
-	return typeof status === "string" ? status : null;
 }
 
 // --- Repositories ---

@@ -1,1 +1,1 @@
-export { SettingsPlanModePanel } from "../../settings/SettingsPlanModePanel";
+export { SettingsPlanModePanel } from "../../settings";

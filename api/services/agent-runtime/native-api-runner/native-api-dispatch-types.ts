@@ -1,7 +1,3 @@
-import type {
-	CoverageAutonomyGateResult,
-	CoverageAutonomyState,
-} from "../../quality/coverage-autonomy-gate";
 import type { NativeApiToolResult } from "./native-api-tool-history";
 
 export type NativeApiDispatchState = {
@@ -20,8 +16,6 @@ export type NativeApiDispatchState = {
 	manifestReadAfterImport?: boolean;
 	successfulVerificationCommands?: string[];
 	compileEvalCompleted?: boolean;
-	coverageAutonomy?: CoverageAutonomyState | null;
-	lastCoverageAutonomyGate?: CoverageAutonomyGateResult | null;
 };
 
 export type NativeApiPostImportState = {
@@ -46,6 +40,5 @@ export type NativeApiDispatchResult =
 			toolResult: NativeApiToolResult;
 			finalReport: string;
 			summary: string;
-			coverageAutonomyGate?: CoverageAutonomyGateResult | null;
 			state: NativeApiDispatchState;
 	  };

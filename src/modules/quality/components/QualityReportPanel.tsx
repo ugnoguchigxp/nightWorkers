@@ -29,14 +29,6 @@ const coverageAxisMetrics = [
 export function coverageAxesFromQualityRun(
 	run: ProjectQualityRun | null | undefined,
 ) {
-	const gateMetrics = run?.coverageGate?.metrics ?? [];
-	if (gateMetrics.length > 0) {
-		return gateMetrics.map((metric) => ({
-			labelKey: `projectDetail.coverage.${metric.metric}`,
-			value: metric.actualPercent,
-		}));
-	}
-
 	const total = coverageSummaryTotal(run?.coverageSummary);
 	if (!total) return [];
 	return coverageAxisMetrics.flatMap((metric) => {
@@ -212,14 +204,6 @@ function QualityRunStatus({
 							{run.exitCode === null ? "" : ` / exit ${run.exitCode}`}
 						</div>
 						<div className="truncate">{run.command}</div>
-						{run.coverageGate ? (
-							<div>
-								{t("projectDetail.quality.coverageGateStatus", {
-									status: run.coverageGate.passed ? "PASS" : "FAIL",
-									target: run.coverageGate.targetPercent,
-								})}
-							</div>
-						) : null}
 						{missingCapability ? (
 							<div style={{ color: "var(--nw-warning)" }}>
 								{missingCapability}

@@ -125,8 +125,8 @@ function buildLiveSettingsFromEnv(): {
 				{ role: "implementation", primary, fallbacks: [] },
 				{ role: "test", primary, fallbacks: [] },
 				{ role: "review", primary, fallbacks: [] },
-				{ role: "quality_gate", primary, fallbacks: [] },
-				{ role: "completion", primary, fallbacks: [] },
+				{ role: "mission_pilot", primary, fallbacks: [] },
+				{ role: "mission_task_generation", primary, fallbacks: [] },
 			],
 		},
 	};

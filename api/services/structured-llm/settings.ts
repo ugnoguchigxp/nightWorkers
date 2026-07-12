@@ -1,5 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+	isLlmRole,
+	LLM_ROLE_ORDER,
+	resolveLlmRole,
+	type LlmRole as StructuredLlmRole,
+} from "../../../shared/llm-role";
 import { getRuntimePaths } from "../../runtime/paths";
 import { mergeCodexModelOptionsIntoEndpoints } from "../codex-global-config/status";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
@@ -40,15 +46,7 @@ export type StructuredLlmProviderEndpointKind =
 	| "codex"
 	| "local";
 
-export type StructuredLlmRole =
-	| "plan"
-	| "evaluation"
-	| "implementation"
-	| "test"
-	| "review"
-	| "mission_task_generation"
-	| "quality_gate"
-	| "completion";
+export type { StructuredLlmRole };
 
 export type StructuredLlmThinkingDepth =
 	| ""
@@ -229,20 +227,62 @@ function sanitizeStructuredLlmRoleRoutes(
 ): StructuredLlmProviderSettings {
 	const endpoints = settings.providerEndpoints || [];
 	if (endpoints.length === 0 || !settings.roleRoutes?.length) return settings;
-
-	const validRoutes = settings.roleRoutes.flatMap((route) => {
+	const canonicalRoutes = new Map<StructuredLlmRole, StructuredLlmRoleRoute>();
+	const legacyRoutes = new Map<StructuredLlmRole, StructuredLlmRoleRoute[]>();
+	for (const route of settings.roleRoutes) {
+		const sourceRole: unknown = route.role;
+		const role = resolveLlmRole(sourceRole);
+		if (!role) continue;
 		const validFallbacks = (route.fallbacks || []).filter((target) =>
 			isValidStructuredLlmModelTarget(target, endpoints),
 		);
+		let sanitized: StructuredLlmRoleRoute | null = null;
 		if (isValidStructuredLlmModelTarget(route.primary, endpoints)) {
-			return [{ ...route, fallbacks: validFallbacks }];
+			sanitized = { role, primary: route.primary, fallbacks: validFallbacks };
+		} else {
+			const promotedPrimary = validFallbacks.shift();
+			if (promotedPrimary) {
+				sanitized = {
+					role,
+					primary: promotedPrimary,
+					fallbacks: validFallbacks,
+				};
+			}
 		}
-		const promotedPrimary = validFallbacks.shift();
-		if (!promotedPrimary) return [];
-		return [{ ...route, primary: promotedPrimary, fallbacks: validFallbacks }];
+		if (!sanitized) continue;
+		if (isLlmRole(sourceRole)) {
+			canonicalRoutes.set(role, sanitized);
+		} else {
+			legacyRoutes.set(role, [...(legacyRoutes.get(role) ?? []), sanitized]);
+		}
+	}
+	const validRoutes = LLM_ROLE_ORDER.flatMap((role) => {
+		const canonical = canonicalRoutes.get(role);
+		const legacy = legacyRoutes.get(role) ?? [];
+		const selected = canonical ?? legacy[0];
+		if (!selected) return [];
+		const additional = canonical ? legacy : legacy.slice(1);
+		const targets = uniqueStructuredLlmModelTargets([
+			selected.primary,
+			...selected.fallbacks,
+			...additional.flatMap((route) => [route.primary, ...route.fallbacks]),
+		]);
+		return [{ role, primary: targets[0], fallbacks: targets.slice(1) }];
 	});
 
 	return { ...settings, roleRoutes: validRoutes };
+}
+
+function uniqueStructuredLlmModelTargets(
+	targets: StructuredLlmModelTarget[],
+): StructuredLlmModelTarget[] {
+	const seen = new Set<string>();
+	return targets.filter((target) => {
+		const key = `${target.providerEndpointId}\u0000${target.model}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
 }
 
 function isValidStructuredLlmModelTarget(

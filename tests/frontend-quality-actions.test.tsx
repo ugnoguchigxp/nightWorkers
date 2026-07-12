@@ -15,7 +15,6 @@ const coverageRun = {
 		total: { lines: { pct: 80 } },
 		"src/example.ts": { lines: { pct: 60 }, uncoveredLines: [10] },
 	},
-	coverageGate: null,
 	e2eSummary: null,
 	errorMessage: null,
 	createdAt: "2026-07-10T00:00:00.000Z",

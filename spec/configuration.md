@@ -163,8 +163,6 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 ## Closeout Evidence and Security Oracle
 - Closeout has no environment-variable bypass. It reads persisted Test Mode,
   Review Run, Security Oracle, finding, ownership, and Git evidence.
-- Test settings are Project-scoped at
-  `/api/repositories/:id/settings/test-quality`.
 - Security Intelligence settings are Project-scoped at
   `/api/repositories/:id/settings/security-intelligence`.
 - Missing Security Oracle evidence is not a policy skip. Optional Review Run

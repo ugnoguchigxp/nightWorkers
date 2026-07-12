@@ -19,7 +19,6 @@ export const projectQualityRuns = sqliteTable(
 		outputArtifactId: text("output_artifact_id"),
 		latestOutput: text("latest_output"),
 		coverageSummaryJson: text("coverage_summary_json", { mode: "json" }),
-		coverageGateJson: text("coverage_gate_json", { mode: "json" }),
 		e2eSummaryJson: text("e2e_summary_json", { mode: "json" }),
 		errorMessage: text("error_message"),
 	},

@@ -6,11 +6,6 @@ import {
 	type ProjectQualityCapabilities,
 } from "../../../shared/schemas/quality.schema";
 import { ValidationError } from "../../lib/errors";
-import {
-	evaluateCoverageGate,
-	readCoverageSummaryFile,
-} from "../../services/quality/coverage-gate";
-import { readTestQualitySettingsFile } from "../../services/settings/test-quality-settings";
 
 const COVERAGE_REPORTERS = ["json-summary", "text", "html"] as const;
 const E2E_JSON_OUTPUT_PATH = path.join("test-results", "e2e-results.json");
@@ -72,21 +67,14 @@ export function readCoverageArtifacts(repositoryRoot: string) {
 	if (!fs.existsSync(summaryPath))
 		return {
 			coverageSummary: null,
-			coverageGate: null,
 			error: "coverage-summary.json not found",
 		};
 	try {
-		const coverageSummary = readCoverageSummaryFile(summaryPath);
-		const coverageGate = evaluateCoverageGate(
-			readTestQualitySettingsFile(repositoryRoot),
-			coverageSummary,
-			{ summaryPath },
-		);
-		return { coverageSummary, coverageGate, error: null };
+		const coverageSummary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+		return { coverageSummary, error: null };
 	} catch (error) {
 		return {
 			coverageSummary: null,
-			coverageGate: null,
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}

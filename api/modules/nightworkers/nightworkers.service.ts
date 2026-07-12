@@ -36,7 +36,7 @@ export {
 	saveBlueprintArtifactAdoption,
 	saveBlueprintDesignSettings,
 	saveBlueprintDesignTokenAdoption,
-} from "../blueprint/blueprint.service";
+} from "../blueprint";
 export { generateDataModelArtifact as generateSpecificationStatusDataModel } from "../dataModel/dataModel.service";
 export {
 	acceptDesignQuestionnaireReview,

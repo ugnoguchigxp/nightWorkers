@@ -1,5 +1,5 @@
 import { and, eq, gte, sql } from "drizzle-orm";
-import { type DbTransaction, db } from "../../db/client";
+import { db } from "../../db/client";
 import {
 	llmUsageRecords,
 	llmUsageSummaryBuckets,
@@ -7,84 +7,39 @@ import {
 	llmUsageSummaryWarnings,
 	tasks,
 } from "../../db/schema";
+import {
+	bucketScopeConditions,
+	type LlmUsageSummaryBackfillResult,
+	type LlmUsageSummaryIntegrityResult,
+	mergeSummaryDelta,
+	normalizeInt,
+	normalizeKey,
+	resolveUsageRepositoryId,
+	SUMMARY_COMPARE_FIELDS,
+	type SummaryDelta,
+	type SummaryWarningDelta,
+	summaryDeltaKey,
+	summaryRowKey,
+	summaryTaskDeltaKey,
+	summaryTaskRowKey,
+	TASK_SUMMARY_COMPARE_FIELDS,
+	taskBucketScopeConditions,
+	toDate,
+	toUtcHour,
+	type UsageRecord,
+	type UsageSummaryDbExecutor,
+	warningScopeConditions,
+} from "../../modules/llm-gateway";
 import { calculateUsageCost, findPricingForUsage } from "../pricing";
 
-type DbExecutor = typeof db | DbTransaction;
-type UsageRecord = typeof llmUsageRecords.$inferSelect;
-
-type SummaryWarningDelta = {
-	code: string;
-	detailKey: string;
-	detailJson: Record<string, unknown>;
-	callCount: number;
-};
-
-type SummaryDelta = {
-	bucketHourUtc: Date;
-	repositoryId: string | null;
-	repositoryKey: string;
-	taskId: string;
-	provider: string;
-	model: string | null;
-	modelKey: string;
-	pricingCurrencyCode: string | null;
-	pricingCurrencyKey: string;
-	pricingStatus: "priced" | "manual" | "missing";
-	inputTokens: number;
-	outputTokens: number;
-	cachedInputTokens: number;
-	reasoningOutputTokens: number;
-	systemPromptTokens: number;
-	userPromptTokens: number;
-	stateCardTokens: number;
-	totalTokens: number;
-	totalDurationMs: number;
-	outputDurationMs: number;
-	measuredDurationCallCount: number;
-	callCount: number;
-	measuredCallCount: number;
-	estimatedCallCount: number;
-	mixedCallCount: number;
-	unavailableCallCount: number;
-	pricedCallCount: number;
-	unpricedCallCount: number;
-	manualPricedCallCount: number;
-	estimatedCost: number;
-	inputCost: number;
-	cachedInputCost: number;
-	outputCost: number;
-	reasoningOutputCost: number;
-	pricingUpdatedAt: Date | null;
-	warnings: SummaryWarningDelta[];
-};
-
-export type LlmUsageSummaryBackfillResult = {
-	dryRun: boolean;
-	reset: boolean;
-	selectedRecords: number;
-	existingSummaryBuckets: number;
-	updatedSummaryBuckets: number;
-	updatedWarnings: number;
-};
-
-export type LlmUsageSummaryIntegrityResult = {
-	ok: boolean;
-	checkedRecords: number;
-	expectedBuckets: number;
-	actualBuckets: number;
-	expectedTaskBuckets: number;
-	actualTaskBuckets: number;
-	mismatches: Array<{
-		key: string;
-		field: string;
-		expected: number | string | null;
-		actual: number | string | null;
-	}>;
-};
+export type {
+	LlmUsageSummaryBackfillResult,
+	LlmUsageSummaryIntegrityResult,
+} from "../../modules/llm-gateway";
 
 export async function upsertLlmUsageSummaryForRecord(
 	record: UsageRecord,
-	executor: DbExecutor = db,
+	executor: UsageSummaryDbExecutor = db,
 ) {
 	const delta = await buildLlmUsageSummaryDelta(record, executor);
 	await upsertSummaryDelta(delta, executor);
@@ -274,9 +229,9 @@ function compareSummaryMaps(input: {
 
 async function buildLlmUsageSummaryDelta(
 	record: UsageRecord,
-	executor: DbExecutor = db,
+	executor: UsageSummaryDbExecutor = db,
 ): Promise<SummaryDelta> {
-	const repositoryId = await resolveRepositoryId(record.taskId, executor);
+	const repositoryId = await resolveUsageRepositoryId(record.taskId, executor);
 	const createdAt = toDate(record.createdAt);
 	const pricing = await findPricingForUsage({
 		provider: record.provider,
@@ -389,7 +344,10 @@ async function buildLlmUsageSummaryDelta(
 	};
 }
 
-async function upsertSummaryDelta(delta: SummaryDelta, executor: DbExecutor) {
+async function upsertSummaryDelta(
+	delta: SummaryDelta,
+	executor: UsageSummaryDbExecutor,
+) {
 	const now = new Date();
 	await executor
 		.insert(llmUsageSummaryBuckets)
@@ -547,15 +505,6 @@ function summaryTaskIncrementSet(delta: SummaryDelta, now: Date) {
 	};
 }
 
-async function resolveRepositoryId(taskId: string, executor: DbExecutor) {
-	const [task] = await executor
-		.select({ repositoryId: tasks.repositoryId })
-		.from(tasks)
-		.where(eq(tasks.id, taskId))
-		.limit(1);
-	return task?.repositoryId ?? null;
-}
-
 async function listUsageRecordsForSummary(input: {
 	since?: Date | null;
 	repositoryId?: string | null;
@@ -648,182 +597,4 @@ async function deleteSummaryScope(input: {
 		.where(
 			taskBucketConditions.length ? and(...taskBucketConditions) : undefined,
 		);
-}
-
-function taskBucketScopeConditions(input: {
-	since?: Date | null;
-	repositoryId?: string | null;
-}) {
-	const conditions = [];
-	if (input.since)
-		conditions.push(
-			gte(llmUsageSummaryTaskBuckets.bucketHourUtc, toUtcHour(input.since)),
-		);
-	if (input.repositoryId)
-		conditions.push(
-			eq(
-				llmUsageSummaryTaskBuckets.repositoryKey,
-				normalizeKey(input.repositoryId),
-			),
-		);
-	return conditions;
-}
-
-function bucketScopeConditions(input: {
-	since?: Date | null;
-	repositoryId?: string | null;
-}) {
-	const conditions = [];
-	if (input.since)
-		conditions.push(
-			gte(llmUsageSummaryBuckets.bucketHourUtc, toUtcHour(input.since)),
-		);
-	if (input.repositoryId)
-		conditions.push(
-			eq(
-				llmUsageSummaryBuckets.repositoryKey,
-				normalizeKey(input.repositoryId),
-			),
-		);
-	return conditions;
-}
-
-function warningScopeConditions(input: {
-	since?: Date | null;
-	repositoryId?: string | null;
-}) {
-	const conditions = [];
-	if (input.since)
-		conditions.push(
-			gte(llmUsageSummaryWarnings.bucketHourUtc, toUtcHour(input.since)),
-		);
-	if (input.repositoryId)
-		conditions.push(
-			eq(
-				llmUsageSummaryWarnings.repositoryKey,
-				normalizeKey(input.repositoryId),
-			),
-		);
-	return conditions;
-}
-
-function mergeSummaryDelta(
-	target: Map<string, SummaryDelta>,
-	delta: SummaryDelta,
-	key = summaryDeltaKey(delta),
-) {
-	const current = target.get(key);
-	if (!current) {
-		target.set(key, { ...delta, warnings: [] });
-		return;
-	}
-	for (const field of SUMMARY_COMPARE_FIELDS) {
-		current[field] += delta[field];
-	}
-}
-
-const SUMMARY_COMPARE_FIELDS = [
-	"inputTokens",
-	"outputTokens",
-	"cachedInputTokens",
-	"reasoningOutputTokens",
-	"systemPromptTokens",
-	"userPromptTokens",
-	"stateCardTokens",
-	"totalTokens",
-	"totalDurationMs",
-	"outputDurationMs",
-	"measuredDurationCallCount",
-	"callCount",
-	"measuredCallCount",
-	"estimatedCallCount",
-	"mixedCallCount",
-	"unavailableCallCount",
-	"pricedCallCount",
-	"unpricedCallCount",
-	"manualPricedCallCount",
-	"estimatedCost",
-	"inputCost",
-	"cachedInputCost",
-	"outputCost",
-	"reasoningOutputCost",
-] as const;
-
-const TASK_SUMMARY_COMPARE_FIELDS = [
-	"inputTokens",
-	"outputTokens",
-	"cachedInputTokens",
-	"reasoningOutputTokens",
-	"systemPromptTokens",
-	"userPromptTokens",
-	"stateCardTokens",
-	"totalTokens",
-	"totalDurationMs",
-	"outputDurationMs",
-	"measuredDurationCallCount",
-	"callCount",
-	"pricedCallCount",
-	"estimatedCost",
-] as const satisfies readonly (typeof SUMMARY_COMPARE_FIELDS)[number][];
-
-function summaryDeltaKey(delta: SummaryDelta) {
-	return [
-		delta.bucketHourUtc.getTime(),
-		delta.repositoryKey,
-		delta.provider,
-		delta.modelKey,
-		delta.pricingCurrencyKey,
-		delta.pricingStatus,
-	].join("\u0000");
-}
-
-function summaryTaskDeltaKey(delta: SummaryDelta) {
-	return [
-		delta.bucketHourUtc.getTime(),
-		delta.repositoryKey,
-		delta.taskId,
-		delta.pricingCurrencyKey,
-		delta.pricingStatus,
-	].join("\u0000");
-}
-
-function summaryRowKey(row: typeof llmUsageSummaryBuckets.$inferSelect) {
-	return [
-		row.bucketHourUtc.getTime(),
-		row.repositoryKey,
-		row.provider,
-		row.modelKey,
-		row.pricingCurrencyKey,
-		row.pricingStatus,
-	].join("\u0000");
-}
-
-function summaryTaskRowKey(
-	row: typeof llmUsageSummaryTaskBuckets.$inferSelect,
-) {
-	return [
-		row.bucketHourUtc.getTime(),
-		row.repositoryKey,
-		row.taskId,
-		row.pricingCurrencyKey,
-		row.pricingStatus,
-	].join("\u0000");
-}
-
-function normalizeInt(value: number | null | undefined) {
-	return typeof value === "number" && Number.isFinite(value)
-		? Math.max(0, Math.floor(value))
-		: 0;
-}
-
-function normalizeKey(value: string | null | undefined) {
-	return value?.trim() || "";
-}
-
-function toUtcHour(date: Date) {
-	return new Date(Math.floor(date.getTime() / 3_600_000) * 3_600_000);
-}
-
-function toDate(value: Date | number) {
-	return value instanceof Date ? value : new Date(value);
 }

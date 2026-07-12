@@ -1,7 +1,7 @@
 import { Database } from "lucide-react";
 import type React from "react";
 import { useTranslation } from "react-i18next";
-import type { NightWorkersCurrency } from "../../settings/settingsTypes";
+import type { NightWorkersCurrency } from "../../settings";
 import {
 	formatCompactCurrency,
 	formatCompactNumber,

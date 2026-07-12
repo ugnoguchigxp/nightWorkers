@@ -5,7 +5,7 @@ import {
 	overviewDashboardSchema,
 } from "../../../shared/schemas/overview.schema";
 import type { OverviewRange } from "../nightworkers/routing/workbench-route-state";
-import { fetchStartupPreflight } from "../settings/settingsCommands";
+import { fetchStartupPreflight } from "../settings";
 import { fetchOverview } from "./overviewCommands";
 
 type StartupPreflightView = {

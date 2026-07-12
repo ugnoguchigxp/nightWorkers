@@ -28,10 +28,6 @@ import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
 import {
-	applyCoverageAutonomyFallback,
-	readRuntimeFailureTerminalReason,
-} from "./coverage-autonomy";
-import {
 	parseChangedPathsFromDiff,
 	updateCommitOwnershipEvidence,
 } from "./git-ownership";
@@ -44,6 +40,7 @@ import {
 } from "./queues";
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
+import { readRuntimeFailureTerminalReason } from "./runtime-failure";
 import { appendTestModeNextStepLink } from "./runtime-final-report";
 
 export {
@@ -284,23 +281,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				return;
 			}
 
-			const preliminaryOutcome = outcomeFromRuntimeResult(runtimeResult);
-			const todosBeforeCoverageFallback = await repo.listTaskRunTodosForRun(
-				run.id,
-			);
-			const coverageFallbackBlockedByOpenTodos =
-				preliminaryOutcome.status === "completed" &&
-				listOpenTodos(todosBeforeCoverageFallback).length > 0 &&
-				!isPlanningOnlyRun(todosBeforeCoverageFallback);
-			if (!coverageFallbackBlockedByOpenTodos) {
-				runtimeResult = await applyCoverageAutonomyFallback({
-					runtimeResult,
-					repoRoot: repoInfo.localPath,
-					safetyPolicy: repoInfo.safetyPolicy || undefined,
-					sink,
-				});
-			}
-
 			const statusBeforeFinalize = latestRunBeforeFinalize?.status || "running";
 			const transitionTable: Record<string, readonly string[]> =
 				runStatusTransitionTable;
@@ -346,9 +326,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			});
 
 			const outcome = outcomeFromRuntimeResult(runtimeResult);
-			let finalTodos = coverageFallbackBlockedByOpenTodos
-				? todosBeforeCoverageFallback
-				: await repo.listTaskRunTodosForRun(run.id);
+			let finalTodos = await repo.listTaskRunTodosForRun(run.id);
 			if (outcome.status === "needs_human") {
 				await markRunningTodosNeedsHuman({
 					runId: run.id,

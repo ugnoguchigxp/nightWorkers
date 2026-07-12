@@ -6,7 +6,6 @@ import {
 	PlugZap,
 	type Settings,
 	ShieldCheck,
-	TestTube2,
 	Workflow,
 } from "lucide-react";
 import type { GeneralSettings } from "../nightworkers/types";
@@ -17,7 +16,6 @@ export type SettingsSectionId =
 	| "appearance"
 	| "llm-providers"
 	| "llm-routing"
-	| "test"
 	| "security-intelligence"
 	| "hooks"
 	| "mcp";
@@ -109,12 +107,6 @@ export const settingsSections: Array<{
 		labelKey: "settings.section.llmRouting",
 		descriptionKey: "settings.section.llmRoutingDescription",
 		icon: Workflow,
-	},
-	{
-		id: "test",
-		labelKey: "settings.section.test",
-		descriptionKey: "settings.section.testDescription",
-		icon: TestTube2,
 	},
 	{
 		id: "security-intelligence",

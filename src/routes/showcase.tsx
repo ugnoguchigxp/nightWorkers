@@ -9,7 +9,7 @@ import {
 	PreviewField,
 	PreviewProgress,
 	PreviewTable,
-} from "../modules/blueprint-preview/BlueprintPreviewPrimitives";
+} from "../modules/blueprint-preview";
 
 export const Route = createFileRoute("/showcase")({
 	component: ShowcasePage,

@@ -1,5 +1,5 @@
 import type { ProjectQueueViewMode } from "../../queue/projectQueueTypes";
-import type { SettingsSectionId } from "../../settings/SettingsForms";
+import type { SettingsSectionId } from "../../settings";
 import type { PlanWorkspaceTab } from "../../specification";
 import type { ProjectDetailTab } from "../components/project-detail/types";
 
@@ -33,7 +33,6 @@ const settingsSections = [
 	"appearance",
 	"llm-providers",
 	"llm-routing",
-	"test",
 	"security-intelligence",
 	"hooks",
 	"mcp",
