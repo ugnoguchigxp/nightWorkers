@@ -10,6 +10,7 @@ import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
+	implementationQueueEntries,
 	repositories,
 	taskGitWorkspaces,
 	taskRunMergeRecords,
@@ -18,6 +19,7 @@ import {
 import {
 	ensureTaskGitWorkspace,
 	provisionTaskGitWorkspace,
+	releaseProvisionedTaskWorkspace,
 } from "../api/modules/gitworktree/task-git-workspace.service";
 import {
 	createMergeRecordForCommittedRun,
@@ -400,5 +402,68 @@ describe("Plan-time Git workspace and Review merge", () => {
 			executeTaskRunMerge({ runId: run.id, expectedVersion: 1 }),
 		).rejects.toMatchObject({ code: "merge_source_changed" });
 		expect(await git(root, ["rev-parse", "HEAD"])).toBe(targetBefore);
+	});
+
+	it("does not release a Queue entry with another Task workspace", async () => {
+		const { project, task } = await fixture();
+		await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `release-owner:${task.id}`,
+		});
+		const ready = await provisionTaskGitWorkspace(task.id);
+		const otherTask = await nightworkersRepo.createTask({
+			repositoryId: project.id,
+			title: "Other queued task",
+			status: "queued",
+		});
+		const [entry] = await db
+			.insert(implementationQueueEntries)
+			.values({
+				taskId: otherTask.id,
+				repositoryId: project.id,
+				status: "queued",
+				claimReady: false,
+				workspaceRequired: true,
+			})
+			.returning();
+		await expect(
+			releaseProvisionedTaskWorkspace({
+				entryId: entry.id,
+				workspaceId: ready.id,
+			}),
+		).rejects.toMatchObject({ code: "workspace_queue_release_lost" });
+	});
+
+	it("requires an explicit merge decision when the reviewed source is already integrated", async () => {
+		const { run, root, ready, task } =
+			await reviewedFixture("fast_forward_only");
+		await git(root, ["merge", "--ff-only", ready.sourceBranch]);
+		const preview = await previewTaskRunMerge({
+			runId: run.id,
+			expectedVersion: 0,
+		});
+		expect(preview).toMatchObject({
+			status: "merge_ready",
+			previewEvidenceJson: { alreadyIntegrated: true },
+		});
+		const [beforeDecision] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, task.id));
+		expect(beforeDecision?.status).not.toBe("completed");
+		const merged = await executeTaskRunMerge({
+			runId: run.id,
+			expectedVersion: 1,
+		});
+		expect(merged).toMatchObject({
+			status: "merged",
+			mergeOrigin: "already_ancestor",
+		});
+		const [completed] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, task.id));
+		expect(completed?.status).toBe("completed");
 	});
 });

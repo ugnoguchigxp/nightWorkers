@@ -696,6 +696,60 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain("night queueに登録");
 	});
 
+	it("keeps implementation actions visible while Mission Pilot review correction is pending", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={
+					{
+						blueprintArtifacts: [{ id: "blueprint-1", title: "Blueprint" }],
+						dataModelArtifacts: [{ id: "data-model-1", title: "Data Model" }],
+					} as never
+				}
+				missionPilotPlanProgress={
+					{
+						desiredState: "stopped",
+						steps: [
+							{ key: "questionnaire", status: "completed" },
+							{ key: "blueprint", status: "completed" },
+							{ key: "data_model", status: "completed" },
+							{ key: "feature_plan", status: "completed" },
+						],
+						review: { status: "revision_required" },
+					} as never
+				}
+				questionnaireSession={
+					{
+						id: "questionnaire-1",
+						status: "accepted",
+						answers: [],
+						questionSets: [],
+					} as never
+				}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={true}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+				onQueueSession={vi.fn()}
+				onAddToQueue={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("今すぐ実装開始");
+		expect(markup).toContain("キューに追加");
+		expect(markup).toContain(
+			"Mission Pilotを再生してレビュー修正を完了してください。",
+		);
+		expect(
+			markup.match(
+				/<button[^>]*disabled=""[^>]*>(今すぐ実装開始|キューに追加)<\/button>/g,
+			) || [],
+		).toHaveLength(2);
+	});
+
 	it("disables regeneration and implementation actions for implemented tasks", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView

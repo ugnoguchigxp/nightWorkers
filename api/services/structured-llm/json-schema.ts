@@ -7,6 +7,10 @@ export function normalizeStructuredOutputJsonSchema(value: unknown): unknown {
 	const normalized: Record<string, unknown> = {};
 	for (const [key, child] of Object.entries(source)) {
 		if (key === "$schema" || key === "default") continue;
+		if (key === "oneOf") {
+			normalized.anyOf = normalizeStructuredOutputJsonSchema(child);
+			continue;
+		}
 		normalized[key] = normalizeStructuredOutputJsonSchema(child);
 	}
 

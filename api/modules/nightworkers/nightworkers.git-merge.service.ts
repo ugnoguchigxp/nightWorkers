@@ -213,7 +213,7 @@ export async function previewTaskRunMerge(input: {
 			},
 		});
 	}
-	if (record.strategy === "fast_forward_only") {
+	if (record.strategy === "fast_forward_only" && !ancestor) {
 		const canFastForward = await execFileAsync(
 			"git",
 			["merge-base", "--is-ancestor", targetHead, record.sourceCommitSha],
@@ -235,20 +235,15 @@ export async function previewTaskRunMerge(input: {
 	return mergeRepo.compareAndSetTaskRunMergeRecord({
 		id: record.id,
 		expectedVersion: input.expectedVersion,
-		data: ancestor
-			? {
-					status: "merged",
-					decision: "merge",
-					observedTargetSha: targetHead,
-					mergeOrigin: "already_ancestor",
-					targetHeadAfter: targetHead,
-					mergedAt: new Date(),
-				}
-			: {
-					status: "merge_ready",
-					observedTargetSha: targetHead,
-					previewEvidenceJson: { sourceHead, targetHead },
-				},
+		data: {
+			status: "merge_ready",
+			observedTargetSha: targetHead,
+			previewEvidenceJson: {
+				sourceHead,
+				targetHead,
+				alreadyIntegrated: ancestor,
+			},
+		},
 	});
 }
 
@@ -442,6 +437,13 @@ async function executeTaskRunMergeUnlocked(input: {
 			"Target worktree has uncommitted changes",
 		);
 	try {
+		const alreadyIntegrated = await execFileAsync(
+			"git",
+			["merge-base", "--is-ancestor", record.sourceCommitSha, targetHead],
+			{ cwd: targetRoot },
+		)
+			.then(() => true)
+			.catch(() => false);
 		const args =
 			record.strategy === "squash"
 				? ["merge", "--squash", record.sourceCommitSha]
@@ -456,37 +458,13 @@ async function executeTaskRunMergeUnlocked(input: {
 				`Merge reviewed task ${record.taskId.slice(0, 8)}`,
 			]);
 		const after = await git(targetRoot, ["rev-parse", "HEAD"]);
-		const updated = await mergeRepo.compareAndSetTaskRunMergeRecord({
-			id: record.id,
+		const updated = await mergeRepo.persistMergedLifecycle({
+			record,
 			expectedVersion: input.expectedVersion,
-			data: {
-				decision: "merge",
-				status: "merged",
-				mergeOrigin: "local",
-				mergeCommitSha: after,
-				targetHeadAfter: after,
-				mergedAt: new Date(),
-				decidedAt: new Date(),
-			},
+			mergeOrigin: alreadyIntegrated ? "already_ancestor" : "local",
+			targetHeadAfter: after,
+			mergeCommitSha: after,
 		});
-		if (!updated)
-			throw new AppError(
-				409,
-				"merge_record_changed",
-				"Merge record changed during merge",
-			);
-		await db
-			.update(taskGitWorkspaces)
-			.set({ status: "merged", updatedAt: new Date() })
-			.where(eq(taskGitWorkspaces.id, record.workspaceId));
-		await db
-			.update(tasks)
-			.set({
-				status: "completed",
-				completedAt: new Date(),
-				updatedAt: new Date(),
-			})
-			.where(eq(tasks.id, record.taskId));
 		const [workspace] = await db
 			.select()
 			.from(taskGitWorkspaces)

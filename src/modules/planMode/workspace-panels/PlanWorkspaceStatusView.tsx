@@ -267,10 +267,16 @@ export function PlanWorkspaceStatusView({
 			};
 		});
 	const allStepsDone = steps.every((step) => step.done);
-	const planReady =
+	const implementationActionsReady =
 		allStepsDone &&
 		(!missionPilotPlanProgress ||
 			missionPilotPlanProgress.review?.status === "passed");
+	const implementationActionsBlockedReason =
+		allStepsDone && !implementationActionsReady
+			? missionPilotPlanProgress?.desiredState === "stopped"
+				? "Mission Pilotを再生してレビュー修正を完了してください。"
+				: "Mission Pilotのレビューが完了すると実装できます。"
+			: null;
 	const nextAutoGenerateStep = steps.find(
 		(step) => step.autoGenerate && !step.done && !step.disabled,
 	);
@@ -408,22 +414,37 @@ export function PlanWorkspaceStatusView({
 					);
 				})}
 			</div>
-			{planReady ? (
-				<div className="mt-4 flex flex-wrap justify-center gap-3">
-					<StatusActionButton
-						label="今すぐ実装開始"
-						busy={busyAction === "start-session"}
-						disabled={!onQueueSession || isImplementationLocked}
-						onClick={() => onQueueSession?.()}
-						size="lg"
-					/>
-					<StatusActionButton
-						label="キューに追加"
-						busy={busyAction === "add-to-queue"}
-						disabled={!onAddToQueue || isImplementationLocked}
-						onClick={() => onAddToQueue?.()}
-						size="lg"
-					/>
+			{allStepsDone ? (
+				<div className="mt-4">
+					<div className="flex flex-wrap justify-center gap-3">
+						<StatusActionButton
+							label="今すぐ実装開始"
+							busy={busyAction === "start-session"}
+							disabled={
+								!onQueueSession ||
+								isImplementationLocked ||
+								!implementationActionsReady
+							}
+							onClick={() => onQueueSession?.()}
+							size="lg"
+						/>
+						<StatusActionButton
+							label="キューに追加"
+							busy={busyAction === "add-to-queue"}
+							disabled={
+								!onAddToQueue ||
+								isImplementationLocked ||
+								!implementationActionsReady
+							}
+							onClick={() => onAddToQueue?.()}
+							size="lg"
+						/>
+					</div>
+					{implementationActionsBlockedReason ? (
+						<div className="nightworkers-structured-artifact-warning mt-2 text-center text-xs">
+							{implementationActionsBlockedReason}
+						</div>
+					) : null}
 				</div>
 			) : null}
 		</div>

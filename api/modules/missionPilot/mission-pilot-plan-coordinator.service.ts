@@ -13,6 +13,7 @@ import { db } from "../../db/client";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
 import { readGeneralSettings } from "../../services/settings/general-settings";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { getLatestVerificationDocumentForTask } from "../nightworkers/nightworkers.verification.repository";
 import { getDesignQuestionnaireSession } from "../questionnaire/questionnaire.service";
@@ -233,7 +234,7 @@ async function reviewCurrentPlan(
 			taskId,
 			role: "mission_pilot",
 			schemaName: "mission_pilot_plan_review",
-			schema: z.toJSONSchema(missionPilotPlanReviewSchema),
+			schema: buildMissionPilotPlanReviewResponseJsonSchema(),
 		},
 	);
 	return {
@@ -242,6 +243,12 @@ async function reviewCurrentPlan(
 		contextRevision: session.contextRevision,
 		contextDigest: session.contextDigest,
 	};
+}
+
+export function buildMissionPilotPlanReviewResponseJsonSchema() {
+	return normalizeStructuredOutputJsonSchema(
+		z.toJSONSchema(missionPilotPlanReviewSchema),
+	);
 }
 
 async function executeArtifactCorrections(input: {

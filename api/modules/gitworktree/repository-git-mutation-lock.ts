@@ -42,9 +42,28 @@ export async function withRepositoryGitMutationLock<T>(
 			"repository_git_mutation_locked",
 			"Repository Git mutation is already in progress",
 		);
+	const renewal = setInterval(() => {
+		const renewedAt = new Date();
+		void db
+			.update(repositoryGitMutationLeases)
+			.set({
+				expiresAt: new Date(renewedAt.getTime() + 120_000),
+				updatedAt: renewedAt,
+			})
+			.where(
+				and(
+					eq(repositoryGitMutationLeases.repositoryId, repositoryId),
+					eq(repositoryGitMutationLeases.ownerId, ownerId),
+					eq(repositoryGitMutationLeases.leaseVersion, lease.leaseVersion),
+				),
+			)
+			.catch(() => undefined);
+	}, 30_000);
+	renewal.unref();
 	try {
 		return await fn();
 	} finally {
+		clearInterval(renewal);
 		await db
 			.delete(repositoryGitMutationLeases)
 			.where(

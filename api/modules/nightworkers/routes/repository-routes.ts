@@ -1,11 +1,11 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { projectGitIntegrationPolicySchema } from "../../../../shared/schemas/git-integration.schema";
 import {
 	createRepositorySchema,
 	repositorySchema,
 	safetyPolicySchema,
 	updateRepositoryGitIntegrationSchema,
 } from "../../../../shared/schemas/nightworkers.schema";
-import { projectGitIntegrationPolicySchema } from "../../../../shared/schemas/git-integration.schema";
 
 export const listRepositoriesRoute = createRoute({
 	method: "get",
@@ -85,8 +85,7 @@ export const updateRepositoryRoute = createRoute({
 						safetyPolicy: safetyPolicySchema.optional(),
 						branch:
 							updateRepositoryGitIntegrationSchema.shape.branch.optional(),
-						gitIntegrationPolicy:
-							projectGitIntegrationPolicySchema.optional(),
+						gitIntegrationPolicy: projectGitIntegrationPolicySchema.optional(),
 						expectedGitIntegrationVersion:
 							updateRepositoryGitIntegrationSchema.shape.expectedGitIntegrationVersion.optional(),
 					}),

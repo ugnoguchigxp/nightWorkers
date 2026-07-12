@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
 	defaultProjectGitIntegrationPolicy,
 	projectGitIntegrationPolicySchema,
@@ -171,7 +171,9 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 			const existing = await listRepositoryWorktrees(workspace.repositoryId);
 			const adopted = existing.worktrees.find(
 				(item) =>
-					item.branch === workspace.sourceBranch && item.head === targetBaseSha,
+					item.branch === workspace.sourceBranch &&
+					item.head === targetBaseSha &&
+					item.canonicalPath === requestedPath,
 			);
 			if (adopted) return adopted;
 			throw error;
@@ -180,7 +182,15 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 			const [updated] = await tx
 				.update(tasks)
 				.set({ worktreePath: created.canonicalPath, updatedAt: new Date() })
-				.where(eq(tasks.id, task.id))
+				.where(
+					and(
+						eq(tasks.id, task.id),
+						or(
+							isNull(tasks.worktreePath),
+							eq(tasks.worktreePath, created.canonicalPath),
+						),
+					),
+				)
 				.returning();
 			if (!updated)
 				throw new AppError(
@@ -223,14 +233,18 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 		});
 		return ready;
 	} catch (error) {
-		await workspaceRepo.updateTaskGitWorkspace(workspace.id, {
-			status: "provision_failed",
-			lastErrorCode:
-				error instanceof AppError ? error.code : "workspace_provision_failed",
-			lastErrorMessage:
-				error instanceof Error
-					? error.message
-					: "Workspace provisioning failed",
+		await workspaceRepo.transitionTaskGitWorkspace({
+			id: workspace.id,
+			expectedStatus: "provisioning",
+			data: {
+				status: "provision_failed",
+				lastErrorCode:
+					error instanceof AppError ? error.code : "workspace_provision_failed",
+				lastErrorMessage:
+					error instanceof Error
+						? error.message
+						: "Workspace provisioning failed",
+			},
 		});
 		throw error;
 	}
@@ -300,6 +314,8 @@ export async function releaseProvisionedTaskWorkspace(input: {
 			.where(
 				and(
 					eq(implementationQueueEntries.id, input.entryId),
+					eq(implementationQueueEntries.taskId, workspace.taskId),
+					eq(implementationQueueEntries.repositoryId, workspace.repositoryId),
 					eq(implementationQueueEntries.claimReady, false),
 				),
 			)

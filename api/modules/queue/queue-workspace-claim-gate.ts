@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
 	type implementationQueueEntries,
 	taskGitWorkspaces,
@@ -20,7 +20,13 @@ export async function workspaceClaimSkipEvidence(
 		const [workspace] = await tx
 			.select({ status: taskGitWorkspaces.status })
 			.from(taskGitWorkspaces)
-			.where(eq(taskGitWorkspaces.id, candidate.workspaceId))
+			.where(
+				and(
+					eq(taskGitWorkspaces.id, candidate.workspaceId),
+					eq(taskGitWorkspaces.taskId, candidate.taskId),
+					eq(taskGitWorkspaces.repositoryId, candidate.repositoryId),
+				),
+			)
 			.limit(1);
 		ready = Boolean(
 			workspace && ["ready", "active"].includes(workspace.status),

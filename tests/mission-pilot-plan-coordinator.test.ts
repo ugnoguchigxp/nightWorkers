@@ -79,7 +79,10 @@ vi.mock(
 	}),
 );
 
-const { runMissionPilotPlanPipeline } = await import(
+const {
+	buildMissionPilotPlanReviewResponseJsonSchema,
+	runMissionPilotPlanPipeline,
+} = await import(
 	"../api/modules/missionPilot/mission-pilot-plan-coordinator.service"
 );
 
@@ -107,6 +110,17 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot plan coordinator", () => {
+	it("builds a Codex-compatible plan review response schema", () => {
+		const schema = buildMissionPilotPlanReviewResponseJsonSchema();
+		const serialized = JSON.stringify(schema);
+
+		expect(serialized).not.toContain('"$schema"');
+		expect(serialized).not.toContain('"default"');
+		expect(serialized).not.toContain('"oneOf"');
+		expect(serialized).toContain('"anyOf"');
+		expectAllObjectPropertiesRequired(schema);
+	});
+
 	it("does not churn Session version before Questionnaire completion", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
@@ -515,3 +529,22 @@ describe("Mission Pilot plan coordinator", () => {
 		).toMatchObject({ phase: "queued", desiredState: "playing" });
 	});
 });
+
+function expectAllObjectPropertiesRequired(schema: unknown): void {
+	if (!schema || typeof schema !== "object") return;
+	if (Array.isArray(schema)) {
+		for (const item of schema) expectAllObjectPropertiesRequired(item);
+		return;
+	}
+	const record = schema as Record<string, unknown>;
+	if (record.type === "object" && record.properties) {
+		const propertyKeys = Object.keys(
+			record.properties as Record<string, unknown>,
+		);
+		expect(record.required).toEqual(propertyKeys);
+		expect(record.additionalProperties).toBe(false);
+	}
+	for (const value of Object.values(record)) {
+		expectAllObjectPropertiesRequired(value);
+	}
+}

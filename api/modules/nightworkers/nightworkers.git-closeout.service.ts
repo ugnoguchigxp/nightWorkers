@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
+import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as queueRepo from "../queue/queue.repository";
 import {
 	type ReviewCloseoutEvidence,
@@ -395,7 +396,9 @@ export async function commitRunGitCloseout(
 ) {
 	const context = await loadCloseoutContext(runId);
 	return withRepositoryCloseoutLock(context.repository.id, () =>
-		commitRunGitCloseoutLocked(runId, input),
+		withRepositoryGitMutationLock(context.repository.id, "commit", () =>
+			commitRunGitCloseoutLocked(runId, input),
+		),
 	);
 }
 
@@ -523,7 +526,9 @@ async function commitRunGitCloseoutLocked(
 export async function pushRunGitCloseout(runId: string) {
 	const context = await loadCloseoutContext(runId);
 	return withRepositoryCloseoutLock(context.repository.id, () =>
-		pushRunGitCloseoutLocked(runId),
+		withRepositoryGitMutationLock(context.repository.id, "commit", () =>
+			pushRunGitCloseoutLocked(runId),
+		),
 	);
 }
 
