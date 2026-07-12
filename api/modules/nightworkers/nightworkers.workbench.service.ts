@@ -1,12 +1,7 @@
 import { z } from "zod";
-import { toDeepRecord } from "../../../shared/json-record";
-import {
-	type PlanModeWorkspace,
-	planModeRegenerationTargetSchema,
-} from "../../../shared/schemas/plan-mode-artifact.schema";
-import { AppError, NotFoundError } from "../../lib/errors";
+import { planModeRegenerationTargetSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
+import { AppError } from "../../lib/errors";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
-import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
@@ -15,394 +10,31 @@ import {
 	callStructuredJsonLLM,
 	type SupervisorLlmDebugEvent,
 } from "../../services/structured-llm";
-import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
+import type { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import type { StructuredLlmRole } from "../../services/structured-llm/settings";
-import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createDesignQuestionnaire } from "../questionnaire/questionnaire.service";
-import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
-import {
-	assertRunnableWorkbenchTask,
-	hasImplementationPlanEvidence,
-} from "./nightworkers.planning-helpers.service";
-import { queueTask } from "./nightworkers.queue-management.service";
+import { hasImplementationPlanEvidence } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
-import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing";
-export async function createPlanningArtifactMessageIfNeeded(input: {
-	taskId: string;
-	runId: string;
-	finalReport: string;
-}) {
-	const messages = await repo.listTaskMessages(input.taskId);
-	const runStartedMessage = [...messages].reverse().find((message) => {
-		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-		return (
-			message.role === "system" &&
-			metadata.intent === "run_started" &&
-			metadata.source === "workbench"
-		);
-	});
-	const runStartedMetadata = (runStartedMessage?.metadataJson || {}) as Record<
-		string,
-		unknown
-	>;
-	const intakeJobSelection = toDeepRecord(
-		runStartedMetadata.intakeJobSelection,
-	);
-	if (String(intakeJobSelection.jobType) !== "planning") {
-		const run = await repo.getTaskRun(input.runId);
-		const runContext =
-			run?.contextSnapshot &&
-			typeof run.contextSnapshot === "object" &&
-			!Array.isArray(run.contextSnapshot)
-				? (run.contextSnapshot as Record<string, unknown>)
-				: {};
-		if (runContext.executionMode !== "planning") return;
-	}
-	const alreadyPublished = messages.some((message) => {
-		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-		return (
-			message.messageType === "markdown_document" &&
-			metadata.intent === "implementation_plan" &&
-			metadata.sourceRunId === input.runId
-		);
-	});
-	if (alreadyPublished) return;
-	const message = await repo.createTaskMessage({
-		taskId: input.taskId,
-		runId: input.runId,
-		role: "assistant",
-		content: input.finalReport,
-		messageType: "markdown_document",
-		payloadJson: {
-			intent: "implementation_plan",
-			title: "Implementation Plan",
-			source: "workbench-planning-run",
-			sourceRunId: input.runId,
-			routingHypothesis: runStartedMetadata.routingHypothesis,
-			intakeJobSelection,
-			markdownDocumentData: {
-				title: "Implementation Plan",
-				content: input.finalReport,
-			},
-		},
-	});
-	if (!message) return;
-	await attachImplementationPlanVerificationMetadata({
-		taskId: input.taskId,
-		runId: input.runId,
-		specMessageId: message.id,
-		finalReport: input.finalReport,
-		sourceMessageIds: [...messages.map((item) => item.id), message.id],
-		baseMetadata: toDeepRecord(message.metadataJson),
-	});
-}
-async function attachImplementationPlanVerificationMetadata(input: {
-	taskId: string;
-	runId: string;
-	specMessageId: string;
-	finalReport: string;
-	sourceMessageIds: string[];
-	baseMetadata: Record<string, unknown>;
-}) {
-	const task = await repo.getTask(input.taskId);
-	if (!task) throw new NotFoundError("Task not found");
-	const generatedAt = new Date().toISOString();
-	const workspace = buildImplementationPlanVerificationWorkspace({
-		taskId: input.taskId,
-		repositoryId: task.repositoryId,
-		generatedAt,
-		specMessageId: input.specMessageId,
-	});
-	const sidecar = buildSpecificationVerificationSidecar({
-		taskId: input.taskId,
-		specId: input.specMessageId,
-		specPath: "spec/implementation-plan.md",
-		content: input.finalReport,
-		sourceMessageIds: input.sourceMessageIds,
-		workspace,
-		generatedAt,
-	});
-	const verificationMessage = await repo.createTaskMessage({
-		taskId: input.taskId,
-		runId: input.runId,
-		role: "assistant",
-		content: JSON.stringify(sidecar.document, null, 2),
-		messageType: "verification_json",
-		payloadJson: {
-			intent: "implementation_plan_verification",
-			artifactKind: "verification_json",
-			title: "Implementation Plan Verification",
-			sourceImplementationPlanMessageId: input.specMessageId,
-			verificationDocument: sidecar.document,
-		},
-	});
-	const verificationArtifactId = verificationMessage
-		? `verification-json-${verificationMessage.id}`
-		: null;
-	const verificationDocument = await createVerificationDocumentFromSpec({
-		taskId: input.taskId,
-		runId: input.runId,
-		specMessageId: input.specMessageId,
-		specArtifactId: `implementation-plan-${input.specMessageId}`,
-		verificationArtifactId,
-		sourceSpecPath: sidecar.document.specPath,
-		document: sidecar.document,
-	});
-	await repo.updateTaskMessageMetadata(input.specMessageId, {
-		...input.baseMetadata,
-		verificationDocumentId: verificationDocument.id,
-		verificationArtifactId,
-		verificationSidecarMessageId: verificationMessage?.id ?? null,
-		markdownDocumentData: {
-			...toDeepRecord(input.baseMetadata.markdownDocumentData),
-			verificationDocumentId: verificationDocument.id,
-		},
-	});
-	if (!verificationMessage) return;
-	await repo.updateTaskMessageMetadata(verificationMessage.id, {
-		...toDeepRecord(verificationMessage.metadataJson),
-		verificationDocumentId: verificationDocument.id,
-		verificationArtifactId,
-		sourceImplementationPlanMessageId: input.specMessageId,
-	});
-}
-function buildImplementationPlanVerificationWorkspace(input: {
-	taskId: string;
-	repositoryId: string;
-	generatedAt: string;
-	specMessageId: string;
-}): PlanModeWorkspace {
-	return {
-		taskId: input.taskId,
-		repositoryId: input.repositoryId,
-		generatedAt: input.generatedAt,
-		featurePlanArtifacts: [],
-		blueprintArtifacts: [],
-		dataModelArtifacts: [],
-		dedicatedViewArtifacts: [],
-		questionnaireSessions: [],
-		decisionReviews: [],
-		viewDecisions: [],
-		implementationReferences: [
-			{
-				id: `implementation-plan-${input.specMessageId}`,
-				kind: "implementation_reference",
-				title: "Implementation Plan",
-				sourceMessageId: input.specMessageId,
-				taskId: input.taskId,
-			},
-		],
-	};
-}
-export async function appendTaskMessage(
-	id: string,
-	prompt: string,
-	metadata?: Record<string, unknown>,
-) {
-	const task = await repo.getTask(id);
-	if (!task) throw new NotFoundError("Task not found");
-	const trimmed = prompt.trim();
-	if (!trimmed)
-		throw new AppError(400, "EMPTY_PROMPT", "Prompt must not be empty");
-	const existingMessages = await repo.listTaskMessages(id);
-	const hasAnyUserMessage = existingMessages.some(
-		(message) => message.role === "user",
-	);
-	await repo.createTaskMessage({
-		taskId: id,
-		role: "user",
-		content: trimmed,
-		messageType: "text",
-		payloadJson: metadata,
-	});
-	if (task.title === "New Session" && !hasAnyUserMessage) {
-		const firstPromptTitle = trimmed.replace(/\s+/g, " ").slice(0, 40);
-		await repo.updateTask(id, { title: firstPromptTitle });
-	}
-	const latestTask = await repo.getTask(id);
-	if (!latestTask) throw new NotFoundError("Task not found");
-	return latestTask;
-}
-export type WorkbenchChatIntent =
-	| "intake"
-	| "draft"
-	| "feature_plan"
-	| "create_task"
-	| "queue"
-	| "run_task"
-	| "adjust_running"
-	| "review_followup"
-	| "learning_capture"
-	| "design_component"
-	| "design_blueprint_data";
 
-export async function appendWorkbenchMessage(
-	id: string,
-	input: {
-		prompt: string;
-		intent?: WorkbenchChatIntent;
-		waitForIntake?: boolean;
-		artifactContext?: WorkbenchArtifactContext | null;
-		providerEndpointId?: string;
-		model?: string;
-		thinkingDepth?: "low" | "medium" | "high" | "very_high";
-	},
-) {
-	const intent = input.intent || "intake";
-	const task = await repo.getTask(id);
-	if (!task) throw new NotFoundError("Task not found");
-	const prompt = input.prompt.trim();
-	if (!prompt)
-		throw new AppError(400, "EMPTY_PROMPT", "Prompt must not be empty");
-	const artifactContext = input.artifactContext || null;
-	const llmSelection =
-		input.model || input.providerEndpointId || input.thinkingDepth
-			? {
-					model: input.model || null,
-					providerEndpointId: input.providerEndpointId || null,
-					thinkingDepth: input.thinkingDepth || null,
-				}
-			: null;
-	const llmRouteOverride = normalizeStructuredLlmModelTarget(llmSelection);
-	const existingMessages = await repo.listTaskMessages(id);
-	const messageMetadata =
-		artifactContext || llmSelection
-			? {
-					...(artifactContext
-						? { intent: "artifact_context_instruction", artifactContext }
-						: {}),
-					source: "workbench",
-					...(llmSelection ? { llmSelection } : {}),
-				}
-			: undefined;
+export type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
+export {
+	appendTaskMessage,
+	appendWorkbenchMessage,
+	createPlanningArtifactMessageIfNeeded,
+	resumeWorkbenchIntakeMessage,
+} from "./nightworkers.workbench-message.service";
 
-	if (intent === "run_task") {
-		assertRunnableWorkbenchTask(task, existingMessages);
-		await appendTaskMessage(id, prompt, messageMetadata);
-		const run = await startTaskRun(id, {
-			executionMode: "implementation",
-			executionModeSource: "workbench_run_task",
-			routeOverride: llmRouteOverride,
-		});
-		return {
-			task: await repo.getTask(id),
-			run,
-			messages: await repo.listTaskMessages(id),
-		};
-	}
+import type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
 
-	if (intent === "design_blueprint_data") {
-		await appendTaskMessage(id, prompt, messageMetadata);
-		await generateDataModelArtifact(id, {
-			prompt,
-			routeOverride: llmRouteOverride,
-		});
-		const updated = await repo.updateTask(id, {
-			objective: task.objective || prompt,
-			status: task.status === "draft" ? "ready" : task.status,
-		});
-		return {
-			task: updated,
-			run: null,
-			messages: await repo.listTaskMessages(id),
-		};
-	}
+export {
+	ensureDesignQuestionnaireReadyMessage,
+	prepareMissionPilotPlanModeIntake,
+} from "./nightworkers.workbench-plan-intake.service";
 
-	if (
-		intent === "intake" &&
-		isPlanModeArtifactRegenerationContext(artifactContext)
-	) {
-		await appendTaskMessage(id, prompt, messageMetadata);
-		const metadata = artifactContext.metadata || {};
-		const result = await executePlanModeArtifactCorrection({
-			taskId: id,
-			prompt,
-			target: planModeRegenerationTargetSchema.parse(metadata.planModeTarget),
-			focus: metadata.planModeFocus,
-			correlationId: metadata.correlationId,
-			questionnaireSessionId: metadata.questionnaireSessionId ?? null,
-			featurePlanMessageId: metadata.featurePlanMessageId ?? null,
-			sourceBlueprintMessageId: metadata.sourceBlueprintMessageId ?? null,
-			sourceDataModelMessageId: metadata.sourceDataModelMessageId ?? null,
-			routeOverride: llmRouteOverride,
-		});
-		return {
-			task: (await repo.getTask(id)) || task,
-			run: null,
-			messages: await repo.listTaskMessages(id),
-			workspace: result.workspace,
-		};
-	}
-
-	await appendTaskMessage(id, prompt, messageMetadata);
-
-	if (intent === "queue" || intent === "create_task") {
-		const queued = await queueTask(id);
-		return {
-			task: queued,
-			run: null,
-			messages: await repo.listTaskMessages(id),
-		};
-	}
-
-	const waitForIntake =
-		input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
-	if (waitForIntake) {
-		return handleWorkbenchIntakeMessage(id, task, prompt, {
-			failureMode: "throw",
-			intent,
-			artifactContext,
-			llmRouteOverride,
-		});
-	}
-
-	const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
-	void handleWorkbenchIntakeMessage(id, task, prompt, {
-		failureMode: "record",
-		intent,
-		artifactContext,
-		llmRouteOverride,
-	});
-	return {
-		task: updated,
-		run: null,
-		messages: await repo.listTaskMessages(id),
-	};
-}
-
-export async function resumeWorkbenchIntakeMessage(
-	id: string,
-	prompt: string,
-	options?: { waitForIntake?: boolean },
-) {
-	const task = await repo.getTask(id);
-	if (!task) throw new NotFoundError("Task not found");
-	const waitForIntake =
-		options?.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
-	if (waitForIntake) {
-		return handleWorkbenchIntakeMessage(id, task, prompt, {
-			failureMode: "throw",
-			intent: "intake",
-			artifactContext: null,
-			llmRouteOverride: null,
-		});
-	}
-	const updated = await prepareWorkbenchIntakeTask(id, task, prompt);
-	void handleWorkbenchIntakeMessage(id, task, prompt, {
-		failureMode: "record",
-		intent: "intake",
-		artifactContext: null,
-		llmRouteOverride: null,
-	});
-	return {
-		task: updated,
-		run: null,
-		messages: await repo.listTaskMessages(id),
-	};
-}
+import { ensureDesignQuestionnaireReadyMessage } from "./nightworkers.workbench-plan-intake.service";
+import { workbenchRunStartedMessage } from "./nightworkers-workbench-intake-support";
 
 function renderArtifactContextualPrompt(
 	prompt: string,
@@ -459,7 +91,7 @@ function renderArtifactContextualPrompt(
 		.join("\n");
 }
 
-function isPlanModeArtifactRegenerationContext(
+export function isPlanModeArtifactRegenerationContext(
 	artifactContext: WorkbenchArtifactContext | null,
 ): artifactContext is WorkbenchArtifactContext {
 	const target = artifactContext?.metadata?.planModeTarget;
@@ -518,108 +150,13 @@ const workbenchPlanModeGateSchema = z
 	})
 	.strict();
 
-type WorkbenchPlanModeGate = z.infer<typeof workbenchPlanModeGateSchema> & {
+export type WorkbenchPlanModeGate = z.infer<
+	typeof workbenchPlanModeGateSchema
+> & {
 	action: "plan_mode" | "general_answer" | "implementation" | "review";
 };
 
-async function ensureDesignQuestionnaireReadyMessage(input: {
-	taskId: string;
-	questionnaireSession: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
-	planModeGate: WorkbenchPlanModeGate & Record<string, unknown>;
-	planModeSettingsSnapshot: ReturnType<typeof buildPlanModeSettingsSnapshot>;
-	source: "workbench" | "mission_pilot";
-}) {
-	const messages = await repo.listTaskMessages(input.taskId);
-	const existing = messages.find((message) => {
-		const metadata = toRecord(message.metadataJson);
-		const planModeGate = toRecord(metadata?.planModeGate);
-		return (
-			metadata?.intent === "design_questionnaire_ready" &&
-			metadata.questionnaireSessionId === input.questionnaireSession.id &&
-			Array.isArray(planModeGate?.dedicatedViews)
-		);
-	});
-	if (existing) return existing;
-	const totalQuestionCount = input.questionnaireSession.questionSets.reduce(
-		(total, set) =>
-			total +
-			(set.questionnaire?.questionSets || []).reduce(
-				(setTotal, questionSet) => setTotal + questionSet.questions.length,
-				0,
-			),
-		0,
-	);
-	return repo.createTaskMessage({
-		taskId: input.taskId,
-		role: "system",
-		content: `Design Questionnaire を生成しました。${totalQuestionCount} 件の質問に回答できます。`,
-		messageType: "text",
-		payloadJson: {
-			intent: "design_questionnaire_ready",
-			source: input.source,
-			questionnaireSessionId: input.questionnaireSession.id,
-			questionnaireStatus: input.questionnaireSession.status,
-			totalQuestionCount,
-			planModeGate: input.planModeGate,
-			planModeSettingsSnapshot: input.planModeSettingsSnapshot,
-		},
-	});
-}
-
-export async function prepareMissionPilotPlanModeIntake(input: {
-	taskId: string;
-	prompt: string;
-	questionnaireSession?: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
-}) {
-	const task = await repo.getTask(input.taskId);
-	if (!task) throw new NotFoundError("Task not found");
-	const repository = await repo.getRepository(task.repositoryId);
-	const projectRoot = repository?.localPath || process.cwd();
-	const messages = await repo.listTaskMessages(input.taskId);
-	const originalGate = await decideWorkbenchPlanModeGate({
-		projectRoot,
-		prompt: input.prompt,
-		task,
-		messages,
-		runs: await repo.listTaskRunsForTask(input.taskId),
-		routeOverride: null,
-		emitEvent: createWorkbenchLlmDebugEventEmitter(input.taskId),
-		taskId: input.taskId,
-		role: "mission_pilot",
-	});
-	const planModeGate = {
-		...originalGate,
-		shouldStartPlanMode: true,
-		action: "plan_mode" as const,
-		reason: "Mission Pilotのpre-Queue計画としてPlan Modeを開始します。",
-		originalGate,
-	};
-	const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(
-		readGeneralSettings(),
-	);
-	if (!planModeSettingsSnapshot.capabilities.questionnaire) {
-		throw new AppError(
-			409,
-			"MISSION_PILOT_QUESTIONNAIRE_DISABLED",
-			"Mission PilotのPlan ModeにはQuestionnaire capabilityが必要です。",
-		);
-	}
-	const questionnaireSession =
-		input.questionnaireSession ??
-		(await createDesignQuestionnaire(input.taskId, null, input.prompt, {
-			role: "mission_pilot",
-		}));
-	await ensureDesignQuestionnaireReadyMessage({
-		taskId: input.taskId,
-		questionnaireSession,
-		planModeGate,
-		planModeSettingsSnapshot,
-		source: "mission_pilot",
-	});
-	return questionnaireSession;
-}
-
-async function decideWorkbenchPlanModeGate(input: {
+export async function decideWorkbenchPlanModeGate(input: {
 	projectRoot: string;
 	prompt: string;
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
@@ -717,7 +254,7 @@ async function decideWorkbenchPlanModeGate(input: {
 	};
 }
 
-function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
+export function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 	return [
 		"Workbench intake で次の処理を1つだけ判定してください。",
 		"現在のユーザー文だけでなく、提示された Task context / Recent conversation / Latest non-general run を判断材料にしてください。",
@@ -745,7 +282,7 @@ function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 	].join("\n");
 }
 
-function buildWorkbenchPlanModeGateUserPrompt(input: {
+export function buildWorkbenchPlanModeGateUserPrompt(input: {
 	prompt: string;
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
 	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
@@ -832,13 +369,13 @@ function compactForGatePrompt(value: string, maxLength: number) {
 	return `${compacted.slice(0, maxLength - 1)}…`;
 }
 
-function toRecord(value: unknown) {
+export function toRecord(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
 }
 
-async function handleWorkbenchIntakeMessage(
+export async function handleWorkbenchIntakeMessage(
 	taskId: string,
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
 	prompt: string,
@@ -1030,17 +567,7 @@ function shouldPreferPlanModeForProjectEvaluationTask(
 	);
 }
 
-function workbenchRunStartedMessage(
-	executionMode: "general_answer" | "implementation" | "review",
-) {
-	if (executionMode === "general_answer")
-		return "General answer run started from Workbench intake.";
-	if (executionMode === "review")
-		return "Review run started from Workbench intake.";
-	return "Implementation run started from Workbench intake.";
-}
-
-function createWorkbenchLlmDebugEventEmitter(taskId: string) {
+export function createWorkbenchLlmDebugEventEmitter(taskId: string) {
 	return async (event: SupervisorLlmDebugEvent) => {
 		if (event.type !== "model.response_delta") return;
 		const text =
@@ -1056,7 +583,7 @@ function createWorkbenchLlmDebugEventEmitter(taskId: string) {
 	};
 }
 
-async function prepareWorkbenchIntakeTask(
+export async function prepareWorkbenchIntakeTask(
 	taskId: string,
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
 	prompt: string,

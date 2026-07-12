@@ -234,7 +234,7 @@ module A -> module B public API or explicit port
 
 ### Phase 6: Workbench backend — 3 files
 
-- [ ] NW-LF-37 `api/modules/nightworkers/nightworkers.workbench.service.ts` (1073): intake routing、message command、Plan handoff、projection queryを分ける。
+- [x] NW-LF-37 `api/modules/nightworkers/nightworkers.workbench.service.ts` (1073 → 600): message command、Plan intake/handoff、gate/supportを分離し、既存service exportを互換維持した。
 - [ ] NW-LF-38 `api/modules/nightworkers/nightworkers.activity.repository.ts` (748): activity event、artifact、projection queryのrepositoryを分ける。
 - [ ] NW-LF-39 `api/modules/nightworkers/nightworkers.runs.repository.ts` (864): Run command、Run query、event replay、row mappingをTask Executionへ分ける。
 
