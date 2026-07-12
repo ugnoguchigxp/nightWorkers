@@ -1,4 +1,3 @@
-import { AppError, NotFoundError } from "../../../lib/errors";
 import { getCurrentSettings } from "../../../routes/settings";
 import {
 	nativeApiRoleForExecutionMode,
@@ -12,8 +11,6 @@ import {
 } from "../../../services/agent-runtime/runtime-lane";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
-import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
-import { startTaskRunInWorker } from "../../../services/execution/worker-process-manager";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
@@ -46,40 +43,19 @@ import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toAgentRuntimeTodoContext } from "./todo-closeout";
 import { toErrorMessage } from "./utils";
 
+export { startTaskRun } from "./start-task-run-entry";
+
+import {
+	prepareStartableTask,
+	readMissionPilotEnvelope,
+} from "./start-task-run-entry";
+
 export type { StartTaskRunOptions } from "./start-task-run-types";
-
-export async function startTaskRun(
-	taskId: string,
-	options: StartTaskRunOptions = {},
-) {
-	if (shouldUseIsolatedTaskExecutor()) {
-		return startTaskRunInWorker<
-			Awaited<ReturnType<typeof startTaskRunInProcess>>
-		>(taskId, options);
-	}
-	return startTaskRunInProcess(taskId, options);
-}
-
 export async function startTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
-	const task = await repo.getTask(taskId);
-	if (!task) {
-		throw new NotFoundError("Task not found");
-	}
-	const activeRuns = await repo.listActiveTaskRunsForTask(taskId);
-	if (activeRuns.length > 0) {
-		throw new AppError(
-			409,
-			"RUN_ALREADY_ACTIVE",
-			"Another run is already active for this task",
-		);
-	}
-
-	// 1. Mark the task as running while the runtime prompt is prepared.
-	await repo.updateTaskStatus(taskId, "running");
-
+	const task = await prepareStartableTask(taskId);
 	// 2. Fetch repo information and compile the deterministic run inputs.
 	const {
 		repoInfo,
@@ -231,7 +207,6 @@ export async function startTaskRunInProcess(
 					verificationPolicy,
 				}),
 	);
-
 	await repo.createRunEvent({
 		version: 1,
 		runId: run.id,
@@ -328,7 +303,6 @@ export async function startTaskRunInProcess(
 			charCount: compiledPromptText.length,
 		},
 	};
-
 	const rawLatestUserMessage = buildLatestRuntimeUserMessage({
 		fallback:
 			lastUserMessage?.content ||
@@ -525,7 +499,6 @@ export async function startTaskRunInProcess(
 			return failedRun ?? run;
 		}
 	}
-
 	if (runtimeLaneResolution.lane === "codex-sdk") {
 		const runtimeResume =
 			executionMode === "review" || executionMode === "test"
@@ -568,7 +541,6 @@ export async function startTaskRunInProcess(
 			},
 		});
 	}
-
 	await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
 	const compiledRun = await repo.updateTaskRun(run.id, {
 		status: "running",
@@ -611,7 +583,6 @@ export async function startTaskRunInProcess(
 			missionPilot,
 		});
 	}
-
 	launchRuntimeExecution({
 		taskId,
 		task,
@@ -624,24 +595,5 @@ export async function startTaskRunInProcess(
 		runtimeLaneDefinition,
 		runtimeLaneResolution,
 	});
-
 	return compiledRun ?? run;
-}
-
-function readMissionPilotEnvelope(value: unknown) {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-	const candidate = value as Record<string, unknown>;
-	if (
-		typeof candidate.sessionId !== "string" ||
-		typeof candidate.cycle !== "number" ||
-		typeof candidate.contextRevision !== "number" ||
-		typeof candidate.contextDigest !== "string"
-	)
-		return null;
-	return {
-		sessionId: candidate.sessionId,
-		cycle: candidate.cycle,
-		contextRevision: candidate.contextRevision,
-		contextDigest: candidate.contextDigest,
-	};
 }

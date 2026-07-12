@@ -13,7 +13,6 @@
     { "id": "NW-LF-47", "path": "api/services/worker-tools/project-post-import.ts", "maxLines": 737, "targetModule": "project-registry", "phase": 7 },
     { "id": "NW-LF-48", "path": "api/mcp/nightworkers-codex-mcp.ts", "maxLines": 786, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-49", "path": "api/mcp/nightworkers-tool-manifest.ts", "maxLines": 665, "targetModule": "task-execution", "phase": 7 },
-    { "id": "NW-LF-50", "path": "api/modules/nightworkers/run-orchestration/start-task-run.ts", "maxLines": 647, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-51", "path": "api/modules/nightworkers/run-orchestration/runtime-execution.ts", "maxLines": 642, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-52", "path": "api/modules/nightworkers/routes/run-routes.ts", "maxLines": 769, "targetModule": "task-execution", "phase": 7 },
     { "id": "NW-LF-53", "path": "scripts/agent-ontology/core.mjs", "maxLines": 1028, "targetModule": "task-execution", "phase": 7 },
