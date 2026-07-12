@@ -2,7 +2,6 @@
   "version": 1,
   "lineLimit": 600,
   "entries": [
-    { "id": "NW-LF-23", "path": "src/modules/nightworkers/components/ThreadTimeline.tsx", "maxLines": 1230, "targetModule": "workbench", "phase": 5 },
     { "id": "NW-LF-24", "path": "src/modules/nightworkers/components/NightWorkersShell.tsx", "maxLines": 1141, "targetModule": "workbench", "phase": 5 },
     { "id": "NW-LF-35", "path": "src/i18n/dictionaries/ja.ts", "maxLines": 1091, "targetModule": "workbench", "phase": 5 },
     { "id": "NW-LF-36", "path": "src/i18n/dictionaries/en.ts", "maxLines": 1098, "targetModule": "workbench", "phase": 5 },
