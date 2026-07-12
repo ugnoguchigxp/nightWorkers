@@ -436,7 +436,9 @@ export async function retryOpenAITransientUnavailableOnce(input: {
 	});
 }
 
-function buildOpenAICompatibleHeaders(apiKey: string): Record<string, string> {
+export function buildOpenAICompatibleHeaders(
+	apiKey: string,
+): Record<string, string> {
 	return {
 		"Content-Type": "application/json",
 		...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -563,7 +565,7 @@ async function emitOpenAITransientRetryEvents(
 	});
 }
 
-async function _emitOpenAICompatibilityRetryEvents(
+export async function emitOpenAICompatibilityRetryEvents(
 	options: CallSupervisorOptions,
 	input: {
 		reason: "transport_error" | "stream_read_error";

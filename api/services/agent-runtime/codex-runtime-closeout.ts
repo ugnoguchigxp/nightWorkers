@@ -1,4 +1,5 @@
 import { gitDiffTool } from "../worker-tools/git";
+import { DEFAULT_RESULT } from "./codex-runtime-failure-report";
 import {
 	changedFilesFromDiff,
 	hasTodoProgressWarning,

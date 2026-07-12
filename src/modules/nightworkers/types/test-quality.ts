@@ -9,4 +9,3 @@ export const defaultTestQualitySettings: TestQualitySettings = {
 	coverageMinimumPercent: 80,
 	coverageMaxIterations: 5,
 };
-

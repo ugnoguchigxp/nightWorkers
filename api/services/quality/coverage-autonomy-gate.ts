@@ -446,4 +446,3 @@ function isStagnated(results: CoverageGateResult[]) {
 function truncate(value: string, max = 2000) {
 	return value.length > max ? `${value.slice(0, max)}\n...truncated...` : value;
 }
-

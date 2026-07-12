@@ -10,6 +10,7 @@ import type {
 	RawLlmCallOptions,
 } from "./providers";
 import {
+	buildOpenAICompatibleHeaders,
 	emitOpenAICompatibilityRetryEvents,
 	emitSchemaRetryEvents,
 	getResolvedProviderEndpoint,
@@ -17,9 +18,9 @@ import {
 	toOpenAIReasoningEffort,
 } from "./providers";
 import {
-	type getStructuredLlmBoolSetting,
+	getStructuredLlmBoolSetting,
 	getStructuredLlmSetting,
-	type readStructuredLlmProviderSettings,
+	readStructuredLlmProviderSettings,
 } from "./settings";
 import type { ProviderCallResult } from "./types";
 export type OpenAIProviderInput = {

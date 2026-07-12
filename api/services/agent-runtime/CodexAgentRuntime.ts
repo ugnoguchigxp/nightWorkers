@@ -80,8 +80,8 @@ export class CodexAgentRuntime implements AgentRuntime {
 	private readonly collectWorkspaceDiff: boolean;
 	private readonly persistRuntimeUsage: boolean;
 	private readonly usageRecorder: RuntimeUsageRecorder;
-	private readonly providerCapacityRetryLimit: number;
-	private readonly providerCapacityRetryDelayMs: number;
+	readonly providerCapacityRetryLimit: number;
+	readonly providerCapacityRetryDelayMs: number;
 
 	constructor(
 		input: {
@@ -515,7 +515,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 	}
 
 	private canRetryProviderCapacity(attemptIndex: number) {
-		return canRetryProviderCapacity(this, attemptIndex);
+		return canRetryProviderCapacity(this.closeoutHost(), attemptIndex);
 	}
 
 	private async emitProviderCapacityRetry(
@@ -524,7 +524,13 @@ export class CodexAgentRuntime implements AgentRuntime {
 		attemptIndex: number,
 		signal: AbortSignal,
 	) {
-		return emitProviderCapacityRetry(this, sink, logs, attemptIndex, signal);
+		return emitProviderCapacityRetry(
+			this.closeoutHost(),
+			sink,
+			logs,
+			attemptIndex,
+			signal,
+		);
 	}
 
 	private async emitMissingImportVerificationWarningIfNeeded(
@@ -554,7 +560,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		sink: AgentRuntimeSink,
 		options: { forceFresh?: boolean } = {},
 	) {
-		return createThread(this, context, sink, options);
+		return createThread(this.closeoutHost(), context, sink, options);
 	}
 
 	private toCancelled(logContent: string): AgentRuntimeResult {
@@ -575,7 +581,17 @@ export class CodexAgentRuntime implements AgentRuntime {
 			testResults?: unknown;
 		},
 	) {
-		return finishRun(this, context, sink, logs, input);
+		return finishRun(this.closeoutHost(), context, sink, logs, input);
+	}
+
+	private closeoutHost() {
+		return {
+			providerCapacityRetryLimit: this.providerCapacityRetryLimit,
+			providerCapacityRetryDelayMs: this.providerCapacityRetryDelayMs,
+			threadFactory: this.threadFactory,
+			runtimeSessionStore: this.runtimeSessionStore,
+			collectWorkspaceDiff: this.collectWorkspaceDiff,
+		};
 	}
 
 	async stop(runId: string): Promise<void> {

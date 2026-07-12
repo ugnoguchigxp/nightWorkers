@@ -162,7 +162,7 @@ const llmSettings: LlmSettings = {
 	],
 };
 
-const activeProject: Repository = {
+const _activeProject: Repository = {
 	id: "repo-1",
 	name: "NightWorkers",
 	localPath: "/tmp/nightworkers",

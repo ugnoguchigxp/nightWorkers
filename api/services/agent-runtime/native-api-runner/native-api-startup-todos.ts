@@ -96,9 +96,8 @@ export async function alignTodoState(
 	const openStartupGate = todos.find(
 		(todo) =>
 			["pending", "running"].includes(todo.status) &&
-			((todo) =>
-				todo.taskType === "coding_preparation" ||
-				todo.procedureId === "coding_preparation"(todo) ||
+			(todo.taskType === "coding_preparation" ||
+				todo.procedureId === "coding_preparation" ||
 				todo.procedureId === "contextstill.initial_instructions" ||
 				todo.procedureId === "contextstill.context_compile"),
 	);

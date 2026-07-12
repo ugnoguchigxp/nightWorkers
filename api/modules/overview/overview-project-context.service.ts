@@ -38,9 +38,7 @@ export async function buildProjectOverviewContext(repositoryId: string) {
 }
 
 function selectLatestCoverageRun(runs: ProjectQualityRun[]) {
-	return (
-		runs.find((run) => Boolean(run.coverageSummary)) ?? null
-	);
+	return runs.find((run) => Boolean(run.coverageSummary)) ?? null;
 }
 
 function toIsoString(value: string | Date | null | undefined) {

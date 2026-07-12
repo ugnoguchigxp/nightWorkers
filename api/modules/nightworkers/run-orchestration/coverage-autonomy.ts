@@ -81,4 +81,3 @@ export function readRuntimeFailureTerminalReason(
 		? codexFailure.terminalReason.trim()
 		: null;
 }
-
