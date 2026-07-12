@@ -73,6 +73,7 @@ export {
 	getActivityCode,
 	parseDiffMetadata,
 } from "./ThreadTimelineActivityTranscript";
+export * from "./ThreadTimelineDiffModel";
 export * from "./ThreadTimelineEventModel";
 export {
 	buildNormalTranscriptItems,
