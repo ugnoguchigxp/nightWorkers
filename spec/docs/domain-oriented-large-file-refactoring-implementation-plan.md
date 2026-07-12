@@ -243,7 +243,7 @@ module A -> module B public API or explicit port
 - [x] NW-LF-40 `api/services/structured-llm/providers.ts` (596): fixture、Codex、Azure、OpenAI、Bedrock adapterを分離し、provider dispatch/retry/互換正規化をfacadeに維持した。
 - [x] NW-LF-41 `api/services/agent-runtime/CodexAgentRuntime.ts` (584): session lifecycleのfacadeを維持し、closeout/retry/terminal policyとrun-loop supportを分離した。
 - [x] NW-LF-42 `api/services/agent-runtime/codex-runtime-support.ts` (455): config、prompt support、failure mapping、environment supportとread evidenceを分ける。`codex-runtime-evidence.ts`へ監査・読取証跡を抽出。
-- [ ] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (925): runtime loopをuse case coordinatorに縮小する。
+- [ ] NW-LF-43 `api/services/agent-runtime/native-api-runner/native-api-runner.ts` (211 facade + 761 coordinator): runtime loopをuse case coordinatorへ抽出済み。coordinator本体のturn/tool loop分割を継続する。
 - [ ] NW-LF-44 `api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts` (1019): startup state、request preparation、provider attempt、session recoveryを分ける。
 - [x] NW-LF-45 `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts` (677 → 208): tool manifestを`native-api-tool-manifest.ts`へ分離し、policy/handler binding facadeと公開契約を維持した。
 - [x] NW-LF-46 `api/services/worker-tools/todo-list.ts` (862 → 515): Todo context/repository境界を`todo-list-context.ts`、response mappingを`todo-list-response.ts`へ分離し、schema/state/DB契約を維持した。
