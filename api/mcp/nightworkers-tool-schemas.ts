@@ -228,8 +228,17 @@ export const nightWorkersImportProjectInputSchema = z.object({
 		.optional()
 		.describe("Git repository URL or local git path."),
 	variant: z
-		.string()
-		.trim()
+		.enum([
+			"sqlite",
+			"baseline",
+			"postgres",
+			"pgvector",
+			"rag",
+			"turso",
+			"cloudflare",
+			"api-only",
+			"auth",
+		])
 		.optional()
 		.describe("Starter variant, e.g. sqlite, postgres, rag, or auth."),
 	overlays: z

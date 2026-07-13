@@ -166,11 +166,27 @@ describe("frontend utility components", () => {
 		const emptyMarkup = renderToStaticMarkup(
 			<CodeBlock data={[]} showHeader={false} lineNumbers={false} />,
 		);
+		const diffMarkup = renderToStaticMarkup(
+			<CodeBlock
+				className="nightworkers-code-block"
+				data={[
+					{
+						filename: "src/app.ts",
+						language: "diff",
+						code: "@@ -1 +1 @@\n-old\n+new",
+					},
+				]}
+				lineNumbers={false}
+			/>,
+		);
 
 		expect(multiFileMarkup).toContain("README.md");
 		expect(multiFileMarkup).toContain("NightWorkers");
 		expect(multiFileMarkup).toContain("item 2 of 3");
 		expect(emptyMarkup).toContain("No code available");
+		expect(diffMarkup).toContain("diff hunk");
+		expect(diffMarkup).toContain("diff add");
+		expect(diffMarkup).toContain("diff remove");
 	});
 
 	it("renders message payload variants and artifact cards", () => {

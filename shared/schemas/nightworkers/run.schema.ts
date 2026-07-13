@@ -99,6 +99,18 @@ export const taskRunMergeRecordSchema = z.object({
 		.optional(),
 	mergeCommitSha: z.string().nullable().optional(),
 	targetHeadAfter: z.string().nullable().optional(),
+	targetPushStatus: z
+		.enum([
+			"not_started",
+			"pushing",
+			"pushed",
+			"failed",
+			"blocked",
+			"not_required",
+		])
+		.nullable()
+		.optional(),
+	targetPushedAt: dateLikeSchema.nullable().optional(),
 	lastErrorCode: z.string().nullable().optional(),
 	lastErrorMessage: z.string().nullable().optional(),
 	createdAt: dateLikeSchema,

@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { db } from "../../db/client";
+import { missionPilotPhaseRuns } from "../../db/mission-pilot-schema";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
 import {
 	normalizeEvidenceRequirements,
@@ -141,6 +144,26 @@ export async function todoListTool(input: {
 				verificationPolicy,
 				todos: currentTodos,
 			}) => {
+				const [phaseRun] = await db
+					.select({ phase: missionPilotPhaseRuns.phase })
+					.from(missionPilotPhaseRuns)
+					.where(eq(missionPilotPhaseRuns.runId, runId))
+					.limit(1);
+				if (phaseRun?.phase === "repository_bootstrap") {
+					return failedTodoAction(
+						{
+							runId,
+							taskId,
+							requireDataMigrationGates,
+							verificationPolicy,
+							todos: currentTodos,
+						},
+						"todo_list",
+						input.operation,
+						"REPOSITORY_BOOTSTRAP_REPLAN_FORBIDDEN",
+						{ todoListReplaceReason: input.todoListReplaceReason },
+					);
+				}
 				const reasonValidation = validateTodoListReplaceReason({
 					currentTodos,
 					todoListReplaceReason: input.todoListReplaceReason,

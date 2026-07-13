@@ -8,6 +8,12 @@ import {
 describe("Mission Pilot post-Queue state", () => {
 	it("accepts the deterministic happy-path transitions", () => {
 		expect(() =>
+			assertMissionPilotPhaseTransition("queued", "repository_bootstrapping"),
+		).not.toThrow();
+		expect(() =>
+			assertMissionPilotPhaseTransition("repository_bootstrapping", "queued"),
+		).not.toThrow();
+		expect(() =>
 			assertMissionPilotPhaseTransition("queued", "implementation_starting"),
 		).not.toThrow();
 		expect(() =>

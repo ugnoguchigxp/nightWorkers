@@ -11,7 +11,7 @@ import {
 import { parseReviewRunFindings } from "../api/modules/review/review-run-finalize.service";
 
 describe("Review Run workflow", () => {
-	it("defaults apply fixes on when review run options are omitted", () => {
+	it("defaults code review, fixes, and commit on when options are omitted", () => {
 		const todos = buildReviewRunTodos({
 			options: normalizeReviewRunOptions({}),
 			target: reviewTarget(),
@@ -25,6 +25,7 @@ describe("Review Run workflow", () => {
 			"review.consolidate_findings",
 			"review.apply_fixes",
 			"review.verify_after_fixes",
+			"review.commit_changes",
 		]);
 	});
 

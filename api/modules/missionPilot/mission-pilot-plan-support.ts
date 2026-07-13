@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { PlanModeArtifactKind } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { MissionPilotReviewedArtifact } from "../../../shared/schemas/mission-pilot-plan-review.schema";
+import {
+	type PlanModeArtifactKind,
+	planModeRegenerationTargetSchema,
+} from "../../../shared/schemas/plan-mode-artifact.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -62,6 +66,25 @@ export function artifactKinds(
 		...workspace.dedicatedViewArtifacts.map((artifact) => artifact.kind),
 	]);
 }
+export function collectCurrentReviewArtifacts(
+	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
+) {
+	const byKind = new Map<string, MissionPilotReviewedArtifact>();
+	for (const artifact of [
+		...workspace.blueprintArtifacts,
+		...workspace.dataModelArtifacts,
+		...workspace.dedicatedViewArtifacts,
+		...workspace.featurePlanArtifacts,
+	]) {
+		const parsed = planModeRegenerationTargetSchema.safeParse(artifact.kind);
+		if (!parsed.success) continue;
+		byKind.set(parsed.data, {
+			artifactKind: parsed.data,
+			sourceMessageId: artifact.sourceMessageId,
+		});
+	}
+	return [...byKind.values()];
+}
 export function existingArtifactForStep(
 	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
 	stepKey: string,
@@ -76,6 +99,24 @@ export function existingArtifactForStep(
 			.find((artifact) => artifact.kind === view);
 	}
 	return null;
+}
+export function selectMissionPilotPipelineQuestionnaire(
+	questionnaires: Array<{ id: string; status: string }>,
+	steps: Array<{ stepKey: string; evidenceJson: Record<string, unknown> }>,
+) {
+	const completed = [...questionnaires]
+		.reverse()
+		.find((item) => ["review_ready", "accepted"].includes(item.status));
+	if (completed) return completed;
+	const featurePlanStep = steps.find((step) => step.stepKey === "feature_plan");
+	const preFeatureStatus =
+		featurePlanStep?.evidenceJson.preFeaturePlanQuestionnaireStatus;
+	if (!["running", "waiting_intervention"].includes(String(preFeatureStatus))) {
+		return undefined;
+	}
+	return [...questionnaires]
+		.reverse()
+		.find((item) => item.status === "answering");
 }
 export async function updatePhase(
 	taskId: string,
@@ -239,6 +280,19 @@ export async function answerPreFeaturePlanQuestionnaire(
 		addedCount = generated.result.addedCount;
 		skippedDuplicateCount = generated.result.skippedDuplicateCount;
 		if (generated.session) questionnaire = generated.session;
+		const recordedGeneration = await planRepo.updatePlanStepEvidence(
+			featurePlanStep.id,
+			{
+				preFeaturePlanQuestionnaireStatus: "running",
+				preFeaturePlanQuestionnaireAddedCount: addedCount,
+				preFeaturePlanQuestionnaireSkippedDuplicateCount: skippedDuplicateCount,
+			},
+		);
+		if (!recordedGeneration) {
+			throw new Error(
+				"Pre-Feature Plan Questionnaire generation evidence conflicted",
+			);
+		}
 	}
 	if (questionnaire.status === "answering") {
 		const existingAnswerIds = new Set(
@@ -281,6 +335,34 @@ export async function answerPreFeaturePlanQuestionnaire(
 		throw new Error("Pre-Feature Plan Questionnaire completion conflicted");
 	}
 	return questionnaire;
+}
+
+export async function finalizeResumedPreFeaturePlanQuestionnaire(input: {
+	taskId: string;
+	sessionId: string;
+	questionnaireSessionId: string;
+	questionnaire: Awaited<ReturnType<typeof getDesignQuestionnaireSession>>;
+	leaseOwner: string;
+}) {
+	if (input.questionnaire.status !== "answering") return input.questionnaire;
+	const featurePlanStep = (await planRepo.listPlanSteps(input.sessionId)).find(
+		(step) => step.stepKey === "feature_plan",
+	);
+	const preFeatureStatus =
+		featurePlanStep?.evidenceJson.preFeaturePlanQuestionnaireStatus;
+	if (
+		!featurePlanStep ||
+		!["running", "waiting_intervention"].includes(String(preFeatureStatus))
+	) {
+		return input.questionnaire;
+	}
+	return answerPreFeaturePlanQuestionnaire(
+		input.taskId,
+		input.sessionId,
+		input.questionnaireSessionId,
+		featurePlanStep,
+		input.leaseOwner,
+	);
 }
 
 export async function ensureQuestionnaireContext(

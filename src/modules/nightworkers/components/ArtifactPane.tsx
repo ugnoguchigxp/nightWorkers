@@ -100,6 +100,7 @@ type ArtifactPaneProps = {
 	) => Promise<ReviewSessionDetail>;
 	onOpenReviewArtifact?: () => Promise<void>;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
+	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskStatus?: string | null;
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
@@ -146,6 +147,7 @@ export function ArtifactPane({
 	onStartReviewRun,
 	onOpenReviewArtifact,
 	onCommitGitCloseout,
+	onPushGitCloseout,
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
@@ -454,6 +456,7 @@ export function ArtifactPane({
 							onStartReviewRun={onStartReviewRun}
 							gitCloseout={gitCloseout}
 							onCommitGitCloseout={onCommitGitCloseout}
+							onPushGitCloseout={onPushGitCloseout}
 							activeTaskStatus={activeTaskStatus}
 							onCompleteAndArchiveTask={onCompleteAndArchiveTask}
 							onRestoreArchivedTask={onRestoreArchivedTask}

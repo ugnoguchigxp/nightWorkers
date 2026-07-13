@@ -65,7 +65,9 @@ async function git(repoRoot: string, args: string[]) {
 	return result.stdout.trim();
 }
 
-async function createGitRepo(input: { withRemote?: boolean } = {}) {
+async function createGitRepo(
+	input: { withRemote?: boolean; withWorktree?: boolean } = {},
+) {
 	const root = await mkdtemp(path.join(tmpdir(), "nightworkers-closeout-"));
 	tempRoots.push(root);
 	await git(root, ["init"]);
@@ -76,6 +78,21 @@ async function createGitRepo(input: { withRemote?: boolean } = {}) {
 	await writeFile(path.join(root, "unowned.txt"), "before\n");
 	await git(root, ["add", "owned.txt", "unowned.txt"]);
 	await git(root, ["commit", "-m", "initial"]);
+	let executionRoot = root;
+	if (input.withWorktree) {
+		executionRoot = await mkdtemp(
+			path.join(tmpdir(), "nightworkers-closeout-worktree-"),
+		);
+		await rm(executionRoot, { recursive: true, force: true });
+		tempRoots.push(executionRoot);
+		await git(root, [
+			"worktree",
+			"add",
+			"-b",
+			`closeout-${crypto.randomUUID()}`,
+			executionRoot,
+		]);
+	}
 	let remoteRoot: string | null = null;
 	if (input.withRemote) {
 		remoteRoot = await mkdtemp(
@@ -86,14 +103,20 @@ async function createGitRepo(input: { withRemote?: boolean } = {}) {
 		await git(root, ["remote", "add", "origin", remoteRoot]);
 		await git(root, ["push", "-u", "origin", "main"]);
 	}
-	const baselineHead = await git(root, ["rev-parse", "HEAD"]);
-	await writeFile(path.join(root, "owned.txt"), "after\n");
-	return { root, baselineHead, remoteRoot };
+	const baselineHead = await git(executionRoot, ["rev-parse", "HEAD"]);
+	await writeFile(path.join(executionRoot, "owned.txt"), "after\n");
+	return {
+		root: executionRoot,
+		repositoryRoot: root,
+		baselineHead,
+		remoteRoot,
+	};
 }
 
 async function createCloseoutFixture(
 	input: {
 		withRemote?: boolean;
+		withWorktree?: boolean;
 		safetyPolicy?: unknown;
 		withTestCoverage?: boolean;
 		withReviewRun?: boolean;
@@ -108,10 +131,13 @@ async function createCloseoutFixture(
 		reviewFixesApplied?: boolean;
 	} = {},
 ) {
-	const gitRepo = await createGitRepo({ withRemote: input.withRemote });
+	const gitRepo = await createGitRepo({
+		withRemote: input.withRemote,
+		withWorktree: input.withWorktree,
+	});
 	const project = await repo.createRepository({
 		name: `TEST: Git Closeout ${crypto.randomUUID()}`,
-		localPath: gitRepo.root,
+		localPath: gitRepo.repositoryRoot,
 		branch: "main",
 		safetyPolicy: input.safetyPolicy,
 	});
@@ -127,6 +153,7 @@ async function createCloseoutFixture(
 		repositoryId: project.id,
 		status: "needs_review",
 		workerKind: "native-local",
+		worktreePath: input.withWorktree ? gitRepo.root : null,
 		summary: "Implementation done",
 		finalReport: "Implementation done",
 		startedAt: new Date(),
@@ -421,6 +448,32 @@ describe("NightWorkers Git closeout API", () => {
 		expect(entry?.status).toBe("execution_completed");
 	});
 
+	it("commits in the run worktree without moving the registered repository HEAD", async () => {
+		const fixture = await createCloseoutFixture({ withWorktree: true });
+		const registeredHeadBefore = await git(fixture.gitRepo.repositoryRoot, [
+			"rev-parse",
+			"HEAD",
+		]);
+
+		const commitRes = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/commit`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ message: "Commit from task worktree" }),
+			},
+		);
+		expect(commitRes.status).toBe(200);
+		const committed = await commitRes.json();
+		expect(committed.state).toBe("committed");
+		expect(await git(fixture.gitRepo.root, ["rev-parse", "HEAD"])).toBe(
+			committed.commitRecord.commitSha,
+		);
+		expect(
+			await git(fixture.gitRepo.repositoryRoot, ["rev-parse", "HEAD"]),
+		).toBe(registeredHeadBefore);
+	});
+
 	it("serializes duplicate commit requests for the same repository", async () => {
 		const fixture = await createCloseoutFixture();
 
@@ -475,7 +528,7 @@ describe("NightWorkers Git closeout API", () => {
 		"running",
 		"needs_human",
 		"failed",
-	] as const)("does not treat ReviewRun status %s as completed evidence", async (reviewRunStatus) => {
+	] as const)("keeps Git commit available while ReviewRun status is %s", async (reviewRunStatus) => {
 		const fixture = await createCloseoutFixture({
 			withTestCoverage: false,
 			withReviewRun: true,
@@ -490,12 +543,9 @@ describe("NightWorkers Git closeout API", () => {
 		const state = await stateRes.json();
 
 		expect(state).toMatchObject({
-			canCommit: false,
-			state: "review_required",
-			blockingCode:
-				reviewRunStatus === "running"
-					? "REVIEW_RUN_IN_PROGRESS"
-					: "REVIEW_RUN_NOT_SUCCESSFUL",
+			canCommit: true,
+			state: "commit_ready",
+			blockingCode: null,
 			requiredReview: {
 				testCoverageStatus: null,
 				reviewRunStatus,
@@ -524,7 +574,7 @@ describe("NightWorkers Git closeout API", () => {
 		});
 	});
 
-	it("rejects ReviewRun done artifacts without a canonical completion event", async () => {
+	it("reports invalid ReviewRun evidence without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
@@ -536,13 +586,13 @@ describe("NightWorkers Git closeout API", () => {
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: false,
-			blockingCode: "REVIEW_RUN_NOT_SUCCESSFUL",
+			canCommit: true,
+			blockingCode: null,
 			evidence: { review: { status: "failed" } },
 		});
 	});
 
-	it("rejects an explicitly failed completion_check event", async () => {
+	it("reports a failed completion_check without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
@@ -554,15 +604,15 @@ describe("NightWorkers Git closeout API", () => {
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: false,
-			blockingCode: "TEST_EVIDENCE_INCOMPLETE",
+			canCommit: true,
+			blockingCode: null,
 			evidence: {
 				test: { status: "incomplete", completionCheckEventId: null },
 			},
 		});
 	});
 
-	it("rejects managed evidence recorded by the implementation run", async () => {
+	it("reports implementation-run evidence without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
@@ -574,8 +624,8 @@ describe("NightWorkers Git closeout API", () => {
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: false,
-			blockingCode: "TEST_EVIDENCE_INCOMPLETE",
+			canCommit: true,
+			blockingCode: null,
 			evidence: { test: { status: "incomplete" } },
 		});
 	});
@@ -598,7 +648,7 @@ describe("NightWorkers Git closeout API", () => {
 		});
 	});
 
-	it("requires Test Mode to rerun after Review Run applies fixes", async () => {
+	it("reports stale Test evidence without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
@@ -610,8 +660,8 @@ describe("NightWorkers Git closeout API", () => {
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: false,
-			blockingCode: "TEST_EVIDENCE_STALE",
+			canCommit: true,
+			blockingCode: null,
 			evidence: { test: { status: "stale" } },
 		});
 	});
@@ -696,7 +746,7 @@ describe("NightWorkers Git closeout API", () => {
 		});
 	});
 
-	it("blocks commit when required test evidence review is incomplete", async () => {
+	it("keeps Git commit available while Review evidence is incomplete", async () => {
 		const fixture = await createCloseoutFixture();
 		await reviewRepo.upsertReviewArtifact({
 			reviewSessionId: (await reviewRepo.getReviewSessionByRun(fixture.run.id))
@@ -716,13 +766,13 @@ describe("NightWorkers Git closeout API", () => {
 		expect(stateRes.status).toBe(200);
 		const state = await stateRes.json();
 		expect(state).toMatchObject({
-			canCommit: false,
-			state: "review_required",
-			blockingCode: "REVIEW_RUN_NOT_STARTED",
+			canCommit: true,
+			state: "commit_ready",
+			blockingCode: null,
 		});
 	});
 
-	it("blocks closeout when implementation Security Oracle evidence is missing", async () => {
+	it("reports missing Security evidence without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withSecurityEvidence: false,
 		});
@@ -732,13 +782,13 @@ describe("NightWorkers Git closeout API", () => {
 		);
 		const state = await stateRes.json();
 		expect(state).toMatchObject({
-			canCommit: false,
-			blockingCode: "SECURITY_EVIDENCE_MISSING",
+			canCommit: true,
+			blockingCode: null,
 			evidence: { security: { source: "missing", status: "missing" } },
 		});
 	});
 
-	it("blocks closeout while a blocking review finding is unresolved", async () => {
+	it("reports unresolved blocking findings without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({ withBlockingFinding: true });
 		const stateRes = await app.request(
 			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
@@ -746,13 +796,13 @@ describe("NightWorkers Git closeout API", () => {
 		);
 		const state = await stateRes.json();
 		expect(state).toMatchObject({
-			canCommit: false,
-			blockingCode: "BLOCKING_FINDINGS_UNRESOLVED",
+			canCommit: true,
+			blockingCode: null,
 		});
 		expect(state.evidence.findings.unresolvedBlockingIds).toHaveLength(1);
 	});
 
-	it("keeps a legacy dismissed blocking finding blocked when its note is missing", async () => {
+	it("reports a legacy dismissed finding without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({ withBlockingFinding: true });
 		const session = await reviewRepo.getReviewSessionByRun(fixture.run.id);
 		if (!session) throw new Error("Review session was not created");
@@ -769,8 +819,8 @@ describe("NightWorkers Git closeout API", () => {
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: false,
-			blockingCode: "BLOCKING_FINDINGS_UNRESOLVED",
+			canCommit: true,
+			blockingCode: null,
 		});
 	});
 });

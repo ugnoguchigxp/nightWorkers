@@ -200,6 +200,86 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		]);
 	});
 
+	it("keeps low-scoring conceptual Artifacts advisory and non-blocking", () => {
+		const blueprintId = "00000000-0000-4000-8000-000000000021";
+		const flowId = "00000000-0000-4000-8000-000000000022";
+		const featurePlanId = "00000000-0000-4000-8000-000000000023";
+		const review = normalizeMissionPilotPlanReview(
+			{
+				verdict: "revise",
+				summary: "Concept artifacts are advisory.",
+				coverage: {
+					goal: "pass",
+					scope: "fail",
+					acceptanceCriteria: "pass",
+					implementationSteps: "pass",
+					verification: "pass",
+					artifactConsistency: "fail",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "blueprint",
+						sourceMessageId: blueprintId,
+						score: 58,
+						rationale: "Conceptual mismatch.",
+					},
+					{
+						artifactKind: "user_flow",
+						sourceMessageId: flowId,
+						score: 55,
+						rationale: "Flow detail mismatch.",
+					},
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: featurePlanId,
+						score: 86,
+						rationale: "Implementation-ready.",
+					},
+				],
+				findings: [
+					{
+						severity: "blocking",
+						artifactKind: "blueprint",
+						sourceId: blueprintId,
+						issue: "Conceptual mismatch.",
+						recommendation: "Review manually.",
+					},
+				],
+				revisionTargets: [
+					{
+						target: "blueprint",
+						sourceMessageId: blueprintId,
+						focus: { kind: "artifact" },
+						instruction: "Regenerate Blueprint.",
+						preserveUnfocusedContent: true,
+					},
+					{
+						target: "user_flow",
+						sourceMessageId: flowId,
+						focus: { kind: "artifact" },
+						instruction: "Regenerate Flow.",
+						preserveUnfocusedContent: true,
+					},
+				],
+			},
+			[
+				{ artifactKind: "blueprint", sourceMessageId: blueprintId },
+				{ artifactKind: "user_flow", sourceMessageId: flowId },
+				{ artifactKind: "feature_plan", sourceMessageId: featurePlanId },
+			],
+		);
+
+		expect(review.verdict).toBe("pass");
+		expect(review.revisionTargets).toEqual([]);
+		expect(review.findings).toEqual([
+			expect.objectContaining({
+				artifactKind: "blueprint",
+				severity: "warning",
+			}),
+		]);
+	});
+
 	it("allows only one database-backed pipeline lease owner", async () => {
 		const fixture = await createFixture();
 		const firstOwner = `${process.pid}:owner-1`;
@@ -476,6 +556,13 @@ describe("Mission Pilot plan pipeline persistence", () => {
 						instruction: "Integrate the screen",
 						preserveUnfocusedContent: true,
 					},
+					{
+						target: "user_flow",
+						sourceMessageId: source.id,
+						focus: { kind: "artifact" },
+						instruction: "Clarify the conceptual flow",
+						preserveUnfocusedContent: true,
+					},
 				],
 			},
 		});
@@ -487,9 +574,10 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			contextDigest: fixture.session.contextDigest,
 			targets: review.reviewJson.revisionTargets,
 		};
-		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(1);
-		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(1);
-		const [run] = await planRepo.listArtifactCorrectionRunsForReview(review.id);
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(2);
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(2);
+		const [run, pendingConcept] =
+			await planRepo.listArtifactCorrectionRunsForReview(review.id);
 		expect(await planRepo.claimArtifactCorrectionRun(run.id)).toMatchObject({
 			status: "running",
 			attempt: 1,
@@ -512,5 +600,9 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			status: "applied",
 			outputContextRevision: 2,
 		});
+		await planRepo.supersedeConceptArtifactCorrectionRunsForReview(review.id);
+		expect(
+			await planRepo.getArtifactCorrectionRun(pendingConcept.id),
+		).toMatchObject({ status: "superseded" });
 	});
 });

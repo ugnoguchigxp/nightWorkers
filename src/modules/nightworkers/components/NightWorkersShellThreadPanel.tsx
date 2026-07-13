@@ -366,6 +366,7 @@ export function NightWorkersShellThreadPanel(
 						onStartReviewRun={workspace.startReviewRun}
 						onOpenReviewArtifact={props.onOpenReviewArtifact}
 						onCommitGitCloseout={workspace.commitRunGitCloseout}
+						onPushGitCloseout={workspace.pushRunGitCloseout}
 						activeTaskStatus={workspace.activeSession?.status ?? null}
 						onCompleteAndArchiveTask={(taskId) =>
 							workspace.archiveCompletedSession(taskId)

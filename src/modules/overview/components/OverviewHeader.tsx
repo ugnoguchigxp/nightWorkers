@@ -48,7 +48,6 @@ export function OverviewHeader({
 					projectId={projectFilterId}
 					activeTab="overview"
 					range={range}
-					showDivider={false}
 					onTabChange={(tab) => {
 						if (tab !== "overview") onOpenProjectDetailTab(tab);
 					}}

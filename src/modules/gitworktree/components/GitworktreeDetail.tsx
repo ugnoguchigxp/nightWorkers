@@ -4,7 +4,10 @@ import type {
 	WorktreeAdviceResponse,
 	WorktreeSummary,
 } from "../../../../shared/schemas/gitworktree.schema";
-import { worktreeStatusLabelKey } from "../model/gitworktreeViewModel";
+import {
+	canDiscardAndRemoveWorktree,
+	worktreeStatusLabelKey,
+} from "../model/gitworktreeViewModel";
 import {
 	controlStyle,
 	mutedTextStyle,
@@ -14,7 +17,7 @@ import {
 
 type GitworktreeDetailProps = {
 	selected: WorktreeSummary | null;
-	busy: boolean;
+	busy: string | null;
 	advice: WorktreeAdviceResponse | null;
 	onViewDiff: () => void;
 	onRequestAdvice: () => void;
@@ -39,6 +42,7 @@ export function GitworktreeDetail({
 			</div>
 		);
 	}
+	const canDiscardAndRemove = canDiscardAndRemoveWorktree(selected);
 	return (
 		<div className="border p-4" style={panelStyle}>
 			<div className="space-y-4">
@@ -108,17 +112,21 @@ export function GitworktreeDetail({
 						type="button"
 						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
 						style={controlStyle}
-						disabled={busy}
+						disabled={Boolean(busy)}
 						onClick={onViewDiff}
 					>
 						<GitCompare className="h-3.5 w-3.5" aria-hidden="true" />
-						{t("projectDetail.worktrees.viewDiff")}
+						{t(
+							busy === "diff"
+								? "projectDetail.worktrees.loadingDiff"
+								: "projectDetail.worktrees.viewDiff",
+						)}
 					</button>
 					<button
 						type="button"
 						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
 						style={controlStyle}
-						disabled={busy}
+						disabled={Boolean(busy)}
 						onClick={onRequestAdvice}
 					>
 						<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
@@ -128,11 +136,19 @@ export function GitworktreeDetail({
 						type="button"
 						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
 						style={{ ...controlStyle, color: "var(--nw-danger)" }}
-						disabled={busy || !selected.canRemove || !selected.head}
+						disabled={
+							Boolean(busy) ||
+							!selected.head ||
+							(!selected.canRemove && !canDiscardAndRemove)
+						}
 						onClick={onRemove}
 					>
 						<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-						{t("projectDetail.worktrees.remove")}
+						{t(
+							canDiscardAndRemove
+								? "projectDetail.worktrees.discardAndRemove"
+								: "projectDetail.worktrees.remove",
+						)}
 					</button>
 				</div>
 				{advice ? (

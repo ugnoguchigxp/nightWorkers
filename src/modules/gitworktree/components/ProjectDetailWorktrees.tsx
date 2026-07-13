@@ -27,8 +27,8 @@ import {
 	mutedTextStyle,
 	panelStyle,
 	primaryButtonStyle,
-	tableBorderStyle,
 } from "./gitworktreeStyles";
+import { WorktreeDiffDialog } from "./WorktreeDiffDialog";
 
 type ProjectDetailWorktreesProps = {
 	repositoryId: string;
@@ -125,12 +125,18 @@ export function ProjectDetailWorktrees({
 		);
 	};
 	const remove = () => {
+		const discardChanges = Boolean(selected && !selected.canRemove);
 		if (
 			!selected?.head ||
 			!window.confirm(
-				t("projectDetail.worktrees.confirmRemove", {
-					branch: selected.branch || t("projectDetail.worktrees.detached"),
-				}),
+				t(
+					discardChanges
+						? "projectDetail.worktrees.confirmDiscardAndRemove"
+						: "projectDetail.worktrees.confirmRemove",
+					{
+						branch: selected.branch || t("projectDetail.worktrees.detached"),
+					},
+				),
 			)
 		)
 			return;
@@ -139,6 +145,7 @@ export function ProjectDetailWorktrees({
 				await removeRepositoryWorktree(repositoryId, {
 					worktreeId: selected.id,
 					expectedHead: selected.head || "",
+					discardChanges,
 				}),
 			);
 			await load();
@@ -244,7 +251,7 @@ export function ProjectDetailWorktrees({
 				/>
 				<GitworktreeDetail
 					selected={selected}
-					busy={interactionDisabled}
+					busy={loading ? "loading" : busy}
 					advice={advice}
 					onViewDiff={viewDiff}
 					onRequestAdvice={requestAdvice}
@@ -263,17 +270,11 @@ export function ProjectDetailWorktrees({
 					{t("projectDetail.worktrees.prune")}
 				</button>
 			</div>
-
-			{diff ? (
-				<div className="overflow-hidden border" style={panelStyle}>
-					<div className="border-b px-3 py-2 text-xs" style={tableBorderStyle}>
-						{diff.diffStat || t("projectDetail.worktrees.noChanges")}
-					</div>
-					<pre className="nightworkers-scrollbar max-h-[520px] overflow-auto p-3 text-xs">
-						{diff.diff || t("projectDetail.worktrees.noChanges")}
-					</pre>
-				</div>
-			) : null}
+			<WorktreeDiffDialog
+				branch={selected?.branch || t("projectDetail.worktrees.detached")}
+				diff={diff}
+				onClose={() => setDiff(null)}
+			/>
 		</section>
 	);
 }

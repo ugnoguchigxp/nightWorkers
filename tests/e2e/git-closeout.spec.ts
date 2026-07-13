@@ -187,8 +187,8 @@ test.describe("Git closeout @regression", () => {
 				);
 			}
 			expect(beforeReviewState).toMatchObject({
-				canCommit: false,
-				blockingCode: "REVIEW_RUN_NOT_STARTED",
+				canCommit: true,
+				blockingCode: null,
 				evidence: {
 					test: { status: "passed" },
 					security: { status: "skipped" },

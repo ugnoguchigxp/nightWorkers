@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 
 export const missionPilotPostQueuePhaseSchema = z.enum([
 	"queued",
+	"repository_bootstrapping",
 	"implementation_starting",
 	"implementing",
 	"implementation_evaluating",
@@ -29,7 +30,7 @@ export const missionPilotPhaseRunSchema = z.object({
 	id: z.string().uuid(),
 	sessionId: z.string().uuid(),
 	taskId: z.string().uuid(),
-	phase: z.enum(["implementation", "test", "review"]),
+	phase: z.enum(["repository_bootstrap", "implementation", "test", "review"]),
 	cycle: z.number().int().positive(),
 	attempt: z.number().int().positive(),
 	runId: z.string().uuid(),

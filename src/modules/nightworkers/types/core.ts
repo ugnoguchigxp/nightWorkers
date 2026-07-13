@@ -177,6 +177,15 @@ export type GitCloseoutState = {
 			| "failed";
 		recordVersion: number;
 		ciStatus: "not_required" | "pending" | "passed" | "failed" | "unavailable";
+		targetPushStatus?:
+			| "not_started"
+			| "pushing"
+			| "pushed"
+			| "failed"
+			| "blocked"
+			| "not_required"
+			| null;
+		targetPushedAt?: string | null;
 		lastErrorCode?: string | null;
 		lastErrorMessage?: string | null;
 	} | null;

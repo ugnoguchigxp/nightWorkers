@@ -5,13 +5,15 @@ import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
 	missionPilotContextSnapshots,
+	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
-import { repositories, tasks } from "../api/db/schema";
+import { repositories, taskRuns, tasks } from "../api/db/schema";
 
 const continuationMocks = vi.hoisted(() => ({
 	execute: vi.fn(),
 	markFailed: vi.fn(),
+	resumeInterruptedImplementation: vi.fn(),
 	startImplementationRework: vi.fn(),
 }));
 
@@ -20,6 +22,8 @@ vi.mock(
 	() => ({
 		executeMissionPilotContinuation: continuationMocks.execute,
 		markMissionPilotContinuationFailed: continuationMocks.markFailed,
+		resumeInterruptedImplementation:
+			continuationMocks.resumeInterruptedImplementation,
 		startImplementationRework: continuationMocks.startImplementationRework,
 	}),
 );
@@ -37,6 +41,93 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot post-Queue recovery", () => {
+	it("starts a continuation run when Play resumes an interrupted implementation", async () => {
+		const repositoryId = crypto.randomUUID();
+		const taskId = crypto.randomUUID();
+		const sessionId = crypto.randomUUID();
+		const runId = crypto.randomUUID();
+		const phaseRunId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		const now = new Date();
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "implementation-resume-recovery",
+			localPath: "/tmp/implementation-resume-recovery",
+			branch: "main",
+		});
+		await db.insert(tasks).values({
+			id: taskId,
+			repositoryId,
+			title: "Resume implementation",
+			objective: "continue existing implementation",
+			status: "running",
+		});
+		await db.insert(taskRuns).values({
+			id: runId,
+			taskId,
+			repositoryId,
+			status: "cancelled",
+			endedAt: now,
+			finishedAt: now,
+		});
+		await db.insert(missionPilotSessions).values({
+			id: sessionId,
+			taskId,
+			repositoryId,
+			sourceKind: "task",
+			sourceId: taskId,
+			desiredState: "playing",
+			phase: "implementing",
+			initialPromptSnapshot: "continue existing implementation",
+			initialPromptState: "sent",
+			implementationCycle: 1,
+			contextRevision: 7,
+			contextDigest: "ctx-7",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(missionPilotPhaseRuns).values({
+			id: phaseRunId,
+			sessionId,
+			taskId,
+			phase: "implementation",
+			cycle: 1,
+			attempt: 1,
+			runId,
+			inputContextRevision: 7,
+			inputContextDigest: "ctx-7",
+			status: "running",
+			evidenceJson: {},
+			startedAt: now,
+		});
+
+		await expect(recoverMissionPilotPostQueueSessions()).resolves.toBe(1);
+		expect(
+			continuationMocks.resumeInterruptedImplementation,
+		).toHaveBeenCalledWith({
+			taskId,
+			missionPilot: {
+				sessionId,
+				cycle: 1,
+				contextRevision: 7,
+				contextDigest: "ctx-7",
+				interruptedRunId: runId,
+			},
+		});
+		expect(
+			await db.query.missionPilotPhaseRuns.findFirst({
+				where: eq(missionPilotPhaseRuns.id, phaseRunId),
+			}),
+		).toMatchObject({
+			status: "failed",
+			verdict: "attention",
+			evidenceJson: {
+				interrupted: true,
+				resumeReason: "mission_pilot_play",
+			},
+		});
+	});
+
 	it("restarts an interrupted implementation rework with its durable packet", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();

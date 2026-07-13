@@ -59,6 +59,27 @@ describe("gitworktree routes", () => {
 		expect(service.createRepositoryWorktree).not.toHaveBeenCalled();
 	});
 
+	it("passes an explicit discard request to worktree removal", async () => {
+		service.removeRepositoryWorktree.mockResolvedValue({ removed: true });
+
+		const response = await app().request("/repositories/repo-id/worktrees", {
+			method: "DELETE",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				worktreeId: "worktree-id",
+				expectedHead: "0123456789012345678901234567890123456789",
+				discardChanges: true,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(service.removeRepositoryWorktree).toHaveBeenCalledWith("repo-id", {
+			worktreeId: "worktree-id",
+			expectedHead: "0123456789012345678901234567890123456789",
+			discardChanges: true,
+		});
+	});
+
 	it("keeps LLM advice behind the explicit advice endpoint", async () => {
 		adviseRepositoryWorktrees.mockResolvedValue({
 			summary: "clean",

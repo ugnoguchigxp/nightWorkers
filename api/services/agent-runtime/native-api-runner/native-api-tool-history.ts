@@ -296,6 +296,9 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		context.runtimeOptions?.planModeSettingsSnapshot,
 	);
 	const ontologyGuidance = buildOntologyGuidance(context);
+	const repositoryBootstrap = Boolean(
+		context.runtimeOptions?.repositoryBootstrap,
+	);
 	return [
 		`executionMode: ${executionMode}`,
 		...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
@@ -303,6 +306,12 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。",
 		"new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。",
 		"リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。",
+		...(repositoryBootstrap
+			? [
+					"このrunはRepository bootstrap専用です。最初にpwdとlist-dir / ls相当で空状態と.gitを確認し、HEADがなければnightworkers.import_project source=starter stack=honoをvariant省略で実行してください。",
+					"import後はGit HEADとbaseline commitだけを確認し、通常機能の実装には進まないでください。",
+				]
+			: []),
 		"",
 		"Tool choice guidance:",
 		"- context_initial_instructions は通常 read_current_specification の後に実行して従ってください。",

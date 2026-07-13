@@ -33,6 +33,23 @@ export const enTechStack = {
 	"techStack.profile.field.source": "Source",
 	"techStack.profile.field.version": "Version",
 	"techStack.profile.field.confidence": "Confidence",
+	"techStack.audit.title": "Dependency Vulnerabilities",
+	"techStack.audit.description":
+		"Runs bun audit in the registered project's repository root and fetches known vulnerabilities.",
+	"techStack.audit.fetch": "Fetch latest",
+	"techStack.audit.refresh": "Refresh latest",
+	"techStack.audit.running": "Auditing…",
+	"techStack.audit.unsupported":
+		"Audit execution from this screen currently supports Bun projects only.",
+	"techStack.audit.empty":
+		"Vulnerability information has not been fetched. The audit runs only when you press the button.",
+	"techStack.audit.clean": "No known vulnerabilities found",
+	"techStack.audit.findings": "{{count}} known vulnerabilities",
+	"techStack.audit.auditedAt": "Fetched at",
+	"techStack.audit.severity.critical": "Critical",
+	"techStack.audit.severity.high": "High",
+	"techStack.audit.severity.moderate": "Moderate",
+	"techStack.audit.severity.low": "Low",
 	"techStack.codeSize.title": "Project Size",
 	"techStack.codeSize.description":
 		"Counts physical code lines excluding blank and comment-only lines, grouped by purpose.",

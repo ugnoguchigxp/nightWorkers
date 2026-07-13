@@ -12,10 +12,14 @@ const conceptArtifactKinds = new Set([
 	"sequence_flow",
 ]);
 
+export function isMissionPilotConceptArtifactKind(artifactKind: string) {
+	return conceptArtifactKinds.has(artifactKind);
+}
+
 export function missionPilotArtifactScoreThreshold(
 	artifactKind: z.infer<typeof planModeRegenerationTargetSchema>,
 ) {
-	return conceptArtifactKinds.has(artifactKind)
+	return isMissionPilotConceptArtifactKind(artifactKind)
 		? MISSION_PILOT_CONCEPT_ARTIFACT_SCORE_THRESHOLD
 		: MISSION_PILOT_IMPLEMENTATION_ARTIFACT_SCORE_THRESHOLD;
 }
@@ -55,6 +59,7 @@ export const missionPilotPlanReviewSchema = z
 	.superRefine((review, context) => {
 		const belowThreshold = review.artifactScores.filter(
 			(item) =>
+				!isMissionPilotConceptArtifactKind(item.artifactKind) &&
 				item.score < missionPilotArtifactScoreThreshold(item.artifactKind),
 		);
 		if (belowThreshold.length > 0 && review.revisionTargets.length === 0) {
@@ -106,6 +111,7 @@ export function normalizeMissionPilotPlanReview(
 		review.artifactScores
 			.filter(
 				(item) =>
+					!isMissionPilotConceptArtifactKind(item.artifactKind) &&
 					item.score < missionPilotArtifactScoreThreshold(item.artifactKind),
 			)
 			.map((item) => `${item.artifactKind}:${item.sourceMessageId}`),
@@ -120,6 +126,11 @@ export function normalizeMissionPilotPlanReview(
 	}
 	return {
 		...review,
+		findings: review.findings.map((finding) =>
+			isMissionPilotConceptArtifactKind(finding.artifactKind)
+				? { ...finding, severity: "warning" as const }
+				: finding,
+		),
 		verdict: belowThreshold.size === 0 ? "pass" : "revise",
 		revisionTargets,
 	};

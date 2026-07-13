@@ -35,6 +35,7 @@ import {
 	generateMissionTaskCandidates,
 	generateTaskCandidates,
 	patchTask,
+	pushRunGitCloseout,
 	queueWorkbenchSession,
 	requestMissionPlanningRevision,
 	startReviewRun,
@@ -97,6 +98,7 @@ describe("nightWorkersCommands", () => {
 		await startReviewRun("review-1", { options: { codeReview: true } });
 		await fetchRunGitCloseout("run-1");
 		await commitRunGitCloseout("run-1");
+		await pushRunGitCloseout("run-1");
 
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			1,
@@ -139,6 +141,11 @@ describe("nightWorkersCommands", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			22,
 			"/api/runs/run-1/git/commit",
+			expect.objectContaining({ method: "POST" }),
+		);
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			23,
+			"/api/runs/run-1/git/push",
 			expect.objectContaining({ method: "POST" }),
 		);
 	});

@@ -68,7 +68,8 @@ export async function createMergeRecordForCommittedRun(runId: string) {
 		ciStatus:
 			policy.ciGate === "external_ci_required" ? "pending" : "not_required",
 		targetPushStatus:
-			policy.targetPushPolicy === "after_merge"
+			policy.targetPushPolicy === "after_merge" ||
+			policy.targetPushPolicy === "manual"
 				? "not_started"
 				: "not_required",
 	});

@@ -7,6 +7,7 @@ import {
 	createWorkbenchSession,
 	deleteTask,
 	patchTask as patchTaskCommand,
+	pushRunGitCloseout,
 	queueWorkbenchSession,
 	restoreWorkbenchSessionArchive,
 	startReviewRun,
@@ -34,6 +35,7 @@ import type {
 	UpdateProjectInput,
 	WorkbenchMovableSessionGroup,
 } from "../types";
+import { syncGitCloseoutMutationCache } from "./gitCloseoutMutationCache";
 
 type TaskPatchInput = {
 	title?: string;
@@ -365,21 +367,18 @@ export function useNightWorkersMutations({
 			return (await res.json()) as GitCloseoutState;
 		},
 		onSuccess: (state) => {
-			queryClient.setQueryData<GitCloseoutState | null>(
-				["gitCloseout", state.runId],
-				state,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["gitCloseout", state.runId],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["runDetails", state.runId],
-			});
-			if (activeSessionId) {
-				queryClient.invalidateQueries({
-					queryKey: ["sessionRuns", activeSessionId],
-				});
-			}
+			syncGitCloseoutMutationCache(queryClient, state, activeSessionId);
+		},
+	});
+
+	const pushRunGitCloseoutMutation = useMutation({
+		mutationFn: async (runId: string) => {
+			const res = await pushRunGitCloseout(runId);
+			if (!res.ok) throw new Error(await res.text());
+			return (await res.json()) as GitCloseoutState;
+		},
+		onSuccess: (state) => {
+			syncGitCloseoutMutationCache(queryClient, state);
 		},
 	});
 
@@ -593,5 +592,6 @@ export function useNightWorkersMutations({
 		startReviewSessionMutation,
 		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
+		pushRunGitCloseoutMutation,
 	};
 }

@@ -41,6 +41,7 @@ export async function resolveMissionPilotParentTaskStatus(input: {
 	if (!phaseRun) return input.runStatus;
 	if (!["completed", "needs_review"].includes(input.runStatus))
 		return input.runStatus;
+	if (phaseRun.phase === "repository_bootstrap") return "queued";
 	if (input.executionMode === "implementation") return "verifying";
 	return "needs_review";
 }
@@ -173,6 +174,16 @@ export async function continueMissionPilotAfterRun(input: {
 		.limit(1);
 	if (!session || session.desiredState !== "playing")
 		return { kind: "paused" } as const;
+	if (phaseRun.phase === "repository_bootstrap") {
+		const { completeMissionPilotRepositoryBootstrap } = await import(
+			"./mission-pilot-repository-bootstrap.service"
+		);
+		return completeMissionPilotRepositoryBootstrap({
+			phaseRun,
+			session,
+			runId: input.runId,
+		});
+	}
 	if (input.executionMode === "test") {
 		return continueAfterTestRun({ session, phaseRun, runId: input.runId });
 	}

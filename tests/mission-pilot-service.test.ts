@@ -31,6 +31,11 @@ const workbenchMocks = vi.hoisted(() => ({
 const planIntakeMocks = vi.hoisted(() => ({
 	start: vi.fn(),
 }));
+const queueRecoveryMocks = vi.hoisted(() => ({
+	reconcile: vi.fn(),
+	recoverPostQueue: vi.fn(),
+	release: vi.fn(),
+}));
 
 vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
 	stopTaskRun: workbenchMocks.stopRun,
@@ -38,6 +43,27 @@ vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
 }));
 vi.mock("../api/modules/missionPilot/mission-pilot-plan-intake.port", () => ({
 	startOrResumeMissionPilotPlanIntake: planIntakeMocks.start,
+}));
+vi.mock(
+	"../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service")
+		>()),
+		reconcileMissionPilotPreQueueSessions: queueRecoveryMocks.reconcile,
+	}),
+);
+vi.mock(
+	"../api/modules/missionPilot/mission-pilot-post-queue-coordinator.service",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/modules/missionPilot/mission-pilot-post-queue-coordinator.service")
+		>()),
+		releaseMissionPilotQueueHandoff: queueRecoveryMocks.release,
+	}),
+);
+vi.mock("../api/modules/missionPilot/mission-pilot-recovery.service", () => ({
+	recoverMissionPilotPostQueueSessions: queueRecoveryMocks.recoverPostQueue,
 }));
 
 const service = await import(
@@ -53,6 +79,12 @@ beforeEach(() => {
 		questionnaireSessionId: crypto.randomUUID(),
 		questionnaireStatus: "answering",
 	});
+	queueRecoveryMocks.reconcile.mockReset();
+	queueRecoveryMocks.reconcile.mockResolvedValue(1);
+	queueRecoveryMocks.recoverPostQueue.mockReset();
+	queueRecoveryMocks.recoverPostQueue.mockResolvedValue(1);
+	queueRecoveryMocks.release.mockReset();
+	queueRecoveryMocks.release.mockResolvedValue("queue-entry");
 });
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) {
@@ -177,6 +209,75 @@ describe("Mission Pilot service", () => {
 					),
 				),
 		).toHaveLength(1);
+	});
+
+	it("resumes a held Queue handoff without regenerating Plan context", async () => {
+		const fixture = await createPilotFixture();
+		const current = await getSessionByTaskId(fixture.taskId);
+		if (!current) throw new Error("missing Mission Pilot session");
+		await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "stopped",
+				phase: "attention",
+				queueHandoffJson: {
+					sessionId: current.id,
+					taskId: fixture.taskId,
+					admissionKey: `mission-pilot:${current.id}:digest:review`,
+					queueEntryId: crypto.randomUUID(),
+					queueEntryStatus: "queued",
+					queueClaimReady: false,
+					reviewedContextRevision: current.contextRevision,
+					reviewedContextDigest: current.contextDigest,
+					featurePlanMessageId: crypto.randomUUID(),
+					verificationDocumentId: crypto.randomUUID(),
+					planReviewId: crypto.randomUUID(),
+					planReviewVerdict: "pass",
+					queuedAt: new Date().toISOString(),
+				},
+				version: current.version + 1,
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.id, current.id));
+		const before = await getSessionByTaskId(fixture.taskId);
+		const played = await service.play(fixture.taskId, before?.version ?? -1);
+		expect(queueRecoveryMocks.reconcile).toHaveBeenCalledOnce();
+		expect(queueRecoveryMocks.release).toHaveBeenCalledWith(fixture.taskId);
+		expect(planIntakeMocks.start).not.toHaveBeenCalled();
+		expect(played.missionPilot).toMatchObject({
+			desiredState: "playing",
+			phase: "queued",
+		});
+		expect(await getSessionByTaskId(fixture.taskId)).toMatchObject({
+			contextRevision: current.contextRevision,
+			contextDigest: current.contextDigest,
+		});
+	});
+
+	it("resumes the interrupted implementation phase and invokes post-Queue recovery", async () => {
+		const fixture = await createPilotFixture();
+		const current = await getSessionByTaskId(fixture.taskId);
+		if (!current) throw new Error("missing Mission Pilot session");
+		await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "stopped",
+				phase: "paused",
+				resumePhase: "implementing",
+				version: current.version + 1,
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.id, current.id));
+		const before = await getSessionByTaskId(fixture.taskId);
+
+		const played = await service.play(fixture.taskId, before?.version ?? -1);
+
+		expect(queueRecoveryMocks.recoverPostQueue).toHaveBeenCalledOnce();
+		expect(planIntakeMocks.start).not.toHaveBeenCalled();
+		expect(played.missionPilot).toMatchObject({
+			desiredState: "playing",
+			phase: "implementing",
+		});
 	});
 
 	it("preserves typed Plan intake conflicts instead of replacing them with a 502", async () => {

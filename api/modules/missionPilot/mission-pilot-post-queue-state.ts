@@ -10,7 +10,13 @@ export const MISSION_PILOT_CORRECTION_LIMITS = {
 const transitions: Partial<
 	Record<MissionPilotPostQueuePhase, readonly MissionPilotPostQueuePhase[]>
 > = {
-	queued: ["implementation_starting", "paused", "attention"],
+	queued: [
+		"repository_bootstrapping",
+		"implementation_starting",
+		"paused",
+		"attention",
+	],
+	repository_bootstrapping: ["queued", "paused", "attention"],
 	implementation_starting: ["implementing", "paused", "attention"],
 	implementing: ["implementation_evaluating", "paused", "attention"],
 	implementation_evaluating: ["test_preparing", "attention"],

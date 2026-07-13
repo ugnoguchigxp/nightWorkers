@@ -1,5 +1,4 @@
 import { and, desc, eq } from "drizzle-orm";
-import { repositoryMaterializationIntentSchema } from "../../../shared/schemas/git-integration.schema";
 import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotQueueHandoffSchema,
@@ -26,6 +25,10 @@ import * as queueRepo from "../queue/queue.repository";
 import { prepareImplementationQueueAdmission } from "../queue/queue-management.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
+import {
+	repositoryHasGitHead,
+	startMissionPilotRepositoryBootstrap,
+} from "./mission-pilot-repository-bootstrap.service";
 
 const TERMINAL_TASK_STATUSES = new Set([
 	"completed",
@@ -402,33 +405,29 @@ export async function admitMissionPilotQueueHandoff(input: {
 			"Committed Mission Pilot Queue handoff could not be verified",
 		);
 	}
+	const repository = await nightworkersRepo.getRepository(
+		persistedTask.repositoryId,
+	);
+	if (!repository?.localPath) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"Repository path is not configured",
+		);
+	}
+	const hasGitHead = await repositoryHasGitHead(repository.localPath);
 	const workspace = await ensureTaskGitWorkspace({
 		taskId: input.taskId,
 		planReviewId: input.planReviewId,
 		admissionKey: committedHandoff.admissionKey,
-		materializationIntent: repositoryMaterializationIntentSchema.safeParse(
-			record(
-				(
-					await db
-						.select()
-						.from(missionPilotContextSnapshots)
-						.where(eq(missionPilotContextSnapshots.sessionId, input.sessionId))
-						.orderBy(desc(missionPilotContextSnapshots.revision))
-						.limit(1)
-				)[0]?.contextJson,
-			)?.repositoryMaterializationIntent,
-		).data,
+		materializationIntent: hasGitHead
+			? { kind: "existing_git" }
+			: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					initialize: true,
+				},
 	});
-	const provisionedWorkspace = await provisionTaskGitWorkspace(input.taskId);
-	if (
-		provisionedWorkspace.status !== "ready" &&
-		provisionedWorkspace.status !== "active"
-	) {
-		throw new MissionPilotPreQueueError(
-			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
-			"Dedicated Git workspace could not be provisioned",
-		);
-	}
 	await db
 		.update(implementationQueueEntries)
 		.set({
@@ -438,6 +437,41 @@ export async function admitMissionPilotQueueHandoff(input: {
 			updatedAt: new Date(),
 		})
 		.where(eq(implementationQueueEntries.id, committedHandoff.queueEntryId));
+	if (!hasGitHead) {
+		await startMissionPilotRepositoryBootstrap({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+		});
+		const bootstrappingSession = await missionPilotRepo.getSessionByTaskId(
+			input.taskId,
+		);
+		if (bootstrappingSession) {
+			publishMissionPilotUpdated(
+				input.taskId,
+				missionPilotRepo.toControlSummary(bootstrappingSession),
+			);
+		}
+		return persistedHandoff.data;
+	}
+	const provisionedWorkspace = await provisionTaskGitWorkspace(
+		input.taskId,
+	).catch((error) => {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			error instanceof Error
+				? error.message
+				: "Dedicated Git workspace provisioning failed",
+		);
+	});
+	if (
+		provisionedWorkspace.status !== "ready" &&
+		provisionedWorkspace.status !== "active"
+	) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"Dedicated Git workspace could not be provisioned",
+		);
+	}
 	publishMissionPilotUpdated(
 		input.taskId,
 		missionPilotRepo.toControlSummary(persistedSession),

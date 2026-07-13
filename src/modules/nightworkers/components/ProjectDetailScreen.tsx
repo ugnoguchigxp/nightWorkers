@@ -3,10 +3,15 @@ import { ProjectScopeNavigation } from "@/modules/overview";
 import { ProjectEvaluationScreen } from "@/modules/project-evaluation";
 import { QualityScreen, useProjectQualityController } from "@/modules/quality";
 import { TaskGenerationPanel } from "@/modules/taskGeneration";
-import { measureProjectCodeSize, TechStackPanel } from "@/modules/techStack";
+import {
+	measureProjectCodeSize,
+	refreshProjectDependencyAudit,
+	TechStackPanel,
+} from "@/modules/techStack";
 import type { ProjectDetailMetrics } from "../../../../shared/schemas/project-detail.schema";
 import type {
 	ProjectCodeSizeSnapshot,
+	ProjectDependencyAuditResult,
 	ProjectStackProfile,
 } from "../../../../shared/schemas/tech-stack.schema";
 import { ProjectDetailWorktrees } from "../../gitworktree";
@@ -57,6 +62,8 @@ export function ProjectDetailScreen({
 	onMissionTaskCandidatesCreated,
 }: ProjectDetailScreenProps) {
 	const [metrics, setMetrics] = useState<ProjectDetailMetrics>(emptyMetrics);
+	const [dependencyAuditResult, setDependencyAuditResult] =
+		useState<ProjectDependencyAuditResult | null>(null);
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	const [message, setMessage] = useState("");
 	const stackFocusRefreshInFlightRef = useRef(false);
@@ -91,6 +98,7 @@ export function ProjectDetailScreen({
 		projectDetailLoadInFlightRef.current = false;
 		stackFocusRefreshInFlightRef.current = false;
 		setMetrics(emptyMetrics);
+		setDependencyAuditResult(null);
 		setBusyAction(null);
 		setMessage("");
 		loadProjectDetail().catch((error) => {
@@ -156,6 +164,22 @@ export function ProjectDetailScreen({
 		}
 	}, [project.id]);
 
+	const runDependencyAuditAction = useCallback(async () => {
+		setBusyAction("dependency-audit");
+		setMessage("");
+		try {
+			setDependencyAuditResult(
+				await readJsonResponse<ProjectDependencyAuditResult>(
+					await refreshProjectDependencyAudit(project.id),
+				),
+			);
+		} catch (error) {
+			setMessage(error instanceof Error ? error.message : String(error));
+		} finally {
+			setBusyAction(null);
+		}
+	}, [project.id]);
+
 	return (
 		<div
 			className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-4"
@@ -211,6 +235,9 @@ export function ProjectDetailScreen({
 						currentGitHead={metrics.projectMeta?.git.head ?? null}
 						measurementBusy={busyAction === "code-size:measure"}
 						onMeasureCodeSize={() => void runCodeSizeAction()}
+						dependencyAuditResult={dependencyAuditResult}
+						dependencyAuditBusy={busyAction === "dependency-audit"}
+						onRefreshDependencyAudit={() => void runDependencyAuditAction()}
 					/>
 				) : null}
 

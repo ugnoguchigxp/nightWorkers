@@ -183,6 +183,23 @@ describe("nightworkers MCP manifest", () => {
 		).toContain("list");
 	});
 
+	it("rejects presentation labels as starter variants", () => {
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "hono",
+				variant: "react-vite",
+			}).success,
+		).toBe(false);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "hono",
+				variant: "sqlite",
+			}).success,
+		).toBe(true);
+	});
+
 	it("accepts SystemContext-echoed managed Todo taskTypes in replace input", () => {
 		expect(() =>
 			nightWorkersTodoListInputSchema.parse({

@@ -1,9 +1,11 @@
-import { Code2, Layers3 } from "lucide-react";
+import { Code2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
 	ProjectCodeSizeSnapshot,
+	ProjectDependencyAuditResult,
 	ProjectStackProfile,
 } from "../../../../shared/schemas/tech-stack.schema";
+import { DependencyAuditPanel } from "./DependencyAuditPanel";
 import { ProjectCodeSizePanel } from "./ProjectCodeSizePanel";
 import { StackSummaryBadge } from "./StackSummaryBadge";
 
@@ -47,6 +49,9 @@ export function TechStackPanel({
 	currentGitHead,
 	measurementBusy,
 	onMeasureCodeSize,
+	dependencyAuditResult = null,
+	dependencyAuditBusy = false,
+	onRefreshDependencyAudit,
 }: {
 	stackProfile: ProjectStackProfile;
 	projectPath: string;
@@ -54,21 +59,15 @@ export function TechStackPanel({
 	currentGitHead: string | null;
 	measurementBusy: boolean;
 	onMeasureCodeSize: () => void;
+	dependencyAuditResult?: ProjectDependencyAuditResult | null;
+	dependencyAuditBusy?: boolean;
+	onRefreshDependencyAudit?: () => void;
 }) {
 	const { t } = useTranslation();
 	const summary = stackProfile.summary || t("techStack.profile.unknown");
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-end justify-between gap-2">
-				<div>
-					<h2 className="flex items-center gap-2 text-base font-bold">
-						<Layers3 className="h-4 w-4" />
-						{t("techStack.profile.title")}
-					</h2>
-					<p className="mt-1 text-xs" style={subtleStyle}>
-						{t("techStack.profile.description")}
-					</p>
-				</div>
+			<div className="flex justify-end">
 				<StackSummaryBadge stackProfile={stackProfile} />
 			</div>
 			<div className="grid gap-3 md:grid-cols-3">
@@ -90,6 +89,12 @@ export function TechStackPanel({
 					sub={projectPath}
 				/>
 			</div>
+			<DependencyAuditPanel
+				packageManager={stackProfile.packageManager}
+				result={dependencyAuditResult}
+				busy={dependencyAuditBusy}
+				onRefresh={onRefreshDependencyAudit}
+			/>
 			<ProjectCodeSizePanel
 				snapshot={codeSizeSnapshot}
 				currentGitHead={currentGitHead}

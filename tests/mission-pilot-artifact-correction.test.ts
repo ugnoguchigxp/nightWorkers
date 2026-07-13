@@ -35,7 +35,7 @@ describe("Mission Pilot Artifact correction validation", () => {
 		).not.toThrow();
 	});
 
-	it("rejects changes outside the focused Blueprint screen", () => {
+	it("allows copy changes outside the focused Blueprint screen", () => {
 		expect(() =>
 			validateCorrectionResult(target, sourceMetadata, {
 				mockBlueprint: {
@@ -48,6 +48,19 @@ describe("Mission Pilot Artifact correction validation", () => {
 					],
 				},
 			}),
-		).toThrow("changed unfocused screen");
+		).not.toThrow();
+	});
+
+	it("rejects removal of an existing Blueprint section", () => {
+		expect(() =>
+			validateCorrectionResult(target, sourceMetadata, {
+				mockBlueprint: {
+					screens: [
+						{ id: "main", sections: [{ id: "main-list", copy: "New" }] },
+						{ id: "settings", sections: [] },
+					],
+				},
+			}),
+		).toThrow("removed section: settings-form");
 	});
 });

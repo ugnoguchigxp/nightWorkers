@@ -4,12 +4,43 @@ import type { MissionPilotQuestionnaireDraft } from "../../../../shared/schemas/
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type { ActivityEvent, Task, TaskEvent } from "../../nightworkers/types";
 import { getRelativeTimestamp } from "../../nightworkers/utils/time";
-import { fetchMissionPilotQuestionnaireDraft } from "../missionPilotCommands";
+import {
+	fetchMissionPilotExecutionTrace,
+	fetchMissionPilotQuestionnaireDraft,
+} from "../missionPilotCommands";
 
-type PilotThoughtItem = {
+export type PilotThoughtItem = {
 	id: string;
 	createdAt: unknown;
 	event: TaskEvent;
+};
+
+export type MissionPilotStoredEvent = {
+	id: string;
+	eventType: string;
+	phase: string;
+	cycle?: number | null;
+	contextRevision: number;
+	sourceKind: string;
+	sourceId?: string | null;
+	payloadJson?: Record<string, unknown>;
+	processStatus: string;
+	attemptCount: number;
+	lastError?: string | null;
+	createdAt: unknown;
+};
+
+export type MissionPilotOwnedRunEvent = TaskEvent & {
+	taskRunId: string;
+	missionPilotPhase?: string | null;
+	missionPilotCycle?: number | null;
+	missionPilotAttempt?: number | null;
+	timestamp: unknown;
+};
+
+export type MissionPilotExecutionTrace = {
+	events: MissionPilotStoredEvent[];
+	runEvents: MissionPilotOwnedRunEvent[];
 };
 
 export function isMissionPilotActivityEvent(event: ActivityEvent) {
@@ -42,6 +73,55 @@ function activityToTaskEvent(event: ActivityEvent): TaskEvent {
 	};
 }
 
+function missionPilotEventToTaskEvent(
+	event: MissionPilotStoredEvent,
+): TaskEvent {
+	return {
+		id: event.id,
+		eventType: event.eventType,
+		actor: "mission_pilot",
+		message: event.eventType,
+		payloadJson: {
+			phase: event.phase,
+			cycle: event.cycle ?? null,
+			contextRevision: event.contextRevision,
+			sourceKind: event.sourceKind,
+			sourceId: event.sourceId ?? null,
+			processStatus: event.processStatus,
+			attemptCount: event.attemptCount,
+			lastError: event.lastError ?? null,
+			...(event.payloadJson ?? {}),
+		},
+		createdAt: event.createdAt,
+	};
+}
+
+export function missionPilotTraceItems(
+	trace: MissionPilotExecutionTrace | null,
+): PilotThoughtItem[] {
+	return [
+		...(trace?.events ?? []).map((event) => ({
+			id: `mission-pilot-event:${event.id}`,
+			createdAt: event.createdAt,
+			event: missionPilotEventToTaskEvent(event),
+		})),
+		...(trace?.runEvents ?? []).map((event) => ({
+			id: `mission-pilot-run:${event.id}`,
+			createdAt: event.timestamp ?? event.createdAt,
+			event: {
+				...event,
+				runId: event.taskRunId,
+				payloadJson: {
+					...(event.payloadJson ?? {}),
+					missionPilotPhase: event.missionPilotPhase ?? null,
+					missionPilotCycle: event.missionPilotCycle ?? null,
+					missionPilotAttempt: event.missionPilotAttempt ?? null,
+				},
+			},
+		})),
+	];
+}
+
 export function PilotThoughtDock({
 	session,
 	activityEvents,
@@ -55,6 +135,8 @@ export function PilotThoughtDock({
 }) {
 	const [questionnaireDraft, setQuestionnaireDraft] =
 		useState<MissionPilotQuestionnaireDraft | null>(null);
+	const [executionTrace, setExecutionTrace] =
+		useState<MissionPilotExecutionTrace | null>(null);
 	useEffect(() => {
 		if (!session?.id) {
 			setQuestionnaireDraft(null);
@@ -73,8 +155,34 @@ export function PilotThoughtDock({
 			.catch(() => undefined);
 		return () => controller.abort();
 	}, [session?.id]);
+	useEffect(() => {
+		if (!session?.id) {
+			setExecutionTrace(null);
+			return;
+		}
+		let disposed = false;
+		const refresh = async () => {
+			try {
+				const response = await fetchMissionPilotExecutionTrace(session.id);
+				if (!response.ok) return;
+				const trace = (await response.json()) as MissionPilotExecutionTrace;
+				if (!disposed) setExecutionTrace(trace);
+			} catch {
+				// 既に取得済みの証跡は、一時的な通信断でも表示したままにする。
+			}
+		};
+		void refresh();
+		const timer = window.setInterval(() => void refresh(), 2_000);
+		return () => {
+			disposed = true;
+			window.clearInterval(timer);
+		};
+	}, [session?.id]);
 	const items = useMemo(() => {
 		const diagnostic = session?.missionPilot?.preQueueDiagnostic;
+		const ownedRunEventIds = new Set(
+			(executionTrace?.runEvents ?? []).map((event) => event.id),
+		);
 		const merged: PilotThoughtItem[] = [
 			...(diagnostic
 				? [
@@ -128,16 +236,28 @@ export function PilotThoughtDock({
 				createdAt: event.createdAt,
 				event: activityToTaskEvent(event),
 			})),
-			...runEvents.filter(isMissionPilotRunEvent).map((event) => ({
-				id: `run:${event.id}`,
-				createdAt: event.timestamp ?? event.createdAt,
-				event,
-			})),
+			...missionPilotTraceItems(executionTrace),
+			...runEvents
+				.filter(
+					(event) =>
+						isMissionPilotRunEvent(event) && !ownedRunEventIds.has(event.id),
+				)
+				.map((event) => ({
+					id: `run:${event.id}`,
+					createdAt: event.timestamp ?? event.createdAt,
+					event,
+				})),
 		];
 		return merged.sort(
 			(a, b) => eventTimestamp(a.createdAt) - eventTimestamp(b.createdAt),
 		);
-	}, [activityEvents, questionnaireDraft, runEvents, session?.missionPilot]);
+	}, [
+		activityEvents,
+		executionTrace,
+		questionnaireDraft,
+		runEvents,
+		session?.missionPilot,
+	]);
 
 	return (
 		<aside className="nightworkers-chat-dock flex h-full min-h-0 flex-col border-r border-slate-700/80 bg-[#0f172a]">

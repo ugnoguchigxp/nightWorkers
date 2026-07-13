@@ -112,6 +112,7 @@ export type NightWorkersWorkspaceState = {
 		options: Partial<ReviewRunOptions>,
 	) => Promise<ReviewSessionDetail>;
 	commitRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
+	pushRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
 	updateSessionStatus: (
 		sessionId: string,
 		status: "draft" | "ready" | "cancelled",

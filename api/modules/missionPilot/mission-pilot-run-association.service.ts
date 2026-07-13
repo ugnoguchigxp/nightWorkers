@@ -114,7 +114,7 @@ export async function associateMissionPilotImplementationRun(input: {
 export async function associateMissionPilotChildRun(input: {
 	taskId: string;
 	runId: string;
-	phase: "implementation" | "test" | "review";
+	phase: "repository_bootstrap" | "implementation" | "test" | "review";
 	missionPilot: {
 		sessionId: string;
 		cycle: number;
@@ -171,13 +171,22 @@ export async function associateMissionPilotChildRun(input: {
 		.update(missionPilotSessions)
 		.set({
 			phase:
-				input.phase === "implementation"
-					? "implementing"
-					: input.phase === "test"
-						? "testing"
-						: "reviewing",
+				input.phase === "repository_bootstrap"
+					? "repository_bootstrapping"
+					: input.phase === "implementation"
+						? "implementing"
+						: input.phase === "test"
+							? "testing"
+							: "reviewing",
 			activeRunId: input.runId,
 			activePhaseRunId: phaseRun.id,
+			...(input.phase === "repository_bootstrap"
+				? {
+						preQueueDiagnosticJson: null,
+						lastErrorCode: null,
+						lastErrorMessage: null,
+					}
+				: {}),
 			updatedAt: now,
 		})
 		.where(eq(missionPilotSessions.id, session.id));
@@ -186,11 +195,13 @@ export async function associateMissionPilotChildRun(input: {
 		taskId: session.taskId,
 		eventType: `${input.phase}_mode.run_started`,
 		phase:
-			input.phase === "implementation"
-				? "implementing"
-				: input.phase === "test"
-					? "testing"
-					: "reviewing",
+			input.phase === "repository_bootstrap"
+				? "repository_bootstrapping"
+				: input.phase === "implementation"
+					? "implementing"
+					: input.phase === "test"
+						? "testing"
+						: "reviewing",
 		cycle: input.missionPilot.cycle,
 		contextRevision: input.missionPilot.contextRevision,
 		contextDigest: input.missionPilot.contextDigest,

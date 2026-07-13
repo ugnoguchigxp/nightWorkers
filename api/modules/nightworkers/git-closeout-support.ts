@@ -166,6 +166,36 @@ export function pushBlockedByPolicy(safetyPolicy: unknown) {
 	});
 }
 
+export function resolveGitIntegrationCloseout(
+	mergeRecord: {
+		status: string;
+		targetPushStatus?: string | null;
+		lastErrorMessage?: string | null;
+	} | null,
+	decision: { state: string; reason: string | null },
+) {
+	const state = mergeRecord
+		? ({
+				decision_required: "integration_decision_required",
+				previewing: "merge_preview_running",
+				merging: "merge_running",
+				deferred: "integration_deferred",
+			}[mergeRecord.status] ?? mergeRecord.status)
+		: decision.state;
+	const targetPushStatus = mergeRecord?.targetPushStatus ?? "not_started";
+	const mergedTarget = mergeRecord?.status === "merged";
+	return {
+		state,
+		canPush: mergedTarget
+			? !["pushed", "pushing", "blocked"].includes(targetPushStatus)
+			: decision.state === "push_ready",
+		blockingReason:
+			mergedTarget && ["failed", "blocked"].includes(targetPushStatus)
+				? mergeRecord.lastErrorMessage
+				: decision.reason,
+	};
+}
+
 function escapeRegExp(value: string) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

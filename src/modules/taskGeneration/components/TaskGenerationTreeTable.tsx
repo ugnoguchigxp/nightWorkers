@@ -1,4 +1,4 @@
-import { Loader2, Minus, Plus, Sparkles, Target, Zap } from "lucide-react";
+import { Loader2, Minus, Plus, Target, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import type { Mission } from "../../../../shared/schemas/mission-planner.schema";
@@ -6,7 +6,6 @@ import type { MissionGoal } from "../../../../shared/schemas/task-generation.sch
 import {
 	EmptyTableRow,
 	IconActionButton,
-	SectionHeading,
 	SectionLabel,
 } from "../../nightworkers/components/project-detail/ProjectDetailCommon";
 import {
@@ -79,10 +78,6 @@ export function TaskGenerationTreeTable({
 	const { t } = useTranslation();
 	return (
 		<section className="space-y-3">
-			<SectionHeading
-				icon={<Sparkles className="h-4 w-4" />}
-				title={t("projectDetail.mission.treeTitle")}
-			/>
 			<div className="overflow-hidden border" style={panelStyle}>
 				<div
 					className="flex flex-wrap items-center justify-between gap-3 border-b p-3"

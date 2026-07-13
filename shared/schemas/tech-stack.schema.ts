@@ -33,6 +33,44 @@ export const projectStackProfileSchema = z.object({
 });
 export type ProjectStackProfile = z.infer<typeof projectStackProfileSchema>;
 
+export const projectDependencyAuditSeveritySchema = z.enum([
+	"low",
+	"moderate",
+	"high",
+	"critical",
+]);
+export type ProjectDependencyAuditSeverity = z.infer<
+	typeof projectDependencyAuditSeveritySchema
+>;
+
+export const projectDependencyAuditFindingSchema = z.object({
+	packageName: z.string().min(1),
+	advisoryId: z.string().min(1),
+	title: z.string().min(1),
+	severity: projectDependencyAuditSeveritySchema,
+	vulnerableVersions: z.string().nullable(),
+	url: z.string().nullable(),
+});
+export type ProjectDependencyAuditFinding = z.infer<
+	typeof projectDependencyAuditFindingSchema
+>;
+
+export const projectDependencyAuditResultSchema = z.object({
+	packageManager: z.literal("bun"),
+	auditedAt: dateLikeSchema,
+	counts: z.object({
+		total: z.number().int().nonnegative(),
+		low: z.number().int().nonnegative(),
+		moderate: z.number().int().nonnegative(),
+		high: z.number().int().nonnegative(),
+		critical: z.number().int().nonnegative(),
+	}),
+	findings: z.array(projectDependencyAuditFindingSchema),
+});
+export type ProjectDependencyAuditResult = z.infer<
+	typeof projectDependencyAuditResultSchema
+>;
+
 export const projectCodeSizeSourceCategorySchema = z.enum([
 	"frontend",
 	"backend",

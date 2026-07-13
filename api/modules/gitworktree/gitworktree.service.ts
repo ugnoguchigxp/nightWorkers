@@ -9,6 +9,7 @@ import type {
 	WorktreeSummary,
 	WorktreeUsage,
 } from "../../../shared/schemas/gitworktree.schema";
+import { discardableWorktreeRemoveBlockers } from "../../../shared/schemas/gitworktree.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { gitDiffTool } from "../../services/worker-tools/git";
 import * as gitworktreeRepo from "./gitworktree.repository";
@@ -32,6 +33,9 @@ import {
 
 type RepositoryIdentity = { topLevel: string; commonDir: string };
 type WorktreeServiceOptions = { runner?: GitCommandRunner };
+const discardableRemoveBlockers = new Set<WorktreeRemoveBlocker>(
+	discardableWorktreeRemoveBlockers,
+);
 
 function appError(status: number, code: string, message: string) {
 	return new AppError(status, code, message);
@@ -483,19 +487,31 @@ export async function removeRepositoryWorktree(
 			"worktree_changed",
 			"Worktree HEAD changed; refresh and retry",
 		);
-	if (!target.canRemove)
+	const remainingBlockers = target.removeBlockers.filter(
+		(blocker) =>
+			!(request.discardChanges && discardableRemoveBlockers.has(blocker)),
+	);
+	if (remainingBlockers.length > 0)
 		throw new AppError(
 			409,
-			target.removeBlockers[0] || "worktree_in_use",
+			remainingBlockers[0] || "worktree_in_use",
 			"Worktree cannot be removed",
 			{
-				blockers: target.removeBlockers,
+				blockers: remainingBlockers,
 				warnings: target.removeWarnings,
 			},
 		);
 	try {
 		await runner(
-			["-C", repository.localPath, "worktree", "remove", "--", target.path],
+			[
+				"-C",
+				repository.localPath,
+				"worktree",
+				"remove",
+				...(request.discardChanges ? ["--force"] : []),
+				"--",
+				target.path,
+			],
 			{ timeoutMs: 60_000 },
 		);
 	} catch (error) {

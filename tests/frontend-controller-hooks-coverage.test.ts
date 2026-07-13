@@ -89,6 +89,7 @@ function mutationFixture() {
 		startReviewSessionMutation: mutation,
 		startReviewRunMutation: mutation,
 		commitRunGitCloseoutMutation: mutation,
+		pushRunGitCloseoutMutation: mutation,
 		updateSessionStatusMutation: mutation,
 		reorderQueueSessionsMutation: mutation,
 		moveWorkbenchSessionMutation: mutation,
@@ -138,6 +139,7 @@ describe("frontend controller hook coverage", () => {
 			{ [task.id]: "streaming response" },
 		]);
 		vi.doMock("@tanstack/react-query", () => ({
+			queryOptions: <T>(options: T) => options,
 			useQueryClient: () => queryClient,
 			useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
 				const key = queryKey[0];
@@ -276,6 +278,7 @@ describe("frontend controller hook coverage", () => {
 		await workspace.startReviewSession(run.id);
 		await workspace.startReviewRun("review-1");
 		await workspace.commitRunGitCloseout(run.id);
+		await workspace.pushRunGitCloseout(run.id);
 		await workspace.updateSessionStatus(task.id, "completed");
 		await workspace.reorderQueueSessions([task.id]);
 		await workspace.moveWorkbenchSession({ taskId: task.id, group: "archive" });

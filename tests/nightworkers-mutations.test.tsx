@@ -149,6 +149,18 @@ function stubMutationFetch() {
 				requiredReview: {},
 			});
 		}
+		if (url.endsWith("/api/runs/run-started/git/push")) {
+			return jsonResponse({
+				runId: "run-started",
+				repositoryId: "repo-1",
+				canCommit: false,
+				canPush: false,
+				state: "pushed",
+				blockingCode: null,
+				commitRecord: { status: "committed", pushStatus: "pushed" },
+				requiredReview: {},
+			});
+		}
 		if (url.endsWith("/api/workbench/sessions/task-2/archive")) {
 			return jsonResponse(task("task-2", "cancelled", 1));
 		}
@@ -288,6 +300,7 @@ describe("useNightWorkersMutations", () => {
 			options: { codeReview: true },
 		});
 		await mutations.commitRunGitCloseoutMutation.mutateAsync("run-started");
+		await mutations.pushRunGitCloseoutMutation.mutateAsync("run-started");
 
 		expect(
 			queryClient.getQueryData<TaskRun[]>(["sessionRuns", "task-1"]),
@@ -317,7 +330,7 @@ describe("useNightWorkersMutations", () => {
 				"gitCloseout",
 				"run-started",
 			]),
-		).toEqual(expect.objectContaining({ state: "committed" }));
+		).toEqual(expect.objectContaining({ state: "pushed" }));
 	});
 
 	it("optimistically patches status, reorders priority, and moves sessions", async () => {

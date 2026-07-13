@@ -7,6 +7,7 @@ import type {
 import "../src/i18n/setup";
 import {
 	measureProjectCodeSize,
+	refreshProjectDependencyAudit,
 	TechStackPanel,
 } from "../src/modules/techStack";
 
@@ -127,6 +128,22 @@ describe("TechStackPanel", () => {
 		}
 	});
 
+	it("uses an explicit POST endpoint for dependency audit refresh", async () => {
+		const fetchMock = vi.fn<typeof fetch>(() =>
+			Promise.resolve(new Response("{}")),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			await refreshProjectDependencyAudit("repo-1");
+			expect(fetchMock).toHaveBeenCalledWith(
+				"/api/repositories/repo-1/tech-stack/dependency-audit",
+				expect.objectContaining({ method: "POST", body: "{}" }),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("renders the combined size equation and separate source/test breakdowns", () => {
 		const markup = renderToStaticMarkup(
 			<TechStackPanel
@@ -149,6 +166,7 @@ describe("TechStackPanel", () => {
 	});
 
 	it("renders an explicit empty state and disables measurement while busy", () => {
+		const onRefreshDependencyAudit = vi.fn();
 		const markup = renderToStaticMarkup(
 			<TechStackPanel
 				stackProfile={stackProfile}
@@ -157,10 +175,55 @@ describe("TechStackPanel", () => {
 				currentGitHead={null}
 				measurementBusy
 				onMeasureCodeSize={vi.fn()}
+				onRefreshDependencyAudit={onRefreshDependencyAudit}
 			/>,
 		);
 		expect(markup).toContain("コードサイズはまだ計測されていません");
 		expect(markup).toContain("disabled");
 		expect(markup).toContain("計測中");
+		expect(markup).toContain("最新情報を取得");
+		expect(markup).toContain("ボタンを押したときだけ監査を実行します");
+		expect(onRefreshDependencyAudit).not.toHaveBeenCalled();
+	});
+
+	it("renders the latest dependency audit result", () => {
+		const markup = renderToStaticMarkup(
+			<TechStackPanel
+				stackProfile={stackProfile}
+				projectPath="/tmp/project"
+				codeSizeSnapshot={null}
+				currentGitHead={null}
+				measurementBusy={false}
+				onMeasureCodeSize={vi.fn()}
+				dependencyAuditResult={{
+					packageManager: "bun",
+					auditedAt: "2026-07-13T00:00:00.000Z",
+					counts: {
+						total: 1,
+						low: 0,
+						moderate: 0,
+						high: 1,
+						critical: 0,
+					},
+					findings: [
+						{
+							packageName: "example-package",
+							advisoryId: "123",
+							title: "Example vulnerability",
+							severity: "high",
+							vulnerableVersions: "<2.0.0",
+							url: "https://example.com/advisory",
+						},
+					],
+				}}
+				dependencyAuditBusy={false}
+				onRefreshDependencyAudit={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("1件の既知脆弱性");
+		expect(markup).toContain("example-package");
+		expect(markup).toContain("Example vulnerability");
+		expect(markup).toContain("最新情報を再取得");
 	});
 });

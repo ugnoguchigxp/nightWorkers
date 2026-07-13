@@ -7,3 +7,10 @@ export function measureProjectCodeSize(repositoryId: string) {
 		jsonRequest("POST", {}),
 	);
 }
+
+export function refreshProjectDependencyAudit(repositoryId: string) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/tech-stack/dependency-audit`,
+		jsonRequest("POST", {}),
+	);
+}

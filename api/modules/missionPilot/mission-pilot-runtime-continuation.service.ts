@@ -4,6 +4,7 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
+import type { StartTaskRunOptions } from "../nightworkers/run-orchestration/start-task-run-types";
 import type { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
 
 type MissionPilotContinuation = Awaited<
@@ -36,8 +37,8 @@ export async function executeMissionPilotContinuation(
 			{
 				codeReview: true,
 				securityReview: true,
-				applyFixes: false,
-				commitChanges: false,
+				applyFixes: true,
+				commitChanges: true,
 			},
 			{
 				targetRunIds: continuation.input.targetRunIds,
@@ -73,6 +74,33 @@ export async function startImplementationRework(input: {
 		executionModeSource: "explicit",
 		runtimeOptionsPatch: { missionPilot: input.missionPilot },
 	});
+}
+
+export async function resumeInterruptedImplementation(input: {
+	taskId: string;
+	missionPilot: Record<string, unknown>;
+}) {
+	const { startTaskRun } = await import(
+		"../nightworkers/run-orchestration/start-task-run"
+	);
+	await startTaskRun(
+		input.taskId,
+		buildInterruptedImplementationResumeOptions(input.missionPilot),
+	);
+}
+
+export function buildInterruptedImplementationResumeOptions(
+	missionPilot: Record<string, unknown>,
+): StartTaskRunOptions {
+	return {
+		executionMode: "implementation",
+		executionModeSource: "explicit",
+		latestUserMessageOverride: "再開してください。",
+		...(typeof missionPilot.interruptedRunId === "string"
+			? { resumeTodosFromRunId: missionPilot.interruptedRunId }
+			: {}),
+		runtimeOptionsPatch: { missionPilot },
+	};
 }
 
 export async function markMissionPilotContinuationFailed(

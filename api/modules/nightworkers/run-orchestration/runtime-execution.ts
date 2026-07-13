@@ -23,6 +23,7 @@ import {
 import {
 	autoStartReviewSessionForRun,
 	finalizeReviewRunFromRuntime,
+	startReviewRunForSession,
 } from "../../review";
 import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
@@ -512,6 +513,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
+			let reviewRunStartedByMissionPilot = false;
 			try {
 				const missionContinuation = await continueMissionPilotAfterRun({
 					taskId,
@@ -520,6 +522,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						runtimeContextSnapshot.executionMode ?? "implementation",
 				});
 				await executeMissionPilotContinuation(missionContinuation);
+				reviewRunStartedByMissionPilot =
+					missionContinuation.kind === "start_review";
 			} catch (error) {
 				await markMissionPilotContinuationFailed(run.id, error);
 				logger.error(
@@ -527,13 +531,19 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					"Mission Pilot continuation failed after the run was finalized",
 				);
 			}
-			if (guardedStatus === "needs_review") {
+			if (
+				guardedStatus === "needs_review" &&
+				(runtimeContextSnapshot.executionMode ?? "implementation") !==
+					"review" &&
+				!reviewRunStartedByMissionPilot
+			) {
 				try {
-					await autoStartReviewSessionForRun(run.id);
+					const reviewSession = await autoStartReviewSessionForRun(run.id);
+					await startReviewRunForSession(reviewSession.session.id);
 				} catch (error) {
 					logger.warn(
 						{ error: toErrorMessage(error), runId: run.id },
-						"failed to auto-start Review Mode session",
+						"failed to auto-start Review Run",
 					);
 					await repo.createRunEvent({
 						version: 1,
@@ -543,7 +553,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						type: "review.required_section_auto_failed",
 						severity: "warning",
 						actor: "system",
-						message: "Review Mode session could not be automatically started.",
+						message: "Review Run could not be automatically started.",
 						data: { error: toErrorMessage(error) },
 					});
 				}

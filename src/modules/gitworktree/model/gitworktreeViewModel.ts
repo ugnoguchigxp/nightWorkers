@@ -2,6 +2,11 @@ import type {
 	CreateWorktreeRequest,
 	WorktreeSummary,
 } from "../../../../shared/schemas/gitworktree.schema";
+import { discardableWorktreeRemoveBlockers } from "../../../../shared/schemas/gitworktree.schema";
+
+const discardableRemoveBlockers = new Set<string>(
+	discardableWorktreeRemoveBlockers,
+);
 
 export type WorktreeDiff = {
 	diff: string;
@@ -17,6 +22,15 @@ export function worktreeHasChanges(worktree: WorktreeSummary) {
 			worktree.untrackedCount +
 			worktree.conflictedCount >
 		0
+	);
+}
+
+export function canDiscardAndRemoveWorktree(worktree: WorktreeSummary) {
+	return (
+		worktree.removeBlockers.length > 0 &&
+		worktree.removeBlockers.every((blocker) =>
+			discardableRemoveBlockers.has(blocker),
+		)
 	);
 }
 

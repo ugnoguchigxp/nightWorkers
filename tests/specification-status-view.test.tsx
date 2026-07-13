@@ -750,6 +750,47 @@ describe("PlanWorkspaceStatusView", () => {
 		).toHaveLength(2);
 	});
 
+	it("renders conceptual Artifact scores as non-blocking reference information", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={null}
+				missionPilotPlanProgress={
+					{
+						phase: "queued",
+						desiredState: "playing",
+						lastError: null,
+						activeCorrection: null,
+						review: {
+							status: "passed",
+							attempt: 1,
+							advisories: [
+								{
+									artifactKind: "blueprint",
+									score: 58,
+									threshold: 70,
+									rationale: "概念確認用の参考情報です。",
+								},
+							],
+						},
+					} as never
+				}
+				questionnaireSession={null}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={true}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("概念Artifactの参考評価");
+		expect(markup).toContain("Blueprint: 58/100");
+		expect(markup).toContain("Queue投入を妨げません");
+	});
+
 	it("disables regeneration and implementation actions for implemented tasks", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView

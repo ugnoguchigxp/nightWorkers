@@ -19,7 +19,6 @@ import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/
 import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
-import { buildStandardImplementationTodoList } from "../../../services/todo-runtime";
 import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
@@ -41,6 +40,7 @@ import {
 import { prepareTaskRunStart } from "./start-task-run-preparation";
 import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toAgentRuntimeTodoContext } from "./todo-closeout";
+import { resolveInitialTaskRunTodos } from "./todo-resume";
 import { toErrorMessage } from "./utils";
 
 export { startTaskRun } from "./start-task-run-entry";
@@ -188,23 +188,20 @@ export async function startTaskRunInProcess(
 			ontologyToolProfile: securityIntelligence.ontology.toolProfile,
 		},
 	};
-	const initialTodos =
-		executionMode === "test"
-			? []
-			: (options.initialTodos ??
-				runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput));
 	await repo.replaceTaskRunTodosForRun(
 		run.id,
-		executionMode === "planning" ||
-			executionMode === "general_answer" ||
-			executionMode === "test"
-			? []
-			: buildStandardImplementationTodoList({
-					todos: initialTodos,
-					startFirst: true,
-					requireDataMigrationGates: jobType === "data_migration",
-					verificationPolicy,
-				}),
+		await resolveInitialTaskRunTodos({
+			executionMode,
+			resumeTodosFromRunId: options.resumeTodosFromRunId,
+			loadTodosForRun: repo.listTaskRunTodosForRun,
+			initialTodos:
+				executionMode === "test"
+					? []
+					: (options.initialTodos ??
+						runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput)),
+			requireDataMigrationGates: jobType === "data_migration",
+			verificationPolicy,
+		}),
 	);
 	await repo.createRunEvent({
 		version: 1,
@@ -302,16 +299,18 @@ export async function startTaskRunInProcess(
 			charCount: compiledPromptText.length,
 		},
 	};
-	const rawLatestUserMessage = buildLatestRuntimeUserMessage({
-		fallback:
-			lastUserMessage?.content ||
-			task.description ||
-			task.objective ||
-			compiledPromptText,
-		lastUserMessage,
-		implementationHandoffMessage,
-		executionMode,
-	});
+	const rawLatestUserMessage =
+		options.latestUserMessageOverride?.trim() ||
+		buildLatestRuntimeUserMessage({
+			fallback:
+				lastUserMessage?.content ||
+				task.description ||
+				task.objective ||
+				compiledPromptText,
+			lastUserMessage,
+			implementationHandoffMessage,
+			executionMode,
+		});
 	const conversationContext =
 		executionMode === "review" || runtimeLaneResolution.lane === "codex-sdk"
 			? null
@@ -579,7 +578,7 @@ export async function startTaskRunInProcess(
 		await associateMissionPilotChildRun({
 			taskId,
 			runId: run.id,
-			phase: executionMode,
+			phase: options.missionPilotPhase ?? executionMode,
 			missionPilot,
 		});
 	}

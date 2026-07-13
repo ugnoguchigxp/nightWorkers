@@ -214,3 +214,34 @@ export async function supersedeArtifactCorrectionRunsForReview(
 			),
 		);
 }
+
+export async function supersedeConceptArtifactCorrectionRunsForReview(
+	planReviewId: string,
+) {
+	await db
+		.update(missionPilotArtifactCorrectionRuns)
+		.set({
+			status: "superseded",
+			finishedAt: new Date(),
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(missionPilotArtifactCorrectionRuns.planReviewId, planReviewId),
+				inArray(missionPilotArtifactCorrectionRuns.target, [
+					"blueprint",
+					"user_flow",
+					"activity_flow",
+					"sequence_flow",
+				]),
+				inArray(missionPilotArtifactCorrectionRuns.status, [
+					"pending",
+					"dispatching",
+					"running",
+					"result_received",
+					"validating",
+					"failed",
+				]),
+			),
+		);
+}

@@ -6,10 +6,7 @@ import { callStructuredJsonLLM } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as queueRepo from "../queue/queue.repository";
-import {
-	type ReviewCloseoutEvidence,
-	resolveReviewCloseoutEvidence,
-} from "../review/review-closeout-evidence.service";
+import { resolveReviewCloseoutEvidence } from "../review/review-closeout-evidence.service";
 import * as reviewRepo from "../review/review-mode.repository";
 import {
 	blocking,
@@ -21,10 +18,12 @@ import {
 	pushBlockedByPolicy,
 	readGitState,
 	readOwnedDiff,
+	resolveGitIntegrationCloseout,
 	withRepositoryCloseoutLock,
 } from "./git-closeout-support";
 import { getTaskRunMergeRecord } from "./nightworkers.git-merge.repository";
 import { createMergeRecordForCommittedRun } from "./nightworkers.git-merge.service";
+import { pushMergedTaskRunTarget } from "./nightworkers.git-target-push.service";
 import * as repo from "./nightworkers.repository";
 import { toErrorMessage } from "./run-orchestration/utils";
 
@@ -116,10 +115,6 @@ async function loadCloseoutContext(runId: string) {
 
 function decideCloseout(input: {
 	commitRecord: CommitRecord | null;
-	reviewSessionId: string | null;
-	testCoverageStatus: ReviewProgress | null;
-	reviewRunStatus: ReviewProgress | null;
-	closeoutEvidence: ReviewCloseoutEvidence | null;
 	head: string | null;
 	upstream: string | null;
 	dirtyPaths: string[];
@@ -127,57 +122,6 @@ function decideCloseout(input: {
 }) {
 	const { commitRecord } = input;
 	const stageablePaths = list(commitRecord?.stageableOwnedPathsJson);
-	if (!input.reviewSessionId) {
-		return blocking(
-			"REVIEW_SESSION_MISSING",
-			"Review Mode session has not been created for this run.",
-			"review_required",
-		);
-	}
-	if (input.closeoutEvidence?.review.status !== "done") {
-		const reviewStatus = input.closeoutEvidence?.review.status ?? "not_started";
-		return blocking(
-			reviewStatus === "not_started"
-				? "REVIEW_RUN_NOT_STARTED"
-				: reviewStatus === "running"
-					? "REVIEW_RUN_IN_PROGRESS"
-					: "REVIEW_RUN_NOT_SUCCESSFUL",
-			`Review evidence is not complete: ${reviewStatus}.`,
-			"review_required",
-		);
-	}
-	if (input.closeoutEvidence.test.status !== "passed") {
-		const testStatus = input.closeoutEvidence.test.status;
-		return blocking(
-			testStatus === "missing"
-				? "TEST_EVIDENCE_MISSING"
-				: testStatus === "failed"
-					? "TEST_EVIDENCE_FAILED"
-					: testStatus === "stale"
-						? "TEST_EVIDENCE_STALE"
-						: "TEST_EVIDENCE_INCOMPLETE",
-			input.closeoutEvidence.test.reason ||
-				`Test evidence is not passed: ${input.closeoutEvidence.test.status}.`,
-			"review_required",
-		);
-	}
-	if (!["passed", "skipped"].includes(input.closeoutEvidence.security.status)) {
-		return blocking(
-			input.closeoutEvidence.security.status === "missing"
-				? "SECURITY_EVIDENCE_MISSING"
-				: "SECURITY_GATE_BLOCKED",
-			input.closeoutEvidence.security.reason ||
-				`Security Oracle evidence is not passed: ${input.closeoutEvidence.security.status}.`,
-			"review_required",
-		);
-	}
-	if (input.closeoutEvidence.findings.unresolvedBlockingIds.length > 0) {
-		return blocking(
-			"BLOCKING_FINDINGS_UNRESOLVED",
-			`Unresolved blocking findings remain: ${input.closeoutEvidence.findings.unresolvedBlockingIds.join(", ")}`,
-			"review_required",
-		);
-	}
 	if (!commitRecord) {
 		return blocking(
 			"COMMIT_RECORD_MISSING",
@@ -268,37 +212,23 @@ export async function getRunGitCloseout(runId: string) {
 	const excludedPaths = exclusions(context.commitRecord?.excludedPathsJson);
 	const decision = decideCloseout({
 		commitRecord: context.commitRecord,
-		reviewSessionId: context.reviewSession?.id ?? null,
-		testCoverageStatus: context.testCoverageStatus,
-		reviewRunStatus: context.reviewRunStatus,
-		closeoutEvidence: context.closeoutEvidence,
 		head: context.gitState.head,
 		upstream: context.gitState.upstream,
 		dirtyPaths: context.gitState.dirtyPaths,
 		stagedPaths: context.gitState.stagedPaths,
 	});
-	const integrationState = context.mergeRecord
-		? ({
-				decision_required: "integration_decision_required",
-				previewing: "merge_preview_running",
-				merge_ready: "merge_ready",
-				merging: "merge_running",
-				merged: "merged",
-				deferred: "integration_deferred",
-				rework_requested: "rework_requested",
-				merge_blocked: "merge_blocked",
-				merge_conflicted: "merge_conflicted",
-				failed: "failed",
-			}[context.mergeRecord.status] ?? decision.state)
-		: decision.state;
+	const integration = resolveGitIntegrationCloseout(
+		context.mergeRecord,
+		decision,
+	);
 	return {
 		runId: context.run.id,
 		repositoryId: context.repository.id,
 		canCommit: decision.state === "commit_ready",
-		canPush: decision.state === "push_ready",
-		state: integrationState,
+		canPush: integration.canPush,
+		state: integration.state,
 		blockingCode: decision.code,
-		blockingReason: decision.reason,
+		blockingReason: integration.blockingReason,
 		commitRecord: context.commitRecord,
 		mergeRecord: context.mergeRecord,
 		requiredReview: {
@@ -536,6 +466,10 @@ async function pushRunGitCloseoutLocked(runId: string) {
 	const context = await loadCloseoutContext(runId);
 	const state = await getRunGitCloseout(runId);
 	if (!state.canPush) return state;
+	if (context.mergeRecord?.status === "merged") {
+		await pushMergedTaskRunTarget(runId);
+		return getRunGitCloseout(runId);
+	}
 	if (pushBlockedByPolicy(context.repository.safetyPolicy)) {
 		await repo.updateTaskRunCommitRecord(runId, {
 			pushStatus: "blocked",

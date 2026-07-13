@@ -83,23 +83,12 @@ export function validateCorrectionResult(
 			: []
 		).map((screen) => [String(screen.id || ""), screen]),
 	);
-	const focusedScreens = new Set(target.focus.screenIds);
 	for (const sourceScreen of sourceScreens) {
 		const screenId = String(sourceScreen.id || "");
 		const resultScreen = resultScreens.get(screenId);
 		if (!resultScreen) {
 			throw new Error(`Blueprint correction removed screen: ${screenId}`);
 		}
-		if (!focusedScreens.has(screenId)) {
-			if (JSON.stringify(sourceScreen) !== JSON.stringify(resultScreen)) {
-				throw new Error(
-					`Blueprint correction changed unfocused screen: ${screenId}`,
-				);
-			}
-			continue;
-		}
-		if (target.focus.kind !== "section") continue;
-		const focusedSections = new Set(target.focus.sectionIds);
 		const resultSections = new Map(
 			(Array.isArray(resultScreen.sections)
 				? (resultScreen.sections as Array<Record<string, unknown>>)
@@ -113,14 +102,6 @@ export function validateCorrectionResult(
 			const resultSection = resultSections.get(sectionId);
 			if (!resultSection) {
 				throw new Error(`Blueprint correction removed section: ${sectionId}`);
-			}
-			if (
-				!focusedSections.has(sectionId) &&
-				JSON.stringify(sourceSection) !== JSON.stringify(resultSection)
-			) {
-				throw new Error(
-					`Blueprint correction changed unfocused section: ${sectionId}`,
-				);
 			}
 		}
 	}

@@ -38,7 +38,47 @@ export async function ensureTaskGitWorkspace(input: {
 	materializationIntent?: RepositoryMaterializationIntent;
 }) {
 	const existing = await workspaceRepo.getTaskGitWorkspace(input.taskId);
-	if (existing) return existing;
+	if (existing) {
+		if (
+			existing.status === "waiting_for_repository_initialization" &&
+			input.materializationIntent?.kind === "existing_git"
+		) {
+			const initialized = await workspaceRepo.transitionTaskGitWorkspace({
+				id: existing.id,
+				expectedStatus: "waiting_for_repository_initialization",
+				data: {
+					status: "planned",
+					materializationKind: "existing_git",
+					materializationIntentJson: { kind: "existing_git" },
+					lastErrorCode: null,
+					lastErrorMessage: null,
+				},
+			});
+			if (initialized) return initialized;
+		}
+		if (
+			existing.status === "provision_failed" &&
+			input.materializationIntent &&
+			existing.provisionAttempt < 3
+		) {
+			const resumed = await workspaceRepo.transitionTaskGitWorkspace({
+				id: existing.id,
+				expectedStatus: "provision_failed",
+				data: {
+					status:
+						input.materializationIntent.kind === "existing_git"
+							? "planned"
+							: "waiting_for_repository_initialization",
+					materializationKind: input.materializationIntent.kind,
+					materializationIntentJson: input.materializationIntent,
+					lastErrorCode: null,
+					lastErrorMessage: null,
+				},
+			});
+			if (resumed) return resumed;
+		}
+		return existing;
+	}
 	return db.transaction(async (tx) => {
 		const current = await workspaceRepo.getTaskGitWorkspace(input.taskId, tx);
 		if (current) return current;

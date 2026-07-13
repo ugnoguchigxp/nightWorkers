@@ -41,8 +41,18 @@ export const missionPilotPlanProgressSchema = z.object({
 			]),
 			attempt: z.number().int().nonnegative(),
 			reviewId: z.string().uuid().nullable(),
+			advisories: z
+				.array(
+					z.object({
+						artifactKind: planModeRegenerationTargetSchema,
+						score: z.number().int().min(0).max(100),
+						threshold: z.number().int().min(0).max(100),
+						rationale: z.string().min(1),
+					}),
+				)
+				.default([]),
 		})
-		.default({ status: "pending", attempt: 0, reviewId: null }),
+		.default({ status: "pending", attempt: 0, reviewId: null, advisories: [] }),
 	activeCorrection: z
 		.object({
 			id: z.string().uuid(),

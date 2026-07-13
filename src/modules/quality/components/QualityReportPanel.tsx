@@ -1,4 +1,4 @@
-import { Play, TestTube2 } from "lucide-react";
+import { Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import type {
@@ -10,7 +10,7 @@ import type { CoverageFileRow } from "../model/qualityRows";
 import type { E2EResultRow } from "../model/qualityTypes";
 import { CoverageReportSection } from "./CoverageReportSection";
 import { E2EResultsSection } from "./E2EResultsSection";
-import { JestStatusLabel, SectionHeading } from "./QualityUi";
+import { JestStatusLabel } from "./QualityUi";
 import {
 	controlStyle,
 	mutedTextStyle,
@@ -110,11 +110,7 @@ export function QualityReportPanel({
 
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<SectionHeading
-					icon={<TestTube2 className="h-4 w-4" />}
-					title={t("projectDetail.quality.title")}
-				/>
+			<div className="flex flex-wrap items-center justify-end gap-3">
 				<div className="flex flex-wrap gap-2">
 					{runButtons.map((button, index) => (
 						<Button

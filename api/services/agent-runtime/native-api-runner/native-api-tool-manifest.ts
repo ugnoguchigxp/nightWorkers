@@ -167,7 +167,20 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 			inputSchema: objectSchema({
 				source: { type: "string", enum: ["starter", "git"] },
 				stack: { type: "string", enum: ["hono", "python"] },
-				variant: { type: "string" },
+				variant: {
+					type: "string",
+					enum: [
+						"sqlite",
+						"baseline",
+						"postgres",
+						"pgvector",
+						"rag",
+						"turso",
+						"cloudflare",
+						"api-only",
+						"auth",
+					],
+				},
 				overlays: { type: "array", items: { type: "string" } },
 				repoUrl: { type: "string" },
 				ref: { type: "string" },

@@ -3,7 +3,6 @@ import {
 	Archive,
 	ArchiveRestore,
 	ClipboardCheck,
-	GitCommitHorizontal,
 	LoaderCircle,
 	Play,
 	ShieldAlert,
@@ -29,6 +28,7 @@ type ReviewStatusViewerProps = {
 	) => Promise<ReviewSessionDetail>;
 	gitCloseout?: GitCloseoutState | null;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
+	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskStatus?: string | null;
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
@@ -39,7 +39,7 @@ const defaultReviewRunOptions: ReviewRunOptions = {
 	codeReview: true,
 	securityReview: false,
 	applyFixes: true,
-	commitChanges: false,
+	commitChanges: true,
 };
 
 const reviewRunOptionDescriptions: Array<{
@@ -150,6 +150,7 @@ export function ReviewStatusViewer({
 	onStartReviewRun,
 	gitCloseout,
 	onCommitGitCloseout,
+	onPushGitCloseout,
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
@@ -221,19 +222,6 @@ export function ReviewStatusViewer({
 		!latestReviewRun?.warnings.some(
 			(warning) => warning.severity === "blocking",
 		);
-	const commitAlreadyDone =
-		Boolean(gitCloseout?.mergeRecord) ||
-		gitCloseout?.state === "committed" ||
-		gitCloseout?.state === "push_ready" ||
-		gitCloseout?.state === "pushed";
-	const canCommitReviewedRun =
-		Boolean(gitCloseout?.canCommit) &&
-		!commitAlreadyDone &&
-		busySection !== "git_commit";
-	const commitButtonDisabled = !onCommitGitCloseout || !canCommitReviewedRun;
-	const commitButtonTitle = commitAlreadyDone
-		? "この run は既にコミット済みです。"
-		: gitCloseout?.blockingReason;
 	const isArchivedTask = activeTaskStatus === "archived";
 	const taskArchiveBusy = busySection === "task_archive";
 	const taskArchiveAction = isArchivedTask
@@ -280,7 +268,10 @@ export function ReviewStatusViewer({
 					)}
 				</div>
 
-				<div className="grid gap-3 rounded border border-slate-800 bg-slate-900/50 p-3">
+				<div
+					className="grid gap-3 rounded border border-slate-800 bg-slate-900/50 p-3"
+					data-review-section="review-run"
+				>
 					<div className="flex flex-wrap items-start justify-between gap-3">
 						<div className="min-w-0">
 							<div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
@@ -378,68 +369,14 @@ export function ReviewStatusViewer({
 						visibleFindings={visibleFindings}
 						securityArtifact={latestSecurityReview}
 					/>
-					<div className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
-						<div className="min-w-0 text-xs">
-							<div className="font-medium text-slate-100">手動コミット</div>
-							<div className="mt-1 text-slate-400">
-								対象 {gitCloseout?.counts.stageablePaths ?? 0} 件 / 除外{" "}
-								{gitCloseout?.counts.excludedPaths ?? 0} 件 /{" "}
-								{gitCloseout?.state ?? "未確認"}
-							</div>
-							{gitCloseout?.evidence ? (
-								<div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
-									<span>Review: {gitCloseout.evidence.review.status}</span>
-									<span>Test: {gitCloseout.evidence.test.status}</span>
-									<span>
-										Security Oracle: {gitCloseout.evidence.security.status}
-									</span>
-									<span>
-										Blocking findings:{" "}
-										{gitCloseout.evidence.findings.unresolvedBlockingIds.length}
-									</span>
-								</div>
-							) : null}
-							{gitCloseout?.blockingReason ? (
-								<div className="mt-1 text-[11px] text-amber-200">
-									{gitCloseout.blockingReason}
-								</div>
-							) : null}
-						</div>
-						<button
-							type="button"
-							className={reviewSuccessActionButtonClass}
-							title={commitButtonTitle ?? undefined}
-							disabled={commitButtonDisabled}
-							onClick={async () => {
-								if (!onCommitGitCloseout || !canCommitReviewedRun) return;
-								setBusySection("git_commit");
-								setError(null);
-								try {
-									await onCommitGitCloseout(detail.session.runId);
-								} catch (err) {
-									setError(
-										err instanceof Error
-											? err.message
-											: "Git commit could not be created.",
-									);
-								} finally {
-									setBusySection(null);
-								}
-							}}
-						>
-							{busySection === "git_commit" ? (
-								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<GitCommitHorizontal className="h-3.5 w-3.5" />
-							)}
-							{commitAlreadyDone ? "コミット済み" : "LLMメッセージでコミット"}
-						</button>
-					</div>
-					<ReviewGitIntegrationPanel
-						mergeRecord={gitCloseout?.mergeRecord ?? null}
-						onError={setError}
-					/>
 				</div>
+
+				<ReviewGitIntegrationPanel
+					gitCloseout={gitCloseout ?? null}
+					onCommitGitCloseout={onCommitGitCloseout}
+					onPushGitCloseout={onPushGitCloseout}
+					onError={setError}
+				/>
 
 				{detail.securityHandoffs.length > 0 ? (
 					<div className="grid gap-3">

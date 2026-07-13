@@ -72,11 +72,6 @@ describe("ProjectEvaluationActivityPanel", () => {
 				evaluation={null}
 				isRunning={true}
 				onRun={vi.fn()}
-				project={{
-					id: "repo-1",
-					name: "Project",
-					localPath: "/tmp/project",
-				}}
 			/>,
 		);
 		const empty = renderToStaticMarkup(

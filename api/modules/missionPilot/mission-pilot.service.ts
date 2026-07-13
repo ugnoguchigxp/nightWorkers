@@ -3,6 +3,7 @@ import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
 import { startOrResumeMissionPilotPlanIntake } from "./mission-pilot-plan-intake.port";
+import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	markMissionPilotPreQueueAttention,
 	reconcileMissionPilotPreQueueSessions,
@@ -12,6 +13,7 @@ import {
 	resumeQuestionnaireCountdown,
 } from "./mission-pilot-questionnaire.service";
 import { MissionPilotPreQueueError } from "./mission-pilot-queue-handoff.service";
+import { claimQueueHandoffResume } from "./mission-pilot-queue-resume.repository";
 import {
 	publishMissionPilotInitialPrompt,
 	publishMissionPilotUpdated,
@@ -79,6 +81,40 @@ export async function play(taskId: string, expectedVersion: number) {
 			"MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
 			"Mission Pilot requires a non-empty initial prompt",
 		);
+	if (
+		session.phase === "attention" &&
+		session.queueHandoffJson &&
+		!session.activeRunId
+	) {
+		const resumed = await claimQueueHandoffResume(taskId, expectedVersion);
+		if (!resumed)
+			throw new MissionPilotError(
+				409,
+				"MISSION_PILOT_VERSION_CONFLICT",
+				"Mission Pilot state changed; refresh and retry",
+			);
+		await reconcileMissionPilotPreQueueSessions();
+		const recovered = await repo.getSessionByTaskId(taskId);
+		if (
+			!recovered ||
+			recovered.desiredState !== "playing" ||
+			!["queued", "repository_bootstrapping"].includes(recovered.phase)
+		) {
+			throw new MissionPilotError(
+				409,
+				recovered?.lastErrorCode ??
+					"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+				recovered?.lastErrorMessage ?? "Queue handoff recovery failed",
+			);
+		}
+		if (recovered.phase === "queued") {
+			await releaseMissionPilotQueueHandoff(taskId);
+		}
+		const current = (await repo.getSessionByTaskId(taskId)) ?? recovered;
+		const missionPilot = repo.toControlSummary(current);
+		publishMissionPilotUpdated(taskId, missionPilot);
+		return { missionPilot, run: null, messages: [] };
+	}
 	if (
 		["paused", "attention"].includes(session.phase) &&
 		session.resumePhase &&

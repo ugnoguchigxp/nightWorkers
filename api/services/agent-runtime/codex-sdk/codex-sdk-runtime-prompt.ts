@@ -121,6 +121,9 @@ function buildExecutionContract(
 	const planModeContract =
 		"Plan mode: disabled. ユーザーはこの run で Plan Mode を明示していない。計画だけの回答で止まらず、implementation-plan artifact を主成果物として作らない。";
 	const ontologyProtocol = buildOntologyProtocolContract(context);
+	const repositoryBootstrap = Boolean(
+		context.runtimeOptions?.repositoryBootstrap,
+	);
 	const contract = [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
@@ -136,6 +139,16 @@ function buildExecutionContract(
 		"- context-still.initial_instructions は、この task で未実行の場合だけ作業前に一度実行して従う。チャット入力ごとに再実行しない。",
 		"",
 		...(ontologyProtocol ? [ontologyProtocol, ""] : []),
+		...(repositoryBootstrap
+			? [
+					"Repository bootstrap run:",
+					"- このrunは通常機能の実装runではありません。登録済みrepoRootを初期化するbootstrap専用です。",
+					"- 最初にpwdとlist-dir / ls相当でrepoRootの存在、空状態、.gitの有無を確認してください。",
+					"- Git HEADがなく空または未materializedならnightworkers.import_projectを実行してください。未指定のHono Web/APIはsource=starter, stack=honoとし、variantを省略して既定SQLiteを使ってください。",
+					"- import_project後にGit HEADとbaseline commitを確認し、通常機能のファイル編集や実装には進まずbootstrap Todoと固定gateだけを完了してください。",
+					"",
+				]
+			: []),
 		"実装時の最小実行方針:",
 		"- 明示的な計画・仕様化依頼でない限り、対象変更と必要な局所確認を同じ実作業 Todo の中で扱う。小変更で詳細な implementation-plan artifact を作らない。Todo tracking、quality_gate_verify、closeout は省略しない。",
 		"- テスト実装は原則 Test Mode の担当です。Implementation Mode では production change と必要最小限の局所確認に集中してください。既存テストの軽微な修正や失敗原因切り分けを除き、新規 test file / broad test coverage の追加を主成果物にしないでください。",

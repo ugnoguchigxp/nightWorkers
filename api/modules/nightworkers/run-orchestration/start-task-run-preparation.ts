@@ -61,7 +61,10 @@ export async function prepareTaskRunStart(input: {
 	const jobType = resolveLatestJobTypeFromMessages(messages);
 	const executionMode =
 		input.options.executionMode ?? resolveExecutionModeFromMessages(messages);
-	if (executionMode === "implementation") {
+	if (
+		executionMode === "implementation" &&
+		input.options.missionPilotPhase !== "repository_bootstrap"
+	) {
 		const workspace = await getTaskGitWorkspace(input.task.id);
 		if (workspace) {
 			if (

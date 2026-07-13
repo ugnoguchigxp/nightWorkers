@@ -294,6 +294,91 @@ describe("gitworktree service boundary", () => {
 		).toBe(false);
 	});
 
+	it("removes a dirty non-base worktree only after explicit discard", async () => {
+		let removed = false;
+		const runner: GitCommandRunner = vi.fn(async (args) => {
+			if (args[0] === "--version")
+				return { stdout: "git version 2.52.0\n", stderr: "", exitCode: 0 };
+			if (args.includes("--show-toplevel"))
+				return { stdout: "/repo\n", stderr: "", exitCode: 0 };
+			if (args.includes("--git-common-dir"))
+				return { stdout: "/repo/.git\n", stderr: "", exitCode: 0 };
+			if (args.includes("list"))
+				return {
+					stdout: [
+						"worktree /repo",
+						`HEAD ${head}`,
+						"branch refs/heads/main",
+						"",
+						...(removed
+							? []
+							: [
+									"worktree /repo-worktrees/feature",
+									`HEAD ${head}`,
+									"branch refs/heads/feature",
+									"",
+								]),
+					].join("\0"),
+					stderr: "",
+					exitCode: 0,
+				};
+			if (args.includes("status"))
+				return {
+					stdout:
+						args[1] === "/repo-worktrees/feature"
+							? "# branch.head feature\0? untracked.txt\0"
+							: "# branch.head main\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			if (args.includes("log"))
+				return { stdout: "Commit\n", stderr: "", exitCode: 0 };
+			if (args.includes("remove")) {
+				removed = true;
+				return { stdout: "", stderr: "", exitCode: 0 };
+			}
+			throw new Error(`Unexpected git args: ${args.join(" ")}`);
+		});
+		const listed = await listRepositoryWorktrees("repo-id", { runner });
+		const feature = listed.worktrees.find((item) => item.branch === "feature");
+		expect(feature).toMatchObject({
+			canRemove: false,
+			removeBlockers: ["worktree_dirty"],
+		});
+
+		await expect(
+			removeRepositoryWorktree(
+				"repo-id",
+				{ worktreeId: feature?.id || "", expectedHead: head },
+				{ runner },
+			),
+		).rejects.toMatchObject({ code: "worktree_dirty" });
+
+		await expect(
+			removeRepositoryWorktree(
+				"repo-id",
+				{
+					worktreeId: feature?.id || "",
+					expectedHead: head,
+					discardChanges: true,
+				},
+				{ runner },
+			),
+		).resolves.toMatchObject({ removed: true, branch: "feature" });
+		expect(runner).toHaveBeenCalledWith(
+			[
+				"-C",
+				"/repo",
+				"worktree",
+				"remove",
+				"--force",
+				"--",
+				"/repo-worktrees/feature",
+			],
+			{ timeoutMs: 60_000 },
+		);
+	});
+
 	it("does not fall back to the base repository when a task target is missing", async () => {
 		await expect(
 			resolveTaskExecutionRoot(

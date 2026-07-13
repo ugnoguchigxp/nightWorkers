@@ -29,6 +29,7 @@ import {
 	previewTaskRunMerge,
 	requestTaskRunRework,
 } from "../api/modules/nightworkers/nightworkers.git-merge.service";
+import { pushMergedTaskRunTarget } from "../api/modules/nightworkers/nightworkers.git-target-push.service";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 
 const execFileAsync = promisify(execFile);
@@ -252,6 +253,28 @@ describe("Plan-time Git workspace and Review merge", () => {
 			.from(taskGitWorkspaces)
 			.where(eq(taskGitWorkspaces.id, allocation.id));
 		expect(workspace?.status).toBe("merged");
+	});
+
+	it("pushes the merged target branch for a manual Review Mode push", async () => {
+		const { run, root } = await reviewedFixture("merge_commit");
+		const remote = await mkdtemp(path.join(tmpdir(), "nw-target-remote-"));
+		roots.push(remote);
+		await git(remote, ["init", "--bare"]);
+		await git(root, ["remote", "add", "origin", remote]);
+		await git(root, ["push", "-u", "origin", "main"]);
+		await previewTaskRunMerge({ runId: run.id, expectedVersion: 0 });
+		const merged = await executeTaskRunMerge({
+			runId: run.id,
+			expectedVersion: 1,
+		});
+		expect(merged.targetPushStatus).toBe("not_started");
+
+		const pushed = await pushMergedTaskRunTarget(run.id);
+
+		expect(pushed?.targetPushStatus).toBe("pushed");
+		expect(await git(remote, ["rev-parse", "refs/heads/main"])).toBe(
+			merged.targetHeadAfter,
+		);
 	});
 
 	it.each([

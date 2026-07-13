@@ -6,6 +6,7 @@ import {
 } from "../../../shared/schemas/mission-pilot.schema";
 import { db } from "../../db/client";
 import {
+	missionPilotPhaseRuns,
 	missionPilotPlanReviews,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
@@ -16,8 +17,14 @@ import {
 	taskRuns,
 	tasks,
 } from "../../db/schema";
+import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { MissionPilotPreQueueError } from "./mission-pilot-queue-handoff.service";
+import {
+	alignBootstrappedRepositoryBranch,
+	repositoryHasGitHead,
+	startMissionPilotRepositoryBootstrap,
+} from "./mission-pilot-repository-bootstrap.service";
 
 const TERMINAL_TASK_STATUSES = new Set([
 	"completed",
@@ -162,6 +169,7 @@ export async function markMissionPilotPreQueueAttention(
 		.set({
 			desiredState: "stopped",
 			phase: "attention",
+			resumePhase: session.queueHandoffJson ? "queued" : session.phase,
 			lastErrorCode: error.code,
 			lastErrorMessage: error.message,
 			preQueueDiagnosticJson: diagnostic,
@@ -192,6 +200,7 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				"revising_dependencies",
 				"queueing",
 				"queued",
+				"repository_bootstrapping",
 				"attention",
 			]),
 		);
@@ -207,7 +216,7 @@ export async function reconcileMissionPilotPreQueueSessions() {
 		const [task, runs, queueEntries] = await Promise.all([
 			db.query.tasks.findFirst({ where: eq(tasks.id, session.taskId) }),
 			db
-				.select({ id: taskRuns.id })
+				.select({ id: taskRuns.id, status: taskRuns.status })
 				.from(taskRuns)
 				.where(eq(taskRuns.taskId, session.taskId)),
 			db
@@ -215,11 +224,49 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				.from(implementationQueueEntries)
 				.where(eq(implementationQueueEntries.taskId, session.taskId)),
 		]);
+		const bootstrapRuns = await db
+			.select({
+				id: missionPilotPhaseRuns.id,
+				runId: missionPilotPhaseRuns.runId,
+				status: missionPilotPhaseRuns.status,
+			})
+			.from(missionPilotPhaseRuns)
+			.where(
+				and(
+					eq(missionPilotPhaseRuns.sessionId, session.id),
+					eq(missionPilotPhaseRuns.phase, "repository_bootstrap"),
+				),
+			);
+		const bootstrapRunIds = new Set(
+			bootstrapRuns.map((phaseRun) => phaseRun.runId),
+		);
+		const unexpectedRuns = runs.filter((run) => !bootstrapRunIds.has(run.id));
+		const hasActiveRun = runs.some((run) =>
+			[
+				"running",
+				"context_compiling",
+				"compiling_context",
+				"finalizing",
+			].includes(run.status),
+		);
+		const recoverableOrphanedStart =
+			Boolean(task && ["running", "ready"].includes(task.status)) &&
+			!hasActiveRun &&
+			queueEntries.length === 1 &&
+			queueEntries[0]?.status === "queued" &&
+			queueEntries[0]?.claimReady === false;
+		if (task && recoverableOrphanedStart) {
+			await db
+				.update(tasks)
+				.set({ status: "queued", updatedAt: new Date() })
+				.where(eq(tasks.id, task.id));
+		}
+		const taskStatus = recoverableOrphanedStart ? "queued" : task?.status;
 		let code: MissionPilotPreQueueDiagnosticCode | null = null;
 		if (!task) code = "MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING";
-		else if (TERMINAL_TASK_STATUSES.has(task.status)) {
+		else if (taskStatus && TERMINAL_TASK_STATUSES.has(taskStatus)) {
 			code = "MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL";
-		} else if (runs.length > 0) {
+		} else if (unexpectedRuns.length > 0) {
 			code = "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN";
 		} else if (queueEntries.length === 1) {
 			const handoff = missionPilotQueueHandoffSchema.safeParse(
@@ -233,7 +280,7 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				entry.status === "queued" &&
 				entry.claimReady === false &&
 				!entry.activeRunId &&
-				task.status === "queued" &&
+				taskStatus === "queued" &&
 				session.desiredState === "playing" &&
 				session.contextRevision === handoff.data.reviewedContextRevision &&
 				session.contextDigest === handoff.data.reviewedContextDigest
@@ -241,14 +288,46 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				try {
 					const { ensureTaskGitWorkspace, provisionTaskGitWorkspace } =
 						await import("../gitworktree/task-git-workspace.service");
+					const repository = await nightworkersRepo.getRepository(
+						task.repositoryId,
+					);
+					if (!repository?.localPath)
+						throw new Error("Repository path is not configured");
+					const hasGitHead = await repositoryHasGitHead(repository.localPath);
+					if (hasGitHead && bootstrapRuns.length > 0) {
+						await alignBootstrappedRepositoryBranch({
+							repositoryPath: repository.localPath,
+							targetBranch: repository.branch,
+						});
+						await db
+							.update(missionPilotPhaseRuns)
+							.set({
+								status: "completed",
+								verdict: "pass",
+								evidenceJson: { recoveredRepositoryHead: true },
+								finishedAt: new Date(),
+							})
+							.where(
+								and(
+									eq(missionPilotPhaseRuns.sessionId, session.id),
+									eq(missionPilotPhaseRuns.phase, "repository_bootstrap"),
+									eq(missionPilotPhaseRuns.status, "running"),
+								),
+							);
+					}
 					const workspace = await ensureTaskGitWorkspace({
 						taskId: session.taskId,
 						planReviewId: handoff.data.planReviewId,
 						admissionKey: handoff.data.admissionKey,
+						materializationIntent: hasGitHead
+							? { kind: "existing_git" }
+							: {
+									kind: "starter_template",
+									source: "starter",
+									stack: "hono",
+									initialize: true,
+								},
 					});
-					const ready = await provisionTaskGitWorkspace(session.taskId);
-					if (!["ready", "active"].includes(ready.status))
-						throw new Error("workspace not ready");
 					await db
 						.update(implementationQueueEntries)
 						.set({
@@ -257,6 +336,17 @@ export async function reconcileMissionPilotPreQueueSessions() {
 							updatedAt: new Date(),
 						})
 						.where(eq(implementationQueueEntries.id, entry.id));
+					if (!hasGitHead) {
+						await startMissionPilotRepositoryBootstrap({
+							taskId: session.taskId,
+							sessionId: session.id,
+						});
+						classified++;
+						continue;
+					}
+					const ready = await provisionTaskGitWorkspace(session.taskId);
+					if (!["ready", "active"].includes(ready.status))
+						throw new Error("workspace not ready");
 				} catch (error) {
 					await db
 						.update(missionPilotSessions)

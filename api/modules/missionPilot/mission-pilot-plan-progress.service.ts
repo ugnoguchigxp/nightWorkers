@@ -2,6 +2,10 @@ import {
 	type MissionPilotPlanProgress,
 	missionPilotPlanProgressSchema,
 } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
+import {
+	isMissionPilotConceptArtifactKind,
+	missionPilotArtifactScoreThreshold,
+} from "../../../shared/schemas/mission-pilot-plan-review.schema";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 
@@ -77,6 +81,19 @@ export async function getMissionPilotPlanProgress(
 							: "pending",
 			attempt: review?.attempt ?? 0,
 			reviewId: review?.id ?? null,
+			advisories: (review?.reviewJson.artifactScores ?? [])
+				.filter(
+					(score) =>
+						isMissionPilotConceptArtifactKind(score.artifactKind) &&
+						score.score <
+							missionPilotArtifactScoreThreshold(score.artifactKind),
+				)
+				.map((score) => ({
+					artifactKind: score.artifactKind,
+					score: score.score,
+					threshold: missionPilotArtifactScoreThreshold(score.artifactKind),
+					rationale: score.rationale,
+				})),
 		},
 		activeCorrection: activeCorrection
 			? {

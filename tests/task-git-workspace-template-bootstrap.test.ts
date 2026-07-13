@@ -6,11 +6,12 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { repositories } from "../api/db/schema";
+import { repositories, taskGitWorkspaces } from "../api/db/schema";
 import {
 	ensureTaskGitWorkspace,
 	provisionTaskGitWorkspace,
 } from "../api/modules/gitworktree/task-git-workspace.service";
+import { alignBootstrappedRepositoryBranch } from "../api/modules/missionPilot/mission-pilot-repository-bootstrap.service";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 
 vi.mock("../api/services/worker-tools/import-project", async () => {
@@ -88,6 +89,129 @@ describe("Task Git workspace template bootstrap", () => {
 		expect(ready.bootstrapEvidenceJson).toMatchObject({
 			baselineCommitCreated: true,
 		});
+		expect(ready.worktreePath).not.toBe(root);
+	});
+
+	it("restarts a failed existing-git allocation from template materialization", async () => {
+		const root = await mkdtemp(path.join(tmpdir(), "nw-template-retry-"));
+		roots.push(root, `${root}-worktrees`);
+		const project = await repo.createRepository({
+			name: `TEST: template retry ${crypto.randomUUID()}`,
+			localPath: root,
+			branch: "main",
+		});
+		repositoryIds.push(project.id);
+		const task = await repo.createTask({
+			repositoryId: project.id,
+			title: "Retry Starter",
+			status: "queued",
+		});
+		const failed = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `template-retry:${task.id}`,
+		});
+		await db
+			.update(taskGitWorkspaces)
+			.set({
+				status: "provision_failed",
+				provisionAttempt: 1,
+				lastErrorCode: "workspace_provision_failed",
+				lastErrorMessage: "not a git repository",
+			})
+			.where(eq(taskGitWorkspaces.id, failed.id));
+		const resumed = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `template-retry:${task.id}`,
+			materializationIntent: {
+				kind: "starter_template",
+				source: "starter",
+				stack: "hono",
+				initialize: true,
+			},
+		});
+		expect(resumed).toMatchObject({
+			status: "waiting_for_repository_initialization",
+			materializationKind: "starter_template",
+			lastErrorCode: null,
+			lastErrorMessage: null,
+		});
+		const ready = await provisionTaskGitWorkspace(task.id);
+		expect(ready).toMatchObject({
+			status: "ready",
+			materializationKind: "starter_template",
+		});
+		expect(ready.worktreePath).not.toBe(root);
+	});
+
+	it("reuses a held starter allocation after a worker creates the baseline", async () => {
+		const { execFileSync } = await import("node:child_process");
+		const { writeFileSync } = await import("node:fs");
+		const root = await mkdtemp(path.join(tmpdir(), "nw-worker-bootstrap-"));
+		roots.push(root, `${root}-worktrees`);
+		const project = await repo.createRepository({
+			name: `TEST: worker bootstrap ${crypto.randomUUID()}`,
+			localPath: root,
+			branch: "main",
+		});
+		repositoryIds.push(project.id);
+		const task = await repo.createTask({
+			repositoryId: project.id,
+			title: "Worker Bootstrap",
+			status: "queued",
+		});
+		const held = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `worker-bootstrap:${task.id}`,
+			materializationIntent: {
+				kind: "starter_template",
+				source: "starter",
+				stack: "hono",
+				initialize: true,
+			},
+		});
+		expect(held.status).toBe("waiting_for_repository_initialization");
+		writeFileSync(path.join(root, "README.md"), "# bootstrapped\n");
+		execFileSync("git", ["init", "--initial-branch=master"], { cwd: root });
+		execFileSync("git", ["add", "."], { cwd: root });
+		execFileSync(
+			"git",
+			[
+				"-c",
+				"user.name=Test",
+				"-c",
+				"user.email=test@example.com",
+				"commit",
+				"-m",
+				"baseline",
+			],
+			{ cwd: root },
+		);
+		await alignBootstrappedRepositoryBranch({
+			repositoryPath: root,
+			targetBranch: "main",
+		});
+		expect(
+			execFileSync("git", ["branch", "--show-current"], {
+				cwd: root,
+				encoding: "utf8",
+			}).trim(),
+		).toBe("main");
+		const initialized = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `worker-bootstrap:${task.id}`,
+			materializationIntent: { kind: "existing_git" },
+		});
+		expect(initialized).toMatchObject({
+			id: held.id,
+			status: "planned",
+			materializationKind: "existing_git",
+		});
+		const ready = await provisionTaskGitWorkspace(task.id);
+		expect(ready.status).toBe("ready");
 		expect(ready.worktreePath).not.toBe(root);
 	});
 });

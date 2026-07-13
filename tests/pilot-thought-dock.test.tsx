@@ -1,8 +1,72 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { PilotThoughtDock } from "../src/modules/missionPilot/components/PilotThoughtDock";
+import {
+	missionPilotTraceItems,
+	PilotThoughtDock,
+} from "../src/modules/missionPilot/components/PilotThoughtDock";
 
 describe("PilotThoughtDock", () => {
+	it("includes Mission Pilot coordinator events and every event from owned implementation/test runs", () => {
+		const items = missionPilotTraceItems({
+			events: [
+				{
+					id: "pilot-event-1",
+					eventType: "implementation.completed",
+					phase: "test_preparing",
+					cycle: 1,
+					contextRevision: 3,
+					sourceKind: "task_run",
+					sourceId: "implementation-run",
+					payloadJson: { nextPhase: "test" },
+					processStatus: "processed",
+					attemptCount: 0,
+					createdAt: new Date("2026-07-13T00:00:00Z"),
+				},
+			],
+			runEvents: [
+				{
+					id: "implementation-tool-call",
+					taskRunId: "implementation-run",
+					seq: 4,
+					actor: "tool",
+					eventType: "tool.call",
+					message: "実装ファイルを確認しています",
+					payloadJson: { toolName: "exec_command" },
+					missionPilotPhase: "implementation",
+					missionPilotCycle: 1,
+					missionPilotAttempt: 1,
+					timestamp: new Date("2026-07-13T00:00:01Z"),
+				},
+				{
+					id: "test-thought",
+					taskRunId: "test-run",
+					seq: 2,
+					actor: "worker",
+					eventType: "assistant.reasoning",
+					message: "テスト証跡を評価しています",
+					missionPilotPhase: "test",
+					missionPilotCycle: 1,
+					missionPilotAttempt: 1,
+					timestamp: new Date("2026-07-13T00:00:02Z"),
+				},
+			],
+		});
+
+		expect(items.map((item) => item.event.message)).toEqual([
+			"implementation.completed",
+			"実装ファイルを確認しています",
+			"テスト証跡を評価しています",
+		]);
+		expect(items[1]?.event.actor).toBe("tool");
+		expect(items[1]?.event.payloadJson).toMatchObject({
+			missionPilotPhase: "implementation",
+			toolName: "exec_command",
+		});
+		expect(items[2]?.event.payloadJson).toMatchObject({
+			missionPilotPhase: "test",
+		});
+	});
+
 	it("renders Pilot decisions without task execution or screen generation logs", () => {
 		const markup = renderToStaticMarkup(
 			<PilotThoughtDock

@@ -3,13 +3,12 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { buildPlanModeExecutionSteps } from "../../../shared/plan-mode-execution";
 import {
+	isMissionPilotConceptArtifactKind,
 	type MissionPilotPlanReview,
-	type MissionPilotReviewedArtifact,
 	missionPilotArtifactScoreThreshold,
 	missionPilotPlanReviewSchema,
 	normalizeMissionPilotPlanReview,
 } from "../../../shared/schemas/mission-pilot-plan-review.schema";
-import { planModeRegenerationTargetSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
@@ -28,9 +27,11 @@ import {
 	answerPreFeaturePlanQuestionnaire,
 	artifactKinds,
 	assertTaskContextCurrent,
+	collectCurrentReviewArtifacts,
 	ensureQuestionnaireContext,
 	errorMessage,
 	existingArtifactForStep,
+	finalizeResumedPreFeaturePlanQuestionnaire,
 	type GeneratedArtifact,
 	generateStepArtifact,
 	latestContext,
@@ -41,6 +42,7 @@ import {
 	persistArtifactContext,
 	publishCurrentPlanProgress,
 	renewPipelineLease,
+	selectMissionPilotPipelineQuestionnaire,
 	synchronizeTaskContext,
 	updatePhase,
 } from "./mission-pilot-plan-support";
@@ -63,10 +65,17 @@ async function executeArtifactSteps(
 	await assertMissionPilotPreQueueMutable(taskId);
 	await updatePhase(taskId, leaseOwner, "generating_artifacts");
 	const workspace = await getPlanModeWorkspace(taskId);
-	const questionnaire = await getDesignQuestionnaireSession(
+	let questionnaire = await getDesignQuestionnaireSession(
 		taskId,
 		questionnaireSessionId,
 	);
+	questionnaire = await finalizeResumedPreFeaturePlanQuestionnaire({
+		taskId,
+		sessionId,
+		questionnaireSessionId,
+		questionnaire,
+		leaseOwner,
+	});
 	if (!["review_ready", "accepted"].includes(questionnaire.status)) {
 		throw new Error(
 			"Completed Questionnaire is required for Artifact generation",
@@ -212,14 +221,13 @@ async function reviewCurrentPlan(
 			"全Plan Artifactの生成完了後に、Goal、確定Questionnaire、現行Artifact一式、受け入れ条件、検証の整合性を一度に審査してください。Artifact生成途中の個別レビューは行いません。",
 			"artifactScoresにはreviewArtifactsの各ArtifactをsourceMessageId単位で重複なく1件ずつ含め、0〜100点で採点してください。",
 			"feature_plan、data_model、api_io_contract、zod_schema_designは実装直結Artifactとして80点以上を合格とします。",
-			"blueprint、user_flow、activity_flow、sequence_flowは概念・可視化Artifactとして70点以上を合格とします。",
-			"全Artifactが種別ごとの基準点以上ならverdict=pass、1件でも基準未満ならverdict=reviseとしてください。findingのseverityだけで合否を決めないでください。",
+			"blueprint、user_flow、activity_flow、sequence_flowは概念把握用Artifactです。点数とfindingは参考情報として返しますが、低得点や細部不一致をverdict=reviseの理由にせず、revisionTargetsにも含めないでください。",
+			"実装直結Artifactがすべて80点以上ならverdict=pass、1件でも80点未満ならverdict=reviseとしてください。findingのseverityだけで合否を決めないでください。",
 			"確定QuestionnaireとTask acceptance criteriaは不変の入力であり、実装詳細をすべて列挙する文書ではありません。回答と矛盾しない型、値、取得元、コマンド、検証詳細はFeature Planが具体化します。",
 			"QuestionnaireまたはTask acceptance criteriaの変更を要求せず、不足する派生仕様はfeature_planのrevisionTargetとして返してください。",
-			"revisionTargetsは基準点未満のArtifactだけに限定し、基準点以上のArtifactを修正対象に含めないでください。",
-			"QuestionnaireとBlueprintが矛盾する場合はBlueprintをtargetにし、sourceMessageIdへ対象Artifact messageのUUIDを指定してください。",
-			"Blueprintの特定画面またはSectionを特定できる場合はfocusをscreenまたはsectionにし、構造化Artifact内のIDを指定してください。",
-			"基準点未満の各Artifactには、同じtargetとsourceMessageIdを持つrevisionTargetをちょうど1件返してください。",
+			"revisionTargetsは80点未満の実装直結Artifactだけに限定してください。概念把握用Artifactは修正対象に含めないでください。",
+			"Questionnaireと概念把握用Artifactが矛盾する場合はwarning findingとして記録し、revisionTargetにはしないでください。",
+			"80点未満の各実装直結Artifactには、同じtargetとsourceMessageIdを持つrevisionTargetをちょうど1件返してください。",
 		].join("\n"),
 		JSON.stringify({
 			reviewAttempt: attempt,
@@ -250,26 +258,6 @@ async function reviewCurrentPlan(
 		contextRevision: session.contextRevision,
 		contextDigest: session.contextDigest,
 	};
-}
-
-export function collectCurrentReviewArtifacts(
-	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
-) {
-	const byKind = new Map<string, MissionPilotReviewedArtifact>();
-	for (const artifact of [
-		...workspace.blueprintArtifacts,
-		...workspace.dataModelArtifacts,
-		...workspace.dedicatedViewArtifacts,
-		...workspace.featurePlanArtifacts,
-	]) {
-		const parsed = planModeRegenerationTargetSchema.safeParse(artifact.kind);
-		if (!parsed.success) continue;
-		byKind.set(parsed.data, {
-			artifactKind: parsed.data,
-			sourceMessageId: artifact.sourceMessageId,
-		});
-	}
-	return [...byKind.values()];
 }
 
 export function buildMissionPilotPlanReviewResponseJsonSchema() {
@@ -313,12 +301,16 @@ async function executeArtifactCorrections(input: {
 		if (run.status === "applied" || run.status === "superseded") continue;
 		await updatePhase(input.taskId, input.leaseOwner, "correcting_artifact");
 		await renewPipelineLease(input.sessionId, input.leaseOwner);
-		await executeMissionPilotArtifactCorrection({
-			taskId: input.taskId,
-			sessionId: input.sessionId,
-			questionnaireSessionId: input.questionnaireSessionId,
-			run,
-		});
+		try {
+			await executeMissionPilotArtifactCorrection({
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				questionnaireSessionId: input.questionnaireSessionId,
+				run,
+			});
+		} catch (error) {
+			if (!isMissionPilotConceptArtifactKind(run.target)) throw error;
+		}
 		await publishCurrentPlanProgress(input.taskId);
 	}
 }
@@ -346,18 +338,24 @@ async function executeReview(
 		if ((latest.reviewJson.artifactScores?.length ?? 0) === 0) {
 			await planRepo.supersedeArtifactCorrectionRunsForReview(latest.id);
 		} else {
-			await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
-			await executeArtifactCorrections({
-				taskId,
-				sessionId,
-				questionnaireSessionId,
-				reviewId: latest.id,
-				targets: latest.reviewJson.revisionTargets,
-				contextRevision: latest.contextRevision,
-				contextDigest: latest.contextDigest,
-				leaseOwner,
-			});
-			await updatePhase(taskId, leaseOwner, "reviewing_plan");
+			await planRepo.supersedeConceptArtifactCorrectionRunsForReview(latest.id);
+			const implementationTargets = latest.reviewJson.revisionTargets.filter(
+				(target) => !isMissionPilotConceptArtifactKind(target.target),
+			);
+			if (implementationTargets.length > 0) {
+				await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
+				await executeArtifactCorrections({
+					taskId,
+					sessionId,
+					questionnaireSessionId,
+					reviewId: latest.id,
+					targets: implementationTargets,
+					contextRevision: latest.contextRevision,
+					contextDigest: latest.contextDigest,
+					leaseOwner,
+				});
+				await updatePhase(taskId, leaseOwner, "reviewing_plan");
+			}
 		}
 	}
 	const firstAttempt = (latest?.attempt ?? 0) + 1;
@@ -485,10 +483,14 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 			preflight.phase === "queued"
 		)
 			return;
-		const workspace = await getPlanModeWorkspace(taskId);
-		const questionnaire = [...workspace.questionnaireSessions]
-			.reverse()
-			.find((item) => ["review_ready", "accepted"].includes(item.status));
+		const [workspace, existingSteps] = await Promise.all([
+			getPlanModeWorkspace(taskId),
+			planRepo.listPlanSteps(preflight.id),
+		]);
+		const questionnaire = selectMissionPilotPipelineQuestionnaire(
+			workspace.questionnaireSessions,
+			existingSteps,
+		);
 		if (!questionnaire) return;
 		const session = await planRepo.claimPipelineLease({
 			taskId,

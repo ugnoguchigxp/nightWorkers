@@ -46,6 +46,16 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.status.prunable": "Prunable",
 	"projectDetail.worktrees.status.unavailable": "状態確認不可",
 	"projectDetail.worktrees.viewDiff": "変更を見る",
+	"projectDetail.worktrees.loadingDiff": "変更を読み込み中...",
+	"projectDetail.worktrees.diff.title": "Worktreeの変更内容",
+	"projectDetail.worktrees.diff.changedFiles": "変更ファイル",
+	"projectDetail.worktrees.diff.fileCount": "{{count}}ファイル",
+	"projectDetail.worktrees.diff.addedLines": "{{count}}行追加",
+	"projectDetail.worktrees.diff.deletedLines": "{{count}}行削除",
+	"projectDetail.worktrees.diff.truncated": "一部省略",
+	"projectDetail.worktrees.diff.close": "差分を閉じる",
+	"projectDetail.worktrees.diff.copy": "差分をコピー",
+	"projectDetail.worktrees.diff.copied": "コピーしました",
 	"projectDetail.worktrees.summarize": "状況を要約",
 	"projectDetail.worktrees.confirmAdvice":
 		"確認済みのWorktree状態をLLMへ渡して要約します。続行しますか？",
@@ -53,8 +63,11 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.taskTitlePlaceholder": "Taskタイトル",
 	"projectDetail.worktrees.confirmTask": "Taskを作成",
 	"projectDetail.worktrees.remove": "削除",
+	"projectDetail.worktrees.discardAndRemove": "変更を破棄して削除",
 	"projectDetail.worktrees.confirmRemove":
 		"{{branch}}のWorktree directoryを削除します。Branchは残ります。続行しますか？",
+	"projectDetail.worktrees.confirmDiscardAndRemove":
+		"{{branch}}の未保存の変更をすべて破棄してWorktree directoryを削除します。Branchは残ります。この操作は元に戻せません。続行しますか？",
 	"projectDetail.worktrees.prune": "Stale metadataを整理",
 	"projectDetail.worktrees.confirmPrune":
 		"{{count}}件のstale worktree metadataを整理しますか？",

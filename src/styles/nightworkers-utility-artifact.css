@@ -82,6 +82,11 @@
 	background: color-mix(in srgb, var(--nw-danger) 14%, transparent);
 }
 
+.nightworkers-code-block .line.diff.hunk {
+	background: color-mix(in srgb, var(--nw-primary) 12%, transparent);
+	color: color-mix(in srgb, var(--nw-primary) 68%, var(--nw-code-text));
+}
+
 .nightworkers-diff-view {
 	overflow: hidden;
 	border: 1px solid var(--nw-border);

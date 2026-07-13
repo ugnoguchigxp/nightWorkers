@@ -55,7 +55,6 @@ export function ProjectEvaluationScreen({
 				evaluation={detail?.evaluation ?? null}
 				isRunning={controller.isRunning}
 				onRun={controller.runEvaluation}
-				project={project}
 			/>
 			<div className="nightworkers-scrollbar min-h-0 flex-1 overflow-auto">
 				<div className="min-w-[1120px] space-y-4 p-4">

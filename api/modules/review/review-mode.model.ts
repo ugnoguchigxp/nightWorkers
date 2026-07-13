@@ -65,7 +65,7 @@ export const DEFAULT_REVIEW_RUN_OPTIONS: ReviewRunOptions = {
 	codeReview: true,
 	securityReview: false,
 	applyFixes: true,
-	commitChanges: false,
+	commitChanges: true,
 };
 
 export type ReviewTargetWarning = {

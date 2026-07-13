@@ -46,6 +46,16 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.status.prunable": "Prunable",
 	"projectDetail.worktrees.status.unavailable": "Status unavailable",
 	"projectDetail.worktrees.viewDiff": "View changes",
+	"projectDetail.worktrees.loadingDiff": "Loading changes...",
+	"projectDetail.worktrees.diff.title": "Worktree changes",
+	"projectDetail.worktrees.diff.changedFiles": "Changed files",
+	"projectDetail.worktrees.diff.fileCount": "{{count}} files",
+	"projectDetail.worktrees.diff.addedLines": "{{count}} lines added",
+	"projectDetail.worktrees.diff.deletedLines": "{{count}} lines deleted",
+	"projectDetail.worktrees.diff.truncated": "Truncated",
+	"projectDetail.worktrees.diff.close": "Close diff",
+	"projectDetail.worktrees.diff.copy": "Copy diff",
+	"projectDetail.worktrees.diff.copied": "Copied",
 	"projectDetail.worktrees.summarize": "Summarize status",
 	"projectDetail.worktrees.confirmAdvice":
 		"Send the verified worktree snapshot to the LLM for a summary?",
@@ -53,8 +63,11 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.taskTitlePlaceholder": "Task title",
 	"projectDetail.worktrees.confirmTask": "Create task",
 	"projectDetail.worktrees.remove": "Remove",
+	"projectDetail.worktrees.discardAndRemove": "Discard changes and remove",
 	"projectDetail.worktrees.confirmRemove":
 		"Remove the worktree directory for {{branch}}? The branch will remain.",
+	"projectDetail.worktrees.confirmDiscardAndRemove":
+		"Discard all uncommitted changes and remove the worktree directory for {{branch}}? The branch will remain. This cannot be undone.",
 	"projectDetail.worktrees.prune": "Clean stale metadata",
 	"projectDetail.worktrees.confirmPrune":
 		"Clean {{count}} stale worktree entries?",

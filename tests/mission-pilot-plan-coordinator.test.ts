@@ -85,6 +85,9 @@ const {
 } = await import(
 	"../api/modules/missionPilot/mission-pilot-plan-coordinator.service"
 );
+const { selectMissionPilotPipelineQuestionnaire } = await import(
+	"../api/modules/missionPilot/mission-pilot-plan-support"
+);
 
 const repositoryIds: string[] = [];
 
@@ -110,6 +113,28 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot plan coordinator", () => {
+	it("resumes an answering pre-Feature Plan Questionnaire from durable step evidence", () => {
+		expect(
+			selectMissionPilotPipelineQuestionnaire(
+				[{ id: "questionnaire-1", status: "answering" }],
+				[
+					{
+						stepKey: "feature_plan",
+						evidenceJson: {
+							preFeaturePlanQuestionnaireStatus: "running",
+						},
+					},
+				],
+			),
+		).toEqual({ id: "questionnaire-1", status: "answering" });
+		expect(
+			selectMissionPilotPipelineQuestionnaire(
+				[{ id: "questionnaire-1", status: "answering" }],
+				[],
+			),
+		).toBeUndefined();
+	});
+
 	it("builds a Codex-compatible plan review response schema", () => {
 		const schema = buildMissionPilotPlanReviewResponseJsonSchema();
 		const serialized = JSON.stringify(schema);
@@ -233,6 +258,7 @@ describe("Mission Pilot plan coordinator", () => {
 			.where(eq(missionPilotSessions.id, session.id));
 
 		let featurePlanMessageId: string | null = null;
+		let questionnaireStatus = "review_ready";
 		const verificationDocumentId = crypto.randomUUID();
 		mocks.getWorkspace.mockImplementation(async () => ({
 			taskId,
@@ -255,7 +281,7 @@ describe("Mission Pilot plan coordinator", () => {
 			questionnaireSessions: [
 				{
 					id: questionnaireId,
-					status: "review_ready",
+					status: questionnaireStatus,
 					answeredCount: 1,
 					totalQuestionCount: 1,
 					unansweredCount: 0,
@@ -353,6 +379,8 @@ describe("Mission Pilot plan coordinator", () => {
 			],
 		};
 		mocks.generateAdditionalQuestionnaire.mockImplementation(async () => {
+			questionnaireStatus = "answering";
+			mocks.getQuestionnaire.mockResolvedValue(preFeaturePlanQuestionnaire);
 			return {
 				session: preFeaturePlanQuestionnaire,
 				result: {
@@ -383,9 +411,15 @@ describe("Mission Pilot plan coordinator", () => {
 				},
 			],
 		};
-		mocks.saveQuestionnaireAnswers.mockResolvedValue(
-			completedPreFeaturePlanQuestionnaire,
-		);
+		mocks.saveQuestionnaireAnswers
+			.mockRejectedValueOnce(new Error("simulated process interruption"))
+			.mockImplementation(async () => {
+				questionnaireStatus = "review_ready";
+				mocks.getQuestionnaire.mockResolvedValue(
+					completedPreFeaturePlanQuestionnaire,
+				);
+				return completedPreFeaturePlanQuestionnaire;
+			});
 		mocks.generateFeaturePlan.mockImplementation(async () => {
 			const [message] = await db
 				.insert(taskMessages)
@@ -491,6 +525,18 @@ describe("Mission Pilot plan coordinator", () => {
 			return { taskId };
 		});
 
+		await expect(runMissionPilotPlanPipeline(taskId)).rejects.toThrow(
+			"simulated process interruption",
+		);
+		await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "generating_artifacts",
+				lastErrorCode: null,
+				lastErrorMessage: null,
+			})
+			.where(eq(missionPilotSessions.id, session.id));
 		await runMissionPilotPlanPipeline(taskId);
 
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(1, taskId, {
@@ -514,8 +560,8 @@ describe("Mission Pilot plan coordinator", () => {
 			maxQuestions: 5,
 			role: "mission_pilot",
 		});
-		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledTimes(1);
-		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledWith(
+		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledTimes(2);
+		expect(mocks.saveQuestionnaireAnswers).toHaveBeenLastCalledWith(
 			taskId,
 			questionnaireId,
 			[

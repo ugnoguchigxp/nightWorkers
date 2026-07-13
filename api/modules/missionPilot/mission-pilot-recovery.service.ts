@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
+	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { taskRuns } from "../../db/schema";
@@ -10,6 +11,7 @@ import { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordin
 import {
 	executeMissionPilotContinuation,
 	markMissionPilotContinuationFailed,
+	resumeInterruptedImplementation,
 	startImplementationRework,
 } from "./mission-pilot-runtime-continuation.service";
 
@@ -30,6 +32,50 @@ export async function recoverMissionPilotPostQueueSessions() {
 		.where(eq(missionPilotSessions.desiredState, "playing"));
 	let recovered = 0;
 	for (const session of sessions) {
+		if (session.phase === "implementing" && !session.activeRunId) {
+			const [interruptedPhaseRun] = await db
+				.select()
+				.from(missionPilotPhaseRuns)
+				.where(
+					and(
+						eq(missionPilotPhaseRuns.sessionId, session.id),
+						eq(missionPilotPhaseRuns.phase, "implementation"),
+						eq(missionPilotPhaseRuns.cycle, session.implementationCycle),
+						eq(missionPilotPhaseRuns.status, "running"),
+					),
+				)
+				.orderBy(desc(missionPilotPhaseRuns.attempt))
+				.limit(1);
+			if (interruptedPhaseRun) {
+				await db
+					.update(missionPilotPhaseRuns)
+					.set({
+						status: "failed",
+						verdict: "attention",
+						evidenceJson: {
+							...interruptedPhaseRun.evidenceJson,
+							interrupted: true,
+							resumeReason: "mission_pilot_play",
+						},
+						finishedAt: new Date(),
+					})
+					.where(eq(missionPilotPhaseRuns.id, interruptedPhaseRun.id));
+			}
+			await resumeInterruptedImplementation({
+				taskId: session.taskId,
+				missionPilot: {
+					sessionId: session.id,
+					cycle: session.implementationCycle,
+					contextRevision: session.contextRevision,
+					contextDigest: session.contextDigest,
+					...(interruptedPhaseRun
+						? { interruptedRunId: interruptedPhaseRun.runId }
+						: {}),
+				},
+			});
+			recovered += 1;
+			continue;
+		}
 		if (session.phase === "implementation_rework" && !session.activeRunId) {
 			const [latestContext] = await db
 				.select()

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
+import { playMissionPilotTask } from "../../missionPilot";
 import { useImplementationQueue } from "../../queue";
 import { markArtifactOpenStart } from "../artifactPerformance";
 import { useWorkspaceAppearanceState } from "../contexts/WorkspaceAppearanceContext";
@@ -425,6 +426,21 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				current.activeSession;
 			if (isImplementationLockedStatus(targetSession?.status)) return;
 			current.setActiveSessionId(sessionId);
+			const missionPilot = targetSession?.missionPilot;
+			if (
+				missionPilot?.desiredState === "stopped" &&
+				missionPilot.phase === "attention" &&
+				missionPilot.queueHandoff
+			) {
+				const response = await playMissionPilotTask(
+					sessionId,
+					missionPilot.version,
+				);
+				if (!response.ok) throw new Error(await response.text());
+				await current.refreshProjectList();
+			} else {
+				await createImplementationQueueEntryWithMissionApproval(sessionId);
+			}
 			setClearedArtifactContextId(null);
 			setArtifactFocus({ type: "todo" });
 			props.onNavigate({
@@ -432,8 +448,6 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				sessionId,
 				artifact: { kind: "todo" },
 			});
-			await createImplementationQueueEntryWithMissionApproval(sessionId);
-			setArtifactFocus({ type: "todo" });
 		},
 		[createImplementationQueueEntryWithMissionApproval, props.onNavigate],
 	);

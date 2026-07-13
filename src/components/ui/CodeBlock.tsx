@@ -135,17 +135,35 @@ function buildCodeDisplayLines(code: string): { key: string; text: string }[] {
 
 function CodeLines({
 	code,
+	language,
 	lineNumbers,
 }: {
 	code: string;
+	language?: CodeBlockLanguage;
 	lineNumbers: boolean;
 }) {
 	const lines = React.useMemo(() => buildCodeDisplayLines(code), [code]);
+	const diffLanguage = language === "diff" || language === "patch";
 	return (
 		<pre className="m-0 overflow-x-auto bg-transparent py-4">
 			<code className="grid min-w-full bg-transparent font-mono leading-6">
 				{lines.map((line, index) => (
-					<span className="line block min-h-6 w-full px-4" key={line.key}>
+					<span
+						className={cn(
+							"line block min-h-6 w-full px-4",
+							diffLanguage && "diff",
+							diffLanguage &&
+								line.text.startsWith("+") &&
+								!line.text.startsWith("+++") &&
+								"add",
+							diffLanguage &&
+								line.text.startsWith("-") &&
+								!line.text.startsWith("---") &&
+								"remove",
+							diffLanguage && line.text.startsWith("@@") && "hunk",
+						)}
+						key={line.key}
+					>
 						{lineNumbers ? (
 							<span className="mr-4 inline-block w-5 select-none text-right text-muted-foreground/45">
 								{index + 1}
@@ -289,7 +307,11 @@ export const CodeBlock = React.forwardRef<HTMLDivElement, CodeBlockProps>(
 						data-syntax-highlighting="false"
 						style={normalizeMaxHeight(maxHeight)}
 					>
-						<CodeLines code={activeItem.code} lineNumbers={lineNumbers} />
+						<CodeLines
+							code={activeItem.code}
+							language={activeItem.language}
+							lineNumbers={lineNumbers}
+						/>
 					</div>
 				) : (
 					<div className="flex min-h-24 items-center justify-center bg-background text-muted-foreground text-sm">

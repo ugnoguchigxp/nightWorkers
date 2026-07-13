@@ -65,11 +65,11 @@ export function OverviewDashboard({
 
 	return (
 		<div
-			className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-6"
+			className="nightworkers-scrollbar h-full min-h-0 overflow-y-auto p-4"
 			style={overviewShellStyle}
 			aria-busy={isLoading && !scopedDashboard}
 		>
-			<div className="mx-auto max-w-7xl space-y-6">
+			<div className="mx-auto max-w-7xl space-y-4">
 				<OverviewHeader
 					projects={projects}
 					range={range}

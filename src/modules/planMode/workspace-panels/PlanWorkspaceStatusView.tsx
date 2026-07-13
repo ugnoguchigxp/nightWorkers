@@ -457,6 +457,8 @@ function MissionPilotPlanPhase({
 	progress: MissionPilotPlanProgress;
 }) {
 	const labels: Record<string, string> = {
+		repository_bootstrapping:
+			"Projectを確認し、必要なStarter templateを取り込んでいます",
 		generating_artifacts: "Plan Artifactを生成しています",
 		reviewing_plan: "実装計画をレビューしています",
 		revising_plan: "レビュー指摘を反映しています",
@@ -490,6 +492,17 @@ function MissionPilotPlanPhase({
 			{progress.review && progress.review.status !== "pending" ? (
 				<div className="mt-1">
 					Self-review: {progress.review.status}（{progress.review.attempt}回目）
+				</div>
+			) : null}
+			{(progress.review?.advisories?.length ?? 0) > 0 ? (
+				<div className="mt-2 grid gap-1 text-xs">
+					<div>概念Artifactの参考評価（Queue投入を妨げません）</div>
+					{progress.review?.advisories?.map((advisory) => (
+						<div key={`${advisory.artifactKind}-${advisory.score}`}>
+							{formatViewLabel(advisory.artifactKind)}: {advisory.score}/100 —{" "}
+							{advisory.rationale}
+						</div>
+					))}
 				</div>
 			) : null}
 		</div>

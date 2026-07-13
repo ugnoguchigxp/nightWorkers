@@ -65,4 +65,32 @@ describe("workbench nested route outlet contract", () => {
 		expect(projectQueueSource).toMatch(/kind: ['"]project_queue['"]/);
 		expect(projectQueueSource).toContain('data-view-toggle="project-queue"');
 	});
+
+	it("omits redundant headers from project detail tab surfaces", () => {
+		const projectNavigationSource = readRoute(
+			"src/modules/overview/components/ProjectScopeNavigation.tsx",
+		);
+		const taskGenerationSource = readRoute(
+			"src/modules/taskGeneration/components/TaskGenerationTreeTable.tsx",
+		);
+		const evaluationToolbarSource = readRoute(
+			"src/modules/project-evaluation/components/ProjectEvaluationToolbar.tsx",
+		);
+		const qualitySource = readRoute(
+			"src/modules/quality/components/QualityReportPanel.tsx",
+		);
+		const techStackSource = readRoute(
+			"src/modules/techStack/components/TechStackPanel.tsx",
+		);
+
+		expect(projectNavigationSource).not.toContain("border-b pb-2");
+		expect(taskGenerationSource).not.toContain(
+			"projectDetail.mission.treeTitle",
+		);
+		expect(evaluationToolbarSource).not.toContain("project.name");
+		expect(evaluationToolbarSource).not.toContain("project.localPath");
+		expect(evaluationToolbarSource).not.toContain("border-b");
+		expect(qualitySource).not.toContain("projectDetail.quality.title");
+		expect(techStackSource).not.toContain("techStack.profile.description");
+	});
 });

@@ -187,6 +187,10 @@ export function commitRunGitCloseout(runId: string) {
 	return apiFetch(`/api/runs/${runId}/git/commit`, jsonRequest("POST", {}));
 }
 
+export function pushRunGitCloseout(runId: string) {
+	return apiFetch(`/api/runs/${runId}/git/push`, jsonRequest("POST", {}));
+}
+
 export function previewRunGitMerge(runId: string, expectedVersion: number) {
 	return apiFetch(
 		`/api/runs/${runId}/git/merge/preview`,

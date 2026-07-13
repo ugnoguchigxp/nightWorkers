@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("ThreadWorkspace header", () => {
 	it("does not render an ambiguous session-state spinner beside the debug button", () => {
 		const source = readFileSync(
-			"src/modules/nightworkers/components/ThreadWorkspace.tsx",
+			"src/modules/nightworkers/components/ThreadWorkspaceHeader.tsx",
 			"utf8",
 		);
 
@@ -16,7 +16,7 @@ describe("ThreadWorkspace header", () => {
 
 	it("does not advertise missing Blueprint artifacts as a chat-backed create action", () => {
 		const workspaceSource = readFileSync(
-			"src/modules/nightworkers/components/ThreadWorkspace.tsx",
+			"src/modules/nightworkers/components/ThreadWorkspaceHeader.tsx",
 			"utf8",
 		);
 		const shellSource = readFileSync(
@@ -53,11 +53,20 @@ describe("ThreadWorkspace header", () => {
 		);
 		expect(workspaceSource).toContain("onOpenTodoArtifact");
 		expect(workspaceSource).not.toContain("nightworkers-thread-side-panel");
+		const queueAction = shellSource.indexOf(
+			"await createImplementationQueueEntryWithMissionApproval(sessionId);",
+		);
+		const todoFocusAfterQueue = shellSource.indexOf(
+			'setArtifactFocus({ type: "todo" });',
+			queueAction,
+		);
+		expect(queueAction).toBeGreaterThanOrEqual(0);
+		expect(todoFocusAfterQueue).toBeGreaterThan(queueAction);
 	});
 
 	it("opens restored questionnaire workspaces on Status instead of Questionnaire", () => {
-		const shellSource = readFileSync(
-			"src/modules/nightworkers/components/NightWorkersShell.tsx",
+		const questionnaireSource = readFileSync(
+			"src/modules/nightworkers/components/useNightWorkersQuestionnaire.ts",
 			"utf8",
 		);
 		const panelSource = readFileSync(
@@ -65,8 +74,8 @@ describe("ThreadWorkspace header", () => {
 			"utf8",
 		);
 
-		expect(shellSource).toMatch(
-			/void openQuestionnaireWorkspace\(\s*latestQuestionnaireMessage,\s*['"]status['"],/,
+		expect(questionnaireSource).toContain(
+			"resolveQuestionnaireReadyInitialTab(latestQuestionnaireMessage)",
 		);
 		expect(panelSource).toContain("existingQuestionnaireMessageIds");
 		expect(panelSource).toContain(

@@ -35,6 +35,7 @@ export {
 	recordArtifactCorrectionResult,
 	recoverArtifactCorrectionRuns,
 	supersedeArtifactCorrectionRunsForReview,
+	supersedeConceptArtifactCorrectionRunsForReview,
 } from "./mission-pilot-artifact-correction.repository";
 
 export async function claimPipelineLease(input: {

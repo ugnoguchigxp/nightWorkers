@@ -411,6 +411,7 @@ describe("ReviewStatusViewer", () => {
 		expect(text).toContain("Source: nightworkers/task @ 1111111111");
 		expect(text).toContain("Target: main @ 3333333333");
 		expect(text).toContain("再評価");
+		expect(text).toContain("LLMにマージを手配");
 		expect(text).toContain("マージ");
 		expect(text).toContain("後で判断");
 		expect(text).toContain("再作業");
@@ -540,7 +541,7 @@ describe("ReviewStatusViewer", () => {
 		expect(runButton).not.toContain("animate-spin");
 	});
 
-	it("renders a manual commit button for the reviewed run", async () => {
+	it("renders commit, merge, and push as peer Review Mode actions", async () => {
 		await i18next.changeLanguage("ja");
 		const detail = reviewSessionDetail();
 		const markup = renderToStaticMarkup(
@@ -557,8 +558,14 @@ describe("ReviewStatusViewer", () => {
 			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
 			?.find((button) => button.includes("LLMメッセージでコミット"));
 
-		expect(text).toContain("手動コミット");
-		expect(text).toContain("対象 1 件 / 除外 0 件 / commit_ready");
+		expect(text).toContain("Git統合");
+		expect(markup).toContain('data-review-section="review-run"');
+		expect(markup).toContain('data-review-section="git-integration"');
+		expect(
+			markup.indexOf('data-review-section="git-integration"'),
+		).toBeGreaterThan(markup.indexOf('data-review-section="review-run"'));
+		expect(text).toContain("LLMにマージを手配");
+		expect(text).toContain("LLMにPushを手配");
 		expect(commitButton).toBeTruthy();
 		expect(commitButton).not.toContain(' disabled=""');
 		expect(commitButton).toContain("nightworkers-success-action-button");
@@ -722,6 +729,93 @@ describe("ReviewStatusViewer", () => {
 		expect(commitButton).toContain('disabled=""');
 		expect(commitButton).toContain("cursor-not-allowed");
 		expect(commitButton).toContain("nightworkers-success-action-button");
+	});
+
+	it("connects a committed run to an explicit push action", async () => {
+		await i18next.changeLanguage("ja");
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				gitCloseout={gitCloseoutState({
+					canCommit: false,
+					canPush: true,
+					state: "push_ready",
+					git: {
+						head: "def456",
+						branch: "nightworkers/task",
+						upstream: "origin/nightworkers/task",
+						dirtyPaths: [],
+						stagedPaths: [],
+					},
+					commitRecord: {
+						...gitCloseoutState().commitRecord,
+						status: "committed",
+						commitSha: "def456",
+						commitMessage: "Update review integration UI",
+						pushStatus: "not_pushed",
+					},
+				})}
+				onPushGitCloseout={async () => gitCloseoutState({ state: "pushed" })}
+			/>,
+		);
+		const text = visibleText(markup);
+		const pushButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("Push"));
+
+		expect(text).toContain("Git統合");
+		expect(text).toContain("コミット済みの変更を上流ブランチへPush");
+		expect(text).toContain("nightworkers/task → origin/nightworkers/task");
+		expect(pushButton).toBeTruthy();
+		expect(pushButton).not.toContain('disabled=""');
+	});
+
+	it("routes Push to the merged target branch after worktree integration", async () => {
+		await i18next.changeLanguage("ja");
+		const base = gitCloseoutState();
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				gitCloseout={gitCloseoutState({
+					canCommit: false,
+					canPush: true,
+					state: "merged",
+					commitRecord: {
+						...base.commitRecord,
+						status: "committed",
+						commitSha: "def456",
+						pushStatus: "not_pushed",
+					},
+					mergeRecord: {
+						id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+						runId: base.runId,
+						sourceBranch: "nightworkers/task",
+						sourceCommitSha: "def456",
+						planTargetBranch: "main",
+						planTargetBaseSha: "abc123",
+						targetBranch: "main",
+						targetSelectedSha: "abc123",
+						observedTargetSha: "abc123",
+						strategy: "merge_commit",
+						decision: "merge",
+						status: "merged",
+						recordVersion: 2,
+						ciStatus: "not_required",
+						targetPushStatus: "not_started",
+					},
+				})}
+				onPushGitCloseout={async () => gitCloseoutState({ state: "merged" })}
+			/>,
+		);
+		const text = visibleText(markup);
+		const pushButton = markup
+			.match(/<button[^>]*>[\s\S]*?<\/button>/g)
+			?.find((button) => button.includes("LLMにPushを手配"));
+
+		expect(text).toContain("main → 設定済みremote/upstream");
+		expect(text).toContain("マージ済みの統合先ブランチ");
+		expect(pushButton).toBeTruthy();
+		expect(pushButton).not.toContain('disabled=""');
 	});
 
 	it("renders the complete-and-archive task action for active review tasks", async () => {

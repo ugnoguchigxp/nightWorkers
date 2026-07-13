@@ -33,6 +33,23 @@ export const jaTechStack = {
 	"techStack.profile.field.source": "根拠",
 	"techStack.profile.field.version": "Version",
 	"techStack.profile.field.confidence": "信頼度",
+	"techStack.audit.title": "依存関係の脆弱性",
+	"techStack.audit.description":
+		"登録済みProjectのrepo rootで bun audit を実行し、既知の脆弱性情報を取得します。",
+	"techStack.audit.fetch": "最新情報を取得",
+	"techStack.audit.refresh": "最新情報を再取得",
+	"techStack.audit.running": "監査中…",
+	"techStack.audit.unsupported":
+		"現在この画面からの監査実行に対応しているのはBunプロジェクトのみです。",
+	"techStack.audit.empty":
+		"脆弱性情報はまだ取得されていません。ボタンを押したときだけ監査を実行します。",
+	"techStack.audit.clean": "既知の脆弱性は検出されませんでした",
+	"techStack.audit.findings": "{{count}}件の既知脆弱性",
+	"techStack.audit.auditedAt": "取得日時",
+	"techStack.audit.severity.critical": "Critical",
+	"techStack.audit.severity.high": "High",
+	"techStack.audit.severity.moderate": "Moderate",
+	"techStack.audit.severity.low": "Low",
 	"techStack.codeSize.title": "プロジェクトサイズ",
 	"techStack.codeSize.description":
 		"空行・コメントのみの行を除いた実コード行を、用途別に集計します。",

@@ -15,6 +15,13 @@ export type StartTaskRunOptions = {
 		| "test_mode"
 		| "explicit";
 	initialTodos?: ImplementationTodoInput[];
+	resumeTodosFromRunId?: string;
+	latestUserMessageOverride?: string;
 	runtimeOptionsPatch?: Record<string, unknown>;
 	routeOverride?: StructuredLlmModelTarget | null;
+	missionPilotPhase?:
+		| "repository_bootstrap"
+		| "implementation"
+		| "test"
+		| "review";
 };

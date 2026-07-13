@@ -21,6 +21,11 @@ export const worktreeRemoveBlockerSchema = z.enum([
 	"detached_commits_unprotected",
 ]);
 
+export const discardableWorktreeRemoveBlockers = [
+	"worktree_dirty",
+	"worktree_conflicted",
+] as const;
+
 export const worktreeRemoveWarningSchema = z.enum([
 	"upstream_missing",
 	"upstream_ahead",
@@ -102,6 +107,7 @@ export const removeWorktreeRequestSchema = z
 	.object({
 		worktreeId: z.string().min(1),
 		expectedHead: z.string().min(1),
+		discardChanges: z.boolean().optional(),
 	})
 	.strict()
 	.openapi("RemoveWorktreeRequest");

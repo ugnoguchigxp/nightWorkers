@@ -1,3 +1,4 @@
+import type { RemoveWorktreeRequest } from "../../../../shared/schemas/gitworktree.schema";
 import { apiFetch } from "../../../lib/api-base";
 import { jsonRequest } from "../../../lib/api-request";
 
@@ -61,7 +62,7 @@ export function fetchRepositoryWorktreeDiff(
 
 export function removeRepositoryWorktree(
 	repositoryId: string,
-	input: { worktreeId: string; expectedHead: string },
+	input: RemoveWorktreeRequest,
 ) {
 	return apiFetch(`/api/repositories/${repositoryId}/worktrees`, {
 		method: "DELETE",

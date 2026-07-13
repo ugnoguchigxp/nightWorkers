@@ -126,4 +126,90 @@ describe("ProjectDetailWorktrees", () => {
 		expect(markup).toContain("projectDetail.worktrees.blocker.worktree_dirty");
 		expect(markup).toContain("disabled");
 	});
+
+	it("offers explicit discard removal and renders a file-based diff dialog", async () => {
+		const worktree = {
+			id: "worktree-id",
+			path: "/repo-worktrees/feature",
+			canonicalPath: "/repo-worktrees/feature",
+			isBase: false,
+			head: "0123456789012345678901234567890123456789",
+			headSubject: "Feature work",
+			branch: "feature",
+			detached: false,
+			bare: false,
+			locked: false,
+			lockReason: null,
+			prunable: false,
+			pruneReason: null,
+			upstream: null,
+			ahead: 0,
+			behind: 0,
+			stagedCount: 0,
+			modifiedCount: 1,
+			untrackedCount: 0,
+			conflictedCount: 0,
+			usage: {
+				taskIds: [],
+				runIds: [],
+				activeTaskCount: 0,
+				activeRunCount: 0,
+				pendingCloseoutCount: 0,
+			},
+			canRemove: false,
+			removeBlockers: ["worktree_dirty"],
+			removeWarnings: [],
+		} as const;
+		const state = controller({
+			git: { available: true, version: "git version 2.52.0", reason: null },
+			repository: { available: true, commonDir: "/repo/.git", reason: null },
+			worktrees: [worktree],
+			refreshedAt: "2026-07-13T00:00:00.000Z",
+		});
+		useGitworktreeController.mockReturnValue({
+			...state,
+			diff: {
+				diff: [
+					"diff --git a/file.ts b/file.ts",
+					"--- a/file.ts",
+					"+++ b/file.ts",
+					"@@ -1 +1 @@",
+					"-old value",
+					"+new value",
+					"diff --git a/new.ts b/new.ts",
+					"new file mode 100644",
+					"--- /dev/null",
+					"+++ b/new.ts",
+					"@@ -0,0 +1 @@",
+					"+export {};",
+				].join("\n"),
+				diffStat: "2 files changed, 2 insertions(+), 1 deletion(-)",
+				hasChanges: true,
+				truncated: false,
+			},
+		});
+		const { ProjectDetailWorktrees } = await import(
+			"../../src/modules/gitworktree/components/ProjectDetailWorktrees"
+		);
+
+		const markup = renderToStaticMarkup(
+			<ProjectDetailWorktrees repositoryId="repo-id" onCreateTask={vi.fn()} />,
+		);
+
+		expect(markup).toContain("projectDetail.worktrees.discardAndRemove");
+		expect(markup).toContain('role="dialog"');
+		expect(markup).toContain('data-worktree-diff-file="file.ts"');
+		expect(markup).toContain('data-worktree-diff-file="new.ts"');
+		expect(markup).toContain("+1");
+		expect(markup).toContain("-1");
+		expect(markup).toContain(
+			'<span class="nightworkers-chip" style="color:var(--nw-danger)">projectDetail.worktrees.diff.deletedLines</span>',
+		);
+		expect(markup).toContain('<span style="color:var(--nw-danger)">-1</span>');
+		expect(markup).toContain('<span style="color:var(--nw-danger)">-0</span>');
+		expect(markup).toContain("nightworkers-code-block");
+		expect(markup).toContain("diff --git a/file.ts b/file.ts");
+		expect(markup).toContain("diff add");
+		expect(markup).toContain("diff remove");
+	});
 });
