@@ -2,6 +2,7 @@ import {
 	resolveLatestPlanWorkspaceArtifact,
 	resolveLatestPlanWorkspaceTab,
 } from "../../specification";
+import type { WorkbenchRouteState } from "../routing/workbench-route-state";
 import type {
 	PlanModeWorkspace,
 	Task,
@@ -80,10 +81,16 @@ export function resolveMissionPilotArtifactFocus(input: {
 	activeSession: Task | null;
 	activeArtifactRefs: WorkbenchArtifactRef[];
 	latestRun?: TaskRun;
+	routeState: WorkbenchRouteState;
 }): MissionPilotArtifactFocusTarget | null {
 	const task = input.activeSession;
 	const missionPilot = task?.missionPilot;
 	if (!task || missionPilot?.desiredState !== "playing") return null;
+	if (
+		input.routeState.kind !== "session" ||
+		input.routeState.sessionId !== task.id
+	)
+		return null;
 	const executionMode = activeRunExecutionMode(input.latestRun, task.id);
 	if (executionMode === "implementation") {
 		return { key: `${task.id}:implementation`, kind: "todo" };

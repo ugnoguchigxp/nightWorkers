@@ -153,6 +153,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		activeSession: workspace.activeSession,
 		activeArtifactRefs: workspace.activeArtifactRefs,
 		latestRun: workspace.latestRun,
+		routeState,
 		onNavigate: props.onNavigate,
 	});
 

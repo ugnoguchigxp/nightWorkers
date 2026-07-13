@@ -4,416 +4,663 @@
 
 [English](./README.md) | [日本語](./README.ja.md)
 
-NightWorkers is a local-first autonomous development control plane. It coordinates project-scoped work sessions, runs supervisor-worker executions, and records verifiable run evidence such as events, logs, diffs, todos, test results, and final reports.
+NightWorkers is a local-first control plane for running coding-agent work as an
+inspectable development lifecycle. It keeps the target repository, planning
+artifacts, execution authorization, isolated Git workspace, queue state, tool
+activity, verification, review, and closeout decisions in durable local state.
 
-![NightWorkers workbench screenshot](assets/screenshot.webp)
+It is designed for a human who wants an agent to keep moving without turning
+the repository into an untraceable background job. A task starts stopped. The
+user explicitly starts its Mission Pilot, can stop it again, and can inspect the
+persisted evidence used at each gate.
 
-## Table of Contents
-- [What NightWorkers Is](#what-nightworkers-is)
-- [Why NightWorkers](#why-nightworkers)
-- [Good Fit / Not Good Fit](#good-fit--not-good-fit)
-- [Current Capabilities](#current-capabilities)
-- [Current Limits](#current-limits)
-- [Architecture](#architecture)
-- [Requirements](#requirements)
+## Contents
+
+- [The Product in One Flow](#the-product-in-one-flow)
+- [Why NightWorkers Exists](#why-nightworkers-exists)
+- [Who It Is For](#who-it-is-for)
+- [What Is Implemented](#what-is-implemented)
+- [Local State and Trust Boundary](#local-state-and-trust-boundary)
+- [Runtime Configuration](#runtime-configuration)
 - [Quick Start](#quick-start)
 - [Credential-Free Demo](#credential-free-demo)
-- [Five-Minute Orientation](#five-minute-orientation)
-- [What You Should See First](#what-you-should-see-first)
-- [Trust and Local-First Model](#trust-and-local-first-model)
-- [Configuration](#configuration)
-- [Development Commands](#development-commands)
-- [Testing](#testing)
-- [Documentation Map](#documentation-map)
-- [Contributing](#contributing)
-- [Security](#security)
-- [License](#license)
+- [Desktop Application](#desktop-application)
+- [Verification](#verification)
+- [Operations and Development Commands](#operations-and-development-commands)
+- [Architecture](#architecture)
+- [Current Limits](#current-limits)
+- [Documentation](#documentation)
+- [Source-of-Truth Map](#source-of-truth-map)
 
-## What NightWorkers Is
-NightWorkers is not a chat UI with a task list attached. It is a local-first
-control plane for autonomous development runs: you register a Project Folder,
-work in a project-scoped Workbench Session, decide when a plan enters the
-Implementation Queue, and inspect the run evidence that proves what happened.
+## The Product in One Flow
 
-The main adoption question is whether you want autonomous coding work to be
-operated through durable local state: Project, Session, Queue, run events,
-artifacts, diffs, todos, settings, and provider usage records.
+```text
+Project Folder
+  -> Goal / Evaluation / Quality finding / direct Task
+  -> Mission Pilot (stopped by default)
+  -> Play authorization
+  -> Questionnaire and selected Plan artifacts
+  -> Artifact review and focused correction
+  -> reviewed Queue handoff
+  -> task-owned branch and worktree
+  -> implementation
+  -> Test Mode evidence
+  -> Review decision and possible rework
+  -> Security Oracle evidence or policy skip
+  -> commit / merge / push according to the saved Git policy
+  -> completion and archive
+```
 
-If you are evaluating the project for the first time, start with:
+This is not a promise that every task reaches the last step. Missing evidence,
+stale context, failed verification, blocking review findings, Git conflicts, or
+an explicit Stop move the task to a visible waiting or attention state.
 
-1. [Feature Tour](./spec/feature-tour.md) to see the major surfaces and evidence
-   each one creates.
-2. [First Run Orientation](./spec/first-run-orientation.md) for the first
-   throwaway-repo workflow.
-3. [Adoption Checklist](./spec/adoption-checklist.md) before connecting real
-   provider credentials, MCP servers, hooks, or a sensitive repository.
+## Why NightWorkers Exists
 
-## Why NightWorkers
-- Local-first operation with SQLite/libSQL by default, with desktop runtime
-  state stored outside the repo checkout
-- Structured run lifecycle with task/run/event persistence, so run outcomes do
-  not depend on a live chat connection
-- Model-provider aware LLM settings (OpenAI, Azure OpenAI, Bedrock, Codex SDK)
-- Explicit separation between structured LLM providers and the implementation
-  runtime lane such as `codex-agent`
-- Non-authenticated MCP Server settings for the coding agent
-- Agent Hooks settings for lifecycle command / HTTP automation
-- Chat-first workbench flow with explicit Implementation Queue admission and run execution
-- App Blueprint review with governed preview settings plus Plan Mode Workspace artifacts
-- Clear current limits: no automatic PR/merge/deploy, no parallel multi-agent
-  orchestration, and no required external memory service
+Coding agents are useful at producing changes, but a long-running development
+workflow needs more than a final chat message. NightWorkers makes the operating
+state explicit:
 
-## Good Fit / Not Good Fit
-NightWorkers is a good fit when you want:
-- Local-first autonomous coding runs with inspectable SQLite-backed state.
-- Explicit approval before work enters an Implementation Queue.
-- Evidence for what happened: tool calls, policy blocks, todos, diffs, tests,
-  provider usage, artifacts, and final reports.
-- A single-user desktop/local control plane for provider settings, MCP servers,
-  Agent Hooks, and repo-scoped runs.
+- which local Project Folder is in scope;
+- which Task and context revision authorized the work;
+- which plan artifacts were generated and reviewed;
+- which branch and worktree own the implementation;
+- which tools, commands, todos, diffs, and tests were recorded;
+- whether Test, Review, security, and Git integration gates passed;
+- what stopped, failed, changed, or still needs a human decision;
+- how many provider calls, tokens, time, and estimated cost were recorded.
 
-NightWorkers is not a good fit when you need:
-- Hosted team collaboration or browser-only SaaS onboarding.
-- Automatic PR creation, merge, release, or deploy as the default workflow.
-- Parallel multi-agent orchestration over the same repository state.
-- A hosted browser-only demo without installing the app locally.
+The differentiator is not autonomous code generation by itself. It is
+human-governed autonomy backed by a local execution ledger.
 
-## Current Capabilities
-- Project Folder registration and per-project Session/Task management
-- Dedicated Implementation Queue screen with Processor lanes, queued work, and not-queued plan-ready Sessions
-- Global Processor capacity controls plus TODO Workflow gates for implementation runs
-- Separate Test Mode and Review Mode runs with evidence-gated Git closeout
-- Chat timeline inspection with run events, todo state, context output, diffs, and final reports
-- DB-backed run event replay for Workbench WebSocket reattach through `runId` / `afterSeq` cursors
-- Cursor-based run event API at `/api/runs/:id/events?afterSeq=...`
-- Artifact pane with project tree and source file preview
-- App Blueprint artifacts rendered as reviewable Blueprint Preview surfaces
-- Design settings in Blueprint Preview for governed theme, density, shape, shadow, font, contrast, motion, and component variants
-- Data Model artifacts in Plan Mode Workspace for canonical data structure design without applying physical database changes
-- Separate adopted/not-adopted decisions for Blueprint artifacts and Design Token settings, tied to the Workbench session and source conversation message
-- LLM provider settings UI and smoke-test API
-- MCP Server settings UI for non-auth stdio / Streamable HTTP servers, with paste-import, immediate connection tests, ON/OFF controls, and legacy SSE compatibility
-- Agent Hooks settings UI for `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, and session lifecycle hooks
-- MCP auth headers/API keys/secret-like env values are rejected; MCP tool calls stay in the runtime evidence path through the worker-tool bridge
-- Agent Hook commands run through the hook runner, not recursive worker `run_command`, and failure summaries are redacted
-- Health/readiness endpoints and API docs UI
+## Who It Is For
 
-## Current Limits
-- No automatic PR creation/merge/deploy
-- No multi-agent orchestration in parallel
-- No mandatory external memory service requirement
-- No hosted demo GIF/video in the repository docs yet
+NightWorkers is a good fit when you want to:
 
-## Architecture
-- Backend: Hono + TypeScript (`api/`)
-- Frontend: React + Vite + TanStack Router (`src/`)
-- Database: Drizzle ORM + SQLite/libSQL (`drizzle/`, `sqlite.db`)
-- Shared schemas: Zod (`shared/schemas`)
-- UI primitives: NightWorkers-owned components under `src/components/ui`
+- run coding-agent work against local repositories;
+- keep planning, authorization, implementation, verification, and review as
+  separate persisted states;
+- let work continue after an intervention window while retaining a real Stop
+  boundary;
+- isolate reviewed implementation work in Task-owned Git worktrees;
+- inspect evidence before commit, merge, push, completion, or archive;
+- compare Project evaluation, quality, usage, duration, and estimated cost over
+  time;
+- operate provider routing, MCP servers, hooks, and security tooling from one
+  local control plane.
 
-Details: [Architecture and Module Boundaries](./spec/architecture.md)
+It is not a good fit when you need a hosted team SaaS, browser-only onboarding,
+distributed multi-host scheduling, automatic pull-request creation or deploys,
+or several agents racing in the same repository workspace.
 
-## Requirements
-- Bun 1.3+
-- Node.js 20+ only for the packaged desktop sidecar and Node-based tooling
-- Rust toolchain and target OS build tools for desktop packaging
+## What Is Implemented
+
+### Mission Pilot
+
+Every Task created through the shared task-creation path receives a Mission
+Pilot session in the same database transaction. Its desired state is initially
+`stopped`.
+
+Pressing Play creates a versioned authorization snapshot for the current Task
+context. The saved authorization covers planning, Queue admission,
+implementation, test mutation, review, local commit, task completion, and task
+archive. Push behavior remains controlled by the saved push policy.
+
+Mission Pilot currently provides:
+
+- explicit Play and Stop controls with optimistic version checks;
+- a visible intervention countdown before an unattended continuation;
+- persisted context revisions and digests;
+- editable Questionnaire drafts with answer provenance;
+- resumable Plan progress rather than regenerating accepted checkpoints;
+- routing-selected Plan artifacts;
+- structured review of the current artifact set;
+- focused correction of the artifact that caused a review problem;
+- a reviewed, idempotent handoff into the Implementation Queue;
+- post-Queue implementation, Test, Review, rework, closeout, and recovery;
+- Pilot Thought, which reads persisted Mission Pilot and owned run events.
+
+Mission Pilot does not treat a fluent model response as completion. Queue
+admission requires current reviewed context and the required artifacts. Test and
+Review use their own persisted records, and later changes can invalidate older
+evidence.
+
+### Task-Owned Git Workspaces
+
+NightWorkers manages Git worktrees as a product surface and as an execution
+boundary.
+
+The Project Worktrees view can:
+
+- list the base worktree and linked worktrees;
+- show branch, HEAD, latest commit, upstream, ahead/behind state, and file-state
+  counts;
+- show active Task and Run usage;
+- create a worktree from a new or existing branch;
+- display its diff;
+- remove eligible worktrees with explicit discard confirmation when supported;
+- preview and execute `git worktree prune`;
+- prevent deletion of the base worktree and worktrees with non-discardable
+  blockers.
+
+For the reviewed Mission Pilot path, NightWorkers records a Task-owned Git
+workspace with its source branch, merge target, base SHA, expected HEAD,
+worktree identity, materialization source, and policy snapshot. Existing Git
+repositories, starter templates, and Git imports have explicit materialization
+contracts; an empty project can run a separate repository-bootstrap phase
+before implementation.
+
+Review exposes the integration decision instead of silently merging. The
+current Git integration contract supports:
+
+- merge preview;
+- defer and rework decisions;
+- merge commit, squash, and fast-forward-only strategies;
+- optional source-push requirements;
+- manual or after-merge target-push policy;
+- an optional external-CI gate;
+- merge-target changes that invalidate stale preview evidence;
+- conflict and already-integrated states recorded in a merge record.
+
+Direct and legacy execution paths can exist without the same Task workspace
+record. The Task-owned workspace statements above describe the reviewed
+Mission Pilot / Queue path.
+
+### Project Intelligence
+
+Project Detail is more than a repository picker. It has six current views:
+
+| View | Current behavior |
+| --- | --- |
+| Overview | Project metadata, repository snapshot, recent Task state, and navigation into the project-specific tools. |
+| Mission | Mission / Task Generation: Goal, Mission, proposal, and Task-candidate management; selected candidates can become executable Tasks. |
+| Evaluation | LLM-backed evaluation across fixed product and engineering dimensions, history comparison, evidence/confidence, improvement generation, and Task creation. |
+| Quality | Unit/coverage and E2E capability detection, managed runs, coverage file inspection, and coverage-improvement Task creation. |
+| Tech Stack | Detected stack profile used by Project and Task-planning surfaces. |
+| Worktrees | Git integration policy plus worktree creation, status, diff, removal, and prune operations. |
+
+The global Overview can be scoped by Project and time range. It reports run
+counts, warnings, provider/model usage, token categories, cache rate, duration,
+throughput, estimated cost or credits, model breakdown, expensive calls, and a
+Project snapshot containing evaluation and coverage data.
+
+### Planning and Reviewable Artifacts
+
+Plan Mode does not force every design document into every task. A routing
+decision selects the applicable views from the capabilities enabled in
+Settings.
+
+Implemented Plan surfaces include:
+
+- Questionnaire;
+- Feature Plan;
+- App Blueprint and Blueprint Preview;
+- Data Model;
+- User Flow;
+- API I/O Contract;
+- Activity Flow;
+- Sequence Flow;
+- Zod Schema Design.
+
+Questionnaire is always part of the Mission Pilot Plan sequence. Other views
+can be included or omitted by the saved routing decision. Existing artifacts
+and accepted Questionnaire state are resumable checkpoints.
+
+Blueprint Preview keeps visual application structure separate from canonical
+data modeling. Preview controls cover theme, density, shape, shadow, font,
+contrast, motion, and component variants. Blueprint and design-token adoption
+are stored as explicit decisions tied to the Task and source message; adoption
+metadata does not rewrite the artifact.
+
+Artifacts can be inspected alongside the Project tree, source previews, and
+diffs. Supported artifact exports include source-oriented output and rendered
+image export where the artifact surface supports it.
+
+### Workbench and Prompt Input
+
+The Workbench is the Task-scoped operating surface for chat, planning,
+execution, artifacts, and review.
+
+It currently supports:
+
+- normal Workbench messages and explicit intents;
+- initial Task prompts and later messages;
+- PNG, JPEG, WebP, and GIF prompt-image attachments with count, size, MIME, and
+  file-signature validation;
+- persisted task messages and artifact references;
+- an Activity Transcript that keeps chat/intake separate from run events;
+- replayable run events using `runId` and `afterSeq` cursors;
+- Todo state, tool outcomes, policy blocks, diffs, tests, usage, and final
+  reports;
+- URL-addressable Overview, Queue, Project Detail, Session, Task, and Settings
+  routes.
+
+Repository writes are performed through registered worker-tool boundaries
+relative to the registered Project or its assigned Task worktree. Provider or
+Supervisor decision scratch directories are not accepted as evidence that the
+Project repository was changed.
+
+### Context Continuity and External Evidence
+
+NightWorkers has two distinct continuity paths:
+
+- the built-in StateCard cache derives compact conversation context and can
+  inject the latest card into a runtime request without rewriting the stored
+  user prompt;
+- when a contextStill MCP server is configured, the native runtime recognizes
+  `initial_instructions`, `context_compile`, `context_decision`, `compile_eval`,
+  and candidate-registration procedures and records their outcomes in the run
+  ledger and transcript.
+
+contextStill is an external MCP capability, not hidden storage inside
+NightWorkers. Availability and task-specific procedure requirements determine
+whether a missing call is advisory or blocking. The credential-free demo does
+not require an external memory service.
+
+### Implementation Queue
+
+Normal Workbench conversation and queued automation are separate states. The
+Implementation Queue provides:
+
+- explicit admission of implementation-ready work;
+- global and Project-scoped Queue views;
+- bounded Processor lanes and capacity settings;
+- TODO Workflow claim gates;
+- claim readiness separate from row creation;
+- persisted queued, active, attention, completed, and archived state;
+- recovery and reconciliation paths for interrupted Mission Pilot work.
+
+Mission Pilot can create a held Queue row while a repository or workspace is
+being prepared. A row is not claimable merely because it exists.
+
+### Test, Review, Security, and Closeout
+
+NightWorkers separates these responsibilities:
+
+| Boundary | Owns |
+| --- | --- |
+| Implementation | Repository changes and implementation evidence. |
+| Test Mode | Verification document, required checklist items, managed evidence, and `completion_check`. |
+| Review Mode | Review Run, structured findings, dispositions, and rework decisions. |
+| Security Oracle | Scanner-backed security evidence or a saved policy skip. |
+| Git closeout | Evidence revalidation, commit, merge decision, and push-policy handling. |
+
+A final report is useful evidence, but it is not the closeout gate. Closeout
+also checks the active Test snapshot, matching Review decision, Security Oracle
+state, unresolved blocking findings, ownership, and Git state. Review-applied
+fixes make earlier Test evidence stale and require new verification.
+
+The optional vulnWorkbench integration invokes a separately configured local
+vulnWorkbench checkout for scanner-backed security diagnostics. When it is not
+configured or is ineligible, NightWorkers records the unavailable or
+policy-skip state instead of presenting an LLM-only concern as a confirmed
+vulnerability.
+
+### Providers, Routing, MCP, and Hooks
+
+Structured reasoning and repository execution are separate runtime concerns.
+
+The Settings UI currently manages:
+
+- Azure OpenAI, OpenAI-compatible, AWS Bedrock, Codex SDK, and local provider
+  endpoints;
+- enabled models and per-role provider/model routing;
+- native API runner or Codex SDK implementation runtime lanes;
+- provider smoke tests and normalized usage recording;
+- General settings, language, timezone, currency, FX source, and retention;
+- Plan Mode capabilities and appearance;
+- Project Security Intelligence and ontology-tool eligibility;
+- MCP servers;
+- Agent Hooks.
+
+MCP settings support stdio, Streamable HTTP, and legacy SSE-compatible
+connections, paste import, tool discovery, connection tests, and ON/OFF state.
+The current settings contract rejects authentication headers, API keys, bearer
+tokens, cookies, and secret-like environment entries. MCP tool execution stays
+inside the worker-tool evidence path.
+
+Agent Hooks support command or HTTP actions around tool and session lifecycle
+events, including `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, and `Stop`.
+Hook execution uses its own runner, stores status, and redacts failure summaries;
+it does not recursively call the worker command tool.
+
+## Local State and Trust Boundary
+
+The default development runtime root is:
+
+```text
+<nightWorkers checkout>/.nightworkers/
+```
+
+Runtime paths are allocated under that root as needed. Desktop bootstrap creates
+the managed subdirectories; development services create the paths they use:
+
+```text
+.nightworkers/
+  sqlite.db
+  settings/    # integration settings and compatibility files when used
+  secrets/     # desktop-managed secrets when used
+  logs/        # managed runtime logs
+  artifacts/   # persisted attachment files and runtime artifacts when used
+```
+
+`DATABASE_URL` is normally generated for `.nightworkers/sqlite.db`; it does not
+need to be set for the standard development or desktop flow. Tests use isolated
+databases. Application settings are persisted in SQLite; some integration
+services retain compatibility files below `settings/`. Desktop builds resolve a
+runtime data root and can override it with `NIGHTWORKERS_RUNTIME_DIR`.
+
+Registered Project work remains rooted in the Project repository or its Task
+worktree. NightWorkers runtime files are not a substitute for repository
+changes, commits, or verification performed in that execution root.
+
+Provider requests can contain the user request, Supervisor instructions,
+derived StateCard context, artifact or Task context, and summarized tool
+results. Raw LLM traces can therefore contain sensitive repository material.
+Read the [Trust Model](./spec/trust-model.md) before connecting production
+credentials or a sensitive repository.
+
+The default retention settings are:
+
+| Data | Default retention / limit |
+| --- | --- |
+| API logs | 7 days |
+| Raw LLM traces and parse previews | 3 days |
+| Usage data | 30 days |
+| Retention audit events | 90 days |
+| Managed runtime log directory | 80 MiB total |
+
+Closed log segments can be deleted before their time limit when the configured
+capacity limit is reached.
+
+The server binds to loopback by default. A non-loopback production bind requires
+API authentication. Local account authentication is implemented; Google and
+GitHub OAuth are available only when their matching credentials and application
+URL are configured.
+
+## Runtime Configuration
+
+Server, authentication, provider, routing, integration, and general application
+settings are managed from the Settings UI and persisted locally. Environment
+variables remain available for bootstrap and explicit runtime overrides.
+
+| Variable | Current role |
+| --- | --- |
+| `NIGHTWORKERS_RUNTIME_DIR` | Override the managed runtime root. |
+| `HOST` / `PORT` | API listen address and port; the default API bind is `127.0.0.1:39173`. |
+| `API_AUTH_REQUIRED` | Require authentication for protected product APIs and the NightWorkers WebSocket. |
+| `AUTH_MODE` | Select `local`, `oauth`, or `both`; OAuth still requires configured providers. |
+| `APP_URL` | Required for OAuth callback and secure application URL handling. |
+| `TRUST_PROXY` | Trust reverse-proxy forwarding only when explicitly enabled. |
+| `CONVERSATION_CONTEXT_ENABLED` | Master switch for derived conversation context; enabled by default. |
+| `CONVERSATION_CONTEXT_STATE_CARD_ENABLED` | Inject the latest compact StateCard into the runtime request. |
+| `CONVERSATION_CONTEXT_BUILD_ON_IDLE` | Refresh derived context after intake and run completion. |
+| `NIGHTWORKERS_DISABLE_AUTO_QUEUE_DRAIN` | Disable automatic Queue drain for deterministic maintenance and tests. |
+| `NIGHTWORKERS_VULNWORKBENCH_CWD` | Point the optional security integration at a local vulnWorkbench checkout. |
+
+Liveness is exposed at `/api/health/live`, readiness at
+`/api/health/ready`, the OpenAPI document at `/api/doc`, and the Swagger UI at
+`/api/ui`.
+
+See [Runtime Configuration](./spec/configuration.md) for the broader reference.
 
 ## Quick Start
-1. Prepare local dependencies, environment, migrations, and seed data:
+
+### Requirements
+
+- Bun 1.3.x (CI currently uses Bun 1.3.14)
+- Git
+- Node.js 20-compatible tooling for the bundled backend/desktop sidecar
+- Rust 1.77.2 or newer plus target-OS build dependencies for Tauri packaging
+
+### Browser development
+
 ```bash
 bun run setup
-```
-2. Start the app:
-```bash
 bun run dev
 ```
 
+`setup` installs dependencies, creates `.env` only when it does not exist,
+applies migrations, and seeds the database. Open:
+
+```text
+http://localhost:39174
+```
+
+Before using a live provider:
+
+1. Open Settings.
+2. Configure and enable a provider endpoint and model.
+3. Configure Role Routing.
+4. Select the implementation runtime lane.
+5. Run the provider smoke test.
+
+### First real workflow
+
+Use a disposable Git repository first.
+
+1. Register its root as a Project Folder.
+2. Inspect Overview and the Project Detail tabs.
+3. Create a Task with a read-only initial request.
+4. Confirm that Mission Pilot is stopped.
+5. Press Play and inspect the intervention countdown.
+6. Review or edit Questionnaire answers and generated Plan artifacts.
+7. Watch Plan review, focused correction, workspace preparation, and Queue
+   admission.
+8. Inspect Pilot Thought, the Activity Transcript, the assigned worktree, and
+   the Run evidence.
+9. Do not integrate the change until Test, Review, security, and Git evidence
+   agree.
+
+Stopping Mission Pilot is a real lifecycle action. It does not erase already
+persisted context, artifacts, or evidence.
+
 ## Credential-Free Demo
 
-The [Support Ops CRM deterministic demo](./demo/support-ops-crm/README.md)
+The deterministic [Support Ops CRM demo](./demo/support-ops-crm/README.md)
 creates a disposable Git Project, records Plan and Queue state, applies a fixed
-implementation, runs real tests, and writes Review evidence without provider
-credentials or a production repository:
+change, runs real tests, and writes Review evidence without provider credentials:
 
 ```bash
 bun run demo:setup
 bun run demo:run
 ```
 
-Inspect `.nightworkers-demo/evidence/review.json`, then clean up with
-`bun run demo:reset`. CI uses `bun run demo:smoke` for the complete setup, run,
-assertion, and reset lifecycle.
-
-`setup` creates `.env` from `.env.example` only when `.env` does not already
-exist, then applies migrations and seeds the local database.
-
-Default URL: `http://localhost:39174`
-
-After startup, use the [First Run Orientation](./spec/first-run-orientation.md).
-The recommended first message is read-only:
-
-```text
-Inspect the repository structure and summarize the available test commands. Do
-not edit files.
-```
-
-For the first run, prefer a throwaway repository or a repository where you can
-review and discard changes before committing.
-
-## What Happens When You Run Work
-NightWorkers keeps chat, queue admission, execution, and review as separate
-states:
-
-1. Register a Project Folder.
-2. Create or select a Workbench Session.
-3. Send chat, planning, Blueprint, or direct execution requests.
-4. Admit implementation-ready work into the Implementation Queue when you want
-   automation to proceed.
-5. Inspect the Run Timeline for state changes, tool calls, policy blocks, todo
-   updates, diffs, test results, usage events, and final reports.
-6. Run Test Mode and confirm managed evidence plus `completion_check`.
-7. Complete Review Run and resolve blocking findings. Rerun Test Mode if Review applies fixes.
-8. Confirm the implementation Security Oracle passed or recorded an explicit policy skip.
-9. Commit or push explicitly only after server-side closeout reports all gates complete.
-
-## Five-Minute Orientation
-1. Open `http://localhost:39174` and confirm the Overview loads.
-2. Register a Project Folder that you are comfortable using for local
-   investigation. Start with a throwaway repo or a repo where you can review
-   changes before committing them.
-3. Create or select a Workbench Session for that project.
-4. Send a read-only investigation request first, for example: "Inspect the repo
-   structure and summarize the test commands without editing files."
-5. Watch whether the message stays as normal Workbench chat or becomes an
-   execution run. Runs create task events, todos, tool outcomes, diffs, and a
-   final report.
-6. Open the Artifact Pane only when the Session has produced artifacts such as
-   a diff or App Blueprint.
-7. Visit Settings before connecting real provider credentials, MCP servers, or
-   Agent Hooks.
-
-For a fuller step-by-step walkthrough, see
-[First Run Orientation](./spec/first-run-orientation.md).
-
-## What You Should See First
-- Project Folder: the local repo root NightWorkers will use for workbench and
-  worker-tool activity.
-- Workbench Session: the chat-first workspace where intake, planning,
-  Blueprint generation, and direct coding requests start.
-- Run Timeline: persisted task events for execution state, tool outcomes, todo
-  changes, diffs, test results, and final reports.
-- Artifact Pane: project tree, source previews, diff artifacts, and Blueprint
-  Preview when those artifacts exist.
-- Implementation Queue: explicit user-approved automation work, separate from
-  normal Session chat.
-- Settings: LLM providers, MCP servers, Agent Hooks, and appearance.
-- Overview: repository, queue, settings, usage, and warning summaries across
-  the local NightWorkers workspace.
-
-See [Feature Tour](./spec/feature-tour.md) for each surface's evidence
-path and current limits.
-
-## Trust and Local-First Model
-NightWorkers stores its primary runtime state locally. Development mode uses the
-repo-local database/settings/log defaults. Desktop mode uses
-`NIGHTWORKERS_RUNTIME_DIR` when set; otherwise the Tauri sidecar resolves the
-runtime directory from its desktop resource root. Registered Project work is
-still performed relative to the registered Project repo root, not a temporary
-provider or desktop resource directory.
-
-Provider calls can include the current user request, supervisor prompt context,
-StateCard continuity context when enabled, tool/result summaries, and relevant
-artifact or task context. Usage records are normalized and stored locally.
-Structured providers handle schema-first reasoning and generation; the runtime
-lane handles repository execution. MCP servers and Agent Hooks are configured
-locally, reject secret-like auth inputs in the current implementation slice,
-and run through NightWorkers evidence paths instead of bypassing the ledger.
-
-Read [Trust Model](./spec/trust-model.md) before connecting provider
-credentials, MCP servers, hooks, or a repository that contains sensitive data.
-
-## Desktop App
-NightWorkers can also be built as a Tauri desktop app. The desktop shell launches
-the Vite frontend in a WebView and manages the Node backend as a sidecar.
+Inspect `.nightworkers-demo/evidence/review.json`, then remove generated demo
+state:
 
 ```bash
+bun run demo:reset
+```
+
+`bun run demo:smoke` runs the complete setup, execution, assertion, and reset
+lifecycle used by CI.
+
+The deterministic demo proves the local state and evidence path. It does not
+exercise a live provider or prove that every Mission Pilot branch is healthy.
+
+## Desktop Application
+
+NightWorkers includes a Tauri shell that starts the frontend and manages the
+bundled Node backend sidecar.
+
+```bash
+bun run desktop:dev
 bun run desktop:build
 bun run desktop:smoke
 ```
 
-On macOS, the default generated app is written to:
+The current macOS build target is an `.app`; DMG creation is a separate command:
 
-```text
-src-tauri/target/release/bundle/macos/NightWorkers.app
+```bash
+bun run desktop:build:dmg
 ```
 
-Linux and Windows package targets are prepared with platform-specific Tauri
-config files. Run these on the matching OS build host:
+Linux and Windows bundle commands are defined for native build hosts:
 
 ```bash
 bun run desktop:build:linux
 bun run desktop:build:windows
 ```
 
-Linux builds target `.deb`, `.rpm`, and AppImage artifacts. Windows builds target
-x64 NSIS and MSI installers. `bun run desktop:check:cross-platform` verifies the
-Linux/Windows bundle config and sidecar target metadata without launching a
-non-macOS app.
+Linux targets `.deb`, `.rpm`, and AppImage. Windows targets x64 NSIS and MSI.
+Cross-platform configuration can be checked without producing those native
+artifacts:
 
-Desktop runtime state is stored under the resolved runtime directory. Set
-`NIGHTWORKERS_RUNTIME_DIR` to force a specific location; otherwise the packaged
-app resolves it from the desktop resource root.
-
-```text
-${NIGHTWORKERS_RUNTIME_DIR}/
-```
-
-Desktop diagnostics are written under that runtime directory:
-
-```text
-logs/
-```
-
-The main files are `desktop.log` for the Tauri shell startup path, `sidecar.log`
-for the bundled Node process stdout/stderr, and `api.log` for API request and
-runtime events.
-
-Runtime API logs rotate daily and by size, and are retained for 7 days. Raw LLM
-request/response traces and JSON parse-failure previews are retained for 3 days.
-Usage summaries are retained for 30 days and retention-operation audit entries
-for 90 days. The managed runtime log directory is capped at 80 MiB; older closed
-segments may therefore be removed before their time limit. Raw LLM traces can
-contain sensitive project context and are not an archive mechanism.
-
-The default desktop build on macOS currently produces a verified `.app` artifact.
-DMG creation is kept as a separate release gate via `bun run desktop:build:dmg`
-because create-dmg can fail on local mount/Finder state. Signing requires
-Developer ID credentials and is run separately with `bun run desktop:sign`.
-
-## Configuration
-Important environment variables:
-- `DATABASE_URL`: SQLite/libSQL connection target (default local file: `sqlite.db`)
-- `AUTH_MODE`: `local` / `oauth` / `both`
-- `API_AUTH_REQUIRED`: opt-in protection for product APIs and the NightWorkers WebSocket. Defaults to `false` for local personal use; set `true` when intentionally exposing the app beyond localhost.
-- `APP_URL`: required for OAuth and secure cookie scenarios
-- `TRUST_PROXY`: set `true` behind reverse proxy
-- `SESSION_QUEUE_MAX_CONCURRENCY`: legacy Session queue default retained for migration compatibility
-- `CONVERSATION_CONTEXT_ENABLED`: enables the derived conversation context cache by default. Set `false` to disable StateCard build and runtime prompt injection.
-- `CONVERSATION_CONTEXT_STATE_CARD_ENABLED`: requires `CONVERSATION_CONTEXT_ENABLED=true`; injects the latest compact StateCard into the runtime `latestUserMessage` only, leaving `tasks.compiled_prompt` raw.
-- `CONVERSATION_CONTEXT_BUILD_ON_IDLE`: requires `CONVERSATION_CONTEXT_ENABLED=true`; refreshes the derived StateCard cache after Workbench intake and run completion.
-- `NIGHTWORKERS_MCP_SETTINGS_PATH`: optional override for the MCP Server settings JSON path
-- `NIGHTWORKERS_HOOKS_SETTINGS_PATH`: optional override for the Agent Hooks settings JSON path
-- `NIGHTWORKERS_LLM_SETTINGS_PATH`: optional override for the LLM settings JSON path in tests or local experiments
-
-Detailed runtime configuration:
-- [Runtime Configuration Reference](./spec/configuration.md)
-
-## Development Commands
-| Command | Description |
-| --- | --- |
-| `bun run dev` | Start API + web in watch mode |
-| `bun run build` | Build frontend and backend |
-| `bun run start` | Start production backend bundle |
-| `bun run desktop:dev` | Start the Tauri desktop app in development mode |
-| `bun run desktop:build` | Build the default desktop artifact for the current OS |
-| `bun run desktop:build:dmg` | Build a DMG release artifact as a separate gate |
-| `bun run desktop:build:linux` | Build Linux `.deb`, `.rpm`, and AppImage artifacts on Linux |
-| `bun run desktop:build:windows` | Build Windows NSIS and MSI installers on Windows |
-| `bun run desktop:check:cross-platform` | Statically verify Linux/Windows desktop packaging readiness |
-| `bun run desktop:lint` | Run Rust format and Clippy checks for the Tauri shell |
-| `bun run desktop:prepare-sidecar` | Stage the Node sidecar runtime resources |
-| `bun run desktop:smoke-sidecar` | Smoke-test the staged sidecar health endpoint |
-| `bun run desktop:smoke` | Launch the packaged `.app` and verify API, WebSocket, logs, and shutdown |
-| `bun run desktop:sign` | Sign/verify an app path when Developer ID credentials are available |
-| `bun run demo:setup` | Create and register the disposable fixed-seed demo Project |
-| `bun run demo:run` | Execute implementation, verification, Review, and evidence capture |
-| `bun run demo:reset` | Remove all generated demo Project and runtime data |
-| `bun run demo:smoke` | Run the credential-free demo lifecycle and reset it |
-| `bun run release:check` | Check package, Tauri, CHANGELOG, release-note, tag, and optional manifest consistency |
-| `bun run release:manifest` | After release verification, generate SHA-256 and signing/notarization artifact metadata |
-| `bun run release:create` | Run release verification before a dry-run or explicit annotated tag creation |
-| `bun run check:docs` | Check documented commands, local links/anchors, and completed-plan archive links |
-| `bun run lint` | Run Biome checks |
-| `bun run typecheck` | Run TypeScript checks |
-| `bun run test` | Run Vitest |
-| `bun run test:e2e` | Run Playwright E2E |
-| `bun run test:e2e:agent-outcome` | Run deterministic agent outcome E2E |
-| `bun run test:e2e:agent-live` | Run optional live-provider agent E2E |
-| `bun run db:generate` | Generate Drizzle migrations from schema changes |
-| `bun run db:migrate` | Apply Drizzle migrations |
-| `bun run db:studio` | Open Drizzle Studio |
-| `bun run db:seed` | Seed local development data |
-| `bun run cleanup:test-data:dry-run` | Preview cleanup of TEST-prefixed local data |
-| `bun run cleanup:test-data` | Delete TEST-prefixed local data |
-| `bun run verify:base` | Run the base gate with static checks in parallel, then supervisor regression tests |
-| `bun run verify:desktop` | Run desktop runtime tests and lint in parallel, then build the `.app` and run sidecar/packaged smoke |
-| `bun run verify` | Run the same lightweight base gate as `verify:base` |
-| `bun run verify:fast` | Alias for `verify:base` |
-| `bun run verify:full` | Run the complete deterministic slow suite: all tests, E2E/accessibility, audit, and desktop build/smoke |
-| `bun run verify:e2e` | Run the credential-free Playwright smoke gate |
-| `bun run verify:audit` | Enforce the High/Critical dependency audit policy |
-| `bun run verify:live` | Explicitly run the external-provider LLM canaries |
-| `bun run verify:release` | Run metadata/docs, full tests, E2E, demo, dependency, and desktop release gates |
-
-## Testing
-- Default gate: `bun run verify` runs the lightweight base gate: tracked-artifact check, TypeScript, and Biome first in parallel, then supervisor regression tests serially.
-- Fast gate: `bun run verify:fast` is an alias for `verify:base`.
-- Desktop gate: `bun run verify:desktop` remains separate. It runs desktop runtime tests and desktop lint first in parallel, then current-OS Tauri desktop build, staged sidecar smoke, and packaged app smoke serially.
-- Full gate: `bun run verify:full` is intentionally slow and opt-in, but remains deterministic and credential-free. It runs the base gate, the full non-live Vitest suite, Playwright smoke/accessibility, deterministic demo, dependency audit, and desktop runtime/lint/build/smoke.
-- Live gate: `bun run verify:live` is the only verification target that can call an external LLM. It retains minimal provider and agent canaries and skips unless `NIGHTWORKERS_LIVE_LLM_VITEST=1` or `NIGHTWORKERS_LIVE_LLM_E2E=1` and credentials are configured.
-- Dependency gate: `bun run verify:audit` fails on every unallowlisted High/Critical advisory. Temporary exceptions require an advisory ID, owner, reason, mitigation, and expiry in `config/dependency-audit-allowlist.json`.
-- Release gate: `bun run verify:release` is the only release-ready entrypoint. It checks release metadata and docs and runs the deterministic full profile. Opt-in live-provider checks remain exclusive to `verify:live` so release reproducibility does not depend on an external provider.
-- Coverage report: `bun run test:coverage` runs the same non-E2E/non-live Vitest suite with V8 coverage and writes `coverage/coverage-summary.json`; use the summary to track statements, branches, functions, and lines toward the 80% target.
-- Packaged desktop smoke: `bun run desktop:smoke` can also be run directly as the release/adoption smoke for launching the built `.app` and verifying API, WebSocket, logs, and shutdown.
-- Smoke E2E: `bun run test:e2e:smoke` remains separate until local app/server prerequisites are explicitly available.
-- E2E isolation: every `test:e2e:*` command creates a disposable `.nightworkers-e2e/<run-id>/` containing its own SQLite DB, runtime, settings, ports, and fixture repositories. Existing dev servers are never reused, and the run directory is reset after success or failure.
-- Husky hooks: `pre-commit` and `pre-push` both run only the fast `bun run verify` gate; they never run E2E, desktop build/smoke, or live LLM calls.
-- Unit/integration: Vitest
-- End-to-end: Playwright (`@smoke`, `@regression` tags)
-- Agent outcome E2E: `bun run test:e2e:agent-outcome` uses the deterministic `test` provider, scratch git workspaces, real API/DB/run event paths, and requires no provider credentials. Set `KEEP_E2E_WORKSPACE=1` to keep the scratch workspace after a failure.
-- Live agent E2E: `bun run test:e2e:agent-live` is optional and skips unless provider credentials are configured.
-- If validation fails, first identify the phase that failed: TypeScript (`bun run typecheck`), Biome (`bun run lint`), desktop packaging readiness (`bun run desktop:check:cross-platform`), Rust/Tauri (`bun run desktop:lint` / `bun run desktop:build`), sidecar or packaged smoke (`bun run desktop:smoke-sidecar` / `bun run desktop:smoke`), Vitest (`bun run test run`), coverage (`bun run test:coverage`), or Playwright (`bun run test:e2e:smoke`).
-- Do not describe a red Full Vitest or coverage run as passing. Record the failing command, failing test file(s) or below-target metric, and the next repair target separately from any green narrower gate used for interim confidence.
-- Recommended pre-PR validation:
 ```bash
-bun run verify
+bun run desktop:check:cross-platform
 ```
-Run `bun run verify:full` explicitly when the complete slow suite is warranted. Targeted `verify:e2e`, `verify:desktop`, `verify:audit`, and `verify:live` commands remain available. Release candidates must pass `bun run verify:release`.
-Before a release, run `bun run verify:release`; tag creation through
-`bun run release:create -- --execute` is blocked unless that command succeeds.
 
-## Documentation Map
-This repository uses the following documentation layout.
+Signing and notarization require real platform credentials and are not
+simulated by the normal build.
 
-- GitHub-rendered OSS documents (root):
-  - [`README.ja.md`](./README.ja.md) (Japanese)
-  - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-  - [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
-  - [`SECURITY.md`](./SECURITY.md)
-  - [`SUPPORT.md`](./SUPPORT.md)
-  - [`GOVERNANCE.md`](./GOVERNANCE.md)
-  - [`CHANGELOG.md`](./CHANGELOG.md)
-- Adoption and first-run references:
-  - [`Trust Model`](./spec/trust-model.md)
-  - [`First Run Orientation`](./spec/first-run-orientation.md)
-  - [`Feature Tour`](./spec/feature-tour.md)
-  - [`Adoption Checklist`](./spec/adoption-checklist.md)
-  - [`Documentation Maintenance Checklist`](./spec/archive/documentation-maintenance-checklist.md)
-  - [`Credential-Free Demo`](./demo/support-ops-crm/README.md)
-  - [`0.1.0 Release Notes`](./spec/release-notes/0.1.0.md)
-- Engineering specs and internal references:
-  - `spec/docs/` (primary specification/reference docs)
-  - [`Architecture and Module Boundaries`](./spec/architecture.md)
-  - [`Runtime Configuration Reference`](./spec/configuration.md)
-- `spec/public/` (public-facing specs managed outside GitHub-rendered root docs)
+## Verification
 
-Note: `spec/public/` is reserved for non-GitHub-public spec artifacts. GitHub-rendered documents are intentionally kept at the repository root.
+NightWorkers separates deterministic local gates from optional live-provider
+checks.
 
-## Contributing
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening issues or pull requests.
+| Command | Scope |
+| --- | --- |
+| `bun run verify:base` | Named entry point for the lightweight base gate. |
+| `bun run verify` | Lightweight base gate: tracked artifacts, TypeScript, Biome, then Supervisor regressions. |
+| `bun run verify:fast` | Alias for the base gate. |
+| `bun run verify:e2e` | Credential-free Playwright smoke gate. |
+| `bun run verify:audit` | High/Critical dependency policy. |
+| `bun run verify:desktop` | Desktop runtime tests, Rust checks, build, sidecar smoke, and packaged-app smoke. |
+| `bun run verify:full` | Complete deterministic suite, including tests, E2E/accessibility, demo, audit, and desktop gates. |
+| `bun run verify:live` | Explicit external-provider canaries; skipped unless enabled and configured. |
+| `bun run verify:release` | Release metadata, deterministic verification, demo, dependency, and desktop release gates. |
 
-## Security
-Please report vulnerabilities via [SECURITY.md](./SECURITY.md).
+Useful focused commands:
 
-## License
-MIT
+```bash
+bun run typecheck
+bun run lint
+bun run test
+bun run test:coverage
+bun run test:e2e
+bun run test:e2e:smoke
+bun run test:e2e:agent-outcome
+bun run test:e2e:agent-live
+bun run check:architecture
+bun run check:docs
+```
+
+`check:docs` verifies registered document existence, local links and anchors,
+documented `bun run` commands, and selected completed-plan archive rules. It does
+not prove that prose still matches the implementation; semantic documentation
+review is still required.
+
+Live-provider tests are intentionally outside the normal deterministic gates.
+`verify:live` only runs them when the corresponding enable flags and credentials
+are present.
+
+## Operations and Development Commands
+
+| Command | Purpose |
+| --- | --- |
+| `bun run build` | Build the frontend and backend bundles. |
+| `bun run start` | Start the production backend bundle after `build`. |
+| `bun run db:generate` | Generate Drizzle migration files after a schema change. |
+| `bun run db:migrate` | Apply Drizzle migrations to the active runtime database. |
+| `bun run db:seed` | Seed the active development database. |
+| `bun run db:studio` | Open Drizzle Studio. |
+| `bun run cleanup:test-data:dry-run` | Preview deletion of local TEST-prefixed data. |
+| `bun run cleanup:test-data` | Execute the scoped TEST-data cleanup. |
+| `bun run release:check` | Validate package, Tauri, changelog, release-note, tag, and optional manifest metadata. |
+| `bun run release:manifest` | Generate artifact checksum and signing/notarization metadata after verification. |
+| `bun run release:create` | Run release checks before a dry run or explicit annotated tag creation. |
+| `bun run desktop:prepare-sidecar` | Build and stage the packaged backend sidecar. |
+| `bun run desktop:smoke-sidecar` | Smoke-test the staged sidecar. |
+| `bun run desktop:lint` | Check cross-platform metadata, Rust formatting, and Clippy. |
+| `bun run desktop:sign` | Sign and verify a desktop artifact when platform credentials are available. |
+
+## Architecture
+
+| Layer | Current implementation |
+| --- | --- |
+| API | Hono + TypeScript under `api/` |
+| Web UI | React, Vite, and TanStack Router under `src/` |
+| Desktop | Tauri shell under `src-tauri/` with a bundled Node backend sidecar |
+| Persistence | Drizzle ORM with SQLite/libSQL schemas and migrations |
+| Shared contracts | Zod schemas under `shared/schemas/` |
+| Runtime evidence | Task, Mission Pilot, Queue, event, Todo, artifact, verification, review, usage, and Git records |
+| Repository mutation | Worker-tool boundary operating on a registered Project root or Task worktree |
+
+High-level module families include Mission Pilot, NightWorkers Task/Run
+orchestration, Queue, Git worktree, Review, Project Evaluation, Quality, Task
+Generation, Plan Mode, Blueprint, Data Model, Overview, Settings, Ontology, MCP,
+and Agent Hooks.
+
+See [Architecture and Module Boundaries](./spec/architecture.md) for lower-level
+boundaries. When that document and executable contracts disagree, treat the
+schemas, route definitions, migrations, and tested service paths as current
+runtime truth and update the document.
+
+## Current Limits
+
+- NightWorkers is a local, primarily single-user control plane, not a hosted
+  collaboration service.
+- It does not create pull requests, deploy applications, publish releases, or
+  submit desktop packages automatically.
+- Git merge is implemented as an explicit, evidence-backed Review action; it is
+  not an unconditional background side effect.
+- Parallel Processor work does not mean multiple agents may race in the same
+  worktree. Isolation depends on Task workspace ownership and claim gates.
+- The queue and local runtime are not a distributed multi-host scheduler.
+- Live provider behavior depends on the configured service, credentials, model,
+  network, and provider policy.
+- MCP authentication secrets are not supported by the current MCP settings
+  contract.
+- The optional Security Oracle and ontology extension require an eligible and
+  separately configured local vulnWorkbench integration.
+- contextStill procedures require a configured contextStill MCP server; the
+  deterministic product/demo baseline does not require one.
+- Estimated cost is incomplete when pricing, usage, or FX data is unavailable.
+- A successful final report, successful model response, or existing Queue row
+  alone does not prove completion.
+- Documentation plans in `spec/archive/` are historical evidence, not current
+  user contracts.
+
+## Documentation
+
+- [Feature Tour](./spec/feature-tour.md)
+- [First Run Orientation](./spec/first-run-orientation.md)
+- [Architecture and Module Boundaries](./spec/architecture.md)
+- [Runtime Configuration](./spec/configuration.md)
+- [Trust Model](./spec/trust-model.md)
+- [Adoption Checklist](./spec/adoption-checklist.md)
+- [E2E Testing Policy](./spec/e2e-testing-policy.md)
+- [Release Notes](./spec/release-notes/0.1.0.md)
+- [Changelog](./CHANGELOG.md)
+- [Security Policy](./SECURITY.md)
+- [Contributing](./CONTRIBUTING.md)
+
+Active specifications live under `spec/docs/` or directly under `spec/` when
+they are still being worked. Completed implementation plans move to
+`spec/archive/`. Neither location automatically makes a document a current
+product guarantee.
+
+## Source-of-Truth Map
+
+These are useful starting points when validating README claims:
+
+| Claim area | Executable source |
+| --- | --- |
+| Task + Mission Pilot atomic creation | `api/modules/nightworkers/nightworkers.task-creation.service.ts` |
+| Mission Pilot state and authorization | `shared/schemas/mission-pilot.schema.ts`, `api/modules/missionPilot/` |
+| Plan steps and review progress | `shared/plan-mode-execution.ts`, `shared/schemas/mission-pilot-plan-progress.schema.ts` |
+| Queue handoff and claim readiness | `api/modules/missionPilot/mission-pilot-queue-handoff.service.ts`, `api/modules/queue/` |
+| Task Git workspace and merge policy | `shared/schemas/git-integration.schema.ts`, `api/modules/gitworktree/`, `api/modules/nightworkers/nightworkers.git-merge.service.ts` |
+| Test, Review, and closeout evidence | `api/modules/review/`, `api/modules/missionPilot/mission-pilot-closeout.service.ts` |
+| Project Evaluation and Quality | `api/modules/project-evaluation/`, `api/modules/quality/` |
+| Overview usage and cost | `shared/schemas/overview.schema.ts`, `api/modules/overview/` |
+| Runtime storage paths | `api/runtime/paths.ts` |
+| Available commands | `package.json`, `scripts/verify.mjs` |
+
+## Contributing, Security, and License
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a change. Report
+security issues through [SECURITY.md](./SECURITY.md), not a public issue.
+
+NightWorkers is distributed under the [MIT License](./LICENSE.md).

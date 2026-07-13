@@ -128,6 +128,129 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		).toBe(false);
 	});
 
+	it("reconciles uniquely identifiable Artifact sourceMessageId transcription errors", () => {
+		const dataModelId = "2c0f70f3-ba12-4ab2-a5a2-f68add2354e3";
+		const transcribedDataModelId = "2c0f70f3-ba12-4ab2-a5a2-f68dfa4ad4e3";
+		const featurePlanId = "28b651d3-4c7a-4e78-bc5d-8499da594e0c";
+		const review = normalizeMissionPilotPlanReview(
+			{
+				verdict: "revise",
+				summary: "Data Model correction is required.",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "fail",
+					verification: "pass",
+					artifactConsistency: "fail",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "data_model",
+						sourceMessageId: transcribedDataModelId,
+						score: 78,
+						rationale: "A blocking mismatch remains.",
+					},
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: featurePlanId,
+						score: 90,
+						rationale: "Implementation-ready.",
+					},
+				],
+				findings: [
+					{
+						severity: "blocking",
+						artifactKind: "data_model",
+						sourceId: transcribedDataModelId,
+						issue: "The ownership constraint is missing.",
+						recommendation: "Add the ownership constraint.",
+					},
+				],
+				revisionTargets: [
+					{
+						target: "data_model",
+						sourceMessageId: transcribedDataModelId,
+						focus: { kind: "artifact" },
+						instruction: "所有者制約を追加してください。",
+						preserveUnfocusedContent: true,
+					},
+				],
+			},
+			[
+				{ artifactKind: "data_model", sourceMessageId: dataModelId },
+				{ artifactKind: "feature_plan", sourceMessageId: featurePlanId },
+			],
+		);
+
+		expect(review.artifactScores).toEqual([
+			expect.objectContaining({
+				artifactKind: "data_model",
+				sourceMessageId: dataModelId,
+			}),
+			expect.objectContaining({
+				artifactKind: "feature_plan",
+				sourceMessageId: featurePlanId,
+			}),
+		]);
+		expect(review.revisionTargets).toEqual([
+			expect.objectContaining({
+				target: "data_model",
+				sourceMessageId: dataModelId,
+			}),
+		]);
+		expect(review.findings).toEqual([
+			expect.objectContaining({
+				artifactKind: "data_model",
+				sourceId: dataModelId,
+			}),
+		]);
+	});
+
+	it("rejects sourceMessageId recovery when an Artifact kind is ambiguous", () => {
+		const firstId = "00000000-0000-4000-8000-000000000041";
+		const secondId = "00000000-0000-4000-8000-000000000042";
+		const unknownId = "00000000-0000-4000-8000-000000000043";
+		expect(() =>
+			normalizeMissionPilotPlanReview(
+				{
+					verdict: "pass",
+					summary: "Ambiguous Artifact identities.",
+					coverage: {
+						goal: "pass",
+						scope: "pass",
+						acceptanceCriteria: "pass",
+						implementationSteps: "pass",
+						verification: "pass",
+						artifactConsistency: "pass",
+						riskAndSafety: "pass",
+					},
+					artifactScores: [
+						{
+							artifactKind: "feature_plan",
+							sourceMessageId: firstId,
+							score: 90,
+							rationale: "First plan.",
+						},
+						{
+							artifactKind: "feature_plan",
+							sourceMessageId: unknownId,
+							score: 90,
+							rationale: "Unknown plan.",
+						},
+					],
+					findings: [],
+					revisionTargets: [],
+				},
+				[
+					{ artifactKind: "feature_plan", sourceMessageId: firstId },
+					{ artifactKind: "feature_plan", sourceMessageId: secondId },
+				],
+			),
+		).toThrow("Plan review must score every current Artifact exactly once");
+	});
+
 	it("keeps warning-only improvement requests non-blocking", () => {
 		const sourceMessageId = "00000000-0000-4000-8000-000000000001";
 		const review = normalizeMissionPilotPlanReview(

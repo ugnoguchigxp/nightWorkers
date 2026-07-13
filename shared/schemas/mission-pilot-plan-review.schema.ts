@@ -103,6 +103,24 @@ export type MissionPilotReviewedArtifact = {
 	sourceMessageId: string;
 };
 
+function reconcileArtifactSourceMessageId(
+	artifactKind: string,
+	sourceMessageId: string,
+	reviewedArtifactsByKind: ReadonlyMap<
+		string,
+		readonly MissionPilotReviewedArtifact[]
+	>,
+	expectedArtifactKeys: ReadonlySet<string>,
+) {
+	if (expectedArtifactKeys.has(`${artifactKind}:${sourceMessageId}`)) {
+		return sourceMessageId;
+	}
+	const candidates = reviewedArtifactsByKind.get(artifactKind) ?? [];
+	return candidates.length === 1
+		? (candidates[0]?.sourceMessageId ?? sourceMessageId)
+		: sourceMessageId;
+}
+
 export function normalizeMissionPilotPlanReview(
 	input: unknown,
 	reviewedArtifacts: MissionPilotReviewedArtifact[] = [],
@@ -119,13 +137,49 @@ export function normalizeMissionPilotPlanReview(
 			(item) => `${item.artifactKind}:${item.sourceMessageId}`,
 		),
 	);
+	const reviewedArtifactsByKind = new Map<
+		string,
+		MissionPilotReviewedArtifact[]
+	>();
+	for (const artifact of reviewedArtifacts) {
+		const candidates = reviewedArtifactsByKind.get(artifact.artifactKind) ?? [];
+		candidates.push(artifact);
+		reviewedArtifactsByKind.set(artifact.artifactKind, candidates);
+	}
+	const normalizedArtifactScores = review.artifactScores.map((score) => ({
+		...score,
+		sourceMessageId: reconcileArtifactSourceMessageId(
+			score.artifactKind,
+			score.sourceMessageId,
+			reviewedArtifactsByKind,
+			expected,
+		),
+	}));
+	const normalizedRevisionTargets = review.revisionTargets.map((target) => ({
+		...target,
+		sourceMessageId: reconcileArtifactSourceMessageId(
+			target.target,
+			target.sourceMessageId,
+			reviewedArtifactsByKind,
+			expected,
+		),
+	}));
+	const normalizedFindings = review.findings.map((finding) => ({
+		...finding,
+		sourceId: reconcileArtifactSourceMessageId(
+			finding.artifactKind,
+			finding.sourceId,
+			reviewedArtifactsByKind,
+			expected,
+		),
+	}));
 	const scored = new Set(
-		review.artifactScores.map(
+		normalizedArtifactScores.map(
 			(item) => `${item.artifactKind}:${item.sourceMessageId}`,
 		),
 	);
 	if (
-		review.artifactScores.length !== expected.size ||
+		normalizedArtifactScores.length !== expected.size ||
 		expected.size !== scored.size ||
 		[...expected].some((key) => !scored.has(key))
 	) {
@@ -134,12 +188,12 @@ export function normalizeMissionPilotPlanReview(
 		);
 	}
 	const blockingArtifactKinds = new Set(
-		review.findings
+		normalizedFindings
 			.filter((finding) => finding.severity === "blocking")
 			.map((finding) => finding.artifactKind),
 	);
 	const seenTargets = new Set<string>();
-	const revisionTargets = review.revisionTargets.filter((target) => {
+	const revisionTargets = normalizedRevisionTargets.filter((target) => {
 		const key = `${target.target}:${target.sourceMessageId}`;
 		if (
 			review.verdict !== "revise" ||
@@ -154,7 +208,8 @@ export function normalizeMissionPilotPlanReview(
 	});
 	return {
 		...review,
-		findings: review.findings.map((finding) =>
+		artifactScores: normalizedArtifactScores,
+		findings: normalizedFindings.map((finding) =>
 			isMissionPilotConceptArtifactKind(finding.artifactKind)
 				? { ...finding, severity: "warning" as const }
 				: finding,

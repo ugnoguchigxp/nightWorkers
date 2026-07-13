@@ -95,7 +95,7 @@ export async function getMissionPilotExecution(sessionId: string) {
 			.select()
 			.from(missionPilotEvents)
 			.where(eq(missionPilotEvents.sessionId, sessionId))
-			.orderBy(asc(missionPilotEvents.createdAt)),
+			.orderBy(asc(missionPilotEvents.createdAt), asc(missionPilotEvents.id)),
 		db
 			.select({
 				id: missionPilotArtifactCorrectionRuns.id,
@@ -118,7 +118,11 @@ export async function getMissionPilotExecution(sessionId: string) {
 				eq(activityEvents.traceChannel, "pilot_thought"),
 			),
 		)
-		.orderBy(asc(activityEvents.seq), asc(activityEvents.createdAt));
+		.orderBy(
+			asc(activityEvents.seq),
+			asc(activityEvents.createdAt),
+			asc(activityEvents.id),
+		);
 	const pilotMessages = await db
 		.select()
 		.from(taskMessages)
@@ -129,7 +133,7 @@ export async function getMissionPilotExecution(sessionId: string) {
 				eq(taskMessages.traceChannel, "pilot_thought"),
 			),
 		)
-		.orderBy(asc(taskMessages.createdAt));
+		.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id));
 	return {
 		session,
 		phaseRuns,

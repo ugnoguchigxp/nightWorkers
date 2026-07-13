@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+	mergeMissionPilotExecutionTrace,
 	missionPilotStopThoughtItem,
 	missionPilotTraceItems,
 	PilotThoughtDock,
@@ -99,6 +100,111 @@ describe("PilotThoughtDock", () => {
 		});
 	});
 
+	it("deduplicates persisted rows and keeps same-second activity order stable", () => {
+		const duplicateEvent = {
+			id: "pilot-event-1",
+			eventType: "questionnaire.completed",
+			phase: "plan_mode",
+			cycle: 1,
+			contextRevision: 3,
+			sourceKind: "questionnaire",
+			sourceId: "questionnaire-1",
+			payloadJson: {},
+			processStatus: "processed",
+			attemptCount: 0,
+			createdAt: new Date("2026-07-13T00:00:00Z"),
+		};
+		const activity = (
+			id: string,
+			seq: number,
+			text: string,
+			createdAt: Date,
+		) => ({
+			id,
+			taskId: "task-1",
+			seq,
+			kind: "runtime.state",
+			source: "mission_pilot",
+			text,
+			visibility: "visible",
+			traceOwner: "mission_pilot" as const,
+			traceChannel: "pilot_thought" as const,
+			createdAt,
+		});
+
+		const items = missionPilotTraceItems({
+			messages: [],
+			events: [duplicateEvent, duplicateEvent],
+			activityEvents: [
+				activity(
+					"activity-7",
+					7,
+					"確定しました",
+					new Date("2026-07-13T00:00:00Z"),
+				),
+				activity(
+					"activity-6",
+					6,
+					"確定しています",
+					new Date("2026-07-13T00:00:00Z"),
+				),
+			],
+		});
+
+		expect(items.map((item) => item.event.message)).toEqual([
+			"questionnaire.completed",
+			"確定しています",
+			"確定しました",
+		]);
+	});
+
+	it("merges live snapshots by persisted id without dropping newer history", () => {
+		const current = {
+			events: [],
+			activityEvents: [
+				{
+					id: "activity-1",
+					taskId: "task-1",
+					seq: 1,
+					kind: "runtime.state",
+					source: "mission_pilot",
+					status: "running",
+					text: "処理中",
+					visibility: "visible",
+					traceOwner: "mission_pilot" as const,
+					traceChannel: "pilot_thought" as const,
+					createdAt: new Date("2026-07-13T00:00:00Z"),
+				},
+			],
+			messages: [],
+		};
+		const incoming = {
+			events: [],
+			activityEvents: [
+				{
+					...current.activityEvents[0],
+					status: "completed",
+					text: "完了",
+				},
+				{
+					...current.activityEvents[0],
+					id: "activity-2",
+					seq: 2,
+					text: "次の履歴",
+				},
+			],
+			messages: [],
+		};
+
+		const merged = mergeMissionPilotExecutionTrace(current, incoming);
+		const staleResponse = mergeMissionPilotExecutionTrace(merged, current);
+
+		expect(staleResponse.activityEvents).toHaveLength(2);
+		expect(
+			staleResponse.activityEvents.find((event) => event.id === "activity-2"),
+		).toBeDefined();
+	});
+
 	it("renders Pilot decisions without task execution or screen generation logs", () => {
 		const markup = renderToStaticMarkup(
 			<PilotThoughtDock
@@ -162,7 +268,10 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("repositoryを確認しています");
 		expect(markup).not.toContain("exec_command");
 		expect(markup).not.toContain("User Flowを生成しています。");
-		expect(markup).toContain("Mission Pilotの判断要約、状態遷移、LLM証跡");
+		expect(markup).toContain("現在のSQLite状態（履歴外）");
+		expect(markup).toContain(
+			"SQLiteに保存されたMission Pilotの判断、状態遷移、LLM証跡だけを表示します。",
+		);
 	});
 
 	it("shows the persisted stop reason even without a pre-Queue diagnostic", () => {

@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { resolveMissionPilotArtifactFocus } from "../src/modules/nightworkers/components/mission-pilot-artifact-focus";
+import { resolveMissionPilotArtifactFocus as resolveMissionPilotArtifactFocusForRoute } from "../src/modules/nightworkers/components/mission-pilot-artifact-focus";
+import type { WorkbenchRouteState } from "../src/modules/nightworkers/routing/workbench-route-state";
 import type {
 	PlanModeWorkspace,
 	Task,
 	WorkbenchArtifactRef,
 } from "../src/modules/nightworkers/types";
+
+function resolveMissionPilotArtifactFocus(
+	input: Omit<
+		Parameters<typeof resolveMissionPilotArtifactFocusForRoute>[0],
+		"routeState"
+	>,
+	routeState: WorkbenchRouteState = {
+		kind: "session",
+		sessionId: input.activeSession?.id || "task-1",
+		artifact: null,
+	},
+) {
+	return resolveMissionPilotArtifactFocusForRoute({ ...input, routeState });
+}
 
 function task(phase: string, desiredState: "playing" | "stopped" = "playing") {
 	return {
@@ -202,6 +217,29 @@ describe("resolveMissionPilotArtifactFocus", () => {
 				activeSession: task("testing", "stopped"),
 				activeArtifactRefs: [],
 			}),
+		).toBeNull();
+	});
+
+	it.each([
+		{
+			kind: "overview",
+			range: "30d",
+			projectId: "repo-1",
+		},
+		{
+			kind: "project_detail",
+			projectId: "repo-1",
+			tab: "mission",
+		},
+	] satisfies WorkbenchRouteState[])("does not take focus away from a project screen ($kind)", (routeState) => {
+		expect(
+			resolveMissionPilotArtifactFocus(
+				{
+					activeSession: task("reviewing"),
+					activeArtifactRefs: [],
+				},
+				routeState,
+			),
 		).toBeNull();
 	});
 });

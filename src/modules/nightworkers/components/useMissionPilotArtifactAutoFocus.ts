@@ -7,6 +7,7 @@ export function useMissionPilotArtifactAutoFocus(input: {
 	activeSession: Task | null;
 	activeArtifactRefs: WorkbenchArtifactRef[];
 	latestRun?: TaskRun;
+	routeState: WorkbenchRouteState;
 	onNavigate: (routeState: WorkbenchRouteState) => void;
 }) {
 	const lastAutoFocusKeyRef = useRef<string | null>(null);

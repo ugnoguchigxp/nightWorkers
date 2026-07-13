@@ -13,8 +13,12 @@ import {
 import { logEvent } from "../../lib/logger";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
+import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import { missionPilotPlanOutputTrace } from "../nightworkers/nightworkers.trace-provenance";
+import {
+	missionPilotPlanOutputTrace,
+	missionPilotThoughtTrace,
+} from "../nightworkers/nightworkers.trace-provenance";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
 import {
 	getDesignQuestionnaireSession,
@@ -153,6 +157,33 @@ export async function updatePhase(
 		)
 		.returning();
 	if (updated) {
+		if (input.error) {
+			await appendActivityEvent({
+				taskId,
+				kind: "system.error",
+				source: "mission_pilot",
+				status: "failed",
+				text: `Mission PilotのPlanパイプラインが停止しました。理由: ${input.error}`,
+				payloadJson: {
+					source: "mission_pilot",
+					missionPilotSessionId: updated.id,
+					errorCode: "MISSION_PILOT_PLAN_PIPELINE_FAILED",
+					error: input.error,
+					phase,
+					contextRevision: updated.contextRevision,
+					contextDigest: updated.contextDigest,
+				},
+				dedupeKey: `mission-pilot:plan-pipeline:failed:${updated.id}:${updated.version}`,
+				trace: missionPilotThoughtTrace({ sessionId: updated.id }),
+			}).catch((error) => {
+				logEvent({
+					channel: "mission-pilot",
+					level: "warn",
+					message: "Plan pipeline failure activity persistence failed",
+					meta: { taskId, sessionId: updated.id, error: errorMessage(error) },
+				});
+			});
+		}
 		publishMissionPilotUpdated(
 			taskId,
 			missionPilotRepo.toControlSummary(updated),

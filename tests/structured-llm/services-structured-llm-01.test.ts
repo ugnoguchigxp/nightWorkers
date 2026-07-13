@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createStructuredLlmAbortSignal,
 	jsonFixWrapper,
@@ -7,6 +7,10 @@ import {
 import { questionnaireChoiceFormSchema } from "../../shared/schemas/design-questionnaire.schema";
 
 describe("structured LLM JSON helpers", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("extracts fenced JSON with jsonFixWrapper", () => {
 		const fixed = jsonFixWrapper('```json\n{"ok":true}\n```');
 
@@ -72,5 +76,23 @@ describe("structured LLM JSON helpers", () => {
 		await new Promise((resolve) => setTimeout(resolve, 40));
 
 		expect(handle.signal.aborted).toBe(false);
+	});
+
+	it("uses 180 seconds as the default structured LLM timeout", () => {
+		vi.useFakeTimers();
+		const originalTimeout = process.env.SUPERVISOR_LLM_TIMEOUT_MS;
+		delete process.env.SUPERVISOR_LLM_TIMEOUT_MS;
+		try {
+			const handle = createStructuredLlmAbortSignal({});
+
+			vi.advanceTimersByTime(179_999);
+			expect(handle.signal.aborted).toBe(false);
+			vi.advanceTimersByTime(1);
+			expect(handle.signal.aborted).toBe(true);
+		} finally {
+			if (originalTimeout === undefined)
+				delete process.env.SUPERVISOR_LLM_TIMEOUT_MS;
+			else process.env.SUPERVISOR_LLM_TIMEOUT_MS = originalTimeout;
+		}
 	});
 });

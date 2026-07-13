@@ -1,9 +1,6 @@
 import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type {
-	MissionPilotControlSummary,
-	MissionPilotQuestionnaireDraft,
-} from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type {
 	ActivityEvent,
@@ -12,13 +9,19 @@ import type {
 	TaskMessage,
 } from "../../nightworkers/types";
 import { getRelativeTimestamp } from "../../nightworkers/utils/time";
-import {
-	fetchMissionPilotExecutionTrace,
-	fetchMissionPilotQuestionnaireDraft,
-} from "../missionPilotCommands";
+import { fetchMissionPilotExecutionTrace } from "../missionPilotCommands";
+
+type PilotThoughtSource =
+	| "mission_pilot_event"
+	| "activity_event"
+	| "task_message"
+	| "current_state";
 
 export type PilotThoughtItem = {
 	id: string;
+	source: PilotThoughtSource;
+	sourceId: string;
+	sequence?: number;
 	createdAt: unknown;
 	event: TaskEvent;
 };
@@ -54,6 +57,30 @@ export function isMissionPilotActivityEvent(event: ActivityEvent) {
 function eventTimestamp(value: unknown) {
 	const time = new Date(value as string | number | Date).getTime();
 	return Number.isFinite(time) ? time : 0;
+}
+
+const PILOT_THOUGHT_SOURCE_ORDER: Record<PilotThoughtSource, number> = {
+	mission_pilot_event: 0,
+	activity_event: 1,
+	task_message: 2,
+	current_state: 3,
+};
+
+export function comparePilotThoughtItems(
+	a: PilotThoughtItem,
+	b: PilotThoughtItem,
+) {
+	const timestampDifference =
+		eventTimestamp(a.createdAt) - eventTimestamp(b.createdAt);
+	if (timestampDifference !== 0) return timestampDifference;
+	const sourceDifference =
+		PILOT_THOUGHT_SOURCE_ORDER[a.source] - PILOT_THOUGHT_SOURCE_ORDER[b.source];
+	if (sourceDifference !== 0) return sourceDifference;
+	const sequenceDifference =
+		(a.sequence ?? Number.MAX_SAFE_INTEGER) -
+		(b.sequence ?? Number.MAX_SAFE_INTEGER);
+	if (sequenceDifference !== 0) return sequenceDifference;
+	return a.sourceId.localeCompare(b.sourceId);
 }
 
 function activityToTaskEvent(event: ActivityEvent): TaskEvent {
@@ -99,9 +126,11 @@ function missionPilotEventToTaskEvent(
 export function missionPilotTraceItems(
 	trace: MissionPilotExecutionTrace | null,
 ): PilotThoughtItem[] {
-	return [
+	const persistedItems = [
 		...(trace?.events ?? []).map((event) => ({
 			id: `mission-pilot-event:${event.id}`,
+			source: "mission_pilot_event" as const,
+			sourceId: event.id,
 			createdAt: event.createdAt,
 			event: missionPilotEventToTaskEvent(event),
 		})),
@@ -109,11 +138,16 @@ export function missionPilotTraceItems(
 			.filter(isMissionPilotActivityEvent)
 			.map((event) => ({
 				id: `mission-pilot-activity:${event.id}`,
+				source: "activity_event" as const,
+				sourceId: event.id,
+				sequence: event.seq,
 				createdAt: event.createdAt,
 				event: activityToTaskEvent(event),
 			})),
 		...(trace?.messages ?? []).map((message) => ({
 			id: `mission-pilot-message:${message.id}`,
+			source: "task_message" as const,
+			sourceId: message.id,
 			createdAt: message.createdAt,
 			event: {
 				id: message.id,
@@ -128,6 +162,33 @@ export function missionPilotTraceItems(
 			},
 		})),
 	];
+	return [
+		...new Map(persistedItems.map((item) => [item.id, item])).values(),
+	].sort(comparePilotThoughtItems);
+}
+
+function mergePersistedRows<T extends { id: string }>(
+	current: readonly T[],
+	incoming: readonly T[],
+) {
+	const rowsById = new Map(current.map((row) => [row.id, row]));
+	for (const row of incoming) rowsById.set(row.id, row);
+	return [...rowsById.values()];
+}
+
+export function mergeMissionPilotExecutionTrace(
+	current: MissionPilotExecutionTrace | null,
+	incoming: MissionPilotExecutionTrace,
+): MissionPilotExecutionTrace {
+	if (!current) return incoming;
+	return {
+		events: mergePersistedRows(current.events, incoming.events),
+		activityEvents: mergePersistedRows(
+			current.activityEvents,
+			incoming.activityEvents,
+		),
+		messages: mergePersistedRows(current.messages, incoming.messages),
+	};
 }
 
 export function missionPilotStopThoughtItem(
@@ -164,6 +225,8 @@ export function missionPilotStopThoughtItem(
 	const attention = summary.activityState === "attention";
 	return {
 		id: `stop:${reasonCode}:${eventTimestamp(createdAt)}`,
+		source: "current_state",
+		sourceId: `current-state:${reasonCode}`,
 		createdAt,
 		event: {
 			id: `stop:${reasonCode}`,
@@ -200,86 +263,59 @@ export function PilotThoughtDock({
 	session: Task | null;
 	onClose: () => void;
 }) {
-	const [questionnaireDraft, setQuestionnaireDraft] =
-		useState<MissionPilotQuestionnaireDraft | null>(null);
-	const [executionTrace, setExecutionTrace] =
-		useState<MissionPilotExecutionTrace | null>(null);
+	const [executionTraceState, setExecutionTraceState] = useState<{
+		taskId: string;
+		trace: MissionPilotExecutionTrace;
+	} | null>(null);
 	useEffect(() => {
 		if (!session?.id) {
-			setQuestionnaireDraft(null);
-			return;
-		}
-		const controller = new AbortController();
-		void fetchMissionPilotQuestionnaireDraft(session.id)
-			.then(async (response) =>
-				response.ok
-					? ((await response.json()) as MissionPilotQuestionnaireDraft | null)
-					: null,
-			)
-			.then((draft) => {
-				if (!controller.signal.aborted) setQuestionnaireDraft(draft);
-			})
-			.catch(() => undefined);
-		return () => controller.abort();
-	}, [session?.id]);
-	useEffect(() => {
-		if (!session?.id) {
-			setExecutionTrace(null);
+			setExecutionTraceState(null);
 			return;
 		}
 		let disposed = false;
+		let timer: number | undefined;
+		setExecutionTraceState((current) =>
+			current?.taskId === session.id ? current : null,
+		);
 		const refresh = async () => {
 			try {
 				const response = await fetchMissionPilotExecutionTrace(session.id);
 				if (!response.ok) return;
 				const trace = (await response.json()) as MissionPilotExecutionTrace;
-				if (!disposed) setExecutionTrace(trace);
+				if (!disposed) {
+					setExecutionTraceState((current) => ({
+						taskId: session.id,
+						trace: mergeMissionPilotExecutionTrace(
+							current?.taskId === session.id ? current.trace : null,
+							trace,
+						),
+					}));
+				}
 			} catch {
 				// 既に取得済みの証跡は、一時的な通信断でも表示したままにする。
+			} finally {
+				if (!disposed) timer = window.setTimeout(() => void refresh(), 2_000);
 			}
 		};
 		void refresh();
-		const timer = window.setInterval(() => void refresh(), 2_000);
 		return () => {
 			disposed = true;
-			window.clearInterval(timer);
+			if (timer !== undefined) window.clearTimeout(timer);
 		};
 	}, [session?.id]);
-	const items = useMemo(() => {
-		const stopItem = missionPilotStopThoughtItem(session?.missionPilot);
-		const merged: PilotThoughtItem[] = [
-			...(stopItem ? [stopItem] : []),
-			...(questionnaireDraft
-				? [
-						{
-							id: `questionnaire:${questionnaireDraft.id}:${questionnaireDraft.version}`,
-							createdAt: questionnaireDraft.updatedAt,
-							event: {
-								id: `questionnaire:${questionnaireDraft.id}`,
-								eventType: "runtime.state",
-								actor: "mission_pilot",
-								message:
-									questionnaireDraft.state === "submitted"
-										? `${questionnaireDraft.answers.length}件のQuestionnaire回答は確定済みです。`
-										: `${questionnaireDraft.answers.length}件のQuestionnaire回答案は${questionnaireDraft.state}です。`,
-								payloadJson: {
-									questionnaireSessionId:
-										questionnaireDraft.questionnaireSessionId,
-									state: questionnaireDraft.state,
-									answerCount: questionnaireDraft.answers.length,
-									deadlineAt: questionnaireDraft.deadlineAt,
-								},
-								createdAt: questionnaireDraft.updatedAt,
-							},
-						},
-					]
-				: []),
-			...missionPilotTraceItems(executionTrace),
-		];
-		return merged.sort(
-			(a, b) => eventTimestamp(a.createdAt) - eventTimestamp(b.createdAt),
-		);
-	}, [executionTrace, questionnaireDraft, session?.missionPilot]);
+	const currentStateItem = useMemo(
+		() => missionPilotStopThoughtItem(session?.missionPilot),
+		[session?.missionPilot],
+	);
+	const items = useMemo(
+		() =>
+			missionPilotTraceItems(
+				executionTraceState && executionTraceState.taskId === session?.id
+					? executionTraceState.trace
+					: null,
+			),
+		[executionTraceState, session?.id],
+	);
 
 	return (
 		<aside className="nightworkers-chat-dock flex h-full min-h-0 flex-col border-r border-slate-700/80 bg-[#0f172a]">
@@ -303,11 +339,23 @@ export function PilotThoughtDock({
 					<X className="h-4 w-4" />
 				</button>
 			</header>
+			{currentStateItem ? (
+				<section className="shrink-0 border-b border-slate-700/80 bg-slate-950/40">
+					<p className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+						現在のSQLite状態（履歴外）
+					</p>
+					<AgentDebugEventCard
+						event={currentStateItem.event}
+						variant="dock"
+						timestamp={getRelativeTimestamp(currentStateItem.createdAt)}
+					/>
+				</section>
+			) : null}
 			<div className="nightworkers-scrollbar min-h-0 flex-1 overflow-y-auto">
 				{items.length === 0 ? (
 					<div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-xs text-slate-500">
 						<BrainCircuit className="h-7 w-7 text-slate-600" />
-						<p>Mission Pilotの実行イベントを待っています。</p>
+						<p>SQLiteに保存されたMission Pilot履歴はまだありません。</p>
 					</div>
 				) : (
 					items.map((item) => (
@@ -321,7 +369,8 @@ export function PilotThoughtDock({
 				)}
 			</div>
 			<footer className="shrink-0 border-t border-slate-800 px-4 py-2 text-[10px] leading-relaxed text-slate-500">
-				Mission Pilotの判断要約、状態遷移、LLM証跡を時系列で表示します。
+				SQLiteに保存されたMission
+				Pilotの判断、状態遷移、LLM証跡だけを表示します。
 			</footer>
 		</aside>
 	);

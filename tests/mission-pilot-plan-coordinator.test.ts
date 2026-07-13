@@ -16,7 +16,12 @@ import {
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../api/db/mission-pilot-schema";
-import { repositories, taskMessages, tasks } from "../api/db/schema";
+import {
+	activityEvents,
+	repositories,
+	taskMessages,
+	tasks,
+} from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import * as planRepo from "../api/modules/missionPilot/mission-pilot-plan.repository";
 
@@ -543,6 +548,28 @@ describe("Mission Pilot plan coordinator", () => {
 		await expect(runMissionPilotPlanPipeline(taskId)).rejects.toThrow(
 			"simulated process interruption",
 		);
+		const failureEvents = await db
+			.select()
+			.from(activityEvents)
+			.where(
+				and(
+					eq(activityEvents.taskId, taskId),
+					eq(activityEvents.kind, "system.error"),
+				),
+			);
+		expect(failureEvents).toEqual([
+			expect.objectContaining({
+				source: "mission_pilot",
+				status: "failed",
+				traceOwner: "mission_pilot",
+				traceChannel: "pilot_thought",
+				text: expect.stringContaining("simulated process interruption"),
+				payloadJson: expect.objectContaining({
+					errorCode: "MISSION_PILOT_PLAN_PIPELINE_FAILED",
+					error: "simulated process interruption",
+				}),
+			}),
+		]);
 		await db
 			.update(missionPilotSessions)
 			.set({

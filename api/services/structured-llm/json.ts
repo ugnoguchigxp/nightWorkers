@@ -136,6 +136,8 @@ export type StructuredLlmAbortHandle = {
 	dispose: () => void;
 };
 
+const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS = 180_000;
+
 export function createStructuredLlmAbortSignal(
 	options: CallSupervisorOptions,
 ): StructuredLlmAbortHandle {
@@ -206,7 +208,10 @@ function getStructuredLlmTimeoutMs(options: CallSupervisorOptions): number {
 	) {
 		return Math.floor(options.timeoutMs);
 	}
-	const configured = Number(process.env.SUPERVISOR_LLM_TIMEOUT_MS || 120_000);
-	if (!Number.isFinite(configured) || configured <= 0) return 120_000;
+	const configured = Number(
+		process.env.SUPERVISOR_LLM_TIMEOUT_MS || DEFAULT_STRUCTURED_LLM_TIMEOUT_MS,
+	);
+	if (!Number.isFinite(configured) || configured <= 0)
+		return DEFAULT_STRUCTURED_LLM_TIMEOUT_MS;
 	return Math.floor(configured);
 }
