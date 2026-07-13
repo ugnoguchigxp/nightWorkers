@@ -19,7 +19,6 @@ import {
 	answerPreFeaturePlanQuestionnaire,
 	artifactKinds,
 	assertTaskContextCurrent,
-	correctionStepKey,
 	ensureQuestionnaireContext,
 	errorMessage,
 	existingArtifactForStep,
@@ -211,25 +210,6 @@ async function executeArtifactCorrections(input: {
 		feature_plan: 40,
 	};
 	targets.sort((left, right) => rank[left.target] - rank[right.target]);
-	const steps = await planRepo.listPlanSteps(input.sessionId);
-	const regeneratedStepTargets = targets
-		.filter((target) => {
-			const stepKey = correctionStepKey[target.target];
-			return steps.some(
-				(step) =>
-					step.stepKey === stepKey &&
-					step.status === "completed" &&
-					step.attempt > 1,
-			);
-		})
-		.map((target) => target.target);
-	if (regeneratedStepTargets.length > 0) {
-		throw new Error(
-			`Mission Pilot automatic Artifact regeneration limit reached: ${[
-				...new Set(regeneratedStepTargets),
-			].join(", ")}`,
-		);
-	}
 	const runs = await planRepo.createArtifactCorrectionRuns({
 		sessionId: input.sessionId,
 		taskId: input.taskId,

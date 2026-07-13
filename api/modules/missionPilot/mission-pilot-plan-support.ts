@@ -5,7 +5,6 @@ import {
 	type PlanModeArtifactKind,
 	planModeRegenerationTargetSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
-import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -38,19 +37,6 @@ export const activeTasks = new Set<string>();
 export const MAX_REVIEW_ATTEMPTS = 3;
 export const MAX_QUEUE_STABILIZATION_ATTEMPTS = 3;
 export const PIPELINE_LEASE_MS = 15 * 60 * 1000;
-export const correctionStepKey: Record<
-	PlanModeArtifactCorrectionTarget["target"],
-	string
-> = {
-	feature_plan: "feature_plan",
-	blueprint: "blueprint",
-	data_model: "data_model",
-	user_flow: "view:user_flow",
-	api_io_contract: "view:api_io_contract",
-	activity_flow: "view:activity_flow",
-	sequence_flow: "view:sequence_flow",
-	zod_schema_design: "view:zod_schema_design",
-};
 export class MissionPilotPlanReviewStaleError extends Error {}
 export async function publishCurrentPlanProgress(taskId: string) {
 	try {

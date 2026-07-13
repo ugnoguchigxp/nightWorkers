@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+	missionPilotStopThoughtItem,
 	missionPilotTraceItems,
 	PilotThoughtDock,
 } from "../src/modules/missionPilot/components/PilotThoughtDock";
@@ -78,9 +79,9 @@ describe("PilotThoughtDock", () => {
 					updatedAt: new Date(),
 					missionPilot: {
 						taskId: "11111111-1111-4111-8111-111111111111",
-						desiredState: "playing",
-						activityState: "running",
-						phase: "running",
+						desiredState: "stopped",
+						activityState: "attention",
+						phase: "attention",
 						authorizationVersion: 2,
 						initialPromptState: "sent",
 						initialPromptMessageId: null,
@@ -126,5 +127,61 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("exec_command");
 		expect(markup).not.toContain("User Flowを生成しています。");
 		expect(markup).toContain("Mission Pilotの判断要約、状態遷移、LLM証跡");
+	});
+
+	it("shows the persisted stop reason even without a pre-Queue diagnostic", () => {
+		const item = missionPilotStopThoughtItem({
+			taskId: "11111111-1111-4111-8111-111111111111",
+			desiredState: "stopped",
+			activityState: "attention",
+			phase: "attention",
+			authorizationVersion: 3,
+			initialPromptState: "sent",
+			initialPromptMessageId: null,
+			activeRunId: null,
+			nextWakeAt: null,
+			version: 8,
+			lastErrorCode: "MISSION_PILOT_PLAN_PIPELINE_FAILED",
+			lastError:
+				"Mission Pilot automatic Artifact regeneration limit reached: feature_plan",
+			stoppedAt: null,
+			queueHandoff: null,
+			preQueueDiagnostic: null,
+			updatedAt: new Date("2026-07-13T10:23:49Z"),
+		});
+
+		expect(item?.event.message).toContain(
+			"Mission Pilot automatic Artifact regeneration limit reached: feature_plan",
+		);
+		expect(item?.event.payloadJson).toMatchObject({
+			stopReasonCode: "MISSION_PILOT_PLAN_PIPELINE_FAILED",
+			phase: "attention",
+		});
+	});
+
+	it("labels a normal paused state as a user-requested stop", () => {
+		const item = missionPilotStopThoughtItem({
+			taskId: "11111111-1111-4111-8111-111111111111",
+			desiredState: "stopped",
+			activityState: "idle",
+			phase: "paused",
+			authorizationVersion: 3,
+			initialPromptState: "sent",
+			initialPromptMessageId: null,
+			activeRunId: null,
+			nextWakeAt: null,
+			version: 9,
+			lastErrorCode: null,
+			lastError: null,
+			stoppedAt: new Date("2026-07-13T10:24:00Z"),
+			queueHandoff: null,
+			preQueueDiagnostic: null,
+			updatedAt: new Date("2026-07-13T10:24:00Z"),
+		});
+
+		expect(item?.event.message).toContain("ユーザーの停止操作");
+		expect(item?.event.payloadJson).toMatchObject({
+			stopReasonCode: "MISSION_PILOT_USER_STOPPED",
+		});
 	});
 });

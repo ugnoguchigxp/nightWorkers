@@ -1,6 +1,9 @@
 import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../../shared/schemas/mission-pilot.schema";
+import type {
+	MissionPilotControlSummary,
+	MissionPilotQuestionnaireDraft,
+} from "../../../../shared/schemas/mission-pilot.schema";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type {
 	ActivityEvent,
@@ -127,6 +130,69 @@ export function missionPilotTraceItems(
 	];
 }
 
+export function missionPilotStopThoughtItem(
+	summary: MissionPilotControlSummary | null | undefined,
+): PilotThoughtItem | null {
+	if (
+		!summary ||
+		summary.desiredState !== "stopped" ||
+		summary.phase === "created"
+	)
+		return null;
+	const diagnostic = summary.preQueueDiagnostic;
+	const reasonCode =
+		diagnostic?.code ??
+		summary.lastErrorCode ??
+		(summary.phase === "paused"
+			? "MISSION_PILOT_USER_STOPPED"
+			: summary.phase === "archived"
+				? "MISSION_PILOT_COMPLETED"
+				: "MISSION_PILOT_STOPPED");
+	const reason =
+		summary.lastError?.trim() ||
+		(diagnostic
+			? diagnostic.code
+			: summary.phase === "paused"
+				? "ユーザーの停止操作を受け付けました。"
+				: summary.phase === "archived"
+					? "タスクの完了・アーカイブ処理が完了しました。"
+					: `phase=${summary.phase} で停止状態へ遷移しました。`);
+	const createdAt =
+		diagnostic?.detectedAt ??
+		(summary.phase === "paused" ? summary.stoppedAt : null) ??
+		summary.updatedAt;
+	const attention = summary.activityState === "attention";
+	return {
+		id: `stop:${reasonCode}:${eventTimestamp(createdAt)}`,
+		createdAt,
+		event: {
+			id: `stop:${reasonCode}`,
+			eventType: attention ? "runtime.attention" : "runtime.state",
+			actor: "mission_pilot",
+			message: `Mission Pilotを停止しました。${
+				attention ? "自動再開されません。" : ""
+			}理由: ${reason}`,
+			payloadJson: {
+				stopReasonCode: reasonCode,
+				stopReason: reason,
+				phase: summary.phase,
+				lastErrorCode: summary.lastErrorCode ?? null,
+				lastError: summary.lastError,
+				stoppedAt: summary.stoppedAt ?? null,
+				...(diagnostic
+					? {
+							taskStatus: diagnostic.taskStatus,
+							runIds: diagnostic.runIds,
+							queueEntryIds: diagnostic.queueEntryIds,
+							detectedAt: diagnostic.detectedAt,
+						}
+					: {}),
+			},
+			createdAt,
+		},
+	};
+}
+
 export function PilotThoughtDock({
 	session,
 	onClose,
@@ -180,30 +246,9 @@ export function PilotThoughtDock({
 		};
 	}, [session?.id]);
 	const items = useMemo(() => {
-		const diagnostic = session?.missionPilot?.preQueueDiagnostic;
+		const stopItem = missionPilotStopThoughtItem(session?.missionPilot);
 		const merged: PilotThoughtItem[] = [
-			...(diagnostic
-				? [
-						{
-							id: `diagnostic:${diagnostic.code}:${new Date(diagnostic.detectedAt).toISOString()}`,
-							createdAt: diagnostic.detectedAt,
-							event: {
-								id: `diagnostic:${diagnostic.code}`,
-								eventType: "runtime.attention",
-								actor: "mission_pilot",
-								message: `Mission Pilotを停止しました。自動再開されません。理由: ${diagnostic.code}`,
-								payloadJson: {
-									diagnosticCode: diagnostic.code,
-									taskStatus: diagnostic.taskStatus,
-									runIds: diagnostic.runIds,
-									queueEntryIds: diagnostic.queueEntryIds,
-									detectedAt: diagnostic.detectedAt,
-								},
-								createdAt: diagnostic.detectedAt,
-							},
-						},
-					]
-				: []),
+			...(stopItem ? [stopItem] : []),
 			...(questionnaireDraft
 				? [
 						{

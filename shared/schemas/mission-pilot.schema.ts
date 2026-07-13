@@ -131,7 +131,9 @@ export const missionPilotControlSummarySchema = z.object({
 	activeRunId: z.string().uuid().nullable(),
 	nextWakeAt: dateLikeSchema.nullable(),
 	version: z.number().int().nonnegative(),
+	lastErrorCode: z.string().nullable().optional(),
 	lastError: z.string().nullable(),
+	stoppedAt: dateLikeSchema.nullable().optional(),
 	queueHandoff: missionPilotQueueHandoffSchema.nullable().default(null),
 	preQueueDiagnostic: missionPilotPreQueueDiagnosticSchema
 		.nullable()

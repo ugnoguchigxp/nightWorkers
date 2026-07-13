@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
 	afterEach,
 	beforeAll,
@@ -14,6 +14,7 @@ import { db } from "../api/db/client";
 import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
+	missionPilotSteps,
 } from "../api/db/mission-pilot-schema";
 import { repositories, taskMessages, tasks } from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
@@ -420,7 +421,9 @@ describe("Mission Pilot plan coordinator", () => {
 				);
 				return completedPreFeaturePlanQuestionnaire;
 			});
+		let featurePlanGenerationCount = 0;
 		mocks.generateFeaturePlan.mockImplementation(async () => {
+			featurePlanGenerationCount += 1;
 			const [message] = await db
 				.insert(taskMessages)
 				.values({
@@ -432,6 +435,18 @@ describe("Mission Pilot plan coordinator", () => {
 					metadataJson: { intent: "feature_plan", title: "Feature Plan" },
 				})
 				.returning();
+			if (featurePlanGenerationCount === 1) {
+				// routing 拡張後の依存再生成は、Artifact correction の消費回数ではない。
+				await db
+					.update(missionPilotSteps)
+					.set({ attempt: 2 })
+					.where(
+						and(
+							eq(missionPilotSteps.sessionId, session.id),
+							eq(missionPilotSteps.stepKey, "feature_plan"),
+						),
+					);
+			}
 			featurePlanMessageId = message.id;
 			return { message, workspace: await mocks.getWorkspace() };
 		});
