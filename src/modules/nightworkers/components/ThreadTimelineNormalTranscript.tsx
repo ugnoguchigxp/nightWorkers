@@ -142,12 +142,12 @@ function NormalEditDiffBlock({ event }: { event: ActivityEvent }) {
 	const code = getVisibleEditDiffCode(event);
 	if (summary.length === 0) return null;
 	return (
-		<details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] font-mono text-sm text-slate-200">
-			<summary className="cursor-pointer list-none px-4 py-3">
+		<details className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border font-mono text-sm">
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
 				<NormalEditSummaryList summary={summary} />
 			</summary>
 			{code.trim() ? (
-				<div className="border-slate-700/60 border-t">
+				<div className="nightworkers-chat-card-body border-t">
 					<DiffCodeBlock code={code} label={activityCodeFilename(event)} />
 				</div>
 			) : null}
@@ -160,18 +160,18 @@ function NormalCliCommandBlock({ event }: { event: ActivityEvent }) {
 	if (!summary) return null;
 
 	return (
-		<details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] font-mono text-sm text-slate-200">
-			<summary className="cursor-pointer list-none px-4 py-3">
+		<details className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border font-mono text-sm">
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
 				<div className="flex items-baseline justify-between gap-4">
-					<span className="min-w-0 truncate text-slate-300">
+					<span className="nightworkers-chat-card-title min-w-0 truncate">
 						{summary.command}
 					</span>
-					<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+					<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
 						{summary.toolName}
 					</span>
 				</div>
 			</summary>
-			<div className="border-slate-700/60 border-t">
+			<div className="nightworkers-chat-card-body border-t">
 				<NightWorkersCodeBlock
 					code={
 						summary.output
@@ -200,18 +200,22 @@ function NormalEditSummaryList({
 					className="flex items-baseline justify-between gap-4"
 					key={section.path}
 				>
-					<span className="min-w-0 truncate text-slate-300">
+					<span className="nightworkers-chat-card-title min-w-0 truncate">
 						{section.path}
 					</span>
 					{section.changedOnly ? (
-						<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+						<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
 							changed
 						</span>
 					) : (
 						<span className="shrink-0 whitespace-nowrap text-right">
-							<span className="text-emerald-300">+{section.added}</span>
-							<span className="px-1 text-slate-500"> </span>
-							<span className="text-rose-300">-{section.deleted}</span>
+							<span className="nightworkers-chat-card-success">
+								+{section.added}
+							</span>
+							<span className="nightworkers-chat-card-subtle px-1"> </span>
+							<span className="nightworkers-chat-card-danger-text">
+								-{section.deleted}
+							</span>
 						</span>
 					)}
 				</div>

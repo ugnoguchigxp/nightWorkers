@@ -213,6 +213,21 @@ export async function reconcileMissionPilotPreQueueSessions() {
 		) {
 			continue;
 		}
+		const [postQueuePhaseRun] = await db
+			.select({ id: missionPilotPhaseRuns.id })
+			.from(missionPilotPhaseRuns)
+			.where(
+				and(
+					eq(missionPilotPhaseRuns.sessionId, session.id),
+					inArray(missionPilotPhaseRuns.phase, [
+						"implementation",
+						"test",
+						"review",
+					]),
+				),
+			)
+			.limit(1);
+		if (postQueuePhaseRun) continue;
 		const [task, runs, queueEntries] = await Promise.all([
 			db.query.tasks.findFirst({ where: eq(tasks.id, session.taskId) }),
 			db

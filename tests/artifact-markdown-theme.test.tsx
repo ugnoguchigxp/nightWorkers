@@ -19,7 +19,7 @@ function themeBlock(css: string, theme?: string): string {
 	const selector = theme
 		? `.nightworkers-shell[data-theme="${theme}"]`
 		: ".nightworkers-shell";
-	const start = css.indexOf(`${selector} {`);
+	const start = css.indexOf(selector);
 	if (start < 0) throw new Error(`Missing theme block: ${selector}`);
 	const bodyStart = css.indexOf("{", start) + 1;
 	const bodyEnd = css.indexOf("}", bodyStart);

@@ -94,9 +94,8 @@ export function evaluateImplementationCompletionGate(
 export type TestGateInput = {
 	runStatus: string;
 	verificationDocumentMatches: boolean;
-	managedEvidenceCount: number;
-	failedManagedEvidenceCount: number;
-	rawArtifactsComplete: boolean;
+	acceptedEvidenceCount: number;
+	evidenceValidationReasons: string[];
 	completionCheckEventId: string | null;
 	completionCheckOk: boolean;
 	requiredTotal: number;
@@ -112,11 +111,11 @@ export function evaluateTestCompletionGate(input: TestGateInput) {
 	if (input.runStatus !== "completed") reasons.push("run_not_completed");
 	if (!input.verificationDocumentMatches)
 		reasons.push("verification_document_mismatch");
-	if (input.managedEvidenceCount === 0)
+	if (input.acceptedEvidenceCount === 0)
 		reasons.push("managed_evidence_missing");
-	if (input.failedManagedEvidenceCount > 0)
-		reasons.push("managed_evidence_failed");
-	if (!input.rawArtifactsComplete) reasons.push("raw_artifact_missing");
+	for (const reason of input.evidenceValidationReasons) {
+		if (!reasons.includes(reason)) reasons.push(reason);
+	}
 	if (!input.completionCheckEventId || !input.completionCheckOk)
 		reasons.push("completion_check_missing_or_failed");
 	if (input.requiredTotal === 0) reasons.push("required_conditions_empty");

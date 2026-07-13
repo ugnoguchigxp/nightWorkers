@@ -19,16 +19,19 @@ export function CodexToolCard({ event }: { event: TaskEvent | ActivityEvent }) {
 
 	return (
 		<details
-			className="rounded border border-cyan-700/60 bg-cyan-950/20 text-slate-100"
+			className="nightworkers-chat-card rounded border"
+			data-tone="accent"
 			open
 		>
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs">
-				<span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs">
+				<span className="nightworkers-chat-card-badge mr-2 rounded border px-1.5 py-0.5">
 					{card.title}
 				</span>
-				<span className="text-current/80">{card.summary}</span>
+				<span className="nightworkers-chat-card-meta">{card.summary}</span>
 				{typeof event.seq === "number" ? (
-					<span className="ml-2 text-current/50">#{event.seq}</span>
+					<span className="nightworkers-chat-card-subtle ml-2">
+						#{event.seq}
+					</span>
 				) : null}
 			</summary>
 			<CodexToolCardBody card={card} debug />
@@ -46,18 +49,18 @@ export function NormalCodexToolCard({
 
 	return (
 		<LazyDetails
-			className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] text-sm text-slate-200"
+			className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border text-sm"
 			summary={
-				<summary className="cursor-pointer list-none px-4 py-3">
+				<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
 					<div className="flex items-baseline justify-between gap-4">
-						<span className="min-w-0 truncate text-slate-200">
+						<span className="nightworkers-chat-card-title min-w-0 truncate">
 							{card.summary}
 						</span>
-						<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+						<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
 							{card.title}
 						</span>
 					</div>
-					<div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+					<div className="nightworkers-chat-card-meta mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
 						<span>{statusLabel(card)}</span>
 						{card.metadata.slice(0, 3).map((item) => (
 							<span key={`${item.label}:${item.value}`}>
@@ -97,7 +100,7 @@ function CodexToolCardBody({
 	if (blocks.length === 0) return null;
 
 	return (
-		<div className="border-slate-700/60 border-t">
+		<div className="nightworkers-chat-card-body border-t">
 			{card.editDiffPreview ? (
 				<div className="space-y-2 p-3">
 					<DiffCodeBlock

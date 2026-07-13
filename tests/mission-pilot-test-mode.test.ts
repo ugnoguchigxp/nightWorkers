@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { evaluateTestCompletionGate } from "../api/modules/missionPilot/mission-pilot-post-queue-state";
+import { resolveAcceptedTestEvidence } from "../api/modules/missionPilot/mission-pilot-test-evidence";
 import {
 	completionCheckMatchesVerificationDocument,
 	readLatestCompletionCheckResult,
 } from "../api/services/run-events/completion-check-result";
+import { missionPilotTestDecisionSchema } from "../shared/schemas/mission-pilot-test.schema";
 
 const passingInput = {
 	runStatus: "completed",
 	verificationDocumentMatches: true,
-	managedEvidenceCount: 2,
-	failedManagedEvidenceCount: 0,
-	rawArtifactsComplete: true,
+	acceptedEvidenceCount: 2,
+	evidenceValidationReasons: [],
 	completionCheckEventId: "event-1",
 	completionCheckOk: true,
 	requiredTotal: 3,
@@ -22,6 +23,21 @@ const passingInput = {
 };
 
 describe("Mission Pilot Test completion gate", () => {
+	it("accepts the deterministic hash IDs used by managed evidence rows", () => {
+		const evidenceRunId = "a".repeat(64);
+		expect(
+			missionPilotTestDecisionSchema.safeParse({
+				verdict: "pass",
+				defectOwner: "test",
+				failedConditionIds: [],
+				evidenceRunIds: [evidenceRunId],
+				affectedPaths: [],
+				summary: "Managed checks passed.",
+				implementationRework: null,
+			}).success,
+		).toBe(true);
+	});
+
 	it("uses the successful completion event after the tool-start event", () => {
 		const verificationDocumentId = "verification-document";
 		const completionCheck = readLatestCompletionCheckResult([
@@ -133,7 +149,7 @@ describe("Mission Pilot Test completion gate", () => {
 	it("does not promote raw command execution to formal pass", () => {
 		const result = evaluateTestCompletionGate({
 			...passingInput,
-			managedEvidenceCount: 0,
+			acceptedEvidenceCount: 0,
 			completionCheckEventId: null,
 		});
 		expect(result.pass).toBe(false);
@@ -157,4 +173,89 @@ describe("Mission Pilot Test completion gate", () => {
 			]),
 		);
 	});
+
+	it("keeps historical failures while accepting explicitly selected successes", () => {
+		const selected = evidenceRow({ id: "selected", exitCode: 0 });
+		const historicalFailure = evidenceRow({ id: "failed", exitCode: 1 });
+		const result = resolveAcceptedTestEvidence({
+			selectedEvidenceRunIds: [selected.id],
+			taskId: selected.taskId,
+			runId: selected.runId,
+			verificationDocumentId: selected.verificationDocumentId,
+			selectedRows: [selected],
+			historyRows: [historicalFailure, selected],
+		});
+
+		expect(result.reasons).toEqual([]);
+		expect(result.acceptedEvidence.map((item) => item.id)).toEqual([
+			"selected",
+		]);
+		expect(result.historySummary).toEqual({
+			totalCount: 2,
+			acceptedCount: 1,
+			historicalFailureCount: 1,
+		});
+	});
+
+	it.each([
+		["missing", [], [], "selected_evidence_missing"],
+		[
+			"duplicate",
+			["selected", "selected"],
+			[evidenceRow({ id: "selected" })],
+			"selected_evidence_duplicate",
+		],
+		["not found", ["missing"], [], "selected_evidence_not_found"],
+		[
+			"wrong scope",
+			["selected"],
+			[evidenceRow({ id: "selected", runId: "other-run" })],
+			"selected_evidence_scope_mismatch",
+		],
+		[
+			"failed",
+			["selected"],
+			[evidenceRow({ id: "selected", exitCode: 1 })],
+			"selected_evidence_failed",
+		],
+		[
+			"raw artifact missing",
+			["selected"],
+			[evidenceRow({ id: "selected", rawStdoutArtifactId: null })],
+			"selected_evidence_raw_artifact_missing",
+		],
+	] as const)("rejects %s selected evidence", (_name, ids, rows, reason) => {
+		const result = resolveAcceptedTestEvidence({
+			selectedEvidenceRunIds: [...ids],
+			taskId: "task",
+			runId: "run",
+			verificationDocumentId: "document",
+			selectedRows: [...rows],
+			historyRows: [...rows],
+		});
+		expect(result.reasons).toContain(reason);
+	});
 });
+
+function evidenceRow(
+	overrides: Partial<{
+		id: string;
+		taskId: string;
+		runId: string;
+		verificationDocumentId: string;
+		exitCode: number;
+		rawStdoutArtifactId: string | null;
+		rawStderrArtifactId: string | null;
+	}> = {},
+) {
+	return {
+		id: "evidence",
+		taskId: "task",
+		runId: "run",
+		verificationDocumentId: "document",
+		exitCode: 0,
+		rawStdoutArtifactId: "stdout",
+		rawStderrArtifactId: "stderr",
+		...overrides,
+	};
+}

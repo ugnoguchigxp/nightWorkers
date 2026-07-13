@@ -25,15 +25,18 @@ export function MessagePayload({
 		const artifactContext = toDeepRecord(metadata.artifactContext);
 		return (
 			<div className="space-y-2">
-				<div className="flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-2.5 py-1.5 text-[11px] text-cyan-50">
+				<div
+					className="nightworkers-chat-card flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px]"
+					data-tone="accent"
+				>
 					<span className="font-semibold">
 						{t("timeline.referencedArtifact")}
 					</span>
-					<span className="min-w-0 max-w-[26rem] truncate text-cyan-100/90">
+					<span className="nightworkers-chat-card-meta min-w-0 max-w-[26rem] truncate">
 						{String(artifactContext.title || artifactContext.artifactId || "")}
 					</span>
 					{artifactContext.kind ? (
-						<span className="rounded border border-cyan-500/30 px-1.5 py-0.5 text-[10px] uppercase text-cyan-100/70">
+						<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5 text-[10px] uppercase">
 							{String(artifactContext.kind)}
 						</span>
 					) : null}
@@ -48,8 +51,8 @@ export function MessagePayload({
 			typeof codeBlock.code === "string" ? codeBlock.code : message.content;
 		return (
 			<div className="space-y-2">
-				<div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-					<span className="rounded-[var(--radius-sm)] border border-border bg-muted px-1.5 py-0.5 text-card-foreground">
+				<div className="nightworkers-chat-card-meta flex flex-wrap items-center gap-2 text-[11px]">
+					<span className="nightworkers-chat-card-badge rounded-[var(--radius-sm)] border px-1.5 py-0.5">
 						{t("timeline.codeChange")}
 					</span>
 					{metadata.toolName ? <span>{String(metadata.toolName)}</span> : null}
@@ -91,13 +94,13 @@ export function MessagePayload({
 			<div className="nightworkers-artifact-message space-y-3">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
-						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase">
 							{t("timeline.blueprintArtifact")}
 						</div>
-						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold">
 							{title}
 						</div>
-						<div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+						<div className="nightworkers-artifact-meta mt-1 text-xs">
 							{t("timeline.screensCount", {
 								count: appBlueprint.screens?.length || 0,
 							})}{" "}
@@ -110,7 +113,7 @@ export function MessagePayload({
 					</div>
 					<button
 						type="button"
-						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border"
 						onClick={() =>
 							onOpenArtifact({
 								id: `message-${message.id}`,
@@ -137,7 +140,7 @@ export function MessagePayload({
 						<PanelsTopLeft className="h-4 w-4" />
 					</button>
 				</div>
-				<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+				<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5">
 					{summarizeBlueprintCard(
 						appBlueprint,
 						String(display.summary || message.content),
@@ -155,17 +158,17 @@ export function MessagePayload({
 			<div className="nightworkers-artifact-message space-y-3">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
-						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase">
 							{t("timeline.componentDesignArtifact")}
 						</div>
-						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold">
 							{String(
 								componentDesign.componentName ||
 									metadata.title ||
 									t("timeline.componentDesignFallback"),
 							)}
 						</div>
-						<div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+						<div className="nightworkers-artifact-meta mt-1 text-xs">
 							{t("timeline.variantsCount", {
 								count: componentDesign.variants?.length || 0,
 							})}{" "}
@@ -177,7 +180,7 @@ export function MessagePayload({
 					</div>
 					<button
 						type="button"
-						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border"
 						onClick={() =>
 							onOpenArtifact({
 								id: `message-${message.id}`,
@@ -200,7 +203,7 @@ export function MessagePayload({
 						<PanelsTopLeft className="h-4 w-4" />
 					</button>
 				</div>
-				<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+				<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5">
 					{String(componentDesign.summary || message.content)}
 				</p>
 			</div>
@@ -209,10 +212,10 @@ export function MessagePayload({
 	if (message.messageType === "chart" && metadata?.chartData) {
 		return (
 			<div className="space-y-2">
-				<div className="text-xs font-semibold text-zinc-300">
+				<div className="nightworkers-chat-card-title text-xs font-semibold">
 					{t("timeline.chart")}
 				</div>
-				<pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+				<pre className="nightworkers-chat-card-code whitespace-pre-wrap break-all rounded-md p-2 text-xs">
 					{JSON.stringify(metadata.chartData, null, 2)}
 				</pre>
 			</div>
@@ -222,11 +225,11 @@ export function MessagePayload({
 		const browserFrameData = toDeepRecord(metadata.browserFrameData);
 		return (
 			<div className="space-y-2">
-				<div className="text-xs font-semibold text-zinc-300">
+				<div className="nightworkers-chat-card-title text-xs font-semibold">
 					{t("timeline.browser")}
 				</div>
 				<a
-					className="text-cyan-300 underline"
+					className="nightworkers-chat-card-accent underline"
 					href={String(browserFrameData.url)}
 					target="_blank"
 					rel="noreferrer"
@@ -239,10 +242,10 @@ export function MessagePayload({
 	if (message.messageType === "flow" && metadata?.flowData) {
 		return (
 			<div className="space-y-2">
-				<div className="text-xs font-semibold text-zinc-300">
+				<div className="nightworkers-chat-card-title text-xs font-semibold">
 					{t("timeline.flow")}
 				</div>
-				<pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+				<pre className="nightworkers-chat-card-code whitespace-pre-wrap break-all rounded-md p-2 text-xs">
 					{JSON.stringify(metadata.flowData, null, 2)}
 				</pre>
 			</div>
@@ -251,10 +254,10 @@ export function MessagePayload({
 	if (message.messageType === "playwright" && metadata?.playwrightResult) {
 		return (
 			<div className="space-y-2">
-				<div className="text-xs font-semibold text-zinc-300">
+				<div className="nightworkers-chat-card-title text-xs font-semibold">
 					{t("timeline.playwright")}
 				</div>
-				<pre className="whitespace-pre-wrap break-all rounded-md bg-black/30 p-2 text-xs">
+				<pre className="nightworkers-chat-card-code whitespace-pre-wrap break-all rounded-md p-2 text-xs">
 					{JSON.stringify(metadata.playwrightResult, null, 2)}
 				</pre>
 			</div>
@@ -286,19 +289,19 @@ export function MessagePayload({
 			<div className="nightworkers-artifact-message space-y-3">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
-						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase">
 							API Contract
 						</div>
-						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold">
 							{title}
 						</div>
-						<div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+						<div className="nightworkers-artifact-meta mt-1 text-xs">
 							OpenAPI 3.1 / {endpointCount} endpoints
 						</div>
 					</div>
 					<button
 						type="button"
-						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border"
 						onClick={() =>
 							onOpenArtifact({
 								id: `plan-mode-workspace-${message.taskId}`,
@@ -321,7 +324,7 @@ export function MessagePayload({
 					</button>
 				</div>
 				{summary ? (
-					<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+					<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5">
 						{summary}
 					</p>
 				) : null}
@@ -342,20 +345,20 @@ export function MessagePayload({
 			<div className="nightworkers-artifact-message space-y-3">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
-						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase text-cyan-200">
+						<div className="nightworkers-artifact-kicker text-xs font-semibold uppercase">
 							Zod Schema
 						</div>
-						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold text-slate-100">
+						<div className="nightworkers-artifact-title mt-1 truncate text-sm font-semibold">
 							{title}
 						</div>
-						<div className="nightworkers-artifact-meta mt-1 text-xs text-slate-400">
+						<div className="nightworkers-artifact-meta mt-1 text-xs">
 							{String(zodSchema.schemaName || "Schema")} / {fields.length}{" "}
 							fields
 						</div>
 					</div>
 					<button
 						type="button"
-						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-cyan-500/60 text-cyan-100 hover:bg-cyan-950/30"
+						className="nightworkers-artifact-open-button inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border"
 						onClick={() =>
 							onOpenArtifact({
 								id: `plan-mode-workspace-${message.taskId}`,
@@ -378,7 +381,7 @@ export function MessagePayload({
 					</button>
 				</div>
 				{summary ? (
-					<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5 text-slate-300">
+					<p className="nightworkers-artifact-summary line-clamp-3 text-xs leading-5">
 						{summary}
 					</p>
 				) : null}

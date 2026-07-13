@@ -13,10 +13,10 @@ export function ThreadMessage({
 }: ThreadMessageProps) {
 	const isUser = messageRole === "user";
 	const bubbleClass = isUser
-		? "nightworkers-message-bubble-user bg-[#242530] border-[#30313f] text-zinc-100"
+		? "nightworkers-message-bubble-user"
 		: messageRole === "assistant"
-			? "nightworkers-message-bubble-assistant bg-[#191924] border-[#2b2c3d]/60 text-zinc-100"
-			: "nightworkers-message-bubble-system bg-zinc-900/70 border-zinc-700/50 text-zinc-300";
+			? "nightworkers-message-bubble-assistant"
+			: "nightworkers-message-bubble-system";
 
 	return (
 		<div
@@ -30,7 +30,7 @@ export function ThreadMessage({
 				{children}
 			</div>
 			{timestamp ? (
-				<span className="nightworkers-message-timestamp mt-1 text-[10px] text-zinc-500">
+				<span className="nightworkers-message-timestamp mt-1 text-[10px]">
 					{timestamp}
 				</span>
 			) : null}

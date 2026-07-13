@@ -1,0 +1,99 @@
+.nightworkers-chat-card {
+	border-color: var(--nw-chat-card-border);
+	background: var(--nw-chat-card-background);
+	color: var(--nw-chat-card-text);
+}
+
+.nightworkers-chat-card[data-tone="accent"],
+.nightworkers-chat-card-tone-accent {
+	background: var(--nw-chat-card-accent-background);
+}
+
+.nightworkers-chat-card[data-tone="warning"],
+.nightworkers-chat-card-tone-warning {
+	background: var(--nw-chat-card-warning-background);
+}
+
+.nightworkers-chat-card-header,
+.nightworkers-chat-card-body {
+	border-color: var(--nw-chat-card-border);
+	color: var(--nw-chat-card-text);
+}
+
+.nightworkers-chat-card-title {
+	color: var(--nw-chat-card-text);
+}
+
+.nightworkers-chat-card-meta {
+	color: var(--nw-chat-card-muted-text);
+}
+
+.nightworkers-chat-card-subtle {
+	color: var(--nw-chat-card-subtle-text);
+}
+
+.nightworkers-chat-card-badge {
+	border-color: var(--nw-chat-card-border);
+	color: var(--nw-chat-card-text);
+}
+
+.nightworkers-chat-card-item {
+	border-color: var(--nw-chat-card-border);
+	background: var(--nw-chat-card-background-strong);
+	color: var(--nw-chat-card-text);
+}
+
+.nightworkers-chat-card-code {
+	background: var(--nw-code-bg);
+	color: var(--nw-code-text);
+}
+
+.nightworkers-chat-card-accent {
+	color: var(--nw-chat-card-accent-text);
+}
+
+.nightworkers-chat-card-warning {
+	color: var(--nw-chat-card-warning-text);
+}
+
+.nightworkers-chat-card-danger {
+	border-color: color-mix(in srgb, var(--nw-danger) 58%, var(--nw-border));
+	background: var(--nw-chat-card-danger-background);
+	color: var(--nw-chat-card-danger-text);
+}
+
+.nightworkers-chat-card-danger-text {
+	color: var(--nw-chat-card-danger-text);
+}
+
+.nightworkers-chat-card-success {
+	color: var(--nw-chat-card-success-text);
+}
+
+.nightworkers-chat-markdown-heading {
+	color: var(--nw-text);
+}
+
+.nightworkers-chat-markdown-muted {
+	border-color: var(--nw-chat-card-border);
+	color: var(--nw-chat-card-muted-text);
+}
+
+.nightworkers-chat-markdown-cell {
+	border-color: var(--nw-chat-card-border);
+	color: var(--nw-text);
+}
+
+.nightworkers-chat-markdown-header-cell {
+	border-color: var(--nw-chat-card-border);
+	background: var(--nw-chat-card-background-strong);
+	color: var(--nw-text);
+}
+
+.nightworkers-chat-markdown-link {
+	color: var(--nw-chat-card-accent-text);
+}
+
+.nightworkers-chat-markdown-link:hover {
+	color: var(--nw-primary);
+}

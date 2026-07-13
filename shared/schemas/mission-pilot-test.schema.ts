@@ -4,7 +4,7 @@ export const missionPilotTestDecisionSchema = z.object({
 	verdict: z.enum(["pass", "rework", "attention"]),
 	defectOwner: z.enum(["test", "implementation", "environment", "unknown"]),
 	failedConditionIds: z.array(z.string()),
-	evidenceRunIds: z.array(z.string().uuid()),
+	evidenceRunIds: z.array(z.string().trim().min(1)),
 	affectedPaths: z.array(z.string()),
 	summary: z.string().min(1),
 	implementationRework: z

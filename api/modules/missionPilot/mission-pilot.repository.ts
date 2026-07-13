@@ -12,6 +12,7 @@ import {
 } from "../../db/mission-pilot-schema";
 import { taskMessages, tasks } from "../../db/schema";
 import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.trace-provenance";
+import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
 
 type Db = typeof db | DbTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
@@ -301,22 +302,24 @@ export async function claimPostQueueResume(
 	expectedVersion: number,
 ) {
 	const row = await getSessionByTaskId(taskId);
+	const resumePhase = row?.resumePhase;
 	if (
 		!row ||
 		row.version !== expectedVersion ||
 		row.desiredState !== "stopped" ||
 		row.activeRunId ||
-		!row.resumePhase
+		!resumePhase
 	)
 		return null;
 	const [updated] = await db
 		.update(missionPilotSessions)
 		.set({
 			desiredState: "playing",
-			phase: row.resumePhase,
+			phase: resolvePostQueueResumePhase({ ...row, resumePhase }),
 			resumePhase: null,
 			startedAt: new Date(),
 			stoppedAt: null,
+			preQueueDiagnosticJson: null,
 			lastErrorCode: null,
 			lastErrorMessage: null,
 			version: row.version + 1,

@@ -32,11 +32,6 @@
 }
 
 .nightworkers-code-block {
-	--nw-code-bg: #111827;
-	--nw-code-header-bg: #1f2937;
-	--nw-code-border: #334155;
-	--nw-code-text: #e5e7eb;
-	--nw-code-muted-text: #94a3b8;
 	--background: var(--nw-code-bg);
 	--foreground: var(--nw-code-text);
 	--card: var(--nw-code-bg);
@@ -65,7 +60,7 @@
 	> div:first-child
 	> div:first-child
 	:is(button, svg, span, div) {
-	color: #f8fafc;
+	color: var(--nw-code-text);
 }
 
 .nightworkers-code-block pre,
@@ -75,24 +70,26 @@
 }
 
 .nightworkers-code-block .line.diff.add {
-	background: color-mix(in srgb, var(--nw-success) 14%, transparent);
+	background: var(--nw-code-add-background);
+	color: var(--nw-code-add-text);
 }
 
 .nightworkers-code-block .line.diff.remove {
-	background: color-mix(in srgb, var(--nw-danger) 14%, transparent);
+	background: var(--nw-code-remove-background);
+	color: var(--nw-code-remove-text);
 }
 
 .nightworkers-code-block .line.diff.hunk {
-	background: color-mix(in srgb, var(--nw-primary) 12%, transparent);
-	color: color-mix(in srgb, var(--nw-primary) 68%, var(--nw-code-text));
+	background: var(--nw-code-hunk-background);
+	color: var(--nw-code-hunk-text);
 }
 
 .nightworkers-diff-view {
 	overflow: hidden;
-	border: 1px solid var(--nw-border);
+	border: 1px solid var(--nw-code-border);
 	border-radius: var(--nw-radius);
-	background: hsl(236 22% 14%);
-	color: var(--nw-text);
+	background: var(--nw-code-bg);
+	color: var(--nw-code-text);
 	font-family:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		monospace;
@@ -104,9 +101,9 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 1rem;
-	border-bottom: 1px solid var(--nw-border);
-	background: hsl(237 18% 24%);
-	color: var(--nw-muted-text);
+	border-bottom: 1px solid var(--nw-code-border);
+	background: var(--nw-code-header-bg);
+	color: var(--nw-code-muted-text);
 	min-height: 2.25rem;
 	padding: 0.5rem 0.75rem;
 }
@@ -114,14 +111,14 @@
 .nightworkers-diff-file {
 	min-width: 0;
 	overflow: hidden;
-	color: var(--nw-text);
+	color: var(--nw-code-text);
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 .nightworkers-diff-label {
 	flex-shrink: 0;
-	color: var(--nw-subtle-text);
+	color: var(--nw-code-muted-text);
 }
 
 .nightworkers-diff-body {
@@ -143,8 +140,8 @@
 }
 
 .nightworkers-diff-line-number {
-	border-right: 1px solid hsl(230 22% 24%);
-	color: hsl(230 18% 66%);
+	border-right: 1px solid var(--nw-code-border);
+	color: var(--nw-code-subtle-text);
 	padding: 0 0.75rem 0 0.5rem;
 	text-align: right;
 	user-select: none;
@@ -158,19 +155,19 @@
 }
 
 .nightworkers-diff-line-add {
-	background: hsl(132 18% 25%);
-	color: hsl(118 72% 78%);
+	background: var(--nw-code-add-background);
+	color: var(--nw-code-add-text);
 }
 
 .nightworkers-diff-line-remove {
-	background: hsl(333 22% 24%);
-	color: hsl(350 80% 78%);
+	background: var(--nw-code-remove-background);
+	color: var(--nw-code-remove-text);
 }
 
 .nightworkers-diff-line-meta,
 .nightworkers-diff-line-hunk {
-	background: hsl(221 20% 22%);
-	color: hsl(214 74% 77%);
+	background: var(--nw-code-hunk-background);
+	color: var(--nw-code-hunk-text);
 }
 
 .nightworkers-message-bubble {

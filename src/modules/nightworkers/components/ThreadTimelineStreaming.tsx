@@ -25,14 +25,11 @@ export function RuntimePromptSnapshotCard({
 	if (typeof stateCardText !== "string" || !stateCardText.trim()) return null;
 
 	return (
-		<details
-			className="rounded border border-slate-700/80 bg-slate-900/25"
-			open
-		>
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-100">
+		<details className="nightworkers-chat-card rounded border" open>
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs font-medium">
 				Runtime Prompt Snapshot
 			</summary>
-			<div className="grid gap-3 border-t border-slate-800 p-3">
+			<div className="nightworkers-chat-card-body grid gap-3 border-t p-3">
 				<NightWorkersCodeBlock
 					code={stateCardText}
 					filename="StateCard Text"
@@ -85,7 +82,7 @@ export function StreamingResponsePreview({
 }) {
 	return (
 		<div className="space-y-2" aria-live="polite">
-			<div className="inline-flex items-center gap-2 text-xs text-cyan-200">
+			<div className="nightworkers-chat-card-accent inline-flex items-center gap-2 text-xs">
 				<span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-cyan-300" />
 				応答を生成中
 			</div>
@@ -100,7 +97,9 @@ export function StreamingResponsePreview({
 					<span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
 				</div>
 			) : (
-				<div className="text-xs text-slate-400">{preview.statusText}</div>
+				<div className="nightworkers-chat-card-meta text-xs">
+					{preview.statusText}
+				</div>
 			)}
 		</div>
 	);

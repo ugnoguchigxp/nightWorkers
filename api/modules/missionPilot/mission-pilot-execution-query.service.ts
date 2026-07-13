@@ -1,6 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
+	missionPilotArtifactCorrectionRuns,
 	missionPilotCloseouts,
 	missionPilotEvents,
 	missionPilotPhaseRuns,
@@ -11,6 +12,44 @@ import {
 import { activityEvents, taskMessages } from "../../db/schema";
 import { MissionPilotError } from "./mission-pilot.errors";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
+
+export function attachArtifactCorrectionRequests<
+	T extends { payloadJson: unknown },
+	C extends {
+		id: string;
+		target: string;
+		focusJson: unknown;
+		instruction: string;
+		preserveUnfocusedContent: boolean;
+	},
+>(events: readonly T[], correctionRuns: readonly C[]): T[] {
+	const correctionById = new Map(correctionRuns.map((run) => [run.id, run]));
+	return events.map((event) => {
+		const payload =
+			event.payloadJson &&
+			typeof event.payloadJson === "object" &&
+			!Array.isArray(event.payloadJson)
+				? (event.payloadJson as Record<string, unknown>)
+				: null;
+		if (!payload || payload.correctionRequest) return event;
+		const correctionRunId = payload.correctionRunId;
+		if (typeof correctionRunId !== "string") return event;
+		const correction = correctionById.get(correctionRunId);
+		if (!correction) return event;
+		return {
+			...event,
+			payloadJson: {
+				...payload,
+				correctionRequest: {
+					target: correction.target,
+					focus: correction.focusJson,
+					instruction: correction.instruction,
+					preserveUnfocusedContent: correction.preserveUnfocusedContent,
+				},
+			},
+		};
+	});
+}
 
 export async function getMissionPilotExecution(sessionId: string) {
 	const [session] = await db
@@ -24,34 +63,51 @@ export async function getMissionPilotExecution(sessionId: string) {
 			"MISSION_PILOT_NOT_FOUND",
 			"Mission Pilot session not found",
 		);
-	const [phaseRuns, testSnapshots, reviewDecisions, closeouts, events] =
-		await Promise.all([
-			db
-				.select()
-				.from(missionPilotPhaseRuns)
-				.where(eq(missionPilotPhaseRuns.sessionId, sessionId))
-				.orderBy(desc(missionPilotPhaseRuns.startedAt)),
-			db
-				.select()
-				.from(missionPilotTestSnapshots)
-				.where(eq(missionPilotTestSnapshots.sessionId, sessionId))
-				.orderBy(desc(missionPilotTestSnapshots.createdAt)),
-			db
-				.select()
-				.from(missionPilotReviewDecisions)
-				.where(eq(missionPilotReviewDecisions.sessionId, sessionId))
-				.orderBy(desc(missionPilotReviewDecisions.createdAt)),
-			db
-				.select()
-				.from(missionPilotCloseouts)
-				.where(eq(missionPilotCloseouts.sessionId, sessionId))
-				.orderBy(desc(missionPilotCloseouts.attempt)),
-			db
-				.select()
-				.from(missionPilotEvents)
-				.where(eq(missionPilotEvents.sessionId, sessionId))
-				.orderBy(asc(missionPilotEvents.createdAt)),
-		]);
+	const [
+		phaseRuns,
+		testSnapshots,
+		reviewDecisions,
+		closeouts,
+		events,
+		artifactCorrectionRuns,
+	] = await Promise.all([
+		db
+			.select()
+			.from(missionPilotPhaseRuns)
+			.where(eq(missionPilotPhaseRuns.sessionId, sessionId))
+			.orderBy(desc(missionPilotPhaseRuns.startedAt)),
+		db
+			.select()
+			.from(missionPilotTestSnapshots)
+			.where(eq(missionPilotTestSnapshots.sessionId, sessionId))
+			.orderBy(desc(missionPilotTestSnapshots.createdAt)),
+		db
+			.select()
+			.from(missionPilotReviewDecisions)
+			.where(eq(missionPilotReviewDecisions.sessionId, sessionId))
+			.orderBy(desc(missionPilotReviewDecisions.createdAt)),
+		db
+			.select()
+			.from(missionPilotCloseouts)
+			.where(eq(missionPilotCloseouts.sessionId, sessionId))
+			.orderBy(desc(missionPilotCloseouts.attempt)),
+		db
+			.select()
+			.from(missionPilotEvents)
+			.where(eq(missionPilotEvents.sessionId, sessionId))
+			.orderBy(asc(missionPilotEvents.createdAt)),
+		db
+			.select({
+				id: missionPilotArtifactCorrectionRuns.id,
+				target: missionPilotArtifactCorrectionRuns.target,
+				focusJson: missionPilotArtifactCorrectionRuns.focusJson,
+				instruction: missionPilotArtifactCorrectionRuns.instruction,
+				preserveUnfocusedContent:
+					missionPilotArtifactCorrectionRuns.preserveUnfocusedContent,
+			})
+			.from(missionPilotArtifactCorrectionRuns)
+			.where(eq(missionPilotArtifactCorrectionRuns.sessionId, sessionId)),
+	]);
 	const pilotActivityEvents = await db
 		.select()
 		.from(activityEvents)
@@ -81,7 +137,10 @@ export async function getMissionPilotExecution(sessionId: string) {
 		reviewDecisions,
 		closeouts,
 		events,
-		activityEvents: pilotActivityEvents,
+		activityEvents: attachArtifactCorrectionRequests(
+			pilotActivityEvents,
+			artifactCorrectionRuns,
+		),
 		messages: pilotMessages,
 	};
 }

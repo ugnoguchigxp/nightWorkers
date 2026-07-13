@@ -23,6 +23,7 @@ import {
 	isMissionProposalApprovalRequiredError,
 	resolvePlanWorkspaceInitialTab,
 } from "./nightworkers-shell-utils";
+import { useMissionPilotArtifactAutoFocus } from "./useMissionPilotArtifactAutoFocus";
 import { useNightWorkersComposer } from "./useNightWorkersComposer";
 import { useNightWorkersProjectNavigation } from "./useNightWorkersProjectNavigation";
 import { useNightWorkersQuestionnaire } from "./useNightWorkersQuestionnaire";
@@ -146,6 +147,13 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		formatReviewStatusSummary,
 		testModeTitle,
 		testModeArtifactSummary,
+	});
+
+	useMissionPilotArtifactAutoFocus({
+		activeSession: workspace.activeSession,
+		activeArtifactRefs: workspace.activeArtifactRefs,
+		latestRun: workspace.latestRun,
+		onNavigate: props.onNavigate,
 	});
 
 	useEffect(() => {

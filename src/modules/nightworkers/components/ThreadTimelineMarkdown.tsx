@@ -13,7 +13,7 @@ const chatCodeBlockThemes = {
 	dark: "github-dark-default",
 } as const;
 const chatCodeBlockClassName =
-	"nightworkers-code-block dark max-w-full rounded-[var(--radius-md)] border-[color:var(--nw-border)] bg-[var(--nw-surface)] text-[var(--nw-text)] text-xs shadow-none [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden";
+	"nightworkers-code-block dark max-w-full rounded-[var(--radius-md)] text-xs shadow-none [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden";
 const _UNKNOWN_ACTIVITY_TITLE_KEY = "timeline.unknownActivity";
 
 type NightWorkersCodeBlockProps = Omit<
@@ -64,7 +64,7 @@ export function NightWorkersCodeBlock({
 const chatMarkdownRemarkPlugins = [remarkGfm];
 const baseChatMarkdownComponents: Components = {
 	blockquote: ({ children }) => (
-		<blockquote className="my-3 border-slate-600 border-l-2 pl-3 text-slate-300">
+		<blockquote className="nightworkers-chat-markdown-muted my-3 border-l-2 pl-3">
 			{children}
 		</blockquote>
 	),
@@ -96,17 +96,17 @@ const baseChatMarkdownComponents: Components = {
 		);
 	},
 	h1: ({ children }) => (
-		<h1 className="mt-1 mb-3 text-lg font-semibold text-slate-50">
+		<h1 className="nightworkers-chat-markdown-heading mt-1 mb-3 text-lg font-semibold">
 			{children}
 		</h1>
 	),
 	h2: ({ children }) => (
-		<h2 className="mt-4 mb-2 text-base font-semibold text-slate-50">
+		<h2 className="nightworkers-chat-markdown-heading mt-4 mb-2 text-base font-semibold">
 			{children}
 		</h2>
 	),
 	h3: ({ children }) => (
-		<h3 className="mt-3 mb-2 text-sm font-semibold text-slate-50">
+		<h3 className="nightworkers-chat-markdown-heading mt-3 mb-2 text-sm font-semibold">
 			{children}
 		</h3>
 	),
@@ -122,12 +122,12 @@ const baseChatMarkdownComponents: Components = {
 		</div>
 	),
 	td: ({ children }) => (
-		<td className="border border-slate-700 px-2 py-1 align-top text-slate-200">
+		<td className="nightworkers-chat-markdown-cell border px-2 py-1 align-top">
 			{children}
 		</td>
 	),
 	th: ({ children }) => (
-		<th className="border border-slate-700 bg-slate-950/60 px-2 py-1 text-left font-medium text-slate-100">
+		<th className="nightworkers-chat-markdown-header-cell border px-2 py-1 text-left font-medium">
 			{children}
 		</th>
 	),
@@ -193,7 +193,7 @@ function buildChatMarkdownComponents(
 				<a
 					{...props}
 					className={cn(
-						"text-cyan-200 underline underline-offset-2 hover:text-cyan-100",
+						"nightworkers-chat-markdown-link underline underline-offset-2",
 						workbenchArtifactLink && "mt-1 block w-fit",
 					)}
 					href={href}
@@ -279,7 +279,7 @@ export function ChatMarkdown({
 	);
 
 	return (
-		<div className="nightworkers-message-content max-w-full whitespace-normal break-words text-sm leading-6 text-slate-100">
+		<div className="nightworkers-message-content max-w-full whitespace-normal break-words text-sm leading-6">
 			<ReactMarkdown
 				components={markdownComponents}
 				remarkPlugins={chatMarkdownRemarkPlugins}

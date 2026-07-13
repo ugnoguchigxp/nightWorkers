@@ -5,8 +5,42 @@ import {
 	missionPilotTraceItems,
 	PilotThoughtDock,
 } from "../src/modules/missionPilot/components/PilotThoughtDock";
+import { AgentDebugEventCard } from "../src/modules/nightworkers/components/ThreadTimelineAgentCards";
 
 describe("PilotThoughtDock", () => {
+	it("shows the Plan Mode correction instruction outside debug details", () => {
+		const markup = renderToStaticMarkup(
+			<AgentDebugEventCard
+				variant="dock"
+				event={{
+					id: "correction-request",
+					eventType: "runtime.state",
+					actor: "mission_pilot",
+					message:
+						"feature_planへフォーカスした修正をPlan Mode agentへ依頼しました。",
+					payloadJson: {
+						correctionRunId: "correction-run-1",
+						correctionRequest: {
+							target: "feature_plan",
+							focus: { kind: "artifact" },
+							instruction:
+								"API契約を正本として扱うよう、実装手順を修正してください。",
+							preserveUnfocusedContent: true,
+						},
+					},
+					createdAt: new Date("2026-07-13T00:00:00Z"),
+				}}
+			/>,
+		);
+
+		expect(markup).toContain("Plan Mode agentへの依頼内容");
+		expect(markup).toContain("依頼内容");
+		expect(markup).toContain(
+			"API契約を正本として扱うよう、実装手順を修正してください。",
+		);
+		expect(markup).not.toContain("review_result");
+	});
+
 	it("includes only Mission Pilot coordinator and pilot_thought activity events", () => {
 		const items = missionPilotTraceItems({
 			messages: [],
@@ -113,7 +147,9 @@ describe("PilotThoughtDock", () => {
 
 		expect(markup).toContain("nightworkers-chat-dock");
 		expect(markup).not.toContain("nightworkers-message-bubble");
-		expect(markup).toContain("w-full border-slate-700/80 border-b");
+		expect(markup).toContain(
+			"nightworkers-pilot-thought-event w-full border-b",
+		);
 		expect(markup).toContain("nightworkers-debug-payload");
 		expect(markup).toContain("<details");
 		expect(markup).not.toContain("<details open");

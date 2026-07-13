@@ -1,4 +1,5 @@
 @import "./nightworkers-utility-artifact.css";
+@import "./nightworkers-utility-chat.css";
 .nightworkers-shell [class~="bg-[#111827]"],
 .nightworkers-shell [class~="bg-[#121214]"] {
 	background-color: var(--nw-background);

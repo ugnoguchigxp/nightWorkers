@@ -3,7 +3,10 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { missionPilotSessions } from "../api/db/mission-pilot-schema";
+import {
+	missionPilotPhaseRuns,
+	missionPilotSessions,
+} from "../api/db/mission-pilot-schema";
 import {
 	repositories,
 	taskEvents,
@@ -24,6 +27,85 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot pre-Queue recovery", () => {
+	it("does not classify a Session that already owns a post-Queue phase run", async () => {
+		const repositoryId = crypto.randomUUID();
+		const taskId = crypto.randomUUID();
+		const runId = crypto.randomUUID();
+		const phaseRunId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		const now = new Date();
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "Mission Pilot post-Queue boundary",
+			localPath: `/tmp/${repositoryId}`,
+			branch: "main",
+		});
+		const session = await db.transaction(async (tx) => {
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					id: taskId,
+					repositoryId,
+					title: "Post-Queue Test attention",
+					objective: "Keep startup recovery in the post-Queue coordinator",
+					status: "needs_review",
+				})
+				.returning();
+			return createSession(
+				{
+					task,
+					sourceKind: "mission_task_candidate",
+					sourceId: crypto.randomUUID(),
+				},
+				tx,
+			);
+		});
+		await db.insert(taskRuns).values({
+			id: runId,
+			taskId,
+			repositoryId,
+			status: "completed",
+			finishedAt: now,
+		});
+		await db.insert(missionPilotPhaseRuns).values({
+			id: phaseRunId,
+			sessionId: session.id,
+			taskId,
+			phase: "test",
+			cycle: 1,
+			attempt: 1,
+			runId,
+			inputContextRevision: session.contextRevision,
+			inputContextDigest: session.contextDigest,
+			status: "failed",
+			verdict: "attention",
+			evidenceJson: {},
+			startedAt: now,
+			finishedAt: now,
+		});
+		await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "attention",
+				activePhaseRunId: phaseRunId,
+				version: 4,
+			})
+			.where(eq(missionPilotSessions.id, session.id));
+
+		expect(await reconcileMissionPilotPreQueueSessions()).toBe(0);
+		expect(
+			await db.query.missionPilotSessions.findFirst({
+				where: eq(missionPilotSessions.id, session.id),
+			}),
+		).toMatchObject({
+			desiredState: "playing",
+			phase: "attention",
+			activePhaseRunId: phaseRunId,
+			version: 4,
+		});
+	});
+
 	it("classifies a terminal Task with a pre-Queue WorkBench run without rollback", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();

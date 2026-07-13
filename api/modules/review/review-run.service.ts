@@ -14,6 +14,11 @@ import {
 	type ReviewTargetWarning,
 } from "./review-mode.model";
 import * as reviewRepo from "./review-mode.repository";
+import { buildReviewRunArtifact } from "./review-run-artifact";
+import {
+	findExistingReviewTaskRun,
+	reviewRunArtifactStatus,
+} from "./review-run-idempotency.service";
 import {
 	extractPlanBullets,
 	reviewTargetWarningTitle,
@@ -145,7 +150,7 @@ export async function startReviewRunForSession(
 		missionPilot?: Record<string, unknown>;
 	} | null,
 ) {
-	const session = await reviewRepo.getReviewSession(reviewSessionId);
+	let session = await reviewRepo.getReviewSession(reviewSessionId);
 	if (!session) throw new NotFoundError("Review session not found");
 	const options = normalizeReviewRunOptions(optionsInput);
 	const target = await buildReviewTarget({
@@ -154,12 +159,42 @@ export async function startReviewRunForSession(
 	});
 	const planSpec = await readReviewPlanSpec(session.taskId);
 	const todos = buildReviewRunTodos({ options, target, planSpec });
+	const existing = await findExistingReviewTaskRun(session);
+	if (existing) {
+		if (session.status === "not_started") {
+			session =
+				(await reviewRepo.markReviewSessionStarted(reviewSessionId)) ?? session;
+		}
+		if (!existing.artifact) {
+			const recoveredStatus = reviewRunArtifactStatus(existing.run.status);
+			await reviewRepo.upsertReviewArtifact({
+				reviewSessionId,
+				runId: session.runId,
+				taskId: session.taskId,
+				kind: "review_run",
+				status: recoveredStatus,
+				artifactJson: buildReviewRunArtifact({
+					session,
+					options,
+					target,
+					todos,
+					status: recoveredStatus,
+					reviewRunId: existing.run.id,
+					initialFindingCount: 0,
+				}),
+				sourceEvidenceRefsJson: [],
+			});
+		}
+		return { reviewRun: existing.run, target, planSpec, todos };
+	}
 	const initialFindings = await createInitialReviewRunFindings({
 		session,
 		target,
 		planSpec,
 		options,
 	});
+	session =
+		(await reviewRepo.markReviewSessionStarted(reviewSessionId)) ?? session;
 	await reviewRepo.upsertReviewArtifact({
 		reviewSessionId,
 		runId: session.runId,
@@ -194,6 +229,10 @@ export async function startReviewRunForSession(
 		(warning) => warning.severity === "blocking",
 	);
 	if (blockingWarnings.length > 0) {
+		await reviewRepo.updateReviewSession(reviewSessionId, {
+			status: "needs_human",
+			finalNote: "Review target extraction needs human review.",
+		});
 		await reviewRepo.upsertReviewArtifact({
 			reviewSessionId,
 			runId: session.runId,
@@ -452,45 +491,6 @@ function warningToFinding(
 			.join("\n"),
 		evidenceRefsJson: [],
 		sourceSection: "review_run",
-	};
-}
-
-function buildReviewRunArtifact(input: {
-	session: NonNullable<Awaited<ReturnType<typeof reviewRepo.getReviewSession>>>;
-	options: ReviewRunOptions;
-	target: ReviewTarget;
-	todos: ImplementationTodoInput[];
-	status: "not_started" | "running" | "needs_human" | "done" | "failed";
-	reviewRunId: string | null;
-	initialFindingCount: number;
-}) {
-	return {
-		version: 1,
-		kind: "review_run",
-		runId: input.session.runId,
-		reviewRunId: input.reviewRunId,
-		taskId: input.session.taskId,
-		repositoryId: input.session.repositoryId,
-		options: input.options,
-		status: input.status,
-		target: summarizeTarget(input.target),
-		todos: input.todos.map((todo, index) => ({
-			seq: index + 1,
-			title: todo.title,
-			taskType: todo.taskType ?? "implementation",
-			procedureId: todo.procedureId ?? null,
-		})),
-		findings: [],
-		initialFindingCount: input.initialFindingCount,
-		fixesApplied: false,
-		commit: {
-			requested: input.options.commitChanges,
-			created: false,
-			sha: null,
-			message: null,
-			error: null,
-		},
-		warnings: input.target.warnings,
 	};
 }
 

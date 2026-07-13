@@ -4,9 +4,11 @@ import {
 	missionPilotContextSnapshots,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
+	missionPilotTestSnapshots,
 } from "../../db/mission-pilot-schema";
 import { taskRuns } from "../../db/schema";
 import { executeMissionPilotCloseout } from "./mission-pilot-closeout.service";
+import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	executeMissionPilotContinuation,
@@ -32,6 +34,91 @@ export async function recoverMissionPilotPostQueueSessions() {
 		.where(eq(missionPilotSessions.desiredState, "playing"));
 	let recovered = 0;
 	for (const session of sessions) {
+		if (
+			session.phase === "attention" &&
+			!session.activeRunId &&
+			session.activePhaseRunId
+		) {
+			const [phaseRun] = await db
+				.select()
+				.from(missionPilotPhaseRuns)
+				.where(
+					and(
+						eq(missionPilotPhaseRuns.id, session.activePhaseRunId),
+						eq(missionPilotPhaseRuns.sessionId, session.id),
+						eq(missionPilotPhaseRuns.taskId, session.taskId),
+						eq(missionPilotPhaseRuns.phase, "test"),
+					),
+				)
+				.limit(1);
+			const run = phaseRun ? await findTerminalRun(phaseRun.runId) : null;
+			if (phaseRun && run) {
+				const continuation = await continueMissionPilotAfterRun({
+					taskId: session.taskId,
+					runId: run.id,
+					executionMode: "test",
+				});
+				try {
+					await executeMissionPilotContinuation(continuation);
+					if (continuation.kind === "start_review") {
+						await appendMissionPilotEvent({
+							sessionId: session.id,
+							taskId: session.taskId,
+							eventType: "mission_pilot.test_gate_recovered",
+							phase: "review_preparing",
+							cycle: phaseRun.cycle,
+							contextRevision: session.contextRevision,
+							contextDigest: session.contextDigest,
+							dedupeKey: `test:${phaseRun.id}:gate-recovered`,
+							sourceKind: "task_run",
+							sourceId: run.id,
+							payload: { phaseRunId: phaseRun.id, runId: run.id },
+						});
+					}
+				} catch (error) {
+					await markMissionPilotContinuationFailed(run.id, error);
+				}
+				recovered += 1;
+				continue;
+			}
+		}
+		if (
+			["attention", "review_preparing"].includes(session.phase) &&
+			!session.activeRunId &&
+			session.activeTestSnapshotId
+		) {
+			const [snapshot] = await db
+				.select()
+				.from(missionPilotTestSnapshots)
+				.where(
+					and(
+						eq(missionPilotTestSnapshots.id, session.activeTestSnapshotId),
+						eq(missionPilotTestSnapshots.sessionId, session.id),
+					),
+				)
+				.limit(1);
+			const [phaseRun] = snapshot
+				? await db
+						.select()
+						.from(missionPilotPhaseRuns)
+						.where(eq(missionPilotPhaseRuns.id, snapshot.phaseRunId))
+						.limit(1)
+				: [];
+			if (phaseRun) {
+				const continuation = await continueMissionPilotAfterRun({
+					taskId: session.taskId,
+					runId: phaseRun.runId,
+					executionMode: "test",
+				});
+				try {
+					await executeMissionPilotContinuation(continuation);
+				} catch (error) {
+					await markMissionPilotContinuationFailed(phaseRun.runId, error);
+				}
+				recovered += 1;
+				continue;
+			}
+		}
 		if (session.phase === "implementing" && !session.activeRunId) {
 			const [interruptedPhaseRun] = await db
 				.select()
@@ -141,6 +228,21 @@ export async function recoverMissionPilotPostQueueSessions() {
 		recovered += 1;
 	}
 	return recovered;
+}
+
+async function findTerminalRun(runId: string) {
+	const [run] = await db
+		.select()
+		.from(taskRuns)
+		.where(
+			and(
+				eq(taskRuns.id, runId),
+				inArray(taskRuns.status, terminalStatuses),
+				isNotNull(taskRuns.finishedAt),
+			),
+		)
+		.limit(1);
+	return run ?? null;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

@@ -11,11 +11,19 @@ import {
 import { repositories, taskRuns, tasks } from "../api/db/schema";
 
 const continuationMocks = vi.hoisted(() => ({
+	continueAfterRun: vi.fn(),
 	execute: vi.fn(),
 	markFailed: vi.fn(),
 	resumeInterruptedImplementation: vi.fn(),
 	startImplementationRework: vi.fn(),
 }));
+
+vi.mock(
+	"../api/modules/missionPilot/mission-pilot-post-queue-coordinator.service",
+	() => ({
+		continueMissionPilotAfterRun: continuationMocks.continueAfterRun,
+	}),
+);
 
 vi.mock(
 	"../api/modules/missionPilot/mission-pilot-runtime-continuation.service",
@@ -41,6 +49,88 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot post-Queue recovery", () => {
+	it("re-evaluates a terminal Test run from activePhaseRunId after attention", async () => {
+		const repositoryId = crypto.randomUUID();
+		const taskId = crypto.randomUUID();
+		const sessionId = crypto.randomUUID();
+		const runId = crypto.randomUUID();
+		const phaseRunId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		const now = new Date();
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "test-attention-recovery",
+			localPath: "/tmp/test-attention-recovery",
+			branch: "main",
+		});
+		await db.insert(tasks).values({
+			id: taskId,
+			repositoryId,
+			title: "Recover Test attention",
+			objective: "resume the accepted Test decision",
+			status: "needs_review",
+		});
+		await db.insert(taskRuns).values({
+			id: runId,
+			taskId,
+			repositoryId,
+			status: "completed",
+			contextSnapshot: { executionMode: "test" },
+			endedAt: now,
+			finishedAt: now,
+		});
+		await db.insert(missionPilotSessions).values({
+			id: sessionId,
+			taskId,
+			repositoryId,
+			sourceKind: "task",
+			sourceId: taskId,
+			desiredState: "playing",
+			phase: "attention",
+			activePhaseRunId: phaseRunId,
+			initialPromptSnapshot: "resume the accepted Test decision",
+			initialPromptState: "sent",
+			testCycle: 1,
+			contextRevision: 4,
+			contextDigest: "ctx-4",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(missionPilotPhaseRuns).values({
+			id: phaseRunId,
+			sessionId,
+			taskId,
+			phase: "test",
+			cycle: 1,
+			attempt: 1,
+			runId,
+			inputContextRevision: 4,
+			inputContextDigest: "ctx-4",
+			status: "failed",
+			verdict: "attention",
+			evidenceJson: { attentionReasonCodes: ["managed_evidence_failed"] },
+			startedAt: now,
+			finishedAt: now,
+		});
+		const continuation = {
+			kind: "start_review",
+			input: {
+				anchorRunId: crypto.randomUUID(),
+				targetRunIds: [runId],
+				missionPilot: { sessionId },
+			},
+		} as const;
+		continuationMocks.continueAfterRun.mockResolvedValueOnce(continuation);
+
+		await expect(recoverMissionPilotPostQueueSessions()).resolves.toBe(1);
+		expect(continuationMocks.continueAfterRun).toHaveBeenCalledWith({
+			taskId,
+			runId,
+			executionMode: "test",
+		});
+		expect(continuationMocks.execute).toHaveBeenCalledWith(continuation);
+	});
+
 	it("starts a continuation run when Play resumes an interrupted implementation", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();

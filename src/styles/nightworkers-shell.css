@@ -1,6 +1,21 @@
 @import "./nightworkers-todo.css";
 /* Add any app-specific overrides here */
 
+:root {
+	--nw-code-bg: hsl(222 47% 11%);
+	--nw-code-header-bg: hsl(221 39% 17%);
+	--nw-code-border: hsl(215 25% 34%);
+	--nw-code-text: hsl(210 20% 92%);
+	--nw-code-muted-text: hsl(215 20% 72%);
+	--nw-code-subtle-text: hsl(215 16% 64%);
+	--nw-code-add-background: hsl(151 42% 20%);
+	--nw-code-add-text: hsl(142 70% 84%);
+	--nw-code-remove-background: hsl(344 46% 21%);
+	--nw-code-remove-text: hsl(350 82% 86%);
+	--nw-code-hunk-background: hsl(218 35% 22%);
+	--nw-code-hunk-text: hsl(213 88% 82%);
+}
+
 .nightworkers-shell {
 	--nw-background: hsl(222 42% 10%);
 	--nw-panel: hsl(222 47% 11%);
@@ -16,6 +31,67 @@
 	--nw-danger: hsl(350 88% 68%);
 	--nw-border: hsl(218 24% 30% / 0.78);
 	--nw-strong-border: hsl(218 28% 44% / 0.88);
+	--nw-chat-card-background: color-mix(
+		in srgb,
+		var(--nw-surface-soft) 68%,
+		var(--nw-panel)
+	);
+	--nw-chat-card-background-strong: color-mix(
+		in srgb,
+		var(--nw-surface) 82%,
+		var(--nw-panel)
+	);
+	--nw-chat-card-border: color-mix(
+		in srgb,
+		var(--nw-border) 68%,
+		var(--nw-text)
+	);
+	--nw-chat-card-text: var(--nw-text);
+	--nw-chat-card-muted-text: color-mix(
+		in srgb,
+		var(--nw-muted-text) 60%,
+		var(--nw-text)
+	);
+	--nw-chat-card-subtle-text: color-mix(
+		in srgb,
+		var(--nw-subtle-text) 55%,
+		var(--nw-text)
+	);
+	--nw-chat-card-accent-background: color-mix(
+		in srgb,
+		var(--nw-primary) 9%,
+		var(--nw-chat-card-background)
+	);
+	--nw-chat-card-accent-text: color-mix(
+		in srgb,
+		var(--nw-primary) 48%,
+		var(--nw-text)
+	);
+	--nw-chat-card-warning-background: color-mix(
+		in srgb,
+		var(--nw-warning) 9%,
+		var(--nw-chat-card-background)
+	);
+	--nw-chat-card-warning-text: color-mix(
+		in srgb,
+		var(--nw-warning) 48%,
+		var(--nw-text)
+	);
+	--nw-chat-card-danger-background: color-mix(
+		in srgb,
+		var(--nw-danger) 9%,
+		var(--nw-chat-card-background)
+	);
+	--nw-chat-card-danger-text: color-mix(
+		in srgb,
+		var(--nw-danger) 48%,
+		var(--nw-text)
+	);
+	--nw-chat-card-success-text: color-mix(
+		in srgb,
+		var(--nw-success) 56%,
+		var(--nw-text)
+	);
 	--nw-artifact-markdown-background: var(--nw-panel);
 	--nw-artifact-markdown-text: var(--nw-text);
 	--nw-artifact-markdown-muted-text: color-mix(

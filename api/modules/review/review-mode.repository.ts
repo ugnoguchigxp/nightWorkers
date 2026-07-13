@@ -80,22 +80,30 @@ export async function createOrStartReviewSession(data: {
 		.insert(reviewSessions)
 		.values({
 			...data,
-			status: "in_progress",
-			startedAt: now,
+			status: "not_started",
+			startedAt: null,
 			createdAt: now,
 			updatedAt: now,
 		})
 		.onConflictDoUpdate({
 			target: reviewSessions.runId,
 			set: {
-				status: "in_progress",
 				recommendationId: data.recommendationId,
-				startedAt: now,
 				updatedAt: now,
 			},
 		})
 		.returning();
 	return row;
+}
+
+export async function markReviewSessionStarted(id: string) {
+	const now = new Date();
+	const [row] = await db
+		.update(reviewSessions)
+		.set({ status: "in_progress", startedAt: now, updatedAt: now })
+		.where(eq(reviewSessions.id, id))
+		.returning();
+	return row ?? null;
 }
 
 export async function updateReviewSession(
@@ -147,6 +155,20 @@ export async function listReviewArtifacts(reviewSessionId: string) {
 		.from(reviewArtifacts)
 		.where(eq(reviewArtifacts.reviewSessionId, reviewSessionId))
 		.orderBy(desc(reviewArtifacts.updatedAt));
+}
+
+export async function getReviewArtifact(reviewSessionId: string, kind: string) {
+	const [row] = await db
+		.select()
+		.from(reviewArtifacts)
+		.where(
+			and(
+				eq(reviewArtifacts.reviewSessionId, reviewSessionId),
+				eq(reviewArtifacts.kind, kind),
+			),
+		)
+		.limit(1);
+	return row ?? null;
 }
 
 export async function listReviewFindings(reviewSessionId: string) {

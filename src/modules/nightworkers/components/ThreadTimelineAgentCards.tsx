@@ -25,29 +25,31 @@ export function AgentEditSummaryCard({ event }: { event: TaskEvent }) {
 	if (!summary) return null;
 
 	return (
-		<details className="rounded border border-slate-700/80 bg-slate-900/30">
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-200">
+		<details className="nightworkers-chat-card rounded border">
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs">
 				コード変更 ({summary.sections.length}){" "}
-				<span className="text-slate-400">
+				<span className="nightworkers-chat-card-meta">
 					{editSummaryToolLabel(summary.toolName)}
 				</span>
 			</summary>
-			<div className="space-y-3 border-t border-slate-700/80 px-3 py-2 text-xs">
+			<div className="nightworkers-chat-card-body space-y-3 border-t px-3 py-2 text-xs">
 				<div className="space-y-1">
 					{summary.sections.map((section, _idx) => (
 						<div
 							key={`${event.id}-section-${section.path}-${section.detail || ""}`}
-							className="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1"
+							className="nightworkers-chat-card-item rounded border px-2 py-1"
 						>
-							<div className="truncate text-slate-200">{section.path}</div>
-							<div className="text-slate-400">
+							<div className="nightworkers-chat-card-title truncate">
+								{section.path}
+							</div>
+							<div className="nightworkers-chat-card-meta">
 								{typeof section.added === "number" ||
 								typeof section.deleted === "number" ? (
 									<>
-										<span className="text-emerald-400">
+										<span className="nightworkers-chat-card-success">
 											+{section.added || 0}
 										</span>{" "}
-										<span className="text-rose-400">
+										<span className="nightworkers-chat-card-danger-text">
 											-{section.deleted || 0}
 										</span>
 									</>
@@ -87,27 +89,34 @@ export function ReviewerEvaluationCard({ event }: { event: TaskEvent }) {
 		: [];
 
 	return (
-		<details className="rounded border border-amber-700/60 bg-amber-950/20">
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs text-amber-100">
-				<span className="mr-2 rounded border border-amber-700/70 px-1.5 py-0.5">
+		<details
+			className="nightworkers-chat-card rounded border"
+			data-tone="warning"
+		>
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs">
+				<span className="nightworkers-chat-card-badge mr-2 rounded border px-1.5 py-0.5">
 					agent reviewer
 				</span>
 				{String(status)}
 				{verdict ? (
-					<span className="ml-2 text-amber-200">verdict {String(verdict)}</span>
+					<span className="nightworkers-chat-card-warning ml-2">
+						verdict {String(verdict)}
+					</span>
 				) : null}
 				{typeof blockingCount === "number" ? (
-					<span className="ml-2 text-amber-200">blocking {blockingCount}</span>
+					<span className="nightworkers-chat-card-warning ml-2">
+						blocking {blockingCount}
+					</span>
 				) : null}
 			</summary>
-			<div className="space-y-2 border-t border-amber-800/60 px-3 py-2 text-[11px] text-amber-50">
+			<div className="nightworkers-chat-card-body space-y-2 border-t px-3 py-2 text-[11px]">
 				<div>{event.message}</div>
 				{degradedReasons.length > 0 ? (
-					<div className="text-amber-200">
+					<div className="nightworkers-chat-card-warning">
 						degraded: {degradedReasons.join(", ")}
 					</div>
 				) : null}
-				<pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 text-[10px] text-slate-300">
+				<pre className="nightworkers-chat-card-code max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded p-2 text-[10px]">
 					{JSON.stringify(data, null, 2)}
 				</pre>
 			</div>
@@ -146,8 +155,15 @@ export function AgentDebugEventCard({
 	const payload = asRecord(event.payloadJson);
 	const runEvent = asRecord(payload.runEvent);
 	const toolCall = asRecord(payload.toolCall);
+	const correctionRequest = asRecord(payload.correctionRequest);
+	const correctionInstruction = asString(correctionRequest.instruction);
 	const runEventType = asString(runEvent.type);
-	const reviewResult = asRecord(payload.reviewResult) as ReviewResult | null;
+	const reviewResult =
+		payload.reviewResult &&
+		typeof payload.reviewResult === "object" &&
+		!Array.isArray(payload.reviewResult)
+			? (asRecord(payload.reviewResult) as ReviewResult)
+			: null;
 	const toolName = asString(payload.toolName || toolCall.name);
 	const patchContent = getApplyPatchContent(payload);
 	const round = payload.round;
@@ -159,54 +175,71 @@ export function AgentDebugEventCard({
 		<div
 			className={
 				variant === "dock"
-					? "nightworkers-pilot-thought-event w-full border-slate-700/80 border-b px-3 py-2"
-					: "rounded border border-slate-700/80 bg-slate-900/30 p-3"
+					? "nightworkers-pilot-thought-event w-full border-b px-3 py-2"
+					: "nightworkers-chat-card rounded border p-3"
 			}
 		>
 			<div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
-				<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-200">
+				<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5">
 					{runEventType || event.eventType || event.type || "event"}
 				</span>
 				{event.actor ? (
-					<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
+					<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5">
 						{event.actor}
 					</span>
 				) : null}
 				{typeof round === "number" ? (
-					<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
+					<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5">
 						{t("timeline.roundLabel", { round })}
 					</span>
 				) : null}
 				{phase ? (
-					<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
+					<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5">
 						{phase}
 					</span>
 				) : null}
 				{toolName ? (
-					<span className="rounded border border-slate-600/80 px-1.5 py-0.5 text-slate-300">
+					<span className="nightworkers-chat-card-badge rounded border px-1.5 py-0.5">
 						{t("timeline.toolLabel", { tool: toolName })}
 					</span>
 				) : null}
 				{timestamp ? (
-					<span className="ml-auto text-slate-500">{timestamp}</span>
+					<span className="nightworkers-chat-card-subtle ml-auto">
+						{timestamp}
+					</span>
 				) : null}
 			</div>
-			<div className="mb-2 text-xs text-slate-100">{event.message}</div>
+			<div className="nightworkers-chat-card-title mb-2 text-xs">
+				{event.message}
+			</div>
+			{correctionInstruction ? (
+				<section
+					className="nightworkers-chat-card-item mt-2 rounded border px-3 py-2"
+					aria-label="Plan Mode agentへの依頼内容"
+				>
+					<div className="nightworkers-chat-card-meta text-[10px] font-medium">
+						依頼内容
+					</div>
+					<div className="nightworkers-chat-card-title mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed">
+						{correctionInstruction}
+					</div>
+				</section>
+			) : null}
 			{reviewResult ? (
 				<ReviewResultSummary reviewResult={reviewResult} />
 			) : null}
 			{typeof patchContent === "string" && patchContent.trim() ? (
-				<div className="mt-2 overflow-hidden rounded border border-slate-700/80 bg-[#0b1020]">
-					<div className="flex items-center border-b border-slate-700/80 bg-[#131a2e] px-3 py-2 text-xs text-slate-300">
+				<div className="nightworkers-code-block mt-2 overflow-hidden rounded border">
+					<div className="flex items-center border-b px-3 py-2 text-xs">
 						apply_patch.patch
 					</div>
 					<div className="max-h-[320px] overflow-auto p-3 font-mono text-[12px] leading-6">
 						{patchLines.map((line, _idx) => {
 							const lineClass = line.startsWith("+")
-								? "bg-emerald-900/55 text-emerald-100"
+								? "nightworkers-diff-line-add"
 								: line.startsWith("-")
-									? "bg-rose-900/55 text-rose-100"
-									: "text-slate-100";
+									? "nightworkers-diff-line-remove"
+									: "text-[var(--nw-code-text)]";
 							return (
 								<div
 									key={`${event.id}-patch-${line}`}

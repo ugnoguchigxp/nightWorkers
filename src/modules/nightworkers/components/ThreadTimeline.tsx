@@ -388,7 +388,7 @@ export function ThreadTimeline({
 				/>
 			) : null}
 			{showDebugEvents && isAgentWorking && latestEvent ? (
-				<div className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
+				<div className="nightworkers-chat-card rounded-lg border px-3 py-2 text-xs">
 					<span className="mr-2 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
 					Live: {latestEvent.message}
 				</div>

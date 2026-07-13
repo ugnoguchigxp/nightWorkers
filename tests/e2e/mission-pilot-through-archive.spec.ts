@@ -56,8 +56,9 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 			data: {
 				repositoryId,
 				title: "Mission Pilot autonomous closeout",
-				description: "[fixture:success]",
-				objective: "[fixture:success] Implement and verify the greeting.",
+				description: "[fixture:success] [fixture:test-transient-failure]",
+				objective:
+					"[fixture:success] [fixture:test-transient-failure] Implement and verify the greeting.",
 				acceptanceCriteria: "The Mission Pilot task reaches archived.",
 				timeoutSeconds: 60,
 			},
@@ -250,6 +251,21 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 			),
 		).toBe(true);
 		const traceDb = new Database(databasePath, { readonly: true });
+		const evidenceRows = traceDb
+			.prepare(
+				"select p.id as phaseRunId, v.id, v.command, v.exit_code as exitCode from verification_evidence_runs v join mission_pilot_phase_runs p on p.run_id = v.run_id where p.session_id = ? and p.phase = 'test' order by p.cycle, v.rowid",
+			)
+			.all(session.id) as Array<{
+			phaseRunId: string;
+			id: string;
+			command: string;
+			exitCode: number;
+		}>;
+		const snapshots = traceDb
+			.prepare(
+				"select evidence_run_ids_json as evidenceRunIdsJson from mission_pilot_test_snapshots where session_id = ? order by created_at, rowid",
+			)
+			.all(session.id) as Array<{ evidenceRunIdsJson: string }>;
 		const forbidden = traceDb
 			.prepare(
 				"select count(*) as count from activity_events a join mission_pilot_phase_runs p on p.run_id = a.run_id where p.session_id = ? and (a.trace_owner <> 'coding_agent' or a.trace_channel <> 'chat')",
@@ -257,6 +273,40 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 			.get(session.id) as { count: number };
 		traceDb.close();
 		expect(forbidden.count).toBe(0);
+		const evidenceByPhaseRun = new Map<string, typeof evidenceRows>();
+		for (const row of evidenceRows) {
+			const rows = evidenceByPhaseRun.get(row.phaseRunId) ?? [];
+			rows.push(row);
+			evidenceByPhaseRun.set(row.phaseRunId, rows);
+		}
+		expect(evidenceByPhaseRun.size).toBe(2);
+		const transientPhaseRuns = [];
+		for (const rows of evidenceByPhaseRun.values()) {
+			expect(rows.at(-1)?.exitCode).toBe(0);
+			expect(new Set(rows.map((row) => row.command)).size).toBe(1);
+			if (rows.some((row) => row.exitCode !== 0)) transientPhaseRuns.push(rows);
+		}
+		expect(transientPhaseRuns).toHaveLength(1);
+		expect(transientPhaseRuns[0]).toHaveLength(2);
+		expect(transientPhaseRuns[0]?.[0]?.exitCode).toBeGreaterThan(0);
+		expect(transientPhaseRuns[0]?.[1]?.exitCode).toBe(0);
+		const acceptedEvidenceIds = new Set(
+			snapshots.flatMap(
+				(snapshot) => JSON.parse(snapshot.evidenceRunIdsJson) as string[],
+			),
+		);
+		expect(snapshots).toHaveLength(2);
+		expect(acceptedEvidenceIds.size).toBe(2);
+		expect(
+			evidenceRows
+				.filter((row) => acceptedEvidenceIds.has(row.id))
+				.every((row) => row.exitCode === 0),
+		).toBe(true);
+		expect(
+			evidenceRows
+				.filter((row) => row.exitCode !== 0)
+				.every((row) => !acceptedEvidenceIds.has(row.id)),
+		).toBe(true);
 		await page.goto(`/sessions/${taskId}`);
 		await expect(
 			page.getByText("Mission Pilot autonomous closeout"),

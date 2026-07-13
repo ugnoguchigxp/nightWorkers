@@ -84,7 +84,9 @@ export async function play(taskId: string, expectedVersion: number) {
 	if (
 		session.phase === "attention" &&
 		session.queueHandoffJson &&
-		!session.activeRunId
+		!session.activeRunId &&
+		!session.activePhaseRunId &&
+		!session.activeTestSnapshotId
 	) {
 		const resumed = await claimQueueHandoffResume(taskId, expectedVersion);
 		if (!resumed)

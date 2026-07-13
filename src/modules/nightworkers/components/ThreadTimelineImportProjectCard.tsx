@@ -158,17 +158,25 @@ export function ImportProjectToolCard({
 	if (!card) return null;
 
 	return (
-		<details className="rounded border border-sky-700/50 bg-sky-950/15" open>
-			<summary className="cursor-pointer list-none px-3 py-2 text-xs text-sky-50">
-				<span className="mr-2 rounded border border-sky-700/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+		<details
+			className="nightworkers-chat-card rounded border"
+			data-tone="accent"
+			open
+		>
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs">
+				<span className="nightworkers-chat-card-badge mr-2 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
 					import_project
 				</span>
 				{card.targetPath || card.sourceSummary || card.title}
 				{event.source ? (
-					<span className="ml-2 text-sky-200/80">{event.source}</span>
+					<span className="nightworkers-chat-card-meta ml-2">
+						{event.source}
+					</span>
 				) : null}
 				{typeof event.seq === "number" ? (
-					<span className="ml-2 text-sky-200/60">#{event.seq}</span>
+					<span className="nightworkers-chat-card-subtle ml-2">
+						#{event.seq}
+					</span>
 				) : null}
 			</summary>
 			<ImportProjectCardBody card={card} maxHeight={320} />
@@ -185,17 +193,17 @@ export function NormalImportProjectToolCard({
 	if (!card) return null;
 
 	return (
-		<details className="overflow-hidden rounded-[var(--radius-md)] border border-transparent bg-[#1f2030] text-sm text-slate-200">
-			<summary className="cursor-pointer list-none px-4 py-3">
+		<details className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border text-sm">
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
 				<div className="flex items-baseline justify-between gap-4">
-					<span className="min-w-0 truncate text-slate-200">
+					<span className="nightworkers-chat-card-title min-w-0 truncate">
 						{card.targetPath || card.sourceSummary || card.title}
 					</span>
-					<span className="shrink-0 whitespace-nowrap text-right text-slate-400">
+					<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
 						{card.installStatus || card.manifestStatus || card.mode || "result"}
 					</span>
 				</div>
-				<div className="mt-1 truncate text-xs text-slate-400">
+				<div className="nightworkers-chat-card-meta mt-1 truncate text-xs">
 					{[card.packageManager, card.installCommand, card.sourceSummary]
 						.filter(Boolean)
 						.join(" | ")}
@@ -216,7 +224,7 @@ function ImportProjectCardBody({
 	const installOutput = buildInstallOutput(card);
 	const gitInitializationOutput = buildGitInitializationOutput(card);
 	return (
-		<div className="space-y-3 border-t border-slate-700/60 p-3 text-xs text-slate-100">
+		<div className="nightworkers-chat-card-body space-y-3 border-t p-3 text-xs">
 			<dl className="grid gap-2 sm:grid-cols-2">
 				<SummaryItem label="mode" value={card.mode} />
 				<SummaryItem label="source" value={card.sourceSummary} />
@@ -232,16 +240,16 @@ function ImportProjectCardBody({
 				/>
 			</dl>
 			{card.errorMessage ? (
-				<div className="rounded border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-rose-100">
+				<div className="nightworkers-chat-card-danger rounded border px-3 py-2">
 					{card.errorMessage}
 				</div>
 			) : null}
 			{card.gitOperations.length > 0 ? (
-				<details className="rounded border border-slate-700/60" open>
-					<summary className="cursor-pointer list-none px-3 py-2 text-slate-300">
+				<details className="nightworkers-chat-card-item rounded border" open>
+					<summary className="nightworkers-chat-card-meta cursor-pointer list-none px-3 py-2">
 						git operations
 					</summary>
-					<div className="space-y-2 border-t border-slate-700/60 p-2">
+					<div className="nightworkers-chat-card-body space-y-2 border-t p-2">
 						{card.gitOperations.map((operation, index) => (
 							<NightWorkersCodeBlock
 								key={`${operation.command}-${operation.cwd || ""}-${operation.exitCode ?? ""}`}
@@ -319,8 +327,10 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 	if (!value) return null;
 	return (
 		<div className="min-w-0">
-			<dt className="text-[10px] uppercase text-slate-500">{label}</dt>
-			<dd className="truncate text-slate-200">{value}</dd>
+			<dt className="nightworkers-chat-card-subtle text-[10px] uppercase">
+				{label}
+			</dt>
+			<dd className="nightworkers-chat-card-title truncate">{value}</dd>
 		</div>
 	);
 }

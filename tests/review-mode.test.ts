@@ -4,6 +4,7 @@ import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import * as reviewRepo from "../api/modules/review/review-mode.repository";
+import { startReviewRunForSession } from "../api/modules/review/review-run.service";
 
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
 const originalSecurityPluginIntegration =
@@ -29,6 +30,55 @@ afterEach(() => {
 });
 
 describe("Review Mode", () => {
+	it("reuses an existing Review TaskRun for the same session", async () => {
+		const { task } = await createTask();
+		const anchorRun = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "completed",
+			workerKind: "native-local",
+			summary: "Implementation finished",
+			finalReport: "Implementation finished",
+			startedAt: new Date(),
+			endedAt: new Date(),
+			finishedAt: new Date(),
+		});
+		const session = await reviewRepo.createOrStartReviewSession({
+			runId: anchorRun.id,
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			recommendationId: null,
+		});
+		const existingReviewRun = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+			workerKind: "native-local",
+			contextSnapshot: {
+				executionMode: "review",
+				reviewRun: {
+					reviewSessionId: session.id,
+					reviewedRunId: anchorRun.id,
+				},
+			},
+			startedAt: new Date(),
+		});
+
+		const result = await startReviewRunForSession(session.id);
+
+		expect(result.reviewRun?.id).toBe(existingReviewRun.id);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(2);
+		expect(await reviewRepo.getReviewSession(session.id)).toMatchObject({
+			status: "in_progress",
+		});
+		expect(
+			await reviewRepo.getReviewArtifact(session.id, "review_run"),
+		).toMatchObject({
+			status: "running",
+			artifactJson: { reviewRunId: existingReviewRun.id },
+		});
+	});
+
 	it("refreshes an existing system finding with the latest diagnostic text", async () => {
 		const { task } = await createTask();
 		const run = await repo.createTaskRun({
@@ -146,6 +196,10 @@ describe("Review Mode", () => {
 		);
 		expect(startRes.status).toBe(201);
 		const started = await startRes.json();
+		expect(started.session).toMatchObject({
+			status: "not_started",
+			startedAt: null,
+		});
 		expect(started.statusArtifact.finalActionGate.canApprove).toBe(true);
 		expect(
 			started.statusArtifact.finalActionGate.requiredSectionKindsRemaining,
@@ -375,6 +429,7 @@ describe("Review Mode", () => {
 			(artifact: { kind: string }) => artifact.kind === "review_run",
 		);
 		expect(reviewRunArtifact).toMatchObject({ status: "needs_human" });
+		expect(detail.session.status).toBe("needs_human");
 		expect(
 			reviewRunArtifact.artifact.warnings.map(
 				(warning: { code: string }) => warning.code,

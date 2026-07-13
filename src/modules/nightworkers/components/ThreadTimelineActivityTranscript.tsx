@@ -255,10 +255,8 @@ function TranscriptActivityBlock({
 }) {
 	const { t } = useTranslation();
 	if (!event) return null;
-	const borderClass =
-		tone === "warning"
-			? "border-amber-700/60 bg-amber-950/20 text-amber-50"
-			: "border-slate-700/80 bg-slate-900/30 text-slate-100";
+	const toneClass =
+		tone === "warning" ? "nightworkers-chat-card-tone-warning" : "";
 	const payload = event.payloadJson || {};
 	const titleText = title.startsWith("timeline.") ? t(title) : title;
 	const displayTitle = activityDisplayTitle(event, titleText);
@@ -283,22 +281,26 @@ function TranscriptActivityBlock({
 
 	return (
 		<LazyDetails
-			className={`rounded border ${borderClass}`}
+			className={`nightworkers-chat-card rounded border ${toneClass}`.trim()}
 			defaultOpen={defaultOpen}
 			summary={
-				<summary className="cursor-pointer list-none px-3 py-2 text-xs">
-					<span className="mr-2 rounded border border-current/30 px-1.5 py-0.5">
+				<summary className="nightworkers-chat-card-header cursor-pointer list-none px-3 py-2 text-xs">
+					<span className="nightworkers-chat-card-badge mr-2 rounded border px-1.5 py-0.5">
 						{displayTitle}
 					</span>
-					<span className="text-current/80">{event.source}</span>
+					<span className="nightworkers-chat-card-meta">{event.source}</span>
 					{event.status ? (
-						<span className="ml-2 text-current/70">{event.status}</span>
+						<span className="nightworkers-chat-card-meta ml-2">
+							{event.status}
+						</span>
 					) : null}
-					<span className="ml-2 text-current/50">#{event.seq}</span>
+					<span className="nightworkers-chat-card-subtle ml-2">
+						#{event.seq}
+					</span>
 				</summary>
 			}
 		>
-			<div className="space-y-2 border-current/10 border-t px-3 py-2 text-xs">
+			<div className="nightworkers-chat-card-body space-y-2 border-t px-3 py-2 text-xs">
 				{showSummary && summary ? (
 					<div className="whitespace-pre-wrap break-words">{summary}</div>
 				) : null}
@@ -312,7 +314,7 @@ function TranscriptActivityBlock({
 					/>
 				) : null}
 				{showLlmDetails && !code ? (
-					<pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950/40 p-2 font-mono text-[10px] text-slate-300">
+					<pre className="nightworkers-chat-card-code max-h-[280px] overflow-auto whitespace-pre-wrap break-all rounded p-2 font-mono text-[10px]">
 						{formatLlmOutputJson(event, payload)}
 					</pre>
 				) : null}

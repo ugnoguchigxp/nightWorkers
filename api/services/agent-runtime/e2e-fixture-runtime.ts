@@ -21,6 +21,9 @@ export async function runE2eFixtureRuntime(
 			context.contextSnapshot.missionPilot,
 	);
 	if (executionMode === "test") {
+		const transientFailure = context.compiledPrompt.includes(
+			"[fixture:test-transient-failure]",
+		);
 		const testMode = readRecord(context.runtimeOptions?.testMode);
 		const verificationDocumentId = String(
 			testMode?.verificationDocumentId ??
@@ -35,17 +38,50 @@ export async function runE2eFixtureRuntime(
 		const conditionIds = checklist
 			.filter((item) => item.required)
 			.map((item) => item.conditionId);
-		const check = await runCheckTool({
+		const command = "git diff --check";
+		let transientTarget: { path: string; originalContent: string } | undefined;
+		if (transientFailure) {
+			const targetPath = path.join(context.repoRoot, "src/greeting.txt");
+			const originalContent = await fs.readFile(targetPath, "utf8");
+			transientTarget = { path: targetPath, originalContent };
+			await fs.writeFile(
+				targetPath,
+				`${originalContent}\ntransient failure fixture   \n`,
+				"utf8",
+			);
+		}
+		const checkInput = {
 			taskId: context.taskId,
 			runId: context.runId,
 			verificationDocumentId,
 			checkKind: "verify",
 			conditionIds:
 				conditionIds.length > 0 ? conditionIds : ["mission-pilot-archive"],
-			command: "git diff --check",
+			command,
 			cwd: context.repoRoot,
 			repoRoot: context.repoRoot,
-		});
+		} as const;
+		if (transientFailure) {
+			const failedCheck = await runCheckTool(checkInput);
+			if (transientTarget) {
+				await fs.writeFile(
+					transientTarget.path,
+					transientTarget.originalContent,
+					"utf8",
+				);
+			}
+			await sink.emit({
+				type: "tool_call_finished",
+				message: "Test Mode fixture transient managed verification failed.",
+				payload: { toolName: "run_check", result: failedCheck },
+			});
+			if (failedCheck.ok) {
+				throw new Error(
+					"Transient Test fixture did not produce its first failure",
+				);
+			}
+		}
+		const check = await runCheckTool(checkInput);
 		await sink.emit({
 			type: "tool_call_finished",
 			message: "Test Mode fixture managed verification finished.",

@@ -37,6 +37,8 @@ describe("Mission Pilot Test to Review transition", () => {
 		const testRunId = crypto.randomUUID();
 		const testPhaseRunId = crypto.randomUUID();
 		const verificationDocumentId = crypto.randomUUID();
+		const acceptedEvidenceRunId = crypto.randomUUID();
+		const historicalFailureRunId = crypto.randomUUID();
 		const completionStartedEventId = crypto.randomUUID();
 		const completionFinishedEventId = crypto.randomUUID();
 		const now = new Date();
@@ -70,6 +72,15 @@ describe("Mission Pilot Test to Review transition", () => {
 				repositoryId,
 				status: "completed",
 				contextSnapshot: { executionMode: "test" },
+				finalReport: JSON.stringify({
+					verdict: "pass",
+					defectOwner: "unknown",
+					failedConditionIds: [],
+					evidenceRunIds: [acceptedEvidenceRunId],
+					affectedPaths: [],
+					summary: "Verification passed after a retry.",
+					implementationRework: null,
+				}),
 				startedAt: now,
 				endedAt: now,
 				finishedAt: now,
@@ -173,23 +184,42 @@ describe("Mission Pilot Test to Review transition", () => {
 			status: "passed",
 			evidenceIdsJson: [],
 		});
-		await db.insert(verificationEvidenceRuns).values({
-			id: crypto.randomUUID(),
-			taskId,
-			runId: testRunId,
-			verificationDocumentId,
-			checkKind: "verify",
-			command: "bun run verify",
-			cwd: "/tmp/mission-pilot-test-review-transition",
-			exitCode: 0,
-			runner: "test",
-			rawStdoutArtifactId: "stdout-artifact",
-			rawStderrArtifactId: "stderr-artifact",
-			summaryJson: {},
-			commandLevelConditionIdsJson: ["AC-001"],
-			startedAt: now,
-			finishedAt: now,
-		});
+		await db.insert(verificationEvidenceRuns).values([
+			{
+				id: historicalFailureRunId,
+				taskId,
+				runId: testRunId,
+				verificationDocumentId,
+				checkKind: "verify",
+				command: "bun run verify",
+				cwd: "/tmp/mission-pilot-test-review-transition",
+				exitCode: 1,
+				runner: "test",
+				rawStdoutArtifactId: "failed-stdout-artifact",
+				rawStderrArtifactId: "failed-stderr-artifact",
+				summaryJson: {},
+				commandLevelConditionIdsJson: ["AC-001"],
+				startedAt: now,
+				finishedAt: now,
+			},
+			{
+				id: acceptedEvidenceRunId,
+				taskId,
+				runId: testRunId,
+				verificationDocumentId,
+				checkKind: "verify",
+				command: "bun run verify",
+				cwd: "/tmp/mission-pilot-test-review-transition",
+				exitCode: 0,
+				runner: "test",
+				rawStdoutArtifactId: "stdout-artifact",
+				rawStderrArtifactId: "stderr-artifact",
+				summaryJson: {},
+				commandLevelConditionIdsJson: ["AC-001"],
+				startedAt: now,
+				finishedAt: now,
+			},
+		]);
 		await db.insert(taskEvents).values([
 			{
 				id: completionStartedEventId,
@@ -263,7 +293,15 @@ describe("Mission Pilot Test to Review transition", () => {
 		expect(snapshot).toMatchObject({
 			phaseRunId: testPhaseRunId,
 			completionCheckEventId: completionFinishedEventId,
+			evidenceRunIdsJson: [acceptedEvidenceRunId],
 			verdict: "pass",
+			snapshotJson: {
+				testEvidenceHistorySummary: {
+					totalCount: 2,
+					acceptedCount: 1,
+					historicalFailureCount: 1,
+				},
+			},
 		});
 		const updatedSession = await db.query.missionPilotSessions.findFirst({
 			where: eq(missionPilotSessions.id, sessionId),
@@ -273,5 +311,22 @@ describe("Mission Pilot Test to Review transition", () => {
 			reviewCycle: 1,
 			activeTestSnapshotId: snapshot?.id,
 		});
+		if (!updatedSession)
+			throw new Error("Mission Pilot session was not updated");
+
+		const repeated = await continueAfterTestRun({
+			session: updatedSession,
+			phaseRun,
+			runId: testRunId,
+		});
+		expect(repeated).toMatchObject({
+			kind: "start_review",
+			input: { anchorRunId: implementationRunId },
+		});
+		expect(
+			await db.query.missionPilotTestSnapshots.findMany({
+				where: eq(missionPilotTestSnapshots.phaseRunId, testPhaseRunId),
+			}),
+		).toHaveLength(1);
 	});
 });

@@ -11,24 +11,24 @@ export function ThreadTimelinePermissionDialog(props: {
 	return (
 		<ThreadMessage messageRole="assistant">
 			<div
-				className="max-w-2xl rounded-lg border border-slate-700 bg-slate-950/80 p-4"
+				className="nightworkers-chat-card max-w-2xl rounded-lg border p-4"
 				role="dialog"
 				aria-labelledby="external-path-permission-title"
 				aria-describedby="external-path-permission-description"
 			>
 				<div
 					id="external-path-permission-title"
-					className="text-sm font-semibold text-slate-100"
+					className="nightworkers-chat-card-title text-sm font-semibold"
 				>
 					外部フォルダへのアクセス許可
 				</div>
 				<div
 					id="external-path-permission-description"
-					className="mt-2 text-xs leading-5 text-slate-300"
+					className="nightworkers-chat-card-meta mt-2 text-xs leading-5"
 				>
 					続行するには、このフォルダの読み取り許可が必要です。
 				</div>
-				<div className="mt-3 break-all rounded-md border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-200">
+				<div className="nightworkers-chat-card-code mt-3 break-all rounded-md border border-[color:var(--nw-code-border)] px-3 py-2 font-mono text-[11px]">
 					{props.path}
 				</div>
 				<div className="mt-4 flex justify-end gap-2">
@@ -51,7 +51,7 @@ export function ThreadTimelinePermissionDialog(props: {
 				</div>
 				{props.error ? (
 					<div
-						className="mt-3 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-200"
+						className="nightworkers-chat-card-danger mt-3 rounded-md border px-3 py-2 text-xs"
 						role="alert"
 					>
 						{props.error}

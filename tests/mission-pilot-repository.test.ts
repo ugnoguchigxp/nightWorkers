@@ -5,11 +5,13 @@ import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
 	missionPilotContextSnapshots,
+	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
 import {
 	claimInitialPromptDispatch,
+	claimPostQueueResume,
 	claimStop,
 	createSession,
 	ensureInitialPromptMessage,
@@ -39,6 +41,77 @@ async function insertRepository() {
 }
 
 describe("Mission Pilot repository", () => {
+	it("prefers the durable post-Queue phase over a stale queued resume phase", async () => {
+		const repositoryId = await insertRepository();
+		const taskId = crypto.randomUUID();
+		const runId = crypto.randomUUID();
+		const phaseRunId = crypto.randomUUID();
+		const now = new Date();
+		const session = await db.transaction(async (tx) => {
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					id: taskId,
+					repositoryId,
+					title: "Resume post-Queue Test",
+					objective: "Recover the terminal Test phase",
+					status: "needs_review",
+				})
+				.returning();
+			const session = await createSession(
+				{
+					task,
+					sourceKind: "mission_task_candidate",
+					sourceId: crypto.randomUUID(),
+				},
+				tx,
+			);
+			await tx.insert(taskRuns).values({
+				id: runId,
+				taskId,
+				repositoryId,
+				status: "completed",
+				finishedAt: now,
+			});
+			await tx.insert(missionPilotPhaseRuns).values({
+				id: phaseRunId,
+				sessionId: session.id,
+				taskId,
+				phase: "test",
+				cycle: 1,
+				attempt: 1,
+				runId,
+				inputContextRevision: session.contextRevision,
+				inputContextDigest: session.contextDigest,
+				status: "failed",
+				verdict: "attention",
+				evidenceJson: {},
+				startedAt: now,
+				finishedAt: now,
+			});
+			await tx
+				.update(missionPilotSessions)
+				.set({
+					desiredState: "stopped",
+					phase: "attention",
+					resumePhase: "queued",
+					activePhaseRunId: phaseRunId,
+					version: 5,
+				})
+				.where(eq(missionPilotSessions.id, session.id));
+			return session;
+		});
+
+		expect(await claimPostQueueResume(taskId, 5)).toMatchObject({
+			id: session.id,
+			desiredState: "playing",
+			phase: "attention",
+			resumePhase: null,
+			activePhaseRunId: phaseRunId,
+			version: 6,
+		});
+	});
+
 	it("creates Task, Session, and Context revision 1 atomically", async () => {
 		const repositoryId = await insertRepository();
 		const taskId = crypto.randomUUID();

@@ -59,11 +59,11 @@ export async function continueAfterReviewRun(input: {
 		targetManifestMatches: ownedPaths.length > 0 || commitRecords.length > 0,
 	});
 	if (!gate.pass || !gate.decision || !testSnapshotId) {
+		const reviewSessionId = readReviewSessionId(run?.contextSnapshot);
 		if (gate.decision?.verdict === "rework") {
-			const reviewSessionId = readReviewSessionId(run?.contextSnapshot);
 			if (reviewSessionId) {
 				await reviewRepo.updateReviewSession(reviewSessionId, {
-					status: "completed",
+					status: "changes_requested",
 					completedAt: new Date(),
 					finalAction: "changes_requested",
 					finalNote: gate.decision.summary,
@@ -81,10 +81,22 @@ export async function continueAfterReviewRun(input: {
 				},
 			});
 		}
+		if (reviewSessionId) {
+			await reviewRepo.updateReviewSession(reviewSessionId, {
+				status: "needs_human",
+				completedAt: new Date(),
+				finalAction: "needs_human",
+				finalNote: gate.decision?.summary ?? gate.reasons.join(","),
+			});
+		}
 		await setMissionPilotAttention(
 			input.session.id,
 			input.phaseRun.id,
 			gate.reasons.join(","),
+			{
+				errorCode: "MISSION_PILOT_REVIEW_GATE_REJECTED",
+				reasonCodes: gate.reasons,
+			},
 		);
 		return { kind: "attention", reasons: gate.reasons } as const;
 	}
@@ -252,7 +264,7 @@ export async function continueAfterReviewRun(input: {
 			.where(eq(missionPilotSessions.id, input.session.id));
 	});
 	await reviewRepo.updateReviewSession(reviewSessionId, {
-		status: "completed",
+		status: "approved",
 		completedAt: now,
 		finalAction: "approved",
 		finalNote: snapshotDecision.summary,
@@ -381,21 +393,45 @@ export async function setMissionPilotAttention(
 	sessionId: string,
 	phaseRunId: string,
 	reason: string,
+	options?: {
+		errorCode?: string;
+		reasonCodes?: string[];
+		evidence?: Record<string, unknown>;
+	},
 ) {
 	const now = new Date();
-	await db
-		.update(missionPilotPhaseRuns)
-		.set({ status: "failed", verdict: "attention", finishedAt: now })
-		.where(eq(missionPilotPhaseRuns.id, phaseRunId));
-	await db
-		.update(missionPilotSessions)
-		.set({
-			phase: "attention",
-			lastErrorCode: "MISSION_PILOT_IMPLEMENTATION_GATE_REJECTED",
-			lastErrorMessage: reason,
-			updatedAt: now,
-		})
-		.where(eq(missionPilotSessions.id, sessionId));
+	await db.transaction(async (tx) => {
+		const [phaseRun] = await tx
+			.select({ evidenceJson: missionPilotPhaseRuns.evidenceJson })
+			.from(missionPilotPhaseRuns)
+			.where(eq(missionPilotPhaseRuns.id, phaseRunId))
+			.limit(1);
+		await tx
+			.update(missionPilotPhaseRuns)
+			.set({
+				status: "failed",
+				verdict: "attention",
+				evidenceJson: {
+					...readRecord(phaseRun?.evidenceJson),
+					...(options?.evidence ?? {}),
+					attentionReasonCodes: options?.reasonCodes ?? [reason],
+					attentionAt: now.toISOString(),
+				},
+				finishedAt: now,
+			})
+			.where(eq(missionPilotPhaseRuns.id, phaseRunId));
+		await tx
+			.update(missionPilotSessions)
+			.set({
+				phase: "attention",
+				preQueueDiagnosticJson: null,
+				lastErrorCode:
+					options?.errorCode ?? "MISSION_PILOT_IMPLEMENTATION_GATE_REJECTED",
+				lastErrorMessage: reason,
+				updatedAt: now,
+			})
+			.where(eq(missionPilotSessions.id, sessionId));
+	});
 }
 
 export function readRecord(value: unknown): Record<string, unknown> {

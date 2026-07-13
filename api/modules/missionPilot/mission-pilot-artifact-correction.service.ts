@@ -162,6 +162,12 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				target: claimed.target,
 				focus: claimed.focusJson,
 				sourceMessageId: claimed.sourceMessageId,
+				correctionRequest: {
+					target: claimed.target,
+					focus: claimed.focusJson,
+					instruction: claimed.instruction,
+					preserveUnfocusedContent: claimed.preserveUnfocusedContent,
+				},
 			},
 			trace: thoughtTrace,
 		}).catch(() => undefined);
