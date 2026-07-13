@@ -11,17 +11,32 @@ export async function ensureRuntimeAndUsageTables() {
       content text NOT NULL,
       message_type text,
       metadata_json text,
+      trace_owner text DEFAULT 'system' NOT NULL,
+      trace_channel text DEFAULT 'internal' NOT NULL,
       created_at integer NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
+	await ensureColumn(
+		"task_messages",
+		"trace_owner",
+		"trace_owner text DEFAULT 'system' NOT NULL",
+	);
+	await ensureColumn(
+		"task_messages",
+		"trace_channel",
+		"trace_channel text DEFAULT 'internal' NOT NULL",
+	);
 
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_messages_task_id_idx ON task_messages (task_id)",
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_messages_run_id_idx ON task_messages (run_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_messages_task_channel_created_idx ON task_messages (task_id, trace_channel, created_at)",
 	);
 
 	await client.execute(`
@@ -188,10 +203,22 @@ export async function ensureRuntimeAndUsageTables() {
       duration_ms integer NOT NULL,
       raw_usage_json text,
       metadata_json text,
+      trace_owner text DEFAULT 'system' NOT NULL,
+      trace_channel text DEFAULT 'internal' NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
   `);
+	await ensureColumn(
+		"llm_usage_records",
+		"trace_owner",
+		"trace_owner text DEFAULT 'system' NOT NULL",
+	);
+	await ensureColumn(
+		"llm_usage_records",
+		"trace_channel",
+		"trace_channel text DEFAULT 'internal' NOT NULL",
+	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS llm_usage_records_task_created_idx ON llm_usage_records (task_id, created_at)",
 	);
@@ -203,6 +230,9 @@ export async function ensureRuntimeAndUsageTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS llm_usage_records_provider_created_idx ON llm_usage_records (provider, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_records_task_owner_created_idx ON llm_usage_records (task_id, trace_owner, created_at)",
 	);
 
 	await client.execute(`

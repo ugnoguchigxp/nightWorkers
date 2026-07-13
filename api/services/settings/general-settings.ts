@@ -316,6 +316,9 @@ function resolveCapabilityValue(
 	capability: PlanModeCapability,
 	capabilities: Record<string, unknown>,
 ) {
+	if (capability === "questionnaire" || capability === "feature_plan") {
+		return true;
+	}
 	if (typeof capabilities[capability] === "boolean")
 		return capabilities[capability];
 	return (

@@ -193,7 +193,9 @@ export function ThreadTimeline({
 				"threadTimeline.buildTranscriptItems",
 				() =>
 					buildTranscriptItems({
-						events: activityEvents,
+						events: activityEvents.filter(
+							(event) => event.traceChannel === "chat",
+						),
 						artifacts: activityArtifacts,
 					}),
 				{

@@ -37,6 +37,8 @@ export const llmUsageRecords = sqliteTable(
 		durationMs: integer("duration_ms").notNull(),
 		rawUsageJson: text("raw_usage_json", { mode: "json" }),
 		metadataJson: text("metadata_json", { mode: "json" }),
+		traceOwner: text("trace_owner").default("system").notNull(),
+		traceChannel: text("trace_channel").default("internal").notNull(),
 	},
 	(table) => ({
 		taskCreatedIdx: index("llm_usage_records_task_created_idx").on(
@@ -52,6 +54,11 @@ export const llmUsageRecords = sqliteTable(
 		),
 		providerCreatedIdx: index("llm_usage_records_provider_created_idx").on(
 			table.provider,
+			table.createdAt,
+		),
+		taskOwnerCreatedIdx: index("llm_usage_records_task_owner_created_idx").on(
+			table.taskId,
+			table.traceOwner,
 			table.createdAt,
 		),
 	}),

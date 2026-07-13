@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	CreateWorktreeRequest,
-	WorktreeAdviceResponse,
 	WorktreeListResponse,
 } from "../../../../shared/schemas/gitworktree.schema";
 import {
@@ -30,14 +29,12 @@ export function useGitworktreeController(repositoryId: string) {
 	const [showTask, setShowTask] = useState(false);
 	const [taskTitle, setTaskTitle] = useState("");
 	const [diff, setDiff] = useState<WorktreeDiff | null>(null);
-	const [advice, setAdvice] = useState<WorktreeAdviceResponse | null>(null);
 
 	const load = useCallback(async () => {
 		const generation = ++requestGeneration.current;
 		setError("");
 		setLoading(true);
 		setDiff(null);
-		setAdvice(null);
 		setShowTask(false);
 		setTaskTitle("");
 		try {
@@ -120,8 +117,6 @@ export function useGitworktreeController(repositoryId: string) {
 		setTaskTitle,
 		diff,
 		setDiff,
-		advice,
-		setAdvice,
 		load,
 		selected,
 		runningCount,

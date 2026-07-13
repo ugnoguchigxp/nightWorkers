@@ -1,4 +1,5 @@
 import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { renderMockBlueprintMarkdown } from "../../services/blueprints/mock-draft";
 import { listLlmUsageRecordsForTask } from "../../services/llm-usage";
@@ -32,6 +33,8 @@ export async function generateBlueprintArtifact(
 		sourceBlueprintMessageId?: string | null;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		trace?: TraceProvenance;
+		llmUsageTrace?: TraceProvenance;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -69,6 +72,7 @@ export async function generateBlueprintArtifact(
 				specContext,
 				routeOverride: input.routeOverride || null,
 				role: input.role,
+				usageTrace: input.llmUsageTrace,
 			});
 		const generationWithUsage = {
 			...generation,
@@ -112,6 +116,7 @@ export async function generateBlueprintArtifact(
 				source: "status",
 				questionnaireSessionId: session?.id ?? null,
 			},
+			trace: input.trace,
 		});
 		await updatePlanModeTask(taskId, {
 			objective: task.objective || task.description || task.title || prompt,
@@ -141,6 +146,7 @@ export async function generateBlueprintArtifact(
 					userRegenerationRequest: input.prompt?.trim() || null,
 					promptDiagnostics: error.promptDiagnostics,
 				},
+				trace: input.trace,
 			});
 		}
 		throw new AppError(502, "SPECIFICATION_BLUEPRINT_FAILED", message);

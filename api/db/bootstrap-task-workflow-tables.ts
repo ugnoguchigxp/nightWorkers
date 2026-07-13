@@ -147,12 +147,24 @@ export async function ensureTaskWorkflowTables() {
       dedupe_key text,
       ingest_error text,
       visibility text DEFAULT 'visible' NOT NULL,
+      trace_owner text DEFAULT 'system' NOT NULL,
+      trace_channel text DEFAULT 'internal' NOT NULL,
       created_at integer NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null,
       FOREIGN KEY (artifact_id) REFERENCES activity_artifacts(id) ON DELETE set null
     )
   `);
+	await ensureColumn(
+		"activity_events",
+		"trace_owner",
+		"trace_owner text DEFAULT 'system' NOT NULL",
+	);
+	await ensureColumn(
+		"activity_events",
+		"trace_channel",
+		"trace_channel text DEFAULT 'internal' NOT NULL",
+	);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS activity_events_task_seq_uidx ON activity_events (task_id, seq)",
 	);
@@ -173,6 +185,12 @@ export async function ensureTaskWorkflowTables() {
 	);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_key_uidx ON activity_events (dedupe_key)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_task_channel_seq_idx ON activity_events (task_id, trace_channel, seq)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS activity_events_task_owner_channel_created_idx ON activity_events (task_id, trace_owner, trace_channel, created_at)",
 	);
 
 	await client.execute(`

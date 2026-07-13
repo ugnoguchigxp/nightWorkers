@@ -1,3 +1,7 @@
+import type {
+	TraceChannel,
+	TraceOwner,
+} from "../../../../shared/schemas/trace-provenance.schema";
 import type { ReviewResult } from "../../review";
 import type { TaskRunTodo } from "./blueprint";
 import type { TaskRun } from "./core";
@@ -51,6 +55,8 @@ export type ActivityEvent = {
 	dedupeKey?: string | null;
 	ingestError?: string | null;
 	visibility: string;
+	traceOwner: TraceOwner;
+	traceChannel: TraceChannel;
 	createdAt: unknown;
 };
 

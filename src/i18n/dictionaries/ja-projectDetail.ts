@@ -56,9 +56,6 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.diff.close": "差分を閉じる",
 	"projectDetail.worktrees.diff.copy": "差分をコピー",
 	"projectDetail.worktrees.diff.copied": "コピーしました",
-	"projectDetail.worktrees.summarize": "状況を要約",
-	"projectDetail.worktrees.confirmAdvice":
-		"確認済みのWorktree状態をLLMへ渡して要約します。続行しますか？",
 	"projectDetail.worktrees.createTask": "このWorktreeでTaskを作成",
 	"projectDetail.worktrees.taskTitlePlaceholder": "Taskタイトル",
 	"projectDetail.worktrees.confirmTask": "Taskを作成",

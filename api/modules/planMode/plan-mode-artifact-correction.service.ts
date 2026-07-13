@@ -1,5 +1,6 @@
 import type { PlanModeRegenerationTarget } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type { PlanModeArtifactFocus } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -21,6 +22,8 @@ export type PlanModeArtifactCorrectionInput = {
 	sourceDataModelMessageId?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	trace?: TraceProvenance;
+	llmUsageTrace?: TraceProvenance;
 };
 
 function renderCorrectionPrompt(input: PlanModeArtifactCorrectionInput) {
@@ -57,6 +60,8 @@ export async function executePlanModeArtifactCorrection(
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
 				role: input.role,
+				trace: input.trace,
+				llmUsageTrace: input.llmUsageTrace,
 			});
 		case "blueprint":
 			return generateBlueprintArtifact(input.taskId, {
@@ -65,6 +70,8 @@ export async function executePlanModeArtifactCorrection(
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
 				role: input.role,
+				trace: input.trace,
+				llmUsageTrace: input.llmUsageTrace,
 			});
 		case "data_model":
 			return generateDataModelArtifact(input.taskId, {
@@ -74,6 +81,8 @@ export async function executePlanModeArtifactCorrection(
 				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
 				routeOverride: input.routeOverride,
 				role: input.role,
+				trace: input.trace,
+				llmUsageTrace: input.llmUsageTrace,
 			});
 		case "user_flow":
 		case "api_io_contract":
@@ -88,6 +97,8 @@ export async function executePlanModeArtifactCorrection(
 				sourceDataModelMessageId: input.sourceDataModelMessageId,
 				routeOverride: input.routeOverride,
 				role: input.role,
+				trace: input.trace,
+				llmUsageTrace: input.llmUsageTrace,
 			});
 	}
 }

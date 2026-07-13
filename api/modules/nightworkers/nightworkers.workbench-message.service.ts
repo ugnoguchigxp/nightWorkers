@@ -182,6 +182,14 @@ function buildImplementationPlanVerificationWorkspace(input: {
 		questionnaireSessions: [],
 		decisionReviews: [],
 		viewDecisions: [],
+		routing: {
+			revision: 0,
+			entries: [],
+			editable: false,
+			lockedReason: "Implementation Plan verification workspace",
+			updatedBy: null,
+			updatedAt: null,
+		},
 		implementationReferences: [
 			{
 				id: `implementation-plan-${input.specMessageId}`,

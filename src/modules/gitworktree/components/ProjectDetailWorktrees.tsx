@@ -1,11 +1,7 @@
 import { AlertTriangle, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type {
-	WorktreeAdviceResponse,
-	WorktreeSummary,
-} from "../../../../shared/schemas/gitworktree.schema";
+import type { WorktreeSummary } from "../../../../shared/schemas/gitworktree.schema";
 import {
-	adviseRepositoryWorktrees,
 	createRepositoryWorktree,
 	fetchRepositoryWorktreeDiff,
 	previewRepositoryWorktreePrune,
@@ -58,8 +54,6 @@ export function ProjectDetailWorktrees({
 		setCreateDraft,
 		diff,
 		setDiff,
-		advice,
-		setAdvice,
 		load,
 		selected,
 		runningCount,
@@ -103,23 +97,6 @@ export function ProjectDetailWorktrees({
 			setDiff(
 				await readGitworktreeResponse<WorktreeDiff>(
 					await fetchRepositoryWorktreeDiff(repositoryId, selected.id),
-				),
-			),
-		);
-	};
-	const requestAdvice = () => {
-		if (
-			!selected ||
-			!window.confirm(t("projectDetail.worktrees.confirmAdvice"))
-		)
-			return;
-		void runAction("advice", async () =>
-			setAdvice(
-				await readGitworktreeResponse<WorktreeAdviceResponse>(
-					await adviseRepositoryWorktrees(repositoryId, {
-						kind: "summarize",
-						selectedWorktreeId: selected.id,
-					}),
 				),
 			),
 		);
@@ -246,15 +223,12 @@ export function ProjectDetailWorktrees({
 					onSelect={(id) => {
 						setSelectedId(id);
 						setDiff(null);
-						setAdvice(null);
 					}}
 				/>
 				<GitworktreeDetail
 					selected={selected}
 					busy={loading ? "loading" : busy}
-					advice={advice}
 					onViewDiff={viewDiff}
-					onRequestAdvice={requestAdvice}
 					onRemove={remove}
 				/>
 			</div>

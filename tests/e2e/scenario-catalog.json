@@ -331,6 +331,14 @@
 			"suite": "regression",
 			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "filesystem"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-TRACE-001",
+			"title": "Mission Pilot thoughtとcoding-agent chatのtraceを完全分離する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		}
 	]
 }

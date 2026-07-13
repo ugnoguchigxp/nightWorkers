@@ -174,6 +174,8 @@ describe("ThreadTimeline streaming persistence", () => {
 				content: '{"id":"raw-blueprint"}',
 				messageType: "text",
 				metadataJson: { intent: "blueprint_raw_output" },
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
 				createdAt: "2026-06-08T00:00:00.000Z",
 			} as never),
 		).toBe(false);
@@ -186,6 +188,8 @@ describe("ThreadTimeline streaming persistence", () => {
 				content: "Blueprint を作成しました。",
 				messageType: "text",
 				metadataJson: { intent: "blueprint_created" },
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
 				createdAt: "2026-06-08T00:00:01.000Z",
 			} as never),
 		).toBe(true);
@@ -198,6 +202,8 @@ describe("ThreadTimeline streaming persistence", () => {
 				content: "# Feature Plan",
 				messageType: "markdown_document",
 				metadataJson: { intent: "feature_plan" },
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
 				createdAt: "2026-06-08T00:00:02.000Z",
 			} as never),
 		).toBe(false);
@@ -213,7 +219,22 @@ describe("ThreadTimeline streaming persistence", () => {
 					intent: "feature_plan",
 					source: "status",
 				},
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
 				createdAt: "2026-06-08T00:00:03.000Z",
+			} as never),
+		).toBe(false);
+
+		expect(
+			isUserVisibleChatMessage({
+				id: "msg-pilot",
+				taskId: "task-1",
+				role: "user",
+				content: "Mission Pilot internal prompt",
+				messageType: "mission_pilot_initial_prompt",
+				traceOwner: "mission_pilot",
+				traceChannel: "pilot_thought",
+				createdAt: "2026-06-08T00:00:04.000Z",
 			} as never),
 		).toBe(false);
 	});

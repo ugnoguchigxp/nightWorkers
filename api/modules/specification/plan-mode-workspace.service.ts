@@ -8,6 +8,7 @@ import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
+import { getPlanModeRouting } from "../planMode/plan-mode-routing.service";
 import { listDesignQuestionnaires } from "../questionnaire/questionnaire.service";
 import { getAnswerableSessionQuestions } from "../questionnaire/questionnaire-parser.service";
 import {
@@ -22,6 +23,10 @@ export async function getPlanModeWorkspace(
 	if (!task) throw new NotFoundError("Task not found");
 	const messages = await listPlanModeTaskMessages(taskId);
 	const sessions = await listDesignQuestionnaires(taskId);
+	const routing = await getPlanModeRouting(taskId, {
+		messages,
+		taskStatus: task.status,
+	});
 	const featurePlanArtifacts = [];
 	const blueprintArtifacts = [];
 	const dataModelArtifacts = [];
@@ -181,53 +186,13 @@ export async function getPlanModeWorkspace(
 		}),
 		decisionReviews,
 		implementationReferences,
-		viewDecisions: extractViewDecisions(messages),
+		viewDecisions: routing.entries.map(({ view, decision, reason }) => ({
+			view,
+			decision,
+			...(reason ? { reason } : {}),
+		})),
+		routing,
 	};
-}
-
-function extractViewDecisions(
-	messages: Awaited<ReturnType<typeof listPlanModeTaskMessages>>,
-) {
-	const decisionsByView = new Map<
-		string,
-		{ view: string; decision: "include" | "omit"; reason?: string }
-	>();
-	for (const message of messages) {
-		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-		const planModeGate = isRecord(metadata.planModeGate)
-			? metadata.planModeGate
-			: null;
-		const originalGate =
-			planModeGate && isRecord(planModeGate.originalGate)
-				? planModeGate.originalGate
-				: null;
-		const planMode = isRecord(metadata.planMode) ? metadata.planMode : null;
-		const candidates = [
-			originalGate?.dedicatedViews,
-			planMode?.dedicatedViews,
-			planModeGate?.dedicatedViews,
-			metadata.dedicatedViews,
-			metadata.viewDecisions,
-		];
-		for (const candidate of candidates) {
-			if (!Array.isArray(candidate)) continue;
-			for (const item of candidate) {
-				if (!isRecord(item)) continue;
-				const view = typeof item.view === "string" ? item.view : "";
-				const decision =
-					item.decision === "include" || item.decision === "omit"
-						? item.decision
-						: null;
-				if (!view || !decision) continue;
-				decisionsByView.set(view, {
-					view,
-					decision,
-					...(typeof item.reason === "string" ? { reason: item.reason } : {}),
-				});
-			}
-		}
-	}
-	return [...decisionsByView.values()];
 }
 
 function findLatestAdditionalQuestionSetId(

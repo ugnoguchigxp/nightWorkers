@@ -92,6 +92,8 @@ function appendOptimisticUserMessage(
 							: {}),
 					}
 				: undefined,
+		traceOwner: "user",
+		traceChannel: "chat",
 		createdAt: new Date().toISOString(),
 	};
 	queryClient.setQueryData<TaskMessage[]>(

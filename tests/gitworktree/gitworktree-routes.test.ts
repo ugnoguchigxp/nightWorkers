@@ -9,12 +9,7 @@ const service = vi.hoisted(() => ({
 	previewRepositoryWorktreePrune: vi.fn(),
 	pruneRepositoryWorktrees: vi.fn(),
 }));
-const adviseRepositoryWorktrees = vi.hoisted(() => vi.fn());
-
 vi.mock("../../api/modules/gitworktree/gitworktree.service", () => service);
-vi.mock("../../api/modules/gitworktree/gitworktree-advice.service", () => ({
-	adviseRepositoryWorktrees,
-}));
 
 import { gitworktreeRouter } from "../../api/modules/gitworktree/gitworktree.routes";
 
@@ -80,15 +75,7 @@ describe("gitworktree routes", () => {
 		});
 	});
 
-	it("keeps LLM advice behind the explicit advice endpoint", async () => {
-		adviseRepositoryWorktrees.mockResolvedValue({
-			summary: "clean",
-			suggestedBranchName: null,
-			suggestedStartPoint: null,
-			suggestedPathSlug: null,
-			cleanupWorktreeIds: [],
-		});
-
+	it("does not expose the removed LLM advice endpoint", async () => {
 		const response = await app().request(
 			"/repositories/repo-id/worktrees/advice",
 			{
@@ -98,10 +85,7 @@ describe("gitworktree routes", () => {
 			},
 		);
 
-		expect(response.status).toBe(200);
-		expect(adviseRepositoryWorktrees).toHaveBeenCalledWith("repo-id", {
-			kind: "summarize",
-		});
+		expect(response.status).toBe(404);
 	});
 
 	it("does not expose unexpected internal error details", async () => {

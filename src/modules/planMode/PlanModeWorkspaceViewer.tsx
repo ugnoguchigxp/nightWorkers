@@ -47,6 +47,7 @@ import {
 } from "./PlanModeWorkspaceViewer.model";
 import { usePlanModeArtifactGenerationForWorkspace } from "./usePlanModeArtifactGeneration";
 import { usePlanModeQuestionnaireActions } from "./usePlanModeQuestionnaireActions";
+import { usePlanModeRoutingEditor } from "./usePlanModeRoutingEditor";
 import { usePlanModeWorkspaceOutputs } from "./usePlanModeWorkspaceOutputs";
 
 export {
@@ -462,6 +463,11 @@ export function PlanModeWorkspaceViewer({
 		setActionError,
 		setActionNotice,
 	});
+	const updateRouting = usePlanModeRoutingEditor({
+		sessionId,
+		routing: workspace?.routing,
+		runAction,
+	});
 
 	const planModeDisabledReason =
 		"Plan Mode capability is disabled in Settings.";
@@ -582,6 +588,7 @@ export function PlanModeWorkspaceViewer({
 			hasFeaturePlan={hasFeaturePlan}
 			generalSettings={generalSettings}
 			viewDecisions={viewDecisions}
+			onUpdateRouting={updateRouting}
 			generatePlanModeArtifact={generatePlanModeArtifact}
 			generateDedicatedViews={generateDedicatedViews}
 			onQueueSession={onQueueSession}

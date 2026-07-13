@@ -3,14 +3,12 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
 	createWorktreeRequestSchema,
 	removeWorktreeRequestSchema,
-	worktreeAdviceRequestSchema,
 	worktreeIdRequestSchema,
 } from "../../../shared/schemas/gitworktree.schema";
 import { AppError } from "../../lib/errors";
 import { createOpenApiRouter } from "../../lib/openapi";
 import type { AppEnv } from "../../lib/types";
 import * as service from "./gitworktree.service";
-import { adviseRepositoryWorktrees } from "./gitworktree-advice.service";
 
 export const gitworktreeRouter = createOpenApiRouter();
 
@@ -135,19 +133,4 @@ gitworktreeRouter.post(
 	withRouteError(async (c) =>
 		c.json(await service.pruneRepositoryWorktrees(repositoryId(c))),
 	),
-);
-
-gitworktreeRouter.post(
-	"/repositories/:id/worktrees/advice",
-	withRouteError(async (c) => {
-		const input = worktreeAdviceRequestSchema.safeParse(await readJson(c));
-		if (!input.success) {
-			throw new AppError(
-				400,
-				"INVALID_ADVICE_REQUEST",
-				"Invalid advice request",
-			);
-		}
-		return c.json(await adviseRepositoryWorktrees(repositoryId(c), input.data));
-	}),
 );

@@ -18,6 +18,7 @@ import {
 import type { JsonRecord } from "./nightworkers.json-adapters";
 import { readRunEventPayload } from "./nightworkers.json-adapters";
 import { isSqliteUniqueConstraintError } from "./nightworkers.runs.repository";
+import { resolveRunCodingAgentTrace } from "./nightworkers.trace-provenance";
 
 export async function createTaskEvent(data: {
 	taskRunId: string;
@@ -126,6 +127,7 @@ export async function createRunEvent(
 		taskId = run?.taskId;
 	}
 	if (taskId) {
+		const trace = await resolveRunCodingAgentTrace(event.runId);
 		const agentEventType = schemaFirstAgentEventType(patchedPayload);
 		const projectToActivity = shouldProjectRunEventToActivity({
 			eventType: event.type,
@@ -182,6 +184,7 @@ export async function createRunEvent(
 			externalId: finalEvent.id,
 			dedupeKey: `task_event:${finalEvent.id}`,
 			createdAt: finalEvent.timestamp,
+			trace,
 		});
 		nightWorkersRealtimeBroker.publish(taskId, {
 			type: "task_event_created",

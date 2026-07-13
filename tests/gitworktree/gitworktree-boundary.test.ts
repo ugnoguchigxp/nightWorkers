@@ -73,7 +73,7 @@ describe("gitworktree module boundary", () => {
 
 		expect(domainCommands).toContain("fetchRepositoryWorktrees");
 		expect(domainCommands).toContain("/worktrees/prune-preview");
-		expect(domainCommands).toContain("/worktrees/advice");
+		expect(domainCommands).not.toContain("/worktrees/advice");
 		expect(nightworkersCommands).not.toContain("fetchRepositoryWorktrees");
 		expect(nightworkersCommands).not.toContain("createRepositoryWorktree");
 	});

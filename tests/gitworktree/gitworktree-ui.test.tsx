@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorktreeListResponse } from "../../shared/schemas/gitworktree.schema";
+import { fetchRepositoryWorktrees } from "../../src/modules/gitworktree/api/gitworktreeCommands";
 
 const { useGitworktreeController } = vi.hoisted(() => ({
 	useGitworktreeController: vi.fn(),
@@ -31,8 +32,6 @@ function controller(data: WorktreeListResponse | null) {
 		setTaskTitle: vi.fn(),
 		diff: null,
 		setDiff: vi.fn(),
-		advice: null,
-		setAdvice: vi.fn(),
 		load: vi.fn(),
 		selected: data?.worktrees[0] || null,
 		runningCount: 0,
@@ -43,9 +42,24 @@ function controller(data: WorktreeListResponse | null) {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe("ProjectDetailWorktrees", () => {
+	it("always fetches the current worktree list without using the browser cache", async () => {
+		const fetchMock = vi.fn<typeof fetch>(() =>
+			Promise.resolve(new Response("{}")),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await fetchRepositoryWorktrees("repo-id");
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/repositories/repo-id/worktrees",
+			{ cache: "no-store" },
+		);
+	});
+
 	it("exposes no mutation actions when Git is unavailable", async () => {
 		useGitworktreeController.mockReturnValue(
 			controller({
@@ -66,6 +80,84 @@ describe("ProjectDetailWorktrees", () => {
 		expect(markup).toContain("projectDetail.worktrees.gitMissingTitle");
 		expect(markup).not.toContain("projectDetail.worktrees.create");
 		expect(markup).not.toContain("projectDetail.worktrees.remove");
+	});
+
+	it("reloads the worktree list after a successful removal", async () => {
+		const worktree = {
+			id: "worktree-id",
+			path: "/repo-worktrees/feature",
+			canonicalPath: "/repo-worktrees/feature",
+			isBase: false,
+			head: "0123456789012345678901234567890123456789",
+			headSubject: "Feature work",
+			branch: "feature",
+			detached: false,
+			bare: false,
+			locked: false,
+			lockReason: null,
+			prunable: false,
+			pruneReason: null,
+			upstream: null,
+			ahead: 0,
+			behind: 0,
+			stagedCount: 0,
+			modifiedCount: 0,
+			untrackedCount: 0,
+			conflictedCount: 0,
+			usage: {
+				taskIds: [],
+				runIds: [],
+				activeTaskCount: 0,
+				activeRunCount: 0,
+				pendingCloseoutCount: 0,
+			},
+			canRemove: true,
+			removeBlockers: [],
+			removeWarnings: [],
+		} as const;
+		const state = controller({
+			git: { available: true, version: "git version 2.52.0", reason: null },
+			repository: { available: true, commonDir: "/repo/.git", reason: null },
+			worktrees: [worktree],
+			refreshedAt: "2026-07-13T00:00:00.000Z",
+		});
+		const load = vi.fn(async () => undefined);
+		const runAction = vi.fn();
+		useGitworktreeController.mockReturnValue({ ...state, load, runAction });
+		vi.stubGlobal("window", { confirm: vi.fn(() => true) });
+		const fetchMock = vi.fn<typeof fetch>(() =>
+			Promise.resolve(
+				new Response(JSON.stringify({ removed: true }), {
+					headers: { "content-type": "application/json" },
+				}),
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const { ProjectDetailWorktrees } = await import(
+			"../../src/modules/gitworktree/components/ProjectDetailWorktrees"
+		);
+
+		const element = ProjectDetailWorktrees({
+			repositoryId: "repo-id",
+			onCreateTask: vi.fn(),
+		});
+		const detail = findElementWithHandler(element, "onRemove");
+		(detail?.props.onRemove as (() => void) | undefined)?.();
+		const action = runAction.mock.calls[0]?.[1] as
+			| (() => Promise<void>)
+			| undefined;
+
+		expect(runAction).toHaveBeenCalledWith("remove", expect.any(Function));
+		expect(action).toBeDefined();
+		await action?.();
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/repositories/repo-id/worktrees",
+			expect.objectContaining({ method: "DELETE" }),
+		);
+		expect(load).toHaveBeenCalledOnce();
+		expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(
+			load.mock.invocationCallOrder[0],
+		);
 	});
 
 	it("renders base and dirty safety state from the verified projection", async () => {
@@ -97,7 +189,7 @@ describe("ProjectDetailWorktrees", () => {
 				activeRunCount: 0,
 				pendingCloseoutCount: 0,
 			},
-			canRemove: false,
+			canRemove: true,
 			removeBlockers: ["base_worktree_protected", "worktree_dirty"],
 			removeWarnings: ["upstream_missing"],
 		} as const;
@@ -124,7 +216,11 @@ describe("ProjectDetailWorktrees", () => {
 			"projectDetail.worktrees.blocker.base_worktree_protected",
 		);
 		expect(markup).toContain("projectDetail.worktrees.blocker.worktree_dirty");
-		expect(markup).toContain("disabled");
+		expect(markup).not.toContain("projectDetail.worktrees.summarize");
+		const removeButton = markup
+			.split("<button")
+			.find((button) => button.includes("projectDetail.worktrees.remove"));
+		expect(removeButton).toContain('disabled=""');
 	});
 
 	it("offers explicit discard removal and renders a file-based diff dialog", async () => {
@@ -213,3 +309,21 @@ describe("ProjectDetailWorktrees", () => {
 		expect(markup).toContain("diff remove");
 	});
 });
+
+function findElementWithHandler(
+	node: unknown,
+	handler: string,
+): { props: Record<string, unknown> } | null {
+	if (!node || typeof node !== "object") return null;
+	if (Array.isArray(node)) {
+		for (const child of node) {
+			const match = findElementWithHandler(child, handler);
+			if (match) return match;
+		}
+		return null;
+	}
+	const props = (node as { props?: Record<string, unknown> }).props;
+	if (!props) return null;
+	if (typeof props[handler] === "function") return { props };
+	return findElementWithHandler(props.children, handler);
+}

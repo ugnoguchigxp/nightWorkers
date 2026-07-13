@@ -34,6 +34,7 @@ export async function getMissionPilotPlanProgress(
 	);
 	const reviewPassed = Boolean(
 		review?.verdict === "pass" &&
+			review.routingRevision === session.planRoutingRevision &&
 			review.contextRevision === session.contextRevision &&
 			review.contextDigest === session.contextDigest,
 	);
@@ -74,7 +75,7 @@ export async function getMissionPilotPlanProgress(
 				? "passed"
 				: session.phase === "reviewing_plan"
 					? "running"
-					: review?.verdict === "revise"
+					: review?.verdict === "revise" || review?.verdict === "reroute"
 						? "revision_required"
 						: review?.verdict === "reject"
 							? "failed"

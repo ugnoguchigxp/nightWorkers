@@ -1,4 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import type {
+	TraceChannel,
+	TraceProvenance,
+} from "../../../shared/schemas/trace-provenance.schema";
 import { type DbTransaction, db } from "../../db/client";
 import type { TaskStatus } from "../../db/schema";
 import { repositories, taskMessages, tasks } from "../../db/schema";
@@ -12,10 +16,19 @@ import {
 	taskMessageRoleToActivitySource,
 } from "./nightworkers.activity.repository";
 import { isJsonRecord, toJsonRecord } from "./nightworkers.json-adapters";
+import {
+	resolveTaskMessageTrace,
+	withTraceProvenance,
+} from "./nightworkers.trace-provenance";
 
 type RepositoryInsert = typeof repositories.$inferInsert;
 type Db = typeof db | DbTransaction;
 type RepositorySafetyPolicy = RepositoryInsert["safetyPolicy"];
+
+export type {
+	ActivitySource,
+	ActivityStatus,
+} from "./nightworkers.activity-types";
 
 const _ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
 	"queued",
@@ -69,28 +82,6 @@ const _KNOWN_ACTIVITY_KINDS = new Set([
 	"system.error",
 	"unknown.activity",
 ]);
-
-export type ActivitySource =
-	| "user"
-	| "assistant"
-	| "supervisor"
-	| "worker"
-	| "tool"
-	| "system"
-	| "provider"
-	| "runtime"
-	| "transport"
-	| "ui";
-
-export type ActivityStatus =
-	| "started"
-	| "delta"
-	| "completed"
-	| "failed"
-	| "paused"
-	| "resumed"
-	| "info"
-	| "unknown";
 
 // --- Repositories ---
 export async function createRepository(data: {
@@ -182,11 +173,20 @@ export async function listTasks() {
 	return db.select().from(tasks).orderBy(desc(tasks.createdAt));
 }
 
-export async function listTaskMessages(taskId: string) {
-	return db
-		.select()
-		.from(taskMessages)
-		.where(eq(taskMessages.taskId, taskId))
+export async function listTaskMessages(
+	taskId: string,
+	options?: { traceChannel?: TraceChannel },
+) {
+	const query = db.select().from(taskMessages);
+	return query
+		.where(
+			options?.traceChannel
+				? and(
+						eq(taskMessages.taskId, taskId),
+						eq(taskMessages.traceChannel, options.traceChannel),
+					)
+				: eq(taskMessages.taskId, taskId),
+		)
 		.orderBy(taskMessages.createdAt);
 }
 
@@ -198,10 +198,18 @@ export async function createTaskMessage(
 		content: string;
 		messageType?: string | null;
 		payloadJson?: unknown;
+		trace?: TraceProvenance;
 	},
 	database: Db = db,
 ) {
-	const metadata = toJsonRecord(data.payloadJson);
+	const trace = resolveTaskMessageTrace({
+		role: data.role,
+		runId: data.runId,
+		metadata: data.payloadJson,
+		trace: data.trace,
+	});
+	const storedMetadata = withTraceProvenance(data.payloadJson, trace);
+	const metadata = toJsonRecord(storedMetadata);
 	const [message] = await database
 		.insert(taskMessages)
 		.values({
@@ -210,7 +218,9 @@ export async function createTaskMessage(
 			role: data.role,
 			content: data.content,
 			messageType: data.messageType ?? null,
-			metadataJson: data.payloadJson ?? null,
+			metadataJson: storedMetadata,
+			traceOwner: trace.owner,
+			traceChannel: trace.channel,
 		})
 		.returning();
 	if (message && database === db) {
@@ -225,8 +235,9 @@ export async function createTaskMessage(
 			payloadJson: {
 				message,
 				messageType: data.messageType ?? null,
-				metadata: data.payloadJson ?? null,
+				metadata: storedMetadata,
 			},
+			trace,
 			externalId: message.id,
 			dedupeKey: `task_message:${message.id}`,
 			createdAt: message.createdAt,
@@ -251,6 +262,7 @@ export async function createTaskMessage(
 				externalId: message.id,
 				dedupeKey: `task_message_artifact:${message.id}`,
 				createdAt: message.createdAt,
+				trace,
 			});
 		} else if (isAppBlueprintDocumentMessage(data.messageType, metadata)) {
 			const artifact = await appendActivityArtifact({
@@ -286,6 +298,7 @@ export async function createTaskMessage(
 				externalId: message.id,
 				dedupeKey: `task_message_artifact:${message.id}`,
 				createdAt: message.createdAt,
+				trace,
 			});
 		}
 		const diffActivityKind = getToolDiffActivityKind(metadata);
@@ -334,6 +347,7 @@ export async function createTaskMessage(
 				externalId: message.id,
 				dedupeKey: `task_message_diff:${message.id}`,
 				createdAt: message.createdAt,
+				trace,
 			});
 		}
 		nightWorkersRealtimeBroker.publish(data.taskId, {

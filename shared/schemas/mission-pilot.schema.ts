@@ -85,6 +85,7 @@ export const missionPilotQueueHandoffSchema = z.object({
 	queueClaimReady: z.literal(false),
 	reviewedContextRevision: z.number().int().positive(),
 	reviewedContextDigest: z.string().min(1),
+	routingRevision: z.number().int().nonnegative().default(0),
 	featurePlanMessageId: z.string().uuid(),
 	verificationDocumentId: z.string().uuid(),
 	planReviewId: z.string().uuid(),

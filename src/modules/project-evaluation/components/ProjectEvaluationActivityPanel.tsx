@@ -66,6 +66,8 @@ function toActivityEvent(event: ProjectEvaluationActivityEvent): ActivityEvent {
 			llmDebugEvent: event.payload,
 		},
 		visibility: "debug",
+		traceOwner: "coding_agent",
+		traceChannel: "chat",
 		createdAt: event.createdAt,
 	};
 }

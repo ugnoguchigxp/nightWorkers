@@ -11,6 +11,7 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { taskMessages, tasks } from "../../db/schema";
+import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.trace-provenance";
 
 type Db = typeof db | DbTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
@@ -399,6 +400,10 @@ export async function ensureInitialPromptMessage(taskId: string) {
 		const messageId = existing[0]?.id ?? crypto.randomUUID();
 		let message = existing[0] ?? null;
 		if (!message) {
+			const { trace, metadataJson } = missionPilotInitialPromptTrace(
+				row.id,
+				row.version,
+			);
 			[message] = await tx
 				.insert(taskMessages)
 				.values({
@@ -407,11 +412,9 @@ export async function ensureInitialPromptMessage(taskId: string) {
 					role: "user",
 					content: row.initialPromptSnapshot,
 					messageType: "mission_pilot_initial_prompt",
-					metadataJson: {
-						source: "mission_pilot",
-						intent: "initial_prompt",
-						controlVersion: row.version,
-					},
+					metadataJson,
+					traceOwner: trace.owner,
+					traceChannel: trace.channel,
 				})
 				.returning();
 		}

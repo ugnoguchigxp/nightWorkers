@@ -44,7 +44,7 @@ export {
 } from "../todo/todoCommands";
 
 export function fetchTaskMessages(sessionId: string) {
-	return apiFetch(`/api/tasks/${sessionId}/messages`);
+	return apiFetch(`/api/tasks/${sessionId}/messages?channel=chat`);
 }
 
 export function fetchTaskLlmUsage(sessionId: string) {
@@ -52,7 +52,7 @@ export function fetchTaskLlmUsage(sessionId: string) {
 }
 
 export function fetchTaskActivityEvents(sessionId: string) {
-	return apiFetch(`/api/tasks/${sessionId}/activity-events`);
+	return apiFetch(`/api/tasks/${sessionId}/activity-events?channel=chat`);
 }
 
 export function fetchBackgroundProcessesForTask(sessionId: string) {

@@ -152,6 +152,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 			review.verdict !== "pass" ||
 			review.contextRevision !== session.contextRevision ||
 			review.contextDigest !== session.contextDigest ||
+			review.routingRevision !== session.planRoutingRevision ||
 			context.revision !== session.contextRevision ||
 			context.digest !== session.contextDigest
 		) {
@@ -211,6 +212,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 						input.verificationDocumentId &&
 					handoff.data.reviewedContextRevision === session.contextRevision &&
 					handoff.data.reviewedContextDigest === session.contextDigest &&
+					handoff.data.routingRevision === session.planRoutingRevision &&
 					!persisted.activeRunId
 				) {
 					return handoff.data;
@@ -323,6 +325,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 			queueClaimReady: false,
 			reviewedContextRevision: review.contextRevision,
 			reviewedContextDigest: review.contextDigest,
+			routingRevision: review.routingRevision,
 			featurePlanMessageId: featurePlanMessage.id,
 			verificationDocumentId: verificationDocument.id,
 			planReviewId: review.id,

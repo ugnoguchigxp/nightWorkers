@@ -56,9 +56,6 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.diff.close": "Close diff",
 	"projectDetail.worktrees.diff.copy": "Copy diff",
 	"projectDetail.worktrees.diff.copied": "Copied",
-	"projectDetail.worktrees.summarize": "Summarize status",
-	"projectDetail.worktrees.confirmAdvice":
-		"Send the verified worktree snapshot to the LLM for a summary?",
 	"projectDetail.worktrees.createTask": "Create task in this worktree",
 	"projectDetail.worktrees.taskTitlePlaceholder": "Task title",
 	"projectDetail.worktrees.confirmTask": "Create task",

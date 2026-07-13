@@ -109,8 +109,6 @@ export function NightWorkersShellLayout(props: ShellLayoutProps) {
 					workspace.activeSession?.missionPilot ? (
 						<PilotThoughtDock
 							session={workspace.activeSession}
-							activityEvents={workspace.activityEvents}
-							runEvents={workspace.latestRunEvents}
 							onClose={() => props.setPilotThoughtDockSessionId(null)}
 						/>
 					) : (

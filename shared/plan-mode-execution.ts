@@ -44,7 +44,11 @@ export function buildPlanModeExecutionSteps(input: {
 		if (visible) result.push(step);
 	};
 	const decisionFor = (view: DedicatedDesignView) =>
-		decisionByView.get(view) === "omit" ? "omit" : "include";
+		view === "questionnaire"
+			? "include"
+			: decisionByView.get(view) === "omit"
+				? "omit"
+				: "include";
 	const visibleDefault = (
 		view: DedicatedDesignView,
 		exists: boolean,
@@ -62,7 +66,7 @@ export function buildPlanModeExecutionSteps(input: {
 			view: "questionnaire",
 			required: true,
 			enabled: input.capabilities.questionnaire,
-			decision: decisionFor("questionnaire"),
+			decision: "include",
 			status: input.questionnaireComplete
 				? "completed"
 				: input.capabilities.questionnaire
@@ -129,13 +133,9 @@ export function buildPlanModeExecutionSteps(input: {
 		kind: "feature_plan",
 		view: "feature_plan",
 		required: true,
-		enabled: input.capabilities.feature_plan,
+		enabled: true,
 		decision: "include",
-		status: !input.capabilities.feature_plan
-			? "skipped"
-			: existing.has("feature_plan")
-				? "completed"
-				: "pending",
+		status: existing.has("feature_plan") ? "completed" : "pending",
 	});
 
 	return result.map((step, index) => ({ ...step, ordinal: index + 1 }));

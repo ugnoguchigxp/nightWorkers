@@ -2,7 +2,12 @@ import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MissionPilotQuestionnaireDraft } from "../../../../shared/schemas/mission-pilot.schema";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
-import type { ActivityEvent, Task, TaskEvent } from "../../nightworkers/types";
+import type {
+	ActivityEvent,
+	Task,
+	TaskEvent,
+	TaskMessage,
+} from "../../nightworkers/types";
 import { getRelativeTimestamp } from "../../nightworkers/utils/time";
 import {
 	fetchMissionPilotExecutionTrace,
@@ -30,25 +35,17 @@ export type MissionPilotStoredEvent = {
 	createdAt: unknown;
 };
 
-export type MissionPilotOwnedRunEvent = TaskEvent & {
-	taskRunId: string;
-	missionPilotPhase?: string | null;
-	missionPilotCycle?: number | null;
-	missionPilotAttempt?: number | null;
-	timestamp: unknown;
-};
-
 export type MissionPilotExecutionTrace = {
 	events: MissionPilotStoredEvent[];
-	runEvents: MissionPilotOwnedRunEvent[];
+	activityEvents: ActivityEvent[];
+	messages: TaskMessage[];
 };
 
 export function isMissionPilotActivityEvent(event: ActivityEvent) {
-	return event.source === "mission_pilot";
-}
-
-export function isMissionPilotRunEvent(event: TaskEvent) {
-	return event.actor === "mission_pilot";
+	return (
+		event.traceOwner === "mission_pilot" &&
+		event.traceChannel === "pilot_thought"
+	);
 }
 
 function eventTimestamp(value: unknown) {
@@ -105,18 +102,26 @@ export function missionPilotTraceItems(
 			createdAt: event.createdAt,
 			event: missionPilotEventToTaskEvent(event),
 		})),
-		...(trace?.runEvents ?? []).map((event) => ({
-			id: `mission-pilot-run:${event.id}`,
-			createdAt: event.timestamp ?? event.createdAt,
+		...(trace?.activityEvents ?? [])
+			.filter(isMissionPilotActivityEvent)
+			.map((event) => ({
+				id: `mission-pilot-activity:${event.id}`,
+				createdAt: event.createdAt,
+				event: activityToTaskEvent(event),
+			})),
+		...(trace?.messages ?? []).map((message) => ({
+			id: `mission-pilot-message:${message.id}`,
+			createdAt: message.createdAt,
 			event: {
-				...event,
-				runId: event.taskRunId,
+				id: message.id,
+				eventType: "pilot.message",
+				actor: "mission_pilot",
+				message: message.content,
 				payloadJson: {
-					...(event.payloadJson ?? {}),
-					missionPilotPhase: event.missionPilotPhase ?? null,
-					missionPilotCycle: event.missionPilotCycle ?? null,
-					missionPilotAttempt: event.missionPilotAttempt ?? null,
+					messageType: message.messageType ?? null,
+					metadata: message.metadataJson ?? null,
 				},
+				createdAt: message.createdAt,
 			},
 		})),
 	];
@@ -124,13 +129,9 @@ export function missionPilotTraceItems(
 
 export function PilotThoughtDock({
 	session,
-	activityEvents,
-	runEvents,
 	onClose,
 }: {
 	session: Task | null;
-	activityEvents: ActivityEvent[];
-	runEvents: TaskEvent[];
 	onClose: () => void;
 }) {
 	const [questionnaireDraft, setQuestionnaireDraft] =
@@ -180,9 +181,6 @@ export function PilotThoughtDock({
 	}, [session?.id]);
 	const items = useMemo(() => {
 		const diagnostic = session?.missionPilot?.preQueueDiagnostic;
-		const ownedRunEventIds = new Set(
-			(executionTrace?.runEvents ?? []).map((event) => event.id),
-		);
 		const merged: PilotThoughtItem[] = [
 			...(diagnostic
 				? [
@@ -231,33 +229,12 @@ export function PilotThoughtDock({
 						},
 					]
 				: []),
-			...activityEvents.filter(isMissionPilotActivityEvent).map((event) => ({
-				id: `activity:${event.id}`,
-				createdAt: event.createdAt,
-				event: activityToTaskEvent(event),
-			})),
 			...missionPilotTraceItems(executionTrace),
-			...runEvents
-				.filter(
-					(event) =>
-						isMissionPilotRunEvent(event) && !ownedRunEventIds.has(event.id),
-				)
-				.map((event) => ({
-					id: `run:${event.id}`,
-					createdAt: event.timestamp ?? event.createdAt,
-					event,
-				})),
 		];
 		return merged.sort(
 			(a, b) => eventTimestamp(a.createdAt) - eventTimestamp(b.createdAt),
 		);
-	}, [
-		activityEvents,
-		executionTrace,
-		questionnaireDraft,
-		runEvents,
-		session?.missionPilot,
-	]);
+	}, [executionTrace, questionnaireDraft, session?.missionPilot]);
 
 	return (
 		<aside className="nightworkers-chat-dock flex h-full min-h-0 flex-col border-r border-slate-700/80 bg-[#0f172a]">
@@ -299,7 +276,7 @@ export function PilotThoughtDock({
 				)}
 			</div>
 			<footer className="shrink-0 border-t border-slate-800 px-4 py-2 text-[10px] leading-relaxed text-slate-500">
-				判断要約、状態遷移、LLM呼び出し、ツール実行など、保存済みの実行証跡を時系列で表示します。
+				Mission Pilotの判断要約、状態遷移、LLM証跡を時系列で表示します。
 			</footer>
 		</aside>
 	);

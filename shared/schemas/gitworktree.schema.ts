@@ -125,25 +125,6 @@ export const worktreePrunePreviewSchema = z
 	.object({ entries: z.array(z.string()), refreshedAt: z.string() })
 	.openapi("WorktreePrunePreview");
 
-export const worktreeAdviceRequestSchema = z
-	.object({
-		kind: z.enum(["summarize", "suggest_create", "suggest_cleanup"]),
-		selectedWorktreeId: z.string().optional(),
-		taskIntent: z.string().trim().max(2_000).optional(),
-	})
-	.strict()
-	.openapi("WorktreeAdviceRequest");
-
-export const worktreeAdviceResponseSchema = z
-	.object({
-		summary: z.string(),
-		suggestedBranchName: z.string().nullable(),
-		suggestedStartPoint: z.string().nullable(),
-		suggestedPathSlug: z.string().nullable(),
-		cleanupWorktreeIds: z.array(z.string()),
-	})
-	.openapi("WorktreeAdviceResponse");
-
 export type WorktreeRemoveBlocker = z.infer<typeof worktreeRemoveBlockerSchema>;
 export type WorktreeRemoveWarning = z.infer<typeof worktreeRemoveWarningSchema>;
 export type WorktreeUsage = z.infer<typeof worktreeUsageSchema>;
@@ -151,7 +132,3 @@ export type WorktreeSummary = z.infer<typeof worktreeSummarySchema>;
 export type WorktreeListResponse = z.infer<typeof worktreeListResponseSchema>;
 export type CreateWorktreeRequest = z.infer<typeof createWorktreeRequestSchema>;
 export type RemoveWorktreeRequest = z.infer<typeof removeWorktreeRequestSchema>;
-export type WorktreeAdviceRequest = z.infer<typeof worktreeAdviceRequestSchema>;
-export type WorktreeAdviceResponse = z.infer<
-	typeof worktreeAdviceResponseSchema
->;

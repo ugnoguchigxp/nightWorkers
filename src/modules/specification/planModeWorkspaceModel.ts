@@ -125,34 +125,7 @@ export function resolvePlanWorkspaceViewDecisions(
 		workspace?.viewDecisions?.length && workspace.viewDecisions.length > 0
 			? workspace.viewDecisions
 			: messageViewDecisions;
-	if (!workspace) return decisions;
-	const decisionsByView = new Map(
-		decisions.map((decision) => [decision.view, decision]),
-	);
-	for (const view of listGeneratedWorkspaceViews(workspace)) {
-		const current = decisionsByView.get(view);
-		if (current?.decision === "include") continue;
-		decisionsByView.set(view, {
-			view,
-			decision: "include",
-			reason: "生成済みのView artifactがあります。",
-		});
-	}
-	return [...decisionsByView.values()];
-}
-
-function listGeneratedWorkspaceViews(
-	workspace: PlanModeWorkspace,
-): PlanModeViewDecision["view"][] {
-	const views = new Set<PlanModeViewDecision["view"]>();
-	if (workspace.questionnaireSessions?.length > 0) views.add("questionnaire");
-	if (workspace.blueprintArtifacts?.length > 0) views.add("blueprint");
-	if (workspace.dataModelArtifacts?.length > 0) views.add("data_model");
-	for (const artifact of workspace.dedicatedViewArtifacts || []) {
-		if (artifact.kind === "feature_plan") continue;
-		views.add(artifact.kind);
-	}
-	return [...views];
+	return decisions;
 }
 
 function latestMessageByCreatedAt(messages: TaskMessage[]) {

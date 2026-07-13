@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { expect, test } from "@playwright/test";
@@ -17,6 +18,10 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 	const { workspace } = await createDisposableGitWorkspace({
 		prefix: "mission-pilot-through-archive-",
 	});
+	const branch = execFileSync("git", ["branch", "--show-current"], {
+		cwd: workspace,
+		encoding: "utf8",
+	}).trim();
 	const hookPath = `${workspace}/.git/hooks/pre-commit`;
 	await fs.writeFile(
 		hookPath,
@@ -36,7 +41,7 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 		data: {
 			name: "Mission Pilot through archive",
 			localPath: workspace,
-			branch: "main",
+			branch,
 			allowed: true,
 		},
 	});
@@ -77,7 +82,7 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 		const planReviewId = randomUUID();
 		const admissionKey = `mission-pilot:${session.id}:${session.contextDigest}:${planReviewId}`;
 		db.prepare(
-			"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, created_at) values (?, ?, null, 'assistant', ?, 'markdown_document', ?, ?)",
+			"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, trace_owner, trace_channel, created_at) values (?, ?, null, 'assistant', ?, 'markdown_document', ?, 'mission_pilot', 'artifact', ?)",
 		).run(
 			featurePlanMessageId,
 			taskId,
@@ -213,6 +218,45 @@ test("Mission Pilot continues from a reviewed Queue handoff through true Task Ar
 					"test",
 				],
 			});
+		const chatResponse = await request.get(
+			`/api/tasks/${taskId}/activity-events?channel=chat`,
+			{ headers },
+		);
+		expect(chatResponse.status(), await chatResponse.text()).toBe(200);
+		const chat = (await chatResponse.json()) as {
+			events: Array<{ traceOwner: string; traceChannel: string }>;
+		};
+		expect(
+			chat.events.every(
+				(event) =>
+					event.traceOwner !== "mission_pilot" && event.traceChannel === "chat",
+			),
+		).toBe(true);
+		const traceResponse = await request.get(
+			`/api/mission-pilot/tasks/${taskId}/execution`,
+			{ headers },
+		);
+		expect(traceResponse.status(), await traceResponse.text()).toBe(200);
+		const trace = (await traceResponse.json()) as {
+			activityEvents: Array<{ traceOwner: string; traceChannel: string }>;
+			runEvents?: unknown[];
+		};
+		expect(trace.runEvents).toBeUndefined();
+		expect(
+			trace.activityEvents.every(
+				(event) =>
+					event.traceOwner === "mission_pilot" &&
+					event.traceChannel === "pilot_thought",
+			),
+		).toBe(true);
+		const traceDb = new Database(databasePath, { readonly: true });
+		const forbidden = traceDb
+			.prepare(
+				"select count(*) as count from activity_events a join mission_pilot_phase_runs p on p.run_id = a.run_id where p.session_id = ? and (a.trace_owner <> 'coding_agent' or a.trace_channel <> 'chat')",
+			)
+			.get(session.id) as { count: number };
+		traceDb.close();
+		expect(forbidden.count).toBe(0);
 		await page.goto(`/sessions/${taskId}`);
 		await expect(
 			page.getByText("Mission Pilot autonomous closeout"),

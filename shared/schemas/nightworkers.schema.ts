@@ -5,3 +5,4 @@ export * from "./nightworkers/review.schema";
 export * from "./nightworkers/run.schema";
 export * from "./nightworkers/run-events.schema";
 export * from "./overview.schema";
+export * from "./trace-provenance.schema";

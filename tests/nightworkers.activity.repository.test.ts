@@ -8,6 +8,11 @@ import {
 	runEventToActivityText,
 } from "../api/modules/nightworkers/nightworkers.activity.repository";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
+import {
+	codingAgentChatTrace,
+	missionPilotArtifactTrace,
+	missionPilotThoughtTrace,
+} from "../api/modules/nightworkers/nightworkers.trace-provenance";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
@@ -85,6 +90,11 @@ describe("nightworkers activity repository", () => {
 			nested: {
 				text: "before",
 			},
+			traceProvenance: {
+				owner: "system",
+				channel: "internal",
+				producer: { kind: "system" },
+			},
 		});
 	});
 
@@ -116,6 +126,59 @@ describe("nightworkers activity repository", () => {
 		expect(
 			events.filter((event) => event.text?.startsWith("queued batch event ")),
 		).toHaveLength(64);
+	});
+
+	it("filters chat, Pilot thought, and artifact ledgers by structured channel", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Trace Channels ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: Trace channel target",
+			status: "draft",
+		});
+		await repo.createTaskMessage({
+			taskId: task.id,
+			role: "assistant",
+			content: "coding-agent response",
+			trace: codingAgentChatTrace(),
+		});
+		await repo.createTaskMessage({
+			taskId: task.id,
+			role: "assistant",
+			content: "Mission Pilot artifact body",
+			trace: missionPilotArtifactTrace({ sessionId: "pilot-session" }),
+		});
+		enqueueActivityEvent({
+			taskId: task.id,
+			kind: "runtime.decision",
+			source: "mission_pilot",
+			text: "Mission Pilot decision",
+			trace: missionPilotThoughtTrace({ sessionId: "pilot-session" }),
+		});
+
+		await flushActivityEventQueue();
+		const [chatEvents, pilotEvents, artifactMessages] = await Promise.all([
+			listActivityEventsForTask(task.id, { traceChannel: "chat" }),
+			listActivityEventsForTask(task.id, {
+				traceChannel: "pilot_thought",
+			}),
+			repo.listTaskMessages(task.id, { traceChannel: "artifact" }),
+		]);
+		expect(chatEvents.map((event) => event.text)).toContain(
+			"coding-agent response",
+		);
+		expect(chatEvents.map((event) => event.text)).not.toContain(
+			"Mission Pilot decision",
+		);
+		expect(pilotEvents.map((event) => event.text)).toEqual([
+			"Mission Pilot decision",
+		]);
+		expect(artifactMessages.map((message) => message.content)).toEqual([
+			"Mission Pilot artifact body",
+		]);
 	});
 
 	it("flushes queued activity before deleting its task", async () => {

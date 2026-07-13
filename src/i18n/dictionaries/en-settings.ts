@@ -44,6 +44,7 @@ export const enSettings = {
 	"settings.planMode.description":
 		"Control each Plan Mode generation path. Disabled items are blocked in the UI and generation API. Existing artifacts remain readable.",
 	"settings.planMode.save": "Save Plan Mode settings",
+	"settings.planMode.required": "Required",
 	"settings.planMode.featurePlan": "spec",
 	"settings.planMode.featurePlanHelp":
 		"Allows spec artifacts as the primary plan output.",

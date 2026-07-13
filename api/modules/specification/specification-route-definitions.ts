@@ -1,5 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { planModeWorkspaceSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
+import {
+	planModeRoutingSnapshotSchema,
+	updatePlanModeRoutingRequestSchema,
+} from "../../../shared/schemas/plan-mode-routing.schema";
 
 export const getPlanModeWorkspaceRoute = createRoute({
 	method: "get",
@@ -11,6 +15,27 @@ export const getPlanModeWorkspaceRoute = createRoute({
 		200: {
 			content: { "application/json": { schema: planModeWorkspaceSchema } },
 			description: "Plan Mode Workspace read model",
+		},
+	},
+});
+
+export const updatePlanModeRoutingRoute = createRoute({
+	method: "patch",
+	path: "/tasks/:id/plan-mode/routing",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: {
+				"application/json": { schema: updatePlanModeRoutingRequestSchema },
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: planModeRoutingSnapshotSchema },
+			},
+			description: "Updated Plan Artifact routing",
 		},
 	},
 });

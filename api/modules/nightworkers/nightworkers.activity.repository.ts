@@ -1,5 +1,5 @@
+import type { ActivitySource } from "./nightworkers.activity-types";
 import { isJsonRecord, type JsonRecord } from "./nightworkers.json-adapters";
-import type { ActivitySource } from "./nightworkers.repository";
 
 export * from "./nightworkers.activity-persistence.repository";
 

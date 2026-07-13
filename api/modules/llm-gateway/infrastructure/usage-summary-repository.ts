@@ -3,7 +3,10 @@ import type { DbTransaction, db } from "../../../db/client";
 import { type llmUsageRecords, tasks } from "../../../db/schema";
 
 export type UsageSummaryDbExecutor = typeof db | DbTransaction;
-export type UsageRecord = typeof llmUsageRecords.$inferSelect;
+export type UsageRecord = Omit<
+	typeof llmUsageRecords.$inferSelect,
+	"traceOwner" | "traceChannel"
+>;
 
 export async function resolveUsageRepositoryId(
 	taskId: string,

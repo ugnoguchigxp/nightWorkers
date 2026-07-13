@@ -14,6 +14,10 @@ import { logEvent } from "../../lib/logger";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import {
+	missionPilotArtifactTrace,
+	missionPilotThoughtTrace,
+} from "../nightworkers/nightworkers.trace-provenance";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
 import {
 	getDesignQuestionnaireSession,
@@ -69,6 +73,12 @@ export function artifactKinds(
 export function collectCurrentReviewArtifacts(
 	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
 ) {
+	const included = new Set(
+		(workspace.routing?.entries ?? workspace.viewDecisions)
+			.filter((entry) => entry.decision === "include")
+			.map((entry) => entry.view),
+	);
+	included.add("feature_plan");
 	const byKind = new Map<string, MissionPilotReviewedArtifact>();
 	for (const artifact of [
 		...workspace.blueprintArtifacts,
@@ -78,6 +88,7 @@ export function collectCurrentReviewArtifacts(
 	]) {
 		const parsed = planModeRegenerationTargetSchema.safeParse(artifact.kind);
 		if (!parsed.success) continue;
+		if (!included.has(parsed.data)) continue;
 		byKind.set(parsed.data, {
 			artifactKind: parsed.data,
 			sourceMessageId: artifact.sourceMessageId,
@@ -174,29 +185,42 @@ export async function generateStepArtifact(
 	const evidence = step.evidenceJson;
 	const kind = String(evidence.kind || "");
 	const view = String(evidence.view || "");
+	const trace = missionPilotArtifactTrace({ sessionId: step.sessionId });
+	const llmUsageTrace = missionPilotThoughtTrace({ sessionId: step.sessionId });
 	if (kind === "blueprint") {
 		return generateBlueprintArtifact(taskId, {
 			questionnaireSessionId,
 			role: "mission_pilot",
+			trace,
+			llmUsageTrace,
 		});
 	}
 	if (kind === "data_model") {
 		return generateDataModelArtifact(taskId, {
 			questionnaireSessionId,
 			role: "mission_pilot",
+			trace,
+			llmUsageTrace,
 		});
 	}
 	if (kind === "dedicated_view") {
 		return generatePlanViewArtifact(
 			taskId,
 			view as Parameters<typeof generatePlanViewArtifact>[1],
-			{ questionnaireSessionId, role: "mission_pilot" },
+			{
+				questionnaireSessionId,
+				role: "mission_pilot",
+				trace,
+				llmUsageTrace,
+			},
 		);
 	}
 	if (kind === "feature_plan") {
 		return generateFeaturePlanArtifact(taskId, {
 			questionnaireSessionId,
 			role: "mission_pilot",
+			trace,
+			llmUsageTrace,
 		});
 	}
 	throw new Error(`Unsupported Mission Pilot plan step: ${step.stepKey}`);
@@ -275,6 +299,7 @@ export async function answerPreFeaturePlanQuestionnaire(
 					"Feature Plan生成直前に、生成済みArtifactから実装を阻害する未確定事項だけを確認する。",
 				maxQuestions: 5,
 				role: "mission_pilot",
+				llmUsageTrace: missionPilotThoughtTrace({ sessionId }),
 			},
 		);
 		addedCount = generated.result.addedCount;

@@ -44,6 +44,7 @@ export const jaSettings = {
 	"settings.planMode.description":
 		"プランモードの各生成経路をオン・オフします。オフにした項目はUIだけでなくAPI生成も停止します。既存の成果物は閲覧できます。",
 	"settings.planMode.save": "プランモード設定を保存",
+	"settings.planMode.required": "必須",
 	"settings.planMode.featurePlan": "spec",
 	"settings.planMode.featurePlanHelp":
 		"primary plan artifact としての spec を許可します。",

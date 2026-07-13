@@ -26,7 +26,9 @@ export async function readGitworktreeResponse<T>(
 }
 
 export function fetchRepositoryWorktrees(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/worktrees`);
+	return apiFetch(`/api/repositories/${repositoryId}/worktrees`, {
+		cache: "no-store",
+	});
 }
 
 export function fetchRepositoryGitIntegration(repositoryId: string) {
@@ -79,14 +81,4 @@ export function pruneRepositoryWorktrees(repositoryId: string) {
 	return apiFetch(`/api/repositories/${repositoryId}/worktrees/prune`, {
 		method: "POST",
 	});
-}
-
-export function adviseRepositoryWorktrees(
-	repositoryId: string,
-	input: unknown,
-) {
-	return apiFetch(
-		`/api/repositories/${repositoryId}/worktrees/advice`,
-		jsonRequest("POST", input),
-	);
 }

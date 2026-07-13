@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { designQuestionnaireSessionStatusSchema } from "./design-questionnaire.schema";
+import { planModeRoutingSnapshotSchema } from "./plan-mode-routing.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
@@ -364,6 +365,7 @@ export const planModeWorkspaceSchema = z.object({
 	decisionReviews: z.array(planModeWorkspaceArtifactSchema),
 	implementationReferences: z.array(planModeWorkspaceReferenceSchema),
 	viewDecisions: z.array(planModeViewDecisionSchema).default([]),
+	routing: planModeRoutingSnapshotSchema,
 });
 
 export type FeaturePlanBodySection = z.infer<

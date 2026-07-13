@@ -19,6 +19,11 @@ export const listTaskMessagesRoute = createRoute({
 		params: z.object({
 			id: z.string().uuid().openapi({ example: "task-uuid" }),
 		}),
+		query: z.object({
+			channel: z
+				.enum(["chat", "pilot_thought", "artifact", "internal"])
+				.optional(),
+		}),
 	},
 	responses: {
 		200: {
@@ -67,6 +72,9 @@ export const listTaskActivityEventsRoute = createRoute({
 		}),
 		query: z.object({
 			afterSeq: z.coerce.number().int().min(0).optional(),
+			channel: z
+				.enum(["chat", "pilot_thought", "artifact", "internal"])
+				.optional(),
 		}),
 	},
 	responses: {

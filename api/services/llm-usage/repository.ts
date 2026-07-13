@@ -1,7 +1,12 @@
 import { desc, eq, sql } from "drizzle-orm";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { db } from "../../db/client";
 import { llmUsageRecords } from "../../db/schema";
 import * as nightWorkersRepo from "../../modules/nightworkers/nightworkers.repository";
+import {
+	resolveLlmUsageTrace,
+	withTraceProvenance,
+} from "../../modules/nightworkers/nightworkers.trace-provenance";
 import { readGeneralSettings } from "../settings/general-settings";
 import { upsertLlmUsageSummaryForRecord } from "./summary";
 import type {
@@ -23,6 +28,7 @@ export async function recordLlmUsage(input: {
 	promptPartObservabilityEnabled?: boolean;
 	durationMs: number;
 	metadataJson?: Record<string, unknown>;
+	trace?: TraceProvenance;
 }) {
 	const promptPartObservabilityEnabled = resolvePromptPartObservabilityEnabled(
 		input.promptPartObservabilityEnabled,
@@ -39,11 +45,20 @@ export async function recordLlmUsage(input: {
 		input.usage.inputTokens !== null && input.usage.cachedInputTokens !== null
 			? Math.max(0, input.usage.inputTokens - input.usage.cachedInputTokens)
 			: null;
-	const metadataJson = {
-		...(input.metadataJson ?? {}),
-		nonCachedInputTokens,
-		promptPartObservabilityEnabled,
-	};
+	const trace = resolveLlmUsageTrace({
+		runId: input.runId,
+		callId: input.callId,
+		metadata: input.metadataJson,
+		trace: input.trace,
+	});
+	const metadataJson = withTraceProvenance(
+		{
+			...(input.metadataJson ?? {}),
+			nonCachedInputTokens,
+			promptPartObservabilityEnabled,
+		},
+		trace,
+	);
 	const record = await db.transaction(async (tx) => {
 		const [created] = await tx
 			.insert(llmUsageRecords)
@@ -74,6 +89,8 @@ export async function recordLlmUsage(input: {
 				durationMs: Math.max(0, Math.floor(input.durationMs)),
 				rawUsageJson: input.usage.rawUsage ?? null,
 				metadataJson,
+				traceOwner: trace.owner,
+				traceChannel: trace.channel,
 			})
 			.returning();
 		if (created) await upsertLlmUsageSummaryForRecord(created, tx);
@@ -89,6 +106,7 @@ export async function recordLlmUsage(input: {
 			status: "completed",
 			text: `LLM usage recorded. input:${formatUsageToken(record.inputTokens)} cached_input:${formatUsageToken(record.cachedInputTokens)} output:${formatUsageToken(record.outputTokens)}`,
 			visibility: "debug",
+			trace,
 			externalId: record.id,
 			dedupeKey: `llm_usage:${record.id}`,
 			payloadJson: {
@@ -107,6 +125,7 @@ export async function recordLlmUsage(input: {
 				userPromptTokens: record.userPromptTokens,
 				stateCardTokens: record.stateCardTokens,
 				promptPartObservabilityEnabled,
+				role: input.metadataJson?.role ?? null,
 			},
 		});
 	}

@@ -1,20 +1,13 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { z } from "zod";
 import { buildPlanModeExecutionSteps } from "../../../shared/plan-mode-execution";
 import {
 	isMissionPilotConceptArtifactKind,
-	type MissionPilotPlanReview,
-	missionPilotArtifactScoreThreshold,
-	missionPilotPlanReviewSchema,
-	normalizeMissionPilotPlanReview,
 } from "../../../shared/schemas/mission-pilot-plan-review.schema";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
 import { readGeneralSettings } from "../../services/settings/general-settings";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
-import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { getLatestVerificationDocumentForTask } from "../nightworkers/nightworkers.verification.repository";
 import { getDesignQuestionnaireSession } from "../questionnaire/questionnaire.service";
@@ -27,14 +20,12 @@ import {
 	answerPreFeaturePlanQuestionnaire,
 	artifactKinds,
 	assertTaskContextCurrent,
-	collectCurrentReviewArtifacts,
 	ensureQuestionnaireContext,
 	errorMessage,
 	existingArtifactForStep,
 	finalizeResumedPreFeaturePlanQuestionnaire,
 	type GeneratedArtifact,
 	generateStepArtifact,
-	latestContext,
 	MAX_QUEUE_STABILIZATION_ATTEMPTS,
 	MAX_REVIEW_ATTEMPTS,
 	MissionPilotPlanReviewStaleError,
@@ -46,6 +37,9 @@ import {
 	synchronizeTaskContext,
 	updatePhase,
 } from "./mission-pilot-plan-support";
+import { dispatchMissionPilotPlanToolCall } from "./mission-pilot-plan-tool.service";
+import { reviewCurrentPlan } from "./mission-pilot-plan-review.service";
+export { buildMissionPilotPlanReviewResponseJsonSchema } from "./mission-pilot-plan-review.service";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	assertMissionPilotPreQueueMutable,
@@ -55,6 +49,9 @@ import {
 	admitMissionPilotQueueHandoff,
 	MissionPilotPreQueueError,
 } from "./mission-pilot-queue-handoff.service";
+
+class MissionPilotPlanRoutingChangedError extends Error {}
+const MAX_ROUTING_TOOL_CALLS = 7;
 
 async function executeArtifactSteps(
 	taskId: string,
@@ -121,6 +118,7 @@ async function executeArtifactSteps(
 					contextRevision: updatedSession.contextRevision,
 					contextDigest: updatedSession.contextDigest,
 					adoptedExistingArtifact: true,
+					artifactRoutingRevision: updatedSession.planRoutingRevision,
 				},
 			});
 			if (!adopted)
@@ -169,6 +167,7 @@ async function executeArtifactSteps(
 					sourceMessageId: result.message.id,
 					contextRevision: updatedSession.contextRevision,
 					contextDigest: updatedSession.contextDigest,
+					artifactRoutingRevision: currentSession.planRoutingRevision,
 				},
 			});
 			await publishCurrentPlanProgress(taskId);
@@ -186,84 +185,6 @@ async function executeArtifactSteps(
 	);
 	if (blocker)
 		throw new Error(`Plan step did not complete: ${blocker.stepKey}`);
-}
-
-async function reviewCurrentPlan(
-	taskId: string,
-	sessionId: string,
-	attempt: number,
-): Promise<{
-	review: MissionPilotPlanReview;
-	featurePlanMessageId: string;
-	contextRevision: number;
-	contextDigest: string;
-}> {
-	await assertMissionPilotPreQueueMutable(taskId);
-	const [session, context, workspace, messages, task] = await Promise.all([
-		missionPilotRepo.getSessionByTaskId(taskId),
-		latestContext(sessionId),
-		getPlanModeWorkspace(taskId),
-		nightworkersRepo.listTaskMessages(taskId),
-		nightworkersRepo.getTask(taskId),
-	]);
-	if (!session || !context || !task)
-		throw new Error("Review context is missing");
-	const featurePlan = workspace.featurePlanArtifacts.at(-1);
-	if (!featurePlan) throw new Error("Feature Plan is missing");
-	const featurePlanMessage = messages.find(
-		(message) => message.id === featurePlan.sourceMessageId,
-	);
-	if (!featurePlanMessage) throw new Error("Feature Plan message is missing");
-	const reviewArtifacts = collectCurrentReviewArtifacts(workspace);
-	const raw = await callStructuredJsonLLM(
-		[
-			"あなたはMission PilotのQueue投入前・一括実装計画レビュアーです。",
-			"全Plan Artifactの生成完了後に、Goal、確定Questionnaire、現行Artifact一式、受け入れ条件、検証の整合性を一度に審査してください。Artifact生成途中の個別レビューは行いません。",
-			"artifactScoresにはreviewArtifactsの各ArtifactをsourceMessageId単位で重複なく1件ずつ含め、0〜100点で採点してください。",
-			"feature_plan、data_model、api_io_contract、zod_schema_designは実装直結Artifactとして80点以上を合格とします。",
-			"blueprint、user_flow、activity_flow、sequence_flowは概念把握用Artifactです。点数とfindingは参考情報として返しますが、低得点や細部不一致をverdict=reviseの理由にせず、revisionTargetsにも含めないでください。",
-			"実装直結Artifactがすべて80点以上ならverdict=pass、1件でも80点未満ならverdict=reviseとしてください。findingのseverityだけで合否を決めないでください。",
-			"確定QuestionnaireとTask acceptance criteriaは不変の入力であり、実装詳細をすべて列挙する文書ではありません。回答と矛盾しない型、値、取得元、コマンド、検証詳細はFeature Planが具体化します。",
-			"QuestionnaireまたはTask acceptance criteriaの変更を要求せず、不足する派生仕様はfeature_planのrevisionTargetとして返してください。",
-			"revisionTargetsは80点未満の実装直結Artifactだけに限定してください。概念把握用Artifactは修正対象に含めないでください。",
-			"Questionnaireと概念把握用Artifactが矛盾する場合はwarning findingとして記録し、revisionTargetにはしないでください。",
-			"80点未満の各実装直結Artifactには、同じtargetとsourceMessageIdを持つrevisionTargetをちょうど1件返してください。",
-		].join("\n"),
-		JSON.stringify({
-			reviewAttempt: attempt,
-			task: {
-				title: task.title,
-				objective: task.objective,
-				acceptanceCriteria: task.acceptanceCriteria,
-			},
-			contextRevision: session.contextRevision,
-			contextDigest: session.contextDigest,
-			canonicalContext: context.contextJson,
-			featurePlan: featurePlanMessage.content,
-			reviewArtifacts: reviewArtifacts.map((artifact) => ({
-				...artifact,
-				threshold: missionPilotArtifactScoreThreshold(artifact.artifactKind),
-			})),
-		}),
-		{
-			taskId,
-			role: "mission_pilot",
-			schemaName: "mission_pilot_plan_review",
-			schema: buildMissionPilotPlanReviewResponseJsonSchema(),
-		},
-	);
-	return {
-		review: normalizeMissionPilotPlanReview(JSON.parse(raw), reviewArtifacts),
-		featurePlanMessageId: featurePlanMessage.id,
-		contextRevision: session.contextRevision,
-		contextDigest: session.contextDigest,
-	};
-}
-
-export function buildMissionPilotPlanReviewResponseJsonSchema() {
-	return normalizeStructuredOutputJsonSchema(
-		z.toJSONSchema(missionPilotPlanReviewSchema),
-	);
 }
 
 async function executeArtifactCorrections(input: {
@@ -332,6 +253,7 @@ async function executeReview(
 		currentSession &&
 		latest.contextRevision === currentSession.contextRevision &&
 		latest.contextDigest === currentSession.contextDigest
+		&& latest.routingRevision === currentSession.planRoutingRevision
 	)
 		return latest;
 	if (latest?.verdict === "revise") {
@@ -360,7 +282,9 @@ async function executeReview(
 	}
 	const firstAttempt = (latest?.attempt ?? 0) + 1;
 	const completedScoredReviews = existingReviews.filter(
-		(review) => (review.reviewJson.artifactScores?.length ?? 0) > 0,
+		(review) =>
+			review.verdict !== "reroute" &&
+			(review.reviewJson.artifactScores?.length ?? 0) > 0,
 	).length;
 	for (
 		let offset = 0;
@@ -372,12 +296,26 @@ async function executeReview(
 		const result = await reviewCurrentPlan(taskId, sessionId, attempt);
 		latest = await planRepo.createPlanReview({
 			sessionId,
+			routingRevision: result.routingRevision,
 			contextRevision: result.contextRevision,
 			contextDigest: result.contextDigest,
 			featurePlanMessageId: result.featurePlanMessageId,
 			attempt,
 			review: result.review,
 		});
+		if (result.review.verdict === "reroute") {
+			if (!result.review.routingToolCall) {
+				throw new Error("Plan review reroute tool call is missing");
+			}
+			await dispatchMissionPilotPlanToolCall(
+				taskId,
+				result.review.routingToolCall,
+			);
+			await publishCurrentPlanProgress(taskId);
+			throw new MissionPilotPlanRoutingChangedError(
+				"Plan Artifact routing was expanded by Mission Pilot",
+			);
+		}
 		if (result.review.verdict === "pass") return latest;
 		if (result.review.verdict === "reject") {
 			throw new Error(`Plan review rejected: ${result.review.summary}`);
@@ -420,13 +358,25 @@ async function admitToQueue(
 		!review ||
 		review.verdict !== "pass" ||
 		review.contextRevision !== session.contextRevision ||
-		review.contextDigest !== session.contextDigest
+		review.contextDigest !== session.contextDigest ||
+		review.routingRevision !== session.planRoutingRevision
 	)
 		throw new MissionPilotPlanReviewStaleError(
 			"Latest Context does not have a passing plan review",
 		);
 	if (steps.some((step) => !["completed", "skipped"].includes(step.status)))
 		throw new Error("Plan execution steps are incomplete");
+	const featurePlanStep = steps.find((step) => step.stepKey === "feature_plan");
+	if (
+		!featurePlanStep ||
+		featurePlanStep.status !== "completed" ||
+		featurePlanStep.evidenceJson.artifactRoutingRevision !==
+			session.planRoutingRevision
+	) {
+		throw new MissionPilotPlanReviewStaleError(
+			"Feature Plan was not generated from the current routing revision",
+		);
+	}
 	const correctionRuns = await planRepo.listArtifactCorrectionRuns(sessionId);
 	if (
 		correctionRuns.some((run) =>
@@ -499,13 +449,27 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		});
 		if (!session) return;
 		leasedSessionId = session.id;
-		await executeArtifactSteps(
-			taskId,
-			session.id,
-			questionnaire.id,
-			leaseOwner,
-		);
-		await executeReview(taskId, session.id, questionnaire.id, leaseOwner);
+		let reviewCompleted = false;
+		for (let rerouteCount = 0; rerouteCount <= MAX_ROUTING_TOOL_CALLS; rerouteCount++) {
+			await executeArtifactSteps(
+				taskId,
+				session.id,
+				questionnaire.id,
+				leaseOwner,
+			);
+			try {
+				await executeReview(taskId, session.id, questionnaire.id, leaseOwner);
+				reviewCompleted = true;
+				break;
+			} catch (error) {
+				if (!(error instanceof MissionPilotPlanRoutingChangedError)) throw error;
+				if (rerouteCount >= MAX_ROUTING_TOOL_CALLS) {
+					throw new Error("Mission Pilot routing expansion limit exceeded");
+				}
+				await updatePhase(taskId, leaseOwner, "generating_artifacts");
+			}
+		}
+		if (!reviewCompleted) throw new Error("Plan review did not complete");
 		for (
 			let attempt = 1;
 			attempt <= MAX_QUEUE_STABILIZATION_ATTEMPTS;

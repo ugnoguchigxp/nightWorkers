@@ -338,6 +338,7 @@ async function callRawJsonLLMAttempt(
 			usage: providerUsage,
 			promptPartTokenEstimates,
 			durationMs: Date.now() - startedAt,
+			trace: options.usageTrace,
 			metadataJson: {
 				schemaFirst: Boolean(options.schemaFirst),
 				providerEndpointId: normalizedRequest.providerEndpointId ?? null,

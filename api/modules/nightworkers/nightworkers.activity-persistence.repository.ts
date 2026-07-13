@@ -1,12 +1,23 @@
 import crypto from "node:crypto";
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import type {
+	TraceChannel,
+	TraceProvenance,
+} from "../../../shared/schemas/trace-provenance.schema";
 import { db } from "../../db/client";
 import { activityArtifacts, activityEvents } from "../../db/schema";
 import { logEvent } from "../../lib/logger";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import { normalizeActivityKind } from "./nightworkers.activity.repository";
+import type {
+	ActivitySource,
+	ActivityStatus,
+} from "./nightworkers.activity-types";
 import { activityPayloadJson } from "./nightworkers.json-adapters";
-import type { ActivitySource, ActivityStatus } from "./nightworkers.repository";
+import {
+	resolveActivityTrace,
+	withTraceProvenance,
+} from "./nightworkers.trace-provenance";
 
 export async function appendActivityArtifact(data: {
 	taskId: string;
@@ -47,6 +58,7 @@ export async function appendActivityEvent(data: {
 	dedupeKey?: string | null;
 	ingestError?: string | null;
 	visibility?: string;
+	trace?: TraceProvenance;
 	createdAt?: Date;
 }) {
 	const [result] = await appendActivityEventBatch([data]);
@@ -100,6 +112,7 @@ async function appendActivityEventBatch(batch: AppendActivityEventInput[]) {
 		const rowsToInsert: Array<typeof activityEvents.$inferInsert> = [];
 		const insertTargetIndexes: number[] = [];
 		for (const [index, entry] of batch.entries()) {
+			const trace = resolveActivityTrace(entry);
 			const normalizedKind = normalizeActivityKind(entry.kind);
 			const ingestError =
 				normalizedKind === entry.kind
@@ -135,18 +148,20 @@ async function appendActivityEventBatch(batch: AppendActivityEventInput[]) {
 				source: entry.source,
 				status: entry.status ?? null,
 				text: entry.text ?? null,
-				payloadJson: activityPayloadJson(
-					entry.payloadJson,
-					normalizedKind,
-					entry.kind,
-				),
 				artifactId: entry.artifactId ?? null,
 				clientTempId: entry.clientTempId ?? null,
 				externalId: entry.externalId ?? null,
 				dedupeKey,
 				ingestError: ingestError || null,
 				visibility: entry.visibility ?? "visible",
+				traceOwner: trace.owner,
+				traceChannel: trace.channel,
 				createdAt: entry.createdAt ?? new Date(),
+				payloadJson: activityPayloadJson(
+					withTraceProvenance(entry.payloadJson, trace),
+					normalizedKind,
+					entry.kind,
+				),
 			});
 			insertTargetIndexes.push(index);
 			if (dedupeKey) dedupeResultIndexByKey.set(dedupeKey, index);
@@ -339,12 +354,15 @@ function cloneJsonSnapshot(value: unknown) {
 
 export async function listActivityEventsForTask(
 	taskId: string,
-	options?: { afterSeq?: number },
+	options?: { afterSeq?: number; traceChannel?: TraceChannel },
 ) {
 	await flushActivityEventQueue();
 	const predicates = [eq(activityEvents.taskId, taskId)];
 	if (typeof options?.afterSeq === "number") {
 		predicates.push(gt(activityEvents.seq, options.afterSeq));
+	}
+	if (options?.traceChannel) {
+		predicates.push(eq(activityEvents.traceChannel, options.traceChannel));
 	}
 	return db
 		.select()

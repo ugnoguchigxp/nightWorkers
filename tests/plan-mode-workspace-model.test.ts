@@ -117,7 +117,7 @@ describe("planModeWorkspaceModel", () => {
 		expect(resolvePlanWorkspaceViewDecisions(null, fallback)).toEqual(fallback);
 	});
 
-	it("restores generated workspace views as included decisions over stale omit decisions", () => {
+	it("preserves explicit omit decisions even when historical artifacts exist", () => {
 		const workspace = {
 			questionnaireSessions: [],
 			blueprintArtifacts: [
@@ -161,13 +161,13 @@ describe("planModeWorkspaceModel", () => {
 		expect(resolvePlanWorkspaceViewDecisions(workspace, [])).toEqual([
 			{
 				view: "blueprint",
-				decision: "include",
-				reason: "生成済みのView artifactがあります。",
+				decision: "omit",
+				reason: "UI 方針の再設計ではありません。",
 			},
 			{
 				view: "api_io_contract",
-				decision: "include",
-				reason: "生成済みのView artifactがあります。",
+				decision: "omit",
+				reason: "API 契約変更ではありません。",
 			},
 			{
 				view: "data_model",

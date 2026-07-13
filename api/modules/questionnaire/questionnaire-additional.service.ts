@@ -4,6 +4,7 @@ import type {
 	DesignQuestionnaireSession,
 	QuestionnaireQuestionSetSource,
 } from "../../../shared/schemas/design-questionnaire.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildAdditionalDesignQuestionnaireSystemPrompt,
@@ -42,6 +43,7 @@ export type GenerateAdditionalQuestionsInput = {
 	reason?: string;
 	maxQuestions?: number;
 	role?: StructuredLlmRole;
+	llmUsageTrace?: TraceProvenance;
 };
 
 export type GenerateAdditionalQuestionsResult = {
@@ -90,6 +92,7 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 			schema: additionalQuestionnaireDraftJsonSchema,
 			taskId,
 			role: input.role ?? "plan",
+			usageTrace: input.llmUsageTrace,
 		},
 	);
 	const parsed = parseAdditionalQuestionnaireDraftRaw(rawOutput);

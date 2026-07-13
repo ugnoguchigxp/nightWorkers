@@ -89,6 +89,8 @@ export const activityEvents = sqliteTable(
 		dedupeKey: text("dedupe_key"),
 		ingestError: text("ingest_error"),
 		visibility: text("visibility").default("visible").notNull(),
+		traceOwner: text("trace_owner").default("system").notNull(),
+		traceChannel: text("trace_channel").default("internal").notNull(),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.$defaultFn(() => new Date())
 			.notNull(),
@@ -114,6 +116,14 @@ export const activityEvents = sqliteTable(
 			table.kind,
 			table.createdAt,
 		),
+		taskChannelSeqIdx: index("activity_events_task_channel_seq_idx").on(
+			table.taskId,
+			table.traceChannel,
+			table.seq,
+		),
+		taskOwnerChannelCreatedIdx: index(
+			"activity_events_task_owner_channel_created_idx",
+		).on(table.taskId, table.traceOwner, table.traceChannel, table.createdAt),
 		artifactIdIdx: index("activity_events_artifact_id_idx").on(
 			table.artifactId,
 		),
@@ -188,6 +198,8 @@ export const taskMessages = sqliteTable(
 		content: text("content").notNull(),
 		messageType: text("message_type"), // text | chart | browser | playwright | flow | markdown_document
 		metadataJson: text("metadata_json", { mode: "json" }),
+		traceOwner: text("trace_owner").default("system").notNull(),
+		traceChannel: text("trace_channel").default("internal").notNull(),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.$defaultFn(() => new Date())
 			.notNull(),
@@ -195,6 +207,11 @@ export const taskMessages = sqliteTable(
 	(table) => ({
 		taskIdIdx: index("task_messages_task_id_idx").on(table.taskId),
 		runIdIdx: index("task_messages_run_id_idx").on(table.runId),
+		taskChannelCreatedIdx: index("task_messages_task_channel_created_idx").on(
+			table.taskId,
+			table.traceChannel,
+			table.createdAt,
+		),
 	}),
 );
 

@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotCloseouts,
@@ -8,7 +8,7 @@ import {
 	missionPilotSessions,
 	missionPilotTestSnapshots,
 } from "../../db/mission-pilot-schema";
-import { taskEvents } from "../../db/schema";
+import { activityEvents, taskMessages } from "../../db/schema";
 import { MissionPilotError } from "./mission-pilot.errors";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 
@@ -52,22 +52,28 @@ export async function getMissionPilotExecution(sessionId: string) {
 				.where(eq(missionPilotEvents.sessionId, sessionId))
 				.orderBy(asc(missionPilotEvents.createdAt)),
 		]);
-	const phaseRunByRunId = new Map(
-		phaseRuns.map((phaseRun) => [phaseRun.runId, phaseRun] as const),
-	);
-	const runEvents =
-		phaseRuns.length === 0
-			? []
-			: await db
-					.select()
-					.from(taskEvents)
-					.where(
-						inArray(
-							taskEvents.taskRunId,
-							phaseRuns.map((phaseRun) => phaseRun.runId),
-						),
-					)
-					.orderBy(asc(taskEvents.timestamp), asc(taskEvents.seq));
+	const pilotActivityEvents = await db
+		.select()
+		.from(activityEvents)
+		.where(
+			and(
+				eq(activityEvents.taskId, session.taskId),
+				eq(activityEvents.traceOwner, "mission_pilot"),
+				eq(activityEvents.traceChannel, "pilot_thought"),
+			),
+		)
+		.orderBy(asc(activityEvents.seq), asc(activityEvents.createdAt));
+	const pilotMessages = await db
+		.select()
+		.from(taskMessages)
+		.where(
+			and(
+				eq(taskMessages.taskId, session.taskId),
+				eq(taskMessages.traceOwner, "mission_pilot"),
+				eq(taskMessages.traceChannel, "pilot_thought"),
+			),
+		)
+		.orderBy(asc(taskMessages.createdAt));
 	return {
 		session,
 		phaseRuns,
@@ -75,15 +81,8 @@ export async function getMissionPilotExecution(sessionId: string) {
 		reviewDecisions,
 		closeouts,
 		events,
-		runEvents: runEvents.map((event) => {
-			const phaseRun = phaseRunByRunId.get(event.taskRunId);
-			return {
-				...event,
-				missionPilotPhase: phaseRun?.phase ?? null,
-				missionPilotCycle: phaseRun?.cycle ?? null,
-				missionPilotAttempt: phaseRun?.attempt ?? null,
-			};
-		}),
+		activityEvents: pilotActivityEvents,
+		messages: pilotMessages,
 	};
 }
 

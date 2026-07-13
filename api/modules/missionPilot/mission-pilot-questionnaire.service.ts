@@ -12,6 +12,7 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
+import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
 import { MissionPilotError } from "./mission-pilot.errors";
@@ -26,6 +27,7 @@ type DraftRow = typeof missionPilotQuestionnaireDrafts.$inferSelect;
 
 function recordPilotActivity(input: {
 	taskId: string;
+	sessionId: string;
 	kind: string;
 	text: string;
 	status?: string;
@@ -40,9 +42,11 @@ function recordPilotActivity(input: {
 		text: input.text,
 		payloadJson: {
 			source: "mission_pilot",
+			missionPilotSessionId: input.sessionId,
 			...input.payloadJson,
 		},
 		dedupeKey: input.dedupeKey,
+		trace: missionPilotThoughtTrace({ sessionId: input.sessionId }),
 	}).catch(() => undefined);
 }
 
@@ -149,6 +153,7 @@ async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 		);
 	recordPilotActivity({
 		taskId: session.taskId,
+		sessionId: pilot.id,
 		kind: "runtime.decision",
 		status: "waiting",
 		text: `${generated.answers.length}件のQuestionnaire回答案を作成しました。20秒間、ユーザーの変更を待ちます。`,
@@ -253,6 +258,7 @@ export async function updateQuestionnaireDraft(
 		);
 	recordPilotActivity({
 		taskId,
+		sessionId: current.sessionId,
 		kind: "ui.optimistic",
 		status: "updated",
 		text: "Questionnaireのユーザー変更を回答案へ反映しました。",
@@ -290,6 +296,7 @@ async function submitDraftRow(
 	if (!claimed) return null;
 	recordPilotActivity({
 		taskId,
+		sessionId: row.sessionId,
 		kind: "runtime.state",
 		status: "running",
 		text:
@@ -355,6 +362,7 @@ async function submitDraftRow(
 		}
 		recordPilotActivity({
 			taskId,
+			sessionId: claimed.sessionId,
 			kind: "runtime.state",
 			status: "completed",
 			text: `${claimed.answersJson.length}件のQuestionnaire回答を確定しました。`,
@@ -414,6 +422,7 @@ async function submitDraftRow(
 		}
 		recordPilotActivity({
 			taskId,
+			sessionId: claimed.sessionId,
 			kind: "system.error",
 			status: "failed",
 			text: "Questionnaire回答の確定に失敗しました。",

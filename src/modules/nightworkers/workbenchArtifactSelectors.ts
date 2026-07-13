@@ -56,6 +56,8 @@ export function activityArtifactToTaskMessage(
 		role: "assistant",
 		content: artifact.contentText || "",
 		messageType: "markdown_document",
+		traceOwner: "system",
+		traceChannel: "artifact",
 		metadataJson: {
 			...metadata,
 			intent:

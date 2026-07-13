@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+	traceChannelSchema,
+	traceOwnerSchema,
+} from "../trace-provenance.schema";
 
 const jsonValueSchema = z.unknown();
 const dateLikeSchema = z.union([z.string(), z.date()]);
@@ -61,6 +65,8 @@ export const activityEventSchema = z
 		dedupeKey: z.string().nullable().optional(),
 		ingestError: z.string().nullable().optional(),
 		visibility: z.string(),
+		traceOwner: traceOwnerSchema,
+		traceChannel: traceChannelSchema,
 		createdAt: dateLikeSchema,
 	})
 	.openapi("ActivityEvent");
@@ -114,6 +120,8 @@ export const taskMessageSchema = z
 		content: z.string(),
 		messageType: z.string().nullable().optional(),
 		metadataJson: jsonValueSchema.nullable().optional(),
+		traceOwner: traceOwnerSchema,
+		traceChannel: traceChannelSchema,
 		createdAt: dateLikeSchema,
 	})
 	.openapi("TaskMessage");

@@ -210,6 +210,14 @@ export async function ensureTestModeVerificationDocument(input: {
 			questionnaireSessions: [],
 			decisionReviews: [],
 			viewDecisions: [],
+			routing: {
+				revision: 0,
+				entries: [],
+				editable: false,
+				lockedReason: "Specification verification workspace",
+				updatedBy: null,
+				updatedAt: null,
+			},
 			implementationReferences:
 				intent === "implementation_plan"
 					? [

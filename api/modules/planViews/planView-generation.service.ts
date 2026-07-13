@@ -3,6 +3,7 @@ import type {
 	DedicatedDesignView,
 	MermaidRenderRepair,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildPlanApiContractSystemPrompt,
@@ -95,6 +96,8 @@ export type PlanViewGenerationInput = {
 	mermaidRenderRepair?: MermaidRenderRepair;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	trace?: TraceProvenance;
+	llmUsageTrace?: TraceProvenance;
 };
 
 export async function generatePlanViewArtifact(
@@ -181,6 +184,7 @@ export async function generatePlanViewArtifact(
 			prompt,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
+			usageTrace: input.llmUsageTrace,
 		});
 		const message = await createPlanModeTaskMessage({
 			taskId,
@@ -205,6 +209,7 @@ export async function generatePlanViewArtifact(
 					promptVersion: PLAN_API_CONTRACT_PROMPT_VERSION,
 				},
 			},
+			trace: input.trace,
 		});
 		return { message, workspace: await getPlanModeWorkspace(taskId) };
 	}
@@ -222,6 +227,7 @@ export async function generatePlanViewArtifact(
 			prompt,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
+			usageTrace: input.llmUsageTrace,
 		});
 		const message = await createPlanModeTaskMessage({
 			taskId,
@@ -246,6 +252,7 @@ export async function generatePlanViewArtifact(
 					promptVersion: PLAN_ZOD_SCHEMA_PROMPT_VERSION,
 				},
 			},
+			trace: input.trace,
 		});
 		return { message, workspace: await getPlanModeWorkspace(taskId) };
 	}
@@ -263,6 +270,7 @@ export async function generatePlanViewArtifact(
 		prompt,
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
+		usageTrace: input.llmUsageTrace,
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -295,6 +303,7 @@ export async function generatePlanViewArtifact(
 					: {}),
 			},
 		},
+		trace: input.trace,
 	});
 	return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
@@ -311,6 +320,7 @@ async function generateArtifactFromLlm(input: {
 	prompt: string;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }) {
 	try {
 		let repairContext: string | null = null;
@@ -329,6 +339,7 @@ async function generateArtifactFromLlm(input: {
 					taskId: input.taskId,
 					runId: null,
 					role: input.role,
+					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
 				},
 			);
@@ -371,6 +382,7 @@ async function generateApiContractArtifactFromLlm(input: {
 	prompt: string;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }) {
 	try {
 		const rawOutput = await callStructuredJsonLLM(
@@ -382,6 +394,7 @@ async function generateApiContractArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
+				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 			},
 		);
@@ -407,6 +420,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	prompt: string;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }) {
 	try {
 		const rawOutput = await callStructuredJsonLLM(
@@ -418,6 +432,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
+				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 			},
 		);

@@ -58,6 +58,8 @@ export type TaskMessage = {
 		| "mission_pilot_initial_prompt"
 		| null;
 	metadataJson?: unknown;
+	traceOwner: import("../../../../shared/schemas/trace-provenance.schema").TraceOwner;
+	traceChannel: import("../../../../shared/schemas/trace-provenance.schema").TraceChannel;
 	createdAt: unknown;
 };
 
@@ -135,6 +137,9 @@ export type PlanModeViewDecision = {
 	reason?: string;
 };
 
+export type PlanModeRoutingSnapshot =
+	import("../../../../shared/schemas/plan-mode-routing.schema").PlanModeRoutingSnapshot;
+
 export type PlanModeWorkspace = {
 	taskId: string;
 	repositoryId: string;
@@ -164,4 +169,5 @@ export type PlanModeWorkspace = {
 		taskId: string;
 	}>;
 	viewDecisions: PlanModeViewDecision[];
+	routing: PlanModeRoutingSnapshot;
 };

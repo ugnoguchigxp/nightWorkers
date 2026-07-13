@@ -40,6 +40,11 @@ export async function ensureMissionPilotTables() {
 	}
 	await ensureColumn(
 		"mission_pilot_sessions",
+		"plan_routing_revision",
+		"plan_routing_revision integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"mission_pilot_sessions",
 		"active_phase_run_id",
 		"active_phase_run_id text",
 	);
@@ -88,6 +93,12 @@ export async function ensureMissionPilotTables() {
 		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_context_snapshots_revision_uidx ON mission_pilot_context_snapshots (session_id, revision)",
 	);
 	await client.execute(
+		`CREATE TABLE IF NOT EXISTS mission_pilot_plan_routing_revisions (id text PRIMARY KEY NOT NULL, session_id text NOT NULL, revision integer NOT NULL, entries_json text NOT NULL, updated_by text NOT NULL, reason text NOT NULL, created_at integer NOT NULL, FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade)`,
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_plan_routing_revisions_revision_uidx ON mission_pilot_plan_routing_revisions (session_id, revision)",
+	);
+	await client.execute(
 		`CREATE TABLE IF NOT EXISTS mission_pilot_questionnaire_drafts (id text PRIMARY KEY NOT NULL, session_id text NOT NULL, questionnaire_session_id text NOT NULL, answers_json text NOT NULL, answer_evidence_json text NOT NULL, state text DEFAULT 'waiting_user' NOT NULL, deadline_at integer NOT NULL, version integer DEFAULT 0 NOT NULL, created_at integer NOT NULL, updated_at integer NOT NULL, FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade, FOREIGN KEY (questionnaire_session_id) REFERENCES design_questionnaire_sessions(id) ON DELETE cascade)`,
 	);
 	await client.execute(
@@ -107,6 +118,11 @@ export async function ensureMissionPilotTables() {
 	);
 	await client.execute(
 		`CREATE TABLE IF NOT EXISTS mission_pilot_plan_reviews (id text PRIMARY KEY NOT NULL, session_id text NOT NULL, context_revision integer NOT NULL, context_digest text NOT NULL, feature_plan_message_id text NOT NULL, attempt integer NOT NULL, verdict text NOT NULL, review_json text NOT NULL, created_at integer NOT NULL, FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade, FOREIGN KEY (feature_plan_message_id) REFERENCES task_messages(id) ON DELETE cascade)`,
+	);
+	await ensureColumn(
+		"mission_pilot_plan_reviews",
+		"routing_revision",
+		"routing_revision integer DEFAULT 0 NOT NULL",
 	);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_plan_reviews_attempt_uidx ON mission_pilot_plan_reviews (session_id, attempt)",

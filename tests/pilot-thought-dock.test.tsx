@@ -6,8 +6,9 @@ import {
 } from "../src/modules/missionPilot/components/PilotThoughtDock";
 
 describe("PilotThoughtDock", () => {
-	it("includes Mission Pilot coordinator events and every event from owned implementation/test runs", () => {
+	it("includes only Mission Pilot coordinator and pilot_thought activity events", () => {
 		const items = missionPilotTraceItems({
+			messages: [],
 			events: [
 				{
 					id: "pilot-event-1",
@@ -23,47 +24,43 @@ describe("PilotThoughtDock", () => {
 					createdAt: new Date("2026-07-13T00:00:00Z"),
 				},
 			],
-			runEvents: [
+			activityEvents: [
 				{
-					id: "implementation-tool-call",
-					taskRunId: "implementation-run",
+					id: "pilot-decision",
+					taskId: "task-1",
 					seq: 4,
-					actor: "tool",
-					eventType: "tool.call",
-					message: "実装ファイルを確認しています",
+					kind: "runtime.decision",
+					source: "mission_pilot",
+					text: "次のphaseへ進みます",
 					payloadJson: { toolName: "exec_command" },
-					missionPilotPhase: "implementation",
-					missionPilotCycle: 1,
-					missionPilotAttempt: 1,
-					timestamp: new Date("2026-07-13T00:00:01Z"),
+					visibility: "visible",
+					traceOwner: "mission_pilot",
+					traceChannel: "pilot_thought",
+					createdAt: new Date("2026-07-13T00:00:01Z"),
 				},
 				{
-					id: "test-thought",
-					taskRunId: "test-run",
+					id: "implementation-tool-call",
+					taskId: "task-1",
+					runId: "implementation-run",
 					seq: 2,
-					actor: "worker",
-					eventType: "assistant.reasoning",
-					message: "テスト証跡を評価しています",
-					missionPilotPhase: "test",
-					missionPilotCycle: 1,
-					missionPilotAttempt: 1,
-					timestamp: new Date("2026-07-13T00:00:02Z"),
+					kind: "tool.call",
+					source: "tool",
+					text: "実装ファイルを確認しています",
+					visibility: "visible",
+					traceOwner: "coding_agent",
+					traceChannel: "chat",
+					createdAt: new Date("2026-07-13T00:00:02Z"),
 				},
 			],
 		});
 
 		expect(items.map((item) => item.event.message)).toEqual([
 			"implementation.completed",
-			"実装ファイルを確認しています",
-			"テスト証跡を評価しています",
+			"次のphaseへ進みます",
 		]);
-		expect(items[1]?.event.actor).toBe("tool");
+		expect(items[1]?.event.actor).toBe("mission_pilot");
 		expect(items[1]?.event.payloadJson).toMatchObject({
-			missionPilotPhase: "implementation",
 			toolName: "exec_command",
-		});
-		expect(items[2]?.event.payloadJson).toMatchObject({
-			missionPilotPhase: "test",
 		});
 	});
 
@@ -109,49 +106,6 @@ describe("PilotThoughtDock", () => {
 						updatedAt: new Date(),
 					},
 				}}
-				activityEvents={[
-					{
-						id: "activity-1",
-						taskId: "11111111-1111-4111-8111-111111111111",
-						seq: 1,
-						kind: "runtime.decision",
-						source: "mission_pilot",
-						text: "20秒間、ユーザーの変更を待ちます。",
-						payloadJson: { decision: "wait_for_user_or_auto_submit" },
-						visibility: "visible",
-						createdAt: new Date("2026-07-11T10:00:00Z"),
-					},
-					{
-						id: "activity-2",
-						taskId: "11111111-1111-4111-8111-111111111111",
-						seq: 2,
-						kind: "llm.response_delta",
-						source: "dedicated-view-generator",
-						text: "User Flowを生成しています。",
-						payloadJson: {},
-						visibility: "visible",
-						createdAt: new Date("2026-07-11T10:00:00Z"),
-					},
-				]}
-				runEvents={[
-					{
-						id: "event-1",
-						runId: "33333333-3333-4333-8333-333333333333",
-						eventType: "tool.call",
-						actor: "tool",
-						message: "repositoryを確認しています",
-						payloadJson: { toolName: "exec_command" },
-						createdAt: new Date("2026-07-11T10:00:01Z"),
-					},
-					{
-						id: "event-2",
-						eventType: "runtime.decision",
-						actor: "mission_pilot",
-						message: "設計判断を確定しました。",
-						payloadJson: { decision: "continue" },
-						createdAt: new Date("2026-07-11T10:00:02Z"),
-					},
-				]}
 				onClose={vi.fn()}
 			/>,
 		);
@@ -163,8 +117,6 @@ describe("PilotThoughtDock", () => {
 		expect(markup).toContain("<details");
 		expect(markup).not.toContain("<details open");
 		expect(markup).toContain("Pilot thought");
-		expect(markup).toContain("20秒間、ユーザーの変更を待ちます。");
-		expect(markup).toContain("設計判断を確定しました。");
 		expect(markup).toContain(
 			"Mission Pilotを停止しました。自動再開されません。",
 		);
@@ -173,5 +125,6 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("repositoryを確認しています");
 		expect(markup).not.toContain("exec_command");
 		expect(markup).not.toContain("User Flowを生成しています。");
+		expect(markup).toContain("Mission Pilotの判断要約、状態遷移、LLM証跡");
 	});
 });

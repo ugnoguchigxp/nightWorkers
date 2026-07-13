@@ -352,7 +352,7 @@ const router = createOpenApiRouter()
 		listTaskMessagesRoute,
 		withOpenApiRouteError(listTaskMessagesRoute, async (c) => {
 			const id = c.req.param("id");
-			const messages = await service.listTaskMessages(id);
+			const messages = await service.listTaskMessages(id, c.req.valid("query"));
 			return c.json(messages, 200);
 		}),
 	)

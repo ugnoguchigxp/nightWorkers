@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
@@ -49,6 +50,8 @@ export async function generateFeaturePlanArtifact(
 		proceedWithUnansweredBlocking?: boolean;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		trace?: TraceProvenance;
+		llmUsageTrace?: TraceProvenance;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -104,6 +107,7 @@ export async function generateFeaturePlanArtifact(
 		context,
 		input.routeOverride || null,
 		input.role ?? "plan",
+		input.llmUsageTrace,
 	);
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
@@ -149,6 +153,7 @@ export async function generateFeaturePlanArtifact(
 				content: initialSidecar.content,
 			},
 		},
+		trace: input.trace,
 	});
 	const sidecar = buildSpecificationVerificationSidecar({
 		taskId,
@@ -173,6 +178,7 @@ export async function generateFeaturePlanArtifact(
 			sourceFeaturePlanMessageId: message.id,
 			verificationDocument: sidecar.document,
 		},
+		trace: input.trace,
 	});
 	const verificationDocument = await createVerificationDocumentFromSpec({
 		taskId,
@@ -228,6 +234,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 	context: ReturnType<typeof buildSpecificationDocumentContext>,
 	routeOverride: StructuredLlmModelTarget | null,
 	role: StructuredLlmRole,
+	usageTrace?: TraceProvenance,
 ) {
 	try {
 		return await callStructuredJsonLLM(
@@ -238,6 +245,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 				schema: z.toJSONSchema(specificationDocumentDraftSchema),
 				taskId,
 				role,
+				usageTrace,
 				routeOverride,
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
 			},

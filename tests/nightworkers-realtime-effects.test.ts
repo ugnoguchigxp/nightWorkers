@@ -247,6 +247,8 @@ describe("useNightWorkersRealtime effect", () => {
 					id: "activity-1",
 					taskId: "task-1",
 					kind: "llm.usage",
+					traceOwner: "coding_agent",
+					traceChannel: "chat",
 					message: "usage",
 					createdAt: now,
 				},
@@ -280,6 +282,8 @@ describe("useNightWorkersRealtime effect", () => {
 					role: "user",
 					content: "hello",
 					messageType: "text",
+					traceOwner: "user",
+					traceChannel: "chat",
 					createdAt: now,
 				},
 			},
@@ -316,6 +320,8 @@ describe("useNightWorkersRealtime effect", () => {
 						artifactKind: "plan_mode_dedicated_view",
 						view: "user_flow",
 					},
+					traceOwner: "mission_pilot",
+					traceChannel: "artifact",
 					createdAt: now,
 				},
 			},
@@ -376,7 +382,6 @@ describe("useNightWorkersRealtime effect", () => {
 			queryClient.getQueryData<TaskMessage[]>(["taskMessages", "task-1"]),
 		).toEqual([
 			expect.objectContaining({ id: "message-user" }),
-			expect.objectContaining({ id: "message-assistant" }),
 			expect.objectContaining({ content: "socket failed" }),
 		]);
 		expect(

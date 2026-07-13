@@ -1,6 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import { planModeRegenerationTargetSchema } from "./plan-mode-artifact.schema";
 import { planModeArtifactCorrectionTargetSchema } from "./plan-mode-artifact-correction.schema";
+import { missionPilotPlanRoutingToolCallSchema } from "./plan-mode-routing.schema";
 
 export const MISSION_PILOT_IMPLEMENTATION_ARTIFACT_SCORE_THRESHOLD = 80;
 export const MISSION_PILOT_CONCEPT_ARTIFACT_SCORE_THRESHOLD = 70;
@@ -33,7 +34,7 @@ export const missionPilotPlanArtifactScoreSchema = z.object({
 
 export const missionPilotPlanReviewSchema = z
 	.object({
-		verdict: z.enum(["pass", "revise", "reject"]),
+		verdict: z.enum(["pass", "revise", "reroute", "reject"]),
 		summary: z.string().min(1),
 		coverage: z.object({
 			goal: z.enum(["pass", "fail"]),
@@ -55,8 +56,25 @@ export const missionPilotPlanReviewSchema = z
 			}),
 		),
 		revisionTargets: z.array(planModeArtifactCorrectionTargetSchema),
+		routingToolCall: missionPilotPlanRoutingToolCallSchema
+			.nullable()
+			.default(null),
 	})
 	.superRefine((review, context) => {
+		if (review.verdict === "reroute" && !review.routingToolCall) {
+			context.addIssue({
+				code: "custom",
+				path: ["routingToolCall"],
+				message: "reroute verdict requires edit_plan_artifact_routing",
+			});
+		}
+		if (review.verdict !== "reroute" && review.routingToolCall) {
+			context.addIssue({
+				code: "custom",
+				path: ["routingToolCall"],
+				message: "routing tool call requires reroute verdict",
+			});
+		}
 		const belowThreshold = review.artifactScores.filter(
 			(item) =>
 				!isMissionPilotConceptArtifactKind(item.artifactKind) &&
@@ -85,6 +103,9 @@ export function normalizeMissionPilotPlanReview(
 	reviewedArtifacts: MissionPilotReviewedArtifact[] = [],
 ): MissionPilotPlanReview {
 	const review = missionPilotPlanReviewSchema.parse(input);
+	if (review.verdict === "reroute") {
+		return { ...review, revisionTargets: [] };
+	}
 	if (reviewedArtifacts.length === 0 && review.artifactScores.length === 0) {
 		return review;
 	}

@@ -28,6 +28,7 @@ import type {
 	TaskRun,
 	TaskRunTodo,
 } from "../types";
+import { isPlanModeWorkspaceMessage } from "./nightWorkersRealtimeModel";
 
 type RealtimeStatus =
 	| "initializing"
@@ -94,22 +95,6 @@ function readReviewRunSnapshot(contextSnapshot: unknown): {
 				? record.reviewedRunId
 				: undefined,
 	};
-}
-
-export function isPlanModeWorkspaceMessage(message: TaskMessage) {
-	const metadata = toDeepRecord(message.metadataJson);
-	const intent = String(metadata.intent || "");
-	const artifactKind = String(metadata.artifactKind || "");
-	return (
-		intent === "design_questionnaire_ready" ||
-		intent === "mock_blueprint" ||
-		intent === "feature_plan" ||
-		intent === "design_decision_review" ||
-		intent === "implementation_plan" ||
-		artifactKind === "plan_mode_dedicated_view" ||
-		artifactKind === "plan_mode_api_contract" ||
-		artifactKind === "plan_mode_zod_schema"
-	);
 }
 
 export function useNightWorkersRealtime({
@@ -233,6 +218,14 @@ export function useNightWorkersRealtime({
 					if (msg.type === "activity_event_created" && msg.payload?.event) {
 						const incoming = msg.payload.event;
 						if (activeSessionId && incoming.taskId !== activeSessionId) return;
+						if (incoming.traceChannel !== "chat") {
+							if (incoming.kind === "llm.usage") {
+								void queryClient.invalidateQueries({
+									queryKey: ["llmUsage", incoming.taskId],
+								});
+							}
+							return;
+						}
 						queryClient.setQueryData<ActivityReplay>(
 							["activityReplay", incoming.taskId],
 							(prev = emptyActivityReplay) => ({
@@ -332,24 +325,25 @@ export function useNightWorkersRealtime({
 								queryKey: planModeWorkspaceQueryKey(incoming.taskId),
 							});
 						}
-						queryClient.setQueryData<TaskMessage[]>(
-							["taskMessages", activeSessionId],
-							(prev = []) => {
-								if (!incoming) return prev;
-								const next = [...prev];
-								if (incoming.role === "user") {
-									const optimisticIndex = next.findIndex(
-										(m) =>
-											m.id.startsWith("optimistic-") &&
-											m.role === "user" &&
-											m.content === incoming.content,
-									);
-									if (optimisticIndex >= 0) next.splice(optimisticIndex, 1);
-								}
-								next.push(incoming);
-								return next;
-							},
-						);
+						if (incoming.traceChannel === "chat") {
+							queryClient.setQueryData<TaskMessage[]>(
+								["taskMessages", activeSessionId],
+								(prev = []) => {
+									const next = [...prev];
+									if (incoming.role === "user") {
+										const optimisticIndex = next.findIndex(
+											(m) =>
+												m.id.startsWith("optimistic-") &&
+												m.role === "user" &&
+												m.content === incoming.content,
+										);
+										if (optimisticIndex >= 0) next.splice(optimisticIndex, 1);
+									}
+									next.push(incoming);
+									return next;
+								},
+							);
+						}
 						if (
 							(incoming.role === "assistant" || incoming.role === "system") &&
 							(!pendingAssistantTaskIdRef.current ||
@@ -390,6 +384,8 @@ export function useNightWorkersRealtime({
 								msg.message ||
 								"送信に失敗しました。接続状態を確認してください。",
 							messageType: "text",
+							traceOwner: "system",
+							traceChannel: "chat",
 							createdAt: new Date().toISOString(),
 						};
 						queryClient.setQueryData<TaskMessage[]>(

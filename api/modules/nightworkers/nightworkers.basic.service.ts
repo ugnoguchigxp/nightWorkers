@@ -310,10 +310,13 @@ export async function listTasks() {
 	return listTasksWithMissionPilot();
 }
 
-export async function listTaskMessages(taskId: string) {
+export async function listTaskMessages(
+	taskId: string,
+	options?: { channel?: "chat" | "pilot_thought" | "artifact" | "internal" },
+) {
 	const task = await repo.getTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
-	return repo.listTaskMessages(taskId);
+	return repo.listTaskMessages(taskId, { traceChannel: options?.channel });
 }
 
 export async function getTaskLlmUsageSummary(taskId: string) {
@@ -324,12 +327,16 @@ export async function getTaskLlmUsageSummary(taskId: string) {
 
 export async function listTaskActivityEvents(
 	taskId: string,
-	options?: { afterSeq?: number },
+	options?: {
+		afterSeq?: number;
+		channel?: "chat" | "pilot_thought" | "artifact" | "internal";
+	},
 ) {
 	const task = await repo.getTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	const events = await repo.listActivityEventsForTask(taskId, {
 		afterSeq: options?.afterSeq,
+		traceChannel: options?.channel,
 	});
 	const artifacts = await listReferencedActivityArtifacts(taskId, events);
 	return { events, artifacts };

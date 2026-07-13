@@ -2,6 +2,10 @@ import crypto from "node:crypto";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import {
+	missionPilotArtifactTrace,
+	missionPilotThoughtTrace,
+} from "../nightworkers/nightworkers.trace-provenance";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
@@ -140,6 +144,12 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			preserveUnfocusedContent: claimed.preserveUnfocusedContent,
 		};
 		validateFocus(target, sourceMetadata);
+		const thoughtTrace = missionPilotThoughtTrace({
+			sessionId: input.sessionId,
+		});
+		const artifactTrace = missionPilotArtifactTrace({
+			sessionId: input.sessionId,
+		});
 		void appendActivityEvent({
 			taskId: input.taskId,
 			kind: "runtime.state",
@@ -147,11 +157,13 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			status: "running",
 			text: `${claimed.target}へフォーカスした修正をPlan Mode agentへ依頼しました。`,
 			payloadJson: {
+				missionPilotSessionId: input.sessionId,
 				correctionRunId: claimed.id,
 				target: claimed.target,
 				focus: claimed.focusJson,
 				sourceMessageId: claimed.sourceMessageId,
 			},
+			trace: thoughtTrace,
 		}).catch(() => undefined);
 		const result = await executePlanModeArtifactCorrection({
 			taskId: input.taskId,
@@ -169,6 +181,8 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			sourceDataModelMessageId:
 				workspace.dataModelArtifacts.at(-1)?.sourceMessageId ?? null,
 			role: "mission_pilot",
+			trace: artifactTrace,
+			llmUsageTrace: thoughtTrace,
 		});
 		if (!result.message?.id) {
 			throw new Error("Correction agent result message is missing");
@@ -213,10 +227,12 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			status: "completed",
 			text: `${claimed.target}の修正結果を確認し、Plan Contextへ反映しました。`,
 			payloadJson: {
+				missionPilotSessionId: input.sessionId,
 				correctionRunId: claimed.id,
 				resultMessageId: result.message.id,
 				contextRevision: updated.contextRevision,
 			},
+			trace: thoughtTrace,
 		}).catch(() => undefined);
 		return applied;
 	} catch (error) {

@@ -8,16 +8,19 @@ const planModeCapabilities: Array<{
 	key: PlanModeCapability;
 	labelKey: string;
 	descriptionKey: string;
+	required?: boolean;
 }> = [
 	{
 		key: "feature_plan",
 		labelKey: "settings.planMode.featurePlan",
 		descriptionKey: "settings.planMode.featurePlanHelp",
+		required: true,
 	},
 	{
 		key: "questionnaire",
 		labelKey: "settings.planMode.questionnaire",
 		descriptionKey: "settings.planMode.questionnaireHelp",
+		required: true,
 	},
 	{
 		key: "user_flow",
@@ -76,6 +79,7 @@ export function SettingsPlanModePanel({
 						<input
 							type="checkbox"
 							checked={value.planMode.capabilities[capability.key]}
+							disabled={capability.required}
 							onChange={(event) =>
 								onChange({
 									...value,
@@ -93,6 +97,9 @@ export function SettingsPlanModePanel({
 						<span>
 							<span className="block text-xs font-semibold text-zinc-100">
 								{t(capability.labelKey)}
+								{capability.required
+									? ` (${t("settings.planMode.required")})`
+									: ""}
 							</span>
 							<span className="mt-1 block text-[10px] text-zinc-500">
 								{t(capability.descriptionKey)}

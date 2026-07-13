@@ -84,7 +84,9 @@ export function normalizeActivityReplay(data: unknown): ActivityReplay {
 	if (!data || typeof data !== "object") return emptyActivityReplay;
 	const replay = data as Partial<ActivityReplay>;
 	return {
-		events: Array.isArray(replay.events) ? replay.events : [],
+		events: Array.isArray(replay.events)
+			? replay.events.filter((event) => event.traceChannel === "chat")
+			: [],
 		artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
 	};
 }

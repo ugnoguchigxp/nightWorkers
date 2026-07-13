@@ -4,6 +4,7 @@ import {
 	mergeUnprojectedMessagesChronologically,
 	sliceTimelineWindow,
 } from "../src/modules/nightworkers/components/ThreadTimeline";
+import { isUserVisibleChatMessage } from "../src/modules/nightworkers/messageVisibility";
 
 describe("ThreadTimeline bounded history window", () => {
 	it.each([
@@ -67,7 +68,7 @@ describe("ThreadTimeline bounded history window", () => {
 		]);
 	});
 
-	it("places user and Mission Pilot prompts at their actual creation time", () => {
+	it("keeps Mission Pilot prompts out while preserving chat chronology", () => {
 		const event = (id: string, createdAt: string) => ({
 			id,
 			taskId: "task-1",
@@ -102,6 +103,8 @@ describe("ThreadTimeline bounded history window", () => {
 				role: "user" as const,
 				content: "pilot prompt",
 				messageType: "mission_pilot_initial_prompt" as const,
+				traceOwner: "mission_pilot" as const,
+				traceChannel: "pilot_thought" as const,
 				createdAt: "2026-07-10T00:00:20.000Z",
 			},
 			{
@@ -109,18 +112,20 @@ describe("ThreadTimeline bounded history window", () => {
 				taskId: "task-1",
 				role: "user" as const,
 				content: "original prompt",
+				traceOwner: "user" as const,
+				traceChannel: "chat" as const,
 				createdAt: "2026-07-10T00:00:00.000Z",
 			},
 		];
 
 		expect(
-			mergeUnprojectedMessagesChronologically(transcriptItems, messages).map(
-				(item) => item.id,
-			),
+			mergeUnprojectedMessagesChronologically(
+				transcriptItems,
+				messages.filter(isUserVisibleChatMessage),
+			).map((item) => item.id),
 		).toEqual([
 			"unprojected-original-user-prompt",
 			"assistant:turn-1",
-			"unprojected-mission-pilot-prompt",
 			"assistant:turn-2",
 		]);
 	});

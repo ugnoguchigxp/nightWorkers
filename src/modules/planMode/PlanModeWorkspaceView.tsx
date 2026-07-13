@@ -57,6 +57,7 @@ export function PlanModeWorkspaceView({
 	hasFeaturePlan,
 	generalSettings,
 	viewDecisions,
+	onUpdateRouting,
 	generatePlanModeArtifact,
 	generateDedicatedViews,
 	onQueueSession,
@@ -119,6 +120,7 @@ export function PlanModeWorkspaceView({
 	hasFeaturePlan: boolean;
 	generalSettings: { planMode?: StatusProps["planModeSettings"] } | null;
 	viewDecisions: StatusProps["viewDecisions"];
+	onUpdateRouting: StatusProps["onUpdateRouting"];
 	generatePlanModeArtifact: (
 		action: "blueprint" | "data-model" | "feature-plan",
 		tab: PlanWorkspaceTab,
@@ -232,6 +234,7 @@ export function PlanModeWorkspaceView({
 						isImplementationLocked={isImplementationLocked}
 						planModeSettings={generalSettings?.planMode}
 						viewDecisions={viewDecisions || []}
+						onUpdateRouting={onUpdateRouting}
 						onOpenQuestionnaire={() => selectActiveTab("questionnaire")}
 						onGenerateAdditionalQuestions={
 							requestAdditionalQuestionnaireQuestions

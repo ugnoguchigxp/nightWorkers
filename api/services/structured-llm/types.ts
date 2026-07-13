@@ -1,4 +1,5 @@
 import type { LlmRole as StructuredLlmRole } from "../../../shared/llm-role";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import type { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import type {
 	LlmPromptPartTokenEstimates,
@@ -36,6 +37,7 @@ export type CallSupervisorOptions = {
 	workingDirectory?: string;
 	taskId?: string;
 	runId?: string | null;
+	usageTrace?: TraceProvenance;
 	promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
 	runtimeSessionStore?: RuntimeSessionStateStore;

@@ -1,9 +1,6 @@
-import { GitCompare, Sparkles, Trash2 } from "lucide-react";
+import { GitCompare, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type {
-	WorktreeAdviceResponse,
-	WorktreeSummary,
-} from "../../../../shared/schemas/gitworktree.schema";
+import type { WorktreeSummary } from "../../../../shared/schemas/gitworktree.schema";
 import {
 	canDiscardAndRemoveWorktree,
 	worktreeStatusLabelKey,
@@ -18,18 +15,14 @@ import {
 type GitworktreeDetailProps = {
 	selected: WorktreeSummary | null;
 	busy: string | null;
-	advice: WorktreeAdviceResponse | null;
 	onViewDiff: () => void;
-	onRequestAdvice: () => void;
 	onRemove: () => void;
 };
 
 export function GitworktreeDetail({
 	selected,
 	busy,
-	advice,
 	onViewDiff,
-	onRequestAdvice,
 	onRemove,
 }: GitworktreeDetailProps) {
 	const { t } = useTranslation();
@@ -124,20 +117,11 @@ export function GitworktreeDetail({
 					</button>
 					<button
 						type="button"
-						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
-						style={controlStyle}
-						disabled={Boolean(busy)}
-						onClick={onRequestAdvice}
-					>
-						<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-						{t("projectDetail.worktrees.summarize")}
-					</button>
-					<button
-						type="button"
-						className="inline-flex h-8 items-center gap-2 border px-3 text-xs"
+						className="inline-flex h-8 items-center gap-2 border px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
 						style={{ ...controlStyle, color: "var(--nw-danger)" }}
 						disabled={
 							Boolean(busy) ||
+							selected.isBase ||
 							!selected.head ||
 							(!selected.canRemove && !canDiscardAndRemove)
 						}
@@ -151,11 +135,6 @@ export function GitworktreeDetail({
 						)}
 					</button>
 				</div>
-				{advice ? (
-					<div className="border p-3 text-xs" style={controlStyle}>
-						{advice.summary}
-					</div>
-				) : null}
 			</div>
 		</div>
 	);

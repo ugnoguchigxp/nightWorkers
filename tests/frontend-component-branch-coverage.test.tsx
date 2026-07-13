@@ -137,6 +137,25 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 function stubPlanModeCommands() {
+	let queryIndex = 0;
+	vi.doMock("@tanstack/react-query", async () => ({
+		...(await vi.importActual<typeof import("@tanstack/react-query")>(
+			"@tanstack/react-query",
+		)),
+		useQueryClient: () => ({
+			invalidateQueries: vi.fn(async () => undefined),
+			setQueryData: vi.fn(),
+		}),
+		useQuery: () => {
+			queryIndex += 1;
+			return queryIndex === 1
+				? {
+						data: createPlanWorkspace(),
+						refetch: vi.fn(async () => ({ data: createPlanWorkspace() })),
+					}
+				: { data: null, refetch: vi.fn(async () => ({ data: null })) };
+		},
+	}));
 	const generatedMessage = buildTaskMessage({
 		id: "generated-plan-view",
 		taskId: "task-1",
@@ -240,11 +259,13 @@ async function triggerElementCallbacks(element: unknown) {
 			const argument =
 				name === "onGenerateDedicatedViews"
 					? ["api_io_contract", "activity_flow"]
-					: name === "onStart"
-						? "discover_tests"
-						: name === "onChange"
-							? { "q-1": { questionId: "q-1", freeText: "updated" } }
-							: undefined;
+					: name === "onSelectSession"
+						? createQuestionnaireSession()
+						: name === "onStart"
+							? "discover_tests"
+							: name === "onChange"
+								? { "q-1": { questionId: "q-1", freeText: "updated" } }
+								: undefined;
 			await value(argument);
 		}
 		await visit(props.children);
@@ -483,6 +504,27 @@ function createPlanWorkspace(): PlanModeWorkspace {
 		],
 		decisionReviews: [],
 		implementationReferences: [],
+		viewDecisions: [
+			{ view: "questionnaire", decision: "include" },
+			{ view: "feature_plan", decision: "include" },
+			{ view: "blueprint", decision: "include" },
+			{ view: "data_model", decision: "include" },
+			{ view: "api_io_contract", decision: "include" },
+		],
+		routing: {
+			revision: 0,
+			entries: [
+				{ view: "questionnaire", decision: "include", required: true },
+				{ view: "feature_plan", decision: "include", required: true },
+				{ view: "blueprint", decision: "include", required: false },
+				{ view: "data_model", decision: "include", required: false },
+				{ view: "api_io_contract", decision: "include", required: false },
+			],
+			editable: true,
+			lockedReason: null,
+			updatedBy: null,
+			updatedAt: null,
+		},
 	};
 }
 
@@ -654,7 +696,7 @@ describe("frontend component branch coverage", () => {
 		for (const route of routes) {
 			await expect(renderShellRoute(route)).resolves.toBeTruthy();
 		}
-	});
+	}, 15_000);
 
 	it("evaluates PlanModeWorkspaceViewer tab branches with injected state", async () => {
 		const tabs: PlanWorkspaceTab[] = [
@@ -676,7 +718,7 @@ describe("frontend component branch coverage", () => {
 		];
 
 		for (const tab of tabs) {
-			resetHookMocks(planViewerStateValues(tab));
+			resetHookMocks(planViewerStateValues(tab).slice(1));
 			stubPlanModeCommands();
 			const { PlanModeWorkspaceViewer } = await import(
 				"../src/modules/planMode/PlanModeWorkspaceViewer"

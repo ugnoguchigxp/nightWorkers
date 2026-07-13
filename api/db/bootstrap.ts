@@ -1,6 +1,7 @@
 import { ensureBaseNightWorkersTables } from "./base-schema-bootstrap";
 import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
+import { backfillTraceProvenance } from "./bootstrap-trace-provenance";
 import { client } from "./client";
 import { ensureMissionPilotTables } from "./mission-pilot-schema-bootstrap";
 import {
@@ -171,6 +172,7 @@ export async function ensureNightWorkersSchema() {
 	await ensureRuntimeAndUsageTables();
 
 	await ensureTaskWorkflowTables();
+	await backfillTraceProvenance();
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_settings (

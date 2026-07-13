@@ -539,10 +539,18 @@ describe("Mission Pilot plan coordinator", () => {
 			.where(eq(missionPilotSessions.id, session.id));
 		await runMissionPilotPlanPipeline(taskId);
 
-		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(1, taskId, {
-			questionnaireSessionId: questionnaireId,
-			role: "mission_pilot",
-		});
+		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(
+			1,
+			taskId,
+			expect.objectContaining({
+				questionnaireSessionId: questionnaireId,
+				role: "mission_pilot",
+				trace: expect.objectContaining({
+					owner: "mission_pilot",
+					channel: "artifact",
+				}),
+			}),
+		);
 		expect(mocks.generateFeaturePlan).toHaveBeenCalledTimes(2);
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(
 			2,
@@ -554,12 +562,15 @@ describe("Mission Pilot plan coordinator", () => {
 			}),
 		);
 		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledTimes(1);
-		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledWith(taskId, {
-			source: "pre_feature_plan_gate",
-			reason: expect.stringContaining("Feature Plan生成直前"),
-			maxQuestions: 5,
-			role: "mission_pilot",
-		});
+		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledWith(
+			taskId,
+			expect.objectContaining({
+				source: "pre_feature_plan_gate",
+				reason: expect.stringContaining("Feature Plan生成直前"),
+				maxQuestions: 5,
+				role: "mission_pilot",
+			}),
+		);
 		expect(mocks.saveQuestionnaireAnswers).toHaveBeenCalledTimes(2);
 		expect(mocks.saveQuestionnaireAnswers).toHaveBeenLastCalledWith(
 			taskId,

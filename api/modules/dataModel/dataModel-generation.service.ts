@@ -4,6 +4,7 @@ import {
 	type DataModelArtifact,
 	dataModelArtifactSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildDataModelSystemPrompt,
@@ -43,6 +44,8 @@ export type DataModelGenerationInput = {
 	sourceBlueprintMessageId?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	trace?: TraceProvenance;
+	llmUsageTrace?: TraceProvenance;
 };
 
 export class DataModelGenerationError extends Error {
@@ -99,6 +102,7 @@ export async function generateDataModelArtifact(
 		prompt,
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
+		usageTrace: input.llmUsageTrace,
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -124,6 +128,7 @@ export async function generateDataModelArtifact(
 				promptVersion: DATA_MODEL_PROMPT_VERSION,
 			},
 		},
+		trace: input.trace,
 	});
 	return { message, workspace: await getPlanModeWorkspace(taskId) };
 }
@@ -194,6 +199,7 @@ async function generateArtifactFromLlm(input: {
 	prompt: string;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }) {
 	try {
 		const schema = buildDataModelResponseJsonSchema();
@@ -213,6 +219,7 @@ async function generateArtifactFromLlm(input: {
 					taskId: input.taskId,
 					runId: null,
 					role: input.role,
+					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
 				},
 			);

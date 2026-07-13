@@ -1,4 +1,5 @@
 import type { MockBlueprint } from "../../../shared/schemas/mock-blueprint.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import {
 	buildMockBlueprintSectionCatalog,
 	buildMockBlueprintStructuredOutputJsonSchema,
@@ -66,6 +67,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }): Promise<GeneratedMockBlueprintDraft> {
 	const schema = buildMockBlueprintStructuredOutputJsonSchema();
 	const systemPrompt = buildMockBlueprintSystemPrompt({
@@ -96,6 +98,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		taskId: input.taskId,
 		runId: null,
 		role: input.role ?? "plan",
+		usageTrace: input.usageTrace,
 		routeOverride: input.routeOverride || null,
 		allowRawOutputOnJsonParseFailure: true,
 	});

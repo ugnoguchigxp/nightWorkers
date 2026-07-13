@@ -177,12 +177,16 @@ export async function synchronizePlanSteps(
 	for (const step of steps) {
 		const current = byKey.get(step.key);
 		if (!current) {
+			const routingInvalidated =
+				session.planRoutingRevision > 0 &&
+				step.key !== "questionnaire" &&
+				step.decision === "include";
 			await db.insert(missionPilotSteps).values({
 				id: crypto.randomUUID(),
 				sessionId,
 				stepKey: step.key,
 				ordinal: step.ordinal,
-				status: step.status,
+				status: routingInvalidated ? "pending" : step.status,
 				contextRevision: session.contextRevision,
 				contextDigest: session.contextDigest,
 				evidenceJson: {
@@ -191,6 +195,9 @@ export async function synchronizePlanSteps(
 					required: step.required,
 					enabled: step.enabled,
 					decision: step.decision,
+					...(routingInvalidated
+						? { invalidatedByRoutingRevision: session.planRoutingRevision }
+						: {}),
 				},
 				createdAt: now,
 				updatedAt: now,
@@ -198,13 +205,27 @@ export async function synchronizePlanSteps(
 			continue;
 		}
 		if (current.status === "running" || current.status === "completed")
-			continue;
+			if (
+				current.evidenceJson.invalidatedByRoutingRevision !==
+					session.planRoutingRevision ||
+				current.evidenceJson.artifactRoutingRevision ===
+					session.planRoutingRevision
+			)
+				continue;
+		const routingInvalidated =
+			current.evidenceJson.invalidatedByRoutingRevision ===
+				session.planRoutingRevision &&
+			current.evidenceJson.artifactRoutingRevision !==
+				session.planRoutingRevision;
 		await db
 			.update(missionPilotSteps)
 			.set({
 				ordinal: step.ordinal,
-				status:
-					step.status === "skipped" || step.status === "completed"
+				status: routingInvalidated
+					? step.decision === "omit"
+						? "skipped"
+						: "pending"
+					: step.status === "skipped" || step.status === "completed"
 						? step.status
 						: current.status === "failed"
 							? "failed"
@@ -506,17 +527,26 @@ export async function appendPlanContext(
 
 export async function createPlanReview(input: {
 	sessionId: string;
+	routingRevision?: number;
 	contextRevision: number;
 	contextDigest: string;
 	featurePlanMessageId: string;
 	attempt: number;
 	review: MissionPilotPlanReview;
 }) {
+	const session =
+		input.routingRevision === undefined
+			? await db.query.missionPilotSessions.findFirst({
+					where: eq(missionPilotSessions.id, input.sessionId),
+				})
+			: null;
 	const [row] = await db
 		.insert(missionPilotPlanReviews)
 		.values({
 			id: crypto.randomUUID(),
 			...input,
+			routingRevision:
+				input.routingRevision ?? session?.planRoutingRevision ?? 0,
 			verdict: input.review.verdict,
 			reviewJson: input.review,
 			createdAt: new Date(),
