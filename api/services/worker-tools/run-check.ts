@@ -214,21 +214,48 @@ function formatRunCheckSummary(input: {
 	if (input.exitCode === 0) {
 		return [`OK ${input.checkKind}`, `exitCode=0`].join("\n");
 	}
-	const excerpt = `${input.stderr}\n${input.stdout}`
+	const excerpt = stripTerminalControlSequences(
+		`${input.stderr}\n${input.stdout}`,
+	)
 		.split("\n")
 		.map((line) => line.trimEnd())
 		.filter(Boolean)
 		.slice(0, 24)
 		.join("\n");
+	const errorMessage = input.error?.message
+		? stripTerminalControlSequences(input.error.message).trim()
+		: "";
+	const includeErrorMessage =
+		Boolean(errorMessage) &&
+		(input.error?.code !== "COMMAND_FAILED" || !excerpt);
 	return [
 		`ERROR ${input.checkKind}`,
 		`exitCode=${input.exitCode}`,
 		input.error?.code ? `errorCode=${input.error.code}` : null,
-		input.error?.message ? `error=${input.error.message}` : null,
+		includeErrorMessage ? `error=${errorMessage}` : null,
 		excerpt,
 	]
 		.filter(Boolean)
 		.join("\n");
+}
+
+function stripTerminalControlSequences(value: string) {
+	const ansiEscape = String.fromCharCode(27);
+	return value
+		.replace(
+			new RegExp(
+				`${ansiEscape}\\][^\\u0007]*(?:\\u0007|${ansiEscape}\\\\)`,
+				"g",
+			),
+			"",
+		)
+		.replace(
+			new RegExp(
+				`${ansiEscape}\\[[0-?]*[ -/]*[@-~]|\\u009B[0-?]*[ -/]*[@-~]`,
+				"g",
+			),
+			"",
+		);
 }
 
 async function writeRawCheckArtifact(input: {

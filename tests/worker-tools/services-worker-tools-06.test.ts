@@ -162,6 +162,43 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.llmSummary).not.toContain("stdoutArtifact=");
 		expect(result.payload.llmSummary).not.toContain("stderrArtifact=");
 	});
+
+	it("removes terminal controls and duplicate command errors from failed check summaries", async () => {
+		await fs.writeFile(
+			path.join(dummyRepoDir, "package.json"),
+			JSON.stringify({
+				type: "module",
+				scripts: { test: "node failing-test.mjs" },
+			}),
+			"utf-8",
+		);
+		await fs.writeFile(
+			path.join(dummyRepoDir, "failing-test.mjs"),
+			[
+				'process.stderr.write("\\u001b[31mFailed Tests 1\\u001b[39m\\n");',
+				'process.stderr.write("AssertionError: expected 404 to be 201\\n");',
+				"process.exit(1);",
+			].join("\n"),
+			"utf-8",
+		);
+
+		const result = await runCheckTool({
+			command: "test",
+			checkKind: "test",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.payload.llmSummary).toContain("ERROR test");
+		expect(result.payload.llmSummary).toContain("errorCode=COMMAND_FAILED");
+		expect(result.payload.llmSummary).toContain("Failed Tests 1");
+		expect(result.payload.llmSummary).toContain(
+			"AssertionError: expected 404 to be 201",
+		);
+		expect(result.payload.llmSummary).not.toContain("error=Command failed:");
+		expect(result.payload.llmSummary).not.toContain(String.fromCharCode(27));
+		expect(result.payload.llmSummary.match(/Failed Tests 1/g)).toHaveLength(1);
+	});
 });
 
 describe("gitDiffTool", () => {
