@@ -14,6 +14,7 @@ import {
 import { handleWorkbenchAnchorClick } from "../nightworkers/routing/workbench-link-click";
 import { serializeWorkbenchRoute } from "../nightworkers/routing/workbench-route-state";
 import type {
+	FxRateCache,
 	GeneralSettings,
 	LlmSettings,
 	Repository,
@@ -30,6 +31,7 @@ import { SettingsPlanModePanel } from "./SettingsPlanModePanel";
 import { SettingsSaveActions } from "./SettingsSaveActions";
 import { defaultSettings } from "./settings-defaults";
 import {
+	fetchFxRates,
 	fetchGeneralSettings,
 	fetchLlmSettings,
 	refreshFxRates as refreshFxRatesCommand,
@@ -62,6 +64,7 @@ export function SettingsScreen({
 	const [generalSettings, setGeneralSettings] = useState<GeneralSettings>(
 		defaultGeneralSettings,
 	);
+	const [fxRateCache, setFxRateCache] = useState<FxRateCache | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [llmSaveStatus, setLlmSaveStatus] =
@@ -109,14 +112,17 @@ export function SettingsScreen({
 		Promise.all([
 			fetchLlmSettings().then((res) => res.json()),
 			fetchGeneralSettings().then((res) => res.json()),
+			fetchFxRates().then((res) => (res.ok ? res.json() : null)),
 		])
 			.then(
-				([llmData, generalData]: [
+				([llmData, generalData, fxData]: [
 					Partial<LlmSettings>,
 					Partial<GeneralSettings>,
+					FxRateCache | null,
 				]) => {
 					setSettings({ ...defaultSettings, ...llmData });
 					setGeneralSettings(mergeGeneralSettings(generalData));
+					setFxRateCache(fxData);
 				},
 			)
 			.finally(() => setIsLoading(false));
@@ -228,7 +234,8 @@ export function SettingsScreen({
 					t("settings.general.exchangeRefreshFailed", { status: res.status }),
 				);
 			}
-			const cache = (await res.json()) as { fetchedAt: string };
+			const cache = (await res.json()) as FxRateCache;
+			setFxRateCache(cache);
 			setGeneralSettings((prev) => ({
 				...prev,
 				fx: { ...prev.fx, source: "ecb", lastRefreshedAt: cache.fetchedAt },
@@ -398,6 +405,7 @@ export function SettingsScreen({
 							/>
 							<GeneralSettingsPanel
 								value={generalSettings}
+								fxCache={fxRateCache}
 								isRefreshingFx={isRefreshingFx}
 								onChange={setGeneralSettings}
 								onRefreshFx={() => void refreshFxRates()}

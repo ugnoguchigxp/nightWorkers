@@ -1,3 +1,4 @@
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildPlanModeSettingsSnapshot,
@@ -5,6 +6,7 @@ import {
 } from "../../services/settings/general-settings";
 import { createDesignQuestionnaire } from "../questionnaire/questionnaire.service";
 import * as repo from "./nightworkers.repository";
+import { missionPilotPlanOutputTrace } from "./nightworkers.trace-provenance";
 import type { WorkbenchPlanModeGate } from "./nightworkers.workbench.service";
 import {
 	createWorkbenchLlmDebugEventEmitter,
@@ -18,6 +20,7 @@ export async function ensureDesignQuestionnaireReadyMessage(input: {
 	planModeGate: WorkbenchPlanModeGate & Record<string, unknown>;
 	planModeSettingsSnapshot: ReturnType<typeof buildPlanModeSettingsSnapshot>;
 	source: "workbench" | "mission_pilot";
+	trace?: TraceProvenance;
 }) {
 	const messages = await repo.listTaskMessages(input.taskId);
 	const existing = messages.find((message) => {
@@ -53,14 +56,19 @@ export async function ensureDesignQuestionnaireReadyMessage(input: {
 			planModeGate: input.planModeGate,
 			planModeSettingsSnapshot: input.planModeSettingsSnapshot,
 		},
+		trace: input.trace,
 	});
 }
 
 export async function prepareMissionPilotPlanModeIntake(input: {
 	taskId: string;
 	prompt: string;
+	missionPilotSessionId: string;
 	questionnaireSession?: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
 }) {
+	const trace = missionPilotPlanOutputTrace({
+		sessionId: input.missionPilotSessionId,
+	});
 	const task = await repo.getTask(input.taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	const repository = await repo.getRepository(task.repositoryId);
@@ -76,6 +84,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		emitEvent: createWorkbenchLlmDebugEventEmitter(input.taskId),
 		taskId: input.taskId,
 		role: "mission_pilot",
+		usageTrace: trace,
 	});
 	const planModeGate = {
 		...originalGate,
@@ -98,6 +107,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		input.questionnaireSession ??
 		(await createDesignQuestionnaire(input.taskId, null, input.prompt, {
 			role: "mission_pilot",
+			usageTrace: trace,
 		}));
 	await ensureDesignQuestionnaireReadyMessage({
 		taskId: input.taskId,
@@ -105,6 +115,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		planModeGate,
 		planModeSettingsSnapshot,
 		source: "mission_pilot",
+		trace,
 	});
 	return questionnaireSession;
 }

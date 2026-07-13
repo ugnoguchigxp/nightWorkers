@@ -19,6 +19,7 @@ import {
 } from "../../db/mission-pilot-schema";
 import { implementationQueueEntries, taskRuns, tasks } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
+import { readGeneralSettings } from "../../services/settings/general-settings";
 import { listPlanModeTaskMessages } from "../nightworkers/nightworkers.plan-mode-core.port";
 
 const ALL_ROUTING_VIEWS: readonly PlanModeRoutingView[] = [
@@ -38,6 +39,9 @@ const TERMINAL_TASK_STATUSES = new Set([
 ]);
 
 type TaskMessage = Awaited<ReturnType<typeof listPlanModeTaskMessages>>[number];
+type PlanModeCapabilities = ReturnType<
+	typeof readGeneralSettings
+>["planMode"]["capabilities"];
 
 function record(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -47,6 +51,7 @@ function record(value: unknown) {
 
 function initialEntriesFromMessages(
 	messages: TaskMessage[],
+	capabilities: PlanModeCapabilities,
 ): PlanModeRoutingEntry[] {
 	const explicit = new Map<PlanModeRoutingView, PlanModeRoutingEntry>();
 	const generated = new Set<PlanModeRoutingView>();
@@ -79,9 +84,13 @@ function initialEntriesFromMessages(
 					view: typedView,
 					decision: REQUIRED_VIEWS.has(typedView) ? "include" : decision,
 					required: REQUIRED_VIEWS.has(typedView),
-					...(typeof value.reason === "string" && value.reason.trim()
-						? { reason: value.reason.trim() }
-						: {}),
+					capabilityEnabled:
+						REQUIRED_VIEWS.has(typedView) || capabilities[typedView],
+					reason: REQUIRED_VIEWS.has(typedView)
+						? "Plan Mode の必須 Artifact です。"
+						: typeof value.reason === "string" && value.reason.trim()
+							? value.reason.trim()
+							: undefined,
 				});
 			}
 		}
@@ -112,6 +121,7 @@ function initialEntriesFromMessages(
 				decision:
 					REQUIRED_VIEWS.has(view) || generated.has(view) ? "include" : "omit",
 				required: REQUIRED_VIEWS.has(view),
+				capabilityEnabled: REQUIRED_VIEWS.has(view) || capabilities[view],
 				reason: REQUIRED_VIEWS.has(view)
 					? "Plan Mode の必須 Artifact です。"
 					: generated.has(view)
@@ -119,6 +129,28 @@ function initialEntriesFromMessages(
 						: "初期 routing では省略されています。",
 			},
 	);
+}
+
+function normalizeRoutingEntries(
+	entries: PlanModeRoutingEntry[],
+	capabilities: PlanModeCapabilities,
+) {
+	const byView = new Map(entries.map((entry) => [entry.view, entry]));
+	return ALL_ROUTING_VIEWS.map((view): PlanModeRoutingEntry => {
+		const entry = byView.get(view);
+		const required = REQUIRED_VIEWS.has(view);
+		return {
+			view,
+			decision: required ? "include" : (entry?.decision ?? "omit"),
+			required,
+			capabilityEnabled: required || capabilities[view],
+			...(required
+				? { reason: "Plan Mode の必須 Artifact です。" }
+				: entry?.reason
+					? { reason: entry.reason }
+					: {}),
+		};
+	});
 }
 
 async function routingLockState(taskId: string) {
@@ -150,6 +182,7 @@ export async function getPlanModeRouting(
 	taskId: string,
 	options: { messages?: TaskMessage[]; taskStatus?: string } = {},
 ): Promise<PlanModeRoutingSnapshot> {
+	const capabilities = readGeneralSettings().planMode.capabilities;
 	const [session, messages] = await Promise.all([
 		db.query.missionPilotSessions.findFirst({
 			where: eq(missionPilotSessions.taskId, taskId),
@@ -163,7 +196,7 @@ export async function getPlanModeRouting(
 				: null;
 		return {
 			revision: 0,
-			entries: initialEntriesFromMessages(messages),
+			entries: initialEntriesFromMessages(messages, capabilities),
 			editable: !lockedReason,
 			lockedReason,
 			updatedBy: null,
@@ -182,7 +215,11 @@ export async function getPlanModeRouting(
 		: null;
 	return {
 		revision,
-		entries: persisted?.entriesJson ?? initialEntriesFromMessages(messages),
+		entries: normalizeRoutingEntries(
+			persisted?.entriesJson ??
+				initialEntriesFromMessages(messages, capabilities),
+			capabilities,
+		),
 		editable: !lockedReason,
 		lockedReason,
 		updatedBy: persisted?.updatedBy ?? null,
@@ -196,9 +233,57 @@ function stepKeyForView(view: PlanModeRoutingView) {
 	return `view:${view}`;
 }
 
+function routingRequestHash(
+	actor: PlanModeRoutingActor,
+	request: UpdatePlanModeRoutingRequest,
+) {
+	const serialized = JSON.stringify({
+		actor,
+		expectedRevision: request.expectedRevision,
+		changes: [...request.changes].sort((left, right) =>
+			left.view.localeCompare(right.view),
+		),
+	});
+	return crypto.createHash("sha256").update(serialized).digest("hex");
+}
+
+function assertIdempotencyReplayMatches(
+	requestHash: string | null,
+	expectedHash: string,
+) {
+	if (requestHash === expectedHash) return;
+	throw new AppError(
+		409,
+		"PLAN_MODE_ROUTING_IDEMPOTENCY_CONFLICT",
+		"同じ idempotency key が別の routing 変更に使用されています。",
+	);
+}
+
+async function isAppliedRoutingRequest(input: {
+	taskId: string;
+	idempotencyKey: string;
+	requestHash: string;
+}) {
+	const session = await db.query.missionPilotSessions.findFirst({
+		where: eq(missionPilotSessions.taskId, input.taskId),
+	});
+	if (!session) return false;
+	const existing = await db.query.missionPilotPlanRoutingRevisions.findFirst({
+		where: and(
+			eq(missionPilotPlanRoutingRevisions.sessionId, session.id),
+			eq(missionPilotPlanRoutingRevisions.idempotencyKey, input.idempotencyKey),
+		),
+	});
+	if (!existing) return false;
+	assertIdempotencyReplayMatches(existing.requestHash, input.requestHash);
+	return true;
+}
+
 async function persistRoutingRevision(input: {
 	taskId: string;
 	expectedRevision: number;
+	idempotencyKey: string;
+	requestHash: string;
 	entries: PlanModeRoutingEntry[];
 	changedViews: PlanModeRoutingView[];
 	actor: PlanModeRoutingActor;
@@ -209,6 +294,19 @@ async function persistRoutingRevision(input: {
 			where: eq(missionPilotSessions.taskId, input.taskId),
 		});
 		if (!session) throw new NotFoundError("Mission Pilot Session not found");
+		const replay = await tx.query.missionPilotPlanRoutingRevisions.findFirst({
+			where: and(
+				eq(missionPilotPlanRoutingRevisions.sessionId, session.id),
+				eq(
+					missionPilotPlanRoutingRevisions.idempotencyKey,
+					input.idempotencyKey,
+				),
+			),
+		});
+		if (replay) {
+			assertIdempotencyReplayMatches(replay.requestHash, input.requestHash);
+			return replay;
+		}
 		if (session.planRoutingRevision !== input.expectedRevision) {
 			throw new AppError(
 				409,
@@ -216,7 +314,8 @@ async function persistRoutingRevision(input: {
 				"Plan Artifact routing が別の操作で更新されました。再読み込みしてください。",
 			);
 		}
-		const [queueEntry, run, latestContext] = await Promise.all([
+		const [task, queueEntry, run, latestContext] = await Promise.all([
+			tx.query.tasks.findFirst({ where: eq(tasks.id, input.taskId) }),
 			tx.query.implementationQueueEntries.findFirst({
 				where: eq(implementationQueueEntries.taskId, input.taskId),
 			}),
@@ -226,6 +325,24 @@ async function persistRoutingRevision(input: {
 				orderBy: (row, { desc }) => [desc(row.revision)],
 			}),
 		]);
+		if (!task) throw new NotFoundError("Task not found");
+		if (TERMINAL_TASK_STATUSES.has(task.status)) {
+			throw new AppError(
+				409,
+				"PLAN_MODE_ROUTING_LOCKED",
+				`Task が ${task.status} のため routing を変更できません。`,
+			);
+		}
+		if (
+			input.actor === "user" &&
+			(session.desiredState === "playing" || session.leaseOwner)
+		) {
+			throw new AppError(
+				409,
+				"PLAN_MODE_ROUTING_REBUILD_IN_PROGRESS",
+				"Mission Pilot 実行中は routing を変更できません。停止後に再試行してください。",
+			);
+		}
 		if (
 			queueEntry ||
 			run ||
@@ -277,6 +394,8 @@ async function persistRoutingRevision(input: {
 			entriesJson: input.entries,
 			updatedBy: input.actor,
 			reason: input.reason,
+			idempotencyKey: input.idempotencyKey,
+			requestHash: input.requestHash,
 			createdAt: now,
 		});
 		await tx.insert(missionPilotContextSnapshots).values({
@@ -366,6 +485,16 @@ async function updatePlanModeRouting(input: {
 	request: UpdatePlanModeRoutingRequest;
 	actor: PlanModeRoutingActor;
 }) {
+	const requestHash = routingRequestHash(input.actor, input.request);
+	if (
+		await isAppliedRoutingRequest({
+			taskId: input.taskId,
+			idempotencyKey: input.request.idempotencyKey,
+			requestHash,
+		})
+	) {
+		return getPlanModeRouting(input.taskId);
+	}
 	const current = await getPlanModeRouting(input.taskId);
 	if (!current.editable) {
 		throw new AppError(
@@ -388,6 +517,13 @@ async function updatePlanModeRouting(input: {
 	for (const change of input.request.changes) {
 		const previous = nextByView.get(change.view);
 		if (!previous) continue;
+		if (change.decision === "include" && !previous.capabilityEnabled) {
+			throw new AppError(
+				409,
+				"PLAN_MODE_ROUTING_CAPABILITY_DISABLED",
+				`${change.view} は Settings で無効なため ON にできません。`,
+			);
+		}
 		if (
 			input.actor === "mission_pilot" &&
 			(previous.decision !== "omit" || change.decision !== "include")
@@ -402,7 +538,11 @@ async function updatePlanModeRouting(input: {
 		nextByView.set(change.view, {
 			...previous,
 			decision: change.decision,
-			reason: change.reason ?? previous.reason,
+			reason:
+				change.reason?.trim() ||
+				(input.actor === "user"
+					? `ユーザーが ${change.decision === "include" ? "ON" : "OFF"} に変更しました。`
+					: previous.reason),
 		});
 		changedViews.push(change.view);
 	}
@@ -410,6 +550,8 @@ async function updatePlanModeRouting(input: {
 	await persistRoutingRevision({
 		taskId: input.taskId,
 		expectedRevision: current.revision,
+		idempotencyKey: input.request.idempotencyKey,
+		requestHash,
 		entries: ALL_ROUTING_VIEWS.map((view) => {
 			const entry = nextByView.get(view);
 			if (!entry) throw new Error(`Routing entry is missing: ${view}`);
@@ -440,6 +582,7 @@ export function executeMissionPilotPlanRoutingTool(
 		taskId,
 		request: {
 			expectedRevision: toolCall.expectedRevision,
+			idempotencyKey: toolCall.idempotencyKey,
 			changes: toolCall.changes,
 		},
 		actor: "mission_pilot",

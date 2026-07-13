@@ -50,21 +50,6 @@ import { usePlanModeQuestionnaireActions } from "./usePlanModeQuestionnaireActio
 import { usePlanModeRoutingEditor } from "./usePlanModeRoutingEditor";
 import { usePlanModeWorkspaceOutputs } from "./usePlanModeWorkspaceOutputs";
 
-export {
-	extractViewDecisions,
-	selectActiveDedicatedArtifact,
-} from "./PlanModeWorkspaceViewer.helpers";
-export {
-	buildPlanModeArtifactContext,
-	buildPlanModeExportDescriptor,
-	buildVisiblePlanWorkspaceTabs,
-	getPlanWorkspaceTabLabel,
-	resetPlanWorkspaceScrollToTop,
-	resolveInitialPlanWorkspaceTabUpdate,
-	scrollPlanWorkspaceToTop,
-	shouldOpenQuestionnaireForEmptyBlueprint,
-	shouldShowQuestionnaireStartAction,
-} from "./PlanModeWorkspaceViewer.model";
 export function PlanModeWorkspaceViewer({
 	sessionId,
 	taskMessages,

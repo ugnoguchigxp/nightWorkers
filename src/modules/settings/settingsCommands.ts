@@ -22,6 +22,10 @@ export function saveGeneralSettings(settings: GeneralSettings) {
 	return apiFetch("/api/settings/general", jsonRequest("POST", settings));
 }
 
+export function fetchFxRates() {
+	return apiFetch("/api/settings/fx");
+}
+
 export function refreshFxRates() {
 	return apiFetch("/api/settings/fx/refresh", { method: "POST" });
 }

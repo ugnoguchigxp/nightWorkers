@@ -32,48 +32,120 @@ export const editablePlanModeRoutingViewSchema = z.enum(
 export const planModeRoutingDecisionSchema = z.enum(["include", "omit"]);
 export const planModeRoutingActorSchema = z.enum(["user", "mission_pilot"]);
 
-export const planModeRoutingEntrySchema = z.object({
-	view: planModeRoutingViewSchema,
-	decision: planModeRoutingDecisionSchema,
-	required: z.boolean(),
-	reason: z.string().min(1).optional(),
-});
+export const planModeRoutingEntrySchema = z
+	.object({
+		view: planModeRoutingViewSchema,
+		decision: planModeRoutingDecisionSchema,
+		required: z.boolean(),
+		capabilityEnabled: z.boolean(),
+		reason: z.string().min(1).optional(),
+	})
+	.strict();
 
-export const planModeRoutingSnapshotSchema = z.object({
-	revision: z.number().int().nonnegative(),
-	entries: z.array(planModeRoutingEntrySchema),
-	editable: z.boolean(),
-	lockedReason: z.string().nullable(),
-	updatedBy: planModeRoutingActorSchema.nullable(),
-	updatedAt: z.union([z.string(), z.date()]).nullable(),
-});
+export const planModeRoutingSnapshotSchema = z
+	.object({
+		revision: z.number().int().nonnegative(),
+		entries: z.array(planModeRoutingEntrySchema).length(9),
+		editable: z.boolean(),
+		lockedReason: z.string().nullable(),
+		updatedBy: planModeRoutingActorSchema.nullable(),
+		updatedAt: z.union([z.string(), z.date()]).nullable(),
+	})
+	.strict()
+	.superRefine((snapshot, context) => {
+		const byView = new Map(
+			snapshot.entries.map((entry) => [entry.view, entry]),
+		);
+		if (byView.size !== snapshot.entries.length) {
+			context.addIssue({
+				code: "custom",
+				path: ["entries"],
+				message: "Plan Artifact routing entries must be unique by view.",
+			});
+		}
+		for (const requiredView of REQUIRED_PLAN_MODE_ROUTING_VIEWS) {
+			const entry = byView.get(requiredView);
+			if (
+				!entry ||
+				entry.decision !== "include" ||
+				!entry.required ||
+				!entry.capabilityEnabled
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["entries"],
+					message: `${requiredView} must remain required and enabled.`,
+				});
+			}
+		}
+	});
 
-export const updatePlanModeRoutingRequestSchema = z.object({
-	expectedRevision: z.number().int().nonnegative(),
-	changes: z
-		.array(
-			z.object({
+const updatePlanModeRoutingChangesSchema = z
+	.array(
+		z
+			.object({
 				view: editablePlanModeRoutingViewSchema,
 				decision: planModeRoutingDecisionSchema,
 				reason: z.string().min(1).max(1_000).optional(),
-			}),
-		)
-		.min(1),
-});
+			})
+			.strict(),
+	)
+	.min(1)
+	.superRefine((changes, context) => {
+		const seen = new Set<string>();
+		for (const [index, change] of changes.entries()) {
+			if (!seen.has(change.view)) {
+				seen.add(change.view);
+				continue;
+			}
+			context.addIssue({
+				code: "custom",
+				path: [index, "view"],
+				message: "同じ Artifact を1回の変更で重複指定できません。",
+			});
+		}
+	});
 
-export const missionPilotPlanRoutingToolCallSchema = z.object({
-	tool: z.literal("edit_plan_artifact_routing"),
-	expectedRevision: z.number().int().nonnegative(),
-	changes: z
-		.array(
-			z.object({
-				view: editablePlanModeRoutingViewSchema,
-				decision: z.literal("include"),
-				reason: z.string().min(1).max(1_000),
+export const updatePlanModeRoutingRequestSchema = z
+	.object({
+		expectedRevision: z.number().int().nonnegative(),
+		idempotencyKey: z.string().uuid(),
+		changes: updatePlanModeRoutingChangesSchema,
+	})
+	.strict();
+
+export const missionPilotPlanRoutingToolCallSchema = z
+	.object({
+		tool: z.literal("edit_plan_artifact_routing"),
+		expectedRevision: z.number().int().nonnegative(),
+		idempotencyKey: z.string().uuid(),
+		changes: z
+			.array(
+				z
+					.object({
+						view: editablePlanModeRoutingViewSchema,
+						decision: z.literal("include"),
+						reason: z.string().min(1).max(1_000),
+					})
+					.strict(),
+			)
+			.min(1)
+			.superRefine((changes, context) => {
+				const seen = new Set<string>();
+				for (const [index, change] of changes.entries()) {
+					if (!seen.has(change.view)) {
+						seen.add(change.view);
+						continue;
+					}
+					context.addIssue({
+						code: "custom",
+						path: [index, "view"],
+						message: "同じ Artifact を1回のtool callで重複指定できません。",
+					});
+				}
 			}),
-		)
-		.min(1),
-});
+	})
+	.strict();
 
 export type PlanModeRoutingView = z.infer<typeof planModeRoutingViewSchema>;
 export type EditablePlanModeRoutingView = z.infer<

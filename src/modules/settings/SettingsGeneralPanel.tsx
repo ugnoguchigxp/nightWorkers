@@ -2,8 +2,9 @@ import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { formatDateTime } from "../../i18n/format";
 import { applyAppLanguage } from "../../i18n/I18nProvider";
-import type { GeneralSettings } from "../nightworkers/types";
+import type { FxRateCache, GeneralSettings } from "../nightworkers/types";
 import { SelectField } from "./SettingsFields";
 import { fetchPricingRows, importPublicPricingRows } from "./settingsCommands";
 
@@ -67,18 +68,34 @@ function formatPricingDate(value: LlmPricingRowView["fetchedAt"]) {
 	return date.toLocaleString();
 }
 
+function formatFxRate(value: number | undefined, language: "ja" | "en") {
+	if (value === undefined || !Number.isFinite(value)) return "—";
+	return new Intl.NumberFormat(language === "en" ? "en-US" : "ja-JP", {
+		minimumFractionDigits: value === 1 ? 0 : 2,
+		maximumFractionDigits: 6,
+	}).format(value);
+}
+
 export function GeneralSettingsPanel({
 	value,
+	fxCache,
 	isRefreshingFx,
 	onChange,
 	onRefreshFx,
 }: {
 	value: GeneralSettings;
+	fxCache: FxRateCache | null;
 	isRefreshingFx: boolean;
 	onChange: (next: GeneralSettings) => void;
 	onRefreshFx: () => void;
 }) {
 	const { t } = useTranslation();
+	const fxCurrencies = ["EUR", "USD", "JPY"] as const;
+	const fxUpdatedAt = fxCache?.fetchedAt ?? value.fx.lastRefreshedAt;
+	const formattedFxUpdatedAt =
+		fxUpdatedAt && Number.isFinite(Date.parse(fxUpdatedAt))
+			? formatDateTime(fxUpdatedAt, value.language, value.timezone)
+			: t("settings.general.notAvailable");
 	const [pricingRows, setPricingRows] = useState<LlmPricingRowView[]>([]);
 	const [pricingTotalCount, setPricingTotalCount] = useState(0);
 	const [pricingNextCursor, setPricingNextCursor] = useState<string | null>(
@@ -189,17 +206,55 @@ export function GeneralSettingsPanel({
 				/>
 			</div>
 			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
-				<div>
+				<div className="min-w-0 flex-1">
 					<div className="text-xs font-semibold text-zinc-100">
 						{t("settings.general.fx")}
 					</div>
 					<p className="mt-1 text-[10px] text-zinc-500">
 						{t("settings.general.fxStatus", {
-							source: value.fx.source,
-							updatedAt:
-								value.fx.lastRefreshedAt || t("settings.general.notAvailable"),
+							source: fxCache?.source ?? value.fx.source,
+							updatedAt: formattedFxUpdatedAt,
 						})}
 					</p>
+					<p className="mt-1 text-[10px] text-zinc-500">
+						{t("settings.general.fxAutoRefresh", {
+							status: value.fx.autoRefresh
+								? t("settings.general.enabled")
+								: t("settings.general.disabled"),
+						})}
+					</p>
+					{fxCache ? (
+						<div className="mt-3 overflow-hidden rounded border border-zinc-800">
+							<div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2 text-[10px] text-zinc-400">
+								<span>
+									{t("settings.general.fxBase", {
+										currency: fxCache.baseCurrency,
+									})}
+								</span>
+								<span>
+									{t("settings.general.fxValidOn", { date: fxCache.validOn })}
+								</span>
+							</div>
+							<dl className="divide-y divide-zinc-800">
+								{fxCurrencies.map((currency) => (
+									<div
+										key={currency}
+										className="flex items-center justify-between px-3 py-2 text-xs"
+									>
+										<dt className="text-zinc-400">1 {fxCache.baseCurrency}</dt>
+										<dd className="font-mono text-zinc-100">
+											{formatFxRate(fxCache.rates[currency], value.language)}{" "}
+											{currency}
+										</dd>
+									</div>
+								))}
+							</dl>
+						</div>
+					) : (
+						<p className="mt-3 text-xs text-amber-300">
+							{t("settings.general.fxMissing")}
+						</p>
+					)}
 				</div>
 				<Button
 					type="button"

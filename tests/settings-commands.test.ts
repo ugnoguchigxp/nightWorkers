@@ -6,6 +6,7 @@ import type {
 } from "../src/modules/nightworkers/types";
 import {
 	fetchCodexSdkStatus,
+	fetchFxRates,
 	fetchGeneralSettings,
 	fetchLlmModelOptions,
 	fetchLlmSettings,
@@ -37,6 +38,7 @@ describe("settingsCommands", () => {
 
 		await fetchLlmSettings();
 		await fetchGeneralSettings(init);
+		await fetchFxRates();
 		await fetchPricingRows({
 			provider: "openai",
 			model: "gpt 5",
@@ -52,18 +54,19 @@ describe("settingsCommands", () => {
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/settings/general", init);
+		expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/settings/fx", undefined);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			3,
+			4,
 			"/api/settings/pricing?provider=openai&model=gpt+5&limit=100&cursor=200",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/api/settings/llm/models",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			5,
+			6,
 			"/api/settings/codex/status",
 			undefined,
 		);

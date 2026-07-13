@@ -52,6 +52,7 @@ function schedulePlanPipeline(taskId: string) {
 export async function startOrResumeMissionPilotPlanIntake(input: {
 	taskId: string;
 	initialPrompt: string;
+	sessionId: string;
 }) {
 	await assertMissionPilotPreQueueMutable(input.taskId);
 	const existing = (await listDesignQuestionnaires(input.taskId))[0];
@@ -60,6 +61,7 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 			await prepareMissionPilotPlanModeIntake({
 				taskId: input.taskId,
 				prompt: input.initialPrompt,
+				missionPilotSessionId: input.sessionId,
 				questionnaireSession: existing,
 			});
 			if (hasPreFeaturePlanQuestionSet(existing)) {
@@ -73,6 +75,7 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 			await prepareMissionPilotPlanModeIntake({
 				taskId: input.taskId,
 				prompt: input.initialPrompt,
+				missionPilotSessionId: input.sessionId,
 				questionnaireSession: existing,
 			});
 			schedulePlanPipeline(input.taskId);
@@ -88,6 +91,7 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 	const created = await prepareMissionPilotPlanModeIntake({
 		taskId: input.taskId,
 		prompt: input.initialPrompt,
+		missionPilotSessionId: input.sessionId,
 	});
 	if (created.status === "answering") {
 		return resultForQuestionnaire(created);

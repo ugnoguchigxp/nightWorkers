@@ -75,17 +75,22 @@ export const missionPilotPlanReviewSchema = z
 				message: "routing tool call requires reroute verdict",
 			});
 		}
-		const belowThreshold = review.artifactScores.filter(
-			(item) =>
-				!isMissionPilotConceptArtifactKind(item.artifactKind) &&
-				item.score < missionPilotArtifactScoreThreshold(item.artifactKind),
-		);
-		if (belowThreshold.length > 0 && review.revisionTargets.length === 0) {
-			context.addIssue({
-				code: "custom",
-				path: ["revisionTargets"],
-				message: "below-threshold scores require revision targets",
-			});
+		if (review.verdict === "reroute") {
+			if (review.artifactScores.length > 0) {
+				context.addIssue({
+					code: "custom",
+					path: ["artifactScores"],
+					message: "reroute verdict must not score stale routing artifacts",
+				});
+			}
+			if (review.revisionTargets.length > 0) {
+				context.addIssue({
+					code: "custom",
+					path: ["revisionTargets"],
+					message: "reroute verdict must not mix artifact revisions",
+				});
+			}
+			return;
 		}
 	});
 
@@ -128,23 +133,25 @@ export function normalizeMissionPilotPlanReview(
 			"Plan review must score every current Artifact exactly once",
 		);
 	}
-	const belowThreshold = new Set(
-		review.artifactScores
-			.filter(
-				(item) =>
-					!isMissionPilotConceptArtifactKind(item.artifactKind) &&
-					item.score < missionPilotArtifactScoreThreshold(item.artifactKind),
-			)
-			.map((item) => `${item.artifactKind}:${item.sourceMessageId}`),
+	const blockingArtifactKinds = new Set(
+		review.findings
+			.filter((finding) => finding.severity === "blocking")
+			.map((finding) => finding.artifactKind),
 	);
-	const revisionTargets = review.revisionTargets.filter((target) =>
-		belowThreshold.has(`${target.target}:${target.sourceMessageId}`),
-	);
-	if (revisionTargets.length !== belowThreshold.size) {
-		throw new Error(
-			"Every below-threshold Artifact requires one matching revision target",
-		);
-	}
+	const seenTargets = new Set<string>();
+	const revisionTargets = review.revisionTargets.filter((target) => {
+		const key = `${target.target}:${target.sourceMessageId}`;
+		if (
+			review.verdict !== "revise" ||
+			isMissionPilotConceptArtifactKind(target.target) ||
+			!expected.has(key) ||
+			!blockingArtifactKinds.has(target.target) ||
+			seenTargets.has(key)
+		)
+			return false;
+		seenTargets.add(key);
+		return true;
+	});
 	return {
 		...review,
 		findings: review.findings.map((finding) =>
@@ -152,7 +159,12 @@ export function normalizeMissionPilotPlanReview(
 				? { ...finding, severity: "warning" as const }
 				: finding,
 		),
-		verdict: belowThreshold.size === 0 ? "pass" : "revise",
+		verdict:
+			review.verdict === "reject"
+				? "reject"
+				: revisionTargets.length > 0
+					? "revise"
+					: "pass",
 		revisionTargets,
 	};
 }

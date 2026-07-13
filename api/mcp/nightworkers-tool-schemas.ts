@@ -70,7 +70,17 @@ export const nightWorkersRunCheckInputSchema = z.object({
 		"completion_check",
 		"other",
 	]),
-	conditionIds: z.array(z.string().trim().min(1)).optional(),
+	conditionIds: z
+		.array(
+			z
+				.string()
+				.trim()
+				.regex(/^AC-\d{3}$/),
+		)
+		.optional()
+		.describe(
+			"Completion condition IDs directly verified by this command. In Test Mode, specify these IDs when the check is intended to satisfy checklist conditions; an unmapped broad gate is supplemental evidence only.",
+		),
 	timeoutSeconds: z.number().int().positive().optional(),
 	displayMode: z.enum(["summary", "error_excerpt", "full"]).optional(),
 });

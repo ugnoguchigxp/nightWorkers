@@ -50,7 +50,8 @@ export const enOverview = {
 	"overview.cost.codexCredits": "Codex credits",
 	"overview.value.credits": "credits",
 	"overview.cost.exchangeRates": "Exchange rates",
-	"overview.cost.updated": "Updated",
+	"overview.cost.fxUpdated": "FX updated",
+	"overview.cost.updated": "Overview updated",
 	"overview.warning.title": "Warnings",
 	"overview.table.model": "Model",
 	"overview.table.tokens": "Tokens",
@@ -79,6 +80,7 @@ export const enOverview = {
 	"overview.warning.pricing_missing": "Missing pricing",
 	"overview.warning.usage_token_anomaly": "Usage token anomaly",
 	"overview.warning.fx_unavailable": "FX unavailable",
+	"overview.warning.openFxSettings": "Check exchange-rate settings",
 	"overview.warning.fx_mixed_base_currencies": "Multiple FX base currencies",
 	"overview.warning.usage_estimated": "Estimated usage",
 } as const;

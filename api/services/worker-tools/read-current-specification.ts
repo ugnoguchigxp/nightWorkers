@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
+import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import { taskMessages, tasks } from "../../db/schema";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
@@ -256,7 +257,8 @@ async function resolveSpecificationVerification(input: {
 			unknownRequired: checklist.filter(
 				(item) =>
 					item.required &&
-					(item.status === "pending" || item.status === "unknown"),
+					item.status !== "failed" &&
+					!isVerificationChecklistItemComplete(item),
 			).length,
 		},
 	};

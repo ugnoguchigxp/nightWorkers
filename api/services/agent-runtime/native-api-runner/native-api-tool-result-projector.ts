@@ -240,16 +240,91 @@ function compactSpecificationPayload(payload: unknown) {
 		found: record.found,
 		messageId: record.messageId,
 		title: record.title,
+		view: record.view,
 		generatedAt: record.generatedAt,
 		digest,
 		contentChars: fullContentChars,
-		compactContent: buildSpecificationCompactContent(content),
-		assembledDesignContext: compactAssembledDesignContext(
-			record.assembledDesignContext,
-		),
+		compactContent:
+			record.view === "verification"
+				? compactVerificationSpecificationContent(content)
+				: buildSpecificationCompactContent(content),
+		verification: compactSpecificationVerification(record.verification),
+		assembledDesignContext:
+			record.view === "verification"
+				? undefined
+				: compactAssembledDesignContext(record.assembledDesignContext),
 		sources: record.sources,
 		fullViewAvailableVia: "read_current_specification view='full'",
 	};
+}
+
+function compactSpecificationVerification(value: unknown) {
+	const verification = toRecord(value);
+	if (Object.keys(verification).length === 0) return undefined;
+	const document = toRecord(verification.document);
+	const conditions = toArray(document.conditions).map(toRecord);
+	const detailChars = Math.max(
+		80,
+		Math.min(400, Math.floor(5_400 / Math.max(1, conditions.length * 3))),
+	);
+	const checklistTextChars = conditions.length > 0 ? 80 : detailChars;
+	return {
+		verificationDocumentId: verification.verificationDocumentId,
+		verificationArtifactId: verification.verificationArtifactId,
+		summary: verification.summary,
+		document: {
+			version: document.version,
+			specId: document.specId,
+			specPath: document.specPath,
+			generatedAt: document.generatedAt,
+			conditions: conditions.map((condition) => ({
+				id: condition.id,
+				text: compactField(condition.text, detailChars),
+				category: condition.category,
+				verificationKind: condition.verificationKind,
+				expectedEvidence: condition.expectedEvidence,
+				expectedResult: compactField(condition.expectedResult, detailChars),
+				failureMeaning: compactField(condition.failureMeaning, detailChars),
+				required: condition.required,
+			})),
+			commands: toArray(document.commands).map((value) => {
+				const command = toRecord(value);
+				return {
+					id: command.id,
+					label: command.label,
+					command: command.command,
+					cwd: command.cwd,
+					conditionIds: command.conditionIds,
+					scope: command.scope,
+					runnerHint: command.runnerHint,
+				};
+			}),
+		},
+		checklist: toArray(verification.checklist).map((value) => {
+			const item = toRecord(value);
+			const evidenceIds = toArray(item.evidenceIds);
+			return {
+				conditionId: item.conditionId,
+				text: compactField(item.text, checklistTextChars),
+				required: item.required,
+				status: item.status,
+				evidenceIds: evidenceIds.slice(-5),
+				evidenceCount: evidenceIds.length,
+				lastCheckedAt: item.lastCheckedAt,
+				reason: item.reason,
+			};
+		}),
+	};
+}
+
+function compactVerificationSpecificationContent(content: string) {
+	if (content.length <= 1_500) return content;
+	return `${content.slice(0, 1_500)}\n[verification-spec-content-truncated]`;
+}
+
+function compactField(value: unknown, limit: number) {
+	if (typeof value !== "string" || value.length <= limit) return value;
+	return `${value.slice(0, Math.max(1, limit - 12))}[truncated]`;
 }
 
 function compactAssembledDesignContext(value: unknown) {

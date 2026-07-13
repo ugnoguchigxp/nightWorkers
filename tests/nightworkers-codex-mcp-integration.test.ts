@@ -21,6 +21,7 @@ import {
 	deleteRepository,
 	deleteTask,
 } from "../api/modules/nightworkers/nightworkers.repository";
+import { listVerificationEvidenceRuns } from "../api/modules/nightworkers/nightworkers.verification.repository";
 import * as taskGenerationRepo from "../api/modules/taskGeneration/task-generation.repository";
 
 let tempDir = "";
@@ -350,6 +351,91 @@ describe("NightWorkers Codex MCP integration", () => {
 			await deleteRepository(repository.id);
 		}
 	}, 120_000);
+
+	it("runs managed checks from the persisted task-run worktree", async () => {
+		const repoRoot = path.join(tempDir, "managed-check-repo");
+		const worktreeRoot = path.join(tempDir, "managed-check-worktree");
+		fs.mkdirSync(repoRoot, { recursive: true });
+		fs.mkdirSync(worktreeRoot, { recursive: true });
+		const canonicalWorktreeRoot = fs.realpathSync(worktreeRoot);
+
+		const repository = await createRepository({
+			name: `managed-check-${Date.now()}`,
+			localPath: repoRoot,
+			branch: "main",
+			allowed: true,
+		});
+		const task = await createTask({
+			repositoryId: repository.id,
+			title: "NightWorkers MCP managed check worktree",
+			worktreePath: worktreeRoot,
+			status: "running",
+		});
+		const run = await createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			worktreePath: worktreeRoot,
+			status: "running",
+			workerKind: "codex-agent",
+			startedAt: new Date(),
+		});
+
+		let client: Client | null = null;
+		try {
+			client = new Client(
+				{ name: "nightworkers-codex-mcp-worktree-test", version: "0.1.0" },
+				{ capabilities: {} },
+			);
+			const transport = new StreamableHTTPClientTransport(
+				new URL(
+					`http://127.0.0.1/mcp/nightworkers?taskId=${task.id}&runId=${run.id}&executionMode=test`,
+				),
+				{
+					fetch: async (input, init) => {
+						const request =
+							input instanceof Request ? input : new Request(input, init);
+						return app.fetch(request);
+					},
+				},
+			);
+			await client.connect(transport);
+
+			const callResult = await client.callTool(
+				{
+					name: "run_check",
+					arguments: {
+						command: "pwd",
+						checkKind: "other",
+						displayMode: "full",
+					},
+				},
+				undefined,
+				{ timeout: 30_000 },
+			);
+
+			expect(callResult.isError).toBeFalsy();
+			expect(callResult.structuredContent).toMatchObject({
+				payload: {
+					stdout: `${canonicalWorktreeRoot}\n`,
+					exitCode: 0,
+					evidenceRunId: expect.any(String),
+				},
+			});
+			const evidenceRunId = (
+				callResult.structuredContent as {
+					payload?: { evidenceRunId?: string };
+				}
+			).payload?.evidenceRunId;
+			const [evidenceRun] = await listVerificationEvidenceRuns([
+				evidenceRunId ?? "",
+			]);
+			expect(evidenceRun?.cwd).toBe(canonicalWorktreeRoot);
+		} finally {
+			if (client) await client.close().catch(() => undefined);
+			await deleteTask(task.id);
+			await deleteRepository(repository.id);
+		}
+	}, 30_000);
 
 	it("loads task generation evidence from request-scoped run context", async () => {
 		const repoRoot = path.join(tempDir, "run-context-task-evidence-repo");

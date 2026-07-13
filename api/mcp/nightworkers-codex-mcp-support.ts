@@ -29,23 +29,44 @@ export async function resolveTaskRepository(input: {
 	taskId: string;
 	runId: string;
 }) {
-	const task = input.taskId ? await repo.getTask(input.taskId) : null;
-	if (task) {
+	const run = input.runId ? await repo.getTaskRun(input.runId) : null;
+	const requestedTask = input.taskId ? await repo.getTask(input.taskId) : null;
+	if (requestedTask && run && run.taskId !== requestedTask.id) {
 		return {
-			task,
-			repository: await repo.getRepository(task.repositoryId),
+			task: null,
+			run: null,
+			repository: null,
+			registeredRepoRoot: null,
+			executionRoot: null,
 		};
 	}
-
-	const run = input.runId ? await repo.getTaskRun(input.runId) : null;
-	if (!run) {
-		return { task: null, repository: null };
+	const task =
+		requestedTask ?? (run ? await repo.getTask(run.taskId) : null) ?? null;
+	if (!task) {
+		return {
+			task: null,
+			run: run ?? null,
+			repository: null,
+			registeredRepoRoot: null,
+			executionRoot: null,
+		};
 	}
-	const runTask = await repo.getTask(run.taskId);
-	const repositoryId = run.repositoryId || runTask?.repositoryId || "";
+	const repositoryId = run?.repositoryId || task.repositoryId;
+	const repository = repositoryId
+		? await repo.getRepository(repositoryId)
+		: null;
+	const registeredRepoRoot = repository?.localPath ?? null;
+	const executionRoot = firstNonEmpty(
+		run?.worktreePath,
+		task.worktreePath,
+		registeredRepoRoot,
+	);
 	return {
-		task: runTask ?? null,
-		repository: repositoryId ? await repo.getRepository(repositoryId) : null,
+		task,
+		run: run ?? null,
+		repository,
+		registeredRepoRoot,
+		executionRoot: executionRoot || null,
 	};
 }
 
@@ -58,7 +79,7 @@ export async function resolveOntologyRepoPath(
 		taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
 		runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
 	});
-	return resolved.repository?.localPath;
+	return resolved.executionRoot ?? resolved.repository?.localPath;
 }
 
 export async function resolveOntologyTaskId(

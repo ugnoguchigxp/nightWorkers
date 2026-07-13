@@ -37,6 +37,13 @@ export const jaSettings = {
 	"settings.general.exchangeRefreshFailed":
 		"為替情報更新に失敗しました: {{status}}",
 	"settings.general.exchangeRefreshSucceeded": "為替情報を更新しました",
+	"settings.general.fxAutoRefresh": "自動更新: {{status}}",
+	"settings.general.enabled": "有効",
+	"settings.general.disabled": "無効",
+	"settings.general.fxBase": "基準通貨: {{currency}}",
+	"settings.general.fxValidOn": "基準日: {{date}}",
+	"settings.general.fxMissing":
+		"為替情報はまだ取得されていません。更新するとレートを確認できます。",
 	"settings.general.promptPartObservability": "プロンプト構成要素の使用量推定",
 	"settings.general.promptPartObservabilityHelp":
 		"provider usage と別に、system prompt / user prompt / State Card の NightWorkers 推定 token を保存します。",

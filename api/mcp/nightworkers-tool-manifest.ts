@@ -58,7 +58,7 @@ export const nightWorkersCodexToolManifest = {
 	run_check: {
 		title: "Run Check",
 		description:
-			"Run a NightWorkers-managed check command and store raw stdout/stderr as formal verification evidence. Use for lint, format:check, typecheck, test, coverage, build, and verify.",
+			"Run a NightWorkers-managed check command and store raw stdout/stderr as formal verification evidence. Use conditionIds to link the command to the AC-xxx completion conditions it directly verifies. An unmapped broad gate is supplemental evidence only.",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,

@@ -162,6 +162,7 @@ export async function play(taskId: string, expectedVersion: number) {
 		await startOrResumeMissionPilotPlanIntake({
 			taskId,
 			initialPrompt: activeClaim.initialPromptSnapshot,
+			sessionId: activeClaim.id,
 		});
 		const finished = await repo.getSessionByTaskId(taskId);
 		if (!finished) throw new Error("Mission Pilot state changed during intake");

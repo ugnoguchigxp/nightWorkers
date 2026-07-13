@@ -3,7 +3,7 @@ import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/p
 import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import {
-	missionPilotArtifactTrace,
+	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 } from "../nightworkers/nightworkers.trace-provenance";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
@@ -147,7 +147,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 		const thoughtTrace = missionPilotThoughtTrace({
 			sessionId: input.sessionId,
 		});
-		const artifactTrace = missionPilotArtifactTrace({
+		const artifactTrace = missionPilotPlanOutputTrace({
 			sessionId: input.sessionId,
 		});
 		void appendActivityEvent({
@@ -169,6 +169,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			taskId: input.taskId,
 			target: claimed.target,
 			prompt: claimed.instruction,
+			sourceArtifactContent: source.content,
 			focus: claimed.focusJson,
 			correlationId: claimed.id,
 			questionnaireSessionId: input.questionnaireSessionId,
@@ -182,7 +183,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				workspace.dataModelArtifacts.at(-1)?.sourceMessageId ?? null,
 			role: "mission_pilot",
 			trace: artifactTrace,
-			llmUsageTrace: thoughtTrace,
+			llmUsageTrace: artifactTrace,
 		});
 		if (!result.message?.id) {
 			throw new Error("Correction agent result message is missing");

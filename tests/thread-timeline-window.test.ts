@@ -68,7 +68,7 @@ describe("ThreadTimeline bounded history window", () => {
 		]);
 	});
 
-	it("keeps Mission Pilot prompts out while preserving chat chronology", () => {
+	it("shows the initial user prompt while preserving chat chronology", () => {
 		const event = (id: string, createdAt: string) => ({
 			id,
 			taskId: "task-1",
@@ -103,8 +103,8 @@ describe("ThreadTimeline bounded history window", () => {
 				role: "user" as const,
 				content: "pilot prompt",
 				messageType: "mission_pilot_initial_prompt" as const,
-				traceOwner: "mission_pilot" as const,
-				traceChannel: "pilot_thought" as const,
+				traceOwner: "user" as const,
+				traceChannel: "chat" as const,
 				createdAt: "2026-07-10T00:00:20.000Z",
 			},
 			{
@@ -126,6 +126,7 @@ describe("ThreadTimeline bounded history window", () => {
 		).toEqual([
 			"unprojected-original-user-prompt",
 			"assistant:turn-1",
+			"unprojected-mission-pilot-prompt",
 			"assistant:turn-2",
 		]);
 	});

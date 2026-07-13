@@ -31,6 +31,8 @@ import {
 	readFxRateCache,
 	readGeneralSettings,
 	refreshEcbFxRates,
+	refreshFxRatesIfNeeded,
+	shouldRefreshFxRateCache,
 	validateTimezone,
 	writeFxRateCache,
 	writeGeneralSettings,
@@ -204,6 +206,7 @@ describe("general-settings service", () => {
 			const result = await refreshEcbFxRates();
 			expect(fetchMock).toHaveBeenCalledWith(
 				"https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+				expect.objectContaining({ signal: expect.any(AbortSignal) }),
 			);
 			expect(result.source).toBe("ecb");
 			expect(result.validOn).toBe("2026-06-10");
@@ -244,6 +247,82 @@ describe("general-settings service", () => {
 			const result = await refreshEcbFxRates();
 			expect(result.validOn).toBeDefined();
 			expect(result.rates.USD).toBe(1.085);
+		});
+	});
+
+	describe("refreshFxRatesIfNeeded", () => {
+		const currentCache = {
+			source: "ecb" as const,
+			baseCurrency: "EUR" as const,
+			validOn: "2026-07-13",
+			fetchedAt: "2026-07-13T00:00:00Z",
+			rates: { EUR: 1, USD: 1.1, JPY: 170 },
+		};
+
+		it("recognizes missing, invalid, stale, and current caches", () => {
+			const now = new Date("2026-07-14T00:00:00Z");
+			expect(shouldRefreshFxRateCache(null, now)).toBe(true);
+			expect(
+				shouldRefreshFxRateCache(
+					{ ...currentCache, fetchedAt: "invalid" },
+					now,
+				),
+			).toBe(true);
+			expect(
+				shouldRefreshFxRateCache(
+					{ ...currentCache, rates: { EUR: 1, USD: 1.1 } },
+					now,
+				),
+			).toBe(true);
+			expect(shouldRefreshFxRateCache(currentCache, now)).toBe(true);
+			expect(
+				shouldRefreshFxRateCache(
+					{ ...currentCache, fetchedAt: "2026-07-13T12:00:00Z" },
+					now,
+				),
+			).toBe(false);
+		});
+
+		it("does not fetch when automatic refresh is disabled", async () => {
+			const result = await refreshFxRatesIfNeeded({
+				settings: {
+					...DEFAULT_GENERAL_SETTINGS,
+					fx: { ...DEFAULT_GENERAL_SETTINGS.fx, autoRefresh: false },
+				},
+				cache: null,
+			});
+
+			expect(result).toEqual({ status: "disabled", cache: null });
+			expect(fetch).not.toHaveBeenCalled();
+		});
+
+		it("does not fetch a current cache", async () => {
+			const result = await refreshFxRatesIfNeeded({
+				settings: DEFAULT_GENERAL_SETTINGS,
+				cache: currentCache,
+				now: new Date("2026-07-13T12:00:00Z"),
+			});
+
+			expect(result).toEqual({ status: "current", cache: currentCache });
+			expect(fetch).not.toHaveBeenCalled();
+		});
+
+		it("fetches and persists a missing cache when automatic refresh is enabled", async () => {
+			vi.mocked(fetch).mockResolvedValueOnce(
+				new Response(
+					'<Cube time="2026-07-13"><Cube currency="USD" rate="1.1"/><Cube currency="JPY" rate="170"/></Cube>',
+					{ status: 200 },
+				),
+			);
+
+			const result = await refreshFxRatesIfNeeded({
+				settings: DEFAULT_GENERAL_SETTINGS,
+				cache: null,
+			});
+
+			expect(result.status).toBe("refreshed");
+			expect(result.cache.rates).toEqual({ EUR: 1, USD: 1.1, JPY: 170 });
+			expect(readFxRateCache()).toEqual(result.cache);
 		});
 	});
 

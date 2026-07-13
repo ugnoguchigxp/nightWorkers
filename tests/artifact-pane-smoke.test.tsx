@@ -217,6 +217,6 @@ describe("ArtifactPane", () => {
 		const evidenceStepStart = markup.indexOf("証跡テストチェック");
 
 		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
-		expect(markup).toContain("ゲート確認済み");
+		expect(markup).toContain("ゲートのみ");
 	});
 });

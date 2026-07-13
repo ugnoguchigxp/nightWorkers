@@ -109,6 +109,34 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("UI が状態を表示する");
 	});
 
+	it("shows every completion condition when the specification has more than five", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				...Array.from(
+					{ length: 7 },
+					(_, index) =>
+						`- [AC-${String(index + 1).padStart(3, "0")}] 完了条件 ${index + 1}`,
+				),
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+			},
+		});
+
+		const markup = renderTestModePane({ taskMessages: [implementationPlan] });
+
+		expect(markup).toContain("AC-001");
+		expect(markup).toContain("AC-006");
+		expect(markup).toContain("AC-007");
+		expect(markup).toContain("完了条件 7");
+	});
+
 	it("shows Test Mode actions even when the task is archived", () => {
 		const implementationPlan = buildTaskMessage({
 			id: "implementation-plan-message",
@@ -303,7 +331,8 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("OK unit tests");
 		expect(markup).not.toContain("証跡テストチェック結果");
 		expect(markup).not.toContain("OK completion_check");
-		expect(markup).toContain("確認済み");
+		expect(markup).toContain("未確認");
+		expect(markup).not.toContain("レビューモードに移行");
 		expect(markup.match(/完了/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
 		expect(markup).not.toContain("LLM コードレビュー");
 	});
@@ -373,7 +402,8 @@ describe("Test Mode artifact pane", () => {
 		expect(markup).toContain("OK test");
 		expect(markup).not.toContain("証跡テストチェック結果");
 		expect(markup).not.toContain("OK completion_check");
-		expect(markup).toContain("確認済み");
+		expect(markup).toContain("未確認");
+		expect(markup).not.toContain("レビューモードに移行");
 	});
 
 	it("overwrites failed managed checks with later passing verification commands", () => {
@@ -585,6 +615,8 @@ describe("Test Mode artifact pane", () => {
 		const unitStepStart = markup.indexOf("ユニットテスト実行");
 		const evidenceStepStart = markup.indexOf("証跡テストチェック");
 		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
+		expect(markup).toContain("未確認");
+		expect(markup).not.toContain("レビューモードに移行");
 	});
 
 	it("marks only covered checklist conditions from completion check details", () => {
@@ -662,6 +694,63 @@ describe("Test Mode artifact pane", () => {
 		expect(secondCondition).toContain("不明");
 	});
 
+	it("keeps gate-only conditions incomplete even for a legacy successful completion event", () => {
+		const implementationPlan = buildTaskMessage({
+			id: "implementation-plan-message",
+			messageType: "markdown_document",
+			content: [
+				"# Implementation Plan",
+				"",
+				"## 完了条件",
+				"- [AC-001] API が成功する",
+			].join("\n"),
+			metadataJson: {
+				intent: "implementation_plan",
+				title: "Implementation Plan",
+				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+			},
+		});
+		const latestRun = buildTaskRun({
+			contextSnapshot: {
+				executionMode: "test",
+				testMode: { action: "plan_and_implement_tests" },
+			},
+			events: [
+				buildTaskEvent({
+					id: "completion-check-event",
+					payloadJson: {
+						runEvent: {
+							data: {
+								toolName: "completion_check",
+								ok: true,
+								status: "completed",
+								result: {
+									result: {
+										ok: true,
+										conditions: [
+											{
+												conditionId: "AC-001",
+												status: "verified_by_gate",
+											},
+										],
+									},
+								},
+							},
+						},
+					},
+				}),
+			],
+		});
+
+		const markup = renderTestModePane({
+			taskMessages: [implementationPlan],
+			latestRun,
+		});
+
+		expect(markup).toContain("ゲートのみ");
+		expect(markup).not.toContain("レビューモードに移行");
+	});
+
 	it("reads prefixed NightWorkers MCP check events from structured content", () => {
 		const implementationPlan = buildTaskMessage({
 			id: "implementation-plan-message",
@@ -716,6 +805,15 @@ describe("Test Mode artifact pane", () => {
 									structured_content: {
 										payload: {
 											llmSummary: "OK completion_check",
+											result: {
+												ok: true,
+												conditions: [
+													{
+														conditionId: "AC-001",
+														status: "passed",
+													},
+												],
+											},
 										},
 									},
 								},

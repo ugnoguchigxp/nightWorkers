@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	codingAgentChatTrace,
+	missionPilotInitialPromptTrace,
+	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 	resolveActivityTrace,
 	resolveLlmUsageTrace,
@@ -34,7 +36,7 @@ describe("NightWorkers trace provenance", () => {
 				callId: "call-1",
 				metadata: { traceProvenance: forgedTrace, role: "plan" },
 			}),
-		).toMatchObject({ owner: "system", channel: "internal" });
+		).toMatchObject({ owner: "coding_agent", channel: "chat" });
 	});
 
 	it("preserves non-record payloads while adding authoritative provenance", () => {
@@ -46,7 +48,7 @@ describe("NightWorkers trace provenance", () => {
 		});
 	});
 
-	it("accepts explicit provenance supplied through the trusted call contract", () => {
+	it("separates Mission Pilot usage from orchestrated Plan Mode usage", () => {
 		const trace = missionPilotThoughtTrace({
 			sessionId: "pilot-session",
 			phase: "review",
@@ -59,5 +61,30 @@ describe("NightWorkers trace provenance", () => {
 				trace,
 			}),
 		).toEqual(trace);
+		expect(
+			resolveLlmUsageTrace({
+				callId: "call-3",
+				metadata: { role: "mission_pilot" },
+				trace: missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
+			}),
+		).toMatchObject({ owner: "coding_agent", channel: "chat" });
+		expect(
+			resolveLlmUsageTrace({
+				callId: "call-4",
+				metadata: {
+					role: "mission_pilot",
+					missionPilotSessionId: "pilot-session",
+				},
+			}),
+		).toMatchObject({ owner: "mission_pilot", channel: "pilot_thought" });
+	});
+
+	it("routes Plan output and the initial user prompt to chat", () => {
+		expect(
+			missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
+		).toMatchObject({ owner: "coding_agent", channel: "chat" });
+		expect(
+			missionPilotInitialPromptTrace("pilot-session", 1).trace,
+		).toMatchObject({ owner: "user", channel: "chat" });
 	});
 });

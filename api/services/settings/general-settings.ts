@@ -61,6 +61,9 @@ export type FxRateCache = {
 	rates: Record<string, number>;
 };
 
+export const FX_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const FX_REFRESH_TIMEOUT_MS = 15_000;
+
 export const SUPPORTED_LANGUAGES: NightWorkersLanguage[] = ["ja", "en"];
 export const SUPPORTED_CURRENCIES: NightWorkersCurrency[] = [
 	"JPY",
@@ -165,6 +168,7 @@ export function writeFxRateCache(cache: FxRateCache) {
 export async function refreshEcbFxRates(): Promise<FxRateCache> {
 	const res = await fetch(
 		"https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+		{ signal: AbortSignal.timeout(FX_REFRESH_TIMEOUT_MS) },
 	);
 	if (!res.ok) {
 		throw new Error(`ECB FX refresh failed: ${res.status}`);
@@ -187,6 +191,45 @@ export async function refreshEcbFxRates(): Promise<FxRateCache> {
 		rates,
 	};
 	return writeFxRateCache(cache);
+}
+
+export function shouldRefreshFxRateCache(
+	cache: FxRateCache | null,
+	now = new Date(),
+) {
+	if (!cache) return true;
+	if (
+		SUPPORTED_CURRENCIES.some((currency) => {
+			const rate = cache.rates[currency];
+			return !Number.isFinite(rate) || (rate ?? 0) <= 0;
+		})
+	) {
+		return true;
+	}
+	const fetchedAt = Date.parse(cache.fetchedAt);
+	if (!Number.isFinite(fetchedAt)) return true;
+	return now.getTime() - fetchedAt >= FX_CACHE_MAX_AGE_MS;
+}
+
+export async function refreshFxRatesIfNeeded(
+	input: {
+		settings?: GeneralSettings;
+		cache?: FxRateCache | null;
+		now?: Date;
+	} = {},
+) {
+	const settings = input.settings ?? readGeneralSettings();
+	const cache = input.cache === undefined ? readFxRateCache() : input.cache;
+	if (!settings.fx.autoRefresh || settings.fx.source !== "ecb") {
+		return { status: "disabled" as const, cache };
+	}
+	if (!shouldRefreshFxRateCache(cache, input.now)) {
+		return { status: "current" as const, cache };
+	}
+	return {
+		status: "refreshed" as const,
+		cache: await refreshEcbFxRates(),
+	};
 }
 
 export function convertCurrency(input: {

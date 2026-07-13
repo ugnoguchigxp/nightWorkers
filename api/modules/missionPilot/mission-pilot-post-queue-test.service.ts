@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { missionPilotTestDecisionSchema } from "../../../shared/schemas/mission-pilot-test.schema";
+import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -13,6 +14,10 @@ import {
 	verificationChecklistItems,
 	verificationEvidenceRuns,
 } from "../../db/verification-schema";
+import {
+	completionCheckMatchesVerificationDocument,
+	readLatestCompletionCheckResult,
+} from "../../services/run-events/completion-check-result";
 import { digestText } from "../../services/text-digest";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import {
@@ -72,35 +77,27 @@ export async function continueAfterTestRun(input: {
 		.select()
 		.from(taskEvents)
 		.where(eq(taskEvents.taskRunId, input.runId));
-	const completionEvent = events.find((event) => {
-		const serialized = JSON.stringify(event.payloadJson ?? {});
-		return serialized.includes('"completion_check"');
-	});
-	const completionSerialized = JSON.stringify(
-		completionEvent?.payloadJson ?? {},
-	);
-	const completedChecklistStatuses = new Set([
-		"complete",
-		"passed",
-		"covered",
-		"verified_by_gate",
-		"manual",
-		"not_applicable",
-	]);
+	const completionCheck = readLatestCompletionCheckResult(events);
 	const requiredComplete = required.filter((item) =>
-		completedChecklistStatuses.has(item.status),
+		isVerificationChecklistItemComplete({
+			required: item.required,
+			status: item.status,
+		}),
 	).length;
 	const gate = evaluateTestCompletionGate({
 		runStatus: run?.status ?? "missing",
-		verificationDocumentMatches: Boolean(verificationDocumentId),
+		verificationDocumentMatches: completionCheckMatchesVerificationDocument(
+			completionCheck,
+			verificationDocumentId,
+		),
 		managedEvidenceCount: evidence.length,
 		failedManagedEvidenceCount: evidence.filter((item) => item.exitCode !== 0)
 			.length,
 		rawArtifactsComplete: evidence.every((item) =>
 			Boolean(item.rawStdoutArtifactId && item.rawStderrArtifactId),
 		),
-		completionCheckEventId: completionEvent?.id ?? null,
-		completionCheckOk: completionSerialized.includes('"ok":true'),
+		completionCheckEventId: completionCheck?.eventId ?? null,
+		completionCheckOk: completionCheck?.ok ?? false,
 		requiredTotal: required.length,
 		requiredComplete,
 		failedRequired: required.filter((item) => item.status === "failed").length,
@@ -185,7 +182,7 @@ export async function continueAfterTestRun(input: {
 				requiredTotal: required.length,
 				requiredComplete,
 				evidenceRunIds: evidence.map((item) => item.id),
-				completionCheckEventId: completionEvent?.id ?? "",
+				completionCheckEventId: completionCheck?.eventId ?? "",
 				verdict: "pass",
 			},
 		},
@@ -216,7 +213,7 @@ export async function continueAfterTestRun(input: {
 			failedRequired: 0,
 			unknownRequired: 0,
 			evidenceRunIdsJson: evidence.map((item) => item.id),
-			completionCheckEventId: completionEvent?.id ?? "",
+			completionCheckEventId: completionCheck?.eventId ?? "",
 			testChangedPathsJson: [],
 			verdict: "pass",
 			snapshotJson: {

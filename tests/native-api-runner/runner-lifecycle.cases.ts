@@ -462,6 +462,28 @@ describe("NativeApiRunner lifecycle", () => {
 		expect(system).not.toContain("check_boundary");
 	});
 
+	it("adds registered and execution roots to native/API system context", () => {
+		const history = buildInitialNativeApiHistory(
+			buildContext({
+				repoRoot: "/repo/worktrees/task-1",
+				contextSnapshot: {
+					compiledPrompt: "implement the requested change",
+					source: "fallback",
+					request: {
+						registeredRepositoryPath: "/repo/project",
+						repositoryPath: "/repo/worktrees/task-1",
+					},
+				},
+			}),
+		);
+		const system =
+			history.find((item) => item.type === "system")?.content ?? "";
+
+		expect(system).toContain("registeredRepoRoot: /repo/project");
+		expect(system).toContain("executionRoot: /repo/worktrees/task-1");
+		expect(system).toContain("登録元で実装・検証しない");
+	});
+
 	it("includes ontology runtime snapshot in native/API system prompt", () => {
 		const history = buildInitialNativeApiHistory(
 			buildContext({

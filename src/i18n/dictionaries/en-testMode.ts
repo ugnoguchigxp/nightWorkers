@@ -37,7 +37,7 @@ export const enTestMode = {
 	"testMode.conditionStatus.completed": "Completed",
 	"testMode.conditionStatus.done": "Done",
 	"testMode.conditionStatus.covered": "Covered",
-	"testMode.conditionStatus.verified_by_gate": "Gate verified",
+	"testMode.conditionStatus.verified_by_gate": "Gate only",
 	"testMode.conditionStatus.manual": "Manually verified",
 	"testMode.conditionStatus.not_applicable": "Not applicable",
 	"testMode.conditionStatus.missing": "Missing",

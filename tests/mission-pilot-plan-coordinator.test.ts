@@ -546,8 +546,15 @@ describe("Mission Pilot plan coordinator", () => {
 				questionnaireSessionId: questionnaireId,
 				role: "mission_pilot",
 				trace: expect.objectContaining({
-					owner: "mission_pilot",
-					channel: "artifact",
+					owner: "coding_agent",
+					channel: "chat",
+					orchestrationRef: expect.objectContaining({
+						sessionId: session.id,
+					}),
+				}),
+				llmUsageTrace: expect.objectContaining({
+					owner: "coding_agent",
+					channel: "chat",
 				}),
 			}),
 		);
@@ -558,7 +565,9 @@ describe("Mission Pilot plan coordinator", () => {
 			expect.objectContaining({
 				questionnaireSessionId: questionnaireId,
 				role: "mission_pilot",
-				prompt: expect.stringContaining("検証手順を具体化してください"),
+				prompt: expect.stringMatching(
+					/\[現在のArtifact\][\s\S]*# Feature Plan[\s\S]*検証手順を具体化してください/,
+				),
 			}),
 		);
 		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledTimes(1);
@@ -586,7 +595,17 @@ describe("Mission Pilot plan coordinator", () => {
 		expect(mocks.callLlm).toHaveBeenCalledWith(
 			expect.any(String),
 			expect.any(String),
-			expect.objectContaining({ role: "mission_pilot", taskId }),
+			expect.objectContaining({
+				role: "mission_pilot",
+				taskId,
+				usageTrace: expect.objectContaining({
+					owner: "mission_pilot",
+					channel: "pilot_thought",
+					orchestrationRef: expect.objectContaining({
+						sessionId: session.id,
+					}),
+				}),
+			}),
 		);
 		expect(mocks.callLlm).toHaveBeenCalledTimes(3);
 		expect(mocks.createQueueEntry).toHaveBeenCalledWith(

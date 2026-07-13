@@ -13,7 +13,24 @@ export async function createArtifactCorrectionRuns(input: {
 	targets: PlanModeArtifactCorrectionTarget[];
 }) {
 	const now = new Date();
+	const existingRuns = await listArtifactCorrectionRuns(input.sessionId);
+	const exhaustedTargets = new Set(
+		existingRuns
+			.filter((run) => run.planReviewId !== input.planReviewId)
+			.map((run) => run.target),
+	);
+	const scheduledTargets = new Set(
+		existingRuns
+			.filter((run) => run.planReviewId === input.planReviewId)
+			.map((run) => run.target),
+	);
 	for (const [index, target] of input.targets.entries()) {
+		if (
+			exhaustedTargets.has(target.target) ||
+			scheduledTargets.has(target.target)
+		)
+			continue;
+		scheduledTargets.add(target.target);
 		const dispatchKey = crypto
 			.createHash("sha256")
 			.update(

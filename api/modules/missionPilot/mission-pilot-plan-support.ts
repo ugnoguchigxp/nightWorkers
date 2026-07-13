@@ -5,6 +5,7 @@ import {
 	type PlanModeArtifactKind,
 	planModeRegenerationTargetSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -14,10 +15,7 @@ import { logEvent } from "../../lib/logger";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import {
-	missionPilotArtifactTrace,
-	missionPilotThoughtTrace,
-} from "../nightworkers/nightworkers.trace-provenance";
+import { missionPilotPlanOutputTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
 import {
 	getDesignQuestionnaireSession,
@@ -40,6 +38,19 @@ export const activeTasks = new Set<string>();
 export const MAX_REVIEW_ATTEMPTS = 3;
 export const MAX_QUEUE_STABILIZATION_ATTEMPTS = 3;
 export const PIPELINE_LEASE_MS = 15 * 60 * 1000;
+export const correctionStepKey: Record<
+	PlanModeArtifactCorrectionTarget["target"],
+	string
+> = {
+	feature_plan: "feature_plan",
+	blueprint: "blueprint",
+	data_model: "data_model",
+	user_flow: "view:user_flow",
+	api_io_contract: "view:api_io_contract",
+	activity_flow: "view:activity_flow",
+	sequence_flow: "view:sequence_flow",
+	zod_schema_design: "view:zod_schema_design",
+};
 export class MissionPilotPlanReviewStaleError extends Error {}
 export async function publishCurrentPlanProgress(taskId: string) {
 	try {
@@ -185,8 +196,8 @@ export async function generateStepArtifact(
 	const evidence = step.evidenceJson;
 	const kind = String(evidence.kind || "");
 	const view = String(evidence.view || "");
-	const trace = missionPilotArtifactTrace({ sessionId: step.sessionId });
-	const llmUsageTrace = missionPilotThoughtTrace({ sessionId: step.sessionId });
+	const trace = missionPilotPlanOutputTrace({ sessionId: step.sessionId });
+	const llmUsageTrace = trace;
 	if (kind === "blueprint") {
 		return generateBlueprintArtifact(taskId, {
 			questionnaireSessionId,
@@ -299,7 +310,7 @@ export async function answerPreFeaturePlanQuestionnaire(
 					"Feature Plan生成直前に、生成済みArtifactから実装を阻害する未確定事項だけを確認する。",
 				maxQuestions: 5,
 				role: "mission_pilot",
-				llmUsageTrace: missionPilotThoughtTrace({ sessionId }),
+				llmUsageTrace: missionPilotPlanOutputTrace({ sessionId }),
 			},
 		);
 		addedCount = generated.result.addedCount;

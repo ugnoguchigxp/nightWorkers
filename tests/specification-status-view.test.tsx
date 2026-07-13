@@ -499,6 +499,75 @@ describe("DedicatedViewPanel", () => {
 });
 
 describe("PlanWorkspaceStatusView", () => {
+	it("locks required and Settings-disabled routing while leaving available optional routing editable", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={
+					{
+						blueprintArtifacts: [],
+						dataModelArtifacts: [],
+						dedicatedViewArtifacts: [],
+						routing: {
+							revision: 3,
+							entries: [
+								{
+									view: "questionnaire",
+									decision: "include",
+									required: true,
+									capabilityEnabled: true,
+								},
+								{
+									view: "feature_plan",
+									decision: "include",
+									required: true,
+									capabilityEnabled: true,
+								},
+								{
+									view: "api_io_contract",
+									decision: "omit",
+									required: false,
+									capabilityEnabled: true,
+								},
+								{
+									view: "zod_schema_design",
+									decision: "omit",
+									required: false,
+									capabilityEnabled: false,
+								},
+							],
+							editable: true,
+							lockedReason: null,
+							updatedBy: "user",
+							updatedAt: new Date(),
+						},
+					} as never
+				}
+				questionnaireSession={null}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={false}
+				viewDecisions={[
+					{ view: "questionnaire", decision: "include" },
+					{ view: "feature_plan", decision: "include" },
+					{ view: "api_io_contract", decision: "omit" },
+				]}
+				onUpdateRouting={vi.fn()}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("Questionnaire （必須）");
+		expect(markup).toContain("仕様書 （必須）");
+		expect(markup).toContain("API Contract");
+		expect(markup).toContain("Settings で無効です。");
+		expect(markup).toContain("Routing revision: 3");
+		expect(markup.match(/<input[^>]*disabled=""[^>]*>/g)).toHaveLength(3);
+	});
+
 	it("uses persisted Mission Pilot progress for running and completed steps", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
@@ -884,7 +953,7 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
 	});
 
-	it("allows included Data Model work without forcing Questionnaire or Blueprint steps", () => {
+	it("keeps required Questionnaire before included Data Model work", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={null}
@@ -923,7 +992,7 @@ describe("PlanWorkspaceStatusView", () => {
 		);
 
 		expect(markup).toContain("Data Model作成");
-		expect(markup).not.toContain("アンケートへ");
+		expect(markup).toContain("アンケートへ");
 		expect(markup).not.toContain("Blueprint作成");
 		expect(markup).toContain("Data Model: include - storage contract needed");
 		expect(markup).toContain("Questionnaire: omit - not needed");
@@ -970,7 +1039,7 @@ describe("PlanWorkspaceStatusView", () => {
 		);
 		expect(markup).not.toContain("Blueprint作成");
 		expect(markup).not.toContain("Blueprintを再生成");
-		expect(markup).toContain("1. 仕様書を作成します");
+		expect(markup).toContain("2. 仕様書を作成します");
 	});
 
 	it("does not show Blueprint or Data Model creation by default when routing decisions are missing", () => {
@@ -1010,7 +1079,7 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain("3. 仕様書を作成します");
 	});
 
-	it("allows included Blueprint work without forcing Questionnaire first", () => {
+	it("keeps required Questionnaire before included Blueprint work", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={null}
@@ -1031,7 +1100,7 @@ describe("PlanWorkspaceStatusView", () => {
 		);
 
 		expect(markup).toContain("Blueprint作成");
-		expect(markup).not.toContain("アンケートへ");
+		expect(markup).toContain("アンケートへ");
 		expect(markup).toMatch(/<button[^>]*>Blueprint作成<\/button>/);
 	});
 
@@ -1067,9 +1136,9 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("1. User Flowを作成します");
-		expect(markup).toContain("2. API Contractを作成します");
-		expect(markup).toContain("3. 仕様書を作成します");
+		expect(markup).toContain("2. User Flowを作成します");
+		expect(markup).toContain("3. API Contractを作成します");
+		expect(markup).toContain("4. 仕様書を作成します");
 		expect(markup).toContain("User Flow作成");
 		expect(markup).toContain("API Contract作成");
 		expect(markup).not.toContain("追加の Plan View");
@@ -1229,8 +1298,8 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("1. User Flowを作成します");
-		expect(markup).toContain("2. API Contractを作成します");
+		expect(markup).toContain("2. User Flowを作成します");
+		expect(markup).toContain("3. API Contractを作成します");
 		expect(markup).toContain("Plan Mode capability is disabled in Settings.");
 		expect(markup).toMatch(
 			/<button[^>]*disabled=""[^>]*>User Flow作成<\/button>/,

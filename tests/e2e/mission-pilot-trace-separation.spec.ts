@@ -90,8 +90,22 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 			"chat",
 			now + 1,
 		);
+		insertActivity.run(
+			randomUUID(),
+			taskId,
+			"plan-output-turn",
+			3,
+			"assistant.message",
+			"assistant",
+			"MISSION_PILOT_ARTIFACT_BODY",
+			JSON.stringify({ intent: "feature_plan" }),
+			`e2e:plan-output:${taskId}`,
+			"coding_agent",
+			"chat",
+			now + 2,
+		);
 		db.prepare(
-			"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, trace_owner, trace_channel, created_at) values (?, ?, null, 'assistant', 'MISSION_PILOT_ARTIFACT_BODY', 'markdown_document', ?, 'mission_pilot', 'artifact', ?)",
+			"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, trace_owner, trace_channel, created_at) values (?, ?, null, 'assistant', 'MISSION_PILOT_ARTIFACT_BODY', 'markdown_document', ?, 'coding_agent', 'chat', ?)",
 		).run(
 			randomUUID(),
 			taskId,
@@ -115,6 +129,9 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		};
 		expect(chat.events.map((event) => event.text)).toContain(
 			"CODING_AGENT_CHAT_ONLY",
+		);
+		expect(chat.events.map((event) => event.text)).toContain(
+			"MISSION_PILOT_ARTIFACT_BODY",
 		);
 		expect(chat.events.every((event) => event.traceChannel === "chat")).toBe(
 			true,
@@ -162,13 +179,16 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		).toHaveCount(0);
 		await expect(
 			chatWindow.getByText("MISSION_PILOT_ARTIFACT_BODY"),
-		).toHaveCount(0);
+		).toBeVisible();
 		await page.getByRole("button", { name: "Pilot thought" }).click();
 		const pilotDock = page.locator("aside.nightworkers-chat-dock");
 		await expect(
 			pilotDock.getByText("MISSION_PILOT_THOUGHT_ONLY"),
 		).toBeVisible();
 		await expect(pilotDock.getByText("CODING_AGENT_CHAT_ONLY")).toHaveCount(0);
+		await expect(
+			pilotDock.getByText("MISSION_PILOT_ARTIFACT_BODY"),
+		).toHaveCount(0);
 	} finally {
 		await Promise.allSettled([
 			taskId ? request.delete(`/api/tasks/${taskId}`, { headers }) : null,

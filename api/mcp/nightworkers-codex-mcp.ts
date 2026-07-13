@@ -166,8 +166,8 @@ export function createNightWorkersCodexMcpServer(
 				taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
 				runId: resolvedRunId,
 			});
-			const { task, repository } = resolved;
-			if (!task || !repository) {
+			const { task, repository, executionRoot } = resolved;
+			if (!task || !repository || !executionRoot) {
 				return toolResultToMcp({
 					ok: false,
 					toolName: "run_check",
@@ -190,7 +190,7 @@ export function createNightWorkersCodexMcpServer(
 				conditionIds,
 				timeoutSeconds,
 				displayMode,
-				repoRoot: repository.localPath,
+				repoRoot: executionRoot,
 				allowedPaths: repository.safetyPolicy?.allowedPaths,
 				deniedPaths: repository.safetyPolicy?.deniedPaths,
 				blockedCommands: repository.safetyPolicy?.blockedCommands,
@@ -201,7 +201,7 @@ export function createNightWorkersCodexMcpServer(
 				runId: resolvedRunId,
 				toolName: "run_check",
 				arguments: args,
-				workspaceIdentity: repository.localPath,
+				workspaceIdentity: executionRoot,
 				evidenceKind: "verification",
 				execute: () => runCheckTool(args),
 			});

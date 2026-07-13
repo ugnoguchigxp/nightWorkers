@@ -185,6 +185,9 @@ export function NightWorkersShellLayout(props: ShellLayoutProps) {
 								})
 							}
 							onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
+							onOpenFxSettings={() =>
+								shellProps.onNavigate({ kind: "settings", section: "general" })
+							}
 						/>
 					) : missingProjectRoute ? (
 						<NightWorkersRouteNotFoundScreen

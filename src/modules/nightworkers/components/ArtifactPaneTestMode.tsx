@@ -287,7 +287,19 @@ export function VerificationChecklistPanel({
 	const { t } = useTranslation();
 	const canShowStartButton = Boolean(model.specArtifactId);
 	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
-	const canEnterReviewMode = isTestModeWorkflowComplete(workflowSteps);
+	const completionCheck = readLatestCompletionCheckConditionStatuses(latestRun);
+	const requiredConditions = model.conditions.filter(
+		(condition) => condition.required,
+	);
+	const allRequiredConditionsComplete =
+		requiredConditions.length > 0 &&
+		requiredConditions.every((condition) =>
+			isCompleteConditionStatus(
+				resolveConditionDisplayStatus(condition, completionCheck),
+			),
+		);
+	const canEnterReviewMode =
+		isTestModeWorkflowComplete(workflowSteps) && allRequiredConditionsComplete;
 	const workflowInProgress =
 		workflowActionStatus === "starting" ||
 		isTestModeWorkflowInProgress(workflowSteps);
@@ -300,7 +312,6 @@ export function VerificationChecklistPanel({
 	const checkResults = readLatestTestModeCheckResults(latestRun).filter(
 		(result) => result.checkKind !== "completion_check",
 	);
-	const completionCheck = readLatestCompletionCheckConditionStatuses(latestRun);
 	return (
 		<div className="nightworkers-structured-artifact nightworkers-structured-artifact-section border-b px-4 py-3">
 			<div>
@@ -331,7 +342,7 @@ export function VerificationChecklistPanel({
 			</div>
 			{model.conditions.length > 0 ? (
 				<div className="mt-3 grid gap-1.5">
-					{model.conditions.slice(0, 5).map((condition) => {
+					{model.conditions.map((condition) => {
 						const displayStatus = resolveConditionDisplayStatus(
 							condition,
 							completionCheck,

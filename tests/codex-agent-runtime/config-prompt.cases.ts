@@ -315,6 +315,8 @@ describe("CodexAgentRuntime config and prompt", () => {
 		const prompt = buildCodexRuntimePrompt(
 			buildContext({
 				latestUserMessage: "実装計画書を作ってください",
+				repoRoot: "/repo/worktrees/task-1",
+				registeredRepositoryPath: "/repo/project",
 				ontologyMcp: { enabled: true, fileScale: "large" },
 			}),
 		);
@@ -323,6 +325,15 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).toContain("[NightWorkers Runtime Contract]");
 		expect(prompt).toContain("taskId: task-codex");
 		expect(prompt).toContain("runId: run-codex");
+		expect(prompt).toContain("registeredRepoRoot: /repo/project");
+		expect(prompt).toContain("executionRoot: /repo/worktrees/task-1");
+		expect(prompt).toContain("workspaceSource: task_worktree");
+		expect(prompt).toContain(
+			"NightWorkers managed tool は executionRoot を基準にする",
+		);
+		expect(prompt).toContain(
+			"registeredRepoRoot と異なる場合、登録元で実装・検証しない",
+		);
 		expect(prompt).toContain("executionMode: implementation");
 		expect(prompt).toContain("Plan mode: disabled");
 		expect(prompt).toContain("Plan Mode を明示していない");

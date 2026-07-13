@@ -8,7 +8,7 @@ Target repository: `/Users/y.noguchi/Code/nightWorkers`
 
 ## 1. 目的
 
-Mission Pilotの判断、状態遷移、LLM利用、復旧・停止理由を`Pilot thought`へ集約し、従来のchat欄にはユーザーとコーディングエージェントの会話、reasoning、tool、command、diff、verification、final responseだけを表示する。
+Mission Pilot固有の判断、状態遷移、審査LLM利用、復旧・停止理由を`Pilot thought`へ集約する。一方、ユーザーが手動でPlan Modeを進めた場合と同等のinitial prompt、Questionnaire、Plan Artifact、生成LLM利用は従来のchat欄へ表示する。実行をMission Pilotが起動したことだけを理由にPlan Mode出力をPilot thoughtへ移してはならない。
 
 Mission Pilotがコーディングエージェントを起動した場合も、orchestration ownershipと表示上のproducer ownershipを混同しない。Mission Pilotとの相関関係は保存するが、コーディングエージェントが生成した実行証跡はchatへ表示する。
 
@@ -39,10 +39,10 @@ Mission Pilotがコーディングエージェントを起動した場合も、o
 4. `showDebugEvents`は同じchannel内のdetail levelだけを切り替える。別channelを表示対象へ追加してはならない。
 5. Mission Pilotが起動・所有するTaskRunでも、そのrun内のworker/tool/verifier eventは`traceOwner=coding_agent`、`traceChannel=chat`とする。
 6. Mission Pilotとの関係は`orchestrationRef`で保持し、`traceOwner`へ上書きしない。
-7. Mission Pilotが生成したBlueprint、Data Model、dedicated view、Feature Plan、Verification JSONは`traceChannel=artifact`とし、本文をchatにもPilot thoughtにも重複表示しない。
+7. Mission Pilot経由で生成したBlueprint、Data Model、dedicated view、Feature Plan、Verification JSONもPlan Mode相当の出力なので`traceOwner=coding_agent`、`traceChannel=chat`とする。Mission Pilotとの相関は`orchestrationRef`で保持する。
 8. Artifact生成開始、採用、review、correction、失敗などの要約イベントはMission Pilotが発生させた場合に`pilot_thought`へ表示し、artifact ID / message IDへの相関を保存する。
-9. Mission Pilot initial prompt、Questionnaire draft/finalize、Queue handoff、attention、recoveryは`pilot_thought`へ表示し、通常chatのuser messageとして扱わない。
-10. 人間がchat composerから送信したmessageだけを`traceOwner=user`、`traceChannel=chat`とする。
+9. Mission Pilot initial promptはユーザーがTaskへ設定したpromptの送信記録なので`user/chat`、Questionnaire生成物とready messageは`coding_agent/chat`とする。Questionnaire待機・採用判断、Queue handoff、attention、recoveryは`mission_pilot/pilot_thought`とする。
+10. 人間がchat composerから送信したmessageと、Task objectiveからMission Pilotが初回送信するinitial promptを`traceOwner=user`、`traceChannel=chat`とする。
 11. actor、role、source、run ownership、display channelを同じ概念として扱わない。
 12. ユーザー本文、LLM本文、event textのkeyword / regexからownerやchannelを決めない。
 13. provider層はtrace routingを判断しない。呼び出し元が渡したtyped trace contextを透過的にusage/event persistenceへ引き渡すだけとする。
@@ -60,9 +60,9 @@ Mission Pilotがコーディングエージェントを起動した場合も、o
 | coding agentのassistant text / reasoning | `coding_agent` | `chat` | chat |
 | coding agentのtool / command / diff / verification / run status | `coding_agent` | `chat` | chat |
 | Mission Pilot coordinator decision / state / attention / recovery | `mission_pilot` | `pilot_thought` | Pilot thought |
-| Mission Pilot structured LLM request / usage / review summary | `mission_pilot` | `pilot_thought` | Pilot thought |
-| Mission Pilot initial prompt / Questionnaire lifecycle | `mission_pilot` | `pilot_thought` | Pilot thought |
-| Mission Pilotが生成したPlan Artifact本文 | `mission_pilot` | `artifact` | Plan Mode / Artifact pane |
+| Mission Pilot固有の審査LLM request / usage / review summary | `mission_pilot` | `pilot_thought` | Pilot thought |
+| Task objectiveから送信するMission Pilot initial prompt | `user` | `chat` | chat |
+| Questionnaire / Plan Artifactの生成本文・生成LLM usage | `coding_agent` | `chat` + `orchestrationRef` | chat、Plan Mode / Artifact pane |
 | Plan Artifact生成・採用・修正の要約 | `mission_pilot` | `pilot_thought` | Pilot thought |
 | Mission Pilotが起動したimplementation/test/review runのagent event | `coding_agent` | `chat` | chat |
 | 上記runとMission Pilot Sessionの所有関係 | `coding_agent` | `chat` + `orchestrationRef` | chat、詳細JSONでPilot相関を確認可能 |
@@ -136,7 +136,7 @@ SQLite migrationでは各列を安全側の`system` / `internal` default付き�
 - `userChatTrace()`
 - `codingAgentChatTrace({ runId, orchestrationRef? })`
 - `missionPilotThoughtTrace({ sessionId, phase, cycle?, attempt?, callId? })`
-- `missionPilotArtifactTrace({ sessionId, stepId?, correctionRunId? })`
+- `missionPilotPlanOutputTrace({ sessionId, stepId?, correctionRunId? })`
 - `systemInternalTrace({ reason })`
 
 `createTaskMessage`、`appendActivityEvent`、`recordLlmUsage`のinputで`trace`を必須にする。低レベルrepositoryでrole/sourceから暗黙決定するfallbackは設けない。compile errorをcall-site inventoryとして利用し、全writerを明示的に更新する。
@@ -150,13 +150,13 @@ SQLite migrationでは各列を安全側の`system` / `internal` default付き�
 - `traceChannel`は表示先を表す。
 - artifact projection eventも元messageのtraceを継承する。
 
-Mission Pilot Plan Artifact generatorは`role=mission_pilot`をLLM routingだけに使用せず、`missionPilotArtifactTrace`をmessage/artifact persistenceへ渡す。
+Mission Pilot Plan Artifact generatorはLLM routing上の`role=mission_pilot`と表示責務を分離し、`missionPilotPlanOutputTrace`をmessage、artifact、生成usage persistenceへ渡す。traceは`coding_agent/chat`とし、Mission Pilot Sessionは`orchestrationRef`へ残す。
 
 ### 6.3 Structured LLM / usage
 
 `CallSupervisorOptions` / `StructuredJsonLlmOptions`へ`traceContext`を追加する。roleからownerを推測する互換処理はservice境界の一か所に限定し、Mission Pilot call siteはSession IDを含む明示contextを渡す。
 
-`recordLlmUsage`は`llm_usage_records`と`activity_events`へ同じowner/channelを保存し、activity payloadにもrole、callId、Mission Pilot orchestration refを含める。provider実装はこの分類に関与しない。
+`recordLlmUsage`は`llm_usage_records`と`activity_events`へ同じowner/channelを保存し、activity payloadにもrole、callId、Mission Pilot orchestration refを含める。Plan gate、Questionnaire、Plan Artifact生成・修正のusageは`coding_agent/chat`、Mission Pilot review/decisionのusageは`mission_pilot/pilot_thought`とする。provider実装はこの分類に関与しない。
 
 ### 6.4 Run event projection
 
@@ -192,7 +192,7 @@ Mission Pilot execution trace endpointは、次だけを返す。
 
 ### 7.3 Artifact read path
 
-Plan Mode workspaceとArtifact paneは`artifact` channelのmessageを従来どおりsource message IDから取得する。chatから除外してもartifact採用、Context組み立て、Verification Document、Queue handoffが壊れないことをservice testで固定する。
+Plan Mode workspaceとArtifact paneは、chatにも表示されるPlan Artifact messageを従来どおりsource message IDから取得する。表示先をchatへ戻してもartifact採用、Context組み立て、Verification Document、Queue handoffが壊れないことをservice testで固定する。
 
 ## 8. Frontend Plan
 
@@ -201,7 +201,7 @@ Plan Mode workspaceとArtifact paneは`artifact` channelのmessageを従来ど�
 - input名を`chatActivityEvents` / `chatTaskMessages`へ変更し、channel境界をcomponent contractで明示する。
 - defensive assertion/filterを追加し、Mission Pilot eventが渡されても描画しない。
 - `showDebugEvents`はcoding agent channel内のdebug detailsだけを切り替える。
-- Mission Pilot initial promptをunprojected user messageとしてmergeする既存testを置換し、人間のuser messageだけをchronological merge対象にする。
+- Mission Pilot initial promptを`user/chat`としてchronological merge対象にし、Task objectiveがPlay時に送信されたことを表示する。
 - coding agent runのreasoning、tool、command、diff、verification、final reportの時系列・windowingは維持する。
 
 ### 8.2 `PilotThoughtDock`
@@ -232,16 +232,17 @@ backfillは本文・タイトル・日本語文言を解析せず、次のdurabl
    - `mission_pilot/pilot_thought`。
 3. TaskMessage由来activity (`external_id` / `turn_id`がmessage ID)
    - 対応するTaskMessageのowner/channelを継承する。
-4. Mission Pilot artifact relation
+4. Mission Pilot Plan Artifact relation
    - `mission_pilot_steps.artifact_message_id`
    - `mission_pilot_artifact_correction_runs.result_message_id`
    - `mission_pilot_plan_reviews.feature_plan_message_id`
    - Queue handoff / Contextのtyped source message refs
-   - 一致messageを`mission_pilot/artifact`とする。
-5. `task_messages.message_type = mission_pilot_initial_prompt`またはtyped metadata sourceがMission Pilot
-   - `mission_pilot/pilot_thought`。
+   - 一致messageを`coding_agent/chat`とし、Mission Pilot relationはmetadataへ残す。
+5. `task_messages.message_type = mission_pilot_initial_prompt`またはSessionの`initial_prompt_message_id`
+   - `user/chat`。
 6. `llm_usage_records.metadata_json.role = mission_pilot`
-   - `mission_pilot/pilot_thought`。
+   - Plan gate、Questionnaire、Plan Artifact生成・修正のlabelは`coding_agent/chat`。
+   - Mission Pilot review/decisionのlabelは`mission_pilot/pilot_thought`。
 7. 非Mission Pilotのrun-associated usage/message/event
    - `coding_agent/chat`。
 8. 人間が作成したことをtyped metadataまたは既存submit pathで証明できるuser message
@@ -258,7 +259,7 @@ migration前後に件数reportを出すread-only scriptを追加する。
 - `pilot_thought`に入ったrun-associated coding agent event件数
 - `internal`へ退避したlegacy row件数とID一覧
 
-完了条件は、Mission Pilot関係の未分類が0、chat内Mission Pilot eventが0、Pilot thought内coding agent run eventが0である。一般legacyの`internal`件数は0を強制しないが、reportを保存して意図しない欠落がないことをreviewする。
+完了条件は、Mission Pilot関係の未分類が0、Plan Mode出力・usageのchat外件数が0、Mission Pilot固有event・usageのPilot thought外件数が0、Pilot thought内coding agent run eventが0である。一般legacyの`internal`件数は0を強制しないが、reportを保存して意図しない欠落がないことをreviewする。
 
 ## 10. Implementation File Plan
 
@@ -337,7 +338,7 @@ Gate:
 ### Phase 2: Producer propagation
 
 1. Mission Pilot coordinator/questionnaire/recovery eventを`pilot_thought`で保存する。
-2. Mission Pilot Plan Artifact messageを`artifact`で保存する。
+2. Mission Pilot経由のPlan Artifact messageと生成usageを`coding_agent/chat` + `orchestrationRef`で保存する。
 3. structured LLM usage/debug eventへtrace contextを通す。
 4. TaskRun eventを常にcoding agent producerとして投影し、Mission Pilot associationはorchestration refへ保存する。
 5. messageからactivityへのprojectionでprovenanceを継承する。
@@ -345,9 +346,9 @@ Gate:
 Gate:
 
 - 新規writerがowner/channelなしではcompileしない。
-- `role=mission_pilot` callのusage eventがPilot thoughtへ入る。
+- Plan Mode相当callのusage eventはchat、Mission Pilot固有のreview/decision usageはPilot thoughtへ入る。
 - Mission Pilot phase runのtool/reasoning eventがchatへ入る。
-- Artifact本文がchat/Pilot thoughtへ重複しない。
+- Artifact本文がchatへ入り、Pilot thoughtへ重複しない。
 
 ### Phase 3: Server-side channel projection
 
@@ -365,7 +366,7 @@ Gate:
 ### Phase 4: Frontend separation
 
 1. `ThreadTimeline`をchat-only inputへ変更する。
-2. Mission Pilot promptのchat mergeを除去する。
+2. Mission Pilot initial promptを`user/chat`としてchat mergeへ含める。
 3. `PilotThoughtDock`のactivity/run props fallbackを除去する。
 4. debug toggleがchannel境界を越えないことを固定する。
 5. artifact summaryと既存Plan Mode paneの接続を維持する。
@@ -403,26 +404,27 @@ Gate:
 ### Persistence
 
 - `createTaskMessage`からactivityへprovenanceが同値継承される。
-- Mission Pilot initial promptがuser/chatにならない。
-- Mission Pilot artifact messageがassistant/chatにならない。
+- Mission Pilot initial promptが`user/chat`になる。
+- Mission Pilot経由のPlan Artifact messageが`coding_agent/chat`になる。
+- Plan Mode生成usageが`coding_agent/chat`、Mission Pilot review usageが`mission_pilot/pilot_thought`になる。
 - structured LLM usage activityへroleとtrace contextが残る。
 - Mission Pilot phase runのtask eventがcoding_agent/chatになる。
 - dedupe時に異なるchannelのrowへ誤収束しない。
 
 ### Projection / frontend
 
-- `ThreadTimeline`が`pilot_thought` / `artifact` / `internal`を描画しない。
+- `ThreadTimeline`が`pilot_thought` / `internal`を描画せず、Plan Artifactの`chat` messageを描画する。
 - `PilotThoughtDock`が`coding_agent/chat`を描画しない。
 - `showDebugEvents=true`でもchannel違反が起きない。
 - userとcoding agentのchronologyが維持される。
 - streaming response、persisted response、tool card、diff、final reportがchatに残る。
-- artifact本文はPlan Mode / Artifact paneで開ける。
+- artifact本文はchatに残り、Plan Mode / Artifact paneからも開ける。
 
 ### Migration
 
 - recent live shapeをfixture化してbackfill結果を検証する。
-- Mission Pilot step/correction/review refからartifact ownerを復元する。
-- `metadata_json.role=mission_pilot`からusage ownerを復元する。
+- Mission Pilot step/correction/review refからPlan Artifactを`coding_agent/chat`へ復元する。
+- `metadata_json.role=mission_pilot`だけでは表示先を決めず、Plan Mode labelとMission Pilot固有labelを分けてusage ownerを復元する。
 - phase run associationがcoding agent eventをPilot ownerへ変えない。
 - unresolved legacyがinternalへ退避される。
 - migrationの二重実行・restartで結果が変わらない。
@@ -434,8 +436,8 @@ Gate:
 `NW-E2E-MISSION-PILOT-TRACE-001`（P0 / regression）
 
 1. Mission PilotをPlayする。
-2. Questionnaire draft/wait/finalizeがPilot thoughtだけに出る。
-3. Blueprint/Data Model/Feature Plan本文がchatに出ず、Plan Mode workspaceで開ける。
+2. Questionnaire生成物とready messageがchatへ出て、待機・採用判断イベントだけがPilot thoughtへ出る。
+3. Blueprint/Data Model/Feature Plan本文と生成usageがchatに出て、Plan Mode workspaceでも開ける。
 4. Queue handoff後にcoding agent implementation runを開始する。
 5. coding agent reasoning/tool/command/diff/final responseがchatだけに出る。
 6. Pilot thoughtにはphase開始・完了・attentionなどMission Pilot要約だけが出る。
@@ -482,26 +484,28 @@ bun run verify
 次をすべて満たした場合だけ完了とする。
 
 1. 新規event/message/usageの100%にvalidなowner/channelが保存される。
-2. chat APIがMission Pilot / artifact / internal rowを返さない。
+2. chat APIがuser/coding-agentのchat rowだけを返し、Mission Pilot固有eventとinternal rowを返さない。
 3. Pilot thought APIがcoding agent chat rowとowned run event本文を返さない。
 4. Mission Pilot配下のcoding agent runにMission Pilot correlationが残る。
 5. chatとPilot thoughtのevent ID intersectionが空である。
 6. debug toggleでchannel境界が変わらない。
-7. Mission Pilot Artifact本文がchatから消えてもPlan pipelineとArtifact paneが機能する。
+7. Mission Pilot経由のPlan Artifact本文がchatとArtifact paneの両方で利用でき、Pilot thoughtへ重複しない。
 8. migration後の禁止件数がすべて0。
 9. reload / restart / realtime replay後も同じ分離結果になる。
 10. manual WorkBench / Plan / Test / Review flowに回帰がない。
 11. focused test、migration check、E2E、`bun run verify`が成功する。
 12. verification evidenceを本書へ追記し、完了後にarchiveする。
 
-## 15. Verification Evidence (2026-07-13)
+## 15. Initial Verification Evidence (2026-07-13, superseded boundary)
+
+以下は最初の実装時点の証跡であり、Plan Mode出力までMission Pilot側へ寄せていた表示境界は15.2の補正で置き換えた。migrationや回帰試験の履歴として保持する。
 
 実装完了時の決定的証跡:
 
 - `bun run db:migrate`: `0038_trace_provenance`を正式適用し成功。
 - live DB migration: `.nightworkers/sqlite.db`へ同一migrationを適用し、事前backupを`/tmp/nightworkers-pre-trace-provenance.sqlite`へ保存。
 - `DATABASE_URL=.nightworkers/sqlite.db JWT_SECRET=trace-report-local-only-secret bun api/scripts/report-trace-provenance.ts`: `ok=true`。禁止件数は10項目すべて0。
-- live distribution: activity=`coding_agent/chat:3`, `mission_pilot/artifact:7`, `mission_pilot/pilot_thought:19`。message=`coding_agent/chat:3`, `mission_pilot/artifact:6`, `mission_pilot/pilot_thought:2`。usage=`mission_pilot/pilot_thought:11`。
+- 当時のlive distribution: activity=`coding_agent/chat:3`, `mission_pilot/artifact:7`, `mission_pilot/pilot_thought:19`。message=`coding_agent/chat:3`, `mission_pilot/artifact:6`, `mission_pilot/pilot_thought:2`。usage=`mission_pilot/pilot_thought:11`。この分類は現在の契約ではない。
 - focused Vitest: provenance repository、Pilot thought、chat timeline、realtime、Mission Pilot plan coordinator、LLM usageを含む対象suiteがpass。
 - `NW-E2E-MISSION-PILOT-TRACE-001`: API、DB、chat UI、Pilot thought UI、event ID intersectionを照合しpass。
 - `NW-E2E-MISSION-PILOT-003`: archive完了後のphase-run activityが`coding_agent/chat`だけであることを追加確認しpass。
@@ -511,13 +515,29 @@ bun run verify
 
 追加で`bun run verify:full`を実行した。今回追加したtrace mock / realtime fixtureの2件は修正後pass。残存失敗は、同時進行中の別差分に属するartifact theme、Quality、Codex warning catalog、Plan Mode source-string contractなど11 test fileであり、本変更の対象外として変更していない。full-suite cleanup後にlive DBが空になったことを検出したため、migration前backupから即時復元し、`0038`と当時の最新migrationを再適用した。復元後はTask 1、activity 29、message 11、usage 11を確認し、禁止件数は再度すべて0となった。
 
-この証跡により、本計画のowner/channel分離、migration、API/realtime/UI防御、P0 E2E、通常verifyの完了条件を満たした。本書をarchiveへ移す。
+この証跡により初期のowner/channel分離を完了したが、Plan Mode相当出力の表示責務は15.2で補正した。
 
 ### 15.1 Post-implementation review
 
-完了後レビューで、payload内の自己申告`traceProvenance`を新規rowの分類根拠にできる信頼境界上の問題を修正した。owner/channelは明示された内部trace、run、role/source contractだけから決定し、payloadのtraceは保存後の監査情報として扱う。また、Artifact message用の`mission_pilot/artifact`と、その生成LLM usage用の`mission_pilot/pilot_thought`を別引数へ分け、同じMission Pilot sessionへ相関させた。非object payloadは`rawPayload`として保持し、trace付与による情報欠落を防止した。
+完了後レビューで、payload内の自己申告`traceProvenance`を新規rowの分類根拠にできる信頼境界上の問題を修正した。owner/channelは明示された内部trace、run、role/source contractだけから決定し、payloadのtraceは保存後の監査情報として扱う。非object payloadは`rawPayload`として保持し、trace付与による情報欠落を防止した。なお、この時点のArtifact messageと生成usageの分類は15.2でさらに補正している。
 
 レビュー後検証は、型検査、生成系5 suite 37件、trace/UI/realtime 5 suite 22件、provenance/usage 2 suite 6件がpass。監査はowner/channel違反に加え、payloadと列の不一致を含む10項目すべて0。現在のworktree全体のarchitecture checkは、同時進行中のPlan routing差分にある既存のoversized file 3件で失敗するため、本変更ではそれらを編集・分割していない。
+
+### 15.2 Plan Mode output / Mission Pilot thought boundary correction
+
+ユーザー操作時のPlan Modeと同等の出力は常にchatへ残し、Mission Pilot固有の判断だけをPilot thoughtへ送るよう補正した。
+
+- initial prompt: `user/chat`。Task objectiveをPlay時に実際に送信し、通常timelineへ表示する。
+- Plan gate、Questionnaire、Plan Artifact生成・修正のmessageとusage: `coding_agent/chat` + Mission Pilot `orchestrationRef`。
+- Mission Pilot review/decision usage、phase/attention/recovery event: `mission_pilot/pilot_thought`。
+- fresh DBへの`0040_plan_output_chat_routing`を含む全migration: pass。
+- live DBコピーへの0040単独適用と監査: pass。
+- live監査: 12項目すべて0。activity=`coding_agent/chat:14`, `mission_pilot/pilot_thought:3`、message=`coding_agent/chat:6`, `user/chat:1`、usage=`coding_agent/chat:7`。
+- `bun run typecheck`: pass。
+- trace、intake、service、realtime、timeline、Pilot thought、coordinator、Artifact correctionのfocused test: 9 files / 39 tests pass。Mission Pilot review usageの`mission_pilot/pilot_thought`契約も追加assertionで固定した。
+- `NW-E2E-MISSION-PILOT-TRACE-001`: pass。
+- 対象18ファイルのBiome、`check:docs`、`check:architecture`: pass。
+- `bun run verify`: tracked artifacts、architecture、typecheck、lint、supervisor regressionがすべてpass。
 
 ## 16. Non-goals
 

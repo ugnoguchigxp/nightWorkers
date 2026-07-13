@@ -2,8 +2,13 @@
 
 ## Status
 
-- Plan status: `planned`
+- Plan status: `implemented`
 - Document created: 2026-07-13
+- Implementation completed: 2026-07-13
+- Verification:
+  - `bun run verify`
+  - routing / Mission Pilot / Queue handoff / Settings / UI regression: 13 files, 120 tests
+  - migration smoke test: `0039_mission_pilot_plan_routing.sql` + `0041_plan_routing_idempotency.sql`
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Target runtime span: Plan Mode routing確定からPlan Artifact生成、self-review、Implementation Queue admission直前まで
 - Triggering incident:

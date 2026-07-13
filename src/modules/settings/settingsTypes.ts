@@ -1,6 +1,14 @@
 export type NightWorkersLanguage = "ja" | "en";
 export type NightWorkersCurrency = "JPY" | "USD" | "EUR";
 
+export type FxRateCache = {
+	source: "ecb" | "manual";
+	baseCurrency: "EUR";
+	validOn: string;
+	fetchedAt: string;
+	rates: Record<string, number>;
+};
+
 export type PlanModeCapability =
 	| "feature_plan"
 	| "questionnaire"

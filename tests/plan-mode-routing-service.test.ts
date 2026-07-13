@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
@@ -15,6 +15,11 @@ import {
 	getPlanModeRouting,
 	updatePlanModeRoutingForUser,
 } from "../api/modules/planMode/plan-mode-routing.service";
+import * as generalSettings from "../api/services/settings/general-settings";
+import {
+	missionPilotPlanRoutingToolCallSchema,
+	updatePlanModeRoutingRequestSchema,
+} from "../shared/schemas/plan-mode-routing.schema";
 
 const repositoryIds: string[] = [];
 
@@ -101,6 +106,7 @@ describe("Plan Mode routing service", () => {
 
 		const updated = await updatePlanModeRoutingForUser(task.id, {
 			expectedRevision: 0,
+			idempotencyKey: crypto.randomUUID(),
 			changes: [
 				{
 					view: "api_io_contract",
@@ -141,15 +147,20 @@ describe("Plan Mode routing service", () => {
 
 	it("limits the Mission Pilot tool to omit-to-include expansion", async () => {
 		const { task } = await createFixture();
-		await updatePlanModeRoutingForUser(task.id, {
+		const updated = await updatePlanModeRoutingForUser(task.id, {
 			expectedRevision: 0,
+			idempotencyKey: crypto.randomUUID(),
 			changes: [{ view: "blueprint", decision: "include" }],
 		});
+		expect(
+			updated.entries.find((entry) => entry.view === "blueprint")?.reason,
+		).toBe("ユーザーが ON に変更しました。");
 
 		await expect(
 			executeMissionPilotPlanRoutingTool(task.id, {
 				tool: "edit_plan_artifact_routing",
 				expectedRevision: 1,
+				idempotencyKey: crypto.randomUUID(),
 				changes: [
 					{
 						view: "blueprint",
@@ -163,6 +174,109 @@ describe("Plan Mode routing service", () => {
 		});
 	});
 
+	it("rejects duplicate views in user and Mission Pilot changes", () => {
+		expect(
+			updatePlanModeRoutingRequestSchema.safeParse({
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{ view: "blueprint", decision: "include" },
+					{ view: "blueprint", decision: "omit" },
+				],
+			}).success,
+		).toBe(false);
+		expect(
+			missionPilotPlanRoutingToolCallSchema.safeParse({
+				tool: "edit_plan_artifact_routing",
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{
+						view: "api_io_contract",
+						decision: "include",
+						reason: "API contract is required.",
+					},
+					{
+						view: "api_io_contract",
+						decision: "include",
+						reason: "Duplicate request.",
+					},
+				],
+			}).success,
+		).toBe(false);
+	});
+
+	it("projects Settings capability separately and rejects unavailable includes", async () => {
+		const { task } = await createFixture();
+		const currentSettings = generalSettings.readGeneralSettings();
+		const settingsSpy = vi
+			.spyOn(generalSettings, "readGeneralSettings")
+			.mockReturnValue({
+				...currentSettings,
+				planMode: {
+					capabilities: {
+						...currentSettings.planMode.capabilities,
+						api_io_contract: false,
+					},
+				},
+			});
+		try {
+			const routing = await getPlanModeRouting(task.id);
+			expect(
+				routing.entries.find((entry) => entry.view === "api_io_contract"),
+			).toMatchObject({
+				decision: "omit",
+				capabilityEnabled: false,
+			});
+			await expect(
+				updatePlanModeRoutingForUser(task.id, {
+					expectedRevision: 0,
+					idempotencyKey: crypto.randomUUID(),
+					changes: [{ view: "api_io_contract", decision: "include" }],
+				}),
+			).rejects.toMatchObject({
+				code: "PLAN_MODE_ROUTING_CAPABILITY_DISABLED",
+			});
+		} finally {
+			settingsSpy.mockRestore();
+		}
+	});
+
+	it("converges idempotent retries and rejects key reuse with different content", async () => {
+		const { task } = await createFixture();
+		const idempotencyKey = crypto.randomUUID();
+		const request = {
+			expectedRevision: 0,
+			idempotencyKey,
+			changes: [
+				{
+					view: "sequence_flow" as const,
+					decision: "include" as const,
+					reason: "Concurrency order must be explicit.",
+				},
+			],
+		};
+		const first = await updatePlanModeRoutingForUser(task.id, request);
+		const replay = await updatePlanModeRoutingForUser(task.id, request);
+		expect(first.revision).toBe(1);
+		expect(replay.revision).toBe(1);
+
+		await expect(
+			updatePlanModeRoutingForUser(task.id, {
+				...request,
+				changes: [
+					{
+						view: "activity_flow",
+						decision: "include",
+						reason: "Different operation with a reused key.",
+					},
+				],
+			}),
+		).rejects.toMatchObject({
+			code: "PLAN_MODE_ROUTING_IDEMPOTENCY_CONFLICT",
+		});
+	});
+
 	it("rejects edits after the Mission Pilot reaches Queue state", async () => {
 		const { task, session } = await createFixture();
 		await db
@@ -173,8 +287,27 @@ describe("Plan Mode routing service", () => {
 		await expect(
 			updatePlanModeRoutingForUser(task.id, {
 				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
 				changes: [{ view: "data_model", decision: "include" }],
 			}),
 		).rejects.toMatchObject({ code: "PLAN_MODE_ROUTING_LOCKED" });
+	});
+
+	it("rejects user edits while Mission Pilot is rebuilding the plan", async () => {
+		const { task, session } = await createFixture();
+		await db
+			.update(missionPilotSessions)
+			.set({ desiredState: "playing", leaseOwner: "test-owner" })
+			.where(eq(missionPilotSessions.id, session.id));
+
+		await expect(
+			updatePlanModeRoutingForUser(task.id, {
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [{ view: "data_model", decision: "include" }],
+			}),
+		).rejects.toMatchObject({
+			code: "PLAN_MODE_ROUTING_REBUILD_IN_PROGRESS",
+		});
 	});
 });

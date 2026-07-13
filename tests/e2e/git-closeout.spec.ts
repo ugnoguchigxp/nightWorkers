@@ -38,7 +38,7 @@ function readTestEvidence(taskId: string) {
 	const db = new Database(databasePath, { readonly: true });
 	const counts = db
 		.prepare(
-			"select (select count(*) from verification_documents where task_id = ?) as documents, (select group_concat(status) from verification_documents where task_id = ?) as documentStatuses, (select count(*) from verification_evidence_runs where task_id = ?) as evidenceRuns, (select count(*) from verification_checklist_items where task_id = ?) as checklistItems, (select group_concat(status) from verification_checklist_items where task_id = ?) as checklistStatuses, (select count(*) from verification_checklist_items where task_id = ? and required = 1 and status in ('passed', 'covered', 'verified_by_gate', 'manual', 'not_applicable')) as completedItems",
+			"select (select count(*) from verification_documents where task_id = ?) as documents, (select group_concat(status) from verification_documents where task_id = ?) as documentStatuses, (select count(*) from verification_evidence_runs where task_id = ?) as evidenceRuns, (select count(*) from verification_checklist_items where task_id = ?) as checklistItems, (select group_concat(status) from verification_checklist_items where task_id = ?) as checklistStatuses, (select count(*) from verification_checklist_items where task_id = ? and required = 1 and status in ('passed', 'covered', 'manual', 'not_applicable')) as completedItems",
 		)
 		.get(taskId, taskId, taskId, taskId, taskId, taskId) as {
 		documents: number;

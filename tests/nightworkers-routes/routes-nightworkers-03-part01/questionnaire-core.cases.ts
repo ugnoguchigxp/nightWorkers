@@ -301,18 +301,29 @@ describe("NightWorkers task routes questionnaire core", () => {
 					expect.objectContaining({ title: "Support Desk Decision Review" }),
 				]),
 			);
-			expect(planModeWorkspace.viewDecisions).toEqual([
-				{
-					view: "blueprint",
-					decision: "omit",
-					reason: "UI方針の再設計ではありません。",
-				},
-				{
-					view: "api_io_contract",
-					decision: "include",
-					reason: "API契約変更があります。",
-				},
-			]);
+			expect(planModeWorkspace.viewDecisions).toHaveLength(9);
+			expect(planModeWorkspace.viewDecisions).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						view: "questionnaire",
+						decision: "include",
+					}),
+					expect.objectContaining({
+						view: "feature_plan",
+						decision: "include",
+					}),
+					{
+						view: "blueprint",
+						decision: "omit",
+						reason: "UI方針の再設計ではありません。",
+					},
+					{
+						view: "api_io_contract",
+						decision: "include",
+						reason: "API契約変更があります。",
+					},
+				]),
+			);
 		} finally {
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

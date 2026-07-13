@@ -49,6 +49,7 @@ describe("Mission Pilot typed Plan intake", () => {
 			startOrResumeMissionPilotPlanIntake({
 				taskId: "task-1",
 				initialPrompt: "計画を作成する",
+				sessionId: "pilot-1",
 			}),
 		).resolves.toEqual({
 			questionnaireSessionId: "questionnaire-1",
@@ -57,6 +58,7 @@ describe("Mission Pilot typed Plan intake", () => {
 		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
 			taskId: "task-1",
 			prompt: "計画を作成する",
+			missionPilotSessionId: "pilot-1",
 		});
 		expect(mocks.runPipeline).not.toHaveBeenCalled();
 	});
@@ -69,11 +71,13 @@ describe("Mission Pilot typed Plan intake", () => {
 		await startOrResumeMissionPilotPlanIntake({
 			taskId: "task-2",
 			initialPrompt: "既存Questionnaireを再利用する",
+			sessionId: "pilot-2",
 		});
 
 		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
 			taskId: "task-2",
 			prompt: "既存Questionnaireを再利用する",
+			missionPilotSessionId: "pilot-2",
 			questionnaireSession: questionnaire,
 		});
 		expect(mocks.publishReady).toHaveBeenCalledWith(questionnaire);
@@ -98,6 +102,7 @@ describe("Mission Pilot typed Plan intake", () => {
 		await startOrResumeMissionPilotPlanIntake({
 			taskId: "task-pre-feature",
 			initialPrompt: "Feature Plan直前から再開する",
+			sessionId: "pilot-pre-feature",
 		});
 
 		await vi.waitFor(() =>
@@ -115,6 +120,7 @@ describe("Mission Pilot typed Plan intake", () => {
 		await startOrResumeMissionPilotPlanIntake({
 			taskId: "task-3",
 			initialPrompt: "review済み計画を再開する",
+			sessionId: "pilot-3",
 		});
 		await vi.waitFor(() =>
 			expect(mocks.runPipeline).toHaveBeenCalledWith("task-3"),
@@ -122,6 +128,7 @@ describe("Mission Pilot typed Plan intake", () => {
 		expect(mocks.preparePlanIntake).toHaveBeenCalledWith({
 			taskId: "task-3",
 			prompt: "review済み計画を再開する",
+			missionPilotSessionId: "pilot-3",
 			questionnaireSession: questionnaire,
 		});
 	});
@@ -135,6 +142,7 @@ describe("Mission Pilot typed Plan intake", () => {
 			startOrResumeMissionPilotPlanIntake({
 				taskId: "task-4",
 				initialPrompt: "不正なQuestionnaireを確認する",
+				sessionId: "pilot-4",
 			}),
 		).rejects.toMatchObject({
 			statusCode: 409,

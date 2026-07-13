@@ -9,7 +9,14 @@ import type {
 } from "../shared/schemas/verification-checklist.schema";
 
 describe("verification checklist matcher", () => {
-	it("distinguishes passed cases from full-gate coverage", () => {
+	it("keeps an empty or optional-only checklist incomplete", () => {
+		expect(summarizeChecklist([]).complete).toBe(false);
+		expect(
+			summarizeChecklist([{ ...item("AC-001"), required: false }]).complete,
+		).toBe(false);
+	});
+
+	it("keeps unmapped full-gate coverage incomplete", () => {
 		const items: VerificationChecklistItem[] = [item("AC-001"), item("AC-002")];
 		const updated = applyEvidenceToChecklist({
 			items,
@@ -33,6 +40,24 @@ describe("verification checklist matcher", () => {
 		expect(
 			updated.find((entry) => entry.conditionId === "AC-002")?.status,
 		).toBe("verified_by_gate");
+		const summary = summarizeChecklist(updated);
+		expect(summary.complete).toBe(false);
+		expect(summary.unknownRequired.map((item) => item.conditionId)).toEqual([
+			"AC-002",
+		]);
+	});
+
+	it("completes conditions explicitly mapped to a successful command", () => {
+		const updated = applyEvidenceToChecklist({
+			items: [item("AC-001")],
+			evidence: evidence({
+				exitCode: 0,
+				cases: [],
+				conditionIds: ["AC-001"],
+			}),
+		});
+
+		expect(updated[0]?.status).toBe("covered");
 		expect(summarizeChecklist(updated).complete).toBe(true);
 	});
 
@@ -82,6 +107,32 @@ describe("verification checklist matcher", () => {
 		expect(updated[0]?.status).toBe("unknown");
 		expect(summarizeChecklist(updated).complete).toBe(false);
 	});
+
+	it("keeps a failed case dominant within the same evidence run", () => {
+		const updated = applyEvidenceToChecklist({
+			items: [item("AC-001")],
+			evidence: evidence({
+				exitCode: 1,
+				cases: [
+					{
+						id: "case-failed",
+						name: "[AC-001] failure path",
+						status: "failed",
+						conditionIds: ["AC-001"],
+					},
+					{
+						id: "case-passed",
+						name: "[AC-001] success path",
+						status: "passed",
+						conditionIds: ["AC-001"],
+					},
+				],
+			}),
+		});
+
+		expect(updated[0]?.status).toBe("failed");
+		expect(summarizeChecklist(updated).complete).toBe(false);
+	});
 });
 
 function item(conditionId: string): VerificationChecklistItem {
@@ -99,6 +150,7 @@ function evidence(input: {
 	id?: string;
 	exitCode: number;
 	cases: NormalizedVerificationEvidence["cases"];
+	conditionIds?: string[];
 }): NormalizedVerificationEvidence {
 	return {
 		id: input.id ?? "evidence-1",
@@ -115,6 +167,6 @@ function evidence(input: {
 		rawStderrArtifactId: "stderr.log",
 		summary: { passed: null, failed: null, skipped: null, total: null },
 		cases: input.cases,
-		commandLevelConditionIds: [],
+		commandLevelConditionIds: input.conditionIds ?? [],
 	};
 }

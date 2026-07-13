@@ -43,6 +43,151 @@ describe("NativeApiRunner result projection", () => {
 		expect(result.payload).toEqual({ content: fullText });
 	});
 
+	it("keeps verification checklist details in the verification model view", () => {
+		const result = projectWorkerResultToMcpStructuredPayload({
+			ok: true,
+			toolName: "read_current_specification",
+			startedAt: new Date(0).toISOString(),
+			finishedAt: new Date(0).toISOString(),
+			payload: {
+				taskId: "task-1",
+				found: true,
+				messageId: "message-1",
+				title: "Feature Plan",
+				view: "verification",
+				content: "## 完了条件\n- [AC-001] API が成功する",
+				assembledDesignContext: {
+					taskId: "task-1",
+					sections: [
+						{
+							kind: "api_io_contract",
+							content: "verification view では不要",
+						},
+					],
+				},
+				verification: {
+					verificationDocumentId: "verification-1",
+					verificationArtifactId: "artifact-1",
+					summary: {
+						total: 1,
+						failedRequired: 0,
+						unknownRequired: 1,
+					},
+					document: {
+						version: 1,
+						specId: "spec-1",
+						specPath: "spec/feature-plan.md",
+						conditions: [
+							{
+								id: "AC-001",
+								text: "API が成功する",
+								category: "api",
+								verificationKind: "automated_test",
+								expectedEvidence: ["unit_test"],
+								expectedResult: "API が200を返す",
+								failureMeaning: "API契約が未達",
+								required: true,
+							},
+						],
+						commands: [],
+					},
+					checklist: [
+						{
+							conditionId: "AC-001",
+							text: "API が成功する",
+							required: true,
+							status: "pending",
+							evidenceIds: [],
+						},
+					],
+				},
+			},
+		});
+
+		expect(result).toMatchObject({
+			view: "verification",
+			verification: {
+				verificationDocumentId: "verification-1",
+				summary: { total: 1, unknownRequired: 1 },
+				document: {
+					conditions: [
+						{
+							id: "AC-001",
+							text: "API が成功する",
+							expectedResult: "API が200を返す",
+							failureMeaning: "API契約が未達",
+							verificationKind: "automated_test",
+						},
+					],
+				},
+				checklist: [
+					{
+						conditionId: "AC-001",
+						text: "API が成功する",
+						status: "pending",
+					},
+				],
+			},
+		});
+		expect(
+			(result as { assembledDesignContext?: unknown }).assembledDesignContext,
+		).toBeUndefined();
+	});
+
+	it("keeps all verification conditions structured under the payload limit", () => {
+		const conditions = Array.from({ length: 11 }, (_, index) => ({
+			id: `AC-${String(index + 1).padStart(3, "0")}`,
+			text: `condition ${index + 1} ${"x".repeat(180)}`,
+			category: "workflow",
+			verificationKind: "automated_test",
+			expectedEvidence: ["integration_test"],
+			expectedResult: `expected ${"y".repeat(180)}`,
+			failureMeaning: `failure ${"z".repeat(180)}`,
+			required: true,
+		}));
+		const result = projectWorkerResultToMcpStructuredPayload({
+			ok: true,
+			toolName: "read_current_specification",
+			startedAt: new Date(0).toISOString(),
+			finishedAt: new Date(0).toISOString(),
+			payload: {
+				taskId: "task-1",
+				found: true,
+				view: "verification",
+				content: `# Feature Plan\n${"spec".repeat(4_000)}`,
+				verification: {
+					verificationDocumentId: "verification-1",
+					document: { version: 1, conditions, commands: [] },
+					checklist: conditions.map((condition) => ({
+						conditionId: condition.id,
+						text: condition.text,
+						required: true,
+						status: "pending",
+						evidenceIds: [],
+					})),
+				},
+			},
+		});
+
+		const projected = result as {
+			view?: unknown;
+			verification?: {
+				document?: { conditions?: Array<{ id?: unknown }> };
+				checklist?: Array<{ conditionId?: unknown }>;
+			};
+		};
+		expect(projected.view).toBe("verification");
+		expect(projected.verification?.document?.conditions).toHaveLength(11);
+		expect(projected.verification?.document?.conditions?.at(-1)?.id).toBe(
+			"AC-011",
+		);
+		expect(projected.verification?.checklist).toHaveLength(11);
+		expect(projected.verification?.checklist?.at(-1)?.conditionId).toBe(
+			"AC-011",
+		);
+		expect(result).not.toMatchObject({ truncated: true });
+	});
+
 	it("projects high-volume worker tool payloads into compact model-visible views", () => {
 		const todos = Array.from({ length: 25 }, (_, index) => ({
 			id: `todo-${index + 1}`,

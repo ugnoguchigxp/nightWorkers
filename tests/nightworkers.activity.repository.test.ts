@@ -10,7 +10,7 @@ import {
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import {
 	codingAgentChatTrace,
-	missionPilotArtifactTrace,
+	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 } from "../api/modules/nightworkers/nightworkers.trace-provenance";
 
@@ -128,7 +128,7 @@ describe("nightworkers activity repository", () => {
 		).toHaveLength(64);
 	});
 
-	it("filters chat, Pilot thought, and artifact ledgers by structured channel", async () => {
+	it("keeps Plan output in chat while isolating Pilot-specific thoughts", async () => {
 		const createdRepo = await repo.createRepository({
 			name: `TEST: Trace Channels ${crypto.randomUUID()}`,
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
@@ -149,7 +149,7 @@ describe("nightworkers activity repository", () => {
 			taskId: task.id,
 			role: "assistant",
 			content: "Mission Pilot artifact body",
-			trace: missionPilotArtifactTrace({ sessionId: "pilot-session" }),
+			trace: missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
 		});
 		enqueueActivityEvent({
 			taskId: task.id,
@@ -160,15 +160,18 @@ describe("nightworkers activity repository", () => {
 		});
 
 		await flushActivityEventQueue();
-		const [chatEvents, pilotEvents, artifactMessages] = await Promise.all([
+		const [chatEvents, pilotEvents, chatMessages] = await Promise.all([
 			listActivityEventsForTask(task.id, { traceChannel: "chat" }),
 			listActivityEventsForTask(task.id, {
 				traceChannel: "pilot_thought",
 			}),
-			repo.listTaskMessages(task.id, { traceChannel: "artifact" }),
+			repo.listTaskMessages(task.id, { traceChannel: "chat" }),
 		]);
 		expect(chatEvents.map((event) => event.text)).toContain(
 			"coding-agent response",
+		);
+		expect(chatEvents.map((event) => event.text)).toContain(
+			"Mission Pilot artifact body",
 		);
 		expect(chatEvents.map((event) => event.text)).not.toContain(
 			"Mission Pilot decision",
@@ -176,7 +179,8 @@ describe("nightworkers activity repository", () => {
 		expect(pilotEvents.map((event) => event.text)).toEqual([
 			"Mission Pilot decision",
 		]);
-		expect(artifactMessages.map((message) => message.content)).toEqual([
+		expect(chatMessages.map((message) => message.content)).toEqual([
+			"coding-agent response",
 			"Mission Pilot artifact body",
 		]);
 	});

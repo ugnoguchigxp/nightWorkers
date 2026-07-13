@@ -19,7 +19,10 @@ import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process
 import { mcpClientManager } from "./services/mcp/mcp-client-manager";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 import { runRuntimeRetentionSweep } from "./services/runtime-retention/runtime-retention.service";
-import { readGeneralSettings } from "./services/settings/general-settings";
+import {
+	readGeneralSettings,
+	refreshFxRatesIfNeeded,
+} from "./services/settings/general-settings";
 
 export type NightWorkersServerOptions = {
 	port?: number;
@@ -38,6 +41,7 @@ export type NightWorkersServerHandle = {
 const defaultShutdownTimeoutMs = 10_000;
 const serverCloseCallbackGraceMs = 250;
 const webSocketServerCloseGraceMs = 250;
+const fxRefreshIntervalMs = 60 * 60 * 1000;
 
 type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
 	closeAllConnections?: () => void;
@@ -166,6 +170,44 @@ export async function createNightWorkersServer(
 		port,
 	});
 	nodeWebSocket.injectWebSocket(server);
+	let fxRefreshInFlight: Promise<void> | null = null;
+	const refreshFxRates = () => {
+		if (fxRefreshInFlight) return fxRefreshInFlight;
+		fxRefreshInFlight = refreshFxRatesIfNeeded()
+			.then((result) => {
+				if (result.status !== "refreshed") return;
+				logEvent({
+					channel: "api",
+					level: "info",
+					message: "FX rates refreshed",
+					meta: {
+						source: result.cache.source,
+						validOn: result.cache.validOn,
+					},
+				});
+			})
+			.catch((error) => {
+				logEvent({
+					channel: "api",
+					level: "warn",
+					message: "FX rate auto refresh failed",
+					meta: {
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					},
+				});
+			})
+			.finally(() => {
+				fxRefreshInFlight = null;
+			});
+		return fxRefreshInFlight;
+	};
+	void refreshFxRates();
+	const fxRefreshTimer = setInterval(
+		() => void refreshFxRates(),
+		fxRefreshIntervalMs,
+	);
+	fxRefreshTimer.unref?.();
 	const missionPilotQuestionnaireTimer = setInterval(() => {
 		void submitDueQuestionnaireDrafts().catch((error) => {
 			logEvent({
@@ -236,6 +278,7 @@ export async function createNightWorkersServer(
 		clearInterval(missionPilotQuestionnaireTimer);
 		clearInterval(missionPilotPlanTimer);
 		clearInterval(retentionTimer);
+		clearInterval(fxRefreshTimer);
 		logEvent({
 			channel: "api",
 			level: "info",

@@ -115,12 +115,17 @@ export const missionPilotPlanRoutingRevisions = sqliteTable(
 			.notNull(),
 		updatedBy: text("updated_by").$type<PlanModeRoutingActor>().notNull(),
 		reason: text("reason").notNull(),
+		idempotencyKey: text("idempotency_key"),
+		requestHash: text("request_hash"),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 	},
 	(table) => ({
 		revisionUidx: uniqueIndex(
 			"mission_pilot_plan_routing_revisions_revision_uidx",
 		).on(table.sessionId, table.revision),
+		idempotencyUidx: uniqueIndex(
+			"mission_pilot_plan_routing_revisions_idempotency_uidx",
+		).on(table.sessionId, table.idempotencyKey),
 	}),
 );
 

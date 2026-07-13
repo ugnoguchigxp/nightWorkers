@@ -3,6 +3,7 @@ import {
 	type DesignQuestionnaireSession,
 	designQuestionnaireAnswerSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
@@ -73,6 +74,7 @@ export async function createDesignQuestionnaire(
 	options: {
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		usageTrace?: TraceProvenance;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -98,6 +100,7 @@ export async function createDesignQuestionnaire(
 		planModeContext,
 		routeOverride: options.routeOverride || null,
 		role: options.role ?? "plan",
+		usageTrace: options.usageTrace,
 	}).catch(async (error) => {
 		const rawContent = (error as Error & { rawContent?: string }).rawContent;
 		if (rawContent?.trim()) return rawContent;
@@ -482,6 +485,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
 	planModeContext?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }) {
 	return callStructuredJsonLLM(
 		buildDesignQuestionnaireSystemPrompt(),
@@ -491,6 +495,7 @@ async function generateDesignQuestionnaireRawOutput(input: {
 			schema: questionnaireChoiceFormJsonSchema,
 			taskId: input.taskId,
 			role: input.role,
+			usageTrace: input.usageTrace,
 			routeOverride: input.routeOverride || null,
 		},
 	);

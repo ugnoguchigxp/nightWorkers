@@ -9,6 +9,7 @@ import type {
 	ProviderToolMessage,
 } from "../../structured-llm/tool-calls";
 import type { ModelVisiblePayloadSummary } from "../model-visible-payload";
+import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
 import { readNativeApiExecutionMode } from "./native-api-mode";
 import { readNativeApiRoleWorkingContextText } from "./native-api-role-context-events";
@@ -302,10 +303,11 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 	return [
 		`executionMode: ${executionMode}`,
 		...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		"Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。",
 		"Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。",
 		"new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。",
-		"リポジトリの読み書きは登録済み Project の repo root を基準にし、worker tool handler 経由で行います。",
+		"リポジトリの読み書きは workspace context の executionRoot を基準にし、worker tool handler 経由で行います。",
 		...(repositoryBootstrap
 			? [
 					"このrunはRepository bootstrap専用です。最初にpwdとlist-dir / ls相当で空状態と.gitを確認し、HEADがなければnightworkers.import_project source=starter stack=honoをvariant省略で実行してください。",
@@ -335,7 +337,6 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"- 推奨 tool を使わない場合は、finalReport でその理由を短く説明してください。",
 		"",
 		...modeGuidance(executionMode),
-		`repoRoot: ${context.repoRoot}`,
 	].join("\n");
 }
 

@@ -253,6 +253,13 @@ describe("settings panels", () => {
 		const generalMarkup = renderToStaticMarkup(
 			<GeneralSettingsPanel
 				value={generalSettings}
+				fxCache={{
+					source: "ecb",
+					baseCurrency: "EUR",
+					validOn: "2026-07-13",
+					fetchedAt: "2026-07-13T00:00:00Z",
+					rates: { EUR: 1, USD: 1.17, JPY: 172.5 },
+				}}
 				isRefreshingFx={false}
 				onChange={() => undefined}
 				onRefreshFx={() => undefined}
@@ -265,6 +272,9 @@ describe("settings panels", () => {
 			/>,
 		);
 		expect(generalMarkup).toContain("Asia/Tokyo");
+		expect(generalMarkup).toContain("基準通貨: EUR");
+		expect(generalMarkup).toContain("1.17 USD");
+		expect(generalMarkup).toContain("172.50 JPY");
 		expect(planModeMarkup).toContain('type="checkbox"');
 	});
 

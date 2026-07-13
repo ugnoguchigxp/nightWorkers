@@ -281,6 +281,20 @@
       "when": 1784037600000,
       "tag": "0039_mission_pilot_plan_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1784041200000,
+      "tag": "0040_plan_output_chat_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1784044800000,
+      "tag": "0041_plan_routing_idempotency",
+      "breakpoints": true
     }
   ]
 }

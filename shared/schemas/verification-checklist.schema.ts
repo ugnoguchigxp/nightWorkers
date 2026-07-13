@@ -218,13 +218,15 @@ export type NormalizedTestCaseEvidence = z.infer<
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([
 	"covered",
 	"passed",
-	"verified_by_gate",
 	"manual",
 	"not_applicable",
 ]);
 
-export function isVerificationChecklistItemComplete(
-	item: Pick<VerificationChecklistItem, "required" | "status">,
-): boolean {
-	return !item.required || COMPLETE_STATUSES.has(item.status);
+export function isVerificationChecklistItemComplete(item: {
+	required: boolean;
+	status: unknown;
+}): boolean {
+	if (!item.required) return true;
+	const status = verificationChecklistItemStatusSchema.safeParse(item.status);
+	return status.success && COMPLETE_STATUSES.has(status.data);
 }

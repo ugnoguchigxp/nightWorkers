@@ -97,13 +97,15 @@ export async function runCheckTool(
 		/<testsuites?\b/i.test(payload.stderr)
 			? parseJUnitXmlCases(`${payload.stdout}\n${payload.stderr}`)
 			: [];
+	const resolvedCwd = path.resolve(input.repoRoot, input.cwd || "");
+	const evidenceCwd = await fs.realpath(resolvedCwd).catch(() => resolvedCwd);
 	const evidence =
 		input.taskId && input.runId && shouldRecordRunCheckEvidence(commandResult)
 			? buildCommandLevelEvidence({
 					runId: input.runId,
 					taskId: input.taskId,
 					command,
-					cwd: input.cwd || ".",
+					cwd: evidenceCwd,
 					startedAt,
 					finishedAt,
 					exitCode: payload.exitCode,

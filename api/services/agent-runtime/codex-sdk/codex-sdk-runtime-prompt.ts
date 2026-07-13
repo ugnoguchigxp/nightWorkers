@@ -5,6 +5,7 @@ import {
 	formatOntologyRuntimeContextForPrompt,
 } from "../../../modules/ontology";
 import { estimateTokens } from "../../conversation-context/token-budget";
+import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
@@ -90,7 +91,7 @@ function buildGeneralAnswerContract(
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
-		`repoRoot: ${context.repoRoot}`,
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		"executionMode: general_answer",
 		"Plan mode: disabled. この run は質問への回答用です。Plan Mode artifact を作成・更新せず、実装編集も行わず、必要な読み取り確認だけで回答してください。",
 		"",
@@ -128,7 +129,7 @@ function buildExecutionContract(
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
-		`repoRoot: ${context.repoRoot}`,
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		`executionMode: ${executionMode}`,
 		planModeContract,
 		"",
@@ -188,7 +189,7 @@ function buildTestModeContract(
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
-		`repoRoot: ${context.repoRoot}`,
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		"executionMode: test",
 		...(testModeAction ? [`testMode.action: ${testModeAction}`] : []),
 		"Plan mode: disabled. この run は Test Mode です。Implementation run の thread/history を前提にせず、仕様書の completion conditions と verification JSON を source of truth にしてください。",
@@ -203,7 +204,8 @@ function buildTestModeContract(
 		"- Test Mode agent は Implementation agent とは別 session で動く。Implementation run の thread/history を引き継がず、この run 内で必要な仕様・ファイル・テストを読み直す。",
 		"- testMode.action が plan_and_implement_tests の場合、画面上のワークフロー順に、実装開始 -> ユニットテスト実行 -> 証跡テストチェックを進める。実装開始では Verification Checklist 準拠のテスト計画を本文にまとめたうえで着手し、計画作成だけで完了扱いにしない。",
 		"- テストは完了条件観点を中心に追加・修正し、production code の変更は明確な defect を証明できる場合の最小修正に限る。",
-		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。",
+		"- lint / format:check / typecheck / test / coverage / build / verify は NightWorkers の run_check / run_verification で実行し、raw output artifact と managed evidence を残す。完了条件を満たす証跡として実行する run_check には、対応する AC-xxx を conditionIds に明示する。複数条件を同じ command で確認できる場合だけ複数 ID を指定する。",
+		"- conditionIds のない broad verify / coverage / build 成功は補助的な全体ゲート証跡であり、個別の完了条件を満たした扱いにはならない。各条件は対応する test case または conditionIds 付き managed check で確認する。",
 		"- nightworkers.completion_check は、managed evidence が Verification Checklist の項目と一致しているかを確認する証跡テストチェックとして実行する。failed / unknown required conditions が残る場合は、対象テストまたは明確な defect を修正して再度 run_check / completion_check を実行する。",
 		"- Test Mode では TodoList を使わない。Verification Checklist の状態は backend の deterministic evidence 更新に任せ、画面進捗はこの run の managed tool 実行イベントから表現される。",
 		...(missionPilotRun
@@ -235,7 +237,7 @@ function buildReviewContract(
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
-		`repoRoot: ${context.repoRoot}`,
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		"executionMode: review",
 		"Review lane: completed-task review only. 実装中の会話継続ではなく、完了後の system context と repository evidence を根拠にレビューする。",
 		"",
@@ -302,7 +304,7 @@ function buildPlanningContract(
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
 		`runId: ${context.runId}`,
-		`repoRoot: ${context.repoRoot}`,
+		...formatRuntimeWorkspaceContextForPrompt(context),
 		"executionMode: planning",
 		"Plan mode: enabled. ユーザーは計画、仕様化、設計作業を明示的に依頼している。ユーザーが実装へ移るよう依頼するまで、実装編集は行わない。",
 		"",

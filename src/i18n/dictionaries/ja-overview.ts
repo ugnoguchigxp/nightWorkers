@@ -50,7 +50,8 @@ export const jaOverview = {
 	"overview.cost.codexCredits": "Codex クレジット",
 	"overview.value.credits": "クレジット",
 	"overview.cost.exchangeRates": "為替情報",
-	"overview.cost.updated": "更新日時",
+	"overview.cost.fxUpdated": "為替更新日時",
+	"overview.cost.updated": "概要更新日時",
 	"overview.warning.title": "警告",
 	"overview.table.model": "モデル",
 	"overview.table.tokens": "トークン",
@@ -79,6 +80,7 @@ export const jaOverview = {
 	"overview.warning.pricing_missing": "価格設定なし",
 	"overview.warning.usage_token_anomaly": "トークン使用量の異常",
 	"overview.warning.fx_unavailable": "為替レート未取得",
+	"overview.warning.openFxSettings": "設定で為替情報を確認",
 	"overview.warning.fx_mixed_base_currencies": "複数の基準通貨を換算",
 	"overview.warning.usage_estimated": "推定使用量あり",
 } as const;

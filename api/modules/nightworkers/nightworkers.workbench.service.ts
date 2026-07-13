@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { planModeRegenerationTargetSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError } from "../../lib/errors";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import {
@@ -90,7 +91,6 @@ function renderArtifactContextualPrompt(
 		.filter((line): line is string => line !== null && line !== undefined)
 		.join("\n");
 }
-
 export function isPlanModeArtifactRegenerationContext(
 	artifactContext: WorkbenchArtifactContext | null,
 ): artifactContext is WorkbenchArtifactContext {
@@ -101,7 +101,6 @@ export function isPlanModeArtifactRegenerationContext(
 		planModeRegenerationTargetSchema.safeParse(target).success
 	);
 }
-
 const workbenchPlanModeGateSchema = z
 	.object({
 		shouldStartPlanMode: z.boolean(),
@@ -149,13 +148,11 @@ const workbenchPlanModeGateSchema = z
 			.default([]),
 	})
 	.strict();
-
 export type WorkbenchPlanModeGate = z.infer<
 	typeof workbenchPlanModeGateSchema
 > & {
 	action: "plan_mode" | "general_answer" | "implementation" | "review";
 };
-
 export async function decideWorkbenchPlanModeGate(input: {
 	projectRoot: string;
 	prompt: string;
@@ -166,6 +163,7 @@ export async function decideWorkbenchPlanModeGate(input: {
 	emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
 	taskId: string;
 	role?: StructuredLlmRole;
+	usageTrace?: TraceProvenance;
 }): Promise<WorkbenchPlanModeGate> {
 	const raw = await callStructuredJsonLLM(
 		buildWorkbenchPlanModeGatePrompt(input.projectRoot),
@@ -237,6 +235,7 @@ export async function decideWorkbenchPlanModeGate(input: {
 				},
 			},
 			role: input.role ?? "plan",
+			usageTrace: input.usageTrace,
 			routeOverride: input.routeOverride,
 			tolerateSchemaFailure: false,
 			emitEvent: input.emitEvent,

@@ -24,12 +24,18 @@ export function applyEvidenceToChecklist(input: {
 	const next = input.items.map((item) => ({ ...item }));
 	const nextByCondition = new Map(next.map((item) => [item.conditionId, item]));
 	const touched = new Set<string>();
+	const failedInCurrentEvidence = new Set<string>();
 
 	for (const testCase of input.evidence.cases) {
 		for (const conditionId of testCase.conditionIds) {
 			const item = nextByCondition.get(conditionId);
 			if (!item) continue;
 			touched.add(conditionId);
+			if (testCase.status === "failed") {
+				failedInCurrentEvidence.add(conditionId);
+			} else if (failedInCurrentEvidence.has(conditionId)) {
+				continue;
+			}
 			const status = statusForTestCase(testCase.status);
 			updateItem(item, {
 				status,
@@ -51,6 +57,12 @@ export function applyEvidenceToChecklist(input: {
 		const mutable = nextByCondition.get(conditionId);
 		if (!mutable) continue;
 		touched.add(conditionId);
+		if (
+			failedInCurrentEvidence.has(conditionId) &&
+			input.evidence.exitCode === 0
+		) {
+			continue;
+		}
 		updateItem(mutable, {
 			status: input.evidence.exitCode === 0 ? "covered" : "failed",
 			evidenceId,
@@ -102,9 +114,13 @@ export function summarizeChecklist(items: VerificationChecklistItem[]) {
 	);
 	const unknownRequired = items.filter(
 		(item) =>
-			item.required && (item.status === "pending" || item.status === "unknown"),
+			item.required &&
+			item.status !== "failed" &&
+			!isVerificationChecklistItemComplete(item),
 	);
-	const complete = items.every(isVerificationChecklistItemComplete);
+	const complete =
+		items.some((item) => item.required) &&
+		items.every(isVerificationChecklistItemComplete);
 	return { items, complete, failedRequired, unknownRequired };
 }
 

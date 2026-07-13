@@ -15,13 +15,17 @@ export function usePlanModeRoutingEditor(input: {
 	) => Promise<void>;
 }) {
 	return useCallback(
-		async (view: string, decision: "include" | "omit") => {
+		async (view: EditablePlanModeRoutingView, decision: "include" | "omit") => {
 			if (!input.sessionId || !input.routing) return;
 			await input.runAction(`routing:${view}`, async () => {
-				const response = await updatePlanModeRouting(input.sessionId as string, {
-					expectedRevision: input.routing?.revision ?? 0,
-					changes: [{ view: view as EditablePlanModeRoutingView, decision }],
-				});
+				const response = await updatePlanModeRouting(
+					input.sessionId as string,
+					{
+						expectedRevision: input.routing?.revision ?? 0,
+						idempotencyKey: crypto.randomUUID(),
+						changes: [{ view, decision }],
+					},
+				);
 				if (!response.ok) throw new Error(await response.text());
 				return undefined;
 			});

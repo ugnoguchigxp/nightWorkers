@@ -146,6 +146,7 @@ describe("Mission Pilot service", () => {
 		expect(planIntakeMocks.start).toHaveBeenCalledWith({
 			taskId: fixture.taskId,
 			initialPrompt: "Play時点の最新プロンプト",
+			sessionId: expect.any(String),
 		});
 		const activated = await getSessionByTaskId(fixture.taskId);
 		expect(activated?.authorizationJson).toMatchObject({
@@ -176,6 +177,8 @@ describe("Mission Pilot service", () => {
 						role: "user",
 						content: "Play時点の最新プロンプト",
 						messageType: "mission_pilot_initial_prompt",
+						traceOwner: "user",
+						traceChannel: "chat",
 					}),
 				},
 			}),

@@ -57,6 +57,56 @@ async function createFixture() {
 }
 
 describe("Mission Pilot plan pipeline persistence", () => {
+	it("keeps reroute tool calls separate from stale Artifact scoring", () => {
+		const base = {
+			verdict: "reroute" as const,
+			summary: "API contract is required before scoring.",
+			coverage: {
+				goal: "pass" as const,
+				scope: "pass" as const,
+				acceptanceCriteria: "pass" as const,
+				implementationSteps: "pass" as const,
+				verification: "pass" as const,
+				artifactConsistency: "pass" as const,
+				riskAndSafety: "pass" as const,
+			},
+			findings: [],
+			routingToolCall: {
+				tool: "edit_plan_artifact_routing" as const,
+				expectedRevision: 2,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{
+						view: "api_io_contract" as const,
+						decision: "include" as const,
+						reason: "HTTP boundary must be explicit.",
+					},
+				],
+			},
+		};
+		expect(
+			normalizeMissionPilotPlanReview({
+				...base,
+				artifactScores: [],
+				revisionTargets: [],
+			}).verdict,
+		).toBe("reroute");
+		expect(() =>
+			normalizeMissionPilotPlanReview({
+				...base,
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: crypto.randomUUID(),
+						score: 79,
+						rationale: "Stale routing score.",
+					},
+				],
+				revisionTargets: [],
+			}),
+		).toThrow();
+	});
+
 	it("limits screen focus to Blueprint corrections", () => {
 		expect(
 			planModeArtifactCorrectionTargetSchema.safeParse({
@@ -78,7 +128,7 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		).toBe(false);
 	});
 
-	it("uses the Artifact score instead of finding severity for Queue admission", () => {
+	it("keeps warning-only improvement requests non-blocking", () => {
 		const sourceMessageId = "00000000-0000-4000-8000-000000000001";
 		const review = normalizeMissionPilotPlanReview(
 			{
@@ -137,7 +187,48 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		});
 	});
 
-	it("accepts conceptual Artifacts at 70 and revises implementation Artifacts below 80", () => {
+	it("keeps low scores informational when there is no major correction target", () => {
+		const sourceMessageId = "00000000-0000-4000-8000-000000000009";
+		const review = normalizeMissionPilotPlanReview(
+			{
+				verdict: "revise",
+				summary: "The plan can still be implemented safely.",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "pass",
+					verification: "pass",
+					artifactConsistency: "pass",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId,
+						score: 68,
+						rationale: "More detail could be added during implementation.",
+					},
+				],
+				findings: [
+					{
+						severity: "warning",
+						artifactKind: "feature_plan",
+						sourceId: sourceMessageId,
+						issue: "Repository paths are not listed exhaustively.",
+						recommendation: "Inspect the repository before editing.",
+					},
+				],
+				revisionTargets: [],
+			},
+			[{ artifactKind: "feature_plan", sourceMessageId }],
+		);
+
+		expect(review.verdict).toBe("pass");
+		expect(review.revisionTargets).toEqual([]);
+	});
+
+	it("revises only implementation Artifacts with blocking major findings", () => {
 		const featurePlanId = "00000000-0000-4000-8000-000000000011";
 		const blueprintId = "00000000-0000-4000-8000-000000000012";
 		const review = normalizeMissionPilotPlanReview(
@@ -167,7 +258,15 @@ describe("Mission Pilot plan pipeline persistence", () => {
 						rationale: "概念図として必要十分です。",
 					},
 				],
-				findings: [],
+				findings: [
+					{
+						severity: "blocking",
+						artifactKind: "feature_plan",
+						sourceId: featurePlanId,
+						issue: "A required implementation phase is missing.",
+						recommendation: "Add the missing implementation phase.",
+					},
+				],
 				revisionTargets: [
 					{
 						target: "feature_plan",
@@ -600,6 +699,43 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			status: "applied",
 			outputContextRevision: 2,
 		});
+		const secondReview = await planRepo.createPlanReview({
+			sessionId: fixture.session.id,
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+			featurePlanMessageId: source.id,
+			attempt: 2,
+			review: {
+				verdict: "revise",
+				summary: "The same Artifact still has a major mismatch.",
+				coverage: {
+					goal: "pass",
+					scope: "fail",
+					acceptanceCriteria: "pass",
+					implementationSteps: "fail",
+					verification: "pass",
+					artifactConsistency: "fail",
+					riskAndSafety: "pass",
+				},
+				findings: [],
+				revisionTargets: [],
+			},
+		});
+		expect(
+			await planRepo.createArtifactCorrectionRuns({
+				...input,
+				planReviewId: secondReview.id,
+				targets: [
+					{
+						target: "blueprint",
+						sourceMessageId: result.id,
+						focus: { kind: "artifact" },
+						instruction: "Regenerate Blueprint again",
+						preserveUnfocusedContent: true,
+					},
+				],
+			}),
+		).toEqual([]);
 		await planRepo.supersedeConceptArtifactCorrectionRunsForReview(review.id);
 		expect(
 			await planRepo.getArtifactCorrectionRun(pendingConcept.id),

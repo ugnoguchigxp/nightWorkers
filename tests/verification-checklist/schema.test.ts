@@ -61,11 +61,17 @@ describe("verification checklist schemas", () => {
 					evidenceIds: ["evidence-1"],
 				}),
 			),
-		).toBe(true);
+		).toBe(false);
 		expect(
 			isVerificationChecklistItemComplete({
 				required: true,
 				status: "unknown",
+			}),
+		).toBe(false);
+		expect(
+			isVerificationChecklistItemComplete({
+				required: true,
+				status: "legacy_complete",
 			}),
 		).toBe(false);
 	});

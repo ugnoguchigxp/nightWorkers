@@ -37,6 +37,13 @@ export const enSettings = {
 	"settings.general.exchangeRefreshFailed":
 		"Failed to refresh exchange rates: {{status}}",
 	"settings.general.exchangeRefreshSucceeded": "Updated exchange rates",
+	"settings.general.fxAutoRefresh": "Auto refresh: {{status}}",
+	"settings.general.enabled": "Enabled",
+	"settings.general.disabled": "Disabled",
+	"settings.general.fxBase": "Base currency: {{currency}}",
+	"settings.general.fxValidOn": "Valid on: {{date}}",
+	"settings.general.fxMissing":
+		"Exchange rates have not been fetched yet. Refresh to view them.",
 	"settings.general.promptPartObservability": "Prompt part usage estimates",
 	"settings.general.promptPartObservabilityHelp":
 		"Store NightWorkers estimates for system prompt, user prompt, and State Card tokens alongside provider usage.",

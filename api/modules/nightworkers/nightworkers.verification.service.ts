@@ -1,4 +1,5 @@
 import {
+	isVerificationChecklistItemComplete,
 	type NormalizedVerificationEvidence,
 	type SpecificationVerificationDocument,
 	specificationVerificationDocumentSchema,
@@ -106,13 +107,7 @@ export async function runCompletionCheck(input: {
 	const items = await repository.listVerificationChecklistItems(document.id);
 	const summary = summarizeChecklist(items);
 	const completeCount = items.filter(
-		(item) =>
-			!item.required ||
-			item.status === "passed" ||
-			item.status === "covered" ||
-			item.status === "verified_by_gate" ||
-			item.status === "manual" ||
-			item.status === "not_applicable",
+		isVerificationChecklistItemComplete,
 	).length;
 	return {
 		ok: summary.complete,

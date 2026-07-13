@@ -324,7 +324,6 @@ export function resolveConditionDisplayStatus(
 ) {
 	const explicitStatus = completionCheck?.statuses.get(condition.id);
 	if (explicitStatus) return explicitStatus;
-	if (completionCheck?.ok === true && condition.required) return "covered";
 	return condition.status;
 }
 
@@ -485,7 +484,6 @@ export function isCompleteConditionStatus(status: string) {
 	return (
 		status === "covered" ||
 		status === "passed" ||
-		status === "verified_by_gate" ||
 		status === "manual" ||
 		status === "not_applicable" ||
 		status === "completed" ||

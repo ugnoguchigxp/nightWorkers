@@ -1,10 +1,15 @@
 import { eq } from "drizzle-orm";
+import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotReviewDecisions,
 	missionPilotSessions,
 	missionPilotTestSnapshots,
 } from "../../db/mission-pilot-schema";
+import {
+	completionCheckMatchesVerificationDocument,
+	readCompletionCheckResult,
+} from "../../services/run-events/completion-check-result";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as verificationRepo from "../nightworkers/nightworkers.verification.repository";
 import * as reviewRepo from "./review-mode.repository";
@@ -161,38 +166,13 @@ async function findCompletionCheck(input: {
 			) {
 				return false;
 			}
-			const data = eventData(event);
-			const result = record(data.result);
-			const nestedPayload = record(result.payload);
-			const completionResult = record(nestedPayload.result);
-			const structuredPayload = record(
-				record(result.structured_content).payload,
-			);
-			const structuredResult = record(structuredPayload.result);
-			const explicitOkValues = [
-				data.ok,
-				result.ok,
-				completionResult.ok,
-				structuredPayload.ok,
-				structuredResult.ok,
-			].filter((value): value is boolean => typeof value === "boolean");
-			const resultDocumentIds = [
-				result.verificationDocumentId,
-				completionResult.verificationDocumentId,
-				structuredPayload.verificationDocumentId,
-				structuredResult.verificationDocumentId,
-			].filter((value): value is string => typeof value === "string");
+			const completionCheck = readCompletionCheckResult(event);
 			return (
-				(data.mcpTool === "completion_check" ||
-					data.toolName === "completion_check" ||
-					result.toolName === "completion_check") &&
-				data.status !== "failed" &&
-				explicitOkValues.includes(true) &&
-				!explicitOkValues.includes(false) &&
-				(resultDocumentIds.length === 0 ||
-					resultDocumentIds.every(
-						(documentId) => documentId === input.verificationDocumentId,
-					))
+				completionCheck?.ok === true &&
+				completionCheckMatchesVerificationDocument(
+					completionCheck,
+					input.verificationDocumentId,
+				)
 			);
 		});
 		if (match) return match;
@@ -296,16 +276,9 @@ async function resolveTestEvidence(input: {
 		const items = await verificationRepo.listVerificationChecklistItems(
 			document.id,
 		);
-		const completeStatuses = new Set([
-			"passed",
-			"covered",
-			"verified_by_gate",
-			"manual",
-			"not_applicable",
-		]);
 		const required = items.filter((item) => item.required);
 		const incomplete = required.filter(
-			(item) => !completeStatuses.has(item.status),
+			(item) => !isVerificationChecklistItemComplete(item),
 		);
 		const evidenceRunIds = [
 			...new Set(

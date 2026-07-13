@@ -1,4 +1,5 @@
 import { ensureNightWorkersSchema } from "../db/bootstrap";
+import { PLAN_MODE_USAGE_LABELS_SQL } from "../db/bootstrap-trace-provenance";
 import { client } from "../db/client";
 
 async function count(sql: string) {
@@ -20,8 +21,8 @@ async function distribution(table: string) {
 async function main() {
 	await ensureNightWorkersSchema();
 	const forbidden = {
-		missionPilotInChat: await count(
-			"SELECT count(*) AS count FROM activity_events WHERE trace_owner = 'mission_pilot' AND trace_channel = 'chat'",
+		missionPilotActivityOutsideThought: await count(
+			"SELECT count(*) AS count FROM activity_events WHERE trace_owner = 'mission_pilot' AND trace_channel <> 'pilot_thought'",
 		),
 		nonPilotInPilotThought: await count(
 			"SELECT count(*) AS count FROM activity_events WHERE trace_channel = 'pilot_thought' AND trace_owner <> 'mission_pilot'",
@@ -29,17 +30,23 @@ async function main() {
 		runEventsOutsideCodingChat: await count(
 			"SELECT count(*) AS count FROM activity_events WHERE run_id IS NOT NULL AND (trace_owner <> 'coding_agent' OR trace_channel <> 'chat')",
 		),
-		pilotMessagesInChat: await count(
-			"SELECT count(*) AS count FROM task_messages WHERE trace_owner = 'mission_pilot' AND trace_channel = 'chat'",
+		missionPilotMessagesOutsideThought: await count(
+			"SELECT count(*) AS count FROM task_messages WHERE trace_owner = 'mission_pilot' AND trace_channel <> 'pilot_thought'",
 		),
 		nonPilotMessagesInPilotThought: await count(
 			"SELECT count(*) AS count FROM task_messages WHERE trace_channel = 'pilot_thought' AND trace_owner <> 'mission_pilot'",
 		),
-		pilotUsageOutsideThought: await count(
-			"SELECT count(*) AS count FROM llm_usage_records WHERE (trace_owner = 'mission_pilot' AND trace_channel <> 'pilot_thought') OR (json_valid(metadata_json) = 1 AND json_extract(metadata_json, '$.role') = 'mission_pilot' AND (trace_owner <> 'mission_pilot' OR trace_channel <> 'pilot_thought'))",
+		planModeUsageOutsideChat: await count(
+			`SELECT count(*) AS count FROM llm_usage_records WHERE (json_valid(metadata_json) = 0 OR json_extract(metadata_json, '$.role') IS NULL OR json_extract(metadata_json, '$.role') <> 'mission_pilot' OR label IN (${PLAN_MODE_USAGE_LABELS_SQL})) AND (trace_owner <> 'coding_agent' OR trace_channel <> 'chat')`,
 		),
-		nonPilotUsageInPilotThought: await count(
-			"SELECT count(*) AS count FROM llm_usage_records WHERE trace_channel = 'pilot_thought' AND trace_owner <> 'mission_pilot'",
+		missionPilotUsageOutsideThought: await count(
+			`SELECT count(*) AS count FROM llm_usage_records WHERE json_valid(metadata_json) = 1 AND json_extract(metadata_json, '$.role') = 'mission_pilot' AND label NOT IN (${PLAN_MODE_USAGE_LABELS_SQL}) AND (trace_owner <> 'mission_pilot' OR trace_channel <> 'pilot_thought')`,
+		),
+		planArtifactMessagesOutsideChat: await count(
+			"SELECT count(*) AS count FROM task_messages WHERE id IN (SELECT artifact_message_id FROM mission_pilot_steps WHERE artifact_message_id IS NOT NULL UNION SELECT feature_plan_message_id FROM mission_pilot_plan_reviews UNION SELECT source_message_id FROM mission_pilot_artifact_correction_runs UNION SELECT result_message_id FROM mission_pilot_artifact_correction_runs WHERE result_message_id IS NOT NULL) AND (trace_owner <> 'coding_agent' OR trace_channel <> 'chat')",
+		),
+		initialPromptOutsideChat: await count(
+			"SELECT count(*) AS count FROM task_messages WHERE message_type = 'mission_pilot_initial_prompt' AND (trace_owner <> 'user' OR trace_channel <> 'chat')",
 		),
 		activityPayloadTraceMismatch: await count(
 			"SELECT count(*) AS count FROM activity_events WHERE json_valid(payload_json) = 1 AND json_extract(payload_json, '$.traceProvenance.owner') IS NOT NULL AND (json_extract(payload_json, '$.traceProvenance.owner') <> trace_owner OR json_extract(payload_json, '$.traceProvenance.channel') <> trace_channel)",

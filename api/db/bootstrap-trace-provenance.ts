@@ -1,22 +1,39 @@
 import { client } from "./client";
 
+export const PLAN_MODE_USAGE_LABELS_SQL = [
+	"workbench_plan_mode_gate",
+	"design_questionnaire",
+	"design_questionnaire_additional",
+	"mock_blueprint",
+	"plan_mode_data_model",
+	"plan_mode_dedicated_view",
+	"plan_mode_api_contract",
+	"plan_mode_zod_schema",
+	"specification_document",
+]
+	.map((label) => `'${label}'`)
+	.join(", ");
+
 export async function backfillTraceProvenance() {
 	await client.execute(`
     UPDATE llm_usage_records
-    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
-    WHERE trace_channel = 'internal'
-      AND json_valid(metadata_json) = 1
-      AND json_extract(metadata_json, '$.role') = 'mission_pilot'
-  `);
+    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+	    WHERE json_valid(metadata_json) = 0
+	       OR json_extract(metadata_json, '$.role') IS NULL
+	       OR json_extract(metadata_json, '$.role') <> 'mission_pilot'
+	       OR label IN (${PLAN_MODE_USAGE_LABELS_SQL})
+	  `);
 	await client.execute(`
     UPDATE llm_usage_records
-    SET trace_owner = 'coding_agent', trace_channel = 'chat'
-    WHERE trace_channel = 'internal' AND run_id IS NOT NULL
+    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
+	    WHERE json_valid(metadata_json) = 1
+	      AND json_extract(metadata_json, '$.role') = 'mission_pilot'
+	      AND label NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
   `);
 	await client.execute(`
     UPDATE task_messages
-    SET trace_owner = 'mission_pilot', trace_channel = 'artifact'
-    WHERE trace_channel = 'internal' AND id IN (
+	    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+	    WHERE id IN (
       SELECT artifact_message_id FROM mission_pilot_steps WHERE artifact_message_id IS NOT NULL
       UNION SELECT feature_plan_message_id FROM mission_pilot_plan_reviews
       UNION SELECT source_message_id FROM mission_pilot_artifact_correction_runs
@@ -25,17 +42,20 @@ export async function backfillTraceProvenance() {
   `);
 	await client.execute(`
     UPDATE task_messages
-    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
-    WHERE trace_channel = 'internal' AND (
-      id IN (
+	    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
+	    WHERE trace_channel = 'internal' AND (
+        json_valid(metadata_json) = 1
+        AND json_extract(metadata_json, '$.source') = 'mission_pilot'
+    )
+  `);
+	await client.execute(`
+    UPDATE task_messages
+    SET trace_owner = 'user', trace_channel = 'chat'
+    WHERE message_type = 'mission_pilot_initial_prompt'
+      OR id IN (
         SELECT initial_prompt_message_id FROM mission_pilot_sessions
         WHERE initial_prompt_message_id IS NOT NULL
       )
-      OR (
-        json_valid(metadata_json) = 1
-        AND json_extract(metadata_json, '$.source') = 'mission_pilot'
-      )
-    )
   `);
 	await client.execute(`
     UPDATE task_messages
@@ -74,4 +94,42 @@ export async function backfillTraceProvenance() {
     )
     WHERE external_id IN (SELECT id FROM llm_usage_records)
   `);
+	await client.execute(`
+    UPDATE activity_events
+    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+	    WHERE trace_owner = 'mission_pilot' AND trace_channel = 'artifact'
+	       OR (
+	         kind = 'llm.usage'
+	         AND (
+	           json_valid(payload_json) = 0
+	           OR json_extract(payload_json, '$.role') IS NULL
+	           OR json_extract(payload_json, '$.role') <> 'mission_pilot'
+	           OR json_extract(payload_json, '$.label') IN (${PLAN_MODE_USAGE_LABELS_SQL})
+	         )
+	       )
+	  `);
+	await client.execute(`
+    UPDATE activity_events
+    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
+	    WHERE kind = 'llm.usage'
+	      AND json_valid(payload_json) = 1
+	      AND json_extract(payload_json, '$.role') = 'mission_pilot'
+	      AND json_extract(payload_json, '$.label') NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
+  `);
+	for (const [table, jsonColumn] of [
+		["activity_events", "payload_json"],
+		["task_messages", "metadata_json"],
+		["llm_usage_records", "metadata_json"],
+	] as const) {
+		await client.execute(`
+      UPDATE ${table}
+      SET ${jsonColumn} = json_set(
+        ${jsonColumn},
+        '$.traceProvenance.owner', trace_owner,
+        '$.traceProvenance.channel', trace_channel
+      )
+      WHERE json_valid(${jsonColumn}) = 1
+        AND json_extract(${jsonColumn}, '$.traceProvenance.owner') IS NOT NULL
+    `);
+	}
 }

@@ -1,9 +1,7 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { buildPlanModeExecutionSteps } from "../../../shared/plan-mode-execution";
-import {
-	isMissionPilotConceptArtifactKind,
-} from "../../../shared/schemas/mission-pilot-plan-review.schema";
+import { isMissionPilotConceptArtifactKind } from "../../../shared/schemas/mission-pilot-plan-review.schema";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
@@ -15,11 +13,13 @@ import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.servi
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { executeMissionPilotArtifactCorrection } from "./mission-pilot-artifact-correction.service";
 import * as planRepo from "./mission-pilot-plan.repository";
+import { reviewCurrentPlan } from "./mission-pilot-plan-review.service";
 import {
 	activeTasks,
 	answerPreFeaturePlanQuestionnaire,
 	artifactKinds,
 	assertTaskContextCurrent,
+	correctionStepKey,
 	ensureQuestionnaireContext,
 	errorMessage,
 	existingArtifactForStep,
@@ -38,8 +38,9 @@ import {
 	updatePhase,
 } from "./mission-pilot-plan-support";
 import { dispatchMissionPilotPlanToolCall } from "./mission-pilot-plan-tool.service";
-import { reviewCurrentPlan } from "./mission-pilot-plan-review.service";
+
 export { buildMissionPilotPlanReviewResponseJsonSchema } from "./mission-pilot-plan-review.service";
+
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	assertMissionPilotPreQueueMutable,
@@ -210,6 +211,25 @@ async function executeArtifactCorrections(input: {
 		feature_plan: 40,
 	};
 	targets.sort((left, right) => rank[left.target] - rank[right.target]);
+	const steps = await planRepo.listPlanSteps(input.sessionId);
+	const regeneratedStepTargets = targets
+		.filter((target) => {
+			const stepKey = correctionStepKey[target.target];
+			return steps.some(
+				(step) =>
+					step.stepKey === stepKey &&
+					step.status === "completed" &&
+					step.attempt > 1,
+			);
+		})
+		.map((target) => target.target);
+	if (regeneratedStepTargets.length > 0) {
+		throw new Error(
+			`Mission Pilot automatic Artifact regeneration limit reached: ${[
+				...new Set(regeneratedStepTargets),
+			].join(", ")}`,
+		);
+	}
 	const runs = await planRepo.createArtifactCorrectionRuns({
 		sessionId: input.sessionId,
 		taskId: input.taskId,
@@ -218,6 +238,19 @@ async function executeArtifactCorrections(input: {
 		contextDigest: input.contextDigest,
 		targets,
 	});
+	const scheduledTargets = new Set(runs.map((run) => run.target));
+	const exhaustedTargets = [
+		...new Set(
+			targets
+				.map((target) => target.target)
+				.filter((target) => !scheduledTargets.has(target)),
+		),
+	];
+	if (exhaustedTargets.length > 0) {
+		throw new Error(
+			`Mission Pilot automatic Artifact regeneration limit reached: ${exhaustedTargets.join(", ")}`,
+		);
+	}
 	for (const run of runs) {
 		if (run.status === "applied" || run.status === "superseded") continue;
 		await updatePhase(input.taskId, input.leaseOwner, "correcting_artifact");
@@ -252,8 +285,8 @@ async function executeReview(
 		(latest.reviewJson.artifactScores?.length ?? 0) > 0 &&
 		currentSession &&
 		latest.contextRevision === currentSession.contextRevision &&
-		latest.contextDigest === currentSession.contextDigest
-		&& latest.routingRevision === currentSession.planRoutingRevision
+		latest.contextDigest === currentSession.contextDigest &&
+		latest.routingRevision === currentSession.planRoutingRevision
 	)
 		return latest;
 	if (latest?.verdict === "revise") {
@@ -450,7 +483,11 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		if (!session) return;
 		leasedSessionId = session.id;
 		let reviewCompleted = false;
-		for (let rerouteCount = 0; rerouteCount <= MAX_ROUTING_TOOL_CALLS; rerouteCount++) {
+		for (
+			let rerouteCount = 0;
+			rerouteCount <= MAX_ROUTING_TOOL_CALLS;
+			rerouteCount++
+		) {
 			await executeArtifactSteps(
 				taskId,
 				session.id,
@@ -462,7 +499,8 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 				reviewCompleted = true;
 				break;
 			} catch (error) {
-				if (!(error instanceof MissionPilotPlanRoutingChangedError)) throw error;
+				if (!(error instanceof MissionPilotPlanRoutingChangedError))
+					throw error;
 				if (rerouteCount >= MAX_ROUTING_TOOL_CALLS) {
 					throw new Error("Mission Pilot routing expansion limit exceeded");
 				}

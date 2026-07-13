@@ -31,6 +31,7 @@ type OverviewScreenProps = {
 		tab: "mission" | "evaluation" | "quality" | "stack" | "worktrees",
 	) => void;
 	onOpenSession: (sessionId: string) => void;
+	onOpenFxSettings: () => void;
 };
 
 export function OverviewDashboard({
@@ -41,6 +42,7 @@ export function OverviewDashboard({
 	onProjectFilterChange,
 	onOpenProjectDetailTab,
 	onOpenSession,
+	onOpenFxSettings,
 }: OverviewScreenProps) {
 	const { t } = useTranslation();
 	const { dashboard, isLoading, error, refresh, startupWarnings } =
@@ -95,6 +97,7 @@ export function OverviewDashboard({
 						viewModel={viewModel}
 						range={range}
 						onOpenSession={onOpenSession}
+						onOpenFxSettings={onOpenFxSettings}
 					/>
 				) : error ? null : (
 					<EmptyState
@@ -113,11 +116,13 @@ function OverviewContent({
 	viewModel,
 	range,
 	onOpenSession,
+	onOpenFxSettings,
 }: {
 	dashboard: OverviewDashboardData;
 	viewModel: ReturnType<typeof buildOverviewViewModel>;
 	range: OverviewRange;
 	onOpenSession: (sessionId: string) => void;
+	onOpenFxSettings: () => void;
 }) {
 	const language = dashboard.settings.language;
 	const timezone = dashboard.scope.timezone;
@@ -150,6 +155,7 @@ function OverviewContent({
 				language={language}
 				timezone={timezone}
 				currency={currency}
+				onOpenFxSettings={onOpenFxSettings}
 			/>
 			<OverviewTables
 				dashboard={dashboard}

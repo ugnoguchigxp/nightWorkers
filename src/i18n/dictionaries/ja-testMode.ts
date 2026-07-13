@@ -37,7 +37,7 @@ export const jaTestMode = {
 	"testMode.conditionStatus.completed": "完了",
 	"testMode.conditionStatus.done": "完了",
 	"testMode.conditionStatus.covered": "確認済み",
-	"testMode.conditionStatus.verified_by_gate": "ゲート確認済み",
+	"testMode.conditionStatus.verified_by_gate": "ゲートのみ",
 	"testMode.conditionStatus.manual": "手動確認済み",
 	"testMode.conditionStatus.not_applicable": "対象外",
 	"testMode.conditionStatus.missing": "未充足",

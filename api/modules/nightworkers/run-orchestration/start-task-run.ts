@@ -288,6 +288,7 @@ export async function startTaskRunInProcess(
 			reason: securityIntelligence.ontology.reason,
 		},
 		request: {
+			registeredRepositoryPath: repoInfo.localPath,
 			repositoryPath: executionRoot,
 			taskTitle: task.title,
 			taskDescriptionDigest: digestText(

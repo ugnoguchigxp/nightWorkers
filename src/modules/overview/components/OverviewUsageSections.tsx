@@ -3,7 +3,11 @@ import { AlertTriangle, BarChart3, CircleDollarSign } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { OverviewDashboard } from "../../../../shared/schemas/overview.schema";
 import { formatDateTime } from "../../../i18n/format";
-import type { OverviewRange } from "../../nightworkers/routing/workbench-route-state";
+import { handleWorkbenchAnchorClick } from "../../nightworkers/routing/workbench-link-click";
+import {
+	type OverviewRange,
+	serializeWorkbenchRoute,
+} from "../../nightworkers/routing/workbench-route-state";
 import type { NightWorkersCurrency } from "../../settings";
 import {
 	formatCompactCurrency,
@@ -35,6 +39,7 @@ export function OverviewUsageSections({
 	language,
 	timezone,
 	currency,
+	onOpenFxSettings,
 }: {
 	dashboard: OverviewDashboard;
 	viewModel: OverviewViewModel;
@@ -42,6 +47,7 @@ export function OverviewUsageSections({
 	language: "ja" | "en";
 	timezone: string;
 	currency: NightWorkersCurrency;
+	onOpenFxSettings?: () => void;
 }) {
 	const { t } = useTranslation();
 	return (
@@ -54,7 +60,7 @@ export function OverviewUsageSections({
 				}
 			>
 				{range === "all" ? null : (
-					<div className="border p-4" style={panelStyle}>
+					<div className="min-w-0 border p-4" style={panelStyle}>
 						<SectionTitle
 							icon={<BarChart3 className="h-4 w-4" />}
 							title={t("overview.section.daily")}
@@ -108,7 +114,7 @@ export function OverviewUsageSections({
 														className="max-w-full truncate text-[9px]"
 														style={subtleTextStyle}
 													>
-														{bucket.key}
+														{formatUsageBucketLabel(bucket.key, range)}
 													</span>
 												)}
 											</div>
@@ -181,12 +187,24 @@ export function OverviewUsageSections({
 						<MetricRow
 							label={t("overview.cost.exchangeRates")}
 							value={
-								dashboard.cost.fxRate
+								dashboard.cost.fxRate !== null
 									? t("overview.cost.fxRate", {
 											base: dashboard.cost.fxBaseCurrency,
 											currency,
 											rate: dashboard.cost.fxRate.toFixed(4),
 										})
+									: t("overview.value.notAvailable")
+							}
+						/>
+						<MetricRow
+							label={t("overview.cost.fxUpdated")}
+							value={
+								dashboard.cost.fxUpdatedAt
+									? formatDateTime(
+											dashboard.cost.fxUpdatedAt,
+											language,
+											timezone,
+										)
 									: t("overview.value.notAvailable")
 							}
 						/>
@@ -197,19 +215,34 @@ export function OverviewUsageSections({
 					</dl>
 				</div>
 			</section>
-			<OverviewWarnings warnings={dashboard.warnings} t={t} />
+			<OverviewWarnings
+				warnings={dashboard.warnings}
+				t={t}
+				onOpenFxSettings={onOpenFxSettings}
+			/>
 		</>
 	);
+}
+
+function formatUsageBucketLabel(bucketKey: string, range: OverviewRange) {
+	if (range !== "24h") return bucketKey;
+	const hour = bucketKey.split("T")[1];
+	return hour ? `${hour}:00` : bucketKey;
 }
 
 function OverviewWarnings({
 	warnings,
 	t,
+	onOpenFxSettings,
 }: {
 	warnings: OverviewDashboard["warnings"];
 	t: TFunction;
+	onOpenFxSettings?: () => void;
 }) {
 	if (warnings.length === 0) return null;
+	const hasFxUnavailable = warnings.some(
+		(warning) => warning.code === "fx_unavailable",
+	);
 	return (
 		<section
 			className="border p-3 text-xs"
@@ -248,6 +281,27 @@ function OverviewWarnings({
 					</span>
 				))}
 			</div>
+			{hasFxUnavailable ? (
+				<a
+					href={serializeWorkbenchRoute({
+						kind: "settings",
+						section: "general",
+					})}
+					onClick={
+						onOpenFxSettings
+							? (event) => handleWorkbenchAnchorClick(event, onOpenFxSettings)
+							: undefined
+					}
+					className="mt-3 inline-flex border px-3 py-1.5 font-medium"
+					style={{
+						borderColor: "var(--nw-primary)",
+						borderRadius: "var(--nw-control-radius)",
+						color: "var(--nw-primary)",
+					}}
+				>
+					{t("overview.warning.openFxSettings")}
+				</a>
+			) : null}
 		</section>
 	);
 }

@@ -65,15 +65,11 @@ export function buildPlanModeExecutionSteps(input: {
 			kind: "questionnaire",
 			view: "questionnaire",
 			required: true,
-			enabled: input.capabilities.questionnaire,
+			enabled: true,
 			decision: "include",
-			status: input.questionnaireComplete
-				? "completed"
-				: input.capabilities.questionnaire
-					? "pending"
-					: "skipped",
+			status: input.questionnaireComplete ? "completed" : "pending",
 		},
-		visibleDefault("questionnaire", input.questionnaireExists, true),
+		true,
 	);
 
 	for (const view of ["blueprint", "data_model"] as const) {

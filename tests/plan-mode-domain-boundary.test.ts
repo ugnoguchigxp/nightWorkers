@@ -162,20 +162,23 @@ describe("Plan Mode domain boundaries", () => {
 	});
 
 	it("allows Plan Mode Questionnaire creation without a Blueprint source", () => {
-		const workspaceShell = readProjectFile(
-			"src/modules/planMode/PlanModeWorkspaceViewer.tsx",
+		const questionnaireActions = readProjectFile(
+			"src/modules/planMode/usePlanModeQuestionnaireActions.ts",
+		);
+		const questionnairePanel = readProjectFile(
+			"src/modules/planMode/PlanModeQuestionnairePanel.tsx",
 		);
 		const questionnaireCommands = readProjectFile(
 			"src/modules/questionnaire/questionnaireCommands.ts",
 		);
 
-		expect(workspaceShell).not.toContain(
+		expect(questionnaireActions).not.toContain(
 			"if (!sessionId || !activeBlueprintMessage) return;",
 		);
-		expect(workspaceShell).toContain(
+		expect(questionnaireActions).toContain(
 			"sourceBlueprintMessageId: activeBlueprintMessage?.id ?? null",
 		);
-		expect(workspaceShell).toMatch(
+		expect(questionnairePanel).toMatch(
 			/activeBlueprintMessage\s*\?\s*['"]この画面案から質問を作成['"]\s*:\s*['"]質問を作成['"]/,
 		);
 		expect(questionnaireCommands).toContain(

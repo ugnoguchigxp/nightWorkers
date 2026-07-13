@@ -19,6 +19,7 @@ export function buildContext(
 			stateCardTokens: number;
 			runtimeUserPromptTokens: number;
 		};
+		registeredRepositoryPath?: string;
 		currentTodo?: {
 			id: string;
 			seq: number;
@@ -48,6 +49,14 @@ export function buildContext(
 		contextSnapshot: {
 			compiledPrompt: "do work",
 			source: "fallback" as const,
+			...(input.registeredRepositoryPath
+				? {
+						request: {
+							registeredRepositoryPath: input.registeredRepositoryPath,
+							repositoryPath: input.repoRoot ?? "/repo",
+						},
+					}
+				: {}),
 			...(input.conversationContextUsage
 				? {
 						conversationContext: {

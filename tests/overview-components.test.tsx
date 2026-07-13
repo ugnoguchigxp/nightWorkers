@@ -84,19 +84,15 @@ describe("Overview components", () => {
 		expect(markup).not.toContain("クレジット");
 	});
 
-	it("limits usage chart details for long ranges", () => {
-		const renderUsage = (range: "7d" | "30d" | "all") =>
-			renderToStaticMarkup(
-				<OverviewUsageSections
-					dashboard={usageDashboard as never}
-					viewModel={usageViewModel as never}
-					range={range}
-					language="ja"
-					timezone="Asia/Tokyo"
-					currency="JPY"
-				/>,
-			);
+	it("fits hourly usage into the panel and renders time-only labels", () => {
+		const hourlyUsage = renderUsage("24h");
 
+		expect(hourlyUsage).toContain('class="min-w-0 border p-4"');
+		expect(hourlyUsage).toContain(">21:00</span>");
+		expect(hourlyUsage).not.toContain(">2026-07-11T21</span>");
+	});
+
+	it("limits usage chart details for long ranges", () => {
 		const sevenDays = renderUsage("7d");
 		const thirtyDays = renderUsage("30d");
 		const allTime = renderUsage("all");
@@ -107,13 +103,55 @@ describe("Overview components", () => {
 		expect(allTime).not.toContain("日別使用量");
 		expect(allTime).toContain("コスト概要");
 	});
+
+	it("shows the applied FX rate, refresh time, and recovery link", () => {
+		const markup = renderToStaticMarkup(
+			<OverviewUsageSections
+				dashboard={
+					{
+						...usageDashboard,
+						cost: {
+							...usageDashboard.cost,
+							fxRate: 156.25,
+							fxBaseCurrency: "USD",
+							fxUpdatedAt: "2026-07-13T00:00:00.000Z",
+						},
+						warnings: [{ code: "fx_unavailable" }],
+					} as never
+				}
+				viewModel={usageViewModel as never}
+				range="30d"
+				language="ja"
+				timezone="Asia/Tokyo"
+				currency="JPY"
+			/>,
+		);
+
+		expect(markup).toContain("USD から JPY: 156.2500");
+		expect(markup).toContain("為替更新日時");
+		expect(markup).toContain('href="/settings/general"');
+		expect(markup).toContain("設定で為替情報を確認");
+	});
 });
+
+function renderUsage(range: "24h" | "7d" | "30d" | "all") {
+	return renderToStaticMarkup(
+		<OverviewUsageSections
+			dashboard={usageDashboard as never}
+			viewModel={usageViewModel as never}
+			range={range}
+			language="ja"
+			timezone="Asia/Tokyo"
+			currency="JPY"
+		/>,
+	);
+}
 
 const usageDashboard = {
 	generatedAt: "2026-07-11T00:00:00.000Z",
 	dailyUsage: [
 		{
-			key: "2026-07-11",
+			key: "2026-07-11T21",
 			inputTokens: 10,
 			cachedInputTokens: 2,
 			outputTokens: 1,
@@ -125,6 +163,8 @@ const usageDashboard = {
 		outputCost: 1,
 		creditTotal: null,
 		fxRate: null,
+		fxBaseCurrency: null,
+		fxUpdatedAt: null,
 	},
 	warnings: [],
 };

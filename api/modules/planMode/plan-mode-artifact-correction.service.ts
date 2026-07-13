@@ -14,6 +14,7 @@ export type PlanModeArtifactCorrectionInput = {
 	taskId: string;
 	target: PlanModeRegenerationTarget;
 	prompt: string;
+	sourceArtifactContent?: string | null;
 	focus?: PlanModeArtifactFocus;
 	correlationId?: string | null;
 	questionnaireSessionId?: string | null;
@@ -37,6 +38,9 @@ function renderCorrectionPrompt(input: PlanModeArtifactCorrectionInput) {
 	return [
 		"[対象Artifact]",
 		input.target,
+		"[現在のArtifact]",
+		input.sourceArtifactContent?.trim() ||
+			"現在のArtifact本文は取得できませんでした。",
 		"[フォーカス]",
 		focusText,
 		"[変更要求]",
@@ -44,6 +48,7 @@ function renderCorrectionPrompt(input: PlanModeArtifactCorrectionInput) {
 		"[不変条件]",
 		"確定QuestionnaireとTask acceptance criteriaは変更しないでください。",
 		"対象外のArtifact、画面、Sectionを変更せず、ついで対応や過剰拡張を行わないでください。",
+		"現在のArtifactで指摘されていない判断と内容は維持し、変更要求を満たす最小差分として再生成してください。",
 		"repository source codeを編集せず、対象Plan Artifactだけを再生成してください。",
 	].join("\n");
 }
