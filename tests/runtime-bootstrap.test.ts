@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { openSyncSqlite } from "../api/db/sync-sqlite";
 import {
+	createRuntimeDatabaseBackup,
 	ensureDesktopRuntimeBootstrap,
 	ensureRuntimeDatabasePath,
 } from "../api/runtime/bootstrap";
@@ -105,6 +107,31 @@ describe("desktop runtime bootstrap", () => {
 });
 
 describe("runtime database path", () => {
+	it("creates a consistent pre-migration backup and retains it under runtime data", () => {
+		const root = makeRuntimeDir();
+		const runtimeDir = path.join(root, "runtime");
+		fs.mkdirSync(runtimeDir, { recursive: true });
+		const databasePath = path.join(runtimeDir, "sqlite.db");
+		const database = openSyncSqlite(databasePath);
+		database.exec(
+			"CREATE TABLE marker (value TEXT); INSERT INTO marker VALUES ('preserved');",
+		);
+		database.close();
+
+		const backupPath = createRuntimeDatabaseBackup({
+			NODE_ENV: "development",
+			NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
+		});
+
+		expect(backupPath).toBeTruthy();
+		expect(fs.existsSync(backupPath as string)).toBe(true);
+		const backup = openSyncSqlite(backupPath as string, { readonly: true });
+		expect(
+			(backup.get("SELECT value FROM marker") as { value?: string }).value,
+		).toBe("preserved");
+		backup.close();
+	});
+
 	it("backs up an existing configured SQLite database into the fixed runtime path", () => {
 		const root = makeRuntimeDir();
 		const source = path.join(root, "legacy.db");

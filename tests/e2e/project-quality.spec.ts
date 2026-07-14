@@ -216,4 +216,46 @@ test.describe("Project Quality @regression", () => {
 			]);
 		}
 	});
+
+	test("persists repository test quality settings across a reload", {
+		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-SETTINGS-001"],
+	}, async ({ request }) => {
+		const { workspace } = await createDisposableGitWorkspace({
+			prefix: "project-quality-settings-",
+		});
+		const settings = {
+			testQuality: {
+				coverageGateEnabled: true,
+				coverageMinimumPercent: 90,
+				coverageMaxIterations: 3,
+			},
+		};
+		const settingsPath = path.join(workspace, "nightworkers-quality.json");
+		await fs.writeFile(settingsPath, `${JSON.stringify(settings)}\n`);
+		const repository = await request.post("/api/repositories", {
+			headers,
+			data: {
+				name: "Project Quality settings",
+				localPath: workspace,
+				branch: "main",
+				allowed: true,
+			},
+		});
+		expect(repository.status(), await repository.text()).toBe(201);
+		const repositoryId = ((await repository.json()) as { id: string }).id;
+		try {
+			const reloaded = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+			expect(reloaded).toEqual(settings);
+			const quality = await request.get(
+				`/api/repositories/${repositoryId}/quality`,
+				{ headers },
+			);
+			expect(quality.status(), await quality.text()).toBe(200);
+		} finally {
+			await Promise.allSettled([
+				request.delete(`/api/repositories/${repositoryId}`, { headers }),
+				fs.rm(workspace, { recursive: true, force: true }),
+			]);
+		}
+	});
 });

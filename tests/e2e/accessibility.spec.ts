@@ -99,7 +99,9 @@ test.describe("NightWorkers accessibility @accessibility", () => {
 	}, async ({ page }) => {
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		await page.goto("/overview");
-		const settingsLink = page.getByRole("link", { name: "Settings" });
+		const settingsLink = page.getByRole("link", {
+			name: /^(Settings|設定)$/,
+		});
 		await expect(settingsLink).toBeVisible();
 		await settingsLink.focus();
 		await page.keyboard.press("Tab");

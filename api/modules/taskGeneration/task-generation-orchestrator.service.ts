@@ -6,7 +6,8 @@ import type {
 	TaskGenerationEstimate,
 } from "../../../shared/schemas/task-generation.schema";
 import { NotFoundError, ValidationError } from "../../lib/errors";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import * as missionPlannerService from "../mission-planner/mission-planner.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
@@ -31,7 +32,7 @@ type TaskGenerationDependencies = {
 	getRepository: typeof nightworkersRepo.getRepository;
 	listMissionGoals: typeof taskGenerationRepo.listMissionGoals;
 	buildProjectSignalSnapshot: typeof buildProjectSignalSnapshot;
-	callStructuredJsonLLM: typeof callStructuredJsonLLM;
+	callStructuredOutputWithRepair: typeof callStructuredOutputWithRepair;
 	generateMissionTaskCandidates: typeof taskGenerationService.generateMissionTaskCandidates;
 	generateMissionPlansFromGoals: typeof missionPlannerService.generateMissionPlansFromGoals;
 };
@@ -40,7 +41,7 @@ const defaultDependencies: TaskGenerationDependencies = {
 	getRepository: nightworkersRepo.getRepository,
 	listMissionGoals: taskGenerationRepo.listMissionGoals,
 	buildProjectSignalSnapshot,
-	callStructuredJsonLLM,
+	callStructuredOutputWithRepair,
 	generateMissionTaskCandidates:
 		taskGenerationService.generateMissionTaskCandidates,
 	generateMissionPlansFromGoals:
@@ -99,16 +100,19 @@ async function estimateTaskGenerationScale(
 	const schema = normalizeStructuredOutputJsonSchema(
 		z.toJSONSchema(taskGenerationEstimateResultSchema),
 	);
-	const raw = await dependencies.callStructuredJsonLLM(
-		buildTaskGenerationEstimateSystemPrompt(),
-		buildTaskGenerationEstimateUserPrompt(input),
-		{
+	const generated = await dependencies.callStructuredOutputWithRepair({
+		systemPrompt: buildTaskGenerationEstimateSystemPrompt(),
+		userPrompt: buildTaskGenerationEstimateUserPrompt(input),
+		options: {
+			contract: createStructuredOutputContract({
+				name: "task_generation_estimate",
+				runtimeSchema: taskGenerationEstimateResultSchema,
+				providerJsonSchema: schema,
+			}),
 			role: "mission_task_generation",
-			schemaName: "task_generation_estimate",
-			schema,
 		},
-	);
-	const parsed = taskGenerationEstimateResultSchema.parse(JSON.parse(raw));
+	});
+	const parsed = generated.value;
 	return {
 		estimatedChangedLines: parsed.estimatedChangedLines,
 		estimatedFileCount: parsed.estimatedFileCount,

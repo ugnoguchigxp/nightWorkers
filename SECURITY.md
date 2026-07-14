@@ -14,7 +14,7 @@ Report privately with:
 - Impact assessment
 - Suggested mitigation if available
 
-Use the private contact channel described in [SUPPORT.md](./SUPPORT.md).
+Use the repository's private [GitHub Security Advisory](https://github.com/ugnoguchigxp/nightWorkers/security/advisories/new) form. Do not include secrets or exploit details in a public issue.
 
 ## Response Process
 1. Acknowledge receipt.

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +64,12 @@ copyRequired(path.join(repoRoot, 'dist'), path.join(stagedRoot, 'dist'));
 fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(stagedRoot, 'package.json'));
 copyPackage(sidecarTarget.libsqlPackage);
 copyPackage('argon2');
+copyPackage('better-sqlite3');
+const betterSqliteBinding = path.join(
+  path.dirname(resolvePackageJson('better-sqlite3')),
+  'build/Release/better_sqlite3.node',
+);
+copyRequired(betterSqliteBinding, path.join(stagedRoot, 'build/Release/better_sqlite3.node'));
 copyPackage('@phc/format');
 copyPackage('node-addon-api');
 copyPackage('node-gyp-build');
@@ -72,8 +79,18 @@ copyPackage(sidecarTarget.codexPackage);
 
 const nodeDestinationDir = path.join(stagedRoot, 'node/bin');
 fs.mkdirSync(nodeDestinationDir, { recursive: true });
+const nodeSource = process.env.NIGHTWORKERS_NODE_RUNTIME_PATH || process.execPath;
+if (!process.env.NIGHTWORKERS_NODE_RUNTIME_PATH && process.env.NIGHTWORKERS_RELEASE === '1') {
+  throw new Error('NIGHTWORKERS_NODE_RUNTIME_PATH is required for release sidecar staging');
+}
 const nodeDestination = path.join(nodeDestinationDir, sidecarTarget.nodeExecutable);
-fs.copyFileSync(process.execPath, nodeDestination);
+fs.copyFileSync(nodeSource, nodeDestination);
+const runtimeLicense = process.env.NIGHTWORKERS_NODE_RUNTIME_PATH
+  ? path.join(path.dirname(path.dirname(process.env.NIGHTWORKERS_NODE_RUNTIME_PATH)), 'LICENSE')
+  : null;
+if (runtimeLicense && fs.existsSync(runtimeLicense)) {
+  fs.copyFileSync(runtimeLicense, path.join(nodeDestinationDir, '..', 'LICENSE'));
+}
 if (process.platform !== 'win32') {
   fs.chmodSync(nodeDestination, 0o755);
 }
@@ -87,6 +104,12 @@ const metadata = {
   nodeExecutable: sidecarTarget.nodeExecutable,
   entry: 'dist-api-desktop/index.js',
   copiedPackages,
+  runtime: {
+    source: process.env.NIGHTWORKERS_NODE_RUNTIME_PATH ? 'pinned-runtime' : 'development-host-runtime',
+    version: process.env.NIGHTWORKERS_NODE_RUNTIME_VERSION || process.version,
+    target: `${process.platform}-${process.arch}`,
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(nodeDestination)).digest('hex'),
+  },
 };
 fs.writeFileSync(path.join(stagedRoot, 'manifest.json'), `${JSON.stringify(metadata, null, 2)}\n`);
 fs.writeFileSync(path.join(stagedRoot, '.gitkeep'), '');

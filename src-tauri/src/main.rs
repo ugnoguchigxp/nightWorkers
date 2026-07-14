@@ -48,6 +48,7 @@ fn get_desktop_config(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SidecarState {
             child: Mutex::new(None),
             config: Mutex::new(None),

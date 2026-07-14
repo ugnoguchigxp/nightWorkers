@@ -85,6 +85,10 @@ describe("CodexAgentRuntime event mapping and catalog contracts", () => {
 			await Promise.all([
 				readFile("api/services/agent-runtime/CodexAgentRuntime.ts", "utf8"),
 				readFile("api/services/agent-runtime/codex-runtime-audit.ts", "utf8"),
+				readFile(
+					"api/services/agent-runtime/codex-runtime-closeout.ts",
+					"utf8",
+				),
 			])
 		).join("\n");
 		const emittedCodes = [

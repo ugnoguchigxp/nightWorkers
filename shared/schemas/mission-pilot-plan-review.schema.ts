@@ -45,7 +45,7 @@ export const missionPilotPlanReviewSchema = z
 			artifactConsistency: z.enum(["pass", "fail"]),
 			riskAndSafety: z.enum(["pass", "fail"]),
 		}),
-		artifactScores: z.array(missionPilotPlanArtifactScoreSchema).default([]),
+		artifactScores: z.array(missionPilotPlanArtifactScoreSchema),
 		findings: z.array(
 			z.object({
 				severity: z.enum(["blocking", "warning"]),
@@ -56,9 +56,7 @@ export const missionPilotPlanReviewSchema = z
 			}),
 		),
 		revisionTargets: z.array(planModeArtifactCorrectionTargetSchema),
-		routingToolCall: missionPilotPlanRoutingToolCallSchema
-			.nullable()
-			.default(null),
+		routingToolCall: missionPilotPlanRoutingToolCallSchema.nullable(),
 	})
 	.superRefine((review, context) => {
 		if (review.verdict === "reroute" && !review.routingToolCall) {
@@ -103,123 +101,152 @@ export type MissionPilotReviewedArtifact = {
 	sourceMessageId: string;
 };
 
-function reconcileArtifactSourceMessageId(
-	artifactKind: string,
-	sourceMessageId: string,
-	reviewedArtifactsByKind: ReadonlyMap<
-		string,
-		readonly MissionPilotReviewedArtifact[]
-	>,
-	expectedArtifactKeys: ReadonlySet<string>,
-) {
-	if (expectedArtifactKeys.has(`${artifactKind}:${sourceMessageId}`)) {
-		return sourceMessageId;
+export type MissionPilotPlanReviewFactIssue = {
+	stage: "fact";
+	path: Array<string | number>;
+	code: string;
+	message: string;
+};
+
+export function validateMissionPilotPlanReviewFacts(
+	review: MissionPilotPlanReview,
+	input: {
+		reviewedArtifacts: MissionPilotReviewedArtifact[];
+		currentRouting?: {
+			revision: number;
+			entries: Array<{
+				view: string;
+				decision: "include" | "omit";
+				capabilityEnabled: boolean;
+			}>;
+		};
+	},
+): MissionPilotPlanReviewFactIssue[] {
+	const issues: MissionPilotPlanReviewFactIssue[] = [];
+	const expected = new Set(
+		input.reviewedArtifacts.map(
+			(artifact) => `${artifact.artifactKind}:${artifact.sourceMessageId}`,
+		),
+	);
+	const byKind = new Map<string, Set<string>>();
+	for (const artifact of input.reviewedArtifacts) {
+		const ids = byKind.get(artifact.artifactKind) ?? new Set<string>();
+		ids.add(artifact.sourceMessageId);
+		byKind.set(artifact.artifactKind, ids);
 	}
-	const candidates = reviewedArtifactsByKind.get(artifactKind) ?? [];
-	return candidates.length === 1
-		? (candidates[0]?.sourceMessageId ?? sourceMessageId)
-		: sourceMessageId;
+
+	if (review.verdict !== "reroute") {
+		const scored = new Set<string>();
+		for (const [index, score] of review.artifactScores.entries()) {
+			const key = `${score.artifactKind}:${score.sourceMessageId}`;
+			if (!expected.has(key)) {
+				issues.push(
+					factIssue(
+						["artifactScores", index, "sourceMessageId"],
+						"unknown_artifact_reference",
+						`現在のArtifactを参照していません: ${key}`,
+					),
+				);
+			}
+			if (scored.has(key)) {
+				issues.push(
+					factIssue(
+						["artifactScores", index],
+						"duplicate_artifact_score",
+						`同じArtifactが重複しています: ${key}`,
+					),
+				);
+			}
+			scored.add(key);
+		}
+		for (const key of expected) {
+			if (!scored.has(key)) {
+				issues.push(
+					factIssue(
+						["artifactScores"],
+						"missing_artifact_score",
+						`現在のArtifactの採点がありません: ${key}`,
+					),
+				);
+			}
+		}
+	}
+
+	for (const [index, finding] of review.findings.entries()) {
+		const currentIds = byKind.get(finding.artifactKind);
+		if (!currentIds?.has(finding.sourceId)) {
+			issues.push(
+				factIssue(
+					["findings", index, "sourceId"],
+					"unknown_artifact_reference",
+					`現在のArtifactを参照していません: ${finding.artifactKind}:${finding.sourceId}`,
+				),
+			);
+		}
+	}
+	const revisionTargetKeys = new Set<string>();
+	for (const [index, target] of review.revisionTargets.entries()) {
+		const key = `${target.target}:${target.sourceMessageId}`;
+		if (!expected.has(key)) {
+			issues.push(
+				factIssue(
+					["revisionTargets", index, "sourceMessageId"],
+					"unknown_artifact_reference",
+					`現在のArtifactを参照していません: ${key}`,
+				),
+			);
+		}
+		if (revisionTargetKeys.has(key)) {
+			issues.push(
+				factIssue(
+					["revisionTargets", index],
+					"duplicate_revision_target",
+					`同じArtifact修正対象が重複しています: ${key}`,
+				),
+			);
+		}
+		revisionTargetKeys.add(key);
+	}
+
+	const routingCall = review.routingToolCall;
+	if (routingCall && input.currentRouting) {
+		if (routingCall.expectedRevision !== input.currentRouting.revision) {
+			issues.push(
+				factIssue(
+					["routingToolCall", "expectedRevision"],
+					"stale_routing_revision",
+					`現在のrouting revisionは${input.currentRouting.revision}です。`,
+				),
+			);
+		}
+		const entries = new Map(
+			input.currentRouting.entries.map((entry) => [entry.view, entry]),
+		);
+		for (const [index, change] of routingCall.changes.entries()) {
+			const current = entries.get(change.view);
+			if (
+				!current ||
+				current.decision !== "omit" ||
+				!current.capabilityEnabled
+			) {
+				issues.push(
+					factIssue(
+						["routingToolCall", "changes", index, "view"],
+						"routing_change_not_applicable",
+						`現在追加可能なArtifactではありません: ${change.view}`,
+					),
+				);
+			}
+		}
+	}
+
+	return issues;
 }
 
-export function normalizeMissionPilotPlanReview(
-	input: unknown,
-	reviewedArtifacts: MissionPilotReviewedArtifact[] = [],
-): MissionPilotPlanReview {
-	const review = missionPilotPlanReviewSchema.parse(input);
-	if (review.verdict === "reroute") {
-		return { ...review, revisionTargets: [] };
-	}
-	if (reviewedArtifacts.length === 0 && review.artifactScores.length === 0) {
-		return review;
-	}
-	const expected = new Set(
-		reviewedArtifacts.map(
-			(item) => `${item.artifactKind}:${item.sourceMessageId}`,
-		),
-	);
-	const reviewedArtifactsByKind = new Map<
-		string,
-		MissionPilotReviewedArtifact[]
-	>();
-	for (const artifact of reviewedArtifacts) {
-		const candidates = reviewedArtifactsByKind.get(artifact.artifactKind) ?? [];
-		candidates.push(artifact);
-		reviewedArtifactsByKind.set(artifact.artifactKind, candidates);
-	}
-	const normalizedArtifactScores = review.artifactScores.map((score) => ({
-		...score,
-		sourceMessageId: reconcileArtifactSourceMessageId(
-			score.artifactKind,
-			score.sourceMessageId,
-			reviewedArtifactsByKind,
-			expected,
-		),
-	}));
-	const normalizedRevisionTargets = review.revisionTargets.map((target) => ({
-		...target,
-		sourceMessageId: reconcileArtifactSourceMessageId(
-			target.target,
-			target.sourceMessageId,
-			reviewedArtifactsByKind,
-			expected,
-		),
-	}));
-	const normalizedFindings = review.findings.map((finding) => ({
-		...finding,
-		sourceId: reconcileArtifactSourceMessageId(
-			finding.artifactKind,
-			finding.sourceId,
-			reviewedArtifactsByKind,
-			expected,
-		),
-	}));
-	const scored = new Set(
-		normalizedArtifactScores.map(
-			(item) => `${item.artifactKind}:${item.sourceMessageId}`,
-		),
-	);
-	if (
-		normalizedArtifactScores.length !== expected.size ||
-		expected.size !== scored.size ||
-		[...expected].some((key) => !scored.has(key))
-	) {
-		throw new Error(
-			"Plan review must score every current Artifact exactly once",
-		);
-	}
-	const blockingArtifactKinds = new Set(
-		normalizedFindings
-			.filter((finding) => finding.severity === "blocking")
-			.map((finding) => finding.artifactKind),
-	);
-	const seenTargets = new Set<string>();
-	const revisionTargets = normalizedRevisionTargets.filter((target) => {
-		const key = `${target.target}:${target.sourceMessageId}`;
-		if (
-			review.verdict !== "revise" ||
-			isMissionPilotConceptArtifactKind(target.target) ||
-			!expected.has(key) ||
-			!blockingArtifactKinds.has(target.target) ||
-			seenTargets.has(key)
-		)
-			return false;
-		seenTargets.add(key);
-		return true;
-	});
-	return {
-		...review,
-		artifactScores: normalizedArtifactScores,
-		findings: normalizedFindings.map((finding) =>
-			isMissionPilotConceptArtifactKind(finding.artifactKind)
-				? { ...finding, severity: "warning" as const }
-				: finding,
-		),
-		verdict:
-			review.verdict === "reject"
-				? "reject"
-				: revisionTargets.length > 0
-					? "revise"
-					: "pass",
-		revisionTargets,
-	};
+function factIssue(
+	path: Array<string | number>,
+	code: string,
+	message: string,
+): MissionPilotPlanReviewFactIssue {
+	return { stage: "fact", path, code, message };
 }

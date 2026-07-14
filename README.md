@@ -504,6 +504,9 @@ bun run desktop:build:windows
 ```
 
 Linux targets `.deb`, `.rpm`, and AppImage. Windows targets x64 NSIS and MSI.
+The current limited-beta support target is macOS ARM64; Linux and Windows are
+not declared supported until their native installer and clean-environment
+launch/shutdown smoke gates pass.
 Cross-platform configuration can be checked without producing those native
 artifacts:
 

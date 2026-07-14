@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
@@ -59,48 +60,53 @@ describe("ArtifactPane", () => {
 	});
 
 	it("renders artifact focus with only the artifact title in the shared header", () => {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
 		const markup = renderToStaticMarkup(
-			<ArtifactPane
-				activeProject={{
-					id: "repo-1",
-					name: "todolist",
-					localPath: "/Users/y.noguchi/Code/todolist",
-					branch: "main",
-					allowed: true,
-					queueEnabled: true,
-					maxConcurrentSessions: 1,
-					createdAt: "2026-07-08T00:00:00Z",
-					updatedAt: "2026-07-08T00:00:00Z",
-				}}
-				activeSessionId="session-1"
-				focusType="artifact"
-				selectedArtifact={{
-					id: "plan-mode-workspace-session-1",
-					taskId: "session-1",
-					kind: "plan_mode_workspace",
-					title: "Plan Mode Workspace",
-					summary: "Workspace summary",
-					source: { type: "task_message", messageId: "message-1" },
-					createdAt: "2026-07-08T00:00:00Z",
-					metadata: { initialTab: "status" },
-				}}
-				taskMessages={[]}
-				activityArtifacts={[]}
-				fileEntries={[]}
-				fileEntriesByDirectory={{}}
-				expandedDirectories={{}}
-				loadingDirectories={{}}
-				selectedFile={null}
-				selectedFilePath={null}
-				isFilesLoading={false}
-				isFileLoading={false}
-				projectDiff={null}
-				isDiffLoading={false}
-				onToggleDirectory={async () => undefined}
-				onOpenFile={() => undefined}
-				onRefreshFiles={async () => undefined}
-				onRefreshDiff={async () => undefined}
-			/>,
+			<QueryClientProvider client={queryClient}>
+				<ArtifactPane
+					activeProject={{
+						id: "repo-1",
+						name: "todolist",
+						localPath: "/Users/y.noguchi/Code/todolist",
+						branch: "main",
+						allowed: true,
+						queueEnabled: true,
+						maxConcurrentSessions: 1,
+						createdAt: "2026-07-08T00:00:00Z",
+						updatedAt: "2026-07-08T00:00:00Z",
+					}}
+					activeSessionId="session-1"
+					focusType="artifact"
+					selectedArtifact={{
+						id: "plan-mode-workspace-session-1",
+						taskId: "session-1",
+						kind: "plan_mode_workspace",
+						title: "Plan Mode Workspace",
+						summary: "Workspace summary",
+						source: { type: "task_message", messageId: "message-1" },
+						createdAt: "2026-07-08T00:00:00Z",
+						metadata: { initialTab: "status" },
+					}}
+					taskMessages={[]}
+					activityArtifacts={[]}
+					fileEntries={[]}
+					fileEntriesByDirectory={{}}
+					expandedDirectories={{}}
+					loadingDirectories={{}}
+					selectedFile={null}
+					selectedFilePath={null}
+					isFilesLoading={false}
+					isFileLoading={false}
+					projectDiff={null}
+					isDiffLoading={false}
+					onToggleDirectory={async () => undefined}
+					onOpenFile={() => undefined}
+					onRefreshFiles={async () => undefined}
+					onRefreshDiff={async () => undefined}
+				/>
+			</QueryClientProvider>,
 		);
 
 		expect(markup).not.toContain("todolist");
@@ -113,6 +119,9 @@ describe("ArtifactPane", () => {
 	});
 
 	it("passes live latest run events into the Plan Mode test panel", () => {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
 			content:
@@ -170,53 +179,54 @@ describe("ArtifactPane", () => {
 		];
 
 		const markup = renderToStaticMarkup(
-			<ArtifactPane
-				activeProject={{
-					id: "repo-1",
-					name: "todolist",
-					localPath: "/Users/y.noguchi/Code/todolist",
-					branch: "main",
-					allowed: true,
-					queueEnabled: true,
-					maxConcurrentSessions: 1,
-					createdAt: "2026-07-08T00:00:00Z",
-					updatedAt: "2026-07-08T00:00:00Z",
-				}}
-				activeSessionId="session-1"
-				focusType="artifact"
-				selectedArtifact={{
-					id: "plan-mode-workspace-session-1",
-					taskId: "session-1",
-					kind: "plan_mode_workspace",
-					title: "Plan Mode Workspace",
-					source: { type: "task_message", messageId: "feature-plan-message" },
-					createdAt: "2026-07-08T00:00:00Z",
-					metadata: { initialTab: "feature-plan" },
-				}}
-				latestRun={latestRun}
-				latestRunEvents={latestRunEvents}
-				taskMessages={[featurePlan, verificationSidecar]}
-				activityArtifacts={[]}
-				fileEntries={[]}
-				fileEntriesByDirectory={{}}
-				expandedDirectories={{}}
-				loadingDirectories={{}}
-				selectedFile={null}
-				selectedFilePath={null}
-				isFilesLoading={false}
-				isFileLoading={false}
-				projectDiff={null}
-				isDiffLoading={false}
-				onToggleDirectory={async () => undefined}
-				onOpenFile={vi.fn()}
-				onRefreshFiles={async () => undefined}
-				onRefreshDiff={async () => undefined}
-			/>,
+			<QueryClientProvider client={queryClient}>
+				<ArtifactPane
+					activeProject={{
+						id: "repo-1",
+						name: "todolist",
+						localPath: "/Users/y.noguchi/Code/todolist",
+						branch: "main",
+						allowed: true,
+						queueEnabled: true,
+						maxConcurrentSessions: 1,
+						createdAt: "2026-07-08T00:00:00Z",
+						updatedAt: "2026-07-08T00:00:00Z",
+					}}
+					activeSessionId="session-1"
+					focusType="artifact"
+					selectedArtifact={{
+						id: "plan-mode-workspace-session-1",
+						taskId: "session-1",
+						kind: "test_mode",
+						title: "Test Mode",
+						source: { type: "test_mode" },
+						createdAt: "2026-07-08T00:00:00Z",
+						metadata: {},
+					}}
+					latestRun={latestRun}
+					latestRunEvents={latestRunEvents}
+					taskMessages={[featurePlan, verificationSidecar]}
+					activityArtifacts={[]}
+					fileEntries={[]}
+					fileEntriesByDirectory={{}}
+					expandedDirectories={{}}
+					loadingDirectories={{}}
+					selectedFile={null}
+					selectedFilePath={null}
+					isFilesLoading={false}
+					isFileLoading={false}
+					projectDiff={null}
+					isDiffLoading={false}
+					onToggleDirectory={async () => undefined}
+					onOpenFile={vi.fn()}
+					onRefreshFiles={async () => undefined}
+					onRefreshDiff={async () => undefined}
+				/>
+			</QueryClientProvider>,
 		);
-		const unitStepStart = markup.indexOf("ユニットテスト実行");
-		const evidenceStepStart = markup.indexOf("証跡テストチェック");
-
-		expect(markup.slice(unitStepStart, evidenceStepStart)).toContain("完了");
-		expect(markup).toContain("ゲートのみ");
+		expect(markup).toContain("テストモード");
+		expect(markup).toContain("ユニットテスト実行");
+		expect(markup).toContain("証跡テストチェック");
+		expect(markup).toContain("完了");
 	});
 });

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { DedicatedDesignView } from "../../../../shared/schemas/plan-mode-artifact.schema";
 
 export const PLAN_DEDICATED_VIEW_PROMPT_VERSION = "plan-mode-dedicated-view-v2";
@@ -20,6 +21,18 @@ export const genericDedicatedViewSchema = {
 		},
 	},
 } as const;
+
+export const genericDedicatedViewArtifactSchema = z
+	.object({
+		artifactKind: z.literal("plan_mode_dedicated_view"),
+		view: z.enum(["user_flow", "activity_flow", "sequence_flow"]),
+		title: z.string().min(1),
+		markdown: z.string().min(1),
+		diagramKind: z
+			.enum(["stateDiagram-v2", "flowchart", "sequenceDiagram"])
+			.nullable(),
+	})
+	.strict();
 
 export type GenericDedicatedViewArtifact = {
 	artifactKind: "plan_mode_dedicated_view";

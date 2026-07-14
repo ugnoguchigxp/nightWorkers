@@ -7,10 +7,12 @@ import {
 	missionDecompositionEvaluationSchema,
 } from "../../../shared/schemas/mission-planner.schema";
 import type { ProjectSignalSnapshot } from "../../../shared/schemas/task-generation.schema";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import {
 	buildNormalizedSupervisorLlmRequest,
-	callStructuredJsonLLM,
+	createStructuredOutputContract,
+	structuredLlmAttemptValueText,
 } from "../../services/structured-llm";
 import {
 	buildMissionEvaluationSystemPrompt,
@@ -107,15 +109,18 @@ export async function callMissionPlannerJson<T>(input: {
 					thinkingDepth: input.thinkingDepthOverride,
 				}
 			: null;
-	const raw = await callStructuredJsonLLM(
-		input.systemPrompt,
-		input.userPrompt,
-		{
+	const generated = await callStructuredOutputWithRepair({
+		systemPrompt: input.systemPrompt,
+		userPrompt: input.userPrompt,
+		options: {
+			contract: createStructuredOutputContract({
+				name: input.schemaName,
+				runtimeSchema: input.schema,
+				providerJsonSchema: jsonSchema,
+			}),
 			role:
 				input.stage === "evaluation" ? "evaluation" : "mission_task_generation",
 			routeOverride,
-			schemaName: input.schemaName,
-			schema: jsonSchema,
 			emitEvent: async (event) => {
 				const nextSelection = missionSelectionFromDebugEvent(
 					input.stage,
@@ -127,10 +132,15 @@ export async function callMissionPlannerJson<T>(input: {
 				}
 			},
 		},
-	);
-	const rawOutput = JSON.parse(raw) as unknown;
+	});
+	const acceptedAttempt = generated.attempts.at(-1);
+	const rawOutput = JSON.parse(
+		acceptedAttempt
+			? structuredLlmAttemptValueText(acceptedAttempt)
+			: JSON.stringify(generated.value),
+	) as unknown;
 	return {
-		parsed: input.schema.parse(rawOutput),
+		parsed: generated.value,
 		rawOutput,
 		selectedModel,
 	};

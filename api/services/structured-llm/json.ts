@@ -5,6 +5,7 @@ import type { CallSupervisorOptions } from "./types";
 
 export type JsonFixWrapperResult = {
 	parsedJson: unknown;
+	candidateText: string;
 	sourceText: string;
 	repaired: boolean;
 	repairKind:
@@ -30,6 +31,7 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
 		try {
 			return {
 				parsedJson: JSON.parse(candidate.text),
+				candidateText: candidate.text,
 				sourceText: candidate.text,
 				repaired: candidate.extracted,
 				repairKind: candidate.extracted ? "extracted_candidate" : "none",
@@ -45,6 +47,7 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
 		try {
 			return {
 				parsedJson: JSON.parse(balanced),
+				candidateText: candidate.text,
 				sourceText: balanced,
 				repaired: true,
 				repairKind: candidate.extracted
@@ -62,6 +65,7 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
 			const repaired = jsonrepair(candidate.text);
 			return {
 				parsedJson: JSON.parse(repaired),
+				candidateText: candidate.text,
 				sourceText: repaired,
 				repaired: true,
 				repairKind: candidate.extracted
@@ -75,6 +79,7 @@ export function jsonFixWrapper(raw: string): JsonFixWrapperResult | null {
 				const repaired = jsonrepair(balanced);
 				return {
 					parsedJson: JSON.parse(repaired),
+					candidateText: candidate.text,
 					sourceText: repaired,
 					repaired: true,
 					repairKind: candidate.extracted
@@ -160,9 +165,46 @@ function tryExtractJsonCandidate(raw: string): string | null {
 		raw.match(/```json\s*([\s\S]*?)\s*```/i) ||
 		raw.match(/```\s*([\s\S]*?)\s*```/i);
 	if (fenced?.[1]) return fenced[1].trim();
-	const first = raw.indexOf("{");
-	const last = raw.lastIndexOf("}");
-	if (first >= 0 && last > first) return raw.slice(first, last + 1).trim();
+	return extractFirstBalancedJsonValue(raw);
+}
+
+function extractFirstBalancedJsonValue(input: string): string | null {
+	const objectIndex = input.indexOf("{");
+	const arrayIndex = input.indexOf("[");
+	const start =
+		objectIndex < 0
+			? arrayIndex
+			: arrayIndex < 0
+				? objectIndex
+				: Math.min(objectIndex, arrayIndex);
+	if (start < 0) return null;
+
+	const stack: string[] = [];
+	let inString = false;
+	let escaped = false;
+	for (let index = start; index < input.length; index += 1) {
+		const char = input[index];
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (char === "\\" && inString) {
+			escaped = true;
+			continue;
+		}
+		if (char === '"') {
+			inString = !inString;
+			continue;
+		}
+		if (inString) continue;
+		if (char === "{") stack.push("}");
+		else if (char === "[") stack.push("]");
+		else if (char === "}" || char === "]") {
+			if (stack.at(-1) !== char) return null;
+			stack.pop();
+			if (stack.length === 0) return input.slice(start, index + 1).trim();
+		}
+	}
 	return null;
 }
 

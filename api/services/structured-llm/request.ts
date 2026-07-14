@@ -52,9 +52,12 @@ export function buildNormalizedSupervisorLlmRequest(input: {
 		"azure";
 	const providerId = normalizeProviderId(rawProvider);
 	const providerClass = resolveProviderClass(providerId);
-	const callKind = resolveCallKind(input.label, providerClass);
+	const callKind = resolveCallKind({
+		providerClass,
+		schemaFirst: input.schemaFirst,
+		round: input.round,
+	});
 	const capabilityPolicy = buildCapabilityPolicy({
-		callKind,
 		providerClass,
 		schemaFirst: input.schemaFirst,
 	});
@@ -190,25 +193,18 @@ function resolveProviderClass(
 	return "chat_completion";
 }
 
-function resolveCallKind(
-	label: string,
-	providerClass: SupervisorProviderClass,
-): NormalizedSupervisorLlmRequest["callKind"] {
-	if (providerClass === "fixture") return "fixture";
-	if (label === "supervisor") return "supervisor_decision";
-	if (
-		label === "design_questionnaire" ||
-		label === "design_questionnaire_follow_up" ||
-		label === "design_questionnaire_follow_up_decision"
-	) {
-		return "design_questionnaire";
-	}
-	if (label === "design_decision_review") return "design_decision_review";
-	return "structured_artifact";
+function resolveCallKind(input: {
+	providerClass: SupervisorProviderClass;
+	schemaFirst?: boolean;
+	round?: 1 | 2;
+}): NormalizedSupervisorLlmRequest["callKind"] {
+	if (input.providerClass === "fixture") return "fixture";
+	return input.schemaFirst && input.round
+		? "supervisor_decision"
+		: "structured_artifact";
 }
 
 function buildCapabilityPolicy(input: {
-	callKind: NormalizedSupervisorLlmRequest["callKind"];
 	providerClass: SupervisorProviderClass;
 	schemaFirst?: boolean;
 }): ProviderCapabilityPolicy {
@@ -217,7 +213,8 @@ function buildCapabilityPolicy(input: {
 		allowProviderFileWrites: false,
 		allowProviderCommandExecution: false,
 		allowProviderNetwork: false,
-		requireStructuredOutput: input.schemaFirst || input.callKind !== "fixture",
+		requireStructuredOutput:
+			input.schemaFirst || input.providerClass !== "fixture",
 		rejectUnobservedProviderActivity: input.providerClass !== "fixture",
 	};
 }

@@ -1,16 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { shouldOmitCodexOutputSchema } from "../../api/services/structured-llm/codex-output-schema";
+import { resolveCodexOutputSchemaMode } from "../../api/services/structured-llm/codex-output-schema";
 
 describe("Codex structured LLM output schema routing", () => {
-	it("omits Codex outputSchema for prompt-validated Blueprint artifacts", () => {
-		expect(shouldOmitCodexOutputSchema("app_blueprint")).toBe(true);
-		expect(shouldOmitCodexOutputSchema("app_blueprint_data_design")).toBe(true);
-		expect(shouldOmitCodexOutputSchema("mock_blueprint")).toBe(true);
+	it("uses native outputSchema for a strict required object", () => {
+		expect(
+			resolveCodexOutputSchemaMode({
+				type: "object",
+				additionalProperties: false,
+				required: ["answer"],
+				properties: { answer: { type: "string" } },
+			}),
+		).toEqual({ mode: "native_schema", reasons: [] });
 	});
 
-	it("keeps Codex outputSchema for compact schema-first calls", () => {
-		expect(shouldOmitCodexOutputSchema("design_questionnaire")).toBe(false);
-		expect(shouldOmitCodexOutputSchema("supervisor")).toBe(false);
-		expect(shouldOmitCodexOutputSchema(undefined)).toBe(false);
+	it("uses prompt validation for schemas unsupported by strict mode", () => {
+		const optional = resolveCodexOutputSchemaMode({
+			type: "object",
+			additionalProperties: false,
+			properties: { answer: { type: "string" } },
+		});
+		expect(optional.mode).toBe("prompt_validated_json");
+		expect(optional.reasons).toContain("optional_object_property:$");
+
+		const open = resolveCodexOutputSchemaMode({
+			type: "object",
+			additionalProperties: true,
+			required: [],
+			properties: {},
+		});
+		expect(open.mode).toBe("prompt_validated_json");
+		expect(open.reasons).toContain("non_strict_object:$");
+	});
+
+	it("does not inspect schema names or product vocabulary", () => {
+		expect(resolveCodexOutputSchemaMode(undefined)).toEqual({
+			mode: "prompt_validated_json",
+			reasons: ["schema_missing"],
+		});
 	});
 });

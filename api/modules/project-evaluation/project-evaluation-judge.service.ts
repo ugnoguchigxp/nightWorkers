@@ -5,14 +5,15 @@ import {
 	type ProjectEvaluationReport,
 	type ProjectEvaluationRun,
 	type ProjectImprovementIdea,
-	projectEvaluationDimensionLabels,
 	projectEvaluationReportSchema,
 	projectImprovementIdeasResultSchema,
 } from "../../../shared/schemas/project-evaluation.schema";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import {
 	buildNormalizedSupervisorLlmRequest,
-	callStructuredJsonLLM,
+	createStructuredOutputContract,
+	structuredLlmAttemptValueText,
 } from "../../services/structured-llm";
 import {
 	buildProjectEvaluationSystemPrompt,
@@ -83,42 +84,32 @@ async function callProjectEvaluationJson(input: {
 	systemPrompt: string;
 	userPrompt: string;
 	schemaName: string;
-	schema: unknown;
+	schema: z.ZodTypeAny;
 	onLlmEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }) {
 	let selectedModel = fallbackSelectedModelForPrompts(
 		input.systemPrompt,
 		input.userPrompt,
 		input.schemaName,
-		input.schema,
+		toJsonSchema(input.schema),
 	);
-	const raw = await callStructuredJsonLLM(
-		input.systemPrompt,
-		input.userPrompt,
-		{
+	const generated = await callStructuredOutputWithRepair({
+		systemPrompt: input.systemPrompt,
+		userPrompt: input.userPrompt,
+		options: {
+			contract: createStructuredOutputContract({
+				name: input.schemaName,
+				runtimeSchema: input.schema,
+			}),
 			role: "evaluation",
-			schemaName: input.schemaName,
-			schema: input.schema,
 			emitEvent: async (event) => {
 				const nextSelection = selectionFromDebugEvent(event);
 				if (nextSelection) selectedModel = nextSelection;
 				await input.onLlmEvent?.(event);
 			},
 		},
-	);
-	return { raw, selectedModel };
-}
-
-function normalizeProjectEvaluationReportLabels(
-	report: ProjectEvaluationReport,
-): ProjectEvaluationReport {
-	return {
-		...report,
-		dimensions: report.dimensions.map((dimension) => ({
-			...dimension,
-			label: projectEvaluationDimensionLabels[dimension.key],
-		})),
-	};
+	});
+	return { generated, selectedModel };
 }
 
 export async function judgeProjectEvaluation(input: {
@@ -136,13 +127,18 @@ export async function judgeProjectEvaluation(input: {
 		systemPrompt,
 		userPrompt,
 		schemaName: "project_evaluation",
-		schema: toJsonSchema(projectEvaluationReportSchema),
+		schema: projectEvaluationReportSchema,
 		onLlmEvent: input.onLlmEvent,
 	});
-	const rawOutput = JSON.parse(called.raw) as unknown;
-	const report = projectEvaluationReportSchema.parse(rawOutput);
+	const acceptedAttempt = called.generated.attempts.at(-1);
+	const rawOutput = JSON.parse(
+		acceptedAttempt
+			? structuredLlmAttemptValueText(acceptedAttempt)
+			: JSON.stringify(called.generated.value),
+	) as unknown;
+	const report = called.generated.value as ProjectEvaluationReport;
 	return {
-		report: normalizeProjectEvaluationReportLabels(report),
+		report,
 		rawOutput,
 		selectedModel: called.selectedModel,
 	};
@@ -164,11 +160,18 @@ export async function generateProjectImprovementIdeas(input: {
 		systemPrompt,
 		userPrompt,
 		schemaName: "project_improvement_ideas",
-		schema: toJsonSchema(projectImprovementIdeasResultSchema),
+		schema: projectImprovementIdeasResultSchema,
 		onLlmEvent: input.onLlmEvent,
 	});
-	const rawOutput = JSON.parse(called.raw) as unknown;
-	const parsed = projectImprovementIdeasResultSchema.parse(rawOutput);
+	const acceptedAttempt = called.generated.attempts.at(-1);
+	const rawOutput = JSON.parse(
+		acceptedAttempt
+			? structuredLlmAttemptValueText(acceptedAttempt)
+			: JSON.stringify(called.generated.value),
+	) as unknown;
+	const parsed = called.generated.value as z.infer<
+		typeof projectImprovementIdeasResultSchema
+	>;
 	return {
 		ideas: parsed.ideas,
 		rawOutput,

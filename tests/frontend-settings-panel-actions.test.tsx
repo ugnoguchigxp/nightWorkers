@@ -41,6 +41,9 @@ async function triggerTreeHandlers(element: unknown) {
 		const props = (node as { props?: Record<string, unknown> }).props;
 		const type = (node as { type?: unknown }).type;
 		if (props) {
+			if (typeof props.onSave === "function") {
+				await props.onSave();
+			}
 			if (typeof props.onClick === "function") {
 				await props.onClick({
 					preventDefault: vi.fn(),

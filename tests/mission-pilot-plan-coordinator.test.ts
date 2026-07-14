@@ -68,8 +68,9 @@ vi.mock(
 			mocks.generateAdditionalQuestionnaire,
 	}),
 );
-vi.mock("../api/services/structured-llm", () => ({
-	callStructuredJsonLLM: mocks.callLlm,
+vi.mock("../api/services/structured-llm", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../api/services/structured-llm")>()),
+	callStructuredLlmResult: mocks.callLlm,
 }));
 vi.mock(
 	"../api/modules/missionPilot/mission-pilot-queue-handoff.service",
@@ -91,11 +92,30 @@ const {
 } = await import(
 	"../api/modules/missionPilot/mission-pilot-plan-coordinator.service"
 );
+const { selectCurrentPlanReviews } = await import(
+	"../api/modules/missionPilot/mission-pilot-plan-review-selection"
+);
 const { selectMissionPilotPipelineQuestionnaire } = await import(
 	"../api/modules/missionPilot/mission-pilot-plan-support"
 );
 
 const repositoryIds: string[] = [];
+
+function structuredSuccess<T>(value: T, attempt = 1) {
+	const rawText = JSON.stringify(value);
+	return {
+		ok: true as const,
+		value,
+		attempt: {
+			attempt,
+			rawText,
+			extractedText: rawText,
+			repairedText: null,
+			repairKind: "none" as const,
+		},
+		issues: [] as const,
+	};
+}
 
 beforeAll(() => ensureNightWorkersSchema());
 beforeEach(() => {
@@ -119,6 +139,37 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot plan coordinator", () => {
+	it("uses only reviews from the current Context and routing revision", () => {
+		const reviews = [
+			{
+				id: "stale-context",
+				contextRevision: 2,
+				contextDigest: "digest-2",
+				routingRevision: 4,
+			},
+			{
+				id: "stale-routing",
+				contextRevision: 3,
+				contextDigest: "digest-3",
+				routingRevision: 4,
+			},
+			{
+				id: "current",
+				contextRevision: 3,
+				contextDigest: "digest-3",
+				routingRevision: 5,
+			},
+		];
+
+		expect(
+			selectCurrentPlanReviews(reviews, {
+				contextRevision: 3,
+				contextDigest: "digest-3",
+				planRoutingRevision: 5,
+			}),
+		).toEqual([reviews[2]]);
+	});
+
 	it("resumes an answering pre-Feature Plan Questionnaire from durable step evidence", () => {
 		expect(
 			selectMissionPilotPipelineQuestionnaire(
@@ -461,10 +512,12 @@ describe("Mission Pilot plan coordinator", () => {
 			status: "active",
 		}));
 		let reviewCallCount = 0;
-		mocks.callLlm.mockImplementation(async () => {
+		const transcribedFeaturePlanMessageId =
+			"00000000-0000-4000-8000-000000000071";
+		mocks.callLlm.mockImplementation(async (...args: unknown[]) => {
 			reviewCallCount += 1;
 			if (reviewCallCount === 1) {
-				return JSON.stringify({
+				return structuredSuccess({
 					verdict: "revise",
 					summary: "Feature Plan correction is required.",
 					coverage: {
@@ -513,29 +566,35 @@ describe("Mission Pilot plan coordinator", () => {
 					})
 					.where(eq(tasks.id, taskId));
 			}
-			return JSON.stringify({
-				verdict: "pass",
-				summary: "実装可能です。",
-				coverage: {
-					goal: "pass",
-					scope: "pass",
-					acceptanceCriteria: "pass",
-					implementationSteps: "pass",
-					verification: "pass",
-					artifactConsistency: "pass",
-					riskAndSafety: "pass",
-				},
-				artifactScores: [
-					{
-						artifactKind: "feature_plan",
-						sourceMessageId: featurePlanMessageId,
-						score: 80,
-						rationale: "実装に必要な詳細を満たしています。",
+			return structuredSuccess(
+				{
+					verdict: "pass",
+					summary: "実装可能です。",
+					coverage: {
+						goal: "pass",
+						scope: "pass",
+						acceptanceCriteria: "pass",
+						implementationSteps: "pass",
+						verification: "pass",
+						artifactConsistency: "pass",
+						riskAndSafety: "pass",
 					},
-				],
-				findings: [],
-				revisionTargets: [],
-			});
+					artifactScores: [
+						{
+							artifactKind: "feature_plan",
+							sourceMessageId:
+								reviewCallCount === 3
+									? transcribedFeaturePlanMessageId
+									: featurePlanMessageId,
+							score: 80,
+							rationale: "実装に必要な詳細を満たしています。",
+						},
+					],
+					findings: [],
+					revisionTargets: [],
+				},
+				(args[2] as { attempt?: number } | undefined)?.attempt ?? 1,
+			);
 		});
 		mocks.createQueueEntry.mockImplementation(async () => {
 			await db
@@ -649,7 +708,7 @@ describe("Mission Pilot plan coordinator", () => {
 				}),
 			}),
 		);
-		expect(mocks.callLlm).toHaveBeenCalledTimes(3);
+		expect(mocks.callLlm).toHaveBeenCalledTimes(4);
 		expect(mocks.createQueueEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
 				taskId,
@@ -662,6 +721,14 @@ describe("Mission Pilot plan coordinator", () => {
 		expect(await planRepo.getLatestPlanReview(session.id)).toMatchObject({
 			verdict: "pass",
 			attempt: 3,
+			reviewJson: {
+				artifactScores: [
+					expect.objectContaining({
+						artifactKind: "feature_plan",
+						sourceMessageId: featurePlanMessageId,
+					}),
+				],
+			},
 		});
 		expect(await planRepo.listArtifactCorrectionRuns(session.id)).toEqual([
 			expect.objectContaining({

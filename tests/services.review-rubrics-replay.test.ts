@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	callStructuredJsonLLM: vi.fn(),
+	callStructuredOutputWithRepair: vi.fn(),
 }));
 
-vi.mock("../api/services/structured-llm", () => ({
-	callStructuredJsonLLM: mocks.callStructuredJsonLLM,
-}));
+vi.mock(
+	"../api/services/structured-generation/structured-output-repair.service",
+	() => ({
+		callStructuredOutputWithRepair: mocks.callStructuredOutputWithRepair,
+	}),
+);
 
 import { buildReviewEvidencePackFromRun } from "../api/modules/review/rubrics/evidence-pack";
 import {
@@ -175,7 +178,7 @@ describe("review rubric replay evaluation", () => {
 	});
 
 	it("blocks missing verification and policy violation regardless of LLM availability", async () => {
-		mocks.callStructuredJsonLLM.mockRejectedValueOnce(
+		mocks.callStructuredOutputWithRepair.mockRejectedValueOnce(
 			new Error("No structured LLM route candidates were available."),
 		);
 

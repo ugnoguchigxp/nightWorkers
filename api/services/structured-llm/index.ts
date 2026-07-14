@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-	appendLlmTrace,
-	appendSupervisorTrace,
-	logger,
-} from "../../lib/logger";
+import { isDeepStrictEqual } from "node:util";
+import { appendLlmTrace, logger } from "../../lib/logger";
 import { estimateTokens } from "../conversation-context/token-budget";
 import type { NormalizedLlmUsage } from "../llm-usage";
 import { recordLlmUsage } from "../llm-usage";
@@ -11,8 +8,12 @@ import {
 	type AgentToolCallEnvelope,
 	buildResponseJsonSchema as buildSchemaFirstResponseJsonSchema,
 	type JobTypeSelection,
-	parseSupervisorOutput,
 } from "../supervisor/schema-first";
+import {
+	type StructuredLlmResult,
+	type StructuredLlmResultOptions,
+	zodIssuesToStructuredLlmIssues,
+} from "./contract";
 import {
 	emitSupervisorLlmDebugEvent,
 	ProviderActivityRejectedError,
@@ -27,42 +28,19 @@ import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	providerAdapterKey,
 } from "./request";
+import {
+	emitStructuredLlmRouteFallbackStarted,
+	emitStructuredLlmRouteFallbackUnavailable,
+	shouldTryStructuredLlmRouteFallback,
+} from "./route-fallback";
+import { parseSupervisorLlmResponse } from "./supervisor-response";
 import type {
 	CallSupervisorOptions,
 	NormalizedSupervisorLlmRequest,
 	StructuredJsonLlmOptions,
 } from "./types";
 
-export { ProviderActivityRejectedError } from "./events";
-export {
-	type ResolvedStructuredLlmModelCapability,
-	resolveStructuredLlmModelCapability,
-} from "./model-capability";
-export { callProviderToolTurn } from "./providers";
-export {
-	buildNormalizedSupervisorLlmRequest,
-	buildNormalizedSupervisorLlmRequestCandidates,
-	normalizeProviderId,
-	providerAdapterKey,
-} from "./request";
-export {
-	normalizeStructuredLlmProviderSetting,
-	readStructuredLlmProviderSettings,
-} from "./settings";
-export type {
-	ProviderToolCall,
-	ProviderToolDefinition,
-	ProviderToolMessage,
-	ProviderToolTurnResult,
-} from "./tool-calls";
-export type {
-	NormalizedSupervisorLlmRequest,
-	ProviderCapabilityPolicy,
-	StructuredLlmRole,
-	SupervisorLlmDebugEvent,
-	SupervisorProviderClass,
-	SupervisorProviderId,
-} from "./types";
+export * from "./public";
 
 export async function callSupervisorLLM(
 	systemPrompt: string,
@@ -74,50 +52,134 @@ export async function callSupervisorLLM(
 		jsonSchema: buildSchemaFirstResponseJsonSchema(options.round),
 		label: "supervisor",
 	});
-	const parsedJson = await parseJsonContent(
-		rawContent,
-		options,
-		"Supervisor LLM",
-	);
-	try {
-		return parseSupervisorOutput(parsedJson.parsedJson, options.round);
-	} catch (err) {
-		await emitSupervisorLlmDebugEvent(options, {
-			type: "model.response_parse_failed",
-			severity: "error",
-			message: "Schema-first LLM response failed schema validation.",
-			data: {
-				round: options.round,
-				errorMessage: err instanceof Error ? err.message : String(err),
-				rawContentPreview: rawContent.slice(0, 500),
-			},
-		});
-		throw err;
-	}
+	return parseSupervisorLlmResponse(rawContent, options);
 }
 
+/**
+ * @deprecated Compatibility seam for provider-level tests and external callers.
+ * Product generation paths must use callStructuredLlmResult.
+ */
 export async function callStructuredJsonLLM(
 	systemPrompt: string,
 	userPrompt: string,
 	options: StructuredJsonLlmOptions,
 ): Promise<string> {
-	const rawContent = await callRawJsonLLM(systemPrompt, userPrompt, {
+	return callRawJsonLLM(systemPrompt, userPrompt, {
 		...options,
 		jsonSchema: { name: options.schemaName, schema: options.schema },
 		label: options.schemaName,
 	});
-	let parsedJson: Awaited<ReturnType<typeof parseJsonContent>>;
-	try {
-		parsedJson = await parseJsonContent(
-			rawContent,
-			options,
-			options.schemaName,
-		);
-	} catch (error) {
-		if (options.allowRawOutputOnJsonParseFailure) return rawContent;
-		throw error;
+}
+
+/**
+ * Calls a provider and preserves its response while returning parse and schema
+ * failures as data. Product services decide whether to show, repair, or reject
+ * the response without replacing the model's text.
+ */
+export async function callStructuredLlmResult<T>(
+	systemPrompt: string,
+	userPrompt: string,
+	options: StructuredLlmResultOptions<T>,
+): Promise<StructuredLlmResult<T>> {
+	const rawText = await callRawJsonLLM(systemPrompt, userPrompt, {
+		...options,
+		jsonSchema: {
+			name: options.contract.name,
+			schema: options.contract.providerJsonSchema,
+		},
+		label: options.contract.name,
+	});
+	const attemptNumber = options.attempt ?? 1;
+	const jsonFix = jsonFixWrapper(rawText);
+	const attempt = {
+		attempt: attemptNumber,
+		rawText,
+		extractedText: jsonFix?.candidateText ?? null,
+		repairedText:
+			jsonFix && jsonFix.sourceText !== jsonFix.candidateText
+				? jsonFix.sourceText
+				: null,
+		repairKind: jsonFix?.repairKind ?? null,
+	};
+
+	if (!jsonFix) {
+		const issues = [
+			{
+				stage: "parse" as const,
+				path: [],
+				code: "invalid_json",
+				message: "応答本文から JSON を抽出できませんでした。",
+			},
+		];
+		await emitSupervisorLlmDebugEvent(options, {
+			type: "model.response_parse_failed",
+			severity: "error",
+			message: `${options.contract.name} response did not contain parseable JSON.`,
+			data: {
+				round: null,
+				attempt: attemptNumber,
+				rawContentPreview: rawText.slice(0, 500),
+			},
+		});
+		return { ok: false, value: null, attempt, issues };
 	}
-	return parsedJson.sourceText;
+
+	if (jsonFix.repaired) {
+		await emitSupervisorLlmDebugEvent(options, {
+			type: "model.response_repaired",
+			severity: "warning",
+			message: `${options.contract.name} response JSON was extracted or syntactically repaired before schema validation.`,
+			data: {
+				round: null,
+				attempt: attemptNumber,
+				repairKind: jsonFix.repairKind,
+				rawContentLength: rawText.length,
+				repairedContentLength: jsonFix.sourceText.length,
+			},
+		});
+	}
+
+	const parsed = options.contract.runtimeSchema.safeParse(jsonFix.parsedJson);
+	if (!parsed.success) {
+		const issues = zodIssuesToStructuredLlmIssues(parsed.error.issues);
+		await emitSupervisorLlmDebugEvent(options, {
+			type: "model.response_parse_failed",
+			severity: "error",
+			message: `${options.contract.name} response failed schema validation.`,
+			data: {
+				round: null,
+				attempt: attemptNumber,
+				issues,
+				rawContentPreview: rawText.slice(0, 500),
+			},
+		});
+		return { ok: false, value: null, attempt, issues };
+	}
+	if (!isDeepStrictEqual(parsed.data, jsonFix.parsedJson)) {
+		const issues = [
+			{
+				stage: "schema" as const,
+				path: [],
+				code: "non_lossless_schema_parse",
+				message:
+					"Schema validation added, removed, or transformed response fields.",
+			},
+		];
+		await emitSupervisorLlmDebugEvent(options, {
+			type: "model.response_parse_failed",
+			severity: "error",
+			message: `${options.contract.name} response required a semantic schema transformation.`,
+			data: {
+				round: null,
+				attempt: attemptNumber,
+				issues,
+				rawContentPreview: rawText.slice(0, 500),
+			},
+		});
+		return { ok: false, value: null, attempt, issues };
+	}
+
+	return { ok: true, value: parsed.data, attempt, issues: [] };
 }
 
 async function callRawJsonLLM(
@@ -400,127 +462,4 @@ async function callRawJsonLLMAttempt(
 	});
 
 	return rawContent;
-}
-
-function shouldTryStructuredLlmRouteFallback(error: unknown) {
-	if (error instanceof ProviderActivityRejectedError) return false;
-	if (!(error instanceof Error)) return false;
-	if (error.name === "AbortError") return true;
-	const message = error.message.toLowerCase();
-	return (
-		message.includes("operation was aborted") ||
-		message.includes("fetch failed") ||
-		message.includes("network") ||
-		message.includes("econnreset") ||
-		message.includes("etimedout") ||
-		message.includes("econnrefused") ||
-		message.includes("socket hang up") ||
-		/status\s+(429|500|502|503|504)/i.test(error.message)
-	);
-}
-
-async function emitStructuredLlmRouteFallbackStarted(
-	options: CallSupervisorOptions,
-	from: NormalizedSupervisorLlmRequest,
-	to: NormalizedSupervisorLlmRequest,
-	error: unknown,
-) {
-	const errorMessage = error instanceof Error ? error.message : String(error);
-	await emitSupervisorLlmDebugEvent(options, {
-		type: "model.route_fallback_scheduled",
-		severity: "warning",
-		message: `Structured LLM provider failed; retrying with role route fallback ${to.providerEndpointId ?? to.providerId}.`,
-		data: {
-			round: options.round ?? null,
-			reason: "provider_transport_error",
-			errorMessage,
-			from: summarizeRouteForEvent(from),
-			to: summarizeRouteForEvent(to),
-		},
-	});
-	await emitSupervisorLlmDebugEvent(options, {
-		type: "model.route_fallback_started",
-		severity: "info",
-		message: `Structured LLM role route fallback started. provider=${to.providerId} round=${options.round ?? "unknown"}`,
-		data: {
-			round: options.round ?? null,
-			reason: "provider_transport_error",
-			from: summarizeRouteForEvent(from),
-			to: summarizeRouteForEvent(to),
-		},
-	});
-}
-
-async function emitStructuredLlmRouteFallbackUnavailable(
-	options: CallSupervisorOptions,
-	request: NormalizedSupervisorLlmRequest,
-	error: unknown,
-) {
-	if (!request.role) return;
-	await emitSupervisorLlmDebugEvent(options, {
-		type: "model.route_fallback_unavailable",
-		severity: "warning",
-		message:
-			"Structured LLM provider failed and no role route fallback was available.",
-		data: {
-			round: options.round ?? null,
-			code: "NO_PROVIDER_FALLBACK_CONFIGURED",
-			reason: "provider_transport_error",
-			errorMessage: error instanceof Error ? error.message : String(error),
-			route: summarizeRouteForEvent(request),
-		},
-	});
-}
-
-function summarizeRouteForEvent(request: NormalizedSupervisorLlmRequest) {
-	return {
-		providerId: request.providerId,
-		providerEndpointId: request.providerEndpointId ?? null,
-		routeSource: request.routeSource ?? null,
-		role: request.role ?? null,
-		model: request.modelOrDeployment ?? null,
-		thinkingDepth: request.thinkingDepth ?? null,
-	};
-}
-
-async function parseJsonContent(
-	rawContent: string,
-	options: CallSupervisorOptions,
-	label: string,
-) {
-	const jsonFix = jsonFixWrapper(rawContent);
-	if (!jsonFix) {
-		await emitSupervisorLlmDebugEvent(options, {
-			type: "model.response_parse_failed",
-			severity: "error",
-			message: `${label} JSON parse failed and automatic repair did not produce JSON.`,
-			data: {
-				round: options.round ?? null,
-				rawContentPreview: rawContent.slice(0, 500),
-			},
-		});
-		appendSupervisorTrace("json_parse_failed", {
-			round: options.round,
-			errorMessage:
-				"JSON parse failed and automatic repair did not produce JSON",
-			rawContentPreview: rawContent.slice(0, 1000),
-		});
-		const error = new Error(`${label} response JSON parse failed.`);
-		(error as Error & { rawContent?: string }).rawContent = rawContent;
-		throw error;
-	}
-	if (jsonFix.repaired) {
-		await emitSupervisorLlmDebugEvent(options, {
-			type: "model.response_repaired",
-			severity: "warning",
-			message: `${label} response JSON was repaired before schema validation.`,
-			data: {
-				round: options.round ?? null,
-				repairKind: jsonFix.repairKind,
-				rawContentLength: rawContent.length,
-				repairedContentLength: jsonFix.sourceText.length,
-			},
-		});
-	}
-	return jsonFix;
 }

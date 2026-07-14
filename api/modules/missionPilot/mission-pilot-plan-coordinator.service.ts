@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { buildPlanModeExecutionSteps } from "../../../shared/plan-mode-execution";
-import { isMissionPilotConceptArtifactKind } from "../../../shared/schemas/mission-pilot-plan-review.schema";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
+import { AppError } from "../../lib/errors";
 import { readGeneralSettings } from "../../services/settings/general-settings";
+import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { getLatestVerificationDocumentForTask } from "../nightworkers/nightworkers.verification.repository";
 import { getDesignQuestionnaireSession } from "../questionnaire/questionnaire.service";
@@ -14,6 +15,7 @@ import * as missionPilotRepo from "./mission-pilot.repository";
 import { executeMissionPilotArtifactCorrection } from "./mission-pilot-artifact-correction.service";
 import * as planRepo from "./mission-pilot-plan.repository";
 import { reviewCurrentPlan } from "./mission-pilot-plan-review.service";
+import { selectCurrentPlanReviews } from "./mission-pilot-plan-review-selection";
 import {
 	activeTasks,
 	answerPreFeaturePlanQuestionnaire,
@@ -235,16 +237,12 @@ async function executeArtifactCorrections(input: {
 		if (run.status === "applied" || run.status === "superseded") continue;
 		await updatePhase(input.taskId, input.leaseOwner, "correcting_artifact");
 		await renewPipelineLease(input.sessionId, input.leaseOwner);
-		try {
-			await executeMissionPilotArtifactCorrection({
-				taskId: input.taskId,
-				sessionId: input.sessionId,
-				questionnaireSessionId: input.questionnaireSessionId,
-				run,
-			});
-		} catch (error) {
-			if (!isMissionPilotConceptArtifactKind(run.target)) throw error;
-		}
+		await executeMissionPilotArtifactCorrection({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+			questionnaireSessionId: input.questionnaireSessionId,
+			run,
+		});
 		await publishCurrentPlanProgress(input.taskId);
 	}
 }
@@ -258,43 +256,46 @@ async function executeReview(
 	await updatePhase(taskId, leaseOwner, "reviewing_plan");
 	await synchronizeTaskContext(taskId, sessionId);
 	const existingReviews = await planRepo.listPlanReviews(sessionId);
-	let latest = existingReviews.at(-1) ?? null;
-	const currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
+	const latestRecorded = existingReviews.at(-1) ?? null;
+	let latest = latestRecorded;
+	let currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
+	let currentReviews = selectCurrentPlanReviews(
+		existingReviews,
+		currentSession,
+	);
+	const latestCurrent = currentReviews.at(-1) ?? null;
 	if (
-		latest?.verdict === "pass" &&
-		(latest.reviewJson.artifactScores?.length ?? 0) > 0 &&
-		currentSession &&
-		latest.contextRevision === currentSession.contextRevision &&
-		latest.contextDigest === currentSession.contextDigest &&
-		latest.routingRevision === currentSession.planRoutingRevision
+		latestCurrent?.verdict === "pass" &&
+		(latestCurrent.reviewJson.artifactScores?.length ?? 0) > 0
 	)
-		return latest;
-	if (latest?.verdict === "revise") {
-		if ((latest.reviewJson.artifactScores?.length ?? 0) === 0) {
-			await planRepo.supersedeArtifactCorrectionRunsForReview(latest.id);
+		return latestCurrent;
+	if (latestCurrent?.verdict === "revise") {
+		if ((latestCurrent.reviewJson.artifactScores?.length ?? 0) === 0) {
+			await planRepo.supersedeArtifactCorrectionRunsForReview(latestCurrent.id);
 		} else {
-			await planRepo.supersedeConceptArtifactCorrectionRunsForReview(latest.id);
-			const implementationTargets = latest.reviewJson.revisionTargets.filter(
-				(target) => !isMissionPilotConceptArtifactKind(target.target),
-			);
-			if (implementationTargets.length > 0) {
+			if (latestCurrent.reviewJson.revisionTargets.length > 0) {
 				await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
 				await executeArtifactCorrections({
 					taskId,
 					sessionId,
 					questionnaireSessionId,
-					reviewId: latest.id,
-					targets: implementationTargets,
-					contextRevision: latest.contextRevision,
-					contextDigest: latest.contextDigest,
+					reviewId: latestCurrent.id,
+					targets: latestCurrent.reviewJson.revisionTargets,
+					contextRevision: latestCurrent.contextRevision,
+					contextDigest: latestCurrent.contextDigest,
 					leaseOwner,
 				});
 				await updatePhase(taskId, leaseOwner, "reviewing_plan");
+				currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
+				currentReviews = selectCurrentPlanReviews(
+					existingReviews,
+					currentSession,
+				);
 			}
 		}
 	}
-	const firstAttempt = (latest?.attempt ?? 0) + 1;
-	const completedScoredReviews = existingReviews.filter(
+	const firstAttempt = (latestRecorded?.attempt ?? 0) + 1;
+	const completedScoredReviews = currentReviews.filter(
 		(review) =>
 			review.verdict !== "reroute" &&
 			(review.reviewJson.artifactScores?.length ?? 0) > 0,
@@ -307,15 +308,25 @@ async function executeReview(
 		const attempt = firstAttempt + offset;
 		await renewPipelineLease(sessionId, leaseOwner);
 		const result = await reviewCurrentPlan(taskId, sessionId, attempt);
-		latest = await planRepo.createPlanReview({
-			sessionId,
-			routingRevision: result.routingRevision,
-			contextRevision: result.contextRevision,
-			contextDigest: result.contextDigest,
-			featurePlanMessageId: result.featurePlanMessageId,
-			attempt,
-			review: result.review,
-		});
+		try {
+			latest = await planRepo.createCurrentPlanReview({
+				sessionId,
+				leaseOwner,
+				routingRevision: result.routingRevision,
+				contextRevision: result.contextRevision,
+				contextDigest: result.contextDigest,
+				featurePlanMessageId: result.featurePlanMessageId,
+				attempt,
+				review: result.review,
+			});
+		} catch (error) {
+			if (!(error instanceof planRepo.MissionPilotContextConflictError)) {
+				throw error;
+			}
+			const current = await missionPilotRepo.getSessionByTaskId(taskId);
+			if (current?.desiredState !== "playing") throw error;
+			throw new MissionPilotPlanRoutingChangedError(error.message);
+		}
 		if (result.review.verdict === "reroute") {
 			if (!result.review.routingToolCall) {
 				throw new Error("Plan review reroute tool call is missing");
@@ -518,6 +529,10 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 			await updatePhase(taskId, leaseOwner, "attention", {
 				desiredState: "stopped",
 				error: errorMessage(error),
+				errorTextIsModelResponse:
+					error instanceof StructuredLlmResponseError ||
+					(error instanceof AppError &&
+						error.details?.responseTextOrigin === "llm"),
 			}).catch(() => undefined);
 		}
 		throw error;

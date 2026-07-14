@@ -10,10 +10,47 @@ import {
 import { repositories, taskMessages, tasks } from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import * as planRepo from "../api/modules/missionPilot/mission-pilot-plan.repository";
-import { normalizeMissionPilotPlanReview } from "../shared/schemas/mission-pilot-plan-review.schema";
+import {
+	missionPilotPlanReviewSchema,
+	validateMissionPilotPlanReviewFacts,
+} from "../shared/schemas/mission-pilot-plan-review.schema";
 import { planModeArtifactCorrectionTargetSchema } from "../shared/schemas/plan-mode-artifact-correction.schema";
 
 const repositoryIds: string[] = [];
+const passingCoverage = {
+	goal: "pass" as const,
+	scope: "pass" as const,
+	acceptanceCriteria: "pass" as const,
+	implementationSteps: "pass" as const,
+	verification: "pass" as const,
+	artifactConsistency: "pass" as const,
+	riskAndSafety: "pass" as const,
+};
+
+function reviewFactResult(
+	input: unknown,
+	reviewedArtifacts: Array<{
+		artifactKind:
+			| "feature_plan"
+			| "blueprint"
+			| "data_model"
+			| "user_flow"
+			| "api_io_contract"
+			| "activity_flow"
+			| "sequence_flow"
+			| "zod_schema_design";
+		sourceMessageId: string;
+	}>,
+) {
+	const review = missionPilotPlanReviewSchema.parse({
+		...(input as Record<string, unknown>),
+		routingToolCall: (input as Record<string, unknown>).routingToolCall ?? null,
+	});
+	return {
+		review,
+		issues: validateMissionPilotPlanReviewFacts(review, { reviewedArtifacts }),
+	};
+}
 
 beforeAll(() => ensureNightWorkersSchema());
 afterEach(async () => {
@@ -85,14 +122,14 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			},
 		};
 		expect(
-			normalizeMissionPilotPlanReview({
+			missionPilotPlanReviewSchema.parse({
 				...base,
 				artifactScores: [],
 				revisionTargets: [],
 			}).verdict,
 		).toBe("reroute");
 		expect(() =>
-			normalizeMissionPilotPlanReview({
+			missionPilotPlanReviewSchema.parse({
 				...base,
 				artifactScores: [
 					{
@@ -128,11 +165,11 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		).toBe(false);
 	});
 
-	it("reconciles uniquely identifiable Artifact sourceMessageId transcription errors", () => {
+	it("reports sourceMessageId transcription errors without rewriting the response", () => {
 		const dataModelId = "2c0f70f3-ba12-4ab2-a5a2-f68add2354e3";
 		const transcribedDataModelId = "2c0f70f3-ba12-4ab2-a5a2-f68dfa4ad4e3";
 		const featurePlanId = "28b651d3-4c7a-4e78-bc5d-8499da594e0c";
-		const review = normalizeMissionPilotPlanReview(
+		const { review, issues } = reviewFactResult(
 			{
 				verdict: "revise",
 				summary: "Data Model correction is required.",
@@ -187,7 +224,7 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		expect(review.artifactScores).toEqual([
 			expect.objectContaining({
 				artifactKind: "data_model",
-				sourceMessageId: dataModelId,
+				sourceMessageId: transcribedDataModelId,
 			}),
 			expect.objectContaining({
 				artifactKind: "feature_plan",
@@ -197,63 +234,158 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		expect(review.revisionTargets).toEqual([
 			expect.objectContaining({
 				target: "data_model",
-				sourceMessageId: dataModelId,
+				sourceMessageId: transcribedDataModelId,
 			}),
 		]);
 		expect(review.findings).toEqual([
 			expect.objectContaining({
 				artifactKind: "data_model",
-				sourceId: dataModelId,
+				sourceId: transcribedDataModelId,
 			}),
 		]);
+		expect(issues.map((issue) => issue.code)).toEqual(
+			expect.arrayContaining([
+				"unknown_artifact_reference",
+				"missing_artifact_score",
+			]),
+		);
+	});
+
+	it("does not reconcile a stale sourceMessageId that still exists", () => {
+		const currentId = "00000000-0000-4000-8000-000000000051";
+		const staleId = "00000000-0000-4000-8000-000000000052";
+		const { review, issues } = reviewFactResult(
+			{
+				verdict: "pass",
+				summary: "The stale plan was reviewed.",
+				coverage: passingCoverage,
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: staleId,
+						score: 90,
+						rationale: "Stale plan score.",
+					},
+				],
+				findings: [],
+				revisionTargets: [],
+			},
+			[{ artifactKind: "feature_plan", sourceMessageId: currentId }],
+		);
+		expect(review.artifactScores[0]?.sourceMessageId).toBe(staleId);
+		expect(issues.map((issue) => issue.code)).toEqual(
+			expect.arrayContaining([
+				"unknown_artifact_reference",
+				"missing_artifact_score",
+			]),
+		);
+	});
+
+	it("reports a stale correction target without replacing it", () => {
+		const currentId = "00000000-0000-4000-8000-000000000061";
+		const staleId = "00000000-0000-4000-8000-000000000062";
+		const { review, issues } = reviewFactResult(
+			{
+				verdict: "revise",
+				summary: "A blocking correction is required.",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "fail",
+					verification: "pass",
+					artifactConsistency: "fail",
+					riskAndSafety: "pass",
+				},
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: currentId,
+						score: 70,
+						rationale: "A blocking mismatch remains.",
+					},
+				],
+				findings: [
+					{
+						severity: "blocking",
+						artifactKind: "feature_plan",
+						sourceId: currentId,
+						issue: "A required step is missing.",
+						recommendation: "Add the required step.",
+					},
+				],
+				revisionTargets: [
+					{
+						target: "feature_plan",
+						sourceMessageId: staleId,
+						focus: { kind: "artifact" },
+						instruction: "必須手順を追加してください。",
+						preserveUnfocusedContent: true,
+					},
+				],
+			},
+			[{ artifactKind: "feature_plan", sourceMessageId: currentId }],
+		);
+		expect(review.revisionTargets[0]?.sourceMessageId).toBe(staleId);
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: "unknown_artifact_reference",
+				path: ["revisionTargets", 0, "sourceMessageId"],
+			}),
+		);
 	});
 
 	it("rejects sourceMessageId recovery when an Artifact kind is ambiguous", () => {
 		const firstId = "00000000-0000-4000-8000-000000000041";
 		const secondId = "00000000-0000-4000-8000-000000000042";
 		const unknownId = "00000000-0000-4000-8000-000000000043";
-		expect(() =>
-			normalizeMissionPilotPlanReview(
-				{
-					verdict: "pass",
-					summary: "Ambiguous Artifact identities.",
-					coverage: {
-						goal: "pass",
-						scope: "pass",
-						acceptanceCriteria: "pass",
-						implementationSteps: "pass",
-						verification: "pass",
-						artifactConsistency: "pass",
-						riskAndSafety: "pass",
-					},
-					artifactScores: [
-						{
-							artifactKind: "feature_plan",
-							sourceMessageId: firstId,
-							score: 90,
-							rationale: "First plan.",
-						},
-						{
-							artifactKind: "feature_plan",
-							sourceMessageId: unknownId,
-							score: 90,
-							rationale: "Unknown plan.",
-						},
-					],
-					findings: [],
-					revisionTargets: [],
+		const { review, issues } = reviewFactResult(
+			{
+				verdict: "pass",
+				summary: "Ambiguous Artifact identities.",
+				coverage: {
+					goal: "pass",
+					scope: "pass",
+					acceptanceCriteria: "pass",
+					implementationSteps: "pass",
+					verification: "pass",
+					artifactConsistency: "pass",
+					riskAndSafety: "pass",
 				},
-				[
-					{ artifactKind: "feature_plan", sourceMessageId: firstId },
-					{ artifactKind: "feature_plan", sourceMessageId: secondId },
+				artifactScores: [
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: firstId,
+						score: 90,
+						rationale: "First plan.",
+					},
+					{
+						artifactKind: "feature_plan",
+						sourceMessageId: unknownId,
+						score: 90,
+						rationale: "Unknown plan.",
+					},
 				],
-			),
-		).toThrow("Plan review must score every current Artifact exactly once");
+				findings: [],
+				revisionTargets: [],
+			},
+			[
+				{ artifactKind: "feature_plan", sourceMessageId: firstId },
+				{ artifactKind: "feature_plan", sourceMessageId: secondId },
+			],
+		);
+		expect(review.artifactScores[1]?.sourceMessageId).toBe(unknownId);
+		expect(issues.map((issue) => issue.code)).toEqual(
+			expect.arrayContaining([
+				"unknown_artifact_reference",
+				"missing_artifact_score",
+			]),
+		);
 	});
 
-	it("keeps warning-only improvement requests non-blocking", () => {
+	it("preserves a warning-only revise decision without semantic rewriting", () => {
 		const sourceMessageId = "00000000-0000-4000-8000-000000000001";
-		const review = normalizeMissionPilotPlanReview(
+		const { review, issues } = reviewFactResult(
 			{
 				verdict: "revise",
 				summary: "Minor verification detail remains.",
@@ -278,7 +410,7 @@ describe("Mission Pilot plan pipeline persistence", () => {
 					{
 						severity: "warning",
 						artifactKind: "feature_plan",
-						sourceId: "plan-1",
+						sourceId: sourceMessageId,
 						issue: "Optional detail",
 						recommendation: "Clarify when convenient",
 					},
@@ -296,8 +428,10 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			[{ artifactKind: "feature_plan", sourceMessageId }],
 		);
 		expect(review).toMatchObject({
-			verdict: "pass",
-			revisionTargets: [],
+			verdict: "revise",
+			revisionTargets: [
+				expect.objectContaining({ sourceMessageId, target: "feature_plan" }),
+			],
 			coverage: {
 				goal: "pass",
 				scope: "pass",
@@ -308,11 +442,12 @@ describe("Mission Pilot plan pipeline persistence", () => {
 				riskAndSafety: "pass",
 			},
 		});
+		expect(issues).toEqual([]);
 	});
 
-	it("keeps low scores informational when there is no major correction target", () => {
+	it("preserves the model verdict when scores are low", () => {
 		const sourceMessageId = "00000000-0000-4000-8000-000000000009";
-		const review = normalizeMissionPilotPlanReview(
+		const { review, issues } = reviewFactResult(
 			{
 				verdict: "revise",
 				summary: "The plan can still be implemented safely.",
@@ -347,14 +482,15 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			[{ artifactKind: "feature_plan", sourceMessageId }],
 		);
 
-		expect(review.verdict).toBe("pass");
+		expect(review.verdict).toBe("revise");
 		expect(review.revisionTargets).toEqual([]);
+		expect(issues).toEqual([]);
 	});
 
-	it("revises only implementation Artifacts with blocking major findings", () => {
+	it("preserves all schema-valid revision targets", () => {
 		const featurePlanId = "00000000-0000-4000-8000-000000000011";
 		const blueprintId = "00000000-0000-4000-8000-000000000012";
-		const review = normalizeMissionPilotPlanReview(
+		const { review, issues } = reviewFactResult(
 			{
 				verdict: "revise",
 				summary: "Artifact種別ごとの基準で判定します。",
@@ -419,14 +555,19 @@ describe("Mission Pilot plan pipeline persistence", () => {
 				target: "feature_plan",
 				sourceMessageId: featurePlanId,
 			}),
+			expect.objectContaining({
+				target: "blueprint",
+				sourceMessageId: blueprintId,
+			}),
 		]);
+		expect(issues).toEqual([]);
 	});
 
-	it("keeps low-scoring conceptual Artifacts advisory and non-blocking", () => {
+	it("does not demote conceptual Artifact findings", () => {
 		const blueprintId = "00000000-0000-4000-8000-000000000021";
 		const flowId = "00000000-0000-4000-8000-000000000022";
 		const featurePlanId = "00000000-0000-4000-8000-000000000023";
-		const review = normalizeMissionPilotPlanReview(
+		const { review, issues } = reviewFactResult(
 			{
 				verdict: "revise",
 				summary: "Concept artifacts are advisory.",
@@ -492,14 +633,15 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			],
 		);
 
-		expect(review.verdict).toBe("pass");
-		expect(review.revisionTargets).toEqual([]);
+		expect(review.verdict).toBe("revise");
+		expect(review.revisionTargets).toHaveLength(2);
 		expect(review.findings).toEqual([
 			expect.objectContaining({
 				artifactKind: "blueprint",
-				severity: "warning",
+				severity: "blocking",
 			}),
 		]);
+		expect(issues).toEqual([]);
 	});
 
 	it("allows only one database-backed pipeline lease owner", async () => {
@@ -728,6 +870,64 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			contextRevision: 1,
 			contextDigest: fixture.session.contextDigest,
 		});
+	});
+
+	it("adopts a live plan review only for the current playing lease and Context", async () => {
+		const fixture = await createFixture();
+		const leaseOwner = crypto.randomUUID();
+		await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				leaseOwner,
+				leaseExpiresAt: new Date(Date.now() + 60_000),
+			})
+			.where(eq(missionPilotSessions.id, fixture.session.id));
+		const [message] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Feature Plan",
+				messageType: "markdown_document",
+				metadataJson: { intent: "feature_plan" },
+			})
+			.returning();
+		const input = {
+			sessionId: fixture.session.id,
+			leaseOwner,
+			routingRevision: fixture.session.planRoutingRevision,
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+			featurePlanMessageId: message.id,
+			attempt: 1,
+			review: {
+				verdict: "pass" as const,
+				summary: "Implementation-ready",
+				coverage: passingCoverage,
+				findings: [],
+				artifactScores: [],
+				revisionTargets: [],
+				routingToolCall: null,
+			},
+		};
+
+		await expect(
+			planRepo.createCurrentPlanReview(input),
+		).resolves.toMatchObject({
+			contextRevision: fixture.session.contextRevision,
+			contextDigest: fixture.session.contextDigest,
+		});
+
+		await db
+			.update(missionPilotSessions)
+			.set({ desiredState: "stopped" })
+			.where(eq(missionPilotSessions.id, fixture.session.id));
+		await expect(
+			planRepo.createCurrentPlanReview({ ...input, attempt: 2 }),
+		).rejects.toThrow("state changed before adopting");
+		expect(await planRepo.listPlanReviews(fixture.session.id)).toHaveLength(1);
 	});
 
 	it("persists and advances an idempotent Artifact correction run", async () => {

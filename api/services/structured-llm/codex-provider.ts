@@ -1,7 +1,7 @@
 import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { normalizeProviderUsage } from "../llm-usage";
-import { shouldOmitCodexOutputSchema } from "./codex-output-schema";
+import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
 import type { RawLlmCallOptions } from "./providers";
 import {
 	getResolvedProviderEndpoint,
@@ -168,9 +168,10 @@ export async function callCodexProvider(
 	} else {
 		thread = codex.startThread(threadOptions);
 	}
-	const omitOutputSchema = shouldOmitCodexOutputSchema(
-		input.options.jsonSchema?.name,
+	const outputSchemaMode = resolveCodexOutputSchemaMode(
+		input.options.jsonSchema?.schema,
 	);
+	const omitOutputSchema = outputSchemaMode.mode === "prompt_validated_json";
 	const runOptions: { outputSchema?: unknown; signal: AbortSignal } = {
 		signal: input.signal,
 	};
@@ -242,9 +243,7 @@ export async function callCodexProvider(
 			: "structured_output",
 		model,
 		modelReasoningEffort,
-		outputSchemaOmittedFor: omitOutputSchema
-			? input.options.jsonSchema?.name
-			: null,
+		outputSchemaModeReasons: outputSchemaMode.reasons,
 		resumeState: resumeState.status,
 		providerThreadId: thread.id ?? null,
 		resumedInputReduced: resumedThread,

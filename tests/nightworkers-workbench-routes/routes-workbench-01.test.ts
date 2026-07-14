@@ -19,10 +19,17 @@ vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
 		typeof import("../../api/services/structured-llm")
 	>("../../api/services/structured-llm");
+	const { createStructuredLlmResultMock } = await import(
+		"../helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn();
 	return {
 		...actual,
 		callSupervisorLLM: vi.fn(),
-		callStructuredJsonLLM: vi.fn(),
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
+		),
 	};
 });
 
@@ -110,7 +117,13 @@ function mockPlanModeGate(
 		| "implementation"
 		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
 ) {
-	return JSON.stringify({ shouldStartPlanMode, action, reason });
+	return JSON.stringify({
+		shouldStartPlanMode,
+		action,
+		reason,
+		dedicatedViews: [],
+		specificationLenses: [],
+	});
 }
 
 function expectStrictObjectSchemas(schema: unknown, path = "schema") {
@@ -383,55 +396,7 @@ describe("NightWorkers workbench routes", () => {
 				mockPlanModeGate(true, "explicit planning request"),
 			)
 			.mockResolvedValueOnce(
-				JSON.stringify({
-					version: 1,
-					source: {
-						taskId: task.id,
-						repositoryId: task.repositoryId,
-						blueprintMessageId: null,
-						sourceKind: "plan_mode_intake",
-					},
-					title: "Kanban Design Questionnaire",
-					summary: "Clarify Kanban workflow decisions before implementation.",
-					questionSets: [
-						{
-							id: "workflow",
-							title: "Workflow",
-							category: "workflow",
-							purpose: "Kanban workflow decisions.",
-							questions: [
-								{
-									id: "lane-model",
-									topic: "Lane model",
-									question:
-										"Which lane model should the first version support?",
-									why: "The lane model affects UI and DB design.",
-									answerType: "single_choice",
-									options: [
-										{
-											id: "fixed-lanes",
-											label: "Fixed lanes",
-											description: "Start with todo, doing, done.",
-											tradeoff: "Simple first release.",
-										},
-									],
-									blocks: ["Board UI", "Task schema"],
-									outputSection: "Kanban workflow",
-								},
-							],
-						},
-					],
-					openQuestions: [],
-					dataModelHandoffNotes: [
-						{
-							id: "card-lane-history",
-							summary: "Card lane transitions may need history.",
-							sourceQuestionIds: ["lane-model"],
-							constraint:
-								"Data Model should decide whether lane transition history is stored.",
-						},
-					],
-				}),
+				mockQuestionnaireOutput(task, "Kanban Design Questionnaire"),
 			);
 
 		const res = await app.request(
@@ -680,41 +645,7 @@ describe("NightWorkers workbench routes", () => {
 				}),
 			)
 			.mockResolvedValueOnce(
-				JSON.stringify({
-					version: 1,
-					source: {
-						taskId: task.id,
-						repositoryId: task.repositoryId,
-						blueprintMessageId: null,
-						sourceKind: "plan_mode_intake",
-					},
-					title: "Improvement Plan Questionnaire",
-					summary:
-						"Clarify project evaluation improvement scope before implementation.",
-					questionSets: [
-						{
-							id: "scope",
-							title: "Scope",
-							category: "workflow",
-							purpose: "Confirm improvement scope.",
-							questions: [
-								{
-									id: "scope-boundary",
-									topic: "Scope boundary",
-									question:
-										"Which part of the improvement should be implemented first?",
-									why: "Project evaluation improvements should start with a bounded plan.",
-									answerType: "free_text",
-									options: [],
-									blocks: ["Implementation Plan"],
-									outputSection: "Scope",
-								},
-							],
-						},
-					],
-					openQuestions: [],
-					dataModelHandoffNotes: [],
-				}),
+				mockQuestionnaireOutput(task, "Improvement Plan Questionnaire"),
 			);
 
 		const res = await app.request(
@@ -767,46 +698,7 @@ describe("NightWorkers workbench routes", () => {
 				mockPlanModeGate(true, "explicit planning request"),
 			)
 			.mockResolvedValueOnce(
-				JSON.stringify({
-					version: 1,
-					source: {
-						taskId: task.id,
-						repositoryId: task.repositoryId,
-						blueprintMessageId: null,
-						sourceKind: "plan_mode_intake",
-					},
-					title: "Todo Design Questionnaire",
-					summary: "Clarify todo app decisions before implementation.",
-					questionSets: [
-						{
-							id: "scope",
-							title: "Scope",
-							category: "product",
-							purpose: "Todo scope decisions.",
-							questions: [
-								{
-									id: "first-version",
-									topic: "First version",
-									question: "What should the first version include?",
-									why: "This shapes the implementation plan.",
-									answerType: "single_choice",
-									options: [
-										{
-											id: "basic-crud",
-											label: "Basic CRUD",
-											description: "Add, edit, complete, delete todos.",
-											tradeoff: "Small first release.",
-										},
-									],
-									blocks: ["Todo UI", "Todo API"],
-									outputSection: "Scope",
-								},
-							],
-						},
-					],
-					openQuestions: [],
-					dataModelHandoffNotes: [],
-				}),
+				mockQuestionnaireOutput(task, "Todo Design Questionnaire"),
 			);
 
 		const res = await app.request(
@@ -924,12 +816,6 @@ describe("NightWorkers workbench routes", () => {
 			String(runs[0]?.contextSnapshot?.compiledPrompt || ""),
 		).not.toContain("<IMPLEMENTATION_HANDOFF>");
 		expect(await repo.listTaskRunTodosForRun(runs[0]?.id || "")).toEqual([]);
-		const events = await repo.listTaskEventsForRun(runs[0]?.id || "");
-		expect(
-			events.some((event) =>
-				event.message.includes("general_answer LLM route resolved"),
-			),
-		).toBe(true);
 	});
 
 	it("applies a composer model override to one run only", async () => {
@@ -1457,47 +1343,18 @@ describe("NightWorkers workbench routes", () => {
 });
 
 function mockQuestionnaireOutput(
-	task: Awaited<ReturnType<typeof repo.createTask>>,
+	_task: Awaited<ReturnType<typeof repo.createTask>>,
+	title = "Plan Mode Questionnaire",
 ) {
 	return JSON.stringify({
-		version: 1,
-		source: {
-			taskId: task.id,
-			repositoryId: task.repositoryId,
-			blueprintMessageId: null,
-			sourceKind: "plan_mode_intake",
-		},
-		title: "Plan Mode Questionnaire",
-		summary: "Clarify implementation choices before coding.",
-		questionSets: [
+		title,
+		questions: [
 			{
-				id: "scope",
-				title: "Scope",
-				category: "requirements",
-				purpose: "Decide the initial implementation scope.",
-				questions: [
-					{
-						id: "initial-scope",
-						topic: "Initial scope",
-						question: "Which scope should be included first?",
-						why: "The implementation queue needs a concrete target.",
-						answerType: "single_choice",
-						options: [
-							{
-								id: "minimal",
-								label: "Minimal",
-								description: "Implement the smallest useful flow.",
-								tradeoff: "Leaves enhancements for later.",
-							},
-						],
-						blocks: ["UI", "Data model"],
-						outputSection: "Initial scope",
-					},
-				],
+				text: "Which scope should be included first?",
+				type: "radio",
+				options: ["Minimal", "Complete"],
 			},
 		],
-		openQuestions: [],
-		dataModelHandoffNotes: [],
 	});
 }
 

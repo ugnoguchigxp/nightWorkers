@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const artifactPaneActionsSource = readFileSync(
+	new URL(
+		"../src/modules/nightworkers/components/ArtifactPaneActions.tsx",
+		import.meta.url,
+	),
+	"utf8",
+);
 const artifactPaneSource = readFileSync(
 	new URL(
 		"../src/modules/nightworkers/components/ArtifactPane.tsx",
@@ -38,7 +45,7 @@ describe("ArtifactExportMenu", () => {
 			useTranslation: () => ({ t: (key: string) => key }),
 		}));
 		const { ArtifactExportMenu } = await import(
-			"../src/modules/nightworkers/components/ArtifactPane"
+			"../src/modules/nightworkers/components/ArtifactPaneActions"
 		);
 		const element = ArtifactExportMenu({
 			onCopyMarkdown: vi.fn(),
@@ -70,13 +77,15 @@ describe("ArtifactExportMenu", () => {
 			"nightworkers-artifact-export-menu-item",
 			"nightworkers-artifact-export-error",
 		]) {
-			expect(artifactPaneSource).toContain(className);
+			expect(`${artifactPaneSource}\n${artifactPaneActionsSource}`).toContain(
+				className,
+			);
 			expect(utilityOverridesCss).toContain(`.${className}`);
 		}
 
-		const menuSource = artifactPaneSource.slice(
-			artifactPaneSource.indexOf("export function ArtifactExportMenu"),
-			artifactPaneSource.indexOf("function ProjectTreeHeaderActions"),
+		const menuSource = artifactPaneActionsSource.slice(
+			artifactPaneActionsSource.indexOf("export function ArtifactExportMenu"),
+			artifactPaneActionsSource.indexOf("function ArtifactExportMenuItem"),
 		);
 		expect(menuSource).not.toMatch(
 			/bg-\[#181825\]|text-slate-200|text-slate-300|border-slate-700|text-rose-300/,

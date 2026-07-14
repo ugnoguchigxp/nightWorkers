@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("imports Mermaid SVG containing HTML line breaks", async ({ page }) => {
+test("imports Mermaid SVG containing HTML line breaks", {
+	tag: ["@deterministic", "@p1", "@scenario:NW-E2E-PLAN-MERMAID-001"],
+}, async ({ page }) => {
 	await page.goto("/");
 
 	const result = await page.evaluate(async () => {
@@ -44,9 +46,9 @@ test("imports Mermaid SVG containing HTML line breaks", async ({ page }) => {
 	});
 });
 
-test("rejects output that does not contain an SVG element", async ({
-	page,
-}) => {
+test("rejects output that does not contain an SVG element", {
+	tag: ["@deterministic", "@p1", "@scenario:NW-E2E-PLAN-MERMAID-002"],
+}, async ({ page }) => {
 	await page.goto("/");
 
 	const imported = await page.evaluate(async () => {

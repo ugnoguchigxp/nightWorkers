@@ -31,9 +31,16 @@ import * as structuredLlm from "../api/services/structured-llm";
 vi.mock("../api/services/structured-llm", async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import("../api/services/structured-llm")>();
+	const { createStructuredLlmResultMock } = await import(
+		"./helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn();
 	return {
 		...actual,
-		callStructuredJsonLLM: vi.fn(),
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
+		),
 	};
 });
 

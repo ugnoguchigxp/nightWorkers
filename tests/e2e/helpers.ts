@@ -86,6 +86,21 @@ export async function createE2eWorkspaceDirectory(prefix: string) {
 	return mkdtemp(path.join(workspaceRoot, prefix));
 }
 
+export function initializeE2eGitRepository(cwd: string) {
+	try {
+		execFileSync("git", ["init", "--initial-branch=main"], {
+			cwd,
+			stdio: "ignore",
+		});
+	} catch {
+		execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+		execFileSync("git", ["branch", "-M", "main"], {
+			cwd,
+			stdio: "ignore",
+		});
+	}
+}
+
 export async function createDisposableGitWorkspace(options: {
 	prefix: string;
 	dirty?: boolean;
@@ -94,7 +109,7 @@ export async function createDisposableGitWorkspace(options: {
 	const workspace = await createE2eWorkspaceDirectory(options.prefix);
 	await mkdir(path.join(workspace, "src"), { recursive: true });
 	await writeFile(path.join(workspace, "src", "greeting.txt"), "TODO\n");
-	execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+	initializeE2eGitRepository(workspace);
 	execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
 	execFileSync(
 		"git",

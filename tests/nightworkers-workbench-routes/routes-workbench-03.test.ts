@@ -23,10 +23,17 @@ vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
 		typeof import("../../api/services/structured-llm")
 	>("../../api/services/structured-llm");
+	const { createStructuredLlmResultMock } = await import(
+		"../helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn();
 	return {
 		...actual,
 		callSupervisorLLM: vi.fn(),
-		callStructuredJsonLLM: vi.fn(),
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
+		),
 	};
 });
 
@@ -114,7 +121,13 @@ function mockPlanModeGate(
 		| "implementation"
 		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
 ) {
-	return JSON.stringify({ shouldStartPlanMode, action, reason });
+	return JSON.stringify({
+		shouldStartPlanMode,
+		action,
+		reason,
+		dedicatedViews: [],
+		specificationLenses: [],
+	});
 }
 
 function _expectStrictObjectSchemas(schema: unknown, path = "schema") {

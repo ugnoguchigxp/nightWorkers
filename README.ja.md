@@ -392,7 +392,7 @@ bun run desktop:build:linux
 bun run desktop:build:windows
 ```
 
-Linuxは`.deb`、`.rpm`、AppImage、Windowsはx64 NSIS、MSIを対象にします。native artifactを生成せずにcross-platform設定を確認できます。
+Linuxは`.deb`、`.rpm`、AppImage、Windowsはx64 NSIS、MSIを対象にします。現在の限定βサポート対象はmacOS ARM64で、Linux / Windowsはnative installerとclean環境の起動・終了smokeが成功するまでsupportedとは表記しません。native artifactを生成せずにcross-platform設定を確認できます。
 
 ```bash
 bun run desktop:check:cross-platform

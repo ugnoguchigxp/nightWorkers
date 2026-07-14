@@ -11,17 +11,14 @@ import {
 	or,
 } from "drizzle-orm";
 import type { PlanModeExecutionStep } from "../../../shared/plan-mode-execution";
-import type { MissionPilotPlanReview } from "../../../shared/schemas/mission-pilot-plan-review.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotArtifactCorrectionRuns,
 	missionPilotContextSnapshots,
-	missionPilotPlanReviews,
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../../db/mission-pilot-schema";
-
-export class MissionPilotContextConflictError extends Error {}
+import { MissionPilotContextConflictError } from "./mission-pilot-plan-errors";
 
 export {
 	applyArtifactCorrectionRun,
@@ -37,6 +34,13 @@ export {
 	supersedeArtifactCorrectionRunsForReview,
 	supersedeConceptArtifactCorrectionRunsForReview,
 } from "./mission-pilot-artifact-correction.repository";
+export { MissionPilotContextConflictError } from "./mission-pilot-plan-errors";
+export {
+	createCurrentPlanReview,
+	createPlanReview,
+	getLatestPlanReview,
+	listPlanReviews,
+} from "./mission-pilot-plan-review.repository";
 
 export async function claimPipelineLease(input: {
 	taskId: string;
@@ -523,52 +527,4 @@ export async function appendPlanContext(
 		}
 		return updated;
 	});
-}
-
-export async function createPlanReview(input: {
-	sessionId: string;
-	routingRevision?: number;
-	contextRevision: number;
-	contextDigest: string;
-	featurePlanMessageId: string;
-	attempt: number;
-	review: MissionPilotPlanReview;
-}) {
-	const session =
-		input.routingRevision === undefined
-			? await db.query.missionPilotSessions.findFirst({
-					where: eq(missionPilotSessions.id, input.sessionId),
-				})
-			: null;
-	const [row] = await db
-		.insert(missionPilotPlanReviews)
-		.values({
-			id: crypto.randomUUID(),
-			...input,
-			routingRevision:
-				input.routingRevision ?? session?.planRoutingRevision ?? 0,
-			verdict: input.review.verdict,
-			reviewJson: input.review,
-			createdAt: new Date(),
-		})
-		.returning();
-	return row;
-}
-
-export async function getLatestPlanReview(sessionId: string) {
-	const [row] = await db
-		.select()
-		.from(missionPilotPlanReviews)
-		.where(eq(missionPilotPlanReviews.sessionId, sessionId))
-		.orderBy(desc(missionPilotPlanReviews.attempt))
-		.limit(1);
-	return row ?? null;
-}
-
-export function listPlanReviews(sessionId: string) {
-	return db
-		.select()
-		.from(missionPilotPlanReviews)
-		.where(eq(missionPilotPlanReviews.sessionId, sessionId))
-		.orderBy(asc(missionPilotPlanReviews.attempt));
 }

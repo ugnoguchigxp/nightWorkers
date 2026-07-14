@@ -136,17 +136,15 @@ const kanbanDatasetSchema = z
 					.object({
 						id: mockBlueprintIdSchema,
 						title: z.string().min(1),
-						cards: z
-							.array(
-								z
-									.object({
-										title: z.string().min(1),
-										description: z.string().min(1),
-										meta: z.string().min(1).optional(),
-									})
-									.strict(),
-							)
-							.default([]),
+						cards: z.array(
+							z
+								.object({
+									title: z.string().min(1),
+									description: z.string().min(1),
+									meta: z.string().min(1).optional(),
+								})
+								.strict(),
+						),
 					})
 					.strict(),
 			)
@@ -455,7 +453,7 @@ export const mockBlueprintSchema = z
 		tone: z.string().min(1),
 		meta: mockBlueprintMetaSchema,
 		screens: z.array(mockBlueprintScreenSchema).min(1).max(3),
-		generationNotes: z.array(z.string().min(1)).default([]),
+		generationNotes: z.array(z.string().min(1)),
 	})
 	.strict();
 

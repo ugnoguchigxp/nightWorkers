@@ -198,3 +198,10 @@ export async function listVerificationEvidenceRuns(ids: string[]) {
 		.from(verificationEvidenceRuns)
 		.where(inArray(verificationEvidenceRuns.id, ids));
 }
+
+export async function listVerificationEvidenceRunsForTask(taskId: string) {
+	return db
+		.select()
+		.from(verificationEvidenceRuns)
+		.where(eq(verificationEvidenceRuns.taskId, taskId));
+}

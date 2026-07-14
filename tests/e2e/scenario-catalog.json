@@ -325,6 +325,30 @@
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
+			"id": "NW-E2E-MISSION-PILOT-001",
+			"title": "Task作成時に停止状態のMission Pilotを開始する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-002",
+			"title": "Queue前のMission Pilot reviewed handoffを保存する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-003",
+			"title": "reviewed Queue handoffからMission PilotをArchiveまで進める",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database", "queue"]
+		},
+		{
 			"id": "NW-E2E-TECH-STACK-001",
 			"title": "Projectの実ステップを用途別に計測保存し再表示する",
 			"priority": "P1",
@@ -339,6 +363,22 @@
 			"suite": "regression",
 			"gateStatus": "required",
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-PLAN-MERMAID-001",
+			"title": "Plan Mode Mermaid SVGのHTML改行を安全に表示する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "security"]
+		},
+		{
+			"id": "NW-E2E-PLAN-MERMAID-002",
+			"title": "SVGでないMermaid出力を拒否する",
+			"priority": "P1",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "security"]
 		}
 	]
 }

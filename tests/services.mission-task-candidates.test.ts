@@ -6,7 +6,6 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {
-	applyMissionTaskCandidateSemantics,
 	buildMissionTaskCandidatesResponseJsonSchema,
 	selectMissionGoalsForGeneration,
 } from "../api/modules/taskGeneration/task-generation.service";
@@ -141,11 +140,12 @@ describe("Mission task candidate generation helpers", () => {
 		expect(parsed.candidates[0]?.evaluationContribution).toBe(35);
 	});
 
-	it("keeps feature entrypoints first and folds detail followups into Plan mode questions", () => {
+	it("does not reorder or fold LLM-selected candidates", () => {
 		const featureGoalId = crypto.randomUUID();
 		const projectWideGoalId = crypto.randomUUID();
-		const candidates = applyMissionTaskCandidateSemantics(
-			[
+		const candidates = missionTaskCandidatesResultSchema.parse({
+			schemaVersion: "nightworkers.mission-task-candidates/v1",
+			candidates: [
 				{
 					title: "Todo一覧のフィルタ UI を改善する",
 					summary: "UI 詳細。",
@@ -219,33 +219,19 @@ describe("Mission task candidate generation helpers", () => {
 					verificationPlan: "coverage を確認する。",
 				},
 			],
-			[
-				missionGoalFixture({
-					id: featureGoalId,
-					title: "todolist を作る",
-					scope: "unknown",
-					source: "unknown",
-				}),
-				missionGoalFixture({
-					id: projectWideGoalId,
-					title: "カバレッジ維持",
-					scope: "project_wide",
-					source: "preset",
-				}),
-			],
-		);
+		}).candidates;
 
-		expect(candidates).toHaveLength(1);
+		expect(candidates).toHaveLength(3);
 		expect(candidates[0]).toMatchObject({
+			candidateKind: "feature_followup",
+			title: "Todo一覧のフィルタ UI を改善する",
+		});
+		expect(candidates[1]).toMatchObject({
 			candidateKind: "feature_entrypoint",
 			title: "todolist 本体を実装する",
-			constraintGoalIds: [projectWideGoalId],
+			constraintGoalIds: [],
+			planModeOpenQuestions: ["保存方式を決める。"],
 		});
-		expect(candidates[0]?.planModeOpenQuestions).toEqual([
-			"保存方式を決める。",
-			"「Todo一覧のフィルタ UI を改善する」は、本体実装方針の中で必要性と範囲を決める。",
-			"「todolist の coverage gate を確認する」は、本体実装方針の中で必要性と範囲を決める。",
-		]);
 	});
 
 	it("adds compact repository implementation context to mission signals", async () => {

@@ -58,12 +58,45 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 			);
 		}) as unknown as typeof fetch;
 
-		await expect(
-			callSupervisorLLM("system", "user", {
-				round: 2,
-				schemaFirst: true,
-			}),
-		).rejects.toThrow();
+		const error = await callSupervisorLLM("system", "user", {
+			round: 2,
+			schemaFirst: true,
+		}).catch((caught) => caught);
+		expect(error).toMatchObject({
+			message: "plain text response",
+			rawText: "plain text response",
+			issues: [expect.objectContaining({ code: "invalid_json" })],
+		});
+	});
+
+	it("keeps schema-invalid supervisor JSON as the displayed error text", async () => {
+		process.env.ACTIVE_LLM_PROVIDER = "openai";
+		process.env.OPENAI_ENABLED = "true";
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.OPENAI_MODEL = "gpt-test";
+		process.env.OPENAI_STREAMING_ENABLED = "false";
+		const rawDecision = '{"toolCall":{"name":""}}';
+
+		globalThis.fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({ choices: [{ message: { content: rawDecision } }] }),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+		) as unknown as typeof fetch;
+
+		const error = await callSupervisorLLM("system", "user", {
+			round: 2,
+			schemaFirst: true,
+		}).catch((caught) => caught);
+		expect(error).toMatchObject({
+			message: rawDecision,
+			rawText: rawDecision,
+			issues: [expect.objectContaining({ stage: "schema" })],
+		});
 	});
 
 	it("rejects OpenAI non-stream provider tool calls before parsing content", async () => {

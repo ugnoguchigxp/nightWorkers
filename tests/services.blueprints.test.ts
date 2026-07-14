@@ -113,7 +113,7 @@ describe("Blueprint validation service", () => {
 		expect(parsed.validation.valid).toBe(true);
 	});
 
-	it("repairs misplaced root actions from LLM Blueprint JSON output", () => {
+	it("rejects misplaced root actions without deleting or relocating them", () => {
 		const regularBlueprint = {
 			...representativeAppBlueprint,
 			databaseSchema: { tables: [], relations: [] },
@@ -124,17 +124,15 @@ describe("Blueprint validation service", () => {
 			',"actions":[{"id":"create-card-global","label":"カード追加","type":"open","target":"board-card-form"}]}],"databaseSchema"',
 		);
 
-		const parsed = parseAndValidateBlueprintOutput(malformedBlueprint);
-
-		expect(parsed.blueprint.databaseSchema).toEqual({
-			tables: [],
-			relations: [],
-		});
-		expect(parsed.blueprint.dataBindings).toEqual([]);
-		expect(parsed.validation.valid).toBe(true);
+		try {
+			parseAndValidateBlueprintOutput(malformedBlueprint);
+			expect.unreachable("malformed Blueprint should be rejected");
+		} catch (error) {
+			expect(error).toMatchObject({ rawOutput: malformedBlueprint });
+		}
 	});
 
-	it("unwraps Codex-delimited Blueprint arrays before schema validation", () => {
+	it("rejects delimited Blueprint arrays instead of rebuilding root fields", () => {
 		const regularBlueprint = {
 			...representativeAppBlueprint,
 			databaseSchema: { tables: [], relations: [] },
@@ -163,18 +161,10 @@ describe("Blueprint validation service", () => {
 			learningHooks,
 		]);
 
-		const parsed = parseAndValidateBlueprintOutput(delimitedOutput);
-
-		expect(parsed.blueprint.databaseSchema).toEqual({
-			tables: [],
-			relations: [],
-		});
-		expect(parsed.blueprint.dataBindings).toEqual([]);
-		expect(parsed.blueprint.implementationTasks).toEqual(implementationTasks);
-		expect(parsed.validation.valid).toBe(true);
+		expect(() => parseAndValidateBlueprintOutput(delimitedOutput)).toThrow();
 	});
 
-	it("adds stable ids to LLM section actions before Blueprint schema validation", () => {
+	it("rejects missing action ids instead of fabricating them", () => {
 		const regularBlueprint = {
 			...representativeAppBlueprint,
 			databaseSchema: { tables: [], relations: [] },
@@ -204,17 +194,12 @@ describe("Blueprint validation service", () => {
 			],
 		};
 
-		const parsed = parseAndValidateBlueprintOutput(
-			JSON.stringify(regularBlueprint),
-		);
-
-		expect(parsed.blueprint.screens[0]?.sections[0]?.actions[0]?.id).toBe(
-			"action-form-action-1",
-		);
-		expect(parsed.validation.valid).toBe(true);
+		expect(() =>
+			parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint)),
+		).toThrow();
 	});
 
-	it("normalizes invalid regular Blueprint section sources before validation", () => {
+	it("rejects invalid section sources instead of replacing them", () => {
 		const regularBlueprint = {
 			...representativeAppBlueprint,
 			databaseSchema: { tables: [], relations: [] },
@@ -240,15 +225,12 @@ describe("Blueprint validation service", () => {
 			],
 		};
 
-		const parsed = parseAndValidateBlueprintOutput(
-			JSON.stringify(regularBlueprint),
-		);
-
-		expect(parsed.blueprint.screens[0]?.sections[0]?.source).toBe("app");
-		expect(parsed.validation.valid).toBe(true);
+		expect(() =>
+			parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint)),
+		).toThrow();
 	});
 
-	it("normalizes section components accidentally used as regular Blueprint screens", () => {
+	it("rejects section components used as screens instead of replacing them", () => {
 		const regularBlueprint = {
 			...representativeAppBlueprint,
 			databaseSchema: { tables: [], relations: [] },
@@ -278,15 +260,9 @@ describe("Blueprint validation service", () => {
 			],
 		};
 
-		const parsed = parseAndValidateBlueprintOutput(
-			JSON.stringify(regularBlueprint),
-		);
-
-		expect(parsed.blueprint.screens[0]?.componentName).toBe("SidebarPage");
-		expect(parsed.blueprint.screens[0]?.sections[0]?.componentName).toBe(
-			"ChartSection",
-		);
-		expect(parsed.validation.valid).toBe(true);
+		expect(() =>
+			parseAndValidateBlueprintOutput(JSON.stringify(regularBlueprint)),
+		).toThrow();
 	});
 
 	it("still fails validation after repair when Blueprint contracts are violated", () => {
@@ -299,7 +275,7 @@ describe("Blueprint validation service", () => {
 			parseAndValidateBlueprintOutput(
 				`\`\`\`json\n${JSON.stringify(invalidBlueprint)}\n\`\`\``,
 			),
-		).toThrow(/valid JSON|failed validation/);
+		).toThrow();
 	});
 
 	it("accepts a representative valid blueprint", () => {

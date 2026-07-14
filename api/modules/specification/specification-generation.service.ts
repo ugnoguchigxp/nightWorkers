@@ -8,7 +8,8 @@ import {
 	buildSpecificationDocumentSystemPrompt,
 	buildSpecificationDocumentUserPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -237,19 +238,22 @@ async function generateSpecificationDesignDocumentRawOutput(
 	usageTrace?: TraceProvenance,
 ) {
 	try {
-		return await callStructuredJsonLLM(
-			buildSpecificationDocumentSystemPrompt(),
-			buildSpecificationDocumentUserPrompt(context),
-			{
-				schemaName: "specification_document",
-				schema: z.toJSONSchema(specificationDocumentDraftSchema),
+		const generated = await callStructuredOutputWithRepair({
+			systemPrompt: buildSpecificationDocumentSystemPrompt(),
+			userPrompt: buildSpecificationDocumentUserPrompt(context),
+			options: {
+				contract: createStructuredOutputContract({
+					name: "specification_document",
+					runtimeSchema: specificationDocumentDraftSchema,
+				}),
 				taskId,
 				role,
 				usageTrace,
 				routeOverride,
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
 			},
-		);
+		});
+		return JSON.stringify(generated.value);
 	} catch (error) {
 		if (isStructuredLlmAbortError(error)) {
 			throw new AppError(

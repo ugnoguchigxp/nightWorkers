@@ -1,5 +1,8 @@
+import { reviewerDraftSchema } from "../../../../shared/schemas/nightworkers.schema";
 import { buildReviewerSystemPrompt } from "../../../services/structured-generation/prompts/review-rubric";
-import { callStructuredJsonLLM } from "../../../services/structured-llm";
+import { callStructuredOutputWithRepair } from "../../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../../services/structured-llm";
+import { StructuredLlmResponseError } from "../../../services/structured-llm/contract";
 import { digestObject } from "./loader";
 import type {
 	LlmReviewerResult,
@@ -87,12 +90,15 @@ export async function callLlmReviewer(
 	let provider = "unknown";
 	let model: string | undefined;
 	try {
-		const rawOutput = await callStructuredJsonLLM(
-			REVIEWER_SYSTEM_CONTEXT,
+		const generated = await callStructuredOutputWithRepair({
+			systemPrompt: REVIEWER_SYSTEM_CONTEXT,
 			userPrompt,
-			{
-				schemaName: "reviewer_draft",
-				schema: reviewerDraftJsonSchema,
+			options: {
+				contract: createStructuredOutputContract({
+					name: "reviewer_draft",
+					runtimeSchema: reviewerDraftSchema,
+					providerJsonSchema: reviewerDraftJsonSchema,
+				}),
 				role: "review",
 				taskId: input.evidencePack.taskId,
 				runId: input.evidencePack.runId,
@@ -102,19 +108,33 @@ export async function callLlmReviewer(
 					if (typeof data.model === "string") model = data.model;
 				},
 			},
-		);
-		const normalizedOutput = normalizeReviewerDraftOutput(rawOutput);
+		});
+		const rawOutput =
+			generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
 		return {
 			status: "completed",
-			rawOutput: normalizedOutput,
+			rawOutput,
+			draft: generated.value as ReviewerDraft,
 			provider,
 			model,
 			promptDigest,
 			evidencePackDigest,
-			outputDigest: digestObject(normalizedOutput),
+			outputDigest: digestObject(rawOutput),
 			degradedReasons: [],
 		};
 	} catch (error) {
+		if (error instanceof StructuredLlmResponseError) {
+			return {
+				status: "degraded",
+				rawOutput: error.rawText,
+				provider,
+				model,
+				promptDigest,
+				evidencePackDigest,
+				degradedReasons: ["llm_reviewer_response_invalid"],
+				errorCode: "LLM_REVIEWER_RESPONSE_INVALID",
+			};
+		}
 		const message = error instanceof Error ? error.message : String(error);
 		const isNotConfigured = /no structured llm route candidates/i.test(message);
 		return {
@@ -132,26 +152,6 @@ export async function callLlmReviewer(
 				? "LLM_REVIEWER_PROVIDER_NOT_CONFIGURED"
 				: "LLM_REVIEWER_CALL_FAILED",
 		};
-	}
-}
-
-function normalizeReviewerDraftOutput(rawOutput: string): string {
-	try {
-		const parsed = JSON.parse(rawOutput) as {
-			findings?: Array<Record<string, unknown>>;
-			humanCallouts?: Array<Record<string, unknown>>;
-		};
-		const normalizeFinding = (finding: Record<string, unknown>) =>
-			Object.fromEntries(
-				Object.entries(finding).filter(([, value]) => value !== null),
-			);
-		return JSON.stringify({
-			...parsed,
-			findings: (parsed.findings ?? []).map(normalizeFinding),
-			humanCallouts: (parsed.humanCallouts ?? []).map(normalizeFinding),
-		});
-	} catch {
-		return rawOutput;
 	}
 }
 

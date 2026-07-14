@@ -15,10 +15,7 @@ import {
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import { NotFoundError } from "../../lib/errors";
-import {
-	jsonFixWrapper,
-	parseRepairedJsonWithSchema,
-} from "../../services/structured-llm/json";
+import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import * as repo from "./questionnaire.repository";
 
 export {
@@ -61,20 +58,7 @@ export function parseDesignQuestionnaireRaw(
 
 	const v1 = parseRepairedJsonWithSchema(rawOutput, designQuestionnaireSchema);
 	if (v1.ok) return { ok: true, value: v1.value };
-
-	const jsonFix = jsonFixWrapper(rawOutput);
-	if (!jsonFix) return { ok: false, error: choiceForm.error };
-
-	const normalized = normalizeLegacyDesignQuestionnaireOutput(
-		jsonFix.parsedJson,
-		fallbackSource,
-	);
-	if (!normalized) return { ok: false, error: v1.error };
-	try {
-		return { ok: true, value: designQuestionnaireSchema.parse(normalized) };
-	} catch (error) {
-		return { ok: false, error };
-	}
+	return { ok: false, error: v1.error ?? choiceForm.error };
 }
 
 function adaptQuestionnaireChoiceForm(
@@ -142,211 +126,6 @@ function adaptQuestionnaireChoiceForm(
 	};
 }
 
-function normalizeLegacyDesignQuestionnaireOutput(
-	value: unknown,
-	fallbackSource?: DesignQuestionnaireSourceFallback,
-): unknown | null {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-	const raw = value as Record<string, unknown>;
-	const questions = Array.isArray(raw.questions)
-		? raw.questions.filter(isRecord)
-		: [];
-	if (questions.length === 0) return null;
-	const source = isRecord(raw.source) ? raw.source : {};
-	const taskId =
-		stringOrNull(source.taskId) ||
-		stringOrNull(raw.taskId) ||
-		fallbackSource?.taskId;
-	const repositoryId =
-		stringOrNull(source.repositoryId) ||
-		stringOrNull(raw.repositoryId) ||
-		fallbackSource?.repositoryId;
-	if (!taskId || !repositoryId) return null;
-
-	const grouped = new Map<string, Record<string, unknown>[]>();
-	for (const question of questions) {
-		const category = firstNonEmptyString(
-			question.category,
-			question.outputSection,
-			"仕様確認",
-		);
-		const key = toKebabId(category, `section-${grouped.size + 1}`);
-		grouped.set(key, [...(grouped.get(key) || []), question]);
-	}
-
-	return {
-		version: 1,
-		source: {
-			taskId,
-			repositoryId,
-			sourceKind:
-				stringOrNull(source.sourceKind) ||
-				fallbackSource?.sourceKind ||
-				"plan_mode_intake",
-			blueprintMessageId:
-				stringOrNull(source.blueprintMessageId) ||
-				fallbackSource?.sourceBlueprintMessageId ||
-				null,
-		},
-		title: firstNonEmptyString(raw.title, "Design Questionnaire"),
-		summary: firstNonEmptyString(
-			raw.summary,
-			"実装前に未決定仕様を確認します。",
-		),
-		questionSets: [...grouped.entries()].map(([id, group], index) => {
-			const category = firstNonEmptyString(
-				group[0]?.category,
-				group[0]?.outputSection,
-				`Section ${index + 1}`,
-			);
-			return {
-				id,
-				title: category,
-				category,
-				purpose: `Resolve ${category} decisions before implementation.`,
-				questions: group.map((question, questionIndex) =>
-					normalizeLegacyQuestion(question, questionIndex),
-				),
-			};
-		}),
-		openQuestions: [],
-		dataModelHandoffNotes: normalizeLegacyDataModelHandoffNotes(
-			raw.dataModelHandoffNotes,
-			questions,
-		),
-	};
-}
-
-function normalizeLegacyQuestion(
-	question: Record<string, unknown>,
-	index: number,
-) {
-	const choices = Array.isArray(question.choices)
-		? question.choices.filter(isRecord)
-		: [];
-	const options = choices.map((choice, choiceIndex) => {
-		const label = firstNonEmptyString(
-			choice.label,
-			choice.title,
-			`Option ${choiceIndex + 1}`,
-		);
-		const recommended =
-			stringOrNull(question.recommendedAnswer) === label ||
-			stringOrNull(question.recommendedAnswerId) === stringOrNull(choice.id) ||
-			Boolean(choice.recommended);
-		return {
-			id: toKebabId(
-				firstNonEmptyString(choice.id, label),
-				`option-${choiceIndex + 1}`,
-			),
-			label,
-			tradeoff: firstNonEmptyString(
-				choice.tradeoff,
-				choice.description,
-				"選択時の影響を確認してください。",
-			),
-			...(recommended ? { recommended: true } : {}),
-		};
-	});
-	const recommendedOption = options.find((option) => option.recommended);
-	const answerType = options.length > 0 ? "single_choice" : "free_text";
-	return {
-		id: toKebabId(
-			firstNonEmptyString(question.id, question.topic, `question-${index + 1}`),
-			`question-${index + 1}`,
-		),
-		topic: firstNonEmptyString(
-			question.topic,
-			question.category,
-			question.outputSection,
-			`Question ${index + 1}`,
-		),
-		question: firstNonEmptyString(
-			question.question,
-			question.title,
-			`Question ${index + 1}`,
-		),
-		why: firstNonEmptyString(
-			question.why,
-			question.reason,
-			"実装前に仕様判断が必要です。",
-		),
-		answerType,
-		...(recommendedOption ? { recommendedAnswerId: recommendedOption.id } : {}),
-		...(options.length > 0 ? { options } : {}),
-		allowsCustomAnswer: true,
-		blocks: normalizeStringArray(question.blocks, ["実装方針"]),
-		outputSection: firstNonEmptyString(
-			question.outputSection,
-			question.category,
-			"specification",
-		),
-	};
-}
-
-function normalizeLegacyDataModelHandoffNotes(
-	value: unknown,
-	questions: Record<string, unknown>[],
-) {
-	const notes = Array.isArray(value) ? value : [];
-	const firstQuestionId = toKebabId(
-		firstNonEmptyString(questions[0]?.id, "question-1"),
-		"question-1",
-	);
-	return notes.map((note, index) => {
-		if (isRecord(note)) {
-			return {
-				id: toKebabId(
-					firstNonEmptyString(
-						note.id,
-						note.summary,
-						`data-model-note-${index + 1}`,
-					),
-					`data-model-note-${index + 1}`,
-				),
-				summary: firstNonEmptyString(
-					note.summary,
-					note.constraint,
-					`Data Model note ${index + 1}`,
-				),
-				sourceQuestionIds: normalizeStringArray(note.sourceQuestionIds, [
-					firstQuestionId,
-				]).map((id, idIndex) => toKebabId(id, `question-${idIndex + 1}`)),
-				constraint: firstNonEmptyString(
-					note.constraint,
-					note.summary,
-					`Data Model note ${index + 1}`,
-				),
-			};
-		}
-		return {
-			id: `data-model-note-${index + 1}`,
-			summary: String(note || `Data Model note ${index + 1}`),
-			sourceQuestionIds: [firstQuestionId],
-			constraint: String(note || `Data Model note ${index + 1}`),
-		};
-	});
-}
-
-function firstNonEmptyString(...values: unknown[]) {
-	for (const value of values) {
-		if (typeof value === "string" && value.trim()) return value.trim();
-	}
-	return "";
-}
-
-function stringOrNull(value: unknown) {
-	return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function normalizeStringArray(value: unknown, fallback: string[]) {
-	if (!Array.isArray(value)) return fallback;
-	const strings = value.filter(
-		(item): item is string => typeof item === "string" && Boolean(item.trim()),
-	);
-	return strings.length > 0 ? strings : fallback;
-}
-
 export function toKebabId(value: string, fallback: string) {
 	const normalized = value
 		.normalize("NFKD")
@@ -364,10 +143,6 @@ export function toQuestionnaireDecisionKey(value: string, fallback: string) {
 		.replace(/[._-]{2,}/g, ".")
 		.replace(/^[._-]+|[._-]+$/g, "");
 	return normalized || fallback;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export function parseDesignDecisionReviewRaw(

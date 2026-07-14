@@ -129,27 +129,52 @@ export async function generateBlueprintArtifact(
 			error instanceof MockBlueprintDraftGenerationError &&
 			error.rawOutput?.trim()
 		) {
-			await createPlanModeTaskMessage({
-				taskId,
-				role: "assistant",
-				content: error.rawOutput.trim(),
-				messageType: "text",
-				payloadJson: {
-					intent: "mock_blueprint_raw_output",
-					source: "status",
-					validationStatus: "failed",
-					error: message,
-					rawOutputBytes: Buffer.byteLength(error.rawOutput.trim(), "utf8"),
-					rawOutputPreview: error.rawOutput.trim().slice(0, 500),
-					questionnaireSessionId: session?.id ?? null,
-					sourceBlueprintMessageId: input.sourceBlueprintMessageId ?? null,
-					userRegenerationRequest: input.prompt?.trim() || null,
-					promptDiagnostics: error.promptDiagnostics,
-				},
-				trace: input.trace,
-			});
+			const attempts = error.attempts.length
+				? error.attempts
+				: [
+						{
+							attempt: 1,
+							rawText: error.rawOutput,
+							extractedText: null,
+							repairedText: null,
+							repairKind: null,
+						},
+					];
+			for (const attempt of attempts) {
+				const rawText = attempt.rawText.trim();
+				if (!rawText) continue;
+				await createPlanModeTaskMessage({
+					taskId,
+					role: "assistant",
+					content: rawText,
+					messageType: "text",
+					payloadJson: {
+						intent: "mock_blueprint_raw_output",
+						source: "status",
+						attempt: attempt.attempt,
+						validationStatus: "failed",
+						validationIssues:
+							error.validationByAttempt.find(
+								(item) => item.attempt === attempt.attempt,
+							)?.issues ?? [],
+						repairKind: attempt.repairKind,
+						rawOutputBytes: Buffer.byteLength(rawText, "utf8"),
+						rawOutputPreview: rawText.slice(0, 500),
+						questionnaireSessionId: session?.id ?? null,
+						sourceBlueprintMessageId: input.sourceBlueprintMessageId ?? null,
+						userRegenerationRequest: input.prompt?.trim() || null,
+						promptDiagnostics: error.promptDiagnostics,
+					},
+					trace: input.trace,
+				});
+			}
 		}
-		throw new AppError(502, "SPECIFICATION_BLUEPRINT_FAILED", message);
+		throw new AppError(502, "SPECIFICATION_BLUEPRINT_FAILED", message, {
+			responseTextOrigin:
+				error instanceof MockBlueprintDraftGenerationError
+					? "llm"
+					: "application",
+		});
 	}
 }
 

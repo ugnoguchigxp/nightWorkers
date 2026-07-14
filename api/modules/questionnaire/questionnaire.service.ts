@@ -1,7 +1,10 @@
 import {
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
+	designDecisionReviewSchema,
 	designQuestionnaireAnswerSchema,
+	designQuestionnaireFollowUpDecisionSchema,
+	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
@@ -14,7 +17,8 @@ import {
 	buildDesignQuestionnaireReviewUserPrompt,
 	buildDesignQuestionnaireSystemPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -102,7 +106,9 @@ export async function createDesignQuestionnaire(
 		role: options.role ?? "plan",
 		usageTrace: options.usageTrace,
 	}).catch(async (error) => {
-		const rawContent = (error as Error & { rawContent?: string }).rawContent;
+		const rawContent =
+			(error as Error & { rawContent?: string; rawText?: string }).rawText ??
+			(error as Error & { rawContent?: string }).rawContent;
 		if (rawContent?.trim()) return rawContent;
 		throw error;
 	});
@@ -487,12 +493,13 @@ async function generateDesignQuestionnaireRawOutput(input: {
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
-	return callStructuredJsonLLM(
+	return generateQuestionnaireRawOutput(
 		buildDesignQuestionnaireSystemPrompt(),
 		buildDesignQuestionnaireInitialUserPrompt(input),
 		{
-			schemaName: "design_questionnaire",
-			schema: questionnaireChoiceFormJsonSchema,
+			name: "design_questionnaire",
+			runtimeSchema: questionnaireChoiceFormSchema,
+			providerJsonSchema: questionnaireChoiceFormJsonSchema,
 			taskId: input.taskId,
 			role: input.role,
 			usageTrace: input.usageTrace,
@@ -510,7 +517,7 @@ async function generateDesignQuestionnaireFollowUpRawOutput(
 	const planModeContext = buildQuestionnairePlanModeContext(
 		await listPlanModeTaskMessages(session.taskId),
 	);
-	return callStructuredJsonLLM(
+	return generateQuestionnaireRawOutput(
 		buildDesignQuestionnaireSystemPrompt(),
 		buildDesignQuestionnaireFollowUpUserPrompt(
 			session,
@@ -518,8 +525,9 @@ async function generateDesignQuestionnaireFollowUpRawOutput(
 			planModeContext,
 		),
 		{
-			schemaName: "design_questionnaire_follow_up",
-			schema: questionnaireChoiceFormJsonSchema,
+			name: "design_questionnaire_follow_up",
+			runtimeSchema: questionnaireChoiceFormSchema,
+			providerJsonSchema: questionnaireChoiceFormJsonSchema,
 			taskId: session.taskId,
 			role: "plan",
 		},
@@ -535,7 +543,7 @@ async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 	const planModeContext = buildQuestionnairePlanModeContext(
 		await listPlanModeTaskMessages(session.taskId),
 	);
-	return callStructuredJsonLLM(
+	return generateQuestionnaireRawOutput(
 		buildDesignQuestionnaireFollowUpDecisionSystemPrompt(),
 		buildDesignQuestionnaireFollowUpDecisionUserPrompt(
 			session,
@@ -543,8 +551,9 @@ async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 			planModeContext,
 		),
 		{
-			schemaName: "design_questionnaire_follow_up_decision",
-			schema: designQuestionnaireFollowUpDecisionJsonSchema,
+			name: "design_questionnaire_follow_up_decision",
+			runtimeSchema: designQuestionnaireFollowUpDecisionSchema,
+			providerJsonSchema: designQuestionnaireFollowUpDecisionJsonSchema,
 			taskId: session.taskId,
 			role: "plan",
 		},
@@ -554,14 +563,46 @@ async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 async function generateDesignQuestionnaireReviewRawOutput(
 	session: DesignQuestionnaireSession,
 ) {
-	return callStructuredJsonLLM(
+	return generateQuestionnaireRawOutput(
 		buildDesignQuestionnaireReviewSystemPrompt(),
 		buildDesignQuestionnaireReviewUserPrompt(session),
 		{
-			schemaName: "design_decision_review",
-			schema: designDecisionReviewJsonSchema,
+			name: "design_decision_review",
+			runtimeSchema: designDecisionReviewSchema,
+			providerJsonSchema: designDecisionReviewJsonSchema,
 			taskId: session.taskId,
 			role: "review",
 		},
 	);
+}
+
+async function generateQuestionnaireRawOutput<T>(
+	systemPrompt: string,
+	userPrompt: string,
+	input: {
+		name: string;
+		runtimeSchema: import("zod").ZodType<T>;
+		providerJsonSchema: unknown;
+		taskId: string;
+		role: StructuredLlmRole;
+		usageTrace?: TraceProvenance;
+		routeOverride?: StructuredLlmModelTarget | null;
+	},
+) {
+	const generated = await callStructuredOutputWithRepair({
+		systemPrompt,
+		userPrompt,
+		options: {
+			contract: createStructuredOutputContract({
+				name: input.name,
+				runtimeSchema: input.runtimeSchema,
+				providerJsonSchema: input.providerJsonSchema,
+			}),
+			taskId: input.taskId,
+			role: input.role,
+			usageTrace: input.usageTrace,
+			routeOverride: input.routeOverride,
+		},
+	});
+	return generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
 }

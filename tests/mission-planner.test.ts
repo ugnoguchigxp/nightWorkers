@@ -11,25 +11,32 @@ const structuredLlmFixture = vi.hoisted(() => ({
 vi.mock("../api/services/structured-llm", async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import("../api/services/structured-llm")>();
+	const { createStructuredLlmResultMock } = await import(
+		"./helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn(
+		async (_systemPrompt, _userPrompt, options) => {
+			await options.emitEvent?.({
+				type: "model.request_started",
+				severity: "info",
+				message: "fixture request started",
+				data: {
+					provider: "fixture",
+					providerEndpointId: "fixture-mission-planner",
+					routeSource: "primary",
+					model: "fixture-mission-planner-model",
+				},
+			});
+			const next = structuredLlmFixture.outputs.shift();
+			if (!next) throw new Error("No Mission Planner fixture output queued");
+			return JSON.stringify(next);
+		},
+	);
 	return {
 		...actual,
-		callStructuredJsonLLM: vi.fn(
-			async (_systemPrompt, _userPrompt, options) => {
-				await options.emitEvent?.({
-					type: "model.request_started",
-					severity: "info",
-					message: "fixture request started",
-					data: {
-						provider: "fixture",
-						providerEndpointId: "fixture-mission-planner",
-						routeSource: "primary",
-						model: "fixture-mission-planner-model",
-					},
-				});
-				const next = structuredLlmFixture.outputs.shift();
-				if (!next) throw new Error("No Mission Planner fixture output queued");
-				return JSON.stringify(next);
-			},
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
 		),
 	};
 });
@@ -269,12 +276,10 @@ describe("Mission Planner schemas and validation", () => {
 		).toBe("pass");
 	});
 
-	it("still requires approval for migration work", () => {
+	it("requires approval when the planning contract marks work as high risk", () => {
 		const fixture = planningResultFixture();
-		fixture.taskProposals[0].risk = "low";
+		fixture.taskProposals[0].risk = "high";
 		fixture.taskProposals[0].approvalRequired = false;
-		fixture.taskProposals[0].initialPrompt =
-			"database migration で既存 schema を移行する。";
 		const report = validateMissionPlanningResult(fixture);
 
 		expect(

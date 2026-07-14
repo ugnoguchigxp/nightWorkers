@@ -69,6 +69,16 @@ describe("structured LLM JSON helpers", () => {
 			expect(parsed.rawOutput).toBe('{"title":"x","questions":[]}');
 	});
 
+	it("keeps explicit workflow compatibility defaults in the repair parser", () => {
+		const parsed = parseRepairedJsonWithSchema(
+			'{"questions":[{"text":"範囲は？","type":"radio","options":["A","B"]}]}',
+			questionnaireChoiceFormSchema,
+		);
+
+		expect(parsed.ok).toBe(true);
+		if (parsed.ok) expect(parsed.value.title).toBe("実装前に決めたいこと");
+	});
+
 	it("disposes structured LLM timeout signals after use", async () => {
 		const handle = createStructuredLlmAbortSignal({ timeoutMs: 20 });
 		handle.dispose();

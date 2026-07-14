@@ -1,0 +1,23 @@
+import type {
+	StructuredLlmIssue,
+	StructuredOutputContract,
+} from "../../structured-llm";
+
+export function buildStructuredOutputRepairPrompt<T>(input: {
+	contract: StructuredOutputContract<T>;
+	rawText: string;
+	issues: StructuredLlmIssue[];
+}) {
+	return {
+		systemPrompt: [
+			"あなたは構造化応答の修復を担当します。",
+			"元の回答の意味、判断、主張、自由記述を維持し、JSON構文・契約・参照不整合だけを直してください。",
+			"不足情報を推測で創作したり、アプリケーション都合の別回答へ置き換えたりしないでください。",
+			input.contract.renderOutputRequirements(),
+		].join("\n"),
+		userPrompt: JSON.stringify({
+			originalResponse: input.rawText,
+			validationIssues: input.issues,
+		}),
+	};
+}

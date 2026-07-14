@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
 	buildNormalizedSupervisorLlmRequest,
 	callProviderToolTurn,
-	callStructuredJsonLLM,
+	callStructuredLlmResult,
+	createStructuredOutputContract,
 } from "../../../api/services/structured-llm";
 import "./setup";
 
@@ -27,12 +29,11 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 		);
 		process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({ ok: true });
 
-		const rawOutput = await callStructuredJsonLLM("system", "user", {
-			schemaName: "example_schema",
-			schema: { type: "object" },
+		const result = await callStructuredLlmResult("system", "user", {
+			contract: exampleContract(),
 		});
 
-		expect(JSON.parse(rawOutput)).toEqual({ ok: true });
+		expect(result).toMatchObject({ ok: true, value: { ok: true } });
 	});
 
 	it("allows local OpenAI-compatible endpoints without an API key", async () => {
@@ -81,13 +82,12 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-		const rawOutput = await callStructuredJsonLLM("system", "user", {
-			schemaName: "example_schema",
-			schema: { type: "object" },
+		const result = await callStructuredLlmResult("system", "user", {
+			contract: exampleContract(),
 			role: "implementation",
 		});
 
-		expect(JSON.parse(rawOutput)).toEqual({ ok: true });
+		expect(result).toMatchObject({ ok: true, value: { ok: true } });
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
@@ -141,13 +141,12 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-		const rawOutput = await callStructuredJsonLLM("system", "user", {
-			schemaName: "example_schema",
-			schema: { type: "object" },
+		const result = await callStructuredLlmResult("system", "user", {
+			contract: exampleContract(),
 			role: "implementation",
 		});
 
-		expect(JSON.parse(rawOutput)).toEqual({ ok: true });
+		expect(result).toMatchObject({ ok: true, value: { ok: true } });
 		expect(requestBodies[0]).not.toHaveProperty("temperature");
 		expect(requestBodies[0]).toMatchObject({
 			reasoning_effort: "low",
@@ -313,3 +312,10 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });
+
+function exampleContract() {
+	return createStructuredOutputContract({
+		name: "example_schema",
+		runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+	});
+}

@@ -5,14 +5,16 @@ import {
 	dataModelArtifactSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import { AppError, NotFoundError } from "../../lib/errors";
+import { NotFoundError } from "../../lib/errors";
 import {
 	buildDataModelSystemPrompt,
 	buildDataModelUserPrompt,
 	DATA_MODEL_PROMPT_VERSION,
 	renderDataModelArtifactMarkdown,
 } from "../../services/structured-generation/prompts/data-model";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { createStructuredGenerationAppError } from "../../services/structured-generation/structured-generation-error";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import type {
@@ -201,6 +203,7 @@ async function generateArtifactFromLlm(input: {
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
+	let lastRawOutput: string | null = null;
 	try {
 		const schema = buildDataModelResponseJsonSchema();
 		let repairContext: string | null = null;
@@ -210,21 +213,32 @@ async function generateArtifactFromLlm(input: {
 			attempt <= DATA_MODEL_MERMAID_MAX_ATTEMPTS;
 			attempt += 1
 		) {
-			const rawOutput = await callStructuredJsonLLM(
-				buildDataModelSystemPrompt(JSON.stringify(schema, null, 2)),
-				buildDataModelUserPrompt({ ...input, repairContext }),
-				{
-					schemaName: "plan_mode_data_model",
-					schema,
+			const generated = await callStructuredOutputWithRepair({
+				systemPrompt: buildDataModelSystemPrompt(
+					JSON.stringify(schema, null, 2),
+				),
+				userPrompt: buildDataModelUserPrompt({ ...input, repairContext }),
+				options: {
+					contract: createStructuredOutputContract({
+						name: "plan_mode_data_model",
+						runtimeSchema: dataModelArtifactSchema,
+						providerJsonSchema: schema,
+					}),
 					taskId: input.taskId,
 					runId: null,
 					role: input.role,
 					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
 				},
-			);
+			});
+			const rawOutput =
+				generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
+			lastRawOutput = rawOutput;
 			try {
-				const artifact = parseDataModelOutput(rawOutput);
+				const artifact = generated.value;
+				if (artifact.canonicalSource === "ddl" && !artifact.ddl?.trim()) {
+					throw new Error("DDL-backed Data Model output must include ddl.");
+				}
 				const mermaidError = await validateDataModelMermaidArtifact(artifact);
 				if (!mermaidError) return artifact;
 				lastError = new Error(mermaidError.error);
@@ -242,10 +256,12 @@ async function generateArtifactFromLlm(input: {
 			? lastError
 			: new Error("Data Model generation failed.");
 	} catch (err) {
-		if (err instanceof AppError) throw err;
-		const message =
-			err instanceof Error ? err.message : "Data Model generation failed.";
-		throw new AppError(502, "DATA_MODEL_GENERATION_FAILED", message);
+		throw createStructuredGenerationAppError({
+			code: "DATA_MODEL_GENERATION_FAILED",
+			fallbackMessage: "Data Model generation failed.",
+			error: err,
+			lastRawText: lastRawOutput,
+		});
 	}
 }
 

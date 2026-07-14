@@ -7,8 +7,9 @@ import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../services/settings/general-settings";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import {
-	callStructuredJsonLLM,
+	createStructuredOutputContract,
 	type SupervisorLlmDebugEvent,
 } from "../../services/structured-llm";
 import type { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
@@ -104,50 +105,53 @@ export function isPlanModeArtifactRegenerationContext(
 const workbenchPlanModeGateSchema = z
 	.object({
 		shouldStartPlanMode: z.boolean(),
-		action: z
-			.enum(["plan_mode", "general_answer", "implementation", "review"])
-			.optional(),
+		action: z.enum(["plan_mode", "general_answer", "implementation", "review"]),
 		reason: z.string().min(1),
-		dedicatedViews: z
-			.array(
-				z
-					.object({
-						view: z.enum([
-							"questionnaire",
-							"user_flow",
-							"blueprint",
-							"data_model",
-							"api_io_contract",
-							"activity_flow",
-							"sequence_flow",
-							"zod_schema_design",
-						]),
-						decision: z.enum(["include", "omit"]),
-						reason: z.string().min(1),
-					})
-					.strict(),
-			)
-			.default([]),
-		specificationLenses: z
-			.array(
-				z.enum([
-					"target_users_or_actors",
-					"functional_requirements",
-					"business_rules",
-					"input_output",
-					"interface_contract",
-					"data_requirements",
-					"state_behavior",
-					"workflow_behavior",
-					"error_behavior",
-					"permission_boundary",
-					"compatibility",
-					"observability",
-				]),
-			)
-			.default([]),
+		dedicatedViews: z.array(
+			z
+				.object({
+					view: z.enum([
+						"questionnaire",
+						"user_flow",
+						"blueprint",
+						"data_model",
+						"api_io_contract",
+						"activity_flow",
+						"sequence_flow",
+						"zod_schema_design",
+					]),
+					decision: z.enum(["include", "omit"]),
+					reason: z.string().min(1),
+				})
+				.strict(),
+		),
+		specificationLenses: z.array(
+			z.enum([
+				"target_users_or_actors",
+				"functional_requirements",
+				"business_rules",
+				"input_output",
+				"interface_contract",
+				"data_requirements",
+				"state_behavior",
+				"workflow_behavior",
+				"error_behavior",
+				"permission_boundary",
+				"compatibility",
+				"observability",
+			]),
+		),
 	})
-	.strict();
+	.strict()
+	.superRefine((value, context) => {
+		if (value.shouldStartPlanMode === (value.action === "plan_mode")) return;
+		context.addIssue({
+			code: "custom",
+			path: ["action"],
+			message:
+				"shouldStartPlanMode and action must describe the same decision.",
+		});
+	});
 export type WorkbenchPlanModeGate = z.infer<
 	typeof workbenchPlanModeGateSchema
 > & {
@@ -165,75 +169,14 @@ export async function decideWorkbenchPlanModeGate(input: {
 	role?: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }): Promise<WorkbenchPlanModeGate> {
-	const raw = await callStructuredJsonLLM(
-		buildWorkbenchPlanModeGatePrompt(input.projectRoot),
-		buildWorkbenchPlanModeGateUserPrompt(input),
-		{
-			schemaName: "workbench_plan_mode_gate",
-			schema: {
-				type: "object",
-				required: [
-					"shouldStartPlanMode",
-					"action",
-					"reason",
-					"dedicatedViews",
-					"specificationLenses",
-				],
-				additionalProperties: false,
-				properties: {
-					shouldStartPlanMode: { type: "boolean" },
-					action: {
-						type: "string",
-						enum: ["plan_mode", "general_answer", "implementation", "review"],
-					},
-					reason: { type: "string" },
-					dedicatedViews: {
-						type: "array",
-						items: {
-							type: "object",
-							required: ["view", "decision", "reason"],
-							additionalProperties: false,
-							properties: {
-								view: {
-									type: "string",
-									enum: [
-										"questionnaire",
-										"user_flow",
-										"blueprint",
-										"data_model",
-										"api_io_contract",
-										"activity_flow",
-										"sequence_flow",
-										"zod_schema_design",
-									],
-								},
-								decision: { type: "string", enum: ["include", "omit"] },
-								reason: { type: "string" },
-							},
-						},
-					},
-					specificationLenses: {
-						type: "array",
-						items: {
-							type: "string",
-							enum: [
-								"target_users_or_actors",
-								"functional_requirements",
-								"business_rules",
-								"input_output",
-								"interface_contract",
-								"data_requirements",
-								"state_behavior",
-								"workflow_behavior",
-								"error_behavior",
-								"permission_boundary",
-								"compatibility",
-								"observability",
-							],
-						},
-					},
-				},
-			},
+	const generated = await callStructuredOutputWithRepair({
+		systemPrompt: buildWorkbenchPlanModeGatePrompt(input.projectRoot),
+		userPrompt: buildWorkbenchPlanModeGateUserPrompt(input),
+		options: {
+			contract: createStructuredOutputContract({
+				name: "workbench_plan_mode_gate",
+				runtimeSchema: workbenchPlanModeGateSchema,
+			}),
 			role: input.role ?? "plan",
 			usageTrace: input.usageTrace,
 			routeOverride: input.routeOverride,
@@ -243,14 +186,8 @@ export async function decideWorkbenchPlanModeGate(input: {
 			taskId: input.taskId,
 			runId: null,
 		},
-	);
-	const parsed = workbenchPlanModeGateSchema.parse(JSON.parse(raw));
-	return {
-		...parsed,
-		action: parsed.shouldStartPlanMode
-			? "plan_mode"
-			: (parsed.action ?? "implementation"),
-	};
+	});
+	return generated.value;
 }
 
 export function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {

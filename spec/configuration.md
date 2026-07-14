@@ -231,8 +231,14 @@ bun run desktop:build:windows
 
 Run `desktop:build:linux` on a Linux build host to produce `.deb`, `.rpm`, and
 AppImage artifacts. Run `desktop:build:windows` on an x64 Windows build host to
-produce NSIS and MSI installers. `desktop:check:cross-platform` is safe to run
-on macOS because it only validates config, scripts, and sidecar target metadata.
+produce NSIS and MSI installers. These platforms remain packaging candidates
+until native install/launch/shutdown smoke succeeds. `desktop:check:cross-platform`
+is safe to run on macOS because it only validates config, scripts, and sidecar
+target metadata.
 `bun run desktop:build:dmg` is kept as a separate release gate because DMG
 creation can fail on local mount/Finder state. `bun run desktop:sign` requires
-`NIGHTWORKERS_DESKTOP_APP_PATH` and `APPLE_DEVELOPER_ID_APPLICATION`.
+`NIGHTWORKERS_DESKTOP_APP_PATH`, `APPLE_DEVELOPER_ID_APPLICATION`, and an
+`APPLE_NOTARYTOOL_PROFILE`; it fails closed when notarization cannot be
+verified. In a packaged release, runtime data is stored in Tauri
+`app_data_dir`, while development and test runs may override it with
+`NIGHTWORKERS_RUNTIME_DIR`.

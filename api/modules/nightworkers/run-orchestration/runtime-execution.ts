@@ -432,23 +432,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				? "finalizing"
 				: statusBeforeFinalize;
 			assertRunStatusTransition(statusBeforeOutcome, guardedStatus);
-			await repo.updateTaskRun(run.id, {
-				status: guardedStatus,
-				endedAt: new Date(),
-				finishedAt: new Date(),
-				contextSnapshot: mergeRuntimeContractSnapshot(
-					contextSnapshotWithBoundaryAudit,
-					finalContractWarnings,
-					{ lane: runtimeLaneResolution.lane },
-				),
-				finalReport,
-				finalJudgment: null,
-				summary: todoFinalizationBlocked
-					? "Runtime finished without explicitly closing all open Todos."
-					: securityFinalizationBlocked
-						? "Security Oracle gate did not allow implementation finalization."
-						: runtimeResult.summary || outcome.summary,
-			});
 			if (todoFinalizationBlocked) {
 				await repo.createRunEvent({
 					version: 1,
@@ -562,6 +545,26 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				runtimeLaneResolution,
 				taskId,
 				runId: run.id,
+			});
+			// Publish the terminal status only after all closeout writes have
+			// completed. Consumers use a terminal run as a handoff boundary and
+			// must not start the next mode while this run still owns SQLite writes.
+			await repo.updateTaskRun(run.id, {
+				status: guardedStatus,
+				endedAt: new Date(),
+				finishedAt: new Date(),
+				contextSnapshot: mergeRuntimeContractSnapshot(
+					contextSnapshotWithBoundaryAudit,
+					finalContractWarnings,
+					{ lane: runtimeLaneResolution.lane },
+				),
+				finalReport,
+				finalJudgment: null,
+				summary: todoFinalizationBlocked
+					? "Runtime finished without explicitly closing all open Todos."
+					: securityFinalizationBlocked
+						? "Security Oracle gate did not allow implementation finalization."
+						: runtimeResult.summary || outcome.summary,
 			});
 		} catch (err: unknown) {
 			await handleRuntimeExecutionFailure({

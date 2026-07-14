@@ -7,6 +7,7 @@ export type NightWorkersRuntimePaths = {
 	logsDir: string;
 	secretsDir: string;
 	artifactsDir: string;
+	backupsDir: string;
 };
 
 export function isDesktopMode(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -37,6 +38,7 @@ export function getRuntimePaths(
 		logsDir: path.join(runtimeRoot, "logs"),
 		secretsDir: path.join(runtimeRoot, "secrets"),
 		artifactsDir: path.join(runtimeRoot, "artifacts"),
+		backupsDir: path.join(runtimeRoot, "backups"),
 	};
 }
 

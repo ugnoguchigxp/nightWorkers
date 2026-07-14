@@ -388,26 +388,15 @@ describe("Project Detail backend mission core", () => {
 				status: "draft",
 				createdBy: "mission-task-candidate",
 			});
+			expect(created.tasks[0].objective).toContain("[Mission Goal]");
+			expect(created.tasks[0].objective).toContain("[Task Candidate]");
 			expect(created.tasks[0].objective).toContain(
-				"package.json に coverage と E2E scripts を追加してください。",
-			);
-			expect(created.tasks[0].objective).toContain("[作るもの]");
-			expect(created.tasks[0].objective).toContain(
-				"package.json に coverage と E2E scripts を追加する。",
-			);
-			expect(created.tasks[0].objective).toContain("[Planで確認すること]");
-			expect(created.tasks[0].objective).toContain("- 入口画面または route");
-			expect(created.tasks[0].objective).toContain("- データモデル");
-			expect(created.tasks[0].objective).toContain("- 保存方式");
-			expect(created.tasks[0].objective).toContain("- 完了状態の表現");
-			expect(created.tasks[0].objective).toContain(
-				"- 編集、削除、並び替えの初期範囲",
+				"package.json に coverage と E2E scripts を追加する",
 			);
 			expect(created.tasks[0].objective).toContain(
-				"- unit / schema / e2e の検証範囲",
+				"package.json に test:coverage と test:e2e scripts を追加してください。",
 			);
-			expect(created.tasks[0].objective).toContain("[実装上の注意]");
-			expect(created.tasks[0].objective).toContain("未確認の仕様は固定せず");
+			expect(created.tasks[0].objective).not.toContain("[Planで確認すること]");
 			expect(created.tasks[0].objective).toContain("[完了条件]");
 			expect(created.tasks[0].objective).toContain(
 				"Quality capability が runnable として検出される。",
@@ -491,11 +480,10 @@ describe("Project Detail backend mission core", () => {
 					body: JSON.stringify({}),
 				},
 			);
-			expect(secondGenerateRes.status).toBe(201);
-			const secondGenerated = (await secondGenerateRes.json()) as {
-				candidates: Array<{ id: string; title: string }>;
-			};
-			expect(secondGenerated.candidates).toHaveLength(0);
+			expect(secondGenerateRes.status).toBe(502);
+			expect(await secondGenerateRes.text()).toContain(
+				"package.json に coverage と E2E scripts を追加する",
+			);
 
 			const candidatesRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/mission-task-candidates`,
@@ -610,11 +598,10 @@ describe("Project Detail backend mission core", () => {
 					body: JSON.stringify({}),
 				},
 			);
-			expect(generateRes.status).toBe(201);
-			const generated = (await generateRes.json()) as {
-				candidates: Array<{ id: string; title: string }>;
-			};
-			expect(generated.candidates).toHaveLength(0);
+			expect(generateRes.status).toBe(502);
+			expect(await generateRes.text()).toContain(
+				"package.json に coverage と E2E scripts を追加する",
+			);
 
 			const candidatesRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/mission-task-candidates`,

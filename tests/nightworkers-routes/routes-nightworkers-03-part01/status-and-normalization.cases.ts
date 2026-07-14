@@ -503,7 +503,7 @@ describe("NightWorkers task routes status and normalization", () => {
 		}
 	});
 
-	it("normalizes legacy flat Design Questionnaire output into grouped question sets", async () => {
+	it("preserves invalid legacy Design Questionnaire output without semantic fabrication", async () => {
 		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
 		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
 		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -564,35 +564,14 @@ describe("NightWorkers task routes status and normalization", () => {
 
 			expect(createRes.status).toBe(201);
 			const session = await createRes.json();
-			expect(session.status).toBe("answering");
+			expect(session.status).toBe("needs_edit");
 			expect(session.questionSets[0]).toMatchObject({
-				validationStatus: "valid",
+				validationStatus: "invalid",
+				questionnaire: null,
 			});
-			const questionnaire = session.questionSets[0].questionnaire;
-			expect(questionnaire.source).toMatchObject({
-				taskId: task.id,
-				repositoryId: createdRepo.id,
-				sourceKind: "plan_mode_intake",
-			});
-			expect(questionnaire.questionSets[0].questions[0]).toMatchObject({
-				id: "product-scope-and-users",
-				topic: "プロダクト範囲",
-				answerType: "single_choice",
-				recommendedAnswerId: "option-1",
-			});
-			expect(questionnaire.questionSets[0].questions[0].options).toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({
-						id: "option-1",
-						label: "個人利用",
-						recommended: true,
-					}),
-				]),
+			expect(session.questionSets[0].rawOutput).toBe(
+				process.env.SUPERVISOR_FIXTURE_OUTPUT,
 			);
-			expect(questionnaire.dataModelHandoffNotes[0]).toMatchObject({
-				id: "data-model-note-1",
-				sourceQuestionIds: ["product-scope-and-users"],
-			});
 		} finally {
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

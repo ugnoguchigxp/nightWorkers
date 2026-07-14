@@ -4,11 +4,12 @@ import {
 	FEATURE_PLAN_LLM_TIMEOUT_MS,
 	generateFeaturePlanArtifact,
 } from "../api/modules/specification/specification-generation.service";
-import { callStructuredJsonLLM } from "../api/services/structured-llm";
+import { callStructuredOutputWithRepair } from "../api/services/structured-generation/structured-output-repair.service";
 
-vi.mock("../api/services/structured-llm", () => ({
-	callStructuredJsonLLM: vi.fn(),
-}));
+vi.mock(
+	"../api/services/structured-generation/structured-output-repair.service",
+	() => ({ callStructuredOutputWithRepair: vi.fn() }),
+);
 
 vi.mock(
 	"../api/modules/nightworkers/nightworkers.verification.repository",
@@ -79,35 +80,39 @@ vi.mock("../api/modules/specification/plan-mode-workspace.service", () => ({
 
 describe("Feature Plan generation timeout handling", () => {
 	beforeEach(() => {
-		vi.mocked(callStructuredJsonLLM).mockReset();
+		vi.mocked(callStructuredOutputWithRepair).mockReset();
 	});
 
 	it("uses an extended timeout for specification document generation", async () => {
-		vi.mocked(callStructuredJsonLLM).mockResolvedValueOnce(
-			JSON.stringify({
+		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
+			value: {
 				title: "Todo List Feature Plan",
 				content:
 					"# Todo List Feature Plan\n\n## DDL\nData Model DDL reference は未生成です。",
-			}),
-		);
+			},
+			attempts: [],
+		});
 
 		await generateFeaturePlanArtifact("task-1");
 
-		expect(callStructuredJsonLLM).toHaveBeenCalledWith(
-			expect.any(String),
-			expect.any(String),
+		expect(callStructuredOutputWithRepair).toHaveBeenCalledWith(
 			expect.objectContaining({
-				schemaName: "specification_document",
-				role: "plan",
-				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
+				systemPrompt: expect.any(String),
+				userPrompt: expect.any(String),
+				options: expect.objectContaining({
+					role: "plan",
+					timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
+				}),
 			}),
 		);
+		const call = vi.mocked(callStructuredOutputWithRepair).mock.calls[0]?.[0];
+		expect(call.options.contract.name).toBe("specification_document");
 	});
 
 	it("returns a gateway timeout error when the provider aborts", async () => {
 		const abortError = new Error("The operation was aborted.");
 		abortError.name = "AbortError";
-		vi.mocked(callStructuredJsonLLM).mockRejectedValueOnce(abortError);
+		vi.mocked(callStructuredOutputWithRepair).mockRejectedValueOnce(abortError);
 
 		await expect(generateFeaturePlanArtifact("task-1")).rejects.toMatchObject({
 			statusCode: 504,

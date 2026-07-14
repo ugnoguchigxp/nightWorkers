@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { createE2eWorkspaceDirectory } from "./helpers";
+import {
+	createE2eWorkspaceDirectory,
+	initializeE2eGitRepository,
+} from "./helpers";
 
 const sameOriginHeaders = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
@@ -21,7 +24,7 @@ async function createDisposableGitWorkspace(): Promise<string> {
 		"TODO\n",
 		"utf-8",
 	);
-	execFileSync("git", ["init"], { cwd: workspaceDir, stdio: "ignore" });
+	initializeE2eGitRepository(workspaceDir);
 	execFileSync("git", ["add", "."], { cwd: workspaceDir, stdio: "ignore" });
 	execFileSync(
 		"git",
@@ -66,7 +69,7 @@ async function createDisposableLiveWorkspace(): Promise<string> {
 		"export function greet(name) {\n  return 'TODO';\n}\n",
 		"utf-8",
 	);
-	execFileSync("git", ["init"], { cwd: workspaceDir, stdio: "ignore" });
+	initializeE2eGitRepository(workspaceDir);
 	execFileSync("git", ["add", "."], { cwd: workspaceDir, stdio: "ignore" });
 	execFileSync(
 		"git",

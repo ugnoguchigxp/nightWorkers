@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import Database from "better-sqlite3";
 import { createDisposableGitWorkspace } from "./helpers";
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+	"x-nightworkers-e2e": "1",
 };
 
 test("creates a task only from the selected deterministic mission candidate", {
@@ -39,40 +38,42 @@ test("creates a task only from the selected deterministic mission candidate", {
 		);
 		expect(goalResponse.status(), await goalResponse.text()).toBe(201);
 		const goalId = ((await goalResponse.json()) as { id: string }).id;
-		const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-		if (!databasePath) throw new Error("E2E database path is required");
-		const db = new Database(databasePath);
-		const now = Date.now();
-		const batchId = randomUUID();
-		db.prepare(
-			"insert into mission_task_candidate_batches (id, created_at, updated_at, repository_id, status, requested_goal_ids_json, signal_snapshot_json, started_at, completed_at) values (?, ?, ?, ?, 'completed', ?, '{}', ?, ?)",
-		).run(batchId, now, now, repositoryId, JSON.stringify([goalId]), now, now);
-		const insertCandidate = db.prepare(
-			"insert into mission_task_candidates (id, created_at, updated_at, batch_id, repository_id, goal_id, candidate_kind, secondary_modules_json, routing_confidence_percent, constraint_goal_ids_json, plan_mode_open_questions_json, title, summary, rationale, evidence_json, importance_percent, confidence_percent, token_size, complexity, task_prompt, acceptance_criteria, verification_plan, status) values (?, ?, ?, ?, ?, ?, 'feature_followup', '[]', 100, ?, '[]', ?, ?, ?, '[]', 70, 90, 'small', 'simple', ?, ?, ?, ?)",
+		const fixtureResponse = await request.post(
+			"/api/e2e/fixtures/mission-candidates",
+			{
+				headers,
+				data: {
+					repositoryId,
+					goalId,
+					candidates: [
+						{
+							title: "Approved mission task",
+							summary: "summary",
+							rationale: "rationale",
+							taskPrompt: "Approved mission task",
+							acceptanceCriteria: "acceptance",
+							verificationPlan: "verification",
+							status: "selected",
+						},
+						{
+							title: "Dismissed mission task",
+							summary: "summary",
+							rationale: "rationale",
+							taskPrompt: "Dismissed mission task",
+							acceptanceCriteria: "acceptance",
+							verificationPlan: "verification",
+							status: "dismissed",
+						},
+					],
+				},
+			},
 		);
-		const selectedId = randomUUID();
-		const dismissedId = randomUUID();
-		for (const [id, title, status] of [
-			[selectedId, "Approved mission task", "selected"],
-			[dismissedId, "Dismissed mission task", "dismissed"],
-		] as const)
-			insertCandidate.run(
-				id,
-				now,
-				now,
-				batchId,
-				repositoryId,
-				goalId,
-				JSON.stringify([goalId]),
-				title,
-				"summary",
-				"rationale",
-				title,
-				"acceptance",
-				"verification",
-				status,
-			);
-		db.close();
+		expect(fixtureResponse.status(), await fixtureResponse.text()).toBe(201);
+		const candidateIds = (
+			(await fixtureResponse.json()) as { candidateIds: string[] }
+		).candidateIds;
+		const selectedId = candidateIds[0];
+		const dismissedId = candidateIds[1];
 		const created = await request.post(
 			`/api/repositories/${repositoryId}/mission-task-candidates/create-tasks`,
 			{ headers, data: { candidateIds: [selectedId], mode: "ready" } },

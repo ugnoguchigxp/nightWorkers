@@ -134,7 +134,11 @@ export async function updatePhase(
 	taskId: string,
 	leaseOwner: string,
 	phase: string,
-	input: { desiredState?: "playing" | "stopped"; error?: string | null } = {},
+	input: {
+		desiredState?: "playing" | "stopped";
+		error?: string | null;
+		errorTextIsModelResponse?: boolean;
+	} = {},
 ) {
 	const session = await missionPilotRepo.getSessionByTaskId(taskId);
 	if (!session) throw new Error("Mission Pilot Session is missing");
@@ -163,12 +167,15 @@ export async function updatePhase(
 				kind: "system.error",
 				source: "mission_pilot",
 				status: "failed",
-				text: `Mission PilotのPlanパイプラインが停止しました。理由: ${input.error}`,
+				text: input.errorTextIsModelResponse
+					? input.error
+					: `Mission PilotのPlanパイプラインが停止しました。理由: ${input.error}`,
 				payloadJson: {
 					source: "mission_pilot",
 					missionPilotSessionId: updated.id,
 					errorCode: "MISSION_PILOT_PLAN_PIPELINE_FAILED",
 					error: input.error,
+					errorTextIsModelResponse: input.errorTextIsModelResponse ?? false,
 					phase,
 					contextRevision: updated.contextRevision,
 					contextDigest: updated.contextDigest,

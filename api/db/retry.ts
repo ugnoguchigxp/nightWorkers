@@ -14,9 +14,16 @@ function sleep(ms: number) {
 }
 
 export function isSqliteBusyError(error: unknown) {
-	const message = error instanceof Error ? error.message : String(error);
+	const messages: string[] = [];
+	let current: unknown = error;
+	for (let depth = 0; depth < 4 && current; depth += 1) {
+		messages.push(current instanceof Error ? current.message : String(current));
+		current = current instanceof Error ? current.cause : undefined;
+	}
+	const message = messages.join("\n");
 	return (
 		message.includes("SQLITE_BUSY") ||
+		message.includes("SQLITE_IOERR") ||
 		message.includes("database is locked") ||
 		message.includes("cannot commit transaction")
 	);

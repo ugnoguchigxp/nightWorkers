@@ -4,7 +4,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import Database from "better-sqlite3";
-import { createE2eWorkspaceDirectory } from "./helpers";
+import {
+	createE2eWorkspaceDirectory,
+	initializeE2eGitRepository,
+} from "./helpers";
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
@@ -18,7 +21,7 @@ async function fixture(
 	const workspace = await createE2eWorkspaceDirectory("test-mode-");
 	await fs.mkdir(path.join(workspace, "src"), { recursive: true });
 	await fs.writeFile(path.join(workspace, "src", "greeting.txt"), "TODO\n");
-	execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+	initializeE2eGitRepository(workspace);
 	execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
 	execFileSync(
 		"git",

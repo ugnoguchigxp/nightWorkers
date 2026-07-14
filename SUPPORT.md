@@ -1,9 +1,9 @@
 # Support
 
 ## Getting Help
-- For usage questions, open a GitHub Discussion.
-- For confirmed bugs, open a GitHub Issue with reproduction details.
-- For security concerns, follow [SECURITY.md](./SECURITY.md) and use private reporting.
+- For usage questions, open a [GitHub issue](https://github.com/ugnoguchigxp/nightWorkers/issues) with the `question` label.
+- For confirmed bugs, open a [GitHub issue](https://github.com/ugnoguchigxp/nightWorkers/issues) with reproduction details.
+- For security concerns, follow [SECURITY.md](./SECURITY.md) and use the private advisory channel.
 
 ## What to Include
 - Runtime environment (OS, Bun, and Node for desktop sidecar issues)

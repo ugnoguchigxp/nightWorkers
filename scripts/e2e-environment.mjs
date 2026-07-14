@@ -125,6 +125,7 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     NIGHTWORKERS_CODEX_HOME: codexHome,
     NIGHTWORKERS_DESKTOP: '0',
     NIGHTWORKERS_EXECUTOR_MODE: 'in_process',
+    NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: 'coverage',
     DATABASE_URL: pathToFileURL(databasePath).href,
     JWT_SECRET: 'nightworkers-e2e-isolated-jwt-secret-32-chars',
     AUTH_MODE: 'local',

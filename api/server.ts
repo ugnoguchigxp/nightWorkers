@@ -15,6 +15,7 @@ import {
 } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
+import { createRuntimeDatabaseBackup } from "./runtime/bootstrap";
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
 import { mcpClientManager } from "./services/mcp/mcp-client-manager";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
@@ -138,6 +139,7 @@ export async function createNightWorkersServer(
 	const shutdownTimeoutMs =
 		options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
 
+	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
 	configureRuntimeLogRetention(readGeneralSettings().dataRetention);
 	await runRuntimeRetentionSweep({ forceUsageCleanup: true }).catch((error) => {

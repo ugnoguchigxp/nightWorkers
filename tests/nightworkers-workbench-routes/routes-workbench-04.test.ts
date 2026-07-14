@@ -20,10 +20,17 @@ vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
 		typeof import("../../api/services/structured-llm")
 	>("../../api/services/structured-llm");
+	const { createStructuredLlmResultMock } = await import(
+		"../helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn();
 	return {
 		...actual,
 		callSupervisorLLM: vi.fn(),
-		callStructuredJsonLLM: vi.fn(),
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
+		),
 	};
 });
 
@@ -111,7 +118,13 @@ function mockPlanModeGate(
 		| "implementation"
 		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
 ) {
-	return JSON.stringify({ shouldStartPlanMode, action, reason });
+	return JSON.stringify({
+		shouldStartPlanMode,
+		action,
+		reason,
+		dedicatedViews: [],
+		specificationLenses: [],
+	});
 }
 
 function _expectStrictObjectSchemas(schema: unknown, path = "schema") {
@@ -170,44 +183,14 @@ describe("NightWorkers workbench routes", () => {
 			)
 			.mockResolvedValueOnce(
 				JSON.stringify({
-					version: 1,
-					source: {
-						taskId: "queued-task",
-						repositoryId: "queued-repo",
-						blueprintMessageId: null,
-						sourceKind: "plan_mode_intake",
-					},
 					title: "Queued Plan Questionnaire",
-					summary: "Clarify the queued plan before implementation.",
-					questionSets: [
+					questions: [
 						{
-							id: "scope",
-							title: "Scope",
-							category: "workflow",
-							purpose: "Clarify queued plan scope.",
-							questions: [
-								{
-									id: "target",
-									topic: "Target",
-									question: "What should be refined first?",
-									why: "The next implementation depends on scope.",
-									answerType: "single_choice",
-									options: [
-										{
-											id: "ui",
-											label: "UI",
-											description: "Refine UI first.",
-											tradeoff: "Keeps implementation focused.",
-										},
-									],
-									blocks: ["Implementation"],
-									outputSection: "Scope",
-								},
-							],
+							text: "What should be refined first?",
+							type: "radio",
+							options: ["UI", "API"],
 						},
 					],
-					openQuestions: [],
-					dataModelHandoffNotes: [],
 				}),
 			);
 		const { task } = await createWorkbenchTask({ status: "queued" });

@@ -2,8 +2,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { AppError, NotFoundError } from "../../lib/errors";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
-import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
+import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as queueRepo from "../queue/queue.repository";
 import { resolveReviewCloseoutEvidence } from "../review/review-closeout-evidence.service";
@@ -196,6 +197,16 @@ function decideCloseout(input: {
 		);
 	}
 	const dirty = new Set(input.dirtyPaths);
+	const preExistingDirtyPaths = list(commitRecord.preExistingDirtyPathsJson);
+	const stillDirtyPreExistingPaths = preExistingDirtyPaths.filter((path) =>
+		dirty.has(path),
+	);
+	if (stillDirtyPreExistingPaths.length > 0) {
+		return blocking(
+			"PRE_EXISTING_DIRTY_PATHS",
+			`Pre-existing dirty paths must be resolved before closeout: ${stillDirtyPreExistingPaths.join(", ")}`,
+		);
+	}
 	const missing = stageablePaths.filter((path) => !dirty.has(path));
 	if (missing.length > 0) {
 		return blocking(
@@ -273,14 +284,14 @@ async function generateCommitMessage(input: {
 			repoRoot: input.repoRoot,
 			stageablePaths: input.stageablePaths,
 		});
-		const raw = await callStructuredJsonLLM(
-			[
+		const generated = await callStructuredOutputWithRepair({
+			systemPrompt: [
 				"You generate concise Git commit messages.",
 				"Return JSON only.",
 				"Use an imperative subject line.",
 				"Do not mention NightWorkers, ReviewRun, or implementation details unless they are part of the user-facing change.",
 			].join("\n"),
-			[
+			userPrompt: [
 				`Task title: ${input.taskTitle || "(none)"}`,
 				`Run summary: ${input.runSummary || "(none)"}`,
 				`Final report: ${(input.finalReport || "").slice(0, 2000) || "(none)"}`,
@@ -289,19 +300,21 @@ async function generateCommitMessage(input: {
 				"",
 				"Generate one commit message subject, 72 characters preferred, 240 characters maximum.",
 			].join("\n"),
-			{
-				schemaName: "git_commit_message",
-				schema: commitMessageJsonSchema,
+			options: {
+				contract: createStructuredOutputContract({
+					name: "git_commit_message",
+					runtimeSchema: commitMessageDraftSchema,
+					providerJsonSchema: commitMessageJsonSchema,
+				}),
 				role: "review",
 				workingDirectory: input.repoRoot,
 				runId: input.runId,
 				timeoutMs: 30_000,
 			},
-		);
-		const parsed = parseRepairedJsonWithSchema(raw, commitMessageDraftSchema);
-		if (parsed.ok) return parsed.value.message;
-		return fallback;
-	} catch {
+		});
+		return generated.value.message;
+	} catch (error) {
+		if (error instanceof StructuredLlmResponseError) throw error;
 		return fallback;
 	}
 }
@@ -311,6 +324,7 @@ async function markUnsafe(runId: string, code: string, reason: string) {
 		["HEAD_MOVED", "NO_STAGEABLE_PATHS", "DIRTY_PATHS_MISSING"].includes(
 			code,
 		) ||
+		code === "PRE_EXISTING_DIRTY_PATHS" ||
 		code === "STAGED_PATHS_OUTSIDE_OWNERSHIP"
 	) {
 		await repo.updateTaskRunCommitRecord(runId, {

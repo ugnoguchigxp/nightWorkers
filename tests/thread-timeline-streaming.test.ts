@@ -165,7 +165,7 @@ describe("ThreadTimeline streaming persistence", () => {
 		expect(preview?.visibleText).toBe("schema-first stream");
 	});
 
-	it("keeps blueprint raw diagnostics out of the normal chat timeline", () => {
+	it("shows Mock Blueprint model text while retaining legacy hidden diagnostics", () => {
 		expect(
 			isUserVisibleChatMessage({
 				id: "msg-raw",
@@ -179,6 +179,20 @@ describe("ThreadTimeline streaming persistence", () => {
 				createdAt: "2026-06-08T00:00:00.000Z",
 			} as never),
 		).toBe(false);
+
+		expect(
+			isUserVisibleChatMessage({
+				id: "msg-mock-raw",
+				taskId: "task-1",
+				role: "assistant",
+				content: '{"id":"raw-mock-blueprint"}',
+				messageType: "text",
+				metadataJson: { intent: "mock_blueprint_raw_output" },
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
+				createdAt: "2026-06-08T00:00:00.000Z",
+			} as never),
+		).toBe(true);
 
 		expect(
 			isUserVisibleChatMessage({

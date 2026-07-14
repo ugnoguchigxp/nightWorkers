@@ -28,7 +28,7 @@ function goal() {
 }
 
 function estimate(changedLines: number) {
-	return JSON.stringify({
+	return {
 		schemaVersion: "nightworkers.task-generation-estimate/v1",
 		estimatedChangedLines: changedLines,
 		estimatedFileCount: changedLines >= 2_000 ? 25 : 8,
@@ -36,7 +36,7 @@ function estimate(changedLines: number) {
 		confidencePercent: 85,
 		rationale: "repository signal と Goal から見積もった。",
 		assumptions: ["既存基盤を再利用する"],
-	});
+	};
 }
 
 function mission(id = "44444444-4444-4444-8444-444444444444") {
@@ -101,7 +101,10 @@ function dependencies(changedLines: number) {
 		})),
 		listMissionGoals: vi.fn(async () => [goal()]),
 		buildProjectSignalSnapshot: vi.fn(async () => ({ repository: {} })),
-		callStructuredJsonLLM: vi.fn(async () => estimate(changedLines)),
+		callStructuredOutputWithRepair: vi.fn(async () => ({
+			value: estimate(changedLines),
+			attempts: [],
+		})),
 		generateMissionTaskCandidates: vi.fn(async () => ({
 			batchId: "33333333-3333-4333-8333-333333333333",
 			status: "completed" as const,

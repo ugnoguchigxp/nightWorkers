@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	callStructuredJsonLLM: vi.fn(),
+	callStructuredOutputWithRepair: vi.fn(),
 }));
 
-vi.mock("../api/services/structured-llm", () => ({
-	callStructuredJsonLLM: mocks.callStructuredJsonLLM,
-}));
+vi.mock(
+	"../api/services/structured-generation/structured-output-repair.service",
+	() => ({
+		callStructuredOutputWithRepair: mocks.callStructuredOutputWithRepair,
+	}),
+);
 
 import { callLlmReviewer } from "../api/modules/review/rubrics/llm-reviewer";
 import { loadRubric } from "../api/modules/review/rubrics/loader";
@@ -49,10 +52,8 @@ describe("LLM reviewer adapter", () => {
 	});
 
 	it("calls the structured LLM through the review role", async () => {
-		mocks.callStructuredJsonLLM.mockImplementationOnce(
-			async (
-				_systemPrompt: string,
-				_userPrompt: string,
+		mocks.callStructuredOutputWithRepair.mockImplementationOnce(
+			async (input: {
 				options: {
 					emitEvent?: (event: {
 						type: "model.request_started";
@@ -60,15 +61,26 @@ describe("LLM reviewer adapter", () => {
 						message: string;
 						data: Record<string, unknown>;
 					}) => void | Promise<void>;
-				},
-			) => {
-				await options.emitEvent?.({
+				};
+			}) => {
+				await input.options.emitEvent?.({
 					type: "model.request_started",
 					severity: "info",
 					message: "started",
 					data: { provider: "codex", model: "gpt-5.4-mini" },
 				});
-				return JSON.stringify(draft);
+				return {
+					value: draft,
+					attempts: [
+						{
+							attempt: 1,
+							rawText: JSON.stringify(draft),
+							extractedText: JSON.stringify(draft),
+							repairedText: null,
+							repairKind: null,
+						},
+					],
+				};
 			},
 		);
 
@@ -81,20 +93,24 @@ describe("LLM reviewer adapter", () => {
 		expect(result.provider).toBe("codex");
 		expect(result.model).toBe("gpt-5.4-mini");
 		expect(result.rawOutput).toBe(JSON.stringify(draft));
-		expect(mocks.callStructuredJsonLLM).toHaveBeenCalledWith(
-			"コードレビューをしてください。改善するべき点が無くなるまで改善してください",
-			expect.stringContaining("ReviewerDraft JSON"),
+		expect(mocks.callStructuredOutputWithRepair).toHaveBeenCalledWith(
 			expect.objectContaining({
-				role: "review",
-				schemaName: "reviewer_draft",
-				taskId: pack.taskId,
-				runId: pack.runId,
+				systemPrompt:
+					"コードレビューをしてください。改善するべき点が無くなるまで改善してください",
+				userPrompt: expect.stringContaining("ReviewerDraft JSON"),
+				options: expect.objectContaining({
+					role: "review",
+					taskId: pack.taskId,
+					runId: pack.runId,
+				}),
 			}),
 		);
+		const call = mocks.callStructuredOutputWithRepair.mock.calls[0]?.[0];
+		expect(call.options.contract.name).toBe("reviewer_draft");
 	});
 
 	it("returns degraded only when the review route is actually unavailable", async () => {
-		mocks.callStructuredJsonLLM.mockRejectedValueOnce(
+		mocks.callStructuredOutputWithRepair.mockRejectedValueOnce(
 			new Error("No structured LLM route candidates were available."),
 		);
 

@@ -1,4 +1,7 @@
-import type { MockBlueprint } from "../../../shared/schemas/mock-blueprint.schema";
+import {
+	type MockBlueprint,
+	mockBlueprintSchema,
+} from "../../../shared/schemas/mock-blueprint.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import {
 	buildMockBlueprintSectionCatalog,
@@ -8,16 +11,19 @@ import {
 	MOCK_BLUEPRINT_PROMPT_VERSION,
 	mockBlueprintPromptDiagnostics,
 } from "../../services/structured-generation/prompts/mock-blueprint";
+import { repairStructuredOutputOnce } from "../../services/structured-generation/structured-output-repair.service";
 import {
-	callStructuredJsonLLM,
+	callStructuredLlmResult,
+	createStructuredOutputContract,
+	type StructuredLlmIssue,
 	type SupervisorLlmDebugEvent,
 } from "../../services/structured-llm";
+import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import type { JsonFixWrapperResult } from "../../services/structured-llm/json";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
-import { parseMockBlueprintJsonOutput } from "./mock-blueprint-parser";
 
 export type GeneratedMockBlueprintDraft = {
 	mockBlueprint: MockBlueprint;
@@ -29,6 +35,17 @@ export type GeneratedMockBlueprintDraft = {
 			repaired: boolean;
 			repairKind: JsonFixWrapperResult["repairKind"];
 		};
+		attempts: Array<{
+			attempt: number;
+			rawText: string;
+			extractedText: string | null;
+			repairedText: string | null;
+			repairKind: JsonFixWrapperResult["repairKind"] | null;
+		}>;
+		validationByAttempt: Array<{
+			attempt: number;
+			issues: StructuredLlmIssue[];
+		}>;
 		promptDiagnostics: MockBlueprintPromptDiagnostics;
 	};
 };
@@ -37,20 +54,24 @@ export type MockBlueprintPromptDiagnostics = ReturnType<
 	typeof mockBlueprintPromptDiagnostics
 >;
 
-export class MockBlueprintDraftGenerationError extends Error {
+export class MockBlueprintDraftGenerationError extends StructuredLlmResponseError {
 	rawOutput?: string;
 	promptDiagnostics: MockBlueprintPromptDiagnostics;
 
 	constructor(
-		message: string,
+		error: StructuredLlmResponseError,
 		input: {
-			rawOutput?: string;
 			promptDiagnostics: MockBlueprintPromptDiagnostics;
 		},
 	) {
-		super(message);
+		super({
+			rawText: error.rawText,
+			issues: error.issues,
+			attempts: error.attempts,
+			validationByAttempt: error.validationByAttempt,
+		});
 		this.name = "MockBlueprintDraftGenerationError";
-		this.rawOutput = input.rawOutput;
+		this.rawOutput = error.rawText;
 		this.promptDiagnostics = input.promptDiagnostics;
 	}
 }
@@ -91,38 +112,51 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		userPrompt,
 		schema,
 	});
-	const rawOutput = await callStructuredJsonLLM(systemPrompt, userPrompt, {
-		schemaName: "mock_blueprint",
-		schema,
+	const contract = createStructuredOutputContract({
+		name: "mock_blueprint",
+		runtimeSchema: mockBlueprintSchema,
+		providerJsonSchema: schema,
+	});
+	const llmOptions = {
+		contract,
 		emitEvent: input.emitEvent,
 		taskId: input.taskId,
 		runId: null,
-		role: input.role ?? "plan",
+		role: input.role ?? ("plan" as const),
 		usageTrace: input.usageTrace,
 		routeOverride: input.routeOverride || null,
-		allowRawOutputOnJsonParseFailure: true,
-	});
-
-	const parsed = parseMockBlueprintJsonOutput(rawOutput);
-	if (!parsed.ok) {
-		throw new MockBlueprintDraftGenerationError(
-			parsed.reason === "schema"
-				? `Mock Blueprint LLM output failed schema validation: ${parsed.message}`
-				: "Mock Blueprint LLM output did not contain valid JSON.",
-			{ rawOutput, promptDiagnostics },
-		);
+	};
+	const initialResult = await callStructuredLlmResult(
+		systemPrompt,
+		userPrompt,
+		llmOptions,
+	);
+	let generated: Awaited<
+		ReturnType<typeof repairStructuredOutputOnce<MockBlueprint>>
+	>;
+	try {
+		generated = await repairStructuredOutputOnce({
+			initialResult,
+			options: llmOptions,
+		});
+	} catch (error) {
+		if (!(error instanceof StructuredLlmResponseError)) throw error;
+		throw new MockBlueprintDraftGenerationError(error, { promptDiagnostics });
 	}
+	const acceptedAttempt = generated.attempts.at(-1);
 
 	return {
-		mockBlueprint: parsed.value,
+		mockBlueprint: generated.value,
 		generation: {
 			source: "llm",
 			promptVersion: MOCK_BLUEPRINT_PROMPT_VERSION,
-			rawOutput,
+			rawOutput: acceptedAttempt?.rawText,
 			jsonRepair: {
-				repaired: parsed.repaired,
-				repairKind: parsed.repairKind,
+				repaired: Boolean(acceptedAttempt?.repairedText),
+				repairKind: acceptedAttempt?.repairKind ?? "none",
 			},
+			attempts: generated.attempts,
+			validationByAttempt: generated.validationByAttempt,
 			promptDiagnostics,
 		},
 	};

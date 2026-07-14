@@ -1,16 +1,18 @@
-import type {
-	AdditionalQuestionnaireDraft,
-	DesignQuestionnaire,
-	DesignQuestionnaireSession,
-	QuestionnaireQuestionSetSource,
+import {
+	type AdditionalQuestionnaireDraft,
+	additionalQuestionnaireDraftSchema,
+	type DesignQuestionnaire,
+	type DesignQuestionnaireSession,
+	type QuestionnaireQuestionSetSource,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import { AppError, NotFoundError } from "../../lib/errors";
+import { NotFoundError } from "../../lib/errors";
 import {
 	buildAdditionalDesignQuestionnaireSystemPrompt,
 	buildAdditionalDesignQuestionnaireUserPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import type { StructuredLlmRole } from "../../services/structured-llm/settings";
 import {
 	createPlanModeTaskMessage,
@@ -26,7 +28,6 @@ import { publishQuestionnaireReady } from "./questionnaire-events";
 import {
 	additionalQuestionnaireDraftJsonSchema,
 	buildDesignQuestionnaireSessionView,
-	parseAdditionalQuestionnaireDraftRaw,
 	toKebabId,
 	toQuestionnaireDecisionKey,
 } from "./questionnaire-parser.service";
@@ -74,9 +75,9 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 	const projectStackContext = await resolvePlanModeProjectStackContext(
 		task.repositoryId,
 	);
-	const rawOutput = await callStructuredJsonLLM(
-		buildAdditionalDesignQuestionnaireSystemPrompt(),
-		buildAdditionalDesignQuestionnaireUserPrompt({
+	const generated = await callStructuredOutputWithRepair({
+		systemPrompt: buildAdditionalDesignQuestionnaireSystemPrompt(),
+		userPrompt: buildAdditionalDesignQuestionnaireUserPrompt({
 			task: task.objective || task.description || task.title,
 			source: input.source,
 			reason: input.reason || null,
@@ -87,27 +88,24 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 				? buildQuestionnaireDecisionInventory(existingSession)
 				: [],
 		}),
-		{
-			schemaName: "design_questionnaire_additional",
-			schema: additionalQuestionnaireDraftJsonSchema,
+		options: {
+			contract: createStructuredOutputContract({
+				name: "design_questionnaire_additional",
+				runtimeSchema: additionalQuestionnaireDraftSchema,
+				providerJsonSchema: additionalQuestionnaireDraftJsonSchema,
+			}),
 			taskId,
 			role: input.role ?? "plan",
 			usageTrace: input.llmUsageTrace,
 		},
-	);
-	const parsed = parseAdditionalQuestionnaireDraftRaw(rawOutput);
-	if (!parsed.ok) {
-		throw new AppError(
-			502,
-			"ADDITIONAL_QUESTIONNAIRE_PARSE_FAILED",
-			"Additional questionnaire output could not be parsed.",
-		);
-	}
+	});
 
 	const dedupedDraft = dedupeAdditionalDraftQuestions(
-		parsed.value,
+		generated.value,
 		maxQuestions,
 	);
+	const rawOutput =
+		generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
 	const draft = dedupedDraft.draft;
 	if (draft.questions.length === 0) {
 		return {

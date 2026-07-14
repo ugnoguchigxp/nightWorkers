@@ -1,10 +1,14 @@
 import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type {
 	RuntimeSessionStateLookup,
 	RuntimeSessionStateStore,
 } from "../../api/services/agent-runtime/runtime-session-state";
-import { callStructuredJsonLLM } from "../../api/services/structured-llm";
+import {
+	callStructuredLlmResult,
+	createStructuredOutputContract,
+} from "../../api/services/structured-llm";
 import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
 
 const codexMock = vi.hoisted(() => {
@@ -94,23 +98,27 @@ describe("Codex structured provider thread resume", () => {
 		const store = createFakeRuntimeSessionStore();
 		const longSystemPrompt = `system contract\n${"x".repeat(3000)}`;
 
-		await callStructuredJsonLLM(longSystemPrompt, "first user prompt", {
-			schemaName: "example_schema",
-			schema: { type: "object" },
+		const exampleContract = createStructuredOutputContract({
+			name: "example_schema",
+			runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+		});
+		await callStructuredLlmResult(longSystemPrompt, "first user prompt", {
+			contract: exampleContract,
 			taskId: "task-1",
 			role: "plan",
 			runtimeSessionStore: store,
 		});
-		await callStructuredJsonLLM(longSystemPrompt, "second user prompt", {
-			schemaName: "example_schema",
-			schema: { type: "object" },
+		await callStructuredLlmResult(longSystemPrompt, "second user prompt", {
+			contract: exampleContract,
 			taskId: "task-1",
 			role: "plan",
 			runtimeSessionStore: store,
 		});
-		await callStructuredJsonLLM(longSystemPrompt, "third user prompt", {
-			schemaName: "different_schema",
-			schema: { type: "object" },
+		await callStructuredLlmResult(longSystemPrompt, "third user prompt", {
+			contract: createStructuredOutputContract({
+				name: "different_schema",
+				runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+			}),
 			taskId: "task-1",
 			role: "plan",
 			runtimeSessionStore: store,

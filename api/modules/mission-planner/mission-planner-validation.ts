@@ -21,16 +21,6 @@ function addCheck(
 	checks.push({ key, status, message, targetId });
 }
 
-function hasManualConfirmation(gates: string[]) {
-	return gates.some((gate) => /manual|human|承認|確認|レビュー/.test(gate));
-}
-
-function detectsDestructiveWork(text: string) {
-	return /drop|truncate|destroy|migration|migrate|destructive|破壊|移行|マイグレーション/i.test(
-		text,
-	);
-}
-
 function detectDependencyCycle(edges: Map<string, string[]>) {
 	const visiting = new Set<string>();
 	const visited = new Set<string>();
@@ -136,11 +126,8 @@ export function validateMissionPlanningResult(
 		addCheck(
 			checks,
 			"verification_gate_required",
-			proposal.verificationGate.length > 0 ||
-				hasManualConfirmation(proposal.acceptanceCriteria)
-				? "pass"
-				: "fail",
-			"Every Task Proposal must include a verification gate or explicit manual confirmation.",
+			proposal.verificationGate.length > 0 ? "pass" : "fail",
+			"Every Task Proposal must include a verification gate.",
 			proposal.id,
 		);
 		for (const dependencyId of proposal.dependencies) {
@@ -164,18 +151,10 @@ export function validateMissionPlanningResult(
 				proposal.id,
 			);
 		}
-		const proposalText = [
-			proposal.title,
-			proposal.summary,
-			proposal.purpose,
-			proposal.initialPrompt,
-			proposal.expectedOutcome,
-			...proposal.implementationFocus,
-		].join("\n");
 		addCheck(
 			checks,
 			"approval_required_for_high_risk",
-			proposal.risk !== "high" && !detectsDestructiveWork(proposalText)
+			proposal.risk !== "high"
 				? "pass"
 				: proposal.approvalRequired
 					? "pass"
@@ -213,11 +192,8 @@ export function validateMissionPlanningResult(
 		addCheck(
 			checks,
 			"verification_gate_required",
-			objective.verificationGate.length > 0 ||
-				hasManualConfirmation(objective.completionCriteria)
-				? "pass"
-				: "fail",
-			"Every Objective must include a verification gate or explicit manual confirmation.",
+			objective.verificationGate.length > 0 ? "pass" : "fail",
+			"Every Objective must include a verification gate.",
 			objective.id,
 		);
 	}
@@ -226,11 +202,8 @@ export function validateMissionPlanningResult(
 		addCheck(
 			checks,
 			"verification_gate_required",
-			workPackage.verificationGate.length > 0 ||
-				hasManualConfirmation([workPackage.purpose])
-				? "pass"
-				: "fail",
-			"Every Work Package must include a verification gate or explicit manual confirmation.",
+			workPackage.verificationGate.length > 0 ? "pass" : "fail",
+			"Every Work Package must include a verification gate.",
 			workPackage.id,
 		);
 	}

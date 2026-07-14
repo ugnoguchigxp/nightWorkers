@@ -14,6 +14,7 @@ describe("release verification plan", () => {
 
 		expect(taskIds).toEqual([
 			"tracked-artifacts",
+			"architecture",
 			"typecheck",
 			"lint",
 			"supervisor-regression",

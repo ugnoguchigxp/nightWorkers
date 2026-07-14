@@ -26,4 +26,18 @@ if (manifest.nodeExecutable !== target.nodeExecutable) {
 if (missingPackages.length > 0) {
   throw new Error(`Desktop manifest is missing native packages: ${missingPackages.join(', ')}`);
 }
+if (process.env.NIGHTWORKERS_RELEASE === '1' && manifest.runtime?.source !== 'pinned-runtime') {
+  throw new Error('Release sidecar must use a pinned Node runtime');
+}
+if (
+  process.env.NIGHTWORKERS_NODE_RUNTIME_VERSION &&
+  manifest.runtime?.version !== process.env.NIGHTWORKERS_NODE_RUNTIME_VERSION
+) {
+  throw new Error(
+    `Desktop runtime version mismatch: expected=${process.env.NIGHTWORKERS_NODE_RUNTIME_VERSION} actual=${manifest.runtime?.version || '<missing>'}`,
+  );
+}
+if (!manifest.runtime?.sha256 || !/^[a-f0-9]{64}$/.test(manifest.runtime.sha256)) {
+  throw new Error('Desktop manifest is missing the Node runtime SHA-256');
+}
 console.log(`Desktop target manifest verified: ${expectedTarget}`);

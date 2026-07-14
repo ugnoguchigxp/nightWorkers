@@ -75,7 +75,7 @@ export function readCoverageArtifacts(repositoryRoot: string) {
 	} catch (error) {
 		return {
 			coverageSummary: null,
-			error: error instanceof Error ? error.message : String(error),
+			error: `Failed to read coverage-summary.json: ${error instanceof Error ? error.message : String(error)}`,
 		};
 	}
 }

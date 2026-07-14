@@ -54,6 +54,10 @@ jobs:
           libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Install and checksum pinned Node sidecar runtime
+        run: node scripts/desktop/install-node-runtime.mjs
+      - name: Rebuild native modules for pinned Node runtime
+        run: bun run desktop:rebuild-native
       - name: Capture desktop preflight
         run: node scripts/desktop/collect-diagnostics.mjs preflight --expected-target ${{ matrix.target }}
       - name: Verify platform configuration
@@ -62,16 +66,32 @@ jobs:
         run: bun run build:frontend
       - name: Prepare sidecar
         run: bun run desktop:prepare-sidecar
+      - name: Generate bundled third-party notices
+        run: bun run desktop:third-party-notices
       - name: Verify target manifest
         run: node scripts/desktop/verify-target-manifest.mjs ${{ matrix.target }}
       - name: Sidecar readiness smoke
         run: bun run desktop:smoke-sidecar
       - name: Build macOS package
-        if: matrix.packaged_smoke
+        if: runner.os == 'macOS'
         run: bun run desktop:build:dmg
+      - name: Build Linux packages
+        if: runner.os == 'Linux'
+        run: bun run desktop:build:linux
+      - name: Build Windows installers
+        if: runner.os == 'Windows'
+        run: bun run desktop:build:windows
       - name: Packaged app smoke
         if: matrix.packaged_smoke
         run: bun run desktop:smoke
+      - name: Linux native install and launch smoke
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bun run desktop:smoke-native-package -- linux
+      - name: Windows native install and launch smoke
+        if: runner.os == 'Windows'
+        run: bun run desktop:smoke-native-package -- windows
+      - name: Verify bundle budget
+        run: bun run desktop:bundle-budget
       - name: Record release check evidence
         run: >-
           node scripts/release/release-check-evidence.mjs

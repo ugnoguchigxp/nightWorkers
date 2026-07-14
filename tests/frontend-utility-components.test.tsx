@@ -512,7 +512,7 @@ describe("frontend utility components", () => {
 		);
 
 		const combinedMarkup = renderedTabs.join("\n");
-		expect(combinedMarkup).toContain("NightWorkers");
+		expect(combinedMarkup).toContain('aria-label="プロジェクト画面"');
 		expect(combinedMarkup).toContain("タスク生成");
 		expect(combinedMarkup).toContain("品質");
 		expect(combinedMarkup).toContain("Project Evaluation");

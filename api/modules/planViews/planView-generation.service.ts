@@ -14,6 +14,7 @@ import {
 import {
 	buildPlanDedicatedViewSystemPrompt,
 	buildPlanDedicatedViewUserPrompt,
+	genericDedicatedViewArtifactSchema,
 	genericDedicatedViewSchema,
 	PLAN_DEDICATED_VIEW_PROMPT_VERSION,
 } from "../../services/structured-generation/prompts/plan-dedicated-view";
@@ -23,7 +24,9 @@ import {
 	PLAN_ZOD_SCHEMA_PROMPT_VERSION,
 	planZodSchemaStructuredOutputSchema,
 } from "../../services/structured-generation/prompts/plan-zod-schema";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { createStructuredGenerationAppError } from "../../services/structured-generation/structured-generation-error";
+import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
+import { createStructuredOutputContract } from "../../services/structured-llm";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -41,6 +44,8 @@ import {
 	buildZodSchemaSourceEvidence,
 	parsePlanApiContractOutput,
 	parsePlanZodSchemaOutput,
+	planApiContractDraftSchema,
+	planZodSchemaDraftSchema,
 } from "./plan-view-contract-parser";
 import {
 	buildClientMermaidRepairPrompt,
@@ -322,6 +327,7 @@ async function generateArtifactFromLlm(input: {
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
+	let lastRawOutput: string | null = null;
 	try {
 		let repairContext: string | null = null;
 		let lastError: unknown = null;
@@ -330,22 +336,34 @@ async function generateArtifactFromLlm(input: {
 			attempt <= PLAN_VIEW_MERMAID_MAX_ATTEMPTS;
 			attempt += 1
 		) {
-			const rawOutput = await callStructuredJsonLLM(
-				buildPlanDedicatedViewSystemPrompt(input.view),
-				buildPlanDedicatedViewUserPrompt({ ...input, repairContext }),
-				{
-					schemaName: "plan_mode_dedicated_view",
-					schema: genericDedicatedViewSchema,
+			const generated = await callStructuredOutputWithRepair({
+				systemPrompt: buildPlanDedicatedViewSystemPrompt(input.view),
+				userPrompt: buildPlanDedicatedViewUserPrompt({
+					...input,
+					repairContext,
+				}),
+				options: {
+					contract: createStructuredOutputContract({
+						name: "plan_mode_dedicated_view",
+						runtimeSchema: genericDedicatedViewArtifactSchema,
+						providerJsonSchema: genericDedicatedViewSchema,
+					}),
 					taskId: input.taskId,
 					runId: null,
 					role: input.role,
 					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
 				},
-			);
+			});
+			const rawOutput =
+				generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
+			lastRawOutput = rawOutput;
 			try {
 				const artifact = normalizePlanViewMermaidArtifact(
-					parseGenericDedicatedViewOutput(rawOutput, input.view),
+					parseGenericDedicatedViewOutput(
+						JSON.stringify(generated.value),
+						input.view,
+					),
 				);
 				const mermaidError = await validatePlanViewMermaidArtifact(artifact);
 				if (!mermaidError) return artifact;
@@ -364,10 +382,12 @@ async function generateArtifactFromLlm(input: {
 			? lastError
 			: new Error("Plan view generation failed.");
 	} catch (err) {
-		if (err instanceof AppError) throw err;
-		const message =
-			err instanceof Error ? err.message : "Plan view generation failed.";
-		throw new AppError(502, "PLAN_VIEW_GENERATION_FAILED", message);
+		throw createStructuredGenerationAppError({
+			code: "PLAN_VIEW_GENERATION_FAILED",
+			fallbackMessage: "Plan view generation failed.",
+			error: err,
+			lastRawText: lastRawOutput,
+		});
 	}
 }
 
@@ -384,28 +404,34 @@ async function generateApiContractArtifactFromLlm(input: {
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
+	let lastRawOutput: string | null = null;
 	try {
-		const rawOutput = await callStructuredJsonLLM(
-			buildPlanApiContractSystemPrompt(),
-			buildPlanApiContractUserPrompt(input),
-			{
-				schemaName: "plan_mode_api_contract",
-				schema: planApiContractStructuredOutputSchema,
+		const generated = await callStructuredOutputWithRepair({
+			systemPrompt: buildPlanApiContractSystemPrompt(),
+			userPrompt: buildPlanApiContractUserPrompt(input),
+			options: {
+				contract: createStructuredOutputContract({
+					name: "plan_mode_api_contract",
+					runtimeSchema: planApiContractDraftSchema,
+					providerJsonSchema: planApiContractStructuredOutputSchema,
+				}),
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 			},
-		);
-		return parsePlanApiContractOutput(rawOutput);
+		});
+		lastRawOutput =
+			generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
+		return parsePlanApiContractOutput(JSON.stringify(generated.value));
 	} catch (err) {
-		if (err instanceof AppError) throw err;
-		const message =
-			err instanceof Error
-				? err.message
-				: "Plan API contract generation failed.";
-		throw new AppError(502, "PLAN_API_CONTRACT_GENERATION_FAILED", message);
+		throw createStructuredGenerationAppError({
+			code: "PLAN_API_CONTRACT_GENERATION_FAILED",
+			fallbackMessage: "Plan API contract generation failed.",
+			error: err,
+			lastRawText: lastRawOutput,
+		});
 	}
 }
 
@@ -422,28 +448,36 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
+	let lastRawOutput: string | null = null;
 	try {
-		const rawOutput = await callStructuredJsonLLM(
-			buildPlanZodSchemaSystemPrompt(),
-			buildPlanZodSchemaUserPrompt(input),
-			{
-				schemaName: "plan_mode_zod_schema",
-				schema: planZodSchemaStructuredOutputSchema,
+		const generated = await callStructuredOutputWithRepair({
+			systemPrompt: buildPlanZodSchemaSystemPrompt(),
+			userPrompt: buildPlanZodSchemaUserPrompt(input),
+			options: {
+				contract: createStructuredOutputContract({
+					name: "plan_mode_zod_schema",
+					runtimeSchema: planZodSchemaDraftSchema,
+					providerJsonSchema: planZodSchemaStructuredOutputSchema,
+				}),
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 			},
-		);
-		return parsePlanZodSchemaOutput(rawOutput, {
+		});
+		lastRawOutput =
+			generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
+		return parsePlanZodSchemaOutput(JSON.stringify(generated.value), {
 			sourceText: buildZodSchemaSourceEvidence(input),
 		});
 	} catch (err) {
-		if (err instanceof AppError) throw err;
-		const message =
-			err instanceof Error ? err.message : "Plan Zod schema generation failed.";
-		throw new AppError(502, "PLAN_ZOD_SCHEMA_GENERATION_FAILED", message);
+		throw createStructuredGenerationAppError({
+			code: "PLAN_ZOD_SCHEMA_GENERATION_FAILED",
+			fallbackMessage: "Plan Zod schema generation failed.",
+			error: err,
+			lastRawText: lastRawOutput,
+		});
 	}
 }
 

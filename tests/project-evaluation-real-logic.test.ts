@@ -40,74 +40,79 @@ function fixtureEvaluationDimensions() {
 vi.mock("../api/services/structured-llm", async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import("../api/services/structured-llm")>();
+	const { createStructuredLlmResultMock } = await import(
+		"./helpers/structured-llm-result-mock"
+	);
+	const callStructuredJsonLLM = vi.fn(
+		async (_systemPrompt, _userPrompt, options) => {
+			await options.emitEvent?.({
+				type: "model.request_started",
+				severity: "info",
+				message: "fixture request started",
+				data: {
+					provider: "fixture",
+					providerEndpointId: "fixture-evaluation",
+					routeSource: "primary",
+					model: "fixture-eval-model",
+					thinkingDepth: "high",
+				},
+			});
+			await options.emitEvent?.({
+				type: "model.response_delta",
+				severity: "debug",
+				message: "fixture response delta",
+				data: {
+					provider: "fixture",
+					round: null,
+					text: '{"schemaVersion"',
+				},
+			});
+			await new Promise((resolve) => setTimeout(resolve, 25));
+			if (options.schemaName === "project_improvement_ideas") {
+				return JSON.stringify({
+					schemaVersion: "nightworkers.project-improvement-ideas/v1",
+					ideas: [
+						{
+							title: "評価履歴を実データで表示する",
+							summary:
+								"保存済み評価と履歴を UI に接続し、Project owner が前回との差分を判断できる状態にする。",
+							agentPrompt:
+								"Project Evaluation の保存済み評価、選択軸、改善案を読み取り、UI と API の実データ接続を実装してください。",
+							expectedOutcome:
+								"評価履歴、選択軸、改善案、Task 化結果が mock なしで表示される。",
+							implementationFocus: ["API response を UI controller に接続する"],
+							targetDimensions: ["architectureQuality"],
+							scoreImpacts: [
+								{
+									dimensionKey: "architectureQuality",
+									currentScore: 70,
+									expectedScoreGain: 8,
+									expectedScoreAfter: 78,
+									rationale:
+										"mock を除去して実データで評価 loop を閉じるため。",
+								},
+							],
+						},
+					],
+				});
+			}
+			return JSON.stringify({
+				schemaVersion: "nightworkers.project-evaluation-report/v1",
+				overallScore: 70,
+				confidence: 0.71,
+				summary: "repository bundle と保存済み証跡に基づく評価です。",
+				dimensions: fixtureEvaluationDimensions(),
+				strengths: ["local-first DB に保存できる"],
+				weaknesses: ["source sampling は初期範囲外"],
+				nextEvidenceToCollect: ["bun run verify の結果"],
+			});
+		},
+	);
 	return {
 		...actual,
-		callStructuredJsonLLM: vi.fn(
-			async (_systemPrompt, _userPrompt, options) => {
-				await options.emitEvent?.({
-					type: "model.request_started",
-					severity: "info",
-					message: "fixture request started",
-					data: {
-						provider: "fixture",
-						providerEndpointId: "fixture-evaluation",
-						routeSource: "primary",
-						model: "fixture-eval-model",
-						thinkingDepth: "high",
-					},
-				});
-				await options.emitEvent?.({
-					type: "model.response_delta",
-					severity: "debug",
-					message: "fixture response delta",
-					data: {
-						provider: "fixture",
-						round: null,
-						text: '{"schemaVersion"',
-					},
-				});
-				await new Promise((resolve) => setTimeout(resolve, 25));
-				if (options.schemaName === "project_improvement_ideas") {
-					return JSON.stringify({
-						schemaVersion: "nightworkers.project-improvement-ideas/v1",
-						ideas: [
-							{
-								title: "評価履歴を実データで表示する",
-								summary:
-									"保存済み評価と履歴を UI に接続し、Project owner が前回との差分を判断できる状態にする。",
-								agentPrompt:
-									"Project Evaluation の保存済み評価、選択軸、改善案を読み取り、UI と API の実データ接続を実装してください。",
-								expectedOutcome:
-									"評価履歴、選択軸、改善案、Task 化結果が mock なしで表示される。",
-								implementationFocus: [
-									"API response を UI controller に接続する",
-								],
-								targetDimensions: ["architectureQuality"],
-								scoreImpacts: [
-									{
-										dimensionKey: "architectureQuality",
-										currentScore: 70,
-										expectedScoreGain: 8,
-										expectedScoreAfter: 78,
-										rationale:
-											"mock を除去して実データで評価 loop を閉じるため。",
-									},
-								],
-							},
-						],
-					});
-				}
-				return JSON.stringify({
-					schemaVersion: "nightworkers.project-evaluation-report/v1",
-					overallScore: 70,
-					confidence: 0.71,
-					summary: "repository bundle と保存済み証跡に基づく評価です。",
-					dimensions: fixtureEvaluationDimensions(),
-					strengths: ["local-first DB に保存できる"],
-					weaknesses: ["source sampling は初期範囲外"],
-					nextEvidenceToCollect: ["bun run verify の結果"],
-				});
-			},
+		callStructuredJsonLLM,
+		callStructuredLlmResult: vi.fn(
+			createStructuredLlmResultMock(callStructuredJsonLLM),
 		),
 	};
 });

@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { callStructuredJsonLLM } from "../../api/services/structured-llm";
+import { z } from "zod";
+import {
+	callStructuredLlmResult,
+	createStructuredOutputContract,
+} from "../../api/services/structured-llm";
 import { checkStructuredLlmProviderHealth } from "../../api/services/structured-llm/provider-health";
 import type {
 	StructuredLlmProviderEndpoint,
@@ -14,6 +18,9 @@ const liveEnabled = process.env.NIGHTWORKERS_LIVE_LLM_VITEST === "1";
 const liveHealthEnabled =
 	liveEnabled && process.env.NIGHTWORKERS_LIVE_LLM_HEALTH === "1";
 const liveHealthSupported = liveHealthEnabled && isLiveHealthProbeSupported();
+const liveLlmTimeoutMs = Number(
+	process.env.NIGHTWORKERS_LIVE_LLM_TIMEOUT_MS || 60_000,
+);
 
 const originalRuntimeLane = process.env.NIGHTWORKERS_RUNTIME_LANE;
 const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -35,31 +42,24 @@ describe("structured LLM live provider smoke", () => {
 
 			const events: Array<{ type: string; data?: Record<string, unknown> }> =
 				[];
-			const raw = await callStructuredJsonLLM(
+			const result = await callStructuredLlmResult(
 				"Return only JSON matching the requested schema.",
 				'Respond with {"status":"ok","provider":"live"} and no other text.',
 				{
-					schemaName: "nightworkers_live_llm_smoke",
-					schema: {
-						type: "object",
-						additionalProperties: false,
-						properties: {
-							status: { type: "string" },
-							provider: { type: "string" },
-						},
-						required: ["status", "provider"],
-					},
+					contract: createStructuredOutputContract({
+						name: "nightworkers_live_llm_smoke",
+						runtimeSchema: z
+							.object({ status: z.string(), provider: z.string() })
+							.strict(),
+					}),
 					role: "plan",
-					timeoutMs: Number(
-						process.env.NIGHTWORKERS_LIVE_LLM_TIMEOUT_MS || 60_000,
-					),
+					timeoutMs: liveLlmTimeoutMs,
 					emitEvent: (event) =>
 						events.push({ type: event.type, data: event.data }),
 				},
 			);
 
-			const parsed = JSON.parse(raw) as { status?: string; provider?: string };
-			expect(parsed).toMatchObject({ status: "ok" });
+			expect(result).toMatchObject({ ok: true, value: { status: "ok" } });
 			expect(
 				events.some((event) => event.type === "model.request_started"),
 			).toBe(true);
@@ -71,6 +71,7 @@ describe("structured LLM live provider smoke", () => {
 				role: "plan",
 			});
 		},
+		liveLlmTimeoutMs + 5_000,
 	);
 
 	it.skipIf(!liveHealthSupported)(
@@ -148,6 +149,7 @@ function resolveLiveProviderKind(): StructuredLlmProviderEndpointKind {
 	) {
 		return "local";
 	}
+	if (process.env.CODEX_MODEL) return "codex";
 	if (process.env.OPENAI_COMPATIBLE_BASE_URL) return "openai-compatible";
 	if (process.env.OPENAI_API_KEY) return "openai";
 	throw new Error(
@@ -180,6 +182,16 @@ function isLiveHealthProbeSupported() {
 function buildLiveEndpoint(
 	kind: StructuredLlmProviderEndpointKind,
 ): StructuredLlmProviderEndpoint {
+	if (kind === "codex") {
+		return {
+			id: "live-codex",
+			name: "Live Codex SDK",
+			kind,
+			enabled: true,
+			models: [process.env.CODEX_MODEL || "gpt-5.6-luna"],
+		};
+	}
+
 	if (kind === "azure") {
 		const apiKey = requireEnv("AZURE_OPENAI_API_KEY");
 		const endpoint = requireEnv("AZURE_OPENAI_ENDPOINT");

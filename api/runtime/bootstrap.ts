@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { openSyncSqlite } from "../db/sync-sqlite";
 import { getRuntimePaths, isDesktopMode } from "./paths";
 
 const JWT_SECRET_BYTES = 48;
@@ -37,6 +37,7 @@ export function ensureDesktopRuntimeBootstrap(
 		paths.logsDir,
 		paths.secretsDir,
 		paths.artifactsDir,
+		paths.backupsDir,
 	]) {
 		fs.mkdirSync(dir, { recursive: true });
 	}
@@ -101,13 +102,54 @@ export function ensureRuntimeDatabasePath(
 		fs.existsSync(legacyPath) &&
 		!fs.existsSync(paths.databasePath)
 	) {
-		const escapedTarget = paths.databasePath.replaceAll("'", "''");
-		execFileSync("sqlite3", [legacyPath], {
-			input: `.timeout 10000\n.backup '${escapedTarget}'\n`,
-		});
+		const backupPath = path.join(
+			paths.backupsDir,
+			`pre-migration-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.sqlite`,
+		);
+		backupSqliteDatabase(legacyPath, backupPath);
+		backupSqliteDatabase(legacyPath, paths.databasePath);
 		fs.chmodSync(paths.databasePath, 0o600);
 	}
 	env.DATABASE_URL = `file:${paths.databasePath}`;
+}
+
+export function createRuntimeDatabaseBackup(
+	env: NodeJS.ProcessEnv = process.env,
+): string | null {
+	if (env.NODE_ENV === "test" || env.NIGHTWORKERS_E2E_ISOLATED === "1")
+		return null;
+	const paths = getRuntimePaths(env);
+	if (!fs.existsSync(paths.databasePath)) return null;
+	fs.mkdirSync(paths.backupsDir, { recursive: true, mode: 0o700 });
+	const backupPath = path.join(
+		paths.backupsDir,
+		`startup-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.sqlite`,
+	);
+	backupSqliteDatabase(paths.databasePath, backupPath);
+	const backups = fs
+		.readdirSync(paths.backupsDir)
+		.filter((name) => name.endsWith(".sqlite"))
+		.sort()
+		.reverse();
+	for (const stale of backups.slice(5)) {
+		fs.rmSync(path.join(paths.backupsDir, stale), { force: true });
+	}
+	return backupPath;
+}
+
+function backupSqliteDatabase(sourcePath: string, destinationPath: string) {
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true, mode: 0o700 });
+	const database = openSyncSqlite(sourcePath, {
+		readonly: true,
+		timeout: 10_000,
+	});
+	try {
+		const escapedDestination = destinationPath.replaceAll("'", "''");
+		database.exec(`VACUUM INTO '${escapedDestination}'`);
+	} finally {
+		database.close();
+	}
+	fs.chmodSync(destinationPath, 0o600);
 }
 
 function localDatabasePath(databaseUrl?: string) {

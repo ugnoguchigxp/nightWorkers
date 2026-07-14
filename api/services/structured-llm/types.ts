@@ -43,6 +43,15 @@ export type CallSupervisorOptions = {
 	runtimeSessionStore?: RuntimeSessionStateStore;
 };
 
+/** @deprecated Use StructuredLlmResultOptions with callStructuredLlmResult. */
+export type StructuredJsonLlmOptions = Omit<
+	CallSupervisorOptions,
+	"schemaFirst" | "round"
+> & {
+	schemaName: string;
+	schema: unknown;
+};
+
 export type StructuredLlmPromptBudgetMetadata = {
 	modelContextWindowTokens: number;
 	safePromptBudgetTokens: number;
@@ -88,12 +97,7 @@ export type ProviderCapabilityPolicy = {
 };
 
 export type NormalizedSupervisorLlmRequest = {
-	callKind:
-		| "supervisor_decision"
-		| "structured_artifact"
-		| "design_questionnaire"
-		| "design_decision_review"
-		| "fixture";
+	callKind: "supervisor_decision" | "structured_artifact" | "fixture";
 	providerId: SupervisorProviderId;
 	providerClass: SupervisorProviderClass;
 	providerEndpointId?: string | null;
@@ -129,15 +133,6 @@ export type ProviderCallResult = {
 	usage: NormalizedLlmUsage;
 	model?: string | null;
 	providerDebug?: Record<string, unknown>;
-};
-
-export type StructuredJsonLlmOptions = Omit<
-	CallSupervisorOptions,
-	"schemaFirst" | "round"
-> & {
-	schemaName: string;
-	schema: unknown;
-	allowRawOutputOnJsonParseFailure?: boolean;
 };
 
 export type SupervisorLlmDebugEvent = {

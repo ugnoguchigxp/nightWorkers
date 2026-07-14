@@ -239,8 +239,10 @@ describe("Project Detail backend mission evidence", () => {
 			const created = (await createTasksRes.json()) as {
 				tasks: Array<{ id: string; objective: string }>;
 			};
-			expect(created.tasks[0].objective).toContain("Todo を実現してください。");
-			expect(created.tasks[0].objective).toContain("todolist 本体。");
+			expect(created.tasks[0].objective).toContain("[Mission Goal]\nTodo");
+			expect(created.tasks[0].objective).toContain(
+				"[Task Candidate]\ntodolist 本体を実装する",
+			);
 			expect(created.tasks[0].objective).toContain("[Planで確認すること]");
 			const objectiveLines = created.tasks[0].objective.split("\n");
 			expect(objectiveLines).toContain("- UI は単一画面か分割画面か");
@@ -249,13 +251,12 @@ describe("Project Detail backend mission evidence", () => {
 			);
 			expect(objectiveLines).toContain("- 保存先は SQLite の永続化でよいか");
 			expect(objectiveLines).toContain("- 完了状態をどう表現するか");
-			expect(objectiveLines).toContain("- 編集、削除、並び替えの初期範囲");
-			expect(objectiveLines).toContain("- unit / schema / e2e の検証範囲");
+			expect(objectiveLines).not.toContain("- 編集、削除、並び替えの初期範囲");
+			expect(objectiveLines).not.toContain("- unit / schema / e2e の検証範囲");
 			expect(objectiveLines).not.toContain("- 入口画面または route");
 			expect(objectiveLines).not.toContain("- データモデル");
 			expect(objectiveLines).not.toContain("- 保存方式");
 			expect(objectiveLines).not.toContain("- 完了状態の表現");
-			expect(created.tasks[0].objective).toContain("[実装上の注意]");
 			expect(created.tasks[0].objective).toContain("[完了条件]");
 			expect(created.tasks[0].objective).toContain("本体実装方針が決まる。");
 			expect(created.tasks[0].objective).toContain("[検証]");
@@ -455,7 +456,7 @@ describe("Project Detail backend mission evidence", () => {
 					body: JSON.stringify({}),
 				},
 			);
-			expect(generateRes.status).toBe(400);
+			expect(generateRes.status).toBe(502);
 
 			const candidatesRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/mission-task-candidates`,
@@ -543,7 +544,7 @@ describe("Project Detail backend mission evidence", () => {
 					body: JSON.stringify({}),
 				},
 			);
-			expect(generateRes.status).toBe(400);
+			expect(generateRes.status).toBe(502);
 
 			const candidatesRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/mission-task-candidates`,
@@ -554,7 +555,7 @@ describe("Project Detail backend mission evidence", () => {
 		}
 	});
 
-	it("does not count project-wide detail candidates folded out by semantics as quality setup candidates", async () => {
+	it("preserves project-wide detail candidates selected by the LLM", async () => {
 		const repoRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "nightworkers-detail-folded-quality-"),
 		);
@@ -669,12 +670,19 @@ describe("Project Detail backend mission evidence", () => {
 					body: JSON.stringify({ goalIds: [featureGoal.id, coverageGoal.id] }),
 				},
 			);
-			expect(generateRes.status).toBe(400);
+			expect(generateRes.status).toBe(201);
+			const generated = (await generateRes.json()) as {
+				candidates: Array<{ title: string }>;
+			};
+			expect(generated.candidates.map((candidate) => candidate.title)).toEqual([
+				"todolist 本体を実装する",
+				"coverage script を確認する",
+			]);
 
 			const candidatesRes = await app.request(
 				`http://localhost/api/repositories/${project.id}/mission-task-candidates`,
 			);
-			expect(await candidatesRes.json()).toHaveLength(0);
+			expect(await candidatesRes.json()).toHaveLength(2);
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}

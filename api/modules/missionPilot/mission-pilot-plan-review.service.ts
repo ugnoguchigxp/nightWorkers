@@ -2,10 +2,17 @@ import { z } from "zod";
 import {
 	type MissionPilotPlanReview,
 	missionPilotPlanReviewSchema,
-	normalizeMissionPilotPlanReview,
+	validateMissionPilotPlanReviewFacts,
 } from "../../../shared/schemas/mission-pilot-plan-review.schema";
-import { callStructuredJsonLLM } from "../../services/structured-llm";
+import { buildMissionPilotPlanReviewSystemPrompt } from "../../services/structured-generation/prompts/mission-pilot-plan-review";
+import { repairStructuredOutputOnce } from "../../services/structured-generation/structured-output-repair.service";
+import {
+	callStructuredLlmResult,
+	createStructuredOutputContract,
+	validateStructuredLlmFacts,
+} from "../../services/structured-llm";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
+import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
@@ -72,31 +79,23 @@ export async function reviewCurrentPlan(
 		}
 		return { ...artifact, content: message.content };
 	});
-	const raw = await callStructuredJsonLLM(
-		[
-			"あなたはMission PilotのQueue投入前・一括実装計画レビュアーです。",
-			"全Plan Artifactの生成完了後に、Goal、確定Questionnaire、現行Artifact一式、受け入れ条件、検証の整合性を一度に審査してください。Artifact生成途中の個別レビューは行いません。",
-			"artifactScoresにはreviewArtifactsの各ArtifactをsourceMessageId単位で重複なく1件ずつ含め、0〜100点で採点してください。",
-			"採点は品質傾向を示す参考情報です。点数や80点未満であることだけを理由にverdict=reviseとしてはいけません。",
-			"原則はverdict=passです。より詳しくできる、表現を改善できる、実装開始時にrepositoryを確認すれば解決できる、という理由だけで再生成を要求しないでください。warning findingはverdict=passと両立します。",
-			"verdict=reviseは、現行Artifactのまま実装するとGoal、確定Questionnaire、Task acceptance criteriaを満たせない重大な設計逸脱がある場合だけに限定してください。",
-			"重大な設計逸脱は、必須機能の欠落、対象repositoryや技術stackの明確な取り違え、API・DB・UI間の実装不能な矛盾、security/data safety上の重大な誤り、後続agentが利用できない壊れたArtifact、完了判定不能な検証欠落です。",
-			"実装時に確認できるfile path、既存命名、細かな入力上限、error code、任意の改善、生成側が意図的に残したopenQuestionsは、実装を誤らせる重大な矛盾がない限りwarningとしてください。",
-			"Project Stack Contextに実在するscriptやtoolingは確認済みevidenceとして扱ってください。Feature Planにrepository探索の手順があれば、個別file pathが未確定でもそれだけでreviseにしないでください。",
-			"api_io_contractはHTTP request/response/error contract、zod_schema_designはnon-HTTP runtime input contractを担当します。責務外のschemaを追加するよう要求しないでください。",
-			"blueprint、user_flow、activity_flow、sequence_flowは概念把握用Artifactです。点数とfindingは参考情報として返しますが、細部不一致をverdict=reviseの理由にせず、revisionTargetsにも含めないでください。",
-			"確定QuestionnaireとTask acceptance criteriaは不変の入力であり、実装詳細をすべて列挙する文書ではありません。回答と矛盾しない型、値、取得元、コマンド、検証詳細はFeature Planが具体化します。",
-			"QuestionnaireまたはTask acceptance criteriaの変更を要求せず、不足する派生仕様はfeature_planのrevisionTargetとして返してください。",
-			"revisionTargetsはblocking findingに対応する重大な設計逸脱がある実装直結Artifactだけに限定してください。warningや採点をrevisionTargetで代用せず、概念把握用Artifactは修正対象に含めないでください。",
-			"Questionnaireと概念把握用Artifactが矛盾する場合はwarning findingとして記録し、revisionTargetにはしないでください。",
-			"verdict=reviseの場合、各blocking findingに対して同じtargetとsourceMessageIdを持つrevisionTargetを重複なく1件だけ返してください。",
-			"現在 omit の編集可能ArtifactがGoal、Questionnaire、受け入れ条件を具体化するために不可欠なら、採点やrevisionTargetで代用せず verdict=reroute とし、routingToolCall.tool=edit_plan_artifact_routing を返してください。",
-			"verdict=rerouteの場合はartifactScoresとrevisionTargetsを空配列にし、現在のroutingに対する採点・修正指示と混在させないでください。",
-			"routingToolCall は omit から include に広げる変更だけを指定できます。questionnaire と feature_plan は常に必須で編集対象外です。不要なArtifactを慣例だけで追加しないでください。",
-			"currentRouting.entriesでcapabilityEnabled=falseのArtifactはSettingsで生成不能なためroutingToolCallへ含めないでください。必要性はfindingに記録してください。",
-			"routingToolCallを返す場合、expectedRevisionはcurrentRouting.revisionと一致させ、追加が必要な理由を各change.reasonへ具体的に書いてください。",
-			"routingToolCall.idempotencyKeyには、このtool callを一意に識別するUUIDを指定してください。再送時は同じUUIDを維持します。",
-		].join("\n"),
+	const currentRouting = workspace.routing ?? {
+		revision: session.planRoutingRevision,
+		entries: workspace.viewDecisions,
+	};
+	const contract = createStructuredOutputContract({
+		name: "mission_pilot_plan_review",
+		runtimeSchema: missionPilotPlanReviewSchema,
+		providerJsonSchema: buildMissionPilotPlanReviewResponseJsonSchema(),
+	});
+	const llmOptions = {
+		taskId,
+		role: "mission_pilot" as const,
+		usageTrace: missionPilotThoughtTrace({ sessionId }),
+		contract,
+	};
+	const initialResponse = await callStructuredLlmResult(
+		buildMissionPilotPlanReviewSystemPrompt(contract),
 		JSON.stringify({
 			reviewAttempt: attempt,
 			task: {
@@ -108,27 +107,111 @@ export async function reviewCurrentPlan(
 			contextDigest: session.contextDigest,
 			projectStackContext,
 			canonicalContext: compactCanonicalReviewContext(context.contextJson),
-			currentRouting: workspace.routing ?? {
-				revision: session.planRoutingRevision,
-				entries: workspace.viewDecisions,
-			},
+			currentRouting,
 			reviewArtifacts: reviewArtifactPayloads,
 		}),
-		{
-			taskId,
-			role: "mission_pilot",
-			usageTrace: missionPilotThoughtTrace({ sessionId }),
-			schemaName: "mission_pilot_plan_review",
-			schema: buildMissionPilotPlanReviewResponseJsonSchema(),
-		},
+		llmOptions,
 	);
+	const validateFacts = (review: MissionPilotPlanReview) =>
+		validateMissionPilotPlanReviewFacts(review, {
+			reviewedArtifacts: reviewArtifacts,
+			currentRouting,
+		});
+	const validatedResponse = validateStructuredLlmFacts(
+		initialResponse,
+		validateFacts,
+	);
+	await recordPlanReviewAttempt({
+		taskId,
+		sessionId,
+		reviewAttempt: attempt,
+		result: validatedResponse,
+	});
+	const repaired = await repairStructuredOutputOnce({
+		initialResult: validatedResponse,
+		options: llmOptions,
+		validateFacts,
+		beforeRepair: () =>
+			assertPlanReviewStateCurrent(taskId, {
+				contextRevision: session.contextRevision,
+				contextDigest: session.contextDigest,
+				routingRevision: session.planRoutingRevision,
+			}),
+		onRepairResult: (result) =>
+			recordPlanReviewAttempt({
+				taskId,
+				sessionId,
+				reviewAttempt: attempt,
+				result,
+			}),
+	});
+	await assertPlanReviewStateCurrent(taskId, {
+		contextRevision: session.contextRevision,
+		contextDigest: session.contextDigest,
+		routingRevision: session.planRoutingRevision,
+	});
 	return {
-		review: normalizeMissionPilotPlanReview(JSON.parse(raw), reviewArtifacts),
+		review: repaired.value,
 		featurePlanMessageId: featurePlanMessage.id,
 		contextRevision: session.contextRevision,
 		contextDigest: session.contextDigest,
 		routingRevision: session.planRoutingRevision,
 	};
+}
+
+async function assertPlanReviewStateCurrent(
+	taskId: string,
+	expected: {
+		contextRevision: number;
+		contextDigest: string;
+		routingRevision: number;
+	},
+) {
+	const currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
+	if (
+		currentSession?.desiredState === "playing" &&
+		currentSession.contextRevision === expected.contextRevision &&
+		currentSession.contextDigest === expected.contextDigest &&
+		currentSession.planRoutingRevision === expected.routingRevision
+	) {
+		return;
+	}
+	throw new Error(
+		"Mission Pilot state changed while the plan review response was being validated.",
+	);
+}
+
+async function recordPlanReviewAttempt(input: {
+	taskId: string;
+	sessionId: string;
+	reviewAttempt: number;
+	result: Awaited<
+		ReturnType<typeof callStructuredLlmResult<MissionPilotPlanReview>>
+	>;
+}) {
+	await appendActivityEvent({
+		taskId: input.taskId,
+		kind: "assistant.raw_output",
+		source: "mission_pilot",
+		status: input.result.ok ? "completed" : "failed",
+		text: input.result.attempt.rawText,
+		payloadJson: {
+			source: "mission_pilot",
+			intent: "structured_llm_raw_output",
+			missionPilotSessionId: input.sessionId,
+			schemaName: "mission_pilot_plan_review",
+			reviewAttempt: input.reviewAttempt,
+			structuredOutputAttempt: input.result.attempt.attempt,
+			validationStatus: input.result.ok ? "validated" : "failed",
+			issues: input.result.issues,
+			repairKind: input.result.attempt.repairKind,
+		},
+		dedupeKey: `mission-pilot:plan-review-output:${input.sessionId}:${input.reviewAttempt}:${input.result.attempt.attempt}`,
+		trace: missionPilotThoughtTrace({
+			sessionId: input.sessionId,
+			attempt: input.reviewAttempt,
+		}),
+	});
 }
 
 export function buildMissionPilotPlanReviewResponseJsonSchema() {
