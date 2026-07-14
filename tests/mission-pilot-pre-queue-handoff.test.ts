@@ -24,6 +24,7 @@ import { createPlanReview } from "../api/modules/missionPilot/mission-pilot-plan
 import { reconcileMissionPilotPreQueueSessions } from "../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service";
 import { admitMissionPilotQueueHandoff } from "../api/modules/missionPilot/mission-pilot-queue-handoff.service";
 import { claimNextImplementationQueueEntry } from "../api/modules/queue/queue.repository";
+import { buildFeaturePlanImplementationPlanMetadata } from "../api/modules/specification/feature-plan-implementation-plan";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
 const repositoryIds: string[] = [];
@@ -68,6 +69,19 @@ async function createHandoffFixture() {
 	repositoryIds.push(repositoryId);
 	repositoryPaths.push(repositoryPath);
 	const { session, featurePlanMessage } = await db.transaction(async (tx) => {
+		const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
+			version: 1,
+			requiresDataMigration: false,
+			steps: [
+				{
+					key: "queue-handoff",
+					title: "review済みhandoffを実装する",
+					description: "review済みFeature PlanをQueue開始へ引き渡す。",
+					taskType: "implementation",
+					dependsOnKeys: [],
+				},
+			],
+		});
 		await tx.insert(repositories).values({
 			id: repositoryId,
 			name: "Mission Pilot Queue handoff",
@@ -100,7 +114,11 @@ async function createHandoffFixture() {
 				role: "assistant",
 				content: "# Feature Plan\n\n## Verification\n- Run tests",
 				messageType: "markdown_document",
-				metadataJson: { intent: "feature_plan", title: "Feature Plan" },
+				metadataJson: {
+					intent: "feature_plan",
+					title: "Feature Plan",
+					implementationPlan,
+				},
 			})
 			.returning();
 		await tx
@@ -230,6 +248,11 @@ describe("Mission Pilot pre-Queue handoff", () => {
 			queueHandoffJson: expect.objectContaining({
 				queueEntryId: first.queueEntryId,
 				admissionKey: first.admissionKey,
+				implementationTodoProjectionVersion: 1,
+				implementationPlanSourceMessageId: fixture.featurePlanMessageId,
+				implementationPlanDigest: expect.stringMatching(
+					/^sha256:[a-f0-9]{64}$/,
+				),
 			}),
 		});
 		expect(task?.status).toBe("queued");

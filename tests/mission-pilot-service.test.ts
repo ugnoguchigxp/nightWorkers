@@ -218,6 +218,7 @@ describe("Mission Pilot service", () => {
 		const fixture = await createPilotFixture();
 		const current = await getSessionByTaskId(fixture.taskId);
 		if (!current) throw new Error("missing Mission Pilot session");
+		const featurePlanMessageId = crypto.randomUUID();
 		await db
 			.update(missionPilotSessions)
 			.set({
@@ -232,7 +233,10 @@ describe("Mission Pilot service", () => {
 					queueClaimReady: false,
 					reviewedContextRevision: current.contextRevision,
 					reviewedContextDigest: current.contextDigest,
-					featurePlanMessageId: crypto.randomUUID(),
+					featurePlanMessageId,
+					implementationTodoProjectionVersion: 1,
+					implementationPlanSourceMessageId: featurePlanMessageId,
+					implementationPlanDigest: `sha256:${"1".repeat(64)}`,
 					verificationDocumentId: crypto.randomUUID(),
 					planReviewId: crypto.randomUUID(),
 					planReviewVerdict: "pass",

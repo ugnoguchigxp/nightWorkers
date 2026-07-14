@@ -2,7 +2,12 @@ import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { db } from "../../db/client";
-import { missionPilotArtifactCorrectionRuns } from "../../db/mission-pilot-schema";
+import {
+	missionPilotArtifactCorrectionRuns,
+	missionPilotContextSnapshots,
+	missionPilotSessions,
+} from "../../db/mission-pilot-schema";
+import { MissionPilotContextConflictError } from "./mission-pilot-plan-errors";
 
 export async function createArtifactCorrectionRuns(input: {
 	sessionId: string;
@@ -83,6 +88,24 @@ export function listArtifactCorrectionRuns(sessionId: string) {
 		.orderBy(desc(missionPilotArtifactCorrectionRuns.createdAt));
 }
 
+export function canResumePartialArtifactCorrections(
+	runs: Awaited<ReturnType<typeof listArtifactCorrectionRunsForReview>>,
+	currentContextRevision: number,
+) {
+	const hasUnfinished = runs.some((run) =>
+		["pending", "failed"].includes(run.status),
+	);
+	const appliedRevisions = runs
+		.filter((run) => run.status === "applied")
+		.map((run) => run.outputContextRevision)
+		.filter((revision): revision is number => revision !== null);
+	return (
+		hasUnfinished &&
+		appliedRevisions.length > 0 &&
+		Math.max(...appliedRevisions) === currentContextRevision
+	);
+}
+
 export async function getArtifactCorrectionRun(id: string) {
 	const [row] = await db
 		.select()
@@ -92,32 +115,58 @@ export async function getArtifactCorrectionRun(id: string) {
 }
 
 export async function claimArtifactCorrectionRun(id: string) {
-	const [current] = await db
-		.select()
-		.from(missionPilotArtifactCorrectionRuns)
-		.where(eq(missionPilotArtifactCorrectionRuns.id, id));
-	if (!current || !["pending", "failed"].includes(current.status)) return null;
-	const [row] = await db
-		.update(missionPilotArtifactCorrectionRuns)
-		.set({
-			status: "running",
-			attempt: current.attempt + 1,
-			startedAt: new Date(),
-			lastError: null,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotArtifactCorrectionRuns.id, id),
-				eq(missionPilotArtifactCorrectionRuns.attempt, current.attempt),
-				inArray(missionPilotArtifactCorrectionRuns.status, [
-					"pending",
-					"failed",
-				]),
-			),
-		)
-		.returning();
-	return row ?? null;
+	return db.transaction(async (tx) => {
+		const [current] = await tx
+			.select()
+			.from(missionPilotArtifactCorrectionRuns)
+			.where(eq(missionPilotArtifactCorrectionRuns.id, id));
+		if (!current || !["pending", "failed"].includes(current.status))
+			return null;
+		const [session] = await tx
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, current.sessionId));
+		const [latestContext] = await tx
+			.select()
+			.from(missionPilotContextSnapshots)
+			.where(eq(missionPilotContextSnapshots.sessionId, current.sessionId))
+			.orderBy(desc(missionPilotContextSnapshots.revision))
+			.limit(1);
+		if (
+			!session ||
+			!latestContext ||
+			latestContext.revision !== session.contextRevision ||
+			latestContext.digest !== session.contextDigest
+		) {
+			throw new MissionPilotContextConflictError(
+				"Mission Pilot Session and latest Context snapshot diverged",
+			);
+		}
+		const now = new Date();
+		const [row] = await tx
+			.update(missionPilotArtifactCorrectionRuns)
+			.set({
+				status: "running",
+				attempt: current.attempt + 1,
+				sourceContextRevision: session.contextRevision,
+				sourceContextDigest: session.contextDigest,
+				startedAt: now,
+				lastError: null,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(missionPilotArtifactCorrectionRuns.id, id),
+					eq(missionPilotArtifactCorrectionRuns.attempt, current.attempt),
+					inArray(missionPilotArtifactCorrectionRuns.status, [
+						"pending",
+						"failed",
+					]),
+				),
+			)
+			.returning();
+		return row ?? null;
+	});
 }
 
 export async function recordArtifactCorrectionResult(

@@ -4,8 +4,29 @@ import {
 	deriveTodoVerificationPolicyFromPromptText,
 	NIGHTWORKERS_TODO_TASK_TYPES,
 } from "../api/services/todo-runtime";
+import { requiresDataMigrationFromRun } from "../api/services/worker-tools/todo-list-context";
 
 describe("standard implementation TodoList builder", () => {
+	it("preserves a projected migration gate hint from the persisted Run context", () => {
+		expect(
+			requiresDataMigrationFromRun({
+				contextSnapshot: { requireDataMigrationGates: true },
+			}),
+		).toBe(true);
+		expect(
+			requiresDataMigrationFromRun({
+				contextSnapshot: { requireDataMigrationGates: false },
+			}),
+		).toBe(false);
+		expect(
+			requiresDataMigrationFromRun({
+				contextSnapshot: {
+					missionPilot: { requireDataMigrationGates: true },
+				},
+			}),
+		).toBe(true);
+	});
+
 	it("adds fixed first and final gates around LLM-decomposed implementation Todos", () => {
 		const todos = buildStandardImplementationTodoList({
 			now: new Date("2026-06-11T00:00:00.000Z"),

@@ -1,5 +1,5 @@
 import path from "node:path";
-import * as ts from "typescript";
+import * as ts from "@typescript/typescript6";
 import type {
 	InspectStructureOutput,
 	SourceImportSummary,

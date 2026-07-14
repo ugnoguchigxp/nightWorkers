@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot Test to Review transition", () => {
-	it("freezes the Test snapshot and starts Review after completion_check finishes", async () => {
+	it("starts Review from persisted Test evidence even when the legacy decision includes a completion_check ref", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
 		const sessionId = crypto.randomUUID();
@@ -39,9 +39,12 @@ describe("Mission Pilot Test to Review transition", () => {
 		const verificationDocumentId = crypto.randomUUID();
 		const acceptedEvidenceRunId = crypto.randomUUID();
 		const historicalFailureRunId = crypto.randomUUID();
+		const completionCheckEvidenceRefId = crypto.randomUUID();
 		const completionStartedEventId = crypto.randomUUID();
 		const completionFinishedEventId = crypto.randomUUID();
+		const featurePlanMessageId = crypto.randomUUID();
 		const now = new Date();
+		const historicalFailureAt = new Date(now.getTime() - 1_000);
 		repositoryIds.push(repositoryId);
 
 		await db.insert(repositories).values({
@@ -76,7 +79,7 @@ describe("Mission Pilot Test to Review transition", () => {
 					verdict: "pass",
 					defectOwner: "unknown",
 					failedConditionIds: [],
-					evidenceRunIds: [acceptedEvidenceRunId],
+					evidenceRunIds: [acceptedEvidenceRunId, completionCheckEvidenceRefId],
 					affectedPaths: [],
 					summary: "Verification passed after a retry.",
 					implementationRework: null,
@@ -113,7 +116,10 @@ describe("Mission Pilot Test to Review transition", () => {
 				reviewedContextRevision: 1,
 				reviewedContextDigest: "ctx-1",
 				routingRevision: 0,
-				featurePlanMessageId: crypto.randomUUID(),
+				featurePlanMessageId,
+				implementationTodoProjectionVersion: 1,
+				implementationPlanSourceMessageId: featurePlanMessageId,
+				implementationPlanDigest: `sha256:${"1".repeat(64)}`,
 				verificationDocumentId,
 				planReviewId: crypto.randomUUID(),
 				planReviewVerdict: "pass",
@@ -182,7 +188,7 @@ describe("Mission Pilot Test to Review transition", () => {
 			text: "Review starts after Test passes",
 			required: true,
 			status: "passed",
-			evidenceIdsJson: [],
+			evidenceIdsJson: [historicalFailureRunId, acceptedEvidenceRunId],
 		});
 		await db.insert(verificationEvidenceRuns).values([
 			{
@@ -199,8 +205,8 @@ describe("Mission Pilot Test to Review transition", () => {
 				rawStderrArtifactId: "failed-stderr-artifact",
 				summaryJson: {},
 				commandLevelConditionIdsJson: ["AC-001"],
-				startedAt: now,
-				finishedAt: now,
+				startedAt: historicalFailureAt,
+				finishedAt: historicalFailureAt,
 			},
 			{
 				id: acceptedEvidenceRunId,
@@ -300,6 +306,7 @@ describe("Mission Pilot Test to Review transition", () => {
 					totalCount: 2,
 					acceptedCount: 1,
 					historicalFailureCount: 1,
+					latestFailureCount: 0,
 				},
 			},
 		});

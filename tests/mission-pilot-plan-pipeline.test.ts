@@ -924,7 +924,7 @@ describe("Mission Pilot plan pipeline persistence", () => {
 		expect(await planRepo.listPlanReviews(fixture.session.id)).toHaveLength(1);
 	});
 
-	it("persists and advances an idempotent Artifact correction run", async () => {
+	it("rebinds sequential Artifact correction runs to each committed Context revision", async () => {
 		const fixture = await createFixture();
 		const [source] = await db
 			.insert(taskMessages)
@@ -979,6 +979,13 @@ describe("Mission Pilot plan pipeline persistence", () => {
 						instruction: "Clarify the conceptual flow",
 						preserveUnfocusedContent: true,
 					},
+					{
+						target: "activity_flow",
+						sourceMessageId: source.id,
+						focus: { kind: "artifact" },
+						instruction: "Clarify the remaining activity flow",
+						preserveUnfocusedContent: true,
+					},
 				],
 			},
 		});
@@ -990,13 +997,15 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			contextDigest: fixture.session.contextDigest,
 			targets: review.reviewJson.revisionTargets,
 		};
-		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(2);
-		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(2);
-		const [run, pendingConcept] =
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(3);
+		expect(await planRepo.createArtifactCorrectionRuns(input)).toHaveLength(3);
+		const [run, pendingConcept, pendingActivity] =
 			await planRepo.listArtifactCorrectionRunsForReview(review.id);
 		expect(await planRepo.claimArtifactCorrectionRun(run.id)).toMatchObject({
 			status: "running",
 			attempt: 1,
+			sourceContextRevision: fixture.session.contextRevision,
+			sourceContextDigest: fixture.session.contextDigest,
 		});
 		const [result] = await db
 			.insert(taskMessages)
@@ -1012,14 +1021,105 @@ describe("Mission Pilot plan pipeline persistence", () => {
 			resultMessageId: result.id,
 		});
 		await planRepo.markArtifactCorrectionValidating(run.id);
-		expect(await planRepo.applyArtifactCorrectionRun(run.id, 2)).toMatchObject({
+		const afterBlueprint = await planRepo.appendPlanContext(
+			fixture.session.id,
+			"artifact",
+			{
+				stepKey: "correction:blueprint",
+				correctionRunId: run.id,
+				sourceMessageId: result.id,
+				content: result.content,
+				metadata: { intent: "mock_blueprint" },
+			},
+			{ correctionRunId: run.id },
+		);
+		expect(afterBlueprint).toMatchObject({ contextRevision: 2 });
+		expect(await planRepo.getArtifactCorrectionRun(run.id)).toMatchObject({
 			status: "applied",
 			outputContextRevision: 2,
 		});
+		expect(
+			planRepo.canResumePartialArtifactCorrections(
+				await planRepo.listArtifactCorrectionRunsForReview(review.id),
+				afterBlueprint?.contextRevision ?? -1,
+			),
+		).toBe(true);
+		expect(
+			planRepo.canResumePartialArtifactCorrections(
+				await planRepo.listArtifactCorrectionRunsForReview(review.id),
+				(afterBlueprint?.contextRevision ?? -1) + 1,
+			),
+		).toBe(false);
+		expect(
+			await planRepo.claimArtifactCorrectionRun(pendingConcept.id),
+		).toMatchObject({
+			status: "running",
+			attempt: 1,
+			sourceContextRevision: 2,
+			sourceContextDigest: afterBlueprint?.contextDigest,
+		});
+		await planRepo.failArtifactCorrectionRun(
+			pendingConcept.id,
+			"simulated interruption",
+		);
+		expect(
+			await planRepo.claimArtifactCorrectionRun(pendingConcept.id),
+		).toMatchObject({
+			status: "running",
+			attempt: 2,
+			sourceContextRevision: 2,
+			sourceContextDigest: afterBlueprint?.contextDigest,
+		});
+		const [secondResult] = await db
+			.insert(taskMessages)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: fixture.task.id,
+				role: "assistant",
+				content: "# Corrected User Flow",
+				messageType: "markdown_document",
+			})
+			.returning();
+		await planRepo.recordArtifactCorrectionResult(pendingConcept.id, {
+			resultMessageId: secondResult.id,
+		});
+		await planRepo.markArtifactCorrectionValidating(pendingConcept.id);
+		const afterUserFlow = await planRepo.appendPlanContext(
+			fixture.session.id,
+			"artifact",
+			{
+				stepKey: "correction:user_flow",
+				correctionRunId: pendingConcept.id,
+				sourceMessageId: secondResult.id,
+				content: secondResult.content,
+				metadata: { view: "user_flow" },
+			},
+			{ correctionRunId: pendingConcept.id },
+		);
+		expect(afterUserFlow).toMatchObject({ contextRevision: 3 });
+		expect(
+			await planRepo.getArtifactCorrectionRun(pendingConcept.id),
+		).toMatchObject({ status: "applied", outputContextRevision: 3 });
+		expect(
+			planRepo.canResumePartialArtifactCorrections(
+				await planRepo.listArtifactCorrectionRunsForReview(review.id),
+				afterUserFlow?.contextRevision ?? -1,
+			),
+		).toBe(true);
+		await planRepo.supersedeConceptArtifactCorrectionRunsForReview(review.id);
+		expect(
+			await planRepo.getArtifactCorrectionRun(pendingActivity.id),
+		).toMatchObject({ status: "superseded" });
+		expect(
+			planRepo.canResumePartialArtifactCorrections(
+				await planRepo.listArtifactCorrectionRunsForReview(review.id),
+				afterUserFlow?.contextRevision ?? -1,
+			),
+		).toBe(false);
 		const secondReview = await planRepo.createPlanReview({
 			sessionId: fixture.session.id,
-			contextRevision: fixture.session.contextRevision,
-			contextDigest: fixture.session.contextDigest,
+			contextRevision: afterUserFlow?.contextRevision ?? 3,
+			contextDigest: afterUserFlow?.contextDigest ?? "missing",
 			featurePlanMessageId: source.id,
 			attempt: 2,
 			review: {
@@ -1053,9 +1153,5 @@ describe("Mission Pilot plan pipeline persistence", () => {
 				],
 			}),
 		).toEqual([]);
-		await planRepo.supersedeConceptArtifactCorrectionRunsForReview(review.id);
-		expect(
-			await planRepo.getArtifactCorrectionRun(pendingConcept.id),
-		).toMatchObject({ status: "superseded" });
 	});
 });

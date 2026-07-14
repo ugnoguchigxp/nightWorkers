@@ -1,0 +1,199 @@
+import { describe, expect, it } from "vitest";
+import {
+	measureProjectExplorationRun,
+	summarizeProjectExplorationPair,
+} from "../api/modules/ontology/exploration/project-exploration-measurement";
+
+const GENERATION_ID = "00000000-0000-4000-8000-000000000501";
+
+describe("project exploration measurement", () => {
+	it("measures only successful exploration calls before the first source mutation", () => {
+		const catalogText = JSON.stringify({
+			ok: true,
+			status: "completed",
+			generation: { scanRunId: "scan-1", generationId: GENERATION_ID },
+			likelyFiles: [{ path: "src/a.ts" }, { path: "src/b.ts" }],
+			relatedTests: [{ path: "src/a.test.ts" }],
+			verificationCandidates: [{ command: "bun test", candidateOnly: true }],
+		});
+		const events = [
+			event(1, "list_dir", true, {}),
+			event(2, "read_file", true, { filePath: "src/a.ts" }),
+			event(3, "read_file", false, { filePath: "src/b.ts" }),
+			event(
+				4,
+				"mcp_call_tool",
+				true,
+				{
+					toolName: "vuln_get_project_exploration_catalog",
+				},
+				mcpWorkerResult(catalogText),
+			),
+			event(
+				5,
+				"mcp_call_tool",
+				true,
+				{
+					toolName: "vuln_get_project_exploration_catalog",
+				},
+				mcpWorkerResult("not-json"),
+			),
+			event(6, "apply_patch", false, {}),
+			event(7, "search_files", true, { query: "service" }),
+			event(8, "apply_patch", true, {}),
+			event(9, "read_file", true, { filePath: "src/after.ts" }),
+			event(10, "todo_list", true, { operation: "replace" }),
+			event(11, "run_verification", false, {}),
+			event(12, "completion_check", true, {}),
+		];
+		const result = measureProjectExplorationRun({
+			run: runFixture(true),
+			events: events.reverse(),
+			usageRecords: [
+				{ inputTokens: 100, cachedInputTokens: 25, usageMode: "measured" },
+				{ inputTokens: 50, cachedInputTokens: null, usageMode: "estimated" },
+			],
+		});
+		expect(result).toEqual({
+			runId: "run-1",
+			taskId: "task-1",
+			repositoryId: "repo-1",
+			mode: "catalog",
+			generationId: GENERATION_ID,
+			catalogCalled: true,
+			catalogCallCount: 2,
+			catalogResponseBytes:
+				Buffer.byteLength(catalogText, "utf8") +
+				Buffer.byteLength("not-json", "utf8"),
+			catalogFileCount: 2,
+			catalogTestCount: 1,
+			catalogVerificationCount: 1,
+			listDirCallsBeforeMutation: 1,
+			searchCallsBeforeMutation: 1,
+			readFileCallsBeforeMutation: 1,
+			uniqueFilesReadBeforeMutation: 1,
+			totalInputTokens: 150,
+			totalCachedInputTokens: 25,
+			usageMode: "mixed",
+			timeToFirstMutationMs: 8000,
+			taskCompleted: true,
+			verificationPassed: true,
+			replanCount: 1,
+			warnings: ["catalog_result_invalid"],
+		});
+	});
+
+	it("keeps baseline tokens unavailable and ignores failed mutation boundaries", () => {
+		const result = measureProjectExplorationRun({
+			run: runFixture(false, "running"),
+			events: [
+				event(1, "apply_patch", false, {}),
+				event(2, "read_file", true, { filePath: "src/a.ts" }),
+			],
+			usageRecords: [],
+		});
+		expect(result).toMatchObject({
+			mode: "baseline",
+			generationId: null,
+			catalogCalled: false,
+			readFileCallsBeforeMutation: 1,
+			totalInputTokens: null,
+			totalCachedInputTokens: null,
+			usageMode: "unavailable",
+			timeToFirstMutationMs: null,
+			taskCompleted: false,
+			verificationPassed: null,
+		});
+	});
+
+	it("includes the catalog call itself in paired exploratory reduction", () => {
+		const baseline = measureProjectExplorationRun({
+			run: runFixture(false),
+			events: [
+				event(1, "list_dir", true, {}),
+				event(2, "search_files", true, {}),
+				event(3, "read_file", true, { filePath: "a.ts" }),
+				event(4, "apply_patch", true, {}),
+			],
+			usageRecords: [
+				{ inputTokens: 100, cachedInputTokens: 10, usageMode: "measured" },
+			],
+		});
+		const catalog = {
+			...baseline,
+			runId: "run-2",
+			mode: "catalog" as const,
+			catalogCallCount: 1,
+			listDirCallsBeforeMutation: 0,
+			searchCallsBeforeMutation: 0,
+			readFileCallsBeforeMutation: 1,
+			totalInputTokens: 70,
+		};
+		const summary = summarizeProjectExplorationPair({ baseline, catalog });
+		expect(summary.exploratoryToolCalls).toEqual({
+			baseline: 3,
+			catalog: 2,
+			reductionRate: 1 / 3,
+		});
+		expect(summary.totalInputTokens.reductionRate).toBe(0.3);
+	});
+});
+
+function runFixture(available: boolean, status = "completed") {
+	return {
+		id: "run-1",
+		taskId: "task-1",
+		repositoryId: "repo-1",
+		startedAt: new Date("2026-07-14T00:00:00.000Z"),
+		status,
+		contextSnapshot: {
+			projectExplorationCatalog: available
+				? {
+						version: 1,
+						available: true,
+						serverId: "server-1",
+						rootRef: "a".repeat(64),
+						projectId: "project-1",
+						scanRunId: "scan-1",
+						generationId: GENERATION_ID,
+						snapshotRef: "code_structure:fixture",
+						sourceTreeHash: "b".repeat(64),
+						sourceStateHash: "c".repeat(64),
+						sourceRevisionHead: "abc123",
+						toolName: "vuln_get_project_exploration_catalog",
+					}
+				: { version: 1, available: false, reason: "disabled" },
+		},
+	};
+}
+
+function event(
+	seq: number,
+	toolName: string,
+	ok: boolean,
+	args: Record<string, unknown>,
+	result?: unknown,
+) {
+	return {
+		seq,
+		timestamp: new Date(
+			`2026-07-14T00:00:${String(seq).padStart(2, "0")}.000Z`,
+		),
+		payloadJson: {
+			runEvent: {
+				type: "tool.call_finished",
+				seq,
+				timestamp: `2026-07-14T00:00:${String(seq).padStart(2, "0")}.000Z`,
+				data: { toolName, arguments: args, ok, result },
+			},
+		},
+	};
+}
+
+function mcpWorkerResult(text: string) {
+	return {
+		serverId: "server-1",
+		toolName: "vuln_get_project_exploration_catalog",
+		result: { content: [{ type: "text", text }] },
+	};
+}

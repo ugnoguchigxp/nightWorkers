@@ -22,6 +22,7 @@ import { MissionPilotContextConflictError } from "./mission-pilot-plan-errors";
 
 export {
 	applyArtifactCorrectionRun,
+	canResumePartialArtifactCorrections,
 	claimArtifactCorrectionRun,
 	createArtifactCorrectionRuns,
 	failArtifactCorrectionRun,

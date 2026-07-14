@@ -87,6 +87,12 @@ export const missionPilotQueueHandoffSchema = z.object({
 	reviewedContextDigest: z.string().min(1),
 	routingRevision: z.number().int().nonnegative().default(0),
 	featurePlanMessageId: z.string().uuid(),
+	implementationTodoProjectionVersion: z.literal(1).optional(),
+	implementationPlanSourceMessageId: z.string().uuid().optional(),
+	implementationPlanDigest: z
+		.string()
+		.regex(/^sha256:[a-f0-9]{64}$/)
+		.optional(),
 	verificationDocumentId: z.string().uuid(),
 	planReviewId: z.string().uuid(),
 	planReviewVerdict: z.literal("pass"),

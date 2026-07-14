@@ -2,9 +2,10 @@ import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/execu
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
 import {
-	associateMissionPilotImplementationRun,
-	getMissionPilotImplementationEnvelope,
-} from "../../missionPilot/mission-pilot-run-association.service";
+	holdBlockedMissionPilotImplementationStart,
+	resolveMissionPilotImplementationStart,
+} from "../../missionPilot/mission-pilot-implementation-todo-projection.service";
+import { associateMissionPilotImplementationRun } from "../../missionPilot/mission-pilot-run-association.service";
 import * as repo from "../nightworkers.repository";
 import { startTaskRun } from "./start-task-run";
 
@@ -70,18 +71,52 @@ async function drainImplementationQueue(
 		if (claimed.kind !== "claimed") break;
 		const claimedEntry = claimed.entry;
 		try {
-			const missionPilot = await getMissionPilotImplementationEnvelope(
-				claimedEntry.taskId,
-			);
+			const missionPilot =
+				await resolveMissionPilotImplementationStart(claimedEntry);
+			if (missionPilot.kind === "blocked") {
+				await holdBlockedMissionPilotImplementationStart({
+					entry: claimedEntry,
+					code: missionPilot.code,
+					message: missionPilot.message,
+					sessionGuard: missionPilot.sessionGuard,
+				});
+				await repo
+					.createTaskMessage({
+						taskId: claimedEntry.taskId,
+						role: "system",
+						content: `Implementation Queue held this task before run start: ${missionPilot.message}`,
+						messageType: "text",
+						payloadJson: {
+							source: "implementation_queue",
+							status: "mission_pilot_todo_projection_blocked",
+							queueEntryId: claimedEntry.id,
+							code: missionPilot.code,
+						},
+					})
+					.catch(() => null);
+				continue;
+			}
+			const missionPilotReady =
+				missionPilot.kind === "ready" ? missionPilot : null;
 			const run = await startTaskRun(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
-				...(missionPilot ? { runtimeOptionsPatch: { missionPilot } } : {}),
+				...(missionPilotReady
+					? {
+							initialTodos: missionPilotReady.initialTodos,
+							runtimeOptionsPatch: {
+								missionPilot: missionPilotReady.envelope,
+							},
+						}
+					: {}),
 			});
-			await associateMissionPilotImplementationRun({
-				taskId: claimedEntry.taskId,
-				runId: run.id,
-			});
+			if (missionPilotReady) {
+				await associateMissionPilotImplementationRun({
+					taskId: claimedEntry.taskId,
+					runId: run.id,
+					missionPilot: missionPilotReady.envelope,
+				});
+			}
 			started.push(run);
 			const processingEntry = await repo.markImplementationQueueEntryProcessing(
 				{

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppError } from "../api/lib/errors";
+import { createPlanModeTaskMessage } from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
 import {
 	FEATURE_PLAN_LLM_TIMEOUT_MS,
 	generateFeaturePlanArtifact,
@@ -89,14 +90,28 @@ vi.mock("../api/modules/specification/plan-mode-workspace.service", () => ({
 describe("Feature Plan generation timeout handling", () => {
 	beforeEach(() => {
 		vi.mocked(callStructuredOutputWithRepair).mockReset();
+		vi.mocked(createPlanModeTaskMessage).mockClear();
 	});
 
 	it("uses an extended timeout for specification document generation", async () => {
 		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
 			value: {
 				title: "Todo List Feature Plan",
-				content:
-					"# Todo List Feature Plan\n\n## DDL\nData Model DDL reference は未生成です。",
+				contentTemplate:
+					"# Todo List Feature Plan\n\n{{IMPLEMENTATION_PLAN}}\n\n## 検証計画\n- Run tests",
+				implementationPlan: {
+					version: 1,
+					requiresDataMigration: false,
+					steps: [
+						{
+							key: "todo-api",
+							title: "Todo APIを実装する",
+							description: "既存契約に沿ってTodo APIを追加する。",
+							taskType: "implementation",
+							dependsOnKeys: [],
+						},
+					],
+				},
 			},
 			attempts: [],
 		});
@@ -115,6 +130,50 @@ describe("Feature Plan generation timeout handling", () => {
 		);
 		const call = vi.mocked(callStructuredOutputWithRepair).mock.calls[0]?.[0];
 		expect(call.options.contract.name).toBe("specification_document");
+	});
+
+	it("keeps sanitized implementation text identical in metadata and Markdown", async () => {
+		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
+			value: {
+				title: "Todo List Feature Plan",
+				contentTemplate:
+					"## 目的\nNightWorkersへTodoを追加する。\n\n{{IMPLEMENTATION_PLAN}}",
+				implementationPlan: {
+					version: 1,
+					requiresDataMigration: false,
+					steps: [
+						{
+							key: "todo-api",
+							title: "NightWorkers APIを実装する",
+							description: "NightWorkersの既存契約へTodo APIを追加する。",
+							taskType: "implementation",
+							dependsOnKeys: [],
+						},
+					],
+				},
+			},
+			attempts: [],
+		});
+
+		await generateFeaturePlanArtifact("task-1");
+
+		const featurePlanCall = vi
+			.mocked(createPlanModeTaskMessage)
+			.mock.calls.find(
+				([input]) => input.payloadJson?.intent === "feature_plan",
+			)?.[0];
+		if (!featurePlanCall)
+			throw new Error("Feature Plan message was not created");
+		const metadata = featurePlanCall.payloadJson?.implementationPlan as {
+			steps: Array<{ title: string; description: string }>;
+		};
+		expect(metadata.steps[0]).toMatchObject({
+			title: "対象プロジェクト APIを実装する",
+			description: "対象プロジェクトの既存契約へTodo APIを追加する。",
+		});
+		expect(featurePlanCall.content).toContain(metadata.steps[0].title);
+		expect(featurePlanCall.content).toContain(metadata.steps[0].description);
+		expect(featurePlanCall.content).not.toMatch(/NightWorkers?/i);
 	});
 
 	it("returns a gateway timeout error when the provider aborts", async () => {

@@ -107,7 +107,9 @@ describe("Questionnaire decision layer services", () => {
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Feature Plan",
-				content: "## 目的\n未回答 blocking を assumption として進める。\n",
+				contentTemplate:
+					"## 目的\n未回答 blocking を assumption として進める。\n\n{{IMPLEMENTATION_PLAN}}",
+				implementationPlan: fixtureImplementationPlan(),
 			});
 			const result = await generateFeaturePlanArtifact(task.id, {
 				questionnaireSessionId: session.id,
@@ -117,7 +119,14 @@ describe("Questionnaire decision layer services", () => {
 			expect(result.message.metadataJson).toMatchObject({
 				intent: "feature_plan",
 				questionnaireSessionId: session.id,
+				implementationPlan: {
+					...fixtureImplementationPlan(),
+					digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+				},
 			});
+			expect(result.message.content).toContain("## 実装計画");
+			expect(result.message.content).toContain("Todo本体を実装する");
+			expect(result.message.content).not.toContain("{{IMPLEMENTATION_PLAN}}");
 		} finally {
 			restoreFixtureProvider(env);
 		}
@@ -134,7 +143,9 @@ describe("Questionnaire decision layer services", () => {
 			});
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Feature Plan",
-				content: "## 目的\nnon-blocking は既存資料から進める。\n",
+				contentTemplate:
+					"## 目的\nnon-blocking は既存資料から進める。\n\n{{IMPLEMENTATION_PLAN}}",
+				implementationPlan: fixtureImplementationPlan(),
 			});
 
 			const result = await generateFeaturePlanArtifact(task.id, {
@@ -150,6 +161,22 @@ describe("Questionnaire decision layer services", () => {
 		}
 	});
 });
+
+function fixtureImplementationPlan() {
+	return {
+		version: 1,
+		requiresDataMigration: false,
+		steps: [
+			{
+				key: "todo-core",
+				title: "Todo本体を実装する",
+				description: "Questionnaireの決定に沿ってTodo本体を実装する。",
+				taskType: "implementation",
+				dependsOnKeys: [],
+			},
+		],
+	};
+}
 
 async function createPlanModeTask(label: string) {
 	const repository = await nightworkersRepo.createRepository({

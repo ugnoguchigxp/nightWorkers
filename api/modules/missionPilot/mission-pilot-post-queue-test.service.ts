@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { missionPilotTestDecisionSchema } from "../../../shared/schemas/mission-pilot-test.schema";
 import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
@@ -27,7 +27,7 @@ import {
 	setMissionPilotAttention,
 } from "./mission-pilot-post-queue-review.service";
 import { evaluateTestCompletionGate } from "./mission-pilot-post-queue-state";
-import { resolveAcceptedTestEvidence } from "./mission-pilot-test-evidence";
+import { resolvePersistedTestEvidence } from "./mission-pilot-test-evidence";
 
 export async function continueAfterTestRun(input: {
 	session: typeof missionPilotSessions.$inferSelect;
@@ -50,64 +50,6 @@ export async function continueAfterTestRun(input: {
 		.from(taskRuns)
 		.where(eq(taskRuns.id, input.runId))
 		.limit(1);
-	const testDecision = parseStructuredTestDecision(run?.finalReport ?? "");
-	if (!testDecision) {
-		const reasons = ["structured_test_decision_invalid"];
-		await setMissionPilotAttention(
-			input.session.id,
-			input.phaseRun.id,
-			reasons.join(","),
-			{
-				errorCode: "MISSION_PILOT_TEST_GATE_REJECTED",
-				reasonCodes: reasons,
-			},
-		);
-		return { kind: "attention", reasons } as const;
-	}
-	if (
-		testDecision.verdict === "rework" &&
-		testDecision.defectOwner === "test"
-	) {
-		return prepareTestRetry({
-			session: input.session,
-			phaseRun: input.phaseRun,
-			reworkPacket: {
-				summary: testDecision.summary,
-				failedConditionIds: testDecision.failedConditionIds,
-				affectedPaths: testDecision.affectedPaths,
-			},
-		});
-	}
-	if (
-		testDecision.verdict === "rework" &&
-		testDecision.defectOwner === "implementation"
-	) {
-		return prepareImplementationRework({
-			session: input.session,
-			phaseRun: input.phaseRun,
-			source: "test",
-			reworkPacket: testDecision.implementationRework ?? {
-				summary: testDecision.summary,
-			},
-		});
-	}
-	if (testDecision.verdict !== "pass") {
-		const reasons = [
-			testDecision.verdict === "attention"
-				? "test_attention"
-				: "test_rework_owner_unresolved",
-		];
-		await setMissionPilotAttention(
-			input.session.id,
-			input.phaseRun.id,
-			reasons.join(","),
-			{
-				errorCode: "MISSION_PILOT_TEST_GATE_REJECTED",
-				reasonCodes: reasons,
-			},
-		);
-		return { kind: "attention", reasons } as const;
-	}
 	const verificationDocumentId =
 		input.session.queueHandoffJson?.verificationDocumentId;
 	if (!verificationDocumentId) {
@@ -143,23 +85,17 @@ export async function continueAfterTestRun(input: {
 				),
 			),
 		);
-	const selectedEvidence =
-		testDecision.evidenceRunIds.length > 0
-			? await db
-					.select()
-					.from(verificationEvidenceRuns)
-					.where(
-						inArray(verificationEvidenceRuns.id, testDecision.evidenceRunIds),
-					)
-			: [];
-	const evidenceResolution = resolveAcceptedTestEvidence({
-		selectedEvidenceRunIds: testDecision.evidenceRunIds,
-		taskId: input.session.taskId,
-		runId: input.runId,
-		verificationDocumentId,
-		selectedRows: selectedEvidence,
+	const evidenceResolution = resolvePersistedTestEvidence({
 		historyRows: evidence,
 	});
+	const acceptedEvidenceIds = new Set(
+		evidenceResolution.acceptedEvidence.map((item) => item.id),
+	);
+	const unlinkedRequiredEvidenceCount = required.filter(
+		(item) =>
+			!["manual", "not_applicable"].includes(item.status) &&
+			!item.evidenceIdsJson.some((id) => acceptedEvidenceIds.has(id)),
+	).length;
 	const events = await db
 		.select()
 		.from(taskEvents)
@@ -178,7 +114,9 @@ export async function continueAfterTestRun(input: {
 			verificationDocumentId,
 		),
 		acceptedEvidenceCount: evidenceResolution.acceptedEvidence.length,
-		evidenceValidationReasons: evidenceResolution.reasons,
+		latestFailedEvidenceCount:
+			evidenceResolution.historySummary.latestFailureCount,
+		unlinkedRequiredEvidenceCount,
 		completionCheckEventId: completionCheck?.eventId ?? null,
 		completionCheckOk: completionCheck?.ok ?? false,
 		requiredTotal: required.length,
@@ -191,6 +129,34 @@ export async function continueAfterTestRun(input: {
 		sourceChangedAfterTest: false,
 	});
 	if (!gate.pass) {
+		const testDecision = parseStructuredTestDecision(run?.finalReport ?? "");
+		if (
+			testDecision?.verdict === "rework" &&
+			testDecision.defectOwner === "test"
+		) {
+			return prepareTestRetry({
+				session: input.session,
+				phaseRun: input.phaseRun,
+				reworkPacket: {
+					summary: testDecision.summary,
+					failedConditionIds: testDecision.failedConditionIds,
+					affectedPaths: testDecision.affectedPaths,
+				},
+			});
+		}
+		if (
+			testDecision?.verdict === "rework" &&
+			testDecision.defectOwner === "implementation"
+		) {
+			return prepareImplementationRework({
+				session: input.session,
+				phaseRun: input.phaseRun,
+				source: "test",
+				reworkPacket: testDecision.implementationRework ?? {
+					summary: testDecision.summary,
+				},
+			});
+		}
 		await setMissionPilotAttention(
 			input.session.id,
 			input.phaseRun.id,

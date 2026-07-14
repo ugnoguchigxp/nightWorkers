@@ -262,6 +262,34 @@ async function executeReview(
 		existingReviews,
 		currentSession,
 	);
+	if (
+		currentReviews.length === 0 &&
+		latestRecorded?.verdict === "revise" &&
+		currentSession?.planRoutingRevision === latestRecorded.routingRevision
+	) {
+		const correctionRuns = await planRepo.listArtifactCorrectionRunsForReview(
+			latestRecorded.id,
+		);
+		if (
+			planRepo.canResumePartialArtifactCorrections(
+				correctionRuns,
+				currentSession.contextRevision,
+			)
+		) {
+			await updatePhase(taskId, leaseOwner, "awaiting_artifact_correction");
+			await executeArtifactCorrections({
+				taskId,
+				sessionId,
+				questionnaireSessionId,
+				reviewId: latestRecorded.id,
+				targets: latestRecorded.reviewJson.revisionTargets,
+				contextRevision: latestRecorded.contextRevision,
+				contextDigest: latestRecorded.contextDigest,
+				leaseOwner,
+			});
+			await updatePhase(taskId, leaseOwner, "reviewing_plan");
+		}
+	}
 	const latestCurrent = currentReviews.at(-1) ?? null;
 	if (
 		latestCurrent?.verdict === "pass" &&

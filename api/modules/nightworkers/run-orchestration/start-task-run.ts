@@ -1,22 +1,7 @@
-import { getCurrentSettings } from "../../../routes/settings";
-import {
-	nativeApiRoleForExecutionMode,
-	stateCardRoleForExecutionMode,
-} from "../../../services/agent-runtime/native-api-runner/native-api-mode";
+import { stateCardRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
-import { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
-import {
-	readRuntimeLaneConfigFromEnv,
-	resolveRuntimeLane,
-} from "../../../services/agent-runtime/runtime-lane";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
-import {
-	buildPlanModeSettingsSnapshot,
-	readGeneralSettings,
-} from "../../../services/settings/general-settings";
-import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
-import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
@@ -25,19 +10,20 @@ import {
 	buildOntologyRuntimeContextSnapshot,
 	ontologySnapshotEventSeverity,
 } from "../../ontology";
-import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import { launchRuntimeExecution } from "./runtime-execution";
 import {
-	buildEffectiveLlmRoutingSnapshot,
 	buildLatestRuntimeUserMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
 	loadCodexRuntimeResumeState,
 	maybeLoadConversationStateCard,
-	resolveRuntimeLaneForRoleRoute,
 } from "./runtime-routing";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
+import {
+	prepareTaskRunRuntimeContext,
+	resolveRunProjectExplorationCatalogPin,
+} from "./start-task-run-runtime-context";
 import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toAgentRuntimeTodoContext } from "./todo-closeout";
 import { resolveInitialTaskRunTodos } from "./todo-resume";
@@ -61,6 +47,7 @@ export async function startTaskRunInProcess(
 		executionRoot,
 		projectMeta,
 		securityIntelligence,
+		projectExplorationCatalogSettings,
 		lastUserMessage,
 		runtimeImageAttachments,
 		llmRouteOverride,
@@ -72,54 +59,31 @@ export async function startTaskRunInProcess(
 		verificationPolicy,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
-	const runtimeRole = nativeApiRoleForExecutionMode(executionMode);
-	const blueprintPlanningSnapshot =
-		executionMode === "general_answer"
-			? {}
-			: {
-					blueprintPlanning: await resolveBlueprintPlanningReadiness(taskId),
-				};
-	const runtimeRoleLabel =
-		executionMode === "general_answer"
-			? "general_answer"
-			: runtimeRole === "implementation"
-				? "Implementation"
-				: runtimeRole;
-	const settings = getCurrentSettings();
-	const generalSettings = readGeneralSettings();
-	const planModeSettingsSnapshot =
-		buildPlanModeSettingsSnapshot(generalSettings);
-	const llmUsageSettingsSnapshot = generalSettings.llmUsage ?? {
-		promptPartObservabilityEnabled: true,
-	};
-	const baseRuntimeLaneResolution = resolveRuntimeLane({
-		settingsRuntimeLane: settings.IMPLEMENTATION_RUNTIME_LANE,
-		activeLlmProvider: settings.ACTIVE_LLM_PROVIDER,
-		codexEnabled: settings.CODEX_ENABLED,
-		...readRuntimeLaneConfigFromEnv(),
-	});
-	const structuredLlmSettings = readStructuredLlmProviderSettings();
-	const runtimeLlmRoute = resolveStructuredLlmRoleRoute({
-		role: runtimeRole,
-		settings: structuredLlmSettings,
-		override: llmRouteOverride,
-	});
-	const runtimeLaneResolution = resolveRuntimeLaneForRoleRoute(
-		baseRuntimeLaneResolution,
+	const {
+		runtimeRole,
+		blueprintPlanningSnapshot,
+		runtimeRoleLabel,
+		planModeSettingsSnapshot,
+		llmUsageSettingsSnapshot,
 		runtimeLlmRoute,
+		runtimeLaneResolution,
+		runtimeLaneDefinition,
+		effectiveLlmRouting,
+	} = await prepareTaskRunRuntimeContext({
+		taskId,
 		executionMode,
-	);
-	const runtimeLaneDefinition = resolveRuntimeLaneDefinition(
-		runtimeLaneResolution.lane,
-	);
-	const effectiveLlmRouting = buildEffectiveLlmRoutingSnapshot({
-		activeRole: runtimeRole,
-		executionMode,
-		settings: structuredLlmSettings,
-		activeRoute: runtimeLlmRoute,
-		override: llmRouteOverride,
+		llmRouteOverride,
 	});
 	const gitBaseline = await readGitBaseline(executionRoot);
+	const projectExplorationCatalogPin =
+		await resolveRunProjectExplorationCatalogPin({
+			executionMode,
+			registeredRepoRoot: repoInfo.localPath,
+			expectedHead: gitBaseline.baselineHead,
+			preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
+			settings: projectExplorationCatalogSettings,
+			runtimeLane: runtimeLaneResolution.lane,
+		});
 	const run = await repo.createTaskRun({
 		taskId,
 		repositoryId: task.repositoryId,
@@ -134,6 +98,7 @@ export async function startTaskRunInProcess(
 			executionModeSource,
 			jobType,
 			verificationPolicy,
+			projectExplorationCatalog: projectExplorationCatalogPin,
 			planModeSettingsSnapshot,
 			...blueprintPlanningSnapshot,
 			runtimeLane: runtimeLaneResolution.lane,
@@ -253,6 +218,7 @@ export async function startTaskRunInProcess(
 		executionPhase: executionMode,
 		executionModeSource,
 		verificationPolicy,
+		projectExplorationCatalog: projectExplorationCatalogPin,
 		planModeClosed: executionMode !== "planning",
 		planModeSettingsSnapshot,
 		...blueprintPlanningSnapshot,

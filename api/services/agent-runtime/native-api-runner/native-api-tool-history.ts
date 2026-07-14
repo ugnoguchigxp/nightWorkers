@@ -1,5 +1,6 @@
 import type { PromptImageAttachment } from "../../../../shared/prompt-image";
 import { isPromptImageMediaType } from "../../../../shared/prompt-image";
+import { projectExplorationCatalogRunPinSchema } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import {
 	formatOntologyCloseoutRequirementsForPrompt,
 	formatOntologyRuntimeContextForPrompt,
@@ -297,6 +298,8 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		context.runtimeOptions?.planModeSettingsSnapshot,
 	);
 	const ontologyGuidance = buildOntologyGuidance(context);
+	const projectExplorationGuidance =
+		buildProjectExplorationCatalogGuidance(context);
 	const repositoryBootstrap = Boolean(
 		context.runtimeOptions?.repositoryBootstrap,
 	);
@@ -321,6 +324,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"- 仕様書、実装計画、artifact が source of truth です。Plan Mode artifact の契約詳細が実装に影響する場合は read_current_specification includeDesignContext=true の assembled design context も読んでください。",
 		"- provider-visible tools は current Todo / procedure に合わせて絞られます。表示されている tool から現在の作業に必要なものだけを使ってください。",
 		...(ontologyGuidance ? ontologyGuidance : []),
+		...(projectExplorationGuidance ? projectExplorationGuidance : []),
 		"- TodoList pane がユーザーに見える進捗の source of truth です。Timeline 追加警告ではなく、TodoList の状態遷移で現在位置を示してください。",
 		"- SystemContext / Todo snapshot に出る coding_preparation / completion_report は読み取り用の NightWorkers-managed gates です。replace では実作業 Todo だけを書き、固定ゲートは NightWorkers に維持させてください。",
 		"- Todo snapshot を echo して固定ゲートを replace に含めても tool は固定ゲートへ merge しますが、これは進捗更新ではありません。作業段階を進める場合は start/done/block/fail を使ってください。",
@@ -338,6 +342,26 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"",
 		...modeGuidance(executionMode),
 	].join("\n");
+}
+
+export function buildProjectExplorationCatalogGuidance(
+	context: AgentRunContext,
+): string[] | null {
+	if (readNativeApiExecutionMode(context) !== "implementation") return null;
+	const pin = readProjectExplorationCatalogPin(context);
+	if (!pin?.available) return null;
+	return [
+		"- このrunでは固定済みProject exploration catalogを利用できます。編集対象がTask/Todoに明示済み、またはtrivialな単一file作業なら呼び出しを省略できます。scopeが不明な場合だけ、広域のdirectory/search探索より先に一度だけ呼び出してください。",
+		`- mcp_call_tool の固定値は serverId=${pin.serverId}、scanRunId=${pin.scanRunId}、generationId=${pin.generationId} です。`,
+		'- call shape: {"serverId":"' +
+			pin.serverId +
+			'","toolName":"vuln_get_project_exploration_catalog","arguments":{"scanRunId":"' +
+			pin.scanRunId +
+			'","generationId":"' +
+			pin.generationId +
+			'","focus":{"paths":["<known project-relative path, if any>"],"moduleIds":["<known module id, if any>"],"terms":["<task nouns>"]}}}',
+		"- focusにはpaths/moduleIds/termsの少なくとも1つを入れ、Taskから導けないmodule IDを捏造しないでください。返却pathはclueとして扱い、編集前に対象sourceをread_fileで読んでください。catalogで得た事実について同等のproject-wide searchを繰り返さないでください。",
+	];
 }
 
 function buildOntologyGuidance(context: AgentRunContext) {
@@ -365,6 +389,14 @@ export function readOntologyMcpEnabled(context: AgentRunContext) {
 	}
 	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
 	return enabled === true;
+}
+
+export function readProjectExplorationCatalogPin(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const parsed = projectExplorationCatalogRunPinSchema.safeParse(
+		snapshot.projectExplorationCatalog,
+	);
+	return parsed.success ? parsed.data : null;
 }
 
 function formatPlanModeSettingsSnapshot(snapshot: unknown) {

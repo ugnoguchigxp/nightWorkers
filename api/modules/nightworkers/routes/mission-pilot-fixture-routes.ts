@@ -26,6 +26,7 @@ import {
 } from "../../../db/verification-schema";
 import { createOpenApiRouter } from "../../../lib/openapi";
 import * as missionPilotRepo from "../../missionPilot/mission-pilot.repository";
+import { buildFeaturePlanImplementationPlanMetadata } from "../../specification/feature-plan-implementation-plan";
 import * as repo from "../nightworkers.repository";
 import { codingAgentChatTrace } from "../nightworkers.trace-provenance";
 
@@ -138,13 +139,30 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 			return c.json({ error: "Context snapshot not found" }, 404);
 		const now = new Date();
 		const questionnaireId = randomUUID();
+		const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
+			version: 1,
+			requiresDataMigration: false,
+			steps: [
+				{
+					key: "fixture-implementation",
+					title: "fixture実装を確認する",
+					description: "Mission Pilot E2E fixtureの実装経路を確認する。",
+					taskType: "implementation",
+					dependsOnKeys: [],
+				},
+			],
+		});
 		const featurePlan = await repo.createTaskMessage({
 			taskId: input.taskId,
 			role: "assistant",
 			content:
 				"# Feature Plan\n\n## Completion Conditions\n\n- Assert the immutable Queue handoff",
 			messageType: "markdown_document",
-			payloadJson: { intent: "feature_plan", title: "Feature Plan" },
+			payloadJson: {
+				intent: "feature_plan",
+				title: "Feature Plan",
+				implementationPlan,
+			},
 			trace: codingAgentChatTrace(),
 		});
 		await db.insert(designQuestionnaireSessions).values({
@@ -331,6 +349,9 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 			reviewedContextRevision: activationContextRevision,
 			reviewedContextDigest: contextDigest,
 			featurePlanMessageId: featurePlan.id,
+			implementationTodoProjectionVersion: 1 as const,
+			implementationPlanSourceMessageId: featurePlan.id,
+			implementationPlanDigest: implementationPlan.digest,
 			verificationDocumentId,
 			planReviewId,
 			planReviewVerdict: "pass" as const,

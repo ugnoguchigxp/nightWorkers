@@ -303,6 +303,7 @@ function findContextArtifactMessageId(
 		);
 		if (
 			stepKey === kind ||
+			stepKey === `correction:${kind}` ||
 			entryKind === kind ||
 			(kind === "feature_plan" && metadata.intent === "feature_plan")
 		) {

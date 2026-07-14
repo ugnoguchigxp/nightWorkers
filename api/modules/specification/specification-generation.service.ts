@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { featurePlanImplementationPlanSchema } from "../../../shared/schemas/feature-plan-implementation-plan.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
@@ -25,6 +26,10 @@ import {
 	listDesignQuestionnaires,
 } from "../questionnaire/questionnaire.service";
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
+import {
+	buildFeaturePlanImplementationPlanMetadata,
+	renderFeaturePlanContent,
+} from "./feature-plan-implementation-plan";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
 import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
@@ -41,7 +46,8 @@ import { buildSpecificationVerificationSidecar } from "./specification-verificat
 
 const specificationDocumentDraftSchema = z.object({
 	title: z.string().min(1),
-	content: z.string().min(1),
+	contentTemplate: z.string().min(1),
+	implementationPlan: featurePlanImplementationPlanSchema,
 });
 const DEFAULT_FEATURE_PLAN_TITLE = "Feature Plan";
 export const FEATURE_PLAN_LLM_TIMEOUT_MS = PLAN_ARTIFACT_GENERATION_TIMEOUT_MS;
@@ -129,8 +135,29 @@ export async function generateFeaturePlanArtifact(
 		input.llmUsageTrace,
 	);
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
+	const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
+		...parsed.implementationPlan,
+		steps: parsed.implementationPlan.steps.map((step) => ({
+			...step,
+			title: sanitizeSpecificationTargetNaming(
+				step.title,
+				context.projectStackContext,
+			),
+			description: sanitizeSpecificationTargetNaming(
+				step.description,
+				context.projectStackContext,
+			),
+		})),
+	});
+	const renderedContent = renderFeaturePlanContent({
+		contentTemplate: sanitizeSpecificationTargetNaming(
+			parsed.contentTemplate,
+			context.projectStackContext,
+		),
+		implementationPlan,
+	});
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
-		parsed.content.trimEnd(),
+		renderedContent.trimEnd(),
 		context.projectStackContext,
 	);
 	const initialSidecar = buildSpecificationVerificationSidecar({
@@ -153,6 +180,7 @@ export async function generateFeaturePlanArtifact(
 			title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
 			source: "status",
 			questionnaireSessionId: session?.id ?? null,
+			implementationPlan,
 			generation: {
 				source: "llm",
 				context: {

@@ -23,6 +23,7 @@ import {
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as queueRepo from "../queue/queue.repository";
 import { prepareImplementationQueueAdmission } from "../queue/queue-management.service";
+import { readFeaturePlanImplementationPlanMetadata } from "../specification/feature-plan-implementation-plan";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 import {
@@ -175,6 +176,15 @@ export async function admitMissionPilotQueueHandoff(input: {
 				"Feature Plan or Verification Document evidence is missing",
 			);
 		}
+		const implementationPlan = readFeaturePlanImplementationPlanMetadata(
+			featurePlanMessage.metadataJson,
+		);
+		if (!implementationPlan) {
+			throw new MissionPilotPreQueueError(
+				"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+				"Feature Plan implementation plan metadata is missing or invalid",
+			);
+		}
 		if (
 			session.desiredState !== "playing" ||
 			!missionPilotRepo.hasValidAuthorization(session)
@@ -208,6 +218,10 @@ export async function admitMissionPilotQueueHandoff(input: {
 					handoff.data.queueClaimReady === false &&
 					handoff.data.planReviewId === input.planReviewId &&
 					handoff.data.featurePlanMessageId === input.featurePlanMessageId &&
+					handoff.data.implementationTodoProjectionVersion === 1 &&
+					handoff.data.implementationPlanSourceMessageId ===
+						featurePlanMessage.id &&
+					handoff.data.implementationPlanDigest === implementationPlan.digest &&
 					handoff.data.verificationDocumentId ===
 						input.verificationDocumentId &&
 					handoff.data.reviewedContextRevision === session.contextRevision &&
@@ -327,6 +341,9 @@ export async function admitMissionPilotQueueHandoff(input: {
 			reviewedContextDigest: review.contextDigest,
 			routingRevision: review.routingRevision,
 			featurePlanMessageId: featurePlanMessage.id,
+			implementationTodoProjectionVersion: 1,
+			implementationPlanSourceMessageId: featurePlanMessage.id,
+			implementationPlanDigest: implementationPlan.digest,
 			verificationDocumentId: verificationDocument.id,
 			planReviewId: review.id,
 			planReviewVerdict: "pass",

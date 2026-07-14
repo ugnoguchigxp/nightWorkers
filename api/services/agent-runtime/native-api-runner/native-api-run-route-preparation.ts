@@ -12,7 +12,10 @@ import {
 	validateNativeApiRouteSnapshot,
 } from "./native-api-runner-routing";
 import type { NativeApiHistoryItem } from "./native-api-tool-history";
-import { readOntologyMcpEnabled } from "./native-api-tool-history";
+import {
+	readOntologyMcpEnabled,
+	readProjectExplorationCatalogPin,
+} from "./native-api-tool-history";
 import { getNativeApiToolDefinitions } from "./native-api-tool-registry";
 
 export async function prepareNativeApiRunRoute(input: {
@@ -42,6 +45,8 @@ export async function prepareNativeApiRunRoute(input: {
 		executionMode: input.executionMode,
 		currentTodo: input.currentTodo ?? input.context.currentTodo ?? null,
 		ontologyMcpEnabled: readOntologyMcpEnabled(input.context),
+		projectExplorationCatalogEnabled:
+			readProjectExplorationCatalogPin(input.context)?.available === true,
 	});
 	const providerRequests = buildNativeApiProviderRequests({
 		context: input.context,

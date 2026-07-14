@@ -4,27 +4,9 @@ import type { AgentRunContext } from "../api/services/agent-runtime/types";
 
 describe("Codex runtime Test Mode prompt", () => {
 	it("keeps Test Mode focused on test implementation and evidence checks", () => {
-		const prompt = buildCodexRuntimePromptParts({
-			runId: "run-1",
-			taskId: "task-1",
-			repositoryId: "repo-1",
-			repoRoot: "/tmp/repo-worktrees/task-1",
-			compiledPrompt: "テストを実装してください",
-			latestUserMessage: "テストを実装してください",
-			timeoutSeconds: 3600,
-			contextSnapshot: {
-				compiledPrompt: "テストを実装してください",
-				source: "task_prompt",
-				executionMode: "test",
-				request: {
-					registeredRepositoryPath: "/tmp/repo",
-					repositoryPath: "/tmp/repo-worktrees/task-1",
-				},
-			},
-			runtimeOptions: {
-				testMode: { action: "plan_and_implement_tests" },
-			},
-		} satisfies AgentRunContext).runtimeContract;
+		const prompt = buildTestModePrompt({
+			testMode: { action: "plan_and_implement_tests" },
+		});
 
 		expect(prompt).toContain(
 			"実装開始 -> ユニットテスト実行 -> 証跡テストチェック",
@@ -42,4 +24,40 @@ describe("Codex runtime Test Mode prompt", () => {
 		expect(prompt).toContain("登録元で実装・検証しない");
 		expect(prompt).not.toContain("reviewer_evaluation");
 	});
+
+	it("keeps Mission Pilot evidence selection deterministic", () => {
+		const prompt = buildTestModePrompt({
+			testMode: { action: "plan_and_implement_tests" },
+			missionPilot: { sessionId: "session-1" },
+		});
+
+		expect(prompt).toContain(
+			"永続化されたVerification Checklist、managed evidence、completion_checkからNightWorkersが決定する",
+		);
+		expect(prompt).not.toContain("evidenceRunIds");
+	});
 });
+
+function buildTestModePrompt(
+	runtimeOptions: AgentRunContext["runtimeOptions"],
+) {
+	return buildCodexRuntimePromptParts({
+		runId: "run-1",
+		taskId: "task-1",
+		repositoryId: "repo-1",
+		repoRoot: "/tmp/repo-worktrees/task-1",
+		compiledPrompt: "テストを実装してください",
+		latestUserMessage: "テストを実装してください",
+		timeoutSeconds: 3600,
+		contextSnapshot: {
+			compiledPrompt: "テストを実装してください",
+			source: "task_prompt",
+			executionMode: "test",
+			request: {
+				registeredRepositoryPath: "/tmp/repo",
+				repositoryPath: "/tmp/repo-worktrees/task-1",
+			},
+		},
+		runtimeOptions,
+	} satisfies AgentRunContext).runtimeContract;
+}

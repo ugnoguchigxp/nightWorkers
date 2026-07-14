@@ -249,11 +249,13 @@ export function buildSpecificationDocumentSystemPrompt() {
 		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",
 		"auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。",
 		"`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。",
-		"content の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。",
+		"contentTemplate の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。実装計画の位置には `{{IMPLEMENTATION_PLAN}}` を正確に1件だけ置き、`## 実装計画` を別途書かないでください。",
 		"`## 目的` は 1-2 文にしてください。",
 		"`## スコープ` は対象 / 非対象を短い箇条書きにしてください。",
 		"`## タスク分類` は分類と理由を 2-3 行で書いてください。",
-		"`## 実装計画` は番号付きで DB / API / UI / test / verification の順に、各項目 1-2 文で書いてください。API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照する形にしてください。",
+		"production変更は implementationPlan.steps にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。",
+		"implementationPlan は version=1、requiresDataMigration、steps を返してください。各stepは一意な key、title、description、taskType(scaffold または implementation)、dependsOnKeysを持ちます。test、verification、review、closeout、固定Todo gateはstepsへ入れないでください。",
+		"DB schema / migration変更が必要な場合だけ requiresDataMigration=true にしてください。stepsは実装順に並べ、dependsOnKeysは同じimplementationPlan内の先行stepのkeyだけを参照し、循環させないでください。",
 		"`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。",
 		"`## 検証計画` は `## 完了条件` の各項目がどう確認されるかをつなぐテストケースゴールとして書いてください。unit / focused test / API smoke / DB verification / regression check のどれで確認するかが読める粒度にしてください。",
 		"`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。",
@@ -265,7 +267,7 @@ export function buildSpecificationDocumentSystemPrompt() {
 		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
 			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
-		"出力は JSON object のみで、title と content を返してください。content は Markdown 文字列にしてください。",
+		"出力は JSON object のみで、title、contentTemplate、implementationPlan を返してください。contentTemplate は Markdown 文字列にしてください。",
 	].join("\n");
 }
 

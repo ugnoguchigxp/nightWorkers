@@ -115,9 +115,6 @@ export async function runE2eFixtureRuntime(
 			verdict: completion.ok ? "pass" : "attention",
 			defectOwner: completion.ok ? "test" : "unknown",
 			failedConditionIds: [],
-			evidenceRunIds: check.payload.evidenceRunId
-				? [check.payload.evidenceRunId]
-				: [],
 			affectedPaths: [],
 			summary: completion.ok
 				? "Deterministic Test Mode passed."

@@ -145,6 +145,14 @@ export async function listLlmUsageRecordsForTask(taskId: string) {
 		.orderBy(desc(llmUsageRecords.createdAt));
 }
 
+export async function listLlmUsageRecordsForRun(runId: string) {
+	return db
+		.select()
+		.from(llmUsageRecords)
+		.where(eq(llmUsageRecords.runId, runId))
+		.orderBy(llmUsageRecords.createdAt);
+}
+
 export async function summarizeLlmUsageForTask(taskId: string) {
 	const [row] = await db
 		.select({

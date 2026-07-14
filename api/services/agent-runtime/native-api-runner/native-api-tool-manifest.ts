@@ -38,6 +38,7 @@ export type NativeApiToolProfileInput = {
 	executionMode?: NativeApiExecutionMode;
 	currentTodo?: NativeApiToolProfileTodo | null;
 	ontologyMcpEnabled?: boolean;
+	projectExplorationCatalogEnabled?: boolean;
 };
 
 export const objectSchema = (

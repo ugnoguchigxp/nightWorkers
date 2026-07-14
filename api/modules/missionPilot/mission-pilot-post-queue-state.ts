@@ -95,7 +95,8 @@ export type TestGateInput = {
 	runStatus: string;
 	verificationDocumentMatches: boolean;
 	acceptedEvidenceCount: number;
-	evidenceValidationReasons: string[];
+	latestFailedEvidenceCount: number;
+	unlinkedRequiredEvidenceCount: number;
 	completionCheckEventId: string | null;
 	completionCheckOk: boolean;
 	requiredTotal: number;
@@ -113,9 +114,8 @@ export function evaluateTestCompletionGate(input: TestGateInput) {
 		reasons.push("verification_document_mismatch");
 	if (input.acceptedEvidenceCount === 0)
 		reasons.push("managed_evidence_missing");
-	for (const reason of input.evidenceValidationReasons) {
-		if (!reasons.includes(reason)) reasons.push(reason);
-	}
+	if (input.latestFailedEvidenceCount > 0)
+		reasons.push("managed_evidence_failed");
 	if (!input.completionCheckEventId || !input.completionCheckOk)
 		reasons.push("completion_check_missing_or_failed");
 	if (input.requiredTotal === 0) reasons.push("required_conditions_empty");
@@ -123,6 +123,8 @@ export function evaluateTestCompletionGate(input: TestGateInput) {
 		reasons.push("required_conditions_incomplete");
 	if (input.failedRequired > 0) reasons.push("required_conditions_failed");
 	if (input.unknownRequired > 0) reasons.push("required_conditions_unknown");
+	if (input.unlinkedRequiredEvidenceCount > 0)
+		reasons.push("required_conditions_evidence_missing");
 	if (!input.contextDigestMatches) reasons.push("stale_context");
 	if (input.sourceChangedAfterTest) reasons.push("source_changed_after_test");
 	return { pass: reasons.length === 0, reasons };

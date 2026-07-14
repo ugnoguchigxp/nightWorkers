@@ -130,7 +130,17 @@ export function requiresDataMigrationFromRun(run: {
 		!Array.isArray(run.contextSnapshot)
 			? (run.contextSnapshot as Record<string, unknown>)
 			: null;
-	return snapshot?.jobType === "data_migration";
+	const missionPilot =
+		snapshot?.missionPilot &&
+		typeof snapshot.missionPilot === "object" &&
+		!Array.isArray(snapshot.missionPilot)
+			? (snapshot.missionPilot as Record<string, unknown>)
+			: null;
+	return (
+		snapshot?.jobType === "data_migration" ||
+		snapshot?.requireDataMigrationGates === true ||
+		missionPilot?.requireDataMigrationGates === true
+	);
 }
 
 export function readVerificationPolicyFromRun(run: {

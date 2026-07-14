@@ -212,7 +212,7 @@ function buildTestModeContract(
 		"- Test Mode では TodoList を使わない。Verification Checklist の状態は backend の deterministic evidence 更新に任せ、画面進捗はこの run の managed tool 実行イベントから表現される。",
 		...(missionPilotRun
 			? [
-					"- 最終回答は verdict(pass|rework|attention), defectOwner(test|implementation|environment|unknown), failedConditionIds, evidenceRunIds, affectedPaths, summary, implementationRework を持つJSON objectだけを返す。",
+					"- 最終回答は verdict(pass|rework|attention), defectOwner(test|implementation|environment|unknown), failedConditionIds, affectedPaths, summary, implementationRework を持つJSON objectだけを返す。Testの合否とsnapshot対象証跡は、永続化されたVerification Checklist、managed evidence、completion_checkからNightWorkersが決定する。",
 					"- production defectはdefectOwner=implementationとし、implementationReworkへobjective、acceptanceCriteria、evidenceRefsを設定する。Test role自身でproduction修正を抱え込まない。",
 				]
 			: []),

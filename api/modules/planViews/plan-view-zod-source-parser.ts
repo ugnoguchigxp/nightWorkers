@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import type { PlanZodSchemaArtifact } from "../../../shared/schemas/plan-mode-artifact.schema";
 
 export function parseZodObjectSource(zodSource: string): {

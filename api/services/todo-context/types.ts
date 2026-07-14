@@ -81,6 +81,7 @@ export type RuntimePromptSnapshot = {
 	};
 	ontologyContext?: unknown;
 	ontologyBoundaryAudit?: unknown;
+	projectExplorationCatalog?: unknown;
 	effectiveLlmRouting?: unknown;
 	request: {
 		registeredRepositoryPath?: string;

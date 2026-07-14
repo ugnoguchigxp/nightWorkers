@@ -6,42 +6,27 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
-
-export async function getMissionPilotImplementationEnvelope(taskId: string) {
-	const [session] = await db
-		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.taskId, taskId))
-		.limit(1);
-	if (!session || session.desiredState !== "playing") return null;
-	const handoff = session.queueHandoffJson;
-	if (
-		!handoff ||
-		handoff.reviewedContextRevision !== session.contextRevision ||
-		handoff.reviewedContextDigest !== session.contextDigest
-	)
-		return null;
-	return {
-		sessionId: session.id,
-		cycle: session.implementationCycle,
-		contextRevision: session.contextRevision,
-		contextDigest: session.contextDigest,
-		featurePlanMessageId: handoff.featurePlanMessageId,
-		verificationDocumentId: handoff.verificationDocumentId,
-		planReviewId: handoff.planReviewId,
-	};
-}
+import type { MissionPilotImplementationEnvelope } from "./mission-pilot-implementation-todo-projection.service";
 
 export async function associateMissionPilotImplementationRun(input: {
 	taskId: string;
 	runId: string;
+	missionPilot: MissionPilotImplementationEnvelope;
 }) {
 	const [session] = await db
 		.select()
 		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.taskId, input.taskId))
+		.where(eq(missionPilotSessions.id, input.missionPilot.sessionId))
 		.limit(1);
-	if (!session || session.desiredState !== "playing") return null;
+	if (
+		!session ||
+		session.taskId !== input.taskId ||
+		session.desiredState !== "playing" ||
+		session.implementationCycle !== input.missionPilot.cycle ||
+		session.contextRevision !== input.missionPilot.contextRevision ||
+		session.contextDigest !== input.missionPilot.contextDigest
+	)
+		return null;
 	if (
 		!["queued", "implementation_starting", "implementing"].includes(
 			session.phase,
@@ -49,7 +34,14 @@ export async function associateMissionPilotImplementationRun(input: {
 	)
 		return null;
 	const handoff = session.queueHandoffJson;
-	if (!handoff || handoff.reviewedContextDigest !== session.contextDigest)
+	if (
+		!handoff ||
+		handoff.reviewedContextDigest !== input.missionPilot.contextDigest ||
+		handoff.featurePlanMessageId !== input.missionPilot.featurePlanMessageId ||
+		handoff.verificationDocumentId !==
+			input.missionPilot.verificationDocumentId ||
+		handoff.planReviewId !== input.missionPilot.planReviewId
+	)
 		return null;
 	const now = new Date();
 	const cycle = session.implementationCycle;
@@ -81,6 +73,17 @@ export async function associateMissionPilotImplementationRun(input: {
 				.returning()
 		)[0];
 	if (!phaseRun) return null;
+	if (existing) {
+		await db
+			.update(missionPilotPhaseRuns)
+			.set({
+				evidenceJson: {
+					...record(existing.evidenceJson),
+					queueHandoff: handoff,
+				},
+			})
+			.where(eq(missionPilotPhaseRuns.id, existing.id));
+	}
 	await db
 		.update(missionPilotSessions)
 		.set({
@@ -111,6 +114,12 @@ export async function associateMissionPilotImplementationRun(input: {
 	return phaseRun;
 }
 
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
 export async function associateMissionPilotChildRun(input: {
 	taskId: string;
 	runId: string;
@@ -131,6 +140,7 @@ export async function associateMissionPilotChildRun(input: {
 		!session ||
 		session.taskId !== input.taskId ||
 		session.desiredState !== "playing" ||
+		session.implementationCycle !== input.missionPilot.cycle ||
 		session.contextRevision !== input.missionPilot.contextRevision ||
 		session.contextDigest !== input.missionPilot.contextDigest
 	)

@@ -5,6 +5,7 @@ import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service"
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
 import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
 import { getProjectSecurityIntelligenceSettings } from "../../ontology";
+import { getProjectExplorationCatalogSettings } from "../../ontology/exploration/project-exploration-settings.service";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import * as repo from "../nightworkers.repository";
 import { readPromptImageAttachments } from "../prompt-image-attachments";
@@ -50,9 +51,15 @@ export async function prepareTaskRunStart(input: {
 			"Repository path is not a directory",
 		);
 	}
-	const [projectMeta, securityIntelligence, messages] = await Promise.all([
+	const [
+		projectMeta,
+		securityIntelligence,
+		projectExplorationCatalogSettings,
+		messages,
+	] = await Promise.all([
 		getFreshProjectMeta(repoInfo),
 		getProjectSecurityIntelligenceSettings(repoInfo.id),
+		getProjectExplorationCatalogSettings(repoInfo.id),
 		repo.listTaskMessages(input.task.id),
 	]);
 	const lastUserMessage = [...messages]
@@ -125,6 +132,7 @@ export async function prepareTaskRunStart(input: {
 		executionRoot,
 		projectMeta,
 		securityIntelligence,
+		projectExplorationCatalogSettings,
 		messages,
 		lastUserMessage,
 		runtimeImageAttachments: readPromptImageAttachments(

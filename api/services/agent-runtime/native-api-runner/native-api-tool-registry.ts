@@ -89,6 +89,7 @@ export function getNativeApiToolDefinitions(
 		mode: input.executionMode ?? "implementation",
 		currentTodo: input.currentTodo,
 		ontologyMcpEnabled: input.ontologyMcpEnabled,
+		projectExplorationCatalogEnabled: input.projectExplorationCatalogEnabled,
 	});
 	return nativeApiToolRegistrations
 		.filter((registration) => allowed.has(registration.name))
@@ -120,6 +121,7 @@ function modelVisibleNativeApiToolNames(input: {
 	mode: NativeApiExecutionMode;
 	currentTodo?: NativeApiToolProfileTodo | null;
 	ontologyMcpEnabled?: boolean;
+	projectExplorationCatalogEnabled?: boolean;
 }) {
 	if (input.mode !== "implementation")
 		return allowedNativeApiToolNames(input.mode);
@@ -143,7 +145,7 @@ function modelVisibleNativeApiToolNames(input: {
 	for (const toolName of oneShotToolNamesForTodo(input.currentTodo)) {
 		allowed.add(toolName);
 	}
-	if (input.ontologyMcpEnabled) {
+	if (input.ontologyMcpEnabled || input.projectExplorationCatalogEnabled) {
 		allowed.add("list_mcp_tools");
 		allowed.add("mcp_call_tool");
 	}
