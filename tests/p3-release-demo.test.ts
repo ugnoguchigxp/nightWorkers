@@ -253,7 +253,7 @@ describe("P3 release discipline", () => {
 		expect(workflow).toContain("release-attestation.mjs");
 		expect(workflow).toContain('--attestation "$ATTESTATION"');
 		expect(workflow).toContain("environment: release");
-		expect(publishSection).toContain("actions/download-artifact@v4");
+		expect(publishSection).toContain("actions/download-artifact@v8");
 		expect(publishSection).not.toContain("verify:release");
 		expect(publishSection).not.toContain("desktop:build");
 	});

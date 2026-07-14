@@ -19,7 +19,7 @@ describe("desktop OS matrix workflow", () => {
 			"desktop:smoke-sidecar",
 			"desktop:smoke",
 			"collect-diagnostics.mjs postmortem",
-			"actions/upload-artifact@v4",
+			"actions/upload-artifact@v7",
 		]) {
 			expect(workflow).toContain(value);
 		}
