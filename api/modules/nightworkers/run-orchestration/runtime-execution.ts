@@ -496,6 +496,10 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
+			// Mission Pilot continuation may immediately start the next mode. Publish
+			// the terminal run status before that handoff so the start guard does not
+			// mistake this completed run for an active execution.
+			await repo.updateTaskRun(run.id, { status: guardedStatus });
 			let reviewRunStartedByMissionPilot = false;
 			try {
 				const missionContinuation = await continueMissionPilotAfterRun({
@@ -503,6 +507,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					runId: run.id,
 					executionMode:
 						runtimeContextSnapshot.executionMode ?? "implementation",
+					runStatus: guardedStatus,
 				});
 				await executeMissionPilotContinuation(missionContinuation);
 				reviewRunStartedByMissionPilot =

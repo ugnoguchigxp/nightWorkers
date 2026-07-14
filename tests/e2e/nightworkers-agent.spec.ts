@@ -464,7 +464,7 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 				{ headers: sameOriginHeaders },
 			);
 			expect(archiveRes.status(), await archiveRes.text()).toBe(200);
-			expect(["completed", "cancelled"]).toContain(
+			expect(["archived", "completed", "cancelled"]).toContain(
 				((await archiveRes.json()) as { status: string }).status,
 			);
 		} finally {

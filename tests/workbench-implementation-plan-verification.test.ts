@@ -72,8 +72,8 @@ describe("Workbench implementation plan verification metadata", () => {
 		);
 		expect(verificationMessage?.messageType).toBe("verification_json");
 		expect(
-			(verificationMessage?.metadataJson as Record<string, unknown>)
-				.sourceImplementationPlanMessageId,
+			(verificationMessage?.metadataJson as Record<string, unknown> | undefined)
+				?.sourceImplementationPlanMessageId,
 		).toBe(implementationPlan?.id);
 
 		const checklist = await listVerificationChecklistItems(

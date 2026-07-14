@@ -2,13 +2,28 @@
 
 ## Status
 
-- Plan status: `proposed`
+- Plan status: `in_progress`
 - Document created: 2026-07-14
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Baseline HEAD: `b0dae7098740e1eba834556e38033fca46865ed7`
 - Primary release target: macOS ARM64 signed limited beta
 - Secondary targets: Windows x64 / Linux x64 after native package verification
-- Implementation authorization: not started
+- Implementation authorization: started
+
+実装進捗（2026-07-14）:
+
+- Phase 1 gate は `bun run verify`、full Vitest、deterministic E2E coverage（45/45）、
+  Accessibility を通過した。
+- Phase 2 の現行 desktop gate は `bun run verify:desktop` を通過した。
+- release metadata、documentation consistency、dependency audit、desktop build / smokeを含む
+  `bun run verify:release` を通過した。
+- Phase 3 / 6 / 8 のproduction CSP、DevTools無効化、migration前backup、bundle budget、
+  third-party notice、SBOM、updater設定とrelease attestationは実装済みで、release regression
+  testでも検証した。
+- `bun run test:coverage` はbackend coverage workerが完走結果を返さず停止したため、Phase 7の
+  global coverage再確立は未完了として扱う（既存summaryのbranch 63.12%は目標75%未達）。
+- macOS signing / notarization / staple と Windows / Linux のnative installer実行は、対応する
+  GitHub Actions runner と release secrets を必要とするため、実release workflowでの証明を残す。
 
 この文書を、NightWorkers の現行機能を広げず、品質 gate、Tauri sidecar、
 security、署名、cross-platform packaging、保守性を配布可能な状態へ収束させるための

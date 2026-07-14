@@ -68,7 +68,7 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 			expect(url).toBe("http://localhost:11434/v1/chat/completions");
 			expect(
-				(init?.headers as Record<string, string>).Authorization,
+				(init?.headers as Record<string, string> | undefined)?.Authorization,
 			).toBeUndefined();
 			return new Response(
 				JSON.stringify({
@@ -188,9 +188,9 @@ describe("Supervisor LLM schema-first parsing provider runtime", () => {
 			expect(url).toBe(
 				"https://example.openai.azure.com/openai/deployments/gpt-5-4-mini/chat/completions?api-version=2025-04-01-preview",
 			);
-			expect((init?.headers as Record<string, string>)["api-key"]).toBe(
-				"test-azure-key",
-			);
+			expect(
+				(init?.headers as Record<string, string> | undefined)?.["api-key"],
+			).toBe("test-azure-key");
 			requestBodies.push(
 				JSON.parse(String(init?.body || "{}")) as Record<string, unknown>,
 			);

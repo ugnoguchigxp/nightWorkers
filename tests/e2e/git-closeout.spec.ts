@@ -135,12 +135,7 @@ test.describe("Git closeout @regression", () => {
 	test.describe.configure({ mode: "serial", timeout: 60_000 });
 
 	test("commits only the runtime-owned diff and persists its SHA", {
-		tag: [
-			"@deterministic",
-			"@p0",
-			"@scenario:NW-E2E-GIT-001",
-			"@scenario:NW-E2E-GIT-004",
-		],
+		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-GIT-001"],
 	}, async ({ request }) => {
 		const { workspace } = await createDisposableGitWorkspace({
 			prefix: "git-commit-",
@@ -220,6 +215,25 @@ test.describe("Git closeout @regression", () => {
 					encoding: "utf8",
 				}),
 			).toBe("");
+		} finally {
+			await cleanup(request, value, [workspace]);
+		}
+	});
+
+	test("review closeout requires persisted Test evidence before commit", {
+		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-GIT-004"],
+	}, async ({ request }) => {
+		const { workspace } = await createDisposableGitWorkspace({
+			prefix: "git-evidence-gate-",
+		});
+		const value = await createCompletedRun(request, workspace);
+		try {
+			expect(await readTestEvidence(request, value.taskId)).toMatchObject({
+				documents: 1,
+				documentStatuses: "active",
+				evidenceRuns: 1,
+				completedItems: 1,
+			});
 		} finally {
 			await cleanup(request, value, [workspace]);
 		}

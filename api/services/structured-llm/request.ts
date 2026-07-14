@@ -142,6 +142,15 @@ export function buildNormalizedSupervisorLlmRequestCandidates(input: {
 		policy: input.routePolicy,
 	});
 	if (routeCandidates.length === 0) {
+		if (process.env.NIGHTWORKERS_E2E_ISOLATED === "1") {
+			return [
+				buildNormalizedSupervisorLlmRequest({
+					...input,
+					settings: { ...settings, ACTIVE_LLM_PROVIDER: "fixture" },
+					resolvedRoute: null,
+				}),
+			];
+		}
 		if (input.routePolicy || isRoleRouteConfigured(settings, input.role))
 			return [];
 		return [

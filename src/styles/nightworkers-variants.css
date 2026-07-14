@@ -102,8 +102,8 @@
 }
 
 .nightworkers-shell[data-contrast="high"][data-theme]:not(
-		[data-theme="dark"]
-	):not([data-theme="campfire"]) {
+	[data-theme="dark"]
+):not([data-theme="campfire"]) {
 	--nw-text: hsl(210 30% 4%);
 	--nw-muted-text: hsl(210 15% 24%);
 	--nw-border: hsl(210 18% 42% / 0.96);

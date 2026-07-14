@@ -304,7 +304,7 @@ export class DefaultToolPolicyGate implements ToolPolicyGate {
 				? payload.changedFiles.filter((v): v is string => typeof v === "string")
 				: [];
 			const expected = Array.isArray(preflight?.patchTargets)
-				? (preflight?.patchTargets as unknown[]).filter(
+				? (preflight.patchTargets as unknown[]).filter(
 						(v): v is string => typeof v === "string",
 					)
 				: [];

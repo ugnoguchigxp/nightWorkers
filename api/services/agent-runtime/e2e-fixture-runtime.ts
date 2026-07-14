@@ -21,6 +21,21 @@ export async function runE2eFixtureRuntime(
 			context.contextSnapshot.missionPilot,
 	);
 	if (executionMode === "test") {
+		if (fixtureBehavior === "verification_failure") {
+			await sink.emit({
+				type: "verification_finished",
+				message: "Deterministic verification failed.",
+				payload: { command: "fixture verify", exitCode: 1, ok: false },
+			});
+			return {
+				terminalState: "needs_human",
+				summary: "Deterministic verification requires follow-up.",
+				finalReport: "Required deterministic verification failed.",
+				stoppedBy: "tool_failure",
+				riskLevel: "medium",
+				testResults: { fixture: true, behavior: fixtureBehavior },
+			};
+		}
 		const transientFailure = context.compiledPrompt.includes(
 			"[fixture:test-transient-failure]",
 		);

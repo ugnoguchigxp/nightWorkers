@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import Database from "better-sqlite3";
 import { createDisposableGitWorkspace } from "./helpers";
 
 const headers = {
@@ -52,7 +51,13 @@ async function task(
 	return { ...fixture, taskId };
 }
 
-type QueueEntry = { id: string; priority: number; status: string };
+type QueueEntry = {
+	id: string;
+	priority: number;
+	status: string;
+	claimedAt?: number | null;
+	activeRunId?: string | null;
+};
 
 async function enqueue(request: APIRequestContext, taskId: string) {
 	const response = await request.post("/api/implementation-queue/entries", {
@@ -63,26 +68,13 @@ async function enqueue(request: APIRequestContext, taskId: string) {
 	return (await response.json()) as QueueEntry;
 }
 
-function queueRows(entryIds: string[]) {
-	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-	if (!databasePath) throw new Error("E2E database path is required");
-	const db = new Database(databasePath, { readonly: true });
-	const placeholders = entryIds.map(() => "?").join(", ");
-	const rows = db
-		.prepare(
-			`select id, status, claimed_at as claimedAt, active_run_id as activeRunId, priority from implementation_queue_entries where id in (${placeholders})`,
-		)
-		.all(...entryIds) as Array<{
-		id: string;
-		status: string;
-		claimedAt: number | null;
-		activeRunId: string | null;
-		priority: number;
-	}>;
-	db.close();
-	return entryIds.flatMap((entryId) =>
-		rows.filter((row) => row.id === entryId),
-	);
+async function queueRows(request: APIRequestContext, entryIds: string[]) {
+	const response = await request.post("/api/e2e/fixtures/queue-entry", {
+		headers: { ...headers, "x-nightworkers-e2e": "1" },
+		data: { entryIds },
+	});
+	expect(response.status(), await response.text()).toBe(200);
+	return ((await response.json()) as { entries: QueueEntry[] }).entries;
 }
 
 async function cleanup(
@@ -91,7 +83,7 @@ async function cleanup(
 	entries: QueueEntry[] = [],
 ) {
 	for (const entry of entries) {
-		const row = queueRows([entry.id])[0];
+		const row = (await queueRows(request, [entry.id]))[0];
 		if (
 			[
 				"queued",
@@ -132,19 +124,16 @@ async function cleanup(
 	}
 }
 
-function seedScheduling(taskId: string, scheduling: Record<string, unknown>) {
-	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-	if (!databasePath) throw new Error("E2E database path is required");
-	const db = new Database(databasePath);
-	db.prepare(
-		"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, created_at) values (?, ?, null, 'system', 'E2E scheduling fixture', 'text', ?, ?)",
-	).run(
-		randomUUID(),
-		taskId,
-		JSON.stringify({ intakeJobSelection: { scheduling } }),
-		Date.now(),
-	);
-	db.close();
+async function seedScheduling(
+	request: APIRequestContext,
+	taskId: string,
+	scheduling: Record<string, unknown>,
+) {
+	const response = await request.post("/api/e2e/fixtures/task-scheduling", {
+		headers: { ...headers, "x-nightworkers-e2e": "1" },
+		data: { taskId, scheduling },
+	});
+	expect(response.status(), await response.text()).toBe(201);
 }
 
 test.describe("Implementation Queue scheduling @regression", () => {
@@ -207,13 +196,15 @@ test.describe("Implementation Queue scheduling @regression", () => {
 		];
 		const entries: QueueEntry[] = [];
 		try {
-			seedScheduling(values[1].taskId, {
+			await seedScheduling(request, values[1].taskId, {
 				executionType: "exclusive",
 				reason: "E2E exclusive scheduling",
 			});
 			entries.push(await enqueue(request, values[0].taskId));
 			await expect
-				.poll(() => queueRows([entries[0].id])[0]?.status)
+				.poll(
+					async () => (await queueRows(request, [entries[0].id]))[0]?.status,
+				)
 				.toBe("processing");
 			entries.push(await enqueue(request, values[1].taskId));
 			await expect
@@ -246,7 +237,7 @@ test.describe("Implementation Queue scheduling @regression", () => {
 		);
 		const group = `e2e-sequence-${randomUUID()}`;
 		for (const [index, value] of values.entries()) {
-			seedScheduling(value.taskId, {
+			await seedScheduling(request, value.taskId, {
 				executionType: "sequence",
 				sequenceGroupId: group,
 				sequenceOrder: index + 1,
@@ -261,9 +252,12 @@ test.describe("Implementation Queue scheduling @regression", () => {
 				.poll(
 					async () => {
 						await request.post("/api/implementation-queue/drain", { headers });
-						return queueRows(entries.map((entry) => entry.id)).map(
-							(row) => row.status,
-						);
+						return (
+							await queueRows(
+								request,
+								entries.map((entry) => entry.id),
+							)
+						).map((row) => row.status);
 					},
 					{ timeout: 10_000 },
 				)
@@ -272,7 +266,10 @@ test.describe("Implementation Queue scheduling @regression", () => {
 					"execution_completed",
 					"execution_completed",
 				]);
-			const rows = queueRows(entries.map((entry) => entry.id));
+			const rows = await queueRows(
+				request,
+				entries.map((entry) => entry.id),
+			);
 			expect(rows.map((row) => row.claimedAt)).toEqual(
 				[...rows]
 					.sort((a, b) => (a.claimedAt ?? 0) - (b.claimedAt ?? 0))
@@ -293,7 +290,7 @@ test.describe("Implementation Queue scheduling @regression", () => {
 		];
 		const group = `e2e-sequence-failure-${randomUUID()}`;
 		for (const [index, value] of values.entries()) {
-			seedScheduling(value.taskId, {
+			await seedScheduling(request, value.taskId, {
 				executionType: "sequence",
 				sequenceGroupId: group,
 				sequenceOrder: index + 1,
@@ -313,7 +310,10 @@ test.describe("Implementation Queue scheduling @regression", () => {
 					),
 				)
 				.toContain("sequence_predecessor_failed");
-			const rows = queueRows(entries.map((entry) => entry.id));
+			const rows = await queueRows(
+				request,
+				entries.map((entry) => entry.id),
+			);
 			expect(rows.find((row) => row.id === entries[0]?.id)?.status).toBe(
 				"failed",
 			);
@@ -334,7 +334,7 @@ test.describe("Implementation Queue scheduling @regression", () => {
 		try {
 			const entry = await enqueue(request, value.taskId);
 			await expect
-				.poll(() => queueRows([entry.id])[0]?.status)
+				.poll(async () => (await queueRows(request, [entry.id]))[0]?.status)
 				.toBe("needs_human");
 			const requeued = await request.post(
 				`/api/implementation-queue/entries/${entry.id}/requeue`,
@@ -346,7 +346,7 @@ test.describe("Implementation Queue scheduling @regression", () => {
 			expect(requeued.status(), await requeued.text()).toBe(201);
 			const next = (await requeued.json()) as QueueEntry;
 			expect(next.priority).toBe(entry.priority);
-			expect(queueRows([entry.id])[0]).toMatchObject({
+			expect((await queueRows(request, [entry.id]))[0]).toMatchObject({
 				status: "execution_archived",
 				priority: entry.priority,
 			});

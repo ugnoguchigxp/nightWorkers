@@ -1,8 +1,6 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import Database from "better-sqlite3";
 import {
 	createDisposableGitWorkspace,
 	createE2eWorkspaceDirectory,
@@ -10,6 +8,7 @@ import {
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+	"x-nightworkers-e2e": "1",
 };
 
 test.describe("Repository safety @regression", () => {
@@ -86,15 +85,11 @@ test.describe("Activity replay @regression", () => {
 		expect(task.status(), await task.text()).toBe(201);
 		const taskId = ((await task.json()) as { id: string }).id;
 		try {
-			const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-			if (!databasePath) throw new Error("E2E database path is required");
-			const db = new Database(databasePath);
-			const insert = db.prepare(
-				"insert into activity_events (id, task_id, run_id, seq, kind, source, visibility, created_at) values (?, ?, null, ?, 'fixture.replay', 'e2e', 'visible', ?)",
-			);
-			for (const seq of [1001, 1002, 1003])
-				insert.run(randomUUID(), taskId, seq, Date.now());
-			db.close();
+			const fixture = await request.post("/api/e2e/fixtures/activity-events", {
+				headers,
+				data: { taskId, sequences: [1001, 1002, 1003] },
+			});
+			expect(fixture.status(), await fixture.text()).toBe(201);
 			const all = await request.get(`/api/tasks/${taskId}/activity-events`, {
 				headers,
 			});

@@ -1,9 +1,15 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 import { createOpenApiRouter } from "../../../lib/openapi";
+import * as missionPilotRepo from "../../missionPilot/mission-pilot.repository";
+import * as queueRepo from "../../queue/queue-repository-commands";
+import { appendActivityEvent } from "../nightworkers.activity-persistence.repository";
 import * as repo from "../nightworkers.repository";
+import {
+	codingAgentChatTrace,
+	missionPilotThoughtTrace,
+} from "../nightworkers.trace-provenance";
 import * as verificationRepo from "../nightworkers.verification.repository";
-import * as taskGenerationRepo from "../../taskGeneration/task-generation.repository";
 
 const createTaskMarkdownFixtureRoute = createRoute({
 	method: "post",
@@ -69,27 +75,16 @@ const readTaskVerificationSummaryRoute = createRoute({
 	},
 });
 
-const createMissionCandidatesFixtureRoute = createRoute({
+const createTaskSchedulingFixtureRoute = createRoute({
 	method: "post",
-	path: "/e2e/fixtures/mission-candidates",
+	path: "/e2e/fixtures/task-scheduling",
 	request: {
 		body: {
 			content: {
 				"application/json": {
 					schema: z.object({
-						repositoryId: z.string().uuid(),
-						goalId: z.string().uuid(),
-						candidates: z.array(
-							z.object({
-								title: z.string().min(1),
-								summary: z.string().min(1),
-								rationale: z.string().min(1),
-								taskPrompt: z.string().min(1),
-								acceptanceCriteria: z.string().min(1),
-								verificationPlan: z.string().min(1),
-								status: z.enum(["candidate", "selected", "dismissed"]),
-							}),
-						),
+						taskId: z.string().uuid(),
+						scheduling: z.record(z.string(), z.unknown()),
 					}),
 				},
 			},
@@ -99,13 +94,86 @@ const createMissionCandidatesFixtureRoute = createRoute({
 		201: {
 			content: {
 				"application/json": {
+					schema: z.object({ messageId: z.string().uuid() }),
+				},
+			},
+			description: "Create isolated E2E scheduling fixture.",
+		},
+		404: { description: "Route unavailable" },
+	},
+});
+
+const readQueueEntryFixtureRoute = createRoute({
+	method: "post",
+	path: "/e2e/fixtures/queue-entry",
+	request: {
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({ entryIds: z.array(z.string().uuid()) }),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: z.object({ entries: z.array(z.unknown()) }),
+				},
+			},
+			description: "Read isolated E2E queue fixtures.",
+		},
+		404: { description: "Route unavailable" },
+	},
+});
+
+const createActivityFixtureRoute = createRoute({
+	method: "post",
+	path: "/e2e/fixtures/activity-events",
+	request: {
+		body: {
+			content: {
+				"application/json": {
 					schema: z.object({
-						batchId: z.string().uuid(),
-						candidateIds: z.array(z.string().uuid()),
+						taskId: z.string().uuid(),
+						sequences: z.array(z.number().int()),
 					}),
 				},
 			},
-			description: "Create isolated Mission candidate fixtures.",
+		},
+	},
+	responses: {
+		201: {
+			content: {
+				"application/json": { schema: z.object({ count: z.number() }) },
+			},
+			description: "Create isolated E2E activity fixtures.",
+		},
+		404: { description: "Route unavailable" },
+	},
+});
+
+const createTraceFixtureRoute = createRoute({
+	method: "post",
+	path: "/e2e/fixtures/trace-events",
+	request: {
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({ taskId: z.string().uuid() }),
+				},
+			},
+		},
+	},
+	responses: {
+		201: {
+			content: {
+				"application/json": {
+					schema: z.object({ sessionId: z.string().uuid() }),
+				},
+			},
+			description: "Create isolated Mission Pilot trace fixtures.",
 		},
 		404: { description: "Route unavailable" },
 	},
@@ -169,7 +237,7 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			200,
 		);
 	})
-	.openapi(createMissionCandidatesFixtureRoute, async (c) => {
+	.openapi(createTaskSchedulingFixtureRoute, async (c) => {
 		if (
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
@@ -177,45 +245,93 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			return c.json({ error: "Not found" }, 404);
 		}
 		const input = c.req.valid("json");
-		const batch = await taskGenerationRepo.createRunningMissionBatch({
-			repositoryId: input.repositoryId,
-			requestedGoalIds: [input.goalId],
-			signalSnapshot: {},
+		if (!(await repo.getTask(input.taskId)))
+			return c.json({ error: "Task not found" }, 404);
+		const message = await repo.createTaskMessage({
+			taskId: input.taskId,
+			role: "system",
+			content: "E2E scheduling fixture",
+			messageType: "text",
+			payloadJson: { intakeJobSelection: { scheduling: input.scheduling } },
 		});
-		const candidates = await taskGenerationRepo.createMissionCandidates(
-			input.candidates.map((candidate) => ({
-				batchId: batch.id,
-				repositoryId: input.repositoryId,
-				goalId: input.goalId,
-				candidateKind: "feature_followup",
-				secondaryModulesJson: [],
-				routingConfidencePercent: 100,
-				constraintGoalIdsJson: [input.goalId],
-				planModeOpenQuestionsJson: [],
-				title: candidate.title,
-				summary: candidate.summary,
-				rationale: candidate.rationale,
-				evidenceJson: [],
-				importancePercent: 90,
-				confidencePercent: 95,
-				tokenSize: "small",
-				complexity: "simple",
-				taskPrompt: candidate.taskPrompt,
-				acceptanceCriteria: candidate.acceptanceCriteria,
-				verificationPlan: candidate.verificationPlan,
-				status: candidate.status,
-			})),
+		return c.json({ messageId: message.id }, 201);
+	})
+	.openapi(readQueueEntryFixtureRoute, async (c) => {
+		if (
+			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
+			c.req.header("x-nightworkers-e2e") !== "1"
+		) {
+			return c.json({ error: "Not found" }, 404);
+		}
+		const { entryIds } = c.req.valid("json");
+		const entries = await Promise.all(
+			entryIds.map((entryId) => queueRepo.getImplementationQueueEntry(entryId)),
 		);
-		await taskGenerationRepo.completeMissionBatch({
-			batchId: batch.id,
-			rawOutput: { fixture: true },
-			selectedModel: { provider: "fixture" },
+		return c.json({ entries: entries.filter(Boolean) }, 200);
+	})
+	.openapi(createActivityFixtureRoute, async (c) => {
+		if (
+			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
+			c.req.header("x-nightworkers-e2e") !== "1"
+		) {
+			return c.json({ error: "Not found" }, 404);
+		}
+		const input = c.req.valid("json");
+		if (!(await repo.getTask(input.taskId)))
+			return c.json({ error: "Task not found" }, 404);
+		for (const sequence of input.sequences) {
+			await appendActivityEvent({
+				taskId: input.taskId,
+				kind: "fixture.replay",
+				source: "e2e",
+				status: "completed",
+				text: `fixture ${sequence}`,
+				payloadJson: { fixtureSequence: sequence },
+				dedupeKey: `e2e-fixture-${input.taskId}-${sequence}`,
+			});
+		}
+		return c.json({ count: input.sequences.length }, 201);
+	})
+	.openapi(createTraceFixtureRoute, async (c) => {
+		if (
+			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
+			c.req.header("x-nightworkers-e2e") !== "1"
+		) {
+			return c.json({ error: "Not found" }, 404);
+		}
+		const { taskId } = c.req.valid("json");
+		const session = await missionPilotRepo.getSessionByTaskId(taskId);
+		if (!session)
+			return c.json({ error: "Mission Pilot session not found" }, 404);
+		await appendActivityEvent({
+			taskId,
+			turnId: "pilot-turn",
+			kind: "runtime.decision",
+			source: "e2e",
+			status: "completed",
+			text: "MISSION_PILOT_THOUGHT_ONLY",
+			payloadJson: { missionPilotSessionId: session.id },
+			dedupeKey: `e2e:pilot:${taskId}`,
+			trace: missionPilotThoughtTrace({ sessionId: session.id }),
 		});
-		return c.json(
-			{
-				batchId: batch.id,
-				candidateIds: candidates.map((candidate) => candidate.id),
-			},
-			201,
-		);
+		await appendActivityEvent({
+			taskId,
+			turnId: "coding-turn",
+			kind: "assistant.message",
+			source: "worker",
+			status: "completed",
+			text: "CODING_AGENT_CHAT_ONLY",
+			payloadJson: {},
+			dedupeKey: `e2e:coding:${taskId}`,
+			trace: codingAgentChatTrace(),
+		});
+		await repo.createTaskMessage({
+			taskId,
+			role: "assistant",
+			content: "MISSION_PILOT_ARTIFACT_BODY",
+			messageType: "markdown_document",
+			payloadJson: { intent: "feature_plan" },
+			trace: codingAgentChatTrace(),
+		});
+		return c.json({ sessionId: session.id }, 201);
 	});

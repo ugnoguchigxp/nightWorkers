@@ -25,6 +25,8 @@ import { missionPilotRouter } from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
 import { e2eFixtureRouter } from "./modules/nightworkers/routes/e2e-fixture-routes";
+import { missionCandidatesFixtureRouter } from "./modules/nightworkers/routes/mission-candidates-fixture-route";
+import { missionPilotFixtureRouter } from "./modules/nightworkers/routes/mission-pilot-fixture-routes";
 import {
 	configureOntologyTaskGenerationEvidenceLoader,
 	ontologyRouter,
@@ -77,6 +79,8 @@ const apiRoutes = createOpenApiRouter()
 
 if (process.env.NIGHTWORKERS_E2E_ISOLATED === "1") {
 	apiRoutes.route("/", e2eFixtureRouter);
+	apiRoutes.route("/", missionPilotFixtureRouter);
+	apiRoutes.route("/", missionCandidatesFixtureRouter);
 }
 
 apiRoutes.route("/", gitworktreeRouter);

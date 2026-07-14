@@ -1,12 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import Database from "better-sqlite3";
 import { createDisposableGitWorkspace } from "./helpers";
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+	"x-nightworkers-e2e": "1",
 };
 
 test("Mission Pilot thought and coding-agent chat remain disjoint", {
@@ -17,8 +16,6 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		"@scenario:NW-E2E-MISSION-PILOT-TRACE-001",
 	],
 }, async ({ page, request }) => {
-	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-	if (!databasePath) throw new Error("Isolated E2E database path is required");
 	const { workspace } = await createDisposableGitWorkspace({
 		prefix: "mission-pilot-trace-separation-",
 	});
@@ -54,65 +51,11 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		});
 		expect(taskResponse.status(), await taskResponse.text()).toBe(201);
 		taskId = ((await taskResponse.json()) as { id: string }).id;
-		const db = new Database(databasePath);
-		const session = db
-			.prepare("select id from mission_pilot_sessions where task_id = ?")
-			.get(taskId) as { id: string };
-		const now = Math.floor(Date.now() / 1000);
-		const insertActivity = db.prepare(
-			"insert into activity_events (id, task_id, run_id, turn_id, parent_event_id, seq, run_seq, kind, source, status, text, payload_json, artifact_id, client_temp_id, external_id, dedupe_key, ingest_error, visibility, trace_owner, trace_channel, created_at) values (?, ?, null, ?, null, ?, null, ?, ?, 'completed', ?, ?, null, null, null, ?, null, 'visible', ?, ?, ?)",
-		);
-		insertActivity.run(
-			randomUUID(),
-			taskId,
-			"pilot-turn",
-			1,
-			"runtime.decision",
-			"mission_pilot",
-			"MISSION_PILOT_THOUGHT_ONLY",
-			JSON.stringify({ missionPilotSessionId: session.id }),
-			`e2e:pilot:${taskId}`,
-			"mission_pilot",
-			"pilot_thought",
-			now,
-		);
-		insertActivity.run(
-			randomUUID(),
-			taskId,
-			"coding-turn",
-			2,
-			"assistant.message",
-			"worker",
-			"CODING_AGENT_CHAT_ONLY",
-			JSON.stringify({}),
-			`e2e:coding:${taskId}`,
-			"coding_agent",
-			"chat",
-			now + 1,
-		);
-		insertActivity.run(
-			randomUUID(),
-			taskId,
-			"plan-output-turn",
-			3,
-			"assistant.message",
-			"assistant",
-			"MISSION_PILOT_ARTIFACT_BODY",
-			JSON.stringify({ intent: "feature_plan" }),
-			`e2e:plan-output:${taskId}`,
-			"coding_agent",
-			"chat",
-			now + 2,
-		);
-		db.prepare(
-			"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, trace_owner, trace_channel, created_at) values (?, ?, null, 'assistant', 'MISSION_PILOT_ARTIFACT_BODY', 'markdown_document', ?, 'coding_agent', 'chat', ?)",
-		).run(
-			randomUUID(),
-			taskId,
-			JSON.stringify({ intent: "feature_plan" }),
-			now,
-		);
-		db.close();
+		const fixture = await request.post("/api/e2e/fixtures/trace-events", {
+			headers,
+			data: { taskId },
+		});
+		expect(fixture.status(), await fixture.text()).toBe(201);
 
 		const chatResponse = await request.get(
 			`/api/tasks/${taskId}/activity-events?channel=chat`,

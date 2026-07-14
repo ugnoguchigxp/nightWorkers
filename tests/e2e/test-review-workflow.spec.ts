@@ -1,9 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import Database from "better-sqlite3";
 import {
 	createE2eWorkspaceDirectory,
 	initializeE2eGitRepository,
@@ -11,6 +9,7 @@ import {
 
 const headers = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+	"x-nightworkers-e2e": "1",
 };
 type Fixture = { workspace: string; repositoryId: string; taskId: string };
 
@@ -66,22 +65,18 @@ async function fixture(
 	};
 }
 
-function seedSpec(taskId: string) {
-	const databasePath = process.env.NIGHTWORKERS_E2E_DATABASE_PATH;
-	if (!databasePath) throw new Error("E2E database path is required");
-	const db = new Database(databasePath);
-	const id = randomUUID();
-	db.prepare(
-		"insert into task_messages (id, task_id, run_id, role, content, message_type, metadata_json, created_at) values (?, ?, null, 'assistant', ?, 'markdown_document', ?, ?)",
-	).run(
-		id,
-		taskId,
-		"# E2E verification plan\n\n- fixture verify",
-		JSON.stringify({ intent: "implementation_plan" }),
-		Date.now(),
-	);
-	db.close();
-	return `implementation-plan-${id}`;
+async function seedSpec(request: APIRequestContext, taskId: string) {
+	const response = await request.post("/api/e2e/fixtures/task-markdown", {
+		headers,
+		data: {
+			taskId,
+			content:
+				"# E2E verification plan\n\n## Completion Conditions\n\n- fixture verify",
+			intent: "implementation_plan",
+		},
+	});
+	expect(response.status(), await response.text()).toBe(201);
+	return ((await response.json()) as { specArtifactId: string }).specArtifactId;
 }
 
 async function waitFor(
@@ -126,7 +121,7 @@ async function startImplementation(request: APIRequestContext, taskId: string) {
 
 async function prepareTestModeReviewArtifact(request: APIRequestContext) {
 	const value = await fixture(request, "[fixture:success]");
-	const specArtifactId = seedSpec(value.taskId);
+	const specArtifactId = await seedSpec(request, value.taskId);
 	const testMode = await request.post(
 		`/api/tasks/${value.taskId}/test-mode-run`,
 		{
@@ -153,7 +148,7 @@ test.describe("Test Mode boundaries @regression", () => {
 	}, async ({ request }) => {
 		const value = await fixture(request, "[fixture:success]");
 		try {
-			const specArtifactId = seedSpec(value.taskId);
+			const specArtifactId = await seedSpec(request, value.taskId);
 			const response = await request.post(
 				`/api/tasks/${value.taskId}/test-mode-run`,
 				{
@@ -165,7 +160,9 @@ test.describe("Test Mode boundaries @regression", () => {
 			const started = (await response.json()) as { id: string };
 			const run = await waitFor(request, started.id, ["completed"]);
 			expect(run.todos).toEqual([]);
-			expect(JSON.stringify(run.events)).toContain("verification.finished");
+			expect(JSON.stringify(run.events)).toContain(
+				"Test Mode fixture managed verification finished",
+			);
 		} finally {
 			await cleanup(request, value);
 		}
@@ -202,7 +199,7 @@ test.describe("Test Mode boundaries @regression", () => {
 	}, async ({ request }) => {
 		const value = await fixture(request, "[fixture:verification_failure]");
 		try {
-			const specArtifactId = seedSpec(value.taskId);
+			const specArtifactId = await seedSpec(request, value.taskId);
 			const response = await request.post(
 				`/api/tasks/${value.taskId}/test-mode-run`,
 				{

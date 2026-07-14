@@ -160,6 +160,7 @@ export async function continueMissionPilotAfterRun(input: {
 	taskId: string;
 	runId: string;
 	executionMode: string;
+	runStatus?: TaskStatus;
 }) {
 	const [phaseRun] = await db
 		.select()
@@ -208,13 +209,14 @@ export async function continueMissionPilotAfterRun(input: {
 		.where(eq(taskRunCommitRecords.runId, input.runId))
 		.limit(1);
 	const gate = evaluateImplementationCompletionGate({
-		runStatus: run?.status ?? "missing",
+		runStatus: input.runStatus ?? run?.status ?? "missing",
 		terminalReason: null,
 		openTodoCount: todos.filter((todo) =>
 			["pending", "running"].includes(todo.status),
 		).length,
 		securityAllowed:
-			run?.status === "completed" || run?.status === "needs_review",
+			(input.runStatus ?? run?.status) === "completed" ||
+			(input.runStatus ?? run?.status) === "needs_review",
 		hasOwnershipEvidence: Boolean(commitRecord),
 		hasDiffOrNoopEvidence: Boolean(
 			run?.diffPatch ||
