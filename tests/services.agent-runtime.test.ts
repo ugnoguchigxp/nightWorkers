@@ -586,7 +586,7 @@ describe("AgentRuntime", () => {
 
 	it("runs SessionEnd hooks after native api runner skeleton result", async () => {
 		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([] as never);
-		createAgentHook({
+		await createAgentHook({
 			name: "Session end audit",
 			enabled: true,
 			event: "SessionEnd",

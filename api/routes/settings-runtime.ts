@@ -99,21 +99,22 @@ const readRuntimeSettings = (): {
 				].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
 			) as Partial<RawLlmSettings>;
 			if (Object.keys(imported).length > 0) {
-				writeRuntimeSettings(
+				void writeRuntimeSettings(
 					normalizeRawLlmSettings(llmSettingsSchema.parse(imported)),
-				);
+				).catch(() => undefined);
 				return { settings: imported, exists: true, loaded: true };
 			}
 			return { settings: {}, exists: false, loaded: false };
 		}
 		const text = fs.readFileSync(RUNTIME_SETTINGS_PATH, "utf-8");
 		const settings = JSON.parse(text) as Partial<RawLlmSettings>;
-		writeRuntimeSettings(
+		void writeRuntimeSettings(
 			normalizeRawLlmSettings(llmSettingsSchema.parse(settings), {
 				validateExplicitRoleRoutes: false,
 			}),
-		);
-		archiveLegacySettingsFile(RUNTIME_SETTINGS_PATH);
+		)
+			.then(() => archiveLegacySettingsFile(RUNTIME_SETTINGS_PATH))
+			.catch(() => undefined);
 		return {
 			settings,
 			exists: true,
@@ -124,7 +125,7 @@ const readRuntimeSettings = (): {
 	}
 };
 
-const writeRuntimeSettings = (settings: LlmSettings) => {
+const writeRuntimeSettings = async (settings: LlmSettings) => {
 	if (TEST_RUNTIME_SETTINGS_PATH) {
 		fs.mkdirSync(path.dirname(TEST_RUNTIME_SETTINGS_PATH), { recursive: true });
 		fs.writeFileSync(
@@ -149,7 +150,7 @@ const writeRuntimeSettings = (settings: LlmSettings) => {
 	publicSettings.providerEndpoints = (settings.providerEndpoints || []).map(
 		({ apiKey: _apiKey, ...endpoint }) => ({ ...endpoint, apiKey: "" }),
 	);
-	writeApplicationSettingBundle("llm", publicSettings, {
+	await writeApplicationSettingBundle("llm", publicSettings, {
 		...secrets,
 		providerEndpointApiKeys: endpointApiKeys,
 	});
@@ -254,7 +255,7 @@ export const getCurrentSettings = (): LlmSettings => {
 		persistedRead.exists &&
 		persistedRead.loaded
 	) {
-		writeRuntimeSettings(migration.settings);
+		void writeRuntimeSettings(migration.settings).catch(() => undefined);
 	}
 	return migration.settings;
 };

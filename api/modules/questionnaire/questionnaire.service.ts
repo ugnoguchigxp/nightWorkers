@@ -7,6 +7,7 @@ import {
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
+import { type DbTransaction, db } from "../../db/client";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
@@ -40,7 +41,6 @@ import {
 	buildDesignQuestionnaireSessionView,
 	designDecisionReviewJsonSchema,
 	designQuestionnaireFollowUpDecisionJsonSchema,
-	getAnswerableSessionQuestions,
 	getSessionQuestions,
 	parseDesignDecisionReviewRaw,
 	parseDesignQuestionnaireFollowUpDecisionRaw,
@@ -49,7 +49,8 @@ import {
 	renderDesignDecisionReviewMarkdown,
 } from "./questionnaire-parser.service";
 import {
-	isDesignQuestionnaireAnswerComplete,
+	areQuestionnaireAnswersComplete,
+	parseQuestionnaireAnswerViews,
 	removeDuplicateFollowUpQuestions,
 	validateDesignQuestionnaireAnswerForQuestion,
 } from "./questionnaire-validation";
@@ -188,7 +189,7 @@ export async function saveDesignQuestionnaireAnswers(
 			question,
 		]),
 	);
-	for (const answer of answers) {
+	const parsedAnswers = answers.map((answer) => {
 		const parsed = designQuestionnaireAnswerSchema.parse(answer);
 		const question = questionById.get(parsed.questionId);
 		if (!question) {
@@ -199,36 +200,50 @@ export async function saveDesignQuestionnaireAnswers(
 			);
 		}
 		validateDesignQuestionnaireAnswerForQuestion(parsed, question);
-		await repo.upsertDesignQuestionnaireAnswer({
+		return parsed;
+	});
+	const updatedAnswers = await db.transaction(async (tx: DbTransaction) => {
+		for (const parsed of parsedAnswers) {
+			await repo.upsertDesignQuestionnaireAnswer({
+				sessionId,
+				questionId: parsed.questionId,
+				answerJson: parsed,
+				transaction: tx,
+			});
+		}
+		const savedAnswers = await repo.listDesignQuestionnaireAnswers(
 			sessionId,
-			questionId: parsed.questionId,
-			answerJson: parsed,
-		});
-	}
-	const updatedAnswers = await repo.listDesignQuestionnaireAnswers(sessionId);
-	const updatedAnswerViews = updatedAnswers.map((answer) => ({
-		questionId: answer.questionId,
-		answer: designQuestionnaireAnswerSchema.parse(answer.answerJson),
-	}));
-	const requiredQuestions = getAnswerableSessionQuestions(
-		session,
-		updatedAnswerViews,
-	);
-	const answerByQuestionId = new Map(
-		updatedAnswerViews.map((answer) => [answer.questionId, answer.answer]),
-	);
-	const nextStatus =
-		requiredQuestions.length > 0 &&
-		requiredQuestions.every((question) =>
-			isDesignQuestionnaireAnswerComplete(
-				question,
-				answerByQuestionId.get(String(question.id)),
+			tx,
+		);
+		const savedAnswerViews = parseQuestionnaireAnswerViews(savedAnswers);
+		const complete = areQuestionnaireAnswersComplete(
+			session,
+			new Map(
+				savedAnswerViews.map((answer) => [answer.questionId, answer.answer]),
 			),
-		)
-			? "review_ready"
-			: "answering";
+		);
+		if (
+			!complete ||
+			options.completionPolicy === "finalize_current_questions"
+		) {
+			await repo.updateDesignQuestionnaireSessionStatus(
+				sessionId,
+				complete ? "review_ready" : "answering",
+				tx,
+			);
+		}
+		return savedAnswers;
+	});
+	const updatedAnswerViews = parseQuestionnaireAnswerViews(updatedAnswers);
+	const nextStatus = areQuestionnaireAnswersComplete(
+		session,
+		new Map(
+			updatedAnswerViews.map((answer) => [answer.questionId, answer.answer]),
+		),
+	)
+		? "review_ready"
+		: "answering";
 	if (nextStatus === "answering") {
-		await repo.updateDesignQuestionnaireSessionStatus(sessionId, nextStatus);
 		return getDesignQuestionnaireSession(taskId, sessionId);
 	}
 	const completedSession = await getDesignQuestionnaireSession(
@@ -236,10 +251,6 @@ export async function saveDesignQuestionnaireAnswers(
 		sessionId,
 	);
 	if (options.completionPolicy === "finalize_current_questions") {
-		await repo.updateDesignQuestionnaireSessionStatus(
-			sessionId,
-			"review_ready",
-		);
 		return getDesignQuestionnaireSession(taskId, sessionId);
 	}
 	return assessDesignQuestionnaireNextStep(taskId, completedSession);

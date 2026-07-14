@@ -27,13 +27,13 @@ export const mcpSettingsRouter = createOpenApiRouter()
 			200,
 		);
 	})
-	.openapi(createMcpServerRoute, (c) => {
-		const server = createMcpServer(c.req.valid("json"));
+	.openapi(createMcpServerRoute, async (c) => {
+		const server = await createMcpServer(c.req.valid("json"));
 		return c.json(server, 201);
 	})
 	.openapi(importMcpServersRoute, async (c) => {
 		const input = c.req.valid("json");
-		const servers = importMcpServersFromText(input.text);
+		const servers = await importMcpServersFromText(input.text);
 		const updatedServers = new Map(
 			servers.map((server) => [server.id, server]),
 		);
@@ -42,7 +42,9 @@ export const mcpSettingsRouter = createOpenApiRouter()
 					servers.map(async (server) => {
 						const status = await mcpClientManager.testServer(server);
 						if (!status.ok) {
-							const updated = updateMcpServer(server.id, { enabled: false });
+							const updated = await updateMcpServer(server.id, {
+								enabled: false,
+							});
 							if (updated) updatedServers.set(updated.id, updated);
 						}
 						return {
@@ -65,7 +67,10 @@ export const mcpSettingsRouter = createOpenApiRouter()
 		);
 	})
 	.openapi(updateMcpServerRoute, async (c) => {
-		const server = updateMcpServer(c.req.param("id"), c.req.valid("json"));
+		const server = await updateMcpServer(
+			c.req.param("id"),
+			c.req.valid("json"),
+		);
 		if (!server)
 			return c.json(
 				{ error: { code: "NOT_FOUND", message: "MCP server not found" } },
@@ -75,7 +80,7 @@ export const mcpSettingsRouter = createOpenApiRouter()
 		return c.json(server, 200);
 	})
 	.openapi(deleteMcpServerRoute, async (c) => {
-		const removed = deleteMcpServer(c.req.param("id"));
+		const removed = await deleteMcpServer(c.req.param("id"));
 		if (!removed)
 			return c.json(
 				{ error: { code: "NOT_FOUND", message: "MCP server not found" } },

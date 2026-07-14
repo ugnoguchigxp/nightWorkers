@@ -81,7 +81,7 @@ export async function runAgentHooks(
 			durationMs,
 		};
 		if (shouldPersistHookLastRun(hook)) {
-			updateAgentHookLastRun(hook.id, lastRun);
+			await updateAgentHookLastRun(hook.id, lastRun);
 		}
 		const summary = {
 			hookId: hook.id,

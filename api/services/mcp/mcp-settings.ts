@@ -78,8 +78,9 @@ export function readMcpServerSettings(): PersistedMcpSettings {
 		const settings = parsePersistedSettings(
 			JSON.parse(fs.readFileSync(settingsPath, "utf-8")),
 		);
-		writeApplicationSetting("mcp", settings);
-		archiveLegacySettingsFile(settingsPath);
+		void writeApplicationSetting("mcp", settings)
+			.then(() => archiveLegacySettingsFile(settingsPath))
+			.catch(() => undefined);
 		return settings;
 	} catch (err) {
 		return {
@@ -95,8 +96,8 @@ export function readMcpServerSettings(): PersistedMcpSettings {
 	}
 }
 
-function writeMcpServerSettings(settings: PersistedMcpSettings) {
-	writeApplicationSetting("mcp", { servers: settings.servers });
+async function writeMcpServerSettings(settings: PersistedMcpSettings) {
+	await writeApplicationSetting("mcp", { servers: settings.servers });
 }
 
 export function listMcpServers(): McpServerConfig[] {
@@ -107,7 +108,9 @@ export function getMcpServer(id: string): McpServerConfig | null {
 	return listMcpServers().find((server) => server.id === id) ?? null;
 }
 
-export function createMcpServer(input: McpServerInput): McpServerConfig {
+export async function createMcpServer(
+	input: McpServerInput,
+): Promise<McpServerConfig> {
 	const parsed = mcpServerInputSchema.parse(input);
 	const settings = readMcpServerSettings();
 	if (
@@ -125,7 +128,7 @@ export function createMcpServer(input: McpServerInput): McpServerConfig {
 		updatedAt: now,
 	});
 	settings.servers.push(server);
-	writeMcpServerSettings(settings);
+	await writeMcpServerSettings(settings);
 	return server;
 }
 
@@ -283,7 +286,9 @@ export function parseMcpServerPaste(text: string): McpServerInput[] {
 	return [inputFromRawMcpServer("server", root)];
 }
 
-export function importMcpServersFromText(text: string): McpServerConfig[] {
+export async function importMcpServersFromText(
+	text: string,
+): Promise<McpServerConfig[]> {
 	const inputs = parseMcpServerPaste(text);
 	if (inputs.length === 0) {
 		throw new ValidationError("No MCP servers found in pasted config.");
@@ -315,14 +320,14 @@ export function importMcpServersFromText(text: string): McpServerConfig[] {
 		}),
 	);
 	settings.servers.push(...servers);
-	writeMcpServerSettings(settings);
+	await writeMcpServerSettings(settings);
 	return servers;
 }
 
-export function updateMcpServer(
+export async function updateMcpServer(
 	id: string,
 	input: Partial<McpServerInput>,
-): McpServerConfig | null {
+): Promise<McpServerConfig | null> {
 	const settings = readMcpServerSettings();
 	const index = settings.servers.findIndex((server) => server.id === id);
 	if (index === -1) return null;
@@ -354,23 +359,25 @@ export function updateMcpServer(
 		updatedAt: new Date().toISOString(),
 	});
 	settings.servers[index] = updated;
-	writeMcpServerSettings(settings);
+	await writeMcpServerSettings(settings);
 	return updated;
 }
 
-export function deleteMcpServer(id: string): McpServerConfig | null {
+export async function deleteMcpServer(
+	id: string,
+): Promise<McpServerConfig | null> {
 	const settings = readMcpServerSettings();
 	const index = settings.servers.findIndex((server) => server.id === id);
 	if (index === -1) return null;
 	const [removed] = settings.servers.splice(index, 1);
-	writeMcpServerSettings(settings);
+	await writeMcpServerSettings(settings);
 	return removed ?? null;
 }
 
-export function updateMcpServerStatus(
+export async function updateMcpServerStatus(
 	id: string,
 	status: McpServerConfig["lastStatus"],
-): McpServerConfig | null {
+): Promise<McpServerConfig | null> {
 	const settings = readMcpServerSettings();
 	const index = settings.servers.findIndex((server) => server.id === id);
 	if (index === -1) return null;
@@ -380,6 +387,6 @@ export function updateMcpServerStatus(
 		updatedAt: new Date().toISOString(),
 	});
 	settings.servers[index] = updated;
-	writeMcpServerSettings(settings);
+	await writeMcpServerSettings(settings);
 	return updated;
 }

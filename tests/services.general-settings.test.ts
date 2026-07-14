@@ -69,8 +69,8 @@ describe("general-settings service", () => {
 			expect(settings).toEqual(DEFAULT_GENERAL_SETTINGS);
 		});
 
-		it("reads and normalizes persisted settings", () => {
-			writeApplicationSetting("general", {
+		it("reads and normalizes persisted settings", async () => {
+			await writeApplicationSetting("general", {
 				timezone: "America/New_York",
 				language: "en",
 				currency: "USD",
@@ -104,7 +104,7 @@ describe("general-settings service", () => {
 	});
 
 	describe("writeGeneralSettings", () => {
-		it("normalizes and writes settings to SQLite", () => {
+		it("normalizes and writes settings to SQLite", async () => {
 			const input = {
 				timezone: "Europe/Paris",
 				language: "en" as const,
@@ -118,7 +118,7 @@ describe("general-settings service", () => {
 					promptPartObservabilityEnabled: false,
 				},
 			};
-			const result = writeGeneralSettings(input);
+			const result = await writeGeneralSettings(input);
 			expect(result).toEqual({
 				...input,
 				planMode: DEFAULT_GENERAL_SETTINGS.planMode,
@@ -176,8 +176,8 @@ describe("general-settings service", () => {
 			expect(readFxRateCache()).toBeNull();
 		});
 
-		it("reads and writes FX rate cache and updates general settings lastRefreshedAt", () => {
-			writeFxRateCache(sampleCache);
+		it("reads and writes FX rate cache and updates general settings lastRefreshedAt", async () => {
+			await writeFxRateCache(sampleCache);
 			expect(readFxRateCache()).toEqual(sampleCache);
 
 			// Verify general settings were updated

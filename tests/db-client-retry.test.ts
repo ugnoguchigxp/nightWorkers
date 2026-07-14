@@ -26,6 +26,30 @@ describe("wrapClientWithBusyRetry", () => {
 		expect(result).toEqual({ rows: [{ ok: 1 }] });
 	});
 
+	it("retries client execute on SQLITE_PROTOCOL locking errors", async () => {
+		const execute = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("locking protocol"))
+			.mockResolvedValueOnce({ rows: [{ ok: 1 }] });
+		const client = wrapClientWithBusyRetry({
+			execute,
+			batch: vi.fn(),
+			migrate: vi.fn(),
+			executeMultiple: vi.fn(),
+			transaction: vi.fn(),
+			sync: vi.fn(),
+			close: vi.fn(),
+			reconnect: vi.fn(),
+			closed: false,
+			protocol: "file",
+		} as never);
+
+		await expect(client.execute("update items set done = 1")).resolves.toEqual({
+			rows: [{ ok: 1 }],
+		});
+		expect(execute).toHaveBeenCalledTimes(2);
+	});
+
 	it("retries transaction execute and commit on SQLITE_BUSY", async () => {
 		const txExecute = vi
 			.fn()

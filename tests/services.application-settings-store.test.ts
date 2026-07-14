@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { writeApplicationSettingBundle } from "../api/services/settings/application-settings-store";
 
 describe("application settings store", () => {
-	it("updates public and secret revisions in one bundle", () => {
-		writeApplicationSettingBundle("llm", { value: 1 }, { secret: "one" });
-		writeApplicationSettingBundle("llm", { value: 2 }, { secret: "two" });
+	it("updates public and secret revisions in one bundle", async () => {
+		await writeApplicationSettingBundle("llm", { value: 1 }, { secret: "one" });
+		await writeApplicationSettingBundle("llm", { value: 2 }, { secret: "two" });
 
 		const databasePath = process.env.DATABASE_URL?.replace(/^file:/, "");
 		if (!databasePath) throw new Error("DATABASE_URL is required");

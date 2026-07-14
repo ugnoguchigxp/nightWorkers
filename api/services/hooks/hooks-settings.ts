@@ -52,16 +52,17 @@ export function readAgentHooksSettings(): PersistedAgentHooksSettings {
 		const settings = parsePersistedSettings(
 			JSON.parse(fs.readFileSync(settingsPath, "utf-8")),
 		);
-		writeApplicationSetting("agent-hooks", settings);
-		archiveLegacySettingsFile(settingsPath);
+		void writeApplicationSetting("agent-hooks", settings)
+			.then(() => archiveLegacySettingsFile(settingsPath))
+			.catch(() => undefined);
 		return settings;
 	} catch {
 		return { hooks: [] };
 	}
 }
 
-function writeAgentHooksSettings(settings: PersistedAgentHooksSettings) {
-	writeApplicationSetting("agent-hooks", settings);
+async function writeAgentHooksSettings(settings: PersistedAgentHooksSettings) {
+	await writeApplicationSetting("agent-hooks", settings);
 }
 
 export function listAgentHooks(): AgentHookConfig[] {
@@ -72,7 +73,9 @@ export function getAgentHook(id: string): AgentHookConfig | null {
 	return listAgentHooks().find((hook) => hook.id === id) ?? null;
 }
 
-export function createAgentHook(input: AgentHookInputConfig): AgentHookConfig {
+export async function createAgentHook(
+	input: AgentHookInputConfig,
+): Promise<AgentHookConfig> {
 	const parsed = agentHookInputSchema.parse(input);
 	const settings = readAgentHooksSettings();
 	if (settings.hooks.some((hook) => hook.name === parsed.name)) {
@@ -86,14 +89,14 @@ export function createAgentHook(input: AgentHookInputConfig): AgentHookConfig {
 		updatedAt: now,
 	});
 	settings.hooks.push(hook);
-	writeAgentHooksSettings(settings);
+	await writeAgentHooksSettings(settings);
 	return hook;
 }
 
-export function updateAgentHook(
+export async function updateAgentHook(
 	id: string,
 	input: AgentHookUpdateInput,
-): AgentHookConfig | null {
+): Promise<AgentHookConfig | null> {
 	const settings = readAgentHooksSettings();
 	const index = settings.hooks.findIndex((hook) => hook.id === id);
 	if (index === -1) return null;
@@ -120,23 +123,25 @@ export function updateAgentHook(
 		updatedAt: new Date().toISOString(),
 	});
 	settings.hooks[index] = updated;
-	writeAgentHooksSettings(settings);
+	await writeAgentHooksSettings(settings);
 	return updated;
 }
 
-export function deleteAgentHook(id: string): AgentHookConfig | null {
+export async function deleteAgentHook(
+	id: string,
+): Promise<AgentHookConfig | null> {
 	const settings = readAgentHooksSettings();
 	const index = settings.hooks.findIndex((hook) => hook.id === id);
 	if (index === -1) return null;
 	const [removed] = settings.hooks.splice(index, 1);
-	writeAgentHooksSettings(settings);
+	await writeAgentHooksSettings(settings);
 	return removed ?? null;
 }
 
-export function updateAgentHookLastRun(
+export async function updateAgentHookLastRun(
 	id: string,
 	lastRun: AgentHookLastRun,
-): AgentHookConfig | null {
+): Promise<AgentHookConfig | null> {
 	const settings = readAgentHooksSettings();
 	const index = settings.hooks.findIndex((hook) => hook.id === id);
 	if (index === -1) return null;
@@ -146,6 +151,6 @@ export function updateAgentHookLastRun(
 		updatedAt: new Date().toISOString(),
 	});
 	settings.hooks[index] = updated;
-	writeAgentHooksSettings(settings);
+	await writeAgentHooksSettings(settings);
 	return updated;
 }

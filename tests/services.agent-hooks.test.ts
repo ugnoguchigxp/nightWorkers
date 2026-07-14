@@ -54,8 +54,8 @@ afterEach(() => {
 });
 
 describe("Agent Hooks settings", () => {
-	it("persists and updates hook configs", () => {
-		const hook = createAgentHook({
+	it("persists and updates hook configs", async () => {
+		const hook = await createAgentHook({
 			name: "Block command",
 			enabled: true,
 			event: "PreToolUse",
@@ -70,16 +70,16 @@ describe("Agent Hooks settings", () => {
 		expect(listAgentHooks()).toMatchObject([
 			{ id: hook.id, name: "Block command" },
 		]);
-		expect(updateAgentHook(hook.id, { enabled: false })).toMatchObject({
+		expect(await updateAgentHook(hook.id, { enabled: false })).toMatchObject({
 			id: hook.id,
 			enabled: false,
 		});
-		expect(deleteAgentHook(hook.id)?.id).toBe(hook.id);
+		expect((await deleteAgentHook(hook.id))?.id).toBe(hook.id);
 		expect(listAgentHooks()).toEqual([]);
 	});
 
-	it("rejects secret-like hook env and headers", () => {
-		expect(() =>
+	it("rejects secret-like hook env and headers", async () => {
+		await expect(
 			createAgentHook({
 				name: "Secret env",
 				enabled: true,
@@ -91,9 +91,9 @@ describe("Agent Hooks settings", () => {
 					env: { API_KEY: "abc" },
 				},
 			}),
-		).toThrow(/secret-like/i);
+		).rejects.toThrow(/secret-like/i);
 
-		expect(() =>
+		await expect(
 			createAgentHook({
 				name: "Secret header",
 				enabled: true,
@@ -105,7 +105,7 @@ describe("Agent Hooks settings", () => {
 					headers: { Authorization: "Bearer abc" },
 				},
 			}),
-		).toThrow(/secret-like/i);
+		).rejects.toThrow(/secret-like/i);
 	});
 
 	it("exposes compatible Codex global hooks through effective settings", () => {
@@ -184,7 +184,7 @@ describe("Agent Hooks matcher", () => {
 
 describe("Agent Hooks runner", () => {
 	it("passes JSON on stdin to command hooks and aggregates deny decisions", async () => {
-		createAgentHook({
+		await createAgentHook({
 			name: "Deny run command",
 			enabled: true,
 			event: "PreToolUse",
@@ -249,7 +249,7 @@ describe("Agent Hooks runner", () => {
 	});
 
 	it("defaults command PreToolUse failures to fail-closed", async () => {
-		createAgentHook({
+		await createAgentHook({
 			name: "Crashing pre hook",
 			enabled: true,
 			event: "PreToolUse",
@@ -272,7 +272,7 @@ describe("Agent Hooks runner", () => {
 
 	it("redacts secret-like command hook failure output from summaries and events", async () => {
 		const events: unknown[] = [];
-		createAgentHook({
+		await createAgentHook({
 			name: "Secret crashing pre hook",
 			enabled: true,
 			event: "PreToolUse",
@@ -308,7 +308,7 @@ describe("Agent Hooks runner", () => {
 		if (!address || typeof address === "string")
 			throw new Error("missing test server port");
 
-		createAgentHook({
+		await createAgentHook({
 			name: "Failing HTTP hook",
 			enabled: true,
 			event: "PostToolUse",
@@ -352,7 +352,7 @@ describe("Agent Hooks runner", () => {
 		if (!address || typeof address === "string")
 			throw new Error("missing test server port");
 
-		createAgentHook({
+		await createAgentHook({
 			name: "HTTP context",
 			enabled: true,
 			event: "PostToolUse",
@@ -392,7 +392,7 @@ describe("Agent Hooks runner", () => {
 		if (!address || typeof address === "string")
 			throw new Error("missing test server port");
 
-		createAgentHook({
+		await createAgentHook({
 			name: "HTTP headers",
 			enabled: true,
 			event: "PostToolUse",

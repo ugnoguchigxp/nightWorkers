@@ -20,12 +20,12 @@ export const hooksSettingsRouter = createOpenApiRouter()
 	.openapi(getAgentHooksRoute, (c) => {
 		return c.json(readEffectiveAgentHooksSettings(), 200);
 	})
-	.openapi(createAgentHookRoute, (c) => {
-		const hook = createAgentHook(c.req.valid("json"));
+	.openapi(createAgentHookRoute, async (c) => {
+		const hook = await createAgentHook(c.req.valid("json"));
 		return c.json(hook, 201);
 	})
-	.openapi(updateAgentHookRoute, (c) => {
-		const hook = updateAgentHook(c.req.param("id"), c.req.valid("json"));
+	.openapi(updateAgentHookRoute, async (c) => {
+		const hook = await updateAgentHook(c.req.param("id"), c.req.valid("json"));
 		if (!hook)
 			return c.json(
 				{ error: { code: "NOT_FOUND", message: "Agent hook not found" } },
@@ -33,8 +33,8 @@ export const hooksSettingsRouter = createOpenApiRouter()
 			);
 		return c.json(hook, 200);
 	})
-	.openapi(deleteAgentHookRoute, (c) => {
-		const removed = deleteAgentHook(c.req.param("id"));
+	.openapi(deleteAgentHookRoute, async (c) => {
+		const removed = await deleteAgentHook(c.req.param("id"));
 		if (!removed)
 			return c.json(
 				{ error: { code: "NOT_FOUND", message: "Agent hook not found" } },

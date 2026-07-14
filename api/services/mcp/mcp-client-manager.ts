@@ -159,7 +159,7 @@ class McpClientManager {
 				message: `Connected. ${tools.length} tools available.`,
 				toolCount: tools.length,
 			};
-			updateMcpServerStatus(server.id, status);
+			await updateMcpServerStatus(server.id, status);
 			return status;
 		} catch (err) {
 			const status = {
@@ -170,7 +170,7 @@ class McpClientManager {
 				),
 				toolCount: 0,
 			};
-			updateMcpServerStatus(server.id, status);
+			await updateMcpServerStatus(server.id, status);
 			return status;
 		} finally {
 			if (entry) await closeClientEntry(entry);

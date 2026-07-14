@@ -3,6 +3,7 @@ import type {
 	DesignQuestionnaireAnswer,
 	QuestionnaireQuestionSetMetadata,
 } from "../../../shared/schemas/design-questionnaire.schema";
+import { designQuestionnaireAnswerSchema } from "../../../shared/schemas/design-questionnaire.schema";
 import { AppError } from "../../lib/errors";
 import {
 	getAnswerableSessionQuestions,
@@ -94,6 +95,37 @@ export function isDesignQuestionnaireAnswerComplete(
 	if (question.answerType === "ranked")
 		return answer.rankedOptionIds.length > 0;
 	return answer.selectedOptionIds.length > 0;
+}
+
+export function areQuestionnaireAnswersComplete(
+	session: QuestionnaireSessionLike,
+	answerByQuestionId: Map<string, DesignQuestionnaireAnswer>,
+) {
+	const requiredQuestions = getAnswerableSessionQuestions(
+		session,
+		[...answerByQuestionId.entries()].map(([questionId, answer]) => ({
+			questionId,
+			answer,
+		})),
+	);
+	return (
+		requiredQuestions.length > 0 &&
+		requiredQuestions.every((question) =>
+			isDesignQuestionnaireAnswerComplete(
+				question,
+				answerByQuestionId.get(String(question.id)),
+			),
+		)
+	);
+}
+
+export function parseQuestionnaireAnswerViews(
+	answers: Array<{ questionId: string; answerJson: unknown }>,
+) {
+	return answers.map((answer) => ({
+		questionId: answer.questionId,
+		answer: designQuestionnaireAnswerSchema.parse(answer.answerJson),
+	}));
 }
 
 export function removeDuplicateFollowUpQuestions(

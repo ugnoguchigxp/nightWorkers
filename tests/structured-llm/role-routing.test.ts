@@ -71,8 +71,8 @@ function createDummySettings(): StructuredLlmProviderSettings {
 }
 
 describe("Structured LLM Role Routing", () => {
-	it("restores top-level and endpoint secrets from SQLite", () => {
-		writeApplicationSettingBundle(
+	it("restores top-level and endpoint secrets from SQLite", async () => {
+		await writeApplicationSettingBundle(
 			"llm",
 			{
 				OPENAI_ENABLED: true,

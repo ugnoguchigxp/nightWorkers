@@ -1,5 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { sql } from "drizzle-orm";
+import type { DbTransaction } from "../../db/client";
+import {
+	applicationSettingMigrations,
+	applicationSettingSecrets,
+	applicationSettings,
+} from "../../db/schema";
 import { openSyncSqlite, type SyncSqliteDatabase } from "../../db/sync-sqlite";
 import { getRuntimePaths } from "../../runtime/paths";
 
@@ -26,29 +33,6 @@ function withDatabase<T>(operation: (database: SyncSqliteDatabase) => T): T {
 	const database = openSyncSqlite(target, { timeout: 10_000 });
 	try {
 		database.pragma("busy_timeout = 10000");
-		database.exec(`
-			CREATE TABLE IF NOT EXISTS application_settings (
-				scope TEXT PRIMARY KEY NOT NULL,
-				value_json TEXT NOT NULL,
-				revision INTEGER NOT NULL DEFAULT 1,
-				created_at INTEGER NOT NULL,
-				updated_at INTEGER NOT NULL
-			);
-			CREATE TABLE IF NOT EXISTS application_setting_secrets (
-				scope TEXT PRIMARY KEY NOT NULL,
-				value_json TEXT NOT NULL,
-				revision INTEGER NOT NULL DEFAULT 1,
-				created_at INTEGER NOT NULL,
-				updated_at INTEGER NOT NULL
-			);
-			CREATE TABLE IF NOT EXISTS application_setting_migrations (
-				source TEXT PRIMARY KEY NOT NULL,
-				source_fingerprint TEXT NOT NULL,
-				imported_at INTEGER NOT NULL,
-				completed_at INTEGER NOT NULL,
-				result_json TEXT NOT NULL
-			);
-		`);
 		return operation(database);
 	} finally {
 		database.close();
@@ -56,33 +40,25 @@ function withDatabase<T>(operation: (database: SyncSqliteDatabase) => T): T {
 }
 
 function readJsonRow(table: string, scope: ApplicationSettingsScope) {
-	return withDatabase((database) => {
-		const row = database.get(
-			`SELECT value_json FROM ${table} WHERE scope = ?`,
-			[scope],
-		) as { value_json?: string } | undefined;
-		return row?.value_json ?? "";
-	});
+	try {
+		return withDatabase((database) => {
+			const row = database.get(
+				`SELECT value_json FROM ${table} WHERE scope = ?`,
+				[scope],
+			) as { value_json?: string } | undefined;
+			return row?.value_json ?? "";
+		});
+	} catch (error) {
+		if (String(error).includes("no such table")) return "";
+		throw error;
+	}
 }
 
-function upsertJsonRow(
-	database: SyncSqliteDatabase,
-	table: string,
-	scope: ApplicationSettingsScope,
-	value: unknown,
-	now: number,
-) {
-	database.run(
-		`
-			INSERT INTO ${table} (scope, value_json, revision, created_at, updated_at)
-			VALUES (?, ?, 1, ?, ?)
-			ON CONFLICT(scope) DO UPDATE SET
-				value_json = excluded.value_json,
-				revision = ${table}.revision + 1,
-				updated_at = excluded.updated_at
-		`,
-		[scope, JSON.stringify(value), now, now],
-	);
+async function writeSettingsTransaction<T>(
+	callback: (tx: DbTransaction) => Promise<T>,
+): Promise<T> {
+	const { db } = await import("../../db/client");
+	return db.transaction(callback);
 }
 
 export function readApplicationSetting<T>(
@@ -92,16 +68,24 @@ export function readApplicationSetting<T>(
 	return value ? (JSON.parse(value) as T) : null;
 }
 
-export function writeApplicationSetting<T>(
+export async function writeApplicationSetting<T>(
 	scope: ApplicationSettingsScope,
 	value: T,
-): T {
-	withDatabase((database) => {
-		const now = Math.floor(Date.now() / 1000);
-		database.transaction(() =>
-			upsertJsonRow(database, "application_settings", scope, value, now),
-		)();
-	});
+): Promise<T> {
+	await writeSettingsTransaction((tx) =>
+		tx
+			.insert(applicationSettings)
+			.values({ scope, valueJson: value as Record<string, unknown> })
+			.onConflictDoUpdate({
+				target: applicationSettings.scope,
+				set: {
+					valueJson: value as Record<string, unknown>,
+					revision: sql`${applicationSettings.revision} + 1`,
+					updatedAt: new Date(),
+				},
+			})
+			.returning(),
+	);
 	return value;
 }
 
@@ -112,60 +96,72 @@ export function readApplicationSettingSecrets<T>(
 	return value ? (JSON.parse(value) as T) : null;
 }
 
-export function writeApplicationSettingSecrets<T>(
+export async function writeApplicationSettingSecrets<T>(
 	scope: ApplicationSettingsScope,
 	value: T,
-): T {
-	withDatabase((database) => {
-		const now = Math.floor(Date.now() / 1000);
-		database.transaction(() =>
-			upsertJsonRow(database, "application_setting_secrets", scope, value, now),
-		)();
-	});
+): Promise<T> {
+	await writeSettingsTransaction((tx) =>
+		tx
+			.insert(applicationSettingSecrets)
+			.values({ scope, valueJson: value as Record<string, unknown> })
+			.onConflictDoUpdate({
+				target: applicationSettingSecrets.scope,
+				set: {
+					valueJson: value as Record<string, unknown>,
+					revision: sql`${applicationSettingSecrets.revision} + 1`,
+					updatedAt: new Date(),
+				},
+			})
+			.returning(),
+	);
 	return value;
 }
 
-export function writeApplicationSettingBundle<TPublic, TSecrets>(
+export async function writeApplicationSettingBundle<TPublic, TSecrets>(
 	scope: ApplicationSettingsScope,
 	publicValue: TPublic,
 	secretValue: TSecrets,
-): { publicValue: TPublic; secretValue: TSecrets } {
-	withDatabase((database) => {
-		const now = Math.floor(Date.now() / 1000);
-		database.transaction(() => {
-			upsertJsonRow(database, "application_settings", scope, publicValue, now);
-			upsertJsonRow(
-				database,
-				"application_setting_secrets",
-				scope,
-				secretValue,
-				now,
-			);
-		})();
+): Promise<{ publicValue: TPublic; secretValue: TSecrets }> {
+	await writeSettingsTransaction(async (tx) => {
+		await tx
+			.insert(applicationSettings)
+			.values({ scope, valueJson: publicValue as Record<string, unknown> })
+			.onConflictDoUpdate({
+				target: applicationSettings.scope,
+				set: {
+					valueJson: publicValue as Record<string, unknown>,
+					revision: sql`${applicationSettings.revision} + 1`,
+					updatedAt: new Date(),
+				},
+			});
+		await tx
+			.insert(applicationSettingSecrets)
+			.values({ scope, valueJson: secretValue as Record<string, unknown> })
+			.onConflictDoUpdate({
+				target: applicationSettingSecrets.scope,
+				set: {
+					valueJson: secretValue as Record<string, unknown>,
+					revision: sql`${applicationSettingSecrets.revision} + 1`,
+					updatedAt: new Date(),
+				},
+			});
 	});
 	return { publicValue, secretValue };
 }
 
-export function archiveLegacySettingsFile(filePath: string) {
+export async function archiveLegacySettingsFile(filePath: string) {
 	if (process.env.NODE_ENV === "test" || !fs.existsSync(filePath)) return;
 	const stat = fs.statSync(filePath);
 	const archivedPath = `${filePath}.migrated-${Date.now()}.json`;
 	fs.renameSync(filePath, archivedPath);
 	const now = Math.floor(Date.now() / 1000);
-	withDatabase((database) => {
-		database.run(
-			`
-				INSERT OR REPLACE INTO application_setting_migrations
-				(source, source_fingerprint, imported_at, completed_at, result_json)
-				VALUES (?, ?, ?, ?, ?)
-			`,
-			[
-				filePath,
-				`${stat.size}:${stat.mtimeMs}`,
-				now,
-				now,
-				JSON.stringify({ archivedPath }),
-			],
-		);
-	});
+	await writeSettingsTransaction((tx) =>
+		tx.insert(applicationSettingMigrations).values({
+			source: filePath,
+			sourceFingerprint: `${stat.size}:${stat.mtimeMs}`,
+			importedAt: new Date(now * 1000),
+			completedAt: new Date(now * 1000),
+			resultJson: { archivedPath },
+		}),
+	);
 }

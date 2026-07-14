@@ -122,19 +122,21 @@ export function readGeneralSettings(): GeneralSettings {
 		readJsonFile<Partial<GeneralSettings>>(GENERAL_SETTINGS_PATH) ?? {},
 	);
 	try {
-		writeApplicationSetting("general", migrated);
-		archiveLegacySettingsFile(GENERAL_SETTINGS_PATH);
+		void writeApplicationSetting("general", migrated)
+			.then(() => archiveLegacySettingsFile(GENERAL_SETTINGS_PATH))
+			.catch(() => undefined);
 	} catch {
 		// Schema bootstrap can precede the first settings read in lightweight tools.
 	}
 	return migrated;
 }
 
-export function writeGeneralSettings(
+export async function writeGeneralSettings(
 	input: Partial<GeneralSettings>,
-): GeneralSettings {
+): Promise<GeneralSettings> {
 	const settings = normalizeGeneralSettings(input);
-	return writeApplicationSetting("general", settings);
+	await writeApplicationSetting("general", settings);
+	return settings;
 }
 
 export function readFxRateCache(): FxRateCache | null {
@@ -143,18 +145,19 @@ export function readFxRateCache(): FxRateCache | null {
 	const migrated = readJsonFile<FxRateCache>(FX_CACHE_PATH);
 	if (!migrated) return null;
 	try {
-		writeApplicationSetting("fx-cache", migrated);
-		archiveLegacySettingsFile(FX_CACHE_PATH);
+		void writeApplicationSetting("fx-cache", migrated)
+			.then(() => archiveLegacySettingsFile(FX_CACHE_PATH))
+			.catch(() => undefined);
 	} catch {
 		// Schema bootstrap can precede the first settings read in lightweight tools.
 	}
 	return migrated;
 }
 
-export function writeFxRateCache(cache: FxRateCache) {
-	writeApplicationSetting("fx-cache", cache);
+export async function writeFxRateCache(cache: FxRateCache) {
+	await writeApplicationSetting("fx-cache", cache);
 	const current = readGeneralSettings();
-	writeGeneralSettings({
+	await writeGeneralSettings({
 		...current,
 		fx: {
 			...current.fx,

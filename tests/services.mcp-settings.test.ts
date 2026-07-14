@@ -44,8 +44,8 @@ afterEach(() => {
 });
 
 describe("MCP server settings", () => {
-	it("persists independent non-auth server configs", () => {
-		const first = createMcpServer({
+	it("persists independent non-auth server configs", async () => {
+		const first = await createMcpServer({
 			name: "Local docs",
 			enabled: true,
 			transport: "stdio",
@@ -54,7 +54,7 @@ describe("MCP server settings", () => {
 			env: { NODE_ENV: "test" },
 			toolPrefix: "local_docs",
 		});
-		const second = createMcpServer({
+		const second = await createMcpServer({
 			name: "HTTP docs",
 			enabled: false,
 			transport: "streamable_http",
@@ -68,8 +68,8 @@ describe("MCP server settings", () => {
 		]);
 	});
 
-	it("rejects secret-like env settings in the first implementation slice", () => {
-		expect(() =>
+	it("rejects secret-like env settings in the first implementation slice", async () => {
+		await expect(
 			createMcpServer({
 				name: "Secret server",
 				enabled: true,
@@ -78,11 +78,11 @@ describe("MCP server settings", () => {
 				env: { API_KEY: "abc123" },
 				toolPrefix: "secret_server",
 			}),
-		).toThrow(/secret-like/i);
+		).rejects.toThrow(/secret-like/i);
 	});
 
-	it("keeps authenticated MCP rejection messages user-readable", () => {
-		expect(() =>
+	it("keeps authenticated MCP rejection messages user-readable", async () => {
+		await expect(
 			createMcpServer({
 				name: "Auth server",
 				enabled: true,
@@ -91,11 +91,13 @@ describe("MCP server settings", () => {
 				toolPrefix: "auth_server",
 				authorization: "Bearer should-not-save",
 			} as never),
-		).toThrow(/Authenticated MCP server settings are not supported yet/i);
+		).rejects.toThrow(
+			/Authenticated MCP server settings are not supported yet/i,
+		);
 	});
 
-	it("rejects duplicate tool prefixes and non-local plain HTTP URLs", () => {
-		createMcpServer({
+	it("rejects duplicate tool prefixes and non-local plain HTTP URLs", async () => {
+		await createMcpServer({
 			name: "First",
 			enabled: true,
 			transport: "stdio",
@@ -103,7 +105,7 @@ describe("MCP server settings", () => {
 			toolPrefix: "duplicate",
 		});
 
-		expect(() =>
+		await expect(
 			createMcpServer({
 				name: "Second",
 				enabled: true,
@@ -111,9 +113,9 @@ describe("MCP server settings", () => {
 				command: "node",
 				toolPrefix: "duplicate",
 			}),
-		).toThrow(/already exists/i);
+		).rejects.toThrow(/already exists/i);
 
-		expect(() =>
+		await expect(
 			createMcpServer({
 				name: "Plain remote",
 				enabled: true,
@@ -121,11 +123,11 @@ describe("MCP server settings", () => {
 				url: "http://example.com/mcp",
 				toolPrefix: "plain_remote",
 			}),
-		).toThrow(/https/i);
+		).rejects.toThrow(/https/i);
 	});
 
-	it("updates and deletes a server config", () => {
-		const server = createMcpServer({
+	it("updates and deletes a server config", async () => {
+		const server = await createMcpServer({
 			name: "Editable",
 			enabled: false,
 			transport: "sse",
@@ -133,7 +135,7 @@ describe("MCP server settings", () => {
 			toolPrefix: "editable",
 		});
 
-		const updated = updateMcpServer(server.id, {
+		const updated = await updateMcpServer(server.id, {
 			enabled: true,
 			name: "Edited",
 		});
@@ -143,13 +145,13 @@ describe("MCP server settings", () => {
 			name: "Edited",
 		});
 
-		const removed = deleteMcpServer(server.id);
+		const removed = await deleteMcpServer(server.id);
 		expect(removed?.id).toBe(server.id);
 		expect(listMcpServers()).toEqual([]);
 	});
 
-	it("imports common pasted mcpServers JSON atomically", () => {
-		const imported = importMcpServersFromText(
+	it("imports common pasted mcpServers JSON atomically", async () => {
+		const imported = await importMcpServersFromText(
 			JSON.stringify({
 				mcpServers: {
 					docs: {
@@ -216,8 +218,8 @@ describe("MCP server settings", () => {
 		]);
 	});
 
-	it("prefers NightWorkers MCP settings over Codex global toolPrefix conflicts", () => {
-		createMcpServer({
+	it("prefers NightWorkers MCP settings over Codex global toolPrefix conflicts", async () => {
+		await createMcpServer({
 			name: "Local context",
 			enabled: true,
 			transport: "stdio",
@@ -262,8 +264,8 @@ describe("MCP server settings", () => {
 		expect(diagnosticsText).not.toContain("should-not-leak");
 	});
 
-	it("does not persist partial pasted config when a later server is invalid", () => {
-		expect(() =>
+	it("does not persist partial pasted config when a later server is invalid", async () => {
+		await expect(
 			importMcpServersFromText(
 				JSON.stringify({
 					mcpServers: {
@@ -272,13 +274,13 @@ describe("MCP server settings", () => {
 					},
 				}),
 			),
-		).toThrow(/secret-like/i);
+		).rejects.toThrow(/secret-like/i);
 
 		expect(listMcpServers()).toEqual([]);
 	});
 
-	it("rejects pasted authenticated MCP config instead of silently dropping auth fields", () => {
-		expect(() =>
+	it("rejects pasted authenticated MCP config instead of silently dropping auth fields", async () => {
+		await expect(
 			importMcpServersFromText(
 				JSON.stringify({
 					mcpServers: {
@@ -289,13 +291,13 @@ describe("MCP server settings", () => {
 					},
 				}),
 			),
-		).toThrow(/authenticated/i);
+		).rejects.toThrow(/authenticated/i);
 
 		expect(listMcpServers()).toEqual([]);
 	});
 
 	it("returns diagnostics for invalid persisted settings without erasing the file", async () => {
-		writeApplicationSetting("mcp", {
+		await writeApplicationSetting("mcp", {
 			servers: [{ id: "not-a-uuid", name: "broken" }],
 		});
 

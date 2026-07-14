@@ -23,8 +23,10 @@ export function isSqliteBusyError(error: unknown) {
 	const message = messages.join("\n");
 	return (
 		message.includes("SQLITE_BUSY") ||
+		message.includes("SQLITE_PROTOCOL") ||
 		message.includes("SQLITE_IOERR") ||
 		message.includes("database is locked") ||
+		message.includes("locking protocol") ||
 		message.includes("cannot commit transaction")
 	);
 }

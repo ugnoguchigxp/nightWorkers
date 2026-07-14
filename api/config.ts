@@ -12,8 +12,6 @@ import { isLoopbackHost } from "./security/listen-security";
 import {
 	readApplicationSetting,
 	readApplicationSettingSecrets,
-	writeApplicationSetting,
-	writeApplicationSettingSecrets,
 } from "./services/settings/application-settings-store";
 
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
@@ -94,19 +92,33 @@ function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 	normalizeListenPort(env);
 	if (!env.JWT_SECRET)
 		env.JWT_SECRET = crypto.randomBytes(48).toString("base64url");
-	if (!persisted)
-		writeApplicationSetting("server", pickEnvironment(env, serverKeys));
-	if (!persistedAuth)
-		writeApplicationSetting("auth", pickEnvironment(env, authKeys));
-	if (!persistedRuntime)
-		writeApplicationSetting("runtime", pickEnvironment(env, runtimeKeys));
-	if (!persistedIntegrations)
-		writeApplicationSetting(
-			"integrations",
-			pickEnvironment(env, integrationKeys),
-		);
-	if (!persistedSecrets)
-		writeApplicationSettingSecrets("auth", pickEnvironment(env, secretKeys));
+	env.__NIGHTWORKERS_PERSIST_BOOTSTRAP_SETTINGS = JSON.stringify({
+		server: !persisted ? pickEnvironment(env, serverKeys) : null,
+		auth: !persistedAuth ? pickEnvironment(env, authKeys) : null,
+		runtime: !persistedRuntime ? pickEnvironment(env, runtimeKeys) : null,
+		integrations: !persistedIntegrations
+			? pickEnvironment(env, integrationKeys)
+			: null,
+		secrets: !persistedSecrets ? pickEnvironment(env, secretKeys) : null,
+	});
+}
+
+export async function persistBootstrapSettings() {
+	const raw = process.env.__NIGHTWORKERS_PERSIST_BOOTSTRAP_SETTINGS;
+	if (!raw) return;
+	const pending = JSON.parse(raw) as Record<
+		string,
+		Record<string, string> | null
+	>;
+	const { writeApplicationSetting, writeApplicationSettingSecrets } =
+		await import("./services/settings/application-settings-store");
+	for (const scope of ["server", "auth", "runtime", "integrations"] as const) {
+		const value = pending[scope];
+		if (value) await writeApplicationSetting(scope, value);
+	}
+	if (pending.secrets)
+		await writeApplicationSettingSecrets("auth", pending.secrets);
+	delete process.env.__NIGHTWORKERS_PERSIST_BOOTSTRAP_SETTINGS;
 }
 
 function normalizeListenPort(env: NodeJS.ProcessEnv) {

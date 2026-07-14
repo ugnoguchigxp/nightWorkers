@@ -1,5 +1,5 @@
 import { asc, desc, eq } from "drizzle-orm";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import {
 	designQuestionnaireAnswers,
 	designQuestionnaireQuestionSets,
@@ -7,6 +7,8 @@ import {
 	designQuestionnaireSessions,
 } from "../../db/design-questionnaire-schema";
 import { taskMessages } from "../../db/schema";
+
+type QuestionnaireDb = typeof db | DbTransaction;
 
 function _isAppBlueprintDocumentMessage(
 	messageType: string | null | undefined,
@@ -51,8 +53,9 @@ export async function createDesignQuestionnaireSession(data: {
 export async function updateDesignQuestionnaireSessionStatus(
 	id: string,
 	status: string,
+	transaction: QuestionnaireDb = db,
 ) {
-	const [session] = await db
+	const [session] = await transaction
 		.update(designQuestionnaireSessions)
 		.set({ status, updatedAt: new Date() })
 		.where(eq(designQuestionnaireSessions.id, id))
@@ -108,9 +111,10 @@ export async function upsertDesignQuestionnaireAnswer(data: {
 	sessionId: string;
 	questionId: string;
 	answerJson: unknown;
+	transaction?: DbTransaction;
 }) {
 	const now = new Date();
-	const [answer] = await db
+	const [answer] = await (data.transaction ?? db)
 		.insert(designQuestionnaireAnswers)
 		.values({
 			sessionId: data.sessionId,
@@ -135,8 +139,11 @@ export async function upsertDesignQuestionnaireAnswer(data: {
 	return answer;
 }
 
-export async function listDesignQuestionnaireAnswers(sessionId: string) {
-	return db
+export async function listDesignQuestionnaireAnswers(
+	sessionId: string,
+	transaction: QuestionnaireDb = db,
+) {
+	return transaction
 		.select()
 		.from(designQuestionnaireAnswers)
 		.where(eq(designQuestionnaireAnswers.sessionId, sessionId))

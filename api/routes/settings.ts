@@ -57,7 +57,7 @@ export const settingsRouter = createOpenApiRouter()
 			c.req.valid("json"),
 			getCurrentSettings(),
 		);
-		writeRuntimeSettings(settings);
+		await writeRuntimeSettings(settings);
 
 		// Update in-memory environment variables instantly!
 		applySettingsToProcessEnv(settings);
@@ -87,8 +87,8 @@ export const settingsRouter = createOpenApiRouter()
 	.openapi(getGeneralSettingsRoute, (c) => {
 		return c.json(readGeneralSettings(), 200);
 	})
-	.openapi(saveGeneralSettingsRoute, (c) => {
-		const settings = writeGeneralSettings(
+	.openapi(saveGeneralSettingsRoute, async (c) => {
+		const settings = await writeGeneralSettings(
 			c.req.valid("json") as GeneralSettings,
 		);
 		configureRuntimeLogRetention(settings.dataRetention);

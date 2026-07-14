@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import app, { nodeWebSocket } from "./app";
-import { config } from "./config";
+import { config, persistBootstrapSettings } from "./config";
 import { ensureNightWorkersSchema } from "./db/bootstrap";
 import { client } from "./db/client";
 import {
@@ -141,6 +141,7 @@ export async function createNightWorkersServer(
 
 	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
+	await persistBootstrapSettings();
 	configureRuntimeLogRetention(readGeneralSettings().dataRetention);
 	await runRuntimeRetentionSweep({ forceUsageCleanup: true }).catch((error) => {
 		logEvent({
