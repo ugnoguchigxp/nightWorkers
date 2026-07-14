@@ -279,7 +279,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "reviewer_evaluation",
 			description:
-				"Run the final NightWorkers reviewer evaluation for a Review Mode run. If the reviewer returns changes_requested or blocking findings, fix them, rerun the needed checks, and run reviewer_evaluation again until no unresolved findings remain.",
+				"Run the final NightWorkers reviewer evaluation for a Review Mode run. If the reviewer returns changes_requested or blocking findings, persist the finding/evidence and hand it off to a new Implementation correction Session; Review Mode itself must not edit, verify, or commit.",
 			inputSchema: objectSchema({
 				runId: { type: "string" },
 				rubricId: { type: "string" },

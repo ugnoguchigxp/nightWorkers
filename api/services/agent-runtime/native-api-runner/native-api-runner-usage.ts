@@ -25,6 +25,7 @@ export async function recordNativeApiTurnUsage(input: {
 	await input.usageRecorder({
 		taskId: input.context.taskId,
 		runId: input.context.runId,
+		agentModeSessionId: input.context.agentModeSessionId,
 		callId: `${input.context.runId}:native-api-turn:${input.turnIndex}`,
 		provider: input.provider,
 		model: input.model,
@@ -71,6 +72,7 @@ export async function recordNativeApiTurnUsage(input: {
 				input.context,
 			),
 		},
+		counterScope: "per_turn",
 	});
 }
 

@@ -302,7 +302,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 				tx,
 			);
 		}
-		if (!entry || entry.status !== "queued" || entry.claimReady !== false) {
+		if (entry?.status !== "queued" || entry.claimReady !== false) {
 			throw new MissionPilotPreQueueError(
 				"MISSION_PILOT_QUEUE_HANDOFF_DUPLICATE",
 				"Mission Pilot Queue entry was claimed before handoff completed",
@@ -380,8 +380,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 			.from(implementationQueueEntries)
 			.where(eq(implementationQueueEntries.id, entry.id));
 		if (
-			!persistedEntry ||
-			persistedEntry.status !== "queued" ||
+			persistedEntry?.status !== "queued" ||
 			persistedEntry.claimReady !== false
 		) {
 			throw new MissionPilotPreQueueError(

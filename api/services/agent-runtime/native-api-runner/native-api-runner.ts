@@ -88,6 +88,21 @@ export class NativeApiRunner {
 		const getLatestCompletedTurn =
 			this.store.getLatestCompletedTurnForPreviousRun;
 		if (typeof getLatestCompletedTurn !== "function") return null;
+		if (!context.agentModeSessionId) {
+			await sink.emit({
+				type: "runtime_started",
+				message:
+					"[NativeApiRunner] runtime session resume skipped because AgentModeSession is unavailable.",
+				payload: {
+					runtime: "native_api_runner",
+					action: "runtime.resume_state_missing",
+					resumeState: "unavailable",
+					reason: "agent_mode_session_unavailable",
+					executionMode,
+				},
+			});
+			return null;
+		}
 		const routeCompatibility = readNativeApiResumeRouteCompatibility(
 			context,
 			executionMode,
@@ -109,6 +124,7 @@ export class NativeApiRunner {
 		}
 		const sourceTurn = await getLatestCompletedTurn.call(this.store, {
 			taskId: context.taskId,
+			agentModeSessionId: context.agentModeSessionId,
 			runId: context.runId,
 			provider: routeCompatibility.provider,
 			model: routeCompatibility.model,

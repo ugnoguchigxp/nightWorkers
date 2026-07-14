@@ -62,6 +62,7 @@ export type RuntimePromptSnapshot = {
 	runtimeLane?: "native-api-runner" | "codex-sdk";
 	runtimeLaneResolution?: RuntimeLaneSnapshot;
 	runtimeResume?: unknown;
+	reviewCorrection?: unknown;
 	projectMeta?: unknown;
 	securityOracle?: {
 		enabled: boolean;
@@ -101,7 +102,7 @@ export type RuntimePromptSnapshot = {
 		stateCardText?: string;
 		snapshotJson?: unknown;
 		projection?: {
-			role: "plan" | "implementation" | "review" | "general_answer";
+			role: "plan" | "implementation" | "test" | "review" | "general_answer";
 			workKind?: string | null;
 			source: "role_projection" | "raw_snapshot" | "omitted";
 			omittedSections: string[];

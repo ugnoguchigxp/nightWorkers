@@ -2,11 +2,13 @@
 
 ## Status
 
-- Plan status: `implemented_pending_repository_gate`
+- Plan status: `completed-archived`
 - Document review: `accepted_after_revision`
 - Implementation completed: 2026-07-14
-- Focused verification: `typecheck + 7 files / 38 tests + check:docs passed`
-- Repository gate: `blocked by concurrent out-of-scope start-task-run.ts growth (646 lines) and unrelated ontology lint changes`
+- Archived: 2026-07-14
+- Archive decision: Todo projection実装の領分ではDone。repo-wide gateの対象外並行変更は本計画のarchive blockerに含めない。
+- Focused verification: `7 files / 42 tests + Mission Pilot regression 4 files / 37 tests + check:docs passed`
+- Repository gate: `blocked by concurrent out-of-scope agent-mode session / usage-accounting changes (schema-task-execution.ts size, typecheck, lint)`
 - Document created: 2026-07-14
 - Last reviewed: 2026-07-14
 - Review-time compatibility evidence: projection metadataを必要とする`queued + claim_ready=0`のMission Pilot rowは0件
@@ -636,4 +638,4 @@ Stop Condition 1が発生した場合だけ、Feature Plan全体をstructured se
 - [x] `bun run check:docs`が成功する。
 - [ ] `bun run verify`が成功する。
 
-`bun run verify`は今回の対象変更ではなく、同一worktreeで並行変更された`api/modules/nightworkers/run-orchestration/start-task-run.ts`が646行へ増えたためarchitecture gateで停止した。今回のprojection実装は同fileを変更していない。ontology exploration配下の並行変更にもlint errorが残っているため、repository gate成功と文書archiveはそれらの解消後に行う。
+`bun run verify`は今回のprojection変更ではなく、同一worktreeで並行変更中のagent-mode session / usage-accounting実装で停止している。現在の主な失敗は`api/db/schema-task-execution.ts`の666行化、同schemaのDrizzle import / self-reference型、usage summary / runtime contextの型不一致、および関連format errorである。Todo projection実装についてはfocused regression、Mission Pilot回帰、scoped lint、docs checkが成功しており、ユーザー合意に基づく領分別Doneとして本書をarchiveする。

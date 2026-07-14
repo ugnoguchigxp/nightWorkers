@@ -75,7 +75,7 @@ export async function prepareTaskRunRuntimeContext(input: {
 		executionMode: input.executionMode,
 		settings: structuredLlmSettings,
 		activeRoute: runtimeLlmRoute,
-		override: input.llmRouteOverride,
+		override: input.llmRouteOverride ?? null,
 	});
 	return {
 		runtimeRole,

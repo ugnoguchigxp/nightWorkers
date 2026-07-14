@@ -2,18 +2,18 @@ name: Desktop matrix
 
 on:
   workflow_call:
-  pull_request:
-    paths:
-      - ".github/workflows/desktop-matrix.yml"
-      - "api/**"
-      - "src/**"
-      - "src-tauri/**"
-      - "scripts/desktop/**"
-      - "package.json"
-      - "bun.lock"
-  push:
-    branches: [main]
-  workflow_dispatch:
+  # pull_request:
+  #   paths:
+  #     - ".github/workflows/desktop-matrix.yml"
+  #     - "api/**"
+  #     - "src/**"
+  #     - "src-tauri/**"
+  #     - "scripts/desktop/**"
+  #     - "package.json"
+  #     - "bun.lock"
+  # push:
+  #   branches: [main]
+  # workflow_dispatch:
 
 permissions:
   contents: read

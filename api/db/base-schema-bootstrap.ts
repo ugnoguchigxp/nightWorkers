@@ -136,8 +136,16 @@ export async function ensureBaseNightWorkersTables() {
     )
   `);
 	await ensureColumn("task_runs", "worktree_path", "worktree_path text");
+	await ensureColumn(
+		"task_runs",
+		"agent_mode_session_id",
+		"agent_mode_session_id text",
+	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_runs_task_id_idx ON task_runs (task_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_runs_agent_mode_session_started_idx ON task_runs (agent_mode_session_id, started_at)",
 	);
 
 	await client.execute(`

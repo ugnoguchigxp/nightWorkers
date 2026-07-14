@@ -7,7 +7,9 @@ updates:
       day: monday
       time: "01:00"
       timezone: Asia/Tokyo
-    open-pull-requests-limit: 10
+    # Version update PRs are disabled; dependency updates remain visible through
+    # the existing audit workflow and can be handled deliberately when needed.
+    open-pull-requests-limit: 0
     groups:
       runtime-patch-minor:
         dependency-type: production
@@ -26,6 +28,7 @@ updates:
       day: monday
       time: "01:30"
       timezone: Asia/Tokyo
+    open-pull-requests-limit: 0
     groups:
       tauri-rust-patch-minor:
         update-types: [patch, minor]
@@ -40,6 +43,7 @@ updates:
       day: monday
       time: "02:00"
       timezone: Asia/Tokyo
+    open-pull-requests-limit: 0
     groups:
       github-actions:
         patterns: ["*"]

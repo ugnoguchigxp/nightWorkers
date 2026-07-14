@@ -31,6 +31,7 @@ import {
 	toRunTerminalReason,
 } from "./codex-runtime-loop-support";
 import {
+	updateCodexSessionKey as k,
 	normalizeRetryDelayMs,
 	normalizeRetryLimit,
 	persistCodexProviderThreadIfPresent,
@@ -131,7 +132,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			executionMode: readCodexRuntimeExecutionMode(context),
 		});
 		const completedFileChanges: CodexObservedFileChange[] = [];
-
+		let providerTurnSequence = 0;
 		try {
 			for (let attemptIndex = 0; ; attemptIndex += 1) {
 				let finalText = "";
@@ -141,7 +142,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 				let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
 				const mapperState = createCodexEventMapperState();
 				const attemptStartedAt = Date.now();
-
 				if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
 					controller.abort();
 					return toCancelled(attemptIndex === 0 ? "" : logs.join("\n"));
@@ -157,6 +157,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 					let finalizeRecoveryPromptsSent = 0;
 					let isCheckpointPrompt = false;
 					let imageInputSent = false;
+					let providerSessionKey: string | null = null;
 					for (;;) {
 						const turnInput = buildCodexRuntimeTurnInput(
 							context,
@@ -164,10 +165,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 							imageInputSent,
 						);
 						imageInputSent ||= typeof turnInput !== "string";
+						const sourceSequence = ++providerTurnSequence;
 						const { events } = await thread.runStreamed(turnInput, {
 							signal: controller.signal,
 						});
-
 						for await (const event of events) {
 							if (this.cancelledRunIds.has(context.runId)) {
 								controller.abort();
@@ -181,6 +182,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 									mapped,
 								);
 								for (const audited of auditedEvents) {
+									providerSessionKey = k(providerSessionKey, audited);
 									logs.push(audited.message);
 									await sink.emit(audited);
 									if (this.persistRuntimeSessionState) {
@@ -284,6 +286,8 @@ export class CodexAgentRuntime implements AgentRuntime {
 														runtimePromptParts.estimates.runtimeContractTokens,
 												}
 											: undefined,
+										providerSessionKey,
+										sourceSequence,
 									});
 								}
 								if (mapped.type === "runtime_error") {
@@ -303,7 +307,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 								}
 							}
 						}
-
 						if (terminalState !== "completed") break;
 						if (
 							readRunControlKernelMode(context) === "enforce" &&
@@ -411,7 +414,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 						}
 						continue;
 					}
-
 					await emitMissingImportVerificationWarningIfNeeded(
 						sink,
 						logs,

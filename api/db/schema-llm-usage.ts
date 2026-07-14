@@ -6,6 +6,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { agentModeSessions } from "./schema-agent-mode-session";
 import { commonColumns, repositories, tasks } from "./schema-base";
 import { taskRuns } from "./schema-task-execution";
 
@@ -19,6 +20,10 @@ export const llmUsageRecords = sqliteTable(
 		runId: text("run_id").references(() => taskRuns.id, {
 			onDelete: "set null",
 		}),
+		agentModeSessionId: text("agent_mode_session_id").references(
+			() => agentModeSessions.id,
+			{ onDelete: "set null" },
+		),
 		callId: text("call_id").notNull(),
 		provider: text("provider").notNull(),
 		model: text("model"),
@@ -39,6 +44,9 @@ export const llmUsageRecords = sqliteTable(
 		metadataJson: text("metadata_json", { mode: "json" }),
 		traceOwner: text("trace_owner").default("system").notNull(),
 		traceChannel: text("trace_channel").default("internal").notNull(),
+		usageCounterScope: text("usage_counter_scope"),
+		usageNormalizationStatus: text("usage_normalization_status"),
+		sourceSequence: integer("source_sequence"),
 	},
 	(table) => ({
 		taskCreatedIdx: index("llm_usage_records_task_created_idx").on(
@@ -61,6 +69,40 @@ export const llmUsageRecords = sqliteTable(
 			table.traceOwner,
 			table.createdAt,
 		),
+		agentModeSessionCreatedIdx: index(
+			"llm_usage_records_agent_mode_session_created_idx",
+		).on(table.agentModeSessionId, table.createdAt),
+	}),
+);
+
+export const llmUsageCounterCheckpoints = sqliteTable(
+	"llm_usage_counter_checkpoints",
+	{
+		...commonColumns,
+		agentModeSessionId: text("agent_mode_session_id")
+			.notNull()
+			.references(() => agentModeSessions.id, { onDelete: "cascade" }),
+		providerSessionKey: text("provider_session_key").notNull(),
+		provider: text("provider").notNull(),
+		model: text("model"),
+		counterScope: text("counter_scope").notNull(),
+		rawInputTokens: integer("raw_input_tokens"),
+		rawCachedInputTokens: integer("raw_cached_input_tokens"),
+		rawOutputTokens: integer("raw_output_tokens"),
+		rawReasoningOutputTokens: integer("raw_reasoning_output_tokens"),
+		sourceRunId: text("source_run_id").references(() => taskRuns.id, {
+			onDelete: "set null",
+		}),
+		sourceSequence: integer("source_sequence"),
+		stateVersion: integer("state_version").default(0).notNull(),
+	},
+	(table) => ({
+		providerSessionUniqueIdx: uniqueIndex(
+			"llm_usage_counter_checkpoints_session_provider_uidx",
+		).on(table.agentModeSessionId, table.providerSessionKey),
+		sessionUpdatedIdx: index(
+			"llm_usage_counter_checkpoints_session_updated_idx",
+		).on(table.agentModeSessionId, table.updatedAt),
 	}),
 );
 

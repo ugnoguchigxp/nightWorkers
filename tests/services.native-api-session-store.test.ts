@@ -189,9 +189,11 @@ describe("NativeApiSessionStore", () => {
 			timeoutSeconds: 60,
 		});
 		const store = new NativeApiSessionStore();
+		const agentModeSessionId = crypto.randomUUID();
 		const failedTurn = await store.createTurn({
 			runId: previousRun.id,
 			taskId: task.id,
+			agentModeSessionId,
 			turnIndex: 1,
 			provider: "openai",
 			model: "failed-model",
@@ -206,6 +208,7 @@ describe("NativeApiSessionStore", () => {
 		const crossModeTurn = await store.createTurn({
 			runId: previousRun.id,
 			taskId: task.id,
+			agentModeSessionId,
 			turnIndex: 2,
 			provider: "openai",
 			model: "api-model",
@@ -226,6 +229,7 @@ describe("NativeApiSessionStore", () => {
 		const completedTurn = await store.createTurn({
 			runId: previousRun.id,
 			taskId: task.id,
+			agentModeSessionId,
 			turnIndex: 3,
 			provider: "openai",
 			model: "api-model",
@@ -247,6 +251,7 @@ describe("NativeApiSessionStore", () => {
 		const resumable = await store.getLatestCompletedTurnForPreviousRun({
 			taskId: task.id,
 			runId: currentRun.id,
+			agentModeSessionId,
 			provider: "openai",
 			model: "api-model",
 			executionMode: "implementation",
@@ -266,6 +271,7 @@ describe("NativeApiSessionStore", () => {
 			store.getLatestCompletedTurnForPreviousRun({
 				taskId: task.id,
 				runId: currentRun.id,
+				agentModeSessionId,
 				provider: "openai",
 				model: "different-model",
 				executionMode: "implementation",
@@ -275,9 +281,20 @@ describe("NativeApiSessionStore", () => {
 			store.getLatestCompletedTurnForPreviousRun({
 				taskId: task.id,
 				runId: currentRun.id,
+				agentModeSessionId,
 				provider: "openai",
 				model: "api-model",
 				executionMode: "review",
+			}),
+		).resolves.toBeNull();
+		await expect(
+			store.getLatestCompletedTurnForPreviousRun({
+				taskId: task.id,
+				runId: currentRun.id,
+				agentModeSessionId: crypto.randomUUID(),
+				provider: "openai",
+				model: "api-model",
+				executionMode: "implementation",
 			}),
 		).resolves.toBeNull();
 	});

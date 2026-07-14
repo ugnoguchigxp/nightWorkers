@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { NormalizedLlmUsage, recordLlmUsage } from "../../llm-usage";
 import type { AgentRunContext } from "../types";
 
@@ -17,6 +16,8 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
 	};
 	promptPartObservabilityEnabled?: boolean;
 	durationMs?: number;
+	providerSessionKey?: string | null;
+	sourceSequence?: number | null;
 }): Promise<void> {
 	if (!input.persistRuntimeUsage) return;
 	const record =
@@ -29,7 +30,7 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
 	await input.usageRecorder({
 		taskId: input.context.taskId,
 		runId: input.context.runId,
-		callId: `codex-runtime:${input.context.runId}:${randomUUID()}`,
+		callId: `codex-runtime:${input.context.runId}:${input.sourceSequence ?? 0}`,
 		provider: "codex",
 		model: resolveRuntimeModel(input.context),
 		label: "codex-runtime",
@@ -69,6 +70,10 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
 			promptPartObservabilityEnabled:
 				input.promptPartObservabilityEnabled ?? true,
 		},
+		agentModeSessionId: input.context.agentModeSessionId,
+		providerSessionKey: input.providerSessionKey,
+		counterScope: "provider_session_cumulative",
+		sourceSequence: input.sourceSequence,
 	});
 }
 

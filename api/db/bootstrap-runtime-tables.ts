@@ -3,6 +3,50 @@ import { ensureColumn } from "./schema-bootstrap-utils";
 
 export async function ensureRuntimeAndUsageTables() {
 	await client.execute(`
+    CREATE TABLE IF NOT EXISTS agent_mode_sessions (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      repository_id text NOT NULL,
+      epoch integer NOT NULL,
+      predecessor_session_id text,
+      execution_mode text NOT NULL,
+      llm_role text NOT NULL,
+      runtime_lane text NOT NULL,
+      provider text,
+      provider_endpoint_id text,
+      model text,
+      thinking_depth text,
+      route_fingerprint text NOT NULL,
+      status text NOT NULL,
+      close_reason text,
+      opened_at integer NOT NULL,
+      closed_at integer,
+      FOREIGN KEY (predecessor_session_id) REFERENCES agent_mode_sessions(id) ON DELETE set null
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS agent_mode_sessions_task_epoch_uidx ON agent_mode_sessions (task_id, epoch)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS agent_mode_sessions_active_task_uidx ON agent_mode_sessions (task_id) WHERE status = 'active'",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS agent_mode_sessions_task_status_updated_idx ON agent_mode_sessions (task_id, status, updated_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS agent_mode_sessions_predecessor_idx ON agent_mode_sessions (predecessor_session_id)",
+	);
+	await ensureColumn(
+		"task_runs",
+		"agent_mode_session_id",
+		"agent_mode_session_id text",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_runs_agent_mode_session_started_idx ON task_runs (agent_mode_session_id, started_at)",
+	);
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_messages (
       id text PRIMARY KEY NOT NULL,
       task_id text NOT NULL,
@@ -46,6 +90,7 @@ export async function ensureRuntimeAndUsageTables() {
       updated_at integer NOT NULL,
       run_id text NOT NULL,
       task_id text NOT NULL,
+      agent_mode_session_id text,
       turn_index integer NOT NULL,
       status text DEFAULT 'running' NOT NULL,
       provider text,
@@ -71,8 +116,16 @@ export async function ensureRuntimeAndUsageTables() {
 		"execution_mode",
 		"execution_mode text",
 	);
+	await ensureColumn(
+		"native_api_turns",
+		"agent_mode_session_id",
+		"agent_mode_session_id text",
+	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_agent_mode_session_resume_idx ON native_api_turns (agent_mode_session_id, status, finished_at)",
 	);
 
 	await client.execute(`
@@ -117,6 +170,7 @@ export async function ensureRuntimeAndUsageTables() {
       task_id text NOT NULL,
       repository_id text,
       run_id text,
+      agent_mode_session_id text,
       runtime_lane text NOT NULL,
       provider text NOT NULL,
       provider_session_id text,
@@ -144,6 +198,14 @@ export async function ensureRuntimeAndUsageTables() {
   `);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)",
+	);
+	await ensureColumn(
+		"runtime_session_states",
+		"agent_mode_session_id",
+		"agent_mode_session_id text",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_session_states_agent_mode_session_lookup_idx ON runtime_session_states (agent_mode_session_id, status, last_seen_at)",
 	);
 
 	await client.execute(`
@@ -185,6 +247,7 @@ export async function ensureRuntimeAndUsageTables() {
       updated_at integer NOT NULL,
       task_id text NOT NULL,
       run_id text,
+      agent_mode_session_id text,
       call_id text NOT NULL,
       provider text NOT NULL,
       model text,
@@ -205,6 +268,9 @@ export async function ensureRuntimeAndUsageTables() {
       metadata_json text,
       trace_owner text DEFAULT 'system' NOT NULL,
       trace_channel text DEFAULT 'internal' NOT NULL,
+      usage_counter_scope text,
+      usage_normalization_status text,
+      source_sequence integer,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
     )
@@ -218,6 +284,26 @@ export async function ensureRuntimeAndUsageTables() {
 		"llm_usage_records",
 		"trace_channel",
 		"trace_channel text DEFAULT 'internal' NOT NULL",
+	);
+	await ensureColumn(
+		"llm_usage_records",
+		"agent_mode_session_id",
+		"agent_mode_session_id text",
+	);
+	await ensureColumn(
+		"llm_usage_records",
+		"usage_counter_scope",
+		"usage_counter_scope text",
+	);
+	await ensureColumn(
+		"llm_usage_records",
+		"usage_normalization_status",
+		"usage_normalization_status text",
+	);
+	await ensureColumn(
+		"llm_usage_records",
+		"source_sequence",
+		"source_sequence integer",
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS llm_usage_records_task_created_idx ON llm_usage_records (task_id, created_at)",
@@ -233,6 +319,36 @@ export async function ensureRuntimeAndUsageTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS llm_usage_records_task_owner_created_idx ON llm_usage_records (task_id, trace_owner, created_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_records_agent_mode_session_created_idx ON llm_usage_records (agent_mode_session_id, created_at)",
+	);
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS llm_usage_counter_checkpoints (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      agent_mode_session_id text NOT NULL,
+      provider_session_key text NOT NULL,
+      provider text NOT NULL,
+      model text,
+      counter_scope text NOT NULL,
+      raw_input_tokens integer,
+      raw_cached_input_tokens integer,
+      raw_output_tokens integer,
+      raw_reasoning_output_tokens integer,
+      source_run_id text,
+      source_sequence integer,
+      state_version integer DEFAULT 0 NOT NULL,
+      FOREIGN KEY (agent_mode_session_id) REFERENCES agent_mode_sessions(id) ON DELETE cascade,
+      FOREIGN KEY (source_run_id) REFERENCES task_runs(id) ON DELETE set null
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS llm_usage_counter_checkpoints_session_provider_uidx ON llm_usage_counter_checkpoints (agent_mode_session_id, provider_session_key)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS llm_usage_counter_checkpoints_session_updated_idx ON llm_usage_counter_checkpoints (agent_mode_session_id, updated_at)",
 	);
 
 	await client.execute(`

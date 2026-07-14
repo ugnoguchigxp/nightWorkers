@@ -12,6 +12,7 @@ export type AgentRuntimeKind = RuntimeLaneKind;
 export type AgentExecutionMode =
 	| "planning"
 	| "implementation"
+	| "test"
 	| "review"
 	| "general_answer";
 
@@ -26,6 +27,7 @@ export interface AgentSafetyPolicy {
 export interface AgentRunContext {
 	runId: string;
 	taskId: string;
+	agentModeSessionId?: string | null;
 	repositoryId: string;
 	repoRoot: string;
 	compiledPrompt: string;
@@ -44,7 +46,7 @@ export interface AgentRunContext {
 			stateCardText?: string;
 			snapshotJson?: unknown;
 			projection?: {
-				role: "plan" | "implementation" | "review" | "general_answer";
+				role: "plan" | "implementation" | "test" | "review" | "general_answer";
 				workKind?: string | null;
 				source: "role_projection" | "raw_snapshot" | "omitted";
 				omittedSections: string[];
@@ -54,6 +56,15 @@ export interface AgentRunContext {
 				stateCardTokens: number;
 				runtimeUserPromptTokens: number;
 			};
+		};
+		agentModeSession?: {
+			id: string;
+			epoch: number;
+			executionMode: AgentExecutionMode;
+			llmRole: string;
+			routeFingerprint: string;
+			transition: "reused" | "opened";
+			predecessorSessionId?: string | null;
 		};
 		roleContext?: {
 			version: 1;

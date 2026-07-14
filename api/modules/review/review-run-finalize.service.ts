@@ -68,7 +68,7 @@ export async function finalizeReviewRunFromRuntime(input: {
 			finalReport:
 				input.runtimeResult.finalReport || input.runtimeResult.summary,
 			findings,
-			fixesApplied: Boolean(input.runtimeResult.diffPatch?.trim()),
+			fixesApplied: false,
 		},
 		sourceEvidenceRefsJson: [],
 	});
@@ -88,9 +88,181 @@ export async function finalizeReviewRunFromRuntime(input: {
 			reviewedRunId: reviewRun.reviewedRunId,
 			status: reviewArtifactStatus(input.status),
 			findingCount: findings.length,
-			fixesApplied: Boolean(input.runtimeResult.diffPatch?.trim()),
+			fixesApplied: false,
 		},
 	});
+	const correctionRequested =
+		!hasMissionPilotContext(input.contextSnapshot) &&
+		readReviewApplyFixes(reviewRun.options) &&
+		findings.some((finding) => finding.severity !== "info");
+	if (!correctionRequested) return;
+	const correctionMessage = buildCorrectionRequestMessage({
+		reviewSessionId: session.id,
+		reviewRunId: input.runId,
+		reviewedRunId: reviewRun.reviewedRunId,
+		findings,
+	});
+	try {
+		await repo.createTaskMessage({
+			taskId: input.taskId,
+			runId: null,
+			role: "user",
+			content: correctionMessage,
+			messageType: "review_correction_request",
+			payloadJson: {
+				kind: "review_correction_request",
+				reviewSessionId: session.id,
+				reviewRunId: input.runId,
+				findings,
+			},
+		});
+		const { startTaskRun } = await import(
+			"../nightworkers/run-orchestration/start-task-run-entry"
+		);
+		const correctionRun = await startTaskRun(input.taskId, {
+			executionMode: "implementation",
+			executionModeSource: "review_run",
+			latestUserMessageOverride: correctionMessage,
+			runtimeOptionsPatch: {
+				reviewCorrection: {
+					mode: "implementation_session",
+					phase: "implementation",
+					cycle: readReviewCorrectionCycle(input.contextSnapshot) + 1,
+					applyFixes: readReviewApplyFixes(reviewRun.options),
+					commitChanges: readReviewCommitChanges(reviewRun.options),
+					reviewSessionId: session.id,
+					sourceReviewRunId: input.runId,
+					fromReviewSessionId: session.id,
+					fromReviewRunId: input.runId,
+					findingCount: findings.length,
+				},
+			},
+		});
+		await repo.createRunEvent({
+			version: 1,
+			runId: input.runId,
+			taskId: input.taskId,
+			timestamp: new Date().toISOString(),
+			type: "review.correction_requested",
+			severity: "info",
+			actor: "system",
+			message:
+				"Accepted Review findings were handed off to a new Implementation Session.",
+			data: {
+				reviewSessionId: session.id,
+				reviewRunId: input.runId,
+				correctionRunId: correctionRun?.id ?? null,
+				correctionMode: "implementation_session",
+				findingCount: findings.length,
+			},
+		});
+	} catch (error) {
+		await repo.createRunEvent({
+			version: 1,
+			runId: input.runId,
+			taskId: input.taskId,
+			timestamp: new Date().toISOString(),
+			type: "review.correction_requested",
+			severity: "error",
+			actor: "system",
+			message: "Review correction handoff could not start.",
+			data: {
+				reviewSessionId: session.id,
+				correctionMode: "implementation_session",
+				findingCount: findings.length,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		});
+	}
+}
+
+function readReviewApplyFixes(value: unknown) {
+	return readReviewBooleanOption(value, "applyFixes");
+}
+
+function readReviewCommitChanges(value: unknown) {
+	return readReviewBooleanOption(value, "commitChanges");
+}
+
+function readReviewBooleanOption(
+	value: unknown,
+	key: "applyFixes" | "commitChanges",
+) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	const nested = record.options;
+	const options =
+		nested && typeof nested === "object" && !Array.isArray(nested)
+			? (nested as Record<string, unknown>)
+			: record;
+	return options[key] === true;
+}
+
+function readReviewCorrectionCycle(contextSnapshot: unknown) {
+	if (
+		!contextSnapshot ||
+		typeof contextSnapshot !== "object" ||
+		Array.isArray(contextSnapshot)
+	) {
+		return 0;
+	}
+	const correction = (contextSnapshot as Record<string, unknown>)
+		.reviewCorrection;
+	if (
+		!correction ||
+		typeof correction !== "object" ||
+		Array.isArray(correction)
+	) {
+		return 0;
+	}
+	const cycle = (correction as Record<string, unknown>).cycle;
+	return typeof cycle === "number" && Number.isInteger(cycle) && cycle >= 0
+		? cycle
+		: 0;
+}
+
+function hasMissionPilotContext(contextSnapshot: unknown) {
+	if (
+		!contextSnapshot ||
+		typeof contextSnapshot !== "object" ||
+		Array.isArray(contextSnapshot)
+	) {
+		return false;
+	}
+	const missionPilot = (contextSnapshot as Record<string, unknown>)
+		.missionPilot;
+	return Boolean(
+		missionPilot &&
+			typeof missionPilot === "object" &&
+			!Array.isArray(missionPilot),
+	);
+}
+
+function buildCorrectionRequestMessage(input: {
+	reviewSessionId: string;
+	reviewRunId: string;
+	reviewedRunId: string;
+	findings: Array<{
+		severity: "blocking" | "warning" | "info";
+		title: string;
+		body: string | null;
+		path: string | null;
+	}>;
+}) {
+	return [
+		"Review correction request: execute this work in a new Implementation Session.",
+		`reviewSessionId=${input.reviewSessionId}`,
+		`reviewRunId=${input.reviewRunId}`,
+		`reviewedRunId=${input.reviewedRunId}`,
+		"Accepted findings:",
+		...input.findings
+			.filter((finding) => finding.severity !== "info")
+			.map(
+				(finding) =>
+					`- [${finding.severity}] ${finding.title}${finding.path ? ` (${finding.path})` : ""}: ${finding.body ?? ""}`,
+			),
+		"Review provider history, reasoning, and tool transcript are not handoff inputs. Use only these findings plus persisted artifacts/evidence and current repository state.",
+	].join("\n");
 }
 
 export function parseReviewRunFindings(text: string): Array<{

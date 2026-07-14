@@ -1,7 +1,8 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
+import type { DbTransaction } from "../../db/client";
 import { db } from "../../db/client";
-import { llmUsageRecords } from "../../db/schema";
+import { llmUsageCounterCheckpoints, llmUsageRecords } from "../../db/schema";
 import * as nightWorkersRepo from "../../modules/nightworkers/nightworkers.repository";
 import {
 	resolveLlmUsageTrace,
@@ -13,7 +14,28 @@ import type {
 	LlmPromptPartTokenEstimates,
 	LlmUsageMode,
 	NormalizedLlmUsage,
+	UsageCounterScope,
+	UsageNormalizationStatus,
 } from "./types";
+
+type UsageNormalization = {
+	usage: NormalizedLlmUsage;
+	status: UsageNormalizationStatus | null;
+	metadata?: Record<string, unknown>;
+	checkpoint?: {
+		agentModeSessionId: string;
+		providerSessionKey: string;
+		provider: string;
+		model: string | null;
+		counterScope: UsageCounterScope;
+		rawInputTokens: number | null;
+		rawCachedInputTokens: number | null;
+		rawOutputTokens: number | null;
+		rawReasoningOutputTokens: number | null;
+		sourceRunId: string | null;
+		sourceSequence: number | null;
+	};
+};
 
 export async function recordLlmUsage(input: {
 	taskId: string;
@@ -29,6 +51,10 @@ export async function recordLlmUsage(input: {
 	durationMs: number;
 	metadataJson?: Record<string, unknown>;
 	trace?: TraceProvenance;
+	agentModeSessionId?: string | null;
+	providerSessionKey?: string | null;
+	counterScope?: UsageCounterScope;
+	sourceSequence?: number | null;
 }) {
 	const promptPartObservabilityEnabled = resolvePromptPartObservabilityEnabled(
 		input.promptPartObservabilityEnabled,
@@ -41,25 +67,36 @@ export async function recordLlmUsage(input: {
 		input.usage.mode,
 		promptPartTokenEstimates,
 	);
-	const nonCachedInputTokens =
-		input.usage.inputTokens !== null && input.usage.cachedInputTokens !== null
-			? Math.max(0, input.usage.inputTokens - input.usage.cachedInputTokens)
-			: null;
 	const trace = resolveLlmUsageTrace({
 		runId: input.runId,
 		callId: input.callId,
 		metadata: input.metadataJson,
 		trace: input.trace,
 	});
-	const metadataJson = withTraceProvenance(
-		{
-			...(input.metadataJson ?? {}),
-			nonCachedInputTokens,
-			promptPartObservabilityEnabled,
-		},
-		trace,
-	);
 	const record = await db.transaction(async (tx) => {
+		const [existing] = await tx
+			.select()
+			.from(llmUsageRecords)
+			.where(eq(llmUsageRecords.callId, input.callId))
+			.limit(1);
+		if (existing) return existing;
+		const normalization = await normalizeUsageForStorage(tx, input);
+		const storedUsage = normalization.usage;
+		const nonCachedInputTokens =
+			storedUsage.inputTokens !== null && storedUsage.cachedInputTokens !== null
+				? Math.max(0, storedUsage.inputTokens - storedUsage.cachedInputTokens)
+				: null;
+		const metadataJson = withTraceProvenance(
+			{
+				...(input.metadataJson ?? {}),
+				nonCachedInputTokens,
+				promptPartObservabilityEnabled,
+				...(normalization.metadata
+					? { usageNormalization: normalization.metadata }
+					: {}),
+			},
+			trace,
+		);
 		const [created] = await tx
 			.insert(llmUsageRecords)
 			.values({
@@ -71,11 +108,11 @@ export async function recordLlmUsage(input: {
 				label: input.label,
 				round: input.round ?? null,
 				usageMode,
-				inputTokens: input.usage.inputTokens,
-				outputTokens: input.usage.outputTokens,
-				cachedInputTokens: input.usage.cachedInputTokens,
-				reasoningOutputTokens: input.usage.reasoningOutputTokens,
-				totalTokens: input.usage.totalTokens,
+				inputTokens: storedUsage.inputTokens,
+				outputTokens: storedUsage.outputTokens,
+				cachedInputTokens: storedUsage.cachedInputTokens,
+				reasoningOutputTokens: storedUsage.reasoningOutputTokens,
+				totalTokens: storedUsage.totalTokens,
 				systemPromptTokens: normalizeOptionalInt(
 					promptPartTokenEstimates?.systemPromptTokens,
 				),
@@ -87,13 +124,39 @@ export async function recordLlmUsage(input: {
 				),
 				responseTokensEstimate: null,
 				durationMs: Math.max(0, Math.floor(input.durationMs)),
-				rawUsageJson: input.usage.rawUsage ?? null,
+				rawUsageJson: storedUsage.rawUsage ?? null,
 				metadataJson,
 				traceOwner: trace.owner,
 				traceChannel: trace.channel,
+				agentModeSessionId: input.agentModeSessionId ?? null,
+				usageCounterScope: input.counterScope ?? "per_turn",
+				usageNormalizationStatus: normalization.status,
+				sourceSequence: input.sourceSequence ?? null,
 			})
 			.returning();
 		if (created) await upsertLlmUsageSummaryForRecord(created, tx);
+		if (created && normalization.checkpoint) {
+			await tx
+				.insert(llmUsageCounterCheckpoints)
+				.values(normalization.checkpoint)
+				.onConflictDoUpdate({
+					target: [
+						llmUsageCounterCheckpoints.agentModeSessionId,
+						llmUsageCounterCheckpoints.providerSessionKey,
+					],
+					set: {
+						rawInputTokens: normalization.checkpoint.rawInputTokens,
+						rawCachedInputTokens: normalization.checkpoint.rawCachedInputTokens,
+						rawOutputTokens: normalization.checkpoint.rawOutputTokens,
+						rawReasoningOutputTokens:
+							normalization.checkpoint.rawReasoningOutputTokens,
+						sourceRunId: normalization.checkpoint.sourceRunId,
+						sourceSequence: normalization.checkpoint.sourceSequence,
+						stateVersion: sql`${llmUsageCounterCheckpoints.stateVersion} + 1`,
+						updatedAt: new Date(),
+					},
+				});
+		}
 		return created;
 	});
 
@@ -119,7 +182,10 @@ export async function recordLlmUsage(input: {
 				inputTokens: record.inputTokens,
 				outputTokens: record.outputTokens,
 				cachedInputTokens: record.cachedInputTokens,
-				nonCachedInputTokens,
+				nonCachedInputTokens:
+					record.inputTokens !== null && record.cachedInputTokens !== null
+						? Math.max(0, record.inputTokens - record.cachedInputTokens)
+						: null,
 				reasoningOutputTokens: record.reasoningOutputTokens,
 				systemPromptTokens: record.systemPromptTokens,
 				userPromptTokens: record.userPromptTokens,
@@ -135,6 +201,167 @@ export async function recordLlmUsage(input: {
 
 function formatUsageToken(value: number | null | undefined) {
 	return value === null || value === undefined ? "n/a" : String(value);
+}
+
+async function normalizeUsageForStorage(
+	tx: DbTransaction,
+	input: {
+		taskId: string;
+		runId?: string | null;
+		provider: string;
+		model?: string | null;
+		usage: NormalizedLlmUsage;
+		agentModeSessionId?: string | null;
+		providerSessionKey?: string | null;
+		counterScope?: UsageCounterScope;
+		sourceSequence?: number | null;
+	},
+): Promise<UsageNormalization> {
+	const scope = input.counterScope ?? "per_turn";
+	if (scope !== "provider_session_cumulative") {
+		return { usage: input.usage, status: null };
+	}
+	if (!input.agentModeSessionId || !input.providerSessionKey) {
+		return {
+			usage: input.usage,
+			status: "unavailable",
+			metadata: {
+				counterScope: scope,
+				status: "unavailable",
+				warning: "agentModeSessionId and providerSessionKey are required",
+			},
+		};
+	}
+	const [previous] = await tx
+		.select()
+		.from(llmUsageCounterCheckpoints)
+		.where(
+			and(
+				eq(
+					llmUsageCounterCheckpoints.agentModeSessionId,
+					input.agentModeSessionId,
+				),
+				eq(
+					llmUsageCounterCheckpoints.providerSessionKey,
+					input.providerSessionKey,
+				),
+			),
+		)
+		.limit(1);
+	const current = toRawCounters(input.usage);
+	const previousRaw = previous
+		? {
+				inputTokens: previous.rawInputTokens,
+				cachedInputTokens: previous.rawCachedInputTokens,
+				outputTokens: previous.rawOutputTokens,
+				reasoningOutputTokens: previous.rawReasoningOutputTokens,
+			}
+		: null;
+	const reset = previousRaw ? hasCounterDecrease(previousRaw, current) : false;
+	const delta = reset ? current : subtractCounters(current, previousRaw);
+	const invalidCachedDelta =
+		delta.cachedInputTokens !== null &&
+		delta.inputTokens !== null &&
+		delta.cachedInputTokens > delta.inputTokens;
+	const stored = {
+		...input.usage,
+		inputTokens: delta.inputTokens,
+		cachedInputTokens: invalidCachedDelta ? null : delta.cachedInputTokens,
+		outputTokens: delta.outputTokens,
+		reasoningOutputTokens: delta.reasoningOutputTokens,
+		totalTokens:
+			delta.inputTokens !== null || delta.outputTokens !== null
+				? (delta.inputTokens ?? 0) + (delta.outputTokens ?? 0)
+				: null,
+	};
+	const status: UsageNormalizationStatus = invalidCachedDelta
+		? "invalid_cached_delta"
+		: reset
+			? "counter_reset"
+			: previous
+				? "delta"
+				: "first_snapshot";
+	return {
+		usage: stored,
+		status,
+		metadata: {
+			counterScope: scope,
+			status,
+			providerSessionKey: input.providerSessionKey,
+			previousRaw,
+			currentRaw: current,
+			delta: {
+				...delta,
+				cachedInputTokens: invalidCachedDelta ? null : delta.cachedInputTokens,
+			},
+		},
+		checkpoint: {
+			agentModeSessionId: input.agentModeSessionId,
+			providerSessionKey: input.providerSessionKey,
+			provider: input.provider,
+			model: input.model ?? null,
+			counterScope: scope,
+			rawInputTokens: current.inputTokens,
+			rawCachedInputTokens: current.cachedInputTokens,
+			rawOutputTokens: current.outputTokens,
+			rawReasoningOutputTokens: current.reasoningOutputTokens,
+			sourceRunId: input.runId ?? null,
+			sourceSequence: input.sourceSequence ?? null,
+		},
+	};
+}
+
+type RawCounters = {
+	inputTokens: number | null;
+	cachedInputTokens: number | null;
+	outputTokens: number | null;
+	reasoningOutputTokens: number | null;
+};
+
+function toRawCounters(usage: NormalizedLlmUsage): RawCounters {
+	return {
+		inputTokens: usage.inputTokens,
+		cachedInputTokens: usage.cachedInputTokens,
+		outputTokens: usage.outputTokens,
+		reasoningOutputTokens: usage.reasoningOutputTokens,
+	};
+}
+
+function hasCounterDecrease(previous: RawCounters, current: RawCounters) {
+	return (Object.keys(previous) as Array<keyof RawCounters>).some(
+		(key) =>
+			previous[key] !== null &&
+			current[key] !== null &&
+			(current[key] as number) < (previous[key] as number),
+	);
+}
+
+function subtractCounters(
+	current: RawCounters,
+	previous: RawCounters | null,
+): RawCounters {
+	return {
+		inputTokens: subtractCounter(current.inputTokens, previous?.inputTokens),
+		cachedInputTokens: subtractCounter(
+			current.cachedInputTokens,
+			previous?.cachedInputTokens,
+		),
+		outputTokens: subtractCounter(current.outputTokens, previous?.outputTokens),
+		reasoningOutputTokens: subtractCounter(
+			current.reasoningOutputTokens,
+			previous?.reasoningOutputTokens,
+		),
+	};
+}
+
+function subtractCounter(
+	current: number | null,
+	previous: number | null | undefined,
+) {
+	if (current === null) return null;
+	return previous === null || previous === undefined
+		? current
+		: Math.max(0, current - previous);
 }
 
 export async function listLlmUsageRecordsForTask(taskId: string) {

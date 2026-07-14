@@ -1,3 +1,4 @@
+import { buildAgentModeSessionRouteIdentity } from "../../../services/agent-runtime/agent-mode-session";
 import { stateCardRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
@@ -24,6 +25,10 @@ import {
 	prepareTaskRunRuntimeContext,
 	resolveRunProjectExplorationCatalogPin,
 } from "./start-task-run-runtime-context";
+import {
+	createTaskRunInAgentModeSession,
+	recordAgentModeSessionTransition,
+} from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toAgentRuntimeTodoContext } from "./todo-closeout";
 import { resolveInitialTaskRunTodos } from "./todo-resume";
@@ -84,32 +89,70 @@ export async function startTaskRunInProcess(
 			settings: projectExplorationCatalogSettings,
 			runtimeLane: runtimeLaneResolution.lane,
 		});
-	const run = await repo.createTaskRun({
+	const provider =
+		runtimeLlmRoute?.providerId ??
+		(runtimeLaneResolution.lane === "codex-sdk" ? "codex" : null);
+	const routeFingerprint = buildAgentModeSessionRouteIdentity({
+		executionMode,
+		llmRole: runtimeRole,
+		runtimeLane: runtimeLaneResolution.lane,
+		provider,
+		providerEndpointId: runtimeLlmRoute?.providerEndpointId ?? null,
+		model: runtimeLlmRoute?.model ?? null,
+		thinkingDepth: runtimeLlmRoute?.thinkingDepth ?? null,
+	});
+	const routeIdentity = {
+		runtimeLane: runtimeLaneResolution.lane,
+		provider,
+		providerEndpointId: runtimeLlmRoute?.providerEndpointId ?? null,
+		model: runtimeLlmRoute?.model ?? null,
+		thinkingDepth: runtimeLlmRoute?.thinkingDepth ?? null,
+		fingerprint: routeFingerprint,
+		continuationEligible:
+			Boolean(provider && runtimeLlmRoute?.model) &&
+			(runtimeLaneResolution.lane === "codex-sdk" || Boolean(runtimeLlmRoute)),
+	};
+	const { run, sessionTransition } = await createTaskRunInAgentModeSession({
 		taskId,
 		repositoryId: task.repositoryId,
-		status: "running",
-		workerKind: runtimeLaneResolution.workerKind,
-		baseRef: gitBaseline.baselineHead,
-		worktreePath: task.worktreePath ? executionRoot : null,
-		timeoutSeconds: task.timeoutSeconds,
-		contextSnapshot: {
-			compiledPrompt: compiledPromptText,
-			executionMode,
-			executionModeSource,
-			jobType,
-			verificationPolicy,
-			projectExplorationCatalog: projectExplorationCatalogPin,
-			planModeSettingsSnapshot,
-			...blueprintPlanningSnapshot,
-			runtimeLane: runtimeLaneResolution.lane,
-			runtimeLaneResolution: {
-				workerKind: runtimeLaneResolution.workerKind,
-				source: runtimeLaneResolution.source,
-				diagnostics: runtimeLaneResolution.diagnostics,
+		executionMode,
+		llmRole: runtimeRole,
+		routeIdentity,
+		taskRun: {
+			taskId,
+			repositoryId: task.repositoryId,
+			status: "running",
+			workerKind: runtimeLaneResolution.workerKind,
+			baseRef: gitBaseline.baselineHead,
+			worktreePath: task.worktreePath ? executionRoot : null,
+			timeoutSeconds: task.timeoutSeconds,
+			contextSnapshot: {
+				compiledPrompt: compiledPromptText,
+				executionMode,
+				executionModeSource,
+				jobType,
+				verificationPolicy,
+				projectExplorationCatalog: projectExplorationCatalogPin,
+				planModeSettingsSnapshot,
+				...blueprintPlanningSnapshot,
+				runtimeLane: runtimeLaneResolution.lane,
+				runtimeLaneResolution: {
+					workerKind: runtimeLaneResolution.workerKind,
+					source: runtimeLaneResolution.source,
+					diagnostics: runtimeLaneResolution.diagnostics,
+				},
+				effectiveLlmRouting,
 			},
-			effectiveLlmRouting,
+			startedAt: new Date(),
 		},
-		startedAt: new Date(),
+	});
+	await recordAgentModeSessionTransition({
+		runId: run.id,
+		taskId,
+		executionMode,
+		llmRole: runtimeRole,
+		routeFingerprint,
+		sessionTransition,
 	});
 	await activateWorkspace(taskId, executionMode, gitBaseline.baselineHead);
 	await repo.createTaskRunCommitRecord({
@@ -233,6 +276,7 @@ export async function startTaskRunInProcess(
 		...(runtimeOptions.reviewRun
 			? { reviewRun: runtimeOptions.reviewRun }
 			: {}),
+		reviewCorrection: runtimeOptions.reviewCorrection,
 		...(runtimeOptions.missionPilot
 			? { missionPilot: runtimeOptions.missionPilot }
 			: {}),
@@ -365,13 +409,14 @@ export async function startTaskRunInProcess(
 			ontologyContext,
 		},
 	});
-	if (runtimeLaneResolution.lane === "native-api-runner") {
+	if (sessionTransition.transition === "opened") {
 		try {
 			const roleContextTodos = await repo.listTaskRunTodosForRun(run.id);
 			const roleContextBase = buildNativeApiRoleContextSnapshot({
 				context: {
 					runId: run.id,
 					taskId,
+					agentModeSessionId: run.agentModeSessionId,
 					repositoryId: task.repositoryId,
 					repoRoot: executionRoot,
 					compiledPrompt: compiledPromptText,
@@ -466,22 +511,12 @@ export async function startTaskRunInProcess(
 		}
 	}
 	if (runtimeLaneResolution.lane === "codex-sdk") {
-		const runtimeResume =
-			executionMode === "review" || executionMode === "test"
-				? {
-						kind: "codex_thread",
-						status: "disabled",
-						executionMode,
-						reason:
-							executionMode === "test"
-								? "test_mode_fresh_context"
-								: "review_fresh_context",
-					}
-				: await loadCodexRuntimeResumeState({
-						taskId,
-						repositoryId: task.repositoryId,
-						executionMode,
-					});
+		const runtimeResume = await loadCodexRuntimeResumeState({
+			taskId,
+			repositoryId: task.repositoryId,
+			executionMode,
+			agentModeSessionId: run.agentModeSessionId,
+		});
 		runtimeContextSnapshot = {
 			...runtimeContextSnapshot,
 			runtimeResume,
@@ -497,10 +532,8 @@ export async function startTaskRunInProcess(
 			actor: "system",
 			message:
 				runtimeResume.status === "available"
-					? "Codex runtime resume state loaded."
-					: runtimeResume.status === "disabled"
-						? `Codex runtime resume state disabled for ${executionMode}; runtime will start fresh.`
-						: "Codex runtime resume state unavailable; runtime will start fresh.",
+					? "Codex runtime resume state loaded for the active agent mode session."
+					: "Codex runtime resume state unavailable; runtime will start fresh.",
 			data: {
 				action: "runtime.resume_state_loaded",
 				runtimeResume,
@@ -561,6 +594,7 @@ export async function startTaskRunInProcess(
 		runtimeOptions,
 		runtimeLaneDefinition,
 		runtimeLaneResolution,
+		agentModeSessionId: run.agentModeSessionId,
 	});
 	return compiledRun ?? run;
 }

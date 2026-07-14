@@ -116,27 +116,20 @@ export function buildReviewRunTodos(input: {
 	});
 	if (input.options.applyFixes) {
 		appendTodo({
-			title: "accepted findings を修正する",
+			title: "accepted findings を Implementation correction に引き渡す",
 			description:
-				"Review Run で見つけた修正対象を最小差分で直し、対象外 dirty file を巻き込まない。",
-			taskType: "code_edit",
-			procedureId: "review.apply_fixes",
-		});
-		appendTodo({
-			title: "修正後に verify を実行する",
-			description:
-				"修正後に package.json の verify script または代表ゲートを実行し、失敗時は commit へ進まない。",
-			taskType: "verification",
-			procedureId: "review.verify_after_fixes",
+				"Review Run 自身は編集・verify・commitせず、accepted finding/evidenceを新しい Implementation correction Sessionへ送るrequest artifact/eventを作成する。",
+			taskType: "documentation",
+			procedureId: "review.correction_request",
 		});
 	}
 	if (input.options.commitChanges) {
 		appendTodo({
-			title: "review 対象差分を commit する",
+			title: "correction loop 後の closeout 権限を記録する",
 			description:
-				"verify 成功後に Review Run 対象/fix file だけを stage し、除外 dirty file は stage しない。",
-			taskType: "git",
-			procedureId: "review.commit_changes",
+				"commitChanges=true は correction Implementation -> Test -> Review pass 後だけ有効とし、Review Runではcommitしない。",
+			taskType: "documentation",
+			procedureId: "review.correction_closeout_permission",
 		});
 	}
 	return todos;
@@ -148,6 +141,7 @@ export async function startReviewRunForSession(
 	missionInput?: {
 		targetRunIds?: string[];
 		missionPilot?: Record<string, unknown>;
+		reviewCorrection?: Record<string, unknown>;
 	} | null,
 ) {
 	let session = await reviewRepo.getReviewSession(reviewSessionId);
@@ -300,6 +294,9 @@ export async function startReviewRunForSession(
 		runtimeOptionsPatch: {
 			...(missionInput?.missionPilot
 				? { missionPilot: missionInput.missionPilot }
+				: {}),
+			...(missionInput?.reviewCorrection
+				? { reviewCorrection: missionInput.reviewCorrection }
 				: {}),
 			reviewRun: {
 				reviewSessionId,
@@ -534,7 +531,7 @@ export function buildReviewRunPrompt(input: {
 	const codeReviewRule = input.options.codeReview
 		? "- codeReview=true。レビュー主対象は Review target files に限定し、Plan と対象 diff を根拠にコードレビューする。"
 		: input.options.applyFixes
-			? "- codeReview=false。機能・仕様の一般コードレビューや全体 diff 取得は行わない。applyFixes=true のため、accepted finding が直接参照するファイルだけを読み、必要な最小差分だけを編集する。"
+			? "- codeReview=false。機能・仕様の一般コードレビューや全体 diff 取得は行わない。applyFixes=true は accepted finding を correction Implementation へ送るだけで、Review Run自身は編集しない。"
 			: "- codeReview=false。Review target boundary はスコープ表示専用であり、機能・仕様のコードレビューを行わない。git diff を取得せず、source / test / schema / migration の内容を個別に読まない。事前取得済み Review evidence だけを使用する。";
 	return [
 		"Review Run を開始してください。",
@@ -576,10 +573,10 @@ export function buildReviewRunPrompt(input: {
 			? "- security review は NightWorkers 側で実行またはProject policyによるskip判定が完了済み。上記 Review evidence を主根拠にし、対象 repository 内で vulnWorkbench を検索・再実行しない。"
 			: "- security review option は off。",
 		input.options.applyFixes
-			? "- applyFixes=true のため、accepted findings は最小差分で修正してよい。"
+			? "- applyFixes=true は accepted findings を新しい Implementation correction Session に handoff する権限です。Review Run内でsource edit/verify/commitを行わない。"
 			: "- applyFixes=false のため、ファイルを編集しない。",
 		input.options.commitChanges
-			? "- commitChanges=true のため、verify 成功後に対象差分だけ commit する。"
+			? "- commitChanges=true は correction Implementation -> Test -> Review pass 後のcloseout権限であり、Review Run内ではcommitしない。"
 			: "- commitChanges=false のため、commit しない。",
 		...(input.missionPilot
 			? [

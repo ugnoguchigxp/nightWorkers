@@ -11,6 +11,7 @@ export type NativeApiExecutionMode =
 export type NativeApiStateCardRole =
 	| "plan"
 	| "implementation"
+	| "test"
 	| "review"
 	| "general_answer";
 
@@ -48,7 +49,6 @@ export function stateCardRoleForExecutionMode(
 	mode: NativeApiExecutionMode,
 ): NativeApiStateCardRole {
 	if (mode === "planning") return "plan";
-	if (mode === "test") return "implementation";
 	return mode;
 }
 

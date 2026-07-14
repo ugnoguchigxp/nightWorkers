@@ -397,10 +397,20 @@ export async function loadCodexRuntimeResumeState(input: {
 	taskId: string;
 	repositoryId: string;
 	executionMode: NativeApiExecutionMode;
+	agentModeSessionId?: string | null;
 }) {
+	if (!input.agentModeSessionId) {
+		return {
+			kind: "codex_thread",
+			status: "unavailable",
+			executionMode: input.executionMode,
+			reason: "agent_mode_session_unavailable",
+		};
+	}
 	const store = new RuntimeSessionStateStore();
 	const state = await store.getLatestRuntimeSessionStateForTask({
 		taskId: input.taskId,
+		agentModeSessionId: input.agentModeSessionId,
 		repositoryId: input.repositoryId,
 		runtimeLane: "codex-sdk",
 		provider: "codex",

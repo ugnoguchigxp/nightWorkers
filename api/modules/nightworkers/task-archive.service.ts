@@ -5,7 +5,11 @@ import {
 	missionPilotSessions,
 	taskArchiveRecords,
 } from "../../db/mission-pilot-schema";
-import { implementationQueueEntries, tasks } from "../../db/schema";
+import {
+	agentModeSessions,
+	implementationQueueEntries,
+	tasks,
+} from "../../db/schema";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 
 type ArchiveInput = {
@@ -63,6 +67,20 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 		if (!archived)
 			throw new ValidationError(
 				"Task archive admission changed; retry required",
+			);
+		await tx
+			.update(agentModeSessions)
+			.set({
+				status: "closed",
+				closeReason: "task_closed",
+				closedAt: now,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(agentModeSessions.taskId, task.id),
+					eq(agentModeSessions.status, "active"),
+				),
 			);
 		await tx
 			.update(implementationQueueEntries)

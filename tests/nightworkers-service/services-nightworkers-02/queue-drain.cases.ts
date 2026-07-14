@@ -67,6 +67,7 @@ describe("NightWorkers service", () => {
 				taskId: task.id,
 				repositoryId: task.repositoryId,
 			}),
+			expect.anything(),
 		);
 		await vi.waitFor(() => {
 			expect(runtimeStart).toHaveBeenCalledTimes(1);

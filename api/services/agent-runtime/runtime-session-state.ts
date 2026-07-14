@@ -12,6 +12,7 @@ export type RuntimeSessionState = typeof runtimeSessionStates.$inferSelect;
 
 export type RuntimeSessionStateLookup = {
 	taskId: string;
+	agentModeSessionId?: string | null;
 	repositoryId?: string | null;
 	runtimeLane: string;
 	provider: string;
@@ -37,6 +38,7 @@ export class RuntimeSessionStateStore {
 			.insert(runtimeSessionStates)
 			.values({
 				taskId: input.taskId,
+				agentModeSessionId: input.agentModeSessionId ?? null,
 				repositoryId: input.repositoryId ?? null,
 				runId: input.runId ?? null,
 				runtimeLane: input.runtimeLane,
@@ -60,6 +62,12 @@ export class RuntimeSessionStateStore {
 			.from(runtimeSessionStates)
 			.where(
 				and(
+					input.agentModeSessionId
+						? eq(
+								runtimeSessionStates.agentModeSessionId,
+								input.agentModeSessionId,
+							)
+						: isNull(runtimeSessionStates.agentModeSessionId),
 					eq(runtimeSessionStates.taskId, input.taskId),
 					input.repositoryId
 						? eq(runtimeSessionStates.repositoryId, input.repositoryId)
@@ -130,6 +138,12 @@ export class RuntimeSessionStateStore {
 			.set({ status, updatedAt: new Date() })
 			.where(
 				and(
+					input.agentModeSessionId
+						? eq(
+								runtimeSessionStates.agentModeSessionId,
+								input.agentModeSessionId,
+							)
+						: isNull(runtimeSessionStates.agentModeSessionId),
 					eq(runtimeSessionStates.taskId, input.taskId),
 					input.repositoryId
 						? eq(runtimeSessionStates.repositoryId, input.repositoryId)
@@ -159,6 +173,7 @@ async function ensureRuntimeSessionStateTables() {
       task_id text NOT NULL,
       repository_id text,
       run_id text,
+      agent_mode_session_id text,
       runtime_lane text NOT NULL,
       provider text NOT NULL,
       provider_session_id text,
@@ -186,5 +201,13 @@ async function ensureRuntimeSessionStateTables() {
   `);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS runtime_session_states_run_idx ON runtime_session_states (run_id)",
+	);
+	await client
+		.execute(
+			"ALTER TABLE runtime_session_states ADD COLUMN agent_mode_session_id text",
+		)
+		.catch(() => undefined);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS runtime_session_states_agent_mode_session_lookup_idx ON runtime_session_states (agent_mode_session_id, status, last_seen_at)",
 	);
 }

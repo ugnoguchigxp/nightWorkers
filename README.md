@@ -319,6 +319,27 @@ The current settings contract rejects authentication headers, API keys, bearer
 tokens, cookies, and secret-like environment entries. MCP tool execution stays
 inside the worker-tool evidence path.
 
+The Phase 42 project-exploration pilot requires an app-managed MCP server entry
+for vulnWorkbench whose discovered tools include
+`vuln_list_knowledge_sources`, `vuln_get_knowledge_source_manifest`, and
+`vuln_get_project_exploration_catalog`. The pilot remains off unless the
+repository `featureSettings` contains the following exact sibling setting:
+
+```json
+{
+  "projectExplorationCatalog": {
+    "enabled": false,
+    "mcpServerId": null
+  }
+}
+```
+
+Set `enabled` to `true` and `mcpServerId` to the app-managed vulnWorkbench
+server ID only for a controlled pilot. Phase 42 supports the native/API
+implementation lane only; Codex SDK, planning, test, review, and general-answer
+lanes remain unchanged. Source selection failures are fail-open and preserve
+the default exploration behavior.
+
 Agent Hooks support command or HTTP actions around tool and session lifecycle
 events, including `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, and `Stop`.
 Hook execution uses its own runner, stores status, and redacts failure summaries;

@@ -25,6 +25,7 @@ import {
 	finalizeReviewRunFromRuntime,
 	startReviewRunForSession,
 } from "../../review";
+import { safelyContinueReviewCorrectionAfterRun } from "../../review/review-correction-continuation.service";
 import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
@@ -80,6 +81,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 		runtimeOptions,
 		runtimeLaneDefinition,
 		runtimeLaneResolution,
+		agentModeSessionId,
 	} = input;
 	const runtime = runtimeLaneDefinition.createAdapter();
 	const sink = createLedgerSink(run.id);
@@ -109,6 +111,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 							{
 								runId: run.id,
 								taskId,
+								agentModeSessionId,
 								repositoryId: task.repositoryId,
 								repoRoot: repoInfo.localPath,
 								compiledPrompt: compiledPromptText,
@@ -128,6 +131,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 							{
 								runId: run.id,
 								taskId,
+								agentModeSessionId,
 								repositoryId: task.repositoryId,
 								repoRoot: repoInfo.localPath,
 								compiledPrompt: compiledPromptText,
@@ -464,19 +468,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			});
 			await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, guardedStatus);
-			await finalizeReviewRunFromRuntime({
-				runId: run.id,
-				taskId,
-				status: guardedStatus,
-				contextSnapshot: contextSnapshotWithBoundaryAudit,
-				runtimeResult: {
-					...runtimeResult,
-					finalReport,
-				},
-			});
-			if (shouldContinueSessionQueue(guardedStatus)) {
-				void runSessionQueueForRepository(task.repositoryId);
-			}
 
 			await createPlanningArtifactMessageIfNeeded({
 				taskId,
@@ -496,56 +487,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				},
 			});
 			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
-			// Mission Pilot continuation may immediately start the next mode. Publish
-			// the terminal run status before that handoff so the start guard does not
-			// mistake this completed run for an active execution.
-			await repo.updateTaskRun(run.id, { status: guardedStatus });
-			let reviewRunStartedByMissionPilot = false;
-			try {
-				const missionContinuation = await continueMissionPilotAfterRun({
-					taskId,
-					runId: run.id,
-					executionMode:
-						runtimeContextSnapshot.executionMode ?? "implementation",
-					runStatus: guardedStatus,
-				});
-				await executeMissionPilotContinuation(missionContinuation);
-				reviewRunStartedByMissionPilot =
-					missionContinuation.kind === "start_review";
-			} catch (error) {
-				await markMissionPilotContinuationFailed(run.id, error);
-				logger.error(
-					{ error: toErrorMessage(error), runId: run.id },
-					"Mission Pilot continuation failed after the run was finalized",
-				);
-			}
-			if (
-				guardedStatus === "needs_review" &&
-				(runtimeContextSnapshot.executionMode ?? "implementation") !==
-					"review" &&
-				!reviewRunStartedByMissionPilot
-			) {
-				try {
-					const reviewSession = await autoStartReviewSessionForRun(run.id);
-					await startReviewRunForSession(reviewSession.session.id);
-				} catch (error) {
-					logger.warn(
-						{ error: toErrorMessage(error), runId: run.id },
-						"failed to auto-start Review Run",
-					);
-					await repo.createRunEvent({
-						version: 1,
-						runId: run.id,
-						taskId,
-						timestamp: new Date().toISOString(),
-						type: "review.required_section_auto_failed",
-						severity: "warning",
-						actor: "system",
-						message: "Review Run could not be automatically started.",
-						data: { error: toErrorMessage(error) },
-					});
-				}
-			}
 			await refreshConversationContextForRuntimeLane({
 				runtimeLaneResolution,
 				taskId,
@@ -571,6 +512,70 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						? "Security Oracle gate did not allow implementation finalization."
 						: runtimeResult.summary || outcome.summary,
 			});
+			await finalizeReviewRunFromRuntime({
+				runId: run.id,
+				taskId,
+				status: guardedStatus,
+				contextSnapshot: contextSnapshotWithBoundaryAudit,
+				runtimeResult: { ...runtimeResult, finalReport },
+			});
+			const reviewRunStartedByCorrection =
+				await safelyContinueReviewCorrectionAfterRun({
+					taskId,
+					runId: run.id,
+					status: guardedStatus,
+					contextSnapshot: contextSnapshotWithBoundaryAudit,
+				});
+			let reviewRunStartedByMissionPilot = false;
+			try {
+				const missionContinuation = await continueMissionPilotAfterRun({
+					taskId,
+					runId: run.id,
+					executionMode:
+						runtimeContextSnapshot.executionMode ?? "implementation",
+					runStatus: guardedStatus,
+				});
+				await executeMissionPilotContinuation(missionContinuation);
+				reviewRunStartedByMissionPilot =
+					missionContinuation.kind === "start_review";
+			} catch (error) {
+				await markMissionPilotContinuationFailed(run.id, error);
+				logger.error(
+					{ error: toErrorMessage(error), runId: run.id },
+					"Mission Pilot continuation failed after the run was finalized",
+				);
+			}
+			if (
+				guardedStatus === "needs_review" &&
+				(runtimeContextSnapshot.executionMode ?? "implementation") !==
+					"review" &&
+				!reviewRunStartedByCorrection &&
+				!reviewRunStartedByMissionPilot
+			) {
+				try {
+					const reviewSession = await autoStartReviewSessionForRun(run.id);
+					await startReviewRunForSession(reviewSession.session.id);
+				} catch (error) {
+					logger.warn(
+						{ error: toErrorMessage(error), runId: run.id },
+						"failed to auto-start Review Run",
+					);
+					await repo.createRunEvent({
+						version: 1,
+						runId: run.id,
+						taskId,
+						timestamp: new Date().toISOString(),
+						type: "review.required_section_auto_failed",
+						severity: "warning",
+						actor: "system",
+						message: "Review Run could not be automatically started.",
+						data: { error: toErrorMessage(error) },
+					});
+				}
+			}
+			if (shouldContinueSessionQueue(guardedStatus)) {
+				void runSessionQueueForRepository(task.repositoryId);
+			}
 		} catch (err: unknown) {
 			await handleRuntimeExecutionFailure({
 				error: err,

@@ -27,6 +27,7 @@ export async function persistCodexProviderThreadIfPresent(
 	if (!providerThreadId) return;
 	await store.upsertRuntimeSessionState({
 		taskId: context.taskId,
+		agentModeSessionId: context.agentModeSessionId,
 		repositoryId: context.repositoryId,
 		runId: context.runId,
 		runtimeLane: "codex-sdk",
@@ -39,6 +40,14 @@ export async function persistCodexProviderThreadIfPresent(
 			providerThreadId,
 		},
 	});
+}
+
+export function updateCodexSessionKey(
+	current: string | null,
+	event: AgentRuntimeEvent,
+) {
+	if (event.type !== "runtime_started") return current;
+	return readString(readEventPayload(event).providerThreadId) ?? current;
 }
 
 export function normalizeRetryLimit(
@@ -103,6 +112,7 @@ export function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 	if (
 		value === "planning" ||
 		value === "implementation" ||
+		value === "test" ||
 		value === "review" ||
 		value === "general_answer"
 	) {
@@ -112,6 +122,7 @@ export function readCodexRuntimeExecutionMode(context: AgentRunContext) {
 	if (
 		snapshotValue === "planning" ||
 		snapshotValue === "implementation" ||
+		snapshotValue === "test" ||
 		snapshotValue === "review" ||
 		snapshotValue === "general_answer"
 	) {

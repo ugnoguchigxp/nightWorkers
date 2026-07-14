@@ -15,6 +15,9 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"run.final_judgment_created": { eventType: "final_report", type: "info" },
 	"run.outcome_decided": { eventType: "run_outcome_decided", type: "info" },
 	"run.recovered": { eventType: "state_change", type: "warning" },
+	"agent_mode_session.opened": { eventType: "state_change", type: "info" },
+	"agent_mode_session.reused": { eventType: "state_change", type: "info" },
+	"agent_mode_session.closed": { eventType: "state_change", type: "info" },
 	"turn.started": { eventType: "supervisor_decision", type: "info" },
 	"turn.finished": { eventType: "supervisor_decision", type: "info" },
 	"model.request_started": { eventType: "supervisor_decision", type: "info" },
@@ -91,6 +94,10 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"review.run_completed": {
 		eventType: "review_evaluation",
 		type: "checkpoint",
+	},
+	"review.correction_requested": {
+		eventType: "review_evaluation",
+		type: "info",
 	},
 	"review.required_section_auto_started": {
 		eventType: "review_evaluation",

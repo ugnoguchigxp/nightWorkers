@@ -135,6 +135,13 @@ function renderRoleProjection(
 
 function omittedSectionsForRole(role: NativeApiStateCardRole) {
 	if (role === "plan") return ["implementation_todos", "code_snippets"];
+	if (role === "test")
+		return [
+			"implementation_todos",
+			"code_snippets",
+			"provider_history",
+			"implementation_conversation",
+		];
 	if (role === "review")
 		return ["implementation_todos", "code_snippets", "planning_detail"];
 	return ["raw_snapshot"];

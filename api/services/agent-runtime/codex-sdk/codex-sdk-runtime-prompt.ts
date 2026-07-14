@@ -61,7 +61,10 @@ export function buildCodexRuntimePromptParts(
 			: executionMode === "review"
 				? buildReviewContract(context, nightWorkersToolList)
 				: buildExecutionContract(context, nightWorkersToolList, executionMode);
-	const prompt = request ? `${request}\n\n${runtimeContract}` : runtimeContract;
+	const roleHandoff = readRoleHandoffProjection(context);
+	const prompt = [request, roleHandoff, runtimeContract]
+		.filter((part): part is string => Boolean(part?.trim()))
+		.join("\n\n");
 	return {
 		prompt,
 		request,
@@ -72,6 +75,18 @@ export function buildCodexRuntimePromptParts(
 			fullPromptTokens: estimateTokens(prompt),
 		},
 	};
+}
+
+function readRoleHandoffProjection(context: AgentRunContext) {
+	const rendered =
+		context.contextSnapshot.roleContext?.workingContext.renderedText;
+	if (typeof rendered !== "string" || !rendered.trim()) return null;
+	return [
+		"[AGENT_MODE_HANDOFF]",
+		"前の mode の provider conversation / reasoning / tool transcript は引き継がず、保存済み artifact・evidence・state card の bounded projection だけを使います。",
+		rendered.slice(0, 12_000),
+		"[/AGENT_MODE_HANDOFF]",
+	].join("\n");
 }
 
 function buildGeneralAnswerContract(
@@ -252,10 +267,10 @@ function buildReviewContract(
 		"- StateCard continuation、implementation handoff、実装中の会話履歴を前提にしない。",
 		"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
 		options.applyFixes
-			? "- applyFixes=true の Review Run では、根拠ある accepted findings だけを最小差分で修正してよい。"
+			? "- applyFixes=true は accepted finding を新しい Implementation correction Session へ送る権限です。Review Run 自身は編集・検証・commit を行わず、finding/evidence の handoff を保存します。"
 			: "- applyFixes=false の Review Run では、実装編集を開始しない。",
 		options.commitChanges
-			? "- commitChanges=true の Review Run では、verify 成功後に対象差分だけ commit してよい。"
+			? "- commitChanges=true は correction Implementation -> Test -> Review pass 後の closeout 権限として扱います。Review Run 自身は commit しません。"
 			: "- commitChanges=false の Review Run では、commit しない。",
 		"- Implementation Queue 投入、import_project、Plan Mode artifact 更新を開始しない。",
 		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",

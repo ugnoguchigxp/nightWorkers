@@ -28,6 +28,7 @@ export class NativeApiSessionStore {
 		runId: string;
 		taskId: string;
 		turnIndex: number;
+		agentModeSessionId?: string | null;
 		history: readonly NativeApiHistoryItem[];
 		provider?: string | null;
 		model?: string | null;
@@ -41,6 +42,7 @@ export class NativeApiSessionStore {
 				runId: input.runId,
 				taskId: input.taskId,
 				turnIndex: input.turnIndex,
+				agentModeSessionId: input.agentModeSessionId ?? null,
 				status: "running",
 				provider: input.provider ?? null,
 				model: input.model ?? null,
@@ -154,6 +156,7 @@ export class NativeApiSessionStore {
 
 	async getLatestCompletedTurnForTask(input: {
 		taskId: string;
+		agentModeSessionId: string;
 		excludeRunId?: string | null;
 		provider?: string | null;
 		model?: string | null;
@@ -163,6 +166,7 @@ export class NativeApiSessionStore {
 		const filters = [
 			eq(nativeApiTurns.taskId, input.taskId),
 			eq(nativeApiTurns.status, "completed"),
+			eq(nativeApiTurns.agentModeSessionId, input.agentModeSessionId),
 		];
 		if (input.excludeRunId)
 			filters.push(ne(nativeApiTurns.runId, input.excludeRunId));
@@ -183,12 +187,14 @@ export class NativeApiSessionStore {
 	async getLatestCompletedTurnForPreviousRun(input: {
 		taskId: string;
 		runId: string;
+		agentModeSessionId: string;
 		provider?: string | null;
 		model?: string | null;
 		executionMode?: NativeApiExecutionMode | null;
 	}) {
 		return this.getLatestCompletedTurnForTask({
 			taskId: input.taskId,
+			agentModeSessionId: input.agentModeSessionId,
 			excludeRunId: input.runId,
 			provider: input.provider,
 			model: input.model,
@@ -228,6 +234,7 @@ async function ensureNativeApiRunnerTables() {
       updated_at integer NOT NULL,
       run_id text NOT NULL,
       task_id text NOT NULL,
+      agent_mode_session_id text,
       turn_index integer NOT NULL,
       status text DEFAULT 'running' NOT NULL,
       provider text,
@@ -249,8 +256,16 @@ async function ensureNativeApiRunnerTables() {
 		"CREATE INDEX IF NOT EXISTS native_api_turns_run_status_idx ON native_api_turns (run_id, status)",
 	);
 	await ensureNativeApiTurnsExecutionModeColumn();
+	await client
+		.execute(
+			"ALTER TABLE native_api_turns ADD COLUMN agent_mode_session_id text",
+		)
+		.catch(() => undefined);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS native_api_turns_resume_idx ON native_api_turns (task_id, status, provider, model, execution_mode, finished_at)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS native_api_turns_agent_mode_session_resume_idx ON native_api_turns (agent_mode_session_id, status, finished_at)",
 	);
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS native_api_tool_calls (

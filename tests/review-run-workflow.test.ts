@@ -11,7 +11,7 @@ import {
 import { parseReviewRunFindings } from "../api/modules/review/review-run-finalize.service";
 
 describe("Review Run workflow", () => {
-	it("defaults code review, fixes, and commit on when options are omitted", () => {
+	it("defaults code review and records correction/closeout permissions", () => {
 		const todos = buildReviewRunTodos({
 			options: normalizeReviewRunOptions({}),
 			target: reviewTarget(),
@@ -23,9 +23,8 @@ describe("Review Run workflow", () => {
 			"review.inspect_targets",
 			"review.code_findings",
 			"review.consolidate_findings",
-			"review.apply_fixes",
-			"review.verify_after_fixes",
-			"review.commit_changes",
+			"review.correction_request",
+			"review.correction_closeout_permission",
 		]);
 	});
 
@@ -62,9 +61,8 @@ describe("Review Run workflow", () => {
 			"review.code_findings",
 			"review.security_vulnworkbench",
 			"review.consolidate_findings",
-			"review.apply_fixes",
-			"review.verify_after_fixes",
-			"review.commit_changes",
+			"review.correction_request",
+			"review.correction_closeout_permission",
 		]);
 		expect(full[3]?.title).toBe(
 			"vulnWorkbench CLI のセキュリティ診断結果を確認する",
@@ -109,8 +107,7 @@ describe("Review Run workflow", () => {
 		expect(todos.map((todo) => todo.procedureId)).toEqual([
 			"review.security_vulnworkbench",
 			"review.consolidate_findings",
-			"review.apply_fixes",
-			"review.verify_after_fixes",
+			"review.correction_request",
 		]);
 		expect(todos.map((todo) => todo.procedureId)).not.toContain(
 			"review.inspect_targets",

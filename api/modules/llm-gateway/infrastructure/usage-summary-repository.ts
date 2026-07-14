@@ -5,8 +5,22 @@ import { type llmUsageRecords, tasks } from "../../../db/schema";
 export type UsageSummaryDbExecutor = typeof db | DbTransaction;
 export type UsageRecord = Omit<
 	typeof llmUsageRecords.$inferSelect,
-	"traceOwner" | "traceChannel"
->;
+	| "traceOwner"
+	| "traceChannel"
+	| "agentModeSessionId"
+	| "usageCounterScope"
+	| "usageNormalizationStatus"
+	| "sourceSequence"
+> &
+	Partial<
+		Pick<
+			typeof llmUsageRecords.$inferSelect,
+			| "agentModeSessionId"
+			| "usageCounterScope"
+			| "usageNormalizationStatus"
+			| "sourceSequence"
+		>
+	>;
 
 export async function resolveUsageRepositoryId(
 	taskId: string,

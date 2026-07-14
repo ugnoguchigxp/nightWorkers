@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, not, sql } from "drizzle-orm";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import { withSqliteBusyRetry } from "../../db/retry";
 import type { TaskRunStatus } from "../../db/schema";
 import {
@@ -23,23 +23,27 @@ import {
 	TERMINAL_TODO_STATUSES,
 } from "./nightworkers.runs-support";
 
-export async function createTaskRun(data: {
-	taskId: string;
-	repositoryId?: string | null;
-	status?: TaskRunStatus;
-	workerKind?: string;
-	baseRef?: string | null;
-	worktreePath?: string | null;
-	timeoutSeconds?: number;
-	contextSnapshot?: unknown;
-	summary?: string | null;
-	finalReport?: string | null;
-	finalJudgment?: unknown;
-	startedAt?: Date;
-	endedAt?: Date;
-	finishedAt?: Date;
-}) {
-	const [run] = await db.insert(taskRuns).values(data).returning();
+export async function createTaskRun(
+	data: {
+		taskId: string;
+		repositoryId?: string | null;
+		agentModeSessionId?: string | null;
+		status?: TaskRunStatus;
+		workerKind?: string;
+		baseRef?: string | null;
+		worktreePath?: string | null;
+		timeoutSeconds?: number;
+		contextSnapshot?: unknown;
+		summary?: string | null;
+		finalReport?: string | null;
+		finalJudgment?: unknown;
+		startedAt?: Date;
+		endedAt?: Date;
+		finishedAt?: Date;
+	},
+	database: typeof db | DbTransaction = db,
+) {
+	const [run] = await database.insert(taskRuns).values(data).returning();
 	return run;
 }
 

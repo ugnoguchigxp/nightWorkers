@@ -86,6 +86,7 @@ export class NativeApiStartupController {
 		const turn = await this.input.store.createTurn({
 			runId: input.context.runId,
 			taskId: input.context.taskId,
+			agentModeSessionId: input.context.agentModeSessionId,
 			turnIndex: 0,
 			history,
 			provider: "runtime_gate",

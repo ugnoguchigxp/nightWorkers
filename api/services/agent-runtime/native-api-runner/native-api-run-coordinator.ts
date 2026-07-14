@@ -199,6 +199,7 @@ export async function runNativeApiRunner(
 			const turn = await runtime.store.createTurn({
 				runId: context.runId,
 				taskId: context.taskId,
+				agentModeSessionId: context.agentModeSessionId,
 				turnIndex,
 				history,
 				provider: initialProviderRequest.provider,

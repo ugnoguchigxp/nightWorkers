@@ -6,12 +6,12 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { agentModeSessions } from "./schema-agent-mode-session";
 import type {
 	ImplementationQueueEntryStatus,
 	TaskRunStatus,
 } from "./schema-base";
 import { commonColumns, repositories, tasks } from "./schema-base";
-
 export const taskRuns = sqliteTable(
 	"task_runs",
 	{
@@ -22,6 +22,10 @@ export const taskRuns = sqliteTable(
 		repositoryId: text("repository_id").references(() => repositories.id, {
 			onDelete: "cascade",
 		}),
+		agentModeSessionId: text("agent_mode_session_id").references(
+			() => agentModeSessions.id,
+			{ onDelete: "set null" },
+		),
 		status: text("status").$type<TaskRunStatus>().default("running").notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
 		workerKind: text("worker_kind").default("native-local-worker").notNull(),
 		baseRef: text("base_ref"),
@@ -42,6 +46,9 @@ export const taskRuns = sqliteTable(
 	},
 	(table) => ({
 		taskIdIdx: index("task_runs_task_id_idx").on(table.taskId),
+		agentModeSessionStartedIdx: index(
+			"task_runs_agent_mode_session_started_idx",
+		).on(table.agentModeSessionId, table.startedAt),
 	}),
 );
 
@@ -489,6 +496,10 @@ export const nativeApiTurns = sqliteTable(
 		taskId: text("task_id")
 			.notNull()
 			.references(() => tasks.id, { onDelete: "cascade" }),
+		agentModeSessionId: text("agent_mode_session_id").references(
+			() => agentModeSessions.id,
+			{ onDelete: "set null" },
+		),
 		turnIndex: integer("turn_index").notNull(),
 		status: text("status").default("running").notNull(),
 		provider: text("provider"),
@@ -519,6 +530,9 @@ export const nativeApiTurns = sqliteTable(
 			table.executionMode,
 			table.finishedAt,
 		),
+		agentModeSessionResumeIdx: index(
+			"native_api_turns_agent_mode_session_resume_idx",
+		).on(table.agentModeSessionId, table.status, table.finishedAt),
 	}),
 );
 
@@ -557,41 +571,5 @@ export const nativeApiToolCalls = sqliteTable(
 			table.status,
 		),
 		turnIdx: index("native_api_tool_calls_turn_idx").on(table.turnId),
-	}),
-);
-
-export const runtimeSessionStates = sqliteTable(
-	"runtime_session_states",
-	{
-		...commonColumns,
-		taskId: text("task_id")
-			.notNull()
-			.references(() => tasks.id, { onDelete: "cascade" }),
-		repositoryId: text("repository_id").references(() => repositories.id, {
-			onDelete: "cascade",
-		}),
-		runId: text("run_id").references(() => taskRuns.id, {
-			onDelete: "set null",
-		}),
-		runtimeLane: text("runtime_lane").notNull(),
-		provider: text("provider").notNull(),
-		providerSessionId: text("provider_session_id"),
-		executionMode: text("execution_mode"),
-		model: text("model"),
-		status: text("status").notNull(),
-		lastSeenAt: integer("last_seen_at", { mode: "timestamp" }).notNull(),
-		metadataJson: text("metadata_json", { mode: "json" }),
-	},
-	(table) => ({
-		lookupIdx: index("runtime_session_states_lookup_idx").on(
-			table.taskId,
-			table.repositoryId,
-			table.runtimeLane,
-			table.provider,
-			table.executionMode,
-			table.status,
-			table.lastSeenAt,
-		),
-		runIdx: index("runtime_session_states_run_idx").on(table.runId),
 	}),
 );

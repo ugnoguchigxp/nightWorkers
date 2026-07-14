@@ -22,4 +22,5 @@ export type LaunchRuntimeExecutionInput = {
 	runtimeOptions: RuntimeOptions;
 	runtimeLaneDefinition: RuntimeLaneDefinition;
 	runtimeLaneResolution: RuntimeLaneResolution;
+	agentModeSessionId?: string | null;
 };

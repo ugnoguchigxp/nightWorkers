@@ -68,6 +68,7 @@ describe("NightWorkers service", () => {
 					}),
 				}),
 			}),
+			expect.anything(),
 		);
 		const todos =
 			vi.mocked(repo.replaceTaskRunTodosForRun).mock.calls[0]?.[1] || [];
@@ -329,6 +330,7 @@ describe("NightWorkers service", () => {
 					executionModeSource: "test_mode",
 				}),
 			}),
+			expect.anything(),
 		);
 	});
 

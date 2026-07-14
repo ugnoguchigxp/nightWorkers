@@ -1,5 +1,13 @@
 export type LlmUsageMode = "measured" | "estimated" | "mixed" | "unavailable";
 
+export type UsageCounterScope = "per_turn" | "provider_session_cumulative";
+export type UsageNormalizationStatus =
+	| "first_snapshot"
+	| "delta"
+	| "counter_reset"
+	| "invalid_cached_delta"
+	| "unavailable";
+
 export type NormalizedLlmUsage = {
 	inputTokens: number | null;
 	outputTokens: number | null;
