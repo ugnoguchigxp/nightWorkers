@@ -94,7 +94,7 @@ async function createFixture() {
 }
 
 describe("Mission Pilot plan pipeline persistence", () => {
-	it("keeps reroute tool calls separate from stale Artifact scoring", () => {
+	it("rejects review-driven Artifact routing expansion", () => {
 		const base = {
 			verdict: "reroute" as const,
 			summary: "API contract is required before scoring.",
@@ -121,24 +121,18 @@ describe("Mission Pilot plan pipeline persistence", () => {
 				],
 			},
 		};
-		expect(
+		expect(() =>
 			missionPilotPlanReviewSchema.parse({
 				...base,
 				artifactScores: [],
 				revisionTargets: [],
-			}).verdict,
-		).toBe("reroute");
+			}),
+		).toThrow();
 		expect(() =>
 			missionPilotPlanReviewSchema.parse({
 				...base,
-				artifactScores: [
-					{
-						artifactKind: "feature_plan",
-						sourceMessageId: crypto.randomUUID(),
-						score: 79,
-						rationale: "Stale routing score.",
-					},
-				],
+				verdict: "revise",
+				artifactScores: [],
 				revisionTargets: [],
 			}),
 		).toThrow();

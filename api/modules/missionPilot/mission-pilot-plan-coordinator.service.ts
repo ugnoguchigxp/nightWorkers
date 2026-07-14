@@ -38,7 +38,6 @@ import {
 	synchronizeTaskContext,
 	updatePhase,
 } from "./mission-pilot-plan-support";
-import { dispatchMissionPilotPlanToolCall } from "./mission-pilot-plan-tool.service";
 
 export { buildMissionPilotPlanReviewResponseJsonSchema } from "./mission-pilot-plan-review.service";
 
@@ -53,7 +52,7 @@ import {
 } from "./mission-pilot-queue-handoff.service";
 
 class MissionPilotPlanRoutingChangedError extends Error {}
-const MAX_ROUTING_TOOL_CALLS = 7;
+const MAX_ROUTING_REFRESH_ATTEMPTS = 7;
 
 async function executeArtifactSteps(
 	taskId: string,
@@ -296,9 +295,7 @@ async function executeReview(
 	}
 	const firstAttempt = (latestRecorded?.attempt ?? 0) + 1;
 	const completedScoredReviews = currentReviews.filter(
-		(review) =>
-			review.verdict !== "reroute" &&
-			(review.reviewJson.artifactScores?.length ?? 0) > 0,
+		(review) => (review.reviewJson.artifactScores?.length ?? 0) > 0,
 	).length;
 	for (
 		let offset = 0;
@@ -326,19 +323,6 @@ async function executeReview(
 			const current = await missionPilotRepo.getSessionByTaskId(taskId);
 			if (current?.desiredState !== "playing") throw error;
 			throw new MissionPilotPlanRoutingChangedError(error.message);
-		}
-		if (result.review.verdict === "reroute") {
-			if (!result.review.routingToolCall) {
-				throw new Error("Plan review reroute tool call is missing");
-			}
-			await dispatchMissionPilotPlanToolCall(
-				taskId,
-				result.review.routingToolCall,
-			);
-			await publishCurrentPlanProgress(taskId);
-			throw new MissionPilotPlanRoutingChangedError(
-				"Plan Artifact routing was expanded by Mission Pilot",
-			);
 		}
 		if (result.review.verdict === "pass") return latest;
 		if (result.review.verdict === "reject") {
@@ -475,9 +459,9 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 		leasedSessionId = session.id;
 		let reviewCompleted = false;
 		for (
-			let rerouteCount = 0;
-			rerouteCount <= MAX_ROUTING_TOOL_CALLS;
-			rerouteCount++
+			let routingRefreshCount = 0;
+			routingRefreshCount <= MAX_ROUTING_REFRESH_ATTEMPTS;
+			routingRefreshCount++
 		) {
 			await executeArtifactSteps(
 				taskId,
@@ -492,8 +476,8 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 			} catch (error) {
 				if (!(error instanceof MissionPilotPlanRoutingChangedError))
 					throw error;
-				if (rerouteCount >= MAX_ROUTING_TOOL_CALLS) {
-					throw new Error("Mission Pilot routing expansion limit exceeded");
+				if (routingRefreshCount >= MAX_ROUTING_REFRESH_ATTEMPTS) {
+					throw new Error("Mission Pilot routing refresh limit exceeded");
 				}
 				await updatePhase(taskId, leaseOwner, "generating_artifacts");
 			}

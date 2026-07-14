@@ -1,8 +1,25 @@
 export type StandardTemplateId =
 	| "hono-standard"
 	| "python-standard"
-	| "java-template";
-export type StarterStack = "hono" | "python" | "java";
+	| "java-template"
+	| "rust-template";
+export const STARTER_STACKS = ["hono", "python", "java", "rust"] as const;
+export type StarterStack = (typeof STARTER_STACKS)[number];
+export const STARTER_VARIANTS = [
+	"sqlite",
+	"baseline",
+	"postgres",
+	"pgvector",
+	"rag",
+	"turso",
+	"cloudflare",
+	"api-only",
+	"java8-sqlite",
+	"java8-postgres",
+	"java25-sqlite",
+	"java25-postgres",
+	"pgsql",
+] as const;
 
 export type TemplateRef = {
 	name: string;
@@ -121,11 +138,6 @@ export const standardTemplateRegistry: Record<
 				ref: "api-only-v1.0.0",
 				description: "Python API-only snapshot.",
 			},
-			auth: {
-				name: "auth",
-				ref: "auth-v1.0.0",
-				description: "Python baseline with auth features.",
-			},
 		},
 		overlays: {
 			ssr: {
@@ -182,7 +194,38 @@ export const standardTemplateRegistry: Record<
 		},
 		overlays: {},
 	},
+	"rust-template": {
+		id: "rust-template",
+		repoUrl: "https://github.com/ugnoguchigxp/rust-template.git",
+		defaultVariant: "sqlite",
+		variants: {
+			sqlite: {
+				name: "sqlite",
+				ref: "variant/sqlite",
+				description: "Rust + Axum + React/Vite baseline with SQLite.",
+			},
+			pgsql: {
+				name: "pgsql",
+				ref: "variant/postgresql",
+				description: "Rust + Axum + React/Vite baseline with PostgreSQL.",
+			},
+		},
+		overlays: {},
+	},
 };
+
+const templateIdByStarterStack: Record<StarterStack, StandardTemplateId> = {
+	hono: "hono-standard",
+	python: "python-standard",
+	java: "java-template",
+	rust: "rust-template",
+};
+
+export function isStarterVariantForStack(stack: StarterStack, variant: string) {
+	return Boolean(
+		standardTemplateRegistry[templateIdByStarterStack[stack]].variants[variant],
+	);
+}
 
 export function normalizeTemplateKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;
@@ -239,17 +282,13 @@ export function resolveStarterTemplate(input: {
 	registry?: TemplateRegistry;
 }) {
 	const registry = input.registry || standardTemplateRegistry;
-	const normalizedStack = normalizeTemplateKey(
-		input.stack,
-	) as StarterStack | null;
+	const normalizedStackKey = normalizeTemplateKey(input.stack);
+	const normalizedStack = STARTER_STACKS.find(
+		(stack) => stack === normalizedStackKey,
+	);
 	const normalizedVariant = normalizeTemplateKey(input.variant);
 
-	if (
-		normalizedStack &&
-		normalizedStack !== "hono" &&
-		normalizedStack !== "python" &&
-		normalizedStack !== "java"
-	) {
+	if (normalizedStackKey && !normalizedStack) {
 		return {
 			ok: false as const,
 			code: "UNKNOWN_STARTER_STACK",
@@ -257,14 +296,9 @@ export function resolveStarterTemplate(input: {
 		};
 	}
 
-	const candidateTemplateIds: StandardTemplateId[] =
-		normalizedStack === "python"
-			? ["python-standard"]
-			: normalizedStack === "java"
-				? ["java-template"]
-				: normalizedStack === "hono"
-					? ["hono-standard"]
-					: ["hono-standard", "python-standard", "java-template"];
+	const candidateTemplateIds: StandardTemplateId[] = normalizedStack
+		? [templateIdByStarterStack[normalizedStack]]
+		: STARTER_STACKS.map((stack) => templateIdByStarterStack[stack]);
 
 	if (normalizedVariant) {
 		const matchingTemplateIds = candidateTemplateIds.filter((templateId) =>
@@ -294,12 +328,9 @@ export function resolveStarterTemplate(input: {
 	}
 
 	return resolveStandardTemplate({
-		templateId:
-			normalizedStack === "python"
-				? "python-standard"
-				: normalizedStack === "java"
-					? "java-template"
-					: "hono-standard",
+		templateId: normalizedStack
+			? templateIdByStarterStack[normalizedStack]
+			: "hono-standard",
 		variant: normalizedVariant || undefined,
 		registry,
 	});

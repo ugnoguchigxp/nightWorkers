@@ -39,6 +39,9 @@ export type ProjectManifestInspection = {
 	path: string;
 	rawContent: string | null;
 	parseError?: string;
+	makefile?: {
+		targets: string[];
+	} | null;
 	packageJson: {
 		name?: string;
 		packageManager?: string;
@@ -306,7 +309,7 @@ async function initializeProject(input: {
 		return {
 			...base,
 			status: "failed",
-			errorMessage: "Template package.json must define scripts.bootstrap.",
+			errorMessage: "Template manifest must define a bootstrap command.",
 		};
 	}
 	if (!initializationCommand) {
@@ -341,6 +344,9 @@ function buildInitializationCommand(
 	manifest: ProjectManifestInspection,
 	requireBootstrap: boolean,
 ) {
+	if (manifest.makefile?.targets.includes("bootstrap")) {
+		return ["make", "bootstrap"];
+	}
 	const packageManager = manifest.detectedPackageManager;
 	if (!packageManager) return null;
 	if (typeof manifest.packageJson?.scripts.bootstrap === "string") {

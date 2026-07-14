@@ -17,6 +17,7 @@ const codexMock = vi.hoisted(() => {
 	const startedThreadOptions: unknown[] = [];
 	const startedThreadIds: string[] = [];
 	const resumedThreadIds: string[] = [];
+	let runItems: unknown[] = [];
 	let nextThreadSeq = 1;
 
 	class MockThread {
@@ -30,7 +31,7 @@ const codexMock = vi.hoisted(() => {
 			runInputs.push(input);
 			return {
 				finalResponse: JSON.stringify({ ok: true }),
-				items: [],
+				items: runItems,
 				usage: {
 					input_tokens: 10,
 					cached_input_tokens: 0,
@@ -66,12 +67,16 @@ const codexMock = vi.hoisted(() => {
 		startedThreadOptions,
 		startedThreadIds,
 		resumedThreadIds,
+		setRunItems: (items: unknown[]) => {
+			runItems = items;
+		},
 		reset: () => {
 			runInputs.length = 0;
 			constructorInputs.length = 0;
 			startedThreadOptions.length = 0;
 			startedThreadIds.length = 0;
 			resumedThreadIds.length = 0;
+			runItems = [];
 			nextThreadSeq = 1;
 		},
 	};
@@ -116,13 +121,13 @@ describe("Codex structured provider isolation", () => {
 		await callStructuredLlmResult(longSystemPrompt, "first user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
-			role: "plan",
+			role: "mission_pilot",
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "second user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
-			role: "plan",
+			role: "mission_pilot",
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "third user prompt", {
@@ -131,7 +136,7 @@ describe("Codex structured provider isolation", () => {
 				runtimeSchema: z.object({ ok: z.boolean() }).strict(),
 			}),
 			taskId: "task-1",
-			role: "plan",
+			role: "mission_pilot",
 			runtimeSessionStore: store,
 		});
 
@@ -144,8 +149,21 @@ describe("Codex structured provider isolation", () => {
 		expect(codexMock.constructorInputs).toHaveLength(3);
 		for (const input of codexMock.constructorInputs) {
 			const config = (input as { config: Record<string, unknown> }).config;
-			expect(config.features).toEqual({ mcp: false });
-			expect(config.mcp_servers).toEqual({});
+			expect(config.features).toEqual({ memories: false });
+			expect(config.features).not.toHaveProperty("mcp");
+			expect(config.memories).toEqual({
+				generate_memories: false,
+				use_memories: false,
+			});
+			expect(config.mcp_servers).toEqual({
+				"context-still": {
+					disabled_tools: ["initial_instructions", "context_compile"],
+				},
+			});
+			expect(config.mcp_servers).not.toEqual({});
+			expect(config.developer_instructions).toContain(
+				"MCP は Plan Mode の明示的な操作に必要な場合だけ使い",
+			);
 			expect(config.project_doc_max_bytes).toBe(0);
 		}
 		expect(codexMock.startedThreadOptions).toHaveLength(3);
@@ -174,6 +192,55 @@ describe("Codex structured provider isolation", () => {
 		expect(JSON.stringify(codexMock.runInputs[2])).toContain(
 			"third user prompt",
 		);
+	});
+
+	it("keeps a valid structured response when the isolated turn used agentic items", async () => {
+		fs.writeFileSync(
+			llmSettingsPath(),
+			JSON.stringify({
+				ACTIVE_LLM_PROVIDER: "codex",
+				CODEX_ENABLED: true,
+				CODEX_MODEL: "gpt-5.4-mini",
+			}),
+		);
+		codexMock.setRunItems([
+			{
+				id: "command-1",
+				type: "command_execution",
+				command: "rg --files .",
+				aggregated_output: "",
+				exit_code: 0,
+				status: "completed",
+			},
+		]);
+		const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+
+		const result = await callStructuredLlmResult("system", "user", {
+			contract: createStructuredOutputContract({
+				name: "agentic_item_with_valid_response",
+				runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+			}),
+			taskId: "task-agentic-item",
+			role: "plan",
+			runtimeSessionStore: createFakeRuntimeSessionStore(),
+			emitEvent: async (event) => {
+				events.push(event);
+			},
+		});
+
+		expect(result).toMatchObject({ ok: true, value: { ok: true } });
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "model.provider_activity_detected",
+				data: expect.objectContaining({
+					activityType: "agentic_item",
+					toolName: "command_execution",
+				}),
+			}),
+		);
+		expect(
+			events.some((event) => event.type === "model.provider_activity_rejected"),
+		).toBe(false);
 	});
 });
 

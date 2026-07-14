@@ -404,6 +404,8 @@ describe("CodexAgentRuntime config and prompt", () => {
 		expect(prompt).not.toContain("nightworkers.run_verification");
 		expect(prompt).toContain("source=starter, stack=hono");
 		expect(prompt).toContain("既定 SQLite variant");
+		expect(prompt).toContain("source=starter, stack=rust");
+		expect(prompt).toContain("PostgreSQLはvariant=pgsql");
 		expect(prompt).toContain(
 			"targetPath 内の package.json や source files を shell/read tools で読まない",
 		);

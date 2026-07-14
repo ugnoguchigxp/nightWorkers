@@ -233,6 +233,8 @@ describe("Mission Pilot plan coordinator", () => {
 		expect(serialized).not.toContain('"default"');
 		expect(serialized).not.toContain('"oneOf"');
 		expect(serialized).toContain('"anyOf"');
+		expect(serialized).not.toContain('"reroute"');
+		expect(serialized).not.toContain("edit_plan_artifact_routing");
 		expectAllObjectPropertiesRequired(schema);
 	});
 

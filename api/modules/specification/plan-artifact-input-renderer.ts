@@ -1,4 +1,4 @@
-import { AppError } from "../../lib/errors";
+// import { AppError } from "../../lib/errors";
 import { estimateTokens } from "../../services/conversation-context/token-budget";
 import { resolveStructuredLlmModelCapability } from "../../services/structured-llm/model-capability";
 import type {
@@ -29,21 +29,22 @@ export function buildPlanArtifactPromptBudgetMetadata(input: {
 	});
 	const estimatedPromptTokensBefore =
 		estimateTokens(input.systemPrompt) + estimateTokens(input.userPrompt);
-	if (estimatedPromptTokensBefore > capability.safePromptBudgetTokens) {
-		throw new AppError(
-			422,
-			"PLAN_ARTIFACT_INPUT_BUDGET_EXCEEDED",
-			"Plan Artifact input exceeds the configured safe prompt budget.",
-			{
-				target: input.projection.target,
-				projectionVersion: input.projection.version,
-				projectionDigest: input.projection.diagnostics.projectionDigest,
-				estimatedPromptTokens: estimatedPromptTokensBefore,
-				safePromptBudgetTokens: capability.safePromptBudgetTokens,
-				sectionBytes: renderedSectionBytes,
-			},
-		);
-	}
+	// safe prompt budget は観測用のしきい値として扱い、超過だけでは生成を停止しない。
+	// if (estimatedPromptTokensBefore > capability.safePromptBudgetTokens) {
+	// 	throw new AppError(
+	// 		422,
+	// 		"PLAN_ARTIFACT_INPUT_BUDGET_EXCEEDED",
+	// 		"Plan Artifact input exceeds the configured safe prompt budget.",
+	// 		{
+	// 			target: input.projection.target,
+	// 			projectionVersion: input.projection.version,
+	// 			projectionDigest: input.projection.diagnostics.projectionDigest,
+	// 			estimatedPromptTokens: estimatedPromptTokensBefore,
+	// 			safePromptBudgetTokens: capability.safePromptBudgetTokens,
+	// 			sectionBytes: renderedSectionBytes,
+	// 		},
+	// 	);
+	// }
 	return {
 		modelContextWindowTokens: capability.contextWindowTokens,
 		safePromptBudgetTokens: capability.safePromptBudgetTokens,

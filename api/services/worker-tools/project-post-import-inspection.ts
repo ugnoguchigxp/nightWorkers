@@ -22,6 +22,12 @@ const VERIFICATION_SCRIPT_ORDER = [
 	"test",
 	"build",
 ] as const;
+const MAKE_VERIFICATION_TARGET_ORDER = [
+	"verify",
+	"lint",
+	"test",
+	"build",
+] as const;
 
 export async function inspectPackageManifest(
 	targetPath: string,
@@ -43,7 +49,9 @@ export async function inspectPackageManifest(
 	try {
 		rawContent = await fs.readFile(packageJsonPath, "utf8");
 	} catch (error) {
-		if (getDeepRecordString(error, "code") === "ENOENT") return missingBase;
+		if (getDeepRecordString(error, "code") === "ENOENT") {
+			return inspectMakefileManifest(targetPath, missingBase);
+		}
 		throw error;
 	}
 
@@ -91,6 +99,38 @@ export async function inspectPackageManifest(
 			}),
 		};
 	}
+}
+
+async function inspectMakefileManifest(
+	targetPath: string,
+	missingBase: ProjectManifestInspection,
+): Promise<ProjectManifestInspection> {
+	const makefilePath = path.join(targetPath, "Makefile");
+	let rawContent = "";
+	try {
+		rawContent = await fs.readFile(makefilePath, "utf8");
+	} catch (error) {
+		if (getDeepRecordString(error, "code") === "ENOENT") return missingBase;
+		throw error;
+	}
+	const targets = Array.from(
+		new Set(
+			rawContent
+				.split(/\r?\n/)
+				.map((line) => /^([A-Za-z0-9][A-Za-z0-9_.-]*):(?:\s|$)/.exec(line)?.[1])
+				.filter((target): target is string => Boolean(target)),
+		),
+	);
+	return {
+		...missingBase,
+		status: "found",
+		path: makefilePath,
+		rawContent,
+		makefile: { targets },
+		recommendedVerificationCommands: MAKE_VERIFICATION_TARGET_ORDER.filter(
+			(target) => targets.includes(target),
+		).map((target) => `make ${target}`),
+	};
 }
 
 export async function findLockfiles(targetPath: string) {

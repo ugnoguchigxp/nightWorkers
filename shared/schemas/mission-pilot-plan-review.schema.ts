@@ -1,7 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { planModeRegenerationTargetSchema } from "./plan-mode-artifact.schema";
 import { planModeArtifactCorrectionTargetSchema } from "./plan-mode-artifact-correction.schema";
-import { missionPilotPlanRoutingToolCallSchema } from "./plan-mode-routing.schema";
 
 export const MISSION_PILOT_IMPLEMENTATION_ARTIFACT_SCORE_THRESHOLD = 80;
 export const MISSION_PILOT_CONCEPT_ARTIFACT_SCORE_THRESHOLD = 70;
@@ -32,65 +31,31 @@ export const missionPilotPlanArtifactScoreSchema = z.object({
 	rationale: z.string().min(1),
 });
 
-export const missionPilotPlanReviewSchema = z
-	.object({
-		verdict: z.enum(["pass", "revise", "reroute", "reject"]),
-		summary: z.string().min(1),
-		coverage: z.object({
-			goal: z.enum(["pass", "fail"]),
-			scope: z.enum(["pass", "fail"]),
-			acceptanceCriteria: z.enum(["pass", "fail"]),
-			implementationSteps: z.enum(["pass", "fail"]),
-			verification: z.enum(["pass", "fail"]),
-			artifactConsistency: z.enum(["pass", "fail"]),
-			riskAndSafety: z.enum(["pass", "fail"]),
+export const missionPilotPlanReviewSchema = z.object({
+	verdict: z.enum(["pass", "revise", "reject"]),
+	summary: z.string().min(1),
+	coverage: z.object({
+		goal: z.enum(["pass", "fail"]),
+		scope: z.enum(["pass", "fail"]),
+		acceptanceCriteria: z.enum(["pass", "fail"]),
+		implementationSteps: z.enum(["pass", "fail"]),
+		verification: z.enum(["pass", "fail"]),
+		artifactConsistency: z.enum(["pass", "fail"]),
+		riskAndSafety: z.enum(["pass", "fail"]),
+	}),
+	artifactScores: z.array(missionPilotPlanArtifactScoreSchema),
+	findings: z.array(
+		z.object({
+			severity: z.enum(["blocking", "warning"]),
+			artifactKind: z.string().min(1),
+			sourceId: z.string().min(1),
+			issue: z.string().min(1),
+			recommendation: z.string().min(1),
 		}),
-		artifactScores: z.array(missionPilotPlanArtifactScoreSchema),
-		findings: z.array(
-			z.object({
-				severity: z.enum(["blocking", "warning"]),
-				artifactKind: z.string().min(1),
-				sourceId: z.string().min(1),
-				issue: z.string().min(1),
-				recommendation: z.string().min(1),
-			}),
-		),
-		revisionTargets: z.array(planModeArtifactCorrectionTargetSchema),
-		routingToolCall: missionPilotPlanRoutingToolCallSchema.nullable(),
-	})
-	.superRefine((review, context) => {
-		if (review.verdict === "reroute" && !review.routingToolCall) {
-			context.addIssue({
-				code: "custom",
-				path: ["routingToolCall"],
-				message: "reroute verdict requires edit_plan_artifact_routing",
-			});
-		}
-		if (review.verdict !== "reroute" && review.routingToolCall) {
-			context.addIssue({
-				code: "custom",
-				path: ["routingToolCall"],
-				message: "routing tool call requires reroute verdict",
-			});
-		}
-		if (review.verdict === "reroute") {
-			if (review.artifactScores.length > 0) {
-				context.addIssue({
-					code: "custom",
-					path: ["artifactScores"],
-					message: "reroute verdict must not score stale routing artifacts",
-				});
-			}
-			if (review.revisionTargets.length > 0) {
-				context.addIssue({
-					code: "custom",
-					path: ["revisionTargets"],
-					message: "reroute verdict must not mix artifact revisions",
-				});
-			}
-			return;
-		}
-	});
+	),
+	revisionTargets: z.array(planModeArtifactCorrectionTargetSchema),
+	routingToolCall: z.null(),
+});
 
 export type MissionPilotPlanReview = z.infer<
 	typeof missionPilotPlanReviewSchema
@@ -135,40 +100,38 @@ export function validateMissionPilotPlanReviewFacts(
 		byKind.set(artifact.artifactKind, ids);
 	}
 
-	if (review.verdict !== "reroute") {
-		const scored = new Set<string>();
-		for (const [index, score] of review.artifactScores.entries()) {
-			const key = `${score.artifactKind}:${score.sourceMessageId}`;
-			if (!expected.has(key)) {
-				issues.push(
-					factIssue(
-						["artifactScores", index, "sourceMessageId"],
-						"unknown_artifact_reference",
-						`現在のArtifactを参照していません: ${key}`,
-					),
-				);
-			}
-			if (scored.has(key)) {
-				issues.push(
-					factIssue(
-						["artifactScores", index],
-						"duplicate_artifact_score",
-						`同じArtifactが重複しています: ${key}`,
-					),
-				);
-			}
-			scored.add(key);
+	const scored = new Set<string>();
+	for (const [index, score] of review.artifactScores.entries()) {
+		const key = `${score.artifactKind}:${score.sourceMessageId}`;
+		if (!expected.has(key)) {
+			issues.push(
+				factIssue(
+					["artifactScores", index, "sourceMessageId"],
+					"unknown_artifact_reference",
+					`現在のArtifactを参照していません: ${key}`,
+				),
+			);
 		}
-		for (const key of expected) {
-			if (!scored.has(key)) {
-				issues.push(
-					factIssue(
-						["artifactScores"],
-						"missing_artifact_score",
-						`現在のArtifactの採点がありません: ${key}`,
-					),
-				);
-			}
+		if (scored.has(key)) {
+			issues.push(
+				factIssue(
+					["artifactScores", index],
+					"duplicate_artifact_score",
+					`同じArtifactが重複しています: ${key}`,
+				),
+			);
+		}
+		scored.add(key);
+	}
+	for (const key of expected) {
+		if (!scored.has(key)) {
+			issues.push(
+				factIssue(
+					["artifactScores"],
+					"missing_artifact_score",
+					`現在のArtifactの採点がありません: ${key}`,
+				),
+			);
 		}
 	}
 
@@ -206,38 +169,6 @@ export function validateMissionPilotPlanReviewFacts(
 			);
 		}
 		revisionTargetKeys.add(key);
-	}
-
-	const routingCall = review.routingToolCall;
-	if (routingCall && input.currentRouting) {
-		if (routingCall.expectedRevision !== input.currentRouting.revision) {
-			issues.push(
-				factIssue(
-					["routingToolCall", "expectedRevision"],
-					"stale_routing_revision",
-					`現在のrouting revisionは${input.currentRouting.revision}です。`,
-				),
-			);
-		}
-		const entries = new Map(
-			input.currentRouting.entries.map((entry) => [entry.view, entry]),
-		);
-		for (const [index, change] of routingCall.changes.entries()) {
-			const current = entries.get(change.view);
-			if (
-				!current ||
-				current.decision !== "omit" ||
-				!current.capabilityEnabled
-			) {
-				issues.push(
-					factIssue(
-						["routingToolCall", "changes", index, "view"],
-						"routing_change_not_applicable",
-						`現在追加可能なArtifactではありません: ${change.view}`,
-					),
-				);
-			}
-		}
 	}
 
 	return issues;

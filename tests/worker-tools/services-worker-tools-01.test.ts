@@ -442,6 +442,93 @@ describe("Worker Tools Unit Tests", () => {
 		}
 	}, 15_000);
 
+	it("imports and bootstraps a Rust starter from a tagged variant", async () => {
+		const templateRepo = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-rust-template-repo-"),
+		);
+		const targetDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-rust-template-target-"),
+		);
+		try {
+			await fs.writeFile(
+				path.join(templateRepo, "Cargo.toml"),
+				'[workspace]\nmembers = []\nresolver = "2"\n',
+			);
+			await fs.writeFile(
+				path.join(templateRepo, "Makefile"),
+				[
+					".PHONY: bootstrap verify",
+					"bootstrap:",
+					'\tprintf "ok\\n" > bootstrap.txt',
+					"verify:",
+					'\tprintf "verified\\n"',
+					"",
+				].join("\n"),
+			);
+			await execFileAsync("git", ["init", "-b", "main"], {
+				cwd: templateRepo,
+			});
+			await execFileAsync("git", ["add", "."], { cwd: templateRepo });
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"user.name=Test User",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"-m",
+					"rust template",
+				],
+				{ cwd: templateRepo },
+			);
+			await execFileAsync("git", ["tag", "variant/sqlite"], {
+				cwd: templateRepo,
+			});
+
+			const result = await importProjectTool({
+				source: "starter",
+				stack: "rust",
+				variant: "sqlite",
+				repoRoot: targetDir,
+				registry: {
+					"rust-template": {
+						id: "rust-template",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "variant/sqlite",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+				},
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload?.postImport?.manifest).toMatchObject({
+				status: "found",
+				path: path.join(targetDir, "Makefile"),
+				makefile: { targets: ["bootstrap", "verify"] },
+				recommendedVerificationCommands: ["make verify"],
+			});
+			expect(result.payload?.postImport?.initialization).toMatchObject({
+				status: "passed",
+				command: ["make", "bootstrap"],
+				exitCode: 0,
+			});
+			await expect(
+				fs.readFile(path.join(targetDir, "bootstrap.txt"), "utf-8"),
+			).resolves.toBe("ok\n");
+		} finally {
+			await fs.rm(templateRepo, { recursive: true, force: true });
+			await fs.rm(targetDir, { recursive: true, force: true });
+		}
+	}, 15_000);
+
 	it("requires bootstrap for registered starter template initialization", async () => {
 		const templateRepo = await fs.mkdtemp(
 			path.join(os.tmpdir(), "nightworkers-template-repo-"),
@@ -512,7 +599,7 @@ describe("Worker Tools Unit Tests", () => {
 			expect(result.payload?.postImport?.initialization).toMatchObject({
 				status: "failed",
 				command: null,
-				errorMessage: "Template package.json must define scripts.bootstrap.",
+				errorMessage: "Template manifest must define a bootstrap command.",
 			});
 		} finally {
 			await fs.rm(templateRepo, { recursive: true, force: true });
@@ -1080,7 +1167,7 @@ describe("Worker Tools Unit Tests", () => {
 			expect(result.ok).toBe(true);
 			expect(result.payload?.commit).toBeTruthy();
 			expect(result.payload?.gitOperations[0]).toMatchObject({
-				command: expect.stringContaining("git ls-remote --heads"),
+				command: expect.stringContaining("git ls-remote --heads --tags"),
 				exitCode: 0,
 			});
 			expect(result.payload?.gitOperations[1]).toMatchObject({
@@ -1092,6 +1179,76 @@ describe("Worker Tools Unit Tests", () => {
 			await expect(
 				fs.readFile(path.join(targetDir, "version.txt"), "utf-8"),
 			).resolves.toBe("latest\n");
+		} finally {
+			await fs.rm(templateRepo, { recursive: true, force: true });
+			await fs.rm(targetDir, { recursive: true, force: true });
+		}
+	});
+
+	it("materializes a selected starter variant tag", async () => {
+		const templateRepo = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-tagged-template-repo-"),
+		);
+		const targetDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-tagged-template-target-"),
+		);
+		try {
+			await fs.writeFile(
+				path.join(templateRepo, "variant.txt"),
+				"rust-sqlite\n",
+				"utf-8",
+			);
+			await execFileAsync("git", ["init", "-b", "main"], {
+				cwd: templateRepo,
+			});
+			await execFileAsync("git", ["add", "."], { cwd: templateRepo });
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"user.name=Test User",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"-m",
+					"rust sqlite",
+				],
+				{ cwd: templateRepo },
+			);
+			await execFileAsync("git", ["tag", "variant/sqlite"], {
+				cwd: templateRepo,
+			});
+
+			const result = await materializeTemplateTool({
+				templateId: "rust-template",
+				variant: "sqlite",
+				repoRoot: targetDir,
+				registry: {
+					"rust-template": {
+						id: "rust-template",
+						repoUrl: templateRepo,
+						defaultVariant: "sqlite",
+						variants: {
+							sqlite: {
+								name: "sqlite",
+								ref: "variant/sqlite",
+								description: "test",
+							},
+						},
+						overlays: {},
+					},
+				},
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload?.templateId).toBe("rust-template");
+			expect(result.payload?.ref).toBe("variant/sqlite");
+			expect(result.payload?.gitOperations[0]?.command).toContain(
+				"git ls-remote --heads --tags",
+			);
+			await expect(
+				fs.readFile(path.join(targetDir, "variant.txt"), "utf-8"),
+			).resolves.toBe("rust-sqlite\n");
 		} finally {
 			await fs.rm(templateRepo, { recursive: true, force: true });
 			await fs.rm(targetDir, { recursive: true, force: true });
@@ -1140,17 +1297,19 @@ describe("Worker Tools Unit Tests", () => {
 		);
 	});
 
-	it("resolves a starter stack and variant into the internal template registry", () => {
-		const resolved = resolveStarterTemplate({
-			stack: "python",
-			variant: "auth",
-		});
+	it("resolves current rust-template starter snapshot refs", () => {
+		const expectedRefs = {
+			sqlite: "variant/sqlite",
+			pgsql: "variant/postgresql",
+		};
 
-		expect(resolved.ok).toBe(true);
-		if (!resolved.ok)
-			throw new Error("expected auth starter variant to resolve");
-		expect(resolved.template.id).toBe("python-standard");
-		expect(resolved.variant.ref).toBe("auth-v1.0.0");
+		for (const [variant, expectedRef] of Object.entries(expectedRefs)) {
+			const resolved = resolveStarterTemplate({ stack: "rust", variant });
+			expect(resolved.ok && resolved.template.id).toBe("rust-template");
+			expect(resolved.ok && resolved.variant.ref).toBe(expectedRef);
+		}
+		const defaultResolved = resolveStarterTemplate({ stack: "rust" });
+		expect(defaultResolved.ok && defaultResolved.variant.name).toBe("sqlite");
 	});
 
 	it("materializes a single registered overlay ref", async () => {

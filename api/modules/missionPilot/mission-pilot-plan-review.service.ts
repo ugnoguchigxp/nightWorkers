@@ -145,7 +145,7 @@ export async function reviewCurrentPlan(
 		"## Review Artifact References",
 		JSON.stringify(reviewArtifactPayloads, null, 2),
 		"sourceMessageId / sourceId には上記の referenceId を使用してください。実際のmessage IDは表示していません。",
-		"routingToolCall.expectedRevision は 0 を返してください。サーバーが現在のrevisionを設定します。",
+		"この一覧にないArtifactを要求せず、routingToolCallはnullを返してください。",
 	].join("\n");
 	const llmOptions = {
 		taskId,
@@ -166,11 +166,7 @@ export async function reviewCurrentPlan(
 		llmOptions,
 	);
 	const normalizeReview = (review: MissionPilotPlanReview) =>
-		normalizeReviewReferences(
-			review,
-			referenceAliases,
-			currentRouting.revision,
-		);
+		normalizeReviewReferences(review, referenceAliases);
 	const validateFacts = (review: MissionPilotPlanReview) =>
 		validateMissionPilotPlanReviewFacts(review, {
 			reviewedArtifacts: reviewArtifacts,
@@ -309,7 +305,6 @@ function buildReviewReferenceAliases(
 function normalizeReviewReferences(
 	review: MissionPilotPlanReview,
 	references: ReturnType<typeof buildReviewReferenceAliases>,
-	routingRevision: number,
 ): MissionPilotPlanReview {
 	const resolve = (value: string) => references.byReference.get(value) ?? value;
 	return {
@@ -326,9 +321,7 @@ function normalizeReviewReferences(
 			...target,
 			sourceMessageId: resolve(target.sourceMessageId),
 		})),
-		routingToolCall: review.routingToolCall
-			? { ...review.routingToolCall, expectedRevision: routingRevision }
-			: null,
+		routingToolCall: null,
 	};
 }
 

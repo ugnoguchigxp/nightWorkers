@@ -86,7 +86,7 @@ describe("plan artifact input projection", () => {
 		expect(projection.projectContext.detectedStack).toBeNull();
 	});
 
-	it("records projection diagnostics and rejects an over-budget prompt", () => {
+	it("records projection diagnostics without rejecting an over-budget prompt", () => {
 		const projection = projectPlanArtifactInput(
 			createTodoListPlanArtifactCanonicalInput({
 				sources: [
@@ -115,14 +115,15 @@ describe("plan artifact input projection", () => {
 			initialPromptOccurrences: 0,
 			staleSourceRejectedCount: 0,
 		});
-		expect(() =>
-			buildPlanArtifactPromptBudgetMetadata({
-				projection,
-				systemPrompt: "system",
-				userPrompt: "x".repeat(40_000),
-			}),
-		).toThrowError(
-			"Plan Artifact input exceeds the configured safe prompt budget.",
+		const overBudgetMetadata = buildPlanArtifactPromptBudgetMetadata({
+			projection,
+			systemPrompt: "system",
+			userPrompt: "x".repeat(40_000),
+		});
+
+		expect(overBudgetMetadata.budgetExceeded).toBe(true);
+		expect(overBudgetMetadata.estimatedPromptTokensBefore).toBeGreaterThan(
+			overBudgetMetadata.safePromptBudgetTokens,
 		);
 	});
 
@@ -144,15 +145,14 @@ describe("plan artifact input projection", () => {
 
 		expect(rendered.prompt).toContain("detail\ndetail\ndetail");
 		expect(rendered.prompt).not.toContain("Artifact summary omitted bytes");
-		expect(() =>
-			buildPlanArtifactPromptBudgetMetadata({
-				projection,
-				systemPrompt: "system",
-				userPrompt: rendered.prompt,
-			}),
-		).toThrowError(
-			"Plan Artifact input exceeds the configured safe prompt budget.",
-		);
+		const metadata = buildPlanArtifactPromptBudgetMetadata({
+			projection,
+			systemPrompt: "system",
+			userPrompt: rendered.prompt,
+		});
+
+		expect(metadata.budgetExceeded).toBe(true);
+		expect(metadata.criticalEvidenceDropped).toBe(0);
 	});
 
 	it("uses a type-aware canonical summary for oversized structured sources", () => {

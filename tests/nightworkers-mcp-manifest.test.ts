@@ -205,6 +205,34 @@ describe("nightworkers MCP manifest", () => {
 				variant: "java8-sqlite",
 			}).success,
 		).toBe(true);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "rust",
+				variant: "pgsql",
+			}).success,
+		).toBe(true);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "hono",
+				variant: "java8-sqlite",
+			}).success,
+		).toBe(false);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "rust",
+				variant: "postgres",
+			}).success,
+		).toBe(false);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "python",
+				variant: "auth",
+			}).success,
+		).toBe(false);
 	});
 
 	it("accepts SystemContext-echoed managed Todo taskTypes in replace input", () => {

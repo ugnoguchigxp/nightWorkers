@@ -4,7 +4,7 @@ import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { normalizeProviderUsage } from "../llm-usage";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
-import { rejectProviderActivity } from "./events";
+import { traceProviderActivity } from "./events";
 import type { RawLlmCallOptions } from "./providers";
 import {
 	getResolvedProviderEndpoint,
@@ -19,6 +19,13 @@ import type { ProviderCallResult } from "./types";
 
 const CODEX_STRUCTURED_RUNTIME_LANE = "structured-llm";
 const CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS = 2_000;
+const MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS = [
+	"Mission Pilot の構造化 Artifact 生成専用レーンです。",
+	"渡された SystemContext、User Prompt、JSON schema を根拠に、要求された構造化応答だけを返してください。",
+	"Memory、AGENTS.md、ファイル、ツール一覧を探索しないでください。",
+	"initial_instructions と context_compile はこのレーンでは実行しません。",
+	"MCP は Plan Mode の明示的な操作に必要な場合だけ使い、存在確認のために列挙しないでください。",
+].join("\n");
 const defaultCodexStructuredSessionStore = new RuntimeSessionStateStore();
 export type CodexProviderInput = {
 	provider: string;
@@ -97,6 +104,8 @@ export async function callCodexProvider(
 	);
 	const structuredArtifact =
 		input.options.normalizedRequest?.callKind === "structured_artifact";
+	const missionPilotStructuredArtifact =
+		structuredArtifact && input.options.role === "mission_pilot";
 	const isolatedWorkingDirectory = structuredArtifact
 		? fs.mkdtempSync(`${os.tmpdir()}/nightworkers-structured-artifact-`)
 		: null;
@@ -107,9 +116,23 @@ export async function callCodexProvider(
 				...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
 			},
 			config: {
-				features: { mcp: false },
-				mcp_servers: {},
+				mcp_servers: {
+					"context-still": {
+						disabled_tools: ["initial_instructions", "context_compile"],
+					},
+				},
 				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
+				...(missionPilotStructuredArtifact
+					? {
+							developer_instructions:
+								MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS,
+							features: { memories: false },
+							memories: {
+								generate_memories: false,
+								use_memories: false,
+							},
+						}
+					: {}),
 			} as never,
 		});
 		const threadOptions = {
@@ -245,19 +268,15 @@ export async function callCodexProvider(
 		);
 		if (agenticItems.length > 0) {
 			if (input.options.normalizedRequest) {
-				await rejectProviderActivity({
+				const activity = describeCodexAgenticItem(agenticItems[0]);
+				await traceProviderActivity({
 					options: input.options,
 					request: input.options.normalizedRequest,
 					activityType: "agentic_item",
-					toolName: String(
-						(agenticItems[0] as { type?: unknown }).type || "agentic_item",
-					),
-					preview: JSON.stringify(
-						(agenticItems[0] as { type?: unknown }).type || "agentic_item",
-					),
+					toolName: activity.toolName,
+					preview: activity.preview,
 				});
 			}
-			throw new Error("Structured Codex generation returned agentic activity.");
 		}
 		if (sessionLookup && thread.id) {
 			await sessionStore.upsertRuntimeSessionState({
@@ -291,6 +310,9 @@ export async function callCodexProvider(
 			agenticItemCount: agenticItems.length,
 			freshThread: structuredArtifact,
 			isolatedWorkingDirectory: Boolean(isolatedWorkingDirectory),
+			missionPilotMemorySuppressed: missionPilotStructuredArtifact,
+			memoryInjectionEnabled: !missionPilotStructuredArtifact,
+			mcpEnabled: true,
 			providerTurnCount: 1,
 		};
 		input.setProviderDebug(providerDebug);
@@ -313,6 +335,31 @@ export async function callCodexProvider(
 			fs.rmSync(isolatedWorkingDirectory, { recursive: true, force: true });
 		}
 	}
+}
+
+function describeCodexAgenticItem(item: unknown) {
+	const activity = item as {
+		type?: unknown;
+		command?: unknown;
+		server?: unknown;
+		tool?: unknown;
+	};
+	const type = String(activity.type || "agentic_item");
+	if (type === "mcp_tool_call") {
+		const server = String(activity.server || "unknown-server");
+		const tool = String(activity.tool || "unknown-tool");
+		return {
+			toolName: `${server}.${tool}`,
+			preview: `${server}.${tool}`,
+		};
+	}
+	if (type === "command_execution") {
+		return {
+			toolName: type,
+			preview: String(activity.command || type),
+		};
+	}
+	return { toolName: type, preview: type };
 }
 
 export function sanitizeCodexProviderEnv(

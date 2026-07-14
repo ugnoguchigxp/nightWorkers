@@ -18,6 +18,7 @@
 - DB 指定がある場合は postgres / pgvector / turso / cloudflare など該当 variant を選ぶ。RAG、ナレッジベース検索、embedding を使う文書検索、agentic search が主要要件なら hono stack で variant=rag を選ぶ。SSR / SSG 指定があり DB/RAG variant がない場合は該当 overlay を指定する。DB/RAG variant と overlay を1回の import_project で合成しない。
 - stack=python は、ユーザーが Python / FastAPI を明示した場合、または ML 活用や大きな数学的・科学技術計算が主要要件に含まれる場合に使う。
 - stack=java は、ユーザーまたは確定済み Questionnaire / Feature Plan が Java / Spring Boot を選択した場合に使う。Java 8 + SQLite は variant=java8-sqlite、Java 8 + PostgreSQL は variant=java8-postgres、Java 25 + SQLite は variant=java25-sqlite、Java 25 + PostgreSQL は variant=java25-postgres を指定する。java-template には hono-standard 由来の frontend / Design System が同梱されているため、取り込み後に別途コピーし直さない。
+- stack=rust は、ユーザーまたは確定済み Questionnaire / Feature Plan が Rust / Axum を選択した場合に使う。SQLite は variant=sqlite、PostgreSQL は variant=pgsql を指定する。
 - 外部ディレクトリテンプレートのコピー、外部リポジトリーの clone や fork、または複数ステップの検証を伴う作業は major_code_edit に切り替える。
 - Project root 外のコピー元は、ユーザー許可により safetyPolicy.externalAllowedPaths に含まれている場合だけ読む。未許可なら完了扱いにせず許可を求める。
 - import_project を Project import の単一入口として使う。新規雛形は source=starter と stack/variant、任意の外部 Git repository は source=git と repoUrl を渡す。

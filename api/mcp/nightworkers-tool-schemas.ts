@@ -4,6 +4,11 @@ import {
 	NIGHTWORKERS_MANAGED_TODO_TASK_TYPES,
 	TODO_TASK_TYPE_ALIASES,
 } from "../services/todo-runtime";
+import {
+	isStarterVariantForStack,
+	STARTER_STACKS,
+	STARTER_VARIANTS,
+} from "../services/worker-tools/template-registry";
 
 export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
 	taskId: z
@@ -205,103 +210,100 @@ export const nightWorkersTodoListInputSchema = z.object({
 		),
 });
 
-export const nightWorkersImportProjectInputSchema = z.object({
-	taskId: z
-		.string()
-		.trim()
-		.optional()
-		.describe(
-			"NightWorkers task id. Defaults to request-scoped task context when available.",
-		),
-	runId: z
-		.string()
-		.trim()
-		.optional()
-		.describe(
-			"NightWorkers run id. Used to resolve the task repository when taskId is not available.",
-		),
-	source: z
-		.enum(["starter", "git"])
-		.optional()
-		.describe(
-			"Choose starter for a registered scaffold or git for an arbitrary repository import.",
-		),
-	stack: z
-		.enum(["hono", "python", "java"])
-		.optional()
-		.describe(
-			"Starter stack: Hono, Python/FastAPI, or Java/Spring Boot. Optional when the default Hono stack is acceptable.",
-		),
-	repoUrl: z
-		.string()
-		.trim()
-		.optional()
-		.describe("Git repository URL or local git path."),
-	variant: z
-		.enum([
-			"sqlite",
-			"baseline",
-			"postgres",
-			"pgvector",
-			"rag",
-			"turso",
-			"cloudflare",
-			"api-only",
-			"auth",
-			"java8-sqlite",
-			"java8-postgres",
-			"java25-sqlite",
-			"java25-postgres",
-		])
-		.optional()
-		.describe(
-			"Starter variant, e.g. sqlite, postgres, rag, auth, java8-sqlite, or java25-postgres.",
-		),
-	overlays: z
-		.array(z.string().trim().min(1))
-		.optional()
-		.describe("Optional overlay refs such as ssr or ssg."),
-	targetPath: z
-		.string()
-		.trim()
-		.optional()
-		.describe(
-			"Project-root-relative target path. Defaults to the Project root.",
-		),
-	overwrite: z
-		.boolean()
-		.optional()
-		.describe(
-			"Allow writing into a non-empty target only when replacement is intended.",
-		),
-	exclude: z
-		.array(z.string().trim().min(1))
-		.optional()
-		.describe("Extra paths to exclude."),
-	ref: z
-		.string()
-		.trim()
-		.optional()
-		.describe("Optional Git branch, tag, or commit when repoUrl is used."),
-	depth: z
-		.number()
-		.int()
-		.positive()
-		.optional()
-		.describe("Shallow clone depth when repoUrl is used and ref is omitted."),
-	stripGitDir: z
-		.boolean()
-		.optional()
-		.describe(
-			"Remove nested .git metadata when repoUrl is used. Default: true.",
-		),
-	initialize: z
-		.boolean()
-		.optional()
-		.describe(
-			"Run package bootstrap after git init for starter templates. Arbitrary Git imports fall back to dependency initialization when bootstrap is absent. Default: true.",
-		),
-});
+export const nightWorkersImportProjectInputSchema = z
+	.object({
+		taskId: z
+			.string()
+			.trim()
+			.optional()
+			.describe(
+				"NightWorkers task id. Defaults to request-scoped task context when available.",
+			),
+		runId: z
+			.string()
+			.trim()
+			.optional()
+			.describe(
+				"NightWorkers run id. Used to resolve the task repository when taskId is not available.",
+			),
+		source: z
+			.enum(["starter", "git"])
+			.optional()
+			.describe(
+				"Choose starter for a registered scaffold or git for an arbitrary repository import.",
+			),
+		stack: z
+			.enum(STARTER_STACKS)
+			.optional()
+			.describe(
+				"Starter stack: Hono, Python/FastAPI, Java/Spring Boot, or Rust/Axum. Optional when the default Hono stack is acceptable.",
+			),
+		repoUrl: z
+			.string()
+			.trim()
+			.optional()
+			.describe("Git repository URL or local git path."),
+		variant: z
+			.enum(STARTER_VARIANTS)
+			.optional()
+			.describe(
+				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql.",
+			),
+		overlays: z
+			.array(z.string().trim().min(1))
+			.optional()
+			.describe("Optional overlay refs such as ssr or ssg."),
+		targetPath: z
+			.string()
+			.trim()
+			.optional()
+			.describe(
+				"Project-root-relative target path. Defaults to the Project root.",
+			),
+		overwrite: z
+			.boolean()
+			.optional()
+			.describe(
+				"Allow writing into a non-empty target only when replacement is intended.",
+			),
+		exclude: z
+			.array(z.string().trim().min(1))
+			.optional()
+			.describe("Extra paths to exclude."),
+		ref: z
+			.string()
+			.trim()
+			.optional()
+			.describe("Optional Git branch, tag, or commit when repoUrl is used."),
+		depth: z
+			.number()
+			.int()
+			.positive()
+			.optional()
+			.describe("Shallow clone depth when repoUrl is used and ref is omitted."),
+		stripGitDir: z
+			.boolean()
+			.optional()
+			.describe(
+				"Remove nested .git metadata when repoUrl is used. Default: true.",
+			),
+		initialize: z
+			.boolean()
+			.optional()
+			.describe(
+				"Run package bootstrap after git init for starter templates. Arbitrary Git imports fall back to dependency initialization when bootstrap is absent. Default: true.",
+			),
+	})
+	.superRefine((input, context) => {
+		if (input.source === "git" || !input.variant) return;
+		const stack = input.stack || "hono";
+		if (isStarterVariantForStack(stack, input.variant)) return;
+		context.addIssue({
+			code: "custom",
+			path: ["variant"],
+			message: `Unknown ${stack} starter variant: ${input.variant}`,
+		});
+	});
 
 export const nightWorkersListOntologyModulesInputSchema = z.object({
 	repoPath: z

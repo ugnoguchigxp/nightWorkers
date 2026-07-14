@@ -299,14 +299,15 @@ export async function materializeTemplateTool(
 				[
 					"ls-remote",
 					"--heads",
+					"--tags",
 					resolved.template.repoUrl,
-					`refs/heads/${selectedRef}`,
+					selectedRef,
 				],
 				tempDir,
 			);
 			if (!latestCheck.stdout) {
 				throw new Error(
-					`Selected template variant branch was not found: ${selectedRef}`,
+					`Selected template variant branch or tag was not found: ${selectedRef}`,
 				);
 			}
 			gitOperations.push(latestCheck);

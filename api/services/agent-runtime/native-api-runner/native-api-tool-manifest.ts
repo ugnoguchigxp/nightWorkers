@@ -166,7 +166,10 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 				"Import a starter scaffold or Git repository into the project. Use this as the only project import entrypoint.",
 			inputSchema: objectSchema({
 				source: { type: "string", enum: ["starter", "git"] },
-				stack: { type: "string", enum: ["hono", "python"] },
+				stack: {
+					type: "string",
+					enum: ["hono", "python", "java", "rust"],
+				},
 				variant: {
 					type: "string",
 					enum: [
@@ -178,7 +181,11 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 						"turso",
 						"cloudflare",
 						"api-only",
-						"auth",
+						"java8-sqlite",
+						"java8-postgres",
+						"java25-sqlite",
+						"java25-postgres",
+						"pgsql",
 					],
 				},
 				overlays: { type: "array", items: { type: "string" } },
