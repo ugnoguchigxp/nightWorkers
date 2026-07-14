@@ -1,5 +1,6 @@
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import * as service from "./blueprint.service";
 import {
 	generatePlanModeBlueprintRoute,
@@ -78,9 +79,17 @@ export const blueprintRouter = createOpenApiRouter()
 	.openapi(
 		generatePlanModeBlueprintRoute,
 		withOpenApiRouteError(generatePlanModeBlueprintRoute, async (c) => {
+			const body = c.req.valid("json");
+			const { sourceBlueprintMessageId, ...generationInput } = body;
 			const result = await service.generateBlueprintArtifact(
 				c.req.param("id"),
-				c.req.valid("json"),
+				{
+					...generationInput,
+					sourceSelection: createPlanArtifactSourceSelection({
+						policy: "explicit_request",
+						previousTargetMessageId: sourceBlueprintMessageId,
+					}),
+				},
 			);
 			return c.json(result, 200);
 		}),

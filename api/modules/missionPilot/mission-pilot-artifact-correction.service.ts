@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
-import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
+import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import {
 	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 } from "../nightworkers/nightworkers.trace-provenance";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
-import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 
@@ -120,16 +120,25 @@ export async function executeMissionPilotArtifactCorrection(input: {
 	const claimed = await planRepo.claimArtifactCorrectionRun(input.run.id);
 	if (!claimed) return input.run;
 	try {
-		const [session, messages, workspace] = await Promise.all([
+		const [session, messages] = await Promise.all([
 			missionPilotRepo.getSessionByTaskId(input.taskId),
 			nightworkersRepo.listTaskMessages(input.taskId),
-			getPlanModeWorkspace(input.taskId),
 		]);
 		if (!session || session.id !== input.sessionId) {
 			throw new Error("Mission Pilot correction Session is missing");
 		}
 		if (session.desiredState !== "playing") {
 			throw new Error("Mission Pilot stopped during Artifact correction");
+		}
+		const sourceContext = await planRepo.getPlanContextSnapshot(
+			input.sessionId,
+			claimed.sourceContextRevision,
+		);
+		if (
+			!sourceContext ||
+			sourceContext.digest !== claimed.sourceContextDigest
+		) {
+			throw new Error("PLAN_ARTIFACT_CONTEXT_STALE");
 		}
 		const source = messages.find(
 			(message) => message.id === claimed.sourceMessageId,
@@ -144,13 +153,40 @@ export async function executeMissionPilotArtifactCorrection(input: {
 			preserveUnfocusedContent: claimed.preserveUnfocusedContent,
 		};
 		validateFocus(target, sourceMetadata);
+		const sourceEntries = contextArtifactEntries(sourceContext.contextJson);
+		const explicitSourceIds = {
+			featurePlanMessageId: findContextArtifactMessageId(
+				sourceEntries,
+				"feature_plan",
+			),
+			sourceBlueprintMessageId: findContextArtifactMessageId(
+				sourceEntries,
+				"blueprint",
+			),
+			sourceDataModelMessageId: findContextArtifactMessageId(
+				sourceEntries,
+				"data_model",
+			),
+		};
+		const dedicatedViewMessageIds = sourceEntries
+			.filter((entry) => String(entry.stepKey || "").startsWith("view:"))
+			.map((entry) => entry.sourceMessageId)
+			.filter((id): id is string => typeof id === "string" && id.length > 0);
+		const sourceSelection = createPlanArtifactSourceSelection({
+			policy: "explicit_request",
+			featurePlanMessageId: explicitSourceIds.featurePlanMessageId,
+			blueprintMessageId: explicitSourceIds.sourceBlueprintMessageId,
+			dataModelMessageId: explicitSourceIds.sourceDataModelMessageId,
+			dedicatedViewMessageIds,
+			previousTargetMessageId: claimed.sourceMessageId,
+		});
 		const thoughtTrace = missionPilotThoughtTrace({
 			sessionId: input.sessionId,
 		});
 		const artifactTrace = missionPilotPlanOutputTrace({
 			sessionId: input.sessionId,
 		});
-		void appendActivityEvent({
+		enqueueActivityEvent({
 			taskId: input.taskId,
 			kind: "runtime.state",
 			source: "mission_pilot",
@@ -170,23 +206,21 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				},
 			},
 			trace: thoughtTrace,
-		}).catch(() => undefined);
+		});
 		const result = await executePlanModeArtifactCorrection({
 			taskId: input.taskId,
 			target: claimed.target,
 			prompt: claimed.instruction,
-			sourceArtifactContent: source.content,
 			focus: claimed.focusJson,
 			correlationId: claimed.id,
 			questionnaireSessionId: input.questionnaireSessionId,
-			featurePlanMessageId:
-				workspace.featurePlanArtifacts.at(-1)?.sourceMessageId ?? null,
-			sourceBlueprintMessageId:
-				claimed.target === "blueprint"
-					? claimed.sourceMessageId
-					: (workspace.blueprintArtifacts.at(-1)?.sourceMessageId ?? null),
-			sourceDataModelMessageId:
-				workspace.dataModelArtifacts.at(-1)?.sourceMessageId ?? null,
+			sourceSelection,
+			expectedState: {
+				missionPilotSessionId: session.id,
+				contextRevision: claimed.sourceContextRevision,
+				contextDigest: claimed.sourceContextDigest,
+				routingRevision: session.planRoutingRevision,
+			},
 			role: "mission_pilot",
 			trace: artifactTrace,
 			llmUsageTrace: artifactTrace,
@@ -227,7 +261,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 		if (!updated) throw new Error("Correction Context adoption failed");
 		const applied = await planRepo.getArtifactCorrectionRun(claimed.id);
 		if (!applied) throw new Error("Correction run adoption conflicted");
-		void appendActivityEvent({
+		enqueueActivityEvent({
 			taskId: input.taskId,
 			kind: "runtime.state",
 			source: "mission_pilot",
@@ -240,10 +274,41 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				contextRevision: updated.contextRevision,
 			},
 			trace: thoughtTrace,
-		}).catch(() => undefined);
+		});
 		return applied;
 	} catch (error) {
 		await planRepo.failArtifactCorrectionRun(claimed.id, errorMessage(error));
 		throw error;
 	}
+}
+
+function contextArtifactEntries(contextJson: Record<string, unknown>) {
+	const plan = toRecord(contextJson.plan);
+	return Array.isArray(plan.artifacts)
+		? plan.artifacts.filter((entry): entry is Record<string, unknown> =>
+				Boolean(entry && typeof entry === "object" && !Array.isArray(entry)),
+			)
+		: [];
+}
+
+function findContextArtifactMessageId(
+	entries: Record<string, unknown>[],
+	kind: string,
+) {
+	for (const entry of [...entries].reverse()) {
+		const stepKey = String(entry.stepKey || "");
+		const metadata = toRecord(entry.metadata);
+		const entryKind = String(
+			metadata.view || metadata.artifactType || entry.kind || "",
+		);
+		if (
+			stepKey === kind ||
+			entryKind === kind ||
+			(kind === "feature_plan" && metadata.intent === "feature_plan")
+		) {
+			const id = entry.sourceMessageId;
+			if (typeof id === "string" && id) return id;
+		}
+	}
+	return null;
 }

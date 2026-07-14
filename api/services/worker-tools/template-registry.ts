@@ -1,5 +1,8 @@
-export type StandardTemplateId = "hono-standard" | "python-standard";
-export type StarterStack = "hono" | "python";
+export type StandardTemplateId =
+	| "hono-standard"
+	| "python-standard"
+	| "java-template";
+export type StarterStack = "hono" | "python" | "java";
 
 export type TemplateRef = {
 	name: string;
@@ -15,9 +18,14 @@ export type TemplateDefinition = {
 	overlays: Record<string, TemplateRef>;
 };
 
-export type TemplateRegistry = Record<StandardTemplateId, TemplateDefinition>;
+export type TemplateRegistry = Partial<
+	Record<StandardTemplateId, TemplateDefinition>
+>;
 
-export const standardTemplateRegistry: TemplateRegistry = {
+export const standardTemplateRegistry: Record<
+	StandardTemplateId,
+	TemplateDefinition
+> = {
 	"hono-standard": {
 		id: "hono-standard",
 		repoUrl: "https://github.com/ugnoguchigxp/hono-standard.git",
@@ -142,6 +150,38 @@ export const standardTemplateRegistry: TemplateRegistry = {
 			},
 		},
 	},
+	"java-template": {
+		id: "java-template",
+		repoUrl: "https://github.com/ugnoguchigxp/java-template.git",
+		defaultVariant: "java25-sqlite",
+		variants: {
+			"java8-sqlite": {
+				name: "java8-sqlite",
+				ref: "variant/java8-sqlite",
+				description:
+					"Java 8 + Spring Boot 2.7 + React/Vite baseline with SQLite.",
+			},
+			"java8-postgres": {
+				name: "java8-postgres",
+				ref: "variant/java-8-postgresql",
+				description:
+					"Java 8 + Spring Boot 2.7 + React/Vite baseline with PostgreSQL.",
+			},
+			"java25-sqlite": {
+				name: "java25-sqlite",
+				ref: "variant/java25-sqlite",
+				description:
+					"Java 25 + Spring Boot 4 + React/Vite baseline with SQLite.",
+			},
+			"java25-postgres": {
+				name: "java25-postgres",
+				ref: "variant/java25-postgres",
+				description:
+					"Java 25 + Spring Boot 4 + React/Vite baseline with PostgreSQL.",
+			},
+		},
+		overlays: {},
+	},
 };
 
 export function normalizeTemplateKey(value: unknown): string | null {
@@ -207,7 +247,8 @@ export function resolveStarterTemplate(input: {
 	if (
 		normalizedStack &&
 		normalizedStack !== "hono" &&
-		normalizedStack !== "python"
+		normalizedStack !== "python" &&
+		normalizedStack !== "java"
 	) {
 		return {
 			ok: false as const,
@@ -219,9 +260,11 @@ export function resolveStarterTemplate(input: {
 	const candidateTemplateIds: StandardTemplateId[] =
 		normalizedStack === "python"
 			? ["python-standard"]
-			: normalizedStack === "hono"
-				? ["hono-standard"]
-				: ["hono-standard", "python-standard"];
+			: normalizedStack === "java"
+				? ["java-template"]
+				: normalizedStack === "hono"
+					? ["hono-standard"]
+					: ["hono-standard", "python-standard", "java-template"];
 
 	if (normalizedVariant) {
 		const matchingTemplateIds = candidateTemplateIds.filter((templateId) =>
@@ -252,7 +295,11 @@ export function resolveStarterTemplate(input: {
 
 	return resolveStandardTemplate({
 		templateId:
-			normalizedStack === "python" ? "python-standard" : "hono-standard",
+			normalizedStack === "python"
+				? "python-standard"
+				: normalizedStack === "java"
+					? "java-template"
+					: "hono-standard",
 		variant: normalizedVariant || undefined,
 		registry,
 	});

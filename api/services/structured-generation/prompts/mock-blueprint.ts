@@ -67,7 +67,9 @@ export function buildMockBlueprintUserPrompt(input: {
 	projectStackContext?: string | null;
 	specContext?: string | null;
 	prompt?: string | null;
+	projectionPrompt?: string | null;
 }) {
+	if (input.projectionPrompt?.trim()) return input.projectionPrompt.trim();
 	return [
 		"次の context から Mock Blueprint JSON を1つ生成してください。",
 		"",

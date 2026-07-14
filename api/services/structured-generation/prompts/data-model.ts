@@ -34,8 +34,21 @@ export function buildDataModelUserPrompt(input: {
 	questionnaire: string;
 	blueprint: string;
 	prompt: string;
+	projectionPrompt?: string;
 	repairContext?: string | null;
 }) {
+	if (input.projectionPrompt?.trim()) {
+		const sections = [input.projectionPrompt.trim()];
+		if (input.repairContext?.trim()) {
+			sections.push(
+				"",
+				"## Mermaid Parse Repair",
+				"前回の Data Model から生成した Mermaid ER diagram は parse に失敗しました。Error と前回 artifact/source を読み、Data Model の意味を保ったまま Mermaid として parse できる derivedTables / relations に最小修正してください。",
+				input.repairContext.trim(),
+			);
+		}
+		return sections.join("\n");
+	}
 	const sections = [
 		"次の context から data_model Plan View を1つ生成してください。",
 		"",

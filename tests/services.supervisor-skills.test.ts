@@ -110,14 +110,17 @@ describe("Supervisor reference registry", () => {
 		expect(toolNames).not.toContain("run_verification");
 	});
 
-	it("exposes the hono-standard rag variant in the import_project schema", () => {
+	it("exposes Hono and Java variants in the import_project schema", () => {
 		const importProject = getAllowedToolsForJobType("major_code_edit").find(
 			(tool) => tool.name === "import_project",
 		);
 
 		expect(importProject).toBeTruthy();
 		expect(JSON.stringify(importProject?.inputSchema)).toContain(
-			"sqlite, postgres, rag, or auth",
+			"sqlite, postgres, rag, auth, java8-sqlite, or java25-postgres",
+		);
+		expect(JSON.stringify(importProject?.inputSchema)).toContain(
+			"java25-sqlite",
 		);
 	});
 

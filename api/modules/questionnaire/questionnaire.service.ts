@@ -7,7 +7,6 @@ import {
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import { type DbTransaction, db } from "../../db/client";
 import { AppError, NotFoundError } from "../../lib/errors";
 import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
@@ -69,6 +68,13 @@ function assertPlanModeMutable(task: { status: string }) {
 		409,
 		"PLAN_MODE_READ_ONLY",
 		"Terminal sessions cannot modify Plan Mode artifacts.",
+	);
+}
+
+function questionnairePersistenceError(stage: string, error: unknown) {
+	return new Error(
+		`Questionnaire永続化に失敗しました (${stage}): ${error instanceof Error ? error.message : String(error)}`,
+		{ cause: error },
 	);
 }
 
@@ -202,38 +208,22 @@ export async function saveDesignQuestionnaireAnswers(
 		validateDesignQuestionnaireAnswerForQuestion(parsed, question);
 		return parsed;
 	});
-	const updatedAnswers = await db.transaction(async (tx: DbTransaction) => {
-		for (const parsed of parsedAnswers) {
+	for (const parsed of parsedAnswers) {
+		try {
 			await repo.upsertDesignQuestionnaireAnswer({
 				sessionId,
 				questionId: parsed.questionId,
 				answerJson: parsed,
-				transaction: tx,
 			});
+		} catch (error) {
+			throw questionnairePersistenceError(`answer:${parsed.questionId}`, error);
 		}
-		const savedAnswers = await repo.listDesignQuestionnaireAnswers(
-			sessionId,
-			tx,
-		);
-		const savedAnswerViews = parseQuestionnaireAnswerViews(savedAnswers);
-		const complete = areQuestionnaireAnswersComplete(
-			session,
-			new Map(
-				savedAnswerViews.map((answer) => [answer.questionId, answer.answer]),
-			),
-		);
-		if (
-			!complete ||
-			options.completionPolicy === "finalize_current_questions"
-		) {
-			await repo.updateDesignQuestionnaireSessionStatus(
-				sessionId,
-				complete ? "review_ready" : "answering",
-				tx,
-			);
-		}
-		return savedAnswers;
-	});
+	}
+	const updatedAnswers = await repo
+		.listDesignQuestionnaireAnswers(sessionId)
+		.catch((error) => {
+			throw questionnairePersistenceError("answer-readback", error);
+		});
 	const updatedAnswerViews = parseQuestionnaireAnswerViews(updatedAnswers);
 	const nextStatus = areQuestionnaireAnswersComplete(
 		session,
@@ -243,6 +233,16 @@ export async function saveDesignQuestionnaireAnswers(
 	)
 		? "review_ready"
 		: "answering";
+	if (
+		nextStatus === "answering" ||
+		options.completionPolicy === "finalize_current_questions"
+	) {
+		await repo
+			.updateDesignQuestionnaireSessionStatus(sessionId, nextStatus)
+			.catch((error) => {
+				throw questionnairePersistenceError("session-status", error);
+			});
+	}
 	if (nextStatus === "answering") {
 		return getDesignQuestionnaireSession(taskId, sessionId);
 	}

@@ -273,6 +273,21 @@ async function callRawJsonLLMAttempt(
 		systemPromptSha256: digestLlmText(systemPrompt),
 		userPromptSha256: digestLlmText(userPrompt),
 		promptBudgetMetadata: options.promptBudgetMetadata ?? null,
+		projectionVersion:
+			options.promptBudgetMetadata?.artifactProjection?.version ?? null,
+		projectionDigest:
+			options.promptBudgetMetadata?.artifactProjection?.digest ?? null,
+		questionnaireDecisionCount:
+			options.promptBudgetMetadata?.artifactProjection
+				?.questionnaireDecisionCount ?? null,
+		initialPromptOccurrences:
+			options.promptBudgetMetadata?.artifactProjection
+				?.initialPromptOccurrences ?? null,
+		sourceMessageCount:
+			options.promptBudgetMetadata?.artifactProjection?.sourceCount ?? null,
+		staleSourceRejectedCount:
+			options.promptBudgetMetadata?.artifactProjection
+				?.staleSourceRejectedCount ?? null,
 	});
 	logger.debug(
 		{
@@ -438,6 +453,33 @@ async function callRawJsonLLMAttempt(
 		rawContentBytes: Buffer.byteLength(rawContent, "utf8"),
 		rawContentSha256: digestLlmText(rawContent),
 		providerDebug,
+		projectionVersion:
+			options.promptBudgetMetadata?.artifactProjection?.version ?? null,
+		projectionDigest:
+			options.promptBudgetMetadata?.artifactProjection?.digest ?? null,
+		questionnaireDecisionCount:
+			options.promptBudgetMetadata?.artifactProjection
+				?.questionnaireDecisionCount ?? null,
+		initialPromptOccurrences:
+			options.promptBudgetMetadata?.artifactProjection
+				?.initialPromptOccurrences ?? null,
+		sourceMessageCount:
+			options.promptBudgetMetadata?.artifactProjection?.sourceCount ?? null,
+		staleSourceRejectedCount:
+			options.promptBudgetMetadata?.artifactProjection
+				?.staleSourceRejectedCount ?? null,
+		agenticItemCount:
+			typeof providerDebug.agenticItemCount === "number"
+				? providerDebug.agenticItemCount
+				: null,
+		providerTurnCount:
+			typeof providerDebug.providerTurnCount === "number"
+				? providerDebug.providerTurnCount
+				: null,
+		freshThread:
+			typeof providerDebug.freshThread === "boolean"
+				? providerDebug.freshThread
+				: null,
 	});
 	await emitSupervisorLlmDebugEvent(options, {
 		type: "model.response_finished",

@@ -446,6 +446,16 @@ export async function appendPlanContext(
 				: {};
 		const listKey = reason === "artifact" ? "artifacts" : "reviews";
 		const existing = Array.isArray(plan[listKey]) ? plan[listKey] : [];
+		const persistedEntry =
+			reason === "artifact"
+				? {
+						...entry,
+						routingRevision:
+							typeof entry.routingRevision === "number"
+								? entry.routingRevision
+								: session.planRoutingRevision,
+					}
+				: entry;
 		if (
 			reason === "artifact" &&
 			existing.some(
@@ -466,7 +476,7 @@ export async function appendPlanContext(
 					? plan
 					: reason === "questionnaire"
 						? { ...plan, questionnaire: entry }
-						: { ...plan, [listKey]: [...existing, entry] },
+						: { ...plan, [listKey]: [...existing, persistedEntry] },
 		};
 		const serialized = JSON.stringify(context);
 		const digest = crypto.createHash("sha256").update(serialized).digest("hex");
@@ -526,5 +536,17 @@ export async function appendPlanContext(
 			}
 		}
 		return updated;
+	});
+}
+
+export async function getPlanContextSnapshot(
+	sessionId: string,
+	revision: number,
+) {
+	return db.query.missionPilotContextSnapshots.findFirst({
+		where: and(
+			eq(missionPilotContextSnapshots.sessionId, sessionId),
+			eq(missionPilotContextSnapshots.revision, revision),
+		),
 	});
 }

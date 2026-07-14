@@ -79,8 +79,21 @@ export function buildPlanDedicatedViewUserPrompt(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	projectionPrompt?: string;
 	repairContext?: string | null;
 }) {
+	if (input.projectionPrompt?.trim()) {
+		const sections = [input.projectionPrompt.trim()];
+		if (input.repairContext?.trim()) {
+			sections.push(
+				"",
+				"## Mermaid Parse Repair",
+				"前回出力した Mermaid は parse に失敗しました。Error と前回 source を読み、同じ view と同じ intent のまま Mermaid として parse できるように最小修正してください。",
+				input.repairContext.trim(),
+			);
+		}
+		return sections.join("\n");
+	}
 	const sections = [
 		`次の context から ${input.view} Plan View を1つ生成してください。`,
 		"",

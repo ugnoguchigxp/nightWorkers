@@ -11,7 +11,7 @@ import {
 	missionPilotQuestionnaireDrafts,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
-import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
+import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
@@ -34,7 +34,7 @@ function recordPilotActivity(input: {
 	payloadJson?: Record<string, unknown>;
 	dedupeKey: string;
 }) {
-	void appendActivityEvent({
+	enqueueActivityEvent({
 		taskId: input.taskId,
 		kind: input.kind,
 		source: "mission_pilot",
@@ -47,7 +47,7 @@ function recordPilotActivity(input: {
 		},
 		dedupeKey: input.dedupeKey,
 		trace: missionPilotThoughtTrace({ sessionId: input.sessionId }),
-	}).catch(() => undefined);
+	});
 }
 
 function toView(row: DraftRow, taskId: string) {

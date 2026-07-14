@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { MermaidRenderRepair } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type { GenericDedicatedViewArtifact } from "../../services/structured-generation/prompts/plan-dedicated-view";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
-import type { PlanModeTaskMessage } from "../nightworkers/nightworkers.plan-mode-core.port";
 import {
 	type MarkdownPlanView,
 	markdownPlanViewSchema,
@@ -102,41 +101,6 @@ export function diagramKindForView(view: MarkdownPlanView) {
 
 export function requiresMermaidDiagram(view: MarkdownPlanView) {
 	return Boolean(diagramKindForView(view));
-}
-
-export function resolveMessage(
-	messages: PlanModeTaskMessage[],
-	messageId: string | null | undefined,
-	kind: "feature_plan" | "blueprint" | "data_model",
-) {
-	if (messageId)
-		return (
-			messages.find(
-				(message) => message.id === messageId && isMessageKind(message, kind),
-			) || null
-		);
-	return (
-		[...messages].reverse().find((message) => isMessageKind(message, kind)) ||
-		null
-	);
-}
-
-function isMessageKind(
-	message: PlanModeTaskMessage,
-	kind: "feature_plan" | "blueprint" | "data_model",
-) {
-	if (message.messageType !== "markdown_document") return false;
-	const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-	if (kind === "feature_plan") return metadata.intent === "feature_plan";
-	if (kind === "blueprint")
-		return (
-			(metadata.intent === "app_blueprint" && Boolean(metadata.appBlueprint)) ||
-			(metadata.intent === "mock_blueprint" && Boolean(metadata.mockBlueprint))
-		);
-	return (
-		metadata.artifactKind === "plan_mode_dedicated_view" &&
-		metadata.view === "data_model"
-	);
 }
 
 export function buildClientMermaidRepairPrompt(input: MermaidRenderRepair) {

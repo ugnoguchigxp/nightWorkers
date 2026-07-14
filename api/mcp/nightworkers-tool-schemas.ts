@@ -227,10 +227,10 @@ export const nightWorkersImportProjectInputSchema = z.object({
 			"Choose starter for a registered scaffold or git for an arbitrary repository import.",
 		),
 	stack: z
-		.enum(["hono", "python"])
+		.enum(["hono", "python", "java"])
 		.optional()
 		.describe(
-			"Starter stack. Optional when the default Hono stack is acceptable.",
+			"Starter stack: Hono, Python/FastAPI, or Java/Spring Boot. Optional when the default Hono stack is acceptable.",
 		),
 	repoUrl: z
 		.string()
@@ -248,9 +248,15 @@ export const nightWorkersImportProjectInputSchema = z.object({
 			"cloudflare",
 			"api-only",
 			"auth",
+			"java8-sqlite",
+			"java8-postgres",
+			"java25-sqlite",
+			"java25-postgres",
 		])
 		.optional()
-		.describe("Starter variant, e.g. sqlite, postgres, rag, or auth."),
+		.describe(
+			"Starter variant, e.g. sqlite, postgres, rag, auth, java8-sqlite, or java25-postgres.",
+		),
 	overlays: z
 		.array(z.string().trim().min(1))
 		.optional()

@@ -24,6 +24,12 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredLlmPromptBudgetMetadata } from "../../services/structured-llm/types";
+import type { PlanArtifactInputProjection } from "../specification/plan-artifact-input.types";
+import {
+	buildPlanArtifactPromptBudgetMetadata,
+	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+} from "../specification/plan-artifact-input-renderer";
 
 export type GeneratedMockBlueprintDraft = {
 	mockBlueprint: MockBlueprint;
@@ -89,6 +95,9 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
+	projectionPrompt?: string | null;
+	projection?: PlanArtifactInputProjection;
+	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
 }): Promise<GeneratedMockBlueprintDraft> {
 	const schema = buildMockBlueprintStructuredOutputJsonSchema();
 	const systemPrompt = buildMockBlueprintSystemPrompt({
@@ -106,12 +115,22 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		projectStackContext: input.projectStackContext,
 		specContext: input.specContext,
 		prompt: input.prompt,
+		projectionPrompt: input.projectionPrompt,
 	});
 	const promptDiagnostics = mockBlueprintPromptDiagnostics({
 		systemPrompt,
 		userPrompt,
 		schema,
 	});
+	const promptBudgetMetadata = input.projection
+		? buildPlanArtifactPromptBudgetMetadata({
+				projection: input.projection,
+				systemPrompt,
+				userPrompt,
+				role: input.role,
+				routeOverride: input.routeOverride,
+			})
+		: input.promptBudgetMetadata;
 	const contract = createStructuredOutputContract({
 		name: "mock_blueprint",
 		runtimeSchema: mockBlueprintSchema,
@@ -125,6 +144,8 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		role: input.role ?? ("plan" as const),
 		usageTrace: input.usageTrace,
 		routeOverride: input.routeOverride || null,
+		promptBudgetMetadata,
+		timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 	};
 	const initialResult = await callStructuredLlmResult(
 		systemPrompt,

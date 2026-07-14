@@ -9,6 +9,7 @@ import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env"
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import { queueTask } from "./nightworkers.queue-management.service";
@@ -337,16 +338,23 @@ export async function appendWorkbenchMessage(
 	) {
 		await appendWorkbenchTaskMessage();
 		const metadata = artifactContext.metadata || {};
+		const target = planModeRegenerationTargetSchema.parse(
+			metadata.planModeTarget,
+		);
 		const result = await executePlanModeArtifactCorrection({
 			taskId: id,
 			prompt,
-			target: planModeRegenerationTargetSchema.parse(metadata.planModeTarget),
+			target,
 			focus: metadata.planModeFocus,
 			correlationId: metadata.correlationId,
 			questionnaireSessionId: metadata.questionnaireSessionId ?? null,
-			featurePlanMessageId: metadata.featurePlanMessageId ?? null,
-			sourceBlueprintMessageId: metadata.sourceBlueprintMessageId ?? null,
-			sourceDataModelMessageId: metadata.sourceDataModelMessageId ?? null,
+			sourceSelection: createPlanArtifactSourceSelection({
+				policy: "explicit_request",
+				previousTargetMessageId: artifactContext.source?.messageId ?? null,
+				featurePlanMessageId: metadata.featurePlanMessageId ?? null,
+				blueprintMessageId: metadata.sourceBlueprintMessageId ?? null,
+				dataModelMessageId: metadata.sourceDataModelMessageId ?? null,
+			}),
 			routeOverride: llmRouteOverride,
 		});
 		return {

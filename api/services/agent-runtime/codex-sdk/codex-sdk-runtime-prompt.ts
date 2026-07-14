@@ -145,7 +145,7 @@ function buildExecutionContract(
 					"Repository bootstrap run:",
 					"- このrunは通常機能の実装runではありません。登録済みrepoRootを初期化するbootstrap専用です。",
 					"- 最初にpwdとlist-dir / ls相当でrepoRootの存在、空状態、.gitの有無を確認してください。",
-					"- Git HEADがなく空または未materializedならnightworkers.import_projectを実行してください。未指定のHono Web/APIはsource=starter, stack=honoとし、variantを省略して既定SQLiteを使ってください。",
+					"- Git HEADがなく空または未materializedならnightworkers.import_projectを実行してください。確定済みQuestionnaire / Feature PlanでJava / Spring Bootが選択されている場合はstack=javaと対応するjava8-sqlite / java8-postgres / java25-sqlite / java25-postgresを使い、未指定のWeb/APIはsource=starter, stack=honoとして既定SQLiteを使ってください。",
 					"- import_project後にGit HEADとbaseline commitを確認し、通常機能のファイル編集や実装には進まずbootstrap Todoと固定gateだけを完了してください。",
 					"",
 				]
@@ -170,6 +170,7 @@ function buildExecutionContract(
 		"- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイルでは配置先 route / registry / sibling component / 既存 style / test pattern を先に読む。rg --files や ls は探索であり編集対象を読んだ evidence ではない。rg -n、sed、cat、nl、head/tail、git diff -- path など対象内容に触れる確認を使う。blind edit を避け、必要範囲だけ読む。",
 		"- 作成または大幅編集後は、検証や closeout の前に関係箇所を読み返す。新規ファイルは作成ファイルまたは path-scoped diff、既存ファイルは変更箇所または git diff -- path を確認する。",
 		"- Project import は nightworkers.import_project が単一入口。新規 scaffold は source=starter と stack/variant、任意 Git は source=git と repoUrl。未指定の空または空に近い Web/API app は、ユーザーが別 stack / blank / DB / RAG / SSR / SSG variant を明示しない限り source=starter, stack=hono、既定 SQLite variant を使う。DB 指定は postgres / pgvector / turso / cloudflare 等、RAG や embeddings-backed search は variant=rag、DB/RAG variant なしの SSR / SSG 指定は対応 overlay。DB/RAG variant と overlay は同時指定しない。",
+		"- Java / Spring Bootがユーザーまたは確定済みQuestionnaire / Feature Planで選択されている場合はsource=starter, stack=javaとし、Java 8/25およびSQLite/PostgreSQLの組み合わせからjava8-sqlite / java8-postgres / java25-sqlite / java25-postgresを選ぶ。java-templateにはfrontend / Design Systemが同梱済みなので別templateから再コピーしない。",
 		"- import_project で扱える task では shell git clone を使わない。import_project が失敗・cancel・未承認なら停止して tool failure を報告し、fallback static app や代替実装を作らない。starter / template / clone / import_project task では、作業開始時にまず pwd と list-dir / ls 相当で targetPath の存在、空状態、.git の有無を確認する。空または空に近い targetPath は未 materialized と扱い、import_project または clone 成功前に targetPath 内の package.json や source files を shell/read tools で読まない。",
 		"- import_project 成功後は postImport.gitInitialization、postImport.llmContext、postImport.manifest、postImport.initialization を先に使う。payload 欠落、truncated、または修復対象の失敗がある場合を除き、LLM_CONTEXT.md / package.json の再読込や install 再実行をしない。manifest-based verification は postImport.manifest.recommendedVerificationCommands を優先する。",
 		"- zsh command で find -name などに glob pattern を渡す場合は、zsh の先行展開を避けるため quote する。例: -name 'vite.config.*'。",

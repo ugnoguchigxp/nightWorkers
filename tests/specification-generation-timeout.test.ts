@@ -39,6 +39,14 @@ vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 	})),
 }));
 
+vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
+	getRepository: vi.fn(async () => ({
+		id: "repo-1",
+		name: "todolist",
+		localPath: "/tmp/missing-todolist-repository",
+	})),
+}));
+
 vi.mock(
 	"../api/modules/nightworkers/nightworkers.plan-mode-settings.service",
 	() => ({

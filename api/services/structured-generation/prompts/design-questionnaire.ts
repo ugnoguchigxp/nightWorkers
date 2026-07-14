@@ -23,6 +23,7 @@ type SpecificationContext = {
 	planModeReferences: string;
 	traceability: string;
 	userRegenerationRequest?: string | null;
+	artifactInputPrompt?: string | null;
 };
 
 type AdditionalQuestionnairePromptInput = {
@@ -46,7 +47,7 @@ export function buildDesignQuestionnaireSystemPrompt() {
 		"auth / permission は対象面が public only または auth only と明確なら質問しないでください。public / protected / auth / admin などの面が混在する、または対象機能をどの面に置くか不明な場合は、初回または follow-up で route / API / data の保護方針を必ず確認してください。",
 		"auth / permission の質問は「認証は必要ですか？」だけにせず、既存の public/protected 面、追加 route/API、データの所有境界に結びつく選択肢にしてください。",
 		"テンプレート選定のため、使用する技術スタックと DB/永続化の選択が context から確定できない場合は、初回フォームで必ず確認してください。",
-		"技術スタックの質問では、Hono + React/Vite、Python/FastAPI + React/Vite、API only、RAG など、starter template や branch variant を識別できる粒度の選択肢にしてください。",
+		"技術スタックの質問では、Hono + React/Vite + SQLite、RAG (Hono + React/Vite + pgvector)、Python/FastAPI + React/Vite、API only (FastAPI + SQLite)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite など、starter template や branch variant を識別できる粒度の選択肢にしてください。通常の Hono starter は必ず Hono + React/Vite + SQLite、RAG の選択肢は必ず RAG (Hono + React/Vite + pgvector)、API only の選択肢は必ず API only (FastAPI + SQLite) と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8 と Java 25 の選択肢を必ず含めてください。",
 		"DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、sqlite 等の template variant を識別できる選択肢にしてください。",
 		"ただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。",
 		"コードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
@@ -126,7 +127,7 @@ export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
 		"既存質問と同じ質問文、同じ意味、または同じ選択肢セットの質問は絶対に返さないでください。",
 		"checkbox が未選択で回答されている場合、それは「どれも不要 / 今回は含めない」という仕様判断として扱ってください。",
 		"一度の follow-up で全ジャンルを詰め込まず、次に設計判断を進めるために必要な 1 ページ分だけを返してください。",
-		"テンプレート選定に必要な使用技術スタックまたは DB/永続化の選択がまだ未確認なら、starter template や branch variant を識別できる粒度で追加確認してください。",
+		"テンプレート選定に必要な使用技術スタックまたは DB/永続化の選択がまだ未確認なら、Hono + React/Vite + SQLite、RAG (Hono + React/Vite + pgvector)、Python/FastAPI + React/Vite、API only (FastAPI + SQLite)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Viteなど、starter template や branch variant を識別できる粒度で追加確認してください。通常の Hono starter は必ず Hono + React/Vite + SQLite、RAG の選択肢は必ず RAG (Hono + React/Vite + pgvector)、API only の選択肢は必ず API only (FastAPI + SQLite) と表示してください。Javaを選ぶ可能性がある新規Projectでは、Java 8 と Java 25 を区別できる選択肢を含めてください。",
 		"DB/永続化の追加確認では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定などを区別できる選択肢にしてください。",
 		"Docker、cloud deployment、storage、認証、外部連携、運用、非対象などは、回答内容または Plan Mode Context から必要性が見えた場合に追加確認してください。",
 		"public / protected / auth / admin などの面が混在する、または対象機能の配置が未回答なら、auth / permission の確認を follow-up に含めてください。明確に public only または auth only なら繰り返し聞かないでください。",
@@ -271,6 +272,8 @@ export function buildSpecificationDocumentSystemPrompt() {
 export function buildSpecificationDocumentUserPrompt(
 	context: SpecificationContext,
 ) {
+	if (context.artifactInputPrompt?.trim())
+		return context.artifactInputPrompt.trim();
 	return [
 		"次の圧縮済み context から Specification を作成してください。",
 		"",

@@ -8,19 +8,23 @@ import type {
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
+import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
 
 export type PlanModeArtifactCorrectionInput = {
 	taskId: string;
 	target: PlanModeRegenerationTarget;
 	prompt: string;
-	sourceArtifactContent?: string | null;
 	focus?: PlanModeArtifactFocus;
 	correlationId?: string | null;
 	questionnaireSessionId?: string | null;
-	featurePlanMessageId?: string | null;
-	sourceBlueprintMessageId?: string | null;
-	sourceDataModelMessageId?: string | null;
+	sourceSelection: PlanArtifactSourceSelection;
+	expectedState?: {
+		missionPilotSessionId: string;
+		contextRevision: number;
+		contextDigest: string;
+		routingRevision: number;
+	};
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
 	trace?: TraceProvenance;
@@ -38,9 +42,6 @@ function renderCorrectionPrompt(input: PlanModeArtifactCorrectionInput) {
 	return [
 		"[対象Artifact]",
 		input.target,
-		"[現在のArtifact]",
-		input.sourceArtifactContent?.trim() ||
-			"現在のArtifact本文は取得できませんでした。",
 		"[フォーカス]",
 		focusText,
 		"[変更要求]",
@@ -57,12 +58,14 @@ export async function executePlanModeArtifactCorrection(
 	input: PlanModeArtifactCorrectionInput,
 ) {
 	const prompt = renderCorrectionPrompt(input);
+	const sourceSelection = input.sourceSelection;
 	switch (input.target) {
 		case "feature_plan":
 			return generateFeaturePlanArtifact(input.taskId, {
 				prompt,
 				questionnaireSessionId: input.questionnaireSessionId,
-				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
+				sourceSelection,
+				expectedState: input.expectedState,
 				routeOverride: input.routeOverride,
 				role: input.role,
 				trace: input.trace,
@@ -72,7 +75,8 @@ export async function executePlanModeArtifactCorrection(
 			return generateBlueprintArtifact(input.taskId, {
 				prompt,
 				questionnaireSessionId: input.questionnaireSessionId,
-				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
+				sourceSelection,
+				expectedState: input.expectedState,
 				routeOverride: input.routeOverride,
 				role: input.role,
 				trace: input.trace,
@@ -82,8 +86,8 @@ export async function executePlanModeArtifactCorrection(
 			return generateDataModelArtifact(input.taskId, {
 				prompt,
 				questionnaireSessionId: input.questionnaireSessionId,
-				featurePlanMessageId: input.featurePlanMessageId,
-				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
+				sourceSelection,
+				expectedState: input.expectedState,
 				routeOverride: input.routeOverride,
 				role: input.role,
 				trace: input.trace,
@@ -97,9 +101,8 @@ export async function executePlanModeArtifactCorrection(
 			return generatePlanViewArtifact(input.taskId, input.target, {
 				prompt,
 				questionnaireSessionId: input.questionnaireSessionId,
-				featurePlanMessageId: input.featurePlanMessageId,
-				sourceBlueprintMessageId: input.sourceBlueprintMessageId,
-				sourceDataModelMessageId: input.sourceDataModelMessageId,
+				sourceSelection,
+				expectedState: input.expectedState,
 				routeOverride: input.routeOverride,
 				role: input.role,
 				trace: input.trace,

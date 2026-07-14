@@ -17,7 +17,6 @@ import type {
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
-	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import { createVerificationDocumentFromSpec } from "../nightworkers/nightworkers.verification.service";
@@ -26,12 +25,17 @@ import {
 	listDesignQuestionnaires,
 } from "../questionnaire/questionnaire.service";
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
-import { resolvePlanModeProjectStackContext } from "./plan-mode-project-stack-context";
-import { getPlanModeWorkspace } from "./plan-mode-workspace.service";
+import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
+import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 import {
-	buildSpecificationDocumentContext,
-	sanitizeSpecificationTargetNaming,
-} from "./specification-document-renderer";
+	buildPlanArtifactPromptBudgetMetadata,
+	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+	renderPlanArtifactInput,
+} from "./plan-artifact-input-renderer";
+import { createPlanArtifactSourceSelection } from "./plan-artifact-source-selection";
+import { getPlanModeWorkspace } from "./plan-mode-workspace.service";
+import { sanitizeSpecificationTargetNaming } from "./specification-document-renderer";
 import { assertPlanModeMutable } from "./specification-mutability";
 import { buildSpecificationVerificationSidecar } from "./specification-verification-sidecar";
 
@@ -40,19 +44,25 @@ const specificationDocumentDraftSchema = z.object({
 	content: z.string().min(1),
 });
 const DEFAULT_FEATURE_PLAN_TITLE = "Feature Plan";
-export const FEATURE_PLAN_LLM_TIMEOUT_MS = 240_000;
+export const FEATURE_PLAN_LLM_TIMEOUT_MS = PLAN_ARTIFACT_GENERATION_TIMEOUT_MS;
 
 export async function generateFeaturePlanArtifact(
 	taskId: string,
 	input: {
 		prompt?: string;
 		questionnaireSessionId?: string | null;
-		sourceBlueprintMessageId?: string | null;
+		sourceSelection?: PlanArtifactSourceSelection;
 		proceedWithUnansweredBlocking?: boolean;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		expectedState?: {
+			missionPilotSessionId: string;
+			contextRevision: number;
+			contextDigest: string;
+			routingRevision: number;
+		};
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -75,39 +85,47 @@ export async function generateFeaturePlanArtifact(
 			{ blockingQuestions: unansweredBlockingQuestions },
 		);
 	}
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		task.repositoryId,
-	);
-	const workspace = await getPlanModeWorkspace(taskId);
-	const messages = await listPlanModeTaskMessages(taskId);
-	const context = buildSpecificationDocumentContext({
-		task,
-		session,
-		workspace,
-		messages,
-		projectStackContext,
-		preferredBlueprintMessageId: input.sourceBlueprintMessageId,
+	const canonical = await resolvePlanArtifactCanonicalInput({
+		taskId,
+		target: "feature_plan",
+		questionnaireSessionId: input.questionnaireSessionId ?? null,
+		sourceSelection:
+			input.sourceSelection ??
+			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
+		regenerationRequest: input.prompt ?? null,
+		expectedState: input.expectedState,
 	});
-	context.userRegenerationRequest = input.prompt?.trim() || null;
+	const projection = projectPlanArtifactInput(canonical);
+	const renderedInput = renderPlanArtifactInput(projection);
+	const workspace = await getPlanModeWorkspace(taskId);
+	const context: Parameters<typeof buildSpecificationDocumentUserPrompt>[0] = {
+		task: renderedInput.task,
+		projectStackContext: renderedInput.projectContext,
+		implementationPlanGuidance: "",
+		questionnaireDecisions: renderedInput.questionnaire,
+		blueprintSummary: renderedInput.blueprint,
+		dataModelDdl: renderedInput.dataModel,
+		planViewReferences: renderedInput.dedicatedViews,
+		planModeReferences: "",
+		traceability: "",
+		userRegenerationRequest: renderedInput.regenerationRequest,
+		artifactInputPrompt: renderedInput.prompt,
+	};
 	if (
 		unansweredBlockingQuestions.length > 0 &&
 		input.proceedWithUnansweredBlocking
 	) {
-		context.questionnaireDecisions = [
-			context.questionnaireDecisions,
-			"",
-			"## Unanswered Blocking Assumptions",
-			...unansweredBlockingQuestions.map(
-				(question) =>
-					`- ${question.question} (decisionKey: ${question.decisionKey}; unanswered and explicitly proceeded without an answer)`,
-			),
-		].join("\n");
+		context.artifactInputPrompt = addUnansweredBlockingAssumptions(
+			context.artifactInputPrompt ?? renderedInput.prompt,
+			unansweredBlockingQuestions,
+		);
 	}
 	const rawOutput = await generateSpecificationDesignDocumentRawOutput(
 		taskId,
 		context,
 		input.routeOverride || null,
 		input.role ?? "plan",
+		projection,
 		input.llmUsageTrace,
 	);
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
@@ -122,7 +140,7 @@ export async function generateFeaturePlanArtifact(
 			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
 		),
 		content: sanitizedContent,
-		sourceMessageIds: messages.map((message) => message.id),
+		sourceMessageIds: projection.provenance.sourceMessageIds,
 		workspace,
 	});
 	const message = await createPlanModeTaskMessage({
@@ -139,12 +157,13 @@ export async function generateFeaturePlanArtifact(
 				source: "llm",
 				context: {
 					blueprintSummaryIncluded: Boolean(context.blueprintSummary.trim()),
-					dataModelReferenceIncluded: Boolean(context.dataModelDdl.trim()),
 					planViewReferencesIncluded: Boolean(
 						context.planViewReferences.trim(),
 					),
-					planModeReferencesIncluded: Boolean(
-						context.planModeReferences.trim(),
+					planModeReferencesIncluded: false,
+					inputProjection: projectionMetadata(
+						projection,
+						canonical.questionnaire?.sessionId ?? null,
 					),
 					contractDetailsStoredInAssembledDesignContext: true,
 				},
@@ -163,7 +182,7 @@ export async function generateFeaturePlanArtifact(
 			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
 		),
 		content: initialSidecar.content,
-		sourceMessageIds: [...messages.map((item) => item.id), message.id],
+		sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
 		workspace,
 		generatedAt: initialSidecar.document.generatedAt,
 	});
@@ -196,6 +215,25 @@ export async function generateFeaturePlanArtifact(
 		verificationArtifactId: `verification-json-${verificationMessage.id}`,
 	});
 	return { message, workspace: await getPlanModeWorkspace(taskId) };
+}
+
+function projectionMetadata(
+	projection: ReturnType<typeof projectPlanArtifactInput>,
+	questionnaireSessionId: string | null,
+) {
+	return {
+		version: projection.version,
+		target: projection.target,
+		digest: projection.diagnostics.projectionDigest,
+		contextRevision: projection.provenance.contextRevision,
+		contextDigest: projection.provenance.contextDigest,
+		routingRevision: projection.provenance.routingRevision,
+		questionnaireSessionId,
+		questionnaireDigest: projection.provenance.questionnaireDigest,
+		sourceMessageIds: projection.provenance.sourceMessageIds,
+		sourceDigests: projection.provenance.sourceDigests,
+		sectionBytes: projection.diagnostics.sectionBytes,
+	};
 }
 
 async function resolveFeaturePlanQuestionnaireGate(
@@ -232,15 +270,18 @@ function hasValidQuestions(
 
 async function generateSpecificationDesignDocumentRawOutput(
 	taskId: string,
-	context: ReturnType<typeof buildSpecificationDocumentContext>,
+	context: Parameters<typeof buildSpecificationDocumentUserPrompt>[0],
 	routeOverride: StructuredLlmModelTarget | null,
 	role: StructuredLlmRole,
+	projection: ReturnType<typeof projectPlanArtifactInput>,
 	usageTrace?: TraceProvenance,
 ) {
 	try {
+		const systemPrompt = buildSpecificationDocumentSystemPrompt();
+		const userPrompt = buildSpecificationDocumentUserPrompt(context);
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: buildSpecificationDocumentSystemPrompt(),
-			userPrompt: buildSpecificationDocumentUserPrompt(context),
+			systemPrompt,
+			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({
 					name: "specification_document",
@@ -250,6 +291,13 @@ async function generateSpecificationDesignDocumentRawOutput(
 				role,
 				usageTrace,
 				routeOverride,
+				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
+					projection,
+					systemPrompt,
+					userPrompt,
+					role,
+					routeOverride,
+				}),
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
 			},
 		});
@@ -272,6 +320,23 @@ function isStructuredLlmAbortError(error: unknown) {
 		error.name === "AbortError" ||
 		error.message.toLowerCase().includes("operation was aborted")
 	);
+}
+
+function addUnansweredBlockingAssumptions(
+	prompt: string,
+	questions: Array<{ question: string; decisionKey: string }>,
+) {
+	const assumptions = [
+		"明示的に未回答のまま進行したblocking論点:",
+		...questions.map(
+			(question) =>
+				`- ${question.question} (decisionKey: ${question.decisionKey}; unanswered and explicitly proceeded without an answer)`,
+		),
+	].join("\n");
+	const marker = "\n## Current Project State";
+	return prompt.includes(marker)
+		? prompt.replace(marker, `\n${assumptions}${marker}`)
+		: `${prompt}\n${assumptions}`;
 }
 
 async function attachVerificationMetadata(input: {

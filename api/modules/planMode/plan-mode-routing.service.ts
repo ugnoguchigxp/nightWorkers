@@ -183,12 +183,14 @@ export async function getPlanModeRouting(
 	options: { messages?: TaskMessage[]; taskStatus?: string } = {},
 ): Promise<PlanModeRoutingSnapshot> {
 	const capabilities = readGeneralSettings().planMode.capabilities;
-	const [session, messages] = await Promise.all([
-		db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.taskId, taskId),
-		}),
-		options.messages ?? listPlanModeTaskMessages(taskId),
-	]);
+	const session = await db.query.missionPilotSessions.findFirst({
+		where: eq(missionPilotSessions.taskId, taskId),
+	});
+	const messages =
+		options.messages ??
+		(session?.planRoutingRevision
+			? []
+			: await listPlanModeTaskMessages(taskId));
 	if (!session) {
 		const lockedReason =
 			options.taskStatus && TERMINAL_TASK_STATUSES.has(options.taskStatus)

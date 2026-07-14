@@ -13,6 +13,8 @@ import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
 
 const codexMock = vi.hoisted(() => {
 	const runInputs: unknown[] = [];
+	const constructorInputs: unknown[] = [];
+	const startedThreadOptions: unknown[] = [];
 	const startedThreadIds: string[] = [];
 	const resumedThreadIds: string[] = [];
 	let nextThreadSeq = 1;
@@ -40,7 +42,12 @@ const codexMock = vi.hoisted(() => {
 	}
 
 	class MockCodex {
-		startThread() {
+		constructor(options: unknown) {
+			constructorInputs.push(options);
+		}
+
+		startThread(options?: unknown) {
+			startedThreadOptions.push(options);
 			const id = `thread-${nextThreadSeq++}`;
 			startedThreadIds.push(id);
 			return new MockThread(id);
@@ -55,10 +62,14 @@ const codexMock = vi.hoisted(() => {
 	return {
 		MockCodex,
 		runInputs,
+		constructorInputs,
+		startedThreadOptions,
 		startedThreadIds,
 		resumedThreadIds,
 		reset: () => {
 			runInputs.length = 0;
+			constructorInputs.length = 0;
+			startedThreadOptions.length = 0;
 			startedThreadIds.length = 0;
 			resumedThreadIds.length = 0;
 			nextThreadSeq = 1;
@@ -81,12 +92,12 @@ vi.mock("../../api/services/llm-usage", async (importOriginal) => {
 
 installStructuredLlmEnvHooks();
 
-describe("Codex structured provider thread resume", () => {
+describe("Codex structured provider isolation", () => {
 	beforeEach(() => {
 		codexMock.reset();
 	});
 
-	it("reuses the persisted Codex thread and sends a compact resumed prompt", async () => {
+	it("uses a fresh isolated call for every structured artifact generation", async () => {
 		fs.writeFileSync(
 			llmSettingsPath(),
 			JSON.stringify({
@@ -124,14 +135,45 @@ describe("Codex structured provider thread resume", () => {
 			runtimeSessionStore: store,
 		});
 
-		expect(codexMock.startedThreadIds).toEqual(["thread-1", "thread-2"]);
-		expect(codexMock.resumedThreadIds).toEqual(["thread-1"]);
-		expect(store.upsertRuntimeSessionState).toHaveBeenCalledTimes(3);
-		const resumedInput = JSON.stringify(codexMock.runInputs[1]);
-		expect(resumedInput).toContain("Continue the existing NightWorkers");
-		expect(resumedInput).toContain("second user prompt");
-		expect(resumedInput).toContain("System prompt truncated");
-		expect(resumedInput).not.toContain("x".repeat(2500));
+		expect(codexMock.startedThreadIds).toEqual([
+			"thread-1",
+			"thread-2",
+			"thread-3",
+		]);
+		expect(codexMock.resumedThreadIds).toEqual([]);
+		expect(codexMock.constructorInputs).toHaveLength(3);
+		for (const input of codexMock.constructorInputs) {
+			const config = (input as { config: Record<string, unknown> }).config;
+			expect(config.features).toEqual({ mcp: false });
+			expect(config.mcp_servers).toEqual({});
+			expect(config.project_doc_max_bytes).toBe(0);
+		}
+		expect(codexMock.startedThreadOptions).toHaveLength(3);
+		for (const input of codexMock.startedThreadOptions) {
+			const options = input as {
+				workingDirectory: string;
+				sandboxMode: string;
+				approvalPolicy: string;
+				networkAccessEnabled: boolean;
+				webSearchMode: string;
+			};
+			expect(options.workingDirectory).not.toBe(process.cwd());
+			expect(options.sandboxMode).toBe("read-only");
+			expect(options.approvalPolicy).toBe("never");
+			expect(options.networkAccessEnabled).toBe(false);
+			expect(options.webSearchMode).toBe("disabled");
+			expect(fs.existsSync(options.workingDirectory)).toBe(false);
+		}
+		expect(store.upsertRuntimeSessionState).not.toHaveBeenCalled();
+		expect(JSON.stringify(codexMock.runInputs[0])).toContain(
+			"first user prompt",
+		);
+		expect(JSON.stringify(codexMock.runInputs[1])).toContain(
+			"second user prompt",
+		);
+		expect(JSON.stringify(codexMock.runInputs[2])).toContain(
+			"third user prompt",
+		);
 	});
 });
 

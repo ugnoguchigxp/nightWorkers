@@ -24,30 +24,36 @@ import type {
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
-	listPlanModeTaskMessages,
-	type PlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
+import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
+import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import {
-	getDesignQuestionnaireSession,
-	listDesignQuestionnaires,
-} from "../questionnaire/questionnaire.service";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+	buildPlanArtifactPromptBudgetMetadata,
+	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+	renderPlanArtifactInput,
+} from "../specification/plan-artifact-input-renderer";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
-import { renderQuestionnaireAnswerMarkdown } from "../specification/specification-document-renderer";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 
-const DATA_MODEL_MERMAID_MAX_ATTEMPTS = 3;
+const DATA_MODEL_MERMAID_MAX_ATTEMPTS = 2;
 
 export type DataModelGenerationInput = {
 	prompt?: string;
 	questionnaireSessionId?: string | null;
-	featurePlanMessageId?: string | null;
-	sourceBlueprintMessageId?: string | null;
+	sourceSelection?: PlanArtifactSourceSelection;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
 	trace?: TraceProvenance;
 	llmUsageTrace?: TraceProvenance;
+	expectedState?: {
+		missionPilotSessionId: string;
+		contextRevision: number;
+		contextDigest: string;
+		routingRevision: number;
+	};
 };
 
 export class DataModelGenerationError extends Error {
@@ -69,39 +75,28 @@ export async function generateDataModelArtifact(
 	assertPlanModeCapabilityEnabled("data_model");
 	assertPlanModeMutable(task);
 
-	const [messages, session] = await Promise.all([
-		listPlanModeTaskMessages(taskId),
-		resolveQuestionnaireSession(taskId, input.questionnaireSessionId),
-	]);
-	const featurePlanMessage = resolveSourceMessage(
-		messages,
-		input.featurePlanMessageId,
-		"feature_plan",
-	);
-	const sourceBlueprintMessage = resolveSourceMessage(
-		messages,
-		input.sourceBlueprintMessageId,
-		"blueprint",
-	);
-	const prompt =
-		input.prompt?.trim() ||
-		task.objective ||
-		task.description ||
-		task.title ||
-		"No additional prompt.";
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		task.repositoryId,
-	);
+	const canonical = await resolvePlanArtifactCanonicalInput({
+		taskId,
+		target: "data_model",
+		questionnaireSessionId: input.questionnaireSessionId ?? null,
+		sourceSelection:
+			input.sourceSelection ??
+			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
+		regenerationRequest: input.prompt ?? null,
+		expectedState: input.expectedState,
+	});
+	const projection = projectPlanArtifactInput(canonical);
+	const renderedInput = renderPlanArtifactInput(projection);
 	const artifact = await generateArtifactFromLlm({
 		taskId,
-		task: renderTaskContext(task),
-		projectStackContext,
-		featurePlan: featurePlanMessage?.content || "Feature Plan は未生成です。",
-		questionnaire: session
-			? renderQuestionnaireAnswerMarkdown(session)
-			: "Questionnaire は未生成です。",
-		blueprint: sourceBlueprintMessage?.content || "Blueprint は未生成です。",
-		prompt,
+		task: renderedInput.task,
+		projectStackContext: renderedInput.projectContext,
+		featurePlan: renderedInput.featurePlan,
+		questionnaire: renderedInput.questionnaire,
+		blueprint: renderedInput.blueprint,
+		prompt: renderedInput.regenerationRequest ?? "",
+		projectionPrompt: renderedInput.prompt,
+		projection,
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
 		usageTrace: input.llmUsageTrace,
@@ -119,15 +114,17 @@ export async function generateDataModelArtifact(
 			intent: "plan_mode_dedicated_view",
 			artifactType: "data_model",
 			dataModelArtifact: artifact,
-			featurePlanMessageId: featurePlanMessage?.id ?? null,
-			questionnaireSessionId: session?.id ?? null,
-			sourceBlueprintMessageId: sourceBlueprintMessage?.id ?? null,
-			sourceMessageIds: [
-				featurePlanMessage?.id,
-				sourceBlueprintMessage?.id,
-			].filter((id): id is string => Boolean(id)),
+			featurePlanMessageId: input.sourceSelection?.featurePlanMessageId ?? null,
+			questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+			sourceBlueprintMessageId:
+				input.sourceSelection?.blueprintMessageId ?? null,
+			sourceMessageIds: projection.provenance.sourceMessageIds,
 			generation: {
 				promptVersion: DATA_MODEL_PROMPT_VERSION,
+				inputProjection: projectionMetadata(
+					projection,
+					canonical.questionnaire?.sessionId ?? null,
+				),
 			},
 		},
 		trace: input.trace,
@@ -160,37 +157,6 @@ export function buildDataModelResponseJsonSchema() {
 	);
 }
 
-async function resolveQuestionnaireSession(
-	taskId: string,
-	sessionId?: string | null,
-) {
-	if (sessionId) return getDesignQuestionnaireSession(taskId, sessionId);
-	const sessions = await listDesignQuestionnaires(taskId);
-	return (
-		sessions.find((session) => session.status === "accepted") ||
-		sessions.find((session) => session.status === "review_ready") ||
-		null
-	);
-}
-
-function resolveSourceMessage(
-	messages: PlanModeTaskMessage[],
-	messageId: string | null | undefined,
-	kind: "feature_plan" | "blueprint",
-) {
-	if (messageId) {
-		return (
-			messages.find(
-				(message) => message.id === messageId && isMessageKind(message, kind),
-			) || null
-		);
-	}
-	return (
-		[...messages].reverse().find((message) => isMessageKind(message, kind)) ||
-		null
-	);
-}
-
 async function generateArtifactFromLlm(input: {
 	taskId: string;
 	task: string;
@@ -199,6 +165,8 @@ async function generateArtifactFromLlm(input: {
 	questionnaire: string;
 	blueprint: string;
 	prompt: string;
+	projectionPrompt?: string;
+	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
@@ -213,11 +181,13 @@ async function generateArtifactFromLlm(input: {
 			attempt <= DATA_MODEL_MERMAID_MAX_ATTEMPTS;
 			attempt += 1
 		) {
+			const systemPrompt = buildDataModelSystemPrompt(
+				JSON.stringify(schema, null, 2),
+			);
+			const userPrompt = buildDataModelUserPrompt({ ...input, repairContext });
 			const generated = await callStructuredOutputWithRepair({
-				systemPrompt: buildDataModelSystemPrompt(
-					JSON.stringify(schema, null, 2),
-				),
-				userPrompt: buildDataModelUserPrompt({ ...input, repairContext }),
+				systemPrompt,
+				userPrompt,
 				options: {
 					contract: createStructuredOutputContract({
 						name: "plan_mode_data_model",
@@ -229,6 +199,14 @@ async function generateArtifactFromLlm(input: {
 					role: input.role,
 					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
+					promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
+						projection: input.projection,
+						systemPrompt,
+						userPrompt,
+						role: input.role,
+						routeOverride: input.routeOverride,
+					}),
+					timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 				},
 			});
 			const rawOutput =
@@ -263,6 +241,25 @@ async function generateArtifactFromLlm(input: {
 			lastRawText: lastRawOutput,
 		});
 	}
+}
+
+function projectionMetadata(
+	projection: ReturnType<typeof projectPlanArtifactInput>,
+	questionnaireSessionId: string | null,
+) {
+	return {
+		version: projection.version,
+		target: projection.target,
+		digest: projection.diagnostics.projectionDigest,
+		contextRevision: projection.provenance.contextRevision,
+		contextDigest: projection.provenance.contextDigest,
+		routingRevision: projection.provenance.routingRevision,
+		questionnaireSessionId,
+		questionnaireDigest: projection.provenance.questionnaireDigest,
+		sourceMessageIds: projection.provenance.sourceMessageIds,
+		sourceDigests: projection.provenance.sourceDigests,
+		sectionBytes: projection.diagnostics.sectionBytes,
+	};
 }
 
 async function validateDataModelMermaidArtifact(artifact: DataModelArtifact) {
@@ -448,31 +445,4 @@ function sanitizeMermaidLabel(value: string) {
 			.slice(0, 10)
 			.join(" ") || "relates";
 	return `"${label}"`;
-}
-
-function isMessageKind(
-	message: PlanModeTaskMessage,
-	kind: "feature_plan" | "blueprint",
-) {
-	if (message.messageType !== "markdown_document") return false;
-	const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-	if (kind === "feature_plan") return metadata.intent === "feature_plan";
-	return (
-		(metadata.intent === "app_blueprint" && Boolean(metadata.appBlueprint)) ||
-		(metadata.intent === "mock_blueprint" && Boolean(metadata.mockBlueprint))
-	);
-}
-
-function renderTaskContext(task: {
-	title?: string | null;
-	description?: string | null;
-	objective?: string | null;
-}) {
-	return [
-		`Title: ${task.title || "Untitled"}`,
-		task.description ? `Description: ${task.description}` : "",
-		task.objective ? `Objective: ${task.objective}` : "",
-	]
-		.filter(Boolean)
-		.join("\n");
 }

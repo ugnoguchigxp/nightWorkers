@@ -1,7 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
 import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { normalizeProviderUsage } from "../llm-usage";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
+import { rejectProviderActivity } from "./events";
 import type { RawLlmCallOptions } from "./providers";
 import {
 	getResolvedProviderEndpoint,
@@ -92,179 +95,224 @@ export async function callCodexProvider(
 			getStructuredLlmSetting(settings, "CODEX_MODEL_REASONING_EFFORT") ||
 			"low",
 	);
-	const codex = new Codex({
-		env: {
-			...sanitizeCodexProviderEnv(process.env),
-			...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
-		},
-		config: {
-			features: { mcp: false },
-			mcp_servers: {},
-		},
-	});
-	const threadOptions = {
-		model,
-		sandboxMode: "read-only",
-		approvalPolicy: "never",
-		networkAccessEnabled: false,
-		webSearchMode: "disabled",
-		workingDirectory: input.options.workingDirectory || process.cwd(),
-		skipGitRepoCheck: true,
-		modelReasoningEffort,
-	} as const;
-	const sessionStore =
-		input.options.runtimeSessionStore ?? defaultCodexStructuredSessionStore;
-	const sessionLookup =
-		input.options.taskId !== undefined
-			? {
-					taskId: input.options.taskId,
-					runtimeLane: CODEX_STRUCTURED_RUNTIME_LANE,
-					provider: "codex",
-					executionMode: buildCodexStructuredExecutionMode({
-						role: input.options.role,
-						model,
-						schemaName: input.options.jsonSchema?.name ?? input.options.label,
-					}),
+	const structuredArtifact =
+		input.options.normalizedRequest?.callKind === "structured_artifact";
+	const isolatedWorkingDirectory = structuredArtifact
+		? fs.mkdtempSync(`${os.tmpdir()}/nightworkers-structured-artifact-`)
+		: null;
+	try {
+		const codex = new Codex({
+			env: {
+				...sanitizeCodexProviderEnv(process.env),
+				...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
+			},
+			config: {
+				features: { mcp: false },
+				mcp_servers: {},
+				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
+			} as never,
+		});
+		const threadOptions = {
+			model,
+			sandboxMode: "read-only",
+			approvalPolicy: "never",
+			networkAccessEnabled: false,
+			webSearchMode: "disabled",
+			workingDirectory:
+				isolatedWorkingDirectory ||
+				input.options.workingDirectory ||
+				process.cwd(),
+			skipGitRepoCheck: true,
+			modelReasoningEffort,
+		} as const;
+		const sessionStore =
+			input.options.runtimeSessionStore ?? defaultCodexStructuredSessionStore;
+		const sessionLookup =
+			!structuredArtifact && input.options.taskId !== undefined
+				? {
+						taskId: input.options.taskId,
+						runtimeLane: CODEX_STRUCTURED_RUNTIME_LANE,
+						provider: "codex",
+						executionMode: buildCodexStructuredExecutionMode({
+							role: input.options.role,
+							model,
+							schemaName: input.options.jsonSchema?.name ?? input.options.label,
+						}),
+					}
+				: null;
+		let thread: CodexThread;
+		let resumeState:
+			| { status: "unavailable" }
+			| { status: "reused"; providerThreadId: string; stateId: string }
+			| {
+					status: "fallback_started_fresh";
+					providerThreadId: string;
+					stateId: string;
+					error: string;
+			  } = { status: "unavailable" };
+		if (sessionLookup) {
+			const state =
+				await sessionStore.getLatestRuntimeSessionStateForTask(sessionLookup);
+			if (state?.providerSessionId) {
+				try {
+					thread = codex.resumeThread(state.providerSessionId, threadOptions);
+					resumeState = {
+						status: "reused",
+						providerThreadId: state.providerSessionId,
+						stateId: state.id,
+					};
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					await sessionStore.markRuntimeSessionStateResumeFailed({
+						id: state.id,
+						error: message,
+					});
+					thread = codex.startThread(threadOptions);
+					resumeState = {
+						status: "fallback_started_fresh",
+						providerThreadId: state.providerSessionId,
+						stateId: state.id,
+						error: message,
+					};
 				}
-			: null;
-	let thread: CodexThread;
-	let resumeState:
-		| { status: "unavailable" }
-		| { status: "reused"; providerThreadId: string; stateId: string }
-		| {
-				status: "fallback_started_fresh";
-				providerThreadId: string;
-				stateId: string;
-				error: string;
-		  } = { status: "unavailable" };
-	if (sessionLookup) {
-		const state =
-			await sessionStore.getLatestRuntimeSessionStateForTask(sessionLookup);
-		if (state?.providerSessionId) {
-			try {
-				thread = codex.resumeThread(state.providerSessionId, threadOptions);
-				resumeState = {
-					status: "reused",
-					providerThreadId: state.providerSessionId,
-					stateId: state.id,
-				};
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				await sessionStore.markRuntimeSessionStateResumeFailed({
-					id: state.id,
-					error: message,
-				});
+			} else {
 				thread = codex.startThread(threadOptions);
-				resumeState = {
-					status: "fallback_started_fresh",
-					providerThreadId: state.providerSessionId,
-					stateId: state.id,
-					error: message,
-				};
 			}
 		} else {
 			thread = codex.startThread(threadOptions);
 		}
-	} else {
-		thread = codex.startThread(threadOptions);
-	}
-	const outputSchemaMode = resolveCodexOutputSchemaMode(
-		input.options.jsonSchema?.schema,
-	);
-	const omitOutputSchema = outputSchemaMode.mode === "prompt_validated_json";
-	const runOptions: { outputSchema?: unknown; signal: AbortSignal } = {
-		signal: input.signal,
-	};
-	const outputSchema = input.options.jsonSchema?.schema;
-	if (!omitOutputSchema && outputSchema !== undefined) {
-		runOptions.outputSchema = outputSchema;
-	}
-	let resumedThread = resumeState.status === "reused";
-	let turnInput = resumedThread
-		? [
-				{
-					type: "text" as const,
-					text: buildCodexResumedStructuredPrompt({
-						schemaName: input.options.jsonSchema?.name ?? input.options.label,
-						systemPrompt: input.systemPrompt,
-						userPrompt: input.userPrompt,
-					}),
-				},
-			]
-		: [
+		const outputSchemaMode = resolveCodexOutputSchemaMode(
+			input.options.jsonSchema?.schema,
+		);
+		const omitOutputSchema = outputSchemaMode.mode === "prompt_validated_json";
+		const runOptions: { outputSchema?: unknown; signal: AbortSignal } = {
+			signal: input.signal,
+		};
+		const outputSchema = input.options.jsonSchema?.schema;
+		if (!omitOutputSchema && outputSchema !== undefined) {
+			runOptions.outputSchema = outputSchema;
+		}
+		let resumedThread = resumeState.status === "reused";
+		let turnInput = resumedThread
+			? [
+					{
+						type: "text" as const,
+						text: buildCodexResumedStructuredPrompt({
+							schemaName: input.options.jsonSchema?.name ?? input.options.label,
+							systemPrompt: input.systemPrompt,
+							userPrompt: input.userPrompt,
+						}),
+					},
+				]
+			: [
+					{ type: "text" as const, text: input.systemPrompt },
+					{ type: "text" as const, text: input.userPrompt },
+				];
+		let turn: Awaited<ReturnType<CodexThread["run"]>>;
+		try {
+			turn = await thread.run(turnInput, runOptions);
+		} catch (error) {
+			if (resumeState.status !== "reused" || !sessionLookup) throw error;
+			const message = error instanceof Error ? error.message : String(error);
+			await sessionStore.markRuntimeSessionStateResumeFailed({
+				id: resumeState.stateId,
+				error: message,
+			});
+			thread = codex.startThread(threadOptions);
+			resumeState = {
+				status: "fallback_started_fresh",
+				providerThreadId: resumeState.providerThreadId,
+				stateId: resumeState.stateId,
+				error: message,
+			};
+			resumedThread = false;
+			turnInput = [
 				{ type: "text" as const, text: input.systemPrompt },
 				{ type: "text" as const, text: input.userPrompt },
 			];
-	let turn: Awaited<ReturnType<CodexThread["run"]>>;
-	try {
-		turn = await thread.run(turnInput, runOptions);
-	} catch (error) {
-		if (resumeState.status !== "reused" || !sessionLookup) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		await sessionStore.markRuntimeSessionStateResumeFailed({
-			id: resumeState.stateId,
-			error: message,
-		});
-		thread = codex.startThread(threadOptions);
-		resumeState = {
-			status: "fallback_started_fresh",
-			providerThreadId: resumeState.providerThreadId,
-			stateId: resumeState.stateId,
-			error: message,
-		};
-		resumedThread = false;
-		turnInput = [
-			{ type: "text" as const, text: input.systemPrompt },
-			{ type: "text" as const, text: input.userPrompt },
-		];
-		turn = await thread.run(turnInput, runOptions);
-	}
-	const content = turn.finalResponse || "";
-	if (sessionLookup && thread.id) {
-		await sessionStore.upsertRuntimeSessionState({
-			...sessionLookup,
-			runId: input.options.runId ?? null,
-			providerSessionId: thread.id,
-			model,
-			metadata: {
-				providerEndpointId: endpoint?.id ?? null,
-				role: input.options.role ?? null,
-				label: input.options.label,
-				jsonSchemaName: input.options.jsonSchema?.name ?? null,
-				resumeState: resumeState.status,
-			},
-		});
-	}
-	const providerDebug = {
-		provider: "codex",
-		providerEndpointId: endpoint?.id ?? null,
-		providerMode: omitOutputSchema
-			? "prompt_validated_json"
-			: "structured_output",
-		model,
-		modelReasoningEffort,
-		outputSchemaModeReasons: outputSchemaMode.reasons,
-		resumeState: resumeState.status,
-		providerThreadId: thread.id ?? null,
-		resumedInputReduced: resumedThread,
-		hasUsage: Boolean(turn.usage),
-		itemCount: turn.items.length,
-	};
-	input.setProviderDebug(providerDebug);
-	return {
-		content,
-		usage: normalizeProviderUsage({
+			turn = await thread.run(turnInput, runOptions);
+		}
+		const content = turn.finalResponse || "";
+		const items = Array.isArray(turn.items) ? turn.items : [];
+		const agenticItems = items.filter((item) =>
+			[
+				"command_execution",
+				"mcp_tool_call",
+				"web_search_call",
+				"computer_call",
+			].includes(String((item as { type?: unknown }).type || "")),
+		);
+		if (agenticItems.length > 0) {
+			if (input.options.normalizedRequest) {
+				await rejectProviderActivity({
+					options: input.options,
+					request: input.options.normalizedRequest,
+					activityType: "agentic_item",
+					toolName: String(
+						(agenticItems[0] as { type?: unknown }).type || "agentic_item",
+					),
+					preview: JSON.stringify(
+						(agenticItems[0] as { type?: unknown }).type || "agentic_item",
+					),
+				});
+			}
+			throw new Error("Structured Codex generation returned agentic activity.");
+		}
+		if (sessionLookup && thread.id) {
+			await sessionStore.upsertRuntimeSessionState({
+				...sessionLookup,
+				runId: input.options.runId ?? null,
+				providerSessionId: thread.id,
+				model,
+				metadata: {
+					providerEndpointId: endpoint?.id ?? null,
+					role: input.options.role ?? null,
+					label: input.options.label,
+					jsonSchemaName: input.options.jsonSchema?.name ?? null,
+					resumeState: resumeState.status,
+				},
+			});
+		}
+		const providerDebug = {
 			provider: "codex",
-			rawUsage: turn.usage,
-			fallback: {
-				systemPrompt: input.systemPrompt,
-				userPrompt: input.userPrompt,
-				responseText: content,
-			},
-		}),
-		model,
-		providerDebug,
-	};
+			providerEndpointId: endpoint?.id ?? null,
+			providerMode: omitOutputSchema
+				? "prompt_validated_json"
+				: "structured_output",
+			model,
+			modelReasoningEffort,
+			outputSchemaModeReasons: outputSchemaMode.reasons,
+			resumeState: resumeState.status,
+			providerThreadId: thread.id ?? null,
+			resumedInputReduced: resumedThread,
+			hasUsage: Boolean(turn.usage),
+			itemCount: items.length,
+			agenticItemCount: agenticItems.length,
+			freshThread: structuredArtifact,
+			isolatedWorkingDirectory: Boolean(isolatedWorkingDirectory),
+			providerTurnCount: 1,
+		};
+		input.setProviderDebug(providerDebug);
+		return {
+			content,
+			usage: normalizeProviderUsage({
+				provider: "codex",
+				rawUsage: turn.usage,
+				fallback: {
+					systemPrompt: input.systemPrompt,
+					userPrompt: input.userPrompt,
+					responseText: content,
+				},
+			}),
+			model,
+			providerDebug,
+		};
+	} finally {
+		if (isolatedWorkingDirectory) {
+			fs.rmSync(isolatedWorkingDirectory, { recursive: true, force: true });
+		}
+	}
 }
 
 export function sanitizeCodexProviderEnv(

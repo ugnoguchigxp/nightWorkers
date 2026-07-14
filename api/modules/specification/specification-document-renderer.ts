@@ -154,6 +154,7 @@ export function buildSpecificationDocumentContext(input: {
 		planViewReferences,
 		planModeReferences,
 		userRegenerationRequest: null as string | null,
+		artifactInputPrompt: null as string | null,
 		traceability: FEATURE_PLAN_TRACEABILITY_STATEMENT,
 	};
 }

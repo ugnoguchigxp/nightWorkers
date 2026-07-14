@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { MissionPilotReviewedArtifact } from "../../../shared/schemas/mission-pilot-plan-review.schema";
-import {
-	type PlanModeArtifactKind,
-	planModeRegenerationTargetSchema,
-} from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeArtifactKind } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -25,10 +21,12 @@ import {
 	saveDesignQuestionnaireAnswers,
 } from "../questionnaire/questionnaire.service";
 import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire/questionnaire-additional.service";
+import type { PlanArtifactGenerationTarget } from "../specification/plan-artifact-input.types";
 import type { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
+import { resolveMissionPilotPlanArtifactSources } from "./mission-pilot-plan-artifact-source-resolver";
 import { getMissionPilotPlanProgress } from "./mission-pilot-plan-progress.service";
 import { assertMissionPilotPreQueueMutable } from "./mission-pilot-pre-queue-recovery.service";
 import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
@@ -42,6 +40,7 @@ export const MAX_REVIEW_ATTEMPTS = 3;
 export const MAX_QUEUE_STABILIZATION_ATTEMPTS = 3;
 export const PIPELINE_LEASE_MS = 15 * 60 * 1000;
 export class MissionPilotPlanReviewStaleError extends Error {}
+
 export async function publishCurrentPlanProgress(taskId: string) {
 	try {
 		const progress = await getMissionPilotPlanProgress(taskId);
@@ -70,32 +69,6 @@ export function artifactKinds(
 		...workspace.dataModelArtifacts.map((artifact) => artifact.kind),
 		...workspace.dedicatedViewArtifacts.map((artifact) => artifact.kind),
 	]);
-}
-export function collectCurrentReviewArtifacts(
-	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
-) {
-	const included = new Set(
-		(workspace.routing?.entries ?? workspace.viewDecisions)
-			.filter((entry) => entry.decision === "include")
-			.map((entry) => entry.view),
-	);
-	included.add("feature_plan");
-	const byKind = new Map<string, MissionPilotReviewedArtifact>();
-	for (const artifact of [
-		...workspace.blueprintArtifacts,
-		...workspace.dataModelArtifacts,
-		...workspace.dedicatedViewArtifacts,
-		...workspace.featurePlanArtifacts,
-	]) {
-		const parsed = planModeRegenerationTargetSchema.safeParse(artifact.kind);
-		if (!parsed.success) continue;
-		if (!included.has(parsed.data)) continue;
-		byKind.set(parsed.data, {
-			artifactKind: parsed.data,
-			sourceMessageId: artifact.sourceMessageId,
-		});
-	}
-	return [...byKind.values()];
 }
 export function existingArtifactForStep(
 	workspace: Awaited<ReturnType<typeof getPlanModeWorkspace>>,
@@ -220,11 +193,19 @@ export async function generateStepArtifact(
 	const evidence = step.evidenceJson;
 	const kind = String(evidence.kind || "");
 	const view = String(evidence.view || "");
+	const target = kind === "dedicated_view" ? view : kind;
+	const resolved = await resolveMissionPilotPlanArtifactSources({
+		sessionId: step.sessionId,
+		stepId: step.id,
+		target: target as PlanArtifactGenerationTarget,
+	});
 	const trace = missionPilotPlanOutputTrace({ sessionId: step.sessionId });
 	const llmUsageTrace = trace;
 	if (kind === "blueprint") {
 		return generateBlueprintArtifact(taskId, {
 			questionnaireSessionId,
+			sourceSelection: resolved.selection,
+			expectedState: resolved.expectedState,
 			role: "mission_pilot",
 			trace,
 			llmUsageTrace,
@@ -233,6 +214,8 @@ export async function generateStepArtifact(
 	if (kind === "data_model") {
 		return generateDataModelArtifact(taskId, {
 			questionnaireSessionId,
+			sourceSelection: resolved.selection,
+			expectedState: resolved.expectedState,
 			role: "mission_pilot",
 			trace,
 			llmUsageTrace,
@@ -244,6 +227,8 @@ export async function generateStepArtifact(
 			view as Parameters<typeof generatePlanViewArtifact>[1],
 			{
 				questionnaireSessionId,
+				sourceSelection: resolved.selection,
+				expectedState: resolved.expectedState,
 				role: "mission_pilot",
 				trace,
 				llmUsageTrace,
@@ -253,6 +238,8 @@ export async function generateStepArtifact(
 	if (kind === "feature_plan") {
 		return generateFeaturePlanArtifact(taskId, {
 			questionnaireSessionId,
+			sourceSelection: resolved.selection,
+			expectedState: resolved.expectedState,
 			role: "mission_pilot",
 			trace,
 			llmUsageTrace,
@@ -266,20 +253,36 @@ export async function persistArtifactContext(
 	stepKey: string,
 	result: GeneratedArtifact,
 ) {
-	const metadata =
+	const metadata: Record<string, unknown> =
 		result.message.metadataJson &&
 		typeof result.message.metadataJson === "object" &&
 		!Array.isArray(result.message.metadataJson)
-			? result.message.metadataJson
+			? (result.message.metadataJson as Record<string, unknown>)
 			: {};
 	const content = result.message.content || "";
 	const digest = crypto.createHash("sha256").update(content).digest("hex");
+	const generation =
+		metadata.generation &&
+		typeof metadata.generation === "object" &&
+		!Array.isArray(metadata.generation)
+			? (metadata.generation as Record<string, unknown>)
+			: {};
+	const inputProjection =
+		generation.inputProjection &&
+		typeof generation.inputProjection === "object" &&
+		!Array.isArray(generation.inputProjection)
+			? (generation.inputProjection as Record<string, unknown>)
+			: {};
 	return planRepo.appendPlanContext(sessionId, "artifact", {
 		stepKey,
 		sourceMessageId: result.message.id,
 		content,
 		metadata,
 		digest,
+		routingRevision:
+			typeof inputProjection.routingRevision === "number"
+				? inputProjection.routingRevision
+				: null,
 		createdAt: new Date().toISOString(),
 	});
 }

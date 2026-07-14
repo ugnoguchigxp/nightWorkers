@@ -71,7 +71,9 @@ export function buildPlanZodSchemaUserPrompt(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	projectionPrompt?: string;
 }) {
+	if (input.projectionPrompt?.trim()) return input.projectionPrompt.trim();
 	return [
 		"次の context から Zod Schema view を1つ生成してください。",
 		"",

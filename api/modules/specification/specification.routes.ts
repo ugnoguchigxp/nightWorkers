@@ -1,6 +1,7 @@
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import { updatePlanModeRoutingForUser } from "../planMode/plan-mode-routing.service";
+import { createPlanArtifactSourceSelection } from "./plan-artifact-source-selection";
 import * as service from "./specification.service";
 import {
 	generateFeaturePlanRoute,
@@ -29,9 +30,17 @@ export const specificationRouter = createOpenApiRouter()
 	.openapi(
 		generateFeaturePlanRoute,
 		withOpenApiRouteError(generateFeaturePlanRoute, async (c) => {
+			const body = c.req.valid("json");
+			const { sourceBlueprintMessageId, ...generationInput } = body;
 			const result = await service.generateFeaturePlanArtifact(
 				c.req.param("id"),
-				c.req.valid("json"),
+				{
+					...generationInput,
+					sourceSelection: createPlanArtifactSourceSelection({
+						policy: "explicit_request",
+						blueprintMessageId: sourceBlueprintMessageId,
+					}),
+				},
 			);
 			return c.json(result, 200);
 		}),

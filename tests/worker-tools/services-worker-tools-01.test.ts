@@ -1121,6 +1121,25 @@ describe("Worker Tools Unit Tests", () => {
 		);
 	});
 
+	it("resolves current java-template starter snapshot refs", () => {
+		const expectedRefs = {
+			"java8-sqlite": "variant/java8-sqlite",
+			"java8-postgres": "variant/java-8-postgresql",
+			"java25-sqlite": "variant/java25-sqlite",
+			"java25-postgres": "variant/java25-postgres",
+		};
+
+		for (const [variant, expectedRef] of Object.entries(expectedRefs)) {
+			const resolved = resolveStarterTemplate({ stack: "java", variant });
+			expect(resolved.ok && resolved.template.id).toBe("java-template");
+			expect(resolved.ok && resolved.variant.ref).toBe(expectedRef);
+		}
+		const defaultResolved = resolveStarterTemplate({ stack: "java" });
+		expect(defaultResolved.ok && defaultResolved.variant.name).toBe(
+			"java25-sqlite",
+		);
+	});
+
 	it("resolves a starter stack and variant into the internal template registry", () => {
 		const resolved = resolveStarterTemplate({
 			stack: "python",

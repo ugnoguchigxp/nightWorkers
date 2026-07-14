@@ -34,10 +34,18 @@ import type {
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
-	listPlanModeTaskMessages,
+	getPlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
+import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
+import {
+	buildPlanArtifactPromptBudgetMetadata,
+	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+	renderPlanArtifactInput,
+} from "../specification/plan-artifact-input-renderer";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 import {
@@ -50,7 +58,6 @@ import {
 import {
 	buildClientMermaidRepairPrompt,
 	parseGenericDedicatedViewOutput,
-	resolveMessage,
 } from "./plan-view-generic-parser";
 import {
 	buildPlanViewMermaidRepairContext,
@@ -66,14 +73,13 @@ export {
 export {
 	buildClientMermaidRepairPrompt,
 	parseGenericDedicatedViewOutput,
-	resolveMessage,
 } from "./plan-view-generic-parser";
 export {
 	normalizePlanViewMermaidArtifact,
 	validatePlanViewMermaidArtifact,
 } from "./plan-view-mermaid-validator";
 
-const PLAN_VIEW_MERMAID_MAX_ATTEMPTS = 3;
+const PLAN_VIEW_MERMAID_MAX_ATTEMPTS = 2;
 export const genericPlanViewSchema = z.enum([
 	"user_flow",
 	"api_io_contract",
@@ -95,14 +101,18 @@ export type MarkdownPlanView = z.infer<typeof markdownPlanViewSchema>;
 export type PlanViewGenerationInput = {
 	prompt?: string;
 	questionnaireSessionId?: string | null;
-	featurePlanMessageId?: string | null;
-	sourceBlueprintMessageId?: string | null;
-	sourceDataModelMessageId?: string | null;
+	sourceSelection?: PlanArtifactSourceSelection;
 	mermaidRenderRepair?: MermaidRenderRepair;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
 	trace?: TraceProvenance;
 	llmUsageTrace?: TraceProvenance;
+	expectedState?: {
+		missionPilotSessionId: string;
+		contextRevision: number;
+		contextDigest: string;
+		routingRevision: number;
+	};
 };
 
 export async function generatePlanViewArtifact(
@@ -123,11 +133,8 @@ export async function generatePlanViewArtifact(
 	assertPlanModeCapabilityEnabled(parsedView.data);
 	assertPlanModeMutable(task);
 
-	const messages = await listPlanModeTaskMessages(taskId);
 	const mermaidRepairSourceMessage = input.mermaidRenderRepair
-		? messages.find(
-				(message) => message.id === input.mermaidRenderRepair?.sourceMessageId,
-			) || null
+		? await getPlanModeTaskMessage(input.mermaidRenderRepair.sourceMessageId)
 		: null;
 	if (input.mermaidRenderRepair) {
 		const repairMetadata = (mermaidRepairSourceMessage?.metadataJson ||
@@ -144,49 +151,39 @@ export async function generatePlanViewArtifact(
 			);
 		}
 	}
-	const featurePlanMessage = resolveMessage(
-		messages,
-		input.featurePlanMessageId,
-		"feature_plan",
-	);
-	const blueprintMessage = resolveMessage(
-		messages,
-		input.sourceBlueprintMessageId,
-		"blueprint",
-	);
-	const dataModelMessage = resolveMessage(
-		messages,
-		input.sourceDataModelMessageId,
-		"data_model",
-	);
-	const prompt = input.mermaidRenderRepair
-		? buildClientMermaidRepairPrompt(input.mermaidRenderRepair)
-		: input.prompt?.trim() ||
-			task.objective ||
-			task.description ||
-			task.title ||
-			"No additional prompt.";
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		task.repositoryId,
-	);
-	const sourceMessageIds = [
-		featurePlanMessage?.id,
-		blueprintMessage?.id,
-		dataModelMessage?.id,
-		mermaidRepairSourceMessage?.id,
-	].filter((id): id is string => Boolean(id));
+	const target = parsedView.data as Parameters<
+		typeof resolvePlanArtifactCanonicalInput
+	>[0]["target"];
+	const canonical = await resolvePlanArtifactCanonicalInput({
+		taskId,
+		target,
+		questionnaireSessionId: input.questionnaireSessionId ?? null,
+		sourceSelection:
+			input.sourceSelection ??
+			createPlanArtifactSourceSelection({
+				policy: "explicit_request",
+				previousTargetMessageId: input.mermaidRenderRepair?.sourceMessageId,
+			}),
+		regenerationRequest: input.mermaidRenderRepair
+			? buildClientMermaidRepairPrompt(input.mermaidRenderRepair)
+			: (input.prompt ?? null),
+		expectedState: input.expectedState,
+	});
+	const projection = projectPlanArtifactInput(canonical);
+	const renderedInput = renderPlanArtifactInput(projection);
+	const sourceMessageIds = projection.provenance.sourceMessageIds;
 	if (parsedView.data === "api_io_contract") {
 		const artifact = await generateApiContractArtifactFromLlm({
 			taskId,
-			task: renderTaskContext(task),
-			projectStackContext,
-			featurePlan: featurePlanMessage?.content || "Feature Plan は未生成です。",
-			questionnaire: input.questionnaireSessionId
-				? `Questionnaire session: ${input.questionnaireSessionId}`
-				: "Questionnaire は指定されていません。",
-			blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
-			dataModel: dataModelMessage?.content || "Data Model は未生成です。",
-			prompt,
+			task: renderedInput.task,
+			projectStackContext: renderedInput.projectContext,
+			featurePlan: renderedInput.featurePlan,
+			questionnaire: renderedInput.questionnaire,
+			blueprint: renderedInput.blueprint,
+			dataModel: renderedInput.dataModel,
+			prompt: renderedInput.regenerationRequest ?? "",
+			projectionPrompt: renderedInput.prompt,
+			projection,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
 			usageTrace: input.llmUsageTrace,
@@ -205,13 +202,20 @@ export async function generatePlanViewArtifact(
 				artifactType: artifact.view,
 				apiContract: artifact,
 				artifactPayload: artifact,
-				featurePlanMessageId: featurePlanMessage?.id ?? null,
-				questionnaireSessionId: input.questionnaireSessionId ?? null,
-				sourceBlueprintMessageId: blueprintMessage?.id ?? null,
-				sourceDataModelMessageId: dataModelMessage?.id ?? null,
+				featurePlanMessageId:
+					input.sourceSelection?.featurePlanMessageId ?? null,
+				questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+				sourceBlueprintMessageId:
+					input.sourceSelection?.blueprintMessageId ?? null,
+				sourceDataModelMessageId:
+					input.sourceSelection?.dataModelMessageId ?? null,
 				sourceMessageIds,
 				generation: {
 					promptVersion: PLAN_API_CONTRACT_PROMPT_VERSION,
+					inputProjection: projectionMetadata(
+						projection,
+						canonical.questionnaire?.sessionId ?? null,
+					),
 				},
 			},
 			trace: input.trace,
@@ -221,15 +225,15 @@ export async function generatePlanViewArtifact(
 	if (parsedView.data === "zod_schema_design") {
 		const artifact = await generateZodSchemaArtifactFromLlm({
 			taskId,
-			task: renderTaskContext(task),
-			projectStackContext,
-			featurePlan: featurePlanMessage?.content || "Feature Plan は未生成です。",
-			questionnaire: input.questionnaireSessionId
-				? `Questionnaire session: ${input.questionnaireSessionId}`
-				: "Questionnaire は指定されていません。",
-			blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
-			dataModel: dataModelMessage?.content || "Data Model は未生成です。",
-			prompt,
+			task: renderedInput.task,
+			projectStackContext: renderedInput.projectContext,
+			featurePlan: renderedInput.featurePlan,
+			questionnaire: renderedInput.questionnaire,
+			blueprint: renderedInput.blueprint,
+			dataModel: renderedInput.dataModel,
+			prompt: renderedInput.regenerationRequest ?? "",
+			projectionPrompt: renderedInput.prompt,
+			projection,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
 			usageTrace: input.llmUsageTrace,
@@ -248,13 +252,20 @@ export async function generatePlanViewArtifact(
 				artifactType: artifact.view,
 				zodSchema: artifact,
 				artifactPayload: artifact,
-				featurePlanMessageId: featurePlanMessage?.id ?? null,
-				questionnaireSessionId: input.questionnaireSessionId ?? null,
-				sourceBlueprintMessageId: blueprintMessage?.id ?? null,
-				sourceDataModelMessageId: dataModelMessage?.id ?? null,
+				featurePlanMessageId:
+					input.sourceSelection?.featurePlanMessageId ?? null,
+				questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+				sourceBlueprintMessageId:
+					input.sourceSelection?.blueprintMessageId ?? null,
+				sourceDataModelMessageId:
+					input.sourceSelection?.dataModelMessageId ?? null,
 				sourceMessageIds,
 				generation: {
 					promptVersion: PLAN_ZOD_SCHEMA_PROMPT_VERSION,
+					inputProjection: projectionMetadata(
+						projection,
+						canonical.questionnaire?.sessionId ?? null,
+					),
 				},
 			},
 			trace: input.trace,
@@ -264,15 +275,15 @@ export async function generatePlanViewArtifact(
 	const artifact = await generateArtifactFromLlm({
 		view: markdownPlanViewSchema.parse(parsedView.data),
 		taskId,
-		task: renderTaskContext(task),
-		projectStackContext,
-		featurePlan: featurePlanMessage?.content || "Feature Plan は未生成です。",
-		questionnaire: input.questionnaireSessionId
-			? `Questionnaire session: ${input.questionnaireSessionId}`
-			: "Questionnaire は指定されていません。",
-		blueprint: blueprintMessage?.content || "Blueprint は未生成です。",
-		dataModel: dataModelMessage?.content || "Data Model は未生成です。",
-		prompt,
+		task: renderedInput.task,
+		projectStackContext: renderedInput.projectContext,
+		featurePlan: renderedInput.featurePlan,
+		questionnaire: renderedInput.questionnaire,
+		blueprint: renderedInput.blueprint,
+		dataModel: renderedInput.dataModel,
+		prompt: renderedInput.regenerationRequest ?? "",
+		projectionPrompt: renderedInput.prompt,
+		projection,
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
 		usageTrace: input.llmUsageTrace,
@@ -290,13 +301,19 @@ export async function generatePlanViewArtifact(
 			intent: "plan_mode_dedicated_view",
 			artifactType: artifact.view,
 			...(artifact.diagramKind ? { diagramKind: artifact.diagramKind } : {}),
-			featurePlanMessageId: featurePlanMessage?.id ?? null,
-			questionnaireSessionId: input.questionnaireSessionId ?? null,
-			sourceBlueprintMessageId: blueprintMessage?.id ?? null,
-			sourceDataModelMessageId: dataModelMessage?.id ?? null,
+			featurePlanMessageId: input.sourceSelection?.featurePlanMessageId ?? null,
+			questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+			sourceBlueprintMessageId:
+				input.sourceSelection?.blueprintMessageId ?? null,
+			sourceDataModelMessageId:
+				input.sourceSelection?.dataModelMessageId ?? null,
 			sourceMessageIds,
 			generation: {
 				promptVersion: PLAN_DEDICATED_VIEW_PROMPT_VERSION,
+				inputProjection: projectionMetadata(
+					projection,
+					canonical.questionnaire?.sessionId ?? null,
+				),
 				...(input.mermaidRenderRepair
 					? {
 							repair: {
@@ -323,6 +340,8 @@ async function generateArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	projectionPrompt?: string;
+	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
@@ -336,12 +355,14 @@ async function generateArtifactFromLlm(input: {
 			attempt <= PLAN_VIEW_MERMAID_MAX_ATTEMPTS;
 			attempt += 1
 		) {
+			const systemPrompt = buildPlanDedicatedViewSystemPrompt(input.view);
+			const userPrompt = buildPlanDedicatedViewUserPrompt({
+				...input,
+				repairContext,
+			});
 			const generated = await callStructuredOutputWithRepair({
-				systemPrompt: buildPlanDedicatedViewSystemPrompt(input.view),
-				userPrompt: buildPlanDedicatedViewUserPrompt({
-					...input,
-					repairContext,
-				}),
+				systemPrompt,
+				userPrompt,
 				options: {
 					contract: createStructuredOutputContract({
 						name: "plan_mode_dedicated_view",
@@ -353,6 +374,14 @@ async function generateArtifactFromLlm(input: {
 					role: input.role,
 					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
+					promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
+						projection: input.projection,
+						systemPrompt,
+						userPrompt,
+						role: input.role,
+						routeOverride: input.routeOverride,
+					}),
+					timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 				},
 			});
 			const rawOutput =
@@ -400,15 +429,19 @@ async function generateApiContractArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	projectionPrompt?: string;
+	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
 	let lastRawOutput: string | null = null;
 	try {
+		const systemPrompt = buildPlanApiContractSystemPrompt();
+		const userPrompt = buildPlanApiContractUserPrompt(input);
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: buildPlanApiContractSystemPrompt(),
-			userPrompt: buildPlanApiContractUserPrompt(input),
+			systemPrompt,
+			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({
 					name: "plan_mode_api_contract",
@@ -420,6 +453,14 @@ async function generateApiContractArtifactFromLlm(input: {
 				role: input.role,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
+				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
+					projection: input.projection,
+					systemPrompt,
+					userPrompt,
+					role: input.role,
+					routeOverride: input.routeOverride,
+				}),
+				timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 			},
 		});
 		lastRawOutput =
@@ -444,15 +485,19 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	blueprint: string;
 	dataModel: string;
 	prompt: string;
+	projectionPrompt?: string;
+	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
 }) {
 	let lastRawOutput: string | null = null;
 	try {
+		const systemPrompt = buildPlanZodSchemaSystemPrompt();
+		const userPrompt = buildPlanZodSchemaUserPrompt(input);
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: buildPlanZodSchemaSystemPrompt(),
-			userPrompt: buildPlanZodSchemaUserPrompt(input),
+			systemPrompt,
+			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({
 					name: "plan_mode_zod_schema",
@@ -464,6 +509,14 @@ async function generateZodSchemaArtifactFromLlm(input: {
 				role: input.role,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
+				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
+					projection: input.projection,
+					systemPrompt,
+					userPrompt,
+					role: input.role,
+					routeOverride: input.routeOverride,
+				}),
+				timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 			},
 		});
 		lastRawOutput =
@@ -481,16 +534,21 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	}
 }
 
-function renderTaskContext(task: {
-	title?: string | null;
-	description?: string | null;
-	objective?: string | null;
-}) {
-	return [
-		`Title: ${task.title || "Untitled"}`,
-		task.description ? `Description: ${task.description}` : "",
-		task.objective ? `Objective: ${task.objective}` : "",
-	]
-		.filter(Boolean)
-		.join("\n");
+function projectionMetadata(
+	projection: ReturnType<typeof projectPlanArtifactInput>,
+	questionnaireSessionId: string | null,
+) {
+	return {
+		version: projection.version,
+		target: projection.target,
+		digest: projection.diagnostics.projectionDigest,
+		contextRevision: projection.provenance.contextRevision,
+		contextDigest: projection.provenance.contextDigest,
+		routingRevision: projection.provenance.routingRevision,
+		questionnaireSessionId,
+		questionnaireDigest: projection.provenance.questionnaireDigest,
+		sourceMessageIds: projection.provenance.sourceMessageIds,
+		sourceDigests: projection.provenance.sourceDigests,
+		sectionBytes: projection.diagnostics.sectionBytes,
+	};
 }

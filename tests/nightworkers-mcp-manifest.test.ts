@@ -198,6 +198,13 @@ describe("nightworkers MCP manifest", () => {
 				variant: "sqlite",
 			}).success,
 		).toBe(true);
+		expect(
+			nightWorkersImportProjectInputSchema.safeParse({
+				source: "starter",
+				stack: "java",
+				variant: "java8-sqlite",
+			}).success,
+		).toBe(true);
 	});
 
 	it("accepts SystemContext-echoed managed Todo taskTypes in replace input", () => {

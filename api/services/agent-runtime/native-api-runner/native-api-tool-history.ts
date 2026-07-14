@@ -310,7 +310,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"リポジトリの読み書きは workspace context の executionRoot を基準にし、worker tool handler 経由で行います。",
 		...(repositoryBootstrap
 			? [
-					"このrunはRepository bootstrap専用です。最初にpwdとlist-dir / ls相当で空状態と.gitを確認し、HEADがなければnightworkers.import_project source=starter stack=honoをvariant省略で実行してください。",
+					"このrunはRepository bootstrap専用です。最初にpwdとlist-dir / ls相当で空状態と.gitを確認し、HEADがなければ確定済みQuestionnaire / Feature Planのstarter選択に従ってnightworkers.import_projectを実行してください。Java / Spring Boot選択時はstack=javaと対応するJava/DB variantを使い、選択がない場合だけstack=honoの既定variantを使ってください。",
 					"import後はGit HEADとbaseline commitだけを確認し、通常機能の実装には進まないでください。",
 				]
 			: []),

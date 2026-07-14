@@ -10,6 +10,7 @@ import {
 	type ProjectPostImportOutput,
 } from "./project-post-import";
 import {
+	resolveStandardTemplate,
 	resolveStarterTemplate,
 	type StarterStack,
 	type TemplateRegistry,
@@ -95,8 +96,8 @@ export async function importProjectTool(
 	if (importMode === "starter") {
 		const targetPath = await normalizeImportTargetPath(input);
 		const resolved = templateId
-			? resolveStarterTemplate({
-					stack: templateId === "python-standard" ? "python" : "hono",
+			? resolveStandardTemplate({
+					templateId,
 					variant: input.variant,
 					registry: input.registry,
 				})

@@ -1,4 +1,3 @@
-import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { renderMockBlueprintMarkdown } from "../../services/blueprints/mock-draft";
@@ -11,15 +10,16 @@ import {
 	createPlanModeMockBlueprintActivityArtifact,
 	createPlanModeTaskMessage,
 	getPlanModeTask,
-	listPlanModeTaskMessages,
 	updatePlanModeTask,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
+import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
+import { renderPlanArtifactInput } from "../specification/plan-artifact-input-renderer";
+import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
-import { renderQuestionnaireAnswerMarkdown } from "../specification/specification-document-renderer";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
-import { resolveOptionalReadyQuestionnaireSession } from "../specification/specification-questionnaire-session";
 import {
 	generatePlanModeMockBlueprintDraft,
 	MockBlueprintDraftGenerationError,
@@ -30,46 +30,48 @@ export async function generateBlueprintArtifact(
 	input: {
 		prompt?: string;
 		questionnaireSessionId?: string | null;
-		sourceBlueprintMessageId?: string | null;
+		sourceSelection?: PlanArtifactSourceSelection;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		expectedState?: {
+			missionPilotSessionId: string;
+			contextRevision: number;
+			contextDigest: string;
+			routingRevision: number;
+		};
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	assertPlanModeCapabilityEnabled("blueprint");
 	assertPlanModeMutable(task);
-	const session = await resolveOptionalReadyQuestionnaireSession(
+	const canonical = await resolvePlanArtifactCanonicalInput({
 		taskId,
-		input.questionnaireSessionId,
-	);
-	const previousBlueprintContext = await resolveSourceBlueprintContext(
-		taskId,
-		input.sourceBlueprintMessageId,
-	);
-	const prompt = renderQuestionnaireBlueprintPrompt(session, {
-		userRegenerationRequest: input.prompt,
-		previousBlueprintContext,
+		target: "blueprint",
+		questionnaireSessionId: input.questionnaireSessionId ?? null,
+		sourceSelection:
+			input.sourceSelection ??
+			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
+		regenerationRequest: input.prompt ?? null,
+		expectedState: input.expectedState,
 	});
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		task.repositoryId,
-	);
-	const specContext = await resolveLatestSpecContext(taskId);
+	const projection = projectPlanArtifactInput(canonical);
+	const renderedInput = renderPlanArtifactInput(projection);
 	try {
 		const { mockBlueprint, generation } =
 			await generatePlanModeMockBlueprintDraft({
 				taskId,
 				title: task.title || "Mock Blueprint",
-				prompt,
-				description: task.description,
-				objective: task.objective,
-				questionnaireMarkdown: session
-					? renderQuestionnaireAnswerMarkdown(session)
-					: null,
-				projectStackContext,
-				specContext,
+				prompt: renderedInput.prompt,
+				description: null,
+				objective: null,
+				questionnaireMarkdown: null,
+				projectStackContext: null,
+				specContext: null,
+				projectionPrompt: renderedInput.prompt,
+				projection,
 				routeOverride: input.routeOverride || null,
 				role: input.role,
 				usageTrace: input.llmUsageTrace,
@@ -82,12 +84,23 @@ export async function generateBlueprintArtifact(
 			taskId,
 			title: mockBlueprint.name || task.title || "Mock Blueprint",
 			mockBlueprint,
-			generation: generationWithUsage,
+			generation: {
+				...generationWithUsage,
+				inputProjection: projectionMetadata(
+					projection,
+					canonical.questionnaire?.sessionId ?? null,
+				),
+			},
 			source: "status",
 			metadataJson: {
-				questionnaireSessionId: session?.id ?? null,
-				sourceBlueprintMessageId: input.sourceBlueprintMessageId ?? null,
+				questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+				sourceBlueprintMessageId:
+					input.sourceSelection?.previousTargetMessageId ?? null,
 				userRegenerationRequest: input.prompt?.trim() || null,
+				inputProjection: projectionMetadata(
+					projection,
+					canonical.questionnaire?.sessionId ?? null,
+				),
 			},
 		});
 		if (!artifact) throw new Error("Blueprint artifact persistence failed.");
@@ -112,14 +125,25 @@ export async function generateBlueprintArtifact(
 					cardKind: "app_blueprint",
 				},
 				mockBlueprint,
-				generation: generationWithUsage,
+				generation: {
+					...generationWithUsage,
+					inputProjection: projectionMetadata(
+						projection,
+						canonical.questionnaire?.sessionId ?? null,
+					),
+				},
 				source: "status",
-				questionnaireSessionId: session?.id ?? null,
+				questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
 			},
 			trace: input.trace,
 		});
 		await updatePlanModeTask(taskId, {
-			objective: task.objective || task.description || task.title || prompt,
+			objective:
+				task.objective ||
+				task.description ||
+				task.title ||
+				renderedInput.regenerationRequest ||
+				"",
 			status: task.status === "draft" ? "ready" : task.status,
 		});
 		return { message, workspace: await getPlanModeWorkspace(taskId) };
@@ -160,8 +184,9 @@ export async function generateBlueprintArtifact(
 						repairKind: attempt.repairKind,
 						rawOutputBytes: Buffer.byteLength(rawText, "utf8"),
 						rawOutputPreview: rawText.slice(0, 500),
-						questionnaireSessionId: session?.id ?? null,
-						sourceBlueprintMessageId: input.sourceBlueprintMessageId ?? null,
+						questionnaireSessionId: canonical.questionnaire?.sessionId ?? null,
+						sourceBlueprintMessageId:
+							input.sourceSelection?.previousTargetMessageId ?? null,
 						userRegenerationRequest: input.prompt?.trim() || null,
 						promptDiagnostics: error.promptDiagnostics,
 					},
@@ -178,94 +203,23 @@ export async function generateBlueprintArtifact(
 	}
 }
 
-function renderQuestionnaireBlueprintPrompt(
-	session: DesignQuestionnaireSession | null,
-	input: {
-		userRegenerationRequest?: string | null;
-		previousBlueprintContext?: string | null;
-	} = {},
+function projectionMetadata(
+	projection: ReturnType<typeof projectPlanArtifactInput>,
+	questionnaireSessionId: string | null,
 ) {
-	const userRegenerationRequest = input.userRegenerationRequest?.trim();
-	return [
-		session
-			? "Design Questionnaire の回答から Mock Blueprint を生成してください。"
-			: "Task context から Mock Blueprint を生成してください。",
-		"## Output Focus",
-		"- UI/UX と画面構成を優先する。",
-		"- DB table/column/relation や詳細実装情報は作らず、表示用の Section 選択と Mock dataset に集中する。",
-		"- ユーザーが回答した仕様判断を画面・セクション・サンプルデータに反映する。",
-		userRegenerationRequest
-			? [
-					"",
-					"## User Regeneration Request",
-					userRegenerationRequest,
-					"",
-					"上記の再生成指示を優先してください。ただし、指摘されていない既存の良い構造は維持し、不要な section や機能を追加しないでください。",
-				].join("\n")
-			: null,
-		input.previousBlueprintContext
-			? [
-					"",
-					"## Previous Blueprint Context",
-					input.previousBlueprintContext,
-				].join("\n")
-			: null,
-	]
-		.filter(Boolean)
-		.join("\n");
-}
-
-async function resolveSourceBlueprintContext(
-	taskId: string,
-	messageId?: string | null,
-) {
-	if (!messageId) return null;
-	const messages = await listPlanModeTaskMessages(taskId);
-	const message = messages.find((item) => item.id === messageId);
-	if (!message?.content.trim()) return null;
-	return compactSpecContext(message.content);
-}
-
-async function resolveLatestSpecContext(taskId: string) {
-	const messages = await listPlanModeTaskMessages(taskId);
-	const latest = [...messages]
-		.filter((message) => {
-			const metadata = (message.metadataJson || {}) as Record<string, unknown>;
-			return (
-				message.messageType === "markdown_document" &&
-				metadata.intent === "feature_plan"
-			);
-		})
-		.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))[0];
-	return latest ? compactSpecContext(latest.content) : null;
-}
-
-function compactSpecContext(content: string) {
-	const compacted = content
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean)
-		.join("\n")
-		.slice(0, 1_600);
-	return compacted || null;
-}
-
-function toMs(value: unknown) {
-	if (!value) return 0;
-	if (value instanceof Date) return value.getTime();
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value > 0 && value < 1_000_000_000_000 ? value * 1000 : value;
-	}
-	if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) {
-		const numeric = Number(value);
-		if (Number.isFinite(numeric)) {
-			return numeric > 0 && numeric < 1_000_000_000_000
-				? numeric * 1000
-				: numeric;
-		}
-	}
-	const ms = new Date(String(value)).getTime();
-	return Number.isFinite(ms) ? ms : 0;
+	return {
+		version: projection.version,
+		target: projection.target,
+		digest: projection.diagnostics.projectionDigest,
+		contextRevision: projection.provenance.contextRevision,
+		contextDigest: projection.provenance.contextDigest,
+		routingRevision: projection.provenance.routingRevision,
+		questionnaireSessionId,
+		questionnaireDigest: projection.provenance.questionnaireDigest,
+		sourceMessageIds: projection.provenance.sourceMessageIds,
+		sourceDigests: projection.provenance.sourceDigests,
+		sectionBytes: projection.diagnostics.sectionBytes,
+	};
 }
 
 async function resolveLatestMockBlueprintUsage(taskId: string) {

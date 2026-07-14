@@ -98,6 +98,9 @@ const { selectCurrentPlanReviews } = await import(
 const { selectMissionPilotPipelineQuestionnaire } = await import(
 	"../api/modules/missionPilot/mission-pilot-plan-support"
 );
+const { missionPilotRequiredArtifactDependencyKeys } = await import(
+	"../api/modules/missionPilot/mission-pilot-plan-artifact-source-resolver"
+);
 
 const repositoryIds: string[] = [];
 
@@ -168,6 +171,36 @@ describe("Mission Pilot plan coordinator", () => {
 				planRoutingRevision: 5,
 			}),
 		).toEqual([reviews[2]]);
+	});
+
+	it("requires every scheduled artifact before Feature Plan generation", () => {
+		expect(
+			missionPilotRequiredArtifactDependencyKeys({
+				target: "feature_plan",
+				stepOrdinal: 5,
+				steps: [
+					{ ordinal: 1, stepKey: "questionnaire", evidenceJson: {} },
+					{
+						ordinal: 2,
+						stepKey: "blueprint",
+						evidenceJson: { kind: "blueprint" },
+					},
+					{
+						ordinal: 3,
+						stepKey: "data_model",
+						evidenceJson: { kind: "data_model" },
+					},
+					{
+						ordinal: 4,
+						stepKey: "view:api_io_contract",
+						evidenceJson: {
+							kind: "dedicated_view",
+							view: "api_io_contract",
+						},
+					},
+				],
+			}),
+		).toEqual(["blueprint", "data_model", "view:api_io_contract"]);
 	});
 
 	it("resumes an answering pre-Feature Plan Questionnaire from durable step evidence", () => {
@@ -666,9 +699,10 @@ describe("Mission Pilot plan coordinator", () => {
 			expect.objectContaining({
 				questionnaireSessionId: questionnaireId,
 				role: "mission_pilot",
-				prompt: expect.stringMatching(
-					/\[現在のArtifact\][\s\S]*# Feature Plan[\s\S]*検証手順を具体化してください/,
-				),
+				prompt: expect.stringContaining("検証手順を具体化してください"),
+				sourceSelection: expect.objectContaining({
+					previousTargetMessageId: expect.any(String),
+				}),
 			}),
 		);
 		expect(mocks.generateAdditionalQuestionnaire).toHaveBeenCalledTimes(1);

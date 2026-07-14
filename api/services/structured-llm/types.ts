@@ -69,6 +69,19 @@ export type StructuredLlmPromptBudgetMetadata = {
 	criticalEvidencePreserved?: number;
 	criticalEvidenceDropped?: number;
 	recoveryDirectiveCount?: number;
+	artifactProjection?: {
+		version: number;
+		target: string;
+		digest: string;
+		sectionBytes: Record<string, number>;
+		sourceMessageIds: string[];
+		sourceDigests: string[];
+		sourceCount: number;
+		deduplicatedSourceCount: number;
+		questionnaireDecisionCount: number;
+		initialPromptOccurrences: number;
+		staleSourceRejectedCount: number;
+	};
 };
 
 export type { StructuredLlmRole };
