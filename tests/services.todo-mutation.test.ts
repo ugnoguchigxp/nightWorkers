@@ -234,6 +234,15 @@ describe("TodoMutationService", () => {
 		if (!paused.ok) return;
 		const pausedTodo = paused.todos.find((todo) => todo.id === target.id);
 		expect(paused.currentTodo).toBeNull();
+		const startWhilePaused = await service().execute(run.id, {
+			op: "start",
+			todoId: plan.todos[1].id,
+			expectedTodoRevision: plan.todos[1].revision,
+		});
+		expect(startWhilePaused).toMatchObject({
+			ok: false,
+			error: { code: "CURRENT_TODO_EXISTS" },
+		});
 		await updateTaskRun(run.id, {
 			status: "needs_human",
 			endedAt: new Date(),

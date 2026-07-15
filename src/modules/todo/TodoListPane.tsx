@@ -5,6 +5,7 @@ import { TodoRailList } from "./TodoRailList";
 
 type TodoListPaneProps = {
 	todos: TaskRunTodo[];
+	allowRunningTodoResume?: boolean;
 	isResuming?: boolean;
 	onResume?: (
 		todoId: string,
@@ -15,6 +16,7 @@ type TodoListPaneProps = {
 
 export function TodoListPane({
 	todos,
+	allowRunningTodoResume = false,
 	isResuming = false,
 	onResume,
 }: TodoListPaneProps) {
@@ -26,14 +28,17 @@ export function TodoListPane({
 	).length;
 	const currentTodo = todos.find((todo) => todo.status === "running");
 	const nextTodo = todos.find((todo) => todo.status === "pending");
-	const blockedTodo = todos.find((todo) => todo.status === "needs_human");
-	const headerSubtitle = currentTodo
-		? `running #${currentTodo.seq} ${currentTodo.title}`
-		: blockedTodo
-			? `blocked: #${blockedTodo.seq} ${blockedTodo.title}`
-			: nextTodo
-				? `next: #${nextTodo.seq} ${nextTodo.title}`
-				: t("todoPane.noActiveTodo");
+	const blockedTodo =
+		todos.find((todo) => todo.status === "needs_human") ??
+		(allowRunningTodoResume ? currentTodo : undefined);
+	const headerSubtitle =
+		currentTodo && !allowRunningTodoResume
+			? `running #${currentTodo.seq} ${currentTodo.title}`
+			: blockedTodo
+				? `blocked: #${blockedTodo.seq} ${blockedTodo.title}`
+				: nextTodo
+					? `next: #${nextTodo.seq} ${nextTodo.title}`
+					: t("todoPane.noActiveTodo");
 	const canResume = Boolean(
 		blockedTodo && onResume && userContext.trim() && !isResuming,
 	);
@@ -85,7 +90,10 @@ export function TodoListPane({
 							{t("todoPane.resumeLabel")}
 						</label>
 						<p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-amber-200/80">
-							{blockedTodo.statusReason || t("todoPane.resumeDescription")}
+							{blockedTodo.statusReason ||
+								(allowRunningTodoResume
+									? t("todoPane.runtimePauseDescription")
+									: t("todoPane.resumeDescription"))}
 						</p>
 						<textarea
 							id={`todo-resume-${blockedTodo.id}`}

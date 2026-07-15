@@ -101,6 +101,7 @@ describe("resumeTaskRunTodo", () => {
 				resumeRunId: run.id,
 				latestUserMessageOverride: "staging環境を使用してください。",
 				resumeCommand: {
+					kind: "todo",
 					todoId: pausedTodo.id,
 					expectedTodoRevision: pausedTodo.revision,
 					userContext: "staging環境を使用してください。",

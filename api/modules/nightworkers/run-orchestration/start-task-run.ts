@@ -1,4 +1,3 @@
-import { stateCardRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
 import { digestText } from "../../../services/text-digest";
@@ -11,6 +10,7 @@ import {
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import { activateTaskRunResume } from "./resume-task-run-activation";
+import { carryRuntimePauseSnapshot } from "./runtime-outcome-guard";
 import {
 	buildLatestRuntimeUserMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
@@ -148,7 +148,6 @@ export async function prepareTaskRunInProcess(
 	const gitBaseline = await readGitBaseline(executionRoot);
 	const projectExplorationCatalogPin =
 		await resolveRunProjectExplorationCatalogPin({
-			executionMode,
 			registeredRepoRoot: repoInfo.localPath,
 			executionRoot,
 			expectedHead: gitBaseline.baselineHead,
@@ -209,7 +208,7 @@ export async function prepareTaskRunInProcess(
 			sessionTransition: created.sessionTransition,
 		});
 	}
-	await activateWorkspace(taskId, executionMode, gitBaseline.baselineHead);
+	await activateWorkspace(taskId, gitBaseline.baselineHead);
 	if (!resumable) {
 		await repo.createTaskRunCommitRecord({
 			runId: run.id,
@@ -364,7 +363,6 @@ export async function prepareTaskRunInProcess(
 				compiledPromptText,
 			lastUserMessage,
 			implementationHandoffMessage,
-			executionMode,
 		});
 	const conversationContext =
 		runtimeLaneResolution.lane === "codex-sdk"
@@ -372,7 +370,7 @@ export async function prepareTaskRunInProcess(
 			: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
-		role: stateCardRoleForExecutionMode(executionMode),
+		role: "implementation",
 		workKind: runtimeRole,
 	});
 	const runtimePromptParts = buildPromptWithStateCardParts({
@@ -481,6 +479,12 @@ export async function prepareTaskRunInProcess(
 			},
 		});
 	}
+	if (resumable && options.resumeCommand?.kind === "runtime_pause") {
+		runtimeContextSnapshot = carryRuntimePauseSnapshot(
+			runtimeContextSnapshot as Record<string, unknown>,
+			run.contextSnapshot,
+		) as RuntimePromptSnapshot;
+	}
 	await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
 	const compiledRun = await repo.updateTaskRun(run.id, {
 		status: resumable ? run.status : "running",
@@ -514,7 +518,6 @@ export async function prepareTaskRunInProcess(
 		associate: resumable
 			? undefined
 			: createPreparedMissionPilotAssociation({
-					executionMode,
 					missionPilotPhase: options.missionPilotPhase,
 					runtimeOptions,
 					taskId,

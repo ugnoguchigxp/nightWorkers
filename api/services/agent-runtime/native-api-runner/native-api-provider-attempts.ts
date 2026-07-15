@@ -302,7 +302,7 @@ export async function runNativeApiProviderAttempts(input: {
 				providerResult = null;
 				break;
 			}
-			if (attemptIndex < providerRequests.length - 1) {
+			if (classified.retryable && attemptIndex < providerRequests.length - 1) {
 				await emitNativeApiRouteFallback({
 					sink: input.sink,
 					turnId: input.turnId,

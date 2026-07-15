@@ -1,3 +1,4 @@
+import { StructuredProviderError } from "../../structured-llm/provider-failure";
 import { getCachedStructuredLlmProviderHealth } from "../../structured-llm/provider-health";
 import { normalizeStructuredLlmModelTarget } from "../../structured-llm/selection";
 import {
@@ -206,11 +207,20 @@ export function classifyNativeApiProviderError(
 		return {
 			reason: "provider_route_attempt_timeout",
 			message: `Provider route attempt timed out after ${timeoutMs}ms.`,
+			retryable: true,
+		};
+	}
+	if (error instanceof StructuredProviderError) {
+		return {
+			reason: `provider_${error.kind}`,
+			message: error.message,
+			retryable: error.retryable,
 		};
 	}
 	return {
 		reason: "provider_error",
 		message: error instanceof Error ? error.message : String(error),
+		retryable: false,
 	};
 }
 

@@ -1,6 +1,55 @@
 import type { TaskRunStatus } from "../../../db/schema";
+import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
 import * as repo from "../nightworkers.repository";
 import { resolveGuardedRunOutcomeStatus } from "./status";
+
+export type RuntimePauseSnapshot = {
+	version: 1;
+	kind: "host_limit";
+	stoppedBy: "budget";
+	resumableRunningTodo: true;
+};
+
+export function buildRuntimePauseSnapshot(
+	result: AgentRuntimeResult,
+): RuntimePauseSnapshot | null {
+	if (result.terminalState !== "needs_human" || result.stoppedBy !== "budget") {
+		return null;
+	}
+	return {
+		version: 1,
+		kind: "host_limit",
+		stoppedBy: result.stoppedBy,
+		resumableRunningTodo: true,
+	};
+}
+
+export function carryRuntimePauseSnapshot(
+	nextSnapshot: Record<string, unknown>,
+	previousSnapshot: unknown,
+) {
+	const runtimePause = readRuntimePauseSnapshot(previousSnapshot);
+	return runtimePause ? { ...nextSnapshot, runtimePause } : nextSnapshot;
+}
+
+export function readRuntimePauseSnapshot(
+	value: unknown,
+): RuntimePauseSnapshot | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const snapshot = value as Record<string, unknown>;
+	const pause = snapshot.runtimePause;
+	if (!pause || typeof pause !== "object" || Array.isArray(pause)) return null;
+	const record = pause as Record<string, unknown>;
+	if (
+		record.version !== 1 ||
+		record.kind !== "host_limit" ||
+		record.resumableRunningTodo !== true ||
+		record.stoppedBy !== "budget"
+	) {
+		return null;
+	}
+	return record as RuntimePauseSnapshot;
+}
 
 export function resolveRuntimeOutcomeGuard(input: {
 	currentStatus: TaskRunStatus;

@@ -4,7 +4,9 @@ export function createNativeApiTimeoutSignal(
 	timeoutSeconds: number,
 ) {
 	const controller = new AbortController();
+	let timedOut = false;
 	const timeout = setTimeout(() => {
+		timedOut = true;
 		controller.abort(
 			new Error(`NativeApiRunner timed out after ${timeoutSeconds}s`),
 		);
@@ -23,6 +25,7 @@ export function createNativeApiTimeoutSignal(
 	}
 	return {
 		signal: controller.signal,
+		didTimeout: () => timedOut,
 		dispose: () => {
 			clearTimeout(timeout);
 			parent?.removeEventListener("abort", abortFromParent);

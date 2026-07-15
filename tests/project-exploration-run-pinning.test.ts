@@ -20,29 +20,6 @@ const availablePin = {
 };
 
 describe("project exploration run pinning", () => {
-	it("skips every non-implementation mode without resolving MCP", async () => {
-		for (const executionMode of [
-			"planning",
-			"test",
-			"review",
-			"general_answer",
-		]) {
-			const resolvePin = vi.fn();
-			await expect(
-				resolveRunProjectExplorationCatalogPin({
-					...baseInput(),
-					executionMode,
-					resolvePin,
-				}),
-			).resolves.toEqual({
-				version: 2,
-				available: false,
-				reason: "wrong_runtime_lane",
-			});
-			expect(resolvePin).not.toHaveBeenCalled();
-		}
-	});
-
 	it("returns the immutable selected generation and forwards Git baseline facts", async () => {
 		const resolvePin = vi.fn().mockResolvedValue(availablePin);
 		await expect(
@@ -96,7 +73,6 @@ describe("project exploration run pinning", () => {
 
 function baseInput() {
 	return {
-		executionMode: "implementation",
 		registeredRepoRoot: "/registered/repository",
 		executionRoot: "/registered/repository",
 		expectedHead: "abc123",

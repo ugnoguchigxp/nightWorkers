@@ -3,7 +3,6 @@ import type {
 	ProjectExplorationCatalogRunPin,
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { getCurrentSettings } from "../../../routes/settings";
-import { nativeApiRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
 import {
 	readRuntimeLaneConfigFromEnv,
@@ -28,21 +27,11 @@ export async function prepareTaskRunRuntimeContext(input: {
 	executionMode: NonNullable<StartTaskRunOptions["executionMode"]>;
 	llmRouteOverride: Exclude<StartTaskRunOptions["routeOverride"], undefined>;
 }) {
-	const runtimeRole = nativeApiRoleForExecutionMode(input.executionMode);
-	const blueprintPlanningSnapshot =
-		input.executionMode === "general_answer"
-			? {}
-			: {
-					blueprintPlanning: await resolveBlueprintPlanningReadiness(
-						input.taskId,
-					),
-				};
-	const runtimeRoleLabel =
-		input.executionMode === "general_answer"
-			? "general_answer"
-			: runtimeRole === "implementation"
-				? "Implementation"
-				: runtimeRole;
+	const runtimeRole = "implementation" as const;
+	const blueprintPlanningSnapshot = {
+		blueprintPlanning: await resolveBlueprintPlanningReadiness(input.taskId),
+	};
+	const runtimeRoleLabel = "Implementation";
 	const settings = getCurrentSettings();
 	const generalSettings = readGeneralSettings();
 	const planModeSettingsSnapshot =
@@ -65,7 +54,6 @@ export async function prepareTaskRunRuntimeContext(input: {
 	const runtimeLaneResolution = resolveRuntimeLaneForRoleRoute(
 		baseRuntimeLaneResolution,
 		runtimeLlmRoute,
-		input.executionMode,
 	);
 	const runtimeLaneDefinition = resolveRuntimeLaneDefinition(
 		runtimeLaneResolution.lane,
@@ -91,7 +79,6 @@ export async function prepareTaskRunRuntimeContext(input: {
 }
 
 export async function resolveRunProjectExplorationCatalogPin(input: {
-	executionMode: string;
 	registeredRepoRoot: string;
 	executionRoot: string;
 	expectedHead: string | null;
@@ -100,13 +87,6 @@ export async function resolveRunProjectExplorationCatalogPin(input: {
 	runtimeLane: string;
 	resolvePin?: typeof resolveProjectExplorationCatalogPin;
 }): Promise<ProjectExplorationCatalogRunPin> {
-	if (input.executionMode !== "implementation") {
-		return {
-			version: 2,
-			available: false,
-			reason: "wrong_runtime_lane",
-		};
-	}
 	try {
 		return await (input.resolvePin ?? resolveProjectExplorationCatalogPin)({
 			registeredRepoRoot: input.registeredRepoRoot,

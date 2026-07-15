@@ -39,19 +39,9 @@ function injectImplementationPhaseContext(latestUserMessage: string) {
 	return `${IMPLEMENTATION_PHASE_PREAMBLE}\n\n${latestUserMessage}`.trim();
 }
 
-function executionPhasePreambleForMode(
-	mode: NativeApiExecutionMode,
-	latestUserMessage: string,
-) {
-	return mode === "implementation"
-		? injectImplementationPhaseContext(latestUserMessage)
-		: latestUserMessage.trim();
-}
-
 export function resolveRuntimeLaneForRoleRoute(
 	fallback: RuntimeLaneResolution,
 	route: ResolvedStructuredLlmRoute | null,
-	executionMode: NativeApiExecutionMode,
 ): RuntimeLaneResolution {
 	if (!route) return fallback;
 	const lane = route.providerId === "codex" ? "codex-sdk" : "native-api-runner";
@@ -75,9 +65,7 @@ export function resolveRuntimeLaneForRoleRoute(
 						{
 							level: "warning" as const,
 							message:
-								executionMode === "implementation"
-									? "IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-api-runner for this run."
-									: "IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the routed API provider requires native-api-runner for this run.",
+								"IMPLEMENTATION_RUNTIME_LANE requested codex-sdk, but the implementation role route is an API provider. Native/API implementation uses native-api-runner for this run.",
 						},
 					]
 				: []),
@@ -263,37 +251,6 @@ export async function maybeLoadConversationStateCard(
 	}
 }
 
-export function resolveExecutionModeFromMessages(
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
-): NativeApiExecutionMode {
-	for (const message of [...messages].reverse()) {
-		const metadata = toRecord(message.metadataJson);
-		if (isImplementationHandoffMessage(message, metadata)) {
-			return "implementation";
-		}
-		const selection =
-			toRecord(metadata?.intakeJobSelection) ??
-			toRecord(metadata?.jobSelection);
-		const jobType =
-			typeof selection?.jobType === "string" ? selection.jobType : null;
-		if (jobType) {
-			if (!isJobType(jobType)) return "general_answer";
-			if (
-				jobType === "planning" ||
-				jobType === "blueprint" ||
-				jobType === "ui_ux"
-			) {
-				return "planning";
-			}
-			if (jobType === "review") return "review";
-			if (jobType === "general_answer") return "general_answer";
-			return "implementation";
-		}
-		if (message.role === "user") return "implementation";
-	}
-	return "implementation";
-}
-
 export function resolveLatestJobTypeFromMessages(
 	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
 ): JobType | null {
@@ -365,13 +322,12 @@ export function buildLatestRuntimeUserMessage(input: {
 	implementationHandoffMessage?: Awaited<
 		ReturnType<typeof repo.listTaskMessages>
 	>[number];
-	executionMode: NativeApiExecutionMode;
 }) {
 	const latestUserText =
 		input.lastUserMessage?.content?.trim() || input.fallback.trim();
 	const handoff = input.implementationHandoffMessage?.content?.trim();
-	if (input.executionMode !== "implementation" || !handoff) {
-		return executionPhasePreambleForMode(input.executionMode, latestUserText);
+	if (!handoff) {
+		return injectImplementationPhaseContext(latestUserText);
 	}
 	const hasDistinctUserRequest =
 		Boolean(input.lastUserMessage?.content?.trim()) ||
@@ -379,8 +335,7 @@ export function buildLatestRuntimeUserMessage(input: {
 	const userRequestSection = hasDistinctUserRequest
 		? ["<USER_REQUEST>", latestUserText, "</USER_REQUEST>", ""]
 		: [];
-	return executionPhasePreambleForMode(
-		input.executionMode,
+	return injectImplementationPhaseContext(
 		[
 			...userRequestSection,
 			"<IMPLEMENTATION_HANDOFF>",

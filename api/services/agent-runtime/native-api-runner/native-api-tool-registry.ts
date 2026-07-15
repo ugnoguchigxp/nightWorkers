@@ -23,9 +23,3 @@ export function getNativeApiToolRegistration(
 		(registration) => registration.name === name,
 	);
 }
-
-export function isNativeApiToolAllowedForMode(name: string): boolean {
-	return nativeApiToolRegistrations.some(
-		(registration) => registration.name === name,
-	);
-}

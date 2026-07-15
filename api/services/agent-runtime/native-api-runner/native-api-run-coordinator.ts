@@ -65,6 +65,7 @@ export async function runNativeApiRunner(
 	let history: NativeApiHistoryItem[] = buildInitialNativeApiHistory(context, {
 		resumeHistory,
 	});
+	let lastAssistantText = latestAssistantText(history);
 	let state: NativeApiDispatchState = {
 		readFiles: [],
 		postImport: null,
@@ -86,6 +87,18 @@ export async function runNativeApiRunner(
 		runController.signal,
 		context.timeoutSeconds,
 	);
+	const toInterruptedResult = (): AgentRuntimeResult =>
+		timeout.didTimeout()
+			? {
+					terminalState: "needs_human",
+					summary: "Native API runner reached its execution time limit.",
+					finalReport:
+						lastAssistantText ||
+						"実行時間の上限に達したため、現在の Todo を保持して一時停止しました。再開すると同じ Todo から処理を続けます。",
+					stoppedBy: "budget",
+					riskLevel: "high",
+				}
+			: runtime.toCancelled();
 	try {
 		const contextWindowBaselineHistory = [...history];
 		let contextBudgetHintInserted = false;
@@ -93,7 +106,7 @@ export async function runNativeApiRunner(
 
 		for (let turnIndex = 1; ; turnIndex += 1) {
 			if (await runtime.isCancelled(context.runId, timeout.signal))
-				return runtime.toCancelled();
+				return toInterruptedResult();
 			const todoSnapshot = await buildTodoSnapshotHistory(context.runId);
 			const currentTodo = todoSnapshot?.currentTodo ?? null;
 			if (
@@ -231,7 +244,7 @@ export async function runNativeApiRunner(
 						? { message: "Run cancelled during provider turn." }
 						: { message },
 				});
-				if (cancelled) return runtime.toCancelled();
+				if (cancelled) return toInterruptedResult();
 				await sink.emit({
 					type: "runtime_error",
 					message: `[NativeApiRunner] provider turn failed: ${message}`,
@@ -240,7 +253,7 @@ export async function runNativeApiRunner(
 				return {
 					terminalState: "failed",
 					summary: "Native API provider turn failed.",
-					finalReport: message,
+					finalReport: lastAssistantText || message,
 					stoppedBy: "llm_error",
 					riskLevel: "high",
 				};
@@ -258,7 +271,7 @@ export async function runNativeApiRunner(
 							? (providerResult.model ?? null)
 							: null,
 				});
-				return runtime.toCancelled();
+				return toInterruptedResult();
 			}
 
 			if (providerResult.type === "unsupported") {
@@ -272,7 +285,7 @@ export async function runNativeApiRunner(
 				return {
 					terminalState: "failed",
 					summary: "Native API provider tool turn is unsupported.",
-					finalReport: providerResult.reason,
+					finalReport: lastAssistantText || providerResult.reason,
 					stoppedBy: "missing_tool_call",
 					riskLevel: "high",
 				};
@@ -303,9 +316,40 @@ export async function runNativeApiRunner(
 					toolCalls: providerResult.toolCalls,
 				},
 			];
+			if (providerResult.content.trim()) {
+				lastAssistantText = providerResult.content;
+			}
 
 			if (providerResult.toolCalls.length === 0) {
 				const finalText = providerResult.content.trim();
+				if (!finalText) {
+					history = [
+						...history,
+						{
+							type: "user",
+							source: "runtime",
+							content: JSON.stringify({
+								ok: false,
+								error: {
+									code: "FINAL_RESPONSE_REQUIRED",
+									message:
+										"tool結果を読んで次の行動を選ぶか、最終回答本文を返してください。",
+								},
+							}),
+						},
+					];
+					await runtime.store.finishTurn({
+						turnId: turn.id,
+						status: "completed",
+						history,
+						providerDebug,
+						model: readNativeApiCompletedTurnModel(
+							providerResult,
+							providerRequest,
+						),
+					});
+					continue;
+				}
 				const completion = await runFinalizeController.evaluateCandidate({
 					runId: context.runId,
 					expectedPlanRevision: todoSnapshot?.planRevision ?? 0,
@@ -324,6 +368,15 @@ export async function runNativeApiRunner(
 				if (completion.allowFinalize) {
 					return {
 						terminalState: "completed",
+						summary: firstLine(finalText),
+						finalReport: finalText,
+						stoppedBy: "decision",
+						riskLevel: "medium",
+					};
+				}
+				if (completion.code === "RUN_NEEDS_HUMAN") {
+					return {
+						terminalState: "needs_human",
 						summary: firstLine(finalText),
 						finalReport: finalText,
 						stoppedBy: "decision",
@@ -356,7 +409,7 @@ export async function runNativeApiRunner(
 						status: "cancelled",
 						history,
 					});
-					return runtime.toCancelled();
+					return toInterruptedResult();
 				}
 				const existingCall = await runtime.store.getToolCall(
 					context.runId,
@@ -422,7 +475,7 @@ export async function runNativeApiRunner(
 						status: "cancelled",
 						history,
 					});
-					return runtime.toCancelled();
+					return toInterruptedResult();
 				}
 				await runtime.store.markToolCallRunning({ id: record.id });
 				if (await runtime.isCancelled(context.runId, timeout.signal)) {
@@ -443,7 +496,7 @@ export async function runNativeApiRunner(
 						status: "cancelled",
 						history,
 					});
-					return runtime.toCancelled();
+					return toInterruptedResult();
 				}
 				const dispatch = await dispatchNativeApiToolCall({
 					toolCall,
@@ -499,4 +552,15 @@ export async function runNativeApiRunner(
 		timeout.dispose();
 		runtime.activeRunControllers.delete(context.runId);
 	}
+}
+
+function latestAssistantText(history: readonly NativeApiHistoryItem[]) {
+	return (
+		[...history]
+			.reverse()
+			.find(
+				(item): item is Extract<NativeApiHistoryItem, { type: "assistant" }> =>
+					item.type === "assistant" && Boolean(item.content.trim()),
+			)?.content ?? ""
+	);
 }

@@ -119,10 +119,6 @@ export class RunFinalizeController {
 			idempotent: false,
 		};
 	}
-
-	async terminalize(runId: string) {
-		return repo.getTaskRun(runId);
-	}
 }
 
 function blocked(

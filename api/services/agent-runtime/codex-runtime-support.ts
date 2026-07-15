@@ -50,37 +50,6 @@ export function updateCodexSessionKey(
 	return readString(readEventPayload(event).providerThreadId) ?? current;
 }
 
-export function normalizeRetryLimit(
-	value: number | undefined,
-	fallback: number,
-) {
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-	return Math.max(0, Math.floor(value));
-}
-
-export function normalizeRetryDelayMs(
-	value: number | undefined,
-	fallback: number,
-) {
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-	return Math.max(0, Math.floor(value));
-}
-
-export async function sleep(ms: number, signal: AbortSignal) {
-	if (ms <= 0 || signal.aborted) return;
-	await new Promise<void>((resolve) => {
-		const timeout = setTimeout(resolve, ms);
-		signal.addEventListener(
-			"abort",
-			() => {
-				clearTimeout(timeout);
-				resolve();
-			},
-			{ once: true },
-		);
-	});
-}
-
 export function readEventPayload(
 	event: AgentRuntimeEvent,
 ): Record<string, unknown> {

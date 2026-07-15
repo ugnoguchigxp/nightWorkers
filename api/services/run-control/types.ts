@@ -18,29 +18,6 @@ export type RunOutcomeReason =
 	| "runner_crashed"
 	| "human_review";
 
-export type RunBudgetConfig = {
-	maxIterations: number;
-	maxToolCalls: number;
-	maxRepeatedAction: number;
-	maxMissingToolCalls: number;
-	maxSchemaFallbacks: number;
-	timeoutSeconds: number;
-};
-
-export type BudgetDecisionReason =
-	| "iteration_limit"
-	| "deadline"
-	| "repeat_action"
-	| "missing_tool_call"
-	| "tool_failure"
-	| "schema_fallback";
-
-export type BudgetDecision = {
-	allowed: boolean;
-	reason?: BudgetDecisionReason;
-	detail?: Record<string, unknown>;
-};
-
 export type RuntimeExecutionResult = {
 	finalReport: string;
 	terminalState:

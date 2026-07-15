@@ -264,7 +264,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "apply_patch",
 			description:
-				"Apply a unified patch to repository files. In planning mode, use only when the user has clearly moved into implementation or the reason is explicit in the final report.",
+				"登録済みProjectのrepository fileへunified patchを適用します。current Todoの目的と受け入れ条件に基づいて使用してください。",
 			inputSchema: objectSchema({ patchContent: { type: "string" } }, [
 				"patchContent",
 			]),

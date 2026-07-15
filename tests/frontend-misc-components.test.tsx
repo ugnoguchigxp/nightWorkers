@@ -329,11 +329,20 @@ describe("miscellaneous frontend components", () => {
 
 	it("renders todo workflow and todo progress variants", () => {
 		const todoMarkup = renderToStaticMarkup(<TodoListPane todos={todos()} />);
+		const runtimePauseMarkup = renderToStaticMarkup(
+			<TodoListPane
+				todos={todos().filter((todo) => todo.status !== "needs_human")}
+				allowRunningTodoResume
+				onResume={async () => undefined}
+			/>,
+		);
 		const workflowMarkup = renderWithQueryClient(<TodoWorkflowPanel />);
 
 		expect(todoMarkup).toContain("todolist");
 		expect(todoMarkup).toContain("Running todo");
 		expect(todoMarkup).toContain("1/4");
+		expect(runtimePauseMarkup).toContain("todo-resume-");
+		expect(runtimePauseMarkup).toContain("同じTodoを再開できます");
 		expect(workflowMarkup).toContain("TODO Workflow");
 		expect(workflowMarkup).toContain("review every Todo");
 	});

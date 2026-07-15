@@ -1,5 +1,6 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
 import * as repo from "../nightworkers.repository";
+import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 import { startTaskRun } from "./start-task-run";
 
 export async function resumeTaskRunTodo(input: {
@@ -17,7 +18,14 @@ export async function resumeTaskRunTodo(input: {
 	const todos = await repo.listTaskRunTodosForRun(run.id);
 	const target = todos.find((todo) => todo.id === input.todoId);
 	if (!target) throw new NotFoundError("Todo not found");
-	if (target.status !== "needs_human") {
+	const runtimePause = readRuntimePauseSnapshot(run.contextSnapshot);
+	const resumeKind =
+		target.status === "needs_human"
+			? "todo"
+			: target.status === "running" && runtimePause?.resumableRunningTodo
+				? "runtime_pause"
+				: null;
+	if (!resumeKind) {
 		throw new AppError(
 			409,
 			"TODO_NOT_RESUMABLE",
@@ -38,6 +46,7 @@ export async function resumeTaskRunTodo(input: {
 		resumeRunId: run.id,
 		latestUserMessageOverride: input.userContext,
 		resumeCommand: {
+			kind: resumeKind,
 			todoId: input.todoId,
 			expectedTodoRevision: input.expectedTodoRevision,
 			userContext: input.userContext,

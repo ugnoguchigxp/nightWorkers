@@ -11,10 +11,8 @@ const execFileAsync = promisify(execFile);
 
 export async function activateWorkspace(
 	taskId: string,
-	executionMode: string,
 	baselineHead: string | null,
 ) {
-	if (executionMode !== "implementation") return;
 	const workspace = await getTaskGitWorkspace(taskId);
 	if (workspace?.status !== "ready") return;
 	await updateTaskGitWorkspace(workspace.id, {

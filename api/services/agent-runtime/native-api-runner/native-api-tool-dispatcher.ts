@@ -14,10 +14,7 @@ import {
 	type NativeApiToolResult,
 	readProjectExplorationCatalogPin,
 } from "./native-api-tool-history";
-import {
-	getNativeApiToolRegistration,
-	isNativeApiToolAllowedForMode,
-} from "./native-api-tool-registry";
+import { getNativeApiToolRegistration } from "./native-api-tool-registry";
 import {
 	capNativeApiToolResultContent,
 	projectWorkerResultToNativeApiToolResult,
@@ -42,16 +39,6 @@ export async function dispatchNativeApiToolCall(input: {
 			input.state,
 		);
 	}
-	if (!isNativeApiToolAllowedForMode(input.toolCall.name)) {
-		return continueWith(
-			failedToolResult(
-				"TOOL_NOT_AVAILABLE",
-				`${input.toolCall.name} is not available in this runtime.`,
-			),
-			input.state,
-		);
-	}
-
 	if (registration.kind === "todo_control") {
 		return continueWith(await dispatchTodoTool(input), input.state);
 	}

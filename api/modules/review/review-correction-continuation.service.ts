@@ -26,7 +26,6 @@ export async function continueReviewCorrectionAfterRun(input: {
 			"../nightworkers/run-orchestration/start-task-run-entry"
 		);
 		const testRun = await startTaskRun(input.taskId, {
-			executionMode: "test",
 			executionModeSource: "test_mode",
 			runtimeOptionsPatch: {
 				testMode: { action: "run_unit_tests", correctionOf: input.runId },

@@ -13,9 +13,6 @@ import { sanitizeNativeApiResumeHistory } from "./native-api-tool-history";
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
 
-const _NATIVE_API_TODO_SNAPSHOT_HEADER = "[Native API Runner Todo Snapshot]";
-const _NATIVE_API_CURRENT_TODO_HEADER = "[Current Native API Runner Todo]";
-
 export class NativeApiRunner {
 	private readonly cancelledRunIds = new Set<string>();
 	private readonly activeRunControllers = new Map<string, AbortController>();
@@ -26,8 +23,6 @@ export class NativeApiRunner {
 	constructor(
 		input: {
 			store?: NativeApiSessionStore;
-			startupController?: unknown;
-			closeoutController?: unknown;
 			providerTurn?: NativeApiToolTurnProvider;
 			usageRecorder?: NativeApiUsageRecorder;
 		} = {},
@@ -147,17 +142,4 @@ export class NativeApiRunner {
 		}
 		return false;
 	}
-}
-
-function _readOntologyMcpEnabled(context: AgentRunContext) {
-	const snapshot = context.contextSnapshot as Record<string, unknown>;
-	const ontologyMcp = snapshot.ontologyMcp;
-	if (
-		!ontologyMcp ||
-		typeof ontologyMcp !== "object" ||
-		Array.isArray(ontologyMcp)
-	)
-		return false;
-	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
-	return enabled === true;
 }

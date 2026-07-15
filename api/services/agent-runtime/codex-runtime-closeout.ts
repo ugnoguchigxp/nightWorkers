@@ -1,10 +1,5 @@
 import { gitDiffTool } from "../worker-tools/git";
-import { DEFAULT_RESULT } from "./codex-runtime-failure-report";
-import {
-	changedFilesFromDiff,
-	sleep,
-	todoPayload,
-} from "./codex-runtime-support";
+import { changedFilesFromDiff, todoPayload } from "./codex-runtime-support";
 import type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 import { createCodexRuntimeThread } from "./codex-sdk/codex-sdk-client";
 import {
@@ -20,51 +15,10 @@ import type {
 } from "./types";
 
 type CodexRuntimeHost = {
-	providerCapacityRetryLimit: number;
-	providerCapacityRetryDelayMs: number;
 	threadFactory?: CodexThreadFactory;
 	runtimeSessionStore: RuntimeSessionStateStore;
 	collectWorkspaceDiff: boolean;
 };
-
-export function canRetryProviderCapacity(
-	runtime: CodexRuntimeHost,
-	attemptIndex: number,
-) {
-	return attemptIndex < runtime.providerCapacityRetryLimit;
-}
-
-export async function emitProviderCapacityRetry(
-	runtime: CodexRuntimeHost,
-	sink: AgentRuntimeSink,
-	logs: string[],
-	attemptIndex: number,
-	signal: AbortSignal,
-) {
-	const retryNumber = attemptIndex + 1;
-	const retryPayload = {
-		provider: "codex",
-		reason: "provider_capacity",
-		retryNumber,
-		maxRetries: runtime.providerCapacityRetryLimit,
-		retryDelayMs: runtime.providerCapacityRetryDelayMs,
-	};
-	const scheduled = {
-		type: "model_retry_scheduled" as const,
-		message: `[Codex] Provider capacity reached; retry ${retryNumber}/${runtime.providerCapacityRetryLimit} scheduled.`,
-		payload: retryPayload,
-	};
-	logs.push(scheduled.message);
-	await sink.emit(scheduled);
-	await sleep(runtime.providerCapacityRetryDelayMs, signal);
-	const started = {
-		type: "model_retry_started" as const,
-		message: `[Codex] Provider capacity retry ${retryNumber}/${runtime.providerCapacityRetryLimit} started.`,
-		payload: retryPayload,
-	};
-	logs.push(started.message);
-	await sink.emit(started);
-}
 
 export async function createThread(
 	runtime: CodexRuntimeHost,
@@ -165,7 +119,7 @@ export async function finishRun(
 			input.finalReport ||
 			(input.terminalState === "completed"
 				? "Codex Agent Runtime completed."
-				: DEFAULT_RESULT.summary),
+				: "Codex Agent Runtime failed."),
 		finalReport: input.finalReport,
 		stoppedBy: input.stoppedBy,
 		riskLevel: input.riskLevel,

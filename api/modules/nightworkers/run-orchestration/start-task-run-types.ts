@@ -24,6 +24,7 @@ export type StartTaskRunOptions = {
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */
 	resumeRunId?: string;
 	resumeCommand?: {
+		kind: "todo" | "runtime_pause";
 		todoId: string;
 		expectedTodoRevision: number;
 		userContext: string;

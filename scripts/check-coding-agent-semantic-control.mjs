@@ -5,12 +5,16 @@ const root = process.cwd();
 const forbiddenFiles = [
 	"api/services/run-control/run-control-service.ts",
 	"api/services/run-control/run-control-reducer.ts",
+	"api/services/run-control/run-budget-controller.ts",
 	"api/services/agent-runtime/native-api-runner/native-api-finalize.ts",
 	"api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts",
 	"api/services/agent-runtime/native-api-runner/native-api-role-context-events.ts",
 	"api/services/agent-runtime/native-api-runner/native-api-role-handoff.ts",
 	"api/services/agent-runtime/native-api-runner/native-api-role-working-context.ts",
 	"api/services/agent-runtime/codex-contract-warning-catalog.ts",
+	"api/services/agent-runtime/codex-runtime-failure-report.ts",
+	"api/modules/nightworkers/run-orchestration/coverage-autonomy.ts",
+	"api/services/quality/coverage-autonomy-gate.ts",
 	"api/services/worker-tools/reviewer-evaluation.ts",
 ];
 const forbiddenToolNames = ["finalize_answer", "new_context", "reviewer_evaluation"];
@@ -22,7 +26,8 @@ const catalogFiles = [
 const errors = [];
 
 for (const file of forbiddenFiles) {
-	if (fs.existsSync(path.join(root, file))) errors.push(`${file}: legacy semantic control must be deleted`);
+	if (fs.existsSync(path.join(root, file)))
+		errors.push(`${file}: legacy semantic control must be deleted`);
 }
 for (const file of catalogFiles) {
 	const source = fs.readFileSync(path.join(root, file), "utf8");
@@ -52,6 +57,46 @@ for (const file of [
 	]) {
 		if (source.includes(symbol)) {
 			errors.push(`${file}: legacy Test / Review UI action ${symbol}`);
+		}
+	}
+}
+
+for (const [file, forbiddenText] of [
+	[
+		"api/services/run-control/finalize-controller.ts",
+		"terminalize(",
+	],
+	[
+		"api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts",
+		"isNativeApiToolAllowedForMode",
+	],
+	[
+		"api/services/agent-runtime/native-api-runner/native-api-tool-manifest.ts",
+		"In planning mode",
+	],
+]) {
+	const source = fs.readFileSync(path.join(root, file), "utf8");
+	if (source.includes(forbiddenText)) {
+		errors.push(`${file}: legacy semantic control ${forbiddenText}`);
+	}
+}
+
+const agentRuntimeRoot = path.join(root, "api/services/agent-runtime");
+const forbiddenProviderRetryControls = [
+	"providerCapacityRetry",
+	"readRuntimeFailureEvidence",
+	"canRetryProviderCapacity",
+	"emitProviderCapacityRetry",
+];
+for (const file of fs.readdirSync(agentRuntimeRoot, { recursive: true })) {
+	if (typeof file !== "string" || !file.endsWith(".ts")) continue;
+	const absolutePath = path.join(agentRuntimeRoot, file);
+	const source = fs.readFileSync(absolutePath, "utf8");
+	for (const symbol of forbiddenProviderRetryControls) {
+		if (source.includes(symbol)) {
+			errors.push(
+				`${path.relative(root, absolutePath)}: forbidden provider retry control ${symbol}`,
+			);
 		}
 	}
 }

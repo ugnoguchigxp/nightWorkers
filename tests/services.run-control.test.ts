@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { RunBudgetController } from "../api/services/run-control/run-budget-controller";
 import { decideRunOutcome } from "../api/services/run-control/run-outcome-gate";
 
 describe("RunControl", () => {
@@ -85,100 +84,6 @@ describe("RunControl", () => {
 			});
 			expect(outcome.status).toBe("blocked");
 			expect(outcome.reason).toBe("budget_exceeded");
-		});
-	});
-
-	describe("RunBudgetController", () => {
-		it("does not stop based on total tool call count", () => {
-			const c = new RunBudgetController({
-				maxIterations: 10,
-				maxToolCalls: 1,
-				maxRepeatedAction: 10,
-				maxMissingToolCalls: 3,
-				maxSchemaFallbacks: 3,
-				timeoutSeconds: 60,
-			});
-			expect(c.onToolCall("find_file", { fileMask: "*.ts" }).allowed).toBe(
-				true,
-			);
-			expect(c.onToolCall("read_file", { path: "a.ts" }).allowed).toBe(true);
-			expect(c.onToolCall("run_command", { command: "npm test" }).allowed).toBe(
-				true,
-			);
-		});
-
-		it("stops after repeated same tool action", () => {
-			const c = new RunBudgetController({
-				maxIterations: 10,
-				maxToolCalls: 10,
-				maxRepeatedAction: 3,
-				maxMissingToolCalls: 3,
-				maxSchemaFallbacks: 3,
-				timeoutSeconds: 60,
-			});
-			expect(c.onIterationStart().allowed).toBe(true);
-			expect(c.onToolCall("find_file", { fileMask: "*.ts" }).allowed).toBe(
-				true,
-			);
-			expect(c.onToolCall("find_file", { fileMask: "*.ts" }).allowed).toBe(
-				true,
-			);
-			const stop = c.onToolCall("find_file", { fileMask: "*.ts" });
-			expect(stop.allowed).toBe(false);
-			expect(stop.reason).toBe("repeat_action");
-		});
-
-		it("stops after repeated missing toolCall", () => {
-			const c = new RunBudgetController({
-				maxIterations: 10,
-				maxToolCalls: 10,
-				maxRepeatedAction: 3,
-				maxMissingToolCalls: 3,
-				maxSchemaFallbacks: 3,
-				timeoutSeconds: 60,
-			});
-			expect(c.onMissingToolCall().allowed).toBe(true);
-			expect(c.onMissingToolCall().allowed).toBe(true);
-			const stop = c.onMissingToolCall();
-			expect(stop.allowed).toBe(false);
-			expect(stop.reason).toBe("missing_tool_call");
-		});
-
-		it("stops after repeated schema fallback events", () => {
-			const c = new RunBudgetController({
-				maxIterations: 10,
-				maxToolCalls: 10,
-				maxRepeatedAction: 3,
-				maxMissingToolCalls: 3,
-				maxSchemaFallbacks: 3,
-				timeoutSeconds: 60,
-			});
-			expect(c.onSchemaFallback("model.response_repaired").allowed).toBe(true);
-			expect(c.onSchemaFallback("model.response_parse_failed").allowed).toBe(
-				true,
-			);
-			const stop = c.onSchemaFallback("model.response_parse_failed");
-			expect(stop.allowed).toBe(false);
-			expect(stop.reason).toBe("schema_fallback");
-		});
-
-		it("resets schema fallback counter after an accepted schema decision", () => {
-			const c = new RunBudgetController({
-				maxIterations: 10,
-				maxToolCalls: 10,
-				maxRepeatedAction: 3,
-				maxMissingToolCalls: 3,
-				maxSchemaFallbacks: 3,
-				timeoutSeconds: 60,
-			});
-			expect(c.onSchemaFallback("model.response_repaired").allowed).toBe(true);
-			expect(c.onSchemaFallback("model.response_parse_failed").allowed).toBe(
-				true,
-			);
-			c.onSchemaDecisionAccepted();
-			expect(c.onSchemaFallback("model.response_parse_failed").allowed).toBe(
-				true,
-			);
 		});
 	});
 });

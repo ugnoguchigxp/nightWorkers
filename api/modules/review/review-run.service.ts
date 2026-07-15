@@ -361,7 +361,6 @@ export async function startReviewRunForSession(
 		},
 	});
 	const reviewRun = await startTaskRun(session.taskId, {
-		executionMode: "review",
 		executionModeSource: "review_run",
 		initialTodos: todos,
 		runtimeOptionsPatch: {

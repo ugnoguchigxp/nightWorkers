@@ -1,5 +1,4 @@
 import { buildAgentModeSessionRouteIdentity } from "../../../services/agent-runtime/agent-mode-session";
-import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
 import { launchRuntimeExecution } from "./runtime-execution";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
@@ -57,23 +56,17 @@ export function createPreparedMissionPilotAssociation(input: {
 	runtimeOptions: Record<string, unknown>;
 	taskId: string;
 	runId: string;
-	executionMode: NativeApiExecutionMode;
 	missionPilotPhase?: StartTaskRunOptions["missionPilotPhase"];
 }) {
 	return createRetryableLaunch(async () => {
 		const missionPilot = readMissionPilotEnvelope(
 			input.runtimeOptions.missionPilot,
 		);
-		if (
-			missionPilot &&
-			(input.executionMode === "implementation" ||
-				input.executionMode === "test" ||
-				input.executionMode === "review")
-		) {
+		if (missionPilot) {
 			const associated = await associateMissionPilotChildRun({
 				taskId: input.taskId,
 				runId: input.runId,
-				phase: input.missionPilotPhase ?? input.executionMode,
+				phase: input.missionPilotPhase ?? "implementation",
 				missionPilot,
 			});
 			if (!associated) throw new MissionPilotRunAssociationError();

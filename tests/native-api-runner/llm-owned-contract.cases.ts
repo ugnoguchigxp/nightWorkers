@@ -4,18 +4,34 @@ import {
 	createTask,
 	createTaskRun,
 	deleteRepository,
+	getTaskRun,
+	listTaskRunTodosForRun,
+	updateTaskRun,
 } from "../../api/modules/nightworkers/nightworkers.repository";
+import { activateTaskRunResume } from "../../api/modules/nightworkers/run-orchestration/resume-task-run-activation";
+import {
+	buildRuntimePauseSnapshot,
+	carryRuntimePauseSnapshot,
+	readRuntimePauseSnapshot,
+} from "../../api/modules/nightworkers/run-orchestration/runtime-outcome-guard";
 import { compactNativeApiHistoryToBaseline } from "../../api/services/agent-runtime/native-api-runner/native-api-context-compaction";
+import type { NativeApiToolTurnProvider } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
+import { NativeApiRunner } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
+import { classifyNativeApiProviderError } from "../../api/services/agent-runtime/native-api-runner/native-api-runner-routing";
 import { dispatchNativeApiToolCall } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher";
 import { buildInitialNativeApiHistory } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-history";
 import { getNativeApiToolDefinitions } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-registry";
 import type { AgentRunContext } from "../../api/services/agent-runtime/types";
 import { buildCodingAgentSystemContext } from "../../api/services/coding-agent-context";
+import { registerFixtureProviderToolTurns } from "../../api/services/structured-llm/fixture-tool-provider";
+import { StructuredProviderError } from "../../api/services/structured-llm/provider-failure";
+import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
+	delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 });
 
 function context(overrides: Partial<AgentRunContext> = {}): AgentRunContext {
@@ -38,6 +54,31 @@ function context(overrides: Partial<AgentRunContext> = {}): AgentRunContext {
 		codingAgentSystemContext: systemContext,
 		...overrides,
 	};
+}
+
+async function createRuntimeRun(title: string) {
+	const repository = await createRepository({
+		name: `${title}-${crypto.randomUUID()}`,
+		localPath: "/tmp/native-llm-owned",
+		branch: "main",
+		allowed: true,
+	});
+	repositoryIds.push(repository.id);
+	const task = await createTask({
+		repositoryId: repository.id,
+		title,
+		status: "running",
+	});
+	const run = await createTaskRun({
+		taskId: task.id,
+		repositoryId: repository.id,
+		status: "running",
+	});
+	return { repository, task, run };
+}
+
+function todoCall(id: string, command: Record<string, unknown>) {
+	return { id, name: "todo_list", arguments: { command } };
 }
 
 describe("Native API LLM-owned Todo contract", () => {
@@ -138,5 +179,342 @@ describe("Native API LLM-owned Todo contract", () => {
 			error: { code: "CURRENT_TODO_REQUIRED" },
 		});
 		expect(sink.emit).not.toHaveBeenCalled();
+	});
+
+	it("runs the real Native loop and stops when the LLM pauses its Todo", async () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const { repository, task, run } = await createRuntimeRun("native-pause");
+		const todoId = crypto.randomUUID();
+		registerFixtureProviderToolTurns(task.id, [
+			{
+				content: "計画を作成します。",
+				toolCalls: [
+					todoCall("plan", {
+						op: "replace_plan",
+						expectedPlanRevision: 0,
+						todos: [
+							{
+								id: todoId,
+								title: "確認して実装する",
+								objective: "確認事項を解消して実装する",
+								nextAction: "ユーザー確認が必要か調べる",
+								acceptanceCriteria: ["判断が確定している"],
+							},
+						],
+					}),
+				],
+			},
+			{
+				content: "Todoを開始します。",
+				toolCalls: [
+					todoCall("start", {
+						op: "start",
+						todoId,
+						expectedTodoRevision: 0,
+					}),
+				],
+			},
+			{
+				content: "選択肢についてユーザーの判断が必要です。",
+				toolCalls: [
+					todoCall("pause", {
+						op: "transition",
+						todoId,
+						expectedTodoRevision: 1,
+						status: "needs_human",
+						reason: "仕様の選択が必要です",
+					}),
+				],
+			},
+			{
+				content: "A案とB案のどちらを採用しますか？",
+				toolCalls: [],
+			},
+		]);
+
+		const result = await new NativeApiRunner({
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			{ emit: vi.fn(async () => {}) },
+		);
+
+		expect(result).toMatchObject({
+			terminalState: "needs_human",
+			stoppedBy: "decision",
+			finalReport: "A案とB案のどちらを採用しますか？",
+		});
+		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
+			{ id: todoId, status: "needs_human" },
+		]);
+	});
+
+	it("does not treat an empty assistant turn as completion", async () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const { repository, task, run } = await createRuntimeRun("native-empty");
+		const todoId = crypto.randomUUID();
+		registerFixtureProviderToolTurns(task.id, [
+			{
+				content: "",
+				toolCalls: [
+					todoCall("plan", {
+						op: "replace_plan",
+						expectedPlanRevision: 0,
+						todos: [
+							{
+								id: todoId,
+								title: "完了させる",
+								nextAction: "実行する",
+								acceptanceCriteria: [],
+							},
+						],
+					}),
+				],
+			},
+			{
+				content: "",
+				toolCalls: [
+					todoCall("start", {
+						op: "start",
+						todoId,
+						expectedTodoRevision: 0,
+					}),
+				],
+			},
+			{ content: "", toolCalls: [] },
+			{
+				content: "完了状態へ更新します。",
+				toolCalls: [
+					todoCall("pass", {
+						op: "transition",
+						todoId,
+						expectedTodoRevision: 1,
+						status: "passed",
+						reason: "検証済み",
+					}),
+				],
+			},
+			{ content: "実装と検証が完了しました。", toolCalls: [] },
+		]);
+
+		const result = await new NativeApiRunner({
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			{ emit: vi.fn(async () => {}) },
+		);
+
+		expect(result).toMatchObject({
+			terminalState: "completed",
+			finalReport: "実装と検証が完了しました。",
+		});
+		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
+			{ id: todoId, status: "passed" },
+		]);
+	});
+
+	it("resumes a host-limited run without changing its running Todo", async () => {
+		const { task, run } = await createRuntimeRun("native-host-resume");
+		const todoId = crypto.randomUUID();
+		const mutations = new TodoMutationService(
+			context().codingAgentSystemContext,
+			"llm",
+		);
+		expect(
+			await mutations.execute(run.id, {
+				op: "replace_plan",
+				expectedPlanRevision: 0,
+				todos: [
+					{
+						id: todoId,
+						title: "処理を継続する",
+						nextAction: "残りを実行する",
+						acceptanceCriteria: [],
+					},
+				],
+			}),
+		).toMatchObject({ ok: true });
+		expect(
+			await mutations.execute(run.id, {
+				op: "start",
+				todoId,
+				expectedTodoRevision: 0,
+			}),
+		).toMatchObject({ ok: true });
+		const runtimePause = buildRuntimePauseSnapshot({
+			terminalState: "needs_human",
+			summary: "turn limit",
+			finalReport: "途中経過",
+			stoppedBy: "budget",
+			riskLevel: "high",
+		});
+		await updateTaskRun(run.id, {
+			status: "needs_human",
+			endedAt: new Date(),
+			finishedAt: new Date(),
+			contextSnapshot: carryRuntimePauseSnapshot(
+				{ compiledPrompt: "再開用prompt" },
+				{ runtimePause },
+			),
+		});
+
+		const resumed = await activateTaskRunResume({
+			kind: "runtime_pause",
+			runId: run.id,
+			todoId,
+			expectedTodoRevision: 1,
+			userContext: "続けてください",
+		});
+
+		expect(resumed.status).toBe("running");
+		expect(resumed.endedAt).toBeNull();
+		expect(resumed.finishedAt).toBeNull();
+		const storedRun = await getTaskRun(run.id);
+		if (!storedRun) throw new Error("resumed run disappeared");
+		expect(storedRun.status).toBe("running");
+		expect(
+			(storedRun.contextSnapshot as Record<string, unknown>).runtimePause,
+		).toBeNull();
+		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
+			{ id: todoId, status: "running", revision: 1 },
+		]);
+		expect((await getTaskRun(run.id))?.taskId).toBe(task.id);
+	});
+
+	it("accepts only typed budget pauses as resumable host limits", () => {
+		const budgetPause = buildRuntimePauseSnapshot({
+			terminalState: "needs_human",
+			summary: "budget",
+			finalReport: "途中経過",
+			stoppedBy: "budget",
+			riskLevel: "high",
+		});
+		const toolFailurePause = buildRuntimePauseSnapshot({
+			terminalState: "needs_human",
+			summary: "tool failure",
+			finalReport: "失敗",
+			stoppedBy: "tool_failure",
+			riskLevel: "high",
+		});
+
+		expect(budgetPause).not.toBeNull();
+		expect(toolFailurePause).toBeNull();
+		expect(
+			readRuntimePauseSnapshot({
+				runtimePause: {
+					version: 1,
+					kind: "host_limit",
+					stoppedBy: "unexpected_reason",
+					resumableRunningTodo: true,
+				},
+			}),
+		).toBeNull();
+		expect(
+			carryRuntimePauseSnapshot(
+				{ compiledPrompt: "next" },
+				{ runtimePause: budgetPause },
+			),
+		).toMatchObject({
+			compiledPrompt: "next",
+			runtimePause: { stoppedBy: "budget" },
+		});
+	});
+
+	it("preserves the latest LLM body when a later provider call fails", async () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const { repository, task, run } = await createRuntimeRun("native-body");
+		const todoId = crypto.randomUUID();
+		let callCount = 0;
+		const providerTurn: NativeApiToolTurnProvider = async () => {
+			callCount += 1;
+			if (callCount > 1) {
+				throw new StructuredProviderError({
+					kind: "authentication",
+					retryable: false,
+					message: "認証設定を確認してください",
+				});
+			}
+			return {
+				type: "supported",
+				content: "調査した結果、変更対象はここまで特定できました。",
+				toolCalls: [
+					todoCall("plan", {
+						op: "replace_plan",
+						expectedPlanRevision: 0,
+						todos: [
+							{
+								id: todoId,
+								title: "変更する",
+								nextAction: "実装する",
+								acceptanceCriteria: [],
+							},
+						],
+					}),
+				],
+				usage: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cachedInputTokens: 0,
+					reasoningOutputTokens: 0,
+					totalTokens: 20,
+					mode: "measured",
+				},
+				model: "fixture-native-tools",
+			};
+		};
+
+		const result = await new NativeApiRunner({
+			providerTurn,
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			{ emit: vi.fn(async () => {}) },
+		);
+
+		expect(callCount).toBe(2);
+		expect(result).toMatchObject({
+			terminalState: "failed",
+			finalReport: "調査した結果、変更対象はここまで特定できました。",
+		});
+	});
+
+	it("retries only provider failures explicitly marked retryable", () => {
+		const authentication = classifyNativeApiProviderError(
+			new StructuredProviderError({
+				kind: "authentication",
+				retryable: false,
+				message: "invalid credential",
+			}),
+			{ attemptTimedOut: false },
+		);
+		const transport = classifyNativeApiProviderError(
+			new StructuredProviderError({
+				kind: "transport",
+				retryable: true,
+				message: "connection reset",
+			}),
+			{ attemptTimedOut: false },
+		);
+
+		expect(authentication).toMatchObject({
+			reason: "provider_authentication",
+			retryable: false,
+		});
+		expect(transport).toMatchObject({
+			reason: "provider_transport",
+			retryable: true,
+		});
 	});
 });

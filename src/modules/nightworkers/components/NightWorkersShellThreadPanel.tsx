@@ -295,6 +295,10 @@ export function NightWorkersShellThreadPanel(
 				isTodoArtifactOpen ? (
 					<TodoListPane
 						todos={workspace.latestRunTodos}
+						allowRunningTodoResume={
+							workspace.latestRun?.status === "needs_human" &&
+							isHostLimitedRuntimePause(workspace.latestRun.contextSnapshot)
+						}
 						isResuming={workspace.isResumingTodo}
 						onResume={async (todoId, expectedTodoRevision, userContext) => {
 							const runId = workspace.latestRun?.id;
@@ -390,5 +394,19 @@ export function NightWorkersShellThreadPanel(
 				) : undefined
 			}
 		/>
+	);
+}
+
+function isHostLimitedRuntimePause(value: unknown) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const pause = (value as Record<string, unknown>).runtimePause;
+	return Boolean(
+		pause &&
+			typeof pause === "object" &&
+			!Array.isArray(pause) &&
+			(pause as Record<string, unknown>).version === 1 &&
+			(pause as Record<string, unknown>).kind === "host_limit" &&
+			(pause as Record<string, unknown>).stoppedBy === "budget" &&
+			(pause as Record<string, unknown>).resumableRunningTodo === true,
 	);
 }

@@ -11,10 +11,6 @@ import type {
 import type { StructuredLlmRoutePolicy } from "../../structured-llm/types";
 import type { AgentRunContext } from "../types";
 import {
-	nativeApiRoleForExecutionMode,
-	readNativeApiExecutionMode,
-} from "./native-api-mode";
-import {
 	extractLatestNativeApiUserPrompt,
 	extractNativeApiSystemPrompt,
 	type NativeApiHistoryItem,
@@ -47,8 +43,7 @@ export function buildNativeApiProviderRequests(input: {
 	routeOverride?: StructuredLlmModelTarget | null;
 	routePolicy?: StructuredLlmRoutePolicy;
 }): NativeApiProviderRequest[] {
-	const executionMode = readNativeApiExecutionMode(input.context);
-	const role = nativeApiRoleForExecutionMode(executionMode);
+	const role = "implementation" as const;
 	const systemPrompt = extractNativeApiSystemPrompt(input.history);
 	const userPrompt = extractLatestNativeApiUserPrompt(input.history);
 	const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({

@@ -104,7 +104,7 @@ export function contextBudgetFailureResult(
 			`modelContextWindowTokens=${budget.modelContextWindowTokens}`,
 			"NativeApiRunner did not fall back to Codex, SchemaFirst, or an unconfigured provider endpoint.",
 		].join("\n"),
-		stoppedBy: "llm_error",
+		stoppedBy: "budget",
 		riskLevel: "high",
 	};
 }

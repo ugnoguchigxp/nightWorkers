@@ -391,7 +391,6 @@ export async function handleWorkbenchIntakeMessage(
 					},
 				});
 				const run = await startTaskRun(taskId, {
-					executionMode: "planning",
 					executionModeSource: "workbench_intake",
 					routeOverride: options.llmRouteOverride || null,
 				});
@@ -438,7 +437,6 @@ export async function handleWorkbenchIntakeMessage(
 				},
 			});
 			const run = await startTaskRun(taskId, {
-				executionMode,
 				executionModeSource: "workbench_intake",
 				routeOverride: options.llmRouteOverride || null,
 			});

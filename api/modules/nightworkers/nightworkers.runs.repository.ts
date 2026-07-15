@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, sql } from "drizzle-orm";
 import { type DbTransaction, db } from "../../db/client";
 import { withSqliteBusyRetry } from "../../db/retry";
 import type { TaskRunStatus } from "../../db/schema";
@@ -265,8 +265,8 @@ export async function claimNextQueuedTask(repositoryId: string) {
 
 type TaskRunUpdateData = {
 	status?: TaskRunStatus;
-	endedAt?: Date;
-	finishedAt?: Date;
+	endedAt?: Date | null;
+	finishedAt?: Date | null;
 	logContent?: string;
 	diffPatch?: string;
 	testResults?: unknown;
@@ -314,6 +314,40 @@ export async function updateTaskRunIfStatus(
 		.returning();
 	if (run) await publishTaskRunUpdate(run);
 	return run;
+}
+
+export async function updateTaskRunIfStatusAndTodoRevision(input: {
+	runId: string;
+	expectedStatus: TaskRunStatus;
+	todoId: string;
+	expectedTodoStatus: typeof taskRunTodos.$inferSelect.status;
+	expectedTodoRevision: number;
+	data: TaskRunUpdateData;
+}) {
+	const matchingTodo = db
+		.select({ id: taskRunTodos.id })
+		.from(taskRunTodos)
+		.where(
+			and(
+				eq(taskRunTodos.runId, input.runId),
+				eq(taskRunTodos.id, input.todoId),
+				eq(taskRunTodos.status, input.expectedTodoStatus),
+				eq(taskRunTodos.revision, input.expectedTodoRevision),
+			),
+		);
+	const [run] = await db
+		.update(taskRuns)
+		.set({ ...input.data, updatedAt: new Date() })
+		.where(
+			and(
+				eq(taskRuns.id, input.runId),
+				eq(taskRuns.status, input.expectedStatus),
+				exists(matchingTodo),
+			),
+		)
+		.returning();
+	if (run) await publishTaskRunUpdate(run);
+	return run ?? null;
 }
 
 export async function updateTaskRunIfStatusWithoutPublish(

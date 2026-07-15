@@ -2,21 +2,8 @@ import { loadCodingAgentContextPacket } from "../coding-agent-context";
 import { recordLlmUsage } from "../llm-usage";
 import { runFinalizeController } from "../run-control/finalize-controller";
 import { auditCodexMappedEvent } from "./codex-runtime-audit";
+import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
-	canRetryProviderCapacity,
-	createThread,
-	emitProviderCapacityRetry,
-	finishRun,
-	toCancelled,
-} from "./codex-runtime-closeout";
-import {
-	DEFAULT_PROVIDER_CAPACITY_RETRY_DELAY_MS,
-	DEFAULT_PROVIDER_CAPACITY_RETRY_LIMIT,
-	readRuntimeFailureEvidence,
-} from "./codex-runtime-failure-report";
-import {
-	normalizeRetryDelayMs,
-	normalizeRetryLimit,
 	persistCodexProviderThreadIfPresent,
 	readCodexRuntimeExecutionMode,
 	readPromptPartObservabilityEnabled,
@@ -43,6 +30,7 @@ import { RuntimeSessionStateStore } from "./runtime-session-state";
 import type {
 	AgentRunContext,
 	AgentRuntime,
+	AgentRuntimeEvent,
 	AgentRuntimeResult,
 	AgentRuntimeSink,
 } from "./types";
@@ -64,8 +52,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 	private readonly collectWorkspaceDiff: boolean;
 	private readonly persistRuntimeUsage: boolean;
 	private readonly usageRecorder: RuntimeUsageRecorder;
-	readonly providerCapacityRetryLimit: number;
-	readonly providerCapacityRetryDelayMs: number;
+	readonly maxModelTurns: number;
 
 	constructor(
 		input: {
@@ -75,8 +62,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			collectWorkspaceDiff?: boolean;
 			persistRuntimeUsage?: boolean;
 			usageRecorder?: RuntimeUsageRecorder;
-			providerCapacityRetryLimit?: number;
-			providerCapacityRetryDelayMs?: number;
+			maxModelTurns?: number;
 		} = {},
 	) {
 		this.threadFactory = input.threadFactory;
@@ -89,14 +75,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 		this.persistRuntimeUsage =
 			input.persistRuntimeUsage ?? !input.threadFactory;
 		this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
-		this.providerCapacityRetryLimit = normalizeRetryLimit(
-			input.providerCapacityRetryLimit,
-			DEFAULT_PROVIDER_CAPACITY_RETRY_LIMIT,
-		);
-		this.providerCapacityRetryDelayMs = normalizeRetryDelayMs(
-			input.providerCapacityRetryDelayMs,
-			input.threadFactory ? 0 : DEFAULT_PROVIDER_CAPACITY_RETRY_DELAY_MS,
-		);
+		this.maxModelTurns =
+			Number.isInteger(input.maxModelTurns) && (input.maxModelTurns ?? 0) > 0
+				? Math.floor(input.maxModelTurns ?? MAX_MODEL_TURNS)
+				: MAX_MODEL_TURNS;
 	}
 
 	async start(
@@ -107,6 +89,15 @@ export class CodexAgentRuntime implements AgentRuntime {
 		const controller = new AbortController();
 		const abort = () => controller.abort();
 		signal?.addEventListener("abort", abort, { once: true });
+		let timedOut = false;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			controller.abort(
+				new Error(
+					`CodexAgentRuntime timed out after ${context.timeoutSeconds}s`,
+				),
+			);
+		}, Math.max(1, context.timeoutSeconds) * 1000);
 		const logs: string[] = [];
 		const auditState = createCodexRuntimeAuditState({
 			executionMode: readCodexRuntimeExecutionMode(context),
@@ -114,196 +105,203 @@ export class CodexAgentRuntime implements AgentRuntime {
 		let lastFinalCandidate = "";
 
 		try {
-			attempts: for (
-				let attemptIndex = 0;
-				attemptIndex <= this.providerCapacityRetryLimit;
-				attemptIndex += 1
-			) {
-				if (this.isCancelled(context, signal))
-					return toCancelled(logs.join("\n"));
-				try {
-					const thread = await createThread(this.closeoutHost(), context, sink);
-					const promptParts = buildCodexRuntimePromptParts(context);
-					let nextPrompt = promptParts.prompt;
-					let imageInputSent = false;
-					let providerSessionKey: string | null = null;
+			if (this.isCancelled(context, signal))
+				return toCancelled(logs.join("\n"));
+			try {
+				const thread = await createThread(this.closeoutHost(), context, sink);
+				const promptParts = buildCodexRuntimePromptParts(context);
+				let nextPrompt = promptParts.prompt;
+				let imageInputSent = false;
+				let providerSessionKey: string | null = null;
 
-					for (
-						let turnIndex = 1;
-						turnIndex <= MAX_MODEL_TURNS;
-						turnIndex += 1
-					) {
-						if (this.isCancelled(context, signal)) {
-							controller.abort();
-							return toCancelled(logs.join("\n"));
-						}
-						const turnStartedAt = Date.now();
-						const turnInput = buildCodexRuntimeTurnInput(
-							context,
-							nextPrompt,
-							imageInputSent,
-						);
-						imageInputSent ||= typeof turnInput !== "string";
-						const { events } = await thread.runStreamed(turnInput, {
-							signal: controller.signal,
+				for (
+					let turnIndex = 1;
+					turnIndex <= this.maxModelTurns;
+					turnIndex += 1
+				) {
+					if (timedOut) {
+						return this.finish(context, sink, logs, auditState, {
+							terminalState: "needs_human",
+							finalReport: lastFinalCandidate,
+							stoppedBy: "budget",
+							riskLevel: "high",
 						});
-						const mapperState = createCodexEventMapperState({
-							repoRoot: context.repoRoot,
-						});
-						let turnFinalText = "";
-						let runtimeFailureReason: string | null = null;
+					}
+					if (this.isCancelled(context, signal)) {
+						controller.abort();
+						return toCancelled(logs.join("\n"));
+					}
+					const turnStartedAt = Date.now();
+					const turnInput = buildCodexRuntimeTurnInput(
+						context,
+						nextPrompt,
+						imageInputSent,
+					);
+					imageInputSent ||= typeof turnInput !== "string";
+					const { events } = await thread.runStreamed(turnInput, {
+						signal: controller.signal,
+					});
+					const mapperState = createCodexEventMapperState({
+						repoRoot: context.repoRoot,
+					});
+					const todoContractViolations = new Set<string>();
+					let turnFinalText = "";
+					let runtimeFailed = false;
 
-						for await (const event of events) {
-							for (const mapped of mapCodexThreadEvent(event, mapperState)) {
-								for (const audited of await auditCodexMappedEvent(
-									context,
-									auditState,
-									mapped,
-								)) {
-									providerSessionKey = updateCodexSessionKey(
-										providerSessionKey,
+					for await (const event of events) {
+						for (const mapped of mapCodexThreadEvent(event, mapperState)) {
+							for (const audited of await auditCodexMappedEvent(
+								context,
+								auditState,
+								mapped,
+							)) {
+								const violation = readModelVisibleTodoViolation(audited);
+								if (violation) todoContractViolations.add(violation);
+								providerSessionKey = updateCodexSessionKey(
+									providerSessionKey,
+									audited,
+								);
+								logs.push(audited.message);
+								await sink.emit(audited);
+								if (this.persistRuntimeSessionState) {
+									await persistCodexProviderThreadIfPresent(
+										this.runtimeSessionStore,
+										context,
 										audited,
 									);
-									logs.push(audited.message);
-									await sink.emit(audited);
-									if (this.persistRuntimeSessionState) {
-										await persistCodexProviderThreadIfPresent(
-											this.runtimeSessionStore,
-											context,
-											audited,
-										);
-									}
-								}
-								if (mapped.type === "model_response_finished") {
-									const payload = mapped.payload as
-										| { text?: unknown }
-										| undefined;
-									if (typeof payload?.text === "string") {
-										turnFinalText = payload.text;
-										lastFinalCandidate = payload.text;
-									}
-									await this.recordUsage({
-										context,
-										payload: mapped.payload,
-										durationMs: Date.now() - turnStartedAt,
-										promptParts,
-										providerSessionKey,
-										turnIndex,
-									});
-								}
-								if (mapped.type === "runtime_error") {
-									runtimeFailureReason =
-										readRuntimeFailureEvidence(mapped)?.reason ??
-										"runtime_error";
 								}
 							}
-						}
-
-						if (runtimeFailureReason) {
-							if (
-								runtimeFailureReason === "provider_capacity" &&
-								canRetryProviderCapacity(this.closeoutHost(), attemptIndex)
-							) {
-								await emitProviderCapacityRetry(
-									this.closeoutHost(),
-									sink,
-									logs,
-									attemptIndex,
-									controller.signal,
-								);
-								continue attempts;
+							if (mapped.type === "model_response_finished") {
+								const payload = mapped.payload as
+									| { text?: unknown }
+									| undefined;
+								if (typeof payload?.text === "string") {
+									turnFinalText = payload.text;
+									lastFinalCandidate = payload.text;
+								}
+								await this.recordUsage({
+									context,
+									payload: mapped.payload,
+									durationMs: Date.now() - turnStartedAt,
+									promptParts,
+									providerSessionKey,
+									turnIndex,
+								});
 							}
-							return this.finish(context, sink, logs, auditState, {
-								terminalState: "failed",
-								finalReport: lastFinalCandidate,
-								stoppedBy: "llm_error",
-								riskLevel: "high",
-							});
+							if (mapped.type === "runtime_error") runtimeFailed = true;
 						}
-
-						if (!turnFinalText.trim()) {
-							nextPrompt = JSON.stringify({
-								ok: false,
-								error: {
-									code: "FINAL_RESPONSE_REQUIRED",
-									message:
-										"tool結果を読んで次の行動を選ぶか、最終回答本文を返してください。",
-								},
-							});
-							continue;
-						}
-
-						const completionSnapshot = await loadCodingAgentContextPacket(
-							context.runId,
-						);
-						const completion = await runFinalizeController.evaluateCandidate({
-							runId: context.runId,
-							expectedPlanRevision:
-								completionSnapshot?.planSummary.planRevision ?? 0,
-							expectedTodoRevisions: Object.fromEntries(
-								(completionSnapshot?.planSummary.todos ?? []).map((todo) => [
-									todo.id,
-									todo.revision,
-								]),
-							),
+					}
+					if (timedOut) {
+						return this.finish(context, sink, logs, auditState, {
+							terminalState: "needs_human",
+							finalReport: lastFinalCandidate,
+							stoppedBy: "budget",
+							riskLevel: "high",
 						});
-						if (completion.allowFinalize) {
-							return this.finish(context, sink, logs, auditState, {
-								terminalState: "completed",
-								finalReport: turnFinalText,
-								stoppedBy: "decision",
-								riskLevel: "medium",
-							});
-						}
-						if (completion.code === "RUN_NEEDS_HUMAN") {
-							return this.finish(context, sink, logs, auditState, {
-								terminalState: "needs_human",
-								finalReport: turnFinalText,
-								stoppedBy: "decision",
-								riskLevel: "medium",
-							});
-						}
-						nextPrompt = JSON.stringify({
-							ok: false,
-							error: {
-								code: completion.code,
-								message: completion.message,
-							},
-							currentSnapshot: completion.snapshot,
-							finalCandidate: turnFinalText,
+					}
+					if (this.isCancelled(context, signal)) {
+						return toCancelled(logs.join("\n"));
+					}
+
+					if (runtimeFailed) {
+						return this.finish(context, sink, logs, auditState, {
+							terminalState: "failed",
+							finalReport: lastFinalCandidate,
+							stoppedBy: "llm_error",
+							riskLevel: "high",
 						});
 					}
 
+					if (todoContractViolations.size > 0) {
+						nextPrompt = buildModelVisibleTodoFeedback(todoContractViolations);
+						continue;
+					}
+
+					if (!turnFinalText.trim()) {
+						nextPrompt = JSON.stringify({
+							ok: false,
+							error: {
+								code: "FINAL_RESPONSE_REQUIRED",
+								message:
+									"tool結果を読んで次の行動を選ぶか、最終回答本文を返してください。",
+							},
+						});
+						continue;
+					}
+
+					const completionSnapshot = await loadCodingAgentContextPacket(
+						context.runId,
+					);
+					const completion = await runFinalizeController.evaluateCandidate({
+						runId: context.runId,
+						expectedPlanRevision:
+							completionSnapshot?.planSummary.planRevision ?? 0,
+						expectedTodoRevisions: Object.fromEntries(
+							(completionSnapshot?.planSummary.todos ?? []).map((todo) => [
+								todo.id,
+								todo.revision,
+							]),
+						),
+					});
+					if (completion.allowFinalize) {
+						return this.finish(context, sink, logs, auditState, {
+							terminalState: "completed",
+							finalReport: turnFinalText,
+							stoppedBy: "decision",
+							riskLevel: "medium",
+						});
+					}
+					if (completion.code === "RUN_NEEDS_HUMAN") {
+						return this.finish(context, sink, logs, auditState, {
+							terminalState: "needs_human",
+							finalReport: turnFinalText,
+							stoppedBy: "decision",
+							riskLevel: "medium",
+						});
+					}
+					nextPrompt = JSON.stringify({
+						ok: false,
+						error: {
+							code: completion.code,
+							message: completion.message,
+						},
+						currentSnapshot: completion.snapshot,
+						finalCandidate: turnFinalText,
+					});
+				}
+
+				return this.finish(context, sink, logs, auditState, {
+					terminalState: "needs_human",
+					finalReport: lastFinalCandidate,
+					stoppedBy: "budget",
+					riskLevel: "high",
+				});
+			} catch (error) {
+				if (timedOut) {
 					return this.finish(context, sink, logs, auditState, {
 						terminalState: "needs_human",
 						finalReport: lastFinalCandidate,
 						stoppedBy: "budget",
 						riskLevel: "high",
 					});
-				} catch (error) {
-					if (this.isCancelled(context, signal)) {
-						return toCancelled(logs.join("\n"));
-					}
-					await sink.emit({
-						type: "runtime_error",
-						message: `[System Error] ${error instanceof Error ? error.message : String(error)}`,
-						payload: { rawError: error },
-					});
-					return this.finish(context, sink, logs, auditState, {
-						terminalState: "failed",
-						finalReport: lastFinalCandidate,
-						stoppedBy: "llm_error",
-						riskLevel: "high",
-					});
 				}
+				if (this.isCancelled(context, signal)) {
+					return toCancelled(logs.join("\n"));
+				}
+				await sink.emit({
+					type: "runtime_error",
+					message: `[System Error] ${error instanceof Error ? error.message : String(error)}`,
+					payload: { rawError: error },
+				});
+				return this.finish(context, sink, logs, auditState, {
+					terminalState: "failed",
+					finalReport: lastFinalCandidate,
+					stoppedBy: "llm_error",
+					riskLevel: "high",
+				});
 			}
-			return this.finish(context, sink, logs, auditState, {
-				terminalState: "failed",
-				finalReport: lastFinalCandidate,
-				stoppedBy: "llm_error",
-				riskLevel: "high",
-			});
 		} finally {
+			clearTimeout(timeout);
 			signal?.removeEventListener("abort", abort);
 		}
 	}
@@ -366,8 +364,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 
 	private closeoutHost() {
 		return {
-			providerCapacityRetryLimit: this.providerCapacityRetryLimit,
-			providerCapacityRetryDelayMs: this.providerCapacityRetryDelayMs,
 			threadFactory: this.threadFactory,
 			runtimeSessionStore: this.runtimeSessionStore,
 			collectWorkspaceDiff: this.collectWorkspaceDiff,
@@ -377,4 +373,31 @@ export class CodexAgentRuntime implements AgentRuntime {
 	async stop(runId: string): Promise<void> {
 		this.cancelledRunIds.add(runId);
 	}
+}
+
+const MODEL_VISIBLE_TODO_VIOLATIONS = new Set([
+	"codex_file_change_without_current_todo",
+	"codex_file_change_before_todo_replace",
+]);
+
+function readModelVisibleTodoViolation(event: AgentRuntimeEvent) {
+	if (event.type !== "runtime_warning") return null;
+	const code = event.payload?.code ?? null;
+	return code && MODEL_VISIBLE_TODO_VIOLATIONS.has(code) ? code : null;
+}
+
+function buildModelVisibleTodoFeedback(violations: Set<string>) {
+	const codes = [...violations];
+	const primaryCode = codes.includes("codex_file_change_without_current_todo")
+		? "CURRENT_TODO_REQUIRED"
+		: "TODO_REPLAN_REQUIRED";
+	return JSON.stringify({
+		ok: false,
+		error: {
+			code: primaryCode,
+			message:
+				"Todo contract違反を検出しました。最新のTodo Contextを確認し、必要なTodo更新を行ってから次の行動を選んでください。",
+		},
+		violations: codes,
+	});
 }

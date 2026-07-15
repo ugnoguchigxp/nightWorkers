@@ -152,7 +152,7 @@ export async function prepareNativeApiRunContext(input: {
 						"No native/API provider route candidates were available after compaction.",
 					finalReport:
 						"Context compaction completed, but no native/API provider route candidates remained. NativeApiRunner did not fall back to Codex or SchemaFirst.",
-					stoppedBy: "llm_error",
+					stoppedBy: "budget",
 					riskLevel: "high",
 				},
 			};

@@ -40,6 +40,7 @@ import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
 import {
+	buildRuntimePauseSnapshot,
 	recordPreservedNeedsHumanOutcome,
 	resolveRuntimeOutcomeGuard,
 } from "./runtime-outcome-guard";
@@ -224,6 +225,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					? contextSnapshotBeforeFinalize
 					: runtimeContextSnapshot),
 				ontologyBoundaryAudit,
+				runtimePause: buildRuntimePauseSnapshot(runtimeResult),
 			};
 			await repo.createRunEvent({
 				version: 1,
