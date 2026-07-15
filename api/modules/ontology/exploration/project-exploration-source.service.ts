@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
-import { promisify } from "node:util";
 import type {
 	ProjectExplorationAvailabilityV2,
 	ProjectExplorationCatalogPilotSettings,
@@ -11,6 +9,10 @@ import {
 } from "../../../services/mcp/mcp-client-manager";
 import type { McpServerConfig } from "../../../services/mcp/mcp-config-schema";
 import { getEffectiveMcpServer } from "../../../services/mcp/mcp-effective-settings";
+import {
+	type ProjectSourceStateReader,
+	projectSourceMatchesRevision,
+} from "./project-exploration-source-state";
 import {
 	clampProjectIntelligencePollMs,
 	PROJECT_INTELLIGENCE_PREPARATION_POLICY,
@@ -37,10 +39,6 @@ const defaultMcpAccess: ProjectExplorationMcpAccess = {
 	callTool: (serverId, toolName, args) =>
 		mcpClientManager.callTool(serverId, toolName, args),
 };
-const execFileAsync = promisify(execFile);
-
-type ProjectSourceState = { head: string | null; dirty: boolean };
-
 export async function resolveProjectExplorationCatalogPin(input: {
 	registeredRepoRoot: string;
 	executionRoot: string;
@@ -51,7 +49,7 @@ export async function resolveProjectExplorationCatalogPin(input: {
 	mcpAccess?: ProjectExplorationMcpAccess;
 	policy?: ProjectIntelligencePreparationPolicy;
 	sleep?: (milliseconds: number) => Promise<void>;
-	readSourceState?: (projectPath: string) => Promise<ProjectSourceState>;
+	readSourceState?: ProjectSourceStateReader;
 }): Promise<ProjectExplorationAvailabilityV2> {
 	if (!input.settings.enabled) return unavailable("disabled");
 	if (input.runtimeLane !== "native-api-runner") {
@@ -63,15 +61,14 @@ export async function resolveProjectExplorationCatalogPin(input: {
 	}
 
 	let projectPath: string;
+	let executionPath: string;
 	try {
 		const [registeredRoot, executionRoot] = await Promise.all([
 			fs.realpath(input.registeredRepoRoot),
 			fs.realpath(input.executionRoot),
 		]);
-		if (registeredRoot !== executionRoot) {
-			return unavailable("workspace_mismatch");
-		}
 		projectPath = registeredRoot;
+		executionPath = executionRoot;
 	} catch {
 		return unavailable("workspace_mismatch");
 	}
@@ -79,7 +76,6 @@ export async function resolveProjectExplorationCatalogPin(input: {
 	const mcp = input.mcpAccess ?? defaultMcpAccess;
 	const policy = input.policy ?? PROJECT_INTELLIGENCE_PREPARATION_POLICY;
 	const sleep = input.sleep ?? delay;
-	const readSourceState = input.readSourceState ?? readGitSourceState;
 	const startedAt = Date.now();
 	let waitedMs = 0;
 	let pollCount = 0;
@@ -89,13 +85,7 @@ export async function resolveProjectExplorationCatalogPin(input: {
 		const tools = await mcp.listTools(server);
 		const contract = validateToolContract(tools);
 		if (!contract.ok) return unavailable(contract.reason);
-		if (
-			!(await sourceRevisionMatches(
-				projectPath,
-				input.expectedHead,
-				readSourceState,
-			))
-		) {
+		if (!(await sourceRootsMatch())) {
 			return unavailable("stale");
 		}
 
@@ -110,13 +100,7 @@ export async function resolveProjectExplorationCatalogPin(input: {
 			return unavailable("contract_invalid");
 		}
 		if (prepared.status === "ready") {
-			if (
-				!(await sourceRevisionMatches(
-					projectPath,
-					input.expectedHead,
-					readSourceState,
-				))
-			) {
+			if (!(await sourceRootsMatch())) {
 				return unavailable("stale", {
 					preparation: preparation(startedAt, waitedMs, pollCount),
 				});
@@ -160,13 +144,7 @@ export async function resolveProjectExplorationCatalogPin(input: {
 				});
 			}
 			if (status.status === "ready") {
-				if (
-					!(await sourceRevisionMatches(
-						projectPath,
-						input.expectedHead,
-						readSourceState,
-					))
-				) {
+				if (!(await sourceRootsMatch())) {
 					return unavailable("stale", {
 						preparation: preparation(startedAt, waitedMs, pollCount),
 					});
@@ -193,6 +171,14 @@ export async function resolveProjectExplorationCatalogPin(input: {
 		return unavailable("mcp_failed", {
 			retryable: true,
 			preparation: preparation(startedAt, waitedMs, pollCount),
+		});
+	}
+
+	function sourceRootsMatch() {
+		return projectSourceMatchesRevision({
+			projectPaths: [projectPath, executionPath],
+			expectedHead: input.expectedHead as string,
+			readSourceState: input.readSourceState,
 		});
 	}
 }
@@ -225,12 +211,43 @@ function validateToolContract(
 		return { ok: false, reason: "tool_missing" };
 	if (
 		prepare.annotations?.readOnlyHint !== false ||
+		prepare.annotations?.destructiveHint !== false ||
+		prepare.annotations?.idempotentHint !== true ||
 		status.annotations?.readOnlyHint !== true ||
-		catalog.annotations?.readOnlyHint !== true
+		catalog.annotations?.readOnlyHint !== true ||
+		!hasPathFirstInput(prepare, ["projectPath"]) ||
+		!hasPathFirstInput(status, ["projectPath"]) ||
+		!hasPathFirstInput(catalog, ["projectPath", "focus", "limits"])
 	) {
 		return { ok: false, reason: "contract_invalid" };
 	}
 	return { ok: true };
+}
+
+function hasPathFirstInput(tool: McpToolSummary, allowedKeys: string[]) {
+	if (!tool.inputSchema || typeof tool.inputSchema !== "object") return false;
+	const schema = tool.inputSchema as Record<string, unknown>;
+	const variants = [
+		schema,
+		...(Array.isArray(schema.anyOf)
+			? schema.anyOf.filter(
+					(value): value is Record<string, unknown> =>
+						!!value && typeof value === "object" && !Array.isArray(value),
+				)
+			: []),
+	];
+	return variants.some((variant) => {
+		if (!variant.properties || typeof variant.properties !== "object") {
+			return false;
+		}
+		const keys = Object.keys(variant.properties as Record<string, unknown>);
+		if (!keys.includes("projectPath")) return false;
+		if (keys.some((key) => !allowedKeys.includes(key))) return false;
+		return (
+			Array.isArray(variant.required) &&
+			variant.required.includes("projectPath")
+		);
+	});
 }
 
 function available(input: {
@@ -310,34 +327,4 @@ function unavailable(
 
 function delay(milliseconds: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function sourceRevisionMatches(
-	projectPath: string,
-	expectedHead: string,
-	readSourceState: (projectPath: string) => Promise<ProjectSourceState>,
-) {
-	try {
-		const source = await readSourceState(projectPath);
-		return source.head === expectedHead && !source.dirty;
-	} catch {
-		return false;
-	}
-}
-
-async function readGitSourceState(
-	projectPath: string,
-): Promise<ProjectSourceState> {
-	const [head, status] = await Promise.all([
-		execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
-			cwd: projectPath,
-		}),
-		execFileAsync("git", ["status", "--porcelain=v1", "-z"], {
-			cwd: projectPath,
-		}),
-	]);
-	return {
-		head: head.stdout.trim() || null,
-		dirty: status.stdout.length > 0,
-	};
 }

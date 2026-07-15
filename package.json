@@ -94,6 +94,7 @@
 		"llm-usage:backfill-summary": "bun api/scripts/backfill-llm-usage-summary.ts",
 		"llm-usage:normalize-cumulative": "bun api/scripts/normalize-cumulative-llm-usage.ts",
 		"llm-usage:check-summary": "bun api/scripts/check-llm-usage-summary-integrity.ts",
+		"evaluate:project-exploration": "bun run scripts/evaluate-project-exploration-catalog.ts",
 		"cleanup:test-data": "bun api/scripts/cleanup-test-data.ts --execute",
 		"cleanup:test-data:dry-run": "bun api/scripts/cleanup-test-data.ts --dry-run",
 		"cleanup:test-data:all": "bun api/scripts/cleanup-test-data.ts --all --execute",

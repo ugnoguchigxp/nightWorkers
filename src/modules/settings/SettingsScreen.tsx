@@ -6,6 +6,7 @@ import {
 	createBlueprintPreviewDesignSettings,
 } from "../blueprint-preview";
 import { SettingsHooksPanel } from "../hooks/SettingsHooksPanel";
+import { fetchMcpServers } from "../mcp/mcpCommands";
 import { SettingsMcpPanel } from "../mcp/SettingsMcpPanel";
 import {
 	useWorkspaceAppearanceActions,
@@ -17,12 +18,17 @@ import type {
 	FxRateCache,
 	GeneralSettings,
 	LlmSettings,
+	McpServerConfig,
 	Repository,
 } from "../nightworkers/types";
 import {
+	fetchProjectExplorationSettings,
 	fetchProjectSecurityIntelligenceSettings,
+	type ProjectExplorationCatalogPilotSettings,
 	type ProjectSecurityIntelligenceSettingsResponse,
 	SettingsOntologyPanel,
+	SettingsProjectExplorationPanel,
+	saveProjectExplorationSettings,
 	saveProjectSecurityIntelligenceSettings,
 } from "../ontology";
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
@@ -85,6 +91,9 @@ export function SettingsScreen({
 	] = useState<SaveFeedbackStatus>("idle");
 	const [securityIntelligenceBusy, setSecurityIntelligenceBusy] =
 		useState(false);
+	const [projectExploration, setProjectExploration] =
+		useState<ProjectExplorationCatalogPilotSettings | null>(null);
+	const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
 	const {
 		settings: appearanceSettings,
 		savedSettings: savedAppearanceSettings,
@@ -131,23 +140,46 @@ export function SettingsScreen({
 	useEffect(() => {
 		if (!activeProject) {
 			setSecurityIntelligence(null);
+			setProjectExploration(null);
+			setMcpServers([]);
 			setSecurityIntelligenceMessage("");
 			setSecurityIntelligenceMessageStatus("idle");
 			return;
 		}
 		let cancelled = false;
 		setSecurityIntelligenceBusy(true);
-		fetchProjectSecurityIntelligenceSettings(activeProject.id)
-			.then(async (res) => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				return (await res.json()) as ProjectSecurityIntelligenceSettingsResponse;
+		Promise.all([
+			fetchProjectSecurityIntelligenceSettings(activeProject.id),
+			fetchProjectExplorationSettings(activeProject.id),
+			fetchMcpServers(),
+		])
+			.then(async ([securityResponse, explorationResponse, mcpResponse]) => {
+				for (const response of [
+					securityResponse,
+					explorationResponse,
+					mcpResponse,
+				]) {
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				}
+				return {
+					security:
+						(await securityResponse.json()) as ProjectSecurityIntelligenceSettingsResponse,
+					exploration:
+						(await explorationResponse.json()) as ProjectExplorationCatalogPilotSettings,
+					mcp: (await mcpResponse.json()) as { servers: McpServerConfig[] },
+				};
 			})
-			.then((value) => {
-				if (!cancelled) setSecurityIntelligence(value);
+			.then(({ security, exploration, mcp }) => {
+				if (!cancelled) {
+					setSecurityIntelligence(security);
+					setProjectExploration(exploration);
+					setMcpServers(mcp.servers);
+				}
 			})
 			.catch((error) => {
 				if (!cancelled) {
 					setSecurityIntelligence(null);
+					setProjectExploration(null);
 					setSecurityIntelligenceMessage(
 						error instanceof Error ? error.message : String(error),
 					);
@@ -251,7 +283,7 @@ export function SettingsScreen({
 	};
 
 	const saveSecurityIntelligence = async () => {
-		if (!activeProject || !securityIntelligence) return;
+		if (!activeProject || !securityIntelligence || !projectExploration) return;
 		setSecurityIntelligenceBusy(true);
 		setSecurityIntelligenceMessage("");
 		setSecurityIntelligenceMessageStatus("idle");
@@ -261,8 +293,16 @@ export function SettingsScreen({
 				securityIntelligence.settings,
 			);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const explorationRes = await saveProjectExplorationSettings(
+				activeProject.id,
+				projectExploration,
+			);
+			if (!explorationRes.ok) throw new Error(`HTTP ${explorationRes.status}`);
 			setSecurityIntelligence(
 				(await res.json()) as ProjectSecurityIntelligenceSettingsResponse,
+			);
+			setProjectExploration(
+				(await explorationRes.json()) as ProjectExplorationCatalogPilotSettings,
 			);
 			setSecurityIntelligenceMessage(
 				t("settings.securityIntelligence.saveSucceeded"),
@@ -490,7 +530,9 @@ export function SettingsScreen({
 							<SettingsSaveActions
 								onSave={() => void saveSecurityIntelligence()}
 								isSaving={securityIntelligenceBusy}
-								disabled={!activeProject || !securityIntelligence}
+								disabled={
+									!activeProject || !securityIntelligence || !projectExploration
+								}
 								saveStatus={securityIntelligenceMessageStatus}
 								saveMessage={securityIntelligenceMessage}
 							/>
@@ -504,10 +546,23 @@ export function SettingsScreen({
 									setSecurityIntelligenceMessageStatus("idle");
 								}}
 							/>
+							<SettingsProjectExplorationPanel
+								activeProject={activeProject}
+								value={projectExploration}
+								mcpServers={mcpServers}
+								isSaving={securityIntelligenceBusy}
+								onChange={(value) => {
+									setProjectExploration(value);
+									setSecurityIntelligenceMessage("");
+									setSecurityIntelligenceMessageStatus("idle");
+								}}
+							/>
 							<SettingsSaveActions
 								onSave={() => void saveSecurityIntelligence()}
 								isSaving={securityIntelligenceBusy}
-								disabled={!activeProject || !securityIntelligence}
+								disabled={
+									!activeProject || !securityIntelligence || !projectExploration
+								}
 								saveStatus={securityIntelligenceMessageStatus}
 								saveMessage={securityIntelligenceMessage}
 							/>

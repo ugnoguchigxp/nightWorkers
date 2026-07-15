@@ -38,7 +38,11 @@ export type WorkerToolDispatchInput = {
 	safetyPolicy?: AgentSafetyPolicy;
 	readFiles: string[];
 	toolContext?: WorkerToolExecutionContext;
-	projectExplorationCatalogAccess?: { serverId: string };
+	projectExplorationCatalogAccess?: {
+		serverId: string;
+		projectPath: string;
+		expectedHead: string;
+	};
 };
 
 export type WorkerToolDispatchResult = {
@@ -365,7 +369,9 @@ export async function executeWorkerTool(
 		return {
 			result: await projectExplorationCatalogTool({
 				serverId: input.projectExplorationCatalogAccess.serverId,
-				projectPath: repoRoot,
+				projectPath: input.projectExplorationCatalogAccess.projectPath,
+				executionPath: repoRoot,
+				expectedHead: input.projectExplorationCatalogAccess.expectedHead,
 				focus: args.focus,
 			}),
 		};

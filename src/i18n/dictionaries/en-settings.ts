@@ -279,4 +279,15 @@ export const enSettings = {
 	"settings.general.pricing.count": "{{from}}–{{to}} of {{total}} entries",
 	"settings.general.pricing.previous": "Previous",
 	"settings.general.pricing.next": "Next",
+	"settings.projectExploration.title": "Project Static Intelligence",
+	"settings.projectExploration.description":
+		"Use vulnWorkbench structure data to identify likely implementation files, related tests, and verification commands before broad exploration.",
+	"settings.projectExploration.enabled":
+		"Enable proactive structure exploration",
+	"settings.projectExploration.enabledHelp":
+		"Limited to native/API implementation runs and clean workspaces at the same revision. Unavailable intelligence falls back to normal exploration.",
+	"settings.projectExploration.mcpServer": "vulnWorkbench MCP Server",
+	"settings.projectExploration.noServer": "Not selected",
+	"settings.projectExploration.mcpServerHelp":
+		"Select an enabled MCP server that provides the path-first Static Intelligence tools.",
 } as const;

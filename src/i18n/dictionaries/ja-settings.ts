@@ -280,4 +280,14 @@ export const jaSettings = {
 	"settings.general.pricing.count": "{{from}}〜{{to}}件 / 全{{total}}件",
 	"settings.general.pricing.previous": "前へ",
 	"settings.general.pricing.next": "次へ",
+	"settings.projectExploration.title": "Project Static Intelligence",
+	"settings.projectExploration.description":
+		"vulnWorkbenchの構造情報から、実装候補file・関連test・検証commandを探索前に取得します。",
+	"settings.projectExploration.enabled": "能動的な構造探索を有効にする",
+	"settings.projectExploration.enabledHelp":
+		"native/API実装runに限定し、cleanで同一revisionのworkspaceでのみ利用します。利用できない場合は通常探索へ切り替わります。",
+	"settings.projectExploration.mcpServer": "vulnWorkbench MCP Server",
+	"settings.projectExploration.noServer": "未選択",
+	"settings.projectExploration.mcpServerHelp":
+		"path-first Static Intelligence toolを提供する有効なMCP Serverを選択してください。",
 } as const;

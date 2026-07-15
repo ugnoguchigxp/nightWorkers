@@ -13,6 +13,7 @@ export type ExplorationReductionMeasurement = {
 	preparationReused: boolean | null;
 	preparationPollCount: number | null;
 	fallbackReason: string | null;
+	catalogAvailable: boolean;
 	catalogCalled: boolean;
 	catalogCallCount: number;
 	catalogFailureCount: number;
@@ -20,6 +21,8 @@ export type ExplorationReductionMeasurement = {
 	catalogFileCount: number;
 	catalogTestCount: number;
 	catalogVerificationCount: number;
+	broadExplorationCallsBeforeCatalog: number;
+	catalogCalledBeforeBroadExploration: boolean | null;
 	listDirCallsBeforeMutation: number;
 	searchCallsBeforeMutation: number;
 	readFileCallsBeforeMutation: number;
@@ -68,6 +71,7 @@ export function measureProjectExplorationRun(input: {
 	let catalogFileCount = 0;
 	let catalogTestCount = 0;
 	let catalogVerificationCount = 0;
+	let broadExplorationCallsBeforeCatalog = 0;
 	let firstCatalogParsed = false;
 	let listDirCallsBeforeMutation = 0;
 	let searchCallsBeforeMutation = 0;
@@ -92,7 +96,8 @@ export function measureProjectExplorationRun(input: {
 		if (toolName === "run_verification" || toolName === "completion_check") {
 			verificationPassed = ok;
 		}
-		if (toolName === "todo_list" && ok && args?.operation === "replace") {
+		const todoCommand = recordValue(args?.command);
+		if (toolName === "todo_list" && ok && todoCommand?.op === "replace_plan") {
 			replanCount += 1;
 		}
 
@@ -102,6 +107,9 @@ export function measureProjectExplorationRun(input: {
 			(toolName === "mcp_call_tool" &&
 				args?.toolName === "vuln_get_project_exploration_catalog");
 		if (isCatalogCall) {
+			if (catalogCallCount === 0 && broadExplorationCallsBeforeCatalog > 0) {
+				warnings.add("catalog_called_after_broad_exploration");
+			}
 			catalogCallCount += 1;
 			const workerPayload = recordValue(data.result);
 			const audit = recordValue(workerPayload?.audit);
@@ -145,8 +153,14 @@ export function measureProjectExplorationRun(input: {
 			continue;
 		}
 		if (!ok) continue;
-		if (toolName === "list_dir") listDirCallsBeforeMutation += 1;
-		if (toolName === "search_files") searchCallsBeforeMutation += 1;
+		if (toolName === "list_dir") {
+			listDirCallsBeforeMutation += 1;
+			if (catalogCallCount === 0) broadExplorationCallsBeforeCatalog += 1;
+		}
+		if (toolName === "search_files") {
+			searchCallsBeforeMutation += 1;
+			if (catalogCallCount === 0) broadExplorationCallsBeforeCatalog += 1;
+		}
 		if (toolName === "read_file") {
 			readFileCallsBeforeMutation += 1;
 			const filePath = stringValue(args?.filePath);
@@ -160,6 +174,10 @@ export function measureProjectExplorationRun(input: {
 	const totalCachedInputTokens = sumNullable(
 		input.usageRecords.map((record) => record.cachedInputTokens),
 	);
+	const catalogAvailable = pin?.version === 2 && pin.available;
+	if (catalogAvailable && catalogCallCount === 0) {
+		warnings.add("catalog_available_but_not_called");
+	}
 	return {
 		runId: input.run.id,
 		taskId: input.run.taskId,
@@ -173,6 +191,7 @@ export function measureProjectExplorationRun(input: {
 		preparationPollCount:
 			pin?.version === 2 ? (pin.preparation?.pollCount ?? null) : null,
 		fallbackReason: pin && !pin.available ? pin.reason : null,
+		catalogAvailable,
 		catalogCalled: catalogCallCount > 0,
 		catalogCallCount,
 		catalogFailureCount,
@@ -180,6 +199,9 @@ export function measureProjectExplorationRun(input: {
 		catalogFileCount,
 		catalogTestCount,
 		catalogVerificationCount,
+		broadExplorationCallsBeforeCatalog,
+		catalogCalledBeforeBroadExploration:
+			catalogCallCount > 0 ? broadExplorationCallsBeforeCatalog === 0 : null,
 		listDirCallsBeforeMutation,
 		searchCallsBeforeMutation,
 		readFileCallsBeforeMutation,

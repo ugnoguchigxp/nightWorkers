@@ -89,7 +89,9 @@ export async function dispatchNativeApiToolCall(input: {
 		runId: input.context.runId,
 		safetyPolicy: input.context.safetyPolicy,
 		readFiles: input.state.readFiles,
-		projectExplorationCatalogAccess: projectExplorationAccess(input.context),
+		projectExplorationCatalogAccess: readProjectExplorationCatalogAccess(
+			input.context,
+		),
 	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({
@@ -113,11 +115,19 @@ export async function dispatchNativeApiToolCall(input: {
 	return continueWith(result, nextState);
 }
 
-function projectExplorationAccess(context: AgentRunContext) {
+export function readProjectExplorationCatalogAccess(context: AgentRunContext) {
 	const availability = readProjectExplorationCatalogPin(context);
-	return availability?.version === 2 && availability.available
-		? { serverId: availability.serverId }
-		: undefined;
+	if (availability?.version !== 2 || !availability.available) return undefined;
+	const request = toRecord(
+		(context.contextSnapshot as Record<string, unknown>).request,
+	);
+	const projectPath = request?.registeredRepositoryPath;
+	if (typeof projectPath !== "string" || !projectPath.trim()) return undefined;
+	return {
+		serverId: availability.serverId,
+		projectPath,
+		expectedHead: availability.freshness.sourceRevisionValue,
+	};
 }
 
 function updateDispatchStateAfterWorkerTool(input: {

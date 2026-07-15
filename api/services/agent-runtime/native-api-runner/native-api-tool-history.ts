@@ -1,6 +1,7 @@
 import type { PromptImageAttachment } from "../../../../shared/prompt-image";
 import { isPromptImageMediaType } from "../../../../shared/prompt-image";
 import { projectExplorationCatalogRunPinSchema } from "../../../../shared/schemas/project-exploration-catalog.schema";
+import { buildProjectExplorationAgentWorkflow } from "../../../modules/ontology/exploration/project-exploration-agent-workflow";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
@@ -221,6 +222,9 @@ export function readProjectExplorationCatalogPin(context: AgentRunContext) {
 }
 
 function buildNativeApiSystemPrompt(context: AgentRunContext) {
+	const projectExplorationWorkflow = buildProjectExplorationAgentWorkflow(
+		readProjectExplorationCatalogPin(context),
+	);
 	return [
 		"[NightWorkers Coding Agent Runtime]",
 		JSON.stringify(
@@ -234,6 +238,8 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 			null,
 			2,
 		),
+		"[Project Static Intelligence Workflow]",
+		JSON.stringify(projectExplorationWorkflow, null, 2),
 		...formatRuntimeWorkspaceContextForPrompt(context),
 		"Todo planとcurrent Todoは各turnのTodo Contextを正本にしてください。",
 		"最初のturnではtodo_listでplanを作成してcurrent Todoを開始し、それ以外のworkspace toolを先に呼ばないでください。",

@@ -37,7 +37,9 @@ describe("project exploration measurement", () => {
 			event(7, "search_files", true, { query: "service" }),
 			event(8, "apply_patch", true, {}),
 			event(9, "read_file", true, { filePath: "src/after.ts" }),
-			event(10, "todo_list", true, { operation: "replace" }),
+			event(10, "todo_list", true, {
+				command: { op: "replace_plan" },
+			}),
 			event(11, "run_verification", false, {}),
 			event(12, "completion_check", true, {}),
 		];
@@ -59,6 +61,7 @@ describe("project exploration measurement", () => {
 			preparationReused: true,
 			preparationPollCount: 1,
 			fallbackReason: null,
+			catalogAvailable: true,
 			catalogCalled: true,
 			catalogCallCount: 2,
 			catalogFailureCount: 0,
@@ -68,6 +71,8 @@ describe("project exploration measurement", () => {
 			catalogFileCount: 2,
 			catalogTestCount: 1,
 			catalogVerificationCount: 1,
+			broadExplorationCallsBeforeCatalog: 1,
+			catalogCalledBeforeBroadExploration: false,
 			listDirCallsBeforeMutation: 1,
 			searchCallsBeforeMutation: 1,
 			readFileCallsBeforeMutation: 1,
@@ -79,7 +84,10 @@ describe("project exploration measurement", () => {
 			taskCompleted: true,
 			verificationPassed: true,
 			replanCount: 1,
-			warnings: ["catalog_result_invalid"],
+			warnings: [
+				"catalog_called_after_broad_exploration",
+				"catalog_result_invalid",
+			],
 		});
 	});
 

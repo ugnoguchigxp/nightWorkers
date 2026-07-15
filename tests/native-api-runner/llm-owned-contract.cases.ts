@@ -18,7 +18,10 @@ import { compactNativeApiHistoryToBaseline } from "../../api/services/agent-runt
 import type { NativeApiToolTurnProvider } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
 import { NativeApiRunner } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
 import { classifyNativeApiProviderError } from "../../api/services/agent-runtime/native-api-runner/native-api-runner-routing";
-import { dispatchNativeApiToolCall } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher";
+import {
+	dispatchNativeApiToolCall,
+	readProjectExplorationCatalogAccess,
+} from "../../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher";
 import { buildInitialNativeApiHistory } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-history";
 import { getNativeApiToolDefinitions } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-registry";
 import type { AgentRunContext } from "../../api/services/agent-runtime/types";
@@ -101,7 +104,82 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain("NightWorkers Coding Agent Runtime");
 		expect(system?.content).toContain("current Todo");
 		expect(system?.content).toContain("単一Coding Agentとして実装する");
+		expect(system?.content).toContain('"availability": "unavailable"');
+		expect(system?.content).toContain("project_exploration_catalogを呼ばず");
 		expect(system?.content).not.toContain("executionMode:");
+	});
+
+	it("instructs the LLM to use available Static Intelligence before broad exploration", () => {
+		const history = buildInitialNativeApiHistory(
+			context({
+				contextSnapshot: {
+					compiledPrompt: "実装する",
+					source: "task_prompt",
+					projectExplorationCatalog: {
+						version: 2,
+						available: true,
+						serverId: "server-1",
+						toolName: "vuln_get_project_exploration_catalog",
+						preparedAt: "2026-07-15T00:00:00.000Z",
+						preparationStatus: "ready",
+						freshness: {
+							status: "current",
+							sourceRevisionKind: "git",
+							sourceRevisionValue: "abc123",
+						},
+						readiness: {
+							codeStructure: "available",
+							reasonCodes: [],
+						},
+						preparation: {
+							reused: true,
+							durationMs: 10,
+							pollCount: 0,
+						},
+					},
+				},
+			}),
+		);
+		const system = history.find((item) => item.type === "system");
+		expect(system?.content).toContain('"availability": "available"');
+		expect(system?.content).toContain(
+			"広いlist_dirやsearch_filesより先にproject_exploration_catalog",
+		);
+		expect(system?.content).toContain("候補fileをread_file等で確認");
+	});
+
+	it("keeps the registered projectPath separate from the execution worktree", () => {
+		const runContext = context({
+			repoRoot: "/execution/worktree",
+			contextSnapshot: {
+				compiledPrompt: "実装する",
+				source: "task_prompt",
+				request: {
+					registeredRepositoryPath: "/registered/repository",
+					repositoryPath: "/execution/worktree",
+				},
+				projectExplorationCatalog: {
+					version: 2,
+					available: true,
+					serverId: "server-1",
+					toolName: "vuln_get_project_exploration_catalog",
+					preparedAt: "2026-07-15T00:00:00.000Z",
+					preparationStatus: "ready",
+					freshness: {
+						status: "current",
+						sourceRevisionKind: "git",
+						sourceRevisionValue: "abc123",
+					},
+					readiness: { codeStructure: "available", reasonCodes: [] },
+					preparation: { reused: true, durationMs: 10, pollCount: 0 },
+				},
+			},
+		});
+		expect(readProjectExplorationCatalogAccess(runContext)).toEqual({
+			serverId: "server-1",
+			projectPath: "/registered/repository",
+			expectedHead: "abc123",
+		});
 	});
 
 	it("keeps a conversation summary and Todo context during compaction", () => {

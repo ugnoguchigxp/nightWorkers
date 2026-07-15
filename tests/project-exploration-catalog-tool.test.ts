@@ -34,8 +34,11 @@ describe("project exploration catalog worker adapter", () => {
 		const result = await projectExplorationCatalogTool({
 			serverId: "server-1",
 			projectPath: "/registered/private-project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
 			focus: { paths: ["src/app.ts"], terms: ["routing"] },
 			mcpAccess: { callTool },
+			readSourceState: currentSource,
 		});
 
 		expect(result.ok).toBe(true);
@@ -70,10 +73,13 @@ describe("project exploration catalog worker adapter", () => {
 		const result = await projectExplorationCatalogTool({
 			serverId: "server-1",
 			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
 			focus: { terms: ["routing"] },
 			mcpAccess: {
 				callTool: async () => mcp(catalog({ freshness: { status: "stale" } })),
 			},
+			readSourceState: currentSource,
 		});
 		expect(result).toMatchObject({
 			ok: false,
@@ -90,6 +96,8 @@ describe("project exploration catalog worker adapter", () => {
 		const result = await projectExplorationCatalogTool({
 			serverId: "server-1",
 			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
 			focus: {},
 			mcpAccess: { callTool },
 		});
@@ -109,6 +117,8 @@ describe("project exploration catalog worker adapter", () => {
 			const result = await projectExplorationCatalogTool({
 				serverId: "server-1",
 				projectPath: "/registered/project",
+				executionPath: "/execution/worktree",
+				expectedHead: "abc123",
 				focus: { terms: ["routing"] },
 				mcpAccess: {
 					callTool: async () =>
@@ -118,6 +128,7 @@ describe("project exploration catalog worker adapter", () => {
 							}),
 						),
 				},
+				readSourceState: currentSource,
 			});
 			expect(result).toMatchObject({
 				ok: false,
@@ -131,12 +142,32 @@ describe("project exploration catalog worker adapter", () => {
 		const result = await projectExplorationCatalogTool({
 			serverId: "server-1",
 			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
 			focus: { paths: ["/registered/project/src/app.ts"] },
 			mcpAccess: { callTool },
 		});
 		expect(result).toMatchObject({
 			ok: false,
 			error: { code: "PROJECT_EXPLORATION_FOCUS_REQUIRED" },
+		});
+		expect(callTool).not.toHaveBeenCalled();
+	});
+
+	it("rejects catalog use after the execution worktree changes", async () => {
+		const callTool = vi.fn();
+		const result = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: { callTool },
+			readSourceState: async () => ({ head: "abc123", dirty: true }),
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "PROJECT_EXPLORATION_EXECUTION_SOURCE_CHANGED" },
 		});
 		expect(callTool).not.toHaveBeenCalled();
 	});
@@ -207,4 +238,8 @@ function file(path: string) {
 
 function mcp(payload: unknown) {
 	return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+}
+
+async function currentSource() {
+	return { head: "abc123", dirty: false };
 }

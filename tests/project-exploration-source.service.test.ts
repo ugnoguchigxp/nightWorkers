@@ -154,9 +154,36 @@ describe("projectPath-first project exploration preparation", () => {
 		});
 	});
 
-	it("rejects workspace mismatches before MCP access", async () => {
+	it("reuses registered-root intelligence for a clean same-revision worktree", async () => {
 		const otherRoot = await fs.mkdtemp(
 			path.join(os.tmpdir(), "exploration-worktree-"),
+		);
+		try {
+			const access = fixture({ statuses: [status("ready", true)] });
+			await expect(
+				resolveProjectExplorationCatalogPin({
+					...baseInput(),
+					executionRoot: otherRoot,
+					mcpAccess: access.value,
+					readSourceState: async () => ({ head: HEAD, dirty: false }),
+				}),
+			).resolves.toMatchObject({
+				version: 2,
+				available: true,
+			});
+			expect(access.callTool).toHaveBeenCalledWith(
+				SERVER_ID,
+				"vuln_prepare_project_intelligence",
+				{ projectPath: projectRoot },
+			);
+		} finally {
+			await fs.rm(otherRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects a worktree at a different revision before MCP access", async () => {
+		const otherRoot = await fs.realpath(
+			await fs.mkdtemp(path.join(os.tmpdir(), "exploration-worktree-")),
 		);
 		try {
 			const access = fixture();
@@ -165,12 +192,12 @@ describe("projectPath-first project exploration preparation", () => {
 					...baseInput(),
 					executionRoot: otherRoot,
 					mcpAccess: access.value,
+					readSourceState: async (projectPath) => ({
+						head: projectPath === otherRoot ? "different-head" : HEAD,
+						dirty: false,
+					}),
 				}),
-			).resolves.toMatchObject({
-				version: 2,
-				available: false,
-				reason: "workspace_mismatch",
-			});
+			).resolves.toMatchObject({ available: false, reason: "stale" });
 			expect(access.callTool).not.toHaveBeenCalled();
 		} finally {
 			await fs.rm(otherRoot, { recursive: true, force: true });
@@ -189,6 +216,10 @@ describe("projectPath-first project exploration preparation", () => {
 		await expect(resolve(invalid.value)).resolves.toMatchObject({
 			available: false,
 			reason: "contract_invalid",
+		});
+		const compatibleUnion = fixture({ catalogAnyOf: true });
+		await expect(resolve(compatibleUnion.value)).resolves.toMatchObject({
+			available: true,
 		});
 	});
 
@@ -269,6 +300,7 @@ function accessFixture(
 		statuses?: unknown[];
 		rawStatuses?: unknown[];
 		invalidAnnotations?: boolean;
+		catalogAnyOf?: boolean;
 		projectPath?: string;
 	} = {},
 ) {
@@ -289,7 +321,42 @@ function accessFixture(
 				readOnlyHint: overrides.invalidAnnotations
 					? true
 					: name !== "vuln_prepare_project_intelligence",
+				destructiveHint: false,
+				idempotentHint: name === "vuln_prepare_project_intelligence",
 			},
+			inputSchema:
+				name === "vuln_get_project_exploration_catalog" &&
+				overrides.catalogAnyOf
+					? {
+							anyOf: [
+								{
+									properties: {
+										projectPath: { type: "string" },
+										focus: { type: "object" },
+										limits: { type: "object" },
+									},
+									required: ["projectPath"],
+								},
+								{
+									properties: {
+										scanRunId: { type: "string" },
+										generationId: { type: "string" },
+									},
+									required: ["scanRunId"],
+								},
+							],
+						}
+					: {
+							type: "object",
+							properties: {
+								projectPath: { type: "string" },
+								...(name === "vuln_get_project_exploration_catalog"
+									? { focus: { type: "object" } }
+									: {}),
+							},
+							required: ["projectPath"],
+							additionalProperties: false,
+						},
 		})),
 	);
 	const responses = [

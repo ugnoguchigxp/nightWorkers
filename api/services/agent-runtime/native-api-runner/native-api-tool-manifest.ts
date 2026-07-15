@@ -411,7 +411,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "project_exploration_catalog",
 			description:
-				"現在のProjectに対する、変更候補file・関連test・検証commandのbounded catalogを取得します。projectPathやMCP内部IDは入力せず、Task/Todoから分かるfocusだけを指定してください。",
+				"現在のProjectに対する変更候補file・関連test・検証commandのbounded catalogを取得します。利用可否と呼び出す順序はsystem promptのProject Static Intelligence Workflowに従い、projectPathやMCP内部IDは入力せず、Task/Todoから分かるfocusだけを指定してください。",
 			inputSchema: objectSchema(
 				{
 					focus: objectSchema({

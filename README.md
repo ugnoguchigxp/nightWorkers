@@ -309,7 +309,8 @@ The Settings UI currently manages:
 - provider smoke tests and normalized usage recording;
 - General settings, language, timezone, currency, FX source, and retention;
 - Plan Mode capabilities and appearance;
-- Project Security Intelligence and ontology-tool eligibility;
+- Project Security Intelligence, ontology-tool eligibility, and the
+  vulnWorkbench project-exploration pilot;
 - MCP servers;
 - Agent Hooks.
 
@@ -324,8 +325,9 @@ vulnWorkbench whose discovered tools include
 `vuln_prepare_project_intelligence`, `vuln_get_project_intelligence_status`,
 and `vuln_get_project_exploration_catalog`. Configure the MCP process with an
 explicit `STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS` allowlist; an empty value
-is fail-closed. The pilot remains off unless the
-repository `featureSettings` contains the following exact sibling setting:
+is fail-closed. The pilot remains off by default and can be configured per
+Project in the Security / Ontology settings screen. Its persisted sibling
+setting is:
 
 ```json
 {
@@ -339,8 +341,13 @@ repository `featureSettings` contains the following exact sibling setting:
 Set `enabled` to `true` and `mcpServerId` to the app-managed vulnWorkbench
 server ID only for a controlled pilot. NightWorkers prepares intelligence by
 the registered repository path, stores no vulnWorkbench internal IDs as run
-keys, and exposes only the focus-only `project_exploration_catalog` tool to the
-coding agent. The pilot supports the native/API
+keys, and gives the coding agent a focus-only `project_exploration_catalog`
+contract. The native/API tool catalog remains stable; a typed system context
+tells the agent whether the catalog is available and, when useful, to call it
+before broad directory/search exploration. Assigned Git worktrees may reuse
+registered-root intelligence only while both roots are clean at the same HEAD;
+MCP calls always use the registered root, and catalog use is rejected after the
+execution worktree changes. The pilot supports the native/API
 implementation lane only; Codex SDK, planning, test, review, and general-answer
 lanes remain unchanged. Preparation, freshness, or MCP failures are fail-open and preserve
 the default exploration behavior.

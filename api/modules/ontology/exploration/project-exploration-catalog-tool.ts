@@ -8,6 +8,10 @@ import {
 import { mcpClientManager } from "../../../services/mcp/mcp-client-manager";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import {
+	type ProjectSourceStateReader,
+	projectSourceMatchesRevision,
+} from "./project-exploration-source-state";
+import {
 	PROJECT_INTELLIGENCE_TOOLS,
 	parseMcpJson,
 } from "./project-intelligence-contract";
@@ -36,8 +40,11 @@ type ProjectExplorationCatalogPayload = {
 export async function projectExplorationCatalogTool(input: {
 	serverId: string;
 	projectPath: string;
+	executionPath: string;
+	expectedHead: string;
 	focus: unknown;
 	mcpAccess?: CatalogMcpAccess;
+	readSourceState?: ProjectSourceStateReader;
 }): Promise<WorkerToolResult<ProjectExplorationCatalogPayload>> {
 	const startedAt = new Date().toISOString();
 	const audit: ProjectExplorationCatalogPayload["audit"] = {
@@ -51,6 +58,20 @@ export async function projectExplorationCatalogTool(input: {
 			audit,
 			"PROJECT_EXPLORATION_FOCUS_REQUIRED",
 			"focusにはpaths、modules、termsの少なくとも一つが必要です。",
+		);
+	}
+	if (
+		!(await projectSourceMatchesRevision({
+			projectPaths: [input.executionPath],
+			expectedHead: input.expectedHead,
+			readSourceState: input.readSourceState,
+		}))
+	) {
+		return failed(
+			startedAt,
+			audit,
+			"PROJECT_EXPLORATION_EXECUTION_SOURCE_CHANGED",
+			"実装workspaceのsource stateが準備時点から変化したため、通常のworkspace探索へ切り替えてください。",
 		);
 	}
 	try {
