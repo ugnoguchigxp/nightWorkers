@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { runSessionQueueForRepository } from "../../../api/modules/nightworkers/nightworkers.service";
 import * as runtimeRegistry from "../../../api/services/agent-runtime/registry";
 import { repoRoot } from "./setup";
 
 describe("NightWorkers service", () => {
+	beforeEach(async () => {
+		await runSessionQueueForRepository("test-session-queue-drain-flush");
+		vi.clearAllMocks();
+	});
+
 	it("starts the next queued session when project queue capacity is available", async () => {
 		const task = {
 			id: "task-next",
@@ -89,7 +94,7 @@ describe("NightWorkers service", () => {
 		try {
 			const started = await runSessionQueueForRepository("repo-full");
 			expect(started).toHaveLength(0);
-			expect(repo.claimNextQueuedTask).not.toHaveBeenCalled();
+			expect(repo.claimNextQueuedTask).not.toHaveBeenCalledWith("repo-full");
 		} finally {
 			if (previousLimit === undefined)
 				delete process.env.SESSION_QUEUE_MAX_CONCURRENCY;

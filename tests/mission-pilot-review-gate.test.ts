@@ -1,13 +1,46 @@
 import { describe, expect, it } from "vitest";
+import { resolveMissionPilotPushPolicy } from "../api/modules/missionPilot/mission-pilot-post-queue-review.service";
 import { evaluateReviewCompletionGate } from "../api/modules/missionPilot/mission-pilot-post-queue-state";
 
 describe("Mission Pilot Review completion gate", () => {
+	it("does not allow push when the Play authorization did not grant it", () => {
+		expect(
+			resolveMissionPilotPushPolicy({
+				version: 3,
+				sessionId: "00000000-0000-4000-8000-000000000001",
+				taskId: "00000000-0000-4000-8000-000000000002",
+				taskRef: {
+					source: "task",
+					id: "00000000-0000-4000-8000-000000000002",
+				},
+				activationContextRevision: 1,
+				activationContextDigest: "ctx-1",
+				grantedByAction: "mission_pilot_play",
+				grantedAt: new Date().toISOString(),
+				scopes: {
+					plan: true,
+					queue: true,
+					implementation: true,
+					testMutation: true,
+					review: true,
+					localCommit: true,
+					taskComplete: true,
+					taskArchive: true,
+					push: false,
+				},
+				pushPolicy: "required",
+			}),
+		).toBe("never");
+	});
+
 	it("accepts a structured pass with no blocking findings", () => {
 		const result = evaluateReviewCompletionGate({
 			decision: { verdict: "pass", summary: "確認済み", findings: [] },
 			contextDigestMatches: true,
 			testSnapshotMatches: true,
 			targetManifestMatches: true,
+			reviewerEvaluationMatches: true,
+			reviewerEvaluationApproved: true,
 		});
 		expect(result.pass).toBe(true);
 	});
@@ -18,6 +51,8 @@ describe("Mission Pilot Review completion gate", () => {
 			contextDigestMatches: true,
 			testSnapshotMatches: true,
 			targetManifestMatches: true,
+			reviewerEvaluationMatches: true,
+			reviewerEvaluationApproved: true,
 		});
 		expect(result).toMatchObject({
 			pass: false,
@@ -45,6 +80,8 @@ describe("Mission Pilot Review completion gate", () => {
 			contextDigestMatches: true,
 			testSnapshotMatches: true,
 			targetManifestMatches: true,
+			reviewerEvaluationMatches: true,
+			reviewerEvaluationApproved: true,
 		});
 		expect(result.pass).toBe(false);
 	});
@@ -69,11 +106,31 @@ describe("Mission Pilot Review completion gate", () => {
 			contextDigestMatches: true,
 			testSnapshotMatches: true,
 			targetManifestMatches: true,
+			reviewerEvaluationMatches: true,
+			reviewerEvaluationApproved: true,
 		});
 		expect(result).toMatchObject({
 			pass: false,
 			reasons: ["structured_decision_invalid"],
 			decision: null,
+		});
+	});
+
+	it("rejects pass when the persisted reviewer evaluation is missing", () => {
+		const result = evaluateReviewCompletionGate({
+			decision: { verdict: "pass", summary: "確認済み", findings: [] },
+			contextDigestMatches: true,
+			testSnapshotMatches: true,
+			targetManifestMatches: true,
+			reviewerEvaluationMatches: false,
+			reviewerEvaluationApproved: false,
+		});
+		expect(result).toMatchObject({
+			pass: false,
+			reasons: [
+				"reviewer_evaluation_missing_or_stale",
+				"reviewer_evaluation_not_approved",
+			],
 		});
 	});
 });

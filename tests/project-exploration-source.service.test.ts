@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,277 +9,311 @@ import {
 import type { McpServerConfig } from "../api/services/mcp/mcp-config-schema";
 
 const SERVER_ID = "00000000-0000-4000-8000-000000000201";
-const GENERATION_ID = "00000000-0000-4000-8000-000000000202";
 const HEAD = "abc123";
-const HASH = "a".repeat(64);
 
-describe("project exploration source selection", () => {
-	let tempDir: string;
-	let rootRef: string;
+describe("projectPath-first project exploration preparation", () => {
+	let projectRoot: string;
 
 	beforeEach(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "exploration-source-"));
-		rootRef = createHash("sha256")
-			.update(await fs.realpath(tempDir))
-			.digest("hex");
+		projectRoot = await fs.realpath(
+			await fs.mkdtemp(path.join(os.tmpdir(), "exploration-source-")),
+		);
 	});
 
 	afterEach(async () => {
-		await fs.rm(tempDir, { recursive: true, force: true });
+		await fs.rm(projectRoot, { recursive: true, force: true });
 	});
 
 	it.each([
 		[false, "native-api-runner", SERVER_ID, HEAD, [], "disabled"],
 		[true, "codex-sdk", SERVER_ID, HEAD, [], "wrong_runtime_lane"],
 		[true, "native-api-runner", null, HEAD, [], "server_missing"],
-		[true, "native-api-runner", SERVER_ID, null, [], "revision_mismatch"],
+		[true, "native-api-runner", SERVER_ID, null, [], "revision_unavailable"],
 		[
 			true,
 			"native-api-runner",
 			SERVER_ID,
 			HEAD,
 			["dirty.ts"],
-			"revision_mismatch",
+			"revision_unavailable",
 		],
 	] as const)("short-circuits guarded fallback %#", async (enabled, runtimeLane, serverId, expectedHead, dirty, reason) => {
-		const access = accessFixture();
+		const access = fixture();
 		await expect(
 			resolveProjectExplorationCatalogPin({
-				registeredRepoRoot: tempDir,
+				...baseInput(),
 				expectedHead,
 				preExistingDirtyPaths: [...dirty],
 				settings: { enabled, mcpServerId: serverId },
 				runtimeLane,
 				mcpAccess: access.value,
 			}),
-		).resolves.toEqual({ version: 1, available: false, reason });
+		).resolves.toMatchObject({ version: 2, available: false, reason });
 		expect(access.listTools).not.toHaveBeenCalled();
 		expect(access.callTool).not.toHaveBeenCalled();
 	});
 
-	it("hashes the canonical registered root and returns one validated immutable pin", async () => {
-		const access = accessFixture();
+	it("prepares by canonical projectPath and returns an ID-free v2 availability", async () => {
+		const access = fixture({ statuses: [status("ready", true)] });
 		const result = await resolve(access.value);
-		expect(result).toEqual({
-			version: 1,
+		expect(result).toMatchObject({
+			version: 2,
 			available: true,
 			serverId: SERVER_ID,
-			rootRef,
-			projectId: "project-1",
-			scanRunId: "scan-1",
-			generationId: GENERATION_ID,
-			snapshotRef: "code_structure:fixture",
-			sourceTreeHash: HASH,
-			sourceStateHash: "b".repeat(64),
-			sourceRevisionHead: HEAD,
-			toolName: "vuln_get_project_exploration_catalog",
+			preparationStatus: "ready",
+			freshness: {
+				status: "current",
+				sourceRevisionKind: "git",
+				sourceRevisionValue: HEAD,
+			},
+			preparation: { reused: true, pollCount: 0 },
 		});
-		expect(access.callTool).toHaveBeenNthCalledWith(
-			1,
+		expect(access.callTool).toHaveBeenCalledTimes(1);
+		expect(access.callTool).toHaveBeenCalledWith(
 			SERVER_ID,
-			"vuln_list_knowledge_sources",
-			{ rootRef, limit: 20 },
+			"vuln_prepare_project_intelligence",
+			{ projectPath: await fs.realpath(projectRoot) },
 		);
-		expect(JSON.stringify(access.callTool.mock.calls)).not.toContain(tempDir);
+		for (const internalKey of [
+			"projectId",
+			"scanRunId",
+			"generationId",
+			"rootRef",
+		]) {
+			expect(JSON.stringify(result)).not.toContain(internalKey);
+		}
 	});
 
-	it("selects generatedAt desc then generationId asc", async () => {
-		const lowerId = "00000000-0000-4000-8000-000000000203";
-		const higherId = "00000000-0000-4000-8000-000000000204";
-		const access = accessFixture({
-			sources: [
-				source({ generationId: higherId }),
-				source({ generationId: lowerId }),
-			],
-			manifestGenerationId: lowerId,
+	it("does not enable a generation when the source changes during preparation", async () => {
+		const access = fixture({ statuses: [status("ready")] });
+		const readSourceState = vi
+			.fn()
+			.mockResolvedValueOnce({ head: HEAD, dirty: false })
+			.mockResolvedValueOnce({ head: "different-head", dirty: false });
+		await expect(
+			resolveProjectExplorationCatalogPin({
+				...baseInput(),
+				mcpAccess: access.value,
+				policy: { maxWaitMs: 0, minPollMs: 1, maxPollMs: 1 },
+				readSourceState,
+			}),
+		).resolves.toMatchObject({
+			available: false,
+			reason: "stale",
 		});
-		const result = await resolve(access.value);
-		expect(result).toMatchObject({ available: true, generationId: lowerId });
-		expect(access.callTool).toHaveBeenNthCalledWith(
-			2,
-			SERVER_ID,
-			"vuln_get_knowledge_source_manifest",
-			{ scanRunId: "scan-1", generationId: lowerId },
+		expect(readSourceState).toHaveBeenCalledTimes(2);
+	});
+
+	it("polls the same job without starting a duplicate prepare", async () => {
+		const access = fixture({
+			statuses: [status("queued"), status("running"), status("ready")],
+		});
+		const sleep = vi.fn(async () => undefined);
+		const result = await resolve(
+			access.value,
+			{
+				maxWaitMs: 500,
+				minPollMs: 100,
+				maxPollMs: 100,
+			},
+			sleep,
 		);
+		expect(result).toMatchObject({
+			available: true,
+			preparation: { pollCount: 2 },
+		});
+		expect(
+			access.callTool.mock.calls.filter(
+				(call) => call[1] === "vuln_prepare_project_intelligence",
+			),
+		).toHaveLength(1);
+		expect(
+			access.callTool.mock.calls.filter(
+				(call) => call[1] === "vuln_get_project_intelligence_status",
+			),
+		).toHaveLength(2);
+		expect(sleep).toHaveBeenCalledTimes(2);
 	});
 
-	it.each([
-		["empty", "source_missing"],
-		["nonmatching_root", "source_missing"],
-		["stale", "source_unusable"],
-		["head_mismatch", "revision_mismatch"],
-		["tree_hash_only", "revision_mismatch"],
-	] as const)("classifies unusable discovery %#", async (scenario, reason) => {
-		const sources =
-			scenario === "empty"
-				? []
-				: [
-						source(
-							scenario === "nonmatching_root"
-								? { rootRef: "f".repeat(64) }
-								: scenario === "stale"
-									? { readiness: "stale" }
-									: scenario === "head_mismatch"
-										? { head: "different" }
-										: { sourceRevisionKind: "tree_hash_only" },
-						),
-					];
-		const access = accessFixture({ sources });
-		await expect(resolve(access.value)).resolves.toEqual({
-			version: 1,
+	it("fails open after bounded polling", async () => {
+		const access = fixture({
+			statuses: [status("queued"), status("running"), status("running")],
+		});
+		await expect(
+			resolve(
+				access.value,
+				{ maxWaitMs: 200, minPollMs: 100, maxPollMs: 100 },
+				async () => undefined,
+			),
+		).resolves.toMatchObject({
+			version: 2,
 			available: false,
-			reason,
+			reason: "preparation_timeout",
+			retryable: true,
+			preparation: { pollCount: 2 },
 		});
 	});
 
-	it("fails closed for missing server or tool", async () => {
-		const missingServer = accessFixture({ server: undefined });
-		await expect(resolve(missingServer.value)).resolves.toMatchObject({
-			available: false,
-			reason: "server_missing",
+	it("rejects workspace mismatches before MCP access", async () => {
+		const otherRoot = await fs.mkdtemp(
+			path.join(os.tmpdir(), "exploration-worktree-"),
+		);
+		try {
+			const access = fixture();
+			await expect(
+				resolveProjectExplorationCatalogPin({
+					...baseInput(),
+					executionRoot: otherRoot,
+					mcpAccess: access.value,
+				}),
+			).resolves.toMatchObject({
+				version: 2,
+				available: false,
+				reason: "workspace_mismatch",
+			});
+			expect(access.callTool).not.toHaveBeenCalled();
+		} finally {
+			await fs.rm(otherRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("requires action/query annotations and all path-first tools", async () => {
+		const missing = fixture({
+			toolNames: ["vuln_prepare_project_intelligence"],
 		});
-		const missingTool = accessFixture({
-			toolNames: ["vuln_list_knowledge_sources"],
-		});
-		await expect(resolve(missingTool.value)).resolves.toMatchObject({
+		await expect(resolve(missing.value)).resolves.toMatchObject({
 			available: false,
 			reason: "tool_missing",
 		});
+		const invalid = fixture({ invalidAnnotations: true });
+		await expect(resolve(invalid.value)).resolves.toMatchObject({
+			available: false,
+			reason: "contract_invalid",
+		});
 	});
 
-	it("maps malformed and rejected MCP responses without throwing", async () => {
-		const malformed = accessFixture({
-			discoveryRaw: { content: [{ type: "text", text: "{" }] },
-		});
+	it("separates malformed contracts, stale state, and MCP failures", async () => {
+		const malformed = fixture({ rawStatuses: [mcp({ invalid: true })] });
 		await expect(resolve(malformed.value)).resolves.toMatchObject({
-			available: false,
-			reason: "mcp_failed",
+			reason: "contract_invalid",
 		});
-		const rejected = accessFixture();
-		rejected.callTool.mockRejectedValueOnce(new Error("offline"));
-		await expect(resolve(rejected.value)).resolves.toMatchObject({
-			available: false,
+		const wrongProject = accessFixture({
+			statuses: [status("ready")],
+			projectPath: "/different/project",
+		});
+		await expect(resolve(wrongProject.value)).resolves.toMatchObject({
+			reason: "contract_invalid",
+		});
+		const stale = fixture({ statuses: [status("stale")] });
+		await expect(resolve(stale.value)).resolves.toMatchObject({
+			reason: "stale",
+		});
+		const failed = fixture();
+		failed.callTool.mockRejectedValueOnce(new Error("offline"));
+		await expect(resolve(failed.value)).resolves.toMatchObject({
 			reason: "mcp_failed",
+			retryable: true,
 		});
 	});
 
-	it("rejects malformed or mismatched exact manifests", async () => {
-		const malformed = accessFixture({ manifestRaw: mcp({ ok: false }) });
-		await expect(resolve(malformed.value)).resolves.toMatchObject({
-			available: false,
-			reason: "manifest_invalid",
-		});
-		const mismatch = accessFixture({ manifestProjectId: "other-project" });
-		await expect(resolve(mismatch.value)).resolves.toMatchObject({
-			available: false,
-			reason: "manifest_invalid",
-		});
-	});
-
-	async function resolve(mcpAccess: ProjectExplorationMcpAccess) {
-		return resolveProjectExplorationCatalogPin({
-			registeredRepoRoot: tempDir,
+	function baseInput() {
+		return {
+			registeredRepoRoot: projectRoot,
+			executionRoot: projectRoot,
 			expectedHead: HEAD,
 			preExistingDirtyPaths: [],
 			settings: { enabled: true, mcpServerId: SERVER_ID },
 			runtimeLane: "native-api-runner",
+		};
+	}
+
+	function fixture(overrides: Parameters<typeof accessFixture>[0] = {}) {
+		return accessFixture({ ...overrides, projectPath: projectRoot });
+	}
+
+	function resolve(
+		mcpAccess: ProjectExplorationMcpAccess,
+		policy = { maxWaitMs: 0, minPollMs: 1, maxPollMs: 1 },
+		sleep = async () => undefined,
+	) {
+		return resolveProjectExplorationCatalogPin({
+			...baseInput(),
 			mcpAccess,
+			policy,
+			sleep,
+			readSourceState: async () => ({ head: HEAD, dirty: false }),
 		});
-	}
-
-	function source(
-		overrides: {
-			rootRef?: string;
-			generationId?: string;
-			readiness?: "available" | "stale" | "degraded";
-			head?: string;
-			sourceRevisionKind?: "git" | "tree_hash_only";
-		} = {},
-	) {
-		return {
-			projectId: "project-1",
-			rootRef: overrides.rootRef ?? rootRef,
-			scanRunId: "scan-1",
-			generationId: overrides.generationId ?? GENERATION_ID,
-			generationGeneratedAt: "2026-07-14T12:00:00.000Z",
-			sourceRevision: {
-				kind: overrides.sourceRevisionKind ?? "git",
-				...(overrides.sourceRevisionKind === "tree_hash_only"
-					? {}
-					: { head: overrides.head ?? HEAD }),
-				value: overrides.head ?? HEAD,
-			},
-			readiness: overrides.readiness ?? "available",
-		};
-	}
-
-	function accessFixture(
-		overrides: {
-			server?: McpServerConfig;
-			toolNames?: string[];
-			sources?: ReturnType<typeof source>[];
-			discoveryRaw?: unknown;
-			manifestRaw?: unknown;
-			manifestProjectId?: string;
-			manifestGenerationId?: string;
-		} = {},
-	) {
-		const server = "server" in overrides ? overrides.server : serverFixture();
-		const toolNames = overrides.toolNames ?? [
-			"vuln_list_knowledge_sources",
-			"vuln_get_knowledge_source_manifest",
-			"vuln_get_project_exploration_catalog",
-		];
-		const listTools = vi.fn(async () =>
-			toolNames.map((name) => ({
-				serverId: SERVER_ID,
-				serverName: "fixture",
-				toolPrefix: "vuln",
-				name,
-				namespacedName: `mcp__vuln__${name}`,
-			})),
-		);
-		const callTool = vi.fn(async (_serverId: string, toolName: string) => {
-			if (toolName === "vuln_list_knowledge_sources") {
-				return (
-					overrides.discoveryRaw ??
-					mcp({
-						ok: true,
-						status: "completed",
-						sources: overrides.sources ?? [source()],
-					})
-				);
-			}
-			return (
-				overrides.manifestRaw ??
-				mcp({
-					ok: true,
-					status: "completed",
-					manifest: {
-						project: { id: overrides.manifestProjectId ?? "project-1" },
-						scan: { id: "scan-1" },
-						generation: {
-							generationId: overrides.manifestGenerationId ?? GENERATION_ID,
-							snapshotRef: "code_structure:fixture",
-							sourceTreeHash: HASH,
-							sourceStateHash: "b".repeat(64),
-							status: "available",
-						},
-					},
-				})
-			);
-		});
-		return {
-			listTools,
-			callTool,
-			value: {
-				resolveServer: () => server,
-				listTools,
-				callTool,
-			} satisfies ProjectExplorationMcpAccess,
-		};
 	}
 });
+
+function status(
+	value: "queued" | "running" | "ready" | "stale" | "failed",
+	reused = false,
+) {
+	return {
+		ok: value !== "failed",
+		status: value,
+		projectPath: "/canonical/project",
+		reused,
+		retryAfterMs: value === "queued" || value === "running" ? 100 : undefined,
+		...(value === "failed"
+			? { errorCode: "SCAN_FAILED", retryable: true }
+			: {}),
+	};
+}
+
+function accessFixture(
+	overrides: {
+		server?: McpServerConfig;
+		toolNames?: string[];
+		statuses?: unknown[];
+		rawStatuses?: unknown[];
+		invalidAnnotations?: boolean;
+		projectPath?: string;
+	} = {},
+) {
+	const server = "server" in overrides ? overrides.server : serverFixture();
+	const toolNames = overrides.toolNames ?? [
+		"vuln_prepare_project_intelligence",
+		"vuln_get_project_intelligence_status",
+		"vuln_get_project_exploration_catalog",
+	];
+	const listTools = vi.fn(async () =>
+		toolNames.map((name) => ({
+			serverId: SERVER_ID,
+			serverName: "fixture",
+			toolPrefix: "vuln",
+			name,
+			namespacedName: `mcp__vuln__${name}`,
+			annotations: {
+				readOnlyHint: overrides.invalidAnnotations
+					? true
+					: name !== "vuln_prepare_project_intelligence",
+			},
+		})),
+	);
+	const responses = [
+		...(overrides.rawStatuses ?? []),
+		...(overrides.statuses ?? [status("ready")]).map((value) =>
+			mcp({
+				...(value as Record<string, unknown>),
+				projectPath: overrides.projectPath ?? "/canonical/project",
+			}),
+		),
+	];
+	const callTool = vi.fn(
+		async () => responses.shift() ?? mcp(status("running")),
+	);
+	return {
+		listTools,
+		callTool,
+		value: {
+			resolveServer: () => server,
+			listTools,
+			callTool,
+		} satisfies ProjectExplorationMcpAccess,
+	};
+}
 
 function serverFixture(): McpServerConfig {
 	return {

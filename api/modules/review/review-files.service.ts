@@ -7,9 +7,14 @@ import type {
 	ParsedRunJsonl,
 	ReplayResult,
 } from "../../services/run-events/types";
+import { digestText } from "../../services/text-digest";
 import { gitDiffTool } from "../../services/worker-tools/git";
 import * as repo from "../nightworkers/nightworkers.repository";
-import { buildReviewEvidencePackFromRun } from "./rubrics/evidence-pack";
+import { readReviewTargetManifest } from "./review-target-manifest";
+import {
+	buildReviewEvidencePackFromRun,
+	buildReviewEvidencePackFromRuns,
+} from "./rubrics/evidence-pack";
 import { listRubrics } from "./rubrics/loader";
 import {
 	runReviewerEvaluationFromPack,
@@ -41,7 +46,10 @@ export async function createReviewerEvaluation(
 	const run = await repo.getTaskRun(runId);
 	if (!run) throw new NotFoundError("Run not found");
 	const events = await repo.listTaskEventsForRun(runId);
-	const pack = buildReviewEvidencePackFromRun(run, events);
+	const manifest = readReviewTargetManifest(run.contextSnapshot);
+	const pack = manifest
+		? await buildManifestReviewEvidencePack({ run, manifest })
+		: buildReviewEvidencePackFromRun(run, events);
 	const evaluation = await runReviewerEvaluationFromPack({
 		pack,
 		rubricId: request.rubricId || "basic-coding-run",
@@ -59,13 +67,58 @@ export async function createReviewerEvaluation(
 			await repo.createRunEvent(
 				event,
 				event.type === "review.evaluation_finished"
-					? { payloadJson: { reviewResult: evaluation.reviewResult } }
+					? {
+							payloadJson: {
+								reviewResult: evaluation.reviewResult,
+								targetManifestDigest: pack.manifestDigest ?? null,
+								testSnapshotId: pack.testSnapshotId ?? null,
+								evidencePackDigest: digestText(JSON.stringify(pack)),
+							},
+						}
 					: undefined,
 			);
 		}
 	}
 
 	return evaluation;
+}
+
+async function buildManifestReviewEvidencePack(input: {
+	run: NonNullable<Awaited<ReturnType<typeof repo.getTaskRun>>>;
+	manifest: NonNullable<ReturnType<typeof readReviewTargetManifest>>;
+}) {
+	if (input.manifest.taskId !== input.run.taskId) {
+		throw new AppError(
+			409,
+			"REVIEW_TARGET_MANIFEST_MISMATCH",
+			"Review target manifest belongs to another task.",
+		);
+	}
+	const sources = [];
+	for (const source of input.manifest.sourceRuns) {
+		const sourceRun = await repo.getTaskRun(source.runId);
+		if (
+			!sourceRun ||
+			sourceRun.taskId !== input.run.taskId ||
+			digestText(sourceRun.diffPatch ?? "") !== source.diffDigest ||
+			digestText(sourceRun.finalReport ?? "") !== source.finalReportDigest
+		) {
+			throw new AppError(
+				409,
+				"REVIEW_TARGET_MANIFEST_STALE",
+				"Review target source evidence no longer matches its manifest.",
+			);
+		}
+		sources.push({
+			run: sourceRun,
+			events: await repo.listTaskEventsForRun(sourceRun.id),
+		});
+	}
+	return buildReviewEvidencePackFromRuns({
+		reviewRun: input.run,
+		sources,
+		manifest: input.manifest,
+	});
 }
 
 export async function createReviewerReplayEvaluation(

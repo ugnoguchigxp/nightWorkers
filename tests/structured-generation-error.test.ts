@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createStructuredGenerationAppError } from "../api/services/structured-generation/structured-generation-error";
-import { StructuredLlmResponseError } from "../api/services/structured-llm";
+import {
+	StructuredLlmResponseError,
+	StructuredLlmTimeoutError,
+} from "../api/services/structured-llm";
 
 describe("structured generation error mapping", () => {
 	it("keeps an invalid structured response as the displayed error text", () => {
@@ -53,6 +56,29 @@ describe("structured generation error mapping", () => {
 		});
 
 		expect(error.message).toBe("Provider connection failed.");
-		expect(error.details).toEqual({ responseTextOrigin: "application" });
+		expect(error.details).toEqual({
+			responseTextOrigin: "application",
+			failureKind: "generation_failure",
+			retryable: true,
+		});
+	});
+
+	it("maps an internal timeout to a retryable gateway timeout", () => {
+		const error = createStructuredGenerationAppError({
+			code: "GENERATION_FAILED",
+			fallbackMessage: "Generation failed.",
+			error: new StructuredLlmTimeoutError(180_000),
+		});
+
+		expect(error).toMatchObject({
+			statusCode: 504,
+			code: "GENERATION_FAILED_TIMEOUT",
+			details: {
+				responseTextOrigin: "application",
+				failureKind: "provider_timeout",
+				retryable: true,
+				timeoutMs: 180_000,
+			},
+		});
 	});
 });

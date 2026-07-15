@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotPhaseRuns,
@@ -84,7 +84,7 @@ export async function associateMissionPilotImplementationRun(input: {
 			})
 			.where(eq(missionPilotPhaseRuns.id, existing.id));
 	}
-	await db
+	const [updatedSession] = await db
 		.update(missionPilotSessions)
 		.set({
 			phase: "implementing",
@@ -95,9 +95,27 @@ export async function associateMissionPilotImplementationRun(input: {
 		.where(
 			and(
 				eq(missionPilotSessions.id, session.id),
+				eq(missionPilotSessions.desiredState, "playing"),
 				eq(missionPilotSessions.contextDigest, session.contextDigest),
+				eq(missionPilotSessions.implementationCycle, input.missionPilot.cycle),
+				inArray(missionPilotSessions.phase, [
+					"queued",
+					"implementation_starting",
+					"implementing",
+				]),
+				isNull(missionPilotSessions.activeRunId),
+				isNull(missionPilotSessions.activePhaseRunId),
 			),
-		);
+		)
+		.returning({ id: missionPilotSessions.id });
+	if (!updatedSession) {
+		if (!existing) {
+			await db
+				.delete(missionPilotPhaseRuns)
+				.where(eq(missionPilotPhaseRuns.id, phaseRun.id));
+		}
+		return null;
+	}
 	await appendMissionPilotEvent({
 		sessionId: session.id,
 		taskId: session.taskId,
@@ -136,11 +154,14 @@ export async function associateMissionPilotChildRun(input: {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.id, input.missionPilot.sessionId))
 		.limit(1);
+	const expectedCycle = session
+		? missionPilotCycleForPhase(session, input.phase)
+		: null;
 	if (
 		!session ||
 		session.taskId !== input.taskId ||
 		session.desiredState !== "playing" ||
-		session.implementationCycle !== input.missionPilot.cycle ||
+		expectedCycle !== input.missionPilot.cycle ||
 		session.contextRevision !== input.missionPilot.contextRevision ||
 		session.contextDigest !== input.missionPilot.contextDigest
 	)
@@ -177,7 +198,7 @@ export async function associateMissionPilotChildRun(input: {
 		.onConflictDoNothing({ target: missionPilotPhaseRuns.runId })
 		.returning();
 	if (!phaseRun) return null;
-	await db
+	const [updatedSession] = await db
 		.update(missionPilotSessions)
 		.set({
 			phase:
@@ -199,7 +220,34 @@ export async function associateMissionPilotChildRun(input: {
 				: {}),
 			updatedAt: now,
 		})
-		.where(eq(missionPilotSessions.id, session.id));
+		.where(
+			and(
+				eq(missionPilotSessions.id, session.id),
+				eq(missionPilotSessions.desiredState, "playing"),
+				eq(
+					missionPilotSessions.contextRevision,
+					input.missionPilot.contextRevision,
+				),
+				eq(
+					missionPilotSessions.contextDigest,
+					input.missionPilot.contextDigest,
+				),
+				phaseCycleCondition(input.phase, input.missionPilot.cycle),
+				inArray(
+					missionPilotSessions.phase,
+					missionPilotAssociationSourcePhases(input.phase),
+				),
+				isNull(missionPilotSessions.activeRunId),
+				isNull(missionPilotSessions.activePhaseRunId),
+			),
+		)
+		.returning({ id: missionPilotSessions.id });
+	if (!updatedSession) {
+		await db
+			.delete(missionPilotPhaseRuns)
+			.where(eq(missionPilotPhaseRuns.id, phaseRun.id));
+		return null;
+	}
 	await appendMissionPilotEvent({
 		sessionId: session.id,
 		taskId: session.taskId,
@@ -221,4 +269,38 @@ export async function associateMissionPilotChildRun(input: {
 		payload: { phaseRunId: phaseRun.id },
 	});
 	return phaseRun;
+}
+
+function missionPilotCycleForPhase(
+	session: typeof missionPilotSessions.$inferSelect,
+	phase: "repository_bootstrap" | "implementation" | "test" | "review",
+) {
+	if (phase === "test") return session.testCycle;
+	if (phase === "review") return session.reviewCycle;
+	return session.implementationCycle;
+}
+
+function phaseCycleCondition(
+	phase: "repository_bootstrap" | "implementation" | "test" | "review",
+	cycle: number,
+) {
+	if (phase === "test") return eq(missionPilotSessions.testCycle, cycle);
+	if (phase === "review") return eq(missionPilotSessions.reviewCycle, cycle);
+	return eq(missionPilotSessions.implementationCycle, cycle);
+}
+
+function missionPilotAssociationSourcePhases(
+	phase: "repository_bootstrap" | "implementation" | "test" | "review",
+) {
+	if (phase === "repository_bootstrap")
+		return ["repository_bootstrap_preparing", "repository_bootstrapping"];
+	if (phase === "implementation")
+		return [
+			"queued",
+			"implementation_starting",
+			"implementation_rework",
+			"implementing",
+		];
+	if (phase === "test") return ["test_preparing", "testing"];
+	return ["review_preparing", "reviewing"];
 }

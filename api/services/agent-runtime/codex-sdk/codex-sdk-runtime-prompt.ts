@@ -266,7 +266,8 @@ function buildReviewContract(
 		"",
 		"Review behavior:",
 		"- StateCard continuation、implementation handoff、実装中の会話履歴を前提にしない。",
-		"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
+			"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
+			"- 最終報告前に nightworkers.reviewer_evaluation を実行する。Mission Pilot Reviewでは、serverが固定したImplementation/Test manifestが評価対象になり、approvedならpass、changes_requestedならblocking findingをreworkとして引き渡す。",
 		...(focusedReview
 			? [
 					"- focused rework Reviewです。runtime contextに渡された前回Reviewのblocking指摘、対象パス、修正diff、関連テストだけを再確認してください。対象外の全体レビューは行わないでください。",

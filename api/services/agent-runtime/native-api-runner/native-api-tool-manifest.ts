@@ -292,6 +292,38 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		},
 	},
 	{
+		name: "project_exploration_catalog",
+		kind: "worker",
+		workerToolName: "project_exploration_catalog",
+		definition: {
+			name: "project_exploration_catalog",
+			description:
+				"現在のProjectに対する、変更候補file・関連test・検証commandのbounded catalogを取得します。projectPathやMCP内部IDは入力せず、Task/Todoから分かるfocusだけを指定してください。",
+			inputSchema: objectSchema(
+				{
+					focus: objectSchema({
+						paths: {
+							type: "array",
+							items: { type: "string" },
+							maxItems: 10,
+						},
+						modules: {
+							type: "array",
+							items: { type: "string" },
+							maxItems: 5,
+						},
+						terms: {
+							type: "array",
+							items: { type: "string" },
+							maxItems: 10,
+						},
+					}),
+				},
+				["focus"],
+			),
+		},
+	},
+	{
 		name: "mcp_call_tool",
 		kind: "worker",
 		workerToolName: "mcp_call_tool",

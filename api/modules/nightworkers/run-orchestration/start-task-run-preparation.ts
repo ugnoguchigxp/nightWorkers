@@ -9,6 +9,7 @@ import { getProjectExplorationCatalogSettings } from "../../ontology/exploration
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import * as repo from "../nightworkers.repository";
 import { readPromptImageAttachments } from "../prompt-image-attachments";
+import { resolveImplementationPlanTodoProjection } from "./implementation-plan-todo-projection";
 import {
 	buildCompiledPromptText,
 	findLatestImplementationHandoffMessage,
@@ -111,10 +112,27 @@ export async function prepareTaskRunStart(input: {
 	const executionModeSource = input.options.executionMode
 		? (input.options.executionModeSource ?? "explicit")
 		: "message_history";
-	const implementationHandoffMessage =
-		executionMode === "implementation"
+	const shouldProjectImplementationPlan =
+		executionMode === "implementation" &&
+		input.options.initialTodos === undefined &&
+		!input.options.resumeTodosFromRunId;
+	const implementationHandoffMessage = shouldProjectImplementationPlan
+		? input.options.implementationPlanConstraint
+			? messages.find(
+					(message) =>
+						message.id ===
+						input.options.implementationPlanConstraint?.sourceMessageId,
+				)
+			: findLatestImplementationHandoffMessage(messages)
+		: executionMode === "implementation"
 			? findLatestImplementationHandoffMessage(messages)
 			: undefined;
+	const implementationPlanTodoProjection = shouldProjectImplementationPlan
+		? resolveImplementationPlanTodoProjection(
+				implementationHandoffMessage,
+				input.options.implementationPlanConstraint,
+			)
+		: null;
 	const compiledPromptText = buildCompiledPromptText({
 		task: input.task,
 		lastUserMessage,
@@ -143,6 +161,7 @@ export async function prepareTaskRunStart(input: {
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
+		implementationPlanTodoProjection,
 		compiledPromptText,
 		verificationPolicy:
 			deriveTodoVerificationPolicyFromPromptText(compiledPromptText),

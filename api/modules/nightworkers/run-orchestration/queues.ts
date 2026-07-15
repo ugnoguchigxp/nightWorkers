@@ -7,7 +7,13 @@ import {
 } from "../../missionPilot/mission-pilot-implementation-todo-projection.service";
 import { associateMissionPilotImplementationRun } from "../../missionPilot/mission-pilot-run-association.service";
 import * as repo from "../nightworkers.repository";
-import { startTaskRun } from "./start-task-run";
+import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
+import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
+import {
+	closeOpenTodosForCancelledRun,
+	closeOpenTodosForFailedRun,
+} from "./todo-closeout";
+import { toErrorMessage } from "./utils";
 
 function getSessionQueueMaxConcurrency() {
 	return getSessionQueueMaxConcurrencyFromEnv();
@@ -28,6 +34,86 @@ const implementationQueueLeaseOwnerRole =
 		? "worker-process"
 		: "api-process";
 const IMPLEMENTATION_QUEUE_LEASE_OWNER_ID = `${implementationQueueLeaseOwnerRole}:${process.pid}`;
+
+export async function activatePreparedQueueRun<T>(input: {
+	attach: () => Promise<T | null>;
+	associate: () => Promise<void>;
+	launch: (() => Promise<void>) | null;
+}) {
+	const attachment = await input.attach();
+	if (!attachment) return { kind: "lease_conflict" as const };
+	try {
+		if (!input.launch) {
+			return { kind: "not_launchable" as const, attachment };
+		}
+		await input.associate();
+		await input.launch();
+		return { kind: "launched" as const, attachment };
+	} catch (error) {
+		return { kind: "activation_failed" as const, attachment, error };
+	}
+}
+
+export function resolveLeaseConflictRunStatus(currentStatus: string) {
+	if (currentStatus === "needs_human") return "needs_human" as const;
+	const transitions: Record<string, readonly string[]> =
+		runStatusTransitionTable;
+	return transitions[currentStatus]?.includes("cancelled")
+		? ("cancelled" as const)
+		: currentStatus;
+}
+
+async function failPreparedQueueRunBeforeLaunch(input: {
+	runId: string;
+	taskId: string;
+	error: unknown;
+}) {
+	const latestRun = await repo.getTaskRun(input.runId);
+	if (!latestRun) return;
+	const nextStatus =
+		latestRun.status === "needs_human" ? "needs_human" : "failed";
+	if (["completed", "cancelled", "failed"].includes(latestRun.status)) {
+		await completeImplementationQueueEntryForRun(input.runId, latestRun.status);
+		return;
+	}
+	if (nextStatus === "needs_human") {
+		await completeImplementationQueueEntryForRun(input.runId, nextStatus);
+		return;
+	}
+	const errorMessage = toErrorMessage(input.error);
+	assertRunStatusTransition(latestRun.status, "failed");
+	const failedRun = await repo.updateTaskRunIfStatus(
+		input.runId,
+		latestRun.status,
+		{
+			status: "failed",
+			endedAt: new Date(),
+			finishedAt: new Date(),
+			finalReport: `Implementation Queue failed before runtime launch: ${errorMessage}`,
+			finalJudgment: null,
+			summary: "Implementation Queue activation failed before runtime launch.",
+		},
+	);
+	if (!failedRun) {
+		const concurrentRun = await repo.getTaskRun(input.runId);
+		if (concurrentRun) {
+			await completeImplementationQueueEntryForRun(
+				input.runId,
+				concurrentRun.status,
+			);
+		}
+		return;
+	}
+	const todos = await repo.listTaskRunTodosForRun(input.runId);
+	await closeOpenTodosForFailedRun({
+		runId: input.runId,
+		taskId: input.taskId,
+		todos,
+		evidence: `implementation_queue_activation_failed: ${errorMessage}`,
+	});
+	await repo.updateTaskStatus(input.taskId, "failed");
+	await completeImplementationQueueEntryForRun(input.runId, "failed");
+}
 
 export function shouldAutoDrainImplementationQueue(
 	environment: NodeJS.ProcessEnv = process.env,
@@ -98,43 +184,85 @@ async function drainImplementationQueue(
 			}
 			const missionPilotReady =
 				missionPilot.kind === "ready" ? missionPilot : null;
-			const run = await startTaskRun(claimedEntry.taskId, {
+			const prepared = await prepareTaskRunInProcess(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
 				...(missionPilotReady
 					? {
-							initialTodos: missionPilotReady.initialTodos,
+							implementationPlanConstraint:
+								missionPilotReady.implementationPlanProvenance,
 							runtimeOptionsPatch: {
 								missionPilot: missionPilotReady.envelope,
 							},
 						}
 					: {}),
 			});
-			if (missionPilotReady) {
-				await associateMissionPilotImplementationRun({
-					taskId: claimedEntry.taskId,
-					runId: run.id,
-					missionPilot: missionPilotReady.envelope,
-				});
-			}
-			started.push(run);
-			const processingEntry = await repo.markImplementationQueueEntryProcessing(
-				{
-					entryId: claimedEntry.id,
-					runId: run.id,
-					leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
-					leaseVersion: claimedEntry.leaseVersion,
-					leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+			const run = prepared.run;
+			const activation = await activatePreparedQueueRun({
+				attach: () =>
+					repo.markImplementationQueueEntryProcessing({
+						entryId: claimedEntry.id,
+						runId: run.id,
+						leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
+						leaseVersion: claimedEntry.leaseVersion,
+						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+					}),
+				associate: async () => {
+					if (!missionPilotReady) return;
+					const associated = await associateMissionPilotImplementationRun({
+						taskId: claimedEntry.taskId,
+						runId: run.id,
+						missionPilot: missionPilotReady.envelope,
+					});
+					if (!associated) {
+						throw new Error(
+							"Mission Pilot could not claim the prepared Implementation run.",
+						);
+					}
 				},
-			);
-			if (!processingEntry) {
-				await repo.updateTaskRun(run.id, {
-					status: "needs_human",
-					endedAt: new Date(),
-					finishedAt: new Date(),
-					finalReport:
-						"Implementation Queue lease changed before run ownership was recorded.",
-				});
+				launch: prepared.launch,
+			});
+			if (activation.kind === "lease_conflict") {
+				const currentEntry = await repo.getImplementationQueueEntry(
+					claimedEntry.id,
+				);
+				const latestRun = (await repo.getTaskRun(run.id)) ?? run;
+				let nextRunStatus = resolveLeaseConflictRunStatus(latestRun.status);
+				let cancellationApplied = false;
+				if (nextRunStatus === "cancelled") {
+					assertRunStatusTransition(latestRun.status, nextRunStatus);
+					const cancelledRun = await repo.updateTaskRunIfStatus(
+						run.id,
+						latestRun.status,
+						{
+							status: nextRunStatus,
+							endedAt: new Date(),
+							finishedAt: new Date(),
+							summary:
+								"Implementation Queue lease changed before runtime launch.",
+							finalReport:
+								"Implementation Queue lease changed before run ownership was recorded; runtime was not launched.",
+							finalJudgment: null,
+						},
+					);
+					if (cancelledRun) {
+						cancellationApplied = true;
+						const todos = await repo.listTaskRunTodosForRun(run.id);
+						await closeOpenTodosForCancelledRun({
+							runId: run.id,
+							taskId: claimedEntry.taskId,
+							todos,
+							evidence:
+								"implementation_queue_lease_conflict_before_runtime_launch",
+						});
+					} else {
+						const concurrentRun = await repo.getTaskRun(run.id);
+						nextRunStatus = concurrentRun?.status ?? latestRun.status;
+					}
+				}
+				if (cancellationApplied && !currentEntry?.activeRunId) {
+					await repo.updateTaskStatus(claimedEntry.taskId, "queued");
+				}
 				await repo.createRunEvent({
 					version: 1,
 					runId: run.id,
@@ -144,12 +272,18 @@ async function drainImplementationQueue(
 					severity: "warning",
 					actor: "system",
 					message:
-						"Implementation Queue lease changed before run ownership was recorded.",
+						"Implementation Queue lease changed before run ownership was recorded; runtime was not launched.",
 					data: {
 						source: "implementation_queue",
 						queueEntryId: claimedEntry.id,
 						leaseOwnerId: IMPLEMENTATION_QUEUE_LEASE_OWNER_ID,
 						leaseVersion: claimedEntry.leaseVersion,
+						actualStatus: currentEntry?.status ?? null,
+						actualLeaseOwnerId: currentEntry?.leaseOwnerId ?? null,
+						actualLeaseVersion: currentEntry?.leaseVersion ?? null,
+						actualActiveRunId: currentEntry?.activeRunId ?? null,
+						nextRunStatus,
+						runtimeLaunched: false,
 					},
 				});
 				await repo.createTaskMessage({
@@ -157,7 +291,7 @@ async function drainImplementationQueue(
 					runId: run.id,
 					role: "system",
 					content:
-						"Implementation Queue could not attach the run because the lease changed.",
+						"Implementation Queue did not launch the prepared run because the lease changed.",
 					messageType: "text",
 					payloadJson: {
 						source: "implementation_queue",
@@ -168,30 +302,65 @@ async function drainImplementationQueue(
 				});
 				continue;
 			}
-			await repo.createTaskMessage({
-				taskId: claimedEntry.taskId,
-				runId: run.id,
-				role: "system",
-				content: `Implementation Queue processor ${processingEntry.processorSlot ?? 1} started this run.`,
-				messageType: "text",
-				payloadJson: {
-					source: "implementation_queue",
-					status: "processing",
-					queueEntryId: claimedEntry.id,
-					processorSlot: processingEntry.processorSlot,
-					leaseOwnerId: processingEntry.leaseOwnerId,
-					leaseVersion: processingEntry.leaseVersion,
-				},
-			});
+			if (activation.kind === "activation_failed") {
+				await failPreparedQueueRunBeforeLaunch({
+					runId: run.id,
+					taskId: claimedEntry.taskId,
+					error: activation.error,
+				});
+				await repo
+					.createTaskMessage({
+						taskId: claimedEntry.taskId,
+						runId: run.id,
+						role: "system",
+						content: `Implementation Queue failed before runtime launch: ${toErrorMessage(activation.error)}`,
+						messageType: "text",
+						payloadJson: {
+							source: "implementation_queue",
+							status: "activation_failed",
+							queueEntryId: claimedEntry.id,
+						},
+					})
+					.catch(() => null);
+				continue;
+			}
+			if (activation.kind === "not_launchable") {
+				await completeImplementationQueueEntryForRun(run.id, run.status);
+				continue;
+			}
+			started.push(run);
+			const processingEntry = activation.attachment;
+			await repo
+				.createTaskMessage({
+					taskId: claimedEntry.taskId,
+					runId: run.id,
+					role: "system",
+					content: `Implementation Queue processor ${processingEntry.processorSlot ?? 1} started this run.`,
+					messageType: "text",
+					payloadJson: {
+						source: "implementation_queue",
+						status: "processing",
+						queueEntryId: claimedEntry.id,
+						processorSlot: processingEntry.processorSlot,
+						leaseOwnerId: processingEntry.leaseOwnerId,
+						leaseVersion: processingEntry.leaseVersion,
+					},
+				})
+				.catch(() => null);
 		} catch (err) {
-			await repo.updateImplementationQueueEntry(claimedEntry.id, {
-				status: "failed",
-				processorSlot: null,
-				leaseOwnerId: null,
-				leaseExpiresAt: null,
-				lastFailureKind: "start_task_run_failed",
-				statusReason: err instanceof Error ? err.message : String(err),
-			});
+			await repo.recoverImplementationQueueEntryFromSnapshot(
+				claimedEntry.id,
+				{ status: "claimed", leaseVersion: claimedEntry.leaseVersion },
+				{
+					status: "failed",
+					processorSlot: null,
+					leaseOwnerId: null,
+					leaseAcquiredAt: null,
+					leaseExpiresAt: null,
+					lastFailureKind: "start_task_run_failed",
+					statusReason: err instanceof Error ? err.message : String(err),
+				},
+			);
 			await repo.createTaskMessage({
 				taskId: claimedEntry.taskId,
 				role: "system",

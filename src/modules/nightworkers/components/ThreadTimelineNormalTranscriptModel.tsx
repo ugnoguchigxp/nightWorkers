@@ -11,7 +11,6 @@ import {
 	getToolArguments,
 	getToolName,
 	getToolResult,
-	isChangedFilesOnlyDiffActivity,
 	parseApplyPatchSections,
 	parseUnifiedDiffSections,
 } from "./ThreadTimeline";
@@ -21,7 +20,10 @@ import {
 	getEditToolCallDiff,
 	isDiffActivity,
 } from "./ThreadTimelineActivityTranscript";
-import { getCodexToolCardModel } from "./ThreadTimelineCodexToolCard";
+import {
+	getCodexToolCardModel,
+	isNormalCodexToolCardVisible,
+} from "./ThreadTimelineCodexToolCard";
 import { getContextStillToolCardModel } from "./ThreadTimelineContextStillCards";
 import { getImportProjectToolCardModel } from "./ThreadTimelineImportProjectCard";
 import { getInspectionToolCardModel } from "./ThreadTimelineInspectionToolCard";
@@ -102,6 +104,7 @@ function rememberVisibleActivityEvent(
 ): boolean {
 	const codexCard = getCodexToolCardModel(event);
 	if (codexCard) {
+		if (!isNormalCodexToolCardVisible(codexCard)) return false;
 		return rememberVisibleCodexToolCard(
 			event,
 			codexCard,
@@ -268,8 +271,18 @@ function visibleCodexToolCardKey(
 
 function visibleEditDiffKey(event: ActivityEvent): string {
 	const code = getVisibleEditDiffCode(event).trim();
-	if (code) return code;
 	const summary = buildVisibleEditDiffSummary(event);
+	if (!code && summary.length === 0) return "";
+	const payload = asRecord(event.payloadJson);
+	const nestedPayload = asRecord(payload.payload);
+	const runEventData = asRecord(asRecord(payload.runEvent).data);
+	const providerItemId =
+		asString(nestedPayload.providerItemId) ||
+		asString(runEventData.providerItemId);
+	if (providerItemId) return `codex:${providerItemId}`;
+	const callId = getToolActivityModel(event)?.callId;
+	if (callId) return `tool:${callId}`;
+	if (code) return code;
 	return summary.length > 0
 		? summary
 				.map(
@@ -299,7 +312,11 @@ export type VisibleEditDiffSummary = Array<{
 	added: number;
 	deleted: number;
 	changedOnly?: boolean;
+	changeKind?: "add" | "update" | "delete";
 }>;
+type CodexFileChangeKind = NonNullable<
+	VisibleEditDiffSummary[number]["changeKind"]
+>;
 
 export function buildVisibleEditDiffSummary(
 	event: ActivityEvent,
@@ -339,21 +356,73 @@ export function buildVisibleEditDiffSummary(
 	}
 
 	if (isDiffActivity(event)) {
+		const codexFileChangeState = getCodexFileChangeState(event);
+		if (codexFileChangeState === "not_completed") return [];
 		const diff = getVisibleEditDiffCode(event);
 		const sections = diff
 			? mergeEditSections(parseUnifiedDiffSections(diff))
 			: [];
 		if (sections.length > 0) return sections;
-		if (isChangedFilesOnlyDiffActivity(event)) return [];
-		return getActivityChangedFiles(event).map((path) => ({
-			path,
-			added: 0,
-			deleted: 0,
-			changedOnly: true,
-		}));
+		const codexChanges = getCodexCompletedFileChanges(event);
+		const changeKindByPath = new Map(
+			codexChanges.map((change) => [change.path, change.kind]),
+		);
+		return getActivityChangedFiles(event).map((path) => {
+			const changeKind = changeKindByPath.get(path);
+			return {
+				path,
+				added: 0,
+				deleted: 0,
+				changedOnly: true,
+				...(changeKind ? { changeKind } : {}),
+			};
+		});
 	}
 
 	return [];
+}
+
+function getCodexFileChangeState(
+	event: ActivityEvent,
+): "completed" | "not_completed" | "other" {
+	const data = activityPayload(event);
+	if (
+		asString(data.provider) !== "codex" ||
+		!asString(data.providerItemId) ||
+		event.kind !== "file.diff"
+	) {
+		return "other";
+	}
+	return asString(data.providerEventType) === "item.completed" &&
+		asString(data.status) === "completed"
+		? "completed"
+		: "not_completed";
+}
+
+function getCodexCompletedFileChanges(
+	event: ActivityEvent,
+): Array<{ path: string; kind: CodexFileChangeKind }> {
+	if (getCodexFileChangeState(event) !== "completed") return [];
+	const changes = activityPayload(event).changes;
+	if (!Array.isArray(changes)) return [];
+	return changes.flatMap((change) => {
+		const record = asRecord(change);
+		const path = asString(
+			record.path ?? record.filePath ?? record.relativePath,
+		);
+		const kind = asString(record.kind);
+		if (!path || (kind !== "add" && kind !== "update" && kind !== "delete")) {
+			return [];
+		}
+		return [{ path, kind: kind as CodexFileChangeKind }];
+	});
+}
+
+function activityPayload(event: ActivityEvent) {
+	const payload = asRecord(event.payloadJson);
+	const nestedPayload = asRecord(payload.payload);
+	if (Object.keys(nestedPayload).length > 0) return nestedPayload;
+	return asRecord(asRecord(payload.runEvent).data);
 }
 
 export type VisibleCliCommandSummary = {

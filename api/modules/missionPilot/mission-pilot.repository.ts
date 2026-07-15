@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
 	type MissionPilotAuthorizationV3,
 	type MissionPilotSourceRef,
@@ -141,6 +141,18 @@ export async function getSessionByTaskId(taskId: string, database: Db = db) {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.taskId, taskId));
 	return row ?? null;
+}
+
+export async function listPlayingSessionsWithActiveRuns() {
+	return db
+		.select()
+		.from(missionPilotSessions)
+		.where(
+			and(
+				eq(missionPilotSessions.desiredState, "playing"),
+				isNotNull(missionPilotSessions.activeRunId),
+			),
+		);
 }
 
 export async function backfillMissingTaskSessions() {

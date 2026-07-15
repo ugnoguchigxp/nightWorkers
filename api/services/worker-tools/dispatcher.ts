@@ -14,6 +14,8 @@ import {
 	listDirTool,
 	materializeTemplateTool,
 	mcpCallTool,
+	projectExplorationCatalogTool,
+	projectExplorationCatalogUnavailableResult,
 	readCurrentSpecificationTool,
 	readFileTool,
 	replaceContentTool,
@@ -37,6 +39,7 @@ export type WorkerToolDispatchInput = {
 	safetyPolicy?: AgentSafetyPolicy;
 	readFiles: string[];
 	toolContext?: WorkerToolExecutionContext;
+	projectExplorationCatalogAccess?: { serverId: string };
 };
 
 export type WorkerToolDispatchResult = {
@@ -363,6 +366,19 @@ export async function executeWorkerTool(
 				rubricId: args.rubricId as string | undefined,
 				mode: args.mode as "deterministic_only" | "llm_assisted" | undefined,
 				persist: args.persist as boolean | undefined,
+			}),
+		};
+	}
+
+	if (toolName === "project_exploration_catalog") {
+		if (!input.projectExplorationCatalogAccess) {
+			return { result: projectExplorationCatalogUnavailableResult() };
+		}
+		return {
+			result: await projectExplorationCatalogTool({
+				serverId: input.projectExplorationCatalogAccess.serverId,
+				projectPath: repoRoot,
+				focus: args.focus,
 			}),
 		};
 	}

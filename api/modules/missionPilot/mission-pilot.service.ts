@@ -1,5 +1,6 @@
 import type { TaskRunStatus } from "../../db/schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { recoverStaleActiveRuns } from "../nightworkers/nightworkers.run-query.service";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
 import { recoverInterruptedIntakeSessions } from "./mission-pilot-intake-recovery.repository";
@@ -45,6 +46,9 @@ export function initializeMissionPilotRunSync() {
 		const updated = await repo.syncCompletedRun(run.taskId, run.id);
 		if (updated) {
 			publishMissionPilotUpdated(run.taskId, repo.toControlSummary(updated));
+			if (["failed", "timed_out", "cancelled"].includes(run.status)) {
+				await recoverMissionPilotPostQueueSessions().catch(() => undefined);
+			}
 		}
 	});
 }
@@ -56,6 +60,11 @@ export async function reconcileMissionPilotStartup() {
 	const provisioned = await repo.backfillMissingTaskSessions();
 	const classified = await reconcileMissionPilotPreQueueSessions();
 	const recovered = await recoverInterruptedIntakeSessions();
+	const activePostQueueSessions =
+		await repo.listPlayingSessionsWithActiveRuns();
+	for (const session of activePostQueueSessions) {
+		await recoverStaleActiveRuns(session.taskId, { force: true });
+	}
 	const postQueueRecovered = await recoverMissionPilotPostQueueSessions();
 	for (const session of recovered) {
 		publishMissionPilotUpdated(session.taskId, repo.toControlSummary(session));
@@ -99,8 +108,7 @@ export async function play(taskId: string, expectedVersion: number) {
 		await reconcileMissionPilotPreQueueSessions();
 		const recovered = await repo.getSessionByTaskId(taskId);
 		if (
-			!recovered ||
-			recovered.desiredState !== "playing" ||
+			recovered?.desiredState !== "playing" ||
 			!["queued", "repository_bootstrapping"].includes(recovered.phase)
 		) {
 			throw new MissionPilotError(

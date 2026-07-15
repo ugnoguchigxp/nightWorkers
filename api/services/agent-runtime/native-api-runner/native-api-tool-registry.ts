@@ -62,6 +62,7 @@ const nativeApiToolNamesByMode: Record<
 		"run_check",
 		"run_verification",
 		"completion_check",
+		"reviewer_evaluation",
 		"list_mcp_tools",
 		"context_initial_instructions",
 		"context_compile",
@@ -145,7 +146,10 @@ function modelVisibleNativeApiToolNames(input: {
 	for (const toolName of oneShotToolNamesForTodo(input.currentTodo)) {
 		allowed.add(toolName);
 	}
-	if (input.ontologyMcpEnabled || input.projectExplorationCatalogEnabled) {
+	if (input.projectExplorationCatalogEnabled) {
+		allowed.add("project_exploration_catalog");
+	}
+	if (input.ontologyMcpEnabled) {
 		allowed.add("list_mcp_tools");
 		allowed.add("mcp_call_tool");
 	}

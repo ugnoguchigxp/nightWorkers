@@ -33,37 +33,48 @@ afterAll(() => {
 	fs.rmSync(repoRoot, { recursive: true, force: true });
 });
 
-vi.mock("../../api/modules/nightworkers/nightworkers.repository", () => ({
-	getTask: vi.fn(),
-	updateRepository: vi.fn(),
-	updateRepositoryProjectMeta: vi.fn(),
-	countActiveTaskRuns: vi.fn(),
-	claimNextQueuedTask: vi.fn(),
-	listActiveTaskRunsForTask: vi.fn(),
-	updateTaskStatus: vi.fn(),
-	getRepository: vi.fn(),
-	listTaskMessages: vi.fn(),
-	createTaskRun: vi.fn(),
-	getTaskRun: vi.fn(),
-	createTaskRunTodo: vi.fn(),
-	replaceTaskRunTodosForRun: vi.fn(),
-	listTaskRunTodosForRun: vi.fn(),
-	updateTaskRunTodo: vi.fn(),
-	createRunEvent: vi.fn(),
-	listTaskRunsForTask: vi.fn(),
-	listTaskEventsForRun: vi.fn(),
-	updateTaskCompiledPrompt: vi.fn(),
-	updateTaskRun: vi.fn(),
-	createTaskMessage: vi.fn(),
-	getImplementationQueueEntryForRun: vi.fn(),
-	updateImplementationQueueEntry: vi.fn(),
-	createTaskRunCommitRecord: vi.fn(),
-	getTaskRunCommitRecord: vi.fn(),
-	refreshImplementationQueueLeaseForRun: vi.fn(),
-	updateTask: vi.fn(),
-	deleteTask: vi.fn(),
-	createTask: vi.fn(),
-}));
+vi.mock("../../api/modules/nightworkers/nightworkers.repository", () => {
+	const updateTaskRun = vi.fn();
+	return {
+		getTask: vi.fn(),
+		updateRepository: vi.fn(),
+		updateRepositoryProjectMeta: vi.fn(),
+		countActiveTaskRuns: vi.fn(),
+		claimNextQueuedTask: vi.fn(),
+		listActiveTaskRunsForTask: vi.fn(),
+		updateTaskStatus: vi.fn(),
+		getRepository: vi.fn(),
+		listTaskMessages: vi.fn(),
+		createTaskRun: vi.fn(),
+		getTaskRun: vi.fn(),
+		createTaskRunTodo: vi.fn(),
+		replaceTaskRunTodosForRun: vi.fn(),
+		listTaskRunTodosForRun: vi.fn(),
+		updateTaskRunTodo: vi.fn(),
+		createRunEvent: vi.fn(),
+		listTaskRunsForTask: vi.fn(),
+		listTaskEventsForRun: vi.fn(),
+		updateTaskCompiledPrompt: vi.fn(),
+		updateTaskRun,
+		updateTaskRunIfStatus: vi.fn((id: string, _status: string, data: unknown) =>
+			updateTaskRun(id, data),
+		),
+		updateTaskRunIfStatusWithoutPublish: vi.fn(
+			(id: string, _status: string, data: unknown) => updateTaskRun(id, data),
+		),
+		publishTaskRunUpdate: vi.fn(),
+		heartbeatActiveTaskRun: vi.fn(),
+		createTaskMessage: vi.fn(),
+		getImplementationQueueEntryForRun: vi.fn(),
+		updateImplementationQueueEntry: vi.fn(),
+		createTaskRunCommitRecord: vi.fn(),
+		getTaskRunCommitRecord: vi.fn(),
+		refreshImplementationQueueLeaseForRun: vi.fn(),
+		updateTask: vi.fn(),
+		deleteTask: vi.fn(),
+		createTask: vi.fn(),
+	};
+});
 
 vi.mock("../../api/modules/missionPilot/mission-pilot.repository", () => ({
 	createSession: vi.fn(async ({ task }: { task: { id: string } }) => ({

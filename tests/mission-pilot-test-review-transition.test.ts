@@ -301,6 +301,7 @@ describe("Mission Pilot Test to Review transition", () => {
 			kind: "start_review",
 			input: {
 				anchorRunId: implementationRunId,
+				targetRunIds: [implementationRunId, testRunId],
 				missionPilot: {
 					reworkPacket: {
 						summary: "migration defaults are missing",

@@ -4,6 +4,7 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
+import { AppError } from "../../lib/errors";
 import type { StartTaskRunOptions } from "../nightworkers/run-orchestration/start-task-run-types";
 import type { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
 import {
@@ -17,6 +18,20 @@ type MissionPilotContinuation = Awaited<
 >;
 
 export async function executeMissionPilotContinuation(
+	continuation: MissionPilotContinuation,
+) {
+	for (let attempt = 1; attempt <= 2; attempt += 1) {
+		try {
+			await executeMissionPilotContinuationOnce(continuation);
+			return;
+		} catch (error) {
+			if (attempt >= 2 || !isRetryableContinuationError(error)) throw error;
+			await new Promise((resolve) => setTimeout(resolve, 250));
+		}
+	}
+}
+
+async function executeMissionPilotContinuationOnce(
 	continuation: MissionPilotContinuation,
 ) {
 	if (continuation.kind === "start_test") {
@@ -47,6 +62,7 @@ export async function executeMissionPilotContinuation(
 			},
 			{
 				targetRunIds: continuation.input.targetRunIds,
+				targetManifestContext: continuation.input.targetManifestContext,
 				missionPilot: continuation.input.missionPilot,
 			},
 		);
@@ -65,6 +81,12 @@ export async function executeMissionPilotContinuation(
 	if (continuation.kind === "start_implementation_rework") {
 		await startImplementationRework(continuation.input);
 	}
+}
+
+function isRetryableContinuationError(error: unknown) {
+	if (!(error instanceof AppError)) return true;
+	if (error.statusCode === 409 || error.statusCode === 429) return true;
+	return error.statusCode >= 500;
 }
 
 export async function startImplementationRework(input: {
@@ -132,6 +154,12 @@ export async function markMissionPilotContinuationFailed(
 		.where(eq(missionPilotPhaseRuns.runId, runId))
 		.limit(1);
 	if (!phaseRun) return;
+	const [session] = await db
+		.select()
+		.from(missionPilotSessions)
+		.where(eq(missionPilotSessions.id, phaseRun.sessionId))
+		.limit(1);
+	if (!session || session.activeRunId) return;
 	const message = error instanceof Error ? error.message : String(error);
 	await db
 		.update(missionPilotSessions)

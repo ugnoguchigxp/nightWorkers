@@ -46,6 +46,7 @@ export async function prepareNativeApiRunRoute(input: {
 		currentTodo: input.currentTodo ?? input.context.currentTodo ?? null,
 		ontologyMcpEnabled: readOntologyMcpEnabled(input.context),
 		projectExplorationCatalogEnabled:
+			readProjectExplorationCatalogPin(input.context)?.version === 2 &&
 			readProjectExplorationCatalogPin(input.context)?.available === true,
 	});
 	const providerRequests = buildNativeApiProviderRequests({

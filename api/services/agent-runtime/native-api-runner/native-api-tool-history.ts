@@ -349,18 +349,11 @@ export function buildProjectExplorationCatalogGuidance(
 ): string[] | null {
 	if (readNativeApiExecutionMode(context) !== "implementation") return null;
 	const pin = readProjectExplorationCatalogPin(context);
-	if (!pin?.available) return null;
+	if (!pin?.available || pin.version !== 2) return null;
 	return [
-		"- このrunでは固定済みProject exploration catalogを利用できます。編集対象がTask/Todoに明示済み、またはtrivialな単一file作業なら呼び出しを省略できます。scopeが不明な場合だけ、広域のdirectory/search探索より先に一度だけ呼び出してください。",
-		`- mcp_call_tool の固定値は serverId=${pin.serverId}、scanRunId=${pin.scanRunId}、generationId=${pin.generationId} です。`,
-		'- call shape: {"serverId":"' +
-			pin.serverId +
-			'","toolName":"vuln_get_project_exploration_catalog","arguments":{"scanRunId":"' +
-			pin.scanRunId +
-			'","generationId":"' +
-			pin.generationId +
-			'","focus":{"paths":["<known project-relative path, if any>"],"moduleIds":["<known module id, if any>"],"terms":["<task nouns>"]}}}',
-		"- focusにはpaths/moduleIds/termsの少なくとも1つを入れ、Taskから導けないmodule IDを捏造しないでください。返却pathはclueとして扱い、編集前に対象sourceをread_fileで読んでください。catalogで得た事実について同等のproject-wide searchを繰り返さないでください。",
+		"- このrunではProject exploration catalogを利用できます。編集対象がTask/Todoに明示済み、またはtrivialな単一file作業なら呼び出しを省略できます。scopeが不明な場合だけ、広域のdirectory/search探索より先に一度だけ呼び出してください。",
+		'- call shape: {"focus":{"paths":["<known project-relative path, if any>"],"modules":["<known module, if any>"],"terms":["<task nouns>"]}}',
+		"- project_exploration_catalogのfocusにはpaths/modules/termsの少なくとも1つを入れ、Taskから導けないmoduleを捏造しないでください。Project識別子、MCP server、vulnWorkbench内部IDはNightWorkersが固定するため入力しません。返却pathはclueとして扱い、編集前に対象sourceをread_fileで読んでください。catalogで得た事実について同等のproject-wide searchを繰り返さないでください。",
 	];
 }
 

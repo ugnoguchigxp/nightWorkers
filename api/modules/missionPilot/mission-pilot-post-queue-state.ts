@@ -135,6 +135,8 @@ export function evaluateReviewCompletionGate(input: {
 	contextDigestMatches: boolean;
 	testSnapshotMatches: boolean;
 	targetManifestMatches: boolean;
+	reviewerEvaluationMatches: boolean;
+	reviewerEvaluationApproved: boolean;
 }) {
 	const parsed = missionPilotReviewDecisionPayloadSchema.safeParse(
 		input.decision,
@@ -146,6 +148,10 @@ export function evaluateReviewCompletionGate(input: {
 	if (!input.contextDigestMatches) reasons.push("stale_context");
 	if (!input.testSnapshotMatches) reasons.push("test_snapshot_mismatch");
 	if (!input.targetManifestMatches) reasons.push("target_manifest_mismatch");
+	if (!input.reviewerEvaluationMatches)
+		reasons.push("reviewer_evaluation_missing_or_stale");
+	if (!input.reviewerEvaluationApproved)
+		reasons.push("reviewer_evaluation_not_approved");
 	return {
 		pass: reasons.length === 0,
 		reasons,

@@ -1,7 +1,8 @@
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
-import type {
-	ImplementationTodoInput,
-	TodoVerificationPolicy,
+import {
+	type ImplementationTodoInput,
+	isDataMigrationTodoMarker,
+	type TodoVerificationPolicy,
 } from "../todo-runtime";
 import type {
 	TodoActionPayload,
@@ -10,7 +11,6 @@ import type {
 	TodoMutationContext,
 	TodoToolName,
 } from "./todo-list";
-import { hasDataMigrationMarker } from "./todo-list";
 import { failedTodoActionResult } from "./todo-list-response";
 import type { WorkerToolResult } from "./types";
 
@@ -117,7 +117,7 @@ export function requireDataMigrationGatesForContext(input: {
 }) {
 	return (
 		input.contextRequiresDataMigration ||
-		input.todos.some(hasDataMigrationMarker)
+		input.todos.some(isDataMigrationTodoMarker)
 	);
 }
 

@@ -22,6 +22,7 @@ import {
 	createStructuredLlmAbortSignal,
 	digestLlmText,
 	jsonFixWrapper,
+	StructuredLlmTimeoutError,
 } from "./json";
 import { callProvider, type RawLlmCallOptions } from "./providers";
 import {
@@ -344,12 +345,15 @@ async function callRawJsonLLMAttempt(
 		providerUsage = providerResult.usage;
 		providerDebug = { ...providerDebug, normalizedUsage: providerUsage };
 	} catch (error) {
+		const normalizedError = requestSignal.aborted
+			? new StructuredLlmTimeoutError(requestAbortHandle.timeoutMs)
+			: error;
 		const rejectedActivity =
-			error instanceof ProviderActivityRejectedError
+			normalizedError instanceof ProviderActivityRejectedError
 				? {
-						activityType: error.activityType,
-						toolName: error.toolName,
-						preview: error.preview.slice(0, 500),
+						activityType: normalizedError.activityType,
+						toolName: normalizedError.toolName,
+						preview: normalizedError.preview.slice(0, 500),
 					}
 				: null;
 		appendLlmTrace("provider_error", {
@@ -364,14 +368,17 @@ async function callRawJsonLLMAttempt(
 			round: options.round ?? null,
 			label: options.label,
 			durationMs: Date.now() - startedAt,
-			errorName: error instanceof Error ? error.name : null,
-			errorMessage: error instanceof Error ? error.message : String(error),
+			errorName: normalizedError instanceof Error ? normalizedError.name : null,
+			errorMessage:
+				normalizedError instanceof Error
+					? normalizedError.message
+					: String(normalizedError),
 			providerDebug: {
 				...providerDebug,
 				...(rejectedActivity ? { rejectedActivity } : {}),
 			},
 		});
-		throw error;
+		throw normalizedError;
 	} finally {
 		requestAbortHandle.dispose();
 	}

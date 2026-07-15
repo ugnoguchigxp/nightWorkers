@@ -22,7 +22,6 @@ import {
 } from "../api/modules/missionPilot/mission-pilot-implementation-todo-projection.service";
 import { associateMissionPilotChildRun } from "../api/modules/missionPilot/mission-pilot-run-association.service";
 import { buildFeaturePlanImplementationPlanMetadata } from "../api/modules/specification/feature-plan-implementation-plan";
-import { buildStandardImplementationTodoList } from "../api/services/todo-runtime";
 
 const repositoryIds: string[] = [];
 
@@ -186,40 +185,22 @@ async function createFixture(input?: { admissionKey?: string | null }) {
 	return fixture;
 }
 
-describe("Mission Pilot implementation Todo projection", () => {
-	it("resolves reviewed Feature Plan steps and migration provenance", async () => {
+describe("Mission Pilot implementation handoff validation", () => {
+	it("validates reviewed Feature Plan provenance without generating TODOs", async () => {
 		const fixture = await createFixture();
 		const resolution = await resolveMissionPilotImplementationStart(
 			fixture.entry,
 		);
 		expect(resolution).toMatchObject({
 			kind: "ready",
-			requireDataMigrationGates: true,
 			implementationPlanProvenance: {
 				version: 1,
 				sourceMessageId: fixture.featurePlanMessage.id,
 				digest: fixture.implementationPlan.digest,
 			},
-			initialTodos: [
-				{ seq: 1, title: "Todo schemaを実装する", dependsOn: [] },
-				{ seq: 2, title: "Todo APIを実装する", dependsOn: [1] },
-			],
 		});
 		if (resolution.kind !== "ready") throw new Error("Expected ready");
-		expect(resolution.initialTodos).toHaveLength(2);
-		expect(
-			buildStandardImplementationTodoList({
-				todos: resolution.initialTodos,
-				requireDataMigrationGates: resolution.requireDataMigrationGates,
-			}).map((todo) => todo.procedureId),
-		).toEqual([
-			"coding_preparation",
-			null,
-			null,
-			"data_migration.apply_migration",
-			"quality_gate_verify",
-			"final_completion_report",
-		]);
+		expect(resolution).not.toHaveProperty("initialTodos");
 	});
 
 	it("uses admission key absence as the normal Queue boundary even when a Session exists", async () => {

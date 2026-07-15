@@ -1,3 +1,4 @@
+export * from "../../modules/ontology/exploration/project-exploration-catalog-tool";
 export * from "./apply-patch";
 export * from "./clone-git-repo";
 export * from "./command-policy";

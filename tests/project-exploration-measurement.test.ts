@@ -4,39 +4,34 @@ import {
 	summarizeProjectExplorationPair,
 } from "../api/modules/ontology/exploration/project-exploration-measurement";
 
-const GENERATION_ID = "00000000-0000-4000-8000-000000000501";
-
 describe("project exploration measurement", () => {
 	it("measures only successful exploration calls before the first source mutation", () => {
-		const catalogText = JSON.stringify({
+		const catalogPayload = {
 			ok: true,
 			status: "completed",
-			generation: { scanRunId: "scan-1", generationId: GENERATION_ID },
+			freshness: { status: "fresh" },
 			likelyFiles: [{ path: "src/a.ts" }, { path: "src/b.ts" }],
 			relatedTests: [{ path: "src/a.test.ts" }],
 			verificationCandidates: [{ command: "bun test", candidateOnly: true }],
-		});
+		};
+		const catalogText = JSON.stringify(catalogPayload);
 		const events = [
 			event(1, "list_dir", true, {}),
 			event(2, "read_file", true, { filePath: "src/a.ts" }),
 			event(3, "read_file", false, { filePath: "src/b.ts" }),
 			event(
 				4,
-				"mcp_call_tool",
+				"project_exploration_catalog",
 				true,
-				{
-					toolName: "vuln_get_project_exploration_catalog",
-				},
-				mcpWorkerResult(catalogText),
+				{},
+				{ status: "completed" },
 			),
 			event(
 				5,
-				"mcp_call_tool",
+				"project_exploration_catalog",
 				true,
-				{
-					toolName: "vuln_get_project_exploration_catalog",
-				},
-				mcpWorkerResult("not-json"),
+				{},
+				{ status: "completed", catalog: catalogPayload },
 			),
 			event(6, "apply_patch", false, {}),
 			event(7, "search_files", true, { query: "service" }),
@@ -59,12 +54,17 @@ describe("project exploration measurement", () => {
 			taskId: "task-1",
 			repositoryId: "repo-1",
 			mode: "catalog",
-			generationId: GENERATION_ID,
+			generationId: null,
+			preparationDurationMs: 20,
+			preparationReused: true,
+			preparationPollCount: 1,
+			fallbackReason: null,
 			catalogCalled: true,
 			catalogCallCount: 2,
+			catalogFailureCount: 0,
 			catalogResponseBytes:
 				Buffer.byteLength(catalogText, "utf8") +
-				Buffer.byteLength("not-json", "utf8"),
+				Buffer.byteLength("{}", "utf8"),
 			catalogFileCount: 2,
 			catalogTestCount: 1,
 			catalogVerificationCount: 1,
@@ -83,6 +83,30 @@ describe("project exploration measurement", () => {
 		});
 	});
 
+	it("counts failed catalog attempts before mutation", () => {
+		const result = measureProjectExplorationRun({
+			run: runFixture(true),
+			events: [
+				event(
+					1,
+					"project_exploration_catalog",
+					false,
+					{},
+					{ status: "unavailable", audit: { responseBytes: 123 } },
+				),
+				event(2, "apply_patch", true, {}),
+			],
+			usageRecords: [],
+		});
+		expect(result).toMatchObject({
+			catalogCalled: true,
+			catalogCallCount: 1,
+			catalogFailureCount: 1,
+			catalogResponseBytes: 123,
+			warnings: ["catalog_call_failed"],
+		});
+	});
+
 	it("keeps baseline tokens unavailable and ignores failed mutation boundaries", () => {
 		const result = measureProjectExplorationRun({
 			run: runFixture(false, "running"),
@@ -95,7 +119,12 @@ describe("project exploration measurement", () => {
 		expect(result).toMatchObject({
 			mode: "baseline",
 			generationId: null,
+			preparationDurationMs: null,
+			preparationReused: null,
+			preparationPollCount: null,
+			fallbackReason: "disabled",
 			catalogCalled: false,
+			catalogFailureCount: 0,
 			readFileCallsBeforeMutation: 1,
 			totalInputTokens: null,
 			totalCachedInputTokens: null,
@@ -149,20 +178,28 @@ function runFixture(available: boolean, status = "completed") {
 		contextSnapshot: {
 			projectExplorationCatalog: available
 				? {
-						version: 1,
+						version: 2,
 						available: true,
 						serverId: "server-1",
-						rootRef: "a".repeat(64),
-						projectId: "project-1",
-						scanRunId: "scan-1",
-						generationId: GENERATION_ID,
-						snapshotRef: "code_structure:fixture",
-						sourceTreeHash: "b".repeat(64),
-						sourceStateHash: "c".repeat(64),
-						sourceRevisionHead: "abc123",
+						preparedAt: "2026-07-14T00:00:00.000Z",
+						preparationStatus: "ready",
+						freshness: {
+							status: "current",
+							sourceRevisionKind: "git",
+							sourceRevisionValue: "abc123",
+						},
+						readiness: {
+							codeStructure: "available",
+							reasonCodes: [],
+						},
+						preparation: {
+							reused: true,
+							durationMs: 20,
+							pollCount: 1,
+						},
 						toolName: "vuln_get_project_exploration_catalog",
 					}
-				: { version: 1, available: false, reason: "disabled" },
+				: { version: 2, available: false, reason: "disabled" },
 		},
 	};
 }
@@ -187,13 +224,5 @@ function event(
 				data: { toolName, arguments: args, ok, result },
 			},
 		},
-	};
-}
-
-function mcpWorkerResult(text: string) {
-	return {
-		serverId: "server-1",
-		toolName: "vuln_get_project_exploration_catalog",
-		result: { content: [{ type: "text", text }] },
 	};
 }

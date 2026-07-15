@@ -9,7 +9,6 @@ import type {
 import { formatFinishedTime } from "../utils/time";
 import { LazyDetails } from "./LazyDetails";
 import { ThreadMessage } from "./ThreadMessage";
-import { isChangedFilesOnlyDiffActivity } from "./ThreadTimeline";
 import { CodexToolCard, hasCodexToolCard } from "./ThreadTimelineCodexToolCard";
 import {
 	ContextStillToolCard,
@@ -99,10 +98,6 @@ export function TranscriptItemView({
 		);
 	}
 
-	if ("event" in item && isChangedFilesOnlyDiffActivity(item.event)) {
-		return null;
-	}
-
 	if (item.kind === "activity" && isVisibleDiffActivity(item.event)) {
 		return (
 			<ThreadMessage
@@ -168,13 +163,6 @@ export function findArtifactTaskMessage(
 }
 
 function TranscriptChildView({ child }: { child: TranscriptChild }) {
-	if (
-		"event" in child &&
-		child.event &&
-		isChangedFilesOnlyDiffActivity(child.event)
-	) {
-		return null;
-	}
 	if (child.kind === "tool") {
 		return (
 			<TranscriptActivityBlock

@@ -12,6 +12,7 @@ export {
 	validateStructuredLlmFacts,
 } from "./contract";
 export { ProviderActivityRejectedError } from "./events";
+export { StructuredLlmTimeoutError } from "./json";
 export {
 	type ResolvedStructuredLlmModelCapability,
 	resolveStructuredLlmModelCapability,

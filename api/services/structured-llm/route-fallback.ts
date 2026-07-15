@@ -2,6 +2,7 @@ import {
 	emitSupervisorLlmDebugEvent,
 	ProviderActivityRejectedError,
 } from "./events";
+import { StructuredLlmTimeoutError } from "./json";
 import type {
 	CallSupervisorOptions,
 	NormalizedSupervisorLlmRequest,
@@ -9,6 +10,7 @@ import type {
 
 export function shouldTryStructuredLlmRouteFallback(error: unknown) {
 	if (error instanceof ProviderActivityRejectedError) return false;
+	if (error instanceof StructuredLlmTimeoutError) return true;
 	if (!(error instanceof Error)) return false;
 	if (error.name === "AbortError") return true;
 	const message = error.message.toLowerCase();

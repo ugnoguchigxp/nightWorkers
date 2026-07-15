@@ -40,6 +40,11 @@ export function readRunEventPayload(payloadJson: unknown): {
 	};
 }
 
+export function readRunEventCanonicalType(payloadJson: unknown): string | null {
+	const { runEvent } = readRunEventPayload(payloadJson);
+	return typeof runEvent?.type === "string" ? runEvent.type : null;
+}
+
 function parseRunEventRecord(value: unknown): JsonRecord | null {
 	const parsed = runEventSchema.safeParse(value);
 	if (parsed.success) return parsed.data;

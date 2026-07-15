@@ -37,7 +37,6 @@ import {
 import {
 	findRuntimePromptSnapshotTimelineAnchorId,
 	findRuntimePromptSnapshotTranscriptAnchorId,
-	isChangedFilesOnlyDiffActivity,
 	TimelineDebugFragment,
 	toMs,
 	transcriptItemTimestamp,
@@ -457,8 +456,7 @@ export function ThreadTimeline({
 									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</ThreadMessage>
-						) : (showDebugEvents &&
-								!isChangedFilesOnlyDiffActivity(item.event)) ||
+						) : showDebugEvents ||
 							hasAgentEditSummary(item.event) ||
 							isReviewerEvaluationEvent(item.event) ||
 							hasContextStillToolCard(item.event) ||

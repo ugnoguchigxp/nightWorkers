@@ -1,5 +1,8 @@
 import { AppError } from "../../lib/errors";
-import { StructuredLlmResponseError } from "../structured-llm";
+import {
+	StructuredLlmResponseError,
+	StructuredLlmTimeoutError,
+} from "../structured-llm";
 
 export function createStructuredGenerationAppError(input: {
 	code: string;
@@ -25,11 +28,23 @@ export function createStructuredGenerationAppError(input: {
 	}
 
 	if (input.error instanceof AppError) return input.error;
+	if (input.error instanceof StructuredLlmTimeoutError) {
+		return new AppError(504, `${input.code}_TIMEOUT`, input.error.message, {
+			responseTextOrigin: "application",
+			failureKind: "provider_timeout",
+			retryable: true,
+			timeoutMs: input.error.timeoutMs,
+		});
+	}
 	return new AppError(
 		502,
 		input.code,
 		describeStructuredGenerationError(input.error, input.fallbackMessage),
-		{ responseTextOrigin: "application" },
+		{
+			responseTextOrigin: "application",
+			failureKind: "generation_failure",
+			retryable: true,
+		},
 	);
 }
 

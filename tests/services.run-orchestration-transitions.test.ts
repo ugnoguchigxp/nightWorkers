@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	assertRunStatusTransition,
+	resolveGuardedRunOutcomeStatus,
 	runStatusTransitionTable,
 } from "../api/modules/nightworkers/nightworkers.run-orchestration.service";
 
@@ -50,5 +51,29 @@ describe("run orchestration status transitions", () => {
 		expect(() => assertRunStatusTransition("ready", "completed")).toThrow(
 			/Invalid run status transition: ready -> completed/,
 		);
+	});
+
+	it("preserves needs_human when a concurrently running runtime reports completed", () => {
+		expect(
+			resolveGuardedRunOutcomeStatus({
+				currentStatus: "needs_human",
+				outcomeStatus: "completed",
+				finalizationBlocked: false,
+			}),
+		).toBe("needs_human");
+		expect(
+			resolveGuardedRunOutcomeStatus({
+				currentStatus: "finalizing",
+				outcomeStatus: "completed",
+				finalizationBlocked: false,
+			}),
+		).toBe("completed");
+		expect(
+			resolveGuardedRunOutcomeStatus({
+				currentStatus: "cancelled",
+				outcomeStatus: "completed",
+				finalizationBlocked: false,
+			}),
+		).toBe("cancelled");
 	});
 });

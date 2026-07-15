@@ -7,10 +7,26 @@ import {
 	buildReviewRunPrompt,
 	buildReviewRunTodos,
 	normalizeReviewRunOptions,
+	resolveReviewTargetRunIds,
 } from "../api/modules/review/review-run.service";
 import { parseReviewRunFindings } from "../api/modules/review/review-run-finalize.service";
 
 describe("Review Run workflow", () => {
+	it("uses the immutable Mission Pilot Implementation/Test target set", () => {
+		expect(
+			resolveReviewTargetRunIds({
+				missionPilot: { sessionId: "pilot-session" },
+				targetRunIds: ["hidden-extra-run"],
+			}),
+		).toEqual(["hidden-extra-run"]);
+		expect(
+			resolveReviewTargetRunIds({
+				reviewCorrection: { phase: "review" },
+				targetRunIds: ["user-requested-correction-run"],
+			}),
+		).toEqual(["user-requested-correction-run"]);
+	});
+
 	it("defaults code review and records correction/closeout permissions", () => {
 		const todos = buildReviewRunTodos({
 			options: normalizeReviewRunOptions({}),

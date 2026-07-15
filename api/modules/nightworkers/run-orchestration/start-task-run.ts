@@ -1,11 +1,9 @@
-import { buildAgentModeSessionRouteIdentity } from "../../../services/agent-runtime/agent-mode-session";
 import { stateCardRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
-import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
 	buildOntologyRuntimeContextSnapshot,
@@ -13,13 +11,17 @@ import {
 } from "../../ontology";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
-import { launchRuntimeExecution } from "./runtime-execution";
 import {
 	buildLatestRuntimeUserMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
 	loadCodexRuntimeResumeState,
 	maybeLoadConversationStateCard,
 } from "./runtime-routing";
+import {
+	buildContinuationRouteIdentity,
+	createPreparedMissionPilotAssociation,
+	createPreparedRuntimeLaunch,
+} from "./start-task-run-launch";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
 import {
 	prepareTaskRunRuntimeContext,
@@ -30,19 +32,86 @@ import {
 	recordAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
-import { toAgentRuntimeTodoContext } from "./todo-closeout";
+import {
+	closeOpenTodosForFailedRun,
+	toAgentRuntimeTodoContext,
+} from "./todo-closeout";
 import { resolveInitialTaskRunTodos } from "./todo-resume";
 import { toErrorMessage } from "./utils";
 
 export { startTaskRun } from "./start-task-run-entry";
 
-import {
-	prepareStartableTask,
-	readMissionPilotEnvelope,
-} from "./start-task-run-entry";
+import { prepareStartableTask } from "./start-task-run-entry";
 
 export type { StartTaskRunOptions } from "./start-task-run-types";
 export async function startTaskRunInProcess(
+	taskId: string,
+	options: StartTaskRunOptions = {},
+) {
+	const prepared = await prepareTaskRunInProcess(taskId, options);
+	try {
+		await prepared.associate?.();
+	} catch (error) {
+		await failPreparedRunBeforeLaunch({
+			runId: prepared.run.id,
+			taskId,
+			executionMode: options.executionMode ?? "implementation",
+			error,
+		});
+		throw error;
+	}
+	await prepared.launch?.();
+	return prepared.run;
+}
+
+async function failPreparedRunBeforeLaunch(input: {
+	runId: string;
+	taskId: string;
+	executionMode: string;
+	error: unknown;
+}) {
+	const message = toErrorMessage(input.error);
+	const failedRun = await repo.updateTaskRunIfStatus(input.runId, "running", {
+		status: "failed",
+		endedAt: new Date(),
+		finishedAt: new Date(),
+		summary:
+			"Mission Pilot child run preparation failed before runtime launch.",
+		finalReport: `Mission Pilot child run preparation failed before runtime launch: ${message}`,
+		finalJudgment: null,
+	});
+	if (!failedRun) return;
+	await repo.createRunEvent({
+		version: 1,
+		runId: input.runId,
+		taskId: input.taskId,
+		timestamp: new Date().toISOString(),
+		type: "system.error",
+		severity: "error",
+		actor: "system",
+		message: "Mission Pilot child run could not be associated before launch.",
+		data: {
+			action: "mission_pilot.run_preparation_failed",
+			executionMode: input.executionMode,
+			error: message,
+		},
+	});
+	const todos = await repo.listTaskRunTodosForRun(input.runId);
+	await closeOpenTodosForFailedRun({
+		runId: input.runId,
+		taskId: input.taskId,
+		todos,
+		evidence: `mission_pilot_run_association_failed: ${message}`,
+	});
+	await repo.updateTaskStatus(
+		input.taskId,
+		["test", "review"].includes(input.executionMode)
+			? "needs_review"
+			: "failed",
+	);
+}
+
+export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
@@ -60,6 +129,7 @@ export async function startTaskRunInProcess(
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
+		implementationPlanTodoProjection,
 		compiledPromptText,
 		verificationPolicy,
 	} = await prepareTaskRunStart({ task, options });
@@ -84,34 +154,18 @@ export async function startTaskRunInProcess(
 		await resolveRunProjectExplorationCatalogPin({
 			executionMode,
 			registeredRepoRoot: repoInfo.localPath,
+			executionRoot,
 			expectedHead: gitBaseline.baselineHead,
 			preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
 			settings: projectExplorationCatalogSettings,
 			runtimeLane: runtimeLaneResolution.lane,
 		});
-	const provider =
-		runtimeLlmRoute?.providerId ??
-		(runtimeLaneResolution.lane === "codex-sdk" ? "codex" : null);
-	const routeFingerprint = buildAgentModeSessionRouteIdentity({
+	const routeIdentity = buildContinuationRouteIdentity({
 		executionMode,
 		llmRole: runtimeRole,
 		runtimeLane: runtimeLaneResolution.lane,
-		provider,
-		providerEndpointId: runtimeLlmRoute?.providerEndpointId ?? null,
-		model: runtimeLlmRoute?.model ?? null,
-		thinkingDepth: runtimeLlmRoute?.thinkingDepth ?? null,
+		runtimeLlmRoute,
 	});
-	const routeIdentity = {
-		runtimeLane: runtimeLaneResolution.lane,
-		provider,
-		providerEndpointId: runtimeLlmRoute?.providerEndpointId ?? null,
-		model: runtimeLlmRoute?.model ?? null,
-		thinkingDepth: runtimeLlmRoute?.thinkingDepth ?? null,
-		fingerprint: routeFingerprint,
-		continuationEligible:
-			Boolean(provider && runtimeLlmRoute?.model) &&
-			(runtimeLaneResolution.lane === "codex-sdk" || Boolean(runtimeLlmRoute)),
-	};
 	const { run, sessionTransition } = await createTaskRunInAgentModeSession({
 		taskId,
 		repositoryId: task.repositoryId,
@@ -132,6 +186,12 @@ export async function startTaskRunInProcess(
 				executionModeSource,
 				jobType,
 				verificationPolicy,
+				...(implementationPlanTodoProjection
+					? {
+							implementationPlanProvenance:
+								implementationPlanTodoProjection.implementationPlanProvenance,
+						}
+					: {}),
 				projectExplorationCatalog: projectExplorationCatalogPin,
 				planModeSettingsSnapshot,
 				...blueprintPlanningSnapshot,
@@ -151,7 +211,7 @@ export async function startTaskRunInProcess(
 		taskId,
 		executionMode,
 		llmRole: runtimeRole,
-		routeFingerprint,
+		routeFingerprint: routeIdentity.fingerprint,
 		sessionTransition,
 	});
 	await activateWorkspace(taskId, executionMode, gitBaseline.baselineHead);
@@ -206,8 +266,11 @@ export async function startTaskRunInProcess(
 				executionMode === "test"
 					? []
 					: (options.initialTodos ??
+						implementationPlanTodoProjection?.initialTodos ??
 						runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput)),
-			requireDataMigrationGates: jobType === "data_migration",
+			requireDataMigrationGates:
+				jobType === "data_migration" ||
+				Boolean(implementationPlanTodoProjection?.requireDataMigrationGates),
 			verificationPolicy,
 		}),
 	);
@@ -261,6 +324,12 @@ export async function startTaskRunInProcess(
 		executionPhase: executionMode,
 		executionModeSource,
 		verificationPolicy,
+		...(implementationPlanTodoProjection
+			? {
+					implementationPlanProvenance:
+						implementationPlanTodoProjection.implementationPlanProvenance,
+				}
+			: {}),
 		projectExplorationCatalog: projectExplorationCatalogPin,
 		planModeClosed: executionMode !== "planning",
 		planModeSettingsSnapshot,
@@ -507,7 +576,7 @@ export async function startTaskRunInProcess(
 				summary: "Role context generation failed before provider call.",
 			});
 			await repo.updateTaskStatus(taskId, "needs_human");
-			return failedRun ?? run;
+			return { run: failedRun ?? run, associate: null, launch: null };
 		}
 	}
 	if (runtimeLaneResolution.lane === "codex-sdk") {
@@ -568,33 +637,28 @@ export async function startTaskRunInProcess(
 			runtimeRole,
 		},
 	});
-	const missionPilot = readMissionPilotEnvelope(runtimeOptions.missionPilot);
-	if (
-		missionPilot &&
-		(executionMode === "implementation" ||
-			executionMode === "test" ||
-			executionMode === "review")
-	) {
-		await associateMissionPilotChildRun({
+	return {
+		run: compiledRun ?? run,
+		associate: createPreparedMissionPilotAssociation({
+			executionMode,
+			missionPilotPhase: options.missionPilotPhase,
+			runtimeOptions,
 			taskId,
 			runId: run.id,
-			phase: options.missionPilotPhase ?? executionMode,
-			missionPilot,
-		});
-	}
-	launchRuntimeExecution({
-		taskId,
-		task,
-		run,
-		repoInfo: { ...repoInfo, localPath: executionRoot },
-		compiledPromptText,
-		runtimeLatestUserMessage,
-		runtimeImageAttachments,
-		runtimeContextSnapshot,
-		runtimeOptions,
-		runtimeLaneDefinition,
-		runtimeLaneResolution,
-		agentModeSessionId: run.agentModeSessionId,
-	});
-	return compiledRun ?? run;
+		}),
+		launch: createPreparedRuntimeLaunch({
+			taskId,
+			task,
+			run,
+			repoInfo: { ...repoInfo, localPath: executionRoot },
+			compiledPromptText,
+			runtimeLatestUserMessage,
+			runtimeImageAttachments,
+			runtimeContextSnapshot,
+			runtimeOptions,
+			runtimeLaneDefinition,
+			runtimeLaneResolution,
+			agentModeSessionId: run.agentModeSessionId,
+		}),
+	};
 }

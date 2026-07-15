@@ -286,7 +286,7 @@ describe("Mission Pilot plan coordinator", () => {
 		expect(after?.leaseOwner).toBeNull();
 	});
 
-	it("re-reviews a changed Task Context before delegating Queue admission", async () => {
+	it("retries one transient generation failure and re-reviews a changed Task Context", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
 		const sourceId = crypto.randomUUID();
@@ -513,7 +513,12 @@ describe("Mission Pilot plan coordinator", () => {
 				return completedPreFeaturePlanQuestionnaire;
 			});
 		let featurePlanGenerationCount = 0;
+		let featurePlanInvocationCount = 0;
 		mocks.generateFeaturePlan.mockImplementation(async () => {
+			featurePlanInvocationCount += 1;
+			if (featurePlanInvocationCount === 1) {
+				throw new Error("simulated transient Feature Plan generation failure");
+			}
 			featurePlanGenerationCount += 1;
 			const [message] = await db
 				.insert(taskMessages)
@@ -694,9 +699,9 @@ describe("Mission Pilot plan coordinator", () => {
 				}),
 			}),
 		);
-		expect(mocks.generateFeaturePlan).toHaveBeenCalledTimes(2);
+		expect(mocks.generateFeaturePlan).toHaveBeenCalledTimes(3);
 		expect(mocks.generateFeaturePlan).toHaveBeenNthCalledWith(
-			2,
+			3,
 			taskId,
 			expect.objectContaining({
 				questionnaireSessionId: questionnaireId,
@@ -784,6 +789,8 @@ describe("Mission Pilot plan coordinator", () => {
 		expect(planSteps[1]?.evidenceJson).toMatchObject({
 			preFeaturePlanQuestionnaireStatus: "completed",
 			preFeaturePlanQuestionnaireAddedCount: 1,
+			retryState: "recovered",
+			autoRetryCount: 1,
 		});
 		const snapshots = await db.query.missionPilotContextSnapshots.findMany({
 			where: eq(missionPilotContextSnapshots.sessionId, session.id),

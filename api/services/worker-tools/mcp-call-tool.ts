@@ -43,11 +43,30 @@ export async function mcpCallTool(input: {
 		if (!input.serverId || !input.toolName) {
 			throw new Error("mcp_call_tool requires serverId and toolName.");
 		}
-		const result = await mcpClientManager.callTool(
+		const execution = await mcpClientManager.callToolGuarded(
 			input.serverId,
 			input.toolName,
 			input.arguments || {},
+			(tool) => tool.annotations?.readOnlyHint !== false,
 		);
+		if (!execution.allowed) {
+			return {
+				ok: false,
+				toolName: "mcp_call_tool",
+				startedAt,
+				finishedAt: new Date().toISOString(),
+				payload: {
+					serverId: input.serverId,
+					toolName: input.toolName,
+				},
+				error: {
+					code: "MCP_MUTATING_TOOL_BLOCKED",
+					message:
+						"Mutating MCP tools cannot be called through the model-facing generic bridge.",
+				},
+			};
+		}
+		const { result } = execution;
 		if (isMcpToolExecutionError(result)) {
 			return {
 				ok: false,

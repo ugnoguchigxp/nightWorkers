@@ -9,8 +9,13 @@ export type ExplorationReductionMeasurement = {
 	repositoryId: string;
 	mode: "baseline" | "catalog";
 	generationId: string | null;
+	preparationDurationMs: number | null;
+	preparationReused: boolean | null;
+	preparationPollCount: number | null;
+	fallbackReason: string | null;
 	catalogCalled: boolean;
 	catalogCallCount: number;
+	catalogFailureCount: number;
 	catalogResponseBytes: number;
 	catalogFileCount: number;
 	catalogTestCount: number;
@@ -58,6 +63,7 @@ export function measureProjectExplorationRun(input: {
 	const pin = readPin(input.run.contextSnapshot);
 	const warnings = new Set<string>();
 	let catalogCallCount = 0;
+	let catalogFailureCount = 0;
 	let catalogResponseBytes = 0;
 	let catalogFileCount = 0;
 	let catalogTestCount = 0;
@@ -91,6 +97,49 @@ export function measureProjectExplorationRun(input: {
 		}
 
 		if (mutationAt) continue;
+		const isCatalogCall =
+			toolName === "project_exploration_catalog" ||
+			(toolName === "mcp_call_tool" &&
+				args?.toolName === "vuln_get_project_exploration_catalog");
+		if (isCatalogCall) {
+			catalogCallCount += 1;
+			const workerPayload = recordValue(data.result);
+			const audit = recordValue(workerPayload?.audit);
+			const auditedResponseBytes = numberValue(audit?.responseBytes);
+			const textBlocks =
+				toolName === "project_exploration_catalog"
+					? [JSON.stringify(workerPayload?.catalog ?? {})]
+					: mcpTextBlocks(workerPayload);
+			catalogResponseBytes +=
+				auditedResponseBytes ??
+				textBlocks.reduce(
+					(total, text) => total + Buffer.byteLength(text, "utf8"),
+					0,
+				);
+			if (!ok) {
+				catalogFailureCount += 1;
+				warnings.add("catalog_call_failed");
+			} else {
+				let parsedCatalog: ReturnType<
+					typeof projectExplorationCatalogResultSchema.safeParse
+				> | null = null;
+				try {
+					parsedCatalog = projectExplorationCatalogResultSchema.safeParse(
+						JSON.parse(textBlocks.join("\n")),
+					);
+					if (!parsedCatalog.success) throw parsedCatalog.error;
+				} catch {
+					warnings.add("catalog_result_invalid");
+				}
+				if (!firstCatalogParsed && parsedCatalog?.success) {
+					firstCatalogParsed = true;
+					catalogFileCount = parsedCatalog.data.likelyFiles.length;
+					catalogTestCount = parsedCatalog.data.relatedTests.length;
+					catalogVerificationCount =
+						parsedCatalog.data.verificationCandidates.length;
+				}
+			}
+		}
 		if (ok && (toolName === "apply_patch" || toolName === "replace_content")) {
 			mutationAt = readTimestamp(event);
 			continue;
@@ -102,47 +151,6 @@ export function measureProjectExplorationRun(input: {
 			readFileCallsBeforeMutation += 1;
 			const filePath = stringValue(args?.filePath);
 			if (filePath) filesRead.add(filePath);
-		}
-		if (
-			toolName === "mcp_call_tool" &&
-			args?.toolName === "vuln_get_project_exploration_catalog"
-		) {
-			catalogCallCount += 1;
-			const workerPayload = recordValue(data.result);
-			const mcpResult = recordValue(workerPayload?.result);
-			const content = Array.isArray(mcpResult?.content)
-				? mcpResult.content
-				: [];
-			const textBlocks = content.flatMap((block) => {
-				const record = recordValue(block);
-				return record?.type === "text" && typeof record.text === "string"
-					? [record.text]
-					: [];
-			});
-			catalogResponseBytes += textBlocks.reduce(
-				(total, text) => total + Buffer.byteLength(text, "utf8"),
-				0,
-			);
-			let parsedCatalog: ReturnType<
-				typeof projectExplorationCatalogResultSchema.safeParse
-			> | null = null;
-			try {
-				parsedCatalog = projectExplorationCatalogResultSchema.safeParse(
-					JSON.parse(textBlocks.join("\n")),
-				);
-				if (!parsedCatalog.success) throw parsedCatalog.error;
-			} catch {
-				warnings.add("catalog_result_invalid");
-			}
-			if (!firstCatalogParsed) {
-				firstCatalogParsed = true;
-				if (parsedCatalog?.success) {
-					const parsed = parsedCatalog;
-					catalogFileCount = parsed.data.likelyFiles.length;
-					catalogTestCount = parsed.data.relatedTests.length;
-					catalogVerificationCount = parsed.data.verificationCandidates.length;
-				}
-			}
 		}
 	}
 
@@ -157,9 +165,17 @@ export function measureProjectExplorationRun(input: {
 		taskId: input.run.taskId,
 		repositoryId: input.run.repositoryId ?? "",
 		mode: pin?.available ? "catalog" : "baseline",
-		generationId: pin?.available ? pin.generationId : null,
+		generationId: pin?.available && pin.version === 1 ? pin.generationId : null,
+		preparationDurationMs:
+			pin?.version === 2 ? (pin.preparation?.durationMs ?? null) : null,
+		preparationReused:
+			pin?.version === 2 && pin.available ? pin.preparation.reused : null,
+		preparationPollCount:
+			pin?.version === 2 ? (pin.preparation?.pollCount ?? null) : null,
+		fallbackReason: pin && !pin.available ? pin.reason : null,
 		catalogCalled: catalogCallCount > 0,
 		catalogCallCount,
+		catalogFailureCount,
 		catalogResponseBytes,
 		catalogFileCount,
 		catalogTestCount,
@@ -179,6 +195,17 @@ export function measureProjectExplorationRun(input: {
 		replanCount,
 		warnings: [...warnings].sort(),
 	};
+}
+
+function mcpTextBlocks(workerPayload: Record<string, unknown> | null) {
+	const mcpResult = recordValue(workerPayload?.result);
+	const content = Array.isArray(mcpResult?.content) ? mcpResult.content : [];
+	return content.flatMap((block) => {
+		const record = recordValue(block);
+		return record?.type === "text" && typeof record.text === "string"
+			? [record.text]
+			: [];
+	});
 }
 
 export function summarizeProjectExplorationPair(input: {
@@ -263,6 +290,12 @@ function readTimestamp(event: MeasurementEvent): Date {
 function recordValue(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
+		: null;
+}
+
+function numberValue(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0
+		? value
 		: null;
 }
 

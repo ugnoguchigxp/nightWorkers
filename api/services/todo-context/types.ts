@@ -55,6 +55,11 @@ export type RuntimePromptSnapshot = {
 		| "test_mode"
 		| "explicit";
 	verificationPolicy?: TodoVerificationPolicy | null;
+	implementationPlanProvenance?: {
+		version: 1;
+		sourceMessageId: string;
+		digest: string;
+	};
 	planModeClosed?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;

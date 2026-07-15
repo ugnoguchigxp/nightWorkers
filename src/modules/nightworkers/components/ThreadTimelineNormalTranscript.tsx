@@ -141,18 +141,56 @@ function NormalEditDiffBlock({ event }: { event: ActivityEvent }) {
 	const summary = buildVisibleEditDiffSummary(event);
 	const code = getVisibleEditDiffCode(event);
 	if (summary.length === 0) return null;
-	return (
-		<details className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border font-mono text-sm">
-			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
-				<NormalEditSummaryList summary={summary} />
-			</summary>
-			{code.trim() ? (
-				<div className="nightworkers-chat-card-body border-t">
-					<DiffCodeBlock code={code} label={activityCodeFilename(event)} />
+	const displaySummary = compactEditSummaryPaths(summary);
+	if (!code.trim()) {
+		return (
+			<div className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border font-mono text-sm">
+				<div className="nightworkers-chat-card-header px-4 py-3">
+					<NormalEditSummaryList summary={displaySummary} />
 				</div>
-			) : null}
+			</div>
+		);
+	}
+	return (
+		<details
+			className="nightworkers-chat-card overflow-hidden rounded-[var(--radius-md)] border font-mono text-sm"
+			open
+		>
+			<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
+				<NormalEditSummaryList summary={displaySummary} />
+			</summary>
+			<div className="nightworkers-chat-card-body border-t">
+				<DiffCodeBlock code={code} label={activityCodeFilename(event)} />
+			</div>
 		</details>
 	);
+}
+
+function compactEditSummaryPaths(
+	summary: VisibleEditDiffSummary,
+): VisibleEditDiffSummary {
+	const paths = summary.map((section) => section.path);
+	if (!paths.every((path) => path.startsWith("/"))) return summary;
+	const segments = paths.map((path) => path.split("/").filter(Boolean));
+	if (segments.length === 1) {
+		return summary.map((section) => ({
+			...section,
+			path: segments[0].slice(-3).join("/"),
+		}));
+	}
+	let commonLength = 0;
+	const shortestPathLength = Math.min(...segments.map((parts) => parts.length));
+	while (
+		commonLength < shortestPathLength &&
+		segments.every((parts) => parts[commonLength] === segments[0][commonLength])
+	) {
+		commonLength += 1;
+	}
+	if (commonLength === 0) return summary;
+	return summary.map((section, index) => ({
+		...section,
+		path: segments[index].slice(commonLength).join("/") || section.path,
+	}));
 }
 
 function NormalCliCommandBlock({ event }: { event: ActivityEvent }) {
@@ -195,6 +233,16 @@ function NormalEditSummaryList({
 }) {
 	return (
 		<div className="space-y-4">
+			<div className="flex items-baseline justify-between gap-4">
+				<span className="nightworkers-chat-card-title font-medium">
+					{summary.every((section) => section.changedOnly)
+						? "コード変更"
+						: "コード差分"}
+				</span>
+				<span className="nightworkers-chat-card-meta">
+					{summary.length}ファイル
+				</span>
+			</div>
 			{summary.map((section) => (
 				<div
 					className="flex items-baseline justify-between gap-4"
@@ -205,7 +253,7 @@ function NormalEditSummaryList({
 					</span>
 					{section.changedOnly ? (
 						<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
-							changed
+							{changeKindLabel(section.changeKind)}
 						</span>
 					) : (
 						<span className="shrink-0 whitespace-nowrap text-right">
@@ -222,4 +270,10 @@ function NormalEditSummaryList({
 			))}
 		</div>
 	);
+}
+
+function changeKindLabel(kind: VisibleEditDiffSummary[number]["changeKind"]) {
+	if (kind === "add") return "追加";
+	if (kind === "delete") return "削除";
+	return "変更";
 }

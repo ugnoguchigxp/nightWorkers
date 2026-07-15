@@ -1,3 +1,4 @@
+import type { TaskRunStatus } from "../../../db/schema";
 import { logger } from "../../../lib/logger";
 import { runE2eFixtureRuntime } from "../../../services/agent-runtime/e2e-fixture-runtime";
 import { createLedgerSink } from "../../../services/agent-runtime/ledger-sink";
@@ -35,7 +36,6 @@ import {
 } from "./git-ownership";
 import {
 	completeImplementationQueueEntryForRun,
-	IMPLEMENTATION_QUEUE_HEARTBEAT_INTERVAL_MS,
 	IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 	runSessionQueueForRepository,
 	shouldContinueSessionQueue,
@@ -45,18 +45,45 @@ import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { readRuntimeFailureTerminalReason } from "./runtime-failure";
 import { appendTestModeNextStepLink } from "./runtime-final-report";
+import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
+import {
+	recordPreservedNeedsHumanOutcome,
+	resolveRuntimeOutcomeGuard,
+} from "./runtime-outcome-guard";
 
 export {
 	appendTestModeNextStepLink,
 	sanitizeReviewFinalReportLinks,
 } from "./runtime-final-report";
 
+type RuntimeTerminalStatus = Parameters<
+	typeof finalizeReviewRunFromRuntime
+>[0]["status"];
+
+function isRuntimeTerminalStatus(
+	status: TaskRunStatus,
+): status is RuntimeTerminalStatus {
+	return [
+		"blocked",
+		"cancelled",
+		"completed",
+		"failed",
+		"needs_human",
+		"needs_review",
+		"timed_out",
+	].includes(status);
+}
+
 import { safelyCreateReviewRecommendation } from "./runtime-routing";
 import {
 	isSecurityOracleFinalizationBlocked,
 	resolveRuntimeSecurityCloseout,
 } from "./runtime-security-closeout";
-import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
+import {
+	assertRunStatusTransition,
+	resolveGuardedRunOutcomeStatus,
+	runStatusTransitionTable,
+} from "./status";
 import {
 	closeOpenTodosForCancelledRun,
 	closeOpenTodosForFailedRun,
@@ -94,18 +121,24 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			await repo.updateTaskStatus(taskId, "running");
 			const runtimeTodosBeforeStart = await repo.listTaskRunTodosForRun(run.id);
 			const heartbeatTimer = setInterval(() => {
-				void repo.refreshImplementationQueueLeaseForRun({
-					runId: run.id,
-					leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
-				});
-			}, IMPLEMENTATION_QUEUE_HEARTBEAT_INTERVAL_MS);
+				void Promise.all([
+					repo.refreshImplementationQueueLeaseForRun({
+						runId: run.id,
+						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+					}),
+					repo.heartbeatActiveTaskRun(run.id),
+				]);
+			}, ACTIVE_RUN_HEARTBEAT_INTERVAL_MS);
 			heartbeatTimer.unref?.();
 			let runtimeResult: AgentRuntimeResult;
 			try {
-				await repo.refreshImplementationQueueLeaseForRun({
-					runId: run.id,
-					leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
-				});
+				await Promise.all([
+					repo.refreshImplementationQueueLeaseForRun({
+						runId: run.id,
+						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
+					}),
+					repo.heartbeatActiveTaskRun(run.id),
+				]);
 				runtimeResult = usesE2eFixture
 					? await runE2eFixtureRuntime(
 							{
@@ -232,6 +265,35 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			if (stopWasRequested) {
 				const outcome = outcomeFromRuntimeResult(runtimeResult);
 				const finalReport = runtimeResult.finalReport || outcome.summary;
+				const statusBeforeCancel = latestRunBeforeFinalize?.status || "running";
+				const cancelStatus = resolveGuardedRunOutcomeStatus({
+					currentStatus: statusBeforeCancel,
+					outcomeStatus: "cancelled",
+					finalizationBlocked: false,
+				});
+				if (cancelStatus !== "cancelled") return;
+				assertRunStatusTransition(statusBeforeCancel, "cancelled");
+				const cancelledRun = await repo.updateTaskRunIfStatusWithoutPublish(
+					run.id,
+					statusBeforeCancel,
+					{
+						status: "cancelled",
+						endedAt: new Date(),
+						finishedAt: new Date(),
+						logContent: runtimeResult.logContent,
+						diffPatch: runtimeResult.diffPatch,
+						testResults: runtimeResult.testResults,
+						contextSnapshot: mergeRuntimeContractSnapshot(
+							contextSnapshotWithBoundaryAudit,
+							runtimeContractWarnings,
+							{ lane: runtimeLaneResolution.lane },
+						),
+						finalReport,
+						finalJudgment: null,
+						summary: runtimeResult.summary || outcome.summary,
+					},
+				);
+				if (!cancelledRun) return;
 				const todosBeforeCancelCloseout = await repo.listTaskRunTodosForRun(
 					run.id,
 				);
@@ -240,26 +302,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					taskId,
 					todos: todosBeforeCancelCloseout,
 					evidence: runtimeResult.stoppedBy || runtimeResult.terminalState,
-				});
-				assertRunStatusTransition(
-					latestRunBeforeFinalize?.status || "running",
-					"cancelled",
-				);
-				await repo.updateTaskRun(run.id, {
-					status: "cancelled",
-					endedAt: new Date(),
-					finishedAt: new Date(),
-					logContent: runtimeResult.logContent,
-					diffPatch: runtimeResult.diffPatch,
-					testResults: runtimeResult.testResults,
-					contextSnapshot: mergeRuntimeContractSnapshot(
-						contextSnapshotWithBoundaryAudit,
-						runtimeContractWarnings,
-						{ lane: runtimeLaneResolution.lane },
-					),
-					finalReport,
-					finalJudgment: null,
-					summary: runtimeResult.summary || outcome.summary,
 				});
 				await repo.updateTaskStatus(taskId, "ready");
 				await completeImplementationQueueEntryForRun(run.id, "cancelled");
@@ -287,30 +329,42 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					taskId,
 					runId: run.id,
 				});
+				await repo.publishTaskRunUpdate(cancelledRun);
 				return;
 			}
 
-			const statusBeforeFinalize = latestRunBeforeFinalize?.status || "running";
+			let statusBeforeFinalize = latestRunBeforeFinalize?.status || "running";
 			const transitionTable: Record<string, readonly string[]> =
 				runStatusTransitionTable;
 			const canEnterFinalizing =
 				statusBeforeFinalize === "finalizing" ||
 				transitionTable[statusBeforeFinalize]?.includes("finalizing") === true;
-			const enteredFinalizing = canEnterFinalizing;
+			let enteredFinalizing = statusBeforeFinalize === "finalizing";
 
 			if (statusBeforeFinalize !== "finalizing" && canEnterFinalizing) {
 				assertRunStatusTransition(statusBeforeFinalize, "finalizing");
-				await repo.updateTaskRun(run.id, {
-					status: "finalizing",
-					logContent: runtimeResult.logContent,
-					diffPatch: runtimeResult.diffPatch,
-					testResults: runtimeResult.testResults,
-					finalReport: runtimeResult.finalReport,
-					summary: runtimeResult.summary,
-				});
-				await repo.updateTaskStatus(taskId, "finalizing");
+				const finalizingRun = await repo.updateTaskRunIfStatus(
+					run.id,
+					statusBeforeFinalize,
+					{
+						status: "finalizing",
+						logContent: runtimeResult.logContent,
+						diffPatch: runtimeResult.diffPatch,
+						testResults: runtimeResult.testResults,
+						finalReport: runtimeResult.finalReport,
+						summary: runtimeResult.summary,
+					},
+				);
+				enteredFinalizing = Boolean(finalizingRun);
+				if (finalizingRun) {
+					statusBeforeFinalize = "finalizing";
+					await repo.updateTaskStatus(taskId, "finalizing");
+				} else {
+					statusBeforeFinalize =
+						(await repo.getTaskRun(run.id))?.status ?? statusBeforeFinalize;
+				}
 			} else {
-				await repo.updateTaskRun(run.id, {
+				await repo.updateTaskRunIfStatus(run.id, statusBeforeFinalize, {
 					logContent: runtimeResult.logContent,
 					diffPatch: runtimeResult.diffPatch,
 					testResults: runtimeResult.testResults,
@@ -403,27 +457,25 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				securityOracleSkipped,
 				allowFinalize: securityGate?.allowFinalize,
 			});
-			const guardedStatus =
-				todoFinalizationBlocked || securityFinalizationBlocked
-					? "needs_human"
-					: outcome.status;
+			const outcomeGuard = resolveRuntimeOutcomeGuard({
+				currentStatus: statusBeforeFinalize,
+				outcomeStatus: outcome.status,
+				todoFinalizationBlocked,
+				securityFinalizationBlocked,
+				openTodoSummary: openTodos
+					.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`)
+					.join(", "),
+				securityGateMessage: securityGate?.message,
+			});
+			const guardedStatus = outcomeGuard.status;
+			if (!isRuntimeTerminalStatus(guardedStatus)) return;
 			const baseFinalReport =
-				todoFinalizationBlocked || securityFinalizationBlocked
+				outcomeGuard.reportNotes.length > 0
 					? [
 							runtimeResult.finalReport || outcome.summary,
 							"",
-							todoFinalizationBlocked
-								? `Todo closeout incomplete: ${openTodos.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`).join(", ")}`
-								: null,
-							todoFinalizationBlocked
-								? "Codex contract warning: codex_open_todos_before_completion."
-								: null,
-							securityFinalizationBlocked
-								? `Security Oracle gate blocked finalization: ${securityGate?.message ?? "gate result unavailable"}`
-								: null,
-						]
-							.filter(Boolean)
-							.join("\n")
+							...outcomeGuard.reportNotes,
+						].join("\n")
 					: runtimeResult.finalReport || outcome.summary;
 			const finalReport = appendTestModeNextStepLink({
 				finalReport: baseFinalReport,
@@ -432,9 +484,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				status: guardedStatus,
 				repoRoot: repoInfo.localPath,
 			});
-			const statusBeforeOutcome = enteredFinalizing
-				? "finalizing"
-				: statusBeforeFinalize;
+			const statusBeforeOutcome = statusBeforeFinalize;
 			assertRunStatusTransition(statusBeforeOutcome, guardedStatus);
 			if (todoFinalizationBlocked) {
 				await repo.createRunEvent({
@@ -461,14 +511,15 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					},
 				});
 			}
-			const parentTaskStatus = await resolveMissionPilotParentTaskStatus({
-				runId: run.id,
-				runStatus: guardedStatus,
-				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
-			});
-			await repo.updateTaskStatus(taskId, parentTaskStatus);
-			await completeImplementationQueueEntryForRun(run.id, guardedStatus);
-
+			if (outcomeGuard.externallyHeldStatus) {
+				await recordPreservedNeedsHumanOutcome({
+					runId: run.id,
+					taskId,
+					previousStatus: statusBeforeFinalize,
+					runtimeOutcomeStatus: outcome.status,
+					nextStatus: guardedStatus,
+				});
+			}
 			await createPlanningArtifactMessageIfNeeded({
 				taskId,
 				runId: run.id,
@@ -495,27 +546,64 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			// Publish the terminal status only after all closeout writes have
 			// completed. Consumers use a terminal run as a handoff boundary and
 			// must not start the next mode while this run still owns SQLite writes.
-			await repo.updateTaskRun(run.id, {
-				status: guardedStatus,
-				endedAt: new Date(),
-				finishedAt: new Date(),
-				contextSnapshot: mergeRuntimeContractSnapshot(
-					contextSnapshotWithBoundaryAudit,
-					finalContractWarnings,
-					{ lane: runtimeLaneResolution.lane },
-				),
-				finalReport,
-				finalJudgment: null,
-				summary: todoFinalizationBlocked
-					? "Runtime finished without explicitly closing all open Todos."
-					: securityFinalizationBlocked
-						? "Security Oracle gate did not allow implementation finalization."
-						: runtimeResult.summary || outcome.summary,
+			let finalizedRun = await repo.updateTaskRunIfStatusWithoutPublish(
+				run.id,
+				statusBeforeOutcome,
+				{
+					status: guardedStatus,
+					endedAt: new Date(),
+					finishedAt: new Date(),
+					contextSnapshot: mergeRuntimeContractSnapshot(
+						contextSnapshotWithBoundaryAudit,
+						finalContractWarnings,
+						{ lane: runtimeLaneResolution.lane },
+					),
+					finalReport,
+					finalJudgment: null,
+					summary:
+						outcomeGuard.summary || runtimeResult.summary || outcome.summary,
+				},
+			);
+			let finalStatus: TaskRunStatus = guardedStatus;
+			if (!finalizedRun) {
+				const concurrentRun = await repo.getTaskRun(run.id);
+				if (!concurrentRun) {
+					throw new Error("Task run disappeared during runtime finalization.");
+				}
+				finalizedRun = concurrentRun;
+				finalStatus = concurrentRun.status;
+				await repo.createRunEvent({
+					version: 1,
+					runId: run.id,
+					taskId,
+					timestamp: new Date().toISOString(),
+					type: "run.outcome_decided",
+					severity: "warning",
+					actor: "system",
+					message:
+						"Runtime terminal outcome did not overwrite a concurrently changed run status.",
+					data: {
+						expectedStatus: statusBeforeOutcome,
+						runtimeOutcomeStatus: guardedStatus,
+						preservedStatus: finalStatus,
+					},
+				});
+			}
+			if (!isRuntimeTerminalStatus(finalStatus)) {
+				return;
+			}
+			const parentTaskStatus = await resolveMissionPilotParentTaskStatus({
+				runId: run.id,
+				runStatus: finalStatus,
+				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
 			});
+			await repo.updateTaskStatus(taskId, parentTaskStatus);
+			await completeImplementationQueueEntryForRun(run.id, finalStatus);
+			await repo.publishTaskRunUpdate(finalizedRun);
 			await finalizeReviewRunFromRuntime({
 				runId: run.id,
 				taskId,
-				status: guardedStatus,
+				status: finalStatus,
 				contextSnapshot: contextSnapshotWithBoundaryAudit,
 				runtimeResult: { ...runtimeResult, finalReport },
 			});
@@ -523,7 +611,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				await safelyContinueReviewCorrectionAfterRun({
 					taskId,
 					runId: run.id,
-					status: guardedStatus,
+					status: finalStatus,
 					contextSnapshot: contextSnapshotWithBoundaryAudit,
 				});
 			let reviewRunStartedByMissionPilot = false;
@@ -533,7 +621,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					runId: run.id,
 					executionMode:
 						runtimeContextSnapshot.executionMode ?? "implementation",
-					runStatus: guardedStatus,
+					runStatus: finalStatus,
 				});
 				await executeMissionPilotContinuation(missionContinuation);
 				reviewRunStartedByMissionPilot =
@@ -546,7 +634,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				);
 			}
 			if (
-				guardedStatus === "needs_review" &&
+				finalStatus === "needs_review" &&
 				(runtimeContextSnapshot.executionMode ?? "implementation") !==
 					"review" &&
 				!reviewRunStartedByCorrection &&
@@ -573,7 +661,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					});
 				}
 			}
-			if (shouldContinueSessionQueue(guardedStatus)) {
+			if (shouldContinueSessionQueue(finalStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);
 			}
 		} catch (err: unknown) {

@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
 	buildNormalTranscriptItems,
@@ -7,7 +9,10 @@ import {
 	getToolResult,
 } from "../../src/modules/nightworkers/components/ThreadTimeline";
 import { getAgentEditSummary } from "../../src/modules/nightworkers/components/ThreadTimelineAgentCards";
-import { getVisibleCliCommandSummary } from "../../src/modules/nightworkers/components/ThreadTimelineNormalTranscript";
+import {
+	getVisibleCliCommandSummary,
+	NormalTranscriptItemView,
+} from "../../src/modules/nightworkers/components/ThreadTimelineNormalTranscript";
 
 describe("ThreadTimeline edit summaries", () => {
 	it("builds an apply_patch summary from a tool call start event", () => {
@@ -105,7 +110,7 @@ describe("ThreadTimeline edit summaries", () => {
 		});
 	});
 
-	it("hides changed-file-only Codex diff detection logs", () => {
+	it("shows changed-file-only Codex diff detection as a code change card", () => {
 		const event = {
 			id: "activity-file-change",
 			taskId: "task-1",
@@ -121,8 +126,126 @@ describe("ThreadTimeline edit summaries", () => {
 			},
 		} as never;
 
-		expect(buildVisibleEditDiffSummary(event)).toEqual([]);
+		expect(buildVisibleEditDiffSummary(event)).toEqual([
+			{ path: "src/fizzbuzz.ts", added: 0, deleted: 0, changedOnly: true },
+		]);
 		expect(getActivityCode(event)).toBe("");
+		expect(
+			buildNormalTranscriptItems([
+				{ kind: "activity", id: "activity-file-change", event },
+			]).map((item) => item.id),
+		).toEqual(["activity-file-change"]);
+		const markup = renderToStaticMarkup(
+			createElement(NormalTranscriptItemView, {
+				item: { kind: "activity", id: "activity-file-change", event },
+				onOpenArtifact: () => {},
+			}),
+		);
+		expect(markup).toContain("コード変更");
+		expect(markup).toContain("src/fizzbuzz.ts");
+		expect(markup).not.toContain("changed-files.txt");
+		expect(markup).not.toContain("nightworkers-code-block");
+	});
+
+	it("keeps each completed Codex file_change and drops its started duplicate", () => {
+		const codexFileChange = (
+			id: string,
+			providerItemId: string,
+			providerEventType: "item.started" | "item.completed",
+		) =>
+			({
+				id,
+				taskId: "task-1",
+				runId: "run-1",
+				kind: "file.diff",
+				source: "worker",
+				status: "completed",
+				seq: id === "started" ? 1 : id === "completed-1" ? 2 : 3,
+				payloadJson: {
+					payload: {
+						provider: "codex",
+						providerItemId,
+						providerEventType,
+						status:
+							providerEventType === "item.completed"
+								? "completed"
+								: "in_progress",
+						changedFiles: ["src/app.ts"],
+						changes: [{ path: "src/app.ts", kind: "update" }],
+					},
+				},
+			}) as never;
+		const started = codexFileChange("started", "file-change-1", "item.started");
+		const completed1 = codexFileChange(
+			"completed-1",
+			"file-change-1",
+			"item.completed",
+		);
+		const completed2 = codexFileChange(
+			"completed-2",
+			"file-change-2",
+			"item.completed",
+		);
+
+		expect(buildVisibleEditDiffSummary(started)).toEqual([]);
+		expect(buildVisibleEditDiffSummary(completed1)).toEqual([
+			{
+				path: "src/app.ts",
+				added: 0,
+				deleted: 0,
+				changedOnly: true,
+				changeKind: "update",
+			},
+		]);
+		expect(
+			buildNormalTranscriptItems([
+				{ kind: "activity", id: "started", event: started },
+				{ kind: "activity", id: "completed-1", event: completed1 },
+				{ kind: "activity", id: "completed-2", event: completed2 },
+			]).map((item) => item.id),
+		).toEqual(["completed-1", "completed-2"]);
+
+		const markup = renderToStaticMarkup(
+			createElement(NormalTranscriptItemView, {
+				item: { kind: "activity", id: "completed-1", event: completed1 },
+				onOpenArtifact: () => {},
+			}),
+		);
+		expect(markup).toContain("変更");
+		expect(markup).toContain("src/app.ts");
+		expect(markup).not.toContain("nightworkers-code-block");
+	});
+
+	it("compacts stored absolute Codex file paths in change-only cards", () => {
+		const root = "/Users/example/Code/todolist";
+		const event = {
+			id: "absolute-file-change",
+			taskId: "task-1",
+			kind: "file.diff",
+			source: "worker",
+			seq: 1,
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					changedFiles: [
+						`${root}/api/app/hono.ts`,
+						`${root}/api/db/schema.ts`,
+						`${root}/shared/schemas/todo.ts`,
+					],
+				},
+			},
+		} as never;
+		const markup = renderToStaticMarkup(
+			createElement(NormalTranscriptItemView, {
+				item: { kind: "activity", id: "absolute-file-change", event },
+				onOpenArtifact: () => {},
+			}),
+		);
+
+		expect(markup).toContain("api/app/hono.ts");
+		expect(markup).toContain("shared/schemas/todo.ts");
+		expect(markup).not.toContain(root);
+		expect(markup).not.toContain("nightworkers-code-block");
 	});
 
 	it("keeps rendering collected git diff when it is available", () => {
@@ -153,6 +276,17 @@ describe("ThreadTimeline edit summaries", () => {
 			{ path: "src/fizzbuzz.ts", added: 1, deleted: 0 },
 		]);
 		expect(getActivityCode(event)).toBe(diff);
+		const markup = renderToStaticMarkup(
+			createElement(NormalTranscriptItemView, {
+				item: { kind: "activity", id: "activity-file-diff", event },
+				onOpenArtifact: () => {},
+			}),
+		);
+		expect(markup).toContain("コード差分");
+		expect(markup).toContain("+1");
+		expect(markup).toContain("-0");
+		expect(markup).toContain("nightworkers-diff-view");
+		expect(markup).toContain("export const fizzbuzz = true;");
 		expect(
 			getAgentEditSummary({
 				id: "event-file-diff",

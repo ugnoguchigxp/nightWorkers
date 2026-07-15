@@ -1,3 +1,7 @@
+export {
+	type DataMigrationTodoMarker,
+	isDataMigrationTodoMarker,
+} from "./data-migration";
 export { buildSkippedTodoGate, evaluateTodoCompletionGate } from "./gate";
 export { appendTodoSummaryToFinalReport } from "./report";
 export {

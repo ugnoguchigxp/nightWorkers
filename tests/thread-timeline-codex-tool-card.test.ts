@@ -10,6 +10,151 @@ import {
 } from "../src/modules/nightworkers/components/ThreadTimelineCodexToolCard";
 
 describe("ThreadTimeline Codex tool cards", () => {
+	it("turns a managed run_check result into a user-facing verification summary", () => {
+		const card = getCodexToolCardModel({
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					providerItemId: "run-check-1",
+					mcpServer: "nightworkers",
+					mcpTool: "run_check",
+					toolName: "nightworkers.run_check",
+					arguments: {
+						command: "bun run typecheck",
+						checkKind: "typecheck",
+						conditionIds: ["AC-002"],
+					},
+					result: {
+						structuredContent: {
+							payload: {
+								command: "bun run typecheck",
+								checkKind: "typecheck",
+								exitCode: 0,
+								managedEvidence: true,
+								evidenceRunId: "evidence-1",
+								checklist: {
+									complete: true,
+									failedRequired: 0,
+									unknownRequired: 0,
+								},
+							},
+						},
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({ ok: true }),
+							},
+						],
+					},
+					status: "completed",
+				},
+			},
+		});
+
+		expect(card).toMatchObject({
+			title: "検証",
+			summary: "型チェックが完了しました",
+			status: "ok",
+			verification: {
+				checkKind: "typecheck",
+				state: "passed",
+				command: "bun run typecheck",
+				resultText: "OK typecheck\nexitCode=0",
+				evidence: "saved",
+				conditionIds: ["AC-002"],
+			},
+		});
+	});
+
+	it("uses the actual managed check outcome instead of MCP transport completion", () => {
+		const card = getCodexToolCardModel({
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					providerItemId: "run-check-failed",
+					mcpServer: "nightworkers",
+					mcpTool: "run_check",
+					toolName: "nightworkers.run_check",
+					arguments: { checkKind: "test", command: "bun run test" },
+					result: {
+						structuredContent: {
+							payload: {
+								checkKind: "test",
+								exitCode: 1,
+								managedEvidence: false,
+							},
+						},
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({ ok: false }),
+							},
+						],
+					},
+					status: "completed",
+				},
+			},
+		});
+
+		expect(card).toMatchObject({
+			summary: "テストが失敗しました",
+			status: "failed",
+			verification: {
+				state: "failed",
+				evidence: "not_saved",
+			},
+		});
+	});
+
+	it("hides run_check from the normal chat transcript", () => {
+		const event = {
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					providerItemId: "run-check-render",
+					mcpServer: "nightworkers",
+					mcpTool: "run_check",
+					toolName: "nightworkers.run_check",
+					arguments: {
+						checkKind: "test",
+						command: "bun run test",
+					},
+					result: {
+						structuredContent: {
+							payload: {
+								checkKind: "test",
+								exitCode: 0,
+								managedEvidence: true,
+							},
+						},
+					},
+					status: "completed",
+				},
+			},
+		} as never;
+		const markup = renderToStaticMarkup(
+			createElement(NormalCodexToolCard, {
+				event,
+			}),
+		);
+
+		expect(markup).toBe("");
+		expect(
+			buildNormalTranscriptItems([
+				{ kind: "activity", id: "run-check", event },
+			]),
+		).toEqual([]);
+	});
+
 	it("extracts Codex MCP started details", () => {
 		const card = getCodexToolCardModel({
 			kind: "tool.call",
@@ -128,7 +273,7 @@ describe("ThreadTimeline Codex tool cards", () => {
 		expect(card?.outputPreview).not.toContain("[39m");
 	});
 
-	it("defers compact Codex command result DOM until the card is expanded", () => {
+	it("renders completed Codex commands as expanded CLI result cards", () => {
 		const markup = renderToStaticMarkup(
 			createElement(NormalCodexToolCard, {
 				event: {
@@ -153,9 +298,66 @@ describe("ThreadTimeline Codex tool cards", () => {
 			}),
 		);
 
-		expect(markup).toContain("command_execution | bun run test");
-		expect(markup).not.toContain("command result");
-		expect(markup).not.toContain("max-height:116px");
+		expect(markup).toContain("$ bun run test");
+		expect(markup).toContain("command.sh");
+		expect(markup).toContain("line 1");
+		expect(markup).not.toContain("provider status:");
+	});
+
+	it("renders command execution results in a CLI-style block", () => {
+		const markup = renderToStaticMarkup(
+			createElement(CodexToolCard, {
+				event: {
+					kind: "tool.result",
+					status: "completed",
+					payloadJson: {
+						payload: {
+							provider: "codex",
+							providerEventType: "item.completed",
+							providerItemId: "cmd-result-cli",
+							toolName: "command_execution",
+							command: "bun run test",
+							commandClass: "verification",
+							aggregatedOutput: "12 tests passed",
+							exitCode: 0,
+							status: "completed",
+						},
+					},
+				} as never,
+			}),
+		);
+
+		expect(markup).toContain("$ bun run test");
+		expect(markup).toContain("12 tests passed");
+		expect(markup).toContain("command.sh");
+		expect(markup).not.toContain("provider status:");
+	});
+
+	it("previews the first command result line while collapsed", () => {
+		const markup = renderToStaticMarkup(
+			createElement(NormalCodexToolCard, {
+				event: {
+					kind: "tool.call",
+					status: "started",
+					payloadJson: {
+						payload: {
+							provider: "codex",
+							providerEventType: "item.started",
+							providerItemId: "cmd-preview",
+							toolName: "command_execution",
+							command: "bun run test",
+							commandClass: "verification",
+							aggregatedOutput: "12 tests passed\nall green",
+							exitCode: null,
+							status: "in_progress",
+						},
+					},
+				} as never,
+			}),
+		);
+
+		expect(markup).toContain("12 tests passed");
+		expect(markup).not.toContain("all green");
 	});
 
 	it("renders expanded Codex MCP result blocks 104px shorter than before", () => {

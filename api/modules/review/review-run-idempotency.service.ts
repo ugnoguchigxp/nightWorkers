@@ -10,16 +10,29 @@ export async function findExistingReviewTaskRun(session: ReviewSession) {
 	const artifactRunId = readRecord(artifact?.artifactJson).reviewRunId;
 	if (typeof artifactRunId === "string") {
 		const run = await repo.getTaskRun(artifactRunId);
-		if (run) return { run, artifact };
+		if (run && isReusableReviewRun(run.status)) return { run, artifact };
 	}
 	const runs = await repo.listTaskRunsForTask(session.taskId);
 	const run = runs.find((candidate) => {
 		const reviewRun = readRecord(
 			readRecord(candidate.contextSnapshot).reviewRun,
 		);
-		return reviewRun.reviewSessionId === session.id;
+		return (
+			reviewRun.reviewSessionId === session.id &&
+			isReusableReviewRun(candidate.status)
+		);
 	});
 	return run ? { run, artifact: null } : null;
+}
+
+function isReusableReviewRun(status: string) {
+	return ![
+		"failed",
+		"timed_out",
+		"cancelled",
+		"blocked",
+		"needs_human",
+	].includes(status);
 }
 
 export function reviewRunArtifactStatus(status: string) {

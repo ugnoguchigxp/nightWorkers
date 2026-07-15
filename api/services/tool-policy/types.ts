@@ -22,6 +22,7 @@ export type WorkerToolName =
 	| "run_verification"
 	| "completion_check"
 	| "reviewer_evaluation"
+	| "project_exploration_catalog"
 	| "mcp_call_tool"
 	| "git_status"
 	| "git_diff";

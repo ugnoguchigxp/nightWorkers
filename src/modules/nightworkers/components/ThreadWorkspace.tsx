@@ -138,7 +138,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 	const reviewArtifact = props.artifactRefs.find(
 		(artifact) => artifact.kind === "review_status",
 	);
-	const [showDebugEvents, setShowDebugEvents] = useState(true);
+	const [showDebugEvents, setShowDebugEvents] = useState(false);
 	const [artifactButtonsCoolingDown, setArtifactButtonsCoolingDown] =
 		useState(false);
 	const artifactButtonCooldownUntilRef = useRef(0);

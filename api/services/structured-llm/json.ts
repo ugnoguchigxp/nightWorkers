@@ -138,8 +138,18 @@ export function parseRepairedJsonWithSchema<T>(
 
 export type StructuredLlmAbortHandle = {
 	signal: AbortSignal;
+	timeoutMs: number;
 	dispose: () => void;
 };
+
+export class StructuredLlmTimeoutError extends Error {
+	constructor(public readonly timeoutMs: number) {
+		super(
+			`LLMへのリクエストが${Math.round(timeoutMs / 1000)}秒でタイムアウトしました。`,
+		);
+		this.name = "StructuredLlmTimeoutError";
+	}
+}
 
 const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS = 180_000;
 
@@ -152,6 +162,7 @@ export function createStructuredLlmAbortSignal(
 	timer.unref?.();
 	return {
 		signal: controller.signal,
+		timeoutMs,
 		dispose: () => clearTimeout(timer),
 	};
 }

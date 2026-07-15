@@ -138,6 +138,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
+	project_exploration_catalog: {
+		name: "project_exploration_catalog",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
 	mcp_call_tool: {
 		name: "mcp_call_tool",
 		mutatesWorkspace: false,

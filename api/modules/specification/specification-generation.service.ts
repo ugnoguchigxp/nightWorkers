@@ -10,7 +10,10 @@ import {
 	buildSpecificationDocumentUserPrompt,
 } from "../../services/structured-generation/prompts/design-questionnaire";
 import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
-import { createStructuredOutputContract } from "../../services/structured-llm";
+import {
+	createStructuredOutputContract,
+	StructuredLlmTimeoutError,
+} from "../../services/structured-llm";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -331,23 +334,16 @@ async function generateSpecificationDesignDocumentRawOutput(
 		});
 		return JSON.stringify(generated.value);
 	} catch (error) {
-		if (isStructuredLlmAbortError(error)) {
-			throw new AppError(
-				504,
-				"SPECIFICATION_DOCUMENT_TIMEOUT",
-				`Feature Plan generation timed out after ${Math.round(FEATURE_PLAN_LLM_TIMEOUT_MS / 1000)} seconds.`,
-			);
+		if (error instanceof StructuredLlmTimeoutError) {
+			throw new AppError(504, "SPECIFICATION_DOCUMENT_TIMEOUT", error.message, {
+				responseTextOrigin: "application",
+				failureKind: "provider_timeout",
+				retryable: true,
+				timeoutMs: error.timeoutMs,
+			});
 		}
 		throw error;
 	}
-}
-
-function isStructuredLlmAbortError(error: unknown) {
-	if (!(error instanceof Error)) return false;
-	return (
-		error.name === "AbortError" ||
-		error.message.toLowerCase().includes("operation was aborted")
-	);
 }
 
 function addUnansweredBlockingAssumptions(

@@ -271,39 +271,92 @@ export async function claimNextQueuedTask(repositoryId: string) {
 	return claimed ?? null;
 }
 
-export async function updateTaskRun(
-	id: string,
-	data: {
-		status?: TaskRunStatus;
-		endedAt?: Date;
-		finishedAt?: Date;
-		logContent?: string;
-		diffPatch?: string;
-		testResults?: unknown;
-		workerKind?: string;
-		baseRef?: string | null;
-		worktreePath?: string | null;
-		timeoutSeconds?: number;
-		contextSnapshot?: unknown;
-		summary?: string | null;
-		finalReport?: string | null;
-		finalJudgment?: unknown;
-	},
-) {
+type TaskRunUpdateData = {
+	status?: TaskRunStatus;
+	endedAt?: Date;
+	finishedAt?: Date;
+	logContent?: string;
+	diffPatch?: string;
+	testResults?: unknown;
+	workerKind?: string;
+	baseRef?: string | null;
+	worktreePath?: string | null;
+	timeoutSeconds?: number;
+	contextSnapshot?: unknown;
+	summary?: string | null;
+	finalReport?: string | null;
+	finalJudgment?: unknown;
+};
+
+export async function publishTaskRunUpdate(run: typeof taskRuns.$inferSelect) {
+	nightWorkersRealtimeBroker.publish(run.taskId, {
+		type: "task_run_updated",
+		runId: run.id,
+		payload: { run },
+	});
+	await notifyTaskRunUpdatedListeners(run);
+}
+
+export async function updateTaskRun(id: string, data: TaskRunUpdateData) {
 	const [run] = await db
 		.update(taskRuns)
 		.set({ ...data, updatedAt: new Date() })
 		.where(eq(taskRuns.id, id))
 		.returning();
-	if (run) {
-		nightWorkersRealtimeBroker.publish(run.taskId, {
-			type: "task_run_updated",
-			runId: run.id,
-			payload: { run },
-		});
-		await notifyTaskRunUpdatedListeners(run);
-	}
+	if (run) await publishTaskRunUpdate(run);
 	return run;
+}
+
+export async function updateTaskRunIfStatus(
+	id: string,
+	expectedStatus: TaskRunStatus | readonly TaskRunStatus[],
+	data: TaskRunUpdateData,
+) {
+	const expectedStatuses = Array.isArray(expectedStatus)
+		? [...expectedStatus]
+		: [expectedStatus];
+	const [run] = await db
+		.update(taskRuns)
+		.set({ ...data, updatedAt: new Date() })
+		.where(and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)))
+		.returning();
+	if (run) await publishTaskRunUpdate(run);
+	return run;
+}
+
+export async function updateTaskRunIfStatusWithoutPublish(
+	id: string,
+	expectedStatus: TaskRunStatus | readonly TaskRunStatus[],
+	data: TaskRunUpdateData,
+) {
+	const expectedStatuses = Array.isArray(expectedStatus)
+		? [...expectedStatus]
+		: [expectedStatus];
+	const [run] = await db
+		.update(taskRuns)
+		.set({ ...data, updatedAt: new Date() })
+		.where(and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)))
+		.returning();
+	return run;
+}
+
+export async function heartbeatActiveTaskRun(id: string) {
+	const [run] = await db
+		.update(taskRuns)
+		.set({ updatedAt: new Date() })
+		.where(
+			and(
+				eq(taskRuns.id, id),
+				inArray(taskRuns.status, [
+					"running",
+					"context_compiling",
+					"finalizing",
+				]),
+			),
+		)
+		.returning();
+	if (run) await publishTaskRunUpdate(run);
+	return run ?? null;
 }
 
 // --- Task Run Todos ---

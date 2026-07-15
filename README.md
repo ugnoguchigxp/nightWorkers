@@ -319,10 +319,12 @@ The current settings contract rejects authentication headers, API keys, bearer
 tokens, cookies, and secret-like environment entries. MCP tool execution stays
 inside the worker-tool evidence path.
 
-The Phase 42 project-exploration pilot requires an app-managed MCP server entry
-for vulnWorkbench whose discovered tools include
-`vuln_list_knowledge_sources`, `vuln_get_knowledge_source_manifest`, and
-`vuln_get_project_exploration_catalog`. The pilot remains off unless the
+The project-exploration pilot requires an app-managed MCP server entry for
+vulnWorkbench whose discovered tools include
+`vuln_prepare_project_intelligence`, `vuln_get_project_intelligence_status`,
+and `vuln_get_project_exploration_catalog`. Configure the MCP process with an
+explicit `STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS` allowlist; an empty value
+is fail-closed. The pilot remains off unless the
 repository `featureSettings` contains the following exact sibling setting:
 
 ```json
@@ -335,9 +337,12 @@ repository `featureSettings` contains the following exact sibling setting:
 ```
 
 Set `enabled` to `true` and `mcpServerId` to the app-managed vulnWorkbench
-server ID only for a controlled pilot. Phase 42 supports the native/API
+server ID only for a controlled pilot. NightWorkers prepares intelligence by
+the registered repository path, stores no vulnWorkbench internal IDs as run
+keys, and exposes only the focus-only `project_exploration_catalog` tool to the
+coding agent. The pilot supports the native/API
 implementation lane only; Codex SDK, planning, test, review, and general-answer
-lanes remain unchanged. Source selection failures are fail-open and preserve
+lanes remain unchanged. Preparation, freshness, or MCP failures are fail-open and preserve
 the default exploration behavior.
 
 Agent Hooks support command or HTTP actions around tool and session lifecycle

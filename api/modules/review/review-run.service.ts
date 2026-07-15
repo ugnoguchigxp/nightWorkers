@@ -30,6 +30,10 @@ import {
 	summarizeTarget,
 } from "./review-run-target-helpers";
 import {
+	buildReviewTargetManifest,
+	type ReviewTargetManifestContext,
+} from "./review-target-manifest";
+import {
 	buildReviewTarget,
 	findLatestPlanArtifact,
 } from "./review-targets.service";
@@ -184,14 +188,23 @@ export function buildReviewRunTodos(input: {
 	return todos;
 }
 
+type ReviewRunMissionInput = {
+	targetRunIds?: string[];
+	targetManifestContext?: ReviewTargetManifestContext;
+	missionPilot?: Record<string, unknown>;
+	reviewCorrection?: Record<string, unknown>;
+};
+
+export function resolveReviewTargetRunIds(
+	missionInput: ReviewRunMissionInput | null | undefined,
+) {
+	return missionInput?.targetRunIds;
+}
+
 export async function startReviewRunForSession(
 	reviewSessionId: string,
 	optionsInput?: Partial<ReviewRunOptions> | null,
-	missionInput?: {
-		targetRunIds?: string[];
-		missionPilot?: Record<string, unknown>;
-		reviewCorrection?: Record<string, unknown>;
-	} | null,
+	missionInput?: ReviewRunMissionInput | null,
 ) {
 	let session = await reviewRepo.getReviewSession(reviewSessionId);
 	if (!session) throw new NotFoundError("Review session not found");
@@ -199,7 +212,11 @@ export async function startReviewRunForSession(
 	const missionPilotReworkPacket = missionInput?.missionPilot?.reworkPacket;
 	const target = await buildReviewTarget({
 		runId: session.runId,
-		runIds: missionInput?.targetRunIds,
+		runIds: resolveReviewTargetRunIds(missionInput),
+	});
+	const targetManifest = await buildReviewTargetManifest({
+		target,
+		context: missionInput?.targetManifestContext,
 	});
 	const planSpec = await readReviewPlanSpec(session.taskId);
 	const todos = buildReviewRunTodos({
@@ -362,6 +379,7 @@ export async function startReviewRunForSession(
 				reviewedRunId: session.runId,
 				options,
 				targetSummary: summarizeTarget(target),
+				targetManifest,
 				focusedReview: hasMissionPilotReworkPacket(missionPilotReworkPacket),
 			},
 		},

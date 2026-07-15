@@ -9,9 +9,11 @@ import {
 	missionPilotReviewDecisions,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
-import { taskRunCommitRecords, taskRuns } from "../../db/schema";
+import { taskEvents, taskRunCommitRecords, taskRuns } from "../../db/schema";
 import { digestText } from "../../services/text-digest";
+import { readRunEventCanonicalType } from "../nightworkers/nightworkers.json-adapters";
 import * as reviewRepo from "../review/review-mode.repository";
+import { readReviewTargetManifest } from "../review/review-target-manifest";
 import { evaluateReviewCompletionGate } from "./mission-pilot-post-queue-state";
 
 export async function continueAfterReviewRun(input: {
@@ -32,6 +34,31 @@ export async function continueAfterReviewRun(input: {
 		.limit(1);
 	const decision = parseStructuredReviewDecision(run?.finalReport ?? "");
 	const testSnapshotId = input.session.activeTestSnapshotId;
+	const targetManifest = readReviewTargetManifest(run?.contextSnapshot);
+	const reviewEvents = run
+		? await db
+				.select()
+				.from(taskEvents)
+				.where(eq(taskEvents.taskRunId, run.id))
+				.orderBy(desc(taskEvents.seq))
+		: [];
+	const reviewerEvaluation = reviewEvents.find(
+		(event) =>
+			readRunEventCanonicalType(event.payloadJson) ===
+			"review.evaluation_finished",
+	);
+	const reviewerPayload = readRecord(reviewerEvaluation?.payloadJson);
+	const reviewerResult = readRecord(reviewerPayload.reviewResult);
+	const reviewerEvaluationMatches = Boolean(
+		targetManifest &&
+			testSnapshotId &&
+			targetManifest.contextDigest === input.phaseRun.inputContextDigest &&
+			targetManifest.testSnapshotId === testSnapshotId &&
+			targetManifest.sourceRuns.length === 2 &&
+			reviewerPayload.targetManifestDigest === targetManifest.digest &&
+			reviewerPayload.testSnapshotId === testSnapshotId,
+	);
+	const reviewerVerdict = reviewerResult.verdict;
 	const phaseRuns = await db
 		.select()
 		.from(missionPilotPhaseRuns)
@@ -51,18 +78,19 @@ export async function continueAfterReviewRun(input: {
 		.select()
 		.from(missionPilotCloseouts)
 		.where(eq(missionPilotCloseouts.sessionId, input.session.id));
-	const ownedPaths = [
-		...new Set(
-			commitRecords.flatMap((record) => record.ownedCandidatePathsJson ?? []),
-		),
-	].sort();
-	const targetManifestDigest = digestText(JSON.stringify(ownedPaths));
+	const targetManifestDigest = targetManifest?.digest ?? "";
 	const gate = evaluateReviewCompletionGate({
 		decision,
 		contextDigestMatches:
 			input.phaseRun.inputContextDigest === input.session.contextDigest,
 		testSnapshotMatches: Boolean(testSnapshotId),
-		targetManifestMatches: ownedPaths.length > 0 || commitRecords.length > 0,
+		targetManifestMatches: Boolean(
+			targetManifest &&
+				targetManifest.contextDigest === input.phaseRun.inputContextDigest &&
+				targetManifest.testSnapshotId === testSnapshotId,
+		),
+		reviewerEvaluationMatches,
+		reviewerEvaluationApproved: reviewerVerdict === "approved",
 	});
 	if (!gate.pass || !gate.decision || !testSnapshotId) {
 		const reviewSessionId = readReviewSessionId(run?.contextSnapshot);
@@ -70,7 +98,12 @@ export async function continueAfterReviewRun(input: {
 			gate.decision?.findings.filter(
 				(finding) => finding.severity === "blocking",
 			) ?? [];
-		if (gate.decision?.verdict === "rework" && blockingFindings.length > 0) {
+		if (
+			gate.decision?.verdict === "rework" &&
+			blockingFindings.length > 0 &&
+			reviewerEvaluationMatches &&
+			reviewerVerdict === "changes_requested"
+		) {
 			if (reviewSessionId) {
 				await reviewRepo.updateReviewSession(reviewSessionId, {
 					status: "changes_requested",
@@ -174,7 +207,7 @@ export async function continueAfterReviewRun(input: {
 	const closeoutAttempt =
 		Math.max(0, ...existingCloseouts.map((item) => item.attempt)) + 1;
 	const authorization = input.session.authorizationJson;
-	const pushPolicy = authorization?.pushPolicy ?? "never";
+	const pushPolicy = resolveMissionPilotPushPolicy(authorization);
 	const [latestContext] = await db
 		.select()
 		.from(missionPilotContextSnapshots)
@@ -292,6 +325,13 @@ export async function continueAfterReviewRun(input: {
 		sessionId: input.session.id,
 		closeoutId,
 	} as const;
+}
+
+export function resolveMissionPilotPushPolicy(
+	authorization: typeof missionPilotSessions.$inferSelect.authorizationJson,
+) {
+	if (authorization?.scopes.push !== true) return "never" as const;
+	return authorization.pushPolicy;
 }
 
 export function parseStructuredReviewDecision(text: string) {

@@ -7,34 +7,45 @@ export const implementationPhasePreamble = [
 	"Todo を作成・更新する場合も、この実装フェーズ前提で進めてください。",
 ].join("\n");
 
-vi.doMock("../../../api/modules/nightworkers/nightworkers.repository", () => ({
-	getTask: vi.fn(),
-	updateRepository: vi.fn(),
-	updateRepositoryProjectMeta: vi.fn(),
-	countActiveTaskRuns: vi.fn(),
-	claimNextQueuedTask: vi.fn(),
-	listActiveTaskRunsForTask: vi.fn(),
-	updateTaskStatus: vi.fn(),
-	getRepository: vi.fn(),
-	listTaskMessages: vi.fn(),
-	createTaskRun: vi.fn(),
-	getTaskRun: vi.fn(),
-	createTaskRunTodo: vi.fn(),
-	replaceTaskRunTodosForRun: vi.fn(),
-	listTaskRunTodosForRun: vi.fn(),
-	updateTaskRunTodo: vi.fn(),
-	createRunEvent: vi.fn(),
-	listTaskRunsForTask: vi.fn(),
-	listTaskEventsForRun: vi.fn(),
-	updateTaskCompiledPrompt: vi.fn(),
-	updateTaskRun: vi.fn(),
-	createTaskMessage: vi.fn(),
-	getImplementationQueueEntryForRun: vi.fn(),
-	updateImplementationQueueEntry: vi.fn(),
-	refreshImplementationQueueLeaseForRun: vi.fn(),
-	createTaskRunCommitRecord: vi.fn(),
-	getTaskRunCommitRecord: vi.fn(),
-}));
+vi.doMock("../../../api/modules/nightworkers/nightworkers.repository", () => {
+	const updateTaskRun = vi.fn();
+	return {
+		getTask: vi.fn(),
+		updateRepository: vi.fn(),
+		updateRepositoryProjectMeta: vi.fn(),
+		countActiveTaskRuns: vi.fn(),
+		claimNextQueuedTask: vi.fn(),
+		listActiveTaskRunsForTask: vi.fn(),
+		updateTaskStatus: vi.fn(),
+		getRepository: vi.fn(),
+		listTaskMessages: vi.fn(),
+		createTaskRun: vi.fn(),
+		getTaskRun: vi.fn(),
+		createTaskRunTodo: vi.fn(),
+		replaceTaskRunTodosForRun: vi.fn(),
+		listTaskRunTodosForRun: vi.fn(),
+		updateTaskRunTodo: vi.fn(),
+		createRunEvent: vi.fn(),
+		listTaskRunsForTask: vi.fn(),
+		listTaskEventsForRun: vi.fn(),
+		updateTaskCompiledPrompt: vi.fn(),
+		updateTaskRun,
+		updateTaskRunIfStatus: vi.fn((id: string, _status: string, data: unknown) =>
+			updateTaskRun(id, data),
+		),
+		updateTaskRunIfStatusWithoutPublish: vi.fn(
+			(id: string, _status: string, data: unknown) => updateTaskRun(id, data),
+		),
+		publishTaskRunUpdate: vi.fn(),
+		heartbeatActiveTaskRun: vi.fn(),
+		createTaskMessage: vi.fn(),
+		getImplementationQueueEntryForRun: vi.fn(),
+		updateImplementationQueueEntry: vi.fn(),
+		refreshImplementationQueueLeaseForRun: vi.fn(),
+		createTaskRunCommitRecord: vi.fn(),
+		getTaskRunCommitRecord: vi.fn(),
+	};
+});
 
 vi.doMock("../../../api/routes/settings", () => ({
 	getCurrentSettings: vi.fn(() => {

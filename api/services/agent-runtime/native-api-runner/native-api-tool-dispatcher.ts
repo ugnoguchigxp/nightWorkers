@@ -22,7 +22,10 @@ import type {
 } from "./native-api-dispatch-types";
 import { finalizeAnswer } from "./native-api-finalize";
 import { readNativeApiExecutionMode } from "./native-api-mode";
-import type { NativeApiToolResult } from "./native-api-tool-history";
+import {
+	type NativeApiToolResult,
+	readProjectExplorationCatalogPin,
+} from "./native-api-tool-history";
 import {
 	getNativeApiToolRegistration,
 	isNativeApiToolAllowedForMode,
@@ -150,6 +153,7 @@ export async function dispatchNativeApiToolCall(input: {
 		runId: input.context.runId,
 		safetyPolicy: input.context.safetyPolicy,
 		readFiles: input.state.readFiles,
+		projectExplorationCatalogAccess: projectExplorationAccess(input.context),
 	});
 	const modelView = projectWorkerResultToMcpStructuredPayload(dispatch.result);
 	const outcome = await runControlService.completeWorkerAction({
@@ -192,6 +196,13 @@ export async function dispatchNativeApiToolCall(input: {
 		dispatch,
 	});
 	return continueWith(result, nextState);
+}
+
+function projectExplorationAccess(context: AgentRunContext) {
+	const availability = readProjectExplorationCatalogPin(context);
+	return availability?.version === 2 && availability.available
+		? { serverId: availability.serverId }
+		: undefined;
 }
 
 function updateDispatchStateAfterWorkerTool(input: {

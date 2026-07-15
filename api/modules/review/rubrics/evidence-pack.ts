@@ -7,6 +7,7 @@ import type {
 	RunSummaryJsonlLine,
 } from "../../../services/run-events/types";
 import type { ReviewEvidenceRef } from "../results/types";
+import type { ReviewTargetManifest } from "../review-mode.model";
 import type { ReviewEvidencePack } from "./types";
 
 type RunRow = typeof taskRuns.$inferSelect;
@@ -327,6 +328,51 @@ export function buildReviewEvidencePackFromRun(
 		selectedEvents: selectedEventsFrom(events),
 		eventTypes: events.map((event) => event.type),
 		diagnostics: [],
+	};
+}
+
+export function buildReviewEvidencePackFromRuns(input: {
+	reviewRun: RunRow;
+	sources: Array<{ run: RunRow; events: EventRow[] }>;
+	manifest: ReviewTargetManifest;
+}): ReviewEvidencePack {
+	const sourcePacks = input.sources.map(({ run, events }) =>
+		buildReviewEvidencePackFromRun(run, events),
+	);
+	const reviewContext = recordFrom(input.reviewRun.contextSnapshot);
+	return {
+		version: 1,
+		runId: input.reviewRun.id,
+		taskId: input.reviewRun.taskId,
+		status: input.reviewRun.status,
+		manifestDigest: input.manifest.digest,
+		sourceRunIds: input.manifest.sourceRuns.map((source) => source.runId),
+		...(input.manifest.testSnapshotId
+			? { testSnapshotId: input.manifest.testSnapshotId }
+			: {}),
+		context: {
+			executionMode: stringFrom(reviewContext.executionMode) ?? "review",
+			inRunReview: input.reviewRun.status === "running",
+		},
+		outcome: sourcePacks.at(-1)?.outcome,
+		finalReport: sourcePacks
+			.map((pack) => pack.finalReport)
+			.filter((value): value is string => Boolean(value))
+			.join("\n\n"),
+		diff: {
+			hasChanges: input.manifest.targetFiles.length > 0,
+			bytes: input.manifest.targetFiles.reduce(
+				(total, file) => total + file.diffBytes,
+				0,
+			),
+			changedFiles: input.manifest.targetFiles.map((file) => file.path),
+		},
+		verification: sourcePacks.flatMap((pack) => pack.verification),
+		policy: sourcePacks.flatMap((pack) => pack.policy),
+		reviewResults: sourcePacks.flatMap((pack) => pack.reviewResults),
+		selectedEvents: sourcePacks.flatMap((pack) => pack.selectedEvents),
+		eventTypes: sourcePacks.flatMap((pack) => pack.eventTypes),
+		diagnostics: [...sourcePacks.flatMap((pack) => pack.diagnostics)],
 	};
 }
 

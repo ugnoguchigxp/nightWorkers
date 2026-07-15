@@ -8,10 +8,7 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { implementationQueueEntries, taskMessages } from "../../db/schema";
-import {
-	projectFeaturePlanImplementationTodos,
-	readFeaturePlanImplementationPlanMetadata,
-} from "../specification/feature-plan-implementation-plan";
+import { readFeaturePlanImplementationPlanMetadata } from "../specification/feature-plan-implementation-plan";
 
 type QueueEntry = typeof implementationQueueEntries.$inferSelect;
 type MissionPilotSessionGuard = { sessionId: string; version: number };
@@ -24,7 +21,6 @@ export type MissionPilotImplementationEnvelope = {
 	featurePlanMessageId: string;
 	verificationDocumentId: string;
 	planReviewId: string;
-	requireDataMigrationGates: boolean;
 	implementationPlanProvenance: {
 		version: 1;
 		sourceMessageId: string;
@@ -37,8 +33,6 @@ export type MissionPilotImplementationStartResolution =
 	| {
 			kind: "ready";
 			envelope: MissionPilotImplementationEnvelope;
-			initialTodos: ReturnType<typeof projectFeaturePlanImplementationTodos>;
-			requireDataMigrationGates: boolean;
 			implementationPlanProvenance: {
 				version: 1;
 				sourceMessageId: string;
@@ -157,15 +151,12 @@ export async function resolveMissionPilotImplementationStart(
 			featurePlanMessageId: handoff.featurePlanMessageId,
 			verificationDocumentId: handoff.verificationDocumentId,
 			planReviewId: handoff.planReviewId,
-			requireDataMigrationGates: implementationPlan.requiresDataMigration,
 			implementationPlanProvenance: {
 				version: 1,
 				sourceMessageId: handoff.implementationPlanSourceMessageId,
 				digest: implementationPlan.digest,
 			},
 		},
-		initialTodos: projectFeaturePlanImplementationTodos(implementationPlan),
-		requireDataMigrationGates: implementationPlan.requiresDataMigration,
 		implementationPlanProvenance: {
 			version: 1,
 			sourceMessageId: handoff.implementationPlanSourceMessageId,

@@ -54,41 +54,21 @@ async function executeCloseout(sessionId: string) {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.id, sessionId))
 		.limit(1);
-	if (session?.phase === "archived") {
+	if (session) {
 		const [archiveRecord] = await db
 			.select()
 			.from(taskArchiveRecords)
 			.where(
 				and(
 					eq(taskArchiveRecords.taskId, session.taskId),
+					eq(taskArchiveRecords.missionPilotSessionId, session.id),
 					isNull(taskArchiveRecords.restoredAt),
 				),
 			)
 			.orderBy(desc(taskArchiveRecords.archivedAt))
 			.limit(1);
-		if (archiveRecord) {
-			const [archivedCloseout] = session.activeCloseoutId
-				? await db
-						.select()
-						.from(missionPilotCloseouts)
-						.where(eq(missionPilotCloseouts.id, session.activeCloseoutId))
-						.limit(1)
-				: [];
-			const finalContext = await appendFinalMissionPilotContext({
-				sessionId: session.id,
-				closeoutId: session.activeCloseoutId,
-				commitSha: archivedCloseout?.commitSha ?? null,
-				pushStatus: archivedCloseout?.pushStatus ?? null,
-				archiveRecordId: archiveRecord.id,
-			});
-			return {
-				status: "archived",
-				commitSha: archivedCloseout?.commitSha ?? null,
-				pushStatus: archivedCloseout?.pushStatus ?? "skipped",
-				archiveRecord,
-				contextRevision: finalContext.revision,
-			} as const;
-		}
+		if (archiveRecord)
+			return finalizeArchivedCloseout({ session, archiveRecord });
 	}
 	if (
 		!session?.activeCloseoutId ||
@@ -323,6 +303,8 @@ async function executeCloseout(sessionId: string) {
 	let pushStatus = closeout.pushStatus;
 	if (closeout.pushPolicy === "never") {
 		pushStatus = "skipped";
+	} else if (pushStatus === "pushed") {
+		closeoutStatus = "pushed";
 	} else {
 		await db
 			.update(missionPilotSessions)
@@ -354,28 +336,33 @@ async function executeCloseout(sessionId: string) {
 	});
 	if (!admission.pass)
 		return markAttention(session, closeout.id, admission.reasons.join(","));
-	const now = new Date();
-	await db.transaction(async (tx) => {
-		const [completedTask] = await tx
-			.update(tasks)
-			.set({ status: "completed", completedAt: now, updatedAt: now })
-			.where(and(eq(tasks.id, task.id), eq(tasks.status, task.status)))
-			.returning({ id: tasks.id });
-		const [completedSession] = await tx
-			.update(missionPilotSessions)
-			.set({ phase: "completed", updatedAt: now })
-			.where(
-				and(
-					eq(missionPilotSessions.id, session.id),
-					eq(missionPilotSessions.desiredState, "playing"),
-					eq(missionPilotSessions.contextDigest, session.contextDigest),
-					eq(missionPilotSessions.activeCloseoutId, closeout.id),
-				),
-			)
-			.returning({ id: missionPilotSessions.id });
-		if (!completedTask || !completedSession)
-			throw new Error("Mission Pilot completion admission changed");
-	});
+	if (
+		task.status !== "completed" ||
+		!["completed", "archiving"].includes(session.phase)
+	) {
+		const now = new Date();
+		await db.transaction(async (tx) => {
+			const [completedTask] = await tx
+				.update(tasks)
+				.set({ status: "completed", completedAt: now, updatedAt: now })
+				.where(and(eq(tasks.id, task.id), eq(tasks.status, task.status)))
+				.returning({ id: tasks.id });
+			const [completedSession] = await tx
+				.update(missionPilotSessions)
+				.set({ phase: "completed", updatedAt: now })
+				.where(
+					and(
+						eq(missionPilotSessions.id, session.id),
+						eq(missionPilotSessions.desiredState, "playing"),
+						eq(missionPilotSessions.contextDigest, session.contextDigest),
+						eq(missionPilotSessions.activeCloseoutId, closeout.id),
+					),
+				)
+				.returning({ id: missionPilotSessions.id });
+			if (!completedTask || !completedSession)
+				throw new Error("Mission Pilot completion admission changed");
+		});
+	}
 	await appendMissionPilotEvent({
 		sessionId: session.id,
 		taskId: session.taskId,
@@ -388,6 +375,31 @@ async function executeCloseout(sessionId: string) {
 		sourceId: closeout.id,
 		payload: { commitSha, pushStatus },
 	});
+	if (session.phase !== "archiving") {
+		const [claimed] = await db
+			.update(missionPilotSessions)
+			.set({ phase: "archiving", updatedAt: new Date() })
+			.where(
+				and(
+					eq(missionPilotSessions.id, session.id),
+					eq(missionPilotSessions.phase, "completed"),
+					eq(missionPilotSessions.activeCloseoutId, closeout.id),
+				),
+			)
+			.returning({ id: missionPilotSessions.id });
+		if (!claimed) {
+			const [currentSession] = await db
+				.select({ phase: missionPilotSessions.phase })
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.id, session.id))
+				.limit(1);
+			if (
+				!currentSession ||
+				!["archiving", "archived"].includes(currentSession.phase)
+			)
+				throw new Error("Mission Pilot archive admission changed");
+		}
+	}
 	const archived = await archiveCompletedTask({
 		taskId: task.id,
 		reason: "mission_pilot_completed",
@@ -424,6 +436,58 @@ async function executeCloseout(sessionId: string) {
 		commitSha,
 		pushStatus,
 		archiveRecord: archived.archiveRecord,
+	} as const;
+}
+
+async function finalizeArchivedCloseout(input: {
+	session: typeof missionPilotSessions.$inferSelect;
+	archiveRecord: typeof taskArchiveRecords.$inferSelect;
+}) {
+	if (input.session.phase !== "archived") {
+		await db
+			.update(missionPilotSessions)
+			.set({
+				phase: "archived",
+				desiredState: "stopped",
+				activeRunId: null,
+				activePhaseRunId: null,
+				stoppedAt: new Date(),
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.id, input.session.id));
+	}
+	const [closeout] = input.session.activeCloseoutId
+		? await db
+				.select()
+				.from(missionPilotCloseouts)
+				.where(eq(missionPilotCloseouts.id, input.session.activeCloseoutId))
+				.limit(1)
+		: [];
+	const finalContext = await appendFinalMissionPilotContext({
+		sessionId: input.session.id,
+		closeoutId: input.session.activeCloseoutId,
+		commitSha: closeout?.commitSha ?? null,
+		pushStatus: closeout?.pushStatus ?? null,
+		archiveRecordId: input.archiveRecord.id,
+	});
+	await appendMissionPilotEvent({
+		sessionId: input.session.id,
+		taskId: input.session.taskId,
+		eventType: "task.archived",
+		phase: "archived",
+		contextRevision: finalContext.revision,
+		contextDigest: finalContext.digest,
+		dedupeKey: `task:archived:${input.archiveRecord.id}`,
+		sourceKind: "task_archive",
+		sourceId: input.archiveRecord.id,
+		payload: { closeoutId: input.session.activeCloseoutId },
+	});
+	return {
+		status: "archived",
+		commitSha: closeout?.commitSha ?? null,
+		pushStatus: closeout?.pushStatus ?? "skipped",
+		archiveRecord: input.archiveRecord,
+		contextRevision: finalContext.revision,
 	} as const;
 }
 

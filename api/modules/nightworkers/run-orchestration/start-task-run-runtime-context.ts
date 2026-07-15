@@ -93,6 +93,7 @@ export async function prepareTaskRunRuntimeContext(input: {
 export async function resolveRunProjectExplorationCatalogPin(input: {
 	executionMode: string;
 	registeredRepoRoot: string;
+	executionRoot: string;
 	expectedHead: string | null;
 	preExistingDirtyPaths: string[];
 	settings: ProjectExplorationCatalogPilotSettings;
@@ -101,7 +102,7 @@ export async function resolveRunProjectExplorationCatalogPin(input: {
 }): Promise<ProjectExplorationCatalogRunPin> {
 	if (input.executionMode !== "implementation") {
 		return {
-			version: 1,
+			version: 2,
 			available: false,
 			reason: "wrong_runtime_lane",
 		};
@@ -109,12 +110,18 @@ export async function resolveRunProjectExplorationCatalogPin(input: {
 	try {
 		return await (input.resolvePin ?? resolveProjectExplorationCatalogPin)({
 			registeredRepoRoot: input.registeredRepoRoot,
+			executionRoot: input.executionRoot,
 			expectedHead: input.expectedHead,
 			preExistingDirtyPaths: input.preExistingDirtyPaths,
 			settings: input.settings,
 			runtimeLane: input.runtimeLane,
 		});
 	} catch {
-		return { version: 1, available: false, reason: "mcp_failed" };
+		return {
+			version: 2,
+			available: false,
+			reason: "mcp_failed",
+			retryable: true,
+		};
 	}
 }

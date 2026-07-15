@@ -53,6 +53,36 @@ import {
 
 class MissionPilotPlanRoutingChangedError extends Error {}
 const MAX_ROUTING_REFRESH_ATTEMPTS = 7;
+const MAX_PLAN_STEP_GENERATION_ATTEMPTS = 2;
+const PLAN_STEP_RETRY_DELAY_MS = 250;
+
+function planStepFailureKind(error: unknown) {
+	if (error instanceof StructuredLlmResponseError)
+		return "invalid_model_output";
+	if (error instanceof AppError) {
+		const failureKind = error.details?.failureKind;
+		return typeof failureKind === "string" ? failureKind : "service_error";
+	}
+	if (error instanceof Error && error.name === "AbortError")
+		return "provider_aborted";
+	return "generation_failure";
+}
+
+function isRetryablePlanStepFailure(error: unknown) {
+	if (error instanceof MissionPilotPreQueueError) return false;
+	if (error instanceof planRepo.MissionPilotContextConflictError) return false;
+	if (error instanceof StructuredLlmResponseError) return true;
+	if (error instanceof AppError) {
+		return error.details?.retryable === true || error.statusCode >= 500;
+	}
+	return true;
+}
+
+async function waitForPlanStepRetry() {
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, PLAN_STEP_RETRY_DELAY_MS);
+	});
+}
 
 async function executeArtifactSteps(
 	taskId: string,
@@ -138,44 +168,73 @@ async function executeArtifactSteps(
 				leaseOwner,
 			);
 		}
-		if (row.status === "failed" && row.attempt >= 2) {
+		if (
+			row.status === "failed" &&
+			row.attempt >= MAX_PLAN_STEP_GENERATION_ATTEMPTS
+		) {
 			throw new Error(`Plan step retry limit exceeded: ${row.stepKey}`);
 		}
-		const claimed = await planRepo.claimPlanStep(row.id);
-		if (!claimed) continue;
-		try {
-			await publishCurrentPlanProgress(taskId);
-			await renewPipelineLease(sessionId, leaseOwner);
-			const result = await generateStepArtifact(
-				taskId,
-				questionnaireSessionId,
-				claimed,
-			);
-			const currentSession = await missionPilotRepo.getSessionByTaskId(taskId);
-			if (!currentSession || currentSession.desiredState !== "playing") {
-				throw new Error("Mission Pilot stopped during Artifact generation");
+		while (true) {
+			const claimed = await planRepo.claimPlanStep(row.id);
+			if (!claimed) break;
+			try {
+				await publishCurrentPlanProgress(taskId);
+				await renewPipelineLease(sessionId, leaseOwner);
+				const result = await generateStepArtifact(
+					taskId,
+					questionnaireSessionId,
+					claimed,
+				);
+				const currentSession =
+					await missionPilotRepo.getSessionByTaskId(taskId);
+				if (currentSession?.desiredState !== "playing") {
+					throw new Error("Mission Pilot stopped during Artifact generation");
+				}
+				const updatedSession = await persistArtifactContext(
+					sessionId,
+					claimed.stepKey,
+					result,
+				);
+				if (!updatedSession) throw new Error("Mission Pilot Context changed");
+				await planRepo.completePlanStep(claimed.id, {
+					artifactMessageId: result.message.id,
+					evidence: {
+						...claimed.evidenceJson,
+						sourceMessageId: result.message.id,
+						contextRevision: updatedSession.contextRevision,
+						contextDigest: updatedSession.contextDigest,
+						artifactRoutingRevision: currentSession.planRoutingRevision,
+						...(claimed.attempt > 1
+							? {
+									retryState: "recovered",
+									recoveredAt: new Date().toISOString(),
+								}
+							: {}),
+					},
+				});
+				await publishCurrentPlanProgress(taskId);
+				break;
+			} catch (error) {
+				await planRepo.failPlanStep(claimed.id, errorMessage(error));
+				const currentSession =
+					await missionPilotRepo.getSessionByTaskId(taskId);
+				const autoRetry = Boolean(
+					currentSession?.desiredState === "playing" &&
+						claimed.attempt < MAX_PLAN_STEP_GENERATION_ATTEMPTS &&
+						isRetryablePlanStepFailure(error),
+				);
+				await planRepo.updatePlanStepEvidence(claimed.id, {
+					failureKind: planStepFailureKind(error),
+					failedAt: new Date().toISOString(),
+					retryState: autoRetry ? "scheduled" : "exhausted",
+					autoRetryCount: autoRetry ? 1 : Math.max(0, claimed.attempt - 1),
+					nextAttempt: autoRetry ? claimed.attempt + 1 : null,
+				});
+				await publishCurrentPlanProgress(taskId);
+				if (!autoRetry) throw error;
+				await renewPipelineLease(sessionId, leaseOwner);
+				await waitForPlanStepRetry();
 			}
-			const updatedSession = await persistArtifactContext(
-				sessionId,
-				claimed.stepKey,
-				result,
-			);
-			if (!updatedSession) throw new Error("Mission Pilot Context changed");
-			await planRepo.completePlanStep(claimed.id, {
-				artifactMessageId: result.message.id,
-				evidence: {
-					...claimed.evidenceJson,
-					sourceMessageId: result.message.id,
-					contextRevision: updatedSession.contextRevision,
-					contextDigest: updatedSession.contextDigest,
-					artifactRoutingRevision: currentSession.planRoutingRevision,
-				},
-			});
-			await publishCurrentPlanProgress(taskId);
-		} catch (error) {
-			await planRepo.failPlanStep(claimed.id, errorMessage(error));
-			await publishCurrentPlanProgress(taskId);
-			throw error;
 		}
 	}
 	const finalSteps = await planRepo.listPlanSteps(sessionId);
@@ -385,14 +444,13 @@ async function admitToQueue(
 		planRepo.getLatestPlanReview(sessionId),
 		planRepo.listPlanSteps(sessionId),
 	]);
-	if (!session || session.desiredState !== "playing")
+	if (session?.desiredState !== "playing")
 		throw new Error("Mission Pilot is not playing");
 	await assertTaskContextCurrent(taskId, sessionId);
 	if (!missionPilotRepo.hasValidAuthorization(session))
 		throw new Error("Mission Pilot queue authorization is invalid");
 	if (
-		!review ||
-		review.verdict !== "pass" ||
+		review?.verdict !== "pass" ||
 		review.contextRevision !== session.contextRevision ||
 		review.contextDigest !== session.contextDigest ||
 		review.routingRevision !== session.planRoutingRevision
@@ -404,8 +462,7 @@ async function admitToQueue(
 		throw new Error("Plan execution steps are incomplete");
 	const featurePlanStep = steps.find((step) => step.stepKey === "feature_plan");
 	if (
-		!featurePlanStep ||
-		featurePlanStep.status !== "completed" ||
+		featurePlanStep?.status !== "completed" ||
 		featurePlanStep.evidenceJson.artifactRoutingRevision !==
 			session.planRoutingRevision
 	) {
@@ -437,8 +494,7 @@ async function admitToQueue(
 	const featurePlan = workspace.featurePlanArtifacts.at(-1);
 	if (!featurePlan) throw new Error("Feature Plan is missing");
 	if (
-		!verificationDocument ||
-		verificationDocument.status !== "active" ||
+		verificationDocument?.status !== "active" ||
 		verificationDocument.specMessageId !== featurePlan.sourceMessageId
 	)
 		throw new Error("Latest Feature Plan verification document is missing");
@@ -463,8 +519,7 @@ export async function runMissionPilotPlanPipeline(taskId: string) {
 	try {
 		const preflight = await missionPilotRepo.getSessionByTaskId(taskId);
 		if (
-			!preflight ||
-			preflight.desiredState !== "playing" ||
+			preflight?.desiredState !== "playing" ||
 			preflight.nextWakeAt ||
 			preflight.phase === "queued"
 		)

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { startTaskRun } from "../../../api/modules/nightworkers/nightworkers.service";
+import { prepareTaskRunInProcess } from "../../../api/modules/nightworkers/run-orchestration/start-task-run";
 import * as runtimeRegistry from "../../../api/services/agent-runtime/registry";
 import { implementationPhasePreamble, repoRoot } from "./setup";
 
@@ -184,6 +185,56 @@ describe("NightWorkers service", () => {
 			]),
 		);
 		expect(repo.updateTaskRunTodo).not.toHaveBeenCalled();
+	});
+
+	it("prepares a run without starting runtime until launch is requested", async () => {
+		const task = {
+			id: "task-prepared-runtime",
+			repositoryId: "repo-prepared-runtime",
+			title: "Prepared runtime task",
+			description: "Prepare before queue attachment",
+			objective: "Defer runtime launch",
+			acceptanceCriteria: "Runtime starts after queue attachment",
+			timeoutSeconds: 60,
+		};
+		const run = {
+			id: "run-prepared-runtime",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		};
+		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
+		vi.mocked(repo.getRepository).mockResolvedValue({
+			id: task.repositoryId,
+			localPath: repoRoot,
+			safetyPolicy: {},
+		} as never);
+		vi.mocked(repo.listTaskMessages).mockResolvedValue([
+			{ role: "user", content: task.description },
+		] as never);
+		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
+		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
+		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
+		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
+		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
+		const runtimeStart = vi.fn(() => new Promise<never>(() => undefined));
+		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
+			kind: "native-local",
+			start: runtimeStart,
+			stop: vi.fn(),
+		} as never);
+
+		const prepared = await prepareTaskRunInProcess(task.id, {
+			executionMode: "implementation",
+			executionModeSource: "implementation_queue",
+		});
+
+		expect(prepared.run.id).toBe(run.id);
+		expect(runtimeStart).not.toHaveBeenCalled();
+		await prepared.launch?.();
+		await prepared.launch?.();
+		await vi.waitFor(() => expect(runtimeStart).toHaveBeenCalledTimes(1));
 	});
 
 	it("starts native/API planning mode without implementation Todos or preamble", async () => {

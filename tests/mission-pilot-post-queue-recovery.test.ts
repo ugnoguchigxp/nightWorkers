@@ -7,6 +7,7 @@ import {
 	missionPilotContextSnapshots,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
+	missionPilotTestSnapshots,
 } from "../api/db/mission-pilot-schema";
 import { repositories, taskRuns, tasks } from "../api/db/schema";
 
@@ -49,6 +50,177 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot post-Queue recovery", () => {
+	it("automatically retries one interrupted Review run from its frozen Test snapshot", async () => {
+		const repositoryId = crypto.randomUUID();
+		const taskId = crypto.randomUUID();
+		const sessionId = crypto.randomUUID();
+		const implementationRunId = crypto.randomUUID();
+		const testRunId = crypto.randomUUID();
+		const reviewRunId = crypto.randomUUID();
+		const implementationPhaseRunId = crypto.randomUUID();
+		const testPhaseRunId = crypto.randomUUID();
+		const reviewPhaseRunId = crypto.randomUUID();
+		const snapshotId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		const now = new Date();
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "review-interruption-recovery",
+			localPath: "/tmp/review-interruption-recovery",
+			branch: "main",
+		});
+		await db.insert(tasks).values({
+			id: taskId,
+			repositoryId,
+			title: "Recover Review interruption",
+			objective: "retry Review once",
+			status: "failed",
+		});
+		await db.insert(taskRuns).values([
+			{
+				id: implementationRunId,
+				taskId,
+				repositoryId,
+				status: "completed",
+				finalReport: "implementation complete",
+				finishedAt: now,
+			},
+			{
+				id: testRunId,
+				taskId,
+				repositoryId,
+				status: "completed",
+				finalReport: "test complete",
+				finishedAt: now,
+			},
+			{
+				id: reviewRunId,
+				taskId,
+				repositoryId,
+				status: "failed",
+				contextSnapshot: { executionMode: "review" },
+				endedAt: now,
+				finishedAt: now,
+			},
+		]);
+		await db.insert(missionPilotSessions).values({
+			id: sessionId,
+			taskId,
+			repositoryId,
+			sourceKind: "task",
+			sourceId: taskId,
+			desiredState: "playing",
+			phase: "reviewing",
+			activePhaseRunId: reviewPhaseRunId,
+			activeTestSnapshotId: snapshotId,
+			initialPromptSnapshot: "retry Review once",
+			initialPromptState: "sent",
+			implementationCycle: 1,
+			testCycle: 1,
+			reviewCycle: 1,
+			contextRevision: 3,
+			contextDigest: "ctx-3",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(missionPilotContextSnapshots).values({
+			id: crypto.randomUUID(),
+			sessionId,
+			revision: 3,
+			reason: "test_completed",
+			contextJson: { execution: { test: { snapshotId } } },
+			digest: "ctx-3",
+			tokenEstimate: 16,
+			createdAt: now,
+		});
+		await db.insert(missionPilotPhaseRuns).values([
+			{
+				id: implementationPhaseRunId,
+				sessionId,
+				taskId,
+				phase: "implementation",
+				cycle: 1,
+				attempt: 1,
+				runId: implementationRunId,
+				inputContextRevision: 2,
+				inputContextDigest: "ctx-2",
+				status: "completed",
+				verdict: "pass",
+				evidenceJson: {},
+				startedAt: now,
+				finishedAt: now,
+			},
+			{
+				id: testPhaseRunId,
+				sessionId,
+				taskId,
+				phase: "test",
+				cycle: 1,
+				attempt: 1,
+				runId: testRunId,
+				inputContextRevision: 3,
+				inputContextDigest: "ctx-3",
+				status: "completed",
+				verdict: "pass",
+				evidenceJson: {},
+				startedAt: now,
+				finishedAt: now,
+			},
+			{
+				id: reviewPhaseRunId,
+				sessionId,
+				taskId,
+				phase: "review",
+				cycle: 1,
+				attempt: 1,
+				runId: reviewRunId,
+				inputContextRevision: 3,
+				inputContextDigest: "ctx-3",
+				status: "running",
+				evidenceJson: {},
+				startedAt: now,
+			},
+		]);
+		await db.insert(missionPilotTestSnapshots).values({
+			id: snapshotId,
+			sessionId,
+			phaseRunId: testPhaseRunId,
+			verificationDocumentId: crypto.randomUUID(),
+			contextRevision: 3,
+			contextDigest: "ctx-3",
+			checklistDigest: "checks",
+			requiredTotal: 1,
+			requiredComplete: 1,
+			failedRequired: 0,
+			unknownRequired: 0,
+			evidenceRunIdsJson: [],
+			completionCheckEventId: "completion-event",
+			testChangedPathsJson: [],
+			verdict: "pass",
+			snapshotJson: {},
+			createdAt: now,
+		});
+
+		await expect(recoverMissionPilotPostQueueSessions()).resolves.toBe(1);
+		expect(continuationMocks.execute).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "start_review",
+				input: expect.objectContaining({
+					anchorRunId: implementationRunId,
+					targetRunIds: [implementationRunId, testRunId],
+				}),
+			}),
+		);
+		expect(
+			await db.query.missionPilotPhaseRuns.findFirst({
+				where: eq(missionPilotPhaseRuns.id, reviewPhaseRunId),
+			}),
+		).toMatchObject({
+			status: "failed",
+			evidenceJson: { interrupted: true, retryAttempt: 2 },
+		});
+	});
+
 	it("re-evaluates a terminal Test run from activePhaseRunId after attention", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
@@ -116,7 +288,6 @@ describe("Mission Pilot post-Queue recovery", () => {
 			kind: "start_review",
 			input: {
 				anchorRunId: crypto.randomUUID(),
-				targetRunIds: [runId],
 				missionPilot: { sessionId },
 			},
 		} as const;

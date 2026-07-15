@@ -1,5 +1,6 @@
 import type { ActivityEvent } from "../types";
 import {
+	asNumber,
 	asRecord,
 	asString,
 	getActivityChangedFiles,
@@ -16,6 +17,23 @@ type CodexToolLifecycle = "started" | "progress" | "result" | "failed";
 type CodexToolStatus = "started" | "running" | "ok" | "failed";
 const CODEX_TOOL_RESULT_HEIGHT_REDUCTION = 104;
 
+export type CodexVerificationSummary = {
+	checkKind: string;
+	label: string;
+	headline: string;
+	state: "running" | "passed" | "failed" | "unknown";
+	command?: string;
+	resultText?: string;
+	exitCode?: number | null;
+	evidence: "saved" | "not_saved" | "unknown";
+	conditionIds: string[];
+	checklist?: {
+		complete: boolean;
+		failedRequired: number;
+		unknownRequired: number;
+	} | null;
+};
+
 export type CodexToolCardModel = {
 	lifecycle: CodexToolLifecycle;
 	status: CodexToolStatus;
@@ -25,12 +43,16 @@ export type CodexToolCardModel = {
 	title: string;
 	summary: string;
 	metadata: Array<{ label: string; value: string }>;
+	command?: string;
+	commandClass?: string;
+	exitCode?: number | null;
 	argumentsPreview?: string;
 	editDiffPreview?: { diff: string; label: string };
 	resultPreview?: string;
 	outputPreview?: string;
 	detailsFilename?: string;
 	errorMessage?: string;
+	verification?: CodexVerificationSummary;
 };
 
 type CodexToolCardEvent = {
@@ -45,6 +67,12 @@ type CodexToolCardEvent = {
 
 export function hasCodexToolCard(event: CodexToolCardEvent): boolean {
 	return getCodexToolCardModel(event) !== null;
+}
+
+export function isNormalCodexToolCardVisible(
+	card: CodexToolCardModel,
+): boolean {
+	return !card.verification;
 }
 
 export function getCodexToolCardModel(
@@ -75,7 +103,7 @@ export function getCodexToolCardModel(
 	const errorMessage = getErrorMessage(data, activity?.error);
 
 	if (isCodexMcpTool(data, toolName)) {
-		return buildMcpCard({
+		const card = buildMcpCard({
 			data,
 			activityArguments: activity?.arguments ?? {},
 			activityRawResult: activity?.rawResult ?? {},
@@ -85,6 +113,8 @@ export function getCodexToolCardModel(
 			toolName,
 			errorMessage,
 		});
+		if (card.verification?.state === "failed") card.status = "failed";
+		return card;
 	}
 
 	if (toolName === "command_execution") {
@@ -145,6 +175,14 @@ function buildMcpCard(input: {
 		asRecord(input.data.result),
 		input.activityRawResult,
 	);
+	const verification =
+		tool === "run_check"
+			? buildVerificationSummary({
+					args,
+					result,
+					lifecycle: input.lifecycle,
+				})
+			: undefined;
 	const operation = asString(args.operation);
 	const seq = typeof args.seq === "number" ? String(args.seq) : "";
 	const summaryParts = [
@@ -159,8 +197,8 @@ function buildMcpCard(input: {
 		providerItemId: input.providerItemId || undefined,
 		toolName: input.toolName,
 		codexKind: "mcp",
-		title: "Codex MCP",
-		summary: summaryParts.join(" | "),
+		title: verification ? "検証" : "Codex MCP",
+		summary: verification?.headline ?? summaryParts.join(" | "),
 		metadata: compactMetadata([
 			["server", server],
 			["tool", tool],
@@ -169,7 +207,194 @@ function buildMcpCard(input: {
 		argumentsPreview: stringifyPreview(args),
 		resultPreview: stringifyPreview(result),
 		errorMessage: input.errorMessage,
+		verification,
 	};
+}
+
+function buildVerificationSummary(input: {
+	args: Record<string, unknown>;
+	result: Record<string, unknown>;
+	lifecycle: CodexToolLifecycle;
+}): CodexVerificationSummary {
+	const resultView = parseMcpWorkerResult(input.result);
+	const payload = resultView.payload;
+	const checkKind =
+		asString(payload.checkKind) || asString(input.args.checkKind) || "other";
+	const label = verificationLabel(checkKind);
+	const exitCode =
+		typeof payload.exitCode === "number" || payload.exitCode === null
+			? (payload.exitCode as number | null)
+			: undefined;
+	const state = resolveVerificationState({
+		lifecycle: input.lifecycle,
+		ok: resultView.ok,
+		exitCode,
+	});
+	const evidence =
+		payload.managedEvidence === true || asString(payload.evidenceRunId) !== ""
+			? "saved"
+			: payload.managedEvidence === false
+				? "not_saved"
+				: "unknown";
+	const conditionIds = normalizeStringArray(
+		payload.conditionIds ?? input.args.conditionIds,
+	);
+	const checklist = asRecord(payload.checklist);
+	const checklistSummary =
+		typeof checklist.complete === "boolean"
+			? {
+					complete: checklist.complete,
+					failedRequired: asNumber(checklist.failedRequired) ?? 0,
+					unknownRequired: asNumber(checklist.unknownRequired) ?? 0,
+				}
+			: null;
+	const command =
+		asString(payload.command) || asString(input.args.command) || undefined;
+	const resultText = buildVerificationResultText({
+		state,
+		checkKind,
+		exitCode,
+		llmSummary: asString(payload.llmSummary),
+		stdout: asString(payload.stdout),
+		stderr: asString(payload.stderr),
+	});
+	const stateLabel =
+		state === "passed"
+			? "完了しました"
+			: state === "failed"
+				? "失敗しました"
+				: state === "running"
+					? "実行中です"
+					: "結果を受け取りました";
+
+	return {
+		checkKind,
+		label,
+		state,
+		command,
+		resultText,
+		exitCode,
+		evidence,
+		conditionIds,
+		checklist: checklistSummary,
+		headline: `${label}が${stateLabel}`,
+	};
+}
+
+function buildVerificationResultText(input: {
+	state: CodexVerificationSummary["state"];
+	checkKind: string;
+	exitCode?: number | null;
+	llmSummary: string;
+	stdout: string;
+	stderr: string;
+}) {
+	const status =
+		input.state === "passed"
+			? "OK"
+			: input.state === "failed"
+				? "ERROR"
+				: input.state === "running"
+					? "RUNNING"
+					: "RESULT";
+	const rawOutput = [
+		sanitizeTerminalText(input.stdout).trim(),
+		input.stderr.trim()
+			? `stderr\n${sanitizeTerminalText(input.stderr).trim()}`
+			: "",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+	return [
+		`${status} ${input.checkKind}`,
+		input.exitCode === undefined
+			? ""
+			: `exitCode=${input.exitCode ?? "pending"}`,
+		sanitizeTerminalText(input.llmSummary).trim(),
+		rawOutput,
+	]
+		.filter(Boolean)
+		.join("\n");
+}
+
+function parseMcpWorkerResult(result: Record<string, unknown>): {
+	payload: Record<string, unknown>;
+	ok?: boolean;
+} {
+	const structured = asRecord(
+		result.structuredContent ?? result.structured_content,
+	);
+	const structuredPayload = asRecord(structured.payload);
+	const parsedText = firstJsonContent(result);
+	const parsedPayload = asRecord(parsedText?.payload);
+	const payload =
+		Object.keys(structuredPayload).length > 0
+			? structuredPayload
+			: Object.keys(parsedPayload).length > 0
+				? parsedPayload
+				: asRecord(result.payload);
+	const domainOutcome = asString(asRecord(structured.outcome).domainOutcome);
+	const ok =
+		typeof parsedText?.ok === "boolean"
+			? parsedText.ok
+			: domainOutcome === "failed"
+				? false
+				: typeof result.ok === "boolean"
+					? result.ok
+					: undefined;
+	return { payload, ok };
+}
+
+function firstJsonContent(result: Record<string, unknown>) {
+	if (!Array.isArray(result.content)) return null;
+	for (const item of result.content) {
+		const text = asString(asRecord(item).text).trim();
+		if (!text) continue;
+		try {
+			const parsed = asRecord(JSON.parse(text));
+			if (Object.keys(parsed).length > 0) return parsed;
+		} catch {
+			// Some MCP results contain human-readable text instead of JSON.
+		}
+	}
+	return null;
+}
+
+function resolveVerificationState(input: {
+	lifecycle: CodexToolLifecycle;
+	ok?: boolean;
+	exitCode?: number | null;
+}): CodexVerificationSummary["state"] {
+	if (input.lifecycle === "started" || input.lifecycle === "progress")
+		return "running";
+	if (
+		input.ok === false ||
+		(input.exitCode !== undefined && input.exitCode !== 0)
+	)
+		return "failed";
+	if (input.ok === true || input.exitCode === 0) return "passed";
+	if (input.lifecycle === "failed") return "failed";
+	return "unknown";
+}
+
+function verificationLabel(checkKind: string) {
+	const labels: Record<string, string> = {
+		lint: "Lintチェック",
+		format_check: "フォーマットチェック",
+		typecheck: "型チェック",
+		test: "テスト",
+		coverage: "カバレッジチェック",
+		build: "ビルドチェック",
+		verify: "総合検証",
+		completion_check: "完了条件の確認",
+	};
+	return labels[checkKind] || "検証チェック";
+}
+
+function normalizeStringArray(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === "string")
+		: [];
 }
 
 function buildCommandCard(input: {
@@ -193,6 +418,12 @@ function buildCommandCard(input: {
 		status: input.status,
 		providerItemId: input.providerItemId || undefined,
 		toolName: "command_execution",
+		command,
+		commandClass: commandClass || undefined,
+		exitCode:
+			typeof input.data.exitCode === "number" || input.data.exitCode === null
+				? (input.data.exitCode as number | null)
+				: undefined,
 		codexKind: editDiffPreview ? "edit_command" : "command",
 		title: editDiffPreview ? "Codex edit" : "Codex command",
 		summary: editDiffPreview?.summary ?? `command_execution | ${command}`,

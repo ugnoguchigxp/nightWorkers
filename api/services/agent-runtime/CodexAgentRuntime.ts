@@ -140,7 +140,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 				let terminalState = "completed" as AgentRuntimeResult["terminalState"];
 				let stoppedBy: AgentRuntimeResult["stoppedBy"] = "decision";
 				let lastRuntimeError: CodexRuntimeFailureEvidence | null = null;
-				const mapperState = createCodexEventMapperState();
+				const mapperState = createCodexEventMapperState({
+					repoRoot: context.repoRoot,
+				});
 				const attemptStartedAt = Date.now();
 				if (signal?.aborted || this.cancelledRunIds.has(context.runId)) {
 					controller.abort();

@@ -2,6 +2,11 @@ import type { NativeApiExecutionMode } from "../../../services/agent-runtime/nat
 import type { StructuredLlmModelTarget } from "../../../services/structured-llm/settings";
 import type { ImplementationTodoInput } from "../../../services/todo-runtime";
 
+export type ImplementationPlanConstraint = {
+	sourceMessageId: string;
+	digest: string;
+};
+
 export type StartTaskRunOptions = {
 	executionMode?: NativeApiExecutionMode;
 	executionModeSource?:
@@ -15,6 +20,7 @@ export type StartTaskRunOptions = {
 		| "test_mode"
 		| "explicit";
 	initialTodos?: ImplementationTodoInput[];
+	implementationPlanConstraint?: ImplementationPlanConstraint;
 	resumeTodosFromRunId?: string;
 	latestUserMessageOverride?: string;
 	runtimeOptionsPatch?: Record<string, unknown>;

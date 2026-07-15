@@ -21,6 +21,11 @@ export type McpToolSummary = {
 	namespacedName: string;
 	description?: string;
 	inputSchema?: unknown;
+	annotations?: {
+		readOnlyHint?: boolean;
+		destructiveHint?: boolean;
+		idempotentHint?: boolean;
+	};
 };
 
 type ClientEntry = {
@@ -122,6 +127,7 @@ class McpClientManager {
 					namespacedName: namespaceToolName(server, tool.name),
 					description: tool.description,
 					inputSchema: tool.inputSchema,
+					annotations: tool.annotations,
 				})),
 			);
 			cursor = result.nextCursor;
@@ -182,18 +188,38 @@ class McpClientManager {
 		toolName: string,
 		args: Record<string, unknown>,
 	) {
+		const execution = await this.callToolGuarded(
+			serverId,
+			toolName,
+			args,
+			() => true,
+		);
+		if (!execution.allowed) {
+			throw new Error(`MCP tool call was blocked: ${toolName}`);
+		}
+		return execution.result;
+	}
+
+	async callToolGuarded(
+		serverId: string,
+		toolName: string,
+		args: Record<string, unknown>,
+		allow: (tool: McpToolSummary) => boolean,
+	) {
 		const server = getEffectiveMcpServer(serverId);
 		if (!server) throw new Error(`MCP server is not configured: ${serverId}`);
 		if (!server.enabled)
 			throw new Error(`MCP server is disabled: ${server.name}`);
-		const tools = await this.listToolsForServer(server);
-		if (!tools.some((tool) => tool.name === toolName)) {
+		const client = await this.getClient(server);
+		const tools = await this.listToolsWithClient(server, client);
+		const tool = tools.find((candidate) => candidate.name === toolName);
+		if (!tool) {
 			throw new Error(
 				`MCP tool is not available on server ${server.name}: ${toolName}`,
 			);
 		}
-		const client = await this.getClient(server);
-		return await client.callTool(
+		if (!allow(tool)) return { allowed: false as const, tool };
+		const result = await client.callTool(
 			{
 				name: toolName,
 				arguments: args,
@@ -201,6 +227,16 @@ class McpClientManager {
 			undefined,
 			{ timeout: CALL_TOOL_TIMEOUT_MS },
 		);
+		return { allowed: true as const, tool, result };
+	}
+
+	async getToolSummary(serverId: string, toolName: string) {
+		const server = getEffectiveMcpServer(serverId);
+		if (!server) throw new Error(`MCP server is not configured: ${serverId}`);
+		if (!server.enabled)
+			throw new Error(`MCP server is disabled: ${server.name}`);
+		const tools = await this.listToolsForServer(server);
+		return tools.find((tool) => tool.name === toolName);
 	}
 
 	async disconnect(serverId: string) {

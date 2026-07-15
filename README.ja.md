@@ -241,7 +241,7 @@ Settings UIでは現在、次を管理します。
 
 MCP settingsは、stdio、Streamable HTTP、legacy SSE-compatible connection、paste import、tool discovery、connection test、ON／OFF状態をサポートします。現在のsettings contractは、authentication header、API key、bearer token、cookie、secret-like environment entryを拒否します。MCP tool executionはworker-tool evidence path内に残ります。
 
-Phase 42 project exploration pilotには、app-managedなvulnWorkbench MCP server登録が必要です。tool discoveryで`vuln_list_knowledge_sources`、`vuln_get_knowledge_source_manifest`、`vuln_get_project_exploration_catalog`の3 toolが見えることを確認してください。repositoryの`featureSettings`に置くsibling settingは次のexact shapeで、既定はoffです。
+project exploration pilotには、app-managedなvulnWorkbench MCP server登録が必要です。tool discoveryで`vuln_prepare_project_intelligence`、`vuln_get_project_intelligence_status`、`vuln_get_project_exploration_catalog`の3 toolが見えることを確認してください。MCP processには`STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS`の明示的なallowlistを設定します。未設定時はfail-closedです。repositoryの`featureSettings`に置くsibling settingは次のexact shapeで、既定はoffです。
 
 ```json
 {
@@ -252,7 +252,7 @@ Phase 42 project exploration pilotには、app-managedなvulnWorkbench MCP serve
 }
 ```
 
-controlled pilotでのみ`enabled`を`true`にし、`mcpServerId`へapp-managedなvulnWorkbench server IDを設定します。Phase 42の対応範囲はnative/API implementation laneだけです。Codex SDK、planning、test、review、general-answer laneは変更せず、source selection失敗時はfail-openで既存探索へ戻ります。
+controlled pilotでのみ`enabled`を`true`にし、`mcpServerId`へapp-managedなvulnWorkbench server IDを設定します。NightWorkersは登録済みrepository pathからintelligenceを準備し、vulnWorkbench内部IDをrun連携キーとして保存しません。coding agentにはfocusだけを受け取る`project_exploration_catalog`を公開します。対応範囲はnative/API implementation laneだけです。Codex SDK、planning、test、review、general-answer laneは変更せず、preparation、freshness、MCP失敗時はfail-openで既存探索へ戻ります。
 
 Agent Hookは、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`Stop`などのtool／session lifecycle eventに対するcommand／HTTP actionをサポートします。Hook executionは専用runnerを使い、statusを保存し、failure summaryをredactします。worker command toolを再帰的には呼びません。
 

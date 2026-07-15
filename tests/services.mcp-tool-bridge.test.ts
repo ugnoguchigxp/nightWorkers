@@ -62,7 +62,13 @@ rl.on('line', (line) => {
       tools: [{
         name: 'lookup',
         description: 'Lookup tool',
+        annotations: { readOnlyHint: true },
         inputSchema: { type: 'object', properties: { query: { type: 'string' } } }
+      }, {
+        name: 'mutate',
+        description: 'Mutating tool',
+        annotations: { readOnlyHint: false },
+        inputSchema: { type: 'object', properties: {} }
       }],
       nextCursor: 'page-2'
     });
@@ -126,7 +132,7 @@ describe("MCP worker tool bridge", () => {
 
 	it("lists paginated tools and calls a stdio MCP tool through the SDK transport", async () => {
 		const serverPath = writeFakeMcpServer();
-		const server = createMcpServer({
+		const server = await createMcpServer({
 			name: "Fake MCP",
 			enabled: true,
 			transport: "stdio",
@@ -136,7 +142,14 @@ describe("MCP worker tool bridge", () => {
 		});
 
 		const tools = await mcpClientManager.listToolsForServer(server);
-		expect(tools.map((tool) => tool.name)).toEqual(["lookup", "second_tool"]);
+		expect(tools.map((tool) => tool.name)).toEqual([
+			"lookup",
+			"mutate",
+			"second_tool",
+		]);
+		expect(tools.find((tool) => tool.name === "mutate")?.annotations).toEqual({
+			readOnlyHint: false,
+		});
 
 		const dispatch = await executeWorkerTool({
 			toolName: "mcp_call_tool",
@@ -155,9 +168,32 @@ describe("MCP worker tool bridge", () => {
 		);
 	});
 
+	it("blocks explicitly mutating MCP tools in the model-facing generic bridge", async () => {
+		const serverPath = writeFakeMcpServer();
+		const server = await createMcpServer({
+			name: "Fake MCP",
+			enabled: true,
+			transport: "stdio",
+			command: process.execPath,
+			args: [serverPath],
+			toolPrefix: "fake",
+		});
+
+		const dispatch = await executeWorkerTool({
+			toolName: "mcp_call_tool",
+			args: { serverId: server.id, toolName: "mutate", arguments: {} },
+			repoRoot: process.cwd(),
+			readFiles: [],
+		});
+		expect(dispatch.result).toMatchObject({
+			ok: false,
+			error: { code: "MCP_MUTATING_TOOL_BLOCKED" },
+		});
+	});
+
 	it("maps MCP isError tool results to failed worker tool results", async () => {
 		const serverPath = writeFakeMcpServer();
-		const server = createMcpServer({
+		const server = await createMcpServer({
 			name: "Fake MCP",
 			enabled: true,
 			transport: "stdio",

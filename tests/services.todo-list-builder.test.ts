@@ -342,6 +342,27 @@ describe("standard implementation TodoList builder", () => {
 		).toHaveLength(1);
 	});
 
+	it("does not duplicate the migration gate for an exact procedure marker", () => {
+		const todos = buildStandardImplementationTodoList({
+			todos: [
+				{
+					seq: 1,
+					title: "migration を適用する",
+					procedureId: "data_migration",
+				},
+			],
+		});
+
+		expect(
+			todos.filter((todo) => todo.taskType === "data_migration"),
+		).toHaveLength(1);
+		expect(
+			todos.filter(
+				(todo) => todo.procedureId === "data_migration.apply_migration",
+			),
+		).toHaveLength(1);
+	});
+
 	it("drops deprecated LLM-generated code review Todos", () => {
 		const todos = buildStandardImplementationTodoList({
 			todos: [

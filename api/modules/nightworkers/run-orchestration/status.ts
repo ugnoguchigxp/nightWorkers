@@ -1,3 +1,4 @@
+import type { TaskRunStatus } from "../../../db/schema";
 import { AppError } from "../../../lib/errors";
 
 export const runStatusTransitionTable = {
@@ -32,4 +33,18 @@ export function assertRunStatusTransition(from: string, to: string) {
 			`Invalid run status transition: ${from} -> ${to}`,
 		);
 	}
+}
+
+export function resolveGuardedRunOutcomeStatus(input: {
+	currentStatus: TaskRunStatus;
+	outcomeStatus: TaskRunStatus;
+	finalizationBlocked: boolean;
+}): TaskRunStatus {
+	if (
+		!(["running", "finalizing"] as TaskRunStatus[]).includes(
+			input.currentStatus,
+		)
+	)
+		return input.currentStatus;
+	return input.finalizationBlocked ? "needs_human" : input.outcomeStatus;
 }

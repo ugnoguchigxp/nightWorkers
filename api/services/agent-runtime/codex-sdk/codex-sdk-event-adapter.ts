@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { ThreadEvent, ThreadItem, Usage } from "@openai/codex-sdk";
 import {
 	compactModelVisibleText,
@@ -20,10 +21,16 @@ export type CodexCommandClass =
 
 type MapperState = {
 	agentTextById: Map<string, string>;
+	repoRoot?: string;
 };
 
-export function createCodexEventMapperState(): MapperState {
-	return { agentTextById: new Map() };
+export function createCodexEventMapperState(input?: {
+	repoRoot?: string;
+}): MapperState {
+	return {
+		agentTextById: new Map(),
+		...(input?.repoRoot ? { repoRoot: input.repoRoot } : {}),
+	};
 }
 
 export function mapCodexThreadEvent(
@@ -212,8 +219,12 @@ function mapCodexItemEvent(
 	}
 
 	if (item.type === "file_change") {
+		const normalizedChanges = normalizeFileChanges(
+			item.changes,
+			state.repoRoot,
+		);
 		const changesProjection = projectCodexJsonValue({
-			value: item.changes,
+			value: normalizedChanges,
 			omittedReason: "large_codex_file_change_payload",
 			providerEventRef: item.id,
 		});
@@ -225,7 +236,7 @@ function mapCodexItemEvent(
 					provider: "codex",
 					providerEventType: eventType,
 					providerItemId: item.id,
-					changedFiles: normalizeChangedFiles(item.changes),
+					changedFiles: normalizeChangedFiles(normalizedChanges),
 					changes: changesProjection.value,
 					changesCompacted: changesProjection.summary?.truncated ?? false,
 					changesSummary: changesProjection.summary,
@@ -375,6 +386,34 @@ function normalizeUsage(usage: Usage) {
 		outputTokens: usage.output_tokens,
 		reasoningOutputTokens: usage.reasoning_output_tokens,
 	};
+}
+
+function normalizeFileChanges(changes: unknown, repoRoot?: string): unknown[] {
+	if (!Array.isArray(changes)) return [];
+	return changes.map((change) => {
+		if (typeof change === "string") {
+			return normalizeChangedPath(change, repoRoot);
+		}
+		if (!change || typeof change !== "object") return change;
+		const record = change as Record<string, unknown>;
+		const pathKey = ["path", "filePath", "relativePath"].find(
+			(key) => typeof record[key] === "string",
+		);
+		if (!pathKey) return change;
+		return {
+			...record,
+			[pathKey]: normalizeChangedPath(String(record[pathKey]), repoRoot),
+		};
+	});
+}
+
+function normalizeChangedPath(value: string, repoRoot?: string): string {
+	if (!repoRoot || !path.isAbsolute(value)) return value;
+	const relative = path.relative(repoRoot, value);
+	if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+		return value;
+	}
+	return relative.split(path.sep).join("/");
 }
 
 function normalizeChangedFiles(changes: unknown): string[] {

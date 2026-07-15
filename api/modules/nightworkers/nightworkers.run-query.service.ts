@@ -4,6 +4,7 @@ import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
 import { digestText } from "../../services/text-digest";
 import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
+import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
 
 export async function getActiveTaskRun(taskId: string) {
 	const task = await repo.getTask(taskId);
@@ -14,7 +15,10 @@ export async function getActiveTaskRun(taskId: string) {
 	return activeRuns[0] ?? null;
 }
 
-export async function recoverStaleActiveRuns(taskId: string) {
+export async function recoverStaleActiveRuns(
+	taskId: string,
+	options: { force?: boolean } = {},
+) {
 	const task = await repo.getTask(taskId);
 	if (!task) {
 		throw new NotFoundError("Task not found");
@@ -29,6 +33,9 @@ export async function recoverStaleActiveRuns(taskId: string) {
 	for (const activeRun of activeRuns) {
 		const runnerStatus = await nativeLocalRunner.getStatus(activeRun.id);
 		if (runnerStatus.status === "running") {
+			return { hasRunning: true as const, recoveredRunIds };
+		}
+		if (!options.force && hasFreshActiveRunHeartbeat(activeRun.updatedAt)) {
 			return { hasRunning: true as const, recoveredRunIds };
 		}
 

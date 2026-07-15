@@ -57,7 +57,18 @@ function compactWorkerPayload(toolName: string, payload: unknown): unknown {
 	if (toolName === "git_diff") return compactGitDiffPayload(payload);
 	if (toolName === "reviewer_evaluation")
 		return compactReviewerEvaluationPayload(payload);
+	if (toolName === "project_exploration_catalog")
+		return compactProjectExplorationCatalogPayload(payload);
 	return payload;
+}
+
+function compactProjectExplorationCatalogPayload(payload: unknown) {
+	const record = toRecord(payload);
+	return {
+		status: record.status,
+		catalog: record.catalog,
+		fallbackToRepositoryExploration: record.status === "unavailable",
+	};
 }
 
 function compactReviewerEvaluationPayload(payload: unknown) {

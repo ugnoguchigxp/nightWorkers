@@ -351,7 +351,21 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 		.from(missionPilotTestSnapshots)
 		.where(eq(missionPilotTestSnapshots.id, input.snapshotId))
 		.limit(1);
-	if (!session || !snapshot || snapshot.sessionId !== session.id) {
+	const [testPhaseRun] = snapshot
+		? await db
+				.select()
+				.from(missionPilotPhaseRuns)
+				.where(eq(missionPilotPhaseRuns.id, snapshot.phaseRunId))
+				.limit(1)
+		: [];
+	if (
+		!session ||
+		!snapshot ||
+		!testPhaseRun ||
+		snapshot.sessionId !== session.id ||
+		testPhaseRun.sessionId !== session.id ||
+		testPhaseRun.phase !== "test"
+	) {
 		return { kind: "attention", reasons: ["test_snapshot_missing"] } as const;
 	}
 	const [anchor] = await db
@@ -364,17 +378,16 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 				eq(missionPilotPhaseRuns.status, "completed"),
 			),
 		)
-		.orderBy(desc(missionPilotPhaseRuns.cycle))
+		.orderBy(
+			desc(missionPilotPhaseRuns.cycle),
+			desc(missionPilotPhaseRuns.attempt),
+		)
 		.limit(1);
 	if (!anchor)
 		return {
 			kind: "attention",
 			reasons: ["implementation_anchor_missing"],
 		} as const;
-	const missionTargetRuns = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(eq(missionPilotPhaseRuns.sessionId, session.id));
 	const [latestContext] = await db
 		.select()
 		.from(missionPilotContextSnapshots)
@@ -385,12 +398,29 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 		readRecord(latestContext?.contextJson).execution,
 	).pendingRework;
 	return {
-		kind: "start_review",
+		kind: "start_review" as const,
 		input: {
 			anchorRunId: anchor.runId,
-			targetRunIds: missionTargetRuns
-				.filter((item) => item.phase !== "review")
-				.map((item) => item.runId),
+			targetRunIds: [anchor.runId, testPhaseRun.runId],
+			targetManifestContext: {
+				contextDigest: session.contextDigest,
+				testSnapshotId: snapshot.id,
+				testSnapshotDigest: digestText(
+					JSON.stringify({
+						id: snapshot.id,
+						phaseRunId: snapshot.phaseRunId,
+						checklistDigest: snapshot.checklistDigest,
+						evidenceRunIds: snapshot.evidenceRunIdsJson,
+						completionCheckEventId: snapshot.completionCheckEventId,
+						testChangedPaths: snapshot.testChangedPathsJson,
+						snapshot: snapshot.snapshotJson,
+					}),
+				),
+				sourceRuns: [
+					{ runId: anchor.runId, role: "implementation" as const },
+					{ runId: testPhaseRun.runId, role: "test" as const },
+				],
+			},
 			missionPilot: {
 				sessionId: session.id,
 				cycle: session.reviewCycle,
@@ -399,7 +429,7 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 				...(pendingRework ? { reworkPacket: pendingRework } : {}),
 			},
 		},
-	} as const;
+	};
 }
 
 export async function prepareTestRetry(input: {

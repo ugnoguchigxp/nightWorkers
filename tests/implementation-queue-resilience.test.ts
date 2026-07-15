@@ -37,6 +37,43 @@ async function createQueuedEntry(input: { priority?: number } = {}) {
 }
 
 describe("Implementation Queue resilience repository behavior", () => {
+	it("updates a prepared run only while its expected status still matches", async () => {
+		const repository = await nightworkersRepo.createRepository({
+			name: `TEST: Run CAS ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await nightworkersRepo.createTask({
+			repositoryId: repository.id,
+			title: `TEST: Run CAS ${crypto.randomUUID()}`,
+			description: "Run CAS fixture",
+			objective: "Preserve concurrent run status",
+			acceptanceCriteria: "Stale updates are rejected",
+			status: "running",
+		});
+		const run = await nightworkersRepo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "running",
+		});
+
+		const heldRun = await nightworkersRepo.updateTaskRunIfStatus(
+			run.id,
+			"running",
+			{ status: "needs_human" },
+		);
+		expect(heldRun?.status).toBe("needs_human");
+
+		await expect(
+			nightworkersRepo.updateTaskRunIfStatus(run.id, "running", {
+				status: "cancelled",
+			}),
+		).resolves.toBeUndefined();
+		await expect(nightworkersRepo.getTaskRun(run.id)).resolves.toMatchObject({
+			status: "needs_human",
+		});
+	});
+
 	it("claims one queued entry with a durable lease and respects processor capacity", async () => {
 		const first = await createQueuedEntry({ priority: 900_001 });
 		await createQueuedEntry({ priority: 900_000 });

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
 import * as verificationRepo from "../../modules/nightworkers/nightworkers.verification.repository";
+import { reviewerEvaluationTool } from "../worker-tools/reviewer-evaluation";
 import { completionCheckTool, runCheckTool } from "../worker-tools/run-check";
 import type {
 	AgentRunContext,
@@ -95,6 +96,7 @@ export async function runE2eFixtureRuntime(
 					"Transient Test fixture did not produce its first failure",
 				);
 			}
+			await new Promise((resolve) => setTimeout(resolve, 5));
 		}
 		const check = await runCheckTool(checkInput);
 		await sink.emit({
@@ -131,6 +133,20 @@ export async function runE2eFixtureRuntime(
 		};
 	}
 	if (missionPilot && executionMode === "review") {
+		const evaluation = await reviewerEvaluationTool({
+			runId: context.runId,
+			mode: "deterministic_only",
+			persist: true,
+		});
+		if (
+			!evaluation.ok ||
+			evaluation.payload?.finalReviewerVerdict !== "approved"
+		) {
+			throw new Error(
+				"Deterministic Mission Pilot reviewer evaluation was not approved.",
+			);
+		}
+		await completeFixtureTodos(context);
 		const finalReport = JSON.stringify({
 			verdict: "pass",
 			summary: "Deterministic Mission Pilot Review passed.",
@@ -257,19 +273,7 @@ export async function runE2eFixtureRuntime(
 		message: "Deterministic verification passed.",
 		payload: { command: "fixture verify", exitCode: 0, ok: true },
 	});
-	const now = new Date();
-	for (const todo of await repo.listTaskRunTodosForRun(context.runId)) {
-		await repo.updateTaskRunTodo(
-			todo.id,
-			{
-				status: "passed",
-				startedAt: todo.startedAt ? new Date(todo.startedAt) : now,
-				completedAt: now,
-				statusReason: "deterministic_e2e_fixture",
-			},
-			{ notifyTaskId: context.taskId, notifyRunId: context.runId },
-		);
-	}
+	await completeFixtureTodos(context);
 	const diffPatch = execFileSync("git", ["diff", "--", "."], {
 		cwd: context.repoRoot,
 		encoding: "utf8",
@@ -299,6 +303,22 @@ export async function runE2eFixtureRuntime(
 		},
 		logContent: finalReport,
 	};
+}
+
+async function completeFixtureTodos(context: AgentRunContext) {
+	const now = new Date();
+	for (const todo of await repo.listTaskRunTodosForRun(context.runId)) {
+		await repo.updateTaskRunTodo(
+			todo.id,
+			{
+				status: "passed",
+				startedAt: todo.startedAt ? new Date(todo.startedAt) : now,
+				completedAt: now,
+				statusReason: "deterministic_e2e_fixture",
+			},
+			{ notifyTaskId: context.taskId, notifyRunId: context.runId },
+		);
+	}
 }
 
 function readFixtureBehavior(message: string) {

@@ -376,6 +376,20 @@ describe("run-query.service", () => {
 			expect(result).toEqual({ hasRunning: true, recoveredRunIds: [] });
 		});
 
+		it("keeps a cross-process run active while its durable heartbeat is fresh", async () => {
+			mocks.getTask.mockResolvedValue({ id: "task-1" });
+			mocks.listActiveTaskRunsForTask.mockResolvedValue([
+				{ id: "run-1", updatedAt: new Date() },
+			]);
+			mocks.nativeLocalRunner.getStatus.mockResolvedValue({
+				status: "stopped",
+			});
+
+			const result = await recoverStaleActiveRuns("task-1");
+			expect(result).toEqual({ hasRunning: true, recoveredRunIds: [] });
+			expect(mocks.updateTaskRun).not.toHaveBeenCalled();
+		});
+
 		it("recovers stale run by failing pending todos and updating run status to failed", async () => {
 			mocks.getTask.mockResolvedValue({ id: "task-1" });
 			mocks.listActiveTaskRunsForTask.mockResolvedValue([

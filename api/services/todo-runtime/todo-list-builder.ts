@@ -1,4 +1,5 @@
 import type { TodoEvidenceRequirement } from "../run-control/evidence";
+import { isDataMigrationTodoMarker } from "./data-migration";
 import { normalizeTodoTaskTypeForStorage } from "./task-types";
 
 export type ImplementationTodoInput = {
@@ -30,13 +31,6 @@ export type BuiltTodoInput = {
 };
 
 type StandardGate = Omit<BuiltTodoInput, "seq" | "status" | "startedAt">;
-
-const DATA_MIGRATION_PROCEDURE_IDS = new Set([
-	"data_migration.create_migration",
-	"data_migration.apply_migration",
-	"data_migration.add_integration_test",
-	"data_migration.verify_migration",
-]);
 
 const FIRST_GATES: StandardGate[] = [
 	{
@@ -282,32 +276,11 @@ function isReservedFinalGateTodo(todo: ImplementationTodoInput) {
 }
 
 function hasDataMigrationTodo(todos: ImplementationTodoInput[]) {
-	return todos.some((todo) => {
-		const taskType =
-			typeof todo.taskType === "string" ? todo.taskType.trim() : "";
-		const procedureId =
-			typeof todo.procedureId === "string" ? todo.procedureId.trim() : "";
-		return (
-			taskType === "data_migration" ||
-			taskType === "migration" ||
-			procedureId === "data_migration" ||
-			procedureId.startsWith("data_migration.")
-		);
-	});
+	return todos.some(isDataMigrationTodoMarker);
 }
 
 function isReservedDataMigrationGateTodo(todo: ImplementationTodoInput) {
-	const taskType =
-		typeof todo.taskType === "string" ? todo.taskType.trim() : "";
-	const procedureId =
-		typeof todo.procedureId === "string" ? todo.procedureId.trim() : "";
-
-	return (
-		taskType === "data_migration" ||
-		taskType === "migration" ||
-		DATA_MIGRATION_PROCEDURE_IDS.has(procedureId) ||
-		procedureId.startsWith("data_migration.")
-	);
+	return isDataMigrationTodoMarker(todo);
 }
 
 function isReservedFirstGateTodo(todo: ImplementationTodoInput) {

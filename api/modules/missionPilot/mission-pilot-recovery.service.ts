@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
+	missionPilotEvents,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 	missionPilotTestSnapshots,
@@ -10,6 +11,10 @@ import { taskRuns } from "../../db/schema";
 import { executeMissionPilotCloseout } from "./mission-pilot-closeout.service";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
+import {
+	buildReviewContinuationFromTestSnapshot,
+	prepareTestRetry,
+} from "./mission-pilot-post-queue-test.service";
 import {
 	executeMissionPilotContinuation,
 	markMissionPilotContinuationFailed,
@@ -31,9 +36,90 @@ export async function recoverMissionPilotPostQueueSessions() {
 	const sessions = await db
 		.select()
 		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.desiredState, "playing"));
+		.where(
+			or(
+				eq(missionPilotSessions.desiredState, "playing"),
+				inArray(missionPilotSessions.phase, [
+					"completed",
+					"archiving",
+					"archived",
+				]),
+			),
+		);
 	let recovered = 0;
 	for (const session of sessions) {
+		if (session.phase === "archived") {
+			if (!session.activeCloseoutId) continue;
+			const [latestContext] = await db
+				.select()
+				.from(missionPilotContextSnapshots)
+				.where(eq(missionPilotContextSnapshots.sessionId, session.id))
+				.orderBy(desc(missionPilotContextSnapshots.revision))
+				.limit(1);
+			const archiveRecordId = readRecord(
+				readRecord(latestContext?.contextJson).execution,
+			).lifecycle;
+			const finalizedArchiveId = readRecord(archiveRecordId).archiveRecordId;
+			const [archiveEvent] =
+				typeof finalizedArchiveId === "string"
+					? await db
+							.select({ id: missionPilotEvents.id })
+							.from(missionPilotEvents)
+							.where(
+								and(
+									eq(missionPilotEvents.sessionId, session.id),
+									eq(missionPilotEvents.eventType, "task.archived"),
+									eq(missionPilotEvents.sourceId, finalizedArchiveId),
+								),
+							)
+							.limit(1)
+					: [];
+			if (typeof finalizedArchiveId === "string" && archiveEvent) continue;
+			await executeMissionPilotCloseout(session.id);
+			recovered += 1;
+			continue;
+		}
+		if (
+			["testing", "reviewing"].includes(session.phase) &&
+			!session.activeRunId &&
+			session.activePhaseRunId
+		) {
+			const [phaseRun] = await db
+				.select()
+				.from(missionPilotPhaseRuns)
+				.where(
+					and(
+						eq(missionPilotPhaseRuns.id, session.activePhaseRunId),
+						eq(missionPilotPhaseRuns.sessionId, session.id),
+					),
+				)
+				.limit(1);
+			const run = phaseRun ? await findTerminalRun(phaseRun.runId) : null;
+			if (phaseRun && run) {
+				if (
+					await retryInterruptedPhaseRun({
+						session,
+						phaseRun,
+						runStatus: run.status,
+					})
+				) {
+					recovered += 1;
+					continue;
+				}
+				const continuation = await continueMissionPilotAfterRun({
+					taskId: session.taskId,
+					runId: run.id,
+					executionMode: phaseRun.phase,
+				});
+				try {
+					await executeMissionPilotContinuation(continuation);
+				} catch (error) {
+					await markMissionPilotContinuationFailed(run.id, error);
+				}
+				recovered += 1;
+				continue;
+			}
+		}
 		if (
 			session.phase === "attention" &&
 			!session.activeRunId &&
@@ -187,9 +273,14 @@ export async function recoverMissionPilotPostQueueSessions() {
 			continue;
 		}
 		if (
-			["closeout_preparing", "committing", "pushing", "completing"].includes(
-				session.phase,
-			) &&
+			[
+				"closeout_preparing",
+				"committing",
+				"pushing",
+				"completing",
+				"completed",
+				"archiving",
+			].includes(session.phase) &&
 			session.activeCloseoutId
 		) {
 			const closeout = await executeMissionPilotCloseout(session.id);
@@ -211,6 +302,24 @@ export async function recoverMissionPilotPostQueueSessions() {
 			)
 			.limit(1);
 		if (!run) continue;
+		const [activePhaseRun] = session.activePhaseRunId
+			? await db
+					.select()
+					.from(missionPilotPhaseRuns)
+					.where(eq(missionPilotPhaseRuns.id, session.activePhaseRunId))
+					.limit(1)
+			: [];
+		if (
+			activePhaseRun &&
+			(await retryInterruptedPhaseRun({
+				session,
+				phaseRun: activePhaseRun,
+				runStatus: run.status,
+			}))
+		) {
+			recovered += 1;
+			continue;
+		}
 		const snapshot = readRecord(run.contextSnapshot);
 		const continuation = await continueMissionPilotAfterRun({
 			taskId: session.taskId,
@@ -228,6 +337,120 @@ export async function recoverMissionPilotPostQueueSessions() {
 		recovered += 1;
 	}
 	return recovered;
+}
+
+async function retryInterruptedPhaseRun(input: {
+	session: typeof missionPilotSessions.$inferSelect;
+	phaseRun: typeof missionPilotPhaseRuns.$inferSelect;
+	runStatus: string;
+}) {
+	if (
+		input.phaseRun.status !== "running" ||
+		input.phaseRun.attempt >= 2 ||
+		!["failed", "timed_out", "cancelled"].includes(input.runStatus)
+	)
+		return false;
+	const interruption = {
+		interrupted: true,
+		runStatus: input.runStatus,
+		retryAttempt: input.phaseRun.attempt + 1,
+	};
+	if (input.phaseRun.phase === "test") {
+		const continuation = await prepareTestRetry({
+			session: input.session,
+			phaseRun: input.phaseRun,
+			reworkPacket: interruption,
+		});
+		if (continuation.kind !== "start_test") {
+			await markMissionPilotContinuationFailed(
+				input.phaseRun.runId,
+				new Error(
+					"Mission Pilot interrupted Test retry could not be prepared.",
+				),
+			);
+			return true;
+		}
+		await executeMissionPilotContinuation(continuation);
+		return true;
+	}
+	if (input.phaseRun.phase === "review") {
+		if (!input.session.activeTestSnapshotId) return false;
+		await db.transaction(async (tx) => {
+			await tx
+				.update(missionPilotPhaseRuns)
+				.set({
+					status: "failed",
+					verdict: "attention",
+					evidenceJson: {
+						...input.phaseRun.evidenceJson,
+						...interruption,
+					},
+					finishedAt: new Date(),
+				})
+				.where(eq(missionPilotPhaseRuns.id, input.phaseRun.id));
+			await tx
+				.update(missionPilotSessions)
+				.set({
+					phase: "review_preparing",
+					activeRunId: null,
+					activePhaseRunId: null,
+					updatedAt: new Date(),
+				})
+				.where(eq(missionPilotSessions.id, input.session.id));
+		});
+		const continuation = await buildReviewContinuationFromTestSnapshot({
+			sessionId: input.session.id,
+			snapshotId: input.session.activeTestSnapshotId,
+		});
+		if (continuation.kind !== "start_review") {
+			await markMissionPilotContinuationFailed(
+				input.phaseRun.runId,
+				new Error(
+					"Mission Pilot interrupted Review retry could not be prepared.",
+				),
+			);
+			return true;
+		}
+		await executeMissionPilotContinuation(continuation);
+		return true;
+	}
+	if (input.phaseRun.phase === "implementation") {
+		await db.transaction(async (tx) => {
+			await tx
+				.update(missionPilotPhaseRuns)
+				.set({
+					status: "failed",
+					verdict: "attention",
+					evidenceJson: {
+						...input.phaseRun.evidenceJson,
+						...interruption,
+					},
+					finishedAt: new Date(),
+				})
+				.where(eq(missionPilotPhaseRuns.id, input.phaseRun.id));
+			await tx
+				.update(missionPilotSessions)
+				.set({
+					phase: "implementing",
+					activeRunId: null,
+					activePhaseRunId: null,
+					updatedAt: new Date(),
+				})
+				.where(eq(missionPilotSessions.id, input.session.id));
+		});
+		await resumeInterruptedImplementation({
+			taskId: input.session.taskId,
+			missionPilot: {
+				sessionId: input.session.id,
+				cycle: input.session.implementationCycle,
+				contextRevision: input.session.contextRevision,
+				contextDigest: input.session.contextDigest,
+				interruptedRunId: input.phaseRun.runId,
+			},
+		});
+		return true;
+	}
+	return false;
 }
 
 async function findTerminalRun(runId: string) {

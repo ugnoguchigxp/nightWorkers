@@ -6,6 +6,7 @@ import {
 	generateFeaturePlanArtifact,
 } from "../api/modules/specification/specification-generation.service";
 import { callStructuredOutputWithRepair } from "../api/services/structured-generation/structured-output-repair.service";
+import { StructuredLlmTimeoutError } from "../api/services/structured-llm";
 
 vi.mock(
 	"../api/services/structured-generation/structured-output-repair.service",
@@ -94,6 +95,7 @@ describe("Feature Plan generation timeout handling", () => {
 	});
 
 	it("uses an extended timeout for specification document generation", async () => {
+		expect(FEATURE_PLAN_LLM_TIMEOUT_MS).toBe(180_000);
 		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
 			value: {
 				title: "Todo List Feature Plan",
@@ -177,13 +179,18 @@ describe("Feature Plan generation timeout handling", () => {
 	});
 
 	it("returns a gateway timeout error when the provider aborts", async () => {
-		const abortError = new Error("The operation was aborted.");
-		abortError.name = "AbortError";
-		vi.mocked(callStructuredOutputWithRepair).mockRejectedValueOnce(abortError);
+		vi.mocked(callStructuredOutputWithRepair).mockRejectedValueOnce(
+			new StructuredLlmTimeoutError(FEATURE_PLAN_LLM_TIMEOUT_MS),
+		);
 
 		await expect(generateFeaturePlanArtifact("task-1")).rejects.toMatchObject({
 			statusCode: 504,
 			code: "SPECIFICATION_DOCUMENT_TIMEOUT",
+			details: {
+				failureKind: "provider_timeout",
+				retryable: true,
+				timeoutMs: 180_000,
+			},
 		} satisfies Partial<AppError>);
 	});
 });

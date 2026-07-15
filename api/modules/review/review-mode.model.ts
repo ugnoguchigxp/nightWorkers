@@ -113,6 +113,27 @@ export type ReviewTarget = {
 	warnings: ReviewTargetWarning[];
 };
 
+export type ReviewTargetManifest = {
+	version: 1;
+	digest: string;
+	taskId: string;
+	contextDigest: string | null;
+	testSnapshotId: string | null;
+	testSnapshotDigest: string | null;
+	sourceRuns: Array<{
+		runId: string;
+		role: "implementation" | "test";
+		status: string;
+		diffDigest: string;
+		finalReportDigest: string;
+	}>;
+	targetFiles: Array<{
+		path: string;
+		diffDigest: string;
+		diffBytes: number;
+	}>;
+};
+
 export type ReviewPlanSpec = {
 	sourceMessageId: string | null;
 	title: string | null;

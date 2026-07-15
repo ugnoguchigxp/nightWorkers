@@ -443,20 +443,31 @@ describe("CodexAgentRuntime event mapping and catalog contracts", () => {
 	});
 
 	it("maps file changes with normalized changed file paths", () => {
-		const events = mapCodexThreadEvent({
-			type: "item.completed",
-			item: {
-				id: "file-change-1",
-				type: "file_change",
-				status: "completed",
-				changes: [{ path: "src/fizzbuzz.ts" }, "README.md"],
+		const repoRoot = path.join(os.tmpdir(), "nightworkers-repo");
+		const events = mapCodexThreadEvent(
+			{
+				type: "item.completed",
+				item: {
+					id: "file-change-1",
+					type: "file_change",
+					status: "completed",
+					changes: [
+						{ path: path.join(repoRoot, "src/fizzbuzz.ts"), kind: "update" },
+						{ path: path.join(repoRoot, "README.md"), kind: "add" },
+					],
+				},
 			},
-		} as never);
+			createCodexEventMapperState({ repoRoot }),
+		);
 
 		expect(events[0]).toMatchObject({
 			type: "diff_collected",
 			payload: {
 				changedFiles: ["src/fizzbuzz.ts", "README.md"],
+				changes: [
+					{ path: "src/fizzbuzz.ts", kind: "update" },
+					{ path: "README.md", kind: "add" },
+				],
 				status: "completed",
 			},
 		});
