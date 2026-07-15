@@ -89,4 +89,42 @@ describe("Mission Pilot Task Action Registry", () => {
 			data: { runId: "00000000-0000-4000-8000-000000000001" },
 		});
 	});
+
+	it("exposes the reusable Questionnaire answer contract to the provider", () => {
+		const definition = getMissionPilotActionDefinition("questionnaire.submit");
+		if (!definition)
+			throw new Error("questionnaire.submit definition is missing");
+		const questionnaireSessionId = "00000000-0000-4000-8000-000000000001";
+
+		expect(
+			validateMissionPilotActionArguments(definition, {
+				questionnaireSessionId,
+				answers: [{}],
+			}),
+		).toMatchObject({ success: false });
+		expect(
+			validateMissionPilotActionArguments(definition, {
+				questionnaireSessionId,
+				answers: [
+					{
+						questionId: "storage-engine",
+						selectedOptionIds: ["sqlite"],
+						deferred: false,
+					},
+				],
+			}),
+		).toEqual({
+			success: true,
+			data: {
+				questionnaireSessionId,
+				answers: [
+					{
+						questionId: "storage-engine",
+						selectedOptionIds: ["sqlite"],
+						deferred: false,
+					},
+				],
+			},
+		});
+	});
 });

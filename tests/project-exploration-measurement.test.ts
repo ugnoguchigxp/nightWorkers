@@ -115,6 +115,26 @@ describe("project exploration measurement", () => {
 		});
 	});
 
+	it("warns only when an available catalog is skipped before repository exploration", () => {
+		const withoutExploration = measureProjectExplorationRun({
+			run: runFixture(true),
+			events: [event(1, "read_file", true, { filePath: "src/known.ts" })],
+			usageRecords: [],
+		});
+		expect(withoutExploration.warnings).not.toContain(
+			"catalog_available_but_not_called_before_repository_exploration",
+		);
+
+		const withExploration = measureProjectExplorationRun({
+			run: runFixture(true),
+			events: [event(1, "search_files", true, { query: "service" })],
+			usageRecords: [],
+		});
+		expect(withExploration.warnings).toContain(
+			"catalog_available_but_not_called_before_repository_exploration",
+		);
+	});
+
 	it("keeps baseline tokens unavailable and ignores failed mutation boundaries", () => {
 		const result = measureProjectExplorationRun({
 			run: runFixture(false, "running"),

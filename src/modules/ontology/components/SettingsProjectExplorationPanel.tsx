@@ -17,6 +17,11 @@ export function SettingsProjectExplorationPanel({
 }) {
 	const { t } = useTranslation();
 	const disabled = !activeProject || !value || isSaving;
+	const selectedServer = mcpServers.find(
+		(server) => server.id === value?.mcpServerId,
+	);
+	const invalidEnabledConfiguration =
+		Boolean(value?.enabled) && !selectedServer?.enabled;
 	return (
 		<section className="space-y-4 rounded-2xl border border-zinc-800/60 bg-[#16161a] p-6">
 			<div>
@@ -68,13 +73,21 @@ export function SettingsProjectExplorationPanel({
 					<option value="">{t("settings.projectExploration.noServer")}</option>
 					{mcpServers.map((server) => (
 						<option key={server.id} value={server.id}>
-							{server.name} {server.enabled ? "" : "(OFF)"}
+							{server.name}{" "}
+							{server.enabled
+								? ""
+								: t("settings.projectExploration.serverDisabledSuffix")}
 						</option>
 					))}
 				</select>
 				<span className="mt-1 block text-[10px] text-zinc-500">
 					{t("settings.projectExploration.mcpServerHelp")}
 				</span>
+				{invalidEnabledConfiguration ? (
+					<span className="mt-2 block text-[10px] text-amber-400">
+						{t("settings.projectExploration.invalidServer")}
+					</span>
+				) : null}
 			</label>
 		</section>
 	);

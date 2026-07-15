@@ -175,8 +175,14 @@ export function measureProjectExplorationRun(input: {
 		input.usageRecords.map((record) => record.cachedInputTokens),
 	);
 	const catalogAvailable = pin?.version === 2 && pin.available;
-	if (catalogAvailable && catalogCallCount === 0) {
-		warnings.add("catalog_available_but_not_called");
+	if (
+		catalogAvailable &&
+		catalogCallCount === 0 &&
+		broadExplorationCallsBeforeCatalog > 0
+	) {
+		warnings.add(
+			"catalog_available_but_not_called_before_repository_exploration",
+		);
 	}
 	return {
 		runId: input.run.id,

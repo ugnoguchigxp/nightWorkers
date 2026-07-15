@@ -31,6 +31,26 @@ const string = { type: "string" };
 const uuid = { type: "string", format: "uuid" };
 const integer = { type: "integer", minimum: 0 };
 const boolean = { type: "boolean" };
+const kebabId = {
+	type: "string",
+	pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+};
+const kebabIdArray = { type: "array", items: kebabId };
+const questionnaireAnswers = {
+	type: "array",
+	minItems: 1,
+	items: objectSchema(
+		{
+			questionId: kebabId,
+			selectedOptionIds: kebabIdArray,
+			booleanValue: boolean,
+			freeText: string,
+			rankedOptionIds: kebabIdArray,
+			deferred: boolean,
+		},
+		["questionId"],
+	),
+};
 
 const definitions: MissionPilotActionDefinition[] = [
 	{
@@ -118,9 +138,10 @@ const definitions: MissionPilotActionDefinition[] = [
 		actionId: "questionnaire.draft.update",
 		toolName: "questionnaire_draft_update",
 		title: "Questionnaire回答を更新",
-		description: "questionnaire sessionへschema検証済み回答を保存する。",
+		description:
+			"現在ページのschema検証済み回答をquestionnaire sessionへ保存し、follow-up判定を行わず現在の質問を確定する。",
 		inputSchema: objectSchema(
-			{ questionnaireSessionId: uuid, answers: { type: "array" } },
+			{ questionnaireSessionId: uuid, answers: questionnaireAnswers },
 			["questionnaireSessionId", "answers"],
 		),
 		authorizationScope: "plan",
@@ -129,9 +150,10 @@ const definitions: MissionPilotActionDefinition[] = [
 		actionId: "questionnaire.submit",
 		toolName: "questionnaire_submit",
 		title: "Questionnaireを確定",
-		description: "必須回答を検証し、現在のQuestionnaireを確定する。",
+		description:
+			"必須回答を検証して保存し、follow-upが必要かを評価する。追加質問が返った場合は同じsessionの回答を続ける。",
 		inputSchema: objectSchema(
-			{ questionnaireSessionId: uuid, answers: { type: "array" } },
+			{ questionnaireSessionId: uuid, answers: questionnaireAnswers },
 			["questionnaireSessionId", "answers"],
 		),
 		authorizationScope: "plan",

@@ -2,10 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	getRepository: vi.fn(),
-	updateRepositoryFeatureSettings: vi.fn(),
+	updateRepositoryFeatureSetting: vi.fn(),
 }));
 
-vi.mock("../api/modules/nightworkers/nightworkers.repository", () => mocks);
+vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
+	getRepository: mocks.getRepository,
+}));
+vi.mock(
+	"../api/modules/nightworkers/repository-feature-settings.repository",
+	() => ({
+		updateRepositoryFeatureSetting: mocks.updateRepositoryFeatureSetting,
+	}),
+);
 
 import {
 	getProjectExplorationCatalogSettings,
@@ -16,7 +24,7 @@ import {
 describe("project exploration catalog settings", () => {
 	beforeEach(() => {
 		mocks.getRepository.mockReset();
-		mocks.updateRepositoryFeatureSettings.mockReset();
+		mocks.updateRepositoryFeatureSetting.mockReset();
 	});
 
 	it("fails closed for missing or invalid settings", () => {
@@ -54,7 +62,7 @@ describe("project exploration catalog settings", () => {
 		).resolves.toEqual({ enabled: true, mcpServerId: "server-1" });
 	});
 
-	it("preserves every sibling feature setting on save", async () => {
+	it("uses a keyed update so sibling feature settings are preserved atomically", async () => {
 		mocks.getRepository.mockResolvedValue({
 			id: "repo-1",
 			featureSettings: {
@@ -62,20 +70,31 @@ describe("project exploration catalog settings", () => {
 				customFeature: { enabled: true },
 			},
 		});
-		mocks.updateRepositoryFeatureSettings.mockResolvedValue({ id: "repo-1" });
+		mocks.updateRepositoryFeatureSetting.mockResolvedValue({ id: "repo-1" });
 		await expect(
 			saveProjectExplorationCatalogSettings("repo-1", {
 				enabled: true,
 				mcpServerId: null,
 			}),
 		).resolves.toEqual({ enabled: true, mcpServerId: null });
-		expect(mocks.updateRepositoryFeatureSettings).toHaveBeenCalledWith(
+		expect(mocks.updateRepositoryFeatureSetting).toHaveBeenCalledWith(
 			"repo-1",
-			{
-				securityIntelligence: { ontologyToolsEnabled: true },
-				customFeature: { enabled: true },
-				projectExplorationCatalog: { enabled: true, mcpServerId: null },
-			},
+			"projectExplorationCatalog",
+			{ enabled: true, mcpServerId: null },
 		);
+	});
+
+	it("reports a repository deleted during the atomic update", async () => {
+		mocks.getRepository.mockResolvedValue({
+			id: "repo-1",
+			featureSettings: {},
+		});
+		mocks.updateRepositoryFeatureSetting.mockResolvedValue(undefined);
+		await expect(
+			saveProjectExplorationCatalogSettings("repo-1", {
+				enabled: false,
+				mcpServerId: null,
+			}),
+		).rejects.toThrow("Repository not found");
 	});
 });

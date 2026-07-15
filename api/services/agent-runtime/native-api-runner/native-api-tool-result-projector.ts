@@ -72,31 +72,25 @@ function compactProjectExplorationCatalogPayload(payload: unknown) {
 function compactTodoPayload(payload: unknown) {
 	const record = toRecord(payload);
 	const todos = toArray(record.todos).map(toRecord);
-	const operation =
-		typeof record.operation === "string" ? record.operation : undefined;
-	const transition = toRecord(record.transition);
-	const diagnostics = toRecord(record.diagnostics);
-	const changedSeq =
-		readNumber(transition.completedSeq) ??
-		readNumber(transition.nextCurrentSeq) ??
-		readNumber(toRecord(diagnostics.attemptedAction).seq);
-	const changedTodo = changedSeq
-		? (todos.find((todo) => readNumber(todo.seq) === changedSeq) ?? null)
+	const command = toRecord(record.command);
+	const operation = typeof command.op === "string" ? command.op : undefined;
+	const changedTodoId =
+		typeof command.todoId === "string" ? command.todoId : null;
+	const changedTodo = changedTodoId
+		? (todos.find((todo) => todo.id === changedTodoId) ?? null)
 		: null;
 	return {
 		runId: record.runId,
-		taskId: record.taskId,
 		action: record.action,
 		operation,
+		planRevision: record.planRevision,
 		changedTodo: compactTodo(changedTodo),
 		currentTodo: compactTodo(record.currentTodo),
-		nextTodo: compactTodo(record.nextTodo),
 		counts: countTodos(todos),
 		todos: todos.slice(0, 24).map(compactTodo),
 		omittedTodoCount: Math.max(0, todos.length - 24),
-		transition: record.transition,
-		diagnostics: record.diagnostics,
-		listIsCanonicalSummary: operation === "list" || operation === "replace",
+		listIsCanonicalSummary:
+			operation === "list" || operation === "replace_plan",
 	};
 }
 

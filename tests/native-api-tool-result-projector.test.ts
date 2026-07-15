@@ -2,6 +2,46 @@ import { describe, expect, it } from "vitest";
 import { projectWorkerResultToNativeApiToolResult } from "../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
 
 describe("projectWorkerResultToNativeApiToolResult", () => {
+	it("projects the LLM-owned Todo command contract without legacy fields", () => {
+		const result = projectWorkerResultToNativeApiToolResult({
+			ok: true,
+			toolName: "todo_list",
+			startedAt: "2026-07-15T00:00:00.000Z",
+			finishedAt: "2026-07-15T00:00:00.001Z",
+			payload: {
+				runId: "run-1",
+				action: "todo_list",
+				command: {
+					op: "transition",
+					todoId: "todo-1",
+					status: "passed",
+				},
+				planRevision: 3,
+				todos: [
+					{ id: "todo-1", seq: 1, title: "調査", status: "passed" },
+					{ id: "todo-2", seq: 2, title: "実装", status: "running" },
+				],
+				currentTodo: {
+					id: "todo-2",
+					seq: 2,
+					title: "実装",
+					status: "running",
+				},
+			},
+		});
+		const modelVisible = JSON.parse(result.content) as {
+			payload: Record<string, unknown>;
+		};
+		expect(modelVisible.payload).toMatchObject({
+			operation: "transition",
+			planRevision: 3,
+			changedTodo: { id: "todo-1", status: "passed" },
+			currentTodo: { id: "todo-2", status: "running" },
+		});
+		expect(modelVisible.payload).not.toHaveProperty("transition");
+		expect(modelVisible.payload).not.toHaveProperty("diagnostics");
+	});
+
 	it("keeps imported LLM context in audit payload without exposing it to the model", () => {
 		const llmContext = `# LLM Context
 

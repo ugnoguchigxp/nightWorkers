@@ -221,6 +221,11 @@ describe("projectPath-first project exploration preparation", () => {
 		await expect(resolve(compatibleUnion.value)).resolves.toMatchObject({
 			available: true,
 		});
+		const missingFocus = fixture({ catalogMissingFocus: true });
+		await expect(resolve(missingFocus.value)).resolves.toMatchObject({
+			available: false,
+			reason: "contract_invalid",
+		});
 	});
 
 	it("separates malformed contracts, stale state, and MCP failures", async () => {
@@ -301,6 +306,7 @@ function accessFixture(
 		rawStatuses?: unknown[];
 		invalidAnnotations?: boolean;
 		catalogAnyOf?: boolean;
+		catalogMissingFocus?: boolean;
 		projectPath?: string;
 	} = {},
 ) {
@@ -322,7 +328,7 @@ function accessFixture(
 					? true
 					: name !== "vuln_prepare_project_intelligence",
 				destructiveHint: false,
-				idempotentHint: name === "vuln_prepare_project_intelligence",
+				idempotentHint: true,
 			},
 			inputSchema:
 				name === "vuln_get_project_exploration_catalog" &&
@@ -350,7 +356,8 @@ function accessFixture(
 							type: "object",
 							properties: {
 								projectPath: { type: "string" },
-								...(name === "vuln_get_project_exploration_catalog"
+								...(name === "vuln_get_project_exploration_catalog" &&
+								!overrides.catalogMissingFocus
 									? { focus: { type: "object" } }
 									: {}),
 							},

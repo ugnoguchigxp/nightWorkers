@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
-import { SettingsOntologyPanel } from "../src/modules/ontology";
+import {
+	SettingsOntologyPanel,
+	SettingsProjectExplorationPanel,
+} from "../src/modules/ontology";
 
 const project = {
 	id: "11111111-1111-4111-8111-111111111111",
@@ -83,5 +86,51 @@ describe("SettingsOntologyPanel", () => {
 		expect(markup).toContain("Security Oracle: 無効");
 		expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
 		expect(markup).toContain("Security Oracle がオフ");
+	});
+});
+
+describe("SettingsProjectExplorationPanel", () => {
+	it("requires an enabled MCP server when proactive exploration is enabled", () => {
+		const markup = renderToStaticMarkup(
+			<SettingsProjectExplorationPanel
+				activeProject={project}
+				value={{ enabled: true, mcpServerId: "server-disabled" }}
+				mcpServers={[
+					{
+						id: "server-disabled",
+						name: "vulnWorkbench",
+						enabled: false,
+						transport: "stdio",
+						command: "bun",
+						args: [],
+						env: {},
+						toolPrefix: "vuln",
+						createdAt: "2026-07-10T00:00:00.000Z",
+						updatedAt: "2026-07-10T00:00:00.000Z",
+					},
+				]}
+				isSaving={false}
+				onChange={vi.fn()}
+			/>,
+		);
+		expect(markup).toContain("vulnWorkbench （無効）");
+		expect(markup).toContain(
+			"ONになっているvulnWorkbench MCP Serverを選択してください",
+		);
+	});
+
+	it("does not show a configuration warning while the pilot is disabled", () => {
+		const markup = renderToStaticMarkup(
+			<SettingsProjectExplorationPanel
+				activeProject={project}
+				value={{ enabled: false, mcpServerId: null }}
+				mcpServers={[]}
+				isSaving={false}
+				onChange={vi.fn()}
+			/>,
+		);
+		expect(markup).not.toContain(
+			"ONになっているvulnWorkbench MCP Serverを選択してください",
+		);
 	});
 });

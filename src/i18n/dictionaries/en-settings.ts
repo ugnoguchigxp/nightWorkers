@@ -290,4 +290,9 @@ export const enSettings = {
 	"settings.projectExploration.noServer": "Not selected",
 	"settings.projectExploration.mcpServerHelp":
 		"Select an enabled MCP server that provides the path-first Static Intelligence tools.",
+	"settings.projectExploration.serverDisabledSuffix": "(disabled)",
+	"settings.projectExploration.invalidServer":
+		"Select an enabled vulnWorkbench MCP server before enabling this feature.",
+	"settings.projectExploration.saveSucceeded":
+		"Project Static Intelligence settings saved.",
 } as const;

@@ -6,7 +6,6 @@ import {
 	createBlueprintPreviewDesignSettings,
 } from "../blueprint-preview";
 import { SettingsHooksPanel } from "../hooks/SettingsHooksPanel";
-import { fetchMcpServers } from "../mcp/mcpCommands";
 import { SettingsMcpPanel } from "../mcp/SettingsMcpPanel";
 import {
 	useWorkspaceAppearanceActions,
@@ -18,18 +17,11 @@ import type {
 	FxRateCache,
 	GeneralSettings,
 	LlmSettings,
-	McpServerConfig,
 	Repository,
 } from "../nightworkers/types";
 import {
-	fetchProjectExplorationSettings,
-	fetchProjectSecurityIntelligenceSettings,
-	type ProjectExplorationCatalogPilotSettings,
-	type ProjectSecurityIntelligenceSettingsResponse,
 	SettingsOntologyPanel,
 	SettingsProjectExplorationPanel,
-	saveProjectExplorationSettings,
-	saveProjectSecurityIntelligenceSettings,
 } from "../ontology";
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
 import { SettingsLlmPanel } from "./SettingsLlmPanel";
@@ -44,6 +36,7 @@ import {
 	saveGeneralSettings as saveGeneralSettingsCommand,
 	saveLlmSettings,
 } from "./settingsCommands";
+import { useProjectIntelligenceSettings } from "./useProjectIntelligenceSettings";
 
 type SaveFeedbackStatus = "idle" | "success" | "error";
 
@@ -81,19 +74,22 @@ export function SettingsScreen({
 		useState<SaveFeedbackStatus>("idle");
 	const [isRefreshingFx, setIsRefreshingFx] = useState(false);
 	const [isSavingGeneral, setIsSavingGeneral] = useState(false);
-	const [securityIntelligence, setSecurityIntelligence] =
-		useState<ProjectSecurityIntelligenceSettingsResponse | null>(null);
-	const [securityIntelligenceMessage, setSecurityIntelligenceMessage] =
-		useState("");
-	const [
-		securityIntelligenceMessageStatus,
-		setSecurityIntelligenceMessageStatus,
-	] = useState<SaveFeedbackStatus>("idle");
-	const [securityIntelligenceBusy, setSecurityIntelligenceBusy] =
-		useState(false);
-	const [projectExploration, setProjectExploration] =
-		useState<ProjectExplorationCatalogPilotSettings | null>(null);
-	const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
+	const {
+		securityIntelligence,
+		securityMessage: securityIntelligenceMessage,
+		securityMessageStatus: securityIntelligenceMessageStatus,
+		securityBusy: securityIntelligenceBusy,
+		changeSecurityIntelligence,
+		saveSecurityIntelligence,
+		projectExploration,
+		explorationMessage: projectExplorationMessage,
+		explorationMessageStatus: projectExplorationMessageStatus,
+		explorationBusy: projectExplorationBusy,
+		mcpServers,
+		explorationConfigurationValid: projectExplorationConfigurationValid,
+		changeProjectExploration,
+		saveProjectExploration,
+	} = useProjectIntelligenceSettings(activeProject);
 	const {
 		settings: appearanceSettings,
 		savedSettings: savedAppearanceSettings,
@@ -136,63 +132,6 @@ export function SettingsScreen({
 			)
 			.finally(() => setIsLoading(false));
 	}, []);
-
-	useEffect(() => {
-		if (!activeProject) {
-			setSecurityIntelligence(null);
-			setProjectExploration(null);
-			setMcpServers([]);
-			setSecurityIntelligenceMessage("");
-			setSecurityIntelligenceMessageStatus("idle");
-			return;
-		}
-		let cancelled = false;
-		setSecurityIntelligenceBusy(true);
-		Promise.all([
-			fetchProjectSecurityIntelligenceSettings(activeProject.id),
-			fetchProjectExplorationSettings(activeProject.id),
-			fetchMcpServers(),
-		])
-			.then(async ([securityResponse, explorationResponse, mcpResponse]) => {
-				for (const response of [
-					securityResponse,
-					explorationResponse,
-					mcpResponse,
-				]) {
-					if (!response.ok) throw new Error(`HTTP ${response.status}`);
-				}
-				return {
-					security:
-						(await securityResponse.json()) as ProjectSecurityIntelligenceSettingsResponse,
-					exploration:
-						(await explorationResponse.json()) as ProjectExplorationCatalogPilotSettings,
-					mcp: (await mcpResponse.json()) as { servers: McpServerConfig[] },
-				};
-			})
-			.then(({ security, exploration, mcp }) => {
-				if (!cancelled) {
-					setSecurityIntelligence(security);
-					setProjectExploration(exploration);
-					setMcpServers(mcp.servers);
-				}
-			})
-			.catch((error) => {
-				if (!cancelled) {
-					setSecurityIntelligence(null);
-					setProjectExploration(null);
-					setSecurityIntelligenceMessage(
-						error instanceof Error ? error.message : String(error),
-					);
-					setSecurityIntelligenceMessageStatus("error");
-				}
-			})
-			.finally(() => {
-				if (!cancelled) setSecurityIntelligenceBusy(false);
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [activeProject]);
 
 	const handleSave = async () => {
 		setIsSaving(true);
@@ -279,42 +218,6 @@ export function SettingsScreen({
 			setGeneralMessageStatus("error");
 		} finally {
 			setIsRefreshingFx(false);
-		}
-	};
-
-	const saveSecurityIntelligence = async () => {
-		if (!activeProject || !securityIntelligence || !projectExploration) return;
-		setSecurityIntelligenceBusy(true);
-		setSecurityIntelligenceMessage("");
-		setSecurityIntelligenceMessageStatus("idle");
-		try {
-			const res = await saveProjectSecurityIntelligenceSettings(
-				activeProject.id,
-				securityIntelligence.settings,
-			);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const explorationRes = await saveProjectExplorationSettings(
-				activeProject.id,
-				projectExploration,
-			);
-			if (!explorationRes.ok) throw new Error(`HTTP ${explorationRes.status}`);
-			setSecurityIntelligence(
-				(await res.json()) as ProjectSecurityIntelligenceSettingsResponse,
-			);
-			setProjectExploration(
-				(await explorationRes.json()) as ProjectExplorationCatalogPilotSettings,
-			);
-			setSecurityIntelligenceMessage(
-				t("settings.securityIntelligence.saveSucceeded"),
-			);
-			setSecurityIntelligenceMessageStatus("success");
-		} catch (error) {
-			setSecurityIntelligenceMessage(
-				error instanceof Error ? error.message : String(error),
-			);
-			setSecurityIntelligenceMessageStatus("error");
-		} finally {
-			setSecurityIntelligenceBusy(false);
 		}
 	};
 
@@ -527,44 +430,36 @@ export function SettingsScreen({
 
 					{activeSection === "security-intelligence" ? (
 						<>
-							<SettingsSaveActions
-								onSave={() => void saveSecurityIntelligence()}
-								isSaving={securityIntelligenceBusy}
-								disabled={
-									!activeProject || !securityIntelligence || !projectExploration
-								}
-								saveStatus={securityIntelligenceMessageStatus}
-								saveMessage={securityIntelligenceMessage}
-							/>
 							<SettingsOntologyPanel
 								activeProject={activeProject}
 								value={securityIntelligence}
 								isSaving={securityIntelligenceBusy}
-								onChange={(value) => {
-									setSecurityIntelligence(value);
-									setSecurityIntelligenceMessage("");
-									setSecurityIntelligenceMessageStatus("idle");
-								}}
+								onChange={changeSecurityIntelligence}
+							/>
+							<SettingsSaveActions
+								onSave={() => void saveSecurityIntelligence()}
+								isSaving={securityIntelligenceBusy}
+								disabled={!activeProject || !securityIntelligence}
+								saveStatus={securityIntelligenceMessageStatus}
+								saveMessage={securityIntelligenceMessage}
 							/>
 							<SettingsProjectExplorationPanel
 								activeProject={activeProject}
 								value={projectExploration}
 								mcpServers={mcpServers}
-								isSaving={securityIntelligenceBusy}
-								onChange={(value) => {
-									setProjectExploration(value);
-									setSecurityIntelligenceMessage("");
-									setSecurityIntelligenceMessageStatus("idle");
-								}}
+								isSaving={projectExplorationBusy}
+								onChange={changeProjectExploration}
 							/>
 							<SettingsSaveActions
-								onSave={() => void saveSecurityIntelligence()}
-								isSaving={securityIntelligenceBusy}
+								onSave={() => void saveProjectExploration()}
+								isSaving={projectExplorationBusy}
 								disabled={
-									!activeProject || !securityIntelligence || !projectExploration
+									!activeProject ||
+									!projectExploration ||
+									!projectExplorationConfigurationValid
 								}
-								saveStatus={securityIntelligenceMessageStatus}
-								saveMessage={securityIntelligenceMessage}
+								saveStatus={projectExplorationMessageStatus}
+								saveMessage={projectExplorationMessage}
 							/>
 						</>
 					) : null}

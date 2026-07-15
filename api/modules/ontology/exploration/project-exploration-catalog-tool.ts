@@ -60,19 +60,8 @@ export async function projectExplorationCatalogTool(input: {
 			"focusにはpaths、modules、termsの少なくとも一つが必要です。",
 		);
 	}
-	if (
-		!(await projectSourceMatchesRevision({
-			projectPaths: [input.executionPath],
-			expectedHead: input.expectedHead,
-			readSourceState: input.readSourceState,
-		}))
-	) {
-		return failed(
-			startedAt,
-			audit,
-			"PROJECT_EXPLORATION_EXECUTION_SOURCE_CHANGED",
-			"実装workspaceのsource stateが準備時点から変化したため、通常のworkspace探索へ切り替えてください。",
-		);
+	if (!(await executionSourceIsCurrent(input))) {
+		return executionSourceChanged(startedAt, audit);
 	}
 	try {
 		const response = await (input.mcpAccess ?? mcpClientManager).callTool(
@@ -135,6 +124,9 @@ export async function projectExplorationCatalogTool(input: {
 			input.projectPath,
 			audit.provenance,
 		);
+		if (!(await executionSourceIsCurrent(input))) {
+			return executionSourceChanged(startedAt, audit);
+		}
 		return {
 			ok: true,
 			toolName: "project_exploration_catalog",
@@ -150,6 +142,30 @@ export async function projectExplorationCatalogTool(input: {
 			"Project exploration catalog is temporarily unavailable.",
 		);
 	}
+}
+
+function executionSourceIsCurrent(input: {
+	executionPath: string;
+	expectedHead: string;
+	readSourceState?: ProjectSourceStateReader;
+}) {
+	return projectSourceMatchesRevision({
+		projectPaths: [input.executionPath],
+		expectedHead: input.expectedHead,
+		readSourceState: input.readSourceState,
+	});
+}
+
+function executionSourceChanged(
+	startedAt: string,
+	audit: ProjectExplorationCatalogPayload["audit"],
+) {
+	return failed(
+		startedAt,
+		audit,
+		"PROJECT_EXPLORATION_EXECUTION_SOURCE_CHANGED",
+		"実装workspaceのsource stateが準備時点から変化したため、通常のworkspace探索へ切り替えてください。",
+	);
 }
 
 function projectModelSafeCatalog(

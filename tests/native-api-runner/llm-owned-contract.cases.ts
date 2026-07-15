@@ -259,6 +259,45 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(sink.emit).not.toHaveBeenCalled();
 	});
 
+	it("records Todo side effects in the run ledger", async () => {
+		const { repository, task, run } = await createRuntimeRun("todo-ledger");
+		const sink = { emit: vi.fn(async () => {}) };
+		const result = await dispatchNativeApiToolCall({
+			toolCall: todoCall("todo-ledger-call", {
+				op: "replace_plan",
+				expectedPlanRevision: 0,
+				todos: [
+					{
+						id: crypto.randomUUID(),
+						title: "実装する",
+						nextAction: "対象を確認する",
+					},
+				],
+			}),
+			context: context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			sink,
+			state: { readFiles: [], postImport: null },
+		});
+		expect(result.toolResult.ok).toBe(true);
+		expect(sink.emit).toHaveBeenCalledTimes(2);
+		expect(sink.emit).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				type: "tool_call_finished",
+				payload: expect.objectContaining({
+					toolName: "todo_list",
+					ok: true,
+					arguments: expect.objectContaining({
+						command: expect.objectContaining({ op: "replace_plan" }),
+					}),
+				}),
+			}),
+		);
+	});
+
 	it("runs the real Native loop and stops when the LLM pauses its Todo", async () => {
 		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-pause");

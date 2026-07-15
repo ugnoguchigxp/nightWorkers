@@ -4,6 +4,7 @@ import {
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { NotFoundError } from "../../../lib/errors";
 import * as nightworkersRepo from "../../nightworkers/nightworkers.repository";
+import { updateRepositoryFeatureSetting } from "../../nightworkers/repository-feature-settings.repository";
 
 const DEFAULT_SETTINGS: ProjectExplorationCatalogPilotSettings = {
 	enabled: false,
@@ -25,13 +26,12 @@ export async function saveProjectExplorationCatalogSettings(
 	const repository = await nightworkersRepo.getRepository(repositoryId);
 	if (!repository) throw new NotFoundError("Repository not found");
 	const settings = projectExplorationCatalogPilotSettingsSchema.parse(input);
-	const featureSettings = isRecord(repository.featureSettings)
-		? repository.featureSettings
-		: {};
-	await nightworkersRepo.updateRepositoryFeatureSettings(repositoryId, {
-		...featureSettings,
-		projectExplorationCatalog: settings,
-	});
+	const updated = await updateRepositoryFeatureSetting(
+		repositoryId,
+		"projectExplorationCatalog",
+		settings,
+	);
+	if (!updated) throw new NotFoundError("Repository not found");
 	return settings;
 }
 

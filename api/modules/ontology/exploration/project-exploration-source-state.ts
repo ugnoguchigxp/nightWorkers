@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const PROJECT_SOURCE_GIT_TIMEOUT_MS = 10_000;
+const PROJECT_SOURCE_GIT_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 
 export type ProjectSourceState = { head: string | null; dirty: boolean };
 export type ProjectSourceStateReader = (
@@ -11,17 +13,33 @@ export type ProjectSourceStateReader = (
 export async function readGitProjectSourceState(
 	projectPath: string,
 ): Promise<ProjectSourceState> {
-	const [head, status] = await Promise.all([
-		execFileAsync("git", ["rev-parse", "--verify", "HEAD"], {
-			cwd: projectPath,
-		}),
-		execFileAsync("git", ["status", "--porcelain=v1", "-z"], {
-			cwd: projectPath,
-		}),
-	]);
+	const before = await readGitHead(projectPath);
+	const status = await execFileAsync(
+		"git",
+		["status", "--porcelain=v1", "-z"],
+		gitExecOptions(projectPath),
+	);
+	const after = await readGitHead(projectPath);
 	return {
-		head: head.stdout.trim() || null,
-		dirty: status.stdout.length > 0,
+		head: after,
+		dirty: status.stdout.length > 0 || before !== after,
+	};
+}
+
+async function readGitHead(projectPath: string) {
+	const head = await execFileAsync(
+		"git",
+		["rev-parse", "--verify", "HEAD"],
+		gitExecOptions(projectPath),
+	);
+	return head.stdout.trim() || null;
+}
+
+function gitExecOptions(projectPath: string) {
+	return {
+		cwd: projectPath,
+		timeout: PROJECT_SOURCE_GIT_TIMEOUT_MS,
+		maxBuffer: PROJECT_SOURCE_GIT_MAX_BUFFER_BYTES,
 	};
 }
 

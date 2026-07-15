@@ -290,4 +290,9 @@ export const jaSettings = {
 	"settings.projectExploration.noServer": "未選択",
 	"settings.projectExploration.mcpServerHelp":
 		"path-first Static Intelligence toolを提供する有効なMCP Serverを選択してください。",
+	"settings.projectExploration.serverDisabledSuffix": "（無効）",
+	"settings.projectExploration.invalidServer":
+		"有効化するには、ONになっているvulnWorkbench MCP Serverを選択してください。",
+	"settings.projectExploration.saveSucceeded":
+		"Project Static Intelligence設定を保存しました。",
 } as const;

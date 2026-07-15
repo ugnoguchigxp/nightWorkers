@@ -40,7 +40,7 @@ export async function dispatchNativeApiToolCall(input: {
 		);
 	}
 	if (registration.kind === "todo_control") {
-		return continueWith(await dispatchTodoTool(input), input.state);
+		return continueWith(await dispatchTodoToolWithLedger(input), input.state);
 	}
 
 	if (registration.kind === "context_still") {
@@ -188,6 +188,36 @@ async function dispatchTodoTool(input: {
 		command: command as never,
 	});
 	return projectWorkerResultToNativeApiToolResult(result);
+}
+
+async function dispatchTodoToolWithLedger(input: {
+	toolCall: ProviderToolCall;
+	context: AgentRunContext;
+	sink: AgentRuntimeSink;
+	state: NativeApiDispatchState;
+}) {
+	await input.sink.emit({
+		type: "tool_call_started",
+		message: "[NativeApiRunner] todo_list started.",
+		payload: {
+			callId: input.toolCall.id,
+			toolName: "todo_list",
+			arguments: input.toolCall.arguments,
+		},
+	});
+	const result = await dispatchTodoTool(input);
+	await input.sink.emit({
+		type: "tool_call_finished",
+		message: `[NativeApiRunner] todo_list ${result.ok ? "finished" : "failed"}.`,
+		payload: {
+			callId: input.toolCall.id,
+			toolName: "todo_list",
+			arguments: input.toolCall.arguments,
+			ok: result.ok,
+			error: result.error,
+		},
+	});
+	return result;
 }
 
 async function dispatchMcpCatalog(): Promise<NativeApiToolResult> {

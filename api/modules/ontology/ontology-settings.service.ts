@@ -6,6 +6,7 @@ import {
 import { NotFoundError } from "../../lib/errors";
 import { isVulnWorkbenchCliConfigured } from "../../services/vulnworkbench-cli-runtime";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { updateRepositoryFeatureSetting } from "../nightworkers/repository-feature-settings.repository";
 import { getRepositoryTechStackOverview } from "../techStack";
 import {
 	DEFAULT_PROJECT_SECURITY_INTELLIGENCE_SETTINGS,
@@ -41,13 +42,12 @@ export async function saveProjectSecurityIntelligenceSettings(
 	const repository = await nightworkersRepo.getRepository(repositoryId);
 	if (!repository) throw new NotFoundError("Repository not found");
 	const settings = projectSecurityIntelligenceSettingsSchema.parse(input);
-	const featureSettings = isRecord(repository.featureSettings)
-		? repository.featureSettings
-		: {};
-	await nightworkersRepo.updateRepositoryFeatureSettings(repositoryId, {
-		...featureSettings,
-		securityIntelligence: settings,
-	});
+	const updated = await updateRepositoryFeatureSetting(
+		repositoryId,
+		"securityIntelligence",
+		settings,
+	);
+	if (!updated) throw new NotFoundError("Repository not found");
 	return getProjectSecurityIntelligenceSettings(repositoryId);
 }
 

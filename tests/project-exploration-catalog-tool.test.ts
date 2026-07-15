@@ -172,6 +172,31 @@ describe("project exploration catalog worker adapter", () => {
 		expect(callTool).not.toHaveBeenCalled();
 	});
 
+	it("does not return clues when the worktree changes during the MCP read", async () => {
+		const callTool = vi.fn(async () => mcp(catalog()));
+		const readSourceState = vi
+			.fn()
+			.mockResolvedValueOnce({ head: "abc123", dirty: false })
+			.mockResolvedValueOnce({ head: "abc123", dirty: true });
+		const result = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: { callTool },
+			readSourceState,
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "PROJECT_EXPLORATION_EXECUTION_SOURCE_CHANGED" },
+		});
+		expect(callTool).toHaveBeenCalledTimes(1);
+		expect(
+			JSON.stringify(projectWorkerResultToMcpStructuredPayload(result)),
+		).not.toContain("src/app.ts");
+	});
+
 	it("returns a structured unavailable result when run access is absent", async () => {
 		const dispatched = await executeWorkerTool({
 			toolName: "project_exploration_catalog",

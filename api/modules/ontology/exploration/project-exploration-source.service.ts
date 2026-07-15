@@ -214,17 +214,40 @@ function validateToolContract(
 		prepare.annotations?.destructiveHint !== false ||
 		prepare.annotations?.idempotentHint !== true ||
 		status.annotations?.readOnlyHint !== true ||
+		status.annotations?.destructiveHint !== false ||
+		status.annotations?.idempotentHint !== true ||
 		catalog.annotations?.readOnlyHint !== true ||
-		!hasPathFirstInput(prepare, ["projectPath"]) ||
-		!hasPathFirstInput(status, ["projectPath"]) ||
-		!hasPathFirstInput(catalog, ["projectPath", "focus", "limits"])
+		catalog.annotations?.destructiveHint !== false ||
+		catalog.annotations?.idempotentHint !== true ||
+		!hasPathFirstInput(prepare, {
+			allowedKeys: ["projectPath"],
+			expectedProperties: ["projectPath"],
+			requiredInputKeys: ["projectPath"],
+		}) ||
+		!hasPathFirstInput(status, {
+			allowedKeys: ["projectPath"],
+			expectedProperties: ["projectPath"],
+			requiredInputKeys: ["projectPath"],
+		}) ||
+		!hasPathFirstInput(catalog, {
+			allowedKeys: ["projectPath", "focus", "limits"],
+			expectedProperties: ["projectPath", "focus"],
+			requiredInputKeys: ["projectPath"],
+		})
 	) {
 		return { ok: false, reason: "contract_invalid" };
 	}
 	return { ok: true };
 }
 
-function hasPathFirstInput(tool: McpToolSummary, allowedKeys: string[]) {
+function hasPathFirstInput(
+	tool: McpToolSummary,
+	contract: {
+		allowedKeys: string[];
+		expectedProperties: string[];
+		requiredInputKeys: string[];
+	},
+) {
 	if (!tool.inputSchema || typeof tool.inputSchema !== "object") return false;
 	const schema = tool.inputSchema as Record<string, unknown>;
 	const variants = [
@@ -241,11 +264,17 @@ function hasPathFirstInput(tool: McpToolSummary, allowedKeys: string[]) {
 			return false;
 		}
 		const keys = Object.keys(variant.properties as Record<string, unknown>);
-		if (!keys.includes("projectPath")) return false;
-		if (keys.some((key) => !allowedKeys.includes(key))) return false;
-		return (
-			Array.isArray(variant.required) &&
-			variant.required.includes("projectPath")
+		if (contract.expectedProperties.some((key) => !keys.includes(key))) {
+			return false;
+		}
+		if (keys.some((key) => !contract.allowedKeys.includes(key))) return false;
+		const required = Array.isArray(variant.required)
+			? variant.required.filter(
+					(value): value is string => typeof value === "string",
+				)
+			: [];
+		return contract.requiredInputKeys.every((property) =>
+			required.includes(property),
 		);
 	});
 }
