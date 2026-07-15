@@ -264,12 +264,22 @@ export async function reconcileMissionPilotPreQueueSessions() {
 				"finalizing",
 			].includes(run.status),
 		);
+		const hasOnlyTerminalFailedUnexpectedRuns =
+			unexpectedRuns.length > 0 &&
+			unexpectedRuns.every((run) =>
+				["failed", "cancelled", "timed_out"].includes(run.status),
+			);
+		const [heldQueueEntry] = queueEntries;
 		const recoverableOrphanedStart =
-			Boolean(task && ["running", "ready"].includes(task.status)) &&
+			Boolean(task && ["running", "ready", "queued"].includes(task.status)) &&
 			!hasActiveRun &&
 			queueEntries.length === 1 &&
-			queueEntries[0]?.status === "queued" &&
-			queueEntries[0]?.claimReady === false;
+			heldQueueEntry?.status === "queued" &&
+			heldQueueEntry.claimReady === false &&
+			!heldQueueEntry.activeRunId &&
+			(unexpectedRuns.length === 0
+				? Boolean(task && ["running", "ready"].includes(task.status))
+				: hasOnlyTerminalFailedUnexpectedRuns);
 		if (task && recoverableOrphanedStart) {
 			await db
 				.update(tasks)
@@ -281,7 +291,7 @@ export async function reconcileMissionPilotPreQueueSessions() {
 		if (!task) code = "MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING";
 		else if (taskStatus && TERMINAL_TASK_STATUSES.has(taskStatus)) {
 			code = "MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL";
-		} else if (unexpectedRuns.length > 0) {
+		} else if (unexpectedRuns.length > 0 && !recoverableOrphanedStart) {
 			code = "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN";
 		} else if (queueEntries.length === 1) {
 			const handoff = missionPilotQueueHandoffSchema.safeParse(

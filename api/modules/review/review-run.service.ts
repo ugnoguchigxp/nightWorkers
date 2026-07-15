@@ -688,6 +688,8 @@ export function buildReviewRunPrompt(input: {
 			? [
 					"- Mission Pilot Review の最終回答は説明文ではなく、次の構造だけを持つJSON objectにする: verdict(pass|rework|attention), summary, findings。",
 					"- findingsの各要素は severity(blocking|warning|info), category, file, line, evidence, recommendedAction, blockingReason を持つ。指摘がなければ空配列にする。",
+					"- file、line、blockingReason に該当値がない場合もキーを省略せず null を設定する。",
+					"- correction Session の起動はReview Run完了後にシステムが行うため、summaryでは起動・引き渡し完了を断定せず、修正要求が必要であることだけを述べる。",
 					"- blocking findingが1件でもあればverdict=passにしない。",
 				]
 			: []),

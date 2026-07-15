@@ -3,11 +3,11 @@ import { z } from "@hono/zod-openapi";
 export const missionPilotReviewFindingSchema = z.object({
 	severity: z.enum(["blocking", "warning", "info"]),
 	category: z.string().min(1),
-	file: z.string().nullable(),
-	line: z.number().int().positive().nullable(),
+	file: z.string().nullable().default(null),
+	line: z.number().int().positive().nullable().default(null),
 	evidence: z.string().min(1),
 	recommendedAction: z.string().min(1),
-	blockingReason: z.string().nullable(),
+	blockingReason: z.string().nullable().default(null),
 });
 
 export const missionPilotReviewDecisionPayloadSchema = z

@@ -605,7 +605,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).not.toContain(">spec</button>");
 	});
 
-	it("shows verification definitions without Test Mode workflow controls", () => {
+	it("does not duplicate verification definitions above the feature plan", () => {
 		const featurePlan = buildTaskMessage({
 			id: "feature-plan-message",
 			content:
@@ -647,46 +647,12 @@ describe("PlanModeWorkspaceViewer", () => {
 			initialTab: "feature-plan",
 		});
 
-		expect(markup).not.toContain("テスト実装ワークフロー開始");
-		expect(markup).not.toContain("実装開始");
-		expect(markup).not.toContain("ユニットテスト実行");
-		expect(markup).not.toContain("証跡テストチェック");
-		expect(markup).not.toContain("LLM コードレビュー");
-		expect(markup).not.toContain("実装完了");
-		expect(markup).not.toContain("件の条件");
-		expect(markup).toContain("AC-001");
+		expect(markup.match(/AC-001/g)).toHaveLength(1);
 		expect(markup).toContain(
 			"ユーザーを作成でき、長い完了条件も省略されずに読める",
 		);
-		expect(markup).toContain("whitespace-normal break-words");
-		expect(markup).not.toContain("truncate text-slate-200");
-	});
-
-	it("keeps verification definitions visible on locked Plan Mode workspaces", () => {
-		const featurePlan = buildTaskMessage({
-			id: "feature-plan-message",
-			content: "# Feature Plan\n\n## 完了条件\n- [AC-001] ユーザーを作成できる",
-			messageType: "markdown_document",
-			metadataJson: {
-				intent: "feature_plan",
-				title: "Feature Plan",
-				verificationDocumentId: "55555555-5555-4555-8555-555555555555",
-				markdownDocumentData: {
-					title: "Feature Plan",
-				},
-			},
-		});
-
-		const markup = renderPlanModeViewer({
-			sessionId: "11111111-1111-4111-8111-111111111111",
-			taskMessages: [featurePlan],
-			activityArtifacts: [],
-			initialTab: "feature-plan",
-			isImplementationLocked: true,
-		});
-
-		expect(markup).toContain("AC-001");
-		expect(markup).not.toContain("テスト実装ワークフロー開始");
+		expect(markup).not.toContain("未確認");
+		expect(markup).not.toContain("nightworkers-structured-artifact-row");
 	});
 
 	it("renders blueprint and data model tabs from task messages", () => {

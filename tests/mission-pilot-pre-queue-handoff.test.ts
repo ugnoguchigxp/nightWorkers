@@ -9,6 +9,7 @@ import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
 	missionPilotContextSnapshots,
+	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
 import {
@@ -23,6 +24,8 @@ import { createSession } from "../api/modules/missionPilot/mission-pilot.reposit
 import { createPlanReview } from "../api/modules/missionPilot/mission-pilot-plan.repository";
 import { reconcileMissionPilotPreQueueSessions } from "../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service";
 import { admitMissionPilotQueueHandoff } from "../api/modules/missionPilot/mission-pilot-queue-handoff.service";
+import { claimMissionPilotRepositoryBootstrapStart } from "../api/modules/missionPilot/mission-pilot-repository-bootstrap.service";
+import { associateMissionPilotChildRun } from "../api/modules/missionPilot/mission-pilot-run-association.service";
 import { claimNextImplementationQueueEntry } from "../api/modules/queue/queue.repository";
 import { buildFeaturePlanImplementationPlanMetadata } from "../api/modules/specification/feature-plan-implementation-plan";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
@@ -347,5 +350,109 @@ describe("Mission Pilot pre-Queue handoff", () => {
 					"implementation_queue",
 			),
 		).toHaveLength(0);
+	});
+
+	it("recovers a terminal child run that failed before Queue release", async () => {
+		const fixture = await createHandoffFixture();
+		await admitMissionPilotQueueHandoff({
+			taskId: fixture.taskId,
+			sessionId: fixture.sessionId,
+			planReviewId: fixture.planReviewId,
+			featurePlanMessageId: fixture.featurePlanMessageId,
+			verificationDocumentId: fixture.verificationDocumentId,
+			leaseOwner: fixture.leaseOwner,
+		});
+		const [failedRun] = await db
+			.insert(taskRuns)
+			.values({
+				taskId: fixture.taskId,
+				repositoryId: fixture.repositoryId,
+				status: "failed",
+				workerKind: "codex-agent",
+				startedAt: new Date(),
+				finishedAt: new Date(),
+			})
+			.returning();
+
+		expect(await reconcileMissionPilotPreQueueSessions()).toBe(1);
+		expect(
+			await db.query.missionPilotSessions.findFirst({
+				where: eq(missionPilotSessions.id, fixture.sessionId),
+			}),
+		).toMatchObject({
+			desiredState: "playing",
+			phase: "queued",
+			lastErrorCode: null,
+			lastErrorMessage: null,
+		});
+		expect(
+			await db.query.taskRuns.findFirst({
+				where: eq(taskRuns.id, failedRun.id),
+			}),
+		).toMatchObject({ status: "failed" });
+	});
+
+	it("moves a queued Session to bootstrap preparation before child run association", async () => {
+		const fixture = await createHandoffFixture();
+		await admitMissionPilotQueueHandoff({
+			taskId: fixture.taskId,
+			sessionId: fixture.sessionId,
+			planReviewId: fixture.planReviewId,
+			featurePlanMessageId: fixture.featurePlanMessageId,
+			verificationDocumentId: fixture.verificationDocumentId,
+			leaseOwner: fixture.leaseOwner,
+		});
+		const preparing = await claimMissionPilotRepositoryBootstrapStart({
+			taskId: fixture.taskId,
+			sessionId: fixture.sessionId,
+			contextRevision: fixture.contextRevision,
+			contextDigest: fixture.contextDigest,
+			implementationCycle: 1,
+		});
+		expect(preparing).toMatchObject({
+			phase: "repository_bootstrap_preparing",
+			activeRunId: null,
+			activePhaseRunId: null,
+		});
+		const [run] = await db
+			.insert(taskRuns)
+			.values({
+				taskId: fixture.taskId,
+				repositoryId: fixture.repositoryId,
+				status: "running",
+				workerKind: "codex-agent",
+				startedAt: new Date(),
+			})
+			.returning();
+		const phaseRun = await associateMissionPilotChildRun({
+			taskId: fixture.taskId,
+			runId: run.id,
+			phase: "repository_bootstrap",
+			missionPilot: {
+				sessionId: fixture.sessionId,
+				cycle: 1,
+				contextRevision: fixture.contextRevision,
+				contextDigest: fixture.contextDigest,
+			},
+		});
+		expect(phaseRun).toMatchObject({
+			phase: "repository_bootstrap",
+			status: "running",
+			runId: run.id,
+		});
+		expect(
+			await db.query.missionPilotSessions.findFirst({
+				where: eq(missionPilotSessions.id, fixture.sessionId),
+			}),
+		).toMatchObject({
+			phase: "repository_bootstrapping",
+			activeRunId: run.id,
+		});
+		expect(
+			await db
+				.select()
+				.from(missionPilotPhaseRuns)
+				.where(eq(missionPilotPhaseRuns.runId, run.id)),
+		).toHaveLength(1);
 	});
 });

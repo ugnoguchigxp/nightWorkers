@@ -15,7 +15,6 @@ import {
 	WorkspaceBlueprintPreview,
 	WorkspaceDataModelPanel,
 } from "./PlanModeWorkspacePanels";
-import { FeaturePlanVerificationBar } from "./PlanModeWorkspaceViewer.helpers";
 import { getPlanWorkspaceTabLabel } from "./PlanModeWorkspaceViewer.model";
 
 type StatusProps = Parameters<typeof PlanWorkspaceStatusView>[0];
@@ -25,7 +24,6 @@ export function PlanModeWorkspaceView({
 	activeTab,
 	selectActiveTab,
 	workspaceScrollRef,
-	featurePlanVerification,
 	featurePlanMessage,
 	sessionId,
 	activeBlueprintMessage,
@@ -74,9 +72,6 @@ export function PlanModeWorkspaceView({
 	activeTab: PlanWorkspaceTab;
 	selectActiveTab: (tab: PlanWorkspaceTab) => void;
 	workspaceScrollRef: RefObject<HTMLDivElement | null>;
-	featurePlanVerification:
-		| Parameters<typeof FeaturePlanVerificationBar>[0]["model"]
-		| null;
 	featurePlanMessage: TaskMessage | null;
 	sessionId: string | null;
 	activeBlueprintMessage: TaskMessage | null;
@@ -172,16 +167,11 @@ export function PlanModeWorkspaceView({
 				data-artifact-export-expand
 			>
 				{activeTab === "feature-plan" ? (
-					<div className="grid gap-3">
-						{featurePlanVerification ? (
-							<FeaturePlanVerificationBar model={featurePlanVerification} />
-						) : null}
-						<MarkdownViewer
-							content={
-								featurePlanMessage?.content || "仕様書 artifact はありません。"
-							}
-						/>
-					</div>
+					<MarkdownViewer
+						content={
+							featurePlanMessage?.content || "仕様書 artifact はありません。"
+						}
+					/>
 				) : activeTab === "blueprint" ? (
 					<div className="grid gap-3">
 						<WorkspaceBlueprintPreview

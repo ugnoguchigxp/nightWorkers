@@ -94,10 +94,11 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).not.toContain("## DDL");
 		expect(systemPrompt).toContain("必要な判断だけを短く");
 		expect(systemPrompt).toContain("同じ内容の重複を避け");
-		expect(systemPrompt).toContain("Questionnaire Decisions を採用判断の正");
-		expect(systemPrompt).toContain("Questionnaire Decisions は検証方針の正");
-		expect(systemPrompt).toContain("unit を主軸にする");
-		expect(systemPrompt).toContain("E2E を必須 command として含めない");
+		expect(systemPrompt).toContain(
+			"Questionnaire Decisions はTaskを具体化する設計判断",
+		);
+		expect(systemPrompt).toContain("Taskに明示された中核機能と検証要件");
+		expect(systemPrompt).not.toContain("Mission Pilot SystemContext");
 		expect(systemPrompt).toContain(
 			"詳細契約は assembled design context 側の責務",
 		);
@@ -133,6 +134,17 @@ describe("Specification document generation", () => {
 		);
 		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
 		expect(systemPrompt).toContain("最小の verify 系 script 追加");
+	});
+
+	it("adds requirement priority only to the Mission Pilot SystemContext", () => {
+		const systemPrompt = buildSpecificationDocumentSystemPrompt({
+			missionPilot: true,
+		});
+
+		expect(systemPrompt).toContain("[Mission Pilot SystemContext]");
+		expect(systemPrompt).toContain("最新の明示的なユーザー指示");
+		expect(systemPrompt).toContain("QuestionnaireはTaskを具体化");
+		expect(systemPrompt).toContain("固定分岐、keyword判定、正規表現");
 	});
 
 	it("adds implementation plan guidance for DB/API/UI/test spanning tasks", () => {

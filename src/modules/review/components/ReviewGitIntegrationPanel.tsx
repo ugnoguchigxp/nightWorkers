@@ -79,18 +79,9 @@ export function ReviewGitIntegrationPanel({
 			? record.targetPushStatus === "pushing"
 			: state?.commitRecord?.pushStatus === "pushing");
 	const commitDisabled =
-		!state ||
-		!onCommitGitCloseout ||
-		!state.canCommit ||
-		commitDone ||
-		busyAction !== null;
+		!state || !onCommitGitCloseout || commitDone || busyAction !== null;
 	const pushDisabled =
-		!state ||
-		!onPushGitCloseout ||
-		!state.canPush ||
-		pushDone ||
-		pushBusy ||
-		busyAction !== null;
+		!state || !onPushGitCloseout || pushDone || pushBusy || busyAction !== null;
 	const mergeDisabled =
 		!record ||
 		["merged", "merging", "rework_requested"].includes(record.status) ||

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotPhaseRuns,
@@ -114,6 +114,18 @@ export async function startMissionPilotRepositoryBootstrap(input: {
 			.set({ status: "failed", finishedAt: new Date() })
 			.where(eq(missionPilotPhaseRuns.id, active.id));
 	}
+	const preparingSession = await claimMissionPilotRepositoryBootstrapStart({
+		taskId: input.taskId,
+		sessionId: input.sessionId,
+		contextRevision: session.contextRevision,
+		contextDigest: session.contextDigest,
+		implementationCycle: session.implementationCycle,
+	});
+	if (!preparingSession) {
+		throw new Error(
+			"Mission Pilot repository bootstrap preparation could not be claimed",
+		);
+	}
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
@@ -129,23 +141,63 @@ export async function startMissionPilotRepositoryBootstrap(input: {
 		],
 		runtimeOptionsPatch: {
 			missionPilot: {
-				sessionId: session.id,
-				cycle: session.implementationCycle,
-				contextRevision: session.contextRevision,
-				contextDigest: session.contextDigest,
+				sessionId: preparingSession.id,
+				cycle: preparingSession.implementationCycle,
+				contextRevision: preparingSession.contextRevision,
+				contextDigest: preparingSession.contextDigest,
 			},
 			repositoryBootstrap: {
 				targetPathSource: "registered_project_root",
-				queueEntryId: session.queueHandoffJson.queueEntryId,
+				queueEntryId: preparingSession.queueHandoffJson?.queueEntryId,
 			},
 		},
 	}).catch(async (error) => {
-		await db
-			.update(tasks)
-			.set({ status: "queued", updatedAt: new Date() })
-			.where(eq(tasks.id, input.taskId));
+		await db.transaction(async (tx) => {
+			await tx
+				.update(tasks)
+				.set({ status: "queued", updatedAt: new Date() })
+				.where(eq(tasks.id, input.taskId));
+			await tx
+				.update(missionPilotSessions)
+				.set({ phase: "queued", updatedAt: new Date() })
+				.where(
+					and(
+						eq(missionPilotSessions.id, input.sessionId),
+						eq(missionPilotSessions.phase, "repository_bootstrap_preparing"),
+						isNull(missionPilotSessions.activeRunId),
+						isNull(missionPilotSessions.activePhaseRunId),
+					),
+				);
+		});
 		throw error;
 	});
+}
+
+export async function claimMissionPilotRepositoryBootstrapStart(input: {
+	taskId: string;
+	sessionId: string;
+	contextRevision: number;
+	contextDigest: string;
+	implementationCycle: number;
+}) {
+	const [preparing] = await db
+		.update(missionPilotSessions)
+		.set({ phase: "repository_bootstrap_preparing", updatedAt: new Date() })
+		.where(
+			and(
+				eq(missionPilotSessions.id, input.sessionId),
+				eq(missionPilotSessions.taskId, input.taskId),
+				eq(missionPilotSessions.desiredState, "playing"),
+				eq(missionPilotSessions.phase, "queued"),
+				eq(missionPilotSessions.contextRevision, input.contextRevision),
+				eq(missionPilotSessions.contextDigest, input.contextDigest),
+				eq(missionPilotSessions.implementationCycle, input.implementationCycle),
+				isNull(missionPilotSessions.activeRunId),
+				isNull(missionPilotSessions.activePhaseRunId),
+			),
+		)
+		.returning();
+	return preparing ?? null;
 }
 
 export async function completeMissionPilotRepositoryBootstrap(input: {

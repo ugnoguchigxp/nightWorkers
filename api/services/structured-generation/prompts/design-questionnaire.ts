@@ -1,6 +1,7 @@
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
 import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "../../../modules/specification/specification-traceability";
+import { MISSION_PILOT_PLAN_SYSTEM_CONTEXT } from "./mission-pilot-system-context";
 
 type QuestionnaireSourceInput = {
 	sourceBlueprintMessage?: {
@@ -230,20 +231,22 @@ export function buildDesignQuestionnaireReviewUserPrompt(
 	);
 }
 
-export function buildSpecificationDocumentSystemPrompt() {
+export function buildSpecificationDocumentSystemPrompt(input?: {
+	missionPilot?: boolean;
+}) {
 	return [
+		...(input?.missionPilot ? [MISSION_PILOT_PLAN_SYSTEM_CONTEXT] : []),
 		"Design Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。",
 		"目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。",
 		"文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。",
 		"実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。",
 		"Target Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。",
 		"Blueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。",
-		"Questionnaire Decisions を採用判断の正としてください。Data Model DDL reference と衝突する場合は Questionnaire を優先し、DDL 側の対象外要素は実装対象にしないでください。",
-		"Questionnaire Decisions は検証方針の正でもあります。Questionnaire が `unit を主軸にする` または同等の unit 主軸を選んでいる場合、Project package scripts に E2E command が存在していても `## 検証計画` に E2E を必須 command として含めないでください。",
-		"初期ユーザー文面と Questionnaire Decisions の検証方針が衝突する場合は Questionnaire を優先し、unit 主軸なら unit / focused test / API smoke / DB verification に限定してください。`unit と E2E` のように scope を再拡張しないでください。",
+		"Questionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。",
+		"Questionnaire Decisions の検証方針を反映しつつ、Taskに明示された中核機能と検証要件を理由なく狭めないでください。unit / focused test / API smoke / DB verification / E2E は、変更範囲と入力済みの要件に合わせて重複なく選んでください。",
 		"Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。",
 		"Plan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。",
-		"既生成資料は正本として信頼し、同じ内容を推測し直さないでください。矛盾がある場合は、最新ユーザー指示、Questionnaire Decisions、各 domain の専用 view、既存 repository context の順に優先してください。",
+		"既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。",
 		"未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。",
 		"Plan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。",
 		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",

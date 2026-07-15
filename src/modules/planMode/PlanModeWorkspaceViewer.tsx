@@ -32,7 +32,6 @@ import {
 import { usePlanWorkspaceActions } from "./PlanModeWorkspace.controller";
 import { PlanModeWorkspaceView } from "./PlanModeWorkspaceView";
 import {
-	buildFeaturePlanVerificationModel,
 	extractViewDecisions,
 	isCompletedQuestionnaireSession,
 	isCompletedStatus,
@@ -124,16 +123,6 @@ export function PlanModeWorkspaceViewer({
 	} = workspaceMessages;
 	const featurePlanMessage =
 		activeFeaturePlanMessage || designDocMessages.at(-1) || null;
-	const featurePlanVerification = useMemo(
-		() =>
-			activeTab === "feature-plan"
-				? buildFeaturePlanVerificationModel({
-						featurePlanMessage,
-						taskMessages,
-					})
-				: null,
-		[activeTab, featurePlanMessage, taskMessages],
-	);
 	const messageViewDecisions = useMemo(
 		() => extractViewDecisions(taskMessages),
 		[taskMessages],
@@ -532,7 +521,6 @@ export function PlanModeWorkspaceViewer({
 			activeTab={activeTab}
 			selectActiveTab={selectActiveTab}
 			workspaceScrollRef={workspaceScrollRef}
-			featurePlanVerification={featurePlanVerification}
 			featurePlanMessage={featurePlanMessage}
 			sessionId={sessionId}
 			activeBlueprintMessage={activeBlueprintMessage}

@@ -1,8 +1,63 @@
 import { describe, expect, it } from "vitest";
-import { resolveMissionPilotPushPolicy } from "../api/modules/missionPilot/mission-pilot-post-queue-review.service";
+import {
+	parseStructuredReviewDecision,
+	resolveMissionPilotPushPolicy,
+} from "../api/modules/missionPilot/mission-pilot-post-queue-review.service";
 import { evaluateReviewCompletionGate } from "../api/modules/missionPilot/mission-pilot-post-queue-state";
 
 describe("Mission Pilot Review completion gate", () => {
+	it("normalizes omitted nullable fields before routing rework", () => {
+		const decision = parseStructuredReviewDecision(
+			JSON.stringify({
+				verdict: "rework",
+				summary: "blocking 1件、warning 1件",
+				findings: [
+					{
+						severity: "blocking",
+						category: "verification",
+						file: "api/routes/todos.route.test.ts",
+						line: 45,
+						evidence: "主要API検証が失敗している",
+						recommendedAction: "APIテストを再実行する",
+						blockingReason: "ACを確認できない",
+					},
+					{
+						severity: "warning",
+						category: "ui",
+						evidence: "操作通知が不足している",
+						recommendedAction: "通知を追加する",
+					},
+				],
+			}),
+		);
+		expect(decision).toMatchObject({
+			verdict: "rework",
+			findings: [
+				{ severity: "blocking" },
+				{
+					severity: "warning",
+					file: null,
+					line: null,
+					blockingReason: null,
+				},
+			],
+		});
+		expect(
+			evaluateReviewCompletionGate({
+				decision,
+				contextDigestMatches: true,
+				testSnapshotMatches: true,
+				targetManifestMatches: true,
+				reviewerEvaluationMatches: true,
+				reviewerEvaluationApproved: false,
+			}),
+		).toMatchObject({
+			pass: false,
+			reasons: ["review_rework", "reviewer_evaluation_not_approved"],
+			decision: { verdict: "rework" },
+		});
+	});
+
 	it("does not allow push when the Play authorization did not grant it", () => {
 		expect(
 			resolveMissionPilotPushPolicy({

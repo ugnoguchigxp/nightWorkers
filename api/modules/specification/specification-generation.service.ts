@@ -308,7 +308,9 @@ async function generateSpecificationDesignDocumentRawOutput(
 	usageTrace?: TraceProvenance,
 ) {
 	try {
-		const systemPrompt = buildSpecificationDocumentSystemPrompt();
+		const systemPrompt = buildSpecificationDocumentSystemPrompt({
+			missionPilot: role === "mission_pilot",
+		});
 		const userPrompt = buildSpecificationDocumentUserPrompt(context);
 		const generated = await callStructuredOutputWithRepair({
 			systemPrompt,

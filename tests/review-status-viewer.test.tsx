@@ -571,6 +571,47 @@ describe("ReviewStatusViewer", () => {
 		expect(commitButton).toContain("nightworkers-success-action-button");
 	});
 
+	it("keeps commit and push requestable before Git closeout is ready", async () => {
+		await i18next.changeLanguage("ja");
+		const markup = renderToStaticMarkup(
+			<ReviewStatusViewer
+				detail={reviewSessionDetail()}
+				gitCloseout={gitCloseoutState({
+					canCommit: false,
+					canPush: false,
+					state: "needs_human",
+					blockingCode: "COMMIT_RECORD_NOT_READY",
+					blockingReason: "Commit ownership record is not ready: pending.",
+					commitRecord: {
+						...gitCloseoutState().commitRecord,
+						status: "pending",
+						ownedCandidatePathsJson: [],
+						stageableOwnedPathsJson: [],
+					},
+				})}
+				onCommitGitCloseout={async () => gitCloseoutState()}
+				onPushGitCloseout={async () => gitCloseoutState()}
+			/>,
+		);
+		const buttons = markup.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? [];
+		const commitButton = buttons.find((button) =>
+			button.includes("LLMメッセージでコミット"),
+		);
+		const mergeButton = buttons.find((button) =>
+			button.includes("LLMにマージを手配"),
+		);
+		const pushButton = buttons.find((button) =>
+			button.includes("LLMにPushを手配"),
+		);
+
+		expect(commitButton).toBeTruthy();
+		expect(commitButton).not.toContain('disabled=""');
+		expect(pushButton).toBeTruthy();
+		expect(pushButton).not.toContain('disabled=""');
+		expect(mergeButton).toBeTruthy();
+		expect(mergeButton).toContain('disabled=""');
+	});
+
 	it("does not render the ReviewRun status badge", async () => {
 		await i18next.changeLanguage("ja");
 		const detail = {
