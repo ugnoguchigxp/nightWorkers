@@ -26,8 +26,32 @@ export const missionPilotReviewDecisionPayloadSchema = z
 				message: "blocking findingを含むReview結果はpassにできません",
 			});
 		}
+		if (
+			value.verdict === "rework" &&
+			!value.findings.some((finding) => finding.severity === "blocking")
+		) {
+			ctx.addIssue({
+				code: "custom",
+				message: "blocking findingのないReview結果はreworkにできません",
+			});
+		}
 	});
+
+export const missionPilotReworkPacketSchema = z.object({
+	summary: z.string().min(1).max(4000).optional(),
+	findings: z.array(missionPilotReviewFindingSchema).max(50).optional(),
+	objective: z.string().min(1).max(4000).optional(),
+	acceptanceCriteria: z.array(z.string().min(1).max(2000)).max(50).optional(),
+	evidenceRefs: z.array(z.string().min(1).max(1000)).max(100).optional(),
+	failedConditionIds: z.array(z.string().min(1).max(200)).max(100).optional(),
+	affectedPaths: z.array(z.string().min(1).max(1000)).max(200).optional(),
+	mutationPaths: z.array(z.string().min(1).max(1000)).max(200).optional(),
+	reason: z.string().min(1).max(1000).optional(),
+});
 
 export type MissionPilotReviewDecisionPayload = z.infer<
 	typeof missionPilotReviewDecisionPayloadSchema
+>;
+export type MissionPilotReworkPacket = z.infer<
+	typeof missionPilotReworkPacketSchema
 >;

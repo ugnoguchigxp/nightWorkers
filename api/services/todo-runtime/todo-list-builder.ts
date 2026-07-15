@@ -297,10 +297,17 @@ function hasDataMigrationTodo(todos: ImplementationTodoInput[]) {
 }
 
 function isReservedDataMigrationGateTodo(todo: ImplementationTodoInput) {
+	const taskType =
+		typeof todo.taskType === "string" ? todo.taskType.trim() : "";
 	const procedureId =
 		typeof todo.procedureId === "string" ? todo.procedureId.trim() : "";
 
-	return DATA_MIGRATION_PROCEDURE_IDS.has(procedureId);
+	return (
+		taskType === "data_migration" ||
+		taskType === "migration" ||
+		DATA_MIGRATION_PROCEDURE_IDS.has(procedureId) ||
+		procedureId.startsWith("data_migration.")
+	);
 }
 
 function isReservedFirstGateTodo(todo: ImplementationTodoInput) {

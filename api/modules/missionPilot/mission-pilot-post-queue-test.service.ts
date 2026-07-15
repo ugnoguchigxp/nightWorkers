@@ -375,6 +375,15 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 		.select()
 		.from(missionPilotPhaseRuns)
 		.where(eq(missionPilotPhaseRuns.sessionId, session.id));
+	const [latestContext] = await db
+		.select()
+		.from(missionPilotContextSnapshots)
+		.where(eq(missionPilotContextSnapshots.sessionId, session.id))
+		.orderBy(desc(missionPilotContextSnapshots.revision))
+		.limit(1);
+	const pendingRework = readRecord(
+		readRecord(latestContext?.contextJson).execution,
+	).pendingRework;
 	return {
 		kind: "start_review",
 		input: {
@@ -387,6 +396,7 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 				cycle: session.reviewCycle,
 				contextRevision: session.contextRevision,
 				contextDigest: session.contextDigest,
+				...(pendingRework ? { reworkPacket: pendingRework } : {}),
 			},
 		},
 	} as const;

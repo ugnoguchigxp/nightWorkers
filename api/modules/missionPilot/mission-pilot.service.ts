@@ -2,6 +2,7 @@ import type { TaskRunStatus } from "../../db/schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
+import { recoverInterruptedIntakeSessions } from "./mission-pilot-intake-recovery.repository";
 import { startOrResumeMissionPilotPlanIntake } from "./mission-pilot-plan-intake.port";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
@@ -54,7 +55,7 @@ initializeMissionPilotQuestionnaireAutonomy();
 export async function reconcileMissionPilotStartup() {
 	const provisioned = await repo.backfillMissingTaskSessions();
 	const classified = await reconcileMissionPilotPreQueueSessions();
-	const recovered = await repo.recoverInterruptedStartingSessions();
+	const recovered = await recoverInterruptedIntakeSessions();
 	const postQueueRecovered = await recoverMissionPilotPostQueueSessions();
 	for (const session of recovered) {
 		publishMissionPilotUpdated(session.taskId, repo.toControlSummary(session));

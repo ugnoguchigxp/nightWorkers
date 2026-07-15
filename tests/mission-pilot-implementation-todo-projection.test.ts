@@ -203,17 +203,14 @@ describe("Mission Pilot implementation Todo projection", () => {
 			initialTodos: [
 				{ seq: 1, title: "Todo schemaを実装する", dependsOn: [] },
 				{ seq: 2, title: "Todo APIを実装する", dependsOn: [1] },
-				{
-					seq: 3,
-					title: "DB migration を実行する",
-					procedureId: "data_migration.apply_migration",
-				},
 			],
 		});
 		if (resolution.kind !== "ready") throw new Error("Expected ready");
+		expect(resolution.initialTodos).toHaveLength(2);
 		expect(
 			buildStandardImplementationTodoList({
 				todos: resolution.initialTodos,
+				requireDataMigrationGates: resolution.requireDataMigrationGates,
 			}).map((todo) => todo.procedureId),
 		).toEqual([
 			"coding_preparation",

@@ -1,6 +1,7 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { startTaskRunInWorker } from "../../../services/execution/worker-process-manager";
+import { parseMissionPilotReworkPacket } from "../../missionPilot/mission-pilot-rework";
 import * as repo from "../nightworkers.repository";
 import { startTaskRunInProcess } from "./start-task-run";
 
@@ -41,10 +42,14 @@ export function readMissionPilotEnvelope(value: unknown) {
 		typeof candidate.contextDigest !== "string"
 	)
 		return null;
+	const hasReworkPacket = Object.hasOwn(candidate, "reworkPacket");
+	const reworkPacket = parseMissionPilotReworkPacket(candidate.reworkPacket);
+	if (hasReworkPacket && !reworkPacket) return null;
 	return {
 		sessionId: candidate.sessionId,
 		cycle: candidate.cycle,
 		contextRevision: candidate.contextRevision,
 		contextDigest: candidate.contextDigest,
+		...(reworkPacket ? { reworkPacket } : {}),
 	};
 }

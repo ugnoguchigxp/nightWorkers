@@ -134,7 +134,15 @@ describe("Mission Pilot Test to Review transition", () => {
 			sessionId,
 			revision: 1,
 			reason: "implementation_completed",
-			contextJson: { execution: {} },
+			contextJson: {
+				execution: {
+					pendingRework: {
+						summary: "migration defaults are missing",
+						findings: [],
+						affectedPaths: ["api/db/migration.ts"],
+					},
+				},
+			},
 			digest: "ctx-1",
 			tokenEstimate: 4,
 			createdAt: now,
@@ -291,7 +299,14 @@ describe("Mission Pilot Test to Review transition", () => {
 
 		expect(result).toMatchObject({
 			kind: "start_review",
-			input: { anchorRunId: implementationRunId },
+			input: {
+				anchorRunId: implementationRunId,
+				missionPilot: {
+					reworkPacket: {
+						summary: "migration defaults are missing",
+					},
+				},
+			},
 		});
 		const snapshot = await db.query.missionPilotTestSnapshots.findFirst({
 			where: eq(missionPilotTestSnapshots.sessionId, sessionId),

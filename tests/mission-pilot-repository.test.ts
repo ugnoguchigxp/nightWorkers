@@ -445,4 +445,47 @@ describe("Mission Pilot repository", () => {
 			version: 3,
 		});
 	});
+
+	it("recovers an orphaned initial intake when no Questionnaire was persisted", async () => {
+		const repositoryId = await insertRepository();
+		const taskId = crypto.randomUUID();
+		await db.transaction(async (tx) => {
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					id: taskId,
+					repositoryId,
+					title: "Interrupted Intake Pilot",
+					objective: "Questionnaire生成から安全に再開する",
+					status: "draft",
+				})
+				.returning();
+			await createSession(
+				{
+					task,
+					sourceKind: "mission_task_candidate",
+					sourceId: crypto.randomUUID(),
+				},
+				tx,
+			);
+			await tx
+				.update(missionPilotSessions)
+				.set({
+					desiredState: "playing",
+					phase: "initial_intake",
+					initialPromptState: "sent",
+					version: 2,
+				})
+				.where(eq(missionPilotSessions.taskId, taskId));
+		});
+
+		expect(await reconcileMissionPilotStartup()).toBeGreaterThanOrEqual(1);
+		await expect(getSessionByTaskId(taskId)).resolves.toMatchObject({
+			desiredState: "stopped",
+			phase: "attention",
+			initialPromptState: "sent",
+			lastErrorCode: "MISSION_PILOT_RESTART_RECOVERY_REQUIRED",
+			version: 3,
+		});
+	});
 });

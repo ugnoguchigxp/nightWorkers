@@ -69,7 +69,7 @@ export async function releaseMissionPilotQueueHandoff(taskId: string) {
 			.from(implementationQueueEntries)
 			.where(eq(implementationQueueEntries.id, handoff.queueEntryId))
 			.limit(1);
-		if (!entry || entry.status !== "queued") return null;
+		if (entry?.status !== "queued") return null;
 		if (entry.workspaceRequired) {
 			if (!entry.workspaceId) return null;
 			const [workspace] = await tx
@@ -173,8 +173,7 @@ export async function continueMissionPilotAfterRun(input: {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.id, phaseRun.sessionId))
 		.limit(1);
-	if (!session || session.desiredState !== "playing")
-		return { kind: "paused" } as const;
+	if (session?.desiredState !== "playing") return { kind: "paused" } as const;
 	if (phaseRun.phase === "repository_bootstrap") {
 		const { completeMissionPilotRepositoryBootstrap } = await import(
 			"./mission-pilot-repository-bootstrap.service"
@@ -256,7 +255,6 @@ export async function continueMissionPilotAfterRun(input: {
 		...latestContext.contextJson,
 		execution: {
 			...readRecord(latestContext.contextJson.execution),
-			pendingRework: undefined,
 			implementation: {
 				currentCycle: phaseRun.cycle,
 				latestAcceptedRunId: run?.id,

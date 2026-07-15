@@ -48,6 +48,28 @@ export async function applyPatchTool(
 	let targets: string[] = [];
 
 	try {
+		const codexUpdate = await applyCodexUpdateEnvelope({
+			patchContent,
+			repoRoot: absoluteRepoRoot,
+			allowedPaths,
+			externalAllowedPaths,
+			deniedPaths,
+		});
+		if (codexUpdate) {
+			return {
+				ok: true,
+				toolName: "apply_patch",
+				startedAt,
+				finishedAt: new Date().toISOString(),
+				payload: {
+					applied: true,
+					changedFiles: codexUpdate,
+					stdout: "",
+					stderr: "",
+				},
+			};
+		}
+
 		// 1. Write the patch content to a temp file
 		await fs.writeFile(tempPatchFile, gitPatchContent, "utf-8");
 
@@ -151,6 +173,91 @@ export async function applyPatchTool(
 			error: classifyPatchError(err),
 		};
 	}
+}
+
+async function applyCodexUpdateEnvelope(input: ApplyPatchInput) {
+	const lines = input.patchContent.trimEnd().split("\n");
+	if (lines[0] !== "*** Begin Patch" || lines.at(-1) !== "*** End Patch") {
+		return null;
+	}
+	const header = lines[1] ?? "";
+	if (!header.startsWith("*** Update File: ")) return null;
+	if (lines.slice(2, -1).some((line) => line.startsWith("*** "))) {
+		return null;
+	}
+	const relativePath = header.slice("*** Update File: ".length).trim();
+	const absolutePath = path.resolve(input.repoRoot, relativePath);
+	const policy = enforcePathPolicy(absolutePath, {
+		repoRoot: input.repoRoot,
+		allowedPaths: input.allowedPaths,
+		externalAllowedPaths: input.externalAllowedPaths,
+		deniedPaths: input.deniedPaths,
+	});
+	if (!policy.allowed) {
+		throw new Error(
+			policy.message || `Patch target is not allowed: ${relativePath}`,
+		);
+	}
+	const original = await fs.readFile(absolutePath, "utf8");
+	const trailingNewline = original.endsWith("\n");
+	let content = original.split("\n");
+	if (trailingNewline) content.pop();
+	const hunks = lines.slice(2, -1).reduce<string[][]>((result, line) => {
+		if (line.startsWith("@@")) result.push([]);
+		else if (result.length > 0) result.at(-1)?.push(line);
+		return result;
+	}, []);
+	if (hunks.length === 0) throw new Error("Codex update patch has no hunks.");
+	let searchFrom = 0;
+	for (const hunk of hunks) {
+		const oldLines: string[] = [];
+		const newLines: string[] = [];
+		for (const line of hunk) {
+			if (line.startsWith("+")) newLines.push(line.slice(1));
+			else if (line.startsWith("-")) oldLines.push(line.slice(1));
+			else {
+				const contextLine = line.startsWith(" ") ? line.slice(1) : line;
+				oldLines.push(contextLine);
+				newLines.push(contextLine);
+			}
+		}
+		const index = findLineSequence(content, oldLines, searchFrom);
+		if (index < 0) {
+			throw new Error(
+				`Codex update hunk does not match current file: ${relativePath}`,
+			);
+		}
+		content = [
+			...content.slice(0, index),
+			...newLines,
+			...content.slice(index + oldLines.length),
+		];
+		searchFrom = index + newLines.length;
+	}
+	await fs.writeFile(
+		absolutePath,
+		`${content.join("\n")}${trailingNewline ? "\n" : ""}`,
+		"utf8",
+	);
+	return [relativePath];
+}
+
+function findLineSequence(
+	content: string[],
+	expected: string[],
+	start: number,
+) {
+	if (expected.length === 0) return -1;
+	for (
+		let index = start;
+		index <= content.length - expected.length;
+		index += 1
+	) {
+		if (expected.every((line, offset) => content[index + offset] === line)) {
+			return index;
+		}
+	}
+	return -1;
 }
 
 function classifyPatchError(err: unknown) {

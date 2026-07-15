@@ -250,6 +250,7 @@ function buildReviewContract(
 	nightWorkersToolList: string,
 ) {
 	const options = readReviewRunOptions(context);
+	const focusedReview = options.focusedReview;
 	return [
 		"[NightWorkers Runtime Contract]",
 		`taskId: ${context.taskId}`,
@@ -266,6 +267,12 @@ function buildReviewContract(
 		"Review behavior:",
 		"- StateCard continuation、implementation handoff、実装中の会話履歴を前提にしない。",
 		"- 変更済み repository state、git diff/status、仕様、テスト/verify evidence、run events から判断する。",
+		...(focusedReview
+			? [
+					"- focused rework Reviewです。runtime contextに渡された前回Reviewのblocking指摘、対象パス、修正diff、関連テストだけを再確認してください。対象外の全体レビューは行わないでください。",
+					"- focused rework Reviewでは、既存のsecurity evidenceを再利用し、vulnWorkbench CLIを再実行しないでください。",
+				]
+			: []),
 		options.applyFixes
 			? "- applyFixes=true は accepted finding を新しい Implementation correction Session へ送る権限です。Review Run 自身は編集・検証・commit を行わず、finding/evidence の handoff を保存します。"
 			: "- applyFixes=false の Review Run では、実装編集を開始しない。",
@@ -294,6 +301,7 @@ function readReviewRunOptions(context: AgentRunContext) {
 	return {
 		applyFixes: options.applyFixes === true,
 		commitChanges: options.commitChanges === true,
+		focusedReview: options.focusedReview === true,
 	};
 }
 

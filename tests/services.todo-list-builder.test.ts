@@ -315,6 +315,33 @@ describe("standard implementation TodoList builder", () => {
 		).toHaveLength(0);
 	});
 
+	it("does not duplicate the migration gate for a task-type-only migration marker", () => {
+		const todos = buildStandardImplementationTodoList({
+			requireDataMigrationGates: true,
+			todos: [
+				{
+					seq: 1,
+					title: "スレッド保存処理を実装する",
+					taskType: "implementation",
+				},
+				{
+					seq: 2,
+					title: "migration を適用する",
+					taskType: "data_migration",
+				},
+			],
+		});
+
+		expect(
+			todos.filter(
+				(todo) => todo.procedureId === "data_migration.apply_migration",
+			),
+		).toHaveLength(1);
+		expect(
+			todos.filter((todo) => todo.taskType === "data_migration"),
+		).toHaveLength(1);
+	});
+
 	it("drops deprecated LLM-generated code review Todos", () => {
 		const todos = buildStandardImplementationTodoList({
 			todos: [

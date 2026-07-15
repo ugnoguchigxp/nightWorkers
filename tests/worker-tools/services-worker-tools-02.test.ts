@@ -52,6 +52,41 @@ describe("Worker Tools Unit Tests", () => {
 });
 
 describe("applyPatchTool", () => {
+	it("applies a Codex update-file patch envelope", async () => {
+		const repoRoot = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-apply-patch-"),
+		);
+		execFileSync("git", ["init"], { cwd: repoRoot });
+		await fs.writeFile(
+			path.join(repoRoot, "cache.ts"),
+			"export class Cache {\n  private values = new Map();\n}\n",
+		);
+
+		const result = await applyPatchTool({
+			repoRoot,
+			patchContent: [
+				"*** Begin Patch",
+				"*** Update File: cache.ts",
+				"@@",
+				" export class Cache {",
+				"   private values = new Map();",
+				"+  public get size(): number {",
+				"+    return this.values.size;",
+				"+  }",
+				" }",
+				"*** End Patch",
+			].join("\n"),
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload.changedFiles).toEqual(["cache.ts"]);
+		await expect(
+			fs.readFile(path.join(repoRoot, "cache.ts"), "utf8"),
+		).resolves.toContain("public get size(): number");
+
+		await fs.rm(repoRoot, { recursive: true, force: true });
+	});
+
 	it("applies a Codex add-file patch envelope", async () => {
 		const repoRoot = await fs.mkdtemp(
 			path.join(os.tmpdir(), "nightworkers-apply-patch-"),

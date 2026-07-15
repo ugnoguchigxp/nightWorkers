@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { missionPilotReviewDecisionPayloadSchema } from "../../../shared/schemas/mission-pilot-review.schema";
 import { db } from "../../db/client";
 import {
@@ -19,6 +19,12 @@ export async function continueAfterReviewRun(input: {
 	phaseRun: typeof missionPilotPhaseRuns.$inferSelect;
 	runId: string;
 }) {
+	if (input.phaseRun.status !== "running") {
+		return {
+			kind: "awaiting_domain_gate",
+			phase: input.phaseRun.phase,
+		} as const;
+	}
 	const [run] = await db
 		.select()
 		.from(taskRuns)
@@ -60,7 +66,11 @@ export async function continueAfterReviewRun(input: {
 	});
 	if (!gate.pass || !gate.decision || !testSnapshotId) {
 		const reviewSessionId = readReviewSessionId(run?.contextSnapshot);
-		if (gate.decision?.verdict === "rework") {
+		const blockingFindings =
+			gate.decision?.findings.filter(
+				(finding) => finding.severity === "blocking",
+			) ?? [];
+		if (gate.decision?.verdict === "rework" && blockingFindings.length > 0) {
 			if (reviewSessionId) {
 				await reviewRepo.updateReviewSession(reviewSessionId, {
 					status: "changes_requested",
@@ -75,9 +85,16 @@ export async function continueAfterReviewRun(input: {
 				source: "review",
 				reworkPacket: {
 					summary: gate.decision.summary,
-					findings: gate.decision.findings.filter(
-						(finding) => finding.severity === "blocking",
-					),
+					findings: blockingFindings,
+					affectedPaths: [
+						...new Set(
+							gate.decision.findings
+								.filter(
+									(finding) => finding.severity === "blocking" && finding.file,
+								)
+								.map((finding) => finding.file as string),
+						),
+					],
 				},
 			});
 		}
@@ -179,6 +196,7 @@ export async function continueAfterReviewRun(input: {
 		...latestContext.contextJson,
 		execution: {
 			...readRecord(latestContext.contextJson.execution),
+			pendingRework: undefined,
 			review: {
 				reviewSessionId,
 				decisionId,
@@ -327,8 +345,32 @@ export async function prepareImplementationRework(input: {
 		return { kind: "attention", reasons: ["correction_cycle_limit"] } as const;
 	}
 	const now = new Date();
-	await db.transaction(async (tx) => {
-		await tx
+	const [latestContext] = await db
+		.select()
+		.from(missionPilotContextSnapshots)
+		.where(eq(missionPilotContextSnapshots.sessionId, input.session.id))
+		.orderBy(desc(missionPilotContextSnapshots.revision))
+		.limit(1);
+	if (
+		latestContext &&
+		latestContext.revision !== input.session.contextRevision
+	) {
+		return {
+			kind: "awaiting_domain_gate",
+			phase: input.phaseRun.phase,
+		} as const;
+	}
+	const nextRevision = input.session.contextRevision + 1;
+	const nextContext = {
+		...(latestContext?.contextJson ?? {}),
+		execution: {
+			...readRecord(latestContext?.contextJson?.execution),
+			pendingRework: input.reworkPacket,
+		},
+	};
+	const nextDigest = digestText(JSON.stringify(nextContext));
+	const reworkPrepared = await db.transaction(async (tx) => {
+		const [updatedPhaseRun] = await tx
 			.update(missionPilotPhaseRuns)
 			.set({
 				status: "completed",
@@ -336,8 +378,28 @@ export async function prepareImplementationRework(input: {
 				evidenceJson: { reworkPacket: input.reworkPacket },
 				finishedAt: now,
 			})
-			.where(eq(missionPilotPhaseRuns.id, input.phaseRun.id));
-		await tx
+			.where(
+				and(
+					eq(missionPilotPhaseRuns.id, input.phaseRun.id),
+					eq(missionPilotPhaseRuns.status, "running"),
+				),
+			)
+			.returning({ id: missionPilotPhaseRuns.id });
+		if (!updatedPhaseRun) return false;
+		await tx.insert(missionPilotContextSnapshots).values({
+			id: crypto.randomUUID(),
+			sessionId: input.session.id,
+			revision: nextRevision,
+			reason:
+				input.source === "review"
+					? "review_rework_requested"
+					: "test_rework_requested",
+			contextJson: nextContext,
+			digest: nextDigest,
+			tokenEstimate: Math.ceil(JSON.stringify(nextContext).length / 4),
+			createdAt: now,
+		});
+		const [updatedSession] = await tx
 			.update(missionPilotSessions)
 			.set({
 				phase: "implementation_rework",
@@ -348,10 +410,30 @@ export async function prepareImplementationRework(input: {
 				activeTestSnapshotId: null,
 				activeReviewDecisionId: null,
 				activeCloseoutId: null,
+				contextRevision: nextRevision,
+				contextDigest: nextDigest,
 				updatedAt: now,
 			})
-			.where(eq(missionPilotSessions.id, input.session.id));
+			.where(
+				and(
+					eq(missionPilotSessions.id, input.session.id),
+					eq(
+						missionPilotSessions.contextRevision,
+						input.session.contextRevision,
+					),
+					eq(missionPilotSessions.contextDigest, input.session.contextDigest),
+				),
+			)
+			.returning({ id: missionPilotSessions.id });
+		if (!updatedSession) return false;
+		return true;
 	});
+	if (!reworkPrepared) {
+		return {
+			kind: "awaiting_domain_gate",
+			phase: input.phaseRun.phase,
+		} as const;
+	}
 	return {
 		kind: "start_implementation_rework",
 		input: {
@@ -359,8 +441,8 @@ export async function prepareImplementationRework(input: {
 			missionPilot: {
 				sessionId: input.session.id,
 				cycle: implementationCycle,
-				contextRevision: input.session.contextRevision,
-				contextDigest: input.session.contextDigest,
+				contextRevision: nextRevision,
+				contextDigest: nextDigest,
 				reworkPacket: input.reworkPacket,
 			},
 		},

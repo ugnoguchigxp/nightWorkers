@@ -164,20 +164,7 @@ export async function resolveMissionPilotImplementationStart(
 				digest: implementationPlan.digest,
 			},
 		},
-		initialTodos: [
-			...projectFeaturePlanImplementationTodos(implementationPlan),
-			...(implementationPlan.requiresDataMigration
-				? [
-						{
-							seq: implementationPlan.steps.length + 1,
-							title: "DB migration を実行する",
-							taskType: "data_migration",
-							procedureId: "data_migration.apply_migration",
-							dependsOn: [],
-						},
-					]
-				: []),
-		],
+		initialTodos: projectFeaturePlanImplementationTodos(implementationPlan),
 		requireDataMigrationGates: implementationPlan.requiresDataMigration,
 		implementationPlanProvenance: {
 			version: 1,

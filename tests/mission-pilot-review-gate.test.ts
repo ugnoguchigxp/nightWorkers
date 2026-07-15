@@ -48,4 +48,32 @@ describe("Mission Pilot Review completion gate", () => {
 		});
 		expect(result.pass).toBe(false);
 	});
+
+	it("does not route warning-only rework back to Implementation", () => {
+		const result = evaluateReviewCompletionGate({
+			decision: {
+				verdict: "rework",
+				summary: "warning only",
+				findings: [
+					{
+						severity: "warning",
+						category: "maintainability",
+						file: "src/a.ts",
+						line: 1,
+						evidence: "改善余地",
+						recommendedAction: "必要なら整理する",
+						blockingReason: null,
+					},
+				],
+			},
+			contextDigestMatches: true,
+			testSnapshotMatches: true,
+			targetManifestMatches: true,
+		});
+		expect(result).toMatchObject({
+			pass: false,
+			reasons: ["structured_decision_invalid"],
+			decision: null,
+		});
+	});
 });

@@ -92,6 +92,75 @@ describe("Review Run workflow", () => {
 		);
 	});
 
+	it("uses only the rework packet for a Mission Pilot correction review", () => {
+		const packet = {
+			summary: "migration defaults are missing",
+			findings: [
+				{
+					severity: "blocking" as const,
+					category: "data_migration",
+					file: "api/db/migration.ts",
+					line: 12,
+					evidence: "CURRENT_TIMESTAMP default is missing",
+					recommendedAction: "add the canonical default",
+					blockingReason: "created_at is null on insert",
+				},
+			],
+			affectedPaths: ["api/db/migration.ts"],
+		};
+		const options = normalizeReviewRunOptions();
+		const todos = buildReviewRunTodos({
+			options,
+			target: reviewTarget(),
+			planSpec: reviewPlanSpec(),
+			missionPilotReworkPacket: packet,
+		});
+
+		expect(todos.map((todo) => todo.procedureId)).toEqual([
+			"review.rework_findings",
+			"review.rework_diff",
+			"review.rework_consolidate",
+			"review.correction_request",
+			"review.correction_closeout_permission",
+		]);
+		expect(todos.map((todo) => todo.procedureId)).not.toContain(
+			"review.security_vulnworkbench",
+		);
+
+		const prompt = buildReviewRunPrompt({
+			session: {
+				id: "session-1",
+				runId: "run-1",
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				recommendationId: null,
+				status: "in_progress",
+				startedAt: new Date(),
+				completedAt: null,
+				finalAction: null,
+				finalNote: null,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			},
+			options,
+			target: reviewTarget(),
+			planSpec: reviewPlanSpec(),
+			todos,
+			initialFindings: [],
+			missionPilot: true,
+			missionPilotReworkPacket: packet,
+		});
+
+		expect(prompt).toContain("focused rework Review");
+		expect(prompt).toContain("CURRENT_TIMESTAMP default is missing");
+		expect(prompt).toContain("Plan全体の再読は省略");
+		expect(prompt).toContain("api/db/migration.ts");
+		expect(prompt).not.toContain("src/app.ts");
+		expect(prompt).not.toContain(
+			"vulnWorkbench CLI のセキュリティ診断結果を確認する",
+		);
+	});
+
 	it("keeps fixes finding-scoped when code review is disabled", () => {
 		const todos = buildReviewRunTodos({
 			options: normalizeReviewRunOptions({

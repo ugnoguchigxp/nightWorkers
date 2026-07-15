@@ -6,6 +6,11 @@ import {
 } from "../../db/mission-pilot-schema";
 import type { StartTaskRunOptions } from "../nightworkers/run-orchestration/start-task-run-types";
 import type { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
+import {
+	buildMissionPilotReworkTodos,
+	formatMissionPilotReworkPacket,
+	parseMissionPilotReworkPacket,
+} from "./mission-pilot-rework";
 
 type MissionPilotContinuation = Awaited<
 	ReturnType<typeof continueMissionPilotAfterRun>
@@ -66,13 +71,27 @@ export async function startImplementationRework(input: {
 	taskId: string;
 	missionPilot: Record<string, unknown>;
 }) {
+	const reworkPacket = parseMissionPilotReworkPacket(
+		input.missionPilot.reworkPacket,
+	);
+	if (!reworkPacket) {
+		throw new Error("Mission Pilot rework packet is missing or invalid.");
+	}
 	const { startTaskRun } = await import(
 		"../nightworkers/run-orchestration/start-task-run"
 	);
 	await startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		runtimeOptionsPatch: { missionPilot: input.missionPilot },
+		initialTodos: buildMissionPilotReworkTodos(reworkPacket),
+		latestUserMessageOverride: [
+			"Review指摘限定のImplementation correctionを開始してください。",
+			"対象外の機能追加、リファクタリング、テスト範囲の拡張は行わないでください。",
+			formatMissionPilotReworkPacket(reworkPacket),
+		].join("\n\n"),
+		runtimeOptionsPatch: {
+			missionPilot: { ...input.missionPilot, reworkPacket },
+		},
 	});
 }
 

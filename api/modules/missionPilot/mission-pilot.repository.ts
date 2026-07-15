@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
 	type MissionPilotAuthorizationV3,
 	type MissionPilotSourceRef,
@@ -575,26 +575,4 @@ export async function syncCompletedRun(taskId: string, runId: string) {
 		)
 		.returning();
 	return updated ?? null;
-}
-
-export async function recoverInterruptedStartingSessions() {
-	return db
-		.update(missionPilotSessions)
-		.set({
-			desiredState: "stopped",
-			phase: "attention",
-			lastErrorCode: "MISSION_PILOT_RESTART_RECOVERY_REQUIRED",
-			lastErrorMessage:
-				"サーバー再起動で初期処理が中断されました。Playで安全に再開できます。",
-			version: sql`${missionPilotSessions.version} + 1`,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.desiredState, "playing"),
-				eq(missionPilotSessions.phase, "starting"),
-				isNull(missionPilotSessions.activeRunId),
-			),
-		)
-		.returning();
 }
