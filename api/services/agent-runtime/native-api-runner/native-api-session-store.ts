@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { client, db } from "../../../db/client";
 import { nativeApiToolCalls, nativeApiTurns } from "../../../db/schema";
 import type { ProviderToolCall } from "../../structured-llm/tool-calls";
@@ -154,52 +154,20 @@ export class NativeApiSessionStore {
 			.orderBy(asc(nativeApiTurns.turnIndex));
 	}
 
-	async getLatestCompletedTurnForTask(input: {
-		taskId: string;
-		agentModeSessionId: string;
-		excludeRunId?: string | null;
-		provider?: string | null;
-		model?: string | null;
-		executionMode?: NativeApiExecutionMode | null;
-	}) {
+	async getLatestCompletedTurnForRun(runId: string) {
 		await this.ensureTables();
-		const filters = [
-			eq(nativeApiTurns.taskId, input.taskId),
-			eq(nativeApiTurns.status, "completed"),
-			eq(nativeApiTurns.agentModeSessionId, input.agentModeSessionId),
-		];
-		if (input.excludeRunId)
-			filters.push(ne(nativeApiTurns.runId, input.excludeRunId));
-		if (input.provider)
-			filters.push(eq(nativeApiTurns.provider, input.provider));
-		if (input.model) filters.push(eq(nativeApiTurns.model, input.model));
-		if (input.executionMode)
-			filters.push(eq(nativeApiTurns.executionMode, input.executionMode));
 		const [turn] = await db
 			.select()
 			.from(nativeApiTurns)
-			.where(and(...filters))
+			.where(
+				and(
+					eq(nativeApiTurns.runId, runId),
+					eq(nativeApiTurns.status, "completed"),
+				),
+			)
 			.orderBy(desc(nativeApiTurns.finishedAt), desc(nativeApiTurns.updatedAt))
 			.limit(1);
 		return turn ?? null;
-	}
-
-	async getLatestCompletedTurnForPreviousRun(input: {
-		taskId: string;
-		runId: string;
-		agentModeSessionId: string;
-		provider?: string | null;
-		model?: string | null;
-		executionMode?: NativeApiExecutionMode | null;
-	}) {
-		return this.getLatestCompletedTurnForTask({
-			taskId: input.taskId,
-			agentModeSessionId: input.agentModeSessionId,
-			excludeRunId: input.runId,
-			provider: input.provider,
-			model: input.model,
-			executionMode: input.executionMode,
-		});
 	}
 
 	async listToolCalls(runId: string) {
@@ -209,6 +177,21 @@ export class NativeApiSessionStore {
 			.from(nativeApiToolCalls)
 			.where(eq(nativeApiToolCalls.runId, runId))
 			.orderBy(asc(nativeApiToolCalls.createdAt));
+	}
+
+	async getToolCall(runId: string, toolCallId: string) {
+		await this.ensureTables();
+		const [record] = await db
+			.select()
+			.from(nativeApiToolCalls)
+			.where(
+				and(
+					eq(nativeApiToolCalls.runId, runId),
+					eq(nativeApiToolCalls.toolCallId, toolCallId),
+				),
+			)
+			.limit(1);
+		return record ?? null;
 	}
 
 	private async ensureTables() {

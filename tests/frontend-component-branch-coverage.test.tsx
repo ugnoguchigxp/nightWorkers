@@ -441,7 +441,6 @@ function createWorkspace(
 		sendWorkbenchMessage: vi.fn(async () => undefined),
 		startRun: vi.fn(async () => undefined),
 		stopLatestRun: vi.fn(async () => undefined),
-		startReviewSession: vi.fn(async () => reviewSession),
 		deleteProject: vi.fn(async () => undefined),
 		setExpandedProjects: vi.fn(),
 		fetchDirectories: vi.fn(async () => undefined),

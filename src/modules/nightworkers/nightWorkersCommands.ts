@@ -98,25 +98,19 @@ export function startWorkbenchRun(sessionId: string) {
 	});
 }
 
-export function startTestModeRun(
-	sessionId: string,
-	input: {
-		projectId: string;
-		specArtifactId: string;
-		verificationDocumentId?: string | null;
-		mode: "test";
-		action?: "discover_tests" | "plan_and_implement_tests" | "run_unit_tests";
-		rerun?: boolean;
-	},
-) {
-	return apiFetch(
-		`/api/tasks/${sessionId}/test-mode-run`,
-		jsonRequest("POST", input),
-	);
-}
-
 export function stopRun(runId: string) {
 	return apiFetch(`/api/runs/${runId}/stop`, { method: "POST" });
+}
+
+export function resumeTaskRunTodo(
+	runId: string,
+	todoId: string,
+	input: { expectedTodoRevision: number; userContext: string },
+) {
+	return apiFetch(
+		`/api/runs/${runId}/todos/${todoId}/resume`,
+		jsonRequest("POST", input),
+	);
 }
 
 export function stopBackgroundProcess(processId: string) {
@@ -143,40 +137,12 @@ export function restoreWorkbenchSessionArchive(sessionId: string) {
 	});
 }
 
-export function submitRunReview(
-	runId: string,
-	input: { action: "complete" | "cancel"; note?: string },
-) {
-	return apiFetch(`/api/runs/${runId}/reviews`, jsonRequest("POST", input));
-}
-
 export function fetchReviewRecommendation(runId: string) {
 	return apiFetch(`/api/runs/${runId}/review-recommendation`);
 }
 
-export function startReviewSession(runId: string) {
-	return apiFetch(`/api/runs/${runId}/review-sessions`, { method: "POST" });
-}
-
 export function fetchLatestTaskReviewSession(sessionId: string) {
 	return apiFetch(`/api/tasks/${sessionId}/review-session`);
-}
-
-export function startReviewRun(
-	reviewSessionId: string,
-	input: {
-		options?: {
-			codeReview?: boolean;
-			securityReview?: boolean;
-			applyFixes?: boolean;
-			commitChanges?: boolean;
-		};
-	} = {},
-) {
-	return apiFetch(
-		`/api/review-sessions/${reviewSessionId}/run`,
-		jsonRequest("POST", input),
-	);
 }
 
 export function fetchRunGitCloseout(runId: string) {

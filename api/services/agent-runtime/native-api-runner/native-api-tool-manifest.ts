@@ -1,6 +1,6 @@
 import type { ProviderToolDefinition } from "../../structured-llm/tool-calls";
+import { TODO_MUTATION_LIMITS } from "../../todo-mutation";
 import type { WorkerToolName } from "../../tool-policy/types";
-import type { NativeApiExecutionMode } from "./native-api-mode";
 
 export type NativeApiRuntimeToolName =
 	| WorkerToolName
@@ -10,17 +10,13 @@ export type NativeApiRuntimeToolName =
 	| "context_compile"
 	| "context_decision"
 	| "compile_eval"
-	| "register_candidates"
-	| "new_context"
-	| "finalize_answer";
+	| "register_candidates";
 
 export type NativeApiToolKind =
 	| "worker"
 	| "todo_control"
 	| "mcp_catalog"
-	| "context_still"
-	| "context_window"
-	| "terminal";
+	| "context_still";
 
 export type NativeApiToolRegistration = {
 	name: NativeApiRuntimeToolName;
@@ -29,14 +25,7 @@ export type NativeApiToolRegistration = {
 	definition: ProviderToolDefinition;
 };
 
-export type NativeApiToolProfileTodo = {
-	taskType?: string | null;
-	procedureId?: string | null;
-};
-
 export type NativeApiToolProfileInput = {
-	executionMode?: NativeApiExecutionMode;
-	currentTodo?: NativeApiToolProfileTodo | null;
 	ontologyMcpEnabled?: boolean;
 	projectExplorationCatalogEnabled?: boolean;
 };
@@ -51,6 +40,149 @@ export const objectSchema = (
 	required,
 	additionalProperties,
 });
+
+const todoRevisionFields = {
+	todoId: {
+		type: "string",
+		minLength: 1,
+		maxLength: TODO_MUTATION_LIMITS.maxTodoIdLength,
+	},
+	expectedTodoRevision: { type: "integer", minimum: 0 },
+};
+
+export const todoCommandJsonSchema = {
+	oneOf: [
+		objectSchema({ op: { const: "list" } }, ["op"]),
+		objectSchema(
+			{
+				op: { const: "replace_plan" },
+				expectedPlanRevision: { type: "integer", minimum: 0 },
+				todos: {
+					type: "array",
+					minItems: 1,
+					maxItems: TODO_MUTATION_LIMITS.maxTodos,
+					items: objectSchema(
+						{
+							id: {
+								type: "string",
+								minLength: 1,
+								maxLength: TODO_MUTATION_LIMITS.maxTodoIdLength,
+							},
+							title: {
+								type: "string",
+								minLength: 1,
+								maxLength: TODO_MUTATION_LIMITS.maxTitleLength,
+							},
+							objective: {
+								type: ["string", "null"],
+								maxLength: TODO_MUTATION_LIMITS.maxObjectiveLength,
+							},
+							context: {
+								type: ["string", "null"],
+								maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+							},
+							nextAction: {
+								type: "string",
+								minLength: 1,
+								maxLength: TODO_MUTATION_LIMITS.maxNextActionLength,
+							},
+							acceptanceCriteria: {
+								type: "array",
+								maxItems: TODO_MUTATION_LIMITS.maxAcceptanceCriteria,
+								items: {
+									type: "string",
+									minLength: 1,
+									maxLength: TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength,
+								},
+							},
+							dependsOn: {
+								type: "array",
+								maxItems: TODO_MUTATION_LIMITS.maxDependencies,
+								items: {
+									type: "string",
+									minLength: 1,
+									maxLength: TODO_MUTATION_LIMITS.maxTodoIdLength,
+								},
+							},
+						},
+						["title", "nextAction"],
+					),
+				},
+			},
+			["op", "expectedPlanRevision", "todos"],
+		),
+		...(["start"] as const).map((op) =>
+			objectSchema({ op: { const: op }, ...todoRevisionFields }, [
+				"op",
+				"todoId",
+				"expectedTodoRevision",
+			]),
+		),
+		objectSchema(
+			{
+				op: { const: "resume" },
+				...todoRevisionFields,
+				userContext: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+				},
+			},
+			["op", "todoId", "expectedTodoRevision", "userContext"],
+		),
+		objectSchema(
+			{
+				op: { const: "transition" },
+				...todoRevisionFields,
+				status: { enum: ["passed", "needs_human", "skipped"] },
+				reason: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
+				},
+				nextTodoId: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxTodoIdLength,
+				},
+			},
+			["op", "todoId", "expectedTodoRevision", "status", "reason"],
+		),
+		objectSchema(
+			{
+				op: { const: "record_failure" },
+				...todoRevisionFields,
+				failureSummary: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
+				},
+				nextAction: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxNextActionLength,
+				},
+			},
+			["op", "todoId", "expectedTodoRevision", "failureSummary", "nextAction"],
+		),
+		objectSchema(
+			{
+				op: { const: "update_context" },
+				...todoRevisionFields,
+				context: {
+					type: "string",
+					maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+				},
+				nextAction: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxNextActionLength,
+				},
+			},
+			["op", "todoId", "expectedTodoRevision", "context", "nextAction"],
+		),
+	],
+};
 
 export const workerToolDefinitions: NativeApiToolRegistration[] = [
 	{
@@ -208,7 +340,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "run_check",
 			description:
-				"Run a NightWorkers-managed check command and store raw stdout/stderr as formal verification evidence. Use this for lint, format:check, typecheck, test, coverage, build, verify, and completion_check-oriented commands.",
+				"Run a check command in the registered repository and return its typed result and raw stdout/stderr. The result does not update Todo or Run status automatically.",
 			inputSchema: objectSchema(
 				{
 					command: { type: "string" },
@@ -246,7 +378,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "run_verification",
 			description:
-				"Run a verification command. If package.json defines a verify script, prefer that verify command as the representative final verification before completion; use typecheck/lint/test/build as focused checks or fallbacks.",
+				"Run a verification command and return its typed result. Choose the relevant command from the current Task and Todo context.",
 			inputSchema: objectSchema(
 				{
 					command: { type: "string" },
@@ -265,29 +397,10 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "completion_check",
 			description:
-				"Check whether required Verification Checklist items are matched by NightWorkers-managed test evidence. If this fails, continue fixing failed or unknown required conditions.",
+				"Read the current verification checklist projection and return a typed status without changing Todo or Run state.",
 			inputSchema: objectSchema({
 				taskId: { type: "string" },
 				verificationDocumentId: { type: "string" },
-			}),
-		},
-	},
-	{
-		name: "reviewer_evaluation",
-		kind: "worker",
-		workerToolName: "reviewer_evaluation",
-		definition: {
-			name: "reviewer_evaluation",
-			description:
-				"Run the final NightWorkers reviewer evaluation for a Review Mode run. If the reviewer returns changes_requested or blocking findings, persist the finding/evidence and hand it off to a new Implementation correction Session; Review Mode itself must not edit, verify, or commit.",
-			inputSchema: objectSchema({
-				runId: { type: "string" },
-				rubricId: { type: "string" },
-				mode: {
-					type: "string",
-					enum: ["deterministic_only", "llm_assisted"],
-				},
-				persist: { type: "boolean" },
 			}),
 		},
 	},
@@ -467,67 +580,17 @@ export const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
 		},
 	},
 	{
-		name: "new_context",
-		kind: "context_window",
-		definition: {
-			name: "new_context",
-			description:
-				"Start a new context window without summarizing conversation history.",
-			inputSchema: objectSchema({}),
-		},
-	},
-	{
 		name: "todo_list",
 		kind: "todo_control",
 		definition: {
 			name: "todo_list",
 			description:
-				"Control the NightWorkers TodoList. Use todo_list operation=replace only for structural replanning; use todo_list operation=start/done/block/fail for existing Todo state transitions.",
+				"ID・revision指定のcommandでTodo planとcurrent Todoを明示更新します。hostは次Todoを推測せず、tool結果だけを返します。",
 			inputSchema: objectSchema(
 				{
-					operation: {
-						type: "string",
-						enum: ["replace", "start", "done", "block", "fail"],
-					},
-					seq: { type: "number" },
-					todos: { type: "array" },
-					startFirst: { type: "boolean" },
-					evidenceRefs: {
-						type: "array",
-						items: { type: "string" },
-						description:
-							"Evidence references returned by NightWorkers tool outcomes. Use with operation=done when required.",
-					},
-					todoListReplaceReason: {
-						type: "string",
-						enum: [
-							"initial_plan",
-							"scope_changed",
-							"estimate_changed",
-							"newly_required_work",
-							"blocked_replan",
-						],
-						description:
-							"Required with todo_list operation=replace when a Todo is already running. Do not provide this for start/done/block/fail.",
-					},
+					command: todoCommandJsonSchema,
 				},
-				["operation"],
-			),
-		},
-	},
-	{
-		name: "finalize_answer",
-		kind: "terminal",
-		definition: {
-			name: "finalize_answer",
-			description:
-				"Finalize the native API runner after all required gates for the current mode are complete. If the coverage autonomy gate rejects finalize_answer, continue in a test-focused loop by adding or repairing unit tests; do not add test-only branches, coverage-ignore comments, or production logic hacks just to satisfy coverage.",
-			inputSchema: objectSchema(
-				{
-					finalReport: { type: "string" },
-					summary: { type: "string" },
-				},
-				["finalReport"],
+				["command"],
 			),
 		},
 	},

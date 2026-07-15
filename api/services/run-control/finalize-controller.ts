@@ -1,135 +1,142 @@
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
-import type { RunControlState, RunTerminalReason } from "./contracts";
-import { RunControlRepository } from "./run-control-repository";
+
+export type RunCompletionSnapshot = {
+	planRevision: number;
+	todos: Array<{
+		id: string;
+		revision: number;
+		status: string;
+		title: string;
+	}>;
+};
 
 export type FinalizeGuardResult = {
 	allowFinalize: boolean;
-	code: string;
+	code:
+		| "FINALIZE_ALLOWED"
+		| "RUN_NOT_FOUND"
+		| "RUN_ALREADY_TERMINAL"
+		| "RUN_HAS_OPEN_TODOS"
+		| "RUN_NEEDS_HUMAN"
+		| "TODO_STATE_INVALID"
+		| "TODO_REVISION_CONFLICT";
 	message: string;
 	missingConditions: string[];
-	recoveryCard: string | null;
-	state: RunControlState | null;
+	snapshot: RunCompletionSnapshot | null;
 	idempotent: boolean;
 };
 
 export class RunFinalizeController {
-	constructor(private readonly repository = new RunControlRepository()) {}
-
 	async evaluateCandidate(input: {
 		runId: string;
-		allowedOpenTodoProcedureIds?: string[];
-		requireFreshEvidence?: boolean;
+		expectedPlanRevision?: number;
+		expectedTodoRevisions?: Record<string, number>;
 	}): Promise<FinalizeGuardResult> {
-		let state: RunControlState;
-		try {
-			state = await this.repository.getOrCreateState(input.runId);
-		} catch {
-			return blocked(
-				"RUN_CONTROL_UNAVAILABLE",
-				"Run control state could not be loaded; finalization is blocked.",
-				["run_control_state"],
-				null,
-			);
+		const run = await repo.getTaskRun(input.runId);
+		if (!run) {
+			return blocked("RUN_NOT_FOUND", "対象Runが存在しません。", [], null);
 		}
-		if (state.phase === "terminal") {
+		const todos = await repo.listTaskRunTodosForRun(input.runId);
+		const snapshot: RunCompletionSnapshot = {
+			planRevision: run.todoPlanRevision,
+			todos: todos.map((todo) => ({
+				id: todo.id,
+				revision: todo.revision,
+				status: todo.status,
+				title: todo.title,
+			})),
+		};
+		if (
+			["completed", "failed", "cancelled", "timed_out"].includes(run.status)
+		) {
 			return {
-				allowFinalize: state.terminalReason === "completed",
+				allowFinalize: run.status === "completed",
 				code: "RUN_ALREADY_TERMINAL",
-				message: `Run is already terminal (${state.terminalReason ?? "unknown"}).`,
+				message: `Runは既にterminalです (${run.status})。`,
 				missingConditions: [],
-				recoveryCard: null,
-				state,
+				snapshot,
 				idempotent: true,
 			};
 		}
-
-		const allowedProcedures = new Set(input.allowedOpenTodoProcedureIds ?? []);
-		let openTodos: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>;
-		try {
-			openTodos = (await repo.listTaskRunTodosForRun(input.runId)).filter(
-				(todo) =>
-					["pending", "running"].includes(todo.status) &&
-					!allowedProcedures.has(todo.procedureId ?? ""),
-			);
-		} catch {
-			return blocked(
-				"TODO_STATE_UNAVAILABLE",
-				"Todo state could not be loaded; finalization is blocked.",
-				["todo_state"],
-				state,
-			);
-		}
-
-		const missingConditions: string[] = [];
-		if (openTodos.length > 0) {
-			missingConditions.push(
-				`open_todos:${openTodos
-					.sort((left, right) => left.seq - right.seq)
-					.map((todo) => todo.seq)
-					.join(",")}`,
-			);
-		}
 		if (
-			input.requireFreshEvidence &&
-			(state.lastEvidenceSequence === null ||
-				(state.lastMutationSequence !== null &&
-					state.lastEvidenceSequence < state.lastMutationSequence))
+			(input.expectedPlanRevision !== undefined &&
+				input.expectedPlanRevision !== run.todoPlanRevision) ||
+			Object.entries(input.expectedTodoRevisions ?? {}).some(
+				([id, revision]) =>
+					todos.find((todo) => todo.id === id)?.revision !== revision,
+			)
 		) {
-			missingConditions.push("fresh_evidence_after_last_mutation");
-		}
-
-		if (missingConditions.length > 0) {
-			const recoveryState = await this.repository
-				.transition({ runId: input.runId, type: "finalize_rejected" })
-				.catch(() => state);
 			return blocked(
-				"FINALIZE_GUARD_NOT_MET",
-				"Finalization is blocked until the current run state is reconciled.",
-				missingConditions,
-				recoveryState,
+				"TODO_REVISION_CONFLICT",
+				"Todo snapshotが更新済みです。最新状態を取得してください。",
+				["todo_revision"],
+				snapshot,
 			);
 		}
-
-		const closeoutState = await this.repository.transition({
-			runId: input.runId,
-			type: "enter_closeout",
-		});
+		const running = todos.filter((todo) => todo.status === "running");
+		if (running.length > 1) {
+			return blocked(
+				"TODO_STATE_INVALID",
+				"running Todoが複数存在します。",
+				["single_running_todo"],
+				snapshot,
+			);
+		}
+		const open = todos.filter((todo) =>
+			["pending", "running"].includes(todo.status),
+		);
+		if (open.length > 0) {
+			return blocked(
+				"RUN_HAS_OPEN_TODOS",
+				"Runを完了する前にopen Todoを明示的に遷移してください。",
+				open.map((todo) => `todo:${todo.id}:${todo.status}`),
+				snapshot,
+			);
+		}
+		const needsHuman = todos.filter((todo) => todo.status === "needs_human");
+		if (needsHuman.length > 0) {
+			return blocked(
+				"RUN_NEEDS_HUMAN",
+				"ユーザー回答待ちのTodoがあるためRunを完了できません。",
+				needsHuman.map((todo) => `todo:${todo.id}:needs_human`),
+				snapshot,
+			);
+		}
+		if (todos.length === 0) {
+			return blocked(
+				"RUN_HAS_OPEN_TODOS",
+				"Coding Agent RunにはTodo planが必要です。",
+				["todo_plan_required"],
+				snapshot,
+			);
+		}
 		return {
 			allowFinalize: true,
 			code: "FINALIZE_ALLOWED",
-			message: "Run control finalize guard passed.",
+			message: "Run completion preconditionsを満たしました。",
 			missingConditions: [],
-			recoveryCard: null,
-			state: closeoutState,
+			snapshot,
 			idempotent: false,
 		};
 	}
 
-	async terminalize(runId: string, reason: RunTerminalReason) {
-		return this.repository.terminalize(runId, reason);
+	async terminalize(runId: string) {
+		return repo.getTaskRun(runId);
 	}
 }
 
 function blocked(
-	code: string,
+	code: Exclude<FinalizeGuardResult["code"], "FINALIZE_ALLOWED">,
 	message: string,
 	missingConditions: string[],
-	state: RunControlState | null,
+	snapshot: RunCompletionSnapshot | null,
 ): FinalizeGuardResult {
 	return {
 		allowFinalize: false,
 		code,
 		message,
 		missingConditions,
-		recoveryCard: [
-			"[NightWorkers Run Control Recovery]",
-			`code: ${code}`,
-			`progressRevision: ${state?.progressRevision ?? "unknown"}`,
-			`workspaceRevision: ${state?.workspaceRevision ?? "unknown"}`,
-			`required: ${missingConditions.join(", ")}`,
-			"不足条件だけを解消してください。既に得た完全なツール出力を再取得しないでください。",
-		].join("\n"),
-		state,
+		snapshot,
 		idempotent: false,
 	};
 }

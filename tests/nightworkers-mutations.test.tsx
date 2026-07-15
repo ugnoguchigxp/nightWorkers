@@ -6,7 +6,6 @@ import type {
 	BackgroundProcess,
 	GitCloseoutState,
 	Repository,
-	ReviewSessionDetail,
 	Task,
 	TaskRun,
 } from "../src/modules/nightworkers/types";
@@ -110,6 +109,9 @@ function stubMutationFetch() {
 		if (url.endsWith("/api/runs/run-started/stop")) {
 			return jsonResponse(run("run-started", "task-1", "cancelled"));
 		}
+		if (url.endsWith("/api/runs/run-started/todos/todo-1/resume")) {
+			return jsonResponse(run("run-started", "task-1", "running"));
+		}
 		if (url.endsWith("/api/background-processes/process-1/stop")) {
 			return jsonResponse({
 				id: "process-1",
@@ -121,21 +123,6 @@ function stubMutationFetch() {
 		}
 		if (url.endsWith("/api/workbench/sessions/task-1/queue")) {
 			return jsonResponse(task("task-1", "queued", 5));
-		}
-		if (url.endsWith("/api/runs/run-started/reviews")) {
-			return jsonResponse({ ok: true });
-		}
-		if (url.endsWith("/api/runs/run-started/review-sessions")) {
-			return jsonResponse({
-				session: { id: "review-1", taskId: "task-1", runId: "run-started" },
-				runs: [],
-			});
-		}
-		if (url.endsWith("/api/review-sessions/review-1/run")) {
-			return jsonResponse({
-				session: { id: "review-1", taskId: "task-1", runId: "run-started" },
-				runs: [{ id: "review-run-1", status: "running" }],
-			});
 		}
 		if (url.endsWith("/api/runs/run-started/git/commit")) {
 			return jsonResponse({
@@ -269,7 +256,7 @@ describe("useNightWorkersMutations", () => {
 		);
 	});
 
-	it("keeps run, review, background-process, and git closeout caches in sync", async () => {
+	it("keeps run, background-process, and git closeout caches in sync", async () => {
 		stubMutationFetch();
 		const { mutations, queryClient } = renderMutations();
 		const processRecord = {
@@ -288,17 +275,14 @@ describe("useNightWorkersMutations", () => {
 		);
 
 		await mutations.startRunMutation.mutateAsync("task-1");
+		await mutations.resumeTodoMutation.mutateAsync({
+			runId: "run-started",
+			todoId: "todo-1",
+			expectedTodoRevision: 2,
+			userContext: "staging環境を使用する",
+		});
 		await mutations.stopRunMutation.mutateAsync("run-started");
 		await mutations.stopBackgroundProcessMutation.mutateAsync("process-1");
-		await mutations.submitRunReviewMutation.mutateAsync({
-			runId: "run-started",
-			data: { action: "complete", note: "reviewed" },
-		});
-		await mutations.startReviewSessionMutation.mutateAsync("run-started");
-		await mutations.startReviewRunMutation.mutateAsync({
-			reviewSessionId: "review-1",
-			options: { codeReview: true },
-		});
 		await mutations.commitRunGitCloseoutMutation.mutateAsync("run-started");
 		await mutations.pushRunGitCloseoutMutation.mutateAsync("run-started");
 
@@ -315,16 +299,6 @@ describe("useNightWorkersMutations", () => {
 		).toEqual([
 			expect.objectContaining({ id: "process-1", status: "stopped" }),
 		]);
-		expect(
-			queryClient.getQueryData<ReviewSessionDetail | null>([
-				"reviewSession",
-				"task-1",
-			]),
-		).toEqual(
-			expect.objectContaining({
-				session: expect.objectContaining({ id: "review-1" }),
-			}),
-		);
 		expect(
 			queryClient.getQueryData<GitCloseoutState | null>([
 				"gitCloseout",

@@ -1,12 +1,8 @@
-import { GitCompare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toDeepRecord } from "../../../../shared/json-record";
-import { TEST_MODE_WORKFLOW_ACTION } from "../../../../shared/test-mode-workflow";
 import { TodoRailList, type TodoRailListStatus } from "../../todo/TodoRailList";
 import { markdownCodeBlock } from "../artifactExport";
 import {
-	isTestModeWorkflowComplete,
-	isTestModeWorkflowInProgress,
 	readTestModeWorkflowActionStatus,
 	type TestModeWorkflowStepView,
 } from "../testModeWorkflowView";
@@ -18,15 +14,9 @@ import {
 	readRecordBoolean,
 	readRecordString,
 	resolveConditionDisplayStatus,
-	TestModeActionButton,
 	TestModeCheckResults,
 	TestModeConditionStatusIcon,
 } from "./ArtifactPaneTestModeModel";
-
-export type TestModeAction =
-	| "discover_tests"
-	| "plan_and_implement_tests"
-	| "run_unit_tests";
 
 export type VerificationPanelModel = {
 	specArtifactId: string;
@@ -215,24 +205,14 @@ function nextConditionId(usedIds: Set<string>, startIndex: number) {
 
 export function TestModeArtifactViewer({
 	model,
-	projectId,
-	taskId,
 	latestRun,
 	workflowSteps,
 	status,
-	canStartRun,
-	onStart,
-	onOpenReviewArtifact,
 }: {
 	model: VerificationPanelModel | null;
-	projectId: string | null;
-	taskId: string | null;
 	latestRun?: TaskRun | null;
 	workflowSteps: TestModeWorkflowStepView[];
 	status: string | null;
-	canStartRun: boolean;
-	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
-	onOpenReviewArtifact?: () => Promise<void>;
 }) {
 	const { t } = useTranslation();
 	return (
@@ -244,14 +224,9 @@ export function TestModeArtifactViewer({
 				{model ? (
 					<VerificationChecklistPanel
 						model={model}
-						projectId={projectId}
-						taskId={taskId}
 						latestRun={latestRun}
 						workflowSteps={workflowSteps}
 						status={status}
-						canStartRun={canStartRun}
-						onOpenReviewArtifact={onOpenReviewArtifact}
-						onStart={onStart}
 					/>
 				) : (
 					<div className="nightworkers-structured-artifact-card nightworkers-structured-artifact-muted rounded-md border p-4 text-xs">
@@ -265,50 +240,18 @@ export function TestModeArtifactViewer({
 
 export function VerificationChecklistPanel({
 	model,
-	projectId,
-	taskId,
 	latestRun,
 	workflowSteps,
 	status,
-	canStartRun,
-	onStart,
-	onOpenReviewArtifact,
 }: {
 	model: VerificationPanelModel;
-	projectId: string | null;
-	taskId: string | null;
 	latestRun?: TaskRun | null;
 	workflowSteps: TestModeWorkflowStepView[];
 	status: string | null;
-	canStartRun: boolean;
-	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
-	onOpenReviewArtifact?: () => Promise<void>;
 }) {
 	const { t } = useTranslation();
-	const canShowStartButton = Boolean(model.specArtifactId);
 	const workflowActionStatus = readTestModeWorkflowActionStatus(status);
 	const completionCheck = readLatestCompletionCheckConditionStatuses(latestRun);
-	const requiredConditions = model.conditions.filter(
-		(condition) => condition.required,
-	);
-	const allRequiredConditionsComplete =
-		requiredConditions.length > 0 &&
-		requiredConditions.every((condition) =>
-			isCompleteConditionStatus(
-				resolveConditionDisplayStatus(condition, completionCheck),
-			),
-		);
-	const canEnterReviewMode =
-		isTestModeWorkflowComplete(workflowSteps) && allRequiredConditionsComplete;
-	const workflowInProgress =
-		workflowActionStatus === "starting" ||
-		isTestModeWorkflowInProgress(workflowSteps);
-	const startDisabled =
-		!canStartRun ||
-		!projectId ||
-		!taskId ||
-		!model.specArtifactId ||
-		workflowInProgress;
 	const checkResults = readLatestTestModeCheckResults(latestRun).filter(
 		(result) => result.checkKind !== "completion_check",
 	);
@@ -321,23 +264,6 @@ export function VerificationChecklistPanel({
 					</div>
 				) : null}
 				<TestModeWorkflowProgress steps={workflowSteps} />
-				{canShowStartButton ? (
-					<div className="mt-2 flex flex-wrap gap-1.5">
-						<TestModeActionButton
-							action={TEST_MODE_WORKFLOW_ACTION}
-							label={t("testMode.action.startWorkflow")}
-							status={workflowActionStatus}
-							disabled={startDisabled}
-							onStart={onStart}
-						/>
-					</div>
-				) : null}
-				{canEnterReviewMode ? (
-					<TestModeReviewTransition
-						taskId={taskId}
-						onOpenReviewArtifact={onOpenReviewArtifact}
-					/>
-				) : null}
 				<TestModeCheckResults results={checkResults} />
 			</div>
 			{model.conditions.length > 0 ? (
@@ -371,34 +297,6 @@ export function VerificationChecklistPanel({
 					})}
 				</div>
 			) : null}
-		</div>
-	);
-}
-
-function TestModeReviewTransition({
-	taskId,
-	onOpenReviewArtifact,
-}: {
-	taskId: string | null;
-	onOpenReviewArtifact?: () => Promise<void>;
-}) {
-	const { t } = useTranslation();
-	if (!taskId) return null;
-	const href = `/sessions/${encodeURIComponent(taskId)}?artifact=review_status`;
-	return (
-		<div className="mt-2">
-			<a
-				href={href}
-				className="nightworkers-structured-artifact-action inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition"
-				onClick={(event) => {
-					if (!onOpenReviewArtifact) return;
-					event.preventDefault();
-					void onOpenReviewArtifact();
-				}}
-			>
-				<GitCompare className="h-3.5 w-3.5" />
-				{t("testMode.action.enterReviewMode")}
-			</a>
 		</div>
 	);
 }

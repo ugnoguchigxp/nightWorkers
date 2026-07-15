@@ -293,7 +293,20 @@ export function NightWorkersShellThreadPanel(
 			}}
 			splitPanel={
 				isTodoArtifactOpen ? (
-					<TodoListPane todos={workspace.latestRunTodos} />
+					<TodoListPane
+						todos={workspace.latestRunTodos}
+						isResuming={workspace.isResumingTodo}
+						onResume={async (todoId, expectedTodoRevision, userContext) => {
+							const runId = workspace.latestRun?.id;
+							if (!runId) return;
+							await workspace.resumeTodo({
+								runId,
+								todoId,
+								expectedTodoRevision,
+								userContext,
+							});
+						}}
+					/>
 				) : artifactPaneOpen ? (
 					<ArtifactPane
 						activeProject={workspace.activeProject}
@@ -363,8 +376,6 @@ export function NightWorkersShellThreadPanel(
 						onAddToQueue={props.addActiveSessionToQueue}
 						activeReviewSession={workspace.activeReviewSession}
 						gitCloseout={workspace.activeGitCloseout}
-						onStartReviewRun={workspace.startReviewRun}
-						onOpenReviewArtifact={props.onOpenReviewArtifact}
 						onCommitGitCloseout={workspace.commitRunGitCloseout}
 						onPushGitCloseout={workspace.pushRunGitCloseout}
 						activeTaskStatus={workspace.activeSession?.status ?? null}

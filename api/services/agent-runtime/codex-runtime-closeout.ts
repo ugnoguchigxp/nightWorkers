@@ -2,9 +2,7 @@ import { gitDiffTool } from "../worker-tools/git";
 import { DEFAULT_RESULT } from "./codex-runtime-failure-report";
 import {
 	changedFilesFromDiff,
-	hasTodoProgressWarning,
 	sleep,
-	toContractWarningEvent,
 	todoPayload,
 } from "./codex-runtime-support";
 import type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
@@ -20,10 +18,6 @@ import type {
 	AgentRuntimeResult,
 	AgentRuntimeSink,
 } from "./types";
-import {
-	normalizeVerificationCommand,
-	verificationCommandsMatch,
-} from "./verification-command";
 
 type CodexRuntimeHost = {
 	providerCapacityRetryLimit: number;
@@ -72,125 +66,6 @@ export async function emitProviderCapacityRetry(
 	await sink.emit(started);
 }
 
-export async function emitMissingImportVerificationWarningIfNeeded(
-	sink: AgentRuntimeSink,
-	logs: string[],
-	auditState: CodexRuntimeAuditState,
-) {
-	if (!auditState.sawNightworkersImportProjectSuccess) return;
-	if (auditState.recommendedVerificationCommands.length === 0) return;
-	const postImportSuccessfulVerificationEvidence =
-		auditState.verificationEvidence.filter(
-			(evidence) =>
-				evidence.exitCode === 0 &&
-				auditState.importProjectSuccessSequence !== null &&
-				evidence.sequence > auditState.importProjectSuccessSequence,
-		);
-	const recommendedCommands = auditState.recommendedVerificationCommands
-		.map((command) => normalizeVerificationCommand(command))
-		.filter((command): command is string => command !== null);
-	const hasRecommendedMatch = postImportSuccessfulVerificationEvidence.some(
-		(evidence) =>
-			recommendedCommands.some((recommended) =>
-				verificationCommandsMatch(evidence.normalizedCommand, recommended),
-			),
-	);
-	if (hasRecommendedMatch) return;
-	if (postImportSuccessfulVerificationEvidence.length > 0) {
-		const firstEvidence = postImportSuccessfulVerificationEvidence[0];
-		const warning = toContractWarningEvent(auditState, {
-			code: "codex_import_project_recommended_verification_mismatch",
-			severity: "warning",
-			message:
-				"nightworkers.import_project recommended verification commands were present, but successful post-import verification did not match a recommended command.",
-			providerItemId: auditState.importProjectProviderItemId,
-			toolName: "nightworkers.import_project",
-			command: firstEvidence.command,
-		});
-		if (warning) {
-			logs.push(warning.message);
-			await sink.emit(warning);
-		}
-		return;
-	}
-	const warning = toContractWarningEvent(auditState, {
-		code: "codex_import_project_verification_missing",
-		severity: "warning",
-		message:
-			"nightworkers.import_project succeeded with recommended verification commands, but no successful verification command evidence was observed.",
-		providerItemId: auditState.importProjectProviderItemId,
-		toolName: "nightworkers.import_project",
-	});
-	if (warning) {
-		logs.push(warning.message);
-		await sink.emit(warning);
-	}
-}
-
-export async function resolveCodexTerminalPolicy(
-	sink: AgentRuntimeSink,
-	logs: string[],
-	auditState: CodexRuntimeAuditState,
-	input: {
-		terminalState: AgentRuntimeResult["terminalState"];
-		finalReport: string;
-		stoppedBy: AgentRuntimeResult["stoppedBy"];
-		riskLevel: AgentRuntimeResult["riskLevel"];
-	},
-): Promise<typeof input> {
-	if (input.terminalState !== "completed") {
-		return input;
-	}
-	const planModeViolation = auditState.contractWarnings.find(
-		(warning) =>
-			warning.code === "codex_plan_mode_file_change" ||
-			warning.code === "codex_plan_mode_mutating_tool",
-	);
-	if (planModeViolation) {
-		const finalReportSuffix =
-			"Codex planning mode mutation was observed; stopping for human review.";
-		const finalReport = input.finalReport
-			? `${input.finalReport}\n\n${finalReportSuffix}`
-			: finalReportSuffix;
-		return {
-			terminalState: "needs_human",
-			finalReport,
-			stoppedBy: "tool_failure",
-			riskLevel: "high",
-		};
-	}
-	if (
-		!auditState.sawHighRiskNativeImportCommand ||
-		auditState.sawNightworkersImportProjectSuccess
-	) {
-		return input;
-	}
-	const warning = toContractWarningEvent(auditState, {
-		code: "codex_native_import_without_import_project",
-		severity: "error",
-		message:
-			"Codex native project import command completed without nightworkers.import_project success. Human review is required before treating the run as complete.",
-		providerItemId: auditState.highRiskNativeImportProviderItemId,
-		toolName: "command_execution",
-		command: auditState.highRiskNativeImportCommand,
-	});
-	if (warning) {
-		logs.push(warning.message);
-		await sink.emit(warning);
-	}
-	const finalReportSuffix =
-		"Codex native project import command was observed without nightworkers.import_project success; stopping for human review.";
-	const finalReport = input.finalReport
-		? `${input.finalReport}\n\n${finalReportSuffix}`
-		: finalReportSuffix;
-	return {
-		terminalState: "needs_human",
-		finalReport,
-		stoppedBy: "tool_failure",
-		riskLevel: "high",
-	};
-}
-
 export async function createThread(
 	runtime: CodexRuntimeHost,
 	context: AgentRunContext,
@@ -216,7 +91,7 @@ export async function createThread(
 				});
 				return;
 			}
-			if (event.status === "fallback_started_fresh") {
+			if (event.status === "resume_failed") {
 				if (event.stateId) {
 					await runtime.runtimeSessionStore.markRuntimeSessionStateResumeFailed(
 						{
@@ -227,13 +102,11 @@ export async function createThread(
 				}
 				await sink.emit({
 					type: "runtime_warning",
-					message:
-						"[Codex] Runtime session resume failed; started a fresh thread.",
+					message: "[Codex] Runtime session resume failed.",
 					payload: {
 						code: "codex_runtime_resume_failed",
 						severity: "warning",
-						message:
-							"Codex runtime session resume failed; started a fresh thread.",
+						message: "Codex runtime session resume failed.",
 						providerItemId: event.providerThreadId,
 					},
 				});
@@ -329,35 +202,6 @@ export async function collectDiff(
 	const result = await gitDiffTool({ repoRoot: context.repoRoot });
 	if (!result.ok || !result.payload.hasChanges) return "";
 	const changedFiles = changedFilesFromDiff(result.payload.diff);
-	if (
-		!auditState.sawNightworkersTodoMutation &&
-		!hasTodoProgressWarning(auditState)
-	) {
-		const warning = toContractWarningEvent(
-			auditState,
-			auditState.sawNightworkersTodoList
-				? {
-						code: "codex_todo_progress_list_only",
-						severity: "warning",
-						message:
-							"Codex completed with workspace changes after nightworkers.todo_list operation=list only; list is not progress.",
-						toolName: "nightworkers.todo_list",
-						changedFiles,
-					}
-				: {
-						code: "codex_todo_progress_missing",
-						severity: "warning",
-						message:
-							"Codex completed with workspace changes before any nightworkers.todo_list progress mutation.",
-						toolName: "nightworkers.todo_list",
-						changedFiles,
-					},
-		);
-		if (warning) {
-			logs.push(warning.message);
-			await sink.emit(warning);
-		}
-	}
 	const message = `[Codex] Workspace diff collected: ${changedFiles.length || "unknown"} file(s).`;
 	logs.push(message);
 	await sink.emit({

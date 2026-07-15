@@ -1,5 +1,4 @@
 import { logger } from "../../../lib/logger";
-import { finalizeReviewRunFromRuntime } from "../../review";
 import * as repo from "../nightworkers.repository";
 import {
 	completeImplementationQueueEntryForRun,
@@ -8,9 +7,7 @@ import {
 } from "./queues";
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
-import { safelyCreateReviewRecommendation } from "./runtime-routing";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
-import { closeOpenTodosForFailedRun } from "./todo-closeout";
 import { toErrorMessage } from "./utils";
 
 export async function handleRuntimeExecutionFailure(input: {
@@ -50,29 +47,7 @@ export async function handleRuntimeExecutionFailure(input: {
 		failureTransitionApplied = Boolean(latestFailedRun);
 	}
 	if (latestFailedRun?.status !== "failed") return;
-	const todosBeforeFailedCloseout = await repo.listTaskRunTodosForRun(run.id);
-	await closeOpenTodosForFailedRun({
-		runId: run.id,
-		taskId,
-		todos: todosBeforeFailedCloseout,
-		evidence: errorMessage,
-	});
 	await repo.updateTaskStatus(taskId, "failed");
-	await finalizeReviewRunFromRuntime({
-		runId: run.id,
-		taskId,
-		status: "failed",
-		contextSnapshot:
-			latestFailedRun?.contextSnapshot ?? input.runtimeContextSnapshot,
-		runtimeResult: {
-			terminalState: "failed",
-			summary: `Execution crashed: ${errorMessage}`,
-			finalReport,
-			stoppedBy: "llm_error",
-			riskLevel: "high",
-			logContent: `[System Error] ${errorMessage}`,
-		},
-	});
 	await completeImplementationQueueEntryForRun(run.id, "failed");
 
 	await repo.createTaskMessage({
@@ -87,7 +62,6 @@ export async function handleRuntimeExecutionFailure(input: {
 			status: "failed",
 		},
 	});
-	await safelyCreateReviewRecommendation({ taskId, runId: run.id });
 	await refreshConversationContextForRuntimeLane({
 		runtimeLaneResolution,
 		taskId,

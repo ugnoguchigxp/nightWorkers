@@ -4,7 +4,6 @@ import {
 	ArchiveRestore,
 	ClipboardCheck,
 	LoaderCircle,
-	Play,
 	ShieldAlert,
 } from "lucide-react";
 import { useState } from "react";
@@ -13,7 +12,6 @@ import type { GitCloseoutState, TaskRun } from "../../nightworkers/types/core";
 import type {
 	ReviewArtifact,
 	ReviewRunArtifactPayload,
-	ReviewRunOptions,
 	ReviewSessionDetail,
 } from "../types";
 import { ReviewGitIntegrationPanel } from "./ReviewGitIntegrationPanel";
@@ -22,10 +20,6 @@ import { ReviewRunResultPanel } from "./ReviewRunResultPanel";
 type ReviewStatusViewerProps = {
 	detail: ReviewSessionDetail | null;
 	loading?: boolean;
-	onStartReviewRun?: (
-		reviewSessionId: string,
-		options: Partial<ReviewRunOptions>,
-	) => Promise<ReviewSessionDetail>;
 	gitCloseout?: GitCloseoutState | null;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
@@ -34,44 +28,6 @@ type ReviewStatusViewerProps = {
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	latestRun?: TaskRun;
 };
-
-const defaultReviewRunOptions: ReviewRunOptions = {
-	codeReview: true,
-	securityReview: false,
-	applyFixes: true,
-	commitChanges: true,
-};
-
-const reviewRunOptionDescriptions: Array<{
-	key: keyof ReviewRunOptions;
-	label: string;
-	description: string;
-}> = [
-	{
-		key: "codeReview",
-		label: "コードレビュー",
-		description:
-			"実装計画、対象 diff、変更ファイルを照合し、仕様漏れ・副作用・設計上の危険箇所を確認します。既存の個別レビュー項目を横断する基本チェックです。",
-	},
-	{
-		key: "securityReview",
-		label: "セキュリティレビュー",
-		description:
-			"vulnWorkbench を使って Semgrep、Gitleaks、OSV、Trivy、scan profile、DAST、reproduction、dynamic verification を bounded CLI 実行します。",
-	},
-	{
-		key: "applyFixes",
-		label: "修正を適用",
-		description:
-			"ReviewRun がコードレビューまたはセキュリティレビューで安全に自動修正できる内容だけをその場で反映します。",
-	},
-	{
-		key: "commitChanges",
-		label: "コミット",
-		description:
-			"ReviewRun が対象として確定した変更だけを commit します。対象抽出が人の確認待ち、または blocking warning がある場合は選択できません。",
-	},
-];
 
 function reviewStatusLabel(t: TFunction, key: string, fallback: string) {
 	return t(key, { defaultValue: fallback });
@@ -147,7 +103,6 @@ const reviewSuccessActionButtonClass = `${reviewActionButtonBaseClass} nightwork
 export function ReviewStatusViewer({
 	detail,
 	loading = false,
-	onStartReviewRun,
 	gitCloseout,
 	onCommitGitCloseout,
 	onPushGitCloseout,
@@ -158,9 +113,6 @@ export function ReviewStatusViewer({
 }: ReviewStatusViewerProps) {
 	const { t } = useTranslation();
 	const [busySection, setBusySection] = useState<string | null>(null);
-	const [reviewRunOptions, setReviewRunOptions] = useState<ReviewRunOptions>(
-		defaultReviewRunOptions,
-	);
 	const [error, setError] = useState<string | null>(null);
 	if (!detail) {
 		return (
@@ -184,8 +136,6 @@ export function ReviewStatusViewer({
 		latestReviewRun,
 		latestRun,
 	);
-	const reviewRunInProgress =
-		busySection === "review_run" || resolvedReviewRunStatus === "running";
 	const reviewCompleted =
 		resolvedReviewRunStatus === "done" ||
 		["approved", "changes_requested", "cancelled"].includes(
@@ -213,15 +163,6 @@ export function ReviewStatusViewer({
 					filePath: null,
 				}))
 			: reviewRunFindings;
-	const latestTargets = latestArtifactByKind(
-		detail.artifacts,
-		"review_targets",
-	);
-	const canSelectCommit =
-		latestTargets?.status !== "needs_human" &&
-		!latestReviewRun?.warnings.some(
-			(warning) => warning.severity === "blocking",
-		);
 	const isArchivedTask = activeTaskStatus === "archived";
 	const taskArchiveBusy = busySection === "task_archive";
 	const taskArchiveAction = isArchivedTask
@@ -293,64 +234,6 @@ export function ReviewStatusViewer({
 								</div>
 							) : null}
 						</div>
-						<button
-							type="button"
-							className={`nightworkers-review-run-button ${reviewPrimaryActionButtonClass}`}
-							disabled={!onStartReviewRun || reviewRunInProgress}
-							onClick={async () => {
-								if (!onStartReviewRun || reviewRunInProgress) return;
-								setBusySection("review_run");
-								setError(null);
-								try {
-									await onStartReviewRun(detail.session.id, reviewRunOptions);
-								} catch (err) {
-									setError(
-										err instanceof Error
-											? err.message
-											: "Review Run could not start.",
-									);
-								} finally {
-									setBusySection(null);
-								}
-							}}
-						>
-							{reviewRunInProgress ? (
-								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<Play className="h-3.5 w-3.5" />
-							)}
-							Run
-						</button>
-					</div>
-					<div className="grid gap-2">
-						{reviewRunOptionDescriptions.map(({ key, label, description }) => {
-							const disabled = key === "commitChanges" && !canSelectCommit;
-							return (
-								<label
-									key={key}
-									className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-x-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-200 ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
-								>
-									<input
-										type="checkbox"
-										className="mt-0.5 h-3.5 w-3.5 accent-cyan-400"
-										checked={reviewRunOptions[key]}
-										disabled={disabled}
-										onChange={(event) =>
-											setReviewRunOptions((prev) => ({
-												...prev,
-												[key]: event.target.checked,
-											}))
-										}
-									/>
-									<span className="grid gap-1">
-										<span className="font-medium text-slate-100">{label}</span>
-										<span className="leading-5 text-slate-400">
-											{description}
-										</span>
-									</span>
-								</label>
-							);
-						})}
 					</div>
 					{latestReviewRun?.warnings.length ? (
 						<div className="grid gap-1 text-xs text-amber-100">

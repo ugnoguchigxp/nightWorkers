@@ -2,17 +2,11 @@ import {
 	AlertTriangle,
 	CheckCircle2,
 	Circle,
-	FlaskConical,
 	LoaderCircle,
 } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import type { TaskRun } from "../types";
 import { asArtifactRecord as asRecord } from "./ArtifactPane.controller";
 
-type TestModeAction =
-	| "discover_tests"
-	| "plan_and_implement_tests"
-	| "run_unit_tests";
 type VerificationPanelModel = {
 	specArtifactId: string;
 	verificationDocumentId: string | null;
@@ -488,35 +482,6 @@ export function isCompleteConditionStatus(status: string) {
 		status === "not_applicable" ||
 		status === "completed" ||
 		status === "done"
-	);
-}
-
-export function TestModeActionButton({
-	action,
-	label,
-	status,
-	disabled,
-	onStart,
-}: {
-	action: TestModeAction;
-	label: string;
-	status: string | null;
-	disabled: boolean;
-	onStart: (action: TestModeAction, rerun: boolean) => Promise<void>;
-}) {
-	const { t } = useTranslation();
-	const isDisabled = disabled || status === "starting";
-	return (
-		<button
-			type="button"
-			className="nightworkers-structured-artifact-action inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed"
-			disabled={isDisabled}
-			onClick={() => void onStart(action, false)}
-			title={label}
-		>
-			<FlaskConical className="h-3.5 w-3.5" />
-			{status === "starting" ? t("testMode.status.starting") : label}
-		</button>
 	);
 }
 

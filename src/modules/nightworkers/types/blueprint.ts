@@ -26,6 +26,10 @@ export type TaskRunTodo = {
 	seq: number;
 	title: string;
 	description?: string | null;
+	objective?: string | null;
+	context?: string | null;
+	nextAction: string;
+	acceptanceCriteriaJson: string[];
 	taskType: TaskType;
 	status: TodoStatus;
 	procedureId?: string | null;
@@ -34,6 +38,12 @@ export type TaskRunTodo = {
 	completionGateResult?: unknown | null;
 	dependsOn?: Array<string | number> | null;
 	statusReason?: string | null;
+	lastFailure?: string | null;
+	attemptCount: number;
+	systemContextVersion: number;
+	systemContextSnapshot?: unknown | null;
+	createdBy: "agent" | "human" | "migration";
+	revision: number;
 	startedAt?: unknown | null;
 	completedAt?: unknown | null;
 	createdAt: unknown;

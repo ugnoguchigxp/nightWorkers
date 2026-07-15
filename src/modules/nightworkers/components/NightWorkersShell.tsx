@@ -9,7 +9,7 @@ import {
 	useWorkspaceLayoutActions,
 	useWorkspaceLayoutState,
 } from "../contexts/WorkspaceLayoutContext";
-import type { WorkbenchArtifactRef, WorkbenchChatIntent } from "../types";
+import type { WorkbenchChatIntent } from "../types";
 import { buildArtifactContext } from "../workbenchSelectors";
 import type { NightWorkersShellProps } from "./NightWorkersShell.types";
 import { NightWorkersShellLayout } from "./NightWorkersShellLayout";
@@ -296,46 +296,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		const existing = current.activeArtifactRefs.find(
 			(artifact) => artifact.kind === "review_status",
 		);
-		let artifact = existing;
-		if (!artifact && current.latestRun?.id) {
-			const pendingArtifact: WorkbenchArtifactRef = {
-				id: `review-status-pending-${current.latestRun.id}`,
-				taskId: sessionId,
-				runId: current.latestRun.id,
-				kind: "review_status",
-				title: reviewStatusTitle,
-				summary: reviewStatusTitle,
-				source: {
-					type: "review_result",
-					reviewId: `pending-${current.latestRun.id}`,
-				},
-				createdAt: new Date().toISOString(),
-				metadata: { reviewSessionLoading: true },
-			};
-			markArtifactOpenStart(pendingArtifact);
-			setClearedArtifactContextId(null);
-			setArtifactFocus({ type: "artifact", artifact: pendingArtifact });
-			props.onNavigate({
-				kind: "session",
-				sessionId,
-				artifact: { kind: "review_status" },
-			});
-			const detail = await current.startReviewSession(current.latestRun.id);
-			artifact = {
-				id: `review-status-${detail.session.id}`,
-				taskId: detail.session.taskId,
-				runId: detail.session.runId,
-				kind: "review_status",
-				title: reviewStatusTitle,
-				summary: formatReviewStatusSummary(
-					detail.recommendation.level,
-					detail.statusArtifact.sections.length,
-				),
-				source: { type: "review_result", reviewId: detail.session.id },
-				createdAt: detail.session.updatedAt,
-				metadata: { reviewSession: detail },
-			};
-		}
+		const artifact = existing;
 		if (!artifact) return;
 		markArtifactOpenStart(artifact);
 		setClearedArtifactContextId(null);
@@ -345,12 +306,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			sessionId,
 			artifact: { kind: "review_status" },
 		});
-	}, [
-		formatReviewStatusSummary,
-		isReviewArtifactOpen,
-		props.onNavigate,
-		reviewStatusTitle,
-	]);
+	}, [isReviewArtifactOpen, props.onNavigate]);
 	const handleOpenTestModeArtifact = useCallback(() => {
 		const task = workspaceRef.current.activeSession;
 		if (!task) return;

@@ -1,27 +1,15 @@
+import { loadCodingAgentContextPacket } from "../../coding-agent-context";
 import { mcpClientManager } from "../../mcp/mcp-client-manager";
-import { runControlService } from "../../run-control/run-control-service";
 import type { ProviderToolCall } from "../../structured-llm/tool-calls";
 import { executeWorkerTool } from "../../worker-tools/dispatcher";
-import {
-	type TodoListOperation,
-	todoListTool,
-} from "../../worker-tools/todo-list";
+import { todoListTool } from "../../worker-tools/todo-list";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
-import {
-	normalizeVerificationCommand,
-	verificationCommandsMatch,
-} from "../verification-command";
-import {
-	dispatchContextStillTool,
-	nextStateFromContextStillToolResult,
-} from "./native-api-context-still";
+import { dispatchContextStillTool } from "./native-api-context-still";
 import { continueWith, failedToolResult } from "./native-api-dispatch-results";
 import type {
 	NativeApiDispatchResult,
 	NativeApiDispatchState,
 } from "./native-api-dispatch-types";
-import { finalizeAnswer } from "./native-api-finalize";
-import { readNativeApiExecutionMode } from "./native-api-mode";
 import {
 	type NativeApiToolResult,
 	readProjectExplorationCatalogPin,
@@ -32,7 +20,6 @@ import {
 } from "./native-api-tool-registry";
 import {
 	capNativeApiToolResultContent,
-	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "./native-api-tool-result-projector";
 
@@ -48,7 +35,6 @@ export async function dispatchNativeApiToolCall(input: {
 	sink: AgentRuntimeSink;
 	state: NativeApiDispatchState;
 }): Promise<NativeApiDispatchResult> {
-	const executionMode = readNativeApiExecutionMode(input.context);
 	const registration = getNativeApiToolRegistration(input.toolCall.name);
 	if (!registration) {
 		return continueWith(
@@ -56,18 +42,14 @@ export async function dispatchNativeApiToolCall(input: {
 			input.state,
 		);
 	}
-	if (!isNativeApiToolAllowedForMode(input.toolCall.name, executionMode)) {
+	if (!isNativeApiToolAllowedForMode(input.toolCall.name)) {
 		return continueWith(
 			failedToolResult(
-				"TOOL_NOT_ALLOWED_FOR_MODE",
-				`${input.toolCall.name} is not allowed in native/API ${executionMode} mode.`,
+				"TOOL_NOT_AVAILABLE",
+				`${input.toolCall.name} is not available in this runtime.`,
 			),
 			input.state,
 		);
-	}
-
-	if (registration.kind === "terminal") {
-		return finalizeAnswer(input);
 	}
 
 	if (registration.kind === "todo_control") {
@@ -82,14 +64,6 @@ export async function dispatchNativeApiToolCall(input: {
 		return continueWith(await dispatchMcpCatalog(), input.state);
 	}
 
-	if (registration.kind === "context_window") {
-		await runControlService.rotateContext(input.context.runId);
-		return continueWith(successfulNewContextWindow(), {
-			...input.state,
-			newContextWindowRequested: true,
-		});
-	}
-
 	const workerToolName = registration.workerToolName;
 	if (!workerToolName) {
 		return continueWith(
@@ -100,42 +74,17 @@ export async function dispatchNativeApiToolCall(input: {
 			input.state,
 		);
 	}
-	const prepared = await runControlService.prepare({
-		runId: input.context.runId,
-		toolName: workerToolName,
-		arguments: input.toolCall.arguments,
-		workspaceIdentity: input.context.repoRoot,
-	});
-	if (prepared.kind === "terminal") {
+	const todoContext = await loadCodingAgentContextPacket(input.context.runId);
+	if (!todoContext?.currentTodo) {
 		return continueWith(
 			failedToolResult(
-				"RUN_ALREADY_TERMINAL",
-				`Run is already terminal (${prepared.state.terminalReason ?? "unknown"}).`,
+				"CURRENT_TODO_REQUIRED",
+				"workspace toolの実行前にTodo planを作成し、current Todoを開始してください。",
+				{ planSummary: todoContext?.planSummary ?? null },
 			),
 			input.state,
 		);
 	}
-	if (prepared.kind === "reuse") {
-		return continueWith(
-			capNativeApiToolResultContent({
-				ok: prepared.action.domainOutcome === "succeeded",
-				content: JSON.stringify({
-					control: "reused_result",
-					domainOutcome: prepared.action.domainOutcome,
-					progressRevision: prepared.state.progressRevision,
-					phase: prepared.state.phase,
-					recoveryRequirement:
-						prepared.state.phase === "recovery"
-							? "新しい観測、workspace/workflow変更、新しい証跡、またはblocker提示のいずれかを一つ行う"
-							: null,
-					payload: prepared.action.modelView,
-				}),
-				payload: prepared.action.modelView,
-			}),
-			input.state,
-		);
-	}
-
 	await input.sink.emit({
 		type: "tool_call_started",
 		message: `[NativeApiRunner] ${workerToolName} started.`,
@@ -155,20 +104,6 @@ export async function dispatchNativeApiToolCall(input: {
 		readFiles: input.state.readFiles,
 		projectExplorationCatalogAccess: projectExplorationAccess(input.context),
 	});
-	const modelView = projectWorkerResultToMcpStructuredPayload(dispatch.result);
-	const outcome = await runControlService.completeWorkerAction({
-		prepared: {
-			state: prepared.state,
-			action: prepared.action,
-			persisted: prepared.persisted,
-		},
-		result: dispatch.result,
-		modelView,
-		evidenceRefs:
-			prepared.action.effect === "verification"
-				? [`verification:${input.context.runId}:${prepared.action.id}`]
-				: [],
-	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({
 		type: "tool_call_finished",
@@ -178,13 +113,6 @@ export async function dispatchNativeApiToolCall(input: {
 			toolName: workerToolName,
 			arguments: input.toolCall.arguments,
 			ok: dispatch.result.ok,
-			outcome: {
-				transportStatus: outcome.transportStatus,
-				domainOutcome: outcome.domainOutcome,
-				effect: outcome.effect,
-				progressRevisionBefore: outcome.progressRevisionBefore,
-				progressRevisionAfter: outcome.progressRevisionAfter,
-			},
 			result: dispatch.result.payload,
 			error: dispatch.result.error,
 		},
@@ -215,29 +143,13 @@ function updateDispatchStateAfterWorkerTool(input: {
 	const nextState: NativeApiDispatchState = {
 		...input.state,
 		readFiles: input.dispatch.readFilesChanged ?? input.state.readFiles,
-		specificationRead:
-			input.state.specificationRead ||
-			(input.workerToolName === "read_current_specification" && result.ok),
 	};
-
-	if (input.workerToolName === "read_file" && input.state.postImport) {
-		const filePath =
-			typeof input.toolCall.arguments.filePath === "string"
-				? input.toolCall.arguments.filePath
-				: "";
-		if (isProjectManifestPath(filePath)) {
-			nextState.manifestReadAfterImport = true;
-		}
-	}
 
 	if (input.workerToolName === "import_project" && result.ok) {
 		const payload = toRecord(result.payload);
 		const postImport = toRecord(payload?.postImport);
 		const manifest = postImport?.manifest;
 		const mode = payload?.mode === "git" ? "git" : "template";
-		nextState.importProjectSucceeded = true;
-		nextState.importProjectFailed = false;
-		nextState.successfulVerificationCommands = [];
 		nextState.postImport = {
 			toolCallId: input.toolCall.id,
 			mode,
@@ -255,51 +167,7 @@ function updateDispatchStateAfterWorkerTool(input: {
 			llmContext: postImport?.llmContext,
 			recommendedVerificationCommands:
 				readRecommendedVerificationCommands(manifest),
-			verifiedCommand: null,
 		};
-		nextState.manifestReadAfterImport = Boolean(manifest);
-	}
-
-	if (input.workerToolName === "import_project" && !result.ok) {
-		nextState.importProjectFailed = true;
-	}
-
-	if (input.workerToolName === "copy_directory" && result.ok) {
-		nextState.copyDirectorySucceeded = true;
-	}
-
-	if (input.workerToolName === "run_verification" && result.ok) {
-		const command =
-			typeof input.toolCall.arguments.command === "string"
-				? input.toolCall.arguments.command
-				: null;
-		const normalizedCommand = normalizeVerificationCommand(command);
-		nextState.successfulVerificationCommands = [
-			...(input.state.successfulVerificationCommands ?? []),
-			...(normalizedCommand ? [normalizedCommand] : []),
-		];
-		if (nextState.postImport && normalizedCommand) {
-			const recommendedCommands =
-				nextState.postImport.recommendedVerificationCommands
-					.map((item) => normalizeVerificationCommand(item))
-					.filter((item): item is string => item !== null);
-			if (
-				recommendedCommands.length === 0 ||
-				recommendedCommands.some((recommended) =>
-					verificationCommandsMatch(normalizedCommand, recommended),
-				)
-			) {
-				nextState.postImport = {
-					...nextState.postImport,
-					verifiedCommand: normalizedCommand,
-				};
-			}
-		}
-	}
-
-	if (input.workerToolName === "mcp_call_tool" && result.ok) {
-		const args = toRecord(input.toolCall.arguments);
-		nextStateFromContextStillToolResult(nextState, args?.toolName, result.ok);
 	}
 
 	return nextState;
@@ -311,36 +179,16 @@ async function dispatchTodoTool(input: {
 	sink: AgentRuntimeSink;
 	state: NativeApiDispatchState;
 }) {
-	const operation = input.toolCall.arguments.operation;
-	if (!isTodoMutationOperation(operation)) {
+	const command = input.toolCall.arguments.command;
+	if (!command || typeof command !== "object" || Array.isArray(command)) {
 		return failedToolResult(
 			"INVALID_TOOL_ARGS",
-			"todo_list operation must be one of todo_list operation=replace, todo_list operation=start, todo_list operation=done, todo_list operation=block, or todo_list operation=fail.",
+			"todo_list requires a command object.",
 		);
 	}
 	const result = await todoListTool({
 		runId: input.context.runId,
-		operation,
-		seq:
-			typeof input.toolCall.arguments.seq === "number"
-				? input.toolCall.arguments.seq
-				: undefined,
-		todos: Array.isArray(input.toolCall.arguments.todos)
-			? (input.toolCall.arguments.todos as never)
-			: undefined,
-		startFirst:
-			typeof input.toolCall.arguments.startFirst === "boolean"
-				? input.toolCall.arguments.startFirst
-				: undefined,
-		todoListReplaceReason:
-			typeof input.toolCall.arguments.todoListReplaceReason === "string"
-				? (input.toolCall.arguments.todoListReplaceReason as never)
-				: undefined,
-		evidenceRefs: Array.isArray(input.toolCall.arguments.evidenceRefs)
-			? input.toolCall.arguments.evidenceRefs.filter(
-					(value): value is string => typeof value === "string",
-				)
-			: undefined,
+		command: command as never,
 	});
 	return projectWorkerResultToNativeApiToolResult(result);
 }
@@ -361,19 +209,6 @@ async function dispatchMcpCatalog(): Promise<NativeApiToolResult> {
 	}
 }
 
-function successfulNewContextWindow(): NativeApiToolResult {
-	const message =
-		"A new context window will start without summarizing conversation history.";
-	return capNativeApiToolResultContent({
-		ok: true,
-		content: message,
-		payload: {
-			newContextWindowRequested: true,
-			message,
-		},
-	});
-}
-
 function readRecommendedVerificationCommands(manifest: unknown): string[] {
 	const record = toRecord(manifest);
 	const commands = Array.isArray(record?.recommendedVerificationCommands)
@@ -385,24 +220,8 @@ function readRecommendedVerificationCommands(manifest: unknown): string[] {
 	);
 }
 
-function isProjectManifestPath(filePath: string) {
-	return /(^|\/)(package\.json|pyproject\.toml)$/.test(filePath.trim());
-}
-
 function toRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
-}
-
-function isTodoMutationOperation(
-	value: unknown,
-): value is Exclude<TodoListOperation, "list"> {
-	return (
-		value === "replace" ||
-		value === "start" ||
-		value === "done" ||
-		value === "block" ||
-		value === "fail"
-	);
 }

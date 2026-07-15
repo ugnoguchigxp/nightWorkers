@@ -9,10 +9,6 @@ import { associateMissionPilotImplementationRun } from "../../missionPilot/missi
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
-import {
-	closeOpenTodosForCancelledRun,
-	closeOpenTodosForFailedRun,
-} from "./todo-closeout";
 import { toErrorMessage } from "./utils";
 
 function getSessionQueueMaxConcurrency() {
@@ -104,13 +100,6 @@ async function failPreparedQueueRunBeforeLaunch(input: {
 		}
 		return;
 	}
-	const todos = await repo.listTaskRunTodosForRun(input.runId);
-	await closeOpenTodosForFailedRun({
-		runId: input.runId,
-		taskId: input.taskId,
-		todos,
-		evidence: `implementation_queue_activation_failed: ${errorMessage}`,
-	});
 	await repo.updateTaskStatus(input.taskId, "failed");
 	await completeImplementationQueueEntryForRun(input.runId, "failed");
 }
@@ -247,14 +236,6 @@ async function drainImplementationQueue(
 					);
 					if (cancelledRun) {
 						cancellationApplied = true;
-						const todos = await repo.listTaskRunTodosForRun(run.id);
-						await closeOpenTodosForCancelledRun({
-							runId: run.id,
-							taskId: claimedEntry.taskId,
-							todos,
-							evidence:
-								"implementation_queue_lease_conflict_before_runtime_launch",
-						});
 					} else {
 						const concurrentRun = await repo.getTaskRun(run.id);
 						nextRunStatus = concurrentRun?.status ?? latestRun.status;

@@ -238,6 +238,10 @@ export async function ensureTaskWorkflowTables() {
       seq integer NOT NULL,
       title text NOT NULL,
       description text,
+	  objective text,
+	  context text,
+	  next_action text DEFAULT '' NOT NULL,
+	  acceptance_criteria_json text DEFAULT '[]' NOT NULL,
       task_type text NOT NULL,
       status text DEFAULT 'pending' NOT NULL,
       procedure_id text,
@@ -248,6 +252,12 @@ export async function ensureTaskWorkflowTables() {
   evidence_refs_json text,
       depends_on text,
       status_reason text,
+	  last_failure text,
+	  attempt_count integer DEFAULT 0 NOT NULL,
+	  system_context_version integer DEFAULT 0 NOT NULL,
+	  system_context_snapshot text,
+	  created_by text DEFAULT 'migration' NOT NULL,
+	  revision integer DEFAULT 0 NOT NULL,
       started_at integer,
       completed_at integer,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
@@ -263,6 +273,44 @@ export async function ensureTaskWorkflowTables() {
 		"evidence_refs_json",
 		"evidence_refs_json text",
 	);
+	await ensureColumn("task_run_todos", "objective", "objective text");
+	await ensureColumn("task_run_todos", "context", "context text");
+	await ensureColumn(
+		"task_run_todos",
+		"next_action",
+		"next_action text DEFAULT '' NOT NULL",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"acceptance_criteria_json",
+		"acceptance_criteria_json text DEFAULT '[]' NOT NULL",
+	);
+	await ensureColumn("task_run_todos", "last_failure", "last_failure text");
+	await ensureColumn(
+		"task_run_todos",
+		"attempt_count",
+		"attempt_count integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"system_context_version",
+		"system_context_version integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"system_context_snapshot",
+		"system_context_snapshot text",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"created_by",
+		"created_by text DEFAULT 'migration' NOT NULL",
+	);
+	await ensureColumn(
+		"task_run_todos",
+		"revision",
+		"revision integer DEFAULT 0 NOT NULL",
+	);
 
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS task_run_todos_run_id_idx ON task_run_todos (run_id)",
@@ -270,7 +318,21 @@ export async function ensureTaskWorkflowTables() {
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS task_run_todos_run_seq_uidx ON task_run_todos (run_id, seq)",
 	);
-
+	await client.execute(`
+		UPDATE task_run_todos
+		SET status = 'pending', updated_at = unixepoch() * 1000
+		WHERE status = 'running'
+		  AND EXISTS (
+			SELECT 1
+			FROM task_run_todos earlier
+			WHERE earlier.run_id = task_run_todos.run_id
+			  AND earlier.status = 'running'
+			  AND earlier.seq < task_run_todos.seq
+		  )
+	`);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_run_todos_single_running_uidx ON task_run_todos (run_id) WHERE status = 'running'",
+	);
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_run_commit_records (
       id text PRIMARY KEY NOT NULL,

@@ -135,9 +135,6 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 			(artifact) => artifact.kind === "plan_mode_workspace",
 		) ||
 		props.artifactRefs.find((artifact) => artifact.kind === "app_blueprint");
-	const reviewArtifact = props.artifactRefs.find(
-		(artifact) => artifact.kind === "review_status",
-	);
 	const [showDebugEvents, setShowDebugEvents] = useState(false);
 	const [artifactButtonsCoolingDown, setArtifactButtonsCoolingDown] =
 		useState(false);
@@ -181,15 +178,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 	].join(":");
 	const planModeWorkspaceLabel = t("thread.planModeWorkspace");
 	const noPlanModeWorkspaceLabel = t("thread.noPlanModeWorkspace");
-	const reviewArtifactLabel = reviewArtifact
-		? t("reviewStatus.title")
-		: t("reviewStatus.start");
-	const testModeArtifactLabel = t("thread.testModeArtifact");
 	const debugModeTooltipLabel = t("thread.tooltip.debugMode");
 	const pilotThoughtTooltipLabel = t("thread.tooltip.pilotThought");
 	const planModeTooltipLabel = t("thread.tooltip.planMode");
-	const testModeTooltipLabel = t("thread.tooltip.testMode");
-	const reviewModeTooltipLabel = t("thread.tooltip.reviewMode");
 	const todoListTooltipLabel = t("thread.tooltip.todoList");
 	const runArtifactButtonAction = useCallback((action: () => void) => {
 		const nextCooldownUntil = nextArtifactButtonCooldown(
@@ -433,16 +424,11 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 				setShowDebugEvents={setShowDebugEvents}
 				artifactButtonsCoolingDown={artifactButtonsCoolingDown}
 				runArtifactButtonAction={runArtifactButtonAction}
-				openTestModeArtifactWithCooldown={openTestModeArtifactWithCooldown}
 				planModeWorkspaceLabel={planModeWorkspaceLabel}
 				noPlanModeWorkspaceLabel={noPlanModeWorkspaceLabel}
-				reviewArtifactLabel={reviewArtifactLabel}
-				testModeArtifactLabel={testModeArtifactLabel}
 				debugModeTooltipLabel={debugModeTooltipLabel}
 				pilotThoughtTooltipLabel={pilotThoughtTooltipLabel}
 				planModeTooltipLabel={planModeTooltipLabel}
-				testModeTooltipLabel={testModeTooltipLabel}
-				reviewModeTooltipLabel={reviewModeTooltipLabel}
 				todoListTooltipLabel={todoListTooltipLabel}
 			/>
 			<Group

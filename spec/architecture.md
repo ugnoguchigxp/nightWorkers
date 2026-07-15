@@ -14,11 +14,16 @@ NightWorkers manages Project Folder sessions through a chat-first task lifecycle
 2. Implementation plan generation or adoption
 3. Optional explicit admission into the global Implementation Queue
 4. Processor claim and run creation
-5. Event append (state changes, tool outcomes, todos, diffs, and decisions)
-6. Implementation finalization and Security Oracle pass or explicit policy skip
-7. Test Mode managed verification and Review Run completion
-8. Explicit evidence-gated Git commit/push closeout
+5. 単一 Coding Agent がversion付きSystem Contextを受け取り、Todo planとcurrent Todoを明示作成
+6. model call、worker tool、typed resultの反復とevent append
+7. Todoの明示完了後、決定的なRun completion preconditionを確認
+8. 必要なら利用者がGit commit/push closeoutを明示実行
 9. Queue execution archive, while the Session remains available for normal chat
+
+Coding Agent runtimeにImplementation / Test / Reviewの実行modeはない。テスト、
+自己確認、修正はTask達成に必要な通常TodoとしてLLMが計画する。ホストはworkspace、
+permission、schema、transaction、revision、idempotency、timeout、cancelだけを強制し、
+Task本文、Todo名、command、LLM本文、error本文から次工程や完了を推定しない。
 
 Run observation is ledger-first. Task events are persisted in SQLite and then
 projected to WebSocket clients. Workbench reattach uses `runId` plus an optional
@@ -144,17 +149,24 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
   under a parent task/run, not as multiple agents racing to update the same
   shared run status and Todo rows.
 
-## Review and Git Closeout Boundary
-- Test Mode owns the active verification checklist, latest managed evidence,
-  and successful `completion_check` from a completed Test Mode run.
-- Review Mode owns Review Run completion, findings, and dispositions. Only a
-  `done` artifact with a matching `review.run_completed` event satisfies it.
-- Review-applied fixes make older Test evidence stale. Mission Pilot uses its
-  active passing Test snapshot and matching Review decision.
-- The implementation Security Oracle is separate from optional Review Security
-  Review. A saved pass or explicit policy skip is required.
-- Blocking findings stop closeout; accepted risk and dismissal require a note.
-- Commit re-evaluates persisted evidence before staging runtime-owned paths.
+## Coding Agent Todo and Completion Boundary
+
+- すべての新規Coding Agent Runは、LLMが作成するTodo planとcurrent Todoを必須とする。
+- Todoは安定IDとrevisionを持ち、LLM toolと人間UIは同じ`TodoMutationService`を使う。
+- event、command成功、verification、final responseはTodoを暗黙更新しない。
+- current Todoがないworkspace tool callは`CURRENT_TODO_REQUIRED`を返す。
+- 完了時はopen Todo、`needs_human`、revision競合、approval待ちだけを確認する。
+- verification、security scan、artifact、evidenceは保存・表示できる事実であり、
+  TodoまたはRunの固定completion gateではない。
+- 過去のTest / Review値とartifactはread-only履歴として表示できるが、新規Runへ
+  conversation、Todo、thread ID、semantic stateを移行しない。
+
+## Git Closeout Boundary
+
+- Git commit/pushはCoding Agent completionとは別の明示操作である。
+- Commit前には対象path、repository root、permission、現在のGit状態を再検証する。
+- 過去のreview/evidence artifactは履歴表示に使えるが、新規Coding Agent Runの
+  完了可否や次actionを決めない。
 
 ## Write Tool And Proposal Boundary
 

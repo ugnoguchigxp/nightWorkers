@@ -302,6 +302,27 @@
       "when": 1784048400000,
       "tag": "0042_agent_mode_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1784106000000,
+      "tag": "0043_llm_owned_todo_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1784111400000,
+      "tag": "0044_mission_pilot_agent_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1784115000000,
+      "tag": "0045_mission_pilot_action_confirmations",
+      "breakpoints": true
     }
   ]
 }

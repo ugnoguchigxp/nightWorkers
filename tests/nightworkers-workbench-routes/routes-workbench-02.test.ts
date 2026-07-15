@@ -164,7 +164,7 @@ describe("NightWorkers workbench routes", () => {
 			},
 		);
 
-		expect(res.status).toBe(200);
+		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
 		expect(Date.now() - startedAt).toBeLessThan(100);
 		expect(body.run).toBeNull();
@@ -194,7 +194,7 @@ describe("NightWorkers workbench routes", () => {
 			},
 		);
 
-		expect(res.status).toBe(200);
+		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
 		expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
 		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
@@ -272,7 +272,7 @@ describe("NightWorkers workbench routes", () => {
 			role: "assistant",
 			content: "# Previous Blueprint\n- extra dashboard sections",
 			messageType: "markdown_document",
-			metadataJson: {
+			payloadJson: {
 				intent: "mock_blueprint",
 				artifactType: "mock_blueprint",
 			},
@@ -315,7 +315,7 @@ describe("NightWorkers workbench routes", () => {
 			},
 		);
 
-		expect(res.status).toBe(200);
+		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
 		expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
 		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
@@ -331,9 +331,9 @@ describe("NightWorkers workbench routes", () => {
 		});
 		const blueprintPrompt = vi.mocked(llm.callStructuredJsonLLM).mock
 			.calls[0]?.[1] as string;
-		expect(blueprintPrompt).toContain("## User Regeneration Request");
+		expect(blueprintPrompt).toContain("## Regeneration Request");
 		expect(blueprintPrompt).toContain(prompt);
-		expect(blueprintPrompt).toContain("## Previous Blueprint Context");
+		expect(blueprintPrompt).toContain("### previous_target");
 		expect(blueprintPrompt).toContain("extra dashboard sections");
 		expect(body.run).toBeNull();
 		expect(body.workspace?.blueprintArtifacts?.length).toBeGreaterThan(0);

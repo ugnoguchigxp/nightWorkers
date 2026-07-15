@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-	LLM_WRITABLE_TODO_TASK_TYPES,
-	NIGHTWORKERS_MANAGED_TODO_TASK_TYPES,
-	TODO_TASK_TYPE_ALIASES,
-} from "../services/todo-runtime";
+import { TODO_MUTATION_LIMITS } from "../services/todo-mutation";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -84,7 +80,7 @@ export const nightWorkersRunCheckInputSchema = z.object({
 		)
 		.optional()
 		.describe(
-			"Completion condition IDs directly verified by this command. In Test Mode, specify these IDs when the check is intended to satisfy checklist conditions; an unmapped broad gate is supplemental evidence only.",
+			"Optional condition IDs associated with this check result for display and later inspection.",
 		),
 	timeoutSeconds: z.number().int().positive().optional(),
 	displayMode: z.enum(["summary", "error_excerpt", "full"]).optional(),
@@ -99,16 +95,107 @@ export const nightWorkersCompletionCheckInputSchema = z.object({
 	verificationDocumentId: z.string().trim().optional(),
 });
 
-export const nightWorkersReviewerEvaluationInputSchema = z.object({
-	runId: z
+const todoDraftSchema = z.object({
+	id: z
 		.string()
 		.trim()
-		.optional()
-		.describe("NightWorkers run id. Defaults to request context."),
-	rubricId: z.string().trim().optional(),
-	mode: z.enum(["deterministic_only", "llm_assisted"]).optional(),
-	persist: z.boolean().optional(),
+		.min(1)
+		.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
+		.optional(),
+	title: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTitleLength),
+	objective: z
+		.string()
+		.max(TODO_MUTATION_LIMITS.maxObjectiveLength)
+		.nullable()
+		.optional(),
+	context: z
+		.string()
+		.max(TODO_MUTATION_LIMITS.maxContextLength)
+		.nullable()
+		.optional(),
+	nextAction: z
+		.string()
+		.trim()
+		.min(1)
+		.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+	acceptanceCriteria: z
+		.array(
+			z
+				.string()
+				.trim()
+				.min(1)
+				.max(TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength),
+		)
+		.max(TODO_MUTATION_LIMITS.maxAcceptanceCriteria)
+		.optional(),
+	dependsOn: z
+		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
+		.max(TODO_MUTATION_LIMITS.maxDependencies)
+		.optional(),
 });
+
+const todoMutationCommandSchema = z.discriminatedUnion("op", [
+	z.object({ op: z.literal("list") }),
+	z.object({
+		op: z.literal("replace_plan"),
+		expectedPlanRevision: z.number().int().nonnegative(),
+		todos: z.array(todoDraftSchema).min(1).max(TODO_MUTATION_LIMITS.maxTodos),
+	}),
+	z.object({
+		op: z.literal("start"),
+		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
+		expectedTodoRevision: z.number().int().nonnegative(),
+	}),
+	z.object({
+		op: z.literal("resume"),
+		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
+		expectedTodoRevision: z.number().int().nonnegative(),
+		userContext: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxContextLength),
+	}),
+	z.object({
+		op: z.literal("transition"),
+		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
+		expectedTodoRevision: z.number().int().nonnegative(),
+		status: z.enum(["passed", "needs_human", "skipped"]),
+		reason: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxReasonLength),
+		nextTodoId: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
+			.optional(),
+	}),
+	z.object({
+		op: z.literal("record_failure"),
+		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
+		expectedTodoRevision: z.number().int().nonnegative(),
+		failureSummary: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxReasonLength),
+		nextAction: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+	}),
+	z.object({
+		op: z.literal("update_context"),
+		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
+		expectedTodoRevision: z.number().int().nonnegative(),
+		context: z.string().max(TODO_MUTATION_LIMITS.maxContextLength),
+		nextAction: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+	}),
+]);
 
 export const nightWorkersTodoListInputSchema = z.object({
 	runId: z
@@ -118,96 +205,9 @@ export const nightWorkersTodoListInputSchema = z.object({
 		.describe(
 			"NightWorkers run id. Defaults to request-scoped run context when available.",
 		),
-	operation: z
-		.enum(["list", "replace", "start", "done", "block", "fail"])
-		.describe(
-			"Todo operation to perform. list is read-only diagnostics. todo_list operation=replace structurally replans the TodoList. todo_list operation=start/done/block/fail transitions existing Todo state.",
-		),
-	seq: z
-		.number()
-		.int()
-		.positive()
-		.optional()
-		.describe(
-			"Todo seq for start/done/block/fail. done may omit seq to complete the current running Todo.",
-		),
-	todos: z
-		.array(
-			z.object({
-				seq: z.number().int().positive(),
-				title: z.string().trim().min(1),
-				description: z.string().optional(),
-				taskType: z
-					.string()
-					.trim()
-					.min(1)
-					.optional()
-					.describe(
-						[
-							"Optional Todo category. Prefer an LLM-writable taskType such as",
-							LLM_WRITABLE_TODO_TASK_TYPES.join(", "),
-							"for real work. NightWorkers-managed taskTypes",
-							NIGHTWORKERS_MANAGED_TODO_TASK_TYPES.join(", "),
-							"and aliases",
-							TODO_TASK_TYPE_ALIASES.join(", "),
-							"are accepted so echoed SystemContext does not fail MCP validation; replace will merge those gates back into NightWorkers-managed fixed gates.",
-						].join(" "),
-					),
-				procedureId: z.string().trim().min(1).nullable().optional(),
-				dependsOn: z
-					.array(
-						z.union([z.number().int().positive(), z.string().trim().min(1)]),
-					)
-					.nullable()
-					.optional(),
-				evidenceRequirements: z
-					.array(
-						z.object({
-							kind: z.enum([
-								"observation",
-								"workspace_mutation",
-								"verification",
-								"decision",
-								"approval",
-							]),
-							freshness: z.enum([
-								"after_todo_start",
-								"after_last_mutation",
-								"any",
-							]),
-							minimumCount: z.number().int().positive().optional(),
-						}),
-					)
-					.nullable()
-					.optional(),
-			}),
-		)
-		.optional()
-		.describe(
-			"Run Todos decomposed by the LLM. Pass real implementation/review/verification work here; NightWorkers keeps initial/context/knowledge/completion and broad quality gates as managed fixed gates. If SystemContext-managed gates are echoed back, todo_list replace accepts them and merges them back into the fixed gates. For DB schema changes, or when creating/updating migration files, DB schema, DB bootstrap, seed, or persistence table definitions, mark migration work with taskType=data_migration or procedureId=data_migration.apply_migration so the fixed DB migration gate is preserved. That single gate covers migration file creation, migration command execution against the real target DB, read-only focused test/smoke implementation, and schema/API/test verification before done.",
-		),
-	startFirst: z
-		.boolean()
-		.optional()
-		.describe("Whether the first fixed gate starts as running. Default: true."),
-	todoListReplaceReason: z
-		.enum([
-			"initial_plan",
-			"scope_changed",
-			"estimate_changed",
-			"newly_required_work",
-			"blocked_replan",
-		])
-		.optional()
-		.describe(
-			"Required with todo_list operation=replace when a Todo is already running. Do not use this with todo_list operation=start/done/block/fail.",
-		),
-	evidenceRefs: z
-		.array(z.string().trim().min(1))
-		.optional()
-		.describe(
-			"Evidence references returned by NightWorkers tool outcomes. Used with operation=done when the Todo declares evidence requirements.",
-		),
+	command: todoMutationCommandSchema.describe(
+		"IDとrevisionを指定するTodo command。hostはTodoを暗黙更新しません。",
+	),
 });
 
 export const nightWorkersImportProjectInputSchema = z

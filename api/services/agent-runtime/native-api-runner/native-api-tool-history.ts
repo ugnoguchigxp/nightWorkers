@@ -1,10 +1,6 @@
 import type { PromptImageAttachment } from "../../../../shared/prompt-image";
 import { isPromptImageMediaType } from "../../../../shared/prompt-image";
 import { projectExplorationCatalogRunPinSchema } from "../../../../shared/schemas/project-exploration-catalog.schema";
-import {
-	formatOntologyCloseoutRequirementsForPrompt,
-	formatOntologyRuntimeContextForPrompt,
-} from "../../../modules/ontology";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
@@ -12,8 +8,6 @@ import type {
 import type { ModelVisiblePayloadSummary } from "../model-visible-payload";
 import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
-import { readNativeApiExecutionMode } from "./native-api-mode";
-import { readNativeApiRoleWorkingContextText } from "./native-api-role-context-events";
 
 export type NativeApiUserSource = "user" | "runtime" | "todo" | "state_card";
 
@@ -22,11 +16,7 @@ export type NativeApiToolResult = {
 	content: string;
 	payload?: unknown;
 	modelVisibleSummary?: ModelVisiblePayloadSummary;
-	error?: {
-		code?: string;
-		message: string;
-		details?: unknown;
-	};
+	error?: { code?: string; message: string; details?: unknown };
 };
 
 export type NativeApiHistoryItem =
@@ -49,33 +39,23 @@ export function buildInitialNativeApiHistory(
 	context: AgentRunContext,
 	options: { resumeHistory?: readonly NativeApiHistoryItem[] | null } = {},
 ): NativeApiHistoryItem[] {
-	const userMessage = context.latestUserMessage || context.compiledPrompt;
 	const items: NativeApiHistoryItem[] = [
 		{ type: "system", content: buildNativeApiSystemPrompt(context) },
 		...(options.resumeHistory ?? []),
 		{
 			type: "user",
 			source: "user",
-			content: userMessage,
+			content: context.latestUserMessage || context.compiledPrompt,
 			...(context.imageAttachments?.length
 				? { imageAttachments: context.imageAttachments }
 				: {}),
 		},
 	];
-	const currentTodo = context.currentTodo;
-	if (currentTodo) {
+	if (context.currentTodo) {
 		items.push({
 			type: "user",
 			source: "todo",
-			content: renderCurrentTodoContext(currentTodo),
-		});
-	}
-	const roleWorkingContext = readNativeApiRoleWorkingContextText(context);
-	if (roleWorkingContext) {
-		items.push({
-			type: "user",
-			source: "runtime",
-			content: roleWorkingContext,
+			content: renderCurrentTodoContext(context.currentTodo),
 		});
 	}
 	return items;
@@ -103,7 +83,6 @@ export function sanitizeNativeApiResumeHistory(
 	const sanitized: NativeApiHistoryItem[] = [];
 	const pendingToolCallIds = new Set<string>();
 	const completedToolCallIds = new Set<string>();
-
 	for (const item of history) {
 		if (!item || typeof item !== "object" || Array.isArray(item)) return null;
 		const record = item as Record<string, unknown>;
@@ -119,18 +98,17 @@ export function sanitizeNativeApiResumeHistory(
 				type: "user",
 				source: "user",
 				content,
-				...(imageAttachments.length > 0 ? { imageAttachments } : {}),
+				...(imageAttachments.length ? { imageAttachments } : {}),
 			});
 			continue;
 		}
 		if (record.type === "assistant") {
-			const content = typeof record.content === "string" ? record.content : "";
 			const toolCalls = readProviderToolCalls(record.toolCalls);
 			if (!toolCalls) return null;
 			for (const toolCall of toolCalls) pendingToolCallIds.add(toolCall.id);
 			sanitized.push({
 				type: "assistant",
-				content,
+				content: typeof record.content === "string" ? record.content : "",
 				...(toolCalls.length ? { toolCalls } : {}),
 			});
 			continue;
@@ -153,56 +131,17 @@ export function sanitizeNativeApiResumeHistory(
 		}
 		return null;
 	}
-
-	if (pendingToolCallIds.size > 0) return null;
-	const maxItems = options.maxItems ?? 16;
-	return trimSanitizedResumeHistory(sanitized, maxItems);
-}
-
-function readNativeApiImageAttachments(
-	value: unknown,
-): PromptImageAttachment[] {
-	if (!Array.isArray(value)) return [];
-	return value.flatMap((item) => {
-		if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-		const record = item as Record<string, unknown>;
-		if (
-			typeof record.id !== "string" ||
-			typeof record.name !== "string" ||
-			typeof record.path !== "string" ||
-			typeof record.size !== "number" ||
-			typeof record.mediaType !== "string" ||
-			!isPromptImageMediaType(record.mediaType)
-		) {
-			return [];
-		}
-		return [
-			{
-				id: record.id,
-				name: record.name,
-				path: record.path,
-				size: record.size,
-				mediaType: record.mediaType,
-			},
-		];
-	});
+	if (pendingToolCallIds.size) return null;
+	return trimSanitizedResumeHistory(sanitized, options.maxItems ?? 16);
 }
 
 export function projectNativeApiHistoryToProviderMessages(
 	history: readonly NativeApiHistoryItem[],
 ): ProviderToolMessage[] {
-	const systemPrompt = history
-		.filter(
-			(item): item is Extract<NativeApiHistoryItem, { type: "system" }> => {
-				return item.type === "system" && item.content.trim().length > 0;
-			},
-		)
-		.map((item) => item.content.trim())
-		.join("\n\n");
+	const systemPrompt = extractNativeApiSystemPrompt(history);
 	const messages: ProviderToolMessage[] = systemPrompt
 		? [{ role: "system", content: systemPrompt }]
 		: [];
-
 	for (const item of history) {
 		if (item.type === "system") continue;
 		if (item.type === "user") {
@@ -234,8 +173,93 @@ export function projectNativeApiHistoryToProviderMessages(
 			content: item.result.content,
 		});
 	}
-
 	return messages;
+}
+
+export function extractNativeApiSystemPrompt(
+	history: readonly NativeApiHistoryItem[],
+) {
+	return history
+		.filter(
+			(item): item is Extract<NativeApiHistoryItem, { type: "system" }> =>
+				item.type === "system" && Boolean(item.content.trim()),
+		)
+		.map((item) => item.content.trim())
+		.join("\n\n");
+}
+
+export function extractLatestNativeApiUserPrompt(
+	history: readonly NativeApiHistoryItem[],
+) {
+	return (
+		history
+			.filter(
+				(item): item is Extract<NativeApiHistoryItem, { type: "user" }> =>
+					item.type === "user",
+			)
+			.at(-1)?.content ?? ""
+	);
+}
+
+export function readOntologyMcpEnabled(context: AgentRunContext) {
+	const ontologyMcp = (context.contextSnapshot as Record<string, unknown>)
+		.ontologyMcp;
+	return Boolean(
+		ontologyMcp &&
+			typeof ontologyMcp === "object" &&
+			!Array.isArray(ontologyMcp) &&
+			(ontologyMcp as Record<string, unknown>).enabled === true,
+	);
+}
+
+export function readProjectExplorationCatalogPin(context: AgentRunContext) {
+	const parsed = projectExplorationCatalogRunPinSchema.safeParse(
+		(context.contextSnapshot as Record<string, unknown>)
+			.projectExplorationCatalog,
+	);
+	return parsed.success ? parsed.data : null;
+}
+
+function buildNativeApiSystemPrompt(context: AgentRunContext) {
+	return [
+		"[NightWorkers Coding Agent Runtime]",
+		JSON.stringify(
+			context.codingAgentSystemContext ?? {
+				version: 1,
+				roleInstructionsJa:
+					"Taskの意味、Todo、次の行動、検証、完了可否を判断するCoding Agentとして振る舞ってください。",
+				taskGoal: context.latestUserMessage || context.compiledPrompt,
+				registeredRepositoryRoot: context.repoRoot,
+			},
+			null,
+			2,
+		),
+		...formatRuntimeWorkspaceContextForPrompt(context),
+		"Todo planとcurrent Todoは各turnのTodo Contextを正本にしてください。",
+		"最初のturnではtodo_listでplanを作成してcurrent Todoを開始し、それ以外のworkspace toolを先に呼ばないでください。",
+		"tool結果を読んで次の行動を選び、失敗時はrecord_failureで外部作業記憶を更新してください。",
+		"Testや自己確認の要否はTaskとTodo Contextから判断し、専用modeを前提にしないでください。",
+		"tool callなしの本文は最終回答候補です。open Todoがある場合は明示transitionしてから回答してください。",
+	].join("\n");
+}
+
+function renderCurrentTodoContext(
+	currentTodo: NonNullable<AgentRunContext["currentTodo"]>,
+) {
+	return [
+		"[Current Coding Agent Todo]",
+		`id=${currentTodo.id}`,
+		`revision=${currentTodo.revision ?? 0}`,
+		`seq=${currentTodo.seq}`,
+		`title=${currentTodo.title}`,
+		`objective=${currentTodo.objective ?? currentTodo.description ?? ""}`,
+		`context=${currentTodo.context ?? ""}`,
+		`nextAction=${currentTodo.nextAction ?? ""}`,
+		`acceptanceCriteria=${JSON.stringify(currentTodo.acceptanceCriteria ?? [])}`,
+		`lastFailure=${currentTodo.lastFailure ?? ""}`,
+		`attemptCount=${currentTodo.attemptCount ?? 0}`,
+		`status=${currentTodo.status}`,
+	].join("\n");
 }
 
 function trimSanitizedResumeHistory(
@@ -243,9 +267,9 @@ function trimSanitizedResumeHistory(
 	maxItems: number,
 ) {
 	const limit = Math.max(0, Math.floor(maxItems));
-	if (limit === 0) return [];
+	if (!limit) return [];
 	if (history.length <= limit) return history;
-	const window = history.slice(Math.max(0, history.length - limit));
+	const window = history.slice(-limit);
 	for (let offset = 0; offset < window.length; offset += 1) {
 		const candidate = window.slice(offset);
 		if (isValidTrimmedResumeHistory(candidate)) return candidate;
@@ -260,214 +284,40 @@ function isValidTrimmedResumeHistory(history: NativeApiHistoryItem[]) {
 			for (const toolCall of item.toolCalls ?? []) {
 				pendingToolCallIds.add(toolCall.id);
 			}
-			continue;
+		} else if (item.type === "tool_result") {
+			if (!pendingToolCallIds.delete(item.toolCallId)) return false;
 		}
-		if (item.type !== "tool_result") continue;
-		if (!pendingToolCallIds.has(item.toolCallId)) return false;
-		pendingToolCallIds.delete(item.toolCallId);
 	}
 	return pendingToolCallIds.size === 0;
 }
 
-export function extractNativeApiSystemPrompt(
-	history: readonly NativeApiHistoryItem[],
-) {
-	return history
-		.filter(
-			(item): item is Extract<NativeApiHistoryItem, { type: "system" }> => {
-				return item.type === "system" && item.content.trim().length > 0;
+function readNativeApiImageAttachments(
+	value: unknown,
+): PromptImageAttachment[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((item) => {
+		if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+		const record = item as Record<string, unknown>;
+		if (
+			typeof record.id !== "string" ||
+			typeof record.name !== "string" ||
+			typeof record.path !== "string" ||
+			typeof record.size !== "number" ||
+			typeof record.mediaType !== "string" ||
+			!isPromptImageMediaType(record.mediaType)
+		) {
+			return [];
+		}
+		return [
+			{
+				id: record.id,
+				name: record.name,
+				path: record.path,
+				size: record.size,
+				mediaType: record.mediaType,
 			},
-		)
-		.map((item) => item.content.trim())
-		.join("\n\n");
-}
-
-export function extractLatestNativeApiUserPrompt(
-	history: readonly NativeApiHistoryItem[],
-) {
-	const userItems = history.filter(
-		(item): item is Extract<NativeApiHistoryItem, { type: "user" }> =>
-			item.type === "user",
-	);
-	return userItems.at(-1)?.content ?? "";
-}
-
-function buildNativeApiSystemPrompt(context: AgentRunContext) {
-	const executionMode = readNativeApiExecutionMode(context);
-	const planModeSettings = formatPlanModeSettingsSnapshot(
-		context.runtimeOptions?.planModeSettingsSnapshot,
-	);
-	const ontologyGuidance = buildOntologyGuidance(context);
-	const projectExplorationGuidance =
-		buildProjectExplorationCatalogGuidance(context);
-	const repositoryBootstrap = Boolean(
-		context.runtimeOptions?.repositoryBootstrap,
-	);
-	return [
-		`executionMode: ${executionMode}`,
-		...(planModeSettings ? [`planModeSettings: ${planModeSettings}`] : []),
-		...formatRuntimeWorkspaceContextForPrompt(context),
-		"Codex 型の turn lifecycle / tool dispatch / cancellation discipline に従って実行します。",
-		"Codex SDK lane へ fallback せず、SchemaFirst supervisor loop へ fallback しません。",
-		"new_context tool は、会話履歴を要約せず次の provider turn から新しい context window を開始します。",
-		"リポジトリの読み書きは workspace context の executionRoot を基準にし、worker tool handler 経由で行います。",
-		...(repositoryBootstrap
-			? [
-					"このrunはRepository bootstrap専用です。最初にpwdとlist-dir / ls相当で空状態と.gitを確認し、HEADがなければ確定済みQuestionnaire / Feature Planのstarter選択に従ってnightworkers.import_projectを実行してください。Java / Spring Boot選択時はstack=javaと対応するJava/DB variant、Rust / Axum選択時はstack=rustとsqlite / pgsqlを使い、選択がない場合だけstack=honoの既定variantを使ってください。",
-					"import後はGit HEADとbaseline commitだけを確認し、通常機能の実装には進まないでください。",
-				]
-			: []),
-		"",
-		"Tool choice guidance:",
-		"- context_initial_instructions は通常 read_current_specification の後に実行して従ってください。",
-		"- native/API resume で runtime が仕様未発見を非致命化した場合は、復元済み履歴と最新ユーザー依頼を現在の作業文脈として続行してください。",
-		"- 仕様書、実装計画、artifact が source of truth です。Plan Mode artifact の契約詳細が実装に影響する場合は read_current_specification includeDesignContext=true の assembled design context も読んでください。",
-		"- provider-visible tools は current Todo / procedure に合わせて絞られます。表示されている tool から現在の作業に必要なものだけを使ってください。",
-		...(ontologyGuidance ? ontologyGuidance : []),
-		...(projectExplorationGuidance ? projectExplorationGuidance : []),
-		"- TodoList pane がユーザーに見える進捗の source of truth です。Timeline 追加警告ではなく、TodoList の状態遷移で現在位置を示してください。",
-		"- SystemContext / Todo snapshot に出る coding_preparation / completion_report は読み取り用の NightWorkers-managed gates です。replace では実作業 Todo だけを書き、固定ゲートは NightWorkers に維持させてください。",
-		"- Todo snapshot を echo して固定ゲートを replace に含めても tool は固定ゲートへ merge しますが、これは進捗更新ではありません。作業段階を進める場合は start/done/block/fail を使ってください。",
-		"- 2 手以上の調査、レビュー、実装、検証では、最初の実質作業前に既存 Todo を start するか、作業内容に合わない場合だけ todo_list operation=replace で UI 追跡可能な TodoList にしてください。",
-		"- todo_list operation=replace は TodoList の構造を再定義する再計画操作です。見積もり変更、スコープ変更、作業分解の粒度変更、実装中に新しい必須作業が判明した場合だけ使います。",
-		"- running Todo がある状態で todo_list operation=replace を使う場合は todoListReplaceReason を必ず指定してください。現在の Todo が完了したことを表すために todo_list operation=replace を使ってはいけません。",
-		"- todo_list operation=start/done/block/fail は既存 Todo の状態遷移です。Todo が終わったら todo_list operation=done を使ってください。todo_list operation=done は次の pending Todo を自動で running にします。",
-		"- todo_list operation=list は診断専用であり、進捗更新ではありません。",
-		"- ファイルを編集する前に、対象ファイルまたは直接関係する既存ファイルを読む。新規ファイル作成では、配置先の route / registry / sibling / style / test pattern を先に確認してください。",
-		"- rg --files や ls は探索であり、編集対象の読了 evidence ではありません。読んだ内容に基づかない blind edit を避けてください。",
-		"- finalReport / finalize_answer の前に open Todo を確認し、未完了 Todo は done/block/fail のいずれかに整理してください。未確認 mutation や未実施 verification を done にしないでください。",
-		"- context-still compile_eval は context_compile を使った run の closeout feedback です。ユーザーへ保存可否を Yes / No で質問せず、常に保存許可として扱ってください。coding_preparation / completion_report など NightWorkers-managed gate の Todo に紐づく場合も、その紐づけを理由にユーザー確認へ戻さないでください。",
-		"- blocker、未完了 Todo、failed tests/review、ユーザー確認へ進む判断がある場合は context_decision を強く推奨します。",
-		"- 推奨 tool を使わない場合は、finalReport でその理由を短く説明してください。",
-		"",
-		...modeGuidance(executionMode),
-	].join("\n");
-}
-
-export function buildProjectExplorationCatalogGuidance(
-	context: AgentRunContext,
-): string[] | null {
-	if (readNativeApiExecutionMode(context) !== "implementation") return null;
-	const pin = readProjectExplorationCatalogPin(context);
-	if (!pin?.available || pin.version !== 2) return null;
-	return [
-		"- このrunではProject exploration catalogを利用できます。編集対象がTask/Todoに明示済み、またはtrivialな単一file作業なら呼び出しを省略できます。scopeが不明な場合だけ、広域のdirectory/search探索より先に一度だけ呼び出してください。",
-		'- call shape: {"focus":{"paths":["<known project-relative path, if any>"],"modules":["<known module, if any>"],"terms":["<task nouns>"]}}',
-		"- project_exploration_catalogのfocusにはpaths/modules/termsの少なくとも1つを入れ、Taskから導けないmoduleを捏造しないでください。Project識別子、MCP server、vulnWorkbench内部IDはNightWorkersが固定するため入力しません。返却pathはclueとして扱い、編集前に対象sourceをread_fileで読んでください。catalogで得た事実について同等のproject-wide searchを繰り返さないでください。",
-	];
-}
-
-function buildOntologyGuidance(context: AgentRunContext) {
-	if (!readOntologyMcpEnabled(context)) return null;
-	return [
-		formatOntologyRuntimeContextForPrompt(
-			context.contextSnapshot.ontologyContext,
-		),
-		"- module ontology tool が使える場合、広域探索や cross-module edit の前に classify_goal と compile_module_context で primaryModule / secondaryModules / invariants / focused verification を確認してください。",
-		"- owned paths 外の planned edit では check_boundary を使い、unknown path や forbidden mutation を finalReport まで黙って持ち込まないでください。",
-		"- ontology-guided work の finalReport には primary module、secondary modules、boundary crossings、invariants checked、verification run、skipped verification reason を含めてください。",
-		formatOntologyCloseoutRequirementsForPrompt(),
-	];
-}
-
-export function readOntologyMcpEnabled(context: AgentRunContext) {
-	const snapshot = context.contextSnapshot as Record<string, unknown>;
-	const ontologyMcp = snapshot.ontologyMcp;
-	if (
-		!ontologyMcp ||
-		typeof ontologyMcp !== "object" ||
-		Array.isArray(ontologyMcp)
-	) {
-		return false;
-	}
-	const enabled = (ontologyMcp as Record<string, unknown>).enabled;
-	return enabled === true;
-}
-
-export function readProjectExplorationCatalogPin(context: AgentRunContext) {
-	const snapshot = context.contextSnapshot as Record<string, unknown>;
-	const parsed = projectExplorationCatalogRunPinSchema.safeParse(
-		snapshot.projectExplorationCatalog,
-	);
-	return parsed.success ? parsed.data : null;
-}
-
-function formatPlanModeSettingsSnapshot(snapshot: unknown) {
-	if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot))
-		return null;
-	const disabledCapabilities = (snapshot as { disabledCapabilities?: unknown })
-		.disabledCapabilities;
-	if (!Array.isArray(disabledCapabilities)) return null;
-	return disabledCapabilities.length > 0
-		? `disabled=${disabledCapabilities.join(", ")}`
-		: "all enabled";
-}
-
-function modeGuidance(
-	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
-) {
-	if (executionMode === "planning") {
-		return [
-			"Planning guidance:",
-			"- 原則として実装・ファイル変更・project import は避け、調査結果に基づく実装計画を返してください。",
-			"- ただし、ユーザーが実装開始を明示した場合、または計画中に実装へ進む合意が明確になった場合は、Todo を更新して implementation work に入って構いません。",
-			"- mutation tool を使う場合は、その理由と根拠を finalReport に含めてください。",
-			"- Planning is not closeout. 実装と検証が終わっていない場合、compile_eval は通常不要です。",
-			"",
 		];
-	}
-	if (executionMode === "review") {
-		return [
-			"Review guidance:",
-			"- 変更差分、受け入れ条件、検証結果を確認し、バグ・回帰・責務境界違反・テスト不足を優先してください。",
-			"- 必要に応じて git_diff、read_file、run_verification、context_compile を使って根拠を確認してください。",
-			"- Review Todo が表示されている場合は、各確認段階の完了時に todo_list operation=done を使い、未完了なら block/fail で状態を残してください。",
-			"- 修正が必要で明確な場合は、Todo を更新して実装修正 tool を使って構いません。",
-			"- findings 保存用の別ファイルを作成しない。finalReport には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は finalReport と Review Status artifact に残してください。",
-			"",
-		];
-	}
-	if (executionMode === "general_answer") {
-		return [
-			"General answer guidance:",
-			"- 原則として最小限の回答でよいですが、リポジトリ事実が必要な場合は read/search tools を使って確認してください。",
-			"- コード変更が必要だと判断した場合は、その理由を明示して Todo を更新してから進めてください。",
-			"",
-		];
-	}
-	return [
-		"Implementation guidance:",
-		"- 実装 Todo が running になった後は、plan-only answer や次ステップ列挙だけで停止しないでください。",
-		"- 実装、必要な検証、必要な修正、closeout まで進めてください。明確な blocker がある場合は todo_list operation=block/fail を使って説明してください。",
-		"- ファイル編集、DB mutation、長い検証、review 判定の後は、該当 Todo を done/block/fail のいずれかに更新してから次の段階に進んでください。",
-		"- import_project を使った場合は、postImport payload と recommended verification command を優先してください。",
-		"- 局所確認は該当する実装・調査・migration Todo の完了条件として扱い、`必要最小限の動作確認を行う` のようなユーザー依頼にない独立検証 Todo を追加しないでください。",
-		"- コード変更後、package.json に verify script が存在する場合は、完了報告前の代表検証として verify command を最優先で実行してください。typecheck / lint / test / build の個別実行は、修正途中の focused check、または verify script が存在しない・実行不能な場合の fallback としてください。",
-		"- DB schema / migration / 永続化テーブル変更では、TodoList に固定 gate「DB migration を実行する」が追加されます。この 1 Todo の中で migration ファイル作成、実作業対象 DB への migration command 実行、既存 migration を使う read-only focused test / smoke 実装、その test / API / schema 確認の実行まで完了してから done にしてください。",
-		"- migration ファイル、DB schema、DB bootstrap / seed / persistence table 定義を作成・更新する必要が分かった時点で、編集前または直後に todo_list operation=replace を使い、todoListReplaceReason=newly_required_work または scope_changed として taskType=data_migration または procedureId=data_migration.apply_migration の Todo を含めてください。migration 作成だけ、隔離 DB の smoke だけ、通常 implementation Todo だけで DB 変更を閉じないでください。",
-		"- DB migration Todo の done には、実作業対象 DB の明示、migration command の exit code、対象 DB での schema/table 存在確認、関連 API または focused test の成功が必要です。対象 DB が不明、実 DB 未適用、または API が no such table 等で失敗する場合は done にせず block / fail にしてください。",
-		"",
-	];
-}
-
-function renderCurrentTodoContext(
-	currentTodo: NonNullable<AgentRunContext["currentTodo"]>,
-) {
-	return [
-		"[Current Native API Runner Todo]",
-		`seq=${currentTodo.seq}`,
-		`title=${currentTodo.title}`,
-		...(currentTodo.description
-			? [`description=${currentTodo.description.replace(/\s+/g, " ").trim()}`]
-			: []),
-		`taskType=${currentTodo.taskType}`,
-		`procedureId=${currentTodo.procedureId ?? "none"}`,
-		`status=${currentTodo.status}`,
-	].join("\n");
-}
-
-function readNonEmptyString(value: unknown) {
-	return typeof value === "string" && value.trim().length > 0 ? value : null;
+	});
 }
 
 function readProviderToolCalls(value: unknown): ProviderToolCall[] | null {
@@ -497,13 +347,12 @@ function readProviderToolCalls(value: unknown): ProviderToolCall[] | null {
 function readNativeApiToolResult(value: unknown): NativeApiToolResult | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const record = value as Record<string, unknown>;
-	if (typeof record.ok !== "boolean") return null;
-	const content = typeof record.content === "string" ? record.content : null;
-	if (content === null) return null;
-	const error = record.error;
+	if (typeof record.ok !== "boolean" || typeof record.content !== "string") {
+		return null;
+	}
 	return {
 		ok: record.ok,
-		content,
+		content: record.content,
 		...(record.payload !== undefined ? { payload: record.payload } : {}),
 		...(record.modelVisibleSummary &&
 		typeof record.modelVisibleSummary === "object" &&
@@ -513,8 +362,14 @@ function readNativeApiToolResult(value: unknown): NativeApiToolResult | null {
 						record.modelVisibleSummary as ModelVisiblePayloadSummary,
 				}
 			: {}),
-		...(error && typeof error === "object" && !Array.isArray(error)
-			? { error: error as NativeApiToolResult["error"] }
+		...(record.error &&
+		typeof record.error === "object" &&
+		!Array.isArray(record.error)
+			? { error: record.error as NativeApiToolResult["error"] }
 			: {}),
 	};
+}
+
+function readNonEmptyString(value: unknown) {
+	return typeof value === "string" && value.trim() ? value : null;
 }

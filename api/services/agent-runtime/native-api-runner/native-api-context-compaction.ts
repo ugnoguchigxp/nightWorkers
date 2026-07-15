@@ -19,6 +19,7 @@ export function compactNativeApiHistoryToBaseline(input: {
 	> | null;
 }): NativeApiBaselineCompactionResult {
 	const history = [...input.baselineHistory];
+	appendIfPresent(history, buildConversationSummary(input.previousHistory));
 	appendIfPresent(history, input.todoSnapshotItem);
 	appendIfPresent(history, input.currentTodoItem);
 	appendIfPresent(history, input.postImportHistoryItem);
@@ -27,6 +28,45 @@ export function compactNativeApiHistoryToBaseline(input: {
 		retainedHistoryItems: history.length,
 		previousHistoryItems: input.previousHistory.length,
 		reason: input.reason,
+	};
+}
+
+function buildConversationSummary(
+	history: readonly NativeApiHistoryItem[],
+): Extract<NativeApiHistoryItem, { type: "user" }> | null {
+	const entries = history
+		.filter((item) => item.type !== "system")
+		.slice(-24)
+		.map((item) => {
+			if (item.type === "user") {
+				return { type: "user", source: item.source, content: item.content };
+			}
+			if (item.type === "assistant") {
+				return {
+					type: "assistant",
+					content: item.content,
+					toolCalls: item.toolCalls?.map((call) => ({
+						id: call.id,
+						name: call.name,
+					})),
+				};
+			}
+			return {
+				type: "tool_result",
+				toolCallId: item.toolCallId,
+				toolName: item.toolName,
+				ok: item.result.ok,
+				content: item.result.content,
+			};
+		});
+	if (!entries.length) return null;
+	return {
+		type: "user",
+		source: "runtime",
+		content: [
+			"[Conversation Summary Before Compaction]",
+			JSON.stringify(entries).slice(0, 24_000),
+		].join("\n"),
 	};
 }
 

@@ -314,14 +314,14 @@ async function executeAction(
 				>[1]["thinkingDepth"],
 			});
 		case "run.test.start":
-			return nightworkersService.startTestModeRunFromArtifact({
+			return nightworkersService.startVerificationRunFromArtifact({
 				projectId: text(args.projectId),
 				taskId,
 				specArtifactId: text(args.specArtifactId),
 				verificationDocumentId: optionalText(args.verificationDocumentId),
 				mode: "test",
 				action: optionalText(args.action) as Parameters<
-					typeof nightworkersService.startTestModeRunFromArtifact
+					typeof nightworkersService.startVerificationRunFromArtifact
 				>[0]["action"],
 				rerun: optionalBoolean(args.rerun),
 			});

@@ -118,16 +118,6 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent["type"], EventMapping> = {
 	},
 };
 
-const AUTO_CLOSE_PROCEDURE_BY_TOOL_NAME: Record<string, string> = {
-	"context-still.initial_instructions": "contextstill.initial_instructions",
-	"context-still.context_compile": "contextstill.context_compile",
-	"context-still.register_candidates": "contextstill.register_candidates",
-};
-
-const QUALITY_GATE_VERIFY_PROCEDURE_ID = "quality_gate_verify";
-const KNOWLEDGE_REGISTRATION_PROCEDURE_ID = "contextstill.register_candidates";
-const FINAL_COMPLETION_REPORT_PROCEDURE_ID = "final_completion_report";
-
 export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 	return {
 		async emit(event: AgentRuntimeEvent) {
@@ -143,8 +133,6 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 					message: event.message.slice(0, 1000),
 					data: (event.payload as Record<string, unknown>) || {},
 				});
-				await maybeAutoCloseGateTodo(taskRunId, event);
-				await maybeAutoCloseCompletionReportTodo(taskRunId, event);
 				await maybeRecordCodexCommandVerificationEvidence(taskRunId, event);
 			} catch (error) {
 				logEvent({
@@ -274,140 +262,6 @@ async function maybeRecordCodexCommandVerificationEvidence(
 	}
 }
 
-async function maybeAutoCloseGateTodo(
-	taskRunId: string,
-	event: AgentRuntimeEvent,
-) {
-	if (event.type !== "tool_call_finished") return;
-	const payload =
-		event.payload && typeof event.payload === "object"
-			? (event.payload as Record<string, unknown>)
-			: null;
-	if (!payload || isFailedToolCompletion(payload)) return;
-	const procedureId = resolveAutoCloseProcedureId(payload);
-	if (!procedureId) return;
-
-	const [run, todos] = await Promise.all([
-		repo.getTaskRun(taskRunId),
-		repo.listTaskRunTodosForRun(taskRunId),
-	]);
-	if (!run) return;
-	const currentTodo =
-		procedureId === KNOWLEDGE_REGISTRATION_PROCEDURE_ID
-			? todos.find(
-					(todo) =>
-						["pending", "running"].includes(todo.status) &&
-						todo.procedureId === procedureId,
-				)
-			: todos.find(
-					(todo) =>
-						todo.status === "running" && todo.procedureId === procedureId,
-				);
-	if (!currentTodo) return;
-
-	const now = new Date();
-	await repo.updateTaskRunTodo(
-		currentTodo.id,
-		{
-			status: "passed",
-			completedAt: now,
-			startedAt: currentTodo.startedAt
-				? new Date(String(currentTodo.startedAt))
-				: now,
-		},
-		{ notifyTaskId: run.taskId, notifyRunId: run.id },
-	);
-
-	if (procedureId !== KNOWLEDGE_REGISTRATION_PROCEDURE_ID) {
-		await autoAdvanceNextTodo(taskRunId, run, currentTodo.seq, now);
-	}
-}
-
-async function maybeAutoCloseCompletionReportTodo(
-	taskRunId: string,
-	event: AgentRuntimeEvent,
-) {
-	if (event.type !== "runtime_finished") return;
-	const payload =
-		event.payload && typeof event.payload === "object"
-			? (event.payload as Record<string, unknown>)
-			: null;
-	if (
-		!payload ||
-		typeof payload.finalReport !== "string" ||
-		payload.finalReport.trim().length === 0
-	) {
-		return;
-	}
-
-	const [run, todos] = await Promise.all([
-		repo.getTaskRun(taskRunId),
-		repo.listTaskRunTodosForRun(taskRunId),
-	]);
-	if (!run) return;
-	const completionTodo = todos.find(
-		(todo) =>
-			["pending", "running"].includes(todo.status) &&
-			todo.procedureId === FINAL_COMPLETION_REPORT_PROCEDURE_ID,
-	);
-	if (!completionTodo) return;
-	const earlierOpenTodo = todos.find(
-		(todo) =>
-			todo.seq < completionTodo.seq &&
-			["pending", "running"].includes(todo.status) &&
-			todo.id !== completionTodo.id,
-	);
-	if (earlierOpenTodo) return;
-
-	const now = new Date();
-	await repo.updateTaskRunTodo(
-		completionTodo.id,
-		{
-			status: "passed",
-			completedAt: now,
-			startedAt: completionTodo.startedAt
-				? new Date(String(completionTodo.startedAt))
-				: now,
-		},
-		{ notifyTaskId: run.taskId, notifyRunId: run.id },
-	);
-}
-
-async function autoAdvanceNextTodo(
-	taskRunId: string,
-	run: { id: string; taskId: string },
-	afterSeq: number,
-	now: Date,
-) {
-	const refreshedTodos = await repo.listTaskRunTodosForRun(taskRunId);
-	const nextTodo = refreshedTodos
-		.filter((todo) => todo.status === "pending" && todo.seq > afterSeq)
-		.sort((a, b) => a.seq - b.seq)[0];
-	if (!nextTodo) return;
-	if (isFinalCloseoutTodo(nextTodo)) return;
-
-	await repo.startTaskRunTodoIfStillPendingAndNoEarlierOpen(
-		{
-			id: nextTodo.id,
-			runId: taskRunId,
-			afterSeq,
-			startedAt: now,
-		},
-		{ notifyTaskId: run.taskId, notifyRunId: run.id },
-	);
-}
-
-function resolveAutoCloseProcedureId(payload: Record<string, unknown>) {
-	const toolName = resolveToolName(payload);
-	if (toolName && AUTO_CLOSE_PROCEDURE_BY_TOOL_NAME[toolName]) {
-		return AUTO_CLOSE_PROCEDURE_BY_TOOL_NAME[toolName];
-	}
-	if (isSuccessfulBroadVerificationCommand(payload, toolName)) {
-		return QUALITY_GATE_VERIFY_PROCEDURE_ID;
-	}
-	return null;
-}
-
 function resolveToolName(payload: Record<string, unknown>) {
 	if (typeof payload.toolName === "string" && payload.toolName.length > 0) {
 		return payload.toolName;
@@ -426,43 +280,6 @@ function isFailedToolCompletion(payload: Record<string, unknown>) {
 		payload.status === "failed" ||
 		payload.status === "error" ||
 		payload.status === "cancelled"
-	);
-}
-
-function isSuccessfulBroadVerificationCommand(
-	payload: Record<string, unknown>,
-	toolName: string | null,
-) {
-	if (
-		toolName !== "command_execution" &&
-		toolName !== "nightworkers.run_verification"
-	) {
-		return false;
-	}
-	if (typeof payload.exitCode === "number" && payload.exitCode !== 0)
-		return false;
-	if (typeof payload.exit_code === "number" && payload.exit_code !== 0)
-		return false;
-
-	const command =
-		typeof payload.command === "string"
-			? payload.command
-			: typeof payload.name === "string"
-				? payload.name
-				: "";
-	if (!command) return false;
-	return classifyCodexCommand(command) === "broad_verification";
-}
-
-function isFinalCloseoutTodo(todo: {
-	taskType?: string | null;
-	procedureId?: string | null;
-}) {
-	return (
-		todo.procedureId === KNOWLEDGE_REGISTRATION_PROCEDURE_ID ||
-		todo.procedureId === FINAL_COMPLETION_REPORT_PROCEDURE_ID ||
-		todo.taskType === "knowledge_capture" ||
-		todo.taskType === "completion_report"
 	);
 }
 

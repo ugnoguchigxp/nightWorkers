@@ -8,6 +8,34 @@
 			"maxLines": 620,
 			"targetModule": "questionnaire-service",
 			"phase": 7
+		},
+		{
+			"id": "NW-LF-02",
+			"path": "api/modules/missionPilot/mission-pilot-closeout.service.ts",
+			"maxLines": 630,
+			"targetModule": "mission-pilot-closeout",
+			"phase": 7
+		},
+		{
+			"id": "NW-LF-03",
+			"path": "api/modules/missionPilot/mission-pilot-plan-coordinator.service.ts",
+			"maxLines": 655,
+			"targetModule": "mission-pilot-plan-coordinator",
+			"phase": 7
+		},
+		{
+			"id": "NW-LF-06",
+			"path": "api/modules/review/review-run.service.ts",
+			"maxLines": 697,
+			"targetModule": "review-run-service",
+			"phase": 7
+		},
+		{
+			"id": "NW-LF-07",
+			"path": "src/modules/nightworkers/components/ThreadTimelineCodexToolCardModel.tsx",
+			"maxLines": 755,
+			"targetModule": "thread-timeline-codex-tool-card-model",
+			"phase": 7
 		}
 	]
 }

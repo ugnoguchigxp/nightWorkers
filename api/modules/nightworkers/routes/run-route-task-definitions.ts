@@ -116,6 +116,29 @@ export const getTaskRunRoute = createRoute({
 	},
 });
 
+export const exportTaskRunJsonlRoute = createRoute({
+	method: "get",
+	path: "/runs/:id/export.jsonl",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+		}),
+	},
+	responses: {
+		200: {
+			description: "Run JSONL export",
+			content: {
+				"application/x-ndjson": {
+					schema: z.string(),
+				},
+			},
+		},
+		404: {
+			description: "Run not found",
+		},
+	},
+});
+
 export const stopTaskRunRoute = createRoute({
 	method: "post",
 	path: "/runs/:id/stop",
@@ -136,6 +159,35 @@ export const stopTaskRunRoute = createRoute({
 		404: {
 			description: "Run not found",
 		},
+	},
+});
+
+export const resumeTaskRunTodoRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/todos/:todoId/resume",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+			todoId: z.string().uuid().openapi({ example: "todo-uuid" }),
+		}),
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						expectedTodoRevision: z.number().int().nonnegative(),
+						userContext: z.string().trim().min(1).max(20_000),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: { "application/json": { schema: taskRunSchema } },
+			description: "Paused Todo and existing task run resumed successfully",
+		},
+		404: { description: "Run or Todo not found" },
+		409: { description: "Run or Todo cannot be resumed" },
 	},
 });
 

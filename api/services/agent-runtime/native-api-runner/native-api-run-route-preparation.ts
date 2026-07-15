@@ -42,8 +42,6 @@ export async function prepareNativeApiRunRoute(input: {
 		basePolicy: { disallowedProviderIds: ["codex"] },
 	});
 	const tools = getNativeApiToolDefinitions({
-		executionMode: input.executionMode,
-		currentTodo: input.currentTodo ?? input.context.currentTodo ?? null,
 		ontologyMcpEnabled: readOntologyMcpEnabled(input.context),
 		projectExplorationCatalogEnabled:
 			readProjectExplorationCatalogPin(input.context)?.version === 2 &&
@@ -75,7 +73,7 @@ export async function prepareNativeApiRunRoute(input: {
 		return {
 			kind: "failed",
 			result: {
-				terminalState: "needs_human",
+				terminalState: "failed",
 				summary: "Native API route candidate was outside the run snapshot.",
 				finalReport:
 					"Native API route candidate was outside the run snapshot. Provider call was blocked before execution.",
@@ -98,7 +96,7 @@ export async function prepareNativeApiRunRoute(input: {
 		return {
 			kind: "failed",
 			result: {
-				terminalState: "needs_human",
+				terminalState: "failed",
 				summary: "No native/API provider route candidates were available.",
 				finalReport:
 					"No native/API provider route candidates were available. NativeApiRunner did not fall back to Codex or SchemaFirst.",

@@ -1,7 +1,6 @@
 import { NotFoundError } from "../../lib/errors";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
-import { digestText } from "../../services/text-digest";
 import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
@@ -37,72 +36,6 @@ export async function recoverStaleActiveRuns(
 		}
 		if (!options.force && hasFreshActiveRunHeartbeat(activeRun.updatedAt)) {
 			return { hasRunning: true as const, recoveredRunIds };
-		}
-
-		const activeTodos = await repo.listTaskRunTodosForRun(activeRun.id);
-		const recoveredAt = new Date();
-		for (const todo of activeTodos) {
-			if (["passed", "failed", "skipped", "needs_human"].includes(todo.status))
-				continue;
-			const status = todo.status === "running" ? "failed" : "skipped";
-			const reason =
-				status === "failed"
-					? "Run recovered as failed while this Todo was active."
-					: "Skipped because the run was recovered before this Todo started.";
-			const completionGateResult = {
-				version: 1,
-				todoId: todo.id,
-				todoSeq: todo.seq,
-				procedureId: todo.procedureId,
-				status,
-				passed: false,
-				reason,
-				checks: [
-					{
-						id: "stale_run_recovery",
-						passed: false,
-						evidence: runnerStatus.status,
-					},
-				],
-				evidence: {
-					terminalState: "failed",
-					stoppedBy: "llm_error",
-					riskLevel: "high",
-					summaryDigest: digestText(reason),
-					finalReportDigest: digestText(activeRun.finalReport || ""),
-					diffBytes: Buffer.byteLength(activeRun.diffPatch || "", "utf8"),
-					hasTests:
-						activeRun.testResults !== undefined &&
-						activeRun.testResults !== null,
-				},
-			};
-			await repo.updateTaskRunTodo(todo.id, {
-				status,
-				statusReason: reason,
-				completionGateResult,
-				completedAt: recoveredAt,
-				startedAt: todo.startedAt
-					? new Date(todo.startedAt as string | number | Date)
-					: recoveredAt,
-			});
-			await repo.createRunEvent({
-				version: 1,
-				runId: activeRun.id,
-				taskId,
-				timestamp: new Date().toISOString(),
-				type: "turn.finished",
-				severity: status === "failed" ? "error" : "warning",
-				actor: "system",
-				message: `Todo #${todo.seq} ${status} during stale run recovery: ${todo.title}`,
-				data: {
-					todoId: todo.id,
-					todoSeq: todo.seq,
-					todoTitle: todo.title,
-					taskType: todo.taskType,
-					procedureId: todo.procedureId,
-					completionGateResult,
-				},
-			});
 		}
 
 		await repo.updateTaskRun(activeRun.id, {

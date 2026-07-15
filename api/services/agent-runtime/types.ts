@@ -1,4 +1,5 @@
 import type { PromptImageAttachment } from "../../../shared/prompt-image";
+import type { CodingAgentSystemContext } from "../coding-agent-context";
 import type {
 	RuntimeContractWarning,
 	RuntimeContractWarningSeverity,
@@ -90,6 +91,14 @@ export interface AgentRunContext {
 		seq: number;
 		title: string;
 		description?: string | null;
+		objective?: string | null;
+		context?: string | null;
+		nextAction?: string | null;
+		acceptanceCriteria?: string[];
+		lastFailure?: string | null;
+		attemptCount?: number;
+		revision?: number;
+		systemContextVersion?: number;
 		taskType: string;
 		status: string;
 		procedureId?: string | null;
@@ -101,11 +110,20 @@ export interface AgentRunContext {
 		seq: number;
 		title: string;
 		description?: string | null;
+		objective?: string | null;
+		context?: string | null;
+		nextAction?: string | null;
+		acceptanceCriteria?: string[];
+		lastFailure?: string | null;
+		attemptCount?: number;
+		revision?: number;
+		systemContextVersion?: number;
 		taskType: string;
 		status: string;
 		procedureId?: string | null;
 	};
 	runtimeOptions?: Record<string, unknown>;
+	codingAgentSystemContext?: CodingAgentSystemContext;
 }
 
 export type CodexContractWarningSeverity = RuntimeContractWarningSeverity;

@@ -15,7 +15,6 @@ import type {
 	ProjectFileEntry,
 	Repository,
 	ReviewResult,
-	ReviewRunOptions,
 	ReviewSessionDetail,
 	Task,
 	TaskEvent,
@@ -100,17 +99,15 @@ export type NightWorkersWorkspaceState = {
 	createSession: (input: CreateSessionInput) => Promise<Task>;
 	startRun: (sessionId: string) => Promise<TaskRun>;
 	stopRun: (runId: string) => Promise<TaskRun>;
+	resumeTodo: (input: {
+		runId: string;
+		todoId: string;
+		expectedTodoRevision: number;
+		userContext: string;
+	}) => Promise<TaskRun>;
+	isResumingTodo: boolean;
 	stopBackgroundProcess: (processId: string) => Promise<BackgroundProcess>;
 	queueSession: (sessionId: string) => Promise<Task>;
-	submitRunReview: (
-		runId: string,
-		input: { action: "complete" | "cancel"; note?: string },
-	) => Promise<void>;
-	startReviewSession: (runId: string) => Promise<ReviewSessionDetail>;
-	startReviewRun: (
-		reviewSessionId: string,
-		options: Partial<ReviewRunOptions>,
-	) => Promise<ReviewSessionDetail>;
 	commitRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
 	pushRunGitCloseout: (runId: string) => Promise<GitCloseoutState>;
 	updateSessionStatus: (

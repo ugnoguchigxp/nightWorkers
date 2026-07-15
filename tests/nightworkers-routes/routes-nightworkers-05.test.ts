@@ -5,8 +5,26 @@ import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import { recordLlmUsage } from "../../api/services/llm-usage";
 import * as generalSettings from "../../api/services/settings/general-settings";
+import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
+
+function todoService(repositoryRoot: string, taskGoal: string) {
+	return new TodoMutationService(
+		{
+			version: 1,
+			roleInstructionsJa: "Coding Agentとして作業する。",
+			taskGoal,
+			projectRulesJa: [],
+			todoRequirementJa: "current Todoを明示的に開始する。",
+			failureRecoveryJa: "失敗を記録して再計画する。",
+			completionRuleJa: "未完了Todoを残さない。",
+			toolContractJa: "構造化tool結果を読む。",
+			registeredRepositoryRoot: repositoryRoot,
+		},
+		"agent",
+	);
+}
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
@@ -34,31 +52,41 @@ describe("NightWorkers task run todo routes", () => {
 			startedAt: new Date("2026-06-02T00:00:00.000Z"),
 		});
 
-		const second = await repo.createTaskRunTodo({
-			runId: run.id,
-			seq: 2,
-			title: "Run verification",
-			description: "Check the implementation",
-			taskType: "verification",
-			status: "pending",
-			dependsOn: [1],
+		const firstId = crypto.randomUUID();
+		const secondId = crypto.randomUUID();
+		const service = todoService(createdRepo.localPath, task.title);
+		const plan = await service.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					id: firstId,
+					title: "Implement persistence",
+					objective: "Add todo persistence",
+					nextAction: "Implement the persistence boundary",
+				},
+				{
+					id: secondId,
+					title: "Run verification",
+					objective: "Check the implementation",
+					nextAction: "Run focused tests",
+					dependsOn: [firstId],
+				},
+			],
 		});
-		const first = await repo.createTaskRunTodo({
-			runId: run.id,
-			seq: 1,
-			title: "Implement persistence",
-			description: "Add todo persistence",
-			taskType: "code_change",
-			status: "running",
-			procedureId: "code-change",
-			procedureSnapshot: { id: "code-change", digest: "sha256:test" },
-			contextSnapshot: { digest: "context:test" },
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await service.execute(run.id, {
+			op: "start",
+			todoId: firstId,
+			expectedTodoRevision: plan.todos[0].revision,
 		});
-
-		await repo.updateTaskRunTodo(first.id, {
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		await service.execute(run.id, {
+			op: "transition",
+			todoId: firstId,
+			expectedTodoRevision: started.currentTodo.revision,
 			status: "passed",
-			completionGateResult: { passed: true },
-			completedAt: new Date("2026-06-02T00:01:00.000Z"),
+			reason: "Persistence boundary completed",
 		});
 
 		const runDetailRes = await app.request(
@@ -70,25 +98,22 @@ describe("NightWorkers task run todo routes", () => {
 		expect(runDetailRes.status).toBe(200);
 		const runDetail = await runDetailRes.json();
 		expect(runDetail.todos.map((todo: unknown) => todo.id)).toEqual([
-			first.id,
-			second.id,
+			firstId,
+			secondId,
 		]);
 		expect(runDetail.todos[0]).toMatchObject({
 			seq: 1,
 			title: "Implement persistence",
-			taskType: "code_change",
+			taskType: "coding",
 			status: "passed",
-			procedureId: "code-change",
-			procedureSnapshot: { id: "code-change", digest: "sha256:test" },
-			contextSnapshot: { digest: "context:test" },
-			completionGateResult: { passed: true },
+			objective: "Add todo persistence",
 			dependsOn: [],
 		});
 		expect(runDetail.todos[1]).toMatchObject({
 			seq: 2,
-			taskType: "verification",
+			taskType: "coding",
 			status: "pending",
-			dependsOn: [1],
+			dependsOn: [firstId],
 		});
 	});
 
@@ -170,7 +195,7 @@ describe("NightWorkers task run todo routes", () => {
 		});
 	});
 
-	it("enforces one todo per run sequence and cascades todos with run deletion", async () => {
+	it("cascades versioned todos with run deletion", async () => {
 		const createdRepo = await repo.createRepository({
 			name: "TEST: Todo Constraint Workspace",
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
@@ -189,21 +214,15 @@ describe("NightWorkers task run todo routes", () => {
 			timeoutSeconds: 60,
 		});
 
-		await repo.createTaskRunTodo({
-			runId: run.id,
-			seq: 1,
-			title: "Only first seq",
-			taskType: "investigation",
-		});
-
-		await expect(
-			repo.createTaskRunTodo({
-				runId: run.id,
-				seq: 1,
-				title: "Duplicate seq",
-				taskType: "verification",
-			}),
-		).rejects.toThrow();
+		const plan = await todoService(createdRepo.localPath, task.title).execute(
+			run.id,
+			{
+				op: "replace_plan",
+				expectedPlanRevision: 0,
+				todos: [{ title: "Only todo", nextAction: "Inspect persistence" }],
+			},
+		);
+		expect(plan.ok).toBe(true);
 
 		await repo.deleteTask(task.id);
 		expect(await repo.listTaskRunTodosForRun(run.id)).toEqual([]);

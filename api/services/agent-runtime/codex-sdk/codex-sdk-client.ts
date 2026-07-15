@@ -31,7 +31,7 @@ export type CodexThreadResumeEvent =
 	| { status: "unavailable" }
 	| { status: "reused"; providerThreadId: string; stateId?: string | null }
 	| {
-			status: "fallback_started_fresh";
+			status: "resume_failed";
 			providerThreadId: string;
 			stateId?: string | null;
 			error: string;
@@ -51,7 +51,6 @@ export async function createCodexRuntimeThread(input: {
 			...process.env,
 			NIGHTWORKERS_TASK_ID: input.context.taskId,
 			NIGHTWORKERS_RUN_ID: input.context.runId,
-			NIGHTWORKERS_EXECUTION_MODE: readCodexRuntimeExecutionMode(input.context),
 			NIGHTWORKERS_ONTOLOGY_MCP_ENABLED: readOntologyMcpEnabled(input.context)
 				? "true"
 				: "false",
@@ -76,23 +75,17 @@ export async function createCodexRuntimeThread(input: {
 			return thread;
 		} catch (error) {
 			await input.onResumeEvent?.({
-				status: "fallback_started_fresh",
+				status: "resume_failed",
 				providerThreadId: resumeState.providerThreadId,
 				stateId: resumeState.stateId,
 				error: error instanceof Error ? error.message : String(error),
 			});
+			throw error;
 		}
 	} else {
 		await input.onResumeEvent?.({ status: "unavailable" });
 	}
 	return codex.startThread(threadOptions);
-}
-
-function readCodexRuntimeExecutionMode(context: AgentRunContext) {
-	const value = context.runtimeOptions?.executionMode;
-	if (typeof value === "string") return value;
-	const snapshotValue = context.contextSnapshot.executionMode;
-	return typeof snapshotValue === "string" ? snapshotValue : "implementation";
 }
 
 function readOntologyMcpEnabled(context: AgentRunContext) {
@@ -106,7 +99,7 @@ function readCodexResumeState(context: AgentRunContext) {
 	const fromOptions = readRecord(context.runtimeOptions?.runtimeResume);
 	const fromSnapshot = readRecord(context.contextSnapshot.runtimeResume);
 	const resume = fromOptions ?? fromSnapshot;
-	if (!resume || resume.kind !== "codex_thread") return null;
+	if (resume?.kind !== "codex_thread") return null;
 	const providerThreadId = readString(resume.providerThreadId);
 	if (!providerThreadId) return null;
 	return {

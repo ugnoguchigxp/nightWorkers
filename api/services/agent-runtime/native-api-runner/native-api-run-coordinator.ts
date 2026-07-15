@@ -1,25 +1,18 @@
 import { runFinalizeController } from "../../run-control/finalize-controller";
-import { readRunControlKernelMode } from "../../run-control/settings";
 import type { callProviderToolTurn } from "../../structured-llm/providers";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
 	AgentRuntimeSink,
 } from "../types";
-import type { NativeApiCloseoutControllerLike } from "./native-api-closeout-controller";
 import { readNativeApiExecutionMode } from "./native-api-mode";
 import { runNativeApiProviderAttempts } from "./native-api-provider-attempts";
 import { prepareNativeApiRunContext } from "./native-api-run-context-preparation";
 import { prepareNativeApiRunRoute } from "./native-api-run-route-preparation";
+import { buildTodoSnapshotHistory } from "./native-api-runner-history-cards";
 import {
-	buildPostImportHistoryItem,
-	buildTodoSnapshotHistory,
-} from "./native-api-runner-history-cards";
-import {
-	canCompleteNativeApiWithTextOnly,
 	firstLine,
 	readNativeApiCompletedTurnModel,
-	shouldForceNativeApiStartupGates,
 } from "./native-api-runner-routing";
 import { createNativeApiTimeoutSignal } from "./native-api-runner-timeout";
 import {
@@ -27,7 +20,6 @@ import {
 	recordNativeApiTurnUsage,
 } from "./native-api-runner-usage";
 import type { NativeApiSessionStore } from "./native-api-session-store";
-import type { NativeApiStartupControllerLike } from "./native-api-startup-controller";
 import {
 	dispatchNativeApiToolCall,
 	type NativeApiDispatchState,
@@ -48,14 +40,11 @@ export type NativeApiRunnerHost = {
 	cancelledRunIds: Set<string>;
 	activeRunControllers: Map<string, AbortController>;
 	store: NativeApiSessionStore;
-	startupController: NativeApiStartupControllerLike;
-	closeoutController: NativeApiCloseoutControllerLike;
 	providerTurn: NativeApiToolTurnProvider;
 	usageRecorder: NativeApiUsageRecorder;
 	loadResumeHistory: (
 		context: AgentRunContext,
 		sink: AgentRuntimeSink,
-		executionMode: ReturnType<typeof readNativeApiExecutionMode>,
 	) => Promise<NativeApiHistoryItem[] | null>;
 	toCancelled: () => AgentRuntimeResult;
 	isCancelled: (runId: string, signal?: AbortSignal) => Promise<boolean>;
@@ -72,27 +61,13 @@ export async function runNativeApiRunner(
 	}
 
 	const executionMode = readNativeApiExecutionMode(context);
-	const resumeHistory = await runtime.loadResumeHistory(
-		context,
-		sink,
-		executionMode,
-	);
+	const resumeHistory = await runtime.loadResumeHistory(context, sink);
 	let history: NativeApiHistoryItem[] = buildInitialNativeApiHistory(context, {
 		resumeHistory,
 	});
 	let state: NativeApiDispatchState = {
 		readFiles: [],
-		specificationRead: false,
-		initialInstructionsCompleted: false,
-		contextCompiled: false,
-		todoAligned: false,
-		startupCompleted: false,
 		postImport: null,
-		importProjectSucceeded: false,
-		copyDirectorySucceeded: false,
-		manifestReadAfterImport: false,
-		successfulVerificationCommands: [],
-		compileEvalCompleted: false,
 	};
 	let lastTodoSnapshotContent: string | null =
 		getLatestNativeApiUserContentByHeader(
@@ -104,7 +79,6 @@ export async function runNativeApiRunner(
 			history,
 			NATIVE_API_CURRENT_TODO_HEADER,
 		);
-	let lastPostImportHistoryToolCallId: string | null = null;
 	const runController = new AbortController();
 	runtime.activeRunControllers.set(context.runId, runController);
 	const timeout = createNativeApiTimeoutSignal(
@@ -113,21 +87,6 @@ export async function runNativeApiRunner(
 		context.timeoutSeconds,
 	);
 	try {
-		if (shouldForceNativeApiStartupGates(context)) {
-			const startup = await runtime.startupController.runStartup({
-				context,
-				sink,
-				history,
-				state,
-				resumeHistoryRestored: (resumeHistory?.length ?? 0) > 0,
-				signal: timeout.signal,
-			});
-			history = startup.history;
-			state = startup.state;
-			if (!startup.ok) {
-				return startup.result;
-			}
-		}
 		const contextWindowBaselineHistory = [...history];
 		let contextBudgetHintInserted = false;
 		let runtimeBaselineCompactionCount = 0;
@@ -150,13 +109,6 @@ export async function runNativeApiRunner(
 			) {
 				history = [...history, todoSnapshot.currentTodoItem];
 				lastCurrentTodoContent = todoSnapshot.currentTodoItem.content;
-			}
-			if (
-				state.postImport &&
-				state.postImport.toolCallId !== lastPostImportHistoryToolCallId
-			) {
-				history = [...history, buildPostImportHistoryItem(state.postImport)];
-				lastPostImportHistoryToolCallId = state.postImport.toolCallId;
 			}
 			const routePreparation = await prepareNativeApiRunRoute({
 				context,
@@ -286,9 +238,9 @@ export async function runNativeApiRunner(
 					payload: { provider: providerRequest.provider, error: message },
 				});
 				return {
-					terminalState: "needs_human",
+					terminalState: "failed",
 					summary: "Native API provider turn failed.",
-					finalReport: `Native API provider turn failed without Codex/SchemaFirst fallback: ${message}`,
+					finalReport: message,
 					stoppedBy: "llm_error",
 					riskLevel: "high",
 				};
@@ -318,9 +270,9 @@ export async function runNativeApiRunner(
 					error: { message: providerResult.reason },
 				});
 				return {
-					terminalState: "needs_human",
+					terminalState: "failed",
 					summary: "Native API provider tool turn is unsupported.",
-					finalReport: `${providerResult.reason}. NativeApiRunner did not fall back to Codex or SchemaFirst.`,
+					finalReport: providerResult.reason,
 					stoppedBy: "missing_tool_call",
 					riskLevel: "high",
 				};
@@ -354,13 +306,14 @@ export async function runNativeApiRunner(
 
 			if (providerResult.toolCalls.length === 0) {
 				const finalText = providerResult.content.trim();
-				const canComplete = canCompleteNativeApiWithTextOnly(
-					executionMode,
-					finalText,
-				);
+				const completion = await runFinalizeController.evaluateCandidate({
+					runId: context.runId,
+					expectedPlanRevision: todoSnapshot?.planRevision ?? 0,
+					expectedTodoRevisions: todoSnapshot?.todoRevisions ?? {},
+				});
 				await runtime.store.finishTurn({
 					turnId: turn.id,
-					status: canComplete ? "completed" : "failed",
+					status: "completed",
 					history,
 					providerDebug,
 					model: readNativeApiCompletedTurnModel(
@@ -368,7 +321,7 @@ export async function runNativeApiRunner(
 						providerRequest,
 					),
 				});
-				if (canComplete) {
+				if (completion.allowFinalize) {
 					return {
 						terminalState: "completed",
 						summary: firstLine(finalText),
@@ -377,15 +330,23 @@ export async function runNativeApiRunner(
 						riskLevel: "medium",
 					};
 				}
-				return {
-					terminalState: "needs_human",
-					summary: "Provider returned no native tool calls.",
-					finalReport: finalText
-						? "Provider returned text without native tool calls. NativeApiRunner requires tool calls/finalize_answer for this execution mode and did not fall back to Codex or SchemaFirst."
-						: "Provider returned no native tool calls. NativeApiRunner requires finalize_answer and did not fall back to Codex or SchemaFirst.",
-					stoppedBy: "missing_tool_call",
-					riskLevel: "high",
-				};
+				history = [
+					...history,
+					{
+						type: "user",
+						source: "runtime",
+						content: JSON.stringify({
+							ok: false,
+							error: {
+								code: completion.code,
+								message: completion.message,
+							},
+							currentSnapshot: completion.snapshot,
+							finalCandidate: finalText,
+						}),
+					},
+				];
+				continue;
 			}
 
 			for (const toolCall of providerResult.toolCalls) {
@@ -396,6 +357,45 @@ export async function runNativeApiRunner(
 						history,
 					});
 					return runtime.toCancelled();
+				}
+				const existingCall = await runtime.store.getToolCall(
+					context.runId,
+					toolCall.id,
+				);
+				if (existingCall) {
+					const result = existingCall.resultJson
+						? capNativeApiToolResultContent(
+								existingCall.resultJson as {
+									ok: boolean;
+									content: string;
+									error?: { code: string; message: string };
+								},
+							)
+						: capNativeApiToolResultContent({
+								ok: false,
+								content: JSON.stringify({
+									ok: false,
+									error: {
+										code: "ACTION_RESULT_UNCERTAIN",
+										message:
+											"同じtool call IDの実行記録がありますが、resultが確定していません。状態を確認して次の行動を選んでください。",
+									},
+								}),
+								error: {
+									code: "ACTION_RESULT_UNCERTAIN",
+									message: "同じtool call IDの実行結果が未確定です。",
+								},
+							});
+					history = [
+						...history,
+						{
+							type: "tool_result",
+							toolCallId: toolCall.id,
+							toolName: toolCall.name,
+							result,
+						},
+					];
+					continue;
 				}
 				const record = await runtime.store.recordToolCallPending({
 					runId: context.runId,
@@ -485,40 +485,6 @@ export async function runNativeApiRunner(
 					error: dispatch.toolResult.error,
 					modelVisibleOutput: dispatch.toolResult.content,
 				});
-				if (dispatch.kind === "final") {
-					const closeout = await runtime.closeoutController.runCompileEval({
-						context,
-						sink,
-						turnId: turn.id,
-						state,
-						finalReport: dispatch.finalReport,
-						todoSeq: currentTodo?.seq ?? context.currentTodo?.seq ?? null,
-					});
-					state = closeout.state;
-					if (!closeout.skipped) {
-						history = [...history, closeout.historyItem];
-					}
-					await runtime.store.finishTurn({
-						turnId: turn.id,
-						status: "completed",
-						history,
-						providerDebug,
-						model: readNativeApiCompletedTurnModel(
-							providerResult,
-							providerRequest,
-						),
-					});
-					if (readRunControlKernelMode(context) === "enforce") {
-						await runFinalizeController.terminalize(context.runId, "completed");
-					}
-					return {
-						terminalState: "completed",
-						summary: dispatch.summary,
-						finalReport: dispatch.finalReport,
-						stoppedBy: "decision",
-						riskLevel: "medium",
-					};
-				}
 			}
 
 			await runtime.store.finishTurn({
@@ -528,34 +494,6 @@ export async function runNativeApiRunner(
 				providerDebug,
 				model: readNativeApiCompletedTurnModel(providerResult, providerRequest),
 			});
-
-			if (state.newContextWindowRequested) {
-				history = [...contextWindowBaselineHistory];
-				state = {
-					...state,
-					newContextWindowRequested: false,
-				};
-				lastTodoSnapshotContent = getLatestNativeApiUserContentByHeader(
-					history,
-					NATIVE_API_TODO_SNAPSHOT_HEADER,
-				);
-				lastCurrentTodoContent = getLatestNativeApiUserContentByHeader(
-					history,
-					NATIVE_API_CURRENT_TODO_HEADER,
-				);
-				lastPostImportHistoryToolCallId = null;
-				await sink.emit({
-					type: "tool_call_progress",
-					message:
-						"[NativeApiRunner] started a new provider context window without summarizing conversation history.",
-					payload: {
-						action: "context_window_started",
-						runtime: "native_api_runner",
-						turnIndex,
-						retainedHistoryItems: history.length,
-					},
-				});
-			}
 		}
 	} finally {
 		timeout.dispose();

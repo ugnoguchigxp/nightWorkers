@@ -8,41 +8,28 @@ import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
 	commitRunGitCloseoutRoute,
-	createReviewerEvaluationRoute,
-	createReviewerReplayEvaluationRoute,
-	createReviewPromptSuggestionsRoute,
-	createReviewSessionRoute,
-	createRunReviewRoute,
 	deferRunGitMergeRoute,
 	executeRunGitMergeRoute,
 	type exportTaskRunJsonlRoute,
 	type getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
-	getReviewRecommendationRoute,
 	getReviewSessionRoute,
 	getRunGitCloseoutRoute,
 	type getTaskRunRoute,
 	listBackgroundProcessesRoute,
-	type listReviewRubricsRoute,
 	listTaskRunActivityEventsRoute,
 	listTaskRunEventsRoute,
 	type listTaskRunsRoute,
 	overrideRunGitMergeTargetRoute,
 	previewRunGitMergeRoute,
 	pushRunGitCloseoutRoute,
+	resumeTaskRunTodoRoute,
 	reworkRunGitMergeRoute,
 	startBackgroundProcessRoute,
-	startReviewRunRoute,
 	stopBackgroundProcessRoute,
 	stopTaskRunRoute,
-	updateReviewFindingDispositionRoute,
-	updateReviewPromptSuggestionRoute,
-	useReviewPromptSuggestionRoute,
 } from "./routes/run-routes";
-import {
-	startTaskRunRoute,
-	startTestModeRunFromArtifactRoute,
-} from "./routes/task-routes";
+import { startTaskRunRoute } from "./routes/task-routes";
 
 type NightWorkersRouteHandler<Route extends RouteConfig> = RouteHandler<
 	Route,
@@ -64,19 +51,6 @@ export const startTaskRunHandler = withOpenApiRouteError(
 	async (c) => {
 		const id = c.req.param("id");
 		const run = await service.startTaskRun(id);
-		return c.json(run, 201);
-	},
-);
-
-export const startTestModeRunFromArtifactHandler = withOpenApiRouteError(
-	startTestModeRunFromArtifactRoute,
-	async (c) => {
-		const id = c.req.param("id");
-		const request = c.req.valid("json");
-		const run = await service.startTestModeRunFromArtifact({
-			...request,
-			taskId: id,
-		});
 		return c.json(run, 201);
 	},
 );
@@ -104,6 +78,20 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 	async (c) => {
 		const id = c.req.param("id");
 		const run = await service.stopTaskRun(id);
+		return c.json(run, 200);
+	},
+);
+
+export const resumeTaskRunTodoHandler = withOpenApiRouteError(
+	resumeTaskRunTodoRoute,
+	async (c) => {
+		const input = c.req.valid("json");
+		const run = await service.resumeTaskRunTodo({
+			runId: c.req.param("id"),
+			todoId: c.req.param("todoId"),
+			expectedTodoRevision: input.expectedTodoRevision,
+			userContext: input.userContext,
+		});
 		return c.json(run, 200);
 	},
 );
@@ -254,16 +242,6 @@ export const stopBackgroundProcessHandler = withOpenApiRouteError(
 	},
 );
 
-export const createRunReviewHandler = withOpenApiRouteError(
-	createRunReviewRoute,
-	async (c) => {
-		const id = c.req.param("id");
-		const request = c.req.valid("json");
-		const result = await service.reviewTaskRun(id, request);
-		return c.json(result, 200);
-	},
-);
-
 export const listTaskRunsHandler: NightWorkersRouteHandler<
 	typeof listTaskRunsRoute
 > = async (c) => {
@@ -271,40 +249,6 @@ export const listTaskRunsHandler: NightWorkersRouteHandler<
 	const runs = await service.getTaskRunsForTask(id);
 	return c.json(runs, 200);
 };
-
-export const listReviewRubricsHandler: NightWorkersRouteHandler<
-	typeof listReviewRubricsRoute
-> = async (c) => {
-	return c.json(service.getReviewRubrics(), 200);
-};
-
-export const createReviewerEvaluationHandler = withOpenApiRouteError(
-	createReviewerEvaluationRoute,
-	async (c) => {
-		const id = c.req.param("id");
-		const request = c.req.valid("json");
-		const result = await service.createReviewerEvaluation(id, request);
-		return c.json(result, 200);
-	},
-);
-
-export const getReviewRecommendationHandler = withOpenApiRouteError(
-	getReviewRecommendationRoute,
-	async (c) => {
-		const result = await service.getOrCreateReviewRecommendation(
-			c.req.param("id"),
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const createReviewSessionHandler = withOpenApiRouteError(
-	createReviewSessionRoute,
-	async (c) => {
-		const result = await service.startReviewSessionForRun(c.req.param("id"));
-		return c.json(result, 201);
-	},
-);
 
 export const getLatestTaskReviewSessionHandler = withOpenApiRouteError(
 	getLatestTaskReviewSessionRoute,
@@ -320,73 +264,6 @@ export const getReviewSessionHandler = withOpenApiRouteError(
 	getReviewSessionRoute,
 	async (c) => {
 		const result = await service.getReviewSessionDetail(c.req.param("id"));
-		return c.json(result, 200);
-	},
-);
-
-export const startReviewRunHandler = withOpenApiRouteError(
-	startReviewRunRoute,
-	async (c) => {
-		const result = await service.startReviewRun(
-			c.req.param("id"),
-			c.req.valid("json")?.options,
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const updateReviewFindingDispositionHandler = withOpenApiRouteError(
-	updateReviewFindingDispositionRoute,
-	async (c) => {
-		const result = await service.setReviewFindingDisposition(
-			c.req.param("id"),
-			c.req.param("findingId"),
-			c.req.valid("json"),
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const createReviewPromptSuggestionsHandler = withOpenApiRouteError(
-	createReviewPromptSuggestionsRoute,
-	async (c) => {
-		const result = await service.createReviewPromptSuggestions(
-			c.req.param("id"),
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const updateReviewPromptSuggestionHandler = withOpenApiRouteError(
-	updateReviewPromptSuggestionRoute,
-	async (c) => {
-		const result = await service.updateReviewPromptSuggestion(
-			c.req.param("id"),
-			c.req.param("suggestionId"),
-			c.req.valid("json"),
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const useReviewPromptSuggestionHandler = withOpenApiRouteError(
-	useReviewPromptSuggestionRoute,
-	async (c) => {
-		const result = await service.useReviewPromptSuggestion(
-			c.req.param("id"),
-			c.req.param("suggestionId"),
-			c.req.valid("json") ?? {},
-		);
-		return c.json(result, 200);
-	},
-);
-
-export const createReviewerReplayEvaluationHandler = withOpenApiRouteError(
-	createReviewerReplayEvaluationRoute,
-	async (c) => {
-		const id = c.req.param("id");
-		const request = c.req.valid("json");
-		const result = await service.createReviewerReplayEvaluation(id, request);
 		return c.json(result, 200);
 	},
 );

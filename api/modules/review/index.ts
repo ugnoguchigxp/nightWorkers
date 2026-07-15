@@ -21,4 +21,3 @@ export * from "./rubrics/llm-reviewer";
 export * from "./rubrics/loader";
 export * from "./rubrics/replay-evaluation";
 export type * from "./rubrics/types";
-export * from "./security-gate.service";

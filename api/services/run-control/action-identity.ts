@@ -1,13 +1,5 @@
 import crypto from "node:crypto";
 
-const REDACTED_ARGUMENT_KEYS = new Set([
-	"apikey",
-	"authorization",
-	"password",
-	"secret",
-	"token",
-]);
-
 export function buildRunActionIdentity(input: {
 	toolName: string;
 	arguments: unknown;
@@ -19,7 +11,7 @@ export function buildRunActionIdentity(input: {
 		workspaceIdentity: input.workspaceIdentity?.trim() || null,
 		arguments: normalizedArguments,
 	};
-	const serialized = JSON.stringify(normalized);
+	const serialized = serializeNormalized(normalized);
 	const normalizedArgsDigest = digestJson(normalizedArguments);
 	return {
 		actionKey: `sha256:${crypto.createHash("sha256").update(serialized).digest("hex")}`,
@@ -31,7 +23,7 @@ export function buildRunActionIdentity(input: {
 export function digestJson(value: unknown) {
 	return `sha256:${crypto
 		.createHash("sha256")
-		.update(JSON.stringify(normalizeActionValue(value)))
+		.update(serializeNormalized(normalizeActionValue(value)))
 		.digest("hex")}`;
 }
 
@@ -40,16 +32,17 @@ export function normalizeActionValue(value: unknown): unknown {
 	if (!value || typeof value !== "object") {
 		if (typeof value === "number" && !Number.isFinite(value))
 			return String(value);
+		if (typeof value === "bigint") return `${value.toString()}n`;
+		if (typeof value === "undefined") return { $type: "undefined" };
 		return value;
 	}
 	return Object.fromEntries(
 		Object.entries(value as Record<string, unknown>)
 			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, entry]) => [
-				key,
-				REDACTED_ARGUMENT_KEYS.has(key.toLowerCase())
-					? "[redacted]"
-					: normalizeActionValue(entry),
-			]),
+			.map(([key, entry]) => [key, normalizeActionValue(entry)]),
 	);
+}
+
+function serializeNormalized(value: unknown) {
+	return JSON.stringify(value) ?? '{"$type":"undefined"}';
 }

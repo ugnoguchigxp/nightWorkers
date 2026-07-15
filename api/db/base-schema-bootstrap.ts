@@ -117,6 +117,7 @@ export async function ensureBaseNightWorkersTables() {
       task_id text NOT NULL,
       repository_id text,
       status text DEFAULT 'running' NOT NULL,
+	  todo_plan_revision integer DEFAULT 0 NOT NULL,
       worker_kind text DEFAULT 'native-local-worker' NOT NULL,
       base_ref text,
       worktree_path text,
@@ -136,6 +137,11 @@ export async function ensureBaseNightWorkersTables() {
     )
   `);
 	await ensureColumn("task_runs", "worktree_path", "worktree_path text");
+	await ensureColumn(
+		"task_runs",
+		"todo_plan_revision",
+		"todo_plan_revision integer DEFAULT 0 NOT NULL",
+	);
 	await ensureColumn(
 		"task_runs",
 		"agent_mode_session_id",
@@ -168,28 +174,6 @@ export async function ensureBaseNightWorkersTables() {
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS task_events_task_run_seq_uidx ON task_events (task_run_id, seq)",
 	);
-
-	await client.execute(`
-    CREATE TABLE IF NOT EXISTS task_run_control_states (
-      run_id text PRIMARY KEY NOT NULL,
-      version integer DEFAULT 1 NOT NULL,
-      phase text DEFAULT 'active' NOT NULL,
-      progress_revision integer DEFAULT 0 NOT NULL,
-      workspace_revision integer DEFAULT 0 NOT NULL,
-      workflow_revision integer DEFAULT 0 NOT NULL,
-      todo_revision integer DEFAULT 0 NOT NULL,
-      evidence_revision integer DEFAULT 0 NOT NULL,
-      context_epoch integer DEFAULT 0 NOT NULL,
-      last_mutation_sequence integer,
-      last_evidence_sequence integer,
-      consecutive_no_progress_turns integer DEFAULT 0 NOT NULL,
-      terminal_reason text,
-      state_version integer DEFAULT 0 NOT NULL,
-      created_at integer NOT NULL,
-      updated_at integer NOT NULL,
-      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade
-    )
-  `);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_run_action_records (

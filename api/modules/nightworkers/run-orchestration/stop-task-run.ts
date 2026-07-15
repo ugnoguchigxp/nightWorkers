@@ -4,7 +4,6 @@ import { stopIsolatedTaskRun } from "../../../services/execution/worker-process-
 import * as repo from "../nightworkers.repository";
 import { completeImplementationQueueEntryForRun } from "./queues";
 import { assertRunStatusTransition } from "./status";
-import { closeOpenTodosForCancelledRun } from "./todo-closeout";
 import { normalizeAgentRuntimeKind } from "./utils";
 
 export async function stopTaskRun(runId: string) {
@@ -43,13 +42,6 @@ export async function stopTaskRun(runId: string) {
 			workerKind: run.workerKind,
 			previousStatus: run.status,
 		},
-	});
-	const todosBeforeCancelCloseout = await repo.listTaskRunTodosForRun(runId);
-	await closeOpenTodosForCancelledRun({
-		runId,
-		taskId: run.taskId,
-		todos: todosBeforeCancelCloseout,
-		evidence: "user_stop_requested",
 	});
 	assertRunStatusTransition(run.status, "cancelled");
 	const stoppedRun = await repo.updateTaskRun(runId, {

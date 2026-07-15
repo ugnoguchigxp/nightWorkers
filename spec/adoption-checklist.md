@@ -45,8 +45,7 @@ NightWorkers を既存のローカル repository に対して使い始める前�
 
 - [ ] Queue に入れる task は user-approved automation work として扱う。
 - [ ] Failed / needs_human の run は raw event、tool output、final report を分けて読む。
-- [ ] Test Mode の managed evidence と成功した `completion_check` がない変更を commit しない。
-- [ ] Review Run が `done` でない場合や、未処置 blocking finding がある場合は commit しない。
-- [ ] Review が修正した場合は Test Mode を再実行する。
-- [ ] implementation Security Oracle の pass または理由付き skip を確認する。
-- [ ] Documentation や verification gate の説明に違和感があれば、[Documentation Maintenance Checklist](./archive/documentation-maintenance-checklist.md) に沿って更新する。
+- [ ] Coding Agentが明示的にTodoを完了し、final report、diff、tool resultを確認してからcommitする。
+- [ ] verificationやsecurity scanが必要かはTaskに応じてTodoへ含め、結果を確認する。
+- [ ] `needs_human` Todoがある場合は質問へ回答し、同じTodoをresumeしてから続行する。
+- [ ] Documentationやruntime境界の説明に違和感があれば、[Architecture and Module Boundaries](./architecture.md) と実装を同時に更新する。

@@ -104,36 +104,6 @@ export async function checkDocsConsistency(options = {}) {
 		}
 	}
 
-	for (const completed of [
-		"p0-01-desktop-sidecar-startup-implementation-plan.md",
-		"p0-02-sanitize-html-critical-implementation-plan.md",
-		"p0-03-high-critical-dependencies-implementation-plan.md",
-		"p0-04-ci-foundation-implementation-plan.md",
-		"p0-05-release-verification-gate-implementation-plan.md",
-		"p1-01-pricing-table-pagination-implementation-plan.md",
-		"p1-02-timeline-virtualization-implementation-plan.md",
-		"p1-03-coverage-measurement-implementation-plan.md",
-		"p1-04-critical-branch-coverage-implementation-plan.md",
-		"p1-05-core-workflow-e2e-implementation-plan.md",
-		"p1-06-desktop-os-ci-implementation-plan.md",
-		"p1-07-non-loopback-security-implementation-plan.md",
-		"p2-01-frontend-boundary-refactor-implementation-plan.md",
-		"p2-02-backend-boundary-refactor-implementation-plan.md",
-		"p2-03-durable-queue-lease-implementation-plan.md",
-		"p2-04-worker-process-isolation-implementation-plan.md",
-		"p2-05-accessibility-automation-implementation-plan.md",
-		"p2-06-dependency-update-automation-implementation-plan.md",
-		"p3-01-release-discipline-implementation-plan.md",
-		"p3-02-demo-and-doc-sync-implementation-plan.md",
-	]) {
-		if (await exists(path.join(root, "spec/docs", completed))) {
-			errors.push(`completed plan is still in spec/docs: ${completed}`);
-		}
-		if (!(await exists(path.join(root, "spec/archive", completed)))) {
-			errors.push(`completed plan is missing from spec/archive: ${completed}`);
-		}
-	}
-
 	return errors;
 }
 

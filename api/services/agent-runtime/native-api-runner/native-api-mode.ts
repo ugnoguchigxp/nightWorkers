@@ -16,17 +16,8 @@ export type NativeApiStateCardRole =
 	| "general_answer";
 
 export function normalizeNativeApiExecutionMode(
-	value: unknown,
+	_value: unknown,
 ): NativeApiExecutionMode {
-	if (
-		value === "planning" ||
-		value === "implementation" ||
-		value === "test" ||
-		value === "review" ||
-		value === "general_answer"
-	) {
-		return value;
-	}
 	return "implementation";
 }
 
@@ -37,21 +28,19 @@ export function readNativeApiExecutionMode(
 }
 
 export function nativeApiRoleForExecutionMode(
-	mode: NativeApiExecutionMode,
+	_mode: NativeApiExecutionMode,
 ): StructuredLlmRole {
-	if (mode === "planning" || mode === "general_answer") return "plan";
-	if (mode === "test") return "test";
-	if (mode === "review") return "review";
 	return "implementation";
 }
 
 export function stateCardRoleForExecutionMode(
-	mode: NativeApiExecutionMode,
+	_mode: NativeApiExecutionMode,
 ): NativeApiStateCardRole {
-	if (mode === "planning") return "plan";
-	return mode;
+	return "implementation";
 }
 
-export function isNativeApiPlanningMode(mode: NativeApiExecutionMode): boolean {
-	return mode === "planning";
+export function isNativeApiPlanningMode(
+	_mode: NativeApiExecutionMode,
+): boolean {
+	return false;
 }

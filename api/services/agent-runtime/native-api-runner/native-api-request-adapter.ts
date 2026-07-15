@@ -4,7 +4,6 @@ import {
 } from "../../structured-llm/request";
 import type { StructuredLlmModelTarget } from "../../structured-llm/settings";
 import type {
-	ProviderToolChoice,
 	ProviderToolDefinition,
 	ProviderToolMessage,
 	RawToolTurnCallOptions,
@@ -77,7 +76,7 @@ export function buildNativeApiProviderRequests(input: {
 			runId: input.context.runId,
 			workingDirectory: input.context.repoRoot,
 			normalizedRequest,
-			toolChoice: nativeApiToolChoiceForExecutionMode(executionMode),
+			toolChoice: "auto",
 			attemptTimeoutMs: nativeApiAttemptTimeoutMs({
 				timeoutMs: input.context.timeoutSeconds * 1000,
 				providerEndpointId: normalizedRequest.providerEndpointId,
@@ -101,13 +100,4 @@ function nativeApiAttemptTimeoutMs(input: {
 			? input.timeoutMs
 			: routeDefault;
 	return Math.max(1_000, Math.min(timeoutMs, routeDefault));
-}
-
-function nativeApiToolChoiceForExecutionMode(
-	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
-): ProviderToolChoice {
-	if (executionMode === "implementation" || executionMode === "review") {
-		return "required";
-	}
-	return "auto";
 }

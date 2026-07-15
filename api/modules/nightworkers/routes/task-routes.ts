@@ -151,48 +151,6 @@ export const startTaskRunRoute = createRoute({
 		},
 	},
 });
-export const startTestModeRunFromArtifactRoute = createRoute({
-	method: "post",
-	path: "/tasks/:id/test-mode-run",
-	request: {
-		params: z.object({
-			id: z.string().uuid().openapi({ example: "task-uuid" }),
-		}),
-		body: {
-			content: {
-				"application/json": {
-					schema: z.object({
-						projectId: z.string().uuid(),
-						specArtifactId: z.string().min(1),
-						verificationDocumentId: z.string().uuid().nullable().optional(),
-						mode: z.literal("test"),
-						action: z
-							.enum([
-								"discover_tests",
-								"plan_and_implement_tests",
-								"run_unit_tests",
-							])
-							.optional(),
-						rerun: z.boolean().optional(),
-					}),
-				},
-			},
-		},
-	},
-	responses: {
-		201: {
-			content: {
-				"application/json": {
-					schema: taskRunSchema,
-				},
-			},
-			description: "Test Mode run started or active run returned",
-		},
-		404: {
-			description: "Task or verification document not found",
-		},
-	},
-});
 export const appendTaskMessageRoute = createRoute({
 	method: "post",
 	path: "/tasks/:id/messages",

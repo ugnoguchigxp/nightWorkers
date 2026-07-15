@@ -99,7 +99,7 @@ export async function startWorkbenchTaskRun(taskId: string) {
 	});
 }
 
-export async function startTestModeRunFromArtifact(input: {
+export async function startVerificationRunFromArtifact(input: {
 	projectId: string;
 	taskId: string;
 	specArtifactId: string;
@@ -143,13 +143,12 @@ export async function startTestModeRunFromArtifact(input: {
 		if (activeTestRun) return activeTestRun;
 	}
 	return startTaskRun(input.taskId, {
-		executionMode: "test",
-		executionModeSource: "test_mode",
+		executionMode: "implementation",
+		executionModeSource: "explicit",
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
 			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),
-			testMode: {
-				action: input.action ?? "run_unit_tests",
+			artifactContext: {
 				specArtifactId: input.specArtifactId,
 				verificationDocumentId: verificationDocument.id,
 			},
@@ -387,6 +386,7 @@ export {
 export {
 	archiveImplementationQueueEntryForRun,
 	completeImplementationQueueEntryForRun,
+	resumeTaskRunTodo,
 	runImplementationQueue,
 	runSessionQueueForRepository,
 	shouldContinueSessionQueue,

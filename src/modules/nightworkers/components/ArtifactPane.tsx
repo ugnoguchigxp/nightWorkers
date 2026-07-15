@@ -9,7 +9,6 @@ import {
 	buildMarkdownFromValue,
 } from "../artifactExport";
 import { logArtifactPaneRendered } from "../artifactPerformance";
-import { startTestModeRun } from "../nightWorkersCommands";
 import {
 	buildTestModeWorkflowSteps,
 	isTestModeWorkflowComplete,
@@ -24,7 +23,6 @@ import type {
 	ProjectFileContent,
 	ProjectFileEntry,
 	Repository,
-	ReviewRunOptions,
 	ReviewSessionDetail,
 	TaskEvent,
 	TaskMessage,
@@ -94,11 +92,6 @@ type ArtifactPaneProps = {
 	onAddToQueue?: () => Promise<void>;
 	activeReviewSession?: ReviewSessionDetail | null;
 	gitCloseout?: GitCloseoutState | null;
-	onStartReviewRun?: (
-		reviewSessionId: string,
-		options: Partial<ReviewRunOptions>,
-	) => Promise<ReviewSessionDetail>;
-	onOpenReviewArtifact?: () => Promise<void>;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskStatus?: string | null;
@@ -144,8 +137,6 @@ export function ArtifactPane({
 	onAddToQueue,
 	activeReviewSession,
 	gitCloseout,
-	onStartReviewRun,
-	onOpenReviewArtifact,
 	onCommitGitCloseout,
 	onPushGitCloseout,
 	activeTaskStatus,
@@ -158,7 +149,7 @@ export function ArtifactPane({
 		null,
 	);
 	const [isFullscreen, setIsFullscreen] = useState(false);
-	const [testModeStatus, setTestModeStatus] = useState<string | null>(null);
+	const [testModeStatus] = useState<string | null>(null);
 	const [frozenTestModeWorkflow, setFrozenTestModeWorkflow] =
 		useState<FrozenTestModeWorkflow | null>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
@@ -453,7 +444,6 @@ export function ArtifactPane({
 							detail={activeReviewDetail}
 							loading={isReviewSessionLoading}
 							latestRun={latestRun}
-							onStartReviewRun={onStartReviewRun}
 							gitCloseout={gitCloseout}
 							onCommitGitCloseout={onCommitGitCloseout}
 							onPushGitCloseout={onPushGitCloseout}
@@ -464,33 +454,9 @@ export function ArtifactPane({
 					) : showTestMode ? (
 						<TestModeArtifactViewer
 							model={testModePanel}
-							projectId={activeProject?.id || null}
-							taskId={activeSessionId}
 							latestRun={latestRunForTestMode}
 							workflowSteps={displayedTestModeWorkflowSteps}
 							status={testModeStatus}
-							canStartRun={true}
-							onStart={async (action, rerun) => {
-								if (
-									!activeProject?.id ||
-									!activeSessionId ||
-									!testModePanel?.specArtifactId
-								) {
-									return;
-								}
-								setTestModeStatus(`${action}:starting`);
-								const response = await startTestModeRun(activeSessionId, {
-									projectId: activeProject.id,
-									specArtifactId: testModePanel.specArtifactId,
-									verificationDocumentId: testModePanel.verificationDocumentId,
-									mode: "test",
-									action,
-									rerun,
-								});
-								setTestModeStatus(
-									response.ok ? `${action}:started` : `${action}:failed`,
-								);
-							}}
 						/>
 					) : showBlueprint ? (
 						<BlueprintViewer
@@ -528,37 +494,9 @@ export function ArtifactPane({
 							{verificationPanel ? (
 								<VerificationChecklistPanel
 									model={verificationPanel}
-									projectId={activeProject?.id || null}
-									taskId={activeSessionId}
 									latestRun={latestRunForTestMode}
 									workflowSteps={displayedTestModeWorkflowSteps}
 									status={testModeStatus}
-									canStartRun={true}
-									onOpenReviewArtifact={onOpenReviewArtifact}
-									onStart={async (action, rerun) => {
-										if (
-											!activeProject?.id ||
-											!activeSessionId ||
-											!verificationPanel.specArtifactId
-										) {
-											return;
-										}
-										setTestModeStatus(`${action}:starting`);
-										const response = await startTestModeRun(activeSessionId, {
-											projectId: activeProject.id,
-											specArtifactId: verificationPanel.specArtifactId,
-											verificationDocumentId:
-												verificationPanel.verificationDocumentId,
-											mode: "test",
-											action,
-											rerun,
-										});
-										if (!response.ok) {
-											setTestModeStatus(`${action}:failed`);
-											return;
-										}
-										setTestModeStatus(`${action}:started`);
-									}}
 								/>
 							) : null}
 							<div className="min-h-0 flex-1 overflow-hidden">

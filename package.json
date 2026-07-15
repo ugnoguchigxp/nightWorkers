@@ -51,7 +51,7 @@
 		"test:desktop-runtime": "node scripts/run-vitest.mjs run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts tests/hono-security-regressions.test.ts tests/config-listen-security.test.ts tests/desktop-matrix-workflow.test.ts tests/desktop-diagnostics.test.ts",
 		"audit:dependencies": "node scripts/audit-dependencies.mjs",
 		"check:tracked-artifacts": "bun scripts/check-tracked-artifacts.mjs",
-		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/agent-ontology/validate-manifests.mjs",
+		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-coding-agent-semantic-control.mjs && node scripts/agent-ontology/validate-manifests.mjs",
 		"check:docs": "node scripts/check-docs-consistency.mjs",
 		"typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit --singleThreaded",
 		"lint": "biome check .",

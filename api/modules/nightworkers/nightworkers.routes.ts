@@ -5,39 +5,28 @@ import { recordMissionPilotUserTaskEvent } from "../missionPilot/agent/mission-p
 import { getOntologyRunDebugReportRoute } from "../ontology";
 import {
 	commitRunGitCloseoutHandler,
-	createReviewerEvaluationHandler,
-	createReviewerReplayEvaluationHandler,
-	createReviewPromptSuggestionsHandler,
-	createReviewSessionHandler,
-	createRunReviewHandler,
 	deferRunGitMergeHandler,
 	executeRunGitMergeHandler,
 	exportTaskRunJsonlHandler,
 	getBackgroundProcessHandler,
 	getLatestTaskReviewSessionHandler,
 	getOntologyRunDebugReportHandler,
-	getReviewRecommendationHandler,
 	getReviewSessionHandler,
 	getRunGitCloseoutHandler,
 	getTaskRunHandler,
 	listBackgroundProcessesHandler,
-	listReviewRubricsHandler,
 	listTaskRunActivityEventsHandler,
 	listTaskRunEventsHandler,
 	listTaskRunsHandler,
 	overrideRunGitMergeTargetHandler,
 	previewRunGitMergeHandler,
 	pushRunGitCloseoutHandler,
+	resumeTaskRunTodoHandler,
 	reworkRunGitMergeHandler,
 	startBackgroundProcessHandler,
-	startReviewRunHandler,
 	startTaskRunHandler,
-	startTestModeRunFromArtifactHandler,
 	stopBackgroundProcessHandler,
 	stopTaskRunHandler,
-	updateReviewFindingDispositionHandler,
-	updateReviewPromptSuggestionHandler,
-	useReviewPromptSuggestionHandler,
 } from "./nightworkers.route-handlers";
 import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
@@ -60,23 +49,16 @@ import {
 } from "./routes/repository-routes";
 import {
 	commitRunGitCloseoutRoute,
-	createReviewerEvaluationRoute,
-	createReviewerReplayEvaluationRoute,
-	createReviewPromptSuggestionsRoute,
-	createReviewSessionRoute,
-	createRunReviewRoute,
 	deferRunGitMergeRoute,
 	executeRunGitMergeRoute,
 	exportTaskRunJsonlRoute,
 	getBackgroundProcessRoute,
 	getLatestTaskReviewSessionRoute,
-	getReviewRecommendationRoute,
 	getReviewSessionRoute,
 	getRunGitCloseoutRoute,
 	getTaskLlmUsageRoute,
 	getTaskRunRoute,
 	listBackgroundProcessesRoute,
-	listReviewRubricsRoute,
 	listTaskActivityEventsRoute,
 	listTaskMessagesRoute,
 	listTaskRunActivityEventsRoute,
@@ -85,14 +67,11 @@ import {
 	overrideRunGitMergeTargetRoute,
 	previewRunGitMergeRoute,
 	pushRunGitCloseoutRoute,
+	resumeTaskRunTodoRoute,
 	reworkRunGitMergeRoute,
 	startBackgroundProcessRoute,
-	startReviewRunRoute,
 	stopBackgroundProcessRoute,
 	stopTaskRunRoute,
-	updateReviewFindingDispositionRoute,
-	updateReviewPromptSuggestionRoute,
-	useReviewPromptSuggestionRoute,
 } from "./routes/run-routes";
 import {
 	appendTaskMessageRoute,
@@ -103,7 +82,6 @@ import {
 	getTaskRoute,
 	listTasksRoute,
 	startTaskRunRoute,
-	startTestModeRunFromArtifactRoute,
 	updateTaskRoute,
 } from "./routes/task-routes";
 import { browseFoldersRoute, createFolderRoute } from "./routes/util-routes";
@@ -397,13 +375,10 @@ const router = createOpenApiRouter()
 		}),
 	)
 	.openapi(startTaskRunRoute, startTaskRunHandler)
-	.openapi(
-		startTestModeRunFromArtifactRoute,
-		startTestModeRunFromArtifactHandler,
-	)
 	.openapi(getTaskRunRoute, getTaskRunHandler)
 	.openapi(getOntologyRunDebugReportRoute, getOntologyRunDebugReportHandler)
 	.openapi(stopTaskRunRoute, stopTaskRunHandler)
+	.openapi(resumeTaskRunTodoRoute, resumeTaskRunTodoHandler)
 	.openapi(getRunGitCloseoutRoute, getRunGitCloseoutHandler)
 	.openapi(commitRunGitCloseoutRoute, commitRunGitCloseoutHandler)
 	.openapi(pushRunGitCloseoutRoute, pushRunGitCloseoutHandler)
@@ -414,36 +389,13 @@ const router = createOpenApiRouter()
 	.openapi(executeRunGitMergeRoute, executeRunGitMergeHandler)
 	.openapi(listTaskRunEventsRoute, listTaskRunEventsHandler)
 	.openapi(listTaskRunActivityEventsRoute, listTaskRunActivityEventsHandler)
-	.openapi(getReviewRecommendationRoute, getReviewRecommendationHandler)
-	.openapi(createReviewSessionRoute, createReviewSessionHandler)
 	.openapi(getLatestTaskReviewSessionRoute, getLatestTaskReviewSessionHandler)
 	.openapi(getReviewSessionRoute, getReviewSessionHandler)
-	.openapi(startReviewRunRoute, startReviewRunHandler)
-	.openapi(
-		updateReviewFindingDispositionRoute,
-		updateReviewFindingDispositionHandler,
-	)
-	.openapi(
-		createReviewPromptSuggestionsRoute,
-		createReviewPromptSuggestionsHandler,
-	)
-	.openapi(
-		updateReviewPromptSuggestionRoute,
-		updateReviewPromptSuggestionHandler,
-	)
-	.openapi(useReviewPromptSuggestionRoute, useReviewPromptSuggestionHandler)
 	.openapi(startBackgroundProcessRoute, startBackgroundProcessHandler)
 	.openapi(listBackgroundProcessesRoute, listBackgroundProcessesHandler)
 	.openapi(getBackgroundProcessRoute, getBackgroundProcessHandler)
 	.openapi(stopBackgroundProcessRoute, stopBackgroundProcessHandler)
-	.openapi(createRunReviewRoute, createRunReviewHandler)
 	.openapi(listTaskRunsRoute, listTaskRunsHandler)
-	.openapi(listReviewRubricsRoute, listReviewRubricsHandler)
-	.openapi(createReviewerEvaluationRoute, createReviewerEvaluationHandler)
-	.openapi(
-		createReviewerReplayEvaluationRoute,
-		createReviewerReplayEvaluationHandler,
-	)
 	.openapi(exportTaskRunJsonlRoute, exportTaskRunJsonlHandler);
 
 router.openapi(browseFoldersRoute, async (c) => {

@@ -9,6 +9,7 @@ import {
 	summarizeRuntimeContractWarnings,
 } from "../../../services/agent-runtime/shared";
 import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
+import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
 import {
 	continueMissionPilotAfterRun,
 	resolveMissionPilotParentTaskStatus,
@@ -21,12 +22,6 @@ import {
 	boundaryAuditEventSeverity,
 	buildOntologyBoundaryAuditSnapshot,
 } from "../../ontology";
-import {
-	autoStartReviewSessionForRun,
-	finalizeReviewRunFromRuntime,
-	startReviewRunForSession,
-} from "../../review";
-import { safelyContinueReviewCorrectionAfterRun } from "../../review/review-correction-continuation.service";
 import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
@@ -43,26 +38,13 @@ import {
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
-import { readRuntimeFailureTerminalReason } from "./runtime-failure";
-import { appendTestModeNextStepLink } from "./runtime-final-report";
 import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
 import {
 	recordPreservedNeedsHumanOutcome,
 	resolveRuntimeOutcomeGuard,
 } from "./runtime-outcome-guard";
 
-export {
-	appendTestModeNextStepLink,
-	sanitizeReviewFinalReportLinks,
-} from "./runtime-final-report";
-
-type RuntimeTerminalStatus = Parameters<
-	typeof finalizeReviewRunFromRuntime
->[0]["status"];
-
-function isRuntimeTerminalStatus(
-	status: TaskRunStatus,
-): status is RuntimeTerminalStatus {
+function isRuntimeTerminalStatus(status: TaskRunStatus) {
 	return [
 		"blocked",
 		"cancelled",
@@ -74,23 +56,13 @@ function isRuntimeTerminalStatus(
 	].includes(status);
 }
 
-import { safelyCreateReviewRecommendation } from "./runtime-routing";
-import {
-	isSecurityOracleFinalizationBlocked,
-	resolveRuntimeSecurityCloseout,
-} from "./runtime-security-closeout";
 import {
 	assertRunStatusTransition,
 	resolveGuardedRunOutcomeStatus,
 	runStatusTransitionTable,
 } from "./status";
 import {
-	closeOpenTodosForCancelledRun,
-	closeOpenTodosForFailedRun,
-	closePendingTodosForNeedsHumanRun,
-	isPlanningOnlyRun,
-	listOpenTodos,
-	markRunningTodosNeedsHuman,
+	listIncompleteTodos,
 	toAgentRuntimeTodoContext,
 } from "./todo-closeout";
 import { toErrorMessage } from "./utils";
@@ -111,6 +83,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 		agentModeSessionId,
 	} = input;
 	const runtime = runtimeLaneDefinition.createAdapter();
+	const codingAgentSystemContext = buildCodingAgentSystemContext({
+		taskGoal: [task.title, task.description || task.objective]
+			.filter(Boolean)
+			.join("\n"),
+		registeredRepositoryRoot: repoInfo.localPath,
+	});
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =
 		process.env.NIGHTWORKERS_E2E === "1" &&
@@ -157,6 +135,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 								todoPlan: runtimeTodosBeforeStart.map(
 									toAgentRuntimeTodoContext,
 								),
+								codingAgentSystemContext,
 							},
 							sink,
 						)
@@ -181,6 +160,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 									.filter((todo) => todo.status === "running")
 									.sort((a, b) => a.seq - b.seq)
 									.map(toAgentRuntimeTodoContext)[0],
+								codingAgentSystemContext,
 							},
 							sink,
 						);
@@ -294,24 +274,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					},
 				);
 				if (!cancelledRun) return;
-				const todosBeforeCancelCloseout = await repo.listTaskRunTodosForRun(
-					run.id,
-				);
-				await closeOpenTodosForCancelledRun({
-					runId: run.id,
-					taskId,
-					todos: todosBeforeCancelCloseout,
-					evidence: runtimeResult.stoppedBy || runtimeResult.terminalState,
-				});
 				await repo.updateTaskStatus(taskId, "ready");
 				await completeImplementationQueueEntryForRun(run.id, "cancelled");
-				await finalizeReviewRunFromRuntime({
-					runId: run.id,
-					taskId,
-					status: "cancelled",
-					contextSnapshot: contextSnapshotWithBoundaryAudit,
-					runtimeResult,
-				});
 				await repo.createTaskMessage({
 					taskId,
 					runId: run.id,
@@ -389,101 +353,29 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			});
 
 			const outcome = outcomeFromRuntimeResult(runtimeResult);
-			let finalTodos = await repo.listTaskRunTodosForRun(run.id);
-			if (outcome.status === "needs_human") {
-				await markRunningTodosNeedsHuman({
-					runId: run.id,
-					taskId,
-					todos: finalTodos,
-					runtimeResult,
-					outcomeStatus: outcome.status,
-				});
-				finalTodos = await repo.listTaskRunTodosForRun(run.id);
-				await closePendingTodosForNeedsHumanRun({
-					runId: run.id,
-					taskId,
-					todos: finalTodos,
-					evidence:
-						runtimeResult.finalReport ||
-						runtimeResult.summary ||
-						outcome.summary,
-				});
-				finalTodos = await repo.listTaskRunTodosForRun(run.id);
-			}
-			if (outcome.status === "failed") {
-				const terminalReason =
-					readRuntimeFailureTerminalReason(runtimeResult) ?? outcome.reason;
-				await closeOpenTodosForFailedRun({
-					runId: run.id,
-					taskId,
-					todos: finalTodos,
-					evidence:
-						runtimeResult.finalReport ||
-						runtimeResult.summary ||
-						outcome.summary,
-					terminalReason,
-					stoppedBy: runtimeResult.stoppedBy,
-				});
-				finalTodos = await repo.listTaskRunTodosForRun(run.id);
-			}
-			const securityCloseout = await resolveRuntimeSecurityCloseout({
-				runId: run.id,
-				taskId,
-				repositoryId: repoInfo.id,
-				repoRoot: repoInfo.localPath,
-				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
-				outcomeStatus: outcome.status,
-				finalTodos,
-				skipSecurityOracle: usesE2eFixture,
-			});
-			finalTodos = securityCloseout.finalTodos;
-			const securityGate = securityCloseout.securityGate;
-			const securityOracleSkipped = securityCloseout.securityOracleSkipped;
-			const openTodos = listOpenTodos(finalTodos);
+			const finalTodos = await repo.listTaskRunTodosForRun(run.id);
+			const incompleteTodos = listIncompleteTodos(finalTodos);
 			const todoFinalizationBlocked =
-				outcome.status === "completed" &&
-				openTodos.length > 0 &&
-				!isPlanningOnlyRun(finalTodos);
+				outcome.status === "completed" && incompleteTodos.length > 0;
 			const openTodoWarning = todoFinalizationBlocked
-				? buildOpenTodoRuntimeContractWarning(openTodos)
+				? buildOpenTodoRuntimeContractWarning(incompleteTodos)
 				: null;
 			const finalContractWarnings = openTodoWarning
 				? [...runtimeContractWarnings, openTodoWarning]
 				: runtimeContractWarnings;
-			const securityFinalizationBlocked = isSecurityOracleFinalizationBlocked({
-				outcomeStatus: outcome.status,
-				executionMode: runtimeContextSnapshot.executionMode,
-				usesE2eFixture,
-				securityOracleSkipped,
-				allowFinalize: securityGate?.allowFinalize,
-			});
 			const outcomeGuard = resolveRuntimeOutcomeGuard({
 				currentStatus: statusBeforeFinalize,
 				outcomeStatus: outcome.status,
 				todoFinalizationBlocked,
-				securityFinalizationBlocked,
-				openTodoSummary: openTodos
+				securityFinalizationBlocked: false,
+				openTodoSummary: incompleteTodos
 					.map((todo) => `#${todo.seq} ${todo.title} (${todo.status})`)
 					.join(", "),
-				securityGateMessage: securityGate?.message,
+				securityGateMessage: undefined,
 			});
 			const guardedStatus = outcomeGuard.status;
 			if (!isRuntimeTerminalStatus(guardedStatus)) return;
-			const baseFinalReport =
-				outcomeGuard.reportNotes.length > 0
-					? [
-							runtimeResult.finalReport || outcome.summary,
-							"",
-							...outcomeGuard.reportNotes,
-						].join("\n")
-					: runtimeResult.finalReport || outcome.summary;
-			const finalReport = appendTestModeNextStepLink({
-				finalReport: baseFinalReport,
-				taskId,
-				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
-				status: guardedStatus,
-				repoRoot: repoInfo.localPath,
-			});
+			const finalReport = runtimeResult.finalReport || outcome.summary;
 			const statusBeforeOutcome = statusBeforeFinalize;
 			assertRunStatusTransition(statusBeforeOutcome, guardedStatus);
 			if (todoFinalizationBlocked) {
@@ -502,7 +394,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						contractWarning: openTodoWarning,
 						terminalState: outcome.status,
 						nextStatus: guardedStatus,
-						openTodos: openTodos.map((todo) => ({
+						openTodos: incompleteTodos.map((todo) => ({
 							id: todo.id,
 							seq: todo.seq,
 							title: todo.title,
@@ -537,7 +429,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					status: guardedStatus,
 				},
 			});
-			await safelyCreateReviewRecommendation({ taskId, runId: run.id });
 			await refreshConversationContextForRuntimeLane({
 				runtimeLaneResolution,
 				taskId,
@@ -600,21 +491,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, finalStatus);
 			await repo.publishTaskRunUpdate(finalizedRun);
-			await finalizeReviewRunFromRuntime({
-				runId: run.id,
-				taskId,
-				status: finalStatus,
-				contextSnapshot: contextSnapshotWithBoundaryAudit,
-				runtimeResult: { ...runtimeResult, finalReport },
-			});
-			const reviewRunStartedByCorrection =
-				await safelyContinueReviewCorrectionAfterRun({
-					taskId,
-					runId: run.id,
-					status: finalStatus,
-					contextSnapshot: contextSnapshotWithBoundaryAudit,
-				});
-			let reviewRunStartedByMissionPilot = false;
 			try {
 				const missionContinuation = await continueMissionPilotAfterRun({
 					taskId,
@@ -624,42 +500,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					runStatus: finalStatus,
 				});
 				await executeMissionPilotContinuation(missionContinuation);
-				reviewRunStartedByMissionPilot =
-					missionContinuation.kind === "start_review";
 			} catch (error) {
 				await markMissionPilotContinuationFailed(run.id, error);
 				logger.error(
 					{ error: toErrorMessage(error), runId: run.id },
 					"Mission Pilot continuation failed after the run was finalized",
 				);
-			}
-			if (
-				finalStatus === "needs_review" &&
-				(runtimeContextSnapshot.executionMode ?? "implementation") !==
-					"review" &&
-				!reviewRunStartedByCorrection &&
-				!reviewRunStartedByMissionPilot
-			) {
-				try {
-					const reviewSession = await autoStartReviewSessionForRun(run.id);
-					await startReviewRunForSession(reviewSession.session.id);
-				} catch (error) {
-					logger.warn(
-						{ error: toErrorMessage(error), runId: run.id },
-						"failed to auto-start Review Run",
-					);
-					await repo.createRunEvent({
-						version: 1,
-						runId: run.id,
-						taskId,
-						timestamp: new Date().toISOString(),
-						type: "review.required_section_auto_failed",
-						severity: "warning",
-						actor: "system",
-						message: "Review Run could not be automatically started.",
-						data: { error: toErrorMessage(error) },
-					});
-				}
 			}
 			if (shouldContinueSessionQueue(finalStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);

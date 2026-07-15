@@ -6,19 +6,9 @@ import type {
 	AgentRuntimeResult,
 	AgentRuntimeSink,
 } from "../types";
-import {
-	NativeApiCloseoutController,
-	type NativeApiCloseoutControllerLike,
-} from "./native-api-closeout-controller";
-import type { readNativeApiExecutionMode } from "./native-api-mode";
 import { runNativeApiRunner } from "./native-api-run-coordinator";
-import { readNativeApiResumeRouteCompatibility } from "./native-api-runner-routing";
 import type { NativeApiUsageRecorder } from "./native-api-runner-usage";
 import { NativeApiSessionStore } from "./native-api-session-store";
-import {
-	NativeApiStartupController,
-	type NativeApiStartupControllerLike,
-} from "./native-api-startup-controller";
 import { sanitizeNativeApiResumeHistory } from "./native-api-tool-history";
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
@@ -30,27 +20,19 @@ export class NativeApiRunner {
 	private readonly cancelledRunIds = new Set<string>();
 	private readonly activeRunControllers = new Map<string, AbortController>();
 	private readonly store: NativeApiSessionStore;
-	private readonly startupController: NativeApiStartupControllerLike;
-	private readonly closeoutController: NativeApiCloseoutControllerLike;
 	private readonly providerTurn: NativeApiToolTurnProvider;
 	private readonly usageRecorder: NativeApiUsageRecorder;
 
 	constructor(
 		input: {
 			store?: NativeApiSessionStore;
-			startupController?: NativeApiStartupControllerLike;
-			closeoutController?: NativeApiCloseoutControllerLike;
+			startupController?: unknown;
+			closeoutController?: unknown;
 			providerTurn?: NativeApiToolTurnProvider;
 			usageRecorder?: NativeApiUsageRecorder;
 		} = {},
 	) {
 		this.store = input.store ?? new NativeApiSessionStore();
-		this.startupController =
-			input.startupController ??
-			new NativeApiStartupController({ store: this.store });
-		this.closeoutController =
-			input.closeoutController ??
-			new NativeApiCloseoutController({ store: this.store });
 		this.providerTurn = input.providerTurn ?? callProviderToolTurn;
 		this.usageRecorder = input.usageRecorder ?? recordLlmUsage;
 	}
@@ -65,12 +47,10 @@ export class NativeApiRunner {
 				cancelledRunIds: this.cancelledRunIds,
 				activeRunControllers: this.activeRunControllers,
 				store: this.store,
-				startupController: this.startupController,
-				closeoutController: this.closeoutController,
 				providerTurn: this.providerTurn,
 				usageRecorder: this.usageRecorder,
-				loadResumeHistory: (nextContext, nextSink, executionMode) =>
-					this.loadResumeHistory(nextContext, nextSink, executionMode),
+				loadResumeHistory: (nextContext, nextSink) =>
+					this.loadResumeHistory(nextContext, nextSink),
 				toCancelled: () => this.toCancelled(),
 				isCancelled: (runId, nextSignal) => this.isCancelled(runId, nextSignal),
 			},
@@ -83,53 +63,13 @@ export class NativeApiRunner {
 	private async loadResumeHistory(
 		context: AgentRunContext,
 		sink: AgentRuntimeSink,
-		executionMode: ReturnType<typeof readNativeApiExecutionMode>,
 	) {
-		const getLatestCompletedTurn =
-			this.store.getLatestCompletedTurnForPreviousRun;
+		const getLatestCompletedTurn = this.store.getLatestCompletedTurnForRun;
 		if (typeof getLatestCompletedTurn !== "function") return null;
-		if (!context.agentModeSessionId) {
-			await sink.emit({
-				type: "runtime_started",
-				message:
-					"[NativeApiRunner] runtime session resume skipped because AgentModeSession is unavailable.",
-				payload: {
-					runtime: "native_api_runner",
-					action: "runtime.resume_state_missing",
-					resumeState: "unavailable",
-					reason: "agent_mode_session_unavailable",
-					executionMode,
-				},
-			});
-			return null;
-		}
-		const routeCompatibility = readNativeApiResumeRouteCompatibility(
-			context,
-			executionMode,
+		const sourceTurn = await getLatestCompletedTurn.call(
+			this.store,
+			context.runId,
 		);
-		if (!routeCompatibility) {
-			await sink.emit({
-				type: "runtime_started",
-				message:
-					"[NativeApiRunner] runtime session resume skipped because route compatibility is unavailable.",
-				payload: {
-					runtime: "native_api_runner",
-					action: "runtime.resume_state_missing",
-					resumeState: "unavailable",
-					reason: "route_compatibility_unavailable",
-					executionMode,
-				},
-			});
-			return null;
-		}
-		const sourceTurn = await getLatestCompletedTurn.call(this.store, {
-			taskId: context.taskId,
-			agentModeSessionId: context.agentModeSessionId,
-			runId: context.runId,
-			provider: routeCompatibility.provider,
-			model: routeCompatibility.model,
-			executionMode,
-		});
 		if (!sourceTurn?.historyJson) {
 			await sink.emit({
 				type: "runtime_started",
@@ -139,8 +79,7 @@ export class NativeApiRunner {
 					runtime: "native_api_runner",
 					action: "runtime.resume_state_missing",
 					resumeState: "unavailable",
-					reason: "no_compatible_completed_history",
-					compatibility: routeCompatibility,
+					reason: "no_completed_history_for_run",
 				},
 			});
 			return null;
@@ -169,12 +108,9 @@ export class NativeApiRunner {
 				runtimeResume: {
 					kind: "native_api_history",
 					status: "reused",
-					sourceRunId: sourceTurn.runId,
+					sourceRunId: context.runId,
 					sourceTurnId: sourceTurn.id,
 					restoredItemCount: sanitized.length,
-					provider: routeCompatibility.provider,
-					model: routeCompatibility.model,
-					executionMode,
 				},
 			},
 		});

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { sql } from "drizzle-orm";
 import {
 	index,
 	integer,
@@ -27,6 +28,7 @@ export const taskRuns = sqliteTable(
 			{ onDelete: "set null" },
 		),
 		status: text("status").$type<TaskRunStatus>().default("running").notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
+		todoPlanRevision: integer("todo_plan_revision").default(0).notNull(),
 		workerKind: text("worker_kind").default("native-local-worker").notNull(),
 		baseRef: text("base_ref"),
 		worktreePath: text("worktree_path"),
@@ -361,6 +363,15 @@ export const taskRunTodos = sqliteTable(
 		seq: integer("seq").notNull(),
 		title: text("title").notNull(),
 		description: text("description"),
+		objective: text("objective"),
+		context: text("context"),
+		nextAction: text("next_action").default("").notNull(),
+		acceptanceCriteriaJson: text("acceptance_criteria_json", {
+			mode: "json",
+		})
+			.$type<string[]>()
+			.default([])
+			.notNull(),
 		taskType: text("task_type").notNull(),
 		status: text("status").default("pending").notNull(),
 		procedureId: text("procedure_id"),
@@ -377,6 +388,14 @@ export const taskRunTodos = sqliteTable(
 			Array<string | number>
 		>(),
 		statusReason: text("status_reason"),
+		lastFailure: text("last_failure"),
+		attemptCount: integer("attempt_count").default(0).notNull(),
+		systemContextVersion: integer("system_context_version")
+			.default(0)
+			.notNull(),
+		systemContextSnapshot: text("system_context_snapshot", { mode: "json" }),
+		createdBy: text("created_by").default("migration").notNull(),
+		revision: integer("revision").default(0).notNull(),
 		startedAt: integer("started_at", { mode: "timestamp" }),
 		completedAt: integer("completed_at", { mode: "timestamp" }),
 	},
@@ -386,6 +405,9 @@ export const taskRunTodos = sqliteTable(
 			table.runId,
 			table.seq,
 		),
+		runCurrentUniqueIdx: uniqueIndex("task_run_todos_single_running_uidx")
+			.on(table.runId)
+			.where(sql`${table.status} = 'running'`),
 	}),
 );
 
@@ -416,34 +438,6 @@ export const taskEvents = sqliteTable(
 		),
 	}),
 );
-
-export const taskRunControlStates = sqliteTable("task_run_control_states", {
-	runId: text("run_id")
-		.primaryKey()
-		.references(() => taskRuns.id, { onDelete: "cascade" }),
-	version: integer("version").default(1).notNull(),
-	phase: text("phase").default("active").notNull(),
-	progressRevision: integer("progress_revision").default(0).notNull(),
-	workspaceRevision: integer("workspace_revision").default(0).notNull(),
-	workflowRevision: integer("workflow_revision").default(0).notNull(),
-	todoRevision: integer("todo_revision").default(0).notNull(),
-	evidenceRevision: integer("evidence_revision").default(0).notNull(),
-	contextEpoch: integer("context_epoch").default(0).notNull(),
-	lastMutationSequence: integer("last_mutation_sequence"),
-	lastEvidenceSequence: integer("last_evidence_sequence"),
-	consecutiveNoProgressTurns: integer("consecutive_no_progress_turns")
-		.default(0)
-		.notNull(),
-	terminalReason: text("terminal_reason"),
-	stateVersion: integer("state_version").default(0).notNull(),
-	createdAt: integer("created_at", { mode: "timestamp" })
-		.$defaultFn(() => new Date())
-		.notNull(),
-	updatedAt: integer("updated_at", { mode: "timestamp" })
-		.$defaultFn(() => new Date())
-		.$onUpdateFn(() => new Date())
-		.notNull(),
-});
 
 export const taskRunActionRecords = sqliteTable(
 	"task_run_action_records",

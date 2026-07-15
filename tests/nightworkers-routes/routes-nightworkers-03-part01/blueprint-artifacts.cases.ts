@@ -99,12 +99,27 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Questionnaire Optional Feature Plan",
-				content: [
+				contentTemplate: [
 					"# Questionnaire Optional Feature Plan",
 					"",
 					"## Goal",
 					"Task contextだけから初期実装可能なFeature Planを作る。",
+					"",
+					"{{IMPLEMENTATION_PLAN}}",
 				].join("\n"),
+				implementationPlan: {
+					version: 1,
+					requiresDataMigration: false,
+					steps: [
+						{
+							key: "implement",
+							title: "初期実装",
+							description: "Feature Planを実装する。",
+							taskType: "implementation",
+							dependsOnKeys: [],
+						},
+					],
+				},
 			});
 			const featurePlanRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,

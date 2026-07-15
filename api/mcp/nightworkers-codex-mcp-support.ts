@@ -5,18 +5,13 @@ import {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "../services/agent-runtime/native-api-runner/native-api-tool-result-projector";
-import type { ToolOutcomeEnvelope } from "../services/run-control/contracts";
-import { runControlService } from "../services/run-control/run-control-service";
-import { deriveWorkerDomainOutcome } from "../services/run-control/tool-outcome-envelope";
+import { loadCodingAgentContextPacket } from "../services/coding-agent-context";
+import { actionExecutionJournal } from "../services/run-control/action-execution-journal";
 import type { WorkerToolResult } from "../services/worker-tools/types";
 import {
 	createNightWorkersCodexMcpServer,
 	type NightWorkersMcpRequestContext,
 } from "./nightworkers-codex-mcp";
-import {
-	isNightWorkersCodexToolAllowedForMode,
-	type NightWorkersCodexToolName,
-} from "./nightworkers-tool-manifest";
 
 export function firstNonEmpty(...values: Array<string | undefined | null>) {
 	return (
@@ -126,34 +121,6 @@ export async function readOnlyOntologyTool<TPayload>(
 	}
 }
 
-export function isToolDisabledForExecutionMode(
-	toolName: NightWorkersCodexToolName,
-	context: NightWorkersMcpRequestContext,
-) {
-	const executionMode = firstNonEmpty(
-		context.executionMode,
-		process.env.NIGHTWORKERS_EXECUTION_MODE,
-	);
-	return !isNightWorkersCodexToolAllowedForMode(toolName, executionMode);
-}
-
-export function disabledToolResult(
-	toolName: NightWorkersCodexToolName,
-): WorkerToolResult<unknown> {
-	const now = new Date().toISOString();
-	return {
-		ok: false,
-		toolName,
-		startedAt: now,
-		finishedAt: now,
-		payload: null,
-		error: {
-			code: "PLAN_MODE_TOOL_DISABLED",
-			message: `${toolName} is disabled in NightWorkers planning mode.`,
-		},
-	};
-}
-
 export async function handleNightWorkersCodexMcpRequest(
 	request: Request,
 ): Promise<Response> {
@@ -209,7 +176,6 @@ export function readNightWorkersMcpRequestContext(
 		return {
 			taskId: readSearchParam(url, "taskId"),
 			runId: readSearchParam(url, "runId"),
-			executionMode: readSearchParam(url, "executionMode"),
 		};
 	} catch {
 		return {};
@@ -224,28 +190,11 @@ export function readSearchParam(
 	return value?.trim() || undefined;
 }
 
-export function toolResultToMcp(
-	result: WorkerToolResult<unknown>,
-	outcome?: ToolOutcomeEnvelope,
-) {
+export function toolResultToMcp(result: WorkerToolResult<unknown>) {
 	const text = projectWorkerResultToNativeApiToolResult(result).content;
-	const domainOutcome =
-		outcome?.domainOutcome ?? deriveWorkerDomainOutcome(result);
-	const transportStatus = outcome?.transportStatus ?? "completed";
 	return {
-		isError: transportStatus !== "completed",
+		isError: !result.ok,
 		structuredContent: {
-			outcome: {
-				transportStatus,
-				domainOutcome,
-				effect: outcome?.effect ?? "unknown",
-				retryPolicy: outcome?.retryPolicy ?? "after_progress",
-				progressRevisionBefore: outcome?.progressRevisionBefore ?? null,
-				progressRevisionAfter: outcome?.progressRevisionAfter ?? null,
-				actionKey: outcome?.actionKey ?? null,
-				evidenceRefs: outcome?.evidenceRefs ?? [],
-				artifactRefs: outcome?.artifactRefs ?? [],
-			},
 			payload: projectWorkerResultToMcpStructuredPayload(result),
 			...(result.error ? { error: result.error } : {}),
 		},
@@ -260,103 +209,37 @@ export async function controlledToolResult(input: {
 	arguments: unknown;
 	workspaceIdentity?: string | null;
 	evidenceKind?: string;
+	idempotentSideEffect?: boolean;
 	execute: () => Promise<WorkerToolResult<unknown>>;
 }) {
-	const prepared = await runControlService.prepare({
-		runId: input.runId,
-		toolName: input.toolName,
-		arguments: input.arguments,
-		workspaceIdentity: input.workspaceIdentity,
-	});
-	if (prepared.kind === "terminal") {
-		return {
-			isError: false,
-			structuredContent: {
-				outcome: {
-					transportStatus: "completed",
-					domainOutcome: "blocked",
-					effect: "none",
-					retryPolicy: "never",
+	const todoContext = await loadCodingAgentContextPacket(input.runId);
+	if (input.toolName !== "todo_list") {
+		if (!todoContext?.currentTodo) {
+			return toolResultToMcp({
+				ok: false,
+				toolName: input.toolName,
+				startedAt: new Date().toISOString(),
+				finishedAt: new Date().toISOString(),
+				payload: { planSummary: todoContext?.planSummary ?? null },
+				error: {
+					code: "CURRENT_TODO_REQUIRED",
+					message:
+						"workspace toolの実行前にTodo planを作成し、current Todoを開始してください。",
 				},
-				control: {
-					terminal: true,
-					terminalReason: prepared.state.terminalReason,
-				},
-			},
-			content: [
-				{
-					type: "text" as const,
-					text: JSON.stringify({
-						ok: false,
-						code: "RUN_ALREADY_TERMINAL",
-						terminalReason: prepared.state.terminalReason,
-					}),
-				},
-			],
-		};
+			});
+		}
 	}
-	if (prepared.kind === "reuse") {
-		return {
-			isError: prepared.action.transportStatus !== "completed",
-			structuredContent: {
-				outcome: {
-					transportStatus: prepared.action.transportStatus,
-					domainOutcome: prepared.action.domainOutcome,
-					effect: prepared.action.effect,
-					retryPolicy:
-						prepared.action.domainOutcome === "failed"
-							? "after_progress"
-							: "immediate",
-					progressRevisionBefore: prepared.action.progressRevision,
-					progressRevisionAfter: prepared.state.progressRevision,
-				},
-				control: {
-					reused: true,
-					actionKey: prepared.action.actionKey,
-					repeatCount: prepared.action.repeatCount,
-					phase: prepared.state.phase,
-					recoveryRequired: prepared.state.phase === "recovery",
-					recoveryCard:
-						prepared.state.phase === "recovery"
-							? {
-									progressRevision: prepared.state.progressRevision,
-									workspaceRevision: prepared.state.workspaceRevision,
-									lastResultDigest: prepared.action.resultDigest,
-									required:
-										"新しい観測、workspace/workflow変更、新しい証跡、またはblocker提示のいずれかを一つ行う",
-								}
-							: null,
-				},
-				payload: prepared.action.modelView,
-			},
-			content: [
-				{
-					type: "text" as const,
-					text: JSON.stringify({
-						control: "reused_result",
-						domainOutcome: prepared.action.domainOutcome,
-						progressRevision: prepared.state.progressRevision,
-						payload: prepared.action.modelView,
-					}),
-				},
-			],
-		};
-	}
-
-	const result = await input.execute();
-	const modelView = projectWorkerResultToMcpStructuredPayload(result);
-	const evidenceRefs = input.evidenceKind
-		? [`${input.evidenceKind}:${input.runId}:${prepared.action.id}`]
-		: [];
-	const outcome = await runControlService.completeWorkerAction({
-		prepared: {
-			state: prepared.state,
-			action: prepared.action,
-			persisted: prepared.persisted,
-		},
-		result,
-		modelView,
-		evidenceRefs,
-	});
-	return toolResultToMcp(result, outcome);
+	const result = input.idempotentSideEffect
+		? (
+				await actionExecutionJournal.execute({
+					runId: input.runId,
+					toolName: input.toolName,
+					arguments: input.arguments,
+					workspaceIdentity: input.workspaceIdentity,
+					dedupeRevision: 0,
+					execute: input.execute,
+				})
+			).result
+		: await input.execute();
+	return toolResultToMcp(result);
 }

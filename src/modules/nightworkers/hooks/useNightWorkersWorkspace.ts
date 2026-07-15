@@ -278,11 +278,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		deleteSessionMutation,
 		startRunMutation,
 		stopRunMutation,
+		resumeTodoMutation,
 		stopBackgroundProcessMutation,
 		queueSessionMutation,
-		submitRunReviewMutation,
-		startReviewSessionMutation,
-		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
 		pushRunGitCloseoutMutation,
 		updateSessionStatusMutation,
@@ -533,16 +531,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		createSession: (input) => createSessionMutation.mutateAsync(input),
 		startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
 		stopRun: (runId) => stopRunMutation.mutateAsync(runId),
+		resumeTodo: (input) => resumeTodoMutation.mutateAsync(input),
+		isResumingTodo: resumeTodoMutation.isPending,
 		stopBackgroundProcess: (processId) =>
 			stopBackgroundProcessMutation.mutateAsync(processId),
 		queueSession: (sessionId) => queueSessionMutation.mutateAsync(sessionId),
-		submitRunReview: async (runId, input) => {
-			await submitRunReviewMutation.mutateAsync({ runId, data: input });
-		},
-		startReviewSession: (runId) =>
-			startReviewSessionMutation.mutateAsync(runId),
-		startReviewRun: (reviewSessionId, options) =>
-			startReviewRunMutation.mutateAsync({ reviewSessionId, options }),
 		commitRunGitCloseout: (runId) =>
 			commitRunGitCloseoutMutation.mutateAsync(runId),
 		pushRunGitCloseout: (runId) =>

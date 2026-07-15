@@ -2,9 +2,6 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
-import * as verificationRepo from "../../modules/nightworkers/nightworkers.verification.repository";
-import { reviewerEvaluationTool } from "../worker-tools/reviewer-evaluation";
-import { completionCheckTool, runCheckTool } from "../worker-tools/run-check";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -15,153 +12,8 @@ export async function runE2eFixtureRuntime(
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
 ): Promise<AgentRuntimeResult> {
-	const fixtureBehavior = readFixtureBehavior(context.compiledPrompt);
-	const executionMode = String(context.contextSnapshot.executionMode ?? "");
-	const missionPilot = readRecord(
-		context.runtimeOptions?.missionPilot ??
-			context.contextSnapshot.missionPilot,
-	);
-	if (executionMode === "test") {
-		if (fixtureBehavior === "verification_failure") {
-			await sink.emit({
-				type: "verification_finished",
-				message: "Deterministic verification failed.",
-				payload: { command: "fixture verify", exitCode: 1, ok: false },
-			});
-			return {
-				terminalState: "needs_human",
-				summary: "Deterministic verification requires follow-up.",
-				finalReport: "Required deterministic verification failed.",
-				stoppedBy: "tool_failure",
-				riskLevel: "medium",
-				testResults: { fixture: true, behavior: fixtureBehavior },
-			};
-		}
-		const transientFailure = context.compiledPrompt.includes(
-			"[fixture:test-transient-failure]",
-		);
-		const testMode = readRecord(context.runtimeOptions?.testMode);
-		const verificationDocumentId = String(
-			testMode?.verificationDocumentId ??
-				context.runtimeOptions?.verificationDocumentId ??
-				"",
-		);
-		const checklist = verificationDocumentId
-			? await verificationRepo.listVerificationChecklistItems(
-					verificationDocumentId,
-				)
-			: [];
-		const conditionIds = checklist
-			.filter((item) => item.required)
-			.map((item) => item.conditionId);
-		const command = "git diff --check";
-		let transientTarget: { path: string; originalContent: string } | undefined;
-		if (transientFailure) {
-			const targetPath = path.join(context.repoRoot, "src/greeting.txt");
-			const originalContent = await fs.readFile(targetPath, "utf8");
-			transientTarget = { path: targetPath, originalContent };
-			await fs.writeFile(
-				targetPath,
-				`${originalContent}\ntransient failure fixture   \n`,
-				"utf8",
-			);
-		}
-		const checkInput = {
-			taskId: context.taskId,
-			runId: context.runId,
-			verificationDocumentId,
-			checkKind: "verify",
-			conditionIds:
-				conditionIds.length > 0 ? conditionIds : ["mission-pilot-archive"],
-			command,
-			cwd: context.repoRoot,
-			repoRoot: context.repoRoot,
-		} as const;
-		if (transientFailure) {
-			const failedCheck = await runCheckTool(checkInput);
-			if (transientTarget) {
-				await fs.writeFile(
-					transientTarget.path,
-					transientTarget.originalContent,
-					"utf8",
-				);
-			}
-			await sink.emit({
-				type: "tool_call_finished",
-				message: "Test Mode fixture transient managed verification failed.",
-				payload: { toolName: "run_check", result: failedCheck },
-			});
-			if (failedCheck.ok) {
-				throw new Error(
-					"Transient Test fixture did not produce its first failure",
-				);
-			}
-			await new Promise((resolve) => setTimeout(resolve, 5));
-		}
-		const check = await runCheckTool(checkInput);
-		await sink.emit({
-			type: "tool_call_finished",
-			message: "Test Mode fixture managed verification finished.",
-			payload: { toolName: "run_check", result: check },
-		});
-		const completion = await completionCheckTool({
-			taskId: context.taskId,
-			verificationDocumentId,
-		});
-		await sink.emit({
-			type: "tool_call_finished",
-			message: "Test Mode fixture completion_check finished.",
-			payload: { toolName: "completion_check", result: completion },
-		});
-		const finalReport = JSON.stringify({
-			verdict: completion.ok ? "pass" : "attention",
-			defectOwner: completion.ok ? "test" : "unknown",
-			failedConditionIds: [],
-			affectedPaths: [],
-			summary: completion.ok
-				? "Deterministic Test Mode passed."
-				: "Deterministic Test Mode needs attention.",
-			implementationRework: null,
-		});
-		return {
-			terminalState: completion.ok ? "completed" : "needs_human",
-			summary: finalReport,
-			finalReport,
-			stoppedBy: "decision",
-			riskLevel: "low",
-			testResults: { fixture: true, managedEvidence: true },
-		};
-	}
-	if (missionPilot && executionMode === "review") {
-		const evaluation = await reviewerEvaluationTool({
-			runId: context.runId,
-			mode: "deterministic_only",
-			persist: true,
-		});
-		if (
-			!evaluation.ok ||
-			evaluation.payload?.finalReviewerVerdict !== "approved"
-		) {
-			throw new Error(
-				"Deterministic Mission Pilot reviewer evaluation was not approved.",
-			);
-		}
-		await completeFixtureTodos(context);
-		const finalReport = JSON.stringify({
-			verdict: "pass",
-			summary: "Deterministic Mission Pilot Review passed.",
-			findings: [],
-		});
-		return {
-			terminalState: "completed",
-			summary: finalReport,
-			finalReport,
-			stoppedBy: "decision",
-			riskLevel: "low",
-			testResults: { fixture: true, review: true },
-		};
-	}
-	if (fixtureBehavior === "policy-block") {
+	const behavior = readFixtureBehavior(context.compiledPrompt);
+	if (behavior === "policy-block") {
 		await sink.emit({
 			type: "runtime_warning",
 			message: "Deterministic fixture policy block.",
@@ -171,83 +23,78 @@ export async function runE2eFixtureRuntime(
 				message: "Policy blocked the deterministic fixture mutation.",
 			},
 		});
-		return {
+		return fixtureResult({
 			terminalState: "needs_human",
-			summary: "Deterministic fixture requires human retry approval.",
 			finalReport: "Policy block persisted; retry after approval.",
 			stoppedBy: "policy",
 			riskLevel: "medium",
-			testResults: { fixture: true, policyBlocked: true },
-		};
+			behavior,
+		});
 	}
-	if (fixtureBehavior === "hold_until_stopped") {
+	if (behavior === "hold_until_stopped") {
 		await sink.emit({
 			type: "runtime_started",
 			message: "Deterministic fixture is holding until stopped.",
-			payload: { fixture: true, behavior: fixtureBehavior },
+			payload: { fixture: true, behavior },
 		});
 		while (true) {
 			const run = await repo.getTaskRun(context.runId);
 			if (!run || run.status === "cancelled") break;
 			await new Promise((resolve) => setTimeout(resolve, 25));
 		}
-		return {
+		return fixtureResult({
 			terminalState: "cancelled",
-			summary: "Deterministic fixture stopped by request.",
 			finalReport: "Deterministic fixture stopped by request.",
 			stoppedBy: "cancelled",
 			riskLevel: "low",
-			testResults: { fixture: true, behavior: fixtureBehavior },
-		};
+			behavior,
+		});
 	}
-	if (fixtureBehavior === "timeout") {
+	if (behavior === "timeout") {
 		await sink.emit({
 			type: "runtime_started",
 			message: "Deterministic fixture is waiting for its run timeout.",
-			payload: { fixture: true, behavior: fixtureBehavior },
+			payload: { fixture: true, behavior },
 		});
 		await new Promise((resolve) =>
 			setTimeout(resolve, Math.max(1, context.timeoutSeconds) * 1000),
 		);
-		return {
+		return fixtureResult({
 			terminalState: "timed_out",
-			summary: "Deterministic fixture timed out.",
 			finalReport: `Deterministic fixture timed out after ${context.timeoutSeconds}s.`,
 			stoppedBy: "budget",
 			riskLevel: "medium",
-			testResults: { fixture: true, behavior: fixtureBehavior },
-		};
+			behavior,
+		});
 	}
-	if (fixtureBehavior === "tool_failure") {
+	if (behavior === "tool_failure") {
 		await sink.emit({
 			type: "runtime_error",
 			message: "Deterministic fixture tool failure.",
-			payload: { fixture: true, behavior: fixtureBehavior },
+			payload: { fixture: true, behavior },
 		});
-		return {
+		return fixtureResult({
 			terminalState: "failed",
-			summary: "Deterministic fixture tool failure.",
 			finalReport:
 				"Deterministic fixture tool failure before any workspace mutation.",
 			stoppedBy: "tool_failure",
 			riskLevel: "medium",
-			testResults: { fixture: true, behavior: fixtureBehavior },
-		};
+			behavior,
+		});
 	}
-	if (fixtureBehavior === "verification_failure") {
+	if (behavior === "verification_failure") {
 		await sink.emit({
 			type: "verification_finished",
 			message: "Deterministic verification failed.",
 			payload: { command: "fixture verify", exitCode: 1, ok: false },
 		});
-		return {
+		return fixtureResult({
 			terminalState: "needs_human",
-			summary: "Deterministic verification requires follow-up.",
 			finalReport: "Required deterministic verification failed.",
 			stoppedBy: "tool_failure",
 			riskLevel: "medium",
-			testResults: { fixture: true, behavior: fixtureBehavior },
-		};
+			behavior,
+		});
 	}
 
 	await sink.emit({
@@ -273,7 +120,6 @@ export async function runE2eFixtureRuntime(
 		message: "Deterministic verification passed.",
 		payload: { command: "fixture verify", exitCode: 0, ok: true },
 	});
-	await completeFixtureTodos(context);
 	const diffPatch = execFileSync("git", ["diff", "--", "."], {
 		cwd: context.repoRoot,
 		encoding: "utf8",
@@ -305,20 +151,21 @@ export async function runE2eFixtureRuntime(
 	};
 }
 
-async function completeFixtureTodos(context: AgentRunContext) {
-	const now = new Date();
-	for (const todo of await repo.listTaskRunTodosForRun(context.runId)) {
-		await repo.updateTaskRunTodo(
-			todo.id,
-			{
-				status: "passed",
-				startedAt: todo.startedAt ? new Date(todo.startedAt) : now,
-				completedAt: now,
-				statusReason: "deterministic_e2e_fixture",
-			},
-			{ notifyTaskId: context.taskId, notifyRunId: context.runId },
-		);
-	}
+function fixtureResult(input: {
+	terminalState: AgentRuntimeResult["terminalState"];
+	finalReport: string;
+	stoppedBy: AgentRuntimeResult["stoppedBy"];
+	riskLevel: AgentRuntimeResult["riskLevel"];
+	behavior: string;
+}): AgentRuntimeResult {
+	return {
+		terminalState: input.terminalState,
+		summary: input.finalReport,
+		finalReport: input.finalReport,
+		stoppedBy: input.stoppedBy,
+		riskLevel: input.riskLevel,
+		testResults: { fixture: true, behavior: input.behavior },
+	};
 }
 
 function readFixtureBehavior(message: string) {
@@ -327,11 +174,5 @@ function readFixtureBehavior(message: string) {
 			/\[fixture:(policy-block|hold_until_stopped|timeout|tool_failure|verification_failure|success)\]/g,
 		),
 	];
-	return matches.at(-1)?.[1] ?? null;
-}
-
-function readRecord(value: unknown) {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: null;
+	return matches.at(-1)?.[1] ?? "success";
 }

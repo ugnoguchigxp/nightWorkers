@@ -1,5 +1,4 @@
 import { getCachedStructuredLlmProviderHealth } from "../../structured-llm/provider-health";
-import { providerAdapterKey } from "../../structured-llm/request";
 import { normalizeStructuredLlmModelTarget } from "../../structured-llm/selection";
 import {
 	readStructuredLlmProviderSettings,
@@ -8,24 +7,7 @@ import {
 import type { ProviderToolTurnResult } from "../../structured-llm/tool-calls";
 import type { StructuredLlmRoutePolicy } from "../../structured-llm/types";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
-import { readNativeApiExecutionMode } from "./native-api-mode";
 import type { NativeApiProviderRequest } from "./native-api-request-adapter";
-
-export function shouldForceNativeApiStartupGates(
-	context: AgentRunContext,
-): boolean {
-	if (context.runtimeOptions?.forceStartupGates === false) return false;
-	const executionMode = readNativeApiExecutionMode(context);
-	return executionMode === "implementation";
-}
-
-export function canCompleteNativeApiWithTextOnly(
-	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
-	content: string,
-) {
-	if (!content.trim()) return false;
-	return executionMode === "planning" || executionMode === "general_answer";
-}
 
 export async function emitNativeApiRouteFallback(input: {
 	sink: AgentRuntimeSink;
@@ -226,26 +208,10 @@ export function classifyNativeApiProviderError(
 			message: `Provider route attempt timed out after ${timeoutMs}ms.`,
 		};
 	}
-	const message = error instanceof Error ? error.message : String(error);
-	if (/required_tool_call_missing/i.test(message)) {
-		return { reason: "tool_required_missing", message };
-	}
-	if (
-		/ECONNREFUSED|Unable to connect|ENOTFOUND|EHOSTUNREACH|network error|fetch failed/i.test(
-			message,
-		)
-	) {
-		return { reason: "endpoint_unreachable", message };
-	}
-	if (
-		/loading model|unavailable_error|temporarily unavailable/i.test(message)
-	) {
-		return { reason: "transient_model_loading", message };
-	}
-	if (/abort/i.test(message)) {
-		return { reason: "provider_aborted", message };
-	}
-	return { reason: "provider_error", message };
+	return {
+		reason: "provider_error",
+		message: error instanceof Error ? error.message : String(error),
+	};
 }
 
 export function readRuntimeLlmRouteOverride(context: AgentRunContext) {
@@ -256,29 +222,6 @@ export function readRuntimeLlmRouteOverride(context: AgentRunContext) {
 			? (context.runtimeOptions.llmRouting as Record<string, unknown>)
 			: {};
 	return normalizeStructuredLlmModelTarget(routing.override);
-}
-
-export function readNativeApiResumeRouteCompatibility(
-	context: AgentRunContext,
-	executionMode: ReturnType<typeof readNativeApiExecutionMode>,
-) {
-	const routing =
-		context.runtimeOptions?.llmRouting &&
-		typeof context.runtimeOptions.llmRouting === "object" &&
-		!Array.isArray(context.runtimeOptions.llmRouting)
-			? (context.runtimeOptions.llmRouting as Record<string, unknown>)
-			: null;
-	const active = toRecord(routing?.active);
-	if (!active) return null;
-	if (readString(routing?.executionMode) !== executionMode) return null;
-	const providerId = readString(active.providerId);
-	const model = readString(active.model);
-	if (!providerId || !model || providerId === "codex") return null;
-	return {
-		provider: providerAdapterKey(providerId),
-		model,
-		executionMode,
-	};
 }
 
 export function toRecord(value: unknown): Record<string, unknown> | null {

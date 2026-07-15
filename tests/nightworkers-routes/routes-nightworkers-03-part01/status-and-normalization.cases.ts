@@ -133,7 +133,7 @@ describe("NightWorkers task routes status and normalization", () => {
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Kanban Specification",
-				content: [
+				contentTemplate: [
 					"# Kanban Specification",
 					"",
 					"## 1. 目的",
@@ -150,7 +150,22 @@ describe("NightWorkers task routes status and normalization", () => {
 					"",
 					"## Appendix. Questionnaire Decisions",
 					"最初に作る画面はどれですか？",
+					"",
+					"{{IMPLEMENTATION_PLAN}}",
 				].join("\n"),
+				implementationPlan: {
+					version: 1,
+					requiresDataMigration: false,
+					steps: [
+						{
+							key: "implement",
+							title: "画面実装",
+							description: "Operations Command Centerを実装する。",
+							taskType: "implementation",
+							dependsOnKeys: [],
+						},
+					],
+				},
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
@@ -182,8 +197,8 @@ describe("NightWorkers task routes status and normalization", () => {
 			expect(docBody.message.metadataJson.generation).toMatchObject({
 				source: "llm",
 				context: {
-					blueprintSummaryIncluded: true,
-					dataModelReferenceIncluded: true,
+					blueprintSummaryIncluded: false,
+					planViewReferencesIncluded: false,
 				},
 			});
 		} finally {
@@ -449,7 +464,7 @@ describe("NightWorkers task routes status and normalization", () => {
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Mechanical Design Document",
-				content: [
+				contentTemplate: [
 					"# Mechanical Design Document",
 					"",
 					"## 1. 目的",
@@ -466,7 +481,22 @@ describe("NightWorkers task routes status and normalization", () => {
 					"",
 					"## Appendix. Questionnaire Decisions",
 					"Which screen should be designed first?",
+					"",
+					"{{IMPLEMENTATION_PLAN}}",
 				].join("\n"),
+				implementationPlan: {
+					version: 1,
+					requiresDataMigration: false,
+					steps: [
+						{
+							key: "implement",
+							title: "画面実装",
+							description: "Design documentを実装する。",
+							taskType: "implementation",
+							dependsOnKeys: [],
+						},
+					],
+				},
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,

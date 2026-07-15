@@ -35,10 +35,10 @@ async function executeMissionPilotContinuationOnce(
 	continuation: MissionPilotContinuation,
 ) {
 	if (continuation.kind === "start_test") {
-		const { startTestModeRunFromArtifact } = await import(
+		const { startVerificationRunFromArtifact } = await import(
 			"../nightworkers/nightworkers.service"
 		);
-		await startTestModeRunFromArtifact({
+		await startVerificationRunFromArtifact({
 			...continuation.input,
 			mode: "test",
 			action: "plan_and_implement_tests",
@@ -47,25 +47,25 @@ async function executeMissionPilotContinuationOnce(
 		return;
 	}
 	if (continuation.kind === "start_review") {
-		const { autoStartReviewSessionForRun, startReviewRunForSession } =
-			await import("../review");
-		const reviewSession = await autoStartReviewSessionForRun(
-			continuation.input.anchorRunId,
+		const { startTaskRun } = await import(
+			"../nightworkers/nightworkers.service"
 		);
-		await startReviewRunForSession(
-			reviewSession.session.id,
-			{
-				codeReview: true,
-				securityReview: true,
-				applyFixes: true,
-				commitChanges: true,
-			},
-			{
+		const anchorRun = await import(
+			"../nightworkers/nightworkers.repository"
+		).then((module) => module.getTaskRun(continuation.input.anchorRunId));
+		if (!anchorRun)
+			throw new AppError(404, "RUN_NOT_FOUND", "Anchor run not found");
+		await startTaskRun(anchorRun.taskId, {
+			executionMode: "implementation",
+			executionModeSource: "explicit",
+			latestUserMessageOverride:
+				"現在のTaskとworkspaceを確認し、必要な自己確認・修正・検証をTodoとして計画して完了してください。",
+			runtimeOptionsPatch: {
+				missionPilot: continuation.input.missionPilot,
 				targetRunIds: continuation.input.targetRunIds,
 				targetManifestContext: continuation.input.targetManifestContext,
-				missionPilot: continuation.input.missionPilot,
 			},
-		);
+		});
 		return;
 	}
 	if (continuation.kind === "run_closeout") {
@@ -137,9 +137,6 @@ export function buildInterruptedImplementationResumeOptions(
 		executionMode: "implementation",
 		executionModeSource: "explicit",
 		latestUserMessageOverride: "再開してください。",
-		...(typeof missionPilot.interruptedRunId === "string"
-			? { resumeTodosFromRunId: missionPilot.interruptedRunId }
-			: {}),
 		runtimeOptionsPatch: { missionPilot },
 	};
 }

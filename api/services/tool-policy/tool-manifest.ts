@@ -132,12 +132,6 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
-	reviewer_evaluation: {
-		name: "reviewer_evaluation",
-		mutatesWorkspace: false,
-		requiresReadBeforeEdit: false,
-		pathArgs: [],
-	},
 	project_exploration_catalog: {
 		name: "project_exploration_catalog",
 		mutatesWorkspace: false,

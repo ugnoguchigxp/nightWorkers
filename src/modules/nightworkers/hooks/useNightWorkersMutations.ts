@@ -10,12 +10,10 @@ import {
 	pushRunGitCloseout,
 	queueWorkbenchSession,
 	restoreWorkbenchSessionArchive,
-	startReviewRun,
-	startReviewSession,
+	resumeTaskRunTodo,
 	startWorkbenchRun,
 	stopBackgroundProcess,
 	stopRun,
-	submitRunReview,
 } from "../nightWorkersCommands";
 import {
 	mergeRealtimeRunDetails,
@@ -27,8 +25,6 @@ import type {
 	CreateSessionInput,
 	GitCloseoutState,
 	Repository,
-	ReviewRunOptions,
-	ReviewSessionDetail,
 	RunDetails,
 	Task,
 	TaskRun,
@@ -246,6 +242,36 @@ export function useNightWorkersMutations({
 		},
 	});
 
+	const resumeTodoMutation = useMutation({
+		mutationFn: async (input: {
+			runId: string;
+			todoId: string;
+			expectedTodoRevision: number;
+			userContext: string;
+		}) => {
+			const res = await resumeTaskRunTodo(input.runId, input.todoId, {
+				expectedTodoRevision: input.expectedTodoRevision,
+				userContext: input.userContext,
+			});
+			if (!res.ok) throw new Error(await res.text());
+			return (await res.json()) as TaskRun;
+		},
+		onSuccess: (run) => {
+			queryClient.setQueryData<TaskRun[]>(
+				["sessionRuns", run.taskId],
+				(prev = []) => mergeRealtimeRunList(prev, run),
+			);
+			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+				prev.map((task) =>
+					task.id === run.taskId ? { ...task, status: "running" } : task,
+				),
+			);
+			queryClient.invalidateQueries({ queryKey: ["runDetails", run.id] });
+			queryClient.invalidateQueries({ queryKey: ["sessionRuns", run.taskId] });
+			queryClient.invalidateQueries({ queryKey: ["sessions"] });
+		},
+	});
+
 	const stopBackgroundProcessMutation = useMutation({
 		mutationFn: async (processId: string) => {
 			const res = await stopBackgroundProcess(processId);
@@ -284,79 +310,6 @@ export function useNightWorkersMutations({
 				return next;
 			});
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-		},
-	});
-
-	const submitRunReviewMutation = useMutation({
-		mutationFn: async (input: {
-			runId: string;
-			data: { action: "complete" | "cancel"; note?: string };
-		}) => {
-			const res = await submitRunReview(input.runId, input.data);
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
-		},
-		onSuccess: (_result, input) => {
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-			queryClient.invalidateQueries({ queryKey: ["implementationQueue"] });
-			queryClient.invalidateQueries({ queryKey: ["sessionRuns"] });
-			queryClient.invalidateQueries({ queryKey: ["runDetails", input.runId] });
-			if (activeSessionId) {
-				queryClient.invalidateQueries({
-					queryKey: ["sessionRuns", activeSessionId],
-				});
-			}
-		},
-	});
-
-	const startReviewSessionMutation = useMutation({
-		mutationFn: async (runId: string) => {
-			const res = await startReviewSession(runId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["runDetails", detail.session.runId],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["gitCloseout", detail.session.runId],
-			});
-		},
-	});
-
-	const startReviewRunMutation = useMutation({
-		mutationFn: async (input: {
-			reviewSessionId: string;
-			options: Partial<ReviewRunOptions>;
-		}) => {
-			const res = await startReviewRun(input.reviewSessionId, {
-				options: input.options,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as ReviewSessionDetail;
-		},
-		onSuccess: (detail) => {
-			queryClient.setQueryData<ReviewSessionDetail | null>(
-				["reviewSession", detail.session.taskId],
-				detail,
-			);
-			queryClient.invalidateQueries({
-				queryKey: ["reviewSession", detail.session.taskId],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["sessionRuns", detail.session.taskId],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["runDetails", detail.session.runId],
-			});
 		},
 	});
 
@@ -581,16 +534,14 @@ export function useNightWorkersMutations({
 		deleteSessionMutation,
 		startRunMutation,
 		stopRunMutation,
+		resumeTodoMutation,
 		stopBackgroundProcessMutation,
 		queueSessionMutation,
-		submitRunReviewMutation,
 		updateSessionStatusMutation,
 		archiveCompletedSessionMutation,
 		restoreArchivedSessionMutation,
 		reorderQueueSessionsMutation,
 		moveWorkbenchSessionMutation,
-		startReviewSessionMutation,
-		startReviewRunMutation,
 		commitRunGitCloseoutMutation,
 		pushRunGitCloseoutMutation,
 	};

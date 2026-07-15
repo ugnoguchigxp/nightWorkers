@@ -1,5 +1,4 @@
 import { stateCardRoleForExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
-import { buildNativeApiRoleContextSnapshot } from "../../../services/agent-runtime/native-api-runner/native-api-role-context-events";
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
 import { digestText } from "../../../services/text-digest";
@@ -11,6 +10,7 @@ import {
 } from "../../ontology";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
+import { activateTaskRunResume } from "./resume-task-run-activation";
 import {
 	buildLatestRuntimeUserMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
@@ -32,25 +32,33 @@ import {
 	recordAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
-import {
-	closeOpenTodosForFailedRun,
-	toAgentRuntimeTodoContext,
-} from "./todo-closeout";
-import { resolveInitialTaskRunTodos } from "./todo-resume";
 import { toErrorMessage } from "./utils";
 
 export { startTaskRun } from "./start-task-run-entry";
 
-import { prepareStartableTask } from "./start-task-run-entry";
+import {
+	prepareResumableTaskRun,
+	prepareStartableTask,
+} from "./start-task-run-entry";
 
 export type { StartTaskRunOptions } from "./start-task-run-types";
 export async function startTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
+	if (Boolean(options.resumeRunId) !== Boolean(options.resumeCommand)) {
+		throw new Error("resumeRunId and resumeCommand must be provided together.");
+	}
 	const prepared = await prepareTaskRunInProcess(taskId, options);
+	let resultRun = prepared.run;
 	try {
 		await prepared.associate?.();
+		if (options.resumeRunId && options.resumeCommand) {
+			resultRun = await activateTaskRunResume({
+				runId: options.resumeRunId,
+				...options.resumeCommand,
+			});
+		}
 	} catch (error) {
 		await failPreparedRunBeforeLaunch({
 			runId: prepared.run.id,
@@ -61,7 +69,7 @@ export async function startTaskRunInProcess(
 		throw error;
 	}
 	await prepared.launch?.();
-	return prepared.run;
+	return resultRun;
 }
 
 async function failPreparedRunBeforeLaunch(input: {
@@ -75,9 +83,8 @@ async function failPreparedRunBeforeLaunch(input: {
 		status: "failed",
 		endedAt: new Date(),
 		finishedAt: new Date(),
-		summary:
-			"Mission Pilot child run preparation failed before runtime launch.",
-		finalReport: `Mission Pilot child run preparation failed before runtime launch: ${message}`,
+		summary: "Runtime preparation failed before launch.",
+		finalReport: `Runtime preparation failed before launch: ${message}`,
 		finalJudgment: null,
 	});
 	if (!failedRun) return;
@@ -89,33 +96,24 @@ async function failPreparedRunBeforeLaunch(input: {
 		type: "system.error",
 		severity: "error",
 		actor: "system",
-		message: "Mission Pilot child run could not be associated before launch.",
+		message: "Task run preparation failed before runtime launch.",
 		data: {
 			action: "mission_pilot.run_preparation_failed",
 			executionMode: input.executionMode,
 			error: message,
 		},
 	});
-	const todos = await repo.listTaskRunTodosForRun(input.runId);
-	await closeOpenTodosForFailedRun({
-		runId: input.runId,
-		taskId: input.taskId,
-		todos,
-		evidence: `mission_pilot_run_association_failed: ${message}`,
-	});
-	await repo.updateTaskStatus(
-		input.taskId,
-		["test", "review"].includes(input.executionMode)
-			? "needs_review"
-			: "failed",
-	);
+	await repo.updateTaskStatus(input.taskId, "failed");
 }
 
 export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
-	const task = await prepareStartableTask(taskId);
+	const resumable = options.resumeRunId
+		? await prepareResumableTaskRun(taskId, options.resumeRunId)
+		: null;
+	const task = resumable?.task ?? (await prepareStartableTask(taskId));
 	const {
 		repoInfo,
 		executionRoot,
@@ -129,9 +127,7 @@ export async function prepareTaskRunInProcess(
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
-		implementationPlanTodoProjection,
 		compiledPromptText,
-		verificationPolicy,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
 	const {
@@ -166,64 +162,65 @@ export async function prepareTaskRunInProcess(
 		runtimeLane: runtimeLaneResolution.lane,
 		runtimeLlmRoute,
 	});
-	const { run, sessionTransition } = await createTaskRunInAgentModeSession({
-		taskId,
-		repositoryId: task.repositoryId,
-		executionMode,
-		llmRole: runtimeRole,
-		routeIdentity,
-		taskRun: {
-			taskId,
-			repositoryId: task.repositoryId,
-			status: "running",
-			workerKind: runtimeLaneResolution.workerKind,
-			baseRef: gitBaseline.baselineHead,
-			worktreePath: task.worktreePath ? executionRoot : null,
-			timeoutSeconds: task.timeoutSeconds,
-			contextSnapshot: {
-				compiledPrompt: compiledPromptText,
+	const created = resumable
+		? null
+		: await createTaskRunInAgentModeSession({
+				taskId,
+				repositoryId: task.repositoryId,
 				executionMode,
-				executionModeSource,
-				jobType,
-				verificationPolicy,
-				...(implementationPlanTodoProjection
-					? {
-							implementationPlanProvenance:
-								implementationPlanTodoProjection.implementationPlanProvenance,
-						}
-					: {}),
-				projectExplorationCatalog: projectExplorationCatalogPin,
-				planModeSettingsSnapshot,
-				...blueprintPlanningSnapshot,
-				runtimeLane: runtimeLaneResolution.lane,
-				runtimeLaneResolution: {
+				llmRole: runtimeRole,
+				routeIdentity,
+				taskRun: {
+					taskId,
+					repositoryId: task.repositoryId,
+					status: "running",
 					workerKind: runtimeLaneResolution.workerKind,
-					source: runtimeLaneResolution.source,
-					diagnostics: runtimeLaneResolution.diagnostics,
+					baseRef: gitBaseline.baselineHead,
+					worktreePath: task.worktreePath ? executionRoot : null,
+					timeoutSeconds: task.timeoutSeconds,
+					contextSnapshot: {
+						compiledPrompt: compiledPromptText,
+						executionMode,
+						executionModeSource,
+						jobType,
+						projectExplorationCatalog: projectExplorationCatalogPin,
+						planModeSettingsSnapshot,
+						...blueprintPlanningSnapshot,
+						runtimeLane: runtimeLaneResolution.lane,
+						runtimeLaneResolution: {
+							workerKind: runtimeLaneResolution.workerKind,
+							source: runtimeLaneResolution.source,
+							diagnostics: runtimeLaneResolution.diagnostics,
+						},
+						effectiveLlmRouting,
+					},
+					startedAt: new Date(),
 				},
-				effectiveLlmRouting,
-			},
-			startedAt: new Date(),
-		},
-	});
-	await recordAgentModeSessionTransition({
-		runId: run.id,
-		taskId,
-		executionMode,
-		llmRole: runtimeRole,
-		routeFingerprint: routeIdentity.fingerprint,
-		sessionTransition,
-	});
+			});
+	const run = resumable?.run ?? created?.run;
+	if (!run) throw new Error("Failed to resolve task run.");
+	if (created) {
+		await recordAgentModeSessionTransition({
+			runId: run.id,
+			taskId,
+			executionMode,
+			llmRole: runtimeRole,
+			routeFingerprint: routeIdentity.fingerprint,
+			sessionTransition: created.sessionTransition,
+		});
+	}
 	await activateWorkspace(taskId, executionMode, gitBaseline.baselineHead);
-	await repo.createTaskRunCommitRecord({
-		runId: run.id,
-		repositoryId: task.repositoryId,
-		status: gitBaseline.status,
-		baselineHead: gitBaseline.baselineHead,
-		baselineStatusJson: gitBaseline.baselineStatusJson,
-		preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
-		statusReason: gitBaseline.statusReason,
-	});
+	if (!resumable) {
+		await repo.createTaskRunCommitRecord({
+			runId: run.id,
+			repositoryId: task.repositoryId,
+			status: gitBaseline.status,
+			baselineHead: gitBaseline.baselineHead,
+			baselineStatusJson: gitBaseline.baselineStatusJson,
+			preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
+			statusReason: gitBaseline.statusReason,
+		});
+	}
 	const runtimeLaneSetupInput = {
 		compiledPromptText,
 		executionMode,
@@ -256,34 +253,19 @@ export async function prepareTaskRunInProcess(
 			ontologyToolProfile: securityIntelligence.ontology.toolProfile,
 		},
 	};
-	await repo.replaceTaskRunTodosForRun(
-		run.id,
-		await resolveInitialTaskRunTodos({
-			executionMode,
-			resumeTodosFromRunId: options.resumeTodosFromRunId,
-			loadTodosForRun: repo.listTaskRunTodosForRun,
-			initialTodos:
-				executionMode === "test"
-					? []
-					: (options.initialTodos ??
-						implementationPlanTodoProjection?.initialTodos ??
-						runtimeLaneDefinition.buildInitialTodos(runtimeLaneSetupInput)),
-			requireDataMigrationGates:
-				jobType === "data_migration" ||
-				Boolean(implementationPlanTodoProjection?.requireDataMigrationGates),
-			verificationPolicy,
-		}),
-	);
 	await repo.createRunEvent({
 		version: 1,
 		runId: run.id,
 		taskId,
 		timestamp: new Date().toISOString(),
-		type: "run.created",
+		type: resumable ? "system.info" : "run.created",
 		severity: "info",
 		actor: "system",
-		message: "Task run created. Runtime prompt is being prepared.",
+		message: resumable
+			? "Task run resume was prepared with the existing Todo and provider session."
+			: "Task run created. Runtime prompt is being prepared.",
 		data: {
+			action: resumable ? "run.resume_prepared" : "run.created",
 			contextSource: "task_prompt",
 			executionMode,
 			executionModeSource,
@@ -323,15 +305,8 @@ export async function prepareTaskRunInProcess(
 		executionMode,
 		executionPhase: executionMode,
 		executionModeSource,
-		verificationPolicy,
-		...(implementationPlanTodoProjection
-			? {
-					implementationPlanProvenance:
-						implementationPlanTodoProjection.implementationPlanProvenance,
-				}
-			: {}),
 		projectExplorationCatalog: projectExplorationCatalogPin,
-		planModeClosed: executionMode !== "planning",
+		planModeClosed: true,
 		planModeSettingsSnapshot,
 		...blueprintPlanningSnapshot,
 		runtimeLane: runtimeLaneResolution.lane,
@@ -392,13 +367,13 @@ export async function prepareTaskRunInProcess(
 			executionMode,
 		});
 	const conversationContext =
-		executionMode === "review" || runtimeLaneResolution.lane === "codex-sdk"
+		runtimeLaneResolution.lane === "codex-sdk"
 			? null
 			: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
 		role: stateCardRoleForExecutionMode(executionMode),
-		workKind: executionMode === "general_answer" ? null : runtimeRole,
+		workKind: runtimeRole,
 	});
 	const runtimePromptParts = buildPromptWithStateCardParts({
 		latestUserMessage: rawLatestUserMessage,
@@ -408,10 +383,8 @@ export async function prepareTaskRunInProcess(
 	let runtimeContextSnapshot: RuntimePromptSnapshot = {
 		...contextSnapshot,
 		executionPhase: executionMode,
-		planModeClosed: executionMode !== "planning",
-		...(executionMode === "implementation"
-			? { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }
-			: {}),
+		planModeClosed: true,
+		implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE,
 		conversationContext: conversationContext
 			? {
 					snapshotId: conversationContext.id,
@@ -478,107 +451,6 @@ export async function prepareTaskRunInProcess(
 			ontologyContext,
 		},
 	});
-	if (sessionTransition.transition === "opened") {
-		try {
-			const roleContextTodos = await repo.listTaskRunTodosForRun(run.id);
-			const roleContextBase = buildNativeApiRoleContextSnapshot({
-				context: {
-					runId: run.id,
-					taskId,
-					agentModeSessionId: run.agentModeSessionId,
-					repositoryId: task.repositoryId,
-					repoRoot: executionRoot,
-					compiledPrompt: compiledPromptText,
-					latestUserMessage: runtimeLatestUserMessage,
-					imageAttachments: runtimeImageAttachments,
-					timeoutSeconds: task.timeoutSeconds ?? 3600,
-					safetyPolicy: repoInfo.safetyPolicy || undefined,
-					contextSnapshot: runtimeContextSnapshot,
-					runtimeOptions,
-					todoPlan: roleContextTodos.map(toAgentRuntimeTodoContext),
-					currentTodo: roleContextTodos
-						.filter((todo) => todo.status === "running")
-						.sort((a, b) => a.seq - b.seq)
-						.map(toAgentRuntimeTodoContext)[0],
-				},
-			});
-			const handoffEvent = await repo.createRunEvent({
-				version: 1,
-				runId: run.id,
-				taskId,
-				timestamp: roleContextBase.handoff.createdAt,
-				type: "context.handoff_created",
-				severity: "info",
-				actor: "runtime",
-				message: "Role handoff artifact created for run-start boundary.",
-				data: {
-					artifact: roleContextBase.handoff,
-					source: "deterministic",
-				},
-			});
-			const workingContextEvent = await repo.createRunEvent({
-				version: 1,
-				runId: run.id,
-				taskId,
-				timestamp: roleContextBase.workingContext.createdAt,
-				type: "context.working_context_created",
-				severity: "info",
-				actor: "runtime",
-				message: "Role working context created for provider history.",
-				data: {
-					artifact: roleContextBase.workingContext,
-					source: "deterministic",
-				},
-			});
-			runtimeContextSnapshot = {
-				...runtimeContextSnapshot,
-				roleContext: {
-					...roleContextBase.snapshot,
-					handoff: {
-						...roleContextBase.snapshot.handoff,
-						eventSeq: handoffEvent?.seq ?? null,
-						eventId: handoffEvent?.id ?? null,
-					},
-					workingContext: {
-						...roleContextBase.snapshot.workingContext,
-						eventSeq: workingContextEvent?.seq ?? null,
-						eventId: workingContextEvent?.id ?? null,
-					},
-				},
-			};
-		} catch (error) {
-			const errorMessage = toErrorMessage(error);
-			const failureType = /handoff/i.test(errorMessage)
-				? "context.handoff_failed"
-				: "context.working_context_failed";
-			await repo.createRunEvent({
-				version: 1,
-				runId: run.id,
-				taskId,
-				timestamp: new Date().toISOString(),
-				type: failureType,
-				severity: "error",
-				actor: "runtime",
-				message: `Role context generation failed before provider call: ${errorMessage}`,
-				data: {
-					source: "deterministic",
-					error: errorMessage,
-				},
-			});
-			await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
-			const failedRun = await repo.updateTaskRun(run.id, {
-				status: "needs_human",
-				endedAt: new Date(),
-				finishedAt: new Date(),
-				contextSnapshot: runtimeContextSnapshot,
-				finalReport: `Role context generation failed before provider call: ${errorMessage}`,
-				finalJudgment: null,
-				summary: "Role context generation failed before provider call.",
-			});
-			await repo.updateTaskStatus(taskId, "needs_human");
-			return { run: failedRun ?? run, associate: null, launch: null };
-		}
-	}
 	if (runtimeLaneResolution.lane === "codex-sdk") {
 		const runtimeResume = await loadCodexRuntimeResumeState({
 			taskId,
@@ -611,7 +483,7 @@ export async function prepareTaskRunInProcess(
 	}
 	await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
 	const compiledRun = await repo.updateTaskRun(run.id, {
-		status: "running",
+		status: resumable ? run.status : "running",
 		contextSnapshot: runtimeContextSnapshot,
 	});
 	await repo.createRunEvent({
@@ -639,17 +511,19 @@ export async function prepareTaskRunInProcess(
 	});
 	return {
 		run: compiledRun ?? run,
-		associate: createPreparedMissionPilotAssociation({
-			executionMode,
-			missionPilotPhase: options.missionPilotPhase,
-			runtimeOptions,
-			taskId,
-			runId: run.id,
-		}),
+		associate: resumable
+			? undefined
+			: createPreparedMissionPilotAssociation({
+					executionMode,
+					missionPilotPhase: options.missionPilotPhase,
+					runtimeOptions,
+					taskId,
+					runId: run.id,
+				}),
 		launch: createPreparedRuntimeLaunch({
 			taskId,
 			task,
-			run,
+			run: compiledRun ?? run,
 			repoInfo: { ...repoInfo, localPath: executionRoot },
 			compiledPromptText,
 			runtimeLatestUserMessage,

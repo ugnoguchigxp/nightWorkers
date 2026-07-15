@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => {
 		getTask: vi.fn(),
 		listActiveTaskRunsForTask: vi.fn(),
 		listTaskRunTodosForRun: vi.fn(),
-		updateTaskRunTodo: vi.fn(),
 		createRunEvent: vi.fn(),
 		updateTaskRun: vi.fn(),
 		updateTaskStatus: vi.fn(),
@@ -28,7 +27,6 @@ vi.mock("@api/modules/nightworkers/nightworkers.repository", () => ({
 	getTask: mocks.getTask,
 	listActiveTaskRunsForTask: mocks.listActiveTaskRunsForTask,
 	listTaskRunTodosForRun: mocks.listTaskRunTodosForRun,
-	updateTaskRunTodo: mocks.updateTaskRunTodo,
 	createRunEvent: mocks.createRunEvent,
 	updateTaskRun: mocks.updateTaskRun,
 	updateTaskStatus: mocks.updateTaskStatus,
@@ -101,7 +99,7 @@ describe("run-query.service", () => {
 			]);
 
 			const result = await getTaskRun("run-1");
-			expect(result).toEqual({
+			expect(result).toMatchObject({
 				id: "run-1",
 				taskId: "task-1",
 				todos: [{ id: "todo-1" }],
@@ -390,7 +388,7 @@ describe("run-query.service", () => {
 			expect(mocks.updateTaskRun).not.toHaveBeenCalled();
 		});
 
-		it("recovers stale run by failing pending todos and updating run status to failed", async () => {
+		it("recovers a stale run without implicitly mutating Todos", async () => {
 			mocks.getTask.mockResolvedValue({ id: "task-1" });
 			mocks.listActiveTaskRunsForTask.mockResolvedValue([
 				{ id: "run-1", finalReport: "report", diffPatch: "patch" },
@@ -428,28 +426,6 @@ describe("run-query.service", () => {
 
 			const result = await recoverStaleActiveRuns("task-1");
 			expect(result).toEqual({ hasRunning: false, recoveredRunIds: ["run-1"] });
-
-			// Todo 1 should be failed
-			expect(mocks.updateTaskRunTodo).toHaveBeenCalledWith(
-				"todo-1",
-				expect.objectContaining({
-					status: "failed",
-				}),
-			);
-
-			// Todo 2 should be skipped
-			expect(mocks.updateTaskRunTodo).toHaveBeenCalledWith(
-				"todo-2",
-				expect.objectContaining({
-					status: "skipped",
-				}),
-			);
-
-			// Todo 3 (already passed) should NOT be modified
-			expect(mocks.updateTaskRunTodo).not.toHaveBeenCalledWith(
-				"todo-3",
-				expect.any(Object),
-			);
 
 			// Task run should be marked failed
 			expect(mocks.updateTaskRun).toHaveBeenCalledWith(

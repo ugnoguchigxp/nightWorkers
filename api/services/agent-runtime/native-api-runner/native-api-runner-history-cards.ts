@@ -4,45 +4,82 @@ import type { NativeApiPostImportState } from "./native-api-tool-dispatcher";
 import type { NativeApiHistoryItem } from "./native-api-tool-history";
 
 export type NativeApiRuntimeTodoSnapshot = {
+	id: string;
 	seq: number;
+	revision: number;
 	title: string;
-	description?: string | null;
-	taskType: string;
+	objective: string | null;
+	context: string | null;
+	nextAction: string;
+	acceptanceCriteria: string[];
+	dependsOn: string[];
+	lastFailure: string | null;
+	attemptCount: number;
+	statusReason: string | null;
+	systemContextVersion: number;
+	systemContextSnapshot: unknown;
 	status: string;
-	procedureId?: string | null;
 };
 
 export async function buildTodoSnapshotHistory(runId: string): Promise<{
+	planRevision: number;
+	todoRevisions: Record<string, number>;
 	snapshotItem: Extract<NativeApiHistoryItem, { type: "user" }> | null;
 	currentTodoItem: Extract<NativeApiHistoryItem, { type: "user" }> | null;
 	currentTodo: NativeApiRuntimeTodoSnapshot | null;
 } | null> {
 	try {
-		const todos = await repo.listTaskRunTodosForRun(runId);
+		const [run, todos] = await Promise.all([
+			repo.getTaskRun(runId),
+			repo.listTaskRunTodosForRun(runId),
+		]);
 		if (todos.length === 0) return null;
 		const lines = todos
 			.sort((a, b) => a.seq - b.seq)
 			.map((todo) => {
 				const title = todo.title.replace(/\s+/g, " ").trim();
-				return `seq=${todo.seq} status=${todo.status} taskType=${todo.taskType} procedureId=${todo.procedureId ?? "none"} title=${title}`;
+				return `id=${todo.id} seq=${todo.seq} revision=${todo.revision} status=${todo.status} title=${title}`;
 			});
 		const currentTodo =
 			todos
 				.filter((todo) => todo.status === "running")
 				.sort((a, b) => a.seq - b.seq)
 				.map((todo) => ({
+					id: todo.id,
 					seq: todo.seq,
+					revision: todo.revision,
 					title: todo.title,
-					description: todo.description,
-					taskType: todo.taskType,
+					objective: todo.objective ?? todo.description ?? null,
+					context: todo.context,
+					nextAction: todo.nextAction,
+					acceptanceCriteria: Array.isArray(todo.acceptanceCriteriaJson)
+						? todo.acceptanceCriteriaJson
+						: [],
+					dependsOn: Array.isArray(todo.dependsOn)
+						? todo.dependsOn.filter(
+								(value): value is string => typeof value === "string",
+							)
+						: [],
+					lastFailure: todo.lastFailure,
+					attemptCount: todo.attemptCount,
+					statusReason: todo.statusReason,
+					systemContextVersion: todo.systemContextVersion,
+					systemContextSnapshot: todo.systemContextSnapshot,
 					status: todo.status,
-					procedureId: todo.procedureId,
 				}))[0] ?? null;
 		return {
+			planRevision: run?.todoPlanRevision ?? 0,
+			todoRevisions: Object.fromEntries(
+				todos.map((todo) => [todo.id, todo.revision]),
+			),
 			snapshotItem: {
 				type: "user",
 				source: "todo",
-				content: ["[Native API Runner Todo Snapshot]", ...lines].join("\n"),
+				content: [
+					"[Native API Runner Todo Snapshot]",
+					`planRevision=${run?.todoPlanRevision ?? 0}`,
+					...lines,
+				].join("\n"),
 			},
 			currentTodoItem: currentTodo
 				? {
@@ -61,13 +98,19 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 function renderRuntimeTodoContext(currentTodo: NativeApiRuntimeTodoSnapshot) {
 	return [
 		"[Current Native API Runner Todo]",
+		`id=${currentTodo.id}`,
 		`seq=${currentTodo.seq}`,
+		`revision=${currentTodo.revision}`,
 		`title=${currentTodo.title}`,
-		...(currentTodo.description
-			? [`description=${currentTodo.description.replace(/\s+/g, " ").trim()}`]
-			: []),
-		`taskType=${currentTodo.taskType}`,
-		`procedureId=${currentTodo.procedureId ?? "none"}`,
+		`objective=${currentTodo.objective ?? ""}`,
+		`context=${currentTodo.context ?? ""}`,
+		`nextAction=${currentTodo.nextAction}`,
+		`acceptanceCriteria=${JSON.stringify(currentTodo.acceptanceCriteria)}`,
+		`dependsOn=${JSON.stringify(currentTodo.dependsOn)}`,
+		`lastFailure=${currentTodo.lastFailure ?? ""}`,
+		`attemptCount=${currentTodo.attemptCount}`,
+		`statusReason=${currentTodo.statusReason ?? ""}`,
+		`systemContextVersion=${currentTodo.systemContextVersion}`,
 		`status=${currentTodo.status}`,
 	].join("\n");
 }
@@ -98,10 +141,9 @@ export function buildPostImportHistoryItem(
 			`recommendedVerificationCommands=${
 				postImport.recommendedVerificationCommands.join(" | ") || "none"
 			}`,
-			`verifiedCommand=${postImport.verifiedCommand ?? "none"}`,
 			postImport.llmContext ? "llmContext=available" : "llmContext=missing",
 			"",
-			"Use this postImport payload before re-reading package manifests. If recommended verification commands exist, run one successfully before finalize_answer.",
+			"Use this postImport payload before re-reading package manifests. Recommended verification commands are available as facts for the Coding Agent to evaluate.",
 			"When package.json contains a verify script, treat the recommended verify command as the representative final verification. Use typecheck/lint/test/build as focused checks or fallbacks only when verify is unavailable or cannot run.",
 		].join("\n"),
 	};

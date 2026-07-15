@@ -83,11 +83,9 @@ function mutationFixture() {
 		deleteSessionMutation: mutation,
 		startRunMutation: mutation,
 		stopRunMutation: mutation,
+		resumeTodoMutation: mutation,
 		stopBackgroundProcessMutation: mutation,
 		queueSessionMutation: mutation,
-		submitRunReviewMutation: mutation,
-		startReviewSessionMutation: mutation,
-		startReviewRunMutation: mutation,
 		commitRunGitCloseoutMutation: mutation,
 		pushRunGitCloseoutMutation: mutation,
 		updateSessionStatusMutation: mutation,
@@ -273,10 +271,13 @@ describe("frontend controller hook coverage", () => {
 		});
 		await workspace.startRun(task.id);
 		await workspace.stopRun(run.id);
+		await workspace.resumeTodo({
+			runId: run.id,
+			todoId: "todo-1",
+			expectedTodoRevision: 1,
+			userContext: "continue",
+		});
 		await workspace.queueSession(task.id);
-		await workspace.submitRunReview(run.id, { status: "approved" });
-		await workspace.startReviewSession(run.id);
-		await workspace.startReviewRun("review-1");
 		await workspace.commitRunGitCloseout(run.id);
 		await workspace.pushRunGitCloseout(run.id);
 		await workspace.updateSessionStatus(task.id, "completed");

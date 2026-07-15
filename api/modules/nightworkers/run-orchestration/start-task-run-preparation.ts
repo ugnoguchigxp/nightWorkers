@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
-import { deriveTodoVerificationPolicyFromPromptText } from "../../../services/todo-runtime";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
 import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
@@ -9,11 +8,9 @@ import { getProjectExplorationCatalogSettings } from "../../ontology/exploration
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
 import * as repo from "../nightworkers.repository";
 import { readPromptImageAttachments } from "../prompt-image-attachments";
-import { resolveImplementationPlanTodoProjection } from "./implementation-plan-todo-projection";
 import {
 	buildCompiledPromptText,
 	findLatestImplementationHandoffMessage,
-	resolveExecutionModeFromMessages,
 	resolveLatestJobTypeFromMessages,
 } from "./runtime-routing";
 import type { StartTaskRunOptions } from "./start-task-run-types";
@@ -67,8 +64,7 @@ export async function prepareTaskRunStart(input: {
 		.reverse()
 		.find((message) => message.role === "user");
 	const jobType = resolveLatestJobTypeFromMessages(messages);
-	const executionMode =
-		input.options.executionMode ?? resolveExecutionModeFromMessages(messages);
+	const executionMode = "implementation" as const;
 	if (
 		executionMode === "implementation" &&
 		input.options.missionPilotPhase !== "repository_bootstrap"
@@ -109,30 +105,9 @@ export async function prepareTaskRunStart(input: {
 			}
 		}
 	}
-	const executionModeSource = input.options.executionMode
-		? (input.options.executionModeSource ?? "explicit")
-		: "message_history";
-	const shouldProjectImplementationPlan =
-		executionMode === "implementation" &&
-		input.options.initialTodos === undefined &&
-		!input.options.resumeTodosFromRunId;
-	const implementationHandoffMessage = shouldProjectImplementationPlan
-		? input.options.implementationPlanConstraint
-			? messages.find(
-					(message) =>
-						message.id ===
-						input.options.implementationPlanConstraint?.sourceMessageId,
-				)
-			: findLatestImplementationHandoffMessage(messages)
-		: executionMode === "implementation"
-			? findLatestImplementationHandoffMessage(messages)
-			: undefined;
-	const implementationPlanTodoProjection = shouldProjectImplementationPlan
-		? resolveImplementationPlanTodoProjection(
-				implementationHandoffMessage,
-				input.options.implementationPlanConstraint,
-			)
-		: null;
+	const executionModeSource = "explicit" as const;
+	const implementationHandoffMessage =
+		findLatestImplementationHandoffMessage(messages);
 	const compiledPromptText = buildCompiledPromptText({
 		task: input.task,
 		lastUserMessage,
@@ -161,9 +136,6 @@ export async function prepareTaskRunStart(input: {
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
-		implementationPlanTodoProjection,
 		compiledPromptText,
-		verificationPolicy:
-			deriveTodoVerificationPolicyFromPromptText(compiledPromptText),
 	};
 }

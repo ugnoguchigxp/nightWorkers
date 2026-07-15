@@ -85,7 +85,7 @@ export function renderNativeApiContextBudgetHint(
 	return [
 		"[Runtime Context Budget]",
 		`Estimated context usage is above 75% (${percent}%).`,
-		"Prefer finishing the current Todo, compacting context, or calling new_context before reading more large files.",
+		"Prefer finishing the current Todo or compacting conversation history before reading more large files.",
 	].join("\n");
 }
 

@@ -108,26 +108,7 @@ export function readChangedFiles(payload: Record<string, unknown>): string[] {
 }
 
 export function readCodexRuntimeExecutionMode(context: AgentRunContext) {
-	const value = context.runtimeOptions?.executionMode;
-	if (
-		value === "planning" ||
-		value === "implementation" ||
-		value === "test" ||
-		value === "review" ||
-		value === "general_answer"
-	) {
-		return value;
-	}
-	const snapshotValue = context.contextSnapshot.executionMode;
-	if (
-		snapshotValue === "planning" ||
-		snapshotValue === "implementation" ||
-		snapshotValue === "test" ||
-		snapshotValue === "review" ||
-		snapshotValue === "general_answer"
-	) {
-		return snapshotValue;
-	}
+	void context;
 	return "implementation";
 }
 

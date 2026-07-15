@@ -12,7 +12,6 @@ import {
 	listRecentSpecificationsTool,
 	readCurrentSpecificationTool,
 } from "../services/worker-tools/read-current-specification";
-import { reviewerEvaluationTool } from "../services/worker-tools/reviewer-evaluation";
 import {
 	completionCheckTool,
 	runCheckTool,
@@ -23,16 +22,13 @@ import { nightWorkersCodexToolManifest } from "./nightworkers-tool-manifest";
 export type NightWorkersMcpRequestContext = {
 	taskId?: string;
 	runId?: string;
-	executionMode?: string;
 };
 
 export * from "./nightworkers-codex-mcp-support";
 
 import {
 	controlledToolResult,
-	disabledToolResult,
 	firstNonEmpty,
-	isToolDisabledForExecutionMode,
 	readOnlyOntologyTool,
 	resolveOntologyRepoPath,
 	resolveOntologyTaskId,
@@ -103,18 +99,7 @@ export function createNightWorkersCodexMcpServer(
 		{
 			...nightWorkersCodexToolManifest.todo_list,
 		},
-		async ({
-			runId,
-			operation,
-			seq,
-			todos,
-			startFirst,
-			todoListReplaceReason,
-			evidenceRefs,
-		}) => {
-			if (isToolDisabledForExecutionMode("todo_list", context)) {
-				return toolResultToMcp(disabledToolResult("todo_list"));
-			}
+		async ({ runId, command }) => {
 			const resolvedRunId = firstNonEmpty(
 				runId,
 				context.runId,
@@ -122,18 +107,14 @@ export function createNightWorkersCodexMcpServer(
 			);
 			const args = {
 				runId: resolvedRunId,
-				operation,
-				seq,
-				todos,
-				startFirst,
-				todoListReplaceReason,
-				evidenceRefs,
+				command,
 			};
 			return controlledToolResult({
 				context,
 				runId: resolvedRunId,
 				toolName: "todo_list",
 				arguments: args,
+				idempotentSideEffect: command.op !== "list",
 				execute: () => todoListTool(args),
 			});
 		},
@@ -154,9 +135,6 @@ export function createNightWorkersCodexMcpServer(
 			timeoutSeconds,
 			displayMode,
 		}) => {
-			if (isToolDisabledForExecutionMode("run_check", context)) {
-				return toolResultToMcp(disabledToolResult("run_check"));
-			}
 			const resolvedRunId = firstNonEmpty(
 				runId,
 				context.runId,
@@ -214,9 +192,6 @@ export function createNightWorkersCodexMcpServer(
 			...nightWorkersCodexToolManifest.completion_check,
 		},
 		async ({ taskId, verificationDocumentId }) => {
-			if (isToolDisabledForExecutionMode("completion_check", context)) {
-				return toolResultToMcp(disabledToolResult("completion_check"));
-			}
 			const resolvedTaskId = firstNonEmpty(
 				taskId,
 				context.taskId,
@@ -230,37 +205,6 @@ export function createNightWorkersCodexMcpServer(
 				arguments: args,
 				evidenceKind: "completion-check",
 				execute: () => completionCheckTool(args),
-			});
-		},
-	);
-
-	server.registerTool(
-		"reviewer_evaluation",
-		{
-			...nightWorkersCodexToolManifest.reviewer_evaluation,
-		},
-		async ({ runId, rubricId, mode, persist }) => {
-			if (isToolDisabledForExecutionMode("reviewer_evaluation", context)) {
-				return toolResultToMcp(disabledToolResult("reviewer_evaluation"));
-			}
-			const resolvedRunId = firstNonEmpty(
-				runId,
-				context.runId,
-				process.env.NIGHTWORKERS_RUN_ID,
-			);
-			const args = {
-				runId: resolvedRunId,
-				rubricId,
-				mode,
-				persist,
-			};
-			return controlledToolResult({
-				context,
-				runId: resolvedRunId,
-				toolName: "reviewer_evaluation",
-				arguments: args,
-				evidenceKind: "reviewer-evaluation",
-				execute: () => reviewerEvaluationTool(args),
 			});
 		},
 	);
@@ -286,9 +230,6 @@ export function createNightWorkersCodexMcpServer(
 			stripGitDir,
 			initialize,
 		}) => {
-			if (isToolDisabledForExecutionMode("import_project", context)) {
-				return toolResultToMcp(disabledToolResult("import_project"));
-			}
 			const resolved = await resolveTaskRepository({
 				taskId: firstNonEmpty(
 					taskId,
@@ -343,6 +284,7 @@ export function createNightWorkersCodexMcpServer(
 				toolName: "import_project",
 				arguments: args,
 				workspaceIdentity: repository.localPath,
+				idempotentSideEffect: true,
 				execute: () => importProjectTool(args),
 			});
 		},

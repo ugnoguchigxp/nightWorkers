@@ -9,7 +9,6 @@ import {
 	isTransportFailedToolPayload,
 	isValidTodoProgressOperation,
 	readChangedFiles,
-	readCodexRuntimeExecutionMode,
 	readCurrentTodoEvidence,
 	readEventPayload,
 	readExitCode,
@@ -56,28 +55,13 @@ export async function auditCodexMappedEvent(
 	const warnings: CodexContractWarning[] = [];
 	const toolName =
 		typeof payload.toolName === "string" ? payload.toolName : null;
-	const executionMode = readCodexRuntimeExecutionMode(context);
 	const expectedCodexTools = new Set(
 		getNightWorkersCodexToolNames({
-			executionMode,
 			ontologyMcpEnabled: readOntologyMcpEnabled(context),
 		}),
 	);
 	if (toolName?.startsWith("nightworkers.")) {
 		auditState.observedNightWorkersTools.add(toolName);
-		if (
-			executionMode === "planning" &&
-			(toolName === "nightworkers.todo_list" ||
-				toolName === "nightworkers.import_project")
-		) {
-			warnings.push({
-				code: "codex_plan_mode_mutating_tool",
-				severity: "error",
-				message: `Mutating NightWorkers MCP tool observed during planning mode: ${toolName}.`,
-				providerItemId: readString(payload.providerItemId),
-				toolName,
-			});
-		}
 		if (toolName === "nightworkers.todo_list") {
 			auditState.sawAnyNightworkersTodo = true;
 			if (event.type === "tool_call_finished") {
@@ -262,15 +246,6 @@ export async function auditCodexMappedEvent(
 			payload.providerItemId,
 		);
 		auditState.lastChangedFiles = readChangedFiles(payload);
-		if (executionMode === "planning") {
-			warnings.push({
-				code: "codex_plan_mode_file_change",
-				severity: "error",
-				message: "Codex file_change occurred during planning mode.",
-				providerItemId: readString(payload.providerItemId),
-				changedFiles: readChangedFiles(payload),
-			});
-		}
 		if (!hasValidTodoProgressBeforeFileChange(auditState, sequence)) {
 			if (
 				auditState.sawNightworkersTodoList &&

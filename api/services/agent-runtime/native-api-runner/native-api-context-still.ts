@@ -38,16 +38,6 @@ export async function dispatchContextStillTool(input: {
 			input.state,
 		);
 	}
-	const prerequisite = validateContextStillPrerequisites(
-		mcpToolName,
-		input.state,
-	);
-	if (prerequisite) {
-		return continueWith(
-			failedToolResult(prerequisite.code, prerequisite.message),
-			input.state,
-		);
-	}
 	const tool = await resolveContextStillTool(mcpToolName);
 	if (!tool) {
 		return continueWith(
@@ -101,9 +91,7 @@ export async function dispatchContextStillTool(input: {
 			error: toolResult.error ?? result.result.error,
 		},
 	});
-	const nextState: NativeApiDispatchState = { ...input.state };
-	nextStateFromContextStillToolResult(nextState, mcpToolName, toolResult.ok);
-	return continueWith(toolResult, nextState);
+	return continueWith(toolResult, input.state);
 }
 
 function contextStillMcpToolName(
@@ -196,40 +184,6 @@ function validateContextStillArguments(
 		};
 	}
 	return null;
-}
-
-function validateContextStillPrerequisites(
-	toolName:
-		| "initial_instructions"
-		| "context_compile"
-		| "context_decision"
-		| "compile_eval"
-		| "register_candidates",
-	state: NativeApiDispatchState,
-): { code: string; message: string } | null {
-	if (
-		(toolName === "initial_instructions" || toolName === "context_compile") &&
-		!state.specificationRead
-	) {
-		return {
-			code: "SPECIFICATION_REQUIRED",
-			message:
-				"read_current_specification must succeed before contextStill initial_instructions or context_compile so the compiled context is grounded in the current task specification.",
-		};
-	}
-	return null;
-}
-
-export function nextStateFromContextStillToolResult(
-	state: NativeApiDispatchState,
-	toolName: unknown,
-	ok: boolean,
-) {
-	if (!ok) return;
-	if (toolName === "initial_instructions")
-		state.initialInstructionsCompleted = true;
-	if (toolName === "context_compile") state.contextCompiled = true;
-	if (toolName === "compile_eval") state.compileEvalCompleted = true;
 }
 
 async function resolveContextStillTool(

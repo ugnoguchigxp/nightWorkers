@@ -67,6 +67,7 @@ describe("NativeApiSessionStore", () => {
 
 		const turns = await store.listTurns(run.id);
 		const toolCalls = await store.listToolCalls(run.id);
+		const reusableToolCall = await store.getToolCall(run.id, "call-1");
 
 		expect(turns).toHaveLength(1);
 		expect(turns[0]).toMatchObject({
@@ -87,6 +88,10 @@ describe("NativeApiSessionStore", () => {
 			toolName: "read_current_specification",
 			status: "completed",
 			todoSeq: 1,
+		});
+		expect(reusableToolCall?.resultJson).toMatchObject({
+			ok: true,
+			content: '{"ok":true}',
 		});
 	});
 
@@ -163,7 +168,7 @@ describe("NativeApiSessionStore", () => {
 		});
 	});
 
-	it("lists the latest completed previous turn as resumable history", async () => {
+	it("resumes only the latest completed turn from the same run", async () => {
 		const project = await repo.createRepository({
 			name: `TEST: native api resume ${crypto.randomUUID()}`,
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
@@ -174,14 +179,7 @@ describe("NativeApiSessionStore", () => {
 			title: "TEST: native API resume source",
 			status: "running",
 		});
-		const previousRun = await repo.createTaskRun({
-			taskId: task.id,
-			repositoryId: project.id,
-			workerKind: "native-api-runner",
-			status: "completed",
-			timeoutSeconds: 60,
-		});
-		const currentRun = await repo.createTaskRun({
+		const run = await repo.createTaskRun({
 			taskId: task.id,
 			repositoryId: project.id,
 			workerKind: "native-api-runner",
@@ -189,15 +187,10 @@ describe("NativeApiSessionStore", () => {
 			timeoutSeconds: 60,
 		});
 		const store = new NativeApiSessionStore();
-		const agentModeSessionId = crypto.randomUUID();
 		const failedTurn = await store.createTurn({
-			runId: previousRun.id,
+			runId: run.id,
 			taskId: task.id,
-			agentModeSessionId,
 			turnIndex: 1,
-			provider: "openai",
-			model: "failed-model",
-			executionMode: "implementation",
 			history: [{ type: "user", source: "user", content: "failed source" }],
 		});
 		await store.finishTurn({
@@ -205,32 +198,10 @@ describe("NativeApiSessionStore", () => {
 			status: "failed",
 			history: [{ type: "user", source: "user", content: "failed source" }],
 		});
-		const crossModeTurn = await store.createTurn({
-			runId: previousRun.id,
-			taskId: task.id,
-			agentModeSessionId,
-			turnIndex: 2,
-			provider: "openai",
-			model: "api-model",
-			executionMode: "planning",
-			history: [
-				{ type: "user", source: "user", content: "planning request" },
-				{ type: "assistant", content: "planning answer" },
-			],
-		});
-		await store.finishTurn({
-			turnId: crossModeTurn.id,
-			status: "completed",
-			history: [
-				{ type: "user", source: "user", content: "planning request" },
-				{ type: "assistant", content: "planning answer" },
-			],
-		});
 		const completedTurn = await store.createTurn({
-			runId: previousRun.id,
+			runId: run.id,
 			taskId: task.id,
-			agentModeSessionId,
-			turnIndex: 3,
+			turnIndex: 2,
 			provider: "openai",
 			model: "api-model",
 			executionMode: "implementation",
@@ -248,18 +219,11 @@ describe("NativeApiSessionStore", () => {
 			],
 		});
 
-		const resumable = await store.getLatestCompletedTurnForPreviousRun({
-			taskId: task.id,
-			runId: currentRun.id,
-			agentModeSessionId,
-			provider: "openai",
-			model: "api-model",
-			executionMode: "implementation",
-		});
+		const resumable = await store.getLatestCompletedTurnForRun(run.id);
 
 		expect(resumable).toMatchObject({
 			id: completedTurn.id,
-			runId: previousRun.id,
+			runId: run.id,
 			taskId: task.id,
 			status: "completed",
 		});
@@ -268,34 +232,7 @@ describe("NativeApiSessionStore", () => {
 			{ type: "assistant", content: "previous answer" },
 		]);
 		await expect(
-			store.getLatestCompletedTurnForPreviousRun({
-				taskId: task.id,
-				runId: currentRun.id,
-				agentModeSessionId,
-				provider: "openai",
-				model: "different-model",
-				executionMode: "implementation",
-			}),
-		).resolves.toBeNull();
-		await expect(
-			store.getLatestCompletedTurnForPreviousRun({
-				taskId: task.id,
-				runId: currentRun.id,
-				agentModeSessionId,
-				provider: "openai",
-				model: "api-model",
-				executionMode: "review",
-			}),
-		).resolves.toBeNull();
-		await expect(
-			store.getLatestCompletedTurnForPreviousRun({
-				taskId: task.id,
-				runId: currentRun.id,
-				agentModeSessionId: crypto.randomUUID(),
-				provider: "openai",
-				model: "api-model",
-				executionMode: "implementation",
-			}),
+			store.getLatestCompletedTurnForRun(crypto.randomUUID()),
 		).resolves.toBeNull();
 	});
 });

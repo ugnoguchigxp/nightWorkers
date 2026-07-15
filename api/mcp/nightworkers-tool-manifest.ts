@@ -13,7 +13,6 @@ import {
 	nightWorkersListOntologyModulesInputSchema,
 	nightWorkersListRecentSpecificationsInputSchema,
 	nightWorkersReadCurrentSpecificationInputSchema,
-	nightWorkersReviewerEvaluationInputSchema,
 	nightWorkersRunCheckInputSchema,
 	nightWorkersTodoListInputSchema,
 } from "./nightworkers-tool-schemas";
@@ -46,7 +45,7 @@ export const nightWorkersCodexToolManifest = {
 	todo_list: {
 		title: "Todo List",
 		description:
-			"Maintain the current run TodoList with one JSON operation. todo_list operation=replace structurally replans the TodoList and requires todoListReplaceReason when a Todo is already running. todo_list operation=start/done/block/fail transitions existing Todo state. todo_list operation=done automatically starts the next pending Todo.",
+			"ID・revision指定のcommandでTodo planを明示更新します。replace_plan、start、resume、transition、record_failure、update_contextを提供し、次Todoをhostが推測しません。",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
@@ -58,7 +57,7 @@ export const nightWorkersCodexToolManifest = {
 	run_check: {
 		title: "Run Check",
 		description:
-			"Run a NightWorkers-managed check command and store raw stdout/stderr as formal verification evidence. Use conditionIds to link the command to the AC-xxx completion conditions it directly verifies. An unmapped broad gate is supplemental evidence only.",
+			"Run a check command in the registered repository and return a typed result with raw stdout/stderr. Stored verification data is an observable fact, not an automatic Todo or Run completion gate.",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
@@ -70,7 +69,7 @@ export const nightWorkersCodexToolManifest = {
 	completion_check: {
 		title: "Completion Check",
 		description:
-			"Check required Verification Checklist items against managed NightWorkers test evidence before closeout.",
+			"Read the current verification checklist projection and return a typed status. The Coding Agent decides how to use the result.",
 		annotations: {
 			readOnlyHint: true,
 			destructiveHint: false,
@@ -78,18 +77,6 @@ export const nightWorkersCodexToolManifest = {
 		},
 		approvalMode: "approve",
 		inputSchema: nightWorkersCompletionCheckInputSchema,
-	},
-	reviewer_evaluation: {
-		title: "Reviewer Evaluation",
-		description:
-			"Run the final NightWorkers reviewer evaluation for a Review Mode run. changes_requested is actionable review feedback, not a tool error: fix the findings, rerun required checks, and rerun reviewer_evaluation until approved.",
-		annotations: {
-			readOnlyHint: false,
-			destructiveHint: false,
-			openWorldHint: false,
-		},
-		approvalMode: "approve",
-		inputSchema: nightWorkersReviewerEvaluationInputSchema,
 	},
 	import_project: {
 		title: "Import Project",
@@ -179,24 +166,6 @@ export const nightWorkersCodexToolManifest = {
 
 export type NightWorkersCodexToolName =
 	keyof typeof nightWorkersCodexToolManifest;
-export type NightWorkersCodexToolExecutionMode =
-	| "planning"
-	| "implementation"
-	| "test"
-	| "review"
-	| "general_answer";
-
-const PLAN_MODE_READ_ONLY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
-	"read_current_specification",
-	"list_recent_specifications",
-	"list_modules",
-	"get_module_ontology",
-	"classify_goal",
-	"compile_module_context",
-	"check_boundary",
-	"get_verification_plan",
-]);
-
 const ONTOLOGY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
 	"list_modules",
 	"get_module_ontology",
@@ -207,13 +176,12 @@ const ONTOLOGY_CODEX_TOOLS = new Set<NightWorkersCodexToolName>([
 ]);
 
 export function getNightWorkersCodexToolNames(
-	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
+	input: { ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.keys(nightWorkersCodexToolManifest)
 		.filter((tool): tool is NightWorkersCodexToolName =>
 			isNightWorkersCodexToolAllowedForMode(
 				tool as NightWorkersCodexToolName,
-				input.executionMode,
 				input.ontologyMcpEnabled,
 			),
 		)
@@ -221,14 +189,13 @@ export function getNightWorkersCodexToolNames(
 }
 
 export function buildNightWorkersCodexToolApprovalConfig(
-	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
+	input: { ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.fromEntries(
 		Object.entries(nightWorkersCodexToolManifest)
 			.filter(([name]) =>
 				isNightWorkersCodexToolAllowedForMode(
 					name as NightWorkersCodexToolName,
-					input.executionMode,
 					input.ontologyMcpEnabled,
 				),
 			)
@@ -240,13 +207,12 @@ export function buildNightWorkersCodexToolApprovalConfig(
 }
 
 export function buildNightWorkersCodexToolConfigLines(
-	input: { executionMode?: string; ontologyMcpEnabled?: boolean } = {},
+	input: { ontologyMcpEnabled?: boolean } = {},
 ) {
 	return Object.entries(nightWorkersCodexToolManifest)
 		.filter(([name]) =>
 			isNightWorkersCodexToolAllowedForMode(
 				name as NightWorkersCodexToolName,
-				input.executionMode,
 				input.ontologyMcpEnabled,
 			),
 		)
@@ -259,13 +225,10 @@ export function buildNightWorkersCodexToolConfigLines(
 
 export function isNightWorkersCodexToolAllowedForMode(
 	tool: NightWorkersCodexToolName,
-	executionMode?: string,
 	ontologyMcpEnabled = false,
 ) {
 	if (!ontologyMcpEnabled && ONTOLOGY_CODEX_TOOLS.has(tool)) return false;
-	if (executionMode === "test" && tool === "reviewer_evaluation") return false;
-	if (executionMode !== "planning") return true;
-	return PLAN_MODE_READ_ONLY_CODEX_TOOLS.has(tool);
+	return true;
 }
 
 export function toNightWorkersJsonSchema(schema: z.ZodTypeAny) {

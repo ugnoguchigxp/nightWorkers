@@ -38,13 +38,10 @@ import {
 	pushRunGitCloseout,
 	queueWorkbenchSession,
 	requestMissionPlanningRevision,
-	startReviewRun,
-	startReviewSession,
-	startTestModeRun,
+	resumeTaskRunTodo,
 	startWorkbenchRun,
 	stopBackgroundProcess,
 	stopRun,
-	submitRunReview,
 	updateMissionGoal,
 	updateMissionTaskCandidate,
 } from "../src/modules/nightworkers/nightWorkersCommands";
@@ -81,21 +78,16 @@ describe("nightWorkersCommands", () => {
 		await createWorkbenchSession({ repositoryId: "repo-1" });
 		await deleteTask("task-1");
 		await startWorkbenchRun("task-1");
-		await startTestModeRun("task-1", {
-			projectId: "repo-1",
-			specArtifactId: "spec-1",
-			mode: "test",
-			action: "run_unit_tests",
-		});
 		await stopRun("run-1");
+		await resumeTaskRunTodo("run-1", "todo-1", {
+			expectedTodoRevision: 2,
+			userContext: "staging環境を使用する",
+		});
 		await stopBackgroundProcess("process-1");
 		await queueWorkbenchSession("task-1");
 		await archiveWorkbenchSession("task-1");
-		await submitRunReview("run-1", { action: "complete", note: "done" });
 		await fetchReviewRecommendation("run-1");
-		await startReviewSession("run-1");
 		await fetchLatestTaskReviewSession("task-1");
-		await startReviewRun("review-1", { options: { codeReview: true } });
 		await fetchRunGitCloseout("run-1");
 		await commitRunGitCloseout("run-1");
 		await pushRunGitCloseout("run-1");
@@ -115,9 +107,15 @@ describe("nightWorkersCommands", () => {
 			}),
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			11,
-			"/api/tasks/task-1/test-mode-run",
-			expect.objectContaining({ method: "POST" }),
+			12,
+			"/api/runs/run-1/todos/todo-1/resume",
+			expect.objectContaining({
+				method: "POST",
+				body: JSON.stringify({
+					expectedTodoRevision: 2,
+					userContext: "staging環境を使用する",
+				}),
+			}),
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			13,
@@ -134,17 +132,12 @@ describe("nightWorkersCommands", () => {
 			},
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			20,
-			"/api/review-sessions/review-1/run",
-			expect.objectContaining({ method: "POST" }),
-		);
-		expect(fetchMock).toHaveBeenNthCalledWith(
-			22,
+			19,
 			"/api/runs/run-1/git/commit",
 			expect.objectContaining({ method: "POST" }),
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			23,
+			20,
 			"/api/runs/run-1/git/push",
 			expect.objectContaining({ method: "POST" }),
 		);
