@@ -1,11 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
-	missionPilotAgentTurns,
-	missionPilotConversationItems,
-	missionPilotToolCalls,
-} from "../../db/mission-pilot-agent-schema";
-import {
 	missionPilotArtifactCorrectionRuns,
 	missionPilotCloseouts,
 	missionPilotEvents,
@@ -68,38 +63,6 @@ export async function getMissionPilotExecution(sessionId: string) {
 			"MISSION_PILOT_NOT_FOUND",
 			"Mission Pilot session not found",
 		);
-	if (session.runtimeKind === "agent") {
-		const [agentTurns, toolCalls, conversation] = await Promise.all([
-			db
-				.select()
-				.from(missionPilotAgentTurns)
-				.where(eq(missionPilotAgentTurns.sessionId, sessionId))
-				.orderBy(asc(missionPilotAgentTurns.turnIndex)),
-			db
-				.select()
-				.from(missionPilotToolCalls)
-				.where(eq(missionPilotToolCalls.sessionId, sessionId))
-				.orderBy(asc(missionPilotToolCalls.createdAt)),
-			db
-				.select()
-				.from(missionPilotConversationItems)
-				.where(eq(missionPilotConversationItems.sessionId, sessionId))
-				.orderBy(asc(missionPilotConversationItems.sequence)),
-		]);
-		return {
-			session,
-			phaseRuns: [],
-			testSnapshots: [],
-			reviewDecisions: [],
-			closeouts: [],
-			events: [],
-			activityEvents: [],
-			messages: [],
-			agentTurns,
-			toolCalls,
-			conversation,
-		};
-	}
 	const [
 		phaseRuns,
 		testSnapshots,
@@ -243,9 +206,6 @@ export async function reconcileMissionPilotExecution(sessionId: string) {
 			"MISSION_PILOT_NOT_FOUND",
 			"Mission Pilot session not found",
 		);
-	if (session.runtimeKind === "agent") {
-		return getMissionPilotExecution(sessionId);
-	}
 	await releaseMissionPilotQueueHandoff(session.taskId);
 	return getMissionPilotExecution(sessionId);
 }

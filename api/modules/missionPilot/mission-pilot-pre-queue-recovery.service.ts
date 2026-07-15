@@ -186,26 +186,23 @@ export async function reconcileMissionPilotPreQueueSessions() {
 		.select()
 		.from(missionPilotSessions)
 		.where(
-			and(
-				eq(missionPilotSessions.runtimeKind, "legacy"),
-				inArray(missionPilotSessions.phase, [
-					"created",
-					"starting",
-					"initial_intake",
-					"waiting_intervention",
-					"generating_artifacts",
-					"reviewing_plan",
-					"revising_plan",
-					"awaiting_artifact_correction",
-					"correcting_artifact",
-					"validating_artifact",
-					"revising_dependencies",
-					"queueing",
-					"queued",
-					"repository_bootstrapping",
-					"attention",
-				]),
-			),
+			inArray(missionPilotSessions.phase, [
+				"created",
+				"starting",
+				"initial_intake",
+				"waiting_intervention",
+				"generating_artifacts",
+				"reviewing_plan",
+				"revising_plan",
+				"awaiting_artifact_correction",
+				"correcting_artifact",
+				"validating_artifact",
+				"revising_dependencies",
+				"queueing",
+				"queued",
+				"repository_bootstrapping",
+				"attention",
+			]),
 		);
 	let classified = 0;
 	for (const session of sessions) {

@@ -1,10 +1,4 @@
 export const enMissionPilot = {
-	"missionPilot.confirmation.title": "Confirmation required",
-	"missionPilot.confirmation.approve": "Approve this action",
-	"missionPilot.confirmation.deny": "Deny",
-	"missionPilot.confirmation.loadFailed": "Could not load pending confirmation",
-	"missionPilot.confirmation.resolveFailed":
-		"Could not save confirmation decision",
 	"missionPilot.play": "Play Mission Pilot",
 	"missionPilot.pause": "Pause Mission Pilot",
 	"missionPilot.pauseCountdown": "Pause Mission Pilot (resumes in {{time}})",
@@ -14,12 +8,6 @@ export const enMissionPilot = {
 	"missionPilot.playing": "Playing",
 	"missionPilot.stopped": "Stopped",
 	"missionPilot.attention": "Attention required",
-	"missionPilot.runtime.stopped": "Stopped",
-	"missionPilot.runtime.idle": "Ready",
-	"missionPilot.runtime.running": "Thinking",
-	"missionPilot.runtime.waiting": "Waiting for an event",
-	"missionPilot.runtime.attention": "Attention required",
-	"missionPilot.runtime.completed": "Completed",
 	"missionPilot.playFailed": "Could not play Mission Pilot",
 	"missionPilot.stopFailed": "Could not stop Mission Pilot",
 } as const;

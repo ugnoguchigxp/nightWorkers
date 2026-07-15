@@ -1,10 +1,4 @@
 export const jaMissionPilot = {
-	"missionPilot.confirmation.title": "実行前の確認が必要です",
-	"missionPilot.confirmation.approve": "この操作を承認",
-	"missionPilot.confirmation.deny": "拒否",
-	"missionPilot.confirmation.loadFailed":
-		"確認待ちの操作を取得できませんでした",
-	"missionPilot.confirmation.resolveFailed": "確認結果を保存できませんでした",
 	"missionPilot.play": "Mission Pilotを再生",
 	"missionPilot.pause": "Mission Pilotを一時停止",
 	"missionPilot.pauseCountdown": "Mission Pilotを一時停止（再開まで {{time}}）",
@@ -14,12 +8,6 @@ export const jaMissionPilot = {
 	"missionPilot.playing": "再生中",
 	"missionPilot.stopped": "停止中",
 	"missionPilot.attention": "確認が必要です",
-	"missionPilot.runtime.stopped": "停止中",
-	"missionPilot.runtime.idle": "待機準備中",
-	"missionPilot.runtime.running": "判断中",
-	"missionPilot.runtime.waiting": "次のイベントを待機中",
-	"missionPilot.runtime.attention": "確認が必要です",
-	"missionPilot.runtime.completed": "完了",
 	"missionPilot.playFailed": "Mission Pilotを再生できませんでした",
 	"missionPilot.stopFailed": "Mission Pilotを停止できませんでした",
 } as const;

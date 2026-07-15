@@ -349,14 +349,6 @@
 			"requiredEvidence": ["ui", "api", "database", "queue"]
 		},
 		{
-			"id": "NW-E2E-MISSION-PILOT-AGENT-001",
-			"title": "Persistent Agentの不可逆操作をUIで承認または拒否する",
-			"priority": "P0",
-			"suite": "regression",
-			"gateStatus": "required",
-			"requiredEvidence": ["ui", "api", "database", "task-events"]
-		},
-		{
 			"id": "NW-E2E-TECH-STACK-001",
 			"title": "Projectの実ステップを用途別に計測保存し再表示する",
 			"priority": "P1",

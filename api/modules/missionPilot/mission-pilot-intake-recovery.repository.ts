@@ -17,7 +17,6 @@ export async function recoverInterruptedIntakeSessions() {
 		})
 		.where(
 			and(
-				eq(missionPilotSessions.runtimeKind, "legacy"),
 				eq(missionPilotSessions.desiredState, "playing"),
 				isNull(missionPilotSessions.activeRunId),
 				or(

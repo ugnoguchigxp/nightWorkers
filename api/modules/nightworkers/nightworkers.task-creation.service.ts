@@ -1,6 +1,5 @@
 import type { MissionPilotSourceRef } from "../../../shared/schemas/mission-pilot.schema";
 import { type DbTransaction, db } from "../../db/client";
-import { readMissionPilotDefaultRuntimeKindAsync } from "../missionPilot/agent/mission-pilot-runtime-settings";
 import {
 	createSession as createMissionPilotSession,
 	toControlSummary,
@@ -15,7 +14,6 @@ export async function createTaskWithMissionPilot(
 	input: CreateTaskInput,
 	transaction?: DbTransaction,
 ) {
-	const runtimeKind = await readMissionPilotDefaultRuntimeKindAsync();
 	const create = async (tx: DbTransaction) => {
 		const { missionPilotSourceRef, ...taskInput } = input;
 		const task = await repo.createTask(taskInput, tx);
@@ -32,7 +30,6 @@ export async function createTaskWithMissionPilot(
 				task: taskForSession,
 				sourceKind: sourceRef.source,
 				sourceId: sourceRef.id,
-				runtimeKind,
 			},
 			tx,
 		);

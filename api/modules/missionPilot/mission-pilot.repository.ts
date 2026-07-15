@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import type {
-	MissionPilotAuthorizationV3,
-	MissionPilotSourceRef,
+import {
+	type MissionPilotAuthorizationV3,
+	type MissionPilotSourceRef,
+	missionPilotControlSummarySchema,
 } from "../../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotRuntimeKind } from "../../../shared/schemas/mission-pilot-agent.schema";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -12,7 +12,6 @@ import {
 } from "../../db/mission-pilot-schema";
 import { taskMessages, tasks } from "../../db/schema";
 import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.trace-provenance";
-import { toControlSummary } from "./agent/mission-pilot-control-summary";
 import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
 
 type Db = typeof db | DbTransaction;
@@ -20,7 +19,36 @@ type SessionRow = typeof missionPilotSessions.$inferSelect;
 
 export class MissionPilotStateConflictError extends Error {}
 
-export { toControlSummary };
+export function toControlSummary(row: SessionRow) {
+	const activityState =
+		row.phase === "attention"
+			? "attention"
+			: row.phase === "starting"
+				? "starting"
+				: row.phase === "stopping"
+					? "stopping"
+					: row.activeRunId
+						? "running"
+						: "idle";
+	return missionPilotControlSummarySchema.parse({
+		taskId: row.taskId,
+		desiredState: row.desiredState,
+		activityState,
+		phase: row.phase,
+		authorizationVersion: row.authorizationVersion ?? null,
+		initialPromptState: row.initialPromptState,
+		initialPromptMessageId: row.initialPromptMessageId ?? null,
+		activeRunId: row.activeRunId ?? null,
+		nextWakeAt: row.nextWakeAt ?? null,
+		version: row.version,
+		lastErrorCode: row.lastErrorCode ?? null,
+		lastError: row.lastErrorMessage ?? null,
+		stoppedAt: row.stoppedAt ?? null,
+		queueHandoff: row.queueHandoffJson ?? null,
+		preQueueDiagnostic: row.preQueueDiagnosticJson ?? null,
+		updatedAt: row.updatedAt,
+	});
+}
 
 export function hasValidAuthorization(row: SessionRow) {
 	const authorization = row.authorizationJson;
@@ -55,7 +83,6 @@ export async function createSession(
 		};
 		sourceKind: MissionPilotSourceRef["source"];
 		sourceId: string;
-		runtimeKind?: MissionPilotRuntimeKind;
 	},
 	tx: DbTransaction,
 ) {
@@ -91,7 +118,6 @@ export async function createSession(
 			sourceId: input.sourceId,
 			initialPromptSnapshot: objective,
 			contextDigest: digest,
-			runtimeKind: input.runtimeKind ?? "legacy",
 			createdAt: now,
 			updatedAt: now,
 		})
@@ -123,7 +149,6 @@ export async function listPlayingSessionsWithActiveRuns() {
 		.from(missionPilotSessions)
 		.where(
 			and(
-				eq(missionPilotSessions.runtimeKind, "legacy"),
 				eq(missionPilotSessions.desiredState, "playing"),
 				isNotNull(missionPilotSessions.activeRunId),
 			),
@@ -145,7 +170,6 @@ export async function backfillMissingTaskSessions() {
 					task,
 					sourceKind: "task",
 					sourceId: task.id,
-					runtimeKind: "legacy",
 				},
 				tx,
 			);
