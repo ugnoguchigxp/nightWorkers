@@ -6,6 +6,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type {
+	MissionPilotActionConfirmationStatus,
 	MissionPilotAgentTurnStatus,
 	MissionPilotConversationItemKind,
 	MissionPilotTaskEventType,
@@ -155,6 +156,52 @@ export const missionPilotTaskEventInbox = sqliteTable(
 			table.sessionId,
 			table.consumedAt,
 			table.availableAt,
+		),
+	}),
+);
+
+export const missionPilotActionConfirmations = sqliteTable(
+	"mission_pilot_action_confirmations",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		requestedToolCallId: text("requested_tool_call_id")
+			.notNull()
+			.references(() => missionPilotToolCalls.id, { onDelete: "cascade" }),
+		consumedByToolCallId: text("consumed_by_tool_call_id").references(
+			() => missionPilotToolCalls.id,
+			{ onDelete: "set null" },
+		),
+		actionId: text("action_id").notNull(),
+		argumentsJson: text("arguments_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		argumentsDigest: text("arguments_digest").notNull(),
+		taskRevision: integer("task_revision").notNull(),
+		activeKey: text("active_key"),
+		status: text("status")
+			.$type<MissionPilotActionConfirmationStatus>()
+			.notNull()
+			.default("pending"),
+		version: integer("version").notNull().default(0),
+		expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+		consumedAt: integer("consumed_at", { mode: "timestamp" }),
+	},
+	(table) => ({
+		activeUidx: uniqueIndex(
+			"mission_pilot_action_confirmations_active_uidx",
+		).on(table.sessionId, table.activeKey),
+		pendingIdx: index("mission_pilot_action_confirmations_pending_idx").on(
+			table.taskId,
+			table.status,
+			table.createdAt,
 		),
 	}),
 );

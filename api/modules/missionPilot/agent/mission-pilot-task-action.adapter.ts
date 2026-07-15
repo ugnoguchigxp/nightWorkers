@@ -53,6 +53,7 @@ import {
 } from "../../review/review-mode.service";
 import { createPlanArtifactSourceSelection } from "../../specification/plan-artifact-source-selection";
 import { generateFeaturePlanArtifact } from "../../specification/specification-generation.service";
+import { requireOrConsumeMissionPilotActionConfirmation } from "./mission-pilot-action-confirmation.repository";
 import {
 	missionPilotActionFailed,
 	toMissionPilotActionFailure,
@@ -112,6 +113,44 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				`authorization scope ${definition.authorizationScope} is not granted`,
 				false,
 			);
+		}
+		if (definition.confirmationRequired) {
+			const confirmation = await requireOrConsumeMissionPilotActionConfirmation(
+				{
+					sessionId: input.sessionId,
+					taskId: input.taskId,
+					toolCallId: input.toolCallId,
+					actionId: input.actionId,
+					argumentsJson: validated.data,
+					taskRevision: task.updatedAt.getTime(),
+				},
+			);
+			if (confirmation.kind === "denied") {
+				return missionPilotActionFailed(
+					input,
+					"domain_precondition",
+					"この操作はユーザーに拒否されています。Taskの状態が変わるまで再要求しないでください。",
+					false,
+				);
+			}
+			if (confirmation.kind === "stale_revision") {
+				return missionPilotActionFailed(
+					input,
+					"revision_conflict",
+					"Task revisionが変更されました。最新のTask Factを読み直してください。",
+					false,
+				);
+			}
+			if (confirmation.kind !== "consumed") {
+				return missionPilotActionFailed(
+					input,
+					"confirmation_required",
+					confirmation.kind === "pending"
+						? `ユーザー確認が必要です (confirmation: ${confirmation.confirmation.id})`
+						: "確認状態が競合しました。最新状態を読み直してください。",
+					false,
+				);
+			}
 		}
 		try {
 			const data = await executeAction(

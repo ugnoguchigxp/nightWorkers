@@ -30,10 +30,25 @@ export type MissionPilotTaskReadPort = {
 		taskId: string;
 		sessionId: string;
 	}): Promise<MissionPilotTaskReadModel>;
-	readCurrentSpecification(taskId: string): Promise<unknown>;
+	readCurrentSpecification(
+		taskId: string,
+		options?: { cursor?: number; maxChars?: number },
+	): Promise<unknown>;
 	readQuestionnaireDecisions(taskId: string): Promise<unknown>;
-	readPlanArtifact(taskId: string, artifactId: string): Promise<unknown>;
-	readRunOutcome(runId: string): Promise<MissionPilotRunOutcome>;
+	readPlanArtifact(
+		taskId: string,
+		artifactId: string,
+		options?: { cursor?: number; maxChars?: number },
+	): Promise<unknown>;
+	readRunOutcome(
+		runId: string,
+		options?: { cursor?: number; maxChars?: number },
+	): Promise<MissionPilotRunOutcome>;
+	readRunChangeSummary(runId: string): Promise<unknown>;
+	readRunVerification(
+		runId: string,
+		options?: { cursor?: number; limit?: number },
+	): Promise<unknown>;
 	listAvailableTaskActions(input: {
 		taskId: string;
 		sessionId: string;
@@ -42,6 +57,7 @@ export type MissionPilotTaskReadPort = {
 
 export type MissionPilotTaskActionPort = {
 	execute(input: {
+		toolCallId: string;
 		taskId: string;
 		sessionId: string;
 		actionId: string;

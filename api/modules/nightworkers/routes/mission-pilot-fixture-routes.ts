@@ -25,10 +25,12 @@ import {
 	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
 import { createOpenApiRouter } from "../../../lib/openapi";
+import { registerFixtureProviderToolTurns } from "../../../services/structured-llm/fixture-tool-provider";
 import * as missionPilotRepo from "../../missionPilot/mission-pilot.repository";
 import { buildFeaturePlanImplementationPlanMetadata } from "../../specification/feature-plan-implementation-plan";
 import * as repo from "../nightworkers.repository";
 import { codingAgentChatTrace } from "../nightworkers.trace-provenance";
+import { registerAgentTurnsFixtureRoute } from "./mission-pilot-agent-fixture-route";
 
 const preparePreQueueHandoffFixtureRoute = createRoute({
 	method: "post",
@@ -117,6 +119,17 @@ const setPreQueueDiagnosticFixtureRoute = createRoute({
 });
 
 export const missionPilotFixtureRouter = createOpenApiRouter()
+	.openapi(registerAgentTurnsFixtureRoute, async (c) => {
+		if (
+			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
+			c.req.header("x-nightworkers-e2e") !== "1"
+		) {
+			return c.json({ error: "Not found" }, 404);
+		}
+		const input = c.req.valid("json");
+		registerFixtureProviderToolTurns(input.taskId, input.turns);
+		return c.json({ ok: true as const }, 201);
+	})
 	.openapi(preparePreQueueHandoffFixtureRoute, async (c) => {
 		if (
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||

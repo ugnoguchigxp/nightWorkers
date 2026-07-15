@@ -1,4 +1,10 @@
 export const enMissionPilot = {
+	"missionPilot.confirmation.title": "Confirmation required",
+	"missionPilot.confirmation.approve": "Approve this action",
+	"missionPilot.confirmation.deny": "Deny",
+	"missionPilot.confirmation.loadFailed": "Could not load pending confirmation",
+	"missionPilot.confirmation.resolveFailed":
+		"Could not save confirmation decision",
 	"missionPilot.play": "Play Mission Pilot",
 	"missionPilot.pause": "Pause Mission Pilot",
 	"missionPilot.pauseCountdown": "Pause Mission Pilot (resumes in {{time}})",

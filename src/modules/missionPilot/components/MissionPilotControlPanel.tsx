@@ -2,6 +2,11 @@ import { Loader2, Pause, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotActionConfirmation } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import {
+	fetchMissionPilotActionConfirmations,
+	resolveMissionPilotActionConfirmation,
+} from "../missionPilotCommands";
 import { missionPilotPresentation } from "../missionPilotPresentation";
 import { useMissionPilotControls } from "../useMissionPilotControls";
 
@@ -36,9 +41,99 @@ export function MissionPilotControlPanel({
 		summary.runtimeKind === "agent"
 			? t(`missionPilot.runtime.${summary.runtimeState}`)
 			: null;
+	const [confirmations, setConfirmations] = useState<
+		MissionPilotActionConfirmation[]
+	>([]);
+	const [resolvingConfirmation, setResolvingConfirmation] = useState(false);
+	const [confirmationError, setConfirmationError] = useState<string | null>(
+		null,
+	);
+
+	useEffect(() => {
+		if (
+			placement !== "composer" ||
+			summary.runtimeKind !== "agent" ||
+			summary.runtimeState !== "attention"
+		) {
+			setConfirmations([]);
+			return;
+		}
+		let active = true;
+		setConfirmationError(null);
+		void fetchMissionPilotActionConfirmations(taskId)
+			.then(async (response) => {
+				if (!response.ok)
+					throw new Error(t("missionPilot.confirmation.loadFailed"));
+				const rows =
+					(await response.json()) as MissionPilotActionConfirmation[];
+				if (active)
+					setConfirmations(rows.filter((row) => row.status === "pending"));
+			})
+			.catch((error) => {
+				if (active)
+					setConfirmationError(
+						error instanceof Error ? error.message : String(error),
+					);
+			});
+		return () => {
+			active = false;
+		};
+	}, [placement, summary.runtimeKind, summary.runtimeState, t, taskId]);
+
+	const confirmation = confirmations[0] ?? null;
+	const resolveConfirmation = async (decision: "approved" | "denied") => {
+		if (!confirmation || resolvingConfirmation) return;
+		setResolvingConfirmation(true);
+		setConfirmationError(null);
+		try {
+			const response = await resolveMissionPilotActionConfirmation(
+				confirmation,
+				decision,
+			);
+			if (!response.ok)
+				throw new Error(t("missionPilot.confirmation.resolveFailed"));
+			setConfirmations((current) =>
+				current.filter((row) => row.id !== confirmation.id),
+			);
+		} catch (error) {
+			setConfirmationError(
+				error instanceof Error ? error.message : String(error),
+			);
+		} finally {
+			setResolvingConfirmation(false);
+		}
+	};
 
 	return (
 		<div className={className} aria-live="polite">
+			{placement === "composer" && confirmation ? (
+				<div className="absolute bottom-full right-0 z-50 mb-2 w-80 rounded-md border border-amber-500/40 bg-background p-3 text-sm shadow-lg">
+					<div className="font-medium">
+						{t("missionPilot.confirmation.title")}: {confirmation.actionId}
+					</div>
+					<pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-xs">
+						{JSON.stringify(confirmation.arguments, null, 2)}
+					</pre>
+					<div className="mt-2 flex gap-2">
+						<button
+							type="button"
+							className="rounded bg-primary px-3 py-1 text-primary-foreground"
+							disabled={resolvingConfirmation}
+							onClick={() => void resolveConfirmation("approved")}
+						>
+							{t("missionPilot.confirmation.approve")}
+						</button>
+						<button
+							type="button"
+							className="rounded border px-3 py-1"
+							disabled={resolvingConfirmation}
+							onClick={() => void resolveConfirmation("denied")}
+						>
+							{t("missionPilot.confirmation.deny")}
+						</button>
+					</div>
+				</div>
+			) : null}
 			<button
 				type="button"
 				className="mission-pilot-control-button"
@@ -82,6 +177,11 @@ export function MissionPilotControlPanel({
 			{controls.error ? (
 				<span className="sr-only" role="status">
 					{controls.error}
+				</span>
+			) : null}
+			{confirmationError ? (
+				<span className="text-xs text-destructive" role="alert">
+					{confirmationError}
 				</span>
 			) : null}
 		</div>

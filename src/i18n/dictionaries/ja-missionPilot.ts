@@ -1,4 +1,10 @@
 export const jaMissionPilot = {
+	"missionPilot.confirmation.title": "実行前の確認が必要です",
+	"missionPilot.confirmation.approve": "この操作を承認",
+	"missionPilot.confirmation.deny": "拒否",
+	"missionPilot.confirmation.loadFailed":
+		"確認待ちの操作を取得できませんでした",
+	"missionPilot.confirmation.resolveFailed": "確認結果を保存できませんでした",
 	"missionPilot.play": "Mission Pilotを再生",
 	"missionPilot.pause": "Mission Pilotを一時停止",
 	"missionPilot.pauseCountdown": "Mission Pilotを一時停止（再開まで {{time}}）",

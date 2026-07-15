@@ -46,6 +46,7 @@ export const missionPilotTaskEventTypeSchema = z.enum([
 	"task_run.started",
 	"task_run.terminal",
 	"task_action.failed",
+	"task_action.confirmation_resolved",
 	"permission.changed",
 	"mission_pilot.resume_requested",
 	"mission_pilot.retry_timer_elapsed",
@@ -53,6 +54,7 @@ export const missionPilotTaskEventTypeSchema = z.enum([
 ]);
 
 export const missionPilotActionFailureKindSchema = z.enum([
+	"confirmation_required",
 	"transport",
 	"timeout",
 	"rate_limit",
@@ -68,6 +70,36 @@ export const missionPilotActionFailureKindSchema = z.enum([
 	"outcome_unknown",
 	"unknown",
 ]);
+
+export const missionPilotActionConfirmationStatusSchema = z.enum([
+	"pending",
+	"approved",
+	"denied",
+	"expired",
+	"consumed",
+	"cancelled",
+]);
+
+export const missionPilotActionConfirmationSchema = z.object({
+	id: z.string().uuid(),
+	sessionId: z.string().uuid(),
+	taskId: z.string().uuid(),
+	actionId: z.string().min(1),
+	arguments: z.record(z.string(), z.unknown()),
+	argumentsDigest: z.string().min(1),
+	taskRevision: z.number().int().nonnegative(),
+	status: missionPilotActionConfirmationStatusSchema,
+	version: z.number().int().nonnegative(),
+	expiresAt: z.string().datetime(),
+	createdAt: z.string().datetime(),
+	resolvedAt: z.string().datetime().nullable(),
+	consumedAt: z.string().datetime().nullable(),
+});
+
+export const resolveMissionPilotActionConfirmationSchema = z.object({
+	expectedVersion: z.number().int().nonnegative(),
+	decision: z.enum(["approved", "denied"]),
+});
 
 export const missionPilotActionFailureSchema = z.object({
 	kind: missionPilotActionFailureKindSchema,
@@ -96,6 +128,17 @@ export const missionPilotRunOutcomeSchema = z.object({
 	executionMode: z.string().nullable(),
 	terminalState: z.string(),
 	finalReport: z.string().nullable(),
+	finalReportPage: z
+		.object({
+			cursor: z.number().int().nonnegative(),
+			chars: z.number().int().nonnegative(),
+			bytes: z.number().int().nonnegative(),
+			totalChars: z.number().int().nonnegative(),
+			totalBytes: z.number().int().nonnegative(),
+			nextCursor: z.number().int().nonnegative().nullable(),
+			truncated: z.boolean(),
+		})
+		.optional(),
 	blocker: z
 		.object({
 			code: z.string().nullable(),
@@ -172,6 +215,12 @@ export type MissionPilotTaskEventType = z.infer<
 >;
 export type MissionPilotActionFailure = z.infer<
 	typeof missionPilotActionFailureSchema
+>;
+export type MissionPilotActionConfirmationStatus = z.infer<
+	typeof missionPilotActionConfirmationStatusSchema
+>;
+export type MissionPilotActionConfirmation = z.infer<
+	typeof missionPilotActionConfirmationSchema
 >;
 export type MissionPilotTaskActionDescriptor = z.infer<
 	typeof missionPilotTaskActionDescriptorSchema

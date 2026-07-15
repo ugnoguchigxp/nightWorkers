@@ -6,6 +6,10 @@ import {
 	submitMissionPilotQuestionnaireDraftSchema,
 	updateMissionPilotQuestionnaireDraftSchema,
 } from "../../../shared/schemas/mission-pilot.schema";
+import {
+	missionPilotActionConfirmationSchema,
+	resolveMissionPilotActionConfirmationSchema,
+} from "../../../shared/schemas/mission-pilot-agent.schema";
 import { missionPilotPlanProgressSchema } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
@@ -133,6 +137,43 @@ const stopRoute = createRoute({
 		},
 	},
 });
+const listActionConfirmationsRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/tasks/:taskId/action-confirmations",
+	request: { params: taskParams },
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: z.array(missionPilotActionConfirmationSchema),
+				},
+			},
+			description: "Pending Mission Pilot action confirmations",
+		},
+	},
+});
+const resolveActionConfirmationRoute = createRoute({
+	method: "post",
+	path: "/mission-pilot/action-confirmations/:id/resolve",
+	request: {
+		params: z.object({ id: z.string().uuid() }),
+		body: {
+			content: {
+				"application/json": {
+					schema: resolveMissionPilotActionConfirmationSchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: missionPilotActionConfirmationSchema },
+			},
+			description: "Resolved Mission Pilot action confirmation",
+		},
+	},
+});
 const getQuestionnaireDraftRoute = createRoute({
 	method: "get",
 	path: "/mission-pilot/tasks/:taskId/questionnaire-draft",
@@ -213,6 +254,26 @@ const submitQuestionnaireDraftRoute = createRoute({
 	},
 });
 export const missionPilotRouter = createOpenApiRouter()
+	.openapi(
+		listActionConfirmationsRoute,
+		withOpenApiRouteError(listActionConfirmationsRoute, async (c) =>
+			c.json(await service.listActionConfirmations(c.req.param("taskId")), 200),
+		),
+	)
+	.openapi(
+		resolveActionConfirmationRoute,
+		withOpenApiRouteError(resolveActionConfirmationRoute, async (c) => {
+			const body = c.req.valid("json");
+			return c.json(
+				await service.resolveActionConfirmation({
+					id: c.req.param("id"),
+					expectedVersion: body.expectedVersion,
+					decision: body.decision,
+				}),
+				200,
+			);
+		}),
+	)
 	.openapi(
 		getConversationRoute,
 		withOpenApiRouteError(getConversationRoute, async (c) =>

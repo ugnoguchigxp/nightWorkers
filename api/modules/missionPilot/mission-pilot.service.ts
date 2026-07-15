@@ -6,6 +6,11 @@ import {
 	recoverStaleActiveRuns,
 } from "../nightworkers/nightworkers.run-query.service";
 import {
+	listApprovedMissionPilotActionConfirmationSessionIds,
+	listPendingMissionPilotActionConfirmations,
+	resolveMissionPilotActionConfirmation,
+} from "./agent/mission-pilot-action-confirmation.repository";
+import {
 	cancelPendingMissionPilotToolCalls,
 	reconcileInterruptedMissionPilotAgentSessions,
 } from "./agent/mission-pilot-agent-lifecycle.repository";
@@ -101,6 +106,48 @@ export function initializeMissionPilotRunSync() {
 initializeMissionPilotRunSync();
 initializeMissionPilotQuestionnaireAutonomy();
 
+export async function listActionConfirmations(taskId: string) {
+	const session = await repo.getSessionByTaskId(taskId);
+	if (!session)
+		throw new MissionPilotError(
+			404,
+			"MISSION_PILOT_NOT_FOUND",
+			"Mission Pilot session not found",
+		);
+	return listPendingMissionPilotActionConfirmations(taskId);
+}
+
+export async function resolveActionConfirmation(input: {
+	id: string;
+	expectedVersion: number;
+	decision: "approved" | "denied";
+}) {
+	const confirmation = await resolveMissionPilotActionConfirmation(input);
+	if (!confirmation)
+		throw new MissionPilotError(
+			409,
+			"MISSION_PILOT_CONFIRMATION_CONFLICT",
+			"確認状態が変更されています。最新状態を読み直してください。",
+		);
+	await appendMissionPilotTaskEvent({
+		taskId: confirmation.taskId,
+		eventType: "task_action.confirmation_resolved",
+		sourceEventId: `action-confirmation:${confirmation.id}:${confirmation.version}`,
+		taskRevision: confirmation.taskRevision,
+		payload: {
+			confirmationId: confirmation.id,
+			actionId: confirmation.actionId,
+			argumentsDigest: confirmation.argumentsDigest,
+			decision: confirmation.status,
+		},
+	});
+	const session = await repo.getSessionByTaskId(confirmation.taskId);
+	if (session?.runtimeKind === "agent" && session.desiredState === "playing") {
+		scheduleMissionPilotAgentWake({ sessionId: session.id });
+	}
+	return confirmation;
+}
+
 export async function reconcileMissionPilotStartup() {
 	const provisioned = await repo.backfillMissingTaskSessions();
 	const interruptedAgentSessions =
@@ -116,6 +163,25 @@ export async function reconcileMissionPilotStartup() {
 			});
 			scheduleMissionPilotAgentWake({ sessionId: session.id });
 		}
+	}
+	const approvedConfirmationSessionIds =
+		await listApprovedMissionPilotActionConfirmationSessionIds();
+	const interruptedSessionIds = new Set(
+		interruptedAgentSessions.map((session) => session.id),
+	);
+	let recoveredApprovalSessions = 0;
+	for (const sessionId of approvedConfirmationSessionIds) {
+		if (interruptedSessionIds.has(sessionId)) continue;
+		const session = await getMissionPilotSessionById(sessionId);
+		if (
+			session?.runtimeKind !== "agent" ||
+			session.desiredState !== "playing" ||
+			session.runtimeState === "running" ||
+			session.runtimeState === "completed"
+		)
+			continue;
+		scheduleMissionPilotAgentWake({ sessionId });
+		recoveredApprovalSessions++;
 	}
 	const classified = await reconcileMissionPilotPreQueueSessions();
 	const recovered = await recoverInterruptedIntakeSessions();
@@ -133,7 +199,8 @@ export async function reconcileMissionPilotStartup() {
 		classified +
 		recovered.length +
 		postQueueRecovered +
-		interruptedAgentSessions.length
+		interruptedAgentSessions.length +
+		recoveredApprovalSessions
 	);
 }
 

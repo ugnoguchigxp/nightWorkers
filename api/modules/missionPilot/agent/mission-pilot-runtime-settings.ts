@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 import type { MissionPilotRuntimeKind } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import {
 	readApplicationSetting,
+	readApplicationSettingAsync,
 	writeApplicationSetting,
 } from "../../../services/settings/application-settings-store";
 
@@ -26,6 +27,15 @@ export function readMissionPilotRuntimeSettings(): MissionPilotRuntimeSettings {
 
 export function readMissionPilotDefaultRuntimeKind(): MissionPilotRuntimeKind {
 	return readMissionPilotRuntimeSettings().defaultRuntimeKind;
+}
+
+export async function readMissionPilotDefaultRuntimeKindAsync(): Promise<MissionPilotRuntimeKind> {
+	const parsed = settingsSchema.safeParse(
+		await readApplicationSettingAsync("mission-pilot-runtime"),
+	);
+	return parsed.success
+		? parsed.data.defaultRuntimeKind
+		: DEFAULT_SETTINGS.defaultRuntimeKind;
 }
 
 export async function writeMissionPilotDefaultRuntimeKind(

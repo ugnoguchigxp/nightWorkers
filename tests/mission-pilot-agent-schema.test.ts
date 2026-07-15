@@ -63,6 +63,7 @@ describe("Mission Pilot agent schema", () => {
 			"mission_pilot_conversation_items",
 			"mission_pilot_tool_calls",
 			"mission_pilot_task_event_inbox",
+			"mission_pilot_action_confirmations",
 		]) {
 			expect(names.has(table)).toBe(true);
 		}

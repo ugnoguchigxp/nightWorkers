@@ -46,8 +46,10 @@ describe("Universal Task creation", () => {
 
 		expect(task.missionPilot).toMatchObject({
 			taskId: task.id,
+			runtimeKind: "agent",
+			runtimeState: "stopped",
 			desiredState: "stopped",
-			phase: "created",
+			phase: "stopped",
 			authorizationVersion: null,
 			initialPromptState: "pending",
 		});
@@ -60,6 +62,8 @@ describe("Universal Task creation", () => {
 			sourceKind: "task",
 			sourceId: task.id,
 			desiredState: "stopped",
+			runtimeKind: "agent",
+			runtimeState: "stopped",
 			phase: "created",
 			initialPromptSnapshot: "",
 		});

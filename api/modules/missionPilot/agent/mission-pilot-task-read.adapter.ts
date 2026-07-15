@@ -13,7 +13,12 @@ import {
 import { AppError } from "../../../lib/errors";
 import { listDesignQuestionnaires } from "../../questionnaire/questionnaire.service";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
-import { readMissionPilotRunOutcome } from "./mission-pilot-run-outcome.adapter";
+import { sliceMissionPilotUtf8Page } from "./mission-pilot-content-page";
+import {
+	readMissionPilotRunChangeSummary,
+	readMissionPilotRunOutcome,
+	readMissionPilotRunVerification,
+} from "./mission-pilot-run-outcome.adapter";
 import { describeMissionPilotActions } from "./mission-pilot-task-action.registry";
 
 const ACTIVE_RUN_STATUSES = [
@@ -97,7 +102,9 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		);
 		const terminalOutcomes = (
 			await Promise.all(
-				terminalRuns.map((run) => readMissionPilotRunOutcome(run.id)),
+				terminalRuns.map((run) =>
+					readMissionPilotRunOutcome(run.id, { maxChars: 2_000 }),
+				),
 			)
 		).filter(Boolean);
 		const taskRevision = task.updatedAt.getTime();
@@ -144,7 +151,7 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		} satisfies MissionPilotTaskReadModel;
 	},
 
-	async readCurrentSpecification(taskId) {
+	async readCurrentSpecification(taskId, options) {
 		const messages = await listPlanMessages(taskId);
 		const message = messages.findLast((candidate) => {
 			const metadata = asRecord(candidate.metadataJson);
@@ -158,7 +165,7 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 							asRecord(candidate.metadataJson).intent === "feature_plan",
 					).length,
 					digest: sha256(message.content),
-					content: message.content,
+					...pageContent(message.content, options),
 					sourceArtifactRefs: readSourceRefs(asRecord(message.metadataJson)),
 				}
 			: null;
@@ -182,7 +189,7 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		};
 	},
 
-	async readPlanArtifact(taskId, artifactId) {
+	async readPlanArtifact(taskId, artifactId, options) {
 		const [message] = await db
 			.select()
 			.from(taskMessages)
@@ -203,13 +210,15 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		return {
 			id: message.id,
 			kind: artifactKind(metadata),
-			content: message.content,
+			...pageContent(message.content, options),
 			digest: sha256(message.content),
 			metadata,
 		};
 	},
 
 	readRunOutcome: readMissionPilotRunOutcome,
+	readRunChangeSummary: readMissionPilotRunChangeSummary,
+	readRunVerification: readMissionPilotRunVerification,
 
 	async listAvailableTaskActions(input) {
 		const model = await this.readTaskWorkspace(input);
@@ -273,4 +282,19 @@ function nonEmpty(value: unknown) {
 }
 function sha256(value: string) {
 	return `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
+}
+
+function pageContent(
+	content: string,
+	options?: { cursor?: number; maxChars?: number },
+) {
+	const page = sliceMissionPilotUtf8Page(content, {
+		cursor: options?.cursor,
+		maxChars: Math.min(24_000, Math.max(1_000, options?.maxChars ?? 16_000)),
+		maxBytes: 16_000,
+	});
+	return {
+		content: page.content,
+		contentPage: page.page,
+	};
 }

@@ -17,6 +17,12 @@ export {
 	type ResolvedStructuredLlmModelCapability,
 	resolveStructuredLlmModelCapability,
 } from "./model-capability";
+export type { StructuredProviderFailureKind } from "./provider-failure";
+export {
+	normalizeStructuredProviderError,
+	StructuredProviderError,
+	withStructuredProviderAttempt,
+} from "./provider-failure";
 export { callProviderToolTurn } from "./providers";
 export {
 	buildNormalizedSupervisorLlmRequest,

@@ -4,6 +4,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	listApprovedMissionPilotActionConfirmationSessionIds,
+	listPendingMissionPilotActionConfirmations,
+	resolveMissionPilotActionConfirmation,
+} from "../api/modules/missionPilot/agent/mission-pilot-action-confirmation.repository";
 import type {
 	MissionPilotProviderPort,
 	MissionPilotTaskActionPort,
@@ -233,13 +238,20 @@ describe("persistent Mission Pilot runtime", () => {
 		expect(result).toMatchObject({ kind: "waiting" });
 		expect(provider.nextTurn).toHaveBeenCalledTimes(2);
 		const items = await listMissionPilotConversation(sessionId);
+		const summary = items.find((item) => item.kind === "compaction_summary");
+		expect(JSON.stringify(summary?.bodyJson)).toContain("採用済み判断");
+		expect(summary).toMatchObject({
+			sourceKind: "conversation_revision",
+			sourceId: "2",
+			bodyJson: { sourceRevision: 2 },
+		});
 		expect(
-			items.some(
-				(item) =>
-					item.kind === "compaction_summary" &&
-					JSON.stringify(item.bodyJson).includes("採用済み判断"),
-			),
-		).toBe(true);
+			(
+				await db.query.missionPilotSessions.findFirst({
+					where: (table, { eq }) => eq(table.id, sessionId),
+				})
+			)?.compactionRevision,
+		).toBe(2);
 	});
 
 	it("does not persist or execute a provider response received after stop", async () => {
@@ -290,6 +302,122 @@ describe("persistent Mission Pilot runtime", () => {
 			desiredState: "stopped",
 			runtimeState: "stopped",
 		});
+	});
+
+	it("does not execute a destructive action before durable approval and consumes approval once", async () => {
+		const { taskId, sessionId } = await fixture();
+		const destructiveTurn = () => ({
+			type: "supported" as const,
+			content: "Task削除にはユーザー確認が必要です。",
+			toolCalls: [
+				{ id: crypto.randomUUID(), name: "task_delete", arguments: {} },
+			],
+			usage: usage(),
+		});
+		await expect(
+			runMissionPilotAgentWake(
+				{ sessionId },
+				{ provider: { nextTurn: async () => destructiveTurn() } },
+			),
+		).resolves.toMatchObject({
+			kind: "attention",
+			failure: { kind: "confirmation_required" },
+		});
+		expect(
+			await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
+		).toBeTruthy();
+		const [pending] = await listPendingMissionPilotActionConfirmations(taskId);
+		expect(pending).toMatchObject({
+			actionId: "task.delete",
+			status: "pending",
+		});
+		if (!pending) throw new Error("pending confirmation is missing");
+		expect(
+			await resolveMissionPilotActionConfirmation({
+				id: pending.id,
+				expectedVersion: pending.version,
+				decision: "approved",
+			}),
+		).toMatchObject({ status: "approved" });
+		expect(
+			await resolveMissionPilotActionConfirmation({
+				id: pending.id,
+				expectedVersion: pending.version,
+				decision: "approved",
+			}),
+		).toMatchObject({ status: "approved", version: pending.version + 1 });
+		expect(
+			await listApprovedMissionPilotActionConfirmationSessionIds(),
+		).toContain(sessionId);
+
+		await expect(
+			runMissionPilotAgentWake(
+				{ sessionId },
+				{ provider: { nextTurn: async () => destructiveTurn() } },
+			),
+		).resolves.toMatchObject({ kind: "completed" });
+		expect(
+			await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
+		).toBeUndefined();
+	});
+
+	it("invalidates approval when the task revision changes", async () => {
+		const { taskId, sessionId } = await fixture();
+		const wake = () =>
+			runMissionPilotAgentWake(
+				{ sessionId },
+				{
+					provider: {
+						nextTurn: async () => ({
+							type: "supported" as const,
+							content: "削除を確認します。",
+							toolCalls: [
+								{
+									id: crypto.randomUUID(),
+									name: "task_delete",
+									arguments: {},
+								},
+							],
+							usage: usage(),
+						}),
+					},
+				},
+			);
+		await wake();
+		const [pending] = await listPendingMissionPilotActionConfirmations(taskId);
+		if (!pending) throw new Error("pending confirmation is missing");
+		await resolveMissionPilotActionConfirmation({
+			id: pending.id,
+			expectedVersion: pending.version,
+			decision: "approved",
+		});
+		const beforeUpdate = await db.query.tasks.findFirst({
+			where: eq(tasks.id, taskId),
+		});
+		if (!beforeUpdate) throw new Error("task is missing");
+		await db
+			.update(tasks)
+			.set({
+				title: "revision changed",
+				updatedAt: beforeUpdate.updatedAt,
+			})
+			.where(eq(tasks.id, taskId));
+
+		await expect(wake()).resolves.toMatchObject({
+			kind: "attention",
+			failure: { kind: "confirmation_required" },
+		});
+		expect(
+			await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
+		).toBeTruthy();
+		const confirmations =
+			await listPendingMissionPilotActionConfirmations(taskId);
+		expect(
+			confirmations.filter((item) => item.status === "pending"),
+		).toHaveLength(1);
+		expect(
+			confirmations.filter((item) => item.status === "approved"),
+		).toHaveLength(1);
 	});
 });
 

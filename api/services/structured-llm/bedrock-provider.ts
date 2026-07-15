@@ -5,6 +5,7 @@ import type {
 	ToolChoice as BedrockToolChoice,
 } from "@aws-sdk/client-bedrock-runtime";
 import { normalizeProviderUsage } from "../llm-usage";
+import { StructuredProviderError } from "./provider-failure";
 import type { RawLlmCallOptions } from "./providers";
 import { getResolvedProviderEndpoint, readProviderUsage } from "./providers";
 import {
@@ -141,9 +142,12 @@ export async function callBedrockProviderToolTurn(
 ): Promise<ProviderToolTurnResult> {
 	const endpointConfig = getResolvedProviderEndpoint(input, settings);
 	if (!endpointConfig?.enabled && !isEnabled("AWS_BEDROCK_ENABLED", false)) {
-		throw new Error(
-			"Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.",
-		);
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message:
+				"Bedrock provider is inactive. Enable AWS_BEDROCK_ENABLED first.",
+		});
 	}
 	const { BedrockRuntimeClient, ConverseCommand } = await import(
 		"@aws-sdk/client-bedrock-runtime"

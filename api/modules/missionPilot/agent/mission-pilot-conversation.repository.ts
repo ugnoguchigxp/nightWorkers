@@ -14,6 +14,7 @@ import type {
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
 import { MISSION_PILOT_AGENT_LEASE_MS } from "./mission-pilot-agent.constants";
+import { projectMissionPilotProviderMessages } from "./mission-pilot-context-envelope";
 import {
 	asRecord,
 	readExpectedRevision,
@@ -306,7 +307,7 @@ export async function loadMissionPilotProviderMessages(sessionId: string) {
 			});
 		}
 	}
-	return messages;
+	return projectMissionPilotProviderMessages(messages);
 }
 
 export async function persistMissionPilotProviderTurn(input: {
@@ -525,23 +526,42 @@ export async function listMissionPilotConversation(sessionId: string) {
 export async function compactMissionPilotConversation(input: {
 	sessionId: string;
 	summary: string;
-	sourceRevision: number;
 	leaseOwner: string;
 }) {
-	const item = await appendConversationItem({
-		sessionId: input.sessionId,
-		kind: "compaction_summary",
-		body: { summary: input.summary, sourceRevision: input.sourceRevision },
-		sourceKind: "conversation_revision",
-		sourceId: String(input.sourceRevision),
-		requiredLeaseOwner: input.leaseOwner,
-	});
-	if (item) {
-		await db
+	return db.transaction(async (tx) => {
+		const [session] = await tx
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, input.sessionId));
+		if (
+			session?.desiredState !== "playing" ||
+			session.runtimeState !== "running" ||
+			session.leaseOwner !== input.leaseOwner
+		)
+			return null;
+
+		const sourceRevision = session.conversationRevision;
+		const now = new Date();
+		const [item] = await tx
+			.insert(missionPilotConversationItems)
+			.values({
+				id: crypto.randomUUID(),
+				sessionId: session.id,
+				sequence: session.nextConversationSequence,
+				kind: "compaction_summary",
+				bodyJson: { summary: input.summary, sourceRevision },
+				sourceKind: "conversation_revision",
+				sourceId: String(sourceRevision),
+				createdAt: now,
+			})
+			.returning();
+		await tx
 			.update(missionPilotSessions)
 			.set({
-				compactionRevision: input.sourceRevision,
-				updatedAt: new Date(),
+				nextConversationSequence: session.nextConversationSequence + 1,
+				conversationRevision: sourceRevision + 1,
+				compactionRevision: sourceRevision,
+				updatedAt: now,
 			})
 			.where(
 				and(
@@ -551,6 +571,6 @@ export async function compactMissionPilotConversation(input: {
 					eq(missionPilotSessions.leaseOwner, input.leaseOwner),
 				),
 			);
-	}
-	return item;
+		return item ?? null;
+	});
 }

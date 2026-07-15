@@ -10,7 +10,7 @@ import { completeMissionPilotToolCall } from "./mission-pilot-conversation.repos
 
 export async function cancelPendingMissionPilotToolCalls(
 	sessionId: string,
-	reason: "stopped" | "resource_limit" = "stopped",
+	reason: "stopped" | "resource_limit" | "confirmation_required" = "stopped",
 ) {
 	const pending = await db
 		.select({
@@ -33,17 +33,23 @@ export async function cancelPendingMissionPilotToolCalls(
 				kind:
 					reason === "resource_limit"
 						? "resource_limit"
-						: "domain_precondition",
+						: reason === "confirmation_required"
+							? "confirmation_required"
+							: "domain_precondition",
 				retryable: false,
 				providerCode:
 					reason === "resource_limit"
 						? "MISSION_PILOT_RESOURCE_LIMIT"
-						: "MISSION_PILOT_STOPPED",
+						: reason === "confirmation_required"
+							? "MISSION_PILOT_CONFIRMATION_REQUIRED"
+							: "MISSION_PILOT_STOPPED",
 				httpStatus: null,
 				message:
 					reason === "resource_limit"
 						? "Mission Pilot reached the per-wake resource limit before this action started."
-						: "Mission Pilot was stopped before this action started.",
+						: reason === "confirmation_required"
+							? "別の操作がユーザー確認待ちのため、この操作は開始されませんでした。"
+							: "Mission Pilot was stopped before this action started.",
 				retryAfterMs: null,
 				attempt: 1,
 				actionId: call.actionId,

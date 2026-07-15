@@ -7,9 +7,26 @@ import {
 import { callCodexProvider } from "./codex-provider";
 import { emitSupervisorLlmDebugEvent } from "./events";
 import { callFixtureProvider } from "./fixture-provider";
+import {
+	callFixtureProviderToolTurn,
+	hasFixtureProviderToolTurns,
+} from "./fixture-tool-provider";
 import { callOpenAIProvider } from "./openai-provider";
+import {
+	type OpenAIChatCompletionResponse,
+	toOpenAIToolDefinition,
+	toProviderToolCall,
+} from "./openai-tool-call-codec";
+
+export type { OpenAIChatCompletionResponse } from "./openai-tool-call-codec";
+
 import { toOpenAIToolMessages } from "./openai-tool-messages";
 import { dispatchStructuredLlmProvider } from "./provider-dispatch";
+import {
+	normalizeStructuredProviderError,
+	providerHttpError,
+	StructuredProviderError,
+} from "./provider-failure";
 import { providerAdapterKey } from "./request";
 import {
 	getStructuredLlmBoolSetting,
@@ -18,7 +35,6 @@ import {
 	type StructuredLlmProviderEndpoint,
 } from "./settings";
 import type {
-	ProviderToolCall,
 	ProviderToolDefinition,
 	ProviderToolMessage,
 	ProviderToolTurnResult,
@@ -31,23 +47,6 @@ import type {
 } from "./types";
 
 export type OpenAIResponseFormat = "json_schema" | "json_object";
-export type OpenAIChatCompletionResponse = {
-	choices?: Array<{
-		message?: {
-			content?: string;
-			tool_calls?: Array<OpenAIChatCompletionToolCall>;
-		};
-	}>;
-	usage?: unknown;
-};
-export type OpenAIChatCompletionToolCall = {
-	id?: string;
-	type?: string;
-	function?: {
-		name?: string | null;
-		arguments?: string | null;
-	};
-};
 
 const OPENAI_TRANSIENT_RETRY_DELAY_MS =
 	process.env.NODE_ENV === "test" ? 0 : 1500;
@@ -100,6 +99,18 @@ export async function callProviderToolTurn(input: {
 	signal: AbortSignal;
 	setProviderDebug: (value: Record<string, unknown>) => void;
 }): Promise<ProviderToolTurnResult> {
+	if (
+		input.options.taskId &&
+		hasFixtureProviderToolTurns(input.options.taskId)
+	) {
+		return callFixtureProviderToolTurn({
+			taskId: input.options.taskId,
+			systemPrompt: input.systemPrompt,
+			userPrompt: input.userPrompt,
+			messages: input.messages,
+			setProviderDebug: input.setProviderDebug,
+		});
+	}
 	const settings = readStructuredLlmProviderSettings();
 	const isEnabled = (
 		key: Parameters<typeof getStructuredLlmBoolSetting>[1],
@@ -109,29 +120,41 @@ export async function callProviderToolTurn(input: {
 		input.options.normalizedRequest.providerId ?? input.provider,
 	);
 
-	return dispatchStructuredLlmProvider({
-		provider,
-		adapters: {
-			openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
-			azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
-			bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
-		},
-		onUnsupported: async (unsupportedProvider) => {
-			const providerDebug = {
-				provider: unsupportedProvider,
-				providerEndpointId:
-					input.options.normalizedRequest.providerEndpointId ?? null,
-				mode: "provider_native_tools",
-				supported: false,
-			};
-			input.setProviderDebug(providerDebug);
-			return {
-				type: "unsupported",
-				reason: `Provider does not support native tool turn runtime yet: ${unsupportedProvider}`,
-				providerDebug,
-			};
-		},
-	});
+	try {
+		return await dispatchStructuredLlmProvider({
+			provider,
+			adapters: {
+				openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
+				azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
+				bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
+				fixture: async () =>
+					callFixtureProviderToolTurn({
+						taskId: input.options.taskId ?? "",
+						systemPrompt: input.systemPrompt,
+						userPrompt: input.userPrompt,
+						messages: input.messages,
+						setProviderDebug: input.setProviderDebug,
+					}),
+			},
+			onUnsupported: async (unsupportedProvider) => {
+				const providerDebug = {
+					provider: unsupportedProvider,
+					providerEndpointId:
+						input.options.normalizedRequest.providerEndpointId ?? null,
+					mode: "provider_native_tools",
+					supported: false,
+				};
+				input.setProviderDebug(providerDebug);
+				return {
+					type: "unsupported",
+					reason: `Provider does not support native tool turn runtime yet: ${unsupportedProvider}`,
+					providerDebug,
+				};
+			},
+		});
+	} catch (error) {
+		throw normalizeStructuredProviderError(error);
+	}
 }
 
 async function callAzureProviderToolTurn(
@@ -144,9 +167,11 @@ async function callAzureProviderToolTurn(
 ): Promise<ProviderToolTurnResult> {
 	const endpointConfig = getResolvedProviderEndpoint(input, settings);
 	if (!endpointConfig?.enabled && !isEnabled("AZURE_OPENAI_ENABLED", false)) {
-		throw new Error(
-			"Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.",
-		);
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message: "Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.",
+		});
 	}
 	const apiKey =
 		endpointConfig?.apiKey ||
@@ -172,9 +197,12 @@ async function callAzureProviderToolTurn(
 			"2024-05-01-preview",
 		);
 	if (!apiKey || !endpoint) {
-		throw new Error(
-			"Azure OpenAI credentials are not configured in environment variables.",
-		);
+		throw new StructuredProviderError({
+			kind: "authentication",
+			retryable: false,
+			message:
+				"Azure OpenAI credentials are not configured in environment variables.",
+		});
 	}
 	const reasoningEffort = toOpenAIReasoningEffort(
 		input.options.normalizedRequest.thinkingDepth,
@@ -195,9 +223,12 @@ async function callAzureProviderToolTurn(
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(
-			`Azure OpenAI native tool call failed with status ${response.status}: ${errorText}`,
-		);
+		throw providerHttpError({
+			provider: "Azure OpenAI",
+			status: response.status,
+			body: errorText,
+			retryAfter: response.headers.get("retry-after"),
+		});
 	}
 
 	const responseData = (await response.json()) as OpenAIChatCompletionResponse;
@@ -246,9 +277,11 @@ async function callOpenAIProviderToolTurn(
 ): Promise<ProviderToolTurnResult> {
 	const endpointConfig = getResolvedProviderEndpoint(input, settings);
 	if (!endpointConfig?.enabled && !isEnabled("OPENAI_ENABLED", true)) {
-		throw new Error(
-			"OpenAI provider is inactive. Enable OPENAI_ENABLED first.",
-		);
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message: "OpenAI provider is inactive. Enable OPENAI_ENABLED first.",
+		});
 	}
 	const apiKey =
 		endpointConfig?.apiKey ||
@@ -270,9 +303,11 @@ async function callOpenAIProviderToolTurn(
 	);
 	const apiKeyRequired = !endpointConfig || endpointConfig.kind === "openai";
 	if (apiKeyRequired && !apiKey) {
-		throw new Error(
-			"OpenAI API key is not configured in environment variables.",
-		);
+		throw new StructuredProviderError({
+			kind: "authentication",
+			retryable: false,
+			message: "OpenAI API key is not configured in environment variables.",
+		});
 	}
 
 	const url = `${baseURL.replace(/\/+$/, "")}/chat/completions`;
@@ -293,9 +328,12 @@ async function callOpenAIProviderToolTurn(
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(
-			`OpenAI native tool call failed with status ${response.status}: ${errorText}`,
-		);
+		throw providerHttpError({
+			provider: "OpenAI",
+			status: response.status,
+			body: errorText,
+			retryAfter: response.headers.get("retry-after"),
+		});
 	}
 
 	const responseData = (await response.json()) as OpenAIChatCompletionResponse;
@@ -331,43 +369,6 @@ async function callOpenAIProviderToolTurn(
 		model,
 		providerDebug,
 	};
-}
-
-function toOpenAIToolDefinition(tool: ProviderToolDefinition) {
-	return {
-		type: "function",
-		function: {
-			name: tool.name,
-			description: tool.description,
-			parameters: tool.inputSchema,
-		},
-	};
-}
-
-function toProviderToolCall(
-	call: OpenAIChatCompletionToolCall,
-): ProviderToolCall[] {
-	const name = call.function?.name;
-	if (!name) return [];
-	return [
-		{
-			id: call.id || `call_${Date.now()}`,
-			name,
-			arguments: parseToolArguments(call.function?.arguments ?? ""),
-		},
-	];
-}
-
-function parseToolArguments(raw: string): Record<string, unknown> {
-	if (!raw.trim()) return {};
-	try {
-		const parsed = JSON.parse(raw);
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: { value: parsed };
-	} catch {
-		return { _raw: raw };
-	}
 }
 
 export async function retryOpenAITransientUnavailableOnce(input: {

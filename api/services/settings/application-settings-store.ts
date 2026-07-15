@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DbTransaction } from "../../db/client";
 import {
 	applicationSettingMigrations,
@@ -67,6 +67,18 @@ export function readApplicationSetting<T>(
 ): T | null {
 	const value = readJsonRow("application_settings", scope);
 	return value ? (JSON.parse(value) as T) : null;
+}
+
+export async function readApplicationSettingAsync<T>(
+	scope: ApplicationSettingsScope,
+): Promise<T | null> {
+	const { db } = await import("../../db/client");
+	const [row] = await db
+		.select({ valueJson: applicationSettings.valueJson })
+		.from(applicationSettings)
+		.where(eq(applicationSettings.scope, scope))
+		.limit(1);
+	return (row?.valueJson as T | undefined) ?? null;
 }
 
 export async function writeApplicationSetting<T>(
