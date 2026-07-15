@@ -1,6 +1,7 @@
 import { ValidationError } from "../../lib/errors";
 import { logEvent } from "../../lib/logger";
 import { createOpenApiRouter } from "../../lib/openapi";
+import { recordMissionPilotUserTaskEvent } from "../missionPilot/agent/mission-pilot-task-event.adapter";
 import { getOntologyRunDebugReportRoute } from "../ontology";
 import {
 	commitRunGitCloseoutHandler,
@@ -290,6 +291,13 @@ const router = createOpenApiRouter()
 		});
 		const task = await service.updateTask(id, data);
 		if (!task) return c.json({ error: "Task not found" }, 404);
+		await recordMissionPilotUserTaskEvent({
+			taskId: id,
+			type: "task.state_changed",
+			sourceEventId: `task-state:${id}:${task.updatedAt.getTime()}`,
+			taskRevision: task.updatedAt.getTime(),
+			payload: { status: task.status },
+		}).catch(() => null);
 		return c.json(task, 200);
 	})
 	.openapi(
@@ -312,6 +320,19 @@ const router = createOpenApiRouter()
 			const id = c.req.param("id");
 			const body = c.req.valid("json");
 			const result = await service.appendWorkbenchMessage(id, body);
+			const latestMessage = result.messages?.at(-1);
+			await recordMissionPilotUserTaskEvent({
+				taskId: id,
+				type: "task.user_message_added",
+				sourceEventId: latestMessage?.id
+					? `task-message:${latestMessage.id}`
+					: `task-message:${id}:${Date.now()}`,
+				taskRevision: result.task?.updatedAt?.getTime?.() ?? Date.now(),
+				payload: {
+					messageId: latestMessage?.id ?? null,
+					content: body.prompt,
+				},
+			}).catch(() => null);
 			return c.json(result, 200);
 		}),
 	)

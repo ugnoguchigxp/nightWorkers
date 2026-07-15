@@ -8,6 +8,12 @@ export const jaMissionPilot = {
 	"missionPilot.playing": "再生中",
 	"missionPilot.stopped": "停止中",
 	"missionPilot.attention": "確認が必要です",
+	"missionPilot.runtime.stopped": "停止中",
+	"missionPilot.runtime.idle": "待機準備中",
+	"missionPilot.runtime.running": "判断中",
+	"missionPilot.runtime.waiting": "次のイベントを待機中",
+	"missionPilot.runtime.attention": "確認が必要です",
+	"missionPilot.runtime.completed": "完了",
 	"missionPilot.playFailed": "Mission Pilotを再生できませんでした",
 	"missionPilot.stopFailed": "Mission Pilotを停止できませんでした",
 } as const;

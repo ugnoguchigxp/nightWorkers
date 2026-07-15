@@ -37,13 +37,16 @@ export async function recoverMissionPilotPostQueueSessions() {
 		.select()
 		.from(missionPilotSessions)
 		.where(
-			or(
-				eq(missionPilotSessions.desiredState, "playing"),
-				inArray(missionPilotSessions.phase, [
-					"completed",
-					"archiving",
-					"archived",
-				]),
+			and(
+				eq(missionPilotSessions.runtimeKind, "legacy"),
+				or(
+					eq(missionPilotSessions.desiredState, "playing"),
+					inArray(missionPilotSessions.phase, [
+						"completed",
+						"archiving",
+						"archived",
+					]),
+				),
 			),
 		);
 	let recovered = 0;

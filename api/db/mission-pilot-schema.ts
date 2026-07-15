@@ -12,6 +12,10 @@ import type {
 	MissionPilotPreQueueDiagnostic,
 	MissionPilotQueueHandoff,
 } from "../../shared/schemas/mission-pilot.schema";
+import type {
+	MissionPilotRuntimeKind,
+	MissionPilotRuntimeState,
+} from "../../shared/schemas/mission-pilot-agent.schema";
 import type { MissionPilotPlanReview } from "../../shared/schemas/mission-pilot-plan-review.schema";
 import type { PlanModeRegenerationTarget } from "../../shared/schemas/plan-mode-artifact.schema";
 import type {
@@ -42,6 +46,28 @@ export const missionPilotSessions = sqliteTable(
 			mode: "json",
 		}).$type<MissionPilotAuthorization | null>(),
 		desiredState: text("desired_state").notNull().default("stopped"),
+		runtimeKind: text("runtime_kind")
+			.$type<MissionPilotRuntimeKind>()
+			.notNull()
+			.default("legacy"),
+		runtimeState: text("runtime_state")
+			.$type<MissionPilotRuntimeState>()
+			.notNull()
+			.default("stopped"),
+		conversationRevision: integer("conversation_revision").notNull().default(0),
+		nextConversationSequence: integer("next_conversation_sequence")
+			.notNull()
+			.default(1),
+		nextEventSequence: integer("next_event_sequence").notNull().default(1),
+		nextTurnIndex: integer("next_turn_index").notNull().default(1),
+		systemContextVersion: integer("system_context_version")
+			.notNull()
+			.default(1),
+		compactionRevision: integer("compaction_revision").notNull().default(0),
+		lastConsumedEventSequence: integer("last_consumed_event_sequence")
+			.notNull()
+			.default(0),
+		providerConversationRef: text("provider_conversation_ref"),
 		phase: text("phase").notNull().default("created"),
 		resumePhase: text("resume_phase"),
 		initialPromptSnapshot: text("initial_prompt_snapshot").notNull(),

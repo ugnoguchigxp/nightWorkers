@@ -19,6 +19,7 @@ export type ApplicationSettingsScope =
 	| "server"
 	| "auth"
 	| "runtime"
+	| "mission-pilot-runtime"
 	| "integrations";
 
 function databasePath() {

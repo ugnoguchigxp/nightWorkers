@@ -27,6 +27,17 @@ const getExecutionRoute = createRoute({
 		},
 	},
 });
+const getConversationRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/sessions/:id/conversation",
+	request: { params: sessionParams },
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.array(z.unknown()) } },
+			description: "Persistent Mission Pilot conversation and tool audit",
+		},
+	},
+});
 const getTaskExecutionRoute = createRoute({
 	method: "get",
 	path: "/mission-pilot/tasks/:taskId/execution",
@@ -202,6 +213,12 @@ const submitQuestionnaireDraftRoute = createRoute({
 	},
 });
 export const missionPilotRouter = createOpenApiRouter()
+	.openapi(
+		getConversationRoute,
+		withOpenApiRouteError(getConversationRoute, async (c) =>
+			c.json(await service.getMissionPilotConversation(c.req.param("id")), 200),
+		),
+	)
 	.openapi(
 		getTaskExecutionRoute,
 		withOpenApiRouteError(getTaskExecutionRoute, async (c) =>

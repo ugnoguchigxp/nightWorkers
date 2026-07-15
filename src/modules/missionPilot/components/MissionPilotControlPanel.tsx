@@ -32,6 +32,10 @@ export function MissionPilotControlPanel({
 		placement === "sidebar"
 			? "mission-pilot-task-control"
 			: "mission-pilot-composer-controls mission-pilot-composer-panel";
+	const runtimeStatusLabel =
+		summary.runtimeKind === "agent"
+			? t(`missionPilot.runtime.${summary.runtimeState}`)
+			: null;
 
 	return (
 		<div className={className} aria-live="polite">
@@ -46,7 +50,7 @@ export function MissionPilotControlPanel({
 				disabled={stopping}
 				aria-busy={Boolean(controls.pending) || state.busy}
 				aria-label={t(controlLabel)}
-				title={controls.error || t(controlLabel)}
+				title={controls.error || runtimeStatusLabel || t(controlLabel)}
 			>
 				{running ? (
 					<span className="mission-pilot-starting-control">
@@ -61,6 +65,11 @@ export function MissionPilotControlPanel({
 					<Play className="h-6 w-6" />
 				)}
 			</button>
+			{placement === "composer" && runtimeStatusLabel ? (
+				<span className="text-xs text-muted-foreground">
+					{runtimeStatusLabel}
+				</span>
+			) : null}
 			{placement === "composer" ? (
 				<MissionPilotCountdown
 					nextWakeAt={

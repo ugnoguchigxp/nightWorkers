@@ -1,5 +1,9 @@
 import { z } from "@hono/zod-openapi";
 import { designQuestionnaireAnswerSchema } from "./design-questionnaire.schema";
+import {
+	missionPilotRuntimeKindSchema,
+	missionPilotRuntimeStateSchema,
+} from "./mission-pilot-agent.schema";
 import { taskSchema } from "./nightworkers/repository-task.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
@@ -128,6 +132,8 @@ export const missionPilotPreQueueDiagnosticSchema = z.object({
 });
 export const missionPilotControlSummarySchema = z.object({
 	taskId: z.string().uuid(),
+	runtimeKind: missionPilotRuntimeKindSchema.default("legacy"),
+	runtimeState: missionPilotRuntimeStateSchema.default("stopped"),
 	desiredState: missionPilotDesiredStateSchema,
 	activityState: missionPilotActivityStateSchema,
 	phase: z.string(),
