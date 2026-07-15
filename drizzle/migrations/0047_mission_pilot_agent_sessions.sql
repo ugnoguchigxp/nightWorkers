@@ -1,0 +1,25 @@
+CREATE TABLE `mission_pilot_agent_sessions` (
+	`session_id` text PRIMARY KEY NOT NULL,
+	`engine_mode` text DEFAULT 'agent' NOT NULL,
+	`runtime_state` text DEFAULT 'stopped' NOT NULL,
+	`system_context_version` integer DEFAULT 1 NOT NULL,
+	`conversation_revision` integer DEFAULT 0 NOT NULL,
+	`compaction_revision` integer,
+	`next_conversation_sequence` integer DEFAULT 1 NOT NULL,
+	`last_consumed_event_sequence` integer,
+	`next_turn_index` integer DEFAULT 1 NOT NULL,
+	`next_event_sequence` integer DEFAULT 1 NOT NULL,
+	`current_turn_id` text,
+	`provider_endpoint_id` text,
+	`model` text,
+	`thinking_depth` text,
+	`context_revision` integer DEFAULT 1 NOT NULL,
+	`context_digest` text DEFAULT '' NOT NULL,
+	`lease_owner` text,
+	`lease_expires_at` integer,
+	`last_failure_json` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`session_id`) REFERENCES `mission_pilot_sessions`(`id`) ON UPDATE no action ON DELETE cascade
+);
+CREATE INDEX `mission_pilot_agent_sessions_runtime_lease_idx` ON `mission_pilot_agent_sessions` (`runtime_state`,`lease_expires_at`);

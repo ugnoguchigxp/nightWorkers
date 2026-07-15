@@ -363,6 +363,7 @@ export async function startReviewRunForSession(
 	const reviewRun = await startTaskRun(session.taskId, {
 		executionModeSource: "review_run",
 		initialTodos: todos,
+		missionPilotPhase: missionInput?.missionPilot ? "review" : undefined,
 		runtimeOptionsPatch: {
 			...(missionInput?.missionPilot
 				? { missionPilot: missionInput.missionPilot }

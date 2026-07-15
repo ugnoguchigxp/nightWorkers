@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import { getLatestVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
+import { runCompletionCheck } from "../../modules/nightworkers/nightworkers.verification.service";
+import { createReviewerEvaluation } from "../../modules/review/review-files.service";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -115,11 +118,72 @@ export async function runE2eFixtureRuntime(
 			exitCode: 0,
 		},
 	});
+	const verificationCommand = "bun run verify";
+	const testRuntime =
+		typeof context.runtimeOptions?.verificationDocumentId === "string";
+	if (testRuntime) {
+		const hasTransientTestFailure = context.compiledPrompt.includes(
+			"[fixture:test-transient-failure]",
+		);
+		if (hasTransientTestFailure) {
+			await sink.emit({
+				type: "tool_call_finished",
+				message: "Deterministic fixture verification retryable failure.",
+				payload: {
+					toolName: "command_execution",
+					command: verificationCommand,
+					aggregatedOutput: "fixture verification transient failure",
+					conditionIds: ["mission-pilot-archive"],
+					ok: false,
+					exitCode: 1,
+					status: "completed",
+				},
+			});
+			await new Promise((resolve) => setTimeout(resolve, 2));
+		}
+		await sink.emit({
+			type: "tool_call_finished",
+			message: "Deterministic fixture verification completed.",
+			payload: {
+				toolName: "command_execution",
+				command: verificationCommand,
+				aggregatedOutput: "fixture verification passed",
+				conditionIds: ["mission-pilot-archive"],
+				ok: true,
+				exitCode: 0,
+				status: "completed",
+			},
+		});
+	}
 	await sink.emit({
 		type: "verification_finished",
 		message: "Deterministic verification passed.",
-		payload: { command: "fixture verify", exitCode: 0, ok: true },
+		payload: { command: verificationCommand, exitCode: 0, ok: true },
 	});
+	const verificationDocument = testRuntime
+		? await getLatestVerificationDocumentForTask(context.taskId)
+		: null;
+	if (verificationDocument) {
+		const completionCheck = await runCompletionCheck({
+			taskId: context.taskId,
+			verificationDocumentId: verificationDocument.id,
+		});
+		await sink.emit({
+			type: "tool_call_finished",
+			message: "Deterministic fixture completion check completed.",
+			payload: {
+				toolName: "completion_check",
+				arguments: { verificationDocumentId: verificationDocument.id },
+				ok: completionCheck.ok,
+				status: completionCheck.ok ? "completed" : "failed",
+				result: {
+					ok: completionCheck.ok,
+					verificationDocumentId: verificationDocument.id,
+					payload: { result: completionCheck },
+				},
+			},
+		});
+	}
 	const diffPatch = execFileSync("git", ["diff", "--", "."], {
 		cwd: context.repoRoot,
 		encoding: "utf8",
@@ -129,8 +193,20 @@ export async function runE2eFixtureRuntime(
 		message: "Deterministic fixture diff collected.",
 		payload: { diffPatch, changedFiles: ["src/greeting.txt"] },
 	});
-	const finalReport =
-		"Deterministic E2E implementation and verification completed.";
+	const reviewRuntime = isReviewRuntime(context.runtimeOptions?.reviewRun);
+	if (reviewRuntime) {
+		await createReviewerEvaluation(context.runId, {
+			rubricId: "basic-coding-run",
+			mode: "deterministic_only",
+		});
+	}
+	const finalReport = reviewRuntime
+		? JSON.stringify({
+				verdict: "pass",
+				summary: "Deterministic E2E review approved.",
+				findings: [],
+			})
+		: "Deterministic E2E implementation and verification completed.";
 	await sink.emit({
 		type: "runtime_finished",
 		message: finalReport,
@@ -145,10 +221,14 @@ export async function runE2eFixtureRuntime(
 		diffPatch,
 		testResults: {
 			fixture: true,
-			verification: { command: "fixture verify", exitCode: 0 },
+			verification: { command: verificationCommand, exitCode: 0 },
 		},
 		logContent: finalReport,
 	};
+}
+
+function isReviewRuntime(value: unknown) {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function fixtureResult(input: {

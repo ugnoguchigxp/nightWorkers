@@ -5,6 +5,7 @@ import {
 	type MissionPilotSourceRef,
 	missionPilotControlSummarySchema,
 } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotRuntimeKind } from "../../../shared/schemas/mission-pilot-agent.schema";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -12,6 +13,7 @@ import {
 } from "../../db/mission-pilot-schema";
 import { taskMessages, tasks } from "../../db/schema";
 import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.trace-provenance";
+import { createMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
 
 type Db = typeof db | DbTransaction;
@@ -83,6 +85,7 @@ export async function createSession(
 		};
 		sourceKind: MissionPilotSourceRef["source"];
 		sourceId: string;
+		runtimeKind?: MissionPilotRuntimeKind;
 	},
 	tx: DbTransaction,
 ) {
@@ -122,6 +125,13 @@ export async function createSession(
 			updatedAt: now,
 		})
 		.returning();
+	if (input.runtimeKind === "agent") {
+		await createMissionPilotAgentSession(tx, {
+			sessionId: id,
+			contextDigest: digest,
+			now,
+		});
+	}
 	await tx.insert(missionPilotContextSnapshots).values({
 		id: crypto.randomUUID(),
 		sessionId: id,

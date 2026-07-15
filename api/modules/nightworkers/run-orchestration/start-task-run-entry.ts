@@ -14,10 +14,7 @@ export async function startTaskRun(
 			...options,
 			executionMode: "implementation",
 			executionModeSource: "explicit",
-			missionPilotPhase:
-				options.missionPilotPhase === "repository_bootstrap"
-					? "repository_bootstrap"
-					: "implementation",
+			missionPilotPhase: options.missionPilotPhase ?? "implementation",
 		};
 	if (shouldUseIsolatedTaskExecutor()) {
 		return startTaskRunInWorker<

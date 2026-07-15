@@ -184,10 +184,10 @@ export async function continueMissionPilotAfterRun(input: {
 			runId: input.runId,
 		});
 	}
-	if (input.executionMode === "test") {
+	if (phaseRun.phase === "test" || input.executionMode === "test") {
 		return continueAfterTestRun({ session, phaseRun, runId: input.runId });
 	}
-	if (input.executionMode === "review") {
+	if (phaseRun.phase === "review" || input.executionMode === "review") {
 		return continueAfterReviewRun({ session, phaseRun, runId: input.runId });
 	}
 	if (input.executionMode !== "implementation") {

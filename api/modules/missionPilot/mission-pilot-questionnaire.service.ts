@@ -15,6 +15,7 @@ import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repo
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
+import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
@@ -68,8 +69,8 @@ function toView(row: DraftRow, taskId: string) {
 async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 	const pilot = await missionPilotRepo.getSessionByTaskId(session.taskId);
 	if (
-		!pilot ||
-		pilot.desiredState !== "playing" ||
+		pilot?.desiredState !== "playing" ||
+		(await isMissionPilotAgentSession(pilot.id)) ||
 		!missionPilotRepo.hasValidAuthorization(pilot)
 	)
 		return;
@@ -530,8 +531,7 @@ export async function submitDueQuestionnaireDrafts(now = new Date()) {
 			.from(missionPilotSessions)
 			.where(eq(missionPilotSessions.id, row.sessionId));
 		if (
-			!pilot ||
-			pilot.desiredState !== "playing" ||
+			pilot?.desiredState !== "playing" ||
 			pilot.nextWakeAt?.getTime() !== row.deadlineAt.getTime()
 		)
 			continue;

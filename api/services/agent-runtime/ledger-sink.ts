@@ -235,6 +235,7 @@ async function maybeRecordCodexCommandVerificationEvidence(
 			runner: inferVerificationRunner({ command }),
 			rawStdoutArtifactId,
 			rawStderrArtifactId,
+			conditionIds: readPayloadStringArray(payload, "conditionIds"),
 		});
 		await recordVerificationEvidence({
 			taskId: run.taskId,
@@ -315,6 +316,18 @@ function readPayloadNumber(
 		if (typeof value === "number" && Number.isFinite(value)) return value;
 	}
 	return null;
+}
+
+function readPayloadStringArray(
+	payload: Record<string, unknown>,
+	key: string,
+): string[] | undefined {
+	const value = payload[key];
+	if (!Array.isArray(value)) return undefined;
+	const strings = value.filter(
+		(item): item is string => typeof item === "string" && item.length > 0,
+	);
+	return strings.length > 0 ? strings : undefined;
 }
 
 function readRunWorktreePath(run: { worktreePath?: string | null }) {

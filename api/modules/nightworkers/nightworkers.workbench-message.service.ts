@@ -8,6 +8,7 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
+import { recordMissionPilotTaskEvent } from "../missionPilot/agent/mission-pilot-task-event.adapter";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
@@ -216,7 +217,7 @@ export async function appendTaskMessage(
 	const hasAnyUserMessage = existingMessages.some(
 		(message) => message.role === "user",
 	);
-	await repo.createTaskMessage({
+	const message = await repo.createTaskMessage({
 		taskId: id,
 		role: "user",
 		content: trimmed,
@@ -229,6 +230,15 @@ export async function appendTaskMessage(
 	}
 	const latestTask = await repo.getTask(id);
 	if (!latestTask) throw new NotFoundError("Task not found");
+	if (message && (metadata?.source as string | undefined) !== "mission_pilot") {
+		await recordMissionPilotTaskEvent({
+			taskId: id,
+			type: "task.user_message_added",
+			sourceEventId: `task-message:${message.id}`,
+			taskRevision: latestTask.updatedAt.getTime(),
+			payload: { messageId: message.id },
+		});
+	}
 	return latestTask;
 }
 export type WorkbenchChatIntent =
@@ -255,6 +265,7 @@ export async function appendWorkbenchMessage(
 		model?: string;
 		thinkingDepth?: "low" | "medium" | "high" | "very_high";
 		images?: PromptImageInput[];
+		source?: "workbench" | "mission_pilot";
 	},
 ) {
 	const intent = input.intent || "intake";
@@ -282,12 +293,15 @@ export async function appendWorkbenchMessage(
 		images: input.images,
 	});
 	const messageMetadata =
-		artifactContext || llmSelection || imageAttachments.length > 0
+		input.source ||
+		artifactContext ||
+		llmSelection ||
+		imageAttachments.length > 0
 			? {
 					...(artifactContext
 						? { intent: "artifact_context_instruction", artifactContext }
 						: {}),
-					source: "workbench",
+					source: input.source ?? "workbench",
 					...(llmSelection ? { llmSelection } : {}),
 					...(imageAttachments.length > 0 ? { imageAttachments } : {}),
 				}

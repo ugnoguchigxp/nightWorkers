@@ -145,6 +145,7 @@ export async function startVerificationRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		missionPilotPhase: input.missionPilot ? "test" : undefined,
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
 			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),

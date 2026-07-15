@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../../db/client";
 import { designQuestionnaireSessions } from "../../../db/design-questionnaire-schema";
+import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";
 import {
 	missionPilotCloseouts,
 	missionPilotContextSnapshots,
@@ -25,6 +26,7 @@ import {
 	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
 import { createOpenApiRouter } from "../../../lib/openapi";
+import { isMissionPilotAgentSession } from "../../missionPilot/agent/mission-pilot-agent-session.repository";
 import * as missionPilotRepo from "../../missionPilot/mission-pilot.repository";
 import { buildFeaturePlanImplementationPlanMetadata } from "../../specification/feature-plan-implementation-plan";
 import * as repo from "../nightworkers.repository";
@@ -129,6 +131,12 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 		if (!session || session.repositoryId !== input.repositoryId) {
 			return c.json({ error: "Mission Pilot session not found" }, 404);
 		}
+		// This characterization fixture exercises the legacy phase projection. Keep
+		// the production-created session untouched while preserving that baseline.
+		if (await isMissionPilotAgentSession(session.id))
+			await db
+				.delete(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, session.id));
 		const [contextRow] = await db
 			.select()
 			.from(missionPilotContextSnapshots)

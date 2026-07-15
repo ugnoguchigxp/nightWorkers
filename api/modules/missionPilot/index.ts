@@ -1,3 +1,10 @@
+export {
+	reconcileInterruptedMissionPilotAgentSessions,
+	runMissionPilotAgentWake,
+	stopMissionPilotAgentRuntime,
+} from "./agent/mission-pilot-agent-runtime";
+export { scheduleMissionPilotAgentWake } from "./agent/mission-pilot-agent-wake.service";
+export { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
 export { missionPilotRouter } from "./mission-pilot.routes";
 export {
 	initializeMissionPilotRunSync,
