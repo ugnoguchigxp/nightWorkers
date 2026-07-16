@@ -4,6 +4,10 @@ import type {
 	MissionPilotTaskActionDescriptor,
 } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import type { ProviderToolDefinition } from "../../../services/structured-llm/public";
+import {
+	questionnaireDraftActionInputSchema,
+	validateMissionPilotJsonSchema,
+} from "./mission-pilot-action-schema";
 
 type Scope = keyof MissionPilotAuthorization["scopes"];
 export type MissionPilotActionDefinition = {
@@ -99,27 +103,17 @@ const definitions: MissionPilotActionDefinition[] = (
 			"questionnaire.draft.update",
 			"questionnaire_draft_update",
 			"Questionnaire回答案を保存",
-			"schema検証済み回答案を保存する。",
+			"LLMが作成した回答案と根拠を既存draft UIへ保存し、20秒のユーザー介入時間を開始する。",
 			"plan",
-			object({ questionnaireSessionId: uuid, answers: array }, [
-				"questionnaireSessionId",
-				"answers",
-			]),
+			questionnaireDraftActionInputSchema,
 		],
 		[
 			"questionnaire.draft.save",
 			"questionnaire_draft_save",
 			"Questionnaire回答案を保存",
-			"Questionnaire回答案と回答根拠を既存commandで保存する。",
+			"LLMが作成した回答案と根拠を既存draft UIへ保存し、20秒のユーザー介入時間を開始する。",
 			"plan",
-			object(
-				{
-					questionnaireSessionId: uuid,
-					answers: array,
-					answerEvidence: array,
-				},
-				["questionnaireSessionId", "answers"],
-			),
+			questionnaireDraftActionInputSchema,
 		],
 		[
 			"questionnaire.submit",
@@ -591,76 +585,11 @@ export function validateMissionPilotActionArguments(
 ):
 	| { success: true; data: Record<string, unknown> }
 	| { success: false; message: string } {
-	const result = validateSchema(definition.inputSchema, value, "arguments");
+	const result = validateMissionPilotJsonSchema(definition.inputSchema, value);
 	return result === null &&
 		value &&
 		typeof value === "object" &&
 		!Array.isArray(value)
 		? { success: true, data: value as Record<string, unknown> }
 		: { success: false, message: result ?? "arguments must be an object" };
-}
-function validateSchema(
-	schema: Record<string, unknown>,
-	value: unknown,
-	path: string,
-): string | null {
-	if (Array.isArray(schema.type)) {
-		const errors = schema.type.map((type) =>
-			validateSchema({ ...schema, type }, value, path),
-		);
-		if (errors.some((error) => error === null)) return null;
-		return errors[0] ?? `${path} has an invalid type`;
-	}
-	if (
-		Array.isArray(schema.enum) &&
-		!schema.enum.some((candidate) => Object.is(candidate, value))
-	)
-		return `${path} must be one of the allowed values`;
-	if (schema.type === "null")
-		return value === null ? null : `${path} must be null`;
-	if (schema.type === "object") {
-		if (!value || typeof value !== "object" || Array.isArray(value))
-			return `${path} must be an object`;
-		const record = value as Record<string, unknown>;
-		for (const required of Array.isArray(schema.required)
-			? schema.required
-			: [])
-			if (!((required as string) in record))
-				return `${path}.${String(required)} is required`;
-		const properties =
-			schema.properties && typeof schema.properties === "object"
-				? (schema.properties as Record<string, Record<string, unknown>>)
-				: {};
-		if (schema.additionalProperties === false)
-			for (const key of Object.keys(record))
-				if (!properties[key]) return `${path}.${key} is not allowed`;
-		for (const [key, child] of Object.entries(properties))
-			if (key in record) {
-				const error = validateSchema(child, record[key], `${path}.${key}`);
-				if (error) return error;
-			}
-		return null;
-	}
-	if (schema.type === "string") {
-		if (typeof value !== "string") return `${path} must be a string`;
-		if (
-			schema.format === "uuid" &&
-			!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-				value,
-			)
-		)
-			return `${path} must be a UUID`;
-	}
-	if (schema.type === "boolean" && typeof value !== "boolean")
-		return `${path} must be a boolean`;
-	if (
-		schema.type === "integer" &&
-		(!Number.isInteger(value) ||
-			(typeof schema.minimum === "number" &&
-				(value as number) < schema.minimum))
-	)
-		return `${path} must be a non-negative integer`;
-	if (schema.type === "array" && !Array.isArray(value))
-		return `${path} must be an array`;
-	return null;
 }

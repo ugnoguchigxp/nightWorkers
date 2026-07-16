@@ -15,13 +15,13 @@ import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repo
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
+import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./agent/mission-pilot-agent.constants";
 import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 
-const QUESTIONNAIRE_INTERVENTION_MS = 20_000;
 let listenerRegistered = false;
 
 type DraftRow = typeof missionPilotQuestionnaireDrafts.$inferSelect;
@@ -82,7 +82,9 @@ async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 		);
 	if (existing?.state === "submitted") return;
 	const now = new Date();
-	const deadlineAt = new Date(now.getTime() + QUESTIONNAIRE_INTERVENTION_MS);
+	const deadlineAt = new Date(
+		now.getTime() + MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS,
+	);
 	const generated = buildMissionPilotQuestionnaireDraft(session, now);
 	if (
 		existing?.state === "waiting_user" &&
@@ -375,11 +377,17 @@ async function submitDraftRow(
 			},
 			dedupeKey: `mission-pilot:questionnaire:submitted:${claimed.id}:${claimed.version}`,
 		});
-		void import("./mission-pilot-plan-coordinator.service")
-			.then(({ runMissionPilotPlanPipeline }) =>
-				runMissionPilotPlanPipeline(taskId),
-			)
-			.catch(() => undefined);
+		if (pilot && (await isMissionPilotAgentSession(pilot.id)))
+			await import("./agent/mission-pilot-task-event.adapter").then(
+				({ recordMissionPilotQuestionnaireReady }) =>
+					recordMissionPilotQuestionnaireReady(questionnaire),
+			);
+		else
+			void import("./mission-pilot-plan-coordinator.service")
+				.then(({ runMissionPilotPlanPipeline }) =>
+					runMissionPilotPlanPipeline(taskId),
+				)
+				.catch(() => undefined);
 		return {
 			draft: submitted ? toView(submitted, taskId) : null,
 			questionnaire,

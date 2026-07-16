@@ -170,7 +170,12 @@ export async function play(taskId: string, expectedVersion: number) {
 			"Mission Pilot requires a non-empty initial prompt",
 		);
 	if (await isMissionPilotAgentSession(session.id))
-		return playAgentSession(session.id, taskId, expectedVersion);
+		return playAgentSession(
+			session.id,
+			taskId,
+			expectedVersion,
+			task.updatedAt.getTime(),
+		);
 	if (
 		session.phase === "attention" &&
 		session.queueHandoffJson &&
@@ -387,6 +392,7 @@ async function playAgentSession(
 	sessionId: string,
 	taskId: string,
 	expectedVersion: number,
+	taskRevision: number,
 ) {
 	const claimed = await claimAgentPlay(taskId, expectedVersion);
 	if (!claimed)
@@ -395,19 +401,28 @@ async function playAgentSession(
 			"MISSION_PILOT_VERSION_CONFLICT",
 			"Mission Pilot state changed; refresh and retry",
 		);
+	const promptEvidence = await repo.ensureInitialPromptMessage(taskId);
+	if (!promptEvidence)
+		throw new MissionPilotError(
+			409,
+			"MISSION_PILOT_INITIAL_PROMPT_FAILED",
+			"Mission Pilot initial prompt could not be persisted",
+		);
+	if (promptEvidence.inserted && promptEvidence.message)
+		publishMissionPilotInitialPrompt(promptEvidence.message);
 	await seedMissionPilotConversation({
 		sessionId,
 		systemContext: buildMissionPilotSystemContext({
 			authorization: claimed.authorizationJson,
 			pushPolicy: claimed.authorizationJson?.pushPolicy ?? null,
 		}),
-		initialPrompt: claimed.initialPromptSnapshot,
+		initialPrompt: promptEvidence.row.initialPromptSnapshot,
 	});
 	await appendMissionPilotTaskEvent({
 		taskId,
 		eventType: "mission_pilot.resume_requested",
 		sourceEventId: `play:${claimed.id}:${claimed.version}`,
-		taskRevision: claimed.version,
+		taskRevision,
 		payload: { reason: "play" },
 	});
 	scheduleMissionPilotAgentWake({ sessionId: claimed.id });

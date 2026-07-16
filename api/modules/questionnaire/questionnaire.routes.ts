@@ -1,4 +1,5 @@
 import { createOpenApiRouter } from "../../lib/openapi";
+import { projectMissionPilotQuestionnaireDraftAnswers } from "../missionPilot/mission-pilot-questionnaire-projection";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./questionnaire.service";
 import * as additionalService from "./questionnaire-additional.service";
@@ -31,7 +32,13 @@ export const questionnaireRouter = createOpenApiRouter()
 			const sessions = await service.listDesignQuestionnaires(
 				c.req.param("id"),
 			);
-			return c.json(sessions, 200);
+			return c.json(
+				await projectMissionPilotQuestionnaireDraftAnswers(
+					c.req.param("id"),
+					sessions,
+				),
+				200,
+			);
 		}),
 	)
 	.openapi(
@@ -41,7 +48,11 @@ export const questionnaireRouter = createOpenApiRouter()
 				c.req.param("id"),
 				c.req.param("sessionId"),
 			);
-			return c.json(session, 200);
+			const [projected] = await projectMissionPilotQuestionnaireDraftAnswers(
+				c.req.param("id"),
+				[session],
+			);
+			return c.json(projected ?? session, 200);
 		}),
 	)
 	.openapi(

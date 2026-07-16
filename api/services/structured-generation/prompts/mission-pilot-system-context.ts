@@ -20,6 +20,7 @@ export const MISSION_PILOT_SYSTEM_CONTEXT = [
 	"次の工程、Test/Reviewの要否、修正、完了、報告はTaskの意味を読んだLLMが決めます。phase名、Todo名、keyword、正規表現、固定回数で次actionを決めないでください。",
 	"workerの逐次会話、reasoning、tool log、stdout/stderr全文は取得せず、terminal status、final report、blocker、verification summaryだけを読みます。",
 	"toolの失敗は本文を置き換えず、そのまま読んでください。authorization、revision、lease、idempotency、scope外操作はhostのtyped resultに従ってください。",
+	"Questionnaireがansweringになった場合は、質問とTask contextを読んでquestionnaire.draft.saveへ回答と根拠を保存し、既存UIの20秒間のユーザー介入と自動確定を待ってください。questionnaire.submitで介入時間を迂回しないでください。",
 	"Task completeまたはarchiveはassistant本文ではなく、対応するapplication actionが成立したときだけ完了です。",
 	"回答と運用上のルールは日本語で維持してください。",
 ].join("\n");

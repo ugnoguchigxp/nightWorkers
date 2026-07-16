@@ -8,13 +8,7 @@ import {
 	missionPilotToolCalls,
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
-import { reviewSessions } from "../../../db/review-mode-schema";
-import {
-	backgroundProcesses,
-	implementationQueueEntries,
-	taskRuns,
-	tasks,
-} from "../../../db/schema";
+import { tasks } from "../../../db/schema";
 import { AppError } from "../../../lib/errors";
 import {
 	commitRunGitCloseout,
@@ -32,6 +26,7 @@ import {
 	getMissionPilotActionUnavailableReason,
 	validateMissionPilotActionArguments,
 } from "./mission-pilot-task-action.registry";
+import { actionResourceBelongsToTask } from "./mission-pilot-task-action-resources";
 
 export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 	async execute(input) {
@@ -212,14 +207,19 @@ async function executeAction(
 			);
 		case "questionnaire.draft.update":
 		case "questionnaire.draft.save":
-			return nightworkersService.saveDesignQuestionnaireAnswers(
+			return (
+				await import("./mission-pilot-agent-questionnaire.service")
+			).saveAgentQuestionnaireDraft({
 				taskId,
-				requiredText(args.questionnaireSessionId),
-				(args.answers ?? []) as Parameters<
+				questionnaireSessionId: requiredText(args.questionnaireSessionId),
+				answers: (args.answers ?? []) as Parameters<
 					typeof nightworkersService.saveDesignQuestionnaireAnswers
 				>[2],
-				{ completionPolicy: "finalize_current_questions" },
-			);
+				answerEvidence: (args.answerEvidence ?? []) as Array<{
+					questionId: string;
+					reason: string;
+				}>,
+			});
 		case "questionnaire.submit":
 			return nightworkersService.saveDesignQuestionnaireAnswers(
 				taskId,
@@ -472,108 +472,6 @@ async function executeAction(
 				`Action ${actionId} is not available in this application command registry yet.`,
 			);
 	}
-}
-
-const runResourceArgumentByAction = new Map<string, string>([
-	["run.stop", "runId"],
-	["review.session.start", "sourceRunId"],
-	["run.review.submit", "runId"],
-	["task.complete", "sourceRunId"],
-	["git.commit", "sourceRunId"],
-	["git.push", "sourceRunId"],
-	["git.merge.preview", "runId"],
-	["git.merge.defer", "runId"],
-	["git.merge.rework", "runId"],
-	["git.merge.target.update", "runId"],
-	["git.merge.execute", "runId"],
-]);
-const queueResourceActions = new Set([
-	"task.queue.update",
-	"task.queue.cancel",
-	"task.queue.requeue",
-	"task.queue.recover",
-	"task.queue.archive",
-]);
-
-async function actionResourceBelongsToTask(
-	taskId: string,
-	actionId: string,
-	args: Record<string, unknown>,
-) {
-	if (actionId === "run.implementation.start") {
-		const repairRequest =
-			args.repairRequest &&
-			typeof args.repairRequest === "object" &&
-			!Array.isArray(args.repairRequest)
-				? (args.repairRequest as Record<string, unknown>)
-				: null;
-		const failure =
-			repairRequest?.failure &&
-			typeof repairRequest.failure === "object" &&
-			!Array.isArray(repairRequest.failure)
-				? (repairRequest.failure as Record<string, unknown>)
-				: null;
-		const sourceRunId = failure?.sourceRunId;
-		if (typeof sourceRunId !== "string") return true;
-		const [run] = await db
-			.select({ id: taskRuns.id })
-			.from(taskRuns)
-			.where(and(eq(taskRuns.id, sourceRunId), eq(taskRuns.taskId, taskId)));
-		return Boolean(run);
-	}
-	const runArgument = runResourceArgumentByAction.get(actionId);
-	if (runArgument) {
-		const runId = args[runArgument];
-		if (typeof runId !== "string") return false;
-		const [run] = await db
-			.select({ id: taskRuns.id })
-			.from(taskRuns)
-			.where(and(eq(taskRuns.id, runId), eq(taskRuns.taskId, taskId)));
-		return Boolean(run);
-	}
-	if (queueResourceActions.has(actionId)) {
-		const entryId = args.entryId;
-		if (typeof entryId !== "string") return false;
-		const [entry] = await db
-			.select({ id: implementationQueueEntries.id })
-			.from(implementationQueueEntries)
-			.where(
-				and(
-					eq(implementationQueueEntries.id, entryId),
-					eq(implementationQueueEntries.taskId, taskId),
-				),
-			);
-		return Boolean(entry);
-	}
-	if (actionId === "background_process.stop") {
-		const processId = args.processId;
-		if (typeof processId !== "string") return false;
-		const [process] = await db
-			.select({ id: backgroundProcesses.id })
-			.from(backgroundProcesses)
-			.where(
-				and(
-					eq(backgroundProcesses.id, processId),
-					eq(backgroundProcesses.taskId, taskId),
-				),
-			);
-		return Boolean(process);
-	}
-	if (actionId === "review.run.start") {
-		const reviewSessionId = args.reviewSessionId;
-		if (typeof reviewSessionId !== "string") return false;
-		const [reviewSession] = await db
-			.select({ id: reviewSessions.id })
-			.from(reviewSessions)
-			.where(
-				and(
-					eq(reviewSessions.id, reviewSessionId),
-					eq(reviewSessions.taskId, taskId),
-				),
-			);
-		return Boolean(reviewSession);
-	}
-	return true;
 }
 
 function requiredText(value: unknown) {

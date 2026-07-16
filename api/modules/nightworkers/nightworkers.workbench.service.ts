@@ -32,6 +32,7 @@ import type { WorkbenchChatIntent } from "./nightworkers.workbench-message.servi
 
 export {
 	ensureDesignQuestionnaireReadyMessage,
+	ensureMissionPilotAgentQuestionnaireReadyMessage,
 	prepareMissionPilotPlanModeIntake,
 } from "./nightworkers.workbench-plan-intake.service";
 

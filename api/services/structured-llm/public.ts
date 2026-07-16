@@ -48,4 +48,3 @@ export type {
 	SupervisorProviderClass,
 	SupervisorProviderId,
 } from "./types";
-

@@ -60,6 +60,37 @@ export async function ensureDesignQuestionnaireReadyMessage(input: {
 	});
 }
 
+export async function ensureMissionPilotAgentQuestionnaireReadyMessage(input: {
+	taskId: string;
+	missionPilotSessionId: string;
+	questionnaireSession: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
+}) {
+	return ensureDesignQuestionnaireReadyMessage({
+		taskId: input.taskId,
+		questionnaireSession: input.questionnaireSession,
+		planModeGate: {
+			shouldStartPlanMode: true,
+			action: "plan_mode",
+			reason: "Mission PilotがQuestionnaire回答案を保存しました。",
+			dedicatedViews: [
+				{
+					view: "questionnaire",
+					decision: "include",
+					reason: "既存Questionnaire UIへ回答案を表示します。",
+				},
+			],
+			specificationLenses: [],
+		},
+		planModeSettingsSnapshot: buildPlanModeSettingsSnapshot(
+			readGeneralSettings(),
+		),
+		source: "mission_pilot",
+		trace: missionPilotPlanOutputTrace({
+			sessionId: input.missionPilotSessionId,
+		}),
+	});
+}
+
 export async function prepareMissionPilotPlanModeIntake(input: {
 	taskId: string;
 	prompt: string;

@@ -318,4 +318,3 @@ function bedrockImageFormat(mediaType: string) {
 	if (mediaType === "image/webp") return "webp" as const;
 	return "png" as const;
 }
-

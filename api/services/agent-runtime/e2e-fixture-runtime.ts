@@ -118,9 +118,9 @@ export async function runE2eFixtureRuntime(
 			exitCode: 0,
 		},
 	});
-	const verificationCommand = "bun run verify";
 	const testRuntime =
 		typeof context.runtimeOptions?.verificationDocumentId === "string";
+	const verificationCommand = testRuntime ? "bun run verify" : "fixture verify";
 	if (testRuntime) {
 		const hasTransientTestFailure = context.compiledPrompt.includes(
 			"[fixture:test-transient-failure]",

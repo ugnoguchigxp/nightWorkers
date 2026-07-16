@@ -370,6 +370,8 @@ export async function runMissionPilotAgentWake(
 				if (
 					result.ok &&
 					[
+						"questionnaire.draft.update",
+						"questionnaire.draft.save",
 						"run.implementation.start",
 						"run.test.start",
 						"review.run.start",
