@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
+	missionPilotActionExecutions,
 	missionPilotAgentTurns,
 	missionPilotToolCalls,
 } from "../api/db/mission-pilot-agent-schema";
@@ -15,7 +16,15 @@ import {
 	MissionPilotActionExecutionConflictError,
 	reconcileMissionPilotActionExecutionReceipts,
 } from "../api/modules/missionPilot/agent/mission-pilot-action-execution.repository";
+import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
+import {
+	claimMissionPilotAgentTurn,
+	claimMissionPilotToolCall,
+	persistMissionPilotProviderTurn,
+} from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
+import { missionPilotTaskActionPort } from "../api/modules/missionPilot/agent/mission-pilot-task-action.adapter";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
+import * as nightworkersService from "../api/modules/nightworkers/nightworkers.service";
 
 const repositoryIds: string[] = [];
 let nextTurnIndex = 1;
@@ -51,7 +60,7 @@ async function fixture() {
 			tx,
 		);
 	});
-	return { taskId, sessionId: session.id };
+	return { taskId, sessionId: session.id, sessionVersion: session.version };
 }
 
 async function addToolCall(sessionId: string, toolCallId: string) {
@@ -145,7 +154,7 @@ describe("Mission Pilot durable action receipts", () => {
 			.insert(taskMessages)
 			.values({
 				taskId,
-				role: "user",
+				role: "assistant",
 				content: "crash-safe",
 				messageType: "text",
 				metadataJson: {
@@ -175,5 +184,118 @@ describe("Mission Pilot durable action receipts", () => {
 			expectedTaskRevision: 1,
 		});
 		expect(equivalent.id).toBe(receipt.id);
+	});
+
+	it("persists a typed application rejection as failed instead of outcome_unknown", async () => {
+		const state = await fixture();
+		const playing = await claimAgentPlay(state.taskId, state.sessionVersion);
+		if (!playing) throw new Error("agent fixture did not start");
+		const leaseOwner = `typed-rejection:${crypto.randomUUID()}`;
+		const turn = await claimMissionPilotAgentTurn({
+			sessionId: state.sessionId,
+			leaseOwner,
+		});
+		if (!turn) throw new Error("agent turn was not claimed");
+		const [task] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, state.taskId));
+		if (!task) throw new Error("task fixture is missing");
+		const argumentsJson = {
+			expectedTaskRevision: task.updatedAt.getTime(),
+		};
+		const [call] =
+			(await persistMissionPilotProviderTurn({
+				sessionId: state.sessionId,
+				turnId: turn.turnId,
+				leaseOwner,
+				content: "完了前のTaskをarchiveします。",
+				toolCalls: [
+					{
+						id: "archive-before-complete",
+						name: "task_archive",
+						arguments: argumentsJson,
+					},
+				],
+			})) ?? [];
+		if (!call) throw new Error("tool call was not persisted");
+		const running = await claimMissionPilotToolCall({
+			id: call.id,
+			leaseOwner,
+		});
+		if (!running) throw new Error("tool call was not claimed");
+
+		const result = await missionPilotTaskActionPort.execute({
+			toolCallId: running.id,
+			leaseOwner,
+			taskId: state.taskId,
+			sessionId: state.sessionId,
+			actionId: running.actionId,
+			arguments: argumentsJson,
+			expectedTaskRevision: argumentsJson.expectedTaskRevision,
+			idempotencyKey: running.idempotencyKey,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			failure: {
+				kind: "domain_precondition",
+				providerCode: "VALIDATION_ERROR",
+			},
+		});
+		const [receipt] = await db
+			.select()
+			.from(missionPilotActionExecutions)
+			.where(eq(missionPilotActionExecutions.toolCallId, running.id));
+		expect(receipt).toMatchObject({
+			status: "failed",
+			failureJson: { kind: "domain_precondition" },
+		});
+	});
+
+	it("enforces the expected Task revision inside the shared update command", async () => {
+		const state = await fixture();
+		const [before] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, state.taskId));
+		if (!before) throw new Error("task fixture is missing");
+		await db
+			.update(tasks)
+			.set({ updatedAt: new Date(before.updatedAt.getTime() + 1_000) })
+			.where(eq(tasks.id, state.taskId));
+
+		await expect(
+			nightworkersService.updateTask(
+				state.taskId,
+				{ title: "must not overwrite a newer Task" },
+				{ expectedRevision: before.updatedAt.getTime() },
+			),
+		).rejects.toMatchObject({
+			code: "TASK_REVISION_CONFLICT",
+			statusCode: 409,
+		});
+		const [after] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, state.taskId));
+		expect(after?.title).toBe("receipt fixture");
+	});
+
+	it("stores Mission Pilot visible messages as assistant messages", async () => {
+		const state = await fixture();
+		const message = await nightworkersService.appendAssistantTaskMessage(
+			state.taskId,
+			"ユーザーへ確認したいことがあります。",
+			{
+				source: "mission_pilot",
+				missionPilotAction: { idempotencyKey: "visible-message" },
+			},
+		);
+		expect(message).toMatchObject({
+			role: "assistant",
+			content: "ユーザーへ確認したいことがあります。",
+			metadataJson: { source: "mission_pilot" },
+		});
 	});
 });

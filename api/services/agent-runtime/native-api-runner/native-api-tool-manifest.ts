@@ -1,5 +1,8 @@
 import type { ProviderToolDefinition } from "../../structured-llm/tool-calls";
-import { TODO_MUTATION_LIMITS } from "../../todo-mutation";
+import {
+	TODO_DRAFT_FIELD_GUIDANCE_JA,
+	TODO_MUTATION_LIMITS,
+} from "../../todo-mutation";
 import type { WorkerToolName } from "../../tool-policy/types";
 
 export type NativeApiRuntimeToolName =
@@ -76,19 +79,23 @@ export const todoCommandJsonSchema = {
 							objective: {
 								type: ["string", "null"],
 								maxLength: TODO_MUTATION_LIMITS.maxObjectiveLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.objective,
 							},
 							context: {
 								type: ["string", "null"],
 								maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.context,
 							},
 							nextAction: {
 								type: "string",
 								minLength: 1,
 								maxLength: TODO_MUTATION_LIMITS.maxNextActionLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction,
 							},
 							acceptanceCriteria: {
 								type: "array",
 								maxItems: TODO_MUTATION_LIMITS.maxAcceptanceCriteria,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.acceptanceCriteria,
 								items: {
 									type: "string",
 									minLength: 1,
@@ -172,11 +179,13 @@ export const todoCommandJsonSchema = {
 				context: {
 					type: "string",
 					maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+					description: TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext,
 				},
 				nextAction: {
 					type: "string",
 					minLength: 1,
 					maxLength: TODO_MUTATION_LIMITS.maxNextActionLength,
+					description: TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction,
 				},
 			},
 			["op", "todoId", "expectedTodoRevision", "context", "nextAction"],

@@ -104,8 +104,15 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain("NightWorkers Coding Agent Runtime");
 		expect(system?.content).toContain("current Todo");
 		expect(system?.content).toContain("単一Coding Agentとして実装する");
-		expect(system?.content).toContain('"version": 2');
+		expect(system?.content).toContain('"version": 3');
 		expect(system?.content).toContain("ユーザーPromptから計画要否を判断し");
+		expect(system?.content).toContain("局所SystemContext兼リマインダー");
+		expect(system?.content).toContain(
+			"Task名だけから最終的な実装Todoを作らない",
+		);
+		expect(system?.content).toContain(
+			"quality gate、verify、template/import、安全・権限",
+		);
 		expect(system?.content).toContain(
 			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
 		);

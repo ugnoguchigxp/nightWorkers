@@ -233,6 +233,31 @@ export async function appendTaskMessage(
 	if (message) publishTaskMessageCreated(message);
 	return latestTask;
 }
+
+export async function appendAssistantTaskMessage(
+	id: string,
+	content: string,
+	metadata?: Record<string, unknown>,
+) {
+	const task = await repo.getTask(id);
+	if (!task) throw new NotFoundError("Task not found");
+	const trimmed = content.trim();
+	if (!trimmed)
+		throw new AppError(
+			400,
+			"EMPTY_ASSISTANT_MESSAGE",
+			"Message must not be empty",
+		);
+	const message = await repo.createTaskMessage({
+		taskId: id,
+		role: "assistant",
+		content: trimmed,
+		messageType: "text",
+		payloadJson: metadata,
+	});
+	if (message) publishTaskMessageCreated(message);
+	return message;
+}
 export type WorkbenchChatIntent =
 	| "intake"
 	| "draft"

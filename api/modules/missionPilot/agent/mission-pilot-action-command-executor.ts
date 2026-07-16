@@ -15,6 +15,7 @@ export type MissionPilotActionCommandContext = {
 	sessionId: string;
 	toolCallId: string;
 	idempotencyKey: string;
+	expectedTaskRevision: number;
 	sourceRunId: string | null;
 };
 
@@ -39,9 +40,10 @@ export async function executeMissionPilotAction(
 				(args.fields ?? {}) as Parameters<
 					typeof nightworkersService.updateTask
 				>[1],
+				{ expectedRevision: context.expectedTaskRevision },
 			);
 		case "task.message.send":
-			return nightworkersService.appendTaskMessage(
+			return nightworkersService.appendAssistantTaskMessage(
 				taskId,
 				requiredText(args.content),
 				{

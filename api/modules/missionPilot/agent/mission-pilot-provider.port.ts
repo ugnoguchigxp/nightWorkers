@@ -119,15 +119,24 @@ export async function callMissionPilotProviderCandidates(input: {
 
 	let lastUnsupported: Awaited<ReturnType<typeof callProviderToolTurn>> | null =
 		null;
+	let lastRetryableFailure: unknown = null;
 	for (const candidate of input.candidates) {
-		const result = await retryMissionPilotProviderCall(
-			() => input.callCandidate(candidate),
+		try {
+			const result = await input.callCandidate(candidate);
+			if (result.type === "supported") return result;
+			lastUnsupported = result;
+		} catch (error) {
+			const failure = normalizeStructuredProviderError(error);
+			if (!failure.retryable || input.signal.aborted) throw failure;
+			lastRetryableFailure = failure;
+		}
+	}
+	if (lastRetryableFailure)
+		return retryMissionPilotProviderCall(
+			() => Promise.reject(lastRetryableFailure),
 			input.signal,
 			input.retryContext,
 		);
-		if (result.type === "supported") return result;
-		lastUnsupported = result;
-	}
 
 	return (
 		lastUnsupported ?? {

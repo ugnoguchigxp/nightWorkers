@@ -53,48 +53,52 @@ async function retryFixture() {
 	return { taskId, sessionId: playing.id };
 }
 
+function providerCandidates() {
+	return buildNormalizedSupervisorLlmRequestCandidates({
+		systemPrompt: "system",
+		userPrompt: "user",
+		label: "mission_pilot_agent",
+		role: "mission_pilot",
+		settings: {
+			providerEndpoints: [
+				{
+					id: "codex",
+					name: "Codex SDK",
+					kind: "codex",
+					enabled: true,
+					models: ["codex-model"],
+				},
+				{
+					id: "azure",
+					name: "Azure OpenAI",
+					kind: "azure",
+					enabled: true,
+					endpoint: "https://example.openai.azure.com",
+					models: ["azure-model"],
+				},
+			],
+			roleRoutes: [
+				{
+					role: "mission_pilot",
+					primary: {
+						providerEndpointId: "codex",
+						model: "codex-model",
+					},
+					fallbacks: [
+						{
+							providerEndpointId: "azure",
+							model: "azure-model",
+						},
+					],
+				},
+			],
+		},
+	});
+}
+
 describe("Mission Pilot provider route fallback", () => {
 	it("continues to the next configured candidate when native tools are unsupported", async () => {
-		const candidates = buildNormalizedSupervisorLlmRequestCandidates({
-			systemPrompt: "system",
-			userPrompt: "user",
-			label: "mission_pilot_agent",
-			role: "mission_pilot",
-			settings: {
-				providerEndpoints: [
-					{
-						id: "codex",
-						name: "Codex SDK",
-						kind: "codex",
-						enabled: true,
-						models: ["codex-model"],
-					},
-					{
-						id: "azure",
-						name: "Azure OpenAI",
-						kind: "azure",
-						enabled: true,
-						endpoint: "https://example.openai.azure.com",
-						models: ["azure-model"],
-					},
-				],
-				roleRoutes: [
-					{
-						role: "mission_pilot",
-						primary: {
-							providerEndpointId: "codex",
-							model: "codex-model",
-						},
-						fallbacks: [
-							{
-								providerEndpointId: "azure",
-								model: "azure-model",
-							},
-						],
-					},
-				],
-			},
-		});
+		const candidates = providerCandidates();
 		const calls: string[] = [];
 		const result = await callMissionPilotProviderCandidates({
 			candidates,
@@ -126,6 +130,44 @@ describe("Mission Pilot provider route fallback", () => {
 			type: "supported",
 			toolCalls: [{ name: "read_task_workspace" }],
 		});
+	});
+
+	it("tries the next candidate before scheduling a retryable outage", async () => {
+		const fixture = await retryFixture();
+		const calls: string[] = [];
+		const result = await callMissionPilotProviderCandidates({
+			candidates: providerCandidates(),
+			signal: new AbortController().signal,
+			retryContext: {
+				sessionId: fixture.sessionId,
+				taskId: fixture.taskId,
+				taskRevision: 1,
+			},
+			callCandidate: vi.fn(async (candidate) => {
+				calls.push(candidate.providerId);
+				if (candidate.providerId === "codex")
+					throw new StructuredProviderError({
+						kind: "transport",
+						message: "primary temporarily unavailable",
+						retryable: true,
+					});
+				return {
+					type: "supported" as const,
+					content: "fallback succeeded",
+					toolCalls: [],
+					usage: usage(),
+				};
+			}),
+		});
+
+		expect(calls).toEqual(["codex", "azure-openai"]);
+		expect(result).toMatchObject({ type: "supported" });
+		expect(
+			await listPendingMissionPilotTaskEvents(
+				fixture.sessionId,
+				new Date(Date.now() + 60_000),
+			),
+		).toHaveLength(0);
 	});
 
 	it("returns a typed unsupported result when no route candidate is configured", async () => {

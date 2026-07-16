@@ -85,6 +85,7 @@ export {
 } from "./nightworkers.planning-helpers.service";
 export type { WorkbenchChatIntent } from "./nightworkers.workbench.service";
 export {
+	appendAssistantTaskMessage,
 	appendTaskMessage,
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,

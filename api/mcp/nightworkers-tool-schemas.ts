@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { TODO_MUTATION_LIMITS } from "../services/todo-mutation";
+import {
+	TODO_DRAFT_FIELD_GUIDANCE_JA,
+	TODO_MUTATION_LIMITS,
+} from "../services/todo-mutation";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -107,17 +110,20 @@ const todoDraftSchema = z.object({
 		.string()
 		.max(TODO_MUTATION_LIMITS.maxObjectiveLength)
 		.nullable()
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.objective),
 	context: z
 		.string()
 		.max(TODO_MUTATION_LIMITS.maxContextLength)
 		.nullable()
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
 	nextAction: z
 		.string()
 		.trim()
 		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+		.max(TODO_MUTATION_LIMITS.maxNextActionLength)
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
 	acceptanceCriteria: z
 		.array(
 			z
@@ -127,7 +133,8 @@ const todoDraftSchema = z.object({
 				.max(TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength),
 		)
 		.max(TODO_MUTATION_LIMITS.maxAcceptanceCriteria)
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.acceptanceCriteria),
 	dependsOn: z
 		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
 		.max(TODO_MUTATION_LIMITS.maxDependencies)
@@ -188,12 +195,16 @@ const todoMutationCommandSchema = z.discriminatedUnion("op", [
 		op: z.literal("update_context"),
 		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
 		expectedTodoRevision: z.number().int().nonnegative(),
-		context: z.string().max(TODO_MUTATION_LIMITS.maxContextLength),
+		context: z
+			.string()
+			.max(TODO_MUTATION_LIMITS.maxContextLength)
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext),
 		nextAction: z
 			.string()
 			.trim()
 			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+			.max(TODO_MUTATION_LIMITS.maxNextActionLength)
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
 	}),
 ]);
 

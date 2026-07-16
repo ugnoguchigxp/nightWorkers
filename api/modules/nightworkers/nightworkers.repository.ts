@@ -547,11 +547,16 @@ export async function updateTask(
 		status?: TaskStatus;
 		priority?: number;
 	},
+	options?: { expectedUpdatedAt?: Date },
 ) {
 	const [task] = await db
 		.update(tasks)
 		.set({ ...data, updatedAt: new Date() })
-		.where(eq(tasks.id, id))
+		.where(
+			options?.expectedUpdatedAt
+				? and(eq(tasks.id, id), eq(tasks.updatedAt, options.expectedUpdatedAt))
+				: eq(tasks.id, id),
+		)
 		.returning();
 	return task;
 }

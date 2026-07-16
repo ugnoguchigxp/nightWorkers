@@ -12,6 +12,10 @@ const codexMock = vi.hoisted(() => {
 	const runInputs: unknown[] = [];
 	const runOptions: unknown[] = [];
 	const constructorInputs: unknown[] = [];
+	const isolatedAuthSnapshots: Array<{
+		contents: string | null;
+		mode: number | null;
+	}> = [];
 	const startedThreadOptions: unknown[] = [];
 	let finalResponse = "";
 
@@ -37,6 +41,17 @@ const codexMock = vi.hoisted(() => {
 	class MockCodex {
 		constructor(options: unknown) {
 			constructorInputs.push(options);
+			const codexHome = (options as { env?: { CODEX_HOME?: string } }).env
+				?.CODEX_HOME;
+			const authPath = codexHome ? path.join(codexHome, "auth.json") : null;
+			isolatedAuthSnapshots.push(
+				authPath && fs.existsSync(authPath)
+					? {
+							contents: fs.readFileSync(authPath, "utf8"),
+							mode: fs.statSync(authPath).mode & 0o777,
+						}
+					: { contents: null, mode: null },
+			);
 		}
 
 		startThread(options?: unknown) {
@@ -50,6 +65,7 @@ const codexMock = vi.hoisted(() => {
 		runInputs,
 		runOptions,
 		constructorInputs,
+		isolatedAuthSnapshots,
 		startedThreadOptions,
 		setFinalResponse(value: string) {
 			finalResponse = value;
@@ -58,6 +74,7 @@ const codexMock = vi.hoisted(() => {
 			runInputs.length = 0;
 			runOptions.length = 0;
 			constructorInputs.length = 0;
+			isolatedAuthSnapshots.length = 0;
 			startedThreadOptions.length = 0;
 			finalResponse = "";
 		},
@@ -211,6 +228,9 @@ describe("Codex Mission Pilot tool turns", () => {
 			"nightworkers-mission-pilot-codex-home-",
 		);
 		expect(fs.existsSync(isolatedCodexHome)).toBe(false);
+		expect(codexMock.isolatedAuthSnapshots).toEqual([
+			{ contents: "test-auth", mode: 0o600 },
+		]);
 		const codexConfig = constructorInput.config;
 		expect(codexConfig).toMatchObject({
 			features: { memories: false },

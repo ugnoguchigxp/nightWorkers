@@ -381,8 +381,29 @@ export async function resolveBlueprintPlanningReadiness(
 	};
 }
 
-export async function updateTask(id: string, data: UpdateTaskData) {
-	const updated = await repo.updateTask(id, data);
+export async function updateTask(
+	id: string,
+	data: UpdateTaskData,
+	options?: { expectedRevision?: number },
+) {
+	const updated = await repo.updateTask(
+		id,
+		data,
+		options?.expectedRevision === undefined
+			? undefined
+			: { expectedUpdatedAt: new Date(options.expectedRevision) },
+	);
+	if (!updated && options?.expectedRevision !== undefined) {
+		const current = await repo.getTask(id);
+		throw new AppError(
+			409,
+			"TASK_REVISION_CONFLICT",
+			"Task revision changed; re-read the Task workspace.",
+			{
+				currentTaskRevision: current?.updatedAt.getTime() ?? null,
+			},
+		);
+	}
 	if (updated?.status === "ready") {
 		void runSessionQueueForRepository(updated.repositoryId);
 	}

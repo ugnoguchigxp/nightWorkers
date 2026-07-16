@@ -96,6 +96,9 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 			"ユーザーPromptから計画要否を判断し",
 		);
 		expect(review.runtimeContract).toContain(
+			"工程固有のリマインダーとして記録",
+		);
+		expect(review.runtimeContract).toContain(
 			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
 		);
 		expect(review.runtimeContract).toContain(

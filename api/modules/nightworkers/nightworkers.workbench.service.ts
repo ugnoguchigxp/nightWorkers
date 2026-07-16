@@ -22,6 +22,7 @@ import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing"
 
 export type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
 export {
+	appendAssistantTaskMessage,
 	appendTaskMessage,
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,

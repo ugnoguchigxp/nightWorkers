@@ -221,6 +221,7 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 					sessionId: input.sessionId,
 					toolCallId: input.toolCallId,
 					idempotencyKey: input.idempotencyKey,
+					expectedTaskRevision: input.expectedTaskRevision,
 					sourceRunId: readRepairSourceRunId(validated.data),
 				},
 			);
@@ -232,15 +233,21 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 			});
 			return { ok: true, actionId: input.actionId, data };
 		} catch (error) {
-			const result = failed(
-				input.actionId,
-				input.idempotencyKey,
-				"outcome_unknown",
-				`Action execution outcome is unknown. Re-read the current resource before retrying. ${error instanceof Error ? error.message : String(error)}`,
-			);
+			const result =
+				error instanceof AppError && error.statusCode < 500
+					? failedFromAppError(input.actionId, input.idempotencyKey, error)
+					: failed(
+							input.actionId,
+							input.idempotencyKey,
+							"outcome_unknown",
+							`Action execution outcome is unknown. Re-read the current resource before retrying. ${error instanceof Error ? error.message : String(error)}`,
+						);
 			await completeMissionPilotActionExecution({
 				id: receipt.id,
-				status: "outcome_unknown",
+				status:
+					result.failure.kind === "outcome_unknown"
+						? "outcome_unknown"
+						: "failed",
 				failure: result.failure,
 			});
 			return result;
@@ -343,6 +350,36 @@ function failed(
 					? details.currentTaskRevision
 					: null,
 			details: details ?? null,
+		},
+	};
+}
+function failedFromAppError(
+	actionId: string,
+	idempotencyKey: string,
+	error: AppError,
+): Extract<MissionPilotActionResult, { ok: false }> {
+	const currentTaskRevision = error.details?.currentTaskRevision;
+	return {
+		ok: false,
+		actionId,
+		failure: {
+			kind:
+				error.code === "TASK_REVISION_CONFLICT"
+					? "revision_conflict"
+					: error.statusCode === 401 || error.statusCode === 403
+						? "permission"
+						: "domain_precondition",
+			retryable: false,
+			providerCode: error.code,
+			httpStatus: error.statusCode,
+			message: error.message,
+			retryAfterMs: null,
+			attempt: 1,
+			actionId,
+			idempotencyKey,
+			currentTaskRevision:
+				typeof currentTaskRevision === "number" ? currentTaskRevision : null,
+			details: error.details ?? null,
 		},
 	};
 }

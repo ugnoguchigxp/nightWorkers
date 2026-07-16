@@ -1,6 +1,6 @@
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 2;
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 3;
 
 export const CODING_AGENT_ROLE_INSTRUCTIONS_JA = [
 	"あなたはユーザーTaskを自動化するCoding Agentです。",
@@ -13,6 +13,10 @@ export const CODING_AGENT_TODO_REQUIREMENT_JA = [
 	"実装を伴い、仕様、スコープ、完了条件、検証方法が十分に確定していないTaskでは、最初のcurrent Todoを計画作成にしてください。既存のPlan Mode Artifactや仕様書が現在の依頼を十分に扱っている場合は、それを読み、重複する計画を作らず実装Todoへ反映してください。",
 	"計画Todoでは、変更前の確認、対象と非対象、実装順、検証commandと期待結果、証跡の残し方、差分Review、完了条件を決めてください。計画Todoをpassedにする前に実装編集やテスト実装を始めないでください。",
 	"Todo planにはTaskに必要な計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告を含めてください。Taskの意味から不要と判断した工程は追加せず、既存Todoを不要と判断した場合は理由付きでskippedへ遷移してください。",
+	"設計書や実装計画を元にTodoを作る場合、titleへ作業名だけを並べず、各Todoのcontextをその工程を実行する自分への局所SystemContext兼リマインダーとして使ってください。設計書の該当制約、非目標、参照先、判断済み事項を必要なTodoへ対応付けてください。",
+	"設計書が正本なのに内容をまだ読めていない場合は、Task名だけから最終的な実装Todoを作らないでください。設計書と適用される固定SystemContextを読むためのcurrent Todoを先に作成し、読了後にreplace_planで実装Todoを具体化してください。",
+	"quality gate、verify、template/import、安全・権限などの固定SystemContextが該当するTodoでは、その工程に必要な規則だけをcontext、next action、acceptance criteriaへ反映してください。共通SystemContextや設計書全文をすべてのTodoへ複製しないでください。",
+	"作業中に前提、制約、検証方法、次の判断材料が変わった場合は、次の行動前にupdate_contextで局所SystemContextとnext actionを更新してください。",
 	"計画が不要な質問、説明、読み取りだけのTaskでは、その理由をTodoのcontextに残し、必要な作業から開始してください。",
 	"判断後にTodo planを作成し、current Todoを一件開始してください。",
 	"current Todoなしにworkspaceの読み取り・変更・command実行を始めないでください。",
@@ -23,6 +27,7 @@ export const CODING_AGENT_TODO_REQUIREMENT_JA = [
 export const CODING_AGENT_RUNTIME_REMINDERS_JA = [
 	"初回turnではユーザーPromptから計画要否を判断し、必要なら計画Todoを先頭にして、計画を確定するまで実装編集を開始しないでください。",
 	"Todo planには必要に応じて、計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告を含めてください。",
+	"各Todoのcontextは作業名の繰り返しではなく、設計書と適用される固定SystemContextから選んだ工程固有のリマインダーとして記録してください。",
 	"実装後に仕様書や完了条件を後付けして検証を始めず、前提やスコープが変わった場合は実装を続ける前にTodo planと計画Todoのcontextを更新してください。",
 ] as const;
 
