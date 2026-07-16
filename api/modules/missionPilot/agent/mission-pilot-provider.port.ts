@@ -1,5 +1,5 @@
 import {
-	buildNormalizedSupervisorLlmRequest,
+	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,
 	normalizeStructuredProviderError,
 	providerAdapterKey,
@@ -38,15 +38,17 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 					}
 				: null;
 		const userPrompt = latestUserPrompt(input.messages);
-		const normalizedRequest = buildNormalizedSupervisorLlmRequest({
+		const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
 			systemPrompt: input.systemContext,
 			userPrompt,
 			label: "mission_pilot_agent",
 			role: "mission_pilot",
 			routeOverride,
 		});
-		return retryMissionPilotProviderCall(
-			() =>
+		return callMissionPilotProviderCandidates({
+			candidates: normalizedRequests,
+			signal: input.signal,
+			callCandidate: (normalizedRequest) =>
 				callProviderToolTurn({
 					provider: providerAdapterKey(normalizedRequest.providerId),
 					messages: input.messages,
@@ -64,10 +66,52 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 					signal: input.signal,
 					setProviderDebug: () => undefined,
 				}),
-			input.signal,
-		);
+		});
 	},
 };
+
+type MissionPilotProviderCandidate = ReturnType<
+	typeof buildNormalizedSupervisorLlmRequestCandidates
+>[number];
+
+export async function callMissionPilotProviderCandidates(input: {
+	candidates: MissionPilotProviderCandidate[];
+	signal: AbortSignal;
+	callCandidate: (
+		candidate: MissionPilotProviderCandidate,
+	) => ReturnType<typeof callProviderToolTurn>;
+}) {
+	if (input.candidates.length === 0) {
+		return {
+			type: "unsupported" as const,
+			reason:
+				"Mission Pilot has no configured provider route that supports tool turns.",
+			providerDebug: {
+				mode: "provider_native_tools",
+				candidateCount: 0,
+			},
+		};
+	}
+
+	let lastUnsupported: Awaited<ReturnType<typeof callProviderToolTurn>> | null =
+		null;
+	for (const candidate of input.candidates) {
+		const result = await retryMissionPilotProviderCall(
+			() => input.callCandidate(candidate),
+			input.signal,
+		);
+		if (result.type === "supported") return result;
+		lastUnsupported = result;
+	}
+
+	return (
+		lastUnsupported ?? {
+			type: "unsupported" as const,
+			reason:
+				"Mission Pilot has no configured provider route that supports tool turns.",
+		}
+	);
+}
 
 export async function retryMissionPilotProviderCall<T>(
 	operation: () => Promise<T>,

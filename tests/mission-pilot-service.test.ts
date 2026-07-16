@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
+import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
 import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
@@ -92,7 +93,7 @@ afterEach(async () => {
 	}
 });
 
-async function createPilotFixture() {
+async function createPilotFixture(options: { runtimeKind?: "agent" } = {}) {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	const runId = crypto.randomUUID();
@@ -119,6 +120,7 @@ async function createPilotFixture() {
 				task,
 				sourceKind: "mission_task_candidate",
 				sourceId: crypto.randomUUID(),
+				...(options.runtimeKind ? { runtimeKind: options.runtimeKind } : {}),
 			},
 			tx,
 		);
@@ -377,6 +379,59 @@ describe("Mission Pilot service", () => {
 			desiredState: "stopped",
 			activityState: "idle",
 			activeRunId: null,
+		});
+	});
+
+	it("stops an agent session that is waiting in attention", async () => {
+		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const [playing] = await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "attention",
+				version: 1,
+				lastErrorCode: "PROVIDER_UNSUPPORTED",
+				lastErrorMessage: "provider route unavailable",
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.taskId, fixture.taskId))
+			.returning();
+		if (!playing) throw new Error("failed to prepare agent session");
+		await db
+			.update(missionPilotAgentSessions)
+			.set({
+				runtimeState: "attention",
+				lastFailureJson: {
+					kind: "unknown",
+					retryable: false,
+					providerCode: null,
+					httpStatus: null,
+					message: "provider route unavailable",
+					retryAfterMs: null,
+					attempt: 1,
+					actionId: "provider.next_turn",
+					idempotencyKey: null,
+				},
+			})
+			.where(eq(missionPilotAgentSessions.sessionId, playing.id));
+
+		const stopped = await service.stop(fixture.taskId, playing.version);
+
+		expect(stopped.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			activityState: "idle",
+			phase: "paused",
+			activeRunId: null,
+		});
+		const [agent] = await db
+			.select()
+			.from(missionPilotAgentSessions)
+			.where(eq(missionPilotAgentSessions.sessionId, playing.id));
+		expect(agent).toMatchObject({
+			runtimeState: "stopped",
+			currentTurnId: null,
+			leaseOwner: null,
+			leaseExpiresAt: null,
 		});
 	});
 });
