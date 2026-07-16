@@ -1,6 +1,6 @@
 import { createOpenApiRouter } from "../../lib/openapi";
+import { updatePlanModeRoutingForUser } from "../missionPilot";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
-import { updatePlanModeRoutingForUser } from "../planMode/plan-mode-routing.service";
 import { createPlanArtifactSourceSelection } from "./plan-artifact-source-selection";
 import * as service from "./specification.service";
 import {

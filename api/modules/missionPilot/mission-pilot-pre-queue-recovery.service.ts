@@ -3,7 +3,7 @@ import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotPreQueueDiagnosticSchema,
 	missionPilotQueueHandoffSchema,
-} from "../../../shared/schemas/mission-pilot.schema";
+} from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
 	missionPilotPhaseRuns,

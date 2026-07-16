@@ -1,4 +1,4 @@
-import type { NativeApiStateCardRole } from "../agent-runtime/native-api-runner/native-api-mode";
+import type { NativeApiStateCardRole } from "../../modules/codingAgent";
 import type {
 	ConversationContextSnapshotRecord,
 	ConversationContextSnapshotV1,

@@ -1,6 +1,6 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
-import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
 import { TodoMutationService } from "../../../services/todo-mutation";
+import { buildCodingAgentSystemContext } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 

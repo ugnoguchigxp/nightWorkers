@@ -1,4 +1,4 @@
-import type { MissionPilotRepairRequest } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotRepairRequest } from "../../../../shared/modules/missionPilot";
 import { createMissionPilotRepairRequest } from "./mission-pilot-repair.repository";
 
 export async function persistMissionPilotRepairRequest(

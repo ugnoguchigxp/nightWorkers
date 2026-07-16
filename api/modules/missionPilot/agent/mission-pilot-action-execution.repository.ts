@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
 	designQuestionnaireReviews,

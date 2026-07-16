@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
-import { playMissionPilotTask } from "../../missionPilot";
+import {
+	playMissionPilotTask,
+	useMissionPilotArtifactAutoFocus,
+} from "../../missionPilot";
 import { useImplementationQueue } from "../../queue";
 import { markArtifactOpenStart } from "../artifactPerformance";
 import { useWorkspaceAppearanceState } from "../contexts/WorkspaceAppearanceContext";
@@ -23,7 +26,6 @@ import {
 	isMissionProposalApprovalRequiredError,
 	resolvePlanWorkspaceInitialTab,
 } from "./nightworkers-shell-utils";
-import { useMissionPilotArtifactAutoFocus } from "./useMissionPilotArtifactAutoFocus";
 import { useNightWorkersComposer } from "./useNightWorkersComposer";
 import { useNightWorkersProjectNavigation } from "./useNightWorkersProjectNavigation";
 import { useNightWorkersQuestionnaire } from "./useNightWorkersQuestionnaire";

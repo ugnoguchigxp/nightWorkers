@@ -35,7 +35,7 @@ export async function createImplementationQueueEntry(
 		schedulingReason?: string | null;
 		missionPilotAdmissionKey?: string | null;
 		missionPilotAgent?:
-			| import("../../../shared/schemas/mission-pilot-agent.schema").MissionPilotAgentRunProvenance
+			| import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance
 			| null;
 		claimReady?: boolean;
 	},

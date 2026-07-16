@@ -1,4 +1,4 @@
-import type { AgentSafetyPolicy } from "../agent-runtime/types";
+import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 import type { WorkerToolName } from "../tool-policy/types";
 import {
 	applyPatchTool,
@@ -116,17 +116,6 @@ export async function executeWorkerTool(
 				taskId: (args.taskId as string | undefined) || input.taskId || "",
 				view: args.view as never,
 				includeDesignContext: args.includeDesignContext as boolean | undefined,
-			}),
-		};
-	}
-
-	if (toolName === "plan_mode") {
-		const { planModeTool } = await import("./plan-mode");
-		return {
-			result: await planModeTool({
-				taskId: input.taskId || (args.taskId as string | undefined) || "",
-				runId: input.runId || (args.runId as string | undefined),
-				command: args.command,
 			}),
 		};
 	}

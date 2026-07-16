@@ -5,14 +5,14 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
 import type {
 	MissionPilotAnswerEvidence,
 	MissionPilotAuthorization,
+	MissionPilotPlanReview,
 	MissionPilotPreQueueDiagnostic,
 	MissionPilotQueueHandoff,
-} from "../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotPlanReview } from "../../shared/schemas/mission-pilot-plan-review.schema";
+} from "../../shared/modules/missionPilot";
+import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
 import type { PlanModeRegenerationTarget } from "../../shared/schemas/plan-mode-artifact.schema";
 import type {
 	MissionPilotArtifactCorrectionStatus,

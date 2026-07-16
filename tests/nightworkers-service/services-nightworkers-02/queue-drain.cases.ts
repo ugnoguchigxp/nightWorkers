@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as runtimeRegistry from "../../../api/modules/codingAgent/runtime/registry";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { runSessionQueueForRepository } from "../../../api/modules/nightworkers/nightworkers.service";
-import * as runtimeRegistry from "../../../api/services/agent-runtime/registry";
 import { repoRoot } from "./setup";
 
 describe("NightWorkers service", () => {

@@ -1,10 +1,10 @@
 import { db } from "../../../db/client";
 import { withSqliteBusyRetry } from "../../../db/retry";
+import type { AgentExecutionMode } from "../../codingAgent";
 import {
 	type AgentModeSessionRouteIdentity,
 	resolveOrOpenAgentModeSession,
-} from "../../../services/agent-runtime/agent-mode-session";
-import type { AgentExecutionMode } from "../../../services/agent-runtime/types";
+} from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 
 export async function createTaskRunInAgentModeSession(input: {

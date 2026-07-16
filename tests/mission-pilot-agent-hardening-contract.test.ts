@@ -10,20 +10,23 @@ import {
 	applyCurrentMissionPilotSystemContext,
 	MISSION_PILOT_PLAN_ENTRY_CONTEXT,
 	MISSION_PILOT_SYSTEM_CONTEXT,
-} from "../api/services/structured-generation/prompts/mission-pilot-system-context";
-import { MISSION_PILOT_TASK_EVENT_TYPES } from "../shared/schemas/mission-pilot-agent.schema";
+} from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
+import { MISSION_PILOT_TASK_EVENT_TYPES } from "../shared/modules/missionPilot/mission-pilot-agent.schema";
 
 describe("Mission Pilot autonomous agent hardening contract", () => {
-	it("delegates Plan Mode artifacts and Questionnaire decisions to Coding Agent", () => {
+	it("owns Questionnaire, routing, and Artifact decisions", () => {
 		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
 			MISSION_PILOT_PLAN_ENTRY_CONTEXT,
 		);
 		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
-			"Questionnaireの作成・回答・確定も行いません",
+			"QuestionnaireとArtifactを所有",
+		);
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
+			"全質問の回答案と質問ごとの根拠を保存",
 		);
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.create"),
-		).toContain("Coding Agent");
+		).toBeNull();
 		expect(applyCurrentMissionPilotSystemContext("保存済みの旧Context")).toBe(
 			`保存済みの旧Context\n${MISSION_PILOT_PLAN_ENTRY_CONTEXT}`,
 		);
@@ -96,20 +99,24 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		);
 	});
 
-	it("does not expose Questionnaire mutation actions to Mission Pilot", () => {
+	it("exposes all Mission Pilot Plan mutations but keeps user submission separate", () => {
 		const actionNames = missionPilotActionToolDefinitions().map(
 			(tool) => tool.name,
 		);
-		expect(actionNames.some((name) => name.startsWith("questionnaire_"))).toBe(
-			false,
-		);
+		expect(actionNames).toContain("questionnaire_draft_save");
+		expect(actionNames).toContain("questionnaire_draft_update");
+		expect(actionNames).toContain("questionnaire_create");
+		expect(actionNames).not.toContain("questionnaire_submit");
+		expect(actionNames).toContain("questionnaire_follow_up_generate");
+		expect(actionNames).toContain("questionnaire_review_generate");
+		expect(actionNames).toContain("questionnaire_review_accept");
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
 		).toContain("ユーザー操作");
 		expect(actionNames.some((name) => name.startsWith("plan_artifact_"))).toBe(
-			false,
+			true,
 		);
-		expect(actionNames).not.toContain("plan_routing_update");
+		expect(actionNames).toContain("plan_routing_update");
 	});
 
 	it("projects visible assistant messages, requested actions, and control states", () => {

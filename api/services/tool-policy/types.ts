@@ -1,4 +1,4 @@
-import type { AgentSafetyPolicy } from "../agent-runtime/types";
+import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 import type { WorkerToolResult } from "../worker-tools/types";
 
 export type WorkerToolName =
@@ -6,7 +6,6 @@ export type WorkerToolName =
 	| "find_file"
 	| "read_file"
 	| "read_current_specification"
-	| "plan_mode"
 	| "inspect_structure"
 	| "search_files"
 	| "search_web"

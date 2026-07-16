@@ -96,7 +96,7 @@ export const implementationQueueEntries = sqliteTable(
 		missionPilotAgentJson: text("mission_pilot_agent_json", {
 			mode: "json",
 		}).$type<
-			| import("../../shared/schemas/mission-pilot-agent.schema").MissionPilotAgentRunProvenance
+			| import("../../shared/modules/missionPilot").MissionPilotAgentRunProvenance
 			| null
 		>(),
 		claimReady: integer("claim_ready", { mode: "boolean" })

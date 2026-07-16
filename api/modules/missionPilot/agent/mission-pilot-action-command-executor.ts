@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { missionPilotRepairRequestSchema } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import { missionPilotRepairRequestSchema } from "../../../../shared/modules/missionPilot";
 import { missionPilotPlanRoutingToolCallSchema } from "../../../../shared/schemas/plan-mode-routing.schema";
 import { db } from "../../../db/client";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
@@ -14,6 +14,7 @@ import {
 	missionPilotThoughtTrace,
 } from "../../nightworkers/nightworkers.trace-provenance";
 import type { PlanArtifactSourceSelection } from "../../specification/plan-artifact-input.types";
+import { missionPilotArtifactProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
 
 export type MissionPilotActionCommandContext = {
 	sessionId: string;
@@ -80,6 +81,7 @@ export async function executeMissionPilotAction(
 				requiredText(args.prompt),
 				{
 					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 					usageTrace: thoughtTrace,
 					missionPilotActionKey: context.idempotencyKey,
 					signal: context.signal,
@@ -108,12 +110,22 @@ export async function executeMissionPilotAction(
 				(args.answers ?? []) as Parameters<
 					typeof nightworkersService.saveDesignQuestionnaireAnswers
 				>[2],
+				{
+					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+					usageTrace: thoughtTrace,
+				},
 			);
 		case "questionnaire.follow_up.generate":
 			return nightworkersService.generateDesignQuestionnaireFollowUp(
 				taskId,
 				requiredText(args.questionnaireSessionId),
-				{ signal: context.signal, usageTrace: thoughtTrace },
+				{
+					signal: context.signal,
+					usageTrace: thoughtTrace,
+					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+				},
 			);
 		case "questionnaire.additional.generate":
 			return (
@@ -125,13 +137,19 @@ export async function executeMissionPilotAction(
 					| "pre_feature_plan_gate",
 				reason: optionalText(args.reason) ?? undefined,
 				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 				llmUsageTrace: thoughtTrace,
 			});
 		case "questionnaire.review.generate":
 			return nightworkersService.generateDesignQuestionnaireReview(
 				taskId,
 				requiredText(args.questionnaireSessionId),
-				{ signal: context.signal, usageTrace: thoughtTrace },
+				{
+					signal: context.signal,
+					usageTrace: thoughtTrace,
+					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+				},
 			);
 		case "questionnaire.review.accept":
 			return nightworkersService.acceptDesignQuestionnaireReview(
@@ -157,6 +175,7 @@ export async function executeMissionPilotAction(
 				questionnaireSessionId: optionalText(args.questionnaireSessionId),
 				sourceSelection: recordOrUndefined(args.sourceSelection),
 				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 				trace: artifactTrace,
 				llmUsageTrace: thoughtTrace,
 				signal: context.signal,
@@ -169,6 +188,7 @@ export async function executeMissionPilotAction(
 					questionnaireSessionId: optionalText(args.questionnaireSessionId),
 					sourceSelection: recordOrUndefined(args.sourceSelection),
 					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 					trace: artifactTrace,
 					llmUsageTrace: thoughtTrace,
 					signal: context.signal,
@@ -182,6 +202,7 @@ export async function executeMissionPilotAction(
 				questionnaireSessionId: optionalText(args.questionnaireSessionId),
 				sourceSelection: recordOrUndefined(args.sourceSelection),
 				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 				trace: artifactTrace,
 				llmUsageTrace: thoughtTrace,
 				signal: context.signal,
@@ -200,6 +221,7 @@ export async function executeMissionPilotAction(
 					questionnaireSessionId: optionalText(args.questionnaireSessionId),
 					sourceSelection: recordOrUndefined(args.sourceSelection),
 					role: "mission_pilot",
+					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 					trace: artifactTrace,
 					llmUsageTrace: thoughtTrace,
 					signal: context.signal,
@@ -214,7 +236,7 @@ export async function executeMissionPilotAction(
 				changes: args.changes,
 			});
 			return (
-				await import("../../planMode/plan-mode-routing.service")
+				await import("../planning/plan-mode-routing.service")
 			).executeMissionPilotPlanRoutingTool(taskId, toolCall);
 		}
 		case "task.queue.enqueue":

@@ -319,8 +319,7 @@ export async function prepareTaskRunInProcess(
 		executionPhase: executionMode,
 		executionModeSource,
 		projectExplorationCatalog: projectExplorationCatalogPin,
-		planModeRequested: Boolean(options.planModeRequested),
-		planModeClosed: !options.planModeRequested,
+		planModeClosed: true,
 		planModeSettingsSnapshot,
 		...blueprintPlanningSnapshot,
 		runtimeLane: runtimeLaneResolution.lane,
@@ -399,11 +398,8 @@ export async function prepareTaskRunInProcess(
 	let runtimeContextSnapshot: RuntimePromptSnapshot = {
 		...contextSnapshot,
 		executionPhase: executionMode,
-		planModeRequested: Boolean(options.planModeRequested),
-		planModeClosed: !options.planModeRequested,
-		...(options.planModeRequested
-			? {}
-			: { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }),
+		planModeClosed: true,
+		implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE,
 		conversationContext: conversationContext
 			? {
 					snapshotId: conversationContext.id,

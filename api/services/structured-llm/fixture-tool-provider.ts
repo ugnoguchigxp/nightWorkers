@@ -222,9 +222,14 @@ function findRunId(value: unknown): string | null {
 	if (typeof activeRun.id === "string") return activeRun.id;
 	if (Array.isArray(record.terminalRuns)) {
 		const terminalRun = record.terminalRuns.find(
-			(run) => typeof asRecord(run).id === "string",
+			(run) =>
+				typeof asRecord(run).runId === "string" ||
+				typeof asRecord(run).id === "string",
 		);
-		if (terminalRun) return asRecord(terminalRun).id as string;
+		if (terminalRun) {
+			const terminalRunRecord = asRecord(terminalRun);
+			return (terminalRunRecord.runId ?? terminalRunRecord.id) as string;
+		}
 	}
 	const runStatuses = new Set([
 		"queued",

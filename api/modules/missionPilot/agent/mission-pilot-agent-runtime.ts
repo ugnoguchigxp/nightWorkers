@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
-import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
+import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
 import {
 	applyCurrentMissionPilotSystemContext,
 	buildMissionPilotSystemContext,
-} from "../../../services/structured-generation/prompts/mission-pilot-system-context";
-import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
+} from "../prompts/mission-pilot-system-context";
 import {
 	MISSION_PILOT_AGENT_LEASE_MS,
 	MISSION_PILOT_CONTEXT_HARD_TOKENS,

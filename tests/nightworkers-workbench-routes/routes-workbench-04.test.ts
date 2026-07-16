@@ -39,7 +39,7 @@ vi.mock("../../api/services/structured-llm", async () => {
 	};
 });
 
-vi.mock("../../api/services/agent-runtime/registry", () => {
+vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 	const runtime = {
 		kind: "native-local",
 		start: vi.fn(async () => ({
@@ -181,7 +181,7 @@ afterEach(async () => {
 });
 
 describe("NightWorkers workbench routes", () => {
-	it("starts Coding Agent Plan Mode while Mission Pilot is stopped", async () => {
+	it("starts the neutral planning run while Mission Pilot is stopped", async () => {
 		vi.mocked(llm.callStructuredJsonLLM)
 			.mockResolvedValueOnce(
 				mockPlanModeGate(true, "explicit planning request"),
@@ -249,10 +249,9 @@ describe("NightWorkers workbench routes", () => {
 		const body = await response.json();
 		expect(body.run).toMatchObject({ taskId: task.id, status: "running" });
 		expect(body.run.contextSnapshot).toMatchObject({
-			planModeRequested: true,
-			planModeClosed: false,
+			planModeClosed: true,
 		});
-		expect(body.run.contextSnapshot).not.toHaveProperty(
+		expect(body.run.contextSnapshot).toHaveProperty(
 			"implementationPhasePreamble",
 		);
 		expect(body.task.status).toBe("running");

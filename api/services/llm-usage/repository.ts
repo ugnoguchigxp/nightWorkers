@@ -381,6 +381,25 @@ export async function listLlmUsageRecordsForRun(runId: string) {
 }
 
 export async function summarizeLlmUsageForTask(taskId: string) {
+	const [total, codingAgent, missionPilot] = await Promise.all([
+		summarizeLlmUsageRows(taskId),
+		summarizeLlmUsageRows(taskId, "coding_agent"),
+		summarizeLlmUsageRows(taskId, "mission_pilot"),
+	]);
+	return {
+		taskId,
+		...total,
+		byOwner: {
+			codingAgent,
+			missionPilot,
+		},
+	};
+}
+
+async function summarizeLlmUsageRows(
+	taskId: string,
+	traceOwner?: "coding_agent" | "mission_pilot",
+) {
 	const [row] = await db
 		.select({
 			inputTokens: sql<number>`coalesce(sum(${llmUsageRecords.inputTokens}), 0)`,
@@ -388,7 +407,7 @@ export async function summarizeLlmUsageForTask(taskId: string) {
 			stateCardTokens: sql<number>`coalesce(sum(${llmUsageRecords.stateCardTokens}), 0)`,
 			promptInputTokens: sql<number>`coalesce(sum(coalesce(${llmUsageRecords.systemPromptTokens}, 0) + coalesce(${llmUsageRecords.userPromptTokens}, 0) + coalesce(${llmUsageRecords.stateCardTokens}, 0)), 0)`,
 			cachedInputTokens: sql<number>`coalesce(sum(${llmUsageRecords.cachedInputTokens}), 0)`,
-			nonCachedInputTokens: sql<number>`coalesce(sum(case when ${llmUsageRecords.inputTokens} is not null and ${llmUsageRecords.cachedInputTokens} is not null and ${llmUsageRecords.inputTokens} > ${llmUsageRecords.cachedInputTokens} then ${llmUsageRecords.inputTokens} - ${llmUsageRecords.cachedInputTokens} else 0 end), 0)`,
+			nonCachedInputTokens: sql<number>`coalesce(sum(case when ${llmUsageRecords.inputTokens} is not null then max(${llmUsageRecords.inputTokens} - coalesce(${llmUsageRecords.cachedInputTokens}, 0), 0) else 0 end), 0)`,
 			reasoningOutputTokens: sql<number>`coalesce(sum(${llmUsageRecords.reasoningOutputTokens}), 0)`,
 			totalTokens: sql<number>`coalesce(sum(coalesce(${llmUsageRecords.totalTokens}, coalesce(${llmUsageRecords.inputTokens}, 0) + coalesce(${llmUsageRecords.outputTokens}, 0))), 0)`,
 			totalDurationMs: sql<number>`coalesce(sum(${llmUsageRecords.durationMs}), 0)`,
@@ -399,7 +418,14 @@ export async function summarizeLlmUsageForTask(taskId: string) {
 			lastUpdatedAt: sql<number | null>`max(${llmUsageRecords.createdAt})`,
 		})
 		.from(llmUsageRecords)
-		.where(eq(llmUsageRecords.taskId, taskId));
+		.where(
+			traceOwner
+				? and(
+						eq(llmUsageRecords.taskId, taskId),
+						eq(llmUsageRecords.traceOwner, traceOwner),
+					)
+				: eq(llmUsageRecords.taskId, taskId),
+		);
 
 	const callCount = Number(row?.callCount ?? 0);
 	const measuredCallCount = Number(row?.measuredCallCount ?? 0);
@@ -417,7 +443,6 @@ export async function summarizeLlmUsageForTask(taskId: string) {
 						: "mixed";
 
 	return {
-		taskId,
 		promptInputTokens: Number(row?.promptInputTokens ?? 0),
 		inputTokens: Number(row?.inputTokens ?? 0),
 		outputTokens: Number(row?.outputTokens ?? 0),

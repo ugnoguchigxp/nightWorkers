@@ -9,7 +9,7 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
+import { executePlanModeArtifactCorrection } from "../missionPilot";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";

@@ -1,7 +1,7 @@
 import { Loader2, Pause, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
 import { missionPilotPresentation } from "../missionPilotPresentation";
 import { useMissionPilotControls } from "../useMissionPilotControls";
 

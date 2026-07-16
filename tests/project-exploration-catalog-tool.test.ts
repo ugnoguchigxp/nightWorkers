@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { projectWorkerResultToMcpStructuredPayload } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector";
 import { projectExplorationCatalogTool } from "../api/modules/ontology/exploration/project-exploration-catalog-tool";
-import { projectWorkerResultToMcpStructuredPayload } from "../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
 import { executeWorkerTool } from "../api/services/worker-tools/dispatcher";
 
 describe("project exploration catalog worker adapter", () => {

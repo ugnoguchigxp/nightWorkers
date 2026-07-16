@@ -1,7 +1,7 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { startTaskRunInWorker } from "../../../services/execution/worker-process-manager";
-import { parseMissionPilotReworkPacket } from "../../missionPilot/mission-pilot-rework";
+import { parseMissionPilotReworkPacket } from "../../missionPilot";
 import * as repo from "../nightworkers.repository";
 import { startTaskRunInProcess } from "./start-task-run";
 

@@ -18,6 +18,8 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -34,7 +36,6 @@ import {
 	renderFeaturePlanContent,
 } from "./feature-plan-implementation-plan";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
-import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -64,6 +65,7 @@ export async function generateFeaturePlanArtifact(
 		proceedWithUnansweredBlocking?: boolean;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
 		signal?: AbortSignal;
@@ -137,6 +139,7 @@ export async function generateFeaturePlanArtifact(
 		input.role ?? "plan",
 		projection,
 		input.llmUsageTrace,
+		input.executionPolicy,
 		input.signal,
 	);
 	input.signal?.throwIfAborted();
@@ -309,6 +312,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 	role: StructuredLlmRole,
 	projection: ReturnType<typeof projectPlanArtifactInput>,
 	usageTrace?: TraceProvenance,
+	executionPolicy?: StructuredProviderExecutionPolicy,
 	signal?: AbortSignal,
 ) {
 	try {
@@ -326,6 +330,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 				}),
 				taskId,
 				role,
+				executionPolicy,
 				usageTrace,
 				routeOverride,
 				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({

@@ -1,5 +1,5 @@
 import { createOpenApiRouter } from "../../lib/openapi";
-import { projectMissionPilotQuestionnaireDraftAnswers } from "../missionPilot/mission-pilot-questionnaire-projection";
+import { projectMissionPilotQuestionnaireDraftAnswers } from "../missionPilot";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./questionnaire.service";
 import * as additionalService from "./questionnaire-additional.service";

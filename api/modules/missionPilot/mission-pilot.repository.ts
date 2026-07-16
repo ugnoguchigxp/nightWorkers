@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import type { MissionPilotRuntimeKind } from "../../../shared/modules/missionPilot";
 import {
 	type MissionPilotAuthorizationV3,
 	type MissionPilotSourceRef,
 	missionPilotControlSummarySchema,
-} from "../../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotRuntimeKind } from "../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../shared/modules/missionPilot";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,

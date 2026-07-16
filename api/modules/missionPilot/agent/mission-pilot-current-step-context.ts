@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
-import type { MissionPilotTaskReadModel } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotTaskReadModel } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,

@@ -2,14 +2,11 @@ import path from "node:path";
 import type { ProjectGitIntegrationPolicy } from "../../../shared/schemas/git-integration.schema";
 import { db } from "../../db/client";
 import { AppError, NotFoundError } from "../../lib/errors";
-import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
+import type { AgentRuntimeResult } from "../codingAgent";
 import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
 import { runGitCommand } from "../gitworktree/gitworktree-cli";
-import {
-	getSessionByTaskId,
-	toControlSummary,
-} from "../missionPilot/mission-pilot.repository";
+import { getSessionByTaskId, toControlSummary } from "../missionPilot";
 import {
 	buildBlueprintPlanningReadiness,
 	isBlueprintMessage,

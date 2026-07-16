@@ -1,8 +1,8 @@
 import { toDeepRecord } from "../../../shared/json-record";
 import { NotFoundError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
-import type { RuntimeLaneResult } from "../../services/agent-runtime/shared/contracts";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
+import type { RuntimeLaneResult } from "../codingAgent";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
 import { buildReviewResult } from "../review/results/build-review-result";
 import { collectDefaultReviewEvidence } from "../review/results/evidence-collector";
@@ -114,7 +114,7 @@ export async function startVerificationRunFromArtifact(input: {
 		contextRevision: number;
 		contextDigest: string;
 	};
-	missionPilotAgent?: import("../../../shared/schemas/mission-pilot-agent.schema").MissionPilotAgentRunProvenance;
+	missionPilotAgent?: import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance;
 }) {
 	const task = await repo.getTask(input.taskId);
 	if (!task) throw new NotFoundError("Task not found");

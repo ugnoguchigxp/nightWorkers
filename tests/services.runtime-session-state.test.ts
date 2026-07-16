@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { RuntimeSessionStateStore } from "../api/services/agent-runtime/runtime-session-state";
+import { RuntimeSessionStateStore } from "../api/services/runtime-session-state";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();

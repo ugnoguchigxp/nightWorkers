@@ -6,8 +6,9 @@ import { db } from "../api/db/client";
 import { missionPilotTaskEventInbox } from "../api/db/mission-pilot-agent-schema";
 import { repositories, tasks } from "../api/db/schema";
 import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import { recordMissionPilotQuestionnaireStateChanged } from "../api/modules/missionPilot/agent/mission-pilot-task-event.adapter";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
+import { initializeMissionPilotAgentQuestionnaireEvents } from "../api/modules/missionPilot/mission-pilot.service";
+import { publishQuestionnaireTransition } from "../api/modules/questionnaire/questionnaire-events";
 import type { DesignQuestionnaireSession } from "../shared/schemas/design-questionnaire.schema";
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,10 @@ vi.mock(
 
 const repositoryIds: string[] = [];
 
-beforeAll(() => ensureNightWorkersSchema());
+beforeAll(() => {
+	ensureNightWorkersSchema();
+	initializeMissionPilotAgentQuestionnaireEvents();
+});
 
 afterEach(async () => {
 	mocks.scheduleWake.mockReset();
@@ -32,7 +36,7 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot Questionnaire state events", () => {
-	it("records accepted as a wakeable state change event", async () => {
+	it("records answering and accepted as wakeable state change events", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
 		repositoryIds.push(repositoryId);
@@ -66,30 +70,35 @@ describe("Mission Pilot Questionnaire state events", () => {
 		if (!claimed) throw new Error("agent session was not claimed");
 		const questionnaireId = crypto.randomUUID();
 
-		const event = await recordMissionPilotQuestionnaireStateChanged({
+		const answering = {
 			id: questionnaireId,
 			taskId,
 			repositoryId,
 			sourceBlueprintMessageId: null,
-			status: "accepted",
+			status: "answering",
 			createdAt: new Date("2026-07-16T07:50:24.000Z"),
 			updatedAt: new Date("2026-07-16T07:50:38.000Z"),
 			questionSets: [],
 			answers: [],
 			reviews: [],
-		} satisfies DesignQuestionnaireSession);
+		} satisfies DesignQuestionnaireSession;
+		await publishQuestionnaireTransition(answering);
+		const [event] = await db
+			.select()
+			.from(missionPilotTaskEventInbox)
+			.where(eq(missionPilotTaskEventInbox.sessionId, claimed.id));
 
 		expect(event).toMatchObject({
 			eventType: "questionnaire.state_changed",
 			payloadJson: {
 				questionnaireSessionId: questionnaireId,
-				status: "accepted",
+				status: "answering",
 				questionSetCount: 0,
 				stateDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
 			},
 		});
 		expect(event?.sourceEventId).toContain(
-			`questionnaire-state:${questionnaireId}:accepted:0:`,
+			`questionnaire-state:${questionnaireId}:answering:0:`,
 		);
 		expect(mocks.scheduleWake).toHaveBeenCalledWith({
 			sessionId: claimed.id,
@@ -101,16 +110,10 @@ describe("Mission Pilot Questionnaire state events", () => {
 				.where(eq(missionPilotTaskEventInbox.id, event?.id ?? "")),
 		).toHaveLength(1);
 
-		const changedEvent = await recordMissionPilotQuestionnaireStateChanged({
-			id: questionnaireId,
-			taskId,
-			repositoryId,
-			sourceBlueprintMessageId: null,
+		await publishQuestionnaireTransition({
+			...answering,
 			status: "accepted",
-			createdAt: new Date("2026-07-16T07:50:24.000Z"),
-			updatedAt: new Date("2026-07-16T07:50:38.000Z"),
-			questionSets: [],
-			answers: [],
+			updatedAt: new Date("2026-07-16T07:50:39.000Z"),
 			reviews: [
 				{
 					id: crypto.randomUUID(),
@@ -121,7 +124,16 @@ describe("Mission Pilot Questionnaire state events", () => {
 					updatedAt: new Date("2026-07-16T07:50:38.000Z"),
 				},
 			],
-		} satisfies DesignQuestionnaireSession);
+		});
+		const changedEvent = (
+			await db
+				.select()
+				.from(missionPilotTaskEventInbox)
+				.where(eq(missionPilotTaskEventInbox.sessionId, claimed.id))
+		).find(
+			(candidate) =>
+				(candidate.payloadJson as { status?: string }).status === "accepted",
+		);
 
 		expect(changedEvent?.id).not.toBe(event?.id);
 		expect(changedEvent?.sourceEventId).not.toBe(event?.sourceEventId);

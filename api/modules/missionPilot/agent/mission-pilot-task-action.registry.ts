@@ -1,8 +1,8 @@
-import type { MissionPilotAuthorization } from "../../../../shared/schemas/mission-pilot.schema";
 import type {
+	MissionPilotAuthorization,
 	MissionPilotRuntimeState,
 	MissionPilotTaskActionDescriptor,
-} from "../../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../../shared/modules/missionPilot";
 import type { ProviderToolDefinition } from "../../../services/structured-llm/public";
 import {
 	type MissionPilotActionExecutionMetadata,
@@ -196,17 +196,6 @@ const definitions: MissionPilotActionDefinition[] = (
 				},
 				["expectedRevision", "idempotencyKey", "changes"],
 			),
-		],
-		[
-			"plan.artifact.generate",
-			"plan_artifact_generate",
-			"Plan Artifactを生成",
-			"指定されたsourceからArtifactを生成する。",
-			"plan",
-			object({ artifactKind: string, prompt: string, sourceIds: openRecord }, [
-				"artifactKind",
-				"sourceIds",
-			]),
 		],
 		[
 			"plan.artifact.feature_plan.generate",

@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { persistPromptImageAttachments } from "../api/modules/nightworkers/prompt-image-attachments";
-import { buildCodexRuntimeInput } from "../api/services/agent-runtime/codex-sdk/codex-sdk-runtime-prompt";
+import { buildCodexRuntimeInput } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
 import {
 	buildInitialNativeApiHistory,
 	projectNativeApiHistoryToProviderMessages,
-} from "../api/services/agent-runtime/native-api-runner/native-api-tool-history";
-import type { AgentRunContext } from "../api/services/agent-runtime/types";
+} from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history";
+import type { AgentRunContext } from "../api/modules/codingAgent/runtime/types";
+import { persistPromptImageAttachments } from "../api/modules/nightworkers/prompt-image-attachments";
 import { toOpenAIToolMessages } from "../api/services/structured-llm/openai-tool-messages";
 
 const originalRuntimeDir = process.env.NIGHTWORKERS_RUNTIME_DIR;

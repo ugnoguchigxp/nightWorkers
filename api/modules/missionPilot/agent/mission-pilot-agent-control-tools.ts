@@ -3,11 +3,11 @@ import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import type {
 	MissionPilotActionFailure,
 	MissionPilotTaskEventType,
-} from "../../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../../shared/modules/missionPilot";
 import {
 	MISSION_PILOT_TASK_EVENT_TYPES,
 	missionPilotTaskEventTypeSchema,
-} from "../../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
 	missionPilotActionExecutions,

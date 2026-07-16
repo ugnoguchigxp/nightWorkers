@@ -41,7 +41,7 @@ export function buildRound1PromptPacket(
 			"修正、実装、確認、調査、レビュー、テスト、設定変更、依存更新、リファクタを依頼している場合は planning ではなく、実行可能な jobType を選んでください。",
 			'planning を選ぶ場合だけ planMode object を返し、primaryArtifact は必ず "feature_plan" にする。planning 以外では planMode は null にする。',
 			"SupervisorはPlan Modeへ入るかだけを判定し、QuestionnaireやDedicated Viewの必要性を提案・選択しない。",
-			"planningのplanMode.dedicatedViewsとspecificationLensesは必ず空配列にする。必要な設計Artifactとユーザー入力は、開始後にCoding AgentがTaskとrepositoryを読んで判断する。",
+			"planningのplanMode.dedicatedViewsとspecificationLensesは必ず空配列にする。必要な設計Artifactとユーザー入力は、開始後にMission PilotがTaskとrepositoryを読んで判断する。",
 			"実装 Queue に入る可能性がある依頼では scheduling を返す。taskExecutionType は Queue scheduling 属性であり runtime lane ではない。",
 			"scheduling.executionType は normal / exclusive / sequence から選ぶ。小さな scoped 修正は normal、DB migration・破壊的操作・広範囲 refactor・共有 contract の破壊的変更は exclusive、A -> B -> C の順序が成果物の正しさに直結する task group は sequence にする。",
 			"destructive_operation overlay や data_migration work kind があるのに scheduling が迷う場合は保守的に exclusive にする。sequence では sequenceGroupId と sequenceOrder を返す。",

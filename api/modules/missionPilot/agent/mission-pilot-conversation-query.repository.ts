@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,

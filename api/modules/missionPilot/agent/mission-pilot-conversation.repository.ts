@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,

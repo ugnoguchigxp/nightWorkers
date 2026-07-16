@@ -20,6 +20,7 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import {
 	listPlanModeTaskMessages,
 	type PlanModeTaskMessage,
@@ -41,6 +42,7 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 	planModeContext?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	usageTrace?: TraceProvenance;
 	signal?: AbortSignal;
 }) {
@@ -53,6 +55,7 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 			providerJsonSchema: questionnaireChoiceFormJsonSchema,
 			taskId: input.taskId,
 			role: input.role,
+			executionPolicy: input.executionPolicy,
 			usageTrace: input.usageTrace,
 			routeOverride: input.routeOverride || null,
 			signal: input.signal,
@@ -65,6 +68,8 @@ export async function generateDesignQuestionnaireFollowUpRawOutput(
 	options: {
 		signal?: AbortSignal;
 		usageTrace?: TraceProvenance;
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 	} = {},
 ) {
 	const projectStackContext = await resolvePlanModeProjectStackContext(
@@ -85,7 +90,8 @@ export async function generateDesignQuestionnaireFollowUpRawOutput(
 			runtimeSchema: questionnaireChoiceFormSchema,
 			providerJsonSchema: questionnaireChoiceFormJsonSchema,
 			taskId: session.taskId,
-			role: "plan",
+			role: options.role ?? "plan",
+			executionPolicy: options.executionPolicy,
 			usageTrace: options.usageTrace,
 			signal: options.signal,
 		},
@@ -94,6 +100,11 @@ export async function generateDesignQuestionnaireFollowUpRawOutput(
 
 export async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 	session: DesignQuestionnaireSession,
+	options: {
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
+		usageTrace?: TraceProvenance;
+	} = {},
 ) {
 	const projectStackContext = await resolvePlanModeProjectStackContext(
 		session.repositoryId,
@@ -113,7 +124,9 @@ export async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 			runtimeSchema: designQuestionnaireFollowUpDecisionSchema,
 			providerJsonSchema: designQuestionnaireFollowUpDecisionJsonSchema,
 			taskId: session.taskId,
-			role: "plan",
+			role: options.role ?? "plan",
+			executionPolicy: options.executionPolicy,
+			usageTrace: options.usageTrace,
 		},
 	);
 }
@@ -123,6 +136,8 @@ export async function generateDesignQuestionnaireReviewRawOutput(
 	options: {
 		signal?: AbortSignal;
 		usageTrace?: TraceProvenance;
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 	} = {},
 ) {
 	return generateQuestionnaireRawOutput(
@@ -133,7 +148,8 @@ export async function generateDesignQuestionnaireReviewRawOutput(
 			runtimeSchema: designDecisionReviewSchema,
 			providerJsonSchema: designDecisionReviewJsonSchema,
 			taskId: session.taskId,
-			role: "review",
+			role: options.role ?? "review",
+			executionPolicy: options.executionPolicy,
 			usageTrace: options.usageTrace,
 			signal: options.signal,
 		},
@@ -149,6 +165,7 @@ async function generateQuestionnaireRawOutput<T>(
 		providerJsonSchema: unknown;
 		taskId: string;
 		role: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 		usageTrace?: TraceProvenance;
 		routeOverride?: StructuredLlmModelTarget | null;
 		signal?: AbortSignal;
@@ -165,6 +182,7 @@ async function generateQuestionnaireRawOutput<T>(
 			}),
 			taskId: input.taskId,
 			role: input.role,
+			executionPolicy: input.executionPolicy,
 			usageTrace: input.usageTrace,
 			routeOverride: input.routeOverride,
 			signal: input.signal,

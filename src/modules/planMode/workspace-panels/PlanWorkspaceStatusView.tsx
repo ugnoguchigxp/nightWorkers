@@ -1,7 +1,7 @@
 import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { buildPlanModeExecutionSteps } from "../../../../shared/plan-mode-execution";
-import type { MissionPilotPlanProgress } from "../../../../shared/schemas/mission-pilot-plan-progress.schema";
 import type { EditablePlanModeRoutingView } from "../../../../shared/schemas/plan-mode-routing.schema";
 import type {
 	DesignQuestionnaireSession,

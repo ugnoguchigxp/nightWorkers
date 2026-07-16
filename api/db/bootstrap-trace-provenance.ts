@@ -31,6 +31,11 @@ export async function backfillTraceProvenance() {
 	      AND label NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
   `);
 	await client.execute(`
+    UPDATE llm_usage_records
+    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+    WHERE run_id IS NOT NULL
+  `);
+	await client.execute(`
     UPDATE task_messages
 	    SET trace_owner = 'coding_agent', trace_channel = 'chat'
 	    WHERE id IN (
@@ -60,8 +65,8 @@ export async function backfillTraceProvenance() {
 	await client.execute(`
     UPDATE task_messages
     SET trace_owner = 'coding_agent', trace_channel = 'chat'
-    WHERE trace_channel = 'internal'
-      AND (run_id IS NOT NULL OR role IN ('assistant', 'tool'))
+    WHERE run_id IS NOT NULL
+      OR (trace_channel = 'internal' AND role IN ('assistant', 'tool'))
   `);
 	await client.execute(`
     UPDATE task_messages
@@ -115,6 +120,11 @@ export async function backfillTraceProvenance() {
 	      AND json_valid(payload_json) = 1
 	      AND json_extract(payload_json, '$.role') = 'mission_pilot'
 	      AND json_extract(payload_json, '$.label') NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
+  `);
+	await client.execute(`
+    UPDATE activity_events
+    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+    WHERE run_id IS NOT NULL
   `);
 	for (const [table, jsonColumn] of [
 		["activity_events", "payload_json"],

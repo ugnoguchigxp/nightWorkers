@@ -1,7 +1,7 @@
-import type { MissionPilotAgentRunProvenance } from "../../../../shared/schemas/mission-pilot-agent.schema";
-import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
+import type { MissionPilotAgentRunProvenance } from "../../../../shared/modules/missionPilot";
 import type { StructuredLlmModelTarget } from "../../../services/structured-llm/settings";
 import type { ImplementationTodoInput } from "../../../services/todo-runtime";
+import type { NativeApiExecutionMode } from "../../codingAgent";
 
 export type ImplementationPlanConstraint = {
 	sourceMessageId: string;
@@ -20,8 +20,6 @@ export type StartTaskRunOptions = {
 		| "review_run"
 		| "test_mode"
 		| "explicit";
-	/** 単一runtime内でCoding AgentがPlan Mode artifact判断から開始する。 */
-	planModeRequested?: boolean;
 	initialTodos?: ImplementationTodoInput[];
 	implementationPlanConstraint?: ImplementationPlanConstraint;
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */

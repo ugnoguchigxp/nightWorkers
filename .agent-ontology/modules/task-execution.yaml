@@ -6,7 +6,7 @@
   "ubiquitousLanguage": [{ "name": "TaskRun", "meaning": "A durable execution attempt for one admitted Task." }],
   "responsibilities": ["Start, stop, and finalize Task Runs.", "Execute runtime turns and tools through explicit ports.", "Persist Run events, Todos, usage, and execution evidence."],
   "ownedPaths": ["api/modules/task-execution/**", "src/modules/task-execution/**"],
-  "readMostlyPaths": ["api/modules/nightworkers/run-orchestration/**", "api/services/agent-runtime/**", "api/services/worker-tools/**", "api/mcp/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/run-orchestration/**", "api/modules/codingAgent/runtime/**", "api/services/worker-tools/**", "api/mcp/**"],
   "ownedData": { "tables": ["task_runs", "task_events", "task_run_todos", "native_api_turns", "native_api_tool_calls"], "files": [] },
   "invariants": [{ "id": "ledger-first-execution", "statement": "Run state and tool outcomes are persisted before being treated as completed projections.", "check": "Runtime and Run query tests cover durable event behavior." }],
   "allowedMutations": ["Task Run lifecycle", "runtime ports", "Todo state", "tool dispatch"],

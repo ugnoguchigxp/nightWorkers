@@ -1,5 +1,5 @@
 import { LoaderCircle } from "lucide-react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import type {
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,

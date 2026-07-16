@@ -1,4 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildCodingAgentSystemContext } from "../../api/modules/codingAgent/context";
+import { compactNativeApiHistoryToBaseline } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-context-compaction";
+import type { NativeApiToolTurnProvider } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
+import { NativeApiRunner } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
+import { classifyNativeApiProviderError } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner-routing";
+import {
+	dispatchNativeApiToolCall,
+	readProjectExplorationCatalogAccess,
+} from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-dispatcher";
+import { buildInitialNativeApiHistory } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history";
+import { getNativeApiToolDefinitions } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry";
+import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
 import {
 	createRepository,
 	createTask,
@@ -14,18 +26,6 @@ import {
 	carryRuntimePauseSnapshot,
 	readRuntimePauseSnapshot,
 } from "../../api/modules/nightworkers/run-orchestration/runtime-outcome-guard";
-import { compactNativeApiHistoryToBaseline } from "../../api/services/agent-runtime/native-api-runner/native-api-context-compaction";
-import type { NativeApiToolTurnProvider } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
-import { NativeApiRunner } from "../../api/services/agent-runtime/native-api-runner/native-api-runner";
-import { classifyNativeApiProviderError } from "../../api/services/agent-runtime/native-api-runner/native-api-runner-routing";
-import {
-	dispatchNativeApiToolCall,
-	readProjectExplorationCatalogAccess,
-} from "../../api/services/agent-runtime/native-api-runner/native-api-tool-dispatcher";
-import { buildInitialNativeApiHistory } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-history";
-import { getNativeApiToolDefinitions } from "../../api/services/agent-runtime/native-api-runner/native-api-tool-registry";
-import type { AgentRunContext } from "../../api/services/agent-runtime/types";
-import { buildCodingAgentSystemContext } from "../../api/services/coding-agent-context";
 import { registerFixtureProviderToolTurns } from "../../api/services/structured-llm/fixture-tool-provider";
 import { StructuredProviderError } from "../../api/services/structured-llm/provider-failure";
 import { TodoMutationService } from "../../api/services/todo-mutation";
@@ -103,9 +103,13 @@ describe("Native API LLM-owned Todo contract", () => {
 		const system = history.find((item) => item.type === "system");
 		expect(system?.content).toContain("NightWorkers Coding Agent Runtime");
 		expect(system?.content).toContain("current Todo");
-		expect(system?.content).toContain("単一Coding Agentとして実装する");
-		expect(system?.content).toContain('"version": 3');
-		expect(system?.content).toContain("ユーザーPromptから計画要否を判断し");
+		expect(system?.content).toContain(
+			"あなたはユーザーTaskを自動化するCoding Agentです",
+		);
+		expect(system?.content).toContain('"version": 5');
+		expect(system?.content).toContain(
+			"実装前の計画が必要かをあなた自身が判断してください",
+		);
 		expect(system?.content).toContain("局所SystemContext兼リマインダー");
 		expect(system?.content).toContain(
 			"Task名だけから最終的な実装Todoを作らない",

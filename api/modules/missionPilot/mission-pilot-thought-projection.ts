@@ -2,7 +2,7 @@ import {
 	type PilotThoughtEntry,
 	type PilotThoughtEntryKind,
 	pilotThoughtEntriesSchema,
-} from "../../../shared/schemas/mission-pilot-thought.schema";
+} from "../../../shared/modules/missionPilot";
 import type {
 	missionPilotConversationItems,
 	missionPilotToolCalls,
@@ -145,9 +145,9 @@ export function buildMissionPilotThoughtEntries(
 	input: ThoughtProjectionInput,
 ): PilotThoughtEntry[] {
 	const entries = [
-		...input.events.map((event) =>
-			projectCoordinatorEvent(input.sessionId, event),
-		),
+		...input.events
+			.filter((event) => event.sourceKind !== "task_run")
+			.map((event) => projectCoordinatorEvent(input.sessionId, event)),
 		...input.activityEvents.map((event) =>
 			projectActivityEvent(input.sessionId, event),
 		),
@@ -288,16 +288,6 @@ function projectConversationItem(
 			"state_changed",
 			"Mission Pilotの修正要求を記録しました。",
 			{ request: body },
-		);
-	if (item.kind === "task_event" || item.kind === "run_outcome")
-		return conversationEntry(
-			sessionId,
-			item,
-			"state_changed",
-			item.kind === "task_event"
-				? "Mission PilotがTask eventを取り込みました。"
-				: "Mission PilotがRun結果を取り込みました。",
-			{ payload: body },
 		);
 	return null;
 }

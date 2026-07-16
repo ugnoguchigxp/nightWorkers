@@ -39,6 +39,47 @@ describe("NightWorkers trace provenance", () => {
 		).toMatchObject({ owner: "coding_agent", channel: "chat" });
 	});
 
+	it("forces every run-owned record into Coding Agent chat", () => {
+		const pilotTrace = missionPilotThoughtTrace({
+			sessionId: "pilot-session",
+		});
+
+		expect(
+			resolveTaskMessageTrace({
+				role: "assistant",
+				runId: "run-1",
+				trace: pilotTrace,
+			}),
+		).toMatchObject({
+			owner: "coding_agent",
+			channel: "chat",
+			producer: { runId: "run-1" },
+			orchestrationRef: { sessionId: "pilot-session" },
+		});
+		expect(
+			resolveActivityTrace({
+				runId: "run-1",
+				source: "mission_pilot",
+				trace: pilotTrace,
+			}),
+		).toMatchObject({
+			owner: "coding_agent",
+			channel: "chat",
+			producer: { runId: "run-1" },
+		});
+		expect(
+			resolveLlmUsageTrace({
+				runId: "run-1",
+				callId: "call-run-1",
+				trace: pilotTrace,
+			}),
+		).toMatchObject({
+			owner: "coding_agent",
+			channel: "chat",
+			producer: { runId: "run-1" },
+		});
+	});
+
 	it("preserves non-record payloads while adding authoritative provenance", () => {
 		const trace = codingAgentChatTrace({ runId: "run-1" });
 

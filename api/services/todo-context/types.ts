@@ -1,4 +1,4 @@
-import type { MissionPilotAgentRunProvenance } from "../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotAgentRunProvenance } from "../../../shared/modules/missionPilot";
 import type { PlanModeCapability } from "../settings/general-settings";
 import type { TodoVerificationPolicy } from "../todo-runtime";
 
@@ -62,7 +62,6 @@ export type RuntimePromptSnapshot = {
 		digest: string;
 	};
 	planModeClosed?: boolean;
-	planModeRequested?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;
 	blueprintPlanning?: unknown;

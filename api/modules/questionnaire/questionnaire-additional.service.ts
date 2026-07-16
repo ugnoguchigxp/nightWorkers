@@ -14,6 +14,7 @@ import {
 import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import { createStructuredOutputContract } from "../../services/structured-llm";
 import type { StructuredLlmRole } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -44,6 +45,7 @@ export type GenerateAdditionalQuestionsInput = {
 	reason?: string;
 	maxQuestions?: number;
 	role?: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	llmUsageTrace?: TraceProvenance;
 };
 
@@ -96,6 +98,7 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 			}),
 			taskId,
 			role: input.role ?? "plan",
+			executionPolicy: input.executionPolicy,
 			usageTrace: input.llmUsageTrace,
 		},
 	});

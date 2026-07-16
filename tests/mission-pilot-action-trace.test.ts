@@ -70,7 +70,14 @@ describe("Mission Pilot action trace propagation", () => {
 		expect(generateFollowUp).toHaveBeenCalledWith(
 			"task-1",
 			"questionnaire-session",
-			{
+			expect.objectContaining({
+				role: "mission_pilot",
+				executionPolicy: expect.objectContaining({
+					allowProviderTools: false,
+					enableMcp: false,
+					enableMemory: false,
+					isolatedHome: true,
+				}),
 				signal,
 				usageTrace: {
 					owner: "mission_pilot",
@@ -84,7 +91,7 @@ describe("Mission Pilot action trace propagation", () => {
 						sessionId: "pilot-session",
 					},
 				},
-			},
+			}),
 		);
 	});
 });

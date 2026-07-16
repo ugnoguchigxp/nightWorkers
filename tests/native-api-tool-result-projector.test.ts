@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectWorkerResultToNativeApiToolResult } from "../api/services/agent-runtime/native-api-runner/native-api-tool-result-projector";
+import { projectWorkerResultToNativeApiToolResult } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector";
 
 describe("projectWorkerResultToNativeApiToolResult", () => {
 	it("projects the LLM-owned Todo command contract without legacy fields", () => {

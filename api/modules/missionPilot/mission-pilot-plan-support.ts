@@ -24,6 +24,7 @@ import { generateAdditionalDesignQuestionnaireQuestions } from "../questionnaire
 import type { PlanArtifactGenerationTarget } from "../specification/plan-artifact-input.types";
 import type { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { generateFeaturePlanArtifact } from "../specification/specification-generation.service";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 import { resolveMissionPilotPlanArtifactSources } from "./mission-pilot-plan-artifact-source-resolver";
@@ -207,6 +208,7 @@ export async function generateStepArtifact(
 			sourceSelection: resolved.selection,
 			expectedState: resolved.expectedState,
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			trace,
 			llmUsageTrace,
 		});
@@ -217,6 +219,7 @@ export async function generateStepArtifact(
 			sourceSelection: resolved.selection,
 			expectedState: resolved.expectedState,
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			trace,
 			llmUsageTrace,
 		});
@@ -230,6 +233,7 @@ export async function generateStepArtifact(
 				sourceSelection: resolved.selection,
 				expectedState: resolved.expectedState,
 				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 				trace,
 				llmUsageTrace,
 			},
@@ -241,6 +245,7 @@ export async function generateStepArtifact(
 			sourceSelection: resolved.selection,
 			expectedState: resolved.expectedState,
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			trace,
 			llmUsageTrace,
 		});
@@ -337,6 +342,7 @@ export async function answerPreFeaturePlanQuestionnaire(
 					"Feature Plan生成直前に、生成済みArtifactから実装を阻害する未確定事項だけを確認する。",
 				maxQuestions: 5,
 				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 				llmUsageTrace: missionPilotPlanOutputTrace({ sessionId }),
 			},
 		);
@@ -368,7 +374,12 @@ export async function answerPreFeaturePlanQuestionnaire(
 			generated.answers.filter(
 				(answer) => !existingAnswerIds.has(answer.questionId),
 			),
-			{ completionPolicy: "finalize_current_questions" },
+			{
+				completionPolicy: "finalize_current_questions",
+				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+				usageTrace: missionPilotPlanOutputTrace({ sessionId }),
+			},
 		);
 	}
 	if (!["review_ready", "accepted"].includes(questionnaire.status)) {

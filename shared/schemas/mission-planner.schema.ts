@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { taskWithMissionPilotSchema } from "./mission-pilot.schema";
+import { taskWithMissionPilotSchema } from "../modules/missionPilot";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 

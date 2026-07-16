@@ -2,8 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
-import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
+import {
+	DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY,
+	type StructuredProviderExecutionPolicy,
+} from "../../modules/agentsShare";
 import { normalizeProviderUsage } from "../llm-usage";
+import { RuntimeSessionStateStore } from "../runtime-session-state";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
 import {
 	buildCodexToolTurnJsonSchema,
@@ -33,20 +37,6 @@ import type { ProviderCallResult } from "./types";
 
 const CODEX_STRUCTURED_RUNTIME_LANE = "structured-llm";
 const CODEX_RESUMED_SYSTEM_REFRESH_MAX_CHARS = 2_000;
-const MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS = [
-	"Mission Pilot の構造化 Artifact 生成専用レーンです。",
-	"渡された SystemContext、User Prompt、JSON schema を根拠に、要求された構造化応答だけを返してください。",
-	"Memory、AGENTS.md、ファイル、ツール一覧を探索しないでください。",
-	"initial_instructions と context_compile はこのレーンでは実行しません。",
-	"MCP は Plan Mode の明示的な操作に必要な場合だけ使い、存在確認のために列挙しないでください。",
-].join("\n");
-const MISSION_PILOT_TOOL_TURN_DEVELOPER_INSTRUCTIONS = [
-	"Mission Pilotのtool判断専用レーンです。",
-	"渡されたSystem Context、conversation、利用可能toolだけを根拠に、指定された構造化応答を返してください。",
-	"MCP、command、filesystem、network、その他のtoolを直接実行しないでください。",
-	"必要な情報取得と操作はtoolCallsへ出力し、NightWorkers側の権限・revision・idempotency検証に委ねてください。",
-	"Memory、AGENTS.md、workspaceを探索しないでください。",
-].join("\n");
 const defaultCodexStructuredSessionStore = new RuntimeSessionStateStore();
 export type CodexProviderInput = {
 	provider: string;
@@ -58,13 +48,13 @@ export type CodexProviderInput = {
 };
 
 export function buildCodexStructuredExecutionMode(input: {
-	role?: string | null;
+	policy?: StructuredProviderExecutionPolicy;
 	model: string | null;
 	schemaName: string;
 }) {
 	return [
 		"structured",
-		input.role || "default",
+		input.policy?.allowProviderTools ? "provider-tools" : "structured",
 		input.model || "default-model",
 		input.schemaName,
 	].join(":");
@@ -125,18 +115,16 @@ export async function callCodexProvider(
 	);
 	const structuredArtifact =
 		input.options.normalizedRequest?.callKind === "structured_artifact";
-	const missionPilotStructuredArtifact =
-		structuredArtifact && input.options.role === "mission_pilot";
-	const missionPilotToolTurn =
-		missionPilotStructuredArtifact &&
-		input.options.jsonSchema?.name === CODEX_TOOL_TURN_SCHEMA_NAME;
+	const executionPolicy =
+		input.options.executionPolicy ??
+		DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY;
 	const isolatedWorkingDirectory = structuredArtifact
 		? fs.mkdtempSync(`${os.tmpdir()}/nightworkers-structured-artifact-`)
 		: null;
 	let isolatedCodexHome: string | null = null;
 	try {
-		isolatedCodexHome = missionPilotToolTurn
-			? createIsolatedMissionPilotCodexHome()
+		isolatedCodexHome = executionPolicy.isolatedHome
+			? createIsolatedCodexHome()
 			: null;
 		const codex = new Codex({
 			env: {
@@ -145,28 +133,26 @@ export async function callCodexProvider(
 				...(isolatedCodexHome ? { CODEX_HOME: isolatedCodexHome } : {}),
 			},
 			config: {
-				...(!missionPilotToolTurn
-					? {
-							mcp_servers: {
-								"context-still": {
-									disabled_tools: ["initial_instructions", "context_compile"],
-								},
-							},
-						}
-					: {}),
+				...(!executionPolicy.enableMcp ? { mcp_servers: {} } : {}),
 				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
-				...(missionPilotStructuredArtifact
+				...(executionPolicy.developerInstructions ||
+				!executionPolicy.enableMemory
 					? {
-							developer_instructions: missionPilotToolTurn
-								? MISSION_PILOT_TOOL_TURN_DEVELOPER_INSTRUCTIONS
-								: MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS,
-							features: {
-								memories: false,
-							},
-							memories: {
-								generate_memories: false,
-								use_memories: false,
-							},
+							...(executionPolicy.developerInstructions
+								? {
+										developer_instructions:
+											executionPolicy.developerInstructions,
+									}
+								: {}),
+							...(!executionPolicy.enableMemory
+								? {
+										features: { memories: false },
+										memories: {
+											generate_memories: false,
+											use_memories: false,
+										},
+									}
+								: {}),
 						}
 					: {}),
 			} as never,
@@ -193,7 +179,7 @@ export async function callCodexProvider(
 						runtimeLane: CODEX_STRUCTURED_RUNTIME_LANE,
 						provider: "codex",
 						executionMode: buildCodexStructuredExecutionMode({
-							role: input.options.role,
+							policy: executionPolicy,
 							model,
 							schemaName: input.options.jsonSchema?.name ?? input.options.label,
 						}),
@@ -347,10 +333,9 @@ export async function callCodexProvider(
 			freshThread: structuredArtifact,
 			isolatedWorkingDirectory: Boolean(isolatedWorkingDirectory),
 			isolatedCodexHome: Boolean(isolatedCodexHome),
-			missionPilotMemorySuppressed: missionPilotStructuredArtifact,
-			memoryInjectionEnabled: !missionPilotStructuredArtifact,
-			mcpEnabled: !missionPilotToolTurn,
-			missionPilotToolTurn,
+			memoryInjectionEnabled: executionPolicy.enableMemory,
+			mcpEnabled: executionPolicy.enableMcp,
+			providerToolsEnabled: executionPolicy.allowProviderTools,
 			providerTurnCount: 1,
 		};
 		input.setProviderDebug(providerDebug);
@@ -378,9 +363,9 @@ export async function callCodexProvider(
 	}
 }
 
-function createIsolatedMissionPilotCodexHome() {
+function createIsolatedCodexHome() {
 	const isolatedHome = fs.mkdtempSync(
-		path.join(os.tmpdir(), "nightworkers-mission-pilot-codex-home-"),
+		path.join(os.tmpdir(), "nightworkers-codex-home-"),
 	);
 	const sourceAuthPath = path.join(resolveCodexHome(), "auth.json");
 	if (fs.existsSync(sourceAuthPath)) {
@@ -419,17 +404,18 @@ export async function callCodexProviderToolTurn(
 	) => boolean,
 	settings: ReturnType<typeof readStructuredLlmProviderSettings>,
 ): Promise<ProviderToolTurnResult> {
-	if (input.options.role !== "mission_pilot") {
+	if (!input.options.executionPolicy?.allowProviderTools) {
 		return {
 			type: "unsupported",
-			reason: `Codex structured tool turns are not enabled for role: ${input.options.role ?? "unassigned"}`,
+			reason:
+				"Codex structured tool turns require an explicit provider-tools capability.",
 			providerDebug: {
 				provider: "codex",
 				providerEndpointId:
 					input.options.normalizedRequest.providerEndpointId ?? null,
 				mode: "codex_structured_tool_turn",
 				supported: false,
-				role: input.options.role ?? null,
+				allowProviderTools: false,
 			},
 		};
 	}
@@ -491,7 +477,9 @@ export async function callCodexProviderToolTurn(
 			message:
 				result.content.trim() ||
 				"Codex tool turn attempted provider-side activity.",
-			cause: new Error("Provider-side activity is disabled for Mission Pilot."),
+			cause: new Error(
+				"Provider-side activity is disabled by execution policy.",
+			),
 		});
 	}
 	const completeDebug = {

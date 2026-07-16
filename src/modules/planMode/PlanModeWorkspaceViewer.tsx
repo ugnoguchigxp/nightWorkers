@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import {
 	fetchMissionPilotQuestionnaireDraft,
 	missionPilotPlanProgressQueryOptions,

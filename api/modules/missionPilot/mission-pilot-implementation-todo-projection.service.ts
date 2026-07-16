@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { missionPilotQueueHandoffSchema } from "../../../shared/schemas/mission-pilot.schema";
+import { missionPilotQueueHandoffSchema } from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
 	missionPilotEvents,

@@ -1,4 +1,4 @@
-import type { RuntimeLaneResolution } from "../../../services/agent-runtime/runtime-lane";
+import type { RuntimeLaneResolution } from "../../codingAgent";
 import { safelyRefreshConversationContext } from "./runtime-routing";
 
 export async function refreshConversationContextForRuntimeLane(input: {

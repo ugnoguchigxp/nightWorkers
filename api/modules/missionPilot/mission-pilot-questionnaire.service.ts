@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { and, desc, eq, lte, or } from "drizzle-orm";
+import { missionPilotQuestionnaireDraftSchema } from "../../../shared/modules/missionPilot";
 import {
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
 	designQuestionnaireAnswerSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
-import { missionPilotQuestionnaireDraftSchema } from "../../../shared/schemas/mission-pilot.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotQuestionnaireDrafts,
@@ -15,6 +15,7 @@ import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repo
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
 import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./agent/mission-pilot-agent.constants";
 import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
@@ -321,7 +322,12 @@ async function submitDraftRow(
 			taskId,
 			claimed.questionnaireSessionId,
 			claimed.answersJson,
-			{ completionPolicy: "finalize_current_questions" },
+			{
+				completionPolicy: "finalize_current_questions",
+				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+				usageTrace: missionPilotThoughtTrace({ sessionId: row.sessionId }),
+			},
 		);
 		if (!["review_ready", "accepted"].includes(questionnaire.status)) {
 			throw new Error("Mission Pilot Questionnaire remained incomplete");

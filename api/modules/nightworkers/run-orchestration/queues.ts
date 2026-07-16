@@ -2,10 +2,10 @@ import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/execu
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
 import {
+	associateMissionPilotImplementationRun,
 	holdBlockedMissionPilotImplementationStart,
 	resolveMissionPilotImplementationStart,
-} from "../../missionPilot/mission-pilot-implementation-todo-projection.service";
-import { associateMissionPilotImplementationRun } from "../../missionPilot/mission-pilot-run-association.service";
+} from "../../missionPilot";
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";

@@ -157,7 +157,9 @@ describe("Specification document generation", () => {
 
 		expect(systemPrompt).toContain("[Mission Pilot SystemContext]");
 		expect(systemPrompt).toContain("最新の明示的なユーザー指示");
-		expect(systemPrompt).toContain("QuestionnaireはTaskを具体化");
+		expect(systemPrompt).toContain(
+			"Questionnaire Decisions はTaskを具体化する設計判断",
+		);
 		expect(systemPrompt).toContain("固定分岐、keyword判定、正規表現");
 	});
 

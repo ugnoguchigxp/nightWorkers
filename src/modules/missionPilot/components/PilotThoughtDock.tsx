@@ -1,7 +1,9 @@
 import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
-import type { PilotThoughtEntry } from "../../../../shared/schemas/mission-pilot-thought.schema";
+import type {
+	MissionPilotControlSummary,
+	PilotThoughtEntry,
+} from "../../../../shared/modules/missionPilot";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type {
 	ActivityEvent,
@@ -157,13 +159,15 @@ export function missionPilotTraceItems(
 			event: pilotThoughtEntryToTaskEvent(entry),
 		}));
 	const persistedItems = [
-		...(trace?.events ?? []).map((event) => ({
-			id: `mission-pilot-event:${event.id}`,
-			source: "mission_pilot_event" as const,
-			sourceId: event.id,
-			createdAt: event.createdAt,
-			event: missionPilotEventToTaskEvent(event),
-		})),
+		...(trace?.events ?? [])
+			.filter((event) => event.sourceKind !== "task_run")
+			.map((event) => ({
+				id: `mission-pilot-event:${event.id}`,
+				source: "mission_pilot_event" as const,
+				sourceId: event.id,
+				createdAt: event.createdAt,
+				event: missionPilotEventToTaskEvent(event),
+			})),
 		...(trace?.activityEvents ?? [])
 			.filter(isMissionPilotActivityEvent)
 			.map((event) => ({

@@ -6,6 +6,7 @@ import {
 	withStructuredProviderAttempt,
 } from "../../../services/structured-llm/public";
 import type { StructuredLlmThinkingDepth } from "../../../services/structured-llm/settings";
+import { missionPilotToolTurnProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
 import { missionPilotDigest } from "./mission-pilot-content-page";
 import { appendMissionPilotTaskEvent } from "./mission-pilot-task-event.repository";
@@ -80,6 +81,7 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 						taskId: input.taskId,
 						normalizedRequest,
 						toolChoice: "auto",
+						executionPolicy: missionPilotToolTurnProviderExecutionPolicy,
 					},
 					signal: input.signal,
 					setProviderDebug: () => undefined,

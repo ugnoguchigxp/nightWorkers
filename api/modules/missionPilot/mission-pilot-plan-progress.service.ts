@@ -1,11 +1,9 @@
 import {
-	type MissionPilotPlanProgress,
-	missionPilotPlanProgressSchema,
-} from "../../../shared/schemas/mission-pilot-plan-progress.schema";
-import {
 	isMissionPilotConceptArtifactKind,
+	type MissionPilotPlanProgress,
 	missionPilotArtifactScoreThreshold,
-} from "../../../shared/schemas/mission-pilot-plan-review.schema";
+	missionPilotPlanProgressSchema,
+} from "../../../shared/modules/missionPilot";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 

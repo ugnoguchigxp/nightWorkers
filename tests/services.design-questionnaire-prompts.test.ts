@@ -14,6 +14,10 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("使用する技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");
+		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain(
+			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
+		);
 		expect(prompt).toContain("Hono + React/Vite");
 		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("Python/FastAPI + React/Vite");
@@ -63,6 +67,10 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("使用技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");
+		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain(
+			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
+		);
 		expect(prompt).toContain("Hono + React/Vite");
 		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("API only (FastAPI)");

@@ -1,9 +1,13 @@
-import { missionPilotAgentRunProvenanceSchema } from "../../../shared/schemas/mission-pilot-agent.schema";
+import { missionPilotAgentRunProvenanceSchema } from "../../../shared/modules/missionPilot";
 import type { TaskRunStatus } from "../../db/schema";
-import { buildMissionPilotSystemContext } from "../../services/structured-generation/prompts/mission-pilot-system-context";
+import {
+	isFailureLikeTaskRunStatus,
+	registerTaskRunTerminalListener,
+} from "../agentsShare";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { recoverStaleActiveRuns } from "../nightworkers/nightworkers.run-query.service";
 import { registerTaskMessageCreatedListener } from "../nightworkers/nightworkers.task-message-events";
+import { registerQuestionnaireStateChangedListener } from "../questionnaire/questionnaire-events";
 import { markMissionPilotAgentTaskActive } from "./agent/mission-pilot-agent-active-registry";
 import {
 	cancelPendingMissionPilotToolCalls,
@@ -27,7 +31,10 @@ import {
 } from "./agent/mission-pilot-agent-wake.service";
 import { seedMissionPilotConversation } from "./agent/mission-pilot-conversation.repository";
 import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
-import { recordMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.adapter";
+import {
+	recordMissionPilotQuestionnaireStateChanged,
+	recordMissionPilotTaskEvent,
+} from "./agent/mission-pilot-task-event.adapter";
 import { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
@@ -49,6 +56,7 @@ import {
 	startTaskRun,
 	stopTaskRun,
 } from "./mission-pilot-workbench.port";
+import { buildMissionPilotSystemContext } from "./prompts/mission-pilot-system-context";
 
 const terminalRunStatuses = new Set<TaskRunStatus>([
 	"completed",
@@ -70,7 +78,7 @@ export function initializeMissionPilotRunSync() {
 		if (session && (await isMissionPilotAgentSession(session.id))) {
 			if (session.desiredState !== "playing") return;
 			const terminal = terminalRunStatuses.has(run.status);
-			if (!terminal && run.status !== "running") return;
+			if (terminal || run.status !== "running") return;
 			const task = await nightworkersRepo.getTask(run.taskId);
 			if (!task) return;
 			const failed = [
@@ -109,6 +117,41 @@ export function initializeMissionPilotRunSync() {
 
 initializeMissionPilotRunSync();
 
+let terminalRunEventsRegistered = false;
+export function initializeMissionPilotTerminalRunEvents() {
+	if (terminalRunEventsRegistered) return;
+	terminalRunEventsRegistered = true;
+	registerTaskRunTerminalListener(async (event) => {
+		const run = await nightworkersRepo.getTaskRun(event.runId);
+		if (!run) return;
+		const session = await repo.getSessionByTaskId(event.taskId);
+		if (session && (await isMissionPilotAgentSession(session.id))) {
+			if (session.desiredState !== "playing") return;
+			const task = await nightworkersRepo.getTask(event.taskId);
+			if (!task) return;
+			await appendMissionPilotTaskEvent({
+				taskId: event.taskId,
+				eventType: isFailureLikeTaskRunStatus(event.status)
+					? "task_run.failed"
+					: "task_run.terminal",
+				sourceEventId: event.eventId,
+				taskRevision: task.updatedAt.getTime(),
+				payload: { runId: event.runId, status: event.status },
+			});
+			scheduleMissionPilotAgentWake({ sessionId: session.id });
+			return;
+		}
+		const updated = await repo.syncCompletedRun(event.taskId, event.runId);
+		if (updated) {
+			publishMissionPilotUpdated(event.taskId, repo.toControlSummary(updated));
+			if (["failed", "timed_out", "cancelled"].includes(event.status)) {
+				await recoverMissionPilotPostQueueSessions().catch(() => undefined);
+			}
+		}
+	});
+}
+initializeMissionPilotTerminalRunEvents();
+
 let agentTaskMessageCreatedRegistered = false;
 function initializeMissionPilotAgentTaskMessageEvents() {
 	if (agentTaskMessageCreatedRegistered) return;
@@ -144,6 +187,16 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 	});
 }
 initializeMissionPilotAgentTaskMessageEvents();
+
+let agentQuestionnaireEventsRegistered = false;
+export function initializeMissionPilotAgentQuestionnaireEvents() {
+	if (agentQuestionnaireEventsRegistered) return;
+	agentQuestionnaireEventsRegistered = true;
+	registerQuestionnaireStateChangedListener(async (questionnaire) => {
+		await recordMissionPilotQuestionnaireStateChanged(questionnaire);
+	});
+}
+initializeMissionPilotAgentQuestionnaireEvents();
 
 export async function reconcileMissionPilotStartup() {
 	const provisioned = await repo.backfillMissingTaskSessions();

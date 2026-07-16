@@ -1,10 +1,10 @@
+import type { MissionPilotAnswerEvidence } from "../../../shared/modules/missionPilot";
 import {
 	type DesignQuestion,
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
 	designQuestionnaireAnswerSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
-import type { MissionPilotAnswerEvidence } from "../../../shared/schemas/mission-pilot.schema";
 
 function defaultAnswer(question: DesignQuestion): {
 	answer: DesignQuestionnaireAnswer;

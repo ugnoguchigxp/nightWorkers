@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMissionPilotPlanReviewSystemPrompt } from "../api/services/structured-generation/prompts/mission-pilot-plan-review";
+import { buildMissionPilotPlanReviewSystemPrompt } from "../api/modules/missionPilot/prompts/mission-pilot-plan-review";
 import type { StructuredOutputContract } from "../api/services/structured-llm/contract";
 
 describe("Mission Pilot plan review prompt", () => {

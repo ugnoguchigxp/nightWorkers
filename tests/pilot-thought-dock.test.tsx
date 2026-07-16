@@ -86,7 +86,7 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("review_result");
 	});
 
-	it("includes only Mission Pilot coordinator and pilot_thought activity events", () => {
+	it("includes Pilot-owned events without re-projecting Coding Agent run events", () => {
 		const items = missionPilotTraceItems({
 			messages: [],
 			events: [
@@ -135,11 +135,10 @@ describe("PilotThoughtDock", () => {
 		});
 
 		expect(items.map((item) => item.event.message)).toEqual([
-			"implementation.completed",
 			"次のphaseへ進みます",
 		]);
-		expect(items[1]?.event.actor).toBe("mission_pilot");
-		expect(items[1]?.event.payloadJson).toMatchObject({
+		expect(items[0]?.event.actor).toBe("mission_pilot");
+		expect(items[0]?.event.payloadJson).toMatchObject({
 			toolName: "exec_command",
 		});
 	});

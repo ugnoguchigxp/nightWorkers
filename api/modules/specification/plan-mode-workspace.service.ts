@@ -4,11 +4,11 @@ import {
 } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { NotFoundError } from "../../lib/errors";
 import { getBlueprintArtifactAdoption } from "../blueprint";
+import { getPlanModeRouting } from "../missionPilot";
 import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
-import { getPlanModeRouting } from "../planMode/plan-mode-routing.service";
 import { listDesignQuestionnaires } from "../questionnaire/questionnaire.service";
 import { getAnswerableSessionQuestions } from "../questionnaire/questionnaire-parser.service";
 import {

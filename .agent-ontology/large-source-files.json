@@ -36,6 +36,13 @@
 			"maxLines": 630,
 			"targetModule": "mission-pilot-questionnaire-service",
 			"phase": 7
+		},
+		{
+			"id": "NW-LF-10",
+			"path": "api/modules/missionPilot/mission-pilot.service.ts",
+			"maxLines": 620,
+			"targetModule": "mission-pilot-service",
+			"phase": 7
 		}
 	]
 }

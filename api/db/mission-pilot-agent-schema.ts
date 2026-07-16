@@ -14,7 +14,7 @@ import type {
 	MissionPilotRuntimeState,
 	MissionPilotTaskEventType,
 	MissionPilotToolCallStatus,
-} from "../../shared/schemas/mission-pilot-agent.schema";
+} from "../../shared/modules/missionPilot";
 import { missionPilotSessions } from "./mission-pilot-schema";
 import { tasks } from "./schema";
 

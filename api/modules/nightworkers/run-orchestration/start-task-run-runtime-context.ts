@@ -3,17 +3,17 @@ import type {
 	ProjectExplorationCatalogRunPin,
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { getCurrentSettings } from "../../../routes/settings";
-import { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
-import {
-	readRuntimeLaneConfigFromEnv,
-	resolveRuntimeLane,
-} from "../../../services/agent-runtime/runtime-lane";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
 import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
 import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
+import {
+	readRuntimeLaneConfigFromEnv,
+	resolveRuntimeLane,
+	resolveRuntimeLaneDefinition,
+} from "../../codingAgent";
 import { resolveProjectExplorationCatalogPin } from "../../ontology/exploration/project-exploration-source.service";
 import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
 import {

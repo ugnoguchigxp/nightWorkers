@@ -33,7 +33,7 @@ vi.mock("../../api/services/structured-llm", async () => {
 	};
 });
 
-vi.mock("../../api/services/agent-runtime/registry", () => {
+vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 	const runtime = {
 		kind: "native-local",
 		start: vi.fn(async () => ({
@@ -177,7 +177,7 @@ describe("NightWorkers workbench routes", () => {
 		expect(body.task.objective).toBe("同期で待たずに受付してください");
 	});
 
-	it("starts Coding Agent Plan Mode without pre-creating a Questionnaire", async () => {
+	it("starts a neutral planning run without pre-creating a Questionnaire", async () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
 			mockPlanModeGate(true, "設計が必要です"),
 		);

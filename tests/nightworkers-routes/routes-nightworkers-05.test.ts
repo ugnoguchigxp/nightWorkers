@@ -3,6 +3,10 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
+import {
+	codingAgentChatTrace,
+	missionPilotThoughtTrace,
+} from "../../api/modules/nightworkers/nightworkers.trace-provenance";
 import { recordLlmUsage } from "../../api/services/llm-usage";
 import * as generalSettings from "../../api/services/settings/general-settings";
 import { TodoMutationService } from "../../api/services/todo-mutation";
@@ -149,7 +153,7 @@ describe("NightWorkers task run todo routes", () => {
 				ontologyBoundaryAudit: {
 					available: true,
 					decision: "allow",
-					touchedFiles: ["api/services/agent-runtime/runtime.ts"],
+					touchedFiles: ["api/modules/codingAgent/runtime/runtime.ts"],
 					boundaryCrossings: [],
 					needsConfirmation: [],
 					forbiddenTouched: [],
@@ -355,6 +359,82 @@ describe("NightWorkers task run todo routes", () => {
 			callCount: 1,
 			measuredCallCount: 1,
 			estimatedCallCount: 0,
+		});
+	});
+
+	it("separates Coding Agent and Mission Pilot token categories", async () => {
+		const createdRepo = await repo.createRepository({
+			name: `TEST: Owned LLM Usage ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: Owned LLM usage task",
+			status: "draft",
+		});
+		await recordLlmUsage({
+			taskId: task.id,
+			callId: crypto.randomUUID(),
+			provider: "codex",
+			model: "gpt-5.4-mini",
+			label: "coding_agent_turn",
+			usage: {
+				inputTokens: 100,
+				cachedInputTokens: 40,
+				outputTokens: 10,
+				reasoningOutputTokens: 3,
+				totalTokens: 110,
+				mode: "measured",
+			},
+			durationMs: 100,
+			trace: codingAgentChatTrace(),
+		});
+		await recordLlmUsage({
+			taskId: task.id,
+			callId: crypto.randomUUID(),
+			provider: "codex",
+			model: "gpt-5.4-mini",
+			label: "mission_pilot_turn",
+			usage: {
+				inputTokens: 50,
+				cachedInputTokens: 20,
+				outputTokens: 5,
+				reasoningOutputTokens: 2,
+				totalTokens: 55,
+				mode: "measured",
+			},
+			durationMs: 50,
+			trace: missionPilotThoughtTrace({ sessionId: crypto.randomUUID() }),
+		});
+
+		const res = await app.request(
+			`http://localhost/api/tasks/${task.id}/llm-usage`,
+			{ headers: sameOriginHeaders },
+		);
+
+		expect(res.status).toBe(200);
+		await expect(res.json()).resolves.toMatchObject({
+			inputTokens: 150,
+			cachedInputTokens: 60,
+			nonCachedInputTokens: 90,
+			outputTokens: 15,
+			byOwner: {
+				codingAgent: {
+					inputTokens: 100,
+					cachedInputTokens: 40,
+					nonCachedInputTokens: 60,
+					outputTokens: 10,
+					reasoningOutputTokens: 3,
+				},
+				missionPilot: {
+					inputTokens: 50,
+					cachedInputTokens: 20,
+					nonCachedInputTokens: 30,
+					outputTokens: 5,
+					reasoningOutputTokens: 2,
+				},
+			},
 		});
 	});
 

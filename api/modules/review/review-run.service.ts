@@ -7,7 +7,7 @@ import {
 	formatMissionPilotReworkPacket,
 	hasMissionPilotReworkPacket,
 	missionPilotReworkPaths,
-} from "../missionPilot/mission-pilot-rework";
+} from "../missionPilot";
 import * as repo from "../nightworkers/nightworkers.repository";
 import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { getProjectSecurityIntelligenceSettings } from "../ontology";

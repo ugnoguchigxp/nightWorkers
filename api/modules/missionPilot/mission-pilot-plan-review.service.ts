@@ -5,9 +5,8 @@ import {
 	type MissionPilotReviewedArtifact,
 	missionPilotPlanReviewSchema,
 	validateMissionPilotPlanReviewFacts,
-} from "../../../shared/schemas/mission-pilot-plan-review.schema";
+} from "../../../shared/modules/missionPilot";
 import { planModeRegenerationTargetSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
-import { buildMissionPilotPlanReviewSystemPrompt } from "../../services/structured-generation/prompts/mission-pilot-plan-review";
 import { repairStructuredOutputOnce } from "../../services/structured-generation/structured-output-repair.service";
 import {
 	callStructuredLlmResult,
@@ -19,8 +18,6 @@ import { normalizeStructuredOutputJsonSchema } from "../../services/structured-l
 import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
-import { getPlanModeRouting } from "../planMode/plan-mode-routing.service";
-import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -28,9 +25,13 @@ import {
 	renderPlanArtifactInput,
 } from "../specification/plan-artifact-input-renderer";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
+import { resolvePlanArtifactCanonicalInput } from "./artifacts/plan-artifact-input-context.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { latestContext } from "./mission-pilot-plan-support";
 import { assertMissionPilotPreQueueMutable } from "./mission-pilot-pre-queue-recovery.service";
+import { getPlanModeRouting } from "./planning/plan-mode-routing.service";
+import { buildMissionPilotPlanReviewSystemPrompt } from "./prompts/mission-pilot-plan-review";
 
 function toRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -150,6 +151,7 @@ export async function reviewCurrentPlan(
 	const llmOptions = {
 		taskId,
 		role: "mission_pilot" as const,
+		executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 		usageTrace: missionPilotThoughtTrace({ sessionId }),
 		contract,
 		promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({

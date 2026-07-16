@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
 import { toDeepRecord } from "../../../../shared/json-record";
-import type { MissionPilotPlanProgress } from "../../../../shared/schemas/mission-pilot-plan-progress.schema";
+import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
 import {
 	mergeTaskPreservingMissionPilot,

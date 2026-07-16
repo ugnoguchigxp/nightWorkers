@@ -6,21 +6,21 @@ const forbiddenFiles = [
 	"api/services/run-control/run-control-service.ts",
 	"api/services/run-control/run-control-reducer.ts",
 	"api/services/run-control/run-budget-controller.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-finalize.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-startup-controller.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-role-context-events.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-role-handoff.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-role-working-context.ts",
-	"api/services/agent-runtime/codex-contract-warning-catalog.ts",
-	"api/services/agent-runtime/codex-runtime-failure-report.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-finalize.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-startup-controller.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-role-context-events.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-role-handoff.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-role-working-context.ts",
+	"api/modules/codingAgent/runtime/codex-contract-warning-catalog.ts",
+	"api/modules/codingAgent/runtime/codex-runtime-failure-report.ts",
 	"api/modules/nightworkers/run-orchestration/coverage-autonomy.ts",
 	"api/services/quality/coverage-autonomy-gate.ts",
 	"api/services/worker-tools/reviewer-evaluation.ts",
 ];
 const forbiddenToolNames = ["finalize_answer", "new_context", "reviewer_evaluation"];
 const catalogFiles = [
-	"api/services/agent-runtime/native-api-runner/native-api-tool-manifest.ts",
-	"api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest.ts",
+	"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry.ts",
 	"api/mcp/nightworkers-tool-manifest.ts",
 ];
 const errors = [];
@@ -67,11 +67,11 @@ for (const [file, forbiddenText] of [
 		"terminalize(",
 	],
 	[
-		"api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts",
+		"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry.ts",
 		"isNativeApiToolAllowedForMode",
 	],
 	[
-		"api/services/agent-runtime/native-api-runner/native-api-tool-manifest.ts",
+		"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest.ts",
 		"In planning mode",
 	],
 ]) {
@@ -81,7 +81,7 @@ for (const [file, forbiddenText] of [
 	}
 }
 
-const agentRuntimeRoot = path.join(root, "api/services/agent-runtime");
+const agentRuntimeRoot = path.join(root, "api/modules/codingAgent/runtime");
 const forbiddenProviderRetryControls = [
 	"providerCapacityRetry",
 	"readRuntimeFailureEvidence",

@@ -2,7 +2,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import {
 	type MissionPilotAgentRunProvenance,
 	missionPilotAgentRunProvenanceSchema,
-} from "../../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";

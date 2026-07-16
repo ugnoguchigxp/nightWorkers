@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
 export function missionPilotPresentation(summary: MissionPilotControlSummary) {
 	const busy =
 		summary.activityState === "starting" ||

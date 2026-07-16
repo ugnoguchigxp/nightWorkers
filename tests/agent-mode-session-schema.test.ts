@@ -4,11 +4,11 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { agentModeSessions, taskRuns } from "../api/db/schema";
-import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import {
 	buildAgentModeSessionRouteIdentity,
 	resolveOrOpenAgentModeSession,
-} from "../api/services/agent-runtime/agent-mode-session";
+} from "../api/modules/codingAgent/runtime/agent-mode-session";
+import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();

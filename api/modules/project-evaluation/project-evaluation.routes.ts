@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { taskWithMissionPilotSchema } from "../../../shared/schemas/mission-pilot.schema";
+import { taskWithMissionPilotSchema } from "../../../shared/modules/missionPilot";
 import {
 	createProjectEvaluationRequestSchema,
 	createTasksFromProjectImprovementsRequestSchema,

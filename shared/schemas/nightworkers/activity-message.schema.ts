@@ -126,22 +126,30 @@ export const taskMessageSchema = z
 	})
 	.openapi("TaskMessage");
 
-export const taskLlmUsageSummarySchema = z
-	.object({
+const taskLlmUsageBreakdownSchema = z.object({
+	promptInputTokens: z.number().int().nonnegative(),
+	inputTokens: z.number().int().nonnegative(),
+	outputTokens: z.number().int().nonnegative(),
+	stateCardTokens: z.number().int().nonnegative(),
+	cachedInputTokens: z.number().int().nonnegative(),
+	nonCachedInputTokens: z.number().int().nonnegative(),
+	reasoningOutputTokens: z.number().int().nonnegative(),
+	totalTokens: z.number().int().nonnegative(),
+	totalDurationMs: z.number().int().nonnegative(),
+	averageDurationMs: z.number().int().nonnegative().nullable(),
+	usageMode: z.enum(["measured", "estimated", "mixed", "unavailable"]),
+	callCount: z.number().int().nonnegative(),
+	measuredCallCount: z.number().int().nonnegative(),
+	estimatedCallCount: z.number().int().nonnegative(),
+	lastUpdatedAt: z.string().nullable(),
+});
+
+export const taskLlmUsageSummarySchema = taskLlmUsageBreakdownSchema
+	.extend({
 		taskId: z.string().uuid(),
-		promptInputTokens: z.number().int().nonnegative(),
-		inputTokens: z.number().int().nonnegative(),
-		outputTokens: z.number().int().nonnegative(),
-		stateCardTokens: z.number().int().nonnegative(),
-		cachedInputTokens: z.number().int().nonnegative(),
-		reasoningOutputTokens: z.number().int().nonnegative(),
-		totalTokens: z.number().int().nonnegative(),
-		totalDurationMs: z.number().int().nonnegative(),
-		averageDurationMs: z.number().int().nonnegative().nullable(),
-		usageMode: z.enum(["measured", "estimated", "mixed", "unavailable"]),
-		callCount: z.number().int().nonnegative(),
-		measuredCallCount: z.number().int().nonnegative(),
-		estimatedCallCount: z.number().int().nonnegative(),
-		lastUpdatedAt: z.string().nullable(),
+		byOwner: z.object({
+			codingAgent: taskLlmUsageBreakdownSchema,
+			missionPilot: taskLlmUsageBreakdownSchema,
+		}),
 	})
 	.openapi("TaskLlmUsageSummary");

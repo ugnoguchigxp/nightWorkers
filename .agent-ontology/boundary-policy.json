@@ -5,10 +5,55 @@
 	"api/modules/blueprint",
 	"src/modules/blueprint-preview",
 	"api/modules/settings",
-	"api/modules/llm-gateway",
+    "api/modules/llm-gateway",
 	"src/modules/settings",
-    "src/modules/quality"
+    "src/modules/quality",
+    "api/modules/missionPilot",
+    "api/modules/codingAgent",
+    "api/modules/agentsShare",
+    "src/modules/missionPilot",
+    "src/modules/codingAgent",
+    "src/modules/agentsShare",
+    "shared/modules/missionPilot",
+    "shared/modules/codingAgent",
+    "shared/modules/agentsShare"
   ],
+	"roleModuleRoots": [
+	    "api/modules/missionPilot",
+	    "api/modules/codingAgent",
+	    "src/modules/missionPilot",
+	    "src/modules/codingAgent",
+	    "shared/modules/missionPilot",
+	    "shared/modules/codingAgent"
+	],
+	"agentSharedModuleRoots": [
+	    "api/modules/agentsShare",
+	    "src/modules/agentsShare",
+	    "shared/modules/agentsShare"
+	],
+	"roleOwnedPathRules": [
+		{
+			"role": "Mission Pilot",
+			"markers": ["mission-pilot", "missionPilot"],
+			"allowedRoots": [
+				"api/modules/missionPilot",
+				"src/modules/missionPilot",
+				"shared/modules/missionPilot"
+			],
+			"exemptPrefixes": ["api/db/"]
+		},
+		{
+			"role": "Coding Agent",
+			"markers": ["coding-agent", "codingAgent"],
+			"allowedRoots": [
+				"api/modules/codingAgent",
+				"src/modules/codingAgent",
+				"shared/modules/codingAgent"
+			],
+			"exemptPrefixes": []
+		}
+	],
+	"forbiddenProductionPathPrefixes": ["api/services/agent-runtime"],
   "domainForbiddenImports": [
     "react",
     "react-dom",

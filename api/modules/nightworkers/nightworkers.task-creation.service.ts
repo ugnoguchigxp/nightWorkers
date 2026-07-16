@@ -1,9 +1,9 @@
-import type { MissionPilotSourceRef } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotSourceRef } from "../../../shared/modules/missionPilot";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	createSession as createMissionPilotSession,
 	toControlSummary,
-} from "../missionPilot/mission-pilot.repository";
+} from "../missionPilot";
 import * as repo from "./nightworkers.repository";
 
 type CreateTaskInput = Parameters<typeof repo.createTask>[0] & {

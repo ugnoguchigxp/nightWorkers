@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import type { MissionPilotTaskReadModel } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotTaskReadModel } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";

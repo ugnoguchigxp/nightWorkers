@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
 import { MissionPilotControlPanel } from "./MissionPilotControlPanel";
 
 export function MissionPilotComposerControls({

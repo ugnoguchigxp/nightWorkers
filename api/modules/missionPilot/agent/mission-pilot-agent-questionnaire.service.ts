@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { missionPilotAnswerEvidenceSchema } from "../../../../shared/modules/missionPilot";
 import {
 	type DesignQuestionnaireAnswer,
 	designQuestionnaireAnswerSchema,
 } from "../../../../shared/schemas/design-questionnaire.schema";
-import { missionPilotAnswerEvidenceSchema } from "../../../../shared/schemas/mission-pilot.schema";
 import { db } from "../../../db/client";
 import {
 	missionPilotQuestionnaireDrafts,

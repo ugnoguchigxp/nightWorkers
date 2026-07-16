@@ -1,23 +1,22 @@
 import type { TaskRunStatus } from "../../../db/schema";
 import { logger } from "../../../lib/logger";
-import { runE2eFixtureRuntime } from "../../../services/agent-runtime/e2e-fixture-runtime";
-import { createLedgerSink } from "../../../services/agent-runtime/ledger-sink";
+import { publishTaskRunTerminal } from "../../agentsShare";
+import type { AgentRuntimeResult } from "../../codingAgent";
 import {
+	buildCodingAgentSystemContext,
 	buildOpenTodoRuntimeContractWarning,
+	createLedgerSink,
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
+	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
-} from "../../../services/agent-runtime/shared";
-import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
-import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
+} from "../../codingAgent";
 import {
 	applyMissionPilotParentTaskStatus,
 	continueMissionPilotAfterRun,
-} from "../../missionPilot/mission-pilot-post-queue-coordinator.service";
-import {
 	executeMissionPilotContinuation,
 	markMissionPilotContinuationFailed,
-} from "../../missionPilot/mission-pilot-runtime-continuation.service";
+} from "../../missionPilot";
 import {
 	boundaryAuditEventSeverity,
 	buildOntologyBoundaryAuditSnapshot,
@@ -457,6 +456,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						outcomeGuard.summary || runtimeResult.summary || outcome.summary,
 				},
 			);
+			const terminalTransitionApplied = Boolean(finalizedRun);
 			let finalStatus: TaskRunStatus = guardedStatus;
 			if (!finalizedRun) {
 				const concurrentRun = await repo.getTaskRun(run.id);
@@ -510,6 +510,44 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 					{ error: toErrorMessage(error), runId: run.id },
 					"Mission Pilot continuation failed after the run was finalized",
 				);
+			}
+			if (terminalTransitionApplied) {
+				const publication = await publishTaskRunTerminal({
+					type: "task_run.terminal",
+					eventId: `task-run-terminal:${run.id}:${finalStatus}`,
+					taskId,
+					runId: run.id,
+					status: finalStatus,
+					sourceRef: null,
+					occurredAt: new Date().toISOString(),
+				});
+				if (publication.failures.length > 0) {
+					logger.error(
+						{
+							listenerFailureCount: publication.failures.length,
+							runId: run.id,
+						},
+						"Task terminal event subscriber failed after closeout",
+					);
+					await repo
+						.createRunEvent({
+							version: 1,
+							runId: run.id,
+							taskId,
+							timestamp: new Date().toISOString(),
+							type: "system.warning",
+							severity: "warning",
+							actor: "system",
+							message:
+								"Task terminal event was persisted, but one or more subscribers failed.",
+							data: {
+								action: "task_run.terminal_publish",
+								listenerCount: publication.listenerCount,
+								listenerFailureCount: publication.failures.length,
+							},
+						})
+						.catch(() => undefined);
+				}
 			}
 			if (shouldContinueSessionQueue(finalStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);

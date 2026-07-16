@@ -732,7 +732,16 @@ describe("Mission Pilot plan coordinator", () => {
 					selectedOptionIds: ["focused"],
 				}),
 			],
-			{ completionPolicy: "finalize_current_questions" },
+			expect.objectContaining({
+				completionPolicy: "finalize_current_questions",
+				role: "mission_pilot",
+				executionPolicy: expect.objectContaining({
+					allowProviderTools: false,
+					enableMcp: false,
+					enableMemory: false,
+					isolatedHome: true,
+				}),
+			}),
 		);
 		expect(mocks.callLlm).toHaveBeenCalledWith(
 			expect.any(String),

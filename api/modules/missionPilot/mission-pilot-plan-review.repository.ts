@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { asc, desc, eq } from "drizzle-orm";
-import type { MissionPilotPlanReview } from "../../../shared/schemas/mission-pilot-plan-review.schema";
+import type { MissionPilotPlanReview } from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
 	missionPilotPlanReviews,

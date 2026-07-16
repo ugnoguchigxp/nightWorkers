@@ -1,4 +1,4 @@
-import type { AgentSafetyPolicy } from "../agent-runtime/types";
+import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 
 export interface RunnerOptions {
 	timeoutSeconds?: number;

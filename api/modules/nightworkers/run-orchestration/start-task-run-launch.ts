@@ -1,5 +1,5 @@
-import { buildAgentModeSessionRouteIdentity } from "../../../services/agent-runtime/agent-mode-session";
-import { associateMissionPilotChildRun } from "../../missionPilot/mission-pilot-run-association.service";
+import { buildAgentModeSessionRouteIdentity } from "../../codingAgent";
+import { associateMissionPilotChildRun } from "../../missionPilot";
 import { launchRuntimeExecution } from "./runtime-execution";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { readMissionPilotEnvelope } from "./start-task-run-entry";

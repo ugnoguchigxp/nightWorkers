@@ -9,6 +9,7 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -72,6 +73,7 @@ export async function createDesignQuestionnaire(
 	options: {
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 		usageTrace?: TraceProvenance;
 		missionPilotActionKey?: string | null;
 		signal?: AbortSignal;
@@ -100,6 +102,7 @@ export async function createDesignQuestionnaire(
 		planModeContext,
 		routeOverride: options.routeOverride || null,
 		role: options.role ?? "plan",
+		executionPolicy: options.executionPolicy,
 		usageTrace: options.usageTrace,
 		signal: options.signal,
 	}).catch(async (error) => {
@@ -168,6 +171,9 @@ export async function saveDesignQuestionnaireAnswers(
 	answers: DesignQuestionnaireAnswer[],
 	options: {
 		completionPolicy?: "assess_follow_up" | "finalize_current_questions";
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
+		usageTrace?: TraceProvenance;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -255,13 +261,18 @@ export async function saveDesignQuestionnaireAnswers(
 			);
 		return persistedStatusSession;
 	}
-	return assessDesignQuestionnaireNextStep(taskId, completedSession);
+	return assessDesignQuestionnaireNextStep(taskId, completedSession, options);
 }
 
 export async function generateDesignQuestionnaireFollowUp(
 	taskId: string,
 	sessionId: string,
-	options: { signal?: AbortSignal; usageTrace?: TraceProvenance } = {},
+	options: {
+		signal?: AbortSignal;
+		usageTrace?: TraceProvenance;
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
+	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -276,6 +287,8 @@ export async function generateDesignQuestionnaireFollowUp(
 		{
 			signal: options.signal,
 			usageTrace: options.usageTrace,
+			role: options.role,
+			executionPolicy: options.executionPolicy,
 		},
 	);
 	options.signal?.throwIfAborted();
@@ -307,6 +320,11 @@ export async function generateDesignQuestionnaireFollowUp(
 async function assessDesignQuestionnaireNextStep(
 	taskId: string,
 	session: DesignQuestionnaireSession,
+	options: {
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
+		usageTrace?: TraceProvenance;
+	} = {},
 ) {
 	if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
 		return updateQuestionnaireStatus(taskId, session.id, "review_ready");
@@ -314,8 +332,10 @@ async function assessDesignQuestionnaireNextStep(
 	const nextSequence =
 		session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) +
 		1;
-	const rawOutput =
-		await generateDesignQuestionnaireFollowUpDecisionRawOutput(session);
+	const rawOutput = await generateDesignQuestionnaireFollowUpDecisionRawOutput(
+		session,
+		options,
+	);
 	const parsed = parseDesignQuestionnaireFollowUpDecisionRaw(
 		rawOutput,
 		{
@@ -369,7 +389,12 @@ async function assessDesignQuestionnaireNextStep(
 export async function generateDesignQuestionnaireReview(
 	taskId: string,
 	sessionId: string,
-	options: { signal?: AbortSignal; usageTrace?: TraceProvenance } = {},
+	options: {
+		signal?: AbortSignal;
+		usageTrace?: TraceProvenance;
+		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
+	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -379,6 +404,8 @@ export async function generateDesignQuestionnaireReview(
 	const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session, {
 		signal: options.signal,
 		usageTrace: options.usageTrace,
+		role: options.role,
+		executionPolicy: options.executionPolicy,
 	});
 	options.signal?.throwIfAborted();
 	const parsed = parseDesignDecisionReviewRaw(rawOutput);

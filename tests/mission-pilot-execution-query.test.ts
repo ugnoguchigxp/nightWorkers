@@ -171,4 +171,57 @@ describe("Mission Pilot execution query", () => {
 			}),
 		]);
 	});
+
+	it("does not re-project Coding Agent run events or consumed run input", () => {
+		const now = new Date("2026-07-16T00:00:00Z");
+		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
+			sessionId: "pilot-session",
+			events: [
+				{
+					id: "run-event",
+					sessionId: "pilot-session",
+					eventType: "implementation.completed",
+					phase: "test_preparing",
+					cycle: 1,
+					contextRevision: 2,
+					sourceKind: "task_run",
+					sourceId: "run-1",
+					payloadJson: { finalReport: "Coding Agent output" },
+					processStatus: "processed",
+					attemptCount: 0,
+					lastError: null,
+					nextAttemptAt: null,
+					processedAt: now,
+					createdAt: now,
+					updatedAt: now,
+				},
+			],
+			activityEvents: [],
+			messages: [],
+			conversationItems: [
+				{
+					id: "task-event-input",
+					sessionId: "pilot-session",
+					sequence: 1,
+					kind: "task_event",
+					turnId: "turn-1",
+					toolCallId: null,
+					bodyJson: {
+						events: [
+							{
+								eventType: "task_run.failed",
+								payload: { finalReport: "Coding Agent output" },
+							},
+						],
+					},
+					sourceKind: "task_event_batch",
+					sourceId: "1:1",
+					createdAt: now,
+				},
+			],
+			toolCalls: [],
+		};
+
+		expect(buildMissionPilotThoughtEntries(input)).toEqual([]);
+	});
 });

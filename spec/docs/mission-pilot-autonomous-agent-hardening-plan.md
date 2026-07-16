@@ -9,6 +9,7 @@
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Target implementation baseline: `4309d798` plus the pre-existing working tree recorded when Luna starts
 - Related concept document: `spec/docs/mission-pilot-persistent-agent-refactor-plan.md`
+- Role/module ownership override: Mission Pilot、Coding Agent、agentsShareの配置、依存方向、Questionnaire・Plan routing・Artifact所有権は`spec/docs/mission-pilot-coding-agent-module-separation-plan.md`を正本とする
 
 この文書は、永続Agent Runtimeを一度実装した後のレビュー結果を反映したhardening計画である。元のコンセプト文書は「何を目指すか」の正本として残し、この文書を「現在の実装をどう直し、どの証拠をもって切り替えるか」の実装正本とする。
 
@@ -1374,7 +1375,7 @@ api/modules/missionPilot/agent/mission-pilot-repair.ts
 api/modules/missionPilot/agent/mission-pilot-repair.repository.ts
 api/modules/missionPilot/agent/mission-pilot-run-outcome.adapter.ts
 api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts
-api/services/agent-runtime/e2e-fixture-runtime.ts
+api/modules/codingAgent/runtime/e2e-fixture-runtime.ts
 ```
 
 Order:
@@ -1602,7 +1603,7 @@ driverは配列順にresponseを返し、期待role/tool name不一致、余分�
 
 ### 24.3 Coding Agent E2E fixture
 
-`api/services/agent-runtime/e2e-fixture-runtime.ts`へ追加するfixture behaviorは、明示的なtest tagにだけ反応してよい。
+`api/modules/codingAgent/runtime/e2e-fixture-runtime.ts`へ追加するfixture behaviorは、明示的なtest tagにだけ反応してよい。
 
 - success。
 - first implementation failure。

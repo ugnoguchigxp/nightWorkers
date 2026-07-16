@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { missionPilotArtifactProviderExecutionPolicy } from "../../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
 import type {
 	RuntimeSessionStateLookup,
 	RuntimeSessionStateStore,
-} from "../../api/services/agent-runtime/runtime-session-state";
+} from "../../api/services/runtime-session-state";
 import {
 	callStructuredLlmResult,
 	createStructuredOutputContract,
@@ -122,12 +123,14 @@ describe("Codex structured provider isolation", () => {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "second user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "third user prompt", {
@@ -137,6 +140,7 @@ describe("Codex structured provider isolation", () => {
 			}),
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			runtimeSessionStore: store,
 		});
 
@@ -155,14 +159,9 @@ describe("Codex structured provider isolation", () => {
 				generate_memories: false,
 				use_memories: false,
 			});
-			expect(config.mcp_servers).toEqual({
-				"context-still": {
-					disabled_tools: ["initial_instructions", "context_compile"],
-				},
-			});
-			expect(config.mcp_servers).not.toEqual({});
+			expect(config.mcp_servers).toEqual({});
 			expect(config.developer_instructions).toContain(
-				"MCP は Plan Mode の明示的な操作に必要な場合だけ使い",
+				"Mission Pilotの構造化Artifact生成専用レーンです",
 			);
 			expect(config.project_doc_max_bytes).toBe(0);
 		}

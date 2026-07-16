@@ -31,6 +31,8 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -38,7 +40,6 @@ import {
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
-import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -105,6 +106,7 @@ export type PlanViewGenerationInput = {
 	mermaidRenderRepair?: MermaidRenderRepair;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	trace?: TraceProvenance;
 	llmUsageTrace?: TraceProvenance;
 	signal?: AbortSignal;
@@ -187,6 +189,7 @@ export async function generatePlanViewArtifact(
 			projection,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
+			executionPolicy: input.executionPolicy,
 			usageTrace: input.llmUsageTrace,
 			signal: input.signal,
 		});
@@ -239,6 +242,7 @@ export async function generatePlanViewArtifact(
 			projection,
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
+			executionPolicy: input.executionPolicy,
 			usageTrace: input.llmUsageTrace,
 			signal: input.signal,
 		});
@@ -291,6 +295,7 @@ export async function generatePlanViewArtifact(
 		projection,
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
+		executionPolicy: input.executionPolicy,
 		usageTrace: input.llmUsageTrace,
 		signal: input.signal,
 	});
@@ -351,6 +356,7 @@ async function generateArtifactFromLlm(input: {
 	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	usageTrace?: TraceProvenance;
 	signal?: AbortSignal;
 }) {
@@ -380,6 +386,7 @@ async function generateArtifactFromLlm(input: {
 					taskId: input.taskId,
 					runId: null,
 					role: input.role,
+					executionPolicy: input.executionPolicy,
 					usageTrace: input.usageTrace,
 					routeOverride: input.routeOverride,
 					promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
@@ -442,6 +449,7 @@ async function generateApiContractArtifactFromLlm(input: {
 	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	usageTrace?: TraceProvenance;
 	signal?: AbortSignal;
 }) {
@@ -461,6 +469,7 @@ async function generateApiContractArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
+				executionPolicy: input.executionPolicy,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
@@ -500,6 +509,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	projection: ReturnType<typeof projectPlanArtifactInput>;
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	usageTrace?: TraceProvenance;
 	signal?: AbortSignal;
 }) {
@@ -519,6 +529,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 				taskId: input.taskId,
 				runId: null,
 				role: input.role,
+				executionPolicy: input.executionPolicy,
 				usageTrace: input.usageTrace,
 				routeOverride: input.routeOverride,
 				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({

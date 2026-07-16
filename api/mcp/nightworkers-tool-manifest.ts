@@ -12,7 +12,6 @@ import {
 	nightWorkersImportProjectInputSchema,
 	nightWorkersListOntologyModulesInputSchema,
 	nightWorkersListRecentSpecificationsInputSchema,
-	nightWorkersPlanModeInputSchema,
 	nightWorkersReadCurrentSpecificationInputSchema,
 	nightWorkersRunCheckInputSchema,
 	nightWorkersTodoListInputSchema,
@@ -42,18 +41,6 @@ export const nightWorkersCodexToolManifest = {
 		},
 		approvalMode: "approve",
 		inputSchema: nightWorkersListRecentSpecificationsInputSchema,
-	},
-	plan_mode: {
-		title: "Plan Mode",
-		description:
-			"Plan Modeの状態を確認し、Coding Agent自身の設計判断として必要なArtifact routingの選択、ユーザー入力のQuestionnaire要求、Artifact生成を行います。hostは選択を推測しません。",
-		annotations: {
-			readOnlyHint: false,
-			destructiveHint: false,
-			openWorldHint: false,
-		},
-		approvalMode: "approve",
-		inputSchema: nightWorkersPlanModeInputSchema,
 	},
 	todo_list: {
 		title: "Todo List",

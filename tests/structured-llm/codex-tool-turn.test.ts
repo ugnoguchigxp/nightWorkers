@@ -224,9 +224,7 @@ describe("Codex Mission Pilot tool turns", () => {
 		};
 		const isolatedCodexHome = constructorInput.env.CODEX_HOME;
 		expect(isolatedCodexHome).not.toBe(sourceCodexHome);
-		expect(isolatedCodexHome).toContain(
-			"nightworkers-mission-pilot-codex-home-",
-		);
+		expect(isolatedCodexHome).toContain("nightworkers-codex-home-");
 		expect(fs.existsSync(isolatedCodexHome)).toBe(false);
 		expect(codexMock.isolatedAuthSnapshots).toEqual([
 			{ contents: "test-auth", mode: 0o600 },
@@ -235,7 +233,7 @@ describe("Codex Mission Pilot tool turns", () => {
 		expect(codexConfig).toMatchObject({
 			features: { memories: false },
 		});
-		expect(codexConfig).not.toHaveProperty("mcp_servers");
+		expect(codexConfig.mcp_servers).toEqual({});
 		expect(codexConfig.developer_instructions).toContain("toolCallsへ出力");
 		expect(JSON.stringify(codexMock.runInputs[0])).toContain(
 			"このTaskをPlan Modeから開始してください。",

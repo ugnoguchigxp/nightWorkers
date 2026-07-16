@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildCodingAgentSystemContext } from "../../api/modules/codingAgent/context";
+import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
+import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
+import { buildCodexRuntimePromptParts } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
+import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
 import {
 	createRepository,
 	createTask,
 	createTaskRun,
 	deleteRepository,
 } from "../../api/modules/nightworkers/nightworkers.repository";
-import { CodexAgentRuntime } from "../../api/services/agent-runtime/CodexAgentRuntime";
-import { createCodexRuntimeThread } from "../../api/services/agent-runtime/codex-sdk/codex-sdk-client";
-import { buildCodexRuntimePromptParts } from "../../api/services/agent-runtime/codex-sdk/codex-sdk-runtime-prompt";
-import type { AgentRunContext } from "../../api/services/agent-runtime/types";
-import { buildCodingAgentSystemContext } from "../../api/services/coding-agent-context";
 import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
@@ -93,7 +93,7 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(review.runtimeContract).toBe(implementation.runtimeContract);
 		expect(review.runtimeContract).toContain("Todo");
 		expect(review.runtimeContract).toContain(
-			"ユーザーPromptから計画要否を判断し",
+			"実装前の計画が必要かをあなた自身が判断してください",
 		);
 		expect(review.runtimeContract).toContain(
 			"工程固有のリマインダーとして記録",

@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { MissionPilotPlanProgress } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
+import type { MissionPilotPlanProgress } from "../../../shared/modules/missionPilot";
 import { fetchMissionPilotPlanProgress } from "./missionPilotCommands";
 
 export const missionPilotPlanProgressQueryKey = (taskId: string | null) =>

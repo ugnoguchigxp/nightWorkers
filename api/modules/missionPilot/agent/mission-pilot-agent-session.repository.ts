@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { MissionPilotAuthorizationV3 } from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotAuthorizationV3 } from "../../../../shared/modules/missionPilot";
 import type { DbTransaction } from "../../../db/client";
 import { db } from "../../../db/client";
 import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";

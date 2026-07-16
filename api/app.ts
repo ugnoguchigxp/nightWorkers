@@ -21,19 +21,20 @@ import { blueprintRouter } from "./modules/blueprint";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
-import { missionPilotRouter } from "./modules/missionPilot";
+import {
+	missionPilotAgentFixtureRouter,
+	missionPilotFixtureRouter,
+	missionPilotRouter,
+} from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
 import { e2eFixtureRouter } from "./modules/nightworkers/routes/e2e-fixture-routes";
 import { missionCandidatesFixtureRouter } from "./modules/nightworkers/routes/mission-candidates-fixture-route";
-import { missionPilotAgentFixtureRouter } from "./modules/nightworkers/routes/mission-pilot-agent-fixture-routes";
-import { missionPilotFixtureRouter } from "./modules/nightworkers/routes/mission-pilot-fixture-routes";
 import {
 	configureOntologyTaskGenerationEvidenceLoader,
 	ontologyRouter,
 } from "./modules/ontology";
 import { overviewRouter } from "./modules/overview/overview.routes";
-import { initializeCodingAgentPlanModeContinuation } from "./modules/planMode/plan-mode-coding-agent-continuation.service";
 import { planViewRouter } from "./modules/planViews/planView.routes";
 import { projectDetailRouter } from "./modules/project-detail/project-detail.routes";
 import { projectEvaluationRouter } from "./modules/project-evaluation/project-evaluation.routes";
@@ -54,7 +55,6 @@ import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
-initializeCodingAgentPlanModeContinuation();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)

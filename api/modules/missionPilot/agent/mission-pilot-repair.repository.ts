@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import type { MissionPilotRepairRequest } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotRepairRequest } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import { missionPilotRepairRequests } from "../../../db/mission-pilot-agent-schema";
 

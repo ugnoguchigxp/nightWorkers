@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
 import type { Task } from "../nightworkers/types";
 export function mergeMissionPilotSummary(
 	tasks: Task[],

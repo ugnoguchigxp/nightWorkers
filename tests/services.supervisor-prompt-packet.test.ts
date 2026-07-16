@@ -50,7 +50,7 @@ describe("supervisor prompt packet", () => {
 			"planMode.dedicatedViewsとspecificationLensesは必ず空配列",
 		);
 		expect(rendered).toContain(
-			"開始後にCoding AgentがTaskとrepositoryを読んで判断",
+			"開始後にMission PilotがTaskとrepositoryを読んで判断",
 		);
 		expect(rendered).toContain("依頼内容からjobTypeとschedulingを推論");
 		expect(rendered).not.toContain("questionnaire を最初の判断材料");

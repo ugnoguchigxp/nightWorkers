@@ -1,4 +1,4 @@
-import type { MissionPilotTaskEventType } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotTaskEventType } from "../../../../shared/modules/missionPilot";
 
 export type MissionPilotActionExecutionMetadata = {
 	effect: "read" | "mutation";

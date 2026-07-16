@@ -8,6 +8,7 @@
 - Last updated: 2026-07-16
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Target scope: Mission Pilot
+- Role/module ownership override: Mission Pilot、Coding Agent、agentsShareの配置、依存方向、Questionnaire・Plan routing・Artifact所有権は`spec/docs/mission-pilot-coding-agent-module-separation-plan.md`を正本とする
 
 この文書を、Mission PilotをLLMの柔軟性を活かした永続オートパイロットへ移行するための正本とする。
 

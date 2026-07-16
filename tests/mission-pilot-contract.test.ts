@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildMissionPilotQuestionnaireDraft } from "../api/modules/missionPilot/mission-pilot-questionnaire-draft";
-import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import {
 	missionPilotAuthorizationV2Schema,
 	missionPilotAuthorizationV3Schema,
 	missionPilotControlSummarySchema,
 	missionPilotSourceRefSchema,
-} from "../shared/schemas/mission-pilot.schema";
-import { missionPilotPlanProgressSchema } from "../shared/schemas/mission-pilot-plan-progress.schema";
+} from "../shared/modules/missionPilot/mission-pilot.schema";
+import { missionPilotPlanProgressSchema } from "../shared/modules/missionPilot/mission-pilot-plan-progress.schema";
+import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import { formatCountdown } from "../src/modules/missionPilot/components/MissionPilotControlPanel";
 import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
 import {

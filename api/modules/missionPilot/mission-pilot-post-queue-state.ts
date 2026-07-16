@@ -1,5 +1,5 @@
-import type { MissionPilotPostQueuePhase } from "../../../shared/schemas/mission-pilot-execution.schema";
-import { missionPilotReviewDecisionPayloadSchema } from "../../../shared/schemas/mission-pilot-review.schema";
+import type { MissionPilotPostQueuePhase } from "../../../shared/modules/missionPilot";
+import { missionPilotReviewDecisionPayloadSchema } from "../../../shared/modules/missionPilot";
 
 export const MISSION_PILOT_CORRECTION_LIMITS = {
 	implementation: 3,

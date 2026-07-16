@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../../agent-runtime/model-visible-payload";
+import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../../model-visible-payload";
 import { compactLineSections, selectWindow, uniqueLines } from "./markers";
 import { buildCompressionMetadata } from "./metadata";
 import type { ToolOutputCompressionMetadata } from "./types";

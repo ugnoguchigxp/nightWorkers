@@ -1,5 +1,7 @@
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotPlanProgress } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
+import type {
+	MissionPilotControlSummary,
+	MissionPilotPlanProgress,
+} from "../../../shared/modules/missionPilot";
 import type { taskMessages } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 

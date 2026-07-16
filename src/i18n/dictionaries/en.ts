@@ -1,8 +1,8 @@
+import { enMissionPilot } from "../../modules/missionPilot";
 import { enArtifact } from "./en-artifact";
 import { enBlueprint } from "./en-blueprint";
 import { enComposer } from "./en-composer";
 import { enFolderBrowser } from "./en-folderBrowser";
-import { enMissionPilot } from "./en-missionPilot";
 import { enModelControls } from "./en-modelControls";
 import { enOverview } from "./en-overview";
 import { enProjectDetail } from "./en-projectDetail";

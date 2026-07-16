@@ -1,4 +1,5 @@
 import { logger } from "../../../lib/logger";
+import { publishTaskRunTerminal } from "../../agentsShare";
 import * as repo from "../nightworkers.repository";
 import {
 	completeImplementationQueueEntryForRun,
@@ -74,6 +75,44 @@ export async function handleRuntimeExecutionFailure(input: {
 	});
 	if (failureTransitionApplied)
 		await repo.publishTaskRunUpdate(latestFailedRun);
+	if (failureTransitionApplied) {
+		const publication = await publishTaskRunTerminal({
+			type: "task_run.terminal",
+			eventId: `task-run-terminal:${run.id}:failed`,
+			taskId,
+			runId: run.id,
+			status: "failed",
+			sourceRef: null,
+			occurredAt: new Date().toISOString(),
+		});
+		if (publication.failures.length > 0) {
+			logger.error(
+				{
+					listenerFailureCount: publication.failures.length,
+					runId: run.id,
+				},
+				"Task terminal event subscriber failed after failure closeout",
+			);
+			await repo
+				.createRunEvent({
+					version: 1,
+					runId: run.id,
+					taskId,
+					timestamp: new Date().toISOString(),
+					type: "system.warning",
+					severity: "warning",
+					actor: "system",
+					message:
+						"Task terminal failure event was persisted, but one or more subscribers failed.",
+					data: {
+						action: "task_run.terminal_publish",
+						listenerCount: publication.listenerCount,
+						listenerFailureCount: publication.failures.length,
+					},
+				})
+				.catch(() => undefined);
+		}
+	}
 	if (shouldContinueSessionQueue("failed")) {
 		void runSessionQueueForRepository(task.repositoryId);
 	}

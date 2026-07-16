@@ -15,9 +15,8 @@ import {
 	getPlanModeRouting,
 	updatePlanModeRoutingForCodingAgent,
 	updatePlanModeRoutingForUser,
-} from "../api/modules/planMode/plan-mode-routing.service";
+} from "../api/modules/missionPilot/planning/plan-mode-routing.service";
 import * as generalSettings from "../api/services/settings/general-settings";
-import { planModeTool } from "../api/services/worker-tools/plan-mode";
 import {
 	missionPilotPlanRoutingToolCallSchema,
 	updatePlanModeRoutingRequestSchema,
@@ -123,60 +122,6 @@ describe("Plan Mode routing service", () => {
 				changes: [{ view: "data_model", decision: "include" }],
 			}),
 		).rejects.toMatchObject({ code: "PLAN_MODE_ROUTING_LOCKED" });
-	});
-
-	it("requires Plan Mode mutations to stay inside the request-scoped Coding Agent run", async () => {
-		const { task } = await createFixture();
-		const missingRun = await planModeTool({
-			taskId: task.id,
-			command: {
-				op: "update_routing",
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [
-					{
-						view: "questionnaire",
-						decision: "include",
-						reason: "ユーザー判断が必要です。",
-					},
-				],
-			},
-		});
-		expect(missingRun).toMatchObject({
-			ok: false,
-			error: { code: "PLAN_MODE_RUN_SCOPE_REQUIRED" },
-		});
-
-		const { task: otherTask } = await createFixture();
-		const [otherRun] = await db
-			.insert(taskRuns)
-			.values({
-				id: crypto.randomUUID(),
-				taskId: otherTask.id,
-				repositoryId: otherTask.repositoryId,
-				status: "running",
-			})
-			.returning();
-		const mismatchedRun = await planModeTool({
-			taskId: task.id,
-			runId: otherRun?.id,
-			command: {
-				op: "update_routing",
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [
-					{
-						view: "questionnaire",
-						decision: "include",
-						reason: "ユーザー判断が必要です。",
-					},
-				],
-			},
-		});
-		expect(mismatchedRun).toMatchObject({
-			ok: false,
-			error: { code: "PLAN_MODE_RUN_SCOPE_MISMATCH" },
-		});
 	});
 
 	it("includes questionnaire after a Questionnaire-ready message is present", async () => {

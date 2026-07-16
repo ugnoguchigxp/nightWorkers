@@ -1,5 +1,5 @@
 import type { TaskRunStatus } from "../../../db/schema";
-import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
+import type { AgentRuntimeResult } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { resolveGuardedRunOutcomeStatus } from "./status";
 

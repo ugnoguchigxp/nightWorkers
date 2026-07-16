@@ -14,7 +14,6 @@ import {
 	submitDueQuestionnaireDrafts,
 } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
-import { reconcileCodingAgentPlanModeContinuations } from "./modules/planMode/plan-mode-coding-agent-continuation.service";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
 import { createRuntimeDatabaseBackup } from "./runtime/bootstrap";
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
@@ -155,7 +154,6 @@ export async function createNightWorkersServer(
 		});
 	});
 	await reconcileMissionPilotStartup();
-	await reconcileCodingAgentPlanModeContinuations();
 	void reconcileImplementationQueue({ apply: true, reason: "startup" }).catch(
 		(error) => {
 			logEvent({

@@ -1,6 +1,6 @@
 import { NotFoundError } from "../../../lib/errors";
-import { resolveAgentRuntime } from "../../../services/agent-runtime/registry";
 import { stopIsolatedTaskRun } from "../../../services/execution/worker-process-manager";
+import { resolveAgentRuntime } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { completeImplementationQueueEntryForRun } from "./queues";
 import { assertRunStatusTransition } from "./status";

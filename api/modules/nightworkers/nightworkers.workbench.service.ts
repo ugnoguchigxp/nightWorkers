@@ -30,11 +30,7 @@ export {
 
 import type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
 
-export {
-	ensureDesignQuestionnaireReadyMessage,
-	ensureMissionPilotAgentQuestionnaireReadyMessage,
-	prepareMissionPilotPlanModeIntake,
-} from "./nightworkers.workbench-plan-intake.service";
+export { ensureDesignQuestionnaireReadyMessage } from "./nightworkers.workbench-plan-intake.service";
 
 import { workbenchRunStartedMessage } from "./nightworkers-workbench-intake-support";
 
@@ -209,7 +205,7 @@ export function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
 		"完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。",
 		"既に implementation_plan / feature_plan があり、現在の依頼が実装・修正・実行キュー投入なら Plan Mode を再起動しないでください。",
 		"このintake gateはPlan Modeへ入るかだけを判断します。Questionnaire、Blueprint、Data Model、各Dedicated Viewの必要性を選択・提案しないでください。",
-		"dedicatedViewsとspecificationLensesは必ず空配列にしてください。設計Artifactのroutingと入力要求は、Plan Modeへ入った後にCoding AgentがTaskとrepositoryを読んで判断します。",
+		"dedicatedViewsとspecificationLensesは必ず空配列にしてください。設計Artifactのroutingと入力要求は、Plan Modeへ入った後にMission PilotがTaskとrepositoryを読んで判断します。",
 		'判断に迷う場合は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
 		"JSON のみを返してください。",
 		"",
@@ -418,7 +414,6 @@ export async function handleWorkbenchIntakeMessage(
 			});
 			const run = await startTaskRun(taskId, {
 				executionModeSource: "workbench_intake",
-				planModeRequested: true,
 				latestUserMessageOverride: llmPrompt,
 				routeOverride: options.llmRouteOverride || null,
 			});

@@ -1,7 +1,10 @@
 import { NotFoundError } from "../../lib/errors";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
-import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
-import { resolveMissionPilotRuntimeOwnership } from "../missionPilot/agent/mission-pilot-runtime-ownership.service";
+import { nativeLocalRunner } from "../codingAgent";
+import {
+	recordMissionPilotTaskEvent,
+	resolveMissionPilotRuntimeOwnership,
+} from "../missionPilot";
 import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
@@ -54,17 +57,13 @@ export async function recoverStaleActiveRuns(
 				runId: activeRun.id,
 				runStatus: "failed",
 			});
-			await import(
-				"../missionPilot/agent/mission-pilot-task-event.adapter"
-			).then(({ recordMissionPilotTaskEvent }) =>
-				recordMissionPilotTaskEvent({
-					taskId,
-					type: "task_run.failed",
-					sourceEventId: `stale-run-failed:${activeRun.id}:${activeRun.updatedAt.getTime()}`,
-					taskRevision: task.updatedAt.getTime(),
-					payload: { runId: activeRun.id, status: "failed" },
-				}),
-			);
+			await recordMissionPilotTaskEvent({
+				taskId,
+				type: "task_run.failed",
+				sourceEventId: `stale-run-failed:${activeRun.id}:${activeRun.updatedAt.getTime()}`,
+				taskRevision: task.updatedAt.getTime(),
+				payload: { runId: activeRun.id, status: "failed" },
+			});
 		} else {
 			await repo.updateTaskStatus(taskId, "failed");
 		}

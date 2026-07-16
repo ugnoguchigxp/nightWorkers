@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
 import type { ReviewResult } from "../../review";
 import type { TaskEvent } from "./activity";
 import type { TaskRunTodo } from "./blueprint";

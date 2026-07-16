@@ -3,7 +3,7 @@ import type {
 	MissionPilotTaskActionDescriptor,
 	MissionPilotTaskEventType,
 	MissionPilotTaskReadModel,
-} from "../../../../shared/schemas/mission-pilot-agent.schema";
+} from "../../../../shared/modules/missionPilot";
 import type {
 	ProviderToolDefinition,
 	ProviderToolMessage,

@@ -1,10 +1,10 @@
 import { ChevronDown, ChevronUp, LoaderCircle, Send } from "lucide-react";
+import type { MissionPilotAnswerEvidence } from "../../../shared/modules/missionPilot";
 import type {
 	DesignQuestion,
 	DesignQuestionOption,
 	DesignQuestionSet,
 } from "../../../shared/schemas/design-questionnaire.schema";
-import type { MissionPilotAnswerEvidence } from "../../../shared/schemas/mission-pilot.schema";
 import type { DesignQuestionnaireAnswer } from "../nightworkers/types";
 import {
 	emptyQuestionnaireAnswer,

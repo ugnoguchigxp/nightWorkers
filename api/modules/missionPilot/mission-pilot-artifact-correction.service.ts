@@ -6,8 +6,9 @@ import {
 	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 } from "../nightworkers/nightworkers.trace-provenance";
-import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
+import { executePlanModeArtifactCorrection } from "./artifacts/plan-mode-artifact-correction.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
 
@@ -222,10 +223,11 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				routingRevision: session.planRoutingRevision,
 			},
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			trace: artifactTrace,
 			llmUsageTrace: artifactTrace,
 		});
-		if (!result.message?.id) {
+		if (!result?.message?.id) {
 			throw new Error("Correction agent result message is missing");
 		}
 		const metadata = toRecord(result.message.metadataJson);

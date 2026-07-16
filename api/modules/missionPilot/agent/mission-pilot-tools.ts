@@ -1,4 +1,4 @@
-import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import type {
 	ProviderToolCall,
 	ProviderToolDefinition,
