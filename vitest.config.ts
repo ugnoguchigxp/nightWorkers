@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 import { testDatabasePath } from "./tests/vitest-db-env";
 import { coverageExcludes } from "./vitest.coverage";
 
+process.env.NIGHTWORKERS_VITEST_DB_PATH ??= testDatabasePath;
+
 export default defineConfig({
 	test: {
 		globals: true,
@@ -11,6 +13,7 @@ export default defineConfig({
 		env: {
 			NODE_ENV: "test",
 			DATABASE_URL: `file:${testDatabasePath}`,
+			NIGHTWORKERS_VITEST_DB_PATH: testDatabasePath,
 			JWT_SECRET: "nightworkers-vitest-jwt-secret-with-enough-length",
 			AUTH_MODE: "local",
 			API_AUTH_REQUIRED: "false",
