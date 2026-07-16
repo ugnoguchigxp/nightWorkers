@@ -224,6 +224,12 @@ async function maybeRecordCodexCommandVerificationEvidence(
 			providerItemId: readPayloadString(payload, "providerItemId"),
 		});
 		const checkKind = inferCodexCommandCheckKind(command, commandClass);
+		const runContext =
+			run.contextSnapshot &&
+			typeof run.contextSnapshot === "object" &&
+			!Array.isArray(run.contextSnapshot)
+				? (run.contextSnapshot as Record<string, unknown>)
+				: {};
 		const evidence = buildCommandLevelEvidence({
 			runId: run.id,
 			taskId: run.taskId,
@@ -235,7 +241,12 @@ async function maybeRecordCodexCommandVerificationEvidence(
 			runner: inferVerificationRunner({ command }),
 			rawStdoutArtifactId,
 			rawStderrArtifactId,
-			conditionIds: readPayloadStringArray(payload, "conditionIds"),
+			conditionIds:
+				runContext.missionPilot &&
+				typeof runContext.missionPilot === "object" &&
+				!Array.isArray(runContext.missionPilot)
+					? readPayloadStringArray(payload, "conditionIds")
+					: undefined,
 		});
 		await recordVerificationEvidence({
 			taskId: run.taskId,

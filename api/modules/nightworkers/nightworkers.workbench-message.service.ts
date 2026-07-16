@@ -8,7 +8,6 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { recordMissionPilotTaskEvent } from "../missionPilot/agent/mission-pilot-task-event.adapter";
 import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
@@ -16,6 +15,7 @@ import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.ser
 import { queueTask } from "./nightworkers.queue-management.service";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
+import { publishTaskMessageCreated } from "./nightworkers.task-message-events";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import {
 	handleWorkbenchIntakeMessage,
@@ -230,15 +230,7 @@ export async function appendTaskMessage(
 	}
 	const latestTask = await repo.getTask(id);
 	if (!latestTask) throw new NotFoundError("Task not found");
-	if (message && (metadata?.source as string | undefined) !== "mission_pilot") {
-		await recordMissionPilotTaskEvent({
-			taskId: id,
-			type: "task.user_message_added",
-			sourceEventId: `task-message:${message.id}`,
-			taskRevision: latestTask.updatedAt.getTime(),
-			payload: { messageId: message.id },
-		});
-	}
+	if (message) publishTaskMessageCreated(message);
 	return latestTask;
 }
 export type WorkbenchChatIntent =

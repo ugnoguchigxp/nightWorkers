@@ -27,7 +27,13 @@ export async function appendMissionPilotTaskEvent(input: {
 					.from(missionPilotAgentSessions)
 					.where(eq(missionPilotAgentSessions.sessionId, session.id))
 			: [];
-		if (!session || !agent || agent.engineMode !== "agent") return null;
+		if (
+			!session ||
+			!agent ||
+			session.desiredState !== "playing" ||
+			agent.engineMode !== "agent"
+		)
+			return null;
 		const [existing] = await tx
 			.select()
 			.from(missionPilotTaskEventInbox)

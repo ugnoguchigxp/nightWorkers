@@ -11,10 +11,13 @@ export async function projectMissionPilotQuestionnaireDraftAnswers(
 	sessions: DesignQuestionnaireSession[],
 ) {
 	const [pilot] = await db
-		.select({ id: missionPilotSessions.id })
+		.select({
+			id: missionPilotSessions.id,
+			desiredState: missionPilotSessions.desiredState,
+		})
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.taskId, taskId));
-	if (!pilot) return sessions;
+	if (pilot?.desiredState !== "playing") return sessions;
 	const [draft] = await db
 		.select()
 		.from(missionPilotQuestionnaireDrafts)

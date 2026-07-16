@@ -5,7 +5,12 @@ import {
 	getActiveTaskRun,
 	recoverStaleActiveRuns,
 } from "../nightworkers/nightworkers.run-query.service";
+import { registerTaskMessageCreatedListener } from "../nightworkers/nightworkers.task-message-events";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
+import {
+	isMissionPilotAgentTaskActive,
+	markMissionPilotAgentTaskActive,
+} from "./agent/mission-pilot-agent-active-registry";
 import { cancelPendingMissionPilotToolCalls } from "./agent/mission-pilot-agent-lifecycle.repository";
 import {
 	reconcileInterruptedMissionPilotAgentSessions,
@@ -20,7 +25,10 @@ import {
 } from "./agent/mission-pilot-agent-session.repository";
 import { scheduleMissionPilotAgentWake } from "./agent/mission-pilot-agent-wake.service";
 import { seedMissionPilotConversation } from "./agent/mission-pilot-conversation.repository";
-import { recordMissionPilotQuestionnaireReady } from "./agent/mission-pilot-task-event.adapter";
+import {
+	recordMissionPilotQuestionnaireReady,
+	recordMissionPilotTaskEvent,
+} from "./agent/mission-pilot-task-event.adapter";
 import { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
@@ -65,6 +73,7 @@ export function initializeMissionPilotRunSync() {
 	registerTaskRunUpdatedListener(async (run) => {
 		const session = await repo.getSessionByTaskId(run.taskId);
 		if (session && (await isMissionPilotAgentSession(session.id))) {
+			if (session.desiredState !== "playing") return;
 			const terminal = terminalRunStatuses.has(run.status);
 			if (!terminal && run.status !== "running") return;
 			const task = await nightworkersRepo.getTask(run.taskId);
@@ -78,8 +87,7 @@ export function initializeMissionPilotRunSync() {
 					? { runId: run.id, status: run.status }
 					: { runId: run.id, status: run.status },
 			});
-			if (session.desiredState === "playing")
-				scheduleMissionPilotAgentWake({ sessionId: session.id });
+			scheduleMissionPilotAgentWake({ sessionId: session.id });
 			return;
 		}
 		if (!terminalRunStatuses.has(run.status)) return;
@@ -96,11 +104,45 @@ export function initializeMissionPilotRunSync() {
 initializeMissionPilotRunSync();
 initializeMissionPilotQuestionnaireAutonomy();
 
+let agentTaskMessageCreatedRegistered = false;
+function initializeMissionPilotAgentTaskMessageEvents() {
+	if (agentTaskMessageCreatedRegistered) return;
+	agentTaskMessageCreatedRegistered = true;
+	registerTaskMessageCreatedListener(async (message) => {
+		if (message.role !== "user") return;
+		const metadata =
+			message.metadataJson &&
+			typeof message.metadataJson === "object" &&
+			!Array.isArray(message.metadataJson)
+				? (message.metadataJson as Record<string, unknown>)
+				: {};
+		if (metadata.source === "mission_pilot") return;
+		if (!isMissionPilotAgentTaskActive(message.taskId)) return;
+		const session = await repo.getSessionByTaskId(message.taskId);
+		if (
+			session?.desiredState !== "playing" ||
+			!(await isMissionPilotAgentSession(session.id))
+		)
+			return;
+		const task = await nightworkersRepo.getTask(message.taskId);
+		if (!task) return;
+		await recordMissionPilotTaskEvent({
+			taskId: message.taskId,
+			type: "task.user_message_added",
+			sourceEventId: `task-message:${message.id}`,
+			taskRevision: task.updatedAt.getTime(),
+			payload: { messageId: message.id },
+		});
+	});
+}
+initializeMissionPilotAgentTaskMessageEvents();
+
 let agentQuestionnaireReadyRegistered = false;
 function initializeMissionPilotAgentQuestionnaireEvents() {
 	if (agentQuestionnaireReadyRegistered) return;
 	agentQuestionnaireReadyRegistered = true;
 	registerQuestionnaireReadyListener(async (questionnaire) => {
+		if (!isMissionPilotAgentTaskActive(questionnaire.taskId)) return;
 		const session = await repo.getSessionByTaskId(questionnaire.taskId);
 		if (
 			session?.desiredState !== "playing" ||
@@ -128,8 +170,10 @@ export async function reconcileMissionPilotStartup() {
 			scheduleMissionPilotAgentWake({ sessionId: session.id });
 		}
 	}
-	for (const { session } of await listPlayingAgentSessions())
+	for (const { session } of await listPlayingAgentSessions()) {
+		markMissionPilotAgentTaskActive(session.taskId);
 		scheduleMissionPilotAgentWake({ sessionId: session.id });
+	}
 	const classified = await reconcileMissionPilotPreQueueSessions();
 	const recovered = await recoverInterruptedIntakeSessions();
 	const activePostQueueSessions =

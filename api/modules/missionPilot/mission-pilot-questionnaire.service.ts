@@ -178,7 +178,7 @@ export function initializeMissionPilotQuestionnaireAutonomy() {
 
 export async function getQuestionnaireDraft(taskId: string) {
 	const pilot = await missionPilotRepo.getSessionByTaskId(taskId);
-	if (!pilot) return null;
+	if (pilot?.desiredState !== "playing") return null;
 	const [row] = await db
 		.select()
 		.from(missionPilotQuestionnaireDrafts)

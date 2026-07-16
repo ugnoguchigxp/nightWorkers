@@ -155,6 +155,30 @@ test("Play posts the initial prompt and preserves the 20-second Questionnaire au
 		expect((await currentTask.json()) as object).toMatchObject({
 			missionPilot: { initialPromptState: "sent", nextWakeAt: null },
 		});
+
+		const composerControls = page.locator(".mission-pilot-composer-controls");
+		await composerControls
+			.getByRole("button", {
+				name: "Mission Pilotを一時停止",
+				exact: true,
+			})
+			.click();
+		await expect(
+			composerControls.getByRole("button", {
+				name: "Mission Pilotを再生",
+				exact: true,
+			}),
+		).toBeVisible({ timeout: 10_000 });
+		await expect(composerControls.locator(".animate-spin")).toHaveCount(0);
+		const stoppedTask = await request.get(`/api/tasks/${taskId}`, { headers });
+		expect(stoppedTask.status(), await stoppedTask.text()).toBe(200);
+		expect((await stoppedTask.json()) as object).toMatchObject({
+			missionPilot: {
+				desiredState: "stopped",
+				activityState: "idle",
+				activeRunId: null,
+			},
+		});
 	} finally {
 		await Promise.allSettled([
 			taskId

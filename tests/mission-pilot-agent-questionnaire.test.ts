@@ -10,13 +10,19 @@ import {
 } from "../api/db/mission-pilot-schema";
 import { repositories, tasks } from "../api/db/schema";
 import { saveAgentQuestionnaireDraft } from "../api/modules/missionPilot/agent/mission-pilot-agent-questionnaire.service";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
+import {
+	claimAgentPlay,
+	claimAgentStop,
+} from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
 	claimMissionPilotAgentTurn,
 	finishMissionPilotAgentTurn,
 } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
-import { submitDueQuestionnaireDrafts } from "../api/modules/missionPilot/mission-pilot-questionnaire.service";
+import {
+	getQuestionnaireDraft,
+	submitDueQuestionnaireDrafts,
+} from "../api/modules/missionPilot/mission-pilot-questionnaire.service";
 import { projectMissionPilotQuestionnaireDraftAnswers } from "../api/modules/missionPilot/mission-pilot-questionnaire-projection";
 import {
 	createDesignQuestionnaireQuestionSet,
@@ -136,6 +142,47 @@ describe("Mission Pilot agent Questionnaire compatibility", () => {
 		expect(await readPilot(fixture.sessionId)).toMatchObject({
 			nextWakeAt: null,
 		});
+	});
+
+	it("hides Mission Pilot draft answers from the normal Questionnaire while stopped", async () => {
+		const fixture = await createFixture();
+		await saveAgentQuestionnaireDraft({
+			taskId: fixture.taskId,
+			questionnaireSessionId: fixture.questionnaireSessionId,
+			answers: [
+				{
+					questionId: "api-style",
+					selectedOptionIds: ["rest"],
+					rankedOptionIds: [],
+					deferred: false,
+				},
+			],
+			answerEvidence: [
+				{
+					questionId: "api-style",
+					reason: "既存API規約と整合するためです。",
+				},
+			],
+		});
+		expect(await getQuestionnaireDraft(fixture.taskId)).not.toBeNull();
+		const playing = await readPilot(fixture.sessionId);
+		const stopped = await claimAgentStop(
+			fixture.taskId,
+			playing?.version ?? -1,
+		);
+		expect(stopped).not.toBeNull();
+		const canonical = await getDesignQuestionnaireSession(
+			fixture.taskId,
+			fixture.questionnaireSessionId,
+		);
+
+		expect(await getQuestionnaireDraft(fixture.taskId)).toBeNull();
+		expect(
+			await projectMissionPilotQuestionnaireDraftAnswers(fixture.taskId, [
+				canonical,
+			]),
+		).toEqual([canonical]);
+		expect(canonical.answers).toHaveLength(0);
 	});
 });
 

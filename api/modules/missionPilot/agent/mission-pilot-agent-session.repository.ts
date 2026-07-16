@@ -9,6 +9,10 @@ import {
 	missionPilotSessions,
 } from "../../../db/mission-pilot-schema";
 import { tasks } from "../../../db/schema";
+import {
+	clearMissionPilotAgentTaskActive,
+	markMissionPilotAgentTaskActive,
+} from "./mission-pilot-agent-active-registry";
 
 export async function createMissionPilotAgentSession(
 	tx: DbTransaction,
@@ -40,7 +44,7 @@ export async function getMissionPilotAgentSessionById(sessionId: string) {
 }
 
 export async function claimAgentPlay(taskId: string, expectedVersion: number) {
-	return db.transaction(async (tx) => {
+	const claimed = await db.transaction(async (tx) => {
 		const [session] = await tx
 			.select()
 			.from(missionPilotSessions)
@@ -186,10 +190,12 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 			? { ...claimed, ...claimedAgent, id: claimed.id }
 			: null;
 	});
+	if (claimed) markMissionPilotAgentTaskActive(taskId);
+	return claimed;
 }
 
 export async function claimAgentStop(taskId: string, expectedVersion: number) {
-	return db.transaction(async (tx) => {
+	const stopped = await db.transaction(async (tx) => {
 		const [session] = await tx
 			.select()
 			.from(missionPilotSessions)
@@ -231,6 +237,8 @@ export async function claimAgentStop(taskId: string, expectedVersion: number) {
 			.where(eq(missionPilotAgentSessions.sessionId, session.id));
 		return { ...row, ...agent, id: row.id, runtimeState: "stopped" as const };
 	});
+	if (stopped) clearMissionPilotAgentTaskActive(taskId);
+	return stopped;
 }
 
 export async function getMissionPilotSessionById(id: string) {

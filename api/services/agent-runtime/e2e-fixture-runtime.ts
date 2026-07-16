@@ -139,7 +139,10 @@ export async function runE2eFixtureRuntime(
 					status: "completed",
 				},
 			});
-			await new Promise((resolve) => setTimeout(resolve, 2));
+			// Verification evidence timestamps are persisted with second precision.
+			// Keep the retry in a later persisted second so the fixture remains
+			// deterministic when the successful result supersedes this failure.
+			await new Promise((resolve) => setTimeout(resolve, 1_100));
 		}
 		await sink.emit({
 			type: "tool_call_finished",
