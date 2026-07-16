@@ -6,6 +6,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type {
+	MissionPilotActionExecutionStatus,
 	MissionPilotActionFailure,
 	MissionPilotAgentEngineMode,
 	MissionPilotConversationItemKind,
@@ -131,6 +132,52 @@ export const missionPilotToolCalls = sqliteTable(
 			"mission_pilot_tool_calls_idempotency_uidx",
 		).on(table.sessionId, table.idempotencyKey),
 		statusIdx: index("mission_pilot_tool_calls_status_idx").on(
+			table.sessionId,
+			table.status,
+		),
+	}),
+);
+
+export const missionPilotActionExecutions = sqliteTable(
+	"mission_pilot_action_executions",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		toolCallId: text("tool_call_id")
+			.notNull()
+			.references(() => missionPilotToolCalls.id, { onDelete: "cascade" }),
+		actionId: text("action_id").notNull(),
+		idempotencyKey: text("idempotency_key").notNull(),
+		argumentsDigest: text("arguments_digest").notNull(),
+		expectedTaskRevision: integer("expected_task_revision"),
+		status: text("status")
+			.$type<MissionPilotActionExecutionStatus>()
+			.notNull()
+			.default("pending"),
+		resultJson: text("result_json", { mode: "json" }).$type<unknown>(),
+		failureJson: text("failure_json", {
+			mode: "json",
+		}).$type<MissionPilotActionFailure>(),
+		sourceResourceType: text("source_resource_type"),
+		sourceResourceId: text("source_resource_id"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		startedAt: integer("started_at", { mode: "timestamp" }),
+		finishedAt: integer("finished_at", { mode: "timestamp" }),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => ({
+		idempotencyUidx: uniqueIndex(
+			"mission_pilot_action_executions_idempotency_uidx",
+		).on(table.sessionId, table.idempotencyKey),
+		toolCallUidx: uniqueIndex(
+			"mission_pilot_action_executions_tool_call_uidx",
+		).on(table.toolCallId),
+		statusIdx: index("mission_pilot_action_executions_status_idx").on(
 			table.sessionId,
 			table.status,
 		),

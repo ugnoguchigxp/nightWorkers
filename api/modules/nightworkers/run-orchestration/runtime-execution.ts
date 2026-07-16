@@ -11,8 +11,8 @@ import {
 import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
 import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
 import {
+	applyMissionPilotParentTaskStatus,
 	continueMissionPilotAfterRun,
-	resolveMissionPilotParentTaskStatus,
 } from "../../missionPilot/mission-pilot-post-queue-coordinator.service";
 import {
 	executeMissionPilotContinuation,
@@ -485,12 +485,14 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			if (!isRuntimeTerminalStatus(finalStatus)) {
 				return;
 			}
-			const parentTaskStatus = await resolveMissionPilotParentTaskStatus({
+			const parentTaskProjection = await applyMissionPilotParentTaskStatus({
 				runId: run.id,
 				runStatus: finalStatus,
 				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
 			});
-			await repo.updateTaskStatus(taskId, parentTaskStatus);
+			const parentTaskStatus = parentTaskProjection.status;
+			if (!parentTaskProjection.handled)
+				await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, finalStatus);
 			await repo.publishTaskRunUpdate(finalizedRun);
 			try {

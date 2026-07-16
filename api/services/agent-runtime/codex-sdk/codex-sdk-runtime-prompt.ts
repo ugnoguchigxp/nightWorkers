@@ -1,5 +1,9 @@
 import type { Input } from "@openai/codex-sdk";
 import { getNightWorkersCodexToolNames } from "../../../mcp/nightworkers-tool-manifest";
+import {
+	CODING_AGENT_RUNTIME_REMINDERS_JA,
+	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
+} from "../../coding-agent-context/system-context";
 import { estimateTokens } from "../../conversation-context/token-budget";
 import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
@@ -78,7 +82,7 @@ function buildCodingAgentContract(
 		...formatRuntimeWorkspaceContextForPrompt(context),
 		JSON.stringify(
 			context.codingAgentSystemContext ?? {
-				version: 1,
+				version: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
 				roleInstructionsJa:
 					"Taskの意味、Todo、次の行動、検証、完了可否を判断するCoding Agentとして振る舞ってください。",
 				taskGoal: context.latestUserMessage || context.compiledPrompt,
@@ -90,6 +94,7 @@ function buildCodingAgentContract(
 		"",
 		`利用可能なNightWorkers MCP tools: ${nightWorkersToolList}`,
 		"最初にnightworkers.todo_listのreplace_planとstartを使い、current Todoを作成してください。",
+		...CODING_AGENT_RUNTIME_REMINDERS_JA,
 		"current Todoなしにworkspace toolを呼ばず、Todoのobjective、context、nextAction、acceptanceCriteriaを読んで行動してください。",
 		"失敗時はrecord_failureでraw errorと次の方法を保存し、hostにretry方法や次工程を推測させないでください。",
 		"Testや自己確認の要否はTaskとTodo Contextから判断し、Test/Review専用modeを前提にしないでください。",

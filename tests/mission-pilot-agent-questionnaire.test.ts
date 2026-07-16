@@ -3,7 +3,11 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
+import { designQuestionnaireQuestionSets } from "../api/db/design-questionnaire-schema";
+import {
+	missionPilotAgentSessions,
+	missionPilotTaskEventInbox,
+} from "../api/db/mission-pilot-agent-schema";
 import {
 	missionPilotQuestionnaireDrafts,
 	missionPilotSessions,
@@ -183,6 +187,71 @@ describe("Mission Pilot agent Questionnaire compatibility", () => {
 			]),
 		).toEqual([canonical]);
 		expect(canonical.answers).toHaveLength(0);
+	});
+
+	it("keeps the agent playing and returns submission failure as a readable event", async () => {
+		const fixture = await createFixture();
+		const draft = await saveAgentQuestionnaireDraft({
+			taskId: fixture.taskId,
+			questionnaireSessionId: fixture.questionnaireSessionId,
+			answers: [
+				{
+					questionId: "api-style",
+					selectedOptionIds: ["rest"],
+					rankedOptionIds: [],
+					deferred: false,
+				},
+			],
+			answerEvidence: [
+				{ questionId: "api-style", reason: "既存API規約と整合します。" },
+			],
+		});
+		const [questionSet] = await db
+			.select()
+			.from(designQuestionnaireQuestionSets)
+			.where(
+				eq(
+					designQuestionnaireQuestionSets.sessionId,
+					fixture.questionnaireSessionId,
+				),
+			);
+		const changed = structuredClone(
+			questionSet?.questionnaireJson as {
+				questionSets: Array<{ questions: Array<{ id: string }> }>;
+			},
+		);
+		changed.questionSets[0].questions[0].id = "changed-after-draft";
+		await db
+			.update(designQuestionnaireQuestionSets)
+			.set({ questionnaireJson: changed, updatedAt: new Date() })
+			.where(
+				eq(designQuestionnaireQuestionSets.id, questionSet?.id ?? "missing"),
+			);
+
+		await submitDueQuestionnaireDrafts(
+			new Date(draft.deadlineAt.getTime() + 1),
+		);
+		const [failedDraft] = await db
+			.select()
+			.from(missionPilotQuestionnaireDrafts)
+			.where(eq(missionPilotQuestionnaireDrafts.id, draft.id));
+		expect(failedDraft?.state).toBe("failed");
+		expect(await readPilot(fixture.sessionId)).toMatchObject({
+			desiredState: "playing",
+		});
+		const [event] = await db
+			.select()
+			.from(missionPilotTaskEventInbox)
+			.where(
+				eq(
+					missionPilotTaskEventInbox.eventType,
+					"questionnaire.submission_failed",
+				),
+			);
+		expect(event?.payloadJson).toMatchObject({
+			questionnaireSessionId: fixture.questionnaireSessionId,
+			error: expect.stringContaining("api-style"),
+		});
 	});
 });
 

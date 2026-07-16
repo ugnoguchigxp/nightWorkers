@@ -1,6 +1,10 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
+	missionPilotAgentSessions,
+	missionPilotConversationItems,
+} from "../../db/mission-pilot-agent-schema";
+import {
 	missionPilotArtifactCorrectionRuns,
 	missionPilotCloseouts,
 	missionPilotEvents,
@@ -134,6 +138,21 @@ export async function getMissionPilotExecution(sessionId: string) {
 			),
 		)
 		.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id));
+	const [agent] = await db
+		.select({
+			sessionId: missionPilotAgentSessions.sessionId,
+			conversationRevision: missionPilotAgentSessions.conversationRevision,
+		})
+		.from(missionPilotAgentSessions)
+		.where(eq(missionPilotAgentSessions.sessionId, sessionId))
+		.limit(1);
+	const agentItems = agent
+		? await db
+				.select()
+				.from(missionPilotConversationItems)
+				.where(eq(missionPilotConversationItems.sessionId, sessionId))
+				.orderBy(asc(missionPilotConversationItems.sequence))
+		: [];
 	return {
 		session,
 		phaseRuns,
@@ -146,7 +165,73 @@ export async function getMissionPilotExecution(sessionId: string) {
 			artifactCorrectionRuns,
 		),
 		messages: pilotMessages,
+		agent: agent
+			? {
+					sessionId: agent.sessionId,
+					conversationRevision: agent.conversationRevision,
+					visibleItems: projectMissionPilotAgentVisibleItems(agentItems),
+				}
+			: null,
 	};
+}
+
+export function projectMissionPilotAgentVisibleItems(
+	items: ReadonlyArray<{ kind: string; sequence: number; bodyJson: unknown }>,
+): Array<
+	| { kind: "assistant"; sequence: number; content: string }
+	| {
+			kind: "wait";
+			sequence: number;
+			eventTypes: unknown[];
+			reason: string;
+	  }
+	| { kind: "finish"; sequence: number; summary: string }
+> {
+	const projected: Array<
+		| { kind: "assistant"; sequence: number; content: string }
+		| {
+				kind: "wait";
+				sequence: number;
+				eventTypes: unknown[];
+				reason: string;
+		  }
+		| { kind: "finish"; sequence: number; summary: string }
+	> = [];
+	for (const item of items) {
+		const body = asRecord(item.bodyJson);
+		if (item.kind === "assistant") {
+			const content = typeof body.content === "string" ? body.content : "";
+			if (content)
+				projected.push({ kind: "assistant", sequence: item.sequence, content });
+			continue;
+		}
+		if (item.kind !== "tool_result" || typeof body.content !== "string")
+			continue;
+		try {
+			const result = asRecord(JSON.parse(body.content));
+			const data = asRecord(result.data);
+			if (data.kind === "wait_for_event")
+				projected.push({
+					kind: "wait",
+					sequence: item.sequence,
+					eventTypes: Array.isArray(data.eventTypes) ? data.eventTypes : [],
+					reason: typeof data.reason === "string" ? data.reason : "",
+				});
+			if (data.kind === "finish")
+				projected.push({
+					kind: "finish",
+					sequence: item.sequence,
+					summary: typeof data.summary === "string" ? data.summary : "",
+				});
+		} catch {}
+	}
+	return projected;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
 }
 
 export async function getMissionPilotExecutionForTask(taskId: string) {

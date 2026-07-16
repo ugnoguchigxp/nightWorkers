@@ -8,26 +8,44 @@ import {
 import { questionnaireChoiceFormSchema } from "../shared/schemas/design-questionnaire.schema";
 
 describe("design questionnaire prompts", () => {
-	it("asks for starter stack and database choices needed to identify template variants", () => {
+	it("keeps starter stack choices independent from database choices", () => {
 		const prompt = buildDesignQuestionnaireSystemPrompt();
 
 		expect(prompt).toContain("使用する技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");
-		expect(prompt).toContain("Hono + React/Vite + SQLite");
-		expect(prompt).toContain("通常の Hono starter は必ず");
-		expect(prompt).toContain("RAG (Hono + React/Vite + pgvector)");
-		expect(prompt).toContain("RAG の選択肢は必ず");
+		expect(prompt).toContain("Hono + React/Vite");
+		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("Python/FastAPI + React/Vite");
-		expect(prompt).toContain("API only (FastAPI + SQLite)");
-		expect(prompt).toContain("API only の選択肢は必ず");
+		expect(prompt).toContain("API only (FastAPI)");
 		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
 		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
-		expect(prompt).toContain("Java 8 と Java 25 の選択肢を必ず含めて");
+		expect(prompt).toContain("Rust + Axum + React/Vite");
+		expect(prompt).toContain(
+			"Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めて",
+		);
+		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
+		expect(prompt).toContain(
+			"技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めない",
+		);
+		expect(prompt).not.toContain("Hono + React/Vite + SQLite");
+		expect(prompt).not.toContain("RAG (Hono + React/Vite + pgvector)");
+		expect(prompt).not.toContain("API only (FastAPI + SQLite)");
 		expect(prompt).toContain("SQLite");
 		expect(prompt).toContain("PostgreSQL");
 		expect(prompt).toContain("pgvector");
 		expect(prompt).toContain("Turso/libSQL");
+		expect(prompt).toContain(
+			"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタック",
+		);
+		expect(prompt).toContain(
+			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
+		);
+		expect(prompt).toContain(
+			"専用 variant がないことを理由に DB の選択肢を除外しない",
+		);
+		expect(prompt).toContain("対応する SQLite variant を雛形として使用");
+		expect(prompt).toContain("DB 要件は SQLite へ変更せず");
 		expect(prompt).toContain("各 options は 2-10 件");
 		expect(prompt).toContain(
 			"本当に複数の選択肢を同時に採用できる設問だけ checkbox",
@@ -45,19 +63,28 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("使用技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");
-		expect(prompt).toContain("Hono + React/Vite + SQLite");
-		expect(prompt).toContain("通常の Hono starter は必ず");
-		expect(prompt).toContain("RAG (Hono + React/Vite + pgvector)");
-		expect(prompt).toContain("RAG の選択肢は必ず");
-		expect(prompt).toContain("API only (FastAPI + SQLite)");
-		expect(prompt).toContain("API only の選択肢は必ず");
+		expect(prompt).toContain("Hono + React/Vite");
+		expect(prompt).toContain("RAG (Hono + React/Vite)");
+		expect(prompt).toContain("API only (FastAPI)");
 		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
 		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
-		expect(prompt).toContain("Java 8 と Java 25 を区別できる選択肢");
+		expect(prompt).toContain("Rust + Axum + React/Vite");
+		expect(prompt).toContain(
+			"Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めて",
+		);
+		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
+		expect(prompt).not.toContain("Hono + React/Vite + SQLite");
+		expect(prompt).not.toContain("RAG (Hono + React/Vite + pgvector)");
+		expect(prompt).not.toContain("API only (FastAPI + SQLite)");
 		expect(prompt).toContain("SQLite");
 		expect(prompt).toContain("PostgreSQL");
 		expect(prompt).toContain("pgvector");
 		expect(prompt).toContain("Turso/libSQL");
+		expect(prompt).toContain(
+			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
+		);
+		expect(prompt).toContain("対応する SQLite variant を雛形として使用");
+		expect(prompt).toContain("implementationPlan.steps");
 		expect(prompt).toContain("各 options は 2-10 件");
 		expect(prompt).toContain(
 			"本当に複数の選択肢を同時に採用できる設問だけ checkbox",

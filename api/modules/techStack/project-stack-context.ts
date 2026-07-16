@@ -4,8 +4,7 @@ export function renderProjectStackContext(
 	profile: ProjectStackProfile | null,
 ): string {
 	if (
-		!profile ||
-		profile.manifestStatus !== "found" ||
+		profile?.manifestStatus !== "found" ||
 		profile.technologies.length === 0
 	) {
 		return [

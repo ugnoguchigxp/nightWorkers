@@ -337,6 +337,13 @@
       "when": 1784163600000,
       "tag": "0047_mission_pilot_agent_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1784167200000,
+      "tag": "0048_mission_pilot_action_executions",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,10 @@ export async function startTaskRun(
 	return startTaskRunInProcess(taskId, codingAgentOptions);
 }
 
-export async function prepareStartableTask(taskId: string) {
+export async function prepareStartableTask(
+	taskId: string,
+	options: { allowMissionPilotNeedsReview?: boolean } = {},
+) {
 	const task = await repo.getTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	const activeRuns = await repo.listActiveTaskRunsForTask(taskId);
@@ -35,7 +38,11 @@ export async function prepareStartableTask(taskId: string) {
 			"Another run is already active for this task",
 		);
 	}
-	await repo.updateTaskStatus(taskId, "running");
+	if (options.allowMissionPilotNeedsReview && task.status === "needs_review") {
+		await repo.updateTaskStatus(taskId, "running");
+	} else {
+		await repo.updateTaskStatus(taskId, "running");
+	}
 	return task;
 }
 

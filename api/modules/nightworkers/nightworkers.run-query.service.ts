@@ -1,9 +1,11 @@
 import { NotFoundError } from "../../lib/errors";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
+import { resolveMissionPilotRuntimeOwnership } from "../missionPilot/agent/mission-pilot-runtime-ownership.service";
 import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
+import { applyMissionPilotTaskStatusAfterRun } from "./run-orchestration/task-status-projection-policy";
 
 export async function getActiveTaskRun(taskId: string) {
 	const task = await repo.getTask(taskId);
@@ -29,6 +31,7 @@ export async function recoverStaleActiveRuns(
 	}
 
 	const recoveredRunIds: string[] = [];
+	const ownership = await resolveMissionPilotRuntimeOwnership({ taskId });
 	for (const activeRun of activeRuns) {
 		const runnerStatus = await nativeLocalRunner.getStatus(activeRun.id);
 		if (runnerStatus.status === "running") {
@@ -45,7 +48,26 @@ export async function recoverStaleActiveRuns(
 			summary: "Run recovered as failed after stale active-state detection.",
 			finalJudgment: null,
 		});
-		await repo.updateTaskStatus(taskId, "failed");
+		if (ownership.kind === "agent") {
+			await applyMissionPilotTaskStatusAfterRun({
+				taskId,
+				runId: activeRun.id,
+				runStatus: "failed",
+			});
+			await import(
+				"../missionPilot/agent/mission-pilot-task-event.adapter"
+			).then(({ recordMissionPilotTaskEvent }) =>
+				recordMissionPilotTaskEvent({
+					taskId,
+					type: "task_run.failed",
+					sourceEventId: `stale-run-failed:${activeRun.id}:${activeRun.updatedAt.getTime()}`,
+					taskRevision: task.updatedAt.getTime(),
+					payload: { runId: activeRun.id, status: "failed" },
+				}),
+			);
+		} else {
+			await repo.updateTaskStatus(taskId, "failed");
+		}
 		await repo.createRunEvent({
 			version: 1,
 			runId: activeRun.id,

@@ -8,6 +8,7 @@ import {
 	missionPilotTestSnapshots,
 } from "../../db/mission-pilot-schema";
 import { taskRuns } from "../../db/schema";
+import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
 import { executeMissionPilotCloseout } from "./mission-pilot-closeout.service";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import { continueMissionPilotAfterRun } from "./mission-pilot-post-queue-coordinator.service";
@@ -48,6 +49,10 @@ export async function recoverMissionPilotPostQueueSessions() {
 		);
 	let recovered = 0;
 	for (const session of sessions) {
+		const ownership = await resolveMissionPilotRuntimeOwnership({
+			sessionId: session.id,
+		});
+		if (ownership.kind !== "legacy") continue;
 		if (session.phase === "archived") {
 			if (!session.activeCloseoutId) continue;
 			const [latestContext] = await db

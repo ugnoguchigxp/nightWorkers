@@ -5,9 +5,14 @@ import type {
 } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import type { ProviderToolDefinition } from "../../../services/structured-llm/public";
 import {
+	type MissionPilotActionExecutionMetadata,
+	missionPilotActionExecutionMetadata,
+} from "./mission-pilot-action-execution-metadata";
+import {
 	questionnaireDraftActionInputSchema,
 	validateMissionPilotJsonSchema,
 } from "./mission-pilot-action-schema";
+import { missionPilotActionUnavailableReasons } from "./mission-pilot-task-action-unavailable";
 
 type Scope = keyof MissionPilotAuthorization["scopes"];
 export type MissionPilotActionDefinition = {
@@ -17,6 +22,7 @@ export type MissionPilotActionDefinition = {
 	description: string;
 	inputSchema: Record<string, unknown>;
 	authorizationScope: Scope;
+	execution: MissionPilotActionExecutionMetadata;
 };
 const object = (
 	properties: Record<string, unknown> = {},
@@ -516,32 +522,29 @@ const definitions: MissionPilotActionDefinition[] = (
 		title,
 		description,
 		authorizationScope,
+		execution: missionPilotActionExecutionMetadata(actionId),
 		inputSchema,
 	}),
 );
-
 export const MISSION_PILOT_ACTION_DEFINITIONS = Object.freeze(definitions);
 const byActionId = new Map(definitions.map((entry) => [entry.actionId, entry]));
 const byToolName = new Map(definitions.map((entry) => [entry.toolName, entry]));
-const unavailableActionReasons = new Map<string, string>([
-	[
-		"plan.artifact.generate",
-		"Artifact kindごとの明示actionを使用してください。",
-	],
-	[
-		"plan.artifact.regenerate",
-		"対象Artifactのsource revisionを含む再生成contractが必要です。",
-	],
-]);
 export function getMissionPilotActionDefinition(actionId: string) {
 	return byActionId.get(actionId) ?? null;
 }
 export function getMissionPilotActionByToolName(toolName: string) {
 	return byToolName.get(toolName) ?? null;
 }
-export function missionPilotActionToolDefinitions(): ProviderToolDefinition[] {
+export function missionPilotActionToolDefinitions(input?: {
+	availableActionIds?: ReadonlySet<string>;
+}): ProviderToolDefinition[] {
 	return definitions
-		.filter((entry) => !unavailableActionReasons.has(entry.actionId))
+		.filter(
+			(entry) =>
+				!missionPilotActionUnavailableReasons.has(entry.actionId) &&
+				(!input?.availableActionIds ||
+					input.availableActionIds.has(entry.actionId)),
+		)
 		.map(({ toolName, description, inputSchema }) => ({
 			name: toolName,
 			description,
@@ -549,7 +552,7 @@ export function missionPilotActionToolDefinitions(): ProviderToolDefinition[] {
 		}));
 }
 export function getMissionPilotActionUnavailableReason(actionId: string) {
-	return unavailableActionReasons.get(actionId) ?? null;
+	return missionPilotActionUnavailableReasons.get(actionId) ?? null;
 }
 export function describeMissionPilotActions(input: {
 	authorization: MissionPilotAuthorization | null;
@@ -561,7 +564,7 @@ export function describeMissionPilotActions(input: {
 			input.authorization?.scopes[entry.authorizationScope],
 		);
 		const unavailableReason =
-			unavailableActionReasons.get(entry.actionId) ??
+			missionPilotActionUnavailableReasons.get(entry.actionId) ??
 			(!authorized
 				? `authorization scope ${entry.authorizationScope} is not granted`
 				: input.runtimeState === "completed" &&

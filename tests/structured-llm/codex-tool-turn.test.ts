@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { missionPilotProviderPort } from "../../api/modules/missionPilot/agent/mission-pilot-provider.port";
 import {
@@ -103,6 +104,13 @@ describe("Codex Mission Pilot tool turns", () => {
 	});
 
 	it("uses the configured Mission Pilot Codex role route without a fallback", async () => {
+		const sourceCodexHome = path.join(
+			path.dirname(llmSettingsPath()),
+			"codex-source-home",
+		);
+		fs.mkdirSync(sourceCodexHome);
+		fs.writeFileSync(path.join(sourceCodexHome, "auth.json"), "test-auth");
+		process.env.NIGHTWORKERS_CODEX_HOME = sourceCodexHome;
 		fs.writeFileSync(
 			llmSettingsPath(),
 			JSON.stringify({
@@ -193,15 +201,21 @@ describe("Codex Mission Pilot tool turns", () => {
 				sandboxMode: "read-only",
 			}),
 		]);
-		const codexConfig = (
-			codexMock.constructorInputs[0] as {
-				config: Record<string, unknown>;
-			}
-		).config;
+		const constructorInput = codexMock.constructorInputs[0] as {
+			env: Record<string, string>;
+			config: Record<string, unknown>;
+		};
+		const isolatedCodexHome = constructorInput.env.CODEX_HOME;
+		expect(isolatedCodexHome).not.toBe(sourceCodexHome);
+		expect(isolatedCodexHome).toContain(
+			"nightworkers-mission-pilot-codex-home-",
+		);
+		expect(fs.existsSync(isolatedCodexHome)).toBe(false);
+		const codexConfig = constructorInput.config;
 		expect(codexConfig).toMatchObject({
-			features: { mcp: false, memories: false },
-			mcp_servers: {},
+			features: { memories: false },
 		});
+		expect(codexConfig).not.toHaveProperty("mcp_servers");
 		expect(codexConfig.developer_instructions).toContain("toolCallsへ出力");
 		expect(JSON.stringify(codexMock.runInputs[0])).toContain(
 			"このTaskをPlan Modeから開始してください。",

@@ -7,6 +7,18 @@ import {
 } from "../../../services/structured-llm/public";
 import type { StructuredLlmThinkingDepth } from "../../../services/structured-llm/settings";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
+import { missionPilotDigest } from "./mission-pilot-content-page";
+import { appendMissionPilotTaskEvent } from "./mission-pilot-task-event.repository";
+
+export class MissionPilotProviderRetryScheduledError extends Error {
+	constructor(
+		readonly failure: ReturnType<typeof normalizeStructuredProviderError>,
+		readonly availableAt: Date,
+	) {
+		super("Mission Pilot provider retry was scheduled.");
+		this.name = "MissionPilotProviderRetryScheduledError";
+	}
+}
 
 function latestUserPrompt(
 	messages: Parameters<MissionPilotProviderPort["nextTurn"]>[0]["messages"],
@@ -48,6 +60,12 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 		return callMissionPilotProviderCandidates({
 			candidates: normalizedRequests,
 			signal: input.signal,
+			retryContext: {
+				sessionId: input.sessionId,
+				taskId: input.taskId,
+				taskRevision: input.currentStepContext?.taskRef.revision ?? 0,
+				attempt: latestProviderRetryAttempt(input.messages),
+			},
 			callCandidate: (normalizedRequest) =>
 				callProviderToolTurn({
 					provider: providerAdapterKey(normalizedRequest.providerId),
@@ -77,6 +95,12 @@ type MissionPilotProviderCandidate = ReturnType<
 export async function callMissionPilotProviderCandidates(input: {
 	candidates: MissionPilotProviderCandidate[];
 	signal: AbortSignal;
+	retryContext?: {
+		sessionId: string;
+		taskId: string;
+		taskRevision: number;
+		attempt?: number;
+	};
 	callCandidate: (
 		candidate: MissionPilotProviderCandidate,
 	) => ReturnType<typeof callProviderToolTurn>;
@@ -99,6 +123,7 @@ export async function callMissionPilotProviderCandidates(input: {
 		const result = await retryMissionPilotProviderCall(
 			() => input.callCandidate(candidate),
 			input.signal,
+			input.retryContext,
 		);
 		if (result.type === "supported") return result;
 		lastUnsupported = result;
@@ -116,37 +141,72 @@ export async function callMissionPilotProviderCandidates(input: {
 export async function retryMissionPilotProviderCall<T>(
 	operation: () => Promise<T>,
 	signal: AbortSignal,
+	retryContext?: {
+		sessionId: string;
+		taskId: string;
+		taskRevision: number;
+		attempt?: number;
+	},
 ) {
-	for (let attempt = 1; attempt <= 3; attempt += 1) {
-		try {
-			return await operation();
-		} catch (error) {
-			const failure = withStructuredProviderAttempt(
-				normalizeStructuredProviderError(error),
+	const attempt = Math.max(1, Math.min(3, retryContext?.attempt ?? 1));
+	try {
+		return await operation();
+	} catch (error) {
+		const failure = withStructuredProviderAttempt(
+			normalizeStructuredProviderError(error),
+			attempt,
+		);
+		if (!failure.retryable || attempt === 3 || signal.aborted || !retryContext)
+			throw failure;
+		const delay =
+			process.env.NODE_ENV === "test"
+				? 0
+				: Math.min(10_000, failure.retryAfterMs ?? 250 * 2 ** (attempt - 1));
+		const availableAt = new Date(Date.now() + delay);
+		const sourceEventId = `provider-retry:${retryContext.sessionId}:${attempt + 1}:${missionPilotDigest(`${Date.now()}:${attempt}`)}`;
+		await appendMissionPilotTaskEvent({
+			taskId: retryContext.taskId,
+			eventType: "mission_pilot.retry_timer_elapsed",
+			sourceEventId,
+			taskRevision: retryContext.taskRevision,
+			payload: {
 				attempt,
-			);
-			if (!failure.retryable || attempt === 3 || signal.aborted) throw failure;
-			await new Promise<void>((resolve, reject) => {
-				if (signal.aborted) return reject(signal.reason);
-				const timer = setTimeout(
-					resolve,
-					process.env.NODE_ENV === "test"
-						? 0
-						: Math.min(
-								10_000,
-								failure.retryAfterMs ?? 250 * 2 ** (attempt - 1),
-							),
-				);
-				signal.addEventListener(
-					"abort",
-					() => {
-						clearTimeout(timer);
-						reject(signal.reason);
-					},
-					{ once: true },
-				);
-			});
-		}
+				nextAttempt: attempt + 1,
+				retryAfterMs: failure.retryAfterMs,
+				failure,
+			},
+			availableAt,
+		});
+		throw new MissionPilotProviderRetryScheduledError(failure, availableAt);
 	}
-	throw new Error("unreachable provider retry state");
+}
+
+function latestProviderRetryAttempt(
+	messages: Parameters<MissionPilotProviderPort["nextTurn"]>[0]["messages"],
+) {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const content = messages[index]?.content;
+		if (
+			typeof content !== "string" ||
+			!content.includes("mission_pilot.retry_timer_elapsed")
+		)
+			continue;
+		try {
+			const parsed = JSON.parse(content) as Record<string, unknown>;
+			const events = Array.isArray(parsed.events) ? parsed.events : [];
+			for (const event of [...events].reverse()) {
+				const record =
+					event && typeof event === "object"
+						? (event as Record<string, unknown>)
+						: {};
+				if (record.eventType !== "mission_pilot.retry_timer_elapsed") continue;
+				const payload =
+					record.payload && typeof record.payload === "object"
+						? (record.payload as Record<string, unknown>)
+						: {};
+				if (typeof payload.nextAttempt === "number") return payload.nextAttempt;
+			}
+		} catch {}
+	}
+	return 1;
 }

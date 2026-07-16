@@ -404,30 +404,48 @@ async function submitDraftRow(
 			.where(eq(missionPilotQuestionnaireDrafts.id, claimed.id));
 		const pilot = await missionPilotRepo.getSessionByTaskId(taskId);
 		if (pilot) {
-			const [updatedPilot] = await db
-				.update(missionPilotSessions)
-				.set({
-					desiredState: "stopped",
-					phase: "attention",
-					nextWakeAt: null,
-					lastErrorCode: "MISSION_PILOT_QUESTIONNAIRE_SUBMIT_FAILED",
-					lastErrorMessage:
-						error instanceof Error ? error.message : String(error),
-					version: pilot.version + 1,
-					updatedAt: now,
-				})
-				.where(
-					and(
-						eq(missionPilotSessions.id, pilot.id),
-						eq(missionPilotSessions.version, pilot.version),
-					),
-				)
-				.returning();
-			if (updatedPilot)
-				publishMissionPilotUpdated(
-					taskId,
-					missionPilotRepo.toControlSummary(updatedPilot),
+			const agentOwned = await isMissionPilotAgentSession(pilot.id);
+			if (agentOwned) {
+				await import("./agent/mission-pilot-task-event.adapter").then(
+					({ recordMissionPilotTaskEvent }) =>
+						recordMissionPilotTaskEvent({
+							taskId,
+							type: "questionnaire.submission_failed",
+							sourceEventId: `questionnaire-submit-failed:${claimed.id}:${claimed.version}`,
+							taskRevision: pilot.version,
+							payload: {
+								questionnaireSessionId: claimed.questionnaireSessionId,
+								trigger,
+								error: error instanceof Error ? error.message : String(error),
+							},
+						}),
 				);
+			} else {
+				const [updatedPilot] = await db
+					.update(missionPilotSessions)
+					.set({
+						desiredState: "stopped",
+						phase: "attention",
+						nextWakeAt: null,
+						lastErrorCode: "MISSION_PILOT_QUESTIONNAIRE_SUBMIT_FAILED",
+						lastErrorMessage:
+							error instanceof Error ? error.message : String(error),
+						version: pilot.version + 1,
+						updatedAt: now,
+					})
+					.where(
+						and(
+							eq(missionPilotSessions.id, pilot.id),
+							eq(missionPilotSessions.version, pilot.version),
+						),
+					)
+					.returning();
+				if (updatedPilot)
+					publishMissionPilotUpdated(
+						taskId,
+						missionPilotRepo.toControlSummary(updatedPilot),
+					);
+			}
 		}
 		recordPilotActivity({
 			taskId,

@@ -247,7 +247,7 @@ export const nightWorkersImportProjectInputSchema = z
 			.enum(STARTER_VARIANTS)
 			.optional()
 			.describe(
-				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql.",
+				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql. 選択した stack に要求 DB の variant がない場合は、同じ stack と runtime version の SQLite variant を雛形として取り込み、Feature Plan に従って要求 DB を実装する。SQLite を最終的な DB 要件へ置き換えない。",
 			),
 		overlays: z
 			.array(z.string().trim().min(1))

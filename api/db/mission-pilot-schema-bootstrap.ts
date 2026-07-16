@@ -114,6 +114,11 @@ export async function ensureMissionPilotTables() {
 	await client.execute(
 		`CREATE TABLE IF NOT EXISTS mission_pilot_questionnaire_drafts (id text PRIMARY KEY NOT NULL, session_id text NOT NULL, questionnaire_session_id text NOT NULL, answers_json text NOT NULL, answer_evidence_json text NOT NULL, state text DEFAULT 'waiting_user' NOT NULL, deadline_at integer NOT NULL, version integer DEFAULT 0 NOT NULL, created_at integer NOT NULL, updated_at integer NOT NULL, FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade, FOREIGN KEY (questionnaire_session_id) REFERENCES design_questionnaire_sessions(id) ON DELETE cascade)`,
 	);
+	await ensureColumn(
+		"mission_pilot_questionnaire_drafts",
+		"last_action_idempotency_key",
+		"last_action_idempotency_key text",
+	);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_questionnaire_drafts_questionnaire_uidx ON mission_pilot_questionnaire_drafts (questionnaire_session_id)",
 	);
@@ -260,6 +265,26 @@ export async function ensureMissionPilotTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS mission_pilot_tool_calls_status_idx ON mission_pilot_tool_calls (session_id, status)",
+	);
+	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_action_executions (
+		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, task_id text NOT NULL,
+		tool_call_id text NOT NULL, action_id text NOT NULL, idempotency_key text NOT NULL,
+		arguments_digest text NOT NULL, expected_task_revision integer,
+		status text DEFAULT 'pending' NOT NULL, result_json text, failure_json text,
+		source_resource_type text, source_resource_id text, created_at integer NOT NULL,
+		started_at integer, finished_at integer, updated_at integer NOT NULL,
+		FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade,
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+		FOREIGN KEY (tool_call_id) REFERENCES mission_pilot_tool_calls(id) ON DELETE cascade)
+	`);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_action_executions_idempotency_uidx ON mission_pilot_action_executions (session_id, idempotency_key)",
+	);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_action_executions_tool_call_uidx ON mission_pilot_action_executions (tool_call_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS mission_pilot_action_executions_status_idx ON mission_pilot_action_executions (session_id, status)",
 	);
 	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_conversation_items (
 		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, sequence integer NOT NULL, kind text NOT NULL,

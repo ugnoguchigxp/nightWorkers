@@ -92,6 +92,15 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(test.runtimeContract).toBe(implementation.runtimeContract);
 		expect(review.runtimeContract).toBe(implementation.runtimeContract);
 		expect(review.runtimeContract).toContain("Todo");
+		expect(review.runtimeContract).toContain(
+			"ユーザーPromptから計画要否を判断し",
+		);
+		expect(review.runtimeContract).toContain(
+			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
+		);
+		expect(review.runtimeContract).toContain(
+			"実装後に仕様書や完了条件を後付けして検証を始めず",
+		);
 		expect(review.runtimeContract).not.toContain("executionMode:");
 		expect(review.runtimeContract).not.toContain("reviewer_evaluation");
 	});

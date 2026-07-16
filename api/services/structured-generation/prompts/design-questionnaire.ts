@@ -37,6 +37,14 @@ type AdditionalQuestionnairePromptInput = {
 	decisionInventory: QuestionnaireDecisionInventoryItem[];
 };
 
+const TECH_STACK_QUESTION_GUIDANCE =
+	"技術スタックの質問では、Hono + React/Vite、RAG (Hono + React/Vite)、Python/FastAPI + React/Vite、API only (FastAPI)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite、Rust + Axum + React/Vite など、アプリケーションの runtime / framework 構成を識別できる粒度の選択肢にしてください。DB/永続化は必ず別の質問で選び、技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めないでください。通常の Hono starter は Hono + React/Vite、RAG は RAG (Hono + React/Vite)、API only は API only (FastAPI)、Rust starter は Rust + Axum + React/Vite と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めてください。";
+
+const STARTER_TEMPLATE_DATABASE_VARIANT_POLICY =
+	"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の implementationPlan.steps に含めてください。";
+
+const DATABASE_QUESTION_GUIDANCE = `DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、template の branch variant または実装計画での DB 差し替えを識別できる選択肢にしてください。技術スタックに専用 variant がないことを理由に DB の選択肢を除外しないでください。${STARTER_TEMPLATE_DATABASE_VARIANT_POLICY}`;
+
 export function buildDesignQuestionnaireSystemPrompt() {
 	return [
 		"実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。",
@@ -48,8 +56,8 @@ export function buildDesignQuestionnaireSystemPrompt() {
 		"auth / permission は対象面が public only または auth only と明確なら質問しないでください。public / protected / auth / admin などの面が混在する、または対象機能をどの面に置くか不明な場合は、初回または follow-up で route / API / data の保護方針を必ず確認してください。",
 		"auth / permission の質問は「認証は必要ですか？」だけにせず、既存の public/protected 面、追加 route/API、データの所有境界に結びつく選択肢にしてください。",
 		"テンプレート選定のため、使用する技術スタックと DB/永続化の選択が context から確定できない場合は、初回フォームで必ず確認してください。",
-		"技術スタックの質問では、Hono + React/Vite + SQLite、RAG (Hono + React/Vite + pgvector)、Python/FastAPI + React/Vite、API only (FastAPI + SQLite)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite など、starter template や branch variant を識別できる粒度の選択肢にしてください。通常の Hono starter は必ず Hono + React/Vite + SQLite、RAG の選択肢は必ず RAG (Hono + React/Vite + pgvector)、API only の選択肢は必ず API only (FastAPI + SQLite) と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8 と Java 25 の選択肢を必ず含めてください。",
-		"DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、sqlite 等の template variant を識別できる選択肢にしてください。",
+		TECH_STACK_QUESTION_GUIDANCE,
+		DATABASE_QUESTION_GUIDANCE,
 		"ただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。",
 		"コードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
 		"ユーザーが Radio button または Checkbox で選べる質問だけを作ってください。",
@@ -128,8 +136,9 @@ export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
 		"既存質問と同じ質問文、同じ意味、または同じ選択肢セットの質問は絶対に返さないでください。",
 		"checkbox が未選択で回答されている場合、それは「どれも不要 / 今回は含めない」という仕様判断として扱ってください。",
 		"一度の follow-up で全ジャンルを詰め込まず、次に設計判断を進めるために必要な 1 ページ分だけを返してください。",
-		"テンプレート選定に必要な使用技術スタックまたは DB/永続化の選択がまだ未確認なら、Hono + React/Vite + SQLite、RAG (Hono + React/Vite + pgvector)、Python/FastAPI + React/Vite、API only (FastAPI + SQLite)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Viteなど、starter template や branch variant を識別できる粒度で追加確認してください。通常の Hono starter は必ず Hono + React/Vite + SQLite、RAG の選択肢は必ず RAG (Hono + React/Vite + pgvector)、API only の選択肢は必ず API only (FastAPI + SQLite) と表示してください。Javaを選ぶ可能性がある新規Projectでは、Java 8 と Java 25 を区別できる選択肢を含めてください。",
-		"DB/永続化の追加確認では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定などを区別できる選択肢にしてください。",
+		"テンプレート選定に必要な使用技術スタックまたは DB/永続化の選択がまだ未確認なら、未確認の判断軸だけを追加質問にしてください。",
+		TECH_STACK_QUESTION_GUIDANCE,
+		DATABASE_QUESTION_GUIDANCE,
 		"Docker、cloud deployment、storage、認証、外部連携、運用、非対象などは、回答内容または Plan Mode Context から必要性が見えた場合に追加確認してください。",
 		"public / protected / auth / admin などの面が混在する、または対象機能の配置が未回答なら、auth / permission の確認を follow-up に含めてください。明確に public only または auth only なら繰り返し聞かないでください。",
 		"コードや既存回答から合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
@@ -243,6 +252,9 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"Target Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。",
 		"Blueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。",
 		"Questionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。",
+		STARTER_TEMPLATE_DATABASE_VARIANT_POLICY,
+		"Questionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。",
+		"専用 variant がなく SQLite variant へフォールバックする場合、implementationPlan では SQLite variant の取得を taskType=scaffold の step、選択 DB への差し替えをそれに依存する taskType=implementation の step として分けてください。",
 		"Questionnaire Decisions の検証方針を反映しつつ、Taskに明示された中核機能と検証要件を理由なく狭めないでください。unit / focused test / API smoke / DB verification / E2E は、変更範囲と入力済みの要件に合わせて重複なく選んでください。",
 		"Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。",
 		"Plan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。",

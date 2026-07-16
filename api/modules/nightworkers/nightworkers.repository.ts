@@ -523,6 +523,7 @@ export async function updateTaskStatus(id: string, status: TaskStatus) {
 	}
 	return task;
 }
+export { updateTaskStatusIfUnchanged } from "./nightworkers.task-status-cas.repository";
 
 export async function updateTaskCompiledPrompt(
 	id: string,

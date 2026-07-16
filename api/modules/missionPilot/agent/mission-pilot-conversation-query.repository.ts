@@ -13,6 +13,7 @@ import type {
 	ProviderToolCall,
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
+import { reconcileMissionPilotActionExecutionReceipts } from "./mission-pilot-action-execution.repository";
 
 export async function finishMissionPilotAgentTurn(input: {
 	sessionId: string;
@@ -249,6 +250,11 @@ export async function reconcileInterruptedMissionPilotAgentSessions(
 			),
 		);
 	for (const { session, agent } of sessions) {
+		const reconciledReceipts =
+			await reconcileMissionPilotActionExecutionReceipts(session.id);
+		const receiptByToolCallId = new Map(
+			reconciledReceipts.map((receipt) => [receipt.toolCallId, receipt]),
+		);
 		const unresolvedCalls = await db
 			.select()
 			.from(missionPilotToolCalls)
@@ -258,7 +264,31 @@ export async function reconcileInterruptedMissionPilotAgentSessions(
 					inArray(missionPilotToolCalls.status, ["pending", "running"]),
 				),
 			);
-		for (const call of unresolvedCalls)
+		for (const call of unresolvedCalls) {
+			const receipt = receiptByToolCallId.get(call.id);
+			if (receipt?.status === "succeeded") {
+				await import("./mission-pilot-conversation.repository").then(
+					({ completeMissionPilotToolCall }) =>
+						completeMissionPilotToolCall({
+							id: call.id,
+							result: receipt.resultJson,
+						}),
+				);
+				continue;
+			}
+			if (
+				receipt?.status === "failed" ||
+				receipt?.status === "outcome_unknown"
+			) {
+				await import("./mission-pilot-conversation.repository").then(
+					({ completeMissionPilotToolCall }) =>
+						completeMissionPilotToolCall({
+							id: call.id,
+							failure: receipt.failureJson ?? interruptedToolCallFailure(call),
+						}),
+				);
+				continue;
+			}
 			await import("./mission-pilot-conversation.repository").then(
 				({ completeMissionPilotToolCall }) =>
 					completeMissionPilotToolCall({
@@ -266,6 +296,7 @@ export async function reconcileInterruptedMissionPilotAgentSessions(
 						failure: interruptedToolCallFailure(call),
 					}),
 			);
+		}
 		await db
 			.update(missionPilotAgentTurns)
 			.set({

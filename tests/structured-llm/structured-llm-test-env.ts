@@ -15,6 +15,8 @@ export function installStructuredLlmEnvHooks() {
 	const originalFixtureRound2Output =
 		process.env.SUPERVISOR_FIXTURE_ROUND2_OUTPUT;
 	const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+	const originalCodexHome = process.env.CODEX_HOME;
+	const originalNightWorkersCodexHome = process.env.NIGHTWORKERS_CODEX_HOME;
 	const originalFetch = globalThis.fetch;
 	let tempDir: string | null = null;
 
@@ -38,6 +40,8 @@ export function installStructuredLlmEnvHooks() {
 		restoreEnv("SUPERVISOR_FIXTURE_ROUND1_OUTPUT", originalFixtureRound1Output);
 		restoreEnv("SUPERVISOR_FIXTURE_ROUND2_OUTPUT", originalFixtureRound2Output);
 		restoreEnv("NIGHTWORKERS_LLM_SETTINGS_PATH", originalSettingsPath);
+		restoreEnv("CODEX_HOME", originalCodexHome);
+		restoreEnv("NIGHTWORKERS_CODEX_HOME", originalNightWorkersCodexHome);
 		if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
 		tempDir = null;
 		globalThis.fetch = originalFetch;

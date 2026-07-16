@@ -110,6 +110,20 @@ describe("Specification document generation", () => {
 		);
 		expect(systemPrompt).toContain("追加見出しは、重複になる場合は作らない");
 		expect(systemPrompt).toContain("DB 変更が必要な場合");
+		expect(systemPrompt).toContain(
+			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
+		);
+		expect(systemPrompt).toContain("対応する SQLite variant を雛形として使用");
+		expect(systemPrompt).toContain("DB 要件は SQLite へ変更せず");
+		expect(systemPrompt).toContain(
+			"SQLite variant へのフォールバックは雛形取得方法",
+		);
+		expect(systemPrompt).toContain(
+			"SQLite variant の取得を taskType=scaffold の step",
+		);
+		expect(systemPrompt).toContain(
+			"選択 DB への差し替えをそれに依存する taskType=implementation の step",
+		);
 		expect(systemPrompt).toContain("Bun 実行環境の `bun test`");
 		expect(systemPrompt).not.toContain("NightWorkers の Specification writer");
 		expect(systemPrompt).toContain(

@@ -10,6 +10,7 @@ import {
 } from "./project-detail-schema-bootstrap";
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
+import { ensureColumn } from "./schema-bootstrap-utils";
 import { ensureTaskGenerationTables } from "./task-generation-schema-bootstrap";
 import { ensureTechStackTables } from "./tech-stack-schema-bootstrap";
 import { ensureVerificationTables } from "./verification-schema-bootstrap";
@@ -21,7 +22,7 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 	const sourceColumn = columns.rows.find(
 		(row) => row.name === "source_blueprint_message_id",
 	);
-	if (!sourceColumn || sourceColumn.notnull !== 1) return;
+	if (sourceColumn?.notnull !== 1) return;
 
 	await client.execute("PRAGMA foreign_keys = OFF");
 	try {
@@ -172,6 +173,11 @@ export async function ensureNightWorkersSchema() {
 	await ensureRuntimeAndUsageTables();
 
 	await ensureTaskWorkflowTables();
+	await ensureColumn(
+		"implementation_queue_entries",
+		"mission_pilot_agent_json",
+		"mission_pilot_agent_json text",
+	);
 	await backfillTraceProvenance();
 
 	await client.execute(`
@@ -249,6 +255,11 @@ export async function ensureNightWorkersSchema() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)",
+	);
+	await ensureColumn(
+		"design_questionnaire_sessions",
+		"mission_pilot_action_key",
+		"mission_pilot_action_key text",
 	);
 
 	await client.execute(`

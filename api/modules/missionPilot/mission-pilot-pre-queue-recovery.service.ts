@@ -18,6 +18,7 @@ import {
 	tasks,
 } from "../../db/schema";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { MissionPilotPreQueueError } from "./mission-pilot-queue-handoff.service";
 import {
@@ -206,6 +207,10 @@ export async function reconcileMissionPilotPreQueueSessions() {
 		);
 	let classified = 0;
 	for (const session of sessions) {
+		const ownership = await resolveMissionPilotRuntimeOwnership({
+			sessionId: session.id,
+		});
+		if (ownership.kind !== "legacy") continue;
 		if (
 			session.desiredState === "stopped" &&
 			session.phase === "created" &&

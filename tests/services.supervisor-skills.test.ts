@@ -92,6 +92,13 @@ describe("Supervisor reference registry", () => {
 		expect(rendered).toContain("変更前に関連ファイルを読む");
 		expect(rendered).toContain("code edit 後は verify に進む");
 		expect(rendered).toContain("observations が空の場合、最終回答へ進まず");
+		expect(rendered).toContain(
+			"pgvector と Turso/libSQL の専用 variant は Hono と Python に限る",
+		);
+		expect(rendered).toContain(
+			"同じ stack と runtime version の SQLite variant",
+		);
+		expect(rendered).toContain("指定した DB を SQLite に変更しない");
 
 		expect(toolNames).toEqual([
 			"read_current_specification",
@@ -121,6 +128,9 @@ describe("Supervisor reference registry", () => {
 			"java25-sqlite",
 		);
 		expect(JSON.stringify(importProject?.inputSchema)).toContain("pgsql");
+		expect(JSON.stringify(importProject?.inputSchema)).toContain(
+			"SQLite を最終的な DB 要件へ置き換えない",
+		);
 		expect(JSON.stringify(importProject?.inputSchema)).not.toContain('"auth"');
 	});
 

@@ -15,7 +15,9 @@ export async function runE2eFixtureRuntime(
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
 ): Promise<AgentRuntimeResult> {
-	const behavior = readFixtureBehavior(context.compiledPrompt);
+	const behavior = readFixtureBehavior(
+		context.latestUserMessage || context.compiledPrompt,
+	);
 	if (behavior === "policy-block") {
 		await sink.emit({
 			type: "runtime_warning",

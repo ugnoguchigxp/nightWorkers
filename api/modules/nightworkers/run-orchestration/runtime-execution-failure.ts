@@ -8,6 +8,7 @@ import {
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
+import { applyMissionPilotTaskStatusAfterRun } from "./task-status-projection-policy";
 import { toErrorMessage } from "./utils";
 
 export async function handleRuntimeExecutionFailure(input: {
@@ -47,7 +48,11 @@ export async function handleRuntimeExecutionFailure(input: {
 		failureTransitionApplied = Boolean(latestFailedRun);
 	}
 	if (latestFailedRun?.status !== "failed") return;
-	await repo.updateTaskStatus(taskId, "failed");
+	await applyMissionPilotTaskStatusAfterRun({
+		taskId,
+		runId: run.id,
+		runStatus: "failed",
+	});
 	await completeImplementationQueueEntryForRun(run.id, "failed");
 
 	await repo.createTaskMessage({

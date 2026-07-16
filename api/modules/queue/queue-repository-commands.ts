@@ -34,6 +34,9 @@ export async function createImplementationQueueEntry(
 		sequenceDependsOnEntryId?: string | null;
 		schedulingReason?: string | null;
 		missionPilotAdmissionKey?: string | null;
+		missionPilotAgent?:
+			| import("../../../shared/schemas/mission-pilot-agent.schema").MissionPilotAgentRunProvenance
+			| null;
 		claimReady?: boolean;
 	},
 	database: QueueDb = db,
@@ -61,6 +64,7 @@ export async function createImplementationQueueEntry(
 					: null,
 			schedulingReason: data.schedulingReason ?? null,
 			missionPilotAdmissionKey: data.missionPilotAdmissionKey ?? null,
+			missionPilotAgentJson: data.missionPilotAgent ?? null,
 			claimReady: data.claimReady ?? true,
 			status: "queued",
 			createdAt: now,

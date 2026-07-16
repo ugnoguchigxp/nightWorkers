@@ -21,7 +21,7 @@ export function resolveNextActiveSessionId(
 
 export function isMissionPilotChatPending(task: Task | null) {
 	const missionPilot = task?.missionPilot;
-	if (!missionPilot || missionPilot.desiredState !== "playing") return false;
+	if (missionPilot?.desiredState !== "playing") return false;
 	return (
 		missionPilot.activityState === "starting" ||
 		missionPilot.initialPromptState === "dispatching"

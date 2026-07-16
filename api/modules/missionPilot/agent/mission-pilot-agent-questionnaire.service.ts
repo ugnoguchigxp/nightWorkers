@@ -30,6 +30,7 @@ export async function saveAgentQuestionnaireDraft(input: {
 	questionnaireSessionId: string;
 	answers: DesignQuestionnaireAnswer[];
 	answerEvidence: Array<{ questionId: string; reason: string }>;
+	idempotencyKey?: string | null;
 }) {
 	const pilot = await missionPilotRepo.getSessionByTaskId(input.taskId);
 	if (
@@ -154,6 +155,7 @@ export async function saveAgentQuestionnaireDraft(input: {
 						state: "waiting_user",
 						deadlineAt,
 						version: existing.version + 1,
+						lastActionIdempotencyKey: input.idempotencyKey ?? null,
 						updatedAt: now,
 					})
 					.where(
@@ -171,6 +173,7 @@ export async function saveAgentQuestionnaireDraft(input: {
 						questionnaireSessionId: input.questionnaireSessionId,
 						answersJson: parsedAnswers,
 						answerEvidenceJson: answerEvidence,
+						lastActionIdempotencyKey: input.idempotencyKey ?? null,
 						deadlineAt,
 						createdAt: now,
 						updatedAt: now,

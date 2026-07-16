@@ -113,6 +113,7 @@ export async function startVerificationRunFromArtifact(input: {
 		contextRevision: number;
 		contextDigest: string;
 	};
+	missionPilotAgent?: import("../../../shared/schemas/mission-pilot-agent.schema").MissionPilotAgentRunProvenance;
 }) {
 	const task = await repo.getTask(input.taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -145,7 +146,9 @@ export async function startVerificationRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		missionPilotPhase: input.missionPilot ? "test" : undefined,
+		missionPilotPhase:
+			input.missionPilot || input.missionPilotAgent ? "test" : undefined,
+		missionPilotAgent: input.missionPilotAgent,
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
 			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),

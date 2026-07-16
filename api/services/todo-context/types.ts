@@ -1,3 +1,4 @@
+import type { MissionPilotAgentRunProvenance } from "../../../shared/schemas/mission-pilot-agent.schema";
 import type { PlanModeCapability } from "../settings/general-settings";
 import type { TodoVerificationPolicy } from "../todo-runtime";
 
@@ -67,6 +68,7 @@ export type RuntimePromptSnapshot = {
 	runtimeLane?: "native-api-runner" | "codex-sdk";
 	runtimeLaneResolution?: RuntimeLaneSnapshot;
 	runtimeResume?: unknown;
+	missionPilotAgent?: MissionPilotAgentRunProvenance;
 	reviewCorrection?: unknown;
 	projectMeta?: unknown;
 	securityOracle?: {

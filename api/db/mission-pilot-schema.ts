@@ -173,6 +173,7 @@ export const missionPilotQuestionnaireDrafts = sqliteTable(
 		state: text("state").notNull().default("waiting_user"),
 		deadlineAt: integer("deadline_at", { mode: "timestamp" }).notNull(),
 		version: integer("version").notNull().default(0),
+		lastActionIdempotencyKey: text("last_action_idempotency_key"),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 	},

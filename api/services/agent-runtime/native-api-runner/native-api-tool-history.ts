@@ -2,6 +2,10 @@ import type { PromptImageAttachment } from "../../../../shared/prompt-image";
 import { isPromptImageMediaType } from "../../../../shared/prompt-image";
 import { projectExplorationCatalogRunPinSchema } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { buildProjectExplorationAgentWorkflow } from "../../../modules/ontology/exploration/project-exploration-agent-workflow";
+import {
+	CODING_AGENT_RUNTIME_REMINDERS_JA,
+	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
+} from "../../coding-agent-context/system-context";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
@@ -229,7 +233,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		"[NightWorkers Coding Agent Runtime]",
 		JSON.stringify(
 			context.codingAgentSystemContext ?? {
-				version: 1,
+				version: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
 				roleInstructionsJa:
 					"Taskの意味、Todo、次の行動、検証、完了可否を判断するCoding Agentとして振る舞ってください。",
 				taskGoal: context.latestUserMessage || context.compiledPrompt,
@@ -243,6 +247,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 		...formatRuntimeWorkspaceContextForPrompt(context),
 		"Todo planとcurrent Todoは各turnのTodo Contextを正本にしてください。",
 		"最初のturnではtodo_listでplanを作成してcurrent Todoを開始し、それ以外のworkspace toolを先に呼ばないでください。",
+		...CODING_AGENT_RUNTIME_REMINDERS_JA,
 		"tool結果を読んで次の行動を選び、失敗時はrecord_failureで外部作業記憶を更新してください。",
 		"Testや自己確認の要否はTaskとTodo Contextから判断し、専用modeを前提にしないでください。",
 		"tool callなしの本文は最終回答候補です。open Todoがある場合は明示transitionしてから回答してください。",

@@ -77,7 +77,6 @@ function questionnairePersistenceError(stage: string, error: unknown) {
 		{ cause: error },
 	);
 }
-
 export async function createDesignQuestionnaire(
 	taskId: string,
 	sourceBlueprintMessageId?: string | null,
@@ -86,6 +85,7 @@ export async function createDesignQuestionnaire(
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
 		usageTrace?: TraceProvenance;
+		missionPilotActionKey?: string | null;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -130,6 +130,7 @@ export async function createDesignQuestionnaire(
 		repositoryId: task.repositoryId,
 		sourceBlueprintMessageId: sourceBlueprintMessageId || null,
 		status: "draft",
+		missionPilotActionKey: options.missionPilotActionKey ?? null,
 	});
 	if (parsed.ok) {
 		await repo.createDesignQuestionnaireQuestionSet({

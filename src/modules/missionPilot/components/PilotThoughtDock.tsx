@@ -194,11 +194,7 @@ export function mergeMissionPilotExecutionTrace(
 export function missionPilotStopThoughtItem(
 	summary: MissionPilotControlSummary | null | undefined,
 ): PilotThoughtItem | null {
-	if (
-		!summary ||
-		summary.desiredState !== "stopped" ||
-		summary.phase === "created"
-	)
+	if (summary?.desiredState !== "stopped" || summary.phase === "created")
 		return null;
 	const diagnostic = summary.preQueueDiagnostic;
 	const reasonCode =

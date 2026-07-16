@@ -32,6 +32,7 @@ import {
 	recordAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
+import { applyMissionPilotTaskStatusAfterRun } from "./task-status-projection-policy";
 import { toErrorMessage } from "./utils";
 
 export { startTaskRun } from "./start-task-run-entry";
@@ -65,6 +66,7 @@ export async function startTaskRunInProcess(
 			taskId,
 			executionMode: options.executionMode ?? "implementation",
 			error,
+			missionPilotAgent: options.missionPilotAgent,
 		});
 		throw error;
 	}
@@ -77,6 +79,7 @@ async function failPreparedRunBeforeLaunch(input: {
 	taskId: string;
 	executionMode: string;
 	error: unknown;
+	missionPilotAgent?: StartTaskRunOptions["missionPilotAgent"];
 }) {
 	const message = toErrorMessage(input.error);
 	const failedRun = await repo.updateTaskRunIfStatus(input.runId, "running", {
@@ -103,7 +106,11 @@ async function failPreparedRunBeforeLaunch(input: {
 			error: message,
 		},
 	});
-	await repo.updateTaskStatus(input.taskId, "failed");
+	await applyMissionPilotTaskStatusAfterRun({
+		taskId: input.taskId,
+		runId: input.runId,
+		runStatus: "failed",
+	});
 }
 
 export async function prepareTaskRunInProcess(
@@ -113,7 +120,11 @@ export async function prepareTaskRunInProcess(
 	const resumable = options.resumeRunId
 		? await prepareResumableTaskRun(taskId, options.resumeRunId)
 		: null;
-	const task = resumable?.task ?? (await prepareStartableTask(taskId));
+	const task =
+		resumable?.task ??
+		(await prepareStartableTask(taskId, {
+			allowMissionPilotNeedsReview: Boolean(options.missionPilotAgent),
+		}));
 	const {
 		repoInfo,
 		executionRoot,
@@ -192,6 +203,9 @@ export async function prepareTaskRunInProcess(
 							diagnostics: runtimeLaneResolution.diagnostics,
 						},
 						effectiveLlmRouting,
+						...(options.missionPilotAgent
+							? { missionPilotAgent: options.missionPilotAgent }
+							: {}),
 					},
 					startedAt: new Date(),
 				},
@@ -322,6 +336,9 @@ export async function prepareTaskRunInProcess(
 		reviewCorrection: runtimeOptions.reviewCorrection,
 		...(runtimeOptions.missionPilot
 			? { missionPilot: runtimeOptions.missionPilot }
+			: {}),
+		...(options.missionPilotAgent
+			? { missionPilotAgent: options.missionPilotAgent }
 			: {}),
 		projectMeta,
 		securityOracle: {

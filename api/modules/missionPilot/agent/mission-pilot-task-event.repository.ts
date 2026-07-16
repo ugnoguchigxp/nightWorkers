@@ -92,3 +92,52 @@ export async function listPendingMissionPilotTaskEvents(
 		)
 		.orderBy(asc(missionPilotTaskEventInbox.sequence));
 }
+
+export async function getNextMissionPilotTaskEventAt(sessionId: string) {
+	const [event] = await db
+		.select({ availableAt: missionPilotTaskEventInbox.availableAt })
+		.from(missionPilotTaskEventInbox)
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, sessionId),
+				isNull(missionPilotTaskEventInbox.consumedAt),
+			),
+		)
+		.orderBy(asc(missionPilotTaskEventInbox.availableAt))
+		.limit(1);
+	return event?.availableAt ?? null;
+}
+
+export async function consumeMissionPilotTaskEventBySource(
+	sessionId: string,
+	sourceEventId: string,
+) {
+	const [updated] = await db
+		.update(missionPilotTaskEventInbox)
+		.set({ consumedAt: new Date() })
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, sessionId),
+				eq(missionPilotTaskEventInbox.sourceEventId, sourceEventId),
+				isNull(missionPilotTaskEventInbox.consumedAt),
+			),
+		)
+		.returning({ id: missionPilotTaskEventInbox.id });
+	return Boolean(updated);
+}
+
+export async function cancelMissionPilotProviderRetryEvents(sessionId: string) {
+	return db
+		.update(missionPilotTaskEventInbox)
+		.set({ consumedAt: new Date() })
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, sessionId),
+				eq(
+					missionPilotTaskEventInbox.eventType,
+					"mission_pilot.retry_timer_elapsed",
+				),
+				isNull(missionPilotTaskEventInbox.consumedAt),
+			),
+		);
+}

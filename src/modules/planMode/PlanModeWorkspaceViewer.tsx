@@ -378,7 +378,7 @@ export function PlanModeWorkspaceViewer({
 			draftUpdateQueueRef.current = draftUpdateQueueRef.current.then(
 				async () => {
 					const current = missionPilotDraftRef.current;
-					if (!current || current.state !== "waiting_user") return;
+					if (current?.state !== "waiting_user") return;
 					const response = await updateMissionPilotQuestionnaireDraft(
 						sessionId,
 						current.version,

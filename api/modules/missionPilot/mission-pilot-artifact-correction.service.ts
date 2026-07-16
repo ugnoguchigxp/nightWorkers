@@ -239,7 +239,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 		});
 		await planRepo.markArtifactCorrectionValidating(claimed.id);
 		const current = await missionPilotRepo.getSessionByTaskId(input.taskId);
-		if (!current || current.desiredState !== "playing") {
+		if (current?.desiredState !== "playing") {
 			throw new Error("Mission Pilot stopped before correction adoption");
 		}
 		const content = result.message.content || "";

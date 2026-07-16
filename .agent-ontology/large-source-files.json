@@ -36,6 +36,13 @@
 			"maxLines": 755,
 			"targetModule": "thread-timeline-codex-tool-card-model",
 			"phase": 7
+		},
+		{
+			"id": "NW-LF-09",
+			"path": "api/modules/missionPilot/mission-pilot-questionnaire.service.ts",
+			"maxLines": 630,
+			"targetModule": "mission-pilot-questionnaire-service",
+			"phase": 7
 		}
 	]
 }

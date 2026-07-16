@@ -193,8 +193,9 @@ export async function autoStartReviewSessionForRun(runId: string) {
 export async function startReviewRun(
 	reviewSessionId: string,
 	options?: Partial<ReviewRunOptions> | null,
+	missionInput?: Parameters<typeof startReviewRunForSession>[2],
 ) {
-	await startReviewRunForSession(reviewSessionId, options);
+	await startReviewRunForSession(reviewSessionId, options, missionInput);
 	return getReviewSessionDetail(reviewSessionId);
 }
 

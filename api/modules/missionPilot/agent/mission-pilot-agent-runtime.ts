@@ -40,8 +40,13 @@ import {
 	renewMissionPilotAgentTurnLease,
 	reprojectMissionPilotTerminalToolCall,
 } from "./mission-pilot-conversation.repository";
-import { missionPilotProviderPort } from "./mission-pilot-provider.port";
+import { buildMissionPilotCurrentStepContext } from "./mission-pilot-current-step-context";
+import {
+	MissionPilotProviderRetryScheduledError,
+	missionPilotProviderPort,
+} from "./mission-pilot-provider.port";
 import { missionPilotTaskActionPort } from "./mission-pilot-task-action.adapter";
+import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";
 import { missionPilotTaskReadPort } from "./mission-pilot-task-read.adapter";
 import {
 	executeMissionPilotToolCall,
@@ -169,9 +174,17 @@ export async function runMissionPilotAgentWake(
 			const providerMessages = await loadMissionPilotProviderMessages(
 				input.sessionId,
 			);
-			const systemContext = readSystemContext(providerMessages);
+			const currentStepContext = await buildMissionPilotCurrentStepContext({
+				sessionId: input.sessionId,
+				taskId: claimed.session.taskId,
+				readPort,
+			});
+			const baseSystemContext = readSystemContext(providerMessages);
+			const systemContext = `${baseSystemContext}\n\n[Mission Pilot 現在のStep文脈]\n${JSON.stringify(currentStepContext)}`;
 			const messages = projectMissionPilotProviderMessages(providerMessages);
-			const tools = missionPilotToolDefinitions();
+			const tools = missionPilotToolDefinitions({
+				availableActionIds: new Set(currentStepContext.availableActionIds),
+			});
 			if (
 				shouldCompactMissionPilotContext({
 					systemContext,
@@ -200,6 +213,7 @@ export async function runMissionPilotAgentWake(
 				}
 				providerCalls += 1;
 				const compacted = await provider.nextTurn({
+					sessionId: input.sessionId,
 					systemContext: MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
 					messages: buildMissionPilotCompactionRequest(messages),
 					tools: [],
@@ -208,6 +222,7 @@ export async function runMissionPilotAgentWake(
 					thinkingDepth: input.thinkingDepth ?? null,
 					taskId: claimed.session.taskId,
 					signal: controller.signal,
+					currentStepContext,
 				});
 				if (controller.signal.aborted) return finishAfterAbort();
 				if (compacted.type !== "supported" || !compacted.content.trim()) {
@@ -267,6 +282,7 @@ export async function runMissionPilotAgentWake(
 			}
 			providerCalls += 1;
 			const response = await provider.nextTurn({
+				sessionId: input.sessionId,
 				systemContext,
 				messages,
 				tools,
@@ -275,6 +291,7 @@ export async function runMissionPilotAgentWake(
 				thinkingDepth: input.thinkingDepth ?? null,
 				taskId: claimed.session.taskId,
 				signal: controller.signal,
+				currentStepContext,
 			});
 			if (controller.signal.aborted) return finishAfterAbort();
 			if (response.type === "unsupported") {
@@ -338,6 +355,7 @@ export async function runMissionPilotAgentWake(
 					leaseOwner,
 					taskId: claimed.session.taskId,
 					sessionId: input.sessionId,
+					turnId: running.turnId,
 					idempotencyKey: running.idempotencyKey,
 					readPort,
 					actionPort,
@@ -348,17 +366,7 @@ export async function runMissionPilotAgentWake(
 						: { id: running.id, failure: result.failure },
 				);
 				if (controller.signal.aborted) return finishAfterAbort();
-				if (
-					!result.ok &&
-					["permission", "revision_conflict", "outcome_unknown"].includes(
-						result.failure.kind,
-					)
-				)
-					continue;
-				if (
-					result.ok &&
-					["task.complete", "task.archive"].includes(callRow.actionId)
-				) {
+				if (result.ok && result.directive === "finish") {
 					await finishMissionPilotAgentTurn({
 						sessionId: input.sessionId,
 						turnId: claimed.turnId,
@@ -368,17 +376,22 @@ export async function runMissionPilotAgentWake(
 					return { kind: "completed", data: result.data } as const;
 				}
 				if (
-					result.ok &&
-					[
-						"questionnaire.draft.update",
-						"questionnaire.draft.save",
-						"run.implementation.start",
-						"run.test.start",
-						"review.run.start",
-						"task.queue.enqueue",
-					].includes(callRow.actionId)
+					!result.ok &&
+					["permission", "revision_conflict", "outcome_unknown"].includes(
+						result.failure.kind,
+					)
 				)
-					shouldWaitForEvent = true;
+					continue;
+				if (result.ok) {
+					const metadata = getMissionPilotActionDefinition(
+						callRow.actionId,
+					)?.execution;
+					if (
+						result.directive === "wait" ||
+						metadata?.completion === "wait_for_event"
+					)
+						shouldWaitForEvent = true;
+				}
 			}
 			if (shouldWaitForEvent) {
 				await finishMissionPilotAgentTurn({
@@ -392,6 +405,22 @@ export async function runMissionPilotAgentWake(
 		}
 		return finishAfterAbort();
 	} catch (error) {
+		if (
+			error instanceof MissionPilotProviderRetryScheduledError &&
+			claimed &&
+			lastTurnId
+		) {
+			await finishMissionPilotAgentTurn({
+				sessionId: input.sessionId,
+				turnId: lastTurnId,
+				leaseOwner,
+				state: "waiting",
+			});
+			return {
+				kind: "waiting",
+				retryScheduledAt: error.availableAt,
+			} as const;
+		}
 		const failure = elapsedLimitReached
 			? resourceFailure("maxElapsedMsPerWake")
 			: providerFailure(error);

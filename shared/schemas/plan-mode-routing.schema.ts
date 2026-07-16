@@ -66,8 +66,7 @@ export const planModeRoutingSnapshotSchema = z
 		for (const requiredView of REQUIRED_PLAN_MODE_ROUTING_VIEWS) {
 			const entry = byView.get(requiredView);
 			if (
-				!entry ||
-				entry.decision !== "include" ||
+				entry?.decision !== "include" ||
 				!entry.required ||
 				!entry.capabilityEnabled
 			) {

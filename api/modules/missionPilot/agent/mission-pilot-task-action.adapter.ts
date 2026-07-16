@@ -1,7 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
-import { missionPilotRepairRequestSchema } from "../../../../shared/schemas/mission-pilot-agent.schema";
-import { missionPilotPlanRoutingToolCallSchema } from "../../../../shared/schemas/plan-mode-routing.schema";
 import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
@@ -9,14 +7,14 @@ import {
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import { tasks } from "../../../db/schema";
+import { taskRuns } from "../../../db/schema-task-execution";
 import { AppError } from "../../../lib/errors";
+import { executeMissionPilotAction } from "./mission-pilot-action-command-executor";
 import {
-	commitRunGitCloseout,
-	pushRunGitCloseout,
-} from "../../nightworkers/nightworkers.git-closeout.service";
-import * as nightworkersService from "../../nightworkers/nightworkers.service";
-import type { generatePlanViewArtifact } from "../../planViews/planView-generation.service";
-import type { PlanArtifactSourceSelection } from "../../specification/plan-artifact-input.types";
+	claimMissionPilotActionExecution,
+	completeMissionPilotActionExecution,
+	createMissionPilotActionExecutionIntent,
+} from "./mission-pilot-action-execution.repository";
 import type {
 	MissionPilotActionResult,
 	MissionPilotTaskActionPort,
@@ -158,320 +156,137 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"permission",
 				"The requested resource does not belong to this Task.",
 			);
+		if (input.actionId === "task.complete")
+			await assertMissionPilotTaskCompletion({
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				sourceRunId: requiredText(validated.data.sourceRunId),
+			});
+		let receipt: Awaited<
+			ReturnType<typeof createMissionPilotActionExecutionIntent>
+		>;
 		try {
-			return {
-				ok: true,
+			receipt = await createMissionPilotActionExecutionIntent({
+				sessionId: input.sessionId,
+				taskId: input.taskId,
+				toolCallId: input.toolCallId,
 				actionId: input.actionId,
-				data: await executeAction(input.taskId, input.actionId, validated.data),
-			};
+				idempotencyKey: input.idempotencyKey,
+				arguments: validated.data,
+				expectedTaskRevision: input.expectedTaskRevision,
+			});
 		} catch (error) {
 			return failed(
 				input.actionId,
 				input.idempotencyKey,
-				"domain_precondition",
+				"invalid_request",
 				error instanceof Error ? error.message : String(error),
 			);
+		}
+		if (receipt.status === "succeeded")
+			return { ok: true, actionId: input.actionId, data: receipt.resultJson };
+		if (receipt.status === "failed")
+			return {
+				ok: false,
+				actionId: input.actionId,
+				failure:
+					receipt.failureJson ??
+					failed(
+						input.actionId,
+						input.idempotencyKey,
+						"domain_precondition",
+						"Mission Pilot action receipt is failed.",
+					).failure,
+			};
+		if (receipt.status === "outcome_unknown" || receipt.status === "executing")
+			return failed(
+				input.actionId,
+				input.idempotencyKey,
+				"outcome_unknown",
+				"A previous process may have completed this mutation. Read the current resource before retrying.",
+			);
+		if (!(await claimMissionPilotActionExecution(receipt.id)))
+			return failed(
+				input.actionId,
+				input.idempotencyKey,
+				"outcome_unknown",
+				"The action receipt changed before execution. Re-read current state before retrying.",
+			);
+		try {
+			const data = await executeMissionPilotAction(
+				input.taskId,
+				input.actionId,
+				validated.data,
+				{
+					sessionId: input.sessionId,
+					toolCallId: input.toolCallId,
+					idempotencyKey: input.idempotencyKey,
+					sourceRunId: readRepairSourceRunId(validated.data),
+				},
+			);
+			await completeMissionPilotActionExecution({
+				id: receipt.id,
+				result: data,
+				sourceResourceType: input.actionId,
+				sourceResourceId: resourceId(data),
+			});
+			return { ok: true, actionId: input.actionId, data };
+		} catch (error) {
+			const result = failed(
+				input.actionId,
+				input.idempotencyKey,
+				"outcome_unknown",
+				`Action execution outcome is unknown. Re-read the current resource before retrying. ${error instanceof Error ? error.message : String(error)}`,
+			);
+			await completeMissionPilotActionExecution({
+				id: receipt.id,
+				status: "outcome_unknown",
+				failure: result.failure,
+			});
+			return result;
 		}
 	},
 };
 
-async function executeAction(
-	taskId: string,
-	actionId: string,
-	args: Record<string, unknown>,
-) {
-	switch (actionId) {
-		case "task.update":
-			return nightworkersService.updateTask(
-				taskId,
-				(args.fields ?? {}) as Parameters<
-					typeof nightworkersService.updateTask
-				>[1],
-			);
-		case "task.message.send":
-			return nightworkersService.appendTaskMessage(
-				taskId,
-				requiredText(args.content),
-				{ source: "mission_pilot", intent: "chat" },
-			);
-		case "task.archive":
-			return nightworkersService.archiveTask(taskId);
-		case "task.archive.restore":
-			return nightworkersService.restoreTaskArchive(taskId);
-		case "questionnaire.create":
-			return nightworkersService.createDesignQuestionnaire(
-				taskId,
-				optionalText(args.sourceBlueprintMessageId),
-				requiredText(args.prompt),
-				{ role: "mission_pilot" },
-			);
-		case "questionnaire.draft.update":
-		case "questionnaire.draft.save":
-			return (
-				await import("./mission-pilot-agent-questionnaire.service")
-			).saveAgentQuestionnaireDraft({
-				taskId,
-				questionnaireSessionId: requiredText(args.questionnaireSessionId),
-				answers: (args.answers ?? []) as Parameters<
-					typeof nightworkersService.saveDesignQuestionnaireAnswers
-				>[2],
-				answerEvidence: (args.answerEvidence ?? []) as Array<{
-					questionId: string;
-					reason: string;
-				}>,
-			});
-		case "questionnaire.submit":
-			return nightworkersService.saveDesignQuestionnaireAnswers(
-				taskId,
-				requiredText(args.questionnaireSessionId),
-				(args.answers ?? []) as Parameters<
-					typeof nightworkersService.saveDesignQuestionnaireAnswers
-				>[2],
-			);
-		case "questionnaire.follow_up.generate":
-			return nightworkersService.generateDesignQuestionnaireFollowUp(
-				taskId,
-				requiredText(args.questionnaireSessionId),
-			);
-		case "questionnaire.additional.generate":
-			return (
-				await import("../../questionnaire/questionnaire-additional.service")
-			).generateAdditionalDesignQuestionnaireQuestions(taskId, {
-				source: requiredText(args.source) as
-					| "user_requested"
-					| "artifact_triggered"
-					| "pre_feature_plan_gate",
-				reason: optionalText(args.reason) ?? undefined,
-				role: "mission_pilot",
-			});
-		case "questionnaire.review.generate":
-			return nightworkersService.generateDesignQuestionnaireReview(
-				taskId,
-				requiredText(args.questionnaireSessionId),
-			);
-		case "questionnaire.review.accept":
-			return nightworkersService.acceptDesignQuestionnaireReview(
-				taskId,
-				requiredText(args.questionnaireSessionId),
-			);
-		case "questionnaire.review.leave_unadopted":
-			return nightworkersService.leaveDesignQuestionnaireReviewUnadopted(
-				taskId,
-				requiredText(args.questionnaireSessionId),
-			);
-		case "plan.artifact.feature_plan.generate":
-			return (
-				await import("../../specification/specification-generation.service")
-			).generateFeaturePlanArtifact(taskId, {
-				prompt: requiredText(args.prompt),
-				questionnaireSessionId: optionalText(args.questionnaireSessionId),
-				sourceSelection: recordOrUndefined(args.sourceSelection),
-				role: "mission_pilot",
-			});
-		case "plan.artifact.blueprint.generate":
-			return (await import("../../blueprint")).generateBlueprintArtifact(
-				taskId,
-				{
-					prompt: requiredText(args.prompt),
-					questionnaireSessionId: optionalText(args.questionnaireSessionId),
-					sourceSelection: recordOrUndefined(args.sourceSelection),
-					role: "mission_pilot",
-				},
-			);
-		case "plan.artifact.data_model.generate":
-			return (
-				await import("../../dataModel/dataModel-generation.service")
-			).generateDataModelArtifact(taskId, {
-				prompt: requiredText(args.prompt),
-				questionnaireSessionId: optionalText(args.questionnaireSessionId),
-				sourceSelection: recordOrUndefined(args.sourceSelection),
-				role: "mission_pilot",
-			});
-		case "plan.artifact.view.generate": {
-			const { generatePlanViewArtifact } = await import(
-				"../../planViews/planView-generation.service"
-			);
-			return generatePlanViewArtifact(
-				taskId,
-				requiredText(args.view) as Parameters<
-					typeof generatePlanViewArtifact
-				>[1],
-				{
-					prompt: requiredText(args.prompt),
-					questionnaireSessionId: optionalText(args.questionnaireSessionId),
-					sourceSelection: recordOrUndefined(args.sourceSelection),
-					role: "mission_pilot",
-				},
-			);
-		}
-		case "plan.routing.update": {
-			const toolCall = missionPilotPlanRoutingToolCallSchema.parse({
-				tool: "edit_plan_artifact_routing",
-				expectedRevision: args.expectedRevision,
-				idempotencyKey: args.idempotencyKey,
-				changes: args.changes,
-			});
-			return (
-				await import("../../planMode/plan-mode-routing.service")
-			).executeMissionPilotPlanRoutingTool(taskId, toolCall);
-		}
-		case "task.queue.enqueue":
-			return nightworkersService.queueTask(taskId);
-		case "task.queue.update":
-			return (
-				await import("../../queue/queue-entry-commands.service")
-			).patchImplementationQueueEntry(requiredText(args.entryId), {
-				action:
-					typeof args.action === "string"
-						? (args.action as "cancel" | "resume")
-						: undefined,
-				priority: typeof args.priority === "number" ? args.priority : undefined,
-				queuePosition:
-					typeof args.queuePosition === "number" || args.queuePosition === null
-						? args.queuePosition
-						: undefined,
-			});
-		case "task.queue.cancel":
-			return (
-				await import("../../queue/queue-entry-commands.service")
-			).patchImplementationQueueEntry(requiredText(args.entryId), {
-				action: "cancel",
-			});
-		case "task.queue.requeue":
-			return (
-				await import("../../queue/queue-entry-commands.service")
-			).requeueImplementationQueueEntry(requiredText(args.entryId), {
-				note: optionalText(args.note) ?? undefined,
-			});
-		case "task.queue.recover":
-			return (
-				await import("../../queue/queue-entry-commands.service")
-			).recoverImplementationQueueEntry(requiredText(args.entryId), {
-				action: requiredText(args.action) as
-					| "archive"
-					| "cancel"
-					| "complete"
-					| "retry"
-					| "mark_needs_human",
-				note: optionalText(args.note) ?? undefined,
-			});
-		case "task.queue.archive":
-			return (
-				await import("../../queue/queue-entry-commands.service")
-			).archiveImplementationQueueEntry(requiredText(args.entryId));
-		case "run.implementation.start": {
-			if (args.repairRequest) {
-				const request = missionPilotRepairRequestSchema.parse(
-					args.repairRequest,
-				);
-				const session = await db.query.missionPilotSessions.findFirst({
-					where: eq(missionPilotSessions.taskId, taskId),
-				});
-				if (session)
-					await (
-						await import("./mission-pilot-repair.repository")
-					).createMissionPilotRepairRequest({
-						sessionId: session.id,
-						sourceRunId: request.failure.sourceRunId,
-						request,
-						sourceRevision: session.contextRevision,
-						sourceDigest: session.contextDigest,
-					});
-			}
-			return nightworkersService.appendWorkbenchMessage(taskId, {
-				prompt: requiredText(args.request),
-				source: "mission_pilot",
-				intent: "run_task",
-			});
-		}
-		case "run.test.start":
-			return nightworkersService.startVerificationRunFromArtifact({
-				projectId: requiredText(args.projectId),
-				taskId,
-				specArtifactId: requiredText(args.specArtifactId),
-				mode: "test",
-				action:
-					typeof args.action === "string"
-						? (args.action as
-								| "discover_tests"
-								| "plan_and_implement_tests"
-								| "run_unit_tests")
-						: "run_unit_tests",
-				rerun: args.rerun === true,
-			});
-		case "run.stop":
-			return nightworkersService.stopTaskRun(requiredText(args.runId));
-		case "background_process.stop":
-			return (
-				await import(
-					"../../nightworkers/nightworkers.background-process.service"
-				)
-			).stopTaskBackgroundProcess(requiredText(args.processId));
-		case "review.session.start":
-			return (
-				await import("../../review/review-mode.service")
-			).startReviewSessionForRun(requiredText(args.sourceRunId));
-		case "review.run.start":
-			return (await import("../../review/review-mode.service")).startReviewRun(
-				requiredText(args.reviewSessionId),
-				undefined,
-			);
-		case "run.review.submit":
-			return nightworkersService.reviewTaskRun(requiredText(args.runId), {
-				action: requiredText(args.action) as "complete" | "cancel",
-				note: typeof args.note === "string" ? args.note : undefined,
-			});
-		case "task.complete":
-			return nightworkersService.reviewTaskRun(requiredText(args.sourceRunId), {
-				action: "complete",
-			});
-		case "git.commit":
-			return commitRunGitCloseout(requiredText(args.sourceRunId));
-		case "git.push":
-			return pushRunGitCloseout(requiredText(args.sourceRunId));
-		case "git.merge.preview":
-			return (
-				await import("../../nightworkers/nightworkers.git-merge.service")
-			).previewTaskRunMerge({
-				runId: requiredText(args.runId),
-				expectedVersion: requiredInteger(args.expectedVersion),
-			});
-		case "git.merge.defer":
-			return (
-				await import("../../nightworkers/nightworkers.git-merge.service")
-			).deferTaskRunMerge({
-				runId: requiredText(args.runId),
-				expectedVersion: requiredInteger(args.expectedVersion),
-			});
-		case "git.merge.rework":
-			return (
-				await import("../../nightworkers/nightworkers.git-merge.service")
-			).requestTaskRunRework({
-				runId: requiredText(args.runId),
-				expectedVersion: requiredInteger(args.expectedVersion),
-			});
-		case "git.merge.target.update":
-			return (
-				await import("../../nightworkers/nightworkers.git-merge.service")
-			).overrideTaskRunMergeTarget({
-				runId: requiredText(args.runId),
-				targetBranch: requiredText(args.targetBranch),
-				expectedVersion: requiredInteger(args.expectedVersion),
-			});
-		case "git.merge.execute":
-			return (
-				await import("../../nightworkers/nightworkers.git-merge.service")
-			).executeTaskRunMerge({
-				runId: requiredText(args.runId),
-				expectedVersion: requiredInteger(args.expectedVersion),
-			});
-		default:
-			throw new AppError(
-				422,
-				"MISSION_PILOT_ACTION_UNSUPPORTED",
-				`Action ${actionId} is not available in this application command registry yet.`,
-			);
-	}
+async function assertMissionPilotTaskCompletion(input: {
+	taskId: string;
+	sessionId: string;
+	sourceRunId: string;
+}) {
+	const [run] = await db
+		.select()
+		.from(taskRuns)
+		.where(
+			and(
+				eq(taskRuns.id, input.sourceRunId),
+				eq(taskRuns.taskId, input.taskId),
+			),
+		)
+		.limit(1);
+	if (!run)
+		throw new Error("Task completion requires a Run owned by this Task.");
+	if (
+		![
+			"completed",
+			"failed",
+			"cancelled",
+			"needs_review",
+			"blocked",
+			"timed_out",
+			"needs_human",
+		].includes(run.status)
+	)
+		throw new Error("Task completion requires a terminal Run.");
+	const provenance = readRecord(run.contextSnapshot).missionPilotAgent;
+	if (readText(readRecord(provenance).sessionId) !== input.sessionId)
+		throw new Error("Task completion requires the Mission Pilot-owned Run.");
+	if (
+		![run.finalReport, run.summary].some(
+			(value) => typeof value === "string" && value.trim().length > 0,
+		) &&
+		!run.testResults
+	)
+		throw new Error("Task completion requires terminal verification evidence.");
 }
 
 function requiredText(value: unknown) {
@@ -483,22 +298,25 @@ function requiredText(value: unknown) {
 		);
 	return value;
 }
-function requiredInteger(value: unknown) {
-	if (!Number.isInteger(value) || (value as number) < 0)
-		throw new AppError(
-			422,
-			"MISSION_PILOT_ARGUMENT_REQUIRED",
-			"A non-negative integer is required.",
-		);
-	return value as number;
-}
-function optionalText(value: unknown) {
-	return typeof value === "string" && value.length > 0 ? value : null;
-}
-function recordOrUndefined(value: unknown) {
+function resourceId(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as PlanArtifactSourceSelection)
-		: undefined;
+		? typeof (value as Record<string, unknown>).id === "string"
+			? ((value as Record<string, unknown>).id as string)
+			: null
+		: null;
+}
+function readRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+function readText(value: unknown) {
+	return typeof value === "string" ? value : null;
+}
+function readRepairSourceRunId(args: Record<string, unknown>) {
+	const repair = readRecord(args.repairRequest);
+	const failure = readRecord(repair.failure);
+	return readText(failure.sourceRunId);
 }
 function failed(
 	actionId: string,
@@ -506,7 +324,7 @@ function failed(
 	kind: Parameters<typeof failureKind>[0],
 	message: string,
 	details?: Record<string, unknown>,
-): MissionPilotActionResult {
+): Extract<MissionPilotActionResult, { ok: false }> {
 	return {
 		ok: false,
 		actionId,

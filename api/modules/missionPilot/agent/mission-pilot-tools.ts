@@ -6,7 +6,13 @@ import type {
 import type {
 	MissionPilotTaskActionPort,
 	MissionPilotTaskReadPort,
+	MissionPilotToolExecutionResult,
 } from "./mission-pilot-agent.ports";
+import {
+	executeMissionPilotAgentControlTool,
+	isMissionPilotAgentControlTool,
+	MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
+} from "./mission-pilot-agent-control-tools";
 import {
 	getMissionPilotActionByToolName,
 	missionPilotActionToolDefinitions,
@@ -107,8 +113,14 @@ const readTools: ProviderToolDefinition[] = [
 		},
 	},
 ];
-export function missionPilotToolDefinitions() {
-	return [...readTools, ...missionPilotActionToolDefinitions()];
+export function missionPilotToolDefinitions(input?: {
+	availableActionIds?: ReadonlySet<string>;
+}) {
+	return [
+		...readTools,
+		...missionPilotActionToolDefinitions(input),
+		...MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
+	];
 }
 
 export async function executeMissionPilotToolCall(input: {
@@ -117,16 +129,23 @@ export async function executeMissionPilotToolCall(input: {
 	leaseOwner: string;
 	taskId: string;
 	sessionId: string;
+	turnId?: string;
 	idempotencyKey: string;
 	readPort: MissionPilotTaskReadPort;
 	actionPort: MissionPilotTaskActionPort;
-}): Promise<
-	| { ok: true; data: unknown }
-	| { ok: false; failure: MissionPilotActionFailure }
-> {
+}): Promise<MissionPilotToolExecutionResult> {
 	try {
 		const read = await executeReadTool(input);
-		if (read) return { ok: true, data: read };
+		if (read) return { ok: true, data: read, directive: "continue" };
+		if (isMissionPilotAgentControlTool(input.call.name))
+			return executeMissionPilotAgentControlTool({
+				call: input.call,
+				toolCallId: input.toolCallId,
+				turnId: input.turnId,
+				leaseOwner: input.leaseOwner,
+				sessionId: input.sessionId,
+				taskId: input.taskId,
+			});
 		const definition = getMissionPilotActionByToolName(input.call.name);
 		if (!definition)
 			return {
@@ -136,6 +155,7 @@ export async function executeMissionPilotToolCall(input: {
 					"invalid_request",
 					"Unknown tool",
 				),
+				directive: "continue",
 			};
 		const revision = expectedTaskRevision(input.call.arguments);
 		if (revision === null)
@@ -147,6 +167,7 @@ export async function executeMissionPilotToolCall(input: {
 					"expectedTaskRevision must be a non-negative integer",
 					input.idempotencyKey,
 				),
+				directive: "continue",
 			};
 		const result = await input.actionPort.execute({
 			toolCallId: input.toolCallId,
@@ -159,11 +180,12 @@ export async function executeMissionPilotToolCall(input: {
 			idempotencyKey: input.idempotencyKey,
 		});
 		return result.ok
-			? { ok: true, data: result.data }
-			: { ok: false, failure: result.failure };
+			? { ok: true, data: result.data, directive: "continue" }
+			: { ok: false, failure: result.failure, directive: "continue" };
 	} catch (error) {
 		return {
 			ok: false,
+			directive: "continue",
 			failure: toolFailure(
 				input.call.name,
 				"domain_precondition",

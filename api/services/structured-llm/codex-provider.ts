@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { normalizeProviderUsage } from "../llm-usage";
@@ -132,20 +133,27 @@ export async function callCodexProvider(
 	const isolatedWorkingDirectory = structuredArtifact
 		? fs.mkdtempSync(`${os.tmpdir()}/nightworkers-structured-artifact-`)
 		: null;
+	let isolatedCodexHome: string | null = null;
 	try {
+		isolatedCodexHome = missionPilotToolTurn
+			? createIsolatedMissionPilotCodexHome()
+			: null;
 		const codex = new Codex({
 			env: {
 				...sanitizeCodexProviderEnv(process.env),
 				...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
+				...(isolatedCodexHome ? { CODEX_HOME: isolatedCodexHome } : {}),
 			},
 			config: {
-				mcp_servers: missionPilotToolTurn
-					? {}
-					: {
-							"context-still": {
-								disabled_tools: ["initial_instructions", "context_compile"],
+				...(!missionPilotToolTurn
+					? {
+							mcp_servers: {
+								"context-still": {
+									disabled_tools: ["initial_instructions", "context_compile"],
+								},
 							},
-						},
+						}
+					: {}),
 				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
 				...(missionPilotStructuredArtifact
 					? {
@@ -154,7 +162,6 @@ export async function callCodexProvider(
 								: MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS,
 							features: {
 								memories: false,
-								...(missionPilotToolTurn ? { mcp: false } : {}),
 							},
 							memories: {
 								generate_memories: false,
@@ -339,6 +346,7 @@ export async function callCodexProvider(
 			agenticItemCount: agenticItems.length,
 			freshThread: structuredArtifact,
 			isolatedWorkingDirectory: Boolean(isolatedWorkingDirectory),
+			isolatedCodexHome: Boolean(isolatedCodexHome),
 			missionPilotMemorySuppressed: missionPilotStructuredArtifact,
 			memoryInjectionEnabled: !missionPilotStructuredArtifact,
 			mcpEnabled: !missionPilotToolTurn,
@@ -364,7 +372,34 @@ export async function callCodexProvider(
 		if (isolatedWorkingDirectory) {
 			fs.rmSync(isolatedWorkingDirectory, { recursive: true, force: true });
 		}
+		if (isolatedCodexHome) {
+			fs.rmSync(isolatedCodexHome, { recursive: true, force: true });
+		}
 	}
+}
+
+function createIsolatedMissionPilotCodexHome() {
+	const isolatedHome = fs.mkdtempSync(
+		path.join(os.tmpdir(), "nightworkers-mission-pilot-codex-home-"),
+	);
+	const sourceAuthPath = path.join(resolveCodexHome(), "auth.json");
+	if (fs.existsSync(sourceAuthPath)) {
+		const isolatedAuthPath = path.join(isolatedHome, "auth.json");
+		fs.writeFileSync(isolatedAuthPath, fs.readFileSync(sourceAuthPath), {
+			flag: "wx",
+			mode: 0o600,
+		});
+	}
+	return isolatedHome;
+}
+
+function resolveCodexHome() {
+	const configuredHome =
+		process.env.NIGHTWORKERS_CODEX_HOME?.trim() ||
+		process.env.CODEX_HOME?.trim();
+	return configuredHome
+		? path.resolve(configuredHome)
+		: path.join(os.homedir(), ".codex");
 }
 
 export async function callCodexProviderToolTurn(

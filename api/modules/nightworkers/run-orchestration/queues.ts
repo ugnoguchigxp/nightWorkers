@@ -9,6 +9,7 @@ import { associateMissionPilotImplementationRun } from "../../missionPilot/missi
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
+import { applyMissionPilotTaskStatusAfterRun } from "./task-status-projection-policy";
 import { toErrorMessage } from "./utils";
 
 function getSessionQueueMaxConcurrency() {
@@ -100,7 +101,11 @@ async function failPreparedQueueRunBeforeLaunch(input: {
 		}
 		return;
 	}
-	await repo.updateTaskStatus(input.taskId, "failed");
+	await applyMissionPilotTaskStatusAfterRun({
+		taskId: input.taskId,
+		runId: input.runId,
+		runStatus: "failed",
+	});
 	await completeImplementationQueueEntryForRun(input.runId, "failed");
 }
 
@@ -176,6 +181,7 @@ async function drainImplementationQueue(
 			const prepared = await prepareTaskRunInProcess(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
+				missionPilotAgent: claimedEntry.missionPilotAgentJson ?? undefined,
 				...(missionPilotReady
 					? {
 							implementationPlanConstraint:

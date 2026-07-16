@@ -1,3 +1,4 @@
+import type { MissionPilotAgentRunProvenance } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import type { StructuredLlmModelTarget } from "../../../services/structured-llm/settings";
 import type { ImplementationTodoInput } from "../../../services/todo-runtime";
@@ -31,6 +32,7 @@ export type StartTaskRunOptions = {
 	};
 	latestUserMessageOverride?: string;
 	runtimeOptionsPatch?: Record<string, unknown>;
+	missionPilotAgent?: MissionPilotAgentRunProvenance;
 	routeOverride?: StructuredLlmModelTarget | null;
 	missionPilotPhase?:
 		| "repository_bootstrap"

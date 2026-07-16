@@ -53,8 +53,7 @@ export async function createCurrentPlanReview(input: {
 			where: eq(missionPilotSessions.id, input.sessionId),
 		});
 		if (
-			!session ||
-			session.desiredState !== "playing" ||
+			session?.desiredState !== "playing" ||
 			session.leaseOwner !== input.leaseOwner ||
 			!session.leaseExpiresAt ||
 			session.leaseExpiresAt <= new Date() ||

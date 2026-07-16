@@ -7,10 +7,7 @@ import {
 } from "../nightworkers/nightworkers.run-query.service";
 import { registerTaskMessageCreatedListener } from "../nightworkers/nightworkers.task-message-events";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
-import {
-	isMissionPilotAgentTaskActive,
-	markMissionPilotAgentTaskActive,
-} from "./agent/mission-pilot-agent-active-registry";
+import { markMissionPilotAgentTaskActive } from "./agent/mission-pilot-agent-active-registry";
 import { cancelPendingMissionPilotToolCalls } from "./agent/mission-pilot-agent-lifecycle.repository";
 import {
 	reconcileInterruptedMissionPilotAgentSessions,
@@ -23,8 +20,12 @@ import {
 	isMissionPilotAgentSession,
 	listPlayingAgentSessions,
 } from "./agent/mission-pilot-agent-session.repository";
-import { scheduleMissionPilotAgentWake } from "./agent/mission-pilot-agent-wake.service";
+import {
+	cancelScheduledMissionPilotAgentWake,
+	scheduleMissionPilotAgentWake,
+} from "./agent/mission-pilot-agent-wake.service";
 import { seedMissionPilotConversation } from "./agent/mission-pilot-conversation.repository";
+import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
 import {
 	recordMissionPilotQuestionnaireReady,
 	recordMissionPilotTaskEvent,
@@ -78,9 +79,20 @@ export function initializeMissionPilotRunSync() {
 			if (!terminal && run.status !== "running") return;
 			const task = await nightworkersRepo.getTask(run.taskId);
 			if (!task) return;
+			const failed = [
+				"failed",
+				"timed_out",
+				"cancelled",
+				"blocked",
+				"needs_human",
+			].includes(run.status);
 			await appendMissionPilotTaskEvent({
 				taskId: run.taskId,
-				eventType: terminal ? "task_run.terminal" : "task_run.started",
+				eventType: failed
+					? "task_run.failed"
+					: terminal
+						? "task_run.terminal"
+						: "task_run.started",
 				sourceEventId: `task-run:${run.id}:${run.status}`,
 				taskRevision: task.updatedAt.getTime(),
 				payload: terminal
@@ -117,7 +129,10 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 				? (message.metadataJson as Record<string, unknown>)
 				: {};
 		if (metadata.source === "mission_pilot") return;
-		if (!isMissionPilotAgentTaskActive(message.taskId)) return;
+		const ownership = await resolveMissionPilotRuntimeOwnership({
+			taskId: message.taskId,
+		});
+		if (ownership.kind !== "agent") return;
 		const session = await repo.getSessionByTaskId(message.taskId);
 		if (
 			session?.desiredState !== "playing" ||
@@ -142,7 +157,10 @@ function initializeMissionPilotAgentQuestionnaireEvents() {
 	if (agentQuestionnaireReadyRegistered) return;
 	agentQuestionnaireReadyRegistered = true;
 	registerQuestionnaireReadyListener(async (questionnaire) => {
-		if (!isMissionPilotAgentTaskActive(questionnaire.taskId)) return;
+		const ownership = await resolveMissionPilotRuntimeOwnership({
+			taskId: questionnaire.taskId,
+		});
+		if (ownership.kind !== "agent") return;
 		const session = await repo.getSessionByTaskId(questionnaire.taskId);
 		if (
 			session?.desiredState !== "playing" ||
@@ -381,6 +399,7 @@ export async function stop(taskId: string, expectedVersion: number) {
 				"Mission Pilot state changed; refresh and retry",
 			);
 		stopMissionPilotAgentRuntime(claimed.id);
+		await cancelScheduledMissionPilotAgentWake(claimed.id);
 		await cancelPendingMissionPilotToolCalls(claimed.id);
 		let stoppedRun: unknown = null;
 		let stopError: string | undefined;

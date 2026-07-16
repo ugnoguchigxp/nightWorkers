@@ -10,6 +10,14 @@ export const missionPilotRuntimeStateSchema = z.enum([
 	"attention",
 	"completed",
 ]);
+export const missionPilotAgentRunProvenanceSchema = z.object({
+	kind: z.literal("agent"),
+	sessionId: z.string().min(1),
+	toolCallId: z.string().min(1),
+	idempotencyKey: z.string().min(1),
+	completionOwner: z.literal("mission_pilot"),
+	sourceRunId: z.string().min(1).nullable(),
+});
 export const missionPilotConversationItemKindSchema = z.enum([
 	"system_context",
 	"user",
@@ -26,10 +34,15 @@ export const missionPilotTaskEventTypeSchema = z.enum([
 	"task.user_message_added",
 	"task.state_changed",
 	"questionnaire.ready",
+	"questionnaire.submission_failed",
+	"questionnaire.follow_up_failed",
 	"plan_artifact.ready",
 	"plan_artifact.failed",
 	"task_run.started",
 	"task_run.terminal",
+	"task_run.failed",
+	"task_queue.failed",
+	"git.mutation_failed",
 	"task_action.failed",
 	"permission.changed",
 	"mission_pilot.resume_requested",
@@ -41,6 +54,13 @@ export const missionPilotToolCallStatusSchema = z.enum([
 	"succeeded",
 	"failed",
 	"cancelled",
+]);
+export const missionPilotActionExecutionStatusSchema = z.enum([
+	"pending",
+	"executing",
+	"succeeded",
+	"failed",
+	"outcome_unknown",
 ]);
 export const missionPilotActionFailureKindSchema = z.enum([
 	"transport",
@@ -148,6 +168,9 @@ export type MissionPilotAgentEngineMode = z.infer<
 export type MissionPilotRuntimeState = z.infer<
 	typeof missionPilotRuntimeStateSchema
 >;
+export type MissionPilotAgentRunProvenance = z.infer<
+	typeof missionPilotAgentRunProvenanceSchema
+>;
 export type MissionPilotConversationItemKind = z.infer<
 	typeof missionPilotConversationItemKindSchema
 >;
@@ -156,6 +179,9 @@ export type MissionPilotTaskEventType = z.infer<
 >;
 export type MissionPilotToolCallStatus = z.infer<
 	typeof missionPilotToolCallStatusSchema
+>;
+export type MissionPilotActionExecutionStatus = z.infer<
+	typeof missionPilotActionExecutionStatusSchema
 >;
 export type MissionPilotActionFailure = z.infer<
 	typeof missionPilotActionFailureSchema

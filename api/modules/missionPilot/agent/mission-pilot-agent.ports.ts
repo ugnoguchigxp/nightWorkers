@@ -1,6 +1,7 @@
 import type {
 	MissionPilotActionFailure,
 	MissionPilotTaskActionDescriptor,
+	MissionPilotTaskEventType,
 	MissionPilotTaskReadModel,
 } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import type {
@@ -8,9 +9,11 @@ import type {
 	ProviderToolMessage,
 	ProviderToolTurnResult,
 } from "../../../services/structured-llm/public";
+import type { MissionPilotCurrentStepContext } from "./mission-pilot-current-step-context";
 
 export type MissionPilotProviderPort = {
 	nextTurn(input: {
+		sessionId: string;
 		systemContext: string;
 		messages: ProviderToolMessage[];
 		tools: ProviderToolDefinition[];
@@ -19,6 +22,7 @@ export type MissionPilotProviderPort = {
 		thinkingDepth: string | null;
 		taskId: string;
 		signal: AbortSignal;
+		currentStepContext?: MissionPilotCurrentStepContext;
 	}): Promise<ProviderToolTurnResult>;
 };
 export type MissionPilotTaskReadPort = {
@@ -55,6 +59,16 @@ export type MissionPilotTaskReadPort = {
 export type MissionPilotActionResult =
 	| { ok: true; actionId: string; data: unknown }
 	| { ok: false; actionId: string; failure: MissionPilotActionFailure };
+export type MissionPilotToolExecutionResult =
+	| { ok: true; data: unknown; directive: "continue" }
+	| {
+			ok: true;
+			data: unknown;
+			directive: "wait";
+			waitFor: MissionPilotTaskEventType[];
+	  }
+	| { ok: true; data: unknown; directive: "finish" }
+	| { ok: false; failure: MissionPilotActionFailure; directive: "continue" };
 export type MissionPilotTaskActionPort = {
 	execute(input: {
 		toolCallId: string;
