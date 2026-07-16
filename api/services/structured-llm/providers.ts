@@ -4,7 +4,7 @@ import {
 	callBedrockProvider,
 	callBedrockProviderToolTurn,
 } from "./bedrock-provider";
-import { callCodexProvider } from "./codex-provider";
+import { callCodexProvider, callCodexProviderToolTurn } from "./codex-provider";
 import { emitSupervisorLlmDebugEvent } from "./events";
 import { callFixtureProvider } from "./fixture-provider";
 import {
@@ -127,6 +127,7 @@ export async function callProviderToolTurn(input: {
 				openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
 				azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
 				bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
+				codex: () => callCodexProviderToolTurn(input, isEnabled, settings),
 				fixture: async () =>
 					callFixtureProviderToolTurn({
 						taskId: input.options.taskId ?? "",

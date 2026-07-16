@@ -4,7 +4,14 @@ import { Codex, type Thread as CodexThread } from "@openai/codex-sdk";
 import { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
 import { normalizeProviderUsage } from "../llm-usage";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
+import {
+	buildCodexToolTurnJsonSchema,
+	buildCodexToolTurnPrompt,
+	CODEX_TOOL_TURN_SCHEMA_NAME,
+	parseCodexToolTurnResponse,
+} from "./codex-tool-turn";
 import { traceProviderActivity } from "./events";
+import { StructuredProviderError } from "./provider-failure";
 import type { RawLlmCallOptions } from "./providers";
 import {
 	getResolvedProviderEndpoint,
@@ -15,6 +22,12 @@ import {
 	getStructuredLlmSetting,
 	type readStructuredLlmProviderSettings,
 } from "./settings";
+import type {
+	ProviderToolDefinition,
+	ProviderToolMessage,
+	ProviderToolTurnResult,
+	RawToolTurnCallOptions,
+} from "./tool-calls";
 import type { ProviderCallResult } from "./types";
 
 const CODEX_STRUCTURED_RUNTIME_LANE = "structured-llm";
@@ -25,6 +38,13 @@ const MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS = [
 	"Memory、AGENTS.md、ファイル、ツール一覧を探索しないでください。",
 	"initial_instructions と context_compile はこのレーンでは実行しません。",
 	"MCP は Plan Mode の明示的な操作に必要な場合だけ使い、存在確認のために列挙しないでください。",
+].join("\n");
+const MISSION_PILOT_TOOL_TURN_DEVELOPER_INSTRUCTIONS = [
+	"Mission Pilotのtool判断専用レーンです。",
+	"渡されたSystem Context、conversation、利用可能toolだけを根拠に、指定された構造化応答を返してください。",
+	"MCP、command、filesystem、network、その他のtoolを直接実行しないでください。",
+	"必要な情報取得と操作はtoolCallsへ出力し、NightWorkers側の権限・revision・idempotency検証に委ねてください。",
+	"Memory、AGENTS.md、workspaceを探索しないでください。",
 ].join("\n");
 const defaultCodexStructuredSessionStore = new RuntimeSessionStateStore();
 export type CodexProviderInput = {
@@ -106,6 +126,9 @@ export async function callCodexProvider(
 		input.options.normalizedRequest?.callKind === "structured_artifact";
 	const missionPilotStructuredArtifact =
 		structuredArtifact && input.options.role === "mission_pilot";
+	const missionPilotToolTurn =
+		missionPilotStructuredArtifact &&
+		input.options.jsonSchema?.name === CODEX_TOOL_TURN_SCHEMA_NAME;
 	const isolatedWorkingDirectory = structuredArtifact
 		? fs.mkdtempSync(`${os.tmpdir()}/nightworkers-structured-artifact-`)
 		: null;
@@ -116,17 +139,23 @@ export async function callCodexProvider(
 				...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
 			},
 			config: {
-				mcp_servers: {
-					"context-still": {
-						disabled_tools: ["initial_instructions", "context_compile"],
-					},
-				},
+				mcp_servers: missionPilotToolTurn
+					? {}
+					: {
+							"context-still": {
+								disabled_tools: ["initial_instructions", "context_compile"],
+							},
+						},
 				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
 				...(missionPilotStructuredArtifact
 					? {
-							developer_instructions:
-								MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS,
-							features: { memories: false },
+							developer_instructions: missionPilotToolTurn
+								? MISSION_PILOT_TOOL_TURN_DEVELOPER_INSTRUCTIONS
+								: MISSION_PILOT_STRUCTURED_DEVELOPER_INSTRUCTIONS,
+							features: {
+								memories: false,
+								...(missionPilotToolTurn ? { mcp: false } : {}),
+							},
 							memories: {
 								generate_memories: false,
 								use_memories: false,
@@ -312,7 +341,8 @@ export async function callCodexProvider(
 			isolatedWorkingDirectory: Boolean(isolatedWorkingDirectory),
 			missionPilotMemorySuppressed: missionPilotStructuredArtifact,
 			memoryInjectionEnabled: !missionPilotStructuredArtifact,
-			mcpEnabled: true,
+			mcpEnabled: !missionPilotToolTurn,
+			missionPilotToolTurn,
 			providerTurnCount: 1,
 		};
 		input.setProviderDebug(providerDebug);
@@ -335,6 +365,114 @@ export async function callCodexProvider(
 			fs.rmSync(isolatedWorkingDirectory, { recursive: true, force: true });
 		}
 	}
+}
+
+export async function callCodexProviderToolTurn(
+	input: {
+		provider: string;
+		messages: ProviderToolMessage[];
+		tools: ProviderToolDefinition[];
+		systemPrompt: string;
+		userPrompt: string;
+		options: RawToolTurnCallOptions;
+		signal: AbortSignal;
+		setProviderDebug: (value: Record<string, unknown>) => void;
+	},
+	isEnabled: (
+		key: Parameters<typeof getStructuredLlmBoolSetting>[1],
+		fallback: boolean,
+	) => boolean,
+	settings: ReturnType<typeof readStructuredLlmProviderSettings>,
+): Promise<ProviderToolTurnResult> {
+	if (input.options.role !== "mission_pilot") {
+		return {
+			type: "unsupported",
+			reason: `Codex structured tool turns are not enabled for role: ${input.options.role ?? "unassigned"}`,
+			providerDebug: {
+				provider: "codex",
+				providerEndpointId:
+					input.options.normalizedRequest.providerEndpointId ?? null,
+				mode: "codex_structured_tool_turn",
+				supported: false,
+				role: input.options.role ?? null,
+			},
+		};
+	}
+	const jsonSchema = {
+		name: CODEX_TOOL_TURN_SCHEMA_NAME,
+		schema: buildCodexToolTurnJsonSchema(input.tools),
+	};
+	const userPrompt = buildCodexToolTurnPrompt({
+		messages: input.messages,
+		tools: input.tools,
+	});
+	let providerDebug: Record<string, unknown> = {};
+	const result = await callCodexProvider(
+		{
+			provider: input.provider,
+			systemPrompt: input.systemPrompt,
+			userPrompt,
+			options: {
+				...input.options,
+				jsonSchema,
+				normalizedRequest: {
+					...input.options.normalizedRequest,
+					systemPrompt: input.systemPrompt,
+					userPrompt,
+					jsonSchema,
+					diagnostics: {
+						...input.options.normalizedRequest.diagnostics,
+						artifactSchemaName: CODEX_TOOL_TURN_SCHEMA_NAME,
+						userPromptLength: userPrompt.length,
+					},
+				},
+			},
+			signal: input.signal,
+			setProviderDebug: (value) => {
+				providerDebug = value;
+				input.setProviderDebug(value);
+			},
+		},
+		isEnabled,
+		settings,
+	);
+	const parsed = parseCodexToolTurnResponse(result.content);
+	if (!parsed.ok) {
+		throw new StructuredProviderError({
+			kind: "unknown",
+			retryable: false,
+			message:
+				result.content.trim() || "Codex returned an empty tool turn response.",
+			cause: new Error(parsed.reason),
+		});
+	}
+	if (
+		typeof providerDebug.agenticItemCount === "number" &&
+		providerDebug.agenticItemCount > 0
+	) {
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message:
+				result.content.trim() ||
+				"Codex tool turn attempted provider-side activity.",
+			cause: new Error("Provider-side activity is disabled for Mission Pilot."),
+		});
+	}
+	const completeDebug = {
+		...providerDebug,
+		mode: "codex_structured_tool_turn",
+		toolCallCount: parsed.toolCalls.length,
+	};
+	input.setProviderDebug(completeDebug);
+	return {
+		type: "supported",
+		content: parsed.content,
+		toolCalls: parsed.toolCalls,
+		usage: result.usage,
+		model: result.model,
+		providerDebug: completeDebug,
+	};
 }
 
 function describeCodexAgenticItem(item: unknown) {
