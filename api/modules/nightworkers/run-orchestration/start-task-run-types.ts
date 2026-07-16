@@ -20,6 +20,8 @@ export type StartTaskRunOptions = {
 		| "review_run"
 		| "test_mode"
 		| "explicit";
+	/** 単一runtime内でCoding AgentがPlan Mode artifact判断から開始する。 */
+	planModeRequested?: boolean;
 	initialTodos?: ImplementationTodoInput[];
 	implementationPlanConstraint?: ImplementationPlanConstraint;
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */

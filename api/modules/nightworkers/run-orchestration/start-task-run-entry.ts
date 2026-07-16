@@ -13,7 +13,7 @@ export async function startTaskRun(
 		{
 			...options,
 			executionMode: "implementation",
-			executionModeSource: "explicit",
+			executionModeSource: options.executionModeSource ?? "explicit",
 			missionPilotPhase: options.missionPilotPhase ?? "implementation",
 		};
 	if (shouldUseIsolatedTaskExecutor()) {

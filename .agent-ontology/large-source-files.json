@@ -3,13 +3,6 @@
   "lineLimit": 600,
 	"entries": [
 		{
-			"id": "NW-LF-01",
-			"path": "api/modules/questionnaire/questionnaire.service.ts",
-			"maxLines": 620,
-			"targetModule": "questionnaire-service",
-			"phase": 7
-		},
-		{
 			"id": "NW-LF-02",
 			"path": "api/modules/missionPilot/mission-pilot-closeout.service.ts",
 			"maxLines": 630,

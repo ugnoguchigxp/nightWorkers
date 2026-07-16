@@ -254,15 +254,8 @@ describe("Supervisor reference registry", () => {
 
 		expect(normalized.planMode).toEqual({
 			primaryArtifact: "feature_plan",
-			dedicatedViews: [
-				{ view: "blueprint", decision: "include", reason: "UI needs a view" },
-				{
-					view: "data_model",
-					decision: "omit",
-					reason: "not specified by routing",
-				},
-			],
-			specificationLenses: ["functional_requirements", "interface_contract"],
+			dedicatedViews: [],
+			specificationLenses: [],
 		});
 		expect(normalized.workKinds).toEqual(["blueprint"]);
 	});

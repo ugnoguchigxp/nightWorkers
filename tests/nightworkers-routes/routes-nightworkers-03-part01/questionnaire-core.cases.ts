@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
+import { registerQuestionnaireStateChangedListener } from "../../../api/modules/questionnaire/questionnaire-events";
 import * as generalSettings from "../../../api/services/settings/general-settings";
 import { representativeDataModelArtifact, sameOriginHeaders } from "./helpers";
 import "./setup";
@@ -13,6 +14,17 @@ describe("NightWorkers task routes questionnaire core", () => {
 		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
 		process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
 		process.env.ACTIVE_LLM_PROVIDER = "fixture";
+		const questionnaireTransitions: Array<{
+			id: string;
+			status: string;
+		}> = [];
+		const unregisterQuestionnaireTransition =
+			registerQuestionnaireStateChangedListener((questionnaire) => {
+				questionnaireTransitions.push({
+					id: questionnaire.id,
+					status: questionnaire.status,
+				});
+			});
 
 		try {
 			const createdRepo = await repo.createRepository({
@@ -246,6 +258,18 @@ describe("NightWorkers task routes questionnaire core", () => {
 			);
 			expect(acceptRes.status).toBe(200);
 			expect((await acceptRes.json()).status).toBe("accepted");
+			expect(questionnaireTransitions).toEqual(
+				expect.arrayContaining([
+					{ id: session.id, status: "review_ready" },
+					{ id: session.id, status: "accepted" },
+				]),
+			);
+			expect(
+				questionnaireTransitions.filter(
+					(transition) =>
+						transition.id === session.id && transition.status === "accepted",
+				),
+			).toHaveLength(1);
 
 			const workspaceRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/workspace`,
@@ -301,7 +325,13 @@ describe("NightWorkers task routes questionnaire core", () => {
 					expect.objectContaining({ title: "Support Desk Decision Review" }),
 				]),
 			);
-			expect(planModeWorkspace.viewDecisions).toHaveLength(9);
+			expect(
+				new Set(
+					planModeWorkspace.viewDecisions.map(
+						(decision: { view: string }) => decision.view,
+					),
+				).size,
+			).toBe(planModeWorkspace.viewDecisions.length);
 			expect(planModeWorkspace.viewDecisions).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({
@@ -325,6 +355,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 				]),
 			);
 		} finally {
+			unregisterQuestionnaireTransition();
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;
 			else process.env.ACTIVE_LLM_PROVIDER = originalProvider;

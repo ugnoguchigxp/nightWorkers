@@ -16,6 +16,8 @@ import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.tra
 import { createMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
 
+export { claimStop, finishStop } from "./mission-pilot-stop.repository";
+
 type Db = typeof db | DbTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
 
@@ -523,58 +525,6 @@ export async function markAttention(
 		.returning();
 	return updated ?? (await getSessionByTaskId(taskId));
 }
-export async function claimStop(taskId: string, expectedVersion: number) {
-	const row = await getSessionByTaskId(taskId);
-	if (!row) return null;
-	if (row.desiredState === "stopped") return row;
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			desiredState: "stopped",
-			resumePhase: row.phase,
-			phase: "stopping",
-			nextWakeAt: null,
-			version: expectedVersion + 1,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, row.id),
-				eq(missionPilotSessions.version, expectedVersion),
-			),
-		)
-		.returning();
-	return updated ?? null;
-}
-export async function finishStop(
-	taskId: string,
-	expectedVersion: number,
-	error?: string,
-) {
-	const row = await getSessionByTaskId(taskId);
-	if (!row) return null;
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			phase: error ? "attention" : "paused",
-			activeRunId: error ? row.activeRunId : null,
-			lastErrorCode: error ? "MISSION_PILOT_RUN_STOP_FAILED" : null,
-			lastErrorMessage: error ?? null,
-			stoppedAt: new Date(),
-			version: row.version + 1,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, row.id),
-				eq(missionPilotSessions.version, expectedVersion),
-				eq(missionPilotSessions.desiredState, "stopped"),
-			),
-		)
-		.returning();
-	return updated ?? (await getSessionByTaskId(taskId));
-}
-
 export async function syncCompletedRun(taskId: string, runId: string) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row || row.activeRunId !== runId || row.desiredState !== "playing")

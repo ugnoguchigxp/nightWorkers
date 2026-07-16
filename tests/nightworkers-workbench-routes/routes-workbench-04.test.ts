@@ -181,7 +181,7 @@ afterEach(async () => {
 });
 
 describe("NightWorkers workbench routes", () => {
-	it("starts the normal Plan Mode unchanged while Mission Pilot is stopped", async () => {
+	it("starts Coding Agent Plan Mode while Mission Pilot is stopped", async () => {
 		vi.mocked(llm.callStructuredJsonLLM)
 			.mockResolvedValueOnce(
 				mockPlanModeGate(true, "explicit planning request"),
@@ -247,20 +247,26 @@ describe("NightWorkers workbench routes", () => {
 
 		expect(response.status, await response.clone().text()).toBe(200);
 		const body = await response.json();
-		expect(body.run).toBeNull();
-		expect(body.task.status).toBe("draft");
-		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+		expect(body.run).toMatchObject({ taskId: task.id, status: "running" });
+		expect(body.run.contextSnapshot).toMatchObject({
+			planModeRequested: true,
+			planModeClosed: false,
+		});
+		expect(body.run.contextSnapshot).not.toHaveProperty(
+			"implementationPhasePreamble",
+		);
+		expect(body.task.status).toBe("running");
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2],
 		).toMatchObject({ schemaName: "workbench_plan_mode_gate", role: "plan" });
 		expect(
 			body.messages.some(
 				(message: unknown) =>
-					message.metadataJson?.intent === "design_questionnaire_ready" &&
-					message.metadataJson?.source === "workbench",
+					message.metadataJson?.intent === "design_questionnaire_ready",
 			),
-		).toBe(true);
-		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+		).toBe(false);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(1);
 	});
 
 	it("starts the normal Coding Agent without a Mission Pilot envelope while stopped", async () => {
@@ -350,7 +356,7 @@ describe("NightWorkers workbench routes", () => {
 		const body = await res.json();
 		expect(body.run).toBeNull();
 		expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
-		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
 		expect(body.task.status).toBe("queued");
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
 		expect(
@@ -362,6 +368,12 @@ describe("NightWorkers workbench routes", () => {
 			body.messages.some(
 				(message: unknown) =>
 					message.metadataJson?.intent === "design_questionnaire_ready",
+			),
+		).toBe(false);
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "plan_mode_run_blocked",
 			),
 		).toBe(true);
 	});

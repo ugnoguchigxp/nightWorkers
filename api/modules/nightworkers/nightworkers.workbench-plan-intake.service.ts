@@ -19,7 +19,7 @@ export async function ensureDesignQuestionnaireReadyMessage(input: {
 	questionnaireSession: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
 	planModeGate: WorkbenchPlanModeGate & Record<string, unknown>;
 	planModeSettingsSnapshot: ReturnType<typeof buildPlanModeSettingsSnapshot>;
-	source: "workbench" | "mission_pilot";
+	source: "workbench" | "mission_pilot" | "coding_agent";
 	trace?: TraceProvenance;
 }) {
 	const messages = await repo.listTaskMessages(input.taskId);

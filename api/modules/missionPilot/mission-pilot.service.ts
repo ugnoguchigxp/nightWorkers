@@ -1,15 +1,16 @@
+import { missionPilotAgentRunProvenanceSchema } from "../../../shared/schemas/mission-pilot-agent.schema";
 import type { TaskRunStatus } from "../../db/schema";
 import { buildMissionPilotSystemContext } from "../../services/structured-generation/prompts/mission-pilot-system-context";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import {
-	getActiveTaskRun,
-	recoverStaleActiveRuns,
-} from "../nightworkers/nightworkers.run-query.service";
+import { recoverStaleActiveRuns } from "../nightworkers/nightworkers.run-query.service";
 import { registerTaskMessageCreatedListener } from "../nightworkers/nightworkers.task-message-events";
-import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
 import { markMissionPilotAgentTaskActive } from "./agent/mission-pilot-agent-active-registry";
-import { cancelPendingMissionPilotToolCalls } from "./agent/mission-pilot-agent-lifecycle.repository";
 import {
+	cancelPendingMissionPilotToolCalls,
+	cancelRunningMissionPilotToolCalls,
+} from "./agent/mission-pilot-agent-lifecycle.repository";
+import {
+	isMissionPilotAgentRuntimeActive,
 	reconcileInterruptedMissionPilotAgentSessions,
 	stopMissionPilotAgentRuntime,
 } from "./agent/mission-pilot-agent-runtime";
@@ -26,24 +27,16 @@ import {
 } from "./agent/mission-pilot-agent-wake.service";
 import { seedMissionPilotConversation } from "./agent/mission-pilot-conversation.repository";
 import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
-import {
-	recordMissionPilotQuestionnaireReady,
-	recordMissionPilotTaskEvent,
-} from "./agent/mission-pilot-task-event.adapter";
+import { recordMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.adapter";
 import { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
 import { recoverInterruptedIntakeSessions } from "./mission-pilot-intake-recovery.repository";
-import { startOrResumeMissionPilotPlanIntake } from "./mission-pilot-plan-intake.port";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	markMissionPilotPreQueueAttention,
 	reconcileMissionPilotPreQueueSessions,
 } from "./mission-pilot-pre-queue-recovery.service";
-import {
-	initializeMissionPilotQuestionnaireAutonomy,
-	resumeQuestionnaireCountdown,
-} from "./mission-pilot-questionnaire.service";
 import { MissionPilotPreQueueError } from "./mission-pilot-queue-handoff.service";
 import { claimQueueHandoffResume } from "./mission-pilot-queue-resume.repository";
 import {
@@ -53,6 +46,7 @@ import {
 import { recoverMissionPilotPostQueueSessions } from "./mission-pilot-recovery.service";
 import {
 	registerTaskRunUpdatedListener,
+	startTaskRun,
 	stopTaskRun,
 } from "./mission-pilot-workbench.port";
 
@@ -114,7 +108,6 @@ export function initializeMissionPilotRunSync() {
 }
 
 initializeMissionPilotRunSync();
-initializeMissionPilotQuestionnaireAutonomy();
 
 let agentTaskMessageCreatedRegistered = false;
 function initializeMissionPilotAgentTaskMessageEvents() {
@@ -151,26 +144,6 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 	});
 }
 initializeMissionPilotAgentTaskMessageEvents();
-
-let agentQuestionnaireReadyRegistered = false;
-function initializeMissionPilotAgentQuestionnaireEvents() {
-	if (agentQuestionnaireReadyRegistered) return;
-	agentQuestionnaireReadyRegistered = true;
-	registerQuestionnaireReadyListener(async (questionnaire) => {
-		const ownership = await resolveMissionPilotRuntimeOwnership({
-			taskId: questionnaire.taskId,
-		});
-		if (ownership.kind !== "agent") return;
-		const session = await repo.getSessionByTaskId(questionnaire.taskId);
-		if (
-			session?.desiredState !== "playing" ||
-			!(await isMissionPilotAgentSession(session.id))
-		)
-			return;
-		await recordMissionPilotQuestionnaireReady(questionnaire);
-	});
-}
-initializeMissionPilotAgentQuestionnaireEvents();
 
 export async function reconcileMissionPilotStartup() {
 	const provisioned = await repo.backfillMissingTaskSessions();
@@ -302,8 +275,7 @@ export async function play(taskId: string, expectedVersion: number) {
 			"MISSION_PILOT_VERSION_CONFLICT",
 			"Mission Pilot state changed; refresh and retry",
 		);
-	const resumed = await resumeQuestionnaireCountdown(taskId);
-	const activeClaim = resumed ?? claimed;
+	const activeClaim = claimed;
 	publishMissionPilotUpdated(taskId, repo.toControlSummary(activeClaim));
 	let intakeVersion = activeClaim.version;
 	try {
@@ -313,22 +285,26 @@ export async function play(taskId: string, expectedVersion: number) {
 			publishMissionPilotInitialPrompt(promptEvidence.message);
 		}
 		intakeVersion = promptEvidence.row.version;
-		const initialized = await repo.finishPlay(taskId, null);
-		if (!initialized)
-			throw new Error("Mission Pilot state changed during Plan intake");
-		intakeVersion = initialized.version;
-		await startOrResumeMissionPilotPlanIntake({
-			taskId,
-			initialPrompt: activeClaim.initialPromptSnapshot,
-			sessionId: activeClaim.id,
+		const run = await startTaskRun(taskId, {
+			executionModeSource: "explicit",
+			latestUserMessageOverride: activeClaim.initialPromptSnapshot,
 		});
+		const initialized = await repo.finishPlay(taskId, run.id);
+		if (!initialized)
+			throw new Error(
+				"Mission Pilot state changed while starting Coding Agent",
+			);
+		intakeVersion = initialized.version;
 		const finished = await repo.getSessionByTaskId(taskId);
-		if (!finished) throw new Error("Mission Pilot state changed during intake");
+		if (!finished)
+			throw new Error(
+				"Mission Pilot state changed after starting Coding Agent",
+			);
 		const missionPilot = repo.toControlSummary(finished);
 		publishMissionPilotUpdated(taskId, missionPilot);
 		return {
 			missionPilot,
-			run: null,
+			run,
 			messages: [],
 		};
 	} catch (error) {
@@ -390,7 +366,21 @@ export async function stop(taskId: string, expectedVersion: number) {
 			"Mission Pilot session not found",
 		);
 	if (await isMissionPilotAgentSession(current.id)) {
-		const activeRun = await getActiveTaskRun(taskId);
+		const activeRuns = await listMissionPilotOwnedActiveRuns(
+			taskId,
+			current.id,
+		);
+		if (
+			current.desiredState === "stopped" &&
+			!current.activeRunId &&
+			activeRuns.length === 0 &&
+			!isMissionPilotAgentRuntimeActive(current.id) &&
+			current.lastErrorCode !== "MISSION_PILOT_RUNTIME_STOP_TIMEOUT"
+		)
+			return {
+				missionPilot: repo.toControlSummary(current),
+				stoppedRun: null,
+			};
 		const claimed = await claimAgentStop(taskId, expectedVersion);
 		if (!claimed)
 			throw new MissionPilotError(
@@ -398,27 +388,61 @@ export async function stop(taskId: string, expectedVersion: number) {
 				"MISSION_PILOT_VERSION_CONFLICT",
 				"Mission Pilot state changed; refresh and retry",
 			);
-		stopMissionPilotAgentRuntime(claimed.id);
+		publishMissionPilotUpdated(taskId, repo.toControlSummary(claimed));
+		const runtimeStop = stopMissionPilotAgentRuntime(claimed.id);
 		await cancelScheduledMissionPilotAgentWake(claimed.id);
+		const runtimeStopResult = await runtimeStop;
 		await cancelPendingMissionPilotToolCalls(claimed.id);
-		let stoppedRun: unknown = null;
-		let stopError: string | undefined;
-		if (activeRun)
+		if (runtimeStopResult.quiesced)
+			await cancelRunningMissionPilotToolCalls(claimed.id);
+		const stoppedRuns: unknown[] = [];
+		const stopErrors: string[] = [];
+		if (!runtimeStopResult.quiesced)
+			stopErrors.push(
+				"Mission Pilot runtime did not acknowledge the stop request in time.",
+			);
+		for (const activeRun of await listMissionPilotOwnedActiveRuns(
+			taskId,
+			claimed.id,
+		)) {
 			try {
-				stoppedRun = await stopTaskRun(activeRun.id);
+				stoppedRuns.push(await stopTaskRun(activeRun.id));
 			} catch (error) {
-				stopError = error instanceof Error ? error.message : String(error);
+				stopErrors.push(error instanceof Error ? error.message : String(error));
 			}
-		const finished = await repo.finishStop(taskId, claimed.version, stopError);
+		}
+		const remainingRuns = await listMissionPilotOwnedActiveRuns(
+			taskId,
+			claimed.id,
+		);
+		if (remainingRuns.length > 0)
+			stopErrors.push(
+				`Active Task Run remains after stop: ${remainingRuns.map((run) => run.id).join(", ")}`,
+			);
+		const stopError =
+			stopErrors.length > 0 ? [...new Set(stopErrors)].join("\n") : undefined;
+		const stopErrorCode = !runtimeStopResult.quiesced
+			? "MISSION_PILOT_RUNTIME_STOP_TIMEOUT"
+			: undefined;
+		const finished = await repo.finishStop(
+			taskId,
+			claimed.version,
+			stopError,
+			remainingRuns[0]?.id ?? null,
+			stopErrorCode,
+		);
 		if (!finished)
 			throw new MissionPilotError(
-				404,
-				"MISSION_PILOT_NOT_FOUND",
-				"Mission Pilot session not found",
+				409,
+				"MISSION_PILOT_VERSION_CONFLICT",
+				"Mission Pilot state changed while finalizing Stop; refresh and retry",
 			);
 		const missionPilot = repo.toControlSummary(finished);
 		publishMissionPilotUpdated(taskId, missionPilot);
-		return { missionPilot, stoppedRun };
+		return {
+			missionPilot,
+			stoppedRun: stoppedRuns[0] ?? null,
+		};
 	}
 	if (current.desiredState === "stopped" && !current.activeRunId)
 		return { missionPilot: repo.toControlSummary(current), stoppedRun: null };
@@ -442,9 +466,9 @@ export async function stop(taskId: string, expectedVersion: number) {
 	const finished = await repo.finishStop(taskId, claimed.version, stopError);
 	if (!finished)
 		throw new MissionPilotError(
-			404,
-			"MISSION_PILOT_NOT_FOUND",
-			"Mission Pilot session not found",
+			409,
+			"MISSION_PILOT_VERSION_CONFLICT",
+			"Mission Pilot state changed while finalizing Stop; refresh and retry",
 		);
 	const missionPilot = repo.toControlSummary(finished);
 	publishMissionPilotUpdated(taskId, missionPilot);
@@ -511,4 +535,23 @@ export async function listTasksWithMissionPilot() {
 		}
 		return { ...task, missionPilot };
 	});
+}
+
+async function listMissionPilotOwnedActiveRuns(
+	taskId: string,
+	sessionId: string,
+) {
+	const activeRuns = await nightworkersRepo.listActiveTaskRunsForTask(taskId);
+	return activeRuns.filter((run) => {
+		const provenance = missionPilotAgentRunProvenanceSchema.safeParse(
+			readRecord(run.contextSnapshot).missionPilotAgent,
+		);
+		return provenance.success && provenance.data.sessionId === sessionId;
+	});
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
 }

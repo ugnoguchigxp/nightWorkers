@@ -4,6 +4,7 @@ import {
 	type PlanModeWorkspace,
 	planModeRegenerationTargetSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
@@ -238,6 +239,7 @@ export async function appendAssistantTaskMessage(
 	id: string,
 	content: string,
 	metadata?: Record<string, unknown>,
+	trace?: TraceProvenance,
 ) {
 	const task = await repo.getTask(id);
 	if (!task) throw new NotFoundError("Task not found");
@@ -254,6 +256,7 @@ export async function appendAssistantTaskMessage(
 		content: trimmed,
 		messageType: "text",
 		payloadJson: metadata,
+		trace,
 	});
 	if (message) publishTaskMessageCreated(message);
 	return message;

@@ -1,6 +1,6 @@
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 3;
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 4;
 
 export const CODING_AGENT_ROLE_INSTRUCTIONS_JA = [
 	"あなたはユーザーTaskを自動化するCoding Agentです。",
@@ -18,6 +18,9 @@ export const CODING_AGENT_TODO_REQUIREMENT_JA = [
 	"quality gate、verify、template/import、安全・権限などの固定SystemContextが該当するTodoでは、その工程に必要な規則だけをcontext、next action、acceptance criteriaへ反映してください。共通SystemContextや設計書全文をすべてのTodoへ複製しないでください。",
 	"作業中に前提、制約、検証方法、次の判断材料が変わった場合は、次の行動前にupdate_contextで局所SystemContextとnext actionを更新してください。",
 	"計画が不要な質問、説明、読み取りだけのTaskでは、その理由をTodoのcontextに残し、必要な作業から開始してください。",
+	"Plan Modeが必要なTaskでは、nightworkers.plan_modeのinspectで既存Artifact、routing、Questionnaireを確認し、Task、repository、既存設計を読んだあなた自身が必要な設計Artifactを提案・選択してください。hostやMission Pilotへ意味判断を委ねないでください。",
+	"未確定のユーザー判断が設計を左右する場合だけrequest_inputでQuestionnaireを作成し、質問待ちにするcurrent Todoをneeds_humanへ遷移してください。回答後は同じRunとTodoが再開されるため、回答を読んでroutingとArtifact生成を続けてください。",
+	"Artifactのinclude・omitはupdate_routingで理由付きで明示し、選択したArtifactだけをgenerate_artifactで生成してください。利用可能であることや固定テンプレートを選択理由にしないでください。",
 	"判断後にTodo planを作成し、current Todoを一件開始してください。",
 	"current Todoなしにworkspaceの読み取り・変更・command実行を始めないでください。",
 	"各turnでcurrent Todoのobjective、context、next action、acceptance criteriaを読んでからtoolを選んでください。",
@@ -50,6 +53,7 @@ export const CODING_AGENT_TOOL_CONTRACT_JA = [
 	"tool成功・失敗は構造化結果として返ります。結果を固定文へ読み替えず、次の行動を判断してください。",
 	"workspace toolは登録済みProjectのrepository rootを基準に実行し、一時directoryを成果物のworkspaceとして扱わないでください。",
 	"Todo以外のworkspace toolはcurrent Todoが必要です。CURRENT_TODO_REQUIREDを受けたらTodo planを作成・開始してください。",
+	"nightworkers.plan_modeは単一のCoding Agent runtimeから常に利用できます。設計専用runtimeやMission Pilotの設計権限があると仮定せず、inspect、request_input、update_routing、generate_artifactをTaskの意味に応じて選んでください。",
 ].join("\n");
 
 export function buildCodingAgentSystemContext(input: {

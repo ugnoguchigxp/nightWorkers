@@ -9,6 +9,10 @@ import {
 	pushRunGitCloseout,
 } from "../../nightworkers/nightworkers.git-closeout.service";
 import * as nightworkersService from "../../nightworkers/nightworkers.service";
+import {
+	missionPilotPlanOutputTrace,
+	missionPilotThoughtTrace,
+} from "../../nightworkers/nightworkers.trace-provenance";
 import type { PlanArtifactSourceSelection } from "../../specification/plan-artifact-input.types";
 
 export type MissionPilotActionCommandContext = {
@@ -17,6 +21,7 @@ export type MissionPilotActionCommandContext = {
 	idempotencyKey: string;
 	expectedTaskRevision: number;
 	sourceRunId: string | null;
+	signal?: AbortSignal;
 };
 
 export async function executeMissionPilotAction(
@@ -25,6 +30,7 @@ export async function executeMissionPilotAction(
 	args: Record<string, unknown>,
 	context: MissionPilotActionCommandContext,
 ) {
+	context.signal?.throwIfAborted();
 	const missionPilotAgent = {
 		kind: "agent" as const,
 		sessionId: context.sessionId,
@@ -33,6 +39,12 @@ export async function executeMissionPilotAction(
 		completionOwner: "mission_pilot" as const,
 		sourceRunId: context.sourceRunId,
 	};
+	const thoughtTrace = missionPilotThoughtTrace({
+		sessionId: context.sessionId,
+	});
+	const artifactTrace = missionPilotPlanOutputTrace({
+		sessionId: context.sessionId,
+	});
 	switch (actionId) {
 		case "task.update":
 			return nightworkersService.updateTask(
@@ -48,12 +60,14 @@ export async function executeMissionPilotAction(
 				requiredText(args.content),
 				{
 					source: "mission_pilot",
+					missionPilotSessionId: context.sessionId,
 					intent: "chat",
 					missionPilotAction: {
 						idempotencyKey: context.idempotencyKey,
 						toolCallId: context.toolCallId,
 					},
 				},
+				thoughtTrace,
 			);
 		case "task.archive":
 			return nightworkersService.archiveTask(taskId);
@@ -66,7 +80,9 @@ export async function executeMissionPilotAction(
 				requiredText(args.prompt),
 				{
 					role: "mission_pilot",
+					usageTrace: thoughtTrace,
 					missionPilotActionKey: context.idempotencyKey,
+					signal: context.signal,
 				},
 			);
 		case "questionnaire.draft.update":
@@ -97,6 +113,7 @@ export async function executeMissionPilotAction(
 			return nightworkersService.generateDesignQuestionnaireFollowUp(
 				taskId,
 				requiredText(args.questionnaireSessionId),
+				{ signal: context.signal, usageTrace: thoughtTrace },
 			);
 		case "questionnaire.additional.generate":
 			return (
@@ -108,16 +125,24 @@ export async function executeMissionPilotAction(
 					| "pre_feature_plan_gate",
 				reason: optionalText(args.reason) ?? undefined,
 				role: "mission_pilot",
+				llmUsageTrace: thoughtTrace,
 			});
 		case "questionnaire.review.generate":
 			return nightworkersService.generateDesignQuestionnaireReview(
 				taskId,
 				requiredText(args.questionnaireSessionId),
+				{ signal: context.signal, usageTrace: thoughtTrace },
 			);
 		case "questionnaire.review.accept":
 			return nightworkersService.acceptDesignQuestionnaireReview(
 				taskId,
 				requiredText(args.questionnaireSessionId),
+				{
+					missionPilotAction: {
+						idempotencyKey: context.idempotencyKey,
+						toolCallId: context.toolCallId,
+					},
+				},
 			);
 		case "questionnaire.review.leave_unadopted":
 			return nightworkersService.leaveDesignQuestionnaireReviewUnadopted(
@@ -132,6 +157,9 @@ export async function executeMissionPilotAction(
 				questionnaireSessionId: optionalText(args.questionnaireSessionId),
 				sourceSelection: recordOrUndefined(args.sourceSelection),
 				role: "mission_pilot",
+				trace: artifactTrace,
+				llmUsageTrace: thoughtTrace,
+				signal: context.signal,
 			});
 		case "plan.artifact.blueprint.generate":
 			return (await import("../../blueprint")).generateBlueprintArtifact(
@@ -141,6 +169,9 @@ export async function executeMissionPilotAction(
 					questionnaireSessionId: optionalText(args.questionnaireSessionId),
 					sourceSelection: recordOrUndefined(args.sourceSelection),
 					role: "mission_pilot",
+					trace: artifactTrace,
+					llmUsageTrace: thoughtTrace,
+					signal: context.signal,
 				},
 			);
 		case "plan.artifact.data_model.generate":
@@ -151,6 +182,9 @@ export async function executeMissionPilotAction(
 				questionnaireSessionId: optionalText(args.questionnaireSessionId),
 				sourceSelection: recordOrUndefined(args.sourceSelection),
 				role: "mission_pilot",
+				trace: artifactTrace,
+				llmUsageTrace: thoughtTrace,
+				signal: context.signal,
 			});
 		case "plan.artifact.view.generate": {
 			const { generatePlanViewArtifact } = await import(
@@ -166,6 +200,9 @@ export async function executeMissionPilotAction(
 					questionnaireSessionId: optionalText(args.questionnaireSessionId),
 					sourceSelection: recordOrUndefined(args.sourceSelection),
 					role: "mission_pilot",
+					trace: artifactTrace,
+					llmUsageTrace: thoughtTrace,
+					signal: context.signal,
 				},
 			);
 		}
@@ -225,6 +262,7 @@ export async function executeMissionPilotAction(
 				await import("../../queue/queue-entry-commands.service")
 			).archiveImplementationQueueEntry(requiredText(args.entryId));
 		case "run.implementation.start": {
+			context.signal?.throwIfAborted();
 			if (args.repairRequest) {
 				const request = missionPilotRepairRequestSchema.parse(
 					args.repairRequest,
@@ -246,6 +284,7 @@ export async function executeMissionPilotAction(
 			const { startTaskRun } = await import(
 				"../../nightworkers/run-orchestration/start-task-run-entry"
 			);
+			context.signal?.throwIfAborted();
 			return startTaskRun(taskId, {
 				executionMode: "implementation",
 				executionModeSource: "explicit",

@@ -57,17 +57,18 @@ export type MissionPilotTaskReadPort = {
 	}): Promise<MissionPilotTaskActionDescriptor[]>;
 };
 export type MissionPilotActionResult =
-	| { ok: true; actionId: string; data: unknown }
+	| { ok: true; actionId: string; data: unknown; replayed?: boolean }
 	| { ok: false; actionId: string; failure: MissionPilotActionFailure };
 export type MissionPilotToolExecutionResult =
-	| { ok: true; data: unknown; directive: "continue" }
+	| { ok: true; data: unknown; directive: "continue"; replayed?: boolean }
 	| {
 			ok: true;
 			data: unknown;
 			directive: "wait";
 			waitFor: MissionPilotTaskEventType[];
+			replayed?: boolean;
 	  }
-	| { ok: true; data: unknown; directive: "finish" }
+	| { ok: true; data: unknown; directive: "finish"; replayed?: boolean }
 	| { ok: false; failure: MissionPilotActionFailure; directive: "continue" };
 export type MissionPilotTaskActionPort = {
 	execute(input: {
@@ -79,5 +80,6 @@ export type MissionPilotTaskActionPort = {
 		arguments: Record<string, unknown>;
 		expectedTaskRevision: number;
 		idempotencyKey: string;
+		signal: AbortSignal;
 	}): Promise<MissionPilotActionResult>;
 };

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../../db/client";
@@ -22,7 +23,7 @@ export async function recordMissionPilotTaskEvent(
 	}
 	return event;
 }
-export async function recordMissionPilotQuestionnaireReady(
+export async function recordMissionPilotQuestionnaireStateChanged(
 	session: DesignQuestionnaireSession,
 ) {
 	const [task] = await db
@@ -34,15 +35,42 @@ export async function recordMissionPilotQuestionnaireReady(
 		session.updatedAt instanceof Date
 			? session.updatedAt.getTime()
 			: new Date(session.updatedAt).getTime();
+	const stateDigest = crypto
+		.createHash("sha256")
+		.update(
+			JSON.stringify({
+				status: session.status,
+				updatedAt: session.updatedAt,
+				questionSets: session.questionSets.map((set) => ({
+					id: set.id,
+					sequence: set.sequence,
+					createdAt: set.createdAt,
+				})),
+				answers: session.answers.map((answer) => ({
+					questionId: answer.questionId,
+					answer: answer.answer,
+					answeredAt: answer.answeredAt,
+				})),
+				reviews: session.reviews.map((review) => ({
+					id: review.id,
+					status: review.status,
+					publishedMessageId: review.publishedMessageId,
+					updatedAt: review.updatedAt,
+				})),
+			}),
+		)
+		.digest("hex");
 	return recordMissionPilotTaskEvent({
 		taskId: session.taskId,
-		type: "questionnaire.ready",
-		sourceEventId: `questionnaire-ready:${session.id}:${sourceRevision}`,
+		type: "questionnaire.state_changed",
+		sourceEventId: `questionnaire-state:${session.id}:${session.status}:${session.questionSets.length}:${stateDigest}`,
 		taskRevision: task.updatedAt.getTime(),
 		payload: {
 			questionnaireSessionId: session.id,
 			status: session.status,
-			questionSetRevision: session.questionSets.length,
+			questionSetCount: session.questionSets.length,
+			sourceRevision,
+			stateDigest,
 		},
 	});
 }

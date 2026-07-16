@@ -1,8 +1,11 @@
 import crypto from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
 import { db } from "../../../db/client";
-import { designQuestionnaireSessions } from "../../../db/design-questionnaire-schema";
+import {
+	designQuestionnaireReviews,
+	designQuestionnaireSessions,
+} from "../../../db/design-questionnaire-schema";
 import {
 	missionPilotActionExecutions,
 	missionPilotToolCalls,
@@ -303,6 +306,78 @@ async function reconcileMissionPilotActionResource(
 			)
 			.limit(1);
 		if (draft) return resource("questionnaire_draft", draft.id, draft);
+	}
+	if (
+		[
+			"questionnaire.review.accept",
+			"questionnaire.review.leave_unadopted",
+		].includes(receipt.actionId)
+	) {
+		const questionnaireSessionId = readText(args.questionnaireSessionId);
+		const actionStartedAt = receipt.startedAt ?? receipt.createdAt;
+		const [questionnaire] = questionnaireSessionId
+			? await db
+					.select()
+					.from(designQuestionnaireSessions)
+					.where(
+						and(
+							eq(designQuestionnaireSessions.id, questionnaireSessionId),
+							eq(designQuestionnaireSessions.taskId, receipt.taskId),
+							gte(designQuestionnaireSessions.updatedAt, actionStartedAt),
+						),
+					)
+					.limit(1)
+			: [];
+		const expectedReviewStatus =
+			receipt.actionId === "questionnaire.review.accept"
+				? "accepted"
+				: "left_unadopted";
+		const expectedSessionStatus =
+			receipt.actionId === "questionnaire.review.accept"
+				? "accepted"
+				: "needs_edit";
+		const [review] = questionnaire
+			? await db
+					.select()
+					.from(designQuestionnaireReviews)
+					.where(
+						and(
+							eq(designQuestionnaireReviews.sessionId, questionnaire.id),
+							eq(designQuestionnaireReviews.status, expectedReviewStatus),
+							gte(designQuestionnaireReviews.updatedAt, actionStartedAt),
+						),
+					)
+					.orderBy(desc(designQuestionnaireReviews.updatedAt))
+					.limit(1)
+			: [];
+		const [publishedMessage] =
+			receipt.actionId === "questionnaire.review.accept" &&
+			review?.publishedMessageId
+				? await db
+						.select()
+						.from(taskMessages)
+						.where(
+							and(
+								eq(taskMessages.id, review.publishedMessageId),
+								eq(taskMessages.taskId, receipt.taskId),
+							),
+						)
+						.limit(1)
+				: [];
+		const publishedAction = readRecord(
+			readRecord(publishedMessage?.metadataJson).missionPilotAction,
+		);
+		const actionMatches =
+			receipt.actionId === "questionnaire.review.accept"
+				? readText(publishedAction.idempotencyKey) === receipt.idempotencyKey &&
+					readText(publishedAction.toolCallId) === receipt.toolCallId
+				: Boolean(review);
+		if (
+			questionnaire?.status === expectedSessionStatus &&
+			review &&
+			actionMatches
+		)
+			return resource("questionnaire_session", questionnaire.id, questionnaire);
 	}
 	if (
 		[

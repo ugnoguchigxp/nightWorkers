@@ -34,6 +34,7 @@ export type CallSupervisorOptions = {
 	routePolicy?: StructuredLlmRoutePolicy;
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 	workingDirectory?: string;
 	taskId?: string;
 	runId?: string | null;

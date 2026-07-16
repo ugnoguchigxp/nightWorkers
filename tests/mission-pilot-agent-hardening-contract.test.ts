@@ -6,8 +6,32 @@ import {
 	missionPilotActionToolDefinitions,
 } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
 import { projectMissionPilotAgentVisibleItems } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
+import {
+	applyCurrentMissionPilotSystemContext,
+	MISSION_PILOT_PLAN_ENTRY_CONTEXT,
+	MISSION_PILOT_SYSTEM_CONTEXT,
+} from "../api/services/structured-generation/prompts/mission-pilot-system-context";
+import { MISSION_PILOT_TASK_EVENT_TYPES } from "../shared/schemas/mission-pilot-agent.schema";
 
 describe("Mission Pilot autonomous agent hardening contract", () => {
+	it("delegates Plan Mode artifacts and Questionnaire decisions to Coding Agent", () => {
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
+			MISSION_PILOT_PLAN_ENTRY_CONTEXT,
+		);
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
+			"Questionnaireの作成・回答・確定も行いません",
+		);
+		expect(
+			getMissionPilotActionUnavailableReason("questionnaire.create"),
+		).toContain("Coding Agent");
+		expect(applyCurrentMissionPilotSystemContext("保存済みの旧Context")).toBe(
+			`保存済みの旧Context\n${MISSION_PILOT_PLAN_ENTRY_CONTEXT}`,
+		);
+		expect(
+			applyCurrentMissionPilotSystemContext(MISSION_PILOT_SYSTEM_CONTEXT),
+		).toBe(MISSION_PILOT_SYSTEM_CONTEXT);
+	});
+
 	it("uses registry execution metadata instead of runtime action-name wait lists", () => {
 		expect(
 			getMissionPilotActionDefinition("run.implementation.start"),
@@ -24,6 +48,37 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		).toMatchObject({
 			completion: "immediate",
 		});
+		expect(
+			getMissionPilotActionDefinition("questionnaire.review.accept")?.execution,
+		).toMatchObject({
+			completion: "wait_for_event",
+			expectedEventTypes: expect.arrayContaining([
+				"questionnaire.state_changed",
+			]),
+			reconciliation: "query_resource",
+		});
+		expect(
+			getMissionPilotActionDefinition("questionnaire.additional.generate")
+				?.execution,
+		).toMatchObject({
+			completion: "immediate",
+			expectedEventTypes: [],
+			reconciliation: "query_receipt",
+		});
+		expect(
+			getMissionPilotActionDefinition("background_process.stop")?.execution,
+		).toMatchObject({
+			completion: "immediate",
+			expectedEventTypes: [],
+			reconciliation: "query_receipt",
+		});
+		expect(
+			getMissionPilotActionDefinition("run.stop")?.execution,
+		).toMatchObject({
+			completion: "immediate",
+			expectedEventTypes: [],
+			reconciliation: "query_receipt",
+		});
 	});
 
 	it("exposes explicit wait and finish controls alongside registered actions", () => {
@@ -33,18 +88,31 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		];
 		expect(names).toContain("agent.wait_for_event");
 		expect(names).toContain("agent.finish");
+		const waitTool = MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS.find(
+			(tool) => tool.name === "agent.wait_for_event",
+		);
+		expect(waitTool?.inputSchema.properties.eventTypes.items.enum).toEqual(
+			MISSION_PILOT_TASK_EVENT_TYPES,
+		);
 	});
 
-	it("requires the Questionnaire intervention timer before submission", () => {
-		expect(
-			missionPilotActionToolDefinitions().map((tool) => tool.name),
-		).not.toContain("questionnaire_submit");
+	it("does not expose Questionnaire mutation actions to Mission Pilot", () => {
+		const actionNames = missionPilotActionToolDefinitions().map(
+			(tool) => tool.name,
+		);
+		expect(actionNames.some((name) => name.startsWith("questionnaire_"))).toBe(
+			false,
+		);
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
-		).toContain("20秒");
+		).toContain("ユーザー操作");
+		expect(actionNames.some((name) => name.startsWith("plan_artifact_"))).toBe(
+			false,
+		);
+		expect(actionNames).not.toContain("plan_routing_update");
 	});
 
-	it("projects only visible assistant messages and control states", () => {
+	it("projects visible assistant messages, requested actions, and control states", () => {
 		expect(
 			projectMissionPilotAgentVisibleItems([
 				{
@@ -53,12 +121,14 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 					bodyJson: {
 						content: "ユーザーへ進捗を通知しました。",
 						reasoning: "hidden",
+						toolCalls: [
+							{
+								id: "call-1",
+								name: "task_update",
+								arguments: { title: "hidden from projection" },
+							},
+						],
 					},
-				},
-				{
-					kind: "tool_call",
-					sequence: 2,
-					bodyJson: { content: "internal" },
 				},
 				{
 					kind: "tool_result",
@@ -80,6 +150,11 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 				kind: "assistant",
 				sequence: 1,
 				content: "ユーザーへ進捗を通知しました。",
+			},
+			{
+				kind: "action_requested",
+				sequence: 1,
+				actionId: "task_update",
 			},
 			{
 				kind: "wait",

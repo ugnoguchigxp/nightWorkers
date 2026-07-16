@@ -95,6 +95,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 	projectionPrompt?: string | null;
 	projection?: PlanArtifactInputProjection;
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
@@ -146,6 +147,7 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		routeOverride: input.routeOverride || null,
 		promptBudgetMetadata,
 		timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+		signal: input.signal,
 	};
 	const initialResult = await callStructuredLlmResult(
 		systemPrompt,

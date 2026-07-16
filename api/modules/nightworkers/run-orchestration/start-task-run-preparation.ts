@@ -102,7 +102,7 @@ export async function prepareTaskRunStart(input: {
 			}
 		}
 	}
-	const executionModeSource = "explicit" as const;
+	const executionModeSource = input.options.executionModeSource ?? "explicit";
 	const implementationHandoffMessage =
 		findLatestImplementationHandoffMessage(messages);
 	const compiledPromptText = buildCompiledPromptText({

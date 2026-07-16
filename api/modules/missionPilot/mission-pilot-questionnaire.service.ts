@@ -67,6 +67,7 @@ function toView(row: DraftRow, taskId: string) {
 }
 
 async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
+	if (session.status !== "answering") return;
 	const pilot = await missionPilotRepo.getSessionByTaskId(session.taskId);
 	if (
 		pilot?.desiredState !== "playing" ||
@@ -377,12 +378,7 @@ async function submitDraftRow(
 			},
 			dedupeKey: `mission-pilot:questionnaire:submitted:${claimed.id}:${claimed.version}`,
 		});
-		if (pilot && (await isMissionPilotAgentSession(pilot.id)))
-			await import("./agent/mission-pilot-task-event.adapter").then(
-				({ recordMissionPilotQuestionnaireReady }) =>
-					recordMissionPilotQuestionnaireReady(questionnaire),
-			);
-		else
+		if (!pilot || !(await isMissionPilotAgentSession(pilot.id)))
 			void import("./mission-pilot-plan-coordinator.service")
 				.then(({ runMissionPilotPlanPipeline }) =>
 					runMissionPilotPlanPipeline(taskId),

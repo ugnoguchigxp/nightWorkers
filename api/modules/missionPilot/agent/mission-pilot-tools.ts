@@ -133,9 +133,12 @@ export async function executeMissionPilotToolCall(input: {
 	idempotencyKey: string;
 	readPort: MissionPilotTaskReadPort;
 	actionPort: MissionPilotTaskActionPort;
+	signal: AbortSignal;
 }): Promise<MissionPilotToolExecutionResult> {
 	try {
+		input.signal.throwIfAborted();
 		const read = await executeReadTool(input);
+		input.signal.throwIfAborted();
 		if (read) return { ok: true, data: read, directive: "continue" };
 		if (isMissionPilotAgentControlTool(input.call.name))
 			return executeMissionPilotAgentControlTool({
@@ -178,18 +181,29 @@ export async function executeMissionPilotToolCall(input: {
 			arguments: input.call.arguments,
 			expectedTaskRevision: revision,
 			idempotencyKey: input.idempotencyKey,
+			signal: input.signal,
 		});
 		return result.ok
-			? { ok: true, data: result.data, directive: "continue" }
+			? {
+					ok: true,
+					data: result.data,
+					directive: "continue",
+					replayed: result.replayed,
+				}
 			: { ok: false, failure: result.failure, directive: "continue" };
 	} catch (error) {
+		const stopped = input.signal.aborted;
 		return {
 			ok: false,
 			directive: "continue",
 			failure: toolFailure(
 				input.call.name,
 				"domain_precondition",
-				error instanceof Error ? error.message : String(error),
+				stopped
+					? "Mission Pilot was stopped while the tool was running."
+					: error instanceof Error
+						? error.message
+						: String(error),
 			),
 		};
 	}

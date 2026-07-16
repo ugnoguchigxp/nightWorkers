@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { MissionPilotAuthorizationV3 } from "../../../../shared/schemas/mission-pilot.schema";
 import type { DbTransaction } from "../../../db/client";
 import { db } from "../../../db/client";
@@ -63,6 +63,7 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 			agent.engineMode !== "agent" ||
 			session.version !== expectedVersion ||
 			session.desiredState !== "stopped" ||
+			session.lastErrorCode === "MISSION_PILOT_RUNTIME_STOP_TIMEOUT" ||
 			agent.runtimeState === "completed"
 		)
 			return null;
@@ -211,7 +212,10 @@ export async function claimAgentStop(taskId: string, expectedVersion: number) {
 			.update(missionPilotSessions)
 			.set({
 				desiredState: "stopped",
-				phase: session.phase,
+				resumePhase:
+					session.phase === "stopping" ? session.resumePhase : session.phase,
+				phase: "stopping",
+				nextWakeAt: null,
 				version: expectedVersion + 1,
 				stoppedAt: now,
 				updatedAt: now,
@@ -220,7 +224,7 @@ export async function claimAgentStop(taskId: string, expectedVersion: number) {
 				and(
 					eq(missionPilotSessions.taskId, taskId),
 					eq(missionPilotSessions.version, expectedVersion),
-					eq(missionPilotSessions.desiredState, "playing"),
+					inArray(missionPilotSessions.desiredState, ["playing", "stopped"]),
 				),
 			)
 			.returning();

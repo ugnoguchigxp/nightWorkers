@@ -66,6 +66,7 @@ export async function generateFeaturePlanArtifact(
 		role?: StructuredLlmRole;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		signal?: AbortSignal;
 		expectedState?: {
 			missionPilotSessionId: string;
 			contextRevision: number;
@@ -136,7 +137,9 @@ export async function generateFeaturePlanArtifact(
 		input.role ?? "plan",
 		projection,
 		input.llmUsageTrace,
+		input.signal,
 	);
+	input.signal?.throwIfAborted();
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
 	const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
 		...parsed.implementationPlan,
@@ -306,6 +309,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 	role: StructuredLlmRole,
 	projection: ReturnType<typeof projectPlanArtifactInput>,
 	usageTrace?: TraceProvenance,
+	signal?: AbortSignal,
 ) {
 	try {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
@@ -332,6 +336,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 					routeOverride,
 				}),
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
+				signal,
 			},
 		});
 		return JSON.stringify(generated.value);

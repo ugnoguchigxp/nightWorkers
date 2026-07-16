@@ -3,6 +3,7 @@ import { db } from "../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotConversationItems,
+	missionPilotToolCalls,
 } from "../../db/mission-pilot-agent-schema";
 import {
 	missionPilotArtifactCorrectionRuns,
@@ -16,6 +17,15 @@ import {
 import { activityEvents, taskMessages } from "../../db/schema";
 import { MissionPilotError } from "./mission-pilot.errors";
 import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
+import {
+	buildMissionPilotThoughtEntries,
+	projectMissionPilotAgentVisibleItems,
+} from "./mission-pilot-thought-projection";
+
+export {
+	buildMissionPilotThoughtEntries,
+	projectMissionPilotAgentVisibleItems,
+} from "./mission-pilot-thought-projection";
 
 export function attachArtifactCorrectionRequests<
 	T extends { payloadJson: unknown },
@@ -112,47 +122,64 @@ export async function getMissionPilotExecution(sessionId: string) {
 			.from(missionPilotArtifactCorrectionRuns)
 			.where(eq(missionPilotArtifactCorrectionRuns.sessionId, sessionId)),
 	]);
-	const pilotActivityEvents = await db
-		.select()
-		.from(activityEvents)
-		.where(
-			and(
-				eq(activityEvents.taskId, session.taskId),
-				eq(activityEvents.traceOwner, "mission_pilot"),
-				eq(activityEvents.traceChannel, "pilot_thought"),
+	const [pilotActivityEvents, pilotMessages, agentRows] = await Promise.all([
+		db
+			.select()
+			.from(activityEvents)
+			.where(
+				and(
+					eq(activityEvents.taskId, session.taskId),
+					eq(activityEvents.traceOwner, "mission_pilot"),
+					eq(activityEvents.traceChannel, "pilot_thought"),
+				),
+			)
+			.orderBy(
+				asc(activityEvents.seq),
+				asc(activityEvents.createdAt),
+				asc(activityEvents.id),
 			),
-		)
-		.orderBy(
-			asc(activityEvents.seq),
-			asc(activityEvents.createdAt),
-			asc(activityEvents.id),
-		);
-	const pilotMessages = await db
-		.select()
-		.from(taskMessages)
-		.where(
-			and(
-				eq(taskMessages.taskId, session.taskId),
-				eq(taskMessages.traceOwner, "mission_pilot"),
-				eq(taskMessages.traceChannel, "pilot_thought"),
-			),
-		)
-		.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id));
-	const [agent] = await db
-		.select({
-			sessionId: missionPilotAgentSessions.sessionId,
-			conversationRevision: missionPilotAgentSessions.conversationRevision,
-		})
-		.from(missionPilotAgentSessions)
-		.where(eq(missionPilotAgentSessions.sessionId, sessionId))
-		.limit(1);
-	const agentItems = agent
-		? await db
-				.select()
-				.from(missionPilotConversationItems)
-				.where(eq(missionPilotConversationItems.sessionId, sessionId))
-				.orderBy(asc(missionPilotConversationItems.sequence))
-		: [];
+		db
+			.select()
+			.from(taskMessages)
+			.where(
+				and(
+					eq(taskMessages.taskId, session.taskId),
+					eq(taskMessages.traceOwner, "mission_pilot"),
+					eq(taskMessages.traceChannel, "pilot_thought"),
+				),
+			)
+			.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id)),
+		db
+			.select({
+				sessionId: missionPilotAgentSessions.sessionId,
+				conversationRevision: missionPilotAgentSessions.conversationRevision,
+			})
+			.from(missionPilotAgentSessions)
+			.where(eq(missionPilotAgentSessions.sessionId, sessionId))
+			.limit(1),
+	]);
+	const agent = agentRows[0] ?? null;
+	const [agentItems, toolCalls] = agent
+		? await Promise.all([
+				db
+					.select()
+					.from(missionPilotConversationItems)
+					.where(eq(missionPilotConversationItems.sessionId, sessionId))
+					.orderBy(asc(missionPilotConversationItems.sequence)),
+				db
+					.select()
+					.from(missionPilotToolCalls)
+					.where(eq(missionPilotToolCalls.sessionId, sessionId))
+					.orderBy(
+						asc(missionPilotToolCalls.createdAt),
+						asc(missionPilotToolCalls.id),
+					),
+			])
+		: [[], []];
+	const projectedActivityEvents = attachArtifactCorrectionRequests(
+		pilotActivityEvents,
+		artifactCorrectionRuns,
+	);
 	return {
 		session,
 		phaseRuns,
@@ -160,11 +187,16 @@ export async function getMissionPilotExecution(sessionId: string) {
 		reviewDecisions,
 		closeouts,
 		events,
-		activityEvents: attachArtifactCorrectionRequests(
-			pilotActivityEvents,
-			artifactCorrectionRuns,
-		),
+		activityEvents: projectedActivityEvents,
 		messages: pilotMessages,
+		entries: buildMissionPilotThoughtEntries({
+			sessionId,
+			events,
+			activityEvents: projectedActivityEvents,
+			messages: pilotMessages,
+			conversationItems: agentItems,
+			toolCalls,
+		}),
 		agent: agent
 			? {
 					sessionId: agent.sessionId,
@@ -173,65 +205,6 @@ export async function getMissionPilotExecution(sessionId: string) {
 				}
 			: null,
 	};
-}
-
-export function projectMissionPilotAgentVisibleItems(
-	items: ReadonlyArray<{ kind: string; sequence: number; bodyJson: unknown }>,
-): Array<
-	| { kind: "assistant"; sequence: number; content: string }
-	| {
-			kind: "wait";
-			sequence: number;
-			eventTypes: unknown[];
-			reason: string;
-	  }
-	| { kind: "finish"; sequence: number; summary: string }
-> {
-	const projected: Array<
-		| { kind: "assistant"; sequence: number; content: string }
-		| {
-				kind: "wait";
-				sequence: number;
-				eventTypes: unknown[];
-				reason: string;
-		  }
-		| { kind: "finish"; sequence: number; summary: string }
-	> = [];
-	for (const item of items) {
-		const body = asRecord(item.bodyJson);
-		if (item.kind === "assistant") {
-			const content = typeof body.content === "string" ? body.content : "";
-			if (content)
-				projected.push({ kind: "assistant", sequence: item.sequence, content });
-			continue;
-		}
-		if (item.kind !== "tool_result" || typeof body.content !== "string")
-			continue;
-		try {
-			const result = asRecord(JSON.parse(body.content));
-			const data = asRecord(result.data);
-			if (data.kind === "wait_for_event")
-				projected.push({
-					kind: "wait",
-					sequence: item.sequence,
-					eventTypes: Array.isArray(data.eventTypes) ? data.eventTypes : [],
-					reason: typeof data.reason === "string" ? data.reason : "",
-				});
-			if (data.kind === "finish")
-				projected.push({
-					kind: "finish",
-					sequence: item.sequence,
-					summary: typeof data.summary === "string" ? data.summary : "",
-				});
-		} catch {}
-	}
-	return projected;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
 }
 
 export async function getMissionPilotExecutionForTask(taskId: string) {

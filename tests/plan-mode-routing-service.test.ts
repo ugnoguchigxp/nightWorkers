@@ -8,14 +8,16 @@ import {
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../api/db/mission-pilot-schema";
-import { repositories, tasks } from "../api/db/schema";
+import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	executeMissionPilotPlanRoutingTool,
 	getPlanModeRouting,
+	updatePlanModeRoutingForCodingAgent,
 	updatePlanModeRoutingForUser,
 } from "../api/modules/planMode/plan-mode-routing.service";
 import * as generalSettings from "../api/services/settings/general-settings";
+import { planModeTool } from "../api/services/worker-tools/plan-mode";
 import {
 	missionPilotPlanRoutingToolCallSchema,
 	updatePlanModeRoutingRequestSchema,
@@ -64,23 +66,140 @@ async function createFixture() {
 }
 
 describe("Plan Mode routing service", () => {
-	it("keeps questionnaire and feature plan required in the initial snapshot", async () => {
+	it("keeps feature plan required and questionnaire editable in the initial snapshot", async () => {
 		const { task } = await createFixture();
 		const routing = await getPlanModeRouting(task.id);
 
 		expect(routing.revision).toBe(0);
-		expect(routing.entries.filter((entry) => entry.required)).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
+		expect(routing.entries.filter((entry) => entry.required)).toEqual([
+			expect.objectContaining({
+				view: "feature_plan",
+				decision: "include",
+			}),
+		]);
+		expect(
+			routing.entries.find((entry) => entry.view === "questionnaire"),
+		).toMatchObject({
+			required: false,
+			capabilityEnabled: true,
+		});
+	});
+
+	it("lets the active Coding Agent choose routing while user edits remain locked", async () => {
+		const { task } = await createFixture();
+		await db.insert(taskRuns).values({
+			id: crypto.randomUUID(),
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "running",
+		});
+
+		const updated = await updatePlanModeRoutingForCodingAgent(task.id, {
+			expectedRevision: 0,
+			idempotencyKey: crypto.randomUUID(),
+			changes: [
+				{
 					view: "questionnaire",
 					decision: "include",
-				}),
-				expect.objectContaining({
-					view: "feature_plan",
+					reason: "認可境界はユーザー判断が必要です。",
+				},
+				{
+					view: "api_io_contract",
 					decision: "include",
-				}),
-			]),
-		);
+					reason: "request/response契約が実装判断を左右します。",
+				},
+			],
+		});
+
+		expect(updated.updatedBy).toBe("coding_agent");
+		expect(updated.editable).toBe(true);
+		expect(
+			updated.entries.find((entry) => entry.view === "questionnaire"),
+		).toMatchObject({ decision: "include", required: false });
+		await expect(
+			updatePlanModeRoutingForUser(task.id, {
+				expectedRevision: updated.revision,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [{ view: "data_model", decision: "include" }],
+			}),
+		).rejects.toMatchObject({ code: "PLAN_MODE_ROUTING_LOCKED" });
+	});
+
+	it("requires Plan Mode mutations to stay inside the request-scoped Coding Agent run", async () => {
+		const { task } = await createFixture();
+		const missingRun = await planModeTool({
+			taskId: task.id,
+			command: {
+				op: "update_routing",
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{
+						view: "questionnaire",
+						decision: "include",
+						reason: "ユーザー判断が必要です。",
+					},
+				],
+			},
+		});
+		expect(missingRun).toMatchObject({
+			ok: false,
+			error: { code: "PLAN_MODE_RUN_SCOPE_REQUIRED" },
+		});
+
+		const { task: otherTask } = await createFixture();
+		const [otherRun] = await db
+			.insert(taskRuns)
+			.values({
+				id: crypto.randomUUID(),
+				taskId: otherTask.id,
+				repositoryId: otherTask.repositoryId,
+				status: "running",
+			})
+			.returning();
+		const mismatchedRun = await planModeTool({
+			taskId: task.id,
+			runId: otherRun?.id,
+			command: {
+				op: "update_routing",
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{
+						view: "questionnaire",
+						decision: "include",
+						reason: "ユーザー判断が必要です。",
+					},
+				],
+			},
+		});
+		expect(mismatchedRun).toMatchObject({
+			ok: false,
+			error: { code: "PLAN_MODE_RUN_SCOPE_MISMATCH" },
+		});
+	});
+
+	it("includes questionnaire after a Questionnaire-ready message is present", async () => {
+		const { task } = await createFixture();
+		await db.insert(taskMessages).values({
+			taskId: task.id,
+			role: "system",
+			content: "Questionnaire ready",
+			messageType: "text",
+			metadataJson: {
+				intent: "design_questionnaire_ready",
+				questionnaireSessionId: crypto.randomUUID(),
+			},
+		});
+
+		const routing = await getPlanModeRouting(task.id);
+
+		expect(
+			routing.entries.find((entry) => entry.view === "questionnaire"),
+		).toMatchObject({
+			decision: "include",
+			required: false,
+		});
 	});
 
 	it("updates routing and Context atomically while invalidating affected steps", async () => {

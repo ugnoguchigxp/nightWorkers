@@ -43,6 +43,7 @@ export async function resumeTaskRunTodo(input: {
 	return startTaskRun(task.id, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		planModeRequested: readPlanModeRequested(run.contextSnapshot),
 		resumeRunId: run.id,
 		latestUserMessageOverride: input.userContext,
 		resumeCommand: {
@@ -52,4 +53,13 @@ export async function resumeTaskRunTodo(input: {
 			userContext: input.userContext,
 		},
 	});
+}
+
+function readPlanModeRequested(value: unknown) {
+	return Boolean(
+		value &&
+			typeof value === "object" &&
+			!Array.isArray(value) &&
+			(value as Record<string, unknown>).planModeRequested === true,
+	);
 }

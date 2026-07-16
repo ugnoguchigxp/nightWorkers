@@ -33,6 +33,7 @@ import {
 	ontologyRouter,
 } from "./modules/ontology";
 import { overviewRouter } from "./modules/overview/overview.routes";
+import { initializeCodingAgentPlanModeContinuation } from "./modules/planMode/plan-mode-coding-agent-continuation.service";
 import { planViewRouter } from "./modules/planViews/planView.routes";
 import { projectDetailRouter } from "./modules/project-detail/project-detail.routes";
 import { projectEvaluationRouter } from "./modules/project-evaluation/project-evaluation.routes";
@@ -53,6 +54,7 @@ import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
+initializeCodingAgentPlanModeContinuation();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)

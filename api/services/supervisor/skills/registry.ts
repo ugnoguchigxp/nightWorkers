@@ -1,12 +1,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {
-	type DedicatedDesignView,
-	dedicatedDesignViewSchema,
-	type SpecificationLens,
-	specificationLensSchema,
-} from "../../../../shared/schemas/plan-mode-artifact.schema";
 import { getResourceRoot } from "../../../runtime/paths";
 import {
 	defaultSupervisorRoutingHypothesis,
@@ -341,51 +335,11 @@ function normalizePlanModeRoutingDecision(
 	const candidate = value as Record<string, unknown>;
 	if (candidate.primaryArtifact !== "feature_plan") return undefined;
 
-	const dedicatedViews: PlanModeRoutingDecision["dedicatedViews"] = [];
-	const seenViews = new Set<DedicatedDesignView>();
-	if (Array.isArray(candidate.dedicatedViews)) {
-		for (const item of candidate.dedicatedViews) {
-			if (!item || typeof item !== "object") continue;
-			const decisionCandidate = item as Record<string, unknown>;
-			const view = dedicatedDesignViewSchema.safeParse(decisionCandidate.view);
-			if (!view.success || seenViews.has(view.data)) continue;
-			if (
-				decisionCandidate.decision !== "include" &&
-				decisionCandidate.decision !== "omit"
-			) {
-				continue;
-			}
-			seenViews.add(view.data);
-			dedicatedViews.push({
-				view: view.data,
-				decision: decisionCandidate.decision,
-				reason: normalizePlanModeReason(decisionCandidate.reason),
-			});
-		}
-	}
-
-	const specificationLenses: SpecificationLens[] = [];
-	const seenLenses = new Set<SpecificationLens>();
-	if (Array.isArray(candidate.specificationLenses)) {
-		for (const item of candidate.specificationLenses) {
-			const lens = specificationLensSchema.safeParse(item);
-			if (!lens.success || seenLenses.has(lens.data)) continue;
-			seenLenses.add(lens.data);
-			specificationLenses.push(lens.data);
-		}
-	}
-
 	return {
 		primaryArtifact: "feature_plan",
-		dedicatedViews,
-		specificationLenses,
+		dedicatedViews: [],
+		specificationLenses: [],
 	};
-}
-
-function normalizePlanModeReason(value: unknown): string {
-	return typeof value === "string" && value.trim()
-		? value.trim()
-		: "not specified by routing";
 }
 
 function isAllowedSection(

@@ -4,7 +4,10 @@ import type {
 	MissionPilotActionFailure,
 	MissionPilotTaskEventType,
 } from "../../../../shared/schemas/mission-pilot-agent.schema";
-import { missionPilotTaskEventTypeSchema } from "../../../../shared/schemas/mission-pilot-agent.schema";
+import {
+	MISSION_PILOT_TASK_EVENT_TYPES,
+	missionPilotTaskEventTypeSchema,
+} from "../../../../shared/schemas/mission-pilot-agent.schema";
 import { db } from "../../../db/client";
 import {
 	missionPilotActionExecutions,
@@ -32,7 +35,10 @@ export const MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS = [
 			properties: {
 				eventTypes: {
 					type: "array",
-					items: { type: "string" },
+					items: {
+						type: "string",
+						enum: MISSION_PILOT_TASK_EVENT_TYPES,
+					},
 					minItems: 1,
 				},
 				reason: { type: "string", minLength: 1 },

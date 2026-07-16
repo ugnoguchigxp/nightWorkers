@@ -35,6 +35,7 @@ export async function generateBlueprintArtifact(
 		role?: StructuredLlmRole;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		signal?: AbortSignal;
 		expectedState?: {
 			missionPilotSessionId: string;
 			contextRevision: number;
@@ -75,7 +76,9 @@ export async function generateBlueprintArtifact(
 				routeOverride: input.routeOverride || null,
 				role: input.role,
 				usageTrace: input.llmUsageTrace,
+				signal: input.signal,
 			});
+		input.signal?.throwIfAborted();
 		const generationWithUsage = {
 			...generation,
 			llmUsage: await resolveLatestMockBlueprintUsage(taskId),

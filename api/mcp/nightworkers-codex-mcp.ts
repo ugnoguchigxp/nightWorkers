@@ -8,6 +8,7 @@ import {
 	listOntologyModules,
 } from "../modules/ontology";
 import { importProjectTool } from "../services/worker-tools/import-project";
+import { planModeTool } from "../services/worker-tools/plan-mode";
 import {
 	listRecentSpecificationsTool,
 	readCurrentSpecificationTool,
@@ -92,6 +93,43 @@ export function createNightWorkersCodexMcpServer(
 				arguments: { limit },
 				execute: () => listRecentSpecificationsTool({ limit }),
 			}),
+	);
+
+	server.registerTool(
+		"plan_mode",
+		{
+			...nightWorkersCodexToolManifest.plan_mode,
+		},
+		async ({ taskId, runId, command }) => {
+			const resolvedTaskId = firstNonEmpty(
+				context.taskId,
+				process.env.NIGHTWORKERS_TASK_ID,
+				taskId,
+			);
+			const resolvedRunId = firstNonEmpty(
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
+				runId,
+			);
+			const args = {
+				taskId: resolvedTaskId,
+				runId: resolvedRunId,
+				command,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "plan_mode",
+				arguments: args,
+				idempotentSideEffect: command.op !== "inspect",
+				execute: () =>
+					planModeTool({
+						taskId: resolvedTaskId,
+						runId: resolvedRunId,
+						command,
+					}),
+			});
+		},
 	);
 
 	server.registerTool(

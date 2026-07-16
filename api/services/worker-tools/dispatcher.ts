@@ -120,6 +120,17 @@ export async function executeWorkerTool(
 		};
 	}
 
+	if (toolName === "plan_mode") {
+		const { planModeTool } = await import("./plan-mode");
+		return {
+			result: await planModeTool({
+				taskId: input.taskId || (args.taskId as string | undefined) || "",
+				runId: input.runId || (args.runId as string | undefined),
+				command: args.command,
+			}),
+		};
+	}
+
 	if (toolName === "inspect_structure") {
 		return {
 			result: await inspectStructureTool({

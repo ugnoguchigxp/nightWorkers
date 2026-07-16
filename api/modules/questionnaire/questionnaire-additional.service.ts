@@ -24,7 +24,7 @@ import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.pl
 import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 import * as repo from "./questionnaire.repository";
-import { publishQuestionnaireReady } from "./questionnaire-events";
+import { publishQuestionnaireTransition } from "./questionnaire-events";
 import {
 	additionalQuestionnaireDraftJsonSchema,
 	buildDesignQuestionnaireSessionView,
@@ -156,7 +156,7 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 	});
 	await repo.updateDesignQuestionnaireSessionStatus(session.id, "answering");
 	const updatedSession = await buildDesignQuestionnaireSessionView(session.id);
-	await publishQuestionnaireReady(updatedSession);
+	await publishQuestionnaireTransition(updatedSession);
 	const previousReadyMessage = [...messages].reverse().find((message) => {
 		const metadata = isRecord(message.metadataJson) ? message.metadataJson : {};
 		return metadata.intent === "design_questionnaire_ready";

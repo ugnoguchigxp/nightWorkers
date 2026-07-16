@@ -107,6 +107,7 @@ export type PlanViewGenerationInput = {
 	role?: StructuredLlmRole;
 	trace?: TraceProvenance;
 	llmUsageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 	expectedState?: {
 		missionPilotSessionId: string;
 		contextRevision: number;
@@ -187,7 +188,9 @@ export async function generatePlanViewArtifact(
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
 			usageTrace: input.llmUsageTrace,
+			signal: input.signal,
 		});
+		input.signal?.throwIfAborted();
 		const message = await createPlanModeTaskMessage({
 			taskId,
 			role: "assistant",
@@ -237,7 +240,9 @@ export async function generatePlanViewArtifact(
 			routeOverride: input.routeOverride || null,
 			role: input.role ?? "plan",
 			usageTrace: input.llmUsageTrace,
+			signal: input.signal,
 		});
+		input.signal?.throwIfAborted();
 		const message = await createPlanModeTaskMessage({
 			taskId,
 			role: "assistant",
@@ -287,7 +292,9 @@ export async function generatePlanViewArtifact(
 		routeOverride: input.routeOverride || null,
 		role: input.role ?? "plan",
 		usageTrace: input.llmUsageTrace,
+		signal: input.signal,
 	});
+	input.signal?.throwIfAborted();
 	const message = await createPlanModeTaskMessage({
 		taskId,
 		role: "assistant",
@@ -345,6 +352,7 @@ async function generateArtifactFromLlm(input: {
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 }) {
 	let lastRawOutput: string | null = null;
 	try {
@@ -382,6 +390,7 @@ async function generateArtifactFromLlm(input: {
 						routeOverride: input.routeOverride,
 					}),
 					timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+					signal: input.signal,
 				},
 			});
 			const rawOutput =
@@ -434,6 +443,7 @@ async function generateApiContractArtifactFromLlm(input: {
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 }) {
 	let lastRawOutput: string | null = null;
 	try {
@@ -461,6 +471,7 @@ async function generateApiContractArtifactFromLlm(input: {
 					routeOverride: input.routeOverride,
 				}),
 				timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+				signal: input.signal,
 			},
 		});
 		lastRawOutput =
@@ -490,6 +501,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 	routeOverride: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
 	usageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 }) {
 	let lastRawOutput: string | null = null;
 	try {
@@ -517,6 +529,7 @@ async function generateZodSchemaArtifactFromLlm(input: {
 					routeOverride: input.routeOverride,
 				}),
 				timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+				signal: input.signal,
 			},
 		});
 		lastRawOutput =

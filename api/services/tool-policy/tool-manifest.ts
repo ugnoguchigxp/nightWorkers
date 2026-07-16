@@ -34,6 +34,12 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
+	plan_mode: {
+		name: "plan_mode",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
 	inspect_structure: {
 		name: "inspect_structure",
 		mutatesWorkspace: false,

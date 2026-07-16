@@ -46,6 +46,7 @@ const MAX_MODEL_TURNS = 64;
 export class CodexAgentRuntime implements AgentRuntime {
 	readonly kind = "codex-agent" as const;
 	private readonly cancelledRunIds = new Set<string>();
+	private readonly activeRunControllers = new Map<string, AbortController>();
 	private readonly threadFactory?: CodexThreadFactory;
 	private readonly runtimeSessionStore: RuntimeSessionStateStore;
 	private readonly persistRuntimeSessionState: boolean;
@@ -87,6 +88,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		signal?: AbortSignal,
 	): Promise<AgentRuntimeResult> {
 		const controller = new AbortController();
+		this.activeRunControllers.set(context.runId, controller);
 		const abort = () => controller.abort();
 		signal?.addEventListener("abort", abort, { once: true });
 		let timedOut = false;
@@ -303,6 +305,8 @@ export class CodexAgentRuntime implements AgentRuntime {
 		} finally {
 			clearTimeout(timeout);
 			signal?.removeEventListener("abort", abort);
+			if (this.activeRunControllers.get(context.runId) === controller)
+				this.activeRunControllers.delete(context.runId);
 		}
 	}
 
@@ -372,6 +376,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 
 	async stop(runId: string): Promise<void> {
 		this.cancelledRunIds.add(runId);
+		this.activeRunControllers
+			.get(runId)
+			?.abort(new Error("CodexAgentRuntime stop requested."));
 	}
 }
 

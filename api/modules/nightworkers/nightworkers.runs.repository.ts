@@ -190,6 +190,14 @@ export async function listTaskRunsForTask(taskId: string) {
 		.orderBy(desc(taskRuns.startedAt));
 }
 
+export async function listNeedsHumanTaskRuns() {
+	return db
+		.select()
+		.from(taskRuns)
+		.where(eq(taskRuns.status, "needs_human"))
+		.orderBy(desc(taskRuns.updatedAt));
+}
+
 export async function listActiveTaskRunsForTask(taskId: string) {
 	return db
 		.select()

@@ -177,6 +177,44 @@ describe("NightWorkers workbench routes", () => {
 		expect(body.task.objective).toBe("同期で待たずに受付してください");
 	});
 
+	it("starts Coding Agent Plan Mode without pre-creating a Questionnaire", async () => {
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+			mockPlanModeGate(true, "設計が必要です"),
+		);
+		const { task } = await createWorkbenchTask({
+			title: "New Session",
+			objective: "",
+		});
+
+		const res = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "認可つきAPIの実装計画を設計してください",
+				}),
+			},
+		);
+
+		expect(res.status, await res.clone().text()).toBe(200);
+		const body = await res.json();
+		expect(body.run).toMatchObject({ taskId: task.id, status: "running" });
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "design_questionnaire_ready",
+			),
+		).toBe(false);
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "run_started" &&
+					message.metadataJson?.planMode === true,
+			),
+		).toBe(true);
+	});
+
 	it("starts a normal run for Blueprint wording instead of classifying jobType in intake", async () => {
 		const { task } = await createWorkbenchTask({
 			title: "New Session",

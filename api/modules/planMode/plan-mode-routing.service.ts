@@ -21,23 +21,18 @@ import { implementationQueueEntries, taskRuns, tasks } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { readGeneralSettings } from "../../services/settings/general-settings";
 import { listPlanModeTaskMessages } from "../nightworkers/nightworkers.plan-mode-core.port";
+import {
+	planModeRoutingTerminalReason,
+	readPlanModeRoutingLockedReason,
+} from "./plan-mode-routing-lock";
 
 const ALL_ROUTING_VIEWS: readonly PlanModeRoutingView[] = [
-	"questionnaire",
 	"feature_plan",
 	...EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 ];
 const REQUIRED_VIEWS = new Set<PlanModeRoutingView>(
 	REQUIRED_PLAN_MODE_ROUTING_VIEWS,
 );
-const TERMINAL_TASK_STATUSES = new Set([
-	"completed",
-	"cancelled",
-	"failed",
-	"timed_out",
-	"archived",
-]);
-
 type TaskMessage = Awaited<ReturnType<typeof listPlanModeTaskMessages>>[number];
 type PlanModeCapabilities = ReturnType<
 	typeof readGeneralSettings
@@ -101,6 +96,12 @@ function initialEntriesFromMessages(
 			generated.add("blueprint");
 		}
 		if (
+			metadata.intent === "design_questionnaire_ready" ||
+			typeof metadata.questionnaireSessionId === "string"
+		) {
+			generated.add("questionnaire");
+		}
+		if (
 			metadata.artifactKind === "plan_mode_dedicated_view" ||
 			metadata.artifactKind === "plan_mode_api_contract" ||
 			metadata.artifactKind === "plan_mode_zod_schema"
@@ -153,34 +154,13 @@ function normalizeRoutingEntries(
 	});
 }
 
-async function routingLockState(taskId: string) {
-	const [task, session, queueEntries, runs] = await Promise.all([
-		db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
-		db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.taskId, taskId),
-		}),
-		db
-			.select({ id: implementationQueueEntries.id })
-			.from(implementationQueueEntries)
-			.where(eq(implementationQueueEntries.taskId, taskId)),
-		db
-			.select({ id: taskRuns.id })
-			.from(taskRuns)
-			.where(eq(taskRuns.taskId, taskId)),
-	]);
-	if (!task) throw new NotFoundError("Task not found");
-	if (queueEntries.length || runs.length || session?.queueHandoffJson) {
-		return "Implementation Queue 投入後は routing を変更できません。";
-	}
-	if (TERMINAL_TASK_STATUSES.has(task.status)) {
-		return `Task が ${task.status} のため routing を変更できません。`;
-	}
-	return null;
-}
-
 export async function getPlanModeRouting(
 	taskId: string,
-	options: { messages?: TaskMessage[]; taskStatus?: string } = {},
+	options: {
+		messages?: TaskMessage[];
+		taskStatus?: string;
+		allowTaskRuns?: boolean;
+	} = {},
 ): Promise<PlanModeRoutingSnapshot> {
 	const capabilities = readGeneralSettings().planMode.capabilities;
 	const session = await db.query.missionPilotSessions.findFirst({
@@ -193,9 +173,9 @@ export async function getPlanModeRouting(
 			: await listPlanModeTaskMessages(taskId));
 	if (!session) {
 		const lockedReason =
-			options.taskStatus && TERMINAL_TASK_STATUSES.has(options.taskStatus)
-				? `Task が ${options.taskStatus} のため routing を変更できません。`
-				: null;
+			options.taskStatus === undefined
+				? null
+				: planModeRoutingTerminalReason(options.taskStatus);
 		return {
 			revision: 0,
 			entries: initialEntriesFromMessages(messages, capabilities),
@@ -205,7 +185,9 @@ export async function getPlanModeRouting(
 			updatedAt: null,
 		};
 	}
-	const lockedReason = await routingLockState(taskId);
+	const lockedReason = await readPlanModeRoutingLockedReason(taskId, {
+		allowTaskRuns: options.allowTaskRuns,
+	});
 	const revision = session.planRoutingRevision;
 	const persisted = revision
 		? await db.query.missionPilotPlanRoutingRevisions.findFirst({
@@ -328,12 +310,9 @@ async function persistRoutingRevision(input: {
 			}),
 		]);
 		if (!task) throw new NotFoundError("Task not found");
-		if (TERMINAL_TASK_STATUSES.has(task.status)) {
-			throw new AppError(
-				409,
-				"PLAN_MODE_ROUTING_LOCKED",
-				`Task が ${task.status} のため routing を変更できません。`,
-			);
+		const terminalReason = planModeRoutingTerminalReason(task.status);
+		if (terminalReason) {
+			throw new AppError(409, "PLAN_MODE_ROUTING_LOCKED", terminalReason);
 		}
 		if (
 			input.actor === "user" &&
@@ -347,7 +326,7 @@ async function persistRoutingRevision(input: {
 		}
 		if (
 			queueEntry ||
-			run ||
+			(input.actor !== "coding_agent" && run) ||
 			session.queueHandoffJson ||
 			session.phase === "queued"
 		) {
@@ -495,9 +474,13 @@ async function updatePlanModeRouting(input: {
 			requestHash,
 		})
 	) {
-		return getPlanModeRouting(input.taskId);
+		return getPlanModeRouting(input.taskId, {
+			allowTaskRuns: input.actor === "coding_agent",
+		});
 	}
-	const current = await getPlanModeRouting(input.taskId);
+	const current = await getPlanModeRouting(input.taskId, {
+		allowTaskRuns: input.actor === "coding_agent",
+	});
 	if (!current.editable) {
 		throw new AppError(
 			409,
@@ -544,7 +527,9 @@ async function updatePlanModeRouting(input: {
 				change.reason?.trim() ||
 				(input.actor === "user"
 					? `ユーザーが ${change.decision === "include" ? "ON" : "OFF"} に変更しました。`
-					: previous.reason),
+					: input.actor === "coding_agent"
+						? `Coding Agentが ${change.decision === "include" ? "必要" : "不要"} と判断しました。`
+						: previous.reason),
 		});
 		changedViews.push(change.view);
 	}
@@ -564,9 +549,13 @@ async function updatePlanModeRouting(input: {
 		reason:
 			input.actor === "mission_pilot"
 				? "Mission Pilot review requested additional Plan Artifacts."
-				: "User updated Plan Artifact routing.",
+				: input.actor === "coding_agent"
+					? "Coding Agent selected the Plan Artifacts required for this task."
+					: "User updated Plan Artifact routing.",
 	});
-	return getPlanModeRouting(input.taskId);
+	return getPlanModeRouting(input.taskId, {
+		allowTaskRuns: input.actor === "coding_agent",
+	});
 }
 
 export function updatePlanModeRoutingForUser(
@@ -574,6 +563,13 @@ export function updatePlanModeRoutingForUser(
 	request: UpdatePlanModeRoutingRequest,
 ) {
 	return updatePlanModeRouting({ taskId, request, actor: "user" });
+}
+
+export function updatePlanModeRoutingForCodingAgent(
+	taskId: string,
+	request: UpdatePlanModeRoutingRequest,
+) {
+	return updatePlanModeRouting({ taskId, request, actor: "coding_agent" });
 }
 
 export function executeMissionPilotPlanRoutingTool(

@@ -25,12 +25,9 @@ import {
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
 const workbenchMocks = vi.hoisted(() => ({
+	startRun: vi.fn(),
 	stopRun: vi.fn(),
 	register: vi.fn(),
-}));
-
-const planIntakeMocks = vi.hoisted(() => ({
-	start: vi.fn(),
 }));
 const queueRecoveryMocks = vi.hoisted(() => ({
 	reconcile: vi.fn(),
@@ -39,11 +36,9 @@ const queueRecoveryMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
+	startTaskRun: workbenchMocks.startRun,
 	stopTaskRun: workbenchMocks.stopRun,
 	registerTaskRunUpdatedListener: workbenchMocks.register,
-}));
-vi.mock("../api/modules/missionPilot/mission-pilot-plan-intake.port", () => ({
-	startOrResumeMissionPilotPlanIntake: planIntakeMocks.start,
 }));
 vi.mock(
 	"../api/modules/missionPilot/mission-pilot-pre-queue-recovery.service",
@@ -74,12 +69,24 @@ const repositoryIds: string[] = [];
 
 beforeAll(() => ensureNightWorkersSchema());
 beforeEach(() => {
-	workbenchMocks.stopRun.mockReset();
-	planIntakeMocks.start.mockReset();
-	planIntakeMocks.start.mockResolvedValue({
-		questionnaireSessionId: crypto.randomUUID(),
-		questionnaireStatus: "answering",
+	workbenchMocks.startRun.mockReset();
+	workbenchMocks.startRun.mockImplementation(async (taskId: string) => {
+		const task = await db.query.tasks.findFirst({
+			where: eq(tasks.id, taskId),
+		});
+		if (!task) throw new Error("Task not found");
+		const [run] = await db
+			.insert(taskRuns)
+			.values({
+				id: crypto.randomUUID(),
+				taskId,
+				repositoryId: task.repositoryId,
+				status: "running",
+			})
+			.returning();
+		return run;
 	});
+	workbenchMocks.stopRun.mockReset();
 	queueRecoveryMocks.reconcile.mockReset();
 	queueRecoveryMocks.reconcile.mockResolvedValue(1);
 	queueRecoveryMocks.recoverPostQueue.mockReset();
@@ -129,7 +136,7 @@ async function createPilotFixture(options: { runtimeKind?: "agent" } = {}) {
 }
 
 describe("Mission Pilot service", () => {
-	it("activates authorization and dispatches one prompt through typed Plan intake", async () => {
+	it("activates authorization and delegates the prompt to Coding Agent", async () => {
 		const publishSpy = vi.spyOn(nightWorkersRealtimeBroker, "publish");
 		const fixture = await createPilotFixture();
 		await db
@@ -142,13 +149,12 @@ describe("Mission Pilot service", () => {
 			desiredState: "playing",
 			authorizationVersion: 3,
 			initialPromptState: "sent",
-			activeRunId: null,
-			phase: "initial_intake",
+			activeRunId: played.run?.id,
+			phase: "running",
 		});
-		expect(planIntakeMocks.start).toHaveBeenCalledWith({
-			taskId: fixture.taskId,
-			initialPrompt: "Play時点の最新プロンプト",
-			sessionId: expect.any(String),
+		expect(workbenchMocks.startRun).toHaveBeenCalledWith(fixture.taskId, {
+			executionModeSource: "explicit",
+			latestUserMessageOverride: "Play時点の最新プロンプト",
 		});
 		const activated = await getSessionByTaskId(fixture.taskId);
 		expect(activated?.authorizationJson).toMatchObject({
@@ -163,13 +169,16 @@ describe("Mission Pilot service", () => {
 				.from(missionPilotContextSnapshots)
 				.where(eq(missionPilotContextSnapshots.sessionId, activated?.id ?? "")),
 		).toHaveLength(2);
-		expect(played.run).toBeNull();
+		expect(played.run).toMatchObject({
+			taskId: fixture.taskId,
+			status: "running",
+		});
 		expect(
 			await db
 				.select()
 				.from(taskRuns)
 				.where(eq(taskRuns.taskId, fixture.taskId)),
-		).toHaveLength(0);
+		).toHaveLength(1);
 		expect(publishSpy).toHaveBeenCalledWith(
 			fixture.taskId,
 			expect.objectContaining({
@@ -190,7 +199,7 @@ describe("Mission Pilot service", () => {
 
 	it("keeps the initial user message exactly once after intake failure and retry", async () => {
 		const fixture = await createPilotFixture();
-		planIntakeMocks.start.mockRejectedValueOnce(
+		workbenchMocks.startRun.mockRejectedValueOnce(
 			new Error("provider unavailable"),
 		);
 		await expect(service.play(fixture.taskId, 0)).rejects.toMatchObject({
@@ -252,7 +261,7 @@ describe("Mission Pilot service", () => {
 		const played = await service.play(fixture.taskId, before?.version ?? -1);
 		expect(queueRecoveryMocks.reconcile).toHaveBeenCalledOnce();
 		expect(queueRecoveryMocks.release).toHaveBeenCalledWith(fixture.taskId);
-		expect(planIntakeMocks.start).not.toHaveBeenCalled();
+		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
 		expect(played.missionPilot).toMatchObject({
 			desiredState: "playing",
 			phase: "queued",
@@ -282,58 +291,50 @@ describe("Mission Pilot service", () => {
 		const played = await service.play(fixture.taskId, before?.version ?? -1);
 
 		expect(queueRecoveryMocks.recoverPostQueue).toHaveBeenCalledOnce();
-		expect(planIntakeMocks.start).not.toHaveBeenCalled();
+		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
 		expect(played.missionPilot).toMatchObject({
 			desiredState: "playing",
 			phase: "implementing",
 		});
 	});
 
-	it("preserves typed Plan intake conflicts instead of replacing them with a 502", async () => {
+	it("preserves typed Coding Agent start conflicts instead of replacing them with a 502", async () => {
 		const fixture = await createPilotFixture();
-		planIntakeMocks.start.mockRejectedValueOnce(
+		workbenchMocks.startRun.mockRejectedValueOnce(
 			new MissionPilotError(
 				409,
-				"MISSION_PILOT_PLAN_INTAKE_NEEDS_EDIT",
-				"Questionnaire needs review",
+				"MISSION_PILOT_RUN_START_CONFLICT",
+				"Coding Agent run is already active",
 			),
 		);
 		await expect(service.play(fixture.taskId, 0)).rejects.toMatchObject({
 			statusCode: 409,
-			code: "MISSION_PILOT_PLAN_INTAKE_NEEDS_EDIT",
+			code: "MISSION_PILOT_RUN_START_CONFLICT",
 		});
 		expect(await getSessionByTaskId(fixture.taskId)).toMatchObject({
 			phase: "attention",
-			lastErrorCode: "MISSION_PILOT_PLAN_INTAKE_NEEDS_EDIT",
+			lastErrorCode: "MISSION_PILOT_RUN_START_CONFLICT",
 		});
 	});
 
-	it("treats Questionnaire intervention as a successful intake handoff", async () => {
+	it("does not create or answer a Questionnaire during Mission Pilot Play", async () => {
 		const fixture = await createPilotFixture();
-		planIntakeMocks.start.mockImplementationOnce(async () => {
-			const current = await getSessionByTaskId(fixture.taskId);
-			if (!current) throw new Error("missing Mission Pilot session");
-			await db
-				.update(missionPilotSessions)
-				.set({
-					phase: "waiting_intervention",
-					nextWakeAt: new Date(Date.now() + 20_000),
-					version: current.version + 1,
-					updatedAt: new Date(),
-				})
-				.where(eq(missionPilotSessions.id, current.id));
-			return {
-				questionnaireSessionId: crypto.randomUUID(),
-				questionnaireStatus: "answering",
-			};
-		});
-
 		const played = await service.play(fixture.taskId, 0);
 		expect(played.missionPilot).toMatchObject({
 			desiredState: "playing",
-			phase: "waiting_intervention",
+			phase: "running",
 		});
-		expect(played.run).toBeNull();
+		expect(
+			(
+				await db
+					.select()
+					.from(taskMessages)
+					.where(eq(taskMessages.taskId, fixture.taskId))
+			).some(
+				(message) =>
+					message.metadataJson?.intent === "design_questionnaire_ready",
+			),
+		).toBe(false);
 	});
 
 	it("preserves an unstopped run and allows Stop to be retried", async () => {
@@ -379,6 +380,132 @@ describe("Mission Pilot service", () => {
 			desiredState: "stopped",
 			activityState: "idle",
 			activeRunId: null,
+		});
+	});
+
+	it("allows an agent Stop to be retried while an active Run remains", async () => {
+		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const agentSession = await getSessionByTaskId(fixture.taskId);
+		if (!agentSession) throw new Error("missing agent session");
+		const [run] = await db
+			.insert(taskRuns)
+			.values({
+				id: fixture.runId,
+				taskId: fixture.taskId,
+				repositoryId: fixture.repositoryId,
+				status: "running",
+				contextSnapshot: {
+					missionPilotAgent: {
+						kind: "agent",
+						sessionId: agentSession.id,
+						toolCallId: crypto.randomUUID(),
+						idempotencyKey: crypto.randomUUID(),
+						completionOwner: "mission_pilot",
+						sourceRunId: null,
+					},
+				},
+			})
+			.returning();
+		const [playing] = await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "implementation",
+				activeRunId: fixture.runId,
+				version: 1,
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.taskId, fixture.taskId))
+			.returning();
+		if (!playing) throw new Error("failed to prepare agent session");
+
+		workbenchMocks.stopRun.mockRejectedValueOnce(new Error("stop unavailable"));
+		const failedStop = await service.stop(fixture.taskId, playing.version);
+		expect(failedStop.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			activityState: "attention",
+			activeRunId: fixture.runId,
+		});
+
+		workbenchMocks.stopRun.mockImplementationOnce(async () => {
+			await db
+				.update(taskRuns)
+				.set({ status: "cancelled", updatedAt: new Date() })
+				.where(eq(taskRuns.id, run.id));
+			return { ...run, status: "cancelled" };
+		});
+		const retried = await service.stop(
+			fixture.taskId,
+			failedStop.missionPilot.version,
+		);
+
+		expect(workbenchMocks.stopRun).toHaveBeenCalledTimes(2);
+		expect(retried.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			activityState: "idle",
+			phase: "paused",
+			activeRunId: null,
+		});
+	});
+
+	it("does not stop an active Run that is not owned by Mission Pilot", async () => {
+		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const [manualRun] = await db
+			.insert(taskRuns)
+			.values({
+				id: fixture.runId,
+				taskId: fixture.taskId,
+				repositoryId: fixture.repositoryId,
+				status: "running",
+			})
+			.returning();
+		const [playing] = await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "playing",
+				phase: "implementation",
+				version: 1,
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.taskId, fixture.taskId))
+			.returning();
+		if (!playing) throw new Error("failed to prepare agent session");
+
+		const stopped = await service.stop(fixture.taskId, playing.version);
+
+		expect(workbenchMocks.stopRun).not.toHaveBeenCalled();
+		expect(stopped.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			phase: "paused",
+			activeRunId: null,
+		});
+		expect(
+			await db.query.taskRuns.findFirst({
+				where: eq(taskRuns.id, manualRun.id),
+			}),
+		).toMatchObject({ status: "running" });
+	});
+
+	it("requires a Stop retry before replay after a runtime stop timeout", async () => {
+		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const [timedOut] = await db
+			.update(missionPilotSessions)
+			.set({
+				desiredState: "stopped",
+				phase: "attention",
+				version: 1,
+				lastErrorCode: "MISSION_PILOT_RUNTIME_STOP_TIMEOUT",
+				lastErrorMessage: "runtime did not acknowledge stop",
+				updatedAt: new Date(),
+			})
+			.where(eq(missionPilotSessions.taskId, fixture.taskId))
+			.returning();
+		if (!timedOut) throw new Error("failed to prepare timeout state");
+
+		await expect(
+			service.play(fixture.taskId, timedOut.version),
+		).rejects.toMatchObject({
+			code: "MISSION_PILOT_VERSION_CONFLICT",
 		});
 	});
 

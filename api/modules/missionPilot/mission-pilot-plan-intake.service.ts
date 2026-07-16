@@ -1,6 +1,6 @@
 import { logEvent } from "../../lib/logger";
 import { listDesignQuestionnaires } from "../questionnaire/questionnaire.service";
-import { publishQuestionnaireReady } from "../questionnaire/questionnaire-events";
+import { publishQuestionnaireTransition } from "../questionnaire/questionnaire-events";
 import { MissionPilotError } from "./mission-pilot.errors";
 import { assertMissionPilotPreQueueMutable } from "./mission-pilot-pre-queue-recovery.service";
 import { prepareMissionPilotPlanModeIntake } from "./mission-pilot-workbench.port";
@@ -68,7 +68,7 @@ export async function startOrResumeMissionPilotPlanIntake(input: {
 				schedulePlanPipeline(input.taskId);
 				return resultForQuestionnaire(existing);
 			}
-			await publishQuestionnaireReady(existing);
+			await publishQuestionnaireTransition(existing);
 			return resultForQuestionnaire(existing);
 		}
 		if (["review_ready", "accepted"].includes(existing.status)) {

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	preparePlanIntake: vi.fn(),
 	listQuestionnaires: vi.fn(),
-	publishReady: vi.fn(),
+	publishTransition: vi.fn(),
 	runPipeline: vi.fn(),
 	assertMutable: vi.fn(),
 }));
@@ -12,7 +12,7 @@ vi.mock("../api/modules/questionnaire/questionnaire.service", () => ({
 	listDesignQuestionnaires: mocks.listQuestionnaires,
 }));
 vi.mock("../api/modules/questionnaire/questionnaire-events", () => ({
-	publishQuestionnaireReady: mocks.publishReady,
+	publishQuestionnaireTransition: mocks.publishTransition,
 }));
 vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
 	prepareMissionPilotPlanModeIntake: mocks.preparePlanIntake,
@@ -80,7 +80,7 @@ describe("Mission Pilot typed Plan intake", () => {
 			missionPilotSessionId: "pilot-2",
 			questionnaireSession: questionnaire,
 		});
-		expect(mocks.publishReady).toHaveBeenCalledWith(questionnaire);
+		expect(mocks.publishTransition).toHaveBeenCalledWith(questionnaire);
 	});
 
 	it("resumes the pipeline without rearming intervention for pre-Feature Plan questions", async () => {
@@ -108,7 +108,7 @@ describe("Mission Pilot typed Plan intake", () => {
 		await vi.waitFor(() =>
 			expect(mocks.runPipeline).toHaveBeenCalledWith("task-pre-feature"),
 		);
-		expect(mocks.publishReady).not.toHaveBeenCalled();
+		expect(mocks.publishTransition).not.toHaveBeenCalled();
 	});
 
 	it("schedules the Plan pipeline for reviewed Questionnaire evidence", async () => {

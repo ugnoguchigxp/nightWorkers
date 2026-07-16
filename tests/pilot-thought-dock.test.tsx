@@ -9,6 +9,50 @@ import {
 import { AgentDebugEventCard } from "../src/modules/nightworkers/components/ThreadTimelineAgentCards";
 
 describe("PilotThoughtDock", () => {
+	it("renders the server-projected Mission Pilot timeline without dropping agent items", () => {
+		const items = missionPilotTraceItems({
+			events: [],
+			activityEvents: [],
+			messages: [],
+			entries: [
+				{
+					id: "conversation-item:assistant-1",
+					sessionId: "pilot-session",
+					sequence: 1,
+					occurredAt: new Date("2026-07-16T00:00:00Z"),
+					kind: "thought",
+					summary: "Taskの状態を確認し、更新を実行します。",
+					sourceRef: {
+						kind: "mission_pilot_conversation_item",
+						id: "assistant-1",
+					},
+				},
+				{
+					id: "tool-call:tool-1:finished",
+					sessionId: "pilot-session",
+					sequence: 2,
+					occurredAt: new Date("2026-07-16T00:00:01Z"),
+					kind: "action_completed",
+					status: "succeeded",
+					summary: "Taskを更新が完了しました。",
+					sourceRef: {
+						kind: "mission_pilot_tool_call",
+						id: "tool-1",
+					},
+				},
+			],
+		});
+
+		expect(items.map((item) => item.event.message)).toEqual([
+			"Taskの状態を確認し、更新を実行します。",
+			"Taskを更新が完了しました。",
+		]);
+		expect(items.map((item) => item.source)).toEqual([
+			"unified_entry",
+			"unified_entry",
+		]);
+	});
+
 	it("shows the Plan Mode correction instruction outside debug details", () => {
 		const markup = renderToStaticMarkup(
 			<AgentDebugEventCard

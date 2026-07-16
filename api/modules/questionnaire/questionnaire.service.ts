@@ -1,24 +1,10 @@
 import {
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
-	designDecisionReviewSchema,
 	designQuestionnaireAnswerSchema,
-	designQuestionnaireFollowUpDecisionSchema,
-	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
-import {
-	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
-	buildDesignQuestionnaireFollowUpDecisionUserPrompt,
-	buildDesignQuestionnaireFollowUpUserPrompt,
-	buildDesignQuestionnaireInitialUserPrompt,
-	buildDesignQuestionnaireReviewSystemPrompt,
-	buildDesignQuestionnaireReviewUserPrompt,
-	buildDesignQuestionnaireSystemPrompt,
-} from "../../services/structured-generation/prompts/design-questionnaire";
-import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
-import { createStructuredOutputContract } from "../../services/structured-llm";
 import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
@@ -28,23 +14,25 @@ import {
 	getPlanModeTask,
 	getPlanModeTaskMessage,
 	listPlanModeTaskMessages,
-	type PlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import { isBlueprintMessage } from "../nightworkers/nightworkers.planning-helpers.service";
 import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
 import * as repo from "./questionnaire.repository";
 import { buildQuestionnairePlanModeContext } from "./questionnaire-context";
-import { publishQuestionnaireReady } from "./questionnaire-events";
+import { publishQuestionnaireTransition } from "./questionnaire-events";
+import {
+	generateDesignQuestionnaireFollowUpDecisionRawOutput,
+	generateDesignQuestionnaireFollowUpRawOutput,
+	generateDesignQuestionnaireRawOutput,
+	generateDesignQuestionnaireReviewRawOutput,
+} from "./questionnaire-generation.service";
 import {
 	buildDesignQuestionnaireSessionView,
-	designDecisionReviewJsonSchema,
-	designQuestionnaireFollowUpDecisionJsonSchema,
 	getSessionQuestions,
 	parseDesignDecisionReviewRaw,
 	parseDesignQuestionnaireFollowUpDecisionRaw,
 	parseDesignQuestionnaireRaw,
-	questionnaireChoiceFormJsonSchema,
 	renderDesignDecisionReviewMarkdown,
 } from "./questionnaire-parser.service";
 import {
@@ -86,6 +74,7 @@ export async function createDesignQuestionnaire(
 		role?: StructuredLlmRole;
 		usageTrace?: TraceProvenance;
 		missionPilotActionKey?: string | null;
+		signal?: AbortSignal;
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -112,6 +101,7 @@ export async function createDesignQuestionnaire(
 		routeOverride: options.routeOverride || null,
 		role: options.role ?? "plan",
 		usageTrace: options.usageTrace,
+		signal: options.signal,
 	}).catch(async (error) => {
 		const rawContent =
 			(error as Error & { rawContent?: string; rawText?: string }).rawText ??
@@ -119,6 +109,7 @@ export async function createDesignQuestionnaire(
 		if (rawContent?.trim()) return rawContent;
 		throw error;
 	});
+	options.signal?.throwIfAborted();
 	const parsed = parseDesignQuestionnaireRaw(rawOutput, {
 		taskId,
 		repositoryId: task.repositoryId,
@@ -140,7 +131,7 @@ export async function createDesignQuestionnaire(
 			rawOutput,
 			validationStatus: "valid",
 		});
-		await repo.updateDesignQuestionnaireSessionStatus(session.id, "answering");
+		return updateQuestionnaireStatus(taskId, session.id, "answering");
 	} else {
 		await repo.createDesignQuestionnaireQuestionSet({
 			sessionId: session.id,
@@ -148,11 +139,8 @@ export async function createDesignQuestionnaire(
 			rawOutput,
 			validationStatus: "invalid",
 		});
-		await repo.updateDesignQuestionnaireSessionStatus(session.id, "needs_edit");
+		return updateQuestionnaireStatus(taskId, session.id, "needs_edit");
 	}
-	const created = await getDesignQuestionnaireSession(taskId, session.id);
-	if (created.status === "answering") await publishQuestionnaireReady(created);
-	return created;
 }
 
 export async function listDesignQuestionnaires(taskId: string) {
@@ -234,25 +222,38 @@ export async function saveDesignQuestionnaireAnswers(
 	)
 		? "review_ready"
 		: "answering";
+	let persistedStatusSession: DesignQuestionnaireSession | null = null;
 	if (
 		nextStatus === "answering" ||
 		options.completionPolicy === "finalize_current_questions"
 	) {
-		await repo
-			.updateDesignQuestionnaireSessionStatus(sessionId, nextStatus)
-			.catch((error) => {
-				throw questionnairePersistenceError("session-status", error);
-			});
+		persistedStatusSession = await updateQuestionnaireStatus(
+			taskId,
+			sessionId,
+			nextStatus,
+		).catch((error) => {
+			throw questionnairePersistenceError("session-status", error);
+		});
 	}
 	if (nextStatus === "answering") {
-		return getDesignQuestionnaireSession(taskId, sessionId);
+		if (!persistedStatusSession)
+			throw questionnairePersistenceError(
+				"session-status",
+				"updated Questionnaire session is missing",
+			);
+		return persistedStatusSession;
 	}
 	const completedSession = await getDesignQuestionnaireSession(
 		taskId,
 		sessionId,
 	);
 	if (options.completionPolicy === "finalize_current_questions") {
-		return getDesignQuestionnaireSession(taskId, sessionId);
+		if (!persistedStatusSession)
+			throw questionnairePersistenceError(
+				"session-status",
+				"updated Questionnaire session is missing",
+			);
+		return persistedStatusSession;
 	}
 	return assessDesignQuestionnaireNextStep(taskId, completedSession);
 }
@@ -260,6 +261,7 @@ export async function saveDesignQuestionnaireAnswers(
 export async function generateDesignQuestionnaireFollowUp(
 	taskId: string,
 	sessionId: string,
+	options: { signal?: AbortSignal; usageTrace?: TraceProvenance } = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -267,13 +269,16 @@ export async function generateDesignQuestionnaireFollowUp(
 	assertPlanModeMutable(task);
 	const session = await getDesignQuestionnaireSession(taskId, sessionId);
 	if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
-		await repo.updateDesignQuestionnaireSessionStatus(
-			sessionId,
-			"review_ready",
-		);
-		return getDesignQuestionnaireSession(taskId, sessionId);
+		return updateQuestionnaireStatus(taskId, sessionId, "review_ready");
 	}
-	const rawOutput = await generateDesignQuestionnaireFollowUpRawOutput(session);
+	const rawOutput = await generateDesignQuestionnaireFollowUpRawOutput(
+		session,
+		{
+			signal: options.signal,
+			usageTrace: options.usageTrace,
+		},
+	);
+	options.signal?.throwIfAborted();
 	const parsed = parseDesignQuestionnaireRaw(rawOutput, {
 		taskId: session.taskId,
 		repositoryId: session.repositoryId,
@@ -292,13 +297,11 @@ export async function generateDesignQuestionnaireFollowUp(
 		rawOutput,
 		validationStatus: parsed.ok ? "valid" : "invalid",
 	});
-	await repo.updateDesignQuestionnaireSessionStatus(
+	return updateQuestionnaireStatus(
+		taskId,
 		sessionId,
 		parsed.ok ? "answering" : "needs_edit",
 	);
-	const updated = await getDesignQuestionnaireSession(taskId, sessionId);
-	if (updated.status === "answering") await publishQuestionnaireReady(updated);
-	return updated;
 }
 
 async function assessDesignQuestionnaireNextStep(
@@ -306,11 +309,7 @@ async function assessDesignQuestionnaireNextStep(
 	session: DesignQuestionnaireSession,
 ) {
 	if (session.questionSets.length >= MAX_DESIGN_QUESTIONNAIRE_PAGES) {
-		await repo.updateDesignQuestionnaireSessionStatus(
-			session.id,
-			"review_ready",
-		);
-		return getDesignQuestionnaireSession(taskId, session.id);
+		return updateQuestionnaireStatus(taskId, session.id, "review_ready");
 	}
 	const nextSequence =
 		session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) +
@@ -336,15 +335,10 @@ async function assessDesignQuestionnaireNextStep(
 			rawOutput,
 			validationStatus: "invalid",
 		});
-		await repo.updateDesignQuestionnaireSessionStatus(session.id, "needs_edit");
-		return getDesignQuestionnaireSession(taskId, session.id);
+		return updateQuestionnaireStatus(taskId, session.id, "needs_edit");
 	}
 	if (parsed.value.action === "ready_for_design_assembly") {
-		await repo.updateDesignQuestionnaireSessionStatus(
-			session.id,
-			"review_ready",
-		);
-		return getDesignQuestionnaireSession(taskId, session.id);
+		return updateQuestionnaireStatus(taskId, session.id, "review_ready");
 	}
 	if (!parsed.value.questionnaire) {
 		await repo.createDesignQuestionnaireQuestionSet({
@@ -353,19 +347,14 @@ async function assessDesignQuestionnaireNextStep(
 			rawOutput,
 			validationStatus: "invalid",
 		});
-		await repo.updateDesignQuestionnaireSessionStatus(session.id, "needs_edit");
-		return getDesignQuestionnaireSession(taskId, session.id);
+		return updateQuestionnaireStatus(taskId, session.id, "needs_edit");
 	}
 	const dedupedQuestionnaire = removeDuplicateFollowUpQuestions(
 		session,
 		parsed.value.questionnaire,
 	);
 	if (!dedupedQuestionnaire) {
-		await repo.updateDesignQuestionnaireSessionStatus(
-			session.id,
-			"review_ready",
-		);
-		return getDesignQuestionnaireSession(taskId, session.id);
+		return updateQuestionnaireStatus(taskId, session.id, "review_ready");
 	}
 	await repo.createDesignQuestionnaireQuestionSet({
 		sessionId: session.id,
@@ -374,34 +363,37 @@ async function assessDesignQuestionnaireNextStep(
 		rawOutput,
 		validationStatus: "valid",
 	});
-	await repo.updateDesignQuestionnaireSessionStatus(session.id, "answering");
-	const updated = await getDesignQuestionnaireSession(taskId, session.id);
-	await publishQuestionnaireReady(updated);
-	return updated;
+	return updateQuestionnaireStatus(taskId, session.id, "answering");
 }
 
 export async function generateDesignQuestionnaireReview(
 	taskId: string,
 	sessionId: string,
+	options: { signal?: AbortSignal; usageTrace?: TraceProvenance } = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	assertPlanModeCapabilityEnabled("questionnaire");
 	assertPlanModeMutable(task);
 	const session = await getDesignQuestionnaireSession(taskId, sessionId);
-	const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session);
+	const rawOutput = await generateDesignQuestionnaireReviewRawOutput(session, {
+		signal: options.signal,
+		usageTrace: options.usageTrace,
+	});
+	options.signal?.throwIfAborted();
 	const parsed = parseDesignDecisionReviewRaw(rawOutput);
 	const review = await repo.createDesignQuestionnaireReview({
 		sessionId,
 		reviewJson: parsed.ok ? parsed.value : null,
 		status: parsed.ok ? "draft" : "needs_edit",
 	});
-	await repo.updateDesignQuestionnaireSessionStatus(
+	const updatedSession = await updateQuestionnaireStatus(
+		taskId,
 		sessionId,
 		parsed.ok ? "review_ready" : "needs_edit",
 	);
 	return {
-		session: await getDesignQuestionnaireSession(taskId, sessionId),
+		session: updatedSession,
 		reviewId: review.id,
 		rawOutput,
 		validationStatus: parsed.ok ? "valid" : "invalid",
@@ -411,6 +403,12 @@ export async function generateDesignQuestionnaireReview(
 export async function acceptDesignQuestionnaireReview(
 	taskId: string,
 	sessionId: string,
+	options: {
+		missionPilotAction?: {
+			idempotencyKey: string;
+			toolCallId: string;
+		};
+	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -439,14 +437,16 @@ export async function acceptDesignQuestionnaireReview(
 			source: "design-questionnaire",
 			sourceBlueprintMessageId: session.sourceBlueprintMessageId,
 			questionnaireSessionId: session.id,
+			...(options.missionPilotAction
+				? { missionPilotAction: options.missionPilotAction }
+				: {}),
 		},
 	});
 	await repo.updateDesignQuestionnaireReview(latestDraft.id, {
 		status: "accepted",
 		publishedMessageId: message.id,
 	});
-	await repo.updateDesignQuestionnaireSessionStatus(sessionId, "accepted");
-	return getDesignQuestionnaireSession(taskId, sessionId);
+	return updateQuestionnaireStatus(taskId, sessionId, "accepted");
 }
 
 export async function leaveDesignQuestionnaireReviewUnadopted(
@@ -464,8 +464,18 @@ export async function leaveDesignQuestionnaireReviewUnadopted(
 			status: "left_unadopted",
 		});
 	}
-	await repo.updateDesignQuestionnaireSessionStatus(sessionId, "needs_edit");
-	return getDesignQuestionnaireSession(taskId, sessionId);
+	return updateQuestionnaireStatus(taskId, sessionId, "needs_edit");
+}
+
+async function updateQuestionnaireStatus(
+	taskId: string,
+	sessionId: string,
+	status: DesignQuestionnaireSession["status"],
+) {
+	await repo.updateDesignQuestionnaireSessionStatus(sessionId, status);
+	const updated = await getDesignQuestionnaireSession(taskId, sessionId);
+	await publishQuestionnaireTransition(updated);
+	return updated;
 }
 
 async function getQuestionnaireTaskAndBlueprint(
@@ -492,129 +502,4 @@ async function getQuestionnaireTaskAndBlueprint(
 		);
 	}
 	return { task, sourceBlueprintMessage };
-}
-
-async function generateDesignQuestionnaireRawOutput(input: {
-	taskId: string;
-	repositoryId: string;
-	sourceBlueprintMessage: PlanModeTaskMessage | null;
-	taskPrompt: string;
-	projectStackContext?: string | null;
-	planModeContext?: string | null;
-	routeOverride?: StructuredLlmModelTarget | null;
-	role: StructuredLlmRole;
-	usageTrace?: TraceProvenance;
-}) {
-	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireSystemPrompt(),
-		buildDesignQuestionnaireInitialUserPrompt(input),
-		{
-			name: "design_questionnaire",
-			runtimeSchema: questionnaireChoiceFormSchema,
-			providerJsonSchema: questionnaireChoiceFormJsonSchema,
-			taskId: input.taskId,
-			role: input.role,
-			usageTrace: input.usageTrace,
-			routeOverride: input.routeOverride || null,
-		},
-	);
-}
-
-async function generateDesignQuestionnaireFollowUpRawOutput(
-	session: DesignQuestionnaireSession,
-) {
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		session.repositoryId,
-	);
-	const planModeContext = buildQuestionnairePlanModeContext(
-		await listPlanModeTaskMessages(session.taskId),
-	);
-	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireSystemPrompt(),
-		buildDesignQuestionnaireFollowUpUserPrompt(
-			session,
-			projectStackContext,
-			planModeContext,
-		),
-		{
-			name: "design_questionnaire_follow_up",
-			runtimeSchema: questionnaireChoiceFormSchema,
-			providerJsonSchema: questionnaireChoiceFormJsonSchema,
-			taskId: session.taskId,
-			role: "plan",
-		},
-	);
-}
-
-async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
-	session: DesignQuestionnaireSession,
-) {
-	const projectStackContext = await resolvePlanModeProjectStackContext(
-		session.repositoryId,
-	);
-	const planModeContext = buildQuestionnairePlanModeContext(
-		await listPlanModeTaskMessages(session.taskId),
-	);
-	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireFollowUpDecisionSystemPrompt(),
-		buildDesignQuestionnaireFollowUpDecisionUserPrompt(
-			session,
-			projectStackContext,
-			planModeContext,
-		),
-		{
-			name: "design_questionnaire_follow_up_decision",
-			runtimeSchema: designQuestionnaireFollowUpDecisionSchema,
-			providerJsonSchema: designQuestionnaireFollowUpDecisionJsonSchema,
-			taskId: session.taskId,
-			role: "plan",
-		},
-	);
-}
-
-async function generateDesignQuestionnaireReviewRawOutput(
-	session: DesignQuestionnaireSession,
-) {
-	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireReviewSystemPrompt(),
-		buildDesignQuestionnaireReviewUserPrompt(session),
-		{
-			name: "design_decision_review",
-			runtimeSchema: designDecisionReviewSchema,
-			providerJsonSchema: designDecisionReviewJsonSchema,
-			taskId: session.taskId,
-			role: "review",
-		},
-	);
-}
-
-async function generateQuestionnaireRawOutput<T>(
-	systemPrompt: string,
-	userPrompt: string,
-	input: {
-		name: string;
-		runtimeSchema: import("zod").ZodType<T>;
-		providerJsonSchema: unknown;
-		taskId: string;
-		role: StructuredLlmRole;
-		usageTrace?: TraceProvenance;
-		routeOverride?: StructuredLlmModelTarget | null;
-	},
-) {
-	const generated = await callStructuredOutputWithRepair({
-		systemPrompt,
-		userPrompt,
-		options: {
-			contract: createStructuredOutputContract({
-				name: input.name,
-				runtimeSchema: input.runtimeSchema,
-				providerJsonSchema: input.providerJsonSchema,
-			}),
-			taskId: input.taskId,
-			role: input.role,
-			usageTrace: input.usageTrace,
-			routeOverride: input.routeOverride,
-		},
-	});
-	return generated.attempts.at(-1)?.rawText ?? JSON.stringify(generated.value);
 }

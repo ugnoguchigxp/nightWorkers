@@ -1,11 +1,9 @@
 import { z } from "@hono/zod-openapi";
 
-export const REQUIRED_PLAN_MODE_ROUTING_VIEWS = [
-	"questionnaire",
-	"feature_plan",
-] as const;
+export const REQUIRED_PLAN_MODE_ROUTING_VIEWS = ["feature_plan"] as const;
 
 export const EDITABLE_PLAN_MODE_ROUTING_VIEWS = [
+	"questionnaire",
 	"blueprint",
 	"data_model",
 	"user_flow",
@@ -30,7 +28,11 @@ export const editablePlanModeRoutingViewSchema = z.enum(
 	EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 );
 export const planModeRoutingDecisionSchema = z.enum(["include", "omit"]);
-export const planModeRoutingActorSchema = z.enum(["user", "mission_pilot"]);
+export const planModeRoutingActorSchema = z.enum([
+	"user",
+	"mission_pilot",
+	"coding_agent",
+]);
 
 export const planModeRoutingEntrySchema = z
 	.object({

@@ -38,6 +38,91 @@ export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
 		),
 });
 
+const planModeArtifactSourceSelectionSchema = z
+	.object({
+		previousTargetMessageId: z.string().trim().min(1).nullable().optional(),
+		featurePlanMessageId: z.string().trim().min(1).nullable().optional(),
+		blueprintMessageId: z.string().trim().min(1).nullable().optional(),
+		dataModelMessageId: z.string().trim().min(1).nullable().optional(),
+		dedicatedViewMessageIds: z.array(z.string().trim().min(1)).optional(),
+	})
+	.strict();
+
+const planModeRoutingChangeSchema = z
+	.object({
+		view: z.enum([
+			"questionnaire",
+			"blueprint",
+			"data_model",
+			"user_flow",
+			"api_io_contract",
+			"activity_flow",
+			"sequence_flow",
+			"zod_schema_design",
+		]),
+		decision: z.enum(["include", "omit"]),
+		reason: z.string().trim().min(1).max(1_000),
+	})
+	.strict();
+
+export const nightWorkersPlanModeInputSchema = z.object({
+	taskId: z
+		.string()
+		.trim()
+		.optional()
+		.describe(
+			"NightWorkers task id. Defaults to request-scoped task context when available.",
+		),
+	runId: z
+		.string()
+		.trim()
+		.optional()
+		.describe(
+			"NightWorkers run id. Used to preserve questionnaire continuation for the current Coding Agent run.",
+		),
+	command: z.discriminatedUnion("op", [
+		z.object({ op: z.literal("inspect") }).strict(),
+		z
+			.object({
+				op: z.literal("request_input"),
+				prompt: z.string().trim().min(1).max(20_000),
+				sourceBlueprintMessageId: z
+					.string()
+					.trim()
+					.min(1)
+					.nullable()
+					.optional(),
+			})
+			.strict(),
+		z
+			.object({
+				op: z.literal("update_routing"),
+				expectedRevision: z.number().int().nonnegative(),
+				idempotencyKey: z.string().uuid(),
+				changes: z.array(planModeRoutingChangeSchema).min(1).max(7),
+			})
+			.strict(),
+		z
+			.object({
+				op: z.literal("generate_artifact"),
+				artifactKind: z.enum([
+					"feature_plan",
+					"blueprint",
+					"data_model",
+					"user_flow",
+					"api_io_contract",
+					"activity_flow",
+					"sequence_flow",
+					"zod_schema_design",
+				]),
+				prompt: z.string().trim().min(1).max(20_000),
+				questionnaireSessionId: z.string().trim().min(1).nullable().optional(),
+				sourceSelection: planModeArtifactSourceSelectionSchema.optional(),
+			})
+			.strict(),
+	]),
+});
+
 export const nightWorkersListRecentSpecificationsInputSchema = z.object({
 	limit: z
 		.number()

@@ -8,9 +8,21 @@ import {
 	missionPilotToolCalls,
 } from "../api/db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../api/db/mission-pilot-schema";
-import { repositories, tasks } from "../api/db/schema";
+import {
+	activityEvents,
+	llmUsageRecords,
+	repositories,
+	tasks,
+} from "../api/db/schema";
 import type { MissionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-agent.ports";
-import { runMissionPilotAgentWake } from "../api/modules/missionPilot/agent/mission-pilot-agent-runtime";
+import {
+	cancelPendingMissionPilotToolCalls,
+	cancelRunningMissionPilotToolCalls,
+} from "../api/modules/missionPilot/agent/mission-pilot-agent-lifecycle.repository";
+import {
+	runMissionPilotAgentWake,
+	stopMissionPilotAgentRuntime,
+} from "../api/modules/missionPilot/agent/mission-pilot-agent-runtime";
 import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
 	appendMissionPilotUserMessage,
@@ -23,6 +35,7 @@ import {
 } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
+import { getMissionPilotExecution } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 
 const repositoryIds: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());
@@ -145,6 +158,70 @@ describe("Mission Pilot persistent agent runtime", () => {
 			.where(eq(missionPilotSessions.id, fixtureState.sessionId));
 		expect(session?.version).toBe(fixtureState.publicVersion);
 		expect(session?.phase).toBe("paused");
+		const [usageRecord] = await db
+			.select()
+			.from(llmUsageRecords)
+			.where(eq(llmUsageRecords.taskId, fixtureState.taskId));
+		expect(usageRecord).toMatchObject({
+			label: "mission_pilot_agent",
+			traceOwner: "mission_pilot",
+			traceChannel: "pilot_thought",
+		});
+		const usageActivity = await db
+			.select()
+			.from(activityEvents)
+			.where(eq(activityEvents.externalId, usageRecord?.id ?? ""));
+		expect(usageActivity[0]).toMatchObject({
+			kind: "llm.usage",
+			traceOwner: "mission_pilot",
+			traceChannel: "pilot_thought",
+		});
+		const execution = await getMissionPilotExecution(fixtureState.sessionId);
+		expect(execution.entries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "thought",
+					summary: "現在のFactを確認しました。",
+				}),
+				expect.objectContaining({
+					kind: "llm_usage",
+				}),
+			]),
+		);
+	});
+
+	it("preserves the provider response when usage persistence fails", async () => {
+		const fixtureState = await fixture();
+		const result = await runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => ({
+						type: "supported",
+						content: "Usage保存に失敗しても、この判断本文は保持します。",
+						toolCalls: [],
+						usage: usage(),
+					}),
+				},
+				recordProviderUsage: async () => {
+					throw new Error("usage database unavailable");
+				},
+			},
+		);
+
+		expect(result).toMatchObject({
+			kind: "waiting",
+			content: "Usage保存に失敗しても、この判断本文は保持します。",
+		});
+		expect(
+			(await listMissionPilotConversation(fixtureState.sessionId)).some(
+				(item) =>
+					item.kind === "assistant" &&
+					(item.bodyJson as { content?: string }).content ===
+						"Usage保存に失敗しても、この判断本文は保持します。",
+			),
+		).toBe(true);
 	});
 
 	it("records tool results without importing worker transcript into the conversation", async () => {
@@ -257,6 +334,110 @@ describe("Mission Pilot persistent agent runtime", () => {
 		).toBeNull();
 	});
 
+	it("continues after replaying a succeeded event-driven action receipt", async () => {
+		const fixtureState = await fixture();
+		let providerCalls = 0;
+		const result = await runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => {
+						providerCalls += 1;
+						return providerCalls === 1
+							? {
+									type: "supported",
+									content: "停止済みRunのreceiptを確認します。",
+									toolCalls: [
+										{
+											id: "replayed-run-stop",
+											name: "run_stop",
+											arguments: {
+												expectedTaskRevision: 1,
+												runId: crypto.randomUUID(),
+											},
+										},
+									],
+									usage: usage(),
+								}
+							: {
+									type: "supported",
+									content: "既存結果を確認して次の判断へ進みます。",
+									toolCalls: [],
+									usage: usage(),
+								};
+					},
+				},
+				actionPort: {
+					execute: async (input) => ({
+						ok: true,
+						actionId: input.actionId,
+						data: { status: "cancelled" },
+						replayed: true,
+					}),
+				},
+			},
+		);
+
+		expect(providerCalls).toBe(2);
+		expect(result).toMatchObject({
+			kind: "waiting",
+			content: "既存結果を確認して次の判断へ進みます。",
+		});
+	});
+
+	it("continues after a fresh run.stop result without waiting for a terminal event", async () => {
+		const fixtureState = await fixture();
+		let providerCalls = 0;
+		const result = await runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => {
+						providerCalls += 1;
+						return providerCalls === 1
+							? {
+									type: "supported",
+									content: "停止結果を確認します。",
+									toolCalls: [
+										{
+											id: "fresh-run-stop",
+											name: "run_stop",
+											arguments: {
+												expectedTaskRevision: 1,
+												runId: crypto.randomUUID(),
+											},
+										},
+									],
+									usage: usage(),
+								}
+							: {
+									type: "supported",
+									content: "停止結果を踏まえて次の判断へ進みます。",
+									toolCalls: [],
+									usage: usage(),
+								};
+					},
+				},
+				actionPort: {
+					execute: async (input) => ({
+						ok: true,
+						actionId: input.actionId,
+						data: { status: "cancelled" },
+						replayed: false,
+					}),
+				},
+			},
+		);
+
+		expect(providerCalls).toBe(2);
+		expect(result).toMatchObject({
+			kind: "waiting",
+			content: "停止結果を踏まえて次の判断へ進みます。",
+		});
+	});
+
 	it("closes pending tool calls with a persisted result when an expired turn is reconciled", async () => {
 		const fixtureState = await fixture();
 		const leaseOwner = "expired-runtime";
@@ -313,6 +494,65 @@ describe("Mission Pilot persistent agent runtime", () => {
 			.from(tasks)
 			.where(eq(tasks.id, fixtureState.taskId));
 		expect(unchanged?.title).toBe("agent runtime");
+	});
+
+	it("does not mark a running tool cancelled until runtime quiescence is confirmed", async () => {
+		const fixtureState = await fixture();
+		const leaseOwner = "running-tool-stop";
+		const turn = await claimMissionPilotAgentTurn({
+			sessionId: fixtureState.sessionId,
+			leaseOwner,
+		});
+		if (!turn) throw new Error("agent turn was not claimed");
+		const [task] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, fixtureState.taskId));
+		if (!task) throw new Error("task fixture is missing");
+		const [call] =
+			(await persistMissionPilotProviderTurn({
+				sessionId: fixtureState.sessionId,
+				turnId: turn.turnId,
+				leaseOwner,
+				content: "Task名を更新します。",
+				toolCalls: [
+					{
+						id: "running-before-stop",
+						name: "task_update",
+						arguments: {
+							expectedTaskRevision: task.updatedAt.getTime(),
+							fields: { title: "must not be applied" },
+						},
+					},
+				],
+			})) ?? [];
+		if (!call) throw new Error("tool call was not persisted");
+		if (!(await claimMissionPilotToolCall({ id: call.id, leaseOwner })))
+			throw new Error("tool call was not claimed");
+
+		expect(
+			await cancelPendingMissionPilotToolCalls(fixtureState.sessionId),
+		).toBe(0);
+		expect(
+			(
+				await db
+					.select()
+					.from(missionPilotToolCalls)
+					.where(eq(missionPilotToolCalls.id, call.id))
+			)[0],
+		).toMatchObject({ status: "running" });
+
+		expect(
+			await cancelRunningMissionPilotToolCalls(fixtureState.sessionId),
+		).toBe(1);
+		expect(
+			(
+				await db
+					.select()
+					.from(missionPilotToolCalls)
+					.where(eq(missionPilotToolCalls.id, call.id))
+			)[0],
+		).toMatchObject({ status: "cancelled" });
 	});
 
 	it("projects the latest compaction summary without deleting canonical conversation", async () => {
@@ -395,6 +635,83 @@ describe("Mission Pilot persistent agent runtime", () => {
 		expect(result).toMatchObject({
 			kind: "attention",
 			failure: { kind: "resource_limit" },
+		});
+	});
+
+	it("propagates a user stop without discarding a completed Task action outcome", async () => {
+		const fixtureState = await fixture();
+		const [task] = await db
+			.select()
+			.from(tasks)
+			.where(eq(tasks.id, fixtureState.taskId));
+		if (!task) throw new Error("task fixture is missing");
+		let resolveActionStarted!: () => void;
+		const actionStarted = new Promise<void>((resolve) => {
+			resolveActionStarted = resolve;
+		});
+		let actionSignal: AbortSignal | null = null;
+		const runPromise = runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => ({
+						type: "supported",
+						content: "Task名を更新します。",
+						toolCalls: [
+							{
+								id: "stoppable-task-update",
+								name: "task_update",
+								arguments: {
+									expectedTaskRevision: task.updatedAt.getTime(),
+									fields: { title: "must not be applied" },
+								},
+							},
+						],
+						usage: usage(),
+					}),
+				},
+				actionPort: {
+					execute: async (input) => {
+						if (!input.signal) throw new Error("runtime signal is required");
+						actionSignal = input.signal;
+						resolveActionStarted();
+						await new Promise<void>((resolve) => {
+							if (input.signal.aborted) {
+								resolve();
+								return;
+							}
+							input.signal.addEventListener("abort", () => resolve(), {
+								once: true,
+							});
+						});
+						return {
+							ok: true,
+							actionId: input.actionId,
+							data: { mutationCommitted: true },
+						};
+					},
+				},
+			},
+		);
+
+		await actionStarted;
+		const stopResult = await stopMissionPilotAgentRuntime(
+			fixtureState.sessionId,
+			1_000,
+		);
+		const result = await runPromise;
+
+		expect(stopResult).toEqual({ requested: true, quiesced: true });
+		expect(actionSignal?.aborted).toBe(true);
+		expect(result).toMatchObject({ kind: "stopped" });
+		const [toolCall] = await db
+			.select()
+			.from(missionPilotToolCalls)
+			.where(eq(missionPilotToolCalls.sessionId, fixtureState.sessionId));
+		expect(toolCall).toMatchObject({
+			status: "succeeded",
+			resultJson: { mutationCommitted: true },
 		});
 	});
 });

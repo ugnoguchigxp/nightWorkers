@@ -1,5 +1,6 @@
 import { toDeepRecord } from "../../../shared/json-record";
-import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import { listTaskRunTodosForRun } from "../../modules/nightworkers/nightworkers.runs.repository";
+import { createRunEvent } from "../../modules/nightworkers/nightworkers.runs-event.repository";
 import { runAgentHooks } from "../hooks/hooks-runner";
 import type { AgentHookInput, AgentHookRunEvent } from "../hooks/types";
 import { NativeApiRunner } from "./native-api-runner/native-api-runner";
@@ -58,7 +59,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 			await sink.emit(enrichedEvent);
 		};
 		const emitHookEvent = async (event: AgentHookRunEvent) => {
-			await repo.createRunEvent(
+			await createRunEvent(
 				{
 					version: 1,
 					runId: context.runId,
@@ -198,7 +199,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 }
 
 async function readCurrentTodo(runId: string) {
-	const todos = await repo.listTaskRunTodosForRun(runId);
+	const todos = await listTaskRunTodosForRun(runId);
 	return todos
 		.filter((todo) => todo.status === "running")
 		.sort((a, b) => a.seq - b.seq)[0];

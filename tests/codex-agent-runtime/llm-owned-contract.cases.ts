@@ -358,6 +358,57 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		});
 	});
 
+	it("aborts the active Codex stream when stop is requested", async () => {
+		let resolveStreamStarted!: () => void;
+		const streamStarted = new Promise<void>((resolve) => {
+			resolveStreamStarted = resolve;
+		});
+		let receivedSignal: AbortSignal | null = null;
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async (
+					_input: unknown,
+					options: { signal: AbortSignal },
+				) => {
+					receivedSignal = options.signal;
+					return {
+						events: (async function* () {
+							resolveStreamStarted();
+							await new Promise<void>((resolve) => {
+								if (options.signal.aborted) {
+									resolve();
+									return;
+								}
+								options.signal.addEventListener("abort", () => resolve(), {
+									once: true,
+								});
+							});
+							yield {
+								type: "turn.failed",
+								error: { message: "aborted provider turn" },
+							};
+						})(),
+					};
+				},
+			}),
+			usageRecorder: async () => {},
+		});
+		const runContext = context("implementation");
+		const resultPromise = runtime.start(runContext, {
+			emit: vi.fn(async () => {}),
+		});
+
+		await streamStarted;
+		await runtime.stop(runContext.runId);
+		const result = await resultPromise;
+
+		expect(receivedSignal?.aborted).toBe(true);
+		expect(result).toMatchObject({
+			terminalState: "cancelled",
+			stoppedBy: "cancelled",
+		});
+	});
+
 	it("preserves a timeout pause when the provider reports an abort error", async () => {
 		vi.useFakeTimers();
 		const runtime = new CodexAgentRuntime({

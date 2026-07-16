@@ -207,6 +207,21 @@ describe("Mission Pilot contract", () => {
 		});
 	});
 
+	it("offers Stop retry instead of Play after a runtime stop timeout", () => {
+		const attention = {
+			...summary(5),
+			activityState: "attention" as const,
+			phase: "attention",
+			lastErrorCode: "MISSION_PILOT_RUNTIME_STOP_TIMEOUT",
+			lastError: "runtime did not acknowledge stop",
+		};
+		expect(missionPilotPresentation(attention)).toMatchObject({
+			playing: false,
+			canPlay: false,
+			canStop: true,
+		});
+	});
+
 	it("formats optional wake countdowns without rendering a permanent timer", () => {
 		expect(formatCountdown(65_000)).toBe("01:05");
 		expect(formatCountdown(3_661_000)).toBe("1:01:01");

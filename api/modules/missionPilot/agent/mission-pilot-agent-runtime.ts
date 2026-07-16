@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import type { MissionPilotActionFailure } from "../../../../shared/schemas/mission-pilot-agent.schema";
-import { buildMissionPilotSystemContext } from "../../../services/structured-generation/prompts/mission-pilot-system-context";
+import {
+	applyCurrentMissionPilotSystemContext,
+	buildMissionPilotSystemContext,
+} from "../../../services/structured-generation/prompts/mission-pilot-system-context";
 import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
 import {
 	MISSION_PILOT_AGENT_LEASE_MS,
@@ -45,6 +48,7 @@ import {
 	MissionPilotProviderRetryScheduledError,
 	missionPilotProviderPort,
 } from "./mission-pilot-provider.port";
+import { recordMissionPilotProviderTurnUsage } from "./mission-pilot-provider-usage";
 import { missionPilotTaskActionPort } from "./mission-pilot-task-action.adapter";
 import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";
 import { missionPilotTaskReadPort } from "./mission-pilot-task-read.adapter";
@@ -54,6 +58,7 @@ import {
 } from "./mission-pilot-tools";
 
 const activeControllers = new Map<string, AbortController>();
+const activeRuntimeCompletions = new Map<string, Promise<void>>();
 export type MissionPilotAgentRuntimeDependencies = {
 	provider?: MissionPilotProviderPort;
 	readPort?: MissionPilotTaskReadPort;
@@ -63,6 +68,7 @@ export type MissionPilotAgentRuntimeDependencies = {
 	maxElapsedMsPerWake?: number;
 	contextHardTokenBudget?: number;
 	compactionTokenBudget?: number;
+	recordProviderUsage?: typeof recordMissionPilotProviderTurnUsage;
 };
 
 export async function runMissionPilotAgentWake(
@@ -78,6 +84,11 @@ export async function runMissionPilotAgentWake(
 		return { kind: "already_running" } as const;
 	const controller = new AbortController();
 	activeControllers.set(input.sessionId, controller);
+	let resolveRuntimeCompletion!: () => void;
+	const runtimeCompletion = new Promise<void>((resolve) => {
+		resolveRuntimeCompletion = resolve;
+	});
+	activeRuntimeCompletions.set(input.sessionId, runtimeCompletion);
 	let elapsedLimitReached = false;
 	const elapsedTimer = setTimeout(
 		() => {
@@ -126,6 +137,8 @@ export async function runMissionPilotAgentWake(
 		const provider = dependencies.provider ?? missionPilotProviderPort;
 		const readPort = dependencies.readPort ?? missionPilotTaskReadPort;
 		const actionPort = dependencies.actionPort ?? missionPilotTaskActionPort;
+		const recordProviderUsage =
+			dependencies.recordProviderUsage ?? recordMissionPilotProviderTurnUsage;
 		const providerLimit =
 			dependencies.maxProviderCallsPerWake ??
 			MISSION_PILOT_MAX_PROVIDER_CALLS_PER_WAKE;
@@ -179,7 +192,9 @@ export async function runMissionPilotAgentWake(
 				taskId: claimed.session.taskId,
 				readPort,
 			});
-			const baseSystemContext = readSystemContext(providerMessages);
+			const baseSystemContext = applyCurrentMissionPilotSystemContext(
+				readSystemContext(providerMessages),
+			);
 			const systemContext = `${baseSystemContext}\n\n[Mission Pilot 現在のStep文脈]\n${JSON.stringify(currentStepContext)}`;
 			const messages = projectMissionPilotProviderMessages(providerMessages);
 			const tools = missionPilotToolDefinitions({
@@ -212,6 +227,8 @@ export async function runMissionPilotAgentWake(
 					return { kind: "attention", failure } as const;
 				}
 				providerCalls += 1;
+				const providerCallIndex = providerCalls;
+				const providerStartedAt = Date.now();
 				const compacted = await provider.nextTurn({
 					sessionId: input.sessionId,
 					systemContext: MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
@@ -225,6 +242,18 @@ export async function runMissionPilotAgentWake(
 					currentStepContext,
 				});
 				if (controller.signal.aborted) return finishAfterAbort();
+				if (compacted.type === "supported")
+					await recordProviderUsage({
+						sessionId: input.sessionId,
+						taskId: claimed.session.taskId,
+						turnId: claimed.turnId,
+						providerCallIndex,
+						label: "mission_pilot_compaction",
+						systemContext: MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
+						messages: buildMissionPilotCompactionRequest(messages),
+						response: compacted,
+						durationMs: Date.now() - providerStartedAt,
+					}).catch(() => false);
 				if (compacted.type !== "supported" || !compacted.content.trim()) {
 					const failure = providerFailure(
 						compacted.type === "unsupported"
@@ -281,6 +310,8 @@ export async function runMissionPilotAgentWake(
 				return { kind: "attention", failure } as const;
 			}
 			providerCalls += 1;
+			const providerCallIndex = providerCalls;
+			const providerStartedAt = Date.now();
 			const response = await provider.nextTurn({
 				sessionId: input.sessionId,
 				systemContext,
@@ -294,6 +325,18 @@ export async function runMissionPilotAgentWake(
 				currentStepContext,
 			});
 			if (controller.signal.aborted) return finishAfterAbort();
+			if (response.type === "supported")
+				await recordProviderUsage({
+					sessionId: input.sessionId,
+					taskId: claimed.session.taskId,
+					turnId: claimed.turnId,
+					providerCallIndex,
+					label: "mission_pilot_agent",
+					systemContext,
+					messages,
+					response,
+					durationMs: Date.now() - providerStartedAt,
+				}).catch(() => false);
 			if (response.type === "unsupported") {
 				const failure = providerFailure(response.reason);
 				await appendMissionPilotRuntimeFailure({
@@ -359,6 +402,7 @@ export async function runMissionPilotAgentWake(
 					idempotencyKey: running.idempotencyKey,
 					readPort,
 					actionPort,
+					signal: controller.signal,
 				});
 				await completeMissionPilotToolCall(
 					result.ok
@@ -382,7 +426,7 @@ export async function runMissionPilotAgentWake(
 					)
 				)
 					continue;
-				if (result.ok) {
+				if (result.ok && !result.replayed) {
 					const metadata = getMissionPilotActionDefinition(
 						callRow.actionId,
 					)?.execution;
@@ -447,6 +491,8 @@ export async function runMissionPilotAgentWake(
 		clearTimeout(elapsedTimer);
 		if (leaseHeartbeat) clearInterval(leaseHeartbeat);
 		activeControllers.delete(input.sessionId);
+		activeRuntimeCompletions.delete(input.sessionId);
+		resolveRuntimeCompletion();
 	}
 
 	async function finishAndReturn(state: "stopped") {
@@ -484,10 +530,29 @@ export async function runMissionPilotAgentWake(
 	}
 }
 
-export function stopMissionPilotAgentRuntime(sessionId: string) {
+export async function stopMissionPilotAgentRuntime(
+	sessionId: string,
+	timeoutMs = 2_000,
+) {
 	const controller = activeControllers.get(sessionId);
-	controller?.abort();
-	return Boolean(controller);
+	if (!controller) return { requested: false, quiesced: true } as const;
+	controller.abort(new Error("Mission Pilot stop requested by user."));
+	const completion = activeRuntimeCompletions.get(sessionId);
+	if (!completion) return { requested: true, quiesced: true } as const;
+	let timeout: ReturnType<typeof setTimeout> | null = null;
+	const quiesced = await Promise.race([
+		completion.then(() => true),
+		new Promise<false>((resolve) => {
+			timeout = setTimeout(() => resolve(false), Math.max(1, timeoutMs));
+			timeout.unref?.();
+		}),
+	]);
+	if (timeout) clearTimeout(timeout);
+	return { requested: true, quiesced } as const;
+}
+
+export function isMissionPilotAgentRuntimeActive(sessionId: string) {
+	return activeControllers.has(sessionId);
 }
 export { reconcileInterruptedMissionPilotAgentSessions };
 

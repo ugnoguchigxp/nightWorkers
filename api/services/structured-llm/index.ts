@@ -211,6 +211,7 @@ async function callRawJsonLLM(
 				normalizedRequest,
 			);
 		} catch (error) {
+			if (options.signal?.aborted) throw options.signal.reason ?? error;
 			if (
 				!shouldTryStructuredLlmRouteFallback(error) ||
 				remainingFallbacks.length === 0
@@ -345,9 +346,11 @@ async function callRawJsonLLMAttempt(
 		providerUsage = providerResult.usage;
 		providerDebug = { ...providerDebug, normalizedUsage: providerUsage };
 	} catch (error) {
-		const normalizedError = requestSignal.aborted
-			? new StructuredLlmTimeoutError(requestAbortHandle.timeoutMs)
-			: error;
+		const normalizedError = options.signal?.aborted
+			? (options.signal.reason ?? error)
+			: requestSignal.aborted
+				? new StructuredLlmTimeoutError(requestAbortHandle.timeoutMs)
+				: error;
 		const rejectedActivity =
 			normalizedError instanceof ProviderActivityRejectedError
 				? {

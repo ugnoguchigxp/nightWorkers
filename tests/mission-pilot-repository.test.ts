@@ -349,7 +349,8 @@ describe("Mission Pilot repository", () => {
 			.set({ desiredState: "playing", phase: "starting", version: 3 })
 			.where(eq(missionPilotSessions.taskId, taskId));
 		const latest = await finishStop(taskId, 2);
-		expect(latest).toMatchObject({
+		expect(latest).toBeNull();
+		expect(await getSessionByTaskId(taskId)).toMatchObject({
 			desiredState: "playing",
 			phase: "starting",
 			version: 3,

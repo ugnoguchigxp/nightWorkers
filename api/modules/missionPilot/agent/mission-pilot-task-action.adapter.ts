@@ -28,6 +28,14 @@ import { actionResourceBelongsToTask } from "./mission-pilot-task-action-resourc
 
 export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 	async execute(input) {
+		const { signal } = input;
+		if (signal.aborted)
+			return failed(
+				input.actionId,
+				input.idempotencyKey,
+				"domain_precondition",
+				"Mission Pilot was stopped before the Task action started.",
+			);
 		const definition = getMissionPilotActionDefinition(input.actionId);
 		if (!definition)
 			return failed(
@@ -184,7 +192,12 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 			);
 		}
 		if (receipt.status === "succeeded")
-			return { ok: true, actionId: input.actionId, data: receipt.resultJson };
+			return {
+				ok: true,
+				actionId: input.actionId,
+				data: receipt.resultJson,
+				replayed: true,
+			};
 		if (receipt.status === "failed")
 			return {
 				ok: false,
@@ -212,6 +225,15 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"outcome_unknown",
 				"The action receipt changed before execution. Re-read current state before retrying.",
 			);
+		if (signal.aborted) {
+			const result = stoppedBeforeAction(input.actionId, input.idempotencyKey);
+			await completeMissionPilotActionExecution({
+				id: receipt.id,
+				status: "failed",
+				failure: result.failure,
+			});
+			return result;
+		}
 		try {
 			const data = await executeMissionPilotAction(
 				input.taskId,
@@ -223,6 +245,7 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 					idempotencyKey: input.idempotencyKey,
 					expectedTaskRevision: input.expectedTaskRevision,
 					sourceRunId: readRepairSourceRunId(validated.data),
+					signal,
 				},
 			);
 			await completeMissionPilotActionExecution({
@@ -231,8 +254,20 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				sourceResourceType: input.actionId,
 				sourceResourceId: resourceId(data),
 			});
-			return { ok: true, actionId: input.actionId, data };
+			return { ok: true, actionId: input.actionId, data, replayed: false };
 		} catch (error) {
+			if (signal.aborted) {
+				const result = stoppedDuringAction(
+					input.actionId,
+					input.idempotencyKey,
+				);
+				await completeMissionPilotActionExecution({
+					id: receipt.id,
+					status: "outcome_unknown",
+					failure: result.failure,
+				});
+				return result;
+			}
 			const result =
 				error instanceof AppError && error.statusCode < 500
 					? failedFromAppError(input.actionId, input.idempotencyKey, error)
@@ -254,6 +289,24 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 		}
 	},
 };
+
+function stoppedBeforeAction(actionId: string, idempotencyKey: string) {
+	return failed(
+		actionId,
+		idempotencyKey,
+		"domain_precondition",
+		"Mission Pilot was stopped before the Task action started.",
+	);
+}
+
+function stoppedDuringAction(actionId: string, idempotencyKey: string) {
+	return failed(
+		actionId,
+		idempotencyKey,
+		"outcome_unknown",
+		"Mission Pilot was stopped while the Task action was running. Re-read the current resource before retrying.",
+	);
+}
 
 async function assertMissionPilotTaskCompletion(input: {
 	taskId: string;

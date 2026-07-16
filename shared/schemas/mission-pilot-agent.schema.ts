@@ -30,10 +30,11 @@ export const missionPilotConversationItemKindSchema = z.enum([
 	"runtime_failure",
 	"repair_request",
 ]);
-export const missionPilotTaskEventTypeSchema = z.enum([
+export const MISSION_PILOT_TASK_EVENT_TYPES = [
 	"task.user_message_added",
 	"task.state_changed",
 	"questionnaire.ready",
+	"questionnaire.state_changed",
 	"questionnaire.submission_failed",
 	"questionnaire.follow_up_failed",
 	"plan_artifact.ready",
@@ -47,7 +48,10 @@ export const missionPilotTaskEventTypeSchema = z.enum([
 	"permission.changed",
 	"mission_pilot.resume_requested",
 	"mission_pilot.retry_timer_elapsed",
-]);
+] as const;
+export const missionPilotTaskEventTypeSchema = z.enum(
+	MISSION_PILOT_TASK_EVENT_TYPES,
+);
 export const missionPilotToolCallStatusSchema = z.enum([
 	"pending",
 	"running",
