@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { isCodingAgentChatTrace } from "../../codingAgent";
 import {
 	buildTranscriptItems,
 	type TranscriptItem,
@@ -192,9 +193,7 @@ export function ThreadTimeline({
 				"threadTimeline.buildTranscriptItems",
 				() =>
 					buildTranscriptItems({
-						events: activityEvents.filter(
-							(event) => event.traceChannel === "chat",
-						),
+						events: activityEvents.filter(isCodingAgentChatTrace),
 						artifacts: activityArtifacts,
 					}),
 				{

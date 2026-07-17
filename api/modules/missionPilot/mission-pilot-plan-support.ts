@@ -11,10 +11,7 @@ import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
 import { appendActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import {
-	missionPilotPlanOutputTrace,
-	missionPilotThoughtTrace,
-} from "../nightworkers/nightworkers.trace-provenance";
+import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { generatePlanViewArtifact } from "../planViews/planView-generation.service";
 import {
 	getDesignQuestionnaireSession,
@@ -35,6 +32,7 @@ import {
 	publishMissionPilotPlanProgressUpdated,
 	publishMissionPilotUpdated,
 } from "./mission-pilot-realtime";
+import { missionPilotArtifactTrace } from "./mission-pilot-trace-provenance";
 
 export const activeTasks = new Set<string>();
 export const MAX_REVIEW_ATTEMPTS = 3;
@@ -200,8 +198,8 @@ export async function generateStepArtifact(
 		stepId: step.id,
 		target: target as PlanArtifactGenerationTarget,
 	});
-	const trace = missionPilotPlanOutputTrace({ sessionId: step.sessionId });
-	const llmUsageTrace = trace;
+	const trace = missionPilotArtifactTrace({ sessionId: step.sessionId });
+	const llmUsageTrace = missionPilotThoughtTrace({ sessionId: step.sessionId });
 	if (kind === "blueprint") {
 		return generateBlueprintArtifact(taskId, {
 			questionnaireSessionId,
@@ -343,7 +341,7 @@ export async function answerPreFeaturePlanQuestionnaire(
 				maxQuestions: 5,
 				role: "mission_pilot",
 				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
-				llmUsageTrace: missionPilotPlanOutputTrace({ sessionId }),
+				llmUsageTrace: missionPilotThoughtTrace({ sessionId }),
 			},
 		);
 		addedCount = generated.result.addedCount;
@@ -378,7 +376,7 @@ export async function answerPreFeaturePlanQuestionnaire(
 				completionPolicy: "finalize_current_questions",
 				role: "mission_pilot",
 				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
-				usageTrace: missionPilotPlanOutputTrace({ sessionId }),
+				usageTrace: missionPilotThoughtTrace({ sessionId }),
 			},
 		);
 	}

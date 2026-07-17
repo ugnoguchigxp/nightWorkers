@@ -26,7 +26,7 @@ import type {
 	NativeApiExecutionMode,
 	RuntimeLaneResolution,
 } from "../../codingAgent";
-import { getOrCreateReviewRecommendation } from "../../review";
+import { getOrCreateReviewRecommendation } from "../../review/review-recommendation.service";
 import * as repo from "../nightworkers.repository";
 import { toErrorMessage, toRecord } from "./utils";
 

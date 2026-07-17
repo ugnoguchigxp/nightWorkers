@@ -5,8 +5,77 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
+import {
+	registerTaskRunAssociationHandler,
+	type TaskRunAssociationRequest,
+} from "../agentsShare";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import type { MissionPilotImplementationEnvelope } from "./mission-pilot-implementation-todo-projection.service";
+import { parseMissionPilotReworkPacket } from "./mission-pilot-rework";
+
+const MISSION_PILOT_RUN_ASSOCIATION_KIND = "mission_pilot";
+
+export type MissionPilotRunPhase =
+	| "repository_bootstrap"
+	| "implementation"
+	| "test"
+	| "review";
+
+export class MissionPilotRunAssociationError extends Error {
+	constructor(
+		message = "Mission Pilot could not claim the prepared child run.",
+	) {
+		super(message);
+		this.name = "MissionPilotRunAssociationError";
+	}
+}
+
+export function readMissionPilotRunAssociationPayload(value: unknown) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const candidate = value as Record<string, unknown>;
+	if (
+		candidate.phase !== "repository_bootstrap" &&
+		candidate.phase !== "implementation" &&
+		candidate.phase !== "test" &&
+		candidate.phase !== "review"
+	)
+		return null;
+	const phase: MissionPilotRunPhase = candidate.phase;
+	const missionPilot = record(candidate.missionPilot);
+	if (
+		typeof missionPilot.sessionId !== "string" ||
+		typeof missionPilot.cycle !== "number" ||
+		typeof missionPilot.contextRevision !== "number" ||
+		typeof missionPilot.contextDigest !== "string"
+	)
+		return null;
+	const hasReworkPacket = Object.hasOwn(missionPilot, "reworkPacket");
+	const reworkPacket = parseMissionPilotReworkPacket(missionPilot.reworkPacket);
+	if (hasReworkPacket && !reworkPacket) return null;
+	return {
+		phase,
+		missionPilot: {
+			sessionId: missionPilot.sessionId,
+			cycle: missionPilot.cycle,
+			contextRevision: missionPilot.contextRevision,
+			contextDigest: missionPilot.contextDigest,
+			...(reworkPacket ? { reworkPacket } : {}),
+		},
+	};
+}
+
+export function buildMissionPilotRunAssociationRequest(input: {
+	phase: MissionPilotRunPhase;
+	missionPilot: unknown;
+}): TaskRunAssociationRequest {
+	const payload = readMissionPilotRunAssociationPayload(input);
+	if (!payload) {
+		throw new MissionPilotRunAssociationError(
+			"Mission Pilot run association payload is invalid.",
+		);
+	}
+	return { kind: MISSION_PILOT_RUN_ASSOCIATION_KIND, payload };
+}
 
 export async function associateMissionPilotImplementationRun(input: {
 	taskId: string;
@@ -141,7 +210,7 @@ function record(value: unknown): Record<string, unknown> {
 export async function associateMissionPilotChildRun(input: {
 	taskId: string;
 	runId: string;
-	phase: "repository_bootstrap" | "implementation" | "test" | "review";
+	phase: MissionPilotRunPhase;
 	missionPilot: {
 		sessionId: string;
 		cycle: number;
@@ -273,25 +342,20 @@ export async function associateMissionPilotChildRun(input: {
 
 function missionPilotCycleForPhase(
 	session: typeof missionPilotSessions.$inferSelect,
-	phase: "repository_bootstrap" | "implementation" | "test" | "review",
+	phase: MissionPilotRunPhase,
 ) {
 	if (phase === "test") return session.testCycle;
 	if (phase === "review") return session.reviewCycle;
 	return session.implementationCycle;
 }
 
-function phaseCycleCondition(
-	phase: "repository_bootstrap" | "implementation" | "test" | "review",
-	cycle: number,
-) {
+function phaseCycleCondition(phase: MissionPilotRunPhase, cycle: number) {
 	if (phase === "test") return eq(missionPilotSessions.testCycle, cycle);
 	if (phase === "review") return eq(missionPilotSessions.reviewCycle, cycle);
 	return eq(missionPilotSessions.implementationCycle, cycle);
 }
 
-function missionPilotAssociationSourcePhases(
-	phase: "repository_bootstrap" | "implementation" | "test" | "review",
-) {
+function missionPilotAssociationSourcePhases(phase: MissionPilotRunPhase) {
 	if (phase === "repository_bootstrap")
 		return ["repository_bootstrap_preparing", "repository_bootstrapping"];
 	if (phase === "implementation")
@@ -304,3 +368,21 @@ function missionPilotAssociationSourcePhases(
 	if (phase === "test") return ["test_preparing", "testing"];
 	return ["review_preparing", "reviewing"];
 }
+
+registerTaskRunAssociationHandler(
+	MISSION_PILOT_RUN_ASSOCIATION_KIND,
+	async ({ taskId, runId, payload }) => {
+		const association = readMissionPilotRunAssociationPayload(payload);
+		if (!association) {
+			throw new MissionPilotRunAssociationError(
+				"Mission Pilot run association payload is invalid.",
+			);
+		}
+		const associated = await associateMissionPilotChildRun({
+			taskId,
+			runId,
+			...association,
+		});
+		if (!associated) throw new MissionPilotRunAssociationError();
+	},
+);

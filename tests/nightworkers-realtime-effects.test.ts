@@ -114,6 +114,51 @@ describe("useNightWorkersRealtime effect", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("completes pending chat only for Coding Agent output or structural Workbench terminal messages", async () => {
+		const { isWorkbenchIntakeTerminalMessage, shouldCompletePendingChat } =
+			await import("../src/modules/nightworkers/realtimeChatCompletion");
+		const intakeFailure: TaskMessage = {
+			id: "failed",
+			taskId: "task-1",
+			role: "system",
+			content: "failed",
+			metadataJson: { source: "workbench", intent: "intake_failed" },
+			createdAt: now,
+		};
+		expect(isWorkbenchIntakeTerminalMessage(intakeFailure)).toBe(true);
+		expect(
+			isWorkbenchIntakeTerminalMessage({
+				...intakeFailure,
+				id: "questionnaire-ready",
+				metadataJson: {
+					source: "workbench",
+					intent: "design_questionnaire_ready",
+				},
+			}),
+		).toBe(true);
+		expect(
+			shouldCompletePendingChat({
+				message: intakeFailure,
+				pendingTaskId: "task-1",
+				pendingRunId: "not-started",
+			}),
+		).toBe(true);
+		expect(
+			shouldCompletePendingChat({
+				message: {
+					...intakeFailure,
+					id: "pilot",
+					metadataJson: {
+						source: "mission_pilot",
+						intent: "intake_failed",
+					},
+				},
+				pendingTaskId: "task-1",
+				pendingRunId: null,
+			}),
+		).toBe(false);
+	});
+
 	it("applies realtime websocket messages to query cache and local state", async () => {
 		vi.useFakeTimers();
 		vi.stubGlobal("window", {
@@ -262,6 +307,49 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: { text: "partial " },
 		});
 		socket.emit("message", {
+			type: "activity_event_created",
+			payload: {
+				event: {
+					id: "pilot-activity",
+					taskId: "task-1",
+					kind: "llm.usage",
+					traceOwner: "mission_pilot",
+					traceChannel: "chat",
+					message: "pilot usage",
+					createdAt: now,
+				},
+			},
+		});
+		socket.emit("message", {
+			type: "task_message_created",
+			payload: {
+				message: {
+					id: "pilot-message",
+					taskId: "task-1",
+					runId: null,
+					role: "assistant",
+					content: "pilot should not finish coding chat",
+					messageType: "text",
+					traceOwner: "mission_pilot",
+					traceChannel: "artifact",
+					createdAt: now,
+				},
+			},
+		});
+		expect(streamingTextByTask).toEqual({ "task-1": "partial " });
+		expect(isChatSubmitting).toBe(true);
+		expect(
+			queryClient.getQueryData<ActivityReplay>(["activityReplay", "task-1"])
+				?.events,
+		).toHaveLength(1);
+		expect(
+			queryClient.getQueryData<TaskMessage[]>(["taskMessages", "task-1"]),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "pilot-message" }),
+			]),
+		);
+		socket.emit("message", {
 			type: "task_event_created",
 			runId: "run-1",
 			seq: 4,
@@ -381,6 +469,7 @@ describe("useNightWorkersRealtime effect", () => {
 		expect(
 			queryClient.getQueryData<TaskMessage[]>(["taskMessages", "task-1"]),
 		).toEqual([
+			expect.objectContaining({ id: "pilot-message" }),
 			expect.objectContaining({ id: "message-user" }),
 			expect.objectContaining({ id: "message-assistant" }),
 			expect.objectContaining({ content: "socket failed" }),

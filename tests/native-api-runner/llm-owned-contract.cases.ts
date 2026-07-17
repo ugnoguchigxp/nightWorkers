@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildCodingAgentSystemContext } from "../../api/modules/codingAgent/context";
+import {
+	buildCodingAgentSystemContext,
+	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
+} from "../../api/modules/codingAgent/context";
 import { compactNativeApiHistoryToBaseline } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-context-compaction";
 import type { NativeApiToolTurnProvider } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
 import { NativeApiRunner } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
@@ -106,7 +109,9 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain(
 			"あなたはユーザーTaskを自動化するCoding Agentです",
 		);
-		expect(system?.content).toContain('"version": 5');
+		expect(system?.content).toContain(
+			`"version": ${CODING_AGENT_SYSTEM_CONTEXT_VERSION}`,
+		);
 		expect(system?.content).toContain(
 			"実装前の計画が必要かをあなた自身が判断してください",
 		);

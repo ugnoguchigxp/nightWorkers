@@ -1,4 +1,8 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
+import {
+	readCodingAgentPlanModeRequested,
+	resolveCodingAgentInvocationSource,
+} from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 import { startTaskRun } from "./start-task-run";
@@ -43,6 +47,10 @@ export async function resumeTaskRunTodo(input: {
 	return startTaskRun(task.id, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		codingAgentInvocationSource: resolveCodingAgentInvocationSource(
+			run.contextSnapshot,
+		),
+		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
 		resumeRunId: run.id,
 		latestUserMessageOverride: input.userContext,
 		resumeCommand: {

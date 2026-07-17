@@ -177,9 +177,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			if (!activeSessionId) return [];
 			const res = await fetchTaskMessages(activeSessionId);
 			if (!res.ok) throw new Error("Failed to fetch task messages");
-			return ((await res.json()) as TaskMessage[]).filter(
-				(message) => message.traceChannel === "chat",
-			);
+			return (await res.json()) as TaskMessage[];
 		},
 		enabled: !!activeSessionId,
 		refetchOnWindowFocus: false,

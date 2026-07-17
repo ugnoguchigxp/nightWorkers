@@ -352,12 +352,13 @@ export async function startReviewRunForSession(
 	});
 	const reviewRun = await startTaskRun(session.taskId, {
 		executionModeSource: "review_run",
-		initialTodos: todos,
-		missionPilotPhase:
+		codingAgentInvocationSource:
 			missionInput?.missionPilot || missionInput?.missionPilotAgent
-				? "review"
-				: undefined,
+				? "mission_pilot"
+				: "user",
+		initialTodos: todos,
 		missionPilotAgent: missionInput?.missionPilotAgent,
+		runAssociation: missionInput?.runAssociation,
 		runtimeOptionsPatch: {
 			...(missionInput?.missionPilot
 				? { missionPilot: missionInput.missionPilot }

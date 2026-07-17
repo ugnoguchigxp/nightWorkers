@@ -37,6 +37,8 @@ export type TodoCreatedBy = "agent" | "human" | "migration";
 
 export type CodingAgentSystemContextSnapshot = {
 	version: number;
+	invocationSource: "user" | "mission_pilot";
+	planModeRequested: boolean;
 	roleInstructionsJa: string;
 	taskGoal: string;
 	projectRulesJa: string[];

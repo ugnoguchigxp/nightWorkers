@@ -2,7 +2,7 @@
 
 ## Status
 
-- Concept status: `locked`
+- Concept status: `superseded in part by standalone Coding Agent prerequisite`
 - Plan status: `implementation-ready; document review passed; Luna slow implementation handoff`
 - Implementation status: `implemented; verification complete`
 - Document review status: `reviewed against current code, scripts, tests, and dirty working tree`
@@ -11,7 +11,7 @@
 - Target branch at plan creation: `codex/mission-pilot-persistent-agent-refactor`
 - Target HEAD at plan creation: `95dfa8dc`
 - Working tree policy: preserve every pre-existing tracked and untracked change visible when implementation starts
-- Priority over older plans: this document is authoritative when an older Mission Pilot or Coding Agent plan assigns Questionnaire, Plan routing, or Artifact ownership to Coding Agent
+- Priority over older plans: module boundary rules remain authoritative; the absolute assumption that every Coding Agent run requires a Mission Pilot handoff is superseded by the correction below
 
 この文書は、Mission PilotとCoding Agentの責務が繰り返し混在した問題を、ファイル配置、依存方向、route、service、repository、SystemContext、tool、event、保存状態のすべてで解消するための実装正本である。
 
@@ -19,7 +19,22 @@
 
 > Agent固有のproduction codeをMission Pilot、Coding Agent、agentsShareの3 moduleへ集約し、Mission PilotがTask解釈・Questionnaire・Plan routing・Artifact・進行判断を所有し、Coding Agentが確定済みTaskと設計に基づくrepository作業だけを所有する状態を、静的検査と回帰テストで破れないようにする。
 
-このリファクタリングは、単なるファイル移動ではない。現在誤ってCoding Agentへ移されたPlan Modeの意味判断をMission Pilotへ戻し、共有moduleやproviderへrole固有処理を隠す迂回も禁止する。
+このリファクタリングは、単なるファイル移動ではない。Mission Pilot起動中のQuestionnaire、Plan routing、Dedicated Artifactに関する意味判断をMission Pilotへ戻し、共有moduleやproviderへrole固有処理を隠す迂回も禁止する。Mission Pilot停止中のユーザー直結Plan Modeは、これらのArtifact操作を行わず、Coding AgentがImplementation Planを作成する独立経路とする。
+
+## 2026-07-17 Standalone Coding Agent Correction
+
+Mission Pilotは任意の自動操縦roleであり、Coding Agentの必須bootstrapではない。Mission Pilotが停止中または未起動でも、ユーザー操作からCoding Agentを直接開始し、Todoによる計画、repository調査、実装、検証、完了報告まで完結できなければならない。
+
+- ユーザー直結Runは`invocationSource=user`を正本とし、Mission Pilotの起動やhandoffを待たない。
+- Mission Pilot handoff Runは`invocationSource=mission_pilot`を正本とし、確定済みTaskと設計を変更せずに実装する。
+- Plan Mode要求は単一Coding Agent runtimeの`planModeRequested`として保持し、通常の実装開始へ暗黙に潰さない。
+- ユーザー直結Plan Mode Runはrepositoryを変更せず、Implementation Planを保存して終了する。実装は後続のユーザー操作で開始する通常のCoding Agent Runが担う。
+- ユーザー直結intakeのPlan Mode gateはCoding Agent moduleが所有し、`plan_mode`または`coding_agent`だけを返す。これはMission PilotのQuestionnaire / Artifact routingとは別契約である。
+- gateは初期ユーザーPrompt、Task履歴、直近Runの構造的provenanceをLLMへ渡し、実装前に確定すべき責務境界、互換性、移行、データ、権限、受け入れ条件、検証方針が残るかを判断させる。作業種別keyword、規模表現、ファイル数の固定閾値で分岐しない。
+- 両経路はユーザー文言やerror keywordでは分岐せず、Runに保存された構造的provenanceでSystemContextを構成する。
+- Questionnaire、Plan routing、Dedicated Artifact mutationのMission Pilot ownershipと、role module境界は維持する。Coding Agent単体のPlan Mode結果はImplementation Planとして保存できる。
+
+以降の「Coding Agentは確定済み設計だけを受け取る」という記述は、`invocationSource=mission_pilot`のRunに限定して読む。ユーザー直結Runへは適用しない。
 
 ## 0. Implementation Start Gate
 

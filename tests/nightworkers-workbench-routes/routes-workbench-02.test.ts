@@ -111,18 +111,14 @@ const sameOriginHeaders = { Origin: "http://localhost:39174" };
 function mockPlanModeGate(
 	shouldStartPlanMode: boolean,
 	reason = "test gate",
-	action:
-		| "plan_mode"
-		| "general_answer"
-		| "implementation"
-		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
+	action: "plan_mode" | "coding_agent" = shouldStartPlanMode
+		? "plan_mode"
+		: "coding_agent",
 ) {
 	return JSON.stringify({
 		shouldStartPlanMode,
 		action,
 		reason,
-		dedicatedViews: [],
-		specificationLenses: [],
 	});
 }
 
@@ -177,10 +173,21 @@ describe("NightWorkers workbench routes", () => {
 		expect(body.task.objective).toBe("同期で待たずに受付してください");
 	});
 
-	it("starts a neutral planning run without pre-creating a Questionnaire", async () => {
-		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
-			mockPlanModeGate(true, "設計が必要です"),
-		);
+	it("opens Plan Mode and creates a Questionnaire without starting Coding Agent", async () => {
+		vi.mocked(llm.callStructuredJsonLLM)
+			.mockResolvedValueOnce(mockPlanModeGate(true, "設計が必要です"))
+			.mockResolvedValueOnce(
+				JSON.stringify({
+					title: "認可つきAPIの実装前確認",
+					questions: [
+						{
+							text: "APIの利用者と権限境界をどれにしますか？",
+							type: "radio",
+							options: ["本人のデータだけ", "管理者が全件操作", "公開API"],
+						},
+					],
+				}),
+			);
 		const { task } = await createWorkbenchTask({
 			title: "New Session",
 			objective: "",
@@ -199,20 +206,22 @@ describe("NightWorkers workbench routes", () => {
 
 		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
-		expect(body.run).toMatchObject({ taskId: task.id, status: "running" });
+		expect(body.run).toBeNull();
+		expect(body.task.status).toBe("ready");
 		expect(
 			body.messages.some(
 				(message: unknown) =>
 					message.metadataJson?.intent === "design_questionnaire_ready",
 			),
-		).toBe(false);
+		).toBe(true);
 		expect(
 			body.messages.some(
 				(message: unknown) =>
-					message.metadataJson?.intent === "run_started" &&
-					message.metadataJson?.planMode === true,
+					message.metadataJson?.intent === "design_questionnaire_starting",
 			),
 		).toBe(true);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
 	});
 
 	it("starts a normal run for Blueprint wording instead of classifying jobType in intake", async () => {

@@ -6,6 +6,7 @@ export function isPlanModeWorkspaceMessage(message: TaskMessage) {
 	const intent = String(metadata.intent || "");
 	const artifactKind = String(metadata.artifactKind || "");
 	return (
+		intent === "design_questionnaire_starting" ||
 		intent === "design_questionnaire_ready" ||
 		intent === "mock_blueprint" ||
 		intent === "feature_plan" ||

@@ -9,6 +9,7 @@ export type WorkbenchMovableSessionGroup = "processing" | "queue" | "archive";
 export type WorkbenchPhase =
 	| "Analyzing"
 	| "Prompt Preparing"
+	| "Planning"
 	| "Queued"
 	| "Implementing"
 	| "Verifying"

@@ -8,8 +8,8 @@ import {
 	getVerificationDocument,
 	listVerificationChecklistItems,
 } from "../../modules/nightworkers/nightworkers.verification.repository";
-import { listDesignQuestionnaires } from "../../modules/questionnaire/questionnaire.service";
-import { getPlanModeWorkspace } from "../../modules/specification/plan-mode-workspace.service";
+import { listDesignQuestionnaires } from "../../modules/questionnaire/questionnaire-query.service";
+import { getPlanModeWorkspaceReferenceContext } from "../../modules/specification/plan-mode-workspace.service";
 import {
 	type AssembledDesignContext,
 	buildAssembledDesignContext,
@@ -293,7 +293,7 @@ async function resolveAssembledDesignContext(
 ) {
 	const task = await repo.getTask(taskId);
 	if (!task) return undefined;
-	const workspace = await getPlanModeWorkspace(taskId);
+	const workspace = await getPlanModeWorkspaceReferenceContext(taskId);
 	const sessions = await listDesignQuestionnaires(taskId);
 	const preferredQuestionnaireSessionId =
 		typeof specificationMetadata.questionnaireSessionId === "string"

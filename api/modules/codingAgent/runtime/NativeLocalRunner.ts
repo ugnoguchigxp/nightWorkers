@@ -4,7 +4,7 @@ import type {
 	RunnerOptions,
 	RunnerStatus,
 } from "../../../services/runner/types";
-import { gitDiffTool } from "../../../services/worker-tools";
+import { gitDiffTool } from "../../../services/worker-tools/git";
 import { NativeAgentRuntime } from "./NativeAgentRuntime";
 
 export class NativeLocalRunner implements IRunner {

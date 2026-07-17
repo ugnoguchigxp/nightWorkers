@@ -1,5 +1,4 @@
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
-import { MISSION_PILOT_PLAN_SYSTEM_CONTEXT } from "../../../modules/missionPilot";
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
 import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "../../../modules/specification/specification-traceability";
 
@@ -45,11 +44,25 @@ const STARTER_TEMPLATE_DATABASE_VARIANT_POLICY =
 
 const DATABASE_QUESTION_GUIDANCE = `DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、template の branch variant または実装計画での DB 差し替えを識別できる選択肢にしてください。技術スタックに専用 variant がないことを理由に DB の選択肢を除外しないでください。${STARTER_TEMPLATE_DATABASE_VARIANT_POLICY}`;
 
+const GRILL_ME_DECISION_GUIDANCE = [
+	"grill-me では、ユーザーの依頼を言い換える質問ではなく、回答によって実装、公開契約、データ、権限、検証のいずれかが具体的に変わる未決定事項を質問してください。",
+	"最初に、目的と成功状態、対象ユーザー、対象 / 非対象、主要操作と状態遷移、受け入れ条件の食い違いを確認し、その回答がないと決められない詳細を follow-up に回してください。",
+	"必要に応じて、空状態・重複・上限・不正入力・権限不足・部分失敗・再試行・削除や復旧などのedge case、互換性、migration、rollback、監視・運用まで掘り下げてください。",
+	"Task、既存Artifact、repository contextの間に矛盾や暗黙の仮定がある場合は、勝手に丸めず、その差によって実装が分かれる選択肢として明示してください。",
+	"各質問は一つの判断軸だけを扱い、選択肢は実装者が異なる挙動として区別できる具体性を持たせてください。『適切に対応』『一般的な方法』『必要に応じて』のように実装を確定できない選択肢は作らないでください。",
+	"radio の選択肢は同時に成立しない代替案、checkbox の選択肢は同時採用できる独立項目だけにしてください。削除方式と追加機能、認証方式と画面範囲など、別の判断軸を一つのcheckboxへ混ぜないでください。",
+	"物理削除 / 論理削除、即時削除 / 復旧可能のように基本方針を一つ選ぶ判断はradioにし、検索・一括操作・通知などの任意機能とは別の質問にしてください。",
+	"並び順と空状態、入力validationと件数上限、route配置と未認証API responseのような独立判断も一問に結合しないでください。1ページに収まらない下位論点は、結合せずfollow-upへ回してください。",
+	"radio の選択肢同士で意味を重複させず、どの選択肢を選んだかだけで実装方針を一意に区別できるようにしてください。",
+	"既存contextで確定済みの事項、通常のrepository調査で一意に分かる事項、回答しても設計や検証が変わらない好みは質問しないでください。",
+].join("\n");
+
 export function buildDesignQuestionnaireSystemPrompt() {
 	return [
 		"実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。",
 		"Questionnaire は最大4ページまで続けられます。初回はその1ページ目です。",
 		"初回フォームでは、最初に回答できる重要論点を 1 ページ分まとめて聞いてください。",
+		GRILL_ME_DECISION_GUIDANCE,
 		"質問ジャンルは task / blueprint / repository context から判断し、必要なものを選んでください。固定分類やキーワード一致で決めないでください。",
 		"例として、scope、UI/UX、データ、backend/API、認証、外部連携、Docker、cloud deployment、storage、運用、非対象などが論点になり得ます。",
 		"Questionnaire も後続の設計書と同じく、入力 context に含まれる既存資料と project context を材料にしてください。材料があるのに一般論だけで質問を作らないでください。",
@@ -62,7 +75,7 @@ export function buildDesignQuestionnaireSystemPrompt() {
 		"コードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
 		"ユーザーが Radio button または Checkbox で選べる質問だけを作ってください。",
 		"自由記述、説明文、DB設計、分岐条件、id は作らないでください。",
-		"質問は原則 8-12 件にしてください。明らかに論点が少ない場合だけ少なくして構いません。",
+		"質問は原則 8-12 件にしてください。これは件数を満たすためのノルマではありません。明らかに論点が少ない場合は減らし、独立判断が多い場合は重要度の低いものをfollow-upへ回してください。",
 		"各 options は 2-10 件にしてください。",
 		"type は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。",
 		"実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。",
@@ -129,6 +142,7 @@ export function buildDesignQuestionnaireFollowUpUserPrompt(
 export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
 	return [
 		"目的は、実装前の仕様の曖昧さを grill-me のように質問攻めで潰すことです。",
+		GRILL_ME_DECISION_GUIDANCE,
 		"ユーザー回答を読み、次に聞かないと答えられない下位論点や、まだ未確認の質問ジャンルが残っているか判定してください。",
 		"Questionnaire は最大4ページまでです。4ページ目まで回答済みなら追加質問を出さず ready_for_design_assembly にしてください。",
 		"answeredQuestions は既に回答済みの仕様判断です。選択肢が「未定」「後続決定」でも、その質問自体は回答済みとして扱い、同じ判断軸を言い換えて再質問しないでください。",
@@ -241,10 +255,10 @@ export function buildDesignQuestionnaireReviewUserPrompt(
 }
 
 export function buildSpecificationDocumentSystemPrompt(input?: {
-	missionPilot?: boolean;
+	additionalSystemContext?: string | null;
 }) {
 	return [
-		...(input?.missionPilot ? [MISSION_PILOT_PLAN_SYSTEM_CONTEXT] : []),
+		...(input?.additionalSystemContext ? [input.additionalSystemContext] : []),
 		"Design Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。",
 		"目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。",
 		"文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。",

@@ -1,5 +1,8 @@
 import { ensureNightWorkersSchema } from "../db/bootstrap";
-import { initializeMissionPilotRunSync } from "../modules/missionPilot";
+import {
+	initializeMissionPilotRunSync,
+	initializeMissionPilotTaskRunCloseout,
+} from "../modules/missionPilot";
 import { runImplementationQueueInProcess } from "../modules/nightworkers/run-orchestration/queues";
 import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
 import {
@@ -12,6 +15,7 @@ let activeRunIds: string[] = [];
 let shuttingDown = false;
 
 initializeMissionPilotRunSync();
+initializeMissionPilotTaskRunCloseout();
 
 async function shutdown() {
 	if (shuttingDown) return;

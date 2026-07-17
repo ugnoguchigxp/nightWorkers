@@ -15,4 +15,7 @@
 - Agent固有のproduction codeは、backendでは`api/modules/missionPilot`、`api/modules/codingAgent`、`api/modules/agentsShare`、frontendでは対応する`src/modules`配下にだけ置く。`services`、`nightworkers`、`planMode`など他moduleへAgent固有のroute、service、repository、prompt、SystemContext、tool、continuation、role分岐を放置しない。
 - Mission PilotとCoding Agentの連携は、`agentsShare`またはAgent非依存の共有application command、port、event、正本schemaを介して行う。`agentsShare`には両roleで同じ意味を持つcontract、port、event、純粋utilityだけを置き、route、repository、SystemContext、role固有prompt、role固有tool、role判定を置かない。共有moduleへrole固有実装を移して境界を迂回しない。
 - Mission PilotはTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有する。Coding Agentは渡されたTaskと確定済み設計を基に、登録済みrepositoryで調査、編集、command実行、検証を行う。これらの所有権を相手へ移さない。
+- Mission Pilot起動中は、Mission PilotがTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有し、Coding Agentは明示的にhandoffされた実装と検証を担う。
+- Mission Pilotが停止中または未起動の場合は、ユーザーがCoding Agentを直接開始できる。Coding AgentはMission Pilotの起動やhandoffを待たず、Todoによる計画、repository調査、実装、検証、完了報告まで単体で完結する。
+- ユーザー直結RunとMission Pilot handoff Runは、ユーザー文言ではなくRunに保存した構造的provenanceで区別する。
 - Mission Pilotはユーザータスクを自動化するAIとして振る舞い、人間のユーザーに許可されていない操作や能力を持たせない。

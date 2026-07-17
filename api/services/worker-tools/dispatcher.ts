@@ -1,32 +1,29 @@
 import type { AgentSafetyPolicy } from "../../modules/codingAgent";
-import type { WorkerToolName } from "../tool-policy/types";
 import {
-	applyPatchTool,
-	cloneGitRepoTool,
-	completionCheckTool,
-	copyDirectoryTool,
-	fetchContentTool,
-	findFileTool,
-	gitDiffTool,
-	gitStatusTool,
-	importProjectTool,
-	inspectStructureTool,
-	listDirTool,
-	materializeTemplateTool,
-	mcpCallTool,
 	projectExplorationCatalogTool,
 	projectExplorationCatalogUnavailableResult,
-	readCurrentSpecificationTool,
-	readFileTool,
-	replaceContentTool,
-	runBackgroundCommandTool,
-	runCheckTool,
-	runCommandTool,
-	runVerificationTool,
-	searchFilesTool,
-	searchWebTool,
-} from ".";
+} from "../../modules/ontology/exploration/project-exploration-catalog-tool";
+import type { WorkerToolName } from "../tool-policy/types";
+import { applyPatchTool } from "./apply-patch";
+import { cloneGitRepoTool } from "./clone-git-repo";
+import { copyDirectoryTool } from "./copy-directory";
+import { fetchContentTool } from "./fetch-content";
+import { findFileTool } from "./find-file";
+import { gitDiffTool, gitStatusTool } from "./git";
+import { importProjectTool } from "./import-project";
+import { listDirTool } from "./list-dir";
+import { materializeTemplateTool } from "./materialize-template";
+import { mcpCallTool } from "./mcp-call-tool";
 import type { WorkerToolExecutionContext } from "./output-compression";
+import { readFileTool } from "./read-file";
+import { replaceContentTool } from "./replace-content";
+import { runBackgroundCommandTool } from "./run-background-command";
+import { completionCheckTool, runCheckTool } from "./run-check";
+import { runCommandTool } from "./run-command";
+import { runVerificationTool } from "./run-verification";
+import { searchFilesTool } from "./search-files";
+import { searchWebTool } from "./search-web";
+import { inspectStructureTool } from "./structure-inspection/inspect-structure";
 import type { WorkerToolResult } from "./types";
 
 export type WorkerToolDispatchInput = {
@@ -111,6 +108,9 @@ export async function executeWorkerTool(
 	}
 
 	if (toolName === "read_current_specification") {
+		const { readCurrentSpecificationTool } = await import(
+			"./read-current-specification"
+		);
 		return {
 			result: await readCurrentSpecificationTool({
 				taskId: (args.taskId as string | undefined) || input.taskId || "",

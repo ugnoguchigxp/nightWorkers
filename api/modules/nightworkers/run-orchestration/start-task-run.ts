@@ -2,6 +2,8 @@ import { buildPromptWithStateCardParts } from "../../../services/conversation-co
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
+import { projectTaskRunParentStatus } from "../../agentsShare";
+import { resolveCodexIntakeRuntimeHandoff } from "../../codingAgent";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
 	buildOntologyRuntimeContextSnapshot,
@@ -19,7 +21,7 @@ import {
 } from "./runtime-routing";
 import {
 	buildContinuationRouteIdentity,
-	createPreparedMissionPilotAssociation,
+	createPreparedRunAssociation,
 	createPreparedRuntimeLaunch,
 } from "./start-task-run-launch";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
@@ -32,7 +34,6 @@ import {
 	recordAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
-import { applyMissionPilotTaskStatusAfterRun } from "./task-status-projection-policy";
 import { toErrorMessage } from "./utils";
 
 export { startTaskRun } from "./start-task-run-entry";
@@ -106,11 +107,14 @@ async function failPreparedRunBeforeLaunch(input: {
 			error: message,
 		},
 	});
-	await applyMissionPilotTaskStatusAfterRun({
+	const parentTaskProjection = await projectTaskRunParentStatus({
 		taskId: input.taskId,
 		runId: input.runId,
 		runStatus: "failed",
+		executionMode: input.executionMode,
 	});
+	if (!parentTaskProjection.handled)
+		await repo.updateTaskStatus(input.taskId, parentTaskProjection.status);
 }
 
 export async function prepareTaskRunInProcess(
@@ -120,11 +124,7 @@ export async function prepareTaskRunInProcess(
 	const resumable = options.resumeRunId
 		? await prepareResumableTaskRun(taskId, options.resumeRunId)
 		: null;
-	const task =
-		resumable?.task ??
-		(await prepareStartableTask(taskId, {
-			allowMissionPilotNeedsReview: Boolean(options.missionPilotAgent),
-		}));
+	const task = resumable?.task ?? (await prepareStartableTask(taskId));
 	const {
 		repoInfo,
 		executionRoot,
@@ -141,6 +141,8 @@ export async function prepareTaskRunInProcess(
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
+	const codingAgentInvocationSource =
+		options.codingAgentInvocationSource ?? "user";
 	const {
 		runtimeRole,
 		blueprintPlanningSnapshot,
@@ -155,6 +157,12 @@ export async function prepareTaskRunInProcess(
 		taskId,
 		executionMode,
 		llmRouteOverride,
+		planModeRequested: Boolean(options.planModeRequested),
+	});
+	const intakeRuntimeResume = resolveCodexIntakeRuntimeHandoff({
+		handoff: options.intakeRuntimeThreadHandoff,
+		executionMode,
+		runtimeRoute: runtimeLlmRoute,
 	});
 	const gitBaseline = await readGitBaseline(executionRoot);
 	const projectExplorationCatalogPin =
@@ -192,6 +200,10 @@ export async function prepareTaskRunInProcess(
 						compiledPrompt: compiledPromptText,
 						executionMode,
 						executionModeSource,
+						codingAgentInvocation: {
+							source: codingAgentInvocationSource,
+						},
+						planModeRequested: Boolean(options.planModeRequested),
 						jobType,
 						projectExplorationCatalog: projectExplorationCatalogPin,
 						planModeSettingsSnapshot,
@@ -318,8 +330,10 @@ export async function prepareTaskRunInProcess(
 		executionMode,
 		executionPhase: executionMode,
 		executionModeSource,
+		codingAgentInvocation: { source: codingAgentInvocationSource },
 		projectExplorationCatalog: projectExplorationCatalogPin,
-		planModeClosed: true,
+		planModeRequested: Boolean(options.planModeRequested),
+		planModeClosed: !options.planModeRequested,
 		planModeSettingsSnapshot,
 		...blueprintPlanningSnapshot,
 		runtimeLane: runtimeLaneResolution.lane,
@@ -398,8 +412,11 @@ export async function prepareTaskRunInProcess(
 	let runtimeContextSnapshot: RuntimePromptSnapshot = {
 		...contextSnapshot,
 		executionPhase: executionMode,
-		planModeClosed: true,
-		implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE,
+		planModeRequested: Boolean(options.planModeRequested),
+		planModeClosed: !options.planModeRequested,
+		...(options.planModeRequested
+			? {}
+			: { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }),
 		conversationContext: conversationContext
 			? {
 					snapshotId: conversationContext.id,
@@ -467,12 +484,17 @@ export async function prepareTaskRunInProcess(
 		},
 	});
 	if (runtimeLaneResolution.lane === "codex-sdk") {
-		const runtimeResume = await loadCodexRuntimeResumeState({
-			taskId,
-			repositoryId: task.repositoryId,
-			executionMode,
-			agentModeSessionId: run.agentModeSessionId,
-		});
+		const runtimeResume =
+			intakeRuntimeResume ??
+			(await loadCodexRuntimeResumeState({
+				taskId,
+				repositoryId: task.repositoryId,
+				executionMode,
+				agentModeSessionId: run.agentModeSessionId,
+			}));
+		const handedOffFromIntakeGate =
+			"source" in runtimeResume &&
+			runtimeResume.source === "intake_gate_handoff";
 		runtimeContextSnapshot = {
 			...runtimeContextSnapshot,
 			runtimeResume,
@@ -486,12 +508,15 @@ export async function prepareTaskRunInProcess(
 			type: "system.info",
 			severity: runtimeResume.status === "available" ? "info" : "warning",
 			actor: "system",
-			message:
-				runtimeResume.status === "available"
+			message: handedOffFromIntakeGate
+				? "Codex runtime thread handed off from the intake gate."
+				: runtimeResume.status === "available"
 					? "Codex runtime resume state loaded for the active agent mode session."
 					: "Codex runtime resume state unavailable; runtime will start fresh.",
 			data: {
-				action: "runtime.resume_state_loaded",
+				action: handedOffFromIntakeGate
+					? "runtime.resume_state_handoff"
+					: "runtime.resume_state_loaded",
 				runtimeResume,
 			},
 		});
@@ -534,11 +559,10 @@ export async function prepareTaskRunInProcess(
 		run: compiledRun ?? run,
 		associate: resumable
 			? undefined
-			: createPreparedMissionPilotAssociation({
-					missionPilotPhase: options.missionPilotPhase,
-					runtimeOptions,
+			: createPreparedRunAssociation({
 					taskId,
 					runId: run.id,
+					request: options.runAssociation,
 				}),
 		launch: createPreparedRuntimeLaunch({
 			taskId,

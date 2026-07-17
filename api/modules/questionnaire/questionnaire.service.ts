@@ -29,13 +29,13 @@ import {
 	generateDesignQuestionnaireReviewRawOutput,
 } from "./questionnaire-generation.service";
 import {
-	buildDesignQuestionnaireSessionView,
 	getSessionQuestions,
 	parseDesignDecisionReviewRaw,
 	parseDesignQuestionnaireFollowUpDecisionRaw,
 	parseDesignQuestionnaireRaw,
 	renderDesignDecisionReviewMarkdown,
 } from "./questionnaire-parser.service";
+import { getDesignQuestionnaireSession } from "./questionnaire-query.service";
 import {
 	areQuestionnaireAnswersComplete,
 	parseQuestionnaireAnswerViews,
@@ -146,24 +146,10 @@ export async function createDesignQuestionnaire(
 	}
 }
 
-export async function listDesignQuestionnaires(taskId: string) {
-	const task = await getPlanModeTask(taskId);
-	if (!task) throw new NotFoundError("Task not found");
-	const sessions = await repo.listDesignQuestionnaireSessionsForTask(taskId);
-	return Promise.all(
-		sessions.map((session) => buildDesignQuestionnaireSessionView(session.id)),
-	);
-}
-
-export async function getDesignQuestionnaireSession(
-	taskId: string,
-	sessionId: string,
-) {
-	const session = await buildDesignQuestionnaireSessionView(sessionId);
-	if (session.taskId !== taskId)
-		throw new NotFoundError("Questionnaire session not found");
-	return session;
-}
+export {
+	getDesignQuestionnaireSession,
+	listDesignQuestionnaires,
+} from "./questionnaire-query.service";
 
 export async function saveDesignQuestionnaireAnswers(
 	taskId: string,

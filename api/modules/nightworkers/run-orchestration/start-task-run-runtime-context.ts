@@ -11,11 +11,12 @@ import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/
 import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import {
 	readRuntimeLaneConfigFromEnv,
+	resolveCodingAgentRuntimeRole,
 	resolveRuntimeLane,
 	resolveRuntimeLaneDefinition,
 } from "../../codingAgent";
 import { resolveProjectExplorationCatalogPin } from "../../ontology/exploration/project-exploration-source.service";
-import { resolveBlueprintPlanningReadiness } from "../nightworkers.basic.service";
+import { resolveBlueprintPlanningReadiness } from "../nightworkers.planning-helpers.service";
 import {
 	buildEffectiveLlmRoutingSnapshot,
 	resolveRuntimeLaneForRoleRoute,
@@ -26,12 +27,13 @@ export async function prepareTaskRunRuntimeContext(input: {
 	taskId: string;
 	executionMode: NonNullable<StartTaskRunOptions["executionMode"]>;
 	llmRouteOverride: Exclude<StartTaskRunOptions["routeOverride"], undefined>;
+	planModeRequested: boolean;
 }) {
-	const runtimeRole = "implementation" as const;
+	const runtimeRole = resolveCodingAgentRuntimeRole(input.planModeRequested);
 	const blueprintPlanningSnapshot = {
 		blueprintPlanning: await resolveBlueprintPlanningReadiness(input.taskId),
 	};
-	const runtimeRoleLabel = "Implementation";
+	const runtimeRoleLabel = input.planModeRequested ? "Plan" : "Implementation";
 	const settings = getCurrentSettings();
 	const generalSettings = readGeneralSettings();
 	const planModeSettingsSnapshot =

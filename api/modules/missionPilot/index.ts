@@ -31,6 +31,7 @@ export {
 	getMissionPilotExecution,
 	reconcileMissionPilotExecution,
 } from "./mission-pilot-execution-query.service";
+export * from "./mission-pilot-implementation-queue.adapter";
 export * from "./mission-pilot-implementation-todo-projection.service";
 export {
 	resumeMissionPilotPlanPipelines,
@@ -48,7 +49,9 @@ export * from "./mission-pilot-questionnaire-projection";
 export { recoverMissionPilotPostQueueSessions } from "./mission-pilot-recovery.service";
 export * from "./mission-pilot-rework";
 export * from "./mission-pilot-run-association.service";
+export { initializeMissionPilotTaskRunCloseout } from "./mission-pilot-run-closeout.adapter";
 export * from "./mission-pilot-runtime-continuation.service";
+export { missionPilotArtifactTrace } from "./mission-pilot-trace-provenance";
 export {
 	getPlanModeRouting,
 	updatePlanModeRoutingForCodingAgent,

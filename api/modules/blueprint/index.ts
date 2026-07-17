@@ -8,6 +8,7 @@ export {
 } from "./blueprint.repository";
 export { blueprintRouter } from "./blueprint.routes";
 export * from "./blueprint.service";
+export * from "./blueprint-adoption-reader.adapter";
 export type {
 	GeneratedMockBlueprintDraft,
 	MockBlueprintPromptDiagnostics,

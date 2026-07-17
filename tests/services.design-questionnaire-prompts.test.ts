@@ -11,6 +11,21 @@ describe("design questionnaire prompts", () => {
 	it("keeps starter stack choices independent from database choices", () => {
 		const prompt = buildDesignQuestionnaireSystemPrompt();
 
+		expect(prompt).toContain("回答によって実装、公開契約、データ、権限、検証");
+		expect(prompt).toContain("目的と成功状態、対象ユーザー、対象 / 非対象");
+		expect(prompt).toContain("主要操作と状態遷移、受け入れ条件");
+		expect(prompt).toContain("権限不足・部分失敗・再試行・削除や復旧");
+		expect(prompt).toContain("互換性、migration、rollback、監視・運用");
+		expect(prompt).toContain("矛盾や暗黙の仮定");
+		expect(prompt).toContain("各質問は一つの判断軸だけ");
+		expect(prompt).toContain("同時採用できる独立項目だけ");
+		expect(prompt).toContain("削除方式と追加機能");
+		expect(prompt).toContain("物理削除 / 論理削除");
+		expect(prompt).toContain("並び順と空状態");
+		expect(prompt).toContain("結合せずfollow-upへ回して");
+		expect(prompt).toContain("意味を重複させず");
+		expect(prompt).toContain("件数を満たすためのノルマではありません");
+		expect(prompt).toContain("通常のrepository調査で一意に分かる事項");
 		expect(prompt).toContain("使用する技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");
@@ -64,6 +79,9 @@ describe("design questionnaire prompts", () => {
 	it("keeps missing template variant inputs in follow-up scope", () => {
 		const prompt = buildDesignQuestionnaireFollowUpDecisionSystemPrompt();
 
+		expect(prompt).toContain("回答によって実装、公開契約、データ、権限、検証");
+		expect(prompt).toContain("空状態・重複・上限・不正入力");
+		expect(prompt).toContain("矛盾や暗黙の仮定");
 		expect(prompt).toContain("使用技術スタック");
 		expect(prompt).toContain("DB/永続化");
 		expect(prompt).toContain("branch variant");

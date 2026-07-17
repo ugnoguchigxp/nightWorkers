@@ -331,7 +331,9 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			content: "MISSION_PILOT_ARTIFACT_BODY",
 			messageType: "markdown_document",
 			payloadJson: { intent: "feature_plan" },
-			trace: codingAgentChatTrace(),
+			trace: missionPilotRepo.missionPilotArtifactTrace({
+				sessionId: session.id,
+			}),
 		});
 		return c.json({ sessionId: session.id }, 201);
 	});

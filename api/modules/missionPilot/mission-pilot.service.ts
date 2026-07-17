@@ -340,6 +340,7 @@ export async function play(taskId: string, expectedVersion: number) {
 		intakeVersion = promptEvidence.row.version;
 		const run = await startTaskRun(taskId, {
 			executionModeSource: "explicit",
+			codingAgentInvocationSource: "mission_pilot",
 			latestUserMessageOverride: activeClaim.initialPromptSnapshot,
 		});
 		const initialized = await repo.finishPlay(taskId, run.id);

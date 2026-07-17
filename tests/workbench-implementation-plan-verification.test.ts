@@ -85,6 +85,111 @@ describe("Workbench implementation plan verification metadata", () => {
 		]);
 	});
 
+	it("publishes the final report from a standalone Plan Mode Coding Agent run", async () => {
+		const repository = await repo.createRepository({
+			name: `standalone-plan-mode-${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: repository.id,
+			title: "Standalone Plan Mode",
+			status: "draft",
+		});
+		const run = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "completed",
+			workerKind: "codex-agent",
+			contextSnapshot: {
+				executionMode: "implementation",
+				codingAgentInvocation: { source: "user" },
+				planModeRequested: true,
+				planModeClosed: false,
+			},
+		});
+		await repo.createTaskMessage({
+			taskId: task.id,
+			runId: run.id,
+			role: "system",
+			content: "Plan Mode started",
+			messageType: "system_event",
+			payloadJson: {
+				intent: "run_started",
+				source: "workbench",
+				planMode: true,
+			},
+		});
+
+		await createPlanningArtifactMessageIfNeeded({
+			taskId: task.id,
+			runId: run.id,
+			finalReport: "# Implementation Plan\n\n- Coding Agent単体で実装する",
+		});
+
+		const messages = await repo.listTaskMessages(task.id);
+		expect(
+			messages.find(
+				(message) =>
+					(message.metadataJson as Record<string, unknown>).intent ===
+					"implementation_plan",
+			),
+		).toMatchObject({
+			runId: run.id,
+			content: expect.stringContaining("Coding Agent単体で実装する"),
+		});
+	});
+
+	it("does not publish a normal run as a plan from stale Plan Mode message metadata", async () => {
+		const repository = await repo.createRepository({
+			name: `stale-plan-message-${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: repository.id,
+			title: "Normal run after Plan Mode",
+			status: "draft",
+		});
+		await repo.createTaskMessage({
+			taskId: task.id,
+			role: "system",
+			content: "Previous Plan Mode started",
+			messageType: "system_event",
+			payloadJson: {
+				intent: "run_started",
+				source: "workbench",
+				planMode: true,
+			},
+		});
+		const run = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "completed",
+			workerKind: "codex-agent",
+			contextSnapshot: {
+				executionMode: "implementation",
+				codingAgentInvocation: { source: "user" },
+				planModeRequested: false,
+			},
+		});
+
+		await createPlanningArtifactMessageIfNeeded({
+			taskId: task.id,
+			runId: run.id,
+			finalReport: "# Implementation complete",
+		});
+
+		const messages = await repo.listTaskMessages(task.id);
+		expect(
+			messages.some(
+				(message) =>
+					(message.metadataJson as Record<string, unknown>).intent ===
+					"implementation_plan",
+			),
+		).toBe(false);
+	});
+
 	it("creates missing verification metadata when Test Mode starts from a markdown checklist", async () => {
 		const repository = await repo.createRepository({
 			name: `test-mode-missing-verification-${crypto.randomUUID()}`,

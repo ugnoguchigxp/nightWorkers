@@ -1,5 +1,8 @@
 import { logger } from "../../../lib/logger";
-import { publishTaskRunTerminal } from "../../agentsShare";
+import {
+	projectTaskRunParentStatus,
+	publishTaskRunTerminal,
+} from "../../agentsShare";
 import * as repo from "../nightworkers.repository";
 import {
 	completeImplementationQueueEntryForRun,
@@ -9,7 +12,6 @@ import {
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
-import { applyMissionPilotTaskStatusAfterRun } from "./task-status-projection-policy";
 import { toErrorMessage } from "./utils";
 
 export async function handleRuntimeExecutionFailure(input: {
@@ -49,11 +51,15 @@ export async function handleRuntimeExecutionFailure(input: {
 		failureTransitionApplied = Boolean(latestFailedRun);
 	}
 	if (latestFailedRun?.status !== "failed") return;
-	await applyMissionPilotTaskStatusAfterRun({
+	const parentTaskProjection = await projectTaskRunParentStatus({
 		taskId,
 		runId: run.id,
 		runStatus: "failed",
+		executionMode:
+			input.runtimeContextSnapshot.executionMode ?? "implementation",
 	});
+	if (!parentTaskProjection.handled)
+		await repo.updateTaskStatus(taskId, parentTaskProjection.status);
 	await completeImplementationQueueEntryForRun(run.id, "failed");
 
 	await repo.createTaskMessage({

@@ -1,5 +1,6 @@
 import type { Input } from "@openai/codex-sdk";
 import { Codex } from "@openai/codex-sdk";
+import { resolveCodexEndpointAccessToken } from "../../../../services/structured-llm/codex-auth-scope";
 import type { AgentRunContext } from "../types";
 import {
 	buildCodexRuntimeSdkOptions,
@@ -45,8 +46,9 @@ export async function createCodexRuntimeThread(input: {
 	forceFresh?: boolean;
 }): Promise<CodexRuntimeThread> {
 	if (input.threadFactory) return input.threadFactory(input.context);
+	const providerEndpointId = readCodexProviderEndpointId(input.context);
 	const codexOptions = buildCodexRuntimeSdkOptions({
-		accessToken: process.env.CODEX_ACCESS_TOKEN || "",
+		accessToken: resolveCodexEndpointAccessToken(providerEndpointId),
 		env: {
 			...process.env,
 			NIGHTWORKERS_TASK_ID: input.context.taskId,
@@ -86,6 +88,11 @@ export async function createCodexRuntimeThread(input: {
 		await input.onResumeEvent?.({ status: "unavailable" });
 	}
 	return codex.startThread(threadOptions);
+}
+
+function readCodexProviderEndpointId(context: AgentRunContext) {
+	const codex = readRecord(context.runtimeOptions?.codex);
+	return readString(codex?.providerEndpointId);
 }
 
 function readOntologyMcpEnabled(context: AgentRunContext) {

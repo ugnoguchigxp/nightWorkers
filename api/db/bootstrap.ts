@@ -3,7 +3,6 @@ import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
 import { backfillTraceProvenance } from "./bootstrap-trace-provenance";
 import { client } from "./client";
-import { ensureMissionPilotTables } from "./mission-pilot-schema-bootstrap";
 import {
 	ensureMissionPlannerTables,
 	ensureProjectDetailTables,
@@ -77,7 +76,10 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 		await client.execute("PRAGMA foreign_keys = ON");
 	}
 }
-export async function ensureNightWorkersSchema() {
+export async function ensureNightWorkersSchema(
+	options: { includeMissionPilot?: boolean } = {},
+) {
+	const includeMissionPilot = options.includeMissionPilot !== false;
 	await client.execute("PRAGMA foreign_keys = ON");
 	await client.execute("PRAGMA busy_timeout = 10000");
 	await client.execute("PRAGMA journal_mode = WAL");
@@ -120,7 +122,12 @@ export async function ensureNightWorkersSchema() {
 	await ensureProjectDetailTables();
 	await ensureTechStackTables();
 	await ensureMissionPlannerTables();
-	await ensureMissionPilotTables();
+	if (includeMissionPilot) {
+		const { ensureMissionPilotTables } = await import(
+			"./mission-pilot-schema-bootstrap"
+		);
+		await ensureMissionPilotTables();
+	}
 	await ensureReviewModeTables();
 	await ensureVerificationTables();
 
@@ -178,7 +185,7 @@ export async function ensureNightWorkersSchema() {
 		"mission_pilot_agent_json",
 		"mission_pilot_agent_json text",
 	);
-	await backfillTraceProvenance();
+	if (includeMissionPilot) await backfillTraceProvenance();
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_settings (

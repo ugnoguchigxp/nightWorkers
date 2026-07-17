@@ -8,6 +8,7 @@ import {
 } from "../../modules/agentsShare";
 import { normalizeProviderUsage } from "../llm-usage";
 import { RuntimeSessionStateStore } from "../runtime-session-state";
+import { resolveCodexEndpointAccessToken } from "./codex-auth-scope";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
 import {
 	buildCodexToolTurnJsonSchema,
@@ -106,8 +107,7 @@ export async function callCodexProvider(
 		input.options.normalizedRequest?.modelOrDeployment ||
 		endpoint?.models[0] ||
 		getStructuredLlmSetting(settings, "CODEX_MODEL", "gpt-5.4-mini");
-	const accessToken =
-		endpoint?.apiKey || getStructuredLlmSetting(settings, "CODEX_ACCESS_TOKEN");
+	const accessToken = resolveCodexEndpointAccessToken(endpoint?.id, settings);
 	const modelReasoningEffort = toCodexReasoningEffort(
 		input.options.normalizedRequest?.thinkingDepth ||
 			getStructuredLlmSetting(settings, "CODEX_MODEL_REASONING_EFFORT") ||

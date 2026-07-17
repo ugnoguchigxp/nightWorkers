@@ -69,7 +69,10 @@ describe("Mission Pilot agent Run provenance", () => {
 
 		expect(mocks.startTaskRun).toHaveBeenCalledWith(
 			"task-1",
-			expect.objectContaining({ missionPilotAgent: provenance }),
+			expect.objectContaining({
+				codingAgentInvocationSource: "mission_pilot",
+				missionPilotAgent: provenance,
+			}),
 		);
 		expect(mocks.startVerificationRunFromArtifact).toHaveBeenCalledWith(
 			expect.objectContaining({ missionPilotAgent: provenance }),

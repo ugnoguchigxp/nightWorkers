@@ -5,6 +5,7 @@ import {
 	designQuestionnaireMessageIds,
 	findComposerRouteTargetByKey,
 	isDesignQuestionnaireReadyMessage,
+	isDesignQuestionnaireStartingMessage,
 	isImplementationLockedStatus,
 	isMissingProjectRoute,
 	isMissingSessionRoute,
@@ -328,6 +329,17 @@ describe("nightworkers-shell-utils", () => {
 		} as unknown as TaskMessage;
 		expect(isDesignQuestionnaireReadyMessage(msg1)).toBe(true);
 		expect(isDesignQuestionnaireReadyMessage(msg2)).toBe(false);
+	});
+
+	it("isDesignQuestionnaireStartingMessage identifies the immediate Plan workspace event", () => {
+		const starting = {
+			metadataJson: { intent: "design_questionnaire_starting" },
+		} as unknown as TaskMessage;
+		const ready = {
+			metadataJson: { intent: "design_questionnaire_ready" },
+		} as unknown as TaskMessage;
+		expect(isDesignQuestionnaireStartingMessage(starting)).toBe(true);
+		expect(isDesignQuestionnaireStartingMessage(ready)).toBe(false);
 	});
 
 	it("opens incomplete Questionnaire ready messages on the Questionnaire tab", () => {

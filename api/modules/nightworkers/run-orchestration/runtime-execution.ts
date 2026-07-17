@@ -1,27 +1,29 @@
 import type { TaskRunStatus } from "../../../db/schema";
 import { logger } from "../../../lib/logger";
-import { publishTaskRunTerminal } from "../../agentsShare";
+import {
+	continueAfterTaskRun,
+	projectTaskRunParentStatus,
+	publishTaskRunTerminal,
+} from "../../agentsShare";
 import type { AgentRuntimeResult } from "../../codingAgent";
 import {
 	buildCodingAgentSystemContext,
+	buildCodingAgentTaskGoal,
 	buildOpenTodoRuntimeContractWarning,
 	createLedgerSink,
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
+	outcomeFromRuntimeResult,
+	projectCodingAgentTaskStatusAfterRun,
+	readCodingAgentPlanModeRequested,
+	resolveCodingAgentInvocationSource,
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
 import {
-	applyMissionPilotParentTaskStatus,
-	continueMissionPilotAfterRun,
-	executeMissionPilotContinuation,
-	markMissionPilotContinuationFailed,
-} from "../../missionPilot";
-import {
 	boundaryAuditEventSeverity,
 	buildOntologyBoundaryAuditSnapshot,
 } from "../../ontology";
-import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
 import {
@@ -84,10 +86,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	} = input;
 	const runtime = runtimeLaneDefinition.createAdapter();
 	const codingAgentSystemContext = buildCodingAgentSystemContext({
-		taskGoal: [task.title, task.description || task.objective]
-			.filter(Boolean)
-			.join("\n"),
+		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repoInfo.localPath,
+		invocationSource: resolveCodingAgentInvocationSource(
+			runtimeContextSnapshot,
+		),
+		planModeRequested: readCodingAgentPlanModeRequested(runtimeContextSnapshot),
 	});
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =
@@ -485,30 +489,33 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			if (!isRuntimeTerminalStatus(finalStatus)) {
 				return;
 			}
-			const parentTaskProjection = await applyMissionPilotParentTaskStatus({
+			const closeoutInput = {
+				taskId,
 				runId: run.id,
 				runStatus: finalStatus,
 				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
-			});
-			const parentTaskStatus = parentTaskProjection.status;
+			};
+			const parentTaskProjection =
+				await projectTaskRunParentStatus(closeoutInput);
+			const parentTaskStatus =
+				projectCodingAgentTaskStatusAfterRun({
+					runStatus: finalStatus,
+					invocationSource: resolveCodingAgentInvocationSource(
+						runtimeContextSnapshot,
+					),
+					planModeRequested: readCodingAgentPlanModeRequested(
+						runtimeContextSnapshot,
+					),
+				}) ?? parentTaskProjection.status;
 			if (!parentTaskProjection.handled)
 				await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, finalStatus);
 			await repo.publishTaskRunUpdate(finalizedRun);
-			try {
-				const missionContinuation = await continueMissionPilotAfterRun({
-					taskId,
-					runId: run.id,
-					executionMode:
-						runtimeContextSnapshot.executionMode ?? "implementation",
-					runStatus: finalStatus,
-				});
-				await executeMissionPilotContinuation(missionContinuation);
-			} catch (error) {
-				await markMissionPilotContinuationFailed(run.id, error);
+			const closeoutFailures = await continueAfterTaskRun(closeoutInput);
+			for (const error of closeoutFailures) {
 				logger.error(
 					{ error: toErrorMessage(error), runId: run.id },
-					"Mission Pilot continuation failed after the run was finalized",
+					"Task run closeout subscriber failed after the run was finalized",
 				);
 			}
 			if (terminalTransitionApplied) {

@@ -8,6 +8,10 @@ export {
 export { CodexAgentRuntime } from "./CodexAgentRuntime";
 export { changedFilesFromDiff } from "./codex-runtime-support";
 export { runE2eFixtureRuntime } from "./e2e-fixture-runtime";
+export {
+	resolveCodexIntakeRuntimeHandoff,
+	resolveCodingAgentRuntimeRole,
+} from "./intake-runtime-handoff";
 export { createLedgerSink } from "./ledger-sink";
 export { NativeAgentRuntime } from "./NativeAgentRuntime";
 export { NativeLocalRunner, nativeLocalRunner } from "./NativeLocalRunner";
@@ -19,6 +23,7 @@ export {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "./native-api-runner/native-api-tool-result-projector";
+export { outcomeFromRuntimeResult } from "./outcome";
 export {
 	type RuntimeLaneDefinition,
 	resolveAgentRuntime,
@@ -42,6 +47,7 @@ export {
 	normalizeRuntimeContractWarnings,
 	summarizeRuntimeContractWarnings,
 } from "./shared";
+export { projectCodingAgentTaskStatusAfterRun } from "./task-status-projection";
 export type {
 	AgentExecutionMode,
 	AgentRunContext,

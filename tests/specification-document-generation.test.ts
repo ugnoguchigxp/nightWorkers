@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MISSION_PILOT_PLAN_SYSTEM_CONTEXT } from "../api/modules/missionPilot";
 import {
 	buildSpecificationDocumentContext,
 	FEATURE_PLAN_TRACEABILITY_STATEMENT,
@@ -152,7 +153,7 @@ describe("Specification document generation", () => {
 
 	it("adds requirement priority only to the Mission Pilot SystemContext", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			missionPilot: true,
+			additionalSystemContext: MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
 		});
 
 		expect(systemPrompt).toContain("[Mission Pilot SystemContext]");

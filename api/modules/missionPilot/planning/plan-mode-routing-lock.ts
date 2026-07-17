@@ -7,20 +7,9 @@ import {
 	tasks,
 } from "../../../db/schema";
 import { NotFoundError } from "../../../lib/errors";
+import { planModeRoutingTerminalReason } from "../../agentsShare";
 
-const TERMINAL_TASK_STATUSES = new Set([
-	"completed",
-	"cancelled",
-	"failed",
-	"timed_out",
-	"archived",
-]);
-
-export function planModeRoutingTerminalReason(status: string) {
-	return TERMINAL_TASK_STATUSES.has(status)
-		? `Task が ${status} のため routing を変更できません。`
-		: null;
-}
+export { planModeRoutingTerminalReason } from "../../agentsShare";
 
 export async function readPlanModeRoutingLockedReason(
 	taskId: string,

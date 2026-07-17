@@ -9,12 +9,10 @@ import {
 	pushRunGitCloseout,
 } from "../../nightworkers/nightworkers.git-closeout.service";
 import * as nightworkersService from "../../nightworkers/nightworkers.service";
-import {
-	missionPilotPlanOutputTrace,
-	missionPilotThoughtTrace,
-} from "../../nightworkers/nightworkers.trace-provenance";
+import { missionPilotThoughtTrace } from "../../nightworkers/nightworkers.trace-provenance";
 import type { PlanArtifactSourceSelection } from "../../specification/plan-artifact-input.types";
 import { missionPilotArtifactProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
+import { missionPilotArtifactTrace } from "../mission-pilot-trace-provenance";
 
 export type MissionPilotActionCommandContext = {
 	sessionId: string;
@@ -43,7 +41,7 @@ export async function executeMissionPilotAction(
 	const thoughtTrace = missionPilotThoughtTrace({
 		sessionId: context.sessionId,
 	});
-	const artifactTrace = missionPilotPlanOutputTrace({
+	const artifactTrace = missionPilotArtifactTrace({
 		sessionId: context.sessionId,
 	});
 	switch (actionId) {
@@ -310,8 +308,8 @@ export async function executeMissionPilotAction(
 			return startTaskRun(taskId, {
 				executionMode: "implementation",
 				executionModeSource: "explicit",
+				codingAgentInvocationSource: "mission_pilot",
 				latestUserMessageOverride: requiredText(args.request),
-				missionPilotPhase: "implementation",
 				missionPilotAgent,
 			});
 		}

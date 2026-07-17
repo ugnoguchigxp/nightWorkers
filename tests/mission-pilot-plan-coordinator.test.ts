@@ -687,15 +687,15 @@ describe("Mission Pilot plan coordinator", () => {
 				questionnaireSessionId: questionnaireId,
 				role: "mission_pilot",
 				trace: expect.objectContaining({
-					owner: "coding_agent",
-					channel: "chat",
+					owner: "mission_pilot",
+					channel: "artifact",
 					orchestrationRef: expect.objectContaining({
 						sessionId: session.id,
 					}),
 				}),
 				llmUsageTrace: expect.objectContaining({
-					owner: "coding_agent",
-					channel: "chat",
+					owner: "mission_pilot",
+					channel: "pilot_thought",
 				}),
 			}),
 		);

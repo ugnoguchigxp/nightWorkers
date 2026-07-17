@@ -1,9 +1,10 @@
+import {
+	associatePreparedTaskRun,
+	type TaskRunAssociationRequest,
+} from "../../agentsShare";
 import { buildAgentModeSessionRouteIdentity } from "../../codingAgent";
-import { associateMissionPilotChildRun } from "../../missionPilot";
 import { launchRuntimeExecution } from "./runtime-execution";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
-import { readMissionPilotEnvelope } from "./start-task-run-entry";
-import type { StartTaskRunOptions } from "./start-task-run-types";
 
 type RouteIdentityInput = Parameters<
 	typeof buildAgentModeSessionRouteIdentity
@@ -45,33 +46,12 @@ export function buildContinuationRouteIdentity(input: {
 	};
 }
 
-export class MissionPilotRunAssociationError extends Error {
-	constructor() {
-		super("Mission Pilot could not claim the prepared child run.");
-		this.name = "MissionPilotRunAssociationError";
-	}
-}
-
-export function createPreparedMissionPilotAssociation(input: {
-	runtimeOptions: Record<string, unknown>;
+export function createPreparedRunAssociation(input: {
 	taskId: string;
 	runId: string;
-	missionPilotPhase?: StartTaskRunOptions["missionPilotPhase"];
+	request?: TaskRunAssociationRequest;
 }) {
-	return createRetryableLaunch(async () => {
-		const missionPilot = readMissionPilotEnvelope(
-			input.runtimeOptions.missionPilot,
-		);
-		if (missionPilot) {
-			const associated = await associateMissionPilotChildRun({
-				taskId: input.taskId,
-				runId: input.runId,
-				phase: input.missionPilotPhase ?? "implementation",
-				missionPilot,
-			});
-			if (!associated) throw new MissionPilotRunAssociationError();
-		}
-	});
+	return createRetryableLaunch(() => associatePreparedTaskRun(input));
 }
 
 export function createPreparedRuntimeLaunch(

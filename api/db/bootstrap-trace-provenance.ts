@@ -1,19 +1,5 @@
 import { client } from "./client";
 
-export const PLAN_MODE_USAGE_LABELS_SQL = [
-	"workbench_plan_mode_gate",
-	"design_questionnaire",
-	"design_questionnaire_additional",
-	"mock_blueprint",
-	"plan_mode_data_model",
-	"plan_mode_dedicated_view",
-	"plan_mode_api_contract",
-	"plan_mode_zod_schema",
-	"specification_document",
-]
-	.map((label) => `'${label}'`)
-	.join(", ");
-
 export async function backfillTraceProvenance() {
 	await client.execute(`
     UPDATE llm_usage_records
@@ -21,14 +7,12 @@ export async function backfillTraceProvenance() {
 	    WHERE json_valid(metadata_json) = 0
 	       OR json_extract(metadata_json, '$.role') IS NULL
 	       OR json_extract(metadata_json, '$.role') <> 'mission_pilot'
-	       OR label IN (${PLAN_MODE_USAGE_LABELS_SQL})
 	  `);
 	await client.execute(`
     UPDATE llm_usage_records
     SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
 	    WHERE json_valid(metadata_json) = 1
 	      AND json_extract(metadata_json, '$.role') = 'mission_pilot'
-	      AND label NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
   `);
 	await client.execute(`
     UPDATE llm_usage_records
@@ -37,7 +21,7 @@ export async function backfillTraceProvenance() {
   `);
 	await client.execute(`
     UPDATE task_messages
-	    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+	    SET trace_owner = 'mission_pilot', trace_channel = 'artifact'
 	    WHERE id IN (
       SELECT artifact_message_id FROM mission_pilot_steps WHERE artifact_message_id IS NOT NULL
       UNION SELECT feature_plan_message_id FROM mission_pilot_plan_reviews
@@ -101,17 +85,13 @@ export async function backfillTraceProvenance() {
   `);
 	await client.execute(`
     UPDATE activity_events
-    SET trace_owner = 'coding_agent', trace_channel = 'chat'
-	    WHERE trace_owner = 'mission_pilot' AND trace_channel = 'artifact'
-	       OR (
-	         kind = 'llm.usage'
-	         AND (
-	           json_valid(payload_json) = 0
-	           OR json_extract(payload_json, '$.role') IS NULL
-	           OR json_extract(payload_json, '$.role') <> 'mission_pilot'
-	           OR json_extract(payload_json, '$.label') IN (${PLAN_MODE_USAGE_LABELS_SQL})
-	         )
-	       )
+	    SET trace_owner = 'coding_agent', trace_channel = 'chat'
+	    WHERE kind = 'llm.usage'
+	      AND (
+	        json_valid(payload_json) = 0
+	        OR json_extract(payload_json, '$.role') IS NULL
+	        OR json_extract(payload_json, '$.role') <> 'mission_pilot'
+	      )
 	  `);
 	await client.execute(`
     UPDATE activity_events
@@ -119,7 +99,6 @@ export async function backfillTraceProvenance() {
 	    WHERE kind = 'llm.usage'
 	      AND json_valid(payload_json) = 1
 	      AND json_extract(payload_json, '$.role') = 'mission_pilot'
-	      AND json_extract(payload_json, '$.label') NOT IN (${PLAN_MODE_USAGE_LABELS_SQL})
   `);
 	await client.execute(`
     UPDATE activity_events

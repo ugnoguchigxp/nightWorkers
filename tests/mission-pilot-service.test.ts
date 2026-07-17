@@ -154,6 +154,7 @@ describe("Mission Pilot service", () => {
 		});
 		expect(workbenchMocks.startRun).toHaveBeenCalledWith(fixture.taskId, {
 			executionModeSource: "explicit",
+			codingAgentInvocationSource: "mission_pilot",
 			latestUserMessageOverride: "Play時点の最新プロンプト",
 		});
 		const activated = await getSessionByTaskId(fixture.taskId);

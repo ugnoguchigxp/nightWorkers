@@ -90,7 +90,7 @@ function stateLabel(sessionView: WorkbenchSessionView) {
 	if (sessionView.emailState === "draft") return "Unclassified";
 	if (sessionView.emailState === "plan_ready") return "Ready for Queue";
 	if (sessionView.emailState === "queued") return "Implementation Queue";
-	if (sessionView.emailState === "running") return "Running";
+	if (sessionView.emailState === "running") return sessionView.phase;
 	if (sessionView.emailState === "needs_input") return "Needs Attention";
 	if (sessionView.emailState === "review_needed") return "Review Required";
 	if (sessionView.emailState === "done") return "Done";

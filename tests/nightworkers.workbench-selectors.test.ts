@@ -41,6 +41,41 @@ const baseTask = buildTask({
 });
 
 describe("workbench selectors", () => {
+	it("projects a user-started Coding Agent Plan run as Planning", () => {
+		const run = buildTaskRun({
+			status: "running",
+			contextSnapshot: {
+				executionMode: "implementation",
+				codingAgentInvocation: { source: "user" },
+				planModeRequested: true,
+			},
+		});
+
+		expect(
+			buildWorkbenchSessionView(
+				{ ...baseTask, status: "running" },
+				{ latestRun: run },
+			).phase,
+		).toBe("Planning");
+	});
+
+	it("does not infer Planning from a Mission Pilot envelope", () => {
+		const run = buildTaskRun({
+			status: "running",
+			contextSnapshot: {
+				executionMode: "implementation",
+				missionPilot: { sessionId: "stale" },
+			},
+		});
+
+		expect(
+			buildWorkbenchSessionView(
+				{ ...baseTask, status: "running" },
+				{ latestRun: run },
+			).phase,
+		).toBe("Implementing");
+	});
+
 	it("groups task status into processing queue and archive deterministically", () => {
 		expect(getSessionGroup({ ...baseTask, status: "draft" })).toBe(
 			"processing",
@@ -1020,6 +1055,36 @@ describe("workbench selectors", () => {
 				initialTab: "questionnaire",
 			},
 		});
+	});
+
+	it("builds an immediately openable Plan workspace ref while Questionnaire generation is starting", () => {
+		const message: TaskMessage = {
+			id: "44444444-4444-4444-8444-444444441237",
+			taskId: baseTask.id,
+			role: "system",
+			content: "Questionnaire generating",
+			messageType: "text",
+			metadataJson: { intent: "design_questionnaire_starting" },
+			createdAt: "2026-06-02T00:00:00.500Z",
+		};
+
+		expect(buildPlanModeWorkspaceArtifactRef(message)).toMatchObject({
+			kind: "plan_mode_workspace",
+			metadata: {
+				planModeWorkspaceSource: "design_questionnaire_starting",
+				initialTab: "questionnaire",
+			},
+		});
+		expect(
+			buildWorkbenchArtifactRefs({ task: baseTask, messages: [message] }),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "plan_mode_workspace",
+					metadata: expect.objectContaining({ initialTab: "questionnaire" }),
+				}),
+			]),
+		);
 	});
 
 	it("can build questionnaire workspace refs that open on the status tab", () => {

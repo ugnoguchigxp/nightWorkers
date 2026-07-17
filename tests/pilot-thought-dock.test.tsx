@@ -88,7 +88,26 @@ describe("PilotThoughtDock", () => {
 
 	it("includes Pilot-owned events without re-projecting Coding Agent run events", () => {
 		const items = missionPilotTraceItems({
-			messages: [],
+			messages: [
+				{
+					id: "pilot-message",
+					taskId: "task-1",
+					role: "assistant",
+					content: "Mission Pilot message",
+					traceOwner: "mission_pilot",
+					traceChannel: "pilot_thought",
+					createdAt: new Date("2026-07-13T00:00:03Z"),
+				},
+				{
+					id: "coding-message",
+					taskId: "task-1",
+					role: "assistant",
+					content: "Coding Agent message",
+					traceOwner: "coding_agent",
+					traceChannel: "pilot_thought",
+					createdAt: new Date("2026-07-13T00:00:04Z"),
+				},
+			],
 			events: [
 				{
 					id: "pilot-event-1",
@@ -136,6 +155,7 @@ describe("PilotThoughtDock", () => {
 
 		expect(items.map((item) => item.event.message)).toEqual([
 			"次のphaseへ進みます",
+			"Mission Pilot message",
 		]);
 		expect(items[0]?.event.actor).toBe("mission_pilot");
 		expect(items[0]?.event.payloadJson).toMatchObject({

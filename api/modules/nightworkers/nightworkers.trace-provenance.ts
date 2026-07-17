@@ -1,10 +1,8 @@
-import { eq } from "drizzle-orm";
 import type {
 	TraceChannel,
 	TraceProvenance,
 } from "../../../shared/schemas/trace-provenance.schema";
-import { db } from "../../db/client";
-import { missionPilotPhaseRuns } from "../../db/mission-pilot-schema";
+import { resolveRunOrchestrationRef } from "../agentsShare";
 
 type MissionPilotRefInput = {
 	sessionId: string;
@@ -85,15 +83,6 @@ export function missionPilotThoughtTrace(
 		},
 		orchestrationRef,
 	};
-}
-
-export function missionPilotPlanOutputTrace(
-	input: MissionPilotRefInput,
-): TraceProvenance {
-	return structuredLlmChatTrace({
-		role: "plan",
-		orchestrationRef: input,
-	});
 }
 
 export function missionPilotInitialPromptTrace(
@@ -231,22 +220,9 @@ function codingAgentRunTrace(
 export async function resolveRunCodingAgentTrace(
 	runId: string,
 ): Promise<TraceProvenance> {
-	const [phaseRun] = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(eq(missionPilotPhaseRuns.runId, runId))
-		.limit(1);
 	return codingAgentChatTrace({
 		runId,
-		orchestrationRef: phaseRun
-			? {
-					sessionId: phaseRun.sessionId,
-					phaseRunId: phaseRun.id,
-					phase: phaseRun.phase,
-					cycle: phaseRun.cycle,
-					attempt: phaseRun.attempt,
-				}
-			: null,
+		orchestrationRef: await resolveRunOrchestrationRef(runId),
 	});
 }
 

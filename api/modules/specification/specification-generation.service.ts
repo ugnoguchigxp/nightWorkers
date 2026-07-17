@@ -19,7 +19,10 @@ import type {
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
-import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
+import {
+	MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
+	resolvePlanArtifactCanonicalInput,
+} from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -317,7 +320,8 @@ async function generateSpecificationDesignDocumentRawOutput(
 ) {
 	try {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			missionPilot: role === "mission_pilot",
+			additionalSystemContext:
+				role === "mission_pilot" ? MISSION_PILOT_PLAN_SYSTEM_CONTEXT : null,
 		});
 		const userPrompt = buildSpecificationDocumentUserPrompt(context);
 		const generated = await callStructuredOutputWithRepair({

@@ -59,6 +59,13 @@ export function isMissionPilotActivityEvent(event: ActivityEvent) {
 	);
 }
 
+export function isMissionPilotTaskMessage(message: TaskMessage) {
+	return (
+		message.traceOwner === "mission_pilot" &&
+		message.traceChannel === "pilot_thought"
+	);
+}
+
 function eventTimestamp(value: unknown) {
 	const time = new Date(value as string | number | Date).getTime();
 	return Number.isFinite(time) ? time : 0;
@@ -178,23 +185,25 @@ export function missionPilotTraceItems(
 				createdAt: event.createdAt,
 				event: activityToTaskEvent(event),
 			})),
-		...(trace?.messages ?? []).map((message) => ({
-			id: `mission-pilot-message:${message.id}`,
-			source: "task_message" as const,
-			sourceId: message.id,
-			createdAt: message.createdAt,
-			event: {
-				id: message.id,
-				eventType: "pilot.message",
-				actor: "mission_pilot",
-				message: message.content,
-				payloadJson: {
-					messageType: message.messageType ?? null,
-					metadata: message.metadataJson ?? null,
-				},
+		...(trace?.messages ?? [])
+			.filter(isMissionPilotTaskMessage)
+			.map((message) => ({
+				id: `mission-pilot-message:${message.id}`,
+				source: "task_message" as const,
+				sourceId: message.id,
 				createdAt: message.createdAt,
-			},
-		})),
+				event: {
+					id: message.id,
+					eventType: "pilot.message",
+					actor: "mission_pilot",
+					message: message.content,
+					payloadJson: {
+						messageType: message.messageType ?? null,
+						metadata: message.metadataJson ?? null,
+					},
+					createdAt: message.createdAt,
+				},
+			})),
 	];
 	return [
 		...new Map(persistedItems.map((item) => [item.id, item])).values(),

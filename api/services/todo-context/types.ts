@@ -62,6 +62,10 @@ export type RuntimePromptSnapshot = {
 		digest: string;
 	};
 	planModeClosed?: boolean;
+	planModeRequested?: boolean;
+	codingAgentInvocation?: {
+		source: "user" | "mission_pilot";
+	};
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;
 	blueprintPlanning?: unknown;

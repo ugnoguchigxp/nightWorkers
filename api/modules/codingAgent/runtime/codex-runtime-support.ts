@@ -40,6 +40,13 @@ export async function persistCodexProviderThreadIfPresent(
 			providerThreadId,
 		},
 	});
+	const runtimeResume =
+		readRecord(context.runtimeOptions?.runtimeResume) ??
+		readRecord(context.contextSnapshot.runtimeResume);
+	const intakeStateId = readString(runtimeResume?.stateId);
+	if (runtimeResume?.source === "intake_gate_handoff" && intakeStateId) {
+		await store.markRuntimeSessionStateSuperseded({ id: intakeStateId });
+	}
 }
 
 export function updateCodexSessionKey(

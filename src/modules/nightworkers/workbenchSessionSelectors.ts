@@ -1,3 +1,4 @@
+import { isStandaloneCodingAgentPlanRun } from "../codingAgent";
 import type {
 	CodexContractWarningSummary,
 	CodexMcpDiagnosticsSummary,
@@ -104,6 +105,13 @@ export function getSessionPhase(
 		return "Reviewing";
 	if (reviews.some((review) => review.verdict === "changes_requested"))
 		return "Improving";
+	if (
+		latestRun &&
+		ACTIVE_RUN_STATUSES.has(latestRun.status) &&
+		isStandaloneCodingAgentPlanRun(latestRun)
+	) {
+		return "Planning";
+	}
 	if (
 		latestRun?.status === "verifying" ||
 		task.status === "verifying" ||

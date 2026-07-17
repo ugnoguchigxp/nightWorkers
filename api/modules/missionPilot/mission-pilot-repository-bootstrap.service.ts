@@ -17,6 +17,7 @@ import {
 } from "../gitworktree/task-git-workspace.service";
 import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
+import { buildMissionPilotRunAssociationRequest } from "./mission-pilot-run-association.service";
 
 export async function repositoryHasGitHead(repositoryPath: string) {
 	try {
@@ -129,7 +130,17 @@ export async function startMissionPilotRepositoryBootstrap(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		missionPilotPhase: "repository_bootstrap",
+		codingAgentInvocationSource: "mission_pilot",
+		allowUnassignedWorkspace: true,
+		runAssociation: buildMissionPilotRunAssociationRequest({
+			phase: "repository_bootstrap",
+			missionPilot: {
+				sessionId: preparingSession.id,
+				cycle: preparingSession.implementationCycle,
+				contextRevision: preparingSession.contextRevision,
+				contextDigest: preparingSession.contextDigest,
+			},
+		}),
 		initialTodos: [
 			{
 				title: "Repositoryをbootstrapする",

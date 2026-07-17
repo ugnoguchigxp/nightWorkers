@@ -12,6 +12,7 @@ import {
 	formatMissionPilotReworkPacket,
 	parseMissionPilotReworkPacket,
 } from "./mission-pilot-rework";
+import { buildMissionPilotRunAssociationRequest } from "./mission-pilot-run-association.service";
 
 type MissionPilotContinuation = Awaited<
 	ReturnType<typeof continueMissionPilotAfterRun>
@@ -43,6 +44,10 @@ async function executeMissionPilotContinuationOnce(
 			mode: "test",
 			action: "plan_and_implement_tests",
 			rerun: true,
+			runAssociation: buildMissionPilotRunAssociationRequest({
+				phase: "test",
+				missionPilot: continuation.input.missionPilot,
+			}),
 		});
 		return;
 	}
@@ -71,6 +76,10 @@ async function executeMissionPilotContinuationOnce(
 				targetRunIds: continuation.input.targetRunIds,
 				targetManifestContext: continuation.input.targetManifestContext,
 				missionPilot: continuation.input.missionPilot,
+				runAssociation: buildMissionPilotRunAssociationRequest({
+					phase: "review",
+					missionPilot: continuation.input.missionPilot,
+				}),
 			},
 		);
 		return;
@@ -112,6 +121,11 @@ export async function startImplementationRework(input: {
 	await startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		codingAgentInvocationSource: "mission_pilot",
+		runAssociation: buildMissionPilotRunAssociationRequest({
+			phase: "implementation",
+			missionPilot: { ...input.missionPilot, reworkPacket },
+		}),
 		initialTodos: buildMissionPilotReworkTodos(reworkPacket),
 		latestUserMessageOverride: [
 			"Review指摘限定のImplementation correctionを開始してください。",
@@ -143,6 +157,11 @@ export function buildInterruptedImplementationResumeOptions(
 	return {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		codingAgentInvocationSource: "mission_pilot",
+		runAssociation: buildMissionPilotRunAssociationRequest({
+			phase: "implementation",
+			missionPilot,
+		}),
 		latestUserMessageOverride: "再開してください。",
 		runtimeOptionsPatch: { missionPilot },
 	};

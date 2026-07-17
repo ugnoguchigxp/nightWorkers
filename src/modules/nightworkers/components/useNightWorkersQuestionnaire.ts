@@ -19,6 +19,7 @@ import { buildPlanModeWorkspaceArtifactRef } from "../workbenchSelectors";
 import type { ArtifactPaneFocus } from "./nightworkers-shell-route-effects";
 import {
 	isDesignQuestionnaireReadyMessage,
+	isDesignQuestionnaireStartingMessage,
 	resolveQuestionnaireReadyInitialTab,
 } from "./nightworkers-shell-utils";
 
@@ -104,7 +105,8 @@ export function useNightWorkersQuestionnaire(input: {
 			.find(
 				(message) =>
 					message.taskId === workspace.activeSessionId &&
-					isDesignQuestionnaireReadyMessage(message),
+					(isDesignQuestionnaireReadyMessage(message) ||
+						isDesignQuestionnaireStartingMessage(message)),
 			);
 		if (!latestQuestionnaireMessage) return;
 		if (
@@ -124,11 +126,30 @@ export function useNightWorkersQuestionnaire(input: {
 		)
 			return;
 		let cancelled = false;
-		void openQuestionnaireWorkspace(
-			latestQuestionnaireMessage,
-			resolveQuestionnaireReadyInitialTab(latestQuestionnaireMessage),
-			() => !cancelled,
-		);
+		if (isDesignQuestionnaireStartingMessage(latestQuestionnaireMessage)) {
+			openedQuestionnaireMessageIdsRef.current.add(
+				latestQuestionnaireMessage.id,
+			);
+			setClearedArtifactContextId(null);
+			setArtifactFocus({
+				type: "artifact",
+				artifact: buildPlanModeWorkspaceArtifactRef(
+					latestQuestionnaireMessage,
+					"questionnaire",
+				),
+			});
+			onNavigate({
+				kind: "session",
+				sessionId: latestQuestionnaireMessage.taskId,
+				artifact: { kind: "plan_mode_workspace", tab: "questionnaire" },
+			});
+		} else {
+			void openQuestionnaireWorkspace(
+				latestQuestionnaireMessage,
+				resolveQuestionnaireReadyInitialTab(latestQuestionnaireMessage),
+				() => !cancelled,
+			);
+		}
 		return () => {
 			cancelled = true;
 		};
@@ -141,6 +162,9 @@ export function useNightWorkersQuestionnaire(input: {
 		workspace.latestRun,
 		workspace.activeSessionView,
 		routeState,
+		onNavigate,
+		setArtifactFocus,
+		setClearedArtifactContextId,
 	]);
 
 	return { openQuestionnaireWorkspace };

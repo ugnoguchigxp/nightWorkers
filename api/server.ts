@@ -9,6 +9,7 @@ import {
 	logEvent,
 } from "./lib/logger";
 import {
+	initializeMissionPilotTaskRunCloseout,
 	reconcileMissionPilotStartup,
 	resumeMissionPilotPlanPipelines,
 	submitDueQuestionnaireDrafts,
@@ -43,6 +44,8 @@ const defaultShutdownTimeoutMs = 10_000;
 const serverCloseCallbackGraceMs = 250;
 const webSocketServerCloseGraceMs = 250;
 const fxRefreshIntervalMs = 60 * 60 * 1000;
+
+initializeMissionPilotTaskRunCloseout();
 
 type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
 	closeAllConnections?: () => void;

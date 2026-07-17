@@ -1,5 +1,10 @@
 import * as repo from "../../nightworkers/nightworkers.repository";
-import { buildCodingAgentSystemContext } from "./system-context";
+import {
+	buildCodingAgentSystemContext,
+	buildCodingAgentTaskGoal,
+	readCodingAgentPlanModeRequested,
+	resolveCodingAgentInvocationSource,
+} from "./system-context";
 import type {
 	CodingAgentContextPacket,
 	CodingAgentCurrentTodoContext,
@@ -17,9 +22,11 @@ export async function loadCodingAgentContextPacket(
 	]);
 	if (!task || !repository) return null;
 	const systemContext = buildCodingAgentSystemContext({
-		taskGoal: [task.title, task.description].filter(Boolean).join("\n"),
+		taskGoal: buildCodingAgentTaskGoal(task),
 		projectRulesJa: [],
 		registeredRepositoryRoot: repository.localPath,
+		invocationSource: resolveCodingAgentInvocationSource(run.contextSnapshot),
+		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
 	});
 	const current = todos.filter((todo) => todo.status === "running");
 	return {

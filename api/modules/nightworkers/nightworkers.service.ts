@@ -2,6 +2,7 @@ import { toDeepRecord } from "../../../shared/json-record";
 import { NotFoundError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
+import type { TaskRunAssociationRequest } from "../agentsShare";
 import type { RuntimeLaneResult } from "../codingAgent";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
 import { buildReviewResult } from "../review/results/build-review-result";
@@ -115,6 +116,7 @@ export async function startVerificationRunFromArtifact(input: {
 		contextDigest: string;
 	};
 	missionPilotAgent?: import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance;
+	runAssociation?: TaskRunAssociationRequest;
 }) {
 	const task = await repo.getTask(input.taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -147,9 +149,10 @@ export async function startVerificationRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		missionPilotPhase:
-			input.missionPilot || input.missionPilotAgent ? "test" : undefined,
+		codingAgentInvocationSource:
+			input.missionPilot || input.missionPilotAgent ? "mission_pilot" : "user",
 		missionPilotAgent: input.missionPilotAgent,
+		runAssociation: input.runAssociation,
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
 			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),

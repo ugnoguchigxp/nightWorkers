@@ -3,11 +3,12 @@ import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
-import { missionPilotPlanOutputTrace } from "../../nightworkers/nightworkers.trace-provenance";
+import { missionPilotThoughtTrace } from "../../nightworkers/nightworkers.trace-provenance";
 import { ensureDesignQuestionnaireReadyMessage } from "../../nightworkers/nightworkers.workbench-plan-intake.service";
 import type { createDesignQuestionnaire } from "../../questionnaire/questionnaire.service";
 import { createDesignQuestionnaire as createQuestionnaire } from "../../questionnaire/questionnaire.service";
 import { missionPilotArtifactProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
+import { missionPilotArtifactTrace } from "../mission-pilot-trace-provenance";
 
 export async function ensureMissionPilotAgentQuestionnaireReadyMessage(input: {
 	taskId: string;
@@ -22,7 +23,7 @@ export async function ensureMissionPilotAgentQuestionnaireReadyMessage(input: {
 		),
 		planModeSettingsSnapshot: missionPilotPlanModeSettings(),
 		source: "mission_pilot",
-		trace: missionPilotPlanOutputTrace({
+		trace: missionPilotArtifactTrace({
 			sessionId: input.missionPilotSessionId,
 		}),
 	});
@@ -34,7 +35,10 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 	missionPilotSessionId: string;
 	questionnaireSession?: Awaited<ReturnType<typeof createDesignQuestionnaire>>;
 }) {
-	const trace = missionPilotPlanOutputTrace({
+	const artifactTrace = missionPilotArtifactTrace({
+		sessionId: input.missionPilotSessionId,
+	});
+	const thoughtTrace = missionPilotThoughtTrace({
 		sessionId: input.missionPilotSessionId,
 	});
 	const planModeSettingsSnapshot = missionPilotPlanModeSettings();
@@ -43,7 +47,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		(await createQuestionnaire(input.taskId, null, input.prompt, {
 			role: "mission_pilot",
 			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
-			usageTrace: trace,
+			usageTrace: thoughtTrace,
 		}));
 	await ensureDesignQuestionnaireReadyMessage({
 		taskId: input.taskId,
@@ -53,7 +57,7 @@ export async function prepareMissionPilotPlanModeIntake(input: {
 		),
 		planModeSettingsSnapshot,
 		source: "mission_pilot",
-		trace,
+		trace: artifactTrace,
 	});
 	return questionnaireSession;
 }

@@ -3,14 +3,9 @@ import type { ProjectGitIntegrationPolicy } from "../../../shared/schemas/git-in
 import { db } from "../../db/client";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
-import type { AgentRuntimeResult } from "../codingAgent";
 import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
 import { runGitCommand } from "../gitworktree/gitworktree-cli";
 import { getSessionByTaskId, toControlSummary } from "../missionPilot";
-import {
-	buildBlueprintPlanningReadiness,
-	isBlueprintMessage,
-} from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import { runSessionQueueForRepository } from "./nightworkers.run-orchestration.service";
 import { createTaskWithMissionPilot } from "./nightworkers.task-creation.service";
@@ -48,40 +43,10 @@ function normalizeSafetyPolicyForRepository(
 	};
 }
 
-export type BlueprintPlanningReadiness = {
-	source: "adopted" | "latest_generated" | "none";
-	diagnostic:
-		| "adopted_blueprint"
-		| "using_latest_generated_blueprint"
-		| "no_adopted_blueprint";
-	messageId: string | null;
-	blueprint: unknown;
-	summary: string;
-};
-
-export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
-	status: AgentRuntimeResult["terminalState"];
-	reason: string;
-	summary: string;
-} {
-	const status = runtimeResult.terminalState;
-	const reason =
-		runtimeResult.stoppedBy === "policy"
-			? "policy_violation"
-			: runtimeResult.stoppedBy === "budget"
-				? "budget_exceeded"
-				: runtimeResult.stoppedBy === "tool_failure"
-					? "tool_failure_limit"
-					: runtimeResult.stoppedBy;
-	return {
-		status,
-		reason,
-		summary:
-			runtimeResult.finalReport ||
-			runtimeResult.summary ||
-			`Runtime finished: ${status}`,
-	};
-}
+export {
+	type BlueprintPlanningReadiness,
+	resolveBlueprintPlanningReadiness,
+} from "./nightworkers.planning-helpers.service";
 
 // --- Repositories ---
 export async function createRepository(data: {
@@ -349,33 +314,6 @@ async function listReferencedActivityArtifacts(
 	if (artifactIds.size === 0) return [];
 	const artifacts = await repo.listActivityArtifactsForTask(taskId);
 	return artifacts.filter((artifact) => artifactIds.has(artifact.id));
-}
-
-export async function resolveBlueprintPlanningReadiness(
-	taskId: string,
-): Promise<BlueprintPlanningReadiness> {
-	const messages = await repo.listTaskMessages(taskId);
-	const blueprintMessages = messages.filter(isBlueprintMessage);
-	for (const message of [...blueprintMessages].reverse()) {
-		const adoption = await repo.getBlueprintArtifactAdoption(
-			taskId,
-			message.id,
-		);
-		if (adoption?.adopted) {
-			return buildBlueprintPlanningReadiness("adopted", message);
-		}
-	}
-	const latestGenerated = blueprintMessages.at(-1);
-	if (latestGenerated) {
-		return buildBlueprintPlanningReadiness("latest_generated", latestGenerated);
-	}
-	return {
-		source: "none",
-		diagnostic: "no_adopted_blueprint",
-		messageId: null,
-		blueprint: null,
-		summary: "No adopted Blueprint artifact is available for task planning.",
-	};
 }
 
 export async function updateTask(

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { missionPilotArtifactTrace } from "../api/modules/missionPilot";
 import {
 	codingAgentChatTrace,
 	missionPilotInitialPromptTrace,
-	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 	resolveActivityTrace,
 	resolveLlmUsageTrace,
@@ -89,7 +89,7 @@ describe("NightWorkers trace provenance", () => {
 		});
 	});
 
-	it("separates Mission Pilot usage from orchestrated Plan Mode usage", () => {
+	it("keeps Mission Pilot usage in Pilot Thought and artifacts outside chat", () => {
 		const trace = missionPilotThoughtTrace({
 			sessionId: "pilot-session",
 			phase: "review",
@@ -103,12 +103,8 @@ describe("NightWorkers trace provenance", () => {
 			}),
 		).toEqual(trace);
 		expect(
-			resolveLlmUsageTrace({
-				callId: "call-3",
-				metadata: { role: "mission_pilot" },
-				trace: missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
-			}),
-		).toMatchObject({ owner: "coding_agent", channel: "chat" });
+			missionPilotArtifactTrace({ sessionId: "pilot-session" }),
+		).toMatchObject({ owner: "mission_pilot", channel: "artifact" });
 		expect(
 			resolveLlmUsageTrace({
 				callId: "call-4",
@@ -120,10 +116,7 @@ describe("NightWorkers trace provenance", () => {
 		).toMatchObject({ owner: "mission_pilot", channel: "pilot_thought" });
 	});
 
-	it("routes Plan output and the initial user prompt to chat", () => {
-		expect(
-			missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
-		).toMatchObject({ owner: "coding_agent", channel: "chat" });
+	it("keeps the initial user prompt in chat", () => {
 		expect(
 			missionPilotInitialPromptTrace("pilot-session", 1).trace,
 		).toMatchObject({ owner: "user", channel: "chat" });

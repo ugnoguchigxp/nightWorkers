@@ -58,7 +58,8 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
 			!Array.isArray(run.contextSnapshot)
 				? (run.contextSnapshot as Record<string, unknown>)
 				: {};
-		if (runContext.executionMode !== "planning") return;
+		const planModeRequested = runContext.planModeRequested === true;
+		if (runContext.executionMode !== "planning" && !planModeRequested) return;
 	}
 	const alreadyPublished = messages.some((message) => {
 		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
