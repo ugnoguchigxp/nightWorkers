@@ -108,6 +108,7 @@ const readPort: MissionPilotTaskReadPort = {
 	}),
 	readCurrentSpecification: async () => null,
 	readQuestionnaireDecisions: async () => null,
+	readPlanArtifactRouting: async () => null,
 	readPlanArtifact: async () => null,
 	readRunOutcome: async () => null,
 	readRunChangeSummary: async () => null,

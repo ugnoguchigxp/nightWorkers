@@ -5,6 +5,7 @@ import {
 	getMissionPilotActionUnavailableReason,
 	missionPilotActionToolDefinitions,
 } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
+import { missionPilotToolDefinitions } from "../api/modules/missionPilot/agent/mission-pilot-tools";
 import { projectMissionPilotAgentVisibleItems } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 import {
 	applyCurrentMissionPilotSystemContext,
@@ -23,6 +24,9 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		);
 		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
 			"全質問の回答案と質問ごとの根拠を保存",
+		);
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
+			"read_questionnaire_decisionsとread_plan_artifact_routing",
 		);
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.create"),
@@ -117,6 +121,9 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 			true,
 		);
 		expect(actionNames).toContain("plan_routing_update");
+		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toContain(
+			"read_plan_artifact_routing",
+		);
 	});
 
 	it("projects visible assistant messages, requested actions, and control states", () => {

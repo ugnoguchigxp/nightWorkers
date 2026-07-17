@@ -109,6 +109,7 @@ export async function executeMissionPilotAction(
 					typeof nightworkersService.saveDesignQuestionnaireAnswers
 				>[2],
 				{
+					completionPolicy: "finalize_current_questions",
 					role: "mission_pilot",
 					executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 					usageTrace: thoughtTrace,

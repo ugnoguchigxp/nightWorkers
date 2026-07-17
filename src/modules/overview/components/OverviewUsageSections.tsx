@@ -73,7 +73,6 @@ export function OverviewUsageSections({
 								<div className="mt-4 flex h-48 items-end gap-1">
 									{dashboard.dailyUsage.map((bucket) => {
 										const uncached = getUncachedInputTokens(bucket);
-										const cached = bucket.cachedInputTokens;
 										const output = bucket.outputTokens;
 										const total = getSeparatedTokenTotal(bucket);
 										return (
@@ -89,7 +88,6 @@ export function OverviewUsageSections({
 													title={t("overview.chart.bucketTokenParts", {
 														bucket: bucket.key,
 														input: formatExactNumber(uncached, language),
-														cached: formatExactNumber(cached, language),
 														output: formatExactNumber(output, language),
 													})}
 												>
@@ -97,11 +95,6 @@ export function OverviewUsageSections({
 														value={output}
 														total={total}
 														tone="output"
-													/>
-													<TokenSegment
-														value={cached}
-														total={total}
-														tone="cachedInput"
 													/>
 													<TokenSegment
 														value={uncached}
@@ -310,7 +303,6 @@ function TokenLegend() {
 	const { t } = useTranslation();
 	const items = [
 		{ key: "input", label: t("overview.table.input") },
-		{ key: "cachedInput", label: t("overview.table.cachedInput") },
 		{ key: "output", label: t("overview.table.output") },
 	] as const;
 	return (

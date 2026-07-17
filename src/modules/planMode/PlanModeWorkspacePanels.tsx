@@ -10,11 +10,6 @@ export {
 	PlanWorkspaceStatusView,
 	ViewDecisionSummary,
 } from "./workspace-panels/PlanWorkspaceStatusView";
-export {
-	PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY,
-	readPlanModeSequentialAutoGeneratePreference,
-	writePlanModeSequentialAutoGeneratePreference,
-} from "./workspace-panels/storage";
 export type {
 	AdditionalPlanView,
 	PlanViewDecision,

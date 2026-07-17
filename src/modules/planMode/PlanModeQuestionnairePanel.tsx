@@ -24,6 +24,7 @@ type QuestionnaireSubmissionState = {
 
 export function PlanModeQuestionnairePanel({
 	showQuestionnaireStartAction,
+	isQuestionnaireGenerating,
 	onStartQuestionnaire,
 	busyAction,
 	isImplementationLocked,
@@ -45,6 +46,7 @@ export function PlanModeQuestionnairePanel({
 	unansweredQuestions,
 }: {
 	showQuestionnaireStartAction: boolean;
+	isQuestionnaireGenerating: boolean;
 	onStartQuestionnaire: () => void | Promise<void>;
 	busyAction: string | null;
 	isImplementationLocked: boolean;
@@ -67,6 +69,15 @@ export function PlanModeQuestionnairePanel({
 }) {
 	return (
 		<div className="grid gap-4">
+			{isQuestionnaireGenerating ? (
+				<div
+					className="flex items-center gap-2 rounded border border-cyan-700/60 bg-cyan-950/30 px-3 py-2 text-cyan-100 text-sm"
+					role="status"
+				>
+					<LoaderCircle className="h-4 w-4 animate-spin" />
+					Design Questionnaireを生成しています
+				</div>
+			) : null}
 			<div className="flex flex-wrap items-center gap-2">
 				{showQuestionnaireStartAction ? (
 					<button
@@ -75,6 +86,7 @@ export function PlanModeQuestionnairePanel({
 						onClick={onStartQuestionnaire}
 						disabled={
 							Boolean(busyAction) ||
+							isQuestionnaireGenerating ||
 							isImplementationLocked ||
 							!questionnaireEnabled
 						}
@@ -97,6 +109,7 @@ export function PlanModeQuestionnairePanel({
 						onClick={onRequestAdditionalQuestionnaireQuestions}
 						disabled={
 							Boolean(busyAction) ||
+							isQuestionnaireGenerating ||
 							isImplementationLocked ||
 							!questionnaireEnabled
 						}

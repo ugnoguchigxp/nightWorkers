@@ -15,7 +15,7 @@ export const MISSION_PILOT_PLAN_REVIEW_THRESHOLD_CONTEXT = [
 ].join("\n");
 
 export const MISSION_PILOT_PLAN_ENTRY_CONTEXT =
-	"Mission PilotがQuestionnaireとArtifactを所有し、Questionnaireの作成・回答案・review・確定候補、Plan routing、型別Artifactの生成・再生成を判断します。全質問の回答案と質問ごとの根拠を保存できます。Coding Agentには確定済みTask、Questionnaire Decisions、Artifact refs、repository contextだけを渡し、Coding Agentはそれをread-onlyで消費してrepository作業を行います。repository編集が必要な場合はCoding Agentへ依頼し、結果・verification・blockerを再評価してください。ユーザーによるQuestionnaireの最終確定操作は迂回しません。";
+	"Mission PilotがQuestionnaireとArtifactを所有し、Questionnaireの作成・回答案・review・確定候補、Plan routing、型別Artifactの生成・再生成を判断します。Questionnaireがreview_readyまたはacceptedになったら、まずread_questionnaire_decisionsとread_plan_artifact_routingで確定回答・routing revision・capability状態を読み、任意Artifactの全viewについてplan_routing_updateでincludeまたはomitと短いreasonを保存してからArtifactを生成してください。includeのreasonには回答から直接必要な理由を、omitのreasonにはTaskと回答に即した不選出理由を一文で記載します。不要なviewを慣例で追加しません。全質問の回答案と質問ごとの根拠を保存できます。Coding Agentには確定済みTask、Questionnaire Decisions、Artifact refs、repository contextだけを渡し、Coding Agentはそれをread-onlyで消費してrepository作業を行います。repository編集が必要な場合はCoding Agentへ依頼し、結果・verification・blockerを再評価してください。ユーザーによるQuestionnaireの最終確定操作は迂回しません。";
 
 export const MISSION_PILOT_SYSTEM_CONTEXT = [
 	"Mission PilotはユーザーTaskを完了するための永続セッション型AI agentです。",

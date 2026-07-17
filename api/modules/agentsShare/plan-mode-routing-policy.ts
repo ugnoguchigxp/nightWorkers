@@ -6,13 +6,14 @@ import {
 } from "../../../shared/schemas/plan-mode-routing.schema";
 
 export const ALL_PLAN_MODE_ROUTING_VIEWS: readonly PlanModeRoutingView[] = [
-	"feature_plan",
+	...REQUIRED_PLAN_MODE_ROUTING_VIEWS,
 	...EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 ];
 
 const REQUIRED_VIEWS = new Set<PlanModeRoutingView>(
 	REQUIRED_PLAN_MODE_ROUTING_VIEWS,
 );
+const LEGACY_INITIAL_OMIT_REASON = "初期 routing では省略されています。";
 const TERMINAL_TASK_STATUSES = new Set([
 	"completed",
 	"cancelled",
@@ -113,11 +114,11 @@ export function buildInitialPlanModeRoutingEntries(
 				required: REQUIRED_VIEWS.has(view),
 				capabilityEnabled:
 					REQUIRED_VIEWS.has(view) || capabilities[view] === true,
-				reason: REQUIRED_VIEWS.has(view)
-					? "Plan Mode の必須 Artifact です。"
+				...(REQUIRED_VIEWS.has(view)
+					? { reason: "Plan Mode の必須 Artifact です。" }
 					: generated.has(view)
-						? "既存 Artifact を初期 routing に引き継ぎました。"
-						: "初期 routing では省略されています。",
+						? { reason: "既存 Artifact を初期 routing に引き継ぎました。" }
+						: {}),
 			},
 	);
 }
@@ -137,7 +138,7 @@ export function normalizePlanModeRoutingEntries(
 			capabilityEnabled: required || capabilities[view] === true,
 			...(required
 				? { reason: "Plan Mode の必須 Artifact です。" }
-				: entry?.reason
+				: entry?.reason && entry.reason !== LEGACY_INITIAL_OMIT_REASON
 					? { reason: entry.reason }
 					: {}),
 		};

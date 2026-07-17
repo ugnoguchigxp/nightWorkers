@@ -44,6 +44,24 @@ const boolean = { type: "boolean" };
 const nullableInteger = { type: ["integer", "null"], minimum: 0 };
 const stringEnum = (...values: string[]) => ({ type: "string", enum: values });
 const openRecord = { type: "object", additionalProperties: true };
+const planRoutingChange = {
+	type: "object",
+	properties: {
+		view: stringEnum(
+			"user_flow",
+			"blueprint",
+			"data_model",
+			"api_io_contract",
+			"activity_flow",
+			"sequence_flow",
+			"zod_schema_design",
+		),
+		decision: stringEnum("include", "omit"),
+		reason: { type: "string", minLength: 1, maxLength: 1_000 },
+	},
+	additionalProperties: false,
+	required: ["view", "decision", "reason"],
+};
 const taskFields = {
 	type: "object",
 	properties: {
@@ -192,7 +210,7 @@ const definitions: MissionPilotActionDefinition[] = (
 				{
 					expectedRevision: integer,
 					idempotencyKey: uuid,
-					changes: array,
+					changes: { type: "array", items: planRoutingChange, minItems: 1 },
 				},
 				["expectedRevision", "idempotencyKey", "changes"],
 			),

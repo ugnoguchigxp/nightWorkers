@@ -47,14 +47,14 @@ describe("Overview view model", () => {
 		});
 	});
 
-	it("keeps total, cached, and uncached input semantics distinct", () => {
+	it("excludes cached input from displayed token totals", () => {
 		const usage = {
 			inputTokens: 1_200,
 			cachedInputTokens: 300,
 			outputTokens: 45,
 		};
 		expect(getUncachedInputTokens(usage)).toBe(900);
-		expect(getSeparatedTokenTotal(usage)).toBe(1_245);
+		expect(getSeparatedTokenTotal(usage)).toBe(945);
 		expect(getCacheRate(usage)).toBe(25);
 	});
 
@@ -136,16 +136,14 @@ describe("Overview view model", () => {
 
 		expect(buildOverviewViewModel(dashboard)).toEqual({
 			tokenMetrics: [
-				{ key: "totalInput", value: 1_200 },
 				{ key: "input", value: 900 },
-				{ key: "cachedInput", value: 300 },
 				{ key: "output", value: 45 },
 				{ key: "reasoningOutput", value: 12 },
 				{ key: "stateCard", value: 5 },
 				{ key: "promptInput", value: 100 },
 			],
 			cacheRate: 25,
-			maxBucketTokens: 1_245,
+			maxBucketTokens: 945,
 			hasDailyUsageData: true,
 		});
 	});

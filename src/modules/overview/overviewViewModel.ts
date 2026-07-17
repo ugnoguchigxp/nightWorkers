@@ -7,9 +7,7 @@ type TokenBreakdown = Pick<
 >;
 
 export type OverviewTokenMetricKey =
-	| "totalInput"
 	| "input"
-	| "cachedInput"
 	| "output"
 	| "reasoningOutput"
 	| "stateCard"
@@ -31,9 +29,7 @@ export function getUncachedInputTokens(usage: TokenBreakdown) {
 }
 
 export function getSeparatedTokenTotal(usage: TokenBreakdown) {
-	return (
-		getUncachedInputTokens(usage) + usage.cachedInputTokens + usage.outputTokens
-	);
+	return getUncachedInputTokens(usage) + usage.outputTokens;
 }
 
 export function getCacheRate(usage: TokenBreakdown) {
@@ -48,9 +44,7 @@ export function buildOverviewViewModel(
 	const dailyTotals = dashboard.dailyUsage.map(getSeparatedTokenTotal);
 	return {
 		tokenMetrics: [
-			{ key: "totalInput", value: dashboard.usage.inputTokens },
 			{ key: "input", value: getUncachedInputTokens(dashboard.usage) },
-			{ key: "cachedInput", value: dashboard.usage.cachedInputTokens },
 			{ key: "output", value: dashboard.usage.outputTokens },
 			{
 				key: "reasoningOutput",

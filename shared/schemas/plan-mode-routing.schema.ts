@@ -1,9 +1,11 @@
 import { z } from "@hono/zod-openapi";
 
-export const REQUIRED_PLAN_MODE_ROUTING_VIEWS = ["feature_plan"] as const;
+export const REQUIRED_PLAN_MODE_ROUTING_VIEWS = [
+	"feature_plan",
+	"questionnaire",
+] as const;
 
 export const EDITABLE_PLAN_MODE_ROUTING_VIEWS = [
-	"questionnaire",
 	"blueprint",
 	"data_model",
 	"user_flow",
@@ -125,7 +127,7 @@ export const missionPilotPlanRoutingToolCallSchema = z
 				z
 					.object({
 						view: editablePlanModeRoutingViewSchema,
-						decision: z.literal("include"),
+						decision: planModeRoutingDecisionSchema,
 						reason: z.string().min(1).max(1_000),
 					})
 					.strict(),

@@ -12,6 +12,7 @@ export {
 	getPlanWorkspaceTabLabel,
 	resetPlanWorkspaceScrollToTop,
 	resolveInitialPlanWorkspaceTabUpdate,
+	resolveQuestionnaireGenerationState,
 	scrollPlanWorkspaceToTop,
 	shouldOpenQuestionnaireForEmptyBlueprint,
 	shouldShowQuestionnaireStartAction,

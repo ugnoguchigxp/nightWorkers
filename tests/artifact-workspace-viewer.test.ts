@@ -20,6 +20,7 @@ import {
 	PlanModeWorkspaceViewer,
 	resetPlanWorkspaceScrollToTop,
 	resolveInitialPlanWorkspaceTabUpdate,
+	resolveQuestionnaireGenerationState,
 	scrollPlanWorkspaceToTop,
 	selectActiveDedicatedArtifact,
 	shouldOpenQuestionnaireForEmptyBlueprint,
@@ -402,6 +403,32 @@ describe("Blueprint message classification", () => {
 });
 
 describe("PlanModeWorkspaceViewer", () => {
+	it("tracks Questionnaire generation through its ready refresh trigger", () => {
+		expect(
+			resolveQuestionnaireGenerationState([
+				buildTaskMessage({
+					id: "questionnaire-starting",
+					metadataJson: { intent: "design_questionnaire_starting" },
+				}),
+			]),
+		).toEqual({
+			status: "generating",
+			messageId: "questionnaire-starting",
+		});
+		expect(
+			resolveQuestionnaireGenerationState([
+				buildTaskMessage({
+					id: "questionnaire-starting",
+					metadataJson: { intent: "design_questionnaire_starting" },
+				}),
+				buildTaskMessage({
+					id: "questionnaire-ready",
+					metadataJson: { intent: "design_questionnaire_ready" },
+				}),
+			]),
+		).toEqual({ status: "ready", messageId: "questionnaire-ready" });
+	});
+
 	it("hides the Questionnaire start action after a questionnaire is complete", () => {
 		expect(
 			shouldShowQuestionnaireStartAction({

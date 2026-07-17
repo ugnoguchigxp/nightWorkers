@@ -162,6 +162,8 @@ export async function saveDesignQuestionnaireAnswers(
 		usageTrace?: TraceProvenance;
 	} = {},
 ) {
+	const completionPolicy =
+		options.completionPolicy ?? "finalize_current_questions";
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	assertPlanModeCapabilityEnabled("questionnaire");
@@ -217,7 +219,7 @@ export async function saveDesignQuestionnaireAnswers(
 	let persistedStatusSession: DesignQuestionnaireSession | null = null;
 	if (
 		nextStatus === "answering" ||
-		options.completionPolicy === "finalize_current_questions"
+		completionPolicy === "finalize_current_questions"
 	) {
 		persistedStatusSession = await updateQuestionnaireStatus(
 			taskId,
@@ -239,7 +241,7 @@ export async function saveDesignQuestionnaireAnswers(
 		taskId,
 		sessionId,
 	);
-	if (options.completionPolicy === "finalize_current_questions") {
+	if (completionPolicy === "finalize_current_questions") {
 		if (!persistedStatusSession)
 			throw questionnairePersistenceError(
 				"session-status",
@@ -278,17 +280,27 @@ export async function generateDesignQuestionnaireFollowUp(
 		},
 	);
 	options.signal?.throwIfAborted();
-	const parsed = parseDesignQuestionnaireRaw(rawOutput, {
-		taskId: session.taskId,
-		repositoryId: session.repositoryId,
-		sourceBlueprintMessageId: session.sourceBlueprintMessageId,
-		sourceKind: session.sourceBlueprintMessageId
-			? "blueprint"
-			: "plan_mode_intake",
-	});
 	const nextSequence =
 		session.questionSets.reduce((max, set) => Math.max(max, set.sequence), 0) +
 		1;
+	const parsed = parseDesignQuestionnaireRaw(
+		rawOutput,
+		{
+			taskId: session.taskId,
+			repositoryId: session.repositoryId,
+			sourceBlueprintMessageId: session.sourceBlueprintMessageId,
+			sourceKind: session.sourceBlueprintMessageId
+				? "blueprint"
+				: "plan_mode_intake",
+		},
+		{
+			questionSetId: `follow-up-${nextSequence}`,
+			questionIdPrefix: `follow-up-${nextSequence}`,
+			category: "追加確認",
+			purpose: "明示的に要求された追加の仕様判断を確認します。",
+			summary: "明示的に要求された追加質問です。",
+		},
+	);
 	await repo.createDesignQuestionnaireQuestionSet({
 		sessionId,
 		sequence: nextSequence,

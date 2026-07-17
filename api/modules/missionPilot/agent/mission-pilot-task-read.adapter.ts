@@ -12,6 +12,7 @@ import {
 	tasks,
 } from "../../../db/schema";
 import { listDesignQuestionnaires } from "../../questionnaire/questionnaire.service";
+import { getPlanModeRouting } from "../planning/plan-mode-routing.service";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
 import { sliceMissionPilotUtf8Page } from "./mission-pilot-content-page";
 import {
@@ -224,6 +225,9 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 					sourceRevision: current.questionSets.length,
 				}
 			: null;
+	},
+	async readPlanArtifactRouting(taskId) {
+		return getPlanModeRouting(taskId);
 	},
 	async readPlanArtifact(taskId, artifactId, options) {
 		const [message] = await db

@@ -39,9 +39,6 @@ export function OverviewTables({
 					<tr>
 						<th className="py-2 text-left">{t("overview.table.model")}</th>
 						<th className="py-2 text-right">{t("overview.table.input")}</th>
-						<th className="py-2 text-right">
-							{t("overview.table.cachedInput")}
-						</th>
 						<th className="py-2 text-right">{t("overview.table.output")}</th>
 						<th className="py-2 text-right">
 							{t("overview.table.outputSpeed")}
@@ -53,7 +50,7 @@ export function OverviewTables({
 				</thead>
 				<tbody>
 					{dashboard.modelBreakdown.length === 0 ? (
-						<EmptyTableRow colSpan={8} />
+						<EmptyTableRow colSpan={7} />
 					) : null}
 					{dashboard.modelBreakdown.map((item) => (
 						<tr
@@ -72,12 +69,6 @@ export function OverviewTables({
 							<td className="py-2 text-right">
 								<CompactNumberValue
 									value={getUncachedInputTokens(item)}
-									language={language}
-								/>
-							</td>
-							<td className="py-2 text-right">
-								<CompactNumberValue
-									value={item.cachedInputTokens}
 									language={language}
 								/>
 							</td>
@@ -112,9 +103,6 @@ export function OverviewTables({
 					<tr>
 						<th className="py-2 text-left">{t("overview.table.call")}</th>
 						<th className="py-2 text-right">{t("overview.table.input")}</th>
-						<th className="py-2 text-right">
-							{t("overview.table.cachedInput")}
-						</th>
 						<th className="py-2 text-right">{t("overview.table.output")}</th>
 						<th className="py-2 text-right">
 							{t("overview.table.outputSpeed")}
@@ -124,7 +112,7 @@ export function OverviewTables({
 				</thead>
 				<tbody>
 					{dashboard.recentExpensiveCalls.length === 0 ? (
-						<EmptyTableRow colSpan={6} />
+						<EmptyTableRow colSpan={5} />
 					) : null}
 					{dashboard.recentExpensiveCalls.map((call) => (
 						<tr key={call.id} className="border-t" style={tableBorderStyle}>
@@ -154,12 +142,6 @@ export function OverviewTables({
 							<td className="py-2 text-right">
 								<CompactNumberValue
 									value={getUncachedInputTokens(call)}
-									language={language}
-								/>
-							</td>
-							<td className="py-2 text-right">
-								<CompactNumberValue
-									value={call.cachedInputTokens}
 									language={language}
 								/>
 							</td>

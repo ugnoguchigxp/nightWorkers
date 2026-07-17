@@ -134,7 +134,9 @@ export async function callCodexProvider(
 			},
 			config: {
 				...(!executionPolicy.enableMcp ? { mcp_servers: {} } : {}),
-				...(structuredArtifact ? { project_doc_max_bytes: 0 } : {}),
+				...(structuredArtifact || executionPolicy.isolatedHome
+					? { project_doc_max_bytes: 0 }
+					: {}),
 				...(executionPolicy.developerInstructions ||
 				!executionPolicy.enableMemory
 					? {

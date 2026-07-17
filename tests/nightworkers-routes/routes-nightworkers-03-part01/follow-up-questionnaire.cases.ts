@@ -7,7 +7,7 @@ import { sameOriginHeaders } from "./helpers";
 import "./setup";
 
 describe("NightWorkers task routes follow-up questionnaire", () => {
-	it("lets Mission Pilot finalize the current questions without another follow-up page", async () => {
+	it("finalizes submitted answers without generating an immediate follow-up", async () => {
 		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
 		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
 		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -59,19 +59,25 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					],
 				},
 			});
-			const completed = await saveDesignQuestionnaireAnswers(
-				task.id,
-				session.id,
-				[
-					{
-						questionId: "q1",
-						selectedOptionIds: ["q1-o1"],
-						rankedOptionIds: [],
-						deferred: false,
-					},
-				],
-				{ completionPolicy: "finalize_current_questions" },
+			const completedRes = await app.request(
+				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
+				{
+					method: "POST",
+					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
+					body: JSON.stringify({
+						answers: [
+							{
+								questionId: "q1",
+								selectedOptionIds: ["q1-o1"],
+								rankedOptionIds: [],
+								deferred: false,
+							},
+						],
+					}),
+				},
 			);
+			expect(completedRes.status).toBe(200);
+			const completed = await completedRes.json();
 			expect(completed.status).toBe("review_ready");
 			expect(completed.questionSets).toHaveLength(1);
 		} finally {
@@ -87,7 +93,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 		}
 	});
 
-	it("continues Design Questionnaire with LLM follow-up questions before Design Assembly", async () => {
+	it("generates follow-up questions only through the explicit follow-up route", async () => {
 		const originalProvider = process.env.ACTIVE_LLM_PROVIDER;
 		const originalFixture = process.env.SUPERVISOR_FIXTURE_OUTPUT;
 		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
@@ -129,22 +135,6 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 			expect(createRes.status).toBe(201);
 			const session = await createRes.json();
 
-			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				action: "follow_up",
-				rationale:
-					"The primary purpose is known, but the first slice boundary is still ambiguous.",
-				questionnaire: {
-					title: "追加で決めたいこと",
-					questions: [
-						{
-							text: "初期リリースの予約範囲はどこまでにしますか？",
-							type: "radio",
-							options: ["作成のみ", "作成と変更", "作成・変更・キャンセル"],
-						},
-					],
-				},
-			});
-
 			const firstAnswersRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
 				{
@@ -163,19 +153,35 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				},
 			);
 			expect(firstAnswersRes.status).toBe(200);
-			const followUpSession = await firstAnswersRes.json();
+			const completedInitialSession = await firstAnswersRes.json();
+			expect(completedInitialSession.status).toBe("review_ready");
+			expect(completedInitialSession.questionSets).toHaveLength(1);
+
+			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+				title: "追加で決めたいこと",
+				questions: [
+					{
+						text: "初期リリースの予約範囲はどこまでにしますか？",
+						type: "radio",
+						options: ["作成のみ", "作成と変更", "作成・変更・キャンセル"],
+					},
+				],
+			});
+			const followUpRes = await app.request(
+				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/follow-up`,
+				{
+					method: "POST",
+					headers: sameOriginHeaders,
+				},
+			);
+			expect(followUpRes.status).toBe(200);
+			const followUpSession = await followUpRes.json();
 			expect(followUpSession.status).toBe("answering");
 			expect(followUpSession.questionSets).toHaveLength(2);
 			expect(
 				followUpSession.questionSets[1].questionnaire.questionSets[0]
 					.questions[0].id,
 			).toBe("follow-up-2-q1");
-
-			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				action: "ready_for_design_assembly",
-				rationale: "The initial release boundary is now clear enough.",
-				questionnaire: null,
-			});
 
 			const followUpAnswersRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
@@ -271,28 +277,19 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 						],
 					},
 				});
-				const res = await app.request(
-					`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
-					{
-						method: "POST",
-						headers: {
-							...sameOriginHeaders,
-							"Content-Type": "application/json",
+				return saveDesignQuestionnaireAnswers(
+					task.id,
+					session.id,
+					[
+						{
+							questionId,
+							selectedOptionIds: [optionId],
+							rankedOptionIds: [],
+							deferred: false,
 						},
-						body: JSON.stringify({
-							answers: [
-								{
-									questionId,
-									selectedOptionIds: [optionId],
-									rankedOptionIds: [],
-									deferred: false,
-								},
-							],
-						}),
-					},
+					],
+					{ completionPolicy: "assess_follow_up" },
 				);
-				expect(res.status).toBe(200);
-				return res.json();
 			}
 
 			let currentSession = await answerAndRequestFollowUp("q1", "q1-o1", 2);
@@ -432,25 +429,19 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					],
 				},
 			});
-			const answersRes = await app.request(
-				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
-				{
-					method: "POST",
-					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
-					body: JSON.stringify({
-						answers: [
-							{
-								questionId: "q1",
-								selectedOptionIds: [],
-								rankedOptionIds: [],
-								deferred: false,
-							},
-						],
-					}),
-				},
+			const answeredSession = await saveDesignQuestionnaireAnswers(
+				task.id,
+				session.id,
+				[
+					{
+						questionId: "q1",
+						selectedOptionIds: [],
+						rankedOptionIds: [],
+						deferred: false,
+					},
+				],
+				{ completionPolicy: "assess_follow_up" },
 			);
-			expect(answersRes.status).toBe(200);
-			const answeredSession = await answersRes.json();
 			expect(answeredSession.status).toBe("review_ready");
 			expect(answeredSession.questionSets).toHaveLength(1);
 		} finally {
@@ -567,31 +558,25 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				},
 			});
 
-			const answersRes = await app.request(
-				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
-				{
-					method: "POST",
-					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
-					body: JSON.stringify({
-						answers: [
-							{
-								questionId: "q1",
-								selectedOptionIds: ["q1-o5"],
-								rankedOptionIds: [],
-								deferred: false,
-							},
-							{
-								questionId: "q2",
-								selectedOptionIds: ["q2-o1"],
-								rankedOptionIds: [],
-								deferred: false,
-							},
-						],
-					}),
-				},
+			const answeredSession = await saveDesignQuestionnaireAnswers(
+				task.id,
+				session.id,
+				[
+					{
+						questionId: "q1",
+						selectedOptionIds: ["q1-o5"],
+						rankedOptionIds: [],
+						deferred: false,
+					},
+					{
+						questionId: "q2",
+						selectedOptionIds: ["q2-o1"],
+						rankedOptionIds: [],
+						deferred: false,
+					},
+				],
+				{ completionPolicy: "assess_follow_up" },
 			);
-			expect(answersRes.status).toBe(200);
-			const answeredSession = await answersRes.json();
 			const followUpQuestions =
 				answeredSession.questionSets[1]?.questionnaire?.questionSets[0]
 					?.questions || [];

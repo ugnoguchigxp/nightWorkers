@@ -37,10 +37,6 @@ export const tokenSegmentStyles = {
 		background: "var(--nw-primary)",
 		color: "var(--nw-primary)",
 	},
-	cachedInput: {
-		background: "var(--nw-success)",
-		color: "var(--nw-success)",
-	},
 	output: {
 		background: "var(--nw-warning)",
 		color: "var(--nw-warning)",

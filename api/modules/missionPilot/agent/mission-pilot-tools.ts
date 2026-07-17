@@ -52,6 +52,16 @@ const readTools: ProviderToolDefinition[] = [
 		},
 	},
 	{
+		name: "read_plan_artifact_routing",
+		description:
+			"現在のPlan Artifact routing、revision、capability状態を読む。",
+		inputSchema: {
+			type: "object",
+			properties: {},
+			additionalProperties: false,
+		},
+	},
+	{
 		name: "read_plan_artifact",
 		description: "指定Artifactをdigestとpaging情報付きで読む。",
 		inputSchema: {
@@ -234,6 +244,8 @@ async function executeReadTool(input: {
 			return input.readPort.readCurrentSpecification(input.taskId, page);
 		case "read_questionnaire_decisions":
 			return input.readPort.readQuestionnaireDecisions(input.taskId);
+		case "read_plan_artifact_routing":
+			return input.readPort.readPlanArtifactRouting(input.taskId);
 		case "read_plan_artifact":
 			return input.readPort.readPlanArtifact(
 				input.taskId,

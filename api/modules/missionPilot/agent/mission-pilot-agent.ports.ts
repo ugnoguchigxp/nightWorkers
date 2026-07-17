@@ -35,6 +35,7 @@ export type MissionPilotTaskReadPort = {
 		options?: { cursor?: number; maxChars?: number },
 	): Promise<unknown>;
 	readQuestionnaireDecisions(taskId: string): Promise<unknown>;
+	readPlanArtifactRouting(taskId: string): Promise<unknown>;
 	readPlanArtifact(
 		taskId: string,
 		artifactId: string,

@@ -24,7 +24,14 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("並び順と空状態");
 		expect(prompt).toContain("結合せずfollow-upへ回して");
 		expect(prompt).toContain("意味を重複させず");
-		expect(prompt).toContain("件数を満たすためのノルマではありません");
+		expect(prompt).toContain("初期質問は15件を絶対上限");
+		expect(prompt).toContain("最低件数や目標件数はありません");
+		expect(prompt).toContain("15件を埋めるために質問を増やさず");
+		expect(prompt).toContain("Task名、プロダクト名、機能名を入れず");
+		expect(prompt).toContain("1/4 のような表記も入れない");
+		expect(prompt).not.toContain("最大4ページ");
+		expect(prompt).not.toContain("1 ページ分");
+		expect(prompt).not.toContain("原則 8-12 件");
 		expect(prompt).toContain("通常のrepository調査で一意に分かる事項");
 		expect(prompt).toContain("使用する技術スタック");
 		expect(prompt).toContain("DB/永続化");
@@ -33,7 +40,8 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain(
 			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
 		);
-		expect(prompt).toContain("Hono + React/Vite");
+		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).toContain("「デフォルト」を独立した選択肢にはせず");
 		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("Python/FastAPI + React/Vite");
 		expect(prompt).toContain("API only (FastAPI)");
@@ -89,7 +97,8 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain(
 			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
 		);
-		expect(prompt).toContain("Hono + React/Vite");
+		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).toContain("「デフォルト」を独立した選択肢にはせず");
 		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("API only (FastAPI)");
 		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
@@ -119,6 +128,11 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("単一軸の判断を checkbox で表現しない");
 		expect(prompt).toContain("対象機能の配置が未回答");
 		expect(prompt).toContain("auth / permission の確認");
+		expect(prompt).toContain("question set sequence が4以上");
+		expect(prompt).toContain("この実行上限をtitleや質問文へ表示しない");
+		expect(prompt).toContain("追加質問は最大10件");
+		expect(prompt).not.toContain("最大4ページ");
+		expect(prompt).not.toContain("必要な 1 ページ分");
 	});
 
 	it("includes concise project stack and plan mode context in initial questionnaire input", () => {
@@ -172,6 +186,27 @@ describe("design questionnaire prompts", () => {
 						options: [...tenOptions, "選択肢11"],
 					},
 				],
+			}).success,
+		).toBe(false);
+	});
+
+	it("accepts at most fifteen initial questions", () => {
+		const question = {
+			text: "実装判断はどれですか？",
+			type: "radio" as const,
+			options: ["案A", "案B"],
+		};
+
+		expect(
+			questionnaireChoiceFormSchema.safeParse({
+				title: "実装前確認",
+				questions: Array.from({ length: 15 }, () => question),
+			}).success,
+		).toBe(true);
+		expect(
+			questionnaireChoiceFormSchema.safeParse({
+				title: "実装前確認",
+				questions: Array.from({ length: 16 }, () => question),
 			}).success,
 		).toBe(false);
 	});

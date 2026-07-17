@@ -397,27 +397,27 @@ async function updatePlanModeRouting(input: {
 				`${change.view} は Settings で無効なため ON にできません。`,
 			);
 		}
-		if (
-			input.actor === "mission_pilot" &&
-			(previous.decision !== "omit" || change.decision !== "include")
-		) {
+		if (input.actor === "mission_pilot" && previous.decision !== "omit") {
 			throw new AppError(
 				400,
 				"MISSION_PILOT_ROUTING_TOOL_SCOPE_VIOLATION",
-				"Mission Pilot は省略中 Artifact の include だけを実行できます。",
+				"Mission Pilot は初期状態で省略中の任意Artifactだけを判断できます。",
 			);
 		}
-		if (previous.decision === change.decision) continue;
+		const reason =
+			change.reason?.trim() ||
+			(input.actor === "user"
+				? `ユーザーが ${change.decision === "include" ? "ON" : "OFF"} に変更しました。`
+				: input.actor === "coding_agent"
+					? `Coding Agentが ${change.decision === "include" ? "必要" : "不要"} と判断しました。`
+					: previous.reason);
+		if (previous.decision === change.decision && previous.reason === reason) {
+			continue;
+		}
 		nextByView.set(change.view, {
 			...previous,
 			decision: change.decision,
-			reason:
-				change.reason?.trim() ||
-				(input.actor === "user"
-					? `ユーザーが ${change.decision === "include" ? "ON" : "OFF"} に変更しました。`
-					: input.actor === "coding_agent"
-						? `Coding Agentが ${change.decision === "include" ? "必要" : "不要"} と判断しました。`
-						: previous.reason),
+			reason,
 		});
 		changedViews.push(change.view);
 	}

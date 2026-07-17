@@ -7,7 +7,10 @@ import {
 	formatExactNumber,
 } from "../overviewFormat";
 import { panelStyle, subtleTextStyle } from "../overviewStyles";
-import type { OverviewViewModel } from "../overviewViewModel";
+import {
+	getSeparatedTokenTotal,
+	type OverviewViewModel,
+} from "../overviewViewModel";
 import {
 	formatExactCurrencyValue,
 	formatTokensPerSecond,
@@ -30,10 +33,11 @@ export function OverviewMetrics({
 		...metric,
 		label: t(`overview.kpi.${metric.key}`),
 	}));
+	const displayedTokenTotal = getSeparatedTokenTotal(dashboard.usage);
 	return (
 		<>
 			<section
-				className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7"
+				className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
 				style={panelStyle}
 				aria-label={t("overview.section.tokenBreakdown")}
 			>
@@ -73,10 +77,10 @@ export function OverviewMetrics({
 				<KpiCard
 					label={t("overview.kpi.calls")}
 					value={formatCompactNumber(dashboard.usage.callCount)}
-					exactValue={`${formatExactNumber(dashboard.usage.callCount, language)} calls / ${formatExactNumber(dashboard.usage.totalTokens, language)} tokens`}
+					exactValue={`${formatExactNumber(dashboard.usage.callCount, language)} calls / ${formatExactNumber(displayedTokenTotal, language)} tokens`}
 					sub={t("overview.kpi.callDetails", {
 						count: dashboard.usage.callCount,
-						tokens: formatCompactNumber(dashboard.usage.totalTokens),
+						tokens: formatCompactNumber(displayedTokenTotal),
 					})}
 				/>
 				<KpiCard

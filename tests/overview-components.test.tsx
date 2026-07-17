@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
 import { OverviewHeader } from "../src/modules/overview/components/OverviewHeader";
+import { OverviewMetrics } from "../src/modules/overview/components/OverviewMetrics";
 import { CompactCostValue } from "../src/modules/overview/components/OverviewPrimitives";
 import { OverviewUsageSections } from "../src/modules/overview/components/OverviewUsageSections";
 
@@ -82,6 +83,46 @@ describe("Overview components", () => {
 		);
 		expect(markup).toContain("￥337");
 		expect(markup).not.toContain("クレジット");
+	});
+
+	it("hides cached token totals while retaining the cache rate", () => {
+		const markup = renderToStaticMarkup(
+			<OverviewMetrics
+				dashboard={
+					{
+						runs: { total: 1, completed: 1, failed: 0, active: 0 },
+						usage: {
+							inputTokens: 1_000,
+							cachedInputTokens: 400,
+							outputTokens: 500,
+							totalTokens: 1_500,
+							callCount: 1,
+							outputTokensPerSecond: 10,
+							measuredDurationCallCount: 1,
+						},
+						cost: {
+							estimatedTotal: 1,
+							pricedCallCount: 1,
+							unpricedCallCount: 0,
+						},
+					} as never
+				}
+				viewModel={
+					{
+						tokenMetrics: [{ key: "input", value: 600 }],
+						cacheRate: 40,
+					} as never
+				}
+				language="ja"
+				currency="JPY"
+			/>,
+		);
+
+		expect(markup).toContain("入力");
+		expect(markup).toContain("キャッシュ率");
+		expect(markup).toContain("1 calls / 1,100 tokens");
+		expect(markup).not.toContain("入力合計（キャッシュ含む）");
+		expect(markup).not.toContain("入力の集計");
 	});
 
 	it("fits hourly usage into the panel and renders time-only labels", () => {

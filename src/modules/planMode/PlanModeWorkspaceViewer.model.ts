@@ -72,6 +72,26 @@ export const correctionTargetTabs: Record<
 	zod_schema_design: "zod-schema-design",
 };
 
+export function resolveQuestionnaireGenerationState(
+	messages: Pick<TaskMessage, "id" | "metadataJson">[],
+) {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const message = messages[index];
+		if (!message) continue;
+		const intent = String(toDeepRecord(message.metadataJson).intent || "");
+		if (intent === "design_questionnaire_starting") {
+			return { status: "generating" as const, messageId: message.id };
+		}
+		if (intent === "design_questionnaire_ready") {
+			return { status: "ready" as const, messageId: message.id };
+		}
+		if (intent === "intake_failed") {
+			return { status: "failed" as const, messageId: message.id };
+		}
+	}
+	return { status: "idle" as const, messageId: null };
+}
+
 type PlanWorkspaceRegenerationTab =
 	keyof typeof planWorkspaceRegenerationTargets;
 

@@ -52,6 +52,7 @@ export * from "./mission-pilot-run-association.service";
 export { initializeMissionPilotTaskRunCloseout } from "./mission-pilot-run-closeout.adapter";
 export * from "./mission-pilot-runtime-continuation.service";
 export { missionPilotArtifactTrace } from "./mission-pilot-trace-provenance";
+export { selectQuestionnaireArtifactsForTask } from "./planning/mission-pilot-questionnaire-artifact-routing.service";
 export {
 	getPlanModeRouting,
 	updatePlanModeRoutingForCodingAgent,

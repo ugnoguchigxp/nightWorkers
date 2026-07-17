@@ -1,3 +1,4 @@
+import type { PlanModeRoutingView } from "../../../../shared/schemas/plan-mode-routing.schema";
 import type {
 	PlanModeCapability,
 	PlanModeViewDecision,
@@ -19,6 +20,7 @@ const ADDITIONAL_PLAN_VIEWS: readonly AdditionalPlanView[] = [
 export type PlanViewDecision = PlanModeViewDecision;
 
 export type PlanWorkspaceStatusStep = {
+	view: PlanModeRoutingView;
 	progressKey: string;
 	number: number;
 	title: string;
@@ -29,21 +31,18 @@ export type PlanWorkspaceStatusStep = {
 	busy: boolean;
 	disabled: boolean;
 	disabledReason?: string | null;
-	onClick: () => void;
+	onClick: () => void | Promise<void>;
 	secondaryAction?: {
 		label: string;
 		busy: boolean;
 		disabled: boolean;
-		onClick: () => void;
+		onClick: () => void | Promise<void>;
 	} | null;
 	autoGenerate: boolean;
 	autoGenerateKey: string;
 	progressStatus?: "pending" | "running" | "completed" | "failed" | "skipped";
 	progressError?: string | null;
 };
-
-export const PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY =
-	"nightworkers.planMode.sequentialAutoGenerate";
 
 export function isAdditionalView(value: string): value is AdditionalPlanView {
 	return (ADDITIONAL_PLAN_VIEWS as readonly string[]).includes(value);

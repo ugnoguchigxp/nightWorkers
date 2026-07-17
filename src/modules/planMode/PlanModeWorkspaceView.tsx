@@ -30,6 +30,7 @@ export function PlanModeWorkspaceView({
 	activityArtifacts,
 	activeDataModelMessage,
 	showQuestionnaireStartAction,
+	isQuestionnaireGenerating,
 	startQuestionnaire,
 	busyAction,
 	isImplementationLocked,
@@ -78,6 +79,7 @@ export function PlanModeWorkspaceView({
 	activityArtifacts: ActivityArtifact[];
 	activeDataModelMessage: TaskMessage | null;
 	showQuestionnaireStartAction: boolean;
+	isQuestionnaireGenerating: boolean;
 	startQuestionnaire: () => void | Promise<void>;
 	busyAction: string | null;
 	isImplementationLocked: boolean;
@@ -137,11 +139,11 @@ export function PlanModeWorkspaceView({
 }) {
 	return (
 		<div
-			className="flex h-full min-h-0 flex-col bg-[#1e1e2e] text-slate-100"
+			className="nightworkers-structured-artifact flex h-full min-h-0 flex-col"
 			data-artifact-export-expand
 		>
 			<div
-				className="shrink-0 border-slate-800 border-b px-5 py-3"
+				className="nightworkers-structured-artifact-section shrink-0 border-b px-5 py-3"
 				data-artifact-export-exclude
 			>
 				<div className="flex flex-wrap gap-1">
@@ -190,6 +192,7 @@ export function PlanModeWorkspaceView({
 				) : activeTab === "questionnaire" ? (
 					<PlanModeQuestionnairePanel
 						showQuestionnaireStartAction={showQuestionnaireStartAction}
+						isQuestionnaireGenerating={isQuestionnaireGenerating}
 						onStartQuestionnaire={startQuestionnaire}
 						busyAction={busyAction}
 						isImplementationLocked={isImplementationLocked}

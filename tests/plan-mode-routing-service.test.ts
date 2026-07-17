@@ -65,7 +65,7 @@ async function createFixture() {
 }
 
 describe("Plan Mode routing service", () => {
-	it("keeps feature plan required and questionnaire editable in the initial snapshot", async () => {
+	it("keeps feature plan and questionnaire required in the initial snapshot", async () => {
 		const { task } = await createFixture();
 		const routing = await getPlanModeRouting(task.id);
 
@@ -75,13 +75,45 @@ describe("Plan Mode routing service", () => {
 				view: "feature_plan",
 				decision: "include",
 			}),
+			expect.objectContaining({
+				view: "questionnaire",
+				decision: "include",
+			}),
 		]);
 		expect(
 			routing.entries.find((entry) => entry.view === "questionnaire"),
 		).toMatchObject({
-			required: false,
+			required: true,
 			capabilityEnabled: true,
 		});
+		expect(
+			routing.entries.find((entry) => entry.view === "blueprint")?.reason,
+		).toBeUndefined();
+	});
+
+	it("drops the legacy fixed omit reason so Mission Pilot can replace it", async () => {
+		const { task } = await createFixture();
+		await db.insert(taskMessages).values({
+			taskId: task.id,
+			role: "system",
+			content: "Legacy routing",
+			messageType: "text",
+			metadataJson: {
+				viewDecisions: [
+					{
+						view: "blueprint",
+						decision: "omit",
+						reason: "初期 routing では省略されています。",
+					},
+				],
+			},
+		});
+
+		const routing = await getPlanModeRouting(task.id);
+
+		expect(
+			routing.entries.find((entry) => entry.view === "blueprint")?.reason,
+		).toBeUndefined();
 	});
 
 	it("lets the active Coding Agent choose routing while user edits remain locked", async () => {
@@ -98,11 +130,6 @@ describe("Plan Mode routing service", () => {
 			idempotencyKey: crypto.randomUUID(),
 			changes: [
 				{
-					view: "questionnaire",
-					decision: "include",
-					reason: "認可境界はユーザー判断が必要です。",
-				},
-				{
 					view: "api_io_contract",
 					decision: "include",
 					reason: "request/response契約が実装判断を左右します。",
@@ -114,7 +141,7 @@ describe("Plan Mode routing service", () => {
 		expect(updated.editable).toBe(true);
 		expect(
 			updated.entries.find((entry) => entry.view === "questionnaire"),
-		).toMatchObject({ decision: "include", required: false });
+		).toMatchObject({ decision: "include", required: true });
 		await expect(
 			updatePlanModeRoutingForUser(task.id, {
 				expectedRevision: updated.revision,
@@ -143,7 +170,7 @@ describe("Plan Mode routing service", () => {
 			routing.entries.find((entry) => entry.view === "questionnaire"),
 		).toMatchObject({
 			decision: "include",
-			required: false,
+			required: true,
 		});
 	});
 
@@ -209,16 +236,28 @@ describe("Plan Mode routing service", () => {
 		);
 	});
 
-	it("limits the Mission Pilot tool to omit-to-include expansion", async () => {
+	it("lets Mission Pilot save omit reasons but not revisit included artifacts", async () => {
 		const { task } = await createFixture();
-		const updated = await updatePlanModeRoutingForUser(task.id, {
+		const routed = await executeMissionPilotPlanRoutingTool(task.id, {
+			tool: "edit_plan_artifact_routing",
 			expectedRevision: 0,
 			idempotencyKey: crypto.randomUUID(),
-			changes: [{ view: "blueprint", decision: "include" }],
+			changes: [
+				{
+					view: "blueprint",
+					decision: "omit",
+					reason: "画面変更を伴わないため、Blueprintは作成しません。",
+				},
+				{
+					view: "api_io_contract",
+					decision: "include",
+					reason: "外部APIとの入出力境界を確定するため。",
+				},
+			],
 		});
 		expect(
-			updated.entries.find((entry) => entry.view === "blueprint")?.reason,
-		).toBe("ユーザーが ON に変更しました。");
+			routed.entries.find((entry) => entry.view === "blueprint")?.reason,
+		).toBe("画面変更を伴わないため、Blueprintは作成しません。");
 
 		await expect(
 			executeMissionPilotPlanRoutingTool(task.id, {
@@ -227,7 +266,7 @@ describe("Plan Mode routing service", () => {
 				idempotencyKey: crypto.randomUUID(),
 				changes: [
 					{
-						view: "blueprint",
+						view: "api_io_contract",
 						decision: "include",
 						reason: "Already included",
 					},
@@ -239,6 +278,20 @@ describe("Plan Mode routing service", () => {
 	});
 
 	it("rejects duplicate views in user and Mission Pilot changes", () => {
+		expect(
+			missionPilotPlanRoutingToolCallSchema.safeParse({
+				tool: "edit_plan_artifact_routing",
+				expectedRevision: 0,
+				idempotencyKey: crypto.randomUUID(),
+				changes: [
+					{
+						view: "blueprint",
+						decision: "omit",
+						reason: "画面構成の変更がないため。",
+					},
+				],
+			}).success,
+		).toBe(true);
 		expect(
 			updatePlanModeRoutingRequestSchema.safeParse({
 				expectedRevision: 0,

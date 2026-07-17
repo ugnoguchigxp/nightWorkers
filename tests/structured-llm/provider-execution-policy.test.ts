@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY } from "../../api/modules/agentsShare/contracts/provider-execution";
 import { codingAgentProviderExecutionPolicy } from "../../api/modules/codingAgent/adapters/coding-agent-provider.adapter";
 import {
 	missionPilotArtifactProviderExecutionPolicy,
@@ -9,6 +10,18 @@ import {
 import { buildCodexStructuredExecutionMode } from "../../api/services/structured-llm/codex-provider";
 
 describe("structured provider execution policy", () => {
+	it("keeps structured artifact context isolated by default", () => {
+		expect(DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY).toMatchObject({
+			isolatedHome: true,
+			enableMcp: false,
+			enableMemory: false,
+			allowProviderTools: false,
+		});
+		expect(
+			DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY.developerInstructions,
+		).toContain("SystemContext、User Prompt、JSON schemaだけ");
+	});
+
 	it("keeps Mission Pilot provider capabilities explicit and role-neutral", () => {
 		expect(missionPilotToolTurnProviderExecutionPolicy).toMatchObject({
 			isolatedHome: true,
