@@ -8,7 +8,7 @@ import {
 } from "../overviewFormat";
 import { panelStyle, subtleTextStyle } from "../overviewStyles";
 import {
-	getSeparatedTokenTotal,
+	getUsageTokenTotal,
 	type OverviewViewModel,
 } from "../overviewViewModel";
 import {
@@ -33,11 +33,11 @@ export function OverviewMetrics({
 		...metric,
 		label: t(`overview.kpi.${metric.key}`),
 	}));
-	const displayedTokenTotal = getSeparatedTokenTotal(dashboard.usage);
+	const displayedTokenTotal = getUsageTokenTotal(dashboard.usage);
 	return (
 		<>
 			<section
-				className="grid gap-2 border p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+				className="grid gap-2 border p-3 sm:grid-cols-3"
 				style={panelStyle}
 				aria-label={t("overview.section.tokenBreakdown")}
 			>

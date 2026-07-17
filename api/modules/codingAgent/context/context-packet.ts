@@ -3,7 +3,6 @@ import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
 	readCodingAgentPlanModeRequested,
-	resolveCodingAgentInvocationSource,
 } from "./system-context";
 import type {
 	CodingAgentContextPacket,
@@ -25,7 +24,6 @@ export async function loadCodingAgentContextPacket(
 		taskGoal: buildCodingAgentTaskGoal(task),
 		projectRulesJa: [],
 		registeredRepositoryRoot: repository.localPath,
-		invocationSource: resolveCodingAgentInvocationSource(run.contextSnapshot),
 		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
 	});
 	const current = todos.filter((todo) => todo.status === "running");

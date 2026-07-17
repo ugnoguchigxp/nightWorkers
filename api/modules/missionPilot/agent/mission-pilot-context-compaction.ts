@@ -26,7 +26,7 @@ export function shouldCompactMissionPilotContext(input: {
 
 export function buildMissionPilotCompactionRequest(
 	messages: ProviderToolMessage[],
-	maxBytes = 240_000,
+	maxBytes = 64_000,
 ) {
 	return boundMissionPilotCompactionInput(messages, maxBytes);
 }

@@ -1,3 +1,4 @@
+import type { VerificationEvidenceHistoryContext } from "../../codingAgent";
 import type { TranscriptItem } from "../activityTranscript";
 import type { ActivityEvent, WorkbenchArtifactRef } from "../types";
 import { formatFinishedTime } from "../utils/time";
@@ -37,12 +38,17 @@ export function NormalTranscriptItemView({
 	onOpenProjectFile,
 	onOpenTestModeArtifact,
 	onOpenReviewModeArtifact,
+	verificationHistoryByEventId,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
 	onOpenTestModeArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
+	verificationHistoryByEventId?: Map<
+		string,
+		VerificationEvidenceHistoryContext
+	>;
 }) {
 	if (item.kind === "user_turn") {
 		const timestamp = item.events.at(-1)?.createdAt;
@@ -93,6 +99,9 @@ export function NormalTranscriptItemView({
 							<NormalVisibleActivityBlock
 								key={`${item.id}-activity-${event.id}`}
 								event={event}
+								verificationHistory={verificationHistoryByEventId?.get(
+									event.id,
+								)}
 							/>
 						) : null;
 					})}
@@ -102,7 +111,12 @@ export function NormalTranscriptItemView({
 	}
 
 	if (item.kind === "activity") {
-		const block = <NormalVisibleActivityBlock event={item.event} />;
+		const block = (
+			<NormalVisibleActivityBlock
+				event={item.event}
+				verificationHistory={verificationHistoryByEventId?.get(item.event.id)}
+			/>
+		);
 		return isVisibleEditDiffActivity(item.event) ? (
 			<ThreadMessage
 				messageRole="assistant"
@@ -122,11 +136,20 @@ function isVisibleEditDiffActivity(event: ActivityEvent) {
 	return buildVisibleEditDiffSummary(event).length > 0;
 }
 
-function NormalVisibleActivityBlock({ event }: { event: ActivityEvent }) {
+function NormalVisibleActivityBlock({
+	event,
+	verificationHistory,
+}: {
+	event: ActivityEvent;
+	verificationHistory?: VerificationEvidenceHistoryContext;
+}) {
 	return (
 		<>
 			<NormalEditDiffBlock event={event} />
-			<NormalCodexToolCard event={event} />
+			<NormalCodexToolCard
+				event={event}
+				verificationHistory={verificationHistory}
+			/>
 			{!getCodexToolCardModel(event) ? (
 				<NormalCliCommandBlock event={event} />
 			) : null}

@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logEvent } from "../../lib/logger";
 import type { StartTaskRunOptions } from "../../modules/nightworkers/run-orchestration/start-task-run";
+import { createApplicationSettingsWorkerSnapshot } from "../settings/application-settings-store";
+import { attachPersistenceOwnerIpcServer } from "./persistence-owner-ipc-server";
 
 type WorkerKind = "task-run-worker" | "queue-worker";
 type WorkerStartedMessage = {
@@ -35,6 +37,7 @@ function workerEntry(kind: WorkerKind) {
 
 function trackWorker(child: ChildProcess) {
 	activeWorkers.add(child);
+	attachPersistenceOwnerIpcServer(child);
 	child.once("exit", () => {
 		activeWorkers.delete(child);
 		for (const [runId, owner] of workersByRunId) {
@@ -59,6 +62,7 @@ function spawnWorker(
 	environment: NodeJS.ProcessEnv = {},
 ) {
 	const entry = workerEntry(kind);
+	const applicationSettingsSnapshot = createApplicationSettingsWorkerSnapshot();
 	const child = spawn(entry.command, entry.args, {
 		cwd: process.cwd(),
 		env: {
@@ -66,6 +70,7 @@ function spawnWorker(
 			...environment,
 			NIGHTWORKERS_EXECUTION_ROLE: "worker",
 			NIGHTWORKERS_EXECUTOR_MODE: "in_process",
+			NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT: applicationSettingsSnapshot,
 			...(kind === "queue-worker" ? { NIGHTWORKERS_QUEUE_WORKER: "1" } : {}),
 		},
 		stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -73,6 +78,7 @@ function spawnWorker(
 	trackWorker(child);
 	return new Promise<unknown[]>((resolve, reject) => {
 		let settled = false;
+		const observedMessageTypes: string[] = [];
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
@@ -91,17 +97,26 @@ function spawnWorker(
 			reject(error);
 		});
 		child.once("exit", (code, signal) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			reject(
-				new Error(
-					`${kind} exited before startup (code=${code}, signal=${signal})`,
-				),
-			);
+			setImmediate(() => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				reject(
+					new Error(
+						`${kind} exited before startup (code=${code}, signal=${signal}, messages=${observedMessageTypes.join(",") || "none"})`,
+					),
+				);
+			});
 		});
 		child.on("message", (raw) => {
 			const message = raw as WorkerMessage;
+			observedMessageTypes.push(
+				message &&
+					typeof message === "object" &&
+					typeof message.type === "string"
+					? message.type
+					: "invalid",
+			);
 			if (settled || !message || typeof message !== "object") return;
 			if (message.type === "failed") {
 				settled = true;
@@ -125,8 +140,13 @@ function spawnWorker(
 export async function startTaskRunInWorker<T = unknown>(
 	taskId: string,
 	options: StartTaskRunOptions,
+	workerOptions: { environment?: NodeJS.ProcessEnv } = {},
 ): Promise<T> {
-	const runs = await spawnWorker("task-run-worker", { taskId, options });
+	const runs = await spawnWorker(
+		"task-run-worker",
+		{ taskId, options },
+		workerOptions.environment,
+	);
 	const run = runs[0];
 	if (!run) throw new Error("Task worker did not return a run.");
 	return run as T;

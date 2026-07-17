@@ -21,8 +21,9 @@ import {
 	tokenSegmentStyles,
 } from "../overviewStyles";
 import {
-	getSeparatedTokenTotal,
+	getCachedInputTokens,
 	getUncachedInputTokens,
+	getUsageTokenTotal,
 	type OverviewViewModel,
 } from "../overviewViewModel";
 import {
@@ -73,8 +74,9 @@ export function OverviewUsageSections({
 								<div className="mt-4 flex h-48 items-end gap-1">
 									{dashboard.dailyUsage.map((bucket) => {
 										const uncached = getUncachedInputTokens(bucket);
+										const cached = getCachedInputTokens(bucket);
 										const output = bucket.outputTokens;
-										const total = getSeparatedTokenTotal(bucket);
+										const total = getUsageTokenTotal(bucket);
 										return (
 											<div
 												key={bucket.key}
@@ -88,6 +90,7 @@ export function OverviewUsageSections({
 													title={t("overview.chart.bucketTokenParts", {
 														bucket: bucket.key,
 														input: formatExactNumber(uncached, language),
+														cached: formatExactNumber(cached, language),
 														output: formatExactNumber(output, language),
 													})}
 												>
@@ -95,6 +98,11 @@ export function OverviewUsageSections({
 														value={output}
 														total={total}
 														tone="output"
+													/>
+													<TokenSegment
+														value={cached}
+														total={total}
+														tone="cachedInput"
 													/>
 													<TokenSegment
 														value={uncached}
@@ -165,6 +173,19 @@ export function OverviewUsageSections({
 							)}
 						/>
 						<MetricRow
+							label={t("overview.cost.reasoningOutput")}
+							value={formatCompactCurrency(
+								dashboard.cost.reasoningOutputCost,
+								currency,
+								language,
+							)}
+							exactValue={formatExactCurrencyValue(
+								dashboard.cost.reasoningOutputCost,
+								currency,
+								language,
+							)}
+						/>
+						<MetricRow
 							label={t("overview.cost.codexCredits")}
 							value={
 								dashboard.cost.creditTotal === null
@@ -206,6 +227,11 @@ export function OverviewUsageSections({
 							value={formatDateTime(dashboard.generatedAt, language, timezone)}
 						/>
 					</dl>
+					{dashboard.usage.callCount > 0 ? (
+						<p className="mt-4 text-[10px]" style={subtleTextStyle}>
+							{t("overview.cost.cacheWriteUnavailable")}
+						</p>
+					) : null}
 				</div>
 			</section>
 			<OverviewWarnings
@@ -303,6 +329,7 @@ function TokenLegend() {
 	const { t } = useTranslation();
 	const items = [
 		{ key: "input", label: t("overview.table.input") },
+		{ key: "cachedInput", label: t("overview.table.cachedInput") },
 		{ key: "output", label: t("overview.table.output") },
 	] as const;
 	return (

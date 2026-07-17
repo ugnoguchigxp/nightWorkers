@@ -8,6 +8,11 @@ import {
 } from "../../api/services/structured-llm/codex-tool-turn";
 import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
 
+vi.mock("../../api/modules/missionPilot/mission-pilot.repository", () => ({
+	getSessionByTaskId: vi.fn(async () => ({ desiredState: "playing" })),
+	hasValidAuthorization: vi.fn(() => true),
+}));
+
 const codexMock = vi.hoisted(() => {
 	const runInputs: unknown[] = [];
 	const runOptions: unknown[] = [];
@@ -94,7 +99,7 @@ describe("Codex Mission Pilot tool turns", () => {
 				content: "引数を確認します。",
 				toolCalls: [
 					{
-						name: "read_task_workspace",
+						name: "read_task_operator_view",
 						argumentsJson: "{not-json",
 					},
 				],
@@ -105,7 +110,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			content: "引数を確認します。",
 			toolCalls: [
 				{
-					name: "read_task_workspace",
+					name: "read_task_operator_view",
 					arguments: { _raw: "{not-json" },
 				},
 			],
@@ -160,7 +165,7 @@ describe("Codex Mission Pilot tool turns", () => {
 				content: "Taskを読み、Plan Modeの次操作を判断します。",
 				toolCalls: [
 					{
-						name: "read_task_workspace",
+						name: "read_task_operator_view",
 						argumentsJson: "{}",
 					},
 				],
@@ -180,7 +185,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			],
 			tools: [
 				{
-					name: "read_task_workspace",
+					name: "read_task_operator_view",
 					description: "現在のTaskを読む。",
 					inputSchema: {
 						type: "object",
@@ -202,7 +207,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			toolCalls: [
 				{
 					id: expect.stringMatching(/^codex_call_/),
-					name: "read_task_workspace",
+					name: "read_task_operator_view",
 					arguments: {},
 				},
 			],
@@ -239,7 +244,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			"このTaskをPlan Modeから開始してください。",
 		);
 		expect(JSON.stringify(codexMock.runInputs[0])).toContain(
-			"read_task_workspace",
+			"read_task_operator_view",
 		);
 		expect(codexMock.runOptions[0]).toMatchObject({
 			outputSchema: expect.objectContaining({

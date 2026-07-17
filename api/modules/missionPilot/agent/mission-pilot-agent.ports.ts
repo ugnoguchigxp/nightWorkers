@@ -1,9 +1,8 @@
 import type {
 	MissionPilotActionFailure,
-	MissionPilotTaskActionDescriptor,
 	MissionPilotTaskEventType,
-	MissionPilotTaskReadModel,
 } from "../../../../shared/modules/missionPilot";
+import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
 import type {
 	ProviderToolDefinition,
 	ProviderToolMessage,
@@ -26,36 +25,35 @@ export type MissionPilotProviderPort = {
 	}): Promise<ProviderToolTurnResult>;
 };
 export type MissionPilotTaskReadPort = {
-	readTaskWorkspace(input: {
+	readTaskOperatorView(input: {
 		taskId: string;
 		sessionId: string;
-	}): Promise<MissionPilotTaskReadModel>;
-	readCurrentSpecification(
-		taskId: string,
-		options?: { cursor?: number; maxChars?: number },
-	): Promise<unknown>;
-	readQuestionnaireDecisions(taskId: string): Promise<unknown>;
-	readPlanArtifactRouting(taskId: string): Promise<unknown>;
-	readPlanArtifact(
-		taskId: string,
-		artifactId: string,
-		options?: { cursor?: number; maxChars?: number },
-	): Promise<unknown>;
-	readRunOutcome(
-		taskId: string,
-		runId: string,
-		options?: { cursor?: number; maxChars?: number },
-	): Promise<unknown>;
-	readRunChangeSummary(taskId: string, runId: string): Promise<unknown>;
-	readRunVerification(
-		taskId: string,
-		runId: string,
-		options?: { cursor?: number; limit?: number },
-	): Promise<unknown>;
+	}): Promise<TaskOperatorProjectionV1>;
+	readTaskResource(input: {
+		taskId: string;
+		sessionId: string;
+		resourceKind: string;
+		resourceId?: string;
+		cursor?: number;
+		limit?: number;
+	}): Promise<unknown>;
 	listAvailableTaskActions(input: {
 		taskId: string;
 		sessionId: string;
-	}): Promise<MissionPilotTaskActionDescriptor[]>;
+	}): Promise<
+		Array<{
+			id: string;
+			title: string;
+			description: string;
+			availability: "available" | "confirmation_required";
+			expectedRevision: number;
+		}>
+	>;
+	readTaskActionContract(input: {
+		taskId: string;
+		sessionId: string;
+		actionId: string;
+	}): Promise<unknown>;
 };
 export type MissionPilotActionResult =
 	| { ok: true; actionId: string; data: unknown; replayed?: boolean }

@@ -29,7 +29,7 @@ function breakdown(
 }
 
 describe("Thread workspace token usage", () => {
-	it("keeps owners and input, cached input, output categories separate", () => {
+	it("shows mutually exclusive billing token categories for each owner", () => {
 		const codingAgent = breakdown({
 			inputTokens: 4_600,
 			nonCachedInputTokens: 1_200,
@@ -53,13 +53,13 @@ describe("Thread workspace token usage", () => {
 		};
 
 		expect(formatUsageBadge(summary)).toBe(
-			"CA i:4.6k c:3.4k o:56 | MP i:1.7k c:900 o:12",
+			"CA i:1.2k cr:3.4k o:56 | MP i:800 cr:900 o:12",
 		);
 		expect(formatUsageTitle(summary)).toContain(
-			"Coding Agent: input 4,600 / cached input 3,400 / output 56 / reasoning output 7",
+			"Coding Agent: uncached input 1,200 / cached read 3,400 / output 56 (reasoning subset 7)",
 		);
 		expect(formatUsageTitle(summary)).toContain(
-			"Mission Pilot: input 1,700 / cached input 900 / output 12 / reasoning output 3",
+			"Mission Pilot: uncached input 800 / cached read 900 / output 12 (reasoning subset 3)",
 		);
 	});
 });

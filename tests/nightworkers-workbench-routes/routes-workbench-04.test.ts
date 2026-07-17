@@ -302,7 +302,6 @@ describe("NightWorkers workbench routes", () => {
 			taskId: task.id,
 			contextSnapshot: {
 				executionMode: "implementation",
-				codingAgentInvocation: { source: "user" },
 				planModeRequested: false,
 				planModeClosed: true,
 			},
@@ -438,7 +437,6 @@ describe("NightWorkers workbench routes", () => {
 		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
 		expect(body.run?.contextSnapshot).toMatchObject({
-			codingAgentInvocation: { source: "user" },
 			planModeRequested: false,
 		});
 	});

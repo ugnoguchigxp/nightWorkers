@@ -130,7 +130,6 @@ export async function startMissionPilotRepositoryBootstrap(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		codingAgentInvocationSource: "mission_pilot",
 		allowUnassignedWorkspace: true,
 		runAssociation: buildMissionPilotRunAssociationRequest({
 			phase: "repository_bootstrap",
@@ -305,9 +304,5 @@ export async function completeMissionPilotRepositoryBootstrap(input: {
 		sourceId: input.runId,
 		payload: { repositoryHead: head, workspaceId: ready.id },
 	});
-	const { releaseMissionPilotQueueHandoff } = await import(
-		"./mission-pilot-post-queue-coordinator.service"
-	);
-	await releaseMissionPilotQueueHandoff(task.id);
 	return { kind: "repository_bootstrap_completed" } as const;
 }

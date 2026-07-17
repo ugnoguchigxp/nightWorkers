@@ -12,7 +12,7 @@
 		{
 			"id": "NW-LF-03",
 			"path": "api/modules/missionPilot/mission-pilot-plan-coordinator.service.ts",
-			"maxLines": 655,
+			"maxLines": 664,
 			"targetModule": "mission-pilot-plan-coordinator",
 			"phase": 7
 		},
@@ -24,13 +24,6 @@
 			"phase": 7
 		},
 		{
-			"id": "NW-LF-07",
-			"path": "src/modules/nightworkers/components/ThreadTimelineCodexToolCardModel.tsx",
-			"maxLines": 755,
-			"targetModule": "thread-timeline-codex-tool-card-model",
-			"phase": 7
-		},
-		{
 			"id": "NW-LF-09",
 			"path": "api/modules/missionPilot/mission-pilot-questionnaire.service.ts",
 			"maxLines": 630,
@@ -39,10 +32,31 @@
 		},
 		{
 			"id": "NW-LF-10",
-			"path": "api/modules/missionPilot/mission-pilot.service.ts",
-			"maxLines": 620,
-			"targetModule": "mission-pilot-service",
-			"phase": 7
+			"path": "api/services/llm-usage/summary.ts",
+			"maxLines": 602,
+			"targetModule": "llm-usage-summary",
+			"phase": 8
+		},
+		{
+			"id": "NW-LF-11",
+			"path": "src/modules/planMode/PlanModeWorkspaceViewer.tsx",
+			"maxLines": 601,
+			"targetModule": "plan-mode-workspace-viewer",
+			"phase": 8
+		},
+		{
+			"id": "NW-LF-12",
+			"path": "src/modules/planMode/workspace-panels/PlanWorkspaceStatusView.tsx",
+			"maxLines": 791,
+			"targetModule": "plan-workspace-status-view",
+			"phase": 8
+		},
+		{
+			"id": "NW-LF-13",
+			"path": "src/styles/nightworkers-utility-overrides.css",
+			"maxLines": 713,
+			"targetModule": "nightworkers-utility-overrides",
+			"phase": 8
 		}
 	]
 }

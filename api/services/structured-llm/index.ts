@@ -24,6 +24,7 @@ import {
 	jsonFixWrapper,
 	StructuredLlmTimeoutError,
 } from "./json";
+import { authorizeStructuredProviderCall } from "./provider-call-authorization";
 import { callProvider, type RawLlmCallOptions } from "./providers";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
@@ -243,6 +244,7 @@ async function callRawJsonLLMAttempt(
 	options: RawLlmCallOptions,
 	normalizedRequest: NormalizedSupervisorLlmRequest,
 ): Promise<string> {
+	await authorizeStructuredProviderCall(options);
 	const provider = providerAdapterKey(normalizedRequest.providerId);
 	const startedAt = Date.now();
 	const callId = randomUUID();

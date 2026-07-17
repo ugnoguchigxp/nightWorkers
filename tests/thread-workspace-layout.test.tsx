@@ -161,7 +161,7 @@ describe("ThreadWorkspace component & helpers", () => {
 		const markup = renderToStaticMarkup(<ThreadWorkspace {...props} />);
 		expect(markup).toContain("My Project");
 		expect(markup).toContain("Active Task Title");
-		expect(markup).toContain("CA i:0 c:0 o:0 | MP i:0 c:0 o:0");
+		expect(markup).toContain("CA i:0 cr:0 o:0 | MP i:0 cr:0 o:0");
 	});
 
 	it("renders resizable panels when splitPanel is provided", () => {

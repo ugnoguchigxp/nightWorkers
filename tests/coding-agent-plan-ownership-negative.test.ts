@@ -13,7 +13,6 @@ import {
 	buildCodingAgentTaskGoal,
 	CODING_AGENT_TODO_REQUIREMENT_JA,
 	CODING_AGENT_TOOL_CONTRACT_JA,
-	resolveCodingAgentInvocationSource,
 } from "../api/modules/codingAgent/context/system-context";
 import { nativeApiToolRegistrations } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import { projectCodingAgentTaskStatusAfterRun } from "../api/modules/codingAgent/runtime/task-status-projection";
@@ -59,79 +58,61 @@ describe("Coding Agent Plan ownership negative contract", () => {
 		const context = buildCodingAgentSystemContext({
 			taskGoal: "ユーザーの変更依頼を実装する",
 			registeredRepositoryRoot: "/repo",
-			invocationSource: "user",
 			planModeRequested: true,
 		});
 
 		expect(context).toMatchObject({
-			invocationSource: "user",
 			planModeRequested: true,
 		});
 		expect(context.todoRequirementJa).toContain(
-			"Mission Pilotの起動やhandoffを待たず",
+			"依頼元のruntime状態に依存しません",
 		);
 		expect(context.todoRequirementJa).toContain("Plan Modeから開始されました");
 		expect(context.todoRequirementJa).toContain(
 			"このPlan Mode Run内では実装せず",
 		);
-		expect(context.todoRequirementJa).not.toContain(
-			"このRunはMission Pilotからの明示的なhandoff",
-		);
 	});
 
-	it("applies Mission Pilot handoff constraints only to Mission Pilot-started runs", () => {
-		const context = buildCodingAgentSystemContext({
+	it("builds identical System Context regardless of requester provenance", () => {
+		const userContext = buildCodingAgentSystemContext({
 			taskGoal: "確定済み設計を実装する",
 			registeredRepositoryRoot: "/repo",
-			invocationSource: "mission_pilot",
 		});
-
-		expect(context.invocationSource).toBe("mission_pilot");
-		expect(context.todoRequirementJa).toContain(
-			"このRunはMission Pilotからの明示的なhandoff",
-		);
-		expect(context.todoRequirementJa).toContain(
-			"具体的なblockerとしてMission Pilotへ返してください",
-		);
+		const automationContext = buildCodingAgentSystemContext({
+			taskGoal: "確定済み設計を実装する",
+			registeredRepositoryRoot: "/repo",
+		});
+		expect(automationContext).toEqual(userContext);
 	});
 
-	it("resolves invocation provenance structurally instead of from user wording", () => {
-		expect(
-			resolveCodingAgentInvocationSource({
-				codingAgentInvocation: { source: "user" },
-				missionPilot: { stale: true },
-			}),
-		).toBe("user");
-		expect(
-			resolveCodingAgentInvocationSource({
-				missionPilotAgent: { id: "pilot" },
-			}),
-		).toBe("user");
-		expect(
-			resolveCodingAgentInvocationSource({
-				codingAgentInvocation: { source: "mission_pilot" },
-			}),
-		).toBe("mission_pilot");
+	it("contains no requester-mode resolver in Coding Agent production context", () => {
+		const source = readFileSync(
+			new URL(
+				"../api/modules/codingAgent/context/system-context.ts",
+				import.meta.url,
+			),
+			"utf8",
+		);
+		expect(source).not.toContain("resolveCodingAgentInvocationSource");
+		expect(source).not.toContain("invocationSource");
 	});
 
 	it("returns a completed standalone Plan Mode task to ready for implementation", () => {
 		expect(
 			projectCodingAgentTaskStatusAfterRun({
 				runStatus: "completed",
-				invocationSource: "user",
 				planModeRequested: true,
 			}),
 		).toBe("ready");
 		expect(
 			projectCodingAgentTaskStatusAfterRun({
 				runStatus: "completed",
-				invocationSource: "mission_pilot",
-				planModeRequested: true,
+				planModeRequested: false,
 			}),
 		).toBeNull();
 	});
 
-	it("keeps the standalone run entry and association launch free of Mission Pilot imports", () => {
+	it("keeps the standalone run entry free of Mission Pilot imports and owner-only schema bootstrap", () => {
 		for (const relativePath of [
 			"../api/modules/nightworkers/run-orchestration/start-task-run-entry.ts",
 			"../api/modules/nightworkers/run-orchestration/start-task-run-launch.ts",
@@ -150,13 +131,8 @@ describe("Coding Agent Plan ownership negative contract", () => {
 			new URL("../api/workers/task-run-worker.ts", import.meta.url),
 			"utf8",
 		);
-		expect(workerSource).not.toMatch(/import .* from ["'][^"']*missionPilot/);
-		expect(workerSource).toMatch(
-			/codingAgentInvocationSource\s*===\s*"mission_pilot"/,
-		);
-		expect(workerSource).toContain(
-			"ensureNightWorkersSchema({ includeMissionPilot: missionPilotRun })",
-		);
+		expect(workerSource).not.toMatch(/missionPilot|MissionPilot/);
+		expect(workerSource).not.toContain("ensureNightWorkersSchema");
 	});
 
 	it("associates optional role-owned runs through the agent-neutral port", async () => {

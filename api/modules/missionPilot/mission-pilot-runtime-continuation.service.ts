@@ -121,7 +121,6 @@ export async function startImplementationRework(input: {
 	await startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		codingAgentInvocationSource: "mission_pilot",
 		runAssociation: buildMissionPilotRunAssociationRequest({
 			phase: "implementation",
 			missionPilot: { ...input.missionPilot, reworkPacket },
@@ -157,7 +156,6 @@ export function buildInterruptedImplementationResumeOptions(
 	return {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		codingAgentInvocationSource: "mission_pilot",
 		runAssociation: buildMissionPilotRunAssociationRequest({
 			phase: "implementation",
 			missionPilot,

@@ -6,9 +6,9 @@ import {
 	missionPilotToolCalls,
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
-import { tasks } from "../../../db/schema";
-import { taskRuns } from "../../../db/schema-task-execution";
 import { AppError } from "../../../lib/errors";
+import { readRunOperatorOutcome } from "../../run";
+import { readTaskOperatorProjection } from "../../taskOperator";
 import { executeMissionPilotAction } from "./mission-pilot-action-command-executor";
 import {
 	claimMissionPilotActionExecution,
@@ -24,7 +24,6 @@ import {
 	getMissionPilotActionUnavailableReason,
 	validateMissionPilotActionArguments,
 } from "./mission-pilot-task-action.registry";
-import { actionResourceBelongsToTask } from "./mission-pilot-task-action-resources";
 
 export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 	async execute(input) {
@@ -65,14 +64,20 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"schema_validation",
 				validated.message,
 			);
-		const [session, task, toolCall, agent] = await Promise.all([
+		const [session, projection, toolCall, agent] = await Promise.all([
 			db.query.missionPilotSessions.findFirst({
 				where: and(
 					eq(missionPilotSessions.id, input.sessionId),
 					eq(missionPilotSessions.taskId, input.taskId),
 				),
 			}),
-			db.query.tasks.findFirst({ where: eq(tasks.id, input.taskId) }),
+			readTaskOperatorProjection(input.taskId, {
+				principal: {
+					kind: "automation",
+					actorId: input.sessionId,
+					authorizationRef: input.sessionId,
+				},
+			}),
 			db
 				.select()
 				.from(missionPilotToolCalls)
@@ -91,7 +96,7 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				.where(eq(missionPilotAgentSessions.sessionId, input.sessionId))
 				.then((rows) => rows[0] ?? null),
 		]);
-		if (!session || !task)
+		if (!session)
 			return failed(
 				input.actionId,
 				input.idempotencyKey,
@@ -102,9 +107,9 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 		if (
 			authorization?.version !== 3 ||
 			authorization.sessionId !== session.id ||
-			authorization.taskId !== task.id ||
+			authorization.taskId !== projection.task.id ||
 			authorization.taskRef.source !== "task" ||
-			authorization.taskRef.id !== task.id ||
+			authorization.taskRef.id !== projection.task.id ||
 			!authorization.scopes[definition.authorizationScope]
 		)
 			return failed(
@@ -133,7 +138,13 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"Task action tool call has not been claimed for execution.",
 			);
 		if (
-			!isDeepStrictEqual(toolCall.argumentsJson, input.arguments) ||
+			!isDeepStrictEqual(
+				normalizePersistedActionArguments(
+					toolCall.argumentsJson,
+					input.expectedTaskRevision,
+				),
+				input.arguments,
+			) ||
 			toolCall.expectedTaskRevision !== input.expectedTaskRevision ||
 			validated.data.expectedTaskRevision !== input.expectedTaskRevision
 		)
@@ -143,31 +154,17 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"invalid_request",
 				"Task action arguments do not match the persisted tool call.",
 			);
-		if (input.expectedTaskRevision !== task.updatedAt.getTime())
+		if (input.expectedTaskRevision !== projection.task.revision)
 			return failed(
 				input.actionId,
 				input.idempotencyKey,
 				"revision_conflict",
 				"Task revision changed; re-read the Task workspace.",
-				{ currentTaskRevision: task.updatedAt.getTime() },
-			);
-		if (
-			!(await actionResourceBelongsToTask(
-				input.taskId,
-				input.actionId,
-				validated.data,
-			))
-		)
-			return failed(
-				input.actionId,
-				input.idempotencyKey,
-				"permission",
-				"The requested resource does not belong to this Task.",
+				{ currentTaskRevision: projection.task.revision },
 			);
 		if (input.actionId === "task.complete")
-			await assertMissionPilotTaskCompletion({
+			await assertTaskCompletionEvidence({
 				taskId: input.taskId,
-				sessionId: input.sessionId,
 				sourceRunId: requiredText(validated.data.sourceRunId),
 			});
 		let receipt: Awaited<
@@ -299,6 +296,17 @@ function stoppedBeforeAction(actionId: string, idempotencyKey: string) {
 	);
 }
 
+function normalizePersistedActionArguments(
+	value: unknown,
+	expectedTaskRevision: number,
+) {
+	const record = readRecord(value);
+	const nested = readRecord(record.arguments);
+	return Object.keys(nested).length > 0 || "arguments" in record
+		? { ...nested, expectedTaskRevision }
+		: record;
+}
+
 function stoppedDuringAction(actionId: string, idempotencyKey: string) {
 	return failed(
 		actionId,
@@ -308,21 +316,14 @@ function stoppedDuringAction(actionId: string, idempotencyKey: string) {
 	);
 }
 
-async function assertMissionPilotTaskCompletion(input: {
+async function assertTaskCompletionEvidence(input: {
 	taskId: string;
-	sessionId: string;
 	sourceRunId: string;
 }) {
-	const [run] = await db
-		.select()
-		.from(taskRuns)
-		.where(
-			and(
-				eq(taskRuns.id, input.sourceRunId),
-				eq(taskRuns.taskId, input.taskId),
-			),
-		)
-		.limit(1);
+	const run = await readRunOperatorOutcome({
+		taskId: input.taskId,
+		runId: input.sourceRunId,
+	});
 	if (!run)
 		throw new Error("Task completion requires a Run owned by this Task.");
 	if (
@@ -337,14 +338,10 @@ async function assertMissionPilotTaskCompletion(input: {
 		].includes(run.status)
 	)
 		throw new Error("Task completion requires a terminal Run.");
-	const provenance = readRecord(run.contextSnapshot).missionPilotAgent;
-	if (readText(readRecord(provenance).sessionId) !== input.sessionId)
-		throw new Error("Task completion requires the Mission Pilot-owned Run.");
 	if (
 		![run.finalReport, run.summary].some(
 			(value) => typeof value === "string" && value.trim().length > 0,
-		) &&
-		!run.testResults
+		)
 	)
 		throw new Error("Task completion requires terminal verification evidence.");
 }

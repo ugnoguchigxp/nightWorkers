@@ -1,31 +1,57 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeMissionPilotAction } from "../api/modules/missionPilot/agent/mission-pilot-action-command-executor";
-import * as nightworkersService from "../api/modules/nightworkers/nightworkers.service";
 
-afterEach(() => {
-	vi.restoreAllMocks();
+const mocks = vi.hoisted(() => ({
+	appendMessage: vi.fn(),
+	generateFollowUp: vi.fn(),
+	questionnaireBelongsToTask: vi.fn(),
+}));
+
+vi.mock("../api/modules/task", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../api/modules/task")>()),
+	sendTaskOperatorMessage: mocks.appendMessage,
+}));
+
+vi.mock("../api/modules/questionnaire", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../api/modules/questionnaire")>()),
+	generateDesignQuestionnaireFollowUp: mocks.generateFollowUp,
+	questionnaireSessionBelongsToTask: mocks.questionnaireBelongsToTask,
+}));
+
+vi.mock("../api/modules/taskOperator/application/task-operator.query", () => ({
+	readTaskOperatorProjection: vi.fn(async () => ({
+		task: { revision: 1, status: "planning" },
+		questionnaire: { id: "questionnaire-session" },
+		commandCatalog: {
+			availableIds: ["task.message.send", "questionnaire.follow_up.generate"],
+		},
+	})),
+}));
+
+beforeEach(() => {
+	mocks.appendMessage.mockReset().mockResolvedValue({ id: "message-1" });
+	mocks.generateFollowUp
+		.mockReset()
+		.mockResolvedValue({ id: "questionnaire-session" });
+	mocks.questionnaireBelongsToTask.mockReset().mockResolvedValue(true);
 });
 
 describe("Mission Pilot action trace propagation", () => {
 	it("stores visible assistant messages in the Pilot Thought channel", async () => {
-		const appendMessage = vi
-			.spyOn(nightworkersService, "appendAssistantTaskMessage")
-			.mockResolvedValue({ id: "message-1" } as never);
-
 		await executeMissionPilotAction(
 			"task-1",
 			"task.message.send",
 			{ content: "ユーザーへ確認したいことがあります。" },
 			{
 				sessionId: "pilot-session",
-				toolCallId: "tool-call-1",
-				idempotencyKey: "pilot-session:tool-call-1",
+				toolCallId: "tool-call-2",
+				idempotencyKey: "pilot-session:tool-call-2",
 				expectedTaskRevision: 1,
 				sourceRunId: null,
 			},
 		);
 
-		expect(appendMessage).toHaveBeenCalledWith(
+		expect(mocks.appendMessage).toHaveBeenCalledWith(
 			"task-1",
 			"ユーザーへ確認したいことがあります。",
 			expect.objectContaining({
@@ -49,10 +75,6 @@ describe("Mission Pilot action trace propagation", () => {
 
 	it("keeps Questionnaire provider routing separate from Pilot Thought ownership", async () => {
 		const signal = new AbortController().signal;
-		const generateFollowUp = vi
-			.spyOn(nightworkersService, "generateDesignQuestionnaireFollowUp")
-			.mockResolvedValue({ id: "questionnaire-session" } as never);
-
 		await executeMissionPilotAction(
 			"task-1",
 			"questionnaire.follow_up.generate",
@@ -67,7 +89,7 @@ describe("Mission Pilot action trace propagation", () => {
 			},
 		);
 
-		expect(generateFollowUp).toHaveBeenCalledWith(
+		expect(mocks.generateFollowUp).toHaveBeenCalledWith(
 			"task-1",
 			"questionnaire-session",
 			expect.objectContaining({

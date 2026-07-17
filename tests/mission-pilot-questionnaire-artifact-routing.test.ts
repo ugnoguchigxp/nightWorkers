@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -57,6 +58,20 @@ beforeEach(() => {
 });
 
 describe("Mission Pilot Questionnaire artifact routing", () => {
+	it("routes Questionnaire submission through the shared command without an extra provider call", () => {
+		const routeSource = readFileSync(
+			new URL(
+				"../api/modules/questionnaire/questionnaire.routes.ts",
+				import.meta.url,
+			),
+			"utf8",
+		);
+
+		expect(routeSource).toContain('actionId: "questionnaire.submit"');
+		expect(routeSource).not.toContain("recommendQuestionnaireArtifactRouting");
+		expect(routeSource).not.toContain("selectQuestionnaireArtifactsForTask");
+	});
+
 	it("does not inspect or send Questionnaire data while Mission Pilot is stopped", async () => {
 		mocks.getSessionByTaskId.mockResolvedValue({
 			id: "pilot-1",

@@ -8,10 +8,7 @@ export function readCodingAgentRunMode(
 	run: CodingAgentRunLike | null | undefined,
 ): CodingAgentRunMode {
 	const snapshot = record(run?.contextSnapshot);
-	const invocation = record(snapshot?.codingAgentInvocation);
-	return invocation?.source === "user" && snapshot?.planModeRequested === true
-		? "plan"
-		: "implementation";
+	return snapshot?.planModeRequested === true ? "plan" : "implementation";
 }
 
 export function isStandaloneCodingAgentPlanRun(

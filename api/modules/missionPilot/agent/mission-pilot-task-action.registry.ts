@@ -40,7 +40,6 @@ const string = { type: "string" };
 const uuid = { type: "string", format: "uuid" };
 const integer = { type: "integer", minimum: 0 };
 const array = { type: "array" };
-const boolean = { type: "boolean" };
 const nullableInteger = { type: ["integer", "null"], minimum: 0 };
 const stringEnum = (...values: string[]) => ({ type: "string", enum: values });
 const openRecord = { type: "object", additionalProperties: true };
@@ -372,23 +371,19 @@ const definitions: MissionPilotActionDefinition[] = (
 			object({ request: string, repairRequest: openRecord }, ["request"]),
 		],
 		[
-			"run.test.start",
-			"run_test_start",
-			"Test Runを開始",
-			"Test Modeの既存commandを使う。",
-			"testMutation",
+			"run.todo.resume",
+			"run_todo_resume",
+			"Coding Agent Todoを再開",
+			"needs_humanのTodoをUIと同じcommand contractで再開する。",
+			"implementation",
 			object(
 				{
-					projectId: uuid,
-					specArtifactId: string,
-					action: stringEnum(
-						"discover_tests",
-						"plan_and_implement_tests",
-						"run_unit_tests",
-					),
-					rerun: boolean,
+					runId: uuid,
+					todoId: uuid,
+					expectedTodoRevision: integer,
+					userContext: string,
 				},
-				["projectId", "specArtifactId"],
+				["runId", "todoId", "expectedTodoRevision", "userContext"],
 			),
 		],
 		[
@@ -406,22 +401,6 @@ const definitions: MissionPilotActionDefinition[] = (
 			"Task所有のprocessを停止する。",
 			"implementation",
 			object({ processId: uuid }, ["processId"]),
-		],
-		[
-			"review.session.start",
-			"review_session_start",
-			"Review sessionを開始",
-			"terminal RunからReview sessionを作る。",
-			"review",
-			object({ sourceRunId: uuid }, ["sourceRunId"]),
-		],
-		[
-			"review.run.start",
-			"review_run_start",
-			"Review Runを開始",
-			"Reviewの既存commandを使う。",
-			"review",
-			object({ reviewSessionId: uuid }, ["reviewSessionId"]),
 		],
 		[
 			"run.review.submit",

@@ -30,7 +30,6 @@ export async function createTaskWithMissionPilot(
 				task: taskForSession,
 				sourceKind: sourceRef.source,
 				sourceId: sourceRef.id,
-				runtimeKind: "agent",
 			},
 			tx,
 		);

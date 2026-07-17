@@ -21,6 +21,29 @@ export type ApplicationSettingsScope =
 	| "runtime"
 	| "integrations";
 
+const APPLICATION_SETTINGS_SCOPES: ApplicationSettingsScope[] = [
+	"general",
+	"fx-cache",
+	"llm",
+	"mcp",
+	"agent-hooks",
+	"server",
+	"auth",
+	"runtime",
+	"integrations",
+];
+
+const WORKER_SETTINGS_SNAPSHOT_ENV =
+	"NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT";
+
+type WorkerSettingsSnapshot = {
+	public: Partial<Record<ApplicationSettingsScope, unknown>>;
+	secrets: Partial<Record<ApplicationSettingsScope, unknown>>;
+};
+
+let cachedWorkerSnapshotRaw: string | undefined;
+let cachedWorkerSnapshot: WorkerSettingsSnapshot | null = null;
+
 function databasePath() {
 	const url =
 		process.env.DATABASE_URL || `file:${getRuntimePaths().databasePath}`;
@@ -64,6 +87,8 @@ async function writeSettingsTransaction<T>(
 export function readApplicationSetting<T>(
 	scope: ApplicationSettingsScope,
 ): T | null {
+	const workerSnapshot = readWorkerSnapshot();
+	if (workerSnapshot) return (workerSnapshot.public[scope] as T) ?? null;
 	const value = readJsonRow("application_settings", scope);
 	return value ? (JSON.parse(value) as T) : null;
 }
@@ -92,8 +117,34 @@ export async function writeApplicationSetting<T>(
 export function readApplicationSettingSecrets<T>(
 	scope: ApplicationSettingsScope,
 ): T | null {
+	const workerSnapshot = readWorkerSnapshot();
+	if (workerSnapshot) return (workerSnapshot.secrets[scope] as T) ?? null;
 	const value = readJsonRow("application_setting_secrets", scope);
 	return value ? (JSON.parse(value) as T) : null;
+}
+
+export function createApplicationSettingsWorkerSnapshot() {
+	if (process.env.NIGHTWORKERS_EXECUTION_ROLE === "worker")
+		throw new Error("A worker cannot create the canonical settings snapshot");
+	const snapshot: WorkerSettingsSnapshot = { public: {}, secrets: {} };
+	for (const scope of APPLICATION_SETTINGS_SCOPES) {
+		const publicValue = readApplicationSetting(scope);
+		const secretValue = readApplicationSettingSecrets(scope);
+		if (publicValue !== null) snapshot.public[scope] = publicValue;
+		if (secretValue !== null) snapshot.secrets[scope] = secretValue;
+	}
+	return JSON.stringify(snapshot);
+}
+
+function readWorkerSnapshot(): WorkerSettingsSnapshot | null {
+	if (process.env.NIGHTWORKERS_EXECUTION_ROLE !== "worker") return null;
+	const raw = process.env[WORKER_SETTINGS_SNAPSHOT_ENV];
+	if (!raw) return { public: {}, secrets: {} };
+	if (raw === cachedWorkerSnapshotRaw && cachedWorkerSnapshot)
+		return cachedWorkerSnapshot;
+	cachedWorkerSnapshotRaw = raw;
+	cachedWorkerSnapshot = JSON.parse(raw) as WorkerSettingsSnapshot;
+	return cachedWorkerSnapshot;
 }
 
 export async function writeApplicationSettingSecrets<T>(

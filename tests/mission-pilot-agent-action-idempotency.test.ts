@@ -308,7 +308,7 @@ describe("Mission Pilot durable action receipts", () => {
 			ok: false,
 			failure: {
 				kind: "domain_precondition",
-				providerCode: "VALIDATION_ERROR",
+				providerCode: "TASK_OPERATOR_COMMAND_UNAVAILABLE",
 			},
 		});
 		const [receipt] = await db

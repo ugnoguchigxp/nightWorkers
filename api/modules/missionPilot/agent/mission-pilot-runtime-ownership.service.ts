@@ -10,7 +10,6 @@ import { missionPilotSessions } from "../../../db/mission-pilot-schema";
  */
 export type MissionPilotRuntimeOwnership =
 	| { kind: "agent"; sessionId: string }
-	| { kind: "legacy"; sessionId: string }
 	| { kind: "none" };
 
 export async function resolveMissionPilotRuntimeOwnership(input: {
@@ -38,16 +37,7 @@ export async function resolveMissionPilotRuntimeOwnership(input: {
 			),
 		)
 		.limit(1);
-	return agent
-		? { kind: "agent", sessionId: session.id }
-		: { kind: "legacy", sessionId: session.id };
-}
-
-export async function isLegacyMissionPilotRuntime(input: {
-	sessionId?: string;
-	taskId?: string;
-}) {
-	return (await resolveMissionPilotRuntimeOwnership(input)).kind === "legacy";
+	return agent ? { kind: "agent", sessionId: session.id } : { kind: "none" };
 }
 
 export async function isAgentMissionPilotRuntime(input: {

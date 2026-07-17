@@ -51,13 +51,13 @@ describe("Mission Pilot runtime ownership", () => {
 		).toEqual({ kind: "agent", sessionId: fixture.sessionId });
 	});
 
-	it("classifies a session without an agent row as legacy", async () => {
+	it("creates every new session as an agent session", async () => {
 		const fixture = await createFixture();
 		expect(
 			await resolveMissionPilotRuntimeOwnership({
 				sessionId: fixture.sessionId,
 			}),
-		).toEqual({ kind: "legacy", sessionId: fixture.sessionId });
+		).toEqual({ kind: "agent", sessionId: fixture.sessionId });
 	});
 
 	it("does not infer ownership for an unknown session", async () => {

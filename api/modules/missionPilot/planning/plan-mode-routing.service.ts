@@ -27,6 +27,7 @@ import {
 	buildInitialPlanModeRoutingEntries,
 	normalizePlanModeRoutingEntries,
 	registerPlanModeRoutingReader,
+	registerPlanModeRoutingUserWriter,
 } from "../../agentsShare";
 import { listPlanModeTaskMessages } from "../../nightworkers/nightworkers.plan-mode-core.port";
 import {
@@ -477,4 +478,7 @@ export function executeMissionPilotPlanRoutingTool(
 
 registerPlanModeRoutingReader(({ taskId, taskStatus }) =>
 	getPlanModeRouting(taskId, { taskStatus }),
+);
+registerPlanModeRoutingUserWriter(({ taskId, request }) =>
+	updatePlanModeRoutingForUser(taskId, request),
 );

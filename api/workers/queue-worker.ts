@@ -1,8 +1,3 @@
-import { ensureNightWorkersSchema } from "../db/bootstrap";
-import {
-	initializeMissionPilotRunSync,
-	initializeMissionPilotTaskRunCloseout,
-} from "../modules/missionPilot";
 import { runImplementationQueueInProcess } from "../modules/nightworkers/run-orchestration/queues";
 import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
 import {
@@ -13,9 +8,6 @@ import {
 
 let activeRunIds: string[] = [];
 let shuttingDown = false;
-
-initializeMissionPilotRunSync();
-initializeMissionPilotTaskRunCloseout();
 
 async function shutdown() {
 	if (shuttingDown) return;
@@ -38,10 +30,9 @@ process.once("message", (raw) => {
 			if (message.type !== "start") {
 				throw new Error("Queue worker received an invalid start payload.");
 			}
-			await ensureNightWorkersSchema();
 			const firstBatch = await runImplementationQueueInProcess();
 			activeRunIds = firstBatch.map((run) => run.id);
-			sendWorkerMessage({ type: "started", runs: firstBatch });
+			await sendWorkerMessage({ type: "started", runs: firstBatch });
 			let batch = firstBatch;
 			while (batch.length > 0 && !shuttingDown) {
 				await waitForRunsToFinish(batch.map((run) => run.id));
@@ -52,7 +43,7 @@ process.once("message", (raw) => {
 			await closeWorkerResources();
 			process.exit(0);
 		} catch (error) {
-			sendWorkerMessage({
+			await sendWorkerMessage({
 				type: "failed",
 				error: error instanceof Error ? error.message : String(error),
 			});

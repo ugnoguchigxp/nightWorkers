@@ -20,8 +20,8 @@ describe("Mission Pilot Plan ownership contract", () => {
 		);
 	});
 
-	it("keeps final Questionnaire submission as a user operation", () => {
+	it("allows final Questionnaire submission through the shared operator command", () => {
 		const names = missionPilotActionToolDefinitions().map((tool) => tool.name);
-		expect(names).not.toContain("questionnaire_submit");
+		expect(names).toContain("questionnaire_submit");
 	});
 });

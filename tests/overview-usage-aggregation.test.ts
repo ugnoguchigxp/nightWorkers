@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	addAggregateUsage,
 	emptyBucket,
+	emptyUsageSummary,
 	fillBuckets,
 	getBucketKey,
 	mergePricingStatus,
@@ -11,6 +13,22 @@ describe("Overview usage aggregation", () => {
 		expect(mergePricingStatus("priced", "missing")).toBe("missing");
 		expect(mergePricingStatus("manual", "priced")).toBe("manual");
 		expect(mergePricingStatus("priced", "ambiguous")).toBe("ambiguous");
+	});
+
+	it("clamps cached reads per aggregate row before summing", () => {
+		const total = emptyUsageSummary();
+
+		addAggregateUsage(total, {
+			inputTokens: 10,
+			cachedInputTokens: 20,
+			outputTokens: 3,
+		});
+
+		expect(total).toMatchObject({
+			inputTokens: 10,
+			cachedInputTokens: 10,
+			outputTokens: 3,
+		});
 	});
 
 	it("fills missing buckets without discarding recorded usage", () => {

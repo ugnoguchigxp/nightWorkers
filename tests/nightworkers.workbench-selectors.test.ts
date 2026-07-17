@@ -41,12 +41,11 @@ const baseTask = buildTask({
 });
 
 describe("workbench selectors", () => {
-	it("projects a user-started Coding Agent Plan run as Planning", () => {
+	it("projects a Coding Agent Plan run as Planning", () => {
 		const run = buildTaskRun({
 			status: "running",
 			contextSnapshot: {
 				executionMode: "implementation",
-				codingAgentInvocation: { source: "user" },
 				planModeRequested: true,
 			},
 		});

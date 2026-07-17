@@ -103,7 +103,6 @@ describe("Workbench implementation plan verification metadata", () => {
 			workerKind: "codex-agent",
 			contextSnapshot: {
 				executionMode: "implementation",
-				codingAgentInvocation: { source: "user" },
 				planModeRequested: true,
 				planModeClosed: false,
 			},
@@ -169,7 +168,6 @@ describe("Workbench implementation plan verification metadata", () => {
 			workerKind: "codex-agent",
 			contextSnapshot: {
 				executionMode: "implementation",
-				codingAgentInvocation: { source: "user" },
 				planModeRequested: false,
 			},
 		});

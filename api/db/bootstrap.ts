@@ -110,6 +110,28 @@ export async function ensureNightWorkersSchema(
       result_json text NOT NULL
     )
   `);
+	await client.execute(`
+		CREATE TABLE IF NOT EXISTS task_operator_command_receipts (
+			id text PRIMARY KEY NOT NULL,
+			actor_kind text NOT NULL,
+			actor_id text NOT NULL,
+			task_id text NOT NULL,
+			action_id text NOT NULL,
+			idempotency_key text NOT NULL,
+			arguments_digest text NOT NULL,
+			status text NOT NULL,
+			result_json text,
+			failure_json text,
+			created_at integer NOT NULL,
+			updated_at integer NOT NULL
+		)
+	`);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_operator_command_receipts_actor_key_uidx ON task_operator_command_receipts (actor_kind, actor_id, idempotency_key)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_operator_command_receipts_status_idx ON task_operator_command_receipts (status)",
+	);
 
 	// Drop legacy BBS tables if they exist
 	await client.execute("DROP TABLE IF EXISTS comments");

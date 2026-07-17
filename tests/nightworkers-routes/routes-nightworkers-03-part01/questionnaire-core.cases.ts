@@ -210,7 +210,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 					}),
 				},
 			);
-			expect(answersRes.status).toBe(200);
+			expect(answersRes.status, await answersRes.clone().text()).toBe(200);
 			expect((await answersRes.json()).status).toBe("review_ready");
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({

@@ -1,10 +1,7 @@
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
-import {
-	projectTaskRunParentStatus,
-	resolveImplementationQueueHandoff,
-} from "../../agentsShare";
+import { projectTaskRunParentStatus } from "../../agentsShare";
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
@@ -152,40 +149,9 @@ async function drainImplementationQueue(
 		if (claimed.kind !== "claimed") break;
 		const claimedEntry = claimed.entry;
 		try {
-			const roleHandoff = await resolveImplementationQueueHandoff(claimedEntry);
-			if (roleHandoff?.kind === "blocked") {
-				await roleHandoff.hold();
-				await repo
-					.createTaskMessage({
-						taskId: claimedEntry.taskId,
-						role: "system",
-						content: `Implementation Queue held this task before run start: ${roleHandoff.message}`,
-						messageType: "text",
-						payloadJson: {
-							source: "implementation_queue",
-							status: "role_handoff_blocked",
-							queueEntryId: claimedEntry.id,
-							code: roleHandoff.code,
-						},
-					})
-					.catch(() => null);
-				continue;
-			}
-			const readyHandoff = roleHandoff?.kind === "ready" ? roleHandoff : null;
 			const prepared = await prepareTaskRunInProcess(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
-				codingAgentInvocationSource:
-					readyHandoff?.codingAgentInvocationSource ??
-					(claimedEntry.missionPilotAgentJson ? "mission_pilot" : "user"),
-				missionPilotAgent: claimedEntry.missionPilotAgentJson ?? undefined,
-				...(readyHandoff
-					? {
-							implementationPlanConstraint:
-								readyHandoff.implementationPlanConstraint,
-							runtimeOptionsPatch: readyHandoff.runtimeOptionsPatch,
-						}
-					: {}),
 			});
 			const run = prepared.run;
 			const activation = await activatePreparedQueueRun({
@@ -197,12 +163,7 @@ async function drainImplementationQueue(
 						leaseVersion: claimedEntry.leaseVersion,
 						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 					}),
-				associate: async () => {
-					await readyHandoff?.associate({
-						taskId: claimedEntry.taskId,
-						runId: run.id,
-					});
-				},
+				associate: async () => {},
 				launch: prepared.launch,
 			});
 			if (activation.kind === "lease_conflict") {

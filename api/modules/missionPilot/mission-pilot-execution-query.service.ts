@@ -16,7 +16,6 @@ import {
 } from "../../db/mission-pilot-schema";
 import { activityEvents, taskMessages } from "../../db/schema";
 import { MissionPilotError } from "./mission-pilot.errors";
-import { releaseMissionPilotQueueHandoff } from "./mission-pilot-post-queue-coordinator.service";
 import {
 	buildMissionPilotThoughtEntries,
 	projectMissionPilotAgentVisibleItems,
@@ -253,17 +252,5 @@ export async function getLatestMissionPilotCloseout(sessionId: string) {
 }
 
 export async function reconcileMissionPilotExecution(sessionId: string) {
-	const [session] = await db
-		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.id, sessionId))
-		.limit(1);
-	if (!session)
-		throw new MissionPilotError(
-			404,
-			"MISSION_PILOT_NOT_FOUND",
-			"Mission Pilot session not found",
-		);
-	await releaseMissionPilotQueueHandoff(session.taskId);
 	return getMissionPilotExecution(sessionId);
 }

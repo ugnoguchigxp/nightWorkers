@@ -1,8 +1,6 @@
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 6;
-
-export type CodingAgentInvocationSource = "user" | "mission_pilot";
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 7;
 
 export const CODING_AGENT_ROLE_INSTRUCTIONS_JA = [
 	"あなたはユーザーTaskを自動化するCoding Agentです。",
@@ -26,13 +24,13 @@ export const CODING_AGENT_TODO_REQUIREMENT_JA = [
 	"Todoの作成、再計画、開始、完了、skip、停止はTodo mutation toolで明示してください。hostは暗黙更新しません。",
 ].join("\n");
 
-export const CODING_AGENT_USER_INVOCATION_JA = [
-	"このRunはユーザー操作で直接開始されました。Mission Pilotの起動やhandoffを待たず、ユーザーPrompt、Task Goal、既存Artifact、repositoryのFactを読んで計画、実装、検証、完了報告まで進めてください。",
+export const CODING_AGENT_STANDALONE_EXECUTION_JA = [
+	"このRunは依頼元のruntime状態に依存しません。ユーザーPrompt、Task Goal、既存Artifact、repositoryのFactを読んで計画、実装、検証、完了報告まで単体で進めてください。",
 	"追加のユーザー判断が本当に必要な場合は、current Todoをneeds_humanへ遷移し、判断に必要な具体的な質問をユーザーへ返してください。",
 ].join("\n");
 
 export const CODING_AGENT_RUNTIME_REMINDERS_JA = [
-	"初回turnではユーザーPrompt、Task Goal、利用可能な確定済み設計を読み、必要なrepository調査Todoを明示してから作業してください。Mission Pilot handoffの有無はCoding Agent System ContextのinvocationSourceに従ってください。",
+	"初回turnではユーザーPrompt、Task Goal、利用可能な確定済み設計を読み、必要なrepository調査Todoを明示してから作業してください。",
 	"Todo planには必要に応じて、計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告を含めてください。",
 	"各Todoのcontextは作業名の繰り返しではなく、設計書と適用される固定SystemContextから選んだ工程固有のリマインダーとして記録してください。",
 	"実装後に仕様書や完了条件を後付けして検証を始めず、前提やスコープが変わった場合は実装を続ける前にTodo planと計画Todoのcontextを更新してください。",
@@ -57,14 +55,7 @@ export const CODING_AGENT_TOOL_CONTRACT_JA = [
 	"tool成功・失敗は構造化結果として返ります。結果を固定文へ読み替えず、次の行動を判断してください。",
 	"workspace toolは登録済みProjectのrepository rootを基準に実行し、一時directoryを成果物のworkspaceとして扱わないでください。",
 	"Todo以外のworkspace toolはcurrent Todoが必要です。CURRENT_TODO_REQUIREDを受けたらTodo planを作成・開始してください。",
-	"Coding AgentにはQuestionnaire、routing、Artifactのmutation toolはありません。設計不足や矛盾はhostの固定文へ置き換えず、現在のinvocationSourceに対応するユーザーまたはMission Pilotへ、構造化されたblockerまたはfinal reportとして返してください。",
-].join("\n");
-
-export const CODING_AGENT_MISSION_PILOT_HANDOFF_JA = [
-	"このRunはMission Pilotからの明示的なhandoffで開始されました。Mission Pilotが渡した確定済みTask、Questionnaire Decisions、Artifact refs、repository contextを正本として読み、追加の設計意味判断を勝手に作らないでください。",
-	"確定済みArtifactが不足している場合は、Artifactを生成・再生成せず、final reportまたはblockerでMission Pilotへ返してください。",
-	"repositoryのFactと確定済み設計が衝突した場合は、Artifactやroutingを変更せず、衝突したFactと参照をMission Pilotへ返してください。",
-	"追加のユーザー判断が必要な場合はQuestionnaireを作成せず、具体的なblockerとしてMission Pilotへ返してください。",
+	"Coding AgentにはQuestionnaire、routing、Artifactのmutation toolはありません。設計不足や矛盾はhostの固定文へ置き換えず、構造化されたblockerまたはfinal reportとしてユーザーへ返してください。",
 ].join("\n");
 
 export const CODING_AGENT_DIRECT_PLAN_MODE_JA = [
@@ -94,23 +85,15 @@ export function buildCodingAgentSystemContext(input: {
 	taskGoal: string;
 	projectRulesJa?: string[];
 	registeredRepositoryRoot: string;
-	invocationSource?: CodingAgentInvocationSource;
 	planModeRequested?: boolean;
 }): CodingAgentSystemContext {
-	const invocationSource = input.invocationSource ?? "user";
 	const todoRequirementJa = [
 		CODING_AGENT_TODO_REQUIREMENT_JA,
-		...(invocationSource === "user" ? [CODING_AGENT_USER_INVOCATION_JA] : []),
-		...(invocationSource === "mission_pilot"
-			? [CODING_AGENT_MISSION_PILOT_HANDOFF_JA]
-			: []),
-		...(invocationSource === "user" && input.planModeRequested
-			? [CODING_AGENT_DIRECT_PLAN_MODE_JA]
-			: []),
+		CODING_AGENT_STANDALONE_EXECUTION_JA,
+		...(input.planModeRequested ? [CODING_AGENT_DIRECT_PLAN_MODE_JA] : []),
 	].join("\n");
 	return {
 		version: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
-		invocationSource,
 		planModeRequested: Boolean(input.planModeRequested),
 		roleInstructionsJa: CODING_AGENT_ROLE_INSTRUCTIONS_JA,
 		taskGoal: input.taskGoal.trim(),
@@ -121,16 +104,6 @@ export function buildCodingAgentSystemContext(input: {
 		toolContractJa: CODING_AGENT_TOOL_CONTRACT_JA,
 		registeredRepositoryRoot: input.registeredRepositoryRoot,
 	};
-}
-
-export function resolveCodingAgentInvocationSource(
-	contextSnapshot: unknown,
-): CodingAgentInvocationSource {
-	const snapshot = record(contextSnapshot);
-	const invocation = record(snapshot?.codingAgentInvocation);
-	if (invocation?.source === "mission_pilot") return "mission_pilot";
-	if (invocation?.source === "user") return "user";
-	return "user";
 }
 
 export function readCodingAgentPlanModeRequested(contextSnapshot: unknown) {

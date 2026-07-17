@@ -1,4 +1,3 @@
-import { ensureNightWorkersSchema } from "../db/bootstrap";
 import {
 	type StartTaskRunOptions,
 	startTaskRunInProcess,
@@ -40,30 +39,18 @@ process.once("message", (raw) => {
 			) {
 				throw new Error("Task worker received an invalid start payload.");
 			}
-			const missionPilotRun =
-				message.payload.options?.codingAgentInvocationSource ===
-				"mission_pilot";
-			if (missionPilotRun) {
-				const {
-					initializeMissionPilotRunSync,
-					initializeMissionPilotTaskRunCloseout,
-				} = await import("../modules/missionPilot");
-				initializeMissionPilotRunSync();
-				initializeMissionPilotTaskRunCloseout();
-			}
-			await ensureNightWorkersSchema({ includeMissionPilot: missionPilotRun });
 			const run = await startTaskRunInProcess(
 				message.payload.taskId,
 				message.payload.options ?? {},
 			);
 			activeRunId = run.id;
-			sendWorkerMessage({ type: "started", runs: [run] });
+			await sendWorkerMessage({ type: "started", runs: [run] });
 			await waitForRunsToFinish([run.id]);
 			activeRunId = null;
 			await closeWorkerResources();
 			process.exit(0);
 		} catch (error) {
-			sendWorkerMessage({
+			await sendWorkerMessage({
 				type: "failed",
 				error: error instanceof Error ? error.message : String(error),
 			});

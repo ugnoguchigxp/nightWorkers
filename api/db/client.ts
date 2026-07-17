@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { config } from "../config";
+import { createPersistenceOwnerIpcClient } from "../services/execution/persistence-owner-ipc-client";
 import * as designQuestionnaireSchema from "./design-questionnaire-schema";
 import * as missionPilotAgentSchema from "./mission-pilot-agent-schema";
 import * as missionPilotSchema from "./mission-pilot-schema";
@@ -14,13 +15,18 @@ import * as taskGenerationSchema from "./task-generation-schema";
 
 export { wrapClientWithBusyRetry };
 
-export const client = wrapClientWithBusyRetry(
-	createClient({
-		url: config.DATABASE_URL.startsWith("file:")
-			? config.DATABASE_URL
-			: `file:${config.DATABASE_URL}`,
-	}),
-);
+const isPersistenceWorker =
+	process.env.NIGHTWORKERS_EXECUTION_ROLE === "worker";
+
+export const client = isPersistenceWorker
+	? createPersistenceOwnerIpcClient()
+	: wrapClientWithBusyRetry(
+			createClient({
+				url: config.DATABASE_URL.startsWith("file:")
+					? config.DATABASE_URL
+					: `file:${config.DATABASE_URL}`,
+			}),
+		);
 
 export const db = drizzle(client, {
 	schema: {

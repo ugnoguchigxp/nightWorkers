@@ -21,6 +21,7 @@ import {
 export type { OpenAIChatCompletionResponse } from "./openai-tool-call-codec";
 
 import { toOpenAIToolMessages } from "./openai-tool-messages";
+import { authorizeStructuredProviderCall } from "./provider-call-authorization";
 import { dispatchStructuredLlmProvider } from "./provider-dispatch";
 import {
 	normalizeStructuredProviderError,
@@ -99,6 +100,7 @@ export async function callProviderToolTurn(input: {
 	signal: AbortSignal;
 	setProviderDebug: (value: Record<string, unknown>) => void;
 }): Promise<ProviderToolTurnResult> {
+	await authorizeStructuredProviderCall(input.options);
 	if (
 		input.options.taskId &&
 		hasFixtureProviderToolTurns(input.options.taskId)

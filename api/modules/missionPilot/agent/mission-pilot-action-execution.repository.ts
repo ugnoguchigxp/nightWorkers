@@ -13,6 +13,7 @@ import {
 import { missionPilotQuestionnaireDrafts } from "../../../db/mission-pilot-schema";
 import {
 	implementationQueueEntries,
+	taskEvents,
 	taskMessages,
 	taskRunCommitRecords,
 	taskRuns,
@@ -219,11 +220,7 @@ async function reconcileMissionPilotActionResource(
 		.where(eq(missionPilotToolCalls.id, receipt.toolCallId))
 		.limit(1);
 	const args = readRecord(toolCall?.argumentsJson);
-	if (
-		["run.implementation.start", "run.test.start", "review.run.start"].includes(
-			receipt.actionId,
-		)
-	) {
+	if (receipt.actionId === "run.implementation.start") {
 		const runs = await db
 			.select({
 				id: taskRuns.id,
@@ -232,7 +229,7 @@ async function reconcileMissionPilotActionResource(
 			})
 			.from(taskRuns)
 			.where(eq(taskRuns.taskId, receipt.taskId));
-		const run = runs.find((candidate) => {
+		let run = runs.find((candidate) => {
 			const provenance = readRecord(
 				candidate.contextSnapshot,
 			).missionPilotAgent;
@@ -242,6 +239,34 @@ async function reconcileMissionPilotActionResource(
 					receipt.idempotencyKey
 			);
 		});
+		if (!run && runs.length > 0) {
+			const events = await db
+				.select({
+					runId: taskEvents.taskRunId,
+					payloadJson: taskEvents.payloadJson,
+				})
+				.from(taskEvents)
+				.where(
+					inArray(
+						taskEvents.taskRunId,
+						runs.map((candidate) => candidate.id),
+					),
+				);
+			const associatedRunId = events.find((event) => {
+				const payload = readRecord(event.payloadJson);
+				const runEvent = readRecord(payload.runEvent);
+				const data = readRecord(runEvent.data);
+				const provenance = readRecord(data.requestProvenance);
+				const requestedBy = readRecord(provenance.requestedBy);
+				const orchestrationRef = readRecord(provenance.orchestrationRef);
+				return (
+					data.action === "coding_agent.requested" &&
+					requestedBy.actorId === receipt.sessionId &&
+					orchestrationRef.id === receipt.idempotencyKey
+				);
+			})?.runId;
+			run = runs.find((candidate) => candidate.id === associatedRunId);
+		}
 		if (run) return resource("task_run", run.id, run);
 	}
 	if (receipt.actionId === "task.queue.enqueue") {

@@ -27,6 +27,73 @@ export async function createMissionPilotAgentSession(
 	});
 }
 
+/**
+ * Additive startup migration for sessions created before the persistent agent
+ * runtime became canonical. It only changes Mission Pilot-owned state: active
+ * Coding Agent runs remain untouched and no wake/provider call is scheduled.
+ */
+export async function backfillStoppedMissionPilotAgentSessions() {
+	const missing = await db
+		.select({ session: missionPilotSessions })
+		.from(missionPilotSessions)
+		.leftJoin(
+			missionPilotAgentSessions,
+			eq(missionPilotAgentSessions.sessionId, missionPilotSessions.id),
+		)
+		.where(isNull(missionPilotAgentSessions.sessionId));
+	let migrated = 0;
+	for (const { session } of missing) {
+		const inserted = await db.transaction(async (tx) => {
+			const [current] = await tx
+				.select()
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.id, session.id));
+			if (!current) return false;
+			const [existing] = await tx
+				.select({ sessionId: missionPilotAgentSessions.sessionId })
+				.from(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, session.id));
+			if (existing) return false;
+			const now = new Date();
+			const [claimed] = await tx
+				.update(missionPilotSessions)
+				.set({
+					desiredState: "stopped",
+					phase: "created",
+					resumePhase: null,
+					activeRunId: null,
+					activePhaseRunId: null,
+					activeTestSnapshotId: null,
+					nextWakeAt: null,
+					leaseOwner: null,
+					leaseExpiresAt: null,
+					stoppedAt: now,
+					version: current.version + 1,
+					updatedAt: now,
+				})
+				.where(
+					and(
+						eq(missionPilotSessions.id, session.id),
+						eq(missionPilotSessions.version, current.version),
+					),
+				)
+				.returning({ id: missionPilotSessions.id });
+			if (!claimed)
+				throw new Error(
+					`Mission Pilot session ${session.id} changed during agent backfill`,
+				);
+			await createMissionPilotAgentSession(tx, {
+				sessionId: session.id,
+				contextDigest: current.contextDigest,
+				now,
+			});
+			return true;
+		});
+		if (inserted) migrated += 1;
+	}
+	return migrated;
+}
+
 export async function isMissionPilotAgentSession(sessionId: string) {
 	const [row] = await db
 		.select({ engineMode: missionPilotAgentSessions.engineMode })

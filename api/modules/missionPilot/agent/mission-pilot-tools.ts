@@ -13,24 +13,13 @@ import {
 	isMissionPilotAgentControlTool,
 	MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
 } from "./mission-pilot-agent-control-tools";
-import {
-	getMissionPilotActionByToolName,
-	missionPilotActionToolDefinitions,
-} from "./mission-pilot-task-action.registry";
+import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";
 
-const pageSchema = {
-	type: "object",
-	properties: {
-		cursor: { type: "integer", minimum: 0 },
-		maxChars: { type: "integer", minimum: 1000, maximum: 24000 },
-	},
-	additionalProperties: false,
-};
-const readTools: ProviderToolDefinition[] = [
+const taskOperatorTools: ProviderToolDefinition[] = [
 	{
-		name: "read_task_workspace",
+		name: "read_task_operator_view",
 		description:
-			"Task Goal、完了条件、Project、Questionnaire、Artifact、Queue、Run outcome、利用可能actionを読む。worker transcriptは返さない。",
+			"Task Goalと現在のresource ref、利用可能action IDを含むbounded head viewを読む。",
 		inputSchema: {
 			type: "object",
 			properties: {},
@@ -38,97 +27,69 @@ const readTools: ProviderToolDefinition[] = [
 		},
 	},
 	{
-		name: "read_current_specification",
-		description: "現在のSpecificationをdigestとpaging情報付きで読む。",
-		inputSchema: pageSchema,
-	},
-	{
-		name: "read_questionnaire_decisions",
-		description: "確定済みQuestionnaire Decisionsを読む。",
-		inputSchema: {
-			type: "object",
-			properties: {},
-			additionalProperties: false,
-		},
-	},
-	{
-		name: "read_plan_artifact_routing",
+		name: "read_task_resource",
 		description:
-			"現在のPlan Artifact routing、revision、capability状態を読む。",
-		inputSchema: {
-			type: "object",
-			properties: {},
-			additionalProperties: false,
-		},
-	},
-	{
-		name: "read_plan_artifact",
-		description: "指定Artifactをdigestとpaging情報付きで読む。",
-		inputSchema: {
-			...pageSchema,
-			properties: {
-				artifactId: { type: "string" },
-				cursor: { type: "integer", minimum: 0 },
-				maxChars: { type: "integer", minimum: 1000, maximum: 24000 },
-			},
-			required: ["artifactId"],
-		},
-	},
-	{
-		name: "read_run_outcome",
-		description:
-			"Runのterminal final report、blocker、verification summaryを読む。",
-		inputSchema: {
-			...pageSchema,
-			properties: {
-				runId: { type: "string", format: "uuid" },
-				cursor: { type: "integer", minimum: 0 },
-				maxChars: { type: "integer", minimum: 1000, maximum: 24000 },
-			},
-			required: ["runId"],
-		},
-	},
-	{
-		name: "read_run_change_summary",
-		description: "Runのユーザー可視変更summaryを読む。",
-		inputSchema: {
-			type: "object",
-			properties: { runId: { type: "string", format: "uuid" } },
-			required: ["runId"],
-			additionalProperties: false,
-		},
-	},
-	{
-		name: "read_run_verification",
-		description: "Runのverification summaryを読む。",
+			"Task Operator viewから選んだresource detailをpagingして読む。",
 		inputSchema: {
 			type: "object",
 			properties: {
-				runId: { type: "string", format: "uuid" },
+				resourceKind: { type: "string" },
+				resourceId: { type: "string" },
 				cursor: { type: "integer", minimum: 0 },
-				limit: { type: "integer", minimum: 1, maximum: 50 },
+				limit: { type: "integer", minimum: 1, maximum: 100 },
 			},
-			required: ["runId"],
+			required: ["resourceKind"],
 			additionalProperties: false,
 		},
 	},
 	{
 		name: "list_available_task_actions",
-		description:
-			"現在のauthorizationとpreconditionで利用できるaction catalogを読む。",
+		description: "現在利用可能なactionのIDと短い説明だけを読む。",
 		inputSchema: {
 			type: "object",
 			properties: {},
 			additionalProperties: false,
 		},
 	},
+	{
+		name: "read_task_action_contract",
+		description: "選択したaction一件のinput contractを読む。",
+		inputSchema: {
+			type: "object",
+			properties: { actionId: { type: "string" } },
+			required: ["actionId"],
+			additionalProperties: false,
+		},
+	},
+	{
+		name: "execute_task_action",
+		description: "取得済みcontractに従ってTask actionを実行する。",
+		inputSchema: {
+			type: "object",
+			properties: {
+				actionId: { type: "string" },
+				expectedResourceRevision: {
+					anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }],
+				},
+				idempotencyKey: { type: "string", minLength: 1 },
+				arguments: { type: "object", additionalProperties: true },
+			},
+			required: [
+				"actionId",
+				"expectedResourceRevision",
+				"idempotencyKey",
+				"arguments",
+			],
+			additionalProperties: false,
+		},
+	},
 ];
-export function missionPilotToolDefinitions(input?: {
+
+export function missionPilotToolDefinitions(_input?: {
 	availableActionIds?: ReadonlySet<string>;
 }) {
 	return [
-		...readTools,
-		...missionPilotActionToolDefinitions(input),
+		...taskOperatorTools,
 		...MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
 	];
 }
@@ -148,8 +109,7 @@ export async function executeMissionPilotToolCall(input: {
 	try {
 		input.signal.throwIfAborted();
 		const read = await executeReadTool(input);
-		input.signal.throwIfAborted();
-		if (read) return { ok: true, data: read, directive: "continue" };
+		if (read !== null) return { ok: true, data: read, directive: "continue" };
 		if (isMissionPilotAgentControlTool(input.call.name))
 			return executeMissionPilotAgentControlTool({
 				call: input.call,
@@ -159,38 +119,37 @@ export async function executeMissionPilotToolCall(input: {
 				sessionId: input.sessionId,
 				taskId: input.taskId,
 			});
-		const definition = getMissionPilotActionByToolName(input.call.name);
+		if (input.call.name !== "execute_task_action")
+			return failureResult(input.call.name, "invalid_request", "Unknown tool");
+		const actionId = textArg(input.call, "actionId");
+		const definition = getMissionPilotActionDefinition(actionId);
 		if (!definition)
-			return {
-				ok: false,
-				failure: toolFailure(
-					input.call.name,
-					"invalid_request",
-					"Unknown tool",
-				),
-				directive: "continue",
-			};
-		const revision = expectedTaskRevision(input.call.arguments);
+			return failureResult(actionId, "invalid_request", "Unknown Task action");
+		const revision = nullableRevision(
+			input.call.arguments.expectedResourceRevision,
+		);
+		if (revision === undefined)
+			return failureResult(
+				actionId,
+				"schema_validation",
+				"expectedResourceRevision must be a non-negative integer or null",
+			);
 		if (revision === null)
-			return {
-				ok: false,
-				failure: toolFailure(
-					definition.actionId,
-					"schema_validation",
-					"expectedTaskRevision must be a non-negative integer",
-					input.idempotencyKey,
-				),
-				directive: "continue",
-			};
+			return failureResult(
+				actionId,
+				"schema_validation",
+				"This action requires the current Task revision",
+			);
+		const argumentsJson = recordArg(input.call, "arguments");
 		const result = await input.actionPort.execute({
 			toolCallId: input.toolCallId,
 			leaseOwner: input.leaseOwner,
 			taskId: input.taskId,
 			sessionId: input.sessionId,
-			actionId: definition.actionId,
-			arguments: input.call.arguments,
+			actionId,
+			arguments: { ...argumentsJson, expectedTaskRevision: revision },
 			expectedTaskRevision: revision,
-			idempotencyKey: input.idempotencyKey,
+			idempotencyKey: textArg(input.call, "idempotencyKey"),
 			signal: input.signal,
 		});
 		return result.ok
@@ -202,84 +161,65 @@ export async function executeMissionPilotToolCall(input: {
 				}
 			: { ok: false, failure: result.failure, directive: "continue" };
 	} catch (error) {
-		const stopped = input.signal.aborted;
-		return {
-			ok: false,
-			directive: "continue",
-			failure: toolFailure(
-				input.call.name,
-				"domain_precondition",
-				stopped
-					? "Mission Pilot was stopped while the tool was running."
-					: error instanceof Error
-						? error.message
-						: String(error),
-			),
-		};
+		return failureResult(
+			input.call.name,
+			"domain_precondition",
+			input.signal.aborted
+				? "Mission Pilot was stopped while the tool was running."
+				: error instanceof Error
+					? error.message
+					: String(error),
+		);
 	}
 }
-function expectedTaskRevision(argumentsJson: Record<string, unknown>) {
-	const value = argumentsJson.expectedTaskRevision;
-	if (typeof value !== "number" || !Number.isInteger(value) || value < 0)
-		return null;
-	return value;
-}
+
 async function executeReadTool(input: {
 	call: ProviderToolCall;
 	taskId: string;
 	sessionId: string;
 	readPort: MissionPilotTaskReadPort;
 }) {
-	const page = {
-		cursor: numberArg(input.call, "cursor"),
-		maxChars: numberArg(input.call, "maxChars"),
-	};
 	switch (input.call.name) {
-		case "read_task_workspace":
-			return input.readPort.readTaskWorkspace({
+		case "read_task_operator_view":
+			return input.readPort.readTaskOperatorView({
 				taskId: input.taskId,
 				sessionId: input.sessionId,
 			});
-		case "read_current_specification":
-			return input.readPort.readCurrentSpecification(input.taskId, page);
-		case "read_questionnaire_decisions":
-			return input.readPort.readQuestionnaireDecisions(input.taskId);
-		case "read_plan_artifact_routing":
-			return input.readPort.readPlanArtifactRouting(input.taskId);
-		case "read_plan_artifact":
-			return input.readPort.readPlanArtifact(
-				input.taskId,
-				textArg(input.call, "artifactId"),
-				page,
-			);
-		case "read_run_outcome":
-			return input.readPort.readRunOutcome(
-				input.taskId,
-				textArg(input.call, "runId"),
-				page,
-			);
-		case "read_run_change_summary":
-			return input.readPort.readRunChangeSummary(
-				input.taskId,
-				textArg(input.call, "runId"),
-			);
-		case "read_run_verification":
-			return input.readPort.readRunVerification(
-				input.taskId,
-				textArg(input.call, "runId"),
-				{
-					cursor: page.cursor,
-					limit: numberArg(input.call, "limit"),
-				},
-			);
+		case "read_task_resource":
+			return input.readPort.readTaskResource({
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				resourceKind: textArg(input.call, "resourceKind"),
+				resourceId: optionalTextArg(input.call, "resourceId"),
+				cursor: numberArg(input.call, "cursor"),
+				limit: numberArg(input.call, "limit"),
+			});
 		case "list_available_task_actions":
 			return input.readPort.listAvailableTaskActions({
 				taskId: input.taskId,
 				sessionId: input.sessionId,
 			});
+		case "read_task_action_contract":
+			return input.readPort.readTaskActionContract({
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				actionId: textArg(input.call, "actionId"),
+			});
 		default:
 			return null;
 	}
+}
+
+function failureResult(
+	actionId: string,
+	kind: MissionPilotActionFailure["kind"],
+	message: string,
+): Extract<MissionPilotToolExecutionResult, { ok: false }> {
+	return {
+		ok: false,
+		directive: "continue",
+		failure: toolFailure(actionId, kind, message),
+	};
 }
 function textArg(call: ProviderToolCall, key: string) {
 	const value = call.arguments[key];
@@ -287,9 +227,25 @@ function textArg(call: ProviderToolCall, key: string) {
 		throw new Error(`${key} must be a non-empty string`);
 	return value;
 }
+function optionalTextArg(call: ProviderToolCall, key: string) {
+	const value = call.arguments[key];
+	return typeof value === "string" && value ? value : undefined;
+}
 function numberArg(call: ProviderToolCall, key: string) {
 	const value = call.arguments[key];
 	return typeof value === "number" && Number.isInteger(value)
+		? value
+		: undefined;
+}
+function recordArg(call: ProviderToolCall, key: string) {
+	const value = call.arguments[key];
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error(`${key} must be an object`);
+	return value as Record<string, unknown>;
+}
+function nullableRevision(value: unknown) {
+	if (value === null) return null;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0
 		? value
 		: undefined;
 }
@@ -297,7 +253,6 @@ function toolFailure(
 	actionId: string,
 	kind: MissionPilotActionFailure["kind"],
 	message: string,
-	idempotencyKey: string | null = null,
 ): MissionPilotActionFailure {
 	return {
 		kind,
@@ -308,6 +263,6 @@ function toolFailure(
 		retryAfterMs: null,
 		attempt: 1,
 		actionId,
-		idempotencyKey,
+		idempotencyKey: null,
 	};
 }

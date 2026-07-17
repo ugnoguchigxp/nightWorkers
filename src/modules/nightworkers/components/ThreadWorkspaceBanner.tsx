@@ -127,7 +127,7 @@ function formatOwnerUsageBadge(
 	label: string,
 	usage: TaskLlmUsageSummary["byOwner"]["codingAgent"] | null | undefined,
 ) {
-	return `${label} i:${formatTokenCount(usage?.inputTokens ?? 0)} c:${formatTokenCount(
+	return `${label} i:${formatTokenCount(usage?.nonCachedInputTokens ?? 0)} cr:${formatTokenCount(
 		usage?.cachedInputTokens ?? 0,
 	)} o:${formatTokenCount(usage?.outputTokens ?? 0)}`;
 }
@@ -140,15 +140,15 @@ function formatOwnerUsageTitle(
 		usage?.averageDurationMs === null || usage?.averageDurationMs === undefined
 			? "n/a"
 			: formatDuration(usage.averageDurationMs);
-	return `${label}: input ${(
-		usage?.inputTokens ?? 0
-	).toLocaleString()} / cached input ${(
+	return `${label}: uncached input ${(
+		usage?.nonCachedInputTokens ?? 0
+	).toLocaleString()} / cached read ${(
 		usage?.cachedInputTokens ?? 0
 	).toLocaleString()} / output ${(
 		usage?.outputTokens ?? 0
-	).toLocaleString()} / reasoning output ${(
+	).toLocaleString()} (reasoning subset ${(
 		usage?.reasoningOutputTokens ?? 0
-	).toLocaleString()} / calls ${usage?.callCount ?? 0} / avg ${averageDuration}`;
+	).toLocaleString()}) / calls ${usage?.callCount ?? 0} / avg ${averageDuration}`;
 }
 
 function formatTokenCount(value: number) {

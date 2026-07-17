@@ -14,7 +14,10 @@ import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import { taskMessages } from "../../../db/schema";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 import { MISSION_PILOT_AGENT_LEASE_MS } from "./mission-pilot-agent.constants";
-import { getMissionPilotActionByToolName } from "./mission-pilot-task-action.registry";
+import {
+	getMissionPilotActionByToolName,
+	getMissionPilotActionDefinition,
+} from "./mission-pilot-task-action.registry";
 
 export {
 	finishMissionPilotAgentTurn,
@@ -251,8 +254,20 @@ export async function persistMissionPilotProviderTurn(input: {
 		sequence += 1;
 		const rows = [];
 		for (const call of input.toolCalls) {
-			const action = getMissionPilotActionByToolName(call.name);
-			const idempotencyKey = `${session.id}:${input.turnId}:${call.id}`;
+			const selectedActionId =
+				call.name === "execute_task_action" &&
+				typeof call.arguments.actionId === "string"
+					? call.arguments.actionId
+					: null;
+			const action = selectedActionId
+				? getMissionPilotActionDefinition(selectedActionId)
+				: getMissionPilotActionByToolName(call.name);
+			const actionId = action?.actionId ?? call.name;
+			const idempotencyKey =
+				typeof call.arguments.idempotencyKey === "string" &&
+				call.arguments.idempotencyKey
+					? call.arguments.idempotencyKey
+					: `${session.id}:${input.turnId}:${call.id}`;
 			const [row] = await tx
 				.insert(missionPilotToolCalls)
 				.values({
@@ -260,7 +275,7 @@ export async function persistMissionPilotProviderTurn(input: {
 					sessionId: session.id,
 					turnId: input.turnId,
 					providerCallId: call.id,
-					actionId: action?.actionId ?? call.name,
+					actionId,
 					argumentsJson: call.arguments,
 					status: "pending",
 					idempotencyKey,
@@ -289,7 +304,7 @@ export async function persistMissionPilotProviderTurn(input: {
 				if (
 					existing &&
 					existing.turnId === input.turnId &&
-					existing.actionId === (action?.actionId ?? call.name) &&
+					existing.actionId === actionId &&
 					existing.idempotencyKey === idempotencyKey &&
 					isDeepStrictEqual(existing.argumentsJson, call.arguments)
 				)
@@ -475,7 +490,9 @@ export async function reprojectMissionPilotTerminalToolCall(input: {
 
 function readExpectedRevision(argumentsJson: Record<string, unknown>) {
 	const value =
-		argumentsJson.expectedTaskRevision ?? argumentsJson.expectedRevision;
+		argumentsJson.expectedResourceRevision ??
+		argumentsJson.expectedTaskRevision ??
+		argumentsJson.expectedRevision;
 	return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 

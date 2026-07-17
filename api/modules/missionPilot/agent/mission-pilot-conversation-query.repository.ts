@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
@@ -14,6 +15,7 @@ import type {
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
 import { reconcileMissionPilotActionExecutionReceipts } from "./mission-pilot-action-execution.repository";
+import { sliceMissionPilotUtf8Page } from "./mission-pilot-content-page";
 
 export async function finishMissionPilotAgentTurn(input: {
 	sessionId: string;
@@ -160,7 +162,26 @@ export async function loadMissionPilotProviderMessages(
 							item.sequence > sourceThroughSequence,
 					),
 				];
-	return projectedItems.flatMap((item): ProviderToolMessage[] => {
+	const recentTurnIds = [
+		...new Set(
+			projectedItems
+				.map((item) => item.turnId)
+				.filter((turnId): turnId is string => Boolean(turnId))
+				.reverse(),
+		),
+	].slice(0, 6);
+	const latestTurnId = projectedItems.findLast((item) => item.turnId)?.turnId;
+	const latestUserItemId = projectedItems.findLast((item) =>
+		["user", "repair_request"].includes(item.kind),
+	)?.id;
+	const boundedItems = projectedItems.filter(
+		(item) =>
+			item.kind === "system_context" ||
+			item.kind === "compaction_summary" ||
+			item.id === latestUserItemId ||
+			(item.turnId ? recentTurnIds.includes(item.turnId) : false),
+	);
+	const messages = boundedItems.flatMap((item): ProviderToolMessage[] => {
 		const body = asRecord(item.bodyJson);
 		if (item.kind === "system_context")
 			return [{ role: "system", content: text(body.content) }];
@@ -189,6 +210,23 @@ export async function loadMissionPilotProviderMessages(
 				},
 			];
 		if (item.kind === "tool_result")
+			if (item.turnId !== latestTurnId)
+				return [
+					{
+						role: "user",
+						content: JSON.stringify({
+							type: "consumed_resource_receipt",
+							toolCallId: item.toolCallId,
+							sourceRef: {
+								kind: item.sourceKind ?? "tool_result",
+								id: item.sourceId ?? item.id,
+							},
+							sourceRevision: item.sequence,
+							sourceDigest: digest(JSON.stringify(item.bodyJson)),
+						}),
+					},
+				];
+		if (item.kind === "tool_result")
 			return [
 				{
 					role: "tool",
@@ -198,6 +236,53 @@ export async function loadMissionPilotProviderMessages(
 			];
 		return [];
 	});
+	return boundMissionPilotProviderConversation(messages);
+}
+
+const MAX_PROVIDER_CONVERSATION_BYTES = 48_000;
+const MAX_PROVIDER_MESSAGE_BYTES = 12_000;
+export function boundMissionPilotProviderConversation(
+	messages: ProviderToolMessage[],
+) {
+	const system = messages.find((message) => message.role === "system");
+	const selected: ProviderToolMessage[] = [];
+	let bytes = system ? Buffer.byteLength(JSON.stringify(system), "utf8") : 0;
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const source = messages[index];
+		if (!source || source === system) continue;
+		const message = boundProviderMessage(source);
+		const nextBytes = Buffer.byteLength(JSON.stringify(message), "utf8");
+		if (bytes + nextBytes > MAX_PROVIDER_CONVERSATION_BYTES) continue;
+		selected.unshift(message);
+		bytes += nextBytes;
+	}
+	return system ? [system, ...selected] : selected;
+}
+
+function boundProviderMessage(
+	message: ProviderToolMessage,
+): ProviderToolMessage {
+	if (typeof message.content !== "string") return message;
+	const originalBytes = Buffer.byteLength(message.content, "utf8");
+	if (originalBytes <= MAX_PROVIDER_MESSAGE_BYTES) return message;
+	const page = sliceMissionPilotUtf8Page(message.content, {
+		maxBytes: 8_000,
+		maxChars: 8_000,
+	});
+	return {
+		...message,
+		content: JSON.stringify({
+			type: "bounded_conversation_receipt",
+			contentPrefix: page.content,
+			originalBytes,
+			sourceDigest: digest(message.content),
+			nextCursor: page.page.nextCursor,
+		}),
+	};
+}
+
+function digest(value: string) {
+	return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
 export async function getMissionPilotConversationCheckpoint(sessionId: string) {

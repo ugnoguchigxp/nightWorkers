@@ -4,6 +4,7 @@ import "../src/i18n/setup";
 import { OverviewHeader } from "../src/modules/overview/components/OverviewHeader";
 import { OverviewMetrics } from "../src/modules/overview/components/OverviewMetrics";
 import { CompactCostValue } from "../src/modules/overview/components/OverviewPrimitives";
+import { OverviewTables } from "../src/modules/overview/components/OverviewTables";
 import { OverviewUsageSections } from "../src/modules/overview/components/OverviewUsageSections";
 
 describe("Overview components", () => {
@@ -85,7 +86,7 @@ describe("Overview components", () => {
 		expect(markup).not.toContain("クレジット");
 	});
 
-	it("hides cached token totals while retaining the cache rate", () => {
+	it("shows exclusive billable token categories and includes cached reads in totals", () => {
 		const markup = renderToStaticMarkup(
 			<OverviewMetrics
 				dashboard={
@@ -109,7 +110,11 @@ describe("Overview components", () => {
 				}
 				viewModel={
 					{
-						tokenMetrics: [{ key: "input", value: 600 }],
+						tokenMetrics: [
+							{ key: "input", value: 600 },
+							{ key: "cachedInput", value: 400 },
+							{ key: "output", value: 500 },
+						],
 						cacheRate: 40,
 					} as never
 				}
@@ -118,19 +123,73 @@ describe("Overview components", () => {
 			/>,
 		);
 
-		expect(markup).toContain("入力");
+		expect(markup).toContain("非キャッシュ入力");
+		expect(markup).toContain("キャッシュ読取");
 		expect(markup).toContain("キャッシュ率");
-		expect(markup).toContain("1 calls / 1,100 tokens");
-		expect(markup).not.toContain("入力合計（キャッシュ含む）");
-		expect(markup).not.toContain("入力の集計");
+		expect(markup).toContain("1 calls / 1,500 tokens");
 	});
 
 	it("fits hourly usage into the panel and renders time-only labels", () => {
 		const hourlyUsage = renderUsage("24h");
 
 		expect(hourlyUsage).toContain('class="min-w-0 border p-4"');
+		expect(hourlyUsage).toContain(
+			"非キャッシュ入力 8 / キャッシュ読取 2 / 出力 1",
+		);
 		expect(hourlyUsage).toContain(">21:00</span>");
 		expect(hourlyUsage).not.toContain(">2026-07-11T21</span>");
+	});
+
+	it("shows uncached input and cached reads separately in model and call tables", () => {
+		const markup = renderToStaticMarkup(
+			<OverviewTables
+				dashboard={
+					{
+						modelBreakdown: [
+							{
+								provider: "openai",
+								model: "gpt-test",
+								inputTokens: 1_000,
+								cachedInputTokens: 400,
+								outputTokens: 500,
+								outputTokensPerSecond: 10,
+								callCount: 1,
+								estimatedCost: 1,
+								estimatedCredits: 0,
+								pricingStatus: "priced",
+							},
+						],
+						recentExpensiveCalls: [
+							{
+								id: "call-1",
+								taskId: "task-1",
+								taskTitle: "test call",
+								label: "provider call",
+								provider: "openai",
+								model: "gpt-test",
+								createdAt: "2026-07-11T00:00:00.000Z",
+								inputTokens: 1_000,
+								cachedInputTokens: 400,
+								outputTokens: 500,
+								outputTokensPerSecond: 10,
+								estimatedCost: 1,
+								estimatedCredits: 0,
+							},
+						],
+					} as never
+				}
+				language="ja"
+				timezone="Asia/Tokyo"
+				currency="JPY"
+				onOpenSession={vi.fn()}
+			/>,
+		);
+
+		expect(markup.match(/非キャッシュ入力/g)).toHaveLength(2);
+		expect(markup.match(/キャッシュ読取/g)).toHaveLength(2);
+		expect(markup.match(/title="600"/g)).toHaveLength(2);
+		expect(markup.match(/title="400"/g)).toHaveLength(2);
+		expect(markup.match(/title="500"/g)).toHaveLength(2);
 	});
 
 	it("limits usage chart details for long ranges", () => {
@@ -170,6 +229,8 @@ describe("Overview components", () => {
 
 		expect(markup).toContain("USD から JPY: 156.2500");
 		expect(markup).toContain("為替更新日時");
+		expect(markup).toContain("推論出力（個別単価）");
+		expect(markup).toContain("キャッシュ書込トークン");
 		expect(markup).toContain('href="/settings/general"');
 		expect(markup).toContain("設定で為替情報を確認");
 	});
@@ -190,6 +251,7 @@ function renderUsage(range: "24h" | "7d" | "30d" | "all") {
 
 const usageDashboard = {
 	generatedAt: "2026-07-11T00:00:00.000Z",
+	usage: { callCount: 1 },
 	dailyUsage: [
 		{
 			key: "2026-07-11T21",
@@ -202,6 +264,7 @@ const usageDashboard = {
 		inputCost: 1,
 		cachedInputCost: 1,
 		outputCost: 1,
+		reasoningOutputCost: 0,
 		creditTotal: null,
 		fxRate: null,
 		fxBaseCurrency: null,
@@ -211,6 +274,6 @@ const usageDashboard = {
 };
 
 const usageViewModel = {
-	maxBucketTokens: 9,
+	maxBucketTokens: 11,
 	hasDailyUsageData: true,
 };

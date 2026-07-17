@@ -67,7 +67,6 @@ export async function startTaskRunInProcess(
 			taskId,
 			executionMode: options.executionMode ?? "implementation",
 			error,
-			missionPilotAgent: options.missionPilotAgent,
 		});
 		throw error;
 	}
@@ -80,7 +79,6 @@ async function failPreparedRunBeforeLaunch(input: {
 	taskId: string;
 	executionMode: string;
 	error: unknown;
-	missionPilotAgent?: StartTaskRunOptions["missionPilotAgent"];
 }) {
 	const message = toErrorMessage(input.error);
 	const failedRun = await repo.updateTaskRunIfStatus(input.runId, "running", {
@@ -102,7 +100,7 @@ async function failPreparedRunBeforeLaunch(input: {
 		actor: "system",
 		message: "Task run preparation failed before runtime launch.",
 		data: {
-			action: "mission_pilot.run_preparation_failed",
+			action: "task_run.preparation_failed",
 			executionMode: input.executionMode,
 			error: message,
 		},
@@ -141,8 +139,6 @@ export async function prepareTaskRunInProcess(
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
-	const codingAgentInvocationSource =
-		options.codingAgentInvocationSource ?? "user";
 	const {
 		runtimeRole,
 		blueprintPlanningSnapshot,
@@ -200,9 +196,6 @@ export async function prepareTaskRunInProcess(
 						compiledPrompt: compiledPromptText,
 						executionMode,
 						executionModeSource,
-						codingAgentInvocation: {
-							source: codingAgentInvocationSource,
-						},
 						planModeRequested: Boolean(options.planModeRequested),
 						jobType,
 						projectExplorationCatalog: projectExplorationCatalogPin,
@@ -215,9 +208,6 @@ export async function prepareTaskRunInProcess(
 							diagnostics: runtimeLaneResolution.diagnostics,
 						},
 						effectiveLlmRouting,
-						...(options.missionPilotAgent
-							? { missionPilotAgent: options.missionPilotAgent }
-							: {}),
 					},
 					startedAt: new Date(),
 				},
@@ -330,7 +320,6 @@ export async function prepareTaskRunInProcess(
 		executionMode,
 		executionPhase: executionMode,
 		executionModeSource,
-		codingAgentInvocation: { source: codingAgentInvocationSource },
 		projectExplorationCatalog: projectExplorationCatalogPin,
 		planModeRequested: Boolean(options.planModeRequested),
 		planModeClosed: !options.planModeRequested,
@@ -348,12 +337,6 @@ export async function prepareTaskRunInProcess(
 			? { reviewRun: runtimeOptions.reviewRun }
 			: {}),
 		reviewCorrection: runtimeOptions.reviewCorrection,
-		...(runtimeOptions.missionPilot
-			? { missionPilot: runtimeOptions.missionPilot }
-			: {}),
-		...(options.missionPilotAgent
-			? { missionPilotAgent: options.missionPilotAgent }
-			: {}),
 		projectMeta,
 		securityOracle: {
 			enabled: securityIntelligence.securityOracle.effectiveEnabled,

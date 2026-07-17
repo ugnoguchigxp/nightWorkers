@@ -103,6 +103,43 @@ describe("Codex structured provider isolation", () => {
 		codexMock.reset();
 	});
 
+	it("runs provider authorization before creating a provider client", async () => {
+		fs.writeFileSync(
+			llmSettingsPath(),
+			JSON.stringify({
+				ACTIVE_LLM_PROVIDER: "codex",
+				CODEX_ENABLED: true,
+				CODEX_MODEL: "gpt-5.4-mini",
+			}),
+		);
+		const authorizeProviderCall = vi.fn(async () => {
+			throw new Error("provider disabled");
+		});
+
+		await expect(
+			callStructuredLlmResult("system", "user", {
+				contract: createStructuredOutputContract({
+					name: "authorization_schema",
+					runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+				}),
+				taskId: "task-1",
+				executionPolicy: {
+					isolatedHome: true,
+					enableMcp: false,
+					enableMemory: false,
+					allowProviderTools: false,
+					authorizeProviderCall,
+				},
+			}),
+		).rejects.toThrow("provider disabled");
+
+		expect(authorizeProviderCall).toHaveBeenCalledWith({
+			taskId: "task-1",
+			signal: undefined,
+		});
+		expect(codexMock.constructorInputs).toHaveLength(0);
+	});
+
 	it("uses a fresh isolated call for every structured artifact generation", async () => {
 		fs.writeFileSync(
 			llmSettingsPath(),
@@ -119,18 +156,22 @@ describe("Codex structured provider isolation", () => {
 			name: "example_schema",
 			runtimeSchema: z.object({ ok: z.boolean() }).strict(),
 		});
+		const {
+			authorizeProviderCall: _authorizeProviderCall,
+			...isolatedArtifactPolicy
+		} = missionPilotArtifactProviderExecutionPolicy;
 		await callStructuredLlmResult(longSystemPrompt, "first user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
-			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "second user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
-			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "third user prompt", {
@@ -140,7 +181,7 @@ describe("Codex structured provider isolation", () => {
 			}),
 			taskId: "task-1",
 			role: "mission_pilot",
-			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 

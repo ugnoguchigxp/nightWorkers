@@ -28,12 +28,14 @@ describe("structured provider execution policy", () => {
 			enableMcp: false,
 			enableMemory: false,
 			allowProviderTools: true,
+			authorizeProviderCall: expect.any(Function),
 		});
 		expect(missionPilotArtifactProviderExecutionPolicy).toMatchObject({
 			isolatedHome: true,
 			enableMcp: false,
 			enableMemory: false,
 			allowProviderTools: false,
+			authorizeProviderCall: expect.any(Function),
 		});
 		expect(codingAgentProviderExecutionPolicy).toMatchObject({
 			isolatedHome: false,

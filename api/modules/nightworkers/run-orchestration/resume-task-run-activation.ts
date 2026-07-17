@@ -4,7 +4,6 @@ import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
 	readCodingAgentPlanModeRequested,
-	resolveCodingAgentInvocationSource,
 } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
@@ -75,7 +74,6 @@ export async function activateTaskRunResume(input: {
 	const systemContext = buildCodingAgentSystemContext({
 		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repository.localPath,
-		invocationSource: resolveCodingAgentInvocationSource(run.contextSnapshot),
 		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
 	});
 	const mutation = await new TodoMutationService(

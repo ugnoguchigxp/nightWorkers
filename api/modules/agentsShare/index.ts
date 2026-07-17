@@ -1,5 +1,13 @@
+export type {
+	CodingAgentArtifactRef,
+	CodingAgentRequestProvenance,
+	CodingAgentRunCommandResult,
+	ResumeCodingAgentRunTodoCommand,
+	StartCodingAgentRunCommand,
+} from "./contracts/coding-agent-run";
 export {
 	DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY,
+	type StructuredProviderCallAuthorizationContext,
 	type StructuredProviderExecutionPolicy,
 } from "./contracts/provider-execution";
 export type {
@@ -26,16 +34,22 @@ export {
 	registerBlueprintArtifactAdoptionReader,
 } from "./ports/blueprint-adoption-reader";
 export {
-	type ImplementationQueueHandoff,
-	type ImplementationQueueHandoffResolver,
-	registerImplementationQueueHandoffResolver,
-	resolveImplementationQueueHandoff,
-} from "./ports/implementation-queue-handoff";
+	type ResumeCodingAgentRunTodoHandler,
+	registerCodingAgentRunHandlers,
+	resumeCodingAgentRunTodo,
+	type StartCodingAgentRunHandler,
+	startCodingAgentRun,
+} from "./ports/coding-agent-run";
 export {
 	type PlanModeRoutingReader,
 	readPlanModeRouting,
 	registerPlanModeRoutingReader,
 } from "./ports/plan-mode-routing-reader";
+export {
+	type PlanModeRoutingUserWriter,
+	registerPlanModeRoutingUserWriter,
+	writePlanModeRoutingForUser,
+} from "./ports/plan-mode-routing-writer";
 export {
 	type RunOrchestrationRef,
 	type RunOrchestrationRefResolver,
@@ -56,3 +70,4 @@ export {
 	type TaskRunCloseoutInput,
 	type TaskRunParentStatusProjection,
 } from "./ports/task-run-closeout";
+export { contentDigest, sliceUtf8ContentPage } from "./utf8-content-page";

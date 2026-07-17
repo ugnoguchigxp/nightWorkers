@@ -160,12 +160,23 @@ export async function saveDesignQuestionnaireAnswers(
 		role?: StructuredLlmRole;
 		executionPolicy?: StructuredProviderExecutionPolicy;
 		usageTrace?: TraceProvenance;
+		expectedTaskRevision?: number;
 	} = {},
 ) {
 	const completionPolicy =
 		options.completionPolicy ?? "finalize_current_questions";
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
+	if (
+		options.expectedTaskRevision !== undefined &&
+		task.updatedAt.getTime() !== options.expectedTaskRevision
+	)
+		throw new AppError(
+			409,
+			"TASK_REVISION_CONFLICT",
+			"Task revision changed; re-read the Task Operator view.",
+			{ currentTaskRevision: task.updatedAt.getTime() },
+		);
 	assertPlanModeCapabilityEnabled("questionnaire");
 	assertPlanModeMutable(task);
 	const session = await getDesignQuestionnaireSession(taskId, sessionId);

@@ -1,4 +1,8 @@
 import { and, asc, desc, eq, like } from "drizzle-orm";
+import {
+	normalizeInputTokenBreakdown,
+	normalizeTokenCount,
+} from "../../../shared/llm-usage-tokens";
 import { db } from "../../db/client";
 import { llmModelPricing } from "../../db/schema";
 import {
@@ -293,17 +297,13 @@ export function calculateUsageCost(input: {
 	reasoningOutputTokens: number | null;
 	pricing: LlmPricingRow;
 }) {
-	const inputTokens = normalizeTokens(input.inputTokens);
-	const outputTokens = normalizeTokens(input.outputTokens);
-	const cachedInputTokens =
-		input.cachedInputTokens === null || input.cachedInputTokens === undefined
-			? null
-			: normalizeTokens(input.cachedInputTokens);
-	const uncachedInputTokens =
-		cachedInputTokens === null
-			? inputTokens
-			: Math.max(inputTokens - cachedInputTokens, 0);
-	const billableCachedInputTokens = cachedInputTokens ?? 0;
+	const outputTokens = normalizeTokenCount(input.outputTokens);
+	const tokenBreakdown = normalizeInputTokenBreakdown(input);
+	const {
+		cachedInputTokens: billableCachedInputTokens,
+		uncachedInputTokens,
+		cachedInputExceedsInput,
+	} = tokenBreakdown;
 
 	const inputCost =
 		input.pricing.inputPer1m === null
@@ -321,7 +321,7 @@ export function calculateUsageCost(input: {
 	const reasoningCost =
 		input.pricing.reasoningOutputPer1m === null
 			? 0
-			: (normalizeTokens(input.reasoningOutputTokens) / 1_000_000) *
+			: (normalizeTokenCount(input.reasoningOutputTokens) / 1_000_000) *
 				input.pricing.reasoningOutputPer1m;
 
 	const parts = [inputCost, cachedInputCost, outputCost, reasoningCost].filter(
@@ -341,7 +341,7 @@ export function calculateUsageCost(input: {
 	if (input.pricing.outputPer1m === null && outputTokens > 0) {
 		incompleteReasons.push("output_price_missing");
 	}
-	if (cachedInputTokens !== null && cachedInputTokens > inputTokens) {
+	if (cachedInputExceedsInput) {
 		incompleteReasons.push("cached_input_exceeds_input");
 	}
 
@@ -353,12 +353,6 @@ export function calculateUsageCost(input: {
 		reasoningCost,
 		incompleteReasons,
 	};
-}
-
-function normalizeTokens(value: number | null | undefined) {
-	return typeof value === "number" && Number.isFinite(value)
-		? Math.max(0, Math.floor(value))
-		: 0;
 }
 
 function normalizePrice(value: number | null | undefined) {

@@ -7,7 +7,7 @@ import {
 	sliceMissionPilotUtf8Page,
 } from "./mission-pilot-content-page";
 
-const MAX_PROJECTED_BYTES = 24_000;
+const MAX_PROJECTED_BYTES = 16_000;
 export function projectMissionPilotProviderMessages(
 	messages: ProviderToolMessage[],
 	maxBytes = MAX_PROJECTED_BYTES,
@@ -45,7 +45,7 @@ export function estimateMissionPilotProviderRequestTokens(input: {
 }
 export function boundMissionPilotCompactionInput(
 	messages: ProviderToolMessage[],
-	maxBytes = 240_000,
+	maxBytes = 64_000,
 ) {
 	if (Buffer.byteLength(JSON.stringify(messages), "utf8") <= maxBytes)
 		return [...messages];

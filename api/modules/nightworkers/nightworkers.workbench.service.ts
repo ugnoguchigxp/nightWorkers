@@ -234,7 +234,6 @@ export async function handleWorkbenchIntakeMessage(
 			});
 			const run = await startTaskRun(taskId, {
 				executionModeSource: "workbench_intake",
-				codingAgentInvocationSource: "user",
 				intakeRuntimeThreadHandoff: runtimeThreadHandoff,
 				routeOverride: options.llmRouteOverride || null,
 			});

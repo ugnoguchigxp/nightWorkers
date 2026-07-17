@@ -8,10 +8,9 @@ import {
 	flushRuntimeLogs,
 	logEvent,
 } from "./lib/logger";
+import { initializeCodingAgentRunHandlers } from "./modules/codingAgent";
 import {
-	initializeMissionPilotTaskRunCloseout,
 	reconcileMissionPilotStartup,
-	resumeMissionPilotPlanPipelines,
 	submitDueQuestionnaireDrafts,
 } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
@@ -45,7 +44,7 @@ const serverCloseCallbackGraceMs = 250;
 const webSocketServerCloseGraceMs = 250;
 const fxRefreshIntervalMs = 60 * 60 * 1000;
 
-initializeMissionPilotTaskRunCloseout();
+initializeCodingAgentRunHandlers();
 
 type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
 	closeAllConnections?: () => void;
@@ -227,19 +226,6 @@ export async function createNightWorkersServer(
 		});
 	}, 1_000);
 	missionPilotQuestionnaireTimer.unref?.();
-	const missionPilotPlanTimer = setInterval(() => {
-		void resumeMissionPilotPlanPipelines().catch((error) => {
-			logEvent({
-				channel: "api",
-				level: "error",
-				message: "mission pilot plan pipeline scheduler failed",
-				meta: {
-					errorMessage: error instanceof Error ? error.message : String(error),
-				},
-			});
-		});
-	}, 5_000);
-	missionPilotPlanTimer.unref?.();
 	const retentionTimer = setInterval(
 		() => {
 			void runRuntimeRetentionSweep().catch((error) => {
@@ -257,19 +243,6 @@ export async function createNightWorkersServer(
 		readGeneralSettings().dataRetention.sweepIntervalMinutes * 60 * 1000,
 	);
 	retentionTimer.unref?.();
-	void resumeMissionPilotPlanPipelines({ recoverInterrupted: true }).catch(
-		(error) => {
-			logEvent({
-				channel: "api",
-				level: "error",
-				message: "mission pilot startup plan recovery failed",
-				meta: {
-					errorMessage: error instanceof Error ? error.message : String(error),
-				},
-			});
-		},
-	);
-
 	logEvent({
 		channel: "api",
 		level: "info",
@@ -282,7 +255,6 @@ export async function createNightWorkersServer(
 		if (closed) return;
 		closed = true;
 		clearInterval(missionPilotQuestionnaireTimer);
-		clearInterval(missionPilotPlanTimer);
 		clearInterval(retentionTimer);
 		clearInterval(fxRefreshTimer);
 		logEvent({

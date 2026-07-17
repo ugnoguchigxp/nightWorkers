@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../../../lib/api";
 import { planModeWorkspaceQueryOptions } from "../../specification";
+import { fetchTaskOperatorProjection } from "../../taskOperator";
 import {
 	fetchBackgroundProcessesForTask,
 	fetchImplementationQueue,
@@ -30,6 +31,7 @@ import type {
 	NightWorkersWorkspaceState,
 	RealtimeStatus,
 } from "./nightWorkersWorkspaceState";
+import { overlayTaskOperatorSession } from "./taskOperatorSessionProjection";
 import { useNightWorkersMutations } from "./useNightWorkersMutations";
 import { useNightWorkersProjectFiles } from "./useNightWorkersProjectFiles";
 import { useNightWorkersRealtime } from "./useNightWorkersRealtime";
@@ -183,6 +185,16 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
+	const { data: activeTaskOperatorView = null } = useQuery({
+		queryKey: ["taskOperatorView", activeSessionId],
+		queryFn: async () =>
+			activeSessionId
+				? fetchTaskOperatorProjection(activeSessionId)
+				: Promise.resolve(null),
+		enabled: !!activeSessionId,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
 
 	const { data: activePlanModeWorkspace = null } = useQuery(
 		planModeWorkspaceQueryOptions(activeSessionId),
@@ -292,10 +304,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		setActiveSessionId,
 	});
 
-	const activeSession = useMemo(
-		() => sessions.find((s) => s.id === activeSessionId) ?? null,
-		[activeSessionId, sessions],
-	);
+	const activeSession = useMemo(() => {
+		const session = sessions.find(
+			(candidate) => candidate.id === activeSessionId,
+		);
+		return overlayTaskOperatorSession(session ?? null, activeTaskOperatorView);
+	}, [activeSessionId, activeTaskOperatorView, sessions]);
 	const activeProject = useMemo(
 		() =>
 			activeSession

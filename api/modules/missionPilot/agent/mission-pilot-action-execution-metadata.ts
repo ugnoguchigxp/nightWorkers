@@ -20,8 +20,6 @@ export function missionPilotActionExecutionMetadata(
 		"questionnaire.review.leave_unadopted",
 		"task.queue.enqueue",
 		"run.implementation.start",
-		"run.test.start",
-		"review.run.start",
 	]);
 	const completion =
 		actionId === "task.complete" || actionId === "task.archive"

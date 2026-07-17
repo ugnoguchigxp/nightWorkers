@@ -16,7 +16,6 @@ import {
 	outcomeFromRuntimeResult,
 	projectCodingAgentTaskStatusAfterRun,
 	readCodingAgentPlanModeRequested,
-	resolveCodingAgentInvocationSource,
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
@@ -88,9 +87,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	const codingAgentSystemContext = buildCodingAgentSystemContext({
 		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repoInfo.localPath,
-		invocationSource: resolveCodingAgentInvocationSource(
-			runtimeContextSnapshot,
-		),
 		planModeRequested: readCodingAgentPlanModeRequested(runtimeContextSnapshot),
 	});
 	const sink = createLedgerSink(run.id);
@@ -500,9 +496,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const parentTaskStatus =
 				projectCodingAgentTaskStatusAfterRun({
 					runStatus: finalStatus,
-					invocationSource: resolveCodingAgentInvocationSource(
-						runtimeContextSnapshot,
-					),
 					planModeRequested: readCodingAgentPlanModeRequested(
 						runtimeContextSnapshot,
 					),

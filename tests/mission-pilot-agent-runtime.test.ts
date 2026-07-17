@@ -34,6 +34,7 @@ import {
 	seedMissionPilotConversation,
 } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
+import { missionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-task-read.adapter";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import { getMissionPilotExecution } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 
@@ -86,35 +87,7 @@ async function fixture() {
 	return { taskId, sessionId: claimed.id, publicVersion: claimed.version };
 }
 
-const readPort: MissionPilotTaskReadPort = {
-	readTaskWorkspace: async () => ({
-		task: {
-			id: "task",
-			title: "title",
-			description: null,
-			objective: "goal",
-			acceptanceCriteria: null,
-			status: "ready",
-			revision: 1,
-		},
-		project: { id: "project", name: "project", repositoryState: "registered" },
-		currentView: null,
-		questionnaire: null,
-		planArtifacts: [],
-		queue: null,
-		activeRun: null,
-		terminalRuns: [],
-		availableActions: [],
-	}),
-	readCurrentSpecification: async () => null,
-	readQuestionnaireDecisions: async () => null,
-	readPlanArtifactRouting: async () => null,
-	readPlanArtifact: async () => null,
-	readRunOutcome: async () => null,
-	readRunChangeSummary: async () => null,
-	readRunVerification: async () => null,
-	listAvailableTaskActions: async () => [],
-};
+const readPort: MissionPilotTaskReadPort = missionPilotTaskReadPort;
 
 describe("Mission Pilot persistent agent runtime", () => {
 	it("keeps an assistant-only turn as waiting and preserves the same logical session", async () => {
@@ -246,7 +219,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 									toolCalls: [
 										{
 											id: "read-1",
-											name: "read_task_workspace",
+											name: "read_task_operator_view",
 											arguments: {},
 										},
 									],
@@ -294,10 +267,14 @@ describe("Mission Pilot persistent agent runtime", () => {
 									toolCalls: [
 										{
 											id: "task-update-1",
-											name: "task_update",
+											name: "execute_task_action",
 											arguments: {
-												expectedTaskRevision: before.updatedAt.getTime(),
-												fields: { title: "updated by persistent agent" },
+												actionId: "task.update",
+												expectedResourceRevision: before.updatedAt.getTime(),
+												idempotencyKey: "runtime-task-update",
+												arguments: {
+													fields: { title: "updated by persistent agent" },
+												},
 											},
 										},
 									],
@@ -352,10 +329,12 @@ describe("Mission Pilot persistent agent runtime", () => {
 									toolCalls: [
 										{
 											id: "replayed-run-stop",
-											name: "run_stop",
+											name: "execute_task_action",
 											arguments: {
-												expectedTaskRevision: 1,
-												runId: crypto.randomUUID(),
+												actionId: "run.stop",
+												expectedResourceRevision: 1,
+												idempotencyKey: "replayed-run-stop",
+												arguments: { runId: crypto.randomUUID() },
 											},
 										},
 									],
@@ -404,10 +383,12 @@ describe("Mission Pilot persistent agent runtime", () => {
 									toolCalls: [
 										{
 											id: "fresh-run-stop",
-											name: "run_stop",
+											name: "execute_task_action",
 											arguments: {
-												expectedTaskRevision: 1,
-												runId: crypto.randomUUID(),
+												actionId: "run.stop",
+												expectedResourceRevision: 1,
+												idempotencyKey: "fresh-run-stop",
+												arguments: { runId: crypto.randomUUID() },
 											},
 										},
 									],
@@ -460,10 +441,12 @@ describe("Mission Pilot persistent agent runtime", () => {
 			toolCalls: [
 				{
 					id: "pending-before-crash",
-					name: "task_update",
+					name: "execute_task_action",
 					arguments: {
-						expectedTaskRevision: task.updatedAt.getTime(),
-						fields: { title: "must not be applied" },
+						actionId: "task.update",
+						expectedResourceRevision: task.updatedAt.getTime(),
+						idempotencyKey: "pending-before-crash",
+						arguments: { fields: { title: "must not be applied" } },
 					},
 				},
 			],
@@ -519,10 +502,12 @@ describe("Mission Pilot persistent agent runtime", () => {
 				toolCalls: [
 					{
 						id: "running-before-stop",
-						name: "task_update",
+						name: "execute_task_action",
 						arguments: {
-							expectedTaskRevision: task.updatedAt.getTime(),
-							fields: { title: "must not be applied" },
+							actionId: "task.update",
+							expectedResourceRevision: task.updatedAt.getTime(),
+							idempotencyKey: "running-before-stop",
+							arguments: { fields: { title: "must not be applied" } },
 						},
 					},
 				],
@@ -569,7 +554,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 			{ sessionId: fixtureState.sessionId },
 			{
 				readPort,
-				compactionTokenBudget: 40_000,
+				compactionTokenBudget: 4_000,
 				maxProviderCallsPerWake: 4,
 				provider: {
 					nextTurn: async ({ tools }) => {
@@ -662,10 +647,12 @@ describe("Mission Pilot persistent agent runtime", () => {
 						toolCalls: [
 							{
 								id: "stoppable-task-update",
-								name: "task_update",
+								name: "execute_task_action",
 								arguments: {
-									expectedTaskRevision: task.updatedAt.getTime(),
-									fields: { title: "must not be applied" },
+									actionId: "task.update",
+									expectedResourceRevision: task.updatedAt.getTime(),
+									idempotencyKey: "stoppable-task-update",
+									arguments: { fields: { title: "must not be applied" } },
 								},
 							},
 						],

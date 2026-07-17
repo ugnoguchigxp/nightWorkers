@@ -1,89 +1,58 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	registerCodingAgentRunHandlers,
+	startCodingAgentRun,
+} from "../api/modules/agentsShare";
 
-const mocks = vi.hoisted(() => ({
-	queueTask: vi.fn(async () => ({ id: "queue" })),
-	startVerificationRunFromArtifact: vi.fn(async () => ({ id: "test-run" })),
-	startTaskRun: vi.fn(async () => ({ id: "implementation-run" })),
-	startReviewRun: vi.fn(async () => ({ id: "review-run" })),
-}));
+let unregister: (() => void) | null = null;
 
-vi.mock("../api/modules/nightworkers/nightworkers.service", () => ({
-	queueTask: mocks.queueTask,
-	startVerificationRunFromArtifact: mocks.startVerificationRunFromArtifact,
-}));
-vi.mock(
-	"../api/modules/nightworkers/run-orchestration/start-task-run-entry",
-	() => ({ startTaskRun: mocks.startTaskRun }),
-);
-vi.mock("../api/modules/review/review-mode.service", () => ({
-	startReviewRun: mocks.startReviewRun,
-}));
+afterEach(() => {
+	unregister?.();
+	unregister = null;
+});
 
-import { executeMissionPilotAction } from "../api/modules/missionPilot/agent/mission-pilot-action-command-executor";
-
-const context = {
-	sessionId: "session-1",
-	toolCallId: "tool-call-1",
-	idempotencyKey: "session-1:tool-call-1",
-	sourceRunId: "source-run-1",
-};
-const provenance = {
-	kind: "agent",
-	sessionId: context.sessionId,
-	toolCallId: context.toolCallId,
-	idempotencyKey: context.idempotencyKey,
-	completionOwner: "mission_pilot",
-	sourceRunId: context.sourceRunId,
-};
-
-describe("Mission Pilot agent Run provenance", () => {
-	it("passes the same ownership envelope to Implementation, Test, Review, and Queue paths", async () => {
-		await executeMissionPilotAction(
-			"task-1",
-			"run.implementation.start",
-			{ request: "implement" },
-			context,
-		);
-		await executeMissionPilotAction(
-			"task-1",
-			"run.test.start",
-			{
-				projectId: "project-1",
-				specArtifactId: "artifact-1",
-				action: "run_unit_tests",
-			},
-			context,
-		);
-		await executeMissionPilotAction(
-			"task-1",
-			"review.run.start",
-			{ reviewSessionId: "review-session-1" },
-			context,
-		);
-		await executeMissionPilotAction(
-			"task-1",
-			"task.queue.enqueue",
-			{},
-			context,
-		);
-
-		expect(mocks.startTaskRun).toHaveBeenCalledWith(
-			"task-1",
-			expect.objectContaining({
-				codingAgentInvocationSource: "mission_pilot",
-				missionPilotAgent: provenance,
+describe("Coding Agent requester provenance", () => {
+	it("keeps automation provenance in the neutral application command without a runtime mode", async () => {
+		const start = vi.fn(async (command) => ({
+			runId: "run-1",
+			taskId: command.taskId,
+			status: "queued",
+		}));
+		unregister = registerCodingAgentRunHandlers({
+			start,
+			resume: async () => ({
+				runId: "run-1",
+				taskId: "task-1",
+				status: "running",
 			}),
-		);
-		expect(mocks.startVerificationRunFromArtifact).toHaveBeenCalledWith(
-			expect.objectContaining({ missionPilotAgent: provenance }),
-		);
-		expect(mocks.startReviewRun).toHaveBeenCalledWith(
-			"review-session-1",
-			undefined,
-			{ missionPilotAgent: provenance },
-		);
-		expect(mocks.queueTask).toHaveBeenCalledWith("task-1", {
-			missionPilotAgent: provenance,
 		});
+		const command = {
+			taskId: "task-1",
+			instruction: "確定済み設計を実装して検証する",
+			artifactRefs: [
+				{
+					kind: "feature_plan",
+					id: "artifact-1",
+					revision: 3,
+					digest: "sha256:artifact",
+				},
+			],
+			repositoryRef: { id: "repository-1", revision: 7 },
+			requestProvenance: {
+				requestedBy: { kind: "automation" as const, actorId: "session-1" },
+				orchestrationRef: { kind: "mission_pilot_session", id: "session-1" },
+			},
+		};
+
+		await expect(startCodingAgentRun(command)).resolves.toEqual({
+			runId: "run-1",
+			taskId: "task-1",
+			status: "queued",
+		});
+		expect(start).toHaveBeenCalledWith(command);
+		const serialized = JSON.stringify(start.mock.calls[0]?.[0]);
+		expect(serialized).not.toContain("codingAgentInvocationSource");
+		expect(serialized).not.toContain("completionOwner");
+		expect(serialized).not.toContain("missionPilotAgent");
 	});
 });

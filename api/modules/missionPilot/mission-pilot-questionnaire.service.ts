@@ -384,12 +384,6 @@ async function submitDraftRow(
 			},
 			dedupeKey: `mission-pilot:questionnaire:submitted:${claimed.id}:${claimed.version}`,
 		});
-		if (!pilot || !(await isMissionPilotAgentSession(pilot.id)))
-			void import("./mission-pilot-plan-coordinator.service")
-				.then(({ runMissionPilotPlanPipeline }) =>
-					runMissionPilotPlanPipeline(taskId),
-				)
-				.catch(() => undefined);
 		return {
 			draft: submitted ? toView(submitted, taskId) : null,
 			questionnaire,

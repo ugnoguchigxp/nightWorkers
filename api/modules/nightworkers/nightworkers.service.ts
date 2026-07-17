@@ -1,5 +1,5 @@
 import { toDeepRecord } from "../../../shared/json-record";
-import { NotFoundError } from "../../lib/errors";
+import { AppError, NotFoundError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
 import type { TaskRunAssociationRequest } from "../agentsShare";
@@ -149,13 +149,9 @@ export async function startVerificationRunFromArtifact(input: {
 	return startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
-		codingAgentInvocationSource:
-			input.missionPilot || input.missionPilotAgent ? "mission_pilot" : "user",
-		missionPilotAgent: input.missionPilotAgent,
 		runAssociation: input.runAssociation,
 		runtimeOptionsPatch: {
 			verificationDocumentId: verificationDocument.id,
-			...(input.missionPilot ? { missionPilot: input.missionPilot } : {}),
 			artifactContext: {
 				specArtifactId: input.specArtifactId,
 				verificationDocumentId: verificationDocument.id,
@@ -353,12 +349,21 @@ export async function createWorkbenchSession(data: {
 	});
 }
 
-export async function archiveTask(id: string) {
-	return (await archiveCompletedTask({ taskId: id, reason: "manual" })).task;
+export async function archiveTask(id: string, expectedTaskRevision?: number) {
+	return (
+		await archiveCompletedTask({
+			taskId: id,
+			reason: "manual",
+			expectedTaskRevision,
+		})
+	).task;
 }
 
-export async function restoreTaskArchive(id: string) {
-	return restoreArchivedTask(id);
+export async function restoreTaskArchive(
+	id: string,
+	expectedTaskRevision?: number,
+) {
+	return restoreArchivedTask(id, "user", expectedTaskRevision);
 }
 
 export async function reopenTask(id: string) {
@@ -412,9 +417,32 @@ export {
 	recoverStaleActiveRuns,
 } from "./nightworkers.run-query.service";
 
-export async function reviewTaskRun(runId: string, request: ReviewRunRequest) {
+export async function reviewTaskRun(
+	runId: string,
+	request: ReviewRunRequest,
+	precondition?: {
+		expectedTaskId: string;
+		expectedTaskRevision: number;
+	},
+) {
 	const run = await repo.getTaskRun(runId);
 	if (!run) throw new Error("Run not found");
+	if (precondition) {
+		if (run.taskId !== precondition.expectedTaskId)
+			throw new AppError(
+				403,
+				"TASK_RESOURCE_OWNERSHIP_MISMATCH",
+				"Run does not belong to the requested Task.",
+			);
+		const task = await repo.getTask(run.taskId);
+		if (task?.updatedAt.getTime() !== precondition.expectedTaskRevision)
+			throw new AppError(
+				409,
+				"TASK_REVISION_CONFLICT",
+				"Task revision changed; re-read the Task Operator view.",
+				{ currentTaskRevision: task?.updatedAt.getTime() ?? null },
+			);
+	}
 	const events = await repo.listTaskEventsForRun(runId);
 	const defaultEvidenceRefs = collectDefaultReviewEvidence(run, events);
 

@@ -16,7 +16,10 @@
     "src/modules/agentsShare",
     "shared/modules/missionPilot",
     "shared/modules/codingAgent",
-    "shared/modules/agentsShare"
+    "shared/modules/agentsShare",
+		"shared/modules/taskOperator",
+		"api/modules/taskOperator",
+		"src/modules/taskOperator"
   ],
 	"roleModuleRoots": [
 	    "api/modules/missionPilot",
@@ -50,7 +53,10 @@
 				"src/modules/codingAgent",
 				"shared/modules/codingAgent"
 			],
-			"exemptPrefixes": []
+			"exemptPrefixes": [
+				"api/modules/agentsShare/contracts/coding-agent-run.ts",
+				"api/modules/agentsShare/ports/coding-agent-run.ts"
+			]
 		}
 	],
 	"forbiddenProductionPathPrefixes": ["api/services/agent-runtime"],

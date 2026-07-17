@@ -10,7 +10,7 @@ import {
 	implementationQueueEntries,
 	tasks,
 } from "../../db/schema";
-import { NotFoundError, ValidationError } from "../../lib/errors";
+import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 
 type ArchiveInput = {
 	taskId: string;
@@ -18,6 +18,7 @@ type ArchiveInput = {
 	missionPilotSessionId?: string | null;
 	sourceRunId?: string | null;
 	evidence?: Record<string, unknown>;
+	expectedTaskRevision?: number;
 };
 
 export async function archiveCompletedTask(input: ArchiveInput) {
@@ -28,6 +29,16 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 			.where(eq(tasks.id, input.taskId))
 			.limit(1);
 		if (!task) throw new NotFoundError("Task not found");
+		if (
+			input.expectedTaskRevision !== undefined &&
+			task.updatedAt.getTime() !== input.expectedTaskRevision
+		)
+			throw new AppError(
+				409,
+				"TASK_REVISION_CONFLICT",
+				"Task revision changed; re-read the Task Operator view.",
+				{ currentTaskRevision: task.updatedAt.getTime() },
+			);
 		const [activeRecord] = await tx
 			.select()
 			.from(taskArchiveRecords)
@@ -62,7 +73,15 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 		const [archived] = await tx
 			.update(tasks)
 			.set({ status: "archived", archivedAt: now, updatedAt: now })
-			.where(and(eq(tasks.id, task.id), eq(tasks.status, "completed")))
+			.where(
+				and(
+					eq(tasks.id, task.id),
+					eq(tasks.status, "completed"),
+					...(input.expectedTaskRevision !== undefined
+						? [eq(tasks.updatedAt, new Date(input.expectedTaskRevision))]
+						: []),
+				),
+			)
 			.returning();
 		if (!archived)
 			throw new ValidationError(
@@ -108,7 +127,11 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 	});
 }
 
-export async function restoreArchivedTask(taskId: string, restoredBy = "user") {
+export async function restoreArchivedTask(
+	taskId: string,
+	restoredBy = "user",
+	expectedTaskRevision?: number,
+) {
 	return db.transaction(async (tx) => {
 		const [task] = await tx
 			.select()
@@ -116,6 +139,16 @@ export async function restoreArchivedTask(taskId: string, restoredBy = "user") {
 			.where(eq(tasks.id, taskId))
 			.limit(1);
 		if (!task) throw new NotFoundError("Task not found");
+		if (
+			expectedTaskRevision !== undefined &&
+			task.updatedAt.getTime() !== expectedTaskRevision
+		)
+			throw new AppError(
+				409,
+				"TASK_REVISION_CONFLICT",
+				"Task revision changed; re-read the Task Operator view.",
+				{ currentTaskRevision: task.updatedAt.getTime() },
+			);
 		if (task.status !== "archived")
 			throw new ValidationError("Task is not archived");
 		const [record] = await tx
@@ -135,7 +168,14 @@ export async function restoreArchivedTask(taskId: string, restoredBy = "user") {
 		const [restored] = await tx
 			.update(tasks)
 			.set({ status: "completed", archivedAt: null, updatedAt: now })
-			.where(eq(tasks.id, taskId))
+			.where(
+				and(
+					eq(tasks.id, taskId),
+					...(expectedTaskRevision !== undefined
+						? [eq(tasks.updatedAt, new Date(expectedTaskRevision))]
+						: []),
+				),
+			)
 			.returning();
 		await tx
 			.update(taskArchiveRecords)

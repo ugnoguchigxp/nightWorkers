@@ -22,12 +22,8 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
 			"QuestionnaireとArtifactを所有",
 		);
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
-			"全質問の回答案と質問ごとの根拠を保存",
-		);
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
-			"read_questionnaire_decisionsとread_plan_artifact_routing",
-		);
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain("read_task_operator_view");
+		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain("read_task_resource");
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.create"),
 		).toBeNull();
@@ -103,27 +99,33 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		);
 	});
 
-	it("exposes all Mission Pilot Plan mutations but keeps user submission separate", () => {
+	it("exposes Questionnaire submission with the same operator contract", () => {
 		const actionNames = missionPilotActionToolDefinitions().map(
 			(tool) => tool.name,
 		);
 		expect(actionNames).toContain("questionnaire_draft_save");
 		expect(actionNames).toContain("questionnaire_draft_update");
 		expect(actionNames).toContain("questionnaire_create");
-		expect(actionNames).not.toContain("questionnaire_submit");
+		expect(actionNames).toContain("questionnaire_submit");
 		expect(actionNames).toContain("questionnaire_follow_up_generate");
 		expect(actionNames).toContain("questionnaire_review_generate");
 		expect(actionNames).toContain("questionnaire_review_accept");
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
-		).toContain("ユーザー操作");
+		).toBeNull();
 		expect(actionNames.some((name) => name.startsWith("plan_artifact_"))).toBe(
 			true,
 		);
 		expect(actionNames).toContain("plan_routing_update");
-		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toContain(
-			"read_plan_artifact_routing",
-		);
+		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toEqual([
+			"read_task_operator_view",
+			"read_task_resource",
+			"list_available_task_actions",
+			"read_task_action_contract",
+			"execute_task_action",
+			"agent.wait_for_event",
+			"agent.finish",
+		]);
 	});
 
 	it("projects visible assistant messages, requested actions, and control states", () => {

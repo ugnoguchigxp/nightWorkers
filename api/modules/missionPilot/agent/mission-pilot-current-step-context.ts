@@ -1,34 +1,30 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
-import type { MissionPilotTaskReadModel } from "../../../../shared/modules/missionPilot";
+import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
 import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotTaskEventInbox,
 } from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
-import { missionPilotDigest } from "./mission-pilot-content-page";
 
 export type MissionPilotCurrentStepContext = {
-	sessionRef: { id: string; revision: number };
+	version: 1;
 	taskRef: { id: string; revision: number; status: string };
-	authorizationRef: { version: number; digest: string };
-	projectRef: { id: string | null; registeredRepoRoot: string | null };
-	activeRunRefs: Array<{
+	sourceDigest: string;
+	changedSincePreviousTurn: {
+		eventTypes: string[];
+		resourceRefs: Array<{ kind: string; id: string; revision: number }>;
+	};
+	activeRunRef: { id: string; status: string } | null;
+	currentTodoRef: {
 		id: string;
-		kind: string;
+		revision: number;
 		status: string;
-		startedAt: string | null;
-	}>;
-	latestTerminalRunRefs: Array<{
-		id: string;
-		status: string;
-		outcomeDigest: string;
-	}>;
-	unreadEventRange: { from: number | null; through: number | null };
+		blockerDigest: string | null;
+	} | null;
 	availableActionIds: string[];
-	availableActionDigest: string;
-	observedAt: string;
+	unreadEventRange: { from: number | null; through: number | null };
+	headProjection?: TaskOperatorProjectionV1;
 };
 
 export async function buildMissionPilotCurrentStepContext(input: {
@@ -36,15 +32,15 @@ export async function buildMissionPilotCurrentStepContext(input: {
 	taskId: string;
 	readPort: MissionPilotTaskReadPort;
 }): Promise<MissionPilotCurrentStepContext> {
-	const [session, agent, events, workspace] = await Promise.all([
-		db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.id, input.sessionId),
-		}),
+	const [agent, events, projection] = await Promise.all([
 		db.query.missionPilotAgentSessions.findFirst({
 			where: eq(missionPilotAgentSessions.sessionId, input.sessionId),
 		}),
 		db
-			.select({ sequence: missionPilotTaskEventInbox.sequence })
+			.select({
+				sequence: missionPilotTaskEventInbox.sequence,
+				eventType: missionPilotTaskEventInbox.eventType,
+			})
 			.from(missionPilotTaskEventInbox)
 			.where(
 				and(
@@ -53,93 +49,60 @@ export async function buildMissionPilotCurrentStepContext(input: {
 				),
 			)
 			.orderBy(asc(missionPilotTaskEventInbox.sequence)),
-		readWorkspace(input.readPort, input.taskId, input.sessionId),
+		input.readPort.readTaskOperatorView({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+		}),
 	]);
-	if (!session || !agent)
-		throw new Error("Mission Pilot agent session not found");
-	const availableActionIds = workspace.availableActions
-		.filter((action) => action.availability === "available")
-		.map((action) => action.actionId)
-		.sort();
+	if (!agent) throw new Error("Mission Pilot agent session not found");
+	const resourceRefs = [
+		{
+			kind: "task",
+			id: projection.task.id,
+			revision: projection.task.revision,
+		},
+		...(projection.questionnaire
+			? [
+					{
+						kind: "questionnaire",
+						id: projection.questionnaire.id,
+						revision: projection.questionnaire.revision,
+					},
+				]
+			: []),
+		...(projection.activeRun
+			? [
+					{
+						kind: "task_run",
+						id: projection.activeRun.id,
+						revision: projection.activeRun.revision,
+					},
+				]
+			: []),
+	];
 	return {
-		sessionRef: { id: input.sessionId, revision: agent.conversationRevision },
+		version: 1,
 		taskRef: {
-			id: workspace.task.id,
-			revision: workspace.task.revision,
-			status: workspace.task.status,
+			id: projection.task.id,
+			revision: projection.task.revision,
+			status: projection.task.status,
 		},
-		authorizationRef: {
-			version:
-				typeof session.authorizationJson?.version === "number"
-					? session.authorizationJson.version
-					: agent.systemContextVersion,
-			digest: missionPilotDigest(
-				JSON.stringify(session.authorizationJson ?? null),
-			),
+		sourceDigest: projection.sourceDigest,
+		changedSincePreviousTurn: {
+			eventTypes: [...new Set(events.map((event) => event.eventType))],
+			resourceRefs,
 		},
-		projectRef: {
-			id: workspace.project.id,
-			registeredRepoRoot:
-				workspace.repository &&
-				typeof workspace.repository === "object" &&
-				"localPath" in workspace.repository &&
-				typeof workspace.repository.localPath === "string"
-					? workspace.repository.localPath
-					: null,
-		},
-		activeRunRefs: (Array.isArray(workspace.activeRuns)
-			? workspace.activeRuns
-			: []
-		).map((value) => {
-			const run = record(value);
-			return {
-				id: text(run.id),
-				kind: "task_run",
-				status: text(run.status),
-				startedAt:
-					run.startedAt instanceof Date
-						? run.startedAt.toISOString()
-						: typeof run.startedAt === "string"
-							? run.startedAt
-							: null,
-			};
-		}),
-		latestTerminalRunRefs: workspace.terminalRuns.map((value) => {
-			const run = record(value);
-			return {
-				id: text(run.runId),
-				status: text(run.status),
-				outcomeDigest: missionPilotDigest(JSON.stringify(run)),
-			};
-		}),
+		activeRunRef: projection.activeRun
+			? { id: projection.activeRun.id, status: projection.activeRun.status }
+			: null,
+		currentTodoRef: projection.activeRun?.currentTodoRef ?? null,
+		availableActionIds: projection.commandCatalog.availableIds,
 		unreadEventRange: {
 			from: events[0]?.sequence ?? null,
 			through: events.at(-1)?.sequence ?? null,
 		},
-		availableActionIds,
-		availableActionDigest: missionPilotDigest(
-			JSON.stringify(availableActionIds),
-		),
-		observedAt: new Date().toISOString(),
+		...(agent.nextTurnIndex <= 2 ? { headProjection: projection } : {}),
 	};
-}
-
-async function readWorkspace(
-	readPort: MissionPilotTaskReadPort,
-	taskId: string,
-	sessionId: string,
-) {
-	return readPort.readTaskWorkspace({ taskId, sessionId });
-}
-
-function text(value: unknown) {
-	return typeof value === "string" ? value : String(value);
-}
-
-function record(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
 }
 
 export function serializeMissionPilotCurrentStepContext(
@@ -148,4 +111,4 @@ export function serializeMissionPilotCurrentStepContext(
 	return JSON.stringify(context);
 }
 
-export type MissionPilotCurrentStepWorkspace = MissionPilotTaskReadModel;
+export type MissionPilotCurrentStepWorkspace = TaskOperatorProjectionV1;

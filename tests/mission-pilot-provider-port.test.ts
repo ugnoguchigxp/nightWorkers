@@ -4,6 +4,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	authorizeMissionPilotProviderCall,
+	missionPilotToolTurnProviderExecutionPolicy,
+} from "../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
 import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
 	cancelScheduledMissionPilotAgentWake,
@@ -18,6 +22,7 @@ import { listPendingMissionPilotTaskEvents } from "../api/modules/missionPilot/a
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
+	callProviderToolTurn,
 	StructuredProviderError,
 } from "../api/services/structured-llm/public";
 
@@ -51,6 +56,29 @@ async function retryFixture() {
 	const playing = await claimAgentPlay(taskId, session.version);
 	if (!playing) throw new Error("provider retry fixture did not start");
 	return { taskId, sessionId: playing.id };
+}
+
+async function stoppedFixture() {
+	const repositoryId = crypto.randomUUID();
+	const taskId = crypto.randomUUID();
+	repositoryIds.push(repositoryId);
+	const session = await db.transaction(async (tx) => {
+		await tx.insert(repositories).values({
+			id: repositoryId,
+			name: "stopped provider",
+			localPath: "/tmp/stopped-provider",
+			branch: "main",
+		});
+		const [task] = await tx
+			.insert(tasks)
+			.values({ id: taskId, repositoryId, title: "stopped provider" })
+			.returning();
+		return createSession(
+			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
+			tx,
+		);
+	});
+	return { taskId, session };
 }
 
 function providerCandidates() {
@@ -97,6 +125,41 @@ function providerCandidates() {
 }
 
 describe("Mission Pilot provider route fallback", () => {
+	it("rejects every provider call until Mission Pilot is explicitly playing", async () => {
+		const fixture = await stoppedFixture();
+		const [normalizedRequest] = providerCandidates();
+		if (!normalizedRequest) throw new Error("provider candidate is missing");
+		await expect(
+			callProviderToolTurn({
+				provider: "codex",
+				messages: [{ role: "user", content: "user" }],
+				tools: [],
+				systemPrompt: "system",
+				userPrompt: "user",
+				options: {
+					label: "mission_pilot_agent",
+					role: "mission_pilot",
+					taskId: fixture.taskId,
+					normalizedRequest,
+					executionPolicy: missionPilotToolTurnProviderExecutionPolicy,
+				},
+				signal: new AbortController().signal,
+				setProviderDebug: vi.fn(),
+			}),
+		).rejects.toMatchObject({
+			code: "MISSION_PILOT_PROVIDER_DISABLED",
+		});
+
+		const playing = await claimAgentPlay(
+			fixture.taskId,
+			fixture.session.version,
+		);
+		expect(playing).not.toBeNull();
+		await expect(
+			authorizeMissionPilotProviderCall({ taskId: fixture.taskId }),
+		).resolves.toBeUndefined();
+	});
+
 	it("continues to the next configured candidate when native tools are unsupported", async () => {
 		const candidates = providerCandidates();
 		const calls: string[] = [];

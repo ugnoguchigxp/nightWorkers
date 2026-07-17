@@ -13,8 +13,60 @@ vi.mock(
 const { selectQuestionnaireArtifacts } = await import(
 	"../api/modules/missionPilot/planning/mission-pilot-questionnaire-artifact-selection.service"
 );
+const { selectQuestionnaireArtifactRouting } = await import(
+	"../api/modules/questionnaire/questionnaire-artifact-selection.service"
+);
 
 describe("Mission Pilot Questionnaire artifact selection", () => {
+	it("uses the plan role without Mission Pilot authorization for direct selection", async () => {
+		callStructuredOutputWithRepair.mockResolvedValueOnce({
+			value: {
+				decisions: [
+					{
+						view: "api_io_contract",
+						decision: "include",
+						depth: "focused",
+						reason: "外部API境界だけをFeature Plan前に確定するため。",
+					},
+				],
+			},
+		});
+
+		await selectQuestionnaireArtifactRouting({
+			taskId: "task-direct",
+			task: {
+				title: "API task",
+				objective: "APIを追加する",
+				acceptanceCriteria: "HTTP契約が定義されている",
+			},
+			questionnaire: {
+				answers: [],
+				questionSets: [],
+			} as unknown as DesignQuestionnaireSession,
+			routing: {
+				revision: 0,
+				entries: [
+					{
+						view: "api_io_contract",
+						decision: "omit",
+						required: false,
+						capabilityEnabled: true,
+					},
+				],
+			},
+			capabilities: { api_io_contract: true },
+		});
+
+		expect(callStructuredOutputWithRepair).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				options: expect.objectContaining({
+					role: "plan",
+					executionPolicy: undefined,
+				}),
+			}),
+		);
+	});
+
 	it("passes rendered Questionnaire answers to the semantic selector", async () => {
 		callStructuredOutputWithRepair.mockResolvedValue({
 			value: {
@@ -22,37 +74,44 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 					{
 						view: "api_io_contract",
 						decision: "include",
+						depth: "standard",
 						reason:
 							"HTTP request/responseの境界を確定回答に沿って定義するため。",
 					},
 					{
 						view: "blueprint",
 						decision: "omit",
+						depth: "none",
 						reason: "画面構成を変更する回答がなく、Feature Planで十分なため。",
 					},
 					{
 						view: "data_model",
 						decision: "omit",
+						depth: "none",
 						reason: "データ構造を変更する回答がないため。",
 					},
 					{
 						view: "user_flow",
 						decision: "omit",
+						depth: "none",
 						reason: "新しいユーザー操作フローを伴わないため。",
 					},
 					{
 						view: "activity_flow",
 						decision: "omit",
+						depth: "none",
 						reason: "複雑な状態遷移を追加しないため。",
 					},
 					{
 						view: "sequence_flow",
 						decision: "omit",
+						depth: "none",
 						reason: "複数サービス間の呼び出し順を変更しないため。",
 					},
 					{
 						view: "zod_schema_design",
 						decision: "omit",
+						depth: "none",
 						reason: "新しい入力検証スキーマを設計しないため。",
 					},
 				],
@@ -118,19 +177,20 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 		expect(result).toContainEqual({
 			view: "api_io_contract",
 			decision: "include",
-			reason: "HTTP request/responseの境界を確定回答に沿って定義するため。",
+			reason:
+				"HTTP request/responseの境界を確定回答に沿って定義するため。（推奨粒度: 標準）",
 		});
 		expect(result).toContainEqual({
 			view: "blueprint",
 			decision: "omit",
-			reason: "画面構成を変更する回答がなく、Feature Planで十分なため。",
+			reason:
+				"画面構成を変更する回答がなく、Feature Planで十分なため。（推奨粒度: 個別設計書なし）",
 		});
 		expect(callStructuredOutputWithRepair).toHaveBeenCalledWith(
 			expect.objectContaining({
-				systemPrompt: expect.stringContaining(
-					"通常は任意Artifactを0〜1件だけincludeし",
-				),
+				systemPrompt: expect.stringContaining("通常は0〜2件"),
 				userPrompt: expect.stringContaining("公開する"),
+				options: expect.objectContaining({ role: "mission_pilot" }),
 			}),
 		);
 	});
