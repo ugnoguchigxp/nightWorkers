@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { isCodingAgentChatTrace } from "../../codingAgent";
 import {
 	buildTranscriptItems,
 	type TranscriptItem,
@@ -65,6 +66,7 @@ import {
 	StreamingResponsePreview,
 	ThinkingIndicator,
 } from "./ThreadTimelineStreaming";
+import { buildChatVerificationEvidenceHistory } from "./ThreadTimelineVerificationEvidence";
 
 export { isUserVisibleChatMessage } from "../messageVisibility";
 export {
@@ -83,6 +85,7 @@ export {
 	buildStreamingResponsePreview,
 	formatVisibleAssistantText,
 } from "./ThreadTimelineStreaming";
+export { buildChatVerificationEvidenceHistory } from "./ThreadTimelineVerificationEvidence";
 
 type ThreadTimelineProps = {
 	session: Task;
@@ -192,9 +195,7 @@ export function ThreadTimeline({
 				"threadTimeline.buildTranscriptItems",
 				() =>
 					buildTranscriptItems({
-						events: activityEvents.filter(
-							(event) => event.traceChannel === "chat",
-						),
+						events: activityEvents.filter(isCodingAgentChatTrace),
 						artifacts: activityArtifacts,
 					}),
 				{
@@ -214,6 +215,17 @@ export function ThreadTimeline({
 						{ transcriptItemCount: transcriptItems.length },
 					),
 		[showDebugEvents, transcriptItems],
+	);
+	const activityVerificationHistory = useMemo(
+		() =>
+			buildChatVerificationEvidenceHistory(
+				activityEvents.filter(isCodingAgentChatTrace),
+			),
+		[activityEvents],
+	);
+	const fallbackVerificationHistory = useMemo(
+		() => buildChatVerificationEvidenceHistory(latestRunEvents),
+		[latestRunEvents],
 	);
 	const hasActivityTranscript = transcriptItems.length > 0;
 	const chatMessages = useMemo(
@@ -432,6 +444,7 @@ export function ThreadTimeline({
 								onOpenProjectFile={onOpenProjectFile}
 								onOpenTestModeArtifact={onOpenTestModeArtifact}
 								onOpenReviewModeArtifact={onOpenReviewModeArtifact}
+								verificationHistoryByEventId={activityVerificationHistory}
 							/>
 						),
 					)
@@ -495,7 +508,12 @@ export function ThreadTimeline({
 											<NormalInspectionToolCard event={item.event} />
 										) : null}
 										{!showDebugEvents ? (
-											<NormalCodexToolCard event={item.event} />
+											<NormalCodexToolCard
+												event={item.event}
+												verificationHistory={fallbackVerificationHistory.get(
+													item.event.id,
+												)}
+											/>
 										) : null}
 										{showDebugEvents ? (
 											<CodexToolCard event={item.event} />

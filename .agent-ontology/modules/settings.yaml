@@ -32,7 +32,7 @@
   ],
   "readMostlyPaths": [
     "api/services/pricing/**",
-    "api/services/agent-runtime/**",
+    "api/modules/codingAgent/runtime/**",
     "api/mcp/**"
   ],
   "ownedData": {

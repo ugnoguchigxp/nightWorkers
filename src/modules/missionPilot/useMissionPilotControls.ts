@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
 import type { Task } from "../nightworkers/types";
 import {
 	playMissionPilotTask,
@@ -20,6 +20,11 @@ export function useMissionPilotControls(
 	const [error, setError] = useState<string | null>(null);
 	const run = useCallback(
 		async (action: "play" | "stop") => {
+			if (action === "stop")
+				await queryClient.refetchQueries({
+					queryKey: ["sessions"],
+					type: "active",
+				});
 			const cachedSummary = queryClient
 				.getQueryData<Task[]>(["sessions"])
 				?.find((task) => task.id === taskId)?.missionPilot;

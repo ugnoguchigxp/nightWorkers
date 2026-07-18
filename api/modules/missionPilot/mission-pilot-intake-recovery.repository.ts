@@ -1,6 +1,7 @@
 import { and, eq, isNull, notExists, or, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import { designQuestionnaireSessions } from "../../db/design-questionnaire-schema";
+import { missionPilotAgentSessions } from "../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../db/mission-pilot-schema";
 
 export async function recoverInterruptedIntakeSessions() {
@@ -19,6 +20,14 @@ export async function recoverInterruptedIntakeSessions() {
 			and(
 				eq(missionPilotSessions.desiredState, "playing"),
 				isNull(missionPilotSessions.activeRunId),
+				notExists(
+					db
+						.select({ sessionId: missionPilotAgentSessions.sessionId })
+						.from(missionPilotAgentSessions)
+						.where(
+							eq(missionPilotAgentSessions.sessionId, missionPilotSessions.id),
+						),
+				),
 				or(
 					eq(missionPilotSessions.phase, "starting"),
 					and(

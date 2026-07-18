@@ -2,6 +2,8 @@ import type { PromptImageInput } from "../../../shared/prompt-image";
 import { apiFetch } from "../../lib/api-base";
 import { jsonRequest } from "../../lib/api-request";
 
+export { apiPath } from "../../lib/api-base";
+
 export {
 	createAgentHook,
 	deleteAgentHook,
@@ -81,7 +83,10 @@ export function appendWorkbenchMessage(
 }
 
 export function patchTask(sessionId: string, input: unknown) {
-	return apiFetch(`/api/tasks/${sessionId}`, jsonRequest("PATCH", input));
+	return apiFetch(
+		`/api/tasks/${sessionId}`,
+		withIdempotency(jsonRequest("PATCH", input)),
+	);
 }
 
 export function createWorkbenchSession(input: unknown) {
@@ -95,11 +100,15 @@ export function deleteTask(sessionId: string) {
 export function startWorkbenchRun(sessionId: string) {
 	return apiFetch(`/api/workbench/sessions/${sessionId}/run`, {
 		method: "POST",
+		headers: idempotencyHeaders(),
 	});
 }
 
 export function stopRun(runId: string) {
-	return apiFetch(`/api/runs/${runId}/stop`, { method: "POST" });
+	return apiFetch(`/api/runs/${runId}/stop`, {
+		method: "POST",
+		headers: idempotencyHeaders(),
+	});
 }
 
 export function resumeTaskRunTodo(
@@ -109,7 +118,7 @@ export function resumeTaskRunTodo(
 ) {
 	return apiFetch(
 		`/api/runs/${runId}/todos/${todoId}/resume`,
-		jsonRequest("POST", input),
+		withIdempotency(jsonRequest("POST", input)),
 	);
 }
 
@@ -128,13 +137,25 @@ export function queueWorkbenchSession(sessionId: string) {
 export function archiveWorkbenchSession(sessionId: string) {
 	return apiFetch(`/api/workbench/sessions/${sessionId}/archive`, {
 		method: "PATCH",
+		headers: idempotencyHeaders(),
 	});
 }
 
 export function restoreWorkbenchSessionArchive(sessionId: string) {
 	return apiFetch(`/api/workbench/sessions/${sessionId}/archive/restore`, {
 		method: "POST",
+		headers: idempotencyHeaders(),
 	});
+}
+
+function idempotencyHeaders() {
+	return { "Idempotency-Key": crypto.randomUUID() };
+}
+
+function withIdempotency(init: RequestInit): RequestInit {
+	const headers = new Headers(init.headers);
+	headers.set("Idempotency-Key", crypto.randomUUID());
+	return { ...init, headers };
 }
 
 export function fetchReviewRecommendation(runId: string) {

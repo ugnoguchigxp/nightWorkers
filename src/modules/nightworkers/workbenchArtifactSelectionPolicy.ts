@@ -214,6 +214,12 @@ export function planModeWorkspaceInitialTabMetadata(message: TaskMessage): {
 	initialTab?: string;
 } {
 	const metadata = taskMessageMetadata(message);
+	if (
+		String(metadata.intent || "") === "design_questionnaire_starting" ||
+		String(metadata.intent || "") === "design_questionnaire_ready"
+	) {
+		return { initialTab: "questionnaire" };
+	}
 	if (isDataModelArtifactMessage(message)) return { initialTab: "data-model" };
 	if (!isPlanModeDedicatedViewMetadata(metadata)) return {};
 	const tabs: Record<string, string> = {

@@ -1,28 +1,28 @@
 import type { TaskRunStatus } from "../../../db/schema";
 import { logger } from "../../../lib/logger";
-import { runE2eFixtureRuntime } from "../../../services/agent-runtime/e2e-fixture-runtime";
-import { createLedgerSink } from "../../../services/agent-runtime/ledger-sink";
 import {
+	continueAfterTaskRun,
+	projectTaskRunParentStatus,
+	publishTaskRunTerminal,
+} from "../../agentsShare";
+import type { AgentRuntimeResult } from "../../codingAgent";
+import {
+	buildCodingAgentSystemContext,
+	buildCodingAgentTaskGoal,
 	buildOpenTodoRuntimeContractWarning,
+	createLedgerSink,
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
+	outcomeFromRuntimeResult,
+	projectCodingAgentTaskStatusAfterRun,
+	readCodingAgentPlanModeRequested,
+	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
-} from "../../../services/agent-runtime/shared";
-import type { AgentRuntimeResult } from "../../../services/agent-runtime/types";
-import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
-import {
-	continueMissionPilotAfterRun,
-	resolveMissionPilotParentTaskStatus,
-} from "../../missionPilot/mission-pilot-post-queue-coordinator.service";
-import {
-	executeMissionPilotContinuation,
-	markMissionPilotContinuationFailed,
-} from "../../missionPilot/mission-pilot-runtime-continuation.service";
+} from "../../codingAgent";
 import {
 	boundaryAuditEventSeverity,
 	buildOntologyBoundaryAuditSnapshot,
 } from "../../ontology";
-import { outcomeFromRuntimeResult } from "../nightworkers.basic.service";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
 import {
@@ -85,10 +85,9 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	} = input;
 	const runtime = runtimeLaneDefinition.createAdapter();
 	const codingAgentSystemContext = buildCodingAgentSystemContext({
-		taskGoal: [task.title, task.description || task.objective]
-			.filter(Boolean)
-			.join("\n"),
+		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repoInfo.localPath,
+		planModeRequested: readCodingAgentPlanModeRequested(runtimeContextSnapshot),
 	});
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =
@@ -457,6 +456,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						outcomeGuard.summary || runtimeResult.summary || outcome.summary,
 				},
 			);
+			const terminalTransitionApplied = Boolean(finalizedRun);
 			let finalStatus: TaskRunStatus = guardedStatus;
 			if (!finalizedRun) {
 				const concurrentRun = await repo.getTaskRun(run.id);
@@ -485,29 +485,69 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			if (!isRuntimeTerminalStatus(finalStatus)) {
 				return;
 			}
-			const parentTaskStatus = await resolveMissionPilotParentTaskStatus({
+			const closeoutInput = {
+				taskId,
 				runId: run.id,
 				runStatus: finalStatus,
 				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
-			});
-			await repo.updateTaskStatus(taskId, parentTaskStatus);
+			};
+			const parentTaskProjection =
+				await projectTaskRunParentStatus(closeoutInput);
+			const parentTaskStatus =
+				projectCodingAgentTaskStatusAfterRun({
+					runStatus: finalStatus,
+					planModeRequested: readCodingAgentPlanModeRequested(
+						runtimeContextSnapshot,
+					),
+				}) ?? parentTaskProjection.status;
+			if (!parentTaskProjection.handled)
+				await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, finalStatus);
 			await repo.publishTaskRunUpdate(finalizedRun);
-			try {
-				const missionContinuation = await continueMissionPilotAfterRun({
-					taskId,
-					runId: run.id,
-					executionMode:
-						runtimeContextSnapshot.executionMode ?? "implementation",
-					runStatus: finalStatus,
-				});
-				await executeMissionPilotContinuation(missionContinuation);
-			} catch (error) {
-				await markMissionPilotContinuationFailed(run.id, error);
+			const closeoutFailures = await continueAfterTaskRun(closeoutInput);
+			for (const error of closeoutFailures) {
 				logger.error(
 					{ error: toErrorMessage(error), runId: run.id },
-					"Mission Pilot continuation failed after the run was finalized",
+					"Task run closeout subscriber failed after the run was finalized",
 				);
+			}
+			if (terminalTransitionApplied) {
+				const publication = await publishTaskRunTerminal({
+					type: "task_run.terminal",
+					eventId: `task-run-terminal:${run.id}:${finalStatus}`,
+					taskId,
+					runId: run.id,
+					status: finalStatus,
+					sourceRef: null,
+					occurredAt: new Date().toISOString(),
+				});
+				if (publication.failures.length > 0) {
+					logger.error(
+						{
+							listenerFailureCount: publication.failures.length,
+							runId: run.id,
+						},
+						"Task terminal event subscriber failed after closeout",
+					);
+					await repo
+						.createRunEvent({
+							version: 1,
+							runId: run.id,
+							taskId,
+							timestamp: new Date().toISOString(),
+							type: "system.warning",
+							severity: "warning",
+							actor: "system",
+							message:
+								"Task terminal event was persisted, but one or more subscribers failed.",
+							data: {
+								action: "task_run.terminal_publish",
+								listenerCount: publication.listenerCount,
+								listenerFailureCount: publication.failures.length,
+							},
+						})
+						.catch(() => undefined);
+				}
 			}
 			if (shouldContinueSessionQueue(finalStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);

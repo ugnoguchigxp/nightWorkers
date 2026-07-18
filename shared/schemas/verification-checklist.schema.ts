@@ -44,6 +44,78 @@ export const verificationRunnerSchema = z.enum([
 	"unknown",
 ]);
 
+/**
+ * Discovery is intentionally distinct from execution.  A filename candidate is
+ * useful to the Coding Agent, but can never by itself satisfy a quality gate.
+ */
+export const testDiscoveryLevelSchema = z.enum([
+	"active",
+	"candidate",
+	"unknown",
+]);
+
+export const testDefinitionSourceSchema = z.enum([
+	"declared_in_test",
+	"coding_agent_assessment",
+]);
+
+export const workspaceSourceSnapshotSchema = z
+	.object({
+		sourceStateHash: z.string().regex(/^[a-f0-9]{64}$/),
+		gitHead: z.string().trim().min(1).nullable(),
+		fileCount: z.number().int().nonnegative(),
+		capturedAt: z.string().datetime(),
+	})
+	.strict();
+
+export const testInventoryCaseSchema = z
+	.object({
+		caseKey: z.string().trim().min(1),
+		name: z.string().trim().min(1),
+		filePath: z.string().trim().min(1),
+		runner: verificationRunnerSchema,
+		discoveryLevel: testDiscoveryLevelSchema,
+		declaredConditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
+	})
+	.strict();
+
+export const testInventorySchema = z
+	.object({
+		id: z.string().trim().min(1),
+		taskId: z.string().trim().min(1),
+		runId: z.string().trim().min(1).optional(),
+		cwd: z.string().trim().min(1),
+		sourceSnapshot: workspaceSourceSnapshotSchema,
+		createdAt: z.string().datetime(),
+		cases: z.array(testInventoryCaseSchema),
+		warnings: z.array(z.string().trim().min(1)),
+	})
+	.strict();
+
+export const testConditionMappingSchema = z
+	.object({
+		id: z.string().trim().min(1),
+		taskId: z.string().trim().min(1),
+		verificationDocumentId: z.string().trim().min(1),
+		inventoryId: z.string().trim().min(1),
+		caseKey: z.string().trim().min(1),
+		conditionId: z.string().regex(/^AC-\d{3}$/),
+		source: testDefinitionSourceSchema,
+		rationale: z.string().trim().min(1).max(4_000).optional(),
+		sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+		createdAt: z.string().datetime(),
+	})
+	.strict()
+	.superRefine((mapping, ctx) => {
+		if (mapping.source === "coding_agent_assessment" && !mapping.rationale) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["rationale"],
+				message: "coding_agent_assessment requires rationale",
+			});
+		}
+	});
+
 export const verificationCommandScopeSchema = z.enum([
 	"focused",
 	"full_gate",
@@ -148,6 +220,8 @@ export const verificationChecklistItemSchema = z
 		conditionId: z.string().regex(/^AC-\d{3}$/),
 		text: z.string().trim().min(1),
 		required: z.boolean(),
+		verificationKind: verificationKindSchema.optional(),
+		expectedEvidence: z.array(expectedEvidenceSchema).optional(),
 		status: verificationChecklistItemStatusSchema,
 		evidenceIds: z.array(z.string().trim().min(1)),
 		lastCheckedAt: z.string().datetime().optional(),
@@ -192,6 +266,9 @@ export const normalizedVerificationEvidenceSchema = z
 			.strict(),
 		cases: z.array(normalizedTestCaseEvidenceSchema),
 		commandLevelConditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
+		sourceSnapshot: workspaceSourceSnapshotSchema.optional(),
+		testExecutionObserved: z.boolean().optional(),
+		sourceMutatedDuringCheck: z.boolean().optional(),
 	})
 	.strict();
 
@@ -199,6 +276,7 @@ export type SpecificationVerificationDocument = z.infer<
 	typeof specificationVerificationDocumentSchema
 >;
 export type VerificationCondition = z.infer<typeof verificationConditionSchema>;
+export type ExpectedEvidence = z.infer<typeof expectedEvidenceSchema>;
 export type VerificationCommandPlan = z.infer<
 	typeof verificationCommandPlanSchema
 >;
@@ -214,6 +292,12 @@ export type NormalizedVerificationEvidence = z.infer<
 export type NormalizedTestCaseEvidence = z.infer<
 	typeof normalizedTestCaseEvidenceSchema
 >;
+export type WorkspaceSourceSnapshot = z.infer<
+	typeof workspaceSourceSnapshotSchema
+>;
+export type TestInventoryCase = z.infer<typeof testInventoryCaseSchema>;
+export type TestInventory = z.infer<typeof testInventorySchema>;
+export type TestConditionMapping = z.infer<typeof testConditionMappingSchema>;
 
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([
 	"covered",

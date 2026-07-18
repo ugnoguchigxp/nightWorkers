@@ -1,5 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
+	collectTestInventoryTool,
+	recordTestConditionMappingTool,
+	todoListTool,
+} from "../modules/codingAgent";
+import {
 	checkOntologyBoundary,
 	classifyOntologyGoal,
 	compileOntologyModuleContext,
@@ -16,7 +21,6 @@ import {
 	completionCheckTool,
 	runCheckTool,
 } from "../services/worker-tools/run-check";
-import { todoListTool } from "../services/worker-tools/todo-list";
 import { nightWorkersCodexToolManifest } from "./nightworkers-tool-manifest";
 
 export type NightWorkersMcpRequestContext = {
@@ -197,7 +201,15 @@ export function createNightWorkersCodexMcpServer(
 				context.taskId,
 				process.env.NIGHTWORKERS_TASK_ID,
 			);
-			const args = { taskId: resolvedTaskId, verificationDocumentId };
+			const resolved = await resolveTaskRepository({
+				taskId: resolvedTaskId,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+			});
+			const args = {
+				taskId: resolvedTaskId,
+				verificationDocumentId,
+				repoRoot: resolved.executionRoot ?? undefined,
+			};
 			return controlledToolResult({
 				context,
 				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
@@ -205,6 +217,75 @@ export function createNightWorkersCodexMcpServer(
 				arguments: args,
 				evidenceKind: "completion-check",
 				execute: () => completionCheckTool(args),
+			});
+		},
+	);
+
+	server.registerTool(
+		"collect_test_inventory",
+		{ ...nightWorkersCodexToolManifest.collect_test_inventory },
+		async ({ runId, cwd }) => {
+			const resolvedRunId = firstNonEmpty(
+				runId,
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
+			);
+			const resolved = await resolveTaskRepository({
+				taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
+				runId: resolvedRunId,
+			});
+			if (!resolved.task || !resolved.repository || !resolved.executionRoot) {
+				return toolResultToMcp({
+					ok: false,
+					toolName: "collect_test_inventory",
+					startedAt: new Date().toISOString(),
+					finishedAt: new Date().toISOString(),
+					payload: null,
+					error: {
+						code: "TASK_REPOSITORY_NOT_FOUND",
+						message: "Cannot resolve the current NightWorkers task repository.",
+					},
+				});
+			}
+			const args = {
+				taskId: resolved.task.id,
+				runId: resolvedRunId,
+				repoRoot: resolved.executionRoot,
+				cwd,
+				allowedPaths: resolved.repository.safetyPolicy?.allowedPaths,
+				deniedPaths: resolved.repository.safetyPolicy?.deniedPaths,
+				blockedCommands: resolved.repository.safetyPolicy?.blockedCommands,
+				maxCommandSeconds: resolved.repository.safetyPolicy?.maxCommandSeconds,
+			};
+			return controlledToolResult({
+				context,
+				runId: resolvedRunId,
+				toolName: "collect_test_inventory",
+				arguments: args,
+				workspaceIdentity: resolved.executionRoot,
+				evidenceKind: "test-inventory",
+				execute: () => collectTestInventoryTool(args),
+			});
+		},
+	);
+
+	server.registerTool(
+		"record_test_condition_mapping",
+		{ ...nightWorkersCodexToolManifest.record_test_condition_mapping },
+		async (input) => {
+			const taskId = firstNonEmpty(
+				context.taskId,
+				process.env.NIGHTWORKERS_TASK_ID,
+			);
+			const args = { taskId, ...input };
+			return controlledToolResult({
+				context,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+				toolName: "record_test_condition_mapping",
+				arguments: args,
+				evidenceKind: "test-condition-mapping",
+				idempotentSideEffect: true,
+				execute: () => recordTestConditionMappingTool(args),
 			});
 		},
 	);

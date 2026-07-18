@@ -6,8 +6,7 @@ import type { ReviewResult } from "../../review";
 import type { TaskRunTodo } from "./blueprint";
 import type { TaskRun } from "./core";
 
-export type TaskLlmUsageSummary = {
-	taskId: string;
+export type TaskLlmUsageBreakdown = {
 	promptInputTokens: number;
 	inputTokens: number;
 	outputTokens: number;
@@ -23,6 +22,14 @@ export type TaskLlmUsageSummary = {
 	measuredCallCount: number;
 	estimatedCallCount: number;
 	lastUpdatedAt?: unknown | null;
+};
+
+export type TaskLlmUsageSummary = TaskLlmUsageBreakdown & {
+	taskId: string;
+	byOwner: {
+		codingAgent: TaskLlmUsageBreakdown;
+		missionPilot: TaskLlmUsageBreakdown;
+	};
 };
 
 export type ActivityArtifact = {

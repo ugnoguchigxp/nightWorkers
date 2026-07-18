@@ -7,7 +7,7 @@ import {
 	formatMissionPilotReworkPacket,
 	hasMissionPilotReworkPacket,
 	missionPilotReworkPaths,
-} from "../missionPilot/mission-pilot-rework";
+} from "../missionPilot";
 import * as repo from "../nightworkers/nightworkers.repository";
 import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { getProjectSecurityIntelligenceSettings } from "../ontology";
@@ -24,15 +24,13 @@ import {
 	findExistingReviewTaskRun,
 	reviewRunArtifactStatus,
 } from "./review-run-idempotency.service";
+import type { ReviewRunMissionInput } from "./review-run-input";
 import {
 	extractPlanBullets,
 	reviewTargetWarningTitle,
 	summarizeTarget,
 } from "./review-run-target-helpers";
-import {
-	buildReviewTargetManifest,
-	type ReviewTargetManifestContext,
-} from "./review-target-manifest";
+import { buildReviewTargetManifest } from "./review-target-manifest";
 import {
 	buildReviewTarget,
 	findLatestPlanArtifact,
@@ -188,19 +186,11 @@ export function buildReviewRunTodos(input: {
 	return todos;
 }
 
-type ReviewRunMissionInput = {
-	targetRunIds?: string[];
-	targetManifestContext?: ReviewTargetManifestContext;
-	missionPilot?: Record<string, unknown>;
-	reviewCorrection?: Record<string, unknown>;
-};
-
 export function resolveReviewTargetRunIds(
 	missionInput: ReviewRunMissionInput | null | undefined,
 ) {
 	return missionInput?.targetRunIds;
 }
-
 export async function startReviewRunForSession(
 	reviewSessionId: string,
 	optionsInput?: Partial<ReviewRunOptions> | null,
@@ -363,10 +353,8 @@ export async function startReviewRunForSession(
 	const reviewRun = await startTaskRun(session.taskId, {
 		executionModeSource: "review_run",
 		initialTodos: todos,
+		runAssociation: missionInput?.runAssociation,
 		runtimeOptionsPatch: {
-			...(missionInput?.missionPilot
-				? { missionPilot: missionInput.missionPilot }
-				: {}),
 			...(missionInput?.reviewCorrection
 				? { reviewCorrection: missionInput.reviewCorrection }
 				: {}),

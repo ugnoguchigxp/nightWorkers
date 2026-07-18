@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildMissionPilotQuestionnaireDraft } from "../api/modules/missionPilot/mission-pilot-questionnaire-draft";
-import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import {
 	missionPilotAuthorizationV2Schema,
 	missionPilotAuthorizationV3Schema,
 	missionPilotControlSummarySchema,
 	missionPilotSourceRefSchema,
-} from "../shared/schemas/mission-pilot.schema";
-import { missionPilotPlanProgressSchema } from "../shared/schemas/mission-pilot-plan-progress.schema";
+} from "../shared/modules/missionPilot/mission-pilot.schema";
+import { missionPilotPlanProgressSchema } from "../shared/modules/missionPilot/mission-pilot-plan-progress.schema";
+import { designQuestionnaireSessionSchema } from "../shared/schemas/design-questionnaire.schema";
 import { formatCountdown } from "../src/modules/missionPilot/components/MissionPilotControlPanel";
 import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
 import {
@@ -199,6 +199,21 @@ describe("Mission Pilot contract", () => {
 			phase: "attention",
 			activeRunId: "44444444-4444-4444-8444-444444444444",
 			lastError: "stop unavailable",
+		};
+		expect(missionPilotPresentation(attention)).toMatchObject({
+			playing: false,
+			canPlay: false,
+			canStop: true,
+		});
+	});
+
+	it("offers Stop retry instead of Play after a runtime stop timeout", () => {
+		const attention = {
+			...summary(5),
+			activityState: "attention" as const,
+			phase: "attention",
+			lastErrorCode: "MISSION_PILOT_RUNTIME_STOP_TIMEOUT",
+			lastError: "runtime did not acknowledge stop",
 		};
 		expect(missionPilotPresentation(attention)).toMatchObject({
 			playing: false,

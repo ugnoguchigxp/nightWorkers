@@ -216,7 +216,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 					{
 						prompt: content,
 						intent,
-						waitForIntake: true,
+						waitForIntake: false,
 						...(llmSelection?.model ? { model: llmSelection.model } : {}),
 						...(llmSelection?.providerEndpointId
 							? { providerEndpointId: llmSelection.providerEndpointId }

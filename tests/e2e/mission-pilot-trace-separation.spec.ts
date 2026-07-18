@@ -73,7 +73,7 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		expect(chat.events.map((event) => event.text)).toContain(
 			"CODING_AGENT_CHAT_ONLY",
 		);
-		expect(chat.events.map((event) => event.text)).toContain(
+		expect(chat.events.map((event) => event.text)).not.toContain(
 			"MISSION_PILOT_ARTIFACT_BODY",
 		);
 		expect(chat.events.every((event) => event.traceChannel === "chat")).toBe(
@@ -82,6 +82,25 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		expect(
 			chat.events.some((event) => event.traceOwner === "mission_pilot"),
 		).toBe(false);
+		const artifactResponse = await request.get(
+			`/api/tasks/${taskId}/activity-events?channel=artifact`,
+			{ headers },
+		);
+		expect(artifactResponse.status(), await artifactResponse.text()).toBe(200);
+		const artifact = (await artifactResponse.json()) as {
+			events: Array<{
+				text: string;
+				traceOwner: string;
+				traceChannel: string;
+			}>;
+		};
+		expect(artifact.events).toEqual([
+			expect.objectContaining({
+				text: "MISSION_PILOT_ARTIFACT_BODY",
+				traceOwner: "mission_pilot",
+				traceChannel: "artifact",
+			}),
+		]);
 
 		const traceResponse = await request.get(
 			`/api/mission-pilot/tasks/${taskId}/execution`,
@@ -122,7 +141,7 @@ test("Mission Pilot thought and coding-agent chat remain disjoint", {
 		).toHaveCount(0);
 		await expect(
 			chatWindow.getByText("MISSION_PILOT_ARTIFACT_BODY"),
-		).toBeVisible();
+		).toHaveCount(0);
 		await page.getByRole("button", { name: "Pilot thought" }).click();
 		const pilotDock = page.locator("aside.nightworkers-chat-dock");
 		await expect(

@@ -4,17 +4,19 @@ import {
 	type PlanModeWorkspace,
 	planModeRegenerationTargetSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
+import { executePlanModeArtifactCorrection } from "../missionPilot";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import { queueTask } from "./nightworkers.queue-management.service";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
+import { publishTaskMessageCreated } from "./nightworkers.task-message-events";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import {
 	handleWorkbenchIntakeMessage,
@@ -56,7 +58,8 @@ export async function createPlanningArtifactMessageIfNeeded(input: {
 			!Array.isArray(run.contextSnapshot)
 				? (run.contextSnapshot as Record<string, unknown>)
 				: {};
-		if (runContext.executionMode !== "planning") return;
+		const planModeRequested = runContext.planModeRequested === true;
+		if (runContext.executionMode !== "planning" && !planModeRequested) return;
 	}
 	const alreadyPublished = messages.some((message) => {
 		const metadata = (message.metadataJson || {}) as Record<string, unknown>;
@@ -216,7 +219,7 @@ export async function appendTaskMessage(
 	const hasAnyUserMessage = existingMessages.some(
 		(message) => message.role === "user",
 	);
-	await repo.createTaskMessage({
+	const message = await repo.createTaskMessage({
 		taskId: id,
 		role: "user",
 		content: trimmed,
@@ -229,7 +232,35 @@ export async function appendTaskMessage(
 	}
 	const latestTask = await repo.getTask(id);
 	if (!latestTask) throw new NotFoundError("Task not found");
+	if (message) publishTaskMessageCreated(message);
 	return latestTask;
+}
+
+export async function appendAssistantTaskMessage(
+	id: string,
+	content: string,
+	metadata?: Record<string, unknown>,
+	trace?: TraceProvenance,
+) {
+	const task = await repo.getTask(id);
+	if (!task) throw new NotFoundError("Task not found");
+	const trimmed = content.trim();
+	if (!trimmed)
+		throw new AppError(
+			400,
+			"EMPTY_ASSISTANT_MESSAGE",
+			"Message must not be empty",
+		);
+	const message = await repo.createTaskMessage({
+		taskId: id,
+		role: "assistant",
+		content: trimmed,
+		messageType: "text",
+		payloadJson: metadata,
+		trace,
+	});
+	if (message) publishTaskMessageCreated(message);
+	return message;
 }
 export type WorkbenchChatIntent =
 	| "intake"
@@ -255,6 +286,7 @@ export async function appendWorkbenchMessage(
 		model?: string;
 		thinkingDepth?: "low" | "medium" | "high" | "very_high";
 		images?: PromptImageInput[];
+		source?: "workbench" | "mission_pilot";
 	},
 ) {
 	const intent = input.intent || "intake";
@@ -282,12 +314,15 @@ export async function appendWorkbenchMessage(
 		images: input.images,
 	});
 	const messageMetadata =
-		artifactContext || llmSelection || imageAttachments.length > 0
+		input.source ||
+		artifactContext ||
+		llmSelection ||
+		imageAttachments.length > 0
 			? {
 					...(artifactContext
 						? { intent: "artifact_context_instruction", artifactContext }
 						: {}),
-					source: "workbench",
+					source: input.source ?? "workbench",
 					...(llmSelection ? { llmSelection } : {}),
 					...(imageAttachments.length > 0 ? { imageAttachments } : {}),
 				}

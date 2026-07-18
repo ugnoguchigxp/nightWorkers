@@ -11,6 +11,7 @@ import { triggerConfiguredQueueDrain } from "./queue-scheduler-port";
 export type QueueSideEffectOptions = {
 	autoDrain?: boolean;
 	approveMissionProposal?: boolean;
+	missionPilotAgent?: import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance;
 };
 
 export type QueueRecoveryAction =
@@ -66,7 +67,7 @@ function hasExplicitMissionProposalApproval(
 
 export function assertMissionProposalQueueApproval(messages: TaskMessageRows) {
 	const missionProposal = latestMissionProposalMetadata(messages);
-	if (!missionProposal || missionProposal.approvalRequired !== true) return;
+	if (missionProposal?.approvalRequired !== true) return;
 	if (hasExplicitMissionProposalApproval(messages, missionProposal.proposalId))
 		return;
 	throw new AppError(

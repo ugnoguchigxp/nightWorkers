@@ -37,7 +37,7 @@ describe("supervisor prompt packet", () => {
 		expect(rendered).not.toContain('"diagnostics"');
 	});
 
-	it("renders Feature Plan routing instructions and round1 planMode schema", () => {
+	it("delegates Plan Artifact routing to Coding Agent in the round1 prompt", () => {
 		const rendered = buildRound1JobTypePrompt("/repo");
 		const schema = buildResponseJsonSchema(1);
 
@@ -45,11 +45,16 @@ describe("supervisor prompt packet", () => {
 		expect(rendered).toContain("planMode");
 		expect(rendered).toContain("planning 以外では planMode は null");
 		expect(rendered).toContain("scheduling.executionType");
-		expect(rendered).toContain("questionnaire を最初の判断材料");
-		expect(rendered).toContain("ユースケース図");
-		expect(rendered).toContain("AI coding rules");
-		expect(rendered).not.toContain(["Use", "case"].join(""));
-		expect(rendered).not.toContain(["AI Coding", "Rules"].join(" "));
+		expect(rendered).toContain("SupervisorはPlan Modeへ入るかだけを判定し");
+		expect(rendered).toContain(
+			"planMode.dedicatedViewsとspecificationLensesは必ず空配列",
+		);
+		expect(rendered).toContain(
+			"開始後にMission PilotがTaskとrepositoryを読んで判断",
+		);
+		expect(rendered).toContain("依頼内容からjobTypeとschedulingを推論");
+		expect(rendered).not.toContain("questionnaire を最初の判断材料");
+		expect(rendered).not.toContain("依頼内容から必要な設計 view を推論");
 		expect(JSON.stringify(schema)).toContain("planMode");
 		expect(JSON.stringify(schema)).toContain(
 			'"required":["jobType","goal","planMode","scheduling"]',

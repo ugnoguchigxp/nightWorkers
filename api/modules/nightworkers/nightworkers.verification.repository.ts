@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
+	ExpectedEvidence,
 	NormalizedVerificationEvidence,
 	SpecificationVerificationDocument,
 	VerificationChecklistItem,
@@ -43,6 +44,8 @@ export async function createVerificationDocument(input: {
 		conditionId: condition.id,
 		text: condition.text,
 		required: condition.required,
+		verificationKind: condition.verificationKind,
+		expectedEvidenceJson: condition.expectedEvidence,
 		status:
 			condition.verificationKind === "manual"
 				? "manual"
@@ -99,6 +102,11 @@ export async function listVerificationChecklistItems(
 		conditionId: row.conditionId,
 		text: row.text,
 		required: row.required,
+		verificationKind:
+			row.verificationKind as VerificationChecklistItem["verificationKind"],
+		expectedEvidence: Array.isArray(row.expectedEvidenceJson)
+			? (row.expectedEvidenceJson as ExpectedEvidence[])
+			: [],
 		status: row.status as VerificationChecklistItem["status"],
 		evidenceIds: Array.isArray(row.evidenceIdsJson) ? row.evidenceIdsJson : [],
 		lastCheckedAt: row.lastCheckedAt?.toISOString(),
@@ -158,6 +166,9 @@ export async function createVerificationEvidenceRun(input: {
 			parsedArtifactId: input.evidence.parsedArtifactId ?? null,
 			summaryJson: input.evidence.summary,
 			commandLevelConditionIdsJson: input.evidence.commandLevelConditionIds,
+			sourceSnapshotJson: input.evidence.sourceSnapshot ?? null,
+			testExecutionObserved: input.evidence.testExecutionObserved,
+			sourceMutatedDuringCheck: input.evidence.sourceMutatedDuringCheck,
 			startedAt: new Date(input.evidence.startedAt),
 			finishedAt: new Date(input.evidence.finishedAt),
 		})

@@ -81,7 +81,14 @@ export function resolveStructuredLlmRoleRouteCandidates(input: {
 		);
 		if (fallback) candidates.push(fallback);
 	}
-	return applyRoutePolicy(candidates, policy);
+	const routedCandidates = applyRoutePolicy(candidates, policy);
+	if (routedCandidates.length > 0) return routedCandidates;
+	if (input.policy) return [];
+	return resolveEnabledEndpointFallbacks({
+		role: input.role,
+		settings: input.settings,
+		policy,
+	});
 }
 
 export type StructuredLlmRouteValidationIssue = {
@@ -247,6 +254,47 @@ function isRouteReady(
 		route.source === "override" ||
 		isEndpointReady(route.providerEndpointId, policy)
 	);
+}
+
+function resolveEnabledEndpointFallbacks(input: {
+	role: StructuredLlmRole;
+	settings: StructuredLlmProviderSettings;
+	policy: StructuredLlmRoutePolicy;
+}) {
+	const activeProviderId = normalizeActiveProviderId(
+		input.settings.ACTIVE_LLM_PROVIDER,
+	);
+	const candidates = (input.settings.providerEndpoints || [])
+		.filter((endpoint) => endpoint.enabled && endpoint.models.length > 0)
+		.sort((left, right) => {
+			const leftActive =
+				providerIdForEndpoint(left) === activeProviderId ? 0 : 1;
+			const rightActive =
+				providerIdForEndpoint(right) === activeProviderId ? 0 : 1;
+			return leftActive - rightActive;
+		})
+		.map((endpoint) => ({
+			role: input.role,
+			providerEndpointId: endpoint.id,
+			providerId: providerIdForEndpoint(endpoint),
+			endpoint,
+			model: endpoint.models[0],
+			thinkingDepth: null,
+			source: "fallback" as const,
+			diagnostics: [
+				`role=${input.role}`,
+				"routeSource=fallback",
+				"fallbackReason=configured_route_unavailable",
+				`providerEndpointId=${endpoint.id}`,
+				`model=${endpoint.models[0]}`,
+			],
+		}));
+	return applyRoutePolicy(candidates, input.policy);
+}
+
+function normalizeActiveProviderId(value: string | undefined) {
+	if (value === "azure") return "azure-openai";
+	return value;
 }
 
 function isEndpointReady(endpointId: string, policy: StructuredLlmRoutePolicy) {

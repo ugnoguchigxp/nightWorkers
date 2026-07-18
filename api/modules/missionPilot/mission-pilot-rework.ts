@@ -1,7 +1,7 @@
 import {
 	type MissionPilotReworkPacket,
 	missionPilotReworkPacketSchema,
-} from "../../../shared/schemas/mission-pilot-review.schema";
+} from "../../../shared/modules/missionPilot";
 import type { ImplementationTodoInput } from "../../services/todo-runtime";
 
 export function parseMissionPilotReworkPacket(

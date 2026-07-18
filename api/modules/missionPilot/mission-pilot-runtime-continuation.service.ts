@@ -12,6 +12,7 @@ import {
 	formatMissionPilotReworkPacket,
 	parseMissionPilotReworkPacket,
 } from "./mission-pilot-rework";
+import { buildMissionPilotRunAssociationRequest } from "./mission-pilot-run-association.service";
 
 type MissionPilotContinuation = Awaited<
 	ReturnType<typeof continueMissionPilotAfterRun>
@@ -43,29 +44,44 @@ async function executeMissionPilotContinuationOnce(
 			mode: "test",
 			action: "plan_and_implement_tests",
 			rerun: true,
+			runAssociation: buildMissionPilotRunAssociationRequest({
+				phase: "test",
+				missionPilot: continuation.input.missionPilot,
+			}),
 		});
 		return;
 	}
 	if (continuation.kind === "start_review") {
-		const { startTaskRun } = await import(
-			"../nightworkers/nightworkers.service"
-		);
 		const anchorRun = await import(
 			"../nightworkers/nightworkers.repository"
 		).then((module) => module.getTaskRun(continuation.input.anchorRunId));
 		if (!anchorRun)
 			throw new AppError(404, "RUN_NOT_FOUND", "Anchor run not found");
-		await startTaskRun(anchorRun.taskId, {
-			executionMode: "implementation",
-			executionModeSource: "explicit",
-			latestUserMessageOverride:
-				"現在のTaskとworkspaceを確認し、必要な自己確認・修正・検証をTodoとして計画して完了してください。",
-			runtimeOptionsPatch: {
-				missionPilot: continuation.input.missionPilot,
+		const { autoStartReviewSessionForRun } = await import(
+			"../review/review-mode.service"
+		);
+		const { startReviewRunForSession } = await import(
+			"../review/review-run.service"
+		);
+		const reviewSession = await autoStartReviewSessionForRun(anchorRun.id);
+		await startReviewRunForSession(
+			reviewSession.session.id,
+			{
+				codeReview: true,
+				securityReview: true,
+				applyFixes: false,
+				commitChanges: false,
+			},
+			{
 				targetRunIds: continuation.input.targetRunIds,
 				targetManifestContext: continuation.input.targetManifestContext,
+				missionPilot: continuation.input.missionPilot,
+				runAssociation: buildMissionPilotRunAssociationRequest({
+					phase: "review",
+					missionPilot: continuation.input.missionPilot,
+				}),
 			},
-		});
+		);
 		return;
 	}
 	if (continuation.kind === "run_closeout") {
@@ -105,6 +121,10 @@ export async function startImplementationRework(input: {
 	await startTaskRun(input.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		runAssociation: buildMissionPilotRunAssociationRequest({
+			phase: "implementation",
+			missionPilot: { ...input.missionPilot, reworkPacket },
+		}),
 		initialTodos: buildMissionPilotReworkTodos(reworkPacket),
 		latestUserMessageOverride: [
 			"Review指摘限定のImplementation correctionを開始してください。",
@@ -136,6 +156,10 @@ export function buildInterruptedImplementationResumeOptions(
 	return {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		runAssociation: buildMissionPilotRunAssociationRequest({
+			phase: "implementation",
+			missionPilot,
+		}),
 		latestUserMessageOverride: "再開してください。",
 		runtimeOptionsPatch: { missionPilot },
 	};

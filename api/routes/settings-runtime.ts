@@ -22,6 +22,7 @@ import {
 	writeApplicationSettingBundle,
 } from "../services/settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "../services/structured-llm/endpoint-id-migration";
+import { migrateLegacyProviderEnablement } from "../services/structured-llm/provider-enablement-migration";
 
 export type {
 	LlmModelTarget,
@@ -83,6 +84,10 @@ const readRuntimeSettings = (): {
 			const imported = Object.fromEntries(
 				[
 					"ACTIVE_LLM_PROVIDER",
+					"OPENAI_ENABLED",
+					"AZURE_OPENAI_ENABLED",
+					"AWS_BEDROCK_ENABLED",
+					"CODEX_ENABLED",
 					"OPENAI_API_KEY",
 					"OPENAI_BASE_URL",
 					"OPENAI_MODEL",
@@ -96,6 +101,8 @@ const readRuntimeSettings = (): {
 					"AWS_BEDROCK_MODEL",
 					"CODEX_ACCESS_TOKEN",
 					"CODEX_MODEL",
+					"IMPLEMENTATION_RUNTIME_LANE",
+					"SESSION_QUEUE_MAX_CONCURRENCY",
 				].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
 			) as Partial<RawLlmSettings>;
 			if (Object.keys(imported).length > 0) {
@@ -158,7 +165,10 @@ const writeRuntimeSettings = async (settings: LlmSettings) => {
 
 export const getCurrentSettings = (): LlmSettings => {
 	const persistedRead = readRuntimeSettings();
-	const persisted = persistedRead.settings;
+	const enablementMigration = migrateLegacyProviderEnablement(
+		persistedRead.settings,
+	);
+	const persisted = enablementMigration.settings;
 	const rawActiveProvider = persisted.ACTIVE_LLM_PROVIDER || "azure";
 	const codexEnabled =
 		typeof persisted.CODEX_ENABLED === "boolean"
@@ -178,6 +188,10 @@ export const getCurrentSettings = (): LlmSettings => {
 			endpointIdSchemaVersion:
 				typeof persisted.endpointIdSchemaVersion === "number"
 					? persisted.endpointIdSchemaVersion
+					: undefined,
+			providerEnablementMigrationVersion:
+				typeof persisted.providerEnablementMigrationVersion === "number"
+					? persisted.providerEnablementMigrationVersion
 					: undefined,
 			ACTIVE_LLM_PROVIDER: getStructuredProviderSetting(rawActiveProvider),
 			OPENAI_ENABLED:
@@ -248,12 +262,14 @@ export const getCurrentSettings = (): LlmSettings => {
 	};
 	const migration = migrateStructuredLlmEndpointIds(normalized);
 	if (
-		(migration.changed ||
+		(enablementMigration.changed ||
+			migration.changed ||
 			providerEndpointsChanged ||
 			roleRoutesChanged ||
 			legacyProviderEnablementChanged) &&
 		persistedRead.exists &&
-		persistedRead.loaded
+		persistedRead.loaded &&
+		process.env.NIGHTWORKERS_EXECUTION_ROLE !== "worker"
 	) {
 		void writeRuntimeSettings(migration.settings).catch(() => undefined);
 	}

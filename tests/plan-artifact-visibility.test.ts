@@ -64,6 +64,20 @@ describe("plan artifact visibility", () => {
 		).toBe(true);
 	});
 
+	it("does not auto-open a Questionnaire for a paused Coding Agent Run", () => {
+		expect(
+			shouldAutoOpenPlanArtifact({
+				activeSession: { status: "running" },
+				sessionView: { emailState: "needs_human" },
+				latestRun: {
+					status: "needs_human",
+					contextSnapshot: { planModeClosed: true },
+				},
+				hasPlanArtifact: true,
+			}),
+		).toBe(false);
+	});
+
 	it("does not auto-open completed, queued, or already executed sessions by default", () => {
 		expect(
 			shouldAutoOpenPlanArtifact({
@@ -83,7 +97,18 @@ describe("plan artifact visibility", () => {
 			shouldAutoOpenPlanArtifact({
 				activeSession: { status: "running" },
 				sessionView: { emailState: "running" },
-				latestRun: { status: "running" },
+				latestRun: { status: "running", contextSnapshot: null },
+				hasPlanArtifact: true,
+			}),
+		).toBe(false);
+		expect(
+			shouldAutoOpenPlanArtifact({
+				activeSession: { status: "running" },
+				sessionView: { emailState: "needs_human" },
+				latestRun: {
+					status: "needs_human",
+					contextSnapshot: { runtimePause: { kind: "host_limit" } },
+				},
 				hasPlanArtifact: true,
 			}),
 		).toBe(false);

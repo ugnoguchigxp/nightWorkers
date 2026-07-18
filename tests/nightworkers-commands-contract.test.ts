@@ -127,9 +127,12 @@ describe("nightWorkersCommands", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			15,
 			"/api/workbench/sessions/task-1/archive",
-			{
+			expect.objectContaining({
 				method: "PATCH",
-			},
+				headers: expect.objectContaining({
+					"Idempotency-Key": expect.any(String),
+				}),
+			}),
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			19,

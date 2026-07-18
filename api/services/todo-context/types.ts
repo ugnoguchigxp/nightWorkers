@@ -1,3 +1,4 @@
+import type { MissionPilotAgentRunProvenance } from "../../../shared/modules/missionPilot";
 import type { PlanModeCapability } from "../settings/general-settings";
 import type { TodoVerificationPolicy } from "../todo-runtime";
 
@@ -61,12 +62,14 @@ export type RuntimePromptSnapshot = {
 		digest: string;
 	};
 	planModeClosed?: boolean;
+	planModeRequested?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;
 	blueprintPlanning?: unknown;
 	runtimeLane?: "native-api-runner" | "codex-sdk";
 	runtimeLaneResolution?: RuntimeLaneSnapshot;
 	runtimeResume?: unknown;
+	missionPilotAgent?: MissionPilotAgentRunProvenance;
 	reviewCorrection?: unknown;
 	projectMeta?: unknown;
 	securityOracle?: {

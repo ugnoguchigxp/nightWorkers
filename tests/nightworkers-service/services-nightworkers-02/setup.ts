@@ -58,7 +58,7 @@ vi.doMock("../../../api/routes/settings", () => ({
 	}),
 }));
 
-vi.doMock("../../../api/services/agent-runtime/registry", () => {
+vi.doMock("../../../api/modules/codingAgent/runtime/registry", () => {
 	const resolveAgentRuntime = vi.fn();
 	const buildRuntimeLaneInitialTodos = vi.fn((lane: string) =>
 		lane === "codex-sdk"

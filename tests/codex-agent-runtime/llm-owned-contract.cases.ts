@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildCodingAgentSystemContext } from "../../api/modules/codingAgent/context";
+import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
+import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
+import { buildCodexRuntimePromptParts } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
+import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
 import {
 	createRepository,
 	createTask,
 	createTaskRun,
 	deleteRepository,
 } from "../../api/modules/nightworkers/nightworkers.repository";
-import { CodexAgentRuntime } from "../../api/services/agent-runtime/CodexAgentRuntime";
-import { createCodexRuntimeThread } from "../../api/services/agent-runtime/codex-sdk/codex-sdk-client";
-import { buildCodexRuntimePromptParts } from "../../api/services/agent-runtime/codex-sdk/codex-sdk-runtime-prompt";
-import type { AgentRunContext } from "../../api/services/agent-runtime/types";
-import { buildCodingAgentSystemContext } from "../../api/services/coding-agent-context";
 import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
@@ -92,6 +92,18 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(test.runtimeContract).toBe(implementation.runtimeContract);
 		expect(review.runtimeContract).toBe(implementation.runtimeContract);
 		expect(review.runtimeContract).toContain("Todo");
+		expect(review.runtimeContract).toContain(
+			"実装前の計画が必要かをあなた自身が判断してください",
+		);
+		expect(review.runtimeContract).toContain(
+			"工程固有のリマインダーとして記録",
+		);
+		expect(review.runtimeContract).toContain(
+			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
+		);
+		expect(review.runtimeContract).toContain(
+			"実装後に仕様書や完了条件を後付けして検証を始めず",
+		);
 		expect(review.runtimeContract).not.toContain("executionMode:");
 		expect(review.runtimeContract).not.toContain("reviewer_evaluation");
 	});
@@ -340,6 +352,57 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 			controller.signal,
 		);
 
+		expect(result).toMatchObject({
+			terminalState: "cancelled",
+			stoppedBy: "cancelled",
+		});
+	});
+
+	it("aborts the active Codex stream when stop is requested", async () => {
+		let resolveStreamStarted!: () => void;
+		const streamStarted = new Promise<void>((resolve) => {
+			resolveStreamStarted = resolve;
+		});
+		let receivedSignal: AbortSignal | null = null;
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async (
+					_input: unknown,
+					options: { signal: AbortSignal },
+				) => {
+					receivedSignal = options.signal;
+					return {
+						events: (async function* () {
+							resolveStreamStarted();
+							await new Promise<void>((resolve) => {
+								if (options.signal.aborted) {
+									resolve();
+									return;
+								}
+								options.signal.addEventListener("abort", () => resolve(), {
+									once: true,
+								});
+							});
+							yield {
+								type: "turn.failed",
+								error: { message: "aborted provider turn" },
+							};
+						})(),
+					};
+				},
+			}),
+			usageRecorder: async () => {},
+		});
+		const runContext = context("implementation");
+		const resultPromise = runtime.start(runContext, {
+			emit: vi.fn(async () => {}),
+		});
+
+		await streamStarted;
+		await runtime.stop(runContext.runId);
+		const result = await resultPromise;
+
+		expect(receivedSignal?.aborted).toBe(true);
 		expect(result).toMatchObject({
 			terminalState: "cancelled",
 			stoppedBy: "cancelled",

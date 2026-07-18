@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { missionPilotReviewDecisionPayloadSchema } from "../../../shared/schemas/mission-pilot-review.schema";
+import { missionPilotReviewDecisionPayloadSchema } from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
 	missionPilotCloseouts,

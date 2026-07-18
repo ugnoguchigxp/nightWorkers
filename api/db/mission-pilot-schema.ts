@@ -5,14 +5,14 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
 import type {
 	MissionPilotAnswerEvidence,
 	MissionPilotAuthorization,
+	MissionPilotPlanReview,
 	MissionPilotPreQueueDiagnostic,
 	MissionPilotQueueHandoff,
-} from "../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotPlanReview } from "../../shared/schemas/mission-pilot-plan-review.schema";
+} from "../../shared/modules/missionPilot";
+import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
 import type { PlanModeRegenerationTarget } from "../../shared/schemas/plan-mode-artifact.schema";
 import type {
 	MissionPilotArtifactCorrectionStatus,
@@ -173,6 +173,7 @@ export const missionPilotQuestionnaireDrafts = sqliteTable(
 		state: text("state").notNull().default("waiting_user"),
 		deadlineAt: integer("deadline_at", { mode: "timestamp" }).notNull(),
 		version: integer("version").notNull().default(0),
+		lastActionIdempotencyKey: text("last_action_idempotency_key"),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 	},

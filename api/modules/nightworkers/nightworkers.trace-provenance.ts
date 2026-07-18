@@ -1,10 +1,8 @@
-import { eq } from "drizzle-orm";
 import type {
 	TraceChannel,
 	TraceProvenance,
 } from "../../../shared/schemas/trace-provenance.schema";
-import { db } from "../../db/client";
-import { missionPilotPhaseRuns } from "../../db/mission-pilot-schema";
+import { resolveRunOrchestrationRef } from "../agentsShare";
 
 type MissionPilotRefInput = {
 	sessionId: string;
@@ -87,15 +85,6 @@ export function missionPilotThoughtTrace(
 	};
 }
 
-export function missionPilotPlanOutputTrace(
-	input: MissionPilotRefInput,
-): TraceProvenance {
-	return structuredLlmChatTrace({
-		role: "plan",
-		orchestrationRef: input,
-	});
-}
-
 export function missionPilotInitialPromptTrace(
 	sessionId: string,
 	controlVersion: number,
@@ -147,8 +136,8 @@ export function resolveTaskMessageTrace(input: {
 	metadata?: unknown;
 	trace?: TraceProvenance;
 }): TraceProvenance {
+	if (input.runId) return codingAgentRunTrace(input.runId, input.trace);
 	if (input.trace) return input.trace;
-	if (input.runId) return codingAgentChatTrace({ runId: input.runId });
 	if (input.role === "user") return userChatTrace();
 	if (input.role === "assistant" || input.role === "tool") {
 		return codingAgentChatTrace();
@@ -162,12 +151,12 @@ export function resolveActivityTrace(input: {
 	payloadJson?: unknown;
 	trace?: TraceProvenance;
 }): TraceProvenance {
+	if (input.runId) return codingAgentRunTrace(input.runId, input.trace);
 	if (input.trace) return input.trace;
 	const payload =
 		input.payloadJson && typeof input.payloadJson === "object"
 			? (input.payloadJson as Record<string, unknown>)
 			: {};
-	if (input.runId) return codingAgentChatTrace({ runId: input.runId });
 	if (input.source === "mission_pilot") {
 		const sessionId =
 			typeof payload.missionPilotSessionId === "string"
@@ -193,6 +182,7 @@ export function resolveLlmUsageTrace(input: {
 	metadata?: Record<string, unknown>;
 	trace?: TraceProvenance;
 }): TraceProvenance {
+	if (input.runId) return codingAgentRunTrace(input.runId, input.trace);
 	if (input.trace) return input.trace;
 	if (input.metadata?.role === "mission_pilot") {
 		return missionPilotThoughtTrace({
@@ -203,32 +193,36 @@ export function resolveLlmUsageTrace(input: {
 			callId: input.callId,
 		});
 	}
-	if (input.runId) return codingAgentChatTrace({ runId: input.runId });
 	return structuredLlmChatTrace({
 		role: typeof input.metadata?.role === "string" ? input.metadata.role : null,
 		callId: input.callId,
 	});
 }
 
+function codingAgentRunTrace(
+	runId: string,
+	trace?: TraceProvenance,
+): TraceProvenance {
+	if (!trace) return codingAgentChatTrace({ runId });
+	return {
+		owner: "coding_agent",
+		channel: "chat",
+		producer: {
+			...trace.producer,
+			runId,
+		},
+		...(trace.orchestrationRef !== undefined
+			? { orchestrationRef: trace.orchestrationRef }
+			: {}),
+	};
+}
+
 export async function resolveRunCodingAgentTrace(
 	runId: string,
 ): Promise<TraceProvenance> {
-	const [phaseRun] = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(eq(missionPilotPhaseRuns.runId, runId))
-		.limit(1);
 	return codingAgentChatTrace({
 		runId,
-		orchestrationRef: phaseRun
-			? {
-					sessionId: phaseRun.sessionId,
-					phaseRunId: phaseRun.id,
-					phase: phaseRun.phase,
-					cycle: phaseRun.cycle,
-					attempt: phaseRun.attempt,
-				}
-			: null,
+		orchestrationRef: await resolveRunOrchestrationRef(runId),
 	});
 }
 

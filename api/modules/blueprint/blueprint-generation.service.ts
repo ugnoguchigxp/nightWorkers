@@ -6,6 +6,8 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
 import {
 	createPlanModeMockBlueprintActivityArtifact,
 	createPlanModeTaskMessage,
@@ -14,7 +16,6 @@ import {
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
-import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import { renderPlanArtifactInput } from "../specification/plan-artifact-input-renderer";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
@@ -33,8 +34,10 @@ export async function generateBlueprintArtifact(
 		sourceSelection?: PlanArtifactSourceSelection;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		signal?: AbortSignal;
 		expectedState?: {
 			missionPilotSessionId: string;
 			contextRevision: number;
@@ -74,8 +77,11 @@ export async function generateBlueprintArtifact(
 				projection,
 				routeOverride: input.routeOverride || null,
 				role: input.role,
+				executionPolicy: input.executionPolicy,
 				usageTrace: input.llmUsageTrace,
+				signal: input.signal,
 			});
+		input.signal?.throwIfAborted();
 		const generationWithUsage = {
 			...generation,
 			llmUsage: await resolveLatestMockBlueprintUsage(taskId),

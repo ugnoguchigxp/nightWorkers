@@ -1,6 +1,10 @@
-import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
 import type { StructuredLlmModelTarget } from "../../../services/structured-llm/settings";
 import type { ImplementationTodoInput } from "../../../services/todo-runtime";
+import type { TaskRunAssociationRequest } from "../../agentsShare";
+import type {
+	CodingAgentPlanModeRuntimeThreadHandoff,
+	NativeApiExecutionMode,
+} from "../../codingAgent";
 
 export type ImplementationPlanConstraint = {
 	sourceMessageId: string;
@@ -19,6 +23,10 @@ export type StartTaskRunOptions = {
 		| "review_run"
 		| "test_mode"
 		| "explicit";
+	/** 単一Coding Agent runtimeを、明示されたPlan Modeの計画Todoから開始する。 */
+	planModeRequested?: boolean;
+	/** 直前のintake gateで初期化済みのCodex threadを、最初のCoding Agent Runへ一度だけ渡す。 */
+	intakeRuntimeThreadHandoff?: CodingAgentPlanModeRuntimeThreadHandoff;
 	initialTodos?: ImplementationTodoInput[];
 	implementationPlanConstraint?: ImplementationPlanConstraint;
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */
@@ -32,9 +40,8 @@ export type StartTaskRunOptions = {
 	latestUserMessageOverride?: string;
 	runtimeOptionsPatch?: Record<string, unknown>;
 	routeOverride?: StructuredLlmModelTarget | null;
-	missionPilotPhase?:
-		| "repository_bootstrap"
-		| "implementation"
-		| "test"
-		| "review";
+	/** 起動元roleがRunを関連付けるための、agentsShare経由の中立request。 */
+	runAssociation?: TaskRunAssociationRequest;
+	/** repository bootstrapなど、割り当て前workspaceでの限定実行を明示する。 */
+	allowUnassignedWorkspace?: boolean;
 };

@@ -1,3 +1,5 @@
+import { normalizeInputTokenBreakdown } from "../../../shared/llm-usage-tokens";
+
 export type OverviewRange = "24h" | "7d" | "30d" | "all";
 
 export type UsageAggregateRow = {
@@ -103,7 +105,8 @@ export function addAggregateUsage(
 		(row.userPromptTokens ?? 0) +
 		(row.stateCardTokens ?? 0);
 	target.outputTokens += row.outputTokens ?? 0;
-	target.cachedInputTokens += row.cachedInputTokens ?? 0;
+	target.cachedInputTokens +=
+		normalizeInputTokenBreakdown(row).cachedInputTokens;
 	target.reasoningOutputTokens += row.reasoningOutputTokens ?? 0;
 	target.stateCardTokens += row.stateCardTokens ?? 0;
 	target.totalTokens += normalizeTotal(row);

@@ -57,6 +57,7 @@ export const llmRoleRouteSchema = z.object({
 export const llmSettingsSchema = z.object({
 	settingsRevision: z.string().optional(),
 	endpointIdSchemaVersion: z.number().int().positive().optional(),
+	providerEnablementMigrationVersion: z.number().int().positive().optional(),
 	ACTIVE_LLM_PROVIDER: z
 		.string()
 		.default("azure")

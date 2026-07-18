@@ -1,11 +1,7 @@
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
-import {
-	holdBlockedMissionPilotImplementationStart,
-	resolveMissionPilotImplementationStart,
-} from "../../missionPilot/mission-pilot-implementation-todo-projection.service";
-import { associateMissionPilotImplementationRun } from "../../missionPilot/mission-pilot-run-association.service";
+import { projectTaskRunParentStatus } from "../../agentsShare";
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
@@ -100,7 +96,14 @@ async function failPreparedQueueRunBeforeLaunch(input: {
 		}
 		return;
 	}
-	await repo.updateTaskStatus(input.taskId, "failed");
+	const parentTaskProjection = await projectTaskRunParentStatus({
+		taskId: input.taskId,
+		runId: input.runId,
+		runStatus: "failed",
+		executionMode: "implementation",
+	});
+	if (!parentTaskProjection.handled)
+		await repo.updateTaskStatus(input.taskId, parentTaskProjection.status);
 	await completeImplementationQueueEntryForRun(input.runId, "failed");
 }
 
@@ -146,45 +149,9 @@ async function drainImplementationQueue(
 		if (claimed.kind !== "claimed") break;
 		const claimedEntry = claimed.entry;
 		try {
-			const missionPilot =
-				await resolveMissionPilotImplementationStart(claimedEntry);
-			if (missionPilot.kind === "blocked") {
-				await holdBlockedMissionPilotImplementationStart({
-					entry: claimedEntry,
-					code: missionPilot.code,
-					message: missionPilot.message,
-					sessionGuard: missionPilot.sessionGuard,
-				});
-				await repo
-					.createTaskMessage({
-						taskId: claimedEntry.taskId,
-						role: "system",
-						content: `Implementation Queue held this task before run start: ${missionPilot.message}`,
-						messageType: "text",
-						payloadJson: {
-							source: "implementation_queue",
-							status: "mission_pilot_todo_projection_blocked",
-							queueEntryId: claimedEntry.id,
-							code: missionPilot.code,
-						},
-					})
-					.catch(() => null);
-				continue;
-			}
-			const missionPilotReady =
-				missionPilot.kind === "ready" ? missionPilot : null;
 			const prepared = await prepareTaskRunInProcess(claimedEntry.taskId, {
 				executionMode: "implementation",
 				executionModeSource: "implementation_queue",
-				...(missionPilotReady
-					? {
-							implementationPlanConstraint:
-								missionPilotReady.implementationPlanProvenance,
-							runtimeOptionsPatch: {
-								missionPilot: missionPilotReady.envelope,
-							},
-						}
-					: {}),
 			});
 			const run = prepared.run;
 			const activation = await activatePreparedQueueRun({
@@ -196,19 +163,7 @@ async function drainImplementationQueue(
 						leaseVersion: claimedEntry.leaseVersion,
 						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 					}),
-				associate: async () => {
-					if (!missionPilotReady) return;
-					const associated = await associateMissionPilotImplementationRun({
-						taskId: claimedEntry.taskId,
-						runId: run.id,
-						missionPilot: missionPilotReady.envelope,
-					});
-					if (!associated) {
-						throw new Error(
-							"Mission Pilot could not claim the prepared Implementation run.",
-						);
-					}
-				},
+				associate: async () => {},
 				launch: prepared.launch,
 			});
 			if (activation.kind === "lease_conflict") {

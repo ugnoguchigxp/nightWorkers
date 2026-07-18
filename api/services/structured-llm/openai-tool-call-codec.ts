@@ -52,4 +52,3 @@ function parseToolArguments(raw: string): Record<string, unknown> {
 		return { _raw: raw };
 	}
 }
-

@@ -1,0 +1,128 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+	listPlanModeTaskMessages: vi.fn(),
+	getPlanModeTask: vi.fn(),
+	createPlanModeTaskMessage: vi.fn(),
+	getPlanModeWorkspace: vi.fn(),
+	readGeneralSettings: vi.fn(),
+	selectQuestionnaireArtifactRouting: vi.fn(),
+	writePlanModeRoutingForUser: vi.fn(),
+}));
+
+vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
+	listPlanModeTaskMessages: mocks.listPlanModeTaskMessages,
+	getPlanModeTask: mocks.getPlanModeTask,
+	createPlanModeTaskMessage: mocks.createPlanModeTaskMessage,
+}));
+vi.mock("../api/modules/specification/plan-mode-workspace.service", () => ({
+	getPlanModeWorkspace: mocks.getPlanModeWorkspace,
+}));
+vi.mock("../api/services/settings/general-settings", () => ({
+	readGeneralSettings: mocks.readGeneralSettings,
+}));
+vi.mock(
+	"../api/modules/questionnaire/questionnaire-artifact-selection.service",
+	() => ({
+		selectQuestionnaireArtifactRouting:
+			mocks.selectQuestionnaireArtifactRouting,
+	}),
+);
+vi.mock("../api/modules/agentsShare", () => ({
+	writePlanModeRoutingForUser: mocks.writePlanModeRoutingForUser,
+}));
+
+const { recommendQuestionnaireArtifactRouting } = await import(
+	"../api/modules/questionnaire/questionnaire-artifact-routing.service"
+);
+
+const questionnaire = {
+	id: "questionnaire-1",
+	status: "review_ready",
+	answers: [
+		{
+			questionId: "api-boundary",
+			answer: { questionId: "api-boundary", selectedOptionIds: ["required"] },
+		},
+	],
+} as never;
+
+const decisions = [
+	{
+		view: "api_io_contract",
+		decision: "include",
+		reason: "外部API境界をFeature Plan前に標準粒度で確定するため。",
+	},
+	{
+		view: "blueprint",
+		decision: "omit",
+		reason: "画面変更がなくFeature Planへ統合できるため。",
+	},
+];
+
+beforeEach(() => {
+	for (const mock of Object.values(mocks)) mock.mockReset();
+	mocks.listPlanModeTaskMessages.mockResolvedValue([]);
+	mocks.getPlanModeTask.mockResolvedValue({
+		title: "API追加",
+		objective: "外部APIを追加する",
+		acceptanceCriteria: "契約が明確である",
+	});
+	mocks.readGeneralSettings.mockReturnValue({
+		planMode: { capabilities: { api_io_contract: true, blueprint: true } },
+	});
+	mocks.selectQuestionnaireArtifactRouting.mockResolvedValue(decisions);
+	mocks.createPlanModeTaskMessage.mockResolvedValue({ id: "message-1" });
+});
+
+describe("Questionnaire artifact routing", () => {
+	it("persists LLM decisions as standalone routing without Mission Pilot", async () => {
+		mocks.getPlanModeWorkspace
+			.mockResolvedValueOnce({
+				routing: { revision: 0, entries: [] },
+			})
+			.mockResolvedValueOnce({
+				routing: { revision: 0, entries: decisions },
+			});
+
+		await expect(
+			recommendQuestionnaireArtifactRouting("task-1", questionnaire),
+		).resolves.toEqual({ revision: 0, entries: decisions });
+
+		expect(mocks.selectQuestionnaireArtifactRouting).toHaveBeenCalledWith(
+			expect.objectContaining({ taskId: "task-1", questionnaire }),
+		);
+		expect(mocks.writePlanModeRoutingForUser).not.toHaveBeenCalled();
+		expect(mocks.createPlanModeTaskMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				payloadJson: expect.objectContaining({
+					intent: "questionnaire_artifact_routing",
+					viewDecisions: decisions,
+				}),
+			}),
+		);
+	});
+
+	it("updates an existing persisted routing revision", async () => {
+		mocks.getPlanModeWorkspace
+			.mockResolvedValueOnce({
+				routing: { revision: 4, entries: [] },
+			})
+			.mockResolvedValueOnce({
+				routing: { revision: 5, entries: decisions },
+			});
+		mocks.writePlanModeRoutingForUser.mockResolvedValue({ revision: 5 });
+
+		await recommendQuestionnaireArtifactRouting("task-1", questionnaire);
+
+		expect(mocks.writePlanModeRoutingForUser).toHaveBeenCalledWith(
+			expect.objectContaining({
+				taskId: "task-1",
+				request: expect.objectContaining({
+					expectedRevision: 4,
+					changes: decisions,
+				}),
+			}),
+		);
+	});
+});

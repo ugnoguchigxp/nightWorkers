@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getDeepRecordString, toDeepRecord } from "../../../shared/json-record";
-import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../agent-runtime/model-visible-payload";
+import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../model-visible-payload";
 import { analyzeCommand } from "./command-policy";
 import {
 	compressCommandStream,

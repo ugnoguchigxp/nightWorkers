@@ -3,13 +3,13 @@ import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
 import { backfillTraceProvenance } from "./bootstrap-trace-provenance";
 import { client } from "./client";
-import { ensureMissionPilotTables } from "./mission-pilot-schema-bootstrap";
 import {
 	ensureMissionPlannerTables,
 	ensureProjectDetailTables,
 } from "./project-detail-schema-bootstrap";
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
+import { ensureColumn } from "./schema-bootstrap-utils";
 import { ensureTaskGenerationTables } from "./task-generation-schema-bootstrap";
 import { ensureTechStackTables } from "./tech-stack-schema-bootstrap";
 import { ensureVerificationTables } from "./verification-schema-bootstrap";
@@ -21,7 +21,7 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 	const sourceColumn = columns.rows.find(
 		(row) => row.name === "source_blueprint_message_id",
 	);
-	if (!sourceColumn || sourceColumn.notnull !== 1) return;
+	if (sourceColumn?.notnull !== 1) return;
 
 	await client.execute("PRAGMA foreign_keys = OFF");
 	try {
@@ -76,7 +76,10 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 		await client.execute("PRAGMA foreign_keys = ON");
 	}
 }
-export async function ensureNightWorkersSchema() {
+export async function ensureNightWorkersSchema(
+	options: { includeMissionPilot?: boolean } = {},
+) {
+	const includeMissionPilot = options.includeMissionPilot !== false;
 	await client.execute("PRAGMA foreign_keys = ON");
 	await client.execute("PRAGMA busy_timeout = 10000");
 	await client.execute("PRAGMA journal_mode = WAL");
@@ -107,6 +110,28 @@ export async function ensureNightWorkersSchema() {
       result_json text NOT NULL
     )
   `);
+	await client.execute(`
+		CREATE TABLE IF NOT EXISTS task_operator_command_receipts (
+			id text PRIMARY KEY NOT NULL,
+			actor_kind text NOT NULL,
+			actor_id text NOT NULL,
+			task_id text NOT NULL,
+			action_id text NOT NULL,
+			idempotency_key text NOT NULL,
+			arguments_digest text NOT NULL,
+			status text NOT NULL,
+			result_json text,
+			failure_json text,
+			created_at integer NOT NULL,
+			updated_at integer NOT NULL
+		)
+	`);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_operator_command_receipts_actor_key_uidx ON task_operator_command_receipts (actor_kind, actor_id, idempotency_key)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_operator_command_receipts_status_idx ON task_operator_command_receipts (status)",
+	);
 
 	// Drop legacy BBS tables if they exist
 	await client.execute("DROP TABLE IF EXISTS comments");
@@ -119,7 +144,12 @@ export async function ensureNightWorkersSchema() {
 	await ensureProjectDetailTables();
 	await ensureTechStackTables();
 	await ensureMissionPlannerTables();
-	await ensureMissionPilotTables();
+	if (includeMissionPilot) {
+		const { ensureMissionPilotTables } = await import(
+			"./mission-pilot-schema-bootstrap"
+		);
+		await ensureMissionPilotTables();
+	}
 	await ensureReviewModeTables();
 	await ensureVerificationTables();
 
@@ -172,7 +202,12 @@ export async function ensureNightWorkersSchema() {
 	await ensureRuntimeAndUsageTables();
 
 	await ensureTaskWorkflowTables();
-	await backfillTraceProvenance();
+	await ensureColumn(
+		"implementation_queue_entries",
+		"mission_pilot_agent_json",
+		"mission_pilot_agent_json text",
+	);
+	if (includeMissionPilot) await backfillTraceProvenance();
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_settings (
@@ -249,6 +284,11 @@ export async function ensureNightWorkersSchema() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS design_questionnaire_sessions_source_blueprint_idx ON design_questionnaire_sessions (source_blueprint_message_id)",
+	);
+	await ensureColumn(
+		"design_questionnaire_sessions",
+		"mission_pilot_action_key",
+		"mission_pilot_action_key text",
 	);
 
 	await client.execute(`

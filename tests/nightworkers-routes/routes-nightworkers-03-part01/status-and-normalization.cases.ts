@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
+import { saveDesignQuestionnaireAnswers } from "../../../api/modules/questionnaire/questionnaire.service";
 import { representativeMockBlueprint } from "../../fixtures/mock-blueprint";
 import {
 	buildMechanicalQuestionnaireAnswers,
@@ -348,19 +349,12 @@ describe("NightWorkers task routes status and normalization", () => {
 				process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify(nextFixture);
 				const answers = buildMechanicalQuestionnaireAnswers(session);
 				expect(answers.length).toBeGreaterThan(0);
-				const res = await app.request(
-					`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
-					{
-						method: "POST",
-						headers: {
-							...sameOriginHeaders,
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({ answers }),
-					},
+				session = await saveDesignQuestionnaireAnswers(
+					task.id,
+					session.id,
+					answers,
+					{ completionPolicy: "assess_follow_up" },
 				);
-				expect(res.status).toBe(200);
-				session = await res.json();
 				return session;
 			}
 

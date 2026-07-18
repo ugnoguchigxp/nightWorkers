@@ -105,9 +105,12 @@ function applyToolEventProgress(
 			continue;
 		}
 		if (toolEvent.toolName === "completion_check") {
-			markPassedIfNotTerminal(firstStep);
-			markPassedIfNotTerminal(unitStep);
-			if (evidenceStep) evidenceStep.status = toolEventStatus(toolEvent);
+			const status = toolEventStatus(toolEvent);
+			if (status === "passed") {
+				markPassedIfNotTerminal(firstStep);
+				markPassedIfNotTerminal(unitStep);
+			}
+			if (evidenceStep) evidenceStep.status = status;
 		}
 	}
 	if (

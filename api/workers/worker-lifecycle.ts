@@ -30,5 +30,12 @@ export function closeWorkerResources() {
 }
 
 export function sendWorkerMessage(message: Record<string, unknown>) {
-	process.send?.(message);
+	const send = process.send;
+	if (!process.connected || !send) return Promise.resolve();
+	return new Promise<void>((resolve, reject) => {
+		send.call(process, message, (error) => {
+			if (error) reject(error);
+			else resolve();
+		});
+	});
 }

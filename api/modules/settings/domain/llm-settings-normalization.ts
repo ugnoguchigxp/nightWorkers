@@ -447,7 +447,7 @@ function isConfiguredModelTarget(
 	const endpoint = providerEndpoints.find(
 		(item) => item.id === target.providerEndpointId,
 	);
-	return Boolean(endpoint?.models.includes(target.model));
+	return Boolean(endpoint?.enabled && endpoint.models.includes(target.model));
 }
 
 function findDefaultEndpointForProvider(
@@ -456,10 +456,11 @@ function findDefaultEndpointForProvider(
 ): LlmProviderEndpoint | undefined {
 	const defaultId =
 		provider === "azure" ? "azure-default" : `${provider}-default`;
+	const enabledEndpoints = endpoints.filter((endpoint) => endpoint.enabled);
 	return (
-		endpoints.find((endpoint) => endpoint.id === defaultId) ||
-		endpoints.find((endpoint) => endpoint.kind === provider) ||
-		endpoints[0]
+		enabledEndpoints.find((endpoint) => endpoint.id === defaultId) ||
+		enabledEndpoints.find((endpoint) => endpoint.kind === provider) ||
+		enabledEndpoints[0]
 	);
 }
 
@@ -543,6 +544,10 @@ function validateRouteTarget(input: {
 	};
 	if (!endpoint) {
 		input.issues.push({ ...baseIssue, reason: "missing_endpoint" });
+		return;
+	}
+	if (!endpoint.enabled) {
+		input.issues.push({ ...baseIssue, reason: "disabled_endpoint" });
 		return;
 	}
 	if (!endpoint.models.includes(input.target.model)) {

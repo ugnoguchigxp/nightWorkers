@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { NativeApiSessionStore } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-session-store";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { NativeApiSessionStore } from "../api/services/agent-runtime/native-api-runner/native-api-session-store";
 
 describe("NativeApiSessionStore", () => {
 	it("persists native API turns and provider-native tool calls", async () => {

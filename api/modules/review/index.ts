@@ -10,6 +10,7 @@ export * from "./review-mode.service";
 export * from "./review-mode.test-evidence-agent";
 export * from "./review-mode.test-evidence-agent.schema";
 export * from "./review-mode.test-evidence-precheck";
+export * from "./review-recommendation.service";
 export * from "./review-run.service";
 export * from "./review-run-finalize.service";
 export * from "./review-targets.service";

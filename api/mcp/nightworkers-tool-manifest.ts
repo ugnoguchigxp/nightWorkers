@@ -5,6 +5,7 @@ export * from "./nightworkers-tool-schemas";
 import {
 	nightWorkersCheckBoundaryInputSchema,
 	nightWorkersClassifyGoalInputSchema,
+	nightWorkersCollectTestInventoryInputSchema,
 	nightWorkersCompileModuleContextInputSchema,
 	nightWorkersCompletionCheckInputSchema,
 	nightWorkersGetModuleOntologyInputSchema,
@@ -13,6 +14,7 @@ import {
 	nightWorkersListOntologyModulesInputSchema,
 	nightWorkersListRecentSpecificationsInputSchema,
 	nightWorkersReadCurrentSpecificationInputSchema,
+	nightWorkersRecordTestConditionMappingInputSchema,
 	nightWorkersRunCheckInputSchema,
 	nightWorkersTodoListInputSchema,
 } from "./nightworkers-tool-schemas";
@@ -77,6 +79,30 @@ export const nightWorkersCodexToolManifest = {
 		},
 		approvalMode: "approve",
 		inputSchema: nightWorkersCompletionCheckInputSchema,
+	},
+	collect_test_inventory: {
+		title: "Collect Test Inventory",
+		description:
+			"Discover test definitions in the registered repository. Active discovery and filename candidates are reported separately; this does not execute tests or update Todo state.",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersCollectTestInventoryInputSchema,
+	},
+	record_test_condition_mapping: {
+		title: "Record Test Condition Mapping",
+		description:
+			"Persist an explicit structural test-case to acceptance-condition mapping for a collected inventory. The Coding Agent supplies the rationale when it is an assessment.",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersRecordTestConditionMappingInputSchema,
 	},
 	import_project: {
 		title: "Import Project",

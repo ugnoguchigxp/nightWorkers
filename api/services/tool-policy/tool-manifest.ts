@@ -132,6 +132,19 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
+	collect_test_inventory: {
+		name: "collect_test_inventory",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+		cwdArg: "cwd",
+	},
+	record_test_condition_mapping: {
+		name: "record_test_condition_mapping",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
 	project_exploration_catalog: {
 		name: "project_exploration_catalog",
 		mutatesWorkspace: false,

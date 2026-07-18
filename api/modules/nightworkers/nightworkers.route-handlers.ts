@@ -4,6 +4,12 @@ import {
 	getOntologyRunDebugReport,
 	type getOntologyRunDebugReportRoute,
 } from "../ontology";
+import {
+	executeTaskOperatorCommand,
+	humanTaskOperatorCommandContext,
+	humanTaskOperatorQueryContext,
+	readTaskOperatorProjection,
+} from "../taskOperator";
 import { withOpenApiRouteError } from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
@@ -50,7 +56,26 @@ export const startTaskRunHandler = withOpenApiRouteError(
 	startTaskRunRoute,
 	async (c) => {
 		const id = c.req.param("id");
-		const run = await service.startTaskRun(id);
+		const projection = await readTaskOperatorProjection(
+			id,
+			humanTaskOperatorQueryContext(c.get("user")?.userId),
+		);
+		const result = await executeTaskOperatorCommand({
+			taskId: id,
+			actionId: "run.implementation.start",
+			expectedTaskRevision: projection.task.revision,
+			arguments: {
+				request:
+					projection.task.objective?.text ??
+					`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
+			},
+			context: humanTaskOperatorCommandContext({
+				userId: c.get("user")?.userId,
+				idempotencyKey: c.req.header("Idempotency-Key"),
+			}),
+		});
+		const run = await service.getTaskRun(result.runId);
+		if (!run) return routeNotFound(c, "Run not found after start");
 		return c.json(run, 201);
 	},
 );
@@ -77,7 +102,22 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 	stopTaskRunRoute,
 	async (c) => {
 		const id = c.req.param("id");
-		const run = await service.stopTaskRun(id);
+		const currentRun = await service.getTaskRun(id);
+		if (!currentRun) return routeNotFound(c, "Run not found");
+		const projection = await readTaskOperatorProjection(
+			currentRun.taskId,
+			humanTaskOperatorQueryContext(c.get("user")?.userId),
+		);
+		const run = await executeTaskOperatorCommand({
+			taskId: currentRun.taskId,
+			actionId: "run.stop",
+			expectedTaskRevision: projection.task.revision,
+			arguments: { runId: id },
+			context: humanTaskOperatorCommandContext({
+				userId: c.get("user")?.userId,
+				idempotencyKey: c.req.header("Idempotency-Key"),
+			}),
+		});
 		return c.json(run, 200);
 	},
 );
@@ -86,12 +126,29 @@ export const resumeTaskRunTodoHandler = withOpenApiRouteError(
 	resumeTaskRunTodoRoute,
 	async (c) => {
 		const input = c.req.valid("json");
-		const run = await service.resumeTaskRunTodo({
-			runId: c.req.param("id"),
-			todoId: c.req.param("todoId"),
-			expectedTodoRevision: input.expectedTodoRevision,
-			userContext: input.userContext,
+		const currentRun = await service.getTaskRun(c.req.param("id"));
+		if (!currentRun) return routeNotFound(c, "Run not found");
+		const projection = await readTaskOperatorProjection(
+			currentRun.taskId,
+			humanTaskOperatorQueryContext(c.get("user")?.userId),
+		);
+		const result = await executeTaskOperatorCommand({
+			taskId: currentRun.taskId,
+			actionId: "run.todo.resume",
+			expectedTaskRevision: projection.task.revision,
+			arguments: {
+				runId: c.req.param("id"),
+				todoId: c.req.param("todoId"),
+				expectedTodoRevision: input.expectedTodoRevision,
+				userContext: input.userContext,
+			},
+			context: humanTaskOperatorCommandContext({
+				userId: c.get("user")?.userId,
+				idempotencyKey: c.req.header("Idempotency-Key"),
+			}),
 		});
+		const run = await service.getTaskRun(result.runId);
+		if (!run) return routeNotFound(c, "Run not found after resume");
 		return c.json(run, 200);
 	},
 );

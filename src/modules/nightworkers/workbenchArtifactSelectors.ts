@@ -162,6 +162,7 @@ export function buildPlanModeWorkspaceArtifactRef(
 	message: TaskMessage,
 	initialTab: "questionnaire" | "status" = "questionnaire",
 ): WorkbenchArtifactRef {
+	const messageIntent = String(taskMessageMetadata(message).intent || "");
 	return {
 		id: `plan-mode-workspace-${message.taskId}`,
 		taskId: message.taskId,
@@ -172,7 +173,10 @@ export function buildPlanModeWorkspaceArtifactRef(
 		source: { type: "task_message", messageId: message.id },
 		createdAt: String(message.createdAt),
 		metadata: {
-			planModeWorkspaceSource: "design_questionnaire_ready",
+			planModeWorkspaceSource:
+				messageIntent === "design_questionnaire_starting"
+					? "design_questionnaire_starting"
+					: "design_questionnaire_ready",
 			questionnaireSessionId:
 				taskMessageMetadata(message).questionnaireSessionId,
 			initialTab,
@@ -306,6 +310,15 @@ export function buildWorkbenchArtifactRefs(input: {
 			message.messageType === "markdown_document" &&
 			String(taskMessageMetadata(message).intent) === "feature_plan",
 	);
+	const questionnaireWorkspaceMessages = (input.messages || []).filter(
+		(message) => {
+			const intent = String(taskMessageMetadata(message).intent || "");
+			return (
+				intent === "design_questionnaire_starting" ||
+				intent === "design_questionnaire_ready"
+			);
+		},
+	);
 	const dedicatedViewMessages = (input.messages || []).filter(
 		(message) =>
 			isPlanModeDedicatedViewMessage(message) &&
@@ -318,9 +331,11 @@ export function buildWorkbenchArtifactRefs(input: {
 		dataModelMessages.length > 0 ||
 		dedicatedViewMessages.length > 0 ||
 		decisionReviewMessages.length > 0 ||
-		featurePlanMessages.length > 0
+		featurePlanMessages.length > 0 ||
+		questionnaireWorkspaceMessages.length > 0
 	) {
 		const latestWorkspaceMessage = latestTaskMessageByCreatedAt([
+			...questionnaireWorkspaceMessages,
 			...blueprintMessages,
 			...dataModelMessages,
 			...dedicatedViewMessages,

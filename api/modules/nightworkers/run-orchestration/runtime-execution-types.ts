@@ -1,7 +1,9 @@
 import type { PromptImageAttachment } from "../../../../shared/prompt-image";
-import type { resolveRuntimeLaneDefinition } from "../../../services/agent-runtime/registry";
-import type { RuntimeLaneResolution } from "../../../services/agent-runtime/runtime-lane";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
+import type {
+	RuntimeLaneResolution,
+	resolveRuntimeLaneDefinition,
+} from "../../codingAgent";
 import type * as repo from "../nightworkers.repository";
 
 type RuntimeLaneDefinition = ReturnType<typeof resolveRuntimeLaneDefinition>;

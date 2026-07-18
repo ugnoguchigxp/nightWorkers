@@ -24,4 +24,31 @@ describe("application settings store", () => {
 		expect(revisions[0]).toBe(revisions[1]);
 		expect(Number(revisions[0])).toBeGreaterThanOrEqual(2);
 	});
+
+	it("consumes the worker snapshot without leaving secrets in child environments", () => {
+		const output = execFileSync(
+			"bun",
+			[
+				"-e",
+				'import { consumeApplicationSettingsWorkerSnapshot, readApplicationSettingSecrets } from "./api/services/settings/application-settings-store.ts"; consumeApplicationSettingsWorkerSnapshot(); console.log(JSON.stringify({ inheritedSnapshot: process.env.NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT ?? null, secret: readApplicationSettingSecrets("llm") }));',
+			],
+			{
+				cwd: process.cwd(),
+				encoding: "utf8",
+				env: {
+					...process.env,
+					NIGHTWORKERS_EXECUTION_ROLE: "worker",
+					NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT: JSON.stringify({
+						public: {},
+						secrets: { llm: { apiKey: "worker-secret" } },
+					}),
+				},
+			},
+		);
+
+		expect(JSON.parse(output)).toEqual({
+			inheritedSnapshot: null,
+			secret: { apiKey: "worker-secret" },
+		});
+	});
 });

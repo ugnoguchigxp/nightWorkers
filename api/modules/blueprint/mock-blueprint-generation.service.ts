@@ -25,6 +25,7 @@ import type {
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
 import type { StructuredLlmPromptBudgetMetadata } from "../../services/structured-llm/types";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import type { PlanArtifactInputProjection } from "../specification/plan-artifact-input.types";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -94,7 +95,9 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role?: StructuredLlmRole;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 	usageTrace?: TraceProvenance;
+	signal?: AbortSignal;
 	projectionPrompt?: string | null;
 	projection?: PlanArtifactInputProjection;
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
@@ -142,10 +145,12 @@ export async function generatePlanModeMockBlueprintDraft(input: {
 		taskId: input.taskId,
 		runId: null,
 		role: input.role ?? ("plan" as const),
+		executionPolicy: input.executionPolicy,
 		usageTrace: input.usageTrace,
 		routeOverride: input.routeOverride || null,
 		promptBudgetMetadata,
 		timeoutMs: PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
+		signal: input.signal,
 	};
 	const initialResult = await callStructuredLlmResult(
 		systemPrompt,

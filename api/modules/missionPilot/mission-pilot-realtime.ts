@@ -1,9 +1,8 @@
-import type { MissionPilotControlSummary } from "../../../shared/schemas/mission-pilot.schema";
-import type { MissionPilotPlanProgress } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
-import type { taskMessages } from "../../db/schema";
+import type {
+	MissionPilotControlSummary,
+	MissionPilotPlanProgress,
+} from "../../../shared/modules/missionPilot";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
-
-type TaskMessage = typeof taskMessages.$inferSelect;
 
 export function publishMissionPilotUpdated(
 	taskId: string,
@@ -12,13 +11,6 @@ export function publishMissionPilotUpdated(
 	nightWorkersRealtimeBroker.publish(taskId, {
 		type: "mission_pilot.updated",
 		payload: { taskId, missionPilot },
-	});
-}
-
-export function publishMissionPilotInitialPrompt(message: TaskMessage) {
-	nightWorkersRealtimeBroker.publish(message.taskId, {
-		type: "task_message_created",
-		payload: { message },
 	});
 }
 

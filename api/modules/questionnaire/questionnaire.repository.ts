@@ -37,6 +37,7 @@ export async function createDesignQuestionnaireSession(data: {
 	repositoryId: string;
 	sourceBlueprintMessageId?: string | null;
 	status?: string;
+	missionPilotActionKey?: string | null;
 }) {
 	const [session] = await db
 		.insert(designQuestionnaireSessions)
@@ -51,10 +52,15 @@ export async function createDesignQuestionnaireSession(data: {
 export async function updateDesignQuestionnaireSessionStatus(
 	id: string,
 	status: string,
+	missionPilotActionKey?: string | null,
 ) {
 	const [session] = await db
 		.update(designQuestionnaireSessions)
-		.set({ status, updatedAt: new Date() })
+		.set({
+			status,
+			updatedAt: new Date(),
+			...(missionPilotActionKey ? { missionPilotActionKey } : {}),
+		})
 		.where(eq(designQuestionnaireSessions.id, id))
 		.returning();
 	return session;

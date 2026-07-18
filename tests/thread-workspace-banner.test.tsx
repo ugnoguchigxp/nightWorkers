@@ -17,6 +17,27 @@ const baseSessionView: WorkbenchSessionView = {
 };
 
 describe("WorkbenchStateBanner review state", () => {
+	it("labels a standalone Coding Agent Plan run as Planning", () => {
+		const markup = renderToStaticMarkup(
+			<WorkbenchStateBanner
+				sessionView={{
+					...baseSessionView,
+					phase: "Planning",
+					progress: {
+						...baseSessionView.progress,
+						phase: "Planning",
+					},
+				}}
+				model="test-model"
+				onRemoveQueueEntry={vi.fn()}
+				onRequeueQueueEntry={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain("Planning");
+		expect(markup).not.toContain(">Running<");
+	});
+
 	it("does not render the review-needed banner or its action buttons", () => {
 		const markup = renderToStaticMarkup(
 			<WorkbenchStateBanner

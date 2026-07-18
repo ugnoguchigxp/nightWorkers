@@ -1,27 +1,20 @@
-import { z } from "zod";
 import { planModeRegenerationTargetSchema } from "../../../shared/schemas/plan-mode-artifact.schema";
-import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { AppError } from "../../lib/errors";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../services/settings/general-settings";
-import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
-import {
-	createStructuredOutputContract,
-	type SupervisorLlmDebugEvent,
-} from "../../services/structured-llm";
+import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import type { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
-import type { StructuredLlmRole } from "../../services/structured-llm/settings";
-import { createDesignQuestionnaire } from "../questionnaire/questionnaire.service";
-import { hasImplementationPlanEvidence } from "./nightworkers.planning-helpers.service";
+import * as codingAgent from "../codingAgent";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
 import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing";
 
 export type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
 export {
+	appendAssistantTaskMessage,
 	appendTaskMessage,
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,
@@ -30,12 +23,10 @@ export {
 
 import type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
 
-export {
-	ensureDesignQuestionnaireReadyMessage,
-	prepareMissionPilotPlanModeIntake,
-} from "./nightworkers.workbench-plan-intake.service";
+export { ensureDesignQuestionnaireReadyMessage } from "./nightworkers.workbench-plan-intake.service";
 
-import { ensureDesignQuestionnaireReadyMessage } from "./nightworkers.workbench-plan-intake.service";
+import { startWorkbenchPlanModeIntake } from "./nightworkers.workbench-plan-intake.service";
+
 import { workbenchRunStartedMessage } from "./nightworkers-workbench-intake-support";
 
 function renderArtifactContextualPrompt(
@@ -102,207 +93,21 @@ export function isPlanModeArtifactRegenerationContext(
 		planModeRegenerationTargetSchema.safeParse(target).success
 	);
 }
-const workbenchPlanModeGateSchema = z
-	.object({
-		shouldStartPlanMode: z.boolean(),
-		action: z.enum(["plan_mode", "general_answer", "implementation", "review"]),
-		reason: z.string().min(1),
-		dedicatedViews: z.array(
-			z
-				.object({
-					view: z.enum([
-						"questionnaire",
-						"user_flow",
-						"blueprint",
-						"data_model",
-						"api_io_contract",
-						"activity_flow",
-						"sequence_flow",
-						"zod_schema_design",
-					]),
-					decision: z.enum(["include", "omit"]),
-					reason: z.string().min(1),
-				})
-				.strict(),
-		),
-		specificationLenses: z.array(
-			z.enum([
-				"target_users_or_actors",
-				"functional_requirements",
-				"business_rules",
-				"input_output",
-				"interface_contract",
-				"data_requirements",
-				"state_behavior",
-				"workflow_behavior",
-				"error_behavior",
-				"permission_boundary",
-				"compatibility",
-				"observability",
-			]),
-		),
-	})
-	.strict()
-	.superRefine((value, context) => {
-		if (value.shouldStartPlanMode === (value.action === "plan_mode")) return;
-		context.addIssue({
-			code: "custom",
-			path: ["action"],
-			message:
-				"shouldStartPlanMode and action must describe the same decision.",
-		});
-	});
-export type WorkbenchPlanModeGate = z.infer<
-	typeof workbenchPlanModeGateSchema
-> & {
-	action: "plan_mode" | "general_answer" | "implementation" | "review";
-};
-export async function decideWorkbenchPlanModeGate(input: {
-	projectRoot: string;
-	prompt: string;
-	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
-	runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
-	routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget> | null;
-	emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
-	taskId: string;
-	role?: StructuredLlmRole;
-	usageTrace?: TraceProvenance;
-}): Promise<WorkbenchPlanModeGate> {
-	const generated = await callStructuredOutputWithRepair({
-		systemPrompt: buildWorkbenchPlanModeGatePrompt(input.projectRoot),
-		userPrompt: buildWorkbenchPlanModeGateUserPrompt(input),
-		options: {
-			contract: createStructuredOutputContract({
-				name: "workbench_plan_mode_gate",
-				runtimeSchema: workbenchPlanModeGateSchema,
-			}),
-			role: input.role ?? "plan",
-			usageTrace: input.usageTrace,
-			routeOverride: input.routeOverride,
-			tolerateSchemaFailure: false,
-			emitEvent: input.emitEvent,
-			workingDirectory: input.projectRoot,
-			taskId: input.taskId,
-			runId: null,
-		},
-	});
-	return generated.value;
+export type WorkbenchPlanModeGate = codingAgent.CodingAgentPlanModeGate;
+export function decideWorkbenchPlanModeGate(
+	input: Parameters<typeof codingAgent.decideCodingAgentPlanModeGate>[0],
+) {
+	return codingAgent.decideCodingAgentPlanModeGate(input);
 }
-
 export function buildWorkbenchPlanModeGatePrompt(projectRoot: string) {
-	return [
-		"Workbench intake で次の処理を1つだけ判定してください。",
-		"現在のユーザー文だけでなく、提示された Task context / Recent conversation / Latest non-general run を判断材料にしてください。",
-		"jobType、作業種別、難易度、実装規模、レビュー種別、調査種別は分類しないでください。",
-		"shouldStartPlanMode は、ユーザーが計画、実装計画、設計方針、仕様策定、質問票化、Blueprint など、実装前の計画作成を依頼している、または Task context 上で Plan Mode で確認する論点が明示されていて現在の依頼がその開始に該当する場合に true にしてください。",
-		'質問、確認、説明依頼、状態確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
-		'ただし、直前の可否回答や状態確認に続いてユーザーが作業の続行、再開、実行を求めている場合は状態確認ではありません。Latest non-general run があればその executionMode を優先し、なければ action="implementation" にしてください。',
-		'修正、実装、設定変更、依存更新、リファクタは shouldStartPlanMode=false かつ action="implementation" にしてください。',
-		'コードレビュー、差分レビュー、品質レビューは shouldStartPlanMode=false かつ action="review" にしてください。',
-		'ログ確認、原因調査、実行時状態の確認は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
-		'テスト実行や検証依頼は shouldStartPlanMode=false かつ action="review" にしてください。',
-		"完了済みの Plan Mode artifact は証跡として扱い、後続の質問や変更依頼で再編集対象にしないでください。",
-		"既に implementation_plan / feature_plan があり、現在の依頼が実装・修正・実行キュー投入なら Plan Mode を再起動しないでください。",
-		"Feature Plan を Plan Mode の主 artifact とし、Dedicated View は Feature Plan の文章だけでは重要な判断を安全に確定できない場合に限って追加してください。利用可能だから、関連語があるから、実装対象に UI や API が含まれるから、という理由だけで include しないでください。Plan View は Plan Mode の表示メニュー用です。UI 変更がない場合は blueprint を omit、DB/永続化 schema 変更がない場合は data_model を omit してください。単一エンティティ、既存 actor への単純な外部キー、一般的な CRUD 項目だけで表現でき、関係・制約・所有権・ライフサイクル・移行に新規または競合する設計判断がない場合も data_model を omit し、必要事項を Feature Plan に短く記載してください。API 契約が主題の場合は api_io_contract を include し、OpenAPI 互換 API contract に寄せてください。",
-		"単純な CRUD が既存の API パターンに従い、endpoint、request / response、error、permission の契約に新規または競合する設計判断がない場合は api_io_contract を omit し、必要事項を Feature Plan に短く記載してください。schema、API、DB、UI の境界を確認するという一般的な指示だけでは include の根拠にしないでください。API 経由で観測・変更できる state と HTTP request / response / error validation は api_io_contract に統合し、zod_schema_design を重複 include しないでください。",
-		"zod_schema_design は LLM JSON、MCP / worker tool input、provider adapter、local config など OpenAPI endpoint に属さない validation contract が主題の場合だけ include してください。",
-		"user_flow / activity_flow / sequence_flow は Mermaid 図として価値がある場合だけ include し、文章説明で足りる場合は omit して spec に任せてください。単一画面内で完結する一般的な CRUD 操作は user_flow を omit してください。複数画面・複数 actor・重要な分岐があり、図にすることで実装判断が明確になる場合に限って include してください。sequence_flow は非同期処理、順序保証、競合、再試行、補償・巻き戻し、外部システム連携など、時系列上の複雑さが要件または実行証跡で確認できる場合に限って include してください。UI、API、DB の複数層を通るというだけでは include しないでください。操作フローを確認するという一般的な指示だけでは include の根拠にしないでください。",
-		'判断に迷う場合は shouldStartPlanMode=false かつ action="general_answer" にしてください。',
-		"JSON のみを返してください。",
-		"",
-		`プロジェクトルート: ${projectRoot}`,
-		"",
-		"[Output Schema]",
-		'{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "general_answer" | "implementation" | "review", "reason": "short reason", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "short reason" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }',
-	].join("\n");
+	return codingAgent.buildCodingAgentPlanModeGatePrompt(projectRoot);
 }
-
-export function buildWorkbenchPlanModeGateUserPrompt(input: {
-	prompt: string;
-	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
-	runs: Awaited<ReturnType<typeof repo.listTaskRunsForTask>>;
-}) {
-	const recentMessages = input.messages.slice(-6).map((message) => {
-		const metadata = toRecord(message.metadataJson);
-		const intent =
-			typeof metadata?.intent === "string" ? ` intent=${metadata.intent}` : "";
-		return `- ${message.role}${intent}: ${compactForGatePrompt(message.content, 360)}`;
-	});
-	const latestNonGeneralRun = input.runs.find((run) => {
-		const executionMode = readRunExecutionMode(run.contextSnapshot);
-		return executionMode && executionMode !== "general_answer";
-	});
-	const latestRun = input.runs[0];
-	const latestRunExecutionMode = latestRun
-		? readRunExecutionMode(latestRun.contextSnapshot)
-		: null;
-	const latestNonGeneralRunExecutionMode = latestNonGeneralRun
-		? readRunExecutionMode(latestNonGeneralRun.contextSnapshot)
-		: null;
-	const latestRunLines = latestRun
-		? [
-				`Latest run: status=${latestRun.status}`,
-				latestRunExecutionMode
-					? `Latest run executionMode=${latestRunExecutionMode}`
-					: null,
-				latestRun.summary
-					? `Latest run summary=${compactForGatePrompt(latestRun.summary, 180)}`
-					: null,
-			].filter((line): line is string => Boolean(line))
-		: ["Latest run: none"];
-	const latestNonGeneralRunLines = latestNonGeneralRun
-		? [
-				`Latest non-general run: status=${latestNonGeneralRun.status}`,
-				`Latest non-general run executionMode=${latestNonGeneralRunExecutionMode}`,
-				latestNonGeneralRun.summary
-					? `Latest non-general run summary=${compactForGatePrompt(
-							latestNonGeneralRun.summary,
-							180,
-						)}`
-					: null,
-			].filter((line): line is string => Boolean(line))
-		: ["Latest non-general run: none"];
-
-	return [
-		"[Task Context]",
-		`Task status: ${input.task.status}`,
-		`Task title: ${compactForGatePrompt(input.task.title, 180)}`,
-		input.task.objective
-			? `Task objective: ${compactForGatePrompt(input.task.objective, 240)}`
-			: null,
-		...latestRunLines,
-		...latestNonGeneralRunLines,
-		"",
-		"[Recent Conversation]",
-		recentMessages.length ? recentMessages.join("\n") : "- none",
-		"",
-		"[Current User Message]",
-		input.prompt,
-	]
-		.filter((line): line is string => line !== null)
-		.join("\n");
-}
-
-function readRunExecutionMode(value: unknown) {
-	const context = toRecord(value);
-	const executionMode = context?.executionMode;
-	if (
-		executionMode === "planning" ||
-		executionMode === "implementation" ||
-		executionMode === "review" ||
-		executionMode === "general_answer"
-	) {
-		return executionMode;
-	}
-	return null;
-}
-
-function compactForGatePrompt(value: string, maxLength: number) {
-	const compacted = value.replace(/\s+/g, " ").trim();
-	if (compacted.length <= maxLength) return compacted;
-	return `${compacted.slice(0, maxLength - 1)}…`;
+export function buildWorkbenchPlanModeGateUserPrompt(
+	input: Parameters<
+		typeof codingAgent.buildCodingAgentPlanModeGateUserPrompt
+	>[0],
+) {
+	return codingAgent.buildCodingAgentPlanModeGateUserPrompt(input);
 }
 
 export function toRecord(value: unknown) {
@@ -339,84 +144,75 @@ export async function handleWorkbenchIntakeMessage(
 
 	try {
 		const messages = await repo.listTaskMessages(taskId);
-		const planModeGate = await decideWorkbenchPlanModeGate({
-			projectRoot,
-			prompt: llmPrompt,
-			task,
-			messages,
-			runs: await repo.listTaskRunsForTask(taskId),
-			routeOverride: options.llmRouteOverride || null,
-			emitEvent: emitWorkbenchLlmDebugEvent,
-			taskId,
-		});
-		const effectivePlanModeGate = shouldPreferPlanModeForProjectEvaluationTask(
-			task,
-			messages,
-		)
-			? {
-					...planModeGate,
-					shouldStartPlanMode: true,
-					action: "plan_mode" as const,
-					reason:
-						"Project Evaluation improvement tasks start in Needs Plan until an implementation plan exists.",
-					originalGate: planModeGate,
-				}
-			: planModeGate;
+		const planModeGateResult =
+			(await codingAgent.loadPersistedCodingAgentPlanModeGateResult({
+				taskId,
+				repositoryId: task.repositoryId,
+				prompt: llmPrompt,
+			})) ??
+			(await decideWorkbenchPlanModeGate({
+				projectRoot,
+				prompt: llmPrompt,
+				task,
+				messages,
+				runs: await repo.listTaskRunsForTask(taskId),
+				routeOverride: options.llmRouteOverride || null,
+				emitEvent: emitWorkbenchLlmDebugEvent,
+				taskId,
+				repositoryId: task.repositoryId,
+			}));
+		const { runtimeThreadHandoff, ...planModeGate } = planModeGateResult;
 		const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(
 			readGeneralSettings(),
 		);
-		if (
-			effectivePlanModeGate.shouldStartPlanMode ||
-			effectivePlanModeGate.action === "plan_mode"
-		) {
-			if (!planModeSettingsSnapshot.capabilities.questionnaire) {
-				const runnable = await repo.updateTask(taskId, {
-					title,
-					objective: task.objective || prompt,
-					acceptanceCriteria: task.acceptanceCriteria || prompt,
-					status: "ready",
-				});
-				await repo.createTaskMessage({
-					taskId,
-					role: "system",
-					content:
-						"Planning run started from Workbench intake because Questionnaire is disabled.",
-					messageType: "text",
-					payloadJson: {
-						intent: "run_started",
-						source: "workbench",
-						executionMode: "planning",
-						planModeGate: effectivePlanModeGate,
-						planModeSettingsSnapshot,
-					},
-				});
-				const run = await startTaskRun(taskId, {
-					executionModeSource: "workbench_intake",
-					routeOverride: options.llmRouteOverride || null,
-				});
-				return {
-					task: (await repo.getTask(taskId)) || runnable,
-					run,
-					messages: await repo.listTaskMessages(taskId),
-				};
-			}
-			const questionnaireSession = await createDesignQuestionnaire(
+		const shouldStartPlanMode =
+			planModeGate.shouldStartPlanMode || planModeGate.action === "plan_mode";
+		const shouldStartCodingAgentRun =
+			shouldStartPlanMode || (options.intent || "intake") === "intake";
+		if (task.status === "queued" && shouldStartCodingAgentRun) {
+			await repo.createTaskMessage({
 				taskId,
-				null,
-				llmPrompt,
-				{
-					routeOverride: options.llmRouteOverride || null,
+				role: "system",
+				content: shouldStartPlanMode
+					? "このTaskはQueue投入済みのため、新しいPlan Mode Runは開始していません。設計を変更する場合はQueueから戻してからCoding Agentへ依頼してください。"
+					: "このTaskはQueue投入済みのため、新しいCoding Agent Runは開始していません。実行内容を変更する場合はQueueから戻してから依頼してください。",
+				messageType: "text",
+				payloadJson: {
+					intent: shouldStartPlanMode
+						? "plan_mode_run_blocked"
+						: "coding_agent_run_blocked",
+					source: "workbench",
+					reason: "task_queued",
+					planModeGate,
 				},
-			);
-			await ensureDesignQuestionnaireReadyMessage({
-				taskId,
-				questionnaireSession,
-				planModeGate: effectivePlanModeGate,
-				planModeSettingsSnapshot,
-				source: "workbench",
 			});
+			return {
+				task,
+				run: null,
+				messages: await repo.listTaskMessages(taskId),
+			};
+		}
+		if (shouldStartPlanMode) {
+			const runnable = await repo.updateTask(taskId, {
+				title,
+				objective: task.objective || prompt,
+				acceptanceCriteria: task.acceptanceCriteria || prompt,
+				status: "ready",
+			});
+			await startWorkbenchPlanModeIntake({
+				taskId,
+				prompt: llmPrompt,
+				planModeGate,
+				planModeSettingsSnapshot,
+				routeOverride: options.llmRouteOverride || null,
+			});
+			return {
+				task: (await repo.getTask(taskId)) || runnable,
+				run: null,
+				messages: await repo.listTaskMessages(taskId),
+			};
 		} else if ((options.intent || "intake") === "intake") {
-			const executionMode = effectivePlanModeGate.action;
+			const executionMode = "implementation";
 			const runnable = await repo.updateTask(taskId, {
 				title,
 				objective: task.objective || prompt,
@@ -432,12 +228,13 @@ export async function handleWorkbenchIntakeMessage(
 					intent: "run_started",
 					source: "workbench",
 					executionMode,
-					planModeGate: effectivePlanModeGate,
+					planModeGate,
 					planModeSettingsSnapshot,
 				},
 			});
 			const run = await startTaskRun(taskId, {
 				executionModeSource: "workbench_intake",
+				intakeRuntimeThreadHandoff: runtimeThreadHandoff,
 				routeOverride: options.llmRouteOverride || null,
 			});
 			return {
@@ -489,16 +286,6 @@ export async function handleWorkbenchIntakeMessage(
 			{ task: updated },
 		);
 	}
-}
-
-function shouldPreferPlanModeForProjectEvaluationTask(
-	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>,
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
-) {
-	return (
-		task.createdBy === "project-evaluation" &&
-		!hasImplementationPlanEvidence(messages)
-	);
 }
 
 export function createWorkbenchLlmDebugEventEmitter(taskId: string) {

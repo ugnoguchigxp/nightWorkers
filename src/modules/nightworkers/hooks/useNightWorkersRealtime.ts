@@ -2,14 +2,16 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
 import { toDeepRecord } from "../../../../shared/json-record";
-import type { MissionPilotPlanProgress } from "../../../../shared/schemas/mission-pilot-plan-progress.schema";
+import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
+import { isCodingAgentChatTrace } from "../../codingAgent";
 import {
 	mergeTaskPreservingMissionPilot,
 	missionPilotPlanProgressQueryKey,
 } from "../../missionPilot";
 import { planModeWorkspaceQueryKey } from "../../specification";
 import { dedupeAndSortActivityEvents } from "../activityTranscript";
+import { shouldCompletePendingChat } from "../realtimeChatCompletion";
 import {
 	dedupeAndSortRunEvents,
 	getRealtimeMessageDedupeKey,
@@ -218,7 +220,7 @@ export function useNightWorkersRealtime({
 					if (msg.type === "activity_event_created" && msg.payload?.event) {
 						const incoming = msg.payload.event;
 						if (activeSessionId && incoming.taskId !== activeSessionId) return;
-						if (incoming.traceChannel !== "chat") {
+						if (!isCodingAgentChatTrace(incoming)) {
 							if (incoming.kind === "llm.usage") {
 								void queryClient.invalidateQueries({
 									queryKey: ["llmUsage", incoming.taskId],
@@ -325,31 +327,29 @@ export function useNightWorkersRealtime({
 								queryKey: planModeWorkspaceQueryKey(incoming.taskId),
 							});
 						}
-						if (incoming.traceChannel === "chat") {
-							queryClient.setQueryData<TaskMessage[]>(
-								["taskMessages", activeSessionId],
-								(prev = []) => {
-									const next = [...prev];
-									if (incoming.role === "user") {
-										const optimisticIndex = next.findIndex(
-											(m) =>
-												m.id.startsWith("optimistic-") &&
-												m.role === "user" &&
-												m.content === incoming.content,
-										);
-										if (optimisticIndex >= 0) next.splice(optimisticIndex, 1);
-									}
-									next.push(incoming);
-									return next;
-								},
-							);
-						}
+						queryClient.setQueryData<TaskMessage[]>(
+							["taskMessages", activeSessionId],
+							(prev = []) => {
+								const next = [...prev];
+								if (incoming.role === "user") {
+									const optimisticIndex = next.findIndex(
+										(m) =>
+											m.id.startsWith("optimistic-") &&
+											m.role === "user" &&
+											m.content === incoming.content,
+									);
+									if (optimisticIndex >= 0) next.splice(optimisticIndex, 1);
+								}
+								next.push(incoming);
+								return next;
+							},
+						);
 						if (
-							(incoming.role === "assistant" || incoming.role === "system") &&
-							(!pendingAssistantTaskIdRef.current ||
-								incoming.taskId === pendingAssistantTaskIdRef.current) &&
-							(!pendingChatRunIdRef.current ||
-								incoming.runId === pendingChatRunIdRef.current)
+							shouldCompletePendingChat({
+								message: incoming,
+								pendingTaskId: pendingAssistantTaskIdRef.current,
+								pendingRunId: pendingChatRunIdRef.current,
+							})
 						) {
 							setStreamingTextByTask((prev) => {
 								const next = { ...prev };

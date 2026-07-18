@@ -40,7 +40,8 @@ vi.mock("@api/modules/nightworkers/nightworkers.repository", () => ({
 	getTaskRunCommitRecord: mocks.getTaskRunCommitRecord,
 }));
 
-vi.mock("@api/services/runner/NativeLocalRunner", () => ({
+vi.mock("@api/modules/codingAgent", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@api/modules/codingAgent")>()),
 	nativeLocalRunner: mocks.nativeLocalRunner,
 }));
 

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import {
 	fetchMissionPilotQuestionnaireDraft,
 	missionPilotPlanProgressQueryOptions,
@@ -41,6 +41,7 @@ import {
 	correctionTargetTabs,
 	resetPlanWorkspaceScrollToTop,
 	resolveInitialPlanWorkspaceTabUpdate,
+	resolveQuestionnaireGenerationState,
 	shouldOpenQuestionnaireForEmptyBlueprint,
 	shouldShowQuestionnaireStartAction,
 } from "./PlanModeWorkspaceViewer.model";
@@ -127,6 +128,10 @@ export function PlanModeWorkspaceViewer({
 		() => extractViewDecisions(taskMessages),
 		[taskMessages],
 	);
+	const questionnaireGeneration = useMemo(
+		() => resolveQuestionnaireGenerationState(taskMessages),
+		[taskMessages],
+	);
 	const viewDecisions = useMemo(
 		() => resolvePlanWorkspaceViewDecisions(workspace, messageViewDecisions),
 		[messageViewDecisions, workspace],
@@ -160,6 +165,7 @@ export function PlanModeWorkspaceViewer({
 			),
 		);
 	const didSelectUnlockedDefaultTab = useRef(false);
+	const refreshedQuestionnaireReadyMessageIdRef = useRef<string | null>(null);
 	const focusedCorrectionIdRef = useRef<string | null>(null);
 	const attemptedMermaidRenderRepairs = useRef(new Set<string>());
 	const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
@@ -240,6 +246,17 @@ export function PlanModeWorkspaceViewer({
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
+	useEffect(() => {
+		if (
+			questionnaireGeneration.status !== "ready" ||
+			refreshedQuestionnaireReadyMessageIdRef.current ===
+				questionnaireGeneration.messageId
+		)
+			return;
+		refreshedQuestionnaireReadyMessageIdRef.current =
+			questionnaireGeneration.messageId;
+		void refresh();
+	}, [questionnaireGeneration, refresh]);
 	useEffect(() => {
 		const controller = new AbortController();
 		fetchGeneralSettings({ signal: controller.signal })
@@ -378,7 +395,7 @@ export function PlanModeWorkspaceViewer({
 			draftUpdateQueueRef.current = draftUpdateQueueRef.current.then(
 				async () => {
 					const current = missionPilotDraftRef.current;
-					if (!current || current.state !== "waiting_user") return;
+					if (current?.state !== "waiting_user") return;
 					const response = await updateMissionPilotQuestionnaireDraft(
 						sessionId,
 						current.version,
@@ -423,10 +440,11 @@ export function PlanModeWorkspaceViewer({
 		isImplementationLocked,
 		isCapabilityEnabled: planModeCapabilities.questionnaire,
 	});
-	const showQuestionnaireStartAction = shouldShowQuestionnaireStartAction({
-		sessionId,
-		questionnaireComplete,
-	});
+	const showQuestionnaireStartAction =
+		shouldShowQuestionnaireStartAction({
+			sessionId,
+			questionnaireComplete,
+		}) && questionnaireGeneration.status !== "generating";
 
 	const { runAction, runSessionAction } = usePlanWorkspaceActions({
 		isImplementationLocked,
@@ -527,6 +545,9 @@ export function PlanModeWorkspaceViewer({
 			activityArtifacts={activityArtifacts}
 			activeDataModelMessage={activeDataModelMessage}
 			showQuestionnaireStartAction={showQuestionnaireStartAction}
+			isQuestionnaireGenerating={
+				questionnaireGeneration.status === "generating"
+			}
 			startQuestionnaire={startQuestionnaire}
 			busyAction={busyAction}
 			isImplementationLocked={isImplementationLocked}

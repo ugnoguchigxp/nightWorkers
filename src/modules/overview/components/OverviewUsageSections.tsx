@@ -21,8 +21,9 @@ import {
 	tokenSegmentStyles,
 } from "../overviewStyles";
 import {
-	getSeparatedTokenTotal,
+	getCachedInputTokens,
 	getUncachedInputTokens,
+	getUsageTokenTotal,
 	type OverviewViewModel,
 } from "../overviewViewModel";
 import {
@@ -73,9 +74,9 @@ export function OverviewUsageSections({
 								<div className="mt-4 flex h-48 items-end gap-1">
 									{dashboard.dailyUsage.map((bucket) => {
 										const uncached = getUncachedInputTokens(bucket);
-										const cached = bucket.cachedInputTokens;
+										const cached = getCachedInputTokens(bucket);
 										const output = bucket.outputTokens;
-										const total = getSeparatedTokenTotal(bucket);
+										const total = getUsageTokenTotal(bucket);
 										return (
 											<div
 												key={bucket.key}
@@ -172,6 +173,19 @@ export function OverviewUsageSections({
 							)}
 						/>
 						<MetricRow
+							label={t("overview.cost.reasoningOutput")}
+							value={formatCompactCurrency(
+								dashboard.cost.reasoningOutputCost,
+								currency,
+								language,
+							)}
+							exactValue={formatExactCurrencyValue(
+								dashboard.cost.reasoningOutputCost,
+								currency,
+								language,
+							)}
+						/>
+						<MetricRow
 							label={t("overview.cost.codexCredits")}
 							value={
 								dashboard.cost.creditTotal === null
@@ -213,6 +227,11 @@ export function OverviewUsageSections({
 							value={formatDateTime(dashboard.generatedAt, language, timezone)}
 						/>
 					</dl>
+					{dashboard.usage.callCount > 0 ? (
+						<p className="mt-4 text-[10px]" style={subtleTextStyle}>
+							{t("overview.cost.cacheWriteUnavailable")}
+						</p>
+					) : null}
 				</div>
 			</section>
 			<OverviewWarnings

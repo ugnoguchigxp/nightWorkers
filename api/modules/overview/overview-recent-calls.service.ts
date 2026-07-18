@@ -1,4 +1,5 @@
 import { and, desc, eq, gte } from "drizzle-orm";
+import { normalizeInputTokenBreakdown } from "../../../shared/llm-usage-tokens";
 import { db } from "../../db/client";
 import { llmUsageRecords, tasks } from "../../db/schema";
 import {
@@ -54,6 +55,7 @@ export async function buildRecentExpensiveCalls(input: {
 
 	const recentCalls = await Promise.all(
 		rows.map(async (row) => {
+			const tokenBreakdown = normalizeInputTokenBreakdown(row);
 			const pricing = await findPricingForUsage({
 				provider: row.provider,
 				model: row.model,
@@ -87,8 +89,8 @@ export async function buildRecentExpensiveCalls(input: {
 				provider: row.provider,
 				model: row.model,
 				label: row.label,
-				inputTokens: row.inputTokens ?? 0,
-				cachedInputTokens: row.cachedInputTokens ?? 0,
+				inputTokens: tokenBreakdown.inputTokens,
+				cachedInputTokens: tokenBreakdown.cachedInputTokens,
 				outputTokens: row.outputTokens ?? 0,
 				stateCardTokens: row.stateCardTokens ?? 0,
 				totalTokens: normalizeTotal(row),

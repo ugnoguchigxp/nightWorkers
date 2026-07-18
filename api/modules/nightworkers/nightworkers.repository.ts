@@ -523,6 +523,7 @@ export async function updateTaskStatus(id: string, status: TaskStatus) {
 	}
 	return task;
 }
+export { updateTaskStatusIfUnchanged } from "./nightworkers.task-status-cas.repository";
 
 export async function updateTaskCompiledPrompt(
 	id: string,
@@ -546,11 +547,16 @@ export async function updateTask(
 		status?: TaskStatus;
 		priority?: number;
 	},
+	options?: { expectedUpdatedAt?: Date },
 ) {
 	const [task] = await db
 		.update(tasks)
 		.set({ ...data, updatedAt: new Date() })
-		.where(eq(tasks.id, id))
+		.where(
+			options?.expectedUpdatedAt
+				? and(eq(tasks.id, id), eq(tasks.updatedAt, options.expectedUpdatedAt))
+				: eq(tasks.id, id),
+		)
 		.returning();
 	return task;
 }

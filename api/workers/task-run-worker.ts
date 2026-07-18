@@ -1,10 +1,9 @@
-import { ensureNightWorkersSchema } from "../db/bootstrap";
-import { initializeMissionPilotRunSync } from "../modules/missionPilot";
 import {
 	type StartTaskRunOptions,
 	startTaskRunInProcess,
 } from "../modules/nightworkers/run-orchestration/start-task-run";
 import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
+import { consumeApplicationSettingsWorkerSnapshot } from "../services/settings/application-settings-store";
 import {
 	closeWorkerResources,
 	sendWorkerMessage,
@@ -14,7 +13,7 @@ import {
 let activeRunId: string | null = null;
 let shuttingDown = false;
 
-initializeMissionPilotRunSync();
+consumeApplicationSettingsWorkerSnapshot();
 
 async function shutdown() {
 	if (shuttingDown) return;
@@ -43,22 +42,21 @@ process.once("message", (raw) => {
 			) {
 				throw new Error("Task worker received an invalid start payload.");
 			}
-			await ensureNightWorkersSchema();
 			const run = await startTaskRunInProcess(
 				message.payload.taskId,
 				message.payload.options ?? {},
 			);
 			activeRunId = run.id;
-			sendWorkerMessage({ type: "started", runs: [run] });
+			await sendWorkerMessage({ type: "started", runs: [run] });
 			await waitForRunsToFinish([run.id]);
 			activeRunId = null;
 			await closeWorkerResources();
 			process.exit(0);
 		} catch (error) {
-			sendWorkerMessage({
+			await sendWorkerMessage({
 				type: "failed",
 				error: error instanceof Error ? error.message : String(error),
-			});
+			}).catch(() => undefined);
 			await closeWorkerResources().catch(() => undefined);
 			process.exit(1);
 		}

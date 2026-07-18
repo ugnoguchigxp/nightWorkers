@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/schemas/mission-pilot.schema";
+import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import { submitMissionPilotQuestionnaireDraft } from "../missionPilot";
 import type {
 	DesignQuestionnaireAnswer,

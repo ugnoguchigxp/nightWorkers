@@ -4,7 +4,7 @@ import {
 	callBedrockProvider,
 	callBedrockProviderToolTurn,
 } from "./bedrock-provider";
-import { callCodexProvider } from "./codex-provider";
+import { callCodexProvider, callCodexProviderToolTurn } from "./codex-provider";
 import { emitSupervisorLlmDebugEvent } from "./events";
 import { callFixtureProvider } from "./fixture-provider";
 import {
@@ -21,6 +21,7 @@ import {
 export type { OpenAIChatCompletionResponse } from "./openai-tool-call-codec";
 
 import { toOpenAIToolMessages } from "./openai-tool-messages";
+import { authorizeStructuredProviderCall } from "./provider-call-authorization";
 import { dispatchStructuredLlmProvider } from "./provider-dispatch";
 import {
 	normalizeStructuredProviderError,
@@ -99,6 +100,7 @@ export async function callProviderToolTurn(input: {
 	signal: AbortSignal;
 	setProviderDebug: (value: Record<string, unknown>) => void;
 }): Promise<ProviderToolTurnResult> {
+	await authorizeStructuredProviderCall(input.options);
 	if (
 		input.options.taskId &&
 		hasFixtureProviderToolTurns(input.options.taskId)
@@ -127,6 +129,7 @@ export async function callProviderToolTurn(input: {
 				openai: () => callOpenAIProviderToolTurn(input, isEnabled, settings),
 				azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
 				bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
+				codex: () => callCodexProviderToolTurn(input, isEnabled, settings),
 				fixture: async () =>
 					callFixtureProviderToolTurn({
 						taskId: input.options.taskId ?? "",
@@ -568,4 +571,3 @@ export async function emitOpenAICompatibilityRetryEvents(
 		data: { round: options.round ?? null, reason: input.reason },
 	});
 }
-

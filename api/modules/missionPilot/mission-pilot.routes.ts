@@ -2,11 +2,11 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
 	missionPilotCommandRequestSchema,
 	missionPilotCommandResponseSchema,
+	missionPilotPlanProgressSchema,
 	missionPilotQuestionnaireDraftSchema,
 	submitMissionPilotQuestionnaireDraftSchema,
 	updateMissionPilotQuestionnaireDraftSchema,
-} from "../../../shared/schemas/mission-pilot.schema";
-import { missionPilotPlanProgressSchema } from "../../../shared/schemas/mission-pilot-plan-progress.schema";
+} from "../../../shared/modules/missionPilot";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./mission-pilot.service";

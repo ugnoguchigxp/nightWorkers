@@ -80,7 +80,7 @@ NightWorkers からの vulnWorkbench 呼び出しに使う project selector は 
 - `shared/schemas/project-exploration-catalog.schema.ts`
 - `api/modules/nightworkers/run-orchestration/start-task-run-runtime-context.ts`
 - `api/modules/nightworkers/run-orchestration/start-task-run.ts`
-- `api/services/agent-runtime/native-api-runner/native-api-tool-history.ts`
+- `api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history.ts`
 - `api/modules/ontology/exploration/project-exploration-measurement.ts`
 
 この設計は immutable generation を固定できる一方、vulnWorkbench の内部 lifecycle と identifier を NightWorkers の consumer contract へ漏らしている。
@@ -670,10 +670,10 @@ measurement を generic `mcp_call_tool` 依存から `project_exploration_catalo
 - `api/modules/ontology/exploration/project-exploration-measurement.ts`
 - `api/modules/nightworkers/run-orchestration/start-task-run-runtime-context.ts`
 - `api/modules/nightworkers/run-orchestration/start-task-run.ts`
-- `api/services/agent-runtime/native-api-runner/native-api-tool-history.ts`
-- `api/services/agent-runtime/native-api-runner/native-api-tool-manifest.ts`
-- `api/services/agent-runtime/native-api-runner/native-api-tool-registry.ts`
-- `api/services/agent-runtime/native-api-runner/native-api-run-route-preparation.ts`
+- `api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history.ts`
+- `api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest.ts`
+- `api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry.ts`
+- `api/modules/codingAgent/runtime/native-api-runner/native-api-run-route-preparation.ts`
 - `api/services/worker-tools/dispatcher.ts`
 - `api/services/worker-tools/mcp-call-tool.ts`
 - `api/services/mcp/mcp-client-manager.ts`

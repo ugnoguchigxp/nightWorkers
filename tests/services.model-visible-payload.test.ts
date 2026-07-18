@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	compactModelVisibleText,
 	summarizeModelVisibleJson,
-} from "../api/services/agent-runtime/model-visible-payload";
+} from "../api/services/model-visible-payload";
 
 describe("model-visible payload helpers", () => {
 	it("returns short text unchanged while reporting metadata", () => {

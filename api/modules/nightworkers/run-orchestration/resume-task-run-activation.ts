@@ -1,6 +1,10 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
-import { buildCodingAgentSystemContext } from "../../../services/coding-agent-context";
 import { TodoMutationService } from "../../../services/todo-mutation";
+import {
+	buildCodingAgentSystemContext,
+	buildCodingAgentTaskGoal,
+	readCodingAgentPlanModeRequested,
+} from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 
@@ -68,10 +72,9 @@ export async function activateTaskRunResume(input: {
 	}
 
 	const systemContext = buildCodingAgentSystemContext({
-		taskGoal: [task.title, task.description || task.objective]
-			.filter(Boolean)
-			.join("\n"),
+		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repository.localPath,
+		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
 	});
 	const mutation = await new TodoMutationService(
 		systemContext,

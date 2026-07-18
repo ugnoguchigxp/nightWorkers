@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { missionPilotArtifactTrace } from "../api/modules/missionPilot";
 import {
 	enqueueActivityEvent,
 	flushActivityEventQueue,
@@ -10,7 +11,6 @@ import {
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import {
 	codingAgentChatTrace,
-	missionPilotPlanOutputTrace,
 	missionPilotThoughtTrace,
 } from "../api/modules/nightworkers/nightworkers.trace-provenance";
 
@@ -128,7 +128,7 @@ describe("nightworkers activity repository", () => {
 		).toHaveLength(64);
 	});
 
-	it("keeps Plan output in chat while isolating Pilot-specific thoughts", async () => {
+	it("keeps Coding Agent chat, Mission Pilot thoughts, and artifacts disjoint", async () => {
 		const createdRepo = await repo.createRepository({
 			name: `TEST: Trace Channels ${crypto.randomUUID()}`,
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
@@ -149,7 +149,7 @@ describe("nightworkers activity repository", () => {
 			taskId: task.id,
 			role: "assistant",
 			content: "Mission Pilot artifact body",
-			trace: missionPilotPlanOutputTrace({ sessionId: "pilot-session" }),
+			trace: missionPilotArtifactTrace({ sessionId: "pilot-session" }),
 		});
 		enqueueActivityEvent({
 			taskId: task.id,
@@ -160,17 +160,25 @@ describe("nightworkers activity repository", () => {
 		});
 
 		await flushActivityEventQueue();
-		const [chatEvents, pilotEvents, chatMessages] = await Promise.all([
+		const [
+			chatEvents,
+			pilotEvents,
+			artifactEvents,
+			chatMessages,
+			artifactMessages,
+		] = await Promise.all([
 			listActivityEventsForTask(task.id, { traceChannel: "chat" }),
 			listActivityEventsForTask(task.id, {
 				traceChannel: "pilot_thought",
 			}),
+			listActivityEventsForTask(task.id, { traceChannel: "artifact" }),
 			repo.listTaskMessages(task.id, { traceChannel: "chat" }),
+			repo.listTaskMessages(task.id, { traceChannel: "artifact" }),
 		]);
 		expect(chatEvents.map((event) => event.text)).toContain(
 			"coding-agent response",
 		);
-		expect(chatEvents.map((event) => event.text)).toContain(
+		expect(chatEvents.map((event) => event.text)).not.toContain(
 			"Mission Pilot artifact body",
 		);
 		expect(chatEvents.map((event) => event.text)).not.toContain(
@@ -179,8 +187,13 @@ describe("nightworkers activity repository", () => {
 		expect(pilotEvents.map((event) => event.text)).toEqual([
 			"Mission Pilot decision",
 		]);
+		expect(artifactEvents.map((event) => event.text)).toEqual([
+			"Mission Pilot artifact body",
+		]);
 		expect(chatMessages.map((message) => message.content)).toEqual([
 			"coding-agent response",
+		]);
+		expect(artifactMessages.map((message) => message.content)).toEqual([
 			"Mission Pilot artifact body",
 		]);
 	});

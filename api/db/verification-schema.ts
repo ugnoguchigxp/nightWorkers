@@ -54,6 +54,11 @@ export const verificationChecklistItems = sqliteTable(
 		conditionId: text("condition_id").notNull(),
 		text: text("text").notNull(),
 		required: integer("required", { mode: "boolean" }).notNull(),
+		verificationKind: text("verification_kind"),
+		expectedEvidenceJson: text("expected_evidence_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull()
+			.default([]),
 		status: text("status").default("pending").notNull(),
 		evidenceIdsJson: text("evidence_ids_json", { mode: "json" })
 			.$type<string[]>()
@@ -102,6 +107,19 @@ export const verificationEvidenceRuns = sqliteTable(
 		})
 			.$type<string[]>()
 			.notNull(),
+		sourceSnapshotJson: text("source_snapshot_json", { mode: "json" }).$type<
+			Record<string, unknown>
+		>(),
+		testExecutionObserved: integer("test_execution_observed", {
+			mode: "boolean",
+		})
+			.notNull()
+			.default(false),
+		sourceMutatedDuringCheck: integer("source_mutated_during_check", {
+			mode: "boolean",
+		})
+			.notNull()
+			.default(false),
 		startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
 		finishedAt: integer("finished_at", { mode: "timestamp" }).notNull(),
 	},
@@ -112,6 +130,91 @@ export const verificationEvidenceRuns = sqliteTable(
 		),
 		documentIdx: index("verification_evidence_runs_document_idx").on(
 			table.verificationDocumentId,
+		),
+	}),
+);
+
+export const codingAgentTestInventoryRuns = sqliteTable(
+	"coding_agent_test_inventory_runs",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		runId: text("run_id").references(() => taskRuns.id, {
+			onDelete: "set null",
+		}),
+		cwd: text("cwd").notNull(),
+		sourceSnapshotJson: text("source_snapshot_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+		warningsJson: text("warnings_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull(),
+	},
+	(table) => ({
+		taskIdx: index("coding_agent_test_inventory_runs_task_idx").on(
+			table.taskId,
+			table.createdAt,
+		),
+	}),
+);
+
+export const codingAgentTestInventoryCases = sqliteTable(
+	"coding_agent_test_inventory_cases",
+	{
+		...commonColumns,
+		inventoryId: text("inventory_id")
+			.notNull()
+			.references(() => codingAgentTestInventoryRuns.id, {
+				onDelete: "cascade",
+			}),
+		caseKey: text("case_key").notNull(),
+		name: text("name").notNull(),
+		filePath: text("file_path").notNull(),
+		runner: text("runner").notNull(),
+		discoveryLevel: text("discovery_level").notNull(),
+		declaredConditionIdsJson: text("declared_condition_ids_json", {
+			mode: "json",
+		})
+			.$type<string[]>()
+			.notNull(),
+	},
+	(table) => ({
+		inventoryCaseIdx: uniqueIndex("coding_agent_test_inventory_case_uidx").on(
+			table.inventoryId,
+			table.caseKey,
+		),
+	}),
+);
+
+export const codingAgentTestConditionMappings = sqliteTable(
+	"coding_agent_test_condition_mappings",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		verificationDocumentId: text("verification_document_id")
+			.notNull()
+			.references(() => verificationDocuments.id, { onDelete: "cascade" }),
+		inventoryId: text("inventory_id")
+			.notNull()
+			.references(() => codingAgentTestInventoryRuns.id, {
+				onDelete: "cascade",
+			}),
+		caseKey: text("case_key").notNull(),
+		conditionId: text("condition_id").notNull(),
+		source: text("source").notNull(),
+		rationale: text("rationale"),
+		sourceDigest: text("source_digest").notNull(),
+	},
+	(table) => ({
+		mappingIdx: uniqueIndex("coding_agent_test_condition_mapping_uidx").on(
+			table.verificationDocumentId,
+			table.inventoryId,
+			table.caseKey,
+			table.conditionId,
 		),
 	}),
 );

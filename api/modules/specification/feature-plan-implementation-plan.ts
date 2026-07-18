@@ -57,6 +57,8 @@ export function renderFeaturePlanImplementationSection(
 	return [
 		"## 実装計画",
 		"",
+		`- マイグレーション: ${plan.requiresDataMigration ? "必要" : "不要"}`,
+		"",
 		...plan.steps.flatMap((step, index) => [
 			`${index + 1}. **${step.title}**`,
 			`   ${step.description}`,

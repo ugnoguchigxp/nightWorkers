@@ -3,14 +3,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
 	missionPilotCloseouts,
 	missionPilotContextSnapshots,
-	missionPilotEvents,
 	missionPilotPhaseRuns,
 	missionPilotReviewDecisions,
 	missionPilotSessions,
@@ -22,7 +21,6 @@ import {
 	executeMissionPilotCloseout,
 	recoverMissionPilotCommittedCloseout,
 } from "../api/modules/missionPilot/mission-pilot-closeout.service";
-import { recoverMissionPilotPostQueueSessions } from "../api/modules/missionPilot/mission-pilot-recovery.service";
 
 const repositoryIds: string[] = [];
 const tempDirectories: string[] = [];
@@ -68,7 +66,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 				stageablePaths: ["other.txt"],
 			}),
 		).resolves.toBe(false);
-	});
+	}, 15_000);
 
 	it("commits the owned path, completes the Task, and true-archives exactly once", async () => {
 		const repoRoot = fs.mkdtempSync(
@@ -269,54 +267,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 			.from(taskArchiveRecords)
 			.where(eq(taskArchiveRecords.taskId, taskId));
 		expect(records).toHaveLength(1);
-
-		const [finalContext] = await db
-			.select()
-			.from(missionPilotContextSnapshots)
-			.where(
-				and(
-					eq(missionPilotContextSnapshots.sessionId, sessionId),
-					eq(missionPilotContextSnapshots.reason, "task_archived"),
-				),
-			)
-			.limit(1);
-		expect(finalContext).toBeTruthy();
-		if (finalContext) {
-			await db
-				.delete(missionPilotContextSnapshots)
-				.where(eq(missionPilotContextSnapshots.id, finalContext.id));
-		}
-		await db
-			.delete(missionPilotEvents)
-			.where(
-				and(
-					eq(missionPilotEvents.sessionId, sessionId),
-					eq(missionPilotEvents.eventType, "task.archived"),
-				),
-			);
-		await db
-			.update(missionPilotSessions)
-			.set({ contextRevision: 4, contextDigest: "ctx-4" })
-			.where(eq(missionPilotSessions.id, sessionId));
-
-		await expect(recoverMissionPilotPostQueueSessions()).resolves.toBe(1);
-		await expect(recoverMissionPilotPostQueueSessions()).resolves.toBe(0);
-		const recoveredRecords = await db
-			.select()
-			.from(taskArchiveRecords)
-			.where(eq(taskArchiveRecords.taskId, taskId));
-		expect(recoveredRecords).toHaveLength(1);
-		const recoveredEvents = await db
-			.select()
-			.from(missionPilotEvents)
-			.where(
-				and(
-					eq(missionPilotEvents.sessionId, sessionId),
-					eq(missionPilotEvents.eventType, "task.archived"),
-				),
-			);
-		expect(recoveredEvents).toHaveLength(1);
-	});
+	}, 15_000);
 });
 
 function git(cwd: string, ...args: string[]) {

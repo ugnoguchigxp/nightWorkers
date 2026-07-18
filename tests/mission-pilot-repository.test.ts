@@ -1,24 +1,23 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
+import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
 import {
 	missionPilotContextSnapshots,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
-import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
+import { repositories, taskRuns, tasks } from "../api/db/schema";
+import { backfillStoppedMissionPilotAgentSessions } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
-	claimInitialPromptDispatch,
 	claimPostQueueResume,
 	claimStop,
 	createSession,
-	ensureInitialPromptMessage,
 	finishStop,
 	getSessionByTaskId,
 } from "../api/modules/missionPilot/mission-pilot.repository";
-import { reconcileMissionPilotStartup } from "../api/modules/missionPilot/mission-pilot.service";
 import { updateTaskRun } from "../api/modules/nightworkers/nightworkers.runs.repository";
 
 const repositoryIds: string[] = [];
@@ -181,140 +180,6 @@ describe("Mission Pilot repository", () => {
 		});
 	});
 
-	it("persists the initial user message exactly once", async () => {
-		const repositoryId = await insertRepository();
-		const taskId = crypto.randomUUID();
-		await db.transaction(async (tx) => {
-			const [task] = await tx
-				.insert(tasks)
-				.values({
-					id: taskId,
-					repositoryId,
-					title: "Pilot",
-					objective: "一度だけ送る",
-					status: "draft",
-				})
-				.returning();
-			await createSession(
-				{
-					task,
-					sourceKind: "mission_task_candidate",
-					sourceId: crypto.randomUUID(),
-				},
-				tx,
-			);
-		});
-		const row = await getSessionByTaskId(taskId);
-		await db
-			.update(missionPilotSessions)
-			.set({ desiredState: "playing", phase: "starting", version: 1 })
-			.where(eq(missionPilotSessions.taskId, taskId));
-		const first = await ensureInitialPromptMessage(taskId);
-		const second = await ensureInitialPromptMessage(taskId);
-		expect(first?.messageId).toBe(second?.messageId);
-		expect(
-			await db
-				.select()
-				.from(taskMessages)
-				.where(
-					and(
-						eq(taskMessages.taskId, taskId),
-						eq(taskMessages.messageType, "mission_pilot_initial_prompt"),
-					),
-				),
-		).toHaveLength(1);
-		expect(row?.initialPromptState).toBe("pending");
-	});
-
-	it("rolls the initial message back when Stop wins the Play race", async () => {
-		const repositoryId = await insertRepository();
-		const taskId = crypto.randomUUID();
-		await db.transaction(async (tx) => {
-			const [task] = await tx
-				.insert(tasks)
-				.values({
-					id: taskId,
-					repositoryId,
-					title: "Stopped Pilot",
-					objective: "送信してはいけない",
-					status: "draft",
-				})
-				.returning();
-			await createSession(
-				{
-					task,
-					sourceKind: "mission_task_candidate",
-					sourceId: crypto.randomUUID(),
-				},
-				tx,
-			);
-		});
-		await expect(ensureInitialPromptMessage(taskId)).rejects.toThrow(
-			"stopped before the initial prompt",
-		);
-		expect(
-			await db
-				.select()
-				.from(taskMessages)
-				.where(eq(taskMessages.taskId, taskId)),
-		).toHaveLength(0);
-	});
-
-	it("recovers dispatching state from durable message evidence", async () => {
-		const repositoryId = await insertRepository();
-		const taskId = crypto.randomUUID();
-		await db.transaction(async (tx) => {
-			const [task] = await tx
-				.insert(tasks)
-				.values({
-					id: taskId,
-					repositoryId,
-					title: "Recovering Pilot",
-					objective: "証跡から復旧する",
-					status: "draft",
-				})
-				.returning();
-			await createSession(
-				{
-					task,
-					sourceKind: "mission_task_candidate",
-					sourceId: crypto.randomUUID(),
-				},
-				tx,
-			);
-		});
-		await db
-			.update(missionPilotSessions)
-			.set({ desiredState: "playing", phase: "starting", version: 1 })
-			.where(eq(missionPilotSessions.taskId, taskId));
-		const dispatching = await claimInitialPromptDispatch(taskId);
-		expect(dispatching).toMatchObject({
-			initialPromptState: "dispatching",
-			version: 2,
-		});
-		const evidenceId = crypto.randomUUID();
-		await db.insert(taskMessages).values({
-			id: evidenceId,
-			taskId,
-			role: "user",
-			content: "証跡から復旧する",
-			messageType: "mission_pilot_initial_prompt",
-			metadataJson: { source: "mission_pilot", intent: "initial_prompt" },
-		});
-		const recovered = await ensureInitialPromptMessage(taskId);
-		expect(recovered).toMatchObject({
-			messageId: evidenceId,
-			inserted: false,
-			row: { initialPromptState: "sent" },
-		});
-		expect(
-			await db
-				.select()
-				.from(taskMessages)
-				.where(eq(taskMessages.taskId, taskId)),
-		).toHaveLength(1);
-	});
-
 	it("does not let a late Stop completion overwrite a newer Play", async () => {
 		const repositoryId = await insertRepository();
 		const taskId = crypto.randomUUID();
@@ -349,14 +214,15 @@ describe("Mission Pilot repository", () => {
 			.set({ desiredState: "playing", phase: "starting", version: 3 })
 			.where(eq(missionPilotSessions.taskId, taskId));
 		const latest = await finishStop(taskId, 2);
-		expect(latest).toMatchObject({
+		expect(latest).toBeNull();
+		expect(await getSessionByTaskId(taskId)).toMatchObject({
 			desiredState: "playing",
 			phase: "starting",
 			version: 3,
 		});
 	});
 
-	it("clears the active run while preserving playing intent on natural completion", async () => {
+	it("does not couple Coding Agent completion to Mission Pilot session state", async () => {
 		const repositoryId = await insertRepository();
 		const taskId = crypto.randomUUID();
 		const runId = crypto.randomUUID();
@@ -398,94 +264,71 @@ describe("Mission Pilot repository", () => {
 		await updateTaskRun(runId, { status: "completed", endedAt: new Date() });
 		await expect(getSessionByTaskId(taskId)).resolves.toMatchObject({
 			desiredState: "playing",
-			phase: "initial_intake",
+			phase: "running",
+			activeRunId: runId,
+			version: 2,
+		});
+	});
+
+	it("migrates a pre-agent session to stopped without stopping its Coding Agent run", async () => {
+		const repositoryId = await insertRepository();
+		const taskId = crypto.randomUUID();
+		const runId = crypto.randomUUID();
+		let sessionId = "";
+		await db.transaction(async (tx) => {
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					id: taskId,
+					repositoryId,
+					title: "Migrating Pilot",
+					objective: "Agent sessionへ安全に移行する",
+					status: "running",
+				})
+				.returning();
+			await tx.insert(taskRuns).values({
+				id: runId,
+				taskId,
+				repositoryId,
+				status: "running",
+			});
+			const session = await createSession(
+				{
+					task,
+					sourceKind: "mission_task_candidate",
+					sourceId: crypto.randomUUID(),
+				},
+				tx,
+			);
+			sessionId = session.id;
+			await tx
+				.delete(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, session.id));
+			await tx
+				.update(missionPilotSessions)
+				.set({
+					desiredState: "playing",
+					phase: "running",
+					activeRunId: runId,
+					version: 2,
+				})
+				.where(eq(missionPilotSessions.taskId, taskId));
+		});
+		expect(await backfillStoppedMissionPilotAgentSessions()).toBe(1);
+		await expect(getSessionByTaskId(taskId)).resolves.toMatchObject({
+			desiredState: "stopped",
+			phase: "created",
 			activeRunId: null,
 			version: 3,
 		});
-	});
-
-	it("turns an interrupted starting state into retryable attention on startup", async () => {
-		const repositoryId = await insertRepository();
-		const taskId = crypto.randomUUID();
-		await db.transaction(async (tx) => {
-			const [task] = await tx
-				.insert(tasks)
-				.values({
-					id: taskId,
-					repositoryId,
-					title: "Restarting Pilot",
-					objective: "安全に再開する",
-					status: "draft",
-				})
-				.returning();
-			await createSession(
-				{
-					task,
-					sourceKind: "mission_task_candidate",
-					sourceId: crypto.randomUUID(),
-				},
-				tx,
-			);
-			await tx
-				.update(missionPilotSessions)
-				.set({
-					desiredState: "playing",
-					phase: "starting",
-					initialPromptState: "dispatching",
-					version: 2,
-				})
-				.where(eq(missionPilotSessions.taskId, taskId));
-		});
-		expect(await reconcileMissionPilotStartup()).toBeGreaterThanOrEqual(1);
-		await expect(getSessionByTaskId(taskId)).resolves.toMatchObject({
-			desiredState: "stopped",
-			phase: "attention",
-			initialPromptState: "dispatching",
-			lastErrorCode: "MISSION_PILOT_RESTART_RECOVERY_REQUIRED",
-			version: 3,
-		});
-	});
-
-	it("recovers an orphaned initial intake when no Questionnaire was persisted", async () => {
-		const repositoryId = await insertRepository();
-		const taskId = crypto.randomUUID();
-		await db.transaction(async (tx) => {
-			const [task] = await tx
-				.insert(tasks)
-				.values({
-					id: taskId,
-					repositoryId,
-					title: "Interrupted Intake Pilot",
-					objective: "Questionnaire生成から安全に再開する",
-					status: "draft",
-				})
-				.returning();
-			await createSession(
-				{
-					task,
-					sourceKind: "mission_task_candidate",
-					sourceId: crypto.randomUUID(),
-				},
-				tx,
-			);
-			await tx
-				.update(missionPilotSessions)
-				.set({
-					desiredState: "playing",
-					phase: "initial_intake",
-					initialPromptState: "sent",
-					version: 2,
-				})
-				.where(eq(missionPilotSessions.taskId, taskId));
-		});
-
-		expect(await reconcileMissionPilotStartup()).toBeGreaterThanOrEqual(1);
-		await expect(getSessionByTaskId(taskId)).resolves.toMatchObject({
-			desiredState: "stopped",
-			phase: "attention",
-			initialPromptState: "sent",
-			lastErrorCode: "MISSION_PILOT_RESTART_RECOVERY_REQUIRED",
-			version: 3,
-		});
+		expect(
+			await db
+				.select()
+				.from(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, sessionId)),
+		).toHaveLength(1);
+		await expect(
+			db.select().from(taskRuns).where(eq(taskRuns.id, runId)),
+		).resolves.toMatchObject([{ status: "running" }]);
 	});
 });

@@ -29,6 +29,39 @@ function createDummyWorkspace(): PlanModeWorkspace {
 }
 
 describe("PlanModeWorkspaceViewer", () => {
+	it("renders Questionnaire generation immediately after Plan Mode starts", () => {
+		const queryClient = new QueryClient();
+		const markup = renderToStaticMarkup(
+			<QueryClientProvider client={queryClient}>
+				<PlanModeWorkspaceViewer
+					sessionId="task-1"
+					initialTab="questionnaire"
+					taskMessages={[
+						{
+							id: "questionnaire-starting",
+							taskId: "task-1",
+							role: "system",
+							content: "Questionnaireを生成しています。",
+							messageType: "text",
+							metadataJson: {
+								intent: "design_questionnaire_starting",
+								planModeGate: {
+									dedicatedViews: [
+										{ view: "questionnaire", decision: "include" },
+									],
+								},
+							},
+							createdAt: "2026-07-17T04:04:15.000Z",
+						},
+					]}
+				/>
+			</QueryClientProvider>,
+		);
+
+		expect(markup).toContain("Design Questionnaireを生成しています");
+		expect(markup).not.toContain(">質問を作成</button>");
+	});
+
 	it("renders plan mode workspace state and tabs", () => {
 		const workspace = createDummyWorkspace();
 		workspace.questionnaireSessions = [

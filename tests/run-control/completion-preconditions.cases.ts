@@ -4,6 +4,7 @@ import {
 	createTask,
 	createTaskRun,
 	deleteRepository,
+	updateTaskRun,
 } from "../../api/modules/nightworkers/nightworkers.repository";
 import { ActionExecutionJournal } from "../../api/services/run-control/action-execution-journal";
 import { RunFinalizeController } from "../../api/services/run-control/finalize-controller";
@@ -216,6 +217,41 @@ describe("Run completion preconditions", () => {
 			{
 				allowFinalize: false,
 				code: "RUN_NEEDS_HUMAN",
+			},
+		);
+	});
+
+	it("allows completion after Todo closure without a Coding Agent Questionnaire gate", async () => {
+		const { run, service } = await fixture();
+		const controller = new RunFinalizeController();
+		const plan = await service.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [{ title: "計画", nextAction: "Questionnaireを開始する" }],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await service.execute(run.id, {
+			op: "start",
+			todoId: plan.todos[0].id,
+			expectedTodoRevision: plan.todos[0].revision,
+		});
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		await service.execute(run.id, {
+			op: "transition",
+			todoId: started.currentTodo.id,
+			expectedTodoRevision: started.currentTodo.revision,
+			status: "passed",
+			reason: "誤ってQuestionnaire前に完了しようとした。",
+		});
+		await updateTaskRun(run.id, {
+			contextSnapshot: {
+				planModeClosed: true,
+			},
+		});
+		expect(await controller.evaluateCandidate({ runId: run.id })).toMatchObject(
+			{
+				allowFinalize: true,
+				code: "FINALIZE_ALLOWED",
 			},
 		);
 	});

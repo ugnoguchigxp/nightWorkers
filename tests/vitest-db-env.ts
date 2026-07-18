@@ -7,6 +7,7 @@ export const testDatabasePath =
 
 export function applyVitestDatabaseEnv() {
 	process.env.NODE_ENV = "test";
+	process.env.NIGHTWORKERS_VITEST_DB_PATH = testDatabasePath;
 	process.env.DATABASE_URL = `file:${testDatabasePath}`;
 	process.env.JWT_SECRET = "nightworkers-vitest-jwt-secret-with-enough-length";
 	process.env.AUTH_MODE = "local";

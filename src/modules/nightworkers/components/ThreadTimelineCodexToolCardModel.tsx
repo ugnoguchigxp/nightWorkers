@@ -1,6 +1,12 @@
+import {
+	buildCommandVerificationEvidenceSummary,
+	buildManagedVerificationEvidenceSummary,
+	isCompletedVerificationEvidence,
+	type VerificationEvidenceSummary,
+	type VerificationToolLifecycle,
+} from "../../codingAgent";
 import type { ActivityEvent } from "../types";
 import {
-	asNumber,
 	asRecord,
 	asString,
 	getActivityChangedFiles,
@@ -13,26 +19,11 @@ import {
 	sanitizeTerminalText,
 } from "./terminalText";
 
-type CodexToolLifecycle = "started" | "progress" | "result" | "failed";
+type CodexToolLifecycle = VerificationToolLifecycle;
 type CodexToolStatus = "started" | "running" | "ok" | "failed";
 const CODEX_TOOL_RESULT_HEIGHT_REDUCTION = 104;
 
-export type CodexVerificationSummary = {
-	checkKind: string;
-	label: string;
-	headline: string;
-	state: "running" | "passed" | "failed" | "unknown";
-	command?: string;
-	resultText?: string;
-	exitCode?: number | null;
-	evidence: "saved" | "not_saved" | "unknown";
-	conditionIds: string[];
-	checklist?: {
-		complete: boolean;
-		failedRequired: number;
-		unknownRequired: number;
-	} | null;
-};
+export type CodexVerificationSummary = VerificationEvidenceSummary;
 
 export type CodexToolCardModel = {
 	lifecycle: CodexToolLifecycle;
@@ -72,7 +63,8 @@ export function hasCodexToolCard(event: CodexToolCardEvent): boolean {
 export function isNormalCodexToolCardVisible(
 	card: CodexToolCardModel,
 ): boolean {
-	return !card.verification;
+	if (!card.verification) return true;
+	return isCompletedVerificationEvidence(card.lifecycle);
 }
 
 export function getCodexToolCardModel(
@@ -176,11 +168,19 @@ function buildMcpCard(input: {
 		input.activityRawResult,
 	);
 	const verification =
-		tool === "run_check"
-			? buildVerificationSummary({
+		tool === "run_check" ||
+		tool === "run_verification" ||
+		tool === "completion_check"
+			? buildManagedVerificationEvidenceSummary({
 					args,
 					result,
 					lifecycle: input.lifecycle,
+					defaultCheckKind:
+						tool === "run_verification"
+							? "verify"
+							: tool === "completion_check"
+								? "completion_check"
+								: undefined,
 				})
 			: undefined;
 	const operation = asString(args.operation);
@@ -211,192 +211,6 @@ function buildMcpCard(input: {
 	};
 }
 
-function buildVerificationSummary(input: {
-	args: Record<string, unknown>;
-	result: Record<string, unknown>;
-	lifecycle: CodexToolLifecycle;
-}): CodexVerificationSummary {
-	const resultView = parseMcpWorkerResult(input.result);
-	const payload = resultView.payload;
-	const checkKind =
-		asString(payload.checkKind) || asString(input.args.checkKind) || "other";
-	const label = verificationLabel(checkKind);
-	const exitCode =
-		typeof payload.exitCode === "number" || payload.exitCode === null
-			? (payload.exitCode as number | null)
-			: undefined;
-	const state = resolveVerificationState({
-		lifecycle: input.lifecycle,
-		ok: resultView.ok,
-		exitCode,
-	});
-	const evidence =
-		payload.managedEvidence === true || asString(payload.evidenceRunId) !== ""
-			? "saved"
-			: payload.managedEvidence === false
-				? "not_saved"
-				: "unknown";
-	const conditionIds = normalizeStringArray(
-		payload.conditionIds ?? input.args.conditionIds,
-	);
-	const checklist = asRecord(payload.checklist);
-	const checklistSummary =
-		typeof checklist.complete === "boolean"
-			? {
-					complete: checklist.complete,
-					failedRequired: asNumber(checklist.failedRequired) ?? 0,
-					unknownRequired: asNumber(checklist.unknownRequired) ?? 0,
-				}
-			: null;
-	const command =
-		asString(payload.command) || asString(input.args.command) || undefined;
-	const resultText = buildVerificationResultText({
-		state,
-		checkKind,
-		exitCode,
-		llmSummary: asString(payload.llmSummary),
-		stdout: asString(payload.stdout),
-		stderr: asString(payload.stderr),
-	});
-	const stateLabel =
-		state === "passed"
-			? "完了しました"
-			: state === "failed"
-				? "失敗しました"
-				: state === "running"
-					? "実行中です"
-					: "結果を受け取りました";
-
-	return {
-		checkKind,
-		label,
-		state,
-		command,
-		resultText,
-		exitCode,
-		evidence,
-		conditionIds,
-		checklist: checklistSummary,
-		headline: `${label}が${stateLabel}`,
-	};
-}
-
-function buildVerificationResultText(input: {
-	state: CodexVerificationSummary["state"];
-	checkKind: string;
-	exitCode?: number | null;
-	llmSummary: string;
-	stdout: string;
-	stderr: string;
-}) {
-	const status =
-		input.state === "passed"
-			? "OK"
-			: input.state === "failed"
-				? "ERROR"
-				: input.state === "running"
-					? "RUNNING"
-					: "RESULT";
-	const rawOutput = [
-		sanitizeTerminalText(input.stdout).trim(),
-		input.stderr.trim()
-			? `stderr\n${sanitizeTerminalText(input.stderr).trim()}`
-			: "",
-	]
-		.filter(Boolean)
-		.join("\n\n");
-	return [
-		`${status} ${input.checkKind}`,
-		input.exitCode === undefined
-			? ""
-			: `exitCode=${input.exitCode ?? "pending"}`,
-		sanitizeTerminalText(input.llmSummary).trim(),
-		rawOutput,
-	]
-		.filter(Boolean)
-		.join("\n");
-}
-
-function parseMcpWorkerResult(result: Record<string, unknown>): {
-	payload: Record<string, unknown>;
-	ok?: boolean;
-} {
-	const structured = asRecord(
-		result.structuredContent ?? result.structured_content,
-	);
-	const structuredPayload = asRecord(structured.payload);
-	const parsedText = firstJsonContent(result);
-	const parsedPayload = asRecord(parsedText?.payload);
-	const payload =
-		Object.keys(structuredPayload).length > 0
-			? structuredPayload
-			: Object.keys(parsedPayload).length > 0
-				? parsedPayload
-				: asRecord(result.payload);
-	const domainOutcome = asString(asRecord(structured.outcome).domainOutcome);
-	const ok =
-		typeof parsedText?.ok === "boolean"
-			? parsedText.ok
-			: domainOutcome === "failed"
-				? false
-				: typeof result.ok === "boolean"
-					? result.ok
-					: undefined;
-	return { payload, ok };
-}
-
-function firstJsonContent(result: Record<string, unknown>) {
-	if (!Array.isArray(result.content)) return null;
-	for (const item of result.content) {
-		const text = asString(asRecord(item).text).trim();
-		if (!text) continue;
-		try {
-			const parsed = asRecord(JSON.parse(text));
-			if (Object.keys(parsed).length > 0) return parsed;
-		} catch {
-			// Some MCP results contain human-readable text instead of JSON.
-		}
-	}
-	return null;
-}
-
-function resolveVerificationState(input: {
-	lifecycle: CodexToolLifecycle;
-	ok?: boolean;
-	exitCode?: number | null;
-}): CodexVerificationSummary["state"] {
-	if (input.lifecycle === "started" || input.lifecycle === "progress")
-		return "running";
-	if (
-		input.ok === false ||
-		(input.exitCode !== undefined && input.exitCode !== 0)
-	)
-		return "failed";
-	if (input.ok === true || input.exitCode === 0) return "passed";
-	if (input.lifecycle === "failed") return "failed";
-	return "unknown";
-}
-
-function verificationLabel(checkKind: string) {
-	const labels: Record<string, string> = {
-		lint: "Lintチェック",
-		format_check: "フォーマットチェック",
-		typecheck: "型チェック",
-		test: "テスト",
-		coverage: "カバレッジチェック",
-		build: "ビルドチェック",
-		verify: "総合検証",
-		completion_check: "完了条件の確認",
-	};
-	return labels[checkKind] || "検証チェック";
-}
-
-function normalizeStringArray(value: unknown): string[] {
-	return Array.isArray(value)
-		? value.filter((item): item is string => typeof item === "string")
-		: [];
-}
-
 function buildCommandCard(input: {
 	data: Record<string, unknown>;
 	lifecycle: CodexToolLifecycle;
@@ -408,12 +222,18 @@ function buildCommandCard(input: {
 	if (!command) return null;
 	const commandClass = asString(input.data.commandClass);
 	const editDiffPreview = buildEditCommandDiffPreview(command);
+	const verification = buildCommandVerificationEvidenceSummary({
+		data: input.data,
+		command,
+		commandClass,
+		lifecycle: input.lifecycle,
+	});
 	const exitCode =
 		typeof input.data.exitCode === "number" || input.data.exitCode === null
 			? String(input.data.exitCode ?? "pending")
 			: "";
 
-	return {
+	const card: CodexToolCardModel = {
 		lifecycle: input.lifecycle,
 		status: input.status,
 		providerItemId: input.providerItemId || undefined,
@@ -425,8 +245,15 @@ function buildCommandCard(input: {
 				? (input.data.exitCode as number | null)
 				: undefined,
 		codexKind: editDiffPreview ? "edit_command" : "command",
-		title: editDiffPreview ? "Codex edit" : "Codex command",
-		summary: editDiffPreview?.summary ?? `command_execution | ${command}`,
+		title: verification
+			? "検証"
+			: editDiffPreview
+				? "Codex edit"
+				: "Codex command",
+		summary:
+			verification?.headline ??
+			editDiffPreview?.summary ??
+			`command_execution | ${command}`,
 		metadata: compactMetadata([
 			["class", commandClass],
 			["exit", exitCode],
@@ -440,7 +267,10 @@ function buildCommandCard(input: {
 			sanitizeTerminalText(asString(input.data.aggregatedOutput)) || undefined,
 		detailsFilename: "command result",
 		errorMessage: input.errorMessage,
+		verification,
 	};
+	if (verification?.state === "failed") card.status = "failed";
+	return card;
 }
 
 type EditCommandDiffPreview = {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MISSION_PILOT_PLAN_SYSTEM_CONTEXT } from "../api/modules/missionPilot";
 import {
 	buildSpecificationDocumentContext,
 	FEATURE_PLAN_TRACEABILITY_STATEMENT,
@@ -97,7 +98,9 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"Questionnaire Decisions はTaskを具体化する設計判断",
 		);
-		expect(systemPrompt).toContain("Taskに明示された中核機能と検証要件");
+		expect(systemPrompt).toContain("確定済みの設計判断");
+		expect(systemPrompt).toContain("選択外のtest種別を追加したりしない");
+		expect(systemPrompt).toContain("`## 検証計画` と `## 完了条件` の拘束条件");
 		expect(systemPrompt).not.toContain("Mission Pilot SystemContext");
 		expect(systemPrompt).toContain(
 			"詳細契約は assembled design context 側の責務",
@@ -110,6 +113,25 @@ describe("Specification document generation", () => {
 		);
 		expect(systemPrompt).toContain("追加見出しは、重複になる場合は作らない");
 		expect(systemPrompt).toContain("DB 変更が必要な場合");
+		expect(systemPrompt).toContain(
+			"production変更と現在のDB/schemaを照合してdata migrationの要否を判断",
+		);
+		expect(systemPrompt).toContain("requiresDataMigration=true の場合");
+		expect(systemPrompt).toContain("taskType=data_migrationのTodo");
+		expect(systemPrompt).toContain(
+			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
+		);
+		expect(systemPrompt).toContain("対応する SQLite variant を雛形として使用");
+		expect(systemPrompt).toContain("DB 要件は SQLite へ変更せず");
+		expect(systemPrompt).toContain(
+			"SQLite variant へのフォールバックは雛形取得方法",
+		);
+		expect(systemPrompt).toContain(
+			"SQLite variant の取得を taskType=scaffold の step",
+		);
+		expect(systemPrompt).toContain(
+			"選択 DB への差し替えをそれに依存する taskType=implementation の step",
+		);
 		expect(systemPrompt).toContain("Bun 実行環境の `bun test`");
 		expect(systemPrompt).not.toContain("NightWorkers の Specification writer");
 		expect(systemPrompt).toContain(
@@ -138,12 +160,14 @@ describe("Specification document generation", () => {
 
 	it("adds requirement priority only to the Mission Pilot SystemContext", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			missionPilot: true,
+			additionalSystemContext: MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
 		});
 
 		expect(systemPrompt).toContain("[Mission Pilot SystemContext]");
 		expect(systemPrompt).toContain("最新の明示的なユーザー指示");
-		expect(systemPrompt).toContain("QuestionnaireはTaskを具体化");
+		expect(systemPrompt).toContain(
+			"Questionnaire Decisions はTaskを具体化する設計判断",
+		);
 		expect(systemPrompt).toContain("固定分岐、keyword判定、正規表現");
 	});
 

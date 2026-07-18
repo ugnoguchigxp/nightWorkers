@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
-import { missionPilotTestDecisionSchema } from "../../../shared/schemas/mission-pilot-test.schema";
+import { missionPilotTestDecisionSchema } from "../../../shared/modules/missionPilot";
 import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import {

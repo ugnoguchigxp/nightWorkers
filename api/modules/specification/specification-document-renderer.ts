@@ -2,7 +2,7 @@ import type {
 	DesignQuestionnaire,
 	DesignQuestionnaireAnswer,
 } from "../../../shared/schemas/design-questionnaire.schema";
-import type { PlanModeWorkspace } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeWorkspaceReferenceContext } from "./plan-mode-workspace.service";
 import {
 	buildImplementationPlanGuidance,
 	renderCompressedBlueprintNaturalLanguage,
@@ -92,7 +92,7 @@ export type AssembledDesignContext = {
 export function buildSpecificationDocumentContext(input: {
 	task: TaskLike;
 	session: QuestionnaireSessionLike | null;
-	workspace: PlanModeWorkspace;
+	workspace: PlanModeWorkspaceReferenceContext;
 	messages: TaskMessageRow[];
 	projectStackContext?: string | null;
 	preferredBlueprintMessageId?: string | null;
@@ -163,7 +163,7 @@ export function buildAssembledDesignContext(input: {
 	taskId: string;
 	task: TaskLike;
 	session: QuestionnaireSessionLike | null;
-	workspace: PlanModeWorkspace;
+	workspace: PlanModeWorkspaceReferenceContext;
 	messages: TaskMessageRow[];
 	projectStackContext?: string | null;
 }): AssembledDesignContext {

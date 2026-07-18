@@ -65,7 +65,7 @@ export async function prepareTaskRunStart(input: {
 		.find((message) => message.role === "user");
 	const jobType = resolveLatestJobTypeFromMessages(messages);
 	const executionMode = "implementation" as const;
-	if (input.options.missionPilotPhase !== "repository_bootstrap") {
+	if (!input.options.allowUnassignedWorkspace) {
 		const workspace = await getTaskGitWorkspace(input.task.id);
 		if (workspace) {
 			if (
@@ -102,7 +102,7 @@ export async function prepareTaskRunStart(input: {
 			}
 		}
 	}
-	const executionModeSource = "explicit" as const;
+	const executionModeSource = input.options.executionModeSource ?? "explicit";
 	const implementationHandoffMessage =
 		findLatestImplementationHandoffMessage(messages);
 	const compiledPromptText = buildCompiledPromptText({

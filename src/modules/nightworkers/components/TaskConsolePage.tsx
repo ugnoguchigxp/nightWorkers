@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { sanitizeTerminalText } from "@/modules/nightworkers/components/terminalText";
 import { client } from "../../../lib/api";
-import { apiPath } from "../../../lib/api-base";
+import { apiPath, startWorkbenchRun } from "../nightWorkersCommands";
 import { isRecord } from "./task-console-model";
 export function TaskConsolePage({ id }: { id: string }) {
 	const queryClient = useQueryClient();
@@ -67,7 +67,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 
 	const startRunMutation = useMutation({
 		mutationFn: async () => {
-			const res = await client.tasks[":id"].run.$post({ param: { id } });
+			const res = await startWorkbenchRun(id);
 			if (!res.ok) throw new Error("Failed to start run");
 			return res.json();
 		},

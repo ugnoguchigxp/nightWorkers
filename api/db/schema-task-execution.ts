@@ -93,6 +93,12 @@ export const implementationQueueEntries = sqliteTable(
 		sequenceDependsOnEntryId: text("sequence_depends_on_entry_id"),
 		schedulingReason: text("scheduling_reason"),
 		missionPilotAdmissionKey: text("mission_pilot_admission_key"),
+		missionPilotAgentJson: text("mission_pilot_agent_json", {
+			mode: "json",
+		}).$type<
+			| import("../../shared/modules/missionPilot").MissionPilotAgentRunProvenance
+			| null
+		>(),
 		claimReady: integer("claim_ready", { mode: "boolean" })
 			.default(true)
 			.notNull(),

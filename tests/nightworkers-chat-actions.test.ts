@@ -147,6 +147,11 @@ describe("createNightWorkersChatActions", () => {
 				},
 			},
 		);
+		expect(appendWorkbenchMessage).toHaveBeenCalledWith(
+			"task-1",
+			expect.objectContaining({ waitForIntake: false }),
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
 
 		expect(queryClient.getQueryData(["planModeWorkspace", "task-1"])).toEqual(
 			workspace,

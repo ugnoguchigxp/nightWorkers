@@ -18,6 +18,11 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import {
+	MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
+	resolvePlanArtifactCanonicalInput,
+} from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
@@ -34,7 +39,6 @@ import {
 	renderFeaturePlanContent,
 } from "./feature-plan-implementation-plan";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
-import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -64,8 +68,10 @@ export async function generateFeaturePlanArtifact(
 		proceedWithUnansweredBlocking?: boolean;
 		routeOverride?: StructuredLlmModelTarget | null;
 		role?: StructuredLlmRole;
+		executionPolicy?: StructuredProviderExecutionPolicy;
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
+		signal?: AbortSignal;
 		expectedState?: {
 			missionPilotSessionId: string;
 			contextRevision: number;
@@ -136,7 +142,10 @@ export async function generateFeaturePlanArtifact(
 		input.role ?? "plan",
 		projection,
 		input.llmUsageTrace,
+		input.executionPolicy,
+		input.signal,
 	);
+	input.signal?.throwIfAborted();
 	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
 	const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
 		...parsed.implementationPlan,
@@ -306,10 +315,13 @@ async function generateSpecificationDesignDocumentRawOutput(
 	role: StructuredLlmRole,
 	projection: ReturnType<typeof projectPlanArtifactInput>,
 	usageTrace?: TraceProvenance,
+	executionPolicy?: StructuredProviderExecutionPolicy,
+	signal?: AbortSignal,
 ) {
 	try {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			missionPilot: role === "mission_pilot",
+			additionalSystemContext:
+				role === "mission_pilot" ? MISSION_PILOT_PLAN_SYSTEM_CONTEXT : null,
 		});
 		const userPrompt = buildSpecificationDocumentUserPrompt(context);
 		const generated = await callStructuredOutputWithRepair({
@@ -322,6 +334,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 				}),
 				taskId,
 				role,
+				executionPolicy,
 				usageTrace,
 				routeOverride,
 				promptBudgetMetadata: buildPlanArtifactPromptBudgetMetadata({
@@ -332,6 +345,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 					routeOverride,
 				}),
 				timeoutMs: FEATURE_PLAN_LLM_TIMEOUT_MS,
+				signal,
 			},
 		});
 		return JSON.stringify(generated.value);

@@ -1,9 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { taskWithMissionPilotSchema } from "../../../../shared/modules/missionPilot";
 import {
 	PROMPT_IMAGE_MAX_COUNT,
 	PROMPT_IMAGE_MEDIA_TYPES,
 } from "../../../../shared/prompt-image";
-import { taskWithMissionPilotSchema } from "../../../../shared/schemas/mission-pilot.schema";
 import {
 	createTaskSchema,
 	taskRunSchema,

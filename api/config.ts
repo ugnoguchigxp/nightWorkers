@@ -31,7 +31,8 @@ function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 	if (
 		env.NODE_ENV === "test" ||
 		env.NIGHTWORKERS_E2E_ISOLATED === "1" ||
-		env.NIGHTWORKERS_CONFIG_TEST === "1"
+		env.NIGHTWORKERS_CONFIG_TEST === "1" ||
+		env.NIGHTWORKERS_EXECUTION_ROLE === "worker"
 	) {
 		return;
 	}

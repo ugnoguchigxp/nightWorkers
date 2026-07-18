@@ -53,8 +53,7 @@ export async function claimPipelineLease(input: {
 		where: eq(missionPilotSessions.taskId, input.taskId),
 	});
 	if (
-		!session ||
-		session.desiredState !== "playing" ||
+		session?.desiredState !== "playing" ||
 		session.nextWakeAt ||
 		(session.leaseOwner &&
 			session.leaseExpiresAt &&

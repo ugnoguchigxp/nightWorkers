@@ -9,6 +9,7 @@ import {
 } from "../../db/mission-pilot-schema";
 import {
 	implementationQueueEntries,
+	type TaskRunStatus,
 	type TaskStatus,
 	taskGitWorkspaces,
 	taskRunCommitRecords,
@@ -19,6 +20,12 @@ import {
 import { logger } from "../../lib/logger";
 import { digestText } from "../../services/text-digest";
 import { listRepositoryWorktrees } from "../gitworktree/gitworktree.service";
+import {
+	applyMissionPilotTaskStatusAfterRun,
+	readMissionPilotAgentRunProvenance,
+	resolveMissionPilotTaskStatusAfterRun,
+} from "../nightworkers/run-orchestration/task-status-projection-policy";
+import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import {
 	continueAfterReviewRun,
@@ -30,9 +37,27 @@ import { continueAfterTestRun } from "./mission-pilot-post-queue-test.service";
 
 export async function resolveMissionPilotParentTaskStatus(input: {
 	runId: string;
-	runStatus: TaskStatus;
+	runStatus: TaskRunStatus;
 	executionMode: string;
 }): Promise<TaskStatus> {
+	const [runForOwnership] = await db
+		.select({
+			taskId: taskRuns.taskId,
+			contextSnapshot: taskRuns.contextSnapshot,
+		})
+		.from(taskRuns)
+		.where(eq(taskRuns.id, input.runId))
+		.limit(1);
+	if (
+		readMissionPilotAgentRunProvenance(
+			readRecord(runForOwnership?.contextSnapshot).missionPilotAgent,
+		)
+	)
+		return resolveMissionPilotTaskStatusAfterRun({
+			taskId: runForOwnership.taskId,
+			runId: input.runId,
+			runStatus: input.runStatus,
+		});
 	const [phaseRun] = await db
 		.select()
 		.from(missionPilotPhaseRuns)
@@ -46,7 +71,41 @@ export async function resolveMissionPilotParentTaskStatus(input: {
 	return "needs_review";
 }
 
+export async function applyMissionPilotParentTaskStatus(input: {
+	runId: string;
+	runStatus: TaskRunStatus;
+	executionMode: string;
+}) {
+	const [runForOwnership] = await db
+		.select({
+			taskId: taskRuns.taskId,
+			contextSnapshot: taskRuns.contextSnapshot,
+		})
+		.from(taskRuns)
+		.where(eq(taskRuns.id, input.runId))
+		.limit(1);
+	if (
+		runForOwnership &&
+		readMissionPilotAgentRunProvenance(
+			readRecord(runForOwnership.contextSnapshot).missionPilotAgent,
+		)
+	) {
+		const task = await applyMissionPilotTaskStatusAfterRun({
+			taskId: runForOwnership.taskId,
+			runId: input.runId,
+			runStatus: input.runStatus,
+		});
+		return { handled: true as const, status: task?.status ?? input.runStatus };
+	}
+	return {
+		handled: false as const,
+		status: await resolveMissionPilotParentTaskStatus(input),
+	};
+}
+
 export async function releaseMissionPilotQueueHandoff(taskId: string) {
+	if ((await resolveMissionPilotRuntimeOwnership({ taskId })).kind === "agent")
+		return null;
 	const now = new Date();
 	const released = await db.transaction(async (tx) => {
 		const [session] = await tx
@@ -162,6 +221,11 @@ export async function continueMissionPilotAfterRun(input: {
 	executionMode: string;
 	runStatus?: TaskStatus;
 }) {
+	if (
+		(await resolveMissionPilotRuntimeOwnership({ taskId: input.taskId }))
+			.kind === "agent"
+	)
+		return { kind: "agent_owned" } as const;
 	const [phaseRun] = await db
 		.select()
 		.from(missionPilotPhaseRuns)
@@ -173,6 +237,12 @@ export async function continueMissionPilotAfterRun(input: {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.id, phaseRun.sessionId))
 		.limit(1);
+	if (
+		session &&
+		(await resolveMissionPilotRuntimeOwnership({ sessionId: session.id }))
+			.kind === "agent"
+	)
+		return { kind: "agent_owned" } as const;
 	if (session?.desiredState !== "playing") return { kind: "paused" } as const;
 	if (phaseRun.phase === "repository_bootstrap") {
 		const { completeMissionPilotRepositoryBootstrap } = await import(
@@ -184,10 +254,10 @@ export async function continueMissionPilotAfterRun(input: {
 			runId: input.runId,
 		});
 	}
-	if (input.executionMode === "test") {
+	if (phaseRun.phase === "test" || input.executionMode === "test") {
 		return continueAfterTestRun({ session, phaseRun, runId: input.runId });
 	}
-	if (input.executionMode === "review") {
+	if (phaseRun.phase === "review" || input.executionMode === "review") {
 		return continueAfterReviewRun({ session, phaseRun, runId: input.runId });
 	}
 	if (input.executionMode !== "implementation") {

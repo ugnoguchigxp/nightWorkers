@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { TODO_MUTATION_LIMITS } from "../services/todo-mutation";
+import {
+	TODO_DRAFT_FIELD_GUIDANCE_JA,
+	TODO_MUTATION_LIMITS,
+} from "../services/todo-mutation";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -95,6 +98,24 @@ export const nightWorkersCompletionCheckInputSchema = z.object({
 	verificationDocumentId: z.string().trim().optional(),
 });
 
+export const nightWorkersCollectTestInventoryInputSchema = z.object({
+	runId: z.string().trim().optional(),
+	cwd: z.string().trim().optional(),
+});
+
+export const nightWorkersRecordTestConditionMappingInputSchema = z.object({
+	verificationDocumentId: z.string().trim().min(1),
+	inventoryId: z.string().trim().min(1),
+	caseKey: z.string().trim().min(1),
+	conditionId: z
+		.string()
+		.trim()
+		.regex(/^AC-\d{3}$/),
+	source: z.enum(["declared_in_test", "coding_agent_assessment"]),
+	rationale: z.string().trim().min(1).max(4_000).optional(),
+	sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
 const todoDraftSchema = z.object({
 	id: z
 		.string()
@@ -107,17 +128,20 @@ const todoDraftSchema = z.object({
 		.string()
 		.max(TODO_MUTATION_LIMITS.maxObjectiveLength)
 		.nullable()
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.objective),
 	context: z
 		.string()
 		.max(TODO_MUTATION_LIMITS.maxContextLength)
 		.nullable()
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
 	nextAction: z
 		.string()
 		.trim()
 		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+		.max(TODO_MUTATION_LIMITS.maxNextActionLength)
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
 	acceptanceCriteria: z
 		.array(
 			z
@@ -127,7 +151,8 @@ const todoDraftSchema = z.object({
 				.max(TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength),
 		)
 		.max(TODO_MUTATION_LIMITS.maxAcceptanceCriteria)
-		.optional(),
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.acceptanceCriteria),
 	dependsOn: z
 		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
 		.max(TODO_MUTATION_LIMITS.maxDependencies)
@@ -188,12 +213,16 @@ const todoMutationCommandSchema = z.discriminatedUnion("op", [
 		op: z.literal("update_context"),
 		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
 		expectedTodoRevision: z.number().int().nonnegative(),
-		context: z.string().max(TODO_MUTATION_LIMITS.maxContextLength),
+		context: z
+			.string()
+			.max(TODO_MUTATION_LIMITS.maxContextLength)
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext),
 		nextAction: z
 			.string()
 			.trim()
 			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxNextActionLength),
+			.max(TODO_MUTATION_LIMITS.maxNextActionLength)
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
 	}),
 ]);
 
@@ -247,7 +276,7 @@ export const nightWorkersImportProjectInputSchema = z
 			.enum(STARTER_VARIANTS)
 			.optional()
 			.describe(
-				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql.",
+				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql. 選択した stack に要求 DB の variant がない場合は、同じ stack と runtime version の SQLite variant を雛形として取り込み、Feature Plan に従って要求 DB を実装する。SQLite を最終的な DB 要件へ置き換えない。",
 			),
 		overlays: z
 			.array(z.string().trim().min(1))

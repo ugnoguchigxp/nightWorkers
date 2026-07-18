@@ -5,7 +5,9 @@ import {
 	ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { VerificationEvidenceHistoryContext } from "../../codingAgent";
 import type { ActivityEvent, TaskEvent } from "../types";
+import { formatFinishedTime } from "../utils/time";
 import { LazyDetails } from "./LazyDetails";
 import {
 	type CodexToolCardModel,
@@ -50,8 +52,10 @@ export function CodexToolCard({ event }: { event: TaskEvent | ActivityEvent }) {
 
 export function NormalCodexToolCard({
 	event,
+	verificationHistory,
 }: {
 	event: TaskEvent | ActivityEvent;
+	verificationHistory?: VerificationEvidenceHistoryContext;
 }) {
 	const card = getCodexToolCardModel(event);
 	if (!card || !isNormalCodexToolCardVisible(card)) return null;
@@ -65,12 +69,15 @@ export function NormalCodexToolCard({
 			}
 			summary={
 				<summary className="nightworkers-chat-card-header cursor-pointer list-none px-4 py-3">
-					{card.codexKind === "command" ? (
+					{card.verification ? (
+						<VerificationCardHeader
+							verification={card.verification}
+							history={verificationHistory}
+						/>
+					) : card.codexKind === "command" ? (
 						<CommandCardHeader card={card} />
 					) : card.codexKind === "edit_command" ? (
 						<EditCommandCardHeader card={card} />
-					) : card.verification ? (
-						<VerificationCardHeader verification={card.verification} />
 					) : (
 						<div className="flex items-baseline justify-between gap-4">
 							<span className="nightworkers-chat-card-title min-w-0 truncate">
@@ -94,7 +101,10 @@ export function NormalCodexToolCard({
 				</summary>
 			}
 		>
-			<CodexToolCardBody card={card} />
+			<CodexToolCardBody
+				card={card}
+				verificationHistory={verificationHistory}
+			/>
 		</LazyDetails>
 	);
 }
@@ -115,9 +125,11 @@ function EditCommandCardHeader({ card }: { card: CodexToolCardModel }) {
 function CodexToolCardBody({
 	card,
 	debug = false,
+	verificationHistory,
 }: {
 	card: CodexToolCardModel;
 	debug?: boolean;
+	verificationHistory?: VerificationEvidenceHistoryContext;
 }) {
 	const detailLines = [
 		`toolName: ${card.toolName}`,
@@ -139,7 +151,10 @@ function CodexToolCardBody({
 		<div className="nightworkers-chat-card-body border-t">
 			{card.verification ? (
 				<div className="space-y-3 p-3">
-					<VerificationCardDetails verification={card.verification} />
+					<VerificationCardDetails
+						verification={card.verification}
+						history={verificationHistory}
+					/>
 					{blocks.length > 0 ? (
 						<details className="nightworkers-chat-card-item rounded border">
 							<summary className="nightworkers-chat-card-meta cursor-pointer list-none px-3 py-2 text-xs">
@@ -252,8 +267,10 @@ function commandStateLabel(card: CodexToolCardModel) {
 
 function VerificationCardHeader({
 	verification,
+	history,
 }: {
 	verification: NonNullable<CodexToolCardModel["verification"]>;
+	history?: VerificationEvidenceHistoryContext;
 }) {
 	return (
 		<>
@@ -276,6 +293,7 @@ function VerificationCardHeader({
 				{verification.conditionIds.length > 0 ? (
 					<span>完了条件 {verification.conditionIds.join(", ")}</span>
 				) : null}
+				{history ? <span>{verificationHistoryLabel(history)}</span> : null}
 			</div>
 		</>
 	);
@@ -283,8 +301,10 @@ function VerificationCardHeader({
 
 function VerificationCardDetails({
 	verification,
+	history,
 }: {
 	verification: NonNullable<CodexToolCardModel["verification"]>;
+	history?: VerificationEvidenceHistoryContext;
 }) {
 	return (
 		<div className="grid gap-2 text-xs sm:grid-cols-2">
@@ -306,6 +326,14 @@ function VerificationCardDetails({
 					value={formatChecklistSummary(verification.checklist)}
 				/>
 			) : null}
+			{verification.qualityGate ? (
+				<VerificationDetailItem
+					value={formatQualityGateSummary(verification.qualityGate)}
+				/>
+			) : null}
+			{history ? (
+				<VerificationDetailItem value={verificationHistoryDetail(history)} />
+			) : null}
 			{verification.command ? (
 				<div className="sm:col-span-2">
 					<NightWorkersCodeBlock
@@ -323,6 +351,41 @@ function VerificationCardDetails({
 			) : null}
 		</div>
 	);
+}
+
+function formatQualityGateSummary(input: {
+	passed: boolean;
+	inventory: string;
+	testExecution: string;
+	fullVerify: string;
+}) {
+	return [
+		`Quality Gate: ${input.passed ? "通過" : "未通過"}`,
+		`発見 ${input.inventory}`,
+		`実行 ${input.testExecution}`,
+		`Full Verify ${input.fullVerify}`,
+	].join(" · ");
+}
+
+function verificationHistoryLabel(history: VerificationEvidenceHistoryContext) {
+	if (!history.lastFullPass) return "Full Verify成功履歴なし";
+	return history.freshness === "current"
+		? "実行時点: Full Verify有効"
+		: "実行時点: Full Verify後に要再検証";
+}
+
+function verificationHistoryDetail(
+	history: VerificationEvidenceHistoryContext,
+) {
+	if (!history.lastFullPass) return "最終Full Verify: 未実行";
+	const time = formatFinishedTime(history.lastFullPass.occurredAt);
+	const suffix =
+		history.freshness === "current"
+			? "Current"
+			: history.staleReason === "code_changed"
+				? "Stale（コード変更後）"
+				: "Stale（後続の検証失敗）";
+	return `最終Full Verify: ${time || "時刻不明"} · ${suffix}`;
 }
 
 function VerificationDetailItem({

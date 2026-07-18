@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { and, desc, eq, lte, or } from "drizzle-orm";
+import { missionPilotQuestionnaireDraftSchema } from "../../../shared/modules/missionPilot";
 import {
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
 	designQuestionnaireAnswerSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
-import { missionPilotQuestionnaireDraftSchema } from "../../../shared/schemas/mission-pilot.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotQuestionnaireDrafts,
@@ -15,12 +15,14 @@ import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repo
 import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
 import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
+import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./agent/mission-pilot-agent.constants";
+import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 
-const QUESTIONNAIRE_INTERVENTION_MS = 20_000;
 let listenerRegistered = false;
 
 type DraftRow = typeof missionPilotQuestionnaireDrafts.$inferSelect;
@@ -66,10 +68,11 @@ function toView(row: DraftRow, taskId: string) {
 }
 
 async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
+	if (session.status !== "answering") return;
 	const pilot = await missionPilotRepo.getSessionByTaskId(session.taskId);
 	if (
-		!pilot ||
-		pilot.desiredState !== "playing" ||
+		pilot?.desiredState !== "playing" ||
+		(await isMissionPilotAgentSession(pilot.id)) ||
 		!missionPilotRepo.hasValidAuthorization(pilot)
 	)
 		return;
@@ -81,7 +84,9 @@ async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
 		);
 	if (existing?.state === "submitted") return;
 	const now = new Date();
-	const deadlineAt = new Date(now.getTime() + QUESTIONNAIRE_INTERVENTION_MS);
+	const deadlineAt = new Date(
+		now.getTime() + MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS,
+	);
 	const generated = buildMissionPilotQuestionnaireDraft(session, now);
 	if (
 		existing?.state === "waiting_user" &&
@@ -175,7 +180,7 @@ export function initializeMissionPilotQuestionnaireAutonomy() {
 
 export async function getQuestionnaireDraft(taskId: string) {
 	const pilot = await missionPilotRepo.getSessionByTaskId(taskId);
-	if (!pilot) return null;
+	if (pilot?.desiredState !== "playing") return null;
 	const [row] = await db
 		.select()
 		.from(missionPilotQuestionnaireDrafts)
@@ -317,7 +322,12 @@ async function submitDraftRow(
 			taskId,
 			claimed.questionnaireSessionId,
 			claimed.answersJson,
-			{ completionPolicy: "finalize_current_questions" },
+			{
+				completionPolicy: "finalize_current_questions",
+				role: "mission_pilot",
+				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
+				usageTrace: missionPilotThoughtTrace({ sessionId: row.sessionId }),
+			},
 		);
 		if (!["review_ready", "accepted"].includes(questionnaire.status)) {
 			throw new Error("Mission Pilot Questionnaire remained incomplete");
@@ -374,11 +384,6 @@ async function submitDraftRow(
 			},
 			dedupeKey: `mission-pilot:questionnaire:submitted:${claimed.id}:${claimed.version}`,
 		});
-		void import("./mission-pilot-plan-coordinator.service")
-			.then(({ runMissionPilotPlanPipeline }) =>
-				runMissionPilotPlanPipeline(taskId),
-			)
-			.catch(() => undefined);
 		return {
 			draft: submitted ? toView(submitted, taskId) : null,
 			questionnaire,
@@ -395,30 +400,48 @@ async function submitDraftRow(
 			.where(eq(missionPilotQuestionnaireDrafts.id, claimed.id));
 		const pilot = await missionPilotRepo.getSessionByTaskId(taskId);
 		if (pilot) {
-			const [updatedPilot] = await db
-				.update(missionPilotSessions)
-				.set({
-					desiredState: "stopped",
-					phase: "attention",
-					nextWakeAt: null,
-					lastErrorCode: "MISSION_PILOT_QUESTIONNAIRE_SUBMIT_FAILED",
-					lastErrorMessage:
-						error instanceof Error ? error.message : String(error),
-					version: pilot.version + 1,
-					updatedAt: now,
-				})
-				.where(
-					and(
-						eq(missionPilotSessions.id, pilot.id),
-						eq(missionPilotSessions.version, pilot.version),
-					),
-				)
-				.returning();
-			if (updatedPilot)
-				publishMissionPilotUpdated(
-					taskId,
-					missionPilotRepo.toControlSummary(updatedPilot),
+			const agentOwned = await isMissionPilotAgentSession(pilot.id);
+			if (agentOwned) {
+				await import("./agent/mission-pilot-task-event.adapter").then(
+					({ recordMissionPilotTaskEvent }) =>
+						recordMissionPilotTaskEvent({
+							taskId,
+							type: "questionnaire.submission_failed",
+							sourceEventId: `questionnaire-submit-failed:${claimed.id}:${claimed.version}`,
+							taskRevision: pilot.version,
+							payload: {
+								questionnaireSessionId: claimed.questionnaireSessionId,
+								trigger,
+								error: error instanceof Error ? error.message : String(error),
+							},
+						}),
 				);
+			} else {
+				const [updatedPilot] = await db
+					.update(missionPilotSessions)
+					.set({
+						desiredState: "stopped",
+						phase: "attention",
+						nextWakeAt: null,
+						lastErrorCode: "MISSION_PILOT_QUESTIONNAIRE_SUBMIT_FAILED",
+						lastErrorMessage:
+							error instanceof Error ? error.message : String(error),
+						version: pilot.version + 1,
+						updatedAt: now,
+					})
+					.where(
+						and(
+							eq(missionPilotSessions.id, pilot.id),
+							eq(missionPilotSessions.version, pilot.version),
+						),
+					)
+					.returning();
+				if (updatedPilot)
+					publishMissionPilotUpdated(
+						taskId,
+						missionPilotRepo.toControlSummary(updatedPilot),
+					);
+			}
 		}
 		recordPilotActivity({
 			taskId,
@@ -530,8 +553,7 @@ export async function submitDueQuestionnaireDrafts(now = new Date()) {
 			.from(missionPilotSessions)
 			.where(eq(missionPilotSessions.id, row.sessionId));
 		if (
-			!pilot ||
-			pilot.desiredState !== "playing" ||
+			pilot?.desiredState !== "playing" ||
 			pilot.nextWakeAt?.getTime() !== row.deadlineAt.getTime()
 		)
 			continue;

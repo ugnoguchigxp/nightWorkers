@@ -1,8 +1,5 @@
 import { LLM_ROLE_ORDER } from "../../../../shared/llm-role";
 import { logger } from "../../../lib/logger";
-import type { NativeApiExecutionMode } from "../../../services/agent-runtime/native-api-runner/native-api-mode";
-import type { RuntimeLaneResolution } from "../../../services/agent-runtime/runtime-lane";
-import { RuntimeSessionStateStore } from "../../../services/agent-runtime/runtime-session-state";
 import {
 	getLatestConversationContextForTask,
 	type RefreshConversationContextInput,
@@ -12,6 +9,7 @@ import {
 	isConversationContextBuildOnIdleEnabled,
 	isConversationContextStateCardEnabled,
 } from "../../../services/conversation-context/flags";
+import { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
 import { providerAdapterKey } from "../../../services/structured-llm/request";
 import {
 	type ResolvedStructuredLlmRoute,
@@ -24,7 +22,11 @@ import type {
 	StructuredLlmRole,
 } from "../../../services/structured-llm/settings";
 import { type JobType, jobTypes } from "../../../services/supervisor/prompt";
-import { getOrCreateReviewRecommendation } from "../../review";
+import type {
+	NativeApiExecutionMode,
+	RuntimeLaneResolution,
+} from "../../codingAgent";
+import { getOrCreateReviewRecommendation } from "../../review/review-recommendation.service";
 import * as repo from "../nightworkers.repository";
 import { toErrorMessage, toRecord } from "./utils";
 

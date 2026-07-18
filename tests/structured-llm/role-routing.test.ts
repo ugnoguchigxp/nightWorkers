@@ -6,6 +6,7 @@ import {
 	readApplicationSettingSecrets,
 	writeApplicationSettingBundle,
 } from "../../api/services/settings/application-settings-store";
+import { migrateLegacyProviderEnablement } from "../../api/services/structured-llm/provider-enablement-migration";
 import {
 	resolveStructuredLlmRoleRoute,
 	structuredLlmRouteKey,
@@ -235,6 +236,68 @@ describe("Structured LLM Role Routing", () => {
 		expect(result?.providerId).toBe("azure-openai");
 	});
 
+	it("falls back to an enabled endpoint when the configured route is disabled", () => {
+		const settings = createDummySettings();
+		settings.providerEndpoints = settings.providerEndpoints?.map((endpoint) =>
+			endpoint.id === "openai-endpoint"
+				? { ...endpoint, enabled: false }
+				: endpoint,
+		);
+		settings.roleRoutes = [
+			{
+				role: "plan",
+				primary: {
+					providerEndpointId: "openai-endpoint",
+					model: "gpt-4",
+				},
+				fallbacks: [],
+			},
+		];
+
+		const result = resolveStructuredLlmRoleRoute({ role: "plan", settings });
+
+		expect(result).toMatchObject({
+			providerEndpointId: "azure-endpoint",
+			model: "gpt-4-azure",
+			source: "fallback",
+		});
+	});
+
+	it("repairs legacy provider enablement only once", () => {
+		const initial = {
+			CODEX_ENABLED: false,
+			providerEndpoints: [
+				{ id: "codex", kind: "codex", enabled: false, models: ["gpt-5.5"] },
+			],
+		};
+		const migrated = migrateLegacyProviderEnablement(initial, {
+			CODEX_ENABLED: "true",
+		});
+
+		expect(migrated.changed).toBe(true);
+		expect(migrated.settings).toMatchObject({
+			CODEX_ENABLED: true,
+			providerEnablementMigrationVersion: 1,
+			providerEndpoints: [{ enabled: true }],
+		});
+
+		const disabledAfterMigration = {
+			...migrated.settings,
+			CODEX_ENABLED: false,
+			providerEndpoints: migrated.settings.providerEndpoints.map(
+				(endpoint) => ({
+					...endpoint,
+					enabled: false,
+				}),
+			),
+		};
+		expect(
+			migrateLegacyProviderEnablement(disabledAfterMigration, {
+				CODEX_ENABLED: "true",
+			}).settings.CODEX_ENABLED,
+		).toBe(false);
+	});
+
 	it("resolveStructuredLlmRoleRoute returns override target immediately", () => {
 		const settings = createDummySettings();
 		const result = resolveStructuredLlmRoleRoute({
@@ -263,5 +326,22 @@ describe("Structured LLM Role Routing", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].reason).toBe("missing_endpoint");
 		expect(issues[0].providerEndpointId).toBe("missing-endpoint");
+	});
+
+	it("validateStructuredLlmRoleRoutes detects disabled endpoints", () => {
+		const settings = createDummySettings();
+		settings.providerEndpoints = settings.providerEndpoints?.map((endpoint) =>
+			endpoint.id === "openai-endpoint"
+				? { ...endpoint, enabled: false }
+				: endpoint,
+		);
+
+		expect(validateStructuredLlmRoleRoutes({ settings })).toContainEqual(
+			expect.objectContaining({
+				role: "plan",
+				providerEndpointId: "openai-endpoint",
+				reason: "disabled_endpoint",
+			}),
+		);
 	});
 });

@@ -38,6 +38,7 @@ describe("Feature Plan implementation plan", () => {
 		const todos = projectFeaturePlanImplementationTodos(plan);
 
 		expect(content).toContain("## 実装計画");
+		expect(content).toContain("マイグレーション: 必要");
 		expect(content).toContain("1. **Todo schemaを実装する**");
 		expect(content).toContain("2. **Todo APIを実装する**");
 		expect(content).not.toContain("{{IMPLEMENTATION_PLAN}}");
@@ -53,6 +54,19 @@ describe("Feature Plan implementation plan", () => {
 				dependsOn: [1],
 			}),
 		]);
+	});
+
+	it("renders a no-migration decision in the implementation section", () => {
+		const plan = featurePlanImplementationPlanSchema.parse({
+			...validPlan,
+			requiresDataMigration: false,
+		});
+		const content = renderFeaturePlanContent({
+			contentTemplate: "{{IMPLEMENTATION_PLAN}}",
+			implementationPlan: plan,
+		});
+
+		expect(content).toContain("マイグレーション: 不要");
 	});
 
 	it("rejects duplicate keys, unknown dependencies, cycles, and fixed gates", () => {

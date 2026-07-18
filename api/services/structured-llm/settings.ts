@@ -13,10 +13,12 @@ import {
 	readApplicationSettingSecrets,
 } from "../settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
+import { migrateLegacyProviderEnablement } from "./provider-enablement-migration";
 
 export type StructuredLlmProviderSettings = {
 	settingsRevision?: string;
 	endpointIdSchemaVersion?: number;
+	providerEnablementMigrationVersion?: number;
 	ACTIVE_LLM_PROVIDER?: string;
 	OPENAI_ENABLED?: boolean;
 	OPENAI_API_KEY?: string;
@@ -189,7 +191,7 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 					}
 				>("llm") ?? {};
 			const { providerEndpointApiKeys, ...topLevelSecrets } = secrets;
-			return {
+			return migrateLegacyProviderEnablement({
 				...sqliteSettings,
 				...topLevelSecrets,
 				providerEndpoints: (sqliteSettings.providerEndpoints || []).map(
@@ -198,7 +200,7 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 						apiKey: providerEndpointApiKeys?.[endpoint.id] || "",
 					}),
 				),
-			};
+			}).settings;
 		}
 		const runtimeSettingsPath =
 			testSettingsPath ||
@@ -219,6 +221,7 @@ function defaultSettings(): Required<
 		ACTIVE_LLM_PROVIDER: null,
 		settingsRevision: null,
 		endpointIdSchemaVersion: null,
+		providerEnablementMigrationVersion: null,
 		OPENAI_ENABLED: null,
 		OPENAI_API_KEY: null,
 		OPENAI_BASE_URL: null,

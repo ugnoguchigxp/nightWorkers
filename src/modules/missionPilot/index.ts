@@ -1,6 +1,9 @@
 export { MissionPilotComposerControls } from "./components/MissionPilotComposerControls";
 export { MissionPilotTaskControl } from "./components/MissionPilotTaskControl";
 export { PilotThoughtDock } from "./components/PilotThoughtDock";
+export { enMissionPilot } from "./i18n/en";
+export { jaMissionPilot } from "./i18n/ja";
+export { resolveMissionPilotArtifactFocus } from "./missionPilotArtifactFocus";
 export {
 	fetchMissionPilotPlanProgress,
 	fetchMissionPilotQuestionnaireDraft,
@@ -13,3 +16,4 @@ export {
 	mergeTaskPreservingMissionPilot,
 	optimisticMissionPilotSummary,
 } from "./missionPilotQueries";
+export { useMissionPilotArtifactAutoFocus } from "./useMissionPilotArtifactAutoFocus";

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { captureWorkspaceSourceSnapshot } from "../../modules/codingAgent";
 import { getLatestVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
 import {
 	recordVerificationEvidence,
@@ -65,6 +66,10 @@ export async function runCheckTool(
 	input: RunCheckInput,
 ): Promise<WorkerToolResult<RunCheckOutput>> {
 	const startedAt = new Date().toISOString();
+	const sourceSnapshotBefore =
+		input.taskId && input.runId
+			? await captureWorkspaceSourceSnapshot(input.repoRoot)
+			: undefined;
 	const command = await resolveRunCheckCommand(input);
 	const commandResult = await runCommandTool({
 		...input,
@@ -119,6 +124,18 @@ export async function runCheckTool(
 					cases: junitCases,
 				})
 			: null;
+	if (evidence && sourceSnapshotBefore) {
+		const sourceSnapshotAfter = await captureWorkspaceSourceSnapshot(
+			input.repoRoot,
+		);
+		evidence.sourceSnapshot = sourceSnapshotBefore;
+		evidence.sourceMutatedDuringCheck =
+			sourceSnapshotBefore.sourceStateHash !==
+			sourceSnapshotAfter.sourceStateHash;
+		evidence.testExecutionObserved =
+			payload.classification === "build_test" &&
+			(input.checkKind === "test" || input.checkKind === "coverage");
+	}
 	const recorded =
 		evidence && input.taskId
 			? await recordVerificationEvidence({
@@ -172,6 +189,7 @@ export async function runCheckTool(
 export async function completionCheckTool(input: {
 	taskId: string;
 	verificationDocumentId?: string;
+	repoRoot?: string;
 }): Promise<WorkerToolResult<CompletionCheckOutput>> {
 	const startedAt = new Date().toISOString();
 	const result = await runCompletionCheck(input);

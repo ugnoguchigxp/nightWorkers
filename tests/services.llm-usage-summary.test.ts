@@ -3,9 +3,16 @@ import { and, eq, sql } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { llmUsageRecords, llmUsageSummaryBuckets } from "../api/db/schema";
+import {
+	llmUsageRecords,
+	llmUsageSummaryBuckets,
+	llmUsageSummaryWarnings,
+} from "../api/db/schema";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { recordLlmUsage } from "../api/services/llm-usage";
+import {
+	recordLlmUsage,
+	summarizeLlmUsageForTask,
+} from "../api/services/llm-usage";
 import {
 	checkLlmUsageSummaryIntegrity,
 	rebuildLlmUsageSummary,
@@ -93,6 +100,76 @@ describe("LLM usage summary", () => {
 			totalDurationMs: 1500,
 			outputDurationMs: 1500,
 			measuredDurationCallCount: 2,
+		});
+	});
+
+	it("keeps cached reads exclusive when provider usage exceeds input", async () => {
+		const model = `summary-cached-anomaly-${crypto.randomUUID()}`;
+		const createdRepo = await repo.createRepository({
+			name: `TEST: LLM Summary Cached Anomaly ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: createdRepo.id,
+			title: "TEST: LLM summary cached anomaly",
+			status: "draft",
+		});
+		await upsertPricingRow({
+			provider: "openai",
+			model,
+			currencyCode: "USD",
+			inputPer1m: 100,
+			cachedInputPer1m: 10,
+			outputPer1m: 200,
+			manualOverride: true,
+			enabled: true,
+		});
+
+		await recordLlmUsage({
+			taskId: task.id,
+			callId: crypto.randomUUID(),
+			provider: "openai",
+			model,
+			label: "cached-anomaly",
+			usage: {
+				inputTokens: 100,
+				outputTokens: 0,
+				cachedInputTokens: 150,
+				reasoningOutputTokens: null,
+				totalTokens: 100,
+				mode: "measured",
+			},
+			durationMs: 100,
+		});
+
+		const [summary] = await db
+			.select()
+			.from(llmUsageSummaryBuckets)
+			.where(eq(llmUsageSummaryBuckets.repositoryKey, createdRepo.id));
+		const warnings = await db
+			.select()
+			.from(llmUsageSummaryWarnings)
+			.where(eq(llmUsageSummaryWarnings.repositoryKey, createdRepo.id));
+
+		expect(summary).toMatchObject({
+			inputTokens: 100,
+			cachedInputTokens: 100,
+			inputCost: 0,
+			cachedInputCost: 0.001,
+		});
+		expect(warnings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "usage_token_anomaly",
+					detailKey: "cached_input_exceeds_input",
+				}),
+			]),
+		);
+		await expect(summarizeLlmUsageForTask(task.id)).resolves.toMatchObject({
+			inputTokens: 100,
+			cachedInputTokens: 100,
+			nonCachedInputTokens: 0,
 		});
 	});
 

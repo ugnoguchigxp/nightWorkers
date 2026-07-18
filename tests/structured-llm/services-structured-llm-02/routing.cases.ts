@@ -135,7 +135,7 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 		});
 	});
 
-	it("preserves disabled role routes without falling back to the active provider", () => {
+	it("falls back to an enabled endpoint when a persisted role route is disabled", () => {
 		fs.writeFileSync(
 			llmSettingsPath(),
 			JSON.stringify({
@@ -187,7 +187,13 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 			providerEndpointId: "codex-disabled",
 			model: "gpt-5.6-luna",
 		});
-		expect(requests).toEqual([]);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toMatchObject({
+			providerEndpointId: "openai-main",
+			providerId: "openai",
+			modelOrDeployment: "gpt-5-mini",
+			routeSource: "fallback",
+		});
 	});
 
 	it("resolves role routing to provider endpoint and model when role is specified", () => {
@@ -282,7 +288,7 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 		expect(requests).toEqual([]);
 	});
 
-	it("does not fall back to ACTIVE_LLM_PROVIDER when a configured role route is invalid", () => {
+	it("falls back to an enabled endpoint when a configured model is invalid", () => {
 		const requests = buildNormalizedSupervisorLlmRequestCandidates({
 			systemPrompt: "system text",
 			userPrompt: "user text",
@@ -316,7 +322,13 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 			},
 		});
 
-		expect(requests).toEqual([]);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toMatchObject({
+			providerEndpointId: "local-review",
+			providerId: "openai",
+			modelOrDeployment: "qwen3-coder",
+			routeSource: "fallback",
+		});
 	});
 
 	it("migrates legacy endpoint ids and rewrites role routes without exposing secrets", () => {

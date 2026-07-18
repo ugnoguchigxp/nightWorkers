@@ -25,8 +25,7 @@ export type LlmPromptPartTokenEstimates = {
 	stateCardTokens?: number | null;
 };
 
-export type TaskLlmUsageSummary = {
-	taskId: string;
+export type TaskLlmUsageBreakdown = {
 	promptInputTokens: number;
 	inputTokens: number;
 	outputTokens: number;
@@ -42,4 +41,12 @@ export type TaskLlmUsageSummary = {
 	measuredCallCount: number;
 	estimatedCallCount: number;
 	lastUpdatedAt: string | null;
+};
+
+export type TaskLlmUsageSummary = TaskLlmUsageBreakdown & {
+	taskId: string;
+	byOwner: {
+		codingAgent: TaskLlmUsageBreakdown;
+		missionPilot: TaskLlmUsageBreakdown;
+	};
 };

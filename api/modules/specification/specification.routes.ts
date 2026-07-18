@@ -1,6 +1,6 @@
 import { createOpenApiRouter } from "../../lib/openapi";
+import { writePlanModeRoutingForUser } from "../agentsShare";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
-import { updatePlanModeRoutingForUser } from "../planMode/plan-mode-routing.service";
 import { createPlanArtifactSourceSelection } from "./plan-artifact-source-selection";
 import * as service from "./specification.service";
 import {
@@ -20,10 +20,10 @@ export const specificationRouter = createOpenApiRouter()
 	.openapi(
 		updatePlanModeRoutingRoute,
 		withOpenApiRouteError(updatePlanModeRoutingRoute, async (c) => {
-			const routing = await updatePlanModeRoutingForUser(
-				c.req.param("id"),
-				c.req.valid("json"),
-			);
+			const routing = await writePlanModeRoutingForUser({
+				taskId: c.req.param("id"),
+				request: c.req.valid("json"),
+			});
 			return c.json(routing, 200);
 		}),
 	)

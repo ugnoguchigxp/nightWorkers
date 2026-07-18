@@ -226,7 +226,7 @@ describe("project evaluation real logic", () => {
 		});
 	});
 
-	it("preserves configured routes while their endpoint is disabled", () => {
+	it("promotes an enabled endpoint while the configured endpoint is disabled", () => {
 		const endpoints = [
 			{
 				id: "openai-main",
@@ -271,10 +271,28 @@ describe("project evaluation real logic", () => {
 		);
 
 		expect(routes.find((route) => route.role === "plan")?.primary).toEqual({
-			providerEndpointId: "codex-main",
-			model: "gpt-5.4-mini",
+			providerEndpointId: "openai-main",
+			model: "gpt-5-mini",
 			thinkingDepth: "",
 		});
+		expect(() =>
+			normalizeRawLlmSettings(
+				llmSettingsSchema.parse({
+					ACTIVE_LLM_PROVIDER: "codex",
+					providerEndpoints: endpoints,
+					roleRoutes: [
+						{
+							role: "plan",
+							primary: {
+								providerEndpointId: "codex-main",
+								model: "gpt-5.4-mini",
+							},
+							fallbacks: [],
+						},
+					],
+				}),
+			),
+		).toThrow("Invalid Role Routing target");
 
 		const normalized = normalizeRawLlmSettings(
 			llmSettingsSchema.parse({
@@ -284,12 +302,13 @@ describe("project evaluation real logic", () => {
 				providerEndpoints: endpoints,
 				roleRoutes: routes,
 			}),
+			{ validateExplicitRoleRoutes: false },
 		);
 		expect(
 			normalized.roleRoutes.find((route) => route.role === "plan")?.primary,
 		).toEqual({
-			providerEndpointId: "codex-main",
-			model: "gpt-5.4-mini",
+			providerEndpointId: "openai-main",
+			model: "gpt-5-mini",
 			thinkingDepth: "",
 		});
 		expect(normalized.CODEX_ENABLED).toBe(false);

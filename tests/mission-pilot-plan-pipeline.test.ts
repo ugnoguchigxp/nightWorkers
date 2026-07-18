@@ -13,7 +13,7 @@ import * as planRepo from "../api/modules/missionPilot/mission-pilot-plan.reposi
 import {
 	missionPilotPlanReviewSchema,
 	validateMissionPilotPlanReviewFacts,
-} from "../shared/schemas/mission-pilot-plan-review.schema";
+} from "../shared/modules/missionPilot/mission-pilot-plan-review.schema";
 import { planModeArtifactCorrectionTargetSchema } from "../shared/schemas/plan-mode-artifact-correction.schema";
 
 const repositoryIds: string[] = [];

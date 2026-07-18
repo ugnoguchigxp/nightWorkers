@@ -101,6 +101,7 @@ export async function createImplementationQueueEntry(
 		sequenceGroupId: scheduling.sequenceGroupId,
 		sequenceOrder: scheduling.sequenceOrder,
 		schedulingReason: scheduling.schedulingReason,
+		missionPilotAgent: options.missionPilotAgent ?? null,
 	});
 	await nightworkersRepo.createTaskMessage({
 		taskId,

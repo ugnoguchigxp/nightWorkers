@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { AppError } from "../../lib/errors";
+import { getPlanModeRouting } from "../missionPilot";
 import {
 	getPlanModeTask,
 	getPlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
-import { getPlanModeRouting } from "../planMode/plan-mode-routing.service";
 import type {
 	PlanArtifactGenerationTarget,
 	PlanArtifactSourceSelection,

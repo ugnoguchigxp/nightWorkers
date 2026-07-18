@@ -1,8 +1,8 @@
+import { jaMissionPilot } from "../../modules/missionPilot";
 import { jaArtifact } from "./ja-artifact";
 import { jaBlueprint } from "./ja-blueprint";
 import { jaComposer } from "./ja-composer";
 import { jaFolderBrowser } from "./ja-folderBrowser";
-import { jaMissionPilot } from "./ja-missionPilot";
 import { jaModelControls } from "./ja-modelControls";
 import { jaOverview } from "./ja-overview";
 import { jaProjectDetail } from "./ja-projectDetail";

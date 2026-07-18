@@ -90,7 +90,7 @@ function stateLabel(sessionView: WorkbenchSessionView) {
 	if (sessionView.emailState === "draft") return "Unclassified";
 	if (sessionView.emailState === "plan_ready") return "Ready for Queue";
 	if (sessionView.emailState === "queued") return "Implementation Queue";
-	if (sessionView.emailState === "running") return "Running";
+	if (sessionView.emailState === "running") return sessionView.phase;
 	if (sessionView.emailState === "needs_input") return "Needs Attention";
 	if (sessionView.emailState === "review_needed") return "Review Required";
 	if (sessionView.emailState === "done") return "Done";
@@ -99,18 +99,56 @@ function stateLabel(sessionView: WorkbenchSessionView) {
 }
 
 export function formatUsageBadge(summary: TaskLlmUsageSummary | null) {
-	return `i:${formatTokenCount(summary?.inputTokens ?? 0)} / o:${formatTokenCount(
-		summary?.outputTokens ?? 0,
-	)}`;
+	const codingAgent = summary?.byOwner?.codingAgent;
+	const missionPilot = summary?.byOwner?.missionPilot;
+	return [
+		formatOwnerUsageBadge("CA", codingAgent),
+		formatOwnerUsageBadge("MP", missionPilot),
+	].join(" | ");
 }
 
 export function formatUsageTitle(summary: TaskLlmUsageSummary | null) {
-	if (!summary) return "input 0 / output 0 / StateCard 0 / mode unavailable";
+	if (!summary) {
+		return [
+			formatOwnerUsageTitle("Coding Agent", null),
+			formatOwnerUsageTitle("Mission Pilot", null),
+		].join("\n");
+	}
+	return [
+		formatOwnerUsageTitle("Coding Agent", summary.byOwner?.codingAgent ?? null),
+		formatOwnerUsageTitle(
+			"Mission Pilot",
+			summary.byOwner?.missionPilot ?? null,
+		),
+	].join("\n");
+}
+
+function formatOwnerUsageBadge(
+	label: string,
+	usage: TaskLlmUsageSummary["byOwner"]["codingAgent"] | null | undefined,
+) {
+	return `${label} i:${formatTokenCount(usage?.nonCachedInputTokens ?? 0)} cr:${formatTokenCount(
+		usage?.cachedInputTokens ?? 0,
+	)} o:${formatTokenCount(usage?.outputTokens ?? 0)}`;
+}
+
+function formatOwnerUsageTitle(
+	label: string,
+	usage: TaskLlmUsageSummary["byOwner"]["codingAgent"] | null,
+) {
 	const averageDuration =
-		summary.averageDurationMs === null
+		usage?.averageDurationMs === null || usage?.averageDurationMs === undefined
 			? "n/a"
-			: formatDuration(summary.averageDurationMs);
-	return `provider input ${summary.inputTokens.toLocaleString()} / output ${summary.outputTokens.toLocaleString()} / prompt estimate ${summary.promptInputTokens.toLocaleString()} / StateCard ${summary.stateCardTokens.toLocaleString()} / avg call ${averageDuration} / mode ${summary.usageMode}`;
+			: formatDuration(usage.averageDurationMs);
+	return `${label}: uncached input ${(
+		usage?.nonCachedInputTokens ?? 0
+	).toLocaleString()} / cached read ${(
+		usage?.cachedInputTokens ?? 0
+	).toLocaleString()} / output ${(
+		usage?.outputTokens ?? 0
+	).toLocaleString()} (reasoning subset ${(
+		usage?.reasoningOutputTokens ?? 0
+	).toLocaleString()}) / calls ${usage?.callCount ?? 0} / avg ${averageDuration}`;
 }
 
 function formatTokenCount(value: number) {

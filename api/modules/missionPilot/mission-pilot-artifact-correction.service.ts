@@ -2,14 +2,13 @@ import crypto from "node:crypto";
 import type { PlanModeArtifactCorrectionTarget } from "../../../shared/schemas/plan-mode-artifact-correction.schema";
 import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repository";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import {
-	missionPilotPlanOutputTrace,
-	missionPilotThoughtTrace,
-} from "../nightworkers/nightworkers.trace-provenance";
-import { executePlanModeArtifactCorrection } from "../planMode/plan-mode-artifact-correction.service";
+import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
+import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
+import { executePlanModeArtifactCorrection } from "./artifacts/plan-mode-artifact-correction.service";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import * as planRepo from "./mission-pilot-plan.repository";
+import { missionPilotArtifactTrace } from "./mission-pilot-trace-provenance";
 
 function errorMessage(error: unknown) {
 	return error instanceof Error ? error.message : String(error);
@@ -183,7 +182,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 		const thoughtTrace = missionPilotThoughtTrace({
 			sessionId: input.sessionId,
 		});
-		const artifactTrace = missionPilotPlanOutputTrace({
+		const artifactTrace = missionPilotArtifactTrace({
 			sessionId: input.sessionId,
 		});
 		enqueueActivityEvent({
@@ -222,10 +221,11 @@ export async function executeMissionPilotArtifactCorrection(input: {
 				routingRevision: session.planRoutingRevision,
 			},
 			role: "mission_pilot",
+			executionPolicy: missionPilotArtifactProviderExecutionPolicy,
 			trace: artifactTrace,
-			llmUsageTrace: artifactTrace,
+			llmUsageTrace: thoughtTrace,
 		});
-		if (!result.message?.id) {
+		if (!result?.message?.id) {
 			throw new Error("Correction agent result message is missing");
 		}
 		const metadata = toRecord(result.message.metadataJson);
@@ -239,7 +239,7 @@ export async function executeMissionPilotArtifactCorrection(input: {
 		});
 		await planRepo.markArtifactCorrectionValidating(claimed.id);
 		const current = await missionPilotRepo.getSessionByTaskId(input.taskId);
-		if (!current || current.desiredState !== "playing") {
+		if (current?.desiredState !== "playing") {
 			throw new Error("Mission Pilot stopped before correction adoption");
 		}
 		const content = result.message.content || "";

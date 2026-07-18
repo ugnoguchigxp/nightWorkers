@@ -55,6 +55,16 @@ export async function ensureVerificationTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS verification_checklist_task_status_idx ON verification_checklist_items (task_id, status)",
 	);
+	// SQLite does not support ADD COLUMN IF NOT EXISTS.  Bootstrap is also used
+	// by existing local installations, so tolerate the duplicate-column error.
+	await addColumnIfMissing(
+		"verification_checklist_items",
+		"verification_kind text",
+	);
+	await addColumnIfMissing(
+		"verification_checklist_items",
+		"expected_evidence_json text NOT NULL DEFAULT '[]'",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS verification_evidence_runs (
@@ -87,6 +97,18 @@ export async function ensureVerificationTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS verification_evidence_runs_document_idx ON verification_evidence_runs (verification_document_id)",
 	);
+	await addColumnIfMissing(
+		"verification_evidence_runs",
+		"source_snapshot_json text",
+	);
+	await addColumnIfMissing(
+		"verification_evidence_runs",
+		"test_execution_observed integer NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		"verification_evidence_runs",
+		"source_mutated_during_check integer NOT NULL DEFAULT 0",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS verification_evidence_cases (
@@ -111,4 +133,74 @@ export async function ensureVerificationTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS verification_evidence_cases_document_idx ON verification_evidence_cases (verification_document_id)",
 	);
+
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_test_inventory_runs (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      run_id text,
+      cwd text NOT NULL,
+      source_snapshot_json text NOT NULL,
+      warnings_json text NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null
+    )
+  `);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS coding_agent_test_inventory_runs_task_idx ON coding_agent_test_inventory_runs (task_id, created_at)",
+	);
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_test_inventory_cases (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      inventory_id text NOT NULL,
+      case_key text NOT NULL,
+      name text NOT NULL,
+      file_path text NOT NULL,
+      runner text NOT NULL,
+      discovery_level text NOT NULL,
+      declared_condition_ids_json text NOT NULL,
+      FOREIGN KEY (inventory_id) REFERENCES coding_agent_test_inventory_runs(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_test_inventory_case_uidx ON coding_agent_test_inventory_cases (inventory_id, case_key)",
+	);
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_test_condition_mappings (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      verification_document_id text NOT NULL,
+      inventory_id text NOT NULL,
+      case_key text NOT NULL,
+      condition_id text NOT NULL,
+      source text NOT NULL,
+      rationale text,
+      source_digest text NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE cascade,
+      FOREIGN KEY (inventory_id) REFERENCES coding_agent_test_inventory_runs(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_test_condition_mapping_uidx ON coding_agent_test_condition_mappings (verification_document_id, inventory_id, case_key, condition_id)",
+	);
+}
+
+async function addColumnIfMissing(table: string, definition: string) {
+	try {
+		await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!/duplicate column name/i.test(error.message)
+		) {
+			throw error;
+		}
+	}
 }

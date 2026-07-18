@@ -1,3 +1,4 @@
+import { isCodingAgentChatTrace } from "../../codingAgent";
 import type {
 	ActivityEvent,
 	ActivityReplay,
@@ -21,7 +22,7 @@ export function resolveNextActiveSessionId(
 
 export function isMissionPilotChatPending(task: Task | null) {
 	const missionPilot = task?.missionPilot;
-	if (!missionPilot || missionPilot.desiredState !== "playing") return false;
+	if (missionPilot?.desiredState !== "playing") return false;
 	return (
 		missionPilot.activityState === "starting" ||
 		missionPilot.initialPromptState === "dispatching"
@@ -85,7 +86,7 @@ export function normalizeActivityReplay(data: unknown): ActivityReplay {
 	const replay = data as Partial<ActivityReplay>;
 	return {
 		events: Array.isArray(replay.events)
-			? replay.events.filter((event) => event.traceChannel === "chat")
+			? replay.events.filter(isCodingAgentChatTrace)
 			: [],
 		artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
 	};

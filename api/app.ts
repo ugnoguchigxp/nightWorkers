@@ -18,15 +18,19 @@ import { errorHandler } from "./middleware/error-handler";
 import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { blueprintRouter } from "./modules/blueprint";
+import { initializeCodingAgentRunHandlers } from "./modules/codingAgent";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
-import { missionPilotRouter } from "./modules/missionPilot";
+import {
+	missionPilotAgentFixtureRouter,
+	missionPilotFixtureRouter,
+	missionPilotRouter,
+} from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
 import { e2eFixtureRouter } from "./modules/nightworkers/routes/e2e-fixture-routes";
 import { missionCandidatesFixtureRouter } from "./modules/nightworkers/routes/mission-candidates-fixture-route";
-import { missionPilotFixtureRouter } from "./modules/nightworkers/routes/mission-pilot-fixture-routes";
 import {
 	configureOntologyTaskGenerationEvidenceLoader,
 	ontologyRouter,
@@ -41,6 +45,7 @@ import { queueRouter } from "./modules/queue/queue.routes";
 import { specificationRouter } from "./modules/specification/specification.routes";
 import { taskGenerationRouter } from "./modules/taskGeneration/task-generation.routes";
 import { buildTaskGenerationEvidence } from "./modules/taskGeneration/task-generation-evidence.service";
+import { taskOperatorRouter } from "./modules/taskOperator";
 import { techStackRouter } from "./modules/techStack/tech-stack.routes";
 import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
@@ -52,6 +57,7 @@ import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
+initializeCodingAgentRunHandlers();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)
@@ -70,6 +76,7 @@ const apiRoutes = createOpenApiRouter()
 	.route("/", planViewRouter)
 	.route("/", specificationRouter)
 	.route("/", taskGenerationRouter)
+	.route("/", taskOperatorRouter)
 	.route("/", qualityRouter)
 	.route("/", projectDetailRouter)
 	.route("/", ontologyRouter)
@@ -79,6 +86,7 @@ const apiRoutes = createOpenApiRouter()
 
 if (process.env.NIGHTWORKERS_E2E_ISOLATED === "1") {
 	apiRoutes.route("/", e2eFixtureRouter);
+	apiRoutes.route("/", missionPilotAgentFixtureRouter);
 	apiRoutes.route("/", missionPilotFixtureRouter);
 	apiRoutes.route("/", missionCandidatesFixtureRouter);
 }

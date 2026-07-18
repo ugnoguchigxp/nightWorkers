@@ -1,3 +1,4 @@
+import { isCodingAgentChatMessage } from "../codingAgent";
 import type { TaskMessage } from "./types";
 
 export function isWorkspaceOnlyTaskMessage(message: TaskMessage): boolean {
@@ -6,7 +7,7 @@ export function isWorkspaceOnlyTaskMessage(message: TaskMessage): boolean {
 }
 
 export function isUserVisibleChatMessage(message: TaskMessage): boolean {
-	if (message.traceChannel !== "chat") return false;
+	if (!isCodingAgentChatMessage(message)) return false;
 	if (message.role !== "user" && message.role !== "assistant") return false;
 	const intent = (message.metadataJson as Record<string, unknown>)?.intent;
 	return (

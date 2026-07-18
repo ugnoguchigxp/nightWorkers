@@ -1,4 +1,4 @@
-import type { PlanModeWorkspace } from "../../../shared/schemas/plan-mode-artifact.schema";
+import type { PlanModeWorkspaceReferenceContext } from "./plan-mode-workspace.service";
 import { renderCompressedBlueprintNaturalLanguage } from "./specification-blueprint-renderer";
 import type { AssembledDesignContextSectionKind } from "./specification-document-renderer";
 import {
@@ -158,7 +158,7 @@ export function renderPlanViewReferences(input: {
 }
 
 export function renderPlanModeReferences(
-	workspace: PlanModeWorkspace,
+	workspace: PlanModeWorkspaceReferenceContext,
 	messages: TaskMessageRow[],
 ) {
 	const messageById = new Map(messages.map((message) => [message.id, message]));
@@ -196,7 +196,7 @@ export function renderPlanModeReferences(
 
 export function renderWorkspaceArtifactSection(
 	title: string,
-	artifacts: PlanModeWorkspace["dedicatedViewArtifacts"],
+	artifacts: PlanModeWorkspaceReferenceContext["dedicatedViewArtifacts"],
 	messageById: Map<string, TaskMessageRow>,
 	mode: "feature_plan" | "blueprint" | "dedicated_view" | "decision_review",
 ) {
@@ -210,7 +210,7 @@ export function renderWorkspaceArtifactSection(
 }
 
 export function renderWorkspaceArtifactReference(
-	artifact: PlanModeWorkspace["dedicatedViewArtifacts"][number],
+	artifact: PlanModeWorkspaceReferenceContext["dedicatedViewArtifacts"][number],
 	message: TaskMessageRow | undefined,
 	mode: "feature_plan" | "blueprint" | "dedicated_view" | "decision_review",
 ) {
@@ -231,7 +231,7 @@ export function renderWorkspaceArtifactReference(
 }
 
 export function renderQuestionnaireSessionReferences(
-	workspace: PlanModeWorkspace,
+	workspace: PlanModeWorkspaceReferenceContext,
 ) {
 	const sessions = workspace.questionnaireSessions || [];
 	if (sessions.length === 0) return "Questionnaire Sessions: none";
@@ -252,7 +252,7 @@ export function renderQuestionnaireSessionReferences(
 }
 
 export function renderImplementationReferenceSection(
-	workspace: PlanModeWorkspace,
+	workspace: PlanModeWorkspaceReferenceContext,
 	messageById: Map<string, TaskMessageRow>,
 ) {
 	const references = workspace.implementationReferences || [];
@@ -337,14 +337,20 @@ export function renderDataModelSummary(artifact: JsonRecord) {
 	return lines.join("\n");
 }
 
-export function workspaceArtifacts<K extends keyof PlanModeWorkspace>(
-	workspace: PlanModeWorkspace,
+export function workspaceArtifacts<
+	K extends keyof PlanModeWorkspaceReferenceContext,
+>(
+	workspace: PlanModeWorkspaceReferenceContext,
 	key: K,
-): PlanModeWorkspace[K] extends unknown[] ? PlanModeWorkspace[K] : [] {
+): PlanModeWorkspaceReferenceContext[K] extends unknown[]
+	? PlanModeWorkspaceReferenceContext[K]
+	: [] {
 	const value = workspace[key];
 	return (
 		Array.isArray(value) ? value : []
-	) as PlanModeWorkspace[K] extends unknown[] ? PlanModeWorkspace[K] : [];
+	) as PlanModeWorkspaceReferenceContext[K] extends unknown[]
+		? PlanModeWorkspaceReferenceContext[K]
+		: [];
 }
 
 export function extractOmittedViewDecisions(messages: TaskMessageRow[]) {

@@ -1,7 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { buildNormalTranscriptItems } from "../src/modules/nightworkers/components/ThreadTimeline";
+import {
+	buildChatVerificationEvidenceHistory,
+	buildNormalTranscriptItems,
+} from "../src/modules/nightworkers/components/ThreadTimeline";
 import {
 	CodexToolCard,
 	getCodexToolCardModel,
@@ -112,7 +115,94 @@ describe("ThreadTimeline Codex tool cards", () => {
 		});
 	});
 
-	it("hides run_check from the normal chat transcript", () => {
+	it("treats the managed run_verification tool as a Full Verify card", () => {
+		const card = getCodexToolCardModel({
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					providerItemId: "run-verification",
+					mcpServer: "nightworkers",
+					mcpTool: "run_verification",
+					toolName: "nightworkers.run_verification",
+					arguments: { command: "bun run verify" },
+					result: {
+						structuredContent: {
+							payload: {
+								command: "bun run verify",
+								exitCode: 0,
+								verified: true,
+							},
+						},
+					},
+					status: "completed",
+				},
+			},
+		});
+
+		expect(card).toMatchObject({
+			title: "検証",
+			summary: "総合検証が完了しました",
+			verification: {
+				checkKind: "verify",
+				state: "passed",
+				command: "bun run verify",
+			},
+		});
+	});
+
+	it("renders completion_check as a quality-gate result instead of saved evidence", () => {
+		const card = getCodexToolCardModel({
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					mcpServer: "nightworkers",
+					mcpTool: "completion_check",
+					toolName: "nightworkers.completion_check",
+					result: {
+						structuredContent: {
+							payload: {
+								llmSummary: "ERROR completion_check",
+								result: {
+									qualityGate: {
+										passed: false,
+										inventory: { status: "passed" },
+										testExecution: { status: "passed" },
+										fullVerify: { status: "failed" },
+									},
+								},
+							},
+						},
+						content: [{ type: "text", text: JSON.stringify({ ok: false }) }],
+					},
+					status: "completed",
+				},
+			},
+		});
+
+		expect(card).toMatchObject({
+			title: "検証",
+			summary: "完了条件の確認が失敗しました",
+			verification: {
+				checkKind: "completion_check",
+				state: "failed",
+				evidence: "unknown",
+				qualityGate: {
+					passed: false,
+					inventory: "passed",
+					testExecution: "passed",
+					fullVerify: "failed",
+				},
+			},
+		});
+	});
+
+	it("keeps completed run_check evidence visible in the normal chat transcript", () => {
 		const event = {
 			kind: "tool.result",
 			status: "completed",
@@ -147,12 +237,13 @@ describe("ThreadTimeline Codex tool cards", () => {
 			}),
 		);
 
-		expect(markup).toBe("");
+		expect(markup).toContain("テストが完了しました");
+		expect(markup).toContain("証跡を保存済み");
 		expect(
 			buildNormalTranscriptItems([
 				{ kind: "activity", id: "run-check", event },
 			]),
-		).toEqual([]);
+		).toHaveLength(1);
 	});
 
 	it("extracts Codex MCP started details", () => {
@@ -261,7 +352,7 @@ describe("ThreadTimeline Codex tool cards", () => {
 			},
 		});
 
-		expect(card?.summary).toBe("command_execution | bun run build");
+		expect(card?.summary).toBe("検証チェックが完了しました");
 		expect(card?.detailsFilename).toBe("command result");
 		expect(card?.outputPreview).toContain("transforming...");
 		expect(card?.outputPreview).toContain("✓ 1899 modules transformed.");
@@ -299,9 +390,8 @@ describe("ThreadTimeline Codex tool cards", () => {
 		);
 
 		expect(markup).toContain("$ bun run test");
-		expect(markup).toContain("command.sh");
+		expect(markup).toContain("run_check.sh");
 		expect(markup).toContain("line 1");
-		expect(markup).not.toContain("provider status:");
 	});
 
 	it("renders command execution results in a CLI-style block", () => {
@@ -329,11 +419,10 @@ describe("ThreadTimeline Codex tool cards", () => {
 
 		expect(markup).toContain("$ bun run test");
 		expect(markup).toContain("12 tests passed");
-		expect(markup).toContain("command.sh");
-		expect(markup).not.toContain("provider status:");
+		expect(markup).toContain("run_check.sh");
 	});
 
-	it("previews the first command result line while collapsed", () => {
+	it("hides in-progress verification commands until a result is available", () => {
 		const markup = renderToStaticMarkup(
 			createElement(NormalCodexToolCard, {
 				event: {
@@ -356,8 +445,7 @@ describe("ThreadTimeline Codex tool cards", () => {
 			}),
 		);
 
-		expect(markup).toContain("12 tests passed");
-		expect(markup).not.toContain("all green");
+		expect(markup).toBe("");
 	});
 
 	it("renders expanded Codex MCP result blocks 104px shorter than before", () => {
@@ -516,10 +604,143 @@ describe("ThreadTimeline Codex tool cards", () => {
 			},
 		]);
 
-		expect(items.map((item) => item.id)).toEqual([
-			"activity:cmd-start-1",
-			"activity:cmd-result",
+		expect(items.map((item) => item.id)).toEqual(["activity:cmd-result"]);
+	});
+
+	it("treats a native broad verification result as a Full Verify card", () => {
+		const card = getCodexToolCardModel({
+			kind: "tool.result",
+			status: "completed",
+			payloadJson: {
+				payload: {
+					provider: "codex",
+					providerEventType: "item.completed",
+					providerItemId: "full-verify",
+					toolName: "command_execution",
+					command: "bun run verify",
+					commandClass: "broad_verification",
+					aggregatedOutput: "all gates passed",
+					exitCode: 0,
+					status: "completed",
+				},
+			},
+		});
+
+		expect(card).toMatchObject({
+			title: "検証",
+			summary: "総合検証が完了しました",
+			verification: {
+				checkKind: "verify",
+				state: "passed",
+			},
+		});
+	});
+
+	it("keeps the last Full Verify and marks later evidence stale after code changes", () => {
+		const fullVerify = nativeVerificationEvent({
+			id: "full-pass",
+			seq: 1,
+			commandClass: "broad_verification",
+			exitCode: 0,
+			createdAt: "2026-07-17T08:00:00.000Z",
+		});
+		const codeChange = {
+			id: "code-change",
+			taskId: "task-1",
+			runId: "run-1",
+			kind: "file.diff",
+			source: "worker",
+			status: "completed",
+			seq: 2,
+			payloadJson: { payload: { changedFiles: ["src/app.ts"] } },
+			createdAt: "2026-07-17T08:05:00.000Z",
+			visibility: "visible",
+		} as never;
+		const focusedPass = nativeVerificationEvent({
+			id: "focused-pass",
+			seq: 3,
+			commandClass: "verification",
+			exitCode: 0,
+			createdAt: "2026-07-17T08:06:00.000Z",
+		});
+		const history = buildChatVerificationEvidenceHistory([
+			fullVerify,
+			codeChange,
+			focusedPass,
 		]);
+
+		expect(history.get("full-pass")).toMatchObject({
+			freshness: "current",
+			lastFullPass: { eventId: "full-pass" },
+		});
+		expect(history.get("focused-pass")).toMatchObject({
+			freshness: "stale",
+			staleReason: "code_changed",
+			lastFullPass: { eventId: "full-pass" },
+		});
+	});
+
+	it("keeps a previous Full Verify after failure and refreshes it on the next Full Verify pass", () => {
+		const history = buildChatVerificationEvidenceHistory([
+			nativeVerificationEvent({
+				id: "first-full-pass",
+				seq: 1,
+				commandClass: "broad_verification",
+				exitCode: 0,
+				createdAt: "2026-07-17T08:00:00.000Z",
+			}),
+			nativeVerificationEvent({
+				id: "focused-failure",
+				seq: 2,
+				commandClass: "verification",
+				exitCode: 1,
+				createdAt: "2026-07-17T08:05:00.000Z",
+			}),
+			nativeVerificationEvent({
+				id: "second-full-pass",
+				seq: 3,
+				commandClass: "broad_verification",
+				exitCode: 0,
+				createdAt: "2026-07-17T08:10:00.000Z",
+			}),
+		]);
+
+		expect(history.get("focused-failure")).toMatchObject({
+			freshness: "stale",
+			staleReason: "later_verification_failed",
+			lastFullPass: { eventId: "first-full-pass" },
+		});
+		expect(history.get("second-full-pass")).toMatchObject({
+			freshness: "current",
+			staleReason: null,
+			lastFullPass: { eventId: "second-full-pass" },
+		});
+	});
+
+	it("renders the Full Verify snapshot on a verification evidence card", () => {
+		const event = nativeVerificationEvent({
+			id: "focused-after-full",
+			seq: 2,
+			commandClass: "verification",
+			exitCode: 0,
+			createdAt: "2026-07-17T08:06:00.000Z",
+		});
+		const markup = renderToStaticMarkup(
+			createElement(NormalCodexToolCard, {
+				event,
+				verificationHistory: {
+					lastFullPass: {
+						eventId: "full-pass",
+						occurredAt: "2026-07-17T08:00:00.000Z",
+					},
+					freshness: "stale",
+					staleReason: "code_changed",
+				},
+			}),
+		);
+
+		expect(markup).toContain("実行時点: Full Verify後に要再検証");
+		expect(markup).toContain("Stale（コード変更後）");
 	});
 
 	it("supports TaskEvent fallback payloads before activity projection flushes", () => {
@@ -592,6 +813,42 @@ function codexCommandEvent(
 			},
 		},
 		createdAt: "2026-06-18T00:00:00.000Z",
+		visibility: "visible",
+	} as never;
+}
+
+function nativeVerificationEvent(input: {
+	id: string;
+	seq: number;
+	commandClass: "verification" | "broad_verification";
+	exitCode: number;
+	createdAt: string;
+}) {
+	return {
+		id: input.id,
+		taskId: "task-1",
+		runId: "run-1",
+		kind: "tool.result",
+		source: "worker",
+		status: input.exitCode === 0 ? "completed" : "failed",
+		seq: input.seq,
+		payloadJson: {
+			payload: {
+				provider: "codex",
+				providerEventType: "item.completed",
+				providerItemId: input.id,
+				toolName: "command_execution",
+				command:
+					input.commandClass === "broad_verification"
+						? "bun run verify"
+						: "bun run test",
+				commandClass: input.commandClass,
+				aggregatedOutput: input.exitCode === 0 ? "ok" : "failed",
+				exitCode: input.exitCode,
+				status: input.exitCode === 0 ? "completed" : "failed",
+			},
+		},
+		createdAt: input.createdAt,
 		visibility: "visible",
 	} as never;
 }

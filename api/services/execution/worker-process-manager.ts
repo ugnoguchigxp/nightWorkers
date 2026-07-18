@@ -4,6 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logEvent } from "../../lib/logger";
 import type { StartTaskRunOptions } from "../../modules/nightworkers/run-orchestration/start-task-run";
+import { createApplicationSettingsWorkerSnapshot } from "../settings/application-settings-store";
+import {
+	attachPersistenceOwnerIpcServer,
+	type PersistenceOwnerIpcServerHandle,
+} from "./persistence-owner-ipc-server";
 
 type WorkerKind = "task-run-worker" | "queue-worker";
 type WorkerStartedMessage = {
@@ -17,6 +22,10 @@ const startupTimeoutMs = 60_000;
 const shutdownTimeoutMs = 10_000;
 const activeWorkers = new Set<ChildProcess>();
 const workersByRunId = new Map<string, ChildProcess>();
+const persistenceOwners = new WeakMap<
+	ChildProcess,
+	PersistenceOwnerIpcServerHandle
+>();
 
 function workerEntry(kind: WorkerKind) {
 	const bundled = path.join(
@@ -35,8 +44,11 @@ function workerEntry(kind: WorkerKind) {
 
 function trackWorker(child: ChildProcess) {
 	activeWorkers.add(child);
+	const persistenceOwner = attachPersistenceOwnerIpcServer(child);
+	persistenceOwners.set(child, persistenceOwner);
 	child.once("exit", () => {
 		activeWorkers.delete(child);
+		void persistenceOwner.close();
 		for (const [runId, owner] of workersByRunId) {
 			if (owner === child) workersByRunId.delete(runId);
 		}
@@ -59,6 +71,7 @@ function spawnWorker(
 	environment: NodeJS.ProcessEnv = {},
 ) {
 	const entry = workerEntry(kind);
+	const applicationSettingsSnapshot = createApplicationSettingsWorkerSnapshot();
 	const child = spawn(entry.command, entry.args, {
 		cwd: process.cwd(),
 		env: {
@@ -66,6 +79,7 @@ function spawnWorker(
 			...environment,
 			NIGHTWORKERS_EXECUTION_ROLE: "worker",
 			NIGHTWORKERS_EXECUTOR_MODE: "in_process",
+			NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT: applicationSettingsSnapshot,
 			...(kind === "queue-worker" ? { NIGHTWORKERS_QUEUE_WORKER: "1" } : {}),
 		},
 		stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -73,6 +87,7 @@ function spawnWorker(
 	trackWorker(child);
 	return new Promise<unknown[]>((resolve, reject) => {
 		let settled = false;
+		const observedMessageTypes: string[] = [];
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
@@ -91,17 +106,26 @@ function spawnWorker(
 			reject(error);
 		});
 		child.once("exit", (code, signal) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			reject(
-				new Error(
-					`${kind} exited before startup (code=${code}, signal=${signal})`,
-				),
-			);
+			setImmediate(() => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				reject(
+					new Error(
+						`${kind} exited before startup (code=${code}, signal=${signal}, messages=${observedMessageTypes.join(",") || "none"})`,
+					),
+				);
+			});
 		});
 		child.on("message", (raw) => {
 			const message = raw as WorkerMessage;
+			observedMessageTypes.push(
+				message &&
+					typeof message === "object" &&
+					typeof message.type === "string"
+					? message.type
+					: "invalid",
+			);
 			if (settled || !message || typeof message !== "object") return;
 			if (message.type === "failed") {
 				settled = true;
@@ -118,15 +142,33 @@ function spawnWorker(
 			}
 			resolve(message.runs);
 		});
-		child.send?.({ type: "start", payload });
+		if (!child.send) {
+			settled = true;
+			clearTimeout(timer);
+			child.kill("SIGKILL");
+			reject(new Error(`${kind} does not have an IPC send channel`));
+			return;
+		}
+		child.send({ type: "start", payload }, (error) => {
+			if (!error || settled) return;
+			settled = true;
+			clearTimeout(timer);
+			child.kill("SIGKILL");
+			reject(error);
+		});
 	});
 }
 
 export async function startTaskRunInWorker<T = unknown>(
 	taskId: string,
 	options: StartTaskRunOptions,
+	workerOptions: { environment?: NodeJS.ProcessEnv } = {},
 ): Promise<T> {
-	const runs = await spawnWorker("task-run-worker", { taskId, options });
+	const runs = await spawnWorker(
+		"task-run-worker",
+		{ taskId, options },
+		workerOptions.environment,
+	);
 	const run = runs[0];
 	if (!run) throw new Error("Task worker did not return a run.");
 	return run as T;
@@ -151,23 +193,29 @@ export async function stopIsolatedTaskRun(runId: string) {
 	const child = workersByRunId.get(runId);
 	if (!child || child.exitCode !== null) return false;
 	child.kill("SIGTERM");
-	await waitForExit(child, shutdownTimeoutMs);
-	return true;
+	return waitForExit(child, shutdownTimeoutMs);
 }
 
-function waitForExit(child: ChildProcess, timeoutMs: number) {
-	if (child.exitCode !== null) return Promise.resolve();
-	return new Promise<void>((resolve) => {
-		const timer = setTimeout(() => {
-			child.kill("SIGKILL");
-			resolve();
-		}, timeoutMs);
-		timer.unref?.();
-		child.once("exit", () => {
-			clearTimeout(timer);
-			resolve();
+async function waitForExit(child: ChildProcess, timeoutMs: number) {
+	let exitConfirmed = child.exitCode !== null;
+	if (child.exitCode === null) {
+		exitConfirmed = await new Promise<boolean>((resolve) => {
+			let hardStopTimer: NodeJS.Timeout | null = null;
+			const forceStopTimer = setTimeout(() => {
+				child.kill("SIGKILL");
+				hardStopTimer = setTimeout(() => resolve(false), 2_000);
+				hardStopTimer.unref?.();
+			}, timeoutMs);
+			forceStopTimer.unref?.();
+			child.once("exit", () => {
+				clearTimeout(forceStopTimer);
+				if (hardStopTimer) clearTimeout(hardStopTimer);
+				resolve(true);
+			});
 		});
-	});
+	}
+	await persistenceOwners.get(child)?.close();
+	return exitConfirmed || child.exitCode !== null;
 }
 
 export async function shutdownIsolatedTaskWorkers() {

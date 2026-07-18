@@ -9,6 +9,50 @@ import {
 import { AgentDebugEventCard } from "../src/modules/nightworkers/components/ThreadTimelineAgentCards";
 
 describe("PilotThoughtDock", () => {
+	it("renders the server-projected Mission Pilot timeline without dropping agent items", () => {
+		const items = missionPilotTraceItems({
+			events: [],
+			activityEvents: [],
+			messages: [],
+			entries: [
+				{
+					id: "conversation-item:assistant-1",
+					sessionId: "pilot-session",
+					sequence: 1,
+					occurredAt: new Date("2026-07-16T00:00:00Z"),
+					kind: "thought",
+					summary: "Taskの状態を確認し、更新を実行します。",
+					sourceRef: {
+						kind: "mission_pilot_conversation_item",
+						id: "assistant-1",
+					},
+				},
+				{
+					id: "tool-call:tool-1:finished",
+					sessionId: "pilot-session",
+					sequence: 2,
+					occurredAt: new Date("2026-07-16T00:00:01Z"),
+					kind: "action_completed",
+					status: "succeeded",
+					summary: "Taskを更新が完了しました。",
+					sourceRef: {
+						kind: "mission_pilot_tool_call",
+						id: "tool-1",
+					},
+				},
+			],
+		});
+
+		expect(items.map((item) => item.event.message)).toEqual([
+			"Taskの状態を確認し、更新を実行します。",
+			"Taskを更新が完了しました。",
+		]);
+		expect(items.map((item) => item.source)).toEqual([
+			"unified_entry",
+			"unified_entry",
+		]);
+	});
+
 	it("shows the Plan Mode correction instruction outside debug details", () => {
 		const markup = renderToStaticMarkup(
 			<AgentDebugEventCard
@@ -42,9 +86,28 @@ describe("PilotThoughtDock", () => {
 		expect(markup).not.toContain("review_result");
 	});
 
-	it("includes only Mission Pilot coordinator and pilot_thought activity events", () => {
+	it("includes Pilot-owned events without re-projecting Coding Agent run events", () => {
 		const items = missionPilotTraceItems({
-			messages: [],
+			messages: [
+				{
+					id: "pilot-message",
+					taskId: "task-1",
+					role: "assistant",
+					content: "Mission Pilot message",
+					traceOwner: "mission_pilot",
+					traceChannel: "pilot_thought",
+					createdAt: new Date("2026-07-13T00:00:03Z"),
+				},
+				{
+					id: "coding-message",
+					taskId: "task-1",
+					role: "assistant",
+					content: "Coding Agent message",
+					traceOwner: "coding_agent",
+					traceChannel: "pilot_thought",
+					createdAt: new Date("2026-07-13T00:00:04Z"),
+				},
+			],
 			events: [
 				{
 					id: "pilot-event-1",
@@ -91,11 +154,11 @@ describe("PilotThoughtDock", () => {
 		});
 
 		expect(items.map((item) => item.event.message)).toEqual([
-			"implementation.completed",
 			"次のphaseへ進みます",
+			"Mission Pilot message",
 		]);
-		expect(items[1]?.event.actor).toBe("mission_pilot");
-		expect(items[1]?.event.payloadJson).toMatchObject({
+		expect(items[0]?.event.actor).toBe("mission_pilot");
+		expect(items[0]?.event.payloadJson).toMatchObject({
 			toolName: "exec_command",
 		});
 	});

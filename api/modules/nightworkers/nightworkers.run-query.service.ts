@@ -1,6 +1,6 @@
 import { NotFoundError } from "../../lib/errors";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
-import { nativeLocalRunner } from "../../services/runner/NativeLocalRunner";
+import { nativeLocalRunner } from "../codingAgent";
 import type { ReviewResult } from "../review/results/types";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";

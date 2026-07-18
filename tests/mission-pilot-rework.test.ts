@@ -3,7 +3,7 @@ import {
 	buildMissionPilotReworkTodos,
 	parseMissionPilotReworkPacket,
 } from "../api/modules/missionPilot/mission-pilot-rework";
-import { readMissionPilotEnvelope } from "../api/modules/nightworkers/run-orchestration/start-task-run-entry";
+import { readMissionPilotRunAssociationPayload } from "../api/modules/missionPilot/mission-pilot-run-association.service";
 
 describe("Mission Pilot rework handoff", () => {
 	it("preserves a structured rework packet in the runtime envelope", () => {
@@ -14,28 +14,34 @@ describe("Mission Pilot rework handoff", () => {
 		};
 
 		expect(
-			readMissionPilotEnvelope({
-				sessionId: "session-1",
-				cycle: 2,
-				contextRevision: 9,
-				contextDigest: "ctx-9",
-				reworkPacket: packet,
+			readMissionPilotRunAssociationPayload({
+				phase: "implementation",
+				missionPilot: {
+					sessionId: "session-1",
+					cycle: 2,
+					contextRevision: 9,
+					contextDigest: "ctx-9",
+					reworkPacket: packet,
+				},
 			}),
 		).toMatchObject({
-			sessionId: "session-1",
-			reworkPacket: packet,
+			phase: "implementation",
+			missionPilot: { sessionId: "session-1", reworkPacket: packet },
 		});
 		expect(
-			readMissionPilotEnvelope({
-				sessionId: "session-1",
-				cycle: 2,
-				contextRevision: 9,
-				contextDigest: "ctx-9",
-				reworkPacket: {
-					reason: "commit_hook_mutation",
-					mutationPaths: ["src/app.ts"],
+			readMissionPilotRunAssociationPayload({
+				phase: "implementation",
+				missionPilot: {
+					sessionId: "session-1",
+					cycle: 2,
+					contextRevision: 9,
+					contextDigest: "ctx-9",
+					reworkPacket: {
+						reason: "commit_hook_mutation",
+						mutationPaths: ["src/app.ts"],
+					},
 				},
-			}).reworkPacket,
+			})?.missionPilot.reworkPacket,
 		).toMatchObject({ reason: "commit_hook_mutation" });
 	});
 
@@ -76,12 +82,15 @@ describe("Mission Pilot rework handoff", () => {
 		expect(parseMissionPilotReworkPacket({})).toBeNull();
 		expect(buildMissionPilotReworkTodos({})).toEqual([]);
 		expect(
-			readMissionPilotEnvelope({
-				sessionId: "session-1",
-				cycle: 2,
-				contextRevision: 9,
-				contextDigest: "ctx-9",
-				reworkPacket: {},
+			readMissionPilotRunAssociationPayload({
+				phase: "implementation",
+				missionPilot: {
+					sessionId: "session-1",
+					cycle: 2,
+					contextRevision: 9,
+					contextDigest: "ctx-9",
+					reworkPacket: {},
+				},
 			}),
 		).toBeNull();
 	});

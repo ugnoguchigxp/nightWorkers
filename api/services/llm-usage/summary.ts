@@ -1,4 +1,5 @@
 import { and, eq, gte, sql } from "drizzle-orm";
+import { normalizeInputTokenBreakdown } from "../../../shared/llm-usage-tokens";
 import { db } from "../../db/client";
 import {
 	llmUsageRecords,
@@ -294,10 +295,10 @@ async function buildLlmUsageSummaryDelta(
 	}
 
 	const outputTokens = normalizeInt(record.outputTokens);
+	const inputTokenBreakdown = normalizeInputTokenBreakdown(record);
 	const durationMs = normalizeInt(record.durationMs);
 	const modelKey = normalizeKey(record.model);
 	const pricingCurrencyKey = normalizeKey(pricingCurrencyCode);
-
 	return {
 		bucketHourUtc: toUtcHour(createdAt),
 		repositoryId,
@@ -311,7 +312,7 @@ async function buildLlmUsageSummaryDelta(
 		pricingStatus,
 		inputTokens: normalizeInt(record.inputTokens),
 		outputTokens,
-		cachedInputTokens: normalizeInt(record.cachedInputTokens),
+		cachedInputTokens: inputTokenBreakdown.cachedInputTokens,
 		reasoningOutputTokens: normalizeInt(record.reasoningOutputTokens),
 		systemPromptTokens: normalizeInt(record.systemPromptTokens),
 		userPromptTokens: normalizeInt(record.userPromptTokens),

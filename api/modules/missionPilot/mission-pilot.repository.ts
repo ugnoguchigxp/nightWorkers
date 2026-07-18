@@ -4,15 +4,17 @@ import {
 	type MissionPilotAuthorizationV3,
 	type MissionPilotSourceRef,
 	missionPilotControlSummarySchema,
-} from "../../../shared/schemas/mission-pilot.schema";
+} from "../../../shared/modules/missionPilot";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
-import { taskMessages, tasks } from "../../db/schema";
-import { missionPilotInitialPromptTrace } from "../nightworkers/nightworkers.trace-provenance";
+import { tasks } from "../../db/schema";
+import { createMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
+
+export { claimStop, finishStop } from "./mission-pilot-stop.repository";
 
 type Db = typeof db | DbTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
@@ -122,6 +124,11 @@ export async function createSession(
 			updatedAt: now,
 		})
 		.returning();
+	await createMissionPilotAgentSession(tx, {
+		sessionId: id,
+		contextDigest: digest,
+		now,
+	});
 	await tx.insert(missionPilotContextSnapshots).values({
 		id: crypto.randomUUID(),
 		sessionId: id,
@@ -349,116 +356,6 @@ export async function claimPostQueueResume(
 	return updated ?? null;
 }
 
-export async function claimInitialPromptDispatch(taskId: string) {
-	const row = await getSessionByTaskId(taskId);
-	if (!row) return null;
-	if (row.desiredState !== "playing") {
-		throw new MissionPilotStateConflictError(
-			"Mission Pilot stopped before the initial prompt was claimed",
-		);
-	}
-	if (row.initialPromptState !== "pending") return row;
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			initialPromptState: "dispatching",
-			version: row.version + 1,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, row.id),
-				eq(missionPilotSessions.version, row.version),
-				eq(missionPilotSessions.desiredState, "playing"),
-				eq(missionPilotSessions.initialPromptState, "pending"),
-			),
-		)
-		.returning();
-	if (!updated) {
-		throw new MissionPilotStateConflictError(
-			"Mission Pilot state changed while dispatching the initial prompt",
-		);
-	}
-	return updated;
-}
-
-export async function ensureInitialPromptMessage(taskId: string) {
-	await claimInitialPromptDispatch(taskId);
-	return db.transaction(async (tx) => {
-		const row = await getSessionByTaskId(taskId, tx);
-		if (!row) return null;
-		if (row.desiredState !== "playing") {
-			throw new MissionPilotStateConflictError(
-				"Mission Pilot stopped before the initial prompt was claimed",
-			);
-		}
-		if (row.initialPromptState === "sent" && row.initialPromptMessageId)
-			return {
-				row,
-				messageId: row.initialPromptMessageId,
-				inserted: false,
-				message: null,
-			};
-		if (row.initialPromptState !== "dispatching") {
-			throw new MissionPilotStateConflictError(
-				"Mission Pilot initial prompt is not dispatchable",
-			);
-		}
-		const existing = await tx
-			.select()
-			.from(taskMessages)
-			.where(
-				and(
-					eq(taskMessages.taskId, taskId),
-					eq(taskMessages.messageType, "mission_pilot_initial_prompt"),
-				),
-			)
-			.limit(1);
-		const messageId = existing[0]?.id ?? crypto.randomUUID();
-		let message = existing[0] ?? null;
-		if (!message) {
-			const { trace, metadataJson } = missionPilotInitialPromptTrace(
-				row.id,
-				row.version,
-			);
-			[message] = await tx
-				.insert(taskMessages)
-				.values({
-					id: messageId,
-					taskId,
-					role: "user",
-					content: row.initialPromptSnapshot,
-					messageType: "mission_pilot_initial_prompt",
-					metadataJson,
-					traceOwner: trace.owner,
-					traceChannel: trace.channel,
-				})
-				.returning();
-		}
-		const [updated] = await tx
-			.update(missionPilotSessions)
-			.set({
-				initialPromptState: "sent",
-				initialPromptMessageId: messageId,
-				version: row.version + 1,
-				updatedAt: new Date(),
-			})
-			.where(
-				and(
-					eq(missionPilotSessions.id, row.id),
-					eq(missionPilotSessions.version, row.version),
-					eq(missionPilotSessions.desiredState, "playing"),
-				),
-			)
-			.returning();
-		if (!updated) {
-			throw new MissionPilotStateConflictError(
-				"Mission Pilot state changed while claiming the initial prompt",
-			);
-		}
-		return { row: updated, messageId, inserted: !existing[0], message };
-	});
-}
 export async function finishPlay(taskId: string, activeRunId: string | null) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
@@ -513,58 +410,6 @@ export async function markAttention(
 		.returning();
 	return updated ?? (await getSessionByTaskId(taskId));
 }
-export async function claimStop(taskId: string, expectedVersion: number) {
-	const row = await getSessionByTaskId(taskId);
-	if (!row) return null;
-	if (row.desiredState === "stopped") return row;
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			desiredState: "stopped",
-			resumePhase: row.phase,
-			phase: "stopping",
-			nextWakeAt: null,
-			version: expectedVersion + 1,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, row.id),
-				eq(missionPilotSessions.version, expectedVersion),
-			),
-		)
-		.returning();
-	return updated ?? null;
-}
-export async function finishStop(
-	taskId: string,
-	expectedVersion: number,
-	error?: string,
-) {
-	const row = await getSessionByTaskId(taskId);
-	if (!row) return null;
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			phase: error ? "attention" : "paused",
-			activeRunId: error ? row.activeRunId : null,
-			lastErrorCode: error ? "MISSION_PILOT_RUN_STOP_FAILED" : null,
-			lastErrorMessage: error ?? null,
-			stoppedAt: new Date(),
-			version: row.version + 1,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, row.id),
-				eq(missionPilotSessions.version, expectedVersion),
-				eq(missionPilotSessions.desiredState, "stopped"),
-			),
-		)
-		.returning();
-	return updated ?? (await getSessionByTaskId(taskId));
-}
-
 export async function syncCompletedRun(taskId: string, runId: string) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row || row.activeRunId !== runId || row.desiredState !== "playing")

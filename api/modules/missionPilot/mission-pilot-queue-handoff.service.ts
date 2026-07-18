@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotQueueHandoffSchema,
-} from "../../../shared/schemas/mission-pilot.schema";
+} from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,

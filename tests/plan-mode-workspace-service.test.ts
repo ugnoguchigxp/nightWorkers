@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getBlueprintArtifactAdoption } from "../api/modules/blueprint/blueprint-adoption.service";
+import { registerBlueprintArtifactAdoptionReader } from "../api/modules/agentsShare";
 import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,
@@ -11,12 +11,8 @@ vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 	listPlanModeTaskMessages: vi.fn(),
 }));
 
-vi.mock("../api/modules/questionnaire/questionnaire.service", () => ({
+vi.mock("../api/modules/questionnaire/questionnaire-query.service", () => ({
 	listDesignQuestionnaires: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("../api/modules/blueprint/blueprint-adoption.service", () => ({
-	getBlueprintArtifactAdoption: vi.fn().mockResolvedValue(null),
 }));
 
 describe("plan-mode-workspace.service", () => {
@@ -84,11 +80,12 @@ describe("plan-mode-workspace.service", () => {
 		] as Awaited<ReturnType<typeof listPlanModeTaskMessages>>;
 
 		vi.mocked(listPlanModeTaskMessages).mockResolvedValueOnce(messages);
-		vi.mocked(getBlueprintArtifactAdoption).mockResolvedValueOnce({
+		const unregister = registerBlueprintArtifactAdoptionReader(async () => ({
 			adopted: true,
-		} as Awaited<ReturnType<typeof getBlueprintArtifactAdoption>>);
+		}));
 
 		const result = await getPlanModeWorkspace("task-1");
+		unregister();
 
 		expect(result.taskId).toBe("task-1");
 		expect(result.repositoryId).toBe("repo-1");

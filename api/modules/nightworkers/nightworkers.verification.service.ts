@@ -8,6 +8,7 @@ import {
 	applyEvidenceToChecklist,
 	summarizeChecklist,
 } from "../../services/verification/checklist-matcher";
+import { evaluateQualityGate, type QualityGateResult } from "../codingAgent";
 import * as repository from "./nightworkers.verification.repository";
 
 export type CompletionCheckResult = {
@@ -32,6 +33,7 @@ export type CompletionCheckResult = {
 		status: string;
 		reason?: string;
 	}>;
+	qualityGate: QualityGateResult;
 	reason?: string;
 };
 
@@ -84,6 +86,7 @@ export async function recordVerificationEvidence(input: {
 export async function runCompletionCheck(input: {
 	taskId: string;
 	verificationDocumentId?: string | null;
+	repoRoot?: string;
 }): Promise<CompletionCheckResult> {
 	const document = input.verificationDocumentId
 		? await repository.getVerificationDocument(input.verificationDocumentId)
@@ -101,6 +104,23 @@ export async function runCompletionCheck(input: {
 			failedRequired: [],
 			unknownRequired: [],
 			conditions: [],
+			qualityGate: {
+				passed: false,
+				inventory: {
+					status: "unknown",
+					activeCaseCount: 0,
+					reason: "missing_verification_document",
+				},
+				testExecution: {
+					status: "unknown",
+					reason: "missing_verification_document",
+				},
+				fullVerify: {
+					status: "unknown",
+					reason: "missing_verification_document",
+				},
+				conditions: [],
+			},
 			reason: "missing_verification_document",
 		};
 	}
@@ -109,8 +129,13 @@ export async function runCompletionCheck(input: {
 	const completeCount = items.filter(
 		isVerificationChecklistItemComplete,
 	).length;
+	const qualityGate = await evaluateQualityGate({
+		taskId: input.taskId,
+		verificationDocumentId: document.id,
+		repoRoot: input.repoRoot,
+	});
 	return {
-		ok: summary.complete,
+		ok: summary.complete && qualityGate.passed,
 		verificationDocumentId: document.id,
 		summary: {
 			total: items.length,
@@ -127,7 +152,12 @@ export async function runCompletionCheck(input: {
 			status: item.status,
 			reason: item.reason,
 		})),
-		reason: summary.complete ? undefined : "required_conditions_incomplete",
+		qualityGate,
+		reason: !summary.complete
+			? "required_conditions_incomplete"
+			: qualityGate.passed
+				? undefined
+				: "quality_gate_incomplete",
 	};
 }
 

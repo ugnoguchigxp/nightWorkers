@@ -44,6 +44,13 @@ type QuestionnaireQuestionSetView = {
 export function parseDesignQuestionnaireRaw(
 	rawOutput: string,
 	fallbackSource?: DesignQuestionnaireSourceFallback,
+	choiceFormOptions?: {
+		questionSetId?: string;
+		questionIdPrefix?: string;
+		category?: string;
+		purpose?: string;
+		summary?: string;
+	},
 ): { ok: true; value: DesignQuestionnaire } | { ok: false; error: unknown } {
 	const choiceForm = parseRepairedJsonWithSchema(
 		rawOutput,
@@ -52,7 +59,11 @@ export function parseDesignQuestionnaireRaw(
 	if (choiceForm.ok) {
 		return {
 			ok: true,
-			value: adaptQuestionnaireChoiceForm(choiceForm.value, fallbackSource),
+			value: adaptQuestionnaireChoiceForm(
+				choiceForm.value,
+				fallbackSource,
+				choiceFormOptions,
+			),
 		};
 	}
 

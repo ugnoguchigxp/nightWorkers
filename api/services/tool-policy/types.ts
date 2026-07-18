@@ -1,4 +1,4 @@
-import type { AgentSafetyPolicy } from "../agent-runtime/types";
+import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 import type { WorkerToolResult } from "../worker-tools/types";
 
 export type WorkerToolName =
@@ -21,6 +21,8 @@ export type WorkerToolName =
 	| "run_check"
 	| "run_verification"
 	| "completion_check"
+	| "collect_test_inventory"
+	| "record_test_condition_mapping"
 	| "project_exploration_catalog"
 	| "mcp_call_tool"
 	| "git_status"

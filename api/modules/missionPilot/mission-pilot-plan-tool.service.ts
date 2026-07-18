@@ -2,7 +2,7 @@ import {
 	type MissionPilotPlanRoutingToolCall,
 	missionPilotPlanRoutingToolCallSchema,
 } from "../../../shared/schemas/plan-mode-routing.schema";
-import { executeMissionPilotPlanRoutingTool } from "../planMode/plan-mode-routing.service";
+import { executeMissionPilotPlanRoutingTool } from "./planning/plan-mode-routing.service";
 
 type ToolHandler = (
 	taskId: string,

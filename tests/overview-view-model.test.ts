@@ -3,9 +3,10 @@ import { overviewDashboardSchema } from "../shared/schemas/overview.schema";
 import {
 	buildOverviewScope,
 	buildOverviewViewModel,
+	getCachedInputTokens,
 	getCacheRate,
-	getSeparatedTokenTotal,
 	getUncachedInputTokens,
+	getUsageTokenTotal,
 } from "../src/modules/overview/overviewViewModel";
 import { isOverviewDashboardForScope } from "../src/modules/overview/useOverviewDashboard";
 
@@ -47,14 +48,15 @@ describe("Overview view model", () => {
 		});
 	});
 
-	it("keeps total, cached, and uncached input semantics distinct", () => {
+	it("separates billable token categories without excluding cached reads", () => {
 		const usage = {
 			inputTokens: 1_200,
 			cachedInputTokens: 300,
 			outputTokens: 45,
 		};
 		expect(getUncachedInputTokens(usage)).toBe(900);
-		expect(getSeparatedTokenTotal(usage)).toBe(1_245);
+		expect(getCachedInputTokens(usage)).toBe(300);
+		expect(getUsageTokenTotal(usage)).toBe(1_245);
 		expect(getCacheRate(usage)).toBe(25);
 	});
 
@@ -73,6 +75,27 @@ describe("Overview view model", () => {
 				outputTokens: 0,
 			}),
 		).toBeNull();
+		expect(
+			getCachedInputTokens({
+				inputTokens: 10,
+				cachedInputTokens: 20,
+				outputTokens: 0,
+			}),
+		).toBe(10);
+		expect(
+			getCacheRate({
+				inputTokens: 10,
+				cachedInputTokens: 20,
+				outputTokens: 0,
+			}),
+		).toBe(100);
+		expect(
+			getUsageTokenTotal({
+				inputTokens: 10,
+				cachedInputTokens: 20,
+				outputTokens: 3,
+			}),
+		).toBe(13);
 	});
 
 	it("builds common token and daily chart values from one dashboard model", () => {
@@ -136,13 +159,9 @@ describe("Overview view model", () => {
 
 		expect(buildOverviewViewModel(dashboard)).toEqual({
 			tokenMetrics: [
-				{ key: "totalInput", value: 1_200 },
 				{ key: "input", value: 900 },
 				{ key: "cachedInput", value: 300 },
 				{ key: "output", value: 45 },
-				{ key: "reasoningOutput", value: 12 },
-				{ key: "stateCard", value: 5 },
-				{ key: "promptInput", value: 100 },
 			],
 			cacheRate: 25,
 			maxBucketTokens: 1_245,

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { eq } from "drizzle-orm";
 import {
 	afterEach,
 	beforeAll,
@@ -10,8 +11,12 @@ import {
 } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
+import { db } from "../../api/db/client";
+import { missionPilotTaskEventInbox } from "../../api/db/mission-pilot-agent-schema";
+import { missionPilotSessions } from "../../api/db/mission-pilot-schema";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import * as service from "../../api/modules/nightworkers/nightworkers.service";
+import { registerTaskMessageCreatedListener } from "../../api/modules/nightworkers/nightworkers.task-message-events";
 import * as llm from "../../api/services/structured-llm";
 import { representativeAppBlueprint } from "../fixtures/app-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
@@ -34,7 +39,7 @@ vi.mock("../../api/services/structured-llm", async () => {
 	};
 });
 
-vi.mock("../../api/services/agent-runtime/registry", () => {
+vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 	const runtime = {
 		kind: "native-local",
 		start: vi.fn(async () => ({
@@ -112,18 +117,14 @@ const sameOriginHeaders = { Origin: "http://localhost:39174" };
 function mockPlanModeGate(
 	shouldStartPlanMode: boolean,
 	reason = "test gate",
-	action:
-		| "plan_mode"
-		| "general_answer"
-		| "implementation"
-		| "review" = shouldStartPlanMode ? "plan_mode" : "implementation",
+	action: "plan_mode" | "coding_agent" = shouldStartPlanMode
+		? "plan_mode"
+		: "coding_agent",
 ) {
 	return JSON.stringify({
 		shouldStartPlanMode,
 		action,
 		reason,
-		dedicatedViews: [],
-		specificationLenses: [],
 	});
 }
 
@@ -176,6 +177,155 @@ afterEach(async () => {
 });
 
 describe("NightWorkers workbench routes", () => {
+	it("starts the standalone Plan Mode Artifact while Mission Pilot is stopped", async () => {
+		vi.mocked(llm.callStructuredJsonLLM)
+			.mockResolvedValueOnce(
+				mockPlanModeGate(true, "explicit planning request"),
+			)
+			.mockResolvedValueOnce(
+				JSON.stringify({
+					title: "Normal Plan Questionnaire",
+					questions: [
+						{
+							text: "Which boundary should be fixed first?",
+							type: "radio",
+							options: ["API", "UI"],
+						},
+					],
+				}),
+			);
+		const project = await repo.createRepository({
+			name: `TEST: Stopped Mission Pilot ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const createResponse = await app.request(
+			"http://localhost/api/workbench/sessions",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ repositoryId: project.id }),
+			},
+		);
+		expect(createResponse.status, await createResponse.clone().text()).toBe(
+			201,
+		);
+		const task = await createResponse.json();
+		expect(task.missionPilot).toMatchObject({
+			desiredState: "stopped",
+			phase: "created",
+		});
+		const unregister = registerTaskMessageCreatedListener((message) => {
+			if (message.role === "user")
+				throw new Error("sidecar listener must not fail normal intake");
+		});
+
+		const response = await (async () => {
+			try {
+				return await app.request(
+					`http://localhost/api/workbench/sessions/${task.id}/messages`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							...sameOriginHeaders,
+						},
+						body: JSON.stringify({
+							prompt: "通常のPlan Modeで実装計画を作成してください",
+							waitForIntake: true,
+						}),
+					},
+				);
+			} finally {
+				unregister();
+			}
+		})();
+
+		expect(response.status, await response.clone().text()).toBe(200);
+		const body = await response.json();
+		expect(body.run).toBeNull();
+		expect(body.task.status).toBe("ready");
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+		expect(
+			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2],
+		).toMatchObject({ schemaName: "workbench_plan_mode_gate", role: "plan" });
+		expect(
+			vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2],
+		).toMatchObject({ schemaName: "design_questionnaire", role: "plan" });
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "design_questionnaire_ready",
+			),
+		).toBe(true);
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "design_questionnaire_starting",
+			),
+		).toBe(true);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+	});
+
+	it("starts the normal Coding Agent without a Mission Pilot envelope while stopped", async () => {
+		const project = await repo.createRepository({
+			name: `TEST: Normal Coding Agent ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const createResponse = await app.request(
+			"http://localhost/api/workbench/sessions",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ repositoryId: project.id }),
+			},
+		);
+		expect(createResponse.status).toBe(201);
+		const task = await createResponse.json();
+
+		const response = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "通常のCoding Agentでこの変更を実装してください",
+					waitForIntake: true,
+				}),
+			},
+		);
+
+		expect(response.status, await response.clone().text()).toBe(200);
+		const body = await response.json();
+		expect(body.run).toMatchObject({
+			taskId: task.id,
+			contextSnapshot: {
+				executionMode: "implementation",
+				planModeRequested: false,
+				planModeClosed: true,
+			},
+		});
+		expect(body.run.contextSnapshot).not.toHaveProperty("missionPilot");
+		expect(body.run.contextSnapshot).toHaveProperty(
+			"implementationPhasePreamble",
+		);
+		expect(
+			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2],
+		).toMatchObject({ schemaName: "workbench_plan_mode_gate", role: "plan" });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const [pilot] = await db
+			.select({ id: missionPilotSessions.id })
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.taskId, task.id));
+		expect(
+			await db
+				.select()
+				.from(missionPilotTaskEventInbox)
+				.where(eq(missionPilotTaskEventInbox.sessionId, pilot?.id ?? "")),
+		).toHaveLength(0);
+	});
+
 	it("keeps plan-mode AI responses available for queued sessions without starting a run", async () => {
 		vi.mocked(llm.callStructuredJsonLLM)
 			.mockResolvedValueOnce(
@@ -211,7 +361,7 @@ describe("NightWorkers workbench routes", () => {
 		const body = await res.json();
 		expect(body.run).toBeNull();
 		expect(llm.callSupervisorLLM).not.toHaveBeenCalled();
-		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(1);
 		expect(body.task.status).toBe("queued");
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
 		expect(
@@ -224,7 +374,71 @@ describe("NightWorkers workbench routes", () => {
 				(message: unknown) =>
 					message.metadataJson?.intent === "design_questionnaire_ready",
 			),
+		).toBe(false);
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "plan_mode_run_blocked",
+			),
 		).toBe(true);
+	});
+
+	it("does not bypass the queue for a normal Coding Agent intake", async () => {
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+			mockPlanModeGate(false, "ready to implement"),
+		);
+		const { task } = await createWorkbenchTask({ status: "queued" });
+
+		const res = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "この変更を実装して",
+					intent: "intake",
+				}),
+			},
+		);
+
+		expect(res.status, await res.clone().text()).toBe(200);
+		const body = await res.json();
+		expect(body.run).toBeNull();
+		expect(body.task.status).toBe("queued");
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "coding_agent_run_blocked",
+			),
+		).toBe(true);
+	});
+
+	it("does not override the LLM gate from the task creation source", async () => {
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+			mockPlanModeGate(false, "requirements are already implementable"),
+		);
+		const { task } = await createWorkbenchTask({
+			createdBy: "project-evaluation",
+		});
+
+		const res = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "確定済みの改善内容を実装して",
+					intent: "intake",
+				}),
+			},
+		);
+
+		expect(res.status, await res.clone().text()).toBe(200);
+		const body = await res.json();
+		expect(body.run?.contextSnapshot).toMatchObject({
+			planModeRequested: false,
+		});
 	});
 
 	it("prefers adopted Blueprint artifacts over newer generated Blueprint messages for planning", async () => {
@@ -320,7 +534,12 @@ describe("NightWorkers workbench routes", () => {
 });
 
 async function createWorkbenchTask(
-	input: { title?: string; status?: string; objective?: string } = {},
+	input: {
+		title?: string;
+		status?: string;
+		objective?: string;
+		createdBy?: "project-evaluation";
+	} = {},
 ) {
 	const project = await repo.createRepository({
 		name: `TEST: Workbench Project ${crypto.randomUUID()}`,
@@ -334,6 +553,7 @@ async function createWorkbenchTask(
 		acceptanceCriteria:
 			"Draft conversation, queue, and run are separate task-queue steps",
 		status: input.status || "draft",
+		createdBy: input.createdBy,
 	});
 	return { project, task };
 }

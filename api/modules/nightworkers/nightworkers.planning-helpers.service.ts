@@ -1,13 +1,24 @@
 import { AppError, NotFoundError } from "../../lib/errors";
 import type { SupervisorRoutingHypothesis } from "../../services/supervisor/skills/types";
-import type * as repo from "./nightworkers.repository";
+import * as repo from "./nightworkers.repository";
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
+
+export type BlueprintPlanningReadiness = {
+	source: "adopted" | "latest_generated" | "none";
+	diagnostic:
+		| "adopted_blueprint"
+		| "using_latest_generated_blueprint"
+		| "no_adopted_blueprint";
+	messageId: string | null;
+	blueprint: unknown;
+	summary: string;
+};
 
 export function buildBlueprintPlanningReadiness(
 	source: "adopted" | "latest_generated",
 	message: TaskMessageRow,
-): import("./nightworkers.basic.service").BlueprintPlanningReadiness {
+): BlueprintPlanningReadiness {
 	const metadata = message.metadataJson as {
 		appBlueprint?: unknown;
 		mockBlueprint?: unknown;
@@ -22,6 +33,33 @@ export function buildBlueprintPlanningReadiness(
 		messageId: message.id,
 		blueprint,
 		summary: summarizePlanningBlueprint(source, blueprint),
+	};
+}
+
+export async function resolveBlueprintPlanningReadiness(
+	taskId: string,
+): Promise<BlueprintPlanningReadiness> {
+	const messages = await repo.listTaskMessages(taskId);
+	const blueprintMessages = messages.filter(isBlueprintMessage);
+	for (const message of [...blueprintMessages].reverse()) {
+		const adoption = await repo.getBlueprintArtifactAdoption(
+			taskId,
+			message.id,
+		);
+		if (adoption?.adopted) {
+			return buildBlueprintPlanningReadiness("adopted", message);
+		}
+	}
+	const latestGenerated = blueprintMessages.at(-1);
+	if (latestGenerated) {
+		return buildBlueprintPlanningReadiness("latest_generated", latestGenerated);
+	}
+	return {
+		source: "none",
+		diagnostic: "no_adopted_blueprint",
+		messageId: null,
+		blueprint: null,
+		summary: "No adopted Blueprint artifact is available for task planning.",
 	};
 }
 

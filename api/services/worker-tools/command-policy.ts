@@ -70,6 +70,13 @@ const BUILD_TEST_COMMANDS = [
 	"yarn typecheck",
 	"yarn lint",
 	"yarn build",
+	"bunx --no-install vitest list",
+	"cargo test",
+	"cargo nextest list",
+	"go test",
+	"./gradlew test",
+	"gradle test",
+	"mvn test",
 ];
 
 const BACKGROUND_COMMANDS = [

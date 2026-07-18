@@ -1,8 +1,8 @@
 import { z } from "@hono/zod-openapi";
 
 export const REQUIRED_PLAN_MODE_ROUTING_VIEWS = [
-	"questionnaire",
 	"feature_plan",
+	"questionnaire",
 ] as const;
 
 export const EDITABLE_PLAN_MODE_ROUTING_VIEWS = [
@@ -30,7 +30,11 @@ export const editablePlanModeRoutingViewSchema = z.enum(
 	EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 );
 export const planModeRoutingDecisionSchema = z.enum(["include", "omit"]);
-export const planModeRoutingActorSchema = z.enum(["user", "mission_pilot"]);
+export const planModeRoutingActorSchema = z.enum([
+	"user",
+	"mission_pilot",
+	"coding_agent",
+]);
 
 export const planModeRoutingEntrySchema = z
 	.object({
@@ -66,8 +70,7 @@ export const planModeRoutingSnapshotSchema = z
 		for (const requiredView of REQUIRED_PLAN_MODE_ROUTING_VIEWS) {
 			const entry = byView.get(requiredView);
 			if (
-				!entry ||
-				entry.decision !== "include" ||
+				entry?.decision !== "include" ||
 				!entry.required ||
 				!entry.capabilityEnabled
 			) {
@@ -124,7 +127,7 @@ export const missionPilotPlanRoutingToolCallSchema = z
 				z
 					.object({
 						view: editablePlanModeRoutingViewSchema,
-						decision: z.literal("include"),
+						decision: planModeRoutingDecisionSchema,
 						reason: z.string().min(1).max(1_000),
 					})
 					.strict(),

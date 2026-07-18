@@ -11,7 +11,7 @@ describe("Review and ontology module boundaries", () => {
 			"api/modules/nightworkers/nightworkers.review-mode.service.ts",
 			"api/modules/nightworkers/nightworkers.review-run.service.ts",
 			"api/services/agent-ontology/agent-ontology.service.ts",
-			"api/services/agent-runtime/ontology-runtime-context.ts",
+			"api/modules/codingAgent/runtime/ontology-runtime-context.ts",
 			"src/modules/nightworkers/components/ReviewStatusViewer.tsx",
 			"src/modules/nightworkers/types/review.ts",
 		]) {

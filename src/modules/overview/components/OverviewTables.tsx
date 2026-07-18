@@ -9,7 +9,10 @@ import {
 	subtleTextStyle,
 	tableBorderStyle,
 } from "../overviewStyles";
-import { getUncachedInputTokens } from "../overviewViewModel";
+import {
+	getCachedInputTokens,
+	getUncachedInputTokens,
+} from "../overviewViewModel";
 import {
 	CompactCostValue,
 	CompactNumberValue,
@@ -77,7 +80,7 @@ export function OverviewTables({
 							</td>
 							<td className="py-2 text-right">
 								<CompactNumberValue
-									value={item.cachedInputTokens}
+									value={getCachedInputTokens(item)}
 									language={language}
 								/>
 							</td>
@@ -159,7 +162,7 @@ export function OverviewTables({
 							</td>
 							<td className="py-2 text-right">
 								<CompactNumberValue
-									value={call.cachedInputTokens}
+									value={getCachedInputTokens(call)}
 									language={language}
 								/>
 							</td>

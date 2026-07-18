@@ -1,5 +1,12 @@
 import { createOpenApiRouter } from "../../lib/openapi";
+import { projectMissionPilotQuestionnaireDraftAnswers } from "../missionPilot";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
+import {
+	executeTaskOperatorCommand,
+	humanTaskOperatorCommandContext,
+	humanTaskOperatorQueryContext,
+	readTaskOperatorProjection,
+} from "../taskOperator";
 import * as service from "./questionnaire.service";
 import * as additionalService from "./questionnaire-additional.service";
 import {
@@ -31,7 +38,13 @@ export const questionnaireRouter = createOpenApiRouter()
 			const sessions = await service.listDesignQuestionnaires(
 				c.req.param("id"),
 			);
-			return c.json(sessions, 200);
+			return c.json(
+				await projectMissionPilotQuestionnaireDraftAnswers(
+					c.req.param("id"),
+					sessions,
+				),
+				200,
+			);
 		}),
 	)
 	.openapi(
@@ -41,17 +54,33 @@ export const questionnaireRouter = createOpenApiRouter()
 				c.req.param("id"),
 				c.req.param("sessionId"),
 			);
-			return c.json(session, 200);
+			const [projected] = await projectMissionPilotQuestionnaireDraftAnswers(
+				c.req.param("id"),
+				[session],
+			);
+			return c.json(projected ?? session, 200);
 		}),
 	)
 	.openapi(
 		saveDesignQuestionnaireAnswersRoute,
 		withOpenApiRouteError(saveDesignQuestionnaireAnswersRoute, async (c) => {
-			const session = await service.saveDesignQuestionnaireAnswers(
-				c.req.param("id"),
-				c.req.param("sessionId"),
-				c.req.valid("json").answers,
-			);
+			const taskId = c.req.param("id");
+			const projection = await readTaskOperatorProjection(taskId, {
+				...humanTaskOperatorQueryContext(c.get("user")?.userId),
+			});
+			const session = await executeTaskOperatorCommand({
+				taskId,
+				actionId: "questionnaire.submit",
+				expectedTaskRevision: projection.task.revision,
+				arguments: {
+					questionnaireSessionId: c.req.param("sessionId"),
+					answers: c.req.valid("json").answers,
+				},
+				context: humanTaskOperatorCommandContext({
+					userId: c.get("user")?.userId,
+					idempotencyKey: c.req.header("Idempotency-Key"),
+				}),
+			});
 			return c.json(session, 200);
 		}),
 	)

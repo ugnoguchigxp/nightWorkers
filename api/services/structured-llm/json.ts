@@ -161,7 +161,9 @@ export function createStructuredLlmAbortSignal(
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	timer.unref?.();
 	return {
-		signal: controller.signal,
+		signal: options.signal
+			? AbortSignal.any([options.signal, controller.signal])
+			: controller.signal,
 		timeoutMs,
 		dispose: () => clearTimeout(timer),
 	};

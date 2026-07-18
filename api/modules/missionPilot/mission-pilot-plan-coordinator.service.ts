@@ -38,6 +38,7 @@ import {
 	synchronizeTaskContext,
 	updatePhase,
 } from "./mission-pilot-plan-support";
+import { selectQuestionnaireArtifactsForTask } from "./planning/mission-pilot-questionnaire-artifact-routing.service";
 
 export { buildMissionPilotPlanReviewResponseJsonSchema } from "./mission-pilot-plan-review.service";
 
@@ -92,7 +93,6 @@ async function executeArtifactSteps(
 ) {
 	await assertMissionPilotPreQueueMutable(taskId);
 	await updatePhase(taskId, leaseOwner, "generating_artifacts");
-	const workspace = await getPlanModeWorkspace(taskId);
 	let questionnaire = await getDesignQuestionnaireSession(
 		taskId,
 		questionnaireSessionId,
@@ -110,20 +110,29 @@ async function executeArtifactSteps(
 		);
 	}
 	await ensureQuestionnaireContext(sessionId, questionnaire);
+	let currentWorkspace = await getPlanModeWorkspace(taskId);
+	const routed = await selectQuestionnaireArtifactsForTask({
+		taskId,
+		sessionId,
+		questionnaire,
+	});
+	if (routed && routed.revision !== (currentWorkspace.routing?.revision ?? 0)) {
+		currentWorkspace = await getPlanModeWorkspace(taskId);
+	}
 	const steps = buildPlanModeExecutionSteps({
 		capabilities: readGeneralSettings().planMode.capabilities,
-		viewDecisions: workspace.viewDecisions,
+		viewDecisions: currentWorkspace.viewDecisions,
 		questionnaireExists: true,
 		questionnaireComplete: ["review_ready", "accepted"].includes(
 			questionnaire.status,
 		),
-		existingArtifactKinds: artifactKinds(workspace),
+		existingArtifactKinds: artifactKinds(currentWorkspace),
 	});
 	const rows = await planRepo.synchronizePlanSteps(sessionId, steps);
 	await publishCurrentPlanProgress(taskId);
 	for (const row of rows) {
 		if (row.status === "completed" && row.stepKey !== "questionnaire") {
-			const artifact = existingArtifactForStep(workspace, row.stepKey);
+			const artifact = existingArtifactForStep(currentWorkspace, row.stepKey);
 			if (!artifact) {
 				throw new Error(`Completed Plan step has no Artifact: ${row.stepKey}`);
 			}
@@ -138,7 +147,7 @@ async function executeArtifactSteps(
 			const updatedSession = await persistArtifactContext(
 				sessionId,
 				row.stepKey,
-				{ message, workspace } as GeneratedArtifact,
+				{ message, workspace: currentWorkspace } as GeneratedArtifact,
 			);
 			if (!updatedSession) throw new Error("Mission Pilot Context is missing");
 			const adopted = await planRepo.adoptPlanStepArtifact(row.id, {

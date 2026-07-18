@@ -233,6 +233,13 @@ export function isDesignQuestionnaireReadyMessage(message: TaskMessage) {
 	);
 }
 
+export function isDesignQuestionnaireStartingMessage(message: TaskMessage) {
+	return (
+		String(toDeepRecord(message.metadataJson).intent) ===
+		"design_questionnaire_starting"
+	);
+}
+
 export function resolveQuestionnaireReadyInitialTab(message: TaskMessage) {
 	const status = String(
 		toDeepRecord(message.metadataJson).questionnaireStatus || "",

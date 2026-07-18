@@ -76,6 +76,38 @@ describe("LLM pricing calculation", () => {
 		expect(result.totalCost).toBeCloseTo(0.0164);
 	});
 
+	it("clamps anomalous cached input before calculating cost", () => {
+		const result = calculateUsageCost({
+			inputTokens: 100,
+			cachedInputTokens: 150,
+			outputTokens: 0,
+			reasoningOutputTokens: null,
+			pricing: {
+				id: "pricing-cached-anomaly-test",
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				provider: "openai",
+				model: "priced-model",
+				currencyCode: "USD",
+				inputPer1m: 10,
+				cachedInputPer1m: 1,
+				outputPer1m: 20,
+				reasoningOutputPer1m: null,
+				sourceUrl: null,
+				sourceLabel: null,
+				effectiveFrom: new Date(0),
+				fetchedAt: new Date(),
+				manualOverride: true,
+				enabled: true,
+			},
+		});
+
+		expect(result.inputCost).toBe(0);
+		expect(result.cachedInputCost).toBeCloseTo(0.0001);
+		expect(result.totalCost).toBeCloseTo(0.0001);
+		expect(result.incompleteReasons).toContain("cached_input_exceeds_input");
+	});
+
 	it("includes reasoning output token cost when a reasoning price is configured", () => {
 		const result = calculateUsageCost({
 			inputTokens: 0,

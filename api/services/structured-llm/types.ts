@@ -1,10 +1,11 @@
 import type { LlmRole as StructuredLlmRole } from "../../../shared/llm-role";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import type { RuntimeSessionStateStore } from "../agent-runtime/runtime-session-state";
+import type { StructuredProviderExecutionPolicy } from "../../modules/agentsShare";
 import type {
 	LlmPromptPartTokenEstimates,
 	NormalizedLlmUsage,
 } from "../llm-usage/types";
+import type { RuntimeSessionStateStore } from "../runtime-session-state";
 import type { StructuredLlmModelTarget } from "./settings";
 
 export type StructuredLlmRouteSource = "override" | "primary" | "fallback";
@@ -34,6 +35,7 @@ export type CallSupervisorOptions = {
 	routePolicy?: StructuredLlmRoutePolicy;
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 	workingDirectory?: string;
 	taskId?: string;
 	runId?: string | null;
@@ -41,6 +43,7 @@ export type CallSupervisorOptions = {
 	promptPartTokenEstimates?: LlmPromptPartTokenEstimates;
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
 	runtimeSessionStore?: RuntimeSessionStateStore;
+	executionPolicy?: StructuredProviderExecutionPolicy;
 };
 
 /** @deprecated Use StructuredLlmResultOptions with callStructuredLlmResult. */

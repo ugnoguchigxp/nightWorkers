@@ -4,10 +4,18 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
+	missionPilotAgentSessions,
+	missionPilotTaskEventInbox,
+} from "../api/db/mission-pilot-agent-schema";
+import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	claimAgentPlay,
+	claimAgentStop,
+} from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import { backfillMissingTaskSessions } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	play,
@@ -15,6 +23,7 @@ import {
 } from "../api/modules/missionPilot/mission-pilot.service";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { createTaskWithMissionPilot } from "../api/modules/nightworkers/nightworkers.task-creation.service";
+import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
 
 const repositoryIds: string[] = [];
 
@@ -115,6 +124,98 @@ describe("Universal Task creation", () => {
 		expect(
 			await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
 		).toMatchObject({ status: "completed" });
+	});
+
+	it("keeps normal user messages out of the Mission Pilot inbox while stopped", async () => {
+		const repositoryId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "Stopped Mission Pilot prompt isolation",
+			localPath: `/tmp/${repositoryId}`,
+			branch: "main",
+		});
+		const task = await createTask({
+			repositoryId,
+			title: "New Session",
+			objective: "",
+		});
+		const [session] = await db
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.taskId, task.id));
+		const [agentBefore] = await db
+			.select()
+			.from(missionPilotAgentSessions)
+			.where(eq(missionPilotAgentSessions.sessionId, session?.id ?? ""));
+
+		const updated = await appendTaskMessage(
+			task.id,
+			"通常のPlan Modeで実装計画を作成してください",
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(updated.title).toBe("通常のPlan Modeで実装計画を作成してください");
+		expect(
+			await db
+				.select()
+				.from(missionPilotTaskEventInbox)
+				.where(eq(missionPilotTaskEventInbox.sessionId, session?.id ?? "")),
+		).toHaveLength(0);
+		const [agentAfter] = await db
+			.select()
+			.from(missionPilotAgentSessions)
+			.where(eq(missionPilotAgentSessions.sessionId, session?.id ?? ""));
+		expect(agentAfter?.nextEventSequence).toBe(agentBefore?.nextEventSequence);
+	});
+
+	it("publishes user messages only to an active Mission Pilot agent", async () => {
+		const repositoryId = crypto.randomUUID();
+		repositoryIds.push(repositoryId);
+		await db.insert(repositories).values({
+			id: repositoryId,
+			name: "Active Mission Pilot prompt events",
+			localPath: `/tmp/${repositoryId}`,
+			branch: "main",
+		});
+		const task = await createTask({
+			repositoryId,
+			title: "New Session",
+			objective: "Active Mission Pilot event test",
+		});
+		const [session] = await db
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.taskId, task.id));
+		const claimed = await claimAgentPlay(task.id, session?.version ?? -1);
+		expect(claimed).not.toBeNull();
+		await db
+			.update(missionPilotAgentSessions)
+			.set({ runtimeState: "completed", updatedAt: new Date() })
+			.where(eq(missionPilotAgentSessions.sessionId, session?.id ?? ""));
+
+		const updated = await appendTaskMessage(task.id, "ユーザーからの追加指示");
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		await appendTaskMessage(task.id, "Mission Pilot自身の指示", {
+			source: "mission_pilot",
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const events = await db
+			.select()
+			.from(missionPilotTaskEventInbox)
+			.where(eq(missionPilotTaskEventInbox.sessionId, session?.id ?? ""));
+
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({
+			eventType: "task.user_message_added",
+			taskRevision: updated.updatedAt.getTime(),
+		});
+		const current = await db.query.missionPilotSessions.findFirst({
+			where: eq(missionPilotSessions.id, session?.id ?? ""),
+		});
+		expect(
+			await claimAgentStop(task.id, current?.version ?? -1),
+		).not.toBeNull();
 	});
 
 	it("rolls back Task insertion when Session provisioning conflicts", async () => {

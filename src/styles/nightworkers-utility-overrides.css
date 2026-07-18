@@ -400,6 +400,146 @@
 	opacity: 0.75;
 }
 
+.nightworkers-shell .nightworkers-plan-artifact-list {
+	display: grid;
+	gap: var(--nw-gap);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card {
+	display: grid;
+	gap: var(--nw-gap);
+	padding: calc(var(--nw-gap) * 1.15);
+	border: 1px solid var(--nw-artifact-structured-border);
+	border-radius: var(--nw-radius);
+	background: var(--nw-artifact-structured-card-background);
+	color: var(--nw-artifact-structured-text);
+	box-shadow: var(--nw-shadow);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card[data-status="pending"] {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary) 56%,
+		var(--nw-artifact-structured-border)
+	);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card[data-status="done"] {
+	border-color: var(--nw-artifact-structured-success-border);
+	background: var(--nw-artifact-structured-success-background);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card[data-included="false"] {
+	opacity: 0.72;
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card-main {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--nw-gap);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-toggle {
+	flex: none;
+	width: calc(var(--nw-control-height) * 0.55);
+	height: calc(var(--nw-control-height) * 0.55);
+	margin-top: calc(var(--nw-gap) * 0.15);
+	accent-color: var(--nw-primary);
+	cursor: pointer;
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-toggle:disabled {
+	cursor: not-allowed;
+	opacity: 0.82;
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-card-title-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: calc(var(--nw-gap) * 0.5);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-badge {
+	display: inline-flex;
+	align-items: center;
+	min-height: calc(var(--nw-control-height) * 0.65);
+	padding: 0 calc(var(--nw-gap) * 0.65);
+	border-width: 1px;
+	border-style: solid;
+	border-radius: var(--nw-control-radius);
+	font-size: calc(var(--nw-font-size) * 0.75);
+	line-height: 1;
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-complete-mark,
+.nightworkers-shell .nightworkers-plan-artifact-state-mark {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: var(--nw-control-height);
+	height: var(--nw-control-height);
+	border: 1px solid var(--nw-artifact-structured-border);
+	border-radius: 999px;
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-complete-mark {
+	border-color: var(--nw-artifact-structured-success-border);
+	background: var(--nw-success);
+	color: var(--nw-primary-foreground);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-complete-mark svg,
+.nightworkers-shell .nightworkers-plan-artifact-state-mark svg {
+	width: calc(var(--nw-control-height) * 0.55);
+	height: calc(var(--nw-control-height) * 0.55);
+	stroke-width: 3;
+}
+
+.nightworkers-shell
+	.nightworkers-plan-artifact-card[data-status="running"]
+	.nightworkers-plan-artifact-state-mark {
+	border-color: color-mix(
+		in srgb,
+		var(--nw-primary) 58%,
+		var(--nw-artifact-structured-border)
+	);
+	color: var(--nw-primary);
+}
+
+.nightworkers-shell
+	.nightworkers-plan-artifact-card[data-status="failed"]
+	.nightworkers-plan-artifact-state-mark {
+	border-color: var(--nw-artifact-structured-warning-border);
+	color: var(--nw-artifact-structured-warning-text);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-actions {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--nw-gap);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-description {
+	margin: 0;
+	color: var(--nw-artifact-structured-muted-text);
+}
+
+.nightworkers-shell .nightworkers-plan-artifact-action-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: calc(var(--nw-gap) * 0.65);
+}
+
+@media (max-width: 40rem) {
+	.nightworkers-shell .nightworkers-plan-artifact-actions {
+		grid-template-columns: 1fr;
+	}
+}
+
 .nightworkers-shell .nightworkers-plan-workspace-tab {
 	border-color: var(--nw-artifact-structured-border);
 	background: var(--nw-artifact-structured-background);

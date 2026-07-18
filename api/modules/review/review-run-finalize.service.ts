@@ -1,4 +1,4 @@
-import type { AgentRuntimeResult } from "../../services/agent-runtime/types";
+import type { AgentRuntimeResult } from "../codingAgent";
 import * as repo from "../nightworkers/nightworkers.repository";
 import * as reviewRepo from "./review-mode.repository";
 

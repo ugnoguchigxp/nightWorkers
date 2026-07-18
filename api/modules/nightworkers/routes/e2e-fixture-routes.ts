@@ -1,7 +1,7 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 import { createOpenApiRouter } from "../../../lib/openapi";
-import * as missionPilotRepo from "../../missionPilot/mission-pilot.repository";
+import * as missionPilotRepo from "../../missionPilot";
 import * as queueRepo from "../../queue/queue-repository-commands";
 import { appendActivityEvent } from "../nightworkers.activity-persistence.repository";
 import * as repo from "../nightworkers.repository";
@@ -331,7 +331,9 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			content: "MISSION_PILOT_ARTIFACT_BODY",
 			messageType: "markdown_document",
 			payloadJson: { intent: "feature_plan" },
-			trace: codingAgentChatTrace(),
+			trace: missionPilotRepo.missionPilotArtifactTrace({
+				sessionId: session.id,
+			}),
 		});
 		return c.json({ sessionId: session.id }, 201);
 	});

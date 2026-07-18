@@ -5,11 +5,8 @@ import {
 	buildFlowchartFromMarkdown,
 	buildMermaidErDiagram,
 	DedicatedViewPanel,
-	PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY,
 	PlanWorkspaceStatusView,
-	readPlanModeSequentialAutoGeneratePreference,
 	WorkspaceDataModelPanel,
-	writePlanModeSequentialAutoGeneratePreference,
 } from "../src/modules/planMode";
 
 describe("WorkspaceDataModelPanel", () => {
@@ -513,8 +510,9 @@ describe("PlanWorkspaceStatusView", () => {
 								{
 									view: "questionnaire",
 									decision: "include",
-									required: true,
+									required: false,
 									capabilityEnabled: true,
+									reason: "仕様判断を実装前に確定するため。",
 								},
 								{
 									view: "feature_plan",
@@ -527,6 +525,7 @@ describe("PlanWorkspaceStatusView", () => {
 									decision: "omit",
 									required: false,
 									capabilityEnabled: true,
+									reason: "APIの入出力を実装前に固定するため。",
 								},
 								{
 									view: "zod_schema_design",
@@ -560,9 +559,18 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("Questionnaire （必須）");
-		expect(markup).toContain("仕様書 （必須）");
+		expect(markup).toContain(">Questionnaire</h3>");
+		expect(markup).toContain(">仕様書</h3>");
+		expect(markup.match(/>必須<\/span>/g)).toHaveLength(2);
+		expect(markup).toContain('aria-label="Questionnaireは必須です"');
+		expect(markup).toContain('aria-label="仕様書は必須です"');
 		expect(markup).toContain("API Contract");
+		expect(markup).toContain("必要な理由: 仕様判断を実装前に確定するため。");
+		expect(markup).toContain(
+			"対象外の理由: APIの入出力を実装前に固定するため。",
+		);
+		expect(markup).not.toContain("Plan Artifact routing");
+		expect(markup).not.toContain("Questionnaire と仕様書は必須です。");
 		expect(markup).toContain("Settings で無効です。");
 		expect(markup).toContain("Routing revision: 3");
 		expect(markup.match(/<input[^>]*disabled=""[^>]*>/g)).toHaveLength(3);
@@ -641,27 +649,7 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).toContain("Blueprintを再生成");
 	});
 
-	it("persists the sequential auto-generate preference in localStorage", () => {
-		const values = new Map<string, string>();
-		const storage = {
-			getItem: (key: string) => values.get(key) ?? null,
-			setItem: (key: string, value: string) => values.set(key, value),
-		} as Storage;
-
-		expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(false);
-		writePlanModeSequentialAutoGeneratePreference(true, storage);
-		expect(values.get(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY)).toBe(
-			"true",
-		);
-		expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(true);
-		writePlanModeSequentialAutoGeneratePreference(false, storage);
-		expect(values.get(PLAN_MODE_SEQUENTIAL_AUTO_GENERATE_STORAGE_KEY)).toBe(
-			"false",
-		);
-		expect(readPlanModeSequentialAutoGeneratePreference(storage)).toBe(false);
-	});
-
-	it("shows the sequential auto-generate checkbox on Status", () => {
+	it("renders the unified Artifact list without sequential auto-generation", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={null}
@@ -677,8 +665,11 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain('type="checkbox"');
-		expect(markup).toContain("順次自動生成");
+		expect(markup).toContain("設計アーティファクト");
+		expect(markup).toContain("nightworkers-plan-artifact-list");
+		expect(markup).toContain("未作成をまとめて生成");
+		expect(markup).not.toContain("順次自動生成");
+		expect(markup).not.toContain("nightworkers-plan-artifact-summary");
 	});
 
 	it("allows additional confirmation generation even when no additional question set exists", () => {
@@ -720,10 +711,10 @@ describe("PlanWorkspaceStatusView", () => {
 			);
 
 		const noExistingAdditionalButton = renderStatus().match(
-			/<button[^>]*>追加確認<\/button>/,
+			/<button[^>]*aria-label="Questionnaire追加確認"[^>]*>/,
 		)?.[0];
 		const enabledAdditionalButton = renderStatus("question-set-1").match(
-			/<button[^>]*>追加確認<\/button>/,
+			/<button[^>]*aria-label="Questionnaire追加確認"[^>]*>/,
 		)?.[0];
 
 		expect(noExistingAdditionalButton).not.toContain('disabled=""');
@@ -765,7 +756,7 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain("night queueに登録");
 	});
 
-	it("keeps implementation actions visible while Mission Pilot review correction is pending", () => {
+	it("enables implementation actions when routed Artifacts are complete even while review correction is pending", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={
@@ -780,7 +771,7 @@ describe("PlanWorkspaceStatusView", () => {
 						steps: [
 							{ key: "questionnaire", status: "completed" },
 							{ key: "blueprint", status: "completed" },
-							{ key: "data_model", status: "completed" },
+							{ key: "data_model", status: "pending" },
 							{ key: "feature_plan", status: "completed" },
 						],
 						review: { status: "revision_required" },
@@ -809,14 +800,59 @@ describe("PlanWorkspaceStatusView", () => {
 
 		expect(markup).toContain("今すぐ実装開始");
 		expect(markup).toContain("キューに追加");
-		expect(markup).toContain(
+		expect(markup).not.toContain(
 			"Mission Pilotを再生してレビュー修正を完了してください。",
 		);
 		expect(
 			markup.match(
 				/<button[^>]*disabled=""[^>]*>(今すぐ実装開始|キューに追加)<\/button>/g,
 			) || [],
-		).toHaveLength(2);
+		).toHaveLength(0);
+	});
+
+	it("hides implementation actions while an included Artifact is missing", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={
+					{
+						blueprintArtifacts: [{ id: "blueprint-1", title: "Blueprint" }],
+						dataModelArtifacts: [{ id: "data-model-1", title: "Data Model" }],
+						dedicatedViewArtifacts: [],
+					} as never
+				}
+				questionnaireSession={
+					{
+						id: "questionnaire-1",
+						status: "accepted",
+						answers: [],
+						questionSets: [],
+					} as never
+				}
+				viewDecisions={[
+					{
+						view: "api_io_contract",
+						decision: "include",
+						required: false,
+						capabilityEnabled: true,
+						reason: "APIの入出力を実装前に固定するため。",
+					},
+				]}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={true}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+				onQueueSession={vi.fn()}
+				onAddToQueue={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain('aria-label="API Contractを生成"');
+		expect(markup).not.toContain("今すぐ実装開始");
+		expect(markup).not.toContain("キューに追加");
 	});
 
 	it("renders conceptual Artifact scores as non-blocking reference information", () => {
@@ -891,15 +927,17 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("アンケートを確認");
+		expect(markup).toContain("回答を確認");
 		expect(markup).toContain("Blueprintを再生成");
 		expect(markup).toContain("Data Modelを再生成");
 		expect(markup).toContain("仕様書を再生成");
-		expect(markup).toContain("4. 仕様書を作成します");
-		expect(markup).not.toContain("5. 仕様書を作成します");
+		expect(markup).toContain('aria-label="仕様書は作成済みです"');
 		expect(markup).toContain("今すぐ実装開始");
 		expect(markup).toContain("キューに追加");
-		expect(markup.match(/disabled=""/g) || []).toHaveLength(5);
+		expect(markup.match(/<input[^>]*disabled=""[^>]*>/g) || []).toHaveLength(4);
+		expect(markup.match(/<button[^>]*disabled=""[^>]*>/g) || []).toHaveLength(
+			5,
+		);
 	});
 
 	it("disables Plan Mode capability actions while keeping read-only status visible", () => {
@@ -945,12 +983,14 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("アンケートを確認");
+		expect(markup).toContain("回答を確認");
 		expect(markup).toContain("Blueprintを再生成");
 		expect(markup).toContain("Data Modelを再生成");
 		expect(markup).toContain("仕様書を再生成");
-		expect(markup).toContain("Plan Mode capability is disabled in Settings.");
-		expect(markup.match(/disabled=""/g) || []).toHaveLength(3);
+		expect(markup).toContain("Settings で無効です。");
+		expect(markup.match(/<button[^>]*disabled=""[^>]*>/g) || []).toHaveLength(
+			3,
+		);
 	});
 
 	it("keeps required Questionnaire before included Data Model work", () => {
@@ -991,12 +1031,11 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("Data Model作成");
-		expect(markup).toContain("アンケートへ");
-		expect(markup).not.toContain("Blueprint作成");
-		expect(markup).toContain("Data Model: include - storage contract needed");
-		expect(markup).toContain("Questionnaire: omit - not needed");
-		expect(markup).toMatch(/<button[^>]*>Data Model作成<\/button>/);
+		expect(markup).toContain('aria-label="Data Modelを生成"');
+		expect(markup).toContain("回答する");
+		expect(markup).not.toContain('aria-label="Blueprintを生成"');
+		expect(markup).toContain("必要な理由: storage contract needed");
+		expect(markup).not.toContain("必要な理由: not needed");
 	});
 
 	it("hides stale Blueprint artifacts when routing omits Frontend UI work", () => {
@@ -1037,9 +1076,9 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain(
 			"インスタントMockUpを作成し、大筋UIの方向性を決めます",
 		);
-		expect(markup).not.toContain("Blueprint作成");
+		expect(markup).not.toContain('aria-label="Blueprintを生成"');
 		expect(markup).not.toContain("Blueprintを再生成");
-		expect(markup).toContain("2. 仕様書を作成します");
+		expect(markup).toContain('aria-label="仕様書を生成"');
 	});
 
 	it("does not show Blueprint or Data Model creation by default when routing decisions are missing", () => {
@@ -1071,12 +1110,10 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("アンケートを確認");
-		expect(markup).toContain("仕様書作成");
-		expect(markup).not.toContain("Blueprint作成");
-		expect(markup).not.toContain("Data Model作成");
-		expect(markup).toContain("2. 仕様書を作成します");
-		expect(markup).not.toContain("3. 仕様書を作成します");
+		expect(markup).toContain("回答を確認");
+		expect(markup).toContain('aria-label="仕様書を生成"');
+		expect(markup).not.toContain('aria-label="Blueprintを生成"');
+		expect(markup).not.toContain('aria-label="Data Modelを生成"');
 	});
 
 	it("keeps required Questionnaire before included Blueprint work", () => {
@@ -1099,9 +1136,8 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("Blueprint作成");
-		expect(markup).toContain("アンケートへ");
-		expect(markup).toMatch(/<button[^>]*>Blueprint作成<\/button>/);
+		expect(markup).toContain('aria-label="Blueprintを生成"');
+		expect(markup).toContain("回答する");
 	});
 
 	it("shows separate generation actions for included plan views", () => {
@@ -1136,16 +1172,18 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("2. User Flowを作成します");
-		expect(markup).toContain("3. API Contractを作成します");
-		expect(markup).toContain("4. 仕様書を作成します");
-		expect(markup).toContain("User Flow作成");
-		expect(markup).toContain("API Contract作成");
+		expect(markup).toContain('aria-label="User Flowを生成"');
+		expect(markup).toContain('aria-label="API Contractを生成"');
+		expect(markup).toContain('aria-label="仕様書を再生成"');
 		expect(markup).not.toContain("追加の Plan View");
 		expect(markup).not.toContain("追加Viewを生成");
-		expect(markup).toContain("User Flow: include - flow changes");
-		expect(markup).toContain("API Contract: include - API changes");
-		expect(markup).toContain("nightworkers-structured-artifact-card");
+		expect(markup).toContain("必要な理由: flow changes");
+		expect(markup).toContain("必要な理由: API changes");
+		expect(markup).toContain("ユーザー操作の流れを確認します。");
+		expect(markup).toContain("APIの入出力と境界を確認します。");
+		expect(markup).toContain("nightworkers-plan-artifact-description");
+		expect(markup).toContain("nightworkers-plan-artifact-action-buttons");
+		expect(markup).toContain("nightworkers-plan-artifact-card");
 		expect(markup).toContain("nightworkers-structured-artifact-success-pill");
 		expect(markup).toContain("nightworkers-structured-artifact-neutral-pill");
 		expect(markup).not.toContain("bg-slate-900/60");
@@ -1193,12 +1231,12 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("API Contract作成");
+		expect(markup).toContain('aria-label="API Contractを生成"');
 		expect(markup).not.toContain("State作成");
 		expect(markup).not.toContain("Zod作成");
 		expect(markup).not.toContain("Stateを再生成");
 		expect(markup).not.toContain("Zodを再生成");
-		expect(markup).toContain("Zod: omit - covered by OpenAPI schemas");
+		expect(markup).toContain("対象外の理由: covered by OpenAPI schemas");
 	});
 
 	it("shows regeneration actions for generated plan views", () => {
@@ -1240,18 +1278,20 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("User Flowが作成済みです。");
-		expect(markup).toContain("API Contractが作成済みです。");
+		expect(markup).toContain('aria-label="User Flowは作成済みです"');
+		expect(markup).toContain('aria-label="API Contractは作成済みです"');
 		expect(markup).toContain("User Flowを再生成");
 		expect(markup).toContain("API Contractを再生成");
 		expect(markup).not.toContain("生成状況を確認");
-		expect(markup).toMatch(/<button[^>]*>User Flowを再生成<\/button>/);
-		expect(markup).toMatch(/<button[^>]*>API Contractを再生成<\/button>/);
-		expect(markup).not.toMatch(
-			/<button[^>]*disabled=""[^>]*>User Flowを再生成<\/button>/,
+		expect(markup).toMatch(/<button[^>]*aria-label="User Flowを再生成"[^>]*>/);
+		expect(markup).toMatch(
+			/<button[^>]*aria-label="API Contractを再生成"[^>]*>/,
 		);
 		expect(markup).not.toMatch(
-			/<button[^>]*disabled=""[^>]*>API Contractを再生成<\/button>/,
+			/<button(?=[^>]*aria-label="User Flowを再生成")(?=[^>]*disabled="")[^>]*>/,
+		);
+		expect(markup).not.toMatch(
+			/<button(?=[^>]*aria-label="API Contractを再生成")(?=[^>]*disabled="")[^>]*>/,
 		);
 	});
 
@@ -1298,14 +1338,14 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("2. User Flowを作成します");
-		expect(markup).toContain("3. API Contractを作成します");
-		expect(markup).toContain("Plan Mode capability is disabled in Settings.");
+		expect(markup).toContain('aria-label="User Flowを生成"');
+		expect(markup).toContain('aria-label="API Contractを生成"');
+		expect(markup).toContain("Settings で無効です。");
 		expect(markup).toMatch(
-			/<button[^>]*disabled=""[^>]*>User Flow作成<\/button>/,
+			/<button(?=[^>]*aria-label="User Flowを生成")(?=[^>]*disabled="")[^>]*>/,
 		);
 		expect(markup).toMatch(
-			/<button[^>]*disabled=""[^>]*>API Contract作成<\/button>/,
+			/<button(?=[^>]*aria-label="API Contractを生成")(?=[^>]*disabled="")[^>]*>/,
 		);
 		expect(markup).not.toContain("生成状況を確認");
 	});

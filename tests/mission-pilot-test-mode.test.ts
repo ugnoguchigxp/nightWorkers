@@ -5,7 +5,7 @@ import {
 	completionCheckMatchesVerificationDocument,
 	readLatestCompletionCheckResult,
 } from "../api/services/run-events/completion-check-result";
-import { missionPilotTestDecisionSchema } from "../shared/schemas/mission-pilot-test.schema";
+import { missionPilotTestDecisionSchema } from "../shared/modules/missionPilot/mission-pilot-test.schema";
 
 const passingInput = {
 	runStatus: "completed",

@@ -88,6 +88,22 @@ describe("structured LLM JSON helpers", () => {
 		expect(handle.signal.aborted).toBe(false);
 	});
 
+	it("combines an external cancellation signal with the timeout signal", () => {
+		const controller = new AbortController();
+		const handle = createStructuredLlmAbortSignal({
+			timeoutMs: 60_000,
+			signal: controller.signal,
+		});
+
+		controller.abort(new Error("user stopped Mission Pilot"));
+
+		expect(handle.signal.aborted).toBe(true);
+		expect(handle.signal.reason).toEqual(
+			new Error("user stopped Mission Pilot"),
+		);
+		handle.dispose();
+	});
+
 	it("uses 180 seconds as the default structured LLM timeout", () => {
 		vi.useFakeTimers();
 		const originalTimeout = process.env.SUPERVISOR_LLM_TIMEOUT_MS;

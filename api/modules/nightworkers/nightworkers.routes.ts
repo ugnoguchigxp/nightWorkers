@@ -3,6 +3,12 @@ import { logEvent } from "../../lib/logger";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { getOntologyRunDebugReportRoute } from "../ontology";
 import {
+	executeTaskOperatorCommand,
+	humanTaskOperatorCommandContext,
+	humanTaskOperatorQueryContext,
+	readTaskOperatorProjection,
+} from "../taskOperator";
+import {
 	commitRunGitCloseoutHandler,
 	deferRunGitMergeHandler,
 	executeRunGitMergeHandler,
@@ -266,7 +272,20 @@ const router = createOpenApiRouter()
 				hasPriority: data.priority !== undefined,
 			},
 		});
-		const task = await service.updateTask(id, data);
+		const projection = await readTaskOperatorProjection(
+			id,
+			humanTaskOperatorQueryContext(c.get("user")?.userId),
+		);
+		const task = await executeTaskOperatorCommand({
+			taskId: id,
+			actionId: "task.update",
+			expectedTaskRevision: projection.task.revision,
+			arguments: { fields: data },
+			context: humanTaskOperatorCommandContext({
+				userId: c.get("user")?.userId,
+				idempotencyKey: c.req.header("Idempotency-Key"),
+			}),
+		});
 		if (!task) return c.json({ error: "Task not found" }, 404);
 		return c.json(task, 200);
 	})
@@ -310,15 +329,46 @@ const router = createOpenApiRouter()
 	.openapi(
 		archiveWorkbenchSessionRoute,
 		withOpenApiRouteError(archiveWorkbenchSessionRoute, async (c) => {
-			const task = await service.archiveTask(c.req.param("id"));
+			const taskId = c.req.param("id");
+			const projection = await readTaskOperatorProjection(
+				taskId,
+				humanTaskOperatorQueryContext(c.get("user")?.userId),
+			);
+			const task = await executeTaskOperatorCommand({
+				taskId,
+				actionId: "task.archive",
+				expectedTaskRevision: projection.task.revision,
+				arguments: {},
+				context: humanTaskOperatorCommandContext({
+					userId: c.get("user")?.userId,
+					idempotencyKey: c.req.header("Idempotency-Key"),
+				}),
+			});
 			return c.json(task, 200);
 		}),
 	)
 	.openapi(
 		restoreWorkbenchSessionArchiveRoute,
-		withOpenApiRouteError(restoreWorkbenchSessionArchiveRoute, async (c) =>
-			c.json(await service.restoreTaskArchive(c.req.param("id")), 200),
-		),
+		withOpenApiRouteError(restoreWorkbenchSessionArchiveRoute, async (c) => {
+			const taskId = c.req.param("id");
+			const projection = await readTaskOperatorProjection(
+				taskId,
+				humanTaskOperatorQueryContext(c.get("user")?.userId),
+			);
+			return c.json(
+				await executeTaskOperatorCommand({
+					taskId,
+					actionId: "task.archive.restore",
+					expectedTaskRevision: projection.task.revision,
+					arguments: {},
+					context: humanTaskOperatorCommandContext({
+						userId: c.get("user")?.userId,
+						idempotencyKey: c.req.header("Idempotency-Key"),
+					}),
+				}),
+				200,
+			);
+		}),
 	)
 	.openapi(
 		reopenWorkbenchSessionRoute,

@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { missionPilotArtifactProviderExecutionPolicy } from "../../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
 import type {
 	RuntimeSessionStateLookup,
 	RuntimeSessionStateStore,
-} from "../../api/services/agent-runtime/runtime-session-state";
+} from "../../api/services/runtime-session-state";
 import {
 	callStructuredLlmResult,
 	createStructuredOutputContract,
@@ -102,6 +103,43 @@ describe("Codex structured provider isolation", () => {
 		codexMock.reset();
 	});
 
+	it("runs provider authorization before creating a provider client", async () => {
+		fs.writeFileSync(
+			llmSettingsPath(),
+			JSON.stringify({
+				ACTIVE_LLM_PROVIDER: "codex",
+				CODEX_ENABLED: true,
+				CODEX_MODEL: "gpt-5.4-mini",
+			}),
+		);
+		const authorizeProviderCall = vi.fn(async () => {
+			throw new Error("provider disabled");
+		});
+
+		await expect(
+			callStructuredLlmResult("system", "user", {
+				contract: createStructuredOutputContract({
+					name: "authorization_schema",
+					runtimeSchema: z.object({ ok: z.boolean() }).strict(),
+				}),
+				taskId: "task-1",
+				executionPolicy: {
+					isolatedHome: true,
+					enableMcp: false,
+					enableMemory: false,
+					allowProviderTools: false,
+					authorizeProviderCall,
+				},
+			}),
+		).rejects.toThrow("provider disabled");
+
+		expect(authorizeProviderCall).toHaveBeenCalledWith({
+			taskId: "task-1",
+			signal: undefined,
+		});
+		expect(codexMock.constructorInputs).toHaveLength(0);
+	});
+
 	it("uses a fresh isolated call for every structured artifact generation", async () => {
 		fs.writeFileSync(
 			llmSettingsPath(),
@@ -118,16 +156,22 @@ describe("Codex structured provider isolation", () => {
 			name: "example_schema",
 			runtimeSchema: z.object({ ok: z.boolean() }).strict(),
 		});
+		const {
+			authorizeProviderCall: _authorizeProviderCall,
+			...isolatedArtifactPolicy
+		} = missionPilotArtifactProviderExecutionPolicy;
 		await callStructuredLlmResult(longSystemPrompt, "first user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "second user prompt", {
 			contract: exampleContract,
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 		await callStructuredLlmResult(longSystemPrompt, "third user prompt", {
@@ -137,6 +181,7 @@ describe("Codex structured provider isolation", () => {
 			}),
 			taskId: "task-1",
 			role: "mission_pilot",
+			executionPolicy: isolatedArtifactPolicy,
 			runtimeSessionStore: store,
 		});
 
@@ -155,14 +200,9 @@ describe("Codex structured provider isolation", () => {
 				generate_memories: false,
 				use_memories: false,
 			});
-			expect(config.mcp_servers).toEqual({
-				"context-still": {
-					disabled_tools: ["initial_instructions", "context_compile"],
-				},
-			});
-			expect(config.mcp_servers).not.toEqual({});
+			expect(config.mcp_servers).toEqual({});
 			expect(config.developer_instructions).toContain(
-				"MCP は Plan Mode の明示的な操作に必要な場合だけ使い",
+				"Mission Pilotの構造化Artifact生成専用レーンです",
 			);
 			expect(config.project_doc_max_bytes).toBe(0);
 		}

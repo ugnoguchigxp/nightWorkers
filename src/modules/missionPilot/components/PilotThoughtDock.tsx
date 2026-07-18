@@ -1,6 +1,9 @@
 import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { MissionPilotControlSummary } from "../../../../shared/schemas/mission-pilot.schema";
+import type {
+	MissionPilotControlSummary,
+	PilotThoughtEntry,
+} from "../../../../shared/modules/missionPilot";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type {
 	ActivityEvent,
@@ -12,6 +15,7 @@ import { getRelativeTimestamp } from "../../nightworkers/utils/time";
 import { fetchMissionPilotExecutionTrace } from "../missionPilotCommands";
 
 type PilotThoughtSource =
+	| "unified_entry"
 	| "mission_pilot_event"
 	| "activity_event"
 	| "task_message"
@@ -45,6 +49,7 @@ export type MissionPilotExecutionTrace = {
 	events: MissionPilotStoredEvent[];
 	activityEvents: ActivityEvent[];
 	messages: TaskMessage[];
+	entries?: PilotThoughtEntry[];
 };
 
 export function isMissionPilotActivityEvent(event: ActivityEvent) {
@@ -54,16 +59,24 @@ export function isMissionPilotActivityEvent(event: ActivityEvent) {
 	);
 }
 
+export function isMissionPilotTaskMessage(message: TaskMessage) {
+	return (
+		message.traceOwner === "mission_pilot" &&
+		message.traceChannel === "pilot_thought"
+	);
+}
+
 function eventTimestamp(value: unknown) {
 	const time = new Date(value as string | number | Date).getTime();
 	return Number.isFinite(time) ? time : 0;
 }
 
 const PILOT_THOUGHT_SOURCE_ORDER: Record<PilotThoughtSource, number> = {
+	unified_entry: 0,
 	mission_pilot_event: 0,
-	activity_event: 1,
-	task_message: 2,
-	current_state: 3,
+	activity_event: 2,
+	task_message: 3,
+	current_state: 4,
 };
 
 export function comparePilotThoughtItems(
@@ -123,17 +136,45 @@ function missionPilotEventToTaskEvent(
 	};
 }
 
+function pilotThoughtEntryToTaskEvent(entry: PilotThoughtEntry): TaskEvent {
+	return {
+		id: entry.id,
+		seq: entry.sequence,
+		eventType: entry.kind,
+		type: entry.kind,
+		actor: "mission_pilot",
+		message: entry.summary,
+		payloadJson: {
+			status: entry.status ?? null,
+			sourceRef: entry.sourceRef,
+			...(entry.details ?? {}),
+		},
+		createdAt: entry.occurredAt,
+	};
+}
+
 export function missionPilotTraceItems(
 	trace: MissionPilotExecutionTrace | null,
 ): PilotThoughtItem[] {
+	if (Array.isArray(trace?.entries))
+		return trace.entries.map((entry) => ({
+			id: `unified-entry:${entry.id}`,
+			source: "unified_entry" as const,
+			sourceId: entry.id,
+			sequence: entry.sequence,
+			createdAt: entry.occurredAt,
+			event: pilotThoughtEntryToTaskEvent(entry),
+		}));
 	const persistedItems = [
-		...(trace?.events ?? []).map((event) => ({
-			id: `mission-pilot-event:${event.id}`,
-			source: "mission_pilot_event" as const,
-			sourceId: event.id,
-			createdAt: event.createdAt,
-			event: missionPilotEventToTaskEvent(event),
-		})),
+		...(trace?.events ?? [])
+			.filter((event) => event.sourceKind !== "task_run")
+			.map((event) => ({
+				id: `mission-pilot-event:${event.id}`,
+				source: "mission_pilot_event" as const,
+				sourceId: event.id,
+				createdAt: event.createdAt,
+				event: missionPilotEventToTaskEvent(event),
+			})),
 		...(trace?.activityEvents ?? [])
 			.filter(isMissionPilotActivityEvent)
 			.map((event) => ({
@@ -144,23 +185,25 @@ export function missionPilotTraceItems(
 				createdAt: event.createdAt,
 				event: activityToTaskEvent(event),
 			})),
-		...(trace?.messages ?? []).map((message) => ({
-			id: `mission-pilot-message:${message.id}`,
-			source: "task_message" as const,
-			sourceId: message.id,
-			createdAt: message.createdAt,
-			event: {
-				id: message.id,
-				eventType: "pilot.message",
-				actor: "mission_pilot",
-				message: message.content,
-				payloadJson: {
-					messageType: message.messageType ?? null,
-					metadata: message.metadataJson ?? null,
-				},
+		...(trace?.messages ?? [])
+			.filter(isMissionPilotTaskMessage)
+			.map((message) => ({
+				id: `mission-pilot-message:${message.id}`,
+				source: "task_message" as const,
+				sourceId: message.id,
 				createdAt: message.createdAt,
-			},
-		})),
+				event: {
+					id: message.id,
+					eventType: "pilot.message",
+					actor: "mission_pilot",
+					message: message.content,
+					payloadJson: {
+						messageType: message.messageType ?? null,
+						metadata: message.metadataJson ?? null,
+					},
+					createdAt: message.createdAt,
+				},
+			})),
 	];
 	return [
 		...new Map(persistedItems.map((item) => [item.id, item])).values(),
@@ -188,17 +231,20 @@ export function mergeMissionPilotExecutionTrace(
 			incoming.activityEvents,
 		),
 		messages: mergePersistedRows(current.messages, incoming.messages),
+		entries:
+			Array.isArray(current.entries) || Array.isArray(incoming.entries)
+				? mergePersistedRows(
+						current.entries ?? [],
+						incoming.entries ?? [],
+					).sort((a, b) => a.sequence - b.sequence)
+				: undefined,
 	};
 }
 
 export function missionPilotStopThoughtItem(
 	summary: MissionPilotControlSummary | null | undefined,
 ): PilotThoughtItem | null {
-	if (
-		!summary ||
-		summary.desiredState !== "stopped" ||
-		summary.phase === "created"
-	)
+	if (summary?.desiredState !== "stopped" || summary.phase === "created")
 		return null;
 	const diagnostic = summary.preQueueDiagnostic;
 	const reasonCode =

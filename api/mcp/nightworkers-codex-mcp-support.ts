@@ -1,11 +1,11 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ensureNightWorkersSchema } from "../db/bootstrap";
-import * as repo from "../modules/nightworkers/nightworkers.repository";
 import {
+	loadCodingAgentContextPacket,
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
-} from "../services/agent-runtime/native-api-runner/native-api-tool-result-projector";
-import { loadCodingAgentContextPacket } from "../services/coding-agent-context";
+} from "../modules/codingAgent";
+import * as repo from "../modules/nightworkers/nightworkers.repository";
 import { actionExecutionJournal } from "../services/run-control/action-execution-journal";
 import type { WorkerToolResult } from "../services/worker-tools/types";
 import {
