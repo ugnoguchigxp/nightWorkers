@@ -106,7 +106,11 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					"Task contextだけから初期実装可能なFeature Planを作る。",
 					"",
 					"{{IMPLEMENTATION_PLAN}}",
+					"",
+					"## 完了条件",
+					"{{ACCEPTANCE_CRITERIA}}",
 				].join("\n"),
+				acceptanceCriteria: [fixtureAcceptanceCriterion()],
 				implementationPlan: {
 					version: 1,
 					requiresDataMigration: false,
@@ -453,3 +457,16 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 		}
 	});
 });
+
+function fixtureAcceptanceCriterion() {
+	return {
+		title: "初期画面を表示できる",
+		category: "ui",
+		testCase: {
+			target: "初期画面component",
+			preconditions: ["表示対象データを1件用意する"],
+			action: "componentをrenderする",
+			assertions: ["対象データのlabelが表示される"],
+		},
+	};
+}

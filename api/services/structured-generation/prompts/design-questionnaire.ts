@@ -283,7 +283,7 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",
 		"auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。",
 		"`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。",
-		"contentTemplate の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。実装計画の位置には `{{IMPLEMENTATION_PLAN}}` を正確に1件だけ置き、`## 実装計画` を別途書かないでください。",
+		"contentTemplate の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。実装計画の位置には `{{IMPLEMENTATION_PLAN}}`、`## 完了条件` の本文には `{{ACCEPTANCE_CRITERIA}}` をそれぞれ正確に1件だけ置き、実装計画や完了条件の項目を contentTemplate へ直接書かないでください。",
 		"`## 目的` は 1-2 文にしてください。",
 		"`## スコープ` は対象 / 非対象を短い箇条書きにしてください。",
 		"`## タスク分類` は分類と理由を 2-3 行で書いてください。",
@@ -293,17 +293,19 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"requiresDataMigration=true の場合は、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行うproduction stepをimplementationPlan.stepsへ必ず1件以上含めてください。このstepは後続Coding AgentがtaskType=data_migrationのTodoとして分離できるtitleとdescriptionにし、固定Todo gateの文言そのものは使わないでください。requiresDataMigration=false の場合はmigration作業をstepsへ追加しないでください。",
 		"stepsは実装順に並べ、dependsOnKeysは同じimplementationPlan内の先行stepのkeyだけを参照し、循環させないでください。",
 		"`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。",
-		"`## 検証計画` は `## 完了条件` の各項目がどう確認されるかをつなぐテストケースゴールとして書いてください。unit / focused test / API smoke / DB verification / regression check のどれで確認するかが読める粒度にしてください。",
+		"`## 検証計画` は acceptanceCriteria のユニットテストケースを実行する方法を短く書いてください。unit / component / API handler / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。",
 		"`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。",
 		"`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。",
 		"個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。",
 		"Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。",
-		"`## 完了条件` は検証済み事実だけで書いてください。後続レビューでそのままテスト項目・検証ゴールとして使うため、各項目は確認対象と期待結果が分かる粒度に分けてください。",
-		"`## 完了条件` では、UI 操作、DB 反映、API route、既存機能回帰などを 1 行に混ぜず、レビュー時に条件ごとのテスト有無を判定できる形にしてください。",
+		"acceptanceCriteria は、実装後に必ず対応するユニットテストを作成して証跡を対応付ける完了条件です。各項目を1つの独立したテストケースとして、title、category、testCase.target、testCase.preconditions、testCase.action、testCase.assertionsを具体的に返してください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。",
+		"testCase.preconditions にはfixture、入力値、初期状態を具体的に書き、testCase.action には呼び出す関数・handler・component操作・repository操作を1つ書き、testCase.assertions には戻り値、永続化結果、状態遷移、表示内容、非保存など観測可能な期待値を列挙してください。『正しく』『一貫して』『適切に』『契約どおり』『確認できる』だけの表現は禁止です。",
+		"1つのacceptanceCriteriaにDB、API、UIなど複数の責務を混ぜないでください。成功系とvalidation失敗系、削除と復旧など初期状態や期待結果が異なるケースは分割してください。",
+		"`verify` / `verify:base` の成功、build、typecheck、lint、format、coverage閾値、migrationファイルの存在、実装済みであること、手動確認はacceptanceCriteriaに含めないでください。これらは機能の期待挙動を証明するユニットテストの代わりになりません。必要なaggregate gateは `## 検証計画` にだけ書いてください。",
 		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
 			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
-		"出力は JSON object のみで、title、contentTemplate、implementationPlan を返してください。contentTemplate は Markdown 文字列にしてください。",
+		"出力は JSON object のみで、title、contentTemplate、implementationPlan、acceptanceCriteria を返してください。contentTemplate は Markdown 文字列にしてください。",
 	].join("\n");
 }
 

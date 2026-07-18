@@ -135,6 +135,51 @@ export function NightWorkersShellThreadPanel(
 		},
 		[onNavigate, setArtifactFocus, workspace],
 	);
+	const handleToggleProjectFiles = useCallback(() => {
+		const sessionId = workspaceRef.current.activeSessionId;
+		if (!sessionId) return;
+		if (artifactFocus.type === "project_tree") {
+			setArtifactFocus({ type: "closed" });
+			onNavigate({ kind: "session", sessionId, artifact: null });
+			return;
+		}
+		setClearedArtifactContextId(null);
+		setArtifactFocus({ type: "project_tree" });
+		onNavigate({
+			kind: "session",
+			sessionId,
+			artifact: { kind: "project_tree", mode: "tree", filePath: null },
+		});
+	}, [
+		artifactFocus.type,
+		onNavigate,
+		setArtifactFocus,
+		setClearedArtifactContextId,
+		workspaceRef,
+	]);
+	const submitReviewPrompt = useCallback(
+		async (prompt: string) => {
+			const current = workspaceRef.current;
+			const sessionId = current.activeSession?.id;
+			if (!sessionId) return false;
+			const llmSelection = buildComposerLlmSelection();
+			const result = await current.sendWorkbenchMessage(
+				sessionId,
+				prompt,
+				"review_followup",
+				effectiveArtifactContext,
+				llmSelection,
+			);
+			if (llmSelection && result) props.onComposerLlmSelectionSubmitted();
+			return Boolean(result);
+		},
+		[
+			buildComposerLlmSelection,
+			effectiveArtifactContext,
+			props.onComposerLlmSelectionSubmitted,
+			workspaceRef,
+		],
+	);
 
 	return (
 		<ThreadWorkspace
@@ -214,7 +259,9 @@ export function NightWorkersShellThreadPanel(
 			isReviewArtifactOpen={isReviewArtifactOpen}
 			onOpenTestModeArtifact={props.onOpenTestModeArtifact}
 			isTestModeArtifactOpen={props.isTestModeArtifactOpen}
-			hasReviewArtifact={Boolean(workspace.activeReviewSession)}
+			hasReviewArtifact={workspace.activeArtifactRefs.some(
+				(artifact) => artifact.kind === "review_status",
+			)}
 			isReviewActionBusy={workspace.isChatSubmitting}
 			onOpenTodoArtifact={props.onOpenTodoArtifact}
 			isTodoArtifactOpen={isTodoArtifactOpen}
@@ -258,22 +305,7 @@ export function NightWorkersShellThreadPanel(
 			isProjectFilesOpen={artifactFocus.type === "project_tree"}
 			isPilotThoughtDockOpen={props.isPilotThoughtDockOpen}
 			onTogglePilotThoughtDock={props.onTogglePilotThoughtDock}
-			onOpenProjectFiles={() => {
-				const sessionId = workspace.activeSessionId;
-				if (!sessionId) return;
-				if (artifactFocus.type === "project_tree") {
-					setArtifactFocus({ type: "closed" });
-					onNavigate({ kind: "session", sessionId, artifact: null });
-					return;
-				}
-				setClearedArtifactContextId(null);
-				setArtifactFocus({ type: "project_tree" });
-				onNavigate({
-					kind: "session",
-					sessionId,
-					artifact: { kind: "project_tree", mode: "tree", filePath: null },
-				});
-			}}
+			onOpenProjectFiles={handleToggleProjectFiles}
 			onGrantExternalPath={async (externalPath) => {
 				const project = workspace.activeProject;
 				if (!project) return;
@@ -390,6 +422,8 @@ export function NightWorkersShellThreadPanel(
 							workspace.restoreArchivedSession(taskId)
 						}
 						isImplementationLocked={isActiveImplementationLocked}
+						onSubmitReviewPrompt={submitReviewPrompt}
+						isReviewPromptDisabled={workspace.isAgentThinking}
 					/>
 				) : undefined
 			}

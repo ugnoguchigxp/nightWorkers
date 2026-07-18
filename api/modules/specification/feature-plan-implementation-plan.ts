@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import {
+	FEATURE_PLAN_ACCEPTANCE_CRITERIA_PLACEHOLDER,
 	FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER,
 	type FeaturePlanImplementationPlan,
 	type FeaturePlanImplementationPlanMetadata,
 	featurePlanImplementationPlanMetadataSchema,
 	featurePlanImplementationPlanSchema,
 } from "../../../shared/schemas/feature-plan-implementation-plan.schema";
+import type { SpecificationAcceptanceCriterion } from "../../../shared/schemas/verification-checklist.schema";
 import type { ImplementationTodoInput } from "../../services/todo-runtime";
 
 export function digestFeaturePlanImplementationPlan(
@@ -72,6 +74,7 @@ export function renderFeaturePlanImplementationSection(
 export function renderFeaturePlanContent(input: {
 	contentTemplate: string;
 	implementationPlan: FeaturePlanImplementationPlan;
+	acceptanceCriteria?: SpecificationAcceptanceCriterion[];
 }) {
 	const placeholderCount =
 		input.contentTemplate.split(FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER)
@@ -81,10 +84,40 @@ export function renderFeaturePlanContent(input: {
 			`Feature Plan contentTemplate must contain ${FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER} exactly once.`,
 		);
 	}
-	return input.contentTemplate.replace(
+	const content = input.contentTemplate.replace(
 		FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER,
 		renderFeaturePlanImplementationSection(input.implementationPlan),
 	);
+	if (!input.acceptanceCriteria) return content;
+	const acceptanceCriteriaPlaceholderCount =
+		content.split(FEATURE_PLAN_ACCEPTANCE_CRITERIA_PLACEHOLDER).length - 1;
+	if (acceptanceCriteriaPlaceholderCount !== 1) {
+		throw new Error(
+			`Feature Plan contentTemplate must contain ${FEATURE_PLAN_ACCEPTANCE_CRITERIA_PLACEHOLDER} exactly once.`,
+		);
+	}
+	return content.replace(
+		FEATURE_PLAN_ACCEPTANCE_CRITERIA_PLACEHOLDER,
+		renderFeaturePlanAcceptanceCriteria(input.acceptanceCriteria),
+	);
+}
+
+export function renderFeaturePlanAcceptanceCriteria(
+	criteria: SpecificationAcceptanceCriterion[],
+) {
+	return criteria
+		.flatMap((criterion, index) => [
+			`- [AC-${String(index + 1).padStart(3, "0")}] ${criterion.title}`,
+			`  - テスト対象: ${criterion.testCase.target}`,
+			...criterion.testCase.preconditions.map(
+				(precondition) => `  - 前提・入力: ${precondition}`,
+			),
+			`  - 操作: ${criterion.testCase.action}`,
+			...criterion.testCase.assertions.map(
+				(assertion) => `  - アサーション: ${assertion}`,
+			),
+		])
+		.join("\n");
 }
 
 export function projectFeaturePlanImplementationTodos(

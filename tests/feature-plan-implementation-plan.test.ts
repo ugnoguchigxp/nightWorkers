@@ -69,6 +69,34 @@ describe("Feature Plan implementation plan", () => {
 		expect(content).toContain("マイグレーション: 不要");
 	});
 
+	it("renders acceptance criteria as unit-test cases with explicit assertions", () => {
+		const plan = featurePlanImplementationPlanSchema.parse(validPlan);
+		const content = renderFeaturePlanContent({
+			contentTemplate:
+				"{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
+			implementationPlan: plan,
+			acceptanceCriteria: [
+				{
+					title: "空白だけのtitleを拒否する",
+					category: "validation",
+					testCase: {
+						target: "CreateTodoInput schema",
+						preconditions: ["titleに半角空白3文字を指定する"],
+						action: "safeParseを実行する",
+						assertions: ["successがfalseになる", "永続化処理が呼ばれない"],
+					},
+				},
+			],
+		});
+
+		expect(content).toContain("[AC-001] 空白だけのtitleを拒否する");
+		expect(content).toContain("テスト対象: CreateTodoInput schema");
+		expect(content).toContain("前提・入力: titleに半角空白3文字");
+		expect(content).toContain("操作: safeParseを実行する");
+		expect(content).toContain("アサーション: successがfalseになる");
+		expect(content).not.toContain("{{ACCEPTANCE_CRITERIA}}");
+	});
+
 	it("rejects duplicate keys, unknown dependencies, cycles, and fixed gates", () => {
 		const duplicate = structuredClone(validPlan);
 		duplicate.steps[1].key = "db";

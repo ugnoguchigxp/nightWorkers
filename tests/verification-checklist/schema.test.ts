@@ -1,11 +1,41 @@
 import { describe, expect, it } from "vitest";
 import {
 	isVerificationChecklistItemComplete,
+	specificationAcceptanceCriterionSchema,
 	specificationVerificationDocumentSchema,
 	verificationChecklistItemSchema,
 } from "../../shared/schemas/verification-checklist.schema";
 
 describe("verification checklist schemas", () => {
+	it("requires executable unit-test details for generated acceptance criteria", () => {
+		const criterion = {
+			title: "空白titleを拒否する",
+			category: "validation",
+			testCase: {
+				target: "CreateTodoInput schema",
+				preconditions: ["titleに半角空白3文字を指定する"],
+				action: "safeParseを実行する",
+				assertions: ["successがfalseになる"],
+			},
+		};
+
+		expect(specificationAcceptanceCriterionSchema.parse(criterion)).toEqual(
+			criterion,
+		);
+		expect(() =>
+			specificationAcceptanceCriterionSchema.parse({
+				...criterion,
+				testCase: { ...criterion.testCase, assertions: [] },
+			}),
+		).toThrow();
+		expect(() =>
+			specificationAcceptanceCriterionSchema.parse({
+				...criterion,
+				category: "quality",
+			}),
+		).toThrow();
+	});
+
 	it("rejects unknown fields and duplicate condition ids", () => {
 		const base = {
 			version: 1,

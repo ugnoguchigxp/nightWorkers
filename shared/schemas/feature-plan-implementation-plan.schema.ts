@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER =
 	"{{IMPLEMENTATION_PLAN}}";
+export const FEATURE_PLAN_ACCEPTANCE_CRITERIA_PLACEHOLDER =
+	"{{ACCEPTANCE_CRITERIA}}";
 
 const RESERVED_TODO_TITLES = new Set([
 	"コーディング準備を行う",

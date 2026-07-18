@@ -98,6 +98,8 @@ type ArtifactPaneProps = {
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	isImplementationLocked?: boolean;
+	onSubmitReviewPrompt?: (prompt: string) => Promise<boolean>;
+	isReviewPromptDisabled?: boolean;
 };
 
 type FrozenTestModeWorkflow = {
@@ -143,6 +145,8 @@ export function ArtifactPane({
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
 	isImplementationLocked = false,
+	onSubmitReviewPrompt,
+	isReviewPromptDisabled = false,
 }: ArtifactPaneProps) {
 	const { t } = useTranslation();
 	const [versionArtifactId, setVersionArtifactId] = useState<string | null>(
@@ -450,6 +454,8 @@ export function ArtifactPane({
 							activeTaskStatus={activeTaskStatus}
 							onCompleteAndArchiveTask={onCompleteAndArchiveTask}
 							onRestoreArchivedTask={onRestoreArchivedTask}
+							onSubmitReviewPrompt={onSubmitReviewPrompt}
+							isReviewPromptDisabled={isReviewPromptDisabled}
 						/>
 					) : showTestMode ? (
 						<TestModeArtifactViewer

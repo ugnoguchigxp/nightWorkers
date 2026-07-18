@@ -253,6 +253,7 @@ function compactSpecificationVerification(value: unknown) {
 				expectedEvidence: condition.expectedEvidence,
 				expectedResult: compactField(condition.expectedResult, detailChars),
 				failureMeaning: compactField(condition.failureMeaning, detailChars),
+				testCase: compactVerificationTestCase(condition.testCase, detailChars),
 				required: condition.required,
 			})),
 			commands: toArray(document.commands).map((value) => {
@@ -282,6 +283,21 @@ function compactSpecificationVerification(value: unknown) {
 				reason: item.reason,
 			};
 		}),
+	};
+}
+
+function compactVerificationTestCase(value: unknown, maxChars: number) {
+	const testCase = toRecord(value);
+	if (Object.keys(testCase).length === 0) return undefined;
+	return {
+		target: compactField(testCase.target, maxChars),
+		preconditions: toArray(testCase.preconditions).map((item) =>
+			compactField(item, maxChars),
+		),
+		action: compactField(testCase.action, maxChars),
+		assertions: toArray(testCase.assertions).map((item) =>
+			compactField(item, maxChars),
+		),
 	};
 }
 

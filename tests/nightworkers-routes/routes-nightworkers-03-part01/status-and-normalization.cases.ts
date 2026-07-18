@@ -153,7 +153,11 @@ describe("NightWorkers task routes status and normalization", () => {
 					"最初に作る画面はどれですか？",
 					"",
 					"{{IMPLEMENTATION_PLAN}}",
+					"",
+					"## 完了条件",
+					"{{ACCEPTANCE_CRITERIA}}",
 				].join("\n"),
+				acceptanceCriteria: [fixtureAcceptanceCriterion()],
 				implementationPlan: {
 					version: 1,
 					requiresDataMigration: false,
@@ -477,7 +481,11 @@ describe("NightWorkers task routes status and normalization", () => {
 					"Which screen should be designed first?",
 					"",
 					"{{IMPLEMENTATION_PLAN}}",
+					"",
+					"## 完了条件",
+					"{{ACCEPTANCE_CRITERIA}}",
 				].join("\n"),
+				acceptanceCriteria: [fixtureAcceptanceCriterion()],
 				implementationPlan: {
 					version: 1,
 					requiresDataMigration: false,
@@ -609,3 +617,16 @@ describe("NightWorkers task routes status and normalization", () => {
 		}
 	});
 });
+
+function fixtureAcceptanceCriterion() {
+	return {
+		title: "初期画面を表示できる",
+		category: "ui",
+		testCase: {
+			target: "初期画面component",
+			preconditions: ["表示対象データを1件用意する"],
+			action: "componentをrenderする",
+			assertions: ["対象データのlabelが表示される"],
+		},
+	};
+}

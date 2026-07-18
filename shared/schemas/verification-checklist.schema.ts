@@ -12,6 +12,34 @@ export const verificationConditionCategorySchema = z.enum([
 	"other",
 ]);
 
+export const verificationTestCaseSchema = z
+	.object({
+		target: z.string().trim().min(1).max(1_000),
+		preconditions: z.array(z.string().trim().min(1).max(1_000)).min(1).max(10),
+		action: z.string().trim().min(1).max(1_000),
+		assertions: z.array(z.string().trim().min(1).max(1_000)).min(1).max(10),
+	})
+	.strict();
+
+export const specificationAcceptanceCriterionCategorySchema = z.enum([
+	"api",
+	"ui",
+	"db",
+	"validation",
+	"auth",
+	"workflow",
+	"migration",
+	"other",
+]);
+
+export const specificationAcceptanceCriterionSchema = z
+	.object({
+		title: z.string().trim().min(1).max(300),
+		category: specificationAcceptanceCriterionCategorySchema,
+		testCase: verificationTestCaseSchema,
+	})
+	.strict();
+
 export const verificationKindSchema = z.enum([
 	"automated_test",
 	"command_gate",
@@ -131,6 +159,7 @@ export const verificationConditionSchema = z
 		expectedEvidence: z.array(expectedEvidenceSchema).min(1),
 		expectedResult: z.string().trim().min(1),
 		failureMeaning: z.string().trim().min(1),
+		testCase: verificationTestCaseSchema.optional(),
 		required: z.boolean(),
 		status: z.literal("pending"),
 	})
@@ -277,6 +306,9 @@ export type SpecificationVerificationDocument = z.infer<
 >;
 export type VerificationCondition = z.infer<typeof verificationConditionSchema>;
 export type ExpectedEvidence = z.infer<typeof expectedEvidenceSchema>;
+export type SpecificationAcceptanceCriterion = z.infer<
+	typeof specificationAcceptanceCriterionSchema
+>;
 export type VerificationCommandPlan = z.infer<
 	typeof verificationCommandPlanSchema
 >;

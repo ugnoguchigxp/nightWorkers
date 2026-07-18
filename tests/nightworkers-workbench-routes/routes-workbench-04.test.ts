@@ -326,6 +326,41 @@ describe("NightWorkers workbench routes", () => {
 		).toHaveLength(0);
 	});
 
+	it("starts a Coding Agent run for a Review Mode follow-up", async () => {
+		const { task } = await createWorkbenchTask({ status: "ready" });
+
+		const response = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt:
+						"コードレビューをしてください。指摘事項があれば修正してください。",
+					intent: "review_followup",
+					waitForIntake: true,
+				}),
+			},
+		);
+
+		expect(response.status, await response.clone().text()).toBe(200);
+		const body = await response.json();
+		expect(body.run).toMatchObject({
+			taskId: task.id,
+			contextSnapshot: {
+				executionMode: "implementation",
+				planModeRequested: false,
+			},
+		});
+		expect(
+			body.messages.some(
+				(message: unknown) =>
+					message.metadataJson?.intent === "run_started" &&
+					message.metadataJson?.executionMode === "implementation",
+			),
+		).toBe(true);
+	});
+
 	it("keeps plan-mode AI responses available for queued sessions without starting a run", async () => {
 		vi.mocked(llm.callStructuredJsonLLM)
 			.mockResolvedValueOnce(

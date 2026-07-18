@@ -108,8 +108,9 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Feature Plan",
 				contentTemplate:
-					"## 目的\n未回答 blocking を assumption として進める。\n\n{{IMPLEMENTATION_PLAN}}",
+					"## 目的\n未回答 blocking を assumption として進める。\n\n{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
 				implementationPlan: fixtureImplementationPlan(),
+				acceptanceCriteria: fixtureAcceptanceCriteria(),
 			});
 			const result = await generateFeaturePlanArtifact(task.id, {
 				questionnaireSessionId: session.id,
@@ -144,8 +145,9 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				title: "Feature Plan",
 				contentTemplate:
-					"## 目的\nnon-blocking は既存資料から進める。\n\n{{IMPLEMENTATION_PLAN}}",
+					"## 目的\nnon-blocking は既存資料から進める。\n\n{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
 				implementationPlan: fixtureImplementationPlan(),
+				acceptanceCriteria: fixtureAcceptanceCriteria(),
 			});
 
 			const result = await generateFeaturePlanArtifact(task.id, {
@@ -176,6 +178,21 @@ function fixtureImplementationPlan() {
 			},
 		],
 	};
+}
+
+function fixtureAcceptanceCriteria() {
+	return [
+		{
+			title: "Todoを作成できる",
+			category: "api",
+			testCase: {
+				target: "Todo作成handler",
+				preconditions: ["titleが『買い物』の作成request"],
+				action: "Todo作成handlerを呼び出す",
+				assertions: ["responseのtitleが『買い物』になる"],
+			},
+		},
+	];
 }
 
 async function createPlanModeTask(label: string) {

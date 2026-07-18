@@ -2,6 +2,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { featurePlanImplementationPlanSchema } from "../../../shared/schemas/feature-plan-implementation-plan.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
+import {
+	type SpecificationAcceptanceCriterion,
+	specificationAcceptanceCriterionSchema,
+} from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
@@ -55,6 +59,10 @@ const specificationDocumentDraftSchema = z.object({
 	title: z.string().min(1),
 	contentTemplate: z.string().min(1),
 	implementationPlan: featurePlanImplementationPlanSchema,
+	acceptanceCriteria: z
+		.array(specificationAcceptanceCriterionSchema)
+		.min(1)
+		.max(20),
 });
 const DEFAULT_FEATURE_PLAN_TITLE = "Feature Plan";
 export const FEATURE_PLAN_LLM_TIMEOUT_MS = PLAN_ARTIFACT_GENERATION_TIMEOUT_MS;
@@ -161,12 +169,16 @@ export async function generateFeaturePlanArtifact(
 			),
 		})),
 	});
+	const acceptanceCriteria = parsed.acceptanceCriteria.map((criterion) =>
+		sanitizeAcceptanceCriterion(criterion, context.projectStackContext),
+	);
 	const renderedContent = renderFeaturePlanContent({
 		contentTemplate: sanitizeSpecificationTargetNaming(
 			parsed.contentTemplate,
 			context.projectStackContext,
 		),
 		implementationPlan,
+		acceptanceCriteria,
 	});
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
 		renderedContent.trimEnd(),
@@ -181,6 +193,7 @@ export async function generateFeaturePlanArtifact(
 		content: sanitizedContent,
 		sourceMessageIds: projection.provenance.sourceMessageIds,
 		workspace,
+		acceptanceCriteria,
 	});
 	const message = await createPlanModeTaskMessage({
 		taskId,
@@ -224,6 +237,7 @@ export async function generateFeaturePlanArtifact(
 		content: initialSidecar.content,
 		sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
 		workspace,
+		acceptanceCriteria,
 		generatedAt: initialSidecar.document.generatedAt,
 	});
 	const verificationMessage = await createPlanModeTaskMessage({
@@ -255,6 +269,24 @@ export async function generateFeaturePlanArtifact(
 		verificationArtifactId: `verification-json-${verificationMessage.id}`,
 	});
 	return { message, workspace: await getPlanModeWorkspace(taskId) };
+}
+
+function sanitizeAcceptanceCriterion(
+	criterion: SpecificationAcceptanceCriterion,
+	projectStackContext: string,
+): SpecificationAcceptanceCriterion {
+	const sanitize = (value: string) =>
+		sanitizeSpecificationTargetNaming(value, projectStackContext);
+	return {
+		...criterion,
+		title: sanitize(criterion.title),
+		testCase: {
+			target: sanitize(criterion.testCase.target),
+			preconditions: criterion.testCase.preconditions.map(sanitize),
+			action: sanitize(criterion.testCase.action),
+			assertions: criterion.testCase.assertions.map(sanitize),
+		},
+	};
 }
 
 function projectionMetadata(

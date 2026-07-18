@@ -100,7 +100,8 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				title: "Todo List Feature Plan",
 				contentTemplate:
-					"# Todo List Feature Plan\n\n{{IMPLEMENTATION_PLAN}}\n\n## 検証計画\n- Run tests",
+					"# Todo List Feature Plan\n\n{{IMPLEMENTATION_PLAN}}\n\n## 検証計画\n- Run tests\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
+				acceptanceCriteria: fixtureAcceptanceCriteria(),
 				implementationPlan: {
 					version: 1,
 					requiresDataMigration: false,
@@ -139,7 +140,8 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				title: "Todo List Feature Plan",
 				contentTemplate:
-					"## 目的\nNightWorkersへTodoを追加する。\n\n{{IMPLEMENTATION_PLAN}}",
+					"## 目的\nNightWorkersへTodoを追加する。\n\n{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
+				acceptanceCriteria: fixtureAcceptanceCriteria(),
 				implementationPlan: {
 					version: 1,
 					requiresDataMigration: false,
@@ -194,3 +196,18 @@ describe("Feature Plan generation timeout handling", () => {
 		} satisfies Partial<AppError>);
 	});
 });
+
+function fixtureAcceptanceCriteria() {
+	return [
+		{
+			title: "Todoを作成できる",
+			category: "api" as const,
+			testCase: {
+				target: "Todo作成handler",
+				preconditions: ["titleが『買い物』の作成request"],
+				action: "Todo作成handlerを呼び出す",
+				assertions: ["responseのtitleが『買い物』になる"],
+			},
+		},
+	];
+}

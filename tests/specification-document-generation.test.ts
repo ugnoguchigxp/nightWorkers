@@ -146,14 +146,19 @@ describe("Specification document generation", () => {
 			"または `## 実装計画` で追加すると明記した script 名だけ",
 		);
 		expect(systemPrompt).toContain(
-			"`## 完了条件` の各項目がどう確認されるかをつなぐテストケースゴール",
+			"acceptanceCriteria のユニットテストケースを実行する方法",
 		);
 		expect(systemPrompt).toContain(
-			"後続レビューでそのままテスト項目・検証ゴールとして使う",
+			"testCase.preconditions、testCase.action、testCase.assertions",
+		);
+		expect(systemPrompt).toContain("fixture、入力値、初期状態");
+		expect(systemPrompt).toContain(
+			"`verify` / `verify:base` の成功、build、typecheck、lint、format、coverage閾値",
 		);
 		expect(systemPrompt).toContain(
-			"レビュー時に条件ごとのテスト有無を判定できる形",
+			"機能の期待挙動を証明するユニットテストの代わりになりません",
 		);
+		expect(systemPrompt).toContain("{{ACCEPTANCE_CRITERIA}}");
 		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
 		expect(systemPrompt).toContain("最小の verify 系 script 追加");
 	});
@@ -460,15 +465,14 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain("API Contract: Todo API Contract");
 		expect(userPrompt).toContain("## Plan Mode References");
 		expect(userPrompt).toContain("Todo User Flow");
-		expect(userPrompt).toContain(
-			"後続レビューでテスト項目・検証ゴールとして使う",
-		);
-		expect(userPrompt).toContain(
-			"レビュー時に条件ごとのテスト有無を判定できる形",
-		);
+		expect(userPrompt).toContain("必須ユニットテスト1ケース");
+		expect(userPrompt).toContain("fixture・入力・初期状態");
 		expect(userPrompt).toContain("verify / verify:base がある場合は代表 gate");
 		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
-		expect(userPrompt).toContain("同じ目的の command を重複列挙しない");
+		expect(userPrompt).toContain("同じ目的のcommandを重複列挙しない");
+		expect(userPrompt).toContain(
+			"typecheck / build / lint / verify / coverageは完了条件へ含めず",
+		);
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");
 		expect(systemPrompt).toContain("未決定事項は極力作らず");

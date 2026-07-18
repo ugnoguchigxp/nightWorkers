@@ -65,7 +65,7 @@ export async function createCodexRuntimeThread(input: {
 		: readCodexResumeState(input.context);
 	if (resumeState?.providerThreadId) {
 		try {
-			const thread = await codex.resumeThread(
+			let activeThread = await codex.resumeThread(
 				resumeState.providerThreadId,
 				threadOptions,
 			);
@@ -74,7 +74,34 @@ export async function createCodexRuntimeThread(input: {
 				providerThreadId: resumeState.providerThreadId,
 				stateId: resumeState.stateId,
 			});
-			return thread;
+			let firstTurn = true;
+			return {
+				async runStreamed(prompt, options) {
+					const mayRecoverResume = firstTurn;
+					firstTurn = false;
+					if (!mayRecoverResume) {
+						return activeThread.runStreamed(prompt, options);
+					}
+					const resumedThread = activeThread;
+					return {
+						events: recoverFirstResumedTurn({
+							resumedThread,
+							prompt,
+							options,
+							startFreshThread: async (error) => {
+								await input.onResumeEvent?.({
+									status: "resume_failed",
+									providerThreadId: resumeState.providerThreadId,
+									stateId: resumeState.stateId,
+									error: error instanceof Error ? error.message : String(error),
+								});
+								activeThread = await codex.startThread(threadOptions);
+								return activeThread;
+							},
+						}),
+					};
+				},
+			};
 		} catch (error) {
 			await input.onResumeEvent?.({
 				status: "resume_failed",
@@ -88,6 +115,34 @@ export async function createCodexRuntimeThread(input: {
 		await input.onResumeEvent?.({ status: "unavailable" });
 	}
 	return codex.startThread(threadOptions);
+}
+
+async function* recoverFirstResumedTurn(input: {
+	resumedThread: CodexRuntimeThread;
+	prompt: Input;
+	options: { signal: AbortSignal };
+	startFreshThread: (error: unknown) => Promise<CodexRuntimeThread>;
+}) {
+	let emittedEvent = false;
+	try {
+		const resumedTurn = await input.resumedThread.runStreamed(
+			input.prompt,
+			input.options,
+		);
+		for await (const event of resumedTurn.events) {
+			emittedEvent = true;
+			yield event;
+		}
+		return;
+	} catch (error) {
+		if (emittedEvent || input.options.signal.aborted) throw error;
+		const freshThread = await input.startFreshThread(error);
+		const freshTurn = await freshThread.runStreamed(
+			input.prompt,
+			input.options,
+		);
+		for await (const event of freshTurn.events) yield event;
+	}
 }
 
 function readCodexProviderEndpointId(context: AgentRunContext) {

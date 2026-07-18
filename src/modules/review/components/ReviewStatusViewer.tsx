@@ -6,15 +6,17 @@ import {
 	LoaderCircle,
 	ShieldAlert,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GitCloseoutState, TaskRun } from "../../nightworkers/types/core";
+import type { ReviewModePromptAction } from "../reviewModeLauncher";
 import type {
 	ReviewArtifact,
 	ReviewRunArtifactPayload,
 	ReviewSessionDetail,
 } from "../types";
 import { ReviewGitIntegrationPanel } from "./ReviewGitIntegrationPanel";
+import { ReviewPromptActions } from "./ReviewPromptActions";
 import { ReviewRunResultPanel } from "./ReviewRunResultPanel";
 
 type ReviewStatusViewerProps = {
@@ -27,6 +29,8 @@ type ReviewStatusViewerProps = {
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	latestRun?: TaskRun;
+	onSubmitReviewPrompt?: (prompt: string) => Promise<boolean>;
+	isReviewPromptDisabled?: boolean;
 };
 
 function reviewStatusLabel(t: TFunction, key: string, fallback: string) {
@@ -110,14 +114,81 @@ export function ReviewStatusViewer({
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
 	latestRun,
+	onSubmitReviewPrompt,
+	isReviewPromptDisabled = false,
 }: ReviewStatusViewerProps) {
 	const { t } = useTranslation();
 	const [busySection, setBusySection] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [promptSubmission, setPromptSubmission] = useState<{
+		actionId: ReviewModePromptAction["id"];
+		phase: "submitting" | "waiting";
+	} | null>(null);
+	const handleGitBusyChange = useCallback((busy: boolean) => {
+		setBusySection((current) =>
+			busy ? "git" : current === "git" ? null : current,
+		);
+	}, []);
+	useEffect(() => {
+		if (promptSubmission?.phase !== "waiting" || isReviewPromptDisabled) return;
+		setPromptSubmission(null);
+	}, [isReviewPromptDisabled, promptSubmission?.phase]);
+	const submitReviewPrompt = async (action: ReviewModePromptAction) => {
+		if (!onSubmitReviewPrompt || busySection || promptSubmission) return;
+		setPromptSubmission({ actionId: action.id, phase: "submitting" });
+		setError(null);
+		try {
+			const accepted = await onSubmitReviewPrompt(action.prompt);
+			if (!accepted) {
+				throw new Error(
+					"Coding Agentの実行を開始できませんでした。もう一度お試しください。",
+				);
+			}
+			setPromptSubmission({ actionId: action.id, phase: "waiting" });
+		} catch (err) {
+			setPromptSubmission(null);
+			setError(
+				err instanceof Error
+					? err.message
+					: "定型プロンプトを送信できませんでした。",
+			);
+		}
+	};
+	const promptActions = (
+		<ReviewPromptActions
+			onSubmit={onSubmitReviewPrompt ? submitReviewPrompt : undefined}
+			disabled={
+				isReviewPromptDisabled ||
+				busySection !== null ||
+				promptSubmission !== null
+			}
+			busyActionId={promptSubmission?.actionId ?? null}
+			pendingPhase={promptSubmission?.phase ?? null}
+			disabledStatusMessage={
+				isReviewPromptDisabled
+					? "Coding Agentの結果が確定するまで操作できません。"
+					: busySection
+						? "別の操作が完了するまで操作できません。"
+						: null
+			}
+		/>
+	);
 	if (!detail) {
 		return (
-			<div className="flex h-full items-center justify-center text-xs text-slate-500">
-				{loading ? t("reviewStatus.loading") : t("reviewStatus.unavailable")}
+			<div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
+				<div className="mx-auto grid max-w-5xl gap-4">
+					{promptActions}
+					{loading ? (
+						<div className="text-center text-xs text-slate-500">
+							{t("reviewStatus.loading")}
+						</div>
+					) : null}
+					{error ? (
+						<div className="rounded border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-100">
+							{error}
+						</div>
+					) : null}
+				</div>
 			</div>
 		);
 	}
@@ -172,7 +243,10 @@ export function ReviewStatusViewer({
 					"このタスクを以前の完了状態へ戻します。実装の再開は別の Reopen 操作で行います。",
 				icon: <ArchiveRestore className="h-3.5 w-3.5" />,
 				buttonClass: reviewPrimaryActionButtonClass,
-				disabled: !onRestoreArchivedTask || taskArchiveBusy,
+				disabled:
+					!onRestoreArchivedTask ||
+					busySection !== null ||
+					isReviewPromptDisabled,
 				run: () => onRestoreArchivedTask?.(detail.session.taskId),
 			}
 		: {
@@ -181,7 +255,10 @@ export function ReviewStatusViewer({
 					"このレビュー対象タスクを完全に完了したものとして扱い、アーカイブタスクへ移動します。",
 				icon: <Archive className="h-3.5 w-3.5" />,
 				buttonClass: reviewSuccessActionButtonClass,
-				disabled: !onCompleteAndArchiveTask || taskArchiveBusy,
+				disabled:
+					!onCompleteAndArchiveTask ||
+					busySection !== null ||
+					isReviewPromptDisabled,
 				run: () => onCompleteAndArchiveTask?.(detail.session.taskId),
 			};
 	return (
@@ -190,6 +267,7 @@ export function ReviewStatusViewer({
 			data-artifact-export-expand
 		>
 			<div className="mx-auto grid max-w-5xl gap-5">
+				{promptActions}
 				<div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
 					<div>
 						<div className="text-xs leading-5 text-slate-400">
@@ -259,6 +337,11 @@ export function ReviewStatusViewer({
 					onCommitGitCloseout={onCommitGitCloseout}
 					onPushGitCloseout={onPushGitCloseout}
 					onError={setError}
+					disabled={
+						isReviewPromptDisabled ||
+						(busySection !== null && busySection !== "git")
+					}
+					onBusyChange={handleGitBusyChange}
 				/>
 
 				{detail.securityHandoffs.length > 0 ? (

@@ -94,6 +94,12 @@ export function isPlanModeArtifactRegenerationContext(
 	);
 }
 export type WorkbenchPlanModeGate = codingAgent.CodingAgentPlanModeGate;
+
+const CODING_AGENT_RUN_INTENTS = new Set<WorkbenchChatIntent>([
+	"intake",
+	"review_followup",
+]);
+
 export function decideWorkbenchPlanModeGate(
 	input: Parameters<typeof codingAgent.decideCodingAgentPlanModeGate>[0],
 ) {
@@ -167,8 +173,9 @@ export async function handleWorkbenchIntakeMessage(
 		);
 		const shouldStartPlanMode =
 			planModeGate.shouldStartPlanMode || planModeGate.action === "plan_mode";
+		const intent = options.intent || "intake";
 		const shouldStartCodingAgentRun =
-			shouldStartPlanMode || (options.intent || "intake") === "intake";
+			shouldStartPlanMode || CODING_AGENT_RUN_INTENTS.has(intent);
 		if (task.status === "queued" && shouldStartCodingAgentRun) {
 			await repo.createTaskMessage({
 				taskId,
@@ -211,7 +218,7 @@ export async function handleWorkbenchIntakeMessage(
 				run: null,
 				messages: await repo.listTaskMessages(taskId),
 			};
-		} else if ((options.intent || "intake") === "intake") {
+		} else if (CODING_AGENT_RUN_INTENTS.has(intent)) {
 			const executionMode = "implementation";
 			const runnable = await repo.updateTask(taskId, {
 				title,

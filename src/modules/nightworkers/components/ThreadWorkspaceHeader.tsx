@@ -1,15 +1,8 @@
-import {
-	Bug,
-	FolderTree,
-	ListTodo,
-	LoaderCircle,
-	MessageCircleMore,
-	NotebookPen,
-	Trash2,
-} from "lucide-react";
+import { Bug, MessageCircleMore, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { WorkbenchArtifactRef } from "../types";
 import { getRelativeTimestamp } from "../utils/time";
+import { ArtifactModeNavigation } from "./ArtifactModeNavigation";
 import type { ThreadWorkspaceProps } from "./ThreadWorkspace";
 import { formatUsageBadge, formatUsageTitle } from "./ThreadWorkspaceBanner";
 
@@ -22,12 +15,8 @@ type ThreadWorkspaceHeaderProps = {
 	) => void;
 	artifactButtonsCoolingDown: boolean;
 	runArtifactButtonAction: (action: () => void) => void;
-	planModeWorkspaceLabel: string;
-	noPlanModeWorkspaceLabel: string;
 	debugModeTooltipLabel: string;
 	pilotThoughtTooltipLabel: string;
-	planModeTooltipLabel: string;
-	todoListTooltipLabel: string;
 };
 
 export function ThreadWorkspaceHeader({
@@ -37,12 +26,8 @@ export function ThreadWorkspaceHeader({
 	setShowDebugEvents,
 	artifactButtonsCoolingDown,
 	runArtifactButtonAction,
-	planModeWorkspaceLabel,
-	noPlanModeWorkspaceLabel,
 	debugModeTooltipLabel,
 	pilotThoughtTooltipLabel,
-	planModeTooltipLabel,
-	todoListTooltipLabel,
 }: ThreadWorkspaceHeaderProps) {
 	const { t } = useTranslation();
 	return (
@@ -122,99 +107,76 @@ export function ThreadWorkspaceHeader({
 									<MessageCircleMore className="h-4 w-4" />
 								</button>
 							) : null}
-							<button
-								type="button"
-								className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
+							<ArtifactModeNavigation
+								current={
 									props.isProjectFilesOpen
-										? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
-										: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
-								}`}
-								aria-pressed={props.isProjectFilesOpen}
-								aria-disabled={artifactButtonsCoolingDown}
+										? "project_files"
+										: props.isBlueprintArtifactOpen
+											? "plan"
+											: props.isTodoArtifactOpen
+												? "todo"
+												: props.isTestModeArtifactOpen
+													? "test"
+													: props.isReviewArtifactOpen
+														? "review"
+														: null
+								}
 								disabled={artifactButtonsCoolingDown}
-								onClick={() =>
-									runArtifactButtonAction(props.onOpenProjectFiles)
+								busyKind={
+									props.isBlueprintActionBusy
+										? "plan"
+										: props.isReviewActionBusy
+											? "review"
+											: null
 								}
-								title={t("thread.projectFiles")}
-							>
-								<FolderTree className="h-3.5 w-3.5" />
-							</button>
-							<button
-								type="button"
-								className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
-									props.isBlueprintArtifactOpen
-										? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100 hover:bg-cyan-900/30"
-										: "border-slate-600/80 bg-slate-900/30 text-slate-300 hover:border-slate-400"
-								}`}
-								onClick={() =>
-									runArtifactButtonAction(() => {
-										void props.onOpenBlueprintArtifact();
-									})
-								}
-								disabled={
-									artifactButtonsCoolingDown ||
-									props.isBlueprintActionBusy ||
-									!props.activeSession ||
-									!blueprintArtifact
-								}
-								aria-disabled={artifactButtonsCoolingDown}
-								title={planModeTooltipLabel}
-								aria-label={
-									blueprintArtifact
-										? planModeWorkspaceLabel
-										: noPlanModeWorkspaceLabel
-								}
-								aria-pressed={props.isBlueprintArtifactOpen}
-							>
-								{props.isBlueprintActionBusy ? (
-									<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<NotebookPen className="h-3.5 w-3.5" />
-								)}
-							</button>
-							<button
-								type="button"
-								className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-not-allowed disabled:opacity-40 ${
-									props.isTodoArtifactOpen
-										? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
-										: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
-								}`}
-								aria-pressed={props.isTodoArtifactOpen}
-								aria-disabled={artifactButtonsCoolingDown}
-								disabled={artifactButtonsCoolingDown || !props.hasTodoArtifact}
-								onClick={() =>
-									runArtifactButtonAction(props.onOpenTodoArtifact)
-								}
-								title={todoListTooltipLabel}
-								aria-label={
-									props.hasTodoArtifact
-										? t("thread.todoArtifact")
-										: t("thread.noTodoArtifact")
-								}
-							>
-								<ListTodo className="h-3.5 w-3.5" />
-							</button>
+								available={{
+									project_files: true,
+									plan: Boolean(blueprintArtifact),
+									todo: props.hasTodoArtifact,
+									test: Boolean(props.activeSession),
+									review: props.hasReviewArtifact,
+								}}
+								onOpen={{
+									project_files: () =>
+										runArtifactButtonAction(props.onOpenProjectFiles),
+									plan: () =>
+										runArtifactButtonAction(() => {
+											void props.onOpenBlueprintArtifact();
+										}),
+									todo: () => runArtifactButtonAction(props.onOpenTodoArtifact),
+									test: () =>
+										runArtifactButtonAction(props.onOpenTestModeArtifact),
+									review: () =>
+										runArtifactButtonAction(() => {
+											void props.onOpenReviewArtifact();
+										}),
+								}}
+							/>
 						</div>
 					</div>
 				</div>
 			) : (
 				<div className="flex items-center justify-between gap-4">
 					<p className="text-sm text-slate-300/70">{t("thread.emptyPrompt")}</p>
-					<button
-						type="button"
-						className={`inline-flex h-7 w-7 items-center justify-center rounded border disabled:cursor-wait disabled:opacity-60 ${
-							props.isProjectFilesOpen
-								? "border-cyan-400/70 bg-cyan-950/30 text-cyan-100"
-								: "border-slate-600/80 bg-slate-900/30 text-slate-200 hover:border-slate-400"
-						}`}
-						aria-pressed={props.isProjectFilesOpen}
-						aria-disabled={artifactButtonsCoolingDown}
+					<ArtifactModeNavigation
+						current={props.isProjectFilesOpen ? "project_files" : null}
 						disabled={artifactButtonsCoolingDown}
-						onClick={() => runArtifactButtonAction(props.onOpenProjectFiles)}
-						title={t("thread.projectFiles")}
-					>
-						<FolderTree className="h-3.5 w-3.5" />
-					</button>
+						available={{
+							project_files: true,
+							plan: false,
+							todo: false,
+							test: false,
+							review: false,
+						}}
+						onOpen={{
+							project_files: () =>
+								runArtifactButtonAction(props.onOpenProjectFiles),
+							plan: () => undefined,
+							todo: () => undefined,
+							test: () => undefined,
+							review: () => undefined,
+						}}
+					/>
 				</div>
 			)}
 		</div>

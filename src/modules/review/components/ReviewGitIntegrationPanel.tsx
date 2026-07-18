@@ -52,15 +52,23 @@ export function ReviewGitIntegrationPanel({
 	onCommitGitCloseout,
 	onPushGitCloseout,
 	onError,
+	disabled = false,
+	onBusyChange,
 }: {
 	gitCloseout: GitCloseoutState | null;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onError: (message: string | null) => void;
+	disabled?: boolean;
+	onBusyChange?: (busy: boolean) => void;
 }) {
 	const [state, setState] = useState(externalState);
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	useEffect(() => setState(externalState), [externalState]);
+	useEffect(() => {
+		onBusyChange?.(busyAction !== null);
+		return () => onBusyChange?.(false);
+	}, [busyAction, onBusyChange]);
 
 	const record = state?.mergeRecord ?? null;
 	const commitDone =
@@ -79,10 +87,22 @@ export function ReviewGitIntegrationPanel({
 			? record.targetPushStatus === "pushing"
 			: state?.commitRecord?.pushStatus === "pushing");
 	const commitDisabled =
-		!state || !onCommitGitCloseout || commitDone || busyAction !== null;
+		disabled ||
+		!state ||
+		!state.canCommit ||
+		!onCommitGitCloseout ||
+		commitDone ||
+		busyAction !== null;
 	const pushDisabled =
-		!state || !onPushGitCloseout || pushDone || pushBusy || busyAction !== null;
+		disabled ||
+		!state ||
+		!state.canPush ||
+		!onPushGitCloseout ||
+		pushDone ||
+		pushBusy ||
+		busyAction !== null;
 	const mergeDisabled =
+		disabled ||
 		!record ||
 		["merged", "merging", "rework_requested"].includes(record.status) ||
 		busyAction !== null;
@@ -90,7 +110,7 @@ export function ReviewGitIntegrationPanel({
 	const applyMergeAction = async (
 		kind: "preview" | "defer" | "rework" | "merge",
 	) => {
-		if (!record) return;
+		if (!record || disabled) return;
 		setBusyAction(kind);
 		onError(null);
 		try {
@@ -171,7 +191,7 @@ export function ReviewGitIntegrationPanel({
 	};
 
 	const changeTarget = async () => {
-		if (!record) return;
+		if (!record || disabled) return;
 		const targetBranch = window
 			.prompt(
 				"新しいlocal merge target branchを入力してください。previewとCI証跡は無効になります。",
@@ -243,6 +263,7 @@ export function ReviewGitIntegrationPanel({
 					</div>
 					<button
 						type="button"
+						data-review-git-action="commit"
 						className={`${buttonClass} nightworkers-success-action-button`}
 						disabled={commitDisabled}
 						onClick={() => void commit()}
@@ -267,6 +288,7 @@ export function ReviewGitIntegrationPanel({
 					</div>
 					<button
 						type="button"
+						data-review-git-action="merge"
 						className={`${buttonClass} nightworkers-success-action-button`}
 						disabled={mergeDisabled}
 						onClick={() => void arrangeMerge()}
@@ -291,6 +313,7 @@ export function ReviewGitIntegrationPanel({
 					</div>
 					<button
 						type="button"
+						data-review-git-action="push"
 						className={`${buttonClass} nightworkers-primary-action-button`}
 						disabled={pushDisabled}
 						onClick={() => void push()}
@@ -337,7 +360,9 @@ export function ReviewGitIntegrationPanel({
 						<button
 							type="button"
 							className={`${buttonClass} nightworkers-primary-action-button`}
-							disabled={busyAction !== null || record.status === "merged"}
+							disabled={
+								disabled || busyAction !== null || record.status === "merged"
+							}
 							onClick={() => void applyMergeAction("preview")}
 						>
 							<RefreshCw className="h-3.5 w-3.5" />
@@ -346,7 +371,9 @@ export function ReviewGitIntegrationPanel({
 						<button
 							type="button"
 							className={buttonClass}
-							disabled={busyAction !== null || record.status === "merged"}
+							disabled={
+								disabled || busyAction !== null || record.status === "merged"
+							}
 							onClick={() => void applyMergeAction("defer")}
 						>
 							後で判断
@@ -354,7 +381,9 @@ export function ReviewGitIntegrationPanel({
 						<button
 							type="button"
 							className={buttonClass}
-							disabled={busyAction !== null || record.status === "merged"}
+							disabled={
+								disabled || busyAction !== null || record.status === "merged"
+							}
 							onClick={() => void applyMergeAction("rework")}
 						>
 							再作業
@@ -362,7 +391,9 @@ export function ReviewGitIntegrationPanel({
 						<button
 							type="button"
 							className={buttonClass}
-							disabled={busyAction !== null || record.status === "merged"}
+							disabled={
+								disabled || busyAction !== null || record.status === "merged"
+							}
 							onClick={() => void changeTarget()}
 						>
 							統合先を変更

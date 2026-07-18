@@ -82,4 +82,48 @@ describe("Specification Verification Sidecar", () => {
 		expect(result.document.commands[0].command).toBe("bun test");
 		expect(result.document.commands[1].command).toBe("npm run test:api");
 	});
+
+	it("keeps generated acceptance criteria as structured unit-test evidence", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec.md",
+			content: ["## 完了条件", "- [AC-001] 空白だけのtitleを拒否する"].join(
+				"\n",
+			),
+			sourceMessageIds: ["msg-1"],
+			workspace: dummyWorkspace,
+			acceptanceCriteria: [
+				{
+					title: "空白だけのtitleを拒否する",
+					category: "validation",
+					testCase: {
+						target: "CreateTodoInput schema",
+						preconditions: ["titleに全角空白2文字を指定する"],
+						action: "safeParseを実行する",
+						assertions: [
+							"successがfalseになる",
+							"repository.createが呼ばれない",
+						],
+					},
+				},
+			],
+		});
+
+		expect(result.document.conditions).toEqual([
+			expect.objectContaining({
+				id: "AC-001",
+				category: "validation",
+				verificationKind: "automated_test",
+				expectedEvidence: ["unit_test"],
+				expectedResult: "successがfalseになる / repository.createが呼ばれない",
+				testCase: {
+					target: "CreateTodoInput schema",
+					preconditions: ["titleに全角空白2文字を指定する"],
+					action: "safeParseを実行する",
+					assertions: ["successがfalseになる", "repository.createが呼ばれない"],
+				},
+			}),
+		]);
+	});
 });

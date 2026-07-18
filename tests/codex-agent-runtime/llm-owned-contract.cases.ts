@@ -82,6 +82,22 @@ function failedEvents(message: string): AsyncIterable<unknown> {
 	})();
 }
 
+function rejectedEvents(
+	error: () => unknown,
+	beforeReject?: () => void,
+): AsyncIterable<unknown> {
+	return {
+		[Symbol.asyncIterator]() {
+			return {
+				async next() {
+					beforeReject?.();
+					throw error();
+				},
+			};
+		},
+	};
+}
+
 describe("Codex SDK LLM-owned Todo contract", () => {
 	it("uses the same runtime contract for every legacy mode value", () => {
 		const implementation = buildCodexRuntimePromptParts(
@@ -132,6 +148,152 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(startThread).not.toHaveBeenCalled();
 		expect(onResumeEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "resume_failed" }),
+		);
+	});
+
+	it("starts one fresh thread when the first resumed turn fails before events", async () => {
+		const resumedRun = vi.fn(async () => ({
+			events: rejectedEvents(() => new Error("lazy resume failed")),
+		}));
+		const freshEvents = completedTextEvents("fresh thread response");
+		const freshRun = vi.fn(async () => ({ events: freshEvents }));
+		const resumeThread = vi.fn(() => ({ runStreamed: resumedRun }));
+		const startThread = vi.fn(() => ({ runStreamed: freshRun }));
+		const onResumeEvent = vi.fn();
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context("implementation"),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-missing-rollout",
+						stateId: "state-stale",
+					},
+				},
+			},
+			codexClient: { resumeThread, startThread },
+			onResumeEvent,
+		});
+
+		const turn = await thread.runStreamed("review the changes", {
+			signal: new AbortController().signal,
+		});
+		const events = [];
+		for await (const event of turn.events) events.push(event);
+		expect(events).toHaveLength(2);
+		expect(events[0]).toMatchObject({
+			type: "item.completed",
+			item: { type: "agent_message", text: "fresh thread response" },
+		});
+		expect(events[1]).toMatchObject({ type: "turn.completed" });
+		expect(resumedRun).toHaveBeenCalledOnce();
+		expect(startThread).toHaveBeenCalledOnce();
+		expect(freshRun).toHaveBeenCalledOnce();
+		expect(onResumeEvent).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				status: "reused",
+				providerThreadId: "thread-missing-rollout",
+			}),
+		);
+		expect(onResumeEvent).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				status: "resume_failed",
+				providerThreadId: "thread-missing-rollout",
+				stateId: "state-stale",
+			}),
+		);
+	});
+
+	it("does not replace a resumed thread after it has emitted an event", async () => {
+		const resumedRun = vi.fn(async () => ({
+			events: (async function* () {
+				yield { type: "thread.started", thread_id: "thread-resumed" };
+				throw new Error("turn failed after start");
+			})(),
+		}));
+		const startThread = vi.fn();
+		const onResumeEvent = vi.fn();
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context("implementation"),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-resumed",
+						stateId: "state-active",
+					},
+				},
+			},
+			codexClient: {
+				resumeThread: vi.fn(() => ({ runStreamed: resumedRun })),
+				startThread,
+			},
+			onResumeEvent,
+		});
+
+		const turn = await thread.runStreamed("continue", {
+			signal: new AbortController().signal,
+		});
+		const events: unknown[] = [];
+		await expect(
+			(async () => {
+				for await (const event of turn.events) events.push(event);
+			})(),
+		).rejects.toThrow("turn failed after start");
+		expect(events).toEqual([
+			{ type: "thread.started", thread_id: "thread-resumed" },
+		]);
+		expect(startThread).not.toHaveBeenCalled();
+		expect(onResumeEvent).toHaveBeenCalledTimes(1);
+		expect(onResumeEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ status: "reused" }),
+		);
+	});
+
+	it("does not replace a resumed thread when the turn was cancelled", async () => {
+		const controller = new AbortController();
+		const resumedRun = vi.fn(async () => ({
+			events: rejectedEvents(
+				() => new DOMException("cancelled", "AbortError"),
+				() => controller.abort(),
+			),
+		}));
+		const startThread = vi.fn();
+		const onResumeEvent = vi.fn();
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context("implementation"),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-cancelled",
+						stateId: "state-cancelled",
+					},
+				},
+			},
+			codexClient: {
+				resumeThread: vi.fn(() => ({ runStreamed: resumedRun })),
+				startThread,
+			},
+			onResumeEvent,
+		});
+
+		const turn = await thread.runStreamed("continue", {
+			signal: controller.signal,
+		});
+		await expect(
+			(async () => {
+				for await (const _event of turn.events) {
+					// No event is expected before cancellation.
+				}
+			})(),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(startThread).not.toHaveBeenCalled();
+		expect(onResumeEvent).toHaveBeenCalledTimes(1);
+		expect(onResumeEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ status: "reused" }),
 		);
 	});
 

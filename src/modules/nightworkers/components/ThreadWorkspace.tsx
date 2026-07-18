@@ -176,12 +176,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		latestActivityEvent?.id || props.activityEvents.length,
 		props.activeStreamingResponse.length,
 	].join(":");
-	const planModeWorkspaceLabel = t("thread.planModeWorkspace");
-	const noPlanModeWorkspaceLabel = t("thread.noPlanModeWorkspace");
 	const debugModeTooltipLabel = t("thread.tooltip.debugMode");
 	const pilotThoughtTooltipLabel = t("thread.tooltip.pilotThought");
-	const planModeTooltipLabel = t("thread.tooltip.planMode");
-	const todoListTooltipLabel = t("thread.tooltip.todoList");
 	const runArtifactButtonAction = useCallback((action: () => void) => {
 		const nextCooldownUntil = nextArtifactButtonCooldown(
 			Date.now(),
@@ -424,12 +420,8 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 				setShowDebugEvents={setShowDebugEvents}
 				artifactButtonsCoolingDown={artifactButtonsCoolingDown}
 				runArtifactButtonAction={runArtifactButtonAction}
-				planModeWorkspaceLabel={planModeWorkspaceLabel}
-				noPlanModeWorkspaceLabel={noPlanModeWorkspaceLabel}
 				debugModeTooltipLabel={debugModeTooltipLabel}
 				pilotThoughtTooltipLabel={pilotThoughtTooltipLabel}
-				planModeTooltipLabel={planModeTooltipLabel}
-				todoListTooltipLabel={todoListTooltipLabel}
 			/>
 			<Group
 				className="nightworkers-thread-split-layout min-h-0 flex-1"

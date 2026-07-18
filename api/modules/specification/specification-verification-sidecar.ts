@@ -1,5 +1,6 @@
 import type { PlanModeWorkspace } from "../../../shared/schemas/plan-mode-artifact.schema";
 import type {
+	SpecificationAcceptanceCriterion,
 	SpecificationVerificationDocument,
 	VerificationCommandPlan,
 	VerificationCondition,
@@ -12,6 +13,7 @@ type BuildInput = {
 	content: string;
 	sourceMessageIds: string[];
 	workspace: PlanModeWorkspace;
+	acceptanceCriteria?: SpecificationAcceptanceCriterion[];
 	generatedAt?: string;
 };
 
@@ -19,7 +21,13 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 	content: string;
 	document: SpecificationVerificationDocument;
 } {
-	const { content, conditions } = annotateCompletionConditions(input.content);
+	const annotated = input.acceptanceCriteria
+		? {
+				content: input.content,
+				conditions: input.acceptanceCriteria.map(buildGeneratedCondition),
+			}
+		: annotateCompletionConditions(input.content);
+	const { content, conditions } = annotated;
 	const commands = extractVerificationCommands(content, conditions);
 	return {
 		content,
@@ -37,6 +45,32 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 			commands,
 			nonGoals: extractNonGoals(content),
 		},
+	};
+}
+
+function buildGeneratedCondition(
+	criterion: SpecificationAcceptanceCriterion,
+	index: number,
+): VerificationCondition {
+	const id = `AC-${String(index + 1).padStart(3, "0")}`;
+	const expectedResult = criterion.testCase.assertions.join(" / ");
+	return {
+		id,
+		text: [
+			criterion.title,
+			`テスト対象: ${criterion.testCase.target}`,
+			`前提・入力: ${criterion.testCase.preconditions.join(" / ")}`,
+			`操作: ${criterion.testCase.action}`,
+			`アサーション: ${expectedResult}`,
+		].join("。"),
+		category: criterion.category,
+		verificationKind: "automated_test",
+		expectedEvidence: ["unit_test"],
+		expectedResult,
+		failureMeaning: `${criterion.title} の期待アサーションを満たさない場合、この完了条件は未達です。`,
+		testCase: criterion.testCase,
+		required: true,
+		status: "pending",
 	};
 }
 

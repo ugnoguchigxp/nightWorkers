@@ -115,22 +115,26 @@ export function ProjectSnapshotPanel({
 					</div>
 				</div>
 				<div className="border p-3" style={controlStyle}>
-					<div className="flex items-center gap-2 text-xs font-semibold">
+					<div className="flex items-center gap-2 text-sm font-semibold">
 						<TestTube2 className="h-4 w-4" style={primaryTextStyle} />
 						{t("projectDetail.health.coverage")}
 					</div>
 					{snapshot.coverageAxes.length > 0 ? (
-						<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+						<div className="mt-1 grid grid-cols-2 sm:grid-cols-4">
 							{snapshot.coverageAxes.map((axis) => (
 								<div
 									key={axis.key}
-									className="flex justify-between gap-2 text-xs"
+									className="flex min-w-0 items-baseline justify-center gap-2 border-l px-3 py-1 first:border-l-0"
+									style={{ borderColor: "var(--nw-border)" }}
 								>
-									<span style={subtleTextStyle}>
+									<span
+										className="truncate text-sm font-medium"
+										style={mutedTextStyle}
+									>
 										{t(`projectDetail.coverage.${axis.key}`)}
 									</span>
 									<span
-										className="font-semibold"
+										className="shrink-0 text-lg font-bold leading-none tabular-nums"
 										title={`${formatExactNumber(axis.actualPercent, language)}%`}
 									>
 										{formatCompactNumber(axis.actualPercent)}%
@@ -141,7 +145,7 @@ export function ProjectSnapshotPanel({
 					) : (
 						<div className="mt-2 text-sm font-semibold">—</div>
 					)}
-					<div className="mt-2 text-[10px]" style={subtleTextStyle}>
+					<div className="mt-1 text-[10px]" style={subtleTextStyle}>
 						{formatDateTime(snapshot.coverageAt, language, timezone)}
 					</div>
 				</div>

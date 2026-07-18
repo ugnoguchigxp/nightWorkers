@@ -1,3 +1,4 @@
+import { buildPostImplementationReviewArtifact } from "../review/reviewModeLauncher";
 import type {
 	ActivityArtifact,
 	ReviewResult,
@@ -464,6 +465,13 @@ export function buildWorkbenchArtifactRefs(input: {
 			createdAt: input.reviewSession.session.updatedAt,
 			metadata: { reviewSession: input.reviewSession },
 		});
+	} else if (run) {
+		const reviewModeArtifact = buildPostImplementationReviewArtifact({
+			task: input.task,
+			run,
+			todos: input.todos || [],
+		});
+		if (reviewModeArtifact) refs.push(reviewModeArtifact);
 	}
 	return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
 }

@@ -291,7 +291,13 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 	});
 
 	it("resumes the gate thread with the selected Role Routing options", async () => {
-		const resumedThread = { runStreamed: vi.fn() };
+		const resumedThread = {
+			runStreamed: vi.fn(async () => ({
+				events: (async function* () {
+					yield { type: "thread.started", thread_id: "thread-plan-gate" };
+				})(),
+			})),
+		};
 		const resumeThread = vi.fn(() => resumedThread);
 		const startThread = vi.fn();
 		const context = {
@@ -315,16 +321,24 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 			},
 		} satisfies AgentRunContext;
 
-		await expect(
-			createCodexRuntimeThread({
-				context,
-				codexClient: { resumeThread, startThread },
-			}),
-		).resolves.toBe(resumedThread);
+		const thread = await createCodexRuntimeThread({
+			context,
+			codexClient: { resumeThread, startThread },
+		});
 		expect(resumeThread).toHaveBeenCalledWith(
 			"thread-plan-gate",
 			expect.objectContaining({ model: "implementation-model" }),
 		);
 		expect(startThread).not.toHaveBeenCalled();
+		const turn = await thread.runStreamed("request", {
+			signal: new AbortController().signal,
+		});
+		for await (const _event of turn.events) {
+			// Resume is lazy in the Codex SDK and starts when events are consumed.
+		}
+		expect(resumedThread.runStreamed).toHaveBeenCalledWith(
+			"request",
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
 	});
 });

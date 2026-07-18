@@ -25,10 +25,25 @@ describe("ThreadWorkspace header", () => {
 		);
 
 		expect(workspaceSource).not.toContain("Create Blueprint artifact");
-		expect(workspaceSource).toContain("noPlanModeWorkspaceLabel");
-		expect(workspaceSource).toContain("!blueprintArtifact");
+		expect(workspaceSource).toContain("plan: Boolean(blueprintArtifact)");
+		expect(workspaceSource).toContain("review: props.hasReviewArtifact");
+		expect(workspaceSource).toContain("test: Boolean(props.activeSession)");
 		expect(shellSource).not.toContain(
 			"sendWorkbenchMessage(session.id, prompt, 'draft_spec')",
+		);
+	});
+
+	it("keeps review actions locked while the Coding Agent result is pending", () => {
+		const panelSource = readFileSync(
+			"src/modules/nightworkers/components/NightWorkersShellThreadPanel.tsx",
+			"utf8",
+		);
+
+		expect(panelSource).toContain(
+			"isReviewPromptDisabled={workspace.isAgentThinking}",
+		);
+		expect(panelSource).not.toContain(
+			"isReviewPromptDisabled={workspace.isAgentWorking}",
 		);
 	});
 

@@ -6,6 +6,7 @@ import {
 	useMissionPilotArtifactAutoFocus,
 } from "../../missionPilot";
 import { useImplementationQueue } from "../../queue";
+import { useReviewModeArtifactAutoFocus } from "../../review";
 import { markArtifactOpenStart } from "../artifactPerformance";
 import { useWorkspaceAppearanceState } from "../contexts/WorkspaceAppearanceContext";
 import {
@@ -155,6 +156,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		activeSession: workspace.activeSession,
 		activeArtifactRefs: workspace.activeArtifactRefs,
 		latestRun: workspace.latestRun,
+		routeState,
+		onNavigate: props.onNavigate,
+	});
+
+	useReviewModeArtifactAutoFocus({
+		activeSession: workspace.activeSession,
+		latestRun: workspace.latestRun,
+		latestRunTodos: workspace.latestRunTodos,
 		routeState,
 		onNavigate: props.onNavigate,
 	});
