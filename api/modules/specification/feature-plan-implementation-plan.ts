@@ -71,11 +71,22 @@ export function renderFeaturePlanImplementationSection(
 	].join("\n");
 }
 
+export function hasFeaturePlanImplementationHeading(contentTemplate: string) {
+	return contentTemplate
+		.split(/\r?\n/)
+		.some((line) => /^##[ \t]+実装計画(?:[ \t]+#+)?[ \t]*$/.test(line.trim()));
+}
+
 export function renderFeaturePlanContent(input: {
 	contentTemplate: string;
 	implementationPlan: FeaturePlanImplementationPlan;
 	acceptanceCriteria?: SpecificationAcceptanceCriterion[];
 }) {
+	if (hasFeaturePlanImplementationHeading(input.contentTemplate)) {
+		throw new Error(
+			"Feature Plan contentTemplate must not contain the implementation plan heading because the rendered implementation section owns it.",
+		);
+	}
 	const placeholderCount =
 		input.contentTemplate.split(FEATURE_PLAN_IMPLEMENTATION_PLACEHOLDER)
 			.length - 1;
@@ -106,17 +117,10 @@ export function renderFeaturePlanAcceptanceCriteria(
 	criteria: SpecificationAcceptanceCriterion[],
 ) {
 	return criteria
-		.flatMap((criterion, index) => [
-			`- [AC-${String(index + 1).padStart(3, "0")}] ${criterion.title}`,
-			`  - テスト対象: ${criterion.testCase.target}`,
-			...criterion.testCase.preconditions.map(
-				(precondition) => `  - 前提・入力: ${precondition}`,
-			),
-			`  - 操作: ${criterion.testCase.action}`,
-			...criterion.testCase.assertions.map(
-				(assertion) => `  - アサーション: ${assertion}`,
-			),
-		])
+		.map(
+			(criterion, index) =>
+				`- [AC-${String(index + 1).padStart(3, "0")}] ${criterion.title}`,
+		)
 		.join("\n");
 }
 

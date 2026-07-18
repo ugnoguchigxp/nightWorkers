@@ -40,6 +40,7 @@ import {
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
 import {
 	buildFeaturePlanImplementationPlanMetadata,
+	hasFeaturePlanImplementationHeading,
 	renderFeaturePlanContent,
 } from "./feature-plan-implementation-plan";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
@@ -57,7 +58,13 @@ import { buildSpecificationVerificationSidecar } from "./specification-verificat
 
 const specificationDocumentDraftSchema = z.object({
 	title: z.string().min(1),
-	contentTemplate: z.string().min(1),
+	contentTemplate: z
+		.string()
+		.min(1)
+		.refine((value) => !hasFeaturePlanImplementationHeading(value), {
+			message:
+				"contentTemplate must not contain the implementation plan heading; place {{IMPLEMENTATION_PLAN}} at that position instead.",
+		}),
 	implementationPlan: featurePlanImplementationPlanSchema,
 	acceptanceCriteria: z
 		.array(specificationAcceptanceCriterionSchema)
@@ -280,12 +287,6 @@ function sanitizeAcceptanceCriterion(
 	return {
 		...criterion,
 		title: sanitize(criterion.title),
-		testCase: {
-			target: sanitize(criterion.testCase.target),
-			preconditions: criterion.testCase.preconditions.map(sanitize),
-			action: sanitize(criterion.testCase.action),
-			assertions: criterion.testCase.assertions.map(sanitize),
-		},
 	};
 }
 

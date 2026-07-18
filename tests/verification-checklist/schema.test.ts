@@ -7,16 +7,10 @@ import {
 } from "../../shared/schemas/verification-checklist.schema";
 
 describe("verification checklist schemas", () => {
-	it("requires executable unit-test details for generated acceptance criteria", () => {
+	it("accepts only a required test viewpoint for generated acceptance criteria", () => {
 		const criterion = {
 			title: "空白titleを拒否する",
 			category: "validation",
-			testCase: {
-				target: "CreateTodoInput schema",
-				preconditions: ["titleに半角空白3文字を指定する"],
-				action: "safeParseを実行する",
-				assertions: ["successがfalseになる"],
-			},
 		};
 
 		expect(specificationAcceptanceCriterionSchema.parse(criterion)).toEqual(
@@ -25,7 +19,12 @@ describe("verification checklist schemas", () => {
 		expect(() =>
 			specificationAcceptanceCriterionSchema.parse({
 				...criterion,
-				testCase: { ...criterion.testCase, assertions: [] },
+				testCase: {
+					target: "CreateTodoInput schema",
+					preconditions: ["titleに半角空白3文字を指定する"],
+					action: "safeParseを実行する",
+					assertions: ["successがfalseになる"],
+				},
 			}),
 		).toThrow();
 		expect(() =>

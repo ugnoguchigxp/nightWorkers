@@ -146,17 +146,22 @@ describe("Specification document generation", () => {
 			"または `## 実装計画` で追加すると明記した script 名だけ",
 		);
 		expect(systemPrompt).toContain(
-			"acceptanceCriteria のユニットテストケースを実行する方法",
+			"acceptanceCriteria で列挙した必須テスト観点",
+		);
+		expect(systemPrompt).toContain("title と category だけ");
+		expect(systemPrompt).toContain("観点の最小集合");
+		expect(systemPrompt).toContain("似た観点や同じ利用フローはまとめ");
+		expect(systemPrompt).toContain(
+			"具体的な入力値、初期状態、操作手順、アサーション列",
 		);
 		expect(systemPrompt).toContain(
-			"testCase.preconditions、testCase.action、testCase.assertions",
+			"repositoryを調査してテスト設計するときに決めます",
 		);
-		expect(systemPrompt).toContain("fixture、入力値、初期状態");
 		expect(systemPrompt).toContain(
 			"`verify` / `verify:base` の成功、build、typecheck、lint、format、coverage閾値",
 		);
 		expect(systemPrompt).toContain(
-			"機能の期待挙動を証明するユニットテストの代わりになりません",
+			"機能の期待挙動を証明する自動テストの代わりになりません",
 		);
 		expect(systemPrompt).toContain("{{ACCEPTANCE_CRITERIA}}");
 		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
@@ -460,13 +465,13 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain(
 			"Project root: /Users/y.noguchi/Code/todolist",
 		);
-		expect(userPrompt).toContain("DB 変更の完了条件");
+		expect(userPrompt).toContain("DB 変更のテスト観点");
 		expect(userPrompt).toContain("## Plan View References");
 		expect(userPrompt).toContain("API Contract: Todo API Contract");
 		expect(userPrompt).toContain("## Plan Mode References");
 		expect(userPrompt).toContain("Todo User Flow");
-		expect(userPrompt).toContain("必須ユニットテスト1ケース");
-		expect(userPrompt).toContain("fixture・入力・初期状態");
+		expect(userPrompt).toContain("必ずテストを作るべき観点の最小集合");
+		expect(userPrompt).toContain("具体的な入力、操作、アサーションは書かず");
 		expect(userPrompt).toContain("verify / verify:base がある場合は代表 gate");
 		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
 		expect(userPrompt).toContain("同じ目的のcommandを重複列挙しない");

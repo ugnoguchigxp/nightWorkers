@@ -185,12 +185,6 @@ function fixtureAcceptanceCriteria() {
 		{
 			title: "Todoを作成できる",
 			category: "api",
-			testCase: {
-				target: "Todo作成handler",
-				preconditions: ["titleが『買い物』の作成request"],
-				action: "Todo作成handlerを呼び出す",
-				assertions: ["responseのtitleが『買い物』になる"],
-			},
 		},
 	];
 }

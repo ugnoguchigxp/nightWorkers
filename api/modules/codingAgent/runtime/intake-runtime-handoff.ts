@@ -1,4 +1,3 @@
-import { AppError } from "../../../lib/errors";
 import { resolveCodexAuthScopeFingerprint } from "../../../services/structured-llm/codex-auth-scope";
 import type { ResolvedStructuredLlmRoute } from "../../../services/structured-llm/role-routing";
 import type { CodingAgentPlanModeRuntimeThreadHandoff } from "../intake";
@@ -16,23 +15,11 @@ export function resolveCodexIntakeRuntimeHandoff(input: {
 }) {
 	const { handoff, runtimeRoute } = input;
 	if (!handoff) return null;
-	if (runtimeRoute?.providerId !== "codex") {
-		throw new AppError(
-			409,
-			"INTAKE_THREAD_HANDOFF_PROVIDER_MISMATCH",
-			"The intake gate Codex thread cannot continue on a non-Codex Role Routing provider.",
-		);
-	}
+	if (runtimeRoute?.providerId !== "codex") return null;
 	const targetAuthScopeFingerprint = (
 		input.resolveAuthScopeFingerprint ?? resolveCodexAuthScopeFingerprint
 	)(runtimeRoute.providerEndpointId);
-	if (targetAuthScopeFingerprint !== handoff.authScopeFingerprint) {
-		throw new AppError(
-			409,
-			"INTAKE_THREAD_HANDOFF_AUTH_SCOPE_MISMATCH",
-			"The intake gate Codex thread and selected Role Routing endpoint use different authentication scopes.",
-		);
-	}
+	if (targetAuthScopeFingerprint !== handoff.authScopeFingerprint) return null;
 	return {
 		kind: "codex_thread" as const,
 		status: "available" as const,

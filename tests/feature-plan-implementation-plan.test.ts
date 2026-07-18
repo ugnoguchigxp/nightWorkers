@@ -69,7 +69,7 @@ describe("Feature Plan implementation plan", () => {
 		expect(content).toContain("マイグレーション: 不要");
 	});
 
-	it("renders acceptance criteria as unit-test cases with explicit assertions", () => {
+	it("renders only the required test viewpoints as acceptance criteria", () => {
 		const plan = featurePlanImplementationPlanSchema.parse(validPlan);
 		const content = renderFeaturePlanContent({
 			contentTemplate:
@@ -79,21 +79,15 @@ describe("Feature Plan implementation plan", () => {
 				{
 					title: "空白だけのtitleを拒否する",
 					category: "validation",
-					testCase: {
-						target: "CreateTodoInput schema",
-						preconditions: ["titleに半角空白3文字を指定する"],
-						action: "safeParseを実行する",
-						assertions: ["successがfalseになる", "永続化処理が呼ばれない"],
-					},
 				},
 			],
 		});
 
 		expect(content).toContain("[AC-001] 空白だけのtitleを拒否する");
-		expect(content).toContain("テスト対象: CreateTodoInput schema");
-		expect(content).toContain("前提・入力: titleに半角空白3文字");
-		expect(content).toContain("操作: safeParseを実行する");
-		expect(content).toContain("アサーション: successがfalseになる");
+		expect(content).not.toContain("テスト対象:");
+		expect(content).not.toContain("前提・入力:");
+		expect(content).not.toContain("操作:");
+		expect(content).not.toContain("アサーション:");
 		expect(content).not.toContain("{{ACCEPTANCE_CRITERIA}}");
 	});
 
@@ -146,6 +140,18 @@ describe("Feature Plan implementation plan", () => {
 				implementationPlan: plan,
 			}),
 		).toThrow(/exactly once/);
+	});
+
+	it("rejects an implementation heading owned by the content template", () => {
+		const plan = featurePlanImplementationPlanSchema.parse(validPlan);
+
+		expect(() =>
+			renderFeaturePlanContent({
+				contentTemplate:
+					"## 目的\nTodoを実装する。\n\n## 実装計画\n{{IMPLEMENTATION_PLAN}}",
+				implementationPlan: plan,
+			}),
+		).toThrow(/must not contain the implementation plan heading/);
 	});
 
 	it("produces a stable backend digest", () => {

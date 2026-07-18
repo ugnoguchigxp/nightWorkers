@@ -17,6 +17,18 @@ describe("Coding Agent Plan Mode gate prompt", () => {
 		expect(prompt).toContain("『リファクタ』");
 		expect(prompt).toContain("keywordや固定の規模閾値ではなく");
 		expect(prompt).toContain("通常のrepository調査で解消できる未知だけなら");
+		expect(prompt).toContain(
+			"Current User Messageは現在の依頼範囲を示す最新の正本",
+		);
+		expect(prompt).toContain(
+			"矛盾する過去の広い計画指示を優先してPlan Modeを選ばない",
+		);
+		expect(prompt).toContain(
+			"repositoryの既存規約や既定値に沿った可逆的な実装",
+		);
+		expect(prompt).toContain(
+			"完全なプロダクト仕様として先に確定できるという理由だけでPlan Modeを選ばない",
+		);
 		expect(prompt).not.toContain("リファクタは shouldStartPlanMode=false");
 		expect(prompt).not.toContain("判断に迷う場合は");
 	});

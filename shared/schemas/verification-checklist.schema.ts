@@ -36,7 +36,6 @@ export const specificationAcceptanceCriterionSchema = z
 	.object({
 		title: z.string().trim().min(1).max(300),
 		category: specificationAcceptanceCriterionCategorySchema,
-		testCase: verificationTestCaseSchema,
 	})
 	.strict();
 
@@ -48,6 +47,7 @@ export const verificationKindSchema = z.enum([
 ]);
 
 export const expectedEvidenceSchema = z.enum([
+	"automated_test",
 	"unit_test",
 	"integration_test",
 	"e2e_test",

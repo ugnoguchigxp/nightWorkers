@@ -622,11 +622,5 @@ function fixtureAcceptanceCriterion() {
 	return {
 		title: "初期画面を表示できる",
 		category: "ui",
-		testCase: {
-			target: "初期画面component",
-			preconditions: ["表示対象データを1件用意する"],
-			action: "componentをrenderする",
-			assertions: ["対象データのlabelが表示される"],
-		},
 	};
 }

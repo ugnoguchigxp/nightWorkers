@@ -248,7 +248,10 @@ describe("NightWorkers workbench routes", () => {
 		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2],
-		).toMatchObject({ schemaName: "workbench_plan_mode_gate", role: "plan" });
+		).toMatchObject({
+			schemaName: "workbench_plan_mode_gate",
+			role: "evaluation",
+		});
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[1]?.[2],
 		).toMatchObject({ schemaName: "design_questionnaire", role: "plan" });
@@ -304,6 +307,7 @@ describe("NightWorkers workbench routes", () => {
 				executionMode: "implementation",
 				planModeRequested: false,
 				planModeClosed: true,
+				effectiveLlmRouting: { activeRole: "implementation" },
 			},
 		});
 		expect(body.run.contextSnapshot).not.toHaveProperty("missionPilot");
@@ -312,7 +316,10 @@ describe("NightWorkers workbench routes", () => {
 		);
 		expect(
 			vi.mocked(llm.callStructuredJsonLLM).mock.calls[0]?.[2],
-		).toMatchObject({ schemaName: "workbench_plan_mode_gate", role: "plan" });
+		).toMatchObject({
+			schemaName: "workbench_plan_mode_gate",
+			role: "evaluation",
+		});
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		const [pilot] = await db
 			.select({ id: missionPilotSessions.id })

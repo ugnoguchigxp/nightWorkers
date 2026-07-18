@@ -53,22 +53,14 @@ function buildGeneratedCondition(
 	index: number,
 ): VerificationCondition {
 	const id = `AC-${String(index + 1).padStart(3, "0")}`;
-	const expectedResult = criterion.testCase.assertions.join(" / ");
 	return {
 		id,
-		text: [
-			criterion.title,
-			`テスト対象: ${criterion.testCase.target}`,
-			`前提・入力: ${criterion.testCase.preconditions.join(" / ")}`,
-			`操作: ${criterion.testCase.action}`,
-			`アサーション: ${expectedResult}`,
-		].join("。"),
+		text: criterion.title,
 		category: criterion.category,
 		verificationKind: "automated_test",
-		expectedEvidence: ["unit_test"],
-		expectedResult,
-		failureMeaning: `${criterion.title} の期待アサーションを満たさない場合、この完了条件は未達です。`,
-		testCase: criterion.testCase,
+		expectedEvidence: ["automated_test"],
+		expectedResult: criterion.title,
+		failureMeaning: `${criterion.title} を満たさない場合、この完了条件は未達です。`,
 		required: true,
 		status: "pending",
 	};

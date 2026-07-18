@@ -143,7 +143,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 		);
 	});
 
-	it("rejects a Role Routing endpoint with a different Codex auth scope", () => {
+	it("starts a fresh implementation thread for a different Codex auth scope", () => {
 		const handoff: CodingAgentPlanModeRuntimeThreadHandoff = {
 			kind: "codex_thread",
 			provider: "codex",
@@ -159,17 +159,17 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 			model: "implementation-model",
 		} as Parameters<typeof resolveCodexIntakeRuntimeHandoff>[0]["runtimeRoute"];
 
-		expect(() =>
+		expect(
 			resolveCodexIntakeRuntimeHandoff({
 				handoff,
 				executionMode: "implementation",
 				runtimeRoute,
 				resolveAuthScopeFingerprint: () => "implementation-scope",
 			}),
-		).toThrow(/different authentication scopes/);
+		).toBeNull();
 	});
 
-	it("rejects a Codex gate handoff to a non-Codex Role Routing provider", () => {
+	it("starts a fresh implementation thread for a non-Codex Role Route", () => {
 		const handoff: CodingAgentPlanModeRuntimeThreadHandoff = {
 			kind: "codex_thread",
 			provider: "codex",
@@ -185,13 +185,13 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 			model: "implementation-model",
 		} as Parameters<typeof resolveCodexIntakeRuntimeHandoff>[0]["runtimeRoute"];
 
-		expect(() =>
+		expect(
 			resolveCodexIntakeRuntimeHandoff({
 				handoff,
 				executionMode: "implementation",
 				runtimeRoute,
 			}),
-		).toThrow(/cannot continue on a non-Codex/);
+		).toBeNull();
 	});
 
 	it("resolves endpoint credentials without exposing them in the handoff", () => {

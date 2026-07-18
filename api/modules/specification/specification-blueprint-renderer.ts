@@ -64,7 +64,7 @@ export function buildImplementationPlanGuidance(context: string) {
 	if (hasSchemaChange) {
 		lines.push(
 			"DB 変更: Data Model DDL reference は設計根拠として扱う。実装では既存 tooling に従って schema/migration を作成し、適用と検証を独立した手順にする。",
-			"DB 変更の完了条件: 一時DBへ既存migrationを適用した初期状態、追加migrationの実行、対象table/index/constraintと既存データの期待値を、repositoryまたはmigrationのfocused testで個別にassertできる形にする。",
+			"DB 変更のテスト観点: migration適用、既存データ互換性、保存整合性のうち、このTaskで失敗を許容できない観点だけを完了条件に含める。具体的なtable/index/constraintやfixtureはrepository調査後に決める。",
 		);
 	}
 
@@ -79,11 +79,11 @@ export function buildImplementationPlanGuidance(context: string) {
 		);
 	}
 	lines.push(
-		"完了条件: 各条件を必須ユニットテスト1ケースとして、テスト対象、fixture・入力・初期状態、1つの操作、観測可能なアサーションを具体的に書く。",
-		"完了条件: UI、DB、API、validationなどの責務や、成功系・失敗系・復旧系を混ぜず、条件ごとに独立したテストを対応付けられる形に分ける。",
+		"完了条件: Taskの達成に不可欠で、実装後に必ずテストを作るべき観点の最小集合だけを書く。主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件から、該当するものを選ぶ。",
+		"完了条件: 類似ケースや同じ利用フローはまとめる。テスト対象、関数名、handler、repository、component、fixture、具体的な入力、操作、アサーションは書かず、Coding Agentのrepository調査後のテスト設計へ委ねる。",
 		"検証: Project package scripts に verify / verify:base がある場合は代表 gate として扱い、build / typecheck / lint / test は対象範囲の確認または verify で代替できない理由がある場合だけ別に書く。",
 		"検証: verify / verify:base が無い場合でも検証を弱めず、既存構成に合わせた最小の verify 系 script 追加を実装計画に入れる。",
-		"検証: unit testは各完了条件の証跡として扱う。typecheck / build / lint / verify / coverageは完了条件へ含めず、必要なものだけ検証計画へ書く。同じ目的のcommandを重複列挙しない。",
+		"検証: 各完了条件には実装後のテスト証跡を対応付ける。typecheck / build / lint / verify / coverageは完了条件へ含めず、必要なものだけ検証計画へ書く。同じ目的のcommandを重複列挙しない。",
 		"禁止: 元資料、Evidence、Questionnaire の raw answer、API schema、DDL、Blueprint 詳細を本文に再掲しない。",
 	);
 	return lines.join("\n");
