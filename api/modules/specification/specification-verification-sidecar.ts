@@ -32,7 +32,7 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 	return {
 		content,
 		document: {
-			version: 1,
+			version: 2,
 			specId: input.specId,
 			specPath: input.specPath,
 			generatedAt: input.generatedAt ?? new Date().toISOString(),
@@ -43,7 +43,6 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 			},
 			conditions,
 			commands,
-			nonGoals: extractNonGoals(content),
 		},
 	};
 }
@@ -189,32 +188,9 @@ function extractVerificationCommands(
 			label: command,
 			command,
 			conditionIds: conditions.map((condition) => condition.id),
-			scope: /verify|coverage|build/.test(command) ? "full_gate" : "focused",
-			runnerHint: inferRunnerHint(command),
 		});
 	}
 	return commands;
-}
-
-function inferRunnerHint(
-	command: string,
-): VerificationCommandPlan["runnerHint"] {
-	if (/vitest/i.test(command)) return "vitest";
-	if (/jest/i.test(command)) return "jest";
-	if (/pytest/i.test(command)) return "pytest";
-	if (/playwright/i.test(command)) return "playwright";
-	if (/cargo\s+nextest/i.test(command)) return "cargo-nextest";
-	if (/cargo\s+test/i.test(command)) return "cargo-test";
-	if (/\bgo\s+test\b/i.test(command)) return "go-test";
-	return "unknown";
-}
-
-function extractNonGoals(markdown: string): string[] {
-	const section = extractSection(markdown, /非対象|out of scope|non-goals/i);
-	return section
-		.split("\n")
-		.map((line) => line.match(/^\s*[-*]\s+(.+)$/)?.[1]?.trim())
-		.filter((line): line is string => Boolean(line));
 }
 
 function extractSection(markdown: string, headingPattern: RegExp): string {

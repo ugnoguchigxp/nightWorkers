@@ -129,6 +129,29 @@ describe("runCommandTool", () => {
 
 		expect(result.ok).toBe(true);
 		expect(result.payload.stdout.trim()).toBe("hello");
+		expect(result.payload).toMatchObject({
+			exitCode: 0,
+			signal: null,
+			timedOut: false,
+			cwd: dummyRepoDir,
+			repositoryRoot: dummyRepoDir,
+		});
+		expect(result.payload.stdoutDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(result.payload.stderrDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+	});
+
+	it("propagates an earlier pipeline failure", async () => {
+		const result = await runCommandTool({
+			command: "echo ok | grep missing | head -1",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.payload).toMatchObject({
+			exitCode: 1,
+			timedOut: false,
+		});
+		expect(result.error?.code).toBe("COMMAND_FAILED");
 	});
 
 	it("blocks destructive commands from running", async () => {
@@ -139,6 +162,15 @@ describe("runCommandTool", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.error?.code).toBe("DESTRUCTIVE_COMMAND");
+		expect(result.payload).toMatchObject({
+			exitCode: -1,
+			signal: null,
+			timedOut: false,
+			cwd: dummyRepoDir,
+			repositoryRoot: dummyRepoDir,
+		});
+		expect(result.payload.stdoutDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(result.payload.stderrDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
 	});
 
 	it("blocks unknown commands by default", async () => {

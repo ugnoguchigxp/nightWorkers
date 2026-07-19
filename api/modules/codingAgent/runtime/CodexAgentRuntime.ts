@@ -1,7 +1,11 @@
 import { recordLlmUsage } from "../../../services/llm-usage";
-import { runFinalizeController } from "../../../services/run-control/finalize-controller";
 import { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
-import { loadCodingAgentContextPacket } from "../context";
+import { runFinalizeController } from "../application/run-finalize-controller";
+import {
+	buildCodingAgentCompletionRecoveryFeedback,
+	buildCodingAgentTodoRecoveryGuidance,
+	loadCodingAgentContextPacket,
+} from "../context";
 import { auditCodexMappedEvent } from "./codex-runtime-audit";
 import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
@@ -157,19 +161,25 @@ export class CodexAgentRuntime implements AgentRuntime {
 								auditState,
 								mapped,
 							)) {
-								const violation = readModelVisibleTodoViolation(audited);
+								const eventWithCandidateRevision = attachCandidateRevision(
+									audited,
+									turnIndex,
+								);
+								const violation = readModelVisibleTodoViolation(
+									eventWithCandidateRevision,
+								);
 								if (violation) todoContractViolations.add(violation);
 								providerSessionKey = updateCodexSessionKey(
 									providerSessionKey,
-									audited,
+									eventWithCandidateRevision,
 								);
-								logs.push(audited.message);
-								await sink.emit(audited);
+								logs.push(eventWithCandidateRevision.message);
+								await sink.emit(eventWithCandidateRevision);
 								if (this.persistRuntimeSessionState) {
 									await persistCodexProviderThreadIfPresent(
 										this.runtimeSessionStore,
 										context,
-										audited,
+										eventWithCandidateRevision,
 									);
 								}
 							}
@@ -215,7 +225,21 @@ export class CodexAgentRuntime implements AgentRuntime {
 					}
 
 					if (todoContractViolations.size > 0) {
-						nextPrompt = buildModelVisibleTodoFeedback(todoContractViolations);
+						const recoveryPacket = await loadCodingAgentContextPacket(
+							context.runId,
+						);
+						nextPrompt = buildModelVisibleTodoFeedback({
+							violations: todoContractViolations,
+							finalCandidate: lastFinalCandidate,
+							guidance: buildCodingAgentTodoRecoveryGuidance({
+								taskId: context.taskId,
+								runId: context.runId,
+								repositoryRoot: context.repoRoot,
+								packet: recoveryPacket,
+								latestUserMessage: context.latestUserMessage,
+								finalCandidate: lastFinalCandidate,
+							}),
+						});
 						continue;
 					}
 
@@ -236,6 +260,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 					);
 					const completion = await runFinalizeController.evaluateCandidate({
 						runId: context.runId,
+						repositoryRoot: context.repoRoot,
+						candidateRevision: turnIndex,
+						finalCandidate: turnFinalText,
 						expectedPlanRevision:
 							completionSnapshot?.planSummary.planRevision ?? 0,
 						expectedTodoRevisions: Object.fromEntries(
@@ -261,14 +288,18 @@ export class CodexAgentRuntime implements AgentRuntime {
 							riskLevel: "medium",
 						});
 					}
-					nextPrompt = JSON.stringify({
-						ok: false,
-						error: {
+					nextPrompt = buildCodingAgentCompletionRecoveryFeedback({
+						taskId: context.taskId,
+						runId: context.runId,
+						repositoryRoot: context.repoRoot,
+						latestUserMessage: context.latestUserMessage,
+						packet: completionSnapshot,
+						finalCandidate: turnFinalText,
+						precondition: {
 							code: completion.code,
 							message: completion.message,
 						},
 						currentSnapshot: completion.snapshot,
-						finalCandidate: turnFinalText,
 					});
 				}
 
@@ -393,8 +424,12 @@ function readModelVisibleTodoViolation(event: AgentRuntimeEvent) {
 	return code && MODEL_VISIBLE_TODO_VIOLATIONS.has(code) ? code : null;
 }
 
-function buildModelVisibleTodoFeedback(violations: Set<string>) {
-	const codes = [...violations];
+function buildModelVisibleTodoFeedback(input: {
+	violations: Set<string>;
+	finalCandidate: string;
+	guidance: ReturnType<typeof buildCodingAgentTodoRecoveryGuidance>;
+}) {
+	const codes = [...input.violations];
 	const primaryCode = codes.includes("codex_file_change_without_current_todo")
 		? "CURRENT_TODO_REQUIRED"
 		: "TODO_REPLAN_REQUIRED";
@@ -406,5 +441,21 @@ function buildModelVisibleTodoFeedback(violations: Set<string>) {
 				"Todo contract違反を検出しました。最新のTodo Contextを確認し、必要なTodo更新を行ってから次の行動を選んでください。",
 		},
 		violations: codes,
+		currentRecoveryContext: input.guidance,
+		finalCandidate: input.finalCandidate,
 	});
+}
+
+function attachCandidateRevision(
+	event: AgentRuntimeEvent,
+	turnIndex: number,
+): AgentRuntimeEvent {
+	if (event.type !== "model_response_finished") return event;
+	return {
+		...event,
+		payload: {
+			...(event.payload ?? {}),
+			candidateRevision: turnIndex,
+		},
+	};
 }

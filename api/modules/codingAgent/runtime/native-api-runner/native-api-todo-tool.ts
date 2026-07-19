@@ -1,7 +1,4 @@
-import {
-	TODO_DRAFT_FIELD_GUIDANCE_JA,
-	TODO_MUTATION_LIMITS,
-} from "../../../../services/todo-mutation";
+import { TODO_DRAFT_FIELD_GUIDANCE_JA, TODO_MUTATION_LIMITS } from "../../todo";
 import { objectSchema } from "./native-api-tool-schema";
 
 const todoRevisionFields = {
@@ -26,10 +23,11 @@ export const todoCommandJsonSchema = {
 					maxItems: TODO_MUTATION_LIMITS.maxTodos,
 					items: objectSchema(
 						{
-							id: {
+							todoKey: {
 								type: "string",
 								minLength: 1,
 								maxLength: TODO_MUTATION_LIMITS.maxTodoIdLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.todoKey,
 							},
 							title: {
 								type: "string",
@@ -62,9 +60,10 @@ export const todoCommandJsonSchema = {
 									maxLength: TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength,
 								},
 							},
-							dependsOn: {
+							dependsOnKeys: {
 								type: "array",
 								maxItems: TODO_MUTATION_LIMITS.maxDependencies,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.dependsOnKeys,
 								items: {
 									type: "string",
 									minLength: 1,

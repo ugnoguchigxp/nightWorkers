@@ -1,4 +1,5 @@
 import type { StructuredOutputContract } from "../../../services/structured-llm/contract";
+import { FEATURE_PLAN_DDD_BOUNDARY_REVIEW_CONTEXT_JA } from "../../specification/feature-plan-domain-boundary";
 import {
 	MISSION_PILOT_PLAN_REVIEW_THRESHOLD_CONTEXT,
 	MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
@@ -10,6 +11,7 @@ export function buildMissionPilotPlanReviewSystemPrompt<T>(
 	return [
 		MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
 		MISSION_PILOT_PLAN_REVIEW_THRESHOLD_CONTEXT,
+		FEATURE_PLAN_DDD_BOUNDARY_REVIEW_CONTEXT_JA,
 		"あなたはMission PilotのQueue投入前に、現在のPlan Artifact一式を審査するレビュアーです。",
 		"Goal、確定Questionnaire、Task acceptance criteria、Project Stack Context、各Artifact本文をFactとして使用してください。",
 		"審査対象はReview Artifact Referencesに列挙された現在のArtifactだけです。現在のroutingはこの審査では確定済みであり、不足を理由に新しいArtifact、view、routing変更を要求してはいけません。",

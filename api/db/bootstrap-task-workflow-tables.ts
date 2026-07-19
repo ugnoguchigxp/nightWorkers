@@ -1,3 +1,4 @@
+import { ensureTaskRunTodoKey } from "./bootstrap-task-run-todo-key";
 import { client } from "./client";
 import { ensureColumn } from "./schema-bootstrap-utils";
 
@@ -235,6 +236,7 @@ export async function ensureTaskWorkflowTables() {
       created_at integer NOT NULL,
       updated_at integer NOT NULL,
       run_id text NOT NULL,
+	  todo_key text NOT NULL,
       seq integer NOT NULL,
       title text NOT NULL,
       description text,
@@ -268,6 +270,7 @@ export async function ensureTaskWorkflowTables() {
 		"evidence_requirements_json",
 		"evidence_requirements_json text",
 	);
+	await ensureTaskRunTodoKey();
 	await ensureColumn(
 		"task_run_todos",
 		"evidence_refs_json",

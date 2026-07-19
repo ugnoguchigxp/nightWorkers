@@ -1,3 +1,4 @@
+import path from "node:path";
 import { unknownErrorMessage } from "../../../shared/json-record";
 import { startBackgroundCommand } from "../background-processes";
 import type { WorkerToolResult } from "./types";
@@ -19,6 +20,8 @@ export interface RunBackgroundCommandOutput {
 	backgroundProcessId: string;
 	command: string;
 	cwd: string;
+	executionCwd?: string;
+	repositoryRoot?: string;
 	status: string;
 	pid?: number | null;
 }
@@ -27,6 +30,10 @@ export async function runBackgroundCommandTool(
 	input: RunBackgroundCommandInput,
 ): Promise<WorkerToolResult<RunBackgroundCommandOutput>> {
 	const startedAt = new Date().toISOString();
+	const repositoryRoot = path.resolve(input.repoRoot);
+	const executionCwd = input.cwd
+		? path.resolve(repositoryRoot, input.cwd)
+		: repositoryRoot;
 	try {
 		const processRecord = await startBackgroundCommand(input);
 		return {
@@ -38,6 +45,8 @@ export async function runBackgroundCommandTool(
 				backgroundProcessId: processRecord.id,
 				command: processRecord.command,
 				cwd: processRecord.cwd,
+				executionCwd,
+				repositoryRoot,
 				status: processRecord.status,
 				pid: processRecord.pid,
 			},
@@ -52,6 +61,8 @@ export async function runBackgroundCommandTool(
 				backgroundProcessId: "",
 				command: input.command,
 				cwd: input.cwd || "",
+				executionCwd,
+				repositoryRoot,
 				status: "failed",
 				pid: null,
 			},

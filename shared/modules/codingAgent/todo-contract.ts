@@ -20,6 +20,8 @@ export const TODO_MUTATION_LIMITS = {
 } as const;
 
 export const TODO_DRAFT_FIELD_GUIDANCE_JA = {
+	todoKey:
+		"このRun内でTodoを安定して参照するlocal key。replace_planとdependsOnKeysではこの値を使い、start等の個別更新ではtool resultのcanonical idとrevisionを使う。",
 	objective:
 		"このTodoで達成する局所的な目的。Task名の言い換えではなく、設計書の実装計画上の成果を具体化する。",
 	context:
@@ -28,6 +30,8 @@ export const TODO_DRAFT_FIELD_GUIDANCE_JA = {
 		"局所SystemContextを読んだうえで次に行う具体的な一手。hostに次工程を推測させない。",
 	acceptanceCriteria:
 		"このTodoをpassedと判断する観測可能な条件。設計書の完了条件や適用されるquality gateを工程単位へ対応付ける。",
+	dependsOnKeys:
+		"同じRunのreplace_plan内にある先行TodoのtodoKey。serverがcanonical Todo IDへ解決する。",
 	updateContext:
 		"作業で得た新事実と、以後も忘れてはいけない工程固有のリマインダーを反映した局所SystemContext。共通SystemContext全文は複製しない。",
 } as const;
@@ -49,12 +53,16 @@ export type CodingAgentSystemContextSnapshot = {
 };
 
 export type TodoDraft = {
+	todoKey?: string;
+	/** @deprecated replace_planではRun-local todoKeyとして互換正規化する。 */
 	id?: string;
 	title: string;
 	objective?: string | null;
 	context?: string | null;
 	nextAction: string;
 	acceptanceCriteria?: string[];
+	dependsOnKeys?: string[];
+	/** @deprecated replace_planではdependsOnKeysとして互換正規化する。 */
 	dependsOn?: string[];
 };
 
@@ -109,7 +117,9 @@ export type TodoMutationErrorCode =
 	| "TODO_DEPENDENCY_NOT_FOUND"
 	| "TODO_DEPENDENCY_OPEN"
 	| "TODO_DEPENDENCY_CYCLE"
+	| "TODO_KEY_DUPLICATED"
 	| "TODO_ID_DUPLICATED"
+	| "TODO_IDENTITY_CONFLICT"
 	| "TODO_MUTATION_CONFLICT";
 
 export type TodoMutationSnapshot<TTodo> = {

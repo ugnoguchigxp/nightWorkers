@@ -67,6 +67,9 @@ describe("Specification Verification Sidecar", () => {
 			"以下を実行すること：",
 			"- `bun test` を実行する",
 			"- `npm run test:api` を実行する",
+			"",
+			"## 非対象",
+			"- unrelated feature",
 		].join("\n");
 
 		const result = buildSpecificationVerificationSidecar({
@@ -78,9 +81,21 @@ describe("Specification Verification Sidecar", () => {
 			workspace: dummyWorkspace,
 		});
 
+		expect(result.document.version).toBe(2);
 		expect(result.document.commands).toHaveLength(2);
-		expect(result.document.commands[0].command).toBe("bun test");
-		expect(result.document.commands[1].command).toBe("npm run test:api");
+		expect(result.document.commands[0]).toEqual({
+			id: "CMD-001",
+			label: "bun test",
+			command: "bun test",
+			conditionIds: ["AC-001"],
+		});
+		expect(result.document.commands[1]).toEqual({
+			id: "CMD-002",
+			label: "npm run test:api",
+			command: "npm run test:api",
+			conditionIds: ["AC-001"],
+		});
+		expect(result.document).not.toHaveProperty("nonGoals");
 	});
 
 	it("keeps generated acceptance criteria as required test viewpoints", () => {

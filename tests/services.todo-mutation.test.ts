@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	type CodingAgentSystemContextSnapshot,
+	TodoMutationService,
+} from "../api/modules/codingAgent/todo";
+import {
 	createRepository,
 	createTask,
 	createTaskRun,
@@ -7,10 +11,6 @@ import {
 	getTaskRun,
 	updateTaskRun,
 } from "../api/modules/nightworkers/nightworkers.repository";
-import {
-	type CodingAgentSystemContextSnapshot,
-	TodoMutationService,
-} from "../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 
@@ -76,6 +76,96 @@ async function createTwoTodoPlan(runId: string) {
 }
 
 describe("TodoMutationService", () => {
+	it("treats the same Todo key as run-local across different Runs", async () => {
+		const [{ run: firstRun }, { run: secondRun }] = await Promise.all([
+			createRunFixture(),
+			createRunFixture(),
+		]);
+		const command = {
+			op: "replace_plan" as const,
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					id: "inspect",
+					title: "調査する",
+					nextAction: "repositoryを確認する。",
+				},
+			],
+		};
+
+		const first = await service().execute(firstRun.id, command);
+		const second = await service().execute(secondRun.id, command);
+
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		if (!first.ok || !second.ok) return;
+		expect(first.todos[0]?.id).not.toBe(second.todos[0]?.id);
+		expect(first.todos[0]?.todoKey).toBe("inspect");
+		expect(second.todos[0]?.todoKey).toBe("inspect");
+	});
+
+	it("keeps the canonical Todo ID stable when replanning with todoKey", async () => {
+		const { run } = await createRunFixture();
+		const first = await service().execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					todoKey: "inspect",
+					title: "調査する",
+					nextAction: "sourceを確認する。",
+				},
+			],
+		});
+		if (!first.ok) throw new Error(first.error.code);
+
+		const replanned = await service().execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: first.planRevision,
+			todos: [
+				{
+					todoKey: "inspect",
+					title: "調査を続ける",
+					nextAction: "追加のsourceを確認する。",
+				},
+			],
+		});
+
+		expect(replanned.ok).toBe(true);
+		if (!replanned.ok) return;
+		expect(replanned.todos[0]).toMatchObject({
+			id: first.todos[0]?.id,
+			todoKey: "inspect",
+			revision: 1,
+			title: "調査を続ける",
+		});
+	});
+
+	it("resolves dependsOnKeys to canonical Todo IDs", async () => {
+		const { run } = await createRunFixture();
+		const plan = await service().execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					todoKey: "inspect",
+					title: "調査する",
+					nextAction: "sourceを確認する。",
+				},
+				{
+					todoKey: "implement",
+					title: "実装する",
+					nextAction: "sourceを編集する。",
+					dependsOnKeys: ["inspect"],
+				},
+			],
+		});
+
+		expect(plan.ok).toBe(true);
+		if (!plan.ok) return;
+		expect(plan.todos[1]?.dependsOn).toEqual([plan.todos[0]?.id]);
+	});
+
 	it("creates an additive versioned plan with the shared system context", async () => {
 		const { run } = await createRunFixture();
 

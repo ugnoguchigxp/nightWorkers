@@ -1,9 +1,9 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
-import { TodoMutationService } from "../../../services/todo-mutation";
 import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
 	readCodingAgentPlanModeRequested,
+	TodoMutationService,
 } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
@@ -30,7 +30,9 @@ export async function activateTaskRunResume(input: {
 			);
 		}
 		const todos = await repo.listTaskRunTodosForRun(run.id);
-		const target = todos.find((todo) => todo.id === input.todoId);
+		const target = todos.find(
+			(todo) => todo.id === input.todoId || todo.todoKey === input.todoId,
+		);
 		if (!target) throw new NotFoundError("Todo not found");
 		if (target.status !== "running") {
 			throw new AppError(409, "TODO_NOT_RESUMABLE", "Todo is not running");
@@ -92,7 +94,7 @@ export async function activateTaskRunResume(input: {
 	await finishResumeActivation({
 		runId: run.id,
 		taskId: task.id,
-		todoId: input.todoId,
+		todoId: mutation.currentTodo?.id ?? input.todoId,
 		todoRevision: mutation.currentTodo?.revision ?? null,
 		message: "User context resumed the paused Todo and existing task run.",
 	});

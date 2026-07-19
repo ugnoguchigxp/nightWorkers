@@ -1,10 +1,10 @@
+import type { WorkerToolResult } from "../../../services/worker-tools/types";
+import { loadCodingAgentContextPacket } from "../context";
 import {
 	type TodoMutationCommand,
 	type TodoMutationResult,
 	TodoMutationService,
-} from "../../../services/todo-mutation";
-import type { WorkerToolResult } from "../../../services/worker-tools/types";
-import { loadCodingAgentContextPacket } from "../context";
+} from "../todo";
 
 export type TodoToolName = "todo_list";
 export type TodoListOperation = "list" | TodoMutationCommand["op"];

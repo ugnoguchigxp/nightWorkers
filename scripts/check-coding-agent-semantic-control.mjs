@@ -63,7 +63,7 @@ for (const file of [
 
 for (const [file, forbiddenText] of [
 	[
-		"api/services/run-control/finalize-controller.ts",
+		"api/modules/codingAgent/application/run-finalize-controller.ts",
 		"terminalize(",
 	],
 	[

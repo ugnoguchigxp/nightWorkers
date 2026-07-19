@@ -100,4 +100,61 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 		});
 		expect(result.modelVisibleSummary?.truncated).toBe(false);
 	});
+
+	it("reads legacy verification documents without projecting removed fields", () => {
+		const result = projectWorkerResultToNativeApiToolResult({
+			ok: true,
+			toolName: "read_current_specification",
+			startedAt: "2026-07-19T00:00:00.000Z",
+			finishedAt: "2026-07-19T00:00:00.001Z",
+			payload: {
+				taskId: "task-1",
+				found: true,
+				view: "verification",
+				content: "## 検証計画\n- `bun test`",
+				verification: {
+					verificationDocumentId: "verification-1",
+					document: {
+						version: 1,
+						specId: "spec-1",
+						specPath: "spec/spec-1.md",
+						generatedAt: "2026-07-10T00:00:00.000Z",
+						conditions: [],
+						commands: [
+							{
+								id: "CMD-001",
+								label: "bun test",
+								command: "bun test",
+								conditionIds: [],
+								scope: "focused",
+								runnerHint: "unknown",
+							},
+						],
+						nonGoals: [],
+					},
+					checklist: [],
+				},
+				sources: {},
+			},
+		});
+		const modelVisible = JSON.parse(result.content) as {
+			payload: {
+				verification: {
+					document: {
+						commands: Array<Record<string, unknown>>;
+					};
+				};
+			};
+		};
+
+		expect(modelVisible.payload.verification.document.commands[0]).toEqual({
+			id: "CMD-001",
+			label: "bun test",
+			command: "bun test",
+			conditionIds: [],
+		});
+		expect(modelVisible.payload.verification.document).not.toHaveProperty(
+			"nonGoals",
+		);
+	});
 });

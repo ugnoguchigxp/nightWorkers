@@ -14,7 +14,8 @@ export function validateTodoMutationCommand(
 			return "INVALID_TODO_COMMAND";
 		}
 		for (const todo of command.todos) {
-			const dependencies = todo.dependsOn ?? [];
+			const todoKey = todo.todoKey ?? todo.id;
+			const dependencies = todo.dependsOnKeys ?? todo.dependsOn ?? [];
 			const acceptanceCriteria = todo.acceptanceCriteria ?? [];
 			if (
 				!todo.title.trim() ||
@@ -24,9 +25,15 @@ export function validateTodoMutationCommand(
 				!todo.nextAction.trim() ||
 				todo.nextAction.length > TODO_MUTATION_LIMITS.maxNextActionLength ||
 				(todo.context?.length ?? 0) > TODO_MUTATION_LIMITS.maxContextLength ||
-				(todo.id !== undefined &&
-					(!todo.id.trim() ||
-						todo.id.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||
+				(todoKey !== undefined &&
+					(!todoKey.trim() ||
+						todoKey.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||
+				(todo.todoKey !== undefined &&
+					todo.id !== undefined &&
+					todo.todoKey !== todo.id) ||
+				(todo.dependsOnKeys !== undefined &&
+					todo.dependsOn !== undefined &&
+					!sameStringArray(todo.dependsOnKeys, todo.dependsOn)) ||
 				acceptanceCriteria.length >
 					TODO_MUTATION_LIMITS.maxAcceptanceCriteria ||
 				acceptanceCriteria.some(
@@ -40,7 +47,7 @@ export function validateTodoMutationCommand(
 						!id.trim() || id.length > TODO_MUTATION_LIMITS.maxTodoIdLength,
 				) ||
 				new Set(dependencies).size !== dependencies.length ||
-				(todo.id !== undefined && dependencies.includes(todo.id))
+				(todoKey !== undefined && dependencies.includes(todoKey))
 			) {
 				return "INVALID_TODO_COMMAND";
 			}
@@ -111,9 +118,19 @@ export function todoMutationErrorMessage(code: TodoMutationErrorCode) {
 		TODO_DEPENDENCY_NOT_FOUND: "参照先Todo IDがplan内に存在しません。",
 		TODO_DEPENDENCY_OPEN: "未完了のdependencyがあるためTodoを開始できません。",
 		TODO_DEPENDENCY_CYCLE: "Todo dependencyに循環があります。",
+		TODO_KEY_DUPLICATED: "同じRun内でTodo keyが重複しています。",
 		TODO_ID_DUPLICATED: "Todo IDが重複しています。",
+		TODO_IDENTITY_CONFLICT:
+			"Todo keyからcanonical IDを確定できませんでした。最新planを取得してください。",
 		TODO_MUTATION_CONFLICT:
 			"Todo更新を確定できませんでした。最新状態を取得してください。",
 	};
 	return messages[code];
+}
+
+function sameStringArray(left: string[], right: string[]) {
+	return (
+		left.length === right.length &&
+		left.every((value, index) => value === right[index])
+	);
 }

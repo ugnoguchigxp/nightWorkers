@@ -3,7 +3,11 @@ import { projectConversationStateCardForRuntime } from "../../../services/conver
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { projectTaskRunParentStatus } from "../../agentsShare";
-import { resolveCodexIntakeRuntimeHandoff } from "../../codingAgent";
+import {
+	loadCodingAgentContextPacket,
+	renderCodingAgentTodoRecoveryGuidance,
+	resolveCodexIntakeRuntimeHandoff,
+} from "../../codingAgent";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
 	buildOntologyRuntimeContextSnapshot,
@@ -378,18 +382,30 @@ export async function prepareTaskRunInProcess(
 			lastUserMessage,
 			implementationHandoffMessage,
 		});
-	const conversationContext =
-		runtimeLaneResolution.lane === "codex-sdk"
-			? null
-			: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
+	const conversationContext = await maybeLoadConversationStateCard(
+		taskId,
+		lastUserMessage?.id,
+	);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
 		role: "implementation",
 		workKind: runtimeRole,
 	});
+	const todoRecoveryStateCard = renderCodingAgentTodoRecoveryGuidance({
+		taskId,
+		runId: run.id,
+		repositoryRoot: executionRoot,
+		packet: await loadCodingAgentContextPacket(run.id),
+	});
+	const runtimeStateCardText = [
+		projectedStateCard.stateCardText,
+		todoRecoveryStateCard,
+	]
+		.filter((value): value is string => Boolean(value?.trim()))
+		.join("\n\n");
 	const runtimePromptParts = buildPromptWithStateCardParts({
 		latestUserMessage: rawLatestUserMessage,
-		stateCardText: projectedStateCard.stateCardText,
+		stateCardText: runtimeStateCardText,
 	});
 	const runtimeLatestUserMessage = runtimePromptParts.promptText;
 	let runtimeContextSnapshot: RuntimePromptSnapshot = {
@@ -405,9 +421,9 @@ export async function prepareTaskRunInProcess(
 					snapshotId: conversationContext.id,
 					version: conversationContext.version,
 					tokenEstimate: conversationContext.tokenEstimate,
-					stateCardIncluded: Boolean(projectedStateCard.stateCardText),
-					...(projectedStateCard.stateCardText
-						? { stateCardText: projectedStateCard.stateCardText }
+					stateCardIncluded: Boolean(runtimeStateCardText),
+					...(runtimeStateCardText
+						? { stateCardText: runtimeStateCardText }
 						: {}),
 					snapshotJson: conversationContext.snapshotJson,
 					projection: projectedStateCard.projection,
@@ -419,12 +435,15 @@ export async function prepareTaskRunInProcess(
 					},
 				}
 			: {
-					stateCardIncluded: false,
+					stateCardIncluded: Boolean(runtimeStateCardText),
+					...(runtimeStateCardText
+						? { stateCardText: runtimeStateCardText }
+						: {}),
 					projection: projectedStateCard.projection,
 					usage: {
 						latestUserMessageTokens:
 							runtimePromptParts.estimates.latestUserMessageTokens,
-						stateCardTokens: 0,
+						stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
 						runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
 					},
 				},

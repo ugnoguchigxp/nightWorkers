@@ -71,13 +71,21 @@ function compactProjectExplorationCatalogPayload(payload: unknown) {
 
 function compactTodoPayload(payload: unknown) {
 	const record = toRecord(payload);
+	if (isRecord(record.guidance)) {
+		return {
+			intentStatus: record.intentStatus,
+			guidance: record.guidance,
+		};
+	}
 	const todos = toArray(record.todos).map(toRecord);
 	const command = toRecord(record.command);
 	const operation = typeof command.op === "string" ? command.op : undefined;
 	const changedTodoId =
 		typeof command.todoId === "string" ? command.todoId : null;
 	const changedTodo = changedTodoId
-		? (todos.find((todo) => todo.id === changedTodoId) ?? null)
+		? (todos.find(
+				(todo) => todo.id === changedTodoId || todo.todoKey === changedTodoId,
+			) ?? null)
 		: null;
 	return {
 		runId: record.runId,
@@ -264,8 +272,6 @@ function compactSpecificationVerification(value: unknown) {
 					command: command.command,
 					cwd: command.cwd,
 					conditionIds: command.conditionIds,
-					scope: command.scope,
-					runnerHint: command.runnerHint,
 				};
 			}),
 		},

@@ -1,5 +1,6 @@
 type JsonRecord = Record<string, unknown>;
 
+import { SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA } from "../../../shared/schemas/verification-checklist.schema";
 import {
 	compactText,
 	isRecord,
@@ -80,10 +81,11 @@ export function buildImplementationPlanGuidance(context: string) {
 	}
 	lines.push(
 		"完了条件: Taskの達成に不可欠で、実装後に必ずテストを作るべき観点の最小集合だけを書く。主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件から、該当するものを選ぶ。",
-		"完了条件: 類似ケースや同じ利用フローはまとめる。テスト対象、関数名、handler、repository、component、fixture、具体的な入力、操作、アサーションは書かず、Coding Agentのrepository調査後のテスト設計へ委ねる。",
+		`完了条件: ${SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA}`,
+		"完了条件: 類似ケースや同じ利用フローは、今回の仕様上の要点が伝わる1項目にまとめる。各titleは挙動と結果に集中させ、テスト対象、関数名、handler、repository、component、fixture、具体的な入力、操作、アサーションはCoding Agentのrepository調査後のテスト設計で具体化する。",
 		"検証: Project package scripts に verify / verify:base がある場合は代表 gate として扱い、build / typecheck / lint / test は対象範囲の確認または verify で代替できない理由がある場合だけ別に書く。",
 		"検証: verify / verify:base が無い場合でも検証を弱めず、既存構成に合わせた最小の verify 系 script 追加を実装計画に入れる。",
-		"検証: 各完了条件には実装後のテスト証跡を対応付ける。typecheck / build / lint / verify / coverageは完了条件へ含めず、必要なものだけ検証計画へ書く。同じ目的のcommandを重複列挙しない。",
+		"検証: 各完了条件には実装後のテスト証跡を対応付け、typecheck / build / lint / verify / coverageなどのaggregate gateは検証計画に整理する。同じ目的のcommandは代表gateへまとめる。",
 		"禁止: 元資料、Evidence、Questionnaire の raw answer、API schema、DDL、Blueprint 詳細を本文に再掲しない。",
 	);
 	return lines.join("\n");

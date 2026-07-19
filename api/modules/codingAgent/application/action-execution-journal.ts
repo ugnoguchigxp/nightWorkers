@@ -1,7 +1,7 @@
 import { and, desc, eq, max, sql } from "drizzle-orm";
-import { db } from "../../db/client";
-import { taskRunActionRecords } from "../../db/schema";
-import type { WorkerToolResult } from "../worker-tools/types";
+import { db } from "../../../db/client";
+import { taskRunActionRecords } from "../../../db/schema";
+import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import { buildRunActionIdentity, digestJson } from "./action-identity";
 
 export type JournalExecutionResult = {

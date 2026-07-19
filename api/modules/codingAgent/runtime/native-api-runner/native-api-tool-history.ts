@@ -8,6 +8,7 @@ import type {
 } from "../../../../services/structured-llm/tool-calls";
 import { buildProjectExplorationAgentWorkflow } from "../../../ontology/exploration/project-exploration-agent-workflow";
 import {
+	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
 	CODING_AGENT_RUNTIME_REMINDERS_JA,
 	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
 } from "../../context";
@@ -242,6 +243,7 @@ function buildNativeApiSystemPrompt(context: AgentRunContext) {
 			null,
 			2,
 		),
+		CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
 		"[Project Static Intelligence Workflow]",
 		JSON.stringify(projectExplorationWorkflow, null, 2),
 		...formatRuntimeWorkspaceContextForPrompt(context),

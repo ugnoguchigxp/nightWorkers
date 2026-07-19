@@ -1,5 +1,7 @@
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
+import { SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA } from "../../../../shared/schemas/verification-checklist.schema";
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
+import { FEATURE_PLAN_DDD_BOUNDARY_SYSTEM_CONTEXT_JA } from "../../../modules/specification/feature-plan-domain-boundary";
 import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "../../../modules/specification/specification-traceability";
 
 type QuestionnaireSourceInput = {
@@ -263,6 +265,7 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 }) {
 	return [
 		...(input?.additionalSystemContext ? [input.additionalSystemContext] : []),
+		FEATURE_PLAN_DDD_BOUNDARY_SYSTEM_CONTEXT_JA,
 		"Design Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。",
 		"目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。",
 		"文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。",
@@ -299,9 +302,11 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。",
 		"Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。",
 		"acceptanceCriteria は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は title と category だけを返してください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。",
-		"title には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、Taskの達成に不可欠な観点だけを観測可能な結果として短く書いてください。似た観点や同じ利用フローはまとめ、網羅のためだけに正常系・異常系・各実装層へ機械的に分割しないでください。",
-		"関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はacceptanceCriteriaへ書かないでください。それらはCoding Agentがrepositoryを調査してテスト設計するときに決めます。明示要件でない実装方式や内部構造を完了条件として固定しないでください。",
-		"`verify` / `verify:base` の成功、build、typecheck、lint、format、coverage閾値、migrationファイルの存在、実装済みであること、手動確認はacceptanceCriteriaに含めないでください。これらは機能の期待挙動を証明する自動テストの代わりになりません。必要なaggregate gateは `## 検証計画` にだけ書いてください。",
+		SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA,
+		"title には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。",
+		"acceptanceCriteriaとして採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。",
+		"acceptanceCriteriaのtitleは挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。",
+		"機能の期待挙動と対応する自動テスト証跡をacceptanceCriteriaに整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。",
 		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
 			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",

@@ -3,6 +3,7 @@ import {
 	buildNightWorkersCodexToolApprovalConfig,
 	getNightWorkersCodexToolNames,
 } from "../../../../mcp/nightworkers-tool-manifest";
+import { CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA } from "../../context";
 import type { AgentRunContext } from "../types";
 
 type CodexRuntimeConfigInput = {
@@ -43,14 +44,20 @@ export function buildCodexRuntimeSdkOptions(
 		input.enableNightworkersMcp === false
 			? {}
 			: buildNightWorkersMcpServers(env);
-	const sdkOptions: CodexOptions = {};
+	const sdkOptions: CodexOptions = {
+		config: {
+			developer_instructions: CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
+		},
+	};
 	if (input.enableNightworkersMcp === false) {
 		sdkOptions.config = {
+			developer_instructions: CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
 			features: { mcp: false },
 			mcp_servers: {},
 		};
 	} else if (Object.keys(mcpServers).length > 0) {
 		sdkOptions.config = {
+			developer_instructions: CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
 			features: { mcp: true },
 			mcp_servers: mcpServers,
 		};

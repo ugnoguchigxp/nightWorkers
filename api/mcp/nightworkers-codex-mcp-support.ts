@@ -1,12 +1,16 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ensureNightWorkersSchema } from "../db/bootstrap";
 import {
+	buildCodingAgentRecoveryGuidance,
+	contentDigest,
+} from "../modules/agentsShare";
+import {
+	actionExecutionJournal,
 	loadCodingAgentContextPacket,
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "../modules/codingAgent";
 import * as repo from "../modules/nightworkers/nightworkers.repository";
-import { actionExecutionJournal } from "../services/run-control/action-execution-journal";
 import type { WorkerToolResult } from "../services/worker-tools/types";
 import {
 	createNightWorkersCodexMcpServer,
@@ -18,6 +22,125 @@ export function firstNonEmpty(...values: Array<string | undefined | null>) {
 		values.find((value) => typeof value === "string" && value.trim())?.trim() ??
 		""
 	);
+}
+
+export type RequestScopedIdentityResolution = {
+	taskId: string;
+	runId: string;
+	discrepancies: Array<{
+		field: "taskId" | "runId";
+		supplied: string;
+		authoritative: string;
+	}>;
+};
+
+export function resolveRequestScopedIdentity(input: {
+	context: NightWorkersMcpRequestContext;
+	suppliedTaskId?: string | null;
+	suppliedRunId?: string | null;
+	fallbackTaskId?: string | null;
+	fallbackRunId?: string | null;
+}): RequestScopedIdentityResolution {
+	const authoritativeTaskId = firstNonEmpty(
+		input.context.taskId,
+		input.fallbackTaskId,
+	);
+	const authoritativeRunId = firstNonEmpty(
+		input.context.runId,
+		input.fallbackRunId,
+	);
+	const suppliedTaskId = firstNonEmpty(input.suppliedTaskId);
+	const suppliedRunId = firstNonEmpty(input.suppliedRunId);
+	const discrepancies: RequestScopedIdentityResolution["discrepancies"] = [];
+	if (
+		suppliedTaskId &&
+		authoritativeTaskId &&
+		suppliedTaskId !== authoritativeTaskId
+	) {
+		discrepancies.push({
+			field: "taskId",
+			supplied: suppliedTaskId,
+			authoritative: authoritativeTaskId,
+		});
+	}
+	if (
+		suppliedRunId &&
+		authoritativeRunId &&
+		suppliedRunId !== authoritativeRunId
+	) {
+		discrepancies.push({
+			field: "runId",
+			supplied: suppliedRunId,
+			authoritative: authoritativeRunId,
+		});
+	}
+	return {
+		taskId: authoritativeTaskId || suppliedTaskId,
+		runId: authoritativeRunId || suppliedRunId,
+		discrepancies,
+	};
+}
+
+export async function requestContextMismatchToMcp(input: {
+	toolName: string;
+	resolution: RequestScopedIdentityResolution;
+	retryArguments: Record<string, unknown>;
+}) {
+	const resolved = await resolveTaskRepository({
+		taskId: input.resolution.taskId,
+		runId: input.resolution.runId,
+	});
+	const todoContext = input.resolution.runId
+		? await loadCodingAgentContextPacket(input.resolution.runId)
+		: null;
+	const guidance = buildCodingAgentRecoveryGuidance({
+		authoritativeContext: {
+			taskId: (resolved.task?.id ?? input.resolution.taskId) || undefined,
+			runId: (resolved.run?.id ?? input.resolution.runId) || undefined,
+			repositoryRoot: resolved.executionRoot ?? undefined,
+			planRevision: todoContext?.planSummary.planRevision,
+			currentTodoId: todoContext?.currentTodo?.id,
+		},
+		observations: [
+			{
+				kind: "tool",
+				summary: "tool入力とrequest-scoped identityの差分を確認しました。",
+				digest: contentDigest(JSON.stringify(input.resolution.discrepancies)),
+			},
+		],
+		discrepancies: input.resolution.discrepancies,
+		unresolvedItems: [
+			"訂正されたscoped identityで元のtool intentを再実行する。",
+		],
+		recoveryRefs: [],
+		satisfactionConditions: [
+			"tool引数のtaskIdとrunIdがrequest-scoped identityに一致する。",
+			"訂正callが同じTask、Run、repositoryを解決する。",
+		],
+		intentKey: `scoped-retry:${contentDigest(
+			JSON.stringify({
+				toolName: input.toolName,
+				retryArguments: input.retryArguments,
+			}),
+		)}`,
+		retryArguments: input.retryArguments,
+	});
+	const now = new Date().toISOString();
+	return toolResultToMcp({
+		ok: false,
+		toolName: input.toolName,
+		startedAt: now,
+		finishedAt: now,
+		payload: {
+			intentStatus: "not_executed",
+			guidance,
+		},
+		error: {
+			code: "REQUEST_CONTEXT_MISMATCH",
+			message:
+				"request-scoped identityとtool引数に差があります。guidanceの正本値とretryArgumentsを使って同じintentを再実行できます。",
+		},
+	});
 }
 
 export async function resolveTaskRepository(input: {

@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
 	TODO_DRAFT_FIELD_GUIDANCE_JA,
 	TODO_MUTATION_LIMITS,
-} from "../services/todo-mutation";
+} from "../../shared/modules/codingAgent";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -117,6 +117,13 @@ export const nightWorkersRecordTestConditionMappingInputSchema = z.object({
 });
 
 const todoDraftSchema = z.object({
+	todoKey: z
+		.string()
+		.trim()
+		.min(1)
+		.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.todoKey),
 	id: z
 		.string()
 		.trim()
@@ -153,6 +160,11 @@ const todoDraftSchema = z.object({
 		.max(TODO_MUTATION_LIMITS.maxAcceptanceCriteria)
 		.optional()
 		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.acceptanceCriteria),
+	dependsOnKeys: z
+		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
+		.max(TODO_MUTATION_LIMITS.maxDependencies)
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.dependsOnKeys),
 	dependsOn: z
 		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
 		.max(TODO_MUTATION_LIMITS.maxDependencies)

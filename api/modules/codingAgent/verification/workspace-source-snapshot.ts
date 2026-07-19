@@ -16,9 +16,10 @@ export async function captureWorkspaceSourceSnapshot(
 	const digest = crypto.createHash("sha256");
 	for (const file of files) {
 		const relativePath = path.relative(root, file).split(path.sep).join("/");
-		digest.update(relativePath).update("\0");
-		digest.update(await fs.readFile(file));
-		digest.update("\0");
+		updateFramedHash(digest, Buffer.from(relativePath));
+		const content = await readWorkspaceSourceFile(file);
+		digest.update(content === null ? Buffer.from([0]) : Buffer.from([1]));
+		if (content !== null) updateFramedHash(digest, content);
 	}
 	return {
 		sourceStateHash: digest.digest("hex"),
@@ -26,6 +27,28 @@ export async function captureWorkspaceSourceSnapshot(
 		fileCount: files.length,
 		capturedAt: new Date().toISOString(),
 	};
+}
+
+function updateFramedHash(digest: crypto.Hash, value: Uint8Array) {
+	const length = Buffer.allocUnsafe(8);
+	length.writeBigUInt64BE(BigInt(value.byteLength));
+	digest.update(length).update(value);
+}
+
+async function readWorkspaceSourceFile(file: string) {
+	try {
+		return await fs.readFile(file);
+	} catch (error) {
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			error.code === "ENOENT"
+		) {
+			return null;
+		}
+		throw error;
+	}
 }
 
 async function readGitHead(root: string): Promise<string | null> {

@@ -1,5 +1,9 @@
-import { runFinalizeController } from "../../../../services/run-control/finalize-controller";
 import type { callProviderToolTurn } from "../../../../services/structured-llm/providers";
+import { runFinalizeController } from "../../application/run-finalize-controller";
+import {
+	buildCodingAgentCompletionRecoveryFeedback,
+	loadCodingAgentContextPacket,
+} from "../../context";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -318,6 +322,16 @@ export async function runNativeApiRunner(
 			];
 			if (providerResult.content.trim()) {
 				lastAssistantText = providerResult.content;
+				await sink.emit({
+					type: "model_response_finished",
+					message: providerResult.content,
+					payload: {
+						text: providerResult.content,
+						candidateRevision: turnIndex,
+						provider: providerRequest.provider,
+						model: providerResult.model ?? null,
+					},
+				});
 			}
 
 			if (providerResult.toolCalls.length === 0) {
@@ -352,6 +366,9 @@ export async function runNativeApiRunner(
 				}
 				const completion = await runFinalizeController.evaluateCandidate({
 					runId: context.runId,
+					repositoryRoot: context.repoRoot,
+					candidateRevision: turnIndex,
+					finalCandidate: finalText,
 					expectedPlanRevision: todoSnapshot?.planRevision ?? 0,
 					expectedTodoRevisions: todoSnapshot?.todoRevisions ?? {},
 				});
@@ -383,19 +400,26 @@ export async function runNativeApiRunner(
 						riskLevel: "medium",
 					};
 				}
+				const recoveryPacket = await loadCodingAgentContextPacket(
+					context.runId,
+				);
 				history = [
 					...history,
 					{
 						type: "user",
 						source: "runtime",
-						content: JSON.stringify({
-							ok: false,
-							error: {
+						content: buildCodingAgentCompletionRecoveryFeedback({
+							taskId: context.taskId,
+							runId: context.runId,
+							repositoryRoot: context.repoRoot,
+							latestUserMessage: context.latestUserMessage,
+							packet: recoveryPacket,
+							finalCandidate: finalText,
+							precondition: {
 								code: completion.code,
 								message: completion.message,
 							},
 							currentSnapshot: completion.snapshot,
-							finalCandidate: finalText,
 						}),
 					},
 				];

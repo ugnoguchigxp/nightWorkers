@@ -34,8 +34,10 @@ import {
 	controlledToolResult,
 	firstNonEmpty,
 	readOnlyOntologyTool,
+	requestContextMismatchToMcp,
 	resolveOntologyRepoPath,
 	resolveOntologyTaskId,
+	resolveRequestScopedIdentity,
 	resolveTaskRepository,
 	toolResultToMcp,
 } from "./nightworkers-codex-mcp-support";
@@ -104,11 +106,20 @@ export function createNightWorkersCodexMcpServer(
 			...nightWorkersCodexToolManifest.todo_list,
 		},
 		async ({ runId, command }) => {
-			const resolvedRunId = firstNonEmpty(
-				runId,
-				context.runId,
-				process.env.NIGHTWORKERS_RUN_ID,
-			);
+			const identity = resolveRequestScopedIdentity({
+				context,
+				suppliedRunId: runId,
+				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
+				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
+			});
+			if (identity.discrepancies.length > 0) {
+				return requestContextMismatchToMcp({
+					toolName: "todo_list",
+					resolution: identity,
+					retryArguments: { runId: identity.runId, command },
+				});
+			}
+			const resolvedRunId = identity.runId;
 			const args = {
 				runId: resolvedRunId,
 				command,
@@ -139,11 +150,29 @@ export function createNightWorkersCodexMcpServer(
 			timeoutSeconds,
 			displayMode,
 		}) => {
-			const resolvedRunId = firstNonEmpty(
-				runId,
-				context.runId,
-				process.env.NIGHTWORKERS_RUN_ID,
-			);
+			const identity = resolveRequestScopedIdentity({
+				context,
+				suppliedRunId: runId,
+				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
+				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
+			});
+			if (identity.discrepancies.length > 0) {
+				return requestContextMismatchToMcp({
+					toolName: "run_check",
+					resolution: identity,
+					retryArguments: {
+						runId: identity.runId,
+						verificationDocumentId,
+						command,
+						cwd,
+						checkKind,
+						conditionIds,
+						timeoutSeconds,
+						displayMode,
+					},
+				});
+			}
+			const resolvedRunId = identity.runId;
 			const resolved = await resolveTaskRepository({
 				taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
 				runId: resolvedRunId,
@@ -225,11 +254,20 @@ export function createNightWorkersCodexMcpServer(
 		"collect_test_inventory",
 		{ ...nightWorkersCodexToolManifest.collect_test_inventory },
 		async ({ runId, cwd }) => {
-			const resolvedRunId = firstNonEmpty(
-				runId,
-				context.runId,
-				process.env.NIGHTWORKERS_RUN_ID,
-			);
+			const identity = resolveRequestScopedIdentity({
+				context,
+				suppliedRunId: runId,
+				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
+				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
+			});
+			if (identity.discrepancies.length > 0) {
+				return requestContextMismatchToMcp({
+					toolName: "collect_test_inventory",
+					resolution: identity,
+					retryArguments: { runId: identity.runId, cwd },
+				});
+			}
+			const resolvedRunId = identity.runId;
 			const resolved = await resolveTaskRepository({
 				taskId: firstNonEmpty(context.taskId, process.env.NIGHTWORKERS_TASK_ID),
 				runId: resolvedRunId,
@@ -311,17 +349,38 @@ export function createNightWorkersCodexMcpServer(
 			stripGitDir,
 			initialize,
 		}) => {
+			const identity = resolveRequestScopedIdentity({
+				context,
+				suppliedTaskId: taskId,
+				suppliedRunId: runId,
+				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
+				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
+			});
+			if (identity.discrepancies.length > 0) {
+				return requestContextMismatchToMcp({
+					toolName: "import_project",
+					resolution: identity,
+					retryArguments: {
+						taskId: identity.taskId,
+						runId: identity.runId,
+						source,
+						stack,
+						repoUrl,
+						variant,
+						overlays,
+						targetPath,
+						overwrite,
+						exclude,
+						ref,
+						depth,
+						stripGitDir,
+						initialize,
+					},
+				});
+			}
 			const resolved = await resolveTaskRepository({
-				taskId: firstNonEmpty(
-					taskId,
-					context.taskId,
-					process.env.NIGHTWORKERS_TASK_ID,
-				),
-				runId: firstNonEmpty(
-					runId,
-					context.runId,
-					process.env.NIGHTWORKERS_RUN_ID,
-				),
+				taskId: identity.taskId,
+				runId: identity.runId,
 			});
 			const { task, repository } = resolved;
 			if (!task || !repository) {
@@ -337,11 +396,7 @@ export function createNightWorkersCodexMcpServer(
 					},
 				});
 			}
-			const resolvedRunId = firstNonEmpty(
-				runId,
-				context.runId,
-				process.env.NIGHTWORKERS_RUN_ID,
-			);
+			const resolvedRunId = identity.runId;
 			const args = {
 				source,
 				stack,

@@ -1,16 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildCodingAgentSystemContext } from "../../api/modules/codingAgent/context";
+import { db } from "../../api/db/client";
+import { verificationDocuments } from "../../api/db/verification-schema";
+import {
+	buildCodingAgentSystemContext,
+	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
+} from "../../api/modules/codingAgent/context";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
+import { buildCodexRuntimeSdkOptions } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config";
 import { buildCodexRuntimePromptParts } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
 import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
+import { TodoMutationService } from "../../api/modules/codingAgent/todo";
 import {
 	createRepository,
 	createTask,
 	createTaskRun,
 	deleteRepository,
 } from "../../api/modules/nightworkers/nightworkers.repository";
-import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 
@@ -124,28 +130,40 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(review.runtimeContract).not.toContain("reviewer_evaluation");
 	});
 
-	it("does not start a fresh thread when resume fails", async () => {
+	it("passes the shared DDD boundary contract as Codex developer instructions", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			enableNightworkersMcp: false,
+			env: {},
+		});
+		const config = options.config as Record<string, unknown>;
+
+		expect(config.developer_instructions).toBe(
+			CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
+		);
+	});
+
+	it("starts a fresh thread when synchronous resume fails", async () => {
 		const resumeThread = vi.fn(() => {
 			throw new Error("resume rejected");
 		});
-		const startThread = vi.fn();
+		const freshThread = { runStreamed: vi.fn() };
+		const startThread = vi.fn(() => freshThread);
 		const onResumeEvent = vi.fn();
-		await expect(
-			createCodexRuntimeThread({
-				context: {
-					...context("implementation"),
-					runtimeOptions: {
-						runtimeResume: {
-							kind: "codex_thread",
-							providerThreadId: "thread-old",
-						},
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context("implementation"),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-old",
 					},
 				},
-				codexClient: { resumeThread, startThread },
-				onResumeEvent,
-			}),
-		).rejects.toThrow("resume rejected");
-		expect(startThread).not.toHaveBeenCalled();
+			},
+			codexClient: { resumeThread, startThread },
+			onResumeEvent,
+		});
+		expect(thread).toBe(freshThread);
+		expect(startThread).toHaveBeenCalledOnce();
 		expect(onResumeEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "resume_failed" }),
 		);
@@ -175,7 +193,9 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 			onResumeEvent,
 		});
 
-		const turn = await thread.runStreamed("review the changes", {
+		const recoveryPrompt =
+			"review the changes\n\n<STATE_CARD>previous failures</STATE_CARD>";
+		const turn = await thread.runStreamed(recoveryPrompt, {
 			signal: new AbortController().signal,
 		});
 		const events = [];
@@ -189,6 +209,10 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		expect(resumedRun).toHaveBeenCalledOnce();
 		expect(startThread).toHaveBeenCalledOnce();
 		expect(freshRun).toHaveBeenCalledOnce();
+		expect(freshRun).toHaveBeenCalledWith(
+			recoveryPrompt,
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
 		expect(onResumeEvent).toHaveBeenNthCalledWith(
 			1,
 			expect.objectContaining({
@@ -342,9 +366,8 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 			usageRecorder: async () => {},
 		});
 
-		const result = await runtime.start(runContext, {
-			emit: vi.fn(async () => {}),
-		});
+		const emit = vi.fn(async () => {});
+		const result = await runtime.start(runContext, { emit });
 
 		expect(runStreamed).toHaveBeenCalledOnce();
 		expect(result).toMatchObject({
@@ -405,6 +428,85 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		});
 	});
 
+	it("returns verification readiness differences before accepting a final candidate", async () => {
+		const { repository, task, run } = await createRuntimeRun(
+			"codex-readiness-reconciliation",
+		);
+		const todoId = crypto.randomUUID();
+		const runContext = {
+			...context("implementation"),
+			runId: run.id,
+			taskId: task.id,
+			repositoryId: repository.id,
+			repoRoot: process.cwd(),
+		};
+		const mutations = new TodoMutationService(
+			runContext.codingAgentSystemContext,
+			"llm",
+		);
+		const plan = await mutations.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					id: todoId,
+					title: "実装する",
+					nextAction: "実装を検証する",
+					acceptanceCriteria: [],
+				},
+			],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await mutations.execute(run.id, {
+			op: "start",
+			todoId: plan.todos[0].id,
+			expectedTodoRevision: plan.todos[0].revision,
+		});
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		await mutations.execute(run.id, {
+			op: "transition",
+			todoId: started.currentTodo.id,
+			expectedTodoRevision: started.currentTodo.revision,
+			status: "passed",
+			reason: "Todo上は完了した。",
+		});
+		await db.insert(verificationDocuments).values({
+			taskId: task.id,
+			runId: run.id,
+			sourceSpecPath: "spec/docs/codex-readiness.md",
+			documentJson: {},
+			generatedAt: new Date(),
+			status: "active",
+		});
+		const inputs: unknown[] = [];
+		const runStreamed = vi.fn(async (input: unknown) => {
+			inputs.push(input);
+			return inputs.length === 1
+				? { events: completedTextEvents("実装と検証が完了しました。") }
+				: { events: failedEvents("stop after readiness feedback") };
+		});
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			usageRecorder: async () => {},
+			maxModelTurns: 2,
+		}).start(runContext, { emit: vi.fn(async () => {}) });
+
+		expect(runStreamed).toHaveBeenCalledTimes(2);
+		expect(inputs[1]).toEqual(
+			expect.stringContaining("FINALIZE_RECONCILIATION_REQUIRED"),
+		);
+		expect(inputs[1]).toEqual(
+			expect.stringContaining("missing_successful_full_verify"),
+		);
+		expect(inputs[1]).toEqual(
+			expect.stringContaining('"finalCandidate":"実装と検証が完了しました。"'),
+		);
+		expect(result).toMatchObject({
+			terminalState: "failed",
+			finalReport: "実装と検証が完了しました。",
+		});
+	});
+
 	it("returns a Todo contract violation to the model before the next turn", async () => {
 		const { repository, task, run } = await createRuntimeRun(
 			"codex-todo-feedback",
@@ -457,14 +559,27 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 			maxModelTurns: 2,
 		});
 
-		const result = await runtime.start(runContext, {
-			emit: vi.fn(async () => {}),
-		});
+		const emit = vi.fn(async () => {});
+		const result = await runtime.start(runContext, { emit });
 
 		expect(runStreamed).toHaveBeenCalledTimes(2);
 		expect(inputs[1]).toEqual(expect.stringContaining("CURRENT_TODO_REQUIRED"));
 		expect(inputs[1]).toEqual(
 			expect.stringContaining("codex_file_change_without_current_todo"),
+		);
+		expect(inputs[1]).toEqual(
+			expect.stringContaining('"finalCandidate":"変更しました。"'),
+		);
+		expect(inputs[1]).toEqual(
+			expect.stringContaining('"authoritativeContext"'),
+		);
+		expect(inputs[1]).toEqual(expect.stringContaining(run.id));
+		expect(inputs[1]).toEqual(expect.stringContaining(runContext.repoRoot));
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "model_response_finished",
+				payload: expect.objectContaining({ candidateRevision: 1 }),
+			}),
 		);
 		expect(result.terminalState).toBe("failed");
 	});

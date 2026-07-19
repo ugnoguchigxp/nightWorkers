@@ -1,8 +1,9 @@
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
-import { db } from "../../db/client";
-import { withSqliteBusyRetry } from "../../db/retry";
-import { taskRuns, taskRunTodos } from "../../db/schema";
-import { nightWorkersRealtimeBroker } from "../realtime/nightworkers-ws";
+import { db } from "../../../db/client";
+import { withSqliteBusyRetry } from "../../../db/retry";
+import { taskRuns, taskRunTodos } from "../../../db/schema";
+import { nightWorkersRealtimeBroker } from "../../../services/realtime/nightworkers-ws";
+import { buildCanonicalTodoId } from "./todo-identity";
 import {
 	todoMutationErrorMessage,
 	validateTodoMutationCommand,
@@ -73,7 +74,7 @@ export class TodoMutationService {
 					}
 
 					const todos = await listTodos(tx, run.id);
-					const target = todos.find((todo) => todo.id === command.todoId);
+					const target = findTodoByReference(todos, command.todoId);
 					if (!target) {
 						return this.failure("TODO_NOT_FOUND", run.todoPlanRevision, todos);
 					}
@@ -103,12 +104,7 @@ export class TodoMutationService {
 			if (result.ok) await publishMutation(result.todos, normalizedRunId);
 			return result;
 		} catch (error) {
-			const code =
-				error instanceof TodoMutationAbort
-					? error.code
-					: isUniqueConstraintError(error)
-						? "CURRENT_TODO_EXISTS"
-						: "TODO_MUTATION_CONFLICT";
+			const code = todoMutationErrorCodeForError(error);
 			return this.loadFailure(normalizedRunId, code);
 		}
 	}
@@ -127,37 +123,71 @@ export class TodoMutationService {
 			);
 		}
 
-		const materialized = command.todos.map((todo) => ({
-			...todo,
-			id: todo.id ?? crypto.randomUUID(),
-		}));
-		const ids = materialized.map((todo) => todo.id);
-		if (new Set(ids).size !== ids.length) {
-			return this.failure("TODO_ID_DUPLICATED", run.todoPlanRevision, current);
+		const currentByKey = new Map(
+			current.map((todo) => [todo.todoKey, todo] as const),
+		);
+		const materializedBase = command.todos.map((todo) => {
+			const todoKey = (todo.todoKey ?? todo.id ?? crypto.randomUUID()).trim();
+			return {
+				...todo,
+				todoKey,
+				id:
+					currentByKey.get(todoKey)?.id ??
+					buildCanonicalTodoId(run.id, todoKey),
+				dependencyKeys: todo.dependsOnKeys ?? todo.dependsOn ?? [],
+			};
+		});
+		const todoKeys = materializedBase.map((todo) => todo.todoKey);
+		if (new Set(todoKeys).size !== todoKeys.length) {
+			return this.failure("TODO_KEY_DUPLICATED", run.todoPlanRevision, current);
 		}
 
 		const preservedTodos = current.filter(
 			(todo) =>
 				!(REPLACEABLE_TODO_STATUSES as readonly string[]).includes(todo.status),
 		);
-		const preservedIds = new Set(preservedTodos.map((todo) => todo.id));
-		if (ids.some((id) => preservedIds.has(id))) {
-			return this.failure(
-				"TODO_TERMINAL_REOPEN_FORBIDDEN",
-				run.todoPlanRevision,
-				current,
-			);
+		const idByReference = new Map<string, string>();
+		for (const todo of preservedTodos) {
+			idByReference.set(todo.id, todo.id);
+			idByReference.set(todo.todoKey, todo.id);
 		}
-		const availableIds = new Set([...preservedIds, ...ids]);
+		for (const todo of materializedBase) {
+			idByReference.set(todo.id, todo.id);
+			idByReference.set(todo.todoKey, todo.id);
+		}
 		if (
-			materialized.some((todo) =>
-				(todo.dependsOn ?? []).some(
-					(dependencyId) => !availableIds.has(dependencyId),
+			materializedBase.some((todo) =>
+				todo.dependencyKeys.some(
+					(dependencyReference) => !idByReference.has(dependencyReference),
 				),
 			)
 		) {
 			return this.failure(
 				"TODO_DEPENDENCY_NOT_FOUND",
+				run.todoPlanRevision,
+				current,
+			);
+		}
+		const materialized = materializedBase.map((todo) => ({
+			...todo,
+			dependsOn: todo.dependencyKeys.map(
+				(dependencyReference) =>
+					idByReference.get(dependencyReference) as string,
+			),
+		}));
+		const ids = materialized.map((todo) => todo.id);
+		if (new Set(ids).size !== ids.length) {
+			return this.failure(
+				"TODO_IDENTITY_CONFLICT",
+				run.todoPlanRevision,
+				current,
+			);
+		}
+
+		const preservedIds = new Set(preservedTodos.map((todo) => todo.id));
+		if (ids.some((id) => preservedIds.has(id))) {
+			return this.failure(
+				"TODO_TERMINAL_REOPEN_FORBIDDEN",
 				run.todoPlanRevision,
 				current,
 			);
@@ -213,6 +243,7 @@ export class TodoMutationService {
 			await tx.insert(taskRunTodos).values({
 				id: todo.id,
 				runId: run.id,
+				todoKey: todo.todoKey,
 				seq: firstSeq + index + 1,
 				title: todo.title.trim(),
 				description: todo.objective?.trim() || null,
@@ -222,7 +253,7 @@ export class TodoMutationService {
 				acceptanceCriteriaJson: todo.acceptanceCriteria ?? [],
 				taskType: "coding",
 				status: "pending",
-				dependsOn: todo.dependsOn ?? [],
+				dependsOn: todo.dependsOn,
 				systemContextVersion: this.systemContext.version,
 				systemContextSnapshot: this.systemContext,
 				contextSnapshot: this.systemContext,
@@ -326,7 +357,7 @@ export class TodoMutationService {
 		}
 
 		const next = command.nextTodoId
-			? todos.find((todo) => todo.id === command.nextTodoId)
+			? findTodoByReference(todos, command.nextTodoId)
 			: null;
 		if (command.nextTodoId && !next) {
 			return this.failure("TODO_NOT_FOUND", run.todoPlanRevision, todos);
@@ -498,6 +529,12 @@ function hasOtherCurrentTodo(todos: TodoRow[], excludingId?: string) {
 	);
 }
 
+function findTodoByReference(todos: TodoRow[], reference: string) {
+	return todos.find(
+		(todo) => todo.id === reference || todo.todoKey === reference,
+	);
+}
+
 function dependenciesAreTerminal(
 	target: TodoRow,
 	todos: TodoRow[],
@@ -540,9 +577,31 @@ function hasDependencyCycle(
 	return todos.some((todo) => visit(todo.id));
 }
 
-function isUniqueConstraintError(error: unknown) {
+function todoMutationErrorCodeForError(error: unknown): TodoMutationErrorCode {
+	if (error instanceof TodoMutationAbort) return error.code;
 	const message = error instanceof Error ? error.message : String(error);
-	return message.includes("UNIQUE constraint failed");
+	if (!message.includes("UNIQUE constraint failed")) {
+		return "TODO_MUTATION_CONFLICT";
+	}
+	if (message.includes("task_run_todos.id")) {
+		return "TODO_IDENTITY_CONFLICT";
+	}
+	if (
+		message.includes("task_run_todos.run_id") &&
+		message.includes("task_run_todos.todo_key")
+	) {
+		return "TODO_KEY_DUPLICATED";
+	}
+	if (
+		message.includes("task_run_todos.run_id") &&
+		message.includes("task_run_todos.seq")
+	) {
+		return "TODO_MUTATION_CONFLICT";
+	}
+	if (message.includes("task_run_todos.run_id")) {
+		return "CURRENT_TODO_EXISTS";
+	}
+	return "TODO_MUTATION_CONFLICT";
 }
 
 async function publishMutation(todos: TodoRow[], runId: string) {

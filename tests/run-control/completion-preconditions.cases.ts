@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { db } from "../../api/db/client";
+import { verificationDocuments } from "../../api/db/verification-schema";
+import { ActionExecutionJournal } from "../../api/modules/codingAgent/application/action-execution-journal";
+import { RunFinalizeController } from "../../api/modules/codingAgent/application/run-finalize-controller";
+import {
+	type CodingAgentSystemContextSnapshot,
+	TodoMutationService,
+} from "../../api/modules/codingAgent/todo";
 import {
 	createRepository,
 	createTask,
@@ -6,12 +14,6 @@ import {
 	deleteRepository,
 	updateTaskRun,
 } from "../../api/modules/nightworkers/nightworkers.repository";
-import { ActionExecutionJournal } from "../../api/services/run-control/action-execution-journal";
-import { RunFinalizeController } from "../../api/services/run-control/finalize-controller";
-import {
-	type CodingAgentSystemContextSnapshot,
-	TodoMutationService,
-} from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 const systemContext: CodingAgentSystemContextSnapshot = {
@@ -48,7 +50,11 @@ async function fixture() {
 		repositoryId: repository.id,
 		status: "running",
 	});
-	return { run, service: new TodoMutationService(systemContext, "agent") };
+	return {
+		task,
+		run,
+		service: new TodoMutationService(systemContext, "agent"),
+	};
 }
 
 describe("Run completion preconditions", () => {
@@ -182,6 +188,137 @@ describe("Run completion preconditions", () => {
 				allowFinalize: true,
 				code: "FINALIZE_ALLOWED",
 			},
+		);
+	});
+
+	it("reconciles terminal Todos with an active verification result", async () => {
+		const { task, run, service } = await fixture();
+		const plan = await service.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [{ title: "実装", nextAction: "対象を変更して検証する" }],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await service.execute(run.id, {
+			op: "start",
+			todoId: plan.todos[0].id,
+			expectedTodoRevision: plan.todos[0].revision,
+		});
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		await service.execute(run.id, {
+			op: "transition",
+			todoId: started.currentTodo.id,
+			expectedTodoRevision: started.currentTodo.revision,
+			status: "passed",
+			reason: "Todo上の作業は完了した。",
+		});
+		const controller = new RunFinalizeController({
+			evaluateReadiness: async (input) => ({
+				ready: false,
+				authority: {
+					taskId: task.id,
+					runId: run.id,
+					repositoryRoot: input.repositoryRoot,
+					verificationDocumentId: "verification-document",
+				},
+				task: { goalDigest: "goal-digest" },
+				workspace: { sourceStateHash: "source-hash" },
+				verification: {
+					applicability: "active",
+					checkedSourceStateHash: "source-hash",
+					result: null,
+				},
+				candidate: { revision: 1, digest: "candidate-digest" },
+				discrepancies: [
+					{
+						code: "missing_successful_full_verify",
+						summary: "full verify evidence is missing",
+					},
+				],
+				satisfactionConditions: [
+					"現在のsourceに対するfull verify結果を確認する。",
+				],
+			}),
+		});
+
+		const result = await controller.evaluateCandidate({
+			runId: run.id,
+			repositoryRoot: "/tmp/completion-preconditions",
+			candidateRevision: 1,
+			finalCandidate: "実装完了です。",
+		});
+
+		expect(result).toMatchObject({
+			allowFinalize: false,
+			code: "FINALIZE_RECONCILIATION_REQUIRED",
+			missingConditions: ["現在のsourceに対するfull verify結果を確認する。"],
+			snapshot: {
+				readiness: {
+					ready: false,
+					authority: { taskId: task.id, runId: run.id },
+					discrepancies: [{ code: "missing_successful_full_verify" }],
+				},
+			},
+		});
+	});
+
+	it("loads the active verification document before allowing completion", async () => {
+		const { task, run, service } = await fixture();
+		await db.insert(verificationDocuments).values({
+			taskId: task.id,
+			runId: run.id,
+			sourceSpecPath: "spec/docs/completion-fixture.md",
+			documentJson: {},
+			generatedAt: new Date(),
+			status: "active",
+		});
+		const plan = await service.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [{ title: "実装", nextAction: "対象を変更して検証する" }],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await service.execute(run.id, {
+			op: "start",
+			todoId: plan.todos[0].id,
+			expectedTodoRevision: plan.todos[0].revision,
+		});
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		await service.execute(run.id, {
+			op: "transition",
+			todoId: started.currentTodo.id,
+			expectedTodoRevision: started.currentTodo.revision,
+			status: "passed",
+			reason: "Todo上の作業は完了した。",
+		});
+
+		const result = await new RunFinalizeController().evaluateCandidate({
+			runId: run.id,
+			repositoryRoot: process.cwd(),
+			candidateRevision: 1,
+			finalCandidate: "実装完了です。",
+		});
+
+		expect(result).toMatchObject({
+			allowFinalize: false,
+			code: "FINALIZE_RECONCILIATION_REQUIRED",
+			snapshot: {
+				readiness: {
+					ready: false,
+					verification: {
+						applicability: "active",
+						result: { ok: false },
+					},
+				},
+			},
+		});
+		expect(result.snapshot?.readiness?.discrepancies).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: "required_conditions_incomplete" }),
+				expect.objectContaining({ code: "missing_active_test_discovery" }),
+				expect.objectContaining({ code: "missing_successful_test_execution" }),
+				expect.objectContaining({ code: "missing_successful_full_verify" }),
+			]),
 		);
 	});
 

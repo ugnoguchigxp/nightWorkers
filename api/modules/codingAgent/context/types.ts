@@ -1,9 +1,10 @@
-import type { CodingAgentSystemContextSnapshot } from "../../../services/todo-mutation";
+import type { CodingAgentSystemContextSnapshot } from "../todo";
 
 export type CodingAgentSystemContext = CodingAgentSystemContextSnapshot;
 
 export type CodingAgentPlanSummaryItem = {
 	id: string;
+	todoKey: string;
 	seq: number;
 	title: string;
 	status: string;
@@ -23,6 +24,7 @@ export type CodingAgentPlanSummary = {
 
 export type CodingAgentCurrentTodoContext = {
 	id: string;
+	todoKey: string;
 	seq: number;
 	revision: number;
 	title: string;

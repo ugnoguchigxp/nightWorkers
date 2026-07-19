@@ -11,6 +11,8 @@ export interface RuntimeContractWarning {
 	severity: RuntimeContractWarningSeverity;
 	message: string;
 	providerItemId?: string | null;
+	providerStateId?: string | null;
+	rawError?: string | null;
 	toolName?: string | null;
 	todoId?: string | null;
 	todoSeq?: number | null;

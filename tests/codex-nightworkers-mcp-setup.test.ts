@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { nightWorkersCodexToolManifest } from "../api/mcp/nightworkers-tool-manifest";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,6 +16,25 @@ afterEach(() => {
 });
 
 describe("Codex NightWorkers MCP setup script", () => {
+	it("keeps the Coding Agent tool capability surface explicit", () => {
+		expect(Object.keys(nightWorkersCodexToolManifest)).toEqual([
+			"read_current_specification",
+			"list_recent_specifications",
+			"todo_list",
+			"run_check",
+			"completion_check",
+			"collect_test_inventory",
+			"record_test_condition_mapping",
+			"import_project",
+			"list_modules",
+			"get_module_ontology",
+			"classify_goal",
+			"compile_module_context",
+			"check_boundary",
+			"get_verification_plan",
+		]);
+	});
+
 	it("removes only the NightWorkers MCP config sections", async () => {
 		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "nightworkers-codex-mcp-"));
 		const configPath = path.join(tempDir, "config.toml");

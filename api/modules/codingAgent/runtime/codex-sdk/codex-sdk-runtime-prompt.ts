@@ -94,6 +94,7 @@ function buildCodingAgentContract(
 		"",
 		`利用可能なNightWorkers MCP tools: ${nightWorkersToolList}`,
 		"最初にnightworkers.todo_listのreplace_planとstartを使い、current Todoを作成してください。",
+		"replace_planではRun内で安定したtodoKeyとdependsOnKeysを使い、start等の個別更新では直前のtool resultが返したcanonical idとrevisionを使ってください。",
 		...CODING_AGENT_RUNTIME_REMINDERS_JA,
 		"current Todoなしにworkspace toolを呼ばず、Todoのobjective、context、nextAction、acceptanceCriteriaを読んで行動してください。",
 		"失敗時はrecord_failureでraw errorと次の方法を保存し、hostにretry方法や次工程を推測させないでください。",

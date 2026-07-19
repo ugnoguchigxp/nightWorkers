@@ -366,6 +366,7 @@ export const taskRunTodos = sqliteTable(
 		runId: text("run_id")
 			.notNull()
 			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		todoKey: text("todo_key").notNull(),
 		seq: integer("seq").notNull(),
 		title: text("title").notNull(),
 		description: text("description"),
@@ -407,6 +408,10 @@ export const taskRunTodos = sqliteTable(
 	},
 	(table) => ({
 		runIdIdx: index("task_run_todos_run_id_idx").on(table.runId),
+		runTodoKeyUniqueIdx: uniqueIndex("task_run_todos_run_todo_key_uidx").on(
+			table.runId,
+			table.todoKey,
+		),
 		runSeqUniqueIdx: uniqueIndex("task_run_todos_run_seq_uidx").on(
 			table.runId,
 			table.seq,

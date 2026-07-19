@@ -102,7 +102,7 @@ describe("NightWorkers repositories routes", () => {
 	});
 
 	it("updates project external path grants through safety policy", async () => {
-		const localPath = "/Users/y.noguchi/Code/todolist";
+		const localPath = "/Users/y.noguchi/Code/nightWorkers";
 		const createRes = await app.request("http://localhost/api/repositories", {
 			method: "POST",
 			headers: {

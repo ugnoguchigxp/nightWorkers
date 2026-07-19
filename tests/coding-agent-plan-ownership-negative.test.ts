@@ -11,6 +11,7 @@ import { codingAgentForbiddenPlanTools } from "../api/modules/codingAgent";
 import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
+	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
 	CODING_AGENT_TODO_REQUIREMENT_JA,
 	CODING_AGENT_TOOL_CONTRACT_JA,
 } from "../api/modules/codingAgent/context/system-context";
@@ -63,6 +64,22 @@ describe("Coding Agent Plan ownership negative contract", () => {
 		);
 		expect(CODING_AGENT_TODO_REQUIREMENT_JA).toContain(
 			"マイグレーション不要と明示されている場合はmigration Todoを追加しない",
+		);
+	});
+
+	it("uses the DDD placement rule only as a direct-run fallback", () => {
+		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
+			"確定Specを優先",
+		);
+		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain("direct run");
+		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
+			"新規domainのみmodules/[domain]",
+		);
+		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
+			"既存domainは既存moduleを拡張",
+		);
+		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).not.toContain(
+			"既存file・sharedへ集約しない",
 		);
 	});
 

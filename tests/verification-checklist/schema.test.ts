@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	isVerificationChecklistItemComplete,
+	SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA,
 	specificationAcceptanceCriterionSchema,
 	specificationVerificationDocumentSchema,
 	verificationChecklistItemSchema,
@@ -15,6 +16,9 @@ describe("verification checklist schemas", () => {
 
 		expect(specificationAcceptanceCriterionSchema.parse(criterion)).toEqual(
 			criterion,
+		);
+		expect(specificationAcceptanceCriterionSchema.shape.title.description).toBe(
+			SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA,
 		);
 		expect(() =>
 			specificationAcceptanceCriterionSchema.parse({
@@ -37,7 +41,7 @@ describe("verification checklist schemas", () => {
 
 	it("rejects unknown fields and duplicate condition ids", () => {
 		const base = {
-			version: 1,
+			version: 2,
 			specId: "spec-1",
 			specPath: "spec/spec-1.md",
 			generatedAt: "2026-07-08T00:00:00.000Z",
@@ -60,7 +64,6 @@ describe("verification checklist schemas", () => {
 				},
 			],
 			commands: [],
-			nonGoals: [],
 		};
 
 		expect(specificationVerificationDocumentSchema.parse(base)).toBeTruthy();
@@ -68,6 +71,27 @@ describe("verification checklist schemas", () => {
 			specificationVerificationDocumentSchema.parse({
 				...base,
 				extra: true,
+			}),
+		).toThrow();
+		expect(() =>
+			specificationVerificationDocumentSchema.parse({
+				...base,
+				nonGoals: [],
+			}),
+		).toThrow();
+		expect(() =>
+			specificationVerificationDocumentSchema.parse({
+				...base,
+				commands: [
+					{
+						id: "CMD-001",
+						label: "test",
+						command: "bun test",
+						conditionIds: ["AC-001"],
+						scope: "focused",
+						runnerHint: "unknown",
+					},
+				],
 			}),
 		).toThrow();
 		expect(() =>

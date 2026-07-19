@@ -70,4 +70,10 @@ export {
 	type TaskRunCloseoutInput,
 	type TaskRunParentStatusProjection,
 } from "./ports/task-run-closeout";
+export {
+	buildCodingAgentRecoveryGuidance,
+	type CodingAgentRecoveryGuidance,
+	type CodingAgentRecoveryObservation,
+	type CodingAgentRecoveryRef,
+} from "./recovery-guidance";
 export { contentDigest, sliceUtf8ContentPage } from "./utf8-content-page";

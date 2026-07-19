@@ -76,6 +76,23 @@ export async function getLatestVerificationDocumentForTask(taskId: string) {
 	return document ?? null;
 }
 
+export async function getLatestActiveVerificationDocumentForTask(
+	taskId: string,
+) {
+	const [document] = await db
+		.select()
+		.from(verificationDocuments)
+		.where(
+			and(
+				eq(verificationDocuments.taskId, taskId),
+				eq(verificationDocuments.status, "active"),
+			),
+		)
+		.orderBy(desc(verificationDocuments.createdAt))
+		.limit(1);
+	return document ?? null;
+}
+
 export async function getVerificationDocument(id: string) {
 	const [document] = await db
 		.select()

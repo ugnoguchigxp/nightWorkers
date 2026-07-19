@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
 import { AppError, NotFoundError } from "../../lib/errors";
 import { readGeneralSettings } from "../../services/settings/general-settings";
+import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { writePlanModeRoutingForUser } from "../agentsShare";
 import {
 	createPlanModeTaskMessage,
@@ -89,13 +90,37 @@ export async function recommendQuestionnaireArtifactRouting(
 		);
 	});
 	if (existing) return workspace.routing;
-	const decisions = await selectQuestionnaireArtifactRouting({
-		taskId,
-		task: taskBasis,
-		questionnaire,
-		routing: workspace.routing,
-		capabilities,
-	});
+	let decisions: Awaited<ReturnType<typeof selectQuestionnaireArtifactRouting>>;
+	try {
+		decisions = await selectQuestionnaireArtifactRouting({
+			taskId,
+			task: taskBasis,
+			questionnaire,
+			routing: workspace.routing,
+			capabilities,
+		});
+	} catch (error) {
+		const rawOutput =
+			error instanceof StructuredLlmResponseError ? error.rawText : null;
+		await createPlanModeTaskMessage({
+			taskId,
+			role: "system",
+			content:
+				rawOutput?.trim() ||
+				`Questionnaire回答は保存されましたが、任意Artifactの推薦には失敗しました: ${error instanceof Error ? error.message : String(error)}`,
+			messageType: "text",
+			payloadJson: {
+				intent: "questionnaire_artifact_routing_failed",
+				source: "questionnaire_artifact_recommender",
+				questionnaireSessionId: questionnaire.id,
+				recommendationInputDigest: digest,
+				promptVersion: ARTIFACT_ROUTING_PROMPT_VERSION,
+				errorName: error instanceof Error ? error.name : "UnknownError",
+				...(rawOutput !== null ? { rawOutput } : {}),
+			},
+		});
+		return workspace.routing;
+	}
 	if (decisions.length === 0) return workspace.routing;
 
 	if (workspace.routing.revision > 0) {

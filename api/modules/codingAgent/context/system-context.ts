@@ -1,12 +1,15 @@
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 8;
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 10;
 
 export const CODING_AGENT_ROLE_INSTRUCTIONS_JA = [
 	"あなたはユーザーTaskを自動化するCoding Agentです。",
 	"Taskの意味、Todoの分割、次の行動、検証方法、完了可否はあなたが判断します。",
 	"人間のユーザーが実行できる権限を越えず、hostが返す安全・権限・承認・resource制約に従ってください。",
 ].join("\n");
+
+export const CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA =
+	"DDD: 確定Specを優先。direct runで新規domainのみmodules/[domain]へ置き、既存domainは既存moduleを拡張してください。";
 
 export const CODING_AGENT_TODO_REQUIREMENT_JA = [
 	"新しいSessionの最初のturnでは、ユーザーPromptとTask Goalを読み、実装前の計画が必要かをあなた自身が判断してください。",
@@ -45,12 +48,11 @@ export const CODING_AGENT_FAILURE_RECOVERY_JA = [
 ].join("\n");
 
 export const CODING_AGENT_COMPLETION_RULE_JA = [
-	"Testや自己確認の要否と方法はTask、変更内容、Todo Contextからあなたが判断してください。",
-	"変更を行った場合は、計画時に決めた期待結果に沿ってテストと証跡を確認し、その後に変更差分をReviewしてください。問題を見つけた場合は修正して影響範囲を再検証してから完了報告へ進んでください。",
-	"実装後に仕様書や完了条件を作って成功条件を合わせ直すことを、計画や検証の代わりにしないでください。前提や要求が変わった場合はTodo planを明示的に更新してください。",
+	"Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。",
+	"検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。",
 	"完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。",
-	"tool callのないassistant本文は最終回答候補です。hostが返すcompletion precondition errorを読んだ場合は、Todoを明示更新してから再度完了してください。",
-	"Evidence、Review mode、特定command、Context compileの実行自体を一律の完了条件にしないでください。",
+	"tool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。",
+	"completion readiness snapshotが返された場合は、Task、現在のsourceStateHash、verification discrepancy、直前候補を同時に読み、特定toolの呼び出し自体ではなく、未解決条件に対応する観測証跡が現在sourceで確認できる状態へ更新してください。",
 ].join("\n");
 
 export const CODING_AGENT_TOOL_CONTRACT_JA = [

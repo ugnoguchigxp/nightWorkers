@@ -5,6 +5,7 @@ import type { NativeApiHistoryItem } from "./native-api-tool-history";
 
 export type NativeApiRuntimeTodoSnapshot = {
 	id: string;
+	todoKey: string;
 	seq: number;
 	revision: number;
 	title: string;
@@ -38,7 +39,7 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 			.sort((a, b) => a.seq - b.seq)
 			.map((todo) => {
 				const title = todo.title.replace(/\s+/g, " ").trim();
-				return `id=${todo.id} seq=${todo.seq} revision=${todo.revision} status=${todo.status} title=${title}`;
+				return `id=${todo.id} todoKey=${todo.todoKey} seq=${todo.seq} revision=${todo.revision} status=${todo.status} title=${title}`;
 			});
 		const currentTodo =
 			todos
@@ -46,6 +47,7 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 				.sort((a, b) => a.seq - b.seq)
 				.map((todo) => ({
 					id: todo.id,
+					todoKey: todo.todoKey,
 					seq: todo.seq,
 					revision: todo.revision,
 					title: todo.title,
@@ -99,6 +101,7 @@ function renderRuntimeTodoContext(currentTodo: NativeApiRuntimeTodoSnapshot) {
 	return [
 		"[Current Native API Runner Todo]",
 		`id=${currentTodo.id}`,
+		`todoKey=${currentTodo.todoKey}`,
 		`seq=${currentTodo.seq}`,
 		`revision=${currentTodo.revision}`,
 		`title=${currentTodo.title}`,

@@ -62,6 +62,8 @@ export async function createThread(
 						severity: "warning",
 						message: "Codex runtime session resume failed.",
 						providerItemId: event.providerThreadId,
+						rawError: event.error,
+						providerStateId: event.stateId ?? null,
 					},
 				});
 				return;

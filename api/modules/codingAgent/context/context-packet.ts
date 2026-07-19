@@ -42,6 +42,7 @@ export async function loadCodingAgentContextPacket(
 			},
 			todos: todos.map((todo) => ({
 				id: todo.id,
+				todoKey: todo.todoKey,
 				seq: todo.seq,
 				title: todo.title,
 				status: todo.status,
@@ -72,6 +73,7 @@ function toCurrentTodoContext(
 ): CodingAgentCurrentTodoContext {
 	return {
 		id: todo.id,
+		todoKey: todo.todoKey,
 		seq: todo.seq,
 		revision: todo.revision,
 		title: todo.title,

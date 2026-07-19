@@ -351,6 +351,13 @@
       "when": 1784332800000,
       "tag": "0049_test_inventory_quality_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1784448000000,
+      "tag": "0050_coding_agent_todo_key",
+      "breakpoints": true
     }
   ]
 }

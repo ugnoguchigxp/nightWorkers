@@ -94,6 +94,22 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).not.toContain("## 契約");
 		expect(systemPrompt).not.toContain("## DDL");
 		expect(systemPrompt).toContain("必要な判断だけを短く");
+		expect(systemPrompt).toContain("[Feature Plan DDD Boundary]");
+		expect(systemPrompt).toContain("新規domainの導入か既存domainの拡張か");
+		expect(systemPrompt).toContain("modules/[domain]");
+		expect(systemPrompt).toContain(
+			"implementationPlan.stepsのdescriptionへ対象moduleを明記",
+		);
+		expect(systemPrompt).toContain("新しいmoduleを機械的に増やさない");
+		expect(systemPrompt).toContain(
+			"sharedへ置けるのは複数domainで同じ意味を持つcontract",
+		);
+		expect(systemPrompt).toContain(
+			"domain固有のroute、service、repository、prompt、SystemContext、tool、role判定をsharedへ集約しない",
+		);
+		expect(systemPrompt).toContain(
+			"domain本体の配置判断を後続Coding Agentへ先送りしない",
+		);
 		expect(systemPrompt).toContain("同じ内容の重複を避け");
 		expect(systemPrompt).toContain(
 			"Questionnaire Decisions はTaskを具体化する設計判断",
@@ -150,19 +166,24 @@ describe("Specification document generation", () => {
 		);
 		expect(systemPrompt).toContain("title と category だけ");
 		expect(systemPrompt).toContain("観点の最小集合");
-		expect(systemPrompt).toContain("似た観点や同じ利用フローはまとめ");
 		expect(systemPrompt).toContain(
-			"具体的な入力値、初期状態、操作手順、アサーション列",
+			"自動テストのテストケース名としてそのまま使え",
+		);
+		expect(systemPrompt).toContain("1件のテストで単独に合否判定できる");
+		expect(systemPrompt).toContain("今回の仕様でポイントとなる具体的な挙動");
+		expect(systemPrompt).toContain("テスト証跡を1対1で結び付けられる");
+		expect(systemPrompt).toContain("今回の仕様に固有の挙動を直接表し");
+		expect(systemPrompt).toContain("各項目の成功によって仕様全体の達成を説明");
+		expect(systemPrompt).toContain(
+			"似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめ",
 		);
 		expect(systemPrompt).toContain(
-			"repositoryを調査してテスト設計するときに決めます",
+			"具体的な入力値、初期状態、操作手順、アサーション列はCoding Agent",
 		);
 		expect(systemPrompt).toContain(
-			"`verify` / `verify:base` の成功、build、typecheck、lint、format、coverage閾値",
+			"repositoryを調査した後のテスト設計で具体化",
 		);
-		expect(systemPrompt).toContain(
-			"機能の期待挙動を証明する自動テストの代わりになりません",
-		);
+		expect(systemPrompt).toContain("aggregate gateは `## 検証計画` に整理");
 		expect(systemPrompt).toContain("{{ACCEPTANCE_CRITERIA}}");
 		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
 		expect(systemPrompt).toContain("最小の verify 系 script 追加");
@@ -471,13 +492,16 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain("## Plan Mode References");
 		expect(userPrompt).toContain("Todo User Flow");
 		expect(userPrompt).toContain("必ずテストを作るべき観点の最小集合");
-		expect(userPrompt).toContain("具体的な入力、操作、アサーションは書かず");
+		expect(userPrompt).toContain(
+			"自動テストのテストケース名としてそのまま使え",
+		);
+		expect(userPrompt).toContain(
+			"具体的な入力、操作、アサーションはCoding Agent",
+		);
 		expect(userPrompt).toContain("verify / verify:base がある場合は代表 gate");
 		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
-		expect(userPrompt).toContain("同じ目的のcommandを重複列挙しない");
-		expect(userPrompt).toContain(
-			"typecheck / build / lint / verify / coverageは完了条件へ含めず",
-		);
+		expect(userPrompt).toContain("同じ目的のcommandは代表gateへまとめる");
+		expect(userPrompt).toContain("aggregate gateは検証計画に整理");
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");
 		expect(systemPrompt).toContain("未決定事項は極力作らず");

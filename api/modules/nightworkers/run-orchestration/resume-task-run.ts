@@ -17,7 +17,9 @@ export async function resumeTaskRunTodo(input: {
 	const repository = await repo.getRepository(task.repositoryId);
 	if (!repository) throw new NotFoundError("Repository not found");
 	const todos = await repo.listTaskRunTodosForRun(run.id);
-	const target = todos.find((todo) => todo.id === input.todoId);
+	const target = todos.find(
+		(todo) => todo.id === input.todoId || todo.todoKey === input.todoId,
+	);
 	if (!target) throw new NotFoundError("Todo not found");
 	const runtimePause = readRuntimePauseSnapshot(run.contextSnapshot);
 	const resumeKind =
@@ -49,7 +51,7 @@ export async function resumeTaskRunTodo(input: {
 		latestUserMessageOverride: input.userContext,
 		resumeCommand: {
 			kind: resumeKind,
-			todoId: input.todoId,
+			todoId: target.id,
 			expectedTodoRevision: input.expectedTodoRevision,
 			userContext: input.userContext,
 		},

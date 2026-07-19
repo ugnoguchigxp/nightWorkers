@@ -9,6 +9,10 @@ vi.mock("../api/modules/nightworkers/run-orchestration/start-task-run", () => ({
 }));
 
 import {
+	type CodingAgentSystemContextSnapshot,
+	TodoMutationService,
+} from "../api/modules/codingAgent/todo";
+import {
 	createRepository,
 	createTask,
 	createTaskRun,
@@ -16,10 +20,6 @@ import {
 	updateTaskRun,
 } from "../api/modules/nightworkers/nightworkers.repository";
 import { resumeTaskRunTodo } from "../api/modules/nightworkers/run-orchestration/resume-task-run";
-import {
-	type CodingAgentSystemContextSnapshot,
-	TodoMutationService,
-} from "../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 const systemContext: CodingAgentSystemContextSnapshot = {

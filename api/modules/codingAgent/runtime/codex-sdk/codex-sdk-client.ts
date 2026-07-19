@@ -109,7 +109,7 @@ export async function createCodexRuntimeThread(input: {
 				stateId: resumeState.stateId,
 				error: error instanceof Error ? error.message : String(error),
 			});
-			throw error;
+			return codex.startThread(threadOptions);
 		}
 	} else {
 		await input.onResumeEvent?.({ status: "unavailable" });

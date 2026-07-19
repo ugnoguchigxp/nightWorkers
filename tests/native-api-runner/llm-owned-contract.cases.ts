@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { db } from "../../api/db/client";
+import { verificationDocuments } from "../../api/db/verification-schema";
 import {
 	buildCodingAgentSystemContext,
 	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
@@ -14,6 +16,7 @@ import {
 import { buildInitialNativeApiHistory } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history";
 import { getNativeApiToolDefinitions } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry";
 import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
+import { TodoMutationService } from "../../api/modules/codingAgent/todo";
 import {
 	createRepository,
 	createTask,
@@ -31,7 +34,6 @@ import {
 } from "../../api/modules/nightworkers/run-orchestration/runtime-outcome-guard";
 import { registerFixtureProviderToolTurns } from "../../api/services/structured-llm/fixture-tool-provider";
 import { StructuredProviderError } from "../../api/services/structured-llm/provider-failure";
-import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const repositoryIds: string[] = [];
 
@@ -128,6 +130,9 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain(
 			"実装後に仕様書や完了条件を後付けして検証を始めず",
 		);
+		expect(system?.content).toContain("modules/[domain]");
+		expect(system?.content).toContain("確定Specを優先");
+		expect(system?.content).toContain("既存domainは既存moduleを拡張");
 		expect(system?.content).toContain('"availability": "unavailable"');
 		expect(system?.content).toContain("project_exploration_catalogを呼ばず");
 		expect(system?.content).not.toContain("executionMode:");
@@ -241,6 +246,55 @@ describe("Native API LLM-owned Todo contract", () => {
 				(item) => item.type === "user" && item.content === "nextAction=verify",
 			),
 		).toBe(true);
+	});
+
+	it("bounds a large structured completion recovery during compaction", () => {
+		const recovery = JSON.stringify({
+			ok: false,
+			error: {
+				code: "FINALIZE_RECONCILIATION_REQUIRED",
+				message: "readiness reconciliation required",
+			},
+			currentSnapshot: {
+				readiness: {
+					authority: { taskId: "task-1", runId: "run-1" },
+					workspace: { sourceStateHash: "a".repeat(64) },
+					verification: {
+						applicability: "active",
+						result: { ok: false, reason: "quality_gate_incomplete" },
+					},
+					discrepancies: Array.from({ length: 100 }, (_, index) => ({
+						code: `missing-${index}`,
+						summary: "x".repeat(1_000),
+					})),
+					satisfactionConditions: Array.from(
+						{ length: 100 },
+						(_, index) => `condition-${index}-${"y".repeat(1_000)}`,
+					),
+				},
+			},
+			currentSnapshotDigest: "sha256:snapshot",
+			currentSnapshotRef: "runFinalizeController.currentSnapshot",
+			finalCandidate: "candidate".repeat(20_000),
+			currentRecoveryContext: {
+				authoritativeContext: { taskId: "task-1", runId: "run-1" },
+				recoveryRefs: [],
+			},
+		});
+		const result = compactNativeApiHistoryToBaseline({
+			baselineHistory: [{ type: "system", content: "system" }],
+			previousHistory: [{ type: "user", source: "runtime", content: recovery }],
+			reason: "budget",
+		});
+		const summary = result.history.find(
+			(item) =>
+				item.type === "user" && item.content.includes("Conversation Summary"),
+		);
+
+		expect(summary?.type).toBe("user");
+		expect(summary?.content.length).toBeLessThan(6_000);
+		expect(summary?.content).toContain("FINALIZE_RECONCILIATION_REQUIRED");
+		expect(summary?.content).toContain("sha256:");
 	});
 
 	it("rejects workspace tools until a current Todo exists", async () => {
@@ -373,6 +427,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			},
 		]);
 
+		const emit = vi.fn(async () => {});
 		const result = await new NativeApiRunner({
 			usageRecorder: async () => {},
 		}).run(
@@ -381,7 +436,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				taskId: task.id,
 				repositoryId: repository.id,
 			}),
-			{ emit: vi.fn(async () => {}) },
+			{ emit },
 		);
 
 		expect(result).toMatchObject({
@@ -390,7 +445,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			finalReport: "A案とB案のどちらを採用しますか？",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ id: todoId, status: "needs_human" },
+			{ todoKey: todoId, status: "needs_human" },
 		]);
 	});
 
@@ -442,6 +497,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			{ content: "実装と検証が完了しました。", toolCalls: [] },
 		]);
 
+		const emit = vi.fn(async () => {});
 		const result = await new NativeApiRunner({
 			usageRecorder: async () => {},
 		}).run(
@@ -450,7 +506,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				taskId: task.id,
 				repositoryId: repository.id,
 			}),
-			{ emit: vi.fn(async () => {}) },
+			{ emit },
 		);
 
 		expect(result).toMatchObject({
@@ -458,8 +514,130 @@ describe("Native API LLM-owned Todo contract", () => {
 			finalReport: "実装と検証が完了しました。",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ id: todoId, status: "passed" },
+			{ todoKey: todoId, status: "passed" },
 		]);
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "model_response_finished",
+				payload: expect.objectContaining({
+					candidateRevision: 5,
+					text: "実装と検証が完了しました。",
+				}),
+			}),
+		);
+	});
+
+	it("returns the same verification readiness differences in the Native loop", async () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const { repository, task, run } = await createRuntimeRun(
+			"native-readiness-reconciliation",
+		);
+		await db.insert(verificationDocuments).values({
+			taskId: task.id,
+			runId: run.id,
+			sourceSpecPath: "spec/docs/native-readiness.md",
+			documentJson: {},
+			generatedAt: new Date(),
+			status: "active",
+		});
+		const todoId = crypto.randomUUID();
+		const inputs: Parameters<NativeApiToolTurnProvider>[0][] = [];
+		const turns = [
+			{
+				content: "計画を作成します。",
+				toolCalls: [
+					todoCall("plan", {
+						op: "replace_plan",
+						expectedPlanRevision: 0,
+						todos: [
+							{
+								id: todoId,
+								title: "実装する",
+								nextAction: "実装を検証する",
+								acceptanceCriteria: [],
+							},
+						],
+					}),
+				],
+			},
+			{
+				content: "Todoを開始します。",
+				toolCalls: [
+					todoCall("start", {
+						op: "start",
+						todoId,
+						expectedTodoRevision: 0,
+					}),
+				],
+			},
+			{
+				content: "Todoを完了します。",
+				toolCalls: [
+					todoCall("pass", {
+						op: "transition",
+						todoId,
+						expectedTodoRevision: 1,
+						status: "passed",
+						reason: "Todo上は完了した。",
+					}),
+				],
+			},
+			{ content: "実装と検証が完了しました。", toolCalls: [] },
+		];
+		const providerTurn: NativeApiToolTurnProvider = async (input) => {
+			inputs.push(input);
+			const turn = turns.shift();
+			if (!turn) {
+				throw new StructuredProviderError({
+					kind: "authentication",
+					retryable: false,
+					message: "stop after readiness feedback",
+				});
+			}
+			return {
+				type: "supported",
+				...turn,
+				usage: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cachedInputTokens: 0,
+					reasoningOutputTokens: 0,
+					totalTokens: 20,
+					mode: "measured",
+				},
+				model: "fixture-native-tools",
+			};
+		};
+		const result = await new NativeApiRunner({
+			providerTurn,
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+				repoRoot: process.cwd(),
+			}),
+			{ emit: vi.fn(async () => {}) },
+		);
+
+		expect(inputs).toHaveLength(5);
+		const feedback = inputs[4].messages.find(
+			(message) =>
+				message.role === "user" &&
+				typeof message.content === "string" &&
+				message.content.includes("FINALIZE_RECONCILIATION_REQUIRED"),
+		);
+		expect(feedback).toMatchObject({ role: "user" });
+		expect(JSON.stringify(feedback)).toContain(
+			"missing_successful_full_verify",
+		);
+		expect(JSON.stringify(feedback)).toContain("finalCandidate");
+		expect(JSON.stringify(feedback)).toContain("実装と検証が完了しました。");
+		expect(result).toMatchObject({
+			terminalState: "failed",
+			finalReport: "実装と検証が完了しました。",
+		});
 	});
 
 	it("resumes a host-limited run without changing its running Todo", async () => {
@@ -525,7 +703,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			(storedRun.contextSnapshot as Record<string, unknown>).runtimePause,
 		).toBeNull();
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ id: todoId, status: "running", revision: 1 },
+			{ todoKey: todoId, status: "running", revision: 1 },
 		]);
 		expect((await getTaskRun(run.id))?.taskId).toBe(task.id);
 	});

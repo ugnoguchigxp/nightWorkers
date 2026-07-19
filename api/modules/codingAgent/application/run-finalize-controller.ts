@@ -1,4 +1,8 @@
-import * as repo from "../../modules/nightworkers/nightworkers.repository";
+import * as repo from "../../nightworkers/nightworkers.repository";
+import {
+	type CodingAgentCompletionReadiness,
+	evaluateCodingAgentCompletionReadiness,
+} from "./completion-readiness.service";
 
 export type RunCompletionSnapshot = {
 	planRevision: number;
@@ -8,12 +12,14 @@ export type RunCompletionSnapshot = {
 		status: string;
 		title: string;
 	}>;
+	readiness?: CodingAgentCompletionReadiness;
 };
 
 export type FinalizeGuardResult = {
 	allowFinalize: boolean;
 	code:
 		| "FINALIZE_ALLOWED"
+		| "FINALIZE_RECONCILIATION_REQUIRED"
 		| "RUN_NOT_FOUND"
 		| "RUN_ALREADY_TERMINAL"
 		| "RUN_HAS_OPEN_TODOS"
@@ -26,17 +32,39 @@ export type FinalizeGuardResult = {
 	idempotent: boolean;
 };
 
+export type RunFinalizeControllerDependencies = {
+	getTaskRun: typeof repo.getTaskRun;
+	listTaskRunTodosForRun: typeof repo.listTaskRunTodosForRun;
+	evaluateReadiness: typeof evaluateCodingAgentCompletionReadiness;
+};
+
+const defaultDependencies: RunFinalizeControllerDependencies = {
+	getTaskRun: (...args) => repo.getTaskRun(...args),
+	listTaskRunTodosForRun: (...args) => repo.listTaskRunTodosForRun(...args),
+	evaluateReadiness: (...args) =>
+		evaluateCodingAgentCompletionReadiness(...args),
+};
+
 export class RunFinalizeController {
+	private readonly dependencies: RunFinalizeControllerDependencies;
+
+	constructor(dependencies: Partial<RunFinalizeControllerDependencies> = {}) {
+		this.dependencies = { ...defaultDependencies, ...dependencies };
+	}
+
 	async evaluateCandidate(input: {
 		runId: string;
+		repositoryRoot?: string;
+		candidateRevision?: number;
+		finalCandidate?: string;
 		expectedPlanRevision?: number;
 		expectedTodoRevisions?: Record<string, number>;
 	}): Promise<FinalizeGuardResult> {
-		const run = await repo.getTaskRun(input.runId);
+		const run = await this.dependencies.getTaskRun(input.runId);
 		if (!run) {
 			return blocked("RUN_NOT_FOUND", "対象Runが存在しません。", [], null);
 		}
-		const todos = await repo.listTaskRunTodosForRun(input.runId);
+		const todos = await this.dependencies.listTaskRunTodosForRun(input.runId);
 		const snapshot: RunCompletionSnapshot = {
 			planRevision: run.todoPlanRevision,
 			todos: todos.map((todo) => ({
@@ -63,7 +91,8 @@ export class RunFinalizeController {
 				input.expectedPlanRevision !== run.todoPlanRevision) ||
 			Object.entries(input.expectedTodoRevisions ?? {}).some(
 				([id, revision]) =>
-					todos.find((todo) => todo.id === id)?.revision !== revision,
+					todos.find((todo) => todo.id === id || todo.todoKey === id)
+						?.revision !== revision,
 			)
 		) {
 			return blocked(
@@ -110,12 +139,29 @@ export class RunFinalizeController {
 				snapshot,
 			);
 		}
+
+		const readiness = await this.dependencies.evaluateReadiness({
+			taskId: run.taskId,
+			runId: run.id,
+			repositoryRoot: input.repositoryRoot ?? "",
+			candidateRevision: input.candidateRevision,
+			finalCandidate: input.finalCandidate,
+		});
+		const readinessSnapshot = { ...snapshot, readiness };
+		if (!readiness.ready) {
+			return blocked(
+				"FINALIZE_RECONCILIATION_REQUIRED",
+				"現在のTask、source、検証証跡、最終回答候補に未解決の差分があります。",
+				readiness.satisfactionConditions,
+				readinessSnapshot,
+			);
+		}
 		return {
 			allowFinalize: true,
 			code: "FINALIZE_ALLOWED",
-			message: "Run completion preconditionsを満たしました。",
+			message: "Run completion readinessが整合しました。",
 			missingConditions: [],
-			snapshot,
+			snapshot: readinessSnapshot,
 			idempotent: false,
 		};
 	}

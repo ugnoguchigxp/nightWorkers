@@ -49,9 +49,13 @@ async function writeCommandOutputArtifact(input: {
 async function buildCommandOutput(input: {
 	command: string;
 	exitCode: number;
+	signal: string | null;
+	timedOut: boolean;
 	stdout: string;
 	stderr: string;
 	classification: string;
+	cwd: string;
+	repositoryRoot: string;
 	startedAt: string;
 	finishedAt: string;
 	compressionMode?: "auto" | "off";
@@ -68,9 +72,15 @@ async function buildCommandOutput(input: {
 		return {
 			command: input.command,
 			exitCode: input.exitCode,
+			signal: input.signal,
+			timedOut: input.timedOut,
 			stdout: input.stdout,
 			stderr: input.stderr,
+			stdoutDigest: streamDigest(input.stdout),
+			stderrDigest: streamDigest(input.stderr),
 			classification: input.classification,
+			cwd: input.cwd,
+			repositoryRoot: input.repositoryRoot,
 			truncated: false,
 		};
 	}
@@ -99,9 +109,15 @@ async function buildCommandOutput(input: {
 	return {
 		command: input.command,
 		exitCode: input.exitCode,
+		signal: input.signal,
+		timedOut: input.timedOut,
 		stdout: stdoutCompression.content,
 		stderr: stderrCompression.content,
+		stdoutDigest: streamDigest(input.stdout),
+		stderrDigest: streamDigest(input.stderr),
 		classification: input.classification,
+		cwd: input.cwd,
+		repositoryRoot: input.repositoryRoot,
 		truncated: stdoutCompression.truncated || stderrCompression.truncated,
 		logArtifactPath,
 		compression:
@@ -125,9 +141,15 @@ export interface RunCommandInput {
 export interface RunCommandOutput {
 	command: string;
 	exitCode: number;
+	signal: string | null;
+	timedOut: boolean;
 	stdout: string;
 	stderr: string;
+	stdoutDigest: string;
+	stderrDigest: string;
 	classification: string;
+	cwd: string;
+	repositoryRoot: string;
 	truncated: boolean;
 	logArtifactPath?: string;
 	compression?: {
@@ -171,14 +193,12 @@ export async function runCommandTool(
 			toolName: "run_command",
 			startedAt,
 			finishedAt: new Date().toISOString(),
-			payload: {
+			payload: emptyCommandOutput({
 				command,
-				exitCode: -1,
-				stdout: "",
-				stderr: "",
 				classification: "unknown",
-				truncated: false,
-			},
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
 			error: {
 				code: "ACCESS_DENIED",
 				message:
@@ -195,14 +215,12 @@ export async function runCommandTool(
 			toolName: "run_command",
 			startedAt,
 			finishedAt: new Date().toISOString(),
-			payload: {
+			payload: emptyCommandOutput({
 				command,
-				exitCode: -1,
-				stdout: "",
-				stderr: "",
 				classification: "unknown",
-				truncated: false,
-			},
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
 			error: {
 				code: "COMMAND_CWD_NOT_FOUND",
 				message: `Command working directory not found: ${cwd || "."}`,
@@ -219,14 +237,12 @@ export async function runCommandTool(
 			toolName: "run_command",
 			startedAt,
 			finishedAt: new Date().toISOString(),
-			payload: {
+			payload: emptyCommandOutput({
 				command,
-				exitCode: -1,
-				stdout: "",
-				stderr: "",
 				classification: "unknown",
-				truncated: false,
-			},
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
 			error: {
 				code: "COMMAND_CWD_NOT_DIRECTORY",
 				message: `Command working directory is not a directory: ${cwd || "."}`,
@@ -247,14 +263,12 @@ export async function runCommandTool(
 			toolName: "run_command",
 			startedAt,
 			finishedAt: new Date().toISOString(),
-			payload: {
+			payload: emptyCommandOutput({
 				command,
-				exitCode: -1,
-				stdout: "",
-				stderr: "",
 				classification: "unknown",
-				truncated: false,
-			},
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
 			error: {
 				code: "DESTRUCTIVE_COMMAND",
 				message:
@@ -269,14 +283,12 @@ export async function runCommandTool(
 			toolName: "run_command",
 			startedAt,
 			finishedAt: new Date().toISOString(),
-			payload: {
+			payload: emptyCommandOutput({
 				command,
-				exitCode: -1,
-				stdout: "",
-				stderr: "",
 				classification: safety.classification,
-				truncated: false,
-			},
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
 			error: {
 				code: "BACKGROUND_COMMAND_REQUIRED",
 				message: `Long-running command must be started with run_background_command: ${command}`,
@@ -294,10 +306,13 @@ export async function runCommandTool(
 	});
 
 	try {
-		const promise = execAsync(command, {
+		const managedCommand =
+			process.platform === "win32" ? command : `set -o pipefail\n${command}`;
+		const promise = execAsync(managedCommand, {
 			cwd: targetCwd,
 			timeout: effectiveTimeoutSeconds * 1000,
 			maxBuffer: MAX_EXEC_BUFFER_BYTES,
+			...(process.platform === "win32" ? {} : { shell: "/bin/bash" }),
 		});
 
 		const { stdout, stderr } = await promise;
@@ -311,9 +326,13 @@ export async function runCommandTool(
 			payload: await buildCommandOutput({
 				command,
 				exitCode: 0,
+				signal: null,
+				timedOut: false,
 				classification: safety.classification,
 				stdout,
 				stderr,
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
 				startedAt,
 				finishedAt,
 				compressionMode,
@@ -321,12 +340,16 @@ export async function runCommandTool(
 		};
 	} catch (err) {
 		const error = toDeepRecord(err);
+		const rawError =
+			err && typeof err === "object" ? (err as Record<string, unknown>) : {};
 		const exitCode = typeof error.code === "number" ? error.code : 1;
 		const stdout = typeof error.stdout === "string" ? error.stdout : "";
 		const stderr = typeof error.stderr === "string" ? error.stderr : "";
+		const signal = typeof rawError.signal === "string" ? rawError.signal : null;
+		const timedOut = rawError.killed === true;
 		const finishedAt = new Date().toISOString();
 
-		const message = error.killed
+		const message = timedOut
 			? `Command timed out after ${effectiveTimeoutSeconds}s`
 			: `Command failed: ${String(error.message || err)}`;
 
@@ -338,17 +361,44 @@ export async function runCommandTool(
 			payload: await buildCommandOutput({
 				command,
 				exitCode,
+				signal,
+				timedOut,
 				classification: safety.classification,
 				stdout,
 				stderr,
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
 				startedAt,
 				finishedAt,
 				compressionMode,
 			}),
 			error: {
-				code: error.killed ? "COMMAND_TIMEOUT" : "COMMAND_FAILED",
+				code: timedOut ? "COMMAND_TIMEOUT" : "COMMAND_FAILED",
 				message,
 			},
 		};
 	}
+}
+
+function streamDigest(value: string) {
+	return `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
+}
+
+function emptyCommandOutput(input: {
+	command: string;
+	classification: string;
+	cwd: string;
+	repositoryRoot: string;
+}): RunCommandOutput {
+	return {
+		...input,
+		exitCode: -1,
+		signal: null,
+		timedOut: false,
+		stdout: "",
+		stderr: "",
+		stdoutDigest: streamDigest(""),
+		stderrDigest: streamDigest(""),
+		truncated: false,
+	};
 }

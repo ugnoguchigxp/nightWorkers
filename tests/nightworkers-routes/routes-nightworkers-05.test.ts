@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
+import { TodoMutationService } from "../../api/modules/codingAgent/todo";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import {
 	codingAgentChatTrace,
@@ -9,7 +10,6 @@ import {
 } from "../../api/modules/nightworkers/nightworkers.trace-provenance";
 import { recordLlmUsage } from "../../api/services/llm-usage";
 import * as generalSettings from "../../api/services/settings/general-settings";
-import { TodoMutationService } from "../../api/services/todo-mutation";
 
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
 
@@ -79,6 +79,7 @@ describe("NightWorkers task run todo routes", () => {
 			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
+		const [firstTodo, secondTodo] = plan.todos;
 		const started = await service.execute(run.id, {
 			op: "start",
 			todoId: firstId,
@@ -102,10 +103,11 @@ describe("NightWorkers task run todo routes", () => {
 		expect(runDetailRes.status).toBe(200);
 		const runDetail = await runDetailRes.json();
 		expect(runDetail.todos.map((todo: unknown) => todo.id)).toEqual([
-			firstId,
-			secondId,
+			firstTodo.id,
+			secondTodo.id,
 		]);
 		expect(runDetail.todos[0]).toMatchObject({
+			todoKey: firstId,
 			seq: 1,
 			title: "Implement persistence",
 			taskType: "coding",
@@ -114,10 +116,11 @@ describe("NightWorkers task run todo routes", () => {
 			dependsOn: [],
 		});
 		expect(runDetail.todos[1]).toMatchObject({
+			todoKey: secondId,
 			seq: 2,
 			taskType: "coding",
 			status: "pending",
-			dependsOn: [firstId],
+			dependsOn: [firstTodo.id],
 		});
 	});
 

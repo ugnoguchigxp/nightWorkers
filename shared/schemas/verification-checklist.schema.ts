@@ -32,9 +32,17 @@ export const specificationAcceptanceCriterionCategorySchema = z.enum([
 	"other",
 ]);
 
+export const SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA =
+	"今回の仕様でポイントとなる具体的な挙動を、実装後の自動テストのテストケース名としてそのまま使え、1件のテストで単独に合否判定できる1文で書く。各項目は仕様上の要点と対応するテスト証跡を1対1で結び付けられる独立した成功条件とし、同じ要点は1項目にまとめる。";
+
 export const specificationAcceptanceCriterionSchema = z
 	.object({
-		title: z.string().trim().min(1).max(300),
+		title: z
+			.string()
+			.trim()
+			.min(1)
+			.max(300)
+			.describe(SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA),
 		category: specificationAcceptanceCriterionCategorySchema,
 	})
 	.strict();
@@ -144,12 +152,6 @@ export const testConditionMappingSchema = z
 		}
 	});
 
-export const verificationCommandScopeSchema = z.enum([
-	"focused",
-	"full_gate",
-	"manual",
-]);
-
 export const verificationConditionSchema = z
 	.object({
 		id: z.string().regex(/^AC-\d{3}$/),
@@ -181,14 +183,12 @@ export const verificationCommandPlanSchema = z
 		command: z.string().trim().min(1),
 		cwd: z.string().trim().min(1).optional(),
 		conditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
-		scope: verificationCommandScopeSchema,
-		runnerHint: verificationRunnerSchema.optional(),
 	})
 	.strict();
 
 export const specificationVerificationDocumentSchema = z
 	.object({
-		version: z.literal(1),
+		version: z.literal(2),
 		specId: z.string().trim().min(1),
 		specPath: z.string().trim().min(1),
 		generatedAt: z.string().datetime(),
@@ -201,7 +201,6 @@ export const specificationVerificationDocumentSchema = z
 			.strict(),
 		conditions: z.array(verificationConditionSchema),
 		commands: z.array(verificationCommandPlanSchema),
-		nonGoals: z.array(z.string()),
 	})
 	.strict()
 	.superRefine((document, ctx) => {
