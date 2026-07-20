@@ -1,14 +1,9 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { featurePlanImplementationPlanSchema } from "../../../shared/schemas/feature-plan-implementation-plan.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import {
-	type SpecificationAcceptanceCriterion,
-	specificationAcceptanceCriterionSchema,
-} from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import {
 	buildSpecificationDocumentSystemPrompt,
 	buildSpecificationDocumentUserPrompt,
@@ -39,10 +34,10 @@ import {
 } from "../questionnaire/questionnaire.service";
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
 import {
-	buildFeaturePlanImplementationPlanMetadata,
-	hasFeaturePlanImplementationHeading,
-	renderFeaturePlanContent,
-} from "./feature-plan-implementation-plan";
+	digestFeaturePlanContent,
+	featurePlanMarkdownDraftSchema,
+	readFeaturePlanTitle,
+} from "./feature-plan-content";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 import {
@@ -56,21 +51,6 @@ import { sanitizeSpecificationTargetNaming } from "./specification-document-rend
 import { assertPlanModeMutable } from "./specification-mutability";
 import { buildSpecificationVerificationSidecar } from "./specification-verification-sidecar";
 
-const specificationDocumentDraftSchema = z.object({
-	title: z.string().min(1),
-	contentTemplate: z
-		.string()
-		.min(1)
-		.refine((value) => !hasFeaturePlanImplementationHeading(value), {
-			message:
-				"contentTemplate must not contain the implementation plan heading; place {{IMPLEMENTATION_PLAN}} at that position instead.",
-		}),
-	implementationPlan: featurePlanImplementationPlanSchema,
-	acceptanceCriteria: z
-		.array(specificationAcceptanceCriterionSchema)
-		.min(1)
-		.max(20),
-});
 const DEFAULT_FEATURE_PLAN_TITLE = "Feature Plan";
 export const FEATURE_PLAN_LLM_TIMEOUT_MS = PLAN_ARTIFACT_GENERATION_TIMEOUT_MS;
 
@@ -150,7 +130,7 @@ export async function generateFeaturePlanArtifact(
 			unansweredBlockingQuestions,
 		);
 	}
-	const rawOutput = await generateSpecificationDesignDocumentRawOutput(
+	const generatedDraft = await generateSpecificationDesignDocument(
 		taskId,
 		context,
 		input.routeOverride || null,
@@ -161,58 +141,30 @@ export async function generateFeaturePlanArtifact(
 		input.signal,
 	);
 	input.signal?.throwIfAborted();
-	const parsed = specificationDocumentDraftSchema.parse(JSON.parse(rawOutput));
-	const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
-		...parsed.implementationPlan,
-		steps: parsed.implementationPlan.steps.map((step) => ({
-			...step,
-			title: sanitizeSpecificationTargetNaming(
-				step.title,
-				context.projectStackContext,
-			),
-			description: sanitizeSpecificationTargetNaming(
-				step.description,
-				context.projectStackContext,
-			),
-		})),
-	});
-	const acceptanceCriteria = parsed.acceptanceCriteria.map((criterion) =>
-		sanitizeAcceptanceCriterion(criterion, context.projectStackContext),
-	);
-	const renderedContent = renderFeaturePlanContent({
-		contentTemplate: sanitizeSpecificationTargetNaming(
-			parsed.contentTemplate,
-			context.projectStackContext,
-		),
-		implementationPlan,
-		acceptanceCriteria,
-	});
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
-		renderedContent.trimEnd(),
+		generatedDraft.markdown.trimEnd(),
 		context.projectStackContext,
 	);
-	const initialSidecar = buildSpecificationVerificationSidecar({
-		taskId,
-		specId: taskId,
-		specPath: buildSpecificationPath(
-			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
-		),
-		content: sanitizedContent,
-		sourceMessageIds: projection.provenance.sourceMessageIds,
-		workspace,
-		acceptanceCriteria,
-	});
+	const title = readFeaturePlanTitle(
+		sanitizedContent,
+		DEFAULT_FEATURE_PLAN_TITLE,
+	);
+	const contentDigest = digestFeaturePlanContent(sanitizedContent);
 	const message = await createPlanModeTaskMessage({
 		taskId,
 		role: "assistant",
-		content: initialSidecar.content,
+		content: sanitizedContent,
 		messageType: "markdown_document",
 		payloadJson: {
 			intent: "feature_plan",
-			title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
+			title,
 			source: "status",
 			questionnaireSessionId: session?.id ?? null,
-			implementationPlan,
+			featurePlanContent: {
+				version: 1,
+				digest: contentDigest,
+			},
+			verificationSidecarStatus: "pending",
 			generation: {
 				source: "llm",
 				context: {
@@ -229,64 +181,69 @@ export async function generateFeaturePlanArtifact(
 				},
 			},
 			markdownDocumentData: {
-				title: parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
-				content: initialSidecar.content,
+				title,
+				content: sanitizedContent,
 			},
 		},
 		trace: input.trace,
 	});
-	const sidecar = buildSpecificationVerificationSidecar({
-		taskId,
-		specId: message.id,
-		specPath: buildSpecificationPath(
-			parsed.title || DEFAULT_FEATURE_PLAN_TITLE,
-		),
-		content: initialSidecar.content,
-		sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
-		workspace,
-		acceptanceCriteria,
-		generatedAt: initialSidecar.document.generatedAt,
-	});
-	const verificationMessage = await createPlanModeTaskMessage({
-		taskId,
-		role: "assistant",
-		content: JSON.stringify(sidecar.document, null, 2),
-		messageType: "verification_json",
-		payloadJson: {
-			intent: "feature_plan_verification",
-			artifactKind: "verification_json",
-			title: `${parsed.title || DEFAULT_FEATURE_PLAN_TITLE} Verification`,
-			sourceFeaturePlanMessageId: message.id,
-			verificationDocument: sidecar.document,
-		},
-		trace: input.trace,
-	});
-	const verificationDocument = await createVerificationDocumentFromSpec({
-		taskId,
-		specMessageId: message.id,
-		specArtifactId: `feature-plan-${message.id}`,
-		verificationArtifactId: `verification-json-${verificationMessage.id}`,
-		sourceSpecPath: sidecar.document.specPath,
-		document: sidecar.document,
-	});
-	await attachVerificationMetadata({
-		specMessageId: message.id,
-		verificationMessageId: verificationMessage.id,
-		verificationDocumentId: verificationDocument.id,
-		verificationArtifactId: `verification-json-${verificationMessage.id}`,
-	});
-	return { message, workspace: await getPlanModeWorkspace(taskId) };
-}
-
-function sanitizeAcceptanceCriterion(
-	criterion: SpecificationAcceptanceCriterion,
-	projectStackContext: string,
-): SpecificationAcceptanceCriterion {
-	const sanitize = (value: string) =>
-		sanitizeSpecificationTargetNaming(value, projectStackContext);
+	try {
+		const sidecar = buildSpecificationVerificationSidecar({
+			taskId,
+			specId: message.id,
+			specPath: buildSpecificationPath(title),
+			content: sanitizedContent,
+			sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
+			workspace,
+			inferConditionSemantics: false,
+		});
+		const verificationMessage = await createPlanModeTaskMessage({
+			taskId,
+			role: "assistant",
+			content: JSON.stringify(sidecar.document, null, 2),
+			messageType: "verification_json",
+			payloadJson: {
+				intent: "feature_plan_verification",
+				artifactKind: "verification_json",
+				title: `${title} Verification`,
+				sourceFeaturePlanMessageId: message.id,
+				verificationDocument: sidecar.document,
+			},
+			trace: input.trace,
+		});
+		const verificationDocument = await createVerificationDocumentFromSpec({
+			taskId,
+			specMessageId: message.id,
+			specArtifactId: `feature-plan-${message.id}`,
+			verificationArtifactId: `verification-json-${verificationMessage.id}`,
+			sourceSpecPath: sidecar.document.specPath,
+			document: sidecar.document,
+		});
+		await attachVerificationMetadata({
+			specMessageId: message.id,
+			verificationMessageId: verificationMessage.id,
+			verificationDocumentId: verificationDocument.id,
+			verificationArtifactId: `verification-json-${verificationMessage.id}`,
+		});
+	} catch (error) {
+		logger.warn(
+			{ error, taskId, specMessageId: message.id },
+			"Feature Plan was saved but verification sidecar generation failed",
+		);
+		await markVerificationSidecarFailed(message.id).catch((metadataError) => {
+			logger.warn(
+				{ error: metadataError, taskId, specMessageId: message.id },
+				"Failed to record Feature Plan verification sidecar failure",
+			);
+		});
+	}
+	const [persistedMessage] = await db
+		.select()
+		.from(taskMessages)
+		.where(eq(taskMessages.id, message.id));
 	return {
-		...criterion,
-		title: sanitize(criterion.title),
+		message: persistedMessage ?? message,
+		workspace: await getPlanModeWorkspace(taskId),
 	};
 }
 
@@ -341,7 +298,7 @@ function hasValidQuestions(
 	);
 }
 
-async function generateSpecificationDesignDocumentRawOutput(
+async function generateSpecificationDesignDocument(
 	taskId: string,
 	context: Parameters<typeof buildSpecificationDocumentUserPrompt>[0],
 	routeOverride: StructuredLlmModelTarget | null,
@@ -362,8 +319,8 @@ async function generateSpecificationDesignDocumentRawOutput(
 			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({
-					name: "specification_document",
-					runtimeSchema: specificationDocumentDraftSchema,
+					name: "feature_plan_markdown",
+					runtimeSchema: featurePlanMarkdownDraftSchema,
 				}),
 				taskId,
 				role,
@@ -381,7 +338,7 @@ async function generateSpecificationDesignDocumentRawOutput(
 				signal,
 			},
 		});
-		return JSON.stringify(generated.value);
+		return generated.value;
 	} catch (error) {
 		if (error instanceof StructuredLlmTimeoutError) {
 			throw new AppError(504, "SPECIFICATION_DOCUMENT_TIMEOUT", error.message, {
@@ -429,6 +386,7 @@ async function attachVerificationMetadata(input: {
 		.set({
 			metadataJson: {
 				...specMetadata,
+				verificationSidecarStatus: "ready",
 				verificationDocumentId: input.verificationDocumentId,
 				verificationArtifactId: input.verificationArtifactId,
 				verificationSidecarMessageId: input.verificationMessageId,
@@ -456,6 +414,23 @@ async function attachVerificationMetadata(input: {
 			},
 		})
 		.where(eq(taskMessages.id, input.verificationMessageId));
+}
+
+async function markVerificationSidecarFailed(specMessageId: string) {
+	const rows = await db
+		.select()
+		.from(taskMessages)
+		.where(eq(taskMessages.id, specMessageId));
+	const metadata = toRecord(rows[0]?.metadataJson);
+	await db
+		.update(taskMessages)
+		.set({
+			metadataJson: {
+				...metadata,
+				verificationSidecarStatus: "failed",
+			},
+		})
+		.where(eq(taskMessages.id, specMessageId));
 }
 
 function buildSpecificationPath(title: string) {

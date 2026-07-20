@@ -16,3 +16,23 @@ export function applyVitestDatabaseEnv() {
 	process.env.CORS_ORIGIN = "http://localhost:39174";
 	process.env.NIGHTWORKERS_DESKTOP = "0";
 }
+
+export function assertVitestDatabaseIsolation(
+	databaseUrl: string | undefined,
+	env: NodeJS.ProcessEnv = process.env,
+) {
+	const expectedPath = env.NIGHTWORKERS_VITEST_DB_PATH?.trim();
+	if (!expectedPath) {
+		throw new Error(
+			"NIGHTWORKERS_VITEST_DB_PATH is required before destructive test cleanup.",
+		);
+	}
+	const actualPath = databaseUrl?.startsWith("file:")
+		? databaseUrl.slice("file:".length)
+		: databaseUrl;
+	if (!actualPath || path.resolve(actualPath) !== path.resolve(expectedPath)) {
+		throw new Error(
+			`Refusing destructive test cleanup outside the isolated Vitest database: ${actualPath || "<missing>"}`,
+		);
+	}
+}

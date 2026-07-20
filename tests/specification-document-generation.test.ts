@@ -84,6 +84,70 @@ describe("Specification document generation", () => {
 		);
 	});
 
+	it("uses an explicit Markdown condition category without semantic reclassification", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec/sample.md",
+			sourceMessageIds: [],
+			workspace: {
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				generatedAt: "2026-07-08T00:00:00.000Z",
+				featurePlanArtifacts: [],
+				blueprintArtifacts: [],
+				dataModelArtifacts: [],
+				dedicatedViewArtifacts: [],
+				decisionReviews: [],
+				questionnaireSessions: [],
+				implementationReferences: [],
+			},
+			content: "## 完了条件\n- [AC-001][db] 実装結果が永続化される",
+		});
+
+		expect(result.document.conditions).toEqual([
+			expect.objectContaining({
+				id: "AC-001",
+				text: "実装結果が永続化される",
+				category: "db",
+				verificationKind: "automated_test",
+				expectedEvidence: ["automated_test"],
+			}),
+		]);
+	});
+
+	it("does not infer Feature Plan condition semantics from prose", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec/sample.md",
+			sourceMessageIds: [],
+			workspace: {
+				taskId: "task-1",
+				repositoryId: "repo-1",
+				generatedAt: "2026-07-08T00:00:00.000Z",
+				featurePlanArtifacts: [],
+				blueprintArtifacts: [],
+				dataModelArtifacts: [],
+				dedicatedViewArtifacts: [],
+				decisionReviews: [],
+				questionnaireSessions: [],
+				implementationReferences: [],
+			},
+			content: "## 完了条件\n- UIに結果が表示される",
+			inferConditionSemantics: false,
+		});
+
+		expect(result.document.conditions).toEqual([
+			expect.objectContaining({
+				text: "UIに結果が表示される",
+				category: "other",
+				verificationKind: "automated_test",
+				expectedEvidence: ["automated_test"],
+			}),
+		]);
+	});
+
 	it("requires concise implementation-plan sections in the generation prompt", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 
@@ -97,9 +161,7 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("[Feature Plan DDD Boundary]");
 		expect(systemPrompt).toContain("新規domainの導入か既存domainの拡張か");
 		expect(systemPrompt).toContain("modules/[domain]");
-		expect(systemPrompt).toContain(
-			"implementationPlan.stepsのdescriptionへ対象moduleを明記",
-		);
+		expect(systemPrompt).toContain("`## 実装計画` の対象項目へmoduleを明記");
 		expect(systemPrompt).toContain("新しいmoduleを機械的に増やさない");
 		expect(systemPrompt).toContain(
 			"sharedへ置けるのは複数domainで同じ意味を持つcontract",
@@ -132,8 +194,7 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"production変更と現在のDB/schemaを照合してdata migrationの要否を判断",
 		);
-		expect(systemPrompt).toContain("requiresDataMigration=true の場合");
-		expect(systemPrompt).toContain("taskType=data_migrationのTodo");
+		expect(systemPrompt).toContain("migration fileの作成");
 		expect(systemPrompt).toContain(
 			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
 		);
@@ -142,11 +203,9 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"SQLite variant へのフォールバックは雛形取得方法",
 		);
+		expect(systemPrompt).toContain("SQLite variant の取得を scaffold の項目");
 		expect(systemPrompt).toContain(
-			"SQLite variant の取得を taskType=scaffold の step",
-		);
-		expect(systemPrompt).toContain(
-			"選択 DB への差し替えをそれに依存する taskType=implementation の step",
+			"選択 DB への差し替えをそれに依存する implementation の項目",
 		);
 		expect(systemPrompt).toContain("Bun 実行環境の `bun test`");
 		expect(systemPrompt).not.toContain("NightWorkers の Specification writer");
@@ -161,10 +220,8 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"または `## 実装計画` で追加すると明記した script 名だけ",
 		);
-		expect(systemPrompt).toContain(
-			"acceptanceCriteria で列挙した必須テスト観点",
-		);
-		expect(systemPrompt).toContain("title と category だけ");
+		expect(systemPrompt).toContain("`## 完了条件` で列挙した必須テスト観点");
+		expect(systemPrompt).toContain("[AC-001][category]");
 		expect(systemPrompt).toContain("観点の最小集合");
 		expect(systemPrompt).toContain(
 			"自動テストのテストケース名としてそのまま使え",
@@ -184,7 +241,11 @@ describe("Specification document generation", () => {
 			"repositoryを調査した後のテスト設計で具体化",
 		);
 		expect(systemPrompt).toContain("aggregate gateは `## 検証計画` に整理");
-		expect(systemPrompt).toContain("{{ACCEPTANCE_CRITERIA}}");
+		expect(systemPrompt).toContain("プレースホルダーを含まない完成済み");
+		expect(systemPrompt).toContain("markdown フィールド");
+		expect(systemPrompt).toContain(
+			"計画や完了条件を別のJSON fieldへ複製しない",
+		);
 		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
 		expect(systemPrompt).toContain("最小の verify 系 script 追加");
 	});

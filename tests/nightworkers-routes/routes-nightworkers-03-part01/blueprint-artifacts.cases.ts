@@ -98,32 +98,18 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 			});
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				title: "Questionnaire Optional Feature Plan",
-				contentTemplate: [
+				markdown: [
 					"# Questionnaire Optional Feature Plan",
 					"",
 					"## Goal",
 					"Task contextだけから初期実装可能なFeature Planを作る。",
 					"",
-					"{{IMPLEMENTATION_PLAN}}",
+					"## 実装計画",
+					"1. 初期実装: Feature Planを実装する。",
 					"",
 					"## 完了条件",
-					"{{ACCEPTANCE_CRITERIA}}",
+					"- [AC-001][workflow] 初期実装を利用できる",
 				].join("\n"),
-				acceptanceCriteria: [fixtureAcceptanceCriterion()],
-				implementationPlan: {
-					version: 1,
-					requiresDataMigration: false,
-					steps: [
-						{
-							key: "implement",
-							title: "初期実装",
-							description: "Feature Planを実装する。",
-							taskType: "implementation",
-							dependsOnKeys: [],
-						},
-					],
-				},
 			});
 			const featurePlanRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
@@ -457,10 +443,3 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 		}
 	});
 });
-
-function fixtureAcceptanceCriterion() {
-	return {
-		title: "初期画面を表示できる",
-		category: "ui",
-	};
-}

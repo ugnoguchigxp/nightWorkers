@@ -42,7 +42,7 @@ const TECH_STACK_QUESTION_GUIDANCE =
 	"技術スタックの質問文は「どの技術スタックで実装しますか？」と簡潔にしてください。Project Stack Context や task に含まれる既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜないでください。選択肢は、Hono + React/Vite (デフォルト)、RAG (Hono + React/Vite)、Python/FastAPI + React/Vite、API only (FastAPI)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite、Rust + Axum + React/Vite など、アプリケーションの runtime / framework 構成を識別できる粒度にしてください。「デフォルト」を独立した選択肢にはせず、通常の Hono starter の選択肢を必ず Hono + React/Vite (デフォルト) と表示してください。DB/永続化は必ず別の質問で選び、技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めないでください。RAG は RAG (Hono + React/Vite)、API only は API only (FastAPI)、Rust starter は Rust + Axum + React/Vite と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めてください。";
 
 const STARTER_TEMPLATE_DATABASE_VARIANT_POLICY =
-	"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の implementationPlan.steps に含めてください。";
+	"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。";
 
 const DATABASE_QUESTION_GUIDANCE = `DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、template の branch variant または実装計画での DB 差し替えを識別できる選択肢にしてください。技術スタックに専用 variant がないことを理由に DB の選択肢を除外しないでください。${STARTER_TEMPLATE_DATABASE_VARIANT_POLICY}`;
 
@@ -275,7 +275,7 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"Questionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。",
 		STARTER_TEMPLATE_DATABASE_VARIANT_POLICY,
 		"Questionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。",
-		"専用 variant がなく SQLite variant へフォールバックする場合、implementationPlan では SQLite variant の取得を taskType=scaffold の step、選択 DB への差し替えをそれに依存する taskType=implementation の step として分けてください。",
+		"専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。",
 		"Questionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。",
 		"検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。unit / focused test / API smoke / DB verification / E2E の採否と範囲は回答どおりにし、Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。",
 		"Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。",
@@ -286,31 +286,29 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",
 		"auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。",
 		"`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。",
-		"contentTemplate の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。実装計画の位置には `{{IMPLEMENTATION_PLAN}}`、`## 完了条件` の本文には `{{ACCEPTANCE_CRITERIA}}` をそれぞれ正確に1件だけ置き、実装計画や完了条件の項目を contentTemplate へ直接書かないでください。",
+		"markdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。",
 		"`## 目的` は 1-2 文にしてください。",
 		"`## スコープ` は対象 / 非対象を短い箇条書きにしてください。",
 		"`## タスク分類` は分類と理由を 2-3 行で書いてください。",
-		"production変更は implementationPlan.steps にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。",
-		"implementationPlan は version=1、requiresDataMigration、steps を返してください。各stepは一意な key、title、description、taskType(scaffold または implementation)、dependsOnKeysを持ちます。test、verification、review、closeout、固定Todo gateはstepsへ入れないでください。",
-		"implementationPlanを作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ requiresDataMigration=true にし、不要な場合はfalseにしてください。",
-		"requiresDataMigration=true の場合は、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行うproduction stepをimplementationPlan.stepsへ必ず1件以上含めてください。このstepは後続Coding AgentがtaskType=data_migrationのTodoとして分離できるtitleとdescriptionにし、固定Todo gateの文言そのものは使わないでください。requiresDataMigration=false の場合はmigration作業をstepsへ追加しないでください。",
-		"stepsは実装順に並べ、dependsOnKeysは同じimplementationPlan内の先行stepのkeyだけを参照し、循環させないでください。",
+		"production変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。",
+		"`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。",
+		"実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。",
 		"`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。",
-		"`## 検証計画` は acceptanceCriteria で列挙した必須テスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。具体的なテストケースはrepository調査後にCoding Agentが決めます。unit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。",
+		"`## 検証計画` は `## 完了条件` で列挙した必須テスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。具体的なテストケースはrepository調査後にCoding Agentが決めます。unit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。",
 		"`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。",
 		"`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。",
 		"個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。",
 		"Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。",
-		"acceptanceCriteria は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は title と category だけを返してください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。",
+		"`## 完了条件` は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。",
 		SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA,
 		"title には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。",
-		"acceptanceCriteriaとして採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。",
-		"acceptanceCriteriaのtitleは挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。",
-		"機能の期待挙動と対応する自動テスト証跡をacceptanceCriteriaに整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。",
+		"完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。",
+		"完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。",
+		"機能の期待挙動と対応する自動テスト証跡を `## 完了条件` に整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。",
 		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
 			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
-		"出力は JSON object のみで、title、contentTemplate、implementationPlan、acceptanceCriteria を返してください。contentTemplate は Markdown 文字列にしてください。",
+		"出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。",
 	].join("\n");
 }
 

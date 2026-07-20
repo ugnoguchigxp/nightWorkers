@@ -8,7 +8,7 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { implementationQueueEntries, taskMessages } from "../../db/schema";
-import { readFeaturePlanImplementationPlanMetadata } from "../specification/feature-plan-implementation-plan";
+import { digestFeaturePlanContent } from "../specification/feature-plan-content";
 
 type QueueEntry = typeof implementationQueueEntries.$inferSelect;
 type MissionPilotSessionGuard = { sessionId: string; version: number };
@@ -21,7 +21,7 @@ export type MissionPilotImplementationEnvelope = {
 	featurePlanMessageId: string;
 	verificationDocumentId: string;
 	planReviewId: string;
-	implementationPlanProvenance: {
+	featurePlanProvenance: {
 		version: 1;
 		sourceMessageId: string;
 		digest: string;
@@ -33,7 +33,7 @@ export type MissionPilotImplementationStartResolution =
 	| {
 			kind: "ready";
 			envelope: MissionPilotImplementationEnvelope;
-			implementationPlanProvenance: {
+			featurePlanProvenance: {
 				version: 1;
 				sourceMessageId: string;
 				digest: string;
@@ -67,7 +67,7 @@ export async function resolveMissionPilotImplementationStart(
 	);
 	if (!parsedHandoff.success) {
 		return blocked(
-			"MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_MISSING",
+			"MISSION_PILOT_FEATURE_PLAN_HANDOFF_MISSING",
 			"Mission Pilot Queue handoff is missing or invalid.",
 			session,
 		);
@@ -80,9 +80,7 @@ export async function resolveMissionPilotImplementationStart(
 		handoff.sessionId !== session.id ||
 		handoff.reviewedContextRevision !== session.contextRevision ||
 		handoff.reviewedContextDigest !== session.contextDigest ||
-		handoff.routingRevision !== session.planRoutingRevision ||
-		handoff.implementationTodoProjectionVersion !== 1 ||
-		handoff.implementationPlanSourceMessageId !== handoff.featurePlanMessageId
+		handoff.routingRevision !== session.planRoutingRevision
 	) {
 		return blocked(
 			"MISSION_PILOT_IMPLEMENTATION_HANDOFF_MISMATCH",
@@ -99,7 +97,7 @@ export async function resolveMissionPilotImplementationStart(
 		db
 			.select()
 			.from(taskMessages)
-			.where(eq(taskMessages.id, handoff.implementationPlanSourceMessageId))
+			.where(eq(taskMessages.id, handoff.featurePlanMessageId))
 			.limit(1),
 	]);
 	if (
@@ -119,25 +117,21 @@ export async function resolveMissionPilotImplementationStart(
 	}
 	if (!featurePlanMessage || featurePlanMessage.taskId !== entry.taskId) {
 		return blocked(
-			"MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_MISSING",
+			"MISSION_PILOT_FEATURE_PLAN_HANDOFF_MISSING",
 			"Reviewed Feature Plan message is missing.",
 			session,
 		);
 	}
-	const implementationPlan = readFeaturePlanImplementationPlanMetadata(
-		featurePlanMessage.metadataJson,
+	const featurePlanContentDigest = digestFeaturePlanContent(
+		featurePlanMessage.content,
 	);
-	if (!implementationPlan) {
+	if (
+		handoff.featurePlanContentDigest &&
+		featurePlanContentDigest !== handoff.featurePlanContentDigest
+	) {
 		return blocked(
-			"MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_INVALID",
-			"Reviewed Feature Plan implementation plan is missing or invalid.",
-			session,
-		);
-	}
-	if (implementationPlan.digest !== handoff.implementationPlanDigest) {
-		return blocked(
-			"MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_DIGEST_MISMATCH",
-			"Reviewed Feature Plan implementation plan digest does not match the Queue handoff.",
+			"MISSION_PILOT_FEATURE_PLAN_DIGEST_MISMATCH",
+			"Reviewed Feature Plan content digest does not match the Queue handoff.",
 			session,
 		);
 	}
@@ -151,16 +145,16 @@ export async function resolveMissionPilotImplementationStart(
 			featurePlanMessageId: handoff.featurePlanMessageId,
 			verificationDocumentId: handoff.verificationDocumentId,
 			planReviewId: handoff.planReviewId,
-			implementationPlanProvenance: {
+			featurePlanProvenance: {
 				version: 1,
-				sourceMessageId: handoff.implementationPlanSourceMessageId,
-				digest: implementationPlan.digest,
+				sourceMessageId: handoff.featurePlanMessageId,
+				digest: featurePlanContentDigest,
 			},
 		},
-		implementationPlanProvenance: {
+		featurePlanProvenance: {
 			version: 1,
-			sourceMessageId: handoff.implementationPlanSourceMessageId,
-			digest: implementationPlan.digest,
+			sourceMessageId: handoff.featurePlanMessageId,
+			digest: featurePlanContentDigest,
 		},
 	};
 }
@@ -186,7 +180,7 @@ export async function holdBlockedMissionPilotImplementationStart(input: {
 				leaseAcquiredAt: null,
 				leaseExpiresAt: null,
 				statusReason: input.message,
-				lastFailureKind: "mission_pilot_todo_projection_blocked",
+				lastFailureKind: "mission_pilot_feature_plan_handoff_blocked",
 				updatedAt: now,
 			})
 			.where(
@@ -242,12 +236,12 @@ export async function holdBlockedMissionPilotImplementationStart(input: {
 				id: crypto.randomUUID(),
 				sessionId: session.id,
 				taskId: session.taskId,
-				eventType: "todo_projection_blocked",
+				eventType: "feature_plan_handoff_blocked",
 				phase: "attention",
 				cycle: session.implementationCycle,
 				contextRevision: session.contextRevision,
 				contextDigest: session.contextDigest,
-				dedupeKey: `todo-projection:blocked:${input.entry.id}:${input.entry.leaseVersion}`,
+				dedupeKey: `feature-plan-handoff:blocked:${input.entry.id}:${input.entry.leaseVersion}`,
 				sourceKind: "queue",
 				sourceId: input.entry.id,
 				payloadJson: {
@@ -263,8 +257,8 @@ export async function holdBlockedMissionPilotImplementationStart(input: {
 									diagnosticHandoff.data.reviewedContextRevision,
 								reviewedContextDigest:
 									diagnosticHandoff.data.reviewedContextDigest,
-								implementationPlanDigest:
-									diagnosticHandoff.data.implementationPlanDigest,
+								featurePlanContentDigest:
+									diagnosticHandoff.data.featurePlanContentDigest,
 							}
 						: {}),
 				},

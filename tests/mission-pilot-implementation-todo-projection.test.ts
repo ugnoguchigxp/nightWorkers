@@ -21,7 +21,7 @@ import {
 	resolveMissionPilotImplementationStart,
 } from "../api/modules/missionPilot/mission-pilot-implementation-todo-projection.service";
 import { associateMissionPilotChildRun } from "../api/modules/missionPilot/mission-pilot-run-association.service";
-import { buildFeaturePlanImplementationPlanMetadata } from "../api/modules/specification/feature-plan-implementation-plan";
+import { digestFeaturePlanContent } from "../api/modules/specification/feature-plan-content";
 
 const repositoryIds: string[] = [];
 
@@ -32,31 +32,17 @@ afterEach(async () => {
 	}
 });
 
-async function createFixture(input?: { admissionKey?: string | null }) {
+async function createFixture(input?: {
+	admissionKey?: string | null;
+	legacyHandoff?: boolean;
+	missingProvenance?: boolean;
+}) {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	const sourceId = crypto.randomUUID();
 	repositoryIds.push(repositoryId);
-	const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
-		version: 1,
-		requiresDataMigration: true,
-		steps: [
-			{
-				key: "db",
-				title: "Todo schemaを実装する",
-				description: "Todoを所有者単位で保存するschemaを追加する。",
-				taskType: "implementation",
-				dependsOnKeys: [],
-			},
-			{
-				key: "api",
-				title: "Todo APIを実装する",
-				description: "認証済み所有者のCRUD APIを追加する。",
-				taskType: "implementation",
-				dependsOnKeys: ["db"],
-			},
-		],
-	});
+	const featurePlanContent = "# Feature Plan\n\n## 実装計画\n1. Todo schema";
+	const featurePlanContentDigest = digestFeaturePlanContent(featurePlanContent);
 	const fixture = await db.transaction(async (tx) => {
 		await tx.insert(repositories).values({
 			id: repositoryId,
@@ -84,12 +70,15 @@ async function createFixture(input?: { admissionKey?: string | null }) {
 			.values({
 				taskId,
 				role: "assistant",
-				content: "# Feature Plan\n\n## 実装計画\n1. Todo schema",
+				content: featurePlanContent,
 				messageType: "markdown_document",
 				metadataJson: {
 					intent: "feature_plan",
 					title: "Feature Plan",
-					implementationPlan,
+					featurePlanContent: {
+						version: 1,
+						digest: featurePlanContentDigest,
+					},
 				},
 			})
 			.returning();
@@ -161,9 +150,15 @@ async function createFixture(input?: { admissionKey?: string | null }) {
 							reviewedContextDigest: session.contextDigest,
 							routingRevision: 0,
 							featurePlanMessageId: featurePlanMessage.id,
-							implementationTodoProjectionVersion: 1,
-							implementationPlanSourceMessageId: featurePlanMessage.id,
-							implementationPlanDigest: implementationPlan.digest,
+							...(input?.missingProvenance
+								? {}
+								: input?.legacyHandoff
+									? {
+											implementationTodoProjectionVersion: 1,
+											implementationPlanSourceMessageId: featurePlanMessage.id,
+											implementationPlanDigest: `sha256:${"1".repeat(64)}`,
+										}
+									: { featurePlanContentDigest }),
 							verificationDocumentId: crypto.randomUUID(),
 							planReviewId,
 							planReviewVerdict: "pass",
@@ -178,7 +173,7 @@ async function createFixture(input?: { admissionKey?: string | null }) {
 			session,
 			featurePlanMessage,
 			entry,
-			implementationPlan,
+			featurePlanContentDigest,
 			planReviewId,
 		};
 	});
@@ -193,14 +188,39 @@ describe("Mission Pilot implementation handoff validation", () => {
 		);
 		expect(resolution).toMatchObject({
 			kind: "ready",
-			implementationPlanProvenance: {
+			featurePlanProvenance: {
 				version: 1,
 				sourceMessageId: fixture.featurePlanMessage.id,
-				digest: fixture.implementationPlan.digest,
+				digest: fixture.featurePlanContentDigest,
 			},
 		});
 		if (resolution.kind !== "ready") throw new Error("Expected ready");
 		expect(resolution).not.toHaveProperty("initialTodos");
+	});
+
+	it("accepts a persisted legacy Queue handoff without a Markdown digest", async () => {
+		const fixture = await createFixture({ legacyHandoff: true });
+
+		expect(
+			await resolveMissionPilotImplementationStart(fixture.entry),
+		).toMatchObject({
+			kind: "ready",
+			featurePlanProvenance: {
+				sourceMessageId: fixture.featurePlanMessage.id,
+				digest: fixture.featurePlanContentDigest,
+			},
+		});
+	});
+
+	it("rejects a Queue handoff without current or legacy provenance", async () => {
+		const fixture = await createFixture({ missingProvenance: true });
+
+		expect(
+			await resolveMissionPilotImplementationStart(fixture.entry),
+		).toMatchObject({
+			kind: "blocked",
+			code: "MISSION_PILOT_FEATURE_PLAN_HANDOFF_MISSING",
+		});
 	});
 
 	it("uses admission key absence as the normal Queue boundary even when a Session exists", async () => {
@@ -239,7 +259,7 @@ describe("Mission Pilot implementation handoff validation", () => {
 			.set({
 				queueHandoffJson: {
 					...session.queueHandoffJson,
-					implementationPlanDigest: `sha256:${"0".repeat(64)}`,
+					featurePlanContentDigest: `sha256:${"0".repeat(64)}`,
 				},
 			})
 			.where(eq(missionPilotSessions.id, fixture.session.id));
@@ -248,7 +268,7 @@ describe("Mission Pilot implementation handoff validation", () => {
 		);
 		expect(resolution).toMatchObject({
 			kind: "blocked",
-			code: "MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_DIGEST_MISMATCH",
+			code: "MISSION_PILOT_FEATURE_PLAN_DIGEST_MISMATCH",
 		});
 		if (resolution.kind !== "blocked") throw new Error("Expected blocked");
 		await holdBlockedMissionPilotImplementationStart({
@@ -278,22 +298,21 @@ describe("Mission Pilot implementation handoff validation", () => {
 			leaseOwnerId: null,
 			leaseExpiresAt: null,
 			activeRunId: null,
-			lastFailureKind: "mission_pilot_todo_projection_blocked",
+			lastFailureKind: "mission_pilot_feature_plan_handoff_blocked",
 		});
 		expect(heldSession).toMatchObject({
 			phase: "attention",
 			resumePhase: "implementation_starting",
-			lastErrorCode:
-				"MISSION_PILOT_IMPLEMENTATION_TODO_PROJECTION_DIGEST_MISMATCH",
+			lastErrorCode: "MISSION_PILOT_FEATURE_PLAN_DIGEST_MISMATCH",
 		});
 		expect(runs).toHaveLength(0);
 		expect(events).toEqual([
 			expect.objectContaining({
-				eventType: "todo_projection_blocked",
+				eventType: "feature_plan_handoff_blocked",
 				payloadJson: expect.objectContaining({
 					featurePlanMessageId: fixture.featurePlanMessage.id,
 					planReviewId: fixture.planReviewId,
-					implementationPlanDigest: `sha256:${"0".repeat(64)}`,
+					featurePlanContentDigest: `sha256:${"0".repeat(64)}`,
 				}),
 			}),
 		]);
@@ -326,7 +345,7 @@ describe("Mission Pilot implementation handoff validation", () => {
 			.set({
 				queueHandoffJson: {
 					...session.queueHandoffJson,
-					implementationPlanDigest: `sha256:${"0".repeat(64)}`,
+					featurePlanContentDigest: `sha256:${"0".repeat(64)}`,
 				},
 			})
 			.where(eq(missionPilotSessions.id, fixture.session.id));

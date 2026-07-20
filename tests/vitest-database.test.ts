@@ -6,6 +6,7 @@ import {
 	cleanupVitestDatabase,
 	resolveVitestDatabase,
 } from "../scripts/vitest-database.mjs";
+import { assertVitestDatabaseIsolation } from "./vitest-db-env";
 
 const testDirectory = path.join(
 	os.tmpdir(),
@@ -17,6 +18,20 @@ afterEach(() => {
 });
 
 describe("Vitest database lifecycle", () => {
+	it("allows cleanup only for the configured isolated test database", () => {
+		const databasePath = path.join(testDirectory, "isolated.sqlite");
+		expect(() =>
+			assertVitestDatabaseIsolation(`file:${databasePath}`, {
+				NIGHTWORKERS_VITEST_DB_PATH: databasePath,
+			}),
+		).not.toThrow();
+		expect(() =>
+			assertVitestDatabaseIsolation("file:.nightworkers/sqlite.db", {
+				NIGHTWORKERS_VITEST_DB_PATH: databasePath,
+			}),
+		).toThrow("Refusing destructive test cleanup");
+	});
+
 	it("preserves an explicitly configured database", () => {
 		fs.mkdirSync(testDirectory, { recursive: true });
 		const databasePath = path.join(testDirectory, "configured.sqlite");

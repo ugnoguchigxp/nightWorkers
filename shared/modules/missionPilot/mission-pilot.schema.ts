@@ -76,28 +76,51 @@ export const missionPilotInitialPromptStateSchema = z.enum([
 	"sent",
 	"failed",
 ]);
-export const missionPilotQueueHandoffSchema = z.object({
-	sessionId: z.string().uuid(),
-	taskId: z.string().uuid(),
-	admissionKey: z.string().min(1),
-	queueEntryId: z.string().uuid(),
-	queueEntryStatus: z.literal("queued"),
-	queueClaimReady: z.literal(false),
-	reviewedContextRevision: z.number().int().positive(),
-	reviewedContextDigest: z.string().min(1),
-	routingRevision: z.number().int().nonnegative().default(0),
-	featurePlanMessageId: z.string().uuid(),
-	implementationTodoProjectionVersion: z.literal(1).optional(),
-	implementationPlanSourceMessageId: z.string().uuid().optional(),
-	implementationPlanDigest: z
-		.string()
-		.regex(/^sha256:[a-f0-9]{64}$/)
-		.optional(),
-	verificationDocumentId: z.string().uuid(),
-	planReviewId: z.string().uuid(),
-	planReviewVerdict: z.literal("pass"),
-	queuedAt: dateLikeSchema,
-});
+export const missionPilotQueueHandoffSchema = z
+	.object({
+		sessionId: z.string().uuid(),
+		taskId: z.string().uuid(),
+		admissionKey: z.string().min(1),
+		queueEntryId: z.string().uuid(),
+		queueEntryStatus: z.literal("queued"),
+		queueClaimReady: z.literal(false),
+		reviewedContextRevision: z.number().int().positive(),
+		reviewedContextDigest: z.string().min(1),
+		routingRevision: z.number().int().nonnegative().default(0),
+		featurePlanMessageId: z.string().uuid(),
+		featurePlanContentDigest: z
+			.string()
+			.regex(/^sha256:[a-f0-9]{64}$/)
+			.optional(),
+		// Read-only compatibility for queue handoffs persisted before Markdown
+		// became the Feature Plan canonical source.
+		implementationTodoProjectionVersion: z.literal(1).optional(),
+		implementationPlanSourceMessageId: z.string().uuid().optional(),
+		implementationPlanDigest: z
+			.string()
+			.regex(/^sha256:[a-f0-9]{64}$/)
+			.optional(),
+		verificationDocumentId: z.string().uuid(),
+		planReviewId: z.string().uuid(),
+		planReviewVerdict: z.literal("pass"),
+		queuedAt: dateLikeSchema,
+	})
+	.superRefine((handoff, context) => {
+		if (handoff.featurePlanContentDigest) return;
+		if (
+			handoff.implementationTodoProjectionVersion === 1 &&
+			handoff.implementationPlanSourceMessageId ===
+				handoff.featurePlanMessageId &&
+			handoff.implementationPlanDigest
+		)
+			return;
+		context.addIssue({
+			code: "custom",
+			path: ["featurePlanContentDigest"],
+			message:
+				"Queue handoff requires a Feature Plan content digest or complete legacy provenance.",
+		});
+	});
 export const missionPilotPreQueueDiagnosticCodeSchema = z.enum([
 	"MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL",
 	"MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",

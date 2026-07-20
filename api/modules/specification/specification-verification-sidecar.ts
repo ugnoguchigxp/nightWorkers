@@ -14,6 +14,7 @@ type BuildInput = {
 	sourceMessageIds: string[];
 	workspace: PlanModeWorkspace;
 	acceptanceCriteria?: SpecificationAcceptanceCriterion[];
+	inferConditionSemantics?: boolean;
 	generatedAt?: string;
 };
 
@@ -26,7 +27,10 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 				content: input.content,
 				conditions: input.acceptanceCriteria.map(buildGeneratedCondition),
 			}
-		: annotateCompletionConditions(input.content);
+		: annotateCompletionConditions(
+				input.content,
+				input.inferConditionSemantics !== false,
+			);
 	const { content, conditions } = annotated;
 	const commands = extractVerificationCommands(content, conditions);
 	return {
@@ -65,7 +69,10 @@ function buildGeneratedCondition(
 	};
 }
 
-function annotateCompletionConditions(markdown: string): {
+function annotateCompletionConditions(
+	markdown: string,
+	inferSemantics: boolean,
+): {
 	content: string;
 	conditions: VerificationCondition[];
 } {
@@ -89,16 +96,30 @@ function annotateCompletionConditions(markdown: string): {
 		const rawText = bullet[2]?.trim() || "";
 		if (!rawText || /^\[[xX]\]/.test(rawText)) return line;
 		const text = rawText.replace(/^\[\s\]\s*/, "");
+		const typedCondition = text.match(
+			/^\[?(AC-\d{3})\]?\s*\[(api|ui|db|validation|auth|workflow|migration|other)\]\s+(.+)$/,
+		);
 		const existingId = text.match(/^\[?(AC-\d{3})\]?\s*[:：-]?\s*(.+)$/);
+		const requestedId = typedCondition?.[1] || existingId?.[1];
 		const id =
-			existingId?.[1] && !usedConditionIds.has(existingId[1])
-				? existingId[1]
+			requestedId && !usedConditionIds.has(requestedId)
+				? requestedId
 				: nextAvailableConditionId(usedConditionIds, conditionIndex);
-		const conditionText = (existingId?.[2] || text).trim();
+		const conditionText = (
+			typedCondition?.[3] ||
+			existingId?.[2] ||
+			text
+		).trim();
+		const category = typedCondition?.[2] as
+			| VerificationCondition["category"]
+			| undefined;
 		conditionIndex += 1;
 		usedConditionIds.add(id);
-		conditions.push(buildCondition(id, conditionText));
-		if (existingId?.[1] === id) return line;
+		conditions.push(
+			buildCondition(id, conditionText, category, inferSemantics),
+		);
+		if (requestedId === id) return line;
+		if (category) return `${bullet[1]}[${id}][${category}] ${conditionText}`;
 		return `${bullet[1]}[${id}] ${conditionText}`;
 	});
 	return { content: nextLines.join("\n"), conditions };
@@ -114,7 +135,38 @@ function nextAvailableConditionId(usedIds: Set<string>, startIndex: number) {
 	return id;
 }
 
-function buildCondition(id: string, text: string): VerificationCondition {
+function buildCondition(
+	id: string,
+	text: string,
+	explicitCategory?: VerificationCondition["category"],
+	inferSemantics = true,
+): VerificationCondition {
+	if (explicitCategory) {
+		return {
+			id,
+			text,
+			category: explicitCategory,
+			verificationKind: "automated_test",
+			expectedEvidence: ["automated_test"],
+			expectedResult: text,
+			failureMeaning: `${text} が満たされない場合、この完了条件は未達です。`,
+			required: true,
+			status: "pending",
+		};
+	}
+	if (!inferSemantics) {
+		return {
+			id,
+			text,
+			category: "other",
+			verificationKind: "automated_test",
+			expectedEvidence: ["automated_test"],
+			expectedResult: text,
+			failureMeaning: `${text} が満たされない場合、この完了条件は未達です。`,
+			required: true,
+			status: "pending",
+		};
+	}
 	const category = inferCategory(text);
 	const verificationKind =
 		/manual|手動|目視|確認者|運用/i.test(text) &&

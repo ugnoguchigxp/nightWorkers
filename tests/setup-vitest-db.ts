@@ -1,13 +1,19 @@
 import { afterEach } from "vitest";
+import { config } from "../api/config";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { client } from "../api/db/client";
-import { applyVitestDatabaseEnv } from "./vitest-db-env";
+import {
+	applyVitestDatabaseEnv,
+	assertVitestDatabaseIsolation,
+} from "./vitest-db-env";
 
 applyVitestDatabaseEnv();
+assertVitestDatabaseIsolation(config.DATABASE_URL);
 installRegularVitestLlmFetchGuard();
 await ensureNightWorkersSchema();
 
 afterEach(async () => {
+	assertVitestDatabaseIsolation(config.DATABASE_URL);
 	await client.execute("DELETE FROM application_setting_secrets");
 	await client.execute("DELETE FROM application_settings");
 	await client.execute("DELETE FROM application_setting_migrations");

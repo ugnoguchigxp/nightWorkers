@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
+import * as verificationRepo from "../api/modules/nightworkers/nightworkers.verification.repository";
 import * as questionnaireRepo from "../api/modules/questionnaire/questionnaire.repository";
 import { generateAdditionalDesignQuestionnaireQuestions } from "../api/modules/questionnaire/questionnaire-additional.service";
 import { generateFeaturePlanArtifact } from "../api/modules/specification/specification-generation.service";
@@ -106,11 +107,8 @@ describe("Questionnaire decision layer services", () => {
 			});
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				title: "Feature Plan",
-				contentTemplate:
-					"## 目的\n未回答 blocking を assumption として進める。\n\n{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
-				implementationPlan: fixtureImplementationPlan(),
-				acceptanceCriteria: fixtureAcceptanceCriteria(),
+				markdown:
+					"# Feature Plan\n\n## 目的\n未回答 blocking を assumption として進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
 			});
 			const result = await generateFeaturePlanArtifact(task.id, {
 				questionnaireSessionId: session.id,
@@ -120,14 +118,17 @@ describe("Questionnaire decision layer services", () => {
 			expect(result.message.metadataJson).toMatchObject({
 				intent: "feature_plan",
 				questionnaireSessionId: session.id,
-				implementationPlan: {
-					...fixtureImplementationPlan(),
+				verificationSidecarStatus: "ready",
+				featurePlanContent: {
+					version: 1,
 					digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
 				},
 			});
 			expect(result.message.content).toContain("## 実装計画");
 			expect(result.message.content).toContain("Todo本体を実装する");
-			expect(result.message.content).not.toContain("{{IMPLEMENTATION_PLAN}}");
+			expect(result.message.metadataJson).not.toHaveProperty(
+				"implementationPlan",
+			);
 		} finally {
 			restoreFixtureProvider(env);
 		}
@@ -143,11 +144,8 @@ describe("Questionnaire decision layer services", () => {
 				blocking: false,
 			});
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				title: "Feature Plan",
-				contentTemplate:
-					"## 目的\nnon-blocking は既存資料から進める。\n\n{{IMPLEMENTATION_PLAN}}\n\n## 完了条件\n{{ACCEPTANCE_CRITERIA}}",
-				implementationPlan: fixtureImplementationPlan(),
-				acceptanceCriteria: fixtureAcceptanceCriteria(),
+				markdown:
+					"# Feature Plan\n\n## 目的\nnon-blocking は既存資料から進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
 			});
 
 			const result = await generateFeaturePlanArtifact(task.id, {
@@ -162,32 +160,38 @@ describe("Questionnaire decision layer services", () => {
 			restoreFixtureProvider(env);
 		}
 	});
+
+	it("persists a failed sidecar state without discarding the Feature Plan", async () => {
+		const env = useFixtureProvider();
+		const createVerification = vi
+			.spyOn(verificationRepo, "createVerificationDocument")
+			.mockRejectedValueOnce(new Error("verification storage unavailable"));
+		try {
+			const { task } = await createPlanModeTask("Sidecar failure isolation");
+			const markdown =
+				"# Feature Plan\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる";
+			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({ markdown });
+
+			const result = await generateFeaturePlanArtifact(task.id);
+			const persisted = (await nightworkersRepo.listTaskMessages(task.id)).find(
+				(message) => message.id === result.message.id,
+			);
+
+			expect(result.message.content).toBe(markdown);
+			expect(result.message.metadataJson).toMatchObject({
+				intent: "feature_plan",
+				verificationSidecarStatus: "failed",
+			});
+			expect(persisted?.content).toBe(markdown);
+			expect(persisted?.metadataJson).toMatchObject({
+				verificationSidecarStatus: "failed",
+			});
+		} finally {
+			createVerification.mockRestore();
+			restoreFixtureProvider(env);
+		}
+	});
 });
-
-function fixtureImplementationPlan() {
-	return {
-		version: 1,
-		requiresDataMigration: false,
-		steps: [
-			{
-				key: "todo-core",
-				title: "Todo本体を実装する",
-				description: "Questionnaireの決定に沿ってTodo本体を実装する。",
-				taskType: "implementation",
-				dependsOnKeys: [],
-			},
-		],
-	};
-}
-
-function fixtureAcceptanceCriteria() {
-	return [
-		{
-			title: "Todoを作成できる",
-			category: "api",
-		},
-	];
-}
 
 async function createPlanModeTask(label: string) {
 	const repository = await nightworkersRepo.createRepository({

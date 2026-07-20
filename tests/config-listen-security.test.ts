@@ -33,7 +33,50 @@ function loadConfig(input: {
 	);
 }
 
+function loadOAuthConfigWithoutAppUrl(nodeEnv: "development" | "production") {
+	return spawnSync(
+		"bun",
+		[
+			"-e",
+			"const { config } = await import('./api/config.ts'); process.stdout.write(config.APP_URL || '')",
+		],
+		{
+			cwd: process.cwd(),
+			encoding: "utf8",
+			env: {
+				...process.env,
+				NIGHTWORKERS_E2E_ISOLATED: "1",
+				NIGHTWORKERS_CONFIG_TEST: "1",
+				NODE_ENV: nodeEnv,
+				HOST: "127.0.0.1",
+				PORT: "40200",
+				DATABASE_URL: "file:/tmp/nightworkers-config-oauth.sqlite",
+				JWT_SECRET: "nightworkers-config-oauth-secret-32-chars",
+				AUTH_MODE: "both",
+				APP_URL: undefined,
+				API_AUTH_REQUIRED: "false",
+				CORS_ORIGIN: "http://localhost:39174",
+				NIGHTWORKERS_DESKTOP: "0",
+			},
+		},
+	);
+}
+
 describe("production listen config", () => {
+	it("derives a loopback APP_URL for local OAuth-capable development", () => {
+		const result = loadOAuthConfigWithoutAppUrl("development");
+		expect(result.status, result.stderr).toBe(0);
+		expect(result.stdout).toBe("http://127.0.0.1:40200");
+	});
+
+	it("still requires an explicit APP_URL for OAuth-capable production", () => {
+		const result = loadOAuthConfigWithoutAppUrl("production");
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain(
+			"APP_URL is required when AUTH_MODE is oauth or both.",
+		);
+	});
+
 	it.each([
 		"127.0.0.1",
 		"::1",

@@ -133,8 +133,7 @@ describe("NightWorkers task routes status and normalization", () => {
 			).toBe(false);
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				title: "Kanban Specification",
-				contentTemplate: [
+				markdown: [
 					"# Kanban Specification",
 					"",
 					"## 1. 目的",
@@ -152,25 +151,12 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## Appendix. Questionnaire Decisions",
 					"最初に作る画面はどれですか？",
 					"",
-					"{{IMPLEMENTATION_PLAN}}",
+					"## 実装計画",
+					"1. 画面実装: Operations Command Centerを実装する。",
 					"",
 					"## 完了条件",
-					"{{ACCEPTANCE_CRITERIA}}",
+					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
-				acceptanceCriteria: [fixtureAcceptanceCriterion()],
-				implementationPlan: {
-					version: 1,
-					requiresDataMigration: false,
-					steps: [
-						{
-							key: "implement",
-							title: "画面実装",
-							description: "Operations Command Centerを実装する。",
-							taskType: "implementation",
-							dependsOnKeys: [],
-						},
-					],
-				},
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
@@ -461,8 +447,7 @@ describe("NightWorkers task routes status and normalization", () => {
 			});
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
-				title: "Mechanical Design Document",
-				contentTemplate: [
+				markdown: [
 					"# Mechanical Design Document",
 					"",
 					"## 1. 目的",
@@ -480,25 +465,12 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## Appendix. Questionnaire Decisions",
 					"Which screen should be designed first?",
 					"",
-					"{{IMPLEMENTATION_PLAN}}",
+					"## 実装計画",
+					"1. 画面実装: Design documentを実装する。",
 					"",
 					"## 完了条件",
-					"{{ACCEPTANCE_CRITERIA}}",
+					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
-				acceptanceCriteria: [fixtureAcceptanceCriterion()],
-				implementationPlan: {
-					version: 1,
-					requiresDataMigration: false,
-					steps: [
-						{
-							key: "implement",
-							title: "画面実装",
-							description: "Design documentを実装する。",
-							taskType: "implementation",
-							dependsOnKeys: [],
-						},
-					],
-				},
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
@@ -617,10 +589,3 @@ describe("NightWorkers task routes status and normalization", () => {
 		}
 	});
 });
-
-function fixtureAcceptanceCriterion() {
-	return {
-		title: "初期画面を表示できる",
-		category: "ui",
-	};
-}

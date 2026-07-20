@@ -26,6 +26,20 @@ ensureRuntimeDatabasePath(process.env, {
 	legacyDatabaseUrl: configuredDatabaseUrl,
 });
 applyPersistedBootstrapSettings(process.env);
+applyDevelopmentAppUrlDefault(process.env);
+
+function applyDevelopmentAppUrlDefault(env: NodeJS.ProcessEnv) {
+	if (
+		(env.NODE_ENV ?? "development") !== "development" ||
+		env.APP_URL?.trim()
+	) {
+		return;
+	}
+	const port = Number(env.PORT);
+	const resolvedPort =
+		Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : 39_173;
+	env.APP_URL = `http://127.0.0.1:${resolvedPort}`;
+}
 
 function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 	if (

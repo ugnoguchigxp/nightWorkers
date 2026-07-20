@@ -119,7 +119,7 @@ describe("design questionnaire prompts", () => {
 			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
 		);
 		expect(prompt).toContain("対応する SQLite variant を雛形として使用");
-		expect(prompt).toContain("implementationPlan.steps");
+		expect(prompt).toContain("Feature Plan の `## 実装計画`");
 		expect(prompt).toContain("各 options は 2-10 件");
 		expect(prompt).toContain(
 			"本当に複数の選択肢を同時に採用できる設問だけ checkbox",

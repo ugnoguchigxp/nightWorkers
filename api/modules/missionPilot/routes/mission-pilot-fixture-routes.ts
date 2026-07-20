@@ -28,7 +28,7 @@ import {
 import { createOpenApiRouter } from "../../../lib/openapi";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import { codingAgentChatTrace } from "../../nightworkers/nightworkers.trace-provenance";
-import { buildFeaturePlanImplementationPlanMetadata } from "../../specification/feature-plan-implementation-plan";
+import { digestFeaturePlanContent } from "../../specification/feature-plan-content";
 import { isMissionPilotAgentSession } from "../agent/mission-pilot-agent-session.repository";
 import * as missionPilotRepo from "../mission-pilot.repository";
 
@@ -147,29 +147,20 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 			return c.json({ error: "Context snapshot not found" }, 404);
 		const now = new Date();
 		const questionnaireId = randomUUID();
-		const implementationPlan = buildFeaturePlanImplementationPlanMetadata({
-			version: 1,
-			requiresDataMigration: false,
-			steps: [
-				{
-					key: "fixture-implementation",
-					title: "fixture実装を確認する",
-					description: "Mission Pilot E2E fixtureの実装経路を確認する。",
-					taskType: "implementation",
-					dependsOnKeys: [],
-				},
-			],
-		});
+		const featurePlanContent =
+			"# Feature Plan\n\n## Completion Conditions\n\n- Assert the immutable Queue handoff";
 		const featurePlan = await repo.createTaskMessage({
 			taskId: input.taskId,
 			role: "assistant",
-			content:
-				"# Feature Plan\n\n## Completion Conditions\n\n- Assert the immutable Queue handoff",
+			content: featurePlanContent,
 			messageType: "markdown_document",
 			payloadJson: {
 				intent: "feature_plan",
 				title: "Feature Plan",
-				implementationPlan,
+				featurePlanContent: {
+					version: 1,
+					digest: digestFeaturePlanContent(featurePlanContent),
+				},
 			},
 			trace: codingAgentChatTrace(),
 		});
@@ -357,9 +348,7 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 			reviewedContextRevision: activationContextRevision,
 			reviewedContextDigest: contextDigest,
 			featurePlanMessageId: featurePlan.id,
-			implementationTodoProjectionVersion: 1 as const,
-			implementationPlanSourceMessageId: featurePlan.id,
-			implementationPlanDigest: implementationPlan.digest,
+			featurePlanContentDigest: digestFeaturePlanContent(featurePlanContent),
 			verificationDocumentId,
 			planReviewId,
 			planReviewVerdict: "pass" as const,
