@@ -292,6 +292,71 @@ export function findLatestImplementationHandoffMessage(
 	});
 }
 
+const IMPLEMENTATION_DESIGN_ARTIFACT_KINDS = [
+	"blueprint",
+	"data_model",
+	"api_io_contract",
+	"activity_flow",
+	"sequence_flow",
+	"user_flow",
+	"zod_schema_design",
+	"component_design",
+] as const;
+
+const IMPLEMENTATION_DESIGN_ARTIFACT_KIND_SET = new Set<string>(
+	IMPLEMENTATION_DESIGN_ARTIFACT_KINDS,
+);
+
+export function findLatestImplementationDesignArtifacts(
+	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>,
+	handoffMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number],
+) {
+	const sourceMessageIds = readImplementationHandoffSourceMessageIds(
+		handoffMessage?.metadataJson,
+	);
+	const sourceMessageIdSet = sourceMessageIds.length
+		? new Set(sourceMessageIds)
+		: null;
+	const latestByKind = new Map<
+		string,
+		Awaited<ReturnType<typeof repo.listTaskMessages>>[number]
+	>();
+	for (const message of messages) {
+		if (sourceMessageIdSet && !sourceMessageIdSet.has(message.id)) continue;
+		if (message.messageType !== "markdown_document") continue;
+		const metadata = toRecord(message.metadataJson);
+		const intent =
+			typeof metadata?.intent === "string" ? metadata.intent : null;
+		const view = typeof metadata?.view === "string" ? metadata.view : null;
+		const kind = IMPLEMENTATION_DESIGN_ARTIFACT_KIND_SET.has(intent ?? "")
+			? intent
+			: metadata?.artifactKind === "plan_mode_dedicated_view" &&
+					IMPLEMENTATION_DESIGN_ARTIFACT_KIND_SET.has(view ?? "")
+				? view
+				: intent === "app_blueprint" || intent === "mock_blueprint"
+					? "blueprint"
+					: null;
+		if (kind) latestByKind.set(kind, message);
+	}
+	return IMPLEMENTATION_DESIGN_ARTIFACT_KINDS.flatMap((kind) => {
+		const message = latestByKind.get(kind);
+		return message ? [{ kind, message }] : [];
+	});
+}
+
+function readImplementationHandoffSourceMessageIds(metadataJson: unknown) {
+	const metadata = toRecord(metadataJson);
+	const generation = toRecord(metadata?.generation);
+	const context = toRecord(generation?.context);
+	const inputProjection = toRecord(context?.inputProjection);
+	return Array.isArray(inputProjection?.sourceMessageIds)
+		? inputProjection.sourceMessageIds.filter(
+				(value): value is string =>
+					typeof value === "string" && value.length > 0,
+			)
+		: [];
+}
+
 export function buildCompiledPromptText(input: {
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
 	lastUserMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];

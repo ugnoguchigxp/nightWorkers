@@ -110,6 +110,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					"## 完了条件",
 					"- [AC-001][workflow] 初期実装を利用できる",
 				].join("\n"),
+				repositoryMaterializationIntent: null,
 			});
 			const featurePlanRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,

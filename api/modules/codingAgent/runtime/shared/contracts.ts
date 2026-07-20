@@ -29,6 +29,7 @@ type RuntimeEventPayload = unknown;
 export type RuntimeLaneEvent =
 	| { type: "runtime_started"; message: string; payload?: RuntimeEventPayload }
 	| { type: "turn_started"; message: string; payload?: RuntimeEventPayload }
+	| { type: "turn_finished"; message: string; payload?: RuntimeEventPayload }
 	| {
 			type: "model_response_started";
 			message: string;
@@ -99,7 +100,7 @@ export type RuntimeLaneEvent =
 	| {
 			type: "runtime_warning";
 			message: string;
-			payload?: RuntimeContractWarning;
+			payload?: RuntimeEventPayload;
 	  }
 	| { type: "runtime_error"; message: string; payload?: RuntimeEventPayload };
 

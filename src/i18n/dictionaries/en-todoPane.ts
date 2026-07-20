@@ -1,5 +1,7 @@
 export const enTodoPane = {
 	"todoPane.noActiveTodo": "No active Todo",
+	"todoPane.codexCurrentTodo": "Current: #{{seq}} {{title}}",
+	"todoPane.codexOpenTodo": "Open: #{{seq}} {{title}}",
 	"todoPane.resumeLabel": "Your response",
 	"todoPane.resumeDescription": "Provide the information required to continue.",
 	"todoPane.runtimePauseDescription":

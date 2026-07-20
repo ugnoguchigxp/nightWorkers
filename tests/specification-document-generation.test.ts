@@ -179,6 +179,16 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("確定済みの設計判断");
 		expect(systemPrompt).toContain("選択外のtest種別を追加したりしない");
 		expect(systemPrompt).toContain("`## 検証計画` と `## 完了条件` の拘束条件");
+		expect(systemPrompt).toContain("E2E は明示的な opt-in");
+		expect(systemPrompt).toContain(
+			"Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ",
+		);
+		expect(systemPrompt).toContain(
+			"Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めない",
+		);
+		expect(systemPrompt).toContain(
+			"Project package scripts に `test:e2e` 等が存在すること",
+		);
 		expect(systemPrompt).not.toContain("Mission Pilot SystemContext");
 		expect(systemPrompt).toContain(
 			"詳細契約は assembled design context 側の責務",
@@ -243,6 +253,9 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("aggregate gateは `## 検証計画` に整理");
 		expect(systemPrompt).toContain("プレースホルダーを含まない完成済み");
 		expect(systemPrompt).toContain("markdown フィールド");
+		expect(systemPrompt).toContain("repositoryMaterializationIntent");
+		expect(systemPrompt).toContain("stackは hono / python / java / rust");
+		expect(systemPrompt).toContain("推測せず null");
 		expect(systemPrompt).toContain(
 			"計画や完了条件を別のJSON fieldへ複製しない",
 		);

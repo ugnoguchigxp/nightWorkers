@@ -278,6 +278,8 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。",
 		"Questionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。",
 		"検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。unit / focused test / API smoke / DB verification / E2E の採否と範囲は回答どおりにし、Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。",
+		"E2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。",
+		"Project package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。",
 		"Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。",
 		"Plan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。",
 		"既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。",
@@ -308,7 +310,8 @@ export function buildSpecificationDocumentSystemPrompt(input?: {
 		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
 			FEATURE_PLAN_TRACEABILITY_STATEMENT,
 		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
-		"出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。",
+		"出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。",
+		"既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。",
 	].join("\n");
 }
 

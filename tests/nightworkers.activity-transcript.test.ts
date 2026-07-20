@@ -87,6 +87,34 @@ describe("activity transcript reducer", () => {
 		expect(items[0].text).toBe("User Flowを生成しています。");
 	});
 
+	it("keeps a final model response as trace instead of duplicating assistant chat", () => {
+		const items = buildTranscriptItems({
+			events: [
+				event({
+					id: "final-1",
+					kind: "llm.response_final",
+					seq: 1,
+					turnId: "assistant:run-1",
+					text: "[Codex] Assistant message completed.",
+					payloadJson: {
+						payload: { text: "実装と検証が完了しました。" },
+					},
+				}),
+			],
+		});
+
+		expect(items).toHaveLength(1);
+		expect(items[0]).toMatchObject({
+			kind: "activity",
+			event: {
+				kind: "llm.response_final",
+				payloadJson: {
+					payload: { text: "実装と検証が完了しました。" },
+				},
+			},
+		});
+	});
+
 	it("keeps tool and diff events as assistant children", () => {
 		const items = buildTranscriptItems({
 			events: [

@@ -4,6 +4,7 @@ import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { projectTaskRunParentStatus } from "../../agentsShare";
 import {
+	buildCodexRuntimePromptSnapshot,
 	loadCodingAgentContextPacket,
 	renderCodingAgentTodoRecoveryGuidance,
 	resolveCodexIntakeRuntimeHandoff,
@@ -24,6 +25,11 @@ import {
 	maybeLoadConversationStateCard,
 } from "./runtime-routing";
 import {
+	prepareResumableTaskRun,
+	prepareStartableTask,
+	startTaskRun,
+} from "./start-task-run-entry";
+import {
 	buildContinuationRouteIdentity,
 	createPreparedRunAssociation,
 	createPreparedRuntimeLaunch,
@@ -40,14 +46,8 @@ import {
 import type { StartTaskRunOptions } from "./start-task-run-types";
 import { toErrorMessage } from "./utils";
 
-export { startTaskRun } from "./start-task-run-entry";
-
-import {
-	prepareResumableTaskRun,
-	prepareStartableTask,
-} from "./start-task-run-entry";
-
 export type { StartTaskRunOptions } from "./start-task-run-types";
+export { startTaskRun };
 export async function startTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
@@ -140,6 +140,8 @@ export async function prepareTaskRunInProcess(
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
+		implementationHandoffSnapshot,
+		repositoryMaterializationSnapshot,
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
@@ -366,6 +368,12 @@ export async function prepareTaskRunInProcess(
 				lastUserMessage?.content || task.description || task.objective || "",
 			),
 		},
+		...(implementationHandoffSnapshot
+			? {
+					implementationHandoff: implementationHandoffSnapshot,
+				}
+			: {}),
+		repositoryMaterialization: repositoryMaterializationSnapshot,
 		result: {
 			digest: digestText(compiledPromptText),
 			charCount: compiledPromptText.length,
@@ -391,12 +399,15 @@ export async function prepareTaskRunInProcess(
 		role: "implementation",
 		workKind: runtimeRole,
 	});
-	const todoRecoveryStateCard = renderCodingAgentTodoRecoveryGuidance({
-		taskId,
-		runId: run.id,
-		repositoryRoot: executionRoot,
-		packet: await loadCodingAgentContextPacket(run.id),
-	});
+	const todoRecoveryStateCard =
+		runtimeLaneResolution.lane === "codex-sdk"
+			? ""
+			: renderCodingAgentTodoRecoveryGuidance({
+					taskId,
+					runId: run.id,
+					repositoryRoot: executionRoot,
+					packet: await loadCodingAgentContextPacket(run.id),
+				});
 	const runtimeStateCardText = [
 		projectedStateCard.stateCardText,
 		todoRecoveryStateCard,
@@ -416,6 +427,11 @@ export async function prepareTaskRunInProcess(
 		...(options.planModeRequested
 			? {}
 			: { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }),
+		codexPrompt: buildCodexRuntimePromptSnapshot({
+			runtimeLane: runtimeLaneResolution.lane,
+			request: rawLatestUserMessage,
+			stateCardText: projectedStateCard.stateCardText,
+		}),
 		conversationContext: conversationContext
 			? {
 					snapshotId: conversationContext.id,

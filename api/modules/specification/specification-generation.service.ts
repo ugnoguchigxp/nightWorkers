@@ -159,6 +159,8 @@ export async function generateFeaturePlanArtifact(
 			intent: "feature_plan",
 			title,
 			source: "status",
+			repositoryMaterializationIntent:
+				generatedDraft.repositoryMaterializationIntent ?? null,
 			questionnaireSessionId: session?.id ?? null,
 			featurePlanContent: {
 				version: 1,

@@ -3,6 +3,10 @@ import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotQueueHandoffSchema,
 } from "../../../shared/modules/missionPilot";
+import {
+	type RepositoryMaterializationIntent,
+	repositoryMaterializationIntentSchema,
+} from "../../../shared/schemas/git-integration.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -26,10 +30,7 @@ import { prepareImplementationQueueAdmission } from "../queue/queue-management.s
 import { digestFeaturePlanContent } from "../specification/feature-plan-content";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
-import {
-	repositoryHasGitHead,
-	startMissionPilotRepositoryBootstrap,
-} from "./mission-pilot-repository-bootstrap.service";
+import { repositoryHasGitHead } from "./mission-pilot-repository-bootstrap.service";
 
 const TERMINAL_TASK_STATUSES = new Set([
 	"completed",
@@ -52,6 +53,16 @@ function record(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
+}
+
+export function readFeaturePlanMaterializationIntent(
+	metadataJson: unknown,
+): RepositoryMaterializationIntent | null {
+	const metadata = record(metadataJson);
+	const parsed = repositoryMaterializationIntentSchema.safeParse(
+		metadata?.repositoryMaterializationIntent,
+	);
+	return parsed.success ? parsed.data : null;
 }
 
 function hasQueueMessage(
@@ -98,6 +109,7 @@ export async function admitMissionPilotQueueHandoff(input: {
 	verificationDocumentId: string;
 	leaseOwner: string;
 }) {
+	const materializationPreflight = await resolveMaterializationPreflight(input);
 	const committedHandoff = await db.transaction(async (tx) => {
 		const [session, task, review, verificationDocument, featurePlanMessage] =
 			await Promise.all([
@@ -425,18 +437,14 @@ export async function admitMissionPilotQueueHandoff(input: {
 		);
 	}
 	const hasGitHead = await repositoryHasGitHead(repository.localPath);
+	const materializationIntent = hasGitHead
+		? ({ kind: "existing_git" } as const)
+		: materializationPreflight.intent;
 	const workspace = await ensureTaskGitWorkspace({
 		taskId: input.taskId,
 		planReviewId: input.planReviewId,
 		admissionKey: committedHandoff.admissionKey,
-		materializationIntent: hasGitHead
-			? { kind: "existing_git" }
-			: {
-					kind: "starter_template",
-					source: "starter",
-					stack: "hono",
-					initialize: true,
-				},
+		materializationIntent,
 	});
 	await db
 		.update(implementationQueueEntries)
@@ -447,22 +455,6 @@ export async function admitMissionPilotQueueHandoff(input: {
 			updatedAt: new Date(),
 		})
 		.where(eq(implementationQueueEntries.id, committedHandoff.queueEntryId));
-	if (!hasGitHead) {
-		await startMissionPilotRepositoryBootstrap({
-			taskId: input.taskId,
-			sessionId: input.sessionId,
-		});
-		const bootstrappingSession = await missionPilotRepo.getSessionByTaskId(
-			input.taskId,
-		);
-		if (bootstrappingSession) {
-			publishMissionPilotUpdated(
-				input.taskId,
-				missionPilotRepo.toControlSummary(bootstrappingSession),
-			);
-		}
-		return persistedHandoff.data;
-	}
 	const provisionedWorkspace = await provisionTaskGitWorkspace(
 		input.taskId,
 	).catch((error) => {
@@ -487,4 +479,40 @@ export async function admitMissionPilotQueueHandoff(input: {
 		missionPilotRepo.toControlSummary(persistedSession),
 	);
 	return persistedHandoff.data;
+}
+
+async function resolveMaterializationPreflight(input: {
+	taskId: string;
+	featurePlanMessageId: string;
+}) {
+	const [task, featurePlanMessage] = await Promise.all([
+		db.query.tasks.findFirst({ where: eq(tasks.id, input.taskId) }),
+		db.query.taskMessages.findFirst({
+			where: eq(taskMessages.id, input.featurePlanMessageId),
+		}),
+	]);
+	if (!task || !featurePlanMessage || featurePlanMessage.taskId !== task.id) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"Feature Plan or Task is missing",
+		);
+	}
+	const repository = await nightworkersRepo.getRepository(task.repositoryId);
+	if (!repository?.localPath) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"Repository path is not configured",
+		);
+	}
+	const hasGitHead = await repositoryHasGitHead(repository.localPath);
+	const intent = hasGitHead
+		? ({ kind: "existing_git" } as const)
+		: readFeaturePlanMaterializationIntent(featurePlanMessage.metadataJson);
+	if (!intent) {
+		throw new MissionPilotPreQueueError(
+			"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+			"空のProjectをmaterializeするには、Feature Planに構造化されたrepositoryMaterializationIntentが必要です",
+		);
+	}
+	return { intent };
 }

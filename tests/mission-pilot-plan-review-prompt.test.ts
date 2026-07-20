@@ -17,6 +17,13 @@ describe("Mission Pilot plan review prompt", () => {
 		expect(prompt).toContain(
 			"選択外のE2E等をFeature Planへ追加する根拠になりません",
 		);
+		expect(prompt).toContain("E2Eは明示的なopt-in");
+		expect(prompt).toContain(
+			"確定QuestionnaireにE2Eを実施する回答がある場合だけ",
+		);
+		expect(prompt).toContain(
+			"Questionnaireがない、検証方針の質問がない、未回答、またはE2E以外が選択されている",
+		);
 		expect(prompt).toContain("requiresDataMigrationがfalse");
 		expect(prompt).toContain("migration作業が実装stepに無い");
 		expect(prompt).toContain("新規domainと既存domain拡張を区別");

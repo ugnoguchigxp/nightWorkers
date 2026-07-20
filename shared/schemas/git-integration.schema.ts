@@ -25,7 +25,7 @@ export const repositoryMaterializationIntentSchema = z.discriminatedUnion(
 		z.object({
 			kind: z.literal("starter_template"),
 			source: z.literal("starter"),
-			stack: z.enum(["hono", "python", "java"]),
+			stack: z.enum(["hono", "python", "java", "rust"]),
 			variant: z.string().optional(),
 			overlays: z.array(z.string()).optional(),
 			initialize: z.literal(true),

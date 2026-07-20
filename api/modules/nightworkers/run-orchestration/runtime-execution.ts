@@ -14,8 +14,10 @@ import {
 	mergeRuntimeContractSnapshot,
 	normalizeRuntimeContractWarnings,
 	outcomeFromRuntimeResult,
+	prepareCodexRepositoryRuntimeContext,
 	projectCodingAgentTaskStatusAfterRun,
 	readCodingAgentPlanModeRequested,
+	reconcileCodexCompletionBoundary,
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
@@ -93,9 +95,19 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	const usesE2eFixture =
 		process.env.NIGHTWORKERS_E2E === "1" &&
 		process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE === "1";
+	let effectiveRuntimeContextSnapshot = runtimeContextSnapshot;
 
 	void (async () => {
 		try {
+			if (runtimeLaneResolution.lane === "codex-sdk") {
+				effectiveRuntimeContextSnapshot =
+					await prepareCodexRepositoryRuntimeContext({
+						runId: run.id,
+						taskId,
+						repositoryRoot: repoInfo.localPath,
+						contextSnapshot: runtimeContextSnapshot,
+					});
+			}
 			await repo.updateTaskStatus(taskId, "running");
 			const runtimeTodosBeforeStart = await repo.listTaskRunTodosForRun(run.id);
 			const heartbeatTimer = setInterval(() => {
@@ -130,7 +142,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 								imageAttachments: runtimeImageAttachments,
 								timeoutSeconds: task.timeoutSeconds ?? 3600,
 								safetyPolicy: repoInfo.safetyPolicy || undefined,
-								contextSnapshot: runtimeContextSnapshot,
+								contextSnapshot: effectiveRuntimeContextSnapshot,
 								runtimeOptions,
 								todoPlan: runtimeTodosBeforeStart.map(
 									toAgentRuntimeTodoContext,
@@ -151,7 +163,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 								imageAttachments: runtimeImageAttachments,
 								timeoutSeconds: task.timeoutSeconds ?? 3600,
 								safetyPolicy: repoInfo.safetyPolicy || undefined,
-								contextSnapshot: runtimeContextSnapshot,
+								contextSnapshot: effectiveRuntimeContextSnapshot,
 								runtimeOptions,
 								todoPlan: runtimeTodosBeforeStart.map(
 									toAgentRuntimeTodoContext,
@@ -164,6 +176,19 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 							},
 							sink,
 						);
+				if (
+					runtimeLaneResolution.lane === "codex-sdk" &&
+					runtimeResult.terminalState === "completed"
+				) {
+					runtimeResult = await reconcileCodexCompletionBoundary({
+						result: runtimeResult,
+						taskId,
+						runId: run.id,
+						repositoryRoot: repoInfo.localPath,
+						safetyPolicy: repoInfo.safetyPolicy || undefined,
+						sink,
+					});
+				}
 			} finally {
 				clearInterval(heartbeatTimer);
 			}
@@ -182,7 +207,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				runtimeContractWarnings,
 			);
 			const contextSnapshotBeforeFinalize =
-				latestRunBeforeFinalize?.contextSnapshot ?? runtimeContextSnapshot;
+				latestRunBeforeFinalize?.contextSnapshot ??
+				effectiveRuntimeContextSnapshot;
 
 			await repo.createRunEvent({
 				version: 1,
@@ -222,7 +248,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				typeof contextSnapshotBeforeFinalize === "object" &&
 				!Array.isArray(contextSnapshotBeforeFinalize)
 					? contextSnapshotBeforeFinalize
-					: runtimeContextSnapshot),
+					: effectiveRuntimeContextSnapshot),
 				ontologyBoundaryAudit,
 				runtimePause: buildRuntimePauseSnapshot(runtimeResult),
 			};
@@ -357,7 +383,9 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 			const finalTodos = await repo.listTaskRunTodosForRun(run.id);
 			const incompleteTodos = listIncompleteTodos(finalTodos);
 			const todoFinalizationBlocked =
-				outcome.status === "completed" && incompleteTodos.length > 0;
+				runtimeLaneResolution.lane !== "codex-sdk" &&
+				outcome.status === "completed" &&
+				incompleteTodos.length > 0;
 			const openTodoWarning = todoFinalizationBlocked
 				? buildOpenTodoRuntimeContractWarning(incompleteTodos)
 				: null;
@@ -489,7 +517,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				taskId,
 				runId: run.id,
 				runStatus: finalStatus,
-				executionMode: runtimeContextSnapshot.executionMode ?? "implementation",
+				executionMode:
+					effectiveRuntimeContextSnapshot.executionMode ?? "implementation",
 			};
 			const parentTaskProjection =
 				await projectTaskRunParentStatus(closeoutInput);
@@ -497,7 +526,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				projectCodingAgentTaskStatusAfterRun({
 					runStatus: finalStatus,
 					planModeRequested: readCodingAgentPlanModeRequested(
-						runtimeContextSnapshot,
+						effectiveRuntimeContextSnapshot,
 					),
 				}) ?? parentTaskProjection.status;
 			if (!parentTaskProjection.handled)
@@ -559,7 +588,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				task,
 				run,
 				runtimeLaneResolution,
-				runtimeContextSnapshot: input.runtimeContextSnapshot,
+				runtimeContextSnapshot: effectiveRuntimeContextSnapshot,
 			});
 		}
 	})();

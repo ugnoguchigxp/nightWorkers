@@ -7,6 +7,11 @@ import {
 	getActivityCode,
 	parseDiffMetadata,
 } from "../../src/modules/nightworkers/components/ThreadTimeline";
+import {
+	activityCodeFilename,
+	activityCodeLanguage,
+	activityDisplaySummary,
+} from "../../src/modules/nightworkers/components/ThreadTimelineActivityModel";
 import { buildDiffDisplayLinesWithKeys } from "../../src/modules/nightworkers/components/ThreadTimelineDiffView";
 
 describe("ThreadTimeline edit summaries", () => {
@@ -373,6 +378,27 @@ describe("ThreadTimeline edit summaries", () => {
 	});
 
 	it("extracts schema-first debug payloads for CodeBlock rendering", () => {
+		const completedEvent = {
+			id: "response-finished-text",
+			taskId: "task-1",
+			kind: "llm.response_final",
+			source: "supervisor",
+			status: "completed",
+			seq: 0,
+			text: "[Codex] Assistant message completed.",
+			payloadJson: {
+				payload: { text: "実装と検証が完了しました。" },
+			},
+			createdAt: "2026-06-05T00:00:00.000Z",
+			visibility: "visible",
+		} as never;
+		expect(activityDisplaySummary(completedEvent)).toBe(
+			"実装と検証が完了しました。",
+		);
+		expect(getActivityCode(completedEvent)).toBe("実装と検証が完了しました。");
+		expect(activityCodeFilename(completedEvent)).toBe("assistant-response.txt");
+		expect(activityCodeLanguage(completedEvent)).toBe("text");
+
 		expect(
 			getActivityCode({
 				id: "response-finished",

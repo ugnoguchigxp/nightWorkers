@@ -19,6 +19,21 @@ beforeAll(async () => {
 });
 
 describe("nightworkers activity repository", () => {
+	it("uses the final model text instead of the generic event message", () => {
+		const text = runEventToActivityText({
+			eventType: "model.response_finished",
+			message: "[Codex] Assistant message completed.",
+			agentEventType: null,
+			payload: {
+				runEvent: {
+					data: { text: "実装と検証が完了しました。" },
+				},
+			},
+		});
+
+		expect(text).toBe("実装と検証が完了しました。");
+	});
+
 	it("includes MCP tool arguments and error details in activity text", () => {
 		const text = runEventToActivityText({
 			eventType: "tool.call_finished",

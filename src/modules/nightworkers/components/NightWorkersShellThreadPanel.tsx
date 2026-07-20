@@ -7,7 +7,9 @@ import {
 } from "react";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
 import type { useImplementationQueue } from "../../queue";
+import { CodexTodoTracePane } from "../../todo/CodexTodoTracePane";
 import { markArtifactOpenStart } from "../artifactPerformance";
+import { projectLatestCodexTodoTrace } from "../codexTodoTrace";
 import type { WorkbenchLlmSelection } from "../hooks/nightWorkersWorkspaceState";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../routing/workbench-route-state";
@@ -109,6 +111,13 @@ export function NightWorkersShellThreadPanel(
 		workspace,
 		workspaceRef,
 	} = props;
+	const codexTodoTrace = projectLatestCodexTodoTrace(workspace.latestRunEvents);
+	const codexRunActive = [
+		"running",
+		"context_compiling",
+		"compiling_context",
+		"finalizing",
+	].includes(workspace.latestRun?.status || "");
 	const [planModeArtifactContext, setPlanModeArtifactContext] =
 		useState<WorkbenchArtifactContext | null>(null);
 	const effectiveArtifactContext =
@@ -325,24 +334,31 @@ export function NightWorkersShellThreadPanel(
 			}}
 			splitPanel={
 				isTodoArtifactOpen ? (
-					<TodoListPane
-						todos={workspace.latestRunTodos}
-						allowRunningTodoResume={
-							workspace.latestRun?.status === "needs_human" &&
-							isHostLimitedRuntimePause(workspace.latestRun.contextSnapshot)
-						}
-						isResuming={workspace.isResumingTodo}
-						onResume={async (todoId, expectedTodoRevision, userContext) => {
-							const runId = workspace.latestRun?.id;
-							if (!runId) return;
-							await workspace.resumeTodo({
-								runId,
-								todoId,
-								expectedTodoRevision,
-								userContext,
-							});
-						}}
-					/>
+					codexTodoTrace.length > 0 ? (
+						<CodexTodoTracePane
+							items={codexTodoTrace}
+							runActive={codexRunActive}
+						/>
+					) : (
+						<TodoListPane
+							todos={workspace.latestRunTodos}
+							allowRunningTodoResume={
+								workspace.latestRun?.status === "needs_human" &&
+								isHostLimitedRuntimePause(workspace.latestRun.contextSnapshot)
+							}
+							isResuming={workspace.isResumingTodo}
+							onResume={async (todoId, expectedTodoRevision, userContext) => {
+								const runId = workspace.latestRun?.id;
+								if (!runId) return;
+								await workspace.resumeTodo({
+									runId,
+									todoId,
+									expectedTodoRevision,
+									userContext,
+								});
+							}}
+						/>
+					)
 				) : artifactPaneOpen ? (
 					<ArtifactPane
 						activeProject={workspace.activeProject}

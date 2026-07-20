@@ -6,8 +6,19 @@ export {
 	resolveOrOpenAgentModeSession,
 } from "./agent-mode-session";
 export { CodexAgentRuntime } from "./CodexAgentRuntime";
+export {
+	type CodexRepositoryPreflight,
+	inspectCodexRepositoryPreflight,
+	prepareCodexRepositoryRuntimeContext,
+} from "./codex-repository-preflight";
 export { changedFilesFromDiff } from "./codex-runtime-support";
 export { runE2eFixtureRuntime } from "./e2e-fixture-runtime";
+export {
+	buildCodexRuntimePromptSnapshot,
+	buildCodingAgentImplementationHandoffPrompt,
+	buildCodingAgentImplementationHandoffSnapshot,
+	CODING_AGENT_IMPLEMENTATION_HANDOFF_INSTRUCTIONS_JA,
+} from "./implementation-handoff-prompt";
 export {
 	resolveCodexIntakeRuntimeHandoff,
 	resolveCodingAgentRuntimeRole,

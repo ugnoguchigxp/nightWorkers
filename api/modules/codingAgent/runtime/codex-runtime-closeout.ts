@@ -1,13 +1,8 @@
 import type { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
 import { gitDiffTool } from "../../../services/worker-tools/git";
-import { changedFilesFromDiff, todoPayload } from "./codex-runtime-support";
+import { changedFilesFromDiff } from "./codex-runtime-support";
 import type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 import { createCodexRuntimeThread } from "./codex-sdk/codex-sdk-client";
-import {
-	buildCodexRuntimeContractSnapshot,
-	type CodexRuntimeAuditState,
-} from "./codex-sdk/codex-sdk-mcp-audit";
-import { summarizeRuntimeContractWarnings } from "./shared";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -24,12 +19,10 @@ export async function createThread(
 	runtime: CodexRuntimeHost,
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
-	options: { forceFresh?: boolean } = {},
 ) {
 	return createCodexRuntimeThread({
 		context,
 		threadFactory: runtime.threadFactory,
-		forceFresh: options.forceFresh,
 		onResumeEvent: async (event) => {
 			if (event.status === "reused") {
 				await sink.emit({
@@ -104,17 +97,13 @@ export async function finishRun(
 		stoppedBy: AgentRuntimeResult["stoppedBy"];
 		riskLevel: AgentRuntimeResult["riskLevel"];
 		collectDiff?: boolean;
-		auditState: CodexRuntimeAuditState;
 		testResults?: unknown;
 	},
 ): Promise<AgentRuntimeResult> {
 	const diffPatch =
 		input.collectDiff === false
 			? ""
-			: await collectDiff(runtime, context, sink, logs, input.auditState);
-	const contractWarnings = [...input.auditState.contractWarnings];
-	const contractWarningSummary =
-		summarizeRuntimeContractWarnings(contractWarnings);
+			: await collectDiff(runtime, context, sink, logs);
 	const result: AgentRuntimeResult = {
 		terminalState: input.terminalState,
 		summary:
@@ -127,7 +116,6 @@ export async function finishRun(
 		riskLevel: input.riskLevel,
 		logContent: logs.join("\n"),
 		diffPatch,
-		contractWarnings,
 		testResults: input.testResults,
 	};
 	await sink.emit({
@@ -139,9 +127,6 @@ export async function finishRun(
 			stoppedBy: result.stoppedBy,
 			finalReport: result.finalReport,
 			summary: result.summary,
-			contractWarningSummary,
-			contractWarnings,
-			runtimeContract: buildCodexRuntimeContractSnapshot(input.auditState),
 		},
 	});
 	return result;
@@ -152,11 +137,20 @@ export async function collectDiff(
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
 	logs: string[],
-	auditState: CodexRuntimeAuditState,
 ): Promise<string> {
 	if (!runtime.collectWorkspaceDiff) return "";
-	const result = await gitDiffTool({ repoRoot: context.repoRoot });
-	if (!result.ok || !result.payload.hasChanges) return "";
+	let result: Awaited<ReturnType<typeof gitDiffTool>>;
+	try {
+		result = await gitDiffTool({ repoRoot: context.repoRoot });
+	} catch (error) {
+		await emitDiffCollectionWarning(sink, logs, error);
+		return "";
+	}
+	if (!result.ok) {
+		await emitDiffCollectionWarning(sink, logs, result.error?.message);
+		return "";
+	}
+	if (!result.payload.hasChanges) return "";
 	const changedFiles = changedFilesFromDiff(result.payload.diff);
 	const message = `[Codex] Workspace diff collected: ${changedFiles.length || "unknown"} file(s).`;
 	logs.push(message);
@@ -167,11 +161,30 @@ export async function collectDiff(
 			provider: "codex",
 			source: "post_run_git_diff",
 			changedFiles,
-			...todoPayload(auditState.lastCurrentTodo),
 			diff: result.payload.diff,
 			diffStat: result.payload.diffStat,
 			hasChanges: result.payload.hasChanges,
 		},
 	});
 	return result.payload.diff;
+}
+
+async function emitDiffCollectionWarning(
+	sink: AgentRuntimeSink,
+	logs: string[],
+	error: unknown,
+) {
+	const message = "[Codex] Workspace diff could not be collected.";
+	logs.push(message);
+	await sink.emit({
+		type: "runtime_warning",
+		message,
+		payload: {
+			code: "CODEX_WORKSPACE_DIFF_COLLECTION_FAILED",
+			provider: "codex",
+			severity: "warning",
+			error:
+				error instanceof Error ? error.message : String(error || "unknown"),
+		},
+	});
 }

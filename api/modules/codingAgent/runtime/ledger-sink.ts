@@ -1,16 +1,5 @@
-import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { logEvent } from "../../../lib/logger";
-import {
-	buildCommandLevelEvidence,
-	inferVerificationRunner,
-} from "../../../services/verification/normalized-evidence";
 import * as repo from "../../nightworkers/nightworkers.repository";
-import { getLatestVerificationDocumentForTask } from "../../nightworkers/nightworkers.verification.repository";
-import { recordVerificationEvidence } from "../../nightworkers/nightworkers.verification.service";
-import { classifyCodexCommand } from "./codex-sdk/codex-sdk-event-adapter";
 import type { RuntimeContractWarningSeverity } from "./shared";
 import type { AgentRuntimeEvent, AgentRuntimeSink } from "./types";
 
@@ -30,6 +19,11 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent["type"], EventMapping> = {
 		actor: "supervisor",
 		severity: "info",
 		canonicalType: "turn.started",
+	},
+	turn_finished: {
+		actor: "supervisor",
+		severity: "checkpoint",
+		canonicalType: "turn.finished",
 	},
 	model_response_started: {
 		actor: "supervisor",
@@ -133,7 +127,6 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 					message: event.message.slice(0, 1000),
 					data: (event.payload as Record<string, unknown>) || {},
 				});
-				await maybeRecordCodexCommandVerificationEvidence(taskRunId, event);
 			} catch (error) {
 				logEvent({
 					channel: "agent-runtime",
@@ -151,19 +144,12 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 	};
 }
 
-type CodexCommandCheckKind =
-	| "lint"
-	| "format_check"
-	| "typecheck"
-	| "test"
-	| "coverage"
-	| "build"
-	| "verify"
-	| "other";
-
 function resolveEventSeverity(event: AgentRuntimeEvent, mapped: EventMapping) {
 	if (event.type !== "runtime_warning") return mapped.severity;
-	const severity = event.payload?.severity;
+	const severity =
+		event.payload && typeof event.payload === "object"
+			? (event.payload as Record<string, unknown>).severity
+			: undefined;
 	if (isContractWarningSeverity(severity)) return severity;
 	return mapped.severity;
 }
@@ -172,193 +158,4 @@ function isContractWarningSeverity(
 	value: unknown,
 ): value is RuntimeContractWarningSeverity {
 	return value === "info" || value === "warning" || value === "error";
-}
-
-async function maybeRecordCodexCommandVerificationEvidence(
-	taskRunId: string,
-	event: AgentRuntimeEvent,
-) {
-	if (event.type !== "tool_call_finished") return;
-	const payload =
-		event.payload && typeof event.payload === "object"
-			? (event.payload as Record<string, unknown>)
-			: null;
-	if (!payload || isFailedToolCompletion(payload)) return;
-	if (resolveToolName(payload) !== "command_execution") return;
-
-	const command = readPayloadString(payload, "command");
-	if (!command) return;
-	const commandClass = classifyCodexCommand(command);
-	if (
-		commandClass !== "verification" &&
-		commandClass !== "broad_verification"
-	) {
-		return;
-	}
-
-	const exitCode = readPayloadNumber(payload, "exitCode", "exit_code");
-	if (exitCode === null) return;
-
-	try {
-		const run = await repo.getTaskRun(taskRunId);
-		if (!run) return;
-		const verificationDocument = await getLatestVerificationDocumentForTask(
-			run.taskId,
-		);
-		if (!verificationDocument) return;
-
-		const now = new Date().toISOString();
-		const output = readPayloadString(payload, "aggregatedOutput") ?? "";
-		const rawStdoutArtifactId = await writeCodexCommandArtifact({
-			stream: "stdout",
-			command,
-			content: output,
-			finishedAt: now,
-			providerItemId: readPayloadString(payload, "providerItemId"),
-		});
-		const rawStderrArtifactId = await writeCodexCommandArtifact({
-			stream: "stderr",
-			command,
-			content: "",
-			finishedAt: now,
-			providerItemId: readPayloadString(payload, "providerItemId"),
-		});
-		const checkKind = inferCodexCommandCheckKind(command, commandClass);
-		const evidence = buildCommandLevelEvidence({
-			runId: run.id,
-			taskId: run.taskId,
-			command,
-			cwd: readRunWorktreePath(run) ?? ".",
-			startedAt: now,
-			finishedAt: now,
-			exitCode,
-			runner: inferVerificationRunner({ command }),
-			rawStdoutArtifactId,
-			rawStderrArtifactId,
-			conditionIds: readPayloadStringArray(payload, "conditionIds"),
-		});
-		await recordVerificationEvidence({
-			taskId: run.taskId,
-			runId: run.id,
-			verificationDocumentId: verificationDocument.id,
-			checkKind,
-			fullGate:
-				checkKind === "verify" ||
-				checkKind === "coverage" ||
-				checkKind === "build" ||
-				commandClass === "broad_verification",
-			evidence,
-		});
-	} catch (error) {
-		logEvent({
-			channel: "agent-runtime",
-			level: "error",
-			message: "failed to record Codex command verification evidence",
-			meta: {
-				runId: taskRunId,
-				command,
-				errorMessage: error instanceof Error ? error.message : String(error),
-			},
-		});
-	}
-}
-
-function resolveToolName(payload: Record<string, unknown>) {
-	if (typeof payload.toolName === "string" && payload.toolName.length > 0) {
-		return payload.toolName;
-	}
-	if (
-		typeof payload.mcpServer === "string" &&
-		typeof payload.mcpTool === "string"
-	) {
-		return `${payload.mcpServer}.${payload.mcpTool}`;
-	}
-	return null;
-}
-
-function isFailedToolCompletion(payload: Record<string, unknown>) {
-	return (
-		payload.status === "failed" ||
-		payload.status === "error" ||
-		payload.status === "cancelled"
-	);
-}
-
-function inferCodexCommandCheckKind(
-	command: string,
-	commandClass: ReturnType<typeof classifyCodexCommand>,
-): CodexCommandCheckKind {
-	if (commandClass === "broad_verification") return "verify";
-	const normalized = command.toLowerCase();
-	if (/\b(?:typecheck|tsc)\b/.test(normalized)) return "typecheck";
-	if (/\b(?:lint|eslint)\b/.test(normalized)) return "lint";
-	if (/\b(?:format|biome\s+check)\b/.test(normalized)) return "format_check";
-	if (/\bcoverage\b/.test(normalized)) return "coverage";
-	if (/\bbuild\b/.test(normalized)) return "build";
-	if (/\b(?:test|vitest|jest|playwright)\b/.test(normalized)) return "test";
-	return "other";
-}
-
-function readPayloadString(
-	payload: Record<string, unknown>,
-	key: string,
-): string | null {
-	const value = payload[key];
-	return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function readPayloadNumber(
-	payload: Record<string, unknown>,
-	...keys: string[]
-): number | null {
-	for (const key of keys) {
-		const value = payload[key];
-		if (typeof value === "number" && Number.isFinite(value)) return value;
-	}
-	return null;
-}
-
-function readPayloadStringArray(
-	payload: Record<string, unknown>,
-	key: string,
-): string[] | undefined {
-	const value = payload[key];
-	if (!Array.isArray(value)) return undefined;
-	const strings = value.filter(
-		(item): item is string => typeof item === "string" && item.length > 0,
-	);
-	return strings.length > 0 ? strings : undefined;
-}
-
-function readRunWorktreePath(run: { worktreePath?: string | null }) {
-	return typeof run.worktreePath === "string" && run.worktreePath.length > 0
-		? run.worktreePath
-		: null;
-}
-
-async function writeCodexCommandArtifact(input: {
-	stream: "stdout" | "stderr";
-	command: string;
-	content: string;
-	finishedAt: string;
-	providerItemId: string | null;
-}) {
-	const dir = path.join(os.tmpdir(), "nightworkers-codex-check-artifacts");
-	await fs.mkdir(dir, { recursive: true });
-	const digest = crypto
-		.createHash("sha256")
-		.update(
-			[
-				input.stream,
-				input.command,
-				input.finishedAt,
-				input.providerItemId ?? "",
-				input.content,
-			].join("\n"),
-		)
-		.digest("hex")
-		.slice(0, 24);
-	const filePath = path.join(dir, `${digest}.${input.stream}.log`);
-	await fs.writeFile(filePath, input.content, "utf-8");
-	return filePath;
 }

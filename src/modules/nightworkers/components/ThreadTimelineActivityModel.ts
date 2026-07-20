@@ -33,6 +33,7 @@ export function fallbackEventText(event?: ActivityEvent) {
 export function getActivityCode(event: ActivityEvent) {
 	const payload = toDeepRecord(event.payloadJson);
 	const agentEventType = schemaFirstAgentEventType(event);
+	const eventData = toDeepRecord(payload?.payload || payload?.runEvent?.data);
 	const editToolDiff = getEditToolCallDiff(event);
 	if (editToolDiff) return editToolDiff;
 	if (isDiffActivity(event)) return getActivityDiffCode(event);
@@ -46,6 +47,12 @@ export function getActivityCode(event: ActivityEvent) {
 	if (typeof payload?.rawContent === "string") return payload.rawContent;
 	if (typeof payload?.systemPrompt === "string") return payload.systemPrompt;
 	if (typeof payload?.userPrompt === "string") return payload.userPrompt;
+	if (
+		isFinalModelResponseActivity(event) &&
+		typeof eventData.text === "string"
+	) {
+		return eventData.text;
+	}
 	if (typeof payload?.payload?.rawContent === "string")
 		return payload.payload.rawContent;
 	if (typeof payload?.payload?.systemPrompt === "string")
@@ -135,9 +142,9 @@ export function activityCodeFilename(event: ActivityEvent) {
 	}
 	if (event.kind.includes("patch")) return "activity.patch";
 	if (event.kind.includes("diff")) return "activity.diff";
+	if (isFinalModelResponseActivity(event)) return "assistant-response.txt";
 	if (event.kind.includes("json") || event.kind.startsWith("llm."))
 		return "activity.json";
-	if (agentEventType === "model.response_finished") return "raw-output.json";
 	if (agentEventType?.endsWith("prompt_built")) return "prompt.txt";
 	return event.kind;
 }
@@ -148,6 +155,7 @@ export function activityCodeLanguage(event: ActivityEvent) {
 	if (getEditToolCall(event)) return "diff";
 	if (event.kind.includes("patch") || event.kind.includes("diff"))
 		return "diff";
+	if (isFinalModelResponseActivity(event)) return "text";
 	if (event.kind.includes("json") || event.kind.startsWith("llm."))
 		return "json";
 	return "text";
@@ -351,9 +359,13 @@ export function activityDisplaySummary(event: ActivityEvent): string {
 			typeof data.message === "string" ? data.message : event.text || "",
 		);
 	}
-	if (agentEventType === "model.response_finished") {
+	if (isFinalModelResponseActivity(event)) {
 		return formatVisibleAssistantText(
-			typeof data.rawContent === "string" ? data.rawContent : event.text || "",
+			typeof data.text === "string"
+				? data.text
+				: typeof data.rawContent === "string"
+					? data.rawContent
+					: event.text || "",
 		);
 	}
 	if (event.kind === "tool.call" || event.kind === "tool.result") {
@@ -376,6 +388,13 @@ export function activityDisplaySummary(event: ActivityEvent): string {
 		return event.text || "prompt built";
 	}
 	return event.text || event.ingestError || event.status || event.kind;
+}
+
+function isFinalModelResponseActivity(event: ActivityEvent) {
+	return (
+		event.kind === "llm.response_final" ||
+		schemaFirstAgentEventType(event) === "model.response_finished"
+	);
 }
 
 function formatLlmUsageSummary(data: Record<string, unknown>): string {

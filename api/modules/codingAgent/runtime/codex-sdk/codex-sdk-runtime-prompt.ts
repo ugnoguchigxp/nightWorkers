@@ -1,20 +1,13 @@
 import type { Input } from "@openai/codex-sdk";
-import { getNightWorkersCodexToolNames } from "../../../../mcp/nightworkers-tool-manifest";
 import { estimateTokens } from "../../../../services/conversation-context/token-budget";
-import {
-	CODING_AGENT_RUNTIME_REMINDERS_JA,
-	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
-} from "../../context";
-import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
+import { buildCodingAgentImplementationHandoffPrompt } from "../implementation-handoff-prompt";
 import type { AgentRunContext } from "../types";
 
 export type CodexRuntimePromptParts = {
 	prompt: string;
 	request: string;
-	runtimeContract: string;
 	estimates: {
 		requestTokens: number;
-		runtimeContractTokens: number;
 		fullPromptTokens: number;
 	};
 };
@@ -48,71 +41,88 @@ export function buildCodexRuntimeTurnInput(
 export function buildCodexRuntimePromptParts(
 	context: AgentRunContext,
 ): CodexRuntimePromptParts {
-	const request = (context.latestUserMessage || context.compiledPrompt).trim();
-	const nightWorkersToolList = getNightWorkersCodexToolNames({
-		ontologyMcpEnabled: readOntologyMcpEnabled(context),
-	}).join(", ");
-	const runtimeContract = buildCodingAgentContract(
-		context,
-		nightWorkersToolList,
-	);
-	const prompt = [request, runtimeContract]
-		.filter((part): part is string => Boolean(part?.trim()))
-		.join("\n\n");
+	const latestRequest = readCodexPromptRequest(context);
+	const request = latestRequest || context.compiledPrompt.trim();
+	const prompt = buildAuthoritativeImplementationPrompt(context, request);
 	return {
 		prompt,
 		request,
-		runtimeContract,
 		estimates: {
 			requestTokens: estimateTokens(request),
-			runtimeContractTokens: estimateTokens(runtimeContract),
 			fullPromptTokens: estimateTokens(prompt),
 		},
 	};
 }
 
-function buildCodingAgentContract(
+function buildAuthoritativeImplementationPrompt(
 	context: AgentRunContext,
-	nightWorkersToolList: string,
+	request: string,
 ) {
+	const snapshot = asRecord(context.contextSnapshot);
+	const handoff = asRecord(snapshot?.implementationHandoff);
+	const adoptedPlan = readString(handoff?.adoptedPlan);
+	const userRequest = readString(handoff?.userRequest) || request;
+	const prompt = adoptedPlan
+		? buildCodingAgentImplementationHandoffPrompt({
+				userRequest,
+				implementationHandoff: adoptedPlan,
+				omitDuplicatedUserRequest: true,
+			})
+		: request;
+	const designArtifacts = Array.isArray(handoff?.designArtifacts)
+		? handoff.designArtifacts.flatMap((value) => {
+				const artifact = asRecord(value);
+				const kind = readString(artifact?.kind);
+				const content = readString(artifact?.content);
+				if (!kind || !content) return [];
+				return [
+					[
+						`<ADOPTED_DESIGN_ARTIFACT kind="${kind}">`,
+						content,
+						"</ADOPTED_DESIGN_ARTIFACT>",
+					].join("\n"),
+				];
+			})
+		: [];
+	const codexPrompt = asRecord(snapshot?.codexPrompt);
+	const stateCardText = readString(codexPrompt?.stateCardText);
+	const repositoryPreflight = asRecord(snapshot?.repositoryPreflight);
 	return [
-		"[NightWorkers Coding Agent Runtime]",
-		`taskId: ${context.taskId}`,
-		`runId: ${context.runId}`,
-		...formatRuntimeWorkspaceContextForPrompt(context),
-		JSON.stringify(
-			context.codingAgentSystemContext ?? {
-				version: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
-				roleInstructionsJa:
-					"Taskの意味、Todo、次の行動、検証、完了可否を判断するCoding Agentとして振る舞ってください。",
-				taskGoal: context.latestUserMessage || context.compiledPrompt,
-				registeredRepositoryRoot: context.repoRoot,
-			},
-			null,
-			2,
-		),
-		"",
-		`利用可能なNightWorkers MCP tools: ${nightWorkersToolList}`,
-		"最初にnightworkers.todo_listのreplace_planとstartを使い、current Todoを作成してください。",
-		"replace_planではRun内で安定したtodoKeyとdependsOnKeysを使い、start等の個別更新では直前のtool resultが返したcanonical idとrevisionを使ってください。",
-		...CODING_AGENT_RUNTIME_REMINDERS_JA,
-		"current Todoなしにworkspace toolを呼ばず、Todoのobjective、context、nextAction、acceptanceCriteriaを読んで行動してください。",
-		"失敗時はrecord_failureでraw errorと次の方法を保存し、hostにretry方法や次工程を推測させないでください。",
-		"Testや自己確認の要否はTaskとTodo Contextから判断し、Test/Review専用modeを前提にしないでください。",
-		"最終回答前にpending、running、needs_humanを明示的に解消し、不要なTodoはskippedへ遷移してください。",
-		"通常のassistant本文を最終回答候補として返し、finalize専用toolは使用しません。",
-	].join("\n");
+		prompt,
+		...designArtifacts,
+		...(stateCardText
+			? [
+					["<PROJECT_STATE_CARD>", stateCardText, "</PROJECT_STATE_CARD>"].join(
+						"\n",
+					),
+				]
+			: []),
+		...(repositoryPreflight
+			? [
+					[
+						"<REPOSITORY_PREFLIGHT>",
+						JSON.stringify(repositoryPreflight, null, 2),
+						"</REPOSITORY_PREFLIGHT>",
+					].join("\n"),
+				]
+			: []),
+	]
+		.filter(Boolean)
+		.join("\n\n");
 }
 
-function readOntologyMcpEnabled(context: AgentRunContext) {
-	const ontologyMcp = (context.contextSnapshot as Record<string, unknown>)
-		.ontologyMcp;
-	if (
-		!ontologyMcp ||
-		typeof ontologyMcp !== "object" ||
-		Array.isArray(ontologyMcp)
-	) {
-		return false;
-	}
-	return (ontologyMcp as Record<string, unknown>).enabled === true;
+function readCodexPromptRequest(context: AgentRunContext) {
+	const snapshot = asRecord(context.contextSnapshot);
+	const codexPrompt = asRecord(snapshot?.codexPrompt);
+	return readString(codexPrompt?.request) || context.latestUserMessage.trim();
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+function readString(value: unknown) {
+	return typeof value === "string" ? value.trim() : "";
 }

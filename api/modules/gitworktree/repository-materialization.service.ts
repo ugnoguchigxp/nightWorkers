@@ -4,6 +4,7 @@ import { db } from "../../db/client";
 import { repositories } from "../../db/schema";
 import { AppError } from "../../lib/errors";
 import { importProjectTool } from "../../services/worker-tools/import-project";
+import { runGitCommand } from "./gitworktree-cli";
 import * as workspaceRepo from "./task-git-workspace.repository";
 
 export async function materializeTaskGitWorkspaceRepository(taskId: string) {
@@ -51,6 +52,10 @@ export async function materializeTaskGitWorkspaceRepository(taskId: string) {
 			"repository_materialization_failed",
 			result.error?.message ?? "Repository materialization failed",
 		);
+	await alignMaterializedRepositoryBranch({
+		repositoryPath: repository.localPath,
+		targetBranch: repository.branch,
+	});
 	const updated = await workspaceRepo.transitionTaskGitWorkspace({
 		id: workspace.id,
 		expectedStatus: "waiting_for_repository_initialization",
@@ -66,4 +71,41 @@ export async function materializeTaskGitWorkspaceRepository(taskId: string) {
 			"Repository materialization changed concurrently",
 		);
 	return updated;
+}
+
+async function alignMaterializedRepositoryBranch(input: {
+	repositoryPath: string;
+	targetBranch: string;
+}) {
+	const targetExists = await runGitCommand([
+		"-C",
+		input.repositoryPath,
+		"rev-parse",
+		"--verify",
+		`${input.targetBranch}^{commit}`,
+	])
+		.then(() => true)
+		.catch(() => false);
+	if (targetExists) return;
+	const currentBranch = (
+		await runGitCommand([
+			"-C",
+			input.repositoryPath,
+			"branch",
+			"--show-current",
+		])
+	).stdout.trim();
+	if (!currentBranch)
+		throw new AppError(
+			409,
+			"repository_materialization_branch_missing",
+			"Materialized repository branch is missing",
+		);
+	await runGitCommand([
+		"-C",
+		input.repositoryPath,
+		"branch",
+		"-M",
+		input.targetBranch,
+	]);
 }

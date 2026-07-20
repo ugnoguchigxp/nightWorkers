@@ -3,6 +3,7 @@ export {
 	ActionExecutionJournal,
 	actionExecutionJournal,
 } from "./application/action-execution-journal";
+export { reconcileCodexCompletionBoundary } from "./application/codex-completion-boundary.service";
 export {
 	handleResumeCodingAgentRunTodo,
 	handleStartCodingAgentRun,

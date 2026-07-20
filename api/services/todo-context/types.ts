@@ -65,6 +65,24 @@ export type RuntimePromptSnapshot = {
 	planModeRequested?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	implementationPhasePreamble?: string;
+	implementationHandoff?: {
+		version: 1;
+		sourceMessageId: string;
+		instructions: string;
+		userRequest: string;
+		adoptedPlan: string;
+		designArtifacts: Array<{
+			kind: string;
+			sourceMessageId: string;
+			content: string;
+		}>;
+	};
+	codexPrompt?: {
+		request: string;
+		stateCardText: string | null;
+	};
+	repositoryMaterialization?: unknown;
+	repositoryPreflight?: unknown;
 	blueprintPlanning?: unknown;
 	runtimeLane?: "native-api-runner" | "codex-sdk";
 	runtimeLaneResolution?: RuntimeLaneSnapshot;

@@ -1,79 +1,38 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { db } from "../../api/db/client";
-import { verificationDocuments } from "../../api/db/verification-schema";
-import {
-	buildCodingAgentSystemContext,
-	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
-} from "../../api/modules/codingAgent/context";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
-import { buildCodexRuntimeSdkOptions } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config";
+import {
+	buildCodexRuntimeSdkOptions,
+	buildCodexRuntimeThreadOptions,
+} from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config";
 import { buildCodexRuntimePromptParts } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
 import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
-import { TodoMutationService } from "../../api/modules/codingAgent/todo";
-import {
-	createRepository,
-	createTask,
-	createTaskRun,
-	deleteRepository,
-} from "../../api/modules/nightworkers/nightworkers.repository";
 
-const repositoryIds: string[] = [];
+afterEach(() => vi.useRealTimers());
 
-afterEach(async () => {
-	vi.useRealTimers();
-	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
-});
-
-function context(executionMode: string): AgentRunContext {
-	const systemContext = buildCodingAgentSystemContext({
-		taskGoal: "同じTaskを単一Coding Agentで処理する。",
-		registeredRepositoryRoot: "/tmp/codex-llm-owned",
-	});
+function context(executionMode = "implementation"): AgentRunContext {
 	return {
 		runId: "run-codex-contract",
 		taskId: "task-codex-contract",
 		repositoryId: "repo-codex-contract",
 		repoRoot: "/tmp/codex-llm-owned",
-		compiledPrompt: systemContext.taskGoal,
-		latestUserMessage: systemContext.taskGoal,
+		compiledPrompt: "fallback request",
+		latestUserMessage: "ユーザーの実装依頼",
 		timeoutSeconds: 30,
 		contextSnapshot: {
-			compiledPrompt: systemContext.taskGoal,
+			compiledPrompt: "fallback request",
 			source: "task_prompt",
 			executionMode,
 		},
 		runtimeOptions: { executionMode },
-		codingAgentSystemContext: systemContext,
 	};
-}
-
-async function createRuntimeRun(title: string) {
-	const repository = await createRepository({
-		name: `${title}-${crypto.randomUUID()}`,
-		localPath: "/tmp/codex-llm-owned",
-		branch: "main",
-		allowed: true,
-	});
-	repositoryIds.push(repository.id);
-	const task = await createTask({
-		repositoryId: repository.id,
-		title,
-		status: "running",
-	});
-	const run = await createTaskRun({
-		taskId: task.id,
-		repositoryId: repository.id,
-		status: "running",
-	});
-	return { repository, task, run };
 }
 
 function completedTextEvents(text: string): AsyncIterable<unknown> {
 	return (async function* () {
 		yield {
 			type: "item.completed",
-			item: { id: crypto.randomUUID(), type: "agent_message", text },
+			item: { id: "message-1", type: "agent_message", text },
 		};
 		yield {
 			type: "turn.completed",
@@ -88,517 +47,329 @@ function failedEvents(message: string): AsyncIterable<unknown> {
 	})();
 }
 
-function rejectedEvents(
-	error: () => unknown,
-	beforeReject?: () => void,
-): AsyncIterable<unknown> {
+function rejectedEvents(error: Error): AsyncIterable<unknown> {
 	return {
 		[Symbol.asyncIterator]() {
 			return {
 				async next() {
-					beforeReject?.();
-					throw error();
+					throw error;
 				},
 			};
 		},
 	};
 }
 
-describe("Codex SDK LLM-owned Todo contract", () => {
-	it("uses the same runtime contract for every legacy mode value", () => {
-		const implementation = buildCodexRuntimePromptParts(
-			context("implementation"),
-		);
-		const test = buildCodexRuntimePromptParts(context("test"));
-		const review = buildCodexRuntimePromptParts(context("review"));
-		expect(test.runtimeContract).toBe(implementation.runtimeContract);
-		expect(review.runtimeContract).toBe(implementation.runtimeContract);
-		expect(review.runtimeContract).toContain("Todo");
-		expect(review.runtimeContract).toContain(
-			"実装前の計画が必要かをあなた自身が判断してください",
-		);
-		expect(review.runtimeContract).toContain(
-			"工程固有のリマインダーとして記録",
-		);
-		expect(review.runtimeContract).toContain(
-			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
-		);
-		expect(review.runtimeContract).toContain(
-			"実装後に仕様書や完了条件を後付けして検証を始めず",
-		);
-		expect(review.runtimeContract).not.toContain("executionMode:");
-		expect(review.runtimeContract).not.toContain("reviewer_evaluation");
+describe("Codex SDK thin runtime adapter", () => {
+	it("passes only the latest request and no NightWorkers runtime contract", () => {
+		for (const mode of ["implementation", "test", "review"]) {
+			const parts = buildCodexRuntimePromptParts(context(mode));
+			expect(parts.prompt).toBe("ユーザーの実装依頼");
+			expect(parts.request).toBe("ユーザーの実装依頼");
+			expect(parts).not.toHaveProperty("runtimeContract");
+		}
 	});
 
-	it("passes the shared DDD boundary contract as Codex developer instructions", () => {
-		const options = buildCodexRuntimeSdkOptions({
-			enableNightworkersMcp: false,
-			env: {},
+	it("falls back to the compiled request when the latest message is blank", () => {
+		const parts = buildCodexRuntimePromptParts({
+			...context(),
+			latestUserMessage: "  \n ",
+			compiledPrompt: "fallback request",
 		});
-		const config = options.config as Record<string, unknown>;
-
-		expect(config.developer_instructions).toBe(
-			CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
-		);
+		expect(parts.prompt).toBe("fallback request");
 	});
 
-	it("starts a fresh thread when synchronous resume fails", async () => {
-		const resumeThread = vi.fn(() => {
-			throw new Error("resume rejected");
-		});
-		const freshThread = { runStreamed: vi.fn() };
-		const startThread = vi.fn(() => freshThread);
+	it("does not inject developer instructions or inline MCP configuration", () => {
+		const options = buildCodexRuntimeSdkOptions({ env: {} });
+		expect(options.config).toBeUndefined();
+		expect(options.env).toEqual({});
+	});
+
+	it("inherits Codex reasoning effort when no route explicitly configures it", () => {
+		const previousEffort = process.env.CODEX_MODEL_REASONING_EFFORT;
+		delete process.env.CODEX_MODEL_REASONING_EFFORT;
+		try {
+			expect(buildCodexRuntimeThreadOptions(context())).not.toHaveProperty(
+				"modelReasoningEffort",
+			);
+			expect(
+				buildCodexRuntimeThreadOptions({
+					...context(),
+					runtimeOptions: { codex: { thinkingDepth: "high" } },
+				}),
+			).toMatchObject({ modelReasoningEffort: "high" });
+		} finally {
+			if (previousEffort === undefined) {
+				delete process.env.CODEX_MODEL_REASONING_EFFORT;
+			} else {
+				process.env.CODEX_MODEL_REASONING_EFFORT = previousEffort;
+			}
+		}
+	});
+
+	it("surfaces synchronous resume failure without starting a fresh thread", async () => {
+		const startThread = vi.fn();
 		const onResumeEvent = vi.fn();
-		const thread = await createCodexRuntimeThread({
-			context: {
-				...context("implementation"),
-				runtimeOptions: {
-					runtimeResume: {
-						kind: "codex_thread",
-						providerThreadId: "thread-old",
+		await expect(
+			createCodexRuntimeThread({
+				context: {
+					...context(),
+					runtimeOptions: {
+						runtimeResume: {
+							kind: "codex_thread",
+							providerThreadId: "thread-old",
+						},
 					},
 				},
-			},
-			codexClient: { resumeThread, startThread },
-			onResumeEvent,
-		});
-		expect(thread).toBe(freshThread);
-		expect(startThread).toHaveBeenCalledOnce();
+				codexClient: {
+					resumeThread: () => {
+						throw new Error("resume rejected");
+					},
+					startThread,
+				},
+				onResumeEvent,
+			}),
+		).rejects.toThrow("resume rejected");
+		expect(startThread).not.toHaveBeenCalled();
 		expect(onResumeEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "resume_failed" }),
 		);
 	});
 
-	it("starts one fresh thread when the first resumed turn fails before events", async () => {
-		const resumedRun = vi.fn(async () => ({
-			events: rejectedEvents(() => new Error("lazy resume failed")),
-		}));
-		const freshEvents = completedTextEvents("fresh thread response");
-		const freshRun = vi.fn(async () => ({ events: freshEvents }));
-		const resumeThread = vi.fn(() => ({ runStreamed: resumedRun }));
-		const startThread = vi.fn(() => ({ runStreamed: freshRun }));
-		const onResumeEvent = vi.fn();
-		const thread = await createCodexRuntimeThread({
-			context: {
-				...context("implementation"),
-				runtimeOptions: {
-					runtimeResume: {
-						kind: "codex_thread",
-						providerThreadId: "thread-missing-rollout",
-						stateId: "state-stale",
-					},
-				},
-			},
-			codexClient: { resumeThread, startThread },
-			onResumeEvent,
-		});
-
-		const recoveryPrompt =
-			"review the changes\n\n<STATE_CARD>previous failures</STATE_CARD>";
-		const turn = await thread.runStreamed(recoveryPrompt, {
-			signal: new AbortController().signal,
-		});
-		const events = [];
-		for await (const event of turn.events) events.push(event);
-		expect(events).toHaveLength(2);
-		expect(events[0]).toMatchObject({
-			type: "item.completed",
-			item: { type: "agent_message", text: "fresh thread response" },
-		});
-		expect(events[1]).toMatchObject({ type: "turn.completed" });
-		expect(resumedRun).toHaveBeenCalledOnce();
-		expect(startThread).toHaveBeenCalledOnce();
-		expect(freshRun).toHaveBeenCalledOnce();
-		expect(freshRun).toHaveBeenCalledWith(
-			recoveryPrompt,
-			expect.objectContaining({ signal: expect.any(AbortSignal) }),
-		);
-		expect(onResumeEvent).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({
-				status: "reused",
-				providerThreadId: "thread-missing-rollout",
-			}),
-		);
-		expect(onResumeEvent).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({
-				status: "resume_failed",
-				providerThreadId: "thread-missing-rollout",
-				stateId: "state-stale",
-			}),
-		);
-	});
-
-	it("does not replace a resumed thread after it has emitted an event", async () => {
-		const resumedRun = vi.fn(async () => ({
-			events: (async function* () {
-				yield { type: "thread.started", thread_id: "thread-resumed" };
-				throw new Error("turn failed after start");
-			})(),
-		}));
+	it("does not replace a resumed thread when its stream fails", async () => {
 		const startThread = vi.fn();
-		const onResumeEvent = vi.fn();
 		const thread = await createCodexRuntimeThread({
 			context: {
-				...context("implementation"),
+				...context(),
 				runtimeOptions: {
 					runtimeResume: {
 						kind: "codex_thread",
 						providerThreadId: "thread-resumed",
-						stateId: "state-active",
 					},
 				},
 			},
 			codexClient: {
-				resumeThread: vi.fn(() => ({ runStreamed: resumedRun })),
+				resumeThread: () => ({
+					runStreamed: async () => ({
+						events: rejectedEvents(new Error("stream failed")),
+					}),
+				}),
 				startThread,
 			},
-			onResumeEvent,
 		});
-
 		const turn = await thread.runStreamed("continue", {
 			signal: new AbortController().signal,
 		});
-		const events: unknown[] = [];
 		await expect(
 			(async () => {
-				for await (const event of turn.events) events.push(event);
+				for await (const _event of turn.events) void _event;
 			})(),
-		).rejects.toThrow("turn failed after start");
-		expect(events).toEqual([
-			{ type: "thread.started", thread_id: "thread-resumed" },
-		]);
+		).rejects.toThrow("stream failed");
 		expect(startThread).not.toHaveBeenCalled();
-		expect(onResumeEvent).toHaveBeenCalledTimes(1);
-		expect(onResumeEvent).toHaveBeenCalledWith(
-			expect.objectContaining({ status: "reused" }),
-		);
 	});
 
-	it("does not replace a resumed thread when the turn was cancelled", async () => {
-		const controller = new AbortController();
-		const resumedRun = vi.fn(async () => ({
-			events: rejectedEvents(
-				() => new DOMException("cancelled", "AbortError"),
-				() => controller.abort(),
-			),
-		}));
-		const startThread = vi.fn();
-		const onResumeEvent = vi.fn();
-		const thread = await createCodexRuntimeThread({
-			context: {
-				...context("implementation"),
-				runtimeOptions: {
-					runtimeResume: {
-						kind: "codex_thread",
-						providerThreadId: "thread-cancelled",
-						stateId: "state-cancelled",
-					},
-				},
-			},
-			codexClient: {
-				resumeThread: vi.fn(() => ({ runStreamed: resumedRun })),
-				startThread,
-			},
-			onResumeEvent,
-		});
-
-		const turn = await thread.runStreamed("continue", {
-			signal: controller.signal,
-		});
-		await expect(
-			(async () => {
-				for await (const _event of turn.events) {
-					// No event is expected before cancellation.
-				}
-			})(),
-		).rejects.toMatchObject({ name: "AbortError" });
-		expect(startThread).not.toHaveBeenCalled();
-		expect(onResumeEvent).toHaveBeenCalledTimes(1);
-		expect(onResumeEvent).toHaveBeenCalledWith(
-			expect.objectContaining({ status: "reused" }),
-		);
-	});
-
-	it("returns needs_human when the LLM-owned Todo is paused", async () => {
-		const { repository, task, run } = await createRuntimeRun("codex-pause");
-		const todoId = crypto.randomUUID();
-		const runContext = {
-			...context("implementation"),
-			runId: run.id,
-			taskId: task.id,
-			repositoryId: repository.id,
-		};
-		const mutations = new TodoMutationService(
-			runContext.codingAgentSystemContext,
-			"llm",
-		);
-		await mutations.execute(run.id, {
-			op: "replace_plan",
-			expectedPlanRevision: 0,
-			todos: [
-				{
-					id: todoId,
-					title: "仕様を確認する",
-					nextAction: "質問する",
-					acceptanceCriteria: [],
-				},
-			],
-		});
-		await mutations.execute(run.id, {
-			op: "start",
-			todoId,
-			expectedTodoRevision: 0,
-		});
-		await mutations.execute(run.id, {
-			op: "transition",
-			todoId,
-			expectedTodoRevision: 1,
-			status: "needs_human",
-			reason: "選択が必要です",
-		});
+	it("accepts the Codex final message without inspecting host Todo state", async () => {
 		const runStreamed = vi.fn(async () => ({
-			events: completedTextEvents("A案とB案のどちらを採用しますか？"),
+			events: completedTextEvents("Codexが返した最終本文"),
 		}));
-		const runtime = new CodexAgentRuntime({
-			threadFactory: () => ({ runStreamed }),
-			usageRecorder: async () => {},
-		});
-
-		const emit = vi.fn(async () => {});
-		const result = await runtime.start(runContext, { emit });
-
-		expect(runStreamed).toHaveBeenCalledOnce();
-		expect(result).toMatchObject({
-			terminalState: "needs_human",
-			stoppedBy: "decision",
-			finalReport: "A案とB案のどちらを採用しますか？",
-		});
-	});
-
-	it("pauses at the model-turn limit while preserving the running Todo", async () => {
-		const { repository, task, run } = await createRuntimeRun("codex-budget");
-		const todoId = crypto.randomUUID();
-		const runContext = {
-			...context("implementation"),
-			runId: run.id,
-			taskId: task.id,
-			repositoryId: repository.id,
-		};
-		const mutations = new TodoMutationService(
-			runContext.codingAgentSystemContext,
-			"llm",
-		);
-		await mutations.execute(run.id, {
-			op: "replace_plan",
-			expectedPlanRevision: 0,
-			todos: [
-				{
-					id: todoId,
-					title: "実装を続ける",
-					nextAction: "残りを変更する",
-					acceptanceCriteria: [],
-				},
-			],
-		});
-		await mutations.execute(run.id, {
-			op: "start",
-			todoId,
-			expectedTodoRevision: 0,
-		});
-		const runtime = new CodexAgentRuntime({
-			threadFactory: () => ({
-				runStreamed: async () => ({
-					events: completedTextEvents("まだ実装途中です。"),
-				}),
-			}),
-			usageRecorder: async () => {},
-			maxModelTurns: 1,
-		});
-
-		const result = await runtime.start(runContext, {
-			emit: vi.fn(async () => {}),
-		});
-
-		expect(result).toMatchObject({
-			terminalState: "needs_human",
-			stoppedBy: "budget",
-			finalReport: "まだ実装途中です。",
-		});
-	});
-
-	it("returns verification readiness differences before accepting a final candidate", async () => {
-		const { repository, task, run } = await createRuntimeRun(
-			"codex-readiness-reconciliation",
-		);
-		const todoId = crypto.randomUUID();
-		const runContext = {
-			...context("implementation"),
-			runId: run.id,
-			taskId: task.id,
-			repositoryId: repository.id,
-			repoRoot: process.cwd(),
-		};
-		const mutations = new TodoMutationService(
-			runContext.codingAgentSystemContext,
-			"llm",
-		);
-		const plan = await mutations.execute(run.id, {
-			op: "replace_plan",
-			expectedPlanRevision: 0,
-			todos: [
-				{
-					id: todoId,
-					title: "実装する",
-					nextAction: "実装を検証する",
-					acceptanceCriteria: [],
-				},
-			],
-		});
-		if (!plan.ok) throw new Error(plan.error.code);
-		const started = await mutations.execute(run.id, {
-			op: "start",
-			todoId: plan.todos[0].id,
-			expectedTodoRevision: plan.todos[0].revision,
-		});
-		if (!started.ok || !started.currentTodo) throw new Error("start failed");
-		await mutations.execute(run.id, {
-			op: "transition",
-			todoId: started.currentTodo.id,
-			expectedTodoRevision: started.currentTodo.revision,
-			status: "passed",
-			reason: "Todo上は完了した。",
-		});
-		await db.insert(verificationDocuments).values({
-			taskId: task.id,
-			runId: run.id,
-			sourceSpecPath: "spec/docs/codex-readiness.md",
-			documentJson: {},
-			generatedAt: new Date(),
-			status: "active",
-		});
-		const inputs: unknown[] = [];
-		const runStreamed = vi.fn(async (input: unknown) => {
-			inputs.push(input);
-			return inputs.length === 1
-				? { events: completedTextEvents("実装と検証が完了しました。") }
-				: { events: failedEvents("stop after readiness feedback") };
-		});
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
-			maxModelTurns: 2,
-		}).start(runContext, { emit: vi.fn(async () => {}) });
-
-		expect(runStreamed).toHaveBeenCalledTimes(2);
-		expect(inputs[1]).toEqual(
-			expect.stringContaining("FINALIZE_RECONCILIATION_REQUIRED"),
+		}).start(
+			{
+				...context(),
+				todoPlan: [
+					{
+						id: "legacy",
+						seq: 1,
+						title: "open",
+						taskType: "code_change",
+						status: "running",
+					},
+				],
+			},
+			{ emit: vi.fn(async () => {}) },
 		);
-		expect(inputs[1]).toEqual(
-			expect.stringContaining("missing_successful_full_verify"),
-		);
-		expect(inputs[1]).toEqual(
-			expect.stringContaining('"finalCandidate":"実装と検証が完了しました。"'),
-		);
+		expect(runStreamed).toHaveBeenCalledOnce();
 		expect(result).toMatchObject({
-			terminalState: "failed",
-			finalReport: "実装と検証が完了しました。",
+			terminalState: "completed",
+			finalReport: "Codexが返した最終本文",
 		});
 	});
 
-	it("returns a Todo contract violation to the model before the next turn", async () => {
-		const { repository, task, run } = await createRuntimeRun(
-			"codex-todo-feedback",
+	it("projects Codex native todo_list events as trace only", async () => {
+		const emit = vi.fn(async () => {});
+		const runStreamed = vi.fn(async () => ({
+			events: (async function* () {
+				yield {
+					type: "item.updated",
+					item: {
+						id: "plan-1",
+						type: "todo_list",
+						items: [
+							{ text: "調査", completed: true },
+							{ text: "実装", completed: false },
+						],
+					},
+				};
+				yield* completedTextEvents("完了");
+			})(),
+		}));
+		await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			usageRecorder: async () => {},
+		}).start(context(), { emit });
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "tool_call_progress",
+				payload: expect.objectContaining({
+					toolName: "codex.update_plan",
+					providerItemType: "todo_list",
+				}),
+			}),
 		);
-		const runContext = {
-			...context("implementation"),
-			runId: run.id,
-			taskId: task.id,
-			repositoryId: repository.id,
-		};
-		const inputs: unknown[] = [];
-		const runStreamed = vi.fn(async (input: unknown) => {
-			inputs.push(input);
-			if (inputs.length === 1) {
-				return {
+		expect(runStreamed).toHaveBeenCalledOnce();
+	});
+
+	it("does not start a second turn after a file change and final response", async () => {
+		const runStreamed = vi.fn(async () => ({
+			events: (async function* () {
+				yield {
+					type: "item.completed",
+					item: {
+						id: "change-1",
+						type: "file_change",
+						changes: [{ path: "src/a.ts", kind: "update" }],
+						status: "completed",
+					},
+				};
+				yield* completedTextEvents("変更しました。");
+			})(),
+		}));
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			usageRecorder: async () => {},
+		}).start(context(), { emit: vi.fn(async () => {}) });
+		expect(runStreamed).toHaveBeenCalledOnce();
+		expect(result.terminalState).toBe("completed");
+	});
+
+	it("fails once when the provider completes without a final message", async () => {
+		const emit = vi.fn(async () => {});
+		const runStreamed = vi.fn(async () => ({
+			events: (async function* () {
+				yield {
+					type: "turn.completed",
+					usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 0 },
+				};
+			})(),
+		}));
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			usageRecorder: async () => {},
+		}).start(context(), { emit });
+		expect(runStreamed).toHaveBeenCalledOnce();
+		expect(result.terminalState).toBe("failed");
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "runtime_error",
+				payload: expect.objectContaining({
+					code: "PROVIDER_FINAL_RESPONSE_MISSING",
+				}),
+			}),
+		);
+	});
+
+	it("records an explicit failure when the stream ends without a terminal event", async () => {
+		const emit = vi.fn(async () => {});
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async () => ({
 					events: (async function* () {
-						yield {
-							type: "item.completed",
-							item: {
-								id: "file-change-1",
-								type: "file_change",
-								changes: [{ path: "src/a.ts", kind: "update" }],
-								status: "completed",
-							},
-						};
 						yield {
 							type: "item.completed",
 							item: {
 								id: "message-1",
 								type: "agent_message",
-								text: "変更しました。",
-							},
-						};
-						yield {
-							type: "turn.completed",
-							usage: {
-								input_tokens: 10,
-								cached_input_tokens: 0,
-								output_tokens: 10,
+								text: "途中の本文",
 							},
 						};
 					})(),
-				};
-			}
-			return { events: failedEvents("stop after feedback") };
-		});
-		const runtime = new CodexAgentRuntime({
-			threadFactory: () => ({ runStreamed }),
+				}),
+			}),
 			usageRecorder: async () => {},
-			maxModelTurns: 2,
-		});
-
-		const emit = vi.fn(async () => {});
-		const result = await runtime.start(runContext, { emit });
-
-		expect(runStreamed).toHaveBeenCalledTimes(2);
-		expect(inputs[1]).toEqual(expect.stringContaining("CURRENT_TODO_REQUIRED"));
-		expect(inputs[1]).toEqual(
-			expect.stringContaining("codex_file_change_without_current_todo"),
-		);
-		expect(inputs[1]).toEqual(
-			expect.stringContaining('"finalCandidate":"変更しました。"'),
-		);
-		expect(inputs[1]).toEqual(
-			expect.stringContaining('"authoritativeContext"'),
-		);
-		expect(inputs[1]).toEqual(expect.stringContaining(run.id));
-		expect(inputs[1]).toEqual(expect.stringContaining(runContext.repoRoot));
+		}).start(context(), { emit });
+		expect(result.terminalState).toBe("failed");
+		expect(result.finalReport).toBe("途中の本文");
 		expect(emit).toHaveBeenCalledWith(
 			expect.objectContaining({
-				type: "model_response_finished",
-				payload: expect.objectContaining({ candidateRevision: 1 }),
+				type: "runtime_error",
+				payload: expect.objectContaining({
+					code: "PROVIDER_TURN_TERMINAL_EVENT_MISSING",
+				}),
 			}),
 		);
-		expect(result.terminalState).toBe("failed");
 	});
 
-	it("does not retry from provider error message wording", async () => {
+	it("keeps a completed Codex turn successful when usage persistence fails", async () => {
+		const emit = vi.fn(async () => {});
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async () => ({
+					events: completedTextEvents("実装完了"),
+				}),
+			}),
+			persistRuntimeUsage: true,
+			usageRecorder: async () => {
+				throw new Error("usage database unavailable");
+			},
+		}).start(context(), { emit });
+		expect(result).toMatchObject({
+			terminalState: "completed",
+			finalReport: "実装完了",
+		});
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "runtime_warning",
+				payload: expect.objectContaining({
+					code: "CODEX_USAGE_PERSIST_FAILED",
+				}),
+			}),
+		);
+	});
+
+	it("keeps a completed Codex turn successful when post-run diff collection fails", async () => {
+		const emit = vi.fn(async () => {});
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async () => ({
+					events: completedTextEvents("実装完了"),
+				}),
+			}),
+			collectWorkspaceDiff: true,
+			usageRecorder: async () => {},
+		}).start({ ...context(), repoRoot: "/dev/null" }, { emit });
+		expect(result).toMatchObject({
+			terminalState: "completed",
+			finalReport: "実装完了",
+		});
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "runtime_warning",
+				payload: expect.objectContaining({
+					code: "CODEX_WORKSPACE_DIFF_COLLECTION_FAILED",
+				}),
+			}),
+		);
+	});
+
+	it("does not retry based on provider error wording", async () => {
 		const runStreamed = vi.fn(async () => ({
 			events: failedEvents("Selected model is at capacity"),
 		}));
-		const threadFactory = vi.fn(() => ({ runStreamed }));
-		const runtime = new CodexAgentRuntime({
-			threadFactory,
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
-		});
-
-		const result = await runtime.start(context("implementation"), {
-			emit: vi.fn(async () => {}),
-		});
-
-		expect(threadFactory).toHaveBeenCalledOnce();
+		}).start(context(), { emit: vi.fn(async () => {}) });
 		expect(runStreamed).toHaveBeenCalledOnce();
 		expect(result).toMatchObject({
 			terminalState: "failed",
@@ -606,123 +377,106 @@ describe("Codex SDK LLM-owned Todo contract", () => {
 		});
 	});
 
-	it("preserves cancellation when the provider reports an error after abort", async () => {
+	it("keeps a non-fatal Codex item error as trace when the turn completes", async () => {
+		const emit = vi.fn(async () => {});
+		const runStreamed = vi.fn(async () => ({
+			events: (async function* () {
+				yield {
+					type: "item.completed",
+					item: {
+						id: "warning-1",
+						type: "error",
+						message: "optional lookup failed",
+					},
+				};
+				yield* completedTextEvents("別の方法で完了しました。");
+			})(),
+		}));
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			usageRecorder: async () => {},
+		}).start(context(), { emit });
+		expect(result.terminalState).toBe("completed");
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "runtime_warning",
+				payload: expect.objectContaining({ error: "optional lookup failed" }),
+			}),
+		);
+	});
+
+	it("preserves cancellation when the caller aborts", async () => {
 		const controller = new AbortController();
 		const runtime = new CodexAgentRuntime({
 			threadFactory: () => ({
 				runStreamed: async () => ({
 					events: (async function* () {
-						controller.abort(new Error("user cancelled"));
-						yield {
-							type: "turn.failed",
-							error: { message: "aborted provider turn" },
-						};
+						controller.abort();
+						yield { type: "turn.failed", error: { message: "aborted" } };
 					})(),
 				}),
 			}),
 			usageRecorder: async () => {},
 		});
-
 		const result = await runtime.start(
-			context("implementation"),
+			context(),
 			{ emit: vi.fn(async () => {}) },
 			controller.signal,
 		);
-
-		expect(result).toMatchObject({
-			terminalState: "cancelled",
-			stoppedBy: "cancelled",
-		});
+		expect(result.terminalState).toBe("cancelled");
 	});
 
 	it("aborts the active Codex stream when stop is requested", async () => {
-		let resolveStreamStarted!: () => void;
-		const streamStarted = new Promise<void>((resolve) => {
-			resolveStreamStarted = resolve;
-		});
-		let receivedSignal: AbortSignal | null = null;
+		let streamStarted!: () => void;
+		const started = new Promise<void>((resolve) => (streamStarted = resolve));
 		const runtime = new CodexAgentRuntime({
 			threadFactory: () => ({
-				runStreamed: async (
-					_input: unknown,
-					options: { signal: AbortSignal },
-				) => {
-					receivedSignal = options.signal;
-					return {
-						events: (async function* () {
-							resolveStreamStarted();
-							await new Promise<void>((resolve) => {
-								if (options.signal.aborted) {
-									resolve();
-									return;
-								}
-								options.signal.addEventListener("abort", () => resolve(), {
-									once: true,
-								});
-							});
-							yield {
-								type: "turn.failed",
-								error: { message: "aborted provider turn" },
-							};
-						})(),
-					};
-				},
+				runStreamed: async (_input, options) => ({
+					events: (async function* () {
+						streamStarted();
+						await new Promise<void>((resolve) =>
+							options.signal.addEventListener("abort", () => resolve(), {
+								once: true,
+							}),
+						);
+						yield { type: "turn.failed", error: { message: "aborted" } };
+					})(),
+				}),
 			}),
 			usageRecorder: async () => {},
 		});
-		const runContext = context("implementation");
-		const resultPromise = runtime.start(runContext, {
+		const resultPromise = runtime.start(context(), {
 			emit: vi.fn(async () => {}),
 		});
-
-		await streamStarted;
-		await runtime.stop(runContext.runId);
-		const result = await resultPromise;
-
-		expect(receivedSignal?.aborted).toBe(true);
-		expect(result).toMatchObject({
-			terminalState: "cancelled",
-			stoppedBy: "cancelled",
-		});
+		await started;
+		await runtime.stop(context().runId);
+		expect((await resultPromise).terminalState).toBe("cancelled");
 	});
 
-	it("preserves a timeout pause when the provider reports an abort error", async () => {
+	it("returns timed_out when the Codex stream reaches the host time limit", async () => {
 		vi.useFakeTimers();
 		const runtime = new CodexAgentRuntime({
 			threadFactory: () => ({
-				runStreamed: async (
-					_input: unknown,
-					options: { signal: AbortSignal },
-				) => ({
+				runStreamed: async (_input, options) => ({
 					events: (async function* () {
-						await new Promise<void>((resolve) => {
-							if (options.signal.aborted) {
-								resolve();
-								return;
-							}
+						await new Promise<void>((resolve) =>
 							options.signal.addEventListener("abort", () => resolve(), {
 								once: true,
-							});
-						});
-						yield {
-							type: "turn.failed",
-							error: { message: "aborted provider turn" },
-						};
+							}),
+						);
+						yield { type: "turn.failed", error: { message: "aborted" } };
 					})(),
 				}),
 			}),
 			usageRecorder: async () => {},
 		});
 		const resultPromise = runtime.start(
-			{ ...context("implementation"), timeoutSeconds: 1 },
+			{ ...context(), timeoutSeconds: 1 },
 			{ emit: vi.fn(async () => {}) },
 		);
-
 		await vi.advanceTimersByTimeAsync(1_000);
-		const result = await resultPromise;
-
-		expect(result).toMatchObject({
-			terminalState: "needs_human",
+		expect(await resultPromise).toMatchObject({
+			terminalState: "timed_out",
 			stoppedBy: "budget",
 		});
 	});

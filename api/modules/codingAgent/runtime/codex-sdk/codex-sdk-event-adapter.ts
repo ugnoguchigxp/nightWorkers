@@ -11,14 +11,6 @@ import type { AgentRuntimeEvent } from "../types";
 const SECRET_KEY_PATTERN =
 	/(authorization|cookie|token|secret|api[_-]?key|password)/i;
 
-export type CodexCommandClass =
-	| "verification"
-	| "broad_verification"
-	| "git_clone_or_import"
-	| "install"
-	| "inspection"
-	| "other";
-
 type MapperState = {
 	agentTextById: Map<string, string>;
 	repoRoot?: string;
@@ -63,8 +55,8 @@ export function mapCodexThreadEvent(
 	if (event.type === "turn.completed") {
 		return [
 			{
-				type: "model_response_finished",
-				message: "[Codex] Turn usage received.",
+				type: "turn_finished",
+				message: "[Codex] Turn completed.",
 				payload: {
 					provider: "codex",
 					providerEventType: event.type,
@@ -156,7 +148,6 @@ function mapCodexItemEvent(
 	}
 
 	if (item.type === "command_execution") {
-		const commandClass = classifyCodexCommand(item.command);
 		const projection = compactCodexCommandExecutionItem({ item, rawEvent });
 		const payload = {
 			provider: "codex",
@@ -164,7 +155,6 @@ function mapCodexItemEvent(
 			providerItemId: item.id,
 			toolName: "command_execution",
 			command: item.command,
-			commandClass,
 			aggregatedOutput: projection.aggregatedOutput,
 			aggregatedOutputTruncated: projection.aggregation?.truncated ?? false,
 			aggregatedOutputOriginalChars: projection.aggregation?.originalChars ?? 0,
@@ -247,13 +237,32 @@ function mapCodexItemEvent(
 		];
 	}
 
+	if (item.type === "todo_list") {
+		return [
+			{
+				type: mapToolLifecycleEventType(eventType),
+				message: "[Codex] Native Todo trace updated.",
+				payload: {
+					provider: "codex",
+					providerEventType: eventType,
+					providerItemId: item.id,
+					providerItemType: "todo_list",
+					toolName: "codex.update_plan",
+					items: item.items,
+					...projectCodexProviderEvent(rawEvent, item.id),
+				},
+			},
+		];
+	}
+
 	if (item.type === "error") {
 		return [
 			{
-				type: "runtime_error",
+				type: "runtime_warning",
 				message: `[Codex] Item error: ${item.message}`,
 				payload: {
 					provider: "codex",
+					severity: "warning",
 					providerEventType: eventType,
 					providerItemId: item.id,
 					error: item.message,
@@ -434,78 +443,6 @@ function normalizeChangedFiles(changes: unknown): string[] {
 			return path;
 		})
 		.filter((path): path is string => Boolean(path));
-}
-
-export function classifyCodexCommand(command: string): CodexCommandClass {
-	const normalized = normalizeCodexCommand(command);
-	if (!normalized) return "other";
-	if (isBroadVerificationCommand(normalized)) return "broad_verification";
-	if (isGitCloneOrImportCommand(normalized)) return "git_clone_or_import";
-	if (isInstallCommand(normalized)) return "install";
-	if (isVerificationCommand(normalized)) return "verification";
-	if (isInspectionCommand(normalized)) return "inspection";
-	return "other";
-}
-
-export function normalizeCodexCommand(command: string): string {
-	const unwrapped = unwrapShellCommand(command.trim());
-	return unwrapped.replace(/\s+/g, " ").trim();
-}
-
-function unwrapShellCommand(command: string): string {
-	const match = /^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/.exec(command);
-	if (!match) return command;
-	const inner = unquoteShellArgument(match[1].trim());
-	return inner || command;
-}
-
-function unquoteShellArgument(value: string): string {
-	if (value.length < 2) return value;
-	const quote = value[0];
-	if ((quote !== "'" && quote !== '"') || value.at(-1) !== quote) return value;
-	const inner = value.slice(1, -1);
-	if (quote === "'") return inner.replace(/'\\''/g, "'");
-	return inner.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-}
-
-function isBroadVerificationCommand(command: string) {
-	return (
-		/\bbun\s+(?:run\s+)?(?:scripts\/verify\.(?:ts|js|mjs)|verify(?::[\w-]+)?)\b/.test(
-			command,
-		) ||
-		/\bnpm\s+run\s+verify(?::[\w-]+)?\b/.test(command) ||
-		/\b(?:pnpm|yarn)\s+(?:run\s+)?verify(?::[\w-]+)?\b/.test(command)
-	);
-}
-
-function isVerificationCommand(command: string) {
-	return (
-		/\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|typecheck|lint|build)(?::[\w-]+)?\b/.test(
-			command,
-		) || /\b(?:vitest|jest|playwright|tsc|eslint)\b/.test(command)
-	);
-}
-
-function isGitCloneOrImportCommand(command: string) {
-	return (
-		/\bgit\s+clone\b/.test(command) ||
-		/\b(?:npx|pnpm\s+dlx|bunx)\s+(?:degit|create-[\w-]+)\b/.test(command) ||
-		/\b(?:npm|pnpm|yarn|bun)\s+create\b/.test(command)
-	);
-}
-
-function isInstallCommand(command: string) {
-	return /\b(?:npm\s+(?:install|i|ci)|pnpm\s+(?:install|i)|yarn\s+(?:install|add)|bun\s+(?:install|add))\b/.test(
-		command,
-	);
-}
-
-function isInspectionCommand(command: string) {
-	return (
-		/^(?:pwd|ls|find|tree|wc)\b/.test(command) ||
-		/^(?:rg|grep|cat|sed|awk|head|tail|nl)\b/.test(command) ||
-		/^git\s+(?:status|diff|log|show|branch|rev-parse)\b/.test(command)
-	);
 }
 
 function mapToolLifecycleEventType(

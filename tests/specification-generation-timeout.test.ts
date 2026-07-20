@@ -124,10 +124,11 @@ describe("Feature Plan generation timeout handling", () => {
 		expect(call.options.contract.name).toBe("feature_plan_markdown");
 		expect(call.options.contract.providerJsonSchema).toMatchObject({
 			type: "object",
-			required: ["markdown"],
+			required: ["markdown", "repositoryMaterializationIntent"],
 			additionalProperties: false,
 			properties: {
 				markdown: expect.objectContaining({ type: "string" }),
+				repositoryMaterializationIntent: expect.any(Object),
 			},
 		});
 		expect(
@@ -138,7 +139,7 @@ describe("Feature Plan generation timeout handling", () => {
 					}
 				).properties,
 			),
-		).toEqual(["markdown"]);
+		).toEqual(["markdown", "repositoryMaterializationIntent"]);
 		expect(
 			call.options.contract.runtimeSchema.safeParse(validDraft).success,
 		).toBe(true);
@@ -152,6 +153,12 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				markdown:
 					"# Todo List Feature Plan\n\n## 目的\nNightWorkersへTodoを追加する。\n\n## 実装計画\n\n1. NightWorkers APIを実装する\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+				repositoryMaterializationIntent: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					initialize: true,
+				},
 			},
 			attempts: [],
 		});
@@ -174,6 +181,14 @@ describe("Feature Plan generation timeout handling", () => {
 		expect(featurePlanCall.payloadJson?.featurePlanContent).toEqual({
 			version: 1,
 			digest: digestFeaturePlanContent(featurePlanCall.content),
+		});
+		expect(
+			featurePlanCall.payloadJson?.repositoryMaterializationIntent,
+		).toEqual({
+			kind: "starter_template",
+			source: "starter",
+			stack: "hono",
+			initialize: true,
 		});
 		expect(featurePlanCall.content).toContain("対象プロジェクト APIを実装する");
 		expect(featurePlanCall.content).not.toMatch(/NightWorkers?/i);

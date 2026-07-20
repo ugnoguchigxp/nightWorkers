@@ -109,6 +109,7 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
 					"# Feature Plan\n\n## 目的\n未回答 blocking を assumption として進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				repositoryMaterializationIntent: null,
 			});
 			const result = await generateFeaturePlanArtifact(task.id, {
 				questionnaireSessionId: session.id,
@@ -146,6 +147,7 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
 					"# Feature Plan\n\n## 目的\nnon-blocking は既存資料から進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				repositoryMaterializationIntent: null,
 			});
 
 			const result = await generateFeaturePlanArtifact(task.id, {
@@ -170,7 +172,10 @@ describe("Questionnaire decision layer services", () => {
 			const { task } = await createPlanModeTask("Sidecar failure isolation");
 			const markdown =
 				"# Feature Plan\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる";
-			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({ markdown });
+			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
+				markdown,
+				repositoryMaterializationIntent: null,
+			});
 
 			const result = await generateFeaturePlanArtifact(task.id);
 			const persisted = (await nightworkersRepo.listTaskMessages(task.id)).find(

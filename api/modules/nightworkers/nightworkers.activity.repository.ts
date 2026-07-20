@@ -195,6 +195,17 @@ export function runEventToActivityText(input: {
 		? inputPayload.runEvent
 		: {};
 	const runEventData = isJsonRecord(runEvent.data) ? runEvent.data : {};
+	if (input.eventType === "model.response_finished") {
+		return String(
+			payload.text ||
+				payload.rawContent ||
+				inputPayload.text ||
+				runEventData.text ||
+				runEventData.rawContent ||
+				input.message ||
+				"",
+		);
+	}
 	if (input.agentEventType === "model.response_finished") {
 		return String(
 			inputPayload.rawContent || runEventData.rawContent || input.message || "",

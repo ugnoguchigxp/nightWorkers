@@ -157,6 +157,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				repositoryMaterializationIntent: null,
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,
@@ -471,6 +472,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				repositoryMaterializationIntent: null,
 			});
 			const docRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/plan-mode/feature-plan`,

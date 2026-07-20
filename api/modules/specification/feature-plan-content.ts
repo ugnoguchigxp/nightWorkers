@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { repositoryMaterializationIntentSchema } from "../../../shared/schemas/git-integration.schema";
 
 export const featurePlanMarkdownDraftSchema = z
 	.object({
@@ -9,6 +10,9 @@ export const featurePlanMarkdownDraftSchema = z
 			.refine((value) => value.trim().length > 0, {
 				message: "Feature Plan Markdown must not be blank.",
 			}),
+		repositoryMaterializationIntent: repositoryMaterializationIntentSchema
+			.nullable()
+			.default(null),
 	})
 	.passthrough();
 

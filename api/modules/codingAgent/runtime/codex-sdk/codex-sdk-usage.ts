@@ -1,7 +1,5 @@
-import type {
-	NormalizedLlmUsage,
-	recordLlmUsage,
-} from "../../../../services/llm-usage";
+import type { NormalizedLlmUsage } from "../../../../services/llm-usage";
+import type { recordLlmUsage } from "../../../../services/llm-usage/repository";
 import type { AgentRunContext } from "../types";
 
 export type RuntimeUsageRecorder = typeof recordLlmUsage;
@@ -64,8 +62,8 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
 				input.promptPartObservabilityEnabled === false
 					? null
 					: "nightworkers_estimate",
-			runtimePromptShape: "request_plus_runtime_contract",
-			systemPromptMeaning: "runtime_contract_tokens",
+			runtimePromptShape: "request_only",
+			systemPromptMeaning: "none",
 			nonCachedInputTokens:
 				usage.inputTokens !== null && usage.cachedInputTokens !== null
 					? Math.max(0, usage.inputTokens - usage.cachedInputTokens)

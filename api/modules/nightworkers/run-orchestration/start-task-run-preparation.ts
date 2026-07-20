@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
+import { buildCodingAgentImplementationHandoffSnapshot } from "../../codingAgent";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
 import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
@@ -10,6 +11,7 @@ import * as repo from "../nightworkers.repository";
 import { readPromptImageAttachments } from "../prompt-image-attachments";
 import {
 	buildCompiledPromptText,
+	findLatestImplementationDesignArtifacts,
 	findLatestImplementationHandoffMessage,
 	resolveLatestJobTypeFromMessages,
 } from "./runtime-routing";
@@ -65,8 +67,17 @@ export async function prepareTaskRunStart(input: {
 		.find((message) => message.role === "user");
 	const jobType = resolveLatestJobTypeFromMessages(messages);
 	const executionMode = "implementation" as const;
+	const taskGitWorkspace = await getTaskGitWorkspace(input.task.id);
+	const repositoryMaterializationSnapshot = taskGitWorkspace
+		? {
+				status: taskGitWorkspace.status,
+				kind: taskGitWorkspace.materializationKind,
+				intent: taskGitWorkspace.materializationIntentJson,
+				bootstrapEvidence: taskGitWorkspace.bootstrapEvidenceJson,
+			}
+		: { status: "not_configured" };
 	if (!input.options.allowUnassignedWorkspace) {
-		const workspace = await getTaskGitWorkspace(input.task.id);
+		const workspace = taskGitWorkspace;
 		if (workspace) {
 			if (
 				!input.task.worktreePath ||
@@ -105,6 +116,28 @@ export async function prepareTaskRunStart(input: {
 	const executionModeSource = input.options.executionModeSource ?? "explicit";
 	const implementationHandoffMessage =
 		findLatestImplementationHandoffMessage(messages);
+	const implementationDesignArtifacts = findLatestImplementationDesignArtifacts(
+		messages,
+		implementationHandoffMessage,
+	);
+	const implementationHandoffSnapshot = implementationHandoffMessage
+		? buildCodingAgentImplementationHandoffSnapshot({
+				sourceMessageId: implementationHandoffMessage.id,
+				userRequest:
+					lastUserMessage?.content ||
+					input.task.description ||
+					input.task.objective ||
+					"",
+				adoptedPlan: implementationHandoffMessage.content,
+				designArtifacts: implementationDesignArtifacts.map(
+					({ kind, message }) => ({
+						kind,
+						sourceMessageId: message.id,
+						content: message.content,
+					}),
+				),
+			})
+		: null;
 	const compiledPromptText = buildCompiledPromptText({
 		task: input.task,
 		lastUserMessage,
@@ -133,6 +166,8 @@ export async function prepareTaskRunStart(input: {
 		executionMode,
 		executionModeSource,
 		implementationHandoffMessage,
+		implementationHandoffSnapshot,
+		repositoryMaterializationSnapshot,
 		compiledPromptText,
 	};
 }

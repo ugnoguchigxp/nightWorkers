@@ -1,5 +1,7 @@
 export const jaTodoPane = {
 	"todoPane.noActiveTodo": "現在実行中の Todo はありません",
+	"todoPane.codexCurrentTodo": "実行中: #{{seq}} {{title}}",
+	"todoPane.codexOpenTodo": "未完了: #{{seq}} {{title}}",
 	"todoPane.resumeLabel": "ユーザー回答",
 	"todoPane.resumeDescription": "続行に必要な情報を入力してください。",
 	"todoPane.runtimePauseDescription":
