@@ -256,52 +256,12 @@ export function renderPlanModePackageScriptsContext(repoRoot: string) {
 	if (scripts.length === 0) {
 		return [
 			"Project package scripts:",
-			"- package.json scripts は未検出です。検証 command は推測で作らず、既存 tooling を確認してください。",
-			"- 検証方針: template を使わない場合でも、既存構成に合わせた最小の verify 系 script を追加する手順を実装計画に入れてください。",
-			"- verify 系 script は build / typecheck / lint / test など、この repository で実行可能な確認を束ねる quality gate として作ってください。",
+			"- package.json scripts は未検出です。",
 		].join("\n");
 	}
-	const preferredOrder = [
-		"verify",
-		"verify:base",
-		"verify:fast",
-		"typecheck",
-		"lint",
-		"test",
-		"test:unit",
-		"test:e2e",
-		"build",
-	];
-	const scriptByName = new Map(scripts);
-	const ordered = [
-		...preferredOrder.filter((name) => scriptByName.has(name)),
-		...scripts
-			.map(([name]) => name)
-			.filter((name) => !preferredOrder.includes(name))
-			.slice(0, 10),
-	];
-	const hasRepresentativeVerify =
-		scriptByName.has("verify") || scriptByName.has("verify:base");
-	const hasCoveredIndividualCheck = ["build", "typecheck", "lint", "test"].some(
-		(name) => scriptByName.has(name),
-	);
-	const verificationGuidance =
-		hasRepresentativeVerify && hasCoveredIndividualCheck
-			? [
-					"- 検証方針: verify / verify:base がある場合は代表 gate として優先し、同じ目的の build / typecheck / lint / test を検証計画に同列で重複列挙しないでください。",
-					"- 個別の検証 script は対象範囲の確認または verify で代替できない理由がある場合だけ使ってください。",
-				]
-			: !hasRepresentativeVerify && hasCoveredIndividualCheck
-				? [
-						"- 検証方針: verify / verify:base が無い場合は、既存の build / typecheck / lint / test を束ねる verify 系 script の追加を実装計画に入れてください。",
-						"- 検証計画では、追加した verify 系 script を代表 gate として扱い、個別 script は対象範囲の確認または失敗時の切り分けに限定してください。",
-					]
-				: [];
 	return [
 		"Project package scripts:",
-		...ordered.map((name) => `- ${name}: ${scriptByName.get(name)}`),
-		...verificationGuidance,
-		"- Feature Plan の検証コマンドは、上記に存在する script 名だけを使ってください。存在しない script は推測しないでください。",
+		...scripts.map(([name, command]) => `- ${name}: ${command}`),
 	].join("\n");
 }
 

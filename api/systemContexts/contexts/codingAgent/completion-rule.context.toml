@@ -1,5 +1,10 @@
-text = '''Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。
+text = '''Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。品質ゲートがPassした証跡を持つことを完了条件とし、具体的なcommandと品質ゲートの構成はProjectの観測結果から判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。
 検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。
 完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。
 tool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。
-completion readiness snapshotが返された場合は、Task、現在のsourceStateHash、verification discrepancy、直前候補を同時に読み、特定toolの呼び出し自体ではなく、未解決条件に対応する観測証跡が現在sourceで確認できる状態へ更新してください。'''
+completion readiness snapshotが返された場合は、Task、現在のsourceStateHash、verification discrepancy、直前候補を同時に読み、特定toolの呼び出し自体ではなく、未解決条件に対応する観測証跡が現在sourceで確認できる状態へ更新してください。
+完了報告形式:
+[[completionReportFormat]]'''
+
+[variables.completionReportFormat]
+profile = "trusted.inline"

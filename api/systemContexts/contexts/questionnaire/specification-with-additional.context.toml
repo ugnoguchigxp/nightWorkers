@@ -38,18 +38,15 @@ markdown はテンプレートではなく、プレースホルダーを含ま�
 production変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。
 `## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。
 実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。
-`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。
 `## 検証計画` はQuestionnaireで採用されたテスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かないでください。具体的なテストケースはrepository調査後にCoding Agentが決めます。自動テストを採用した場合はunit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。
-`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。
-`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。
-個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。
+`## 検証計画` には、品質ゲートがPassした証跡を持つことを記載してください。具体的なcommandと品質ゲートの構成は固定せず、Projectを観測したCoding Agentに判断させてください。
 Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。
 `## 完了条件` は、今回の仕様で達成すべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。自動テストを選択した場合だけ、選択したtest種別の証跡を各条件へ対応付けてください。テストを完了条件にしない場合も、観測可能な成功条件は残しますが自動テスト証跡を要求しないでください。
 今回の仕様でポイントとなる具体的な挙動を、1件ずつ単独に合否判定できる1文で書いてください。自動テストを選択した場合はテストケース名として使える表現にし、各項目と選択したtest種別の証跡を1対1で結び付けてください。テストを完了条件にしない場合は、テスト証跡を要求せず観測可能な結果として書いてください。同じ要点は1項目にまとめます。
 title には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。
 完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、選択した証跡または観測結果で達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。
 完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。
-機能の期待挙動を `## 完了条件` に整理し、Questionnaireで採用した場合だけ対応するUnit testまたはE2E証跡を要求してください。`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは、Questionnaireの選択と矛盾しない範囲で `## 検証計画` に整理してください。
+機能の期待挙動を `## 完了条件` に整理し、Questionnaireで採用した場合だけ対応するUnit testまたはE2E証跡を要求してください。
 `## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。
 画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。
 出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。

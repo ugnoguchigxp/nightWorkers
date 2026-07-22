@@ -283,13 +283,11 @@ describe("Specification document generation", () => {
 			"NightWorkers / NightWorker を実装対象名として使わない",
 		);
 		expect(systemPrompt).toContain("実装対象は Task と Target Project Context");
-		expect(systemPrompt).toContain("`verify` または `verify:base`");
+		expect(systemPrompt).toContain("品質ゲートがPassした証跡を持つ");
 		expect(systemPrompt).toContain(
-			"`build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しない",
+			"具体的なcommandと品質ゲートの構成は固定せず",
 		);
-		expect(systemPrompt).toContain(
-			"または `## 実装計画` で追加すると明記した script 名だけ",
-		);
+		expect(systemPrompt).not.toContain("`verify` または `verify:base`");
 		expect(systemPrompt).toContain("Questionnaireで採用されたテスト観点");
 		expect(systemPrompt).toContain(
 			"テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かない",
@@ -314,9 +312,6 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"repositoryを調査した後のテスト設計で具体化",
 		);
-		expect(systemPrompt).toContain(
-			"aggregate gateは、Questionnaireの選択と矛盾しない範囲で `## 検証計画`",
-		);
 		expect(systemPrompt).toContain("プレースホルダーを含まない完成済み");
 		expect(systemPrompt).toContain("markdown フィールド");
 		expect(systemPrompt).toContain("repositoryMaterializationIntent");
@@ -325,8 +320,8 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"計画や完了条件を別のJSON fieldへ複製しない",
 		);
-		expect(systemPrompt).toContain("テンプレート未使用でも検証を弱めず");
-		expect(systemPrompt).toContain("最小の verify 系 script 追加");
+		expect(systemPrompt).not.toContain("テンプレート未使用でも検証を弱めず");
+		expect(systemPrompt).not.toContain("最小の verify 系 script 追加");
 	});
 
 	it("adds requirement priority only to the Mission Pilot SystemContext", () => {
@@ -641,11 +636,13 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain(
 			"具体的な入力、操作、アサーションはCoding Agent",
 		);
-		expect(userPrompt).toContain("verify / verify:base がある場合は代表 gate");
-		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
-		expect(userPrompt).toContain("同じ目的のcommandは代表gateへまとめる");
-		expect(userPrompt).toContain("aggregate gateは検証計画に整理");
-		expect(userPrompt).toContain("Questionnaireで選択された証跡または観測結果");
+		expect(userPrompt).toContain("品質ゲートがPassした証跡を持つ");
+		expect(userPrompt).toContain(
+			"具体的なcommandと品質ゲートの構成はProjectを観測したCoding Agentが判断する",
+		);
+		expect(userPrompt).not.toContain(
+			"verify / verify:base がある場合は代表 gate",
+		);
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");
 		expect(systemPrompt).toContain("未決定事項は極力作らず");

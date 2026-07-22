@@ -83,9 +83,7 @@ export function buildImplementationPlanGuidance(context: string) {
 		"完了条件: Taskの達成に不可欠な観点の最小集合だけを書く。主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件から該当するものを選び、自動テストを要求するかはQuestionnaireの検証方針に従う。",
 		`完了条件: ${SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA}`,
 		"完了条件: 類似ケースや同じ利用フローは、今回の仕様上の要点が伝わる1項目にまとめる。各titleは挙動と結果に集中させ、テスト対象、関数名、handler、repository、component、fixture、具体的な入力、操作、アサーションはCoding Agentのrepository調査後のテスト設計で具体化する。",
-		"検証: Project package scripts に verify / verify:base がある場合は代表 gate として扱い、build / typecheck / lint / test は対象範囲の確認または verify で代替できない理由がある場合だけ別に書く。",
-		"検証: verify / verify:base が無い場合でも検証を弱めず、既存構成に合わせた最小の verify 系 script 追加を実装計画に入れる。",
-		"検証: 各完了条件にはQuestionnaireで選択された証跡または観測結果を対応付け、typecheck / build / lint / verify / coverageなどのaggregate gateは検証計画に整理する。同じ目的のcommandは代表gateへまとめる。",
+		"検証: 品質ゲートがPassした証跡を持つこと。具体的なcommandと品質ゲートの構成はProjectを観測したCoding Agentが判断する。",
 		"禁止: 元資料、Evidence、Questionnaire の raw answer、API schema、DDL、Blueprint 詳細を本文に再掲しない。",
 	);
 	return lines.join("\n");

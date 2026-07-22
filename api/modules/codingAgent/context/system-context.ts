@@ -60,7 +60,12 @@ export function getCodingAgentFailureRecovery(
 export function getCodingAgentCompletionRule(
 	p: SystemContextP = bindSystemContextTextCatalog().p,
 ) {
-	return p("codingAgent.completion-rule", {});
+	return p("codingAgent.completion-rule", {
+		completionReportFormat: p(
+			"codingAgent.completion-report-format",
+			{},
+		).trimEnd(),
+	});
 }
 
 export function getCodingAgentToolContract(

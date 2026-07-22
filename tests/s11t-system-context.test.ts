@@ -69,6 +69,7 @@ describe("S11t SystemContext catalog", () => {
 				"codingAgent.role-instructions",
 				"codingAgent.runtime-system",
 				"codingAgent.initial-preparation-todo",
+				"codingAgent.completion-report-format",
 				"codingAgent.completion-report-todo",
 				"missionPilot.plan-system",
 				"missionPilot.compaction",
@@ -81,7 +82,7 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(82);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(83);
 		expect(catalogArtifact.aliases).toEqual({});
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
@@ -122,6 +123,13 @@ describe("S11t SystemContext catalog", () => {
 		expect(rendered).toContain("commit・merge状態");
 		expect(rendered).toContain("Todo・verification・Run・commitの各証跡");
 		expect(rendered).toContain("未commit・未mergeを含む実際の状態");
+		expect(rendered).toContain("品質ゲートがPassした証跡を持つ");
+		expect(rendered).toContain("## 実装結果");
+		expect(rendered).toContain("## 主な変更");
+		expect(rendered).toContain("## 検証結果");
+		expect(rendered).toContain("## 状態");
+		expect(rendered).toContain("[Todo API](api/modules/todos/routing.ts)");
+		expect(rendered).toContain("変更説明をリンクだけで代替しない");
 	});
 
 	it("renders task-generation implementation context without embedding the full output schema", () => {
@@ -258,7 +266,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"0c3204bc689bebf26fcb47c4020730487748c7e6e6270cc5705eaf1935799f99",
+				"e4b052e8c6922c1fa2e32dc93afd2d1822ae566739e304dda077b0374997da48",
 			missionPilotPushAllowed:
 				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
 			missionPilotPushDenied:
