@@ -47,7 +47,11 @@ function questionnaireRepositorySelectionGuidance(
 ) {
 	return repositoryPolicy === "repository_fixed"
 		? p("questionnaire.repository-fixed-guidance", {})
-		: p("questionnaire.starter-selection-guidance", {});
+		: [
+				p("questionnaire.starter-selection-applicability", {}),
+				p("questionnaire.starter-tech-stack-question", {}),
+				p("questionnaire.starter-database-question", {}),
+			].join("");
 }
 
 export function buildDesignQuestionnaireSystemPrompt(
@@ -55,6 +59,10 @@ export function buildDesignQuestionnaireSystemPrompt(
 ) {
 	const { p } = bindSystemContextTextCatalog();
 	return p("questionnaire.design", {
+		completionVerificationGuidance: p(
+			"questionnaire.completion-verification-guidance",
+			{},
+		),
 		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
 			repositoryPolicy,
 			p,

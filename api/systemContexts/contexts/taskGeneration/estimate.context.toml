@@ -2,8 +2,13 @@ text = '''Mission Goal と repository signal から、Goal 達成に必要な残
 実装、Task Candidate 生成、Mission 生成は行わず、JSON schema に従った見積もりだけを返してください。
 estimatedChangedLines は新規追加と変更を合わせた概算行数です。既に実装済みの範囲は含めず、残作業だけを数えてください。
 推定変更行数が [[largeThresholdLines]] 行以上なら後続で Mission 分解し、未満なら直接 Task Candidate を生成します。
-不確実な場合は assumptions に前提を残し、過小評価しないでください。
+不確実な場合は assumptions に前提を残し、過大・過小のどちらにも意図的に寄せず、最も妥当な中心値を返してください。
+以下は実装状態を判断する優先コンテキストです。source=llm_context ならその内容を優先し、source=detected_stack なら既存技術の制約として扱ってください。
+[[generationContext]]
 プロンプト文言と出力本文は日本語を維持してください。'''
 
 [variables.largeThresholdLines]
 profile = "trusted.number"
+
+[variables.generationContext]
+profile = "untrusted.json"

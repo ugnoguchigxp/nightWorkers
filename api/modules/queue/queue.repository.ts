@@ -26,3 +26,4 @@ export {
 	updateTodoWorkflowSettings,
 } from "./queue-repository-query";
 export * from "./queue-repository-row-mapper";
+export { timeoutStaleRunAndQueueFromSnapshot } from "./queue-stale-run-recovery.repository";

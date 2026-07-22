@@ -116,6 +116,55 @@ describe("Specification document generation", () => {
 		]);
 	});
 
+	it("maps Questionnaire completion-test scope to verification evidence", () => {
+		const workspace = {
+			taskId: "task-1",
+			repositoryId: "repo-1",
+			generatedAt: "2026-07-08T00:00:00.000Z",
+			featurePlanArtifacts: [],
+			blueprintArtifacts: [],
+			dataModelArtifacts: [],
+			dedicatedViewArtifacts: [],
+			decisionReviews: [],
+			questionnaireSessions: [],
+			implementationReferences: [],
+		};
+		const build = (
+			completionVerificationScope: "none" | "unit_and_e2e_if_ui",
+		) =>
+			buildSpecificationVerificationSidecar({
+				taskId: "task-1",
+				specId: "spec-1",
+				specPath: "spec/sample.md",
+				sourceMessageIds: [],
+				workspace,
+				content: [
+					"## 完了条件",
+					"- [AC-001][ui] UIに結果が表示される",
+					"- [AC-002][api] APIが結果を返す",
+				].join("\n"),
+				inferConditionSemantics: false,
+				completionVerificationScope,
+			}).document.conditions;
+
+		expect(build("none")).toEqual([
+			expect.objectContaining({
+				verificationKind: "manual",
+				expectedEvidence: ["manual_evidence"],
+			}),
+			expect.objectContaining({
+				verificationKind: "manual",
+				expectedEvidence: ["manual_evidence"],
+			}),
+		]);
+		expect(build("unit_and_e2e_if_ui")).toEqual([
+			expect.objectContaining({
+				expectedEvidence: ["unit_test", "e2e_test"],
+			}),
+			expect.objectContaining({ expectedEvidence: ["unit_test"] }),
+		]);
+	});
+
 	it("does not infer Feature Plan condition semantics from prose", () => {
 		const result = buildSpecificationVerificationSidecar({
 			taskId: "task-1",
@@ -241,16 +290,20 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"または `## 実装計画` で追加すると明記した script 名だけ",
 		);
-		expect(systemPrompt).toContain("`## 完了条件` で列挙した必須テスト観点");
+		expect(systemPrompt).toContain("Questionnaireで採用されたテスト観点");
+		expect(systemPrompt).toContain(
+			"テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かない",
+		);
 		expect(systemPrompt).toContain("[AC-001][category]");
 		expect(systemPrompt).toContain("観点の最小集合");
+		expect(systemPrompt).toContain("1件ずつ単独に合否判定できる");
 		expect(systemPrompt).toContain(
-			"自動テストのテストケース名としてそのまま使え",
+			"自動テストを選択した場合はテストケース名として使える",
 		);
-		expect(systemPrompt).toContain("1件のテストで単独に合否判定できる");
 		expect(systemPrompt).toContain("今回の仕様でポイントとなる具体的な挙動");
-		expect(systemPrompt).toContain("テスト証跡を1対1で結び付けられる");
+		expect(systemPrompt).toContain("選択したtest種別の証跡を1対1で結び付け");
 		expect(systemPrompt).toContain("今回の仕様に固有の挙動を直接表し");
+		expect(systemPrompt).toContain("選択した証跡または観測結果で達成を判断");
 		expect(systemPrompt).toContain("各項目の成功によって仕様全体の達成を説明");
 		expect(systemPrompt).toContain(
 			"似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめ",
@@ -261,7 +314,9 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"repositoryを調査した後のテスト設計で具体化",
 		);
-		expect(systemPrompt).toContain("aggregate gateは `## 検証計画` に整理");
+		expect(systemPrompt).toContain(
+			"aggregate gateは、Questionnaireの選択と矛盾しない範囲で `## 検証計画`",
+		);
 		expect(systemPrompt).toContain("プレースホルダーを含まない完成済み");
 		expect(systemPrompt).toContain("markdown フィールド");
 		expect(systemPrompt).toContain("repositoryMaterializationIntent");
@@ -576,9 +631,12 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain("API Contract: Todo API Contract");
 		expect(userPrompt).toContain("## Plan Mode References");
 		expect(userPrompt).toContain("Todo User Flow");
-		expect(userPrompt).toContain("必ずテストを作るべき観点の最小集合");
+		expect(userPrompt).toContain("Taskの達成に不可欠な観点の最小集合");
 		expect(userPrompt).toContain(
-			"自動テストのテストケース名としてそのまま使え",
+			"自動テストを要求するかはQuestionnaireの検証方針に従う",
+		);
+		expect(userPrompt).toContain(
+			"自動テストが完了条件の場合はテストケース名として使え",
 		);
 		expect(userPrompt).toContain(
 			"具体的な入力、操作、アサーションはCoding Agent",
@@ -587,6 +645,7 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain("verify 系 script 追加を実装計画に入れる");
 		expect(userPrompt).toContain("同じ目的のcommandは代表gateへまとめる");
 		expect(userPrompt).toContain("aggregate gateは検証計画に整理");
+		expect(userPrompt).toContain("Questionnaireで選択された証跡または観測結果");
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");
 		expect(systemPrompt).toContain("未決定事項は極力作らず");

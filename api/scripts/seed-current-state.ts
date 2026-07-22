@@ -4,6 +4,7 @@ import path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { ensureNightWorkersSchema } from "../db/bootstrap";
 import { client } from "../db/client";
+import { getRuntimePaths } from "../runtime/paths";
 
 loadEnv({ quiet: true });
 
@@ -51,7 +52,7 @@ async function listExistingTables() {
 function resolveDatabasePath() {
 	const databaseUrl = process.env.DATABASE_URL?.trim();
 	if (!databaseUrl) {
-		throw new Error("DATABASE_URL is required");
+		return getRuntimePaths(process.env).databasePath;
 	}
 	if (
 		databaseUrl.startsWith("libsql:") ||
@@ -77,17 +78,27 @@ function buildSeedSql(existingTables: Set<string>, snapshotPath: string) {
 		throw new Error(`DB snapshot does not exist: ${snapshotPath}`);
 	}
 	const snapshotSql = readFileSync(snapshotPath, "utf8");
+	const requiresLegacyCoverageGateColumn = snapshotSql.includes(
+		'"coverage_gate_json"',
+	);
 	const deleteSql = [...existingTables]
 		.filter((table) => !PRESERVE_TABLES.has(table))
 		.sort()
 		.map((table) => `DELETE FROM ${quoteIdentifier(table)};`)
 		.join("\n");
 	return [
+		".bail on",
 		".timeout 10000",
 		"PRAGMA foreign_keys=OFF;",
 		"BEGIN;",
+		requiresLegacyCoverageGateColumn
+			? "ALTER TABLE project_quality_runs ADD COLUMN coverage_gate_json text;"
+			: "",
 		deleteSql,
 		snapshotSql,
+		requiresLegacyCoverageGateColumn
+			? "ALTER TABLE project_quality_runs DROP COLUMN coverage_gate_json;"
+			: "",
 		"COMMIT;",
 		"PRAGMA foreign_keys=ON;",
 		"PRAGMA foreign_key_check;",

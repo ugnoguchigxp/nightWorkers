@@ -6,6 +6,7 @@ import { saveDesignQuestionnaireAnswers } from "../../../api/modules/questionnai
 import { representativeMockBlueprint } from "../../fixtures/mock-blueprint";
 import {
 	buildMechanicalQuestionnaireAnswers,
+	completionVerificationAnswer,
 	representativeDataModelArtifact,
 	sameOriginHeaders,
 } from "./helpers";
@@ -37,6 +38,7 @@ describe("NightWorkers task routes status and normalization", () => {
 				questions: [
 					{
 						text: "最初に作る画面はどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: ["業務ダッシュボード", "入力フォーム", "一覧管理"],
 					},
@@ -65,6 +67,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "q1",
 								selectedOptionIds: ["q1-o1"],
@@ -357,6 +360,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					questions: [
 						{
 							text: "Which density should the design use?",
+							kind: "design_decision",
 							type: "radio",
 							options: ["Compact", "Comfortable", "Spacious"],
 						},
@@ -374,6 +378,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					questions: [
 						{
 							text: "Which states should be visible?",
+							kind: "design_decision",
 							type: "checkbox",
 							options: ["Empty", "Loading", "Error", "Success"],
 						},
@@ -391,6 +396,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					questions: [
 						{
 							text: "Which implementation risk should the document mention?",
+							kind: "design_decision",
 							type: "radio",
 							options: ["Data drift", "Slow loading", "Permission mismatch"],
 						},

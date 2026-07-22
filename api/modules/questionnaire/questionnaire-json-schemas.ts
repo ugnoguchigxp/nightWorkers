@@ -2,11 +2,15 @@ import { z } from "zod";
 import {
 	additionalQuestionnaireDraftSchema,
 	designQuestionnaireFollowUpDecisionSchema,
+	generatedQuestionnaireChoiceFormSchema,
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 
 export const questionnaireChoiceFormJsonSchema = z.toJSONSchema(
 	questionnaireChoiceFormSchema,
+);
+export const generatedQuestionnaireChoiceFormJsonSchema = z.toJSONSchema(
+	generatedQuestionnaireChoiceFormSchema,
 );
 export const additionalQuestionnaireDraftJsonSchema = z.toJSONSchema(
 	additionalQuestionnaireDraftSchema,

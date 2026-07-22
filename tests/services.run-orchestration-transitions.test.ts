@@ -10,7 +10,13 @@ describe("run orchestration status transitions", () => {
 		expect(runStatusTransitionTable).toMatchObject({
 			ready: ["queued", "running"],
 			queued: ["running", "ready", "cancelled"],
-			running: ["finalizing", "needs_human", "failed", "cancelled"],
+			running: [
+				"finalizing",
+				"needs_human",
+				"failed",
+				"cancelled",
+				"timed_out",
+			],
 			finalizing: [
 				"needs_review",
 				"completed",

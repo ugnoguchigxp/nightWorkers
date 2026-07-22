@@ -859,4 +859,42 @@ describe("Supervisor LLM schema-first parsing routing", () => {
 			compressionProfile: "none",
 		});
 	});
+
+	it("defaults API provider capability to a 128k context window when unset", () => {
+		const capability = resolveStructuredLlmModelCapability({
+			role: "implementation",
+			settings: {
+				ACTIVE_LLM_PROVIDER: "openai",
+				providerEndpoints: [
+					{
+						id: "openai-default",
+						name: "OpenAI Default",
+						kind: "openai",
+						enabled: true,
+						models: ["gpt-api"],
+					},
+				],
+				roleRoutes: [
+					{
+						role: "implementation",
+						primary: {
+							providerEndpointId: "openai-default",
+							model: "gpt-api",
+						},
+						fallbacks: [],
+					},
+				],
+			},
+		});
+
+		expect(capability).toMatchObject({
+			providerEndpointId: "openai-default",
+			model: "gpt-api",
+			contextWindowTokens: 128_000,
+			safePromptBudgetTokens: 126_976,
+			reservedOutputTokens: 1024,
+			supportsProviderSideCompression: false,
+			compressionProfile: "balanced",
+		});
+	});
 });

@@ -6,16 +6,35 @@ const questionnaireDecisionKeySchema = z
 	.regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/);
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
+export const questionnaireChoiceQuestionKindSchema = z.enum([
+	"design_decision",
+	"completion_verification",
+]);
+
 export const questionnaireChoiceQuestionSchema = z.object({
 	text: z.string().min(1),
+	kind: questionnaireChoiceQuestionKindSchema.default("design_decision"),
 	type: z.enum(["radio", "checkbox"]),
 	options: z.array(z.string().min(1)).min(2).max(10),
 });
 
+export const generatedQuestionnaireChoiceQuestionSchema =
+	questionnaireChoiceQuestionSchema.extend({
+		kind: questionnaireChoiceQuestionKindSchema,
+	});
+
 export const questionnaireChoiceFormSchema = z.object({
 	title: z.string().min(1).default("実装前に決めたいこと"),
-	questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(15),
+	questions: z.array(questionnaireChoiceQuestionSchema).min(1).max(14),
 });
+
+export const generatedQuestionnaireChoiceFormSchema =
+	questionnaireChoiceFormSchema.extend({
+		questions: z
+			.array(generatedQuestionnaireChoiceQuestionSchema)
+			.min(1)
+			.max(14),
+	});
 
 export const questionnaireQuestionSetSourceSchema = z.enum([
 	"initial",

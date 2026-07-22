@@ -9,6 +9,7 @@ export type PlanArtifactGenerationTarget =
 
 export type AcceptedQuestionnaireDecision = {
 	questionId: string;
+	decisionKey: string | null;
 	question: string;
 	answer: string;
 	why: string | null;

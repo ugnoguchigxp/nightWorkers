@@ -7,11 +7,19 @@ import {
 	missionCandidateGenerationResultSchema,
 	missionDecompositionPlanningResultSchema,
 } from "../../../shared/schemas/mission-planner.schema";
+import type {
+	ProjectSignalSnapshot,
+	TaskGenerationLlmUsage,
+} from "../../../shared/schemas/task-generation.schema";
 import { db } from "../../db/client";
 import { tasks } from "../../db/schema";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as taskGenerationRepo from "../taskGeneration/task-generation.repository";
+import {
+	buildTaskGenerationPromptSignal,
+	buildTaskGenerationSystemContext,
+} from "../taskGeneration/task-generation-prompt-context";
 import { buildProjectSignalSnapshot } from "../taskGeneration/task-generation-signal.service";
 import {
 	buildMissionCandidatesSystemPrompt,
@@ -354,6 +362,8 @@ export async function generateMissionPlansFromGoals(input: {
 	repositoryId: string;
 	goalIds?: string[];
 	includeInactiveGoals?: boolean;
+	signal?: ProjectSignalSnapshot;
+	priorLlmUsage?: TaskGenerationLlmUsage[];
 }) {
 	const repository = await requireRepository(input.repositoryId);
 	const allGoals = await taskGenerationRepo.listMissionGoals(repository.id);
@@ -365,10 +375,12 @@ export async function generateMissionPlansFromGoals(input: {
 		throw new ValidationError("At least one mission goal is required");
 	}
 
-	const signal = await buildProjectSignalSnapshot({
-		repository,
-		goals: sourceGoals,
-	});
+	const signal =
+		input.signal ??
+		(await buildProjectSignalSnapshot({
+			repository,
+			goals: sourceGoals,
+		}));
 	const inputBundle = {
 		schemaVersion: "nightworkers.mission-plan-generation-input/v1",
 		sourceGoals: sourceGoals.map((goal) => ({
@@ -379,6 +391,13 @@ export async function generateMissionPlansFromGoals(input: {
 		})),
 		projectSignalSnapshot: signal,
 		createdAt: new Date().toISOString(),
+	};
+	const promptInputBundle = {
+		...inputBundle,
+		projectSignalSnapshot: buildTaskGenerationPromptSignal(
+			signal,
+			"mission_plans",
+		),
 	};
 	const existingMissions = await repo.listMissions(repository.id);
 	const existingMissionsWithCandidateState = await Promise.all(
@@ -391,9 +410,11 @@ export async function generateMissionPlansFromGoals(input: {
 		try {
 			return await callMissionPlannerJson({
 				stage: "mission_candidates",
-				systemPrompt: buildMissionPlansSystemPrompt(),
+				systemPrompt: buildMissionPlansSystemPrompt(
+					buildTaskGenerationSystemContext(signal),
+				),
 				userPrompt: buildMissionPlansUserPrompt({
-					inputBundle,
+					inputBundle: promptInputBundle,
 					existingMissions: existingMissionsWithCandidateState.map(
 						({ mission, hasTaskCandidates }) => ({
 							id: mission.id,
@@ -413,6 +434,9 @@ export async function generateMissionPlansFromGoals(input: {
 			throw new ValidationError(message);
 		}
 	})();
+	const selectedModelWithUsage = input.priorLlmUsage?.length
+		? { ...plansCall.selectedModel, priorLlmUsage: input.priorLlmUsage }
+		: plansCall.selectedModel;
 
 	const allowedGoalIds = new Set(sourceGoals.map((goal) => goal.id));
 	const reusableMissionsByTitle = new Map(
@@ -529,7 +553,7 @@ export async function generateMissionPlansFromGoals(input: {
 						taskProposals: plan.planningResult.taskProposals,
 						evaluation: null,
 					},
-					selectedModels: [plansCall.selectedModel],
+					selectedModels: [selectedModelWithUsage],
 					completedAt: new Date(),
 				},
 				tx,
@@ -553,5 +577,15 @@ export async function generateMissionPlansFromGoals(input: {
 		});
 	}
 
-	return { status: "completed" as const, missions, proposals };
+	return {
+		status: "completed" as const,
+		missions,
+		proposals,
+		llmUsage: plansCall.llmUsage
+			? ({
+					stage: "mission_plans",
+					...plansCall.llmUsage,
+				} satisfies TaskGenerationLlmUsage)
+			: null,
+	};
 }

@@ -85,6 +85,7 @@
 		"db:seed:cond8": "bun api/scripts/seed-current-state.ts cond8",
 		"db:reset": "bun api/scripts/reset-db.ts",
 		"db:init": "bun run db:reset && bun run db:seed:current",
+		"seed:dev": "bun run db:init",
 		"db:init:empty": "bun run db:reset && bun run db:seed",
 		"db:cond1": "bun run db:reset && bun run db:seed:cond1",
 		"db:cond2": "bun run db:reset && bun run db:seed:cond2",

@@ -1,3 +1,8 @@
+import {
+	continueAfterTaskRun,
+	projectTaskRunParentStatus,
+	publishTaskRunTerminal,
+} from "../agentsShare";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as repo from "./queue.repository";
 import { runImplementationQueueWhenEnabled } from "./queue-admission.service";
@@ -13,6 +18,24 @@ type QueueHealthClassification =
 
 const DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
+
+function hasExceededStaleRunDeadline(
+	run: {
+		startedAt: Date;
+		updatedAt: Date;
+		timeoutSeconds: number;
+	},
+	now: Date,
+	staleProcessingMs: number,
+) {
+	const deadlineAt =
+		run.startedAt.getTime() + Math.max(1, run.timeoutSeconds) * 1_000;
+	const heartbeatStaleBefore = now.getTime() - staleProcessingMs;
+	return (
+		now.getTime() >= deadlineAt &&
+		run.updatedAt.getTime() < heartbeatStaleBefore
+	);
+}
 
 export function isRunningRunStatus(status: string | null | undefined) {
 	return Boolean(
@@ -170,9 +193,11 @@ export async function reconcileImplementationQueue(
 ) {
 	const now = options.now ?? new Date();
 	const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_QUEUE_ATTEMPTS;
+	const staleProcessingMs =
+		options.staleProcessingMs ?? DEFAULT_STALE_PROCESSING_MS;
 	const snapshot = await repo.listImplementationQueueHealthSnapshot({
 		now,
-		staleProcessingMs: options.staleProcessingMs ?? DEFAULT_STALE_PROCESSING_MS,
+		staleProcessingMs,
 		maxAttempts,
 	});
 	if (!options.apply) {
@@ -248,6 +273,115 @@ export async function reconcileImplementationQueue(
 			item.classification === "orphaned_active_run" ||
 			item.classification === "stale_processing"
 		) {
+			if (
+				item.classification === "stale_processing" &&
+				item.run &&
+				entry.activeRunId &&
+				isRunningRunStatus(item.run.status) &&
+				hasExceededStaleRunDeadline(item.run, now, staleProcessingMs)
+			) {
+				const summary =
+					"Run exceeded its configured deadline after runtime heartbeats stopped.";
+				const finalReport = item.run.finalReport?.trim() || summary;
+				const recovered = await repo.timeoutStaleRunAndQueueFromSnapshot({
+					now,
+					expectedEntry: {
+						id: entry.id,
+						status: entry.status,
+						leaseVersion: entry.leaseVersion,
+						activeRunId: entry.activeRunId,
+					},
+					expectedRun: {
+						id: item.run.id,
+						status: item.run.status,
+						updatedAt: item.run.updatedAt,
+					},
+					finalReport,
+					summary,
+				});
+				if (recovered) {
+					actions.push({
+						entryId: entry.id,
+						action: "timeout",
+						status: recovered.entry.status,
+					});
+					await nightworkersRepo.createRunEvent({
+						version: 1,
+						runId: recovered.run.id,
+						taskId: recovered.run.taskId,
+						timestamp: now.toISOString(),
+						type: "run.watchdog_timed_out",
+						severity: "error",
+						actor: "system",
+						message: summary,
+						data: {
+							queueEntryId: recovered.entry.id,
+							timeoutSeconds: recovered.run.timeoutSeconds,
+							lastRunHeartbeatAt: item.run.updatedAt.toISOString(),
+							lastQueueHeartbeatAt:
+								entry.lastHeartbeatAt?.toISOString() ?? null,
+						},
+					});
+					await nightworkersRepo.createTaskMessage({
+						taskId: recovered.run.taskId,
+						runId: recovered.run.id,
+						role: "assistant",
+						content: finalReport,
+						messageType: "text",
+						payloadJson: {
+							finalReport,
+							summary,
+							status: "timed_out",
+							source: "implementation_queue_watchdog",
+						},
+					});
+					const contextSnapshot =
+						recovered.run.contextSnapshot &&
+						typeof recovered.run.contextSnapshot === "object" &&
+						!Array.isArray(recovered.run.contextSnapshot)
+							? (recovered.run.contextSnapshot as Record<string, unknown>)
+							: null;
+					const closeoutInput = {
+						taskId: recovered.run.taskId,
+						runId: recovered.run.id,
+						runStatus: "timed_out" as const,
+						executionMode:
+							typeof contextSnapshot?.executionMode === "string"
+								? contextSnapshot.executionMode
+								: "implementation",
+					};
+					const parentProjection =
+						await projectTaskRunParentStatus(closeoutInput);
+					if (!parentProjection.handled) {
+						await nightworkersRepo.updateTaskStatus(
+							recovered.run.taskId,
+							parentProjection.status,
+						);
+					}
+					await recordQueueRecoveryEvidence({
+						taskId: recovered.run.taskId,
+						runId: recovered.run.id,
+						queueEntryId: recovered.entry.id,
+						action: "timeout",
+						reason: "run_deadline_exceeded",
+					});
+					await nightworkersRepo.publishTaskRunUpdate(recovered.run);
+					await continueAfterTaskRun(closeoutInput);
+					await publishTaskRunTerminal({
+						type: "task_run.terminal",
+						eventId: `task-run-terminal:${recovered.run.id}:timed_out`,
+						taskId: recovered.run.taskId,
+						runId: recovered.run.id,
+						status: "timed_out",
+						sourceRef: {
+							kind: "implementation_queue_entry",
+							id: recovered.entry.id,
+						},
+						occurredAt: now.toISOString(),
+					});
+				}
+				continue;
+			}
 			const activeRunIsTerminal =
 				item.run && !isRunningRunStatus(item.run.status);
 			if (activeRunIsTerminal && item.run) {

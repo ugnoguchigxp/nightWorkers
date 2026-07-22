@@ -3,6 +3,7 @@ import {
 	TODO_DRAFT_FIELD_GUIDANCE_JA,
 	TODO_MUTATION_LIMITS,
 } from "../../shared/modules/codingAgent";
+import { testConditionMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -104,18 +105,8 @@ export const nightWorkersCollectTestInventoryInputSchema = z.object({
 	cwd: z.string().trim().optional(),
 });
 
-export const nightWorkersRecordTestConditionMappingInputSchema = z.object({
-	verificationDocumentId: z.string().trim().min(1),
-	inventoryId: z.string().trim().min(1),
-	caseKey: z.string().trim().min(1),
-	conditionId: z
-		.string()
-		.trim()
-		.regex(/^AC-\d{3}$/),
-	source: z.enum(["declared_in_test", "coding_agent_assessment"]),
-	rationale: z.string().trim().min(1).max(4_000).optional(),
-	sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
-});
+export const nightWorkersRecordTestConditionMappingInputSchema =
+	testConditionMappingToolInputSchema;
 
 const todoDraftSchema = z.object({
 	todoKey: z

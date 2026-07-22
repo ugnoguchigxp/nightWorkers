@@ -5,6 +5,7 @@ const runEventTypeSchema = z.enum([
 	"run.prompt_prepared",
 	"run.runtime_started",
 	"run.runtime_finished",
+	"run.watchdog_timed_out",
 	"run.outcome_decided",
 	"run.finalizing_started",
 	"run.final_judgment_created",

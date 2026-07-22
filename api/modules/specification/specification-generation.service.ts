@@ -35,6 +35,7 @@ import {
 	getDesignQuestionnaireSession,
 	listDesignQuestionnaires,
 } from "../questionnaire/questionnaire.service";
+import { resolveCompletionVerificationScope } from "../questionnaire/questionnaire-completion-verification";
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
 import {
 	createFeaturePlanMarkdownDraftSchema,
@@ -213,6 +214,9 @@ export async function generateFeaturePlanArtifact(
 			sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
 			workspace,
 			inferConditionSemantics: false,
+			completionVerificationScope: session
+				? resolveCompletionVerificationScope(session)
+				: null,
 		});
 		const verificationMessage = await createPlanModeTaskMessage({
 			taskId,

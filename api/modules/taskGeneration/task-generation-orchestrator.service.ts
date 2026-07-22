@@ -1,19 +1,27 @@
 import { z } from "@hono/zod-openapi";
 import type {
 	GenerateTaskCandidatesResponse,
-	MissionGoal,
 	ProjectSignalSnapshot,
 	TaskGenerationEstimate,
+	TaskGenerationLlmUsage,
 } from "../../../shared/schemas/task-generation.schema";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
-import { createStructuredOutputContract } from "../../services/structured-llm";
+import {
+	createStructuredOutputContract,
+	mergeStructuredLlmCallUsage,
+	structuredLlmCallUsageFromEvent,
+} from "../../services/structured-llm";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import { p } from "../../systemContexts/catalog";
 import * as missionPlannerService from "../mission-planner/mission-planner.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as taskGenerationRepo from "./task-generation.repository";
 import * as taskGenerationService from "./task-generation.service";
+import {
+	buildTaskGenerationPromptSignal,
+	buildTaskGenerationSystemContext,
+} from "./task-generation-prompt-context";
 import { buildProjectSignalSnapshot } from "./task-generation-signal.service";
 
 export const TASK_GENERATION_LARGE_THRESHOLD_LINES = 2_000;
@@ -61,14 +69,16 @@ export function classifyTaskGenerationScale(
 	return "small";
 }
 
-function buildTaskGenerationEstimateSystemPrompt() {
+function buildTaskGenerationEstimateSystemPrompt(
+	signal: ProjectSignalSnapshot,
+) {
 	return p("taskGeneration.estimate", {
 		largeThresholdLines: TASK_GENERATION_LARGE_THRESHOLD_LINES,
+		generationContext: buildTaskGenerationSystemContext(signal),
 	});
 }
 
 function buildTaskGenerationEstimateUserPrompt(input: {
-	goals: MissionGoal[];
 	signal: ProjectSignalSnapshot;
 }) {
 	return JSON.stringify(
@@ -80,8 +90,7 @@ function buildTaskGenerationEstimateUserPrompt(input: {
 				medium: `${TASK_GENERATION_SMALL_THRESHOLD_LINES}-${TASK_GENERATION_LARGE_THRESHOLD_LINES - 1} lines`,
 				large: `${TASK_GENERATION_LARGE_THRESHOLD_LINES}+ lines`,
 			},
-			goals: input.goals,
-			projectSignalSnapshot: input.signal,
+			projectSignal: buildTaskGenerationPromptSignal(input.signal, "estimate"),
 			requiredOutput: "nightworkers.task-generation-estimate/v1",
 		},
 		null,
@@ -90,14 +99,18 @@ function buildTaskGenerationEstimateUserPrompt(input: {
 }
 
 async function estimateTaskGenerationScale(
-	input: { goals: MissionGoal[]; signal: ProjectSignalSnapshot },
+	input: { signal: ProjectSignalSnapshot },
 	dependencies: TaskGenerationDependencies,
-): Promise<TaskGenerationEstimate> {
+): Promise<{
+	estimate: TaskGenerationEstimate;
+	llmUsage: TaskGenerationLlmUsage | null;
+}> {
 	const schema = normalizeStructuredOutputJsonSchema(
 		z.toJSONSchema(taskGenerationEstimateResultSchema),
 	);
+	let llmUsage: TaskGenerationLlmUsage | null = null;
 	const generated = await dependencies.callStructuredOutputWithRepair({
-		systemPrompt: buildTaskGenerationEstimateSystemPrompt(),
+		systemPrompt: buildTaskGenerationEstimateSystemPrompt(input.signal),
 		userPrompt: buildTaskGenerationEstimateUserPrompt(input),
 		options: {
 			contract: createStructuredOutputContract({
@@ -106,17 +119,29 @@ async function estimateTaskGenerationScale(
 				providerJsonSchema: schema,
 			}),
 			role: "mission_task_generation",
+			emitEvent: (event) => {
+				const usage = structuredLlmCallUsageFromEvent(event);
+				if (usage) {
+					llmUsage = {
+						stage: "estimate",
+						...mergeStructuredLlmCallUsage(llmUsage, usage),
+					};
+				}
+			},
 		},
 	});
 	const parsed = generated.value;
 	return {
-		estimatedChangedLines: parsed.estimatedChangedLines,
-		estimatedFileCount: parsed.estimatedFileCount,
-		estimatedTaskCount: parsed.estimatedTaskCount,
-		confidencePercent: parsed.confidencePercent,
-		rationale: parsed.rationale,
-		assumptions: parsed.assumptions,
-		scale: classifyTaskGenerationScale(parsed.estimatedChangedLines),
+		estimate: {
+			estimatedChangedLines: parsed.estimatedChangedLines,
+			estimatedFileCount: parsed.estimatedFileCount,
+			estimatedTaskCount: parsed.estimatedTaskCount,
+			confidencePercent: parsed.confidencePercent,
+			rationale: parsed.rationale,
+			assumptions: parsed.assumptions,
+			scale: classifyTaskGenerationScale(parsed.estimatedChangedLines),
+		},
+		llmUsage,
 	};
 }
 
@@ -143,14 +168,20 @@ export async function generateTaskCandidates(
 		repository,
 		goals: selectedGoals,
 	});
-	const estimate = await estimateTaskGenerationScale(
-		{ goals: selectedGoals, signal },
+	const estimateResult = await estimateTaskGenerationScale(
+		{ signal },
 		dependencies,
 	);
+	const estimate = estimateResult.estimate;
+	const priorLlmUsage = estimateResult.llmUsage
+		? [estimateResult.llmUsage]
+		: [];
 	const generationInput = {
 		repositoryId: repository.id,
 		goalIds: selectedGoals.map((goal) => goal.id),
 		includeInactiveGoals: true,
+		signal,
+		priorLlmUsage,
 	};
 
 	if (estimate.estimatedChangedLines === 0) {
@@ -161,6 +192,7 @@ export async function generateTaskCandidates(
 			candidates: [],
 			missions: [],
 			proposals: [],
+			llmUsage: estimateResult.llmUsage ? [estimateResult.llmUsage] : [],
 			decompositionFailures: [],
 		};
 	}
@@ -175,6 +207,9 @@ export async function generateTaskCandidates(
 			candidates: generated.candidates,
 			missions: [],
 			proposals: [],
+			llmUsage: [estimateResult.llmUsage, generated.llmUsage].filter(
+				(usage): usage is TaskGenerationLlmUsage => Boolean(usage),
+			),
 			decompositionFailures: [],
 		};
 	}
@@ -188,6 +223,9 @@ export async function generateTaskCandidates(
 		candidates: [],
 		missions: generated.missions,
 		proposals: generated.proposals,
+		llmUsage: [estimateResult.llmUsage, generated.llmUsage].filter(
+			(usage): usage is TaskGenerationLlmUsage => Boolean(usage),
+		),
 		decompositionFailures: [],
 	};
 }

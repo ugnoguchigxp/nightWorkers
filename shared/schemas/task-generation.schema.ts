@@ -4,6 +4,7 @@ import {
 	missionSchema,
 	missionTaskProposalSchema,
 } from "./mission-planner.schema";
+import { projectStackProfileSchema } from "./tech-stack.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 const jsonValueSchema: z.ZodType<unknown> = z.unknown();
@@ -228,8 +229,39 @@ export const projectSignalSnapshotSchema = z.object({
 		failed: z.number(),
 		running: z.number(),
 	}),
+	implementationContext: z
+		.discriminatedUnion("source", [
+			z.object({
+				source: z.literal("llm_context"),
+				files: z
+					.array(z.object({ path: z.string(), excerpt: z.string() }))
+					.min(1)
+					.max(4),
+			}),
+			z.object({
+				source: z.literal("detected_stack"),
+				stackProfile: projectStackProfileSchema,
+			}),
+		])
+		.optional(),
 });
 export type ProjectSignalSnapshot = z.infer<typeof projectSignalSnapshotSchema>;
+
+export const taskGenerationLlmUsageSchema = z.object({
+	stage: z.enum(["estimate", "task_candidates", "mission_plans"]),
+	provider: z.string().nullable(),
+	model: z.string().nullable(),
+	inputTokens: z.number().int().nonnegative().nullable(),
+	cachedInputTokens: z.number().int().nonnegative().nullable(),
+	outputTokens: z.number().int().nonnegative().nullable(),
+	reasoningOutputTokens: z.number().int().nonnegative().nullable(),
+	totalTokens: z.number().int().nonnegative().nullable(),
+	usageMode: z.enum(["measured", "estimated"]).nullable(),
+	durationMs: z.number().int().nonnegative().nullable(),
+});
+export type TaskGenerationLlmUsage = z.infer<
+	typeof taskGenerationLlmUsageSchema
+>;
 
 export const missionTaskCandidateSchema = z
 	.object({
@@ -297,6 +329,7 @@ export const generateMissionTaskCandidatesResponseSchema = z.object({
 	batchId: z.string().uuid(),
 	status: z.enum(["completed", "failed"]),
 	candidates: z.array(missionTaskCandidateSchema),
+	llmUsage: taskGenerationLlmUsageSchema.nullable().optional(),
 	errorMessage: z.string().nullable().optional(),
 });
 
@@ -329,6 +362,7 @@ export const generateTaskCandidatesResponseSchema = z.object({
 	candidates: z.array(missionTaskCandidateSchema),
 	missions: z.array(missionSchema),
 	proposals: z.array(missionTaskProposalSchema),
+	llmUsage: z.array(taskGenerationLlmUsageSchema),
 	decompositionFailures: z.array(
 		z.object({
 			missionId: z.string().uuid(),
@@ -360,35 +394,87 @@ export const createTasksFromMissionCandidatesResponseSchema = z.object({
 	candidates: z.array(missionTaskCandidateSchema),
 });
 
-export const MISSION_TASK_CANDIDATE_MAX_COUNT = 10;
+export const MISSION_TASK_CANDIDATE_MAX_COUNT = 5;
+
+export const MISSION_TASK_CANDIDATE_TEXT_LIMITS = {
+	title: 120,
+	summary: 240,
+	rationale: 360,
+	routingReason: 240,
+	openQuestion: 180,
+	evidenceLabel: 100,
+	evidenceValue: 280,
+	taskPrompt: 700,
+	acceptanceCriteria: 600,
+	verificationPlan: 600,
+} as const;
 
 export const missionTaskCandidatesResultSchema = z.object({
 	schemaVersion: z.literal("nightworkers.mission-task-candidates/v1"),
 	candidates: z
 		.array(
 			z.object({
-				title: z.string().min(1),
-				summary: z.string().min(1),
-				rationale: z.string().min(1),
+				title: z.string().min(1).max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.title),
+				summary: z
+					.string()
+					.min(1)
+					.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.summary),
+				rationale: z
+					.string()
+					.min(1)
+					.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.rationale),
 				goalId: z.string().uuid().nullable().optional(),
 				candidateKind: missionTaskCandidateKindSchema,
 				moduleRouting: z.object({
 					primaryModule: z.string().nullable(),
-					secondaryModules: z.array(z.string()),
+					secondaryModules: z.array(z.string()).max(5),
 					confidencePercent: z.number().int().min(0).max(100),
-					reason: z.string().nullable(),
+					reason: z
+						.string()
+						.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.routingReason)
+						.nullable(),
 				}),
-				constraintGoalIds: z.array(z.string().uuid()),
-				planModeOpenQuestions: z.array(z.string().min(1)),
-				evidence: z.array(candidateEvidenceSchema).default([]),
-				evaluationContribution: z.number().min(0).max(100),
+				constraintGoalIds: z.array(z.string().uuid()).max(10),
+				planModeOpenQuestions: z
+					.array(
+						z
+							.string()
+							.min(1)
+							.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.openQuestion),
+					)
+					.max(5),
+				evidence: z
+					.array(
+						candidateEvidenceSchema.extend({
+							label: z
+								.string()
+								.min(1)
+								.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.evidenceLabel),
+							value: z
+								.string()
+								.min(1)
+								.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.evidenceValue),
+						}),
+					)
+					.max(2)
+					.default([]),
+				evaluationContribution: z.number().min(0).max(100).nullable(),
 				importancePercent: z.number().int().min(0).max(100),
 				confidencePercent: z.number().int().min(0).max(100),
 				tokenSize: missionTaskTokenSizeSchema,
 				complexity: missionTaskComplexitySchema,
-				taskPrompt: z.string().min(1),
-				acceptanceCriteria: z.string().min(1),
-				verificationPlan: z.string().min(1),
+				taskPrompt: z
+					.string()
+					.min(1)
+					.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.taskPrompt),
+				acceptanceCriteria: z
+					.string()
+					.min(1)
+					.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.acceptanceCriteria),
+				verificationPlan: z
+					.string()
+					.min(1)
+					.max(MISSION_TASK_CANDIDATE_TEXT_LIMITS.verificationPlan),
 			}),
 		)
 		.min(1)

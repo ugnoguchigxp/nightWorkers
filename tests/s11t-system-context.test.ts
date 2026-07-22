@@ -57,18 +57,31 @@ describe("S11t SystemContext catalog", () => {
 			owner: "mission-pilot",
 			variableNames: [],
 		});
+		expect(
+			describeSystemContext("questionnaire.starter-tech-stack-question"),
+		).toMatchObject({
+			key: "questionnaire.starter-tech-stack-question",
+			owner: "questionnaire",
+			variableNames: [],
+		});
 		expect(Object.keys(catalogArtifact.contexts)).toEqual(
 			expect.arrayContaining([
 				"codingAgent.role-instructions",
 				"codingAgent.runtime-system",
+				"codingAgent.initial-preparation-todo",
+				"codingAgent.completion-report-todo",
 				"missionPilot.plan-system",
 				"missionPilot.compaction",
 				"supervisor.round1",
 				"specification.repository-materialization-required",
 				"structuredGeneration.output-requirements",
+				"questionnaire.starter-selection-applicability",
+				"questionnaire.starter-tech-stack-question",
+				"questionnaire.starter-database-question",
+				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(77);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(82);
 		expect(catalogArtifact.aliases).toEqual({});
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
@@ -91,6 +104,50 @@ describe("S11t SystemContext catalog", () => {
 			fallbackLocales: ["ja-JP"],
 			resolvedLocale: "ja-JP",
 			fallbackUsed: true,
+		});
+	});
+
+	it("keeps implementation preparation and completion reporting in Todo-owned SystemContext", () => {
+		const context = buildCodingAgentSystemContext({
+			taskGoal: "Todo CRUDを実装する",
+			registeredRepositoryRoot: "/repo",
+		});
+		const rendered = renderCodingAgentRuntimeSystemContext(context);
+
+		expect(rendered).toContain("planの先頭に「実装準備」Todo");
+		expect(rendered).toContain("workspace変更前のcontext_compile");
+		expect(rendered).toContain("検証scopeはQuestionnaireと採用済みPlanを正本");
+		expect(rendered).toContain("理由に拡張しないでください");
+		expect(rendered).toContain("planの末尾に「完了報告準備」Todo");
+		expect(rendered).toContain("commit・merge状態");
+		expect(rendered).toContain("Todo・verification・Run・commitの各証跡");
+		expect(rendered).toContain("未commit・未mergeを含む実際の状態");
+	});
+
+	it("renders task-generation implementation context without embedding the full output schema", () => {
+		const rendered = p("taskGeneration.mission-tasks", {
+			maxCount: 5,
+			generationContext: {
+				schemaVersion: "nightworkers.task-generation-system-context/v1",
+				implementation: {
+					source: "detected_stack",
+					stackProfile: {
+						summary: "TypeScript + Hono",
+					},
+				},
+				moduleOntology: null,
+				canonicalSignalDigest: `sha256:${"0".repeat(64)}`,
+			},
+		});
+
+		expect(rendered).toContain("TypeScript + Hono");
+		expect(rendered).toContain("原則1-3件、最大 5 件");
+		expect(rendered).not.toContain("次の JSON Schema");
+		expect(rendered).not.toContain('"properties"');
+		expect(
+			catalogArtifact.contexts["taskGeneration.mission-tasks"].variables,
+		).toMatchObject({
+			generationContext: { trust: "untrusted", encoding: "json-value" },
 		});
 	});
 
@@ -201,7 +258,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"3d8a8a207b53107a7be99369736a9e7fc582b9320122fdf531dfc9a5d8159b26",
+				"0c3204bc689bebf26fcb47c4020730487748c7e6e6270cc5705eaf1935799f99",
 			missionPilotPushAllowed:
 				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
 			missionPilotPushDenied:

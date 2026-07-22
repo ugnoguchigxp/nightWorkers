@@ -25,6 +25,13 @@ import type {
 	AgentRuntimeSink,
 } from "./types";
 
+const STREAM_DEADLINE_REACHED = Symbol("codex-stream-deadline-reached");
+
+type OpenProviderItem = {
+	id: string;
+	type: string;
+};
+
 export type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 export {
 	buildCodexRuntimePrompt,
@@ -79,6 +86,12 @@ export class CodexAgentRuntime implements AgentRuntime {
 		const abort = () => controller.abort(signal?.reason);
 		signal?.addEventListener("abort", abort, { once: true });
 		let timedOut = false;
+		let resolveStreamDeadline!: (value: typeof STREAM_DEADLINE_REACHED) => void;
+		const streamDeadline = new Promise<typeof STREAM_DEADLINE_REACHED>(
+			(resolve) => {
+				resolveStreamDeadline = resolve;
+			},
+		);
 		const timeout = setTimeout(() => {
 			timedOut = true;
 			controller.abort(
@@ -86,6 +99,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 					`CodexAgentRuntime timed out after ${context.timeoutSeconds}s`,
 				),
 			);
+			resolveStreamDeadline(STREAM_DEADLINE_REACHED);
 		}, Math.max(1, context.timeoutSeconds) * 1000);
 		const logs: string[] = [];
 		let finalReport = "";
@@ -101,17 +115,42 @@ export class CodexAgentRuntime implements AgentRuntime {
 				false,
 			);
 			const turnStartedAt = Date.now();
-			const { events } = await thread.runStreamed(turnInput, {
-				signal: controller.signal,
-			});
+			const streamedTurn = await Promise.race([
+				thread.runStreamed(turnInput, { signal: controller.signal }),
+				streamDeadline,
+			]);
+			if (streamedTurn === STREAM_DEADLINE_REACHED) {
+				await this.emitRuntimeError(sink, logs, {
+					code: "CODEX_STREAM_DEADLINE_EXCEEDED",
+					message:
+						"Codex stream did not start before the host execution deadline.",
+				});
+				return this.finish(context, sink, logs, {
+					terminalState: "timed_out",
+					finalReport,
+					stoppedBy: "budget",
+					riskLevel: "high",
+				});
+			}
+			const { events } = streamedTurn;
 			const mapperState = createCodexEventMapperState({
 				repoRoot: context.repoRoot,
 			});
 			let providerSessionKey: string | null = null;
 			let turnCompleted = false;
 			let runtimeFailed = false;
+			const openProviderItems = new Map<string, OpenProviderItem>();
+			const eventIterator = events[Symbol.asyncIterator]();
 
-			for await (const providerEvent of events) {
+			while (true) {
+				const nextEvent = await Promise.race([
+					eventIterator.next(),
+					streamDeadline,
+				]);
+				if (nextEvent === STREAM_DEADLINE_REACHED) break;
+				if (nextEvent.done) break;
+				const providerEvent = nextEvent.value;
+				updateOpenProviderItems(openProviderItems, providerEvent);
 				for (const event of mapCodexThreadEvent(providerEvent, mapperState)) {
 					providerSessionKey = updateCodexSessionKey(providerSessionKey, event);
 					logs.push(event.message);
@@ -155,9 +194,20 @@ export class CodexAgentRuntime implements AgentRuntime {
 					}
 					if (event.type === "runtime_error") runtimeFailed = true;
 				}
+				if (turnCompleted || runtimeFailed) {
+					clearTimeout(timeout);
+					closeProviderIteratorWithoutWaiting(eventIterator);
+					break;
+				}
 			}
 
 			if (timedOut) {
+				await this.emitRuntimeError(sink, logs, {
+					code: "CODEX_STREAM_DEADLINE_EXCEEDED",
+					message:
+						"Codex event stream did not reach a terminal event before the host execution deadline.",
+				});
+				closeProviderIteratorWithoutWaiting(eventIterator);
 				return this.finish(context, sink, logs, {
 					terminalState: "timed_out",
 					finalReport,
@@ -184,6 +234,28 @@ export class CodexAgentRuntime implements AgentRuntime {
 					terminalState: "failed",
 					finalReport,
 					stoppedBy: "llm_error",
+					riskLevel: "high",
+				});
+			}
+			if (openProviderItems.size > 0) {
+				const items = [...openProviderItems.values()];
+				const message =
+					"Codex turn completed while provider items were still open; manual review is required.";
+				logs.push(`[Codex] ${message}`);
+				await sink.emit({
+					type: "runtime_warning",
+					message: `[Codex] ${message}`,
+					payload: {
+						code: "PROVIDER_TERMINAL_WITH_OPEN_ITEMS",
+						provider: "codex",
+						severity: "warning",
+						openItems: items,
+					},
+				});
+				return this.finish(context, sink, logs, {
+					terminalState: "needs_review",
+					finalReport,
+					stoppedBy: "tool_failure",
 					riskLevel: "high",
 				});
 			}
@@ -327,6 +399,36 @@ export class CodexAgentRuntime implements AgentRuntime {
 
 	isRunning(runId: string): boolean {
 		return this.activeRunControllers.has(runId);
+	}
+}
+
+function updateOpenProviderItems(
+	openItems: Map<string, OpenProviderItem>,
+	event: unknown,
+) {
+	if (!event || typeof event !== "object") return;
+	const record = event as Record<string, unknown>;
+	if (record.type !== "item.started" && record.type !== "item.completed")
+		return;
+	if (!record.item || typeof record.item !== "object") return;
+	const item = record.item as Record<string, unknown>;
+	if (typeof item.id !== "string") return;
+	if (record.type === "item.completed") {
+		openItems.delete(item.id);
+		return;
+	}
+	openItems.set(item.id, {
+		id: item.id,
+		type: typeof item.type === "string" ? item.type : "unknown",
+	});
+}
+
+function closeProviderIteratorWithoutWaiting(iterator: AsyncIterator<unknown>) {
+	if (!iterator.return) return;
+	try {
+		void Promise.resolve(iterator.return()).catch(() => undefined);
+	} catch {
+		// Provider cleanup is best-effort and must never block Run closeout.
 	}
 }
 

@@ -43,6 +43,7 @@ const defaultShutdownTimeoutMs = 10_000;
 const serverCloseCallbackGraceMs = 250;
 const webSocketServerCloseGraceMs = 250;
 const fxRefreshIntervalMs = 60 * 60 * 1000;
+const implementationQueueReconcileIntervalMs = 60 * 1000;
 
 initializeCodingAgentRunHandlers();
 
@@ -156,18 +157,37 @@ export async function createNightWorkersServer(
 		});
 	});
 	await reconcileMissionPilotStartup();
-	void reconcileImplementationQueue({ apply: true, reason: "startup" }).catch(
-		(error) => {
-			logEvent({
-				channel: "api",
-				level: "error",
-				message: "implementation queue startup reconciliation failed",
-				meta: {
-					errorMessage: error instanceof Error ? error.message : String(error),
-				},
+	let queueReconcileInFlight: Promise<void> | null = null;
+	const reconcileQueue = (reason: "startup" | "scheduled") => {
+		if (queueReconcileInFlight) return queueReconcileInFlight;
+		queueReconcileInFlight = reconcileImplementationQueue({
+			apply: true,
+			reason,
+		})
+			.then(() => undefined)
+			.catch((error) => {
+				logEvent({
+					channel: "api",
+					level: "error",
+					message: "implementation queue reconciliation failed",
+					meta: {
+						reason,
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					},
+				});
+			})
+			.finally(() => {
+				queueReconcileInFlight = null;
 			});
-		},
+		return queueReconcileInFlight;
+	};
+	void reconcileQueue("startup");
+	const implementationQueueReconcileTimer = setInterval(
+		() => void reconcileQueue("scheduled"),
+		implementationQueueReconcileIntervalMs,
 	);
+	implementationQueueReconcileTimer.unref?.();
 
 	const server = serve({
 		fetch: app.fetch,
@@ -257,6 +277,7 @@ export async function createNightWorkersServer(
 		clearInterval(missionPilotQuestionnaireTimer);
 		clearInterval(retentionTimer);
 		clearInterval(fxRefreshTimer);
+		clearInterval(implementationQueueReconcileTimer);
 		logEvent({
 			channel: "api",
 			level: "info",

@@ -366,6 +366,8 @@ export function renderQuestionnaireAnswerMarkdown(
 	for (const question of toRecordArray(getSessionQuestions(session))) {
 		const answer = answerByQuestionId.get(String(question.id));
 		lines.push(`- ${question.question}`);
+		if (question.decisionKey)
+			lines.push(`  - Decision key: ${question.decisionKey}`);
 		lines.push(
 			`  - Answer: ${renderQuestionnaireAnswer(question, answer?.answer)}`,
 		);

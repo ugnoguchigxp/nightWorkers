@@ -1,0 +1,2 @@
+text = '''Todo planを使う実装Runでは、LLMがplanの末尾に「完了報告準備」Todoを作成してください。このTodoのsystemContextには、必須・任意の検証結果、未解決・回復済み・scope外の失敗、最終差分、commit・merge状態、Todo・verification・Run・commitの各証跡、compile_evalの結果とcontext_compile／compile_evalの実行回数、最終回答候補とcompletion readinessの照合を含めます。
+E2E失敗を開示するだけで終わらせず、未commit・未mergeを含む実際の状態と証跡に矛盾があれば、矛盾そのものを明示してください。解消できる不一致は解消し、解消できない不一致は完了報告へ明示してから、このTodoをpassedへ遷移してください。このTodoをhostに生成・更新させないでください。'''

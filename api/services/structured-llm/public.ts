@@ -11,7 +11,11 @@ export {
 	structuredLlmAttemptValueText,
 	validateStructuredLlmFacts,
 } from "./contract";
-export { ProviderActivityRejectedError } from "./events";
+export {
+	mergeStructuredLlmCallUsage,
+	ProviderActivityRejectedError,
+	structuredLlmCallUsageFromEvent,
+} from "./events";
 export { StructuredLlmTimeoutError } from "./json";
 export {
 	type ResolvedStructuredLlmModelCapability,
@@ -43,6 +47,7 @@ export type {
 export type {
 	NormalizedSupervisorLlmRequest,
 	ProviderCapabilityPolicy,
+	StructuredLlmCallUsage,
 	StructuredLlmRole,
 	SupervisorLlmDebugEvent,
 	SupervisorProviderClass,

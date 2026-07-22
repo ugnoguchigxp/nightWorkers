@@ -4,6 +4,7 @@ import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import {
 	type TestConditionMapping,
+	type TestConditionMappingWrite,
 	type TestInventory,
 	type TestInventoryCase,
 	workspaceSourceSnapshotSchema,
@@ -17,6 +18,7 @@ import {
 	verificationDocuments,
 } from "../../../db/verification-schema";
 import { runCommandTool } from "../../../services/worker-tools/run-command";
+import { TestConditionMappingFailure } from "./test-inventory-errors";
 import {
 	captureWorkspaceSourceSnapshot,
 	listWorkspaceSourceFiles,
@@ -100,16 +102,9 @@ export async function collectTestInventory(input: {
 	return inventory;
 }
 
-export async function recordTestConditionMapping(input: {
-	taskId: string;
-	verificationDocumentId: string;
-	inventoryId: string;
-	caseKey: string;
-	conditionId: string;
-	source: "declared_in_test" | "coding_agent_assessment";
-	rationale?: string;
-	sourceDigest: string;
-}): Promise<TestConditionMapping> {
+export async function recordTestConditionMapping(
+	input: TestConditionMappingWrite,
+): Promise<TestConditionMapping> {
 	const [document, inventory, testCase, checklistItem] = await Promise.all([
 		db
 			.select({
@@ -157,7 +152,10 @@ export async function recordTestConditionMapping(input: {
 			.then((rows) => rows[0]),
 	]);
 	if (!document || document.taskId !== input.taskId) {
-		throw new Error("verification document does not belong to task");
+		throw new TestConditionMappingFailure(
+			"TEST_MAPPING_AUTHORITY_MISMATCH",
+			"Verification document does not belong to the request-scoped task.",
+		);
 	}
 	if (
 		!inventory ||
@@ -165,7 +163,11 @@ export async function recordTestConditionMapping(input: {
 		!testCase ||
 		!checklistItem
 	) {
-		throw new Error("test condition mapping precondition failed");
+		throw new TestConditionMappingFailure(
+			"TEST_MAPPING_PRECONDITION_MISSING",
+			"Test inventory, case, or verification condition is unavailable.",
+			"collect_test_inventory",
+		);
 	}
 	const snapshot = workspaceSourceSnapshotSchema.safeParse(
 		inventory.sourceSnapshotJson,
@@ -174,48 +176,62 @@ export async function recordTestConditionMapping(input: {
 		!snapshot.success ||
 		input.sourceDigest !== snapshot.data.sourceStateHash
 	) {
-		throw new Error(
-			"test condition mapping source digest does not match inventory",
+		throw new TestConditionMappingFailure(
+			"TEST_MAPPING_SOURCE_STALE",
+			"Test condition mapping source digest does not match the inventory snapshot.",
+			"collect_test_inventory",
 		);
 	}
 	if (
 		input.source === "declared_in_test" &&
 		!testCase.declaredConditionIdsJson.includes(input.conditionId)
 	) {
-		throw new Error("declared test marker does not match condition");
+		throw new TestConditionMappingFailure(
+			"TEST_MAPPING_DECLARATION_MISMATCH",
+			"Declared test marker does not match the requested condition.",
+		);
 	}
 	const mapping: TestConditionMapping = {
 		id: crypto.randomUUID(),
 		...input,
 		createdAt: new Date().toISOString(),
 	};
-	await db
-		.insert(codingAgentTestConditionMappings)
-		.values({
-			id: mapping.id,
-			taskId: mapping.taskId,
-			verificationDocumentId: mapping.verificationDocumentId,
-			inventoryId: mapping.inventoryId,
-			caseKey: mapping.caseKey,
-			conditionId: mapping.conditionId,
-			source: mapping.source,
-			rationale: mapping.rationale ?? null,
-			sourceDigest: mapping.sourceDigest,
-		})
-		.onConflictDoUpdate({
-			target: [
-				codingAgentTestConditionMappings.verificationDocumentId,
-				codingAgentTestConditionMappings.inventoryId,
-				codingAgentTestConditionMappings.caseKey,
-				codingAgentTestConditionMappings.conditionId,
-			],
-			set: {
+	try {
+		await db
+			.insert(codingAgentTestConditionMappings)
+			.values({
+				id: mapping.id,
+				taskId: mapping.taskId,
+				verificationDocumentId: mapping.verificationDocumentId,
+				inventoryId: mapping.inventoryId,
+				caseKey: mapping.caseKey,
+				conditionId: mapping.conditionId,
 				source: mapping.source,
 				rationale: mapping.rationale ?? null,
 				sourceDigest: mapping.sourceDigest,
-				updatedAt: new Date(),
-			},
-		});
+			})
+			.onConflictDoUpdate({
+				target: [
+					codingAgentTestConditionMappings.verificationDocumentId,
+					codingAgentTestConditionMappings.inventoryId,
+					codingAgentTestConditionMappings.caseKey,
+					codingAgentTestConditionMappings.conditionId,
+				],
+				set: {
+					source: mapping.source,
+					rationale: mapping.rationale ?? null,
+					sourceDigest: mapping.sourceDigest,
+					updatedAt: new Date(),
+				},
+			});
+	} catch (error) {
+		throw new TestConditionMappingFailure(
+			"TEST_MAPPING_PERSISTENCE_FAILED",
+			"Test condition mapping could not be persisted.",
+			undefined,
+			{ cause: error },
+		);
+	}
 	return mapping;
 }
 

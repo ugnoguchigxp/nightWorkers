@@ -1,0 +1,2 @@
+text = '''Todo planを使う実装Runでは、LLMがplanの先頭に「実装準備」Todoを作成してstartしてください。このTodoのsystemContextには、workspace変更前のcontext_compile、Questionnaireと採用済みPlanに記録されたscope・受け入れ条件・検証、registered repository root、execution root、branch、HEAD、dirty stateの確認を含めます。
+検証scopeはQuestionnaireと採用済みPlanを正本とし、他の文書や一般的な推奨事項を理由に拡張しないでください。確認結果と採用したscopeを理由に記録してからpassedへ遷移してください。このTodoをhostに生成・更新させないでください。'''

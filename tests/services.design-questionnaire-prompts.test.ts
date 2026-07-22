@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+	COMPLETION_VERIFICATION_QUESTION_ID,
+	resolveCompletionVerificationScope,
+} from "../api/modules/questionnaire/questionnaire-completion-verification";
+import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
 	buildDesignQuestionnaireFollowUpDecisionUserPrompt,
 	buildDesignQuestionnaireInitialUserPrompt,
+	buildDesignQuestionnaireReviewSystemPrompt,
 	buildDesignQuestionnaireSystemPrompt,
 } from "../api/services/structured-generation/prompts/design-questionnaire";
-import { questionnaireChoiceFormSchema } from "../shared/schemas/design-questionnaire.schema";
+import {
+	generatedQuestionnaireChoiceFormSchema,
+	questionnaireChoiceFormSchema,
+} from "../shared/schemas/design-questionnaire.schema";
 
 describe("design questionnaire prompts", () => {
 	it("forbids stack and database selection for a materialized project", () => {
@@ -24,9 +32,19 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("並び順と空状態");
 		expect(prompt).toContain("結合せずfollow-upへ回して");
 		expect(prompt).toContain("意味を重複させず");
-		expect(prompt).toContain("初期質問は15件を絶対上限");
+		expect(prompt).toContain("最終設問を含めて15件を絶対上限");
 		expect(prompt).toContain("最低件数や目標件数はありません");
-		expect(prompt).toContain("15件を埋めるために質問を増やさず");
+		expect(prompt).toContain("本当に必要な未決定事項を漏れなく質問");
+		expect(prompt).toContain("必要な判断を省略してはいけません");
+		expect(prompt).toContain("現時点で回答可能な必要論点が14件以内なら");
+		expect(prompt).toContain("14件を埋めるために質問を増やさず");
+		expect(prompt).toContain(
+			"必要論点が14件を超える場合だけ、優先度の低い下位論点をfollow-up",
+		);
+		expect(prompt).toContain("application所有の固定設問");
+		expect(prompt).toContain("kind=design_decision");
+		expect(prompt).toContain("kind=completion_verification");
+		expect(prompt).toContain("applicationが除外して固定設問へ置き換え");
 		expect(prompt).toContain("Task名、プロダクト名、機能名を入れず");
 		expect(prompt).toContain("1/4 のような表記も入れない");
 		expect(prompt).not.toContain("最大4ページ");
@@ -37,6 +55,7 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("選択質問を生成してはいけません");
 		expect(prompt).toContain("一般的なstack候補やDB製品候補からの再選択");
 		expect(prompt).not.toContain("どの技術スタックで実装しますか？");
+		expect(prompt).not.toContain("第1問を技術スタック");
 		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
 		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
 		expect(prompt).toContain("各 options は 2-10 件");
@@ -86,8 +105,40 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("空の未materialized Project");
 		expect(prompt).toContain("一意に選べない場合に限り");
 		expect(prompt).toContain("技術スタックとDB/永続化を確認");
-		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
-		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
+		expect(prompt).toContain("第1問を技術スタック、第2問をDB/永続化");
+		expect(prompt).toContain("この2問より前に他の質問を置いてはいけません");
+		expect(prompt).toContain("先頭設問を指定する場合は、その質問順を最優先");
+		expect(prompt).toContain("本当に必要な未決定事項を漏れなく質問");
+		expect(prompt).toContain("現時点で回答可能な必要論点が14件以内なら");
+		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).toContain("RAG (Hono + React/Vite)");
+		expect(prompt).toContain("Python/FastAPI + React/Vite");
+		expect(prompt).toContain("API only (FastAPI)");
+		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
+		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
+		expect(prompt).toContain("Rust + Axum + React/Vite");
+		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
+		expect(prompt).toContain("SQLite、PostgreSQL、pgvector、Turso/libSQL");
+		expect(prompt).toContain("DBなし/後続決定");
+		expect(prompt).toContain(
+			"専用 variant がないことを理由に DB の選択肢を除外しない",
+		);
+	});
+
+	it("keeps fixed starter stack and database choices in follow-up", () => {
+		const prompt = buildDesignQuestionnaireFollowUpDecisionSystemPrompt(
+			"starter_selection_required",
+		);
+
+		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
+		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
+		expect(prompt).toContain("Rust + Axum + React/Vite");
+		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
+		expect(prompt).toContain("SQLite、PostgreSQL、pgvector、Turso/libSQL");
+		expect(prompt).toContain("DBなし/後続決定");
 	});
 
 	it("includes concise project stack and plan mode context in initial questionnaire input", () => {
@@ -113,6 +164,29 @@ describe("design questionnaire prompts", () => {
 		);
 	});
 
+	it("preserves the completion verification answer for Feature Plan generation", () => {
+		const prompt = buildDesignQuestionnaireReviewSystemPrompt();
+
+		expect(prompt).toContain("decisionKey=completion.verification_scope");
+		expect(prompt).toContain("outputSection=verification-scope");
+		expect(prompt).toContain("テストを完了条件にしない回答も省略せず");
+	});
+
+	it("resolves completion verification scope from stable option ids", () => {
+		expect(
+			resolveCompletionVerificationScope({
+				answers: [
+					{
+						questionId: COMPLETION_VERIFICATION_QUESTION_ID,
+						answer: {
+							selectedOptionIds: ["completion-verification-unit-e2e"],
+						},
+					},
+				],
+			}),
+		).toBe("unit_and_e2e_if_ui");
+	});
+
 	it("accepts up to ten choices in generated choice-form output", () => {
 		const tenOptions = Array.from(
 			{ length: 10 },
@@ -125,6 +199,7 @@ describe("design questionnaire prompts", () => {
 				questions: [
 					{
 						text: "使用する DB はどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: tenOptions,
 					},
@@ -137,6 +212,7 @@ describe("design questionnaire prompts", () => {
 				questions: [
 					{
 						text: "使用する DB はどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: [...tenOptions, "選択肢11"],
 					},
@@ -145,9 +221,31 @@ describe("design questionnaire prompts", () => {
 		).toBe(false);
 	});
 
-	it("accepts at most fifteen initial questions", () => {
+	it("requires question provenance for new generation while preserving parser compatibility", () => {
+		const legacyQuestionnaire = {
+			title: "実装前確認",
+			questions: [
+				{
+					text: "対象範囲はどれですか？",
+					type: "radio",
+					options: ["最小", "標準"],
+				},
+			],
+		};
+
+		expect(
+			questionnaireChoiceFormSchema.safeParse(legacyQuestionnaire).success,
+		).toBe(true);
+		expect(
+			generatedQuestionnaireChoiceFormSchema.safeParse(legacyQuestionnaire)
+				.success,
+		).toBe(false);
+	});
+
+	it("reserves the fifteenth initial question for completion verification", () => {
 		const question = {
 			text: "実装判断はどれですか？",
+			kind: "design_decision" as const,
 			type: "radio" as const,
 			options: ["案A", "案B"],
 		};
@@ -155,13 +253,13 @@ describe("design questionnaire prompts", () => {
 		expect(
 			questionnaireChoiceFormSchema.safeParse({
 				title: "実装前確認",
-				questions: Array.from({ length: 15 }, () => question),
+				questions: Array.from({ length: 14 }, () => question),
 			}).success,
 		).toBe(true);
 		expect(
 			questionnaireChoiceFormSchema.safeParse({
 				title: "実装前確認",
-				questions: Array.from({ length: 16 }, () => question),
+				questions: Array.from({ length: 15 }, () => question),
 			}).success,
 		).toBe(false);
 	});

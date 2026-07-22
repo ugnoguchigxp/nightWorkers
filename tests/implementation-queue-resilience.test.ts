@@ -500,6 +500,64 @@ describe("Implementation Queue resilience repository behavior", () => {
 		).toBe(true);
 	});
 
+	it("atomically times out a stale processing Run after its configured deadline", async () => {
+		const fixture = await createQueuedEntry({ priority: 903_500 });
+		const startedAt = new Date("2026-07-03T00:00:00.000Z");
+		const run = await nightworkersRepo.createTaskRun({
+			taskId: fixture.task.id,
+			repositoryId: fixture.repository.id,
+			status: "running",
+			timeoutSeconds: 60,
+			startedAt,
+			contextSnapshot: { executionMode: "implementation" },
+		});
+		const now = new Date(run.updatedAt.getTime() + 2 * 60 * 60 * 1_000);
+		await queueRepo.updateImplementationQueueEntry(fixture.entry.id, {
+			status: "processing",
+			processorSlot: 1,
+			activeRunId: run.id,
+			leaseOwnerId: "stale-owner",
+			leaseExpiresAt: new Date(now.getTime() - 60_000),
+			lastHeartbeatAt: new Date(now.getTime() - 60 * 60 * 1_000),
+		});
+
+		const result = await queueService.reconcileImplementationQueue({
+			apply: true,
+			now,
+			staleProcessingMs: 30 * 60 * 1_000,
+		});
+
+		expect(result.actions).toContainEqual({
+			entryId: fixture.entry.id,
+			action: "timeout",
+			status: "failed",
+		});
+		await expect(nightworkersRepo.getTaskRun(run.id)).resolves.toMatchObject({
+			status: "timed_out",
+			finishedAt: now,
+			summary:
+				"Run exceeded its configured deadline after runtime heartbeats stopped.",
+		});
+		await expect(
+			queueRepo.getImplementationQueueEntry(fixture.entry.id),
+		).resolves.toMatchObject({
+			status: "failed",
+			processorSlot: null,
+			leaseOwnerId: null,
+			recoveryReason: "run_deadline_exceeded",
+		});
+		const messages = await nightworkersRepo.listTaskMessages(fixture.task.id);
+		expect(messages).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					runId: run.id,
+					content:
+						"Run exceeded its configured deadline after runtime heartbeats stopped.",
+				}),
+			]),
+		);
+	});
+
 	it("exposes queue health and manual recovery through API routes", async () => {
 		const fixture = await createQueuedEntry({ priority: 904_000 });
 		await queueRepo.updateImplementationQueueEntry(fixture.entry.id, {

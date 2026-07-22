@@ -7,6 +7,7 @@ import {
 	type MissionTaskCandidatesResult,
 	missionTaskCandidatesResultSchema,
 	type ProjectSignalSnapshot,
+	type TaskGenerationLlmUsage,
 } from "../../../shared/schemas/task-generation.schema";
 import { db } from "../../db/client";
 import { tasks } from "../../db/schema";
@@ -16,8 +17,10 @@ import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import {
 	buildNormalizedSupervisorLlmRequest,
 	createStructuredOutputContract,
+	mergeStructuredLlmCallUsage,
 	type StructuredLlmIssue,
 	structuredLlmAttemptValueText,
+	structuredLlmCallUsageFromEvent,
 } from "../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
@@ -28,6 +31,10 @@ import {
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { selectMissionGoalsForGeneration } from "./task-candidate-semantics";
 import * as repo from "./task-generation.repository";
+import {
+	buildTaskGenerationPromptSignal,
+	buildTaskGenerationSystemContext,
+} from "./task-generation-prompt-context";
 import { buildProjectSignalSnapshot } from "./task-generation-signal.service";
 
 export * from "./mission-goal.service";
@@ -42,12 +49,12 @@ async function requireRepository(repositoryId: string) {
 }
 
 function buildMissionTaskSystemPrompt(
-	outputRequirements: string,
+	signal: ProjectSignalSnapshot,
 	p: SystemContextP = bindSystemContextTextCatalog().p,
 ) {
 	return p("taskGeneration.mission-tasks", {
 		maxCount: MISSION_TASK_CANDIDATE_MAX_COUNT,
-		outputRequirements,
+		generationContext: buildTaskGenerationSystemContext(signal),
 	});
 }
 
@@ -58,16 +65,10 @@ function buildMissionTaskUserPrompt(input: {
 }) {
 	return JSON.stringify(
 		{
-			missionGoals: input.signal.activeGoals,
-			moduleOntology: input.signal.repositorySnapshot?.moduleOntology ?? null,
-			projectSignalSnapshot: input.signal,
-			generationRules: [
-				"各候補は Mission Goal に直接紐付ける。",
-				"moduleOntology が無い場合も失敗にせず、moduleRouting は null/低 confidence と reason で表現する。",
-				"importancePercent は Goal 達成への重要度を示す。",
-				"evaluationContribution は評価改善の見込みを数値で示し、null にしない。",
-				`候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件にし、existingUncreatedCandidates / existingTaskTitles と title が重なる候補は返さない。`,
-			],
+			projectSignal: buildTaskGenerationPromptSignal(
+				input.signal,
+				"task_candidates",
+			),
 			existingUncreatedCandidates: input.existingCandidates.map(
 				(candidate) => ({
 					id: candidate.id,
@@ -76,7 +77,6 @@ function buildMissionTaskUserPrompt(input: {
 				}),
 			),
 			existingTaskTitles: input.existingTaskTitles,
-			outputSchema: "nightworkers.mission-task-candidates/v1",
 		},
 		null,
 		2,
@@ -172,6 +172,8 @@ export async function generateMissionTaskCandidates(input: {
 	repositoryId: string;
 	goalIds?: string[];
 	includeInactiveGoals?: boolean;
+	signal?: ProjectSignalSnapshot;
+	priorLlmUsage?: TaskGenerationLlmUsage[];
 }) {
 	const repository = await requireRepository(input.repositoryId);
 	const allGoals = await repo.listMissionGoals(repository.id);
@@ -179,10 +181,12 @@ export async function generateMissionTaskCandidates(input: {
 	if (selectedGoals.length === 0)
 		throw new ValidationError("At least one mission goal is required");
 	await repo.reactivateDeletedTaskMissionCandidates(repository.id);
-	const signal = await buildProjectSignalSnapshot({
-		repository,
-		goals: selectedGoals,
-	});
+	const signal =
+		input.signal ??
+		(await buildProjectSignalSnapshot({
+			repository,
+			goals: selectedGoals,
+		}));
 	const batch = await repo.createRunningMissionBatch({
 		repositoryId: repository.id,
 		requestedGoalIds: selectedGoals.map((goal) => goal.id),
@@ -203,10 +207,7 @@ export async function generateMissionTaskCandidates(input: {
 		providerJsonSchema: buildMissionTaskCandidatesResponseJsonSchema(),
 	});
 	const { p } = bindSystemContextTextCatalog();
-	const systemPrompt = buildMissionTaskSystemPrompt(
-		contract.renderOutputRequirements(p),
-		p,
-	);
+	const systemPrompt = buildMissionTaskSystemPrompt(signal, p);
 	const userPrompt = buildMissionTaskUserPrompt({
 		signal,
 		existingCandidates,
@@ -216,6 +217,7 @@ export async function generateMissionTaskCandidates(input: {
 		systemPrompt,
 		userPrompt,
 	);
+	let llmUsage: TaskGenerationLlmUsage | null = null;
 	try {
 		const generated = await callStructuredOutputWithRepair({
 			systemPrompt,
@@ -226,6 +228,13 @@ export async function generateMissionTaskCandidates(input: {
 				emitEvent: async (event) => {
 					const nextSelection = selectionFromLlmEvent(event);
 					if (nextSelection) selectedModel = nextSelection;
+					const usage = structuredLlmCallUsageFromEvent(event);
+					if (usage) {
+						llmUsage = {
+							stage: "task_candidates",
+							...mergeStructuredLlmCallUsage(llmUsage, usage),
+						};
+					}
 				},
 			},
 			validateFacts: (value) =>
@@ -246,7 +255,11 @@ export async function generateMissionTaskCandidates(input: {
 		await repo.completeMissionBatch({
 			batchId: batch.id,
 			rawOutput,
-			selectedModel,
+			selectedModel: attachLlmUsage(
+				selectedModel,
+				llmUsage,
+				input.priorLlmUsage,
+			),
 		});
 		const candidates = await repo.createMissionCandidates(
 			generated.value.candidates.map((candidate) => {
@@ -280,13 +293,22 @@ export async function generateMissionTaskCandidates(input: {
 				};
 			}),
 		);
-		return { batchId: batch.id, status: "completed" as const, candidates };
+		return {
+			batchId: batch.id,
+			status: "completed" as const,
+			candidates,
+			llmUsage,
+		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		await repo.failMissionBatch({
 			batchId: batch.id,
 			errorMessage: message,
-			selectedModel,
+			selectedModel: attachLlmUsage(
+				selectedModel,
+				llmUsage,
+				input.priorLlmUsage,
+			),
 		});
 		if (error instanceof StructuredLlmResponseError) {
 			throw new AppError(
@@ -303,6 +325,21 @@ export async function generateMissionTaskCandidates(input: {
 		}
 		throw error;
 	}
+}
+
+function attachLlmUsage(
+	selectedModel: unknown,
+	llmUsage: TaskGenerationLlmUsage | null,
+	priorLlmUsage: TaskGenerationLlmUsage[] = [],
+) {
+	if (!llmUsage && priorLlmUsage.length === 0) return selectedModel;
+	const usageMetadata = {
+		priorLlmUsage,
+		llmUsage,
+	};
+	return selectedModel && typeof selectedModel === "object"
+		? { ...selectedModel, ...usageMetadata }
+		: { selection: selectedModel ?? null, ...usageMetadata };
 }
 
 function validateMissionTaskCandidateFacts(

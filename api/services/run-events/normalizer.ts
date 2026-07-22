@@ -10,6 +10,7 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"run.prompt_prepared": { eventType: "state_change", type: "info" },
 	"run.runtime_started": { eventType: "state_change", type: "info" },
 	"run.runtime_finished": { eventType: "state_change", type: "checkpoint" },
+	"run.watchdog_timed_out": { eventType: "error", type: "error" },
 	"run.stop_requested": { eventType: "state_change", type: "warning" },
 	"run.finalizing_started": { eventType: "state_change", type: "info" },
 	"run.final_judgment_created": { eventType: "final_report", type: "info" },

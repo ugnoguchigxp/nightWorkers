@@ -7,6 +7,12 @@ export type WorkerToolResult<TPayload> = {
 	error?: {
 		code: string;
 		message: string;
+		retryable?: boolean;
+		recoveryAction?: string;
+		issues?: Array<{
+			path: Array<string | number>;
+			message: string;
+		}>;
 	};
 	artifactIds?: string[];
 };

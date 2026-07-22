@@ -4,7 +4,11 @@ import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { registerQuestionnaireStateChangedListener } from "../../../api/modules/questionnaire/questionnaire-events";
 import * as generalSettings from "../../../api/services/settings/general-settings";
-import { representativeDataModelArtifact, sameOriginHeaders } from "./helpers";
+import {
+	completionVerificationAnswer,
+	representativeDataModelArtifact,
+	sameOriginHeaders,
+} from "./helpers";
 import "./setup";
 
 describe("NightWorkers task routes questionnaire core", () => {
@@ -199,6 +203,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "triage-mode",
 								selectedOptionIds: ["manual-first"],
@@ -295,8 +300,8 @@ describe("NightWorkers task routes questionnaire core", () => {
 					expect.objectContaining({
 						id: session.id,
 						status: "accepted",
-						answeredCount: 1,
-						totalQuestionCount: 1,
+						answeredCount: 2,
+						totalQuestionCount: 2,
 					}),
 				]),
 			);

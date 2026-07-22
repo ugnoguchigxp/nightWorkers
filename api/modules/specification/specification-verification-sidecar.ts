@@ -5,6 +5,7 @@ import type {
 	VerificationCommandPlan,
 	VerificationCondition,
 } from "../../../shared/schemas/verification-checklist.schema";
+import type { CompletionVerificationScope } from "../questionnaire/questionnaire-completion-verification";
 
 type BuildInput = {
 	taskId: string;
@@ -15,6 +16,7 @@ type BuildInput = {
 	workspace: PlanModeWorkspace;
 	acceptanceCriteria?: SpecificationAcceptanceCriterion[];
 	inferConditionSemantics?: boolean;
+	completionVerificationScope?: CompletionVerificationScope | null;
 	generatedAt?: string;
 };
 
@@ -25,11 +27,18 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 	const annotated = input.acceptanceCriteria
 		? {
 				content: input.content,
-				conditions: input.acceptanceCriteria.map(buildGeneratedCondition),
+				conditions: input.acceptanceCriteria.map((criterion, index) =>
+					buildGeneratedCondition(
+						criterion,
+						index,
+						input.completionVerificationScope ?? null,
+					),
+				),
 			}
 		: annotateCompletionConditions(
 				input.content,
 				input.inferConditionSemantics !== false,
+				input.completionVerificationScope ?? null,
 			);
 	const { content, conditions } = annotated;
 	const commands = extractVerificationCommands(content, conditions);
@@ -54,14 +63,19 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 function buildGeneratedCondition(
 	criterion: SpecificationAcceptanceCriterion,
 	index: number,
+	completionVerificationScope: CompletionVerificationScope | null,
 ): VerificationCondition {
 	const id = `AC-${String(index + 1).padStart(3, "0")}`;
+	const evidence = evidenceForCompletionVerificationScope(
+		completionVerificationScope,
+		criterion.category,
+	);
 	return {
 		id,
 		text: criterion.title,
 		category: criterion.category,
-		verificationKind: "automated_test",
-		expectedEvidence: ["automated_test"],
+		verificationKind: evidence.verificationKind,
+		expectedEvidence: evidence.expectedEvidence,
 		expectedResult: criterion.title,
 		failureMeaning: `${criterion.title} を満たさない場合、この完了条件は未達です。`,
 		required: true,
@@ -72,6 +86,7 @@ function buildGeneratedCondition(
 function annotateCompletionConditions(
 	markdown: string,
 	inferSemantics: boolean,
+	completionVerificationScope: CompletionVerificationScope | null,
 ): {
 	content: string;
 	conditions: VerificationCondition[];
@@ -116,7 +131,13 @@ function annotateCompletionConditions(
 		conditionIndex += 1;
 		usedConditionIds.add(id);
 		conditions.push(
-			buildCondition(id, conditionText, category, inferSemantics),
+			buildCondition(
+				id,
+				conditionText,
+				category,
+				inferSemantics,
+				completionVerificationScope,
+			),
 		);
 		if (requestedId === id) return line;
 		if (category) return `${bullet[1]}[${id}][${category}] ${conditionText}`;
@@ -140,14 +161,19 @@ function buildCondition(
 	text: string,
 	explicitCategory?: VerificationCondition["category"],
 	inferSemantics = true,
+	completionVerificationScope: CompletionVerificationScope | null = null,
 ): VerificationCondition {
 	if (explicitCategory) {
+		const evidence = evidenceForCompletionVerificationScope(
+			completionVerificationScope,
+			explicitCategory,
+		);
 		return {
 			id,
 			text,
 			category: explicitCategory,
-			verificationKind: "automated_test",
-			expectedEvidence: ["automated_test"],
+			verificationKind: evidence.verificationKind,
+			expectedEvidence: evidence.expectedEvidence,
 			expectedResult: text,
 			failureMeaning: `${text} が満たされない場合、この完了条件は未達です。`,
 			required: true,
@@ -155,12 +181,16 @@ function buildCondition(
 		};
 	}
 	if (!inferSemantics) {
+		const evidence = evidenceForCompletionVerificationScope(
+			completionVerificationScope,
+			"other",
+		);
 		return {
 			id,
 			text,
 			category: "other",
-			verificationKind: "automated_test",
-			expectedEvidence: ["automated_test"],
+			verificationKind: evidence.verificationKind,
+			expectedEvidence: evidence.expectedEvidence,
 			expectedResult: text,
 			failureMeaning: `${text} が満たされない場合、この完了条件は未達です。`,
 			required: true,
@@ -189,6 +219,41 @@ function buildCondition(
 		failureMeaning: `${text} が満たされない場合、この完了条件は未達です。`,
 		required: verificationKind !== "not_applicable",
 		status: "pending",
+	};
+}
+
+function evidenceForCompletionVerificationScope(
+	scope: CompletionVerificationScope | null,
+	category: VerificationCondition["category"],
+): Pick<VerificationCondition, "verificationKind" | "expectedEvidence"> {
+	if (!scope) {
+		return {
+			verificationKind: "automated_test",
+			expectedEvidence: ["automated_test"],
+		};
+	}
+	if (scope === "none" || (scope === "e2e_if_ui" && category !== "ui")) {
+		return {
+			verificationKind: "manual",
+			expectedEvidence: ["manual_evidence"],
+		};
+	}
+	if (scope === "unit") {
+		return {
+			verificationKind: "automated_test",
+			expectedEvidence: ["unit_test"],
+		};
+	}
+	if (scope === "e2e_if_ui") {
+		return {
+			verificationKind: "automated_test",
+			expectedEvidence: ["e2e_test"],
+		};
+	}
+	return {
+		verificationKind: "automated_test",
+		expectedEvidence:
+			category === "ui" ? ["unit_test", "e2e_test"] : ["unit_test"],
 	};
 }
 

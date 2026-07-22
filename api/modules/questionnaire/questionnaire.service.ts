@@ -114,12 +114,18 @@ export async function createDesignQuestionnaire(
 		throw error;
 	});
 	options.signal?.throwIfAborted();
-	const parsed = parseDesignQuestionnaireRaw(rawOutput, {
-		taskId,
-		repositoryId: task.repositoryId,
-		sourceBlueprintMessageId: sourceBlueprintMessage?.id ?? null,
-		sourceKind: sourceBlueprintMessage ? "blueprint" : "plan_mode_intake",
-	});
+	const parsed = parseDesignQuestionnaireRaw(
+		rawOutput,
+		{
+			taskId,
+			repositoryId: task.repositoryId,
+			sourceBlueprintMessageId: sourceBlueprintMessage?.id ?? null,
+			sourceKind: sourceBlueprintMessage ? "blueprint" : "plan_mode_intake",
+		},
+		{
+			appendCompletionVerificationQuestion: true,
+		},
+	);
 	const session = await repo.createDesignQuestionnaireSession({
 		taskId,
 		repositoryId: task.repositoryId,

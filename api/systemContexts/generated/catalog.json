@@ -3,11 +3,12 @@
   "schemaVersion": 2,
   "compilerVersion": "0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec",
   "releaseProfile": "development",
-  "policyDigest": "sha256:62f0ddaba92acbaeda1de88df604ba7e761e3367dcd3330765c1f2b69ceab8c1",
+  "policyDigest": "sha256:ed381a093977325a16d92017a241fcc2103f7f09edc507547c462b47318976e3",
   "createdFrom": {
     "configPath": "s11t.config.toml",
     "sourceFiles": [
       "contexts/codingAgent/codex-developer-instructions.context.toml",
+      "contexts/codingAgent/completion-report-todo.context.toml",
       "contexts/codingAgent/completion-rule.context.toml",
       "contexts/codingAgent/current-todo.context.toml",
       "contexts/codingAgent/ddd-fallback-combined.context.toml",
@@ -15,6 +16,7 @@
       "contexts/codingAgent/direct-plan-mode.context.toml",
       "contexts/codingAgent/domain-module-boundary.context.toml",
       "contexts/codingAgent/failure-recovery.context.toml",
+      "contexts/codingAgent/initial-preparation-todo.context.toml",
       "contexts/codingAgent/native-runtime.context.toml",
       "contexts/codingAgent/nightworkers-mcp.context.toml",
       "contexts/codingAgent/plan-mode-gate.context.toml",
@@ -63,13 +65,16 @@
       "contexts/providerExecution/artifact-lane.context.toml",
       "contexts/questionnaire/additional.context.toml",
       "contexts/questionnaire/artifact-selection.context.toml",
+      "contexts/questionnaire/completion-verification-guidance.context.toml",
       "contexts/questionnaire/design.context.toml",
       "contexts/questionnaire/follow-up-decision.context.toml",
       "contexts/questionnaire/repository-fixed-guidance.context.toml",
       "contexts/questionnaire/review.context.toml",
       "contexts/questionnaire/specification-with-additional.context.toml",
       "contexts/questionnaire/specification.context.toml",
-      "contexts/questionnaire/starter-selection-guidance.context.toml",
+      "contexts/questionnaire/starter-database-question.context.toml",
+      "contexts/questionnaire/starter-selection-applicability.context.toml",
+      "contexts/questionnaire/starter-tech-stack-question.context.toml",
       "contexts/review/llm-reviewer.context.toml",
       "contexts/review/test-evidence.context.toml",
       "contexts/specification/ddd-boundary-review.context.toml",
@@ -156,6 +161,38 @@
       },
       "definitionHash": "sha256:315460f030ed4f07523b8e1deb011fb85f0211f8add0e687ea8c70400f548622",
       "releaseDigest": "sha256:e4d47c575b2299fe1ff27ea836dfb794b71848d69c46d5afbf860125f4988d31"
+    },
+    "codingAgent.completion-report-todo": {
+      "key": "codingAgent.completion-report-todo",
+      "owner": "coding-agent",
+      "contentKind": "text",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "enforcement": "prompt",
+              "optimizable": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Todo planを使う実装Runでは、LLMがplanの末尾に「完了報告準備」Todoを作成してください。このTodoのsystemContextには、必須・任意の検証結果、未解決・回復済み・scope外の失敗、最終差分、commit・merge状態、Todo・verification・Run・commitの各証跡、compile_evalの結果とcontext_compile／compile_evalの実行回数、最終回答候補とcompletion readinessの照合を含めます。\nE2E失敗を開示するだけで終わらせず、未commit・未mergeを含む実際の状態と証跡に矛盾があれば、矛盾そのものを明示してください。解消できる不一致は解消し、解消できない不一致は完了報告へ明示してから、このTodoをpassedへ遷移してください。このTodoをhostに生成・更新させないでください。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:1c46e78b9579cc2f370d250d6353b5c0842621b27391b4fd28a01883e1439624"
+        }
+      },
+      "definitionHash": "sha256:2fc7ea6ab5a5018961d4aa1ed05ff0ff4ebe152306ff9035353cbd73cf843099",
+      "releaseDigest": "sha256:2f979cf7c8d9574632ec12af806849d97450bcc8003c6441bd97c1bb4f4c0764"
     },
     "codingAgent.completion-rule": {
       "key": "codingAgent.completion-rule",
@@ -419,6 +456,38 @@
       },
       "definitionHash": "sha256:3895acf752a4de35cc90dd000c48e9ca368e0dc297ebfcec7e9b794c572f4179",
       "releaseDigest": "sha256:628c3193eb9a36300b0b26e5b9224aab3d48c2ed82ee0a505c2fb15c53385ff3"
+    },
+    "codingAgent.initial-preparation-todo": {
+      "key": "codingAgent.initial-preparation-todo",
+      "owner": "coding-agent",
+      "contentKind": "text",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "enforcement": "prompt",
+              "optimizable": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Todo planを使う実装Runでは、LLMがplanの先頭に「実装準備」Todoを作成してstartしてください。このTodoのsystemContextには、workspace変更前のcontext_compile、Questionnaireと採用済みPlanに記録されたscope・受け入れ条件・検証、registered repository root、execution root、branch、HEAD、dirty stateの確認を含めます。\n検証scopeはQuestionnaireと採用済みPlanを正本とし、他の文書や一般的な推奨事項を理由に拡張しないでください。確認結果と採用したscopeを理由に記録してからpassedへ遷移してください。このTodoをhostに生成・更新させないでください。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:95d544f8bff221662bdcc53da03e6d4212ea77ba1a397d43fc2c44057b250547"
+        }
+      },
+      "definitionHash": "sha256:e43ecdf104b8f7aed3f2bb042921c717036db83f1b7c4a1306765ecf3df97287",
+      "releaseDigest": "sha256:981112507885b626212a15d7286b8a9acf42ca5442a024fcd823a97df78b661e"
     },
     "codingAgent.native-runtime": {
       "key": "codingAgent.native-runtime",
@@ -820,7 +889,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "<CODING_AGENT_SYSTEM_CONTEXT version="
+                  "value": "<CODING_AGENT_SYSTEM_CONTEXT version=\""
                 },
                 {
                   "type": "variable",
@@ -828,7 +897,7 @@
                 },
                 {
                   "type": "literal",
-                  "value": " todoPolicy="
+                  "value": "\" todoPolicy=\""
                 },
                 {
                   "type": "variable",
@@ -836,7 +905,7 @@
                 },
                 {
                   "type": "literal",
-                  "value": ">\n"
+                  "value": "\">\n"
                 },
                 {
                   "type": "variable",
@@ -913,11 +982,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:736876fe07ee6c7263ab2e4a9c4b61731bda37eef6766ae5a11b09318a2269ef"
+          "artifactHash": "sha256:0efc4001a7cc1b618c5f33ed25fa74063b1a55a520c38bb413ffda06e3d06aeb"
         }
       },
-      "definitionHash": "sha256:3d1bcf0f8df0d613d9345ee6ebb75ef301883e09615c247213476a4eef83cef1",
-      "releaseDigest": "sha256:0fa74e8a06cc6c941250d23ee8ac3125f038c12bcffe4c76920fc9f0cd7efdc3"
+      "definitionHash": "sha256:5c643f93f6f949b89c9d083fc51b637555cbb3e447c9e30a9375c67947693812",
+      "releaseDigest": "sha256:e08095ccb57fe2323ab3e209d909157e1fe48f8c273ded1629938ce76e087065"
     },
     "codingAgent.runtime-system-without-task-goal": {
       "key": "codingAgent.runtime-system-without-task-goal",
@@ -1011,7 +1080,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "<CODING_AGENT_SYSTEM_CONTEXT version="
+                  "value": "<CODING_AGENT_SYSTEM_CONTEXT version=\""
                 },
                 {
                   "type": "variable",
@@ -1019,7 +1088,7 @@
                 },
                 {
                   "type": "literal",
-                  "value": " todoPolicy="
+                  "value": "\" todoPolicy=\""
                 },
                 {
                   "type": "variable",
@@ -1027,7 +1096,7 @@
                 },
                 {
                   "type": "literal",
-                  "value": ">\n"
+                  "value": "\">\n"
                 },
                 {
                   "type": "variable",
@@ -1096,11 +1165,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ef2e07a61df0925dbe71b45f5cf39219a206cf149c98c952896c7fa83ff5f27d"
+          "artifactHash": "sha256:b2e203bbc98528125fa5b1b6faf6f3498f748e68037a06100b783ed32d857d01"
         }
       },
-      "definitionHash": "sha256:3d195e42224d12e9964a14997edc117d3098fa1f6678a8bd79430999d60fb1f4",
-      "releaseDigest": "sha256:4579630ae6fed1b9191c0f2f0cf4c7130db2e14b67d9495f29f131b142054446"
+      "definitionHash": "sha256:38e59b51523ae83739ea703155dc7d6631f541c39b028e6fca34ee381e722bfa",
+      "releaseDigest": "sha256:6763ab37841cf43ae55ec0127804bbfa0d83207d78ce358c5928871f3a64196f"
     },
     "codingAgent.standalone-execution": {
       "key": "codingAgent.standalone-execution",
@@ -1206,7 +1275,21 @@
         "ja-JP"
       ],
       "variables": {
+        "completionReportTodo": {
+          "required": true,
+          "type": "string",
+          "trust": "trusted",
+          "placement": "inline",
+          "encoding": "raw"
+        },
         "directPlanMode": {
+          "required": true,
+          "type": "string",
+          "trust": "trusted",
+          "placement": "inline",
+          "encoding": "raw"
+        },
+        "initialPreparationTodo": {
           "required": true,
           "type": "string",
           "trust": "trusted",
@@ -1248,6 +1331,22 @@
                 },
                 {
                   "type": "variable",
+                  "name": "initialPreparationTodo"
+                },
+                {
+                  "type": "literal",
+                  "value": "\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "completionReportTodo"
+                },
+                {
+                  "type": "literal",
+                  "value": "\n"
+                },
+                {
+                  "type": "variable",
                   "name": "standaloneExecution"
                 },
                 {
@@ -1261,11 +1360,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ae7d56eee44cba91916acd4c115b1159862c0b2a7f6df73c3ce4586670219b10"
+          "artifactHash": "sha256:2078b4df79841fd1ed5f80f8c649ed9f7168c465f676c0e84f434e7e555be351"
         }
       },
-      "definitionHash": "sha256:f0aadd63d32db6deb7f1fa88d0ce488c4bcf0ca33788236944bce317701cdf55",
-      "releaseDigest": "sha256:e5b6c474467b67105e660a8981706738222c23c9f9e1107653ede80d5edb061b"
+      "definitionHash": "sha256:442f5616675893d7f4370c400e53b3c16d8021fd4fcfcefc00e926a92d290aa9",
+      "releaseDigest": "sha256:3940bad130b235df3213d11ab3971a0ff0d4e6198bdf9f3520634f5fc2353a6d"
     },
     "codingAgent.todo-requirement": {
       "key": "codingAgent.todo-requirement",
@@ -1288,16 +1387,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Todoは固定workflowではなく、あなたが所有する任意の外部作業記憶です。Taskを読んだ直後に、Todoが取りこぼし防止に有効かを一度判断してください。この判断だけを説明する本文は返さず、必要ならtodo_list（Codex MCP表示ではnightworkers.todo_list）を呼び、不要ならそのままTaskへ進んでください。\n複数の成果、複数module、複数の完了条件、schemaやmigration、段階的な検証、失敗後の再開のいずれかを扱うRunではTodoを使ってください。質問、読み取り、一工程で安全に完結する小変更ではTodoを作らず直接進められます。hostはユーザー文言や観測結果からこの判断を代行しません。\nTodoを使うと判断した場合は、必要な事実確認のためのread-only調査を妨げず、workspaceを変更する前にtodo_listのreplace_planで通常2〜6件の成果単位を作り、続けて一件をstartしてください。既存のPlan Mode Artifactや仕様書が十分なら計画を重複生成せず、その制約をTodoへ投影してください。\n各TodoにはsystemContextを必ず含めてください。systemContextはそのTodoで最優先する局所指示であり、該当する設計制約、非目標、参照先、判断済み事項、検証条件だけを短く記録します。共通SystemContextや設計書全文を複製しないでください。\nFeature Planで選択されていないE2E等をTodoへ追加しないでください。検証は採用済みの完了条件に対応する範囲だけをTodoへ含めます。\n確定済みFeature Planにmigration工程がある場合はTodoを使い、taskType=data_migrationの独立Todoを作ってください。新規DBと既存DBからの更新経路をsystemContextとacceptance criteriaへ含め、migrationの実行と結果確認が終わるまでpassedにしません。migration不要と明示されている場合は追加しません。\nTodo planを採用したRunでは、workspace作業前にcurrent TodoのsystemContext、objective、next action、acceptance criteriaを読み、前提が変わればupdate_contextで明示更新してください。hostはTodoを生成・進行・完了しません。\nTodoの作成、再計画、開始、完了、skip、停止はTodo mutation toolで明示してください。hostは暗黙更新しません。"
+                  "value": "Todoは固定workflowではなく、あなたが所有する任意の外部作業記憶です。Taskを読んだ直後に、Todoが取りこぼし防止に有効かを一度判断してください。この判断だけを説明する本文は返さず、必要ならtodo_list（Codex MCP表示ではnightworkers.todo_list）を呼び、不要ならそのままTaskへ進んでください。\n複数の成果、複数module、複数の完了条件、schemaやmigration、段階的な検証、失敗後の再開のいずれかを扱うRunではTodoを使ってください。質問、読み取り、一工程で安全に完結する小変更ではTodoを作らず直接進められます。hostはユーザー文言や観測結果からこの判断を代行しません。\nTodoを使うと判断した場合は、必要な事実確認のためのread-only調査を妨げず、workspaceを変更する前にtodo_listのreplace_planで通常2〜6件の成果単位を作り、続けて一件をstartしてください。既存のPlan Mode Artifactや仕様書が十分なら計画を重複生成せず、その制約をTodoへ投影してください。\n各TodoにはsystemContextを必ず含めてください。systemContextはそのTodoで最優先する局所指示であり、該当する設計制約、非目標、参照先、判断済み事項、検証条件だけを短く記録します。共通SystemContextや設計書全文を複製しないでください。\n検証scopeはQuestionnaireと採用済みPlanを正本とし、他の文書や一般的な推奨事項を理由に、選択されていない検証をTodoへ追加しないでください。\n確定済みFeature Planにmigration工程がある場合はTodoを使い、taskType=data_migrationの独立Todoを作ってください。新規DBと既存DBからの更新経路をsystemContextとacceptance criteriaへ含め、migrationの実行と結果確認が終わるまでpassedにしません。migration不要と明示されている場合は追加しません。\nTodo planを採用したRunでは、workspace作業前にcurrent TodoのsystemContext、objective、next action、acceptance criteriaを読み、前提が変わればupdate_contextで明示更新してください。hostはTodoを生成・進行・完了しません。\nTodoの作成、再計画、開始、完了、skip、停止はTodo mutation toolで明示してください。hostは暗黙更新しません。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:44bf52615e159ed6ba51685670d36f1374e6dc0f86d70dde97116e40b8ec7f2d"
+          "artifactHash": "sha256:e3bd88b620dd839a0461205884d4cba31de1c4d7b5947e52841ccd1a8355633c"
         }
       },
-      "definitionHash": "sha256:2a77a91bbef2a5cb49550757defefd4c39c58fb01d94f32c0a5b484cae8abd83",
-      "releaseDigest": "sha256:ddd7082d2b4d696ea750cb2568ee6578d29a4ba7b05851c0529e1fd789ef09ca"
+      "definitionHash": "sha256:bb64283914197cc47df5fb4d8913e07fb596136b61f53ba20711129f79809fe3",
+      "releaseDigest": "sha256:e257b0d37f939e836621dec0c4f7d43ddc3b22eb7a89780315a822694637eb8f"
     },
     "codingAgent.tool-contract": {
       "key": "codingAgent.tool-contract",
@@ -2205,7 +2304,15 @@
       "requiredLocales": [
         "ja-JP"
       ],
-      "variables": {},
+      "variables": {
+        "generationContext": {
+          "required": true,
+          "type": "json",
+          "trust": "untrusted",
+          "placement": "delimited-context",
+          "encoding": "json-value"
+        }
+      },
       "locales": {
         "ja-JP": {
           "sections": [
@@ -2218,16 +2325,24 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "設定済み Mission Goal と repository signal から、Mission とその配下の Task Candidate を一度の応答で生成してください。\n各 Mission は review 可能な中間目標、各 Task Candidate は Plan Mode がそのまま開始できる実行単位にしてください。\nObjective、Work Package、scheduling、replanning の内部構造はサーバー側で組み立てるため返さないでください。\n情報が不足していても Task Candidate 生成を打ち切らず、安全な前提と確認事項を initialPrompt、acceptanceCriteria、verificationGate に明記してください。\nrepositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。\n既存 Mission や既存 Task と重複する候補は返さないでください。\nTask Candidate の id と dependsOnCandidateIds は、同じ Mission 内で整合させてください。\nプロンプト文言と出力本文は日本語を維持してください。"
+                  "value": "設定済み Mission Goal と repository signal から、Mission とその配下の Task Candidate を一度の応答で生成してください。\n各 Mission は review 可能な中間目標、各 Task Candidate は Plan Mode がそのまま開始できる実行単位にしてください。\nObjective、Work Package、scheduling、replanning の内部構造はサーバー側で組み立てるため返さないでください。\n情報が不足していても Task Candidate 生成を打ち切らず、安全な前提と確認事項を initialPrompt、acceptanceCriteria、verificationGate に明記してください。\n以下のgenerationContextで source=llm_context ならその内容を最優先の実装状態として扱い、source=detected_stack なら技術スタックを既存実装の制約として扱ってください。\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "generationContext"
+                },
+                {
+                  "type": "literal",
+                  "value": "\n既存 Mission や既存 Task と重複する候補は返さないでください。\nMissionとTask Candidateは必要最小限にし、候補同士の目的と対象範囲を重複させず、各説明を短くしてください。\nTask Candidate の id と dependsOnCandidateIds は、同じ Mission 内で整合させてください。\nプロンプト文言と出力本文は日本語を維持してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:9ec564b950a4f1f4388dcd7c119c174cc1146f9519bcd51a9489925098f4f6dc"
+          "artifactHash": "sha256:5d3730b248c14cb1bd3187149774883e7f2dffb22e2d560fae0035dd3f3a0e73"
         }
       },
-      "definitionHash": "sha256:75812c332e1f70a5f66b2f5e4cee2e9b27fe6759065044816ca8476b3f9553ec",
-      "releaseDigest": "sha256:e9fd18259a50adfa4f2c86743588de8be1c8693a05169196496634d500b8a5f0"
+      "definitionHash": "sha256:98d2e9b229ef02c515293161233bac64c23889a91d11458d8ec108b14f094025",
+      "releaseDigest": "sha256:c8b530adf6b6a45c472103ef9d4d410a215f7f5b0e9dc683e5131af940e5e837"
     },
     "missionPlanner.structure": {
       "key": "missionPlanner.structure",
@@ -2661,6 +2776,38 @@
       "definitionHash": "sha256:a0ee55f6119e4e62645958f0d449aee44488ca7e781f9da0350b570f9b63eb7d",
       "releaseDigest": "sha256:21c25fc7ede419b74dfd1909ddd529be98e386f49e1508dd1a31c07388568171"
     },
+    "questionnaire.completion-verification-guidance": {
+      "key": "questionnaire.completion-verification-guidance",
+      "owner": "questionnaire",
+      "contentKind": "text",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "enforcement": "prompt",
+              "optimizable": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "完了条件として採用するテスト範囲はapplication所有の固定設問で確認します。この判断軸をLLM生成questionsへ含めないでください。\nLLMが生成する通常の設計質問はkind=design_decisionにしてください。固定設問と同じ判断軸の候補を返す場合はkind=completion_verificationにしてください。このkindはapplicationが除外して固定設問へ置き換えます。LLM生成質問は最大14件です。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:6552fbd5b802c16b890f9306664b81591dd4c922583abf110a52e91243b1ac55"
+        }
+      },
+      "definitionHash": "sha256:f877bd9bb707de0c46f164100c281552ab1dcd050a3099c3c3cde92bab241cac",
+      "releaseDigest": "sha256:708842b43aec3528e896067da16d772390c9fdb086f07e2ac38eefb38f71536a"
+    },
     "questionnaire.design": {
       "key": "questionnaire.design",
       "owner": "questionnaire",
@@ -2670,6 +2817,13 @@
         "ja-JP"
       ],
       "variables": {
+        "completionVerificationGuidance": {
+          "required": true,
+          "type": "string",
+          "trust": "trusted",
+          "placement": "inline",
+          "encoding": "raw"
+        },
         "repositorySelectionGuidance": {
           "required": true,
           "type": "string",
@@ -2690,7 +2844,15 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。\n初回フォームでは、現時点で回答でき、実装方針を決めるために本当に必要な未決定事項だけを聞いてください。\n初期質問は15件を絶対上限とします。最低件数や目標件数はありません。15件を埋めるために質問を増やさず、必要な論点が少なければ少数で終了してください。\ntitle は「実装前確認」のような短い汎用名にしてください。Task名、プロダクト名、機能名を入れず、ページ数、連番、進捗表記、括弧付きの 1/4 のような表記も入れないでください。\ngrill-me では、ユーザーの依頼を言い換える質問ではなく、回答によって実装、公開契約、データ、権限、検証のいずれかが具体的に変わる未決定事項を質問してください。\n最初に、目的と成功状態、対象ユーザー、対象 / 非対象、主要操作と状態遷移、受け入れ条件の食い違いを確認し、その回答がないと決められない詳細を follow-up に回してください。\n必要に応じて、空状態・重複・上限・不正入力・権限不足・部分失敗・再試行・削除や復旧などのedge case、互換性、migration、rollback、監視・運用まで掘り下げてください。\nTask、既存Artifact、repository contextの間に矛盾や暗黙の仮定がある場合は、勝手に丸めず、その差によって実装が分かれる選択肢として明示してください。\n各質問は一つの判断軸だけを扱い、選択肢は実装者が異なる挙動として区別できる具体性を持たせてください。『適切に対応』『一般的な方法』『必要に応じて』のように実装を確定できない選択肢は作らないでください。\nradio の選択肢は同時に成立しない代替案、checkbox の選択肢は同時採用できる独立項目だけにしてください。削除方式と追加機能、認証方式と画面範囲など、別の判断軸を一つのcheckboxへ混ぜないでください。\n物理削除 / 論理削除、即時削除 / 復旧可能のように基本方針を一つ選ぶ判断はradioにし、検索・一括操作・通知などの任意機能とは別の質問にしてください。\n並び順と空状態、入力validationと件数上限、route配置と未認証API responseのような独立判断も一問に結合しないでください。初回回答がないと決められない下位論点は、結合せずfollow-upへ回してください。\nradio の選択肢同士で意味を重複させず、どの選択肢を選んだかだけで実装方針を一意に区別できるようにしてください。\n既存contextで確定済みの事項、通常のrepository調査で一意に分かる事項、回答しても設計や検証が変わらない好みは質問しないでください。\n質問ジャンルは task / blueprint / repository context から判断し、必要なものを選んでください。固定分類やキーワード一致で決めないでください。\n例として、scope、UI/UX、データ、backend/API、認証、外部連携、Docker、cloud deployment、storage、運用、非対象などが論点になり得ます。\nQuestionnaire も後続の設計書と同じく、入力 context に含まれる既存資料と project context を材料にしてください。材料があるのに一般論だけで質問を作らないでください。\nauth / permission は対象面が public only または auth only と明確なら質問しないでください。public / protected / auth / admin などの面が混在する、または対象機能をどの面に置くか不明な場合は、初回または follow-up で route / API / data の保護方針を必ず確認してください。\nauth / permission の質問は「認証は必要ですか？」だけにせず、既存の public/protected 面、追加 route/API、データの所有境界に結びつく選択肢にしてください。\n"
+                  "value": "実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。\n初回フォームでは、現時点で回答でき、Feature Planを実装可能な水準まで具体化するために本当に必要な未決定事項を漏れなく質問してください。質問件数を少なく見せるために、計画、公開契約、データ、権限、検証の確定に必要な判断を省略してはいけません。\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "completionVerificationGuidance"
+                },
+                {
+                  "type": "literal",
+                  "value": "\n初期フォーム全体はapplicationが追加する最終設問を含めて15件を絶対上限とします。最低件数や目標件数はありません。現時点で回答可能な必要論点が14件以内なら、最終設問と重複しないものをすべて初回フォームに含めてください。14件を埋めるために質問を増やさず、必要な論点が少なければ少数で終了してください。必要論点が14件を超える場合だけ、優先度の低い下位論点をfollow-upへ回してください。\ntitle は「実装前確認」のような短い汎用名にしてください。Task名、プロダクト名、機能名を入れず、ページ数、連番、進捗表記、括弧付きの 1/4 のような表記も入れないでください。\ngrill-me では、ユーザーの依頼を言い換える質問ではなく、回答によって実装、公開契約、データ、権限、検証のいずれかが具体的に変わる未決定事項を質問してください。\nrepository selection guidance が先頭設問を指定する場合は、その質問順を最優先してください。その後、目的と成功状態、対象ユーザー、対象 / 非対象、主要操作と状態遷移、受け入れ条件の食い違いを確認し、その回答がないと決められない詳細を follow-up に回してください。\n必要に応じて、空状態・重複・上限・不正入力・権限不足・部分失敗・再試行・削除や復旧などのedge case、互換性、migration、rollback、監視・運用まで掘り下げてください。\nTask、既存Artifact、repository contextの間に矛盾や暗黙の仮定がある場合は、勝手に丸めず、その差によって実装が分かれる選択肢として明示してください。\n各質問は一つの判断軸だけを扱い、選択肢は実装者が異なる挙動として区別できる具体性を持たせてください。『適切に対応』『一般的な方法』『必要に応じて』のように実装を確定できない選択肢は作らないでください。\nradio の選択肢は同時に成立しない代替案、checkbox の選択肢は同時採用できる独立項目だけにしてください。削除方式と追加機能、認証方式と画面範囲など、別の判断軸を一つのcheckboxへ混ぜないでください。\n物理削除 / 論理削除、即時削除 / 復旧可能のように基本方針を一つ選ぶ判断はradioにし、検索・一括操作・通知などの任意機能とは別の質問にしてください。\n並び順と空状態、入力validationと件数上限、route配置と未認証API responseのような独立判断も一問に結合しないでください。初回回答がないと決められない下位論点は、結合せずfollow-upへ回してください。\nradio の選択肢同士で意味を重複させず、どの選択肢を選んだかだけで実装方針を一意に区別できるようにしてください。\n既存contextで確定済みの事項、通常のrepository調査で一意に分かる事項、回答しても設計や検証が変わらない好みは質問しないでください。\n質問ジャンルは task / blueprint / repository context から判断し、必要なものを選んでください。固定分類やキーワード一致で決めないでください。\n例として、scope、UI/UX、データ、backend/API、認証、外部連携、Docker、cloud deployment、storage、運用、非対象などが論点になり得ます。\nQuestionnaire も後続の設計書と同じく、入力 context に含まれる既存資料と project context を材料にしてください。材料があるのに一般論だけで質問を作らないでください。\nauth / permission は対象面が public only または auth only と明確なら質問しないでください。public / protected / auth / admin などの面が混在する、または対象機能をどの面に置くか不明な場合は、初回または follow-up で route / API / data の保護方針を必ず確認してください。\nauth / permission の質問は「認証は必要ですか？」だけにせず、既存の public/protected 面、追加 route/API、データの所有境界に結びつく選択肢にしてください。\n"
                 },
                 {
                   "type": "variable",
@@ -2698,16 +2860,16 @@
                 },
                 {
                   "type": "literal",
-                  "value": "\nただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。\nコードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。\nユーザーが Radio button または Checkbox で選べる質問だけを作ってください。\n自由記述、説明文、DB設計、分岐条件、id は作らないでください。\n各 options は 2-10 件にしてください。\ntype は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。\n実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。\ncheckbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。\n選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。\nJSON root は {title, questions} のみです。\n回答は JSON のみで返してください。"
+                  "value": "\nただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。\nコードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。\nユーザーが Radio button または Checkbox で選べる質問だけを作ってください。\n自由記述、説明文、DB設計、分岐条件、id は作らないでください。各questionにはkindを含め、通常の設計質問はdesign_decision、application所有の固定テスト範囲と同じ判断軸だけcompletion_verificationにしてください。\n各 options は 2-10 件にしてください。\ntype は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。\n実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。\ncheckbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。\n選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。\nJSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。\n回答は JSON のみで返してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:e431fcaac61273cd0394485950bd0a815d51f5ff25a6066ec8d933abce12b6bb"
+          "artifactHash": "sha256:17dd20401e2e43739a7180450e64482c82e14ffefcd8593df8686acf720bb269"
         }
       },
-      "definitionHash": "sha256:ff93f97f97a8b30809b0bc465f709739dcd82d29bc520d40ffe7362b481741e1",
-      "releaseDigest": "sha256:25732713de1c93864c7d449bc3941ae7e3ccc7be1c81da17430ffe2b016f57d6"
+      "definitionHash": "sha256:fa36d7bd2f015a9bc566c302c5c8cef08258bda155611f47650a10db86d1b741",
+      "releaseDigest": "sha256:99d1fa8ce48b37db3ebe632d2351cb6a4c55c114ba1388896835ce811c4513d9"
     },
     "questionnaire.follow-up-decision": {
       "key": "questionnaire.follow-up-decision",
@@ -2810,16 +2972,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。\nDB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。\nsourceQuestionIds と unresolvedQuestionIds を必ず保持してください。"
+                  "value": "回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。\nDB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。\nsourceQuestionIds と unresolvedQuestionIds を必ず保持してください。\ndecisionKey=completion.verification_scope の回答は、選択肢labelを読み替えず、outputSection=verification-scopeの設計判断として必ず残してください。テストを完了条件にしない回答も省略せず、後続Feature Planの検証scopeへ引き継いでください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:b3763518e808626677d9f9283da64a08aaf1a37e1391c11d1b058f7c3b904dbe"
+          "artifactHash": "sha256:02e92f386a73b0130780c3eff171752dbc8760a530ad9900346df681a1bc05be"
         }
       },
-      "definitionHash": "sha256:7a8d995c655db4cc607963c682177b871db4b689379f6341ea08a647daea0a5e",
-      "releaseDigest": "sha256:a53e4bb5ee826cc3bb6a7ffae87a65f7d17d92601957f55d3da52b72c3f49dec"
+      "definitionHash": "sha256:5a7494270f022f80b379d8904b50b2fb786af514719c584011154c8cb88724f2",
+      "releaseDigest": "sha256:9084ea9eab9f7a534522eff3dbe2e7d27e4114e7db03866add275470aaf938ab"
     },
     "questionnaire.specification": {
       "key": "questionnaire.specification",
@@ -2842,16 +3004,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "[Feature Plan DDD Boundary]\nTarget Project Contextと既存repository構造から、新規domainの導入か既存domainの拡張かを判断してください。\n[Domain Module Boundary]\nrepositoryの既存構造を先に確認し、module構成を採用しているProjectで新規domainを追加する場合だけ、新しいdomain moduleを作ってください。既存domainの変更は既存moduleの命名・配置・分割方法を維持して拡張し、広範な移設を行わないでください。\nbackendの新規domain実装はmodules/[domain]（例: api/modules/[domain]。実際のbackend module rootはrepositoryに合わせる）を境界とし、必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内へ置いてください。domain固有の責務をglobalなroutes、services、repositoriesや一つの汎用fileへ混在させないでください。\nfrontendの新規domain実装はsrc/modules/[domain]（実際のfrontend module rootはrepositoryに合わせる）を境界とし、domain固有の画面、画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内へ置いてください。複数domainで同じ意味と再利用条件を持つものだけを共通領域へ置いてください。\nTaskに存在しないlayerや空fileを構成合わせのためだけに作らず、必要な責務の境界だけを明示してください。module外へ置く変更はcomposition root、bootstrap、route登録、または複数domainで同じ意味を持つcontract、port、event、純粋utilityに限定してください。\n新規domainを導入する場合は、`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記してください。backendが対象ならroute、service、repository、schema等のうち必要な責務をどう分離するか、frontendが対象なら画面、画面専用component、hooks、schema等をどのmoduleへ閉じるかを記載してください。対象外のsurfaceやlayerを機械的に増やさないでください。\nsharedへ置けるのは複数domainで同じ意味を持つcontract、port、event、純粋utilityだけです。domain固有のroute、service、repository、prompt、SystemContext、tool、role判定をsharedへ集約しないでください。\ncomposition root、route登録、他moduleとの接続に必要な変更は対象module外の変更として明示し、domain本体の配置判断を後続Coding Agentへ先送りしないでください。\nDesign Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。\n目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。\n文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。\n実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。\nTarget Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。\nBlueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。\nQuestionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。\nSQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。登録済みvariantの正確な値は Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql です。説明的な別名を作らず、この値だけを使用してください。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。\nQuestionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。\n専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。\nQuestionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。\n検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。unit / focused test / API smoke / DB verification / E2E の採否と範囲は回答どおりにし、Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。\nE2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。\nProject package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。\nData Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。\nPlan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。\n既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。\n未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。\nPlan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。\nAPI Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。\nauth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。\n`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。\nmarkdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。\n`## 目的` は 1-2 文にしてください。\n`## スコープ` は対象 / 非対象を短い箇条書きにしてください。\n`## タスク分類` は分類と理由を 2-3 行で書いてください。\nproduction変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。\n`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。\n実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。\n`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。\n`## 検証計画` は `## 完了条件` で列挙した必須テスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。具体的なテストケースはrepository調査後にCoding Agentが決めます。unit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。\n`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。\n`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。\n個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。\nHono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。\n`## 完了条件` は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。\n今回の仕様でポイントとなる具体的な挙動を、実装後の自動テストのテストケース名としてそのまま使え、1件のテストで単独に合否判定できる1文で書く。各項目は仕様上の要点と対応するテスト証跡を1対1で結び付けられる独立した成功条件とし、同じ要点は1項目にまとめる。\ntitle には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。\n完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。\n完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。\n機能の期待挙動と対応する自動テスト証跡を `## 完了条件` に整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。\n`## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。\n画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。\n出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。\n既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、variantは Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql に列挙した正確な値、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。"
+                  "value": "[Feature Plan DDD Boundary]\nTarget Project Contextと既存repository構造から、新規domainの導入か既存domainの拡張かを判断してください。\n[Domain Module Boundary]\nrepositoryの既存構造を先に確認し、module構成を採用しているProjectで新規domainを追加する場合だけ、新しいdomain moduleを作ってください。既存domainの変更は既存moduleの命名・配置・分割方法を維持して拡張し、広範な移設を行わないでください。\nbackendの新規domain実装はmodules/[domain]（例: api/modules/[domain]。実際のbackend module rootはrepositoryに合わせる）を境界とし、必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内へ置いてください。domain固有の責務をglobalなroutes、services、repositoriesや一つの汎用fileへ混在させないでください。\nfrontendの新規domain実装はsrc/modules/[domain]（実際のfrontend module rootはrepositoryに合わせる）を境界とし、domain固有の画面、画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内へ置いてください。複数domainで同じ意味と再利用条件を持つものだけを共通領域へ置いてください。\nTaskに存在しないlayerや空fileを構成合わせのためだけに作らず、必要な責務の境界だけを明示してください。module外へ置く変更はcomposition root、bootstrap、route登録、または複数domainで同じ意味を持つcontract、port、event、純粋utilityに限定してください。\n新規domainを導入する場合は、`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記してください。backendが対象ならroute、service、repository、schema等のうち必要な責務をどう分離するか、frontendが対象なら画面、画面専用component、hooks、schema等をどのmoduleへ閉じるかを記載してください。対象外のsurfaceやlayerを機械的に増やさないでください。\nsharedへ置けるのは複数domainで同じ意味を持つcontract、port、event、純粋utilityだけです。domain固有のroute、service、repository、prompt、SystemContext、tool、role判定をsharedへ集約しないでください。\ncomposition root、route登録、他moduleとの接続に必要な変更は対象module外の変更として明示し、domain本体の配置判断を後続Coding Agentへ先送りしないでください。\nDesign Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。\n目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。\n文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。\n実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。\nTarget Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。\nBlueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。\nQuestionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。\nSQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。登録済みvariantの正確な値は Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql です。説明的な別名を作らず、この値だけを使用してください。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。\nQuestionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。\n専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。\nQuestionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。\n検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。「テストを完了条件にしない」「Unit test」「UIがある場合のE2E」「Unit testと、UIがある場合のE2E」の採否を回答どおりにしてください。「テストを完了条件にしない」が選択された場合は自動テストを必須証跡にせず、選択外のtest種別やcommandを追加しないでください。Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。\nE2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。\nProject package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。\nData Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。\nPlan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。\n既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。\n未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。\nPlan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。\nAPI Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。\nauth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。\n`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。\nmarkdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。\n`## 目的` は 1-2 文にしてください。\n`## スコープ` は対象 / 非対象を短い箇条書きにしてください。\n`## タスク分類` は分類と理由を 2-3 行で書いてください。\nproduction変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。\n`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。\n実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。\n`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。\n`## 検証計画` はQuestionnaireで採用されたテスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かないでください。具体的なテストケースはrepository調査後にCoding Agentが決めます。自動テストを採用した場合はunit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。\n`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。\n`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。\n個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。\nHono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。\n`## 完了条件` は、今回の仕様で達成すべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。自動テストを選択した場合だけ、選択したtest種別の証跡を各条件へ対応付けてください。テストを完了条件にしない場合も、観測可能な成功条件は残しますが自動テスト証跡を要求しないでください。\n今回の仕様でポイントとなる具体的な挙動を、1件ずつ単独に合否判定できる1文で書いてください。自動テストを選択した場合はテストケース名として使える表現にし、各項目と選択したtest種別の証跡を1対1で結び付けてください。テストを完了条件にしない場合は、テスト証跡を要求せず観測可能な結果として書いてください。同じ要点は1項目にまとめます。\ntitle には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。\n完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、選択した証跡または観測結果で達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。\n完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。\n機能の期待挙動を `## 完了条件` に整理し、Questionnaireで採用した場合だけ対応するUnit testまたはE2E証跡を要求してください。`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは、Questionnaireの選択と矛盾しない範囲で `## 検証計画` に整理してください。\n`## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。\n画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。\n出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。\n既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、variantは Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql に列挙した正確な値、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:0deb0d14df2a92c7cbf4c01c805d5248f7bd59d034f50145dfe550da82cf1d88"
+          "artifactHash": "sha256:4cf8006a443474913cc6cddc0119bccad592d3eca70788703245aa6778e8ab0b"
         }
       },
-      "definitionHash": "sha256:bfadcbd292bff12a8430c696c82994066fbc833c4de7d91ad9f963e0ab5a130c",
-      "releaseDigest": "sha256:99cea5e181a3793bf9611988ef7a43e10fb8bfcb12848c0d87934c717d1128f9"
+      "definitionHash": "sha256:5c201e3ae42b947aa22219361c3ebcacf1715710527539f4c255066dcba4ee5b",
+      "releaseDigest": "sha256:62b7e4acf9c47ac2b2961a2104cbef28fb7189f9306fcf7d9d7c17de4c55fa0d"
     },
     "questionnaire.specification-with-additional": {
       "key": "questionnaire.specification-with-additional",
@@ -2886,19 +3048,19 @@
                 },
                 {
                   "type": "literal",
-                  "value": "\n[Feature Plan DDD Boundary]\nTarget Project Contextと既存repository構造から、新規domainの導入か既存domainの拡張かを判断してください。\n[Domain Module Boundary]\nrepositoryの既存構造を先に確認し、module構成を採用しているProjectで新規domainを追加する場合だけ、新しいdomain moduleを作ってください。既存domainの変更は既存moduleの命名・配置・分割方法を維持して拡張し、広範な移設を行わないでください。\nbackendの新規domain実装はmodules/[domain]（例: api/modules/[domain]。実際のbackend module rootはrepositoryに合わせる）を境界とし、必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内へ置いてください。domain固有の責務をglobalなroutes、services、repositoriesや一つの汎用fileへ混在させないでください。\nfrontendの新規domain実装はsrc/modules/[domain]（実際のfrontend module rootはrepositoryに合わせる）を境界とし、domain固有の画面、画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内へ置いてください。複数domainで同じ意味と再利用条件を持つものだけを共通領域へ置いてください。\nTaskに存在しないlayerや空fileを構成合わせのためだけに作らず、必要な責務の境界だけを明示してください。module外へ置く変更はcomposition root、bootstrap、route登録、または複数domainで同じ意味を持つcontract、port、event、純粋utilityに限定してください。\n新規domainを導入する場合は、`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記してください。backendが対象ならroute、service、repository、schema等のうち必要な責務をどう分離するか、frontendが対象なら画面、画面専用component、hooks、schema等をどのmoduleへ閉じるかを記載してください。対象外のsurfaceやlayerを機械的に増やさないでください。\nsharedへ置けるのは複数domainで同じ意味を持つcontract、port、event、純粋utilityだけです。domain固有のroute、service、repository、prompt、SystemContext、tool、role判定をsharedへ集約しないでください。\ncomposition root、route登録、他moduleとの接続に必要な変更は対象module外の変更として明示し、domain本体の配置判断を後続Coding Agentへ先送りしないでください。\nDesign Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。\n目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。\n文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。\n実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。\nTarget Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。\nBlueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。\nQuestionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。\nSQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。登録済みvariantの正確な値は Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql です。説明的な別名を作らず、この値だけを使用してください。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。\nQuestionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。\n専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。\nQuestionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。\n検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。unit / focused test / API smoke / DB verification / E2E の採否と範囲は回答どおりにし、Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。\nE2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。\nProject package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。\nData Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。\nPlan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。\n既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。\n未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。\nPlan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。\nAPI Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。\nauth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。\n`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。\nmarkdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。\n`## 目的` は 1-2 文にしてください。\n`## スコープ` は対象 / 非対象を短い箇条書きにしてください。\n`## タスク分類` は分類と理由を 2-3 行で書いてください。\nproduction変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。\n`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。\n実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。\n`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。\n`## 検証計画` は `## 完了条件` で列挙した必須テスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。具体的なテストケースはrepository調査後にCoding Agentが決めます。unit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。\n`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。\n`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。\n個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。\nHono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。\n`## 完了条件` は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。\n今回の仕様でポイントとなる具体的な挙動を、実装後の自動テストのテストケース名としてそのまま使え、1件のテストで単独に合否判定できる1文で書く。各項目は仕様上の要点と対応するテスト証跡を1対1で結び付けられる独立した成功条件とし、同じ要点は1項目にまとめる。\ntitle には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。\n完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。\n完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。\n機能の期待挙動と対応する自動テスト証跡を `## 完了条件` に整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。\n`## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。\n画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。\n出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。\n既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、variantは Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql に列挙した正確な値、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。"
+                  "value": "\n[Feature Plan DDD Boundary]\nTarget Project Contextと既存repository構造から、新規domainの導入か既存domainの拡張かを判断してください。\n[Domain Module Boundary]\nrepositoryの既存構造を先に確認し、module構成を採用しているProjectで新規domainを追加する場合だけ、新しいdomain moduleを作ってください。既存domainの変更は既存moduleの命名・配置・分割方法を維持して拡張し、広範な移設を行わないでください。\nbackendの新規domain実装はmodules/[domain]（例: api/modules/[domain]。実際のbackend module rootはrepositoryに合わせる）を境界とし、必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内へ置いてください。domain固有の責務をglobalなroutes、services、repositoriesや一つの汎用fileへ混在させないでください。\nfrontendの新規domain実装はsrc/modules/[domain]（実際のfrontend module rootはrepositoryに合わせる）を境界とし、domain固有の画面、画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内へ置いてください。複数domainで同じ意味と再利用条件を持つものだけを共通領域へ置いてください。\nTaskに存在しないlayerや空fileを構成合わせのためだけに作らず、必要な責務の境界だけを明示してください。module外へ置く変更はcomposition root、bootstrap、route登録、または複数domainで同じ意味を持つcontract、port、event、純粋utilityに限定してください。\n新規domainを導入する場合は、`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記してください。backendが対象ならroute、service、repository、schema等のうち必要な責務をどう分離するか、frontendが対象なら画面、画面専用component、hooks、schema等をどのmoduleへ閉じるかを記載してください。対象外のsurfaceやlayerを機械的に増やさないでください。\nsharedへ置けるのは複数domainで同じ意味を持つcontract、port、event、純粋utilityだけです。domain固有のroute、service、repository、prompt、SystemContext、tool、role判定をsharedへ集約しないでください。\ncomposition root、route登録、他moduleとの接続に必要な変更は対象module外の変更として明示し、domain本体の配置判断を後続Coding Agentへ先送りしないでください。\nDesign Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。\n目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。\n文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。\n実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。\nTarget Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。\nBlueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。\nQuestionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。\nSQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。登録済みvariantの正確な値は Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql です。説明的な別名を作らず、この値だけを使用してください。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。\nQuestionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。\n専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。\nQuestionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。\n検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。「テストを完了条件にしない」「Unit test」「UIがある場合のE2E」「Unit testと、UIがある場合のE2E」の採否を回答どおりにしてください。「テストを完了条件にしない」が選択された場合は自動テストを必須証跡にせず、選択外のtest種別やcommandを追加しないでください。Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。\nE2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。\nProject package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。\nData Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。\nPlan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。\n既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。\n未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。\nPlan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。\nAPI Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。\nauth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。\n`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。\nmarkdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。\n`## 目的` は 1-2 文にしてください。\n`## スコープ` は対象 / 非対象を短い箇条書きにしてください。\n`## タスク分類` は分類と理由を 2-3 行で書いてください。\nproduction変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。\n`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。\n実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。\n`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。\n`## 検証計画` はQuestionnaireで採用されたテスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かないでください。具体的なテストケースはrepository調査後にCoding Agentが決めます。自動テストを採用した場合はunit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。\n`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。\n`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。\n個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。\nHono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。\n`## 完了条件` は、今回の仕様で達成すべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。自動テストを選択した場合だけ、選択したtest種別の証跡を各条件へ対応付けてください。テストを完了条件にしない場合も、観測可能な成功条件は残しますが自動テスト証跡を要求しないでください。\n今回の仕様でポイントとなる具体的な挙動を、1件ずつ単独に合否判定できる1文で書いてください。自動テストを選択した場合はテストケース名として使える表現にし、各項目と選択したtest種別の証跡を1対1で結び付けてください。テストを完了条件にしない場合は、テスト証跡を要求せず観測可能な結果として書いてください。同じ要点は1項目にまとめます。\ntitle には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。\n完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、選択した証跡または観測結果で達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。\n完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。\n機能の期待挙動を `## 完了条件` に整理し、Questionnaireで採用した場合だけ対応するUnit testまたはE2E証跡を要求してください。`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは、Questionnaireの選択と矛盾しない範囲で `## 検証計画` に整理してください。\n`## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。\n画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。\n出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。\n既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、variantは Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql に列挙した正確な値、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:348d7320b951966eb75645924cdfaf586770968d1ff1c3061768f1454570bc76"
+          "artifactHash": "sha256:f0d8ac6f8b70d8243f2c3464552ea76554ec61df922719a59223f401c6853f35"
         }
       },
-      "definitionHash": "sha256:bd82019ff7e04885170fe9503c9973d176812f5aed00fd926c54c58f8bec729e",
-      "releaseDigest": "sha256:8d953f1fd59ac1c7cee2b8949d90ddcca263ad3801fb66b74fe98ec5ce7e4756"
+      "definitionHash": "sha256:ca76d02a88f5a711a5acf587bb09aeed8f4d524f4f4b5cb2926ae056a84da20f",
+      "releaseDigest": "sha256:d4a1d92a4bd716c4bd9377b361fddb522b5ba7a6f3fdf0321180faaae5ebd200"
     },
-    "questionnaire.starter-selection-guidance": {
-      "key": "questionnaire.starter-selection-guidance",
+    "questionnaire.starter-database-question": {
+      "key": "questionnaire.starter-database-question",
       "owner": "questionnaire",
       "contentKind": "text",
       "sourceLocale": "ja-JP",
@@ -2918,16 +3080,80 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "このQuestionnaireは空の未materialized Projectを対象とします。確定済みcontextだけではstarter templateを一意に選べない場合に限り、技術スタックとDB/永続化を確認してください。"
+                  "value": "DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、template の branch variant または実装計画での DB 差し替えを識別できる選択肢にしてください。技術スタックに専用 variant がないことを理由に DB の選択肢を除外しないでください。SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:5f32529e4213bfebc966036bc3fb97378ca6f2f653857d4bb8ace7c75f71abc2"
+          "artifactHash": "sha256:680d5ed4d25006c41b2b2185bc8fd266246ef7c5ae729e56fc5d1ece3fe53676"
         }
       },
-      "definitionHash": "sha256:c24ea394e196d63d37d71a2358251f0d5626c7d61d6c8343fec7869727807867",
-      "releaseDigest": "sha256:46226b8df73266bdc6b7ba60fac73e2047bbfc8851add93c95fec39d84eb450e"
+      "definitionHash": "sha256:a9e0bbbdd10b1792a8dce41a9b9ee29d6b9ac3ca67de3705320818f804932ffa",
+      "releaseDigest": "sha256:5951a58f145ba4b1acccee5014b10b9a1ba8e7d5bcae46460038540707768441"
+    },
+    "questionnaire.starter-selection-applicability": {
+      "key": "questionnaire.starter-selection-applicability",
+      "owner": "questionnaire",
+      "contentKind": "text",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "enforcement": "prompt",
+              "optimizable": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "このQuestionnaireは空の未materialized Projectを対象とします。確定済みcontextだけではstarter templateを一意に選べない場合に限り、技術スタックとDB/永続化を確認してください。技術スタックとDB/永続化を確認する初回フォームでは、第1問を技術スタック、第2問をDB/永続化とし、この2問より前に他の質問を置いてはいけません。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:fd955acbb916807c4a4de9da5fb6232f10f468da557784b567c4a24573e6fa2e"
+        }
+      },
+      "definitionHash": "sha256:ba1c09f9ce783e82212db3469aab356b6218f4e0f99750db93c977a547672ff3",
+      "releaseDigest": "sha256:cdafea44b5a5609a9e3efd6cf215e498db05fee81f5672f78beafdcbeb69b0c0"
+    },
+    "questionnaire.starter-tech-stack-question": {
+      "key": "questionnaire.starter-tech-stack-question",
+      "owner": "questionnaire",
+      "contentKind": "text",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "enforcement": "prompt",
+              "optimizable": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "技術スタックの質問文は「どの技術スタックで実装しますか？」と簡潔にしてください。Project Stack Context や task に含まれる既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜないでください。選択肢は、Hono + React/Vite (デフォルト)、RAG (Hono + React/Vite)、Python/FastAPI + React/Vite、API only (FastAPI)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite、Rust + Axum + React/Vite など、アプリケーションの runtime / framework 構成を識別できる粒度にしてください。「デフォルト」を独立した選択肢にはせず、通常の Hono starter の選択肢を必ず Hono + React/Vite (デフォルト) と表示してください。DB/永続化は必ず別の質問で選び、技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めないでください。RAG は RAG (Hono + React/Vite)、API only は API only (FastAPI)、Rust starter は Rust + Axum + React/Vite と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めてください。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:9231c550e960ee37294026f5524ca04c8bad068257107d261c3613231ab2eb92"
+        }
+      },
+      "definitionHash": "sha256:92e5e3b2f23758ee39996510de1aa288d8cae359218943fd4b3ca712e7d9a309",
+      "releaseDigest": "sha256:25497bf5b91d70b8a2c4eb2d49f977f8ecadef6613beb4178b6653b55a94c12e"
     },
     "review.llm-reviewer": {
       "key": "review.llm-reviewer",
@@ -3542,6 +3768,13 @@
         "ja-JP"
       ],
       "variables": {
+        "generationContext": {
+          "required": true,
+          "type": "json",
+          "trust": "untrusted",
+          "placement": "delimited-context",
+          "encoding": "json-value"
+        },
         "largeThresholdLines": {
           "required": true,
           "type": "number",
@@ -3570,16 +3803,24 @@
                 },
                 {
                   "type": "literal",
-                  "value": " 行以上なら後続で Mission 分解し、未満なら直接 Task Candidate を生成します。\n不確実な場合は assumptions に前提を残し、過小評価しないでください。\nプロンプト文言と出力本文は日本語を維持してください。"
+                  "value": " 行以上なら後続で Mission 分解し、未満なら直接 Task Candidate を生成します。\n不確実な場合は assumptions に前提を残し、過大・過小のどちらにも意図的に寄せず、最も妥当な中心値を返してください。\n以下は実装状態を判断する優先コンテキストです。source=llm_context ならその内容を優先し、source=detected_stack なら既存技術の制約として扱ってください。\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "generationContext"
+                },
+                {
+                  "type": "literal",
+                  "value": "\nプロンプト文言と出力本文は日本語を維持してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:db118058b06f1bce2ea36b57ca1c01690e4d2d8d5cac99f01d437a8bb65056f4"
+          "artifactHash": "sha256:cf4e4b4a298cbbcaeeaa60eaceaebda8124e212c893bae237b953128e5143330"
         }
       },
-      "definitionHash": "sha256:af76676b9cb84c68b764c6ff9be3fc629d726c489886236ccbc9522fc2a94a08",
-      "releaseDigest": "sha256:cad756640216a411b2a4ff0f4011a831f803d67404fb8bae8920832f5d06f591"
+      "definitionHash": "sha256:6f68ccc666fd46d9e3cc1ffc22fed139b243a119b9db44ba372d6bffa94d3f4a",
+      "releaseDigest": "sha256:dc412fc5322b8234315e3c04b501ddf24730bae54b00395731eeb3f317e65249"
     },
     "taskGeneration.mission-tasks": {
       "key": "taskGeneration.mission-tasks",
@@ -3590,19 +3831,19 @@
         "ja-JP"
       ],
       "variables": {
+        "generationContext": {
+          "required": true,
+          "type": "json",
+          "trust": "untrusted",
+          "placement": "delimited-context",
+          "encoding": "json-value"
+        },
         "maxCount": {
           "required": true,
           "type": "number",
           "trust": "trusted",
           "placement": "inline",
           "encoding": "json-value"
-        },
-        "outputRequirements": {
-          "required": true,
-          "type": "string",
-          "trust": "trusted",
-          "placement": "delimited-context",
-          "encoding": "raw"
         }
       },
       "locales": {
@@ -3617,7 +3858,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Mission Goal と保存済みproject signalを読み、ユーザーがTask化を検討できる候補を返してください。\n候補数は最大 "
+                  "value": "Mission Goal と保存済みproject signalを読み、ユーザーがTask化を検討できる必要最小限の候補を返してください。\n候補数は原則1-3件、最大 "
                 },
                 {
                   "type": "variable",
@@ -3625,22 +3866,26 @@
                 },
                 {
                   "type": "literal",
-                  "value": " 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。\n候補の意味、優先順位、candidateKind、Plan Modeで確認すべき事項は、Goalとproject signalのFactに基づいて判断してください。\ncandidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。\nmoduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。\nrepositorySnapshot.llmContextFiles が存在する場合は、それを実装状態の優先根拠にしてください。その場合 recentCommitDiffs は読みません。llmContextFiles が無い場合だけ sourceExcerpts / recentCommitDiffs を補助根拠にしてください。Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。\nimportancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。\nevaluationContribution は、その候補を完了した場合に latestEvaluation.overallScore または該当 dimensions がどれだけ改善し得るかを 0-100 の数値で見積もってください。必ず数値を返し、null や空欄は禁止です。\n秘密情報、生ログ全文、リポジトリ全文を要求しないでください。\n"
+                  "value": " 件です。候補同士の目的と対象範囲を重複させず、既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。\n各候補の説明は判断とTask化に必要な事実だけを短く書き、evidenceは最も強い根拠を最大2件に絞ってください。\n候補の意味、優先順位、candidateKind、Plan Modeで確認すべき事項は、Goalとproject signalのFactに基づいて判断してください。\ncandidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。\nmoduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。\n以下のgenerationContextで source=llm_context ならその内容を実装状態の優先根拠にしてください。source=detected_stack なら技術スタックを既存実装の制約として扱い、実装済み機能を推測しないでください。\n"
                 },
                 {
                   "type": "variable",
-                  "name": "outputRequirements"
+                  "name": "generationContext"
+                },
+                {
+                  "type": "literal",
+                  "value": "\nGoal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。\nimportancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。\nevaluationContribution は latestEvaluation がある場合だけ0-100で見積もり、無い場合は null にしてください。\n秘密情報、生ログ全文、リポジトリ全文を要求しないでください。\nproviderが指定するJSON schemaに従い、JSON objectだけを返してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:47941af111049f882381ccb09346ea79ed0d3a4ee4c02cdf791d26f89e8b398a"
+          "artifactHash": "sha256:4bbfc3aca383c5db11fc843a6817ffe05fac0ebcc1711caa955765fa609f9505"
         }
       },
-      "definitionHash": "sha256:aa2449d83f871a37c3068e29aef2c632e9c1f20b75c9ec31c6cc832e64a143bf",
-      "releaseDigest": "sha256:b0c15c69866f3c6f702585e212f1d1ed8ed58d8da42e5a729ffaf8e2423699ab"
+      "definitionHash": "sha256:705542af2aa71442d96ded07f7a3823c47ab874fb487a500dab0f2e4546334a1",
+      "releaseDigest": "sha256:d8a8133d37b8b00aa3c21607ac683d4c1491f2326f3aab165282801933520f88"
     }
   },
   "aliases": {},
-  "catalogDigest": "sha256:d640a551b6e03860d14cbb439805842654ba50738d954cfff946fcd8e63425a9"
+  "catalogDigest": "sha256:aa16c1a4d19aaf61273d9ba64cae2b652814773157313c780fab265bc99c3abc"
 }

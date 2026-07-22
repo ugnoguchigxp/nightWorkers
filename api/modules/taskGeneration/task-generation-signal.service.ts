@@ -13,6 +13,7 @@ import {
 	detectQualityCapabilities,
 	getLatestProjectQualityRun,
 } from "../quality";
+import { detectProjectStackProfile } from "../techStack";
 
 type RepositorySignalInput = {
 	id: string;
@@ -266,6 +267,25 @@ function buildRepositorySnapshot(
 	};
 }
 
+export function resolveTaskGenerationImplementationContext(
+	input: {
+		repoRoot: string;
+		llmContextFiles: Array<{ path: string; excerpt: string }>;
+	},
+	detectStackProfile: typeof detectProjectStackProfile = detectProjectStackProfile,
+): NonNullable<ProjectSignalSnapshot["implementationContext"]> {
+	if (input.llmContextFiles.length > 0) {
+		return {
+			source: "llm_context",
+			files: input.llmContextFiles,
+		};
+	}
+	return {
+		source: "detected_stack",
+		stackProfile: detectStackProfile(input.repoRoot),
+	};
+}
+
 function shellQuote(value: string) {
 	return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -370,6 +390,13 @@ export async function buildProjectSignalSnapshot(input: {
 	const latestQuality = await getLatestProjectQualityRun({
 		repositoryId: input.repository.id,
 	});
+	const repositorySnapshot = buildRepositorySnapshot(
+		input.repository.localPath,
+	);
+	const implementationContext = resolveTaskGenerationImplementationContext({
+		repoRoot: input.repository.localPath,
+		llmContextFiles: repositorySnapshot?.llmContextFiles ?? [],
+	});
 	return {
 		repository: {
 			id: input.repository.id,
@@ -401,9 +428,10 @@ export async function buildProjectSignalSnapshot(input: {
 			coverage: latestQuality?.coverageSummary ?? null,
 			e2e: latestQuality?.e2eSummary ?? null,
 		},
-		repositorySnapshot: buildRepositorySnapshot(input.repository.localPath),
+		repositorySnapshot,
 		qualityCapabilities: signalQualityCapabilities(input.repository.localPath),
 		recentTokenSpendTasks: await recentTokenSpendTasks(input.repository.id),
 		recentRuns: await recentRunCounts(input.repository.id),
+		implementationContext,
 	};
 }

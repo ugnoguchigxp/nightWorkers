@@ -1,0 +1,2 @@
+text = '''完了条件として採用するテスト範囲はapplication所有の固定設問で確認します。この判断軸をLLM生成questionsへ含めないでください。
+LLMが生成する通常の設計質問はkind=design_decisionにしてください。固定設問と同じ判断軸の候補を返す場合はkind=completion_verificationにしてください。このkindはapplicationが除外して固定設問へ置き換えます。LLM生成質問は最大14件です。'''

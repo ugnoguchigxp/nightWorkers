@@ -12,7 +12,10 @@ import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import {
 	buildNormalizedSupervisorLlmRequest,
 	createStructuredOutputContract,
+	mergeStructuredLlmCallUsage,
+	type StructuredLlmCallUsage,
 	structuredLlmAttemptValueText,
+	structuredLlmCallUsageFromEvent,
 } from "../../services/structured-llm";
 import {
 	buildMissionEvaluationSystemPrompt,
@@ -31,6 +34,7 @@ export type MissionPlannerLlmSelection = {
 	routeSource: string | null;
 	modelOrDeployment: string | null;
 	thinkingDepth: string | null;
+	llmUsage?: StructuredLlmCallUsage | null;
 };
 
 export function fallbackSelectedModelForMissionStage(input: {
@@ -90,6 +94,7 @@ export async function callMissionPlannerJson<T>(input: {
 	parsed: T;
 	rawOutput: unknown;
 	selectedModel: MissionPlannerLlmSelection;
+	llmUsage: StructuredLlmCallUsage | null;
 }> {
 	const jsonSchema = z.toJSONSchema(input.schema);
 	let selectedModel = fallbackSelectedModelForMissionStage({
@@ -109,6 +114,7 @@ export async function callMissionPlannerJson<T>(input: {
 					thinkingDepth: input.thinkingDepthOverride,
 				}
 			: null;
+	let llmUsage: StructuredLlmCallUsage | null = null;
 	const generated = await callStructuredOutputWithRepair({
 		systemPrompt: input.systemPrompt,
 		userPrompt: input.userPrompt,
@@ -122,6 +128,10 @@ export async function callMissionPlannerJson<T>(input: {
 				input.stage === "evaluation" ? "evaluation" : "mission_task_generation",
 			routeOverride,
 			emitEvent: async (event) => {
+				const nextUsage = structuredLlmCallUsageFromEvent(event);
+				if (nextUsage) {
+					llmUsage = mergeStructuredLlmCallUsage(llmUsage, nextUsage);
+				}
 				const nextSelection = missionSelectionFromDebugEvent(
 					input.stage,
 					event,
@@ -142,7 +152,8 @@ export async function callMissionPlannerJson<T>(input: {
 	return {
 		parsed: generated.value,
 		rawOutput,
-		selectedModel,
+		selectedModel: llmUsage ? { ...selectedModel, llmUsage } : selectedModel,
+		llmUsage,
 	};
 }
 

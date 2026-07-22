@@ -1,4 +1,4 @@
-text = '''<CODING_AGENT_SYSTEM_CONTEXT version=[[version]] todoPolicy=[[todoPolicy]]>
+text = '''<CODING_AGENT_SYSTEM_CONTEXT version="[[version]]" todoPolicy="[[todoPolicy]]">
 [[roleInstructions]]
 Domain module boundary:
 [[domainModuleBoundary]]

@@ -3,13 +3,20 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {
 	buildMissionTaskCandidatesResponseJsonSchema,
 	selectMissionGoalsForGeneration,
 } from "../api/modules/taskGeneration/task-generation.service";
-import { buildProjectSignalSnapshot } from "../api/modules/taskGeneration/task-generation-signal.service";
+import {
+	buildTaskGenerationPromptSignal,
+	buildTaskGenerationSystemContext,
+} from "../api/modules/taskGeneration/task-generation-prompt-context";
+import {
+	buildProjectSignalSnapshot,
+	resolveTaskGenerationImplementationContext,
+} from "../api/modules/taskGeneration/task-generation-signal.service";
 import {
 	type MissionGoal,
 	type MissionGoalInterpretation,
@@ -70,42 +77,11 @@ describe("Mission task candidate generation helpers", () => {
 		);
 		expect(
 			JSON.stringify(asRecord(candidate.properties).evaluationContribution),
-		).not.toContain('"null"');
+		).toContain('"null"');
+		expect(candidates.maxItems).toBe(5);
 	});
 
-	it("requires evaluationContribution while accepting null goalId", () => {
-		expect(() =>
-			missionTaskCandidatesResultSchema.parse({
-				schemaVersion: "nightworkers.mission-task-candidates/v1",
-				candidates: [
-					{
-						title: "候補",
-						summary: "要約",
-						rationale: "理由",
-						goalId: null,
-						candidateKind: "feature_followup",
-						moduleRouting: {
-							primaryModule: null,
-							secondaryModules: [],
-							confidencePercent: 0,
-							reason: null,
-						},
-						constraintGoalIds: [],
-						planModeOpenQuestions: [],
-						evidence: [],
-						evaluationContribution: null,
-						importancePercent: 50,
-						confidencePercent: 80,
-						tokenSize: "small",
-						complexity: "simple",
-						taskPrompt: "実装してください。",
-						acceptanceCriteria: "完了していること。",
-						verificationPlan: "テストする。",
-					},
-				],
-			}),
-		).toThrow();
-
+	it("accepts null evaluationContribution when project evaluation is absent", () => {
 		const parsed = missionTaskCandidatesResultSchema.parse({
 			schemaVersion: "nightworkers.mission-task-candidates/v1",
 			candidates: [
@@ -124,7 +100,7 @@ describe("Mission task candidate generation helpers", () => {
 					constraintGoalIds: [],
 					planModeOpenQuestions: [],
 					evidence: [],
-					evaluationContribution: 35,
+					evaluationContribution: null,
 					importancePercent: 50,
 					confidencePercent: 80,
 					tokenSize: "small",
@@ -137,7 +113,44 @@ describe("Mission task candidate generation helpers", () => {
 		});
 
 		expect(parsed.candidates[0]?.goalId).toBeNull();
-		expect(parsed.candidates[0]?.evaluationContribution).toBe(35);
+		expect(parsed.candidates[0]?.evaluationContribution).toBeNull();
+	});
+
+	it("uses LLM_CONTEXT without invoking stack detection", () => {
+		const detectStack = vi.fn();
+		const context = resolveTaskGenerationImplementationContext(
+			{
+				repoRoot: "/repo",
+				llmContextFiles: [
+					{ path: "LLM_CONTEXT.md", excerpt: "既存実装の正本" },
+				],
+			},
+			detectStack as never,
+		);
+
+		expect(context).toEqual({
+			source: "llm_context",
+			files: [{ path: "LLM_CONTEXT.md", excerpt: "既存実装の正本" }],
+		});
+		expect(detectStack).not.toHaveBeenCalled();
+	});
+
+	it("detects the existing stack only when LLM_CONTEXT is absent", () => {
+		const stackProfile = {
+			summary: "TypeScript + Hono",
+			manifestStatus: "found" as const,
+			manifestPath: "/repo/package.json",
+			packageManager: "bun",
+			technologies: [],
+		};
+		const detectStack = vi.fn(() => stackProfile);
+		const context = resolveTaskGenerationImplementationContext(
+			{ repoRoot: "/repo", llmContextFiles: [] },
+			detectStack,
+		);
+
+		expect(context).toEqual({ source: "detected_stack", stackProfile });
+		expect(detectStack).toHaveBeenCalledWith("/repo");
 	});
 
 	it("does not reorder or fold LLM-selected candidates", () => {
@@ -361,6 +374,17 @@ describe("Mission task candidate generation helpers", () => {
 			expect(snapshot.repositorySnapshot?.packageScripts).toEqual(
 				expect.arrayContaining([expect.objectContaining({ name: "verify" })]),
 			);
+			expect(snapshot.implementationContext).toMatchObject({
+				source: "llm_context",
+			});
+			expect(
+				JSON.stringify(buildTaskGenerationSystemContext(snapshot)),
+			).toContain("todo workflow is already implemented");
+			expect(
+				JSON.stringify(
+					buildTaskGenerationPromptSignal(snapshot, "task_candidates"),
+				),
+			).not.toContain("todo workflow is already implemented");
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}
@@ -461,6 +485,10 @@ describe("Mission task candidate generation helpers", () => {
 			expect(
 				JSON.stringify(snapshot.repositorySnapshot?.recentCommitDiffs),
 			).not.toContain("initial template");
+			expect(snapshot.implementationContext).toMatchObject({
+				source: "detected_stack",
+				stackProfile: { manifestStatus: "found" },
+			});
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}

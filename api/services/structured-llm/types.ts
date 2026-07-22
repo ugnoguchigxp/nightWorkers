@@ -170,3 +170,15 @@ export type SupervisorLlmDebugEvent = {
 	message: string;
 	data?: Record<string, unknown>;
 };
+
+export type StructuredLlmCallUsage = {
+	provider: string | null;
+	model: string | null;
+	inputTokens: number | null;
+	cachedInputTokens: number | null;
+	outputTokens: number | null;
+	reasoningOutputTokens: number | null;
+	totalTokens: number | null;
+	usageMode: "measured" | "estimated" | null;
+	durationMs: number | null;
+};

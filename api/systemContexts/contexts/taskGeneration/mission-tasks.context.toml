@@ -1,16 +1,19 @@
-text = '''Mission Goal と保存済みproject signalを読み、ユーザーがTask化を検討できる候補を返してください。
-候補数は最大 [[maxCount]] 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。
+text = '''Mission Goal と保存済みproject signalを読み、ユーザーがTask化を検討できる必要最小限の候補を返してください。
+候補数は原則1-3件、最大 [[maxCount]] 件です。候補同士の目的と対象範囲を重複させず、既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。
+各候補の説明は判断とTask化に必要な事実だけを短く書き、evidenceは最も強い根拠を最大2件に絞ってください。
 候補の意味、優先順位、candidateKind、Plan Modeで確認すべき事項は、Goalとproject signalのFactに基づいて判断してください。
 candidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。
 moduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。
-repositorySnapshot.llmContextFiles が存在する場合は、それを実装状態の優先根拠にしてください。その場合 recentCommitDiffs は読みません。llmContextFiles が無い場合だけ sourceExcerpts / recentCommitDiffs を補助根拠にしてください。Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。
+以下のgenerationContextで source=llm_context ならその内容を実装状態の優先根拠にしてください。source=detected_stack なら技術スタックを既存実装の制約として扱い、実装済み機能を推測しないでください。
+[[generationContext]]
+Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。
 importancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。
-evaluationContribution は、その候補を完了した場合に latestEvaluation.overallScore または該当 dimensions がどれだけ改善し得るかを 0-100 の数値で見積もってください。必ず数値を返し、null や空欄は禁止です。
+evaluationContribution は latestEvaluation がある場合だけ0-100で見積もり、無い場合は null にしてください。
 秘密情報、生ログ全文、リポジトリ全文を要求しないでください。
-[[outputRequirements]]'''
+providerが指定するJSON schemaに従い、JSON objectだけを返してください。'''
 
 [variables.maxCount]
 profile = "trusted.number"
 
-[variables.outputRequirements]
-profile = "trusted.block"
+[variables.generationContext]
+profile = "untrusted.json"

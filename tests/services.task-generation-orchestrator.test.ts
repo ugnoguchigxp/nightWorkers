@@ -4,6 +4,7 @@ import {
 	generateTaskCandidates,
 	TASK_GENERATION_LARGE_THRESHOLD_LINES,
 } from "../api/modules/taskGeneration/task-generation-orchestrator.service";
+import type { SupervisorLlmDebugEvent } from "../api/services/structured-llm";
 import { generateTaskCandidatesResponseSchema } from "../shared/schemas/task-generation.schema";
 
 function goal() {
@@ -36,6 +37,57 @@ function estimate(changedLines: number) {
 		confidencePercent: 85,
 		rationale: "repository signal と Goal から見積もった。",
 		assumptions: ["既存基盤を再利用する"],
+	};
+}
+
+function signal() {
+	return {
+		repository: {
+			id: goal().repositoryId,
+			name: "repo",
+			localPath: "/tmp/repo",
+			branch: "main",
+		},
+		activeGoals: [
+			{
+				id: goal().id,
+				title: goal().title,
+				goalText: goal().goalText,
+				interpretation: goal().interpretation,
+			},
+		],
+		latestEvaluation: null,
+		latestQuality: { coverage: null, e2e: null },
+		repositorySnapshot: {
+			packageName: "repo",
+			description: null,
+			readmeExcerpt: null,
+			sourceFiles: [],
+			routeFiles: [],
+			migrationFiles: [],
+			sourceExcerpts: [],
+			llmContextFiles: [],
+			recentCommitDiffs: [],
+			packageScripts: [],
+			moduleOntology: null,
+		},
+		qualityCapabilities: {
+			projectType: "typescript" as const,
+			commands: [],
+			missingCapabilities: [],
+		},
+		recentTokenSpendTasks: [],
+		recentRuns: { completed: 0, failed: 0, running: 0 },
+		implementationContext: {
+			source: "detected_stack" as const,
+			stackProfile: {
+				summary: "TypeScript",
+				manifestStatus: "found" as const,
+				manifestPath: "/tmp/repo/package.json",
+				packageManager: "bun",
+				technologies: [],
+			},
+		},
 	};
 }
 
@@ -100,20 +152,67 @@ function dependencies(changedLines: number) {
 			branch: "main",
 		})),
 		listMissionGoals: vi.fn(async () => [goal()]),
-		buildProjectSignalSnapshot: vi.fn(async () => ({ repository: {} })),
-		callStructuredOutputWithRepair: vi.fn(async () => ({
-			value: estimate(changedLines),
-			attempts: [],
-		})),
+		buildProjectSignalSnapshot: vi.fn(async () => signal()),
+		callStructuredOutputWithRepair: vi.fn(
+			async (input: {
+				options: {
+					emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
+				};
+			}) => {
+				await input.options.emitEvent?.({
+					type: "model.response_finished",
+					severity: "info",
+					message: "done",
+					data: {
+						provider: "fixture",
+						model: "fixture-model",
+						durationMs: 25,
+						providerDebug: {
+							normalizedUsage: {
+								inputTokens: 100,
+								cachedInputTokens: 20,
+								outputTokens: 30,
+								reasoningOutputTokens: 5,
+								totalTokens: 130,
+								mode: "measured",
+							},
+						},
+					},
+				});
+				await input.options.emitEvent?.({
+					type: "model.response_finished",
+					severity: "info",
+					message: "repair done",
+					data: {
+						provider: "fixture",
+						model: "fixture-model",
+						durationMs: 15,
+						providerDebug: {
+							normalizedUsage: {
+								inputTokens: 50,
+								cachedInputTokens: 10,
+								outputTokens: 20,
+								reasoningOutputTokens: 3,
+								totalTokens: 70,
+								mode: "measured",
+							},
+						},
+					},
+				});
+				return { value: estimate(changedLines), attempts: [] };
+			},
+		),
 		generateMissionTaskCandidates: vi.fn(async () => ({
 			batchId: "33333333-3333-4333-8333-333333333333",
 			status: "completed" as const,
 			candidates: [],
+			llmUsage: null,
 		})),
 		generateMissionPlansFromGoals: vi.fn(async () => ({
 			status: "completed" as const,
 			missions: [mission()],
 			proposals: [proposal()],
+			llmUsage: null,
 		})),
 	};
 }
@@ -139,11 +238,28 @@ describe("task generation orchestrator", () => {
 
 		expect(result.generationPath).toBe("direct_task_candidates");
 		expect(result.estimate.scale).toBe("medium");
+		expect(result.llmUsage).toEqual([
+			expect.objectContaining({
+				stage: "estimate",
+				inputTokens: 150,
+				outputTokens: 50,
+				totalTokens: 200,
+				durationMs: 40,
+			}),
+		]);
 		expect(deps.generateMissionTaskCandidates).toHaveBeenCalledWith({
 			repositoryId: goal().repositoryId,
 			goalIds: [goal().id],
 			includeInactiveGoals: true,
+			signal: signal(),
+			priorLlmUsage: [
+				expect.objectContaining({
+					stage: "estimate",
+					totalTokens: 200,
+				}),
+			],
 		});
+		expect(deps.buildProjectSignalSnapshot).toHaveBeenCalledTimes(1);
 		expect(deps.generateMissionPlansFromGoals).not.toHaveBeenCalled();
 		expect(generateTaskCandidatesResponseSchema.parse(result)).toEqual(result);
 	});
@@ -176,7 +292,15 @@ describe("task generation orchestrator", () => {
 			repositoryId: goal().repositoryId,
 			goalIds: [goal().id],
 			includeInactiveGoals: true,
+			signal: signal(),
+			priorLlmUsage: [
+				expect.objectContaining({
+					stage: "estimate",
+					totalTokens: 200,
+				}),
+			],
 		});
+		expect(deps.buildProjectSignalSnapshot).toHaveBeenCalledTimes(1);
 		expect(deps.generateMissionPlansFromGoals).toHaveBeenCalledTimes(1);
 		expect(result.missions).toHaveLength(1);
 		expect(result.proposals).toHaveLength(1);

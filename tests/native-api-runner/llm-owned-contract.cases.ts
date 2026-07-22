@@ -126,17 +126,15 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain(
 			`version="${CODING_AGENT_SYSTEM_CONTEXT_VERSION}"`,
 		);
+		expect(system?.content).toContain("Todoは固定workflowではなく");
 		expect(system?.content).toContain(
-			"Todoは固定workflowではなく、あなたが所有する任意の外部作業記憶です",
+			"各TodoにはsystemContextを必ず含めてください",
 		);
-		expect(system?.content).toContain("各TodoにはsystemContextを必ず含めて");
 		expect(system?.content).toContain(
-			"質問、読み取り、一工程で安全に完結する小変更ではTodoを作らず直接",
+			"質問、読み取り、一工程で安全に完結する小変更",
 		);
 		expect(system?.content).toContain("新規DBと既存DBからの更新経路");
-		expect(system?.content).toContain(
-			"共通SystemContextや設計書全文を複製しない",
-		);
+		expect(system?.content).toContain("既存のPlan Mode Artifactや仕様書");
 		expect(system?.content).toContain("実装後に完了条件を後付けせず");
 		expect(system?.content).toContain("modules/[domain]");
 		expect(system?.content).toContain("src/modules/[domain]");
@@ -145,7 +143,7 @@ describe("Native API LLM-owned Todo contract", () => {
 		);
 		expect(system?.content).toContain("確定Specを優先");
 		expect(system?.content).toContain("既存domainは既存moduleを拡張");
-		expect(system?.content).toContain('"availability": "unavailable"');
+		expect(system?.content).toContain('"availability":"unavailable"');
 		expect(system?.content).toContain("project_exploration_catalogを呼ばず");
 		expect(system?.content).not.toContain("executionMode:");
 	});
@@ -182,7 +180,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			}),
 		);
 		const system = history.find((item) => item.type === "system");
-		expect(system?.content).toContain('"availability": "available"');
+		expect(system?.content).toContain('"availability":"available"');
 		expect(system?.content).toContain(
 			"広いlist_dirやsearch_filesより先にproject_exploration_catalog",
 		);

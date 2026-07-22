@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { saveDesignQuestionnaireAnswers } from "../../../api/modules/questionnaire/questionnaire.service";
-import { sameOriginHeaders } from "./helpers";
+import { completionVerificationAnswer, sameOriginHeaders } from "./helpers";
 import "./setup";
 
 describe("NightWorkers task routes follow-up questionnaire", () => {
@@ -31,6 +31,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "初期スコープはどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: ["最小", "標準"],
 					},
@@ -53,6 +54,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					questions: [
 						{
 							text: "さらに回答しますか？",
+							kind: "design_decision",
 							type: "radio",
 							options: ["はい", "いいえ"],
 						},
@@ -66,6 +68,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "q1",
 								selectedOptionIds: ["q1-o1"],
@@ -118,6 +121,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "初期リリースの主目的はどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: ["予約管理", "顧客管理", "売上確認"],
 					},
@@ -142,6 +146,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "q1",
 								selectedOptionIds: ["q1-o1"],
@@ -162,6 +167,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "初期リリースの予約範囲はどこまでにしますか？",
+						kind: "design_decision",
 						type: "radio",
 						options: ["作成のみ", "作成と変更", "作成・変更・キャンセル"],
 					},
@@ -240,6 +246,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "初期スコープはどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: ["最小構成", "標準構成", "拡張構成"],
 					},
@@ -271,6 +278,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 						questions: [
 							{
 								text: `追加確認 ${page} はどれですか？`,
+								kind: "design_decision",
 								type: "radio",
 								options,
 							},
@@ -281,6 +289,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					task.id,
 					session.id,
 					[
+						completionVerificationAnswer(),
 						{
 							questionId,
 							selectedOptionIds: [optionId],
@@ -320,6 +329,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					questions: [
 						{
 							text: "5ページ目の質問は作られますか？",
+							kind: "design_decision",
 							type: "radio",
 							options: ["はい", "いいえ"],
 						},
@@ -385,6 +395,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "初期リリースで含めたい運用機能はどれですか？",
+						kind: "design_decision",
 						type: "checkbox",
 						options: [
 							"並び順の保存",
@@ -416,6 +427,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					questions: [
 						{
 							text: "初期リリースに含める運用機能を選んでください。",
+							kind: "design_decision",
 							type: "checkbox",
 							options: [
 								"並び順の保存",
@@ -433,6 +445,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				task.id,
 				session.id,
 				[
+					completionVerificationAnswer(),
 					{
 						questionId: "q1",
 						selectedOptionIds: [],
@@ -482,6 +495,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				questions: [
 					{
 						text: "運用・保存の前提はどれですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: [
 							"ローカル開発のみ",
@@ -493,6 +507,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					},
 					{
 						text: "今回の実装はどの技術スタックの前提ですか？",
+						kind: "design_decision",
 						type: "radio",
 						options: [
 							"Hono + React/Vite",
@@ -523,6 +538,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 					questions: [
 						{
 							text: "この機能の実行・配置先はどれですか？",
+							kind: "design_decision",
 							type: "radio",
 							options: [
 								"ローカル専用の Web アプリ",
@@ -534,6 +550,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 						},
 						{
 							text: "データの保存と復旧はどこまで必要ですか？",
+							kind: "design_decision",
 							type: "radio",
 							options: [
 								"ローカル SQLite の永続保存のみ",
@@ -545,6 +562,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 						},
 						{
 							text: "単一ユーザー前提は維持しますか？",
+							kind: "design_decision",
 							type: "radio",
 							options: [
 								"個人利用の単一ユーザー",
@@ -562,6 +580,7 @@ describe("NightWorkers task routes follow-up questionnaire", () => {
 				task.id,
 				session.id,
 				[
+					completionVerificationAnswer(),
 					{
 						questionId: "q1",
 						selectedOptionIds: ["q1-o5"],

@@ -8,6 +8,7 @@ import type {
 	ProjectSignalSnapshot,
 } from "../../../shared/schemas/task-generation.schema";
 import { p } from "../../systemContexts/catalog";
+import type { buildTaskGenerationSystemContext } from "../taskGeneration/task-generation-prompt-context";
 
 export function buildMissionPlannerInputBundle(input: {
 	mission: Mission;
@@ -98,8 +99,10 @@ export function buildMissionCandidatesUserPrompt(input: {
 	);
 }
 
-export function buildMissionPlansSystemPrompt() {
-	return p("missionPlanner.plans", {});
+export function buildMissionPlansSystemPrompt(
+	generationContext: ReturnType<typeof buildTaskGenerationSystemContext>,
+) {
+	return p("missionPlanner.plans", { generationContext });
 }
 
 export function buildMissionPlansUserPrompt(input: {

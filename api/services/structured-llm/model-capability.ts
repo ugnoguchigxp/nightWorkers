@@ -9,7 +9,7 @@ import {
 } from "./settings";
 import type { StructuredLlmRoutePolicy } from "./types";
 
-export const DEFAULT_STRUCTURED_LLM_CONTEXT_WINDOW_TOKENS = 8192;
+export const DEFAULT_STRUCTURED_LLM_CONTEXT_WINDOW_TOKENS = 128_000;
 export const DEFAULT_LOCAL_LLM_CONTEXT_WINDOW_TOKENS = 176_000;
 export const DEFAULT_STRUCTURED_LLM_RESERVED_OUTPUT_TOKENS = 1024;
 

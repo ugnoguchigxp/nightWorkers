@@ -2,6 +2,7 @@ import {
 	type DesignQuestionnaireSession,
 	designDecisionReviewSchema,
 	designQuestionnaireFollowUpDecisionSchema,
+	generatedQuestionnaireChoiceFormSchema,
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
@@ -33,6 +34,7 @@ import { buildQuestionnairePlanModeContext } from "./questionnaire-context";
 import {
 	designDecisionReviewJsonSchema,
 	designQuestionnaireFollowUpDecisionJsonSchema,
+	generatedQuestionnaireChoiceFormJsonSchema,
 	questionnaireChoiceFormJsonSchema,
 } from "./questionnaire-parser.service";
 
@@ -55,8 +57,8 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 		buildDesignQuestionnaireInitialUserPrompt(input),
 		{
 			name: "design_questionnaire",
-			runtimeSchema: questionnaireChoiceFormSchema,
-			providerJsonSchema: questionnaireChoiceFormJsonSchema,
+			runtimeSchema: generatedQuestionnaireChoiceFormSchema,
+			providerJsonSchema: generatedQuestionnaireChoiceFormJsonSchema,
 			taskId: input.taskId,
 			role: input.role,
 			executionPolicy: input.executionPolicy,

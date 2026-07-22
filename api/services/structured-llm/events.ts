@@ -3,8 +3,80 @@ import type {
 	CallSupervisorOptions,
 	NormalizedSupervisorLlmRequest,
 	ProviderCapabilityPolicy,
+	StructuredLlmCallUsage,
 	SupervisorLlmDebugEvent,
 } from "./types";
+
+function recordValue(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+function nullableString(value: unknown) {
+	return typeof value === "string" ? value : null;
+}
+
+function nullableInteger(value: unknown) {
+	return typeof value === "number" && Number.isFinite(value)
+		? Math.max(0, Math.floor(value))
+		: null;
+}
+
+export function structuredLlmCallUsageFromEvent(
+	event: SupervisorLlmDebugEvent,
+): StructuredLlmCallUsage | null {
+	if (event.type !== "model.response_finished") return null;
+	const data = recordValue(event.data);
+	const providerDebug = recordValue(data.providerDebug);
+	const usage = recordValue(providerDebug.normalizedUsage);
+	const usageMode = usage.mode;
+	return {
+		provider: nullableString(data.provider),
+		model: nullableString(data.model),
+		inputTokens: nullableInteger(usage.inputTokens),
+		cachedInputTokens: nullableInteger(usage.cachedInputTokens),
+		outputTokens: nullableInteger(usage.outputTokens),
+		reasoningOutputTokens: nullableInteger(usage.reasoningOutputTokens),
+		totalTokens: nullableInteger(usage.totalTokens),
+		usageMode:
+			usageMode === "measured" || usageMode === "estimated" ? usageMode : null,
+		durationMs: nullableInteger(data.durationMs),
+	};
+}
+
+function sumNullableUsage(first: number | null, second: number | null) {
+	return first === null && second === null
+		? null
+		: (first ?? 0) + (second ?? 0);
+}
+
+export function mergeStructuredLlmCallUsage(
+	current: StructuredLlmCallUsage | null,
+	next: StructuredLlmCallUsage,
+): StructuredLlmCallUsage {
+	if (!current) return next;
+	return {
+		provider: next.provider ?? current.provider,
+		model: next.model ?? current.model,
+		inputTokens: sumNullableUsage(current.inputTokens, next.inputTokens),
+		cachedInputTokens: sumNullableUsage(
+			current.cachedInputTokens,
+			next.cachedInputTokens,
+		),
+		outputTokens: sumNullableUsage(current.outputTokens, next.outputTokens),
+		reasoningOutputTokens: sumNullableUsage(
+			current.reasoningOutputTokens,
+			next.reasoningOutputTokens,
+		),
+		totalTokens: sumNullableUsage(current.totalTokens, next.totalTokens),
+		usageMode:
+			current.usageMode === "estimated" || next.usageMode === "estimated"
+				? "estimated"
+				: (next.usageMode ?? current.usageMode),
+		durationMs: sumNullableUsage(current.durationMs, next.durationMs),
+	};
+}
 
 export class ProviderActivityRejectedError extends Error {
 	readonly providerId: string;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { representativeMockBlueprint } from "../../fixtures/mock-blueprint";
-import { sameOriginHeaders } from "./helpers";
+import { completionVerificationAnswer, sameOriginHeaders } from "./helpers";
 import "./setup";
 
 describe("NightWorkers task routes blueprint artifacts", () => {
@@ -301,6 +301,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 				questions: [
 					{
 						text: "最初のリリース範囲はどれにしますか？",
+						kind: "design_decision",
 						type: "radio",
 						options: [
 							"最小CRUDのみ",
@@ -310,8 +311,19 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					},
 					{
 						text: "必要なユーザー権限を選んでください",
+						kind: "design_decision",
 						type: "checkbox",
 						options: ["管理者", "編集者", "閲覧者"],
+					},
+					{
+						text: "applicationが完了条件として採用するテスト範囲はどれですか？",
+						kind: "completion_verification",
+						type: "radio",
+						options: [
+							"テストを完了条件にしない",
+							"Unit test",
+							"フロントエンドにUIがある場合のE2E",
+						],
 					},
 				],
 			}).slice(0, -2);
@@ -349,6 +361,29 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 						expect.objectContaining({ id: "q2-o2" }),
 					]),
 				}),
+				expect.objectContaining({
+					id: "completion-verification",
+					decisionKey: "completion.verification_scope",
+					question: "実装完了の条件にするテスト範囲を選んでください。",
+					answerType: "single_choice",
+					blocking: true,
+					options: [
+						expect.objectContaining({
+							id: "completion-verification-none",
+							label: "テストを完了条件にしない",
+						}),
+						expect.objectContaining({
+							id: "completion-verification-unit",
+							label: "Unit testを完了条件にする",
+						}),
+						expect.objectContaining({
+							id: "completion-verification-e2e",
+						}),
+						expect.objectContaining({
+							id: "completion-verification-unit-e2e",
+						}),
+					],
+				}),
 			]);
 
 			const unknownOptionRes = await app.request(
@@ -358,6 +393,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "q1",
 								selectedOptionIds: ["missing-option"],
@@ -407,6 +443,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					headers: { ...sameOriginHeaders, "Content-Type": "application/json" },
 					body: JSON.stringify({
 						answers: [
+							completionVerificationAnswer(),
 							{
 								questionId: "q1",
 								selectedOptionIds: ["q1-o1"],
@@ -430,7 +467,11 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 				answeredSession.answers.map(
 					(answer: unknown) => answer.answer.selectedOptionIds,
 				),
-			).toEqual([["q1-o1"], ["q2-o1", "q2-o2"]]);
+			).toEqual([
+				["completion-verification-unit"],
+				["q1-o1"],
+				["q2-o1", "q2-o2"],
+			]);
 		} finally {
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

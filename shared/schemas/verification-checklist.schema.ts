@@ -33,7 +33,7 @@ export const specificationAcceptanceCriterionCategorySchema = z.enum([
 ]);
 
 export const SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA =
-	"今回の仕様でポイントとなる具体的な挙動を、実装後の自動テストのテストケース名としてそのまま使え、1件のテストで単独に合否判定できる1文で書く。各項目は仕様上の要点と対応するテスト証跡を1対1で結び付けられる独立した成功条件とし、同じ要点は1項目にまとめる。";
+	"今回の仕様でポイントとなる具体的な挙動を、1件ずつ単独に合否判定できる1文で書く。自動テストが完了条件の場合はテストケース名として使え、選択したテスト証跡と1対1で結び付けられる独立した成功条件にする。テストを完了条件にしない場合は、テスト証跡を要求しない観測可能な結果として書く。同じ要点は1項目にまとめる。";
 
 export const specificationAcceptanceCriterionSchema = z
 	.object({
@@ -128,29 +128,54 @@ export const testInventorySchema = z
 	})
 	.strict();
 
+const testConditionMappingContentShape = {
+	verificationDocumentId: z.string().trim().min(1),
+	inventoryId: z.string().trim().min(1),
+	caseKey: z.string().trim().min(1),
+	conditionId: z.string().regex(/^AC-\d{3}$/),
+	source: testDefinitionSourceSchema,
+	rationale: z.string().trim().min(1).max(4_000).optional(),
+	sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+};
+
+function validateTestConditionMappingSource(
+	mapping: {
+		source: z.infer<typeof testDefinitionSourceSchema>;
+		rationale?: string;
+	},
+	ctx: z.RefinementCtx,
+) {
+	if (mapping.source === "coding_agent_assessment" && !mapping.rationale) {
+		ctx.addIssue({
+			code: "custom",
+			path: ["rationale"],
+			message: "coding_agent_assessment requires rationale",
+		});
+	}
+}
+
+export const testConditionMappingToolInputSchema = z
+	.object(testConditionMappingContentShape)
+	.strict()
+	.superRefine(validateTestConditionMappingSource);
+
+export const testConditionMappingWriteSchema = z
+	.object({
+		taskId: z.string().trim().min(1),
+		...testConditionMappingContentShape,
+	})
+	.strict()
+	.superRefine(validateTestConditionMappingSource);
+
 export const testConditionMappingSchema = z
 	.object({
 		id: z.string().trim().min(1),
 		taskId: z.string().trim().min(1),
-		verificationDocumentId: z.string().trim().min(1),
-		inventoryId: z.string().trim().min(1),
-		caseKey: z.string().trim().min(1),
-		conditionId: z.string().regex(/^AC-\d{3}$/),
-		source: testDefinitionSourceSchema,
-		rationale: z.string().trim().min(1).max(4_000).optional(),
-		sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+		...testConditionMappingContentShape,
 		createdAt: z.string().datetime(),
 	})
 	.strict()
-	.superRefine((mapping, ctx) => {
-		if (mapping.source === "coding_agent_assessment" && !mapping.rationale) {
-			ctx.addIssue({
-				code: "custom",
-				path: ["rationale"],
-				message: "coding_agent_assessment requires rationale",
-			});
-		}
-	});
+	.superRefine(validateTestConditionMappingSource);
 
 export const verificationConditionSchema = z
 	.object({
@@ -329,6 +354,12 @@ export type WorkspaceSourceSnapshot = z.infer<
 export type TestInventoryCase = z.infer<typeof testInventoryCaseSchema>;
 export type TestInventory = z.infer<typeof testInventorySchema>;
 export type TestConditionMapping = z.infer<typeof testConditionMappingSchema>;
+export type TestConditionMappingToolInput = z.infer<
+	typeof testConditionMappingToolInputSchema
+>;
+export type TestConditionMappingWrite = z.infer<
+	typeof testConditionMappingWriteSchema
+>;
 
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([
 	"covered",

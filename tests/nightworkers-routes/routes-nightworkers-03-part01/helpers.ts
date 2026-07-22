@@ -1,4 +1,12 @@
 export const sameOriginHeaders = { Origin: "http://localhost:39174" };
+export function completionVerificationAnswer() {
+	return {
+		questionId: "completion-verification",
+		selectedOptionIds: ["completion-verification-unit"],
+		rankedOptionIds: [],
+		deferred: false,
+	};
+}
 export const representativeDataModelArtifact = {
 	artifactKind: "plan_mode_dedicated_view",
 	view: "data_model",

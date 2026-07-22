@@ -1,4 +1,5 @@
 text = '''回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。
 DB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。
 sourceQuestionIds と unresolvedQuestionIds を必ず保持してください。
+decisionKey=completion.verification_scope の回答は、選択肢labelを読み替えず、outputSection=verification-scopeの設計判断として必ず残してください。テストを完了条件にしない回答も省略せず、後続Feature Planの検証scopeへ引き継いでください。
 '''

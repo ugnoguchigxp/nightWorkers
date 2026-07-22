@@ -172,6 +172,7 @@ function renderQuestionnaire(projection: PlanArtifactInputProjection) {
 		.map((decision) =>
 			[
 				`- ${decision.question}`,
+				decision.decisionKey ? `  - Decision key: ${decision.decisionKey}` : "",
 				`  - Answer: ${decision.answer}`,
 				decision.why ? `  - Why: ${decision.why}` : "",
 				decision.outputSection ? `  - Section: ${decision.outputSection}` : "",

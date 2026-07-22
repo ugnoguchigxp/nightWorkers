@@ -17,11 +17,13 @@ import {
 import { NotFoundError } from "../../lib/errors";
 import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json";
 import * as repo from "./questionnaire.repository";
+import { appendCompletionVerificationQuestion } from "./questionnaire-completion-verification";
 
 export {
 	additionalQuestionnaireDraftJsonSchema,
 	designDecisionReviewJsonSchema,
 	designQuestionnaireFollowUpDecisionJsonSchema,
+	generatedQuestionnaireChoiceFormJsonSchema,
 	questionnaireChoiceFormJsonSchema,
 } from "./questionnaire-json-schemas";
 
@@ -50,6 +52,7 @@ export function parseDesignQuestionnaireRaw(
 		category?: string;
 		purpose?: string;
 		summary?: string;
+		appendCompletionVerificationQuestion?: boolean;
 	},
 ): { ok: true; value: DesignQuestionnaire } | { ok: false; error: unknown } {
 	const choiceForm = parseRepairedJsonWithSchema(
@@ -57,18 +60,27 @@ export function parseDesignQuestionnaireRaw(
 		questionnaireChoiceFormSchema,
 	);
 	if (choiceForm.ok) {
+		const questionnaire = adaptQuestionnaireChoiceForm(
+			choiceForm.value,
+			fallbackSource,
+			choiceFormOptions,
+		);
 		return {
 			ok: true,
-			value: adaptQuestionnaireChoiceForm(
-				choiceForm.value,
-				fallbackSource,
-				choiceFormOptions,
-			),
+			value: choiceFormOptions?.appendCompletionVerificationQuestion
+				? appendCompletionVerificationQuestion(questionnaire)
+				: questionnaire,
 		};
 	}
 
 	const v1 = parseRepairedJsonWithSchema(rawOutput, designQuestionnaireSchema);
-	if (v1.ok) return { ok: true, value: v1.value };
+	if (v1.ok)
+		return {
+			ok: true,
+			value: choiceFormOptions?.appendCompletionVerificationQuestion
+				? appendCompletionVerificationQuestion(v1.value)
+				: v1.value,
+		};
 	return { ok: false, error: v1.error ?? choiceForm.error };
 }
 
@@ -81,6 +93,7 @@ function adaptQuestionnaireChoiceForm(
 		category?: string;
 		purpose?: string;
 		summary?: string;
+		appendCompletionVerificationQuestion?: boolean;
 	},
 ): DesignQuestionnaire {
 	if (!fallbackSource?.taskId || !fallbackSource.repositoryId) {
@@ -109,27 +122,29 @@ function adaptQuestionnaireChoiceForm(
 				purpose:
 					options?.purpose ||
 					"実装に入る前に、未決定の仕様判断を選択式で確定します。",
-				questions: form.questions.map((question, questionIndex) => {
-					const questionId =
-						questionIdPrefix === "q"
-							? `q${questionIndex + 1}`
-							: `${questionIdPrefix}-q${questionIndex + 1}`;
-					return {
-						id: questionId,
-						topic: `Question ${questionIndex + 1}`,
-						question: question.text,
-						why: "実装前に仕様判断が必要です。",
-						answerType:
-							question.type === "checkbox" ? "multi_choice" : "single_choice",
-						options: question.options.map((label, optionIndex) => ({
-							id: `${questionId}-o${optionIndex + 1}`,
-							label,
-							tradeoff: "選択後に設計判断として整理します。",
-						})),
-						blocks: ["実装前の仕様判断"],
-						outputSection: `question-${questionIndex + 1}`,
-					};
-				}),
+				questions: form.questions
+					.filter((question) => question.kind === "design_decision")
+					.map((question, questionIndex) => {
+						const questionId =
+							questionIdPrefix === "q"
+								? `q${questionIndex + 1}`
+								: `${questionIdPrefix}-q${questionIndex + 1}`;
+						return {
+							id: questionId,
+							topic: `Question ${questionIndex + 1}`,
+							question: question.text,
+							why: "実装前に仕様判断が必要です。",
+							answerType:
+								question.type === "checkbox" ? "multi_choice" : "single_choice",
+							options: question.options.map((label, optionIndex) => ({
+								id: `${questionId}-o${optionIndex + 1}`,
+								label,
+								tradeoff: "選択後に設計判断として整理します。",
+							})),
+							blocks: ["実装前の仕様判断"],
+							outputSection: `question-${questionIndex + 1}`,
+						};
+					}),
 			},
 		],
 		openQuestions: [],
