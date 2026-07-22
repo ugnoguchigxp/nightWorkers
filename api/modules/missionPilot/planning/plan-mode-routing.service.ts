@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type {
 	MissionPilotPlanRoutingToolCall,
 	PlanModeRoutingActor,
@@ -15,11 +15,7 @@ import {
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../../../db/mission-pilot-schema";
-import {
-	implementationQueueEntries,
-	taskRuns,
-	tasks,
-} from "../../../db/schema";
+import { tasks } from "../../../db/schema";
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { readGeneralSettings } from "../../../services/settings/general-settings";
 import {
@@ -187,12 +183,8 @@ async function persistRoutingRevision(input: {
 				"Plan Artifact routing が別の操作で更新されました。再読み込みしてください。",
 			);
 		}
-		const [task, queueEntry, run, latestContext] = await Promise.all([
+		const [task, latestContext] = await Promise.all([
 			tx.query.tasks.findFirst({ where: eq(tasks.id, input.taskId) }),
-			tx.query.implementationQueueEntries.findFirst({
-				where: eq(implementationQueueEntries.taskId, input.taskId),
-			}),
-			tx.query.taskRuns.findFirst({ where: eq(taskRuns.taskId, input.taskId) }),
 			tx.query.missionPilotContextSnapshots.findFirst({
 				where: eq(missionPilotContextSnapshots.sessionId, session.id),
 				orderBy: (row, { desc }) => [desc(row.revision)],
@@ -211,18 +203,6 @@ async function persistRoutingRevision(input: {
 				409,
 				"PLAN_MODE_ROUTING_REBUILD_IN_PROGRESS",
 				"Mission Pilot 実行中は routing を変更できません。停止後に再試行してください。",
-			);
-		}
-		if (
-			queueEntry ||
-			(input.actor !== "coding_agent" && run) ||
-			session.queueHandoffJson ||
-			session.phase === "queued"
-		) {
-			throw new AppError(
-				409,
-				"PLAN_MODE_ROUTING_LOCKED",
-				"Implementation Queue 投入後は routing を変更できません。",
 			);
 		}
 		if (
@@ -293,7 +273,6 @@ async function persistRoutingRevision(input: {
 					eq(missionPilotSessions.version, session.version),
 					eq(missionPilotSessions.planRoutingRevision, input.expectedRevision),
 					eq(missionPilotSessions.contextRevision, session.contextRevision),
-					isNull(missionPilotSessions.queueHandoffJson),
 				),
 			)
 			.returning();

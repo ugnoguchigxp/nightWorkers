@@ -1,0 +1,9 @@
+text = '''設定済み Mission Goal と repository signal から、Mission とその配下の Task Candidate を一度の応答で生成してください。
+各 Mission は review 可能な中間目標、各 Task Candidate は Plan Mode がそのまま開始できる実行単位にしてください。
+Objective、Work Package、scheduling、replanning の内部構造はサーバー側で組み立てるため返さないでください。
+情報が不足していても Task Candidate 生成を打ち切らず、安全な前提と確認事項を initialPrompt、acceptanceCriteria、verificationGate に明記してください。
+repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。
+既存 Mission や既存 Task と重複する候補は返さないでください。
+Task Candidate の id と dependsOnCandidateIds は、同じ Mission 内で整合させてください。
+プロンプト文言と出力本文は日本語を維持してください。
+'''

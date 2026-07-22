@@ -116,7 +116,7 @@ describe("Plan Mode routing service", () => {
 		).toBeUndefined();
 	});
 
-	it("lets the active Coding Agent choose routing while user edits remain locked", async () => {
+	it("lets Coding Agent and user update routing after a run exists", async () => {
 		const { task } = await createFixture();
 		await db.insert(taskRuns).values({
 			id: crypto.randomUUID(),
@@ -142,13 +142,15 @@ describe("Plan Mode routing service", () => {
 		expect(
 			updated.entries.find((entry) => entry.view === "questionnaire"),
 		).toMatchObject({ decision: "include", required: true });
-		await expect(
-			updatePlanModeRoutingForUser(task.id, {
-				expectedRevision: updated.revision,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [{ view: "data_model", decision: "include" }],
-			}),
-		).rejects.toMatchObject({ code: "PLAN_MODE_ROUTING_LOCKED" });
+		const userUpdated = await updatePlanModeRoutingForUser(task.id, {
+			expectedRevision: updated.revision,
+			idempotencyKey: crypto.randomUUID(),
+			changes: [{ view: "data_model", decision: "include" }],
+		});
+		expect(userUpdated.updatedBy).toBe("user");
+		expect(
+			userUpdated.entries.find((entry) => entry.view === "data_model"),
+		).toMatchObject({ decision: "include" });
 	});
 
 	it("includes questionnaire after a Questionnaire-ready message is present", async () => {
@@ -394,20 +396,37 @@ describe("Plan Mode routing service", () => {
 		});
 	});
 
-	it("rejects edits after the Mission Pilot reaches Queue state", async () => {
+	it("allows edits after the Mission Pilot reaches Queue state", async () => {
 		const { task, session } = await createFixture();
 		await db
 			.update(missionPilotSessions)
-			.set({ phase: "queued" })
+			.set({ phase: "queued", queueHandoffJson: { queued: true } })
 			.where(eq(missionPilotSessions.id, session.id));
 
-		await expect(
-			updatePlanModeRoutingForUser(task.id, {
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [{ view: "data_model", decision: "include" }],
-			}),
-		).rejects.toMatchObject({ code: "PLAN_MODE_ROUTING_LOCKED" });
+		const updated = await updatePlanModeRoutingForUser(task.id, {
+			expectedRevision: 0,
+			idempotencyKey: crypto.randomUUID(),
+			changes: [{ view: "data_model", decision: "include" }],
+		});
+		expect(updated.editable).toBe(true);
+		expect(updated.updatedBy).toBe("user");
+	});
+
+	it("keeps routing editable after the Task reaches a terminal state", async () => {
+		const { task } = await createFixture();
+		await db
+			.update(tasks)
+			.set({ status: "completed" })
+			.where(eq(tasks.id, task.id));
+
+		const current = await getPlanModeRouting(task.id);
+		expect(current.editable).toBe(true);
+		const updated = await updatePlanModeRoutingForUser(task.id, {
+			expectedRevision: current.revision,
+			idempotencyKey: crypto.randomUUID(),
+			changes: [{ view: "data_model", decision: "include" }],
+		});
+		expect(updated.updatedBy).toBe("user");
 	});
 
 	it("rejects user edits while Mission Pilot is rebuilding the plan", async () => {

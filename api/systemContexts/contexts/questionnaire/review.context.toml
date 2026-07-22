@@ -1,0 +1,4 @@
+text = '''回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。
+DB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。
+sourceQuestionIds と unresolvedQuestionIds を必ず保持してください。
+'''

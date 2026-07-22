@@ -6,12 +6,17 @@ import type {
 	ProviderToolCall,
 	ProviderToolMessage,
 } from "../../../../services/structured-llm/tool-calls";
-import { buildProjectExplorationAgentWorkflow } from "../../../ontology/exploration/project-exploration-agent-workflow";
 import {
-	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
-	CODING_AGENT_RUNTIME_REMINDERS_JA,
-	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
-} from "../../context";
+	bindSystemContextTextCatalog,
+	type SystemContextP,
+} from "../../../../systemContexts/catalog";
+import { buildProjectExplorationAgentWorkflow } from "../../../ontology/exploration/project-exploration-agent-workflow";
+import { buildCodingAgentSystemContext } from "../../context/system-context";
+import {
+	renderCodingAgentRuntimeSystemContext,
+	renderCodingAgentTodoPlanSummary,
+	renderCodingAgentTodoSystemContext,
+} from "../../context/todo-prompt-context";
 import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
 
@@ -45,8 +50,9 @@ export function buildInitialNativeApiHistory(
 	context: AgentRunContext,
 	options: { resumeHistory?: readonly NativeApiHistoryItem[] | null } = {},
 ): NativeApiHistoryItem[] {
+	const { p } = bindSystemContextTextCatalog();
 	const items: NativeApiHistoryItem[] = [
-		{ type: "system", content: buildNativeApiSystemPrompt(context) },
+		{ type: "system", content: buildNativeApiSystemPrompt(context, p) },
 		...(options.resumeHistory ?? []),
 		{
 			type: "user",
@@ -61,7 +67,7 @@ export function buildInitialNativeApiHistory(
 		items.push({
 			type: "user",
 			source: "todo",
-			content: renderCurrentTodoContext(context.currentTodo),
+			content: renderCurrentTodoContext(context.currentTodo, p),
 		});
 	}
 	return items;
@@ -226,53 +232,41 @@ export function readProjectExplorationCatalogPin(context: AgentRunContext) {
 	return parsed.success ? parsed.data : null;
 }
 
-function buildNativeApiSystemPrompt(context: AgentRunContext) {
+function buildNativeApiSystemPrompt(
+	context: AgentRunContext,
+	p: SystemContextP,
+) {
 	const projectExplorationWorkflow = buildProjectExplorationAgentWorkflow(
 		readProjectExplorationCatalogPin(context),
+		p,
 	);
-	return [
-		"[NightWorkers Coding Agent Runtime]",
-		JSON.stringify(
-			context.codingAgentSystemContext ?? {
-				version: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
-				roleInstructionsJa:
-					"Taskの意味、Todo、次の行動、検証、完了可否を判断するCoding Agentとして振る舞ってください。",
+	const systemContext =
+		context.codingAgentSystemContext ??
+		buildCodingAgentSystemContext(
+			{
 				taskGoal: context.latestUserMessage || context.compiledPrompt,
 				registeredRepositoryRoot: context.repoRoot,
 			},
-			null,
-			2,
-		),
-		CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
-		"[Project Static Intelligence Workflow]",
-		JSON.stringify(projectExplorationWorkflow, null, 2),
-		...formatRuntimeWorkspaceContextForPrompt(context),
-		"Todo planとcurrent Todoは各turnのTodo Contextを正本にしてください。",
-		"最初のturnではtodo_listでplanを作成してcurrent Todoを開始し、それ以外のworkspace toolを先に呼ばないでください。",
-		...CODING_AGENT_RUNTIME_REMINDERS_JA,
-		"tool結果を読んで次の行動を選び、失敗時はrecord_failureで外部作業記憶を更新してください。",
-		"Testや自己確認の要否はTaskとTodo Contextから判断し、専用modeを前提にしないでください。",
-		"tool callなしの本文は最終回答候補です。open Todoがある場合は明示transitionしてから回答してください。",
-	].join("\n");
+			p,
+		);
+	return p("codingAgent.native-runtime", {
+		runtimeSystemContext: renderCodingAgentRuntimeSystemContext(
+			systemContext,
+			{},
+			p,
+		).trimEnd(),
+		todoPlanSummary:
+			renderCodingAgentTodoPlanSummary(context.todoPlan, p)?.trimEnd() ?? "",
+		projectExplorationWorkflow,
+		workspaceContext: formatRuntimeWorkspaceContextForPrompt(context, p),
+	});
 }
 
 function renderCurrentTodoContext(
 	currentTodo: NonNullable<AgentRunContext["currentTodo"]>,
+	p: SystemContextP,
 ) {
-	return [
-		"[Current Coding Agent Todo]",
-		`id=${currentTodo.id}`,
-		`revision=${currentTodo.revision ?? 0}`,
-		`seq=${currentTodo.seq}`,
-		`title=${currentTodo.title}`,
-		`objective=${currentTodo.objective ?? currentTodo.description ?? ""}`,
-		`context=${currentTodo.context ?? ""}`,
-		`nextAction=${currentTodo.nextAction ?? ""}`,
-		`acceptanceCriteria=${JSON.stringify(currentTodo.acceptanceCriteria ?? [])}`,
-		`lastFailure=${currentTodo.lastFailure ?? ""}`,
-		`attemptCount=${currentTodo.attemptCount ?? 0}`,
-		`status=${currentTodo.status}`,
-	].join("\n");
+	return renderCodingAgentTodoSystemContext(currentTodo, p);
 }
 
 function trimSanitizedResumeHistory(

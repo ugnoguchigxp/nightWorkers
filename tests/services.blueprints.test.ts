@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { blueprintCatalog } from "../api/services/blueprint-catalog";
 import { buildAppBlueprintStructuredOutputJsonSchema } from "../api/services/blueprints/json-schema";
@@ -8,6 +6,7 @@ import {
 	parseAndValidateBlueprintOutput,
 } from "../api/services/blueprints/llm-draft";
 import { validateAppBlueprint } from "../api/services/blueprints/validation";
+import { p } from "../api/systemContexts/catalog";
 import { representativeAppBlueprint } from "./fixtures/app-blueprint";
 import { canonicalBadAppBlueprint } from "./fixtures/bad-app-blueprint";
 
@@ -44,25 +43,18 @@ describe("Blueprint validation service", () => {
 				requiredArtifact: "AppBlueprint JSON",
 			},
 		});
-		expect(
-			contract.referenceDocuments.map((document) => document.relativePath),
-		).toContain("references/work_kinds/blueprint.md");
 	});
 
-	it("documents the regular Blueprint and Data Model boundary in the work-kind reference", () => {
-		const reference = readFileSync(
-			join(
-				process.cwd(),
-				"api/services/supervisor/skills/builtin/references/work_kinds/blueprint.md",
-			),
-			"utf8",
-		);
+	it("keeps the regular Blueprint and Data Model boundary in its SystemContext", () => {
+		const reference = p("structuredGeneration.app-blueprint", {
+			appBlueprintJsonSchema: "{}",
+		});
 
-		expect(reference).toContain("通常 Blueprint では `databaseSchema.tables`");
+		expect(reference).toContain("通常の Blueprint 生成では DB/DDL");
 		expect(reference).toContain("Data Model view");
-		expect(reference).toContain("`dataBindings`");
+		expect(reference).toContain("dataBindings");
 		expect(reference).toContain(
-			"`table_workspace` または `DataTableSection` を第一候補",
+			"table_workspace または DataTableSection を第一候補",
 		);
 		expect(reference).toContain(
 			"単なる task / todo / record 一覧を自動で card 化しない",

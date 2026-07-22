@@ -1,4 +1,11 @@
 import { z } from "@hono/zod-openapi";
+import {
+	isStarterOverlayForStack,
+	isStarterVariantForStack,
+	STARTER_OVERLAYS,
+	STARTER_STACKS,
+	STARTER_VARIANTS,
+} from "../starter-template-contract";
 
 export const gitMergeStrategySchema = z.enum([
 	"merge_commit",
@@ -18,29 +25,49 @@ export const gitWorkspaceStatusSchema = z.enum([
 	"attention",
 	"retired",
 ]);
-export const repositoryMaterializationIntentSchema = z.discriminatedUnion(
-	"kind",
-	[
-		z.object({ kind: z.literal("existing_git") }),
-		z.object({
-			kind: z.literal("starter_template"),
-			source: z.literal("starter"),
-			stack: z.enum(["hono", "python", "java", "rust"]),
-			variant: z.string().optional(),
-			overlays: z.array(z.string()).optional(),
-			initialize: z.literal(true),
-		}),
-		z.object({
-			kind: z.literal("git_import"),
-			source: z.literal("git"),
-			repoUrl: z.string().min(1),
-			ref: z.string().optional(),
-			depth: z.number().int().positive().optional(),
-			stripGitDir: z.boolean().optional(),
-			initialize: z.literal(true),
-		}),
-	],
-);
+const starterTemplateMaterializationIntentSchema = z
+	.object({
+		kind: z.literal("starter_template"),
+		source: z.literal("starter"),
+		stack: z.enum(STARTER_STACKS),
+		variant: z.enum(STARTER_VARIANTS).optional(),
+		overlays: z.array(z.enum(STARTER_OVERLAYS)).optional(),
+		initialize: z.literal(true),
+	})
+	.superRefine((intent, context) => {
+		if (
+			intent.variant &&
+			!isStarterVariantForStack(intent.stack, intent.variant)
+		) {
+			context.addIssue({
+				code: "custom",
+				path: ["variant"],
+				message: `Unknown ${intent.stack} starter variant: ${intent.variant}`,
+			});
+		}
+		for (const overlay of intent.overlays ?? []) {
+			if (isStarterOverlayForStack(intent.stack, overlay)) continue;
+			context.addIssue({
+				code: "custom",
+				path: ["overlays"],
+				message: `Unknown ${intent.stack} starter overlay: ${overlay}`,
+			});
+		}
+	});
+
+export const repositoryMaterializationIntentSchema = z.union([
+	z.object({ kind: z.literal("existing_git") }),
+	starterTemplateMaterializationIntentSchema,
+	z.object({
+		kind: z.literal("git_import"),
+		source: z.literal("git"),
+		repoUrl: z.string().min(1),
+		ref: z.string().optional(),
+		depth: z.number().int().positive().optional(),
+		stripGitDir: z.boolean().optional(),
+		initialize: z.literal(true),
+	}),
+]);
 export const projectGitIntegrationPolicySchema = z.object({
 	version: z.literal(1),
 	remoteName: z.string().min(1).nullable(),

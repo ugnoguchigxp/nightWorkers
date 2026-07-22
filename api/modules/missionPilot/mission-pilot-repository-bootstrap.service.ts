@@ -19,21 +19,6 @@ import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import { buildMissionPilotRunAssociationRequest } from "./mission-pilot-run-association.service";
 
-export async function repositoryHasGitHead(repositoryPath: string) {
-	try {
-		await runGitCommand([
-			"-C",
-			repositoryPath,
-			"rev-parse",
-			"--verify",
-			"HEAD^{commit}",
-		]);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 export async function alignBootstrappedRepositoryBranch(input: {
 	repositoryPath: string;
 	targetBranch: string;

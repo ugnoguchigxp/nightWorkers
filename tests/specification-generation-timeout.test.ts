@@ -10,6 +10,10 @@ import {
 import { callStructuredOutputWithRepair } from "../api/services/structured-generation/structured-output-repair.service";
 import { StructuredLlmTimeoutError } from "../api/services/structured-llm";
 
+vi.mock("../api/modules/gitworktree/repository-state.service", () => ({
+	repositoryHasGitHead: vi.fn(async () => true),
+}));
+
 vi.mock(
 	"../api/services/structured-generation/structured-output-repair.service",
 	() => ({ callStructuredOutputWithRepair: vi.fn() }),
@@ -23,6 +27,11 @@ vi.mock(
 );
 
 vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
+	getPlanModeRepository: vi.fn(async () => ({
+		id: "repo-1",
+		name: "todolist",
+		localPath: "/tmp/missing-todolist-repository",
+	})),
 	getPlanModeTask: vi.fn(async () => ({
 		id: "task-1",
 		repositoryId: "repo-1",

@@ -324,7 +324,10 @@ export async function reconcileImplementationQueue(
 			}
 		}
 	}
-	if (actions.some((action) => action.action === "retry")) {
+	if (
+		snapshot.counts.queued > 0 ||
+		actions.some((action) => action.action === "retry")
+	) {
 		runImplementationQueueWhenEnabled();
 	}
 	return {

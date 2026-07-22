@@ -18,8 +18,19 @@ export const OCCUPIED_PROCESSOR_STATUSES = [
 	"claimed",
 	"processing",
 	"needs_human",
-	"awaiting_commit_decision",
 ] as const;
+export const PROCESSOR_RELEASED_QUEUE_STATUSES = [
+	"awaiting_commit_decision",
+	"execution_completed",
+	"failed",
+	"cancelled",
+] as const;
+
+export function isProcessorReleasedQueueStatus(status: string) {
+	return (PROCESSOR_RELEASED_QUEUE_STATUSES as readonly string[]).includes(
+		status,
+	);
+}
 export type ClaimNextImplementationQueueEntryInput = {
 	processorCount: number;
 	leaseOwnerId: string;

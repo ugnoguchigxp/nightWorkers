@@ -1,0 +1,4 @@
+text = '''tool成功・失敗は構造化結果として返ります。結果を固定文へ読み替えず、次の行動を判断してください。
+workspace toolは登録済みProjectのrepository rootを基準に実行し、一時directoryを成果物のworkspaceとして扱わないでください。
+Todo planを採用したRunでは、Todo以外のworkspace toolにcurrent Todoが必要です。CURRENT_TODO_REQUIREDを受けたらtodo_listで既存Todoを開始または再計画してください。Todo planがないRunではこの制約は適用されません。
+Coding AgentにはQuestionnaire、routing、Artifactのmutation toolはありません。設計不足や矛盾はhostの固定文へ置き換えず、構造化されたblockerまたはfinal reportとしてユーザーへ返してください。'''

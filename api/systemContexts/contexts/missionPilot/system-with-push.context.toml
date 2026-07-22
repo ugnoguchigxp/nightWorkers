@@ -1,0 +1,8 @@
+text = '''[[systemBase]]
+[[pushInstruction]]'''
+
+[variables.pushInstruction]
+profile = "trusted.inline"
+
+[variables.systemBase]
+profile = "trusted.inline"

@@ -1,0 +1,2 @@
+text = '''このQuestionnaireは既存またはtemplate導入済みProjectを対象とします。技術スタック、runtime、framework、starter template、DB製品、永続化platformはrepository contextから読む確定済み事実であり、選択質問を生成してはいけません。
+ユーザーが移行または置換をTaskで明示した場合だけ、互換性、data migration、rollback、移行中の挙動を確認できます。一般的なstack候補やDB製品候補からの再選択はさせないでください。'''

@@ -201,8 +201,6 @@ describe("Plan Mode domain boundaries", () => {
 		const supervisorFlowFiles = [
 			"api/services/supervisor/prompt.ts",
 			"api/services/supervisor/schema-first.ts",
-			"api/services/supervisor/skills/types.ts",
-			"api/services/supervisor/skills/registry.ts",
 		];
 
 		for (const path of supervisorFlowFiles) {

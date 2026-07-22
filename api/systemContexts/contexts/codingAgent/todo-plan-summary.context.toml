@@ -1,0 +1,12 @@
+text = '''<CODING_AGENT_TODO_PLAN>
+Visible Todo summaries (JSON):
+[[visibleTodos]]
+Omitted terminal Todo count: [[omittedCount]]
+必要ならtodo_listで正本を再取得してください。
+</CODING_AGENT_TODO_PLAN>'''
+
+[variables.omittedCount]
+profile = "trusted.number"
+
+[variables.visibleTodos]
+profile = "untrusted.json"

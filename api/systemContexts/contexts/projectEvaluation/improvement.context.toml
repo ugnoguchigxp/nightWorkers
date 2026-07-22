@@ -1,0 +1,4 @@
+text = '''保存済み evaluation と選択された評価軸だけを主入力にし、未選択軸を主目的にしないでください。
+各 idea は NightWorkers Task に変換できる agentPrompt、expectedOutcome、implementationFocus、scoreImpacts を必ず持たせてください。
+出力は指定 JSON schema だけにしてください。説明文や Markdown は含めないでください。
+'''

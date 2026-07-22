@@ -9,6 +9,7 @@ import {
 	loadCodingAgentContextPacket,
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
+	requiresCurrentTodo,
 } from "../modules/codingAgent";
 import * as repo from "../modules/nightworkers/nightworkers.repository";
 import type { WorkerToolResult } from "../services/worker-tools/types";
@@ -337,7 +338,7 @@ export async function controlledToolResult(input: {
 }) {
 	const todoContext = await loadCodingAgentContextPacket(input.runId);
 	if (input.toolName !== "todo_list") {
-		if (!todoContext?.currentTodo) {
+		if (requiresCurrentTodo(todoContext)) {
 			return toolResultToMcp({
 				ok: false,
 				toolName: input.toolName,
@@ -347,7 +348,7 @@ export async function controlledToolResult(input: {
 				error: {
 					code: "CURRENT_TODO_REQUIRED",
 					message:
-						"workspace toolの実行前にTodo planを作成し、current Todoを開始してください。",
+						"Todo planが存在するため、workspace toolの実行前にcurrent Todoを開始してください。",
 				},
 			});
 		}

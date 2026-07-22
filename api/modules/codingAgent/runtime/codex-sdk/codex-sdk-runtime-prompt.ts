@@ -1,5 +1,12 @@
 import type { Input } from "@openai/codex-sdk";
 import { estimateTokens } from "../../../../services/conversation-context/token-budget";
+import { bindSystemContextTextCatalog } from "../../../../systemContexts/catalog";
+import { buildCodingAgentSystemContext } from "../../context/system-context";
+import {
+	renderCodingAgentRuntimeSystemContext,
+	renderCodingAgentTodoPlanSummary,
+	renderCodingAgentTodoSystemContext,
+} from "../../context/todo-prompt-context";
 import { buildCodingAgentImplementationHandoffPrompt } from "../implementation-handoff-prompt";
 import type { AgentRunContext } from "../types";
 
@@ -9,11 +16,46 @@ export type CodexRuntimePromptParts = {
 	estimates: {
 		requestTokens: number;
 		fullPromptTokens: number;
+		developerInstructionsTokens: number;
 	};
 };
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
 	return buildCodexRuntimePromptParts(context).prompt;
+}
+
+export function buildCodexRuntimeDeveloperInstructions(
+	context: AgentRunContext,
+): string {
+	const { p } = bindSystemContextTextCatalog();
+	const request =
+		readCodexPromptRequest(context) || context.compiledPrompt.trim();
+	const snapshot = asRecord(context.contextSnapshot);
+	const handoff = asRecord(snapshot?.implementationHandoff);
+	const userRequest = readString(handoff?.userRequest) || request;
+	const systemContext =
+		context.codingAgentSystemContext ??
+		buildCodingAgentSystemContext(
+			{
+				taskGoal: userRequest,
+				registeredRepositoryRoot: context.repoRoot,
+			},
+			p,
+		);
+	return p("codingAgent.codex-developer-instructions", {
+		runtimeSystemContext: renderCodingAgentRuntimeSystemContext(
+			systemContext,
+			{
+				includeTaskGoal: false,
+			},
+			p,
+		).trimEnd(),
+		todoPlanSummary:
+			renderCodingAgentTodoPlanSummary(context.todoPlan, p)?.trimEnd() ?? "",
+		currentTodoSystemContext: context.currentTodo
+			? renderCodingAgentTodoSystemContext(context.currentTodo, p).trimEnd()
+			: "",
+	});
 }
 
 export function buildCodexRuntimeInput(
@@ -50,6 +92,9 @@ export function buildCodexRuntimePromptParts(
 		estimates: {
 			requestTokens: estimateTokens(request),
 			fullPromptTokens: estimateTokens(prompt),
+			developerInstructionsTokens: estimateTokens(
+				buildCodexRuntimeDeveloperInstructions(context),
+			),
 		},
 	};
 }

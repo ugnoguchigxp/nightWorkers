@@ -17,6 +17,7 @@
         "@libsql/client": "0.17.4",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@openai/codex-sdk": "0.144.4",
+        "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
         "@tanstack/react-query": "5.101.2",
         "@tanstack/react-router": "1.170.18",
         "@tanstack/react-table": "8.21.3",
@@ -53,6 +54,7 @@
         "@biomejs/biome": "2.5.3",
         "@hono/vite-dev-server": "0.26.1",
         "@playwright/test": "1.61.1",
+        "@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
         "@tailwindcss/vite": "4.3.2",
         "@tanstack/router-plugin": "1.168.20",
         "@tauri-apps/cli": "2.11.4",
@@ -79,6 +81,7 @@
     },
   },
   "overrides": {
+    "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
     "fast-uri": "3.1.2",
     "hono": "4.12.30",
     "vite": "8.1.4",
@@ -334,6 +337,8 @@
 
     "@neon-rs/load": ["@neon-rs/load@0.0.4", "", {}, "sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw=="],
 
+    "@noble/hashes": ["@noble/hashes@2.2.0", "", {}, "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg=="],
+
     "@open-draft/deferred-promise": ["@open-draft/deferred-promise@2.2.0", "", {}, "sha512-CecwLWx3rhxVQF6V4bAgPS5t+So2sTbPgAzafKkVizyi7tlwpcFpdFqq+wqF2OwNBmqFuu6tOyouTuxgpMfzmA=="],
 
     "@open-draft/logger": ["@open-draft/logger@0.3.0", "", { "dependencies": { "is-node-process": "1.2.0", "outvariant": "1.4.3" } }, "sha512-X2g45fzhxH238HKO4xbSr7+wBS8Fvw6ixhTDuvLd5mqh6bJJCFAPwU9mPDxbcrRtfxv4u5IHCEH77BmxvXmmxQ=="],
@@ -447,6 +452,10 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.61.1", "", { "os": "win32", "cpu": "x64" }, "sha512-gK1iCEPfpoSG9wfBihXxvBMi8ZfcWffYkEsC/Eih+iFENTaewvNcrEQ69lIOWYO5pePHKLHHO7nq5AILGO/HQQ=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.61.1", "", { "os": "win32", "cpu": "x64" }, "sha512-X+zaP2x+j4RXGfbp/seSoRHWnPxzApilDszisZxbYH5C/jTxFhCtDNdPGZb9lJyYPs24wGxruPF7Y+sIXt9Gzw=="],
+
+    "@s11t/cli": ["@s11t/cli@./vendor/s11t/s11t-cli-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz", { "dependencies": { "@s11t/runtime": "0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec", "smol-toml": "1.7.0" }, "bin": { "s11t": "./bin/s11t.js" } }, "sha512-svLC86JXbQnx9iHxdcmZ6+dz/1a9jQ7tMMrTLrOXV//pp9ZbqNbLgBdgbpcmEO2g5zOWH2wRP9Thjk3SHf9RWQ=="],
+
+    "@s11t/runtime": ["@s11t/runtime@./vendor/s11t/s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz", { "dependencies": { "@noble/hashes": "2.2.0" } }, "sha512-XIlxYk6sODob98U9AibsjItkxUBcsNWn+29Xc08nVRTZ2hY0BsoGmuoFG2VuYbI9guz8TFKPbCSFv3UYDxsfeg=="],
 
     "@smithy/core": ["@smithy/core@3.29.3", "", { "dependencies": { "@smithy/types": "^4.16.1", "tslib": "^2.6.2" } }, "sha512-L+Ys6ecjk5vwPMAKHBpPKlJ3DkqwNcnfEISXBZIsVvWG/XKXfsAP8mwIYlTeLcd2ElHdesPI8OuOmJSFAPhm6A=="],
 

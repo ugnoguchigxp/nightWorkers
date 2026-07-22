@@ -1,0 +1,12 @@
+text = '''[[runtimeSystemContext]]
+[[todoPlanSummary]]
+[[currentTodoSystemContext]]'''
+
+[variables.currentTodoSystemContext]
+profile = "trusted.inline"
+
+[variables.runtimeSystemContext]
+profile = "trusted.inline"
+
+[variables.todoPlanSummary]
+profile = "trusted.inline"

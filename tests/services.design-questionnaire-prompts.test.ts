@@ -8,8 +8,8 @@ import {
 import { questionnaireChoiceFormSchema } from "../shared/schemas/design-questionnaire.schema";
 
 describe("design questionnaire prompts", () => {
-	it("keeps starter stack choices independent from database choices", () => {
-		const prompt = buildDesignQuestionnaireSystemPrompt();
+	it("forbids stack and database selection for a materialized project", () => {
+		const prompt = buildDesignQuestionnaireSystemPrompt("repository_fixed");
 
 		expect(prompt).toContain("回答によって実装、公開契約、データ、権限、検証");
 		expect(prompt).toContain("目的と成功状態、対象ユーザー、対象 / 非対象");
@@ -33,46 +33,12 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).not.toContain("1 ページ分");
 		expect(prompt).not.toContain("原則 8-12 件");
 		expect(prompt).toContain("通常のrepository調査で一意に分かる事項");
-		expect(prompt).toContain("使用する技術スタック");
-		expect(prompt).toContain("DB/永続化");
-		expect(prompt).toContain("branch variant");
-		expect(prompt).toContain("どの技術スタックで実装しますか？");
-		expect(prompt).toContain(
-			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
-		);
-		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
-		expect(prompt).toContain("「デフォルト」を独立した選択肢にはせず");
-		expect(prompt).toContain("RAG (Hono + React/Vite)");
-		expect(prompt).toContain("Python/FastAPI + React/Vite");
-		expect(prompt).toContain("API only (FastAPI)");
-		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
-		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
-		expect(prompt).toContain("Rust + Axum + React/Vite");
-		expect(prompt).toContain(
-			"Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めて",
-		);
-		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
-		expect(prompt).toContain(
-			"技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めない",
-		);
-		expect(prompt).not.toContain("Hono + React/Vite + SQLite");
-		expect(prompt).not.toContain("RAG (Hono + React/Vite + pgvector)");
-		expect(prompt).not.toContain("API only (FastAPI + SQLite)");
-		expect(prompt).toContain("SQLite");
-		expect(prompt).toContain("PostgreSQL");
-		expect(prompt).toContain("pgvector");
-		expect(prompt).toContain("Turso/libSQL");
-		expect(prompt).toContain(
-			"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタック",
-		);
-		expect(prompt).toContain(
-			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
-		);
-		expect(prompt).toContain(
-			"専用 variant がないことを理由に DB の選択肢を除外しない",
-		);
-		expect(prompt).toContain("対応する SQLite variant を雛形として使用");
-		expect(prompt).toContain("DB 要件は SQLite へ変更せず");
+		expect(prompt).toContain("既存またはtemplate導入済みProject");
+		expect(prompt).toContain("選択質問を生成してはいけません");
+		expect(prompt).toContain("一般的なstack候補やDB製品候補からの再選択");
+		expect(prompt).not.toContain("どの技術スタックで実装しますか？");
+		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
 		expect(prompt).toContain("各 options は 2-10 件");
 		expect(prompt).toContain(
 			"本当に複数の選択肢を同時に採用できる設問だけ checkbox",
@@ -84,42 +50,19 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("public only または auth only");
 	});
 
-	it("keeps missing template variant inputs in follow-up scope", () => {
-		const prompt = buildDesignQuestionnaireFollowUpDecisionSystemPrompt();
+	it("keeps stack and database reselection out of materialized follow-up", () => {
+		const prompt =
+			buildDesignQuestionnaireFollowUpDecisionSystemPrompt("repository_fixed");
 
 		expect(prompt).toContain("回答によって実装、公開契約、データ、権限、検証");
 		expect(prompt).toContain("空状態・重複・上限・不正入力");
 		expect(prompt).toContain("矛盾や暗黙の仮定");
-		expect(prompt).toContain("使用技術スタック");
-		expect(prompt).toContain("DB/永続化");
-		expect(prompt).toContain("branch variant");
-		expect(prompt).toContain("どの技術スタックで実装しますか？");
-		expect(prompt).toContain(
-			"既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜない",
-		);
-		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
-		expect(prompt).toContain("「デフォルト」を独立した選択肢にはせず");
-		expect(prompt).toContain("RAG (Hono + React/Vite)");
-		expect(prompt).toContain("API only (FastAPI)");
-		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
-		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
-		expect(prompt).toContain("Rust + Axum + React/Vite");
-		expect(prompt).toContain(
-			"Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めて",
-		);
-		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
-		expect(prompt).not.toContain("Hono + React/Vite + SQLite");
-		expect(prompt).not.toContain("RAG (Hono + React/Vite + pgvector)");
-		expect(prompt).not.toContain("API only (FastAPI + SQLite)");
-		expect(prompt).toContain("SQLite");
-		expect(prompt).toContain("PostgreSQL");
-		expect(prompt).toContain("pgvector");
-		expect(prompt).toContain("Turso/libSQL");
-		expect(prompt).toContain(
-			"pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定",
-		);
-		expect(prompt).toContain("対応する SQLite variant を雛形として使用");
-		expect(prompt).toContain("Feature Plan の `## 実装計画`");
+		expect(prompt).toContain("既存またはtemplate導入済みProject");
+		expect(prompt).toContain("選択質問を生成してはいけません");
+		expect(prompt).toContain("移行または置換をTaskで明示した場合だけ");
+		expect(prompt).not.toContain("どの技術スタックで実装しますか？");
+		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
 		expect(prompt).toContain("各 options は 2-10 件");
 		expect(prompt).toContain(
 			"本当に複数の選択肢を同時に採用できる設問だけ checkbox",
@@ -133,6 +76,18 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("追加質問は最大10件");
 		expect(prompt).not.toContain("最大4ページ");
 		expect(prompt).not.toContain("必要な 1 ページ分");
+	});
+
+	it("allows repository selection only for an empty unmaterialized project", () => {
+		const prompt = buildDesignQuestionnaireSystemPrompt(
+			"starter_selection_required",
+		);
+
+		expect(prompt).toContain("空の未materialized Project");
+		expect(prompt).toContain("一意に選べない場合に限り");
+		expect(prompt).toContain("技術スタックとDB/永続化を確認");
+		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
+		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
 	});
 
 	it("includes concise project stack and plan mode context in initial questionnaire input", () => {

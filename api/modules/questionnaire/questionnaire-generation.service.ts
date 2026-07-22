@@ -25,7 +25,10 @@ import {
 	listPlanModeTaskMessages,
 	type PlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+import {
+	type PlanModeQuestionnaireRepositoryPolicy,
+	resolvePlanModeQuestionnaireProjectContext,
+} from "../specification/plan-mode-project-stack-context";
 import { buildQuestionnairePlanModeContext } from "./questionnaire-context";
 import {
 	designDecisionReviewJsonSchema,
@@ -39,6 +42,7 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 	sourceBlueprintMessage: PlanModeTaskMessage | null;
 	taskPrompt: string;
 	projectStackContext?: string | null;
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy;
 	planModeContext?: string | null;
 	routeOverride?: StructuredLlmModelTarget | null;
 	role: StructuredLlmRole;
@@ -47,7 +51,7 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 	signal?: AbortSignal;
 }) {
 	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireSystemPrompt(),
+		buildDesignQuestionnaireSystemPrompt(input.repositoryPolicy),
 		buildDesignQuestionnaireInitialUserPrompt(input),
 		{
 			name: "design_questionnaire",
@@ -72,17 +76,17 @@ export async function generateDesignQuestionnaireFollowUpRawOutput(
 		executionPolicy?: StructuredProviderExecutionPolicy;
 	} = {},
 ) {
-	const projectStackContext = await resolvePlanModeProjectStackContext(
+	const projectContext = await resolvePlanModeQuestionnaireProjectContext(
 		session.repositoryId,
 	);
 	const planModeContext = buildQuestionnairePlanModeContext(
 		await listPlanModeTaskMessages(session.taskId),
 	);
 	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireSystemPrompt(),
+		buildDesignQuestionnaireSystemPrompt(projectContext.repositoryPolicy),
 		buildDesignQuestionnaireFollowUpUserPrompt(
 			session,
-			projectStackContext,
+			projectContext.projectStackContext,
 			planModeContext,
 		),
 		{
@@ -106,17 +110,19 @@ export async function generateDesignQuestionnaireFollowUpDecisionRawOutput(
 		usageTrace?: TraceProvenance;
 	} = {},
 ) {
-	const projectStackContext = await resolvePlanModeProjectStackContext(
+	const projectContext = await resolvePlanModeQuestionnaireProjectContext(
 		session.repositoryId,
 	);
 	const planModeContext = buildQuestionnairePlanModeContext(
 		await listPlanModeTaskMessages(session.taskId),
 	);
 	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireFollowUpDecisionSystemPrompt(),
+		buildDesignQuestionnaireFollowUpDecisionSystemPrompt(
+			projectContext.repositoryPolicy,
+		),
 		buildDesignQuestionnaireFollowUpDecisionUserPrompt(
 			session,
-			projectStackContext,
+			projectContext.projectStackContext,
 			planModeContext,
 		),
 		{

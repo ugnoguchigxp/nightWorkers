@@ -1,0 +1,5 @@
+text = '''Feature Planのproduction stepが、新規domainと既存domain拡張を区別しているか確認してください。
+TaskとTarget Project Contextから新規domainの導入が明白なのに、modules/[domain]の対象moduleが実装stepに無い、またはdomain固有実装を既存の汎用fileやsharedへ集約する計画なら、中核境界が欠けたblocking findingとしてfeature_planをrevisionTargetsに指定してください。
+backendまたはfrontendの対象責務がdomain内でどう分かれるか全く読み取れない場合も、中核境界の欠落として扱ってください。
+不要なroute、service、repository、component、hook等の空layerを機械的に要求せず、Taskに必要な責務だけを確認してください。
+既存domainの拡張、composition root、route登録、他moduleとの接続変更は、新規moduleを作らないことや対象module外を変更することだけを理由に問題扱いしないでください。'''

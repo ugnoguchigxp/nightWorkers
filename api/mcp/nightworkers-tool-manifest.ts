@@ -47,7 +47,7 @@ export const nightWorkersCodexToolManifest = {
 	todo_list: {
 		title: "Todo List",
 		description:
-			"Todo planを明示更新します。replace_planではRun-local todoKey / dependsOnKeysを使い、成功resultのcanonical id / revisionをstart、resume、transition、record_failure、update_contextで使います。現在状態を返すため、LLMが次actionを判断できます。",
+			"複数工程などTodoが品質を上げるRunでだけTodo planを明示更新します。各TodoのsystemContextは工程中の最優先局所指示です。replace_planではRun-local todoKey / dependsOnKeysを使い、成功resultのcanonical id / revisionをstart、resume、transition、record_failure、update_contextで使います。",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,

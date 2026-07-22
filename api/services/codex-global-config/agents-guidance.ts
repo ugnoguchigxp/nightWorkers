@@ -1,3 +1,7 @@
+import {
+	bindSystemContextTextCatalog,
+	type SystemContextP,
+} from "../../systemContexts/catalog";
 import type { McpServerSettingsDiagnostic } from "../mcp/mcp-config-schema";
 import { loadCodexGlobalConfig } from "./config-loader";
 
@@ -19,6 +23,7 @@ type PreparedGuidanceSource = {
 
 export function renderCodexAgentsGuidance(
 	projectRoot = process.cwd(),
+	p: SystemContextP = bindSystemContextTextCatalog().p,
 ): CodexAgentsGuidance {
 	const loaded = loadCodexGlobalConfig(projectRoot);
 	const sources = [
@@ -40,22 +45,10 @@ export function renderCodexAgentsGuidance(
 		.map(renderLifecycleSummary);
 
 	return {
-		text: [
-			"[Codex Runtime Guidance]",
-			"以下は NightWorkers runtime が読み取った Codex guidance です。",
-			"AGENTS.md の raw 本文は provider prompt に渡さず、runtime が安全に分離した guidance だけを渡します。",
-			"MCP tool、hook、command、file edit、startup action などの lifecycle directive は provider prompt ではなく runtime 側で扱います。",
-			"provider は次の JSON decision だけを返してください。",
-			"",
-			...(safeGuidanceSections.length > 0
-				? ["[Safe Guidance]", safeGuidanceSections.join("\n")]
-				: ["[Safe Guidance]", "none"]),
-			"",
-			...(lifecycleSummaries.length > 0
-				? ["[Runtime Lifecycle Directives]", lifecycleSummaries.join("\n")]
-				: ["[Runtime Lifecycle Directives]", "none"]),
-			"",
-		].join("\n"),
+		text: p("supervisor.codex-guidance", {
+			safeGuidance: safeGuidanceSections.join("\n") || "none",
+			lifecycleSummaries: lifecycleSummaries.join("\n") || "none",
+		}),
 		diagnostics: loaded.diagnostics,
 	};
 }

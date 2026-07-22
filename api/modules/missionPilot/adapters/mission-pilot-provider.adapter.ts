@@ -1,4 +1,5 @@
 import { AppError } from "../../../lib/errors";
+import { p } from "../../../systemContexts/catalog";
 import type {
 	StructuredProviderCallAuthorizationContext,
 	StructuredProviderExecutionPolicy,
@@ -31,13 +32,9 @@ export const missionPilotToolTurnProviderExecutionPolicy: StructuredProviderExec
 		enableMemory: false,
 		allowProviderTools: true,
 		authorizeProviderCall: authorizeMissionPilotProviderCall,
-		developerInstructions: [
-			"Mission Pilotのtool判断専用レーンです。",
-			"渡されたSystem Context、conversation、利用可能toolだけを根拠に、指定された構造化応答を返してください。",
-			"MCP、command、filesystem、network、その他のtoolを直接実行しないでください。",
-			"必要な情報取得と操作はtoolCallsへ出力し、NightWorkers側の権限・revision・idempotency検証に委ねてください。",
-			"Memory、AGENTS.md、workspaceを探索しないでください。",
-		].join("\n"),
+		get developerInstructions() {
+			return p("missionPilot.tool-turn-provider-instructions", {});
+		},
 	};
 
 export const missionPilotArtifactProviderExecutionPolicy: StructuredProviderExecutionPolicy =
@@ -47,10 +44,7 @@ export const missionPilotArtifactProviderExecutionPolicy: StructuredProviderExec
 		enableMemory: false,
 		allowProviderTools: false,
 		authorizeProviderCall: authorizeMissionPilotProviderCall,
-		developerInstructions: [
-			"Mission Pilotの構造化Artifact生成専用レーンです。",
-			"渡されたSystemContext、User Prompt、JSON schemaだけを根拠に、要求された構造化応答を返してください。",
-			"Memory、AGENTS.md、workspace、filesystem、command、network、MCPを探索しないでください。",
-			"tool callを行わず、schemaに適合する応答本文だけを返してください。",
-		].join("\n"),
+		get developerInstructions() {
+			return p("missionPilot.artifact-provider-instructions", {});
+		},
 	};

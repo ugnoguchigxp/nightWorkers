@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as queueService from "../api/modules/nightworkers/nightworkers.queue-management.service";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import * as queueRepo from "../api/modules/queue/queue.repository";
+import * as queueRepositoryReadiness from "../api/modules/queue/queue-repository-readiness.service";
 import * as queueSchedulerPort from "../api/modules/queue/queue-scheduler-port";
 
 vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
@@ -27,6 +28,10 @@ vi.mock(
 
 vi.mock("../api/modules/queue/queue-scheduler-port", () => ({
 	triggerConfiguredQueueDrain: vi.fn(),
+}));
+
+vi.mock("../api/modules/queue/queue-repository-readiness.service", () => ({
+	prepareImplementationQueueRepository: vi.fn(),
 }));
 
 const task = {
@@ -64,6 +69,9 @@ beforeEach(() => {
 	vi.mocked(repo.createTaskMessage).mockResolvedValue({
 		id: "message-2",
 	} as never);
+	vi.mocked(
+		queueRepositoryReadiness.prepareImplementationQueueRepository,
+	).mockResolvedValue(null);
 });
 
 describe("NightWorkers queue management side effects", () => {
@@ -103,6 +111,23 @@ describe("NightWorkers queue management side effects", () => {
 		expect(
 			queueSchedulerPort.triggerConfiguredQueueDrain,
 		).toHaveBeenCalledTimes(1);
+	});
+
+	it("attaches a materialized workspace before making the Queue entry claimable", async () => {
+		vi.mocked(
+			queueRepositoryReadiness.prepareImplementationQueueRepository,
+		).mockResolvedValue({ id: "workspace-1" } as never);
+
+		await queueService.createImplementationQueueEntry(task.id, {
+			autoDrain: false,
+		});
+
+		expect(queueRepo.createImplementationQueueEntry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workspaceId: "workspace-1",
+				workspaceRequired: true,
+			}),
+		);
 	});
 
 	it("downgrades incomplete sequence scheduling metadata to exclusive enqueue scheduling", async () => {

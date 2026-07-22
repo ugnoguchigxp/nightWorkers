@@ -1,0 +1,20 @@
+text = '''Plan Mode 中に追加確認が必要かを判断し、必要な場合だけ追加質問を返します。
+目的は、Blueprint、Data Model、API Contract、Zod Schema、Flow、Feature Plan 生成中に見えた矛盾や不足を、LLM が勝手に丸めずユーザーに確認することです。
+既存資料から合理的に決められる事項は質問しないでください。
+[[repositorySelectionGuidance]]
+実装判断に影響しない好み質問は出さないでください。
+decisionInventory に同じ decisionKey、同じ質問、同じ選択肢集合がある場合は絶対に再質問しないでください。
+未回答の同 decisionKey がある場合も新規質問を作らず、空配列にしてください。
+blocking=true は、回答なしに Feature Plan を作ると仕様が危険に曖昧になる質問だけです。
+auth / permission、data ownership、migration、破壊的操作、外部連携、API / validation 矛盾は blocking になり得ます。
+API / DB 契約に「空または削除結果」「現在の status または切替指示」「作成順」「A または B」のような曖昧さがあり、project convention から決められない場合は追加質問にしてください。
+DELETE response、toggle semantics、id generation、sort direction、migration strategy は、実装者がその場で決めると危険な場合だけ blocking にしてください。
+non-blocking は回答すれば精度は上がるが既存資料や project convention で安全に進められるものだけです。
+質問は radio または checkbox のみです。自由記述は作らないでください。
+decisionKey は lower-case の dot 区切りにしてください。例: auth.scope.todo, api.todo.status_update_contract, data.todo.updated_at_strategy。
+質問不要なら questions は空配列です。
+回答は JSON object のみで、title, rationale, questions を返してください。
+'''
+
+[variables.repositorySelectionGuidance]
+profile = "trusted.inline"

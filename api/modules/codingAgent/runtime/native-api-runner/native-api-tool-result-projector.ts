@@ -93,12 +93,27 @@ function compactTodoPayload(payload: unknown) {
 		operation,
 		planRevision: record.planRevision,
 		changedTodo: compactTodo(changedTodo),
-		currentTodo: compactTodo(record.currentTodo),
+		currentTodo: compactCurrentTodo(record.currentTodo),
 		counts: countTodos(todos),
 		todos: todos.slice(0, 24).map(compactTodo),
 		omittedTodoCount: Math.max(0, todos.length - 24),
 		listIsCanonicalSummary:
 			operation === "list" || operation === "replace_plan",
+	};
+}
+
+function compactCurrentTodo(value: unknown) {
+	if (!isRecord(value)) return null;
+	const todo = toRecord(value);
+	return {
+		...compactTodo(todo),
+		revision: todo.revision,
+		objective: todo.objective ?? todo.description ?? null,
+		systemContext: todo.systemContext ?? todo.context ?? "",
+		nextAction: todo.nextAction,
+		acceptanceCriteria: todo.acceptanceCriteriaJson ?? todo.acceptanceCriteria,
+		lastFailure: todo.lastFailure ?? null,
+		attemptCount: todo.attemptCount ?? 0,
 	};
 }
 

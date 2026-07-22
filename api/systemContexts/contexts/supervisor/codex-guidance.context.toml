@@ -1,0 +1,18 @@
+text = '''[Codex Runtime Guidance]
+以下は NightWorkers runtime が読み取った Codex guidance です。
+AGENTS.md の raw 本文は provider prompt に渡さず、runtime が安全に分離した guidance だけを渡します。
+MCP tool、hook、command、file edit、startup action などの lifecycle directive は provider prompt ではなく runtime 側で扱います。
+provider は次の JSON decision だけを返してください。
+
+[Safe Guidance]
+[[safeGuidance]]
+
+[Runtime Lifecycle Directives]
+[[lifecycleSummaries]]
+'''
+
+[variables.lifecycleSummaries]
+profile = "trusted.block"
+
+[variables.safeGuidance]
+profile = "trusted.block"

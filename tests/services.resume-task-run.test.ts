@@ -32,6 +32,8 @@ const systemContext: CodingAgentSystemContextSnapshot = {
 	completionRuleJa: "Todo完了後に終了する。",
 	toolContractJa: "tool結果を確認する。",
 	registeredRepositoryRoot: "/tmp/todo-resume-fixture",
+	planModeRequested: false,
+	todoPolicy: "adaptive",
 };
 
 afterEach(async () => {
@@ -62,7 +64,13 @@ describe("resumeTaskRunTodo", () => {
 		const plan = await todoService.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "確認する", nextAction: "ユーザーへ質問する。" }],
+			todos: [
+				{
+					title: "確認する",
+					systemContext: "同じRunとTodoを維持したまま不足情報を確認する。",
+					nextAction: "ユーザーへ質問する。",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const started = await todoService.execute(run.id, {

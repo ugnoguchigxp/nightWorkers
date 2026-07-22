@@ -21,6 +21,10 @@ import {
 } from "../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
+import {
+	bindSystemContextTextCatalog,
+	type SystemContextP,
+} from "../../systemContexts/catalog";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { selectMissionGoalsForGeneration } from "./task-candidate-semantics";
 import * as repo from "./task-generation.repository";
@@ -37,19 +41,14 @@ async function requireRepository(repositoryId: string) {
 	return repository;
 }
 
-function buildMissionTaskSystemPrompt(outputRequirements: string) {
-	return [
-		"Mission Goal と保存済みproject signalを読み、ユーザーがTask化を検討できる候補を返してください。",
-		`候補数は最大 ${MISSION_TASK_CANDIDATE_MAX_COUNT} 件です。既存 Task や existingUncreatedCandidates と同じ候補を返さないでください。`,
-		"候補の意味、優先順位、candidateKind、Plan Modeで確認すべき事項は、Goalとproject signalのFactに基づいて判断してください。",
-		"candidateKind は feature_entrypoint / feature_followup / constraint_enablement / constraint_verification / investigation のいずれかです。",
-		"moduleRouting には primaryModule, secondaryModules, confidencePercent, reason を必ず入れてください。ontology が無い、または低信頼なら primaryModule は null、confidencePercent は低め、reason に未判定理由を書いてください。",
-		"repositorySnapshot.llmContextFiles が存在する場合は、それを実装状態の優先根拠にしてください。その場合 recentCommitDiffs は読みません。llmContextFiles が無い場合だけ sourceExcerpts / recentCommitDiffs を補助根拠にしてください。Goal 本体が既に実装されていると判断できる場合は、その本体実装タスクを返さず、残っている差分だけを候補にしてください。",
-		"importancePercent は選択された Mission Goal に対する重要度として 0-100 の整数で算出してください。repo 全体の一般的な重要度ではありません。",
-		"evaluationContribution は、その候補を完了した場合に latestEvaluation.overallScore または該当 dimensions がどれだけ改善し得るかを 0-100 の数値で見積もってください。必ず数値を返し、null や空欄は禁止です。",
-		"秘密情報、生ログ全文、リポジトリ全文を要求しないでください。",
+function buildMissionTaskSystemPrompt(
+	outputRequirements: string,
+	p: SystemContextP = bindSystemContextTextCatalog().p,
+) {
+	return p("taskGeneration.mission-tasks", {
+		maxCount: MISSION_TASK_CANDIDATE_MAX_COUNT,
 		outputRequirements,
-	].join("\n");
+	});
 }
 
 function buildMissionTaskUserPrompt(input: {
@@ -203,8 +202,10 @@ export async function generateMissionTaskCandidates(input: {
 		runtimeSchema: missionTaskCandidatesResultSchema,
 		providerJsonSchema: buildMissionTaskCandidatesResponseJsonSchema(),
 	});
+	const { p } = bindSystemContextTextCatalog();
 	const systemPrompt = buildMissionTaskSystemPrompt(
-		contract.renderOutputRequirements(),
+		contract.renderOutputRequirements(p),
+		p,
 	);
 	const userPrompt = buildMissionTaskUserPrompt({
 		signal,

@@ -5,6 +5,7 @@ import {
 	type ProjectEvaluationRun,
 	projectEvaluationDimensionLabels,
 } from "../../../shared/schemas/project-evaluation.schema";
+import { p } from "../../systemContexts/catalog";
 
 function selectedDimensionLines(
 	keys: readonly ProjectEvaluationDimensionKey[],
@@ -28,15 +29,7 @@ function fixedEvaluationAxisGuidance() {
 }
 
 export function buildProjectEvaluationSystemPrompt() {
-	return [
-		"与えられた repository bundle だけを根拠に評価し、ファイル変更、コマンド実行、外部アクセスは要求しないでください。",
-		"評価軸は固定8項目だけです。Agent利用性、信頼性単独、テスト容易性、実装完成度を独立軸として出力しないでください。",
-		"拡張性は独立軸として出力してください。architectureQuality は現在の構造の成立度、extensibility は将来の追加・置換に耐える余地として分けて評価してください。",
-		"信頼性は運用性に、テストしやすさは保守性に、実装完成度はアーキテクチャまたは保守性に含めて評価してください。",
-		"dimensions は固定8項目を指定順で必ず全件返し、欠落・余剰・重複を出さないでください。",
-		"確認できない点は点数を盛らず、concerns と nextEvidenceToCollect に残してください。",
-		"出力は指定 JSON schema だけにしてください。説明文や Markdown は含めないでください。",
-	].join("\n");
+	return p("projectEvaluation.evaluation", {});
 }
 
 export function buildProjectEvaluationUserPrompt(input: {
@@ -67,11 +60,7 @@ export function buildProjectEvaluationUserPrompt(input: {
 }
 
 export function buildProjectImprovementSystemPrompt() {
-	return [
-		"保存済み evaluation と選択された評価軸だけを主入力にし、未選択軸を主目的にしないでください。",
-		"各 idea は NightWorkers Task に変換できる agentPrompt、expectedOutcome、implementationFocus、scoreImpacts を必ず持たせてください。",
-		"出力は指定 JSON schema だけにしてください。説明文や Markdown は含めないでください。",
-	].join("\n");
+	return p("projectEvaluation.improvement", {});
 }
 
 export function buildProjectImprovementUserPrompt(input: {

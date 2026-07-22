@@ -1,6 +1,7 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/executor-mode";
 import { startTaskRunInWorker } from "../../../services/execution/worker-process-manager";
+import { prepareImplementationQueueRepository } from "../../queue/queue-repository-readiness.service";
 import * as repo from "../nightworkers.repository";
 import { startTaskRunInProcess } from "./start-task-run";
 
@@ -14,12 +15,38 @@ export async function startTaskRun(
 			executionMode: "implementation",
 			executionModeSource: options.executionModeSource ?? "explicit",
 		};
+	await prepareImplementationWorkspaceForStart(taskId, codingAgentOptions);
 	if (shouldUseIsolatedTaskExecutor()) {
 		return startTaskRunInWorker<
 			Awaited<ReturnType<typeof startTaskRunInProcess>>
 		>(taskId, codingAgentOptions);
 	}
 	return startTaskRunInProcess(taskId, codingAgentOptions);
+}
+
+async function prepareImplementationWorkspaceForStart(
+	taskId: string,
+	options: import("./start-task-run-types").StartTaskRunOptions,
+) {
+	if (options.allowUnassignedWorkspace || options.resumeRunId) return;
+	const task = await repo.getTask(taskId);
+	if (!task) throw new NotFoundError("Task not found");
+	if (task.worktreePath) return;
+	if (!task.repositoryId) {
+		throw new AppError(
+			422,
+			"IMPLEMENTATION_REPOSITORY_REQUIRED",
+			"Implementation requires a registered Project.",
+		);
+	}
+	const previousRuns = await repo.listTaskRunsForTask(taskId);
+	// A legacy run may have uncommitted work in the registered repository root.
+	// Moving a continuation to a newly-created worktree would silently lose it.
+	if (previousRuns.length > 0) return;
+	await prepareImplementationQueueRepository({
+		task: { id: task.id, repositoryId: task.repositoryId },
+		messages: await repo.listTaskMessages(taskId),
+	});
 }
 
 export async function prepareStartableTask(taskId: string) {

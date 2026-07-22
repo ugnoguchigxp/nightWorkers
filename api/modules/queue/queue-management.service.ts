@@ -4,6 +4,10 @@ import {
 } from "../nightworkers/nightworkers.planning-helpers.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as repo from "./queue.repository";
+import {
+	isProcessorReleasedQueueStatus,
+	OCCUPIED_PROCESSOR_STATUSES,
+} from "./queue-repository-row-mapper";
 
 export async function listImplementationQueueDashboard() {
 	const [settings, rows, tasks, repositories, activeQueueEntries] =
@@ -41,12 +45,7 @@ export async function listImplementationQueueDashboard() {
 		notQueued.push({ task, repository });
 	}
 	const occupiedEntries = entries.filter((entry) =>
-		[
-			"claimed",
-			"processing",
-			"needs_human",
-			"awaiting_commit_decision",
-		].includes(entry.status),
+		(OCCUPIED_PROCESSOR_STATUSES as readonly string[]).includes(entry.status),
 	);
 	const processors = Array.from(
 		{ length: settings.processorCount },
@@ -64,7 +63,7 @@ export async function listImplementationQueueDashboard() {
 		processors,
 		queued: entries.filter((entry) => entry.status === "queued"),
 		completed: entries.filter((entry) =>
-			["execution_completed", "failed", "cancelled"].includes(entry.status),
+			isProcessorReleasedQueueStatus(entry.status),
 		),
 		notQueued,
 	};

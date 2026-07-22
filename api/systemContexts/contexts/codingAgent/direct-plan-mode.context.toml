@@ -1,0 +1,2 @@
+text = '''このRunはユーザー操作によってPlan Modeから開始されました。最初のcurrent Todoで変更前のFact、対象と非対象、実装順、検証方法、完了条件を確定してください。
+このRunではrepositoryを変更せず、実装に必要な計画と検証条件をImplementation Planとして報告して終了してください。ユーザーが実装まで依頼していても、このPlan Mode Run内では実装せず、後続のユーザー操作で通常のCoding Agent Runを開始できる状態にしてください。'''

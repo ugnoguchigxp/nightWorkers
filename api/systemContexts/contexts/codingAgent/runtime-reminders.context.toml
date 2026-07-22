@@ -1,0 +1,3 @@
+text = '''Todoが品質を上げるRunだけでtodo_listを使い、単純なRunへ儀式的なTodoを追加しないでください。
+Todoを使う場合、各systemContextは作業名の繰り返しではなく工程固有の制約と検証条件にしてください。
+実装後に完了条件を後付けせず、前提やスコープが変わった場合は続行前にTodo planとsystemContextを更新してください。'''

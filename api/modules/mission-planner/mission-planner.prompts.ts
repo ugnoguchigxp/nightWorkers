@@ -7,6 +7,7 @@ import type {
 	MissionGoal,
 	ProjectSignalSnapshot,
 } from "../../../shared/schemas/task-generation.schema";
+import { p } from "../../systemContexts/catalog";
 
 export function buildMissionPlannerInputBundle(input: {
 	mission: Mission;
@@ -36,11 +37,7 @@ export function buildMissionPlannerInputBundle(input: {
 }
 
 export function buildMissionDraftSystemPrompt() {
-	return [
-		"ユーザーの広い goal を、実装可能な Mission planning unit に正規化してください。",
-		"この段階では Task を作らず、Mission title / goal / non-goals / clarification の必要性だけを判断します。",
-		"プロンプト文言と出力本文は日本語を維持してください。",
-	].join("\n");
+	return p("missionPlanner.draft", {});
 }
 
 export function buildMissionDraftUserPrompt(input: { inputBundle: unknown }) {
@@ -63,14 +60,7 @@ export function buildMissionDraftUserPrompt(input: { inputBundle: unknown }) {
 }
 
 export function buildMissionCandidatesSystemPrompt() {
-	return [
-		"設定済み Mission Goal と repository signal から、中間目標としてレビューできる Mission 候補だけを JSON schema に従って返してください。",
-		"ユーザーが Mission を白紙から作る前提にしないでください。Mission 候補は LLM が初期案として作ります。",
-		"候補は Task ではありません。Task proposal は候補が人間に選ばれた後の分解 stage で作ります。",
-		"repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。",
-		"候補は Goal 達成までの中間目標、作業パッケージ、または複数 Task の workflow として意味がある粒度にしてください。",
-		"プロンプト文言と出力本文は日本語を維持してください。",
-	].join("\n");
+	return p("missionPlanner.candidates", {});
 }
 
 export function buildMissionCandidatesUserPrompt(input: {
@@ -109,16 +99,7 @@ export function buildMissionCandidatesUserPrompt(input: {
 }
 
 export function buildMissionPlansSystemPrompt() {
-	return [
-		"設定済み Mission Goal と repository signal から、Mission とその配下の Task Candidate を一度の応答で生成してください。",
-		"各 Mission は review 可能な中間目標、各 Task Candidate は Plan Mode がそのまま開始できる実行単位にしてください。",
-		"Objective、Work Package、scheduling、replanning の内部構造はサーバー側で組み立てるため返さないでください。",
-		"情報が不足していても Task Candidate 生成を打ち切らず、安全な前提と確認事項を initialPrompt、acceptanceCriteria、verificationGate に明記してください。",
-		"repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。",
-		"既存 Mission や既存 Task と重複する候補は返さないでください。",
-		"Task Candidate の id と dependsOnCandidateIds は、同じ Mission 内で整合させてください。",
-		"プロンプト文言と出力本文は日本語を維持してください。",
-	].join("\n");
+	return p("missionPlanner.plans", {});
 }
 
 export function buildMissionPlansUserPrompt(input: {
@@ -155,11 +136,7 @@ export function buildMissionPlansUserPrompt(input: {
 }
 
 export function buildMissionStructureSystemPrompt() {
-	return [
-		"Mission draft を Objective、Work Package、Replanning Unit に分解してください。",
-		"この段階では Task proposal を作らず、構造だけを設計します。",
-		"Work Package は suggestedPlanMode、risk、approvalRequired、verificationGate を持たせてください。",
-	].join("\n");
+	return p("missionPlanner.structure", {});
 }
 
 export function buildMissionStructureUserPrompt(input: {
@@ -187,12 +164,7 @@ export function buildMissionStructureUserPrompt(input: {
 }
 
 export function buildMissionTaskProposalsSystemPrompt() {
-	return [
-		"Mission structure から、ユーザーが選択して Task 化できる proposal を作成してください。",
-		"Task proposal はまだ Task ではありません。Queue に直接入れない前提で、initialPrompt を Worker / Plan mode がそのまま使える日本語指示にしてください。",
-		"initialPrompt には 目的 / 対象範囲 / 非目標 / 実装方針 / 完了条件 / 検証 / 注意点 を含めてください。",
-		"dependency がある proposal は sequence scheduling hint を持たせ、高リスクまたは承認必須の proposal は normal scheduling にしないでください。",
-	].join("\n");
+	return p("missionPlanner.task-proposals", {});
 }
 
 export function buildMissionTaskProposalsUserPrompt(input: {
@@ -222,11 +194,7 @@ export function buildMissionTaskProposalsUserPrompt(input: {
 }
 
 export function buildMissionEvaluationSystemPrompt() {
-	return [
-		"既存の planning result を評価してください。代替 proposal を新規発明してはいけません。",
-		"deterministic checks は構造 gate です。goal alignment、分解品質、依存関係、検証容易性、リスク制御、再計画可能性、Plan mode fit を評価してください。",
-		"review_ready または needs_human_approval だけが review_pending に進めます。",
-	].join("\n");
+	return p("missionPlanner.evaluation", {});
 }
 
 export function buildMissionEvaluationUserPrompt(input: {

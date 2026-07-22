@@ -1,0 +1,8 @@
+text = '''[[dddFallback]]
+[[domainModuleBoundary]]'''
+
+[variables.dddFallback]
+profile = "trusted.inline"
+
+[variables.domainModuleBoundary]
+profile = "trusted.inline"

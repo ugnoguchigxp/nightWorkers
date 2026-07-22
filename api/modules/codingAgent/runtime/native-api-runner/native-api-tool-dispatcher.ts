@@ -1,7 +1,10 @@
 import { mcpClientManager } from "../../../../services/mcp/mcp-client-manager";
 import type { ProviderToolCall } from "../../../../services/structured-llm/tool-calls";
 import { executeWorkerTool } from "../../../../services/worker-tools/dispatcher";
-import { loadCodingAgentContextPacket } from "../../context";
+import {
+	loadCodingAgentContextPacket,
+	requiresCurrentTodo,
+} from "../../context";
 import { todoListTool } from "../../tools";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
 import { dispatchContextStillTool } from "./native-api-context-still";
@@ -62,11 +65,11 @@ export async function dispatchNativeApiToolCall(input: {
 		);
 	}
 	const todoContext = await loadCodingAgentContextPacket(input.context.runId);
-	if (!todoContext?.currentTodo) {
+	if (requiresCurrentTodo(todoContext)) {
 		return continueWith(
 			failedToolResult(
 				"CURRENT_TODO_REQUIRED",
-				"workspace toolの実行前にTodo planを作成し、current Todoを開始してください。",
+				"Todo planが存在するため、workspace toolの実行前にcurrent Todoを開始してください。",
 				{ planSummary: todoContext?.planSummary ?? null },
 			),
 			input.state,

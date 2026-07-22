@@ -12,6 +12,7 @@ import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json"
 import type { WorkerToolName } from "../../services/tool-policy/types";
 import { executeWorkerTool } from "../../services/worker-tools/dispatcher";
 import type { WorkerToolResult } from "../../services/worker-tools/types";
+import { p } from "../../systemContexts/catalog";
 import * as repo from "../nightworkers/nightworkers.repository";
 import {
 	type TestEvidenceReviewResult,
@@ -545,14 +546,7 @@ function normalizeAgenticReviewResult(
 }
 
 function buildSystemPrompt() {
-	return [
-		"あなたは Review Mode のテスト証跡確認エージェントです。",
-		"受け入れ条件ごとに、対応するテスト証跡を tool で確認してください。",
-		"名前一致だけで not_found と断定しないでください。",
-		"confirmed は test_name、test_body、file_path、または cli の evidence を含む場合だけ使ってください。",
-		"not_found / unclear は warning 用の改善依頼につながるため、確認した範囲を evidence に残してください。",
-		"最後は説明文ではなく TestEvidenceReviewResult JSON だけを返してください。",
-	].join("\n");
+	return p("review.test-evidence", {});
 }
 
 function buildUserPrompt(precheck: AcceptanceTestCoverageResult) {

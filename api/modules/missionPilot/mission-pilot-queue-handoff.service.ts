@@ -3,10 +3,6 @@ import {
 	type MissionPilotPreQueueDiagnosticCode,
 	missionPilotQueueHandoffSchema,
 } from "../../../shared/modules/missionPilot";
-import {
-	type RepositoryMaterializationIntent,
-	repositoryMaterializationIntentSchema,
-} from "../../../shared/schemas/git-integration.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
@@ -20,6 +16,8 @@ import {
 	tasks,
 } from "../../db/schema";
 import { verificationDocuments } from "../../db/verification-schema";
+import { readFeaturePlanMaterializationIntent } from "../agentsShare";
+import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
 	ensureTaskGitWorkspace,
 	provisionTaskGitWorkspace,
@@ -30,7 +28,6 @@ import { prepareImplementationQueueAdmission } from "../queue/queue-management.s
 import { digestFeaturePlanContent } from "../specification/feature-plan-content";
 import * as missionPilotRepo from "./mission-pilot.repository";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
-import { repositoryHasGitHead } from "./mission-pilot-repository-bootstrap.service";
 
 const TERMINAL_TASK_STATUSES = new Set([
 	"completed",
@@ -53,16 +50,6 @@ function record(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
-}
-
-export function readFeaturePlanMaterializationIntent(
-	metadataJson: unknown,
-): RepositoryMaterializationIntent | null {
-	const metadata = record(metadataJson);
-	const parsed = repositoryMaterializationIntentSchema.safeParse(
-		metadata?.repositoryMaterializationIntent,
-	);
-	return parsed.success ? parsed.data : null;
 }
 
 function hasQueueMessage(

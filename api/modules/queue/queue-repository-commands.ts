@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import type { ImplementationQueueEntryStatus } from "../../db/schema";
 import { implementationQueueEntries } from "../../db/schema";
-
+import type { CreateImplementationQueueEntryData } from "./queue-repository-command.types";
 import {
 	type ClaimImplementationQueueResult,
 	type ClaimNextImplementationQueueEntryInput,
@@ -22,23 +22,7 @@ import {
 import { workspaceClaimSkipEvidence } from "./queue-workspace-claim-gate";
 
 export async function createImplementationQueueEntry(
-	data: {
-		taskId: string;
-		repositoryId: string;
-		priority?: number;
-		queuePosition?: number | null;
-		executionType?: TaskExecutionType;
-		executionLockKey?: string | null;
-		sequenceGroupId?: string | null;
-		sequenceOrder?: number | null;
-		sequenceDependsOnEntryId?: string | null;
-		schedulingReason?: string | null;
-		missionPilotAdmissionKey?: string | null;
-		missionPilotAgent?:
-			| import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance
-			| null;
-		claimReady?: boolean;
-	},
+	data: CreateImplementationQueueEntryData,
 	database: QueueDb = db,
 ) {
 	const now = new Date();
@@ -66,6 +50,8 @@ export async function createImplementationQueueEntry(
 			missionPilotAdmissionKey: data.missionPilotAdmissionKey ?? null,
 			missionPilotAgentJson: data.missionPilotAgent ?? null,
 			claimReady: data.claimReady ?? true,
+			workspaceId: data.workspaceId ?? null,
+			workspaceRequired: data.workspaceRequired ?? false,
 			status: "queued",
 			createdAt: now,
 			updatedAt: now,

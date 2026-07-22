@@ -131,15 +131,6 @@ export class RunFinalizeController {
 				snapshot,
 			);
 		}
-		if (todos.length === 0) {
-			return blocked(
-				"RUN_HAS_OPEN_TODOS",
-				"Coding Agent RunにはTodo planが必要です。",
-				["todo_plan_required"],
-				snapshot,
-			);
-		}
-
 		const readiness = await this.dependencies.evaluateReadiness({
 			taskId: run.taskId,
 			runId: run.id,

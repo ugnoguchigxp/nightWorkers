@@ -32,6 +32,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				data: {
 					providerDebug: {
 						provider: "codex",
+						isolatedCodexHome: false,
 						providerThreadId: "thread-plan-gate",
 						providerEndpointId: "endpoint-codex",
 						model: "gpt-test-codex",
@@ -60,6 +61,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 			data: {
 				providerDebug: {
 					provider: "codex",
+					isolatedCodexHome: false,
 					providerThreadId,
 					providerEndpointId: "endpoint-codex",
 					model: "gpt-test-codex",
@@ -76,6 +78,23 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 		);
 
 		expect(repaired?.providerThreadId).toBe("thread-repair");
+	});
+
+	it("does not hand off a thread from an isolated Codex home", () => {
+		expect(
+			readCodingAgentPlanModeRuntimeThreadHandoff({
+				type: "model.response_finished",
+				severity: "info",
+				message: "done",
+				data: {
+					providerDebug: {
+						provider: "codex",
+						isolatedCodexHome: true,
+						providerThreadId: "thread-deleted-with-isolated-home",
+					},
+				},
+			}),
+		).toBeNull();
 	});
 
 	it("hands the thread to a matching Codex implementation route", () => {
@@ -228,6 +247,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				model: "plan-model",
 				metadataJson: {
 					promptDigest: digestText("same prompt"),
+					handoffResumable: true,
 					decision: {
 						shouldStartPlanMode: true,
 						action: "plan_mode",
@@ -255,6 +275,35 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				}),
 			}),
 		);
+	});
+
+	it("ignores a persisted intake thread without an explicit resumable marker", async () => {
+		const store = {
+			getLatestRuntimeSessionStateForTask: vi.fn(async () => ({
+				id: "state-isolated-intake",
+				providerSessionId: "thread-deleted-with-isolated-home",
+				model: "plan-model",
+				metadataJson: {
+					promptDigest: digestText("same prompt"),
+					decision: {
+						shouldStartPlanMode: false,
+						action: "coding_agent",
+						reason: "review can start",
+					},
+					providerEndpointId: "plan-endpoint",
+					authScopeFingerprint: "plan-scope",
+				},
+			})),
+		} as unknown as RuntimeSessionStateStore;
+
+		await expect(
+			loadPersistedCodingAgentPlanModeGateResult({
+				taskId: "task-intake",
+				repositoryId: "repository-intake",
+				prompt: "same prompt",
+				store,
+			}),
+		).resolves.toBeNull();
 	});
 
 	it("consumes the persisted intake state only after thread.started", async () => {

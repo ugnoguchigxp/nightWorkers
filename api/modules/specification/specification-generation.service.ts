@@ -17,13 +17,16 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
+import { bindSystemContextTextCatalog } from "../../systemContexts/catalog";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
-	MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
+	getMissionPilotPlanSystemContext,
 	resolvePlanArtifactCanonicalInput,
 } from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
+	getPlanModeRepository,
 	getPlanModeTask,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
@@ -34,8 +37,8 @@ import {
 } from "../questionnaire/questionnaire.service";
 import { listUnansweredBlockingQuestions } from "../questionnaire/questionnaire-validation";
 import {
+	createFeaturePlanMarkdownDraftSchema,
 	digestFeaturePlanContent,
-	featurePlanMarkdownDraftSchema,
 	readFeaturePlanTitle,
 } from "./feature-plan-content";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
@@ -95,6 +98,17 @@ export async function generateFeaturePlanArtifact(
 			{ blockingQuestions: unansweredBlockingQuestions },
 		);
 	}
+	const repository = await getPlanModeRepository(task.repositoryId);
+	if (!repository?.localPath) {
+		throw new AppError(
+			422,
+			"PLAN_MODE_REPOSITORY_PATH_REQUIRED",
+			"Feature Plan generation requires a registered Project path.",
+		);
+	}
+	const requiresRepositoryMaterialization = !(await repositoryHasGitHead(
+		repository.localPath,
+	));
 	const canonical = await resolvePlanArtifactCanonicalInput({
 		taskId,
 		target: "feature_plan",
@@ -139,6 +153,7 @@ export async function generateFeaturePlanArtifact(
 		input.llmUsageTrace,
 		input.executionPolicy,
 		input.signal,
+		requiresRepositoryMaterialization,
 	);
 	input.signal?.throwIfAborted();
 	const sanitizedContent = sanitizeSpecificationTargetNaming(
@@ -309,12 +324,24 @@ async function generateSpecificationDesignDocument(
 	usageTrace?: TraceProvenance,
 	executionPolicy?: StructuredProviderExecutionPolicy,
 	signal?: AbortSignal,
+	requiresRepositoryMaterialization = false,
 ) {
 	try {
-		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			additionalSystemContext:
-				role === "mission_pilot" ? MISSION_PILOT_PLAN_SYSTEM_CONTEXT : null,
-		});
+		const { p } = bindSystemContextTextCatalog();
+		const materializationSystemContext = requiresRepositoryMaterialization
+			? p("specification.repository-materialization-required", {}).trimEnd()
+			: null;
+		const systemPrompt = buildSpecificationDocumentSystemPrompt(
+			{
+				additionalSystemContext: [
+					role === "mission_pilot" ? getMissionPilotPlanSystemContext(p) : null,
+					materializationSystemContext,
+				]
+					.filter((value): value is string => Boolean(value))
+					.join("\n"),
+			},
+			p,
+		);
 		const userPrompt = buildSpecificationDocumentUserPrompt(context);
 		const generated = await callStructuredOutputWithRepair({
 			systemPrompt,
@@ -322,7 +349,9 @@ async function generateSpecificationDesignDocument(
 			options: {
 				contract: createStructuredOutputContract({
 					name: "feature_plan_markdown",
-					runtimeSchema: featurePlanMarkdownDraftSchema,
+					runtimeSchema: createFeaturePlanMarkdownDraftSchema({
+						requiresRepositoryMaterialization,
+					}),
 				}),
 				taskId,
 				role,

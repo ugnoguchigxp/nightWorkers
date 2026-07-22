@@ -1,5 +1,6 @@
 # NightWorkers Agent Rules
 
+- S11tを調査・導入・更新する作業では、最初に`spec/s11t-coding-agent-guide.md`を読み、runtime/CLIの責務、role module境界、生成物、canary配備、検証ルールに従う。
 - 共通で使うツール説明、JSON契約、schema、回答要件は、定数または関数として再利用できる形にまとめる。
 - ユーザー文言やerror messageを正規表現・keywordで分類しない。Task解釈、Todo、次action、検証、完了判断はLLMに委ね、hostは構造的不変条件だけを強制する。
 - Coding Agentは単一runtimeとし、意味別のmode、固定workflow、tool allowlistを追加しない。
@@ -11,9 +12,9 @@
 - Supervisorやproviderのdecision生成に一時ディレクトリを使用しても、実作業workspaceとして扱わせない。リポジトリの読み書きは、登録済みProjectのrepo rootを基準にworker tool経由で行う。一時ディレクトリへの作成・コピー・編集をタスク完了の証拠にしない。
 - プロンプト文言は日本語を維持し、確認しづらい英語の運用ルールへ置き換えない。
 - Mission Pilot（Coding Agentを扱う側）とCoding Agent（実装担当）を明確に区別し、一方への指示を他方へ適用しない。
-- Mission PilotとCoding Agentは、それぞれ独立したrole moduleとしてroute、service、repository、SystemContext、tool contractを所有する。一方のrole moduleから他方のroute、service、repository、内部実装、public indexを直接importまたは再exportしない。
-- Agent固有のproduction codeは、backendでは`api/modules/missionPilot`、`api/modules/codingAgent`、`api/modules/agentsShare`、frontendでは対応する`src/modules`配下にだけ置く。`services`、`nightworkers`、`planMode`など他moduleへAgent固有のroute、service、repository、prompt、SystemContext、tool、continuation、role分岐を放置しない。
-- Mission PilotとCoding Agentの連携は、`agentsShare`またはAgent非依存の共有application command、port、event、正本schemaを介して行う。`agentsShare`には両roleで同じ意味を持つcontract、port、event、純粋utilityだけを置き、route、repository、SystemContext、role固有prompt、role固有tool、role判定を置かない。共有moduleへrole固有実装を移して境界を迂回しない。
+- Mission PilotとCoding Agentは、それぞれ独立したrole moduleとしてroute、service、repository、tool contractを所有する。一方のrole moduleから他方のroute、service、repository、内部実装、public indexを直接importまたは再exportしない。SystemContextだけはrole実装から独立した共有資産として`api/systemContexts`が所有する。
+- Agent固有のproduction codeは、backendでは`api/modules/missionPilot`、`api/modules/codingAgent`、`api/modules/agentsShare`、frontendでは対応する`src/modules`配下にだけ置く。`services`、`nightworkers`、`planMode`など他moduleへAgent固有のroute、service、repository、tool、continuation、role分岐を放置しない。SystemContextのTOML、生成catalog、bindingはこの制約の例外として`api/systemContexts`へ一元化する。
+- Mission PilotとCoding Agentの連携は、`agentsShare`またはAgent非依存の共有application command、port、event、正本schemaを介して行う。`agentsShare`には両roleで同じ意味を持つcontract、port、event、純粋utilityだけを置き、route、repository、role固有tool、role判定を置かない。SystemContextは`agentsShare`ではなく`api/systemContexts`へ置き、共有moduleへrole固有実装を移して境界を迂回しない。
 - Mission PilotはTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有する。Coding Agentは渡されたTaskと確定済み設計を基に、登録済みrepositoryで調査、編集、command実行、検証を行う。これらの所有権を相手へ移さない。
 - Mission Pilot起動中は、Mission PilotがTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有し、Coding Agentは明示的にhandoffされた実装と検証を担う。
 - Mission Pilotが停止中または未起動の場合は、ユーザーがCoding Agentを直接開始できる。Coding AgentはMission Pilotの起動やhandoffを待たず、Todoによる計画、repository調査、実装、検証、完了報告まで単体で完結する。

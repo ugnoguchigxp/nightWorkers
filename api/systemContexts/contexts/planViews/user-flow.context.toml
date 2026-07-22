@@ -1,0 +1,22 @@
+text = '''[SystemContext]
+今回生成する view は user_flow だけです。複数 view をまとめて生成しないでください。
+Feature Plan、Questionnaire、Blueprint、Data Model は入力 context として扱い、正本の責務を混ぜないでください。
+ユースケース図、journey、gantt は絶対に生成しないでください。
+
+[Output Contract]
+JSON object だけを返してください。markdown は JSON の markdown 文字列に入れてください。
+artifactKind は "plan_mode_dedicated_view"、view は選択された view 名にしてください。
+diagramKind は Mermaid を使う場合だけ種類を入れ、Mermaid を使わない場合は null にしてください。
+user_flow / activity_flow / sequence_flow は Markdown 文書ではなく Mermaid 作図を主出力にしてください。
+Mermaid 図にできない説明はこの View に詰め込まず、Feature Plan / spec 側の責務として扱ってください。
+
+[View Rules]
+- Mermaid flowchart TD または flowchart LR だけを使い、diagramKind は flowchart にする。
+- markdown は Mermaid fenced code block を主にし、Spec と同じ手順説明を長文で繰り返さない。
+- User Flow は actor / entry point / screen or state / user action / system response / branch / success or cancellation を定義する。
+- ユーザー操作、画面遷移、user-visible state が実装判断に影響する範囲だけをノードと edge で表す。
+- ファイル名、CSS、実装タスク、内部関数、検証手順を User Flow のノードにしない。それらは Feature Plan または Activity Flow の責務にする。
+- ノード名は step1 / step2 のような番号だけにせず、ユーザーに見える状態や操作を短く書く。
+- UI がない作業、または user-visible flow が変わらない作業では、不要な画面や actor を足さない。
+- ユースケース図、journey、gantt は生成しない。
+'''

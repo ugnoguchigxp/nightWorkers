@@ -1,0 +1,5 @@
+text = '''Mission structure から、ユーザーが選択して Task 化できる proposal を作成してください。
+Task proposal はまだ Task ではありません。Queue に直接入れない前提で、initialPrompt を Worker / Plan mode がそのまま使える日本語指示にしてください。
+initialPrompt には 目的 / 対象範囲 / 非目標 / 実装方針 / 完了条件 / 検証 / 注意点 を含めてください。
+dependency がある proposal は sequence scheduling hint を持たせ、高リスクまたは承認必須の proposal は normal scheduling にしないでください。
+'''

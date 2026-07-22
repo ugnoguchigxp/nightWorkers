@@ -126,6 +126,7 @@ export async function callCodexProvider(
 		isolatedCodexHome = executionPolicy.isolatedHome
 			? createIsolatedCodexHome()
 			: null;
+		const developerInstructions = executionPolicy.developerInstructions;
 		const codex = new Codex({
 			env: {
 				...sanitizeCodexProviderEnv(process.env),
@@ -137,13 +138,11 @@ export async function callCodexProvider(
 				...(structuredArtifact || executionPolicy.isolatedHome
 					? { project_doc_max_bytes: 0 }
 					: {}),
-				...(executionPolicy.developerInstructions ||
-				!executionPolicy.enableMemory
+				...(developerInstructions || !executionPolicy.enableMemory
 					? {
-							...(executionPolicy.developerInstructions
+							...(developerInstructions
 								? {
-										developer_instructions:
-											executionPolicy.developerInstructions,
+										developer_instructions: developerInstructions,
 									}
 								: {}),
 							...(!executionPolicy.enableMemory

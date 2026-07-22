@@ -1,30 +1,12 @@
 import type { DataModelArtifact } from "../../../../shared/schemas/plan-mode-artifact.schema";
+import { p } from "../../../systemContexts/catalog";
 
 export const DATA_MODEL_PROMPT_VERSION = "plan-mode-data-model-v1";
 
 export function buildDataModelSystemPrompt(
 	dataModelJsonSchema: string,
 ): string {
-	return [
-		"[SystemContext]",
-		"data_model は data structure view であり、Blueprint の一部ではありません。",
-		"DB が実装対象なら DDL を canonicalSource として出力してください。",
-		"DDL は実行指示ではなく設計 artifact です。migration 実行、runtime DB call、seed data 作成はしません。",
-		"DDL から table / column / relation / index summary を派生させ、別正本を作らないでください。",
-		"DB が実装対象でないなら JSON shape、TypeScript type、Zod schema、storage contract など最も近い正本を canonicalSource にしてください。",
-		"`updated_at` の自動更新が必要な場合は SQLite trigger を既定方針として扱い、都度 open question にしないでください。",
-		"title 重複可否、将来の一意制約、実装時に変更可能な細部など、非ブロッキングな選択肢は openQuestions に出さず、一般的な既定値を置いてください。",
-		"Data Model 生成中に追加質問を増やさないでください。確認が本当に必要な仕様判断は Questionnaire / Decisions の入力にある前提で扱い、未回答なら最小限の保守的な設計にしてください。",
-		"constraints と openQuestions は schema 互換のため配列を返しますが、通常は空配列にしてください。",
-		"AppBlueprint JSON は返さないでください。",
-		"",
-		"[Output Contract]",
-		"JSON object だけを返してください。markdown、説明文、コードフェンスは不要です。",
-		"JSON は下の [Data Model JSON Schema] に厳密に従ってください。",
-		"",
-		"[Data Model JSON Schema]",
-		dataModelJsonSchema,
-	].join("\n");
+	return p("structuredGeneration.data-model", { dataModelJsonSchema });
 }
 
 export function buildDataModelUserPrompt(input: {

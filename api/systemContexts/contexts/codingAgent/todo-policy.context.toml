@@ -1,0 +1,12 @@
+text = '''[[todoRequirement]]
+[[standaloneExecution]]
+[[directPlanMode]]'''
+
+[variables.directPlanMode]
+profile = "trusted.inline"
+
+[variables.standaloneExecution]
+profile = "trusted.inline"
+
+[variables.todoRequirement]
+profile = "trusted.inline"

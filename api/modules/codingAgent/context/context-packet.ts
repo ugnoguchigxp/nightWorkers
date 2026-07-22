@@ -68,6 +68,19 @@ export function renderCodingAgentContextPacket(
 	].join("\n");
 }
 
+export function requiresCurrentTodo(
+	packet:
+		| {
+				planSummary: { todos: readonly unknown[] };
+				currentTodo: unknown;
+		  }
+		| null
+		| undefined,
+) {
+	if (!packet) return true;
+	return packet.planSummary.todos.length > 0 && !packet.currentTodo;
+}
+
 function toCurrentTodoContext(
 	todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number],
 ): CodingAgentCurrentTodoContext {
@@ -77,7 +90,9 @@ function toCurrentTodoContext(
 		seq: todo.seq,
 		revision: todo.revision,
 		title: todo.title,
+		taskType: todo.taskType,
 		objective: todo.objective ?? todo.description ?? null,
+		systemContext: todo.context ?? "",
 		context: todo.context,
 		nextAction: todo.nextAction,
 		acceptanceCriteria: Array.isArray(todo.acceptanceCriteriaJson)

@@ -22,7 +22,7 @@ import {
 	type PlanModeTaskMessage,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+import { resolvePlanModeQuestionnaireProjectContext } from "../specification/plan-mode-project-stack-context";
 import { assertPlanModeMutable } from "../specification/specification-mutability";
 import * as repo from "./questionnaire.repository";
 import { publishQuestionnaireTransition } from "./questionnaire-events";
@@ -74,17 +74,19 @@ export async function generateAdditionalDesignQuestionnaireQuestions(
 		await resolveLatestMutableQuestionnaireSession(taskId);
 	const maxQuestions = Math.max(0, Math.min(input.maxQuestions ?? 5, 5));
 	const messages = await listPlanModeTaskMessages(taskId);
-	const projectStackContext = await resolvePlanModeProjectStackContext(
+	const projectContext = await resolvePlanModeQuestionnaireProjectContext(
 		task.repositoryId,
 	);
 	const generated = await callStructuredOutputWithRepair({
-		systemPrompt: buildAdditionalDesignQuestionnaireSystemPrompt(),
+		systemPrompt: buildAdditionalDesignQuestionnaireSystemPrompt(
+			projectContext.repositoryPolicy,
+		),
 		userPrompt: buildAdditionalDesignQuestionnaireUserPrompt({
 			task: task.objective || task.description || task.title,
 			source: input.source,
 			reason: input.reason || null,
 			maxQuestions,
-			projectStackContext,
+			projectStackContext: projectContext.projectStackContext,
 			planModeContext: buildAdditionalQuestionnairePlanModeContext(messages),
 			decisionInventory: existingSession
 				? buildQuestionnaireDecisionInventory(existingSession)

@@ -32,7 +32,7 @@ describe("supervisor prompt packet", () => {
 		const rendered = buildRound1JobTypePrompt("/repo");
 
 		expect(packet.diagnostics).toEqual({ round: 1, projectRoot: "/repo" });
-		expect(packet.runtimeContext.join("\n")).toContain("[Job Types]");
+		expect(packet.basePolicy.join("\n")).toContain("[Job Types]");
 		expect(rendered).toContain("[Output Schema]");
 		expect(rendered).not.toContain('"diagnostics"');
 	});

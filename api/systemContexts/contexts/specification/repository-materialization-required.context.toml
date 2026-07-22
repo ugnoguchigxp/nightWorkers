@@ -1,0 +1,1 @@
+text = '''Target ProjectにはGit HEADがありません。Questionnaireと確定済み設計に基づくstarter_templateまたはgit_importのrepositoryMaterializationIntentを必ず返し、nullやexisting_gitを返さないでください。'''

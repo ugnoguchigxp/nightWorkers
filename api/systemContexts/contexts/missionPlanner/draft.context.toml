@@ -1,0 +1,4 @@
+text = '''ユーザーの広い goal を、実装可能な Mission planning unit に正規化してください。
+この段階では Task を作らず、Mission title / goal / non-goals / clarification の必要性だけを判断します。
+プロンプト文言と出力本文は日本語を維持してください。
+'''

@@ -3,6 +3,7 @@ import {
 	type AppBlueprint,
 	appBlueprintSchema,
 } from "../../../shared/schemas/app-blueprint.schema";
+import { bindSystemContextTextCatalog } from "../../systemContexts/catalog";
 import { blueprintCatalog } from "../blueprint-catalog";
 import { buildBlueprintSystemPrompt } from "../structured-generation/prompts/app-blueprint";
 import { callStructuredOutputWithRepair } from "../structured-generation/structured-output-repair.service";
@@ -16,20 +17,10 @@ import {
 	parseRepairedJsonWithSchema,
 } from "../structured-llm/json";
 import {
-	renderSupervisorReferenceDocuments,
-	resolveSupervisorReferenceDocuments,
-	summarizeSupervisorReferenceDocuments,
-} from "../supervisor/skills/registry";
-import type { SupervisorRoutingHypothesis } from "../supervisor/skills/types";
-import {
 	buildAppBlueprintStructuredOutputJsonSchema,
 	renderAppBlueprintJsonSchema,
 } from "./json-schema";
 import { validateAppBlueprint } from "./validation";
-
-type BlueprintReferenceDocumentsSummary = ReturnType<
-	typeof summarizeSupervisorReferenceDocuments
->;
 
 export type PlanModeBlueprintRequestContract = {
 	schemaName: "app_blueprint";
@@ -40,13 +31,11 @@ export type PlanModeBlueprintRequestContract = {
 		sectionDataBindingId: "forbidden";
 		dataModelWorkflowOnly: true;
 	};
-	referenceDocuments: BlueprintReferenceDocumentsSummary;
 	userRequest: {
 		taskId: string;
 		title: string;
 		userRequest: string;
 		projectStackContext: string | null;
-		routingHypothesis: SupervisorRoutingHypothesis | null;
 		requiredArtifact: "AppBlueprint JSON";
 	};
 };
@@ -56,8 +45,6 @@ export type BlueprintPromptDiagnostics = {
 	schemaDigest: string;
 	schemaBytes: number;
 	catalogComponentCount: number;
-	referenceDocumentCount: number;
-	referenceDocuments: BlueprintReferenceDocumentsSummary;
 };
 
 export type GeneratedBlueprintDraft = {
@@ -68,7 +55,6 @@ export type GeneratedBlueprintDraft = {
 		degradedReasons: string[];
 		rawOutput?: string;
 		jsonRepair?: BlueprintJsonRepairDiagnostics;
-		referenceDocuments: BlueprintReferenceDocumentsSummary;
 		promptDiagnostics: BlueprintPromptDiagnostics;
 	};
 };
@@ -101,30 +87,20 @@ export async function generatePlanModeBlueprintDraft(input: {
 	title: string;
 	prompt: string;
 	projectStackContext?: string | null;
-	routing?: SupervisorRoutingHypothesis;
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedBlueprintDraft> {
-	const referenceDocuments = resolveSupervisorReferenceDocuments(
-		input.routing || blueprintRoutingFallback,
-	);
-	const referenceDocumentSummary =
-		summarizeSupervisorReferenceDocuments(referenceDocuments);
-	const requestContract = buildPlanModeBlueprintRequestContract(
-		input,
-		referenceDocumentSummary,
-	);
+	const { p } = bindSystemContextTextCatalog();
+	const requestContract = buildPlanModeBlueprintRequestContract(input);
 	const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
-	const promptDiagnostics = buildPromptDiagnostics(
-		appBlueprintJsonSchema,
-		referenceDocumentSummary,
-	);
+	const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema);
 	try {
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: buildBlueprintSystemPrompt({
-				referenceContext:
-					renderSupervisorReferenceDocuments(referenceDocuments),
-				appBlueprintJsonSchema,
-			}),
+			systemPrompt: buildBlueprintSystemPrompt(
+				{
+					appBlueprintJsonSchema,
+				},
+				p,
+			),
 			userPrompt: JSON.stringify(requestContract.userRequest, null, 2),
 			options: {
 				contract: createStructuredOutputContract({
@@ -153,7 +129,6 @@ export async function generatePlanModeBlueprintDraft(input: {
 					repaired: Boolean(acceptedAttempt?.repairedText),
 					repairKind: acceptedAttempt?.repairKind ?? "none",
 				},
-				referenceDocuments: referenceDocumentSummary,
 				promptDiagnostics,
 			},
 		};
@@ -178,20 +153,12 @@ function validateBlueprintFacts(blueprint: AppBlueprint): StructuredLlmIssue[] {
 			}));
 }
 
-export function buildPlanModeBlueprintRequestContract(
-	input: {
-		taskId: string;
-		title: string;
-		prompt: string;
-		projectStackContext?: string | null;
-		routing?: SupervisorRoutingHypothesis;
-	},
-	referenceDocuments: BlueprintReferenceDocumentsSummary = summarizeSupervisorReferenceDocuments(
-		resolveSupervisorReferenceDocuments(
-			input.routing || blueprintRoutingFallback,
-		),
-	),
-): PlanModeBlueprintRequestContract {
+export function buildPlanModeBlueprintRequestContract(input: {
+	taskId: string;
+	title: string;
+	prompt: string;
+	projectStackContext?: string | null;
+}): PlanModeBlueprintRequestContract {
 	return {
 		schemaName: "app_blueprint",
 		requiredArtifact: "AppBlueprint JSON",
@@ -201,13 +168,11 @@ export function buildPlanModeBlueprintRequestContract(
 			sectionDataBindingId: "forbidden",
 			dataModelWorkflowOnly: true,
 		},
-		referenceDocuments,
 		userRequest: {
 			taskId: input.taskId,
 			title: input.title,
 			userRequest: input.prompt,
 			projectStackContext: input.projectStackContext || null,
-			routingHypothesis: input.routing || null,
 			requiredArtifact: "AppBlueprint JSON",
 		},
 	};
@@ -235,36 +200,16 @@ function blueprintOutputError(rawOutput: string) {
 		rawOutput.trim() || "LLM response was empty.",
 		{
 			rawOutput,
-			promptDiagnostics: buildPromptDiagnostics(
-				renderAppBlueprintJsonSchema(),
-				[],
-			),
+			promptDiagnostics: buildPromptDiagnostics(renderAppBlueprintJsonSchema()),
 		},
 	);
 }
 
-const blueprintRoutingFallback: SupervisorRoutingHypothesis = {
-	primaryMode: "planning",
-	secondaryModes: ["review"],
-	phase: "plan",
-	workKinds: ["blueprint", "ui_ux"],
-	overlays: ["user_facing_change"],
-	subtype: "app_blueprint",
-	requiredEvidence: ["latest user request"],
-	nextReferenceFiles: ["references/work_kinds/blueprint.md"],
-	confidence: 0.7,
-};
-
-function buildPromptDiagnostics(
-	schema: string,
-	referenceDocuments: BlueprintReferenceDocumentsSummary,
-): BlueprintPromptDiagnostics {
+function buildPromptDiagnostics(schema: string): BlueprintPromptDiagnostics {
 	return {
 		schemaIncluded: true,
 		schemaDigest: createHash("sha256").update(schema).digest("hex"),
 		schemaBytes: Buffer.byteLength(schema, "utf8"),
 		catalogComponentCount: blueprintCatalog.length,
-		referenceDocumentCount: referenceDocuments.length,
-		referenceDocuments,
 	};
 }

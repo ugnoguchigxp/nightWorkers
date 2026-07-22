@@ -1,0 +1,1 @@
+text = '''このQuestionnaireは空の未materialized Projectを対象とします。確定済みcontextだけではstarter templateを一意に選べない場合に限り、技術スタックとDB/永続化を確認してください。'''

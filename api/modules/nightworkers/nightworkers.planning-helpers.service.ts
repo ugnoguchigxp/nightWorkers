@@ -1,5 +1,4 @@
 import { AppError, NotFoundError } from "../../lib/errors";
-import type { SupervisorRoutingHypothesis } from "../../services/supervisor/skills/types";
 import * as repo from "./nightworkers.repository";
 
 type TaskMessageRow = Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
@@ -101,17 +100,6 @@ export function summarizePlanningBlueprint(
 		`Sections: ${sections}`,
 		`Implementation tasks: ${implementationTasks}`,
 	].join("\n");
-}
-
-export function isBlueprintRouting(
-	routing: SupervisorRoutingHypothesis | undefined,
-): boolean {
-	if (!routing) return false;
-	return (
-		routing.subtype === "app_blueprint" ||
-		routing.workKinds.includes("blueprint") ||
-		routing.nextReferenceFiles.includes("references/work_kinds/blueprint.md")
-	);
 }
 
 export function assertRunnableWorkbenchTask(

@@ -5,6 +5,7 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import { createStructuredOutputContract } from "../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
+import { p } from "../../systemContexts/catalog";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as queueRepo from "../queue/queue.repository";
 import { resolveReviewCloseoutEvidence } from "../review/review-closeout-evidence.service";
@@ -285,12 +286,7 @@ async function generateCommitMessage(input: {
 			stageablePaths: input.stageablePaths,
 		});
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: [
-				"You generate concise Git commit messages.",
-				"Return JSON only.",
-				"Use an imperative subject line.",
-				"Do not mention NightWorkers, ReviewRun, or implementation details unless they are part of the user-facing change.",
-			].join("\n"),
+			systemPrompt: p("nightworkers.git-commit-message", {}),
 			userPrompt: [
 				`Task title: ${input.taskTitle || "(none)"}`,
 				`Run summary: ${input.runSummary || "(none)"}`,

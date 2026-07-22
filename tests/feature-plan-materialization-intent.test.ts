@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readFeaturePlanMaterializationIntent } from "../api/modules/missionPilot/mission-pilot-queue-handoff.service";
-import { featurePlanMarkdownDraftSchema } from "../api/modules/specification/feature-plan-content";
+import { readFeaturePlanMaterializationIntent } from "../api/modules/agentsShare";
+import {
+	createFeaturePlanMarkdownDraftSchema,
+	featurePlanMarkdownDraftSchema,
+} from "../api/modules/specification/feature-plan-content";
 
 describe("Feature Plan repository materialization intent", () => {
 	it("does not invent a starter when the structured selection is absent", () => {
@@ -39,5 +42,53 @@ describe("Feature Plan repository materialization intent", () => {
 				},
 			}),
 		).toBeNull();
+		expect(
+			readFeaturePlanMaterializationIntent({
+				repositoryMaterializationIntent: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					variant: "hono-react-vite-sqlite",
+					initialize: true,
+				},
+			}),
+		).toBeNull();
+		expect(
+			readFeaturePlanMaterializationIntent({
+				repositoryMaterializationIntent: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					variant: "java25-sqlite",
+					initialize: true,
+				},
+			}),
+		).toBeNull();
+	});
+
+	it("requires a non-existing-git materialization intent for a Project without Git HEAD", () => {
+		const schema = createFeaturePlanMarkdownDraftSchema({
+			requiresRepositoryMaterialization: true,
+		});
+		expect(() => schema.parse({ markdown: "# Feature Plan" })).toThrow();
+		expect(() =>
+			schema.parse({
+				markdown: "# Feature Plan",
+				repositoryMaterializationIntent: { kind: "existing_git" },
+			}),
+		).toThrow();
+		expect(
+			schema.parse({
+				markdown: "# Feature Plan",
+				repositoryMaterializationIntent: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					initialize: true,
+				},
+			}),
+		).toMatchObject({
+			repositoryMaterializationIntent: { stack: "hono" },
+		});
 	});
 });

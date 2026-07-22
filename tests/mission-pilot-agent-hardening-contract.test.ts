@@ -9,30 +9,28 @@ import { missionPilotToolDefinitions } from "../api/modules/missionPilot/agent/m
 import { projectMissionPilotAgentVisibleItems } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 import {
 	applyCurrentMissionPilotSystemContext,
-	MISSION_PILOT_PLAN_ENTRY_CONTEXT,
-	MISSION_PILOT_SYSTEM_CONTEXT,
+	getMissionPilotPlanEntryContext,
+	getMissionPilotSystemContext,
 } from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
 import { MISSION_PILOT_TASK_EVENT_TYPES } from "../shared/modules/missionPilot/mission-pilot-agent.schema";
 
 describe("Mission Pilot autonomous agent hardening contract", () => {
 	it("owns Questionnaire, routing, and Artifact decisions", () => {
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
-			MISSION_PILOT_PLAN_ENTRY_CONTEXT,
-		);
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain(
-			"QuestionnaireとArtifactを所有",
-		);
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain("read_task_operator_view");
-		expect(MISSION_PILOT_SYSTEM_CONTEXT).toContain("read_task_resource");
+		const planEntryContext = getMissionPilotPlanEntryContext();
+		const systemContext = getMissionPilotSystemContext();
+		expect(systemContext).toContain(planEntryContext);
+		expect(systemContext).toContain("QuestionnaireとArtifactを所有");
+		expect(systemContext).toContain("read_task_operator_view");
+		expect(systemContext).toContain("read_task_resource");
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.create"),
 		).toBeNull();
 		expect(applyCurrentMissionPilotSystemContext("保存済みの旧Context")).toBe(
-			`保存済みの旧Context\n${MISSION_PILOT_PLAN_ENTRY_CONTEXT}`,
+			`保存済みの旧Context\n${planEntryContext}`,
 		);
-		expect(
-			applyCurrentMissionPilotSystemContext(MISSION_PILOT_SYSTEM_CONTEXT),
-		).toBe(MISSION_PILOT_SYSTEM_CONTEXT);
+		expect(applyCurrentMissionPilotSystemContext(systemContext)).toBe(
+			systemContext,
+		);
 	});
 
 	it("uses registry execution metadata instead of runtime action-name wait lists", () => {

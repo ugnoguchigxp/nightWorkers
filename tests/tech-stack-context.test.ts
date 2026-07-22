@@ -48,4 +48,36 @@ describe("project stack context", () => {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}
 	});
+
+	it("does not treat manifests without Git HEAD as an established stack", () => {
+		const repoRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-unmaterialized-stack-"),
+		);
+		try {
+			fs.writeFileSync(
+				path.join(repoRoot, "package.json"),
+				JSON.stringify({
+					dependencies: { next: "16.2.6", react: "19.2.6" },
+					devDependencies: { typescript: "5.9.3", vite: "8.0.13" },
+				}),
+				"utf8",
+			);
+
+			const context = renderProjectStackContext(
+				detectProjectStackProfile(repoRoot),
+				{ repositoryHasGitHead: false },
+			);
+
+			expect(context).toContain("Working treeで検出した技術候補");
+			expect(context).toContain("Git HEADがないため");
+			expect(context).toContain(
+				"Questionnaireで技術スタックを確認してください",
+			);
+			expect(context).not.toContain(
+				"別 stack / starter template 選択を質問しない",
+			);
+		} finally {
+			fs.rmSync(repoRoot, { recursive: true, force: true });
+		}
+	});
 });

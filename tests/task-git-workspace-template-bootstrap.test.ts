@@ -145,6 +145,68 @@ describe("Task Git workspace template bootstrap", () => {
 		expect(ready.worktreePath).not.toBe(root);
 	});
 
+	it("replaces a stale waiting materialization intent after Plan regeneration", async () => {
+		const root = await mkdtemp(path.join(tmpdir(), "nw-template-refresh-"));
+		roots.push(root, `${root}-worktrees`);
+		const project = await repo.createRepository({
+			name: `TEST: template refresh ${crypto.randomUUID()}`,
+			localPath: root,
+			branch: "main",
+		});
+		repositoryIds.push(project.id);
+		const task = await repo.createTask({
+			repositoryId: project.id,
+			title: "Refresh Starter",
+			status: "ready",
+		});
+		const waiting = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: null,
+			admissionKey: `template-refresh:${task.id}`,
+			materializationIntent: {
+				kind: "starter_template",
+				source: "starter",
+				stack: "hono",
+				variant: "sqlite",
+				initialize: true,
+			},
+		});
+		await db
+			.update(taskGitWorkspaces)
+			.set({
+				materializationIntentJson: {
+					kind: "starter_template",
+					source: "starter",
+					stack: "hono",
+					variant: "hono-react-vite-sqlite",
+					initialize: true,
+				},
+			})
+			.where(eq(taskGitWorkspaces.id, waiting.id));
+
+		const refreshed = await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: null,
+			admissionKey: `template-refresh:${task.id}`,
+			materializationIntent: {
+				kind: "starter_template",
+				source: "starter",
+				stack: "hono",
+				variant: "sqlite",
+				initialize: true,
+			},
+		});
+
+		expect(refreshed).toMatchObject({
+			status: "waiting_for_repository_initialization",
+			materializationIntentJson: {
+				kind: "starter_template",
+				stack: "hono",
+				variant: "sqlite",
+			},
+		});
+	});
+
 	it("reuses a held starter allocation after a worker creates the baseline", async () => {
 		const { execFileSync } = await import("node:child_process");
 		const { writeFileSync } = await import("node:fs");

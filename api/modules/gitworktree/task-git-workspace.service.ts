@@ -33,7 +33,7 @@ function policyFor(value: unknown) {
 
 export async function ensureTaskGitWorkspace(input: {
 	taskId: string;
-	planReviewId: string;
+	planReviewId: string | null;
 	admissionKey: string;
 	materializationIntent?: RepositoryMaterializationIntent;
 }) {
@@ -41,15 +41,18 @@ export async function ensureTaskGitWorkspace(input: {
 	if (existing) {
 		if (
 			existing.status === "waiting_for_repository_initialization" &&
-			input.materializationIntent?.kind === "existing_git"
+			input.materializationIntent
 		) {
 			const initialized = await workspaceRepo.transitionTaskGitWorkspace({
 				id: existing.id,
 				expectedStatus: "waiting_for_repository_initialization",
 				data: {
-					status: "planned",
-					materializationKind: "existing_git",
-					materializationIntentJson: { kind: "existing_git" },
+					status:
+						input.materializationIntent.kind === "existing_git"
+							? "planned"
+							: "waiting_for_repository_initialization",
+					materializationKind: input.materializationIntent.kind,
+					materializationIntentJson: input.materializationIntent,
 					lastErrorCode: null,
 					lastErrorMessage: null,
 				},

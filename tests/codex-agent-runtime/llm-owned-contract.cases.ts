@@ -5,7 +5,10 @@ import {
 	buildCodexRuntimeSdkOptions,
 	buildCodexRuntimeThreadOptions,
 } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config";
-import { buildCodexRuntimePromptParts } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
+import {
+	buildCodexRuntimeDeveloperInstructions,
+	buildCodexRuntimePromptParts,
+} from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
 import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
 
 afterEach(() => vi.useRealTimers());
@@ -60,10 +63,39 @@ function rejectedEvents(error: Error): AsyncIterable<unknown> {
 }
 
 describe("Codex SDK thin runtime adapter", () => {
-	it("passes only the latest request and no NightWorkers runtime contract", () => {
+	it("keeps the request clean and promotes adaptive Todo guidance to developer instructions", () => {
 		for (const mode of ["implementation", "test", "review"]) {
 			const parts = buildCodexRuntimePromptParts(context(mode));
+			const developerInstructions = buildCodexRuntimeDeveloperInstructions(
+				context(mode),
+			);
 			expect(parts.prompt).toBe("ユーザーの実装依頼");
+			expect(parts.prompt).not.toContain("<CODING_AGENT_SYSTEM_CONTEXT");
+			expect(developerInstructions).toContain("<CODING_AGENT_SYSTEM_CONTEXT");
+			expect(developerInstructions).toContain('todoPolicy="adaptive"');
+			expect(developerInstructions).toContain("nightworkers.todo_list");
+			expect(developerInstructions).toContain("modules/[domain]");
+			expect(developerInstructions).toContain("src/modules/[domain]");
+			expect(developerInstructions).toContain(
+				"route、service、repository、schema、typeなどを責務別に分けてdomain内",
+			);
+			expect(developerInstructions).toContain(
+				"画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内",
+			);
+			expect(developerInstructions).toContain(
+				"必要な事実確認のためのread-only調査を妨げず",
+			);
+			expect(developerInstructions).toContain(
+				"質問、読み取り、一工程で安全に完結する小変更ではTodoを作らず直接",
+			);
+			expect(developerInstructions).not.toContain(
+				"current Todoなしにworkspaceの読み取り",
+			);
+			expect(developerInstructions).not.toContain("Task Goal:");
+			expect(developerInstructions).not.toContain("ユーザーの実装依頼");
+			expect(developerInstructions).not.toContain('"failureRecoveryJa"');
+			expect(developerInstructions.length).toBeLessThan(6_000);
+			expect(parts.estimates.developerInstructionsTokens).toBeGreaterThan(0);
 			expect(parts.request).toBe("ユーザーの実装依頼");
 			expect(parts).not.toHaveProperty("runtimeContract");
 		}
@@ -75,13 +107,82 @@ describe("Codex SDK thin runtime adapter", () => {
 			latestUserMessage: "  \n ",
 			compiledPrompt: "fallback request",
 		});
-		expect(parts.prompt).toBe("fallback request");
+		expect(parts.prompt).toContain("fallback request");
 	});
 
-	it("does not inject developer instructions or inline MCP configuration", () => {
-		const options = buildCodexRuntimeSdkOptions({ env: {} });
-		expect(options.config).toBeUndefined();
-		expect(options.env).toEqual({});
+	it("promotes the current Todo SystemContext into developer instructions", () => {
+		const developerInstructions = buildCodexRuntimeDeveloperInstructions({
+			...context(),
+			todoPlan: [
+				{
+					id: "todo-1",
+					seq: 1,
+					title: "migrationを追加する",
+					taskType: "data_migration",
+					status: "running",
+					systemContext: "既存migrationを変更せずadditive migrationを作る。",
+					nextAction: "既存DBからの更新を確認する。",
+					acceptanceCriteria: ["新規DBと既存DBの両方で成功する"],
+				},
+			],
+			currentTodo: {
+				id: "todo-1",
+				seq: 1,
+				title: "migrationを追加する",
+				taskType: "data_migration",
+				status: "running",
+				systemContext: "既存migrationを変更せずadditive migrationを作る。",
+				nextAction: "既存DBからの更新を確認する。",
+				acceptanceCriteria: ["新規DBと既存DBの両方で成功する"],
+			},
+		});
+
+		expect(developerInstructions).toContain("<CURRENT_TODO_SYSTEM_CONTEXT");
+		expect(developerInstructions).toContain(
+			"SystemContext (highest-priority local instruction):",
+		);
+		expect(developerInstructions).toContain(
+			"既存migrationを変更せずadditive migrationを作る。",
+		);
+	});
+
+	it("injects a required request-scoped NightWorkers MCP without global config", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: { PORT: "41234" },
+			context: context(),
+		});
+		expect(options.config).toMatchObject({
+			developer_instructions: expect.stringContaining("nightworkers.todo_list"),
+			mcp_servers: {
+				nightworkers: {
+					url: "http://127.0.0.1:41234/mcp/nightworkers?taskId=task-codex-contract&runId=run-codex-contract",
+					enabled: true,
+					required: true,
+					tools: {
+						todo_list: { approval_mode: "approve" },
+						run_check: { approval_mode: "approve" },
+					},
+				},
+			},
+		});
+		expect(options.env).toEqual({ PORT: "41234" });
+	});
+
+	it("preserves a configured MCP endpoint while overriding Run identity", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				NIGHTWORKERS_CODEX_MCP_URL:
+					"http://localhost:42000/custom/mcp?taskId=stale&tenant=local",
+			},
+			context: context(),
+		});
+		expect(options.config).toMatchObject({
+			mcp_servers: {
+				nightworkers: {
+					url: "http://localhost:42000/custom/mcp?taskId=task-codex-contract&tenant=local&runId=run-codex-contract",
+				},
+			},
+		});
 	});
 
 	it("inherits Codex reasoning effort when no route explicitly configures it", () => {
@@ -106,37 +207,46 @@ describe("Codex SDK thin runtime adapter", () => {
 		}
 	});
 
-	it("surfaces synchronous resume failure without starting a fresh thread", async () => {
-		const startThread = vi.fn();
+	it("starts a fresh thread when resume setup fails", async () => {
+		const freshThread = {
+			runStreamed: vi.fn(async () => ({
+				events: completedTextEvents("fresh"),
+			})),
+		};
+		const startThread = vi.fn(() => freshThread);
 		const onResumeEvent = vi.fn();
-		await expect(
-			createCodexRuntimeThread({
-				context: {
-					...context(),
-					runtimeOptions: {
-						runtimeResume: {
-							kind: "codex_thread",
-							providerThreadId: "thread-old",
-						},
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context(),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-old",
 					},
 				},
-				codexClient: {
-					resumeThread: () => {
-						throw new Error("resume rejected");
-					},
-					startThread,
+			},
+			codexClient: {
+				resumeThread: () => {
+					throw new Error("resume rejected");
 				},
-				onResumeEvent,
-			}),
-		).rejects.toThrow("resume rejected");
-		expect(startThread).not.toHaveBeenCalled();
+				startThread,
+			},
+			onResumeEvent,
+		});
+		expect(thread).toBe(freshThread);
+		expect(startThread).toHaveBeenCalledOnce();
 		expect(onResumeEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "resume_failed" }),
 		);
 	});
 
-	it("does not replace a resumed thread when its stream fails", async () => {
-		const startThread = vi.fn();
+	it("starts a fresh thread when a resumed stream fails before its first event", async () => {
+		const startThread = vi.fn(() => ({
+			runStreamed: vi.fn(async () => ({
+				events: completedTextEvents("fresh"),
+			})),
+		}));
+		const onResumeEvent = vi.fn();
 		const thread = await createCodexRuntimeThread({
 			context: {
 				...context(),
@@ -155,6 +265,43 @@ describe("Codex SDK thin runtime adapter", () => {
 				}),
 				startThread,
 			},
+			onResumeEvent,
+		});
+		const turn = await thread.runStreamed("continue", {
+			signal: new AbortController().signal,
+		});
+		const events = [];
+		for await (const event of turn.events) events.push(event);
+		expect(events).toHaveLength(2);
+		expect(startThread).toHaveBeenCalledOnce();
+		expect(onResumeEvent).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "resume_failed" }),
+		);
+	});
+
+	it("does not retry a resumed stream after it emitted a provider event", async () => {
+		const startThread = vi.fn();
+		const thread = await createCodexRuntimeThread({
+			context: {
+				...context(),
+				runtimeOptions: {
+					runtimeResume: {
+						kind: "codex_thread",
+						providerThreadId: "thread-resumed",
+					},
+				},
+			},
+			codexClient: {
+				resumeThread: () => ({
+					runStreamed: async () => ({
+						events: (async function* () {
+							yield { type: "thread.started", thread_id: "thread-resumed" };
+							throw new Error("stream failed after start");
+						})(),
+					}),
+				}),
+				startThread,
+			},
 		});
 		const turn = await thread.runStreamed("continue", {
 			signal: new AbortController().signal,
@@ -163,7 +310,7 @@ describe("Codex SDK thin runtime adapter", () => {
 			(async () => {
 				for await (const _event of turn.events) void _event;
 			})(),
-		).rejects.toThrow("stream failed");
+		).rejects.toThrow("stream failed after start");
 		expect(startThread).not.toHaveBeenCalled();
 	});
 
@@ -375,6 +522,25 @@ describe("Codex SDK thin runtime adapter", () => {
 			terminalState: "failed",
 			stoppedBy: "llm_error",
 		});
+	});
+
+	it("preserves a startup failure in the final report and runtime log", async () => {
+		const result = await new CodexAgentRuntime({
+			threadFactory: () => ({
+				runStreamed: async () => {
+					throw new Error("thread resume state is unavailable");
+				},
+			}),
+			usageRecorder: async () => {},
+		}).start(context(), { emit: vi.fn(async () => {}) });
+
+		expect(result).toMatchObject({
+			terminalState: "failed",
+			finalReport: "[System Error] thread resume state is unavailable",
+		});
+		expect(result.logContent).toContain(
+			"[System Error] thread resume state is unavailable",
+		);
 	});
 
 	it("keeps a non-fatal Codex item error as trace when the turn completes", async () => {

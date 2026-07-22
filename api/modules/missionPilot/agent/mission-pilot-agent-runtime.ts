@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
+import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
 import {
 	applyCurrentMissionPilotSystemContext,
 	buildMissionPilotSystemContext,
@@ -22,7 +23,7 @@ import { cancelPendingMissionPilotToolCalls } from "./mission-pilot-agent-lifecy
 import { missionPilotDigest } from "./mission-pilot-content-page";
 import {
 	buildMissionPilotCompactionRequest,
-	MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
+	getMissionPilotCompactionSystemContext,
 	shouldCompactMissionPilotContext,
 } from "./mission-pilot-context-compaction";
 import {
@@ -148,6 +149,7 @@ export async function runMissionPilotAgentWake(
 		let toolCalls = 0;
 		let shouldWaitForEvent = false;
 		while (!controller.signal.aborted) {
+			const { p } = bindSystemContextTextCatalog();
 			if (
 				!(await renewMissionPilotAgentTurnLease({
 					sessionId: input.sessionId,
@@ -194,8 +196,12 @@ export async function runMissionPilotAgentWake(
 			});
 			const baseSystemContext = applyCurrentMissionPilotSystemContext(
 				readSystemContext(providerMessages),
+				p,
 			);
-			const systemContext = `${baseSystemContext}\n\n[Mission Pilot 現在のStep文脈]\n${JSON.stringify(currentStepContext)}`;
+			const systemContext = p("missionPilot.current-step", {
+				baseSystemContext: baseSystemContext.trimEnd(),
+				currentStepContext,
+			});
 			const messages = projectMissionPilotProviderMessages(providerMessages);
 			const tools = missionPilotToolDefinitions({
 				availableActionIds: new Set(currentStepContext.availableActionIds),
@@ -227,11 +233,13 @@ export async function runMissionPilotAgentWake(
 					return { kind: "attention", failure } as const;
 				}
 				providerCalls += 1;
+				const compactionSystemContext =
+					getMissionPilotCompactionSystemContext(p);
 				const providerCallIndex = providerCalls;
 				const providerStartedAt = Date.now();
 				const compacted = await provider.nextTurn({
 					sessionId: input.sessionId,
-					systemContext: MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
+					systemContext: compactionSystemContext,
 					messages: buildMissionPilotCompactionRequest(messages),
 					tools: [],
 					providerEndpointId: input.providerEndpointId ?? null,
@@ -249,7 +257,7 @@ export async function runMissionPilotAgentWake(
 						turnId: claimed.turnId,
 						providerCallIndex,
 						label: "mission_pilot_compaction",
-						systemContext: MISSION_PILOT_COMPACTION_SYSTEM_CONTEXT,
+						systemContext: compactionSystemContext,
 						messages: buildMissionPilotCompactionRequest(messages),
 						response: compacted,
 						durationMs: Date.now() - providerStartedAt,

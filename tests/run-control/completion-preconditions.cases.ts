@@ -26,6 +26,8 @@ const systemContext: CodingAgentSystemContextSnapshot = {
 	completionRuleJa: "open Todoを残さない。",
 	toolContractJa: "typed resultを読む。",
 	registeredRepositoryRoot: "/tmp/completion-preconditions",
+	planModeRequested: false,
+	todoPolicy: "adaptive",
 };
 
 afterEach(async () => {
@@ -146,19 +148,25 @@ describe("Run completion preconditions", () => {
 		expect(executions).toBe(1);
 	});
 
-	it("requires a plan and explicit Todo completion", async () => {
+	it("allows no-plan completion and requires explicit closeout after Todo adoption", async () => {
 		const { run, service } = await fixture();
 		const controller = new RunFinalizeController();
 		expect(await controller.evaluateCandidate({ runId: run.id })).toMatchObject(
 			{
-				allowFinalize: false,
-				code: "RUN_HAS_OPEN_TODOS",
+				allowFinalize: true,
+				code: "FINALIZE_ALLOWED",
 			},
 		);
 		const plan = await service.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "実装", nextAction: "対象を変更する" }],
+			todos: [
+				{
+					title: "実装",
+					systemContext: "完了条件を満たす変更を実装する。",
+					nextAction: "対象を変更する",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const todo = plan.todos[0];
@@ -196,7 +204,13 @@ describe("Run completion preconditions", () => {
 		const plan = await service.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "実装", nextAction: "対象を変更して検証する" }],
+			todos: [
+				{
+					title: "実装",
+					systemContext: "変更と検証を完了し、完了判定へ必要な証拠を残す。",
+					nextAction: "対象を変更して検証する",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const started = await service.execute(run.id, {
@@ -275,7 +289,14 @@ describe("Run completion preconditions", () => {
 		const plan = await service.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "実装", nextAction: "対象を変更して検証する" }],
+			todos: [
+				{
+					title: "実装",
+					systemContext:
+						"active verification documentの条件を満たす変更と検証を行う。",
+					nextAction: "対象を変更して検証する",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const started = await service.execute(run.id, {
@@ -328,7 +349,14 @@ describe("Run completion preconditions", () => {
 		const plan = await service.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "確認", nextAction: "不足情報を確認する" }],
+			todos: [
+				{
+					title: "確認",
+					systemContext:
+						"不足情報が人間の判断を要する場合はneeds_humanへ遷移する。",
+					nextAction: "不足情報を確認する",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const started = await service.execute(run.id, {
@@ -364,7 +392,13 @@ describe("Run completion preconditions", () => {
 		const plan = await service.execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "計画", nextAction: "Questionnaireを開始する" }],
+			todos: [
+				{
+					title: "計画",
+					systemContext: "Coding AgentのTodo完了条件だけでcloseoutを評価する。",
+					nextAction: "Questionnaireを開始する",
+				},
+			],
 		});
 		if (!plan.ok) throw new Error(plan.error.code);
 		const started = await service.execute(run.id, {

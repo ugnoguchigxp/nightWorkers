@@ -1,26 +1,20 @@
+import {
+	STARTER_STACKS,
+	type StarterStack,
+} from "../../../shared/starter-template-contract";
+
+export {
+	isStarterVariantForStack,
+	STARTER_STACKS,
+	STARTER_VARIANTS,
+	type StarterStack,
+} from "../../../shared/starter-template-contract";
+
 export type StandardTemplateId =
 	| "hono-standard"
 	| "python-standard"
 	| "java-template"
 	| "rust-template";
-export const STARTER_STACKS = ["hono", "python", "java", "rust"] as const;
-export type StarterStack = (typeof STARTER_STACKS)[number];
-export const STARTER_VARIANTS = [
-	"sqlite",
-	"baseline",
-	"postgres",
-	"pgvector",
-	"rag",
-	"turso",
-	"cloudflare",
-	"api-only",
-	"java8-sqlite",
-	"java8-postgres",
-	"java25-sqlite",
-	"java25-postgres",
-	"pgsql",
-] as const;
-
 export type TemplateRef = {
 	name: string;
 	ref: string;
@@ -220,12 +214,6 @@ const templateIdByStarterStack: Record<StarterStack, StandardTemplateId> = {
 	java: "java-template",
 	rust: "rust-template",
 };
-
-export function isStarterVariantForStack(stack: StarterStack, variant: string) {
-	return Boolean(
-		standardTemplateRegistry[templateIdByStarterStack[stack]].variants[variant],
-	);
-}
 
 export function normalizeTemplateKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;

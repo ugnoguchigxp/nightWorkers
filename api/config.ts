@@ -210,8 +210,6 @@ const envSchema = z
 			.enum(["true", "false"])
 			.default("false")
 			.transform((value) => value === "true"),
-		SUPERVISOR_REFERENCES_DIR: z.string().trim().optional(),
-		SUPERVISOR_SKILLS_DIR: z.string().trim().optional(),
 		LOG_LEVEL: z.string().default("info"),
 	})
 	.superRefine((env, ctx) => {

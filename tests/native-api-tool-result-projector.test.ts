@@ -25,7 +25,11 @@ describe("projectWorkerResultToNativeApiToolResult", () => {
 					id: "todo-2",
 					seq: 2,
 					title: "実装",
+					taskType: "implementation",
 					status: "running",
+					context: "確定済みAPI契約を変更しない。",
+					nextAction: "routeを実装する。",
+					acceptanceCriteriaJson: ["契約テストが通る"],
 				},
 			},
 		});
@@ -36,7 +40,13 @@ describe("projectWorkerResultToNativeApiToolResult", () => {
 			operation: "transition",
 			planRevision: 3,
 			changedTodo: { id: "todo-1", status: "passed" },
-			currentTodo: { id: "todo-2", status: "running" },
+			currentTodo: {
+				id: "todo-2",
+				status: "running",
+				systemContext: "確定済みAPI契約を変更しない。",
+				nextAction: "routeを実装する。",
+				acceptanceCriteria: ["契約テストが通る"],
+			},
 		});
 		expect(modelVisible.payload).not.toHaveProperty("transition");
 		expect(modelVisible.payload).not.toHaveProperty("diagnostics");

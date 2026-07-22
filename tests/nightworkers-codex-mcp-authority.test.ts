@@ -1,10 +1,48 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+	handleNightWorkersCodexMcpRequest,
 	requestContextMismatchToMcp,
 	resolveRequestScopedIdentity,
 } from "../api/mcp/nightworkers-codex-mcp-support";
+import { CODING_AGENT_SYSTEM_CONTEXT_VERSION } from "../api/modules/codingAgent/context";
+import {
+	createRepository,
+	createTask,
+	createTaskRun,
+	deleteRepository,
+	listTaskRunTodosForRun,
+} from "../api/modules/nightworkers/nightworkers.repository";
 
 describe("NightWorkers Codex MCP request authority", () => {
+	it("advertises non-blocking adaptive Todo guidance during MCP initialization", async () => {
+		const response = await handleNightWorkersCodexMcpRequest(
+			new Request("http://127.0.0.1/mcp/nightworkers", {
+				method: "POST",
+				headers: {
+					accept: "application/json, text/event-stream",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "todo-contract-test", version: "1.0.0" },
+					},
+				}),
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		const body = await response.text();
+		expect(body).toContain("nightworkers.todo_list");
+		expect(body).toContain("一工程の小変更ではTodo呼び出しは不要");
+		expect(body).toContain("hostはTodoを暗黙生成・更新せず");
+	});
+
 	it("keeps request-scoped identity authoritative and reports supplied differences", () => {
 		const resolution = resolveRequestScopedIdentity({
 			context: { taskId: "task-authoritative", runId: "run-authoritative" },
@@ -82,5 +120,79 @@ describe("NightWorkers Codex MCP request authority", () => {
 				},
 			},
 		});
+	});
+
+	it("persists Todo SystemContext through the request-scoped MCP transport", async () => {
+		const repository = await createRepository({
+			name: `TEST: Codex MCP Todo ${crypto.randomUUID()}`,
+			localPath: "/tmp/codex-mcp-todo",
+			branch: "main",
+			allowed: true,
+		});
+		try {
+			const task = await createTask({
+				repositoryId: repository.id,
+				title: "MCP Todo contract",
+				status: "running",
+			});
+			const run = await createTaskRun({
+				taskId: task.id,
+				repositoryId: repository.id,
+				status: "running",
+				workerKind: "codex-sdk",
+			});
+			const response = await handleNightWorkersCodexMcpRequest(
+				new Request(
+					`http://127.0.0.1/mcp/nightworkers?taskId=${task.id}&runId=${run.id}`,
+					{
+						method: "POST",
+						headers: {
+							accept: "application/json, text/event-stream",
+							"content-type": "application/json",
+						},
+						body: JSON.stringify({
+							jsonrpc: "2.0",
+							id: 1,
+							method: "tools/call",
+							params: {
+								name: "todo_list",
+								arguments: {
+									command: {
+										op: "replace_plan",
+										expectedPlanRevision: 0,
+										todos: [
+											{
+												title: "migrationを実装する",
+												taskType: "data_migration",
+												systemContext:
+													"既存DBからの更新経路と新規DBの両方を検証する。",
+												nextAction: "既存migrationを確認する。",
+												acceptanceCriteria: [
+													"新規DBと既存DBでmigrationが成功する",
+												],
+											},
+										],
+									},
+								},
+							},
+						}),
+					},
+				),
+			);
+
+			expect(response.status).toBe(200);
+			expect(await response.text()).not.toContain('"isError":true');
+			expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
+				{
+					taskType: "data_migration",
+					context: "既存DBからの更新経路と新規DBの両方を検証する。",
+					nextAction: "既存migrationを確認する。",
+					systemContextVersion: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
+					systemContextSnapshot: { todoPolicy: "adaptive" },
+				},
+			]);
+		} finally {
+			await deleteRepository(repository.id);
+		}
 	});
 });

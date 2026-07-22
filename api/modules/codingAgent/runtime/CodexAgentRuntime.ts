@@ -204,14 +204,18 @@ export class CodexAgentRuntime implements AgentRuntime {
 			}
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
+			const errorMessage = `[System Error] ${
+				error instanceof Error ? error.message : String(error)
+			}`;
+			logs.push(errorMessage);
 			await sink.emit({
 				type: "runtime_error",
-				message: `[System Error] ${error instanceof Error ? error.message : String(error)}`,
+				message: errorMessage,
 				payload: { rawError: error },
 			});
 			return this.finish(context, sink, logs, {
 				terminalState: "failed",
-				finalReport,
+				finalReport: finalReport || errorMessage,
 				stoppedBy: "llm_error",
 				riskLevel: "high",
 			});
@@ -282,8 +286,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 			promptPartObservabilityEnabled: enabled,
 			promptPartTokenEstimates: enabled
 				? {
-						userPromptTokens: input.promptParts.estimates.requestTokens,
-						systemPromptTokens: 0,
+						userPromptTokens: input.promptParts.estimates.fullPromptTokens,
+						systemPromptTokens:
+							input.promptParts.estimates.developerInstructionsTokens,
 					}
 				: undefined,
 			providerSessionKey: input.providerSessionKey,

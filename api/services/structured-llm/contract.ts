@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+	bindSystemContextTextCatalog,
+	type SystemContextP,
+} from "../../systemContexts/catalog";
 import type { JsonFixWrapperResult } from "./json";
 import { normalizeStructuredOutputJsonSchema } from "./json-schema";
 import type { CallSupervisorOptions } from "./types";
@@ -7,7 +11,7 @@ export type StructuredOutputContract<T> = {
 	name: string;
 	runtimeSchema: z.ZodType<T>;
 	providerJsonSchema: unknown;
-	renderOutputRequirements: () => string;
+	renderOutputRequirements: (p?: SystemContextP) => string;
 };
 
 export type StructuredLlmIssue = {
@@ -85,7 +89,10 @@ export function createStructuredOutputContract<T>(input: {
 	name: string;
 	runtimeSchema: z.ZodType<T>;
 	providerJsonSchema?: unknown;
-	renderOutputRequirements?: (providerJsonSchema: unknown) => string;
+	renderOutputRequirements?: (
+		providerJsonSchema: unknown,
+		p?: SystemContextP,
+	) => string;
 }): StructuredOutputContract<T> {
 	const providerJsonSchema = normalizeStructuredOutputJsonSchema(
 		input.providerJsonSchema ?? z.toJSONSchema(input.runtimeSchema),
@@ -94,18 +101,19 @@ export function createStructuredOutputContract<T>(input: {
 		name: input.name,
 		runtimeSchema: input.runtimeSchema,
 		providerJsonSchema,
-		renderOutputRequirements: () =>
-			input.renderOutputRequirements?.(providerJsonSchema) ??
-			renderStructuredOutputRequirements(providerJsonSchema),
+		renderOutputRequirements: (p) =>
+			input.renderOutputRequirements?.(providerJsonSchema, p) ??
+			renderStructuredOutputRequirements(providerJsonSchema, p),
 	};
 }
 
-export function renderStructuredOutputRequirements(jsonSchema: unknown) {
-	return [
-		"JSON object だけを返してください。markdown、説明文、コードフェンスは不要です。",
-		"次の JSON Schema に従ってください。",
-		JSON.stringify(jsonSchema, null, 2),
-	].join("\n");
+export function renderStructuredOutputRequirements(
+	jsonSchema: unknown,
+	p: SystemContextP = bindSystemContextTextCatalog().p,
+) {
+	return p("structuredGeneration.output-requirements", {
+		jsonSchema: JSON.stringify(jsonSchema, null, 2),
+	}).trimEnd();
 }
 
 export function zodIssuesToStructuredLlmIssues(

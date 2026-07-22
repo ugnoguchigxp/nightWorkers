@@ -1,0 +1,12 @@
+text = '''[[baseSystem]]
+[[planEntry]]
+[[baseSystemSuffix]]'''
+
+[variables.baseSystem]
+profile = "trusted.inline"
+
+[variables.baseSystemSuffix]
+profile = "trusted.inline"
+
+[variables.planEntry]
+profile = "trusted.inline"

@@ -86,7 +86,19 @@ async function createRuntimeRun(title: string) {
 }
 
 function todoCall(id: string, command: Record<string, unknown>) {
-	return { id, name: "todo_list", arguments: { command } };
+	const normalizedCommand =
+		command.op === "replace_plan" && Array.isArray(command.todos)
+			? {
+					...command,
+					todos: command.todos.map((todo) => ({
+						...(todo as Record<string, unknown>),
+						systemContext:
+							(todo as Record<string, unknown>).systemContext ??
+							"このTodoの目的と受け入れ条件を優先する。",
+					})),
+				}
+			: command;
+	return { id, name: "todo_list", arguments: { command: normalizedCommand } };
 }
 
 describe("Native API LLM-owned Todo contract", () => {
@@ -112,25 +124,25 @@ describe("Native API LLM-owned Todo contract", () => {
 			"あなたはユーザーTaskを自動化するCoding Agentです",
 		);
 		expect(system?.content).toContain(
-			`"version": ${CODING_AGENT_SYSTEM_CONTEXT_VERSION}`,
+			`version="${CODING_AGENT_SYSTEM_CONTEXT_VERSION}"`,
 		);
 		expect(system?.content).toContain(
-			"実装前の計画が必要かをあなた自身が判断してください",
+			"Todoは固定workflowではなく、あなたが所有する任意の外部作業記憶です",
 		);
-		expect(system?.content).toContain("局所SystemContext兼リマインダー");
+		expect(system?.content).toContain("各TodoにはsystemContextを必ず含めて");
 		expect(system?.content).toContain(
-			"Task名だけから最終的な実装Todoを作らない",
+			"質問、読み取り、一工程で安全に完結する小変更ではTodoを作らず直接",
 		);
+		expect(system?.content).toContain("新規DBと既存DBからの更新経路");
 		expect(system?.content).toContain(
-			"quality gate、verify、template/import、安全・権限",
+			"共通SystemContextや設計書全文を複製しない",
 		);
-		expect(system?.content).toContain(
-			"計画、実装、テスト・証跡確認、変更差分のReviewと修正、完了報告",
-		);
-		expect(system?.content).toContain(
-			"実装後に仕様書や完了条件を後付けして検証を始めず",
-		);
+		expect(system?.content).toContain("実装後に完了条件を後付けせず");
 		expect(system?.content).toContain("modules/[domain]");
+		expect(system?.content).toContain("src/modules/[domain]");
+		expect(system?.content).toContain(
+			"route、service、repository、schema、typeなどを責務別に分けてdomain内",
+		);
 		expect(system?.content).toContain("確定Specを優先");
 		expect(system?.content).toContain("既存domainは既存moduleを拡張");
 		expect(system?.content).toContain('"availability": "unavailable"');
@@ -297,7 +309,7 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(summary?.content).toContain("sha256:");
 	});
 
-	it("rejects workspace tools until a current Todo exists", async () => {
+	it("allows a simple Run without Todo and requires current Todo after a plan is adopted", async () => {
 		const repository = await createRepository({
 			name: `native-contract-${crypto.randomUUID()}`,
 			localPath: "/tmp/native-llm-owned",
@@ -316,7 +328,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			status: "running",
 		});
 		const sink = { emit: vi.fn(async () => {}) };
-		const result = await dispatchNativeApiToolCall({
+		const directResult = await dispatchNativeApiToolCall({
 			toolCall: {
 				id: "call-read",
 				name: "read_file",
@@ -330,11 +342,46 @@ describe("Native API LLM-owned Todo contract", () => {
 			sink,
 			state: { readFiles: [], postImport: null },
 		});
-		expect(result.toolResult).toMatchObject({
+		expect(directResult.toolResult.error?.code).not.toBe(
+			"CURRENT_TODO_REQUIRED",
+		);
+		expect(sink.emit).toHaveBeenCalled();
+
+		await new TodoMutationService(
+			buildCodingAgentSystemContext({
+				taskGoal: "単一Coding Agentとして実装する。",
+				registeredRepositoryRoot: repository.localPath,
+			}),
+			"agent",
+		).execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					title: "実装する",
+					systemContext: "この工程では既存契約を維持する。",
+					nextAction: "対象を確認する。",
+				},
+			],
+		});
+		const plannedResult = await dispatchNativeApiToolCall({
+			toolCall: {
+				id: "call-read-after-plan",
+				name: "read_file",
+				arguments: { filePath: "README.md" },
+			},
+			context: context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			sink,
+			state: { readFiles: [], postImport: null },
+		});
+		expect(plannedResult.toolResult).toMatchObject({
 			ok: false,
 			error: { code: "CURRENT_TODO_REQUIRED" },
 		});
-		expect(sink.emit).not.toHaveBeenCalled();
 	});
 
 	it("records Todo side effects in the run ledger", async () => {
@@ -655,6 +702,7 @@ describe("Native API LLM-owned Todo contract", () => {
 					{
 						id: todoId,
 						title: "処理を継続する",
+						systemContext: "再開前の目的と完了条件を維持する。",
 						nextAction: "残りを実行する",
 						acceptanceCriteria: [],
 					},

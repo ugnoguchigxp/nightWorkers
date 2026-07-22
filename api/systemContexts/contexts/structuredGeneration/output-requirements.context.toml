@@ -1,0 +1,6 @@
+text = '''JSON object だけを返してください。markdown、説明文、コードフェンスは不要です。
+次の JSON Schema に従ってください。
+[[jsonSchema]]'''
+
+[variables.jsonSchema]
+profile = "trusted.block"

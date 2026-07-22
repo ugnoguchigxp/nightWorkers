@@ -1,0 +1,4 @@
+text = '''[[storedContext]]'''
+
+[variables.storedContext]
+profile = "trusted.inline"

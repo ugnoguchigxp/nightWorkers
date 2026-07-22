@@ -11,6 +11,7 @@ import {
 	createStructuredOutputContract,
 	type StructuredLlmRole,
 } from "../../services/structured-llm";
+import { p } from "../../systemContexts/catalog";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import { renderQuestionnaireAnswer } from "../specification/specification-schema-reference-renderer";
 import { getSessionQuestions } from "./questionnaire-parser.service";
@@ -148,16 +149,7 @@ export async function selectQuestionnaireArtifactRouting(
 		}))
 		.filter((decision) => decision.answer !== "未回答");
 	const result = await callStructuredOutputWithRepair({
-		systemPrompt: [
-			"Questionnaireの確定回答を読み、Feature Planを作る前に生成すべき任意の設計Artifactと、その設計粒度を決めます。",
-			"判断はTask、完了条件、Questionnaire回答を意味的に比較し、keyword一致や固定のArtifact一式に依存しないでください。",
-			"QuestionnaireとFeature Planは必須なので判断対象外です。候補の全viewを一度ずつ返し、capabilityが無効なviewはomitしてください。",
-			"token効率を優先し、Feature Planへ短く安全に統合できる内容は別Artifactへ分解しないでください。通常は0〜2件に絞り、3件以上は重大な独立境界が実際に複数ある場合だけincludeします。重要性が件数上限より優先されます。",
-			"ただしAPI境界、永続化制約、複雑な状態遷移、権限・失敗時挙動など、実装後の手戻りが大きい重要事項はtoken節約だけを理由にomitせず、Feature Planより前の設計を推奨してください。",
-			"depthはfocused（要点・境界だけ）、standard（主要ケースと例外を含む）、comprehensive（高リスクで詳細な契約が必要）のいずれかです。omit時はnoneにしてください。",
-			"includeのreasonはなぜFeature Plan前に独立設計が必要か、omitのreasonはなぜFeature Planへ統合できるかを、Taskと回答に結び付けた180文字以内の一文で記載してください。",
-			"『初期routingでは省略』『不要なため』のような一般論は禁止です。",
-		].join("\n"),
+		systemPrompt: p("questionnaire.artifact-selection", {}),
 		userPrompt: [
 			"## Task",
 			JSON.stringify(input.task, null, 2),

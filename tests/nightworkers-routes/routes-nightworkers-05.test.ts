@@ -25,6 +25,8 @@ function todoService(repositoryRoot: string, taskGoal: string) {
 			completionRuleJa: "未完了Todoを残さない。",
 			toolContractJa: "構造化tool結果を読む。",
 			registeredRepositoryRoot: repositoryRoot,
+			planModeRequested: false,
+			todoPolicy: "adaptive",
 		},
 		"agent",
 	);
@@ -67,12 +69,14 @@ describe("NightWorkers task run todo routes", () => {
 					id: firstId,
 					title: "Implement persistence",
 					objective: "Add todo persistence",
+					systemContext: "Todo永続化の境界を実装し、既存のRun契約を維持する。",
 					nextAction: "Implement the persistence boundary",
 				},
 				{
 					id: secondId,
 					title: "Run verification",
 					objective: "Check the implementation",
+					systemContext: "実装後の永続化動作をfocused testで検証する。",
 					nextAction: "Run focused tests",
 					dependsOn: [firstId],
 				},
@@ -226,7 +230,13 @@ describe("NightWorkers task run todo routes", () => {
 			{
 				op: "replace_plan",
 				expectedPlanRevision: 0,
-				todos: [{ title: "Only todo", nextAction: "Inspect persistence" }],
+				todos: [
+					{
+						title: "Only todo",
+						systemContext: "Todoのcascade削除を永続化層で確認する。",
+						nextAction: "Inspect persistence",
+					},
+				],
 			},
 		);
 		expect(plan.ok).toBe(true);

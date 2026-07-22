@@ -6,8 +6,9 @@ import {
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
+	STARTER_VARIANT_GUIDANCE,
 	STARTER_VARIANTS,
-} from "../services/worker-tools/template-registry";
+} from "../../shared/starter-template-contract";
 
 export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
 	taskId: z
@@ -131,15 +132,28 @@ const todoDraftSchema = z.object({
 		.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
 		.optional(),
 	title: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTitleLength),
+	taskType: z
+		.string()
+		.trim()
+		.min(1)
+		.max(TODO_MUTATION_LIMITS.maxTaskTypeLength)
+		.optional()
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.taskType),
 	objective: z
 		.string()
 		.max(TODO_MUTATION_LIMITS.maxObjectiveLength)
 		.nullable()
 		.optional()
 		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.objective),
+	systemContext: z
+		.string()
+		.trim()
+		.min(1)
+		.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
+		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.systemContext),
 	context: z
 		.string()
-		.max(TODO_MUTATION_LIMITS.maxContextLength)
+		.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
 		.nullable()
 		.optional()
 		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
@@ -225,10 +239,17 @@ const todoMutationCommandSchema = z.discriminatedUnion("op", [
 		op: z.literal("update_context"),
 		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
 		expectedTodoRevision: z.number().int().nonnegative(),
+		systemContext: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext),
 		context: z
 			.string()
-			.max(TODO_MUTATION_LIMITS.maxContextLength)
-			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext),
+			.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
+			.optional()
+			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
 		nextAction: z
 			.string()
 			.trim()
@@ -288,7 +309,7 @@ export const nightWorkersImportProjectInputSchema = z
 			.enum(STARTER_VARIANTS)
 			.optional()
 			.describe(
-				"Stack-specific starter variant. Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql. 選択した stack に要求 DB の variant がない場合は、同じ stack と runtime version の SQLite variant を雛形として取り込み、Feature Plan に従って要求 DB を実装する。SQLite を最終的な DB 要件へ置き換えない。",
+				`Stack-specific starter variant. ${STARTER_VARIANT_GUIDANCE}. 選択した stack に要求 DB の variant がない場合は、同じ stack と runtime version の SQLite variant を雛形として取り込み、Feature Plan に従って要求 DB を実装する。SQLite を最終的な DB 要件へ置き換えない。`,
 			),
 		overlays: z
 			.array(z.string().trim().min(1))

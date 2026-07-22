@@ -1,0 +1,2 @@
+text = '''NightWorkers MCPはCoding AgentのRunに紐付くtoolを提供します。TodoはLLM所有の外部作業記憶です。複数工程、複数module、複数完了条件、schema・migration、段階的検証、失敗後の再開を扱う場合はtodo_list（Codex表示: nightworkers.todo_list）で2〜6件のplanを作り、一件をstartしてください。各Todoに短いsystemContextを含めます。質問、読み取り、一工程の小変更ではTodo呼び出しは不要です。
+Todoを採用した後だけcurrent Todoを維持し、前提変更はupdate_context、失敗はrecord_failure、確認済み完了はtransitionで明示します。hostはTodoを暗黙生成・更新せず、Todo未採用の単純Runを妨げません。'''

@@ -5,6 +5,9 @@
 	"main": "index.js",
 	"scripts": {
 		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate && bun run db:seed",
+		"s11t:lint": "s11t lint --release-profile development --config api/systemContexts/s11t.config.toml",
+		"s11t:build": "s11t build --release-profile development --config api/systemContexts/s11t.config.toml",
+		"s11t:check": "s11t build --check --release-profile development --config api/systemContexts/s11t.config.toml",
 		"dev": "concurrently -k -n api,web -c cyan,magenta \"bun run dev:api\" \"bun run dev:web\"",
 		"dev:api": "cross-env NIGHTWORKERS_EXECUTOR_MODE=in_process bun api/index.ts",
 		"dev:web": "vite",
@@ -47,11 +50,11 @@
 		"test:coverage:frontend": "node scripts/run-vitest.mjs run --config vitest.frontend.config.ts --coverage",
 		"test:coverage:critical": "bun scripts/coverage/check-critical-branches.ts",
 		"test:live:llm": "node scripts/run-vitest.mjs run --config vitest.live.config.ts",
-		"test:supervisor-regression": "node scripts/run-vitest.mjs run tests/services.supervisor-skills.test.ts tests/services.supervisor-prompt-packet.test.ts tests/structured-llm/services-structured-llm-01.test.ts tests/structured-llm/services-structured-llm-02.test.ts tests/structured-llm/services-structured-llm-03.test.ts",
+		"test:supervisor-regression": "node scripts/run-vitest.mjs run tests/services.supervisor-tools.test.ts tests/services.supervisor-prompt-packet.test.ts tests/structured-llm/services-structured-llm-01.test.ts tests/structured-llm/services-structured-llm-02.test.ts tests/structured-llm/services-structured-llm-03.test.ts",
 		"test:desktop-runtime": "node scripts/run-vitest.mjs run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts tests/hono-security-regressions.test.ts tests/config-listen-security.test.ts tests/desktop-matrix-workflow.test.ts tests/desktop-diagnostics.test.ts",
 		"audit:dependencies": "node scripts/audit-dependencies.mjs",
 		"check:tracked-artifacts": "bun scripts/check-tracked-artifacts.mjs",
-		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-coding-agent-semantic-control.mjs && node scripts/check-coding-agent-standalone-boundary.mjs && node scripts/check-task-operator-boundary.mjs && node scripts/agent-ontology/validate-manifests.mjs",
+		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-system-context-catalog.mjs && node scripts/check-coding-agent-semantic-control.mjs && node scripts/check-coding-agent-standalone-boundary.mjs && node scripts/check-task-operator-boundary.mjs && node scripts/agent-ontology/validate-manifests.mjs",
 		"check:docs": "node scripts/check-docs-consistency.mjs",
 		"typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit --singleThreaded",
 		"lint": "biome check .",
@@ -135,6 +138,7 @@
 		"@libsql/client": "0.17.4",
 		"@modelcontextprotocol/sdk": "1.29.0",
 		"@openai/codex-sdk": "0.144.4",
+		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
 		"@tanstack/react-query": "5.101.2",
 		"@tanstack/react-router": "1.170.18",
 		"@tanstack/react-table": "8.21.3",
@@ -171,6 +175,7 @@
 		"@biomejs/biome": "2.5.3",
 		"@hono/vite-dev-server": "0.26.1",
 		"@playwright/test": "1.61.1",
+		"@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
 		"@tailwindcss/vite": "4.3.2",
 		"@tanstack/router-plugin": "1.168.20",
 		"@tauri-apps/cli": "2.11.4",
@@ -195,6 +200,7 @@
 		"vitest": "4.1.10"
 	},
 	"overrides": {
+		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
 		"fast-uri": "3.1.2",
 		"hono": "4.12.30",
 		"vite": "8.1.4"

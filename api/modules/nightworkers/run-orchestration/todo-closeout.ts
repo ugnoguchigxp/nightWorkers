@@ -20,6 +20,7 @@ export function toAgentRuntimeTodoContext(
 		title: todo.title,
 		description: todo.description,
 		objective: todo.objective,
+		systemContext: todo.context,
 		context: todo.context,
 		nextAction: todo.nextAction,
 		acceptanceCriteria: readStringArray(todo.acceptanceCriteriaJson),

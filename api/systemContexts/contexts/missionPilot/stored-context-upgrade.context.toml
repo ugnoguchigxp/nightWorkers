@@ -1,0 +1,8 @@
+text = '''[[storedContext]]
+[[planEntry]]'''
+
+[variables.planEntry]
+profile = "trusted.inline"
+
+[variables.storedContext]
+profile = "trusted.inline"

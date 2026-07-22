@@ -1,4 +1,4 @@
-import type { CodingAgentSystemContextSnapshot } from "../todo";
+import type { CodingAgentSystemContextSnapshot } from "../../../../shared/modules/codingAgent";
 
 export type CodingAgentSystemContext = CodingAgentSystemContextSnapshot;
 
@@ -28,7 +28,10 @@ export type CodingAgentCurrentTodoContext = {
 	seq: number;
 	revision: number;
 	title: string;
+	taskType: string;
 	objective: string | null;
+	systemContext: string;
+	/** @deprecated systemContextの互換alias。 */
 	context: string | null;
 	nextAction: string;
 	acceptanceCriteria: string[];

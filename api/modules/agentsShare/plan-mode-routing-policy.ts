@@ -14,14 +14,6 @@ const REQUIRED_VIEWS = new Set<PlanModeRoutingView>(
 	REQUIRED_PLAN_MODE_ROUTING_VIEWS,
 );
 const LEGACY_INITIAL_OMIT_REASON = "初期 routing では省略されています。";
-const TERMINAL_TASK_STATUSES = new Set([
-	"completed",
-	"cancelled",
-	"failed",
-	"timed_out",
-	"archived",
-]);
-
 type RoutingMessage = { metadataJson: unknown };
 type RoutingCapabilities = Partial<Record<PlanModeRoutingView, boolean>>;
 
@@ -31,10 +23,10 @@ function record(value: unknown) {
 		: null;
 }
 
-export function planModeRoutingTerminalReason(status: string) {
-	return TERMINAL_TASK_STATUSES.has(status)
-		? `Task が ${status} のため routing を変更できません。`
-		: null;
+export function planModeRoutingTerminalReason(_status: string) {
+	// Routing is revisioned configuration. Task lifecycle state must not make it
+	// read-only; concurrent generation and revision checks protect active writes.
+	return null;
 }
 
 export function buildInitialPlanModeRoutingEntries(

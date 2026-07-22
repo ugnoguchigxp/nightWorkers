@@ -1,0 +1,12 @@
+text = '''[[baseSystemContext]]
+
+[Mission Pilot 現在のStep文脈]
+<CURRENT_STEP_CONTEXT_JSON>
+[[currentStepContext]]
+</CURRENT_STEP_CONTEXT_JSON>'''
+
+[variables.baseSystemContext]
+profile = "trusted.inline"
+
+[variables.currentStepContext]
+profile = "untrusted.json"

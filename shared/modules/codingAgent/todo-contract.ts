@@ -7,15 +7,17 @@ export const AGENT_TODO_STATUSES = [
 ] as const;
 
 export const TODO_MUTATION_LIMITS = {
-	maxTodos: 100,
+	maxTodos: 12,
 	maxTodoIdLength: 128,
-	maxDependencies: 100,
+	maxDependencies: 12,
 	maxTitleLength: 200,
+	maxTaskTypeLength: 64,
 	maxObjectiveLength: 8_000,
 	maxContextLength: 20_000,
+	maxTodoSystemContextLength: 4_000,
 	maxNextActionLength: 4_000,
 	maxReasonLength: 8_000,
-	maxAcceptanceCriteria: 50,
+	maxAcceptanceCriteria: 12,
 	maxAcceptanceCriterionLength: 2_000,
 } as const;
 
@@ -24,8 +26,12 @@ export const TODO_DRAFT_FIELD_GUIDANCE_JA = {
 		"このRun内でTodoを安定して参照するlocal key。replace_planとdependsOnKeysではこの値を使い、start等の個別更新ではtool resultのcanonical idとrevisionを使う。",
 	objective:
 		"このTodoで達成する局所的な目的。Task名の言い換えではなく、設計書の実装計画上の成果を具体化する。",
+	systemContext:
+		"このTodoを実行するときに最優先で読む局所SystemContext。設計書の該当制約、非目標、参照先、判断済み事項、検証条件だけを短く記録する。共通SystemContextや設計書全文は複製しない。",
 	context:
-		"このTodoを実行するLLM自身への局所SystemContext兼リマインダー。設計書の該当制約・非目標・参照先と、quality gate、verify、template/import、安全規則など、この工程に適用される固定SystemContextだけを選んで記録する。共通SystemContextや設計書全文は複製しない。",
+		"systemContextの旧互換alias。新しいTodoではsystemContextを使用する。",
+	taskType:
+		"Todoの意味を示す短い分類。runtime modeやtool制限には使わず、例としてinspection、implementation、data_migration、verificationを指定できる。",
 	nextAction:
 		"局所SystemContextを読んだうえで次に行う具体的な一手。hostに次工程を推測させない。",
 	acceptanceCriteria:
@@ -33,7 +39,7 @@ export const TODO_DRAFT_FIELD_GUIDANCE_JA = {
 	dependsOnKeys:
 		"同じRunのreplace_plan内にある先行TodoのtodoKey。serverがcanonical Todo IDへ解決する。",
 	updateContext:
-		"作業で得た新事実と、以後も忘れてはいけない工程固有のリマインダーを反映した局所SystemContext。共通SystemContext全文は複製しない。",
+		"作業で得た新事実と、以後も忘れてはいけない工程固有の制約を反映した局所SystemContext。共通SystemContext全文は複製しない。",
 } as const;
 
 export type AgentTodoStatus = (typeof AGENT_TODO_STATUSES)[number];
@@ -42,7 +48,9 @@ export type TodoCreatedBy = "agent" | "human" | "migration";
 export type CodingAgentSystemContextSnapshot = {
 	version: number;
 	planModeRequested: boolean;
+	todoPolicy: "adaptive";
 	roleInstructionsJa: string;
+	domainModuleBoundaryJa?: string;
 	taskGoal: string;
 	projectRulesJa: string[];
 	todoRequirementJa: string;
@@ -57,7 +65,10 @@ export type TodoDraft = {
 	/** @deprecated replace_planではRun-local todoKeyとして互換正規化する。 */
 	id?: string;
 	title: string;
+	taskType?: string;
 	objective?: string | null;
+	systemContext?: string;
+	/** @deprecated systemContextへ互換正規化する。 */
 	context?: string | null;
 	nextAction: string;
 	acceptanceCriteria?: string[];
@@ -98,7 +109,9 @@ export type TodoMutationCommand =
 			op: "update_context";
 			todoId: string;
 			expectedTodoRevision: number;
-			context: string;
+			systemContext?: string;
+			/** @deprecated systemContextへ互換正規化する。 */
+			context?: string;
 			nextAction: string;
 	  };
 

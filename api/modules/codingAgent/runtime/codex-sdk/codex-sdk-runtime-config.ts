@@ -1,10 +1,15 @@
 import type { CodexOptions, ThreadOptions } from "@openai/codex-sdk";
+import { buildNightWorkersCodexToolApprovalConfig } from "../../../../mcp/nightworkers-tool-manifest";
 import type { AgentRunContext } from "../types";
+import { buildCodexRuntimeDeveloperInstructions } from "./codex-sdk-runtime-prompt";
 
 type CodexRuntimeConfigInput = {
 	accessToken?: string;
 	env?: NodeJS.ProcessEnv;
+	context?: AgentRunContext;
 };
+
+const DEFAULT_NIGHTWORKERS_API_PORT = 39_173;
 
 export function buildCodexRuntimeSdkOptions(
 	input: CodexRuntimeConfigInput = {},
@@ -21,7 +26,45 @@ export function buildCodexRuntimeSdkOptions(
 		...sanitizedEnv,
 		...(input.accessToken ? { CODEX_ACCESS_TOKEN: input.accessToken } : {}),
 	};
+	if (input.context) {
+		sdkOptions.config = {
+			developer_instructions: buildCodexRuntimeDeveloperInstructions(
+				input.context,
+			),
+			mcp_servers: {
+				nightworkers: {
+					url: buildRequestScopedNightWorkersMcpUrl(input.context, env),
+					enabled: true,
+					required: true,
+					tools: buildNightWorkersCodexToolApprovalConfig(),
+				},
+			},
+		};
+	}
 	return sdkOptions;
+}
+
+export function buildRequestScopedNightWorkersMcpUrl(
+	context: Pick<AgentRunContext, "runId" | "taskId">,
+	env: NodeJS.ProcessEnv = process.env,
+) {
+	const configuredMcpUrl = env.NIGHTWORKERS_CODEX_MCP_URL?.trim();
+	const apiOrigin =
+		env.NIGHTWORKERS_API_ORIGIN?.trim() ||
+		`http://127.0.0.1:${readListenPort(env.PORT)}`;
+	const url = configuredMcpUrl
+		? new URL(configuredMcpUrl)
+		: new URL("/mcp/nightworkers", apiOrigin);
+	url.searchParams.set("taskId", context.taskId);
+	url.searchParams.set("runId", context.runId);
+	return url.toString();
+}
+
+function readListenPort(value: string | undefined) {
+	const port = Number(value);
+	return Number.isInteger(port) && port >= 1 && port <= 65_535
+		? port
+		: DEFAULT_NIGHTWORKERS_API_PORT;
 }
 
 export function buildCodexRuntimeThreadOptions(

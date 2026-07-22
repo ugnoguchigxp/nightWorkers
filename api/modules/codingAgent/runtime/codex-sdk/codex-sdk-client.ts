@@ -49,13 +49,15 @@ export async function createCodexRuntimeThread(input: {
 	const codexOptions = buildCodexRuntimeSdkOptions({
 		accessToken: resolveCodexEndpointAccessToken(providerEndpointId),
 		env: process.env,
+		context: input.context,
 	});
 	const codex = input.codexClient ?? new Codex(codexOptions);
 	const threadOptions = buildCodexRuntimeThreadOptions(input.context);
 	const resumeState = readCodexResumeState(input.context);
 	if (resumeState?.providerThreadId) {
+		let resumedThread: CodexRuntimeThread;
 		try {
-			const activeThread = await codex.resumeThread(
+			resumedThread = await codex.resumeThread(
 				resumeState.providerThreadId,
 				threadOptions,
 			);
@@ -64,7 +66,6 @@ export async function createCodexRuntimeThread(input: {
 				providerThreadId: resumeState.providerThreadId,
 				stateId: resumeState.stateId,
 			});
-			return activeThread;
 		} catch (error) {
 			await input.onResumeEvent?.({
 				status: "resume_failed",
@@ -72,12 +73,92 @@ export async function createCodexRuntimeThread(input: {
 				stateId: resumeState.stateId,
 				error: error instanceof Error ? error.message : String(error),
 			});
-			throw error;
+			return codex.startThread(threadOptions);
 		}
+		return wrapResumedThreadWithFreshFallback({
+			resumedThread,
+			startFreshThread: () => codex.startThread(threadOptions),
+			providerThreadId: resumeState.providerThreadId,
+			stateId: resumeState.stateId,
+			onResumeEvent: input.onResumeEvent,
+		});
 	} else {
 		await input.onResumeEvent?.({ status: "unavailable" });
 	}
 	return codex.startThread(threadOptions);
+}
+
+function wrapResumedThreadWithFreshFallback(input: {
+	resumedThread: CodexRuntimeThread;
+	startFreshThread: () => Promise<CodexRuntimeThread> | CodexRuntimeThread;
+	providerThreadId: string;
+	stateId?: string | null;
+	onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
+}): CodexRuntimeThread {
+	return {
+		async runStreamed(prompt, options) {
+			let resumedTurn: Awaited<ReturnType<CodexRuntimeThread["runStreamed"]>>;
+			try {
+				resumedTurn = await input.resumedThread.runStreamed(prompt, options);
+			} catch (error) {
+				if (options.signal.aborted) throw error;
+				await reportResumeFailure(input, error);
+				const freshThread = await input.startFreshThread();
+				return freshThread.runStreamed(prompt, options);
+			}
+			return {
+				events: resumeEventsWithFreshFallback({
+					...input,
+					prompt,
+					options,
+					resumedEvents: resumedTurn.events,
+				}),
+			};
+		},
+	};
+}
+
+async function* resumeEventsWithFreshFallback(input: {
+	resumedEvents: AsyncIterable<unknown>;
+	prompt: Input;
+	options: { signal: AbortSignal };
+	startFreshThread: () => Promise<CodexRuntimeThread> | CodexRuntimeThread;
+	providerThreadId: string;
+	stateId?: string | null;
+	onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
+}) {
+	let emittedProviderEvent = false;
+	try {
+		for await (const event of input.resumedEvents) {
+			emittedProviderEvent = true;
+			yield event;
+		}
+	} catch (error) {
+		if (emittedProviderEvent || input.options.signal.aborted) throw error;
+		await reportResumeFailure(input, error);
+		const freshThread = await input.startFreshThread();
+		const freshTurn = await freshThread.runStreamed(
+			input.prompt,
+			input.options,
+		);
+		for await (const event of freshTurn.events) yield event;
+	}
+}
+
+async function reportResumeFailure(
+	input: {
+		providerThreadId: string;
+		stateId?: string | null;
+		onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
+	},
+	error: unknown,
+) {
+	await input.onResumeEvent?.({
+		status: "resume_failed",
+		providerThreadId: input.providerThreadId,
+		stateId: input.stateId,
+		error: error instanceof Error ? error.message : String(error),
+	});
 }
 
 function readCodexProviderEndpointId(context: AgentRunContext) {

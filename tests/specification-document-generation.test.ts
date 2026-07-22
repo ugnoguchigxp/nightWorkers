@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MISSION_PILOT_PLAN_SYSTEM_CONTEXT } from "../api/modules/missionPilot";
+import { getMissionPilotPlanSystemContext } from "../api/modules/missionPilot";
 import {
 	buildSpecificationDocumentContext,
 	FEATURE_PLAN_TRACEABILITY_STATEMENT,
@@ -161,8 +161,19 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("[Feature Plan DDD Boundary]");
 		expect(systemPrompt).toContain("新規domainの導入か既存domainの拡張か");
 		expect(systemPrompt).toContain("modules/[domain]");
-		expect(systemPrompt).toContain("`## 実装計画` の対象項目へmoduleを明記");
-		expect(systemPrompt).toContain("新しいmoduleを機械的に増やさない");
+		expect(systemPrompt).toContain("src/modules/[domain]");
+		expect(systemPrompt).toContain(
+			"`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記",
+		);
+		expect(systemPrompt).toContain(
+			"route、service、repository、schema等のうち必要な責務をどう分離",
+		);
+		expect(systemPrompt).toContain(
+			"画面、画面専用component、hooks、schema等をどのmoduleへ閉じる",
+		);
+		expect(systemPrompt).toContain(
+			"対象外のsurfaceやlayerを機械的に増やさない",
+		);
 		expect(systemPrompt).toContain(
 			"sharedへ置けるのは複数domainで同じ意味を持つcontract",
 		);
@@ -265,7 +276,7 @@ describe("Specification document generation", () => {
 
 	it("adds requirement priority only to the Mission Pilot SystemContext", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt({
-			additionalSystemContext: MISSION_PILOT_PLAN_SYSTEM_CONTEXT,
+			additionalSystemContext: getMissionPilotPlanSystemContext(),
 		});
 
 		expect(systemPrompt).toContain("[Mission Pilot SystemContext]");

@@ -9,6 +9,7 @@ import { NotFoundError, ValidationError } from "../../lib/errors";
 import { callStructuredOutputWithRepair } from "../../services/structured-generation/structured-output-repair.service";
 import { createStructuredOutputContract } from "../../services/structured-llm";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
+import { p } from "../../systemContexts/catalog";
 import * as missionPlannerService from "../mission-planner/mission-planner.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as taskGenerationRepo from "./task-generation.repository";
@@ -61,14 +62,9 @@ export function classifyTaskGenerationScale(
 }
 
 function buildTaskGenerationEstimateSystemPrompt() {
-	return [
-		"Mission Goal と repository signal から、Goal 達成に必要な残作業の規模だけを見積もってください。",
-		"実装、Task Candidate 生成、Mission 生成は行わず、JSON schema に従った見積もりだけを返してください。",
-		"estimatedChangedLines は新規追加と変更を合わせた概算行数です。既に実装済みの範囲は含めず、残作業だけを数えてください。",
-		`推定変更行数が ${TASK_GENERATION_LARGE_THRESHOLD_LINES} 行以上なら後続で Mission 分解し、未満なら直接 Task Candidate を生成します。`,
-		"不確実な場合は assumptions に前提を残し、過小評価しないでください。",
-		"プロンプト文言と出力本文は日本語を維持してください。",
-	].join("\n");
+	return p("taskGeneration.estimate", {
+		largeThresholdLines: TASK_GENERATION_LARGE_THRESHOLD_LINES,
+	});
 }
 
 function buildTaskGenerationEstimateUserPrompt(input: {

@@ -1,0 +1,15 @@
+text = '''Workspace context:
+- registeredRepoRoot: [[registeredRepoRoot]]
+- executionRoot: [[executionRoot]]
+- workspaceSource: [[workspaceSource]]
+- repoRoot: [[executionRoot]] (executionRoot の互換別名)
+- リポジトリの読み書き、native command、NightWorkers managed tool は executionRoot を基準にする。registeredRepoRoot と異なる場合、登録元で実装・検証しない。run_check の cwd は executionRoot 相対で指定し、root なら省略する。'''
+
+[variables.executionRoot]
+profile = "trusted.inline"
+
+[variables.registeredRepoRoot]
+profile = "trusted.inline"
+
+[variables.workspaceSource]
+profile = "trusted.inline"

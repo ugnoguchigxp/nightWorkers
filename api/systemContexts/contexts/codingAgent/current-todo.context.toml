@@ -1,0 +1,7 @@
+text = '''<CURRENT_TODO_SYSTEM_CONTEXT>
+SystemContextを含むcurrent Todoの正本snapshot（JSON）:
+[[todo]]
+</CURRENT_TODO_SYSTEM_CONTEXT>'''
+
+[variables.todo]
+profile = "untrusted.json"

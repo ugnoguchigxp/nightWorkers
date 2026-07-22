@@ -1,8 +1,11 @@
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
-import { SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA } from "../../../../shared/schemas/verification-checklist.schema";
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
-import { FEATURE_PLAN_DDD_BOUNDARY_SYSTEM_CONTEXT_JA } from "../../../modules/specification/feature-plan-domain-boundary";
-import { FEATURE_PLAN_TRACEABILITY_STATEMENT } from "../../../modules/specification/specification-traceability";
+import type { PlanModeQuestionnaireRepositoryPolicy } from "../../../modules/specification/plan-mode-project-stack-context";
+import {
+	bindSystemContextTextCatalog,
+	p,
+	type SystemContextP,
+} from "../../../systemContexts/catalog";
 
 type QuestionnaireSourceInput = {
 	sourceBlueprintMessage?: {
@@ -38,57 +41,25 @@ type AdditionalQuestionnairePromptInput = {
 	decisionInventory: QuestionnaireDecisionInventoryItem[];
 };
 
-const TECH_STACK_QUESTION_GUIDANCE =
-	"技術スタックの質問文は「どの技術スタックで実装しますか？」と簡潔にしてください。Project Stack Context や task に含まれる既存 template 名、認証、showcase などの説明を「〜を基に」のような前提句として質問文へ混ぜないでください。選択肢は、Hono + React/Vite (デフォルト)、RAG (Hono + React/Vite)、Python/FastAPI + React/Vite、API only (FastAPI)、Java 8 + Spring Boot 2.7 + React/Vite、Java 25 + Spring Boot 4 + React/Vite、Rust + Axum + React/Vite など、アプリケーションの runtime / framework 構成を識別できる粒度にしてください。「デフォルト」を独立した選択肢にはせず、通常の Hono starter の選択肢を必ず Hono + React/Vite (デフォルト) と表示してください。DB/永続化は必ず別の質問で選び、技術スタックの選択肢には SQLite、PostgreSQL、pgvector、Turso/libSQL などの DB 製品や永続化方式を含めないでください。RAG は RAG (Hono + React/Vite)、API only は API only (FastAPI)、Rust starter は Rust + Axum + React/Vite と表示してください。未materializedな新規Projectで技術スタックを質問する場合は、Java 8、Java 25、Rust + Axum + React/Vite の選択肢を必ず含めてください。";
+function questionnaireRepositorySelectionGuidance(
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy,
+	p: SystemContextP,
+) {
+	return repositoryPolicy === "repository_fixed"
+		? p("questionnaire.repository-fixed-guidance", {})
+		: p("questionnaire.starter-selection-guidance", {});
+}
 
-const STARTER_TEMPLATE_DATABASE_VARIANT_POLICY =
-	"SQLite と PostgreSQL は Hono、Python、Java、Rust の各基本技術スタックで専用 starter variant を利用できます。pgvector と Turso/libSQL の専用 starter variant は Hono と Python に限定されます。選択された技術スタックと DB の組み合わせに専用 variant がない場合は、選択した技術スタックと runtime version に対応する SQLite variant を雛形として使用し、ユーザーが選択した DB 要件は SQLite へ変更せず、DB driver、接続設定、schema/migration、query、検証の必要な差し替えを Feature Plan の `## 実装計画` に含めてください。";
-
-const DATABASE_QUESTION_GUIDANCE = `DB/永続化の質問では、SQLite、PostgreSQL、pgvector、Turso/libSQL、DBなし/後続決定など、template の branch variant または実装計画での DB 差し替えを識別できる選択肢にしてください。技術スタックに専用 variant がないことを理由に DB の選択肢を除外しないでください。${STARTER_TEMPLATE_DATABASE_VARIANT_POLICY}`;
-
-const QUESTIONNAIRE_TITLE_GUIDANCE =
-	"title は「実装前確認」のような短い汎用名にしてください。Task名、プロダクト名、機能名を入れず、ページ数、連番、進捗表記、括弧付きの 1/4 のような表記も入れないでください。";
-
-const GRILL_ME_DECISION_GUIDANCE = [
-	"grill-me では、ユーザーの依頼を言い換える質問ではなく、回答によって実装、公開契約、データ、権限、検証のいずれかが具体的に変わる未決定事項を質問してください。",
-	"最初に、目的と成功状態、対象ユーザー、対象 / 非対象、主要操作と状態遷移、受け入れ条件の食い違いを確認し、その回答がないと決められない詳細を follow-up に回してください。",
-	"必要に応じて、空状態・重複・上限・不正入力・権限不足・部分失敗・再試行・削除や復旧などのedge case、互換性、migration、rollback、監視・運用まで掘り下げてください。",
-	"Task、既存Artifact、repository contextの間に矛盾や暗黙の仮定がある場合は、勝手に丸めず、その差によって実装が分かれる選択肢として明示してください。",
-	"各質問は一つの判断軸だけを扱い、選択肢は実装者が異なる挙動として区別できる具体性を持たせてください。『適切に対応』『一般的な方法』『必要に応じて』のように実装を確定できない選択肢は作らないでください。",
-	"radio の選択肢は同時に成立しない代替案、checkbox の選択肢は同時採用できる独立項目だけにしてください。削除方式と追加機能、認証方式と画面範囲など、別の判断軸を一つのcheckboxへ混ぜないでください。",
-	"物理削除 / 論理削除、即時削除 / 復旧可能のように基本方針を一つ選ぶ判断はradioにし、検索・一括操作・通知などの任意機能とは別の質問にしてください。",
-	"並び順と空状態、入力validationと件数上限、route配置と未認証API responseのような独立判断も一問に結合しないでください。初回回答がないと決められない下位論点は、結合せずfollow-upへ回してください。",
-	"radio の選択肢同士で意味を重複させず、どの選択肢を選んだかだけで実装方針を一意に区別できるようにしてください。",
-	"既存contextで確定済みの事項、通常のrepository調査で一意に分かる事項、回答しても設計や検証が変わらない好みは質問しないでください。",
-].join("\n");
-
-export function buildDesignQuestionnaireSystemPrompt() {
-	return [
-		"実装前の確認フォームを作ります。目的は、grill-me のように仕様の曖昧さを段階的に潰すことです。",
-		"初回フォームでは、現時点で回答でき、実装方針を決めるために本当に必要な未決定事項だけを聞いてください。",
-		"初期質問は15件を絶対上限とします。最低件数や目標件数はありません。15件を埋めるために質問を増やさず、必要な論点が少なければ少数で終了してください。",
-		QUESTIONNAIRE_TITLE_GUIDANCE,
-		GRILL_ME_DECISION_GUIDANCE,
-		"質問ジャンルは task / blueprint / repository context から判断し、必要なものを選んでください。固定分類やキーワード一致で決めないでください。",
-		"例として、scope、UI/UX、データ、backend/API、認証、外部連携、Docker、cloud deployment、storage、運用、非対象などが論点になり得ます。",
-		"Questionnaire も後続の設計書と同じく、入力 context に含まれる既存資料と project context を材料にしてください。材料があるのに一般論だけで質問を作らないでください。",
-		"auth / permission は対象面が public only または auth only と明確なら質問しないでください。public / protected / auth / admin などの面が混在する、または対象機能をどの面に置くか不明な場合は、初回または follow-up で route / API / data の保護方針を必ず確認してください。",
-		"auth / permission の質問は「認証は必要ですか？」だけにせず、既存の public/protected 面、追加 route/API、データの所有境界に結びつく選択肢にしてください。",
-		"テンプレート選定のため、使用する技術スタックと DB/永続化の選択が context から確定できない場合は、初回フォームで必ず確認してください。",
-		TECH_STACK_QUESTION_GUIDANCE,
-		DATABASE_QUESTION_GUIDANCE,
-		"ただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。",
-		"コードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
-		"ユーザーが Radio button または Checkbox で選べる質問だけを作ってください。",
-		"自由記述、説明文、DB設計、分岐条件、id は作らないでください。",
-		"各 options は 2-10 件にしてください。",
-		"type は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。",
-		"実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。",
-		"checkbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。",
-		"選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。",
-		"JSON root は {title, questions} のみです。",
-		"回答は JSON のみで返してください。",
-	].join("\n");
+export function buildDesignQuestionnaireSystemPrompt(
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
+) {
+	const { p } = bindSystemContextTextCatalog();
+	return p("questionnaire.design", {
+		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
+			repositoryPolicy,
+			p,
+		),
+	});
 }
 
 export function buildDesignQuestionnaireInitialUserPrompt(
@@ -144,33 +115,16 @@ export function buildDesignQuestionnaireFollowUpUserPrompt(
 	].join("\n");
 }
 
-export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt() {
-	return [
-		"目的は、実装前の仕様の曖昧さを grill-me のように質問攻めで潰すことです。",
-		GRILL_ME_DECISION_GUIDANCE,
-		QUESTIONNAIRE_TITLE_GUIDANCE,
-		"ユーザー回答を読み、次に聞かないと答えられない下位論点や、まだ未確認の質問ジャンルが残っているか判定してください。",
-		"question set sequence が4以上なら追加質問を出さず ready_for_design_assembly にしてください。この実行上限をtitleや質問文へ表示しないでください。",
-		"answeredQuestions は既に回答済みの仕様判断です。選択肢が「未定」「後続決定」でも、その質問自体は回答済みとして扱い、同じ判断軸を言い換えて再質問しないでください。",
-		"不足がある場合だけ action=follow_up にし、次に回答可能になったジャンルの追加質問を questionnaire に返してください。",
-		"既存質問と同じ質問文、同じ意味、または同じ選択肢セットの質問は絶対に返さないでください。",
-		"checkbox が未選択で回答されている場合、それは「どれも不要 / 今回は含めない」という仕様判断として扱ってください。",
-		"一度の follow-up で全ジャンルを詰め込まず、次に設計判断を進めるために必要な質問だけを返してください。",
-		"テンプレート選定に必要な使用技術スタックまたは DB/永続化の選択がまだ未確認なら、未確認の判断軸だけを追加質問にしてください。",
-		TECH_STACK_QUESTION_GUIDANCE,
-		DATABASE_QUESTION_GUIDANCE,
-		"Docker、cloud deployment、storage、認証、外部連携、運用、非対象などは、回答内容または Plan Mode Context から必要性が見えた場合に追加確認してください。",
-		"public / protected / auth / admin などの面が混在する、または対象機能の配置が未回答なら、auth / permission の確認を follow-up に含めてください。明確に public only または auth only なら繰り返し聞かないでください。",
-		"コードや既存回答から合理的に推定できることは、ユーザーに聞かず前提として扱ってください。",
-		"追加質問はユーザーが Radio button または Checkbox で選べるものだけにしてください。",
-		"自由記述、説明文、DB設計、分岐条件、id は作らないでください。",
-		"追加質問は最大10件です。最低件数や目標件数はなく、必要な質問だけを返してください。各 options は 2-10 件にしてください。",
-		"追加質問でも、type は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。",
-		"実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。",
-		"すでに回答から十分に判断できる内容を繰り返さないでください。",
-		"十分であれば action=ready_for_design_assembly とし、questionnaire は null にしてください。",
-		"回答は JSON のみで返してください。",
-	].join("\n");
+export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt(
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
+) {
+	const { p } = bindSystemContextTextCatalog();
+	return p("questionnaire.follow-up-decision", {
+		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
+			repositoryPolicy,
+			p,
+		),
+	});
 }
 
 export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
@@ -194,24 +148,16 @@ export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
 	].join("\n");
 }
 
-export function buildAdditionalDesignQuestionnaireSystemPrompt() {
-	return [
-		"Plan Mode 中に追加確認が必要かを判断し、必要な場合だけ追加質問を返します。",
-		"目的は、Blueprint、Data Model、API Contract、Zod Schema、Flow、Feature Plan 生成中に見えた矛盾や不足を、LLM が勝手に丸めずユーザーに確認することです。",
-		"既存資料から合理的に決められる事項は質問しないでください。",
-		"実装判断に影響しない好み質問は出さないでください。",
-		"decisionInventory に同じ decisionKey、同じ質問、同じ選択肢集合がある場合は絶対に再質問しないでください。",
-		"未回答の同 decisionKey がある場合も新規質問を作らず、空配列にしてください。",
-		"blocking=true は、回答なしに Feature Plan を作ると仕様が危険に曖昧になる質問だけです。",
-		"auth / permission、data ownership、migration、破壊的操作、外部連携、API / validation 矛盾は blocking になり得ます。",
-		"API / DB 契約に「空または削除結果」「現在の status または切替指示」「作成順」「A または B」のような曖昧さがあり、project convention から決められない場合は追加質問にしてください。",
-		"DELETE response、toggle semantics、id generation、sort direction、migration strategy は、実装者がその場で決めると危険な場合だけ blocking にしてください。",
-		"non-blocking は回答すれば精度は上がるが既存資料や project convention で安全に進められるものだけです。",
-		"質問は radio または checkbox のみです。自由記述は作らないでください。",
-		"decisionKey は lower-case の dot 区切りにしてください。例: auth.scope.todo, api.todo.status_update_contract, data.todo.updated_at_strategy。",
-		"質問不要なら questions は空配列です。",
-		"回答は JSON object のみで、title, rationale, questions を返してください。",
-	].join("\n");
+export function buildAdditionalDesignQuestionnaireSystemPrompt(
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
+) {
+	const { p } = bindSystemContextTextCatalog();
+	return p("questionnaire.additional", {
+		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
+			repositoryPolicy,
+			p,
+		),
+	});
 }
 
 export function buildAdditionalDesignQuestionnaireUserPrompt(
@@ -238,11 +184,7 @@ export function buildAdditionalDesignQuestionnaireUserPrompt(
 }
 
 export function buildDesignQuestionnaireReviewSystemPrompt() {
-	return [
-		"回答を設計判断、後回し事項、未解決事項、Data Model handoff note に整理してください。",
-		"DB table、column、relation、DDL の具体案は作らず、Data Model へ渡す制約・論点だけを書いてください。",
-		"sourceQuestionIds と unresolvedQuestionIds を必ず保持してください。",
-	].join("\n");
+	return p("questionnaire.review", {});
 }
 
 export function buildDesignQuestionnaireReviewUserPrompt(
@@ -260,59 +202,15 @@ export function buildDesignQuestionnaireReviewUserPrompt(
 	);
 }
 
-export function buildSpecificationDocumentSystemPrompt(input?: {
-	additionalSystemContext?: string | null;
-}) {
-	return [
-		...(input?.additionalSystemContext ? [input.additionalSystemContext] : []),
-		FEATURE_PLAN_DDD_BOUNDARY_SYSTEM_CONTEXT_JA,
-		"Design Questionnaire、Blueprint summary、Data Model DDL reference、Implementation Plan Guidance をもとに、実装前に読む実装計画書を Markdown で作成してください。",
-		"目的は、後続のコーディングエージェントが迷わず実装、検証、完了判定できることです。必要な判断だけを短く、実装順に読める計画にしてください。",
-		"文体はストレートにしてください。背景説明、評価理由、Evidence の再掲、装飾的な言い回し、同じ内容の重複を避けてください。",
-		"実装対象は Task と Target Project Context に記載されたプロジェクトです。生成・管理システム名を、実装対象アプリ名や実装先として本文に書かないでください。",
-		"Target Project Context の Project name/root が NightWorkers 自体を指す場合を除き、本文で NightWorkers / NightWorker を実装対象名として使わないでください。",
-		"Blueprint summary は選択された画面・section・component・copy・sample・props 要約です。JSON として扱わず、画面再現に必要な仕様判断として解釈してください。",
-		"Questionnaire Decisions はTaskを具体化する設計判断として使用してください。Data Model DDL reference に将来拡張や対象外要素が含まれる場合は実装対象にしないでください。",
-		STARTER_TEMPLATE_DATABASE_VARIANT_POLICY,
-		"Questionnaire で技術スタックと DB/永続化が別々に確定している場合は、両方を組み合わせて starter variant と実装差分を決めてください。SQLite variant へのフォールバックは雛形取得方法であり、最終的な DB 要件の変更として扱わないでください。",
-		"専用 variant がなく SQLite variant へフォールバックする場合、`## 実装計画` では SQLite variant の取得を scaffold の項目、選択 DB への差し替えをそれに依存する implementation の項目として分けてください。",
-		"Questionnaire Decisions は参考情報ではなく、確定済みの設計判断です。各回答をSpecの対応箇所へ反映し、回答済みの選択肢を別の選択肢へ読み替えたり、projectに利用可能なtest scriptがあるという理由だけで選択外のtest種別を追加したりしないでください。",
-		"検証方針を問うQuestionnaire回答は `## 検証計画` と `## 完了条件` の拘束条件です。unit / focused test / API smoke / DB verification / E2E の採否と範囲は回答どおりにし、Taskの最新の明示要件と衝突する場合は一方を黙って追加せず、未解決事項として明示してください。",
-		"E2E は明示的な opt-in として扱ってください。Questionnaire Decisions に E2E を実施するという確定回答がある場合だけ `## 検証計画` と `## 完了条件` に E2E を含めてください。Questionnaire がない、検証方針の質問がない、未回答、または E2E 以外が選択されている場合は E2E を含めないでください。",
-		"Project package scripts に `test:e2e` 等が存在すること、既存repositoryにE2Eテストがあること、UIを変更することは、E2Eを採用する根拠になりません。Questionnaire Decisions の明示回答から推測で補完しないでください。",
-		"Data Model DDL reference は参考情報です。DDL や migration を実行する指示ではありません。DB 変更が必要な場合だけ、既存 tooling に従う schema/migration 作成・適用・検証ステップを書いてください。",
-		"Plan Mode References は入力専用の関連資料 context です。最終文書に全件列挙せず、設計判断と契約の確定に使ってください。",
-		"既生成資料は入力済みの設計判断として尊重し、同じ内容を不要に推測し直さないでください。矛盾がある場合は、入力全体から実装可能で一貫した解釈を選んでください。",
-		"未決定事項は極力作らず、既存資料から合理的に決められる場合は前提として固定してください。実装を始めると危険な矛盾または欠落だけを未解決として短く残してください。",
-		"Plan View References に API Contract や Zod Schema がある場合も、本文に詳細を再掲せず、`## 実装計画` で必要な参照先だけを短く示してください。",
-		"API Contract / Zod Schema に JSON shape が含まれる場合でも、Feature Plan 本文に schema 全文や request / response / error shape を貼らないでください。詳細契約は assembled design context 側の責務です。",
-		"auth / permission が仕様に影響する場合は、Questionnaire answer、Blueprint、または既存 project convention の根拠を1行で書いてください。根拠が無いまま public/protected/admin を固定しないでください。",
-		"`A または B`、`必要に応じて`、`適宜` のような API / DB 契約の未決表現は避けてください。既存資料から決められない場合だけ assumption として短く残してください。",
-		"markdown はテンプレートではなく、プレースホルダーを含まない完成済みの Feature Plan にしてください。先頭に `#` のタイトルを書き、本文の見出しは原則 `## 目的`, `## スコープ`, `## タスク分類`, `## 実装計画`, `## 検証計画`, `## 完了条件`, `## トレーサビリティ` だけにしてください。",
-		"`## 目的` は 1-2 文にしてください。",
-		"`## スコープ` は対象 / 非対象を短い箇条書きにしてください。",
-		"`## タスク分類` は分類と理由を 2-3 行で書いてください。",
-		"production変更は `## 実装計画` にだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。",
-		"`## 実装計画` は実装順の番号付きリストにし、各項目に短い見出し、具体的な変更内容、先行項目への依存がある場合はその参照を文章で書いてください。scaffold と implementation の区別が必要な場合は項目内に明記してください。test、verification、review、closeout、固定Todo gateは実装項目へ入れないでください。",
-		"実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。",
-		"`## 検証計画` は Target Project Context の `Project package scripts` に存在する script 名、または `## 実装計画` で追加すると明記した script 名だけを command として書いてください。存在しない `verify:e2e` や架空の focused test command を推測しないでください。",
-		"`## 検証計画` は `## 完了条件` で列挙した必須テスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。具体的なテストケースはrepository調査後にCoding Agentが決めます。unit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。",
-		"`Project package scripts` に `verify` または `verify:base` がある場合は、それを代表 gate として優先してください。同じ目的の `build` / `typecheck` / `lint` / `test` を `verify` と同列に重複列挙しないでください。",
-		"`Project package scripts` に `verify` / `verify:base` が無い場合は、テンプレート未使用でも検証を弱めず、既存構成に合わせて build / typecheck / lint / test などを束ねる最小の verify 系 script 追加を `## 実装計画` に含めてください。",
-		"個別の `build` / `typecheck` / `lint` / `test` は、対象範囲の確認、早期確認、または `verify` で代替できない理由がある場合だけ `## 検証計画` に含めてください。",
-		"Hono/Bun template または `bun:*` API を使う DB/migration 実装では、migration 検証は Bun 実行環境の `bun test` または `bun run` 経由の CLI smoke を前提にしてください。Node/Vitest が `bun:*` を解決できない構成で動く integration test を検証計画にしないでください。",
-		"`## 完了条件` は、実装後に必ずテストを作成して証跡を対応付けるべき観点の最小集合です。各項目は `- [AC-001][category] 挙動と観測可能な結果` の形式で書き、IDを連番にしてください。category は api / ui / db / validation / auth / workflow / migration / other のいずれかです。",
-		SPECIFICATION_ACCEPTANCE_CRITERION_TITLE_GUIDANCE_JA,
-		"title には、利用者から見た主要動作、重要なvalidation・error、権限境界、永続化・状態遷移の不変条件、破壊的操作から、今回のTask達成を左右する挙動と観測可能な結果を短く書いてください。似た観点や同じ利用フローは、仕様上の要点が伝わる1項目にまとめてください。",
-		"完了条件として採用するのは、今回の仕様に固有の挙動を直接表し、個別の自動テスト証跡を対応付けるだけで達成を判断できる独立条件です。各項目の成功によって仕様全体の達成を説明できる最小構成にしてください。",
-		"完了条件は挙動と結果に集中させ、関数名、handler、repository、component、table、column、fixture、具体的な入力値、初期状態、操作手順、アサーション列はCoding Agentがrepositoryを調査した後のテスト設計で具体化してください。実装方式や内部構造は、今回の明示要件である場合にだけ挙動へ反映してください。",
-		"機能の期待挙動と対応する自動テスト証跡を `## 完了条件` に整理し、`verify` / `verify:base`、build、typecheck、lint、format、coverage、migration確認などのaggregate gateは `## 検証計画` に整理してください。",
-		"`## トレーサビリティ` は次の固定文だけを書いてください: " +
-			FEATURE_PLAN_TRACEABILITY_STATEMENT,
-		"画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。",
-		"出力は JSON object のみで、完成済みFeature Planを格納した markdown フィールドと repositoryMaterializationIntent フィールドを返してください。計画や完了条件を別のJSON fieldへ複製しないでください。",
-		"既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。",
-	].join("\n");
+export function buildSpecificationDocumentSystemPrompt(
+	input?: { additionalSystemContext?: string | null },
+	p: SystemContextP = bindSystemContextTextCatalog().p,
+) {
+	return input?.additionalSystemContext
+		? p("questionnaire.specification-with-additional", {
+				additionalSystemContext: input.additionalSystemContext,
+			})
+		: p("questionnaire.specification", {});
 }
 
 export function buildSpecificationDocumentUserPrompt(

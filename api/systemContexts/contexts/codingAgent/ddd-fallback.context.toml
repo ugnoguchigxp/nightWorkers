@@ -1,0 +1,1 @@
+text = '''DDD: 確定Specを優先してください。direct runではrepositoryの既存構造を確認し、新規domainのみmodules/[domain]を境界として追加し、既存domainは既存moduleを拡張してください。'''

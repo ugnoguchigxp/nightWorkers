@@ -43,6 +43,7 @@ vi.mock("../api/services/structured-llm", async (importOriginal) => {
 
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { runGitCommand } from "../api/modules/gitworktree/gitworktree-cli";
 import * as missionPlannerRepo from "../api/modules/mission-planner/mission-planner.repository";
 import * as missionPlannerService from "../api/modules/mission-planner/mission-planner.service";
 import { validateMissionPlanningResult } from "../api/modules/mission-planner/mission-planner-validation";
@@ -84,6 +85,22 @@ async function createRepository() {
 		branch: "main",
 		queueEnabled: true,
 	});
+}
+
+async function initializeRepositoryGitHead(repositoryPath: string) {
+	await runGitCommand(["-C", repositoryPath, "init", "-b", "main"]);
+	await runGitCommand(["-C", repositoryPath, "add", "package.json"]);
+	await runGitCommand([
+		"-C",
+		repositoryPath,
+		"-c",
+		"user.name=NightWorkers Test",
+		"-c",
+		"user.email=nightworkers@example.invalid",
+		"commit",
+		"-m",
+		"Initial fixture",
+	]);
 }
 
 function planningResultFixture() {
@@ -839,6 +856,7 @@ describe("Mission Planner service and routes", () => {
 describe("Mission Planner queue handoff", () => {
 	it("prefers Mission proposal scheduling metadata when creating queue entries", async () => {
 		const repository = await createRepository();
+		await initializeRepositoryGitHead(repository.localPath);
 		const task = await nightworkersRepo.createTask({
 			repositoryId: repository.id,
 			title: `TEST: Mission queue handoff ${crypto.randomUUID()}`,
@@ -889,6 +907,7 @@ describe("Mission Planner queue handoff", () => {
 
 	it("blocks approval-required Mission proposal tasks until explicit approval metadata exists", async () => {
 		const repository = await createRepository();
+		await initializeRepositoryGitHead(repository.localPath);
 		const proposalId = crypto.randomUUID();
 		const task = await nightworkersRepo.createTask({
 			repositoryId: repository.id,

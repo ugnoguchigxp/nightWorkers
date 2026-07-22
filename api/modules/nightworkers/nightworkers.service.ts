@@ -82,7 +82,6 @@ export {
 	buildBlueprintPlanningReadiness,
 	isAppBlueprintMessage,
 	isBlueprintMessage,
-	isBlueprintRouting,
 } from "./nightworkers.planning-helpers.service";
 export type { WorkbenchChatIntent } from "./nightworkers.workbench.service";
 export {

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
 	collectTestInventoryTool,
+	getCodingAgentNightworkersMcpInstructions,
 	recordTestConditionMappingTool,
 	todoListTool,
 } from "../modules/codingAgent";
@@ -45,10 +46,15 @@ import {
 export function createNightWorkersCodexMcpServer(
 	context: NightWorkersMcpRequestContext = {},
 ) {
-	const server = new McpServer({
-		name: "nightworkers",
-		version: "0.1.0",
-	});
+	const server = new McpServer(
+		{
+			name: "nightworkers",
+			version: "0.1.0",
+		},
+		{
+			instructions: getCodingAgentNightworkersMcpInstructions(),
+		},
+	);
 
 	server.registerTool(
 		"read_current_specification",

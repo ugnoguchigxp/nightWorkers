@@ -92,6 +92,8 @@ export interface AgentRunContext {
 		title: string;
 		description?: string | null;
 		objective?: string | null;
+		systemContext?: string | null;
+		/** @deprecated systemContextの互換alias。 */
 		context?: string | null;
 		nextAction?: string | null;
 		acceptanceCriteria?: string[];
@@ -111,6 +113,8 @@ export interface AgentRunContext {
 		title: string;
 		description?: string | null;
 		objective?: string | null;
+		systemContext?: string | null;
+		/** @deprecated systemContextの互換alias。 */
 		context?: string | null;
 		nextAction?: string | null;
 		acceptanceCriteria?: string[];

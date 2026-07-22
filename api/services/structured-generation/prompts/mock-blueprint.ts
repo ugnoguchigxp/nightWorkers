@@ -6,6 +6,7 @@ import {
 	type RenderableMockBlueprintSectionName,
 	renderableMockBlueprintSectionNames,
 } from "../../../../shared/schemas/mock-blueprint.schema";
+import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
 import {
 	createStructuredOutputContract,
 	renderStructuredOutputRequirements,
@@ -33,27 +34,11 @@ export function buildMockBlueprintSystemPrompt(input: {
 }): string {
 	const sectionCatalog =
 		input.sectionCatalog || buildMockBlueprintSectionCatalog();
-	return [
-		"[SystemContext]",
-		"目的は、実装前に確認できる軽量な Mock 表示用 JSON を作ることです。",
-		"Task、Questionnaire、Specを根拠に、対象プロダクトの画面、Section、表示文言、サンプルデータを設計してください。",
-		"",
-		"[Workflow]",
-		"- 実装後にユーザーが触る対象プロダクトの画面を設計し、NightWorkersの仕様確認・進行管理画面を作らないでください。",
-		"- 入力から主要な利用者、目的、操作、状態を判断し、それを確認するために必要な画面とSectionを自由に選んでください。",
-		"- QuestionnaireとSpecの確定事項を尊重し、技術情報は画面内容ではなく制約として扱ってください。",
-		"- componentNameはSection Catalogから選び、対応するdatasetKindsのデータを作ってください。",
-		"- meta.selectedSectionsは実際に生成したSectionと一致させてください。",
-		"",
-		"[Section Catalog]",
-		renderSectionCatalog(sectionCatalog),
-		"",
-		"[Dataset Guide]",
-		renderDatasetGuide(),
-		"",
-		"[Output Contract]",
-		renderStructuredOutputRequirements(input.jsonSchema),
-	].join("\n");
+	const { p } = bindSystemContextTextCatalog();
+	return p("structuredGeneration.mock-blueprint", {
+		sectionCatalog: renderSectionCatalog(sectionCatalog),
+		outputRequirements: renderStructuredOutputRequirements(input.jsonSchema, p),
+	});
 }
 
 export function buildMockBlueprintUserPrompt(input: {
@@ -140,24 +125,6 @@ function renderSectionCatalog(sectionCatalog: SectionCatalogEntry[]) {
 				`${entry.componentName}: ${entry.usage} dataset=${entry.datasetKinds.join("|")}`,
 		)
 		.join("\n");
-}
-
-function renderDatasetGuide() {
-	return [
-		"navigation: nav items with label/href/active.",
-		"table: columns and row records for comparison/list management.",
-		"form: fields and submitLabel for create/edit input.",
-		"cards: rich summary cards.",
-		"kanban: workflow columns and cards.",
-		"timeline: chronological items.",
-		"article: text body and meta.",
-		"metrics: KPI labels, values, trends.",
-		"media: visual/story items without real image generation.",
-		"map: points or regions.",
-		"code: file excerpts.",
-		"chat: messages.",
-		"generic: simple titled items.",
-	].join("\n");
 }
 
 function sectionUsage(componentName: RenderableMockBlueprintSectionName) {

@@ -16,6 +16,8 @@ const repositoryIds: string[] = [];
 
 const systemContext: CodingAgentSystemContextSnapshot = {
 	version: 1,
+	planModeRequested: false,
+	todoPolicy: "adaptive",
 	roleInstructionsJa: "Coding Agentとして作業する。",
 	taskGoal: "Todo mutation境界を検証する。",
 	projectRulesJa: ["登録済みrepository rootを使用する。"],
@@ -25,6 +27,8 @@ const systemContext: CodingAgentSystemContextSnapshot = {
 	toolContractJa: "tool結果を読んで次の行動を選ぶ。",
 	registeredRepositoryRoot: "/tmp/todo-mutation-fixture",
 };
+
+const TODO_SYSTEM_CONTEXT = "このTodoの目的と受け入れ条件を優先する。";
 
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
@@ -63,12 +67,13 @@ async function createTwoTodoPlan(runId: string) {
 			{
 				title: "実装する",
 				objective: "単一writerを実装する。",
-				context: "既存schemaはadditiveに拡張する。",
+				systemContext: "既存schemaはadditiveに拡張する。",
 				nextAction: "関連repositoryを確認する。",
 				acceptanceCriteria: ["CASで更新できる"],
 			},
 			{
 				title: "検証する",
+				systemContext: TODO_SYSTEM_CONTEXT,
 				nextAction: "対象testを実行する。",
 			},
 		],
@@ -88,6 +93,7 @@ describe("TodoMutationService", () => {
 				{
 					id: "inspect",
 					title: "調査する",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "repositoryを確認する。",
 				},
 			],
@@ -113,6 +119,7 @@ describe("TodoMutationService", () => {
 				{
 					todoKey: "inspect",
 					title: "調査する",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "sourceを確認する。",
 				},
 			],
@@ -126,6 +133,7 @@ describe("TodoMutationService", () => {
 				{
 					todoKey: "inspect",
 					title: "調査を続ける",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "追加のsourceを確認する。",
 				},
 			],
@@ -150,11 +158,13 @@ describe("TodoMutationService", () => {
 				{
 					todoKey: "inspect",
 					title: "調査する",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "sourceを確認する。",
 				},
 				{
 					todoKey: "implement",
 					title: "実装する",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "sourceを編集する。",
 					dependsOnKeys: ["inspect"],
 				},
@@ -197,7 +207,13 @@ describe("TodoMutationService", () => {
 		const stale = await service().execute(run.id, {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
-			todos: [{ title: "stale", nextAction: "上書きする。" }],
+			todos: [
+				{
+					title: "stale",
+					systemContext: TODO_SYSTEM_CONTEXT,
+					nextAction: "上書きする。",
+				},
+			],
 		});
 
 		expect(first.ok).toBe(true);
@@ -282,7 +298,7 @@ describe("TodoMutationService", () => {
 				op: "update_context",
 				todoId: target.id,
 				expectedTodoRevision: expectedRevision,
-				context: "別の更新。",
+				systemContext: "別の更新。",
 				nextAction: "別経路を試す。",
 			}),
 		]);
@@ -374,6 +390,7 @@ describe("TodoMutationService", () => {
 			todos: [
 				{
 					title: "invalid dependency",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "開始する。",
 					dependsOn: ["missing-todo-id"],
 				},
@@ -398,12 +415,14 @@ describe("TodoMutationService", () => {
 				{
 					id: firstId,
 					title: "first",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "first action",
 					dependsOn: [secondId],
 				},
 				{
 					id: secondId,
 					title: "second",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "second action",
 					dependsOn: [firstId],
 				},
@@ -418,10 +437,16 @@ describe("TodoMutationService", () => {
 			op: "replace_plan",
 			expectedPlanRevision: 0,
 			todos: [
-				{ id: firstId, title: "first", nextAction: "first action" },
+				{
+					id: firstId,
+					title: "first",
+					systemContext: TODO_SYSTEM_CONTEXT,
+					nextAction: "first action",
+				},
 				{
 					id: secondId,
 					title: "second",
+					systemContext: TODO_SYSTEM_CONTEXT,
 					nextAction: "second action",
 					dependsOn: [firstId],
 				},

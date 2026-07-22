@@ -18,6 +18,8 @@ import {
 	isTerminalQueueStatus,
 	recordQueueRecoveryEvidence,
 } from "./queue-health.service";
+import { prepareImplementationQueueRepository } from "./queue-repository-readiness.service";
+import { isProcessorReleasedQueueStatus } from "./queue-repository-row-mapper";
 
 export async function queueTask(
 	id: string,
@@ -86,6 +88,10 @@ export async function createImplementationQueueEntry(
 		options,
 	);
 	assertMissionProposalQueueApproval(messages);
+	const workspace = await prepareImplementationQueueRepository({
+		task,
+		messages,
+	});
 	const scheduling = resolveSchedulingDecisionFromMessages(messages);
 	const queuedTask =
 		task.status === "queued"
@@ -102,6 +108,8 @@ export async function createImplementationQueueEntry(
 		sequenceOrder: scheduling.sequenceOrder,
 		schedulingReason: scheduling.schedulingReason,
 		missionPilotAgent: options.missionPilotAgent ?? null,
+		workspaceId: workspace?.id ?? null,
+		workspaceRequired: Boolean(workspace),
 	});
 	await nightworkersRepo.createTaskMessage({
 		taskId,
@@ -257,9 +265,7 @@ export async function recoverImplementationQueueEntry(
 			reason: "manual_complete",
 			note: input.note,
 		});
-		if (
-			["execution_completed", "cancelled", "failed"].includes(completed.status)
-		) {
+		if (isProcessorReleasedQueueStatus(completed.status)) {
 			runImplementationQueueWhenEnabled(options);
 		}
 		return completed;

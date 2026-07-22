@@ -163,6 +163,74 @@ describe("Implementation Queue resilience repository behavior", () => {
 		});
 	});
 
+	it("releases processor capacity while a run awaits commit decision", async () => {
+		const awaiting = await createQueuedEntry({ priority: 2_000_001 });
+		const next = await createQueuedEntry({ priority: 2_000_000 });
+		const occupiedBefore =
+			await queueRepo.listOccupiedImplementationQueueEntries();
+		const processorCount = occupiedBefore.length + 1;
+		const now = new Date("2026-07-03T01:30:00.000Z");
+		const run = await nightworkersRepo.createTaskRun({
+			taskId: awaiting.task.id,
+			repositoryId: awaiting.repository.id,
+			status: "needs_review",
+		});
+		await queueRepo.updateImplementationQueueEntry(awaiting.entry.id, {
+			status: "processing",
+			processorSlot: processorCount,
+			activeRunId: run.id,
+			leaseOwnerId: "review-owner",
+			leaseExpiresAt: new Date(now.getTime() + 60_000),
+		});
+
+		await expect(
+			queueRepo.completeImplementationQueueEntryForRunId({
+				runId: run.id,
+				runStatus: "needs_review",
+				now,
+			}),
+		).resolves.toMatchObject({
+			id: awaiting.entry.id,
+			status: "awaiting_commit_decision",
+			processorSlot: null,
+		});
+
+		const claimed = await queueRepo.claimNextImplementationQueueEntry({
+			processorCount,
+			leaseOwnerId: "next-owner",
+			leaseTtlMs: 60_000,
+			now,
+		});
+		expect(claimed).toMatchObject({
+			kind: "claimed",
+			entry: { id: next.entry.id },
+		});
+
+		const dashboard = await queueService.listImplementationQueueDashboard();
+		expect(dashboard.completed).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: awaiting.entry.id,
+					status: "awaiting_commit_decision",
+				}),
+			]),
+		);
+		expect(
+			dashboard.processors.some(
+				(processor) => processor.entry?.id === awaiting.entry.id,
+			),
+		).toBe(false);
+
+		const health = await queueService.listImplementationQueueHealth({ now });
+		expect(
+			health.items.find((item) => item.entryId === awaiting.entry.id),
+		).toMatchObject({
+			status: "awaiting_commit_decision",
+			classification: "normal",
+			recommendedAction: "none",
+		});
+	});
+
 	it("builds a scoped health snapshot for stale and inconsistent queue entries", async () => {
 		const repository = await nightworkersRepo.createRepository({
 			name: `TEST: Queue Health ${crypto.randomUUID()}`,

@@ -15,16 +15,25 @@ export function validateTodoMutationCommand(
 		}
 		for (const todo of command.todos) {
 			const todoKey = todo.todoKey ?? todo.id;
+			const systemContext = todo.systemContext ?? todo.context;
 			const dependencies = todo.dependsOnKeys ?? todo.dependsOn ?? [];
 			const acceptanceCriteria = todo.acceptanceCriteria ?? [];
 			if (
 				!todo.title.trim() ||
 				todo.title.length > TODO_MUTATION_LIMITS.maxTitleLength ||
+				(todo.taskType !== undefined &&
+					(!todo.taskType.trim() ||
+						todo.taskType.length > TODO_MUTATION_LIMITS.maxTaskTypeLength)) ||
 				(todo.objective?.length ?? 0) >
 					TODO_MUTATION_LIMITS.maxObjectiveLength ||
+				!systemContext?.trim() ||
+				systemContext.length >
+					TODO_MUTATION_LIMITS.maxTodoSystemContextLength ||
+				(todo.systemContext !== undefined &&
+					todo.context != null &&
+					todo.systemContext !== todo.context) ||
 				!todo.nextAction.trim() ||
 				todo.nextAction.length > TODO_MUTATION_LIMITS.maxNextActionLength ||
-				(todo.context?.length ?? 0) > TODO_MUTATION_LIMITS.maxContextLength ||
 				(todoKey !== undefined &&
 					(!todoKey.trim() ||
 						todoKey.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||
@@ -88,13 +97,19 @@ export function validateTodoMutationCommand(
 	) {
 		return "INVALID_TODO_COMMAND";
 	}
-	if (
-		command.op === "update_context" &&
-		(command.context.length > TODO_MUTATION_LIMITS.maxContextLength ||
+	if (command.op === "update_context") {
+		const systemContext = command.systemContext ?? command.context;
+		if (
+			!systemContext?.trim() ||
+			systemContext.length > TODO_MUTATION_LIMITS.maxTodoSystemContextLength ||
+			(command.systemContext !== undefined &&
+				command.context !== undefined &&
+				command.systemContext !== command.context) ||
 			!command.nextAction.trim() ||
-			command.nextAction.length > TODO_MUTATION_LIMITS.maxNextActionLength)
-	) {
-		return "INVALID_TODO_COMMAND";
+			command.nextAction.length > TODO_MUTATION_LIMITS.maxNextActionLength
+		) {
+			return "INVALID_TODO_COMMAND";
+		}
 	}
 	return null;
 }

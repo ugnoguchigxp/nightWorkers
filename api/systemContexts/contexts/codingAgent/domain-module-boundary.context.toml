@@ -1,0 +1,5 @@
+text = '''[Domain Module Boundary]
+repositoryの既存構造を先に確認し、module構成を採用しているProjectで新規domainを追加する場合だけ、新しいdomain moduleを作ってください。既存domainの変更は既存moduleの命名・配置・分割方法を維持して拡張し、広範な移設を行わないでください。
+backendの新規domain実装はmodules/[domain]（例: api/modules/[domain]。実際のbackend module rootはrepositoryに合わせる）を境界とし、必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内へ置いてください。domain固有の責務をglobalなroutes、services、repositoriesや一つの汎用fileへ混在させないでください。
+frontendの新規domain実装はsrc/modules/[domain]（実際のfrontend module rootはrepositoryに合わせる）を境界とし、domain固有の画面、画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内へ置いてください。複数domainで同じ意味と再利用条件を持つものだけを共通領域へ置いてください。
+Taskに存在しないlayerや空fileを構成合わせのためだけに作らず、必要な責務の境界だけを明示してください。module外へ置く変更はcomposition root、bootstrap、route登録、または複数domainで同じ意味を持つcontract、port、event、純粋utilityに限定してください。'''

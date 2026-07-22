@@ -18,7 +18,7 @@ import {
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import { isBlueprintMessage } from "../nightworkers/nightworkers.planning-helpers.service";
-import { resolvePlanModeProjectStackContext } from "../specification/plan-mode-project-stack-context";
+import { resolvePlanModeQuestionnaireProjectContext } from "../specification/plan-mode-project-stack-context";
 import * as repo from "./questionnaire.repository";
 import { buildQuestionnairePlanModeContext } from "./questionnaire-context";
 import { publishQuestionnaireTransition } from "./questionnaire-events";
@@ -87,7 +87,7 @@ export async function createDesignQuestionnaire(
 		? (await getQuestionnaireTaskAndBlueprint(taskId, sourceBlueprintMessageId))
 				.sourceBlueprintMessage
 		: null;
-	const projectStackContext = await resolvePlanModeProjectStackContext(
+	const projectContext = await resolvePlanModeQuestionnaireProjectContext(
 		task.repositoryId,
 	);
 	const taskMessages = await listPlanModeTaskMessages(taskId);
@@ -98,7 +98,8 @@ export async function createDesignQuestionnaire(
 		sourceBlueprintMessage,
 		taskPrompt:
 			sourcePrompt || task.objective || task.description || task.title,
-		projectStackContext,
+		projectStackContext: projectContext.projectStackContext,
+		repositoryPolicy: projectContext.repositoryPolicy,
 		planModeContext,
 		routeOverride: options.routeOverride || null,
 		role: options.role ?? "plan",

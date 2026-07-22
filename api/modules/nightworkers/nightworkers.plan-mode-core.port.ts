@@ -11,6 +11,10 @@ export async function getPlanModeTask(taskId: string) {
 	return repo.getTask(taskId);
 }
 
+export async function getPlanModeRepository(repositoryId: string) {
+	return repo.getRepository(repositoryId);
+}
+
 export async function getPlanModeTaskMessage(messageId: string) {
 	return repo.getTaskMessage(messageId);
 }

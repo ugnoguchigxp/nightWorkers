@@ -2,6 +2,7 @@ import { shouldUseIsolatedTaskExecutor } from "../../../services/execution/execu
 import { runImplementationQueueInWorker } from "../../../services/execution/worker-process-manager";
 import { getSessionQueueMaxConcurrencyFromEnv } from "../../../services/runtime-env";
 import { projectTaskRunParentStatus } from "../../agentsShare";
+import { isProcessorReleasedQueueStatus } from "../../queue/queue-repository-row-mapper";
 import * as repo from "../nightworkers.repository";
 import { prepareTaskRunInProcess, startTaskRun } from "./start-task-run";
 import { assertRunStatusTransition, runStatusTransitionTable } from "./status";
@@ -328,7 +329,7 @@ export async function completeImplementationQueueEntryForRun(
 		});
 		const finalStatus = completed?.status ?? entry.status;
 		if (
-			["execution_completed", "cancelled", "failed"].includes(finalStatus) &&
+			isProcessorReleasedQueueStatus(finalStatus) &&
 			shouldAutoDrainImplementationQueue()
 		) {
 			void runImplementationQueue();

@@ -1,0 +1,55 @@
+text = '''<CODING_AGENT_SYSTEM_CONTEXT version=[[version]] todoPolicy=[[todoPolicy]]>
+[[roleInstructions]]
+Domain module boundary:
+[[domainModuleBoundary]]
+Task Goal (JSON string):
+<TASK_GOAL_JSON_STRING>
+[[taskGoal]]
+</TASK_GOAL_JSON_STRING>
+Registered repository root: [[registeredRepositoryRoot]]
+Project rules (JSON):
+<PROJECT_RULES_JSON>
+[[projectRules]]
+</PROJECT_RULES_JSON>
+Todo policy:
+[[todoRequirement]]
+Failure recovery:
+[[failureRecovery]]
+Completion:
+[[completionRule]]
+Tool contract:
+[[toolContract]]
+</CODING_AGENT_SYSTEM_CONTEXT>'''
+
+[variables.completionRule]
+profile = "trusted.inline"
+
+[variables.domainModuleBoundary]
+profile = "trusted.inline"
+
+[variables.failureRecovery]
+profile = "trusted.inline"
+
+[variables.projectRules]
+profile = "untrusted.json"
+
+[variables.registeredRepositoryRoot]
+profile = "trusted.inline"
+
+[variables.roleInstructions]
+profile = "trusted.inline"
+
+[variables.taskGoal]
+profile = "untrusted.text"
+
+[variables.todoPolicy]
+profile = "trusted.inline"
+
+[variables.todoRequirement]
+profile = "trusted.inline"
+
+[variables.toolContract]
+profile = "trusted.inline"
+
+[variables.version]
+profile = "trusted.number"

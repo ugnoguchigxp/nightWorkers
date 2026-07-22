@@ -1,0 +1,7 @@
+text = '''設定済み Mission Goal と repository signal から、中間目標としてレビューできる Mission 候補だけを JSON schema に従って返してください。
+ユーザーが Mission を白紙から作る前提にしないでください。Mission 候補は LLM が初期案として作ります。
+候補は Task ではありません。Task proposal は候補が人間に選ばれた後の分解 stage で作ります。
+repositorySnapshot.llmContextFiles がある場合はそれを最優先の実装状態として扱い、無い場合だけ README / sourceExcerpts / recentCommitDiffs を補助根拠にしてください。
+候補は Goal 達成までの中間目標、作業パッケージ、または複数 Task の workflow として意味がある粒度にしてください。
+プロンプト文言と出力本文は日本語を維持してください。
+'''

@@ -11,9 +11,9 @@ import { codingAgentForbiddenPlanTools } from "../api/modules/codingAgent";
 import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
-	CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA,
-	CODING_AGENT_TODO_REQUIREMENT_JA,
-	CODING_AGENT_TOOL_CONTRACT_JA,
+	getCodingAgentDddFallbackInstructions,
+	getCodingAgentTodoRequirement,
+	getCodingAgentToolContract,
 } from "../api/modules/codingAgent/context/system-context";
 import { nativeApiToolRegistrations } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import { projectCodingAgentTaskStatusAfterRun } from "../api/modules/codingAgent/runtime/task-status-projection";
@@ -46,40 +46,44 @@ describe("Coding Agent Plan ownership negative contract", () => {
 	});
 
 	it("keeps Questionnaire, routing, and Artifact ownership out of Coding Agent context", () => {
-		expect(CODING_AGENT_TODO_REQUIREMENT_JA).not.toContain(
+		expect(getCodingAgentTodoRequirement()).not.toContain(
 			"Questionnaireを必ず作成",
 		);
-		expect(CODING_AGENT_TODO_REQUIREMENT_JA).not.toContain("request_input");
-		expect(CODING_AGENT_TOOL_CONTRACT_JA).toContain(
+		expect(getCodingAgentTodoRequirement()).not.toContain("request_input");
+		expect(getCodingAgentToolContract()).toContain(
 			"Questionnaire、routing、Artifactのmutation toolはありません",
 		);
 	});
 
 	it("preserves the accepted verification and migration decisions when creating Todos", () => {
-		expect(CODING_AGENT_TODO_REQUIREMENT_JA).toContain(
+		expect(getCodingAgentTodoRequirement()).toContain(
 			"Feature Planで選択されていないE2E等をTodoへ追加しない",
 		);
-		expect(CODING_AGENT_TODO_REQUIREMENT_JA).toContain(
+		expect(getCodingAgentTodoRequirement()).toContain(
 			"taskType=data_migrationの独立Todo",
 		);
-		expect(CODING_AGENT_TODO_REQUIREMENT_JA).toContain(
-			"マイグレーション不要と明示されている場合はmigration Todoを追加しない",
+		expect(getCodingAgentTodoRequirement()).toContain(
+			"不要と明示されている場合は追加しません",
 		);
 	});
 
 	it("uses the DDD placement rule only as a direct-run fallback", () => {
-		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
-			"確定Specを優先",
-		);
-		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain("direct run");
-		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
+		expect(getCodingAgentDddFallbackInstructions()).toContain("確定Specを優先");
+		expect(getCodingAgentDddFallbackInstructions()).toContain("direct run");
+		expect(getCodingAgentDddFallbackInstructions()).toContain(
 			"新規domainのみmodules/[domain]",
 		);
-		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).toContain(
+		expect(getCodingAgentDddFallbackInstructions()).toContain(
 			"既存domainは既存moduleを拡張",
 		);
-		expect(CODING_AGENT_DDD_FALLBACK_INSTRUCTIONS_JA).not.toContain(
-			"既存file・sharedへ集約しない",
+		expect(getCodingAgentDddFallbackInstructions()).toContain(
+			"必要なroute、service、repository、schema、typeなどを責務別に分けてdomain内",
+		);
+		expect(getCodingAgentDddFallbackInstructions()).toContain(
+			"画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内",
+		);
+		expect(getCodingAgentDddFallbackInstructions()).toContain(
+			"Taskに存在しないlayerや空file",
 		);
 	});
 
@@ -93,6 +97,7 @@ describe("Coding Agent Plan ownership negative contract", () => {
 		expect(context).toMatchObject({
 			planModeRequested: true,
 		});
+		expect(context.domainModuleBoundaryJa).toContain("src/modules/[domain]");
 		expect(context.todoRequirementJa).toContain(
 			"依頼元のruntime状態に依存しません",
 		);

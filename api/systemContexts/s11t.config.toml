@@ -1,0 +1,89 @@
+schema_version = 2
+authoring_version = 2
+artifact_version = 2
+source_dir = "contexts"
+out_dir = "generated"
+
+[authoring]
+source_locale = "ja-JP"
+
+[governance]
+require_owner = true
+
+[keyspaces."codingAgent"]
+owner = "coding-agent"
+
+[keyspaces."missionPilot"]
+owner = "mission-pilot"
+
+[keyspaces."missionPlanner"]
+owner = "mission-planner"
+
+[keyspaces."nightworkers"]
+owner = "nightworkers"
+
+[keyspaces."planViews"]
+owner = "plan-views"
+
+[keyspaces."projectEvaluation"]
+owner = "project-evaluation"
+
+[keyspaces."providerExecution"]
+owner = "provider-execution"
+
+[keyspaces."questionnaire"]
+owner = "questionnaire"
+
+[keyspaces."review"]
+owner = "review"
+
+[keyspaces."specification"]
+owner = "specification"
+
+[keyspaces."structuredGeneration"]
+owner = "structured-generation"
+
+[keyspaces."supervisor"]
+owner = "supervisor"
+
+[keyspaces."taskGeneration"]
+owner = "task-generation"
+
+[release_profiles.development]
+required_locales = ["ja-JP"]
+
+[variable_profiles."trusted.block"]
+type = "string"
+trust = "trusted"
+placement = "delimited-context"
+encoding = "raw"
+
+[variable_profiles."trusted.inline"]
+type = "string"
+trust = "trusted"
+placement = "inline"
+encoding = "raw"
+
+[variable_profiles."trusted.json"]
+type = "json"
+trust = "trusted"
+placement = "delimited-context"
+encoding = "json-value"
+
+[variable_profiles."trusted.number"]
+type = "number"
+trust = "trusted"
+placement = "inline"
+encoding = "json-value"
+
+[variable_profiles."untrusted.json"]
+type = "json"
+trust = "untrusted"
+placement = "delimited-context"
+encoding = "json-value"
+
+[variable_profiles."untrusted.text"]
+type = "string"
+trust = "untrusted"
+placement = "delimited-context"
+encoding = "json-string"

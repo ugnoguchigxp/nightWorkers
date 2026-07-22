@@ -62,8 +62,9 @@ export async function recordCodexRuntimeUsageIfPresent(input: {
 				input.promptPartObservabilityEnabled === false
 					? null
 					: "nightworkers_estimate",
-			runtimePromptShape: "request_only",
-			systemPromptMeaning: "none",
+			runtimePromptShape:
+				"authoritative_user_prompt_with_developer_instructions",
+			systemPromptMeaning: "coding_agent_developer_instructions",
 			nonCachedInputTokens:
 				usage.inputTokens !== null && usage.cachedInputTokens !== null
 					? Math.max(0, usage.inputTokens - usage.cachedInputTokens)

@@ -22,6 +22,10 @@ export {
 	type TaskRunTerminalPublicationResult,
 } from "./events/task-run-events";
 export {
+	findLatestFeaturePlanMaterialization,
+	readFeaturePlanMaterializationIntent,
+} from "./feature-plan-materialization";
+export {
 	ALL_PLAN_MODE_ROUTING_VIEWS,
 	buildInitialPlanModeRoutingEntries,
 	normalizePlanModeRoutingEntries,

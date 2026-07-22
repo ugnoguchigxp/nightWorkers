@@ -3,6 +3,7 @@ import { buildReviewerSystemPrompt } from "../../../services/structured-generati
 import { callStructuredOutputWithRepair } from "../../../services/structured-generation/structured-output-repair.service";
 import { createStructuredOutputContract } from "../../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../../services/structured-llm/contract";
+import { p } from "../../../systemContexts/catalog";
 import { digestObject } from "./loader";
 import type {
 	LlmReviewerResult,
@@ -16,9 +17,6 @@ type CallLlmReviewerInput = {
 	evidencePack: ReviewEvidencePack;
 	mockDraft?: ReviewerDraft | string | Record<string, unknown>;
 };
-
-const REVIEWER_SYSTEM_CONTEXT =
-	"コードレビューをしてください。改善するべき点が無くなるまで改善してください";
 
 const nullableStringJsonSchema = { type: ["string", "null"] };
 const nullableIntegerJsonSchema = { type: ["integer", "null"] };
@@ -63,9 +61,10 @@ const reviewerDraftJsonSchema = {
 export async function callLlmReviewer(
 	input: CallLlmReviewerInput,
 ): Promise<LlmReviewerResult> {
+	const reviewerSystemContext = p("review.llm-reviewer", {});
 	const userPrompt = buildReviewerPrompt(input.rubric, input.evidencePack);
 	const promptDigest = digestObject({
-		system: REVIEWER_SYSTEM_CONTEXT,
+		system: reviewerSystemContext,
 		user: userPrompt,
 	});
 	const evidencePackDigest = digestObject(input.evidencePack);
@@ -91,7 +90,7 @@ export async function callLlmReviewer(
 	let model: string | undefined;
 	try {
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: REVIEWER_SYSTEM_CONTEXT,
+			systemPrompt: reviewerSystemContext,
 			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({

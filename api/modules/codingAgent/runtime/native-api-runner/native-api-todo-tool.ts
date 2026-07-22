@@ -34,14 +34,26 @@ export const todoCommandJsonSchema = {
 								minLength: 1,
 								maxLength: TODO_MUTATION_LIMITS.maxTitleLength,
 							},
+							taskType: {
+								type: "string",
+								minLength: 1,
+								maxLength: TODO_MUTATION_LIMITS.maxTaskTypeLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.taskType,
+							},
 							objective: {
 								type: ["string", "null"],
 								maxLength: TODO_MUTATION_LIMITS.maxObjectiveLength,
 								description: TODO_DRAFT_FIELD_GUIDANCE_JA.objective,
 							},
+							systemContext: {
+								type: "string",
+								minLength: 1,
+								maxLength: TODO_MUTATION_LIMITS.maxTodoSystemContextLength,
+								description: TODO_DRAFT_FIELD_GUIDANCE_JA.systemContext,
+							},
 							context: {
 								type: ["string", "null"],
-								maxLength: TODO_MUTATION_LIMITS.maxContextLength,
+								maxLength: TODO_MUTATION_LIMITS.maxTodoSystemContextLength,
 								description: TODO_DRAFT_FIELD_GUIDANCE_JA.context,
 							},
 							nextAction: {
@@ -71,7 +83,7 @@ export const todoCommandJsonSchema = {
 								},
 							},
 						},
-						["title", "nextAction"],
+						["title", "systemContext", "nextAction"],
 					),
 				},
 			},
@@ -135,10 +147,16 @@ export const todoCommandJsonSchema = {
 			{
 				op: { const: "update_context" },
 				...todoRevisionFields,
+				systemContext: {
+					type: "string",
+					minLength: 1,
+					maxLength: TODO_MUTATION_LIMITS.maxTodoSystemContextLength,
+					description: TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext,
+				},
 				context: {
 					type: "string",
-					maxLength: TODO_MUTATION_LIMITS.maxContextLength,
-					description: TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext,
+					maxLength: TODO_MUTATION_LIMITS.maxTodoSystemContextLength,
+					description: TODO_DRAFT_FIELD_GUIDANCE_JA.context,
 				},
 				nextAction: {
 					type: "string",
@@ -147,7 +165,7 @@ export const todoCommandJsonSchema = {
 					description: TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction,
 				},
 			},
-			["op", "todoId", "expectedTodoRevision", "context", "nextAction"],
+			["op", "todoId", "expectedTodoRevision", "systemContext", "nextAction"],
 		),
 	],
 };

@@ -1,3 +1,7 @@
+import {
+	bindSystemContextTextCatalog,
+	type SystemContextP,
+} from "../../../systemContexts/catalog";
 import type { AgentRunContext } from "./types";
 
 export type RuntimeWorkspaceContext = {
@@ -36,14 +40,14 @@ export function readRuntimeWorkspaceContext(
 
 export function formatRuntimeWorkspaceContextForPrompt(
 	context: AgentRunContext,
+	p: SystemContextP = bindSystemContextTextCatalog().p,
 ) {
 	const workspace = readRuntimeWorkspaceContext(context);
-	return [
-		"Workspace context:",
-		`- registeredRepoRoot: ${workspace.registeredRepoRoot}`,
-		`- executionRoot: ${workspace.executionRoot}`,
-		`- workspaceSource: ${workspace.source}`,
-		`- repoRoot: ${workspace.executionRoot} (executionRoot の互換別名)`,
-		"- リポジトリの読み書き、native command、NightWorkers managed tool は executionRoot を基準にする。registeredRepoRoot と異なる場合、登録元で実装・検証しない。run_check の cwd は executionRoot 相対で指定し、root なら省略する。",
-	];
+	return p("codingAgent.workspace-context", {
+		registeredRepoRoot: workspace.registeredRepoRoot,
+		executionRoot: workspace.executionRoot,
+		workspaceSource: workspace.source,
+	})
+		.trimEnd()
+		.split("\n");
 }

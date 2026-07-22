@@ -28,6 +28,12 @@ describe("Mission Pilot plan review prompt", () => {
 		expect(prompt).toContain("migration作業が実装stepに無い");
 		expect(prompt).toContain("新規domainと既存domain拡張を区別");
 		expect(prompt).toContain("modules/[domain]の対象moduleが実装stepに無い");
+		expect(prompt).toContain(
+			"backendまたはfrontendの対象責務がdomain内でどう分かれるか全く読み取れない",
+		);
+		expect(prompt).toContain(
+			"不要なroute、service、repository、component、hook等の空layer",
+		);
 		expect(prompt).toContain("中核境界が欠けたblocking finding");
 		expect(prompt).toContain("既存domainの拡張、composition root、route登録");
 		expect(prompt).toContain("warningまたはinfoに留め、verdictはpass");

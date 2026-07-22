@@ -489,6 +489,9 @@ function CompletedItem({
 	onArchiveEntry: (entryId: string) => Promise<void>;
 }) {
 	const { t } = useTranslation();
+	const canArchive = ["execution_completed", "failed", "cancelled"].includes(
+		entry.status,
+	);
 
 	return (
 		<div className="rounded-md border border-slate-700 bg-slate-950/45 p-3">
@@ -502,16 +505,18 @@ function CompletedItem({
 				</div>
 				<div className="mt-1 text-slate-500 text-xs">{entry.status}</div>
 			</button>
-			<Button
-				type="button"
-				variant="secondary"
-				size="sm"
-				className="mt-2 h-7 text-xs"
-				onClick={() => void onArchiveEntry(entry.id)}
-			>
-				<Archive className="mr-1 h-3.5 w-3.5" />
-				{t("queue.archive")}
-			</Button>
+			{canArchive ? (
+				<Button
+					type="button"
+					variant="secondary"
+					size="sm"
+					className="mt-2 h-7 text-xs"
+					onClick={() => void onArchiveEntry(entry.id)}
+				>
+					<Archive className="mr-1 h-3.5 w-3.5" />
+					{t("queue.archive")}
+				</Button>
+			) : null}
 		</div>
 	);
 }

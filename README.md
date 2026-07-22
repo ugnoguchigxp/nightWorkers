@@ -667,6 +667,7 @@ runtime truth and update the document.
 - [Trust Model](./spec/trust-model.md)
 - [Adoption Checklist](./spec/adoption-checklist.md)
 - [E2E Testing Policy](./spec/e2e-testing-policy.md)
+- [S11t Guide for Coding Agents](./spec/s11t-coding-agent-guide.md)
 - [Release Notes](./spec/release-notes/0.1.0.md)
 - [Changelog](./CHANGELOG.md)
 - [Security Policy](./SECURITY.md)

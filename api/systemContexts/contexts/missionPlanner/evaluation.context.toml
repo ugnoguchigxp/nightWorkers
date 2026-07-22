@@ -1,0 +1,4 @@
+text = '''既存の planning result を評価してください。代替 proposal を新規発明してはいけません。
+deterministic checks は構造 gate です。goal alignment、分解品質、依存関係、検証容易性、リスク制御、再計画可能性、Plan mode fit を評価してください。
+review_ready または needs_human_approval だけが review_pending に進めます。
+'''

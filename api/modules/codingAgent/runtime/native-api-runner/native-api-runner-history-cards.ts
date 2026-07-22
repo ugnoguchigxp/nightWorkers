@@ -10,6 +10,8 @@ export type NativeApiRuntimeTodoSnapshot = {
 	revision: number;
 	title: string;
 	objective: string | null;
+	systemContext: string;
+	/** @deprecated systemContextの互換alias。 */
 	context: string | null;
 	nextAction: string;
 	acceptanceCriteria: string[];
@@ -52,6 +54,7 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 					revision: todo.revision,
 					title: todo.title,
 					objective: todo.objective ?? todo.description ?? null,
+					systemContext: todo.context ?? "",
 					context: todo.context,
 					nextAction: todo.nextAction,
 					acceptanceCriteria: Array.isArray(todo.acceptanceCriteriaJson)
@@ -106,7 +109,8 @@ function renderRuntimeTodoContext(currentTodo: NativeApiRuntimeTodoSnapshot) {
 		`revision=${currentTodo.revision}`,
 		`title=${currentTodo.title}`,
 		`objective=${currentTodo.objective ?? ""}`,
-		`context=${currentTodo.context ?? ""}`,
+		"SystemContext (highest-priority local instruction):",
+		currentTodo.systemContext,
 		`nextAction=${currentTodo.nextAction}`,
 		`acceptanceCriteria=${JSON.stringify(currentTodo.acceptanceCriteria)}`,
 		`dependsOn=${JSON.stringify(currentTodo.dependsOn)}`,

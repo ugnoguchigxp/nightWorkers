@@ -249,10 +249,7 @@ export async function listImplementationQueueHealthSnapshot(
 			entry.attemptCount < options.maxAttempts;
 		const classification = activeRunMissing
 			? "orphaned_active_run"
-			: runIsTerminal &&
-					["claimed", "processing", "awaiting_commit_decision"].includes(
-						entry.status,
-					)
+			: runIsTerminal && ["claimed", "processing"].includes(entry.status)
 				? "terminal_run_pending_completion"
 				: entry.status === "claimed" && leaseExpired && !entry.activeRunId
 					? "stale_claim"

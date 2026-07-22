@@ -247,6 +247,7 @@ export class TodoMutationService {
 		);
 		for (const [index, todo] of materialized.entries()) {
 			const previous = previousById.get(todo.id);
+			const todoSystemContext = todo.systemContext ?? todo.context;
 			await tx.insert(taskRunTodos).values({
 				id: todo.id,
 				runId: run.id,
@@ -255,10 +256,10 @@ export class TodoMutationService {
 				title: todo.title.trim(),
 				description: todo.objective?.trim() || null,
 				objective: todo.objective?.trim() || null,
-				context: todo.context?.trim() || null,
+				context: todoSystemContext?.trim() || null,
 				nextAction: todo.nextAction.trim(),
 				acceptanceCriteriaJson: todo.acceptanceCriteria ?? [],
-				taskType: "coding",
+				taskType: todo.taskType?.trim() || "coding",
 				status: "pending",
 				dependsOn: todo.dependsOn,
 				systemContextVersion: this.systemContext.version,
@@ -429,7 +430,7 @@ export class TodoMutationService {
 			return this.failure("TODO_NOT_RUNNING", run.todoPlanRevision, todos);
 		}
 		await updateTodoCas(tx, target, {
-			context: command.context.trim(),
+			context: (command.systemContext ?? command.context)?.trim() ?? "",
 			nextAction: command.nextAction.trim(),
 		});
 		return this.success(run.todoPlanRevision, await listTodos(tx, run.id));

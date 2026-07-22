@@ -480,7 +480,7 @@ export const nativeApiToolRegistrations: NativeApiToolRegistration[] = [
 		definition: {
 			name: "todo_list",
 			description:
-				"ID・revision指定のcommandでTodo planとcurrent Todoを明示更新します。hostは次Todoを推測せず、tool結果だけを返します。",
+				"Todoが品質を上げるRunでだけ使い、ID・revision指定のcommandでTodo planとcurrent Todoを明示更新します。各TodoのsystemContextは工程中の最優先局所指示です。hostは次Todoを推測しません。",
 			inputSchema: objectSchema(
 				{
 					command: todoCommandJsonSchema,
