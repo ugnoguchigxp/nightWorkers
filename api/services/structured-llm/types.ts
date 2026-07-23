@@ -2,6 +2,10 @@ import type { LlmRole as StructuredLlmRole } from "../../../shared/llm-role";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import type { StructuredProviderExecutionPolicy } from "../../modules/agentsShare";
 import type {
+	SystemContextBindingSnapshot,
+	SystemContextPromptAudit,
+} from "../../systemContexts/catalog";
+import type {
 	LlmPromptPartTokenEstimates,
 	NormalizedLlmUsage,
 } from "../llm-usage/types";
@@ -44,6 +48,8 @@ export type CallSupervisorOptions = {
 	promptBudgetMetadata?: StructuredLlmPromptBudgetMetadata;
 	runtimeSessionStore?: RuntimeSessionStateStore;
 	executionPolicy?: StructuredProviderExecutionPolicy;
+	systemContextBinding?: SystemContextBindingSnapshot;
+	systemContextAudit?: readonly SystemContextPromptAudit[];
 };
 
 /** @deprecated Use StructuredLlmResultOptions with callStructuredLlmResult. */

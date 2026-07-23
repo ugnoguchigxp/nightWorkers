@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { callSupervisorLLM } from "../../../api/services/structured-llm";
+import {
+	bindSystemContextCatalogSnapshot,
+	systemContextPromptAudit,
+} from "../../../api/systemContexts/catalog";
 import "./setup";
 
 describe("Supervisor LLM schema-first parsing schema handling", () => {
@@ -131,10 +135,16 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 		}) as unknown as typeof fetch;
 
 		const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+		const systemContexts = bindSystemContextCatalogSnapshot();
+		const systemPrompt = systemContexts.invoke("review.llm-reviewer", {});
 		await expect(
-			callSupervisorLLM("system", "user", {
+			callSupervisorLLM(systemPrompt.content.text, "user", {
 				round: 2,
 				schemaFirst: true,
+				systemContextBinding: systemContexts.binding,
+				systemContextAudit: [
+					systemContextPromptAudit("system", systemContexts, systemPrompt),
+				],
 				emitEvent: (event) =>
 					events.push({ type: event.type, data: event.data }),
 			}),
@@ -144,6 +154,13 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 			"model.request_started",
 			"model.provider_tool_call_detected",
 			"model.provider_activity_rejected",
+		]);
+		expect(events[0]?.data?.systemContextAudit).toEqual([
+			expect.objectContaining({
+				manifest: expect.objectContaining({
+					requestedKey: "review.llm-reviewer",
+				}),
+			}),
 		]);
 		expect(events.at(-1)?.data).toMatchObject({
 			providerId: "openai",

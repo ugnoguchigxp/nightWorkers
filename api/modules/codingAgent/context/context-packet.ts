@@ -1,3 +1,7 @@
+import {
+	bindSystemContextTextCatalog,
+	readSystemContextBindingSnapshot,
+} from "../../../systemContexts/catalog";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import {
 	buildCodingAgentSystemContext,
@@ -20,12 +24,18 @@ export async function loadCodingAgentContextPacket(
 		repo.listTaskRunTodosForRun(run.id),
 	]);
 	if (!task || !repository) return null;
-	const systemContext = buildCodingAgentSystemContext({
-		taskGoal: buildCodingAgentTaskGoal(task),
-		projectRulesJa: [],
-		registeredRepositoryRoot: repository.localPath,
-		planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
-	});
+	const systemContexts = bindSystemContextTextCatalog(
+		readSystemContextBindingSnapshot(run.contextSnapshot) ?? undefined,
+	);
+	const systemContext = buildCodingAgentSystemContext(
+		{
+			taskGoal: buildCodingAgentTaskGoal(task),
+			projectRulesJa: [],
+			registeredRepositoryRoot: repository.localPath,
+			planModeRequested: readCodingAgentPlanModeRequested(run.contextSnapshot),
+		},
+		systemContexts.p,
+	);
 	const current = todos.filter((todo) => todo.status === "running");
 	return {
 		systemContext,

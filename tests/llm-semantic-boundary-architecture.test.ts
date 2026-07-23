@@ -63,11 +63,13 @@ describe("LLM semantic freedom architecture boundary", () => {
 	});
 
 	it("keeps the common repair instruction in Japanese and domain neutral", () => {
-		const prompt = read(
-			"api/services/structured-generation/prompts/structured-output-repair.ts",
+		const promptSource = read(
+			"api/systemContexts/contexts/structuredGeneration/repair.context.toml",
 		);
 
-		expect(prompt).toContain("元の回答の意味、判断、主張、自由記述を維持");
-		expect(prompt).not.toMatch(/Todo|CRM|BBS|thread|mock_blueprint/);
+		expect(promptSource).toContain(
+			"元の回答の意味、判断、主張、自由記述を維持",
+		);
+		expect(promptSource).not.toMatch(/Todo|CRM|BBS|thread|mock_blueprint/);
 	});
 });

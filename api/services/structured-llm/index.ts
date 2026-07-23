@@ -276,6 +276,7 @@ async function callRawJsonLLMAttempt(
 		userPromptBytes: Buffer.byteLength(userPrompt, "utf8"),
 		systemPromptSha256: digestLlmText(systemPrompt),
 		userPromptSha256: digestLlmText(userPrompt),
+		systemContextAudit: options.systemContextAudit ?? [],
 		promptBudgetMetadata: options.promptBudgetMetadata ?? null,
 		projectionVersion:
 			options.promptBudgetMetadata?.artifactProjection?.version ?? null,
@@ -305,6 +306,7 @@ async function callRawJsonLLMAttempt(
 			label: options.label,
 			systemPromptLength: systemPrompt.length,
 			userPromptLength: userPrompt.length,
+			systemContextAudit: options.systemContextAudit ?? [],
 			promptBudgetMetadata: options.promptBudgetMetadata ?? null,
 		},
 		"Supervisor LLM call start",
@@ -326,6 +328,7 @@ async function callRawJsonLLMAttempt(
 			label: options.label,
 			systemPromptLength: systemPrompt.length,
 			userPromptLength: userPrompt.length,
+			systemContextAudit: options.systemContextAudit ?? [],
 			promptBudgetMetadata: options.promptBudgetMetadata ?? null,
 			diagnostics: normalizedRequest.diagnostics,
 		},
@@ -443,6 +446,7 @@ async function callRawJsonLLMAttempt(
 				userPromptBytes: Buffer.byteLength(userPrompt, "utf8"),
 				systemPromptSha256: digestLlmText(systemPrompt),
 				userPromptSha256: digestLlmText(userPrompt),
+				systemContextAudit: options.systemContextAudit ?? [],
 				promptBudgetMetadata: options.promptBudgetMetadata ?? null,
 			},
 		});

@@ -7,15 +7,20 @@ import type {
 	ProviderToolMessage,
 } from "../../../../services/structured-llm/tool-calls";
 import {
-	bindSystemContextTextCatalog,
-	type SystemContextP,
+	bindSystemContextCatalogSnapshot,
+	readSystemContextBindingSnapshot,
+	type SystemContextPromptAudit,
+	systemContextPromptAudit,
 } from "../../../../systemContexts/catalog";
 import { buildProjectExplorationAgentWorkflow } from "../../../ontology/exploration/project-exploration-agent-workflow";
-import { buildCodingAgentSystemContext } from "../../context/system-context";
 import {
+	buildCodingAgentSystemContext,
+	rebindCodingAgentSystemContext,
+} from "../../context/system-context";
+import {
+	codingAgentTodoSystemContextValues,
 	renderCodingAgentRuntimeSystemContext,
 	renderCodingAgentTodoPlanSummary,
-	renderCodingAgentTodoSystemContext,
 } from "../../context/todo-prompt-context";
 import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
 import type { AgentRunContext } from "../types";
@@ -31,12 +36,17 @@ export type NativeApiToolResult = {
 };
 
 export type NativeApiHistoryItem =
-	| { type: "system"; content: string }
+	| {
+			type: "system";
+			content: string;
+			systemContextAudit?: readonly SystemContextPromptAudit[];
+	  }
 	| {
 			type: "user";
 			content: string;
 			source: NativeApiUserSource;
 			imageAttachments?: PromptImageAttachment[];
+			systemContextAudit?: readonly SystemContextPromptAudit[];
 	  }
 	| { type: "assistant"; content: string; toolCalls?: ProviderToolCall[] }
 	| {
@@ -50,9 +60,21 @@ export function buildInitialNativeApiHistory(
 	context: AgentRunContext,
 	options: { resumeHistory?: readonly NativeApiHistoryItem[] | null } = {},
 ): NativeApiHistoryItem[] {
-	const { p } = bindSystemContextTextCatalog();
+	const systemContexts = bindSystemContextCatalogSnapshot(
+		readSystemContextBindingSnapshot(context.contextSnapshot) ?? undefined,
+	);
+	const systemPrompt = buildNativeApiSystemPrompt(context, systemContexts);
+	const systemAudit = systemContextPromptAudit(
+		"system",
+		systemContexts,
+		systemPrompt,
+	);
 	const items: NativeApiHistoryItem[] = [
-		{ type: "system", content: buildNativeApiSystemPrompt(context, p) },
+		{
+			type: "system",
+			content: systemPrompt.content.text,
+			systemContextAudit: [systemAudit],
+		},
 		...(options.resumeHistory ?? []),
 		{
 			type: "user",
@@ -64,10 +86,20 @@ export function buildInitialNativeApiHistory(
 		},
 	];
 	if (context.currentTodo) {
+		const todoContexts = bindSystemContextCatalogSnapshot(
+			systemContexts.binding,
+		);
+		const todoInvocation = todoContexts.invoke(
+			"codingAgent.current-todo",
+			codingAgentTodoSystemContextValues(context.currentTodo),
+		);
 		items.push({
 			type: "user",
 			source: "todo",
-			content: renderCurrentTodoContext(context.currentTodo, p),
+			content: todoInvocation.content.text,
+			systemContextAudit: [
+				systemContextPromptAudit("user", todoContexts, todoInvocation),
+			],
 		});
 	}
 	return items;
@@ -196,8 +228,16 @@ export function extractNativeApiSystemPrompt(
 			(item): item is Extract<NativeApiHistoryItem, { type: "system" }> =>
 				item.type === "system" && Boolean(item.content.trim()),
 		)
-		.map((item) => item.content.trim())
+		.map((item) => item.content)
 		.join("\n\n");
+}
+
+export function extractNativeApiSystemContextAudit(
+	history: readonly NativeApiHistoryItem[],
+) {
+	return history.flatMap((item) =>
+		"systemContextAudit" in item ? (item.systemContextAudit ?? []) : [],
+	);
 }
 
 export function extractLatestNativeApiUserPrompt(
@@ -234,22 +274,23 @@ export function readProjectExplorationCatalogPin(context: AgentRunContext) {
 
 function buildNativeApiSystemPrompt(
 	context: AgentRunContext,
-	p: SystemContextP,
+	systemContexts: ReturnType<typeof bindSystemContextCatalogSnapshot>,
 ) {
+	const { p } = systemContexts;
 	const projectExplorationWorkflow = buildProjectExplorationAgentWorkflow(
 		readProjectExplorationCatalogPin(context),
 		p,
 	);
-	const systemContext =
-		context.codingAgentSystemContext ??
-		buildCodingAgentSystemContext(
-			{
-				taskGoal: context.latestUserMessage || context.compiledPrompt,
-				registeredRepositoryRoot: context.repoRoot,
-			},
-			p,
-		);
-	return p("codingAgent.native-runtime", {
+	const systemContext = context.codingAgentSystemContext
+		? rebindCodingAgentSystemContext(context.codingAgentSystemContext, p)
+		: buildCodingAgentSystemContext(
+				{
+					taskGoal: context.latestUserMessage || context.compiledPrompt,
+					registeredRepositoryRoot: context.repoRoot,
+				},
+				p,
+			);
+	return systemContexts.invoke("codingAgent.native-runtime", {
 		runtimeSystemContext: renderCodingAgentRuntimeSystemContext(
 			systemContext,
 			{},
@@ -260,13 +301,6 @@ function buildNativeApiSystemPrompt(
 		projectExplorationWorkflow,
 		workspaceContext: formatRuntimeWorkspaceContextForPrompt(context, p),
 	});
-}
-
-function renderCurrentTodoContext(
-	currentTodo: NonNullable<AgentRunContext["currentTodo"]>,
-	p: SystemContextP,
-) {
-	return renderCodingAgentTodoSystemContext(currentTodo, p);
 }
 
 function trimSanitizedResumeHistory(

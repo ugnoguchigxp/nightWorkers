@@ -9,10 +9,12 @@ import type {
 	RawToolTurnCallOptions,
 } from "../../../../services/structured-llm/tool-calls";
 import type { StructuredLlmRoutePolicy } from "../../../../services/structured-llm/types";
+import type { SystemContextPromptAudit } from "../../../../systemContexts/catalog";
 import { codingAgentProviderExecutionPolicy } from "../../adapters/coding-agent-provider.adapter";
 import type { AgentRunContext } from "../types";
 import {
 	extractLatestNativeApiUserPrompt,
+	extractNativeApiSystemContextAudit,
 	extractNativeApiSystemPrompt,
 	type NativeApiHistoryItem,
 	projectNativeApiHistoryToProviderMessages,
@@ -24,6 +26,7 @@ export type NativeApiProviderRequest = {
 	tools: ProviderToolDefinition[];
 	systemPrompt: string;
 	userPrompt: string;
+	systemContextAudit: readonly SystemContextPromptAudit[];
 	options: RawToolTurnCallOptions;
 };
 
@@ -47,6 +50,7 @@ export function buildNativeApiProviderRequests(input: {
 	const role = "implementation" as const;
 	const systemPrompt = extractNativeApiSystemPrompt(input.history);
 	const userPrompt = extractLatestNativeApiUserPrompt(input.history);
+	const systemContextAudit = extractNativeApiSystemContextAudit(input.history);
 	const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
 		systemPrompt,
 		userPrompt,
@@ -62,6 +66,7 @@ export function buildNativeApiProviderRequests(input: {
 		tools: [...(input.tools ?? [])],
 		systemPrompt,
 		userPrompt,
+		systemContextAudit,
 		options: {
 			label: "native_api_runner",
 			role,
@@ -72,6 +77,7 @@ export function buildNativeApiProviderRequests(input: {
 			runId: input.context.runId,
 			workingDirectory: input.context.repoRoot,
 			executionPolicy: codingAgentProviderExecutionPolicy,
+			systemContextAudit,
 			normalizedRequest,
 			toolChoice: "auto",
 			attemptTimeoutMs: nativeApiAttemptTimeoutMs({

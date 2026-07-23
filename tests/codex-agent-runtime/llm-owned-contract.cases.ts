@@ -1,3 +1,4 @@
+import { verifyRenderedHash } from "@s11t/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
@@ -94,6 +95,22 @@ describe("Codex SDK thin runtime adapter", () => {
 			expect(developerInstructions).not.toContain('"failureRecoveryJa"');
 			expect(developerInstructions.length).toBeLessThan(6_000);
 			expect(parts.estimates.developerInstructionsTokens).toBeGreaterThan(0);
+			expect(parts.developerInstructions).toBe(developerInstructions);
+			expect(parts.systemContextAudit).toEqual([
+				expect.objectContaining({
+					promptPart: "developer",
+					manifest: expect.objectContaining({
+						requestedKey: "codingAgent.codex-developer-instructions",
+						renderedHash: expect.stringMatching(/^sha256:/),
+					}),
+				}),
+			]);
+			expect(
+				verifyRenderedHash(
+					parts.developerInstructions,
+					parts.systemContextAudit[0]?.manifest.renderedHash ?? "",
+				),
+			).toBe(true);
 			expect(parts.request).toBe("ユーザーの実装依頼");
 			expect(parts).not.toHaveProperty("runtimeContract");
 		}
@@ -145,12 +162,16 @@ describe("Codex SDK thin runtime adapter", () => {
 	});
 
 	it("injects a required request-scoped NightWorkers MCP without global config", () => {
+		const developerInstructions = buildCodexRuntimePromptParts(
+			context(),
+		).developerInstructions;
 		const options = buildCodexRuntimeSdkOptions({
 			env: { PORT: "41234" },
 			context: context(),
+			developerInstructions,
 		});
 		expect(options.config).toMatchObject({
-			developer_instructions: expect.stringContaining("nightworkers.todo_list"),
+			developer_instructions: developerInstructions,
 			mcp_servers: {
 				nightworkers: {
 					url: "http://127.0.0.1:41234/mcp/nightworkers?taskId=task-codex-contract&runId=run-codex-contract",
@@ -316,6 +337,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		const runStreamed = vi.fn(async () => ({
 			events: completedTextEvents("Codexが返した最終本文"),
 		}));
+		const emit = vi.fn(async () => {});
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
@@ -332,9 +354,23 @@ describe("Codex SDK thin runtime adapter", () => {
 					},
 				],
 			},
-			{ emit: vi.fn(async () => {}) },
+			{ emit },
 		);
 		expect(runStreamed).toHaveBeenCalledOnce();
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "model_response_started",
+				payload: expect.objectContaining({
+					systemContextAudit: [
+						expect.objectContaining({
+							manifest: expect.objectContaining({
+								requestedKey: "codingAgent.codex-developer-instructions",
+							}),
+						}),
+					],
+				}),
+			}),
+		);
 		expect(result).toMatchObject({
 			terminalState: "completed",
 			finalReport: "Codexが返した最終本文",

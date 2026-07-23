@@ -83,11 +83,16 @@ export async function repairStructuredOutputOnce<T>(input: {
 		contract: input.options.contract,
 		rawText: input.initialResult.attempt.rawText,
 		issues: input.initialResult.issues,
+		systemContextBinding: input.options.systemContextBinding,
 	});
 	const repairedResponse = await callStructuredLlmResult(
 		prompt.systemPrompt,
 		prompt.userPrompt,
-		{ ...input.options, attempt: input.initialResult.attempt.attempt + 1 },
+		{
+			...input.options,
+			attempt: input.initialResult.attempt.attempt + 1,
+			systemContextAudit: prompt.systemContextAudit,
+		},
 	);
 	const repaired = input.validateFacts
 		? validateStructuredLlmFacts(repairedResponse, input.validateFacts)

@@ -1,3 +1,4 @@
+import { verifyRenderedHash } from "@s11t/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../api/db/client";
 import { verificationDocuments } from "../../api/db/verification-schema";
@@ -146,6 +147,21 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain('"availability":"unavailable"');
 		expect(system?.content).toContain("project_exploration_catalogを呼ばず");
 		expect(system?.content).not.toContain("executionMode:");
+		expect(system?.systemContextAudit).toEqual([
+			expect.objectContaining({
+				promptPart: "system",
+				manifest: expect.objectContaining({
+					requestedKey: "codingAgent.native-runtime",
+					renderedHash: expect.stringMatching(/^sha256:/),
+				}),
+			}),
+		]);
+		expect(
+			verifyRenderedHash(
+				system?.content ?? "",
+				system?.systemContextAudit?.[0]?.manifest.renderedHash ?? "",
+			),
+		).toBe(true);
 	});
 
 	it("instructs the LLM to use available Static Intelligence before broad exploration", () => {
@@ -667,6 +683,14 @@ describe("Native API LLM-owned Todo contract", () => {
 		);
 
 		expect(inputs).toHaveLength(5);
+		expect(inputs[0].options.systemContextAudit).toEqual([
+			expect.objectContaining({
+				promptPart: "system",
+				manifest: expect.objectContaining({
+					requestedKey: "codingAgent.native-runtime",
+				}),
+			}),
+		]);
 		const feedback = inputs[4].messages.find(
 			(message) =>
 				message.role === "user" &&

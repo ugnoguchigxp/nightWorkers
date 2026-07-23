@@ -19,9 +19,11 @@ export async function createThread(
 	runtime: CodexRuntimeHost,
 	context: AgentRunContext,
 	sink: AgentRuntimeSink,
+	developerInstructions: string,
 ) {
 	return createCodexRuntimeThread({
 		context,
+		developerInstructions,
 		threadFactory: runtime.threadFactory,
 		onResumeEvent: async (event) => {
 			if (event.status === "reused") {

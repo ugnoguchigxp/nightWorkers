@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { verifyRenderedHash } from "@s11t/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const settingsMock = vi.hoisted(() => ({
@@ -26,12 +27,20 @@ vi.mock("../api/services/settings/general-settings", async (importOriginal) => {
 
 import { buildCodingAgentSystemContext } from "../api/modules/codingAgent/context/system-context";
 import { renderCodingAgentRuntimeSystemContext } from "../api/modules/codingAgent/context/todo-prompt-context";
+import { buildCodexRuntimePromptParts } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
+import {
+	buildInitialNativeApiHistory,
+	extractNativeApiSystemContextAudit,
+} from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history";
 import { buildMissionPilotSystemContext } from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
 import {
 	bindSystemContextCatalog,
+	bindSystemContextCatalogSnapshot,
 	bindSystemContextTextCatalog,
+	createSystemContextBindingSnapshot,
 	describeSystemContext,
 	p,
+	readSystemContextBindingSnapshot,
 } from "../api/systemContexts/catalog";
 import { createAppCatalog } from "../api/systemContexts/generated/catalog.generated";
 import catalogArtifact from "../api/systemContexts/generated/catalog.json" with {
@@ -82,7 +91,7 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(83);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(82);
 		expect(catalogArtifact.aliases).toEqual({});
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
@@ -97,6 +106,7 @@ describe("S11t SystemContext catalog", () => {
 		const invoke = bindSystemContextCatalog();
 		const coding = invoke("codingAgent.role-instructions", {});
 		const mission = invoke("missionPilot.plan-system", {});
+		const reviewer = invoke("review.llm-reviewer", {});
 
 		expect(coding.content.text).toContain("Coding Agentです");
 		expect(mission.content.text).toContain("Mission Pilot SystemContext");
@@ -105,6 +115,12 @@ describe("S11t SystemContext catalog", () => {
 			fallbackLocales: ["ja-JP"],
 			resolvedLocale: "ja-JP",
 			fallbackUsed: true,
+		});
+		expect(reviewer.content.text).toContain("Review the code");
+		expect(reviewer.manifest).toMatchObject({
+			requestedLocale: "en-US",
+			resolvedLocale: "en-US",
+			fallbackUsed: false,
 		});
 	});
 
@@ -210,6 +226,135 @@ describe("S11t SystemContext catalog", () => {
 		expect(settingsMock.readCount).toBe(2);
 	});
 
+	it("persists one locale binding snapshot across a run", () => {
+		const runBinding = createSystemContextBindingSnapshot();
+		const runSystemContexts = bindSystemContextCatalogSnapshot(runBinding);
+		const codingAgentSystemContext = buildCodingAgentSystemContext(
+			{
+				taskGoal: "run snapshotを検証する",
+				registeredRepositoryRoot: "/repo",
+			},
+			runSystemContexts.p,
+		);
+		expect(settingsMock.readCount).toBe(1);
+		expect(runBinding).toEqual({
+			version: 1,
+			instructionLocale: "ja-JP",
+			fallbackLocales: [],
+		});
+
+		settingsMock.language = "en";
+		const rebound = bindSystemContextCatalogSnapshot(runBinding);
+		const reviewer = rebound.invoke("review.llm-reviewer", {});
+		expect(settingsMock.readCount).toBe(1);
+		expect(reviewer.content.text).toContain("コードレビュー");
+		expect(reviewer.manifest.requestedLocale).toBe("ja-JP");
+		const runContext = {
+			runId: "run-s11t-snapshot",
+			taskId: "task-s11t-snapshot",
+			repositoryId: "repository-s11t-snapshot",
+			repoRoot: "/repo",
+			compiledPrompt: "run snapshotを検証する",
+			latestUserMessage: "run snapshotを検証する",
+			timeoutSeconds: 30,
+			contextSnapshot: {
+				compiledPrompt: "run snapshotを検証する",
+				source: "task_prompt" as const,
+				systemContextBinding: runBinding,
+			},
+			codingAgentSystemContext,
+			currentTodo: {
+				id: "todo-s11t-snapshot",
+				seq: 1,
+				title: "監査境界を検証する",
+				taskType: "code_change",
+				status: "running",
+			},
+		};
+		const codex = buildCodexRuntimePromptParts(runContext);
+		const nativeHistory = buildInitialNativeApiHistory(runContext);
+		const nativeSystem = nativeHistory.find((item) => item.type === "system");
+		const nativeTodo = nativeHistory.find(
+			(item) => item.type === "user" && item.source === "todo",
+		);
+		expect(codex.systemContextAudit[0]?.manifest.requestedLocale).toBe("ja-JP");
+		expect(codex.systemContextAudit[0]?.requestAudit).toMatchObject({
+			binding: {
+				instructionLocale: "ja-JP",
+				fallbackLocales: [],
+			},
+			finalManifest: codex.systemContextAudit[0]?.manifest,
+		});
+		expect(
+			codex.systemContextAudit[0]?.requestAudit.renderTrace.at(-1)?.via,
+		).toBe("invoke");
+		expect(
+			codex.systemContextAudit[0]?.requestAudit.renderTrace.length,
+		).toBeGreaterThan(1);
+		expect(
+			codex.systemContextAudit[0]?.requestAudit.renderTrace.map(
+				(entry) => entry.manifest.requestedKey,
+			),
+		).toEqual(
+			expect.arrayContaining([
+				"codingAgent.role-instructions",
+				"codingAgent.todo-policy",
+				"codingAgent.runtime-system-without-task-goal",
+				"codingAgent.codex-developer-instructions",
+			]),
+		);
+		expect(
+			nativeSystem?.systemContextAudit?.[0]?.manifest.requestedLocale,
+		).toBe("ja-JP");
+		expect(
+			verifyRenderedHash(
+				nativeSystem?.content ?? "",
+				nativeSystem?.systemContextAudit?.[0]?.manifest.renderedHash ?? "",
+			),
+		).toBe(true);
+		expect(
+			nativeSystem?.systemContextAudit?.[0]?.requestAudit.renderTrace.length,
+		).toBeGreaterThan(1);
+		expect(
+			nativeSystem?.systemContextAudit?.[0]?.requestAudit.renderTrace.map(
+				(entry) => entry.manifest.requestedKey,
+			),
+		).toEqual(
+			expect.arrayContaining([
+				"codingAgent.role-instructions",
+				"codingAgent.todo-policy",
+				"codingAgent.runtime-system",
+				"codingAgent.native-runtime",
+			]),
+		);
+		expect(nativeTodo?.systemContextAudit?.[0]).toMatchObject({
+			promptPart: "user",
+			manifest: {
+				requestedKey: "codingAgent.current-todo",
+			},
+		});
+		expect(
+			verifyRenderedHash(
+				nativeTodo?.content ?? "",
+				nativeTodo?.systemContextAudit?.[0]?.manifest.renderedHash ?? "",
+			),
+		).toBe(true);
+		expect(
+			extractNativeApiSystemContextAudit(nativeHistory).map(
+				(audit) => audit.promptPart,
+			),
+		).toEqual(["system", "user"]);
+		expect(settingsMock.readCount).toBe(1);
+		expect(
+			readSystemContextBindingSnapshot({
+				systemContextBinding: runBinding,
+			}),
+		).toEqual(runBinding);
+		expect(() => createSystemContextBindingSnapshot(null)).toThrow(
+			"Invalid persisted SystemContext binding snapshot.",
+		);
+	});
+
 	it("fails closed for invalid artifacts, digest mismatches, and extra values", () => {
 		expect(() => createAppCatalog({})).toThrowError(
 			expect.objectContaining({ code: "S11T_ARTIFACT_INVALID" }),
@@ -245,6 +390,10 @@ describe("S11t SystemContext catalog", () => {
 		);
 
 		expect(invocation.manifest.compilerVersion).toBe(runtimeVersion);
+		expect(invocation.manifest).toMatchObject({
+			artifactSchemaVersion: 3,
+			renderingContract: "delimited-context-v1",
+		});
 		expect(p("codingAgent.role-instructions", {})).toMatch(/\n$/);
 		expect(p("missionPilot.compaction", {})).toMatch(/\n$/);
 	});
@@ -263,10 +412,13 @@ describe("S11t SystemContext catalog", () => {
 			),
 			missionPilotPushDenied: sha256(buildMissionPilotSystemContext()),
 		};
+		expect(renderCodingAgentRuntimeSystemContext(codingAgent)).toContain(
+			'<S11T_DELIMITED_CONTEXT variable="taskGoal">',
+		);
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"e4b052e8c6922c1fa2e32dc93afd2d1822ae566739e304dda077b0374997da48",
+				"797196e658bcf86e681edd9be852e2ccae05916d519ac55b5750168526c341b3",
 			missionPilotPushAllowed:
 				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
 			missionPilotPushDenied:
@@ -333,7 +485,7 @@ describe("S11t SystemContext catalog", () => {
 				new URL(relativePath, import.meta.url),
 				"utf8",
 			);
-			expect(source).toMatch(/\bp\(/);
+			expect(source).toMatch(/\b(?:p|invoke)\(/);
 			expect(source).not.toContain(removedLiteral);
 		}
 	});

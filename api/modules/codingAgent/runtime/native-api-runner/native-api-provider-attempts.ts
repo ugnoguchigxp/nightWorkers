@@ -4,6 +4,7 @@ import type {
 	ProviderToolTurnResult,
 } from "../../../../services/structured-llm/tool-calls";
 import type { StructuredLlmRoutePolicy } from "../../../../services/structured-llm/types";
+import { digestText } from "../../../../services/text-digest";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
 import type { NativeApiBaselineCompactionResult } from "./native-api-context-compaction";
 import { compactNativeApiHistoryToBaseline } from "./native-api-context-compaction";
@@ -264,6 +265,20 @@ export async function runNativeApiProviderAttempts(input: {
 			input.signal,
 			attemptTimeoutMs,
 		);
+		await input.sink.emit({
+			type: "model_response_started",
+			message: "[NativeApiRunner] Provider request started.",
+			payload: {
+				runtime: "native_api_runner",
+				turnId: input.turnId,
+				turnIndex: input.turnIndex,
+				attemptIndex,
+				provider: providerRequest.provider,
+				systemContextAudit: providerRequest.systemContextAudit,
+				systemPromptSha256: digestText(providerRequest.systemPrompt),
+				userPromptSha256: digestText(providerRequest.userPrompt),
+			},
+		});
 		try {
 			providerResult = await input.providerTurn({
 				provider: providerRequest.provider,

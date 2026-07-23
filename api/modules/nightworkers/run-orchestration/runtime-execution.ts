@@ -7,7 +7,6 @@ import {
 } from "../../agentsShare";
 import type { AgentRuntimeResult } from "../../codingAgent";
 import {
-	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
 	buildOpenTodoRuntimeContractWarning,
 	createLedgerSink,
@@ -37,6 +36,7 @@ import {
 	runSessionQueueForRepository,
 	shouldContinueSessionQueue,
 } from "./queues";
+import { buildRunCodingAgentSystemContext } from "./run-system-context";
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
@@ -86,10 +86,10 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 		agentModeSessionId,
 	} = input;
 	const runtime = runtimeLaneDefinition.createAdapter();
-	const codingAgentSystemContext = buildCodingAgentSystemContext({
+	const codingAgentSystemContext = buildRunCodingAgentSystemContext({
 		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repoInfo.localPath,
-		planModeRequested: readCodingAgentPlanModeRequested(runtimeContextSnapshot),
+		runtimeContextSnapshot,
 	});
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =

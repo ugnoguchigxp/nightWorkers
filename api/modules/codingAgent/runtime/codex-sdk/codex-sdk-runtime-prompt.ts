@@ -1,7 +1,15 @@
 import type { Input } from "@openai/codex-sdk";
 import { estimateTokens } from "../../../../services/conversation-context/token-budget";
-import { bindSystemContextTextCatalog } from "../../../../systemContexts/catalog";
-import { buildCodingAgentSystemContext } from "../../context/system-context";
+import {
+	bindSystemContextCatalogSnapshot,
+	readSystemContextBindingSnapshot,
+	type SystemContextPromptAudit,
+	systemContextPromptAudit,
+} from "../../../../systemContexts/catalog";
+import {
+	buildCodingAgentSystemContext,
+	rebindCodingAgentSystemContext,
+} from "../../context/system-context";
 import {
 	renderCodingAgentRuntimeSystemContext,
 	renderCodingAgentTodoPlanSummary,
@@ -13,11 +21,13 @@ import type { AgentRunContext } from "../types";
 export type CodexRuntimePromptParts = {
 	prompt: string;
 	request: string;
+	developerInstructions: string;
 	estimates: {
 		requestTokens: number;
 		fullPromptTokens: number;
 		developerInstructionsTokens: number;
 	};
+	systemContextAudit: readonly SystemContextPromptAudit[];
 };
 
 export function buildCodexRuntimePrompt(context: AgentRunContext): string {
@@ -27,35 +37,52 @@ export function buildCodexRuntimePrompt(context: AgentRunContext): string {
 export function buildCodexRuntimeDeveloperInstructions(
 	context: AgentRunContext,
 ): string {
-	const { p } = bindSystemContextTextCatalog();
+	return buildCodexRuntimeDeveloperInstructionsInvocation(context).invocation
+		.content.text;
+}
+
+export function buildCodexRuntimeDeveloperInstructionsInvocation(
+	context: AgentRunContext,
+) {
+	const systemContexts = bindSystemContextCatalogSnapshot(
+		readSystemContextBindingSnapshot(context.contextSnapshot) ?? undefined,
+	);
+	const { p } = systemContexts;
 	const request =
 		readCodexPromptRequest(context) || context.compiledPrompt.trim();
 	const snapshot = asRecord(context.contextSnapshot);
 	const handoff = asRecord(snapshot?.implementationHandoff);
 	const userRequest = readString(handoff?.userRequest) || request;
-	const systemContext =
-		context.codingAgentSystemContext ??
-		buildCodingAgentSystemContext(
-			{
-				taskGoal: userRequest,
-				registeredRepositoryRoot: context.repoRoot,
-			},
-			p,
-		);
-	return p("codingAgent.codex-developer-instructions", {
-		runtimeSystemContext: renderCodingAgentRuntimeSystemContext(
-			systemContext,
-			{
-				includeTaskGoal: false,
-			},
-			p,
-		).trimEnd(),
-		todoPlanSummary:
-			renderCodingAgentTodoPlanSummary(context.todoPlan, p)?.trimEnd() ?? "",
-		currentTodoSystemContext: context.currentTodo
-			? renderCodingAgentTodoSystemContext(context.currentTodo, p).trimEnd()
-			: "",
-	});
+	const systemContext = context.codingAgentSystemContext
+		? rebindCodingAgentSystemContext(context.codingAgentSystemContext, p)
+		: buildCodingAgentSystemContext(
+				{
+					taskGoal: userRequest,
+					registeredRepositoryRoot: context.repoRoot,
+				},
+				p,
+			);
+	const invocation = systemContexts.invoke(
+		"codingAgent.codex-developer-instructions",
+		{
+			runtimeSystemContext: renderCodingAgentRuntimeSystemContext(
+				systemContext,
+				{
+					includeTaskGoal: false,
+				},
+				p,
+			).trimEnd(),
+			todoPlanSummary:
+				renderCodingAgentTodoPlanSummary(context.todoPlan, p)?.trimEnd() ?? "",
+			currentTodoSystemContext: context.currentTodo
+				? renderCodingAgentTodoSystemContext(context.currentTodo, p).trimEnd()
+				: "",
+		},
+	);
+	return {
+		invocation,
+		audit: systemContextPromptAudit("developer", systemContexts, invocation),
+	};
 }
 
 export function buildCodexRuntimeInput(
@@ -86,16 +113,20 @@ export function buildCodexRuntimePromptParts(
 	const latestRequest = readCodexPromptRequest(context);
 	const request = latestRequest || context.compiledPrompt.trim();
 	const prompt = buildAuthoritativeImplementationPrompt(context, request);
+	const developerInstructions =
+		buildCodexRuntimeDeveloperInstructionsInvocation(context);
 	return {
 		prompt,
 		request,
+		developerInstructions: developerInstructions.invocation.content.text,
 		estimates: {
 			requestTokens: estimateTokens(request),
 			fullPromptTokens: estimateTokens(prompt),
 			developerInstructionsTokens: estimateTokens(
-				buildCodexRuntimeDeveloperInstructions(context),
+				developerInstructions.invocation.content.text,
 			),
 		},
+		systemContextAudit: [developerInstructions.audit],
 	};
 }
 

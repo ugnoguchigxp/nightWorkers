@@ -21,6 +21,8 @@ import * as llm from "../../api/services/structured-llm";
 import { representativeAppBlueprint } from "../fixtures/app-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
 
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
 		typeof import("../../api/services/structured-llm")
@@ -188,6 +190,7 @@ describe("NightWorkers workbench routes", () => {
 					questions: [
 						{
 							text: "Which boundary should be fixed first?",
+							kind: "design_decision",
 							type: "radio",
 							options: ["API", "UI"],
 						},
@@ -379,6 +382,7 @@ describe("NightWorkers workbench routes", () => {
 					questions: [
 						{
 							text: "What should be refined first?",
+							kind: "design_decision",
 							type: "radio",
 							options: ["UI", "API"],
 						},

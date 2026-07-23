@@ -3,15 +3,15 @@
   "packages": [
     {
       "name": "@s11t/runtime",
-      "version": "0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec",
-      "file": "s11t-runtime-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
-      "sha512": "5c8971624eac383a1bf7c53d0226ec8c8b64c5405cb0d5a7fb6f57734f275514d9da163406ca069aea051b656e61b23d82ecfc4c528f6c2485bf75180f1b1f7a"
+      "version": "0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce",
+      "file": "s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+      "sha512": "af56a82db26323d206e336416a8d83704fedf5af6632e65fe206c4d86f03627f064c9bc47dc4c90c4fcde867810f9f064da5ddb8231d66c1aefd6b6305913669"
     },
     {
       "name": "@s11t/cli",
-      "version": "0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec",
-      "file": "s11t-cli-0.1.0-canary-6ed4c5fe9c420bb498515ca843b144f6232d7fec.tgz",
-      "sha512": "b2f2c2f3a2576d09f1f621f175c999ebe773ff56bd8d0eed30cad32eb39757ffe9a7d65ba8d6cb8017606e972610eda0e733961f6c113fd4e18e4dd21dff5159"
+      "version": "0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce",
+      "file": "s11t-cli-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+      "sha512": "e9dfe623ab112df5b006f573343c0b66ed4c855350f8ad525989a9f766f822294dd9e124ca5b13205f726b796b1310bf12735f8d3c7286d27d98136fdea7b61f"
     }
   ]
 }

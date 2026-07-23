@@ -2,7 +2,6 @@ import { buildPromptWithStateCardParts } from "../../../services/conversation-co
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
 import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
-import { projectTaskRunParentStatus } from "../../agentsShare";
 import {
 	buildCodexRuntimePromptSnapshot,
 	loadCodingAgentContextPacket,
@@ -17,6 +16,7 @@ import {
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import { activateTaskRunResume } from "./resume-task-run-activation";
+import { resolveRunSystemContextBinding } from "./run-system-context";
 import { carryRuntimePauseSnapshot } from "./runtime-outcome-guard";
 import {
 	buildLatestRuntimeUserMessage,
@@ -29,6 +29,7 @@ import {
 	prepareStartableTask,
 	startTaskRun,
 } from "./start-task-run-entry";
+import { failPreparedRunBeforeLaunch } from "./start-task-run-failure";
 import {
 	buildContinuationRouteIdentity,
 	createPreparedRunAssociation,
@@ -44,7 +45,6 @@ import {
 	recordAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
-import { toErrorMessage } from "./utils";
 
 export type { StartTaskRunOptions } from "./start-task-run-types";
 export { startTaskRun };
@@ -78,47 +78,6 @@ export async function startTaskRunInProcess(
 	return resultRun;
 }
 
-async function failPreparedRunBeforeLaunch(input: {
-	runId: string;
-	taskId: string;
-	executionMode: string;
-	error: unknown;
-}) {
-	const message = toErrorMessage(input.error);
-	const failedRun = await repo.updateTaskRunIfStatus(input.runId, "running", {
-		status: "failed",
-		endedAt: new Date(),
-		finishedAt: new Date(),
-		summary: "Runtime preparation failed before launch.",
-		finalReport: `Runtime preparation failed before launch: ${message}`,
-		finalJudgment: null,
-	});
-	if (!failedRun) return;
-	await repo.createRunEvent({
-		version: 1,
-		runId: input.runId,
-		taskId: input.taskId,
-		timestamp: new Date().toISOString(),
-		type: "system.error",
-		severity: "error",
-		actor: "system",
-		message: "Task run preparation failed before runtime launch.",
-		data: {
-			action: "task_run.preparation_failed",
-			executionMode: input.executionMode,
-			error: message,
-		},
-	});
-	const parentTaskProjection = await projectTaskRunParentStatus({
-		taskId: input.taskId,
-		runId: input.runId,
-		runStatus: "failed",
-		executionMode: input.executionMode,
-	});
-	if (!parentTaskProjection.handled)
-		await repo.updateTaskStatus(input.taskId, parentTaskProjection.status);
-}
-
 export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
@@ -127,6 +86,9 @@ export async function prepareTaskRunInProcess(
 		? await prepareResumableTaskRun(taskId, options.resumeRunId)
 		: null;
 	const task = resumable?.task ?? (await prepareStartableTask(taskId));
+	const systemContextBinding = resolveRunSystemContextBinding(
+		resumable?.run.contextSnapshot,
+	);
 	const {
 		repoInfo,
 		executionRoot,
@@ -203,6 +165,7 @@ export async function prepareTaskRunInProcess(
 						executionMode,
 						executionModeSource,
 						planModeRequested: Boolean(options.planModeRequested),
+						systemContextBinding,
 						jobType,
 						projectExplorationCatalog: projectExplorationCatalogPin,
 						planModeSettingsSnapshot,
@@ -291,6 +254,7 @@ export async function prepareTaskRunInProcess(
 			executionMode,
 			executionModeSource,
 			runtimeRole,
+			systemContextBinding,
 			planModeSettingsSnapshot,
 			...blueprintPlanningSnapshot,
 			runtimeLane: runtimeLaneResolution.lane,
@@ -330,6 +294,7 @@ export async function prepareTaskRunInProcess(
 		planModeRequested: Boolean(options.planModeRequested),
 		planModeClosed: !options.planModeRequested,
 		planModeSettingsSnapshot,
+		systemContextBinding,
 		...blueprintPlanningSnapshot,
 		runtimeLane: runtimeLaneResolution.lane,
 		runtimeLaneResolution: {
@@ -571,6 +536,7 @@ export async function prepareTaskRunInProcess(
 			executionMode,
 			executionModeSource,
 			runtimeRole,
+			systemContextBinding,
 		},
 	});
 	return {

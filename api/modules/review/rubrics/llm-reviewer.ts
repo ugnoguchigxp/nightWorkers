@@ -1,9 +1,12 @@
 import { reviewerDraftSchema } from "../../../../shared/schemas/nightworkers.schema";
-import { buildReviewerSystemPrompt } from "../../../services/structured-generation/prompts/review-rubric";
+import { buildReviewerUserPrompt } from "../../../services/structured-generation/prompts/review-rubric";
 import { callStructuredOutputWithRepair } from "../../../services/structured-generation/structured-output-repair.service";
 import { createStructuredOutputContract } from "../../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../../services/structured-llm/contract";
-import { p } from "../../../systemContexts/catalog";
+import {
+	bindSystemContextCatalogSnapshot,
+	systemContextPromptAudit,
+} from "../../../systemContexts/catalog";
 import { digestObject } from "./loader";
 import type {
 	LlmReviewerResult,
@@ -61,10 +64,17 @@ const reviewerDraftJsonSchema = {
 export async function callLlmReviewer(
 	input: CallLlmReviewerInput,
 ): Promise<LlmReviewerResult> {
-	const reviewerSystemContext = p("review.llm-reviewer", {});
+	const systemContexts = bindSystemContextCatalogSnapshot();
+	const reviewerSystemContext = systemContexts.invoke(
+		"review.llm-reviewer",
+		{},
+	);
+	const systemContextAudit = [
+		systemContextPromptAudit("system", systemContexts, reviewerSystemContext),
+	];
 	const userPrompt = buildReviewerPrompt(input.rubric, input.evidencePack);
 	const promptDigest = digestObject({
-		system: reviewerSystemContext,
+		system: reviewerSystemContext.content.text,
 		user: userPrompt,
 	});
 	const evidencePackDigest = digestObject(input.evidencePack);
@@ -82,6 +92,7 @@ export async function callLlmReviewer(
 			promptDigest,
 			evidencePackDigest,
 			outputDigest: digestObject(input.mockDraft),
+			systemContextAudit,
 			degradedReasons: [],
 		};
 	}
@@ -90,7 +101,7 @@ export async function callLlmReviewer(
 	let model: string | undefined;
 	try {
 		const generated = await callStructuredOutputWithRepair({
-			systemPrompt: reviewerSystemContext,
+			systemPrompt: reviewerSystemContext.content.text,
 			userPrompt,
 			options: {
 				contract: createStructuredOutputContract({
@@ -101,6 +112,8 @@ export async function callLlmReviewer(
 				role: "review",
 				taskId: input.evidencePack.taskId,
 				runId: input.evidencePack.runId,
+				systemContextBinding: systemContexts.binding,
+				systemContextAudit,
 				emitEvent: (event) => {
 					const data = event.data ?? {};
 					if (typeof data.provider === "string") provider = data.provider;
@@ -119,6 +132,7 @@ export async function callLlmReviewer(
 			promptDigest,
 			evidencePackDigest,
 			outputDigest: digestObject(rawOutput),
+			systemContextAudit,
 			degradedReasons: [],
 		};
 	} catch (error) {
@@ -130,6 +144,7 @@ export async function callLlmReviewer(
 				model,
 				promptDigest,
 				evidencePackDigest,
+				systemContextAudit,
 				degradedReasons: ["llm_reviewer_response_invalid"],
 				errorCode: "LLM_REVIEWER_RESPONSE_INVALID",
 			};
@@ -142,6 +157,7 @@ export async function callLlmReviewer(
 			model,
 			promptDigest,
 			evidencePackDigest,
+			systemContextAudit,
 			degradedReasons: [
 				isNotConfigured
 					? "llm_reviewer_provider_not_configured"
@@ -159,12 +175,11 @@ export function buildReviewerPrompt(
 	evidencePack: ReviewEvidencePack,
 ): string {
 	const maxChars = rubric.llm?.maxEvidenceChars ?? 12_000;
-	const evidenceJson = JSON.stringify(evidencePack, null, 2).slice(0, maxChars);
-	const hints = rubric.llm?.promptHints?.join("\n") || "追加指示なし";
-	return buildReviewerSystemPrompt({
+	return buildReviewerUserPrompt({
 		rubricTitle: rubric.title,
 		rubricId: rubric.id,
-		hints,
-		evidenceJson,
+		hints: rubric.llm?.promptHints ?? [],
+		evidencePack,
+		maxEvidenceChars: maxChars,
 	});
 }

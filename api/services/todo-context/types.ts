@@ -1,4 +1,5 @@
 import type { MissionPilotAgentRunProvenance } from "../../../shared/modules/missionPilot";
+import type { SystemContextBindingSnapshot } from "../../systemContexts/catalog";
 import type { PlanModeCapability } from "../settings/general-settings";
 import type { TodoVerificationPolicy } from "../todo-runtime";
 
@@ -64,6 +65,7 @@ export type RuntimePromptSnapshot = {
 	planModeClosed?: boolean;
 	planModeRequested?: boolean;
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
+	systemContextBinding?: SystemContextBindingSnapshot;
 	implementationPhasePreamble?: string;
 	implementationHandoff?: {
 		version: 1;

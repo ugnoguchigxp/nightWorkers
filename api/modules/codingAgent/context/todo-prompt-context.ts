@@ -4,7 +4,7 @@ import {
 } from "../../../systemContexts/catalog";
 import type { CodingAgentSystemContext } from "./types";
 
-type RuntimeTodo = {
+export type RuntimeTodo = {
 	id: string;
 	seq: number;
 	title: string;
@@ -86,7 +86,14 @@ export function renderCodingAgentTodoSystemContext(
 	todo: RuntimeTodo,
 	p: SystemContextP = bindSystemContextTextCatalog().p,
 ) {
-	return p("codingAgent.current-todo", {
+	return p(
+		"codingAgent.current-todo",
+		codingAgentTodoSystemContextValues(todo),
+	);
+}
+
+export function codingAgentTodoSystemContextValues(todo: RuntimeTodo) {
+	return {
 		todo: {
 			id: todo.id,
 			revision: todo.revision ?? 0,
@@ -99,5 +106,5 @@ export function renderCodingAgentTodoSystemContext(
 			lastFailure: todo.lastFailure ?? "",
 			attemptCount: todo.attemptCount ?? 0,
 		},
-	});
+	};
 }

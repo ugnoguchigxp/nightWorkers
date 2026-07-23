@@ -138,6 +138,21 @@ export function buildCodingAgentSystemContext(
 	};
 }
 
+export function rebindCodingAgentSystemContext(
+	context: CodingAgentSystemContext,
+	p: SystemContextP,
+): CodingAgentSystemContext {
+	return buildCodingAgentSystemContext(
+		{
+			taskGoal: context.taskGoal,
+			projectRulesJa: context.projectRulesJa,
+			registeredRepositoryRoot: context.registeredRepositoryRoot,
+			planModeRequested: context.planModeRequested,
+		},
+		p,
+	);
+}
+
 export function readCodingAgentPlanModeRequested(contextSnapshot: unknown) {
 	return record(contextSnapshot)?.planModeRequested === true;
 }

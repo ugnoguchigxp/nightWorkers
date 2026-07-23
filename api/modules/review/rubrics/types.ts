@@ -3,6 +3,7 @@ import type {
 	ReplayResult,
 	RunEventBase,
 } from "../../../services/run-events/types";
+import type { SystemContextPromptAudit } from "../../../systemContexts/catalog";
 import type {
 	ReviewEvidenceRef,
 	ReviewFinding,
@@ -153,6 +154,7 @@ export type LlmReviewerResult = {
 	promptDigest: string;
 	evidencePackDigest: string;
 	outputDigest?: string;
+	systemContextAudit: readonly SystemContextPromptAudit[];
 	degradedReasons: string[];
 	errorCode?: string;
 };

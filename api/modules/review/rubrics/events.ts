@@ -84,6 +84,7 @@ export function buildLlmStartedEvent(
 			model: input.llm.model,
 			promptDigest: input.llm.promptDigest,
 			evidencePackDigest: input.llm.evidencePackDigest,
+			systemContextAudit: input.llm.systemContextAudit,
 			reviewer: { kind: "llm" },
 		},
 	};

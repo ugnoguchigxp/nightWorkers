@@ -1,4 +1,8 @@
-import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
+import {
+	bindSystemContextCatalogSnapshot,
+	type SystemContextBindingSnapshot,
+	systemContextPromptAudit,
+} from "../../../systemContexts/catalog";
 import type {
 	StructuredLlmIssue,
 	StructuredOutputContract,
@@ -8,15 +12,24 @@ export function buildStructuredOutputRepairPrompt<T>(input: {
 	contract: StructuredOutputContract<T>;
 	rawText: string;
 	issues: StructuredLlmIssue[];
+	systemContextBinding?: SystemContextBindingSnapshot;
 }) {
-	const { p } = bindSystemContextTextCatalog();
+	const systemContexts = bindSystemContextCatalogSnapshot(
+		input.systemContextBinding,
+	);
+	const invocation = systemContexts.invoke("structuredGeneration.repair", {
+		outputRequirements: input.contract.renderOutputRequirements(
+			systemContexts.p,
+		),
+	});
 	return {
-		systemPrompt: p("structuredGeneration.repair", {
-			outputRequirements: input.contract.renderOutputRequirements(p),
-		}),
+		systemPrompt: invocation.content.text,
 		userPrompt: JSON.stringify({
 			originalResponse: input.rawText,
 			validationIssues: input.issues,
 		}),
+		systemContextAudit: [
+			systemContextPromptAudit("system", systemContexts, invocation),
+		],
 	};
 }

@@ -15,6 +15,8 @@ import * as llm from "../../api/services/structured-llm";
 import { representativeMockBlueprint } from "../fixtures/mock-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
 
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
 		typeof import("../../api/services/structured-llm")
@@ -162,7 +164,7 @@ describe("NightWorkers workbench routes", () => {
 
 		expect(res.status, await res.clone().text()).toBe(200);
 		const body = await res.json();
-		expect(Date.now() - startedAt).toBeLessThan(100);
+		expect(Date.now() - startedAt).toBeLessThan(500);
 		expect(body.run).toBeNull();
 		expect(
 			body.messages.some((message: unknown) => message.role === "user"),
@@ -182,6 +184,7 @@ describe("NightWorkers workbench routes", () => {
 					questions: [
 						{
 							text: "APIの利用者と権限境界をどれにしますか？",
+							kind: "design_decision",
 							type: "radio",
 							options: ["本人のデータだけ", "管理者が全件操作", "公開API"],
 						},

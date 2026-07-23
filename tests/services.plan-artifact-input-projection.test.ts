@@ -115,10 +115,13 @@ describe("plan artifact input projection", () => {
 			initialPromptOccurrences: 0,
 			staleSourceRejectedCount: 0,
 		});
+		const overBudgetPrompt = "x".repeat(
+			(metadata.safePromptBudgetTokens + 1) * 4,
+		);
 		const overBudgetMetadata = buildPlanArtifactPromptBudgetMetadata({
 			projection,
 			systemPrompt: "system",
-			userPrompt: "x".repeat(40_000),
+			userPrompt: overBudgetPrompt,
 		});
 
 		expect(overBudgetMetadata.budgetExceeded).toBe(true);
@@ -128,15 +131,22 @@ describe("plan artifact input projection", () => {
 	});
 
 	it("does not silently truncate oversized source bodies before the budget gate", () => {
+		const baselineProjection = projectPlanArtifactInput(
+			createTodoListPlanArtifactCanonicalInput(),
+		);
+		const safePromptBudgetTokens = buildPlanArtifactPromptBudgetMetadata({
+			projection: baselineProjection,
+			systemPrompt: "system",
+			userPrompt: "small",
+		}).safePromptBudgetTokens;
 		const projection = projectPlanArtifactInput(
 			createTodoListPlanArtifactCanonicalInput({
 				sources: [
 					{
 						...createTodoListPlanArtifactCanonicalInput().sources[0],
-						renderedContent: [
-							"# Blueprint",
-							...Array(20_000).fill("detail"),
-						].join("\n"),
+						renderedContent: `# Blueprint\n${"detail\n".repeat(
+							safePromptBudgetTokens,
+						)}`,
 					},
 				],
 			}),

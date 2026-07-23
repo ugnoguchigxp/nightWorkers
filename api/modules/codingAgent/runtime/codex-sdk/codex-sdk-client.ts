@@ -40,6 +40,7 @@ export type CodexThreadResumeEvent =
 
 export async function createCodexRuntimeThread(input: {
 	context: AgentRunContext;
+	developerInstructions?: string;
 	threadFactory?: CodexThreadFactory;
 	codexClient?: CodexRuntimeClient;
 	onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
@@ -50,6 +51,7 @@ export async function createCodexRuntimeThread(input: {
 		accessToken: resolveCodexEndpointAccessToken(providerEndpointId),
 		env: process.env,
 		context: input.context,
+		developerInstructions: input.developerInstructions,
 	});
 	const codex = input.codexClient ?? new Codex(codexOptions);
 	const threadOptions = buildCodexRuntimeThreadOptions(input.context);

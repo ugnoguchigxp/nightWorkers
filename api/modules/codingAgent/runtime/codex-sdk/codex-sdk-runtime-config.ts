@@ -7,6 +7,7 @@ type CodexRuntimeConfigInput = {
 	accessToken?: string;
 	env?: NodeJS.ProcessEnv;
 	context?: AgentRunContext;
+	developerInstructions?: string;
 };
 
 const DEFAULT_NIGHTWORKERS_API_PORT = 39_173;
@@ -28,9 +29,9 @@ export function buildCodexRuntimeSdkOptions(
 	};
 	if (input.context) {
 		sdkOptions.config = {
-			developer_instructions: buildCodexRuntimeDeveloperInstructions(
-				input.context,
-			),
+			developer_instructions:
+				input.developerInstructions ??
+				buildCodexRuntimeDeveloperInstructions(input.context),
 			mcp_servers: {
 				nightworkers: {
 					url: buildRequestScopedNightWorkersMcpUrl(input.context, env),

@@ -1,4 +1,5 @@
 import { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
+import { digestText } from "../../../services/text-digest";
 import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
 	persistCodexProviderThreadIfPresent,
@@ -107,13 +108,29 @@ export class CodexAgentRuntime implements AgentRuntime {
 		try {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
-			const thread = await createThread(this.closeoutHost(), context, sink);
 			const promptParts = buildCodexRuntimePromptParts(context);
+			const thread = await createThread(
+				this.closeoutHost(),
+				context,
+				sink,
+				promptParts.developerInstructions,
+			);
 			const turnInput = buildCodexRuntimeTurnInput(
 				context,
 				promptParts.prompt,
 				false,
 			);
+			await sink.emit({
+				type: "model_response_started",
+				message: "[Codex] Provider request started.",
+				payload: {
+					provider: "codex",
+					systemContextAudit: promptParts.systemContextAudit,
+					developerInstructionsRenderedHash:
+						promptParts.systemContextAudit[0]?.manifest.renderedHash ?? null,
+					userPromptSha256: digestText(promptParts.prompt),
+				},
+			});
 			const turnStartedAt = Date.now();
 			const streamedTurn = await Promise.race([
 				thread.runStreamed(turnInput, { signal: controller.signal }),

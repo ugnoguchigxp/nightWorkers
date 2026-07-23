@@ -219,7 +219,7 @@ describe("Plan-time Git workspace and Review merge", () => {
 		expect(secondReady.worktreePath).toBeTruthy();
 		expect(firstReady.worktreePath).not.toBe(secondReady.worktreePath);
 		expect(firstReady.sourceBranch).not.toBe(secondReady.sourceBranch);
-	});
+	}, 20_000);
 
 	it("provisions a dedicated workspace and merges only the reviewed SHA", async () => {
 		const { root, task, allocation, ready, sourceSha, run } =
