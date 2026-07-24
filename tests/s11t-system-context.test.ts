@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { verifyRenderedHash } from "@s11t/runtime";
+import { verifyRenderedHash } from "s11tnext";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const settingsMock = vi.hoisted(() => ({
@@ -93,7 +93,7 @@ describe("S11t SystemContext catalog", () => {
 			]),
 		);
 		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(83);
-		expect(catalogArtifact.aliases).toEqual({});
+		expect("aliases" in catalogArtifact).toBe(false);
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
 		).toMatchObject({
@@ -362,7 +362,7 @@ describe("S11t SystemContext catalog", () => {
 		).toBeGreaterThan(1);
 		expect(
 			codex.systemContextAudit[0]?.requestAudit.renderTrace.map(
-				(entry) => entry.manifest.requestedKey,
+				(entry) => entry.manifest.key,
 			),
 		).toEqual(
 			expect.arrayContaining([
@@ -386,7 +386,7 @@ describe("S11t SystemContext catalog", () => {
 		).toBeGreaterThan(1);
 		expect(
 			nativeSystem?.systemContextAudit?.[0]?.requestAudit.renderTrace.map(
-				(entry) => entry.manifest.requestedKey,
+				(entry) => entry.manifest.key,
 			),
 		).toEqual(
 			expect.arrayContaining([
@@ -399,7 +399,7 @@ describe("S11t SystemContext catalog", () => {
 		expect(nativeTodo?.systemContextAudit?.[0]).toMatchObject({
 			promptPart: "user",
 			manifest: {
-				requestedKey: "codingAgent.current-todo",
+				key: "codingAgent.current-todo",
 			},
 		});
 		expect(
@@ -426,12 +426,12 @@ describe("S11t SystemContext catalog", () => {
 
 	it("fails closed for invalid artifacts, digest mismatches, and extra values", () => {
 		expect(() => createAppCatalog({})).toThrowError(
-			expect.objectContaining({ code: "S11T_ARTIFACT_INVALID" }),
+			expect.objectContaining({ code: "S11TNEXT_ARTIFACT_INVALID" }),
 		);
 		const mismatchedArtifact = structuredClone(catalogArtifact);
 		mismatchedArtifact.catalogDigest = `sha256:${"0".repeat(64)}`;
 		expect(() => createAppCatalog(mismatchedArtifact)).toThrowError(
-			expect.objectContaining({ code: "S11T_ARTIFACT_DIGEST_MISMATCH" }),
+			expect.objectContaining({ code: "S11TNEXT_ARTIFACT_DIGEST_MISMATCH" }),
 		);
 
 		const invoke = bindSystemContextCatalog();
@@ -440,28 +440,25 @@ describe("S11t SystemContext catalog", () => {
 				"codingAgent.role-instructions",
 				{ undeclared: true },
 			),
-		).toThrowError(expect.objectContaining({ code: "S11T_VALUE_EXTRA" }));
+		).toThrowError(expect.objectContaining({ code: "S11TNEXT_VALUE_EXTRA" }));
 	});
 
-	it("uses the vendored runtime compiler version and preserves public text shape", () => {
-		const manifest = JSON.parse(
-			readFileSync(
-				new URL("../vendor/s11t/manifest.json", import.meta.url),
-				"utf8",
-			),
-		) as { packages: Array<{ name: string; version: string }> };
-		const runtimeVersion = manifest.packages.find(
-			(item) => item.name === "@s11t/runtime",
-		)?.version;
+	it("uses the published runtime compiler version and preserves public text shape", () => {
+		const packageManifest = JSON.parse(
+			readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+		) as { dependencies: { s11tnext: string } };
 		const invocation = bindSystemContextCatalog()(
 			"codingAgent.role-instructions",
 			{},
 		);
 
-		expect(invocation.manifest.compilerVersion).toBe(runtimeVersion);
+		expect(invocation.manifest.compilerVersion).toBe(
+			packageManifest.dependencies.s11tnext,
+		);
 		expect(invocation.manifest).toMatchObject({
-			artifactSchemaVersion: 1,
-			renderingContract: "delimited-context",
+			key: "codingAgent.role-instructions",
+			sectionIds: ["context.text"],
+			releaseProfile: "development",
 		});
 		expect(p("codingAgent.role-instructions", {})).toMatch(/\n$/);
 		expect(p("missionPilot.compaction", {})).toMatch(/\n$/);
@@ -482,12 +479,12 @@ describe("S11t SystemContext catalog", () => {
 			missionPilotPushDenied: sha256(buildMissionPilotSystemContext()),
 		};
 		expect(renderCodingAgentRuntimeSystemContext(codingAgent)).toContain(
-			'<S11T_DELIMITED_CONTEXT variable="taskGoal">',
+			'<S11TNEXT_DELIMITED_CONTEXT variable="taskGoal">',
 		);
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"83f13e6cc7fd79885b117853237ba861a475cf3214455bc359f089ead4dee2d7",
+				"e4c1c4d59d4e71072e57e5897b16c2cce65e4b291bc4539d679a046689e8e4fb",
 			missionPilotPushAllowed:
 				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
 			missionPilotPushDenied:

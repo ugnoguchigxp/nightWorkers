@@ -229,7 +229,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			expect.objectContaining({
 				promptPart: "system",
 				manifest: expect.objectContaining({
-					requestedKey: "providerExecution.system-prompt",
+					key: "providerExecution.system-prompt",
 					requestedLocale: "ja-JP",
 					resolvedLocale: "ja-JP",
 				}),
@@ -237,7 +237,7 @@ describe("Codex Mission Pilot tool turns", () => {
 			expect.objectContaining({
 				promptPart: "developer",
 				manifest: expect.objectContaining({
-					requestedKey: "missionPilot.tool-turn-provider-instructions",
+					key: "missionPilot.tool-turn-provider-instructions",
 					requestedLocale: "ja-JP",
 					resolvedLocale: "ja-JP",
 				}),

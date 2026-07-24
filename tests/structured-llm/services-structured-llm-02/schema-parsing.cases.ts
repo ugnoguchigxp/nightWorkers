@@ -48,15 +48,14 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 					{
 						promptPart: "system",
 						manifest: expect.objectContaining({
-							requestedKey: "providerExecution.system-prompt",
-							resolvedKey: "providerExecution.system-prompt",
+							key: "providerExecution.system-prompt",
 						}),
 						requestAudit: expect.objectContaining({
 							renderTrace: [
 								expect.objectContaining({
 									via: "invoke",
 									manifest: expect.objectContaining({
-										requestedKey: "providerExecution.system-prompt",
+										key: "providerExecution.system-prompt",
 									}),
 								}),
 							],
@@ -221,7 +220,7 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 		expect(events[0]?.data?.systemContextAudit).toEqual([
 			expect.objectContaining({
 				manifest: expect.objectContaining({
-					requestedKey: "review.llm-reviewer",
+					key: "review.llm-reviewer",
 				}),
 			}),
 		]);

@@ -1,10 +1,11 @@
 # S11t integration audit
 
-## Canary
+## Published packages
 
-- S11t commit: `f3fa8cb8d15f603f1c838446b0868fe75f2e48c1`
+- Runtime: `s11tnext@0.1.0`
+- CLI: `s11tnext-cli@0.1.0`
 - Catalog digest:
-  `sha256:77cec64ec1b5268e5de836e1f3de11640105744b0f611a2e1dc8cf6ff265b44a`
+  `sha256:f7a1eb840e28316271ac61175c62128968b22b57b186ce780897db4dd756f338`
 - Canonical aliases: none
 
 ## Binding ownership

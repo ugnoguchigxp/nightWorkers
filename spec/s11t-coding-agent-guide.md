@@ -5,8 +5,8 @@ S11t自体の実装計画ではなく、NightWorkers内で依存関係、生成�
 
 ## 現在の状態
 
-- 現在の`@s11t/runtime`と`@s11t/cli`は、S11tのコミット済みHEADから作成したcanary tarballである。正式versionとcommitは`vendor/s11t/manifest.json`およびREADMEから確認する。
-- 正確なversionとSHA-512は`vendor/s11t/manifest.json`を正本として確認する。
+- runtimeはnpm公開版`s11tnext`、authoring/build CLIはnpm公開版`s11tnext-cli`を使用する。
+- 正確なversionは`package.json`、解決済みversionとintegrityは`bun.lock`を正本として確認する。local checkoutや`vendor/`のtarballをproduction依存へ使わない。
 - NightWorkersの全SystemContextは`api/systemContexts/contexts/`のTOMLを正本とし、単一catalogへ生成される。
 - production codeは`api/systemContexts/catalog.ts`の型付きrequest bindingを使用する。role別catalogは作らない。
 - 対応Node.jsは20.19以上のNode 20系、Node 22、Node 24である。Node 20.19未満を対応対象にしない。
@@ -17,16 +17,14 @@ production runtimeは生成済みcatalogを読むだけであり、CLIの存在�
 
 | 用途 | 必要なpackage | 備考 |
 | --- | --- | --- |
-| 生成済みcatalogからSystemContextを組み立てる | `@s11t/runtime` | 通常のproduction実行に必要なのはこちらだけ |
-| TOMLをlint、build、stale checkする | `@s11t/cli` | authoring/build用。production codeからimportしない |
-| compiler primitiveを直接検査する | `@s11t/runtime/compiler` | testや診断用途。通常のcatalog利用には不要 |
+| 生成済みcatalogからSystemContextを組み立てる | `s11tnext` | 通常のproduction実行に必要なのはこちらだけ |
+| TOMLをlint、build、stale checkする | `s11tnext-cli` | authoring/build用。production codeからimportしない |
+| compiler primitiveを直接検査する | `s11tnext/compiler` | testや診断用途。通常のcatalog利用には不要 |
 
-依存方向は`@s11t/cli`から`@s11t/runtime`への一方向である。runtimeはCLI、filesystem、TOML
+依存方向は`s11tnext-cli`から`s11tnext`への一方向である。runtimeはCLI、filesystem、TOML
 parserに依存しない。NightWorkersの稼働にCLIを前提としないこと。
 
-現在CLI tarballもvendorされているのは、S11tのruntimeとCLIを同じcanaryとして検証するためである。
-CLIを使わない機能実装では、CLI呼び出しやCLI importを追加しない。CLI tarballやdevDependencyの削除は
-dependency構成を変更する別作業として扱い、機能実装のついでに変更しない。
+runtimeとCLIは同じ公開versionへ固定する。CLIを使わない機能実装では、CLI呼び出しやCLI importを追加しない。
 
 ## module境界
 
@@ -65,7 +63,7 @@ artifact load、locale bind、本文抽出は共有bindingだけが行う。各r
 - `invocation.manifest`のcompiler version、locale、digest、hashは観測・監査に利用できるが、本文判定の分岐に使わない。
 - locale bindingは共有bindingだけが所有する。General Settings最上位の`language`をrequest/run開始時に一度だけ読み、`ja`は`ja-JP`、`en`は`en-US`へ対応させる。fallbackは暗黙に追加せず、NightWorkersのproduction bindingは`fallbackLocales = []`として未翻訳localeをfail-closeする。
 - 各role/domainのcall siteへlanguage、locale、fallbackを渡すAPIを追加しない。作成済みbindingはimmutable snapshotとして扱い、設定変更後の次の独立したrequest/runで新しいlanguageを反映する。
-- applicationがartifact JSONを読み込む。`@s11t/runtime`にpathやfilesystem責務を加えない。
+- applicationがartifact JSONを読み込む。`s11tnext`にpathやfilesystem責務を加えない。
 - NightWorkers backendはesbuildでbundleされるため、JSONの読み込み方法を決める際はdev実行だけでなく
   `dist-api`およびdesktop sidecarへartifactが含まれることを確認する。
 - loaderの実装前に既存のruntime path/resource所有者を調べ、cwd依存の相対pathを追加しない。
@@ -75,9 +73,9 @@ artifact load、locale bind、本文抽出は共有bindingだけが行う。各r
 NightWorkers repository内でTOMLを正本として管理する場合だけCLIを使う。設定pathを決めた後、次を実行する。
 
 ```bash
-bun run s11t:lint
-bun run s11t:build
-bun run s11t:check
+bun run s11tnext:lint
+bun run s11tnext:build
+bun run s11tnext:check
 ```
 
 `build`はcatalog JSONとgenerated TypeScriptを同時に生成する。次のルールを守る。
@@ -92,26 +90,14 @@ bun run s11t:check
 生成済みartifactを別repositoryまたはrelease artifactから受け取る運用では、NightWorkers内にCLIやTOMLを
 追加せず、runtimeと検証済みcatalogだけを利用する。
 
-## canaryの更新
+## npm公開版の更新
 
-正式なcanaryへ更新するときは、vendor内のtarball、manifest、README、`package.json`、`bun.lock`を手作業で個別更新しない。隣接する
-S11t checkoutのコミット済み`HEAD`から自動配備する。working tree由来のversion `0.0.0`は、S11tをcommitしてcanaryを発行するまで正式な配備候補として扱わない。
+`s11tnext`と`s11tnext-cli`はnpm registryの同じversionへ固定し、`package.json`と`bun.lock`を同じ変更で更新する。
+公開前のlocal checkout、Git URL、canary tarballへ依存元を戻さない。
 
-```bash
-cd ../S11t
-pnpm deploy:nightworkers-canary -- --target ../nightWorkers --verify
-```
-
-このcommandはS11tのrelease dry-run、package内容、隔離ESM consumer、auditを通した後、NightWorkersの
-vendorと依存関係を更新する。NightWorkersのfrozen install、runtime import、CLI smokeを確認し、`--verify`
-指定時はNightWorkersのtypecheckとbuildも実行する。途中で失敗した場合は管理対象fileを配備前へ戻す。
-
-注意事項:
-
-- canary versionはS11tの40桁commit SHAに固定される。未コミットのS11t変更は配備されない。
-- npm publishやregistry installは行わない。
-- CLIが存在する間は、BunがCLIのtransitive runtimeをnpmへ取りに行かないようruntime overrideを維持する。
-- 配備後は`vendor/s11t/manifest.json`、`package.json`、`bun.lock`が同じtarball名を指すことを確認する。
+更新時はnpm registryでruntimeとCLIのversion、engine、exports、CLI binaryを確認する。install後は
+`bun.lock`がregistry packageとintegrityを保持し、`s11tnext-cli`のtransitive dependencyも同じ
+`s11tnext` versionを解決していることを確認する。
 
 ## 検証
 
@@ -126,8 +112,8 @@ bun run build:backend
 TOMLまたは生成物を変更した場合は追加で次を実行する。
 
 ```bash
-bun run s11t:lint
-bun run s11t:check
+bun run s11tnext:lint
+bun run s11tnext:check
 ```
 
 検証では少なくとも次をassertする。
@@ -135,21 +121,21 @@ bun run s11t:check
 1. 期待するSystemContext keyとvariablesがgenerated TypeScriptで型検査される。
 2. 日本語本文と英語本文が期待通りで、未翻訳localeが暗黙fallbackせずfail-closeする。
 3. 不正artifact、digest不一致、未宣言variableがfail-closeする。
-4. `invocation.manifest.compilerVersion`がvendorしたruntime versionと一致する。
+4. `invocation.manifest.compilerVersion`が`package.json`で固定した`s11tnext` versionと一致する。
 5. backend bundleまたはdesktop sidecarからcatalog artifactを解決できる。
 6. Coding AgentとMission Pilotのmodule境界を迂回するimportが増えていない。
 
 広いmodule変更では通常の`bun run verify`も実行する。Node 20互換性が完了条件に含まれる場合は、単に
-esbuildの`--target=node20`が成功しただけでなく、Node 20.19環境でvendorしたruntimeのESM importと対象経路を
+esbuildの`--target=node20`が成功しただけでなく、Node 20.19環境で公開runtimeのESM importと対象経路を
 実行して確認する。
 
 ## 禁止事項
 
-- production codeから`@s11t/cli`をimportする。
+- production codeから`s11tnext-cli`をimportする。
 - runtimeだけで稼働する経路にCLI executableの存在を要求する。
 - generated TypeScriptやcatalog JSONの片方だけを更新する。
 - catalog JSONを型castだけで信用し、generated factory/runtime検証を迂回する。
 - S11tのhash、encoding、locale fallbackをNightWorkers側で独自再実装する。
 - SystemContext以外のrole固有route、service、repository、tool contractを`api/systemContexts`へ置いてmodule境界を迂回する。
-- canary tarballを展開・編集・再圧縮する。
-- versionやSHAをこの文書へ固定値として複製する。現在値はvendor manifestから読む。
+- local checkoutやvendor tarballを公開版の代わりに参照する。
+- versionやintegrityをこの文書へ固定値として複製する。現在値は`package.json`と`bun.lock`から読む。

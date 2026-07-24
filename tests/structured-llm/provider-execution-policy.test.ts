@@ -32,7 +32,7 @@ describe("structured provider execution policy", () => {
 		expect(bound?.systemContextAudit[0]).toMatchObject({
 			promptPart: "developer",
 			manifest: {
-				requestedKey: "providerExecution.artifact-lane",
+				key: "providerExecution.artifact-lane",
 				requestedLocale: "ja-JP",
 				resolvedLocale: "ja-JP",
 			},

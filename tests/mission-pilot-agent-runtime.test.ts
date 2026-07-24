@@ -163,7 +163,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 				systemContextAudit: [
 					expect.objectContaining({
 						manifest: expect.objectContaining({
-							requestedKey: "providerExecution.system-prompt",
+							key: "providerExecution.system-prompt",
 						}),
 					}),
 				],

@@ -108,7 +108,7 @@ describe("LLM reviewer adapter", () => {
 						expect.objectContaining({
 							promptPart: "system",
 							manifest: expect.objectContaining({
-								requestedKey: "review.llm-reviewer",
+								key: "review.llm-reviewer",
 								renderedHash: expect.stringMatching(/^sha256:/),
 							}),
 						}),

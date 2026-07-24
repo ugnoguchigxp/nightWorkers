@@ -1,4 +1,4 @@
-import { verifyRenderedHash } from "@s11t/runtime";
+import { verifyRenderedHash } from "s11tnext";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { createCodexRuntimeThread } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
@@ -100,7 +100,7 @@ describe("Codex SDK thin runtime adapter", () => {
 				expect.objectContaining({
 					promptPart: "developer",
 					manifest: expect.objectContaining({
-						requestedKey: "codingAgent.codex-developer-instructions",
+						key: "codingAgent.codex-developer-instructions",
 						renderedHash: expect.stringMatching(/^sha256:/),
 					}),
 				}),
@@ -367,7 +367,7 @@ describe("Codex SDK thin runtime adapter", () => {
 					systemContextAudit: [
 						expect.objectContaining({
 							manifest: expect.objectContaining({
-								requestedKey: "codingAgent.codex-developer-instructions",
+								key: "codingAgent.codex-developer-instructions",
 							}),
 						}),
 					],

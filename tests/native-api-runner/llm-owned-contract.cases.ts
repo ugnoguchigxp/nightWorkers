@@ -1,4 +1,4 @@
-import { verifyRenderedHash } from "@s11t/runtime";
+import { verifyRenderedHash } from "s11tnext";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../api/db/client";
 import { verificationDocuments } from "../../api/db/verification-schema";
@@ -151,7 +151,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			expect.objectContaining({
 				promptPart: "system",
 				manifest: expect.objectContaining({
-					requestedKey: "codingAgent.native-runtime",
+					key: "codingAgent.native-runtime",
 					renderedHash: expect.stringMatching(/^sha256:/),
 				}),
 			}),
@@ -687,7 +687,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			expect.objectContaining({
 				promptPart: "system",
 				manifest: expect.objectContaining({
-					requestedKey: "codingAgent.native-runtime",
+					key: "codingAgent.native-runtime",
 				}),
 			}),
 		]);

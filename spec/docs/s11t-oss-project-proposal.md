@@ -2,13 +2,15 @@
 
 ## Status
 
+- Publication status: the runtime and CLI were published as `s11tnext@0.1.0` and `s11tnext-cli@0.1.0`
+- Historical note: this document retains the original design scope, while package and CLI examples use the published names. Current NightWorkers usage is governed by `spec/s11t-coding-agent-guide.md`.
 - Document status: project name approved; design draft
 - Created: 2026-07-21
 - Project name: `S11t`
 - Name origin: `SystemContext`の先頭`S`、中間11文字、末尾`t`
 - Tagline: `System Context as Code`
-- Naming convention: brandと文書では`S11t`、repository・npm scope・CLIでは`s11t`
-- Package scope: `@s11t`を第一候補とし、公開前に取得可能性を最終確認する
+- Naming convention: brandと文書では`S11t`、repository・runtime package・CLIでは`s11tnext`
+- Published packages: runtimeは`s11tnext`、authoring/build CLIは`s11tnext-cli`
 - Planned repository form: independent OSS in a dedicated Git repository, internally maintained as a monorepo
 - Distribution: public npm packages; NightWorkers consumes released or canary packages as an external dependency
 - Proposed license: Apache License 2.0
@@ -693,7 +695,7 @@ NightWorkersの現在のlicenseとS11tのApache-2.0は依存関係として併�
 
 ### 9.2 Internal monorepo structure
 
-正式名は`S11t`とする。npm packageは`@s11t/*`を第一候補とし、scopeを取得できない場合だけdistribution名を別途決める。project名とdomain terminologyは変更しない。
+正式名は`S11t`とする。npm distributionは`s11tnext`と`s11tnext-cli`に確定している。project名とdomain terminologyは変更しない。
 
 ```text
 s11t/
@@ -736,7 +738,7 @@ s11t/
   SECURITY.md
 ```
 
-初期の公開package名は`@s11t/core`、`@s11t/toml`、`@s11t/node`、`@s11t/eval`、`@s11t/experiments`、`@s11t/optimizer`、`@s11t/cli`を候補とする。CLI binaryは`s11t`とする。
+初期の公開packageはruntimeの`s11tnext`とauthoring/build用の`s11tnext-cli`である。CLI binaryは`s11tnext`とする。
 
 ### 9.3 Package boundaries
 
@@ -1324,17 +1326,17 @@ Experiment assignment keyには生のuser IDやemailを保存しない。storage
 CLI名は正式名と揃えて`s11t`とする。
 
 ```text
-s11t lint
-s11t typegen
-s11t compile --locale ja-JP --profile openai-primary
-s11t diff codingAgent:identity --from 1.2.0 --to 1.3.0
-s11t eval codingAgent:identity
-s11t eval --suite codingAgent.role-boundary
-s11t experiment validate experiment.toml
-s11t experiment report exp-001
-s11t evidence build codingAgent:identity --release sha256:...
-s11t promote codingAgent:identity --release sha256:... --evidence-bundle evidence.json
-s11t rollback codingAgent:identity --to-release sha256:...
+s11tnext lint
+s11tnext typegen
+s11tnext compile --locale ja-JP --profile openai-primary
+s11tnext diff codingAgent:identity --from 1.2.0 --to 1.3.0
+s11tnext eval codingAgent:identity
+s11tnext eval --suite codingAgent.role-boundary
+s11tnext experiment validate experiment.toml
+s11tnext experiment report exp-001
+s11tnext evidence build codingAgent:identity --release sha256:...
+s11tnext promote codingAgent:identity --release sha256:... --evidence-bundle evidence.json
+s11tnext rollback codingAgent:identity --to-release sha256:...
 ```
 
 ### 15.1 Lint requirements
@@ -1662,24 +1664,23 @@ SystemContextのsection変更はdefinition hashを必ず変える。semantic ver
 
 ## 23. Open Questions
 
-公開実装前に決める必要がある事項:
+公開後も継続して判断する事項:
 
-1. `@s11t` npm scopeを取得できない場合のdistribution package名。
-2. TOMLでsimpleとsectioned SystemContextを同一fileに許可する最終schema。
-3. localeを同一fileに置く方式を既定としつつ、分割fileをいつ対応するか。
-4. interpolation記法を`[[name]]`に固定するか、設定可能にするか。
-5. TypeScript型生成を必須にするか、runtime-only利用もfirst-classにするか。
-6. fixed-horizon analyzerで最初に提供する統計手法。
-7. public benchmarkに含められるlicense済みdatasetの範囲。
-8. Stable manifestをGitのみで運用するか、registry adapterも初期提供するか。
-9. DCO、maintainer権限、RFC acceptance process。
+1. TOMLでsimpleとsectioned SystemContextを同一fileに許可する最終schema。
+2. localeを同一fileに置く方式を既定としつつ、分割fileをいつ対応するか。
+3. interpolation記法を`[[name]]`に固定するか、設定可能にするか。
+4. TypeScript型生成を必須にするか、runtime-only利用もfirst-classにするか。
+5. fixed-horizon analyzerで最初に提供する統計手法。
+6. public benchmarkに含められるlicense済みdatasetの範囲。
+7. Stable manifestをGitのみで運用するか、registry adapterも初期提供するか。
+8. DCO、maintainer権限、RFC acceptance process。
 
 ## 24. Recommended First Decisions
 
 初期実装を始める前の推奨判断:
 
 - OSS licenseはApache-2.0。
-- 正式なproject名は`S11t`、repository名とCLI名は`s11t`とする。
+- 正式なproject名は`S11t`、repository名とCLI名は`s11tnext`とする。
 - NightWorkersとは別のpublic Git repositoryで開始し、S11t内部はmonorepoにする。
 - NightWorkersはcopyや内部workspace importではなく、exact versionのnpm packageを利用する。
 - TypeScriptをreference implementationにする。

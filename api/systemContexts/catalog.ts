@@ -3,7 +3,7 @@ import type {
 	CatalogBinding,
 	RequestAudit,
 	SystemContextInvocation,
-} from "@s11t/runtime";
+} from "s11tnext";
 import { readGeneralSettings } from "../services/settings/general-settings";
 import {
 	createAppCatalog,

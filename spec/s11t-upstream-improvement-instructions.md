@@ -2,7 +2,8 @@
 
 > Status: resolved. `cc606d3`から`f3fa8cb`までのS11t変更でrequest-bound
 > audit、実効的なdelimited-context、locale coverage、public rendered hash APIが
-> 実装された。NightWorkersは`f3fa8cb` canaryでこの契約を利用する。
+> 実装され、`s11tnext@0.1.0`と`s11tnext-cli@0.1.0`として公開された。
+> NightWorkersはnpm公開版でこの契約を利用する。
 
 ## 目的
 
@@ -12,7 +13,7 @@ NightWorkersのように複数のSystemContextを一つのprovider requestへ組
 
 ## 1. Request-bound bindingとcompound auditをruntime APIへ追加する
 
-現状、hostは同じ`CatalogBindingV2`を`bindText()`と`bind()`へ別々に渡さないと、固定`p`とmanifest付きinvocationを同時に利用できない。また、内側のcontextを`p()`で組み立てて外側のcontextを`bind()`でrenderした場合、外側のmanifestには構成要素となったcontextのrelease情報が残らない。
+解決前は、hostが同じ`CatalogBindingV2`を`bindText()`と`bind()`へ別々に渡さないと、固定`p`とmanifest付きinvocationを同時に利用できなかった。また、内側のcontextを`p()`で組み立てて外側のcontextを`bind()`でrenderした場合、外側のmanifestには構成要素となったcontextのrelease情報が残らなかった。
 
 次の性質を持つrequest-bound APIを追加する。
 
@@ -47,7 +48,7 @@ const audit = request.finalize(final);
 
 ## 2. `placement = "delimited-context"`を実効的な安全契約にする
 
-現行runtimeは`trust`と`placement`をartifact metadataとして保持するが、render時には`encoding`だけが本文へ作用する。そのため`untrusted.json`を指定しても、authorが明示的なdelimiterを書かなければruntime inputの境界はprompt本文に現れない。
+解決前のruntimeは`trust`と`placement`をartifact metadataとして保持する一方、render時には`encoding`だけが本文へ作用していた。そのため`untrusted.json`を指定しても、authorが明示的なdelimiterを書かなければruntime inputの境界はprompt本文に現れなかった。
 
 次のどちらかをartifact schema versionを含めて設計し、silentな本文変更を避けて導入する。
 
@@ -77,7 +78,7 @@ const audit = request.finalize(final);
 例:
 
 ```bash
-s11t inspect --coverage --locale en-US --release-profile development --format json
+s11tnext inspect --coverage --locale en-US --release-profile development --format json
 ```
 
 `build --check`の成否は既存required locale契約のまま維持し、coverage診断だけで任意localeをrequired扱いしない。
@@ -96,10 +97,5 @@ s11t inspect --coverage --locale en-US --release-profile development --format js
 
 ## NightWorkersへの反映
 
-S11t側をcommitした後、NightWorkersのvendor tarballを手編集せず、S11t checkoutから次を実行する。
-
-```bash
-pnpm deploy:nightworkers-canary -- --target ../nightWorkers --verify
-```
-
-配備後はNightWorkers側で`bun run s11t:check`、focused test、`bun run typecheck`、`bun run build:backend`を実行し、provider request eventに保存したauditが新API由来であることを確認する。
+NightWorkersはruntimeとCLIをnpm registryの同じversionへ固定し、`bun.lock`に公開tarballのintegrityを保持する。
+更新後は`bun run s11tnext:check`、focused test、`bun run typecheck`、`bun run build:backend`を実行し、provider request eventに保存したauditが新API由来であることを確認する。
