@@ -1,6 +1,7 @@
 {
   "format": "s11tnext.catalog",
-  "compilerVersion": "0.1.0",
+  "artifactVersion": 2,
+  "compilerVersion": "0.1.2",
   "releaseProfile": "development",
   "policyDigest": "sha256:caa900b750f321e5d87d4b2009da7c5fc898b3ab99a6ef658e35f4d69332d325",
   "createdFrom": {
@@ -96,6 +97,7 @@
       "key": "codingAgent.codex-developer-instructions",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -130,8 +132,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -156,16 +158,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:b14985e7a16728b1e86a07ceb523a52e668b83af8dbcd889d9c84ee2a64cc618"
+          "artifactHash": "sha256:270443925e59b425f73465772082e8b3a354ff6818f49052eaae5b802cda5e82"
         }
       },
-      "definitionHash": "sha256:cf828e40588afcecfc7c85a9f5e8cc39d26d7be71f724cf35f004f48c75fd6eb",
-      "releaseDigest": "sha256:8e2cdb153a19b4a9e2f9c69f34545a03691d95b7f50f9aa3ff0cf2ad97e3decc"
+      "definitionHash": "sha256:3dd704d0328db8e00ae21501c88149fa0f1a3fca233e5c25440f5457a63c83f1",
+      "releaseDigest": "sha256:811495d3b9cfe248899cbae636332970cc77bf5ebe79d970b6dc37ce6661f316"
     },
     "codingAgent.completion-report-format": {
       "key": "codingAgent.completion-report-format",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -178,8 +181,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -188,16 +191,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:a5689ed49b9abbbaf58c34c0a64714bd9f8b69d3c893235eee7062318464ac2f"
+          "artifactHash": "sha256:50edb41b4d5beecf4c1f9f7ac02000519e35a1ceac0fc8d64603e56dd990c6d0"
         }
       },
-      "definitionHash": "sha256:7848ff2766d099144bf5c5f286648f5a3f6573b8a7d25a5251ea235a0f7f0a20",
-      "releaseDigest": "sha256:a6d4886effd3ae2db335dbc4bdbd5608fdc21ba082378fc88d19cd1e359318f2"
+      "definitionHash": "sha256:803a7f3b1b4f940d38bf42975552fb2e53eb778ae7c2073fa320d827e9655a9e",
+      "releaseDigest": "sha256:4d68c795a53b4577b57dc4e16b2cd445c6ddc7bdaa569da0a67cc56d4ad23fb3"
     },
     "codingAgent.completion-report-todo": {
       "key": "codingAgent.completion-report-todo",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -210,8 +214,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -220,16 +224,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:a840ec829c6f43b0e12192c194a8d4f96b2adeb52943323aa2e4a15074a12165"
+          "artifactHash": "sha256:4245653370387279bbee3215431ea51bf42a27c9e346fa83e7c514337799d982"
         }
       },
-      "definitionHash": "sha256:39de0c4310b7fe4f7464a596f161023bbe902462c2dde0f60afc02d49ceadba6",
-      "releaseDigest": "sha256:a682bf5ee9a096348c2c018431f5371c7c2d99abe96c31254d8e60ef5a618f63"
+      "definitionHash": "sha256:73c478a35f8d7dcfb1948a995b070ab4cc679758ef1dbb61c9b57d243c509a5e",
+      "releaseDigest": "sha256:2512d9b6ece1a08b286b6de24ab433facdd796ff59b8dfc08d8a59ebaeb8ba19"
     },
     "codingAgent.completion-rule": {
       "key": "codingAgent.completion-rule",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -250,8 +255,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -264,16 +269,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:3114371768928bad163098d0ea4b2f3a59b78840405aef829da14201918ffe37"
+          "artifactHash": "sha256:9b637363de3268d2d74d865f98e2045425ee8ca7ce82eecd015a88b4a8b15d1d"
         }
       },
-      "definitionHash": "sha256:89210dd7f6b69e26fb1a405a05a77589d306e7d645ad9ff5b91c91223f5bca12",
-      "releaseDigest": "sha256:9b9a9c0a99d3340834d4473207313f47edbb39a8bb315e7fb3bf8082d1de67b9"
+      "definitionHash": "sha256:daadb3227833b9e1a68ebba26a0973082ee55f2441e26c5a79a2a8bae18d7ab9",
+      "releaseDigest": "sha256:79f37dac17e50c5d3e499ea9f3ab6b7fcddb5c0962f2ac46f30a923e0eb14890"
     },
     "codingAgent.current-todo": {
       "key": "codingAgent.current-todo",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "user",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -294,8 +300,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -312,16 +318,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:7776384b4ccbbeb8c82ce765d035954611ebe98522077134cad0b0511f5aaaa5"
+          "artifactHash": "sha256:d06df06ad2806333f4ca51e857140f25379deaad12dccb5189cce1b4fd643a9b"
         }
       },
-      "definitionHash": "sha256:4d65a6da6a0837f7840b6325683d4634f3e2b20e91e99347e64a84fa34e4b153",
-      "releaseDigest": "sha256:fdb7d805c048f88a1c216a66817b686e3f9543731690a564ab9f2f35c1c17b8b"
+      "definitionHash": "sha256:8dbd0e273ef3e0a12f3760fd6898eabc25da9775a5181269c63d29120385973f",
+      "releaseDigest": "sha256:8051e198e8608fb1226cc936cccc0af24b52c6c357cc1e81a54f08644ac425a2"
     },
     "codingAgent.ddd-fallback": {
       "key": "codingAgent.ddd-fallback",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -334,8 +341,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -344,16 +351,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:14412235f817d483749ac6bfc55c4bc7cae1c35ab4c6593d203e59c51351a728"
+          "artifactHash": "sha256:873e393a9b442a186632bf02120f92255d6724255f46ac0a7030972bc54348bb"
         }
       },
-      "definitionHash": "sha256:123cd3ec80a65558f89323cadb0d6e27c07e4f93f83088ace9b54ac4b18a947d",
-      "releaseDigest": "sha256:713372f5baefae62544cf865335321638052579a55d29f571f44e7cf7caf35e3"
+      "definitionHash": "sha256:bce19aebd71c7522a5d0c86634fce5216dbcc1aee2cc744ee3f7689e2fbd16ac",
+      "releaseDigest": "sha256:7c7a7e6674212965871b59ef72e03fe3e35eb2bd5514fdb933b88b93782004ed"
     },
     "codingAgent.ddd-fallback-combined": {
       "key": "codingAgent.ddd-fallback-combined",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -381,8 +389,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -399,16 +407,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:baef240d049b937210bcf099748f7d2720acd9be0fc1b7924683a584dc6ae0cc"
+          "artifactHash": "sha256:191ec006e4261627d4c9c25fd1cb2b95532930033687a31bc5891b7723034b49"
         }
       },
-      "definitionHash": "sha256:84d08ab87bc532116b61e5a2337b271423e859a61d7114beefecfd95a8a63d98",
-      "releaseDigest": "sha256:1eda7ea39ea0ca2d6261a5dc803b82524c8ab1be805b22631a8dd8aa80bf3662"
+      "definitionHash": "sha256:aa4075c4d3bf3f541a742cd96201e304800b98d764183e48aea30f6c8bb8d0dc",
+      "releaseDigest": "sha256:27d6a46a9ea71aaed058313eb7ca97122ec7544999d18607e8228c47f02bc975"
     },
     "codingAgent.direct-plan-mode": {
       "key": "codingAgent.direct-plan-mode",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -421,8 +430,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -431,16 +440,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:12df4176c3e7d35d8cf511005969a5286f85f89e370080a887ebcdb5bd3882a9"
+          "artifactHash": "sha256:5a67b1a549c0b75a1cf7bd2e2eec9388e3cbc9678e186425845ad892cab8a63b"
         }
       },
-      "definitionHash": "sha256:935bf7d8f81773d95d515088b8079d92c4b57e83a0998e74369ae6b5c38b7ea6",
-      "releaseDigest": "sha256:af6b3c6dd1eadae0b50d232b1517cf544fdf61b50df4415f5d22afdc16e2c3da"
+      "definitionHash": "sha256:7c17981e1072a5464a9ece290e311c88e98dcb53d85f10c46fb3174158bdfbd0",
+      "releaseDigest": "sha256:e9bd09c1787a5636c62a21034c2eac772be0ab020f6f057c710e61b1203f46e4"
     },
     "codingAgent.domain-module-boundary": {
       "key": "codingAgent.domain-module-boundary",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -453,8 +463,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -463,16 +473,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:2964b3dbbcb027a8a40c34e253d2f994c49c179cbe0c65351081809ff92e30b0"
+          "artifactHash": "sha256:b17e652c180145b8cd08e894835a1b8f36db9454199a7c246fed69f75e5aa850"
         }
       },
-      "definitionHash": "sha256:1ae7dc974f0728bb03a9efde544c24aa479ce60005af5550a629565e86a9b525",
-      "releaseDigest": "sha256:0f1167dd876736e1db31c9abf63fdaed73df6376a9d7f51fd16a69486179c3ec"
+      "definitionHash": "sha256:c0e376c7d22d53b64032d622dd5c0f879b5917713d570c29de9bfdaa4257345d",
+      "releaseDigest": "sha256:561843e1fe683ceff785e95e982bae7a9f3beb2f5b6d035a0886b4024074178f"
     },
     "codingAgent.failure-recovery": {
       "key": "codingAgent.failure-recovery",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -485,8 +496,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -495,16 +506,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:cc8e8887875a4cae29a94b0122e136985ff3c06bf0b524dbf8fb810d379d4d74"
+          "artifactHash": "sha256:436906e2e450e4ed57a084f3f98dc49656003ee0a5dd64541a98b26598e0183f"
         }
       },
-      "definitionHash": "sha256:ac08ebb1883dd2ac0e0b82d9eeaa8bf745310cfbd61198560017f0adf4ee3d36",
-      "releaseDigest": "sha256:03a86b73a73a5a883393aa5e2f42fb0b905f642060f616f443d65e44e49a5498"
+      "definitionHash": "sha256:d8d66a07cd595f8c597db05fbfbb0dee6088ae22386e77637cdd1ad32bf8403b",
+      "releaseDigest": "sha256:6b243acd8219677999f57206a17a858a36e4cfdd938dd140d511be9f453fd429"
     },
     "codingAgent.initial-preparation-todo": {
       "key": "codingAgent.initial-preparation-todo",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -517,8 +529,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -527,16 +539,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:c8835b5237d5ffbbee2284f1c017789619d9af7aef5d79905132b6661991b56c"
+          "artifactHash": "sha256:f92a46acc111df446672915f4758d978e04181667dd33c3c4ee8993e54838415"
         }
       },
-      "definitionHash": "sha256:6f5583369f40605f66ba2896eb87c944a2342c375fa4134cc45103a5e3d091cd",
-      "releaseDigest": "sha256:488906d062858081b9526998a0733b193ebb51c5be50510c1a58a9d09914f0a8"
+      "definitionHash": "sha256:26e8dc89ea88e1d0b3b1cf34002a8ecc005f95201bcc089a16f446d0a4bd8d30",
+      "releaseDigest": "sha256:97dab8a75689d9737b85e7dedc6a460c5fcb17613b6d13661838b092212ebd81"
     },
     "codingAgent.native-runtime": {
       "key": "codingAgent.native-runtime",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -578,8 +591,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -620,16 +633,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:204621e2139a33ffac5c4ec13006e3a05ad3c3ce9e924f2013996195ba13c230"
+          "artifactHash": "sha256:f03257630dd38f71bc771d08d9e3664b0a68804fd4ba80f687d1ee0e2eaa2df8"
         }
       },
-      "definitionHash": "sha256:26eac722e4e26360e7cc6bc3405e01229744b27b6f4d4a5260b3ba74d68a96e6",
-      "releaseDigest": "sha256:bdc8cd56753cd49d252784f35b6a0cb0fed94b2d839b996ade0b2681f53ec5a8"
+      "definitionHash": "sha256:f5ccd3869611088c5ba9e488ec8660f3002876d2a8ae364e99a0cf95b83b9ddb",
+      "releaseDigest": "sha256:695736ad61dff40248144e1fff23a73c03e4c2d8fe9e27c0b25b6afe0a960bb0"
     },
     "codingAgent.nightworkers-mcp": {
       "key": "codingAgent.nightworkers-mcp",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -642,8 +656,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -652,16 +666,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:968df72d8b80f3c97e800f8ecb7784953f441541b2f2789b1731ec916289a956"
+          "artifactHash": "sha256:9dc5a88e53e3412bb9c2c2f01cc0c235e474de003a53af886d1c8202a59dc0b2"
         }
       },
-      "definitionHash": "sha256:bff1cf7a7c4d5553f6f69bad40c95ebc32af9809137d1cfb53d70c0f1936e1fb",
-      "releaseDigest": "sha256:e309cead76c031bc77c92956ea916f44751016badc1b828938381fa790b90218"
+      "definitionHash": "sha256:63e365264e7fbedb6000240d6a264dff00530d14c1e9e12819e053771db6d45f",
+      "releaseDigest": "sha256:7b57c797a329962f80d521809a46286b4867dbedb6d03812f77e6706a1cc6911"
     },
     "codingAgent.plan-mode-gate": {
       "key": "codingAgent.plan-mode-gate",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -682,8 +697,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -700,16 +715,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:6209989b3425dfc76a7970faf7f7c5556f21dc5c01649c60fb46bb6bf05ef4ca"
+          "artifactHash": "sha256:a0f274707265e7f7594bdbfa5905a297d4d490598a97f117b7206fbe1a83588a"
         }
       },
-      "definitionHash": "sha256:923a01789a2921e1ac292d8363d0fa37e59b6ed69d941daf9dc1c1a0f1b6771d",
-      "releaseDigest": "sha256:40412da630b54d620ce520731bf7740651935ddb87336ea2d6ff0b6d97a6f08e"
+      "definitionHash": "sha256:f473a5a5e58db497881d4623776af3596b8bfae7ff69abc017f9f35ca5c39c0a",
+      "releaseDigest": "sha256:4f55d9d81c13f5ea94d222e5041949c1b4ad5b3abf579106fbce0a40f06d5358"
     },
     "codingAgent.project-exploration-available": {
       "key": "codingAgent.project-exploration-available",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -722,8 +738,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -732,16 +748,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:49f194c9fd5c41ee5642e24ada6d01028a6b38235ac175a8e56f96cc741a1758"
+          "artifactHash": "sha256:43766a01c03c6b92be3a68bd97152ff14e4d54b18841799cc260350a95db14de"
         }
       },
-      "definitionHash": "sha256:e9ed97ea5de4462a237c3907f5d0e89c5cfb5fd1b0f93af1a358effc2ccd38be",
-      "releaseDigest": "sha256:261a3a75e3c352fbc1e3490aef5a7cc81c6ce853c804fd76518e3f3c7f05c9b9"
+      "definitionHash": "sha256:86f03517d4edacef7e376d2826031f71a22dadb4b81cf0d425645895492c03e6",
+      "releaseDigest": "sha256:676db9dd1fca24d433a3e48818e343ceb94e0e49a7c1f32412ce55723bb4d6c8"
     },
     "codingAgent.project-exploration-unavailable": {
       "key": "codingAgent.project-exploration-unavailable",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -754,8 +771,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -764,16 +781,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:25fef5fea8d5ce49f7f92fdc91448ea431351a147c0f7e92932ace0bbb94122c"
+          "artifactHash": "sha256:e983df0d877dbb94ee7910283b6b651c17123aa8c7865a985bc8380af6131549"
         }
       },
-      "definitionHash": "sha256:8fc5f436d23ca73ab4ba53d773856eb31c023caadc51464daa84cd172da37348",
-      "releaseDigest": "sha256:77ebf9056751442bcc0a151d1e9669e5ae96029b32705b3304aff17c3be61b84"
+      "definitionHash": "sha256:25beb52371216d76f0e6368f811324e9e60b0945de1b58a38fc882c673bd5902",
+      "releaseDigest": "sha256:da60749afa31890693bc6e2903f0f96d6def73f1f9c7424b6aa450259dc40080"
     },
     "codingAgent.role-instructions": {
       "key": "codingAgent.role-instructions",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -786,8 +804,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -796,16 +814,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:9768f910d68b629aa5ac008b06d4267271a2422a1411cfdd74ca47ee730449ea"
+          "artifactHash": "sha256:c5d27d8563e9a66e192e915768bded1512fb91e958d0c4ec5e5b02afebfe3948"
         }
       },
-      "definitionHash": "sha256:66e3e39c87d54908a75efc1f165343f901629b38935a3646a69ffff413de63db",
-      "releaseDigest": "sha256:ddf86a70aa4c28cc85d84c3827dd9770a708a99945be5bde7bed1a81ef77ff15"
+      "definitionHash": "sha256:c8490e6bc8033ff6437d069114470bdfe62c852d825a77ee50675e86de16d022",
+      "releaseDigest": "sha256:faabfba77dd9e1c8b151c971c73b0ce900fe4e77fce74181350e8de4980f12ee"
     },
     "codingAgent.runtime-reminders": {
       "key": "codingAgent.runtime-reminders",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -818,8 +837,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -828,16 +847,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:901de7a85dcde99bd31b8262bb48779a474eaf160dbb4956cf112f661f4ea931"
+          "artifactHash": "sha256:bdc7966596a49ba8510c2a297ccbea2015701985e4bfe25fc649eeedef0ba843"
         }
       },
-      "definitionHash": "sha256:b623685da4af35aa02f72cd70f36648c756daf2d4a0c6544bac4d69e321bedae",
-      "releaseDigest": "sha256:782f9b9b56585304b866fa0e6b5bf11c558b150c27d84d1a296b1f02c0502fae"
+      "definitionHash": "sha256:d6bc6adb0f0c0969ff3c2103cfa3c4187bf1939b8ee7d0ac8842149dd00dfdac",
+      "releaseDigest": "sha256:3826e4a1acd30df547da6c74d8ddc7ef9bbdb9ec8f03e1c71bee0dce15d8ecb6"
     },
     "codingAgent.runtime-system": {
       "key": "codingAgent.runtime-system",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -928,8 +948,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1026,16 +1046,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:8f1f436f652c4b74405ad7d89397fea52d215ece1ef99898bbea8f1bf458e108"
+          "artifactHash": "sha256:7ab0eb0d6346d0a855f24dfda3448b2879378c5b940dee694898fa8890e1e905"
         }
       },
-      "definitionHash": "sha256:593d9d6b21ae6d7f8913fd3ef1d21ae5705b47f5b35e20acf14f48a68736e7a0",
-      "releaseDigest": "sha256:3e2e4e380da3cf252a6b0d765e903968e05bec7a89805fc86d506faab06da5fd"
+      "definitionHash": "sha256:e0c6f50756ca28f810680005ae6ef75ae49e7e89bd908175a9f7c7941e298912",
+      "releaseDigest": "sha256:fc96cd6553df3e6d9c3e0e49483429fb9ef5b44100e3f201be9fa8667e69d443"
     },
     "codingAgent.runtime-system-without-task-goal": {
       "key": "codingAgent.runtime-system-without-task-goal",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1119,8 +1140,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1209,16 +1230,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:b3f60e2790bc3083041685761b0d2fa67218e90f9bdf4fc322a1a78d7143a567"
+          "artifactHash": "sha256:dcb2c4b17578b9248a9ed0119c46cd037216e3e8233bf37f8d8a8dc488108ea4"
         }
       },
-      "definitionHash": "sha256:1451a4944d1307b4798f6ca1124342fea51a416bed6ad4473a0e56570f4fbd6d",
-      "releaseDigest": "sha256:aebe13b21f158cacc24fc8385cd90d1828665e24dc84a2f90a0d0f067e83b15f"
+      "definitionHash": "sha256:55a8f58783148524906ab900faa68262f6aca90b9b22c72d95375f1a88d12167",
+      "releaseDigest": "sha256:b82f5530d393fcdcbebcb1e69980fbffcfe050006ef69c373c3f2044e738082d"
     },
     "codingAgent.standalone-execution": {
       "key": "codingAgent.standalone-execution",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1231,8 +1253,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1241,16 +1263,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:666891946b71b5633077c03cf5d7de01649e5d465f4b0b4f0a2f3794c2a9030a"
+          "artifactHash": "sha256:5e0954ee837388fb6ddeb531a2ad654e10030cb9d522e0a5b661d2b83c72a456"
         }
       },
-      "definitionHash": "sha256:cbf83be68a59ea54f01b64c3e0bb346272de0f3c45f9d6085235a872e4fde1de",
-      "releaseDigest": "sha256:091128f71d5d6a4196d8652757c5ef64c8a2dcb2aecf5fbd685bc6547ac46e72"
+      "definitionHash": "sha256:81f6cbcaa3dea7a1953b183a9dde99a87ac2326289dee8ed63b9947a4b6ec401",
+      "releaseDigest": "sha256:2cffef4a84e1f8d1fea0f65560aa18ae4d145f1868f84c7ecd261eb9388bd467"
     },
     "codingAgent.todo-plan-summary": {
       "key": "codingAgent.todo-plan-summary",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1278,8 +1301,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1304,16 +1327,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:17ed088a31b4811bbd783b3f126414a39324726485d900da52198ffa9e7ee356"
+          "artifactHash": "sha256:88d53fa8caafacf16df92043502ba6b2e7ffdbc334a5243f1c97f113d549fd99"
         }
       },
-      "definitionHash": "sha256:9c7f29a3611de12893e6e7786c63c7de477600fd37604c0f9d681ae32fab6f8f",
-      "releaseDigest": "sha256:7d456ea24cb769b8f61281238e3a1b637adcfca874e9ceef1927facf0188af1d"
+      "definitionHash": "sha256:dc051957a40721dc100ce6ae3ed929954f37bf15eb946f6bb5f166a65359aa56",
+      "releaseDigest": "sha256:de0a4bca1b6fc322df3c570d861f1ddc0278838a27ec83f7c91a88f9c80a3ee1"
     },
     "codingAgent.todo-policy": {
       "key": "codingAgent.todo-policy",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1362,8 +1386,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -1404,16 +1428,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:28d1a2cc2c2126c5dede210efc8cca7a29f3708df766c30c4ca0ca49540cabb6"
+          "artifactHash": "sha256:2348ca85a60c55d456cf12bb0d0433163a283a63cb90bf585e4048f236994a0d"
         }
       },
-      "definitionHash": "sha256:d3943ee93f9d31af16ea74494ac2ae0c28c6695949a1f84b861c19a49fa0eb1f",
-      "releaseDigest": "sha256:7e99163840f2cb45847a22758d285acce1416690a7dee4861739f1504623ee5f"
+      "definitionHash": "sha256:20a71ee6a5aaea260199f745821150cd48820ac3ea976847d3e98366d1e8d596",
+      "releaseDigest": "sha256:a8172adc62c8da93001f4f131a3dc93bdb46941c59c09526aad73f413a50b8a8"
     },
     "codingAgent.todo-requirement": {
       "key": "codingAgent.todo-requirement",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1426,8 +1451,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1436,16 +1461,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:5cb4e502e6d6edbc11131c9912deb02e6762f343c69feecd8fe733a35d3ebd04"
+          "artifactHash": "sha256:c8e5a3fa69a706162383397eb4fc0c94060103477a12f5cc86b96058dd92ffbf"
         }
       },
-      "definitionHash": "sha256:8e7ec6414dbf21b3446a7da3998de358a7300290a9091003b2ac525a7956e01b",
-      "releaseDigest": "sha256:d77c4c4f71d83ac5af7a671fcb9dd0c833c8e84028087b660ecf2ea4e26a9f8d"
+      "definitionHash": "sha256:cf2fb96440fa8b0f09fe58f6d2153ec4f3aa2be1d419b8b34bdd5a98c8264df2",
+      "releaseDigest": "sha256:aa8ee323f444b0fcb1b184838053cec3ecf68f16a1602f99bcb1d64e992c7f3b"
     },
     "codingAgent.tool-contract": {
       "key": "codingAgent.tool-contract",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1458,8 +1484,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1468,16 +1494,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:7667fd588696669d9b0517de6e20e99c1deb9e4588c1d542b32e105a32aa069b"
+          "artifactHash": "sha256:ca21419d7cb3e1e969baa4d79a28953788f700fdd2c4186081c2c9b89de4264d"
         }
       },
-      "definitionHash": "sha256:1f1f3fce2075b304a31ab887ce2aef2aa65cfd8e0a7fa285d367947abd4cc20d",
-      "releaseDigest": "sha256:a9a63cc9e1d08a0041561c08e03d825f606e03176ebe683cf4d01b5f62d27289"
+      "definitionHash": "sha256:455e0ddc7c182f99f5b622f0811780080eb2e33e9dd5def40e5c09e2bf95981c",
+      "releaseDigest": "sha256:99e0af9aa1f33a0c8fa02a64cfe0be2a7afac58c153a3c5d7e45bada7a909850"
     },
     "codingAgent.workspace-context": {
       "key": "codingAgent.workspace-context",
       "owner": "coding-agent",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1512,8 +1539,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1554,16 +1581,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:40e94cca4d70dd3c1648bdcbcc201a2a279c74dbe541cdee73ad84d626a80ded"
+          "artifactHash": "sha256:5aa76e2485cbac0ad83c8df3dd1b910d6f70477d2a06536f2ebe402b15a9d67f"
         }
       },
-      "definitionHash": "sha256:8489e528ac8c4ba9514d85893530ef5fad067c37c7e7f46a67cc90afa82daded",
-      "releaseDigest": "sha256:99c0d882080348e08d4ed48aaddc434b7a376f5b3f5a7f19b10111e6eb66b255"
+      "definitionHash": "sha256:4d7fbafbc0fc0195dfd6e3f8073c58426a67cfa88636a6f77c013aa1e1fb04e1",
+      "releaseDigest": "sha256:9935ec053c44306ce00b4ada0177ed24be95ab373132e93a2ae2344f60ab7820"
     },
     "missionPilot.artifact-provider-instructions": {
       "key": "missionPilot.artifact-provider-instructions",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1576,8 +1604,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1586,16 +1614,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:62f293a3d18d6c905a11f558aceee4b5cf53b3d86b5047d433008b3b83b4ecb3"
+          "artifactHash": "sha256:a09f1fb60b8dcf09e00f6129c8a2221118f57c65aee38e1e291482e233d9c222"
         }
       },
-      "definitionHash": "sha256:90a9bffeb05dc8e4f2a5645e12eb7895d08903eb5aa8fc6fcff4af6b0324f17a",
-      "releaseDigest": "sha256:b875f74e4fc0af32e4c80e408c966f48df2884cb264ead035820e491848c10c3"
+      "definitionHash": "sha256:7f462486981d196af3e7b56da8b77e4a0cc840b9042e21a307708309b2577e24",
+      "releaseDigest": "sha256:88117f3a629dd174c9a995dc38a09e17ef8e5cb889edc600f85d46bfdb3c4dc8"
     },
     "missionPilot.base-system": {
       "key": "missionPilot.base-system",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1608,8 +1637,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1618,16 +1647,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e5a6bb6254c97c4abc152ce186bf3638eb335da3b109889b136520b337afb0b2"
+          "artifactHash": "sha256:b9488d0a3fb5a2ee0373ceb5a4486e560b8a9e47df6d4ecc0c42e1e3f4a34d89"
         }
       },
-      "definitionHash": "sha256:b1364f7d1e4dcd33cdd48331439dc5f3d34068cf4372f4a9495b3db371ee0569",
-      "releaseDigest": "sha256:2cf388b7251f4e117991a18e40a6069db863bd6456505560236098c6269b2750"
+      "definitionHash": "sha256:2c0a7a9640efbceb7f70cc9e487fd29ea25671ae8eb113517774cd54c7548d85",
+      "releaseDigest": "sha256:7cf3d9fdd12882edead5a5d873e30e29759226f868ad1a7317efa511bc0af851"
     },
     "missionPilot.base-system-suffix": {
       "key": "missionPilot.base-system-suffix",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1640,8 +1670,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1650,16 +1680,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ff28f379f04e4d0b140af971df5acc75ec206c0ae7cf785037c68a2f6718c624"
+          "artifactHash": "sha256:d0a4bed9bae283ee38e9686c7d698fa8d07b7a4b6ff916dc597b91971d6cc6bd"
         }
       },
-      "definitionHash": "sha256:7088c2fe3714999924aa5649eed577e1f0879666963e2d04357c2cf896acb2a8",
-      "releaseDigest": "sha256:89862274a0a6e78fb94a7f0c13d9ae412a4c12a4ec22a79fcdcd3bed1f7505c6"
+      "definitionHash": "sha256:20e94f2c7d87035568c8e488195cfc4876e5baad9adb09dc69e6173cda2bbca2",
+      "releaseDigest": "sha256:3145e8ab03f18becc40ab2af7101760391b6675e2d5fa2cb7262662976cc4bbf"
     },
     "missionPilot.compaction": {
       "key": "missionPilot.compaction",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1672,8 +1703,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1682,16 +1713,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:d727afbb62d717c57a45840d866c522a24580cf13c31850f14598a23fe0cdee8"
+          "artifactHash": "sha256:b098a886cdd76d6ee590c4a6e562cf669be44fac14a7b0de03958005cf0feba3"
         }
       },
-      "definitionHash": "sha256:af699ef5f818d9aed828d59a8eb47b1b254a8a1380f00cbfc862aa46f4f7561d",
-      "releaseDigest": "sha256:b8cdfd13d70fcadcba88588c4b7accec92875dcda263597a15ed96954a5c3e5c"
+      "definitionHash": "sha256:9478baacf6c2aa8161db332cdf7b6da90f7cdbb97d552a94cf04eb70551521d3",
+      "releaseDigest": "sha256:f2c75ce232252ff9d877416ca856514d0659e1b24a7beddcb2dbba8ea278ff89"
     },
     "missionPilot.current-step": {
       "key": "missionPilot.current-step",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1719,8 +1751,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -1741,16 +1773,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:11cbaeccbf3e5fadcb1d62aa5aaaee3aca040fa720f3bd6f69304405c92b3068"
+          "artifactHash": "sha256:eefd2de59e932c894b3850b350c4e72b312a07d8189ffd59b1891e815eb7a03f"
         }
       },
-      "definitionHash": "sha256:263a5e07383ee3217c969fd932c856a012e27a6c88d2cafa7b1a4fdb5c66469f",
-      "releaseDigest": "sha256:a6ea7cfc8e5f9537a8e852c079791c2a783829df5fb91360e1eb7cff84b64499"
+      "definitionHash": "sha256:39e5d654a1ab0d772cbea2aa0eeeb3a9f4fde1f2318920f18e8ecc811fc01aec",
+      "releaseDigest": "sha256:d6b9c3811277c391e2f115629a3a9fc8428ac226d4bc5cdcb28bfaa070894e4a"
     },
     "missionPilot.plan-entry": {
       "key": "missionPilot.plan-entry",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1763,8 +1796,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1773,16 +1806,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:fd452ad531ef68471cb2c3ab4bb65b16f3600a98ca6ff92f7d53b73427218673"
+          "artifactHash": "sha256:2dfa84e79be84413c16c8bfe2c77d22103eafc61e53ab3c68702911e92614a02"
         }
       },
-      "definitionHash": "sha256:991486ed10cfdbee35fa93e024a2820c23733dc695d23e18929974383d731b78",
-      "releaseDigest": "sha256:a971da6d781c4551207a03f13d479b6c23a57e66c459f0701425b889ae560832"
+      "definitionHash": "sha256:d1438650452f21fa88878f43344bbfd3c8e2f346fd46d57169a6998cae62f31c",
+      "releaseDigest": "sha256:fe3d23455616e5929a7c79188c3d8ab391e1e1664d6dde1c0eda5a52464b1f12"
     },
     "missionPilot.plan-review": {
       "key": "missionPilot.plan-review",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1824,8 +1858,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -1858,16 +1892,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:f231d4019e827204bdf7a5f3a93284da77e3ec2a23b528b4a659a828333135b9"
+          "artifactHash": "sha256:f225d06010795b5b29a71e16a409a3d1c3e8f69a1b426db4bdd9d69fa5c05a8c"
         }
       },
-      "definitionHash": "sha256:7c5060062753d16993619352c13411fe267256b22accd94b09c8aa8fb4fdf2a1",
-      "releaseDigest": "sha256:56de41a7bac53e3a49266d8f9f2300c09a59ebe9d37375170601bdf4a9a0becf"
+      "definitionHash": "sha256:2dad0db2059035d9527c18765f30bfc8de63b6a16f9573ce1522f027cfc8c1d7",
+      "releaseDigest": "sha256:3d7b63a0308e08981968b5b11c4666c9588f09a22ee000dc68387add9c172ff6"
     },
     "missionPilot.plan-review-threshold": {
       "key": "missionPilot.plan-review-threshold",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1880,8 +1915,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1890,16 +1925,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:7db9e81d27b62c2ff6ffaf812627f97832ceb307a1b29b239cd0de9338a35899"
+          "artifactHash": "sha256:d52d53383da8cada6c2ce713a14ee2580310b85fa9fcc1cdff92a9033cda8505"
         }
       },
-      "definitionHash": "sha256:70751324b96759576b0cc3a3e3c14434dd86ac7df4b6edb6001b79a3f8799354",
-      "releaseDigest": "sha256:adca5532672de155f520349c39344d254724a60c3ae65bc9178bc3f1b2689a1d"
+      "definitionHash": "sha256:3e3be275a0baa0343dfdde909b6c06d392f3fc100c573fe2fa08fb35a7f869bf",
+      "releaseDigest": "sha256:876948b4fd001ded197f0c756bba4841bf1990f45a1e4d56f2e8df0d8d630c6c"
     },
     "missionPilot.plan-system": {
       "key": "missionPilot.plan-system",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1912,8 +1948,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1922,16 +1958,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:8826256b2b8b4824f61e9c2f2a35986ad09424fa9d9708db433ba0f73dbd48db"
+          "artifactHash": "sha256:398a64a3b2c0b25d61560b2c949f398f4fafced75d03bbc4aa8373670e9d5cef"
         }
       },
-      "definitionHash": "sha256:d080716c4bc06151f877397b0f6bfbf23ca49ae7773351a8fafe84860ebe59ae",
-      "releaseDigest": "sha256:ecb732d2f9407dcb08c6dce48538e14c9687e999f38505e3920e64a52f3abf5a"
+      "definitionHash": "sha256:af3a69af03a276d9d6d21e117aa15adb819a4d82923bfadfc946f1431051815d",
+      "releaseDigest": "sha256:660227bbcb4e8de804d7982f437e569d753e9c2888b2ea403d49a6d230495cc8"
     },
     "missionPilot.push-allowed": {
       "key": "missionPilot.push-allowed",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1944,8 +1981,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1954,16 +1991,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:42e9f29733ac2293b3bce072cbc2c2c33cc5f1c6cef409db3906bfb0941c3615"
+          "artifactHash": "sha256:592fd8d9aeb0d2203a85ed3aceb7b1fd738230bc7a61976ddf4a585149f85ee2"
         }
       },
-      "definitionHash": "sha256:a1f553d0e05261a9708dedb631026f961dbb5b7fac1761ff5b00d20c91b7ede8",
-      "releaseDigest": "sha256:66f8482c43feda50f86c92b1b5a4cd26feecd6dc24d381eb270334852757e98e"
+      "definitionHash": "sha256:5a18d4e450ae860d1518922b1b498c8632a782c22caa2efbffa041f42f55df38",
+      "releaseDigest": "sha256:4af2b666b346206fdafa6168c5a6d39ba4cfceb2d83513d982c59bab45febd97"
     },
     "missionPilot.push-denied": {
       "key": "missionPilot.push-denied",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -1976,8 +2014,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -1986,16 +2024,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:412931427a016c78e1a140ee9998b51a33ba1342887ab24a8962df559883b34e"
+          "artifactHash": "sha256:f8f05e9d48624d52f850faae4dbc713f4c92801073d5a0108f8c5cca209e3f98"
         }
       },
-      "definitionHash": "sha256:de7621d74fdf11a63110e4821dd5ce66a2a176df8b03e8101c07f0313af3bc13",
-      "releaseDigest": "sha256:00004b22f33cd079b34b1a3616992a790ffc1e5cbedc9c0f7e9d9cd4df4c2b33"
+      "definitionHash": "sha256:2d2bc7bd6552d53df26b8eca9e3bf1a8992caf657ab56578cfbeb2aa831a10c6",
+      "releaseDigest": "sha256:32d103cfea38b32ce0854601b1f0752e39b956a305aa38866ea6557ecb688ef3"
     },
     "missionPilot.stored-context-current": {
       "key": "missionPilot.stored-context-current",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2016,8 +2055,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2026,16 +2065,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:cf84eacfab859dbb16fac0eddf3d76a905d9379017d61bbcd91b0f716ebcc014"
+          "artifactHash": "sha256:9be4e7fde80a51447010c18a5f00033dd81923e588c1df6a5c0f325ce82d9e6a"
         }
       },
-      "definitionHash": "sha256:0c2eccd9ad72a50a3cfb27e2eb53c1859889f79870b80fb63d00af69c18f3211",
-      "releaseDigest": "sha256:f306c9af6dd823117f4049a35a087918cbfd0040d2f9a842946ff38ecf72f25a"
+      "definitionHash": "sha256:d16e6537c274982bc69f91711bb2a49b4538192f06c733c4fbe49bcfec884014",
+      "releaseDigest": "sha256:e2c97ecd2e349a84e6f54fca395e14a27732aa2d48239b6f968f7eb52db68752"
     },
     "missionPilot.stored-context-upgrade": {
       "key": "missionPilot.stored-context-upgrade",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2063,8 +2103,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2081,16 +2121,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:079a887c4a32cea14491af709629db7cb859fee0f75d1c31f245e741151576d1"
+          "artifactHash": "sha256:160845d5e8021658584050f3874e9a0ce6b5d573042d2f609ea847dfd9c87f14"
         }
       },
-      "definitionHash": "sha256:78db1aafd0857e86554531a54be0e5a5122df019dc5bba3b659aa7333cab03da",
-      "releaseDigest": "sha256:f28208d071db68a2ae2c8cb88fb90da062fe55b1776cce5213d874b264809d17"
+      "definitionHash": "sha256:ee99db757a29a87457415a4c6e91874a31bb3f255fb51e0ee1064a54c44a9080",
+      "releaseDigest": "sha256:2966ae1a26507ff76a36ac17db92930600b6ea37219427226f8a98f6984ed760"
     },
     "missionPilot.system-base": {
       "key": "missionPilot.system-base",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2125,8 +2166,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2151,16 +2192,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e93e4ee2b71d71d375061819f995edf77a89356d77a3ef708807b975eaacef47"
+          "artifactHash": "sha256:e6dc1d0ff776291818cee2e35b42184b755cd525c1e9fbc3051cabf456844a6d"
         }
       },
-      "definitionHash": "sha256:741668b9b4945de2ca46b7dcd77c70ca2af4c2d39c82f27f82fc52852d52c2ca",
-      "releaseDigest": "sha256:bce41fd199f1beb6885a5de5f9d4f23071ef16e40d41d313e37678f86425a763"
+      "definitionHash": "sha256:d814ae231e82c9d507ecb705d4486d17cd887857633e3ab9f789a0da39e75d0f",
+      "releaseDigest": "sha256:d8f54dc0f3200595ed59ec5b3c1f2ca74681dfe43e5bf81332a0b4bea85ee6f9"
     },
     "missionPilot.system-with-push": {
       "key": "missionPilot.system-with-push",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2188,8 +2230,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2206,16 +2248,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:7cb1fb59c34f097ee7ae43ee810d344e8bf56541293ba1448ef955d33073bd7d"
+          "artifactHash": "sha256:20189ad4657e39951670b7d1d425f7258d7529f90d0e7953ed6d057c3ee2bf66"
         }
       },
-      "definitionHash": "sha256:b4defb01d0cf292dbc23acad2340dc8b26f7166115d6cd305909a58da2bf7744",
-      "releaseDigest": "sha256:db266b94870a6bfa684071624c5ea65b7cf962866b4a713ffcd6ac0b06fecb42"
+      "definitionHash": "sha256:2ecb6acdd0849824dddbb36c891bcd4977398b6771e5c2a5360900f8f2b64be7",
+      "releaseDigest": "sha256:c50d07bd453c640a785eb5ff474917a143325d3951d5dba6bc794a1577a7b690"
     },
     "missionPilot.tool-turn-provider-instructions": {
       "key": "missionPilot.tool-turn-provider-instructions",
       "owner": "mission-pilot",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2228,8 +2271,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2238,16 +2281,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e059044318833c52ac79c1d543f0adf015da8650d86a054b81b455e8e5b2c6bc"
+          "artifactHash": "sha256:e8bf1092cf06d8873705c185cb73d1836a0aeb96afb1fe0095e2895d4ae12113"
         }
       },
-      "definitionHash": "sha256:09a403d9a8201428f1469dd55010b6a38914455026313fe321ed0d9e15ac017e",
-      "releaseDigest": "sha256:4ea127735bf4f5b8582b8e124d1838101aeec8051416e462278e88abef4e864a"
+      "definitionHash": "sha256:42e956daaf31b08a9433cad704425373e7ec7764510336b16aa267cf3dca9f32",
+      "releaseDigest": "sha256:26a726d142b8cba3fd888439bb51cd111b7ec94cd9f0d62ba94807c908abd007"
     },
     "missionPlanner.candidates": {
       "key": "missionPlanner.candidates",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2260,8 +2304,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2270,16 +2314,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:f5f49c2df2ef9dd5563794b455905048eca6e717c9cf36b8a09730af9363e98c"
+          "artifactHash": "sha256:1e01f70553c6c4bcb59de7806a99b8cb80140d4752daec6a304c5c1c4a2fcf7c"
         }
       },
-      "definitionHash": "sha256:a7b1d62be38b7fb568370b66f52a6ec56b0421c4ba40cce7703199c51e01e3eb",
-      "releaseDigest": "sha256:0e810216e507d5af1fdf88139ad3cab106fdc101b9005386ee14d25ef40fe6e9"
+      "definitionHash": "sha256:863468749ed49512b7b9f986086e115b962ffd5d587970a237adcc52cbc0ddc9",
+      "releaseDigest": "sha256:a962a10b70e60f41135a16a933656fbce5c7982eb5ca48513c91aa63f820f98d"
     },
     "missionPlanner.draft": {
       "key": "missionPlanner.draft",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2292,8 +2337,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2302,16 +2347,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:9a7cd3e52c0ff7cd3792af77f1c905f6ef380564e05f55d98cf5ea79d79cf269"
+          "artifactHash": "sha256:4923b627e40481672a803c27107d11d904591a129f3f0bc322c502d350bf5744"
         }
       },
-      "definitionHash": "sha256:d23302b1cb63af556cbfab911186a63696fed8833d4f8fd77154ea5e70e0bace",
-      "releaseDigest": "sha256:d9e6d237c8afa392abecb37cb336d83d7b8a952c31bf33f6433a256bceeb60ec"
+      "definitionHash": "sha256:81a09467a91e27b200bfb950c21acca0f15b4c37d53b7926e2acef28287bc73a",
+      "releaseDigest": "sha256:41bcaff160ab42e427d2b76cdc19abba57d71978fa5ddfa4729a5c01127d0566"
     },
     "missionPlanner.evaluation": {
       "key": "missionPlanner.evaluation",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2324,8 +2370,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2334,16 +2380,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e0ab44f0ad0d942fe9a84f84a0917113783ec537f292a2bf15a006205657ddf9"
+          "artifactHash": "sha256:67892081eb5f1fc99d502295e197fdcae65f85852d4816a982353b009498eab7"
         }
       },
-      "definitionHash": "sha256:80e10de6b3eebe589e846e79aa451bf6fd09a59483ce4ef603f05c0ccce6c249",
-      "releaseDigest": "sha256:d4d59c7ab6a756a2968e1ecd14c75c234a34163ffad374553aa5a51fd43c61ef"
+      "definitionHash": "sha256:500e7267e18460b7994f34a23dd1eac93a4200b54fd1209a890b6784455fdcc0",
+      "releaseDigest": "sha256:a55f665cef163925b155b0f32ce03e437503d3fb547d1c3c6468a51422fe8e75"
     },
     "missionPlanner.plans": {
       "key": "missionPlanner.plans",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2364,8 +2411,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2382,16 +2429,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:84506ce0d1148dc5b6faa9d10e8d0cd324ca521760f324bb13c9e00cf9434219"
+          "artifactHash": "sha256:5e8c5c77196e6bdbe9927816d9dfa723a75728d983fb5b218598a2fb0120cfc2"
         }
       },
-      "definitionHash": "sha256:cd472c71c8d4226607f2a43aba44c45eac68404e76ba5dd0c64fb09f7e71d786",
-      "releaseDigest": "sha256:436306fa5f68f6202d0226ebc40923317c73fd1ccc9fd73bd802bf807c814e75"
+      "definitionHash": "sha256:be06b1b99dec7f5a05e4eb1f00f098a7e961da11ad69c1dfafdb98a9236a23a7",
+      "releaseDigest": "sha256:c491db4880b6fcbd0392e58430a9f34ed98bdbb1e09e29e20ec0a690a930d517"
     },
     "missionPlanner.structure": {
       "key": "missionPlanner.structure",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2404,8 +2452,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2414,16 +2462,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:c108ceb14d02348c6871e0377a971cc4f938ee70225e68c8918af0945bd939ef"
+          "artifactHash": "sha256:b7936cd4618c01aeefa7c76db897d4db81a51631ef04d71be31cece8afc2cdcf"
         }
       },
-      "definitionHash": "sha256:498a1442a668ec313870bed0068c3d0e8124a57496fc1f5ac4e21439952dce5f",
-      "releaseDigest": "sha256:e1dfc8c4f5614cbbe1c7c2d2e612ae624e18c6d2467f14e69bf1d40680c14e75"
+      "definitionHash": "sha256:950482f70303c2569c53af4ebb6dc0bbb1092ebd2c76afaa6ad9a2e48f02cdfc",
+      "releaseDigest": "sha256:845c6a3416c66781a3f052389c0c00da303f95e441fddb1b91404bf312ae5356"
     },
     "missionPlanner.task-proposals": {
       "key": "missionPlanner.task-proposals",
       "owner": "mission-planner",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2436,8 +2485,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2446,16 +2495,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:daa80bfe29a8079bf6f7371b9bb1c7bff3f7dde2b2adaf24d03a7c12573a7410"
+          "artifactHash": "sha256:7140768e21b4931f07e387ad54ff1ef98398081ea128d835f8042ea24650d10c"
         }
       },
-      "definitionHash": "sha256:38dc58c7f92fb3703fc051b8c53a6149bf49846cf442b7275d99804ad95eb2c4",
-      "releaseDigest": "sha256:6362a25a69dc794a4e4e1b609c01b0905d57db96f85a2b7d27df8cb951771613"
+      "definitionHash": "sha256:9d9111238a346746afb9a20b582cf9a611bf2d8906c28782e619051f92c0e141",
+      "releaseDigest": "sha256:30ee067935f6fd86f2e9f217eb563cc6d30a8e9697565bf4fab0bd85be60ebb9"
     },
     "nightworkers.git-commit-message": {
       "key": "nightworkers.git-commit-message",
       "owner": "nightworkers",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2468,8 +2518,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2478,16 +2528,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:6cffeaa329c062487955e943565c73146fffe2b63fc9d60744f1a75a7946bf2c"
+          "artifactHash": "sha256:9776f03d55613d9b37e793614557276352d4b282e46f353e0faedfabc8e3f95f"
         }
       },
-      "definitionHash": "sha256:68b8f495cdf25b034090b167bf8222b58e8d2d3ca8b240a14ee5517bee1c293b",
-      "releaseDigest": "sha256:cc2e7b19b4725ee23d20df5a8d6213f63beb5043265e804bc3a83ee0936573f3"
+      "definitionHash": "sha256:0b555916ea9c71266756c5a81cc19c3932550bb6a7508f813684de313041a625",
+      "releaseDigest": "sha256:5271f67b3834cf7d0fe2a42c32758d9c08396c4f67108a331835c00b41bab98a"
     },
     "planViews.activity-flow": {
       "key": "planViews.activity-flow",
       "owner": "plan-views",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2500,8 +2551,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2510,16 +2561,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:c06567d45117b9d76e072c2ea34c29083d5ae4a7e37ceba9dee14b8cff2e1a9f"
+          "artifactHash": "sha256:725f1f7bbfb86a95c05e2f0920e88eb65a0906dc0906a946f6e4491185f801ef"
         }
       },
-      "definitionHash": "sha256:63312e48d44756bdd5a6584ae6be2c994812fdba0eee4f019ce7c8c96e9315c2",
-      "releaseDigest": "sha256:26be7502ac2f6f02ea7c188ff71d4f91738cc8494c4eeba8c47ba659af235c5d"
+      "definitionHash": "sha256:fb194c569e41fb0a98ba97558edf7862213bb062de54bd0b754d65a45176cc87",
+      "releaseDigest": "sha256:98323cd4db916e928ec29bafbe1a73ecb8533e89f5b0dae8d51f329d08702868"
     },
     "planViews.api-contract": {
       "key": "planViews.api-contract",
       "owner": "plan-views",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2532,8 +2584,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2542,16 +2594,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:836d4e495a3e17e0ec58f980379f618aa6588e01e813758d5e91a770ffe5f081"
+          "artifactHash": "sha256:0546d080dfa6d0d8288bdbcddba21b522249f2229be638d6ae4ea6e67d17f988"
         }
       },
-      "definitionHash": "sha256:eac6b7349133a1148fc76791ef1e58bda31bda2109c23d2bdd316a7a3001af0c",
-      "releaseDigest": "sha256:67dda6cd4422d0596159f2f520c584147e1cc20337b48afb67408379ee4b53e1"
+      "definitionHash": "sha256:01e53c6b123e7932dbe5dff17e1a85d42da622c3fd13e6bf79643e0ecfd4c5a0",
+      "releaseDigest": "sha256:4b00e9716faf45ce52e963573e668a3aae9bd466438132bf7a611761ba59f472"
     },
     "planViews.sequence-flow": {
       "key": "planViews.sequence-flow",
       "owner": "plan-views",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2564,8 +2617,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2574,16 +2627,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ddb4b87ef64861e67014a2f160a27921a3754fc0ff283abf5a281ff7150ced58"
+          "artifactHash": "sha256:70f482d2cac3cf93d3bc56b88be6683f0583f8858f170bbf56806cf0fd4ade42"
         }
       },
-      "definitionHash": "sha256:88029ad11b9bfe5055de5b5c95bddbf14d85c8ba71aa934c3459dbfc8aaa3b05",
-      "releaseDigest": "sha256:420c549cbf7fce2df33ecf328a83eea4d64dfa59de585206ee8c294643e122ba"
+      "definitionHash": "sha256:feac95b0c70d982ce18f2066fc9f7f6e7d325dcfa6b4fcb4b8a69b20d1f1c788",
+      "releaseDigest": "sha256:5b7c447d26e8463a67fc88c0ab4fb5b4e02953be0065347c933adce2ecec0f6b"
     },
     "planViews.user-flow": {
       "key": "planViews.user-flow",
       "owner": "plan-views",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2596,8 +2650,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2606,16 +2660,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:264b6ee22a9ac86f6fd8951ed308f8f94c9c92381d6d59f1bd429fa4bbe1edd8"
+          "artifactHash": "sha256:b3a2d0864d32e41028a770382d4d6df0195cc2c2b9a784cd905d9bbf14705146"
         }
       },
-      "definitionHash": "sha256:75d9569536c55a5f55bea6568624636e24d2b39635bcd434f10bf7ef774ea9d2",
-      "releaseDigest": "sha256:b2c4c8d0124921ad9d651d816497b13a45a086d6b020181407d2a396a251e2d0"
+      "definitionHash": "sha256:2bcaf442c4724d066440772ea1b29f8af4bac46af05e3da30133dfff31366d65",
+      "releaseDigest": "sha256:21da6536cfb55e8c075096a8db1fcf9a9702d7f8cc9e68e548c1fa097b9931e8"
     },
     "planViews.zod-schema": {
       "key": "planViews.zod-schema",
       "owner": "plan-views",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2628,8 +2683,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2638,16 +2693,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:6757a5cf41e1445bbd868f5f8d0fe70d68a0bc5225d35961e4af58ee0d49297b"
+          "artifactHash": "sha256:2454019ea93b95ed949495a19c980c3a0a6fdabea4e4b92b20df7283d5a54fbc"
         }
       },
-      "definitionHash": "sha256:217280481981df1ecc3a70715f80c40fec75ccc115dc10f99a8fd3513b4fb8ba",
-      "releaseDigest": "sha256:e5064fc6e997e2d94442df452db36d86edcd5b814fc6b89939be4d8825ab633f"
+      "definitionHash": "sha256:47385d366b5e648752560cec91b711a074ebff51375fb1e85105be1aa06f62df",
+      "releaseDigest": "sha256:a96710966d3d67462f479b8151c01ee5dd2653af7d572888f5450468c59e0ccd"
     },
     "projectEvaluation.evaluation": {
       "key": "projectEvaluation.evaluation",
       "owner": "project-evaluation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2660,8 +2716,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2670,16 +2726,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:4ab00bddc418591544672fc34083459ba614d583271a5547dd0b46b396fca0e2"
+          "artifactHash": "sha256:66d0f6c657006e9c0a297010cc00d47a69c55b0e466d39b8a4a56693a7f2c266"
         }
       },
-      "definitionHash": "sha256:10d0b54012602003df4df48f19163f2403eb41dc29c7a4e8903894430887ecaa",
-      "releaseDigest": "sha256:9c47590cd75cb8c30bef80bf57c619b5ef4361bf6b9bd0258afdc0cd1f0e0b3a"
+      "definitionHash": "sha256:bd2b85ace4b7fb22906139811d29f9c2865e7fadd258b6ebd966c8a4fe16fd32",
+      "releaseDigest": "sha256:89f5e6d34dfa860a2c4d0c426633a30b521e8060e7453a5354a5b8dc402c51b3"
     },
     "projectEvaluation.improvement": {
       "key": "projectEvaluation.improvement",
       "owner": "project-evaluation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2692,8 +2749,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2702,16 +2759,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:3a774fb3371d38b5102aab14da8389e6bc754c6657b7c1dc920dd256b3b1468d"
+          "artifactHash": "sha256:de9ac37eb78217792fef76cfc8b653beea23c5fecc754a3b1ef7c07841baf876"
         }
       },
-      "definitionHash": "sha256:9856c1fcadc49edcdc79caea19394d8dccfd32cd714706981640feb83b6b0f43",
-      "releaseDigest": "sha256:873e0e19196f46124d8b81fbbb98cc59ea6ce8e5efb96aae67a83e25d2d45738"
+      "definitionHash": "sha256:dd016707fc69672dc1fddcad0232a575130ec57f523f23178c410acee5376013",
+      "releaseDigest": "sha256:2f01aa77b981ba27886a4a84098d067281deae81dc0cc1d978bc61ef04192de7"
     },
     "providerExecution.artifact-lane": {
       "key": "providerExecution.artifact-lane",
       "owner": "provider-execution",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2724,8 +2782,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2734,16 +2792,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e20f518237c5fcda7a3ad065664bf53b2583dd8012137ed27f61b1b1888e3a94"
+          "artifactHash": "sha256:eff0a02f0829a0ac6b0eb6fd2ab1e7ce8f5f79f138711cfa1a69a812512c7f11"
         }
       },
-      "definitionHash": "sha256:a2aa58118ec060c48f0abdcbf529a9139ef81b0bcb8596b4ad61282531851dcd",
-      "releaseDigest": "sha256:bea50d6deb2daabcb746ab4d695d635bef4786fe454d9a2f54e85d7212597981"
+      "definitionHash": "sha256:8302e1ba2f209b23299bc10db886471f25b8c78955e8c08166db67d2eb56eb68",
+      "releaseDigest": "sha256:afdea6b1b49f3f69a672d5246b01275dc2ebb86a6c966804f8e5d730256e65b2"
     },
     "providerExecution.system-prompt": {
       "key": "providerExecution.system-prompt",
       "owner": "provider-execution",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2764,8 +2823,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2774,7 +2833,7 @@
               ]
             }
           ],
-          "artifactHash": "sha256:2e681ad1f113a891dc05b63a08aeebc3d940a71dff0d58c6a164dd0628801d26"
+          "artifactHash": "sha256:04c16f57d5fd9faadfdb4d7281f6448285a1c924460410047b247c49c975c128"
         },
         "ja-JP": {
           "sections": [
@@ -2782,8 +2841,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -2792,16 +2851,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:c5a266e9d1f3c838fdfb166ee45a2ea21a21aa36fc9de539eba0fcd2c4820c93"
+          "artifactHash": "sha256:82b80c92d0e4f845e2791f8c3373d4c4abf07b0ba0b5e5dfa73594baf1acb076"
         }
       },
-      "definitionHash": "sha256:47c50f068d6ed3404ec549323aaffa184bef16ddc05d01eace46bf0c0fbdf6e2",
-      "releaseDigest": "sha256:9f3d86224c81e7513c51b52c4f2f960bac260410a32c62fc5fa9fe0497aa984a"
+      "definitionHash": "sha256:7498d6f2354ed5a17d3ddc815b760f189e962efa67ce044f6d0ede52acf8b76d",
+      "releaseDigest": "sha256:6435c0d74898e2b581bb97f624491f7ae756e215b2a1839ee2fdc6729caacc3b"
     },
     "questionnaire.additional": {
       "key": "questionnaire.additional",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2822,8 +2882,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2840,16 +2900,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:17e71832551dffae953fcb7d39ffa14d763788b6799788b8dc282669e64ba46b"
+          "artifactHash": "sha256:d7ad4a95ee24e9a761dce46818dde206d39b97c5343079674d045ec8741f3d66"
         }
       },
-      "definitionHash": "sha256:68da9fc27132e7501bf7a8c5a62a158ecf9f7d4fb562dd302fa8a0c33f9ba2c6",
-      "releaseDigest": "sha256:5610d457492a4dd0b8464b2a0dbacf6e19c638b579b1140f0ac48a25f435902c"
+      "definitionHash": "sha256:b30784556c99ecc7d2f8522cc9cde5a192014e1c6d5f5d7dce151a897c64b310",
+      "releaseDigest": "sha256:8048858cbfa3c1e70096dec258a7daa83a82fb0004d22b7e125b03d5c62755c9"
     },
     "questionnaire.artifact-selection": {
       "key": "questionnaire.artifact-selection",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2862,8 +2923,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2872,16 +2933,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:cd365da4e9ce7251d0ec5919c15cc382c07c176efc88d7941b1374cca8423492"
+          "artifactHash": "sha256:2d864dfa098f1cdfb1f9924d12cff0325f731b651259a77efe152a9ed878b6f7"
         }
       },
-      "definitionHash": "sha256:d0f73192632d69ed8d2267fa7e7dcbc36aff5d637a75116faf77b4cc49ef01c0",
-      "releaseDigest": "sha256:0788280d4ef0ad1954d5037178197dce68083a2ed60de48574199dbebaf108f3"
+      "definitionHash": "sha256:86b4160cd0f17279423df64d75735a94d126cb5443addaf262e102c9ba19697f",
+      "releaseDigest": "sha256:ea947899f4d703cfea1d06b46c5173df08243826d4e7cffedd6ef4d7e0654ae6"
     },
     "questionnaire.completion-verification-guidance": {
       "key": "questionnaire.completion-verification-guidance",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2894,8 +2956,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2904,16 +2966,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:850b020da9224debb0377824fb977a10558a9b93fe58127d15c07aae6fe2732b"
+          "artifactHash": "sha256:6c0ed36fe3742a204d0e05fe871dce83b9f7d3285f7920e6203b51eee5cfb014"
         }
       },
-      "definitionHash": "sha256:863dcd2b039929b26789bb23281ae328bb1708264f43a1f29e2a3f2272c07d22",
-      "releaseDigest": "sha256:1112ee8cc14c89cc96cd9bf698c2b5b452b2a14591adbe0e630c10fc0a24a8ed"
+      "definitionHash": "sha256:b676ac9810c78e1e40e2416443452dc2aaa21a97ca18c3ef7a9adb1c184dd5ec",
+      "releaseDigest": "sha256:0a2550bada02420b5584b06d660c918fe80a4ccebda6068ef209fc2db6a785c1"
     },
     "questionnaire.design": {
       "key": "questionnaire.design",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2941,8 +3004,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -2967,16 +3030,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:d4819d5edc152f622d1d138b910dea790b1eed57ed08a33ce2ac25380c5527cc"
+          "artifactHash": "sha256:0b4c1c090f310e4101012641516de317de1767d4806a74ac744885501f54f857"
         }
       },
-      "definitionHash": "sha256:b3647c7ca5cbdde4d4ac46a10ce285f379193936c6412c17279092b473f6038a",
-      "releaseDigest": "sha256:53c2ca9bb13678f784f43e73bef851cc92c31fe3978f0e2c0ce3e4cde599f2ca"
+      "definitionHash": "sha256:f6e505578c91176367225ef80e36c3d8569e31e436b02bb811b0d5e2c9145a15",
+      "releaseDigest": "sha256:7c5d3bbce048ce1b225f866ca2ab3aa1918fce8b0fa3234c2e30c70c9599d0fe"
     },
     "questionnaire.follow-up-decision": {
       "key": "questionnaire.follow-up-decision",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -2997,8 +3061,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3015,16 +3079,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:091efcca782dc67b7c9e81ba97a35ef5baa6ec8514bb76792de5b17e7a4df58a"
+          "artifactHash": "sha256:b2e70ac0d0d389dfe15c603d2e176c57cd2a2e538053b13f4fb061792c628184"
         }
       },
-      "definitionHash": "sha256:f4d9396dbd0147cb8e487c47daa143a6ec1063569c0057db5ab4d09c5246fca2",
-      "releaseDigest": "sha256:c1918e20345f4475ed8e553685ba94513d8d51563422d7fcb649d45817a3aa6f"
+      "definitionHash": "sha256:69029b0e2fd4002c4685c2b8aeb589e4b5a9edaf7feb92780540ae684b6c1b0a",
+      "releaseDigest": "sha256:5208903d86f02944a9b6c6fd5cc8d70677de1957dc2ea5f543b7b345a9c274ba"
     },
     "questionnaire.repository-fixed-guidance": {
       "key": "questionnaire.repository-fixed-guidance",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3037,8 +3102,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3047,16 +3112,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:f97ab5ebbf9337c819c169980053289298968d0ebb0ee9fd5eab84a7e5597b95"
+          "artifactHash": "sha256:9a989b8d695eaa11ddf5a7e1d7666c67e83da4b2072e9d85b47cc205943176ce"
         }
       },
-      "definitionHash": "sha256:07ae6b33aa8114eead8baf6c10cd4bdf951f9f038a23979637d1f28e9ac12818",
-      "releaseDigest": "sha256:4271a865d4a005c109fc72bb2faad864b935474a147e8f288c14d9a255898654"
+      "definitionHash": "sha256:d2973bda3f16ba0185ae03d39c64f17fdc92f87a9ee5864a8b5bd1ec131ffcf9",
+      "releaseDigest": "sha256:18146c4230041181f14bc5670a20328e703517c5bd9eae15f94d67726dd0e7f9"
     },
     "questionnaire.review": {
       "key": "questionnaire.review",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3069,8 +3135,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3079,16 +3145,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:273d2a689f7870e7afcbb759161b83febdc7aab5f6e0fb1ad6ea54ef24c6af84"
+          "artifactHash": "sha256:b283dc140f64eb821256b196c173aa35b95f2151ba23d4c4fa4b8397d9346d0c"
         }
       },
-      "definitionHash": "sha256:bc49a76a45a51ad47b58feb823b1a62bc39aad361876feff86b1e58ba877e507",
-      "releaseDigest": "sha256:7c628545704043729efbe5ea40965b21390c4323c597f9ddf86c917ef5299548"
+      "definitionHash": "sha256:fb8c6216ec37304e957403467f6ae1852771fbcc6f280372dd1482a4a5e79e41",
+      "releaseDigest": "sha256:bba075b6a08d8b88feceb33181fee89badd3b6ceae5c93b4fee0ceff1de78da5"
     },
     "questionnaire.specification": {
       "key": "questionnaire.specification",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3101,8 +3168,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3111,16 +3178,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:71f918a96897c7f6ca5c2940f195a85726ffc44d5b68bea73565c4d8676096e8"
+          "artifactHash": "sha256:f97d88c649ef3863e0bacc4cee21d8c74d31ef476d0733f84c8aa600d54b4965"
         }
       },
-      "definitionHash": "sha256:d2cc430a0bd042304f78ac69c9d494b7a2be3ff0d89ed967b5dd7295880eb412",
-      "releaseDigest": "sha256:a398cd78943274a2365660c4faf937fddb53cec7719c448ff6cf0509ccc312b5"
+      "definitionHash": "sha256:194260dd09788f6fd1f464a59bcfb87158be79241be260239f403354f4dc195e",
+      "releaseDigest": "sha256:66f1c134ce9cf9a2d5f1ac72d7f81c5d0961ad81081ee7845376df26739e6302"
     },
     "questionnaire.specification-with-additional": {
       "key": "questionnaire.specification-with-additional",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3141,8 +3209,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "variable",
@@ -3155,16 +3223,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:b2cb4590f23660576f8a9a4ed64679935673d5c0c9fc7515672a4add1e87158a"
+          "artifactHash": "sha256:191234cd9ed6810b524846cae285150abd9310ff451df0517640097aa5312cef"
         }
       },
-      "definitionHash": "sha256:8c677ee1d226210f5678e6daf198eb4416113f6b9bdc6a4bab97ad1c31a84102",
-      "releaseDigest": "sha256:a3eb2a15ddf48787cfd43276a45f1e32bcd3dd78355ef59e4230c8529d2935f3"
+      "definitionHash": "sha256:c622e894a730c76e928a6efec8a8705961cdef55c311f88d18da974da3de04f8",
+      "releaseDigest": "sha256:b4b513ace728f6ac24a5cac93cdd423b0b19453571738cef3a595d03aeb477cf"
     },
     "questionnaire.starter-database-question": {
       "key": "questionnaire.starter-database-question",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3177,8 +3246,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3187,16 +3256,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:7cbcaccfad5ee77c4780f86fb4c4caf35f96b6a30993d7a2330de7d242afd7b7"
+          "artifactHash": "sha256:e4a2b31624462b36019dc4b4d2b1f311ccde0a4433ad94c254d90c54e7f1849f"
         }
       },
-      "definitionHash": "sha256:e29dfeea0c1a31bf83928c6bd11456e82d9e96c4bd25b0caae524efccec95349",
-      "releaseDigest": "sha256:09a829aa00c41b6d5d55d92a5f76557be42a5299267fa5cb0465ae6e09de9024"
+      "definitionHash": "sha256:2a0091aaa35168a9190885716b75b40ed70d196fe4068952c0c000c32afa8cf8",
+      "releaseDigest": "sha256:38e4a22faef9863a0ada12fe1cf9a1053a09740b8d2f4fa14b7c75dcdafb626c"
     },
     "questionnaire.starter-selection-applicability": {
       "key": "questionnaire.starter-selection-applicability",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3209,8 +3279,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3219,16 +3289,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:32a869cf64c9a2903faa363cb90ff313502253b5a4b155abd4c04490d7007c7f"
+          "artifactHash": "sha256:7a16b3e89fb5ca43136c70d09f5fcc152acf63963781a7d61b77bfa81f0f1473"
         }
       },
-      "definitionHash": "sha256:e03b7ad6e9d993633e8f8858f18401a97ba31811403a0c6d4a49fea4fed9c72b",
-      "releaseDigest": "sha256:684522febf60fdfc6bb560b98f031062260345dfb0bdc82a6e4e228bf79a46bc"
+      "definitionHash": "sha256:591a22f05ddcd58ac68aa222d016e90364de3fc52533c994660acffde2262a1c",
+      "releaseDigest": "sha256:21807e3797475d12b82024524cfab41008acaa2d0e9d43142c7e61047e3056fe"
     },
     "questionnaire.starter-tech-stack-question": {
       "key": "questionnaire.starter-tech-stack-question",
       "owner": "questionnaire",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3241,8 +3312,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3251,16 +3322,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:3dd63e8ded03d2b6af980f3626ee698dceaa9ee05a896c6deb396167cd76ea38"
+          "artifactHash": "sha256:35294deda024266a724b791989ce7983a435c4a28acc8f1f2d9f33ca8fbbe027"
         }
       },
-      "definitionHash": "sha256:077d55b024aba2db1fa3d7f2482436139e3c9bc061ee49a29ffe0c600cfeb47a",
-      "releaseDigest": "sha256:0d58d24ba7cd30d3581ec2cd431bc7a0eefa833de184b535880e8eb6b75ebd35"
+      "definitionHash": "sha256:82ee7b9713d509bbbbb1eb5402a10fcd0d4f932142d1ac3e9a552e59bf2df8fe",
+      "releaseDigest": "sha256:aeb60bff3c8f1e62c72594f132d130e8b5e9182cd3ceed15d7dd61f051dad098"
     },
     "review.llm-reviewer": {
       "key": "review.llm-reviewer",
       "owner": "review",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3273,8 +3345,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3283,7 +3355,7 @@
               ]
             }
           ],
-          "artifactHash": "sha256:b09179d926e8df6faef7687397bed5ea4a52bf4de4a2f696e512988417faca14"
+          "artifactHash": "sha256:57e54353eec7957a0886e34ec2295c89efb739d428ad5e0a49f5429ece66e9e4"
         },
         "ja-JP": {
           "sections": [
@@ -3291,8 +3363,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3301,16 +3373,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:be508386eddcd8e39f3b43283cd4e72f14de4a099915f5c9569e1afb727a9900"
+          "artifactHash": "sha256:af9220e1a5cbb97bf46970ec9705be9bf9b83db266eafaf27cc6a85ff14bfd76"
         }
       },
-      "definitionHash": "sha256:d92b75646a904dcb65d53dce1a9326b4a12515ed7df221a88f8822b50c70109d",
-      "releaseDigest": "sha256:f85701c099634aafb563cbc3c8e8bcd181c1ae581fb168bedf95f8ce5b5904a5"
+      "definitionHash": "sha256:3570d4cbe255489148d054b145b42cdb0bb2b31ea2831488ee4d96ee7012b7c5",
+      "releaseDigest": "sha256:72a0ca83c764dd96dfafc91fcb53ecc998abf5fb12b8a0b36835f4e3a509723c"
     },
     "review.test-evidence": {
       "key": "review.test-evidence",
       "owner": "review",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3323,8 +3396,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3333,16 +3406,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:dfab08fe84ed98328c1b7158503b3422a7e09da35dec445dab88166277f367e8"
+          "artifactHash": "sha256:d7535ce6423228d46e4b49568fb38a88964e56f62a6192d6f0a7a5faedcceb02"
         }
       },
-      "definitionHash": "sha256:0dda976511bfcbb966605544d4b6198ea5b5c737231fd8cda128e01fe3b6a5f7",
-      "releaseDigest": "sha256:4fff90c6ed855c2aca89faa711274381694dce100f9f953bd6109efbb9928a1e"
+      "definitionHash": "sha256:62b12ef63573df9d4700284006b383b10beca1ac6899b0cd98c9907b1d53a5bc",
+      "releaseDigest": "sha256:8aa706a7c0b54edcd8287d5d9befede845706eba1c9bbf8e47dc509c403fff30"
     },
     "specification.ddd-boundary-review": {
       "key": "specification.ddd-boundary-review",
       "owner": "specification",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3355,8 +3429,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3365,16 +3439,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:3e5f19323c9b48751b1a3248bbaf41e98e086ba66e2e198dae69d7280b8c2d89"
+          "artifactHash": "sha256:5c5945f38572f4bf7fb1c983784dddab9dfe6f80c15b65fbfaab441b9e86ab31"
         }
       },
-      "definitionHash": "sha256:7528096b92542fb42dcfba0372a744d6db4319e77939073ece99d374be229e8b",
-      "releaseDigest": "sha256:7d8ca4a67ee8700fe59f2607a39eae6ff8fcf76d3c870799eae25fc7a8ce4704"
+      "definitionHash": "sha256:631a7ccfd8653630cacb9d9a94532e4eacd3bd304888931f1cd5baef126c4edd",
+      "releaseDigest": "sha256:9ed1be5630c0826079074dd3d9fa0f548a1fe6f1c76855a36fcc6b6f063a5c26"
     },
     "specification.repository-materialization-required": {
       "key": "specification.repository-materialization-required",
       "owner": "specification",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3387,8 +3462,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3397,16 +3472,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:0e0840a88676f21c81cdf9cb4742a0b3454cd377367ab29cf9d9a4d53fdcbb28"
+          "artifactHash": "sha256:f6171aa7bcfa5f40325222b99a0118d2f8e76408d4e8992770b4388643893041"
         }
       },
-      "definitionHash": "sha256:20c8ef5c7696f344f076a2e4280a2cc618dfe31b21c6c02362781865cd5bbf13",
-      "releaseDigest": "sha256:71286c8bc73bad7498c45952007367fb41b3eff86141e6520e7ec68731279628"
+      "definitionHash": "sha256:00763a5ccc3b218ae4fe1448f1b951cf55d6d976c6ff7f38cb4e31ebdf67f90e",
+      "releaseDigest": "sha256:85929dc8ef8f9b334a61d6454dd1380ec7658d973b4d732d217aa55f612d39cd"
     },
     "structuredGeneration.app-blueprint": {
       "key": "structuredGeneration.app-blueprint",
       "owner": "structured-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3427,8 +3503,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3441,16 +3517,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:2b7c66189ec361eae570886bc3c713c15c79b12ff142259d110d7ad38ba670b9"
+          "artifactHash": "sha256:651402eadde49aae9901daa98a5319f854f205ec237aecbbfcbc691d064a4495"
         }
       },
-      "definitionHash": "sha256:2a280dbe100763b038cee00de7e1e771d189de89a3de28e0c8af35ea1801b53f",
-      "releaseDigest": "sha256:7d1aae5df15bd61690fda3bf900f941cd6b4cbe28616bbeddc57c75e4f470bce"
+      "definitionHash": "sha256:0cf9868c250adc8d881af9fc13f58d78ffec17425e94d9c9c8dac82772c85c2d",
+      "releaseDigest": "sha256:702984edb905ee49c87b02345b0c9d51c2ef8816bdf36a212bf2669274d14d6e"
     },
     "structuredGeneration.data-model": {
       "key": "structuredGeneration.data-model",
       "owner": "structured-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3471,8 +3548,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3485,16 +3562,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ec0c723b50b7a868eea48adb7a204e7d9015ba13b69db4b79d89d80615ddbc64"
+          "artifactHash": "sha256:a105fe0093d068d91222347a1a034482dfce677fefa593c9ef857615860a8ffa"
         }
       },
-      "definitionHash": "sha256:210f78da83dda4b03745e641737ea52dfb2e92eeba6732fa5343e74abcc1e5b4",
-      "releaseDigest": "sha256:49621a24b3108bd14bc5cee2d453805108b2a5eeefd954b4f2f850d07caac7ec"
+      "definitionHash": "sha256:81561c8a0eaf1dc52497ca748ada1a564f8d5c6a0fdadd8bd82c17e6be1836c9",
+      "releaseDigest": "sha256:19c3aafc0b1aba6e70dd1fdcd73fff06ed4fe492b96beba066d4cb8dda4fa732"
     },
     "structuredGeneration.mock-blueprint": {
       "key": "structuredGeneration.mock-blueprint",
       "owner": "structured-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3522,8 +3600,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3544,16 +3622,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:89490df235da58c0971b85abe73fe73f82e680c37ddd21e0d5d0f691644408d0"
+          "artifactHash": "sha256:4a189025d875a3d41e07a5eb8820d925df58be9dd128388d4408e2eec0c3a840"
         }
       },
-      "definitionHash": "sha256:7f7cbbe2990e822b920b2e8d6d3c1178230d9ae62a8b5332228e69f6f9210f2c",
-      "releaseDigest": "sha256:ae9f9316543194df38d63412f014356f10b5b665adee8003fb18e1d83375b5e2"
+      "definitionHash": "sha256:9a959af79e6a54bae39b0da3c7ef717ce7e251eecfa13696b53e2377c2cf7a7b",
+      "releaseDigest": "sha256:071336e8590a187ee07cae62f556f2db3022122ad8f4619e1a2b969109e1f903"
     },
     "structuredGeneration.output-requirements": {
       "key": "structuredGeneration.output-requirements",
       "owner": "structured-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3574,8 +3653,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3588,16 +3667,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:e839155d3201411a9786051bc0fbb185be9cdfd0237f97652563702fa460f778"
+          "artifactHash": "sha256:1a7e423dbc015366c70c732e7be04eaff5302acbae998b88f037f89b6c8c31dc"
         }
       },
-      "definitionHash": "sha256:17f2327852f2589c4df885a7c97383851d5fb81588cb2791b1d5636f63d46a59",
-      "releaseDigest": "sha256:3ba4ce5b559aa9d13e49a43b84fe557efd4d0154650af1a864b4d3e739d539ec"
+      "definitionHash": "sha256:2524f1fbc0944ec284fb50e80917724628245c93815982ff76c0955b2fc75851",
+      "releaseDigest": "sha256:0c78c8bd23050ac7df5d0a48c1f7702bed14cb8d45b1b29b80b613699d111790"
     },
     "structuredGeneration.repair": {
       "key": "structuredGeneration.repair",
       "owner": "structured-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3618,8 +3698,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3632,16 +3712,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:0164d942a594e9edda72f0b3ce25b81829fc24d15066c2b8048e1b0b83d43de0"
+          "artifactHash": "sha256:e215d9fe1b20d22104a1d8f78acea874a94537981c5b93d1cc048729c1ac79ae"
         }
       },
-      "definitionHash": "sha256:56d747cfe0ba94b8fe9f4c45ce46ca4df5b7afffe93aef3a9b43b59b8fd5e909",
-      "releaseDigest": "sha256:7cc1b98f4551aee644c921219374af023f9dcb731e118817caab329dd66b2ea3"
+      "definitionHash": "sha256:b3f1c504f2ff8846bff04508b688abf1498fb888121f29e943cc8c959d196591",
+      "releaseDigest": "sha256:65619ab5178f0b3a03cb18df2d6dfe95ba65a623a6f191d81f99276f9d032fd6"
     },
     "supervisor.codex-guidance": {
       "key": "supervisor.codex-guidance",
       "owner": "supervisor",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3669,8 +3750,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3691,7 +3772,7 @@
               ]
             }
           ],
-          "artifactHash": "sha256:6fa9900ef4918b9048c479bc621b485273b59c6d8320d68c380221cc343531b2"
+          "artifactHash": "sha256:acde4c55db64f6224f8aec64c4e0305d6669f81b2dbab57dccdda563a83c840b"
         },
         "ja-JP": {
           "sections": [
@@ -3699,8 +3780,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3721,16 +3802,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:8af8af45623140e82010cac0e0eb7d22ba1fd8b6897c7b5a0e396f030775ad70"
+          "artifactHash": "sha256:bbe835697a5cea78c74f67d3c2e0bca70fe8e2aebdecb5873c9a944eccf13ff4"
         }
       },
-      "definitionHash": "sha256:be5361b53b1b038aa69e669ea9ba1e769ddd421cca68e09221e2cd8ad8084f6b",
-      "releaseDigest": "sha256:796ce53c1ea4acae0399983dbedfe2f0993178521d7094a8c13ab3f836dc8b3b"
+      "definitionHash": "sha256:ed4fbbc83632c75ba957cb34d93a293a36f4aca773710649319c2b4c0d6cb117",
+      "releaseDigest": "sha256:932546e1741f7429d6ae3ae0a2863ba7bc938100a10d1e46542fafda79b14296"
     },
     "supervisor.round1": {
       "key": "supervisor.round1",
       "owner": "supervisor",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3772,8 +3854,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3814,7 +3896,7 @@
               ]
             }
           ],
-          "artifactHash": "sha256:db4da61bc4605104381b5d53233162d60dfb35582a44ac6f9757756916f8baa7"
+          "artifactHash": "sha256:2a3ba46bc47caa8c25c4e9f27928a0a268a4b0ca7d354ea64e9f7a6093fb8d3a"
         },
         "ja-JP": {
           "sections": [
@@ -3822,8 +3904,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3864,16 +3946,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:a7c2627f0373baf5dfa0e0a4fbb2ab2d7faa0675c4e3205c1949a54186e46c41"
+          "artifactHash": "sha256:7ddcaa796b3d01adcb8bf884f01abcb333009ebf43445ec8b2d12f340fa3c9a6"
         }
       },
-      "definitionHash": "sha256:555600d72f88a04818455bf96f6eaa3d369aa2c405380f3b3754c3dc66045a0c",
-      "releaseDigest": "sha256:5f568a29cee28b914171dc5c438d657986b3f8b2a542608607ce7e3d8ef49c63"
+      "definitionHash": "sha256:7478a6c1d7fb0af05eb7475cb7c3ea4ac62028e9bf3a854a8b3119ceaa10791f",
+      "releaseDigest": "sha256:76fd8ce0847a0b659ad7a6e89cd993ca9cbd68fc4bbf5f7351a521ac75df5929"
     },
     "taskGeneration.estimate": {
       "key": "taskGeneration.estimate",
       "owner": "task-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3901,8 +3984,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3927,16 +4010,17 @@
               ]
             }
           ],
-          "artifactHash": "sha256:6c14402311305838b3880af0c9615c929ee2bf04337cbb7c12799b7ac2e5f822"
+          "artifactHash": "sha256:780902b5f2201b3841a7020f3a76fa6865e7a66eb7b279d5e8c8a7c0ead7df69"
         }
       },
-      "definitionHash": "sha256:4e164f67897b49775b79a7ff4be7c7aa49506a0d024fda5902b2c7ed443e1c94",
-      "releaseDigest": "sha256:69bf6f77af6d41c5c6384868b9a503110c14a8b2ec9ebfc846c9c2e6c4556f3c"
+      "definitionHash": "sha256:c4140e23d49f2b657aca2cad9ba69eb7b33942a78655c0b09e5f5b5de899116e",
+      "releaseDigest": "sha256:95761ee41a2e1b03cec4cd6cffcf57d74c66c194561862cc3242223d906ec4bd"
     },
     "taskGeneration.mission-tasks": {
       "key": "taskGeneration.mission-tasks",
       "owner": "task-generation",
       "contentKind": "text",
+      "messageRole": "system",
       "sourceLocale": "ja-JP",
       "requiredLocales": [
         "ja-JP"
@@ -3964,8 +4048,8 @@
               "id": "context.text",
               "kind": "instruction",
               "severity": "must",
-              "enforcement": "prompt",
               "optimizable": false,
+              "omitIfEmpty": false,
               "segments": [
                 {
                   "type": "literal",
@@ -3990,12 +4074,12 @@
               ]
             }
           ],
-          "artifactHash": "sha256:43634a1fe578b2cf14d9d35ebed4ccfece5943b834e4f7b047e433aaaa4e6ed1"
+          "artifactHash": "sha256:50fc79058aaddbde3aaa4bd2e3f81add138e586280dbe9e3ab91be2b3c844e45"
         }
       },
-      "definitionHash": "sha256:fb4e940b9fff58ffc85638dbf4d62f30668c7620ad2a39765fd5765522a1eee4",
-      "releaseDigest": "sha256:d05b0fa6a6e2633cbf4e2e734ea63ac4242077cb364c112ef27e06080bf95e10"
+      "definitionHash": "sha256:d2e21aafa84a79761252c4eced17ce19f57c5d37e9cecb6d3ba1eeec85351ad7",
+      "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:f7a1eb840e28316271ac61175c62128968b22b57b186ce780897db4dd756f338"
+  "catalogDigest": "sha256:beaa55468d56e32388f7fbbfe327b9cbf1ca64433c6a5e8a741cfebd6d36cf30"
 }

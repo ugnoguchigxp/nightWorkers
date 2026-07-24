@@ -1,17 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-	CatalogBinding,
-	RequestAudit,
-	SystemContextInvocation,
-} from "s11tnext";
+import type { CatalogBinding, PromptInvocation, RequestAudit } from "s11tnext";
 import { readGeneralSettings } from "../services/settings/general-settings";
 import {
 	createAppCatalog,
-	type SystemContextKey,
+	type PromptKey,
 } from "./generated/catalog.generated";
 import catalogArtifact from "./generated/catalog.json" with { type: "json" };
 
-export type { SystemContextKey } from "./generated/catalog.generated";
+export type { PromptKey } from "./generated/catalog.generated";
 
 const catalog = createAppCatalog(catalogArtifact as unknown);
 const systemContextScope = new AsyncLocalStorage<{
@@ -20,8 +16,7 @@ const systemContextScope = new AsyncLocalStorage<{
 }>();
 
 export type SystemContextP = ReturnType<typeof catalog.bindText>["p"];
-export type SystemContextManifest =
-	SystemContextInvocation<SystemContextKey>["manifest"];
+export type SystemContextManifest = PromptInvocation<PromptKey>["manifest"];
 export type SystemContextPromptAudit = Readonly<{
 	promptPart: "system" | "developer" | "user";
 	manifest: SystemContextManifest;
@@ -124,8 +119,14 @@ export function readSystemContextBindingSnapshot(
 export function systemContextPromptAudit(
 	promptPart: SystemContextPromptAudit["promptPart"],
 	request: BoundSystemContextCatalog,
-	invocation: SystemContextInvocation<SystemContextKey>,
+	invocation: PromptInvocation<PromptKey>,
 ): SystemContextPromptAudit {
+	const expectedRole = promptPart === "user" ? "user" : "system";
+	if (invocation.role !== expectedRole) {
+		throw new Error(
+			`SystemContext "${invocation.key}" has message role "${invocation.role}", but it is being sent as "${promptPart}".`,
+		);
+	}
 	const requestAudit = request.finalize(invocation);
 	return Object.freeze({
 		promptPart,
@@ -134,7 +135,7 @@ export function systemContextPromptAudit(
 	});
 }
 
-export function describeSystemContext(key: SystemContextKey) {
+export function describeSystemContext(key: PromptKey) {
 	return catalog.describe(key);
 }
 

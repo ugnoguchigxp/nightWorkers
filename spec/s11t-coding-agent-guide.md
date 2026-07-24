@@ -9,6 +9,7 @@ S11t自体の実装計画ではなく、NightWorkers内で依存関係、生成�
 - 正確なversionは`package.json`、解決済みversionとintegrityは`bun.lock`を正本として確認する。local checkoutや`vendor/`のtarballをproduction依存へ使わない。
 - NightWorkersの全SystemContextは`api/systemContexts/contexts/`のTOMLを正本とし、単一catalogへ生成される。
 - production codeは`api/systemContexts/catalog.ts`の型付きrequest bindingを使用する。role別catalogは作らない。
+- 現行artifactはversion 2である。0.1.2より前の生成物をruntimeで読み続けず、runtime/CLI更新時にJSONとTypeScript factoryを同時に再生成する。
 - 対応Node.jsは20.19以上のNode 20系、Node 22、Node 24である。Node 20.19未満を対応対象にしない。
 
 production runtimeは生成済みcatalogを読むだけであり、CLIの存在を前提にしない。
@@ -57,10 +58,13 @@ artifact load、locale bind、本文抽出は共有bindingだけが行う。各r
 重要な契約は次の通り。
 
 - runtimeへ渡すartifactの型は境界では`unknown`のままにし、runtimeのschema/digest検証を通す。
+- 生成型は`PromptKey`、`PromptValueMap`、`PromptMessageRoleMap`を正本とし、runtime invocationには`PromptInvocation`を使う。0.1.2のdeprecated互換名`SystemContextKey`、`SystemContextInvocation`を新規コードで使わない。
 - application codeは共有`p()` facadeを使う。NightWorkersはrequest/run入口でlocale bindingを固定し、`p()`はそのrequest-local snapshotを参照する。production codeから`createTextRenderer()`によるlive rendererや個別の`bindText()`を作らない。
 - 複数contextから一つのrequest/runを組み立てる場合は、開始時にS11tの`bindRequest()`で固定snapshotを一つ作り、その`p`、`byKey`、`invoke`を処理全体で再利用する。textだけが必要な非監査経路では`bindText()`を使う。
 - provider送信、監査、hash、locale manifestが必要な経路ではS11tの`bind()`または`bindRequest()`を維持し、text-only APIへ置き換えない。
 - `invocation.manifest`のcompiler version、locale、digest、hashは観測・監査に利用できるが、本文判定の分岐に使わない。
+- provider messageを表すcontextはTOMLの`message_role`を明示する。省略時は`system`であり、user messageとして送るcontextには`message_role = "user"`を設定する。adapterは`invocation.role`を実送信roleへ使い、manifestの`messageRole`と`messageHash`を同じrequest IDの監査recordへ保存する。
+- provider固有の`developer` messageへ配置するcontextはS11tでは`system`としてauthoringし、NightWorkersの監査境界で`system`から`developer`へのmappingを明示する。`user` contextを`system`/`developer`へ、または`system` contextを`user`へ送るrole不一致はfail-closeする。
 - locale bindingは共有bindingだけが所有する。General Settings最上位の`language`をrequest/run開始時に一度だけ読み、`ja`は`ja-JP`、`en`は`en-US`へ対応させる。fallbackは暗黙に追加せず、NightWorkersのproduction bindingは`fallbackLocales = []`として未翻訳localeをfail-closeする。
 - 各role/domainのcall siteへlanguage、locale、fallbackを渡すAPIを追加しない。作成済みbindingはimmutable snapshotとして扱い、設定変更後の次の独立したrequest/runで新しいlanguageを反映する。
 - applicationがartifact JSONを読み込む。`s11tnext`にpathやfilesystem責務を加えない。
@@ -84,6 +88,8 @@ bun run s11tnext:check
 - generated TypeScriptを手編集しない。
 - `build --check`がstaleを報告した状態で完了にしない。
 - variableの`trust`、`placement`、`encoding`はprojectのnamed profileまたはcontext固有定義として明示し、非trusted入力をraw inlineへ置かない。
+- 複数行のuntrusted文字列にはartifact v2の`delimited-text`を使用できる。JSON構造は`json-value`、単一文字列のJSON encodingは`json-string`を使い、用途に応じて選択する。
+- optional variableと`omit_if_empty`は、値が存在しない場合にsection全体を省略する契約が必要なcontextだけで使用する。既存の必須値をpackage更新だけでoptionalへ変えない。
 - 全role/domainのSystemContext sourceと生成物は、module境界の例外である`api/systemContexts/`へ一元化する。
 - 生成物をGit管理するかbuild artifactとして供給するかを実装計画で決め、loaderとrelease packagingを同時に検証する。
 
@@ -122,8 +128,9 @@ bun run s11tnext:check
 2. 日本語本文と英語本文が期待通りで、未翻訳localeが暗黙fallbackせずfail-closeする。
 3. 不正artifact、digest不一致、未宣言variableがfail-closeする。
 4. `invocation.manifest.compilerVersion`が`package.json`で固定した`s11tnext` versionと一致する。
-5. backend bundleまたはdesktop sidecarからcatalog artifactを解決できる。
-6. Coding AgentとMission Pilotのmodule境界を迂回するimportが増えていない。
+5. providerへ送るroleと`invocation.role`が一致し、`messageRole`と`messageHash`が監査recordへ保存される。
+6. backend bundleまたはdesktop sidecarからcatalog artifactを解決できる。
+7. Coding AgentとMission Pilotのmodule境界を迂回するimportが増えていない。
 
 広いmodule変更では通常の`bun run verify`も実行する。Node 20互換性が完了条件に含まれる場合は、単に
 esbuildの`--target=node20`が成功しただけでなく、Node 20.19環境で公開runtimeのESM importと対象経路を

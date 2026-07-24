@@ -3,7 +3,8 @@
 > Status: resolved. `cc606d3`から`f3fa8cb`までのS11t変更でrequest-bound
 > audit、実効的なdelimited-context、locale coverage、public rendered hash APIが
 > 実装され、`s11tnext@0.1.0`と`s11tnext-cli@0.1.0`として公開された。
-> NightWorkersはnpm公開版でこの契約を利用する。
+> その後のartifact v2、message role/hash、composition receipt契約は0.1.2で
+> 公開され、NightWorkersはruntime/CLIともに0.1.2へ更新済みである。
 
 ## 目的
 

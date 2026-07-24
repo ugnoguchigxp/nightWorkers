@@ -94,11 +94,15 @@ export function buildInitialNativeApiHistory(
 			codingAgentTodoSystemContextValues(context.currentTodo),
 		);
 		items.push({
-			type: "user",
+			type: todoInvocation.role,
 			source: "todo",
 			content: todoInvocation.content.text,
 			systemContextAudit: [
-				systemContextPromptAudit("user", todoContexts, todoInvocation),
+				systemContextPromptAudit(
+					todoInvocation.role,
+					todoContexts,
+					todoInvocation,
+				),
 			],
 		});
 	}

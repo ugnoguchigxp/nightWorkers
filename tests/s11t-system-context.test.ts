@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { verifyRenderedHash } from "s11tnext";
+import { verifyPromptMessageHash, verifyRenderedHash } from "s11tnext";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const settingsMock = vi.hoisted(() => ({
@@ -42,6 +42,7 @@ import {
 	p,
 	readSystemContextBindingSnapshot,
 	runWithSystemContextBinding,
+	systemContextPromptAudit,
 } from "../api/systemContexts/catalog";
 import { createAppCatalog } from "../api/systemContexts/generated/catalog.generated";
 import catalogArtifact from "../api/systemContexts/generated/catalog.json" with {
@@ -55,12 +56,19 @@ describe("S11t SystemContext catalog", () => {
 	});
 
 	it("keeps every role in one generated catalog", () => {
+		expect(catalogArtifact.artifactVersion).toBe(2);
 		expect(
 			describeSystemContext("codingAgent.role-instructions"),
 		).toMatchObject({
 			key: "codingAgent.role-instructions",
 			owner: "coding-agent",
+			messageRole: "system",
 			variableNames: [],
+		});
+		expect(describeSystemContext("codingAgent.current-todo")).toMatchObject({
+			key: "codingAgent.current-todo",
+			owner: "coding-agent",
+			messageRole: "user",
 		});
 		expect(describeSystemContext("missionPilot.plan-system")).toMatchObject({
 			key: "missionPilot.plan-system",
@@ -400,8 +408,16 @@ describe("S11t SystemContext catalog", () => {
 			promptPart: "user",
 			manifest: {
 				key: "codingAgent.current-todo",
+				messageRole: "user",
+				messageHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
 			},
 		});
+		expect(
+			verifyPromptMessageHash(
+				{ role: "user", text: nativeTodo?.content ?? "" },
+				nativeTodo?.systemContextAudit?.[0]?.manifest.messageHash ?? "",
+			),
+		).toBe(true);
 		expect(
 			verifyRenderedHash(
 				nativeTodo?.content ?? "",
@@ -426,7 +442,9 @@ describe("S11t SystemContext catalog", () => {
 
 	it("fails closed for invalid artifacts, digest mismatches, and extra values", () => {
 		expect(() => createAppCatalog({})).toThrowError(
-			expect.objectContaining({ code: "S11TNEXT_ARTIFACT_INVALID" }),
+			expect.objectContaining({
+				code: "S11TNEXT_ARTIFACT_VERSION_UNSUPPORTED",
+			}),
 		);
 		const mismatchedArtifact = structuredClone(catalogArtifact);
 		mismatchedArtifact.catalogDigest = `sha256:${"0".repeat(64)}`;
@@ -441,6 +459,14 @@ describe("S11t SystemContext catalog", () => {
 				{ undeclared: true },
 			),
 		).toThrowError(expect.objectContaining({ code: "S11TNEXT_VALUE_EXTRA" }));
+
+		const request = bindSystemContextCatalogSnapshot();
+		const userInvocation = request.invoke("codingAgent.current-todo", {
+			todo: { id: "todo-role-check" },
+		});
+		expect(() =>
+			systemContextPromptAudit("system", request, userInvocation),
+		).toThrow(/message role "user".*"system"/);
 	});
 
 	it("uses the published runtime compiler version and preserves public text shape", () => {
@@ -457,9 +483,17 @@ describe("S11t SystemContext catalog", () => {
 		);
 		expect(invocation.manifest).toMatchObject({
 			key: "codingAgent.role-instructions",
+			messageRole: "system",
+			messageHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
 			sectionIds: ["context.text"],
 			releaseProfile: "development",
 		});
+		expect(
+			verifyPromptMessageHash(
+				{ role: invocation.role, text: invocation.content.text },
+				invocation.manifest.messageHash,
+			),
+		).toBe(true);
 		expect(p("codingAgent.role-instructions", {})).toMatch(/\n$/);
 		expect(p("missionPilot.compaction", {})).toMatch(/\n$/);
 	});

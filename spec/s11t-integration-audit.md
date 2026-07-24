@@ -2,10 +2,11 @@
 
 ## Published packages
 
-- Runtime: `s11tnext@0.1.0`
-- CLI: `s11tnext-cli@0.1.0`
+- Runtime: `s11tnext@0.1.2`
+- CLI: `s11tnext-cli@0.1.2`
 - Catalog digest:
-  `sha256:f7a1eb840e28316271ac61175c62128968b22b57b186ce780897db4dd756f338`
+  `sha256:beaa55468d56e32388f7fbbfe327b9cbf1ca64433c6a5e8a741cfebd6d36cf30`
+- Artifact version: `2`
 - Canonical aliases: none
 
 ## Binding ownership
@@ -77,6 +78,14 @@ calls are wrapped by `bindRequest()` at the shared structured-LLM boundary.
 
 The event record therefore associates provider prompt digests and S11t
 manifests with both a request ID and the owning run ID.
+
+Artifact v2のmanifestは従来のlocale、release、rendered hashに加えて
+`messageRole`と`messageHash`を保持する。NightWorkersはprovider上の`user`
+messageに使う`codingAgent.current-todo`を`message_role = "user"`としてauthoring
+し、Native API adapterは生成された`invocation.role`をmessage roleへ使用する。
+`system`/`developer` promptはS11t上の`system` roleとしてauthoringし、NightWorkersの
+監査境界でprovider固有の`developer` mappingを明示する。監査登録時にauthoring roleと
+実送信partが一致しない場合はfail-closeする。
 
 ## Trust changes
 
