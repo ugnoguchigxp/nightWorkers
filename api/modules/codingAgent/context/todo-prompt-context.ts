@@ -1,5 +1,5 @@
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 import type { CodingAgentSystemContext } from "./types";
@@ -26,7 +26,7 @@ const MAX_RECENT_TERMINAL_TODO_SUMMARIES = 4;
 export function renderCodingAgentRuntimeSystemContext(
 	context: CodingAgentSystemContext,
 	options: { includeTaskGoal?: boolean } = {},
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	const sharedValues = {
 		version: context.version,
@@ -52,7 +52,7 @@ export function renderCodingAgentRuntimeSystemContext(
 
 export function renderCodingAgentTodoPlanSummary(
 	todos: readonly RuntimeTodo[] | undefined,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	if (!todos?.length) return null;
 	const active = todos
@@ -84,7 +84,7 @@ export function renderCodingAgentTodoPlanSummary(
 
 export function renderCodingAgentTodoSystemContext(
 	todo: RuntimeTodo,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p(
 		"codingAgent.current-todo",

@@ -17,7 +17,7 @@
         "@libsql/client": "0.17.4",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@openai/codex-sdk": "0.144.4",
-        "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+        "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
         "@tanstack/react-query": "5.101.2",
         "@tanstack/react-router": "1.170.18",
         "@tanstack/react-table": "8.21.3",
@@ -54,7 +54,7 @@
         "@biomejs/biome": "2.5.3",
         "@hono/vite-dev-server": "0.26.1",
         "@playwright/test": "1.61.1",
-        "@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+        "@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
         "@tailwindcss/vite": "4.3.2",
         "@tanstack/router-plugin": "1.168.20",
         "@tauri-apps/cli": "2.11.4",
@@ -81,7 +81,7 @@
     },
   },
   "overrides": {
-    "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+    "@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
     "fast-uri": "3.1.2",
     "hono": "4.12.30",
     "vite": "8.1.4",
@@ -453,9 +453,9 @@
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.61.1", "", { "os": "win32", "cpu": "x64" }, "sha512-X+zaP2x+j4RXGfbp/seSoRHWnPxzApilDszisZxbYH5C/jTxFhCtDNdPGZb9lJyYPs24wGxruPF7Y+sIXt9Gzw=="],
 
-    "@s11t/cli": ["@s11t/cli@./vendor/s11t/s11t-cli-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz", { "dependencies": { "@s11t/runtime": "0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce", "smol-toml": "1.7.0" }, "bin": { "s11t": "./bin/s11t.js" } }, "sha512-6d/mI6sRLfWwBvVzNDwLZu1MhVNQ+K1SWYmp92b4IilN2eEkylsTIF9ya3lrExC/EnNfjTxyhtJ9mBNv3qe2Hw=="],
+    "@s11t/cli": ["@s11t/cli@./vendor/s11t/s11t-cli-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz", { "dependencies": { "@s11t/runtime": "0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1", "smol-toml": "1.7.0" }, "bin": { "s11t": "./bin/s11t.js" } }, "sha512-eCuWf3Srwn9OWJcJhR5hy3fiDgNTzlcVPXs5c9BZPMl9ON7KU1xzh2ZjXfQhewZUxp0q0C1p576xpvJtA4t0NA=="],
 
-    "@s11t/runtime": ["@s11t/runtime@./vendor/s11t/s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz", { "dependencies": { "@noble/hashes": "2.2.0" } }, "sha512-r1aoLbJjI9IG4zZBao2DcE/t9a9mMuZf4gbE2G8DYn8GTJvEfcTJDE/N6GeBD58GTaXduCMdZsGu/WtjBZE2aQ=="],
+    "@s11t/runtime": ["@s11t/runtime@./vendor/s11t/s11t-runtime-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz", { "dependencies": { "@noble/hashes": "2.2.0" } }, "sha512-tHGIiocLAAN9tJ4ReY5F2rxUA42NLgbViBTn6S9KZY3ERga4RT8dnKgRef0/73aGdKnB+dSgAnOGsY7/5ptg7w=="],
 
     "@smithy/core": ["@smithy/core@3.29.3", "", { "dependencies": { "@smithy/types": "^4.16.1", "tslib": "^2.6.2" } }, "sha512-L+Ys6ecjk5vwPMAKHBpPKlJ3DkqwNcnfEISXBZIsVvWG/XKXfsAP8mwIYlTeLcd2ElHdesPI8OuOmJSFAPhm6A=="],
 

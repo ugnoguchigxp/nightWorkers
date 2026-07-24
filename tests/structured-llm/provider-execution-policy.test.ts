@@ -8,6 +8,7 @@ import {
 	missionPilotToolTurnProviderExecutionPolicy,
 } from "../../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
 import { buildCodexStructuredExecutionMode } from "../../api/services/structured-llm/codex-provider";
+import { createSystemContextBindingSnapshot } from "../../api/systemContexts/catalog";
 
 describe("structured provider execution policy", () => {
 	it("keeps structured artifact context isolated by default", () => {
@@ -17,9 +18,25 @@ describe("structured provider execution policy", () => {
 			enableMemory: false,
 			allowProviderTools: false,
 		});
-		expect(
-			DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY.developerInstructions,
-		).toContain("SystemContext、User Prompt、JSON schemaだけ");
+		const bound =
+			DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY.bindDeveloperInstructions?.(
+				createSystemContextBindingSnapshot({
+					version: 1,
+					instructionLocale: "ja-JP",
+					fallbackLocales: [],
+				}),
+			);
+		expect(bound?.text).toContain(
+			"SystemContext、User Prompt、JSON schemaだけ",
+		);
+		expect(bound?.systemContextAudit[0]).toMatchObject({
+			promptPart: "developer",
+			manifest: {
+				requestedKey: "providerExecution.artifact-lane",
+				requestedLocale: "ja-JP",
+				resolvedLocale: "ja-JP",
+			},
+		});
 	});
 
 	it("keeps Mission Pilot provider capabilities explicit and role-neutral", () => {

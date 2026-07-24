@@ -139,7 +139,7 @@
 		"@libsql/client": "0.17.4",
 		"@modelcontextprotocol/sdk": "1.29.0",
 		"@openai/codex-sdk": "0.144.4",
-		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
 		"@tanstack/react-query": "5.101.2",
 		"@tanstack/react-router": "1.170.18",
 		"@tanstack/react-table": "8.21.3",
@@ -176,7 +176,7 @@
 		"@biomejs/biome": "2.5.3",
 		"@hono/vite-dev-server": "0.26.1",
 		"@playwright/test": "1.61.1",
-		"@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+		"@s11t/cli": "file:./vendor/s11t/s11t-cli-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
 		"@tailwindcss/vite": "4.3.2",
 		"@tanstack/router-plugin": "1.168.20",
 		"@tauri-apps/cli": "2.11.4",
@@ -201,7 +201,7 @@
 		"vitest": "4.1.10"
 	},
 	"overrides": {
-		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-cc606d34273d7117a79efb910734657ff130ccce.tgz",
+		"@s11t/runtime": "file:./vendor/s11t/s11t-runtime-0.1.0-canary-f3fa8cb8d15f603f1c838446b0868fe75f2e48c1.tgz",
 		"fast-uri": "3.1.2",
 		"hono": "4.12.30",
 		"vite": "8.1.4"

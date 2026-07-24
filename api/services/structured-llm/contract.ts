@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../systemContexts/catalog";
 import type { JsonFixWrapperResult } from "./json";
@@ -109,7 +109,7 @@ export function createStructuredOutputContract<T>(input: {
 
 export function renderStructuredOutputRequirements(
 	jsonSchema: unknown,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("structuredGeneration.output-requirements", {
 		jsonSchema: JSON.stringify(jsonSchema, null, 2),

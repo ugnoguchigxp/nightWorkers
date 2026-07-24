@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,
@@ -6,6 +7,10 @@ import {
 	withStructuredProviderAttempt,
 } from "../../../services/structured-llm/public";
 import type { StructuredLlmThinkingDepth } from "../../../services/structured-llm/settings";
+import {
+	bindSystemContextCatalogSnapshot,
+	systemContextPromptAudit,
+} from "../../../systemContexts/catalog";
 import { missionPilotToolTurnProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
 import { missionPilotDigest } from "./mission-pilot-content-page";
@@ -37,6 +42,32 @@ function latestUserPrompt(
 
 export const missionPilotProviderPort: MissionPilotProviderPort = {
 	async nextTurn(input) {
+		const systemContexts = bindSystemContextCatalogSnapshot(
+			input.systemContextBinding,
+		);
+		const systemInvocation = systemContexts.invoke(
+			"providerExecution.system-prompt",
+			{ systemPrompt: input.systemContext },
+		);
+		const boundDeveloperInstructions =
+			missionPilotToolTurnProviderExecutionPolicy.bindDeveloperInstructions?.(
+				systemContexts.binding,
+			);
+		const systemContextAudit = [
+			systemContextPromptAudit("system", systemContexts, systemInvocation),
+		];
+		const systemPrompt = systemInvocation.content.text;
+		const messages = input.messages.map((message) =>
+			message.role === "system"
+				? { ...message, content: systemPrompt }
+				: message,
+		);
+		const executionPolicy = boundDeveloperInstructions
+			? {
+					...missionPilotToolTurnProviderExecutionPolicy,
+					developerInstructions: boundDeveloperInstructions.text,
+				}
+			: missionPilotToolTurnProviderExecutionPolicy;
 		const routeOverride =
 			input.providerEndpointId && input.model
 				? {
@@ -52,7 +83,7 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 				: null;
 		const userPrompt = latestUserPrompt(input.messages);
 		const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
-			systemPrompt: input.systemContext,
+			systemPrompt,
 			userPrompt,
 			label: "mission_pilot_agent",
 			role: "mission_pilot",
@@ -68,11 +99,19 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 				attempt: latestProviderRetryAttempt(input.messages),
 			},
 			callCandidate: (normalizedRequest) =>
-				callProviderToolTurn({
+				callAuditedMissionPilotProviderTurn({
+					requestId: randomUUID(),
+					systemContextAudit:
+						providerAdapterKey(normalizedRequest.providerId) === "codex"
+							? [
+									...systemContextAudit,
+									...(boundDeveloperInstructions?.systemContextAudit ?? []),
+								]
+							: systemContextAudit,
 					provider: providerAdapterKey(normalizedRequest.providerId),
-					messages: input.messages,
+					messages,
 					tools: input.tools,
-					systemPrompt: input.systemContext,
+					systemPrompt,
 					userPrompt,
 					options: {
 						label: "mission_pilot_agent",
@@ -81,7 +120,12 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 						taskId: input.taskId,
 						normalizedRequest,
 						toolChoice: "auto",
-						executionPolicy: missionPilotToolTurnProviderExecutionPolicy,
+						systemContextBinding: systemContexts.binding,
+						systemContextAudit,
+						executionPolicy:
+							providerAdapterKey(normalizedRequest.providerId) === "codex"
+								? executionPolicy
+								: missionPilotToolTurnProviderExecutionPolicy,
 					},
 					signal: input.signal,
 					setProviderDebug: () => undefined,
@@ -89,6 +133,21 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 		});
 	},
 };
+
+async function callAuditedMissionPilotProviderTurn(
+	input: Parameters<typeof callProviderToolTurn>[0] & {
+		requestId: string;
+		systemContextAudit: ReturnType<typeof systemContextPromptAudit>[];
+	},
+) {
+	const { requestId, systemContextAudit, ...providerInput } = input;
+	const result = await callProviderToolTurn(providerInput);
+	return {
+		...result,
+		requestId,
+		systemContextAudit,
+	};
+}
 
 type MissionPilotProviderCandidate = ReturnType<
 	typeof buildNormalizedSupervisorLlmRequestCandidates

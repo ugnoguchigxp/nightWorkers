@@ -1,7 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type {
-	CatalogBindingV2,
-	RequestAuditV2,
-	SystemContextInvocationV2,
+	CatalogBinding,
+	RequestAudit,
+	SystemContextInvocation,
 } from "@s11t/runtime";
 import { readGeneralSettings } from "../services/settings/general-settings";
 import {
@@ -13,14 +14,18 @@ import catalogArtifact from "./generated/catalog.json" with { type: "json" };
 export type { SystemContextKey } from "./generated/catalog.generated";
 
 const catalog = createAppCatalog(catalogArtifact as unknown);
+const systemContextScope = new AsyncLocalStorage<{
+	binding: SystemContextBindingSnapshot;
+	text: ReturnType<typeof catalog.bindText>;
+}>();
 
 export type SystemContextP = ReturnType<typeof catalog.bindText>["p"];
 export type SystemContextManifest =
-	SystemContextInvocationV2<SystemContextKey>["manifest"];
+	SystemContextInvocation<SystemContextKey>["manifest"];
 export type SystemContextPromptAudit = Readonly<{
 	promptPart: "system" | "developer" | "user";
 	manifest: SystemContextManifest;
-	requestAudit: RequestAuditV2;
+	requestAudit: RequestAudit;
 }>;
 export type SystemContextBindingSnapshot = Readonly<{
 	version: 1;
@@ -35,7 +40,30 @@ export type BoundSystemContextCatalog = Readonly<{
 	finalize: ReturnType<typeof catalog.bindRequest>["finalize"];
 }>;
 
-export const p = catalog.createTextRenderer(resolveCatalogBinding);
+export const p: SystemContextP = (key, values) => {
+	const scoped = systemContextScope.getStore();
+	if (scoped) return scoped.text.p(key, values);
+	return bindSystemContextTextCatalog().p(key, values);
+};
+
+export function runWithSystemContextBinding<T>(
+	operation: () => T,
+	input?: SystemContextBindingSnapshot,
+): T {
+	const current = systemContextScope.getStore();
+	if (input === undefined && current) return operation();
+	const binding =
+		input === undefined
+			? createSystemContextBindingSnapshot()
+			: assertSystemContextBindingSnapshot(input);
+	return systemContextScope.run(
+		{
+			binding,
+			text: catalog.bindText(toRuntimeBinding(binding)),
+		},
+		operation,
+	);
+}
 
 export function bindSystemContextTextCatalog(
 	input?: SystemContextBindingSnapshot,
@@ -48,7 +76,7 @@ export function bindSystemContextTextCatalog(
 }
 
 export function bindSystemContextCatalog() {
-	return catalog.bind(resolveCatalogBinding());
+	return catalog.bind(toRuntimeBinding(createSystemContextBindingSnapshot()));
 }
 
 export function bindSystemContextCatalogSnapshot(
@@ -75,6 +103,8 @@ export function createSystemContextBindingSnapshot(
 	if (input !== undefined) {
 		return assertSystemContextBindingSnapshot(input);
 	}
+	const scoped = systemContextScope.getStore();
+	if (scoped) return scoped.binding;
 	const binding = resolveCatalogBinding();
 	return Object.freeze({
 		version: 1,
@@ -94,7 +124,7 @@ export function readSystemContextBindingSnapshot(
 export function systemContextPromptAudit(
 	promptPart: SystemContextPromptAudit["promptPart"],
 	request: BoundSystemContextCatalog,
-	invocation: SystemContextInvocationV2<SystemContextKey>,
+	invocation: SystemContextInvocation<SystemContextKey>,
 ): SystemContextPromptAudit {
 	const requestAudit = request.finalize(invocation);
 	return Object.freeze({
@@ -115,7 +145,7 @@ function resolveCatalogBinding(): Pick<
 	return readGeneralSettings().language === "en"
 		? {
 				instructionLocale: "en-US",
-				fallbackLocales: ["ja-JP"],
+				fallbackLocales: [],
 			}
 		: {
 				instructionLocale: "ja-JP",
@@ -150,7 +180,7 @@ function assertSystemContextBindingSnapshot(
 
 function toRuntimeBinding(
 	snapshot: SystemContextBindingSnapshot,
-): CatalogBindingV2 {
+): CatalogBinding {
 	return {
 		instructionLocale: snapshot.instructionLocale,
 		fallbackLocales: snapshot.fallbackLocales,

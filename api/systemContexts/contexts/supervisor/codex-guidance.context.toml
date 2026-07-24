@@ -11,8 +11,22 @@ provider は次の JSON decision だけを返してください。
 [[lifecycleSummaries]]
 '''
 
+[translations."en-US"]
+text = '''[Codex Runtime Guidance]
+The following Codex guidance was read by the NightWorkers runtime.
+Do not pass raw AGENTS.md content to the provider prompt. Pass only guidance that the runtime has safely separated.
+Handle lifecycle directives such as MCP tools, hooks, commands, file edits, and startup actions in the runtime rather than in the provider prompt.
+The provider must return only the following JSON decision.
+
+[Safe Guidance]
+[[safeGuidance]]
+
+[Runtime Lifecycle Directives]
+[[lifecycleSummaries]]
+'''
+
 [variables.lifecycleSummaries]
-profile = "trusted.block"
+profile = "untrusted.text"
 
 [variables.safeGuidance]
-profile = "trusted.block"
+profile = "untrusted.text"

@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
-import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
+import {
+	createSystemContextBindingSnapshot,
+	p,
+	runWithSystemContextBinding,
+} from "../../../systemContexts/catalog";
 import {
 	applyCurrentMissionPilotSystemContext,
 	buildMissionPilotSystemContext,
@@ -14,12 +18,11 @@ import {
 	MISSION_PILOT_MAX_PROVIDER_CALLS_PER_WAKE,
 	MISSION_PILOT_MAX_TOOL_CALLS_PER_WAKE,
 } from "./mission-pilot-agent.constants";
-import type {
-	MissionPilotProviderPort,
-	MissionPilotTaskActionPort,
-	MissionPilotTaskReadPort,
-} from "./mission-pilot-agent.ports";
 import { cancelPendingMissionPilotToolCalls } from "./mission-pilot-agent-lifecycle.repository";
+import type {
+	MissionPilotAgentRuntimeDependencies,
+	MissionPilotAgentWakeInput,
+} from "./mission-pilot-agent-runtime.types";
 import { missionPilotDigest } from "./mission-pilot-content-page";
 import {
 	buildMissionPilotCompactionRequest,
@@ -60,27 +63,22 @@ import {
 
 const activeControllers = new Map<string, AbortController>();
 const activeRuntimeCompletions = new Map<string, Promise<void>>();
-export type MissionPilotAgentRuntimeDependencies = {
-	provider?: MissionPilotProviderPort;
-	readPort?: MissionPilotTaskReadPort;
-	actionPort?: MissionPilotTaskActionPort;
-	maxProviderCallsPerWake?: number;
-	maxToolCallsPerWake?: number;
-	maxElapsedMsPerWake?: number;
-	contextHardTokenBudget?: number;
-	compactionTokenBudget?: number;
-	recordProviderUsage?: typeof recordMissionPilotProviderTurnUsage;
-};
-
-export async function runMissionPilotAgentWake(
-	input: {
-		sessionId: string;
-		providerEndpointId?: string | null;
-		model?: string | null;
-		thinkingDepth?: string | null;
-	},
+export function runMissionPilotAgentWake(
+	input: MissionPilotAgentWakeInput,
 	dependencies: MissionPilotAgentRuntimeDependencies = {},
 ) {
+	const systemContextBinding = createSystemContextBindingSnapshot();
+	return runWithSystemContextBinding(
+		() => runMissionPilotAgentWakeInScope(input, dependencies),
+		systemContextBinding,
+	);
+}
+
+async function runMissionPilotAgentWakeInScope(
+	input: MissionPilotAgentWakeInput,
+	dependencies: MissionPilotAgentRuntimeDependencies,
+) {
+	const systemContextBinding = createSystemContextBindingSnapshot();
 	if (activeControllers.has(input.sessionId))
 		return { kind: "already_running" } as const;
 	const controller = new AbortController();
@@ -149,7 +147,6 @@ export async function runMissionPilotAgentWake(
 		let toolCalls = 0;
 		let shouldWaitForEvent = false;
 		while (!controller.signal.aborted) {
-			const { p } = bindSystemContextTextCatalog();
 			if (
 				!(await renewMissionPilotAgentTurnLease({
 					sessionId: input.sessionId,
@@ -240,6 +237,7 @@ export async function runMissionPilotAgentWake(
 				const compacted = await provider.nextTurn({
 					sessionId: input.sessionId,
 					systemContext: compactionSystemContext,
+					systemContextBinding,
 					messages: buildMissionPilotCompactionRequest(messages),
 					tools: [],
 					providerEndpointId: input.providerEndpointId ?? null,
@@ -323,6 +321,7 @@ export async function runMissionPilotAgentWake(
 			const response = await provider.nextTurn({
 				sessionId: input.sessionId,
 				systemContext,
+				systemContextBinding,
 				messages,
 				tools,
 				providerEndpointId: input.providerEndpointId ?? null,

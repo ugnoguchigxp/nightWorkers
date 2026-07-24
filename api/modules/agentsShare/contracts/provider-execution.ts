@@ -1,4 +1,9 @@
-import { p } from "../../../systemContexts/catalog";
+import {
+	bindSystemContextCatalogSnapshot,
+	type SystemContextBindingSnapshot,
+	type SystemContextPromptAudit,
+	systemContextPromptAudit,
+} from "../../../systemContexts/catalog";
 
 /** Meaningful provider capabilities are structural and role-neutral. */
 export type StructuredProviderCallAuthorizationContext = {
@@ -12,6 +17,10 @@ export type StructuredProviderExecutionPolicy = {
 	enableMemory: boolean;
 	allowProviderTools: boolean;
 	developerInstructions?: string;
+	bindDeveloperInstructions?: (binding: SystemContextBindingSnapshot) => {
+		text: string;
+		systemContextAudit: readonly SystemContextPromptAudit[];
+	};
 	authorizeProviderCall?: (
 		context: StructuredProviderCallAuthorizationContext,
 	) => Promise<void> | void;
@@ -23,7 +32,14 @@ export const DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY: StructuredProviderExe
 		enableMcp: false,
 		enableMemory: false,
 		allowProviderTools: false,
-		get developerInstructions() {
-			return p("providerExecution.artifact-lane", {});
+		bindDeveloperInstructions(binding) {
+			const request = bindSystemContextCatalogSnapshot(binding);
+			const invocation = request.invoke("providerExecution.artifact-lane", {});
+			return {
+				text: invocation.content.text,
+				systemContextAudit: [
+					systemContextPromptAudit("developer", request, invocation),
+				],
+			};
 		},
 	};

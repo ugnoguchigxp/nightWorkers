@@ -25,6 +25,34 @@ JSON のみ。旧 decision 形式や toolCall は出さない。
 planMode object は jobType が planning の場合だけ使う。それ以外では null にする。
 Queue 対象外の純粋な回答でも scheduling は null ではなく normal を基本に返す。'''
 
+[translations."en-US"]
+text = '''Select exactly one jobType and one goal.
+Write the goal as one short sentence describing the state this run must achieve.
+Select planning only when the user explicitly requests a plan, implementation plan, design policy, specification work, questionnaire preparation, or other advance organization.
+When the request is for a fix, implementation, confirmation, investigation, review, test, configuration change, dependency update, or refactoring, select an executable jobType instead of planning.
+Return a planMode object only for planning. Its primaryArtifact must be "feature_plan". For every other jobType, planMode must be null.
+The Supervisor decides only whether to enter Plan Mode. It must not propose or select Questionnaire or Dedicated View requirements.
+For planning, planMode.dedicatedViews and specificationLenses must always be empty arrays. After startup, Mission Pilot decides which design artifacts and user input are needed by reading the Task and repository.
+Return scheduling for requests that may enter the Implementation Queue. taskExecutionType is a Queue scheduling attribute, not a runtime lane.
+Choose scheduling.executionType from normal, exclusive, or sequence. Use normal for small scoped changes; exclusive for DB migrations, destructive operations, broad refactors, or breaking shared-contract changes; and sequence when the correctness of a task group depends on A -> B -> C order.
+When a destructive_operation overlay or data_migration work kind exists and scheduling is uncertain, conservatively select exclusive. For sequence, return sequenceGroupId and sequenceOrder.
+Infer jobType and scheduling from the request semantics, not from keyword lists or regular-expression classification.
+Return JSON only. Do not emit the legacy decision format or toolCall.
+
+Project root: [[projectRoot]]
+
+[[codexGuidance]]
+[Job Types]
+[[jobTypes]]
+
+[Tool Overview]
+[[toolOverview]]
+
+[Output Schema]
+{ "jobType": "<job type>", "goal": "<short concrete goal>", "planMode": { "primaryArtifact": "feature_plan", "dedicatedViews": [{ "view": "questionnaire|user_flow|blueprint|data_model|api_io_contract|activity_flow|sequence_flow|zod_schema_design", "decision": "include|omit", "reason": "<short reason>" }], "specificationLenses": ["target_users_or_actors|functional_requirements|business_rules|input_output|interface_contract|data_requirements|state_behavior|workflow_behavior|error_behavior|permission_boundary|compatibility|observability"] }, "scheduling": { "executionType": "normal|exclusive|sequence", "reason": "<short reason>", "sequenceGroupId": null, "sequenceOrder": null, "dependsOnTaskIds": null } }
+Use planMode only when jobType is planning. Otherwise set it to null.
+Even for a pure answer that does not enter the Queue, scheduling should normally be normal rather than null.'''
+
 [variables.codexGuidance]
 profile = "trusted.block"
 
@@ -32,7 +60,7 @@ profile = "trusted.block"
 profile = "trusted.block"
 
 [variables.projectRoot]
-profile = "trusted.inline"
+profile = "untrusted.text"
 
 [variables.toolOverview]
 profile = "trusted.block"

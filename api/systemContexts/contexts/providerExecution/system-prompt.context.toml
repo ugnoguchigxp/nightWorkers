@@ -1,0 +1,7 @@
+text = '[[systemPrompt]]'
+
+[translations."en-US"]
+text = '[[systemPrompt]]'
+
+[variables.systemPrompt]
+profile = "trusted.inline"

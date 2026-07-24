@@ -6,7 +6,9 @@ export const DATA_MODEL_PROMPT_VERSION = "plan-mode-data-model-v1";
 export function buildDataModelSystemPrompt(
 	dataModelJsonSchema: string,
 ): string {
-	return p("structuredGeneration.data-model", { dataModelJsonSchema });
+	return p("structuredGeneration.data-model", {
+		dataModelJsonSchema,
+	});
 }
 
 export function buildDataModelUserPrompt(input: {

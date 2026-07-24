@@ -41,6 +41,7 @@ import {
 	describeSystemContext,
 	p,
 	readSystemContextBindingSnapshot,
+	runWithSystemContextBinding,
 } from "../api/systemContexts/catalog";
 import { createAppCatalog } from "../api/systemContexts/generated/catalog.generated";
 import catalogArtifact from "../api/systemContexts/generated/catalog.json" with {
@@ -91,37 +92,61 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(82);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(83);
 		expect(catalogArtifact.aliases).toEqual({});
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
 		).toMatchObject({
 			taskGoal: { trust: "untrusted", encoding: "json-string" },
 			projectRules: { trust: "untrusted", encoding: "json-value" },
+			registeredRepositoryRoot: {
+				trust: "untrusted",
+				encoding: "json-string",
+			},
+		});
+		expect(
+			catalogArtifact.contexts["codingAgent.workspace-context"].variables,
+		).toMatchObject({
+			executionRoot: { trust: "untrusted", encoding: "json-string" },
+			registeredRepoRoot: { trust: "untrusted", encoding: "json-string" },
+			workspaceSource: { trust: "untrusted", encoding: "json-string" },
+		});
+		expect(
+			catalogArtifact.contexts["supervisor.codex-guidance"].variables,
+		).toMatchObject({
+			lifecycleSummaries: { trust: "untrusted", encoding: "json-string" },
+			safeGuidance: { trust: "untrusted", encoding: "json-string" },
 		});
 	});
 
-	it("renders Japanese and uses the explicit Japanese fallback", () => {
+	it("renders a real English translation and fails closed when it is missing", () => {
 		settingsMock.language = "en";
 		const invoke = bindSystemContextCatalog();
-		const coding = invoke("codingAgent.role-instructions", {});
-		const mission = invoke("missionPilot.plan-system", {});
 		const reviewer = invoke("review.llm-reviewer", {});
-
-		expect(coding.content.text).toContain("Coding Agentです");
-		expect(mission.content.text).toContain("Mission Pilot SystemContext");
-		expect(coding.manifest).toMatchObject({
-			requestedLocale: "en-US",
-			fallbackLocales: ["ja-JP"],
-			resolvedLocale: "ja-JP",
-			fallbackUsed: true,
+		const supervisor = invoke("supervisor.codex-guidance", {
+			safeGuidance: "none",
+			lifecycleSummaries: "none",
 		});
+
 		expect(reviewer.content.text).toContain("Review the code");
 		expect(reviewer.manifest).toMatchObject({
 			requestedLocale: "en-US",
+			fallbackLocales: [],
 			resolvedLocale: "en-US",
 			fallbackUsed: false,
 		});
+		expect(supervisor.content.text).toContain(
+			"The following Codex guidance was read",
+		);
+		expect(supervisor.manifest).toMatchObject({
+			requestedLocale: "en-US",
+			fallbackLocales: [],
+			resolvedLocale: "en-US",
+			fallbackUsed: false,
+		});
+		expect(() => invoke("codingAgent.role-instructions", {})).toThrow(
+			/locale|en-US/i,
+		);
 	});
 
 	it("keeps implementation preparation and completion reporting in Todo-owned SystemContext", () => {
@@ -175,17 +200,14 @@ describe("S11t SystemContext catalog", () => {
 		});
 	});
 
-	it("rebinds p() and the catalog from the single top-level language variable", () => {
+	it("rebinds independent requests from the single top-level language variable", () => {
 		const jaBinding = bindSystemContextCatalog();
-		const ja = jaBinding("codingAgent.role-instructions", {});
+		const ja = jaBinding("review.llm-reviewer", {});
 
 		settingsMock.language = "en";
 		const enBinding = bindSystemContextCatalog();
-		const en = enBinding("codingAgent.role-instructions", {});
-		const jaSnapshotAfterSwitch = jaBinding(
-			"codingAgent.role-instructions",
-			{},
-		);
+		const en = enBinding("review.llm-reviewer", {});
+		const jaSnapshotAfterSwitch = jaBinding("review.llm-reviewer", {});
 
 		expect(ja.manifest).toMatchObject({
 			requestedLocale: "ja-JP",
@@ -194,9 +216,11 @@ describe("S11t SystemContext catalog", () => {
 		});
 		expect(en.manifest).toMatchObject({
 			requestedLocale: "en-US",
-			fallbackLocales: ["ja-JP"],
-			resolvedLocale: "ja-JP",
+			fallbackLocales: [],
+			resolvedLocale: "en-US",
 		});
+		expect(en.content.text).toContain("Review the code");
+		expect(ja.content.text).toContain("コードレビュー");
 		expect(jaSnapshotAfterSwitch.manifest).toMatchObject({
 			requestedLocale: "ja-JP",
 			fallbackLocales: [],
@@ -204,7 +228,7 @@ describe("S11t SystemContext catalog", () => {
 		});
 		expect(settingsMock.readCount).toBe(2);
 
-		p("codingAgent.role-instructions", {});
+		p("review.llm-reviewer", {});
 		expect(settingsMock.readCount).toBe(3);
 	});
 
@@ -222,8 +246,53 @@ describe("S11t SystemContext catalog", () => {
 		expect(settingsMock.readCount).toBe(1);
 
 		const { p: snapshotP } = bindSystemContextTextCatalog();
-		snapshotP("codingAgent.role-instructions", {});
+		snapshotP("review.llm-reviewer", {});
 		expect(settingsMock.readCount).toBe(2);
+	});
+
+	it("does not expose a live locale renderer from the production catalog", () => {
+		const source = readFileSync(
+			new URL("../api/systemContexts/catalog.ts", import.meta.url),
+			"utf8",
+		);
+		expect(source).not.toContain("createTextRenderer");
+		expect(source).toMatch(/export const p\b/);
+	});
+
+	it("keeps the simple p() facade on one request-local locale snapshot", () => {
+		runWithSystemContextBinding(() => {
+			expect(p("review.llm-reviewer", {})).toContain("コードレビュー");
+			settingsMock.language = "en";
+			expect(p("review.llm-reviewer", {})).toContain("コードレビュー");
+			expect(createSystemContextBindingSnapshot().instructionLocale).toBe(
+				"ja-JP",
+			);
+		});
+		expect(settingsMock.readCount).toBe(1);
+		expect(p("review.llm-reviewer", {})).toContain("Review the code");
+		expect(settingsMock.readCount).toBe(2);
+	});
+
+	it("isolates concurrent asynchronous p() request scopes", async () => {
+		const render = (
+			instructionLocale: "ja-JP" | "en-US",
+			expectedText: string,
+		) =>
+			runWithSystemContextBinding(
+				async () => {
+					await Promise.resolve();
+					const rendered = p("review.llm-reviewer", {});
+					expect(rendered).toContain(expectedText);
+					return createSystemContextBindingSnapshot().instructionLocale;
+				},
+				{ version: 1, instructionLocale, fallbackLocales: [] },
+			);
+		await expect(
+			Promise.all([
+				render("ja-JP", "コードレビュー"),
+				render("en-US", "Review the code"),
+			]),
+		).resolves.toEqual(["ja-JP", "en-US"]);
 	});
 
 	it("persists one locale binding snapshot across a run", () => {
@@ -391,8 +460,8 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(invocation.manifest.compilerVersion).toBe(runtimeVersion);
 		expect(invocation.manifest).toMatchObject({
-			artifactSchemaVersion: 3,
-			renderingContract: "delimited-context-v1",
+			artifactSchemaVersion: 1,
+			renderingContract: "delimited-context",
 		});
 		expect(p("codingAgent.role-instructions", {})).toMatch(/\n$/);
 		expect(p("missionPilot.compaction", {})).toMatch(/\n$/);
@@ -418,7 +487,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"797196e658bcf86e681edd9be852e2ccae05916d519ac55b5750168526c341b3",
+				"83f13e6cc7fd79885b117853237ba861a475cf3214455bc359f089ead4dee2d7",
 			missionPilotPushAllowed:
 				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
 			missionPilotPushDenied:

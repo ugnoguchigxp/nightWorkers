@@ -7,6 +7,66 @@ import {
 import "./setup";
 
 describe("Supervisor LLM schema-first parsing schema handling", () => {
+	it("automatically audits raw provider system prompts at the request boundary", async () => {
+		process.env.ACTIVE_LLM_PROVIDER = "openai";
+		process.env.OPENAI_ENABLED = "true";
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.OPENAI_MODEL = "gpt-test";
+		process.env.OPENAI_STREAMING_ENABLED = "false";
+
+		const rawDecision = JSON.stringify({
+			toolCall: {
+				name: "finalize_answer",
+				arguments: { message: "done" },
+			},
+		});
+		globalThis.fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						choices: [{ message: { content: rawDecision } }],
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+		) as unknown as typeof fetch;
+
+		const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+		await callSupervisorLLM("raw provider system prompt", "user", {
+			round: 2,
+			schemaFirst: true,
+			emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+		});
+
+		expect(events[0]).toMatchObject({
+			type: "model.request_started",
+			data: {
+				requestId: expect.any(String),
+				systemContextAudit: [
+					{
+						promptPart: "system",
+						manifest: expect.objectContaining({
+							requestedKey: "providerExecution.system-prompt",
+							resolvedKey: "providerExecution.system-prompt",
+						}),
+						requestAudit: expect.objectContaining({
+							renderTrace: [
+								expect.objectContaining({
+									via: "invoke",
+									manifest: expect.objectContaining({
+										requestedKey: "providerExecution.system-prompt",
+									}),
+								}),
+							],
+						}),
+					},
+				],
+			},
+		});
+	});
+
 	it("repairs truncated schema-first toolCall JSON before schema validation", async () => {
 		process.env.ACTIVE_LLM_PROVIDER = "openai";
 		process.env.OPENAI_ENABLED = "true";
@@ -155,6 +215,9 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 			"model.provider_tool_call_detected",
 			"model.provider_activity_rejected",
 		]);
+		expect(events[0]?.data?.requestId).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+		);
 		expect(events[0]?.data?.systemContextAudit).toEqual([
 			expect.objectContaining({
 				manifest: expect.objectContaining({

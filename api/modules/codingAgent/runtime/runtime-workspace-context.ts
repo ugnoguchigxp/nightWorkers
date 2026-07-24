@@ -1,5 +1,5 @@
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 import type { AgentRunContext } from "./types";
@@ -40,7 +40,7 @@ export function readRuntimeWorkspaceContext(
 
 export function formatRuntimeWorkspaceContextForPrompt(
 	context: AgentRunContext,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	const workspace = readRuntimeWorkspaceContext(context);
 	return p("codingAgent.workspace-context", {

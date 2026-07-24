@@ -17,7 +17,7 @@ import type {
 	StructuredLlmModelTarget,
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
-import { bindSystemContextTextCatalog } from "../../systemContexts/catalog";
+import { p } from "../../systemContexts/catalog";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
 import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
@@ -331,7 +331,6 @@ async function generateSpecificationDesignDocument(
 	requiresRepositoryMaterialization = false,
 ) {
 	try {
-		const { p } = bindSystemContextTextCatalog();
 		const materializationSystemContext = requiresRepositoryMaterialization
 			? p("specification.repository-materialization-required", {}).trimEnd()
 			: null;

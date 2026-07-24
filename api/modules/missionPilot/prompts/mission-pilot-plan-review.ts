@@ -1,5 +1,5 @@
 import type { StructuredOutputContract } from "../../../services/structured-llm/contract";
-import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
+import { p } from "../../../systemContexts/catalog";
 import {
 	getMissionPilotPlanReviewThresholdContext,
 	getMissionPilotPlanSystemContext,
@@ -8,7 +8,6 @@ import {
 export function buildMissionPilotPlanReviewSystemPrompt<T>(
 	contract: StructuredOutputContract<T>,
 ) {
-	const { p } = bindSystemContextTextCatalog();
 	return p("missionPilot.plan-review", {
 		planSystem: getMissionPilotPlanSystemContext(p).trimEnd(),
 		planReviewThreshold: getMissionPilotPlanReviewThresholdContext(p).trimEnd(),

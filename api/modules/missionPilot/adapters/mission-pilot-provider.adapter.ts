@@ -1,5 +1,9 @@
 import { AppError } from "../../../lib/errors";
-import { p } from "../../../systemContexts/catalog";
+import {
+	bindSystemContextCatalogSnapshot,
+	type SystemContextBindingSnapshot,
+	systemContextPromptAudit,
+} from "../../../systemContexts/catalog";
 import type {
 	StructuredProviderCallAuthorizationContext,
 	StructuredProviderExecutionPolicy,
@@ -32,8 +36,11 @@ export const missionPilotToolTurnProviderExecutionPolicy: StructuredProviderExec
 		enableMemory: false,
 		allowProviderTools: true,
 		authorizeProviderCall: authorizeMissionPilotProviderCall,
-		get developerInstructions() {
-			return p("missionPilot.tool-turn-provider-instructions", {});
+		bindDeveloperInstructions(binding) {
+			return bindMissionPilotDeveloperInstructions(
+				binding,
+				"missionPilot.tool-turn-provider-instructions",
+			);
 		},
 	};
 
@@ -44,7 +51,26 @@ export const missionPilotArtifactProviderExecutionPolicy: StructuredProviderExec
 		enableMemory: false,
 		allowProviderTools: false,
 		authorizeProviderCall: authorizeMissionPilotProviderCall,
-		get developerInstructions() {
-			return p("missionPilot.artifact-provider-instructions", {});
+		bindDeveloperInstructions(binding) {
+			return bindMissionPilotDeveloperInstructions(
+				binding,
+				"missionPilot.artifact-provider-instructions",
+			);
 		},
 	};
+
+function bindMissionPilotDeveloperInstructions(
+	binding: SystemContextBindingSnapshot,
+	key:
+		| "missionPilot.tool-turn-provider-instructions"
+		| "missionPilot.artifact-provider-instructions",
+) {
+	const request = bindSystemContextCatalogSnapshot(binding);
+	const invocation = request.invoke(key, {});
+	return {
+		text: invocation.content.text,
+		systemContextAudit: [
+			systemContextPromptAudit("developer", request, invocation),
+		],
+	};
+}

@@ -8,7 +8,7 @@ S11t自体の実装計画ではなく、NightWorkers内で依存関係、生成�
 - 現在の`@s11t/runtime`と`@s11t/cli`は、S11tのコミット済みHEADから作成したcanary tarballである。正式versionとcommitは`vendor/s11t/manifest.json`およびREADMEから確認する。
 - 正確なversionとSHA-512は`vendor/s11t/manifest.json`を正本として確認する。
 - NightWorkersの全SystemContextは`api/systemContexts/contexts/`のTOMLを正本とし、単一catalogへ生成される。
-- production codeは`api/systemContexts/catalog.ts`の型付き`p(key, values)`を使用する。role別catalogは作らない。
+- production codeは`api/systemContexts/catalog.ts`の型付きrequest bindingを使用する。role別catalogは作らない。
 - 対応Node.jsは20.19以上のNode 20系、Node 22、Node 24である。Node 20.19未満を対応対象にしない。
 
 production runtimeは生成済みcatalogを読むだけであり、CLIの存在を前提にしない。
@@ -34,7 +34,7 @@ S11tを使っても、ルート`AGENTS.md`のrole module境界は変わらない
 
 - 全SystemContext source、生成catalog、bindingはroleやdomainの実装から独立した`api/systemContexts/`が所有する。
 - Coding Agent、Mission Pilot、その他domainのkeyはpath由来のcanonical dot keyで区別し、単一catalogで型検査する。
-- 各role/domainのコードは共有bindingが公開する型付き`p(key, values)`だけを使い、SystemContext本文や組み立てロジックを保持しない。
+- 各role/domainのコードは共有bindingが公開する型付き`p`、`invoke`だけを使い、SystemContext本文や組み立てロジックを保持しない。
 - `api/systemContexts/`にはTOML、生成物、artifact loader、純粋なbindingだけを置き、route、service、repository、role判定、application workflowを置かない。
 - S11t共有化を理由に、Mission PilotとCoding Agentのroute、service、repository、tool contractを相互importしない。
 
@@ -59,12 +59,12 @@ artifact load、locale bind、本文抽出は共有bindingだけが行う。各r
 重要な契約は次の通り。
 
 - runtimeへ渡すartifactの型は境界では`unknown`のままにし、runtimeのschema/digest検証を通す。
-- 独立したtext取得にはS11tの`createTextRenderer()`で生成したlive `p()`を使い、NightWorkers独自の`invocation.content.text`抽出wrapperを作らない。
-- 複数contextから一つのrequest/runを組み立てる場合は、開始時にS11tの`bindText()`で固定snapshotを一つ作り、その`p`または`byKey`を処理全体で再利用する。
-- provider送信、監査、hash、locale manifestが必要な経路ではS11tの`bind()`を維持し、text-only APIへ置き換えない。
+- application codeは共有`p()` facadeを使う。NightWorkersはrequest/run入口でlocale bindingを固定し、`p()`はそのrequest-local snapshotを参照する。production codeから`createTextRenderer()`によるlive rendererや個別の`bindText()`を作らない。
+- 複数contextから一つのrequest/runを組み立てる場合は、開始時にS11tの`bindRequest()`で固定snapshotを一つ作り、その`p`、`byKey`、`invoke`を処理全体で再利用する。textだけが必要な非監査経路では`bindText()`を使う。
+- provider送信、監査、hash、locale manifestが必要な経路ではS11tの`bind()`または`bindRequest()`を維持し、text-only APIへ置き換えない。
 - `invocation.manifest`のcompiler version、locale、digest、hashは観測・監査に利用できるが、本文判定の分岐に使わない。
-- locale bindingは共有bindingだけが所有する。General Settings最上位の`language`を呼出時に読み、`ja`は`ja-JP`、`en`は`en-US`へ対応させる。英語本文が未整備の間だけ、`en-US`へ`fallbackLocales = ["ja-JP"]`を明示する。
-- 各role/domainのcall siteへlanguage、locale、fallbackを渡すAPIを追加しない。作成済み`bindText()`はimmutable snapshotとして扱い、設定変更後の次のlive `p()`呼出で新しいlanguageを反映する。
+- locale bindingは共有bindingだけが所有する。General Settings最上位の`language`をrequest/run開始時に一度だけ読み、`ja`は`ja-JP`、`en`は`en-US`へ対応させる。fallbackは暗黙に追加せず、NightWorkersのproduction bindingは`fallbackLocales = []`として未翻訳localeをfail-closeする。
+- 各role/domainのcall siteへlanguage、locale、fallbackを渡すAPIを追加しない。作成済みbindingはimmutable snapshotとして扱い、設定変更後の次の独立したrequest/runで新しいlanguageを反映する。
 - applicationがartifact JSONを読み込む。`@s11t/runtime`にpathやfilesystem責務を加えない。
 - NightWorkers backendはesbuildでbundleされるため、JSONの読み込み方法を決める際はdev実行だけでなく
   `dist-api`およびdesktop sidecarへartifactが含まれることを確認する。
@@ -133,7 +133,7 @@ bun run s11t:check
 検証では少なくとも次をassertする。
 
 1. 期待するSystemContext keyとvariablesがgenerated TypeScriptで型検査される。
-2. 日本語本文とlocale fallbackが期待通りである。
+2. 日本語本文と英語本文が期待通りで、未翻訳localeが暗黙fallbackせずfail-closeする。
 3. 不正artifact、digest不一致、未宣言variableがfail-closeする。
 4. `invocation.manifest.compilerVersion`がvendorしたruntime versionと一致する。
 5. backend bundleまたはdesktop sidecarからcatalog artifactを解決できる。

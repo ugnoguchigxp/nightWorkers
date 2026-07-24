@@ -1,5 +1,5 @@
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../systemContexts/catalog";
 import type { McpServerSettingsDiagnostic } from "../mcp/mcp-config-schema";
@@ -23,7 +23,7 @@ type PreparedGuidanceSource = {
 
 export function renderCodexAgentsGuidance(
 	projectRoot = process.cwd(),
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ): CodexAgentsGuidance {
 	const loaded = loadCodexGlobalConfig(projectRoot);
 	const sources = [

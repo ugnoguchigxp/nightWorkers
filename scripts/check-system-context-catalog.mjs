@@ -7,6 +7,11 @@ const repoRoot = process.cwd();
 const errors = [];
 const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const catalogModulePath = "api/systemContexts/catalog.ts";
+const textBindingAllowedPaths = new Set([
+	catalogModulePath,
+	"api/modules/codingAgent/context/context-packet.ts",
+	"api/modules/nightworkers/run-orchestration/run-system-context.ts",
+]);
 
 function walk(directory) {
 	if (!fs.existsSync(directory)) return [];
@@ -70,6 +75,17 @@ for (const absolutePath of ["api", "tests"].flatMap((directory) =>
 	);
 
 	function visit(node) {
+		if (
+			relativePath.startsWith("api/") &&
+			!textBindingAllowedPaths.has(relativePath) &&
+			ts.isCallExpression(node) &&
+			ts.isIdentifier(node.expression) &&
+			node.expression.text === "bindSystemContextTextCatalog"
+		) {
+			errors.push(
+				`${relativePath}:${sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1}: application code must use the request-scoped p() facade`,
+			);
+		}
 		if (
 			relativePath !== catalogModulePath &&
 			ts.isCallExpression(node) &&

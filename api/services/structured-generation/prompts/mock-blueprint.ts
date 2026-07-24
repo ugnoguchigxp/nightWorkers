@@ -6,7 +6,7 @@ import {
 	type RenderableMockBlueprintSectionName,
 	renderableMockBlueprintSectionNames,
 } from "../../../../shared/schemas/mock-blueprint.schema";
-import { bindSystemContextTextCatalog } from "../../../systemContexts/catalog";
+import { p } from "../../../systemContexts/catalog";
 import {
 	createStructuredOutputContract,
 	renderStructuredOutputRequirements,
@@ -34,7 +34,6 @@ export function buildMockBlueprintSystemPrompt(input: {
 }): string {
 	const sectionCatalog =
 		input.sectionCatalog || buildMockBlueprintSectionCatalog();
-	const { p } = bindSystemContextTextCatalog();
 	return p("structuredGeneration.mock-blueprint", {
 		sectionCatalog: renderSectionCatalog(sectionCatalog),
 		outputRequirements: renderStructuredOutputRequirements(input.jsonSchema, p),

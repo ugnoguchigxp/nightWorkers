@@ -8,12 +8,14 @@ import type {
 	ProviderToolMessage,
 	ProviderToolTurnResult,
 } from "../../../services/structured-llm/public";
+import type { SystemContextBindingSnapshot } from "../../../systemContexts/catalog";
 import type { MissionPilotCurrentStepContext } from "./mission-pilot-current-step-context";
 
 export type MissionPilotProviderPort = {
 	nextTurn(input: {
 		sessionId: string;
 		systemContext: string;
+		systemContextBinding: SystemContextBindingSnapshot;
 		messages: ProviderToolMessage[];
 		tools: ProviderToolDefinition[];
 		providerEndpointId: string | null;

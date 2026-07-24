@@ -55,6 +55,7 @@ import { oauthRouter } from "./routes/oauth";
 import { settingsRouter } from "./routes/settings";
 import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
+import { runWithSystemContextBinding } from "./systemContexts/catalog";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
 initializeCodingAgentRunHandlers();
@@ -141,6 +142,7 @@ const wsClientMessageSchema = z.discriminatedUnion("type", [
 ]);
 
 // Middleware
+app.use("*", (_context, next) => runWithSystemContextBinding(next));
 app.use("*", timing());
 app.use(
 	"*",

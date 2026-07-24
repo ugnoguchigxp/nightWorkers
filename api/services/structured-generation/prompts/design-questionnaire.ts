@@ -2,8 +2,7 @@ import type { DesignQuestionnaireSession } from "../../../../shared/schemas/desi
 import type { QuestionnaireDecisionInventoryItem } from "../../../modules/questionnaire/questionnaire-validation";
 import type { PlanModeQuestionnaireRepositoryPolicy } from "../../../modules/specification/plan-mode-project-stack-context";
 import {
-	bindSystemContextTextCatalog,
-	p,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 
@@ -57,15 +56,14 @@ function questionnaireRepositorySelectionGuidance(
 export function buildDesignQuestionnaireSystemPrompt(
 	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
 ) {
-	const { p } = bindSystemContextTextCatalog();
-	return p("questionnaire.design", {
-		completionVerificationGuidance: p(
+	return defaultP("questionnaire.design", {
+		completionVerificationGuidance: defaultP(
 			"questionnaire.completion-verification-guidance",
 			{},
 		),
 		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
 			repositoryPolicy,
-			p,
+			defaultP,
 		),
 	});
 }
@@ -126,11 +124,10 @@ export function buildDesignQuestionnaireFollowUpUserPrompt(
 export function buildDesignQuestionnaireFollowUpDecisionSystemPrompt(
 	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
 ) {
-	const { p } = bindSystemContextTextCatalog();
-	return p("questionnaire.follow-up-decision", {
+	return defaultP("questionnaire.follow-up-decision", {
 		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
 			repositoryPolicy,
-			p,
+			defaultP,
 		),
 	});
 }
@@ -159,11 +156,10 @@ export function buildDesignQuestionnaireFollowUpDecisionUserPrompt(
 export function buildAdditionalDesignQuestionnaireSystemPrompt(
 	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
 ) {
-	const { p } = bindSystemContextTextCatalog();
-	return p("questionnaire.additional", {
+	return defaultP("questionnaire.additional", {
 		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
 			repositoryPolicy,
-			p,
+			defaultP,
 		),
 	});
 }
@@ -192,7 +188,7 @@ export function buildAdditionalDesignQuestionnaireUserPrompt(
 }
 
 export function buildDesignQuestionnaireReviewSystemPrompt() {
-	return p("questionnaire.review", {});
+	return defaultP("questionnaire.review", {});
 }
 
 export function buildDesignQuestionnaireReviewUserPrompt(
@@ -212,7 +208,7 @@ export function buildDesignQuestionnaireReviewUserPrompt(
 
 export function buildSpecificationDocumentSystemPrompt(
 	input?: { additionalSystemContext?: string | null },
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return input?.additionalSystemContext
 		? p("questionnaire.specification-with-additional", {

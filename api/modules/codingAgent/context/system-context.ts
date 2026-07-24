@@ -1,19 +1,17 @@
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 import type { CodingAgentSystemContext } from "./types";
 
 export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 14;
 
-export function getCodingAgentRoleInstructions(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentRoleInstructions(p: SystemContextP = defaultP) {
 	return p("codingAgent.role-instructions", {});
 }
 
 export function getCodingAgentDddFallbackInstructions(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("codingAgent.ddd-fallback-combined", {
 		dddFallback: p("codingAgent.ddd-fallback", {}).trimEnd(),
@@ -21,45 +19,37 @@ export function getCodingAgentDddFallbackInstructions(
 	});
 }
 
-export function getCodingAgentTodoRequirement(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentTodoRequirement(p: SystemContextP = defaultP) {
 	return p("codingAgent.todo-requirement", {});
 }
 
 export function getCodingAgentInitialPreparationTodo(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("codingAgent.initial-preparation-todo", {});
 }
 
 export function getCodingAgentCompletionReportTodo(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("codingAgent.completion-report-todo", {});
 }
 
 export function getCodingAgentStandaloneExecution(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("codingAgent.standalone-execution", {});
 }
 
-export function getCodingAgentRuntimeReminders(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentRuntimeReminders(p: SystemContextP = defaultP) {
 	return Object.freeze([p("codingAgent.runtime-reminders", {})]);
 }
 
-export function getCodingAgentFailureRecovery(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentFailureRecovery(p: SystemContextP = defaultP) {
 	return p("codingAgent.failure-recovery", {});
 }
 
-export function getCodingAgentCompletionRule(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentCompletionRule(p: SystemContextP = defaultP) {
 	return p("codingAgent.completion-rule", {
 		completionReportFormat: p(
 			"codingAgent.completion-report-format",
@@ -68,20 +58,16 @@ export function getCodingAgentCompletionRule(
 	});
 }
 
-export function getCodingAgentToolContract(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentToolContract(p: SystemContextP = defaultP) {
 	return p("codingAgent.tool-contract", {});
 }
 
-export function getCodingAgentDirectPlanMode(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
-) {
+export function getCodingAgentDirectPlanMode(p: SystemContextP = defaultP) {
 	return p("codingAgent.direct-plan-mode", {});
 }
 
 export function getCodingAgentNightworkersMcpInstructions() {
-	return bindSystemContextTextCatalog().p("codingAgent.nightworkers-mcp", {});
+	return defaultP("codingAgent.nightworkers-mcp", {});
 }
 
 export function buildCodingAgentTaskGoal(input: {
@@ -109,7 +95,7 @@ export function buildCodingAgentSystemContext(
 		registeredRepositoryRoot: string;
 		planModeRequested?: boolean;
 	},
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ): CodingAgentSystemContext {
 	const roleInstructions = getCodingAgentRoleInstructions(p);
 	const domainModuleBoundary = getCodingAgentDddFallbackInstructions(p);

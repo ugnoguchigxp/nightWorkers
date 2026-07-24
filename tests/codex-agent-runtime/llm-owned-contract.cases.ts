@@ -361,6 +361,9 @@ describe("Codex SDK thin runtime adapter", () => {
 			expect.objectContaining({
 				type: "model_response_started",
 				payload: expect.objectContaining({
+					requestId: expect.stringMatching(
+						/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+					),
 					systemContextAudit: [
 						expect.objectContaining({
 							manifest: expect.objectContaining({

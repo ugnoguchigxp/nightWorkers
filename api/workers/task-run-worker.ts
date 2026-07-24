@@ -4,6 +4,7 @@ import {
 } from "../modules/nightworkers/run-orchestration/start-task-run";
 import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
 import { consumeApplicationSettingsWorkerSnapshot } from "../services/settings/application-settings-store";
+import { runWithSystemContextBinding } from "../systemContexts/catalog";
 import {
 	closeWorkerResources,
 	sendWorkerMessage,
@@ -30,7 +31,7 @@ process.on("SIGINT", () => void shutdown());
 process.on("disconnect", () => void shutdown());
 
 process.once("message", (raw) => {
-	void (async () => {
+	void runWithSystemContextBinding(async () => {
 		try {
 			const message = raw as {
 				type?: unknown;
@@ -60,5 +61,5 @@ process.once("message", (raw) => {
 			await closeWorkerResources().catch(() => undefined);
 			process.exit(1);
 		}
-	})();
+	});
 });

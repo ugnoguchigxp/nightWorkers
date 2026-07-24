@@ -1,4 +1,4 @@
-import { bindSystemContextTextCatalog } from "../../systemContexts/catalog";
+import { p } from "../../systemContexts/catalog";
 import { renderCodexAgentsGuidance } from "../codex-global-config/agents-guidance";
 import {
 	renderSupervisorSystemPrompt,
@@ -33,7 +33,6 @@ export function buildRound1JobTypePrompt(projectRoot: string): string {
 export function buildRound1PromptPacket(
 	projectRoot: string,
 ): SupervisorPromptPacket {
-	const { p } = bindSystemContextTextCatalog();
 	const codexGuidance = renderCodexAgentsGuidance(projectRoot, p).text;
 	return {
 		basePolicy: [

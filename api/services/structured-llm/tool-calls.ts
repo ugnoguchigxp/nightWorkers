@@ -1,4 +1,5 @@
 import type { PromptImageAttachment } from "../../../shared/prompt-image";
+import type { SystemContextPromptAudit } from "../../systemContexts/catalog";
 import type { NormalizedLlmUsage } from "../llm-usage/types";
 import type {
 	CallSupervisorOptions,
@@ -47,11 +48,15 @@ export type ProviderToolTurnResult =
 			usage: NormalizedLlmUsage;
 			model?: string | null;
 			providerDebug?: Record<string, unknown>;
+			requestId?: string;
+			systemContextAudit?: readonly SystemContextPromptAudit[];
 	  }
 	| {
 			type: "unsupported";
 			reason: string;
 			providerDebug?: Record<string, unknown>;
+			requestId?: string;
+			systemContextAudit?: readonly SystemContextPromptAudit[];
 	  };
 
 export type RawToolTurnCallOptions = Omit<

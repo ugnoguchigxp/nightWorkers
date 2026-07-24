@@ -176,6 +176,11 @@ describe("Codex Mission Pilot tool turns", () => {
 			sessionId: "mission-session-1",
 			taskId: "task-mission-codex",
 			systemContext: "Mission Pilot system context",
+			systemContextBinding: {
+				version: 1,
+				instructionLocale: "ja-JP",
+				fallbackLocales: [],
+			},
 			messages: [
 				{ role: "system", content: "Mission Pilot system context" },
 				{
@@ -202,6 +207,9 @@ describe("Codex Mission Pilot tool turns", () => {
 
 		expect(result).toMatchObject({
 			type: "supported",
+			requestId: expect.stringMatching(
+				/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+			),
 			content: "Taskを読み、Plan Modeの次操作を判断します。",
 			model: "gpt-5.6-luna",
 			toolCalls: [
@@ -217,6 +225,24 @@ describe("Codex Mission Pilot tool turns", () => {
 				toolCallCount: 1,
 			}),
 		});
+		expect(result.systemContextAudit).toEqual([
+			expect.objectContaining({
+				promptPart: "system",
+				manifest: expect.objectContaining({
+					requestedKey: "providerExecution.system-prompt",
+					requestedLocale: "ja-JP",
+					resolvedLocale: "ja-JP",
+				}),
+			}),
+			expect.objectContaining({
+				promptPart: "developer",
+				manifest: expect.objectContaining({
+					requestedKey: "missionPilot.tool-turn-provider-instructions",
+					requestedLocale: "ja-JP",
+					resolvedLocale: "ja-JP",
+				}),
+			}),
+		]);
 		expect(codexMock.startedThreadOptions).toEqual([
 			expect.objectContaining({
 				model: "gpt-5.6-luna",

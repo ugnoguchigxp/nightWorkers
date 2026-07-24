@@ -31,6 +31,10 @@ import {
 	providerAdapterKey,
 } from "./request";
 import {
+	prepareAuditedExecutionPolicy,
+	prepareAuditedSystemPrompt,
+} from "./request-system-context";
+import {
 	emitStructuredLlmRouteFallbackStarted,
 	emitStructuredLlmRouteFallbackUnavailable,
 	shouldTryStructuredLlmRouteFallback,
@@ -189,37 +193,43 @@ async function callRawJsonLLM(
 	userPrompt: string,
 	options: RawLlmCallOptions,
 ): Promise<string> {
+	const prepared = prepareAuditedSystemPrompt(systemPrompt, options);
 	const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
-		systemPrompt,
+		systemPrompt: prepared.systemPrompt,
 		userPrompt,
-		jsonSchema: options.jsonSchema,
-		label: options.label,
-		round: options.round,
-		schemaFirst: options.schemaFirst,
-		role: options.role,
-		routeOverride: options.routeOverride,
-		routePolicy: options.routePolicy,
+		jsonSchema: prepared.options.jsonSchema,
+		label: prepared.options.label,
+		round: prepared.options.round,
+		schemaFirst: prepared.options.schemaFirst,
+		role: prepared.options.role,
+		routeOverride: prepared.options.routeOverride,
+		routePolicy: prepared.options.routePolicy,
 	});
 
 	for (let index = 0; index < normalizedRequests.length; index += 1) {
 		const normalizedRequest = normalizedRequests[index];
 		const remainingFallbacks = normalizedRequests.slice(index + 1);
 		try {
+			const attemptOptions = prepareAuditedExecutionPolicy(
+				prepared.options,
+				normalizedRequest,
+			);
 			return await callRawJsonLLMAttempt(
-				systemPrompt,
+				prepared.systemPrompt,
 				userPrompt,
-				options,
+				attemptOptions,
 				normalizedRequest,
 			);
 		} catch (error) {
-			if (options.signal?.aborted) throw options.signal.reason ?? error;
+			if (prepared.options.signal?.aborted)
+				throw prepared.options.signal.reason ?? error;
 			if (
 				!shouldTryStructuredLlmRouteFallback(error) ||
 				remainingFallbacks.length === 0
 			) {
 				if (shouldTryStructuredLlmRouteFallback(error)) {
 					await emitStructuredLlmRouteFallbackUnavailable(
-						options,
+						prepared.options,
 						normalizedRequest,
 						error,
 					);
@@ -227,7 +237,7 @@ async function callRawJsonLLM(
 				throw error;
 			}
 			await emitStructuredLlmRouteFallbackStarted(
-				options,
+				prepared.options,
 				normalizedRequest,
 				remainingFallbacks[0],
 				error,
@@ -258,6 +268,7 @@ async function callRawJsonLLMAttempt(
 
 	appendLlmTrace("request", {
 		callId,
+		requestId: callId,
 		provider: normalizedRequest.providerId,
 		providerEndpointId: normalizedRequest.providerEndpointId ?? null,
 		role: normalizedRequest.role ?? null,
@@ -316,6 +327,7 @@ async function callRawJsonLLMAttempt(
 		severity: "info",
 		message: `Supervisor LLM request started. provider=${normalizedRequest.providerId} round=${options.round ?? "unknown"}`,
 		data: {
+			requestId: callId,
 			provider: normalizedRequest.providerId,
 			providerEndpointId: normalizedRequest.providerEndpointId ?? null,
 			role: normalizedRequest.role ?? null,
@@ -432,6 +444,7 @@ async function callRawJsonLLMAttempt(
 			durationMs: Date.now() - startedAt,
 			trace: options.usageTrace,
 			metadataJson: {
+				requestId: callId,
 				schemaFirst: Boolean(options.schemaFirst),
 				providerEndpointId: normalizedRequest.providerEndpointId ?? null,
 				role: normalizedRequest.role ?? null,

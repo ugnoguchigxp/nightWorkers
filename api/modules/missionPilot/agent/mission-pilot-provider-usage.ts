@@ -18,7 +18,9 @@ export async function recordMissionPilotProviderTurnUsage(input: {
 	>;
 	durationMs: number;
 }) {
-	const callId = `mission-pilot:${input.sessionId}:${input.turnId}:${input.label}:${input.providerCallIndex}`;
+	const callId =
+		input.response.requestId ??
+		`mission-pilot:${input.sessionId}:${input.turnId}:${input.label}:${input.providerCallIndex}`;
 	const provider =
 		typeof input.response.providerDebug?.provider === "string"
 			? input.response.providerDebug.provider
@@ -46,6 +48,7 @@ export async function recordMissionPilotProviderTurnUsage(input: {
 				turnId: input.turnId,
 				providerCallIndex: input.providerCallIndex,
 				callKind: input.label,
+				systemContextAudit: input.response.systemContextAudit ?? [],
 			},
 		});
 		return true;

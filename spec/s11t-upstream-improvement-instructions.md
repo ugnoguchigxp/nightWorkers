@@ -1,5 +1,9 @@
 # S11t upstream改善指示
 
+> Status: resolved. `cc606d3`から`f3fa8cb`までのS11t変更でrequest-bound
+> audit、実効的なdelimited-context、locale coverage、public rendered hash APIが
+> 実装された。NightWorkersは`f3fa8cb` canaryでこの契約を利用する。
+
 ## 目的
 
 NightWorkersのように複数のSystemContextを一つのprovider requestへ組み立てるhostが、locale snapshotとmanifest監査を独自wrapperなしで一貫して扱えるようにする。

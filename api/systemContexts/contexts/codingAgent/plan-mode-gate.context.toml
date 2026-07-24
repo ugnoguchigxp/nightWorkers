@@ -19,4 +19,4 @@ JSONのみを返してください。
 { "shouldStartPlanMode": boolean, "action": "plan_mode" | "coding_agent", "reason": "short concrete reason" }'''
 
 [variables.projectRoot]
-profile = "trusted.inline"
+profile = "untrusted.text"

@@ -25,7 +25,7 @@ import {
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { normalizeStructuredOutputJsonSchema } from "../../services/structured-llm/json-schema";
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../systemContexts/catalog";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
@@ -50,7 +50,7 @@ async function requireRepository(repositoryId: string) {
 
 function buildMissionTaskSystemPrompt(
 	signal: ProjectSignalSnapshot,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("taskGeneration.mission-tasks", {
 		maxCount: MISSION_TASK_CANDIDATE_MAX_COUNT,
@@ -206,8 +206,7 @@ export async function generateMissionTaskCandidates(input: {
 		runtimeSchema: missionTaskCandidatesResultSchema,
 		providerJsonSchema: buildMissionTaskCandidatesResponseJsonSchema(),
 	});
-	const { p } = bindSystemContextTextCatalog();
-	const systemPrompt = buildMissionTaskSystemPrompt(signal, p);
+	const systemPrompt = buildMissionTaskSystemPrompt(signal, defaultP);
 	const userPrompt = buildMissionTaskUserPrompt({
 		signal,
 		existingCandidates,

@@ -3,7 +3,7 @@ import {
 	type AppBlueprint,
 	appBlueprintSchema,
 } from "../../../shared/schemas/app-blueprint.schema";
-import { bindSystemContextTextCatalog } from "../../systemContexts/catalog";
+import { p } from "../../systemContexts/catalog";
 import { blueprintCatalog } from "../blueprint-catalog";
 import { buildBlueprintSystemPrompt } from "../structured-generation/prompts/app-blueprint";
 import { callStructuredOutputWithRepair } from "../structured-generation/structured-output-repair.service";
@@ -89,7 +89,6 @@ export async function generatePlanModeBlueprintDraft(input: {
 	projectStackContext?: string | null;
 	emitEvent?: (event: SupervisorLlmDebugEvent) => Promise<void> | void;
 }): Promise<GeneratedBlueprintDraft> {
-	const { p } = bindSystemContextTextCatalog();
 	const requestContract = buildPlanModeBlueprintRequestContract(input);
 	const appBlueprintJsonSchema = renderAppBlueprintJsonSchema();
 	const promptDiagnostics = buildPromptDiagnostics(appBlueprintJsonSchema);

@@ -3,7 +3,7 @@ import type {
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 import {
@@ -12,7 +12,7 @@ import {
 } from "./mission-pilot-context-envelope";
 
 export function getMissionPilotCompactionSystemContext(
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ) {
 	return p("missionPilot.compaction", {});
 }

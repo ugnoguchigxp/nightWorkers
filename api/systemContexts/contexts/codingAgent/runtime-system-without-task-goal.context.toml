@@ -30,7 +30,7 @@ profile = "trusted.inline"
 profile = "untrusted.json"
 
 [variables.registeredRepositoryRoot]
-profile = "trusted.inline"
+profile = "untrusted.text"
 
 [variables.roleInstructions]
 profile = "trusted.inline"

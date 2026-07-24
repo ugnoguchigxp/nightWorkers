@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
 import { digestText } from "../../../services/text-digest";
 import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
@@ -109,6 +110,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
 			const promptParts = buildCodexRuntimePromptParts(context);
+			const requestId = randomUUID();
 			const thread = await createThread(
 				this.closeoutHost(),
 				context,
@@ -124,6 +126,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 				type: "model_response_started",
 				message: "[Codex] Provider request started.",
 				payload: {
+					requestId,
 					provider: "codex",
 					systemContextAudit: promptParts.systemContextAudit,
 					developerInstructionsRenderedHash:

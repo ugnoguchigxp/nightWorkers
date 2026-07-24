@@ -260,6 +260,7 @@ export async function runNativeApiProviderAttempts(input: {
 		}
 		providerDebug = { ...contextPreflightDebug };
 		startedAt = Date.now();
+		const requestId = `${input.context.runId}:${input.turnId}:${attemptIndex}`;
 		const attemptTimeoutMs = providerRequest.options.attemptTimeoutMs;
 		const attemptSignal = createNativeApiAttemptTimeoutSignal(
 			input.signal,
@@ -269,6 +270,7 @@ export async function runNativeApiProviderAttempts(input: {
 			type: "model_response_started",
 			message: "[NativeApiRunner] Provider request started.",
 			payload: {
+				requestId,
 				runtime: "native_api_runner",
 				turnId: input.turnId,
 				turnIndex: input.turnIndex,

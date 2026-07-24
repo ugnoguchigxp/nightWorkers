@@ -1,6 +1,6 @@
 import type { ProjectExplorationCatalogRunPin } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import {
-	bindSystemContextTextCatalog,
+	p as defaultP,
 	type SystemContextP,
 } from "../../../systemContexts/catalog";
 
@@ -23,7 +23,7 @@ export type ProjectExplorationAgentWorkflow =
 
 export function buildProjectExplorationAgentWorkflow(
 	pin: ProjectExplorationCatalogRunPin | null,
-	p: SystemContextP = bindSystemContextTextCatalog().p,
+	p: SystemContextP = defaultP,
 ): ProjectExplorationAgentWorkflow {
 	if (pin?.version === 2 && pin.available) {
 		return {

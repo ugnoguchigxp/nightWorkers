@@ -37,6 +37,10 @@ import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/m
 import { missionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-task-read.adapter";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import { getMissionPilotExecution } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
+import {
+	bindSystemContextCatalogSnapshot,
+	systemContextPromptAudit,
+} from "../api/systemContexts/catalog";
 
 const repositoryIds: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());
@@ -92,17 +96,31 @@ const readPort: MissionPilotTaskReadPort = missionPilotTaskReadPort;
 describe("Mission Pilot persistent agent runtime", () => {
 	it("keeps an assistant-only turn as waiting and preserves the same logical session", async () => {
 		const fixtureState = await fixture();
+		const requestId = crypto.randomUUID();
 		const result = await runMissionPilotAgentWake(
 			{ sessionId: fixtureState.sessionId },
 			{
 				readPort,
 				provider: {
-					nextTurn: async () => ({
-						type: "supported",
-						content: "現在のFactを確認しました。",
-						toolCalls: [],
-						usage: usage(),
-					}),
+					nextTurn: async (input) => {
+						const request = bindSystemContextCatalogSnapshot(
+							input.systemContextBinding,
+						);
+						const invocation = request.invoke(
+							"providerExecution.system-prompt",
+							{ systemPrompt: input.systemContext },
+						);
+						return {
+							type: "supported",
+							content: "現在のFactを確認しました。",
+							toolCalls: [],
+							usage: usage(),
+							requestId,
+							systemContextAudit: [
+								systemContextPromptAudit("system", request, invocation),
+							],
+						};
+					},
 				},
 			},
 		);
@@ -137,9 +155,19 @@ describe("Mission Pilot persistent agent runtime", () => {
 			.from(llmUsageRecords)
 			.where(eq(llmUsageRecords.taskId, fixtureState.taskId));
 		expect(usageRecord).toMatchObject({
+			callId: requestId,
 			label: "mission_pilot_agent",
 			traceOwner: "mission_pilot",
 			traceChannel: "pilot_thought",
+			metadataJson: {
+				systemContextAudit: [
+					expect.objectContaining({
+						manifest: expect.objectContaining({
+							requestedKey: "providerExecution.system-prompt",
+						}),
+					}),
+				],
+			},
 		});
 		const usageActivity = await db
 			.select()
@@ -200,13 +228,15 @@ describe("Mission Pilot persistent agent runtime", () => {
 
 	it("records tool results without importing worker transcript into the conversation", async () => {
 		const fixtureState = await fixture();
+		const bindings: unknown[] = [];
 		const result = await runMissionPilotAgentWake(
 			{ sessionId: fixtureState.sessionId },
 			{
 				readPort,
 				provider: {
-					nextTurn: async ({ messages }) =>
-						messages.some((message) => message.role === "tool")
+					nextTurn: async ({ messages, systemContextBinding }) => {
+						bindings.push(systemContextBinding);
+						return messages.some((message) => message.role === "tool")
 							? {
 									type: "supported",
 									content: "Factを受け取りました。",
@@ -224,7 +254,8 @@ describe("Mission Pilot persistent agent runtime", () => {
 										},
 									],
 									usage: usage(),
-								},
+								};
+					},
 				},
 			},
 		);
@@ -237,6 +268,8 @@ describe("Mission Pilot persistent agent runtime", () => {
 		const serialized = JSON.stringify(items);
 		expect(serialized).not.toContain("nativeApiTurns");
 		expect(items.some((item) => item.kind === "tool_result")).toBe(true);
+		expect(bindings).toHaveLength(2);
+		expect(bindings[1]).toBe(bindings[0]);
 	});
 
 	it("executes a claimed Task action once and never reclaims its terminal call", async () => {
