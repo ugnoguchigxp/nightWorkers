@@ -5,7 +5,6 @@ import { dispatchStructuredLlmProvider } from "../api/services/structured-llm/pr
 import {
 	asArtifactRecord,
 	resolveArtifactWorkspaceInitialTab,
-	testModeWorkflowSignature,
 } from "../src/modules/nightworkers/components/ArtifactPane.controller";
 import { findExternalPathPermissionRequest } from "../src/modules/nightworkers/components/ThreadTimelinePermission.controller";
 
@@ -19,12 +18,6 @@ describe("P2 boundary contracts", () => {
 		);
 		expect(resolveArtifactWorkspaceInitialTab("unknown")).toBeUndefined();
 		expect(asArtifactRecord(null)).toEqual({});
-		expect(
-			testModeWorkflowSignature([
-				{ id: "discover_tests", status: "passed" },
-				{ id: "run_unit_tests", status: "running" },
-			] as never),
-		).toBe("discover_tests:passed|run_unit_tests:running");
 	});
 
 	it("extracts external path permission state without rendering concerns", () => {

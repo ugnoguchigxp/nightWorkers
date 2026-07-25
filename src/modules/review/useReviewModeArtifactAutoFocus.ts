@@ -12,7 +12,7 @@ export function resolveReviewModeArtifactAutoFocus(input: {
 	const readyKey = resolveReviewModeReadyKey(input);
 	if (
 		input.routeState.kind !== "session" ||
-		input.routeState.artifact !== null
+		isReviewModeArtifact(input.routeState.artifact)
 	) {
 		return null;
 	}
@@ -50,8 +50,11 @@ export function useReviewModeArtifactAutoFocus(input: {
 }) {
 	const lastAutoFocusKeyRef = useRef<string | null>(null);
 	const readyKey = resolveReviewModeReadyKey(input);
+	const isReviewModeFocused =
+		input.routeState.kind === "session" &&
+		isReviewModeArtifact(input.routeState.artifact);
 	const autoFocusKey =
-		input.routeState.kind === "session" && input.routeState.artifact === null
+		input.routeState.kind === "session" && !isReviewModeFocused
 			? readyKey
 			: null;
 
@@ -61,13 +64,31 @@ export function useReviewModeArtifactAutoFocus(input: {
 			lastAutoFocusKeyRef.current = null;
 			return;
 		}
-		if (lastAutoFocusKeyRef.current === readyKey) return;
-		lastAutoFocusKeyRef.current = readyKey;
+		if (isReviewModeFocused) {
+			lastAutoFocusKeyRef.current = readyKey;
+			return;
+		}
 		if (!autoFocusKey) return;
+		if (lastAutoFocusKeyRef.current === autoFocusKey) return;
+		lastAutoFocusKeyRef.current = autoFocusKey;
 		input.onNavigate({
 			kind: "session",
 			sessionId,
 			artifact: { kind: "review_status" },
 		});
-	}, [autoFocusKey, input.activeSession?.id, input.onNavigate, readyKey]);
+	}, [
+		autoFocusKey,
+		input.activeSession?.id,
+		input.onNavigate,
+		isReviewModeFocused,
+		readyKey,
+	]);
+}
+
+function isReviewModeArtifact(
+	artifact:
+		| Extract<WorkbenchRouteState, { kind: "session" }>["artifact"]
+		| undefined,
+) {
+	return artifact?.kind === "review_status";
 }

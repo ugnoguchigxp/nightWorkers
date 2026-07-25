@@ -27,7 +27,9 @@ describe("ThreadWorkspace header", () => {
 		expect(workspaceSource).not.toContain("Create Blueprint artifact");
 		expect(workspaceSource).toContain("plan: Boolean(blueprintArtifact)");
 		expect(workspaceSource).toContain("review: props.hasReviewArtifact");
-		expect(workspaceSource).toContain("test: Boolean(props.activeSession)");
+		expect(workspaceSource).toContain(
+			"evidence: props.hasEvidenceCheckArtifact",
+		);
 		expect(shellSource).not.toContain(
 			"sendWorkbenchMessage(session.id, prompt, 'draft_spec')",
 		);

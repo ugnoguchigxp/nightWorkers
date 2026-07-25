@@ -38,14 +38,14 @@ const getTaskExecutionRoute = createRoute({
 		},
 	},
 });
-const getTestSnapshotRoute = createRoute({
+const getVerificationSnapshotRoute = createRoute({
 	method: "get",
-	path: "/mission-pilot/sessions/:id/test-snapshot",
+	path: "/mission-pilot/sessions/:id/verification-snapshot",
 	request: { params: sessionParams },
 	responses: {
 		200: {
 			content: { "application/json": { schema: z.unknown() } },
-			description: "Latest frozen Test snapshot",
+			description: "Latest frozen verification snapshot",
 		},
 	},
 });
@@ -223,10 +223,10 @@ export const missionPilotRouter = createOpenApiRouter()
 		),
 	)
 	.openapi(
-		getTestSnapshotRoute,
-		withOpenApiRouteError(getTestSnapshotRoute, async (c) =>
+		getVerificationSnapshotRoute,
+		withOpenApiRouteError(getVerificationSnapshotRoute, async (c) =>
 			c.json(
-				await executionQueryService.getLatestMissionPilotTestSnapshot(
+				await executionQueryService.getLatestMissionPilotVerificationSnapshot(
 					c.req.param("id"),
 				),
 				200,

@@ -15,7 +15,7 @@
 
 ## 対象外
 
-- Test Modeや固定検証ワークフローの復元。
+- 独立した検証Runや固定検証ワークフローの追加。
 - Task、Todo、Mission Pilot phaseの自動更新。
 - Verify実行自体の追加・変更。
 - 完了条件とテストソースのLLM評価。
@@ -60,4 +60,4 @@ runtime event ledgerの追記型eventからカードを投影する。過去のe
 - [AC-002] 過去のFull Verify成功は後続実行で消えず、実行時点の履歴として残る。
 - [AC-003] 各検証カードで最終Full Verify成功と `current` / `stale` / `unverified` を区別できる。
 - [AC-004] コード変更または後続検証失敗後も過去成功を保持し、再検証が必要なことを表示できる。
-- [AC-005] 固定Test Mode、Task完了gate、暗黙のTodo更新を追加していない。
+- [AC-005] 独立した検証Run、Task完了gate、暗黙のTodo更新を追加していない。

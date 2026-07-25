@@ -118,7 +118,7 @@
 		},
 		{
 			"id": "NW-E2E-REVIEW-002",
-			"title": "Test Mode完了後にReview Mode artifactへ遷移できる",
+			"title": "実装完了後にReview Mode artifactへ遷移できる",
 			"priority": "P0",
 			"suite": "regression",
 			"gateStatus": "required",
@@ -147,30 +147,6 @@
 			"suite": "regression",
 			"gateStatus": "required",
 			"requiredEvidence": ["api", "database", "queue"]
-		},
-		{
-			"id": "NW-E2E-TEST-001",
-			"title": "Test Modeが別Runで起動しTodoを使わずmanaged evidenceを残す",
-			"priority": "P0",
-			"suite": "regression",
-			"gateStatus": "required",
-			"requiredEvidence": ["ui", "api", "database", "task-events"]
-		},
-		{
-			"id": "NW-E2E-TEST-002",
-			"title": "verification documentなしではTest Modeを開始しない",
-			"priority": "P1",
-			"suite": "regression",
-			"gateStatus": "required",
-			"requiredEvidence": ["ui", "api", "database"]
-		},
-		{
-			"id": "NW-E2E-TEST-003",
-			"title": "required verification失敗時にTest Modeを完了扱いにしない",
-			"priority": "P0",
-			"suite": "regression",
-			"gateStatus": "required",
-			"requiredEvidence": ["api", "database", "task-events"]
 		},
 		{
 			"id": "NW-E2E-REVIEW-003",
@@ -310,7 +286,7 @@
 		},
 		{
 			"id": "NW-E2E-A11Y-005",
-			"title": "Project Quality Test Mode Review Modeの実データ状態にseriousなaxe違反がない",
+			"title": "Project Quality 証跡チェック Review Modeの実データ状態にseriousなaxe違反がない",
 			"priority": "P1",
 			"suite": "accessibility",
 			"gateStatus": "required",

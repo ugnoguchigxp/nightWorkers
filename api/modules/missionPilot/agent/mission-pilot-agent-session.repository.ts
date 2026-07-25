@@ -63,7 +63,7 @@ export async function backfillStoppedMissionPilotAgentSessions() {
 					resumePhase: null,
 					activeRunId: null,
 					activePhaseRunId: null,
-					activeTestSnapshotId: null,
+					activeVerificationSnapshotId: null,
 					nextWakeAt: null,
 					leaseOwner: null,
 					leaseExpiresAt: null,

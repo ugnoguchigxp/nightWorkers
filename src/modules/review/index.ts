@@ -3,6 +3,7 @@ export {
 	buildPostImplementationReviewArtifact,
 	isPostImplementationReviewReady,
 	REVIEW_MODE_PROMPT_ACTIONS,
+	resolveReviewImplementationCompletionReport,
 } from "./reviewModeLauncher";
 export * from "./types";
 export {

@@ -71,17 +71,17 @@ const x = 42;
 		expect(markup).toContain("main.tsx");
 	});
 
-	it("identifies test mode artifact link and triggers onOpenTestModeArtifact", () => {
-		const onOpenTestModeArtifact = vi.fn();
-		const markdown = `Go to [Test Runner](http://localhost:3000/sessions/sess-1?artifact=test_mode).`;
+	it("identifies Evidence Check links", () => {
+		const onOpenEvidenceCheckArtifact = vi.fn();
+		const markdown = `Go to [Evidence Check](http://localhost:3000/sessions/sess-1?artifact=evidence_check).`;
 		const markup = renderToStaticMarkup(
 			<ChatMarkdown
 				content={markdown}
-				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 			/>,
 		);
 
-		expect(markup).toContain('data-workbench-artifact-link="test_mode"');
+		expect(markup).toContain('data-workbench-artifact-link="evidence_check"');
 	});
 
 	it("identifies review mode artifact links", () => {

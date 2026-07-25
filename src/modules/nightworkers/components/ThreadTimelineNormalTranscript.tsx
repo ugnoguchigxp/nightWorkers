@@ -36,14 +36,14 @@ export function NormalTranscriptItemView({
 	item,
 	onOpenArtifact,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 	verificationHistoryByEventId,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 	verificationHistoryByEventId?: Map<
 		string,
@@ -60,7 +60,7 @@ export function NormalTranscriptItemView({
 				<ChatMarkdown
 					content={item.text || fallbackEventText(item.events.at(-1))}
 					onOpenProjectFile={onOpenProjectFile}
-					onOpenTestModeArtifact={onOpenTestModeArtifact}
+					onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 					onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 				/>
 			</ThreadMessage>
@@ -82,14 +82,14 @@ export function NormalTranscriptItemView({
 							message={artifactMessage}
 							onOpenArtifact={onOpenArtifact}
 							onOpenProjectFile={onOpenProjectFile}
-							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : visibleText.trim() ? (
 						<ChatMarkdown
 							content={visibleText}
 							onOpenProjectFile={onOpenProjectFile}
-							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : null}

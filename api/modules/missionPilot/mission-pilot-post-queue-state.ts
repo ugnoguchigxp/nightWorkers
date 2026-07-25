@@ -19,15 +19,7 @@ const transitions: Partial<
 	repository_bootstrapping: ["queued", "paused", "attention"],
 	implementation_starting: ["implementing", "paused", "attention"],
 	implementing: ["implementation_evaluating", "paused", "attention"],
-	implementation_evaluating: ["test_preparing", "attention"],
-	test_preparing: ["testing", "paused", "attention"],
-	testing: ["test_evaluating", "paused", "attention"],
-	test_evaluating: [
-		"review_preparing",
-		"test_preparing",
-		"implementation_rework",
-		"attention",
-	],
+	implementation_evaluating: ["review_preparing", "attention"],
 	implementation_rework: ["implementation_starting", "paused", "attention"],
 	review_preparing: ["reviewing", "paused", "attention"],
 	reviewing: ["review_evaluating", "paused", "attention"],
@@ -42,8 +34,6 @@ const transitions: Partial<
 	paused: [
 		"implementation_starting",
 		"implementing",
-		"test_preparing",
-		"testing",
 		"review_preparing",
 		"reviewing",
 		"closeout_preparing",
@@ -79,8 +69,7 @@ export function evaluateImplementationCompletionGate(
 	input: ImplementationGateInput,
 ) {
 	const reasons: string[] = [];
-	if (!["completed", "needs_review"].includes(input.runStatus))
-		reasons.push("run_not_accepted");
+	if (input.runStatus !== "completed") reasons.push("run_not_completed");
 	if (input.terminalReason) reasons.push("terminal_reason_present");
 	if (input.openTodoCount > 0) reasons.push("open_todos");
 	if (!input.securityAllowed) reasons.push("security_gate");
@@ -91,7 +80,7 @@ export function evaluateImplementationCompletionGate(
 	return { pass: reasons.length === 0, reasons };
 }
 
-export type TestGateInput = {
+export type VerificationGateInput = {
 	runStatus: string;
 	verificationDocumentMatches: boolean;
 	acceptedEvidenceCount: number;
@@ -104,10 +93,11 @@ export type TestGateInput = {
 	failedRequired: number;
 	unknownRequired: number;
 	contextDigestMatches: boolean;
-	sourceChangedAfterTest: boolean;
 };
 
-export function evaluateTestCompletionGate(input: TestGateInput) {
+export function evaluateVerificationCompletionGate(
+	input: VerificationGateInput,
+) {
 	const reasons: string[] = [];
 	if (input.runStatus !== "completed") reasons.push("run_not_completed");
 	if (!input.verificationDocumentMatches)
@@ -126,14 +116,13 @@ export function evaluateTestCompletionGate(input: TestGateInput) {
 	if (input.unlinkedRequiredEvidenceCount > 0)
 		reasons.push("required_conditions_evidence_missing");
 	if (!input.contextDigestMatches) reasons.push("stale_context");
-	if (input.sourceChangedAfterTest) reasons.push("source_changed_after_test");
 	return { pass: reasons.length === 0, reasons };
 }
 
 export function evaluateReviewCompletionGate(input: {
 	decision: unknown;
 	contextDigestMatches: boolean;
-	testSnapshotMatches: boolean;
+	verificationSnapshotMatches: boolean;
 	targetManifestMatches: boolean;
 	reviewerEvaluationMatches: boolean;
 	reviewerEvaluationApproved: boolean;
@@ -146,7 +135,8 @@ export function evaluateReviewCompletionGate(input: {
 	if (parsed.success && parsed.data.verdict !== "pass")
 		reasons.push(`review_${parsed.data.verdict}`);
 	if (!input.contextDigestMatches) reasons.push("stale_context");
-	if (!input.testSnapshotMatches) reasons.push("test_snapshot_mismatch");
+	if (!input.verificationSnapshotMatches)
+		reasons.push("verification_snapshot_mismatch");
 	if (!input.targetManifestMatches) reasons.push("target_manifest_mismatch");
 	if (!input.reviewerEvaluationMatches)
 		reasons.push("reviewer_evaluation_missing_or_stale");
@@ -160,7 +150,7 @@ export function evaluateReviewCompletionGate(input: {
 }
 
 export function evaluateCompletionAdmission(input: {
-	testPass: boolean;
+	verificationPass: boolean;
 	reviewPass: boolean;
 	closeoutStatus: string;
 	pushPolicy: "never" | "allowed" | "required";
@@ -169,7 +159,7 @@ export function evaluateCompletionAdmission(input: {
 	commitSha: string | null;
 }) {
 	const reasons: string[] = [];
-	if (!input.testPass) reasons.push("test_pass_missing");
+	if (!input.verificationPass) reasons.push("verification_pass_missing");
 	if (!input.reviewPass) reasons.push("review_pass_missing");
 	if (input.hasOwnedChanges && !input.commitSha)
 		reasons.push("local_commit_missing");

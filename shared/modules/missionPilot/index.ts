@@ -6,5 +6,4 @@ export * from "./mission-pilot-execution.schema";
 export * from "./mission-pilot-plan-progress.schema";
 export * from "./mission-pilot-plan-review.schema";
 export * from "./mission-pilot-review.schema";
-export * from "./mission-pilot-test.schema";
 export * from "./mission-pilot-thought.schema";

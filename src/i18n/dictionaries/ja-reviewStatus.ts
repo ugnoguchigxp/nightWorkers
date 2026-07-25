@@ -4,6 +4,7 @@ export const jaReviewStatus = {
 	"reviewStatus.loading": "レビューモードを準備中...",
 	"reviewStatus.unavailable": "レビューモードは利用できません。",
 	"reviewStatus.runRemains": "Run は",
+	"reviewStatus.implementationCompletionReport": "実装完了報告",
 	"reviewStatus.sessionState.approved": "レビュー承認済み",
 	"reviewStatus.sessionState.executionUnchanged": "実行状態を維持",
 	"reviewStatus.securityHandoffs": "セキュリティ連携",

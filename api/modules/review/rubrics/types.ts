@@ -74,7 +74,7 @@ export type ReviewEvidencePack = {
 	status: string;
 	manifestDigest?: string;
 	sourceRunIds?: string[];
-	testSnapshotId?: string;
+	verificationSnapshotId?: string;
 	context?: {
 		executionMode?: string;
 		inRunReview?: boolean;

@@ -12,7 +12,7 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotReviewDecisions,
 	missionPilotSessions,
-	missionPilotTestSnapshots,
+	missionPilotVerificationSnapshots,
 } from "../../db/mission-pilot-schema";
 import { activityEvents, taskMessages } from "../../db/schema";
 import { MissionPilotError } from "./mission-pilot.errors";
@@ -78,7 +78,7 @@ export async function getMissionPilotExecution(sessionId: string) {
 		);
 	const [
 		phaseRuns,
-		testSnapshots,
+		verificationSnapshots,
 		reviewDecisions,
 		closeouts,
 		events,
@@ -91,9 +91,9 @@ export async function getMissionPilotExecution(sessionId: string) {
 			.orderBy(desc(missionPilotPhaseRuns.startedAt)),
 		db
 			.select()
-			.from(missionPilotTestSnapshots)
-			.where(eq(missionPilotTestSnapshots.sessionId, sessionId))
-			.orderBy(desc(missionPilotTestSnapshots.createdAt)),
+			.from(missionPilotVerificationSnapshots)
+			.where(eq(missionPilotVerificationSnapshots.sessionId, sessionId))
+			.orderBy(desc(missionPilotVerificationSnapshots.createdAt)),
 		db
 			.select()
 			.from(missionPilotReviewDecisions)
@@ -182,7 +182,7 @@ export async function getMissionPilotExecution(sessionId: string) {
 	return {
 		session,
 		phaseRuns,
-		testSnapshots,
+		verificationSnapshots,
 		reviewDecisions,
 		closeouts,
 		events,
@@ -221,12 +221,14 @@ export async function getMissionPilotExecutionForTask(taskId: string) {
 	return getMissionPilotExecution(session.id);
 }
 
-export async function getLatestMissionPilotTestSnapshot(sessionId: string) {
+export async function getLatestMissionPilotVerificationSnapshot(
+	sessionId: string,
+) {
 	const [row] = await db
 		.select()
-		.from(missionPilotTestSnapshots)
-		.where(eq(missionPilotTestSnapshots.sessionId, sessionId))
-		.orderBy(desc(missionPilotTestSnapshots.createdAt))
+		.from(missionPilotVerificationSnapshots)
+		.where(eq(missionPilotVerificationSnapshots.sessionId, sessionId))
+		.orderBy(desc(missionPilotVerificationSnapshots.createdAt))
 		.limit(1);
 	return row ?? null;
 }

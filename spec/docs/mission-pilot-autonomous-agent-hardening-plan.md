@@ -96,7 +96,7 @@ Questionnaire
 - 既存route pathと公開request/response schema。
 - Questionnaireの既存UIとユーザー介入時間。
 - Pilot ThoughtとCoding Agent chatの表示分離。
-- Task、Plan Mode、Test Mode、Review Modeの既存操作面。
+- Task、Plan Mode、証跡チェック、Review Modeの既存操作面。
 - Coding Agentのruntime。repair専用mode、意味別mode、固定workflow、Mission Pilot専用tool allowlistを追加しない。
 - 人間ユーザーに許可されていないfilesystem、Git、network、external service操作をMission Pilotへ追加しない。
 - 現在成功しているtest assertionを新runtimeへ合わせるために弱めない。

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { nightWorkersRecordTestConditionMappingInputSchema } from "../api/mcp/nightworkers-tool-schemas";
+import { workerToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
+import { TestConditionMappingFailure } from "../api/modules/codingAgent/verification/test-inventory-errors";
 import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
 import {
 	testConditionMappingSchema,
-	testConditionMappingToolInputSchema,
-	testConditionMappingWriteSchema,
+	testEvidenceSetMappingJsonSchema,
+	testEvidenceSetMappingToolInputSchema,
+	testEvidenceSetMappingWriteSchema,
 } from "../shared/schemas/verification-checklist.schema";
 
 const sourceDigest = "a".repeat(64);
@@ -16,18 +19,23 @@ const mappingInput = {
 	source: "declared_in_test" as const,
 	sourceDigest,
 };
+const evidenceSetInput = {
+	verificationDocumentId: "verification-1",
+	evidenceSet: {
+		version: 1 as const,
+		references: [
+			{
+				testName: "maps a condition",
+				filePath: "test.ts",
+				runner: "vitest" as const,
+				conditionIds: ["AC-001"],
+			},
+		],
+	},
+};
 
 describe("Coding Agent test condition mapping contract", () => {
-	it("builds tool, write, and persisted schemas without deriving from a refined object", () => {
-		expect(testConditionMappingToolInputSchema.parse(mappingInput)).toEqual(
-			mappingInput,
-		);
-		expect(
-			testConditionMappingWriteSchema.parse({
-				taskId: "task-1",
-				...mappingInput,
-			}),
-		).toEqual({ taskId: "task-1", ...mappingInput });
+	it("keeps the persisted mapping schema and replaces the public tool input with an evidence set", () => {
 		expect(
 			testConditionMappingSchema.parse({
 				id: "mapping-1",
@@ -36,19 +44,49 @@ describe("Coding Agent test condition mapping contract", () => {
 				createdAt: "2026-07-22T00:00:00.000Z",
 			}),
 		).toMatchObject({ id: "mapping-1", taskId: "task-1", ...mappingInput });
-	});
-
-	it("uses the canonical mapping input schema for the MCP contract", () => {
+		expect(
+			testEvidenceSetMappingToolInputSchema.parse(evidenceSetInput),
+		).toEqual(evidenceSetInput);
+		expect(
+			testEvidenceSetMappingWriteSchema.parse({
+				taskId: "task-1",
+				runId: "run-1",
+				repoRoot: "/tmp/repo",
+				...evidenceSetInput,
+			}),
+		).toMatchObject({ taskId: "task-1", ...evidenceSetInput });
 		expect(nightWorkersRecordTestConditionMappingInputSchema).toBe(
-			testConditionMappingToolInputSchema,
+			testEvidenceSetMappingToolInputSchema,
 		);
+		expect(
+			workerToolDefinitions.find(
+				(tool) => tool.name === "record_test_condition_mapping",
+			)?.definition.inputSchema,
+		).toBe(testEvidenceSetMappingJsonSchema);
 	});
 
-	it("returns a non-retryable typed input failure for a missing assessment rationale", async () => {
+	it("does not accept the removed one-mapping public contract", () => {
+		expect(
+			nightWorkersRecordTestConditionMappingInputSchema.safeParse(mappingInput)
+				.success,
+		).toBe(false);
+	});
+
+	it("returns a non-retryable typed input failure for an invalid evidence set", async () => {
 		const result = await recordTestConditionMappingTool({
 			taskId: "task-1",
-			...mappingInput,
-			source: "coding_agent_assessment",
+			runId: "run-1",
+			repoRoot: "/tmp/repo",
+			verificationDocumentId: "verification-1",
+			evidenceSet: {
+				version: 1,
+				references: [
+					{
+						testName: "maps a condition",
+						conditionIds: ["AC-001", "AC-001"],
+					},
+				],
+			},
 		});
 
 		expect(result).toMatchObject({
@@ -58,29 +96,52 @@ describe("Coding Agent test condition mapping contract", () => {
 				retryable: false,
 				issues: [
 					{
-						path: ["rationale"],
-						message: "coding_agent_assessment requires rationale",
+						path: ["evidenceSet", "references", 0, "conditionIds"],
+						message: "conditionIds must be unique",
 					},
 				],
 			},
 		});
 	});
 
-	it("parses a valid mapping before returning a typed authority failure", async () => {
-		const result = await recordTestConditionMappingTool({
-			taskId: "missing-task",
-			...mappingInput,
-		});
+	it("returns missing schema evidence as a typed error", async () => {
+		const result = await recordTestConditionMappingTool(
+			{
+				taskId: "task-1",
+				runId: "run-1",
+				repoRoot: "/tmp/repo",
+				...evidenceSetInput,
+			},
+			{
+				recordTestEvidenceSetMappings: async () => {
+					throw new TestConditionMappingFailure(
+						"TEST_EVIDENCE_NOT_FOUND",
+						"Schema evidence was not found.",
+						"review_test_evidence_set",
+						[
+							{
+								path: ["evidenceSet", "references", 0],
+								message: "Best candidate similarity was 89%.",
+							},
+						],
+					);
+				},
+			},
+		);
 
 		expect(result).toMatchObject({
 			ok: false,
 			error: {
-				code: "TEST_MAPPING_AUTHORITY_MISMATCH",
+				code: "TEST_EVIDENCE_NOT_FOUND",
 				retryable: false,
+				recoveryAction: "review_test_evidence_set",
+				issues: [
+					{
+						path: ["evidenceSet", "references", 0],
+						message: "Best candidate similarity was 89%.",
+					},
+				],
 			},
 		});
-		expect(result.error?.message).not.toContain(
-			".omit() cannot be used on object schemas containing refinements",
-		);
 	});
 });

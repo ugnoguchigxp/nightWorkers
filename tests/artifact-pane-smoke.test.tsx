@@ -3,11 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
 import { ArtifactPane } from "../src/modules/nightworkers/components/ArtifactPane";
-import {
-	buildTaskEvent,
-	buildTaskMessage,
-	buildTaskRun,
-} from "./helpers/nightworkers-fixtures";
+import { buildTaskMessage } from "./helpers/nightworkers-fixtures";
 
 describe("ArtifactPane", () => {
 	it("renders files outline tree when project tree focus is selected", () => {
@@ -118,7 +114,7 @@ describe("ArtifactPane", () => {
 		expect(markup).not.toContain('aria-label="表示中の版を保存"');
 	});
 
-	it("passes live latest run events into the Plan Mode test panel", () => {
+	it("renders only Spec completion conditions in Evidence Check", () => {
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
 		});
@@ -151,33 +147,6 @@ describe("ArtifactPane", () => {
 				},
 			},
 		});
-		const latestRun = buildTaskRun({
-			status: "completed",
-			contextSnapshot: {
-				executionMode: "test",
-				testMode: { action: "plan_and_implement_tests" },
-			},
-			events: [],
-		});
-		const latestRunEvents = [
-			buildTaskEvent({
-				id: "verify-passed",
-				payloadJson: {
-					runEvent: {
-						type: "tool.call_finished",
-						data: {
-							toolName: "command_execution",
-							commandClass: "broad_verification",
-							command: "/bin/zsh -lc 'bun run verify'",
-							status: "completed",
-							exitCode: 0,
-							aggregatedOutput: "OK verify complete",
-						},
-					},
-				},
-			}),
-		];
-
 		const markup = renderToStaticMarkup(
 			<QueryClientProvider client={queryClient}>
 				<ArtifactPane
@@ -197,14 +166,20 @@ describe("ArtifactPane", () => {
 					selectedArtifact={{
 						id: "plan-mode-workspace-session-1",
 						taskId: "session-1",
-						kind: "test_mode",
-						title: "Test Mode",
-						source: { type: "test_mode" },
+						kind: "evidence_check",
+						title: "証跡チェック",
+						source: {
+							type: "verification_document",
+							verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+						},
 						createdAt: "2026-07-08T00:00:00Z",
-						metadata: {},
+						metadata: {
+							specMessageId: "feature-plan-message",
+							verificationDocumentId: "55555555-5555-4555-8555-555555555555",
+							verificationSidecarMessageId: "verification-message",
+							specArtifactId: "feature-plan-feature-plan-message",
+						},
 					}}
-					latestRun={latestRun}
-					latestRunEvents={latestRunEvents}
 					taskMessages={[featurePlan, verificationSidecar]}
 					activityArtifacts={[]}
 					fileEntries={[]}
@@ -224,9 +199,10 @@ describe("ArtifactPane", () => {
 				/>
 			</QueryClientProvider>,
 		);
-		expect(markup).toContain("テストモード");
-		expect(markup).toContain("ユニットテスト実行");
-		expect(markup).toContain("証跡テストチェック");
-		expect(markup).toContain("完了");
+		expect(markup).toContain("証跡チェック");
+		expect(markup).toContain("AC-005");
+		expect(markup).toContain("未確認");
+		expect(markup).not.toContain("ユニットテスト実行");
+		expect(markup).not.toContain("ワークフロー");
 	});
 });

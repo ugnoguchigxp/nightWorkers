@@ -76,7 +76,7 @@ describe("Mission Pilot repository", () => {
 				id: phaseRunId,
 				sessionId: session.id,
 				taskId,
-				phase: "test",
+				phase: "implementation",
 				cycle: 1,
 				attempt: 1,
 				runId,

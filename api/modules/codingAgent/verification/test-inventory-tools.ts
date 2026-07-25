@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { testConditionMappingWriteSchema } from "../../../../shared/schemas/verification-checklist.schema";
+import { testEvidenceSetMappingWriteSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
+import { recordTestEvidenceSetMappings } from "./test-evidence-mapping.service";
+import { collectTestInventory } from "./test-inventory.service";
 import {
-	collectTestInventory,
-	recordTestConditionMapping,
-} from "./test-inventory.service";
-import { TestConditionMappingFailure } from "./test-inventory-errors";
+	TestConditionMappingFailure,
+	TestInventoryFailure,
+} from "./test-inventory-errors";
 
 export async function collectTestInventoryTool(
 	input: Parameters<typeof collectTestInventory>[0],
@@ -23,23 +24,31 @@ export async function collectTestInventoryTool(
 			payload: inventory,
 		};
 	} catch (error) {
+		if (error instanceof TestInventoryFailure) {
+			return toolFailure("collect_test_inventory", startedAt, error, {
+				code: error.code,
+				retryable: error.retryable,
+				recoveryAction: error.recoveryAction,
+			});
+		}
 		return toolFailure("collect_test_inventory", startedAt, error);
 	}
 }
 
 export async function recordTestConditionMappingTool(
-	input: Omit<Parameters<typeof recordTestConditionMapping>[0], "taskId"> & {
-		taskId: string;
-	},
+	input: Parameters<typeof recordTestEvidenceSetMappings>[0],
+	dependencies: {
+		recordTestEvidenceSetMappings: typeof recordTestEvidenceSetMappings;
+	} = { recordTestEvidenceSetMappings },
 ): Promise<
 	WorkerToolResult<Awaited<
-		ReturnType<typeof recordTestConditionMapping>
+		ReturnType<typeof recordTestEvidenceSetMappings>
 	> | null>
 > {
 	const startedAt = new Date().toISOString();
 	try {
-		const parsed = testConditionMappingWriteSchema.parse(input);
-		const mapping = await recordTestConditionMapping(parsed);
+		const parsed = testEvidenceSetMappingWriteSchema.parse(input);
+		const mapping = await dependencies.recordTestEvidenceSetMappings(parsed);
 		return {
 			ok: true,
 			toolName: "record_test_condition_mapping",
@@ -69,6 +78,14 @@ function mappingToolFailure(
 		});
 	}
 	if (error instanceof TestConditionMappingFailure) {
+		return toolFailure("record_test_condition_mapping", startedAt, error, {
+			code: error.code,
+			retryable: error.retryable,
+			recoveryAction: error.recoveryAction,
+			issues: error.issues,
+		});
+	}
+	if (error instanceof TestInventoryFailure) {
 		return toolFailure("record_test_condition_mapping", startedAt, error, {
 			code: error.code,
 			retryable: error.retryable,

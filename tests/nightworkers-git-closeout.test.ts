@@ -130,7 +130,7 @@ async function createCloseoutFixture(
 		reviewRunStatus?: "running" | "done" | "failed" | "needs_human";
 		withSecurityEvidence?: boolean;
 		withBlockingFinding?: boolean;
-		withManagedTestEvidence?: boolean;
+		withManagedVerificationEvidence?: boolean;
 		managedCompletionOk?: boolean;
 		managedEvidenceRunMode?: "test" | "implementation";
 		withReviewCompletionEvent?: boolean;
@@ -192,16 +192,16 @@ async function createCloseoutFixture(
 		repositoryId: project.id,
 		recommendationId: recommendation.id,
 	});
-	if (input.withManagedTestEvidence) {
+	if (input.withManagedVerificationEvidence) {
 		const testStartedAt = new Date(Date.now() + 1_000);
 		const testRun = await repo.createTaskRun({
 			taskId: task.id,
 			repositoryId: project.id,
 			status: "completed",
 			workerKind: "native-local",
-			contextSnapshot: { executionMode: "test" },
-			summary: "Test Mode completed",
-			finalReport: "Managed Test Mode evidence completed.",
+			contextSnapshot: { executionMode: "implementation" },
+			summary: "Implementation verification completed",
+			finalReport: "Managed implementation evidence completed.",
 			startedAt: testStartedAt,
 			endedAt: testStartedAt,
 			finishedAt: testStartedAt,
@@ -287,7 +287,10 @@ async function createCloseoutFixture(
 				mcpTool: "completion_check",
 				ok: input.managedCompletionOk !== false,
 				status: "completed",
-				result: { ok: input.managedCompletionOk !== false },
+				result: {
+					ok: input.managedCompletionOk !== false,
+					verificationDocumentId: document.id,
+				},
 			},
 		});
 	}
@@ -302,7 +305,7 @@ async function createCloseoutFixture(
 				version: 2,
 				kind: "test_coverage",
 				requirement: "required",
-				summary: "Test evidence checked.",
+				summary: "Verification evidence checked.",
 			},
 			sourceEvidenceRefsJson: [],
 		});
@@ -565,7 +568,7 @@ describe("NightWorkers Git closeout API", () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 		});
 
 		const stateRes = await app.request(
@@ -586,7 +589,7 @@ describe("NightWorkers Git closeout API", () => {
 			withReviewRun: true,
 			reviewRunStatus: "done",
 			withReviewCompletionEvent: false,
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 		});
 		const stateRes = await app.request(
 			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
@@ -603,7 +606,7 @@ describe("NightWorkers Git closeout API", () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 			managedCompletionOk: false,
 		});
 		const stateRes = await app.request(
@@ -614,7 +617,10 @@ describe("NightWorkers Git closeout API", () => {
 			canCommit: true,
 			blockingCode: null,
 			evidence: {
-				test: { status: "incomplete", completionCheckEventId: null },
+				verification: {
+					status: "incomplete",
+					completionCheckEventId: null,
+				},
 			},
 		});
 	});
@@ -623,7 +629,7 @@ describe("NightWorkers Git closeout API", () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 			managedEvidenceRunMode: "implementation",
 		});
 		const stateRes = await app.request(
@@ -633,7 +639,7 @@ describe("NightWorkers Git closeout API", () => {
 		expect(await stateRes.json()).toMatchObject({
 			canCommit: true,
 			blockingCode: null,
-			evidence: { test: { status: "incomplete" } },
+			evidence: { verification: { status: "incomplete" } },
 		});
 	});
 
@@ -641,7 +647,7 @@ describe("NightWorkers Git closeout API", () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 			withHistoricalFailedEvidence: true,
 		});
 		const stateRes = await app.request(
@@ -651,16 +657,16 @@ describe("NightWorkers Git closeout API", () => {
 		expect(await stateRes.json()).toMatchObject({
 			canCommit: true,
 			state: "commit_ready",
-			evidence: { test: { status: "passed" } },
+			evidence: { verification: { status: "passed" } },
 		});
 	});
 
-	it("reports stale Test evidence without blocking Git commit", async () => {
+	it("reports stale verification evidence without blocking Git commit", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
 			reviewFixesApplied: true,
-			withManagedTestEvidence: true,
+			withManagedVerificationEvidence: true,
 		});
 		const stateRes = await app.request(
 			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
@@ -669,7 +675,7 @@ describe("NightWorkers Git closeout API", () => {
 		expect(await stateRes.json()).toMatchObject({
 			canCommit: true,
 			blockingCode: null,
-			evidence: { test: { status: "stale" } },
+			evidence: { verification: { status: "stale" } },
 		});
 	});
 

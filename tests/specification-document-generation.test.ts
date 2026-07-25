@@ -64,7 +64,7 @@ describe("Specification document generation", () => {
 			},
 			content: [
 				"## 完了条件",
-				"- [ ] UI に Test Mode ボタンが表示される",
+				"- [ ] UI に証跡チェックボタンが表示される",
 				"1. 実装計画の条件がチェックリスト化される",
 				"- [x] 完了済みメモは条件にしない",
 			].join("\n"),
@@ -73,11 +73,11 @@ describe("Specification document generation", () => {
 		expect(
 			result.document.conditions.map((condition) => condition.text),
 		).toEqual([
-			"UI に Test Mode ボタンが表示される",
+			"UI に証跡チェックボタンが表示される",
 			"実装計画の条件がチェックリスト化される",
 		]);
 		expect(result.content).toContain(
-			"- [AC-001] UI に Test Mode ボタンが表示される",
+			"- [AC-001] UI に証跡チェックボタンが表示される",
 		);
 		expect(result.content).toContain(
 			"1. [AC-002] 実装計画の条件がチェックリスト化される",

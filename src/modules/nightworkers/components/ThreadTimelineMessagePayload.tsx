@@ -9,13 +9,13 @@ export function MessagePayload({
 	message,
 	onOpenArtifact,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	message: TaskMessage;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	const { t } = useTranslation();
@@ -397,7 +397,7 @@ export function MessagePayload({
 			<ChatMarkdown
 				content={String(markdownDocumentData.content)}
 				onOpenProjectFile={onOpenProjectFile}
-				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		);
@@ -407,7 +407,7 @@ export function MessagePayload({
 			<ChatMarkdown
 				content={message.content}
 				onOpenProjectFile={onOpenProjectFile}
-				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		);

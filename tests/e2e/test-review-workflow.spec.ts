@@ -17,7 +17,7 @@ async function fixture(
 	request: APIRequestContext,
 	prompt: string,
 ): Promise<Fixture> {
-	const workspace = await createE2eWorkspaceDirectory("test-mode-");
+	const workspace = await createE2eWorkspaceDirectory("review-workflow-");
 	await fs.mkdir(path.join(workspace, "src"), { recursive: true });
 	await fs.writeFile(path.join(workspace, "src", "greeting.txt"), "TODO\n");
 	initializeE2eGitRepository(workspace);
@@ -38,7 +38,7 @@ async function fixture(
 	const repository = await request.post("/api/repositories", {
 		headers,
 		data: {
-			name: `Test mode ${Date.now()}`,
+			name: `Review workflow ${Date.now()}`,
 			localPath: workspace,
 			branch: "main",
 			allowed: true,
@@ -50,7 +50,7 @@ async function fixture(
 		headers,
 		data: {
 			repositoryId,
-			title: "Test mode fixture",
+			title: "Review workflow fixture",
 			description: prompt,
 			objective: prompt,
 			acceptanceCriteria: "Verification evidence exists.",
@@ -63,20 +63,6 @@ async function fixture(
 		repositoryId,
 		taskId: ((await task.json()) as { id: string }).id,
 	};
-}
-
-async function seedSpec(request: APIRequestContext, taskId: string) {
-	const response = await request.post("/api/e2e/fixtures/task-markdown", {
-		headers,
-		data: {
-			taskId,
-			content:
-				"# E2E verification plan\n\n## Completion Conditions\n\n- fixture verify",
-			intent: "implementation_plan",
-		},
-	});
-	expect(response.status(), await response.text()).toBe(201);
-	return ((await response.json()) as { specArtifactId: string }).specArtifactId;
 }
 
 async function waitFor(
@@ -119,104 +105,17 @@ async function startImplementation(request: APIRequestContext, taskId: string) {
 	return (await started.json()) as { id: string };
 }
 
-async function prepareTestModeReviewArtifact(request: APIRequestContext) {
+async function prepareReviewArtifact(request: APIRequestContext) {
 	const value = await fixture(request, "[fixture:success]");
-	const specArtifactId = await seedSpec(request, value.taskId);
-	const testMode = await request.post(
-		`/api/tasks/${value.taskId}/test-mode-run`,
-		{
-			headers,
-			data: { projectId: value.repositoryId, specArtifactId, mode: "test" },
-		},
-	);
-	expect(testMode.status(), await testMode.text()).toBe(201);
-	const testRun = (await testMode.json()) as { id: string };
-	await waitFor(request, testRun.id, ["completed"]);
+	const implementation = await startImplementation(request, value.taskId);
+	await waitFor(request, implementation.id, ["completed"]);
 	const created = await request.post(
-		`/api/runs/${testRun.id}/review-sessions`,
+		`/api/runs/${implementation.id}/review-sessions`,
 		{ headers },
 	);
 	expect(created.status(), await created.text()).toBe(201);
 	return value;
 }
-
-test.describe("Test Mode boundaries @regression", () => {
-	test.describe.configure({ mode: "serial", timeout: 60_000 });
-
-	test("Test Mode creates a separate run without runtime Todos", {
-		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-TEST-001"],
-	}, async ({ request }) => {
-		const value = await fixture(request, "[fixture:success]");
-		try {
-			const specArtifactId = await seedSpec(request, value.taskId);
-			const response = await request.post(
-				`/api/tasks/${value.taskId}/test-mode-run`,
-				{
-					headers,
-					data: { projectId: value.repositoryId, specArtifactId, mode: "test" },
-				},
-			);
-			expect(response.status(), await response.text()).toBe(201);
-			const started = (await response.json()) as { id: string };
-			const run = await waitFor(request, started.id, ["completed"]);
-			expect(run.todos).toEqual([]);
-			expect(JSON.stringify(run.events)).toContain(
-				"Test Mode fixture managed verification finished",
-			);
-		} finally {
-			await cleanup(request, value);
-		}
-	});
-
-	test("Test Mode rejects a missing spec artifact without creating a run", {
-		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-TEST-002"],
-	}, async ({ request }) => {
-		const value = await fixture(request, "[fixture:success]");
-		try {
-			const response = await request.post(
-				`/api/tasks/${value.taskId}/test-mode-run`,
-				{
-					headers,
-					data: {
-						projectId: value.repositoryId,
-						specArtifactId: "implementation-plan-missing",
-						mode: "test",
-					},
-				},
-			);
-			expect(response.status()).toBe(404);
-			const runs = await request.get(`/api/tasks/${value.taskId}/runs`, {
-				headers,
-			});
-			expect(await runs.json()).toEqual([]);
-		} finally {
-			await cleanup(request, value);
-		}
-	});
-
-	test("failed required verification does not complete Test Mode", {
-		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-TEST-003"],
-	}, async ({ request }) => {
-		const value = await fixture(request, "[fixture:verification_failure]");
-		try {
-			const specArtifactId = await seedSpec(request, value.taskId);
-			const response = await request.post(
-				`/api/tasks/${value.taskId}/test-mode-run`,
-				{
-					headers,
-					data: { projectId: value.repositoryId, specArtifactId, mode: "test" },
-				},
-			);
-			const started = (await response.json()) as { id: string };
-			const run = await waitFor(request, started.id, ["needs_human"]);
-			expect(JSON.stringify(run.events)).toContain(
-				"Deterministic verification failed",
-			);
-		} finally {
-			await cleanup(request, value);
-		}
-	});
-});
 
 test.describe("Review Mode boundaries @regression", () => {
 	test.describe.configure({ mode: "serial", timeout: 60_000 });
@@ -259,10 +158,10 @@ test.describe("Review Mode boundaries @regression", () => {
 		}
 	});
 
-	test("Test Mode result opens the persisted Review artifact route", {
+	test("Implementation result opens the persisted Review artifact route", {
 		tag: ["@deterministic", "@p0", "@scenario:NW-E2E-REVIEW-002"],
 	}, async ({ page, request }) => {
-		const value = await prepareTestModeReviewArtifact(request);
+		const value = await prepareReviewArtifact(request);
 		try {
 			await page.goto(`/sessions/${value.taskId}?artifact=review_status`);
 			await expect(page.locator(".nightworkers-shell")).toBeVisible();
@@ -275,7 +174,7 @@ test.describe("Review Mode boundaries @regression", () => {
 	test("Review artifact deep link survives reload and browser history", {
 		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-NAV-001"],
 	}, async ({ page, request }) => {
-		const value = await prepareTestModeReviewArtifact(request);
+		const value = await prepareReviewArtifact(request);
 		try {
 			await page.goto(`/sessions/${value.taskId}?artifact=review_status`);
 			await page.reload();

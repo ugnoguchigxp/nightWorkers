@@ -82,11 +82,11 @@ Coding Agent
   |
   | Task / Todo / specificationから必要性を判断
   v
-collect_test_inventory
+collect_test_inventory  ※inventoryを単独確認したい場合だけ
   |
   | typed inventory evidence
   v
-record_test_condition_mapping  ※source markerがなく、condition対応の明示assessmentが必要な場合だけ
+record_test_condition_mapping  ※Schema evidence setを一括解決・保存。current inventoryはtool内で再収集
   |
   | typed mapping evidence
   v
@@ -160,18 +160,18 @@ qualityGatePassed =
 
 ### 4.5 Condition mappingの所有権
 
-testcaseと完了条件の意味上の対応をhostがtest名の類似、file名、Task本文、error messageから推測しない。mappingは次のいずれかの明示証跡から作る。
+testcaseと完了条件の意味上の対応をhostがtest名、file名、Task本文、error messageから推測しない。Schemaのtest evidence setがconditionと期待test identityの対応を明示し、hostはそのidentityをcurrent inventoryへ解決する。identity解決では表記揺れを許容するためPure TypeScriptの決定的な類似度を使い、test名と指定file pathがそれぞれ90%以上一致した場合だけ同一testとして扱う。
 
 ```ts
 type TestConditionMappingSource =
   | "declared_in_test"
-  | "coding_agent_assessment";
+  | "coding_agent_assessment"
+  | "schema_evidence_set";
 ```
 
-- `declared_in_test`: test frameworkのtag、trait、annotation、または厳密な`AC-001`形式の構造markerとしてtest sourceに宣言されている。adapterはidentifierを抽出するだけで、test本文の意味を推測しない。
-- `coding_agent_assessment`: Coding Agentがverification documentとtest sourceを読み、明示toolでcase IDとcondition IDの対応、根拠、source digestを保存する。
+- `schema_evidence_set`: Schemaがtest identityとcondition IDの対応を明示し、toolがcurrent inventory上の同一testを90%以上のidentity一致率で解決する。
 
-markerがない既存testを、hostが自動mappingしてはならない。Coding Agentはtestへ構造markerを追加するか、明示assessmentを保存するか、対応testが不足していると判断して実装・再計画する。
+`declared_in_test`と`coding_agent_assessment`は既存の永続化済みrecordを読み出すためだけにschemaへ残す。公開toolの書き込みcontractは`schema_evidence_set`だけであり、旧来の1件mappingやassessmentを書き込む選択肢は公開しない。
 
 serverはcase、condition、inventory、source digest、revision、idempotencyを検証するが、rationaleの意味的妥当性は判定しない。意味上の十分性はCoding Agentが所有し、Mission Pilot起動中はMission Pilotがその結果を評価する。
 
@@ -217,28 +217,46 @@ type CollectTestInventoryOutput = {
 
 ### 5.2 `record_test_condition_mapping`
 
-test inventoryの存在確認と意味mappingの責務を混ぜないため、Coding Agentが必要な場合だけ呼ぶ明示的なevidence mutation toolとして追加する。
+旧来の1 mapping単位の入力は廃止する。Schema化されたtest evidence setを1回で受け取り、current source stateの技術スタック別inventoryを収集し、全参照を解決してからmappingを一括保存する。
 
 ```ts
 type RecordTestConditionMappingInput = {
+  verificationDocumentId: string;
+  cwd?: string;
+  evidenceSet: {
+    version: 1;
+    references: Array<{
+      testName: string;
+      filePath?: string;
+      runner?: VerificationRunner;
+      conditionIds: string[];
+    }>;
+  };
+};
+
+type RecordTestConditionMappingOutput = {
   inventoryId: string;
-  mappings: Array<{
-    caseId: string;
-    conditionIds: string[];
-    rationale: string;
-    sourceFileDigest: string;
+  sourceDigest: string;
+  matchThreshold: 0.9;
+  referenceCount: number;
+  mappingCount: number;
+  matches: Array<{
+    referenceIndex: number;
+    caseKey: string;
+    score: number;
   }>;
-  idempotencyKey: string;
 };
 ```
 
 serverは次を検証する。
 
-- inventory、case、verification document、conditionが存在する。
-- caseが`file_candidate`ではなく、runner/static collectorで収集されている。
-- source fileがrepository内にあり、指定digestと現在digestが一致する。
-- inventoryのworkspace digestがstaleではない。
-- 同じidempotency keyの再送が同じ結果を返す。
+- verification documentとconditionがrequest-scoped taskに属する。
+- repository境界内をPure TypeScriptで走査し、技術スタック別の構造的なtest宣言として確認できたactive caseだけを候補にする。このtool内ではtest runnerや別worker toolを起動しない。
+- Unicode、大小文字、空白、句読点を正規化したLevenshtein比率でtest identityを比較する。
+- test名は90%以上、file path指定時はfile pathも90%以上一致する。
+- runner指定時はrunnerが一致する。
+- 未発見は`TEST_EVIDENCE_NOT_FOUND`、90%以上一致する候補が複数あればscore差にかかわらず`TEST_EVIDENCE_AMBIGUOUS`として参照index付きで返す。
+- 全参照が解決し、source snapshotがcurrentな場合だけinventoryとmappingを同じtransactionで一括保存する。
 
 toolはTodo、Task、Run statusを更新しない。Coding Agentが記録したmappingはprovenance付きappend-only evidenceとして保存する。
 
@@ -475,7 +493,7 @@ Frontendの表示modelと純粋projectionは`src/modules/codingAgent`へ置き�
 tool descriptionは固定workflowを命令せず、次の利用条件と保証範囲を日本語で明示する。
 
 - `collect_test_inventory`: 完了条件が自動test証跡を要求する場合、またはtest定義の存在を確認する必要がある場合に、現在source stateのtest inventoryを取得する。
-- `record_test_condition_mapping`: markerのない既存testについて、Coding Agentがtest sourceとconditionを読んで判断した明示mappingをprovenance付きで保存する。
+- `record_test_condition_mapping`: Schemaのtest evidence setをPure TypeScriptで探索したcurrent inventoryへ90%以上のidentity一致率で解決し、inventoryと全mappingを一括保存する。未発見または複数候補はtyped errorとして返す。
 - `run_check`: 選択したcheck commandを実行し、結果と構造化証跡を返す。inventoryを暗黙生成しない。
 - `completion_check`: 現在保存されているinventory、test execution、verify、condition evidenceを読み、未確認理由をtyped resultで返す。
 

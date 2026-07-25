@@ -1,3 +1,5 @@
+import { TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA } from "../../../../../shared/modules/codingAgent";
+import { testEvidenceSetMappingJsonSchema } from "../../../../../shared/schemas/verification-checklist.schema";
 import type { ProviderToolDefinition } from "../../../../services/structured-llm/tool-calls";
 import type { WorkerToolName } from "../../../../services/tool-policy/types";
 import { todoCommandJsonSchema } from "./native-api-todo-tool";
@@ -273,30 +275,8 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		workerToolName: "record_test_condition_mapping",
 		definition: {
 			name: "record_test_condition_mapping",
-			description:
-				"Persist an explicit test-case to condition mapping from a collected test inventory. Use source='coding_agent_assessment' only with an explicit rationale.",
-			inputSchema: objectSchema(
-				{
-					verificationDocumentId: { type: "string" },
-					inventoryId: { type: "string" },
-					caseKey: { type: "string" },
-					conditionId: { type: "string" },
-					source: {
-						type: "string",
-						enum: ["declared_in_test", "coding_agent_assessment"],
-					},
-					rationale: { type: "string" },
-					sourceDigest: { type: "string" },
-				},
-				[
-					"verificationDocumentId",
-					"inventoryId",
-					"caseKey",
-					"conditionId",
-					"source",
-					"sourceDigest",
-				],
-			),
+			description: TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
+			inputSchema: testEvidenceSetMappingJsonSchema,
 		},
 	},
 	{

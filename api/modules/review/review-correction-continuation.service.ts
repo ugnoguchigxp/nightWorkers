@@ -5,7 +5,7 @@ import { autoStartReviewSessionForRun } from "./review-mode.service";
 import { startReviewRunForSession } from "./review-run.service";
 
 export type ReviewCorrectionState = {
-	phase?: "implementation" | "test" | "review";
+	phase?: "implementation" | "review";
 	reviewSessionId?: string;
 	sourceReviewRunId?: string;
 	commitChanges?: boolean;
@@ -21,30 +21,7 @@ export async function continueReviewCorrectionAfterRun(input: {
 }) {
 	const correction = readReviewCorrectionState(input.contextSnapshot);
 	if (!correction || !isSuccessfulCorrectionStep(input.status)) return false;
-	if (correction.phase === "implementation") {
-		const { startTaskRun } = await import(
-			"../nightworkers/run-orchestration/start-task-run-entry"
-		);
-		const testRun = await startTaskRun(input.taskId, {
-			executionModeSource: "test_mode",
-			runtimeOptionsPatch: {
-				testMode: { action: "run_unit_tests", correctionOf: input.runId },
-				reviewCorrection: {
-					...correction,
-					phase: "test",
-					sourceImplementationRunId: input.runId,
-				},
-			},
-		});
-		await recordCorrectionTransition({
-			runId: input.runId,
-			taskId: input.taskId,
-			phase: "test",
-			nextRunId: testRun?.id ?? null,
-		});
-		return true;
-	}
-	if (correction.phase !== "test") return false;
+	if (correction.phase !== "implementation") return false;
 	const reviewSession = await autoStartReviewSessionForRun(input.runId);
 	const reviewResult = await startReviewRunForSession(
 		reviewSession.session.id,
@@ -107,7 +84,7 @@ function isSuccessfulCorrectionStep(status: TaskRunStatus) {
 async function recordCorrectionTransition(input: {
 	runId: string;
 	taskId: string;
-	phase: "test" | "review";
+	phase: "review";
 	nextRunId: string | null;
 }) {
 	await repo.createRunEvent({

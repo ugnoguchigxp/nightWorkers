@@ -1,13 +1,12 @@
 import crypto from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
-import { missionPilotTestDecisionSchema } from "../../../shared/modules/missionPilot";
+import { desc, eq } from "drizzle-orm";
 import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import {
 	missionPilotContextSnapshots,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
-	missionPilotTestSnapshots,
+	missionPilotVerificationSnapshots,
 } from "../../db/mission-pilot-schema";
 import { taskEvents, taskRuns, tasks } from "../../db/schema";
 import {
@@ -21,30 +20,32 @@ import {
 import { digestText } from "../../services/text-digest";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import {
-	extractFirstJsonObject,
-	prepareImplementationRework,
 	readRecord,
 	setMissionPilotAttention,
 } from "./mission-pilot-post-queue-review.service";
-import { evaluateTestCompletionGate } from "./mission-pilot-post-queue-state";
-import { resolvePersistedTestEvidence } from "./mission-pilot-test-evidence";
+import { evaluateVerificationCompletionGate } from "./mission-pilot-post-queue-state";
+import { resolvePersistedVerificationEvidence } from "./mission-pilot-verification-evidence";
 
-export async function continueAfterTestRun(input: {
+export async function finalizeImplementationVerification(input: {
 	session: typeof missionPilotSessions.$inferSelect;
 	phaseRun: typeof missionPilotPhaseRuns.$inferSelect;
 	runId: string;
+	changedPaths: string[];
 }) {
 	const [existingSnapshot] = await db
 		.select()
-		.from(missionPilotTestSnapshots)
-		.where(eq(missionPilotTestSnapshots.phaseRunId, input.phaseRun.id))
+		.from(missionPilotVerificationSnapshots)
+		.where(
+			eq(missionPilotVerificationSnapshots.sourcePhaseRunId, input.phaseRun.id),
+		)
 		.limit(1);
 	if (existingSnapshot) {
-		return buildReviewContinuationFromTestSnapshot({
+		return buildReviewContinuationFromVerificationSnapshot({
 			sessionId: input.session.id,
 			snapshotId: existingSnapshot.id,
 		});
 	}
+
 	const [run] = await db
 		.select()
 		.from(taskRuns)
@@ -52,17 +53,14 @@ export async function continueAfterTestRun(input: {
 		.limit(1);
 	const verificationDocumentId =
 		input.session.queueHandoffJson?.verificationDocumentId;
-	if (!verificationDocumentId) {
-		await setMissionPilotAttention(
-			input.session.id,
-			input.phaseRun.id,
-			"verification_document_missing",
-		);
-		return {
-			kind: "attention",
-			reasons: ["verification_document_missing"],
-		} as const;
+	if (!run || !verificationDocumentId) {
+		const reason = run
+			? "verification_document_missing"
+			: "implementation_run_missing";
+		await setMissionPilotAttention(input.session.id, input.phaseRun.id, reason);
+		return { kind: "attention", reasons: [reason] } as const;
 	}
+
 	const checklist = await db
 		.select()
 		.from(verificationChecklistItems)
@@ -76,17 +74,11 @@ export async function continueAfterTestRun(input: {
 	const evidence = await db
 		.select()
 		.from(verificationEvidenceRuns)
-		.where(
-			and(
-				eq(verificationEvidenceRuns.runId, input.runId),
-				eq(
-					verificationEvidenceRuns.verificationDocumentId,
-					verificationDocumentId,
-				),
-			),
-		);
-	const evidenceResolution = resolvePersistedTestEvidence({
-		historyRows: evidence,
+		.where(eq(verificationEvidenceRuns.runId, input.runId));
+	const evidenceResolution = resolvePersistedVerificationEvidence({
+		historyRows: evidence.filter(
+			(item) => item.verificationDocumentId === verificationDocumentId,
+		),
 	});
 	const acceptedEvidenceIds = new Set(
 		evidenceResolution.acceptedEvidence.map((item) => item.id),
@@ -107,8 +99,8 @@ export async function continueAfterTestRun(input: {
 			status: item.status,
 		}),
 	).length;
-	const gate = evaluateTestCompletionGate({
-		runStatus: run?.status ?? "missing",
+	const gate = evaluateVerificationCompletionGate({
+		runStatus: run.status,
 		verificationDocumentMatches: completionCheckMatchesVerificationDocument(
 			completionCheck,
 			verificationDocumentId,
@@ -126,62 +118,23 @@ export async function continueAfterTestRun(input: {
 			.length,
 		contextDigestMatches:
 			input.phaseRun.inputContextDigest === input.session.contextDigest,
-		sourceChangedAfterTest: false,
 	});
 	if (!gate.pass) {
-		const testDecision = parseStructuredTestDecision(run?.finalReport ?? "");
-		if (
-			testDecision?.verdict === "rework" &&
-			testDecision.defectOwner === "test"
-		) {
-			return prepareTestRetry({
-				session: input.session,
-				phaseRun: input.phaseRun,
-				reworkPacket: {
-					summary: testDecision.summary,
-					failedConditionIds: testDecision.failedConditionIds,
-					affectedPaths: testDecision.affectedPaths,
-				},
-			});
-		}
-		if (
-			testDecision?.verdict === "rework" &&
-			testDecision.defectOwner === "implementation"
-		) {
-			return prepareImplementationRework({
-				session: input.session,
-				phaseRun: input.phaseRun,
-				source: "test",
-				reworkPacket: testDecision.implementationRework ?? {
-					summary: testDecision.summary,
-				},
-			});
-		}
 		await setMissionPilotAttention(
 			input.session.id,
 			input.phaseRun.id,
 			gate.reasons.join(","),
 			{
-				errorCode: "MISSION_PILOT_TEST_GATE_REJECTED",
+				errorCode: "MISSION_PILOT_VERIFICATION_GATE_REJECTED",
 				reasonCodes: gate.reasons,
 				evidence: {
-					testEvidenceHistorySummary: evidenceResolution.historySummary,
+					verificationEvidenceHistorySummary: evidenceResolution.historySummary,
 				},
 			},
 		);
 		return { kind: "attention", reasons: gate.reasons } as const;
 	}
-	const now = new Date();
-	const snapshotId = crypto.randomUUID();
-	const checklistDigest = digestText(
-		JSON.stringify(
-			required.map((item) => ({
-				conditionId: item.conditionId,
-				status: item.status,
-				evidenceIds: item.evidenceIdsJson,
-			})),
-		),
-	);
+
 	const [latestContext] = await db
 		.select()
 		.from(missionPilotContextSnapshots)
@@ -199,13 +152,35 @@ export async function continueAfterTestRun(input: {
 			reasons: ["context_snapshot_missing"],
 		} as const;
 	}
+
+	const snapshotId = crypto.randomUUID();
+	const checklistDigest = digestText(
+		JSON.stringify(
+			required.map((item) => ({
+				conditionId: item.conditionId,
+				status: item.status,
+				evidenceIds: item.evidenceIdsJson,
+			})),
+		),
+	);
 	const nextContext = {
 		...latestContext.contextJson,
 		execution: {
 			...readRecord(latestContext.contextJson.execution),
-			test: {
+			implementation: {
+				...readRecord(
+					readRecord(latestContext.contextJson.execution).implementation,
+				),
+				currentCycle: input.phaseRun.cycle,
+				latestAcceptedRunId: run.id,
+				changedPaths: input.changedPaths,
+				diffDigest: run.diffPatch ? digestText(run.diffPatch) : null,
+				finalReportSummary: run.summary ?? null,
+			},
+			verification: {
 				snapshotId,
-				phaseRunId: input.phaseRun.id,
+				sourcePhaseRunId: input.phaseRun.id,
+				sourceRunId: run.id,
 				checklistDigest,
 				requiredTotal: required.length,
 				requiredComplete,
@@ -219,13 +194,14 @@ export async function continueAfterTestRun(input: {
 	};
 	const nextRevision = input.session.contextRevision + 1;
 	const nextDigest = digestText(JSON.stringify(nextContext));
+	const now = new Date();
 	const snapshotCreated = await db.transaction(async (tx) => {
 		const inserted = await tx
-			.insert(missionPilotTestSnapshots)
+			.insert(missionPilotVerificationSnapshots)
 			.values({
 				id: snapshotId,
 				sessionId: input.session.id,
-				phaseRunId: input.phaseRun.id,
+				sourcePhaseRunId: input.phaseRun.id,
 				verificationDocumentId,
 				contextRevision: input.session.contextRevision,
 				contextDigest: input.session.contextDigest,
@@ -238,27 +214,27 @@ export async function continueAfterTestRun(input: {
 					(item) => item.id,
 				),
 				completionCheckEventId: completionCheck?.eventId ?? "",
-				testChangedPathsJson: [],
+				changedPathsJson: input.changedPaths,
 				verdict: "pass",
 				snapshotJson: {
 					checklistDigest,
 					evidenceRunIds: evidenceResolution.acceptedEvidence.map(
 						(item) => item.id,
 					),
-					testEvidenceHistorySummary: evidenceResolution.historySummary,
+					verificationEvidenceHistorySummary: evidenceResolution.historySummary,
 				},
 				createdAt: now,
 			})
 			.onConflictDoNothing({
-				target: missionPilotTestSnapshots.phaseRunId,
+				target: missionPilotVerificationSnapshots.sourcePhaseRunId,
 			})
-			.returning({ id: missionPilotTestSnapshots.id });
+			.returning({ id: missionPilotVerificationSnapshots.id });
 		if (!inserted[0]) return false;
 		await tx.insert(missionPilotContextSnapshots).values({
 			id: crypto.randomUUID(),
 			sessionId: input.session.id,
 			revision: nextRevision,
-			reason: "test_completed",
+			reason: "implementation_verified",
 			contextJson: nextContext,
 			digest: nextDigest,
 			tokenEstimate: Math.ceil(JSON.stringify(nextContext).length / 4),
@@ -271,10 +247,10 @@ export async function continueAfterTestRun(input: {
 				verdict: "pass",
 				evidenceJson: {
 					...input.phaseRun.evidenceJson,
+					verificationSnapshotId: snapshotId,
 					acceptedEvidenceRunIds: evidenceResolution.acceptedEvidence.map(
 						(item) => item.id,
 					),
-					testEvidenceHistorySummary: evidenceResolution.historySummary,
 				},
 				outputContextRevision: nextRevision,
 				finishedAt: now,
@@ -288,7 +264,7 @@ export async function continueAfterTestRun(input: {
 				contextDigest: nextDigest,
 				activeRunId: null,
 				activePhaseRunId: null,
-				activeTestSnapshotId: snapshotId,
+				activeVerificationSnapshotId: snapshotId,
 				reviewCycle: input.session.reviewCycle + 1,
 				updatedAt: now,
 			})
@@ -302,42 +278,49 @@ export async function continueAfterTestRun(input: {
 	if (!snapshotCreated) {
 		const [persistedSnapshot] = await db
 			.select()
-			.from(missionPilotTestSnapshots)
-			.where(eq(missionPilotTestSnapshots.phaseRunId, input.phaseRun.id))
+			.from(missionPilotVerificationSnapshots)
+			.where(
+				eq(
+					missionPilotVerificationSnapshots.sourcePhaseRunId,
+					input.phaseRun.id,
+				),
+			)
 			.limit(1);
-		if (!persistedSnapshot)
+		if (!persistedSnapshot) {
 			throw new Error(
-				"Mission Pilot Test snapshot conflict was not recoverable",
+				"Mission Pilot verification snapshot conflict was not recoverable",
 			);
-		return buildReviewContinuationFromTestSnapshot({
+		}
+		return buildReviewContinuationFromVerificationSnapshot({
 			sessionId: input.session.id,
 			snapshotId: persistedSnapshot.id,
 		});
 	}
+
 	await appendMissionPilotEvent({
 		sessionId: input.session.id,
 		taskId: input.session.taskId,
-		eventType: "test_mode.snapshot_frozen",
+		eventType: "verification.snapshot_frozen",
 		phase: "review_preparing",
 		cycle: input.phaseRun.cycle,
 		contextRevision: nextRevision,
 		contextDigest: nextDigest,
-		dedupeKey: `test:${input.phaseRun.cycle}:snapshot:${input.runId}`,
+		dedupeKey: `verification:${input.phaseRun.cycle}:snapshot:${input.runId}`,
 		sourceKind: "verification",
 		sourceId: snapshotId,
 		payload: {
 			snapshotId,
 			checklistDigest,
-			testEvidenceHistorySummary: evidenceResolution.historySummary,
+			verificationEvidenceHistorySummary: evidenceResolution.historySummary,
 		},
 	});
-	return buildReviewContinuationFromTestSnapshot({
+	return buildReviewContinuationFromVerificationSnapshot({
 		sessionId: input.session.id,
 		snapshotId,
 	});
 }
 
-export async function buildReviewContinuationFromTestSnapshot(input: {
+export async function buildReviewContinuationFromVerificationSnapshot(input: {
 	sessionId: string;
 	snapshotId: string;
 }) {
@@ -348,46 +331,29 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 		.limit(1);
 	const [snapshot] = await db
 		.select()
-		.from(missionPilotTestSnapshots)
-		.where(eq(missionPilotTestSnapshots.id, input.snapshotId))
+		.from(missionPilotVerificationSnapshots)
+		.where(eq(missionPilotVerificationSnapshots.id, input.snapshotId))
 		.limit(1);
-	const [testPhaseRun] = snapshot
+	const [sourcePhaseRun] = snapshot
 		? await db
 				.select()
 				.from(missionPilotPhaseRuns)
-				.where(eq(missionPilotPhaseRuns.id, snapshot.phaseRunId))
+				.where(eq(missionPilotPhaseRuns.id, snapshot.sourcePhaseRunId))
 				.limit(1)
 		: [];
 	if (
 		!session ||
 		!snapshot ||
-		!testPhaseRun ||
+		!sourcePhaseRun ||
 		snapshot.sessionId !== session.id ||
-		testPhaseRun.sessionId !== session.id ||
-		testPhaseRun.phase !== "test"
+		sourcePhaseRun.sessionId !== session.id ||
+		sourcePhaseRun.phase !== "implementation"
 	) {
-		return { kind: "attention", reasons: ["test_snapshot_missing"] } as const;
-	}
-	const [anchor] = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(
-			and(
-				eq(missionPilotPhaseRuns.sessionId, session.id),
-				eq(missionPilotPhaseRuns.phase, "implementation"),
-				eq(missionPilotPhaseRuns.status, "completed"),
-			),
-		)
-		.orderBy(
-			desc(missionPilotPhaseRuns.cycle),
-			desc(missionPilotPhaseRuns.attempt),
-		)
-		.limit(1);
-	if (!anchor)
 		return {
 			kind: "attention",
-			reasons: ["implementation_anchor_missing"],
+			reasons: ["verification_snapshot_missing"],
 		} as const;
+	}
 	const [latestContext] = await db
 		.select()
 		.from(missionPilotContextSnapshots)
@@ -400,25 +366,27 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 	return {
 		kind: "start_review" as const,
 		input: {
-			anchorRunId: anchor.runId,
-			targetRunIds: [anchor.runId, testPhaseRun.runId],
+			anchorRunId: sourcePhaseRun.runId,
+			targetRunIds: [sourcePhaseRun.runId],
 			targetManifestContext: {
 				contextDigest: session.contextDigest,
-				testSnapshotId: snapshot.id,
-				testSnapshotDigest: digestText(
+				verificationSnapshotId: snapshot.id,
+				verificationSnapshotDigest: digestText(
 					JSON.stringify({
 						id: snapshot.id,
-						phaseRunId: snapshot.phaseRunId,
+						sourcePhaseRunId: snapshot.sourcePhaseRunId,
 						checklistDigest: snapshot.checklistDigest,
 						evidenceRunIds: snapshot.evidenceRunIdsJson,
 						completionCheckEventId: snapshot.completionCheckEventId,
-						testChangedPaths: snapshot.testChangedPathsJson,
+						changedPaths: snapshot.changedPathsJson,
 						snapshot: snapshot.snapshotJson,
 					}),
 				),
 				sourceRuns: [
-					{ runId: anchor.runId, role: "implementation" as const },
-					{ runId: testPhaseRun.runId, role: "test" as const },
+					{
+						runId: sourcePhaseRun.runId,
+						role: "implementation" as const,
+					},
 				],
 			},
 			missionPilot: {
@@ -430,81 +398,4 @@ export async function buildReviewContinuationFromTestSnapshot(input: {
 			},
 		},
 	};
-}
-
-export async function prepareTestRetry(input: {
-	session: typeof missionPilotSessions.$inferSelect;
-	phaseRun: typeof missionPilotPhaseRuns.$inferSelect;
-	reworkPacket: unknown;
-}) {
-	if (input.phaseRun.attempt >= 3) {
-		await setMissionPilotAttention(
-			input.session.id,
-			input.phaseRun.id,
-			"test_retry_limit",
-		);
-		return { kind: "attention", reasons: ["test_retry_limit"] } as const;
-	}
-	const handoff = input.session.queueHandoffJson;
-	if (!handoff)
-		return { kind: "attention", reasons: ["queue_handoff_missing"] } as const;
-	const now = new Date();
-	await db.transaction(async (tx) => {
-		await tx
-			.update(missionPilotPhaseRuns)
-			.set({
-				status: "completed",
-				verdict: "rework",
-				evidenceJson: { reworkPacket: input.reworkPacket },
-				finishedAt: now,
-			})
-			.where(eq(missionPilotPhaseRuns.id, input.phaseRun.id));
-		await tx
-			.update(missionPilotSessions)
-			.set({
-				phase: "test_preparing",
-				activeRunId: null,
-				activePhaseRunId: null,
-				updatedAt: now,
-			})
-			.where(eq(missionPilotSessions.id, input.session.id));
-	});
-	return {
-		kind: "start_test",
-		input: {
-			projectId: input.session.repositoryId,
-			taskId: input.session.taskId,
-			specArtifactId: handoff.featurePlanMessageId,
-			verificationDocumentId: handoff.verificationDocumentId,
-			missionPilot: {
-				sessionId: input.session.id,
-				cycle: input.session.testCycle,
-				contextRevision: input.session.contextRevision,
-				contextDigest: input.session.contextDigest,
-			},
-		},
-	} as const;
-}
-
-export function parseStructuredTestDecision(text: string) {
-	const trimmed = text.trim();
-	const candidates = [trimmed, extractFirstJsonObject(trimmed)].filter(
-		(value): value is string => Boolean(value),
-	);
-	const firstFence = trimmed.indexOf("```json");
-	if (firstFence >= 0) {
-		const start = trimmed.indexOf("\n", firstFence);
-		const end = trimmed.indexOf("```", start + 1);
-		if (start >= 0 && end > start)
-			candidates.unshift(trimmed.slice(start + 1, end).trim());
-	}
-	for (const candidate of candidates) {
-		try {
-			const parsed = missionPilotTestDecisionSchema.safeParse(
-				JSON.parse(candidate),
-			);
-			if (parsed.success) return parsed.data;
-		} catch {}
-	}
-	return null;
 }

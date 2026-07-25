@@ -5,11 +5,11 @@ import type { ReviewTarget, ReviewTargetManifest } from "./review-mode.model";
 
 export type ReviewTargetManifestContext = {
 	contextDigest: string;
-	testSnapshotId: string;
-	testSnapshotDigest: string;
+	verificationSnapshotId: string;
+	verificationSnapshotDigest: string;
 	sourceRuns: Array<{
 		runId: string;
-		role: "implementation" | "test";
+		role: "implementation";
 	}>;
 };
 
@@ -39,11 +39,12 @@ export async function buildReviewTargetManifest(input: {
 		});
 	}
 	const unsigned = {
-		version: 1 as const,
+		version: 2 as const,
 		taskId: input.target.taskId,
 		contextDigest: input.context?.contextDigest ?? null,
-		testSnapshotId: input.context?.testSnapshotId ?? null,
-		testSnapshotDigest: input.context?.testSnapshotDigest ?? null,
+		verificationSnapshotId: input.context?.verificationSnapshotId ?? null,
+		verificationSnapshotDigest:
+			input.context?.verificationSnapshotDigest ?? null,
 		sourceRuns,
 		targetFiles: input.target.targetFiles
 			.map((file) => ({
@@ -65,7 +66,7 @@ export function readReviewTargetManifest(
 	const context = record(contextSnapshot);
 	const reviewRun = record(context.reviewRun);
 	const manifest = record(reviewRun.targetManifest);
-	if (manifest.version !== 1 || typeof manifest.digest !== "string")
+	if (manifest.version !== 2 || typeof manifest.digest !== "string")
 		return null;
 	const unsigned = parseUnsignedManifest(manifest);
 	if (!unsigned || digestText(JSON.stringify(unsigned)) !== manifest.digest)
@@ -79,8 +80,8 @@ function parseUnsignedManifest(
 	if (
 		typeof manifest.taskId !== "string" ||
 		!nullableString(manifest.contextDigest) ||
-		!nullableString(manifest.testSnapshotId) ||
-		!nullableString(manifest.testSnapshotDigest) ||
+		!nullableString(manifest.verificationSnapshotId) ||
+		!nullableString(manifest.verificationSnapshotDigest) ||
 		!Array.isArray(manifest.sourceRuns) ||
 		!Array.isArray(manifest.targetFiles)
 	)
@@ -91,7 +92,7 @@ function parseUnsignedManifest(
 		sourceRuns.some(
 			(source) =>
 				typeof source.runId !== "string" ||
-				!(["implementation", "test"] as unknown[]).includes(source.role) ||
+				source.role !== "implementation" ||
 				typeof source.status !== "string" ||
 				typeof source.diffDigest !== "string" ||
 				typeof source.finalReportDigest !== "string",
@@ -106,11 +107,13 @@ function parseUnsignedManifest(
 	)
 		return null;
 	return {
-		version: 1,
+		version: 2,
 		taskId: manifest.taskId,
 		contextDigest: manifest.contextDigest as string | null,
-		testSnapshotId: manifest.testSnapshotId as string | null,
-		testSnapshotDigest: manifest.testSnapshotDigest as string | null,
+		verificationSnapshotId: manifest.verificationSnapshotId as string | null,
+		verificationSnapshotDigest: manifest.verificationSnapshotDigest as
+			| string
+			| null,
 		sourceRuns: sourceRuns as ReviewTargetManifest["sourceRuns"],
 		targetFiles: targetFiles as ReviewTargetManifest["targetFiles"],
 	};

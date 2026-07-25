@@ -56,7 +56,7 @@ export function useArtifactPaneSelection(input: {
 	const showBlueprintWorkspace =
 		displayArtifact?.kind === "plan_mode_workspace";
 	const showReviewStatus = displayArtifact?.kind === "review_status";
-	const showTestMode = displayArtifact?.kind === "test_mode";
+	const showEvidenceCheck = displayArtifact?.kind === "evidence_check";
 	const showBlueprint = displayArtifact?.kind === "app_blueprint";
 	const showComponentDesign =
 		displayArtifact?.kind === "component_design" ||
@@ -128,7 +128,7 @@ export function useArtifactPaneSelection(input: {
 		showDiff,
 		showBlueprintWorkspace,
 		showReviewStatus,
-		showTestMode,
+		showEvidenceCheck,
 		showBlueprint,
 		showComponentDesign,
 		taskMessageId,

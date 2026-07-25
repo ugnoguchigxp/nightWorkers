@@ -1,45 +1,22 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq } from "drizzle-orm";
-import {
-	type TestConditionMapping,
-	type TestConditionMappingWrite,
-	type TestInventory,
-	type TestInventoryCase,
-	workspaceSourceSnapshotSchema,
+import { desc, eq } from "drizzle-orm";
+import type {
+	TestInventory,
+	TestInventoryCase,
 } from "../../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../../db/client";
-import {
-	codingAgentTestConditionMappings,
-	codingAgentTestInventoryCases,
-	codingAgentTestInventoryRuns,
-	verificationChecklistItems,
-	verificationDocuments,
-} from "../../../db/verification-schema";
+import { codingAgentTestInventoryRuns } from "../../../db/verification-schema";
 import { runCommandTool } from "../../../services/worker-tools/run-command";
-import { TestConditionMappingFailure } from "./test-inventory-errors";
-import {
-	captureWorkspaceSourceSnapshot,
-	listWorkspaceSourceFiles,
-} from "./workspace-source-snapshot";
+import { enforcePathPolicy } from "../../../services/worker-tools/tool-policy-enforcer";
+import { extractStaticTestNames } from "./static-test-case-discovery";
+import { classifyTestFile } from "./test-file-discovery";
+import { TestInventoryFailure } from "./test-inventory-errors";
+import { insertTestInventory } from "./test-inventory-persistence";
+import { captureWorkspaceSourceSnapshot } from "./workspace-source-snapshot";
 
-const TEST_FILE_NAME = /(?:^|[._-])(?:test|spec)(?:[._-]|$)/i;
-const TEST_EXTENSIONS = new Set([
-	".ts",
-	".tsx",
-	".js",
-	".jsx",
-	".mjs",
-	".cjs",
-	".rs",
-	".go",
-	".java",
-	".kt",
-	".py",
-]);
-
-export async function collectTestInventory(input: {
+export type CollectTestInventoryInput = {
 	taskId: string;
 	runId?: string;
 	repoRoot: string;
@@ -49,15 +26,26 @@ export async function collectTestInventory(input: {
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
 	maxCommandSeconds?: number;
-}): Promise<TestInventory> {
-	const cwd = path.resolve(input.repoRoot, input.cwd || "");
+};
+
+export async function collectTestInventory(
+	input: CollectTestInventoryInput,
+	options: {
+		activeDiscovery?: boolean;
+		persist?: boolean;
+	} = {},
+): Promise<TestInventory> {
+	const cwd = await resolveInventoryCwd(input);
 	const snapshot = await captureWorkspaceSourceSnapshot(input.repoRoot);
 	const candidates = await discoverCandidateCases(cwd);
-	const discoveries = await Promise.all([
-		discoverVitestCases(input, cwd),
-		discoverCargoCases(input, cwd),
-		discoverGoCases(input, cwd),
-	]);
+	const discoveries =
+		options.activeDiscovery === false
+			? []
+			: await Promise.all([
+					discoverVitestCases(input, cwd),
+					discoverCargoCases(input, cwd),
+					discoverGoCases(input, cwd),
+				]);
 	const cases = mergeCases(
 		candidates,
 		discoveries.flatMap((discovery) => discovery.cases),
@@ -76,163 +64,14 @@ export async function collectTestInventory(input: {
 		cases,
 		warnings,
 	};
-	await db.transaction(async (tx) => {
-		await tx.insert(codingAgentTestInventoryRuns).values({
-			id: inventory.id,
-			taskId: inventory.taskId,
-			runId: inventory.runId ?? null,
-			cwd: inventory.cwd,
-			sourceSnapshotJson: inventory.sourceSnapshot,
-			warningsJson: inventory.warnings,
-		});
-		if (inventory.cases.length) {
-			await tx.insert(codingAgentTestInventoryCases).values(
-				inventory.cases.map((testCase) => ({
-					inventoryId: inventory.id,
-					caseKey: testCase.caseKey,
-					name: testCase.name,
-					filePath: testCase.filePath,
-					runner: testCase.runner,
-					discoveryLevel: testCase.discoveryLevel,
-					declaredConditionIdsJson: testCase.declaredConditionIds,
-				})),
-			);
-		}
-	});
+	if (options.persist !== false) await persistTestInventory(inventory);
 	return inventory;
 }
 
-export async function recordTestConditionMapping(
-	input: TestConditionMappingWrite,
-): Promise<TestConditionMapping> {
-	const [document, inventory, testCase, checklistItem] = await Promise.all([
-		db
-			.select({
-				id: verificationDocuments.id,
-				taskId: verificationDocuments.taskId,
-			})
-			.from(verificationDocuments)
-			.where(eq(verificationDocuments.id, input.verificationDocumentId))
-			.then((rows) => rows[0]),
-		db
-			.select({
-				id: codingAgentTestInventoryRuns.id,
-				taskId: codingAgentTestInventoryRuns.taskId,
-				sourceSnapshotJson: codingAgentTestInventoryRuns.sourceSnapshotJson,
-			})
-			.from(codingAgentTestInventoryRuns)
-			.where(eq(codingAgentTestInventoryRuns.id, input.inventoryId))
-			.then((rows) => rows[0]),
-		db
-			.select({
-				caseKey: codingAgentTestInventoryCases.caseKey,
-				declaredConditionIdsJson:
-					codingAgentTestInventoryCases.declaredConditionIdsJson,
-			})
-			.from(codingAgentTestInventoryCases)
-			.where(
-				and(
-					eq(codingAgentTestInventoryCases.inventoryId, input.inventoryId),
-					eq(codingAgentTestInventoryCases.caseKey, input.caseKey),
-				),
-			)
-			.then((rows) => rows[0]),
-		db
-			.select({ conditionId: verificationChecklistItems.conditionId })
-			.from(verificationChecklistItems)
-			.where(
-				and(
-					eq(
-						verificationChecklistItems.verificationDocumentId,
-						input.verificationDocumentId,
-					),
-					eq(verificationChecklistItems.conditionId, input.conditionId),
-				),
-			)
-			.then((rows) => rows[0]),
-	]);
-	if (!document || document.taskId !== input.taskId) {
-		throw new TestConditionMappingFailure(
-			"TEST_MAPPING_AUTHORITY_MISMATCH",
-			"Verification document does not belong to the request-scoped task.",
-		);
-	}
-	if (
-		!inventory ||
-		inventory.taskId !== input.taskId ||
-		!testCase ||
-		!checklistItem
-	) {
-		throw new TestConditionMappingFailure(
-			"TEST_MAPPING_PRECONDITION_MISSING",
-			"Test inventory, case, or verification condition is unavailable.",
-			"collect_test_inventory",
-		);
-	}
-	const snapshot = workspaceSourceSnapshotSchema.safeParse(
-		inventory.sourceSnapshotJson,
-	);
-	if (
-		!snapshot.success ||
-		input.sourceDigest !== snapshot.data.sourceStateHash
-	) {
-		throw new TestConditionMappingFailure(
-			"TEST_MAPPING_SOURCE_STALE",
-			"Test condition mapping source digest does not match the inventory snapshot.",
-			"collect_test_inventory",
-		);
-	}
-	if (
-		input.source === "declared_in_test" &&
-		!testCase.declaredConditionIdsJson.includes(input.conditionId)
-	) {
-		throw new TestConditionMappingFailure(
-			"TEST_MAPPING_DECLARATION_MISMATCH",
-			"Declared test marker does not match the requested condition.",
-		);
-	}
-	const mapping: TestConditionMapping = {
-		id: crypto.randomUUID(),
-		...input,
-		createdAt: new Date().toISOString(),
-	};
-	try {
-		await db
-			.insert(codingAgentTestConditionMappings)
-			.values({
-				id: mapping.id,
-				taskId: mapping.taskId,
-				verificationDocumentId: mapping.verificationDocumentId,
-				inventoryId: mapping.inventoryId,
-				caseKey: mapping.caseKey,
-				conditionId: mapping.conditionId,
-				source: mapping.source,
-				rationale: mapping.rationale ?? null,
-				sourceDigest: mapping.sourceDigest,
-			})
-			.onConflictDoUpdate({
-				target: [
-					codingAgentTestConditionMappings.verificationDocumentId,
-					codingAgentTestConditionMappings.inventoryId,
-					codingAgentTestConditionMappings.caseKey,
-					codingAgentTestConditionMappings.conditionId,
-				],
-				set: {
-					source: mapping.source,
-					rationale: mapping.rationale ?? null,
-					sourceDigest: mapping.sourceDigest,
-					updatedAt: new Date(),
-				},
-			});
-	} catch (error) {
-		throw new TestConditionMappingFailure(
-			"TEST_MAPPING_PERSISTENCE_FAILED",
-			"Test condition mapping could not be persisted.",
-			undefined,
-			{ cause: error },
-		);
-	}
-	return mapping;
+async function persistTestInventory(inventory: TestInventory) {
+	await db.transaction(async (tx) => {
+		await insertTestInventory(tx, inventory);
+	});
 }
 
 export async function getLatestTestInventory(taskId: string) {
@@ -248,30 +87,164 @@ export async function getLatestTestInventory(taskId: string) {
 async function discoverCandidateCases(
 	cwd: string,
 ): Promise<TestInventoryCase[]> {
-	const files = await listWorkspaceSourceFiles(cwd);
+	const files = await listPotentialTestFiles(cwd);
 	const result: TestInventoryCase[] = [];
+	const javascriptRunnerCache = new Map<
+		string,
+		TestInventoryCase["runner"] | null
+	>();
 	for (const file of files.sort()) {
-		if (
-			!TEST_EXTENSIONS.has(path.extname(file)) ||
-			!TEST_FILE_NAME.test(path.basename(file))
-		)
-			continue;
-		const source = await fs.readFile(file, "utf8").catch(() => "");
+		const filePath = path.relative(cwd, file).split(path.sep).join("/");
+		const classification = classifyTestFile(filePath);
+		if (!classification) continue;
+		const source = await fs.readFile(file, "utf8").catch((error: unknown) => {
+			throw new TestInventoryFailure(
+				"TEST_INVENTORY_FILE_READ_FAILED",
+				`Test source file could not be read: ${filePath}`,
+				"review_repository_permissions",
+				{ cause: error },
+			);
+		});
 		const declaredConditionIds = Array.from(
 			source.matchAll(/\bAC-\d{3}\b/g),
 			(match) => match[0],
 		);
-		const filePath = path.relative(cwd, file).split(path.sep).join("/");
-		result.push({
-			caseKey: `candidate:${filePath}`,
-			name: path.basename(file),
-			filePath,
-			runner: inferRunner(filePath),
-			discoveryLevel: "candidate",
-			declaredConditionIds: [...new Set(declaredConditionIds)].sort(),
-		});
+		const runner =
+			classification.technology === "javascript-typescript"
+				? inferJavaScriptRunner(
+						filePath,
+						await detectJavaScriptRunnerForFile(
+							file,
+							cwd,
+							javascriptRunnerCache,
+						),
+					)
+				: classification.runner;
+		const staticNames = extractStaticTestNames({ source, classification });
+		if (staticNames.length) {
+			const nameTotals = countNames(staticNames);
+			const nameOccurrences = new Map<string, number>();
+			result.push(
+				...staticNames.map((name) => {
+					const occurrence = (nameOccurrences.get(name) ?? 0) + 1;
+					nameOccurrences.set(name, occurrence);
+					const suffix =
+						(nameTotals.get(name) ?? 0) > 1 ? `:#${occurrence}` : "";
+					return {
+						caseKey: `static:${runner}:${filePath}:${name}${suffix}`,
+						name,
+						filePath,
+						runner,
+						discoveryLevel: "active" as const,
+						declaredConditionIds: [...new Set(declaredConditionIds)].sort(),
+					};
+				}),
+			);
+		} else if (classification.testFileByConvention) {
+			result.push({
+				caseKey: `candidate:${filePath}`,
+				name: path.basename(file),
+				filePath,
+				runner,
+				discoveryLevel: "candidate",
+				declaredConditionIds: [...new Set(declaredConditionIds)].sort(),
+			});
+		}
 	}
 	return result;
+}
+
+async function resolveInventoryCwd(input: CollectTestInventoryInput) {
+	const repoRoot = path.resolve(input.repoRoot);
+	const cwd = path.resolve(repoRoot, input.cwd || "");
+	const decision = enforcePathPolicy(cwd, {
+		repoRoot,
+		allowedPaths: input.allowedPaths,
+		deniedPaths: input.deniedPaths,
+	});
+	if (!decision.allowed) {
+		throw new TestInventoryFailure(
+			"TEST_INVENTORY_WORKSPACE_DENIED",
+			decision.message ||
+				"Test inventory working directory is outside the registered repository boundary.",
+			"choose_repository_relative_cwd",
+		);
+	}
+	const stat = await fs.stat(cwd).catch((error: unknown) => {
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			error.code === "ENOENT"
+		) {
+			throw new TestInventoryFailure(
+				"TEST_INVENTORY_CWD_NOT_FOUND",
+				"Test inventory working directory does not exist.",
+				"choose_existing_repository_cwd",
+				{ cause: error },
+			);
+		}
+		throw error;
+	});
+	if (!stat.isDirectory()) {
+		throw new TestInventoryFailure(
+			"TEST_INVENTORY_CWD_NOT_DIRECTORY",
+			"Test inventory working directory must be a directory.",
+			"choose_repository_directory",
+		);
+	}
+	return cwd;
+}
+
+async function listPotentialTestFiles(root: string) {
+	const files: string[] = [];
+	async function visit(directory: string) {
+		const entries = await fs.readdir(directory, { withFileTypes: true });
+		for (const entry of entries) {
+			if (entry.isDirectory() && IGNORED_DISCOVERY_DIRECTORIES.has(entry.name))
+				continue;
+			const filePath = path.join(directory, entry.name);
+			if (entry.isDirectory()) {
+				await visit(filePath);
+			} else if (
+				entry.isFile() &&
+				classifyTestFile(path.relative(root, filePath))
+			) {
+				files.push(filePath);
+			}
+		}
+	}
+	await visit(root);
+	return files.sort();
+}
+
+const IGNORED_DISCOVERY_DIRECTORIES = new Set([
+	".git",
+	".bundle",
+	".gradle",
+	".mypy_cache",
+	".next",
+	".pytest_cache",
+	".ruff_cache",
+	".turbo",
+	".venv",
+	"__pycache__",
+	"bin",
+	"build",
+	"coverage",
+	"dist",
+	"node_modules",
+	"obj",
+	"Pods",
+	"target",
+	"vendor",
+	"venv",
+]);
+
+function countNames(names: string[]) {
+	const counts = new Map<string, number>();
+	for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+	return counts;
 }
 
 async function discoverVitestCases(
@@ -441,18 +414,88 @@ function mergeCases(
 	candidates: TestInventoryCase[],
 	active: TestInventoryCase[],
 ) {
-	const activeFiles = new Set(active.map((item) => item.filePath));
+	const candidatesByFile = new Map(
+		candidates.map((candidate) => [candidate.filePath, candidate]),
+	);
+	const mergedActive = active.map((item) => ({
+		...item,
+		declaredConditionIds: Array.from(
+			new Set([
+				...item.declaredConditionIds,
+				...(candidatesByFile.get(item.filePath)?.declaredConditionIds ?? []),
+			]),
+		).sort(),
+	}));
+	const activeFiles = new Set(mergedActive.map((item) => item.filePath));
 	return [
-		...active,
+		...mergedActive,
 		...candidates.filter((item) => !activeFiles.has(item.filePath)),
 	];
 }
 
-function inferRunner(filePath: string): TestInventoryCase["runner"] {
-	const extension = path.extname(filePath);
-	if (extension === ".rs") return "cargo-test";
-	if (extension === ".go") return "go-test";
-	if (extension === ".java" || extension === ".kt") return "junit";
-	if (extension === ".py") return "pytest";
+async function detectJavaScriptRunnerForFile(
+	file: string,
+	root: string,
+	cache: Map<string, TestInventoryCase["runner"] | null>,
+) {
+	let directory = path.dirname(file);
+	while (true) {
+		const detected = cache.has(directory)
+			? (cache.get(directory) ?? null)
+			: await detectJavaScriptRunnerInPackage(directory);
+		cache.set(directory, detected);
+		if (detected !== null) return detected;
+		if (directory === root) break;
+		const parent = path.dirname(directory);
+		if (
+			parent === directory ||
+			path.relative(root, parent).startsWith(`..${path.sep}`)
+		)
+			break;
+		directory = parent;
+	}
 	return "unknown";
+}
+
+async function detectJavaScriptRunnerInPackage(
+	directory: string,
+): Promise<TestInventoryCase["runner"] | null> {
+	try {
+		const pkg = JSON.parse(
+			await fs.readFile(path.join(directory, "package.json"), "utf8"),
+		) as Record<string, unknown>;
+		const dependencies = ["dependencies", "devDependencies", "peerDependencies"]
+			.flatMap((section) => {
+				const value = pkg[section];
+				return value && typeof value === "object" ? Object.keys(value) : [];
+			})
+			.filter(
+				(dependency) =>
+					dependency === "vitest" ||
+					dependency === "jest" ||
+					dependency === "@playwright/test",
+			);
+		if (dependencies.includes("vitest")) return "vitest";
+		if (dependencies.includes("jest")) return "jest";
+		if (dependencies.includes("@playwright/test")) return "playwright";
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+function inferJavaScriptRunner(
+	filePath: string,
+	defaultRunner: TestInventoryCase["runner"],
+): TestInventoryCase["runner"] {
+	const normalized = filePath.toLocaleLowerCase("en-US");
+	if (
+		normalized.startsWith("e2e/") ||
+		normalized.includes("/e2e/") ||
+		normalized.includes(".e2e.") ||
+		normalized.includes("playwright")
+	) {
+		return "playwright";
+	}
+	return defaultRunner;
 }

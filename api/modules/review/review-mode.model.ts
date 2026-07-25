@@ -114,15 +114,15 @@ export type ReviewTarget = {
 };
 
 export type ReviewTargetManifest = {
-	version: 1;
+	version: 2;
 	digest: string;
 	taskId: string;
 	contextDigest: string | null;
-	testSnapshotId: string | null;
-	testSnapshotDigest: string | null;
+	verificationSnapshotId: string | null;
+	verificationSnapshotDigest: string | null;
 	sourceRuns: Array<{
 		runId: string;
-		role: "implementation" | "test";
+		role: "implementation";
 		status: string;
 		diffDigest: string;
 		finalReportDigest: string;

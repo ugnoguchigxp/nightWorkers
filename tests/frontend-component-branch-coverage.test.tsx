@@ -778,7 +778,7 @@ describe("frontend component branch coverage", () => {
 			{
 				kind: "session",
 				sessionId: "task-1",
-				artifact: { kind: "test_mode" },
+				artifact: { kind: "evidence_check" },
 			},
 			{
 				kind: "session",
@@ -800,8 +800,8 @@ describe("frontend component branch coverage", () => {
 				setClearedArtifactContextId,
 				reviewStatusTitle: "Review",
 				formatReviewStatusSummary: (level, count) => `${level}:${count}`,
-				testModeTitle: "Test Mode",
-				testModeArtifactSummary: "Test workflow",
+				evidenceCheckTitle: "Evidence Check",
+				evidenceCheckArtifactSummary: "Spec evidence",
 			});
 		}
 
@@ -814,12 +814,15 @@ describe("frontend component branch coverage", () => {
 		const currentFocus = {
 			type: "artifact" as const,
 			artifact: {
-				id: "test-mode-task-1",
+				id: "evidence-check-document-1",
 				taskId: "task-1",
-				kind: "test_mode" as const,
-				title: "Test Mode",
-				summary: "Test workflow",
-				source: { type: "test_mode" as const },
+				kind: "evidence_check" as const,
+				title: "Evidence Check",
+				summary: "Spec evidence",
+				source: {
+					type: "verification_document" as const,
+					verificationDocumentId: "document-1",
+				},
 				createdAt: "2026-07-08T00:00:00.000Z",
 			},
 		};
@@ -852,8 +855,8 @@ describe("frontend component branch coverage", () => {
 			setClearedArtifactContextId,
 			reviewStatusTitle: "Review",
 			formatReviewStatusSummary: (level, count) => `${level}:${count}`,
-			testModeTitle: "Test Mode",
-			testModeArtifactSummary: "Test workflow",
+			evidenceCheckTitle: "Evidence Check",
+			evidenceCheckArtifactSummary: "Spec evidence",
 		});
 
 		expect(focusUpdates).toEqual([currentFocus]);

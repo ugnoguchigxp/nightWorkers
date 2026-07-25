@@ -1,14 +1,11 @@
-import { toDeepRecord } from "../../../shared/json-record";
-import { AppError, NotFoundError } from "../../lib/errors";
+import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
-import type { TaskRunAssociationRequest } from "../agentsShare";
 import type { RuntimeLaneResult } from "../codingAgent";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
 import { buildReviewResult } from "../review/results/build-review-result";
 import { collectDefaultReviewEvidence } from "../review/results/evidence-collector";
 import type { ReviewRunRequest } from "../review/results/types";
-import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
 import { createTask } from "./nightworkers.basic.service";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
@@ -20,8 +17,6 @@ import {
 	shouldContinueSessionQueue,
 	startTaskRun,
 } from "./nightworkers.run-orchestration.service";
-import { getVerificationDocument } from "./nightworkers.verification.repository";
-import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import { deletePromptImageAttachments } from "./prompt-image-attachments";
 import {
 	archiveCompletedTask,
@@ -98,232 +93,6 @@ export async function startWorkbenchTaskRun(taskId: string) {
 		executionMode: "implementation",
 		executionModeSource: "workbench_run",
 	});
-}
-
-export async function startVerificationRunFromArtifact(input: {
-	projectId: string;
-	taskId: string;
-	specArtifactId: string;
-	verificationDocumentId?: string | null;
-	mode: "test";
-	action?: "discover_tests" | "plan_and_implement_tests" | "run_unit_tests";
-	rerun?: boolean;
-	missionPilot?: {
-		sessionId: string;
-		cycle: number;
-		contextRevision: number;
-		contextDigest: string;
-	};
-	missionPilotAgent?: import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance;
-	runAssociation?: TaskRunAssociationRequest;
-}) {
-	const task = await repo.getTask(input.taskId);
-	if (!task) throw new NotFoundError("Task not found");
-	if (task.repositoryId !== input.projectId) {
-		throw new NotFoundError("Project not found for task");
-	}
-	const verificationDocument = input.verificationDocumentId
-		? await getVerificationDocument(input.verificationDocumentId)
-		: await ensureTestModeVerificationDocument({
-				taskId: input.taskId,
-				projectId: input.projectId,
-				specArtifactId: input.specArtifactId,
-			});
-	if (!verificationDocument || verificationDocument.taskId !== input.taskId) {
-		throw new NotFoundError("Verification document not found");
-	}
-	if (!input.rerun) {
-		const activeRuns = await repo.listActiveTaskRunsForTask(input.taskId);
-		const activeTestRun = activeRuns.find((run) => {
-			const snapshot =
-				run.contextSnapshot &&
-				typeof run.contextSnapshot === "object" &&
-				!Array.isArray(run.contextSnapshot)
-					? (run.contextSnapshot as Record<string, unknown>)
-					: {};
-			return snapshot.executionMode === "test";
-		});
-		if (activeTestRun) return activeTestRun;
-	}
-	return startTaskRun(input.taskId, {
-		executionMode: "implementation",
-		executionModeSource: "explicit",
-		runAssociation: input.runAssociation,
-		runtimeOptionsPatch: {
-			verificationDocumentId: verificationDocument.id,
-			artifactContext: {
-				specArtifactId: input.specArtifactId,
-				verificationDocumentId: verificationDocument.id,
-			},
-		},
-	});
-}
-
-export async function ensureTestModeVerificationDocument(input: {
-	taskId: string;
-	projectId: string;
-	specArtifactId: string;
-}) {
-	const messages = await repo.listTaskMessages(input.taskId);
-	const specMessage = resolveTestModeSpecMessage({
-		messages,
-		specArtifactId: input.specArtifactId,
-	});
-	if (!specMessage) return null;
-	const metadata = toDeepRecord(specMessage.metadataJson);
-	const existingVerificationDocumentId = readRecordString(
-		metadata,
-		"verificationDocumentId",
-	);
-	if (existingVerificationDocumentId) {
-		return getVerificationDocument(existingVerificationDocumentId);
-	}
-	const intent = readRecordString(metadata, "intent");
-	const specPath =
-		intent === "implementation_plan"
-			? "spec/implementation-plan.md"
-			: "spec/feature-plan.md";
-	const generatedAt = new Date().toISOString();
-	const sidecar = buildSpecificationVerificationSidecar({
-		taskId: input.taskId,
-		specId: specMessage.id,
-		specPath,
-		content: specMessage.content,
-		sourceMessageIds: messages.map((message) => message.id),
-		workspace: {
-			taskId: input.taskId,
-			repositoryId: input.projectId,
-			generatedAt,
-			featurePlanArtifacts:
-				intent === "feature_plan"
-					? [
-							{
-								id: `feature-plan-${specMessage.id}`,
-								kind: "feature_plan",
-								title: "Feature Plan",
-								sourceMessageId: specMessage.id,
-								createdAt: String(specMessage.createdAt),
-							},
-						]
-					: [],
-			blueprintArtifacts: [],
-			dataModelArtifacts: [],
-			dedicatedViewArtifacts: [],
-			questionnaireSessions: [],
-			decisionReviews: [],
-			viewDecisions: [],
-			routing: {
-				revision: 0,
-				entries: [],
-				editable: false,
-				lockedReason: "Specification verification workspace",
-				updatedBy: null,
-				updatedAt: null,
-			},
-			implementationReferences:
-				intent === "implementation_plan"
-					? [
-							{
-								id: `implementation-plan-${specMessage.id}`,
-								kind: "implementation_reference",
-								title: "Implementation Plan",
-								sourceMessageId: specMessage.id,
-								taskId: input.taskId,
-							},
-						]
-					: [],
-		},
-		generatedAt,
-	});
-	const verificationMessage = await repo.createTaskMessage({
-		taskId: input.taskId,
-		runId: specMessage.runId,
-		role: "assistant",
-		content: JSON.stringify(sidecar.document, null, 2),
-		messageType: "verification_json",
-		payloadJson: {
-			intent:
-				intent === "implementation_plan"
-					? "implementation_plan_verification"
-					: "feature_plan_verification",
-			artifactKind: "verification_json",
-			title:
-				intent === "implementation_plan"
-					? "Implementation Plan Verification"
-					: "Feature Plan Verification",
-			verificationDocument: sidecar.document,
-			...(intent === "implementation_plan"
-				? { sourceImplementationPlanMessageId: specMessage.id }
-				: { sourceFeaturePlanMessageId: specMessage.id }),
-		},
-	});
-	const verificationArtifactId = `verification-json-${verificationMessage.id}`;
-	const verificationDocument = await createVerificationDocumentFromSpec({
-		taskId: input.taskId,
-		runId: specMessage.runId,
-		specMessageId: specMessage.id,
-		specArtifactId: input.specArtifactId,
-		verificationArtifactId,
-		sourceSpecPath: sidecar.document.specPath,
-		document: sidecar.document,
-	});
-	await repo.updateTaskMessageMetadata(specMessage.id, {
-		...metadata,
-		verificationDocumentId: verificationDocument.id,
-		verificationArtifactId,
-		verificationSidecarMessageId: verificationMessage.id,
-		markdownDocumentData: {
-			...toDeepRecord(metadata.markdownDocumentData),
-			verificationDocumentId: verificationDocument.id,
-		},
-	});
-	await repo.updateTaskMessageMetadata(verificationMessage.id, {
-		...toDeepRecord(verificationMessage.metadataJson),
-		verificationDocumentId: verificationDocument.id,
-		verificationArtifactId,
-	});
-	return verificationDocument;
-}
-
-function resolveTestModeSpecMessage(input: {
-	messages: Awaited<ReturnType<typeof repo.listTaskMessages>>;
-	specArtifactId: string;
-}) {
-	const explicitMessageId = input.specArtifactId.match(
-		/^(?:implementation-plan|feature-plan)-(.+)$/,
-	)?.[1];
-	if (explicitMessageId) {
-		const message = input.messages.find(
-			(item) =>
-				item.id === explicitMessageId &&
-				item.messageType === "markdown_document" &&
-				isTestModeSpecIntent(toDeepRecord(item.metadataJson)),
-		);
-		if (message) return message;
-	}
-	for (let index = input.messages.length - 1; index >= 0; index -= 1) {
-		const message = input.messages[index];
-		if (
-			message?.messageType === "markdown_document" &&
-			isTestModeSpecIntent(toDeepRecord(message.metadataJson))
-		) {
-			return message;
-		}
-	}
-	return null;
-}
-
-function isTestModeSpecIntent(metadata: Record<string, unknown>) {
-	const intent = readRecordString(metadata, "intent");
-	return intent === "implementation_plan" || intent === "feature_plan";
-}
-
-function readRecordString(
-	record: Record<string, unknown>,
-	key: string,
-): string | undefined {
-	const value = record[key];
-	return typeof value === "string" ? value : undefined;
 }
 
 export async function createWorkbenchSession(data: {

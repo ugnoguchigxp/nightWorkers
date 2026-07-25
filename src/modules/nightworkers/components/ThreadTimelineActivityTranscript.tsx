@@ -35,13 +35,13 @@ export function TranscriptItemView({
 	item,
 	onOpenArtifact,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	item: TranscriptItem;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	if (item.kind === "user_turn") {
@@ -54,7 +54,7 @@ export function TranscriptItemView({
 				<ChatMarkdown
 					content={item.text || fallbackEventText(item.events.at(-1))}
 					onOpenProjectFile={onOpenProjectFile}
-					onOpenTestModeArtifact={onOpenTestModeArtifact}
+					onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 					onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 				/>
 			</ThreadMessage>
@@ -76,14 +76,14 @@ export function TranscriptItemView({
 							message={artifactMessage}
 							onOpenArtifact={onOpenArtifact}
 							onOpenProjectFile={onOpenProjectFile}
-							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : visibleText.trim() ? (
 						<ChatMarkdown
 							content={visibleText}
 							onOpenProjectFile={onOpenProjectFile}
-							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 						/>
 					) : null}

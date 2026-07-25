@@ -5,7 +5,7 @@ export const jaThread = {
 	"thread.tooltip.debugMode": "デバッグモード",
 	"thread.tooltip.pilotThought": "Pilot thought",
 	"thread.tooltip.planMode": "Plan モード",
-	"thread.tooltip.testMode": "テストモード",
+	"thread.tooltip.evidenceCheck": "証跡チェック",
 	"thread.tooltip.reviewMode": "レビューモード",
 	"thread.tooltip.todoList": "todolist",
 	"thread.deleteTask": "Task 削除",
@@ -18,6 +18,6 @@ export const jaThread = {
 	"thread.noPlanModeWorkspace": "Plan モードワークスペースはありません",
 	"thread.todoArtifact": "todolist",
 	"thread.noTodoArtifact": "todolist はありません",
-	"thread.testModeArtifact": "テストモード",
+	"thread.evidenceCheckArtifact": "証跡チェック",
 	"thread.emptyPrompt": "作業スレッドを選択するか、下の入力欄から開始",
 } as const;

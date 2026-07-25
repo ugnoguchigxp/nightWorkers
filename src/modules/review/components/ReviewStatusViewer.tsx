@@ -29,6 +29,7 @@ type ReviewStatusViewerProps = {
 	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	latestRun?: TaskRun;
+	implementationCompletionReport?: string | null;
 	onSubmitReviewPrompt?: (prompt: string) => Promise<boolean>;
 	isReviewPromptDisabled?: boolean;
 };
@@ -114,6 +115,7 @@ export function ReviewStatusViewer({
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
 	latestRun,
+	implementationCompletionReport,
 	onSubmitReviewPrompt,
 	isReviewPromptDisabled = false,
 }: ReviewStatusViewerProps) {
@@ -173,10 +175,24 @@ export function ReviewStatusViewer({
 			}
 		/>
 	);
+	const completionReport = implementationCompletionReport?.trim() ? (
+		<section
+			className="grid gap-2 rounded border border-cyan-900/70 bg-cyan-950/20 p-3"
+			data-review-completion-report
+		>
+			<div className="text-xs font-semibold uppercase tracking-wide text-cyan-200">
+				{t("reviewStatus.implementationCompletionReport")}
+			</div>
+			<div className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
+				{implementationCompletionReport.trim()}
+			</div>
+		</section>
+	) : null;
 	if (!detail) {
 		return (
 			<div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
 				<div className="mx-auto grid max-w-5xl gap-4">
+					{completionReport}
 					{promptActions}
 					{loading ? (
 						<div className="text-center text-xs text-slate-500">
@@ -267,6 +283,7 @@ export function ReviewStatusViewer({
 			data-artifact-export-expand
 		>
 			<div className="mx-auto grid max-w-5xl gap-5">
+				{completionReport}
 				{promptActions}
 				<div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
 					<div>

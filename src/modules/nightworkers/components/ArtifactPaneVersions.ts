@@ -22,7 +22,7 @@ export function buildArtifactVersions(
 	if (!selectedArtifact) return [];
 	if (
 		selectedArtifact.kind === "diff" ||
-		selectedArtifact.kind === "test_mode" ||
+		selectedArtifact.kind === "evidence_check" ||
 		selectedArtifact.kind === "review_status" ||
 		selectedArtifact.kind === "plan_mode_workspace"
 	)

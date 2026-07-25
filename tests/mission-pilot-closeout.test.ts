@@ -13,7 +13,7 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotReviewDecisions,
 	missionPilotSessions,
-	missionPilotTestSnapshots,
+	missionPilotVerificationSnapshots,
 	taskArchiveRecords,
 } from "../api/db/mission-pilot-schema";
 import { repositories, taskRuns, tasks } from "../api/db/schema";
@@ -86,9 +86,9 @@ describe("Mission Pilot aggregate Git closeout", () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
 		const sessionId = crypto.randomUUID();
-		const testRunId = crypto.randomUUID();
+		const implementationRunId = crypto.randomUUID();
 		const reviewRunId = crypto.randomUUID();
-		const testPhaseRunId = crypto.randomUUID();
+		const implementationPhaseRunId = crypto.randomUUID();
 		const reviewPhaseRunId = crypto.randomUUID();
 		const snapshotId = crypto.randomUUID();
 		const decisionId = crypto.randomUUID();
@@ -110,11 +110,11 @@ describe("Mission Pilot aggregate Git closeout", () => {
 		});
 		await db.insert(taskRuns).values([
 			{
-				id: testRunId,
+				id: implementationRunId,
 				taskId,
 				repositoryId,
 				status: "completed",
-				workerKind: "test",
+				workerKind: "implementation",
 				timeoutSeconds: 60,
 				startedAt: now,
 				finishedAt: now,
@@ -157,13 +157,13 @@ describe("Mission Pilot aggregate Git closeout", () => {
 		});
 		await db.insert(missionPilotPhaseRuns).values([
 			{
-				id: testPhaseRunId,
+				id: implementationPhaseRunId,
 				sessionId,
 				taskId,
-				phase: "test",
+				phase: "implementation",
 				cycle: 1,
 				attempt: 1,
-				runId: testRunId,
+				runId: implementationRunId,
 				inputContextRevision: 4,
 				inputContextDigest: "ctx-4",
 				status: "completed",
@@ -189,10 +189,10 @@ describe("Mission Pilot aggregate Git closeout", () => {
 				finishedAt: now,
 			},
 		]);
-		await db.insert(missionPilotTestSnapshots).values({
+		await db.insert(missionPilotVerificationSnapshots).values({
 			id: snapshotId,
 			sessionId,
-			phaseRunId: testPhaseRunId,
+			sourcePhaseRunId: implementationPhaseRunId,
 			verificationDocumentId: crypto.randomUUID(),
 			contextRevision: 4,
 			contextDigest: "ctx-4",
@@ -203,7 +203,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 			unknownRequired: 0,
 			evidenceRunIdsJson: [],
 			completionCheckEventId: "event",
-			testChangedPathsJson: [],
+			changedPathsJson: [],
 			verdict: "pass",
 			snapshotJson: {},
 			createdAt: now,
@@ -215,7 +215,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 			reviewPhaseRunId,
 			contextRevision: 4,
 			contextDigest: "ctx-4",
-			testSnapshotId: snapshotId,
+			verificationSnapshotId: snapshotId,
 			targetManifestDigest: "target",
 			verdict: "pass",
 			blockingCount: 0,
@@ -233,7 +233,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 			baselineHead,
 			reviewDecisionId: decisionId,
 			reviewedContextDigest: "ctx-4",
-			ownedPhaseRunIdsJson: [testPhaseRunId],
+			ownedPhaseRunIdsJson: [implementationPhaseRunId],
 			stageableOwnedPathsJson: ["feature.txt"],
 			excludedPathsJson: ["notes.txt"],
 			status: "ready",
@@ -245,7 +245,7 @@ describe("Mission Pilot aggregate Git closeout", () => {
 		await db
 			.update(missionPilotSessions)
 			.set({
-				activeTestSnapshotId: snapshotId,
+				activeVerificationSnapshotId: snapshotId,
 				activeReviewDecisionId: decisionId,
 				activeCloseoutId: closeoutId,
 			})

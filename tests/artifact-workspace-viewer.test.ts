@@ -49,13 +49,16 @@ function renderPlanModeViewer(
 }
 
 describe("buildArtifactVersions", () => {
-	it("does not scan message-backed versions for synthetic Test Mode artifacts", () => {
+	it("does not scan message-backed versions for Evidence Check artifacts", () => {
 		const selectedArtifact = {
-			id: "test-mode-task-1",
+			id: "evidence-check-document-1",
 			taskId: "task-1",
-			kind: "test_mode" as const,
-			title: "Test Mode",
-			source: { type: "test_mode" as const },
+			kind: "evidence_check" as const,
+			title: "Evidence Check",
+			source: {
+				type: "verification_document" as const,
+				verificationDocumentId: "document-1",
+			},
 			createdAt: "2026-07-08T00:00:00.000Z",
 		};
 		const versions = buildArtifactVersions(

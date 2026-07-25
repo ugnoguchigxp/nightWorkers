@@ -1,6 +1,5 @@
 import {
 	ClipboardCheck,
-	FlaskConical,
 	FolderTree,
 	ListTodo,
 	LoaderCircle,
@@ -11,7 +10,7 @@ export type ArtifactModeNavigationKind =
 	| "project_files"
 	| "plan"
 	| "todo"
-	| "test"
+	| "evidence"
 	| "review";
 
 export type ArtifactModeNavigationProps = {
@@ -42,10 +41,10 @@ const navigationItems = [
 		icon: ListTodo,
 	},
 	{
-		kind: "test",
-		label: "Test",
-		title: "テストモード",
-		icon: FlaskConical,
+		kind: "evidence",
+		label: "Evidence",
+		title: "証跡チェック",
+		icon: ClipboardCheck,
 	},
 	{
 		kind: "review",

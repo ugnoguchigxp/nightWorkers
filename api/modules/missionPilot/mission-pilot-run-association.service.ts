@@ -18,7 +18,6 @@ const MISSION_PILOT_RUN_ASSOCIATION_KIND = "mission_pilot";
 export type MissionPilotRunPhase =
 	| "repository_bootstrap"
 	| "implementation"
-	| "test"
 	| "review";
 
 export class MissionPilotRunAssociationError extends Error {
@@ -36,7 +35,6 @@ export function readMissionPilotRunAssociationPayload(value: unknown) {
 	if (
 		candidate.phase !== "repository_bootstrap" &&
 		candidate.phase !== "implementation" &&
-		candidate.phase !== "test" &&
 		candidate.phase !== "review"
 	)
 		return null;
@@ -275,9 +273,7 @@ export async function associateMissionPilotChildRun(input: {
 					? "repository_bootstrapping"
 					: input.phase === "implementation"
 						? "implementing"
-						: input.phase === "test"
-							? "testing"
-							: "reviewing",
+						: "reviewing",
 			activeRunId: input.runId,
 			activePhaseRunId: phaseRun.id,
 			...(input.phase === "repository_bootstrap"
@@ -326,9 +322,7 @@ export async function associateMissionPilotChildRun(input: {
 				? "repository_bootstrapping"
 				: input.phase === "implementation"
 					? "implementing"
-					: input.phase === "test"
-						? "testing"
-						: "reviewing",
+					: "reviewing",
 		cycle: input.missionPilot.cycle,
 		contextRevision: input.missionPilot.contextRevision,
 		contextDigest: input.missionPilot.contextDigest,
@@ -344,13 +338,11 @@ function missionPilotCycleForPhase(
 	session: typeof missionPilotSessions.$inferSelect,
 	phase: MissionPilotRunPhase,
 ) {
-	if (phase === "test") return session.testCycle;
 	if (phase === "review") return session.reviewCycle;
 	return session.implementationCycle;
 }
 
 function phaseCycleCondition(phase: MissionPilotRunPhase, cycle: number) {
-	if (phase === "test") return eq(missionPilotSessions.testCycle, cycle);
 	if (phase === "review") return eq(missionPilotSessions.reviewCycle, cycle);
 	return eq(missionPilotSessions.implementationCycle, cycle);
 }
@@ -365,7 +357,6 @@ function missionPilotAssociationSourcePhases(phase: MissionPilotRunPhase) {
 			"implementation_rework",
 			"implementing",
 		];
-	if (phase === "test") return ["test_preparing", "testing"];
 	return ["review_preparing", "reviewing"];
 }
 

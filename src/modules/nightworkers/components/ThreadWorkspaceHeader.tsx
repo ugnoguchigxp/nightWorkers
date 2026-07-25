@@ -115,8 +115,8 @@ export function ThreadWorkspaceHeader({
 											? "plan"
 											: props.isTodoArtifactOpen
 												? "todo"
-												: props.isTestModeArtifactOpen
-													? "test"
+												: props.isEvidenceCheckArtifactOpen
+													? "evidence"
 													: props.isReviewArtifactOpen
 														? "review"
 														: null
@@ -133,7 +133,7 @@ export function ThreadWorkspaceHeader({
 									project_files: true,
 									plan: Boolean(blueprintArtifact),
 									todo: props.hasTodoArtifact,
-									test: Boolean(props.activeSession),
+									evidence: props.hasEvidenceCheckArtifact,
 									review: props.hasReviewArtifact,
 								}}
 								onOpen={{
@@ -144,8 +144,8 @@ export function ThreadWorkspaceHeader({
 											void props.onOpenBlueprintArtifact();
 										}),
 									todo: () => runArtifactButtonAction(props.onOpenTodoArtifact),
-									test: () =>
-										runArtifactButtonAction(props.onOpenTestModeArtifact),
+									evidence: () =>
+										runArtifactButtonAction(props.onOpenEvidenceCheckArtifact),
 									review: () =>
 										runArtifactButtonAction(() => {
 											void props.onOpenReviewArtifact();
@@ -165,7 +165,7 @@ export function ThreadWorkspaceHeader({
 							project_files: true,
 							plan: false,
 							todo: false,
-							test: false,
+							evidence: false,
 							review: false,
 						}}
 						onOpen={{
@@ -173,7 +173,7 @@ export function ThreadWorkspaceHeader({
 								runArtifactButtonAction(props.onOpenProjectFiles),
 							plan: () => undefined,
 							todo: () => undefined,
-							test: () => undefined,
+							evidence: () => undefined,
 							review: () => undefined,
 						}}
 					/>

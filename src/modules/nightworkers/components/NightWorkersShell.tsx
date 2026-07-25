@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
+import { buildEvidenceCheckArtifact } from "../../codingAgent";
 import {
 	playMissionPilotTask,
 	useMissionPilotArtifactAutoFocus,
@@ -110,8 +111,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			selectedArtifact?.kind === "app_blueprint");
 	const isReviewArtifactOpen =
 		artifactPaneOpen && selectedArtifact?.kind === "review_status";
-	const isTestModeArtifactOpen =
-		artifactPaneOpen && selectedArtifact?.kind === "test_mode";
+	const isEvidenceCheckArtifactOpen =
+		artifactPaneOpen && selectedArtifact?.kind === "evidence_check";
 	const hasTodoArtifact = Boolean(workspace.activeSession);
 	const isActiveImplementationLocked = isImplementationLockedStatus(
 		workspace.activeSession?.status,
@@ -126,8 +127,20 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			].includes(workspace.latestRun.status),
 	);
 	const reviewStatusTitle = t("reviewStatus.title");
-	const testModeTitle = t("testMode.title");
-	const testModeArtifactSummary = t("testMode.artifact.summary");
+	const evidenceCheckTitle = t("evidenceCheck.title");
+	const evidenceCheckArtifactSummary = t("evidenceCheck.artifact.summary");
+	const evidenceCheckArtifact = workspace.activeSession
+		? buildEvidenceCheckArtifact({
+				taskId: workspace.activeSession.id,
+				updatedAt: String(
+					workspace.activeSession.updatedAt ||
+						workspace.activeSession.createdAt,
+				),
+				taskMessages: workspace.taskMessages,
+				title: evidenceCheckTitle,
+				summary: evidenceCheckArtifactSummary,
+			})
+		: null;
 	const formatReviewStatusSummary = useCallback(
 		(level: string, sectionCount: number) =>
 			t("reviewStatus.artifact.summary", {
@@ -148,8 +161,8 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		setClearedArtifactContextId,
 		reviewStatusTitle,
 		formatReviewStatusSummary,
-		testModeTitle,
-		testModeArtifactSummary,
+		evidenceCheckTitle,
+		evidenceCheckArtifactSummary,
 	});
 
 	useMissionPilotArtifactAutoFocus({
@@ -177,7 +190,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		if (
 			selectedArtifact.kind === "plan_mode_workspace" ||
 			selectedArtifact.kind === "review_status" ||
-			selectedArtifact.kind === "test_mode"
+			selectedArtifact.kind === "evidence_check"
 		)
 			return;
 		const stillAvailable = workspace.activeArtifactRefs.some(
@@ -318,24 +331,23 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			artifact: { kind: "review_status" },
 		});
 	}, [isReviewArtifactOpen, props.onNavigate]);
-	const handleOpenTestModeArtifact = useCallback(() => {
+	const handleOpenEvidenceCheckArtifact = useCallback(() => {
 		const task = workspaceRef.current.activeSession;
 		if (!task) return;
-		if (isTestModeArtifactOpen) {
+		if (isEvidenceCheckArtifactOpen) {
 			setArtifactFocus({ type: "closed" });
 			props.onNavigate({ kind: "session", sessionId: task.id, artifact: null });
 			return;
 		}
-		setClearedArtifactContextId(null);
-		const artifact = {
-			id: `test-mode-${task.id}`,
+		const artifact = buildEvidenceCheckArtifact({
 			taskId: task.id,
-			kind: "test_mode" as const,
-			title: testModeTitle,
-			summary: testModeArtifactSummary,
-			source: { type: "test_mode" as const },
-			createdAt: String(task.updatedAt || task.createdAt),
-		};
+			updatedAt: String(task.updatedAt || task.createdAt),
+			taskMessages: workspaceRef.current.taskMessages,
+			title: evidenceCheckTitle,
+			summary: evidenceCheckArtifactSummary,
+		});
+		if (!artifact) return;
+		setClearedArtifactContextId(null);
 		markArtifactOpenStart(artifact);
 		setArtifactFocus({
 			type: "artifact",
@@ -344,13 +356,13 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		props.onNavigate({
 			kind: "session",
 			sessionId: task.id,
-			artifact: { kind: "test_mode" },
+			artifact: { kind: "evidence_check" },
 		});
 	}, [
-		isTestModeArtifactOpen,
+		isEvidenceCheckArtifactOpen,
 		props.onNavigate,
-		testModeArtifactSummary,
-		testModeTitle,
+		evidenceCheckArtifactSummary,
+		evidenceCheckTitle,
 	]);
 	const focusTodoArtifact = useCallback(
 		(sessionId: string) => {
@@ -529,13 +541,14 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				artifactPaneOpen,
 				isTodoArtifactOpen,
 				hasTodoArtifact,
+				hasEvidenceCheckArtifact: Boolean(evidenceCheckArtifact),
 				canStopLatestRun,
 				onOpenBlueprintArtifact: handleOpenBlueprintArtifact,
 				isBlueprintArtifactOpen,
 				onOpenReviewArtifact: handleOpenReviewArtifact,
 				isReviewArtifactOpen,
-				onOpenTestModeArtifact: handleOpenTestModeArtifact,
-				isTestModeArtifactOpen,
+				onOpenEvidenceCheckArtifact: handleOpenEvidenceCheckArtifact,
+				isEvidenceCheckArtifactOpen,
 				onOpenTodoArtifact: handleOpenTodoArtifact,
 				startSessionAndFocusTodo,
 				queueActiveSessionAndFocusTodo,

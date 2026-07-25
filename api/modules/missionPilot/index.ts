@@ -25,7 +25,7 @@ export {
 export {
 	getLatestMissionPilotCloseout,
 	getLatestMissionPilotReviewDecision,
-	getLatestMissionPilotTestSnapshot,
+	getLatestMissionPilotVerificationSnapshot,
 	getMissionPilotExecution,
 	reconcileMissionPilotExecution,
 } from "./mission-pilot-execution-query.service";

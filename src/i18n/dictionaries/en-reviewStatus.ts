@@ -4,6 +4,8 @@ export const enReviewStatus = {
 	"reviewStatus.loading": "Preparing Review Mode...",
 	"reviewStatus.unavailable": "Review Status is not available.",
 	"reviewStatus.runRemains": "Run remains",
+	"reviewStatus.implementationCompletionReport":
+		"Implementation completion report",
 	"reviewStatus.sessionState.approved": "review approved",
 	"reviewStatus.sessionState.executionUnchanged": "execution status unchanged",
 	"reviewStatus.securityHandoffs": "Security Handoffs",

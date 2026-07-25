@@ -14,7 +14,7 @@ import {
 	missionPilotReviewDecisions,
 	missionPilotSessions,
 	missionPilotSteps,
-	missionPilotTestSnapshots,
+	missionPilotVerificationSnapshots,
 	taskArchiveRecords,
 } from "../../../db/mission-pilot-schema";
 import { taskRuns, taskRunTodos } from "../../../db/schema";
@@ -430,8 +430,8 @@ export const missionPilotFixtureRouter = createOpenApiRouter()
 				.where(eq(missionPilotPhaseRuns.sessionId, session.id)),
 			db
 				.select()
-				.from(missionPilotTestSnapshots)
-				.where(eq(missionPilotTestSnapshots.sessionId, session.id)),
+				.from(missionPilotVerificationSnapshots)
+				.where(eq(missionPilotVerificationSnapshots.sessionId, session.id)),
 			db
 				.select()
 				.from(missionPilotReviewDecisions)

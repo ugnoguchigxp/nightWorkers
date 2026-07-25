@@ -47,7 +47,7 @@ type ThreadBodyProps = {
 	onModelChange: (model: string) => void;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 	onClearArtifactContext?: () => void;
 	canStopActiveRun?: boolean;
@@ -194,7 +194,7 @@ export function ThreadBody({
 	onModelChange,
 	onOpenArtifact,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 	onClearArtifactContext,
 	canStopActiveRun,
@@ -281,7 +281,7 @@ export function ThreadBody({
 							showDebugEvents={showDebugEvents}
 							onOpenArtifact={onOpenArtifact}
 							onOpenProjectFile={onOpenProjectFile}
-							onOpenTestModeArtifact={onOpenTestModeArtifact}
+							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 							onGrantExternalPath={onGrantExternalPath}
 						/>

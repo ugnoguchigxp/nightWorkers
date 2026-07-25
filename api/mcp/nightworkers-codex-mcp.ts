@@ -316,17 +316,49 @@ export function createNightWorkersCodexMcpServer(
 	server.registerTool(
 		"record_test_condition_mapping",
 		{ ...nightWorkersCodexToolManifest.record_test_condition_mapping },
-		async (input) => {
+		async ({ verificationDocumentId, cwd, evidenceSet }) => {
 			const taskId = firstNonEmpty(
 				context.taskId,
 				process.env.NIGHTWORKERS_TASK_ID,
 			);
-			const args = { taskId, ...input };
+			const runId = firstNonEmpty(
+				context.runId,
+				process.env.NIGHTWORKERS_RUN_ID,
+			);
+			const resolved = await resolveTaskRepository({ taskId, runId });
+			if (!resolved.task || !resolved.repository || !resolved.executionRoot) {
+				return toolResultToMcp({
+					ok: false,
+					toolName: "record_test_condition_mapping",
+					startedAt: new Date().toISOString(),
+					finishedAt: new Date().toISOString(),
+					payload: null,
+					error: {
+						code: "TASK_REPOSITORY_NOT_FOUND",
+						message: "Cannot resolve the current NightWorkers task repository.",
+					},
+				});
+			}
+			const args = {
+				taskId: resolved.task.id,
+				runId,
+				repoRoot: resolved.executionRoot,
+				verificationDocumentId,
+				cwd,
+				evidenceSet,
+				allowedPaths: resolved.repository.safetyPolicy?.allowedPaths,
+				externalAllowedPaths:
+					resolved.repository.safetyPolicy?.externalAllowedPaths,
+				deniedPaths: resolved.repository.safetyPolicy?.deniedPaths,
+				blockedCommands: resolved.repository.safetyPolicy?.blockedCommands,
+				maxCommandSeconds: resolved.repository.safetyPolicy?.maxCommandSeconds,
+			};
 			return controlledToolResult({
 				context,
-				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
+				runId,
 				toolName: "record_test_condition_mapping",
 				arguments: args,
+				workspaceIdentity: resolved.executionRoot,
 				evidenceKind: "test-condition-mapping",
 				idempotentSideEffect: true,
 				execute: () => recordTestConditionMappingTool(args),

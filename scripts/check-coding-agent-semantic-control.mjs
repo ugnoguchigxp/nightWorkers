@@ -50,7 +50,6 @@ for (const file of [
 ]) {
 	const source = fs.readFileSync(path.join(root, file), "utf8");
 	for (const symbol of [
-		"startTestModeRun",
 		"submitRunReview",
 		"startReviewSession",
 		"startReviewRun",

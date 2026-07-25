@@ -85,7 +85,7 @@ export type WorkbenchArtifactKind =
 	| "diff"
 	| "source_preview"
 	| "test_result"
-	| "test_mode"
+	| "evidence_check"
 	| "review_result"
 	| "review_status"
 	| "run_ledger"
@@ -126,7 +126,10 @@ export type WorkbenchArtifactRef = {
 		| { type: "task_message"; messageId: string }
 		| { type: "run_event"; eventId: string }
 		| { type: "review_result"; reviewId: string }
-		| { type: "test_mode" };
+		| {
+				type: "verification_document";
+				verificationDocumentId: string;
+		  };
 	createdAt: string;
 	metadata?: Record<string, unknown>;
 };

@@ -42,20 +42,6 @@ async function readTestEvidence(request: APIRequestContext, taskId: string) {
 	}>;
 }
 
-async function waitForRun(
-	request: APIRequestContext,
-	runId: string,
-	status: string,
-) {
-	for (let index = 0; index < 200; index += 1) {
-		const detail = await request.get(`/api/runs/${runId}`, { headers });
-		const current = (await detail.json()) as { status: string };
-		if (current.status === status) return;
-		await new Promise((resolve) => setTimeout(resolve, 50));
-	}
-	throw new Error(`Fixture run did not reach ${status}`);
-}
-
 async function createCompletedRun(
 	request: APIRequestContext,
 	workspace: string,
@@ -88,6 +74,7 @@ async function createCompletedRun(
 		headers,
 		data: { status: "ready" },
 	});
+	await seedSpec(request, taskId);
 	const started = await request.post(`/api/workbench/sessions/${taskId}/run`, {
 		headers,
 	});
@@ -96,20 +83,6 @@ async function createCompletedRun(
 		const detail = await request.get(`/api/runs/${run.id}`, { headers });
 		const current = (await detail.json()) as { status: string };
 		if (current.status === "completed") {
-			const testMode = await request.post(
-				`/api/tasks/${taskId}/test-mode-run`,
-				{
-					headers,
-					data: {
-						projectId: repositoryId,
-						specArtifactId: await seedSpec(request, taskId),
-						mode: "test",
-					},
-				},
-			);
-			expect(testMode.status(), await testMode.text()).toBe(201);
-			const testRun = (await testMode.json()) as { id: string };
-			await waitForRun(request, testRun.id, "completed");
 			return { repositoryId, taskId, runId: run.id };
 		}
 		await new Promise((resolve) => setTimeout(resolve, 50));

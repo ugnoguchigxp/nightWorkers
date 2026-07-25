@@ -26,7 +26,6 @@ export type MissionPilotArtifactFocusTarget =
 				| "questionnaire";
 	  }
 	| { key: string; kind: "todo" }
-	| { key: string; kind: "test_mode" }
 	| { key: string; kind: "review_status" };
 
 const IMPLEMENTATION_PHASES = new Set([
@@ -35,7 +34,6 @@ const IMPLEMENTATION_PHASES = new Set([
 	"implementation_evaluating",
 	"implementation_rework",
 ]);
-const TEST_PHASES = new Set(["test_preparing", "testing", "test_evaluating"]);
 const REVIEW_PHASES = new Set([
 	"review_preparing",
 	"reviewing",
@@ -54,9 +52,7 @@ function activeRunExecutionMode(run: TaskRun | undefined, taskId: string) {
 		return null;
 	const mode = (run.contextSnapshot as Record<string, unknown> | null)
 		?.executionMode;
-	return mode === "implementation" || mode === "test" || mode === "review"
-		? mode
-		: null;
+	return mode === "implementation" || mode === "review" ? mode : null;
 }
 
 function planModeWorkspaceFromArtifact(
@@ -95,18 +91,12 @@ export function resolveMissionPilotArtifactFocus(input: {
 	if (executionMode === "implementation") {
 		return { key: `${task.id}:implementation`, kind: "todo" };
 	}
-	if (executionMode === "test") {
-		return { key: `${task.id}:test`, kind: "test_mode" };
-	}
 	if (executionMode === "review") {
 		return { key: `${task.id}:review`, kind: "review_status" };
 	}
 
 	if (IMPLEMENTATION_PHASES.has(missionPilot.phase)) {
 		return { key: `${task.id}:implementation`, kind: "todo" };
-	}
-	if (TEST_PHASES.has(missionPilot.phase)) {
-		return { key: `${task.id}:test`, kind: "test_mode" };
 	}
 	if (REVIEW_PHASES.has(missionPilot.phase)) {
 		return { key: `${task.id}:review`, kind: "review_status" };

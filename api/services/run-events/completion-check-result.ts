@@ -137,9 +137,7 @@ export function completionCheckMatchesVerificationDocument(
 ) {
 	return Boolean(
 		result &&
-			(result.verificationDocumentIds.length === 0 ||
-				result.verificationDocumentIds.every(
-					(documentId) => documentId === expectedVerificationDocumentId,
-				)),
+			result.verificationDocumentIds.length === 1 &&
+			result.verificationDocumentIds[0] === expectedVerificationDocumentId,
 	);
 }

@@ -7,8 +7,8 @@ import {
 	missionPilotContextSnapshots,
 	missionPilotReviewDecisions,
 	missionPilotSessions,
-	missionPilotTestSnapshots,
 	taskArchiveRecords,
+	missionPilotVerificationSnapshots as verificationSnapshots,
 } from "../../db/mission-pilot-schema";
 import { repositories, tasks } from "../../db/schema";
 import { digestText } from "../../services/text-digest";
@@ -33,7 +33,6 @@ export { recoverMissionPilotCommittedCloseout } from "./mission-pilot-closeout-s
 
 const _execFileAsync = promisify(execFile);
 const closeoutLocks = new Map<string, Promise<unknown>>();
-
 export async function executeMissionPilotCloseout(sessionId: string) {
 	const previous = closeoutLocks.get(sessionId) ?? Promise.resolve();
 	const current = previous
@@ -73,10 +72,11 @@ async function executeCloseout(sessionId: string) {
 	if (
 		!session?.activeCloseoutId ||
 		!session.activeReviewDecisionId ||
-		!session.activeTestSnapshotId
+		!session.activeVerificationSnapshotId
 	)
 		throw new Error("Mission Pilot closeout evidence is incomplete");
-	const [[closeout], [reviewDecision], [testSnapshot], [repository], [task]] =
+	const snapshotId = session.activeVerificationSnapshotId;
+	const [[closeout], [reviewDecision], [snapshot], [repository], [task]] =
 		await Promise.all([
 			db
 				.select()
@@ -92,8 +92,8 @@ async function executeCloseout(sessionId: string) {
 				.limit(1),
 			db
 				.select()
-				.from(missionPilotTestSnapshots)
-				.where(eq(missionPilotTestSnapshots.id, session.activeTestSnapshotId))
+				.from(verificationSnapshots)
+				.where(eq(verificationSnapshots.id, snapshotId))
 				.limit(1),
 			db
 				.select()
@@ -102,12 +102,12 @@ async function executeCloseout(sessionId: string) {
 				.limit(1),
 			db.select().from(tasks).where(eq(tasks.id, session.taskId)).limit(1),
 		]);
-	if (!closeout || !reviewDecision || !testSnapshot || !repository || !task)
+	if (!closeout || !reviewDecision || !snapshot || !repository || !task)
 		throw new Error("Mission Pilot closeout rows are missing");
 	if (
 		closeout.reviewedContextDigest !== session.contextDigest ||
 		reviewDecision.verdict !== "pass" ||
-		testSnapshot.verdict !== "pass"
+		snapshot.verdict !== "pass"
 	)
 		throw new Error("Mission Pilot closeout evidence is stale or not passed");
 	const repoRoot = task.worktreePath || repository.localPath;
@@ -325,7 +325,7 @@ async function executeCloseout(sessionId: string) {
 		.set({ status: closeoutStatus, pushStatus, updatedAt: new Date() })
 		.where(eq(missionPilotCloseouts.id, closeout.id));
 	const admission = evaluateCompletionAdmission({
-		testPass: testSnapshot.verdict === "pass",
+		verificationPass: snapshot.verdict === "pass",
 		reviewPass:
 			reviewDecision.verdict === "pass" && reviewDecision.blockingCount === 0,
 		closeoutStatus,
@@ -406,7 +406,7 @@ async function executeCloseout(sessionId: string) {
 		missionPilotSessionId: session.id,
 		sourceRunId: null,
 		evidence: {
-			testSnapshotId: testSnapshot.id,
+			verificationSnapshotId: snapshot.id,
 			reviewDecisionId: reviewDecision.id,
 			closeoutId: closeout.id,
 			commitSha,
@@ -521,7 +521,7 @@ async function invalidateEvidenceAfterHookMutation(input: {
 		);
 	const execution = readRecord(latestContext.contextJson.execution);
 	const invalidatedEvidence = {
-		testSnapshotId: input.session.activeTestSnapshotId,
+		verificationSnapshotId: input.session.activeVerificationSnapshotId,
 		reviewDecisionId: input.session.activeReviewDecisionId,
 		closeoutId: input.closeoutId,
 		reason: "commit_hook_mutation",
@@ -534,7 +534,7 @@ async function invalidateEvidenceAfterHookMutation(input: {
 		...latestContext.contextJson,
 		execution: {
 			...execution,
-			test: undefined,
+			verification: undefined,
 			review: undefined,
 			closeout: undefined,
 			pendingRework: invalidatedEvidence,
@@ -558,7 +558,7 @@ async function invalidateEvidenceAfterHookMutation(input: {
 				contextDigest: digest,
 				activeRunId: null,
 				activePhaseRunId: null,
-				activeTestSnapshotId: null,
+				activeVerificationSnapshotId: null,
 				activeReviewDecisionId: null,
 				activeCloseoutId: null,
 				updatedAt: now,

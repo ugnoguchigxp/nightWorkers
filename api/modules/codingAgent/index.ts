@@ -20,6 +20,7 @@ export {
 	type RunFinalizeControllerDependencies,
 	runFinalizeController,
 } from "./application/run-finalize-controller";
+export { codingAgentRouter } from "./coding-agent.routes";
 export type {
 	CodingAgentContextPacket,
 	CodingAgentSystemContext,

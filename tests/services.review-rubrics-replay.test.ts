@@ -255,89 +255,7 @@ describe("review rubric replay evaluation", () => {
 		expect(replay.reviewResults).toHaveLength(1);
 	});
 
-	it("treats managed Test Mode checks as in-run reviewer evidence", async () => {
-		const run = {
-			id: runId,
-			taskId,
-			status: "running",
-			diffPatch: "",
-			finalReport: null,
-			contextSnapshot: {
-				executionMode: "test",
-				testMode: { action: "plan_and_implement_tests" },
-			},
-		};
-		const events = [
-			buildEventRow(1, {
-				type: "tool.call_finished",
-				severity: "info",
-				message: "run_check finished",
-				data: {
-					mcpTool: "run_check",
-					status: "completed",
-					result: {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									ok: true,
-									toolName: "run_check",
-									payload: {
-										checkKind: "verify",
-										llmSummary: "OK verify",
-									},
-								}),
-							},
-						],
-					},
-				},
-			}),
-			buildEventRow(2, {
-				type: "tool.call_finished",
-				severity: "info",
-				message: "completion_check finished",
-				data: {
-					mcpTool: "completion_check",
-					status: "completed",
-					result: {
-						structured_content: {
-							payload: {
-								llmSummary: "OK completion_check",
-							},
-						},
-					},
-				},
-			}),
-		];
-		const pack = buildReviewEvidencePackFromRun(run as never, events as never);
-		const result = await runReviewerEvaluationFromPack({
-			pack,
-			rubricId: "basic-coding-run",
-			mode: "deterministic_only",
-			run,
-		});
-
-		expect(pack.context).toMatchObject({
-			executionMode: "test",
-			inRunReview: true,
-		});
-		expect(pack.verification.map((item) => item.command)).toEqual([
-			"verify",
-			"completion_check",
-		]);
-		expect(result.finalReviewerVerdict).toBe("approved");
-		expect(
-			result.reviewResult.findings.map((finding) => finding.title),
-		).not.toEqual(
-			expect.arrayContaining([
-				"Diff evidence is present",
-				"Final report is present",
-				"Verification result is present",
-			]),
-		);
-	});
-
-	it("keeps final report and diff requirements outside in-run Test Mode review", async () => {
+	it("keeps final report and diff requirements in implementation review", async () => {
 		const run = {
 			id: runId,
 			taskId,
@@ -368,28 +286,3 @@ describe("review rubric replay evaluation", () => {
 		);
 	});
 });
-
-function buildEventRow(seq: number, event: Record<string, unknown>) {
-	return {
-		id: `event-${seq}`,
-		taskRunId: runId,
-		type: "info",
-		message: event.message || "",
-		timestamp: new Date("2026-06-02T00:00:00.000Z"),
-		seq,
-		actor: "worker",
-		eventType: "tool_result",
-		payloadJson: {
-			runEvent: {
-				version: 1,
-				id: `run-event-${seq}`,
-				runId,
-				taskId,
-				seq,
-				timestamp: "2026-06-02T00:00:00.000Z",
-				actor: "worker",
-				...event,
-			},
-		},
-	};
-}

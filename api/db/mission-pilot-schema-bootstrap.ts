@@ -1,5 +1,127 @@
 import { client } from "./client";
 import { ensureColumn } from "./schema-bootstrap-utils";
+
+async function tableExists(name: string) {
+	const result = await client.execute({
+		sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+		args: [name],
+	});
+	return result.rows.length > 0;
+}
+
+async function migrateMissionPilotVerificationSnapshotSchema() {
+	const hasLegacySnapshots = await tableExists("mission_pilot_test_snapshots");
+	let hasReviewDecisions = await tableExists("mission_pilot_review_decisions");
+	const hasPendingReviewDecisions = await tableExists(
+		"mission_pilot_review_decisions_next",
+	);
+	if (!hasReviewDecisions && hasPendingReviewDecisions) {
+		await client.execute(
+			"ALTER TABLE mission_pilot_review_decisions_next RENAME TO mission_pilot_review_decisions",
+		);
+		hasReviewDecisions = true;
+	}
+	const reviewColumns = hasReviewDecisions
+		? await client.execute("PRAGMA table_info(mission_pilot_review_decisions)")
+		: null;
+	const hasLegacyReviewColumn = Boolean(
+		reviewColumns?.rows.some((row) => row.name === "test_snapshot_id"),
+	);
+	const sessionColumns = await client.execute(
+		"PRAGMA table_info(mission_pilot_sessions)",
+	);
+	const hasLegacyActiveSnapshot = sessionColumns.rows.some(
+		(row) => row.name === "active_test_snapshot_id",
+	);
+	const hasLegacyTestCycle = sessionColumns.rows.some(
+		(row) => row.name === "test_cycle",
+	);
+
+	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_verification_snapshots (
+		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, source_phase_run_id text NOT NULL,
+		verification_document_id text NOT NULL, context_revision integer NOT NULL, context_digest text NOT NULL,
+		checklist_digest text NOT NULL, required_total integer NOT NULL, required_complete integer NOT NULL,
+		failed_required integer NOT NULL, unknown_required integer NOT NULL, evidence_run_ids_json text NOT NULL,
+		completion_check_event_id text NOT NULL, changed_paths_json text NOT NULL, verdict text NOT NULL,
+		snapshot_json text NOT NULL, created_at integer NOT NULL,
+		FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade,
+		FOREIGN KEY (source_phase_run_id) REFERENCES mission_pilot_phase_runs(id) ON DELETE cascade)`);
+
+	if (
+		!hasLegacySnapshots &&
+		!hasLegacyReviewColumn &&
+		!hasLegacyActiveSnapshot &&
+		!hasLegacyTestCycle
+	)
+		return;
+
+	await client.execute("PRAGMA foreign_keys = OFF");
+	try {
+		if (hasLegacySnapshots) {
+			await client.execute(`INSERT OR IGNORE INTO mission_pilot_verification_snapshots (
+				id, session_id, source_phase_run_id, verification_document_id, context_revision,
+				context_digest, checklist_digest, required_total, required_complete, failed_required,
+				unknown_required, evidence_run_ids_json, completion_check_event_id, changed_paths_json,
+				verdict, snapshot_json, created_at
+			)
+			SELECT
+				id, session_id, phase_run_id, verification_document_id, context_revision,
+				context_digest, checklist_digest, required_total, required_complete, failed_required,
+				unknown_required, evidence_run_ids_json, completion_check_event_id, test_changed_paths_json,
+				verdict, snapshot_json, created_at
+			FROM mission_pilot_test_snapshots`);
+		}
+		if (hasLegacyActiveSnapshot) {
+			await client.execute(`UPDATE mission_pilot_sessions
+				SET active_verification_snapshot_id = active_test_snapshot_id
+				WHERE active_verification_snapshot_id IS NULL`);
+		}
+		if (hasLegacyReviewColumn) {
+			await client.execute(
+				"DROP TABLE IF EXISTS mission_pilot_review_decisions_next",
+			);
+			await client.execute(`CREATE TABLE mission_pilot_review_decisions_next (
+				id text PRIMARY KEY NOT NULL, session_id text NOT NULL, review_session_id text NOT NULL,
+				review_phase_run_id text NOT NULL, context_revision integer NOT NULL, context_digest text NOT NULL,
+				verification_snapshot_id text NOT NULL, target_manifest_digest text NOT NULL, verdict text NOT NULL,
+				blocking_count integer NOT NULL, warning_count integer NOT NULL, info_count integer NOT NULL,
+				finding_ids_json text NOT NULL, decision_json text NOT NULL, created_at integer NOT NULL,
+				FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade,
+				FOREIGN KEY (review_phase_run_id) REFERENCES mission_pilot_phase_runs(id) ON DELETE cascade,
+				FOREIGN KEY (verification_snapshot_id) REFERENCES mission_pilot_verification_snapshots(id) ON DELETE restrict)`);
+			await client.execute(`INSERT INTO mission_pilot_review_decisions_next (
+				id, session_id, review_session_id, review_phase_run_id, context_revision, context_digest,
+				verification_snapshot_id, target_manifest_digest, verdict, blocking_count, warning_count,
+				info_count, finding_ids_json, decision_json, created_at
+			)
+			SELECT
+				id, session_id, review_session_id, review_phase_run_id, context_revision, context_digest,
+				test_snapshot_id, target_manifest_digest, verdict, blocking_count, warning_count,
+				info_count, finding_ids_json, decision_json, created_at
+			FROM mission_pilot_review_decisions`);
+			await client.execute("DROP TABLE mission_pilot_review_decisions");
+			await client.execute(
+				"ALTER TABLE mission_pilot_review_decisions_next RENAME TO mission_pilot_review_decisions",
+			);
+		}
+		if (hasLegacySnapshots) {
+			await client.execute("DROP TABLE mission_pilot_test_snapshots");
+		}
+		if (hasLegacyActiveSnapshot) {
+			await client.execute(
+				"ALTER TABLE mission_pilot_sessions DROP COLUMN active_test_snapshot_id",
+			);
+		}
+		if (hasLegacyTestCycle) {
+			await client.execute(
+				"ALTER TABLE mission_pilot_sessions DROP COLUMN test_cycle",
+			);
+		}
+	} finally {
+		await client.execute("PRAGMA foreign_keys = ON");
+	}
+}
+
 export async function ensureMissionPilotTables() {
 	await client.execute(
 		`CREATE TABLE IF NOT EXISTS mission_pilot_sessions (id text PRIMARY KEY NOT NULL, task_id text NOT NULL, repository_id text NOT NULL, source_kind text NOT NULL, source_id text NOT NULL, authorization_version integer, authorization_json text, desired_state text DEFAULT 'stopped' NOT NULL, phase text DEFAULT 'created' NOT NULL, resume_phase text, initial_prompt_snapshot text NOT NULL, initial_prompt_state text DEFAULT 'pending' NOT NULL, initial_prompt_message_id text, active_run_id text, version integer DEFAULT 0 NOT NULL, context_revision integer DEFAULT 1 NOT NULL, context_digest text NOT NULL, next_wake_at integer, lease_owner text, lease_expires_at integer, last_error_code text, last_error_message text, queue_handoff_json text, pre_queue_diagnostic_json text, started_at integer, stopped_at integer, created_at integer NOT NULL, updated_at integer NOT NULL, FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade, FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade, FOREIGN KEY (initial_prompt_message_id) REFERENCES task_messages(id) ON DELETE set null, FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null)`,
@@ -50,8 +172,8 @@ export async function ensureMissionPilotTables() {
 	);
 	await ensureColumn(
 		"mission_pilot_sessions",
-		"active_test_snapshot_id",
-		"active_test_snapshot_id text",
+		"active_verification_snapshot_id",
+		"active_verification_snapshot_id text",
 	);
 	await ensureColumn(
 		"mission_pilot_sessions",
@@ -67,11 +189,6 @@ export async function ensureMissionPilotTables() {
 		"mission_pilot_sessions",
 		"implementation_cycle",
 		"implementation_cycle integer DEFAULT 1 NOT NULL",
-	);
-	await ensureColumn(
-		"mission_pilot_sessions",
-		"test_cycle",
-		"test_cycle integer DEFAULT 0 NOT NULL",
 	);
 	await ensureColumn(
 		"mission_pilot_sessions",
@@ -175,27 +292,28 @@ export async function ensureMissionPilotTables() {
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_phase_runs_attempt_uidx ON mission_pilot_phase_runs (session_id, phase, cycle, attempt)",
 	);
-	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_test_snapshots (
-		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, phase_run_id text NOT NULL,
+	await migrateMissionPilotVerificationSnapshotSchema();
+	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_verification_snapshots (
+		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, source_phase_run_id text NOT NULL,
 		verification_document_id text NOT NULL, context_revision integer NOT NULL, context_digest text NOT NULL,
 		checklist_digest text NOT NULL, required_total integer NOT NULL, required_complete integer NOT NULL,
 		failed_required integer NOT NULL, unknown_required integer NOT NULL, evidence_run_ids_json text NOT NULL,
-		completion_check_event_id text NOT NULL, test_changed_paths_json text NOT NULL, verdict text NOT NULL,
+		completion_check_event_id text NOT NULL, changed_paths_json text NOT NULL, verdict text NOT NULL,
 		snapshot_json text NOT NULL, created_at integer NOT NULL,
 		FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade,
-		FOREIGN KEY (phase_run_id) REFERENCES mission_pilot_phase_runs(id) ON DELETE cascade)`);
+		FOREIGN KEY (source_phase_run_id) REFERENCES mission_pilot_phase_runs(id) ON DELETE cascade)`);
 	await client.execute(
-		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_test_snapshots_phase_run_uidx ON mission_pilot_test_snapshots (phase_run_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_verification_snapshots_source_phase_run_uidx ON mission_pilot_verification_snapshots (source_phase_run_id)",
 	);
 	await client.execute(`CREATE TABLE IF NOT EXISTS mission_pilot_review_decisions (
 		id text PRIMARY KEY NOT NULL, session_id text NOT NULL, review_session_id text NOT NULL,
 		review_phase_run_id text NOT NULL, context_revision integer NOT NULL, context_digest text NOT NULL,
-		test_snapshot_id text NOT NULL, target_manifest_digest text NOT NULL, verdict text NOT NULL,
+		verification_snapshot_id text NOT NULL, target_manifest_digest text NOT NULL, verdict text NOT NULL,
 		blocking_count integer NOT NULL, warning_count integer NOT NULL, info_count integer NOT NULL,
 		finding_ids_json text NOT NULL, decision_json text NOT NULL, created_at integer NOT NULL,
 		FOREIGN KEY (session_id) REFERENCES mission_pilot_sessions(id) ON DELETE cascade,
 		FOREIGN KEY (review_phase_run_id) REFERENCES mission_pilot_phase_runs(id) ON DELETE cascade,
-		FOREIGN KEY (test_snapshot_id) REFERENCES mission_pilot_test_snapshots(id) ON DELETE restrict)`);
+		FOREIGN KEY (verification_snapshot_id) REFERENCES mission_pilot_verification_snapshots(id) ON DELETE restrict)`);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS mission_pilot_review_decisions_phase_run_uidx ON mission_pilot_review_decisions (review_phase_run_id)",
 	);

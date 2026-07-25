@@ -5,7 +5,7 @@ export const enThread = {
 	"thread.tooltip.debugMode": "Debug mode",
 	"thread.tooltip.pilotThought": "Pilot thought",
 	"thread.tooltip.planMode": "Plan mode",
-	"thread.tooltip.testMode": "Test mode",
+	"thread.tooltip.evidenceCheck": "Evidence check",
 	"thread.tooltip.reviewMode": "Review mode",
 	"thread.tooltip.todoList": "Todo list",
 	"thread.deleteTask": "Delete Task",
@@ -18,6 +18,6 @@ export const enThread = {
 	"thread.noPlanModeWorkspace": "No Plan Mode Workspace",
 	"thread.todoArtifact": "TODO",
 	"thread.noTodoArtifact": "No TODO artifact",
-	"thread.testModeArtifact": "Test Mode",
+	"thread.evidenceCheckArtifact": "Evidence Check",
 	"thread.emptyPrompt": "Select a work thread or start from the input below",
 } as const;

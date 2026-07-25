@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { evaluateTestCompletionGate } from "../api/modules/missionPilot/mission-pilot-post-queue-state";
-import { resolvePersistedTestEvidence } from "../api/modules/missionPilot/mission-pilot-test-evidence";
+import {
+	evaluateImplementationCompletionGate,
+	evaluateVerificationCompletionGate,
+} from "../api/modules/missionPilot/mission-pilot-post-queue-state";
+import { resolvePersistedVerificationEvidence } from "../api/modules/missionPilot/mission-pilot-verification-evidence";
 import {
 	completionCheckMatchesVerificationDocument,
 	readLatestCompletionCheckResult,
 } from "../api/services/run-events/completion-check-result";
-import { missionPilotTestDecisionSchema } from "../shared/modules/missionPilot/mission-pilot-test.schema";
 
 const passingInput = {
 	runStatus: "completed",
@@ -20,21 +22,38 @@ const passingInput = {
 	failedRequired: 0,
 	unknownRequired: 0,
 	contextDigestMatches: true,
-	sourceChangedAfterTest: false,
 };
 
-describe("Mission Pilot Test completion gate", () => {
-	it("does not require the LLM to select persisted evidence IDs", () => {
-		expect(
-			missionPilotTestDecisionSchema.safeParse({
-				verdict: "pass",
-				defectOwner: "test",
-				failedConditionIds: [],
-				affectedPaths: [],
-				summary: "Managed checks passed.",
-				implementationRework: null,
-			}).success,
-		).toBe(true);
+describe("Mission Pilot verification completion gate", () => {
+	it.each([
+		"needs_review",
+		"needs_human",
+		"cancelled",
+		"failed",
+		"timed_out",
+		"running",
+	])("rejects a %s Implementation Run before verification", (runStatus) => {
+		const result = evaluateImplementationCompletionGate({
+			runStatus,
+			terminalReason: null,
+			openTodoCount: 0,
+			securityAllowed: true,
+			hasOwnershipEvidence: true,
+			hasDiffOrNoopEvidence: true,
+			hasFinalReport: true,
+			contextDigestMatches: true,
+		});
+		expect(result.pass).toBe(false);
+		expect(result.reasons).toContain("run_not_completed");
+	});
+
+	it("rejects needs_review even when every verification fact passes", () => {
+		const result = evaluateVerificationCompletionGate({
+			...passingInput,
+			runStatus: "needs_review",
+		});
+		expect(result.pass).toBe(false);
+		expect(result.reasons).toContain("run_not_completed");
 	});
 
 	it("uses the successful completion event after the tool-start event", () => {
@@ -102,7 +121,7 @@ describe("Mission Pilot Test completion gate", () => {
 			),
 		).toBe(true);
 		expect(
-			evaluateTestCompletionGate({
+			evaluateVerificationCompletionGate({
 				...passingInput,
 				completionCheckEventId: completionCheck?.eventId ?? null,
 				completionCheckOk: completionCheck?.ok ?? false,
@@ -138,15 +157,42 @@ describe("Mission Pilot Test completion gate", () => {
 		).toBe(false);
 	});
 
+	it("rejects completion evidence that is not linked to a verification document", () => {
+		const completionCheck = readLatestCompletionCheckResult([
+			{
+				id: "completion-finished",
+				seq: 1,
+				payloadJson: {
+					runEvent: {
+						type: "tool.call_finished",
+						data: {
+							mcpTool: "completion_check",
+							status: "completed",
+							result: { ok: true },
+						},
+					},
+				},
+			},
+		]);
+
+		expect(completionCheck?.ok).toBe(true);
+		expect(
+			completionCheckMatchesVerificationDocument(
+				completionCheck,
+				"expected-document",
+			),
+		).toBe(false);
+	});
+
 	it("passes only managed evidence plus completion_check", () => {
-		expect(evaluateTestCompletionGate(passingInput)).toEqual({
+		expect(evaluateVerificationCompletionGate(passingInput)).toEqual({
 			pass: true,
 			reasons: [],
 		});
 	});
 
 	it("does not promote raw command execution to formal pass", () => {
-		const result = evaluateTestCompletionGate({
+		const result = evaluateVerificationCompletionGate({
 			...passingInput,
 			acceptedEvidenceCount: 0,
 			completionCheckEventId: null,
@@ -157,7 +203,7 @@ describe("Mission Pilot Test completion gate", () => {
 	});
 
 	it("blocks Review while required evidence is failed or unknown", () => {
-		const result = evaluateTestCompletionGate({
+		const result = evaluateVerificationCompletionGate({
 			...passingInput,
 			requiredComplete: 1,
 			failedRequired: 1,
@@ -174,7 +220,7 @@ describe("Mission Pilot Test completion gate", () => {
 	});
 
 	it("blocks Review while the latest persisted check is failed", () => {
-		const result = evaluateTestCompletionGate({
+		const result = evaluateVerificationCompletionGate({
 			...passingInput,
 			latestFailedEvidenceCount: 1,
 		});
@@ -183,7 +229,7 @@ describe("Mission Pilot Test completion gate", () => {
 	});
 
 	it("blocks Review when required items are not linked to current evidence", () => {
-		const result = evaluateTestCompletionGate({
+		const result = evaluateVerificationCompletionGate({
 			...passingInput,
 			unlinkedRequiredEvidenceCount: 1,
 		});
@@ -206,7 +252,7 @@ describe("Mission Pilot Test completion gate", () => {
 			id: "incomplete",
 			rawStdoutArtifactId: null,
 		});
-		const result = resolvePersistedTestEvidence({
+		const result = resolvePersistedVerificationEvidence({
 			historyRows: [historicalFailure, incompleteArtifact, selected],
 		});
 
@@ -222,7 +268,7 @@ describe("Mission Pilot Test completion gate", () => {
 	});
 
 	it("reports a failure that happened after an earlier success", () => {
-		const result = resolvePersistedTestEvidence({
+		const result = resolvePersistedVerificationEvidence({
 			historyRows: [
 				evidenceRow({
 					id: "passed-first",

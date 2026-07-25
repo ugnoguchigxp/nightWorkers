@@ -46,7 +46,7 @@ describe("Mission Pilot Review completion gate", () => {
 			evaluateReviewCompletionGate({
 				decision,
 				contextDigestMatches: true,
-				testSnapshotMatches: true,
+				verificationSnapshotMatches: true,
 				targetManifestMatches: true,
 				reviewerEvaluationMatches: true,
 				reviewerEvaluationApproved: false,
@@ -92,7 +92,7 @@ describe("Mission Pilot Review completion gate", () => {
 		const result = evaluateReviewCompletionGate({
 			decision: { verdict: "pass", summary: "確認済み", findings: [] },
 			contextDigestMatches: true,
-			testSnapshotMatches: true,
+			verificationSnapshotMatches: true,
 			targetManifestMatches: true,
 			reviewerEvaluationMatches: true,
 			reviewerEvaluationApproved: true,
@@ -104,7 +104,7 @@ describe("Mission Pilot Review completion gate", () => {
 		const result = evaluateReviewCompletionGate({
 			decision: { status: "done" },
 			contextDigestMatches: true,
-			testSnapshotMatches: true,
+			verificationSnapshotMatches: true,
 			targetManifestMatches: true,
 			reviewerEvaluationMatches: true,
 			reviewerEvaluationApproved: true,
@@ -133,7 +133,7 @@ describe("Mission Pilot Review completion gate", () => {
 				],
 			},
 			contextDigestMatches: true,
-			testSnapshotMatches: true,
+			verificationSnapshotMatches: true,
 			targetManifestMatches: true,
 			reviewerEvaluationMatches: true,
 			reviewerEvaluationApproved: true,
@@ -159,7 +159,7 @@ describe("Mission Pilot Review completion gate", () => {
 				],
 			},
 			contextDigestMatches: true,
-			testSnapshotMatches: true,
+			verificationSnapshotMatches: true,
 			targetManifestMatches: true,
 			reviewerEvaluationMatches: true,
 			reviewerEvaluationApproved: true,
@@ -175,7 +175,7 @@ describe("Mission Pilot Review completion gate", () => {
 		const result = evaluateReviewCompletionGate({
 			decision: { verdict: "pass", summary: "確認済み", findings: [] },
 			contextDigestMatches: true,
-			testSnapshotMatches: true,
+			verificationSnapshotMatches: true,
 			targetManifestMatches: true,
 			reviewerEvaluationMatches: false,
 			reviewerEvaluationApproved: false,

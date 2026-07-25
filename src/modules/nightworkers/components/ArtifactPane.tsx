@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+	buildEvidenceCheckExportMarkdown,
+	buildEvidenceCheckPanelModel,
+	EvidenceCheckArtifactViewer,
+} from "../../codingAgent";
 import { PlanModeWorkspaceViewer } from "../../planMode";
-import { ReviewStatusViewer } from "../../review";
+import {
+	ReviewStatusViewer,
+	resolveReviewImplementationCompletionReport,
+} from "../../review";
 import type { PlanWorkspaceTab } from "../../specification";
 import {
 	type ArtifactExportDescriptor,
@@ -9,13 +17,6 @@ import {
 	buildMarkdownFromValue,
 } from "../artifactExport";
 import { logArtifactPaneRendered } from "../artifactPerformance";
-import {
-	buildTestModeWorkflowSteps,
-	isTestModeWorkflowComplete,
-	isTestModeWorkflowRun,
-	selectTestModeWorkflowSteps,
-	type TestModeWorkflowStepView,
-} from "../testModeWorkflowView";
 import type {
 	ActivityArtifact,
 	GitCloseoutState,
@@ -32,10 +33,8 @@ import type {
 } from "../types";
 import { DiffViewer, FileViewer, MarkdownViewer } from "./ArtifactFileViewers";
 import {
-	cloneTestModeWorkflowSteps,
 	type ProjectArtifactMode,
 	resolveArtifactWorkspaceInitialTab,
-	testModeWorkflowSignature,
 	useProjectArtifactRefresh,
 } from "./ArtifactPane.controller";
 import {
@@ -50,13 +49,6 @@ import {
 } from "./ArtifactPaneContentViewers";
 import { useArtifactPaneExportActions } from "./ArtifactPaneExportActions";
 import { useArtifactPaneSelection } from "./ArtifactPaneSelection";
-import {
-	buildLatestVerificationPanelModel,
-	buildTestModeExportMarkdown,
-	buildVerificationPanelModel,
-	TestModeArtifactViewer,
-	VerificationChecklistPanel,
-} from "./ArtifactPaneTestMode";
 import { buildExportedArtifactContent } from "./ArtifactPaneVersions";
 
 type ArtifactPaneProps = {
@@ -102,17 +94,10 @@ type ArtifactPaneProps = {
 	isReviewPromptDisabled?: boolean;
 };
 
-type FrozenTestModeWorkflow = {
-	taskId: string;
-	signature: string;
-	steps: TestModeWorkflowStepView[];
-};
-
 export function ArtifactPane({
 	activeProject,
 	activeSessionId,
 	latestRun,
-	latestRunEvents,
 	focusType,
 	selectedArtifact,
 	taskMessages,
@@ -153,9 +138,6 @@ export function ArtifactPane({
 		null,
 	);
 	const [isFullscreen, setIsFullscreen] = useState(false);
-	const [testModeStatus] = useState<string | null>(null);
-	const [frozenTestModeWorkflow, setFrozenTestModeWorkflow] =
-		useState<FrozenTestModeWorkflow | null>(null);
 	const [localProjectArtifactMode, setLocalProjectArtifactMode] =
 		useState<ProjectArtifactMode>("tree");
 	const [planModeExportDescriptor, setPlanModeExportDescriptor] =
@@ -189,7 +171,7 @@ export function ArtifactPane({
 		showDiff,
 		showBlueprintWorkspace,
 		showReviewStatus,
-		showTestMode,
+		showEvidenceCheck,
 		showBlueprint,
 		showComponentDesign,
 		taskMessageId,
@@ -200,81 +182,20 @@ export function ArtifactPane({
 		artifactValidation,
 		artifactGeneration,
 	} = selection;
-	const verificationPanel = useMemo(
+	const evidenceCheckPanel = useMemo(
 		() =>
-			selectedMessage && !showTestMode
-				? buildVerificationPanelModel({
-						message: selectedMessage,
-						taskMessages,
-						artifactId: displayArtifact?.id || selectedArtifact?.id || null,
-					})
-				: null,
-		[
-			displayArtifact?.id,
-			selectedArtifact?.id,
-			selectedMessage,
-			showTestMode,
-			taskMessages,
-		],
-	);
-	const testModePanel = useMemo(
-		() =>
-			showTestMode
-				? buildLatestVerificationPanelModel({
-						taskMessages,
-					})
-				: null,
-		[showTestMode, taskMessages],
-	);
-	const latestRunForTestMode = useMemo(
-		() =>
-			latestRun && latestRunEvents
-				? { ...latestRun, events: latestRunEvents }
-				: latestRun,
-		[latestRun, latestRunEvents],
-	);
-	const liveTestModeWorkflowSteps = useMemo(
-		() =>
-			buildTestModeWorkflowSteps({
-				latestRun: latestRunForTestMode,
-				localStatus: testModeStatus,
+			buildEvidenceCheckPanelModel({
+				artifact: showEvidenceCheck ? displayArtifact || null : null,
+				taskMessages,
 			}),
-		[latestRunForTestMode, testModeStatus],
+		[displayArtifact, showEvidenceCheck, taskMessages],
 	);
-	const activeFrozenTestModeSteps =
-		frozenTestModeWorkflow?.taskId === activeSessionId
-			? frozenTestModeWorkflow.steps
-			: null;
-	const displayedTestModeWorkflowSteps = selectTestModeWorkflowSteps({
-		liveSteps: liveTestModeWorkflowSteps,
-		frozenSteps: activeFrozenTestModeSteps,
-		latestRun: latestRunForTestMode,
-	});
-	useEffect(() => {
-		if (!activeSessionId) return;
-		if (!isTestModeWorkflowRun(latestRunForTestMode)) return;
-		if (!isTestModeWorkflowComplete(liveTestModeWorkflowSteps)) return;
-		const signature = testModeWorkflowSignature(liveTestModeWorkflowSteps);
-		setFrozenTestModeWorkflow((current) => {
-			if (
-				current?.taskId === activeSessionId &&
-				current.signature === signature
-			) {
-				return current;
-			}
-			return {
-				taskId: activeSessionId,
-				signature,
-				steps: cloneTestModeWorkflowSteps(liveTestModeWorkflowSteps),
-			};
-		});
-	}, [activeSessionId, latestRunForTestMode, liveTestModeWorkflowSteps]);
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
 		!showBlueprintWorkspace &&
 		!showReviewStatus &&
-		!showTestMode &&
+		!showEvidenceCheck &&
 		!showBlueprint &&
 		!showComponentDesign &&
 		Boolean(selectedMessage);
@@ -285,8 +206,8 @@ export function ArtifactPane({
 				: selectedFilePath || t("artifact.projectTree")
 			: showReviewStatus
 				? t("reviewStatus.title")
-				: showTestMode
-					? t("testMode.title")
+				: showEvidenceCheck
+					? t("evidenceCheck.title")
 					: showBlueprintWorkspace
 						? t("thread.planModeWorkspace")
 						: displayArtifact?.title || selectedArtifact.title;
@@ -298,6 +219,24 @@ export function ArtifactPane({
 		null;
 	const isReviewSessionLoading = Boolean(
 		displayArtifact?.metadata?.reviewSessionLoading,
+	);
+	const implementationCompletionReport = useMemo(
+		() =>
+			showReviewStatus
+				? resolveReviewImplementationCompletionReport({
+						artifact: displayArtifact || null,
+						detail: activeReviewDetail,
+						latestRun,
+						taskMessages,
+					})
+				: null,
+		[
+			activeReviewDetail,
+			displayArtifact,
+			latestRun,
+			showReviewStatus,
+			taskMessages,
+		],
 	);
 	const defaultExportedMarkdown = buildExportedArtifactContent({
 		showDiff,
@@ -316,13 +255,14 @@ export function ArtifactPane({
 					title: artifactTitle,
 					fileStem: artifactFileStem(artifactTitle),
 					markdown: showReviewStatus
-						? buildMarkdownFromValue(artifactTitle, activeReviewDetail || {})
-						: showTestMode
-							? buildTestModeExportMarkdown({
+						? buildMarkdownFromValue(artifactTitle, {
+								implementationCompletionReport,
+								review: activeReviewDetail,
+							})
+						: showEvidenceCheck
+							? buildEvidenceCheckExportMarkdown({
 									title: artifactTitle,
-									model: testModePanel,
-									workflowSteps: displayedTestModeWorkflowSteps,
-									latestRun: latestRunForTestMode,
+									model: evidenceCheckPanel,
 								})
 							: defaultExportedMarkdown,
 				};
@@ -448,6 +388,7 @@ export function ArtifactPane({
 							detail={activeReviewDetail}
 							loading={isReviewSessionLoading}
 							latestRun={latestRun}
+							implementationCompletionReport={implementationCompletionReport}
 							gitCloseout={gitCloseout}
 							onCommitGitCloseout={onCommitGitCloseout}
 							onPushGitCloseout={onPushGitCloseout}
@@ -457,13 +398,8 @@ export function ArtifactPane({
 							onSubmitReviewPrompt={onSubmitReviewPrompt}
 							isReviewPromptDisabled={isReviewPromptDisabled}
 						/>
-					) : showTestMode ? (
-						<TestModeArtifactViewer
-							model={testModePanel}
-							latestRun={latestRunForTestMode}
-							workflowSteps={displayedTestModeWorkflowSteps}
-							status={testModeStatus}
-						/>
+					) : showEvidenceCheck ? (
+						<EvidenceCheckArtifactViewer model={evidenceCheckPanel} />
 					) : showBlueprint ? (
 						<BlueprintViewer
 							sessionId={activeSessionId}
@@ -496,22 +432,10 @@ export function ArtifactPane({
 							onOpenProjectFile={onOpenFile}
 						/>
 					) : showDocument ? (
-						<div className="flex h-full min-h-0 flex-col">
-							{verificationPanel ? (
-								<VerificationChecklistPanel
-									model={verificationPanel}
-									latestRun={latestRunForTestMode}
-									workflowSteps={displayedTestModeWorkflowSteps}
-									status={testModeStatus}
-								/>
-							) : null}
-							<div className="min-h-0 flex-1 overflow-hidden">
-								<MarkdownViewer
-									content={selectedMessage?.content || ""}
-									onOpenProjectFile={onOpenFile}
-								/>
-							</div>
-						</div>
+						<MarkdownViewer
+							content={selectedMessage?.content || ""}
+							onOpenProjectFile={onOpenFile}
+						/>
 					) : showProjectTree && selectedFile ? (
 						<FileViewer file={selectedFile} onOpenProjectFile={onOpenFile} />
 					) : showProjectTree && isFileLoading ? (

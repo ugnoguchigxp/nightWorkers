@@ -17,7 +17,7 @@ export type TestEvidenceHistorySummary = {
 	latestFailureCount: number;
 };
 
-export function resolvePersistedTestEvidence(input: {
+export function resolvePersistedVerificationEvidence(input: {
 	historyRows: TestEvidenceRow[];
 }) {
 	const acceptedEvidence = input.historyRows.filter(

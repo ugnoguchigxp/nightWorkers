@@ -35,22 +35,6 @@ export async function executeMissionPilotContinuation(
 async function executeMissionPilotContinuationOnce(
 	continuation: MissionPilotContinuation,
 ) {
-	if (continuation.kind === "start_test") {
-		const { startVerificationRunFromArtifact } = await import(
-			"../nightworkers/nightworkers.service"
-		);
-		await startVerificationRunFromArtifact({
-			...continuation.input,
-			mode: "test",
-			action: "plan_and_implement_tests",
-			rerun: true,
-			runAssociation: buildMissionPilotRunAssociationRequest({
-				phase: "test",
-				missionPilot: continuation.input.missionPilot,
-			}),
-		});
-		return;
-	}
 	if (continuation.kind === "start_review") {
 		const anchorRun = await import(
 			"../nightworkers/nightworkers.repository"

@@ -4,7 +4,7 @@ import { db } from "../../db/client";
 import {
 	missionPilotReviewDecisions,
 	missionPilotSessions,
-	missionPilotTestSnapshots,
+	missionPilotVerificationSnapshots,
 } from "../../db/mission-pilot-schema";
 import {
 	completionCheckMatchesVerificationDocument,
@@ -27,7 +27,7 @@ export type ReviewCloseoutEvidence = {
 		reviewRunId: string | null;
 		completedAt: string | null;
 	};
-	test: {
+	verification: {
 		source:
 			| "mission_pilot_snapshot"
 			| "verification_checklist"
@@ -151,12 +151,14 @@ async function resolveReviewEvidence(input: {
 }
 
 async function findCompletionCheck(input: {
-	testRuns: Awaited<ReturnType<typeof nightworkersRepo.listTaskRunsForTask>>;
+	verificationRuns: Awaited<
+		ReturnType<typeof nightworkersRepo.listTaskRunsForTask>
+	>;
 	allowedRunIds: Set<string>;
 	verificationDocumentId: string;
 	minimumCompletedAt: Date;
 }) {
-	for (const run of input.testRuns) {
+	for (const run of input.verificationRuns) {
 		if (!input.allowedRunIds.has(run.id)) continue;
 		const events = await nightworkersRepo.listTaskEventsForRun(run.id);
 		const match = [...events].reverse().find((event) => {
@@ -180,11 +182,11 @@ async function findCompletionCheck(input: {
 	return null;
 }
 
-async function resolveTestEvidence(input: {
+async function resolveVerificationEvidence(input: {
 	taskId: string;
 	implementationFinishedAt: Date;
 	artifacts: Awaited<ReturnType<typeof reviewRepo.listReviewArtifacts>>;
-}): Promise<ReviewCloseoutEvidence["test"]> {
+}): Promise<ReviewCloseoutEvidence["verification"]> {
 	const reviewRunArtifact = input.artifacts.find(
 		(artifact) => artifact.kind === "review_run",
 	);
@@ -202,17 +204,17 @@ async function resolveTestEvidence(input: {
 		.where(eq(missionPilotSessions.taskId, input.taskId));
 	const missionManaged = Boolean(
 		missionSession &&
-			(missionSession.desiredState === "running" ||
-				missionSession.activeTestSnapshotId ||
+			(missionSession.desiredState === "playing" ||
+				missionSession.activeVerificationSnapshotId ||
 				missionSession.activeReviewDecisionId),
 	);
 	if (missionSession && missionManaged) {
-		const snapshotId = missionSession.activeTestSnapshotId;
+		const snapshotId = missionSession.activeVerificationSnapshotId;
 		const [snapshot] = snapshotId
 			? await db
 					.select()
-					.from(missionPilotTestSnapshots)
-					.where(eq(missionPilotTestSnapshots.id, snapshotId))
+					.from(missionPilotVerificationSnapshots)
+					.where(eq(missionPilotVerificationSnapshots.id, snapshotId))
 			: [];
 		if (!snapshot) {
 			return {
@@ -221,7 +223,7 @@ async function resolveTestEvidence(input: {
 				verificationDocumentId: null,
 				evidenceRunIds: [],
 				completionCheckEventId: null,
-				reason: "Mission Pilot の active Test snapshot がありません。",
+				reason: "Mission Pilot の active verification snapshot がありません。",
 			};
 		}
 		const passed =
@@ -244,7 +246,7 @@ async function resolveTestEvidence(input: {
 					)
 			: [];
 		const stale = Boolean(
-			reviewDecision && reviewDecision.testSnapshotId !== snapshot.id,
+			reviewDecision && reviewDecision.verificationSnapshotId !== snapshot.id,
 		);
 		return {
 			source: "mission_pilot_snapshot",
@@ -253,10 +255,10 @@ async function resolveTestEvidence(input: {
 			evidenceRunIds: snapshot.evidenceRunIdsJson,
 			completionCheckEventId: snapshot.completionCheckEventId,
 			reason: stale
-				? "Mission Pilot の Review decision が active Test snapshot を参照していません。"
+				? "Mission Pilot の Review decision が active verification snapshot を参照していません。"
 				: passed
 					? null
-					: "Mission Pilot の Test snapshot が pass ではありません。",
+					: "Mission Pilot の verification snapshot が pass ではありません。",
 		};
 	}
 
@@ -265,14 +267,17 @@ async function resolveTestEvidence(input: {
 	);
 	if (document?.status === "active") {
 		const taskRuns = await nightworkersRepo.listTaskRunsForTask(input.taskId);
-		const completedTestRuns = taskRuns.filter((run) => {
+		const completedVerificationRuns = taskRuns.filter((run) => {
 			const snapshot = record(run.contextSnapshot);
-			return run.status === "completed" && snapshot.executionMode === "test";
+			return (
+				run.status === "completed" &&
+				snapshot.executionMode === "implementation"
+			);
 		});
-		const testRuns = completedTestRuns.filter(
+		const verificationRuns = completedVerificationRuns.filter(
 			(run) => run.startedAt >= evidenceFreshnessFloor,
 		);
-		const testRunIds = new Set(testRuns.map((run) => run.id));
+		const verificationRunIds = new Set(verificationRuns.map((run) => run.id));
 		const items = await verificationRepo.listVerificationChecklistItems(
 			document.id,
 		);
@@ -290,8 +295,8 @@ async function resolveTestEvidence(input: {
 		];
 		if (
 			requiresPostReviewRetest &&
-			completedTestRuns.length > 0 &&
-			testRuns.length === 0
+			completedVerificationRuns.length > 0 &&
+			verificationRuns.length === 0
 		) {
 			return {
 				source: "verification_checklist",
@@ -299,7 +304,7 @@ async function resolveTestEvidence(input: {
 				verificationDocumentId: document.id,
 				evidenceRunIds,
 				completionCheckEventId: null,
-				reason: "Review Run が修正を適用した後の Test Mode 証跡がありません。",
+				reason: "Review Run が修正を適用した後の実装Run証跡がありません。",
 			};
 		}
 		const evidenceRuns =
@@ -316,7 +321,7 @@ async function resolveTestEvidence(input: {
 					run.taskId !== input.taskId ||
 					run.verificationDocumentId !== document.id ||
 					!run.runId ||
-					!testRunIds.has(run.runId) ||
+					!verificationRunIds.has(run.runId) ||
 					run.finishedAt < evidenceFreshnessFloor,
 			);
 		const failedEvidence = evidenceRuns.some((run) => run.exitCode !== 0);
@@ -330,7 +335,7 @@ async function resolveTestEvidence(input: {
 			latestEvidenceFinishedAt,
 		].reduce((latest, date) => (date > latest ? date : latest));
 		const completion = await findCompletionCheck({
-			testRuns,
+			verificationRuns,
 			allowedRunIds: new Set(
 				evidenceRuns
 					.map((run) => run.runId)
@@ -384,7 +389,7 @@ async function resolveTestEvidence(input: {
 		verificationDocumentId: null,
 		evidenceRunIds: [],
 		completionCheckEventId: null,
-		reason: "Test Mode の完了証跡がありません。",
+		reason: "実装Runの完了証跡がありません。",
 	};
 }
 
@@ -465,9 +470,9 @@ export async function resolveReviewCloseoutEvidence(input: {
 		reviewRepo.listReviewFindings(input.reviewSessionId),
 		nightworkersRepo.listTaskEventsForRun(input.runId),
 	]);
-	const [review, test] = await Promise.all([
+	const [review, verification] = await Promise.all([
 		resolveReviewEvidence({ runId: input.runId, artifacts, events }),
-		resolveTestEvidence({
+		resolveVerificationEvidence({
 			taskId: input.taskId,
 			implementationFinishedAt: input.implementationFinishedAt,
 			artifacts,
@@ -475,7 +480,7 @@ export async function resolveReviewCloseoutEvidence(input: {
 	]);
 	return {
 		review,
-		test,
+		verification,
 		security: resolveSecurityEvidence(events),
 		findings: {
 			unresolvedBlockingIds: findings

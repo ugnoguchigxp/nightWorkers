@@ -223,7 +223,6 @@ export async function prepareTaskRunInProcess(
 			maxIterations: number;
 			ontologyToolProfile: "standard" | "ontology_extended";
 		};
-		testMode?: unknown;
 		reviewRun?: unknown;
 		runtimeResume?: unknown;
 	} = {
@@ -303,7 +302,6 @@ export async function prepareTaskRunInProcess(
 			diagnostics: runtimeLaneResolution.diagnostics,
 		},
 		effectiveLlmRouting,
-		...(runtimeOptions.testMode ? { testMode: runtimeOptions.testMode } : {}),
 		...(runtimeOptions.reviewRun
 			? { reviewRun: runtimeOptions.reviewRun }
 			: {}),

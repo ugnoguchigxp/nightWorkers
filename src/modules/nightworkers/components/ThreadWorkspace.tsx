@@ -108,11 +108,12 @@ export type ThreadWorkspaceProps = {
 	isReviewArtifactOpen: boolean;
 	hasReviewArtifact: boolean;
 	isReviewActionBusy: boolean;
-	onOpenTestModeArtifact: () => void;
-	isTestModeArtifactOpen: boolean;
+	onOpenEvidenceCheckArtifact: () => void;
+	isEvidenceCheckArtifactOpen: boolean;
 	onOpenTodoArtifact: () => void;
 	isTodoArtifactOpen: boolean;
 	hasTodoArtifact: boolean;
+	hasEvidenceCheckArtifact: boolean;
 	onDeleteSession: () => void;
 	onQueueSession: () => Promise<void> | void;
 	onRemoveQueueEntry: () => void;
@@ -201,9 +202,9 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 		},
 		[props.onOpenArtifact, runArtifactButtonAction],
 	);
-	const openTestModeArtifactWithCooldown = useCallback(() => {
-		runArtifactButtonAction(props.onOpenTestModeArtifact);
-	}, [props.onOpenTestModeArtifact, runArtifactButtonAction]);
+	const openEvidenceCheckArtifactWithCooldown = useCallback(() => {
+		runArtifactButtonAction(props.onOpenEvidenceCheckArtifact);
+	}, [props.onOpenEvidenceCheckArtifact, runArtifactButtonAction]);
 	const openReviewModeArtifactWithCooldown = useCallback(() => {
 		runArtifactButtonAction(() => void props.onOpenReviewArtifact());
 	}, [props.onOpenReviewArtifact, runArtifactButtonAction]);
@@ -391,7 +392,7 @@ export function ThreadWorkspace(props: ThreadWorkspaceProps) {
 			onModelChange={props.onModelChange}
 			onOpenArtifact={openArtifactWithCooldown}
 			onOpenProjectFile={props.onOpenProjectFile}
-			onOpenTestModeArtifact={openTestModeArtifactWithCooldown}
+			onOpenEvidenceCheckArtifact={openEvidenceCheckArtifactWithCooldown}
 			onOpenReviewModeArtifact={openReviewModeArtifactWithCooldown}
 			onClearArtifactContext={props.onClearArtifactContext}
 			canStopActiveRun={props.canStopActiveRun}

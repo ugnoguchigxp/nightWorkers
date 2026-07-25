@@ -21,7 +21,6 @@ export type StartTaskRunOptions = {
 		| "implementation_queue"
 		| "session_queue"
 		| "review_run"
-		| "test_mode"
 		| "explicit";
 	/** 単一Coding Agent runtimeを、明示されたPlan Modeの計画Todoから開始する。 */
 	planModeRequested?: boolean;

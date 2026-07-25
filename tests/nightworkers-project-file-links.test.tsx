@@ -37,15 +37,15 @@ describe("project file links", () => {
 		expect(markup).not.toContain('target="_blank"');
 	});
 
-	it("marks chat markdown Test Mode links for workbench artifact navigation", () => {
+	it("marks chat markdown Evidence Check links for artifact navigation", () => {
 		const markup = renderToStaticMarkup(
 			<ChatMarkdown
-				content="[テストモードに入り、完了条件テストの構築をする](/sessions/task-1?artifact=test_mode)"
-				onOpenTestModeArtifact={() => undefined}
+				content="[証跡チェックを開く](/sessions/task-1?artifact=evidence_check)"
+				onOpenEvidenceCheckArtifact={() => undefined}
 			/>,
 		);
 
-		expect(markup).toContain('data-workbench-artifact-link="test_mode"');
+		expect(markup).toContain('data-workbench-artifact-link="evidence_check"');
 		expect(markup).not.toContain('target="_blank"');
 	});
 
@@ -61,16 +61,16 @@ describe("project file links", () => {
 		expect(markup).not.toContain('target="_blank"');
 	});
 
-	it("renders Test Mode links as a standalone line inside list items", () => {
+	it("renders Evidence Check links as a standalone line inside list items", () => {
 		const markup = renderToStaticMarkup(
 			<ChatMarkdown
-				content="- `compile_eval` 実行回数:1 [テストモードに入り、完了条件テストの構築をする](/sessions/task-1?artifact=test_mode)"
-				onOpenTestModeArtifact={() => undefined}
+				content="- `compile_eval` 実行回数:1 [証跡チェックを開く](/sessions/task-1?artifact=evidence_check)"
+				onOpenEvidenceCheckArtifact={() => undefined}
 			/>,
 		);
 
 		expect(markup).toContain("mt-1 block w-fit");
-		expect(markup).toContain('data-workbench-artifact-link="test_mode"');
+		expect(markup).toContain('data-workbench-artifact-link="evidence_check"');
 	});
 
 	it("marks git diff changed files and renders colored diff lines", () => {

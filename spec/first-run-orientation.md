@@ -118,9 +118,9 @@ Open Settings before connecting real credentials. Confirm:
 Use the Workbench and Queue state to decide what happens next:
 - Leave the Session in chat if you only needed investigation.
 - Queue implementation only after you trust the plan.
-- Run Test Mode and confirm managed evidence plus `completion_check`.
+- Confirm managed evidence plus `completion_check` in the Implementation Run.
 - Complete Review Run and resolve blocking findings.
-- Rerun Test Mode after Review applies fixes.
+- Rerun implementation verification after Review applies fixes.
 - Confirm the implementation Security Oracle pass or explicit policy skip.
 - Review server-side closeout evidence, diff, and final report before explicit
   commit or push.

@@ -56,11 +56,10 @@ export const missionPilotSessions = sqliteTable(
 			onDelete: "set null",
 		}),
 		activePhaseRunId: text("active_phase_run_id"),
-		activeTestSnapshotId: text("active_test_snapshot_id"),
+		activeVerificationSnapshotId: text("active_verification_snapshot_id"),
 		activeReviewDecisionId: text("active_review_decision_id"),
 		activeCloseoutId: text("active_closeout_id"),
 		implementationCycle: integer("implementation_cycle").notNull().default(1),
-		testCycle: integer("test_cycle").notNull().default(0),
 		reviewCycle: integer("review_cycle").notNull().default(0),
 		totalCorrectionCycle: integer("total_correction_cycle")
 			.notNull()
@@ -358,14 +357,14 @@ export const missionPilotPhaseRuns = sqliteTable(
 	}),
 );
 
-export const missionPilotTestSnapshots = sqliteTable(
-	"mission_pilot_test_snapshots",
+export const missionPilotVerificationSnapshots = sqliteTable(
+	"mission_pilot_verification_snapshots",
 	{
 		id: text("id").primaryKey(),
 		sessionId: text("session_id")
 			.notNull()
 			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
-		phaseRunId: text("phase_run_id")
+		sourcePhaseRunId: text("source_phase_run_id")
 			.notNull()
 			.references(() => missionPilotPhaseRuns.id, { onDelete: "cascade" }),
 		verificationDocumentId: text("verification_document_id").notNull(),
@@ -380,7 +379,7 @@ export const missionPilotTestSnapshots = sqliteTable(
 			.$type<string[]>()
 			.notNull(),
 		completionCheckEventId: text("completion_check_event_id").notNull(),
-		testChangedPathsJson: text("test_changed_paths_json", { mode: "json" })
+		changedPathsJson: text("changed_paths_json", { mode: "json" })
 			.$type<string[]>()
 			.notNull(),
 		verdict: text("verdict").notNull(),
@@ -390,9 +389,9 @@ export const missionPilotTestSnapshots = sqliteTable(
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 	},
 	(table) => ({
-		phaseRunUidx: uniqueIndex("mission_pilot_test_snapshots_phase_run_uidx").on(
-			table.phaseRunId,
-		),
+		sourcePhaseRunUidx: uniqueIndex(
+			"mission_pilot_verification_snapshots_source_phase_run_uidx",
+		).on(table.sourcePhaseRunId),
 	}),
 );
 
@@ -409,9 +408,11 @@ export const missionPilotReviewDecisions = sqliteTable(
 			.references(() => missionPilotPhaseRuns.id, { onDelete: "cascade" }),
 		contextRevision: integer("context_revision").notNull(),
 		contextDigest: text("context_digest").notNull(),
-		testSnapshotId: text("test_snapshot_id")
+		verificationSnapshotId: text("verification_snapshot_id")
 			.notNull()
-			.references(() => missionPilotTestSnapshots.id, { onDelete: "restrict" }),
+			.references(() => missionPilotVerificationSnapshots.id, {
+				onDelete: "restrict",
+			}),
 		targetManifestDigest: text("target_manifest_digest").notNull(),
 		verdict: text("verdict").notNull(),
 		blockingCount: integer("blocking_count").notNull(),

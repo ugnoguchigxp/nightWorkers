@@ -71,7 +71,7 @@ export async function createReviewerEvaluation(
 							payloadJson: {
 								reviewResult: evaluation.reviewResult,
 								targetManifestDigest: pack.manifestDigest ?? null,
-								testSnapshotId: pack.testSnapshotId ?? null,
+								verificationSnapshotId: pack.verificationSnapshotId ?? null,
 								evidencePackDigest: digestText(JSON.stringify(pack)),
 							},
 						}

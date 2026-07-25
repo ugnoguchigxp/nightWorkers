@@ -18,7 +18,10 @@ import { errorHandler } from "./middleware/error-handler";
 import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { blueprintRouter } from "./modules/blueprint";
-import { initializeCodingAgentRunHandlers } from "./modules/codingAgent";
+import {
+	codingAgentRouter,
+	initializeCodingAgentRunHandlers,
+} from "./modules/codingAgent";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
@@ -69,6 +72,7 @@ const apiRoutes = createOpenApiRouter()
 	.route("/settings", hooksSettingsRouter)
 	.route("/", projectEvaluationRouter)
 	.route("/", missionPlannerRouter)
+	.route("/", codingAgentRouter)
 	.route("/", missionPilotRouter)
 	.route("/", queueRouter)
 	.route("/", questionnaireRouter)

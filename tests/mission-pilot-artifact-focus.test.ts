@@ -154,8 +154,6 @@ describe("resolveMissionPilotArtifactFocus", () => {
 	it.each([
 		["implementation_starting", "todo"],
 		["implementing", "todo"],
-		["test_preparing", "test_mode"],
-		["testing", "test_mode"],
 		["review_preparing", "review_status"],
 		["reviewing", "review_status"],
 	] as const)("maps %s to %s", (phase, kind) => {
@@ -169,7 +167,6 @@ describe("resolveMissionPilotArtifactFocus", () => {
 
 	it.each([
 		["implementation", "todo", "implementation"],
-		["test", "test_mode", "test"],
 		["review", "review_status", "review"],
 	] as const)("focuses %s from the live Run when the Mission Pilot phase is stale", (executionMode, kind, keySuffix) => {
 		expect(

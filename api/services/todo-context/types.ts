@@ -54,7 +54,6 @@ export type RuntimePromptSnapshot = {
 		| "implementation_queue"
 		| "session_queue"
 		| "review_run"
-		| "test_mode"
 		| "explicit";
 	verificationPolicy?: TodoVerificationPolicy | null;
 	implementationPlanProvenance?: {

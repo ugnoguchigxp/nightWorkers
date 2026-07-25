@@ -146,13 +146,13 @@ function markdownChildrenText(children: ReactNode): string {
 	return "";
 }
 
-function isTestModeArtifactLink(href: string | undefined): boolean {
+function isEvidenceCheckArtifactLink(href: string | undefined): boolean {
 	if (!href) return false;
 	try {
 		const url = new URL(href, "http://nightworkers.local");
 		return (
 			url.pathname.startsWith("/sessions/") &&
-			url.searchParams.get("artifact") === "test_mode"
+			url.searchParams.get("artifact") === "evidence_check"
 		);
 	} catch {
 		return false;
@@ -174,9 +174,9 @@ function isReviewModeArtifactLink(href: string | undefined): boolean {
 
 function buildChatMarkdownComponents(
 	onOpenProjectFile?: (path: string) => void,
-	onOpenTestModeArtifact?: () => void,
+	onOpenEvidenceCheckArtifact?: () => void,
 	onOpenReviewModeArtifact?: () => void,
-	testModeArtifactTitle?: string,
+	evidenceCheckArtifactTitle?: string,
 	reviewModeArtifactTitle?: string,
 ): Components {
 	return {
@@ -185,10 +185,10 @@ function buildChatMarkdownComponents(
 			const projectFilePath =
 				normalizeProjectFileLinkTarget(href) ||
 				normalizeProjectFileLinkTarget(markdownChildrenText(children));
-			const testModeArtifactLink = isTestModeArtifactLink(href);
+			const evidenceCheckArtifactLink = isEvidenceCheckArtifactLink(href);
 			const reviewModeArtifactLink = isReviewModeArtifactLink(href);
 			const workbenchArtifactLink =
-				testModeArtifactLink || reviewModeArtifactLink;
+				evidenceCheckArtifactLink || reviewModeArtifactLink;
 			return (
 				<a
 					{...props}
@@ -205,8 +205,8 @@ function buildChatMarkdownComponents(
 					}
 					data-project-file-link={projectFilePath || undefined}
 					data-workbench-artifact-link={
-						testModeArtifactLink
-							? "test_mode"
+						evidenceCheckArtifactLink
+							? "evidence_check"
 							: reviewModeArtifactLink
 								? "review_status"
 								: undefined
@@ -214,8 +214,8 @@ function buildChatMarkdownComponents(
 					title={
 						projectFilePath
 							? "ソースコードを開く"
-							: testModeArtifactLink
-								? testModeArtifactTitle
+							: evidenceCheckArtifactLink
+								? evidenceCheckArtifactTitle
 								: reviewModeArtifactLink
 									? reviewModeArtifactTitle
 									: props.title
@@ -226,10 +226,10 @@ function buildChatMarkdownComponents(
 									event.preventDefault();
 									onOpenProjectFile(projectFilePath);
 								}
-							: testModeArtifactLink && onOpenTestModeArtifact
+							: evidenceCheckArtifactLink && onOpenEvidenceCheckArtifact
 								? (event) => {
 										event.preventDefault();
-										onOpenTestModeArtifact();
+										onOpenEvidenceCheckArtifact();
 									}
 								: reviewModeArtifactLink && onOpenReviewModeArtifact
 									? (event) => {
@@ -249,31 +249,31 @@ function buildChatMarkdownComponents(
 export function ChatMarkdown({
 	content,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	content: string;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	const { t } = useTranslation();
-	const testModeArtifactTitle = t("testMode.openArtifact");
+	const evidenceCheckArtifactTitle = t("evidenceCheck.openArtifact");
 	const reviewModeArtifactTitle = t("reviewStatus.title");
 	const markdownComponents = useMemo(
 		() =>
 			buildChatMarkdownComponents(
 				onOpenProjectFile,
-				onOpenTestModeArtifact,
+				onOpenEvidenceCheckArtifact,
 				onOpenReviewModeArtifact,
-				testModeArtifactTitle,
+				evidenceCheckArtifactTitle,
 				reviewModeArtifactTitle,
 			),
 		[
 			onOpenProjectFile,
-			onOpenTestModeArtifact,
+			onOpenEvidenceCheckArtifact,
 			onOpenReviewModeArtifact,
-			testModeArtifactTitle,
+			evidenceCheckArtifactTitle,
 			reviewModeArtifactTitle,
 		],
 	);

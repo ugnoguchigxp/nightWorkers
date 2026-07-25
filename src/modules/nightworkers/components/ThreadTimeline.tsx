@@ -100,7 +100,7 @@ type ThreadTimelineProps = {
 	showDebugEvents: boolean;
 	onOpenArtifact: (artifact: WorkbenchArtifactRef) => void;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 	onGrantExternalPath?: (path: string) => Promise<void>;
 };
@@ -178,7 +178,7 @@ export function ThreadTimeline({
 	showDebugEvents,
 	onOpenArtifact,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 	onGrantExternalPath,
 }: ThreadTimelineProps) {
@@ -416,7 +416,7 @@ export function ThreadTimeline({
 									message={item.message}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
-									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</ThreadMessage>
@@ -432,7 +432,7 @@ export function ThreadTimeline({
 									item={item.item}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
-									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</TimelineDebugFragment>
@@ -442,7 +442,7 @@ export function ThreadTimeline({
 								item={item.item}
 								onOpenArtifact={onOpenArtifact}
 								onOpenProjectFile={onOpenProjectFile}
-								onOpenTestModeArtifact={onOpenTestModeArtifact}
+								onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 								onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								verificationHistoryByEventId={activityVerificationHistory}
 							/>
@@ -465,7 +465,7 @@ export function ThreadTimeline({
 									message={item.message}
 									onOpenArtifact={onOpenArtifact}
 									onOpenProjectFile={onOpenProjectFile}
-									onOpenTestModeArtifact={onOpenTestModeArtifact}
+									onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 									onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 								/>
 							</ThreadMessage>
@@ -534,7 +534,7 @@ export function ThreadTimeline({
 					<StreamingResponsePreview
 						preview={streamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
-						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 				</ThreadMessage>
@@ -544,7 +544,7 @@ export function ThreadTimeline({
 					<PersistedStreamingResponse
 						preview={persistedStreamingPreview}
 						onOpenProjectFile={onOpenProjectFile}
-						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 				</ThreadMessage>
@@ -558,7 +558,7 @@ export function ThreadTimeline({
 				<FinalReportCard
 					latestRun={latestRun}
 					onOpenProjectFile={onOpenProjectFile}
-					onOpenTestModeArtifact={onOpenTestModeArtifact}
+					onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 					onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 				/>
 			) : null}

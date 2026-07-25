@@ -249,7 +249,7 @@ export async function getRunGitCloseout(runId: string) {
 			reviewRunStatus: context.reviewRunStatus,
 			complete:
 				context.closeoutEvidence?.review.status === "done" &&
-				context.closeoutEvidence.test.status === "passed" &&
+				context.closeoutEvidence.verification.status === "passed" &&
 				["passed", "skipped"].includes(
 					context.closeoutEvidence.security.status,
 				) &&

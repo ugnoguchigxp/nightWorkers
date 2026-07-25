@@ -72,13 +72,14 @@ type NightWorkersShellThreadPanelProps = {
 	artifactPaneOpen: boolean;
 	isTodoArtifactOpen: boolean;
 	hasTodoArtifact: boolean;
+	hasEvidenceCheckArtifact: boolean;
 	canStopLatestRun: boolean;
 	onOpenBlueprintArtifact: () => Promise<void>;
 	isBlueprintArtifactOpen: boolean;
 	onOpenReviewArtifact: () => Promise<void>;
 	isReviewArtifactOpen: boolean;
-	onOpenTestModeArtifact: () => void;
-	isTestModeArtifactOpen: boolean;
+	onOpenEvidenceCheckArtifact: () => void;
+	isEvidenceCheckArtifactOpen: boolean;
 	onOpenTodoArtifact: () => void;
 	startSessionAndFocusTodo: (sessionId: string) => Promise<void>;
 	queueActiveSessionAndFocusTodo: () => Promise<void>;
@@ -266,8 +267,8 @@ export function NightWorkersShellThreadPanel(
 			isBlueprintActionBusy={workspace.isChatSubmitting}
 			onOpenReviewArtifact={props.onOpenReviewArtifact}
 			isReviewArtifactOpen={isReviewArtifactOpen}
-			onOpenTestModeArtifact={props.onOpenTestModeArtifact}
-			isTestModeArtifactOpen={props.isTestModeArtifactOpen}
+			onOpenEvidenceCheckArtifact={props.onOpenEvidenceCheckArtifact}
+			isEvidenceCheckArtifactOpen={props.isEvidenceCheckArtifactOpen}
 			hasReviewArtifact={workspace.activeArtifactRefs.some(
 				(artifact) => artifact.kind === "review_status",
 			)}
@@ -275,6 +276,7 @@ export function NightWorkersShellThreadPanel(
 			onOpenTodoArtifact={props.onOpenTodoArtifact}
 			isTodoArtifactOpen={isTodoArtifactOpen}
 			hasTodoArtifact={hasTodoArtifact}
+			hasEvidenceCheckArtifact={props.hasEvidenceCheckArtifact}
 			onDeleteSession={() => {
 				if (!workspace.activeSession) return;
 				workspace.deleteSession(workspace.activeSession.id);

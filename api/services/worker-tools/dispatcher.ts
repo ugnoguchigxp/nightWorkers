@@ -1,3 +1,4 @@
+import type { TestEvidenceSet } from "../../../shared/schemas/verification-checklist.schema";
 import {
 	type AgentSafetyPolicy,
 	collectTestInventoryTool,
@@ -387,13 +388,16 @@ export async function executeWorkerTool(
 		return {
 			result: await recordTestConditionMappingTool({
 				taskId: input.taskId || "",
+				runId: input.runId,
+				repoRoot,
 				verificationDocumentId: args.verificationDocumentId as string,
-				inventoryId: args.inventoryId as string,
-				caseKey: args.caseKey as string,
-				conditionId: args.conditionId as string,
-				source: args.source as "declared_in_test" | "coding_agent_assessment",
-				rationale: args.rationale as string | undefined,
-				sourceDigest: args.sourceDigest as string,
+				cwd: args.cwd as string | undefined,
+				evidenceSet: args.evidenceSet as TestEvidenceSet,
+				blockedCommands: safetyPolicy?.blockedCommands,
+				allowedPaths: safetyPolicy?.allowedPaths,
+				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
+				deniedPaths: safetyPolicy?.deniedPaths,
+				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
 			}),
 		};
 	}

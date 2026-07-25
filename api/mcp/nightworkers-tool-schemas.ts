@@ -3,7 +3,7 @@ import {
 	TODO_DRAFT_FIELD_GUIDANCE_JA,
 	TODO_MUTATION_LIMITS,
 } from "../../shared/modules/codingAgent";
-import { testConditionMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
+import { testEvidenceSetMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -106,7 +106,7 @@ export const nightWorkersCollectTestInventoryInputSchema = z.object({
 });
 
 export const nightWorkersRecordTestConditionMappingInputSchema =
-	testConditionMappingToolInputSchema;
+	testEvidenceSetMappingToolInputSchema;
 
 const todoDraftSchema = z.object({
 	todoKey: z

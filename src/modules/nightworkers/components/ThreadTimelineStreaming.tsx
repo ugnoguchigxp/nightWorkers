@@ -45,12 +45,12 @@ export function RuntimePromptSnapshotCard({
 export function FinalReportCard({
 	latestRun,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	latestRun?: TaskRun;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	if (!latestRun?.finalReport?.trim()) return null;
@@ -62,7 +62,7 @@ export function FinalReportCard({
 			<ChatMarkdown
 				content={formatVisibleAssistantText(latestRun.finalReport)}
 				onOpenProjectFile={onOpenProjectFile}
-				onOpenTestModeArtifact={onOpenTestModeArtifact}
+				onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 				onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 			/>
 		</ThreadMessage>
@@ -72,12 +72,12 @@ export function FinalReportCard({
 export function StreamingResponsePreview({
 	preview,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	return (
@@ -91,7 +91,7 @@ export function StreamingResponsePreview({
 					<ChatMarkdown
 						content={preview.visibleText}
 						onOpenProjectFile={onOpenProjectFile}
-						onOpenTestModeArtifact={onOpenTestModeArtifact}
+						onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 						onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 					/>
 					<span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-cyan-300 align-[-2px]" />
@@ -108,19 +108,19 @@ export function StreamingResponsePreview({
 export function PersistedStreamingResponse({
 	preview,
 	onOpenProjectFile,
-	onOpenTestModeArtifact,
+	onOpenEvidenceCheckArtifact,
 	onOpenReviewModeArtifact,
 }: {
 	preview: StreamingPreview;
 	onOpenProjectFile?: (path: string) => void;
-	onOpenTestModeArtifact?: () => void;
+	onOpenEvidenceCheckArtifact?: () => void;
 	onOpenReviewModeArtifact?: () => void;
 }) {
 	return (
 		<ChatMarkdown
 			content={preview.visibleText || preview.statusText}
 			onOpenProjectFile={onOpenProjectFile}
-			onOpenTestModeArtifact={onOpenTestModeArtifact}
+			onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 			onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 		/>
 	);

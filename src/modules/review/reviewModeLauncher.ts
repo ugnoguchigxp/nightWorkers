@@ -1,5 +1,7 @@
 import type {
+	ReviewSessionDetail,
 	Task,
+	TaskMessage,
 	TaskRun,
 	TaskRunTodo,
 	WorkbenchArtifactRef,
@@ -41,7 +43,6 @@ export const REVIEW_MODE_PROMPT_ACTIONS: ReviewModePromptAction[] = [
 	},
 ];
 
-const REVIEW_READY_RUN_STATUSES = new Set(["completed", "needs_review"]);
 const CLOSED_TODO_STATUSES = new Set(["passed", "skipped"]);
 
 function runExecutionMode(run: TaskRun) {
@@ -60,7 +61,7 @@ export function isPostImplementationReviewReady(input: {
 	const { task, run, todos } = input;
 	if (!run || run.taskId !== task.id) return false;
 	if (task.missionPilot?.desiredState === "playing") return false;
-	if (!REVIEW_READY_RUN_STATUSES.has(run.status)) return false;
+	if (run.status !== "completed") return false;
 	if (runExecutionMode(run) !== "implementation") return false;
 	if (!run.finalReport?.trim() || todos.length === 0) return false;
 	if (!todos.every((todo) => CLOSED_TODO_STATUSES.has(todo.status)))
@@ -92,4 +93,45 @@ export function buildPostImplementationReviewArtifact(input: {
 		),
 		metadata: { reviewModeLauncher: true },
 	};
+}
+
+export function resolveReviewImplementationCompletionReport(input: {
+	artifact: WorkbenchArtifactRef | null;
+	detail: ReviewSessionDetail | null;
+	latestRun?: TaskRun;
+	taskMessages: TaskMessage[];
+}) {
+	const implementationRunId =
+		input.artifact?.source.type === "run_field"
+			? input.artifact.source.runId
+			: (input.detail?.session.runId ??
+				(input.artifact?.metadata?.reviewModeLauncher === true
+					? input.artifact.runId
+					: null));
+	if (!implementationRunId) return null;
+	if (
+		input.latestRun?.id === implementationRunId &&
+		input.latestRun.finalReport?.trim()
+	) {
+		return input.latestRun.finalReport.trim();
+	}
+	const reportMessage = input.taskMessages
+		.map((message, index) => ({ index, message }))
+		.filter(
+			({ message }) =>
+				message.runId === implementationRunId &&
+				message.role === "assistant" &&
+				message.content.trim(),
+		)
+		.sort(
+			(left, right) =>
+				timestampValue(right.message.createdAt) -
+					timestampValue(left.message.createdAt) || right.index - left.index,
+		)[0]?.message;
+	return reportMessage?.content.trim() || null;
+}
+
+function timestampValue(value: unknown) {
+	const timestamp = new Date(String(value ?? "")).getTime();
+	return Number.isNaN(timestamp) ? 0 : timestamp;
 }

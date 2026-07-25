@@ -78,7 +78,7 @@ Mission PilotはNightWorkers内部の特権Supervisorではない。
 - Mission Pilot専用のconfirmation panelや確認ボタン。
 - Questionnaireの既存UIと介入時間。
 - Pilot ThoughtとCoding Agent chatの表示分離。
-- 現在のTask画面、Plan Mode、Test Mode、Review Modeの操作面。
+- 現在のTask画面、Plan Mode、証跡チェック、Review Modeの操作面。
 
 内部runtimeが`running`、`waiting`、`attention`等の状態を持っても、既存UIへ新しい状態名として公開しない。
 
@@ -1424,7 +1424,6 @@ read toolはDB mutation、Task message作成、phase更新を行わない。
 | `plan.artifact.regenerate` | existing Plan Artifact correction command | `plan` | target Artifact、defect、preserve、source revisions |
 | `task.queue.enqueue` | `queueTask` | `queue` | current task revision |
 | `run.implementation.start` | shared Workbench run-from-prompt command | `implementation` | request、model selection、source refs |
-| `run.test.start` | `startVerificationRunFromArtifact` | `testMutation` | project/spec/verification IDs、action、rerun |
 | `review.session.start` | `startReviewSessionForRun` | `review` | source run ID |
 | `review.run.start` | `startReviewRun` | `review` | review session ID、options |
 | `run.stop` | `stopTaskRun` | matching run scope | run ID |
@@ -2129,7 +2128,6 @@ new agent directory全体に対して次のimport/identifierを禁止する。
 - `evaluateReviewCompletionGate`
 - `MISSION_PILOT_CORRECTION_LIMITS`
 - `missionPilotPhaseRuns`
-- `missionPilotTestSnapshots`
 - `missionPilotReviewDecisions`
 - `missionPilotCloseouts`
 - `start_test`

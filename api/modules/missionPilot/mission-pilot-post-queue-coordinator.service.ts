@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
-	missionPilotContextSnapshots,
 	missionPilotEvents,
 	missionPilotPhaseRuns,
 	missionPilotSessions,
@@ -18,7 +17,6 @@ import {
 	tasks,
 } from "../../db/schema";
 import { logger } from "../../lib/logger";
-import { digestText } from "../../services/text-digest";
 import { listRepositoryWorktrees } from "../gitworktree/gitworktree.service";
 import {
 	applyMissionPilotTaskStatusAfterRun,
@@ -26,14 +24,13 @@ import {
 	resolveMissionPilotTaskStatusAfterRun,
 } from "../nightworkers/run-orchestration/task-status-projection-policy";
 import { resolveMissionPilotRuntimeOwnership } from "./agent/mission-pilot-runtime-ownership.service";
-import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
 import {
 	continueAfterReviewRun,
 	readRecord,
 	setMissionPilotAttention,
 } from "./mission-pilot-post-queue-review.service";
 import { evaluateImplementationCompletionGate } from "./mission-pilot-post-queue-state";
-import { continueAfterTestRun } from "./mission-pilot-post-queue-test.service";
+import { finalizeImplementationVerification } from "./mission-pilot-verification-snapshot.service";
 
 export async function resolveMissionPilotParentTaskStatus(input: {
 	runId: string;
@@ -254,9 +251,6 @@ export async function continueMissionPilotAfterRun(input: {
 			runId: input.runId,
 		});
 	}
-	if (phaseRun.phase === "test" || input.executionMode === "test") {
-		return continueAfterTestRun({ session, phaseRun, runId: input.runId });
-	}
 	if (phaseRun.phase === "review" || input.executionMode === "review") {
 		return continueAfterReviewRun({ session, phaseRun, runId: input.runId });
 	}
@@ -303,111 +297,11 @@ export async function continueMissionPilotAfterRun(input: {
 		);
 		return { kind: "attention", reasons: gate.reasons } as const;
 	}
-	const [latestContext] = await db
-		.select()
-		.from(missionPilotContextSnapshots)
-		.where(eq(missionPilotContextSnapshots.sessionId, session.id))
-		.orderBy(desc(missionPilotContextSnapshots.revision))
-		.limit(1);
-	if (!latestContext) {
-		await setMissionPilotAttention(
-			session.id,
-			phaseRun.id,
-			"context_snapshot_missing",
-		);
-		return {
-			kind: "attention",
-			reasons: ["context_snapshot_missing"],
-		} as const;
-	}
 	const changedPaths = commitRecord?.ownedCandidatePathsJson ?? [];
-	const nextContext = {
-		...latestContext.contextJson,
-		execution: {
-			...readRecord(latestContext.contextJson.execution),
-			implementation: {
-				currentCycle: phaseRun.cycle,
-				latestAcceptedRunId: run?.id,
-				changedPaths,
-				diffDigest: run?.diffPatch ? digestText(run.diffPatch) : null,
-				finalReportSummary: run?.summary ?? null,
-			},
-		},
-	};
-	const nextRevision = session.contextRevision + 1;
-	const digest = digestText(JSON.stringify(nextContext));
-	const now = new Date();
-	await db.transaction(async (tx) => {
-		await tx.insert(missionPilotContextSnapshots).values({
-			id: crypto.randomUUID(),
-			sessionId: session.id,
-			revision: nextRevision,
-			reason: "implementation_completed",
-			contextJson: nextContext,
-			digest,
-			tokenEstimate: Math.ceil(JSON.stringify(nextContext).length / 4),
-			createdAt: now,
-		});
-		await tx
-			.update(missionPilotPhaseRuns)
-			.set({
-				status: "completed",
-				verdict: "pass",
-				outputContextRevision: nextRevision,
-				finishedAt: now,
-			})
-			.where(eq(missionPilotPhaseRuns.id, phaseRun.id));
-		await tx
-			.update(missionPilotSessions)
-			.set({
-				phase: "test_preparing",
-				contextRevision: nextRevision,
-				contextDigest: digest,
-				activeRunId: null,
-				activePhaseRunId: null,
-				testCycle: session.testCycle + 1,
-				updatedAt: now,
-			})
-			.where(
-				and(
-					eq(missionPilotSessions.id, session.id),
-					eq(missionPilotSessions.contextDigest, session.contextDigest),
-				),
-			);
-		await tx
-			.update(tasks)
-			.set({ status: "verifying", updatedAt: now })
-			.where(eq(tasks.id, session.taskId));
+	return finalizeImplementationVerification({
+		session,
+		phaseRun,
+		runId: input.runId,
+		changedPaths,
 	});
-	await appendMissionPilotEvent({
-		sessionId: session.id,
-		taskId: session.taskId,
-		eventType: "implementation.completed",
-		phase: "test_preparing",
-		cycle: phaseRun.cycle,
-		contextRevision: nextRevision,
-		contextDigest: digest,
-		dedupeKey: `implementation:${phaseRun.cycle}:completed:${input.runId}`,
-		sourceKind: "task_run",
-		sourceId: input.runId,
-		payload: { phaseRunId: phaseRun.id, changedPaths },
-	});
-	const handoff = session.queueHandoffJson;
-	if (!handoff)
-		return { kind: "attention", reasons: ["queue_handoff_missing"] } as const;
-	return {
-		kind: "start_test",
-		input: {
-			projectId: session.repositoryId,
-			taskId: session.taskId,
-			specArtifactId: handoff.featurePlanMessageId,
-			verificationDocumentId: handoff.verificationDocumentId,
-			missionPilot: {
-				sessionId: session.id,
-				cycle: session.testCycle + 1,
-				contextRevision: nextRevision,
-				contextDigest: digest,
-			},
-		},
-	} as const;
 }

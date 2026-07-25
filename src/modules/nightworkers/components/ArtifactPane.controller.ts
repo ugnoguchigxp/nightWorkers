@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import type { PlanWorkspaceTab } from "../../specification";
-import type { TestModeWorkflowStepView } from "../testModeWorkflowView";
 
 export type ProjectArtifactMode = "tree" | "diff";
 
@@ -42,14 +41,6 @@ export function asArtifactRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: {};
-}
-
-export function cloneTestModeWorkflowSteps(steps: TestModeWorkflowStepView[]) {
-	return steps.map((step) => ({ ...step }));
-}
-
-export function testModeWorkflowSignature(steps: TestModeWorkflowStepView[]) {
-	return steps.map((step) => `${step.id}:${step.status}`).join("|");
 }
 
 export function isMockBlueprintCandidate(value: unknown) {

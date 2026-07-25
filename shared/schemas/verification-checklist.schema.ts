@@ -93,6 +93,7 @@ export const testDiscoveryLevelSchema = z.enum([
 export const testDefinitionSourceSchema = z.enum([
 	"declared_in_test",
 	"coding_agent_assessment",
+	"schema_evidence_set",
 ]);
 
 export const workspaceSourceSnapshotSchema = z
@@ -154,19 +155,6 @@ function validateTestConditionMappingSource(
 	}
 }
 
-export const testConditionMappingToolInputSchema = z
-	.object(testConditionMappingContentShape)
-	.strict()
-	.superRefine(validateTestConditionMappingSource);
-
-export const testConditionMappingWriteSchema = z
-	.object({
-		taskId: z.string().trim().min(1),
-		...testConditionMappingContentShape,
-	})
-	.strict()
-	.superRefine(validateTestConditionMappingSource);
-
 export const testConditionMappingSchema = z
 	.object({
 		id: z.string().trim().min(1),
@@ -176,6 +164,58 @@ export const testConditionMappingSchema = z
 	})
 	.strict()
 	.superRefine(validateTestConditionMappingSource);
+
+export const testEvidenceReferenceSchema = z
+	.object({
+		testName: z.string().trim().min(1).max(2_000),
+		filePath: z.string().trim().min(1).max(2_000).optional(),
+		runner: verificationRunnerSchema.optional(),
+		conditionIds: z
+			.array(z.string().regex(/^AC-\d{3}$/))
+			.min(1)
+			.max(100)
+			.refine((values) => new Set(values).size === values.length, {
+				message: "conditionIds must be unique",
+			}),
+	})
+	.strict();
+
+export const testEvidenceSetSchema = z
+	.object({
+		version: z.literal(1),
+		references: z.array(testEvidenceReferenceSchema).min(1).max(500),
+	})
+	.strict();
+
+export const testEvidenceSetMappingToolInputSchema = z
+	.object({
+		verificationDocumentId: z.string().trim().min(1),
+		cwd: z.string().trim().min(1).max(2_000).optional(),
+		evidenceSet: testEvidenceSetSchema,
+	})
+	.strict();
+
+export const testEvidenceSetMappingWriteSchema =
+	testEvidenceSetMappingToolInputSchema
+		.extend({
+			taskId: z.string().trim().min(1),
+			runId: z.string().trim().min(1).optional(),
+			repoRoot: z.string().trim().min(1),
+			blockedCommands: z.array(z.string()).optional(),
+			allowedPaths: z.array(z.string()).optional(),
+			externalAllowedPaths: z.array(z.string()).optional(),
+			deniedPaths: z.array(z.string()).optional(),
+			maxCommandSeconds: z.number().int().positive().optional(),
+		})
+		.strict();
+
+const {
+	$schema: _testEvidenceSetMappingMetaSchema,
+	...testEvidenceSetMappingProviderSchema
+} = z.toJSONSchema(testEvidenceSetMappingToolInputSchema);
+
+export const testEvidenceSetMappingJsonSchema =
+	testEvidenceSetMappingProviderSchema as Record<string, unknown>;
 
 export const verificationConditionSchema = z
 	.object({
@@ -354,11 +394,13 @@ export type WorkspaceSourceSnapshot = z.infer<
 export type TestInventoryCase = z.infer<typeof testInventoryCaseSchema>;
 export type TestInventory = z.infer<typeof testInventorySchema>;
 export type TestConditionMapping = z.infer<typeof testConditionMappingSchema>;
-export type TestConditionMappingToolInput = z.infer<
-	typeof testConditionMappingToolInputSchema
+export type TestEvidenceReference = z.infer<typeof testEvidenceReferenceSchema>;
+export type TestEvidenceSet = z.infer<typeof testEvidenceSetSchema>;
+export type TestEvidenceSetMappingToolInput = z.infer<
+	typeof testEvidenceSetMappingToolInputSchema
 >;
-export type TestConditionMappingWrite = z.infer<
-	typeof testConditionMappingWriteSchema
+export type TestEvidenceSetMappingWrite = z.infer<
+	typeof testEvidenceSetMappingWriteSchema
 >;
 
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([

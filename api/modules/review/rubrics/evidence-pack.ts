@@ -347,8 +347,8 @@ export function buildReviewEvidencePackFromRuns(input: {
 		status: input.reviewRun.status,
 		manifestDigest: input.manifest.digest,
 		sourceRunIds: input.manifest.sourceRuns.map((source) => source.runId),
-		...(input.manifest.testSnapshotId
-			? { testSnapshotId: input.manifest.testSnapshotId }
+		...(input.manifest.verificationSnapshotId
+			? { verificationSnapshotId: input.manifest.verificationSnapshotId }
 			: {}),
 		context: {
 			executionMode: stringFrom(reviewContext.executionMode) ?? "review",

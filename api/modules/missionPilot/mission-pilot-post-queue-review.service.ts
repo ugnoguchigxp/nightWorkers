@@ -33,7 +33,7 @@ export async function continueAfterReviewRun(input: {
 		.where(eq(taskRuns.id, input.runId))
 		.limit(1);
 	const decision = parseStructuredReviewDecision(run?.finalReport ?? "");
-	const testSnapshotId = input.session.activeTestSnapshotId;
+	const verificationSnapshotId = input.session.activeVerificationSnapshotId;
 	const targetManifest = readReviewTargetManifest(run?.contextSnapshot);
 	const reviewEvents = run
 		? await db
@@ -51,12 +51,12 @@ export async function continueAfterReviewRun(input: {
 	const reviewerResult = readRecord(reviewerPayload.reviewResult);
 	const reviewerEvaluationMatches = Boolean(
 		targetManifest &&
-			testSnapshotId &&
+			verificationSnapshotId &&
 			targetManifest.contextDigest === input.phaseRun.inputContextDigest &&
-			targetManifest.testSnapshotId === testSnapshotId &&
-			targetManifest.sourceRuns.length === 2 &&
+			targetManifest.verificationSnapshotId === verificationSnapshotId &&
+			targetManifest.sourceRuns.length === 1 &&
 			reviewerPayload.targetManifestDigest === targetManifest.digest &&
-			reviewerPayload.testSnapshotId === testSnapshotId,
+			reviewerPayload.verificationSnapshotId === verificationSnapshotId,
 	);
 	const reviewerVerdict = reviewerResult.verdict;
 	const phaseRuns = await db
@@ -83,16 +83,16 @@ export async function continueAfterReviewRun(input: {
 		decision,
 		contextDigestMatches:
 			input.phaseRun.inputContextDigest === input.session.contextDigest,
-		testSnapshotMatches: Boolean(testSnapshotId),
+		verificationSnapshotMatches: Boolean(verificationSnapshotId),
 		targetManifestMatches: Boolean(
 			targetManifest &&
 				targetManifest.contextDigest === input.phaseRun.inputContextDigest &&
-				targetManifest.testSnapshotId === testSnapshotId,
+				targetManifest.verificationSnapshotId === verificationSnapshotId,
 		),
 		reviewerEvaluationMatches,
 		reviewerEvaluationApproved: reviewerVerdict === "approved",
 	});
-	if (!gate.pass || !gate.decision || !testSnapshotId) {
+	if (!gate.pass || !gate.decision || !verificationSnapshotId) {
 		const reviewSessionId = readReviewSessionId(run?.contextSnapshot);
 		const blockingFindings =
 			gate.decision?.findings.filter(
@@ -237,7 +237,7 @@ export async function continueAfterReviewRun(input: {
 				blockingCount,
 				warningCount,
 				infoCount,
-				testSnapshotId,
+				verificationSnapshotId,
 				targetManifestDigest,
 			},
 		},
@@ -262,7 +262,7 @@ export async function continueAfterReviewRun(input: {
 			reviewPhaseRunId: input.phaseRun.id,
 			contextRevision: input.session.contextRevision,
 			contextDigest: input.session.contextDigest,
-			testSnapshotId,
+			verificationSnapshotId,
 			targetManifestDigest,
 			verdict: "pass",
 			blockingCount,
@@ -367,7 +367,7 @@ export function readReviewSessionId(snapshot: unknown) {
 export async function prepareImplementationRework(input: {
 	session: typeof missionPilotSessions.$inferSelect;
 	phaseRun: typeof missionPilotPhaseRuns.$inferSelect;
-	source: "test" | "review";
+	source: "review";
 	reworkPacket: unknown;
 }) {
 	const implementationCycle = input.session.implementationCycle + 1;
@@ -375,7 +375,7 @@ export async function prepareImplementationRework(input: {
 	if (
 		implementationCycle > 3 ||
 		totalCorrectionCycle > 5 ||
-		(input.source === "review" && input.session.reviewCycle >= 2)
+		input.session.reviewCycle >= 2
 	) {
 		await setMissionPilotAttention(
 			input.session.id,
@@ -430,10 +430,7 @@ export async function prepareImplementationRework(input: {
 			id: crypto.randomUUID(),
 			sessionId: input.session.id,
 			revision: nextRevision,
-			reason:
-				input.source === "review"
-					? "review_rework_requested"
-					: "test_rework_requested",
+			reason: "review_rework_requested",
 			contextJson: nextContext,
 			digest: nextDigest,
 			tokenEstimate: Math.ceil(JSON.stringify(nextContext).length / 4),
@@ -447,7 +444,7 @@ export async function prepareImplementationRework(input: {
 				totalCorrectionCycle,
 				activeRunId: null,
 				activePhaseRunId: null,
-				activeTestSnapshotId: null,
+				activeVerificationSnapshotId: null,
 				activeReviewDecisionId: null,
 				activeCloseoutId: null,
 				contextRevision: nextRevision,

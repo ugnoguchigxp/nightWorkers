@@ -4,7 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
 import { ArtifactModeNavigation } from "../src/modules/nightworkers/components/ArtifactModeNavigation";
-import type { TaskRunTodo } from "../src/modules/nightworkers/types";
+import type {
+	TaskMessage,
+	TaskRunTodo,
+} from "../src/modules/nightworkers/types";
 import { buildWorkbenchArtifactRefs } from "../src/modules/nightworkers/workbenchArtifactSelectors";
 import { ReviewStatusViewer } from "../src/modules/review";
 import { ReviewGitIntegrationPanel } from "../src/modules/review/components/ReviewGitIntegrationPanel";
@@ -12,6 +15,7 @@ import { ReviewPromptActions } from "../src/modules/review/components/ReviewProm
 import {
 	buildPostImplementationReviewArtifact,
 	REVIEW_MODE_PROMPT_ACTIONS,
+	resolveReviewImplementationCompletionReport,
 } from "../src/modules/review/reviewModeLauncher";
 import { resolveReviewModeArtifactAutoFocus } from "../src/modules/review/useReviewModeArtifactAutoFocus";
 import { buildTask, buildTaskRun } from "./helpers/nightworkers-fixtures";
@@ -89,7 +93,7 @@ describe("Review Mode launcher", () => {
 		).toBe(`${task.id}:${completedImplementationRun.id}:review-mode`);
 	});
 
-	it("does not replace an artifact route that is already selected", () => {
+	it("focuses Review Mode from any other artifact route", () => {
 		const task = buildTask();
 		const input = {
 			activeSession: task,
@@ -97,17 +101,39 @@ describe("Review Mode launcher", () => {
 			latestRunTodos: [todo()],
 		};
 
-		for (const artifact of [
-			{ kind: "review_status" as const },
-			{ kind: "todo" as const },
-		]) {
-			expect(
-				resolveReviewModeArtifactAutoFocus({
-					...input,
-					routeState: { kind: "session", sessionId: task.id, artifact },
-				}),
-			).toBeNull();
-		}
+		expect(
+			resolveReviewModeArtifactAutoFocus({
+				...input,
+				routeState: {
+					kind: "session",
+					sessionId: task.id,
+					artifact: { kind: "todo" },
+				},
+			}),
+		).toBe(`${task.id}:${completedImplementationRun.id}:review-mode`);
+		expect(
+			resolveReviewModeArtifactAutoFocus({
+				...input,
+				routeState: {
+					kind: "session",
+					sessionId: task.id,
+					artifact: {
+						kind: "specification",
+						specificationId: "specification-1",
+					},
+				},
+			}),
+		).toBe(`${task.id}:${completedImplementationRun.id}:review-mode`);
+		expect(
+			resolveReviewModeArtifactAutoFocus({
+				...input,
+				routeState: {
+					kind: "session",
+					sessionId: task.id,
+					artifact: { kind: "review_status" },
+				},
+			}),
+		).toBeNull();
 	});
 
 	it("does not open Review Mode before closeout or while Mission Pilot owns the workflow", () => {
@@ -134,6 +160,23 @@ describe("Review Mode launcher", () => {
 		).toBeNull();
 	});
 
+	it.each([
+		"needs_review",
+		"needs_human",
+		"cancelled",
+		"failed",
+		"timed_out",
+		"running",
+	])("does not open Review Mode for a %s implementation Run", (status) => {
+		expect(
+			buildPostImplementationReviewArtifact({
+				task: buildTask(),
+				run: { ...completedImplementationRun, status },
+				todos: [todo()],
+			}),
+		).toBeNull();
+	});
+
 	it("adds a synthetic Review Mode artifact when no persisted Review Session exists", () => {
 		const refs = buildWorkbenchArtifactRefs({
 			task: buildTask(),
@@ -147,6 +190,60 @@ describe("Review Mode launcher", () => {
 				kind: "review_status",
 			}),
 		);
+	});
+
+	it("resolves and renders the completion report from the reviewed Implementation Run", () => {
+		const task = buildTask();
+		const artifact = buildPostImplementationReviewArtifact({
+			task,
+			run: completedImplementationRun,
+			todos: [todo()],
+		});
+		const report = "対象Implementation Runの完了報告です。";
+		const taskMessages = [
+			{
+				id: "implementation-progress-report",
+				taskId: task.id,
+				runId: completedImplementationRun.id,
+				role: "assistant",
+				content: "実装途中の報告です。",
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
+				createdAt: "invalid-timestamp",
+			} as TaskMessage,
+			{
+				id: "implementation-final-report",
+				taskId: task.id,
+				runId: completedImplementationRun.id,
+				role: "assistant",
+				content: report,
+				traceOwner: "coding_agent",
+				traceChannel: "chat",
+				createdAt: "invalid-timestamp",
+			} as TaskMessage,
+		];
+
+		expect(
+			resolveReviewImplementationCompletionReport({
+				artifact,
+				detail: null,
+				latestRun: buildTaskRun({
+					id: "44444444-4444-4444-8444-444444444444",
+					contextSnapshot: { executionMode: "review" },
+					finalReport: "Review Run report",
+				}),
+				taskMessages,
+			}),
+		).toBe(report);
+		const markup = renderToStaticMarkup(
+			createElement(ReviewStatusViewer, {
+				detail: null,
+				implementationCompletionReport: report,
+			}),
+		);
+		expect(markup).toContain("data-review-completion-report");
+		expect(markup).toContain("実装完了報告");
+		expect(markup).toContain(report);
 	});
 
 	it("renders four buttons backed by the requested automatic prompts", () => {
@@ -238,20 +335,26 @@ describe("Review Mode launcher", () => {
 					project_files: true,
 					plan: true,
 					todo: true,
-					test: true,
+					evidence: true,
 					review: true,
 				},
 				onOpen: {
 					project_files: noop,
 					plan: noop,
 					todo: noop,
-					test: noop,
+					evidence: noop,
 					review: noop,
 				},
 			}),
 		);
 
-		for (const kind of ["project_files", "plan", "todo", "test", "review"]) {
+		for (const kind of [
+			"project_files",
+			"plan",
+			"todo",
+			"evidence",
+			"review",
+		]) {
 			expect(markup).toContain(`data-artifact-mode="${kind}"`);
 		}
 		expect(markup).toContain("nightworkers-scrollbar-hidden");

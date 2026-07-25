@@ -181,7 +181,7 @@ describe("Mission Pilot execution query", () => {
 					id: "run-event",
 					sessionId: "pilot-session",
 					eventType: "implementation.completed",
-					phase: "test_preparing",
+					phase: "review_preparing",
 					cycle: 1,
 					contextRevision: 2,
 					sourceKind: "task_run",

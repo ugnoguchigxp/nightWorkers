@@ -2,6 +2,7 @@ import { enMissionPilot } from "../../modules/missionPilot";
 import { enArtifact } from "./en-artifact";
 import { enBlueprint } from "./en-blueprint";
 import { enComposer } from "./en-composer";
+import { enEvidenceCheck } from "./en-evidenceCheck";
 import { enFolderBrowser } from "./en-folderBrowser";
 import { enModelControls } from "./en-modelControls";
 import { enOverview } from "./en-overview";
@@ -11,7 +12,6 @@ import { enReviewStatus } from "./en-reviewStatus";
 import { enSettings } from "./en-settings";
 import { enSidebar } from "./en-sidebar";
 import { enTechStack } from "./en-techStack";
-import { enTestMode } from "./en-testMode";
 import { enThread } from "./en-thread";
 import { enTimeline } from "./en-timeline";
 import { enTodoPane } from "./en-todoPane";
@@ -30,7 +30,7 @@ export const enDictionary = {
 	...enFolderBrowser,
 	...enArtifact,
 	...enReviewStatus,
-	...enTestMode,
+	...enEvidenceCheck,
 	...enBlueprint,
 	...enTimeline,
 	...enMissionPilot,

@@ -1,4 +1,5 @@
 import { type Dispatch, type SetStateAction, useEffect } from "react";
+import { buildEvidenceCheckArtifact } from "../../codingAgent";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
 import type { WorkbenchRouteState } from "../routing/workbench-route-state";
 import type { WorkbenchArtifactRef } from "../types";
@@ -17,8 +18,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 	setClearedArtifactContextId: Dispatch<SetStateAction<string | null>>;
 	reviewStatusTitle: string;
 	formatReviewStatusSummary: (level: string, sectionCount: number) => string;
-	testModeTitle: string;
-	testModeArtifactSummary: string;
+	evidenceCheckTitle: string;
+	evidenceCheckArtifactSummary: string;
 }) {
 	const {
 		routeState,
@@ -27,8 +28,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 		workspace,
 		reviewStatusTitle,
 		formatReviewStatusSummary,
-		testModeTitle,
-		testModeArtifactSummary,
+		evidenceCheckTitle,
+		evidenceCheckArtifactSummary,
 	} = input;
 	const routeSessionId =
 		routeState.kind === "session" ? routeState.sessionId : null;
@@ -164,7 +165,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 			}
 			return;
 		}
-		if (artifact.kind === "test_mode") {
+		if (artifact.kind === "evidence_check") {
 			const task = workspace.activeSession;
 			if (!task) {
 				setArtifactFocus((current) =>
@@ -172,25 +173,29 @@ export function useNightWorkersRouteArtifactSync(input: {
 				);
 				return;
 			}
-			const testModeArtifactId = `test-mode-${task.id}`;
+			const artifactRef = buildEvidenceCheckArtifact({
+				taskId: task.id,
+				updatedAt: String(task.updatedAt || task.createdAt),
+				taskMessages: workspace.taskMessages,
+				title: evidenceCheckTitle,
+				summary: evidenceCheckArtifactSummary,
+			});
+			if (!artifactRef) {
+				setArtifactFocus((current) =>
+					current.type === "closed" ? current : { type: "closed" },
+				);
+				return;
+			}
 			setArtifactFocus((current) => {
 				if (
 					current.type === "artifact" &&
-					current.artifact.id === testModeArtifactId
+					current.artifact.id === artifactRef.id
 				) {
 					return current;
 				}
 				return {
 					type: "artifact",
-					artifact: {
-						id: testModeArtifactId,
-						taskId: task.id,
-						kind: "test_mode",
-						title: testModeTitle,
-						summary: testModeArtifactSummary,
-						source: { type: "test_mode" },
-						createdAt: String(task.updatedAt || task.createdAt),
-					},
+					artifact: artifactRef,
 				};
 			});
 			return;
@@ -215,8 +220,8 @@ export function useNightWorkersRouteArtifactSync(input: {
 		routeState,
 		setArtifactFocus,
 		setClearedArtifactContextId,
-		testModeArtifactSummary,
-		testModeTitle,
+		evidenceCheckArtifactSummary,
+		evidenceCheckTitle,
 		workspace,
 	]);
 }

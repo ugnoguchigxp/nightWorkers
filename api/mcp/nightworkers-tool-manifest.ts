@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA } from "../../shared/modules/codingAgent";
 
 export * from "./nightworkers-tool-schemas";
 
@@ -94,8 +95,7 @@ export const nightWorkersCodexToolManifest = {
 	},
 	record_test_condition_mapping: {
 		title: "Record Test Condition Mapping",
-		description:
-			"Persist an explicit structural test-case to acceptance-condition mapping for a collected inventory. The Coding Agent supplies the rationale when it is an assessment.",
+		description: TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
