@@ -127,16 +127,12 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(system?.content).toContain(
 			`version="${CODING_AGENT_SYSTEM_CONTEXT_VERSION}"`,
 		);
-		expect(system?.content).toContain("Todoは固定workflowではなく");
 		expect(system?.content).toContain(
-			"各TodoにはsystemContextを必ず含めてください",
+			"Todoはユーザーへ現在工程を表示し、あなたへ現在工程の局所指示を渡す外部作業記憶",
 		);
-		expect(system?.content).toContain(
-			"質問、読み取り、一工程で安全に完結する小変更",
-		);
-		expect(system?.content).toContain("新規DBと既存DBからの更新経路");
-		expect(system?.content).toContain("既存のPlan Mode Artifactや仕様書");
-		expect(system?.content).toContain("実装後に完了条件を後付けせず");
+		expect(system?.content).toContain("workspaceを変更する前にtodo_list");
+		expect(system?.content).toContain("key、id、covers、constraints、doneWhen");
+		expect(system?.content).toContain("Plan Modeで採用済みimplementationPlan");
 		expect(system?.content).toContain("modules/[domain]");
 		expect(system?.content).toContain("src/modules/[domain]");
 		expect(system?.content).toContain(
@@ -403,13 +399,11 @@ describe("Native API LLM-owned Todo contract", () => {
 		const sink = { emit: vi.fn(async () => {}) };
 		const result = await dispatchNativeApiToolCall({
 			toolCall: todoCall("todo-ledger-call", {
-				op: "replace_plan",
-				expectedPlanRevision: 0,
-				todos: [
+				op: "plan",
+				steps: [
 					{
-						id: crypto.randomUUID(),
 						title: "実装する",
-						nextAction: "対象を確認する",
+						systemContext: "対象を確認して実装する。",
 					},
 				],
 			}),
@@ -430,7 +424,7 @@ describe("Native API LLM-owned Todo contract", () => {
 					toolName: "todo_list",
 					ok: true,
 					arguments: expect.objectContaining({
-						command: expect.objectContaining({ op: "replace_plan" }),
+						command: expect.objectContaining({ op: "plan" }),
 					}),
 				}),
 			}),
@@ -440,33 +434,19 @@ describe("Native API LLM-owned Todo contract", () => {
 	it("runs the real Native loop and stops when the LLM pauses its Todo", async () => {
 		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-pause");
-		const todoId = crypto.randomUUID();
 		registerFixtureProviderToolTurns(task.id, [
 			{
 				content: "計画を作成します。",
 				toolCalls: [
 					todoCall("plan", {
-						op: "replace_plan",
-						expectedPlanRevision: 0,
-						todos: [
+						op: "plan",
+						steps: [
 							{
-								id: todoId,
 								title: "確認して実装する",
-								objective: "確認事項を解消して実装する",
-								nextAction: "ユーザー確認が必要か調べる",
-								acceptanceCriteria: ["判断が確定している"],
+								systemContext:
+									"ユーザー確認が必要か調べ、判断が確定してから実装する。",
 							},
 						],
-					}),
-				],
-			},
-			{
-				content: "Todoを開始します。",
-				toolCalls: [
-					todoCall("start", {
-						op: "start",
-						todoId,
-						expectedTodoRevision: 0,
 					}),
 				],
 			},
@@ -474,10 +454,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				content: "選択肢についてユーザーの判断が必要です。",
 				toolCalls: [
 					todoCall("pause", {
-						op: "transition",
-						todoId,
-						expectedTodoRevision: 1,
-						status: "needs_human",
+						op: "block_current",
 						reason: "仕様の選択が必要です",
 					}),
 				],
@@ -506,39 +483,25 @@ describe("Native API LLM-owned Todo contract", () => {
 			finalReport: "A案とB案のどちらを採用しますか？",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ todoKey: todoId, status: "needs_human" },
+			{ todoKey: "step-1", status: "needs_human" },
 		]);
 	});
 
 	it("does not treat an empty assistant turn as completion", async () => {
 		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-empty");
-		const todoId = crypto.randomUUID();
 		registerFixtureProviderToolTurns(task.id, [
 			{
 				content: "",
 				toolCalls: [
 					todoCall("plan", {
-						op: "replace_plan",
-						expectedPlanRevision: 0,
-						todos: [
+						op: "plan",
+						steps: [
 							{
-								id: todoId,
 								title: "完了させる",
-								nextAction: "実行する",
-								acceptanceCriteria: [],
+								systemContext: "実装と検証を完了させる。",
 							},
 						],
-					}),
-				],
-			},
-			{
-				content: "",
-				toolCalls: [
-					todoCall("start", {
-						op: "start",
-						todoId,
-						expectedTodoRevision: 0,
 					}),
 				],
 			},
@@ -547,11 +510,8 @@ describe("Native API LLM-owned Todo contract", () => {
 				content: "完了状態へ更新します。",
 				toolCalls: [
 					todoCall("pass", {
-						op: "transition",
-						todoId,
-						expectedTodoRevision: 1,
-						status: "passed",
-						reason: "検証済み",
+						op: "complete_current",
+						note: "検証済み",
 					}),
 				],
 			},
@@ -575,13 +535,13 @@ describe("Native API LLM-owned Todo contract", () => {
 			finalReport: "実装と検証が完了しました。",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ todoKey: todoId, status: "passed" },
+			{ todoKey: "step-1", status: "passed" },
 		]);
 		expect(emit).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "model_response_finished",
 				payload: expect.objectContaining({
-					candidateRevision: 5,
+					candidateRevision: 4,
 					text: "実装と検証が完了しました。",
 				}),
 			}),
@@ -601,33 +561,19 @@ describe("Native API LLM-owned Todo contract", () => {
 			generatedAt: new Date(),
 			status: "active",
 		});
-		const todoId = crypto.randomUUID();
 		const inputs: Parameters<NativeApiToolTurnProvider>[0][] = [];
 		const turns = [
 			{
 				content: "計画を作成します。",
 				toolCalls: [
 					todoCall("plan", {
-						op: "replace_plan",
-						expectedPlanRevision: 0,
-						todos: [
+						op: "plan",
+						steps: [
 							{
-								id: todoId,
 								title: "実装する",
-								nextAction: "実装を検証する",
-								acceptanceCriteria: [],
+								systemContext: "実装して検証する。",
 							},
 						],
-					}),
-				],
-			},
-			{
-				content: "Todoを開始します。",
-				toolCalls: [
-					todoCall("start", {
-						op: "start",
-						todoId,
-						expectedTodoRevision: 0,
 					}),
 				],
 			},
@@ -635,11 +581,8 @@ describe("Native API LLM-owned Todo contract", () => {
 				content: "Todoを完了します。",
 				toolCalls: [
 					todoCall("pass", {
-						op: "transition",
-						todoId,
-						expectedTodoRevision: 1,
-						status: "passed",
-						reason: "Todo上は完了した。",
+						op: "complete_current",
+						note: "Todo上は完了した。",
 					}),
 				],
 			},
@@ -682,7 +625,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			{ emit: vi.fn(async () => {}) },
 		);
 
-		expect(inputs).toHaveLength(5);
+		expect(inputs).toHaveLength(4);
 		expect(inputs[0].options.systemContextAudit).toEqual([
 			expect.objectContaining({
 				promptPart: "system",
@@ -691,7 +634,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				}),
 			}),
 		]);
-		const feedback = inputs[4].messages.find(
+		const feedback = inputs[3].messages.find(
 			(message) =>
 				message.role === "user" &&
 				typeof message.content === "string" &&
@@ -820,7 +763,6 @@ describe("Native API LLM-owned Todo contract", () => {
 	it("preserves the latest LLM body when a later provider call fails", async () => {
 		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-body");
-		const todoId = crypto.randomUUID();
 		let callCount = 0;
 		const providerTurn: NativeApiToolTurnProvider = async () => {
 			callCount += 1;
@@ -836,14 +778,11 @@ describe("Native API LLM-owned Todo contract", () => {
 				content: "調査した結果、変更対象はここまで特定できました。",
 				toolCalls: [
 					todoCall("plan", {
-						op: "replace_plan",
-						expectedPlanRevision: 0,
-						todos: [
+						op: "plan",
+						steps: [
 							{
-								id: todoId,
 								title: "変更する",
-								nextAction: "実装する",
-								acceptanceCriteria: [],
+								systemContext: "対象を実装する。",
 							},
 						],
 					}),

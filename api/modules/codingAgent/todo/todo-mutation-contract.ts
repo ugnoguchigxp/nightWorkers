@@ -1,13 +1,34 @@
+import { implementationPlanSchema } from "../../../../shared/modules/agentsShare";
 import type { TodoMutationCommand, TodoMutationErrorCode } from "./types";
 import { TODO_MUTATION_LIMITS } from "./types";
 
 export function validateTodoMutationCommand(
 	command: TodoMutationCommand,
 ): TodoMutationErrorCode | null {
+	if (command.op === "plan" || command.op === "replace_remaining") {
+		if (!implementationPlanSchema.safeParse({ steps: command.steps }).success) {
+			return "INVALID_TODO_COMMAND";
+		}
+		return null;
+	}
+	if (command.op === "complete_current") {
+		return command.note !== undefined &&
+			(!command.note.trim() ||
+				command.note.length > TODO_MUTATION_LIMITS.maxReasonLength)
+			? "INVALID_TODO_COMMAND"
+			: null;
+	}
+	if (command.op === "block_current") {
+		return !command.reason.trim() ||
+			command.reason.length > TODO_MUTATION_LIMITS.maxReasonLength
+			? "INVALID_TODO_COMMAND"
+			: null;
+	}
 	if (command.op === "replace_plan") {
 		if (
-			!Number.isInteger(command.expectedPlanRevision) ||
-			command.expectedPlanRevision < 0 ||
+			(command.expectedPlanRevision !== undefined &&
+				(!Number.isInteger(command.expectedPlanRevision) ||
+					command.expectedPlanRevision < 0)) ||
 			command.todos.length < 1 ||
 			command.todos.length > TODO_MUTATION_LIMITS.maxTodos
 		) {
@@ -32,8 +53,10 @@ export function validateTodoMutationCommand(
 				(todo.systemContext !== undefined &&
 					todo.context != null &&
 					todo.systemContext !== todo.context) ||
-				!todo.nextAction.trim() ||
-				todo.nextAction.length > TODO_MUTATION_LIMITS.maxNextActionLength ||
+				(todo.nextAction !== undefined &&
+					(!todo.nextAction.trim() ||
+						todo.nextAction.length >
+							TODO_MUTATION_LIMITS.maxNextActionLength)) ||
 				(todoKey !== undefined &&
 					(!todoKey.trim() ||
 						todoKey.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||

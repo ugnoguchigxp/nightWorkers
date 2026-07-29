@@ -38,8 +38,13 @@ export function ensureDesktopRuntimeBootstrap(
 		paths.secretsDir,
 		paths.artifactsDir,
 		paths.backupsDir,
+		paths.workspaceBootstrapDir,
+		paths.workspaceBootstrapTmpDir,
+		paths.workspaceBootstrapCacheDir,
+		paths.workspaceBootstrapEnvironmentsDir,
+		paths.workspaceBootstrapLogsDir,
 	]) {
-		fs.mkdirSync(dir, { recursive: true });
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	}
 
 	const preserveConfiguredDatabaseUrl =

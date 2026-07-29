@@ -25,8 +25,12 @@ type ReviewStatusViewerProps = {
 	gitCloseout?: GitCloseoutState | null;
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
+	activeTaskId?: string | null;
 	activeTaskStatus?: string | null;
-	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
+	onCompleteAndArchiveTask?: (
+		taskId: string,
+		options?: { discardPendingCloseouts?: boolean },
+	) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	latestRun?: TaskRun;
 	implementationCompletionReport?: string | null;
@@ -111,6 +115,7 @@ export function ReviewStatusViewer({
 	gitCloseout,
 	onCommitGitCloseout,
 	onPushGitCloseout,
+	activeTaskId,
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
 	onRestoreArchivedTask,
@@ -188,12 +193,98 @@ export function ReviewStatusViewer({
 			</div>
 		</section>
 	) : null;
+	const taskId = detail?.session.taskId ?? activeTaskId ?? latestRun?.taskId;
+	const isArchivedTask = activeTaskStatus === "archived";
+	const taskArchiveBusy = busySection === "task_archive";
+	const hasPendingGitCloseout = ["pending", "ready", "needs_human"].includes(
+		gitCloseout?.commitRecord?.status ?? "",
+	);
+	const taskArchiveAction = isArchivedTask
+		? {
+				label: "アクティブタスクに戻す",
+				description:
+					"このタスクを以前の完了状態へ戻します。実装の再開は別の Reopen 操作で行います。",
+				icon: <ArchiveRestore className="h-3.5 w-3.5" />,
+				buttonClass: reviewPrimaryActionButtonClass,
+				disabled:
+					!taskId ||
+					!onRestoreArchivedTask ||
+					busySection !== null ||
+					isReviewPromptDisabled,
+				run: () => (taskId ? onRestoreArchivedTask?.(taskId) : undefined),
+			}
+		: {
+				label: hasPendingGitCloseout
+					? "未コミット処理を破棄してアーカイブ"
+					: "完了してアーカイブ",
+				description: hasPendingGitCloseout
+					? "未処理のGit closeoutを破棄し、このレビュー対象タスクをアーカイブします。変更ファイルはWorktreeを削除するまで残ります。"
+					: "このレビュー対象タスクを完全に完了したものとして扱い、アーカイブタスクへ移動します。",
+				icon: <Archive className="h-3.5 w-3.5" />,
+				buttonClass: reviewSuccessActionButtonClass,
+				disabled:
+					!taskId ||
+					!onCompleteAndArchiveTask ||
+					busySection !== null ||
+					isReviewPromptDisabled,
+				run: () => {
+					if (!taskId) return;
+					const confirmed = window.confirm(
+						hasPendingGitCloseout
+							? "未処理のGit closeoutを破棄してタスクをアーカイブします。この画面からは対象の変更をコミットできなくなります。変更ファイルはWorktreeに残ります。続行しますか？"
+							: "このタスクをアーカイブします。ほかのRunに未処理のGit closeoutが残っている場合は破棄され、対象の変更をこの画面からコミットできなくなります。変更ファイルはWorktreeに残ります。続行しますか？",
+					);
+					if (!confirmed) return;
+					return onCompleteAndArchiveTask?.(taskId, {
+						discardPendingCloseouts: true,
+					});
+				},
+			};
+	const taskArchiveSection = taskId ? (
+		<div className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-900/60 px-3 py-3">
+			<div className="min-w-0 text-xs">
+				<div className="font-medium text-slate-100">レビュー後のタスク状態</div>
+				<div className="mt-1 leading-5 text-slate-400">
+					{taskArchiveAction.description}
+				</div>
+			</div>
+			<button
+				type="button"
+				data-review-task-archive-action={isArchivedTask ? "restore" : "archive"}
+				className={taskArchiveAction.buttonClass}
+				disabled={taskArchiveAction.disabled}
+				onClick={async () => {
+					setBusySection("task_archive");
+					setError(null);
+					try {
+						await taskArchiveAction.run();
+					} catch (err) {
+						setError(
+							err instanceof Error
+								? err.message
+								: "Task status could not be updated.",
+						);
+					} finally {
+						setBusySection(null);
+					}
+				}}
+			>
+				{taskArchiveBusy ? (
+					<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+				) : (
+					taskArchiveAction.icon
+				)}
+				{taskArchiveAction.label}
+			</button>
+		</div>
+	) : null;
 	if (!detail) {
 		return (
 			<div className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100">
 				<div className="mx-auto grid max-w-5xl gap-4">
 					{completionReport}
 					{promptActions}
+					{taskArchiveSection}
 					{loading ? (
 						<div className="text-center text-xs text-slate-500">
 							{t("reviewStatus.loading")}
@@ -250,33 +341,6 @@ export function ReviewStatusViewer({
 					filePath: null,
 				}))
 			: reviewRunFindings;
-	const isArchivedTask = activeTaskStatus === "archived";
-	const taskArchiveBusy = busySection === "task_archive";
-	const taskArchiveAction = isArchivedTask
-		? {
-				label: "アクティブタスクに戻す",
-				description:
-					"このタスクを以前の完了状態へ戻します。実装の再開は別の Reopen 操作で行います。",
-				icon: <ArchiveRestore className="h-3.5 w-3.5" />,
-				buttonClass: reviewPrimaryActionButtonClass,
-				disabled:
-					!onRestoreArchivedTask ||
-					busySection !== null ||
-					isReviewPromptDisabled,
-				run: () => onRestoreArchivedTask?.(detail.session.taskId),
-			}
-		: {
-				label: "完了してアーカイブ",
-				description:
-					"このレビュー対象タスクを完全に完了したものとして扱い、アーカイブタスクへ移動します。",
-				icon: <Archive className="h-3.5 w-3.5" />,
-				buttonClass: reviewSuccessActionButtonClass,
-				disabled:
-					!onCompleteAndArchiveTask ||
-					busySection !== null ||
-					isReviewPromptDisabled,
-				run: () => onCompleteAndArchiveTask?.(detail.session.taskId),
-			};
 	return (
 		<div
 			className="nightworkers-review-status h-full overflow-auto bg-slate-950 p-5 text-slate-100"
@@ -405,43 +469,7 @@ export function ReviewStatusViewer({
 					</div>
 				) : null}
 
-				<div className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-900/60 px-3 py-3">
-					<div className="min-w-0 text-xs">
-						<div className="font-medium text-slate-100">
-							レビュー後のタスク状態
-						</div>
-						<div className="mt-1 leading-5 text-slate-400">
-							{taskArchiveAction.description}
-						</div>
-					</div>
-					<button
-						type="button"
-						className={taskArchiveAction.buttonClass}
-						disabled={taskArchiveAction.disabled}
-						onClick={async () => {
-							setBusySection("task_archive");
-							setError(null);
-							try {
-								await taskArchiveAction.run();
-							} catch (err) {
-								setError(
-									err instanceof Error
-										? err.message
-										: "Task status could not be updated.",
-								);
-							} finally {
-								setBusySection(null);
-							}
-						}}
-					>
-						{taskArchiveBusy ? (
-							<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-						) : (
-							taskArchiveAction.icon
-						)}
-						{taskArchiveAction.label}
-					</button>
-				</div>
+				{taskArchiveSection}
 			</div>
 		</div>
 	);

@@ -39,12 +39,10 @@ function commandForQualityRun(
 				missingCapabilities: ["unit"],
 			});
 		}
-		return [
-			capabilities.unit.command,
-			coverageCommandWithSummaryReporter(capabilities),
-		]
-			.filter(Boolean)
-			.join(" && ");
+		return (
+			coverageCommandWithSummaryReporter(capabilities) ??
+			capabilities.unit.command
+		);
 	}
 	if (runType === "e2e") {
 		if (!capabilities.e2e.runnable || !capabilities.e2e.command) {

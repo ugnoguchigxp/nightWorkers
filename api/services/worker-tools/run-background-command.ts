@@ -14,6 +14,7 @@ export interface RunBackgroundCommandInput {
 	allowedPaths?: string[];
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
+	environment?: Record<string, string>;
 }
 
 export interface RunBackgroundCommandOutput {

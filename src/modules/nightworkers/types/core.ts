@@ -74,6 +74,7 @@ export type TaskRun = {
 			| "pending"
 			| "ready"
 			| "committed"
+			| "discarded"
 			| "needs_human"
 			| "failed";
 		baselineHead?: string | null;

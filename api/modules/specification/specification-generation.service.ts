@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { implementationPlanSchema } from "../../../shared/modules/agentsShare";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
@@ -18,7 +19,11 @@ import type {
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
 import { p } from "../../systemContexts/catalog";
-import type { StructuredProviderExecutionPolicy } from "../agentsShare";
+import {
+	digestImplementationPlan,
+	renderSpecificationWithImplementationPlan,
+	type StructuredProviderExecutionPolicy,
+} from "../agentsShare";
 import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
 	getMissionPilotPlanSystemContext,
@@ -157,15 +162,32 @@ export async function generateFeaturePlanArtifact(
 		requiresRepositoryMaterialization,
 	);
 	input.signal?.throwIfAborted();
-	const sanitizedContent = sanitizeSpecificationTargetNaming(
+	const sanitizedPlan = implementationPlanSchema.parse({
+		steps: generatedDraft.implementationPlan.steps.map((step) => ({
+			title: sanitizeSpecificationTargetNaming(
+				step.title,
+				context.projectStackContext,
+			).replace(/\s+/g, " "),
+			systemContext: sanitizeSpecificationTargetNaming(
+				step.systemContext,
+				context.projectStackContext,
+			).replace(/\s+/g, " "),
+		})),
+	});
+	const sanitizedMarkdown = sanitizeSpecificationTargetNaming(
 		generatedDraft.markdown.trimEnd(),
 		context.projectStackContext,
+	);
+	const sanitizedContent = renderSpecificationWithImplementationPlan(
+		sanitizedMarkdown,
+		sanitizedPlan,
 	);
 	const title = readFeaturePlanTitle(
 		sanitizedContent,
 		DEFAULT_FEATURE_PLAN_TITLE,
 	);
 	const contentDigest = digestFeaturePlanContent(sanitizedContent);
+	const implementationPlanDigest = digestImplementationPlan(sanitizedPlan);
 	const message = await createPlanModeTaskMessage({
 		taskId,
 		role: "assistant",
@@ -177,6 +199,11 @@ export async function generateFeaturePlanArtifact(
 			source: "status",
 			repositoryMaterializationIntent:
 				generatedDraft.repositoryMaterializationIntent ?? null,
+			implementationPlan: sanitizedPlan,
+			implementationPlanProvenance: {
+				version: 1,
+				digest: implementationPlanDigest,
+			},
 			questionnaireSessionId: session?.id ?? null,
 			featurePlanContent: {
 				version: 1,

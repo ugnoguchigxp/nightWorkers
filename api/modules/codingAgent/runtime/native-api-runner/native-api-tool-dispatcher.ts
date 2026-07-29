@@ -95,6 +95,7 @@ export async function dispatchNativeApiToolCall(input: {
 		projectExplorationCatalogAccess: readProjectExplorationCatalogAccess(
 			input.context,
 		),
+		runtimeEnvironment: readWorkspaceRuntimeEnvironment(input.context),
 	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({
@@ -116,6 +117,17 @@ export async function dispatchNativeApiToolCall(input: {
 		dispatch,
 	});
 	return continueWith(result, nextState);
+}
+
+function readWorkspaceRuntimeEnvironment(context: AgentRunContext) {
+	const value = context.runtimeOptions?.workspaceRuntimeEnvironment;
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		return undefined;
+	return Object.fromEntries(
+		Object.entries(value).filter(
+			(entry): entry is [string, string] => typeof entry[1] === "string",
+		),
+	);
 }
 
 export function readProjectExplorationCatalogAccess(context: AgentRunContext) {
@@ -188,7 +200,7 @@ async function dispatchTodoTool(input: {
 	}
 	const result = await todoListTool({
 		runId: input.context.runId,
-		command: command as never,
+		command,
 	});
 	return projectWorkerResultToNativeApiToolResult(result);
 }

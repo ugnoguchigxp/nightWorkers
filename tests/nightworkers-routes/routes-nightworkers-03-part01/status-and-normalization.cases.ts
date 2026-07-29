@@ -160,6 +160,15 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				implementationPlan: {
+					steps: [
+						{
+							title: "画面実装",
+							systemContext:
+								"Operations Command Centerの確定設計に沿って実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 			const docRes = await app.request(
@@ -478,6 +487,14 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				implementationPlan: {
+					steps: [
+						{
+							title: "画面実装",
+							systemContext: "Design documentの確定設計に沿って実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 			const docRes = await app.request(

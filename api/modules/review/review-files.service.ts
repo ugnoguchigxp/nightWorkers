@@ -268,16 +268,30 @@ function resolveProjectPath(rootPath: string, relativePath?: string) {
 	return { root, target };
 }
 
+async function resolveProjectRoot(repositoryId: string, runId?: string) {
+	const repository = await repo.getRepository(repositoryId);
+	if (!repository) throw new NotFoundError("Repository not found");
+	if (!runId) return repository.localPath;
+
+	const run = await repo.getTaskRun(runId);
+	if (!run) throw new NotFoundError("Run not found");
+	if (run.repositoryId !== repositoryId) {
+		throw new AppError(
+			409,
+			"RUN_REPOSITORY_MISMATCH",
+			"Run does not belong to the requested repository",
+		);
+	}
+	return run.worktreePath?.trim() || repository.localPath;
+}
+
 export async function listProjectFiles(
 	repositoryId: string,
 	relativePath?: string,
+	runId?: string,
 ) {
-	const repository = await repo.getRepository(repositoryId);
-	if (!repository) throw new NotFoundError("Repository not found");
-	const { root, target } = resolveProjectPath(
-		repository.localPath,
-		relativePath,
-	);
+	const projectRoot = await resolveProjectRoot(repositoryId, runId);
+	const { root, target } = resolveProjectPath(projectRoot, relativePath);
 	const entries = await fs
 		.readdir(target, { withFileTypes: true })
 		.catch((error: unknown) => {
@@ -318,13 +332,10 @@ export async function listProjectFiles(
 export async function readProjectFile(
 	repositoryId: string,
 	relativePath: string,
+	runId?: string,
 ) {
-	const repository = await repo.getRepository(repositoryId);
-	if (!repository) throw new NotFoundError("Repository not found");
-	const { root, target } = resolveProjectPath(
-		repository.localPath,
-		relativePath,
-	);
+	const projectRoot = await resolveProjectRoot(repositoryId, runId);
+	const { root, target } = resolveProjectPath(projectRoot, relativePath);
 	const stat = await fs.stat(target).catch((error: unknown) => {
 		if (isNoEntryError(error)) {
 			throw new NotFoundError("Project file not found");
@@ -349,10 +360,9 @@ export async function readProjectFile(
 	}
 }
 
-export async function readRepositoryDiff(repositoryId: string) {
-	const repository = await repo.getRepository(repositoryId);
-	if (!repository) throw new NotFoundError("Repository not found");
-	const result = await gitDiffTool({ repoRoot: repository.localPath });
+export async function readRepositoryDiff(repositoryId: string, runId?: string) {
+	const projectRoot = await resolveProjectRoot(repositoryId, runId);
+	const result = await gitDiffTool({ repoRoot: projectRoot });
 	if (!result.ok) {
 		throw new AppError(
 			500,

@@ -61,10 +61,17 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.confirmTask": "Taskを作成",
 	"projectDetail.worktrees.remove": "削除",
 	"projectDetail.worktrees.discardAndRemove": "変更を破棄して削除",
+	"projectDetail.worktrees.removeBranch": "Worktreeとbranchを削除",
+	"projectDetail.worktrees.discardAndRemoveBranch":
+		"変更を破棄してWorktreeとbranchを削除",
 	"projectDetail.worktrees.confirmRemove":
-		"{{branch}}のWorktree directoryを削除します。Branchは残ります。続行しますか？",
+		"{{branch}}のWorktree directoryとlocal branchを削除します。この操作は元に戻せません。続行しますか？",
 	"projectDetail.worktrees.confirmDiscardAndRemove":
-		"{{branch}}の未保存の変更をすべて破棄してWorktree directoryを削除します。Branchは残ります。この操作は元に戻せません。続行しますか？",
+		"{{branch}}の未保存の変更をすべて破棄し、Worktree directoryとlocal branchを削除します。この操作は元に戻せません。続行しますか？",
+	"projectDetail.worktrees.confirmRemoveDetached":
+		"Detached HEADのWorktree directoryを削除します。続行しますか？",
+	"projectDetail.worktrees.confirmDiscardAndRemoveDetached":
+		"Detached HEADの未保存の変更をすべて破棄してWorktree directoryを削除します。この操作は元に戻せません。続行しますか？",
 	"projectDetail.worktrees.prune": "Stale metadataを整理",
 	"projectDetail.worktrees.confirmPrune":
 		"{{count}}件のstale worktree metadataを整理しますか？",
@@ -72,6 +79,8 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.noChanges": "変更はありません。",
 	"projectDetail.worktrees.blocker.base_worktree_protected":
 		"ベースWorktreeは削除できません",
+	"projectDetail.worktrees.blocker.target_branch_protected":
+		"Projectの登録先branchは削除できません",
 	"projectDetail.worktrees.blocker.worktree_in_use":
 		"TaskまたはRunが使用中です",
 	"projectDetail.worktrees.blocker.worktree_dirty": "未保存の変更があります",

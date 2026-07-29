@@ -71,10 +71,30 @@ export function renderCodingAgentContextPacket(
 		JSON.stringify(packet.systemContext, null, 2),
 		"",
 		"[Todo Plan Summary]",
-		JSON.stringify(packet.planSummary, null, 2),
+		JSON.stringify(
+			{
+				counts: packet.planSummary.counts,
+				next:
+					packet.planSummary.todos.find((todo) => todo.status === "pending")
+						?.title ?? null,
+			},
+			null,
+			2,
+		),
 		"",
 		"[Current Todo Detail]",
-		JSON.stringify(packet.currentTodo, null, 2),
+		JSON.stringify(
+			packet.currentTodo
+				? {
+						title: packet.currentTodo.title,
+						systemContext: packet.currentTodo.systemContext,
+						lastFailure: packet.currentTodo.lastFailure,
+						attemptCount: packet.currentTodo.attemptCount,
+					}
+				: null,
+			null,
+			2,
+		),
 	].join("\n");
 }
 

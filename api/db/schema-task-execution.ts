@@ -179,6 +179,9 @@ export const taskGitWorkspaces = sqliteTable(
 		allocationVersion: integer("allocation_version").default(1).notNull(),
 		expectedHeadSha: text("expected_head_sha"),
 		provisionAttempt: integer("provision_attempt").default(0).notNull(),
+		initializationAttempt: integer("initialization_attempt")
+			.default(0)
+			.notNull(),
 		leaseOwner: text("lease_owner"),
 		leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
 		lastVerifiedHead: text("last_verified_head"),
@@ -186,6 +189,7 @@ export const taskGitWorkspaces = sqliteTable(
 		lastErrorCode: text("last_error_code"),
 		lastErrorMessage: text("last_error_message"),
 		provisionedAt: integer("provisioned_at", { mode: "timestamp" }),
+		initializedAt: integer("initialized_at", { mode: "timestamp" }),
 		releasedAt: integer("released_at", { mode: "timestamp" }),
 		retiredAt: integer("retired_at", { mode: "timestamp" }),
 	},

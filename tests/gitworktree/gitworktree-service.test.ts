@@ -59,6 +59,7 @@ beforeEach(() => {
 		id: "repo-id",
 		name: "Example",
 		localPath: "/repo",
+		branch: "main",
 	} as Awaited<ReturnType<typeof gitworktreeRepo.getRepository>>);
 	vi.mocked(gitworktreeRepo.readUsage).mockResolvedValue(new Map());
 });
@@ -294,7 +295,63 @@ describe("gitworktree service boundary", () => {
 		).toBe(false);
 	});
 
-	it("removes a dirty non-base worktree only after explicit discard", async () => {
+	it("never removes the repository target branch from a linked worktree", async () => {
+		const runner: GitCommandRunner = vi.fn(async (args) => {
+			if (args[0] === "--version")
+				return { stdout: "git version 2.52.0\n", stderr: "", exitCode: 0 };
+			if (args.includes("--show-toplevel"))
+				return { stdout: "/repo\n", stderr: "", exitCode: 0 };
+			if (args.includes("--git-common-dir"))
+				return { stdout: "/repo/.git\n", stderr: "", exitCode: 0 };
+			if (args.includes("list"))
+				return {
+					stdout: [
+						"worktree /repo",
+						`HEAD ${head}`,
+						"branch refs/heads/feature",
+						"",
+						"worktree /repo-worktrees/main",
+						`HEAD ${head}`,
+						"branch refs/heads/main",
+						"",
+					].join("\0"),
+					stderr: "",
+					exitCode: 0,
+				};
+			if (args.includes("status"))
+				return {
+					stdout:
+						args[1] === "/repo-worktrees/main"
+							? "# branch.head main\0"
+							: "# branch.head feature\0",
+					stderr: "",
+					exitCode: 0,
+				};
+			if (args.includes("log"))
+				return { stdout: "Commit\n", stderr: "", exitCode: 0 };
+			throw new Error(`Unexpected git args: ${args.join(" ")}`);
+		});
+		const listed = await listRepositoryWorktrees("repo-id", { runner });
+		const target = listed.worktrees.find((item) => item.branch === "main");
+
+		expect(target).toMatchObject({
+			isBase: false,
+			canRemove: false,
+			removeBlockers: ["target_branch_protected"],
+		});
+		await expect(
+			removeRepositoryWorktree(
+				"repo-id",
+				{ worktreeId: target?.id || "", expectedHead: head },
+				{ runner },
+			),
+		).rejects.toMatchObject({ code: "target_branch_protected" });
+		expect(
+			vi.mocked(runner).mock.calls.some(([args]) => args.includes("remove")),
+		).toBe(false);
+	});
+
+	it("removes a dirty non-base worktree and its local branch only after explicit discard", async () => {
 		let removed = false;
 		const runner: GitCommandRunner = vi.fn(async (args) => {
 			if (args[0] === "--version")
@@ -337,6 +394,8 @@ describe("gitworktree service boundary", () => {
 				removed = true;
 				return { stdout: "", stderr: "", exitCode: 0 };
 			}
+			if (args.includes("update-ref"))
+				return { stdout: "", stderr: "", exitCode: 0 };
 			throw new Error(`Unexpected git args: ${args.join(" ")}`);
 		});
 		const listed = await listRepositoryWorktrees("repo-id", { runner });
@@ -375,6 +434,10 @@ describe("gitworktree service boundary", () => {
 				"--",
 				"/repo-worktrees/feature",
 			],
+			{ timeoutMs: 60_000 },
+		);
+		expect(runner).toHaveBeenCalledWith(
+			["-C", "/repo", "update-ref", "-d", "refs/heads/feature", head],
 			{ timeoutMs: 60_000 },
 		);
 	});

@@ -1,14 +1,15 @@
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import { loadCodingAgentContextPacket } from "../context";
 import {
-	type TodoMutationCommand,
+	type CodingAgentTodoListCommand,
+	codingAgentTodoListCommandSchema,
 	type TodoMutationResult,
 	TodoMutationService,
 } from "../todo";
 
 export type TodoToolName = "todo_list";
-export type TodoListOperation = "list" | TodoMutationCommand["op"];
-export type TodoListCommand = { op: "list" } | TodoMutationCommand;
+export type TodoListOperation = CodingAgentTodoListCommand["op"];
+export type TodoListCommand = CodingAgentTodoListCommand;
 
 export type TodoActionPayload = {
 	runId: string;
@@ -21,12 +22,15 @@ export type TodoActionPayload = {
 
 export async function todoListTool(input: {
 	runId: string;
-	command: TodoListCommand;
+	command: unknown;
 	actor?: "agent" | "human";
 }): Promise<WorkerToolResult<TodoActionPayload | null>> {
 	const startedAt = new Date().toISOString();
 	const runId = input.runId?.trim();
-	if (!runId || !input.command || typeof input.command.op !== "string") {
+	const parsedCommand = codingAgentTodoListCommandSchema.safeParse(
+		input.command,
+	);
+	if (!runId || !parsedCommand.success) {
 		return failed(
 			startedAt,
 			"INVALID_TOOL_ARGS",
@@ -34,6 +38,7 @@ export async function todoListTool(input: {
 			null,
 		);
 	}
+	const command = parsedCommand.data;
 
 	try {
 		const packet = await loadCodingAgentContextPacket(runId);
@@ -45,11 +50,11 @@ export async function todoListTool(input: {
 				null,
 			);
 		}
-		if (input.command.op === "list") {
+		if (command.op === "list") {
 			return ok(startedAt, {
 				runId,
 				action: "todo_list",
-				command: input.command,
+				command,
 				planRevision: packet.planSummary.planRevision,
 				todos: packet.planSummary.todos,
 				currentTodo: packet.currentTodo,
@@ -59,11 +64,11 @@ export async function todoListTool(input: {
 		const result = await new TodoMutationService(
 			packet.systemContext,
 			input.actor ?? "agent",
-		).execute(runId, input.command);
+		).execute(runId, command);
 		const payload: TodoActionPayload = {
 			runId,
 			action: "todo_list",
-			command: input.command,
+			command,
 			planRevision: result.planRevision,
 			todos: result.todos,
 			currentTodo: result.currentTodo,

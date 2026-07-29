@@ -201,7 +201,8 @@ describe("Specification document generation", () => {
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 
 		expect(systemPrompt).toContain("## タスク分類");
-		expect(systemPrompt).toContain("## 実装計画");
+		expect(systemPrompt).toContain("implementationPlan");
+		expect(systemPrompt).toContain("markdownへ実装計画を複製しないでください");
 		expect(systemPrompt).toContain("## 検証計画");
 		expect(systemPrompt).toContain("## 完了条件");
 		expect(systemPrompt).not.toContain("## 契約");
@@ -212,7 +213,7 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain("modules/[domain]");
 		expect(systemPrompt).toContain("src/modules/[domain]");
 		expect(systemPrompt).toContain(
-			"`## 実装計画` の対象項目へTaskで対象となるbackendまたはfrontendの対象moduleを明記",
+			"production変更はimplementationPlanにだけ書いてください",
 		);
 		expect(systemPrompt).toContain(
 			"route、service、repository、schema等のうち必要な責務をどう分離",
@@ -273,10 +274,8 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"SQLite variant へのフォールバックは雛形取得方法",
 		);
-		expect(systemPrompt).toContain("SQLite variant の取得を scaffold の項目");
-		expect(systemPrompt).toContain(
-			"選択 DB への差し替えをそれに依存する implementation の項目",
-		);
+		expect(systemPrompt).toContain("SQLite variant の取得をscaffoldのstep");
+		expect(systemPrompt).toContain("選択DBへの差し替えを後続step");
 		expect(systemPrompt).toContain("Bun 実行環境の `bun test`");
 		expect(systemPrompt).not.toContain("NightWorkers の Specification writer");
 		expect(systemPrompt).toContain(
@@ -313,13 +312,13 @@ describe("Specification document generation", () => {
 			"repositoryを調査した後のテスト設計で具体化",
 		);
 		expect(systemPrompt).toContain("プレースホルダーを含まない完成済み");
-		expect(systemPrompt).toContain("markdown フィールド");
+		expect(systemPrompt).toContain(
+			"完成済みFeature Plan本文を格納したmarkdown",
+		);
 		expect(systemPrompt).toContain("repositoryMaterializationIntent");
 		expect(systemPrompt).toContain("stackは hono / python / java / rust");
 		expect(systemPrompt).toContain("推測せず null");
-		expect(systemPrompt).toContain(
-			"計画や完了条件を別のJSON fieldへ複製しない",
-		);
+		expect(systemPrompt).toContain("markdownへ実装計画を複製しない");
 		expect(systemPrompt).not.toContain("テンプレート未使用でも検証を弱めず");
 		expect(systemPrompt).not.toContain("最小の verify 系 script 追加");
 	});

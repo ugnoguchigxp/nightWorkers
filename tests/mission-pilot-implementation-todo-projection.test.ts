@@ -15,6 +15,7 @@ import {
 	taskRuns,
 	tasks,
 } from "../api/db/schema";
+import { digestImplementationPlan } from "../api/modules/agentsShare";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	holdBlockedMissionPilotImplementationStart,
@@ -43,6 +44,15 @@ async function createFixture(input?: {
 	repositoryIds.push(repositoryId);
 	const featurePlanContent = "# Feature Plan\n\n## 実装計画\n1. Todo schema";
 	const featurePlanContentDigest = digestFeaturePlanContent(featurePlanContent);
+	const implementationPlan = {
+		steps: [
+			{
+				title: "Todo schema",
+				systemContext: "最小Todo schemaを実装する。",
+			},
+		],
+	};
+	const implementationPlanDigest = digestImplementationPlan(implementationPlan);
 	const fixture = await db.transaction(async (tx) => {
 		await tx.insert(repositories).values({
 			id: repositoryId,
@@ -78,6 +88,11 @@ async function createFixture(input?: {
 					featurePlanContent: {
 						version: 1,
 						digest: featurePlanContentDigest,
+					},
+					implementationPlan,
+					implementationPlanProvenance: {
+						version: 1,
+						digest: implementationPlanDigest,
 					},
 				},
 			})
@@ -150,6 +165,7 @@ async function createFixture(input?: {
 							reviewedContextDigest: session.contextDigest,
 							routingRevision: 0,
 							featurePlanMessageId: featurePlanMessage.id,
+							featurePlanContentDigest,
 							...(input?.missingProvenance
 								? {}
 								: input?.legacyHandoff
@@ -158,7 +174,11 @@ async function createFixture(input?: {
 											implementationPlanSourceMessageId: featurePlanMessage.id,
 											implementationPlanDigest: `sha256:${"1".repeat(64)}`,
 										}
-									: { featurePlanContentDigest }),
+									: {
+											implementationTodoProjectionVersion: 1,
+											implementationPlanSourceMessageId: featurePlanMessage.id,
+											implementationPlanDigest,
+										}),
 							verificationDocumentId: crypto.randomUUID(),
 							planReviewId,
 							planReviewVerdict: "pass",
@@ -174,6 +194,8 @@ async function createFixture(input?: {
 			featurePlanMessage,
 			entry,
 			featurePlanContentDigest,
+			implementationPlan,
+			implementationPlanDigest,
 			planReviewId,
 		};
 	});
@@ -196,19 +218,17 @@ describe("Mission Pilot implementation handoff validation", () => {
 		});
 		if (resolution.kind !== "ready") throw new Error("Expected ready");
 		expect(resolution).not.toHaveProperty("initialTodos");
+		expect(resolution.implementationPlan).toEqual(fixture.implementationPlan);
 	});
 
-	it("accepts a persisted legacy Queue handoff without a Markdown digest", async () => {
+	it("rejects a Queue handoff with a stale structured plan digest", async () => {
 		const fixture = await createFixture({ legacyHandoff: true });
 
 		expect(
 			await resolveMissionPilotImplementationStart(fixture.entry),
 		).toMatchObject({
-			kind: "ready",
-			featurePlanProvenance: {
-				sourceMessageId: fixture.featurePlanMessage.id,
-				digest: fixture.featurePlanContentDigest,
-			},
+			kind: "blocked",
+			code: "MISSION_PILOT_FEATURE_PLAN_DIGEST_MISMATCH",
 		});
 	});
 

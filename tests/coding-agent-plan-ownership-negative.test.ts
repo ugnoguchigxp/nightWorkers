@@ -57,13 +57,13 @@ describe("Coding Agent Plan ownership negative contract", () => {
 
 	it("preserves the accepted verification and migration decisions when creating Todos", () => {
 		expect(getCodingAgentTodoRequirement()).toContain(
-			"Feature Planで選択されていないE2E等をTodoへ追加しない",
+			"Plan Modeで採用済みimplementationPlanがあるRunでは",
 		);
 		expect(getCodingAgentTodoRequirement()).toContain(
-			"taskType=data_migrationの独立Todo",
+			"品質ゲートと完了報告は固定項目であり、Todo stepとして追加しない",
 		);
 		expect(getCodingAgentTodoRequirement()).toContain(
-			"不要と明示されている場合は追加しません",
+			"key、id、covers、constraints、doneWhen",
 		);
 	});
 

@@ -175,6 +175,98 @@ describe("Quality backend", () => {
 		}
 	});
 
+	it("runs coverage directly and reflects coverage-final.json even when tests fail", async () => {
+		const repoRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-detail-coverage-final-"),
+		);
+		try {
+			fs.mkdirSync(path.join(repoRoot, "scripts"), { recursive: true });
+			fs.writeFileSync(
+				path.join(repoRoot, "scripts", "write-coverage-final.cjs"),
+				[
+					"const fs = require('node:fs');",
+					"const path = require('node:path');",
+					`const file = path.join(${JSON.stringify(repoRoot)}, 'src', 'example.ts');`,
+					"fs.mkdirSync('coverage/src', { recursive: true });",
+					"fs.writeFileSync('coverage/index.html', '<html><body>index</body></html>');",
+					"fs.writeFileSync('coverage/src/example.ts.html', '<html><body><pre>example</pre></body></html>');",
+					"fs.writeFileSync('coverage/coverage-final.json', JSON.stringify({",
+					"  [file]: {",
+					"    path: file,",
+					"    statementMap: { 0: { start: { line: 1 }, end: { line: 1 } }, 1: { start: { line: 2 }, end: { line: 2 } } },",
+					"    s: { 0: 1, 1: 0 },",
+					"    fnMap: { 0: { loc: { start: { line: 1 }, end: { line: 1 } } } },",
+					"    f: { 0: 1 },",
+					"    branchMap: { 0: { locations: [{ start: { line: 1 } }, { start: { line: 2 } }] } },",
+					"    b: { 0: [1, 0] }",
+					"  }",
+					"}));",
+					"process.exit(1);",
+				].join("\n"),
+				"utf8",
+			);
+			fs.writeFileSync(
+				path.join(repoRoot, "package.json"),
+				JSON.stringify({
+					scripts: {
+						test: 'node -e "process.exit(1)"',
+						"test:coverage": "node scripts/write-coverage-final.cjs",
+					},
+				}),
+				"utf8",
+			);
+			const project = await createRepository(repoRoot);
+
+			const runRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ runType: "unit" }),
+				},
+			);
+
+			expect(runRes.status).toBe(201);
+			const run = await runRes.json();
+			expect(run.status).toBe("failed");
+			expect(run.command).not.toContain("bun run 'test' &&");
+			expect(run.command).toContain("bun run 'test:coverage'");
+			expect(run.errorMessage).toBeNull();
+			expect(run.coverageSummary.total.lines).toMatchObject({
+				total: 2,
+				covered: 1,
+				pct: 50,
+			});
+			const fileKey = Object.keys(run.coverageSummary).find((key) =>
+				key.endsWith("/src/example.ts"),
+			);
+			expect(fileKey).toBeDefined();
+			expect(run.coverageSummary[fileKey ?? ""]).toMatchObject({
+				lines: { pct: 50 },
+				statements: { pct: 50 },
+				functions: { pct: 100 },
+				branches: { pct: 50 },
+				uncoveredLines: [2],
+			});
+
+			const qualityRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality`,
+			);
+			const quality = await qualityRes.json();
+			expect(quality.latestCoverageRun.id).toBe(run.id);
+
+			const reportRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${run.id}/coverage-report?fileKey=${encodeURIComponent(fileKey ?? "")}`,
+			);
+			expect(await reportRes.json()).toMatchObject({
+				available: true,
+				reason: null,
+			});
+		} finally {
+			fs.rmSync(repoRoot, { recursive: true, force: true });
+		}
+	});
+
 	it("serves a sanitized fresh single-directory HTML coverage report", async () => {
 		const repoRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "nightworkers-detail-coverage-html-"),

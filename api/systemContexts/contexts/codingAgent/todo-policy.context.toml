@@ -1,16 +1,8 @@
 text = '''[[todoRequirement]]
-[[initialPreparationTodo]]
-[[completionReportTodo]]
 [[standaloneExecution]]
 [[directPlanMode]]'''
 
 [variables.directPlanMode]
-profile = "trusted.inline"
-
-[variables.completionReportTodo]
-profile = "trusted.inline"
-
-[variables.initialPreparationTodo]
 profile = "trusted.inline"
 
 [variables.standaloneExecution]

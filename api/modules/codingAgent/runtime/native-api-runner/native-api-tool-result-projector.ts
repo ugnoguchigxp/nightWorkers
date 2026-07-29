@@ -80,25 +80,12 @@ function compactTodoPayload(payload: unknown) {
 	const todos = toArray(record.todos).map(toRecord);
 	const command = toRecord(record.command);
 	const operation = typeof command.op === "string" ? command.op : undefined;
-	const changedTodoId =
-		typeof command.todoId === "string" ? command.todoId : null;
-	const changedTodo = changedTodoId
-		? (todos.find(
-				(todo) => todo.id === changedTodoId || todo.todoKey === changedTodoId,
-			) ?? null)
-		: null;
+	const next = todos.find((todo) => todo.status === "pending") ?? null;
 	return {
-		runId: record.runId,
-		action: record.action,
 		operation,
-		planRevision: record.planRevision,
-		changedTodo: compactTodo(changedTodo),
+		progress: countTodos(todos),
 		currentTodo: compactCurrentTodo(record.currentTodo),
-		counts: countTodos(todos),
-		todos: todos.slice(0, 24).map(compactTodo),
-		omittedTodoCount: Math.max(0, todos.length - 24),
-		listIsCanonicalSummary:
-			operation === "list" || operation === "replace_plan",
+		nextTodo: compactTodo(next),
 	};
 }
 
@@ -106,12 +93,9 @@ function compactCurrentTodo(value: unknown) {
 	if (!isRecord(value)) return null;
 	const todo = toRecord(value);
 	return {
-		...compactTodo(todo),
-		revision: todo.revision,
-		objective: todo.objective ?? todo.description ?? null,
+		title: todo.title,
+		status: todo.status,
 		systemContext: todo.systemContext ?? todo.context ?? "",
-		nextAction: todo.nextAction,
-		acceptanceCriteria: todo.acceptanceCriteriaJson ?? todo.acceptanceCriteria,
 		lastFailure: todo.lastFailure ?? null,
 		attemptCount: todo.attemptCount ?? 0,
 	};
@@ -121,12 +105,8 @@ function compactTodo(value: unknown) {
 	if (!isRecord(value)) return null;
 	const todo = toRecord(value);
 	return {
-		id: todo.id,
-		seq: todo.seq,
 		title: todo.title,
 		status: todo.status,
-		taskType: todo.taskType,
-		procedureId: todo.procedureId ?? null,
 	};
 }
 
@@ -140,8 +120,9 @@ function countTodos(todos: Record<string, unknown>[]) {
 		pending: count("pending"),
 		running: count("running"),
 		passed: count("passed"),
-		failed: count("failed"),
+		skipped: count("skipped"),
 		needsHuman: count("needs_human"),
+		terminal: count("passed") + count("skipped"),
 	};
 }
 

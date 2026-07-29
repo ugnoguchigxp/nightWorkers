@@ -41,6 +41,22 @@ vi.mock("../../api/services/structured-llm", async () => {
 	};
 });
 
+vi.mock("../../api/modules/gitworktree/workspace-bootstrap", async () => {
+	const actual = await vi.importActual<
+		typeof import("../../api/modules/gitworktree/workspace-bootstrap")
+	>("../../api/modules/gitworktree/workspace-bootstrap");
+	return {
+		...actual,
+		runWorkspaceDependencyBootstrap: vi.fn(async () => ({
+			version: 1 as const,
+			status: "not_required" as const,
+			startedAt: new Date().toISOString(),
+			completedAt: new Date().toISOString(),
+			components: [],
+		})),
+	};
+});
+
 vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 	const runtime = {
 		kind: "native-local",

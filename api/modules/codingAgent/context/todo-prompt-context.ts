@@ -20,9 +20,6 @@ export type RuntimeTodo = {
 	revision?: number;
 };
 
-const MAX_PROMPT_TODO_SUMMARIES = 16;
-const MAX_RECENT_TERMINAL_TODO_SUMMARIES = 4;
-
 export function renderCodingAgentRuntimeSystemContext(
 	context: CodingAgentSystemContext,
 	options: { includeTaskGoal?: boolean } = {},
@@ -55,30 +52,17 @@ export function renderCodingAgentTodoPlanSummary(
 	p: SystemContextP = defaultP,
 ) {
 	if (!todos?.length) return null;
-	const active = todos
-		.filter((todo) => !["passed", "skipped"].includes(todo.status))
-		.slice(0, MAX_PROMPT_TODO_SUMMARIES);
-	const remainingCapacity = MAX_PROMPT_TODO_SUMMARIES - active.length;
-	const recentTerminalCount = Math.min(
-		remainingCapacity,
-		MAX_RECENT_TERMINAL_TODO_SUMMARIES,
-	);
-	const recentTerminal = recentTerminalCount
-		? todos
-				.filter((todo) => ["passed", "skipped"].includes(todo.status))
-				.slice(-recentTerminalCount)
-		: [];
-	const visible = [...active, ...recentTerminal].sort((a, b) => a.seq - b.seq);
-	const omittedCount = todos.length - visible.length;
+	const next = todos.find((todo) => todo.status === "pending") ?? null;
+	const terminal = todos.filter((todo) =>
+		["passed", "skipped"].includes(todo.status),
+	).length;
 	return p("codingAgent.todo-plan-summary", {
-		visibleTodos: visible.map(({ id, seq, status, taskType, title }) => ({
-			id,
-			seq,
-			status,
-			taskType,
-			title,
-		})),
-		omittedCount,
+		progress: {
+			terminal,
+			total: todos.length,
+			needsHuman: todos.filter((todo) => todo.status === "needs_human").length,
+		},
+		next: next ? { title: next.title, status: next.status } : null,
 	});
 }
 
@@ -95,14 +79,8 @@ export function renderCodingAgentTodoSystemContext(
 export function codingAgentTodoSystemContextValues(todo: RuntimeTodo) {
 	return {
 		todo: {
-			id: todo.id,
-			revision: todo.revision ?? 0,
-			taskType: todo.taskType,
 			title: todo.title,
-			objective: todo.objective ?? "",
 			systemContext: todo.systemContext ?? todo.context ?? "",
-			nextAction: todo.nextAction ?? "",
-			acceptanceCriteria: todo.acceptanceCriteria ?? [],
 			lastFailure: todo.lastFailure ?? "",
 			attemptCount: todo.attemptCount ?? 0,
 		},

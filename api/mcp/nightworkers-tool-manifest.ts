@@ -48,7 +48,7 @@ export const nightWorkersCodexToolManifest = {
 	todo_list: {
 		title: "Todo List",
 		description:
-			"複数工程などTodoが品質を上げるRunでだけTodo planを明示更新します。各TodoのsystemContextは工程中の最優先局所指示です。replace_planではRun-local todoKey / dependsOnKeysを使い、成功resultのcanonical id / revisionをstart、resume、transition、record_failure、update_contextで使います。",
+			"Planが未採用の直接Runではplanで工程を作成し、以後はcurrent Todoをcomplete_currentまたはblock_currentで明示更新します。生成するstep fieldはtitleとsystemContextだけです。",
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,

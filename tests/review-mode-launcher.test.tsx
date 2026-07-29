@@ -293,6 +293,33 @@ describe("Review Mode launcher", () => {
 		expect((markup.match(/ disabled=""/g) || []).length).toBe(4);
 	});
 
+	it("offers the final archive action before a Review Session is persisted", () => {
+		const markup = renderToStaticMarkup(
+			createElement(ReviewStatusViewer, {
+				detail: null,
+				activeTaskId: "task-1",
+				activeTaskStatus: "completed",
+				gitCloseout: {
+					state: "commit_ready",
+					commitRecord: {
+						status: "ready",
+						verificationStatus: "partial",
+					},
+					mergeRecord: null,
+					requiredReview: { complete: true },
+					git: { branch: "feature/review", upstream: null },
+					canCommit: true,
+					canPush: false,
+				} as never,
+				onCompleteAndArchiveTask: vi.fn(async () => undefined),
+			}),
+		);
+
+		expect(markup).toContain('data-review-task-archive-action="archive"');
+		expect(markup).toContain("未コミット処理を破棄してアーカイブ");
+		expect(markup).toContain("変更ファイルはWorktreeを削除するまで残ります");
+	});
+
 	it("disables Git actions when closeout preconditions or the global lock fail", () => {
 		const state = {
 			runId: "run-1",

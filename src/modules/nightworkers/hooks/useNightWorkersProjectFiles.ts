@@ -18,6 +18,7 @@ const rootProjectDirectory = "";
 
 export function useNightWorkersProjectFiles(
 	activeProjectId: string | undefined,
+	activeRunId?: string,
 ) {
 	const [currentBrowserPath, setCurrentBrowserPath] = useState<string | null>(
 		null,
@@ -68,12 +69,18 @@ export function useNightWorkersProjectFiles(
 		isLoading: isProjectFilesLoading,
 		refetch: refetchRootProjectFiles,
 	} = useQuery({
-		queryKey: ["projectFiles", activeProjectId, rootProjectDirectory],
+		queryKey: [
+			"projectFiles",
+			activeProjectId,
+			activeRunId,
+			rootProjectDirectory,
+		],
 		queryFn: async () => {
 			if (!activeProjectId) return [];
 			const res = await fetchRepositoryFiles(
 				activeProjectId,
 				rootProjectDirectory,
+				activeRunId,
 			);
 			if (!res.ok) throw new Error("Failed to fetch project files");
 			return (await res.json()) as ProjectFileEntry[];
@@ -98,12 +105,18 @@ export function useNightWorkersProjectFiles(
 		isLoading: isProjectFileLoading,
 		refetch: refetchSelectedProjectFile,
 	} = useQuery({
-		queryKey: ["projectFile", activeProjectId, selectedProjectFilePath],
+		queryKey: [
+			"projectFile",
+			activeProjectId,
+			activeRunId,
+			selectedProjectFilePath,
+		],
 		queryFn: async () => {
 			if (!activeProjectId || !selectedProjectFilePath) return null;
 			const res = await fetchRepositoryFile(
 				activeProjectId,
 				selectedProjectFilePath,
+				activeRunId,
 			);
 			if (!res.ok) throw new Error("Failed to fetch project file");
 			return (await res.json()) as ProjectFileContent;
@@ -118,10 +131,10 @@ export function useNightWorkersProjectFiles(
 		isFetching: isProjectDiffLoading,
 		refetch: refetchProjectDiff,
 	} = useQuery({
-		queryKey: ["projectDiff", activeProjectId],
+		queryKey: ["projectDiff", activeProjectId, activeRunId],
 		queryFn: async () => {
 			if (!activeProjectId) return null;
-			const res = await fetchRepositoryDiff(activeProjectId);
+			const res = await fetchRepositoryDiff(activeProjectId, activeRunId);
 			if (!res.ok) throw new Error("Failed to fetch repository diff");
 			return (await res.json()) as ProjectDiff;
 		},
@@ -143,7 +156,11 @@ export function useNightWorkersProjectFiles(
 		try {
 			const expandedResults = await Promise.all(
 				expandedPaths.map(async (path) => {
-					const res = await fetchRepositoryFiles(activeProjectId, path);
+					const res = await fetchRepositoryFiles(
+						activeProjectId,
+						path,
+						activeRunId,
+					);
 					if (!res.ok) throw new Error("Failed to fetch project files");
 					return [path, (await res.json()) as ProjectFileEntry[]] as const;
 				}),
@@ -166,6 +183,7 @@ export function useNightWorkersProjectFiles(
 		}
 	}, [
 		activeProjectId,
+		activeRunId,
 		expandedProjectDirectories,
 		refetchRootProjectFiles,
 		refetchSelectedProjectFile,
@@ -191,7 +209,11 @@ export function useNightWorkersProjectFiles(
 			return;
 		setLoadingProjectDirectories((prev) => ({ ...prev, [path]: true }));
 		try {
-			const res = await fetchRepositoryFiles(activeProjectId, path);
+			const res = await fetchRepositoryFiles(
+				activeProjectId,
+				path,
+				activeRunId,
+			);
 			if (!res.ok) throw new Error("Failed to fetch project files");
 			const entries = (await res.json()) as ProjectFileEntry[];
 			setProjectFileEntriesByDirectory((prev) => ({

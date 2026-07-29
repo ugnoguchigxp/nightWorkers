@@ -117,6 +117,7 @@ export const listProjectFilesRoute = createRoute({
 		}),
 		query: z.object({
 			path: z.string().optional(),
+			runId: z.string().uuid().optional(),
 		}),
 	},
 	responses: {
@@ -148,6 +149,7 @@ export const readProjectFileRoute = createRoute({
 		}),
 		query: z.object({
 			path: z.string(),
+			runId: z.string().uuid().optional(),
 		}),
 	},
 	responses: {
@@ -174,6 +176,9 @@ export const readRepositoryDiffRoute = createRoute({
 	request: {
 		params: z.object({
 			id: z.string().uuid().openapi({ example: "repo-uuid" }),
+		}),
+		query: z.object({
+			runId: z.string().uuid().optional(),
 		}),
 	},
 	responses: {

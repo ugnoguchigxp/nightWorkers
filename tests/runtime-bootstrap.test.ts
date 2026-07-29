@@ -44,6 +44,10 @@ describe("desktop runtime bootstrap", () => {
 		expect(env.APP_URL).toBe("http://127.0.0.1:40123");
 		expect(fs.existsSync(paths.settingsDir)).toBe(true);
 		expect(fs.existsSync(paths.logsDir)).toBe(true);
+		expect(fs.existsSync(paths.workspaceBootstrapTmpDir)).toBe(true);
+		expect(fs.existsSync(paths.workspaceBootstrapCacheDir)).toBe(true);
+		expect(fs.existsSync(paths.workspaceBootstrapEnvironmentsDir)).toBe(true);
+		expect(fs.existsSync(paths.workspaceBootstrapLogsDir)).toBe(true);
 		expect(fs.existsSync(path.join(paths.secretsDir, "jwt-secret"))).toBe(true);
 	});
 

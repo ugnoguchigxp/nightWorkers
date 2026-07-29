@@ -170,6 +170,7 @@ async function executeTaskOperatorCommandOnce(
 				taskId: input.taskId,
 				expectedRevision: input.expectedTaskRevision,
 				principal: input.context.principal,
+				discardPendingCloseouts: args.discardPendingCloseouts === true,
 			});
 		case "task.archive.restore":
 			return restoreTaskArchiveCommand({

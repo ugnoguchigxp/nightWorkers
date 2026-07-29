@@ -83,12 +83,11 @@ describe("Codex SDK thin runtime adapter", () => {
 			expect(developerInstructions).toContain(
 				"画面内だけで使うcomponent、hooks、schema・type、API accessなどをdomain内",
 			);
-			expect(developerInstructions).toContain("read-only調査を妨げず");
 			expect(developerInstructions).toContain(
-				"質問、読み取り、一工程で安全に完結する小変更",
+				"workspaceを変更する前にtodo_list",
 			);
-			expect(developerInstructions).not.toContain(
-				"current Todoなしにworkspaceの読み取り",
+			expect(developerInstructions).toContain(
+				"生成するfieldは80文字以内のtitleと600文字以内",
 			);
 			expect(developerInstructions).not.toContain("Task Goal:");
 			expect(developerInstructions).not.toContain("ユーザーの実装依頼");
@@ -153,9 +152,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		});
 
 		expect(developerInstructions).toContain("<CURRENT_TODO_SYSTEM_CONTEXT");
-		expect(developerInstructions).toContain(
-			"SystemContextを含むcurrent Todoの正本snapshot",
-		);
+		expect(developerInstructions).toContain("current Todoの局所指示");
 		expect(developerInstructions).toContain(
 			"既存migrationを変更せずadditive migrationを作る。",
 		);
@@ -184,7 +181,36 @@ describe("Codex SDK thin runtime adapter", () => {
 				},
 			},
 		});
-		expect(options.env).toEqual({ PORT: "41234" });
+		expect(options.env).toEqual({});
+	});
+
+	it("keeps registry credentials available to bootstrap but out of the Coding Agent environment", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				PATH: "/usr/bin",
+				JAVA_HOME: "/opt/jdk",
+				CARGO_HOME: "/home/user/.cargo",
+				NPM_TOKEN: "registry-secret",
+				PIP_INDEX_URL: "https://user:password@example.test/simple",
+			},
+			context: {
+				...context(),
+				runtimeOptions: {
+					workspaceRuntimeEnvironment: {
+						TMPDIR: "/tmp/nightworkers-workspace",
+						NUGET_AUTH_TOKEN: "nuget-secret",
+						COOKIE: "session-secret",
+						UNRECOGNIZED_RUNTIME_SETTING: "must-not-propagate",
+					},
+				},
+			},
+		});
+
+		expect(options.env).toEqual({
+			PATH: "/usr/bin",
+			JAVA_HOME: "/opt/jdk",
+			TMPDIR: "/tmp/nightworkers-workspace",
+		});
 	});
 
 	it("preserves a configured MCP endpoint while overriding Run identity", () => {

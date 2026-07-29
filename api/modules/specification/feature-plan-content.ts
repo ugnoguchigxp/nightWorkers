@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { implementationPlanSchema } from "../../../shared/modules/agentsShare";
 import { repositoryMaterializationIntentSchema } from "../../../shared/schemas/git-integration.schema";
 
 const featurePlanMarkdownSchema = z
@@ -24,9 +25,10 @@ export function createFeaturePlanMarkdownDraftSchema(input?: {
 	return z
 		.object({
 			markdown: featurePlanMarkdownSchema,
+			implementationPlan: implementationPlanSchema,
 			repositoryMaterializationIntent: materializationIntent,
 		})
-		.passthrough();
+		.strict();
 }
 
 export const featurePlanMarkdownDraftSchema =

@@ -12,6 +12,7 @@ export const gitRepositoryCapabilityReasonSchema = z
 
 export const worktreeRemoveBlockerSchema = z.enum([
 	"base_worktree_protected",
+	"target_branch_protected",
 	"worktree_in_use",
 	"worktree_dirty",
 	"worktree_conflicted",

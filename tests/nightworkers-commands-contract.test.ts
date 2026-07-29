@@ -152,10 +152,10 @@ describe("nightWorkersCommands", () => {
 		await browseFolders();
 		await browseFolders("/tmp/project root");
 		await createFolder({ parentPath: "/tmp", name: "new-folder" });
-		await fetchRepositoryFiles("repo-1");
-		await fetchRepositoryFiles("repo-1", "src/app file.ts");
-		await fetchRepositoryFile("repo-1", "src/app file.ts");
-		await fetchRepositoryDiff("repo-1");
+		await fetchRepositoryFiles("repo-1", undefined, "run-1");
+		await fetchRepositoryFiles("repo-1", "src/app file.ts", "run-1");
+		await fetchRepositoryFile("repo-1", "src/app file.ts", "run-1");
+		await fetchRepositoryDiff("repo-1", "run-1");
 		await fetchProjectDetailMetrics("repo-1");
 		await fetchMissionGoals("repo-1");
 		await createMissionGoal("repo-1", { title: "Goal" });
@@ -180,13 +180,23 @@ describe("nightWorkersCommands", () => {
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
+			4,
+			"/api/repositories/repo-1/files?runId=run-1",
+			undefined,
+		);
+		expect(fetchMock).toHaveBeenNthCalledWith(
 			5,
-			"/api/repositories/repo-1/files?path=src%2Fapp+file.ts",
+			"/api/repositories/repo-1/files?path=src%2Fapp+file.ts&runId=run-1",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			6,
-			"/api/repositories/repo-1/file?path=src%2Fapp+file.ts",
+			"/api/repositories/repo-1/file?path=src%2Fapp+file.ts&runId=run-1",
+			undefined,
+		);
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			7,
+			"/api/repositories/repo-1/diff?runId=run-1",
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenNthCalledWith(
@@ -203,6 +213,24 @@ describe("nightWorkersCommands", () => {
 			17,
 			"/api/repositories/repo-1/mission-task-candidates/create-tasks",
 			expect.objectContaining({ method: "POST" }),
+		);
+	});
+
+	it("routes explicit pending closeout discard when archiving", async () => {
+		const fetchMock = stubFetch();
+
+		await archiveWorkbenchSession("task-1", {
+			discardPendingCloseouts: true,
+		});
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/workbench/sessions/task-1/archive?discardPendingCloseouts=true",
+			expect.objectContaining({
+				method: "PATCH",
+				headers: expect.objectContaining({
+					"Idempotency-Key": expect.any(String),
+				}),
+			}),
 		);
 	});
 

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 
 export type NightWorkersRuntimePaths = {
@@ -8,6 +10,11 @@ export type NightWorkersRuntimePaths = {
 	secretsDir: string;
 	artifactsDir: string;
 	backupsDir: string;
+	workspaceBootstrapDir: string;
+	workspaceBootstrapTmpDir: string;
+	workspaceBootstrapCacheDir: string;
+	workspaceBootstrapEnvironmentsDir: string;
+	workspaceBootstrapLogsDir: string;
 };
 
 export function isDesktopMode(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -31,6 +38,19 @@ export function getRuntimePaths(
 ): NightWorkersRuntimePaths {
 	const runtimeRoot = getRuntimeRoot(env);
 	const settingsDir = path.join(runtimeRoot, "settings");
+	const workspaceBootstrapDir = env.NIGHTWORKERS_WORKSPACE_BOOTSTRAP_DIR?.trim()
+		? path.resolve(env.NIGHTWORKERS_WORKSPACE_BOOTSTRAP_DIR)
+		: env.NIGHTWORKERS_RUNTIME_DIR?.trim() || isDesktopMode(env)
+			? path.join(runtimeRoot, "workspace-bootstrap")
+			: path.join(
+					os.tmpdir(),
+					"nightworkers",
+					"workspace-bootstrap",
+					createHash("sha256")
+						.update(path.resolve(process.cwd()))
+						.digest("hex")
+						.slice(0, 16),
+				);
 	return {
 		runtimeRoot,
 		databasePath: path.join(runtimeRoot, "sqlite.db"),
@@ -39,6 +59,14 @@ export function getRuntimePaths(
 		secretsDir: path.join(runtimeRoot, "secrets"),
 		artifactsDir: path.join(runtimeRoot, "artifacts"),
 		backupsDir: path.join(runtimeRoot, "backups"),
+		workspaceBootstrapDir,
+		workspaceBootstrapTmpDir: path.join(workspaceBootstrapDir, "tmp"),
+		workspaceBootstrapCacheDir: path.join(workspaceBootstrapDir, "cache"),
+		workspaceBootstrapEnvironmentsDir: path.join(
+			workspaceBootstrapDir,
+			"environments",
+		),
+		workspaceBootstrapLogsDir: path.join(workspaceBootstrapDir, "logs"),
 	};
 }
 

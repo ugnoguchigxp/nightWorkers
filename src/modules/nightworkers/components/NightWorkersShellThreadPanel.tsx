@@ -433,8 +433,8 @@ export function NightWorkersShellThreadPanel(
 						onCommitGitCloseout={workspace.commitRunGitCloseout}
 						onPushGitCloseout={workspace.pushRunGitCloseout}
 						activeTaskStatus={workspace.activeSession?.status ?? null}
-						onCompleteAndArchiveTask={(taskId) =>
-							workspace.archiveCompletedSession(taskId)
+						onCompleteAndArchiveTask={(taskId, options) =>
+							workspace.archiveCompletedSession(taskId, options)
 						}
 						onRestoreArchivedTask={(taskId) =>
 							workspace.restoreArchivedSession(taskId)

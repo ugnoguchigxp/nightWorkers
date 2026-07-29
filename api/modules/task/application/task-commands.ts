@@ -21,8 +21,11 @@ export async function archiveTaskCommand(input: {
 	taskId: string;
 	expectedRevision: number;
 	principal: TaskOperatorPrincipal;
+	discardPendingCloseouts?: boolean;
 }) {
-	return archiveTask(input.taskId, input.expectedRevision);
+	return archiveTask(input.taskId, input.expectedRevision, {
+		discardPendingCloseouts: input.discardPendingCloseouts,
+	});
 }
 
 export async function restoreTaskArchiveCommand(input: {

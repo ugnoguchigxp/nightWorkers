@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectWorkerResultToNativeApiToolResult } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector";
 
 describe("projectWorkerResultToNativeApiToolResult", () => {
-	it("projects the LLM-owned Todo command contract without legacy fields", () => {
+	it("projects only Todo progress, current, and next to the model", () => {
 		const result = projectWorkerResultToNativeApiToolResult({
 			ok: true,
 			toolName: "todo_list",
@@ -38,18 +38,22 @@ describe("projectWorkerResultToNativeApiToolResult", () => {
 		};
 		expect(modelVisible.payload).toMatchObject({
 			operation: "transition",
-			planRevision: 3,
-			changedTodo: { id: "todo-1", status: "passed" },
+			progress: {
+				total: 2,
+				running: 1,
+				passed: 1,
+				terminal: 1,
+			},
 			currentTodo: {
-				id: "todo-2",
+				title: "実装",
 				status: "running",
 				systemContext: "確定済みAPI契約を変更しない。",
-				nextAction: "routeを実装する。",
-				acceptanceCriteria: ["契約テストが通る"],
 			},
+			nextTodo: null,
 		});
-		expect(modelVisible.payload).not.toHaveProperty("transition");
-		expect(modelVisible.payload).not.toHaveProperty("diagnostics");
+		expect(modelVisible.payload).not.toHaveProperty("planRevision");
+		expect(modelVisible.payload).not.toHaveProperty("todos");
+		expect(JSON.stringify(modelVisible.payload)).not.toContain("todo-");
 	});
 
 	it("keeps imported LLM context in audit payload without exposing it to the model", () => {

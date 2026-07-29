@@ -124,6 +124,9 @@ function stubMutationFetch() {
 		if (url.endsWith("/api/workbench/sessions/task-1/queue")) {
 			return jsonResponse(task("task-1", "queued", 5));
 		}
+		if (url.includes("/api/workbench/sessions/task-1/archive")) {
+			return jsonResponse(task("task-1", "archived", 1));
+		}
 		if (url.endsWith("/api/runs/run-started/git/commit")) {
 			return jsonResponse({
 				runId: "run-started",
@@ -305,6 +308,45 @@ describe("useNightWorkersMutations", () => {
 				"run-started",
 			]),
 		).toEqual(expect.objectContaining({ state: "pushed" }));
+	});
+
+	it("refreshes sidebar sources after archiving the active task", async () => {
+		stubMutationFetch();
+		const { mutations, queryClient } = renderMutations();
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+
+		queryClient.setQueryData<Task[]>(
+			["sessions"],
+			[task("task-1", "completed")],
+		);
+		queryClient.setQueryData(["taskOperatorView", "task-1"], {
+			version: 1,
+			task: {
+				id: "task-1",
+				status: "completed",
+			},
+		});
+
+		await mutations.archiveCompletedSessionMutation.mutateAsync({
+			sessionId: "task-1",
+		});
+
+		expect(queryClient.getQueryData<Task[]>(["sessions"])?.[0]?.status).toBe(
+			"archived",
+		);
+		expect(
+			queryClient.getQueryData<{
+				task: { status: string };
+			}>(["taskOperatorView", "task-1"])?.task.status,
+		).toBe("archived");
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: ["sessions"],
+			exact: true,
+		});
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: ["taskOperatorView", "task-1"],
+			exact: true,
+		});
 	});
 
 	it("optimistically patches status, reorders priority, and moves sessions", async () => {

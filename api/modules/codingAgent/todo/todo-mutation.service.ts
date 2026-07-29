@@ -1,13 +1,28 @@
-import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../../db/client";
 import { withSqliteBusyRetry } from "../../../db/retry";
 import { taskRuns, taskRunTodos } from "../../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../../services/realtime/nightworkers-ws";
 import { buildCanonicalTodoId } from "./todo-identity";
 import {
+	blockCurrent,
+	completeCurrent,
+	createInitialPlan,
+	replaceRemainingPlan,
+} from "./todo-minimal-mutation";
+import {
 	todoMutationErrorMessage,
 	validateTodoMutationCommand,
 } from "./todo-mutation-contract";
+import {
+	listTodos,
+	lockMutableRun,
+	MUTABLE_RUN_STATUSES,
+	type RunRow,
+	TodoMutationAbort,
+	type TodoRow,
+	updateTodoCas,
+} from "./todo-mutation-persistence";
 import {
 	dependenciesAreTerminal,
 	findTodoByReference,
@@ -23,22 +38,8 @@ import type {
 	TodoMutationResult,
 } from "./types";
 
-type TodoRow = typeof taskRunTodos.$inferSelect;
-type RunRow = typeof taskRuns.$inferSelect;
-
 const NEW_RUNTIME_TERMINAL_STATUSES = ["passed", "skipped"] as const;
 const REPLACEABLE_TODO_STATUSES = ["pending", "running"] as const;
-const MUTABLE_RUN_STATUSES: Array<RunRow["status"]> = [
-	"running",
-	"context_compiling",
-	"needs_human",
-];
-
-class TodoMutationAbort extends Error {
-	constructor(readonly code: TodoMutationErrorCode) {
-		super(code);
-	}
-}
 
 export class TodoMutationService {
 	constructor(
@@ -69,6 +70,18 @@ export class TodoMutationService {
 						.where(eq(taskRuns.id, normalizedRunId));
 					if (!run) return this.failure("RUN_NOT_FOUND", 0, []);
 
+					if (command.op === "plan") {
+						return createInitialPlan(tx, run, command.steps, {
+							systemContext: this.systemContext,
+							createdBy: this.createdBy,
+						});
+					}
+					if (command.op === "replace_remaining") {
+						return replaceRemainingPlan(tx, run, command.steps, {
+							systemContext: this.systemContext,
+							createdBy: this.createdBy,
+						});
+					}
 					if (command.op === "replace_plan") {
 						return this.replacePlan(tx, run, command);
 					}
@@ -81,6 +94,12 @@ export class TodoMutationService {
 					}
 
 					const todos = await listTodos(tx, run.id);
+					if (command.op === "complete_current") {
+						return completeCurrent(tx, run, todos, command.note);
+					}
+					if (command.op === "block_current") {
+						return blockCurrent(tx, run, todos, command.reason);
+					}
 					const target = findTodoByReference(todos, command.todoId);
 					if (!target) {
 						return this.failure("TODO_NOT_FOUND", run.todoPlanRevision, todos);
@@ -122,7 +141,10 @@ export class TodoMutationService {
 		command: Extract<TodoMutationCommand, { op: "replace_plan" }>,
 	): Promise<TodoMutationResult<TodoRow>> {
 		const current = await listTodos(tx, run.id);
-		if (run.todoPlanRevision !== command.expectedPlanRevision) {
+		if (
+			command.expectedPlanRevision !== undefined &&
+			run.todoPlanRevision !== command.expectedPlanRevision
+		) {
 			return this.failure(
 				"TODO_PLAN_REVISION_CONFLICT",
 				run.todoPlanRevision,
@@ -216,7 +238,7 @@ export class TodoMutationService {
 			.where(
 				and(
 					eq(taskRuns.id, run.id),
-					eq(taskRuns.todoPlanRevision, command.expectedPlanRevision),
+					eq(taskRuns.todoPlanRevision, run.todoPlanRevision),
 					inArray(taskRuns.status, MUTABLE_RUN_STATUSES),
 				),
 			)
@@ -257,7 +279,8 @@ export class TodoMutationService {
 				description: todo.objective?.trim() || null,
 				objective: todo.objective?.trim() || null,
 				context: todoSystemContext?.trim() || null,
-				nextAction: todo.nextAction.trim(),
+				nextAction:
+					todo.nextAction?.trim() || todoSystemContext?.trim() || todo.title,
 				acceptanceCriteriaJson: todo.acceptanceCriteria ?? [],
 				taskType: todo.taskType?.trim() || "coding",
 				status: "pending",
@@ -468,60 +491,6 @@ export class TodoMutationService {
 		const todos = await listTodos(db, runId);
 		return this.failure(code, run.todoPlanRevision, todos);
 	}
-}
-
-async function listTodos(
-	database: Pick<typeof db, "select">,
-	runId: string,
-): Promise<TodoRow[]> {
-	return database
-		.select()
-		.from(taskRunTodos)
-		.where(eq(taskRunTodos.runId, runId))
-		.orderBy(asc(taskRunTodos.seq));
-}
-
-async function lockMutableRun(
-	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-	runId: string,
-) {
-	const [run] = await tx
-		.update(taskRuns)
-		.set({ updatedAt: new Date() })
-		.where(
-			and(
-				eq(taskRuns.id, runId),
-				inArray(taskRuns.status, MUTABLE_RUN_STATUSES),
-			),
-		)
-		.returning({ id: taskRuns.id });
-	return Boolean(run);
-}
-
-async function updateTodoCas(
-	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-	todo: TodoRow,
-	data: Omit<Partial<typeof taskRunTodos.$inferInsert>, "attemptCount"> & {
-		attemptCount?: number | SQL;
-	},
-) {
-	const [updated] = await tx
-		.update(taskRunTodos)
-		.set({
-			...data,
-			revision: sql`${taskRunTodos.revision} + 1`,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(taskRunTodos.id, todo.id),
-				eq(taskRunTodos.runId, todo.runId),
-				eq(taskRunTodos.revision, todo.revision),
-			),
-		)
-		.returning();
-	if (!updated) throw new TodoMutationAbort("TODO_REVISION_CONFLICT");
-	return updated;
 }
 
 function todoMutationErrorCodeForError(error: unknown): TodoMutationErrorCode {

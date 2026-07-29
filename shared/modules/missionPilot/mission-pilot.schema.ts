@@ -92,8 +92,6 @@ export const missionPilotQueueHandoffSchema = z
 			.string()
 			.regex(/^sha256:[a-f0-9]{64}$/)
 			.optional(),
-		// Read-only compatibility for queue handoffs persisted before Markdown
-		// became the Feature Plan canonical source.
 		implementationTodoProjectionVersion: z.literal(1).optional(),
 		implementationPlanSourceMessageId: z.string().uuid().optional(),
 		implementationPlanDigest: z
@@ -106,20 +104,26 @@ export const missionPilotQueueHandoffSchema = z
 		queuedAt: dateLikeSchema,
 	})
 	.superRefine((handoff, context) => {
-		if (handoff.featurePlanContentDigest) return;
+		if (!handoff.featurePlanContentDigest) {
+			context.addIssue({
+				code: "custom",
+				path: ["featurePlanContentDigest"],
+				message: "Queue handoff requires a Feature Plan content digest.",
+			});
+		}
 		if (
-			handoff.implementationTodoProjectionVersion === 1 &&
-			handoff.implementationPlanSourceMessageId ===
-				handoff.featurePlanMessageId &&
-			handoff.implementationPlanDigest
-		)
-			return;
-		context.addIssue({
-			code: "custom",
-			path: ["featurePlanContentDigest"],
-			message:
-				"Queue handoff requires a Feature Plan content digest or complete legacy provenance.",
-		});
+			handoff.implementationTodoProjectionVersion !== 1 ||
+			handoff.implementationPlanSourceMessageId !==
+				handoff.featurePlanMessageId ||
+			!handoff.implementationPlanDigest
+		) {
+			context.addIssue({
+				code: "custom",
+				path: ["implementationPlanDigest"],
+				message:
+					"Queue handoff requires provenance for the adopted structured implementation plan.",
+			});
+		}
 	});
 export const missionPilotPreQueueDiagnosticCodeSchema = z.enum([
 	"MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL",

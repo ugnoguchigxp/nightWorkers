@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +20,25 @@ describe("runtime paths", () => {
 		expect(paths.logsDir).toBe(
 			path.resolve(process.cwd(), ".nightworkers/logs"),
 		);
+		const projectDigest = createHash("sha256")
+			.update(path.resolve(process.cwd()))
+			.digest("hex")
+			.slice(0, 16);
+		const bootstrapRoot = path.join(
+			os.tmpdir(),
+			"nightworkers",
+			"workspace-bootstrap",
+			projectDigest,
+		);
+		expect(paths.workspaceBootstrapTmpDir).toBe(
+			path.join(bootstrapRoot, "tmp"),
+		);
+		expect(paths.workspaceBootstrapCacheDir).toBe(
+			path.join(bootstrapRoot, "cache"),
+		);
+		expect(paths.workspaceBootstrapEnvironmentsDir).toBe(
+			path.join(bootstrapRoot, "environments"),
+		);
 	});
 
 	it("uses desktop runtime root for writable state", () => {
@@ -29,6 +50,9 @@ describe("runtime paths", () => {
 		expect(paths.settingsDir).toBe("/tmp/nightworkers-app/settings");
 		expect(paths.logsDir).toBe("/tmp/nightworkers-app/logs");
 		expect(paths.databasePath).toBe("/tmp/nightworkers-app/sqlite.db");
+		expect(paths.workspaceBootstrapDir).toBe(
+			"/tmp/nightworkers-app/workspace-bootstrap",
+		);
 	});
 
 	it("defaults desktop runtime state to the project .nightworkers directory when no runtime dir is set", () => {

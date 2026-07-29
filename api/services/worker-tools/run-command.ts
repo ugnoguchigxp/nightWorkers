@@ -7,6 +7,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { getDeepRecordString, toDeepRecord } from "../../../shared/json-record";
 import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../model-visible-payload";
+import {
+	isCredentialFileEnvironmentKey,
+	isRegistryCredentialEnvironmentKey,
+} from "../security/secret-redaction";
 import { analyzeCommand } from "./command-policy";
 import {
 	compressCommandStream,
@@ -136,6 +140,7 @@ export interface RunCommandInput {
 	allowedPaths?: string[];
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
+	environment?: Record<string, string>;
 }
 
 export interface RunCommandOutput {
@@ -173,6 +178,7 @@ export async function runCommandTool(
 		allowedPaths,
 		externalAllowedPaths,
 		deniedPaths,
+		environment,
 	} = input;
 
 	const absoluteRepoRoot = path.resolve(repoRoot);
@@ -312,6 +318,9 @@ export async function runCommandTool(
 			cwd: targetCwd,
 			timeout: effectiveTimeoutSeconds * 1000,
 			maxBuffer: MAX_EXEC_BUFFER_BYTES,
+			...(environment
+				? { env: buildAgentCommandEnvironment(environment) }
+				: {}),
 			...(process.platform === "win32" ? {} : { shell: "/bin/bash" }),
 		});
 
@@ -378,6 +387,25 @@ export async function runCommandTool(
 			},
 		};
 	}
+}
+
+function buildAgentCommandEnvironment(
+	workspaceEnvironment: Record<string, string>,
+) {
+	const base = Object.fromEntries(
+		Object.entries(process.env).filter(
+			(entry): entry is [string, string] =>
+				typeof entry[1] === "string" &&
+				!isCredentialFileEnvironmentKey(entry[0]) &&
+				!isRegistryCredentialEnvironmentKey(entry[0], entry[1]),
+		),
+	);
+	const safeWorkspaceEnvironment = Object.fromEntries(
+		Object.entries(workspaceEnvironment).filter(
+			([key, value]) => !isRegistryCredentialEnvironmentKey(key, value),
+		),
+	);
+	return { ...base, ...safeWorkspaceEnvironment };
 }
 
 function streamDigest(value: string) {

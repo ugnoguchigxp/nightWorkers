@@ -60,7 +60,10 @@ function captureImplementationQueueHook() {
 	return { queryClient, queue: captured };
 }
 
-function captureProjectFilesHook(activeProjectId = "repo-1") {
+function captureProjectFilesHook(
+	activeProjectId = "repo-1",
+	activeRunId?: string,
+) {
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: { retry: false },
@@ -69,7 +72,7 @@ function captureProjectFilesHook(activeProjectId = "repo-1") {
 	});
 	let captured!: ReturnType<typeof useNightWorkersProjectFiles>;
 	function Capture() {
-		captured = useNightWorkersProjectFiles(activeProjectId);
+		captured = useNightWorkersProjectFiles(activeProjectId, activeRunId);
 		return null;
 	}
 	renderToStaticMarkup(
@@ -145,7 +148,7 @@ function stubProjectFilesFetch() {
 				}),
 			);
 		}
-		if (url.endsWith("/api/repositories/repo-1/diff")) {
+		if (url.startsWith("/api/repositories/repo-1/diff")) {
 			return new Response(JSON.stringify({ patch: "diff --git a/app b/app" }));
 		}
 		return new Response(JSON.stringify({ ok: true, init }));
@@ -189,7 +192,10 @@ describe("frontend hook snapshots and settings form transforms", () => {
 
 	it("runs project file browser helpers with local fetch stubs", async () => {
 		const fetchMock = stubProjectFilesFetch();
-		const { projectFiles, queryClient } = captureProjectFilesHook();
+		const { projectFiles, queryClient } = captureProjectFilesHook(
+			"repo-1",
+			"run-1",
+		);
 
 		await projectFiles.fetchDirectories("/tmp/nightWorkers");
 		const created = await projectFiles.createFolder({
@@ -208,7 +214,11 @@ describe("frontend hook snapshots and settings form transforms", () => {
 			undefined,
 		);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/repositories/repo-1/files?path=src",
+			"/api/repositories/repo-1/files?path=src&runId=run-1",
+			undefined,
+		);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/repositories/repo-1/diff?runId=run-1",
 			undefined,
 		);
 		queryClient.clear();

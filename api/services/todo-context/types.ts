@@ -1,3 +1,4 @@
+import type { ImplementationPlan } from "../../../shared/modules/agentsShare";
 import type { MissionPilotAgentRunProvenance } from "../../../shared/modules/missionPilot";
 import type { SystemContextBindingSnapshot } from "../../systemContexts/catalog";
 import type { PlanModeCapability } from "../settings/general-settings";
@@ -72,6 +73,7 @@ export type RuntimePromptSnapshot = {
 		instructions: string;
 		userRequest: string;
 		adoptedPlan: string;
+		implementationPlan?: ImplementationPlan | null;
 		designArtifacts: Array<{
 			kind: string;
 			sourceMessageId: string;
@@ -83,6 +85,7 @@ export type RuntimePromptSnapshot = {
 		stateCardText: string | null;
 	};
 	repositoryMaterialization?: unknown;
+	workspaceRuntimeEnvironment?: string[];
 	repositoryPreflight?: unknown;
 	blueprintPlanning?: unknown;
 	runtimeLane?: "native-api-runner" | "codex-sdk";

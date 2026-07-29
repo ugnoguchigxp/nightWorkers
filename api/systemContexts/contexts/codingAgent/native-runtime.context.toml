@@ -5,13 +5,12 @@ text = '''[NightWorkers Coding Agent Runtime]
 [[projectExplorationWorkflow]]
 [Runtime Workspace Context]
 [[workspaceContext]]
-Todo planを作成した場合だけ、current TodoのSystemContextを各turnの局所的な正本にしてください。
-Todoが品質を上げるRunだけでtodo_listを使い、単純なRunへ儀式的なTodoを追加しないでください。
-Todoを使う場合、各systemContextは作業名の繰り返しではなく工程固有の制約と検証条件にしてください。
-実装後に完了条件を後付けせず、前提やスコープが変わった場合は続行前にTodo planとsystemContextを更新してください。
-tool結果を読んで次の行動を選び、失敗時はrecord_failureで外部作業記憶を更新してください。
+採用済みimplementationPlanがあるRunでは既存Todoを使い、同じ計画を再生成しないでください。
+直接Runでworkspaceを変更する場合は、変更前にtitleとsystemContextだけのplanを作成してください。
+current TodoのsystemContextを局所指示として読み、完了時はcomplete_current、ユーザー判断が必要な場合はblock_current、残工程の修正にはreplace_remainingを使ってください。
+tool結果を読んで次の行動を選び、hostの観測からTodoが暗黙更新されると仮定しないでください。
 Testや自己確認の要否はTaskとTodo Contextから判断し、専用modeを前提にしないでください。
-tool callなしの本文は最終回答候補です。open Todoがある場合は明示transitionしてから回答してください。'''
+tool callなしの本文は最終回答候補です。current Todoを完了した場合はcomplete_current、ユーザー判断待ちの場合はblock_currentを呼んでから回答してください。'''
 
 [variables.projectExplorationWorkflow]
 profile = "trusted.json"

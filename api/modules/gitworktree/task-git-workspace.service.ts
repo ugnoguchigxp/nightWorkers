@@ -19,6 +19,10 @@ import {
 import { withRepositoryGitMutationLock } from "./repository-git-mutation-lock";
 import * as workspaceRepo from "./task-git-workspace.repository";
 import {
+	canRetryTaskGitWorkspaceInitialization,
+	initializeTaskGitWorkspace,
+} from "./task-git-workspace-initialization.service";
+import {
 	newWorkspaceId,
 	taskWorkspaceBranchName,
 	taskWorkspacePath,
@@ -74,6 +78,20 @@ export async function ensureTaskGitWorkspace(input: {
 							: "waiting_for_repository_initialization",
 					materializationKind: input.materializationIntent.kind,
 					materializationIntentJson: input.materializationIntent,
+					lastErrorCode: null,
+					lastErrorMessage: null,
+				},
+			});
+			if (resumed) return resumed;
+		}
+		if (canRetryTaskGitWorkspaceInitialization(existing)) {
+			const resumed = await workspaceRepo.transitionTaskGitWorkspace({
+				id: existing.id,
+				expectedStatus: "initialization_failed",
+				data: {
+					status: "initializing",
+					leaseOwner: null,
+					leaseExpiresAt: null,
 					lastErrorCode: null,
 					lastErrorMessage: null,
 				},
@@ -149,9 +167,15 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 	if (!workspace)
 		throw new AppError(404, "workspace_not_found", "Task workspace not found");
 	if (
-		["ready", "active", "reviewing", "integration_pending", "merged"].includes(
-			workspace.status,
-		)
+		[
+			"initializing",
+			"initialization_failed",
+			"ready",
+			"active",
+			"reviewing",
+			"integration_pending",
+			"merged",
+		].includes(workspace.status)
 	)
 		return workspace;
 	if (workspace.status === "waiting_for_repository_initialization") {
@@ -221,7 +245,7 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 			if (adopted) return adopted;
 			throw error;
 		});
-		const ready = await db.transaction(async (tx) => {
+		const initializing = await db.transaction(async (tx) => {
 			const [updated] = await tx
 				.update(tasks)
 				.set({ worktreePath: created.canonicalPath, updatedAt: new Date() })
@@ -246,7 +270,9 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 					id: workspace.id,
 					expectedStatus: "provisioning",
 					data: {
-						status: "ready",
+						status: "initializing",
+						leaseOwner: null,
+						leaseExpiresAt: null,
 						targetBaseSha,
 						worktreePath: created.canonicalPath,
 						worktreeId: created.id,
@@ -263,7 +289,7 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 				tx,
 			);
 			if (
-				concurrent?.status === "ready" &&
+				concurrent?.status === "initializing" &&
 				concurrent.worktreePath === created.canonicalPath &&
 				concurrent.expectedHeadSha === created.head
 			)
@@ -274,7 +300,7 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 				"Workspace provisioning changed concurrently",
 			);
 		});
-		return ready;
+		return initializing;
 	} catch (error) {
 		await workspaceRepo.transitionTaskGitWorkspace({
 			id: workspace.id,
@@ -293,11 +319,14 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 	}
 }
 
-export async function provisionTaskGitWorkspace(taskId: string) {
+export async function provisionTaskGitWorkspace(
+	taskId: string,
+	options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
 	const workspace = await workspaceRepo.getTaskGitWorkspace(taskId);
 	if (!workspace)
 		throw new AppError(404, "workspace_not_found", "Task workspace not found");
-	return withRepositoryGitMutationLock(
+	const provisioned = await withRepositoryGitMutationLock(
 		workspace.repositoryId,
 		"workspace_provision",
 		() => provisionTaskGitWorkspaceUnlocked(taskId),
@@ -311,6 +340,11 @@ export async function provisionTaskGitWorkspace(taskId: string) {
 			await new Promise((resolve) => setTimeout(resolve, 50));
 			const current = await workspaceRepo.getTaskGitWorkspace(taskId);
 			if (current && ["ready", "active"].includes(current.status))
+				return current;
+			if (
+				current &&
+				["initializing", "initialization_failed"].includes(current.status)
+			)
 				return current;
 			if (current?.status === "provision_failed") break;
 			try {
@@ -329,6 +363,7 @@ export async function provisionTaskGitWorkspace(taskId: string) {
 		}
 		throw error;
 	});
+	return initializeTaskGitWorkspace(provisioned, options);
 }
 
 export async function releaseProvisionedTaskWorkspace(input: {

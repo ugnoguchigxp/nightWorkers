@@ -16,12 +16,14 @@ export const gitWorkspaceStatusSchema = z.enum([
 	"planned",
 	"waiting_for_repository_initialization",
 	"provisioning",
+	"initializing",
 	"ready",
 	"active",
 	"reviewing",
 	"integration_pending",
 	"merged",
 	"provision_failed",
+	"initialization_failed",
 	"attention",
 	"retired",
 ]);
@@ -105,6 +107,9 @@ export const taskGitWorkspaceSchema = z
 		worktreePath: z.string().nullable().optional(),
 		worktreeId: z.string().nullable().optional(),
 		expectedHeadSha: z.string().nullable().optional(),
+		bootstrapEvidenceJson: z.unknown().nullable().optional(),
+		initializationAttempt: z.number().int().nonnegative().optional(),
+		initializedAt: z.coerce.date().nullable().optional(),
 		allocationVersion: z.number().int().positive(),
 	})
 	.superRefine((value, context) => {

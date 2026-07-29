@@ -296,6 +296,35 @@ describe("review-files.service", () => {
 				{ name: "file.txt", path: "file.txt", type: "file", size: 5 },
 			]);
 		});
+
+		it("lists files from the run worktree when runId is provided", async () => {
+			const worktreePath = path.join(tempDir, "task-worktree");
+			await fs.mkdir(worktreePath);
+			await fs.writeFile(
+				path.join(worktreePath, "worktree-only.ts"),
+				"export {}",
+			);
+			mocks.getRepository.mockResolvedValue({
+				id: "repo-1",
+				localPath: tempDir,
+			});
+			mocks.getTaskRun.mockResolvedValue({
+				id: "run-1",
+				repositoryId: "repo-1",
+				worktreePath,
+			});
+
+			const result = await listProjectFiles("repo-1", undefined, "run-1");
+
+			expect(result).toEqual([
+				{
+					name: "worktree-only.ts",
+					path: "worktree-only.ts",
+					type: "file",
+					size: 9,
+				},
+			]);
+		});
 	});
 
 	describe("readProjectFile", () => {
@@ -334,6 +363,32 @@ describe("review-files.service", () => {
 				truncated: false,
 			});
 		});
+
+		it("reads file contents from the run worktree when runId is provided", async () => {
+			const worktreePath = path.join(tempDir, "task-worktree");
+			await fs.mkdir(worktreePath);
+			await fs.writeFile(
+				path.join(worktreePath, "worktree-only.ts"),
+				"changed",
+			);
+			mocks.getRepository.mockResolvedValue({
+				id: "repo-1",
+				localPath: tempDir,
+			});
+			mocks.getTaskRun.mockResolvedValue({
+				id: "run-1",
+				repositoryId: "repo-1",
+				worktreePath,
+			});
+
+			const result = await readProjectFile(
+				"repo-1",
+				"worktree-only.ts",
+				"run-1",
+			);
+
+			expect(result.content).toBe("changed");
+		});
 	});
 
 	describe("readRepositoryDiff", () => {
@@ -360,6 +415,50 @@ describe("review-files.service", () => {
 				diffStat: " file.txt | 1 +",
 				hasChanges: true,
 			});
+		});
+
+		it("reads the diff from the run worktree when runId is provided", async () => {
+			const worktreePath = path.join(tempDir, "task-worktree");
+			mocks.getRepository.mockResolvedValue({
+				id: "repo-1",
+				localPath: tempDir,
+			});
+			mocks.getTaskRun.mockResolvedValue({
+				id: "run-1",
+				repositoryId: "repo-1",
+				worktreePath,
+			});
+			mocks.gitDiffTool.mockResolvedValue({
+				ok: true,
+				payload: {
+					diff: "diff --git a/worktree.ts b/worktree.ts\n",
+					diffStat: " worktree.ts | 1 +",
+					hasChanges: true,
+				},
+			});
+
+			await readRepositoryDiff("repo-1", "run-1");
+
+			expect(mocks.gitDiffTool).toHaveBeenCalledWith({
+				repoRoot: worktreePath,
+			});
+		});
+
+		it("rejects a run that belongs to another repository", async () => {
+			mocks.getRepository.mockResolvedValue({
+				id: "repo-1",
+				localPath: tempDir,
+			});
+			mocks.getTaskRun.mockResolvedValue({
+				id: "run-1",
+				repositoryId: "repo-2",
+				worktreePath: path.join(tempDir, "task-worktree"),
+			});
+
+			await expect(readRepositoryDiff("repo-1", "run-1")).rejects.toThrow(
+				expect.objectContaining({ code: "RUN_REPOSITORY_MISMATCH" }),
+			);
+			expect(mocks.gitDiffTool).not.toHaveBeenCalled();
 		});
 
 		it("converts git worker tool failures into AppError responses", async () => {

@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { readFeaturePlanMaterializationIntent } from "../api/modules/agentsShare";
+import {
+	digestImplementationPlan,
+	readFeaturePlanImplementationPlan,
+	readFeaturePlanMaterializationIntent,
+} from "../api/modules/agentsShare";
 import {
 	createFeaturePlanMarkdownDraftSchema,
 	featurePlanMarkdownDraftSchema,
 } from "../api/modules/specification/feature-plan-content";
 
 describe("Feature Plan repository materialization intent", () => {
+	const implementationPlan = {
+		steps: [{ title: "実装する", systemContext: "対象機能を実装する。" }],
+	};
+
 	it("does not invent a starter when the structured selection is absent", () => {
 		expect(
-			featurePlanMarkdownDraftSchema.parse({ markdown: "# Feature Plan" }),
+			featurePlanMarkdownDraftSchema.parse({
+				markdown: "# Feature Plan",
+				implementationPlan,
+			}),
 		).toMatchObject({ repositoryMaterializationIntent: null });
 		expect(
 			readFeaturePlanMaterializationIntent({ intent: "feature_plan" }),
@@ -70,16 +81,20 @@ describe("Feature Plan repository materialization intent", () => {
 		const schema = createFeaturePlanMarkdownDraftSchema({
 			requiresRepositoryMaterialization: true,
 		});
-		expect(() => schema.parse({ markdown: "# Feature Plan" })).toThrow();
+		expect(() =>
+			schema.parse({ markdown: "# Feature Plan", implementationPlan }),
+		).toThrow();
 		expect(() =>
 			schema.parse({
 				markdown: "# Feature Plan",
+				implementationPlan,
 				repositoryMaterializationIntent: { kind: "existing_git" },
 			}),
 		).toThrow();
 		expect(
 			schema.parse({
 				markdown: "# Feature Plan",
+				implementationPlan,
 				repositoryMaterializationIntent: {
 					kind: "starter_template",
 					source: "starter",
@@ -90,5 +105,29 @@ describe("Feature Plan repository materialization intent", () => {
 		).toMatchObject({
 			repositoryMaterializationIntent: { stack: "hono" },
 		});
+	});
+
+	it("accepts only a plan whose stored provenance digest matches", () => {
+		const metadata = {
+			implementationPlan,
+			implementationPlanProvenance: {
+				version: 1,
+				digest: digestImplementationPlan(implementationPlan),
+			},
+		};
+		expect(readFeaturePlanImplementationPlan(metadata)).toEqual(
+			implementationPlan,
+		);
+		expect(
+			readFeaturePlanImplementationPlan({
+				...metadata,
+				implementationPlan: {
+					steps: [{ title: "改ざん", systemContext: "別の工程。" }],
+				},
+			}),
+		).toBeNull();
+		expect(
+			readFeaturePlanImplementationPlan({ implementationPlan }),
+		).toBeNull();
 	});
 });

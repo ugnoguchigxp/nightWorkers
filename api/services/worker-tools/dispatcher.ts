@@ -45,6 +45,7 @@ export type WorkerToolDispatchInput = {
 		projectPath: string;
 		expectedHead: string;
 	};
+	runtimeEnvironment?: Record<string, string>;
 };
 
 export type WorkerToolDispatchResult = {
@@ -55,8 +56,15 @@ export type WorkerToolDispatchResult = {
 export async function executeWorkerTool(
 	input: WorkerToolDispatchInput,
 ): Promise<WorkerToolDispatchResult> {
-	const { toolName, args, repoRoot, safetyPolicy, readFiles, toolContext } =
-		input;
+	const {
+		toolName,
+		args,
+		repoRoot,
+		safetyPolicy,
+		readFiles,
+		toolContext,
+		runtimeEnvironment,
+	} = input;
 
 	if (toolName === "list_dir") {
 		return {
@@ -303,6 +311,7 @@ export async function executeWorkerTool(
 				allowedPaths: safetyPolicy?.allowedPaths,
 				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
+				environment: runtimeEnvironment,
 			}),
 		};
 	}
@@ -326,6 +335,7 @@ export async function executeWorkerTool(
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				compressionMode: args.compressionMode as "auto" | "off" | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+				environment: runtimeEnvironment,
 			}),
 		};
 	}
@@ -352,6 +362,7 @@ export async function executeWorkerTool(
 				deniedPaths: safetyPolicy?.deniedPaths,
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+				environment: runtimeEnvironment,
 			}),
 		};
 	}

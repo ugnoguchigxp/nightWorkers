@@ -6,26 +6,45 @@ import { renderCodingAgentTodoPlanSummary } from "../api/modules/codingAgent/con
 import { todoCommandJsonSchema } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 
 describe("Coding Agent Todo local SystemContext contract", () => {
-	it("gives both runtime lanes the same reminder-oriented Todo field guidance", () => {
+	it("gives both runtime lanes the same minimal Todo step contract", () => {
 		const mcpSchema = JSON.stringify(
 			z.toJSONSchema(nightWorkersTodoListInputSchema),
 		);
 		const nativeSchema = JSON.stringify(todoCommandJsonSchema);
-		for (const expected of [
-			"最優先で読む局所SystemContext",
-			"該当制約、非目標、参照先、判断済み事項、検証条件",
-			"共通SystemContextや設計書全文は複製しない",
-			"観測可能な条件",
-		]) {
-			expect(mcpSchema).toContain(expected);
-			expect(nativeSchema).toContain(expected);
-		}
-		expect(mcpSchema).toContain('"required":["title","systemContext"');
-		expect(nativeSchema).toContain(
-			'"required":["title","systemContext","nextAction"]',
+		expect(mcpSchema).toContain(
+			"stepで生成するfieldはtitleとsystemContextだけ",
 		);
+		expect(nativeSchema).toContain("この工程で最優先する1〜3文の局所指示");
+		expect(mcpSchema).toContain('"required":["title","systemContext"');
+		expect(nativeSchema).toContain('"required":["title","systemContext"]');
 		expect(mcpSchema).toContain('"maxItems":12');
 		expect(nativeSchema).toContain('"maxItems":12');
+		for (const removedField of [
+			"nextAction",
+			"acceptanceCriteria",
+			"dependsOn",
+			"objective",
+		]) {
+			expect(mcpSchema).not.toContain(removedField);
+			expect(nativeSchema).not.toContain(removedField);
+		}
+	});
+
+	it("rejects extra generated fields instead of silently discarding them", () => {
+		expect(
+			nightWorkersTodoListInputSchema.safeParse({
+				command: {
+					op: "plan",
+					steps: [
+						{
+							title: "実装",
+							systemContext: "対象を実装する。",
+							doneWhen: "完了する。",
+						},
+					],
+				},
+			}).success,
+		).toBe(false);
 	});
 
 	it("requires a current Todo only after the LLM adopts a Todo plan", () => {
@@ -49,7 +68,7 @@ describe("Coding Agent Todo local SystemContext contract", () => {
 		).toBe(false);
 	});
 
-	it("bounds accumulated terminal Todo summaries while retaining active work", () => {
+	it("summarizes progress and next work without replaying current detail or history", () => {
 		const summary = renderCodingAgentTodoPlanSummary([
 			...Array.from({ length: 30 }, (_, index) => ({
 				id: `done-${index + 1}`,
@@ -67,10 +86,10 @@ describe("Coding Agent Todo local SystemContext contract", () => {
 			},
 		]);
 
-		expect(summary).toContain('"id":"active"');
-		expect(summary).toContain('"status":"running"');
-		expect(summary).toContain('"id":"done-30"');
+		expect(summary).not.toContain('"id":"active"');
+		expect(summary).not.toContain('"title":"現在の実装"');
+		expect(summary).toContain('"terminal":30');
+		expect(summary).not.toContain('"id":"done-30"');
 		expect(summary).not.toContain('"id":"done-1"');
-		expect(summary).toContain("Omitted terminal Todo count: 26");
 	});
 });

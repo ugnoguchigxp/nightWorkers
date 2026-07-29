@@ -1,9 +1,15 @@
 import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
+import { readFeaturePlanImplementationPlan } from "../../agentsShare";
 import { buildCodingAgentImplementationHandoffSnapshot } from "../../codingAgent";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
 import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
+import {
+	buildWorkspaceRuntimeEnvironment,
+	type WorkspaceDependencyBootstrapEvidence,
+	workspaceDependencyBootstrapEvidenceSchema,
+} from "../../gitworktree/workspace-bootstrap";
 import { getProjectSecurityIntelligenceSettings } from "../../ontology";
 import { getProjectExplorationCatalogSettings } from "../../ontology/exploration/project-exploration-settings.service";
 import { getFreshProjectMeta } from "../../project-detail/project-meta.service";
@@ -96,6 +102,16 @@ export async function prepareTaskRunStart(input: {
 					"割り当て済み Git workspace はまだ実行可能ではありません",
 				);
 			}
+			const dependencyBootstrap = readDependencyBootstrapEvidence(
+				workspace.bootstrapEvidenceJson,
+			);
+			if (!input.options.resumeRunId && !dependencyBootstrap) {
+				throw new AppError(
+					409,
+					"workspace_environment_not_initialized",
+					"環境初期化が完了していないためRunを開始できません",
+				);
+			}
 			const [branch, head] = await Promise.all([
 				runGitCommand(["-C", executionRoot, "branch", "--show-current"]),
 				runGitCommand(["-C", executionRoot, "rev-parse", "HEAD"]),
@@ -114,6 +130,26 @@ export async function prepareTaskRunStart(input: {
 		}
 	}
 	const executionModeSource = input.options.executionModeSource ?? "explicit";
+	const dependencyBootstrap = taskGitWorkspace
+		? readDependencyBootstrapEvidence(taskGitWorkspace.bootstrapEvidenceJson)
+		: null;
+	const workspaceRuntimeEnvironment =
+		taskGitWorkspace && dependencyBootstrap
+			? buildWorkspaceRuntimeEnvironment({
+					workspaceId: taskGitWorkspace.id,
+					evidence: dependencyBootstrap,
+				})
+			: {};
+	for (const key of [
+		"TMPDIR",
+		"HOME",
+		"XDG_CONFIG_HOME",
+		"XDG_CACHE_HOME",
+	] as const) {
+		const directory = workspaceRuntimeEnvironment[key];
+		if (!directory) continue;
+		await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+	}
 	const implementationHandoffMessage =
 		findLatestImplementationHandoffMessage(messages);
 	const implementationDesignArtifacts = findLatestImplementationDesignArtifacts(
@@ -167,7 +203,22 @@ export async function prepareTaskRunStart(input: {
 		executionModeSource,
 		implementationHandoffMessage,
 		implementationHandoffSnapshot,
+		implementationPlan: implementationHandoffMessage
+			? readFeaturePlanImplementationPlan(
+					implementationHandoffMessage.metadataJson,
+				)
+			: null,
 		repositoryMaterializationSnapshot,
+		workspaceRuntimeEnvironment,
 		compiledPromptText,
 	};
+}
+
+function readDependencyBootstrapEvidence(
+	value: unknown,
+): WorkspaceDependencyBootstrapEvidence | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const nested = (value as Record<string, unknown>).dependencyBootstrap;
+	const parsed = workspaceDependencyBootstrapEvidenceSchema.safeParse(nested);
+	return parsed.success ? parsed.data : null;
 }

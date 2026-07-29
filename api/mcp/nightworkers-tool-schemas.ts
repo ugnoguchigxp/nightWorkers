@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-	TODO_DRAFT_FIELD_GUIDANCE_JA,
-	TODO_MUTATION_LIMITS,
-} from "../../shared/modules/codingAgent";
+import { codingAgentTodoListCommandSchema } from "../../shared/modules/codingAgent";
 import { testEvidenceSetMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
 import {
 	isStarterVariantForStack,
@@ -108,160 +105,20 @@ export const nightWorkersCollectTestInventoryInputSchema = z.object({
 export const nightWorkersRecordTestConditionMappingInputSchema =
 	testEvidenceSetMappingToolInputSchema;
 
-const todoDraftSchema = z.object({
-	todoKey: z
-		.string()
-		.trim()
-		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.todoKey),
-	id: z
-		.string()
-		.trim()
-		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
-		.optional(),
-	title: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTitleLength),
-	taskType: z
-		.string()
-		.trim()
-		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxTaskTypeLength)
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.taskType),
-	objective: z
-		.string()
-		.max(TODO_MUTATION_LIMITS.maxObjectiveLength)
-		.nullable()
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.objective),
-	systemContext: z
-		.string()
-		.trim()
-		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.systemContext),
-	context: z
-		.string()
-		.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
-		.nullable()
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
-	nextAction: z
-		.string()
-		.trim()
-		.min(1)
-		.max(TODO_MUTATION_LIMITS.maxNextActionLength)
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
-	acceptanceCriteria: z
-		.array(
-			z
-				.string()
-				.trim()
-				.min(1)
-				.max(TODO_MUTATION_LIMITS.maxAcceptanceCriterionLength),
-		)
-		.max(TODO_MUTATION_LIMITS.maxAcceptanceCriteria)
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.acceptanceCriteria),
-	dependsOnKeys: z
-		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
-		.max(TODO_MUTATION_LIMITS.maxDependencies)
-		.optional()
-		.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.dependsOnKeys),
-	dependsOn: z
-		.array(z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength))
-		.max(TODO_MUTATION_LIMITS.maxDependencies)
-		.optional(),
-});
-
-const todoMutationCommandSchema = z.discriminatedUnion("op", [
-	z.object({ op: z.literal("list") }),
-	z.object({
-		op: z.literal("replace_plan"),
-		expectedPlanRevision: z.number().int().nonnegative(),
-		todos: z.array(todoDraftSchema).min(1).max(TODO_MUTATION_LIMITS.maxTodos),
-	}),
-	z.object({
-		op: z.literal("start"),
-		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
-		expectedTodoRevision: z.number().int().nonnegative(),
-	}),
-	z.object({
-		op: z.literal("resume"),
-		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
-		expectedTodoRevision: z.number().int().nonnegative(),
-		userContext: z
+export const nightWorkersTodoListInputSchema = z
+	.object({
+		runId: z
 			.string()
 			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxContextLength),
-	}),
-	z.object({
-		op: z.literal("transition"),
-		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
-		expectedTodoRevision: z.number().int().nonnegative(),
-		status: z.enum(["passed", "needs_human", "skipped"]),
-		reason: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxReasonLength),
-		nextTodoId: z
-			.string()
-			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxTodoIdLength)
-			.optional(),
-	}),
-	z.object({
-		op: z.literal("record_failure"),
-		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
-		expectedTodoRevision: z.number().int().nonnegative(),
-		failureSummary: z
-			.string()
-			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxReasonLength),
-		nextAction: z
-			.string()
-			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxNextActionLength),
-	}),
-	z.object({
-		op: z.literal("update_context"),
-		todoId: z.string().trim().min(1).max(TODO_MUTATION_LIMITS.maxTodoIdLength),
-		expectedTodoRevision: z.number().int().nonnegative(),
-		systemContext: z
-			.string()
-			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
-			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.updateContext),
-		context: z
-			.string()
-			.max(TODO_MUTATION_LIMITS.maxTodoSystemContextLength)
 			.optional()
-			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.context),
-		nextAction: z
-			.string()
-			.trim()
-			.min(1)
-			.max(TODO_MUTATION_LIMITS.maxNextActionLength)
-			.describe(TODO_DRAFT_FIELD_GUIDANCE_JA.nextAction),
-	}),
-]);
-
-export const nightWorkersTodoListInputSchema = z.object({
-	runId: z
-		.string()
-		.trim()
-		.optional()
-		.describe(
-			"NightWorkers run id. Defaults to request-scoped run context when available.",
+			.describe(
+				"NightWorkers run id. Defaults to request-scoped run context when available.",
+			),
+		command: codingAgentTodoListCommandSchema.describe(
+			"current Todoを基準にする最小command。stepで生成するfieldはtitleとsystemContextだけです。",
 		),
-	command: todoMutationCommandSchema.describe(
-		"IDとrevisionを指定するTodo command。hostはTodoを暗黙更新しません。",
-	),
-});
+	})
+	.strict();
 
 export const nightWorkersImportProjectInputSchema = z
 	.object({

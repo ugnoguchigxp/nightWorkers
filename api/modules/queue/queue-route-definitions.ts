@@ -444,6 +444,9 @@ export const archiveWorkbenchSessionRoute = createRoute({
 	path: "/workbench/sessions/:id/archive",
 	request: {
 		params: z.object({ id: z.string().uuid() }),
+		query: z.object({
+			discardPendingCloseouts: z.enum(["true", "false"]).optional(),
+		}),
 	},
 	responses: {
 		200: {

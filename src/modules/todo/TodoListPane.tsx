@@ -24,7 +24,7 @@ export function TodoListPane({
 	const [userContext, setUserContext] = useState("");
 	const [resumeError, setResumeError] = useState<string | null>(null);
 	const completedCount = todos.filter(
-		(todo) => todo.status === "passed",
+		(todo) => todo.status === "passed" || todo.status === "skipped",
 	).length;
 	const currentTodo = todos.find((todo) => todo.status === "running");
 	const nextTodo = todos.find((todo) => todo.status === "pending");

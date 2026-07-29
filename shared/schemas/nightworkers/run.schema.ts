@@ -29,6 +29,7 @@ export const taskRunCommitRecordSchema = z
 			"pending",
 			"ready",
 			"committed",
+			"discarded",
 			"needs_human",
 			"failed",
 		]),

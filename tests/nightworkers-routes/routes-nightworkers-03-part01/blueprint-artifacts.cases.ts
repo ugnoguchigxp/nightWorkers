@@ -110,6 +110,14 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					"## 完了条件",
 					"- [AC-001][workflow] 初期実装を利用できる",
 				].join("\n"),
+				implementationPlan: {
+					steps: [
+						{
+							title: "初期実装",
+							systemContext: "Feature Planの確定設計に沿って実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 			const featurePlanRes = await app.request(

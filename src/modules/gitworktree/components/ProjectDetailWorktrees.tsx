@@ -103,13 +103,18 @@ export function ProjectDetailWorktrees({
 	};
 	const remove = () => {
 		const discardChanges = Boolean(selected && !selected.canRemove);
+		const removesBranch = Boolean(selected?.branch);
 		if (
 			!selected?.head ||
 			!window.confirm(
 				t(
-					discardChanges
-						? "projectDetail.worktrees.confirmDiscardAndRemove"
-						: "projectDetail.worktrees.confirmRemove",
+					removesBranch
+						? discardChanges
+							? "projectDetail.worktrees.confirmDiscardAndRemove"
+							: "projectDetail.worktrees.confirmRemove"
+						: discardChanges
+							? "projectDetail.worktrees.confirmDiscardAndRemoveDetached"
+							: "projectDetail.worktrees.confirmRemoveDetached",
 					{
 						branch: selected.branch || t("projectDetail.worktrees.detached"),
 					},

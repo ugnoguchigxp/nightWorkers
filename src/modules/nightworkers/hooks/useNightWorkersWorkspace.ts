@@ -319,7 +319,10 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	);
 	const activeProjectId = activeProject?.id;
 
-	const projectFilesState = useNightWorkersProjectFiles(activeProjectId);
+	const projectFilesState = useNightWorkersProjectFiles(
+		activeProjectId,
+		latestRun?.id,
+	);
 	const { setProjectFileEntriesByDirectory } = projectFilesState;
 
 	const { data: latestRunDetails = null } = useQuery({
@@ -554,8 +557,14 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			pushRunGitCloseoutMutation.mutateAsync(runId),
 		updateSessionStatus: (sessionId, status) =>
 			updateSessionStatusMutation.mutateAsync({ sessionId, status }),
-		archiveCompletedSession: (sessionId: string) =>
-			archiveCompletedSessionMutation.mutateAsync(sessionId),
+		archiveCompletedSession: (
+			sessionId: string,
+			options?: { discardPendingCloseouts?: boolean },
+		) =>
+			archiveCompletedSessionMutation.mutateAsync({
+				sessionId,
+				discardPendingCloseouts: options?.discardPendingCloseouts,
+			}),
 		restoreArchivedSession: (sessionId: string) =>
 			restoreArchivedSessionMutation.mutateAsync(sessionId),
 		reorderQueueSessions: (sessionIds) =>

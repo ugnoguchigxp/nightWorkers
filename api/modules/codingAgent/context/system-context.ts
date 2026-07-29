@@ -4,7 +4,7 @@ import {
 } from "../../../systemContexts/catalog";
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 14;
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 15;
 
 export function getCodingAgentRoleInstructions(p: SystemContextP = defaultP) {
 	return p("codingAgent.role-instructions", {});
@@ -101,8 +101,6 @@ export function buildCodingAgentSystemContext(
 	const domainModuleBoundary = getCodingAgentDddFallbackInstructions(p);
 	const todoRequirementJa = p("codingAgent.todo-policy", {
 		todoRequirement: getCodingAgentTodoRequirement(p).trimEnd(),
-		initialPreparationTodo: getCodingAgentInitialPreparationTodo(p).trimEnd(),
-		completionReportTodo: getCodingAgentCompletionReportTodo(p).trimEnd(),
 		standaloneExecution: getCodingAgentStandaloneExecution(p).trimEnd(),
 		directPlanMode: input.planModeRequested
 			? getCodingAgentDirectPlanMode(p).trimEnd()

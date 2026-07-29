@@ -108,7 +108,15 @@ describe("Questionnaire decision layer services", () => {
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
-					"# Feature Plan\n\n## 目的\n未回答 blocking を assumption として進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+					"# Feature Plan\n\n## 目的\n未回答 blocking を assumption として進める。\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todo本体を実装する",
+							systemContext: "既存設計に沿ってTodo本体を実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 			const result = await generateFeaturePlanArtifact(task.id, {
@@ -127,9 +135,11 @@ describe("Questionnaire decision layer services", () => {
 			});
 			expect(result.message.content).toContain("## 実装計画");
 			expect(result.message.content).toContain("Todo本体を実装する");
-			expect(result.message.metadataJson).not.toHaveProperty(
-				"implementationPlan",
-			);
+			expect(result.message.metadataJson).toMatchObject({
+				implementationPlan: {
+					steps: [{ title: "Todo本体を実装する" }],
+				},
+			});
 		} finally {
 			restoreFixtureProvider(env);
 		}
@@ -146,7 +156,15 @@ describe("Questionnaire decision layer services", () => {
 			});
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
-					"# Feature Plan\n\n## 目的\nnon-blocking は既存資料から進める。\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+					"# Feature Plan\n\n## 目的\nnon-blocking は既存資料から進める。\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todo本体を実装する",
+							systemContext: "既存設計に沿ってTodo本体を実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 
@@ -171,9 +189,17 @@ describe("Questionnaire decision layer services", () => {
 		try {
 			const { task } = await createPlanModeTask("Sidecar failure isolation");
 			const markdown =
-				"# Feature Plan\n\n## 実装計画\n\n1. Todo本体を実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる";
+				"# Feature Plan\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる";
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown,
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todo本体を実装する",
+							systemContext: "既存設計に沿ってTodo本体を実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: null,
 			});
 
@@ -182,12 +208,13 @@ describe("Questionnaire decision layer services", () => {
 				(message) => message.id === result.message.id,
 			);
 
-			expect(result.message.content).toBe(markdown);
+			expect(result.message.content).toContain("## 実装計画");
+			expect(result.message.content).toContain("Todo本体を実装する");
 			expect(result.message.metadataJson).toMatchObject({
 				intent: "feature_plan",
 				verificationSidecarStatus: "failed",
 			});
-			expect(persisted?.content).toBe(markdown);
+			expect(persisted?.content).toBe(result.message.content);
 			expect(persisted?.metadataJson).toMatchObject({
 				verificationSidecarStatus: "failed",
 			});

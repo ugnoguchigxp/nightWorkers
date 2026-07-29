@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import type { ImplementationPlan } from "../../../shared/modules/agentsShare";
 import { missionPilotQueueHandoffSchema } from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
 import {
@@ -8,6 +9,10 @@ import {
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
 import { implementationQueueEntries, taskMessages } from "../../db/schema";
+import {
+	digestImplementationPlan,
+	readFeaturePlanImplementationPlan,
+} from "../agentsShare";
 import { digestFeaturePlanContent } from "../specification/feature-plan-content";
 
 type QueueEntry = typeof implementationQueueEntries.$inferSelect;
@@ -26,6 +31,12 @@ export type MissionPilotImplementationEnvelope = {
 		sourceMessageId: string;
 		digest: string;
 	};
+	implementationPlan: ImplementationPlan;
+	implementationPlanProvenance: {
+		version: 1;
+		sourceMessageId: string;
+		digest: string;
+	};
 };
 
 export type MissionPilotImplementationStartResolution =
@@ -34,6 +45,12 @@ export type MissionPilotImplementationStartResolution =
 			kind: "ready";
 			envelope: MissionPilotImplementationEnvelope;
 			featurePlanProvenance: {
+				version: 1;
+				sourceMessageId: string;
+				digest: string;
+			};
+			implementationPlan: ImplementationPlan;
+			implementationPlanProvenance: {
 				version: 1;
 				sourceMessageId: string;
 				digest: string;
@@ -135,6 +152,27 @@ export async function resolveMissionPilotImplementationStart(
 			session,
 		);
 	}
+	const implementationPlan = readFeaturePlanImplementationPlan(
+		featurePlanMessage.metadataJson,
+	);
+	if (!implementationPlan) {
+		return blocked(
+			"MISSION_PILOT_FEATURE_PLAN_HANDOFF_MISSING",
+			"Reviewed Feature Plan structured implementation plan is missing.",
+			session,
+		);
+	}
+	const implementationPlanDigest = digestImplementationPlan(implementationPlan);
+	if (
+		handoff.implementationPlanSourceMessageId !== featurePlanMessage.id ||
+		handoff.implementationPlanDigest !== implementationPlanDigest
+	) {
+		return blocked(
+			"MISSION_PILOT_FEATURE_PLAN_DIGEST_MISMATCH",
+			"Reviewed structured implementation plan digest does not match the Queue handoff.",
+			session,
+		);
+	}
 	return {
 		kind: "ready",
 		envelope: {
@@ -150,11 +188,23 @@ export async function resolveMissionPilotImplementationStart(
 				sourceMessageId: handoff.featurePlanMessageId,
 				digest: featurePlanContentDigest,
 			},
+			implementationPlan,
+			implementationPlanProvenance: {
+				version: 1,
+				sourceMessageId: featurePlanMessage.id,
+				digest: implementationPlanDigest,
+			},
 		},
 		featurePlanProvenance: {
 			version: 1,
 			sourceMessageId: handoff.featurePlanMessageId,
 			digest: featurePlanContentDigest,
+		},
+		implementationPlan,
+		implementationPlanProvenance: {
+			version: 1,
+			sourceMessageId: featurePlanMessage.id,
+			digest: implementationPlanDigest,
 		},
 	};
 }

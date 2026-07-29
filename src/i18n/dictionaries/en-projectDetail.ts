@@ -61,10 +61,17 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.confirmTask": "Create task",
 	"projectDetail.worktrees.remove": "Remove",
 	"projectDetail.worktrees.discardAndRemove": "Discard changes and remove",
+	"projectDetail.worktrees.removeBranch": "Remove worktree and branch",
+	"projectDetail.worktrees.discardAndRemoveBranch":
+		"Discard changes and remove worktree and branch",
 	"projectDetail.worktrees.confirmRemove":
-		"Remove the worktree directory for {{branch}}? The branch will remain.",
+		"Remove the worktree directory and local branch for {{branch}}? This cannot be undone.",
 	"projectDetail.worktrees.confirmDiscardAndRemove":
-		"Discard all uncommitted changes and remove the worktree directory for {{branch}}? The branch will remain. This cannot be undone.",
+		"Discard all uncommitted changes and remove the worktree directory and local branch for {{branch}}? This cannot be undone.",
+	"projectDetail.worktrees.confirmRemoveDetached":
+		"Remove this detached HEAD worktree directory?",
+	"projectDetail.worktrees.confirmDiscardAndRemoveDetached":
+		"Discard all uncommitted changes and remove this detached HEAD worktree directory? This cannot be undone.",
 	"projectDetail.worktrees.prune": "Clean stale metadata",
 	"projectDetail.worktrees.confirmPrune":
 		"Clean {{count}} stale worktree entries?",
@@ -72,6 +79,8 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.noChanges": "No changes.",
 	"projectDetail.worktrees.blocker.base_worktree_protected":
 		"The base worktree cannot be removed",
+	"projectDetail.worktrees.blocker.target_branch_protected":
+		"The repository target branch cannot be removed",
 	"projectDetail.worktrees.blocker.worktree_in_use":
 		"A task or run is using this worktree",
 	"projectDetail.worktrees.blocker.worktree_dirty":

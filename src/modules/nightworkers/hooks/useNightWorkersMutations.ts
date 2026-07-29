@@ -1,5 +1,6 @@
 import { type QueryClient, useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
+import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
 import { client } from "../../../lib/api";
 import {
 	archiveWorkbenchSession,
@@ -61,6 +62,41 @@ function resolveNextActiveSessionId(
 	if (currentId && sessions.some((session) => session.id === currentId))
 		return currentId;
 	return sessions[0]?.id ?? null;
+}
+
+function syncTaskNavigationCaches(queryClient: QueryClient, task: Task) {
+	queryClient.setQueryData<Task[]>(["sessions"], (previous = []) =>
+		previous.map((session) => (session.id === task.id ? task : session)),
+	);
+	queryClient.setQueryData<TaskOperatorProjectionV1 | null>(
+		["taskOperatorView", task.id],
+		(previous) =>
+			previous
+				? {
+						...previous,
+						task: {
+							...previous.task,
+							status: task.status as TaskOperatorProjectionV1["task"]["status"],
+						},
+					}
+				: previous,
+	);
+}
+
+async function refreshTaskNavigationQueries(
+	queryClient: QueryClient,
+	taskId: string,
+) {
+	await Promise.all([
+		queryClient.invalidateQueries({
+			queryKey: ["sessions"],
+			exact: true,
+		}),
+		queryClient.invalidateQueries({
+			queryKey: ["taskOperatorView", taskId],
+			exact: true,
+		}),
+	]);
 }
 
 function buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
@@ -371,17 +407,23 @@ export function useNightWorkersMutations({
 	});
 
 	const archiveCompletedSessionMutation = useMutation({
-		mutationFn: async (sessionId: string) => {
-			const response = await archiveWorkbenchSession(sessionId);
+		mutationFn: async (input: {
+			sessionId: string;
+			discardPendingCloseouts?: boolean;
+		}) => {
+			const response = await archiveWorkbenchSession(input.sessionId, {
+				discardPendingCloseouts: input.discardPendingCloseouts,
+			});
 			if (!response.ok) throw new Error(await response.text());
 			return (await response.json()) as Task;
 		},
-		onSuccess: (task) => {
-			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-				prev.map((session) => (session.id === task.id ? task : session)),
-			);
+		onSuccess: async (task) => {
+			syncTaskNavigationCaches(queryClient, task);
+			await refreshTaskNavigationQueries(queryClient, task.id);
 		},
-		onSettled: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+		onError: async (_error, input) => {
+			await refreshTaskNavigationQueries(queryClient, input.sessionId);
+		},
 	});
 
 	const restoreArchivedSessionMutation = useMutation({
@@ -390,12 +432,13 @@ export function useNightWorkersMutations({
 			if (!response.ok) throw new Error(await response.text());
 			return (await response.json()) as Task;
 		},
-		onSuccess: (task) => {
-			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-				prev.map((session) => (session.id === task.id ? task : session)),
-			);
+		onSuccess: async (task) => {
+			syncTaskNavigationCaches(queryClient, task);
+			await refreshTaskNavigationQueries(queryClient, task.id);
 		},
-		onSettled: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+		onError: async (_error, sessionId) => {
+			await refreshTaskNavigationQueries(queryClient, sessionId);
+		},
 	});
 
 	const reorderQueueSessionsMutation = useMutation({

@@ -161,6 +161,7 @@ const router = createOpenApiRouter()
 			const entries = await service.listProjectFiles(
 				c.req.param("id"),
 				c.req.query("path"),
+				c.req.query("runId"),
 			);
 			return c.json(entries, 200);
 		}),
@@ -170,14 +171,21 @@ const router = createOpenApiRouter()
 		withOpenApiRouteError(readProjectFileRoute, async (c) => {
 			const filePath = c.req.query("path");
 			if (!filePath) return c.json({ error: "path is required" }, 400);
-			const file = await service.readProjectFile(c.req.param("id"), filePath);
+			const file = await service.readProjectFile(
+				c.req.param("id"),
+				filePath,
+				c.req.query("runId"),
+			);
 			return c.json(file, 200);
 		}),
 	)
 	.openapi(
 		readRepositoryDiffRoute,
 		withOpenApiRouteError(readRepositoryDiffRoute, async (c) => {
-			const diff = await service.readRepositoryDiff(c.req.param("id"));
+			const diff = await service.readRepositoryDiff(
+				c.req.param("id"),
+				c.req.query("runId"),
+			);
 			return c.json(diff, 200);
 		}),
 	)
@@ -330,6 +338,8 @@ const router = createOpenApiRouter()
 		archiveWorkbenchSessionRoute,
 		withOpenApiRouteError(archiveWorkbenchSessionRoute, async (c) => {
 			const taskId = c.req.param("id");
+			const discardPendingCloseouts =
+				c.req.valid("query").discardPendingCloseouts === "true";
 			const projection = await readTaskOperatorProjection(
 				taskId,
 				humanTaskOperatorQueryContext(c.get("user")?.userId),
@@ -338,7 +348,7 @@ const router = createOpenApiRouter()
 				taskId,
 				actionId: "task.archive",
 				expectedTaskRevision: projection.task.revision,
-				arguments: {},
+				arguments: { discardPendingCloseouts },
 				context: humanTaskOperatorCommandContext({
 					userId: c.get("user")?.userId,
 					idempotencyKey: c.req.header("Idempotency-Key"),

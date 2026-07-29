@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotSessions,
@@ -8,6 +8,8 @@ import {
 import {
 	agentModeSessions,
 	implementationQueueEntries,
+	taskRunCommitRecords,
+	taskRuns,
 	tasks,
 } from "../../db/schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
@@ -19,6 +21,7 @@ type ArchiveInput = {
 	sourceRunId?: string | null;
 	evidence?: Record<string, unknown>;
 	expectedTaskRevision?: number;
+	discardPendingCloseouts?: boolean;
 };
 
 export async function archiveCompletedTask(input: ArchiveInput) {
@@ -58,7 +61,43 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 				"Task must be completed before it can be archived",
 			);
 		}
+		const pendingCloseouts = await tx
+			.select({ runId: taskRunCommitRecords.runId })
+			.from(taskRunCommitRecords)
+			.innerJoin(taskRuns, eq(taskRunCommitRecords.runId, taskRuns.id))
+			.where(
+				and(
+					eq(taskRuns.taskId, task.id),
+					inArray(taskRunCommitRecords.status, [
+						"pending",
+						"ready",
+						"needs_human",
+					]),
+				),
+			);
+		if (pendingCloseouts.length > 0 && !input.discardPendingCloseouts)
+			throw new AppError(
+				409,
+				"TASK_CLOSEOUT_PENDING",
+				"Pending Git closeout must be committed or explicitly discarded before archiving",
+				{
+					pendingCloseoutCount: pendingCloseouts.length,
+					runIds: pendingCloseouts.map((row) => row.runId),
+				},
+			);
 		const now = new Date();
+		const discardedCloseoutRunIds = pendingCloseouts.map((row) => row.runId);
+		if (discardedCloseoutRunIds.length > 0) {
+			await tx
+				.update(taskRunCommitRecords)
+				.set({
+					status: "discarded",
+					statusReason:
+						"Pending Git closeout was explicitly discarded when the Task was archived.",
+					updatedAt: now,
+				})
+				.where(inArray(taskRunCommitRecords.runId, discardedCloseoutRunIds));
+		}
 		const id = crypto.randomUUID();
 		await tx.insert(taskArchiveRecords).values({
 			id,
@@ -67,7 +106,10 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 			sourceRunId: input.sourceRunId ?? null,
 			previousStatus: "completed",
 			reason: input.reason ?? "manual",
-			evidenceJson: input.evidence ?? {},
+			evidenceJson: {
+				...(input.evidence ?? {}),
+				discardedCloseoutRunIds,
+			},
 			archivedAt: now,
 		});
 		const [archived] = await tx

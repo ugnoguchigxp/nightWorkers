@@ -340,7 +340,7 @@ describe("miscellaneous frontend components", () => {
 
 		expect(todoMarkup).toContain("todolist");
 		expect(todoMarkup).toContain("Running todo");
-		expect(todoMarkup).toContain("1/4");
+		expect(todoMarkup).toContain("2/4");
 		expect(runtimePauseMarkup).toContain("todo-resume-");
 		expect(runtimePauseMarkup).toContain("同じTodoを再開できます");
 		expect(workflowMarkup).toContain("TODO Workflow");

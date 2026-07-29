@@ -111,6 +111,14 @@ describe("Feature Plan generation timeout handling", () => {
 		const validDraft = {
 			markdown:
 				"# Todo List Feature Plan\n\n## 実装計画\n\n1. Todo APIを実装する\n\n## 検証計画\n\n- Run tests\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+			implementationPlan: {
+				steps: [
+					{
+						title: "Todo APIを実装する",
+						systemContext: "既存契約に従ってTodo APIを実装する。",
+					},
+				],
+			},
 		};
 		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
 			value: validDraft,
@@ -133,10 +141,15 @@ describe("Feature Plan generation timeout handling", () => {
 		expect(call.options.contract.name).toBe("feature_plan_markdown");
 		expect(call.options.contract.providerJsonSchema).toMatchObject({
 			type: "object",
-			required: ["markdown", "repositoryMaterializationIntent"],
+			required: [
+				"markdown",
+				"implementationPlan",
+				"repositoryMaterializationIntent",
+			],
 			additionalProperties: false,
 			properties: {
 				markdown: expect.objectContaining({ type: "string" }),
+				implementationPlan: expect.any(Object),
 				repositoryMaterializationIntent: expect.any(Object),
 			},
 		});
@@ -148,7 +161,11 @@ describe("Feature Plan generation timeout handling", () => {
 					}
 				).properties,
 			),
-		).toEqual(["markdown", "repositoryMaterializationIntent"]);
+		).toEqual([
+			"markdown",
+			"implementationPlan",
+			"repositoryMaterializationIntent",
+		]);
 		expect(
 			call.options.contract.runtimeSchema.safeParse(validDraft).success,
 		).toBe(true);
@@ -162,6 +179,14 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				markdown:
 					"# Todo List Feature Plan\n\n## 目的\nNightWorkersへTodoを追加する。\n\n## 実装計画\n\n1. NightWorkers APIを実装する\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+				implementationPlan: {
+					steps: [
+						{
+							title: "NightWorkers APIを実装する",
+							systemContext: "対象ProjectのAPI契約を実装する。",
+						},
+					],
+				},
 				repositoryMaterializationIntent: {
 					kind: "starter_template",
 					source: "starter",
@@ -181,9 +206,14 @@ describe("Feature Plan generation timeout handling", () => {
 			)?.[0];
 		if (!featurePlanCall)
 			throw new Error("Feature Plan message was not created");
-		expect(featurePlanCall.payloadJson).not.toHaveProperty(
-			"implementationPlan",
-		);
+		expect(featurePlanCall.payloadJson?.implementationPlan).toEqual({
+			steps: [
+				{
+					title: "対象プロジェクト APIを実装する",
+					systemContext: "対象ProjectのAPI契約を実装する。",
+				},
+			],
+		});
 		expect(featurePlanCall.payloadJson).not.toHaveProperty(
 			"acceptanceCriteria",
 		);
@@ -223,7 +253,17 @@ describe("Feature Plan generation timeout handling", () => {
 		const markdown =
 			"# Todo Feature Plan\n\n## 実装計画\n\n1. Todoを実装する\n\n## 完了条件\n\n- [AC-001][workflow] Todoを利用できる";
 		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
-			value: { markdown },
+			value: {
+				markdown,
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todoを実装する",
+							systemContext: "確定済み仕様に従ってTodoを実装する。",
+						},
+					],
+				},
+			},
 			attempts: [],
 		});
 		vi.mocked(createVerificationDocument).mockRejectedValueOnce(
@@ -232,14 +272,14 @@ describe("Feature Plan generation timeout handling", () => {
 
 		const result = await generateFeaturePlanArtifact("task-1");
 
-		expect(result.message.content).toBe(markdown);
+		expect(result.message.content).toContain("## 実装計画");
+		expect(result.message.content).toContain("1. Todoを実装する");
 		const featurePlanCall = vi
 			.mocked(createPlanModeTaskMessage)
 			.mock.calls.find(
 				([input]) => input.payloadJson?.intent === "feature_plan",
 			)?.[0];
 		expect(featurePlanCall).toMatchObject({
-			content: markdown,
 			payloadJson: {
 				verificationSidecarStatus: "pending",
 			},

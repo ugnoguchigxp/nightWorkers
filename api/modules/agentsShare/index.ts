@@ -23,8 +23,14 @@ export {
 } from "./events/task-run-events";
 export {
 	findLatestFeaturePlanMaterialization,
+	readFeaturePlanImplementationPlan,
 	readFeaturePlanMaterializationIntent,
 } from "./feature-plan-materialization";
+export {
+	digestImplementationPlan,
+	renderImplementationPlanMarkdown,
+	renderSpecificationWithImplementationPlan,
+} from "./implementation-plan";
 export {
 	ALL_PLAN_MODE_ROUTING_VIEWS,
 	buildInitialPlanModeRoutingEntries,

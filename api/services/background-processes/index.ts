@@ -13,6 +13,10 @@ import {
 	appendActivityArtifact,
 	appendActivityEvent,
 } from "../../modules/nightworkers/nightworkers.activity.repository";
+import {
+	isCredentialFileEnvironmentKey,
+	isRegistryCredentialEnvironmentKey,
+} from "../security/secret-redaction";
 import { analyzeCommand } from "../worker-tools/command-policy";
 import {
 	enforceCommandPolicy,
@@ -47,6 +51,7 @@ export type StartBackgroundCommandInput = {
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
 	blockedCommands?: string[];
+	environment?: Record<string, string>;
 };
 
 function tail(value: string, maxChars = MAX_LATEST_OUTPUT_CHARS) {
@@ -292,6 +297,26 @@ export async function startBackgroundCommand(
 		shell: true,
 		detached: true,
 		stdio: "pipe",
+		...(input.environment
+			? {
+					env: {
+						...Object.fromEntries(
+							Object.entries(process.env).filter(
+								(entry): entry is [string, string] =>
+									typeof entry[1] === "string" &&
+									!isCredentialFileEnvironmentKey(entry[0]) &&
+									!isRegistryCredentialEnvironmentKey(entry[0], entry[1]),
+							),
+						),
+						...Object.fromEntries(
+							Object.entries(input.environment).filter(
+								([key, value]) =>
+									!isRegistryCredentialEnvironmentKey(key, value),
+							),
+						),
+					},
+				}
+			: {}),
 	});
 	child.unref();
 

@@ -7,6 +7,7 @@ import {
 	loadCodingAgentContextPacket,
 	renderCodingAgentTodoRecoveryGuidance,
 	resolveCodexIntakeRuntimeHandoff,
+	TodoMutationService,
 } from "../../codingAgent";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
@@ -103,7 +104,9 @@ export async function prepareTaskRunInProcess(
 		executionModeSource,
 		implementationHandoffMessage,
 		implementationHandoffSnapshot,
+		implementationPlan,
 		repositoryMaterializationSnapshot,
+		workspaceRuntimeEnvironment,
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
 	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
@@ -193,6 +196,22 @@ export async function prepareTaskRunInProcess(
 			sessionTransition: created.sessionTransition,
 		});
 	}
+	if (created && implementationPlan) {
+		const packet = await loadCodingAgentContextPacket(run.id);
+		if (!packet) throw new Error("Coding Agent context packet is unavailable.");
+		const materialized = await new TodoMutationService(
+			packet.systemContext,
+			"agent",
+		).execute(run.id, {
+			op: "plan",
+			steps: implementationPlan.steps,
+		});
+		if (!materialized.ok) {
+			throw new Error(
+				`Adopted implementation plan could not be materialized: ${materialized.error.code}`,
+			);
+		}
+	}
 	await activateWorkspace(taskId, gitBaseline.baselineHead);
 	if (!resumable) {
 		await repo.createTaskRunCommitRecord({
@@ -228,6 +247,7 @@ export async function prepareTaskRunInProcess(
 	} = {
 		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
 		...(options.runtimeOptionsPatch ?? {}),
+		workspaceRuntimeEnvironment,
 		securityOracle: {
 			enabled: securityIntelligence.securityOracle.effectiveEnabled,
 			configured: securityIntelligence.securityOracle.configured,
@@ -337,6 +357,7 @@ export async function prepareTaskRunInProcess(
 				}
 			: {}),
 		repositoryMaterialization: repositoryMaterializationSnapshot,
+		workspaceRuntimeEnvironment: Object.keys(workspaceRuntimeEnvironment),
 		result: {
 			digest: digestText(compiledPromptText),
 			charCount: compiledPromptText.length,

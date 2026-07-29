@@ -15,7 +15,7 @@ import {
 } from "../api/modules/nightworkers/nightworkers.repository";
 
 describe("NightWorkers Codex MCP request authority", () => {
-	it("advertises non-blocking adaptive Todo guidance during MCP initialization", async () => {
+	it("advertises the minimal request-scoped Todo guidance during MCP initialization", async () => {
 		const response = await handleNightWorkersCodexMcpRequest(
 			new Request("http://127.0.0.1/mcp/nightworkers", {
 				method: "POST",
@@ -38,9 +38,9 @@ describe("NightWorkers Codex MCP request authority", () => {
 
 		expect(response.status).toBe(200);
 		const body = await response.text();
-		expect(body).toContain("nightworkers.todo_list");
-		expect(body).toContain("一工程の小変更ではTodo呼び出しは不要");
-		expect(body).toContain("hostはTodoを暗黙生成・更新せず");
+		expect(body).toContain("titleとsystemContextだけのplan");
+		expect(body).toContain("complete_current");
+		expect(body).toContain("hostはTodoを暗黙生成・更新しません");
 	});
 
 	it("keeps request-scoped identity authoritative and reports supplied differences", () => {
@@ -158,18 +158,12 @@ describe("NightWorkers Codex MCP request authority", () => {
 								name: "todo_list",
 								arguments: {
 									command: {
-										op: "replace_plan",
-										expectedPlanRevision: 0,
-										todos: [
+										op: "plan",
+										steps: [
 											{
 												title: "migrationを実装する",
-												taskType: "data_migration",
 												systemContext:
 													"既存DBからの更新経路と新規DBの両方を検証する。",
-												nextAction: "既存migrationを確認する。",
-												acceptanceCriteria: [
-													"新規DBと既存DBでmigrationが成功する",
-												],
 											},
 										],
 									},
@@ -184,9 +178,10 @@ describe("NightWorkers Codex MCP request authority", () => {
 			expect(await response.text()).not.toContain('"isError":true');
 			expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
 				{
-					taskType: "data_migration",
+					taskType: "coding",
+					status: "running",
 					context: "既存DBからの更新経路と新規DBの両方を検証する。",
-					nextAction: "既存migrationを確認する。",
+					nextAction: "既存DBからの更新経路と新規DBの両方を検証する。",
 					systemContextVersion: CODING_AGENT_SYSTEM_CONTEXT_VERSION,
 					systemContextSnapshot: { todoPolicy: "adaptive" },
 				},

@@ -134,8 +134,14 @@ export function queueWorkbenchSession(sessionId: string) {
 	});
 }
 
-export function archiveWorkbenchSession(sessionId: string) {
-	return apiFetch(`/api/workbench/sessions/${sessionId}/archive`, {
+export function archiveWorkbenchSession(
+	sessionId: string,
+	options: { discardPendingCloseouts?: boolean } = {},
+) {
+	const query = options.discardPendingCloseouts
+		? "?discardPendingCloseouts=true"
+		: "";
+	return apiFetch(`/api/workbench/sessions/${sessionId}/archive${query}`, {
 		method: "PATCH",
 		headers: idempotencyHeaders(),
 	});
@@ -226,24 +232,39 @@ export function createFolder(input: { parentPath?: string; name: string }) {
 	return apiFetch("/api/utils/create-folder", jsonRequest("POST", input));
 }
 
-export function fetchRepositoryFiles(repositoryId: string, path?: string) {
+export function fetchRepositoryFiles(
+	repositoryId: string,
+	path?: string,
+	runId?: string,
+) {
 	const params = new URLSearchParams();
 	if (path) params.set("path", path);
+	if (runId) params.set("runId", runId);
 	const query = params.toString();
 	return apiFetch(
 		`/api/repositories/${repositoryId}/files${query ? `?${query}` : ""}`,
 	);
 }
 
-export function fetchRepositoryFile(repositoryId: string, path: string) {
+export function fetchRepositoryFile(
+	repositoryId: string,
+	path: string,
+	runId?: string,
+) {
 	const params = new URLSearchParams({ path });
+	if (runId) params.set("runId", runId);
 	return apiFetch(
 		`/api/repositories/${repositoryId}/file?${params.toString()}`,
 	);
 }
 
-export function fetchRepositoryDiff(repositoryId: string) {
-	return apiFetch(`/api/repositories/${repositoryId}/diff`);
+export function fetchRepositoryDiff(repositoryId: string, runId?: string) {
+	const params = new URLSearchParams();
+	if (runId) params.set("runId", runId);
+	const query = params.toString();
+	return apiFetch(
+		`/api/repositories/${repositoryId}/diff${query ? `?${query}` : ""}`,
+	);
 }
 
 export function createTask(input: unknown) {

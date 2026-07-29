@@ -81,6 +81,106 @@ async function createTwoTodoPlan(runId: string) {
 }
 
 describe("TodoMutationService", () => {
+	it("creates and advances the minimal plan without IDs or revisions from the LLM", async () => {
+		const { run } = await createRunFixture();
+
+		const planned = await service().execute(run.id, {
+			op: "plan",
+			steps: [
+				{
+					title: "実装する",
+					systemContext: "対象契約を維持して実装する。",
+				},
+				{
+					title: "検証する",
+					systemContext: "対象テストを実行して結果を確認する。",
+				},
+			],
+		});
+
+		expect(planned.ok).toBe(true);
+		expect(planned.currentTodo).toMatchObject({
+			title: "実装する",
+			status: "running",
+		});
+		expect(planned.todos[1]).toMatchObject({
+			title: "検証する",
+			status: "pending",
+		});
+
+		const completed = await service().execute(run.id, {
+			op: "complete_current",
+			note: "実装済み。",
+		});
+
+		expect(completed.todos).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					title: "実装する",
+					status: "passed",
+					statusReason: "実装済み。",
+				}),
+				expect.objectContaining({
+					title: "検証する",
+					status: "running",
+				}),
+			]),
+		);
+		expect(completed.currentTodo?.title).toBe("検証する");
+	});
+
+	it("replaces only remaining steps and preserves the current step", async () => {
+		const { run } = await createRunFixture();
+		const planned = await service().execute(run.id, {
+			op: "plan",
+			steps: [
+				{ title: "調査する", systemContext: "関連箇所を特定する。" },
+				{ title: "旧実装", systemContext: "旧方針で実装する。" },
+			],
+		});
+		if (!planned.ok) throw new Error(planned.error.code);
+
+		const replaced = await service().execute(run.id, {
+			op: "replace_remaining",
+			steps: [
+				{ title: "新実装", systemContext: "判明した契約に沿って実装する。" },
+				{ title: "回帰確認", systemContext: "関連回帰テストを実行する。" },
+			],
+		});
+
+		expect(replaced.currentTodo).toMatchObject({
+			id: planned.currentTodo?.id,
+			title: "調査する",
+			status: "running",
+		});
+		expect(
+			replaced.todos.map(({ title, status }) => ({ title, status })),
+		).toEqual([
+			{ title: "調査する", status: "running" },
+			{ title: "新実装", status: "pending" },
+			{ title: "回帰確認", status: "pending" },
+		]);
+	});
+
+	it("blocks the current step with a human-readable reason", async () => {
+		const { run } = await createRunFixture();
+		await service().execute(run.id, {
+			op: "plan",
+			steps: [{ title: "配備する", systemContext: "対象環境へ配備する。" }],
+		});
+
+		const blocked = await service().execute(run.id, {
+			op: "block_current",
+			reason: "配備先の選択が必要。",
+		});
+
+		expect(blocked.currentTodo).toBeNull();
+		expect(blocked.todos[0]).toMatchObject({
+			status: "needs_human",
+			statusReason: "配備先の選択が必要。",
+		});
+	});
+
 	it("treats the same Todo key as run-local across different Runs", async () => {
 		const [{ run: firstRun }, { run: secondRun }] = await Promise.all([
 			createRunFixture(),
@@ -481,5 +581,76 @@ describe("TodoMutationService", () => {
 			error: { code: "RUN_NOT_MUTABLE" },
 		});
 		expect(result.todos[0].status).toBe("pending");
+	});
+
+	it("rejects multiline fields in the minimal plan contract", async () => {
+		const { run } = await createRunFixture();
+
+		const result = await service().execute(run.id, {
+			op: "plan",
+			steps: [
+				{
+					title: "実装\n## 完了条件",
+					systemContext: TODO_SYSTEM_CONTEXT,
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "INVALID_TODO_COMMAND" },
+			todos: [],
+		});
+	});
+
+	it("rejects minimal current completion after the run becomes terminal", async () => {
+		const { run } = await createRunFixture();
+		const plan = await service().execute(run.id, {
+			op: "plan",
+			steps: [{ title: "実装", systemContext: TODO_SYSTEM_CONTEXT }],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		await updateTaskRun(run.id, { status: "completed" });
+
+		const result = await service().execute(run.id, {
+			op: "complete_current",
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "RUN_NOT_MUTABLE" },
+		});
+		expect(result.todos[0]).toMatchObject({ status: "running" });
+	});
+
+	it("does not start replacement work while a Todo needs human input", async () => {
+		const { run } = await createRunFixture();
+		const plan = await service().execute(run.id, {
+			op: "plan",
+			steps: [
+				{ title: "確認", systemContext: TODO_SYSTEM_CONTEXT },
+				{ title: "旧実装", systemContext: TODO_SYSTEM_CONTEXT },
+			],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const blocked = await service().execute(run.id, {
+			op: "block_current",
+			reason: "ユーザー判断が必要。",
+		});
+		if (!blocked.ok) throw new Error(blocked.error.code);
+
+		const replaced = await service().execute(run.id, {
+			op: "replace_remaining",
+			steps: [{ title: "新実装", systemContext: TODO_SYSTEM_CONTEXT }],
+		});
+
+		expect(replaced.ok).toBe(true);
+		expect(replaced.currentTodo).toBeNull();
+		expect(replaced.todos).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ title: "確認", status: "needs_human" }),
+				expect.objectContaining({ title: "新実装", status: "pending" }),
+			]),
+		);
 	});
 });

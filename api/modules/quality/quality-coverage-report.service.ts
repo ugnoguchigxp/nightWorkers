@@ -4,6 +4,7 @@ import sanitizeHtml from "sanitize-html";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as repo from "./quality.repository";
+import { readCoverageArtifacts } from "./quality-artifacts";
 
 const COVERAGE_REPORT_FRESHNESS_TOLERANCE_MS = 120_000;
 const MAX_COVERAGE_REPORT_CHARS = 2_000_000;
@@ -139,18 +140,22 @@ export async function getCoverageFileReport(input: {
 		throw new NotFoundError("Project quality run not found");
 
 	const reportRoot = path.join(repository.localPath, "coverage");
-	const summaryPath = path.join(reportRoot, "coverage-summary.json");
 	const reportIndexPath = path.join(reportRoot, "index.html");
-	if (!fs.existsSync(summaryPath) || !fs.existsSync(reportIndexPath))
+	const coverage = readCoverageArtifacts(repository.localPath);
+	if (
+		!coverage.coverageSummary ||
+		!coverage.artifactPath ||
+		!fs.existsSync(reportIndexPath)
+	)
 		return unavailableCoverageReport("report_missing");
 	const realRepositoryRoot = fs.realpathSync(repository.localPath);
 	const realReportRoot = fs.realpathSync(reportRoot);
 	assertPathInsideRoot(realRepositoryRoot, realReportRoot);
-	assertPathInsideRoot(realReportRoot, fs.realpathSync(summaryPath));
+	assertPathInsideRoot(realReportRoot, fs.realpathSync(coverage.artifactPath));
 	assertPathInsideRoot(realReportRoot, fs.realpathSync(reportIndexPath));
 
 	const [summaryStat, indexStat] = await Promise.all([
-		fs.promises.stat(summaryPath),
+		fs.promises.stat(coverage.artifactPath),
 		fs.promises.stat(reportIndexPath),
 	]);
 	if (await hasFreshSplitCoverageReport(repository.localPath, summaryStat))
@@ -158,17 +163,10 @@ export async function getCoverageFileReport(input: {
 	if (!reportFilesAreFromSameGeneration([summaryStat, indexStat]))
 		return unavailableCoverageReport("report_stale");
 
-	let liveSummary: unknown;
-	try {
-		liveSummary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
-	} catch {
-		return unavailableCoverageReport("report_missing");
-	}
 	if (
-		!liveSummary ||
-		typeof liveSummary !== "object" ||
-		Array.isArray(liveSummary) ||
-		!(input.fileKey in liveSummary)
+		typeof coverage.coverageSummary !== "object" ||
+		Array.isArray(coverage.coverageSummary) ||
+		!(input.fileKey in coverage.coverageSummary)
 	) {
 		return unavailableCoverageReport("file_report_missing");
 	}

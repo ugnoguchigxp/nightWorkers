@@ -8,6 +8,8 @@ import {
 import { ValidationError } from "../../lib/errors";
 
 const COVERAGE_REPORTERS = ["json-summary", "text", "html"] as const;
+const COVERAGE_SUMMARY_FILE = path.join("coverage", "coverage-summary.json");
+const COVERAGE_FINAL_FILE = path.join("coverage", "coverage-final.json");
 const E2E_JSON_OUTPUT_PATH = path.join("test-results", "e2e-results.json");
 const PLAYWRIGHT_JSON_REPORTER_ARGS = "--reporter=list,json";
 const E2E_ARTIFACT_PATHS = [
@@ -59,25 +61,167 @@ function shellQuote(value: string) {
 }
 
 export function readCoverageArtifacts(repositoryRoot: string) {
-	const summaryPath = path.join(
-		repositoryRoot,
-		"coverage",
-		"coverage-summary.json",
-	);
-	if (!fs.existsSync(summaryPath))
+	const summaryPath = path.join(repositoryRoot, COVERAGE_SUMMARY_FILE);
+	if (fs.existsSync(summaryPath)) {
+		try {
+			const coverageSummary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+			return { coverageSummary, artifactPath: summaryPath, error: null };
+		} catch (error) {
+			return {
+				coverageSummary: null,
+				artifactPath: null,
+				error: `Failed to read coverage-summary.json: ${error instanceof Error ? error.message : String(error)}`,
+			};
+		}
+	}
+
+	const finalPath = path.join(repositoryRoot, COVERAGE_FINAL_FILE);
+	if (!fs.existsSync(finalPath))
 		return {
 			coverageSummary: null,
+			artifactPath: null,
 			error: "coverage-summary.json not found",
 		};
 	try {
-		const coverageSummary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
-		return { coverageSummary, error: null };
+		const coverageSummary = summarizeIstanbulCoverage(
+			JSON.parse(fs.readFileSync(finalPath, "utf8")),
+		);
+		return { coverageSummary, artifactPath: finalPath, error: null };
 	} catch (error) {
 		return {
 			coverageSummary: null,
-			error: `Failed to read coverage-summary.json: ${error instanceof Error ? error.message : String(error)}`,
+			artifactPath: null,
+			error: `Failed to read coverage-final.json: ${error instanceof Error ? error.message : String(error)}`,
 		};
 	}
+}
+
+type IstanbulLocation = {
+	start?: { line?: unknown };
+};
+
+type IstanbulFileCoverage = {
+	statementMap: Record<string, IstanbulLocation>;
+	s: Record<string, unknown>;
+	f: Record<string, unknown>;
+	b: Record<string, unknown>;
+};
+
+type CoverageMetric = {
+	total: number;
+	covered: number;
+	skipped: number;
+	pct: number;
+};
+
+function summarizeIstanbulCoverage(input: unknown) {
+	if (!input || typeof input !== "object" || Array.isArray(input))
+		throw new ValidationError("coverage-final.json must be a JSON object");
+
+	const fileSummaries = Object.fromEntries(
+		Object.entries(input as Record<string, unknown>).map(([file, value]) => {
+			const coverage = parseIstanbulFileCoverage(file, value);
+			const lineCounts = new Map<number, number>();
+			for (const [statementId, location] of Object.entries(
+				coverage.statementMap,
+			)) {
+				const line = location.start?.line;
+				if (typeof line !== "number" || !Number.isInteger(line) || line < 1)
+					continue;
+				const count = coverageCount(coverage.s[statementId]);
+				lineCounts.set(line, Math.max(lineCounts.get(line) ?? 0, count));
+			}
+			const uncoveredLines = [...lineCounts.entries()]
+				.filter(([, count]) => count === 0)
+				.map(([line]) => line)
+				.sort((left, right) => left - right);
+			return [
+				file,
+				{
+					lines: metricFromCounts([...lineCounts.values()]),
+					statements: metricFromCounts(Object.values(coverage.s)),
+					functions: metricFromCounts(Object.values(coverage.f)),
+					branches: metricFromCounts(
+						Object.values(coverage.b).flatMap((counts) =>
+							Array.isArray(counts) ? counts : [counts],
+						),
+					),
+					uncoveredLines,
+				},
+			];
+		}),
+	);
+	const files = Object.values(fileSummaries);
+	return {
+		total: {
+			lines: combineCoverageMetrics(files.map((file) => file.lines)),
+			statements: combineCoverageMetrics(files.map((file) => file.statements)),
+			functions: combineCoverageMetrics(files.map((file) => file.functions)),
+			branches: combineCoverageMetrics(files.map((file) => file.branches)),
+		},
+		...fileSummaries,
+	};
+}
+
+function parseIstanbulFileCoverage(
+	file: string,
+	input: unknown,
+): IstanbulFileCoverage {
+	if (!input || typeof input !== "object" || Array.isArray(input))
+		throw new ValidationError(`Invalid Istanbul coverage entry: ${file}`);
+	const record = input as Record<string, unknown>;
+	return {
+		statementMap: coverageRecord(record.statementMap, file, "statementMap"),
+		s: coverageRecord(record.s, file, "s"),
+		f: coverageRecord(record.f, file, "f"),
+		b: coverageRecord(record.b, file, "b"),
+	};
+}
+
+function coverageRecord(
+	input: unknown,
+	file: string,
+	field: string,
+): Record<string, never> {
+	if (!input || typeof input !== "object" || Array.isArray(input))
+		throw new ValidationError(
+			`Invalid Istanbul coverage ${field} entry: ${file}`,
+		);
+	return input as Record<string, never>;
+}
+
+function coverageCount(input: unknown) {
+	return typeof input === "number" && Number.isFinite(input) && input > 0
+		? input
+		: 0;
+}
+
+function metricFromCounts(counts: unknown[]): CoverageMetric {
+	const normalized = counts.map(coverageCount);
+	const total = normalized.length;
+	const covered = normalized.filter((count) => count > 0).length;
+	return {
+		total,
+		covered,
+		skipped: 0,
+		pct: coveragePercent(covered, total),
+	};
+}
+
+function combineCoverageMetrics(metrics: CoverageMetric[]): CoverageMetric {
+	const total = metrics.reduce((sum, metric) => sum + metric.total, 0);
+	const covered = metrics.reduce((sum, metric) => sum + metric.covered, 0);
+	return {
+		total,
+		covered,
+		skipped: metrics.reduce((sum, metric) => sum + metric.skipped, 0),
+		pct: coveragePercent(covered, total),
+	};
+}
+
+function coveragePercent(covered: number, total: number) {
+	if (total === 0) return 100;
+	return Math.floor((covered / total) * 10_000) / 100;
 }
 
 function minimalE2eSummary(exitCode: number | null) {

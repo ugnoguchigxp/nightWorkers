@@ -117,12 +117,17 @@ export async function createWorkbenchSession(data: {
 	});
 }
 
-export async function archiveTask(id: string, expectedTaskRevision?: number) {
+export async function archiveTask(
+	id: string,
+	expectedTaskRevision?: number,
+	options: { discardPendingCloseouts?: boolean } = {},
+) {
 	return (
 		await archiveCompletedTask({
 			taskId: id,
 			reason: "manual",
 			expectedTaskRevision,
+			discardPendingCloseouts: options.discardPendingCloseouts,
 		})
 	).task;
 }

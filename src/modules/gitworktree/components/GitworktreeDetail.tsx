@@ -129,9 +129,13 @@ export function GitworktreeDetail({
 					>
 						<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
 						{t(
-							canDiscardAndRemove
-								? "projectDetail.worktrees.discardAndRemove"
-								: "projectDetail.worktrees.remove",
+							selected.branch
+								? canDiscardAndRemove
+									? "projectDetail.worktrees.discardAndRemoveBranch"
+									: "projectDetail.worktrees.removeBranch"
+								: canDiscardAndRemove
+									? "projectDetail.worktrees.discardAndRemove"
+									: "projectDetail.worktrees.remove",
 						)}
 					</button>
 				</div>

@@ -1,5 +1,10 @@
 import type { CodexOptions, ThreadOptions } from "@openai/codex-sdk";
 import { buildNightWorkersCodexToolApprovalConfig } from "../../../../mcp/nightworkers-tool-manifest";
+import {
+	isCredentialFileEnvironmentKey,
+	isRegistryCredentialEnvironmentKey,
+	isSecretEnvironmentKey,
+} from "../../../../services/security/secret-redaction";
 import type { AgentRunContext } from "../types";
 import { buildCodexRuntimeDeveloperInstructions } from "./codex-sdk-runtime-prompt";
 
@@ -11,6 +16,35 @@ type CodexRuntimeConfigInput = {
 };
 
 const DEFAULT_NIGHTWORKERS_API_PORT = 39_173;
+const WORKSPACE_RUNTIME_ENVIRONMENT_KEYS = new Set([
+	"PATH",
+	"TMPDIR",
+	"TMP",
+	"TEMP",
+	"HOME",
+	"USERPROFILE",
+	"XDG_CONFIG_HOME",
+	"XDG_CACHE_HOME",
+	"BUN_INSTALL_CACHE_DIR",
+	"npm_config_cache",
+	"YARN_CACHE_FOLDER",
+	"UV_CACHE_DIR",
+	"UV_PROJECT_ENVIRONMENT",
+	"VIRTUAL_ENV",
+	"PIP_CACHE_DIR",
+	"POETRY_CACHE_DIR",
+	"POETRY_VIRTUALENVS_PATH",
+	"BUNDLE_PATH",
+	"BUNDLE_CACHE_PATH",
+	"BUNDLE_FROZEN",
+	"COMPOSER_CACHE_DIR",
+	"GOMODCACHE",
+	"GOCACHE",
+	"CARGO_HOME",
+	"CARGO_TARGET_DIR",
+	"NUGET_PACKAGES",
+	"GRADLE_USER_HOME",
+]);
 
 export function buildCodexRuntimeSdkOptions(
 	input: CodexRuntimeConfigInput = {},
@@ -20,11 +54,20 @@ export function buildCodexRuntimeSdkOptions(
 	const sanitizedEnv = Object.fromEntries(
 		Object.entries(env).filter((entry): entry is [string, string] => {
 			const [key, value] = entry;
-			return typeof value === "string" && !isCodexParentSessionEnv(key);
+			return (
+				typeof value === "string" &&
+				isAgentBaseEnvironmentKey(key) &&
+				!isCodexParentSessionEnv(key) &&
+				!isCredentialFileEnvironmentKey(key) &&
+				!isSecretEnvironmentKey(key) &&
+				!isRegistryCredentialEnvironmentKey(key, value)
+			);
 		}),
 	);
+	const workspaceEnv = readWorkspaceRuntimeEnvironment(input.context);
 	sdkOptions.env = {
 		...sanitizedEnv,
+		...workspaceEnv,
 		...(input.accessToken ? { CODEX_ACCESS_TOKEN: input.accessToken } : {}),
 	};
 	if (input.context) {
@@ -98,6 +141,66 @@ function isCodexParentSessionEnv(key: string) {
 		key === "CODEX_INTERNAL_ORIGINATOR_OVERRIDE" ||
 		key === "CODEX_SHELL" ||
 		key === "CODEX_CI"
+	);
+}
+
+function isAgentBaseEnvironmentKey(key: string) {
+	return (
+		[
+			"PATH",
+			"PATHEXT",
+			"SystemRoot",
+			"SYSTEMROOT",
+			"WINDIR",
+			"COMSPEC",
+			"SHELL",
+			"LANG",
+			"TERM",
+			"COLORTERM",
+			"CI",
+			"CODEX_HOME",
+			"SSL_CERT_FILE",
+			"SSL_CERT_DIR",
+			"NODE_EXTRA_CA_CERTS",
+			"JAVA_HOME",
+			"JDK_HOME",
+			"M2_HOME",
+			"GRADLE_HOME",
+			"GRAALVM_HOME",
+			"GOROOT",
+			"GOPATH",
+			"RUSTUP_HOME",
+			"DOTNET_ROOT",
+			"DOTNET_CLI_HOME",
+			"BUN_INSTALL",
+			"NVM_DIR",
+			"PNPM_HOME",
+			"VOLTA_HOME",
+			"COREPACK_HOME",
+			"LD_LIBRARY_PATH",
+			"DYLD_LIBRARY_PATH",
+			"HTTP_PROXY",
+			"HTTPS_PROXY",
+			"NO_PROXY",
+			"http_proxy",
+			"https_proxy",
+			"no_proxy",
+		].includes(key) || key.startsWith("LC_")
+	);
+}
+
+function readWorkspaceRuntimeEnvironment(context?: AgentRunContext) {
+	const candidate = context?.runtimeOptions?.workspaceRuntimeEnvironment;
+	if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+		return {};
+	}
+	return Object.fromEntries(
+		Object.entries(candidate).filter(
+			(entry): entry is [string, string] =>
+				typeof entry[1] === "string" &&
+				WORKSPACE_RUNTIME_ENVIRONMENT_KEYS.has(entry[0]) &&
+				!isRegistryCredentialEnvironmentKey(entry[0], entry[1]),
+		),
 	);
 }
 

@@ -1,3 +1,3 @@
-text = '''Todoが品質を上げるRunだけでtodo_listを使い、単純なRunへ儀式的なTodoを追加しないでください。
-Todoを使う場合、各systemContextは作業名の繰り返しではなく工程固有の制約と検証条件にしてください。
-実装後に完了条件を後付けせず、前提やスコープが変わった場合は続行前にTodo planとsystemContextを更新してください。'''
+text = '''採用済みimplementationPlanがあるRunでは既存Todoを使い、同じ計画を再生成しないでください。
+直接Runでworkspaceを変更する場合は、変更前にtitleとsystemContextだけのplanを作成してください。
+current TodoのsystemContextを局所指示として読み、完了時はcomplete_current、ユーザー判断が必要な場合はblock_current、残工程の修正にはreplace_remainingを使ってください。'''

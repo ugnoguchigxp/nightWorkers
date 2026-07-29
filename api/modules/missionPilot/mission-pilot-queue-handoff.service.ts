@@ -16,7 +16,11 @@ import {
 	tasks,
 } from "../../db/schema";
 import { verificationDocuments } from "../../db/verification-schema";
-import { readFeaturePlanMaterializationIntent } from "../agentsShare";
+import {
+	digestImplementationPlan,
+	readFeaturePlanImplementationPlan,
+	readFeaturePlanMaterializationIntent,
+} from "../agentsShare";
 import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
 	ensureTaskGitWorkspace,
@@ -178,6 +182,17 @@ export async function admitMissionPilotQueueHandoff(input: {
 		const featurePlanContentDigest = digestFeaturePlanContent(
 			featurePlanMessage.content,
 		);
+		const implementationPlan = readFeaturePlanImplementationPlan(
+			featurePlanMessage.metadataJson,
+		);
+		if (!implementationPlan) {
+			throw new MissionPilotPreQueueError(
+				"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
+				"Feature Plan structured implementation plan is missing",
+			);
+		}
+		const implementationPlanDigest =
+			digestImplementationPlan(implementationPlan);
 		if (
 			session.desiredState !== "playing" ||
 			!missionPilotRepo.hasValidAuthorization(session)
@@ -214,6 +229,9 @@ export async function admitMissionPilotQueueHandoff(input: {
 					(!handoff.data.featurePlanContentDigest ||
 						handoff.data.featurePlanContentDigest ===
 							featurePlanContentDigest) &&
+					handoff.data.implementationPlanSourceMessageId ===
+						featurePlanMessage.id &&
+					handoff.data.implementationPlanDigest === implementationPlanDigest &&
 					handoff.data.verificationDocumentId ===
 						input.verificationDocumentId &&
 					handoff.data.reviewedContextRevision === session.contextRevision &&
@@ -334,6 +352,9 @@ export async function admitMissionPilotQueueHandoff(input: {
 			routingRevision: review.routingRevision,
 			featurePlanMessageId: featurePlanMessage.id,
 			featurePlanContentDigest,
+			implementationTodoProjectionVersion: 1,
+			implementationPlanSourceMessageId: featurePlanMessage.id,
+			implementationPlanDigest,
 			verificationDocumentId: verificationDocument.id,
 			planReviewId: review.id,
 			planReviewVerdict: "pass",

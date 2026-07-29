@@ -1,7 +1,12 @@
 import {
+	type ImplementationPlan,
+	implementationPlanSchema,
+} from "../../../shared/modules/agentsShare";
+import {
 	type RepositoryMaterializationIntent,
 	repositoryMaterializationIntentSchema,
 } from "../../../shared/schemas/git-integration.schema";
+import { digestImplementationPlan } from "./implementation-plan";
 
 function record(value: unknown) {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -19,6 +24,24 @@ export function readFeaturePlanMaterializationIntent(
 	return parsed.success ? parsed.data : null;
 }
 
+export function readFeaturePlanImplementationPlan(
+	metadataJson: unknown,
+): ImplementationPlan | null {
+	const metadata = record(metadataJson);
+	const parsed = implementationPlanSchema.safeParse(
+		metadata?.implementationPlan,
+	);
+	if (!parsed.success) return null;
+	const provenance = record(metadata?.implementationPlanProvenance);
+	if (
+		provenance?.version !== 1 ||
+		provenance.digest !== digestImplementationPlan(parsed.data)
+	) {
+		return null;
+	}
+	return parsed.data;
+}
+
 export function findLatestFeaturePlanMaterialization(
 	messages: Array<{ id: string; metadataJson?: unknown }>,
 ) {
@@ -29,6 +52,9 @@ export function findLatestFeaturePlanMaterialization(
 		return {
 			featurePlanMessageId: message.id,
 			intent: readFeaturePlanMaterializationIntent(message.metadataJson),
+			implementationPlan: readFeaturePlanImplementationPlan(
+				message.metadataJson,
+			),
 		};
 	}
 	return null;

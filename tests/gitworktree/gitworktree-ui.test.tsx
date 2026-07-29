@@ -292,7 +292,7 @@ describe("ProjectDetailWorktrees", () => {
 			<ProjectDetailWorktrees repositoryId="repo-id" onCreateTask={vi.fn()} />,
 		);
 
-		expect(markup).toContain("projectDetail.worktrees.discardAndRemove");
+		expect(markup).toContain("projectDetail.worktrees.discardAndRemoveBranch");
 		expect(markup).toContain('role="dialog"');
 		expect(markup).toContain('data-worktree-diff-file="file.ts"');
 		expect(markup).toContain('data-worktree-diff-file="new.ts"');

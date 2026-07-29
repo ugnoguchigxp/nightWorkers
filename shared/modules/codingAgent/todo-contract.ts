@@ -1,3 +1,10 @@
+import { z } from "zod";
+import {
+	IMPLEMENTATION_PLAN_LIMITS,
+	type ImplementationPlanStep,
+	implementationPlanStepSchema,
+} from "../agentsShare";
+
 export const AGENT_TODO_STATUSES = [
 	"pending",
 	"running",
@@ -7,14 +14,14 @@ export const AGENT_TODO_STATUSES = [
 ] as const;
 
 export const TODO_MUTATION_LIMITS = {
-	maxTodos: 12,
+	maxTodos: IMPLEMENTATION_PLAN_LIMITS.maxSteps,
 	maxTodoIdLength: 128,
 	maxDependencies: 12,
-	maxTitleLength: 200,
+	maxTitleLength: IMPLEMENTATION_PLAN_LIMITS.maxTitleLength,
 	maxTaskTypeLength: 64,
 	maxObjectiveLength: 8_000,
 	maxContextLength: 20_000,
-	maxTodoSystemContextLength: 4_000,
+	maxTodoSystemContextLength: IMPLEMENTATION_PLAN_LIMITS.maxSystemContextLength,
 	maxNextActionLength: 4_000,
 	maxReasonLength: 8_000,
 	maxAcceptanceCriteria: 12,
@@ -70,17 +77,80 @@ export type TodoDraft = {
 	systemContext?: string;
 	/** @deprecated systemContextへ互換正規化する。 */
 	context?: string | null;
-	nextAction: string;
+	nextAction?: string;
 	acceptanceCriteria?: string[];
 	dependsOnKeys?: string[];
 	/** @deprecated replace_planではdependsOnKeysとして互換正規化する。 */
 	dependsOn?: string[];
 };
 
+export const codingAgentTodoListCommandSchema = z.discriminatedUnion("op", [
+	z.object({ op: z.literal("list") }).strict(),
+	z
+		.object({
+			op: z.literal("plan"),
+			steps: z
+				.array(implementationPlanStepSchema)
+				.min(1)
+				.max(TODO_MUTATION_LIMITS.maxTodos),
+		})
+		.strict(),
+	z
+		.object({
+			op: z.literal("complete_current"),
+			note: z
+				.string()
+				.trim()
+				.min(1)
+				.max(TODO_MUTATION_LIMITS.maxReasonLength)
+				.optional(),
+		})
+		.strict(),
+	z
+		.object({
+			op: z.literal("block_current"),
+			reason: z
+				.string()
+				.trim()
+				.min(1)
+				.max(TODO_MUTATION_LIMITS.maxReasonLength),
+		})
+		.strict(),
+	z
+		.object({
+			op: z.literal("replace_remaining"),
+			steps: z
+				.array(implementationPlanStepSchema)
+				.min(1)
+				.max(TODO_MUTATION_LIMITS.maxTodos),
+		})
+		.strict(),
+]);
+
+export type CodingAgentTodoListCommand = z.infer<
+	typeof codingAgentTodoListCommandSchema
+>;
+
 export type TodoMutationCommand =
 	| {
+			op: "plan";
+			steps: ImplementationPlanStep[];
+	  }
+	| {
+			op: "complete_current";
+			note?: string;
+	  }
+	| {
+			op: "block_current";
+			reason: string;
+	  }
+	| {
+			op: "replace_remaining";
+			steps: ImplementationPlanStep[];
+	  }
+	| {
 			op: "replace_plan";
-			expectedPlanRevision: number;
+			expectedPlanRevision?: number;
 			todos: TodoDraft[];
 	  }
 	| { op: "start"; todoId: string; expectedTodoRevision: number }

@@ -87,7 +87,10 @@ type ArtifactPaneProps = {
 	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskStatus?: string | null;
-	onCompleteAndArchiveTask?: (taskId: string) => Promise<unknown>;
+	onCompleteAndArchiveTask?: (
+		taskId: string,
+		options?: { discardPendingCloseouts?: boolean },
+	) => Promise<unknown>;
 	onRestoreArchivedTask?: (taskId: string) => Promise<unknown>;
 	isImplementationLocked?: boolean;
 	onSubmitReviewPrompt?: (prompt: string) => Promise<boolean>;
@@ -387,6 +390,7 @@ export function ArtifactPane({
 						<ReviewStatusViewer
 							detail={activeReviewDetail}
 							loading={isReviewSessionLoading}
+							activeTaskId={activeSessionId}
 							latestRun={latestRun}
 							implementationCompletionReport={implementationCompletionReport}
 							gitCloseout={gitCloseout}

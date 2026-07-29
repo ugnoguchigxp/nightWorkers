@@ -101,6 +101,7 @@ function emptyUsage(): WorktreeUsage {
 async function collectWorktrees(input: {
 	repositoryId: string;
 	localPath: string;
+	targetBranch: string;
 	identity: RepositoryIdentity;
 	runner: GitCommandRunner;
 }) {
@@ -143,8 +144,11 @@ async function collectWorktrees(input: {
 			}
 			const blockers: WorktreeRemoveBlocker[] = [];
 			const warnings: WorktreeRemoveWarning[] = [];
-			if (canonicalPath === input.identity.topLevel)
+			if (canonicalPath === input.identity.topLevel) {
 				blockers.push("base_worktree_protected");
+			} else if (record.branch === input.targetBranch) {
+				blockers.push("target_branch_protected");
+			}
 			if (record.locked) blockers.push("worktree_locked");
 			if (record.prunable) blockers.push("worktree_prunable");
 			if (statusUnavailable) blockers.push("worktree_status_unavailable");
@@ -245,6 +249,7 @@ export async function listRepositoryWorktrees(
 	const worktrees = await collectWorktrees({
 		repositoryId,
 		localPath: repository.localPath,
+		targetBranch: repository.branch,
 		identity,
 		runner,
 	});
@@ -501,6 +506,12 @@ export async function removeRepositoryWorktree(
 				warnings: target.removeWarnings,
 			},
 		);
+	if (target.branch === repository.branch)
+		throw appError(
+			409,
+			"target_branch_protected",
+			"The repository target branch cannot be deleted",
+		);
 	try {
 		await runner(
 			[
@@ -517,6 +528,33 @@ export async function removeRepositoryWorktree(
 	} catch (error) {
 		throw gitOperationError(error, "Git worktree remove failed");
 	}
+	if (target.branch) {
+		try {
+			await runner(
+				[
+					"-C",
+					repository.localPath,
+					"update-ref",
+					"-d",
+					`refs/heads/${target.branch}`,
+					request.expectedHead,
+				],
+				{ timeoutMs: 60_000 },
+			);
+		} catch (error) {
+			throw new AppError(
+				409,
+				"branch_delete_failed",
+				"Worktree was removed, but its local branch could not be deleted",
+				{
+					worktreeRemoved: true,
+					branch: target.branch,
+					cause:
+						error instanceof Error ? error.message : "Git branch delete failed",
+				},
+			);
+		}
+	}
 	const after = await listRepositoryWorktrees(repositoryId, { runner });
 	if (after.worktrees.some((item) => item.id === request.worktreeId))
 		throw appError(
@@ -524,7 +562,12 @@ export async function removeRepositoryWorktree(
 			"git_command_failed",
 			"Worktree still exists after remove",
 		);
-	return { removed: true as const, branch: target.branch, path: target.path };
+	return {
+		removed: true as const,
+		branch: target.branch,
+		branchDeleted: Boolean(target.branch),
+		path: target.path,
+	};
 }
 
 function parsePruneEntries(output: string) {
