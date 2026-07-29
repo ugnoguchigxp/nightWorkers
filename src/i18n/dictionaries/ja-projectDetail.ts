@@ -34,6 +34,8 @@ export const jaProjectDetail = {
 	"projectDetail.worktrees.upstream": "Upstream",
 	"projectDetail.worktrees.sync": "同期",
 	"projectDetail.worktrees.aheadBehind": "ahead {{ahead}} / behind {{behind}}",
+	"projectDetail.worktrees.comparisonObservedAt":
+		"local refを {{value}} に観測",
 	"projectDetail.worktrees.changes": "変更",
 	"projectDetail.worktrees.changeCounts":
 		"staged {{staged}} / modified {{modified}} / untracked {{untracked}} / conflict {{conflicted}}",

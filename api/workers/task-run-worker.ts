@@ -1,7 +1,5 @@
-import {
-	type StartTaskRunOptions,
-	startTaskRunInProcess,
-} from "../modules/nightworkers/run-orchestration/start-task-run";
+import { startTaskRunInProcess } from "../modules/nightworkers/run-orchestration/start-task-run";
+import type { StartTaskRunOptions } from "../modules/nightworkers/run-orchestration/start-task-run-types";
 import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
 import { consumeApplicationSettingsWorkerSnapshot } from "../services/settings/application-settings-store";
 import { runWithSystemContextBinding } from "../systemContexts/catalog";

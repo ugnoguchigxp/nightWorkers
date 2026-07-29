@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotPhaseRuns,
@@ -15,9 +15,7 @@ import {
 	ensureTaskGitWorkspace,
 	provisionTaskGitWorkspace,
 } from "../gitworktree/task-git-workspace.service";
-import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { appendMissionPilotEvent } from "./mission-pilot-event.repository";
-import { buildMissionPilotRunAssociationRequest } from "./mission-pilot-run-association.service";
 
 export async function alignBootstrappedRepositoryBranch(input: {
 	repositoryPath: string;
@@ -50,149 +48,6 @@ export async function alignBootstrappedRepositoryBranch(input: {
 			input.targetBranch,
 		]);
 	}
-}
-
-export async function startMissionPilotRepositoryBootstrap(input: {
-	taskId: string;
-	sessionId: string;
-}) {
-	const [session] = await db
-		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.id, input.sessionId))
-		.limit(1);
-	if (
-		!session ||
-		session.taskId !== input.taskId ||
-		session.desiredState !== "playing" ||
-		!session.queueHandoffJson
-	) {
-		throw new Error("Mission Pilot repository bootstrap admission is invalid");
-	}
-	const [active] = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(
-			and(
-				eq(missionPilotPhaseRuns.sessionId, session.id),
-				eq(missionPilotPhaseRuns.phase, "repository_bootstrap"),
-				eq(missionPilotPhaseRuns.status, "running"),
-			),
-		)
-		.limit(1);
-	if (active) {
-		const activeRun = await db.query.taskRuns.findFirst({
-			where: eq(taskRuns.id, active.runId),
-		});
-		if (
-			activeRun &&
-			[
-				"running",
-				"context_compiling",
-				"compiling_context",
-				"finalizing",
-			].includes(activeRun.status)
-		) {
-			return activeRun;
-		}
-		await db
-			.update(missionPilotPhaseRuns)
-			.set({ status: "failed", finishedAt: new Date() })
-			.where(eq(missionPilotPhaseRuns.id, active.id));
-	}
-	const preparingSession = await claimMissionPilotRepositoryBootstrapStart({
-		taskId: input.taskId,
-		sessionId: input.sessionId,
-		contextRevision: session.contextRevision,
-		contextDigest: session.contextDigest,
-		implementationCycle: session.implementationCycle,
-	});
-	if (!preparingSession) {
-		throw new Error(
-			"Mission Pilot repository bootstrap preparation could not be claimed",
-		);
-	}
-	return startTaskRun(input.taskId, {
-		executionMode: "implementation",
-		executionModeSource: "explicit",
-		allowUnassignedWorkspace: true,
-		runAssociation: buildMissionPilotRunAssociationRequest({
-			phase: "repository_bootstrap",
-			missionPilot: {
-				sessionId: preparingSession.id,
-				cycle: preparingSession.implementationCycle,
-				contextRevision: preparingSession.contextRevision,
-				contextDigest: preparingSession.contextDigest,
-			},
-		}),
-		initialTodos: [
-			{
-				title: "Repositoryをbootstrapする",
-				description:
-					"登録済みProject rootでpwdとls相当を実行し、空または未materializedならnightworkers.import_projectでstarterを取り込み、Git HEADとbaseline commitを確認する。通常機能の実装は行わない。",
-				taskType: "scaffold",
-				procedureId: "repository_bootstrap",
-			},
-		],
-		runtimeOptionsPatch: {
-			missionPilot: {
-				sessionId: preparingSession.id,
-				cycle: preparingSession.implementationCycle,
-				contextRevision: preparingSession.contextRevision,
-				contextDigest: preparingSession.contextDigest,
-			},
-			repositoryBootstrap: {
-				targetPathSource: "registered_project_root",
-				queueEntryId: preparingSession.queueHandoffJson?.queueEntryId,
-			},
-		},
-	}).catch(async (error) => {
-		await db.transaction(async (tx) => {
-			await tx
-				.update(tasks)
-				.set({ status: "queued", updatedAt: new Date() })
-				.where(eq(tasks.id, input.taskId));
-			await tx
-				.update(missionPilotSessions)
-				.set({ phase: "queued", updatedAt: new Date() })
-				.where(
-					and(
-						eq(missionPilotSessions.id, input.sessionId),
-						eq(missionPilotSessions.phase, "repository_bootstrap_preparing"),
-						isNull(missionPilotSessions.activeRunId),
-						isNull(missionPilotSessions.activePhaseRunId),
-					),
-				);
-		});
-		throw error;
-	});
-}
-
-export async function claimMissionPilotRepositoryBootstrapStart(input: {
-	taskId: string;
-	sessionId: string;
-	contextRevision: number;
-	contextDigest: string;
-	implementationCycle: number;
-}) {
-	const [preparing] = await db
-		.update(missionPilotSessions)
-		.set({ phase: "repository_bootstrap_preparing", updatedAt: new Date() })
-		.where(
-			and(
-				eq(missionPilotSessions.id, input.sessionId),
-				eq(missionPilotSessions.taskId, input.taskId),
-				eq(missionPilotSessions.desiredState, "playing"),
-				eq(missionPilotSessions.phase, "queued"),
-				eq(missionPilotSessions.contextRevision, input.contextRevision),
-				eq(missionPilotSessions.contextDigest, input.contextDigest),
-				eq(missionPilotSessions.implementationCycle, input.implementationCycle),
-				isNull(missionPilotSessions.activeRunId),
-				isNull(missionPilotSessions.activePhaseRunId),
-			),
-		)
-		.returning();
-	return preparing ?? null;
 }
 
 export async function completeMissionPilotRepositoryBootstrap(input: {

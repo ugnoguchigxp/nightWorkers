@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -110,7 +111,7 @@ export function likelyEmergingFeature(goal) {
 
 export function collectLikelyFiles(repoRoot, manifest, limit) {
   const files = [];
-  const allFiles = listRepoFiles(repoRoot, 2000);
+  const allFiles = listRepoFiles(repoRoot, Number.MAX_SAFE_INTEGER);
   for (const file of allFiles) {
     if (matchesAny(file, manifest.ownedPaths)) files.push(file);
     if (files.length >= limit) break;
@@ -119,6 +120,25 @@ export function collectLikelyFiles(repoRoot, manifest, limit) {
 }
 
 export function listRepoFiles(repoRoot, maxFiles) {
+  try {
+    const output = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    return output
+      .split('\0')
+      .filter(Boolean)
+      .map(normalizeRepoPath)
+      .sort()
+      .slice(0, maxFiles);
+  } catch {
+    // Non-Git repositories still receive deterministic filesystem evidence.
+  }
   const results = [];
   const ignored = new Set(['.git', 'node_modules', 'dist', 'dist-api', 'coverage', '.turbo']);
   function walk(dir) {

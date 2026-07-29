@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isProjectSecretPath } from "../../security/project-secret-paths";
 import { formatFileSystemToolError } from "../fs-error";
 import { buildCompressionMetadata } from "../output-compression";
 import { enforcePathPolicy } from "../tool-policy-enforcer";
@@ -35,6 +36,12 @@ export async function inspectStructureTool(
 	const targetPath = path.isAbsolute(filePath)
 		? filePath
 		: path.resolve(absoluteRepoRoot, filePath);
+	if (isProjectSecretPath(targetPath, absoluteRepoRoot)) {
+		return failure(startedAt, {
+			code: "ACCESS_DENIED",
+			message: "Project secret fileは構造検査で取得できません。",
+		});
+	}
 
 	const pathDecision = enforcePathPolicy(targetPath, {
 		repoRoot: absoluteRepoRoot,

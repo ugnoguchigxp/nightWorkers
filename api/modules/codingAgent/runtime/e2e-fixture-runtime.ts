@@ -171,6 +171,7 @@ export async function runE2eFixtureRuntime(
 	if (verificationDocument) {
 		const completionCheck = await runCompletionCheck({
 			taskId: context.taskId,
+			runId: context.runId,
 			verificationDocumentId: verificationDocument.id,
 		});
 		await sink.emit({

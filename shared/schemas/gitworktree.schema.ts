@@ -38,6 +38,19 @@ export const worktreeUsageSchema = z.object({
 	activeTaskCount: z.number().int().nonnegative(),
 	activeRunCount: z.number().int().nonnegative(),
 	pendingCloseoutCount: z.number().int().nonnegative(),
+	workspaceBinding: z
+		.object({
+			workspaceId: z.string(),
+			allocationVersion: z.number().int().positive(),
+			status: z.string(),
+			sourceBranch: z.string(),
+			targetBranch: z.string(),
+			targetBaseSha: z.string().nullable(),
+			expectedHeadSha: z.string().nullable(),
+			lastVerifiedHead: z.string().nullable(),
+			repositoryIdentityRevision: z.number().int().nullable(),
+		})
+		.nullable(),
 });
 
 export const worktreeSummarySchema = z.object({
@@ -55,6 +68,10 @@ export const worktreeSummarySchema = z.object({
 	prunable: z.boolean(),
 	pruneReason: z.string().nullable(),
 	upstream: z.string().nullable(),
+	comparisonRef: z.string().nullable(),
+	comparisonSha: z.string().nullable(),
+	comparisonObservedAt: z.string(),
+	comparisonFreshness: z.literal("local_ref"),
 	ahead: z.number().int().nonnegative(),
 	behind: z.number().int().nonnegative(),
 	stagedCount: z.number().int().nonnegative(),

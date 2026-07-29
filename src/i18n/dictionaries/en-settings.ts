@@ -47,6 +47,16 @@ export const enSettings = {
 	"settings.general.promptPartObservability": "Prompt part usage estimates",
 	"settings.general.promptPartObservabilityHelp":
 		"Store NightWorkers estimates for system prompt, user prompt, and State Card tokens alongside provider usage.",
+	"settings.general.retention.title": "Coding Agent record retention",
+	"settings.general.retention.description":
+		"Keep full execution records for this period while retaining core Task, Run, Evidence, Review, and Git receipts. Saving settings does not delete records.",
+	"settings.general.retention.days": "Full-record retention (1–365 days)",
+	"settings.general.retention.preview": "Preview cleanup",
+	"settings.general.retention.cleanupNow": "Clean expired records now",
+	"settings.general.retention.previewSummary":
+		"{{rows}} records eligible (estimated {{bytes}} bytes); {{protected}} runs protected",
+	"settings.general.retention.cleanupSucceeded":
+		"Cleaned {{runsPurged}} runs and {{detailRowsDeleted}} detail records.",
 	"settings.planMode.title": "Plan Mode",
 	"settings.planMode.description":
 		"Control each Plan Mode generation path. Disabled items are blocked in the UI and generation API. Existing artifacts remain readable.",

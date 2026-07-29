@@ -5,6 +5,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { evidenceSubjectSnapshots } from "./evidence-ledger-schema";
 import { commonColumns, taskMessages, taskRuns, tasks } from "./schema";
 
 export const verificationDocuments = sqliteTable(
@@ -91,6 +92,10 @@ export const verificationEvidenceRuns = sqliteTable(
 			() => verificationDocuments.id,
 			{ onDelete: "set null" },
 		),
+		subjectId: text("subject_id").references(
+			() => evidenceSubjectSnapshots.id,
+			{ onDelete: "set null" },
+		),
 		checkKind: text("check_kind").notNull(),
 		command: text("command").notNull(),
 		cwd: text("cwd").notNull(),
@@ -130,6 +135,9 @@ export const verificationEvidenceRuns = sqliteTable(
 		),
 		documentIdx: index("verification_evidence_runs_document_idx").on(
 			table.verificationDocumentId,
+		),
+		subjectIdx: index("verification_evidence_runs_subject_idx").on(
+			table.subjectId,
 		),
 	}),
 );

@@ -1,10 +1,7 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { openSyncSqlite } from "../db/sync-sqlite";
 import { getRuntimePaths, isDesktopMode } from "./paths";
-
-const JWT_SECRET_BYTES = 48;
 
 type DesktopRuntimeBootstrapOptions = {
 	preserveConfiguredDatabaseUrl?: boolean;
@@ -35,7 +32,6 @@ export function ensureDesktopRuntimeBootstrap(
 		paths.runtimeRoot,
 		paths.settingsDir,
 		paths.logsDir,
-		paths.secretsDir,
 		paths.artifactsDir,
 		paths.backupsDir,
 		paths.workspaceBootstrapDir,
@@ -52,36 +48,23 @@ export function ensureDesktopRuntimeBootstrap(
 	if (!preserveConfiguredDatabaseUrl || !env.DATABASE_URL?.trim()) {
 		env.DATABASE_URL = `file:${paths.databasePath}`;
 	}
-	if (
-		!env.AUTH_MODE ||
-		((env.AUTH_MODE === "both" || env.AUTH_MODE === "oauth") &&
-			!env.GOOGLE_CLIENT_ID &&
-			!env.GITHUB_CLIENT_ID)
-	) {
-		env.AUTH_MODE = "local";
-	}
-	env.API_AUTH_REQUIRED ||= "false";
 
 	const apiOrigin =
 		env.NIGHTWORKERS_API_ORIGIN || `http://127.0.0.1:${env.PORT || 39173}`;
-	env.APP_URL = apiOrigin;
 	env.CORS_ORIGIN = mergeCorsOrigins(
 		[apiOrigin, "http://tauri.localhost", "tauri://localhost"],
 		env.CORS_ORIGIN,
 	);
+	removeLegacyJwtSecret(paths.runtimeRoot);
+}
 
-	if (!env.JWT_SECRET) {
-		const secretPath = `${paths.secretsDir}/jwt-secret`;
-		if (fs.existsSync(secretPath)) {
-			env.JWT_SECRET = fs.readFileSync(secretPath, "utf-8").trim();
-		} else {
-			const secret = crypto.randomBytes(JWT_SECRET_BYTES).toString("base64url");
-			fs.writeFileSync(secretPath, `${secret}\n`, {
-				encoding: "utf-8",
-				mode: 0o600,
-			});
-			env.JWT_SECRET = secret;
-		}
+function removeLegacyJwtSecret(runtimeRoot: string) {
+	const secretsDirectory = path.join(runtimeRoot, "secrets");
+	fs.rmSync(path.join(secretsDirectory, "jwt-secret"), { force: true });
+	try {
+		fs.rmdirSync(secretsDirectory);
+	} catch {
+		// Preserve non-empty or externally managed directories.
 	}
 }
 

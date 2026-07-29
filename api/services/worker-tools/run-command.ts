@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import crypto from "node:crypto";
 import { Stats } from "node:fs";
 import fs from "node:fs/promises";
@@ -6,11 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getDeepRecordString, toDeepRecord } from "../../../shared/json-record";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
+import { prepareWorkspaceConstrainedShell } from "../execution/workspace-process-confinement";
 import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../model-visible-payload";
-import {
-	isCredentialFileEnvironmentKey,
-	isRegistryCredentialEnvironmentKey,
-} from "../security/secret-redaction";
 import { analyzeCommand } from "./command-policy";
 import {
 	compressCommandStream,
@@ -24,31 +22,9 @@ import {
 import type { WorkerToolResult } from "./types";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_CHARS = DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS;
 const MAX_EXEC_BUFFER_BYTES = 10 * 1024 * 1024;
-
-async function writeCommandOutputArtifact(input: {
-	command: string;
-	exitCode: number;
-	stdout: string;
-	stderr: string;
-	classification: string;
-	startedAt: string;
-	finishedAt: string;
-}): Promise<string> {
-	const dir = path.join(os.tmpdir(), "nightworkers-command-artifacts");
-	await fs.mkdir(dir, { recursive: true });
-	const digest = crypto
-		.createHash("sha256")
-		.update(
-			`${input.startedAt}\n${input.command}\n${input.stdout}\n${input.stderr}`,
-		)
-		.digest("hex")
-		.slice(0, 20);
-	const filePath = path.join(dir, `${digest}.json`);
-	await fs.writeFile(filePath, JSON.stringify(input, null, 2), "utf-8");
-	return filePath;
-}
 
 async function buildCommandOutput(input: {
 	command: string;
@@ -68,9 +44,6 @@ async function buildCommandOutput(input: {
 		input.compressionMode !== "off" &&
 		(input.stdout.length > MAX_OUTPUT_CHARS ||
 			input.stderr.length > MAX_OUTPUT_CHARS);
-	const logArtifactPath = shouldCompress
-		? await writeCommandOutputArtifact(input)
-		: undefined;
 
 	if (!shouldCompress) {
 		return {
@@ -94,14 +67,12 @@ async function buildCommandOutput(input: {
 		content: input.stdout,
 		command: input.command,
 		exitCode: input.exitCode,
-		artifactPath: logArtifactPath,
 	});
 	const stderrCompression = compressCommandStream({
 		streamName: "stderr",
 		content: input.stderr,
 		command: input.command,
 		exitCode: input.exitCode,
-		artifactPath: logArtifactPath,
 	});
 
 	const compression: RunCommandOutput["compression"] = {};
@@ -123,7 +94,6 @@ async function buildCommandOutput(input: {
 		cwd: input.cwd,
 		repositoryRoot: input.repositoryRoot,
 		truncated: stdoutCompression.truncated || stderrCompression.truncated,
-		logArtifactPath,
 		compression:
 			compression.stdout || compression.stderr ? compression : undefined,
 	};
@@ -141,6 +111,7 @@ export interface RunCommandInput {
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
 	environment?: Record<string, string>;
+	confinementRequired?: boolean;
 }
 
 export interface RunCommandOutput {
@@ -179,6 +150,7 @@ export async function runCommandTool(
 		externalAllowedPaths,
 		deniedPaths,
 		environment,
+		confinementRequired = false,
 	} = input;
 
 	const absoluteRepoRoot = path.resolve(repoRoot);
@@ -311,18 +283,45 @@ export async function runCommandTool(
 		maxCommandSeconds,
 	});
 
+	let transientRoot: string | null = null;
 	try {
+		const childEnvironment = buildChildProcessEnvironment({
+			purpose: "workspace_command",
+			overrides: environment,
+		});
+		if (confinementRequired) {
+			transientRoot = await fs.mkdtemp(
+				path.join(os.tmpdir(), "nightworkers-command-"),
+			);
+			childEnvironment.TMPDIR = transientRoot;
+			childEnvironment.TMP = transientRoot;
+			childEnvironment.TEMP = transientRoot;
+		}
+		const confined =
+			confinementRequired && process.platform !== "win32"
+				? await prepareWorkspaceConstrainedShell({
+						command,
+						workspaceRoot: absoluteRepoRoot,
+						environment: childEnvironment,
+					})
+				: null;
 		const managedCommand =
 			process.platform === "win32" ? command : `set -o pipefail\n${command}`;
-		const promise = execAsync(managedCommand, {
+		const executionOptions = {
 			cwd: targetCwd,
 			timeout: effectiveTimeoutSeconds * 1000,
 			maxBuffer: MAX_EXEC_BUFFER_BYTES,
-			...(environment
-				? { env: buildAgentCommandEnvironment(environment) }
-				: {}),
-			...(process.platform === "win32" ? {} : { shell: "/bin/bash" }),
-		});
+			env: childEnvironment,
+		};
+		const promise = confined
+			? execFileAsync(confined.executable, confined.args, executionOptions)
+			: process.platform === "win32"
+				? execAsync(managedCommand, executionOptions)
+				: execFileAsync(
+						"/bin/bash",
+						["--noprofile", "--norc", "-c", managedCommand],
+						executionOptions,
+					);
 
 		const { stdout, stderr } = await promise;
 		const finishedAt = new Date().toISOString();
@@ -386,26 +385,11 @@ export async function runCommandTool(
 				message,
 			},
 		};
+	} finally {
+		if (transientRoot) {
+			await fs.rm(transientRoot, { recursive: true, force: true });
+		}
 	}
-}
-
-function buildAgentCommandEnvironment(
-	workspaceEnvironment: Record<string, string>,
-) {
-	const base = Object.fromEntries(
-		Object.entries(process.env).filter(
-			(entry): entry is [string, string] =>
-				typeof entry[1] === "string" &&
-				!isCredentialFileEnvironmentKey(entry[0]) &&
-				!isRegistryCredentialEnvironmentKey(entry[0], entry[1]),
-		),
-	);
-	const safeWorkspaceEnvironment = Object.fromEntries(
-		Object.entries(workspaceEnvironment).filter(
-			([key, value]) => !isRegistryCredentialEnvironmentKey(key, value),
-		),
-	);
-	return { ...base, ...safeWorkspaceEnvironment };
 }
 
 function streamDigest(value: string) {

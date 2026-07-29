@@ -22,6 +22,24 @@ export function saveGeneralSettings(settings: GeneralSettings) {
 	return apiFetch("/api/settings/general", jsonRequest("POST", settings));
 }
 
+export function previewDataRetentionCleanup() {
+	return apiFetch("/api/settings/data-retention/cleanup/preview", {
+		method: "POST",
+	});
+}
+
+export function executeDataRetentionCleanup(input: {
+	previewId: string;
+	expectedSettingsRevision: number;
+	idempotencyKey: string;
+	reclaimDiskSpace: "incremental" | "skip";
+}) {
+	return apiFetch(
+		"/api/settings/data-retention/cleanup",
+		jsonRequest("POST", input),
+	);
+}
+
 export function fetchFxRates() {
 	return apiFetch("/api/settings/fx");
 }

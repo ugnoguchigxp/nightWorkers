@@ -32,6 +32,7 @@ import type {
 	RealtimeStatus,
 } from "./nightWorkersWorkspaceState";
 import { overlayTaskOperatorSession } from "./taskOperatorSessionProjection";
+import { useLatestRunSubscription } from "./useLatestRunSubscription";
 import { useNightWorkersMutations } from "./useNightWorkersMutations";
 import { useNightWorkersProjectFiles } from "./useNightWorkersProjectFiles";
 import { useNightWorkersRealtime } from "./useNightWorkersRealtime";
@@ -359,23 +360,12 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const latestRunTodos = latestRunDetails?.todos || [];
 	const latestRunReviews = latestRunDetails?.reviews || [];
 
-	useEffect(() => {
-		const runBelongsToActiveSession = Boolean(
-			activeSessionId && latestRun?.id && latestRun.taskId === activeSessionId,
-		);
-		const maxSeq = latestRunEvents.reduce<number | undefined>(
-			(currentMax, event) => {
-				if (typeof event.seq !== "number") return currentMax;
-				if (currentMax === undefined) return event.seq;
-				return Math.max(currentMax, event.seq);
-			},
-			undefined,
-		);
-		latestRunSubscriptionRef.current = {
-			runId: runBelongsToActiveSession ? latestRun?.id || null : null,
-			afterSeq: runBelongsToActiveSession ? maxSeq : undefined,
-		};
-	}, [activeSessionId, latestRun?.id, latestRun?.taskId, latestRunEvents]);
+	useLatestRunSubscription({
+		activeSessionId,
+		latestRun,
+		latestRunEvents,
+		subscriptionRef: latestRunSubscriptionRef,
+	});
 	const sessionPresentation = useNightWorkersSessionPresentation({
 		activeSession,
 		activePlanModeWorkspace,

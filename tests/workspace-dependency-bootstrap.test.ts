@@ -206,14 +206,12 @@ describe("workspace dependency bootstrap execution", () => {
 				"  exit 0",
 				"fi",
 				"mkdir -p node_modules",
-				'echo install >> "$FAKE_BUN_CALLS"',
+				`echo install >> "${callLog}"`,
 			].join("\n"),
 		});
 		await fs.chmod(path.join(binDirectory, "bun"), 0o755);
 		process.env.NIGHTWORKERS_RUNTIME_DIR = runtimeRoot;
 		process.env.PATH = `${binDirectory}${path.delimiter}${originalPath ?? ""}`;
-		process.env.FAKE_BUN_CALLS = callLog;
-
 		const first = await runWorkspaceDependencyBootstrap({
 			workspaceId: "workspace-1",
 			workspaceRoot: root,

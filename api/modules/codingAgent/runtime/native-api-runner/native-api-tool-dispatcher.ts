@@ -1,6 +1,7 @@
 import { mcpClientManager } from "../../../../services/mcp/mcp-client-manager";
 import type { ProviderToolCall } from "../../../../services/structured-llm/tool-calls";
 import { executeWorkerTool } from "../../../../services/worker-tools/dispatcher";
+import { assertRequestedRunWorkspaceRoot } from "../../../../services/workspace/run-workspace-authority.service";
 import {
 	loadCodingAgentContextPacket,
 	requiresCurrentTodo,
@@ -75,6 +76,17 @@ export async function dispatchNativeApiToolCall(input: {
 			input.state,
 		);
 	}
+	const workspaceAuthority = await assertRequestedRunWorkspaceRoot({
+		runId: input.context.runId,
+		taskId: input.context.taskId,
+		requestedRoot: input.context.repoRoot,
+	});
+	if (!workspaceAuthority.ok) {
+		return continueWith(
+			failedToolResult(workspaceAuthority.code, workspaceAuthority.message),
+			input.state,
+		);
+	}
 	await input.sink.emit({
 		type: "tool_call_started",
 		message: `[NativeApiRunner] ${workerToolName} started.`,
@@ -96,6 +108,7 @@ export async function dispatchNativeApiToolCall(input: {
 			input.context,
 		),
 		runtimeEnvironment: readWorkspaceRuntimeEnvironment(input.context),
+		confinementRequired: true,
 	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({

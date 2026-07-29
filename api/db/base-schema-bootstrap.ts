@@ -1,56 +1,7 @@
+import crypto from "node:crypto";
 import { client } from "./client";
 
 export async function ensureBaseNightWorkersTables() {
-	await client.execute(`
-    CREATE TABLE IF NOT EXISTS users (
-      id text PRIMARY KEY NOT NULL,
-      created_at integer NOT NULL,
-      updated_at integer NOT NULL,
-      email text NOT NULL,
-      password_hash text,
-      name text NOT NULL,
-      is_active integer DEFAULT true NOT NULL
-    )
-  `);
-	await client.execute(
-		"CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)",
-	);
-
-	await client.execute(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id text PRIMARY KEY NOT NULL,
-      token text NOT NULL,
-      user_id text NOT NULL,
-      expires_at integer NOT NULL,
-      created_at integer NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
-    )
-  `);
-	await client.execute(
-		"CREATE UNIQUE INDEX IF NOT EXISTS refresh_tokens_token_unique ON refresh_tokens (token)",
-	);
-	await client.execute(
-		"CREATE INDEX IF NOT EXISTS rt_user_id_idx ON refresh_tokens (user_id)",
-	);
-
-	await client.execute(`
-    CREATE TABLE IF NOT EXISTS user_external_accounts (
-      id text PRIMARY KEY NOT NULL,
-      user_id text NOT NULL,
-      provider text NOT NULL,
-      external_id text NOT NULL,
-      email text,
-      created_at integer NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
-    )
-  `);
-	await client.execute(
-		"CREATE UNIQUE INDEX IF NOT EXISTS uex_provider_ext_uidx ON user_external_accounts (provider, external_id)",
-	);
-	await client.execute(
-		"CREATE INDEX IF NOT EXISTS uex_user_id_idx ON user_external_accounts (user_id)",
-	);
-
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS repositories (
       id text PRIMARY KEY NOT NULL,
@@ -91,6 +42,8 @@ export async function ensureBaseNightWorkersTables() {
       description text,
       objective text,
       acceptance_criteria text,
+      revision integer DEFAULT 1 NOT NULL,
+      current_revision_snapshot_id text,
       worktree_path text,
       status text DEFAULT 'draft' NOT NULL,
 	  completed_at integer,
@@ -105,9 +58,44 @@ export async function ensureBaseNightWorkersTables() {
 	await ensureColumn("tasks", "worktree_path", "worktree_path text");
 	await ensureColumn("tasks", "completed_at", "completed_at integer");
 	await ensureColumn("tasks", "archived_at", "archived_at integer");
+	await ensureColumn(
+		"tasks",
+		"revision",
+		"revision integer DEFAULT 1 NOT NULL",
+	);
+	await ensureColumn(
+		"tasks",
+		"current_revision_snapshot_id",
+		"current_revision_snapshot_id text",
+	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS tasks_repository_id_idx ON tasks (repository_id)",
 	);
+	await client.execute(`
+		CREATE TABLE IF NOT EXISTS task_revision_snapshots (
+			id text PRIMARY KEY NOT NULL,
+			created_at integer NOT NULL,
+			updated_at integer NOT NULL,
+			task_id text NOT NULL,
+			revision integer NOT NULL,
+			digest text NOT NULL,
+			title text NOT NULL,
+			description text,
+			objective text,
+			acceptance_criteria text,
+			specification_refs_json text DEFAULT '[]' NOT NULL,
+			source_kind text DEFAULT 'canonical' NOT NULL,
+			created_by text,
+			FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+		)
+	`);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS task_revision_snapshots_task_revision_uidx ON task_revision_snapshots (task_id, revision)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS task_revision_snapshots_task_digest_idx ON task_revision_snapshots (task_id, digest)",
+	);
+	await backfillTaskRevisionSnapshots();
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS task_runs (
@@ -116,6 +104,10 @@ export async function ensureBaseNightWorkersTables() {
       updated_at integer NOT NULL,
       task_id text NOT NULL,
       repository_id text,
+      task_revision_snapshot_id text,
+      task_revision integer,
+      task_digest text,
+      admission_subject_id text,
       status text DEFAULT 'running' NOT NULL,
 	  todo_plan_revision integer DEFAULT 0 NOT NULL,
       worker_kind text DEFAULT 'native-local-worker' NOT NULL,
@@ -132,11 +124,78 @@ export async function ensureBaseNightWorkersTables() {
       log_content text,
       diff_patch text,
       test_results text,
+      details_purged_at integer,
+      purged_detail_count integer DEFAULT 0 NOT NULL,
+      purged_detail_bytes integer DEFAULT 0 NOT NULL,
+      purged_manifest_digest text,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
     )
   `);
 	await ensureColumn("task_runs", "worktree_path", "worktree_path text");
+	await ensureColumn(
+		"task_runs",
+		"workspace_authority_kind",
+		"workspace_authority_kind text",
+	);
+	await ensureColumn(
+		"task_runs",
+		"task_revision_snapshot_id",
+		"task_revision_snapshot_id text",
+	);
+	await ensureColumn("task_runs", "task_revision", "task_revision integer");
+	await ensureColumn("task_runs", "task_digest", "task_digest text");
+	await ensureColumn(
+		"task_runs",
+		"admission_subject_id",
+		"admission_subject_id text",
+	);
+	await ensureColumn("task_runs", "workspace_id", "workspace_id text");
+	await ensureColumn(
+		"task_runs",
+		"workspace_allocation_version",
+		"workspace_allocation_version integer",
+	);
+	await ensureColumn(
+		"task_runs",
+		"repository_identity_revision",
+		"repository_identity_revision integer",
+	);
+	await ensureColumn(
+		"task_runs",
+		"admission_attestation_id",
+		"admission_attestation_id text",
+	);
+	await ensureColumn(
+		"task_runs",
+		"admission_attestation_digest",
+		"admission_attestation_digest text",
+	);
+	await ensureColumn(
+		"task_runs",
+		"admitted_head_sha",
+		"admitted_head_sha text",
+	);
+	await ensureColumn(
+		"task_runs",
+		"details_purged_at",
+		"details_purged_at integer",
+	);
+	await ensureColumn(
+		"task_runs",
+		"purged_detail_count",
+		"purged_detail_count integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"task_runs",
+		"purged_detail_bytes",
+		"purged_detail_bytes integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"task_runs",
+		"purged_manifest_digest",
+		"purged_manifest_digest text",
+	);
 	await ensureColumn(
 		"task_runs",
 		"todo_plan_revision",
@@ -330,6 +389,95 @@ export async function ensureBaseNightWorkersTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS artifacts_run_id_idx ON artifacts (run_id)",
 	);
+}
+
+async function backfillTaskRevisionSnapshots() {
+	await repairCurrentTaskRevisionSnapshotPointers();
+	const rows = await client.execute(`
+		SELECT
+			t.id,
+			t.revision,
+			t.title,
+			t.description,
+			t.objective,
+			t.acceptance_criteria,
+			t.created_by,
+			t.created_at,
+			t.updated_at
+		FROM tasks t
+		LEFT JOIN task_revision_snapshots s
+			ON s.task_id = t.id AND s.revision = t.revision
+		WHERE s.id IS NULL
+	`);
+	for (const row of rows.rows) {
+		const taskId = String(row.id);
+		const revision = Number(row.revision ?? 1);
+		const snapshotId = crypto.randomUUID();
+		const digest = `legacy-unbound:${taskId}:${revision}`;
+		await client.batch(
+			[
+				{
+					sql: `
+						INSERT INTO task_revision_snapshots (
+							id,
+							created_at,
+							updated_at,
+							task_id,
+							revision,
+							digest,
+							title,
+							description,
+							objective,
+							acceptance_criteria,
+							specification_refs_json,
+							source_kind,
+							created_by
+						) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 'legacy_migration', ?)
+					`,
+					args: [
+						snapshotId,
+						Number(row.created_at),
+						Number(row.updated_at),
+						taskId,
+						revision,
+						digest,
+						String(row.title),
+						row.description ?? null,
+						row.objective ?? null,
+						row.acceptance_criteria ?? null,
+						row.created_by ?? null,
+					],
+				},
+				{
+					sql: `
+						UPDATE tasks
+						SET current_revision_snapshot_id = ?
+						WHERE id = ? AND revision = ?
+					`,
+					args: [snapshotId, taskId, revision],
+				},
+			],
+			"write",
+		);
+	}
+}
+
+async function repairCurrentTaskRevisionSnapshotPointers() {
+	await client.execute(`
+		UPDATE tasks
+		SET current_revision_snapshot_id = (
+			SELECT s.id
+			FROM task_revision_snapshots s
+			WHERE s.task_id = tasks.id AND s.revision = tasks.revision
+			LIMIT 1
+		)
+		WHERE current_revision_snapshot_id IS NULL
+		  AND EXISTS (
+			SELECT 1
+			FROM task_revision_snapshots s
+			WHERE s.task_id = tasks.id AND s.revision = tasks.revision
+		  )
+	`);
 }
 
 async function ensureColumn(table: string, column: string, definition: string) {

@@ -50,7 +50,7 @@ function coverageFileRelativePath(fileKey: string, repositoryRoot: string) {
 	const normalizedKey = fileKey.replace(/\\/g, "/");
 	const normalizedRoot = repositoryRoot.replace(/\\/g, "/").replace(/\/+$/, "");
 	const relative = path.isAbsolute(normalizedKey)
-		? path.relative(normalizedRoot, normalizedKey)
+		? path.relative(normalizedRoot, canonicalizePotentialPath(normalizedKey))
 		: normalizedKey;
 	const normalizedRelative = relative.replace(/\\/g, "/").replace(/^\.\//, "");
 	if (
@@ -62,6 +62,19 @@ function coverageFileRelativePath(fileKey: string, repositoryRoot: string) {
 		throw new ValidationError("Coverage file must stay inside the repository");
 	}
 	return normalizedRelative;
+}
+
+function canonicalizePotentialPath(input: string) {
+	let existing = path.resolve(input);
+	const suffix: string[] = [];
+	while (!fs.existsSync(existing)) {
+		const parent = path.dirname(existing);
+		if (parent === existing) break;
+		suffix.unshift(path.basename(existing));
+		existing = parent;
+	}
+	const canonicalExisting = fs.realpathSync(existing);
+	return path.join(canonicalExisting, ...suffix);
 }
 
 function assertPathInsideRoot(root: string, target: string) {
@@ -139,16 +152,18 @@ export async function getCoverageFileReport(input: {
 	if (!run || run.repositoryId !== input.repositoryId)
 		throw new NotFoundError("Project quality run not found");
 
-	const reportRoot = path.join(repository.localPath, "coverage");
+	const repositoryRoot =
+		repository.registeredRootCanonical ?? repository.localPath;
+	const reportRoot = path.join(repositoryRoot, "coverage");
 	const reportIndexPath = path.join(reportRoot, "index.html");
-	const coverage = readCoverageArtifacts(repository.localPath);
+	const coverage = readCoverageArtifacts(repositoryRoot);
 	if (
 		!coverage.coverageSummary ||
 		!coverage.artifactPath ||
 		!fs.existsSync(reportIndexPath)
 	)
 		return unavailableCoverageReport("report_missing");
-	const realRepositoryRoot = fs.realpathSync(repository.localPath);
+	const realRepositoryRoot = fs.realpathSync(repositoryRoot);
 	const realReportRoot = fs.realpathSync(reportRoot);
 	assertPathInsideRoot(realRepositoryRoot, realReportRoot);
 	assertPathInsideRoot(realReportRoot, fs.realpathSync(coverage.artifactPath));
@@ -158,7 +173,7 @@ export async function getCoverageFileReport(input: {
 		fs.promises.stat(coverage.artifactPath),
 		fs.promises.stat(reportIndexPath),
 	]);
-	if (await hasFreshSplitCoverageReport(repository.localPath, summaryStat))
+	if (await hasFreshSplitCoverageReport(repositoryRoot, summaryStat))
 		return unavailableCoverageReport("not_single_report");
 	if (!reportFilesAreFromSameGeneration([summaryStat, indexStat]))
 		return unavailableCoverageReport("report_stale");
@@ -170,10 +185,7 @@ export async function getCoverageFileReport(input: {
 	) {
 		return unavailableCoverageReport("file_report_missing");
 	}
-	const relativePath = coverageFileRelativePath(
-		input.fileKey,
-		repository.localPath,
-	);
+	const relativePath = coverageFileRelativePath(input.fileKey, repositoryRoot);
 	const fileReportPath = path.resolve(reportRoot, `${relativePath}.html`);
 	assertPathInsideRoot(path.resolve(reportRoot), fileReportPath);
 	if (!fs.existsSync(fileReportPath))

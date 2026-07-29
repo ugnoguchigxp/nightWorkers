@@ -14,7 +14,7 @@ export async function readTaskOperatorTask(taskId: string) {
 	if (!row) throw new NotFoundError("Task not found");
 	return {
 		id: row.task.id,
-		revision: row.task.updatedAt.getTime(),
+		revision: row.task.revision,
 		status: row.task.status,
 		title: row.task.title,
 		objective: row.task.objective,

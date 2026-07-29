@@ -6,6 +6,7 @@ import { formatDateTime } from "../../i18n/format";
 import { applyAppLanguage } from "../../i18n/I18nProvider";
 import type { FxRateCache, GeneralSettings } from "../nightworkers/types";
 import { SelectField } from "./SettingsFields";
+import { SettingsRetentionPanel } from "./SettingsRetentionPanel";
 import { fetchPricingRows, importPublicPricingRows } from "./settingsCommands";
 
 const pricingProviderFilter = new Set([
@@ -293,6 +294,7 @@ export function GeneralSettingsPanel({
 					</span>
 				</span>
 			</label>
+			<SettingsRetentionPanel value={value} onChange={onChange} />
 			<div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>

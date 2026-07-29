@@ -41,6 +41,4 @@ export type StartTaskRunOptions = {
 	routeOverride?: StructuredLlmModelTarget | null;
 	/** 起動元roleがRunを関連付けるための、agentsShare経由の中立request。 */
 	runAssociation?: TaskRunAssociationRequest;
-	/** repository bootstrapなど、割り当て前workspaceでの限定実行を明示する。 */
-	allowUnassignedWorkspace?: boolean;
 };

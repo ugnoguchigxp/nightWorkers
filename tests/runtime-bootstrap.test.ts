@@ -38,17 +38,13 @@ describe("desktop runtime bootstrap", () => {
 		const paths = getRuntimePaths(env);
 
 		expect(env.DATABASE_URL).toBe(`file:${path.join(runtimeDir, "sqlite.db")}`);
-		expect(env.JWT_SECRET?.length).toBeGreaterThanOrEqual(32);
-		expect(env.AUTH_MODE).toBe("local");
-		expect(env.API_AUTH_REQUIRED).toBe("false");
-		expect(env.APP_URL).toBe("http://127.0.0.1:40123");
 		expect(fs.existsSync(paths.settingsDir)).toBe(true);
 		expect(fs.existsSync(paths.logsDir)).toBe(true);
 		expect(fs.existsSync(paths.workspaceBootstrapTmpDir)).toBe(true);
 		expect(fs.existsSync(paths.workspaceBootstrapCacheDir)).toBe(true);
 		expect(fs.existsSync(paths.workspaceBootstrapEnvironmentsDir)).toBe(true);
 		expect(fs.existsSync(paths.workspaceBootstrapLogsDir)).toBe(true);
-		expect(fs.existsSync(path.join(paths.secretsDir, "jwt-secret"))).toBe(true);
+		expect(fs.existsSync(path.join(runtimeDir, "secrets"))).toBe(false);
 	});
 
 	it("defaults desktop runtime files under the resource root .nightworkers directory", () => {
@@ -92,21 +88,18 @@ describe("desktop runtime bootstrap", () => {
 		);
 	});
 
-	it("reuses a generated JWT secret on the next bootstrap", () => {
+	it("removes a legacy generated JWT secret during bootstrap", () => {
 		const runtimeDir = makeRuntimeDir();
-		const firstEnv: NodeJS.ProcessEnv = {
+		const secretsDir = path.join(runtimeDir, "secrets");
+		fs.mkdirSync(secretsDir, { recursive: true });
+		fs.writeFileSync(path.join(secretsDir, "jwt-secret"), "legacy-secret");
+		const env: NodeJS.ProcessEnv = {
 			NIGHTWORKERS_DESKTOP: "1",
 			NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
 		};
-		ensureDesktopRuntimeBootstrap(firstEnv);
+		ensureDesktopRuntimeBootstrap(env);
 
-		const secondEnv: NodeJS.ProcessEnv = {
-			NIGHTWORKERS_DESKTOP: "1",
-			NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
-		};
-		ensureDesktopRuntimeBootstrap(secondEnv);
-
-		expect(secondEnv.JWT_SECRET).toBe(firstEnv.JWT_SECRET);
+		expect(fs.existsSync(secretsDir)).toBe(false);
 	});
 });
 

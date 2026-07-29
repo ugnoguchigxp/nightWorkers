@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
+import { listTrackedProjectSecretPaths } from "../../../services/security/project-secret-paths";
 import { readFeaturePlanImplementationPlan } from "../../agentsShare";
 import { buildCodingAgentImplementationHandoffSnapshot } from "../../codingAgent";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
 import { getTaskGitWorkspace } from "../../gitworktree/task-git-workspace.repository";
+import { attestTaskWorkspaceForRun } from "../../gitworktree/workspace-attestation.service";
 import {
 	buildWorkspaceRuntimeEnvironment,
 	type WorkspaceDependencyBootstrapEvidence,
@@ -57,6 +59,17 @@ export async function prepareTaskRunStart(input: {
 			"Repository path is not a directory",
 		);
 	}
+	const trackedSecretPaths = await listTrackedProjectSecretPaths(executionRoot);
+	if (
+		trackedSecretPaths.length > 0 &&
+		!repoInfo.safetyPolicy?.trackedSecretFilesAcknowledged
+	) {
+		throw new AppError(
+			409,
+			"PROJECT_TRACKED_SECRET_CONFIRMATION_REQUIRED",
+			`tracked secret fileの存在をProject設定で明示確認するまでRunを開始できません: ${trackedSecretPaths.join(", ")}`,
+		);
+	}
 	const [
 		projectMeta,
 		securityIntelligence,
@@ -82,53 +95,63 @@ export async function prepareTaskRunStart(input: {
 				bootstrapEvidence: taskGitWorkspace.bootstrapEvidenceJson,
 			}
 		: { status: "not_configured" };
-	if (!input.options.allowUnassignedWorkspace) {
-		const workspace = taskGitWorkspace;
-		if (workspace) {
-			if (
-				!input.task.worktreePath ||
-				workspace.worktreePath !== executionRoot
-			) {
-				throw new AppError(
-					409,
-					"workspace_execution_root_mismatch",
-					"実装は割り当て済みの Git workspace でのみ開始できます",
-				);
-			}
-			if (!["ready", "active"].includes(workspace.status)) {
-				throw new AppError(
-					409,
-					"workspace_not_ready",
-					"割り当て済み Git workspace はまだ実行可能ではありません",
-				);
-			}
-			const dependencyBootstrap = readDependencyBootstrapEvidence(
-				workspace.bootstrapEvidenceJson,
-			);
-			if (!input.options.resumeRunId && !dependencyBootstrap) {
-				throw new AppError(
-					409,
-					"workspace_environment_not_initialized",
-					"環境初期化が完了していないためRunを開始できません",
-				);
-			}
-			const [branch, head] = await Promise.all([
-				runGitCommand(["-C", executionRoot, "branch", "--show-current"]),
-				runGitCommand(["-C", executionRoot, "rev-parse", "HEAD"]),
-			]);
-			if (
-				branch.stdout.trim() !== workspace.sourceBranch ||
-				(workspace.expectedHeadSha &&
-					head.stdout.trim() !== workspace.expectedHeadSha)
-			) {
-				throw new AppError(
-					409,
-					"workspace_head_mismatch",
-					"実行開始前に割り当て済み Git workspace の branch または HEAD が変化しました",
-				);
-			}
-		}
+	const workspace = taskGitWorkspace;
+	if (!workspace) {
+		throw new AppError(
+			409,
+			"workspace_binding_required",
+			"実装は登録済みProjectから割り当てられたTask workspaceでのみ開始できます",
+		);
 	}
+	if (!input.task.worktreePath || workspace.worktreePath !== executionRoot) {
+		throw new AppError(
+			409,
+			"workspace_execution_root_mismatch",
+			"実装は割り当て済みの Git workspace でのみ開始できます",
+		);
+	}
+	if (!["ready", "active"].includes(workspace.status)) {
+		throw new AppError(
+			409,
+			"workspace_not_ready",
+			"割り当て済み Git workspace はまだ実行可能ではありません",
+		);
+	}
+	const admissionDependencyBootstrap = readDependencyBootstrapEvidence(
+		workspace.bootstrapEvidenceJson,
+	);
+	if (!input.options.resumeRunId && !admissionDependencyBootstrap) {
+		throw new AppError(
+			409,
+			"workspace_environment_not_initialized",
+			"環境初期化が完了していないためRunを開始できません",
+		);
+	}
+	const [branch, head] = await Promise.all([
+		runGitCommand(["-C", executionRoot, "branch", "--show-current"]),
+		runGitCommand(["-C", executionRoot, "rev-parse", "HEAD"]),
+	]);
+	if (
+		branch.stdout.trim() !== workspace.sourceBranch ||
+		(workspace.expectedHeadSha &&
+			head.stdout.trim() !== workspace.expectedHeadSha)
+	) {
+		throw new AppError(
+			409,
+			"workspace_head_mismatch",
+			"実行開始前に割り当て済み Git workspace の branch または HEAD が変化しました",
+		);
+	}
+	const resumeCommitRecord = input.options.resumeRunId
+		? await repo.getTaskRunCommitRecord(input.options.resumeRunId)
+		: null;
+	const workspaceAdmission = await attestTaskWorkspaceForRun({
+		taskId: input.task.id,
+		requireClean: !input.options.resumeRunId,
+		allowedDirtyPaths: input.options.resumeRunId
+			? (resumeCommitRecord?.ownedCandidatePathsJson ?? [])
+			: undefined,
+	});
 	const executionModeSource = input.options.executionModeSource ?? "explicit";
 	const dependencyBootstrap = taskGitWorkspace
 		? readDependencyBootstrapEvidence(taskGitWorkspace.bootstrapEvidenceJson)
@@ -209,6 +232,7 @@ export async function prepareTaskRunStart(input: {
 				)
 			: null,
 		repositoryMaterializationSnapshot,
+		workspaceAdmission,
 		workspaceRuntimeEnvironment,
 		compiledPromptText,
 	};

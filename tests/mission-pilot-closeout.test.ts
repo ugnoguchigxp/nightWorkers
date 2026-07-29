@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
@@ -22,10 +22,25 @@ import {
 	recoverMissionPilotCommittedCloseout,
 } from "../api/modules/missionPilot/mission-pilot-closeout.service";
 
+const closeoutAdmissionMocks = vi.hoisted(() => ({
+	admitCloseout: vi.fn(async () => ({
+		id: "test-closeout-admission",
+		status: "admitted",
+	})),
+	consumeCloseoutAdmission: vi.fn(async () => ({ status: "consumed" })),
+}));
+
+vi.mock(
+	"../api/modules/gitCloseout/closeout-admission.service",
+	() => closeoutAdmissionMocks,
+);
+
 const repositoryIds: string[] = [];
 const tempDirectories: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());
 afterEach(async () => {
+	closeoutAdmissionMocks.admitCloseout.mockClear();
+	closeoutAdmissionMocks.consumeCloseoutAdmission.mockClear();
 	for (const id of repositoryIds.splice(0))
 		await db.delete(repositories).where(eq(repositories.id, id));
 	for (const directory of tempDirectories.splice(0))
@@ -252,6 +267,12 @@ describe("Mission Pilot aggregate Git closeout", () => {
 			.where(eq(missionPilotSessions.id, sessionId));
 
 		const result = await executeMissionPilotCloseout(sessionId);
+		expect(closeoutAdmissionMocks.admitCloseout).toHaveBeenCalledWith(
+			implementationRunId,
+		);
+		expect(
+			closeoutAdmissionMocks.consumeCloseoutAdmission,
+		).toHaveBeenCalledTimes(1);
 		expect(result.status).toBe("archived");
 		expect(result.pushStatus).toBe("skipped");
 		expect(git(repoRoot, "show", "--format=", "--name-only", "HEAD")).toBe(

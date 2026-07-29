@@ -66,7 +66,7 @@ export const questionnaireRouter = createOpenApiRouter()
 		withOpenApiRouteError(saveDesignQuestionnaireAnswersRoute, async (c) => {
 			const taskId = c.req.param("id");
 			const projection = await readTaskOperatorProjection(taskId, {
-				...humanTaskOperatorQueryContext(c.get("user")?.userId),
+				...humanTaskOperatorQueryContext(),
 			});
 			const session = await executeTaskOperatorCommand({
 				taskId,
@@ -77,7 +77,6 @@ export const questionnaireRouter = createOpenApiRouter()
 					answers: c.req.valid("json").answers,
 				},
 				context: humanTaskOperatorCommandContext({
-					userId: c.get("user")?.userId,
 					idempotencyKey: c.req.header("Idempotency-Key"),
 				}),
 			});

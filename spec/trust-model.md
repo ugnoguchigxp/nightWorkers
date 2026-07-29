@@ -21,6 +21,17 @@ NightWorkers は local-first の自律開発 control plane であり、信頼境
 - Repository writes は worker-tool dispatcher 経由に集約する。
 - Path policy、command policy、timeout、blocked command は tool policy gate で評価する。
 - Tool calls、policy blocks、diffs、test results、final reports は run evidence として保存する。
+- Coding Agent Run は登録済みProject identity revision、Task workspace allocation、admission attestation、canonical rootを一体のbindingとして保持する。再開時や各workspace tool実行時に一つでも不一致ならfail-closeする。
+- `dirty`、conflict、ahead／behindは観測時刻、比較ref、比較SHAを伴うappend-only attestationで記録する。
+- workspace file artifactはTask worktree内の相対path、allocation version、観測HEAD、content SHA-256が一致する場合だけ登録できる。temporary root、別repository、secret fileは成果物にできない。
+
+## Secret Boundary
+
+- Provider credentialはOS secret store（macOS Keychain、Windows Credential Manager、Linux libsecret）へ保存し、利用不能時はsession-onlyとする。SQLite fallbackは行わない。
+- Project `.env`の正本はProject Tree内のuser-managed fileである。NightWorkersはbase worktreeからTask worktreeへcopyせず、必要な場合はユーザーがTask worktreeへ用意する。
+- `.env`、private key、registry credential fileはfile read、search、structure inspection、Project exploration、artifact登録から除外する。
+- child process environmentはpurpose別の共通builderで明示構築し、NightWorkers/provider credentialをGit、Hook、MCP stdio、bootstrap、Task worker、workspace commandへambient継承しない。
+- event、artifact、Run、message、background processへ書く値はpersistence firewallを通す。raw command outputをtemporary artifactやSQLiteへ保存しない。
 
 ## MCP And Hooks
 
@@ -32,7 +43,7 @@ NightWorkers は local-first の自律開発 control plane であり、信頼境
 ## Operator Checklist
 
 - [ ] Sensitive repository を登録する前に、Provider、MCP、Hooks の設定を確認した。
-- [ ] `API_AUTH_REQUIRED=false` のまま localhost 以外へ露出していない。
+- [ ] `HOST`がloopback addressのままで、proxyやport forwardにより外部公開されていない。
 - [ ] MCP / Hooks に secret-like headers や env values を入れていない。
 - [ ] Implementation Run の managed evidence と `completion_check` を確認した。
 - [ ] Review Run が `done` で、未処置 blocking finding がない。

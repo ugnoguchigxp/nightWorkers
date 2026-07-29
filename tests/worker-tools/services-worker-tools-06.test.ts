@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	analyzeCommand,
 	gitDiffTool,
+	readFileTool,
 	runCheckTool,
 	runCommandTool,
 	runVerificationTool,
+	searchFilesTool,
 } from "../../api/services/worker-tools";
 
 let dummyRepoDir: string;
@@ -24,6 +26,37 @@ afterEach(async () => {
 });
 
 describe("Worker Tools Unit Tests", () => {
+	it("never exposes Project secret files through file tools", async () => {
+		await fs.writeFile(path.join(dummyRepoDir, ".env"), "API_KEY=raw-secret");
+		await fs.writeFile(
+			path.join(dummyRepoDir, ".env.example"),
+			"API_KEY=example",
+		);
+		await fs.writeFile(path.join(dummyRepoDir, "config.txt"), "API_KEY=public");
+
+		const readSecret = await readFileTool({
+			filePath: ".env",
+			repoRoot: dummyRepoDir,
+		});
+		const search = await searchFilesTool({
+			query: "API_KEY",
+			repoRoot: dummyRepoDir,
+		});
+		const readExample = await readFileTool({
+			filePath: ".env.example",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(readSecret.ok).toBe(false);
+		expect(readSecret.error?.code).toBe("ACCESS_DENIED");
+		expect(search.ok).toBe(true);
+		expect(search.payload.matches.map((match) => match.filePath)).toEqual([
+			"config.txt",
+		]);
+		expect(readExample.ok).toBe(true);
+		expect(readExample.payload.content).toContain("example");
+	});
+
 	it("blocks chained commands", async () => {
 		const result = await runCommandTool({
 			command: "pnpm test && rm -rf .",
@@ -62,7 +95,7 @@ describe("Worker Tools Unit Tests", () => {
 		}
 	});
 
-	it("compresses large command output by default and stores full output as an artifact", async () => {
+	it("compresses large command output without persisting raw output", async () => {
 		const longOutput = "x".repeat(21000);
 		const result = await runCommandTool({
 			command: `echo "${longOutput}"`,
@@ -73,13 +106,7 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.truncated).toBe(true);
 		expect(result.payload.stdout).toContain("[command-output-compressed]");
 		expect(result.payload.compression?.stdout?.strategy).toBe("log_error_tail");
-		expect(result.payload.logArtifactPath).toBeTruthy();
-
-		const artifact = await fs.readFile(
-			result.payload.logArtifactPath as string,
-			"utf-8",
-		);
-		expect(artifact).toContain(longOutput);
+		expect(result.payload.logArtifactPath).toBeUndefined();
 	});
 
 	it("keeps full command output when compressionMode is explicitly off", async () => {
@@ -97,6 +124,48 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.logArtifactPath).toBeUndefined();
 	});
 
+	it.runIf(process.platform === "darwin")(
+		"confines shell reads and writes to the workspace",
+		async () => {
+			execFileSync("git", ["init", "-b", "main", dummyRepoDir], {
+				stdio: "ignore",
+			});
+			await fs.writeFile(
+				path.join(dummyRepoDir, "inside.txt"),
+				"inside\n",
+				"utf-8",
+			);
+			const outsidePath = path.join(
+				os.tmpdir(),
+				`nightworkers-confinement-${crypto.randomUUID()}.txt`,
+			);
+			await fs.writeFile(outsidePath, "outside\n", "utf-8");
+
+			const inside = await runCommandTool({
+				command: "cat inside.txt",
+				repoRoot: dummyRepoDir,
+				confinementRequired: true,
+			});
+			const outsideRead = await runCommandTool({
+				command: `cat "${outsidePath}"`,
+				repoRoot: dummyRepoDir,
+				confinementRequired: true,
+			});
+			const outsideWrite = await runCommandTool({
+				command: `echo escaped > "${outsidePath}"`,
+				repoRoot: dummyRepoDir,
+				confinementRequired: true,
+			});
+
+			expect(inside.ok).toBe(true);
+			expect(inside.payload.stdout).toContain("inside");
+			expect(outsideRead.ok).toBe(false);
+			expect(outsideWrite.ok).toBe(false);
+			expect(await fs.readFile(outsidePath, "utf-8")).toBe("outside\n");
+			await fs.rm(outsidePath, { force: true });
+		},
+	);
+
 	it("inherits default output compression for verification commands", async () => {
 		const longOutput = "x".repeat(21000);
 		const result = await runVerificationTool({
@@ -110,7 +179,7 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.truncated).toBe(true);
 		expect(result.payload.stdout).toContain("OK verify");
 		expect(result.payload.reason).toBe("large verification output fixture");
-		expect(result.payload.logArtifactPath).toBeTruthy();
+		expect(result.payload.logArtifactPath).toBeUndefined();
 	});
 
 	it("resolves bare run_check script names and keeps artifact paths out of the model summary", async () => {

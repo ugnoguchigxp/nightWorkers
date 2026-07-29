@@ -127,12 +127,8 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     NIGHTWORKERS_EXECUTOR_MODE: 'in_process',
     NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: 'coverage',
     DATABASE_URL: pathToFileURL(databasePath).href,
-    JWT_SECRET: 'nightworkers-e2e-isolated-jwt-secret-32-chars',
-    AUTH_MODE: 'local',
-    API_AUTH_REQUIRED: 'false',
     HOST: '127.0.0.1',
     PORT: String(apiPort),
-    APP_URL: `http://localhost:${webPort}`,
     CORS_ORIGIN: `http://localhost:${webPort}`,
     AWS_EC2_METADATA_DISABLED: 'true',
   };

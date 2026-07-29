@@ -326,7 +326,7 @@ export async function updateTask(
 		data,
 		options?.expectedRevision === undefined
 			? undefined
-			: { expectedUpdatedAt: new Date(options.expectedRevision) },
+			: { expectedRevision: options.expectedRevision },
 	);
 	if (!updated && options?.expectedRevision !== undefined) {
 		const current = await repo.getTask(id);
@@ -335,7 +335,7 @@ export async function updateTask(
 			"TASK_REVISION_CONFLICT",
 			"Task revision changed; re-read the Task workspace.",
 			{
-				currentTaskRevision: current?.updatedAt.getTime() ?? null,
+				currentTaskRevision: current?.revision ?? null,
 			},
 		);
 	}

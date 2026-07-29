@@ -295,7 +295,7 @@ describe("Agent Hooks runner", () => {
 		expect(result.reason).not.toContain("should-not-leak");
 		expect(result.runs[0]?.message).not.toContain("should-not-leak");
 		expect(JSON.stringify(events)).not.toContain("should-not-leak");
-		expect(result.reason).toContain("[redacted]");
+		expect(result.reason).toContain("[REDACTED]");
 	});
 
 	it("keeps HTTP hook failure summaries actionable without response secret leakage", async () => {

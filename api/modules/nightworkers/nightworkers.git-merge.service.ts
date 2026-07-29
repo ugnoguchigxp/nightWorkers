@@ -11,6 +11,10 @@ import {
 	tasks,
 } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
+import {
+	admitCloseout,
+	consumeCloseoutAdmission,
+} from "../gitCloseout/closeout-admission.service";
 import { listRepositoryWorktrees } from "../gitworktree/gitworktree.service";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as mergeRepo from "./nightworkers.git-merge.repository";
@@ -96,6 +100,13 @@ export async function previewTaskRunMerge(input: {
 			409,
 			"merge_record_changed",
 			"Merge record changed; refresh and retry",
+		);
+	const admission = await admitCloseout(input.runId);
+	if (admission.status !== "admitted")
+		throw new AppError(
+			409,
+			"closeout_admission_consumed",
+			"Closeout Admission has already been consumed",
 		);
 	const [repository] = await db
 		.select()
@@ -243,6 +254,8 @@ export async function previewTaskRunMerge(input: {
 				sourceHead,
 				targetHead,
 				alreadyIntegrated: ancestor,
+				closeoutAdmissionId: admission.id,
+				closeoutAdmissionDigest: admission.admissionDigest,
 			},
 		},
 	});
@@ -389,6 +402,29 @@ async function executeTaskRunMergeUnlocked(input: {
 			"merge_preview_stale",
 			"A current merge preview is required",
 		);
+	const admission = await admitCloseout(input.runId);
+	if (admission.status !== "admitted")
+		throw new AppError(
+			409,
+			"closeout_admission_consumed",
+			"Closeout Admission has already been consumed",
+		);
+	const previewEvidence =
+		record.previewEvidenceJson &&
+		typeof record.previewEvidenceJson === "object" &&
+		!Array.isArray(record.previewEvidenceJson)
+			? (record.previewEvidenceJson as Record<string, unknown>)
+			: {};
+	if (
+		previewEvidence.closeoutAdmissionId !== admission.id ||
+		previewEvidence.closeoutAdmissionDigest !== admission.admissionDigest
+	) {
+		throw new AppError(
+			409,
+			"merge_preview_stale",
+			"Closeout evidence changed after merge preview",
+		);
+	}
 	const [repository] = await db
 		.select()
 		.from(repositories)
@@ -466,6 +502,7 @@ async function executeTaskRunMergeUnlocked(input: {
 			targetHeadAfter: after,
 			mergeCommitSha: after,
 		});
+		await consumeCloseoutAdmission(admission.id);
 		const [workspace] = await db
 			.select()
 			.from(taskGitWorkspaces)

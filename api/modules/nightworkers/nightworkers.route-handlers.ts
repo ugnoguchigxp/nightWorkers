@@ -58,7 +58,7 @@ export const startTaskRunHandler = withOpenApiRouteError(
 		const id = c.req.param("id");
 		const projection = await readTaskOperatorProjection(
 			id,
-			humanTaskOperatorQueryContext(c.get("user")?.userId),
+			humanTaskOperatorQueryContext(),
 		);
 		const result = await executeTaskOperatorCommand({
 			taskId: id,
@@ -70,7 +70,6 @@ export const startTaskRunHandler = withOpenApiRouteError(
 					`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
 			},
 			context: humanTaskOperatorCommandContext({
-				userId: c.get("user")?.userId,
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
@@ -106,7 +105,7 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 		if (!currentRun) return routeNotFound(c, "Run not found");
 		const projection = await readTaskOperatorProjection(
 			currentRun.taskId,
-			humanTaskOperatorQueryContext(c.get("user")?.userId),
+			humanTaskOperatorQueryContext(),
 		);
 		const run = await executeTaskOperatorCommand({
 			taskId: currentRun.taskId,
@@ -114,7 +113,6 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 			expectedTaskRevision: projection.task.revision,
 			arguments: { runId: id },
 			context: humanTaskOperatorCommandContext({
-				userId: c.get("user")?.userId,
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
@@ -130,7 +128,7 @@ export const resumeTaskRunTodoHandler = withOpenApiRouteError(
 		if (!currentRun) return routeNotFound(c, "Run not found");
 		const projection = await readTaskOperatorProjection(
 			currentRun.taskId,
-			humanTaskOperatorQueryContext(c.get("user")?.userId),
+			humanTaskOperatorQueryContext(),
 		);
 		const result = await executeTaskOperatorCommand({
 			taskId: currentRun.taskId,
@@ -143,7 +141,6 @@ export const resumeTaskRunTodoHandler = withOpenApiRouteError(
 				userContext: input.userContext,
 			},
 			context: humanTaskOperatorCommandContext({
-				userId: c.get("user")?.userId,
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});

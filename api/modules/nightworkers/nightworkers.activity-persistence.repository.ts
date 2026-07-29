@@ -4,10 +4,13 @@ import type {
 	TraceChannel,
 	TraceProvenance,
 } from "../../../shared/schemas/trace-provenance.schema";
+import type { WorkspaceArtifactRef } from "../../../shared/schemas/workspace-authority.schema";
 import { db } from "../../db/client";
 import { activityArtifacts, activityEvents } from "../../db/schema";
 import { logEvent } from "../../lib/logger";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
+import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
+import { validateWorkspaceArtifactRef } from "../../services/workspace/workspace-artifact-provenance";
 import { normalizeActivityKind } from "./nightworkers.activity.repository";
 import type {
 	ActivitySource,
@@ -26,7 +29,24 @@ export async function appendActivityArtifact(data: {
 	path?: string | null;
 	contentText?: string | null;
 	metadataJson?: unknown;
+	workspaceArtifactRef?: WorkspaceArtifactRef;
 }) {
+	if (
+		["workspace_file", "workspace_diff", "verification_projection"].includes(
+			data.kind,
+		) &&
+		(!data.runId || !data.workspaceArtifactRef)
+	) {
+		throw new Error("WORKSPACE_ARTIFACT_PROVENANCE_REQUIRED");
+	}
+	const workspaceProvenance =
+		data.runId && data.workspaceArtifactRef
+			? await validateWorkspaceArtifactRef({
+					runId: data.runId,
+					ref: data.workspaceArtifactRef,
+				})
+			: null;
+	data = sanitizePersistenceValue(data);
 	const [artifact] = await db
 		.insert(activityArtifacts)
 		.values({
@@ -35,7 +55,16 @@ export async function appendActivityArtifact(data: {
 			kind: data.kind,
 			path: data.path ?? null,
 			contentText: data.contentText ?? null,
-			metadataJson: data.metadataJson ?? null,
+			metadataJson: workspaceProvenance
+				? {
+						...(data.metadataJson &&
+						typeof data.metadataJson === "object" &&
+						!Array.isArray(data.metadataJson)
+							? data.metadataJson
+							: {}),
+						workspaceProvenance,
+					}
+				: (data.metadataJson ?? null),
 		})
 		.returning();
 	return artifact;
@@ -67,6 +96,7 @@ export async function appendActivityEvent(data: {
 
 async function appendActivityEventBatch(batch: AppendActivityEventInput[]) {
 	if (batch.length === 0) return [];
+	batch = sanitizePersistenceValue(batch);
 	const { insertedEvents, resultEvents } = await db.transaction(async (tx) => {
 		const resultEvents = new Array(batch.length).fill(null);
 		const insertedEvents: Array<typeof activityEvents.$inferSelect> = [];

@@ -12,6 +12,8 @@ import {
 	verificationEvidenceCases,
 	verificationEvidenceRuns,
 } from "../../db/verification-schema";
+import { AppError } from "../../lib/errors";
+import { canonicalDigest } from "../agentsShare";
 
 export async function createVerificationDocument(input: {
 	taskId: string;
@@ -163,60 +165,122 @@ export async function createVerificationEvidenceRun(input: {
 	taskId: string;
 	runId?: string | null;
 	verificationDocumentId?: string | null;
+	subjectId?: string | null;
 	checkKind: string;
 	evidence: NormalizedVerificationEvidence;
 }) {
-	const [row] = await db
-		.insert(verificationEvidenceRuns)
-		.values({
-			id: input.evidence.id,
-			taskId: input.taskId,
-			runId: input.runId ?? null,
-			verificationDocumentId: input.verificationDocumentId ?? null,
-			checkKind: input.checkKind,
-			command: input.evidence.command,
-			cwd: input.evidence.cwd,
-			exitCode: input.evidence.exitCode,
-			runner: input.evidence.runner,
-			rawStdoutArtifactId: input.evidence.rawStdoutArtifactId,
-			rawStderrArtifactId: input.evidence.rawStderrArtifactId,
-			parsedArtifactId: input.evidence.parsedArtifactId ?? null,
-			summaryJson: input.evidence.summary,
-			commandLevelConditionIdsJson: input.evidence.commandLevelConditionIds,
-			sourceSnapshotJson: input.evidence.sourceSnapshot ?? null,
-			testExecutionObserved: input.evidence.testExecutionObserved,
-			sourceMutatedDuringCheck: input.evidence.sourceMutatedDuringCheck,
-			startedAt: new Date(input.evidence.startedAt),
-			finishedAt: new Date(input.evidence.finishedAt),
-		})
-		.onConflictDoUpdate({
-			target: verificationEvidenceRuns.id,
-			set: {
-				updatedAt: new Date(),
-				exitCode: input.evidence.exitCode,
-				summaryJson: input.evidence.summary,
-			},
-		})
-		.returning();
-	if (!row) throw new Error("Failed to create verification evidence run");
-	if (input.evidence.cases.length > 0) {
-		await db
-			.delete(verificationEvidenceCases)
-			.where(eq(verificationEvidenceCases.evidenceRunId, row.id));
-		await db.insert(verificationEvidenceCases).values(
-			input.evidence.cases.map((testCase) => ({
-				evidenceRunId: row.id,
-				verificationDocumentId: input.verificationDocumentId ?? null,
-				conditionIdsJson: testCase.conditionIds,
-				name: testCase.name,
-				filePath: testCase.filePath ?? null,
-				status: testCase.status,
-				durationMs: testCase.durationMs ?? null,
-				failureMessage: testCase.failureMessage ?? null,
-			})),
-		);
-	}
-	return row;
+	const values = {
+		id: input.evidence.id,
+		taskId: input.taskId,
+		runId: input.runId ?? null,
+		verificationDocumentId: input.verificationDocumentId ?? null,
+		subjectId: input.subjectId ?? null,
+		checkKind: input.checkKind,
+		command: input.evidence.command,
+		cwd: input.evidence.cwd,
+		exitCode: input.evidence.exitCode,
+		runner: input.evidence.runner,
+		rawStdoutArtifactId: input.evidence.rawStdoutArtifactId,
+		rawStderrArtifactId: input.evidence.rawStderrArtifactId,
+		parsedArtifactId: input.evidence.parsedArtifactId ?? null,
+		summaryJson: input.evidence.summary,
+		commandLevelConditionIdsJson: input.evidence.commandLevelConditionIds,
+		sourceSnapshotJson: input.evidence.sourceSnapshot ?? null,
+		testExecutionObserved: input.evidence.testExecutionObserved ?? false,
+		sourceMutatedDuringCheck: input.evidence.sourceMutatedDuringCheck ?? false,
+		startedAt: new Date(input.evidence.startedAt),
+		finishedAt: new Date(input.evidence.finishedAt),
+	};
+	return db.transaction(async (tx) => {
+		const [created] = await tx
+			.insert(verificationEvidenceRuns)
+			.values(values)
+			.onConflictDoNothing({ target: verificationEvidenceRuns.id })
+			.returning();
+		if (!created) {
+			const [existing] = await tx
+				.select()
+				.from(verificationEvidenceRuns)
+				.where(eq(verificationEvidenceRuns.id, input.evidence.id));
+			if (!existing)
+				throw new Error("Failed to read existing verification evidence run");
+			if (
+				verificationEvidenceIdentity(existing) !==
+				verificationEvidenceIdentity(values)
+			) {
+				throw new AppError(
+					409,
+					"verification_evidence_conflict",
+					"Verification Evidence ID is already bound to different evidence.",
+				);
+			}
+			return existing;
+		}
+		if (input.evidence.cases.length > 0) {
+			await tx.insert(verificationEvidenceCases).values(
+				input.evidence.cases.map((testCase) => ({
+					evidenceRunId: created.id,
+					verificationDocumentId: input.verificationDocumentId ?? null,
+					conditionIdsJson: testCase.conditionIds,
+					name: testCase.name,
+					filePath: testCase.filePath ?? null,
+					status: testCase.status,
+					durationMs: testCase.durationMs ?? null,
+					failureMessage: testCase.failureMessage ?? null,
+				})),
+			);
+		}
+		return created;
+	});
+}
+
+function verificationEvidenceIdentity(
+	value: Pick<
+		typeof verificationEvidenceRuns.$inferSelect,
+		| "id"
+		| "taskId"
+		| "runId"
+		| "verificationDocumentId"
+		| "subjectId"
+		| "checkKind"
+		| "command"
+		| "cwd"
+		| "exitCode"
+		| "runner"
+		| "rawStdoutArtifactId"
+		| "rawStderrArtifactId"
+		| "parsedArtifactId"
+		| "summaryJson"
+		| "commandLevelConditionIdsJson"
+		| "sourceSnapshotJson"
+		| "testExecutionObserved"
+		| "sourceMutatedDuringCheck"
+		| "startedAt"
+		| "finishedAt"
+	>,
+) {
+	return canonicalDigest({
+		id: value.id,
+		taskId: value.taskId,
+		runId: value.runId,
+		verificationDocumentId: value.verificationDocumentId,
+		subjectId: value.subjectId,
+		checkKind: value.checkKind,
+		command: value.command,
+		cwd: value.cwd,
+		exitCode: value.exitCode,
+		runner: value.runner,
+		rawStdoutArtifactId: value.rawStdoutArtifactId,
+		rawStderrArtifactId: value.rawStderrArtifactId,
+		parsedArtifactId: value.parsedArtifactId,
+		summaryJson: value.summaryJson,
+		commandLevelConditionIdsJson: value.commandLevelConditionIdsJson,
+		sourceSnapshotJson: value.sourceSnapshotJson,
+		testExecutionObserved: value.testExecutionObserved,
+		sourceMutatedDuringCheck: value.sourceMutatedDuringCheck,
+		startedAt: value.startedAt.toISOString(),
+		finishedAt: value.finishedAt.toISOString(),
+	});
 }
 
 export async function listVerificationEvidenceRuns(ids: string[]) {

@@ -7,7 +7,6 @@ export type NightWorkersRuntimePaths = {
 	databasePath: string;
 	settingsDir: string;
 	logsDir: string;
-	secretsDir: string;
 	artifactsDir: string;
 	backupsDir: string;
 	workspaceBootstrapDir: string;
@@ -56,7 +55,6 @@ export function getRuntimePaths(
 		databasePath: path.join(runtimeRoot, "sqlite.db"),
 		settingsDir,
 		logsDir: path.join(runtimeRoot, "logs"),
-		secretsDir: path.join(runtimeRoot, "secrets"),
 		artifactsDir: path.join(runtimeRoot, "artifacts"),
 		backupsDir: path.join(runtimeRoot, "backups"),
 		workspaceBootstrapDir,

@@ -6,6 +6,7 @@ import {
 	projectExplorationPathCatalogResultSchema,
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { mcpClientManager } from "../../../services/mcp/mcp-client-manager";
+import { isProjectSecretPath } from "../../../services/security/project-secret-paths";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import {
 	type ProjectSourceStateReader,
@@ -176,7 +177,8 @@ function projectModelSafeCatalog(
 ) {
 	const forbiddenValues = sensitiveValues(projectPath, provenance);
 	const keepSafe = (value: string) =>
-		!containsSensitiveValue(value, forbiddenValues);
+		!containsSensitiveValue(value, forbiddenValues) &&
+		!isProjectSecretPath(value);
 	return {
 		ok: true,
 		status: data.status,

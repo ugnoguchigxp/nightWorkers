@@ -6,6 +6,7 @@ import {
 	DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY,
 	type StructuredProviderExecutionPolicy,
 } from "../../modules/agentsShare";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
 import { normalizeProviderUsage } from "../llm-usage";
 import { RuntimeSessionStateStore } from "../runtime-session-state";
 import { resolveCodexEndpointAccessToken } from "./codex-auth-scope";
@@ -108,6 +109,11 @@ export async function callCodexProvider(
 		endpoint?.models[0] ||
 		getStructuredLlmSetting(settings, "CODEX_MODEL", "gpt-5.4-mini");
 	const accessToken = resolveCodexEndpointAccessToken(endpoint?.id, settings);
+	if (accessToken) {
+		throw new Error(
+			"CODEX_CHILD_PROVIDER_CREDENTIAL_BLOCKED: NightWorkersのprovider credentialをCodex SDK child processへ渡すことはできません。",
+		);
+	}
 	const modelReasoningEffort = toCodexReasoningEffort(
 		input.options.normalizedRequest?.thinkingDepth ||
 			getStructuredLlmSetting(settings, "CODEX_MODEL_REASONING_EFFORT") ||
@@ -130,7 +136,6 @@ export async function callCodexProvider(
 		const codex = new Codex({
 			env: {
 				...sanitizeCodexProviderEnv(process.env),
-				...(accessToken ? { CODEX_ACCESS_TOKEN: accessToken } : {}),
 				...(isolatedCodexHome ? { CODEX_HOME: isolatedCodexHome } : {}),
 			},
 			config: {
@@ -527,16 +532,8 @@ function describeCodexAgenticItem(item: unknown) {
 export function sanitizeCodexProviderEnv(
 	env: NodeJS.ProcessEnv,
 ): Record<string, string> {
-	return Object.fromEntries(
-		Object.entries(env).filter((entry): entry is [string, string] => {
-			const [key, value] = entry;
-			return (
-				typeof value === "string" &&
-				key !== "CODEX_THREAD_ID" &&
-				key !== "CODEX_INTERNAL_ORIGINATOR_OVERRIDE" &&
-				key !== "CODEX_SHELL" &&
-				key !== "CODEX_CI"
-			);
-		}),
-	);
+	return buildChildProcessEnvironment({
+		purpose: "provider_runtime",
+		source: env,
+	});
 }

@@ -1,5 +1,6 @@
 import { AppError } from "../../lib/errors";
 import { digestText } from "../../services/text-digest";
+import { getLatestFinalResponseEvidence } from "../evidenceLedger";
 import * as repo from "../nightworkers/nightworkers.repository";
 import type { ReviewTarget, ReviewTargetManifest } from "./review-mode.model";
 
@@ -30,16 +31,31 @@ export async function buildReviewTargetManifest(input: {
 				"Review target source run is missing or belongs to another task.",
 			);
 		}
+		const finalResponseEvidence = await getLatestFinalResponseEvidence(run.id);
+		const canonicalBinding =
+			Boolean(
+				run.taskRevisionSnapshotId &&
+					run.taskRevision !== null &&
+					run.taskDigest &&
+					finalResponseEvidence?.subjectId,
+			) && finalResponseEvidence?.bindingStatus === "canonical";
 		sourceRuns.push({
 			runId: run.id,
 			role: source.role,
 			status: run.status,
 			diffDigest: digestText(run.diffPatch ?? ""),
 			finalReportDigest: digestText(run.finalReport ?? ""),
+			taskRevisionSnapshotId: run.taskRevisionSnapshotId,
+			taskRevision: run.taskRevision,
+			taskDigest: run.taskDigest,
+			subjectId: finalResponseEvidence?.subjectId ?? null,
+			finalResponseEvidenceId: finalResponseEvidence?.id ?? null,
+			finalResponseEvidenceDigest: finalResponseEvidence?.contentDigest ?? null,
+			bindingStatus: canonicalBinding ? "canonical" : "legacy_unbound",
 		});
 	}
 	const unsigned = {
-		version: 2 as const,
+		version: 3 as const,
 		taskId: input.target.taskId,
 		contextDigest: input.context?.contextDigest ?? null,
 		verificationSnapshotId: input.context?.verificationSnapshotId ?? null,
@@ -66,7 +82,7 @@ export function readReviewTargetManifest(
 	const context = record(contextSnapshot);
 	const reviewRun = record(context.reviewRun);
 	const manifest = record(reviewRun.targetManifest);
-	if (manifest.version !== 2 || typeof manifest.digest !== "string")
+	if (manifest.version !== 3 || typeof manifest.digest !== "string")
 		return null;
 	const unsigned = parseUnsignedManifest(manifest);
 	if (!unsigned || digestText(JSON.stringify(unsigned)) !== manifest.digest)
@@ -95,7 +111,19 @@ function parseUnsignedManifest(
 				source.role !== "implementation" ||
 				typeof source.status !== "string" ||
 				typeof source.diffDigest !== "string" ||
-				typeof source.finalReportDigest !== "string",
+				typeof source.finalReportDigest !== "string" ||
+				!nullableString(source.taskRevisionSnapshotId) ||
+				!(
+					source.taskRevision === null ||
+					(typeof source.taskRevision === "number" &&
+						Number.isInteger(source.taskRevision))
+				) ||
+				!nullableString(source.taskDigest) ||
+				!nullableString(source.subjectId) ||
+				!nullableString(source.finalResponseEvidenceId) ||
+				!nullableString(source.finalResponseEvidenceDigest) ||
+				(source.bindingStatus !== "canonical" &&
+					source.bindingStatus !== "legacy_unbound"),
 		) ||
 		targetFiles.some(
 			(file) =>
@@ -107,7 +135,7 @@ function parseUnsignedManifest(
 	)
 		return null;
 	return {
-		version: 2,
+		version: 3,
 		taskId: manifest.taskId,
 		contextDigest: manifest.contextDigest as string | null,
 		verificationSnapshotId: manifest.verificationSnapshotId as string | null,

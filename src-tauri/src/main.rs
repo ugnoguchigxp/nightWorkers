@@ -128,10 +128,7 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
         .env("NODE_PATH", &staged_node_modules)
         .env("NIGHTWORKERS_API_ORIGIN", &api_origin)
         .env("PORT", port.to_string())
-        .env("APP_URL", &api_origin)
         .env("CORS_ORIGIN", cors_origins.join(","))
-        .env("API_AUTH_REQUIRED", "false")
-        .env("AUTH_MODE", "local")
         .env(
             "NODE_ENV",
             if cfg!(debug_assertions) {

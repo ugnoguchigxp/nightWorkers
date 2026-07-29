@@ -43,7 +43,10 @@ function dependencies() {
 			id: "verification-document",
 			status: "active",
 		}),
-		runCompletionCheck: async () => greenCompletion,
+		runCompletionCheck: async (input) => {
+			expect(input.runId).toBe("run-1");
+			return greenCompletion;
+		},
 	} as Parameters<typeof evaluateCodingAgentCompletionReadiness>[1];
 }
 

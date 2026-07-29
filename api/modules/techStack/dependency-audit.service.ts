@@ -6,6 +6,7 @@ import {
 	projectDependencyAuditResultSchema,
 } from "../../../shared/schemas/tech-stack.schema";
 import { ValidationError } from "../../lib/errors";
+import { buildChildProcessEnvironment } from "../../services/execution/child-process-environment";
 
 const execFileAsync = promisify(execFile);
 const severityRank: Record<ProjectDependencyAuditSeverity, number> = {
@@ -98,7 +99,10 @@ export async function runBunDependencyAudit(
 			encoding: "utf8",
 			timeout: 60_000,
 			maxBuffer: 8_000_000,
-			env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+			env: buildChildProcessEnvironment({
+				purpose: "workspace_command",
+				overrides: { FORCE_COLOR: "0", NO_COLOR: "1" },
+			}),
 		});
 		stdout = String(result.stdout);
 		stderr = String(result.stderr);

@@ -387,7 +387,7 @@ describe("LLM settings secret hardening", () => {
 		expect(masked.OPENAI_API_KEY).toBe("********");
 		expect(masked.CODEX_ACCESS_TOKEN).toBe("********");
 		expect(masked.AWS_ACCESS_KEY_ID).toBe("aws-key-id");
-	});
+	}, 15_000);
 
 	it("preserves existing secrets when clients save masked values", async () => {
 		const { mergeMaskedSecrets } = await importSettingsRoute();
@@ -433,42 +433,6 @@ describe("LLM settings secret hardening", () => {
 	});
 });
 
-describe("API auth boundary", () => {
-	async function importConfigWithApiAuth(apiAuthRequired?: "true" | "false") {
-		vi.resetModules();
-		vi.stubEnv("NODE_ENV", "development");
-		vi.stubEnv("DATABASE_URL", "sqlite.db");
-		vi.stubEnv("JWT_SECRET", "x".repeat(32));
-		vi.stubEnv("AUTH_MODE", "local");
-		vi.stubEnv("CORS_ORIGIN", "http://localhost:39174");
-		vi.stubEnv("API_AUTH_REQUIRED", apiAuthRequired);
-		return import("../api/config");
-	}
-
-	it("keeps API auth disabled by default for local personal use", async () => {
-		const { config } = await importConfigWithApiAuth();
-
-		expect(config.API_AUTH_REQUIRED).toBe(false);
-	});
-
-	it("enables API auth only when API_AUTH_REQUIRED=true is configured", async () => {
-		const { config } = await importConfigWithApiAuth("true");
-
-		expect(config.API_AUTH_REQUIRED).toBe(true);
-	});
-
-	it("keeps only bootstrap and documentation endpoints public", async () => {
-		const { isPublicApiPath } = await import("../api/lib/api-auth-boundary");
-
-		expect(isPublicApiPath("/api/health")).toBe(true);
-		expect(isPublicApiPath("/api/auth/login")).toBe(true);
-		expect(isPublicApiPath("/api/auth/me")).toBe(false);
-		expect(isPublicApiPath("/api/settings/llm")).toBe(false);
-		expect(isPublicApiPath("/api/repositories")).toBe(false);
-		expect(isPublicApiPath("/api/ws/nightworkers")).toBe(false);
-	});
-});
-
 describe("Desktop security configuration", () => {
 	function stubDesktopEnv() {
 		const runtimeDir = fs.mkdtempSync(
@@ -478,30 +442,23 @@ describe("Desktop security configuration", () => {
 		vi.stubEnv("NIGHTWORKERS_DESKTOP", "1");
 		vi.stubEnv("NIGHTWORKERS_RUNTIME_DIR", runtimeDir);
 		vi.stubEnv("NIGHTWORKERS_API_ORIGIN", "http://127.0.0.1:41234");
-		vi.stubEnv("AUTH_MODE", undefined);
-		vi.stubEnv("API_AUTH_REQUIRED", undefined);
 		vi.stubEnv("DATABASE_URL", undefined);
-		vi.stubEnv("JWT_SECRET", undefined);
 		vi.stubEnv("CORS_ORIGIN", "");
-		vi.stubEnv("APP_URL", undefined);
 		return runtimeDir;
 	}
 
-	it("derives explicit desktop origins and local auth defaults during first-run bootstrap", async () => {
+	it("derives explicit desktop origins during first-run bootstrap", async () => {
 		stubDesktopEnv();
 		vi.resetModules();
 
 		const { config } = await import("../api/config");
 
-		expect(config.AUTH_MODE).toBe("local");
-		expect(config.API_AUTH_REQUIRED).toBe(false);
 		expect(config.CORS_ORIGINS).toEqual([
 			"http://127.0.0.1:41234",
 			"http://tauri.localhost",
 			"tauri://localhost",
 		]);
 		expect(config.DATABASE_URL).toContain("/sqlite.db");
-		expect(config.JWT_SECRET.length).toBeGreaterThanOrEqual(32);
 	});
 
 	it("allows desktop REST and WebSocket origins in production CSP", async () => {

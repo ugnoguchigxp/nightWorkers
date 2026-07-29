@@ -212,6 +212,7 @@ export function createNightWorkersCodexMcpServer(
 				deniedPaths: repository.safetyPolicy?.deniedPaths,
 				blockedCommands: repository.safetyPolicy?.blockedCommands,
 				maxCommandSeconds: repository.safetyPolicy?.maxCommandSeconds,
+				confinementRequired: true,
 			};
 			return controlledToolResult({
 				context,
@@ -242,6 +243,7 @@ export function createNightWorkersCodexMcpServer(
 			});
 			const args = {
 				taskId: resolvedTaskId,
+				runId: firstNonEmpty(context.runId, process.env.NIGHTWORKERS_RUN_ID),
 				verificationDocumentId,
 				repoRoot: resolved.executionRoot ?? undefined,
 			};

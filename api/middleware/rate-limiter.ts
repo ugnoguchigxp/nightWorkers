@@ -13,7 +13,6 @@ type RateLimiterOptions = {
 	limit: number;
 	message?: string;
 	keyGenerator?: (c: Context) => string;
-	trustProxy?: boolean;
 };
 
 export const rateLimiter = (options: RateLimiterOptions) => {
@@ -46,21 +45,7 @@ export const rateLimiter = (options: RateLimiterOptions) => {
 	};
 
 	const readClientIp = (c: Context) => {
-		if (!options.trustProxy) return readDirectRemoteIp(c);
-
-		const cfConnectingIp = c.req.header("cf-connecting-ip");
-		if (cfConnectingIp) return cfConnectingIp.trim();
-
-		const xForwardedFor = c.req.header("x-forwarded-for");
-		if (xForwardedFor) {
-			const firstIp = xForwardedFor.split(",")[0]?.trim();
-			if (firstIp) return firstIp;
-		}
-
-		const xRealIp = c.req.header("x-real-ip");
-		if (xRealIp) return xRealIp.trim();
-
-		return null;
+		return readDirectRemoteIp(c);
 	};
 
 	const defaultKeyGenerator = (c: Context) => {

@@ -1,10 +1,12 @@
 type Query = {
+	all: (...params: unknown[]) => unknown;
 	get: (...params: unknown[]) => unknown;
 	run: (...params: unknown[]) => unknown;
 };
 
 export type SyncSqliteDatabase = {
 	exec: (sql: string) => void;
+	all: (sql: string, params?: unknown[]) => unknown;
 	get: (sql: string, params?: unknown[]) => unknown;
 	run: (sql: string, params?: unknown[]) => unknown;
 	transaction: <T>(callback: () => T) => () => T;
@@ -60,6 +62,7 @@ export function openSyncSqlite(
 				throw new Error("SQLite runtime does not provide exec");
 			database.exec(sql);
 		},
+		all: (sql, params = []) => query(sql).all(...params),
 		get: (sql, params = []) => query(sql).get(...params),
 		run: (sql, params = []) => query(sql).run(...params),
 		transaction: (callback) => {

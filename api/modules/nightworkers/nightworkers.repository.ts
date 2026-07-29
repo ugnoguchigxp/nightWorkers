@@ -4,9 +4,11 @@ import type {
 	TraceProvenance,
 } from "../../../shared/schemas/trace-provenance.schema";
 import { type DbTransaction, db } from "../../db/client";
-import type { TaskStatus } from "../../db/schema";
-import { repositories, taskMessages, tasks } from "../../db/schema";
+import { repositories, taskMessages } from "../../db/schema";
+import { AppError } from "../../lib/errors";
+import { inspectProjectRepositoryIdentity } from "../../services/git/project-repository-identity";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
+import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
 import {
 	appendActivityArtifact,
 	enqueueActivityEvent,
@@ -93,7 +95,58 @@ export async function createRepository(data: {
 	maxConcurrentSessions?: number;
 	safetyPolicy?: RepositorySafetyPolicy;
 }) {
-	const [repo] = await db.insert(repositories).values(data).returning();
+	const identity = await inspectProjectRepositoryIdentity(data.localPath);
+	if (identity.status === "invalid") {
+		throw new AppError(
+			409,
+			identity.failureCode ?? "repository_identity_invalid",
+			"登録Project rootはcanonicalなbase worktreeのGit top-levelである必要があります。",
+		);
+	}
+	if (
+		identity.status === "ready" &&
+		identity.gitCommonDirCanonical &&
+		!process.env.VITEST
+	) {
+		const [duplicate] = await db
+			.select({ id: repositories.id })
+			.from(repositories)
+			.where(
+				and(
+					eq(
+						repositories.gitCommonDirCanonical,
+						identity.gitCommonDirCanonical,
+					),
+					eq(repositories.allowed, true),
+				),
+			);
+		if (duplicate) {
+			throw new AppError(
+				409,
+				"repository_identity_duplicate",
+				"同じGit repositoryは別のProjectとして重複登録できません。",
+			);
+		}
+	}
+	const [repo] = await db
+		.insert(repositories)
+		.values({
+			...data,
+			localPath: identity.registeredRootCanonical,
+			repositoryKind: identity.repositoryKind,
+			repositoryIdentityStatus: identity.status,
+			registeredRootCanonical: identity.registeredRootCanonical,
+			gitCommonDirCanonical: identity.gitCommonDirCanonical,
+			baseWorktreePathCanonical: identity.baseWorktreePathCanonical,
+			baseWorktreeId: identity.baseWorktreeId,
+			baseWorktreeBranch: identity.observedBranch,
+			baseWorktreeHeadSha: identity.observedHeadSha,
+			baseWorktreeDirty: identity.baseWorktreeDirty,
+			repositoryIdentityDigest: identity.digest,
+			repositoryIdentityRevision: identity.revision,
+			repositoryIdentityVerifiedAt: new Date(identity.verifiedAt),
+		})
+		.returning();
 	return repo;
 }
 
@@ -144,35 +197,6 @@ export async function deleteRepository(id: string) {
 	return repo;
 }
 
-// --- Tasks ---
-export async function createTask(
-	data: {
-		repositoryId: string;
-		title: string;
-		description?: string | null;
-		objective?: string | null;
-		acceptanceCriteria?: string | null;
-		worktreePath?: string | null;
-		status?: TaskStatus;
-		timeoutSeconds?: number;
-		priority?: number;
-		createdBy?: string | null;
-	},
-	database: Db = db,
-) {
-	const [task] = await database.insert(tasks).values(data).returning();
-	return task;
-}
-
-export async function getTask(id: string) {
-	const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
-	return task;
-}
-
-export async function listTasks() {
-	return db.select().from(tasks).orderBy(desc(tasks.createdAt));
-}
-
 export async function listTaskMessages(
 	taskId: string,
 	options?: { traceChannel?: TraceChannel },
@@ -202,6 +226,7 @@ export async function createTaskMessage(
 	},
 	database: Db = db,
 ) {
+	data = sanitizePersistenceValue(data);
 	const trace = resolveTaskMessageTrace({
 		role: data.role,
 		runId: data.runId,
@@ -503,84 +528,6 @@ function getBlueprintDocumentTitle(payloadJson: Record<string, unknown>) {
 	);
 }
 
-export async function updateTaskStatus(id: string, status: TaskStatus) {
-	const now = new Date();
-	const [task] = await db
-		.update(tasks)
-		.set({
-			status,
-			updatedAt: now,
-			...(status === "completed" ? { completedAt: now } : {}),
-			...(status === "archived" ? { archivedAt: now } : {}),
-		})
-		.where(eq(tasks.id, id))
-		.returning();
-	if (task) {
-		nightWorkersRealtimeBroker.publish(task.id, {
-			type: "task_status_updated",
-			payload: { status: task.status, task },
-		});
-	}
-	return task;
-}
-export { updateTaskStatusIfUnchanged } from "./nightworkers.task-status-cas.repository";
-
-export async function updateTaskCompiledPrompt(
-	id: string,
-	compiledPrompt: string,
-) {
-	const [task] = await db
-		.update(tasks)
-		.set({ compiledPrompt, updatedAt: new Date() })
-		.where(eq(tasks.id, id))
-		.returning();
-	return task;
-}
-
-export async function updateTask(
-	id: string,
-	data: {
-		title?: string;
-		description?: string | null;
-		objective?: string | null;
-		acceptanceCriteria?: string | null;
-		status?: TaskStatus;
-		priority?: number;
-	},
-	options?: { expectedUpdatedAt?: Date },
-) {
-	const [task] = await db
-		.update(tasks)
-		.set({ ...data, updatedAt: new Date() })
-		.where(
-			options?.expectedUpdatedAt
-				? and(eq(tasks.id, id), eq(tasks.updatedAt, options.expectedUpdatedAt))
-				: eq(tasks.id, id),
-		)
-		.returning();
-	return task;
-}
-
-export async function deleteTask(id: string) {
-	// Persist queued ledger entries while their task foreign keys still exist.
-	// The task delete then removes them through the schema cascade.
-	await flushActivityEventQueue();
-	return db.transaction(async (tx) => {
-		const existing = await tx
-			.select()
-			.from(tasks)
-			.where(eq(tasks.id, id))
-			.limit(1);
-		const task = existing[0];
-		if (!task) return undefined;
-		const [deleted] = await tx
-			.delete(tasks)
-			.where(eq(tasks.id, id))
-			.returning();
-		return deleted;
-	});
-}
-
 // --- Task Runs ---
 export * from "./nightworkers.activity.repository";
 export * from "./nightworkers.blueprint-adoption.repository";
@@ -588,3 +535,5 @@ export * from "./nightworkers.design-questionnaire.repository";
 export * from "./nightworkers.queue.repository";
 export { updateRepository } from "./nightworkers.repository-settings";
 export * from "./nightworkers.runs.repository";
+export * from "./nightworkers.task.repository";
+export { updateTaskStatusIfUnchanged } from "./nightworkers.task-status-cas.repository";

@@ -15,6 +15,7 @@ export interface RunBackgroundCommandInput {
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
 	environment?: Record<string, string>;
+	confinementRequired?: boolean;
 }
 
 export interface RunBackgroundCommandOutput {

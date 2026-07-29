@@ -372,6 +372,48 @@
       "when": 1785290400000,
       "tag": "0052_workspace_dependency_bootstrap",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1785322800000,
+      "tag": "0053_remove_product_authentication",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1785330000000,
+      "tag": "0054_project_repository_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1785333600000,
+      "tag": "0055_workspace_attestation_and_run_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1785337200000,
+      "tag": "0056_evidence_closeout_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1785340800000,
+      "tag": "0057_workspace_attestation_observation",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1785344400000,
+      "tag": "0058_base_worktree_observation",
+      "breakpoints": true
     }
   ]
 }

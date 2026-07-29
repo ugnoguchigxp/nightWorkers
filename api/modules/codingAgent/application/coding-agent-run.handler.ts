@@ -51,6 +51,16 @@ export async function handleStartCodingAgentRun(
 		),
 	]);
 	if (!task) throw new NotFoundError("Task not found");
+	if (
+		command.taskRef.id !== task.id ||
+		command.taskRef.revision !== task.revision
+	) {
+		throw new AppError(
+			409,
+			"TASK_REVISION_CONFLICT",
+			"Task revision changed; re-read the Task Operator view.",
+		);
+	}
 	if (!repository || task.repositoryId !== repository.id)
 		throw new NotFoundError("Repository not found for Task");
 	const repositoryRevision = repository.updatedAt.getTime();
@@ -85,6 +95,7 @@ export async function handleStartCodingAgentRun(
 					kind: CODING_AGENT_REQUEST_ASSOCIATION_KIND,
 					payload: {
 						requestProvenance: command.requestProvenance,
+						taskRef: command.taskRef,
 						artifactRefs: command.artifactRefs,
 					},
 				}

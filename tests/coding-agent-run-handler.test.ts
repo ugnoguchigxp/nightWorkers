@@ -35,6 +35,7 @@ const { handleStartCodingAgentRun } = await import(
 const repositoryUpdatedAt = new Date("2026-07-17T00:00:00.000Z");
 const command = {
 	taskId: "task-1",
+	taskRef: { id: "task-1", revision: 4 },
 	instruction: "確定済み設計を実装する",
 	artifactRefs: [
 		{
@@ -59,6 +60,7 @@ beforeEach(() => {
 	mocks.getTask.mockResolvedValue({
 		id: "task-1",
 		repositoryId: "repository-1",
+		revision: 4,
 	});
 	mocks.getRepository.mockResolvedValue({
 		id: "repository-1",
@@ -95,6 +97,7 @@ describe("Coding Agent run handler", () => {
 					kind: "coding_agent_request",
 					payload: {
 						requestProvenance: command.requestProvenance,
+						taskRef: command.taskRef,
 						artifactRefs: command.artifactRefs,
 					},
 				},

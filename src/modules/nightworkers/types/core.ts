@@ -8,6 +8,22 @@ export type Repository = {
 	name: string;
 	localPath: string;
 	branch: string;
+	repositoryKind?: "git" | "non_git";
+	repositoryIdentityStatus?:
+		| "ready"
+		| "materialization_pending"
+		| "invalid"
+		| "mismatch";
+	registeredRootCanonical?: string | null;
+	gitCommonDirCanonical?: string | null;
+	baseWorktreePathCanonical?: string | null;
+	baseWorktreeId?: string | null;
+	baseWorktreeBranch?: string | null;
+	baseWorktreeHeadSha?: string | null;
+	baseWorktreeDirty?: boolean | null;
+	repositoryIdentityDigest?: string | null;
+	repositoryIdentityRevision?: number;
+	repositoryIdentityVerifiedAt?: unknown | null;
 	allowed: boolean;
 	queueEnabled: boolean;
 	maxConcurrentSessions: number;
@@ -24,6 +40,7 @@ export type ProjectSafetyPolicy = {
 	maxCommandSeconds?: number;
 	requireReadBeforeEdit?: boolean;
 	maxTimeSeconds?: number;
+	trackedSecretFilesAcknowledged?: boolean;
 };
 
 export type Task = {
@@ -138,6 +155,7 @@ export type GitCloseoutState = {
 		| "SECURITY_EVIDENCE_MISSING"
 		| "SECURITY_GATE_BLOCKED"
 		| "BLOCKING_FINDINGS_UNRESOLVED"
+		| "CLOSEOUT_EVIDENCE_STALE"
 		| "COMMIT_RECORD_MISSING"
 		| "COMMIT_RECORD_NOT_READY"
 		| "NO_STAGEABLE_PATHS"

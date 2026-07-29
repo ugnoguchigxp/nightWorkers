@@ -9,6 +9,7 @@ import {
 	projectExplorationCatalogUnavailableResult,
 } from "../../modules/ontology/exploration/project-exploration-catalog-tool";
 import type { WorkerToolName } from "../tool-policy/types";
+import { assertRunWorkspaceSideEffectAuthority } from "../workspace/run-workspace-authority.service";
 import { applyPatchTool } from "./apply-patch";
 import { cloneGitRepoTool } from "./clone-git-repo";
 import { copyDirectoryTool } from "./copy-directory";
@@ -46,6 +47,7 @@ export type WorkerToolDispatchInput = {
 		expectedHead: string;
 	};
 	runtimeEnvironment?: Record<string, string>;
+	confinementRequired?: boolean;
 };
 
 export type WorkerToolDispatchResult = {
@@ -56,6 +58,30 @@ export type WorkerToolDispatchResult = {
 export async function executeWorkerTool(
 	input: WorkerToolDispatchInput,
 ): Promise<WorkerToolDispatchResult> {
+	if (input.runId && WORKSPACE_SIDE_EFFECT_TOOLS.has(input.toolName)) {
+		const authority = await assertRunWorkspaceSideEffectAuthority({
+			runId: input.runId,
+			taskId: input.taskId,
+			requestedRoot: input.repoRoot,
+		});
+		if (!authority.ok) {
+			const now = new Date().toISOString();
+			return {
+				result: {
+					ok: false,
+					toolName: input.toolName,
+					startedAt: now,
+					finishedAt: now,
+					payload: {},
+					error: {
+						code: authority.code,
+						message: authority.message,
+						retryable: false,
+					},
+				},
+			};
+		}
+	}
 	const {
 		toolName,
 		args,
@@ -64,6 +90,7 @@ export async function executeWorkerTool(
 		readFiles,
 		toolContext,
 		runtimeEnvironment,
+		confinementRequired,
 	} = input;
 
 	if (toolName === "list_dir") {
@@ -75,7 +102,6 @@ export async function executeWorkerTool(
 				maxEntries: args.maxEntries as number | undefined,
 				repoRoot,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -90,7 +116,6 @@ export async function executeWorkerTool(
 				maxResults: args.maxResults as number | undefined,
 				repoRoot,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -106,7 +131,6 @@ export async function executeWorkerTool(
 			compressionMode: args.compressionMode as "auto" | "off" | undefined,
 			readCache: toolContext?.readFileCache,
 			allowedPaths: safetyPolicy?.allowedPaths,
-			externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 			deniedPaths: safetyPolicy?.deniedPaths,
 		});
 		const filePath = args.filePath as string;
@@ -142,7 +166,6 @@ export async function executeWorkerTool(
 				previewPrimitives: args.previewPrimitives as boolean | undefined,
 				maxPaths: args.maxPaths as number | undefined,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -157,7 +180,6 @@ export async function executeWorkerTool(
 				maxResults: args.maxResults as number | undefined,
 				caseSensitive: args.caseSensitive as boolean | undefined,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -192,7 +214,6 @@ export async function executeWorkerTool(
 				exclude: args.exclude as string[] | undefined,
 				repoRoot,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -257,7 +278,6 @@ export async function executeWorkerTool(
 				patchContent: args.patchContent as string,
 				repoRoot,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -275,7 +295,6 @@ export async function executeWorkerTool(
 					| undefined,
 				repoRoot,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 			}),
 		};
@@ -289,11 +308,12 @@ export async function executeWorkerTool(
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				compressionMode: args.compressionMode as "auto" | "off" | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+				environment: runtimeEnvironment,
+				confinementRequired,
 			}),
 		};
 	}
@@ -309,9 +329,9 @@ export async function executeWorkerTool(
 				repositoryId: args.repositoryId as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				environment: runtimeEnvironment,
+				confinementRequired,
 			}),
 		};
 	}
@@ -330,12 +350,12 @@ export async function executeWorkerTool(
 					| undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				compressionMode: args.compressionMode as "auto" | "off" | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
 				environment: runtimeEnvironment,
+				confinementRequired,
 			}),
 		};
 	}
@@ -358,11 +378,11 @@ export async function executeWorkerTool(
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				timeoutSeconds: args.timeoutSeconds as number | undefined,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
 				environment: runtimeEnvironment,
+				confinementRequired,
 			}),
 		};
 	}
@@ -371,6 +391,7 @@ export async function executeWorkerTool(
 		return {
 			result: await completionCheckTool({
 				taskId: (args.taskId as string | undefined) || input.taskId || "",
+				runId: (args.runId as string | undefined) || input.runId || "",
 				verificationDocumentId: args.verificationDocumentId as
 					| string
 					| undefined,
@@ -388,7 +409,6 @@ export async function executeWorkerTool(
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
 			}),
@@ -406,7 +426,6 @@ export async function executeWorkerTool(
 				evidenceSet: args.evidenceSet as TestEvidenceSet,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
-				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
 			}),
@@ -445,3 +464,17 @@ export async function executeWorkerTool(
 
 	throw new Error(`Unsupported tool name: ${toolName}`);
 }
+
+const WORKSPACE_SIDE_EFFECT_TOOLS = new Set<WorkerToolName>([
+	"import_project",
+	"clone_git_repo",
+	"copy_directory",
+	"materialize_template",
+	"apply_patch",
+	"replace_content",
+	"run_command",
+	"run_background_command",
+	"run_check",
+	"run_verification",
+	"collect_test_inventory",
+]);

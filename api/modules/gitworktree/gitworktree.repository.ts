@@ -44,69 +44,85 @@ export async function getRepository(id: string) {
 }
 
 export async function readUsage(repositoryId: string) {
-	const [taskRows, runRows, closeoutRows, mergeRows] = await Promise.all([
-		db
-			.select({ id: tasks.id, status: tasks.status, path: tasks.worktreePath })
-			.from(tasks)
-			.where(
-				and(
-					eq(tasks.repositoryId, repositoryId),
-					isNotNull(tasks.worktreePath),
+	const [taskRows, runRows, closeoutRows, mergeRows, workspaceRows] =
+		await Promise.all([
+			db
+				.select({
+					id: tasks.id,
+					status: tasks.status,
+					path: tasks.worktreePath,
+				})
+				.from(tasks)
+				.where(
+					and(
+						eq(tasks.repositoryId, repositoryId),
+						isNotNull(tasks.worktreePath),
+					),
 				),
-			),
-		db
-			.select({
-				id: taskRuns.id,
-				status: taskRuns.status,
-				path: taskRuns.worktreePath,
-			})
-			.from(taskRuns)
-			.where(
-				and(
-					eq(taskRuns.repositoryId, repositoryId),
-					isNotNull(taskRuns.worktreePath),
+			db
+				.select({
+					id: taskRuns.id,
+					status: taskRuns.status,
+					path: taskRuns.worktreePath,
+				})
+				.from(taskRuns)
+				.where(
+					and(
+						eq(taskRuns.repositoryId, repositoryId),
+						isNotNull(taskRuns.worktreePath),
+					),
 				),
-			),
-		db
-			.select({
-				runId: taskRunCommitRecords.runId,
-				path: taskRuns.worktreePath,
-			})
-			.from(taskRunCommitRecords)
-			.innerJoin(taskRuns, eq(taskRunCommitRecords.runId, taskRuns.id))
-			.where(
-				and(
-					eq(taskRuns.repositoryId, repositoryId),
-					isNotNull(taskRuns.worktreePath),
-					inArray(taskRunCommitRecords.status, [...PENDING_CLOSEOUT_STATUSES]),
+			db
+				.select({
+					runId: taskRunCommitRecords.runId,
+					path: taskRuns.worktreePath,
+				})
+				.from(taskRunCommitRecords)
+				.innerJoin(taskRuns, eq(taskRunCommitRecords.runId, taskRuns.id))
+				.where(
+					and(
+						eq(taskRuns.repositoryId, repositoryId),
+						isNotNull(taskRuns.worktreePath),
+						inArray(taskRunCommitRecords.status, [
+							...PENDING_CLOSEOUT_STATUSES,
+						]),
+					),
 				),
-			),
-		db
-			.select({
-				runId: taskRunMergeRecords.runId,
-				path: taskGitWorkspaces.worktreePath,
-			})
-			.from(taskRunMergeRecords)
-			.innerJoin(
-				taskGitWorkspaces,
-				eq(taskRunMergeRecords.workspaceId, taskGitWorkspaces.id),
-			)
-			.where(
-				and(
-					eq(taskGitWorkspaces.repositoryId, repositoryId),
-					isNotNull(taskGitWorkspaces.worktreePath),
-					inArray(taskRunMergeRecords.status, [
-						"decision_required",
-						"previewing",
-						"merge_ready",
-						"merging",
-						"deferred",
-						"merge_blocked",
-						"merge_conflicted",
-					]),
+			db
+				.select({
+					runId: taskRunMergeRecords.runId,
+					path: taskGitWorkspaces.worktreePath,
+				})
+				.from(taskRunMergeRecords)
+				.innerJoin(
+					taskGitWorkspaces,
+					eq(taskRunMergeRecords.workspaceId, taskGitWorkspaces.id),
+				)
+				.where(
+					and(
+						eq(taskGitWorkspaces.repositoryId, repositoryId),
+						isNotNull(taskGitWorkspaces.worktreePath),
+						inArray(taskRunMergeRecords.status, [
+							"decision_required",
+							"previewing",
+							"merge_ready",
+							"merging",
+							"deferred",
+							"merge_blocked",
+							"merge_conflicted",
+						]),
+					),
 				),
-			),
-	]);
+			db
+				.select()
+				.from(taskGitWorkspaces)
+				.where(
+					and(
+						eq(taskGitWorkspaces.repositoryId, repositoryId),
+						isNotNull(taskGitWorkspaces.worktreePath),
+					),
+				),
+		]);
 	const map = new Map<string, WorktreeUsage>();
 	const canonicalPaths = new Map<string, Promise<string>>();
 	const canonicalize = (value: string) => {
@@ -128,6 +144,7 @@ export async function readUsage(repositoryId: string) {
 				activeTaskCount: 0,
 				activeRunCount: 0,
 				pendingCloseoutCount: 0,
+				workspaceBinding: null,
 			};
 			map.set(key, usage);
 		}
@@ -164,6 +181,21 @@ export async function readUsage(repositoryId: string) {
 		const usage = await get(row.path);
 		if (!usage.runIds.includes(row.runId)) usage.runIds.push(row.runId);
 		usage.pendingCloseoutCount += 1;
+	}
+	for (const row of workspaceRows) {
+		if (!row.worktreePath) continue;
+		const usage = await get(row.worktreePath);
+		usage.workspaceBinding = {
+			workspaceId: row.id,
+			allocationVersion: row.allocationVersion,
+			status: row.status,
+			sourceBranch: row.sourceBranch,
+			targetBranch: row.targetBranch,
+			targetBaseSha: row.targetBaseSha,
+			expectedHeadSha: row.expectedHeadSha,
+			lastVerifiedHead: row.lastVerifiedHead,
+			repositoryIdentityRevision: row.repositoryIdentityRevision,
+		};
 	}
 	return map;
 }

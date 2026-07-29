@@ -5,14 +5,18 @@ import { db } from "../../db/client";
 import {
 	missionPilotCloseouts,
 	missionPilotContextSnapshots,
-	missionPilotReviewDecisions,
 	missionPilotSessions,
 	taskArchiveRecords,
-	missionPilotVerificationSnapshots as verificationSnapshots,
 } from "../../db/mission-pilot-schema";
-import { repositories, tasks } from "../../db/schema";
+import { tasks } from "../../db/schema";
 import { digestText } from "../../services/text-digest";
+import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import { archiveCompletedTask } from "../nightworkers/task-archive.service";
+import {
+	admitMissionPilotCloseout,
+	consumeMissionPilotCloseoutAdmission,
+	loadMissionPilotCloseoutEvidence,
+} from "./mission-pilot-closeout-admission.service";
 import {
 	appendFinalMissionPilotContext,
 	git,
@@ -69,41 +73,17 @@ async function executeCloseout(sessionId: string) {
 		if (archiveRecord)
 			return finalizeArchivedCloseout({ session, archiveRecord });
 	}
-	if (
-		!session?.activeCloseoutId ||
-		!session.activeReviewDecisionId ||
-		!session.activeVerificationSnapshotId
-	)
-		throw new Error("Mission Pilot closeout evidence is incomplete");
-	const snapshotId = session.activeVerificationSnapshotId;
-	const [[closeout], [reviewDecision], [snapshot], [repository], [task]] =
-		await Promise.all([
-			db
-				.select()
-				.from(missionPilotCloseouts)
-				.where(eq(missionPilotCloseouts.id, session.activeCloseoutId))
-				.limit(1),
-			db
-				.select()
-				.from(missionPilotReviewDecisions)
-				.where(
-					eq(missionPilotReviewDecisions.id, session.activeReviewDecisionId),
-				)
-				.limit(1),
-			db
-				.select()
-				.from(verificationSnapshots)
-				.where(eq(verificationSnapshots.id, snapshotId))
-				.limit(1),
-			db
-				.select()
-				.from(repositories)
-				.where(eq(repositories.id, session.repositoryId))
-				.limit(1),
-			db.select().from(tasks).where(eq(tasks.id, session.taskId)).limit(1),
-		]);
-	if (!closeout || !reviewDecision || !snapshot || !repository || !task)
-		throw new Error("Mission Pilot closeout rows are missing");
+	if (!session) throw new Error("Mission Pilot session is missing");
+	return withRepositoryGitMutationLock(session.repositoryId, "commit", () =>
+		executeCloseoutLocked(session),
+	);
+}
+
+async function executeCloseoutLocked(
+	session: typeof missionPilotSessions.$inferSelect,
+) {
+	const { closeout, reviewDecision, snapshot, repository, task } =
+		await loadMissionPilotCloseoutEvidence(session);
 	if (
 		closeout.reviewedContextDigest !== session.contextDigest ||
 		reviewDecision.verdict !== "pass" ||
@@ -111,6 +91,11 @@ async function executeCloseout(sessionId: string) {
 	)
 		throw new Error("Mission Pilot closeout evidence is stale or not passed");
 	const repoRoot = task.worktreePath || repository.localPath;
+	const closeoutAdmission = await admitMissionPilotCloseout({
+		session,
+		snapshot,
+		taskId: task.id,
+	});
 	const stageablePaths = normalizeOwnedPaths(closeout.stageableOwnedPathsJson);
 	let commitSha: string | null = closeout.commitSha;
 	let closeoutStatus = closeout.status;
@@ -363,6 +348,7 @@ async function executeCloseout(sessionId: string) {
 				throw new Error("Mission Pilot completion admission changed");
 		});
 	}
+	await consumeMissionPilotCloseoutAdmission(closeoutAdmission.id);
 	await appendMissionPilotEvent({
 		sessionId: session.id,
 		taskId: session.taskId,

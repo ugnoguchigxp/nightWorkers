@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
+import { prepareImplementationQueueRepository } from "../api/modules/queue/queue-repository-readiness.service";
 import {
 	getIsolatedWorkerCount,
 	runImplementationQueueInWorker,
@@ -97,6 +98,10 @@ describe("worker process isolation", () => {
 				role: "user",
 				content: "[fixture:tool_failure]",
 				messageType: "text",
+			});
+			await prepareImplementationQueueRepository({
+				task,
+				messages: await repo.listTaskMessages(task.id),
 			});
 
 			const run = await startTaskRunInWorker<{ id: string }>(

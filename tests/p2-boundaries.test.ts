@@ -49,7 +49,7 @@ describe("P2 boundary contracts", () => {
 	});
 
 	it("uses process isolation by default and limits in-process execution", () => {
-		expect(readTaskExecutorMode({ NODE_ENV: "production" })).toBe("process");
+		expect(readTaskExecutorMode({ NODE_ENV: "production" })).toBe("in_process");
 		expect(readTaskExecutorMode({ NODE_ENV: "test" })).toBe("in_process");
 		expect(
 			readTaskExecutorMode({

@@ -1,5 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
@@ -9,14 +11,11 @@ import {
 	taskRuns,
 	tasks,
 } from "../../db/schema";
-import {
-	appendActivityArtifact,
-	appendActivityEvent,
-} from "../../modules/nightworkers/nightworkers.activity.repository";
-import {
-	isCredentialFileEnvironmentKey,
-	isRegistryCredentialEnvironmentKey,
-} from "../security/secret-redaction";
+import { appendActivityEvent } from "../../modules/nightworkers/nightworkers.activity.repository";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
+import { prepareWorkspaceConstrainedShell } from "../execution/workspace-process-confinement";
+import { sanitizePersistenceValue } from "../security/secret-persistence-firewall";
+import { redactSecretText } from "../security/secret-redaction";
 import { analyzeCommand } from "../worker-tools/command-policy";
 import {
 	enforceCommandPolicy,
@@ -24,11 +23,14 @@ import {
 } from "../worker-tools/tool-policy-enforcer";
 
 const MAX_LATEST_OUTPUT_CHARS = 12_000;
-const MAX_ACTIVITY_OUTPUT_CHARS = 40_000;
+const MAX_MEMORY_OUTPUT_CHARS = 40_000;
 
 type ManagedProcess = {
 	child: ChildProcessWithoutNullStreams;
 	output: string;
+	pendingOutput: string;
+	secretValues: string[];
+	transientRoot: string | null;
 };
 
 const managedProcesses = new Map<string, ManagedProcess>();
@@ -52,6 +54,7 @@ export type StartBackgroundCommandInput = {
 	deniedPaths?: string[];
 	blockedCommands?: string[];
 	environment?: Record<string, string>;
+	confinementRequired?: boolean;
 };
 
 function tail(value: string, maxChars = MAX_LATEST_OUTPUT_CHARS) {
@@ -163,26 +166,6 @@ async function markFinished(input: {
 		.returning();
 	if (!updated) return null;
 
-	let artifactId: string | null = null;
-	if (updated.taskId && input.output.trim()) {
-		const artifact = await appendActivityArtifact({
-			taskId: updated.taskId,
-			runId: updated.runId,
-			kind: "background_command_output",
-			contentText: tail(input.output, MAX_ACTIVITY_OUTPUT_CHARS),
-			metadataJson: {
-				backgroundProcessId: updated.id,
-				command: updated.command,
-				status: input.status,
-			},
-		});
-		artifactId = artifact.id;
-		await db
-			.update(backgroundProcesses)
-			.set({ outputArtifactId: artifact.id, updatedAt: new Date() })
-			.where(eq(backgroundProcesses.id, input.id));
-	}
-
 	await appendBackgroundActivity({
 		taskId: updated.taskId,
 		runId: updated.runId,
@@ -198,7 +181,6 @@ async function markFinished(input: {
 			input.status === "stopped"
 				? `Background command stopped: ${updated.command}`
 				: `Background command ${input.status}: ${updated.command}`,
-		artifactId,
 		payloadJson: {
 			workRecordCard: {
 				type:
@@ -275,6 +257,7 @@ export async function startBackgroundCommand(
 	}
 
 	const id = crypto.randomUUID();
+	const persistedCommand = sanitizePersistenceValue(input.command);
 	const [created] = await db
 		.insert(backgroundProcesses)
 		.values({
@@ -282,7 +265,7 @@ export async function startBackgroundCommand(
 			repositoryId: ownership.repositoryId,
 			taskId: ownership.taskId,
 			runId: ownership.runId,
-			command: input.command,
+			command: persistedCommand,
 			cwd: input.cwd || "",
 			status: "running",
 			pid: null,
@@ -292,32 +275,46 @@ export async function startBackgroundCommand(
 		})
 		.returning();
 
-	const child = spawn(input.command, {
-		cwd: targetCwd,
-		shell: true,
-		detached: true,
-		stdio: "pipe",
-		...(input.environment
-			? {
-					env: {
-						...Object.fromEntries(
-							Object.entries(process.env).filter(
-								(entry): entry is [string, string] =>
-									typeof entry[1] === "string" &&
-									!isCredentialFileEnvironmentKey(entry[0]) &&
-									!isRegistryCredentialEnvironmentKey(entry[0], entry[1]),
-							),
-						),
-						...Object.fromEntries(
-							Object.entries(input.environment).filter(
-								([key, value]) =>
-									!isRegistryCredentialEnvironmentKey(key, value),
-							),
-						),
-					},
-				}
-			: {}),
+	const childEnvironment = buildChildProcessEnvironment({
+		purpose: "background_command",
+		overrides: input.environment,
 	});
+	const transientRoot = input.confinementRequired
+		? await fs.mkdtemp(path.join(os.tmpdir(), "nightworkers-background-"))
+		: null;
+	if (transientRoot) {
+		childEnvironment.TMPDIR = transientRoot;
+		childEnvironment.TMP = transientRoot;
+		childEnvironment.TEMP = transientRoot;
+	}
+	const confined = input.confinementRequired
+		? await prepareWorkspaceConstrainedShell({
+				command: input.command,
+				workspaceRoot: repoRoot,
+				environment: childEnvironment,
+			})
+		: null;
+	const child = confined
+		? spawn(confined.executable, confined.args, {
+				cwd: targetCwd,
+				detached: true,
+				stdio: "pipe",
+				env: childEnvironment,
+			})
+		: process.platform === "win32"
+			? spawn(input.command, {
+					cwd: targetCwd,
+					shell: true,
+					detached: true,
+					stdio: "pipe",
+					env: childEnvironment,
+				})
+			: spawn("/bin/bash", ["--noprofile", "--norc", "-c", input.command], {
+					cwd: targetCwd,
+					detached: true,
+					stdio: "pipe",
+					env: childEnvironment,
+				});
 	child.unref();
 
 	await db
@@ -326,7 +323,13 @@ export async function startBackgroundCommand(
 		.where(eq(backgroundProcesses.id, id));
 	created.pid = child.pid ?? null;
 
-	const managed: ManagedProcess = { child, output: "" };
+	const managed: ManagedProcess = {
+		child,
+		output: "",
+		pendingOutput: "",
+		secretValues: collectSecretValues(input.environment),
+		transientRoot,
+	};
 	managedProcesses.set(id, managed);
 
 	await appendBackgroundActivity({
@@ -348,6 +351,7 @@ export async function startBackgroundCommand(
 	child.on("error", (err) => {
 		managedProcesses.delete(id);
 		void (async () => {
+			await cleanupManagedTransientRoot(managed);
 			const [current] = await db
 				.select({ status: backgroundProcesses.status })
 				.from(backgroundProcesses)
@@ -362,10 +366,24 @@ export async function startBackgroundCommand(
 		})();
 	});
 
-	const onChunk = async (chunk: Buffer) => {
+	const onChunk = async (chunk: Buffer, flush = false) => {
+		managed.pendingOutput += chunk.toString();
+		const lastLineBreak = managed.pendingOutput.lastIndexOf("\n");
+		if (!flush && lastLineBreak < 0 && managed.pendingOutput.length < 4096)
+			return;
+		const splitAt = flush
+			? managed.pendingOutput.length
+			: lastLineBreak >= 0
+				? lastLineBreak + 1
+				: managed.pendingOutput.length;
+		const safeOutput = redactSecretText(
+			managed.pendingOutput.slice(0, splitAt),
+			{ secretValues: managed.secretValues },
+		);
+		managed.pendingOutput = managed.pendingOutput.slice(splitAt);
 		managed.output = tail(
-			`${managed.output}${chunk.toString()}`,
-			MAX_ACTIVITY_OUTPUT_CHARS,
+			`${managed.output}${safeOutput}`,
+			MAX_MEMORY_OUTPUT_CHARS,
 		);
 		await db
 			.update(backgroundProcesses)
@@ -377,6 +395,8 @@ export async function startBackgroundCommand(
 	child.on("close", (code, signal) => {
 		managedProcesses.delete(id);
 		void (async () => {
+			await onChunk(Buffer.alloc(0), true);
+			await cleanupManagedTransientRoot(managed);
 			const [current] = await db
 				.select({ status: backgroundProcesses.status })
 				.from(backgroundProcesses)
@@ -395,6 +415,25 @@ export async function startBackgroundCommand(
 	});
 
 	return created;
+}
+
+function collectSecretValues(environment?: Record<string, string>) {
+	return Object.entries({ ...process.env, ...environment })
+		.filter(([key, value]) => {
+			if (typeof value !== "string") return false;
+			return /(authorization|cookie|token|secret|api[-_]?key|password|passwd|credential|_auth)/i.test(
+				key,
+			);
+		})
+		.map(([, value]) => value)
+		.filter((value): value is string => typeof value === "string");
+}
+
+async function cleanupManagedTransientRoot(managed: ManagedProcess) {
+	if (!managed.transientRoot) return;
+	const transientRoot = managed.transientRoot;
+	managed.transientRoot = null;
+	await fs.rm(transientRoot, { recursive: true, force: true });
 }
 
 export async function listBackgroundProcesses(filters?: {

@@ -34,6 +34,7 @@ export const safetyPolicySchema = z
 		maxCommandSeconds: z.number().optional(),
 		requireReadBeforeEdit: z.boolean().optional(),
 		maxTimeSeconds: z.number().optional(),
+		trackedSecretFilesAcknowledged: z.boolean().optional(),
 	})
 	.openapi("SafetyPolicy");
 
@@ -43,6 +44,18 @@ export const repositorySchema = z
 		name: z.string(),
 		localPath: z.string(),
 		branch: z.string(),
+		repositoryKind: z.string().default("non_git"),
+		repositoryIdentityStatus: z.string().default("materialization_pending"),
+		registeredRootCanonical: z.string().nullable().optional(),
+		gitCommonDirCanonical: z.string().nullable().optional(),
+		baseWorktreePathCanonical: z.string().nullable().optional(),
+		baseWorktreeId: z.string().nullable().optional(),
+		baseWorktreeBranch: z.string().nullable().optional(),
+		baseWorktreeHeadSha: z.string().nullable().optional(),
+		baseWorktreeDirty: z.boolean().nullable().optional(),
+		repositoryIdentityDigest: z.string().nullable().optional(),
+		repositoryIdentityRevision: z.number().int().nonnegative().default(0),
+		repositoryIdentityVerifiedAt: dateLikeSchema.nullable().optional(),
 		gitIntegrationPolicyJson: projectGitIntegrationPolicySchema
 			.nullable()
 			.optional(),

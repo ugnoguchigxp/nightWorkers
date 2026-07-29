@@ -3,6 +3,9 @@ import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
 import { backfillTraceProvenance } from "./bootstrap-trace-provenance";
 import { client } from "./client";
+import { ensureCloseoutAdmissionTables } from "./closeout-admission-schema-bootstrap";
+import { ensureEvidenceLedgerTables } from "./evidence-ledger-schema-bootstrap";
+import { ensureFinalResponseEvidenceTables } from "./final-response-evidence-schema-bootstrap";
 import {
 	ensureMissionPlannerTables,
 	ensureProjectDetailTables,
@@ -76,6 +79,17 @@ async function ensureNullableDesignQuestionnaireBlueprintSource() {
 		await client.execute("PRAGMA foreign_keys = ON");
 	}
 }
+
+async function removeLegacyProductAuthenticationState() {
+	await client.execute("DROP TABLE IF EXISTS refresh_tokens");
+	await client.execute("DROP TABLE IF EXISTS user_external_accounts");
+	await client.execute("DROP TABLE IF EXISTS users");
+	await client.execute("DELETE FROM application_settings WHERE scope = 'auth'");
+	await client.execute(
+		"DELETE FROM application_setting_secrets WHERE scope = 'auth'",
+	);
+}
+
 export async function ensureNightWorkersSchema(
 	options: { includeMissionPilot?: boolean } = {},
 ) {
@@ -136,6 +150,7 @@ export async function ensureNightWorkersSchema(
 	// Drop legacy BBS tables if they exist
 	await client.execute("DROP TABLE IF EXISTS comments");
 	await client.execute("DROP TABLE IF EXISTS threads");
+	await removeLegacyProductAuthenticationState();
 
 	await ensureBaseNightWorkersTables();
 	await ensureTaskGenerationTables();
@@ -198,10 +213,73 @@ export async function ensureNightWorkersSchema(
 			"ALTER TABLE repositories ADD COLUMN feature_settings text",
 		);
 	}
+	await ensureColumn(
+		"repositories",
+		"repository_kind",
+		"repository_kind text DEFAULT 'non_git' NOT NULL",
+	);
+	await ensureColumn(
+		"repositories",
+		"repository_identity_status",
+		"repository_identity_status text DEFAULT 'materialization_pending' NOT NULL",
+	);
+	await ensureColumn(
+		"repositories",
+		"registered_root_canonical",
+		"registered_root_canonical text",
+	);
+	await ensureColumn(
+		"repositories",
+		"git_common_dir_canonical",
+		"git_common_dir_canonical text",
+	);
+	await ensureColumn(
+		"repositories",
+		"base_worktree_path_canonical",
+		"base_worktree_path_canonical text",
+	);
+	await ensureColumn(
+		"repositories",
+		"base_worktree_id",
+		"base_worktree_id text",
+	);
+	await ensureColumn(
+		"repositories",
+		"base_worktree_branch",
+		"base_worktree_branch text",
+	);
+	await ensureColumn(
+		"repositories",
+		"base_worktree_head_sha",
+		"base_worktree_head_sha text",
+	);
+	await ensureColumn(
+		"repositories",
+		"base_worktree_dirty",
+		"base_worktree_dirty integer",
+	);
+	await ensureColumn(
+		"repositories",
+		"repository_identity_digest",
+		"repository_identity_digest text",
+	);
+	await ensureColumn(
+		"repositories",
+		"repository_identity_revision",
+		"repository_identity_revision integer DEFAULT 0 NOT NULL",
+	);
+	await ensureColumn(
+		"repositories",
+		"repository_identity_verified_at",
+		"repository_identity_verified_at integer",
+	);
 
 	await ensureRuntimeAndUsageTables();
 
 	await ensureTaskWorkflowTables();
+	await ensureEvidenceLedgerTables();
+	await ensureFinalResponseEvidenceTables();
+	await ensureCloseoutAdmissionTables();
 	await ensureColumn(
 		"implementation_queue_entries",
 		"mission_pilot_agent_json",

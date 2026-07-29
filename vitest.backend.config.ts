@@ -13,10 +13,6 @@ export default defineConfig({
 		env: {
 			NODE_ENV: "test",
 			DATABASE_URL: `file:${testDatabasePath}`,
-			JWT_SECRET: "nightworkers-vitest-jwt-secret-with-enough-length",
-			AUTH_MODE: "local",
-			API_AUTH_REQUIRED: "false",
-			APP_URL: "http://localhost:39174",
 			CORS_ORIGIN: "http://localhost:39174",
 			NIGHTWORKERS_DESKTOP: "0",
 			NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: "coverage",

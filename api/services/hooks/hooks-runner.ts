@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
+import { redactSecretText } from "../security/secret-redaction";
 import { listEffectiveAgentHooks } from "./hooks-effective-settings";
 import { hookMatchesInput } from "./hooks-matcher";
 import { parseHookOutput } from "./hooks-output";
@@ -232,7 +234,10 @@ async function runCommandHook(
 		throw new Error("Hook handler is not command.");
 	const timeoutSeconds = hook.handler.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 	const cwd = hook.handler.cwd || repoRoot || input.cwd || process.cwd();
-	const env = { ...process.env, ...(hook.handler.env || {}) };
+	const env = buildChildProcessEnvironment({
+		purpose: "hook",
+		overrides: hook.handler.env,
+	});
 	const stdin = `${JSON.stringify(input)}\n`;
 	const args = buildCommandHookArgs(hook, input);
 	const child =
@@ -319,10 +324,7 @@ function resolveAllowedEnvHeaders(
 }
 
 function sanitizeHookMessage(message: string): string {
-	return message.replace(
-		/(?:api[_-]?key|token|password|secret|authorization|bearer)\s*[:=]\s*['"]?[^\s'"]+/gi,
-		"[redacted]",
-	);
+	return redactSecretText(message);
 }
 
 function collectChildProcess(

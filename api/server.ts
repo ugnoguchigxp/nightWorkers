@@ -16,14 +16,21 @@ import {
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
 import { createRuntimeDatabaseBackup } from "./runtime/bootstrap";
+import { isLoopbackHost } from "./security/listen-security";
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
+import { previewProjectRepositoryIdentityBackfill } from "./services/git/project-repository-identity-reconciliation";
 import { mcpClientManager } from "./services/mcp/mcp-client-manager";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
-import { runRuntimeRetentionSweep } from "./services/runtime-retention/runtime-retention.service";
+import {
+	runRuntimeRetentionSweep,
+	subscribeRuntimeRetentionSettingsChanged,
+} from "./services/runtime-retention/runtime-retention.service";
+import { migrateLegacyApplicationSettingSecrets } from "./services/settings/application-settings-store";
 import {
 	readGeneralSettings,
 	refreshFxRatesIfNeeded,
 } from "./services/settings/general-settings";
+import { reconcileTaskWorkspaceAuthorities } from "./services/workspace/workspace-authority-reconciliation";
 
 export type NightWorkersServerOptions = {
 	port?: number;
@@ -141,10 +148,44 @@ export async function createNightWorkersServer(
 	const host = options.host ?? config.HOST;
 	const shutdownTimeoutMs =
 		options.shutdownTimeoutMs ?? defaultShutdownTimeoutMs;
+	if (!isLoopbackHost(host)) {
+		throw new Error(
+			`NightWorkers only supports loopback listeners. Received host=${host}`,
+		);
+	}
 
 	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
+	migrateLegacyApplicationSettingSecrets();
 	await persistBootstrapSettings();
+	const repositoryIdentityPreview =
+		await previewProjectRepositoryIdentityBackfill();
+	const repositoryIdentityMismatchCount = repositoryIdentityPreview.filter(
+		(result) => result.needsBackfill,
+	).length;
+	if (repositoryIdentityMismatchCount > 0) {
+		logEvent({
+			channel: "api",
+			level: "warn",
+			message: "project repository identity reconciliation found mismatches",
+			meta: {
+				mismatchCount: repositoryIdentityMismatchCount,
+				mode: "read_only",
+			},
+		});
+	}
+	const workspaceReconciliation = await reconcileTaskWorkspaceAuthorities();
+	const workspaceMismatchCount = workspaceReconciliation.filter(
+		(result) => result.mismatchCode,
+	).length;
+	if (workspaceMismatchCount > 0) {
+		logEvent({
+			channel: "api",
+			level: "warn",
+			message: "task workspace authority reconciliation requires attention",
+			meta: { mismatchCount: workspaceMismatchCount },
+		});
+	}
 	configureRuntimeLogRetention(readGeneralSettings().dataRetention);
 	await runRuntimeRetentionSweep({ forceUsageCleanup: true }).catch((error) => {
 		logEvent({
@@ -246,23 +287,35 @@ export async function createNightWorkersServer(
 		});
 	}, 1_000);
 	missionPilotQuestionnaireTimer.unref?.();
-	const retentionTimer = setInterval(
-		() => {
-			void runRuntimeRetentionSweep().catch((error) => {
-				logEvent({
-					channel: "api",
-					level: "warn",
-					message: "runtime retention scheduled cleanup failed",
-					meta: {
-						errorMessage:
-							error instanceof Error ? error.message : String(error),
-					},
-				});
-			});
-		},
-		readGeneralSettings().dataRetention.sweepIntervalMinutes * 60 * 1000,
+	let closed = false;
+	let retentionTimer: NodeJS.Timeout | null = null;
+	const scheduleRetentionSweep = () => {
+		if (closed) return;
+		if (retentionTimer) clearTimeout(retentionTimer);
+		retentionTimer = setTimeout(
+			() => {
+				void runRuntimeRetentionSweep()
+					.catch((error) => {
+						logEvent({
+							channel: "api",
+							level: "warn",
+							message: "runtime retention scheduled cleanup failed",
+							meta: {
+								errorMessage:
+									error instanceof Error ? error.message : String(error),
+							},
+						});
+					})
+					.finally(scheduleRetentionSweep);
+			},
+			readGeneralSettings().dataRetention.sweepIntervalMinutes * 60 * 1000,
+		);
+		retentionTimer.unref?.();
+	};
+	const unsubscribeRetentionReload = subscribeRuntimeRetentionSettingsChanged(
+		scheduleRetentionSweep,
 	);
-	retentionTimer.unref?.();
+	scheduleRetentionSweep();
 	logEvent({
 		channel: "api",
 		level: "info",
@@ -270,12 +323,12 @@ export async function createNightWorkersServer(
 		meta: { host, port },
 	});
 
-	let closed = false;
 	const close = async (signal: NodeJS.Signals | "manual" = "manual") => {
 		if (closed) return;
 		closed = true;
 		clearInterval(missionPilotQuestionnaireTimer);
-		clearInterval(retentionTimer);
+		if (retentionTimer) clearTimeout(retentionTimer);
+		unsubscribeRetentionReload();
 		clearInterval(fxRefreshTimer);
 		clearInterval(implementationQueueReconcileTimer);
 		logEvent({

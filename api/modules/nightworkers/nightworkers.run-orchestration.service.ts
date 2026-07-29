@@ -6,8 +6,8 @@ export {
 	shouldContinueSessionQueue,
 } from "./run-orchestration/queues";
 export { resumeTaskRunTodo } from "./run-orchestration/resume-task-run";
-export type { StartTaskRunOptions } from "./run-orchestration/start-task-run";
 export { startTaskRun } from "./run-orchestration/start-task-run";
+export type { StartTaskRunOptions } from "./run-orchestration/start-task-run-types";
 export {
 	assertRunStatusTransition,
 	resolveGuardedRunOutcomeStatus,

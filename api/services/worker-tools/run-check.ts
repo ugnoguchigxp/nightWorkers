@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { captureWorkspaceSourceSnapshot } from "../../modules/codingAgent";
 import { getLatestVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
@@ -78,19 +77,15 @@ export async function runCheckTool(
 	});
 	const finishedAt = commandResult.finishedAt;
 	const payload = commandResult.payload;
-	const rawStdoutArtifactId = await writeRawCheckArtifact({
+	const rawStdoutArtifactId = createCheckStreamDigest({
 		stream: "stdout",
 		command,
 		content: payload.stdout,
-		startedAt,
-		finishedAt,
 	});
-	const rawStderrArtifactId = await writeRawCheckArtifact({
+	const rawStderrArtifactId = createCheckStreamDigest({
 		stream: "stderr",
 		command,
 		content: payload.stderr,
-		startedAt,
-		finishedAt,
 	});
 	const verificationDocumentId =
 		input.verificationDocumentId ||
@@ -182,12 +177,13 @@ export async function runCheckTool(
 				: null,
 		},
 		error: commandResult.error,
-		artifactIds: [rawStdoutArtifactId, rawStderrArtifactId],
+		artifactIds: [],
 	};
 }
 
 export async function completionCheckTool(input: {
 	taskId: string;
+	runId: string;
 	verificationDocumentId?: string;
 	repoRoot?: string;
 }): Promise<WorkerToolResult<CompletionCheckOutput>> {
@@ -276,31 +272,15 @@ function stripTerminalControlSequences(value: string) {
 		);
 }
 
-async function writeRawCheckArtifact(input: {
+function createCheckStreamDigest(input: {
 	stream: "stdout" | "stderr";
 	command: string;
 	content: string;
-	startedAt: string;
-	finishedAt: string;
 }) {
-	const dir = path.join(os.tmpdir(), "nightworkers-check-artifacts");
-	await fs.mkdir(dir, { recursive: true });
-	const digest = crypto
+	return `sha256:${crypto
 		.createHash("sha256")
-		.update(
-			[
-				input.stream,
-				input.command,
-				input.startedAt,
-				input.finishedAt,
-				input.content,
-			].join("\n"),
-		)
-		.digest("hex")
-		.slice(0, 24);
-	const filePath = path.join(dir, `${digest}.${input.stream}.log`);
-	await fs.writeFile(filePath, input.content, "utf-8");
-	return filePath;
+		.update([input.stream, input.command, input.content].join("\n"))
+		.digest("hex")}`;
 }
 
 async function resolveRunCheckCommand(input: RunCheckInput) {

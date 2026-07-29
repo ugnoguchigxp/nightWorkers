@@ -6,6 +6,11 @@ import { callStructuredOutputWithRepair } from "../../services/structured-genera
 import { createStructuredOutputContract } from "../../services/structured-llm";
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
 import { p } from "../../systemContexts/catalog";
+import {
+	admitCloseout,
+	consumeCloseoutAdmission,
+	evaluateCloseoutAdmission,
+} from "../gitCloseout/closeout-admission.service";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
 import * as queueRepo from "../queue/queue.repository";
 import { resolveReviewCloseoutEvidence } from "../review/review-closeout-evidence.service";
@@ -233,14 +238,22 @@ export async function getRunGitCloseout(runId: string) {
 		context.mergeRecord,
 		decision,
 	);
+	const closeoutAdmission =
+		decision.state === "commit_ready"
+			? await evaluateCloseoutAdmission(runId)
+			: null;
+	const evidenceBlocked = closeoutAdmission?.passed === false;
+	const evidenceBlockingReason = evidenceBlocked
+		? `Current revision evidence is incomplete: ${closeoutAdmission.reasons.join(", ")}`
+		: null;
 	return {
 		runId: context.run.id,
 		repositoryId: context.repository.id,
-		canCommit: decision.state === "commit_ready",
+		canCommit: decision.state === "commit_ready" && !evidenceBlocked,
 		canPush: integration.canPush,
-		state: integration.state,
-		blockingCode: decision.code,
-		blockingReason: integration.blockingReason,
+		state: evidenceBlocked ? ("review_required" as const) : integration.state,
+		blockingCode: evidenceBlocked ? "CLOSEOUT_EVIDENCE_STALE" : decision.code,
+		blockingReason: evidenceBlockingReason ?? integration.blockingReason,
 		commitRecord: context.commitRecord,
 		mergeRecord: context.mergeRecord,
 		requiredReview: {
@@ -256,7 +269,7 @@ export async function getRunGitCloseout(runId: string) {
 				context.closeoutEvidence.findings.unresolvedBlockingIds.length === 0,
 		},
 		evidence: context.closeoutEvidence,
-		nextAction: decision.reason,
+		nextAction: evidenceBlockingReason ?? decision.reason,
 		git: context.gitState,
 		counts: {
 			stageablePaths: stageablePaths.length,
@@ -354,6 +367,14 @@ async function commitRunGitCloseoutLocked(
 		}
 		return getRunGitCloseout(runId);
 	}
+	const closeoutAdmission = await admitCloseout(runId);
+	if (closeoutAdmission.status !== "admitted") {
+		throw new AppError(
+			409,
+			"closeout_admission_consumed",
+			"Closeout Admission has already been consumed.",
+		);
+	}
 	const commitRecord = context.commitRecord;
 	if (!commitRecord) {
 		throw new AppError(
@@ -373,6 +394,7 @@ async function commitRunGitCloseoutLocked(
 		stageablePaths,
 		explicitMessage: input.message,
 	});
+	let commitPersisted = false;
 	try {
 		const stagedBefore = context.gitState.stagedPaths;
 		if (stagedBefore.length > 0) {
@@ -415,6 +437,8 @@ async function commitRunGitCloseoutLocked(
 			pushStatus: "not_pushed",
 			statusReason: "Committed runtime-owned paths.",
 		});
+		commitPersisted = true;
+		await consumeCloseoutAdmission(closeoutAdmission.id);
 		await repo.createRunEvent({
 			version: 1,
 			runId,
@@ -444,6 +468,7 @@ async function commitRunGitCloseoutLocked(
 		}
 		return getRunGitCloseout(runId);
 	} catch (error) {
+		if (commitPersisted) throw error;
 		await repo.updateTaskRunCommitRecord(runId, {
 			status: "failed",
 			statusReason: toErrorMessage(error),

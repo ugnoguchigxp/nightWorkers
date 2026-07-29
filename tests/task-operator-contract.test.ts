@@ -98,18 +98,16 @@ function projectionFixture() {
 }
 
 describe("Task Operator contracts", () => {
-	it("isolates HTTP command delivery by authenticated user", () => {
+	it("uses the stable local operator identity for HTTP command delivery", () => {
 		const first = humanTaskOperatorCommandContext({
-			userId: "user-1",
 			idempotencyKey: "delivery-1",
 		});
 		const second = humanTaskOperatorCommandContext({
-			userId: "user-2",
 			idempotencyKey: "delivery-1",
 		});
 
-		expect(first.principal.actorId).toBe("user-1");
-		expect(second.principal.actorId).toBe("user-2");
+		expect(first.principal.actorId).toBe("local-task-operator-user");
+		expect(second.principal.actorId).toBe("local-task-operator-user");
 		expect(first.idempotencyKey).toBe(second.idempotencyKey);
 		expect(humanTaskOperatorQueryContext().principal.actorId).toBe(
 			"local-task-operator-user",

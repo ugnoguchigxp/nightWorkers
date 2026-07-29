@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	AppError,
-	AuthError,
 	ForbiddenError,
 	NotFoundError,
 	ValidationError,
@@ -23,13 +22,6 @@ describe("error classes", () => {
 		expect(err.statusCode).toBe(400);
 		expect(err.code).toBe("VALIDATION_ERROR");
 		expect(err.details).toEqual({ field: "email" });
-	});
-
-	it("creates AuthError with default message", () => {
-		const err = new AuthError();
-		expect(err.statusCode).toBe(401);
-		expect(err.code).toBe("UNAUTHORIZED");
-		expect(err.message).toBe("Unauthorized");
 	});
 
 	it("creates ForbiddenError and NotFoundError", () => {

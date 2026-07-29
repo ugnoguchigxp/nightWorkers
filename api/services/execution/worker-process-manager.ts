@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { logEvent } from "../../lib/logger";
-import type { StartTaskRunOptions } from "../../modules/nightworkers/run-orchestration/start-task-run";
+import type { StartTaskRunOptions } from "../../modules/nightworkers/run-orchestration/start-task-run-types";
 import { createApplicationSettingsWorkerSnapshot } from "../settings/application-settings-store";
+import { buildChildProcessEnvironment } from "./child-process-environment";
 import {
 	attachPersistenceOwnerIpcServer,
 	type PersistenceOwnerIpcServerHandle,
@@ -72,16 +73,23 @@ function spawnWorker(
 ) {
 	const entry = workerEntry(kind);
 	const applicationSettingsSnapshot = createApplicationSettingsWorkerSnapshot();
-	const child = spawn(entry.command, entry.args, {
-		cwd: process.cwd(),
-		env: {
-			...process.env,
-			...environment,
+	const workerEnvironment = buildChildProcessEnvironment({
+		purpose: "task_worker",
+		overrides: {
+			...Object.fromEntries(
+				Object.entries(environment).filter(
+					(entry): entry is [string, string] => typeof entry[1] === "string",
+				),
+			),
 			NIGHTWORKERS_EXECUTION_ROLE: "worker",
 			NIGHTWORKERS_EXECUTOR_MODE: "in_process",
 			NIGHTWORKERS_APPLICATION_SETTINGS_SNAPSHOT: applicationSettingsSnapshot,
 			...(kind === "queue-worker" ? { NIGHTWORKERS_QUEUE_WORKER: "1" } : {}),
 		},
+	});
+	const child = spawn(entry.command, entry.args, {
+		cwd: process.cwd(),
+		env: workerEnvironment,
 		stdio: ["ignore", "pipe", "pipe", "ipc"],
 	});
 	trackWorker(child);

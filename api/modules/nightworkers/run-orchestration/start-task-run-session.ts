@@ -76,3 +76,22 @@ export async function recordAgentModeSessionTransition(input: {
 		},
 	});
 }
+
+export async function recordCreatedAgentModeSessionTransition(input: {
+	created: Awaited<ReturnType<typeof createTaskRunInAgentModeSession>> | null;
+	runId: string;
+	taskId: string;
+	executionMode: AgentExecutionMode;
+	llmRole: string;
+	routeFingerprint: string;
+}) {
+	if (!input.created) return;
+	return recordAgentModeSessionTransition({
+		runId: input.runId,
+		taskId: input.taskId,
+		executionMode: input.executionMode,
+		llmRole: input.llmRole,
+		routeFingerprint: input.routeFingerprint,
+		sessionTransition: input.created.sessionTransition,
+	});
+}

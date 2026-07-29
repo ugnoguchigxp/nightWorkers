@@ -74,6 +74,7 @@ export async function ensureVerificationTables() {
       task_id text NOT NULL,
       run_id text,
       verification_document_id text,
+      subject_id text,
       check_kind text NOT NULL,
       command text NOT NULL,
       cwd text NOT NULL,
@@ -88,7 +89,8 @@ export async function ensureVerificationTables() {
       finished_at integer NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
       FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE set null,
-      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE set null
+      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE set null,
+      FOREIGN KEY (subject_id) REFERENCES evidence_subject_snapshots(id) ON DELETE set null
     )
   `);
 	await client.execute(
@@ -96,6 +98,10 @@ export async function ensureVerificationTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS verification_evidence_runs_document_idx ON verification_evidence_runs (verification_document_id)",
+	);
+	await addColumnIfMissing("verification_evidence_runs", "subject_id text");
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS verification_evidence_runs_subject_idx ON verification_evidence_runs (subject_id)",
 	);
 	await addColumnIfMissing(
 		"verification_evidence_runs",

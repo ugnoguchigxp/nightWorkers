@@ -152,7 +152,7 @@ export const missionPilotAgentFixtureRouter = createOpenApiRouter().openapi(
 						id: "agent-questionnaire-draft",
 						name: "questionnaire_draft_save",
 						arguments: {
-							expectedTaskRevision: task.updatedAt.getTime(),
+							expectedTaskRevision: task.revision,
 							questionnaireSessionId: questionnaire.id,
 							answers: [
 								{

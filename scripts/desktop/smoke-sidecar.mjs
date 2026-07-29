@@ -33,10 +33,7 @@ const child = spawn(nodeBinary, [backendEntry], {
     NIGHTWORKERS_FRONTEND_DIST: path.join(stagedRoot, 'dist'),
     NIGHTWORKERS_API_ORIGIN: apiOrigin,
     PORT: String(port),
-    APP_URL: apiOrigin,
     CORS_ORIGIN: `${apiOrigin},http://tauri.localhost,tauri://localhost`,
-    API_AUTH_REQUIRED: 'false',
-    AUTH_MODE: 'local',
   },
   stdio: 'inherit',
 });

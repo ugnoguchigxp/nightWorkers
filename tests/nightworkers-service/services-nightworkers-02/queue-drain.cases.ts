@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as runtimeRegistry from "../../../api/modules/codingAgent/runtime/registry";
+import * as workspaceRepo from "../../../api/modules/gitworktree/task-git-workspace.repository";
+import * as workspaceAttestation from "../../../api/modules/gitworktree/workspace-attestation.service";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { runSessionQueueForRepository } from "../../../api/modules/nightworkers/nightworkers.service";
 import { repoRoot } from "./setup";
@@ -20,6 +22,33 @@ describe("NightWorkers service", () => {
 			acceptanceCriteria: "Queued session starts",
 			timeoutSeconds: 60,
 			status: "running",
+			worktreePath: repoRoot,
+			revision: 1,
+			currentRevisionSnapshotId: "snapshot-next",
+		};
+		const head = "0".repeat(40);
+		const workspace = {
+			id: "workspace-next",
+			taskId: task.id,
+			repositoryId: task.repositoryId,
+			status: "ready",
+			worktreePath: repoRoot,
+			sourceBranch: "main",
+			sourceRef: "refs/heads/main",
+			targetBranch: "main",
+			targetRef: "refs/heads/main",
+			expectedHeadSha: null,
+			allocationVersion: 1,
+			repositoryIdentityRevision: 1,
+			bootstrapEvidenceJson: {
+				dependencyBootstrap: {
+					version: 1,
+					status: "not_required",
+					startedAt: new Date().toISOString(),
+					completedAt: new Date().toISOString(),
+					components: [],
+				},
+			},
 		};
 		const run = {
 			id: "run-next",
@@ -33,12 +62,34 @@ describe("NightWorkers service", () => {
 			queueEnabled: true,
 			maxConcurrentSessions: 1,
 			safetyPolicy: {},
+			repositoryIdentityStatus: "ready",
+			repositoryIdentityRevision: 1,
 		} as never);
+		vi.mocked(workspaceRepo.getTaskGitWorkspace).mockResolvedValue(
+			workspace as never,
+		);
+		vi.mocked(workspaceAttestation.attestTaskWorkspaceForRun).mockResolvedValue(
+			{
+				workspace,
+				attestation: {
+					id: "attestation-next",
+					digest: `sha256:${"1".repeat(64)}`,
+					headSha: head,
+					canonicalPath: repoRoot,
+				},
+			} as never,
+		);
 		vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(0);
 		vi.mocked(repo.claimNextQueuedTask)
 			.mockResolvedValueOnce(task as never)
 			.mockResolvedValueOnce(null);
 		vi.mocked(repo.getTask).mockResolvedValue(task as never);
+		vi.mocked(repo.getTaskRevisionSnapshot).mockResolvedValue({
+			id: "snapshot-next",
+			taskId: task.id,
+			revision: 1,
+			digest: `sha256:${"2".repeat(64)}`,
+		} as never);
 		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
 		vi.mocked(repo.listTaskMessages).mockResolvedValue([
 			{ role: "user", content: task.description },

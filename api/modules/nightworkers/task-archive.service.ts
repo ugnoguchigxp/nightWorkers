@@ -34,13 +34,13 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 		if (!task) throw new NotFoundError("Task not found");
 		if (
 			input.expectedTaskRevision !== undefined &&
-			task.updatedAt.getTime() !== input.expectedTaskRevision
+			task.revision !== input.expectedTaskRevision
 		)
 			throw new AppError(
 				409,
 				"TASK_REVISION_CONFLICT",
 				"Task revision changed; re-read the Task Operator view.",
-				{ currentTaskRevision: task.updatedAt.getTime() },
+				{ currentTaskRevision: task.revision },
 			);
 		const [activeRecord] = await tx
 			.select()
@@ -120,7 +120,7 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 					eq(tasks.id, task.id),
 					eq(tasks.status, "completed"),
 					...(input.expectedTaskRevision !== undefined
-						? [eq(tasks.updatedAt, new Date(input.expectedTaskRevision))]
+						? [eq(tasks.revision, input.expectedTaskRevision)]
 						: []),
 				),
 			)
@@ -183,13 +183,13 @@ export async function restoreArchivedTask(
 		if (!task) throw new NotFoundError("Task not found");
 		if (
 			expectedTaskRevision !== undefined &&
-			task.updatedAt.getTime() !== expectedTaskRevision
+			task.revision !== expectedTaskRevision
 		)
 			throw new AppError(
 				409,
 				"TASK_REVISION_CONFLICT",
 				"Task revision changed; re-read the Task Operator view.",
-				{ currentTaskRevision: task.updatedAt.getTime() },
+				{ currentTaskRevision: task.revision },
 			);
 		if (task.status !== "archived")
 			throw new ValidationError("Task is not archived");
@@ -214,7 +214,7 @@ export async function restoreArchivedTask(
 				and(
 					eq(tasks.id, taskId),
 					...(expectedTaskRevision !== undefined
-						? [eq(tasks.updatedAt, new Date(expectedTaskRevision))]
+						? [eq(tasks.revision, expectedTaskRevision)]
 						: []),
 				),
 			)

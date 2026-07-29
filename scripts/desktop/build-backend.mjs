@@ -59,7 +59,7 @@ await build({
   banner: {
     js: "import { createRequire as __nightworkersCreateRequire } from 'node:module';import { fileURLToPath as __nightworkersFileURLToPath } from 'node:url';import { dirname as __nightworkersDirname } from 'node:path';const require = __nightworkersCreateRequire(import.meta.url);const __filename = __nightworkersFileURLToPath(import.meta.url);const __dirname = __nightworkersDirname(__filename);",
   },
-  external: ['argon2', '@openai/codex-sdk', '@openai/codex'],
+  external: ['@openai/codex-sdk', '@openai/codex'],
 });
 
 for (const outputFile of temporaryOutputFiles) {

@@ -8,51 +8,16 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { agentModeSessions } from "./schema-agent-mode-session";
-import type {
-	ImplementationQueueEntryStatus,
-	TaskRunStatus,
-} from "./schema-base";
+import type { ImplementationQueueEntryStatus } from "./schema-base";
 import { commonColumns, repositories, tasks } from "./schema-base";
-export const taskRuns = sqliteTable(
-	"task_runs",
-	{
-		...commonColumns,
-		taskId: text("task_id")
-			.notNull()
-			.references(() => tasks.id, { onDelete: "cascade" }),
-		repositoryId: text("repository_id").references(() => repositories.id, {
-			onDelete: "cascade",
-		}),
-		agentModeSessionId: text("agent_mode_session_id").references(
-			() => agentModeSessions.id,
-			{ onDelete: "set null" },
-		),
-		status: text("status").$type<TaskRunStatus>().default("running").notNull(), // running | context_compiling | finalizing | completed | failed | cancelled | needs_review | blocked | timed_out | needs_human
-		todoPlanRevision: integer("todo_plan_revision").default(0).notNull(),
-		workerKind: text("worker_kind").default("native-local-worker").notNull(),
-		baseRef: text("base_ref"),
-		worktreePath: text("worktree_path"),
-		timeoutSeconds: integer("timeout_seconds").default(3600).notNull(),
-		contextSnapshot: text("context_snapshot", { mode: "json" }),
-		summary: text("summary"),
-		finalReport: text("final_report"),
-		finalJudgment: text("final_judgment", { mode: "json" }),
-		startedAt: integer("started_at", { mode: "timestamp" })
-			.$defaultFn(() => new Date())
-			.notNull(),
-		endedAt: integer("ended_at", { mode: "timestamp" }),
-		finishedAt: integer("finished_at", { mode: "timestamp" }),
-		logContent: text("log_content"),
-		diffPatch: text("diff_patch"),
-		testResults: text("test_results", { mode: "json" }),
-	},
-	(table) => ({
-		taskIdIdx: index("task_runs_task_id_idx").on(table.taskId),
-		agentModeSessionStartedIdx: index(
-			"task_runs_agent_mode_session_started_idx",
-		).on(table.agentModeSessionId, table.startedAt),
-	}),
-);
+import { taskRuns } from "./schema-task-runs";
+import { taskGitWorkspaces } from "./schema-workspace-authority";
+
+export { taskRuns } from "./schema-task-runs";
+export {
+	taskGitWorkspaces,
+	workspaceAttestations,
+} from "./schema-workspace-authority";
 
 export const implementationQueueEntries = sqliteTable(
 	"implementation_queue_entries",
@@ -146,58 +111,6 @@ export const implementationQueueEntries = sqliteTable(
 		missionPilotAdmissionUidx: uniqueIndex(
 			"implementation_queue_entries_mission_pilot_admission_uidx",
 		).on(table.missionPilotAdmissionKey),
-	}),
-);
-
-export const taskGitWorkspaces = sqliteTable(
-	"task_git_workspaces",
-	{
-		...commonColumns,
-		taskId: text("task_id")
-			.notNull()
-			.unique()
-			.references(() => tasks.id, { onDelete: "cascade" }),
-		repositoryId: text("repository_id")
-			.notNull()
-			.references(() => repositories.id, { onDelete: "cascade" }),
-		planReviewId: text("plan_review_id"),
-		admissionKey: text("admission_key"),
-		status: text("status").default("planned").notNull(),
-		materializationKind: text("materialization_kind").notNull(),
-		materializationIntentJson: text("materialization_intent_json", {
-			mode: "json",
-		}),
-		bootstrapEvidenceJson: text("bootstrap_evidence_json", { mode: "json" }),
-		integrationPolicySnapshotJson: text("integration_policy_snapshot_json", {
-			mode: "json",
-		}).notNull(),
-		sourceBranch: text("source_branch").notNull(),
-		targetBranch: text("target_branch").notNull(),
-		targetBaseSha: text("target_base_sha"),
-		worktreePath: text("worktree_path"),
-		worktreeId: text("worktree_id"),
-		allocationVersion: integer("allocation_version").default(1).notNull(),
-		expectedHeadSha: text("expected_head_sha"),
-		provisionAttempt: integer("provision_attempt").default(0).notNull(),
-		initializationAttempt: integer("initialization_attempt")
-			.default(0)
-			.notNull(),
-		leaseOwner: text("lease_owner"),
-		leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
-		lastVerifiedHead: text("last_verified_head"),
-		attentionResumeStatus: text("attention_resume_status"),
-		lastErrorCode: text("last_error_code"),
-		lastErrorMessage: text("last_error_message"),
-		provisionedAt: integer("provisioned_at", { mode: "timestamp" }),
-		initializedAt: integer("initialized_at", { mode: "timestamp" }),
-		releasedAt: integer("released_at", { mode: "timestamp" }),
-		retiredAt: integer("retired_at", { mode: "timestamp" }),
-	},
-	(table) => ({
-		repositoryStatusIdx: index("task_git_workspaces_repository_status_idx").on(
-			table.repositoryId,
-			table.status,
-		),
 	}),
 );
 

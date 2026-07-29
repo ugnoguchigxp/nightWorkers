@@ -114,7 +114,7 @@ export type ReviewTarget = {
 };
 
 export type ReviewTargetManifest = {
-	version: 2;
+	version: 3;
 	digest: string;
 	taskId: string;
 	contextDigest: string | null;
@@ -126,6 +126,13 @@ export type ReviewTargetManifest = {
 		status: string;
 		diffDigest: string;
 		finalReportDigest: string;
+		taskRevisionSnapshotId: string | null;
+		taskRevision: number | null;
+		taskDigest: string | null;
+		subjectId: string | null;
+		finalResponseEvidenceId: string | null;
+		finalResponseEvidenceDigest: string | null;
+		bindingStatus: "canonical" | "legacy_unbound";
 	}>;
 	targetFiles: Array<{
 		path: string;

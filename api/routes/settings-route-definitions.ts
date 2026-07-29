@@ -84,6 +84,7 @@ const generalSettingsSchema = z.object({
 				.number()
 				.int()
 				.refine((value): boolean => value === 3),
+			codingAgentFullRecordDays: z.number().int().min(1).max(365),
 			usageDataDays: z
 				.number()
 				.int()
@@ -298,6 +299,87 @@ export const saveGeneralSettingsRoute = createRoute({
 		200: {
 			content: { "application/json": { schema: generalSettingsSchema } },
 			description: "Save general settings",
+		},
+	},
+});
+
+const retentionCleanupPreviewSchema = z.object({
+	previewId: z.string(),
+	settingsRevision: z.number().int().nonnegative(),
+	policyDigest: z.string(),
+	cutoffAt: z.string(),
+	expiresAt: z.string(),
+	databaseBytesBefore: z.number().nonnegative(),
+	walBytesBefore: z.number().nonnegative(),
+	deletable: z.object({
+		payloads: z.number().int().nonnegative(),
+		detailRows: z.number().int().nonnegative(),
+		estimatedPayloadBytes: z.number().int().nonnegative(),
+		estimatedDatabaseBytes: z.number().int().nonnegative(),
+	}),
+	protected: z.object({
+		activeRuns: z.number().int().nonnegative(),
+		reviewPendingRuns: z.number().int().nonnegative(),
+		closeoutPendingRuns: z.number().int().nonnegative(),
+		needsHumanRuns: z.number().int().nonnegative(),
+	}),
+	categories: z.array(
+		z.object({
+			kind: z.string(),
+			records: z.number().int().nonnegative(),
+			estimatedBytes: z.number().int().nonnegative(),
+		}),
+	),
+});
+
+export const previewDataRetentionCleanupRoute = createRoute({
+	method: "post",
+	path: "/data-retention/cleanup/preview",
+	responses: {
+		200: {
+			content: {
+				"application/json": { schema: retentionCleanupPreviewSchema },
+			},
+			description: "Preview expired Coding Agent full-record cleanup",
+		},
+	},
+});
+
+export const executeDataRetentionCleanupRoute = createRoute({
+	method: "post",
+	path: "/data-retention/cleanup",
+	request: {
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						previewId: z.string().min(1),
+						expectedSettingsRevision: z.number().int().nonnegative(),
+						idempotencyKey: z.string().min(8).max(200),
+						reclaimDiskSpace: z.enum(["incremental", "skip"]),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						status: z.literal("completed"),
+						runsPurged: z.number().int().nonnegative(),
+						detailRowsDeleted: z.number().int().nonnegative(),
+						detailBytesPurged: z.number().int().nonnegative(),
+						rowsDeleted: z.record(z.string(), z.number()),
+						reclaim: z.object({
+							requested: z.enum(["incremental", "skip"]),
+							status: z.enum(["completed", "skipped", "unsupported"]),
+						}),
+					}),
+				},
+			},
+			description: "Execute an approved cleanup preview",
 		},
 	},
 });

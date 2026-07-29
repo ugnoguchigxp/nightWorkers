@@ -7,7 +7,6 @@ import {
 	loadCodingAgentContextPacket,
 	renderCodingAgentTodoRecoveryGuidance,
 	resolveCodexIntakeRuntimeHandoff,
-	TodoMutationService,
 } from "../../codingAgent";
 import {
 	buildOntologyRuntimeContextDisabledSnapshot,
@@ -30,6 +29,11 @@ import {
 	prepareStartableTask,
 	startTaskRun,
 } from "./start-task-run-entry";
+import {
+	assertResumedRunBindings,
+	materializeAdoptedImplementationPlan,
+	resolveTaskRunRevisionBinding,
+} from "./start-task-run-evidence";
 import { failPreparedRunBeforeLaunch } from "./start-task-run-failure";
 import {
 	buildContinuationRouteIdentity,
@@ -43,11 +47,10 @@ import {
 } from "./start-task-run-runtime-context";
 import {
 	createTaskRunInAgentModeSession,
-	recordAgentModeSessionTransition,
+	recordCreatedAgentModeSessionTransition,
 } from "./start-task-run-session";
 import type { StartTaskRunOptions } from "./start-task-run-types";
 
-export type { StartTaskRunOptions } from "./start-task-run-types";
 export { startTaskRun };
 export async function startTaskRunInProcess(
 	taskId: string,
@@ -78,7 +81,6 @@ export async function startTaskRunInProcess(
 	await prepared.launch?.();
 	return resultRun;
 }
-
 export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
@@ -106,6 +108,7 @@ export async function prepareTaskRunInProcess(
 		implementationHandoffSnapshot,
 		implementationPlan,
 		repositoryMaterializationSnapshot,
+		workspaceAdmission,
 		workspaceRuntimeEnvironment,
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
@@ -147,6 +150,10 @@ export async function prepareTaskRunInProcess(
 		runtimeLane: runtimeLaneResolution.lane,
 		runtimeLlmRoute,
 	});
+	const taskRevisionSnapshot = await resolveTaskRunRevisionBinding({
+		task,
+		resuming: Boolean(resumable),
+	});
 	const created = resumable
 		? null
 		: await createTaskRunInAgentModeSession({
@@ -158,10 +165,23 @@ export async function prepareTaskRunInProcess(
 				taskRun: {
 					taskId,
 					repositoryId: task.repositoryId,
+					taskRevisionSnapshotId: task.currentRevisionSnapshotId,
+					taskRevision: task.revision,
+					taskDigest: taskRevisionSnapshot?.digest ?? null,
 					status: "running",
 					workerKind: runtimeLaneResolution.workerKind,
 					baseRef: gitBaseline.baselineHead,
 					worktreePath: task.worktreePath ? executionRoot : null,
+					workspaceAuthorityKind: "task_workspace",
+					workspaceId: workspaceAdmission?.workspace.id ?? null,
+					workspaceAllocationVersion:
+						workspaceAdmission?.workspace.allocationVersion ?? null,
+					repositoryIdentityRevision:
+						workspaceAdmission?.workspace.repositoryIdentityRevision ?? null,
+					admissionAttestationId: workspaceAdmission?.attestation.id ?? null,
+					admissionAttestationDigest:
+						workspaceAdmission?.attestation.digest ?? null,
+					admittedHeadSha: workspaceAdmission?.attestation.headSha ?? null,
 					timeoutSeconds: task.timeoutSeconds,
 					contextSnapshot: {
 						compiledPrompt: compiledPromptText,
@@ -186,32 +206,25 @@ export async function prepareTaskRunInProcess(
 			});
 	const run = resumable?.run ?? created?.run;
 	if (!run) throw new Error("Failed to resolve task run.");
-	if (created) {
-		await recordAgentModeSessionTransition({
-			runId: run.id,
-			taskId,
-			executionMode,
-			llmRole: runtimeRole,
-			routeFingerprint: routeIdentity.fingerprint,
-			sessionTransition: created.sessionTransition,
-		});
-	}
-	if (created && implementationPlan) {
-		const packet = await loadCodingAgentContextPacket(run.id);
-		if (!packet) throw new Error("Coding Agent context packet is unavailable.");
-		const materialized = await new TodoMutationService(
-			packet.systemContext,
-			"agent",
-		).execute(run.id, {
-			op: "plan",
-			steps: implementationPlan.steps,
-		});
-		if (!materialized.ok) {
-			throw new Error(
-				`Adopted implementation plan could not be materialized: ${materialized.error.code}`,
-			);
-		}
-	}
+	assertResumedRunBindings({
+		resuming: Boolean(resumable),
+		task,
+		run,
+		admission: workspaceAdmission,
+	});
+	await recordCreatedAgentModeSessionTransition({
+		created,
+		runId: run.id,
+		taskId,
+		executionMode,
+		llmRole: runtimeRole,
+		routeFingerprint: routeIdentity.fingerprint,
+	});
+	await materializeAdoptedImplementationPlan({
+		runId: run.id,
+		plan: implementationPlan,
+		created: Boolean(created),
+	});
 	await activateWorkspace(taskId, gitBaseline.baselineHead);
 	if (!resumable) {
 		await repo.createTaskRunCommitRecord({

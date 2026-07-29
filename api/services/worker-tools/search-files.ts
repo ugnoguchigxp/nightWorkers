@@ -7,6 +7,8 @@ import {
 	toDeepRecord,
 	unknownErrorMessage,
 } from "../../../shared/json-record";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
+import { isProjectSecretPath } from "../security/project-secret-paths";
 import { formatFileSystemToolError, isNodeFileNotFoundError } from "./fs-error";
 import { getRelativePath } from "./path-policy";
 import { enforcePathPolicy } from "./tool-policy-enforcer";
@@ -65,6 +67,7 @@ export async function searchFilesTool(
 		try {
 			const { stdout } = await execAsync(rgCommand, {
 				cwd: absoluteRepoRoot,
+				env: buildChildProcessEnvironment({ purpose: "workspace_command" }),
 				maxBuffer: 10 * 1024 * 1024,
 			});
 			const lines = stdout.split("\n").filter((l) => l.trim().length > 0);
@@ -76,6 +79,9 @@ export async function searchFilesTool(
 					if (parsed.type === "match") {
 						const data = parsed.data;
 						const absolutePath = path.resolve(absoluteRepoRoot, data.path.text);
+						if (isProjectSecretPath(absolutePath, absoluteRepoRoot)) {
+							continue;
+						}
 
 						const policy = enforcePathPolicy(absolutePath, {
 							repoRoot: absoluteRepoRoot,
@@ -150,6 +156,7 @@ export async function searchFilesTool(
 			const entries = await fs.readdir(currentDir, { withFileTypes: true });
 			for (const entry of entries) {
 				const fullPath = path.join(currentDir, entry.name);
+				if (isProjectSecretPath(fullPath, absoluteRepoRoot)) continue;
 
 				if (entry.isDirectory()) {
 					if (

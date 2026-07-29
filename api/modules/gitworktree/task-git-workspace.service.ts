@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { and, eq, isNull, or } from "drizzle-orm";
 import {
 	defaultProjectGitIntegrationPolicy,
@@ -12,6 +13,7 @@ import {
 	tasks,
 } from "../../db/schema";
 import { AppError } from "../../lib/errors";
+import { inspectProjectRepositoryIdentity } from "../../services/git/project-repository-identity";
 import {
 	createRepositoryWorktree,
 	listRepositoryWorktrees,
@@ -27,6 +29,7 @@ import {
 	taskWorkspaceBranchName,
 	taskWorkspacePath,
 } from "./task-workspace-naming";
+import { attestTaskWorkspaceForRun } from "./workspace-attestation.service";
 
 function policyFor(value: unknown) {
 	return (
@@ -47,14 +50,14 @@ export async function ensureTaskGitWorkspace(input: {
 			existing.status === "waiting_for_repository_initialization" &&
 			input.materializationIntent
 		) {
+			if (input.materializationIntent.kind === "existing_git") {
+				return adoptExternallyMaterializedRepository(existing);
+			}
 			const initialized = await workspaceRepo.transitionTaskGitWorkspace({
 				id: existing.id,
 				expectedStatus: "waiting_for_repository_initialization",
 				data: {
-					status:
-						input.materializationIntent.kind === "existing_git"
-							? "planned"
-							: "waiting_for_repository_initialization",
+					status: "waiting_for_repository_initialization",
 					materializationKind: input.materializationIntent.kind,
 					materializationIntentJson: input.materializationIntent,
 					lastErrorCode: null,
@@ -152,6 +155,15 @@ export async function ensureTaskGitWorkspace(input: {
 				integrationPolicySnapshotJson: policy,
 				sourceBranch,
 				targetBranch: repository.branch,
+				sourceRef: `refs/heads/${sourceBranch}`,
+				targetRef: `refs/heads/${repository.branch}`,
+				repositoryIdentityRevision: repository.repositoryIdentityRevision,
+				repositoryIdentityDigest: repository.repositoryIdentityDigest,
+				baseWorktreeId: repository.baseWorktreeId,
+				baseWorktreePathCanonical: repository.baseWorktreePathCanonical,
+				gitCommonDirDigest: repository.gitCommonDirCanonical
+					? digestGitIdentityPath(repository.gitCommonDirCanonical)
+					: null,
 				allocationVersion: 1,
 				provisionAttempt: 0,
 				createdAt: new Date(),
@@ -275,6 +287,7 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 						leaseExpiresAt: null,
 						targetBaseSha,
 						worktreePath: created.canonicalPath,
+						taskWorktreePathCanonical: created.canonicalPath,
 						worktreeId: created.id,
 						expectedHeadSha: created.head,
 						lastVerifiedHead: created.head,
@@ -317,6 +330,82 @@ async function provisionTaskGitWorkspaceUnlocked(taskId: string) {
 		});
 		throw error;
 	}
+}
+
+function digestGitIdentityPath(value: string) {
+	return `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
+}
+
+async function adoptExternallyMaterializedRepository(
+	workspace: NonNullable<
+		Awaited<ReturnType<typeof workspaceRepo.getTaskGitWorkspace>>
+	>,
+) {
+	const [repository] = await db
+		.select()
+		.from(repositories)
+		.where(eq(repositories.id, workspace.repositoryId));
+	if (!repository)
+		throw new AppError(404, "repository_not_found", "Repository not found");
+	const identity = await inspectProjectRepositoryIdentity(repository.localPath);
+	if (identity.status !== "ready") {
+		throw new AppError(
+			409,
+			"repository_materialization_identity_invalid",
+			"Materialized repository identity is not ready",
+		);
+	}
+	return db.transaction(async (tx) => {
+		const nextRevision = repository.repositoryIdentityRevision + 1;
+		await tx
+			.update(repositories)
+			.set({
+				localPath: identity.registeredRootCanonical,
+				repositoryKind: identity.repositoryKind,
+				repositoryIdentityStatus: identity.status,
+				registeredRootCanonical: identity.registeredRootCanonical,
+				gitCommonDirCanonical: identity.gitCommonDirCanonical,
+				baseWorktreePathCanonical: identity.baseWorktreePathCanonical,
+				baseWorktreeId: identity.baseWorktreeId,
+				baseWorktreeBranch: identity.observedBranch,
+				baseWorktreeHeadSha: identity.observedHeadSha,
+				baseWorktreeDirty: identity.baseWorktreeDirty,
+				repositoryIdentityDigest: identity.digest,
+				repositoryIdentityRevision: nextRevision,
+				repositoryIdentityVerifiedAt: new Date(identity.verifiedAt),
+				updatedAt: new Date(),
+			})
+			.where(eq(repositories.id, repository.id));
+		const adopted = await workspaceRepo.transitionTaskGitWorkspace(
+			{
+				id: workspace.id,
+				expectedStatus: "waiting_for_repository_initialization",
+				data: {
+					status: "planned",
+					materializationKind: "existing_git",
+					materializationIntentJson: { kind: "existing_git" },
+					repositoryIdentityRevision: nextRevision,
+					repositoryIdentityDigest: identity.digest,
+					baseWorktreeId: identity.baseWorktreeId,
+					baseWorktreePathCanonical: identity.baseWorktreePathCanonical,
+					gitCommonDirDigest: identity.gitCommonDirCanonical
+						? digestGitIdentityPath(identity.gitCommonDirCanonical)
+						: null,
+					lastErrorCode: null,
+					lastErrorMessage: null,
+				},
+			},
+			tx,
+		);
+		if (!adopted) {
+			throw new AppError(
+				409,
+				"repository_materialization_changed",
+				"Repository materialization changed concurrently",
+			);
+		}
+		return adopted;
+	});
 }
 
 export async function provisionTaskGitWorkspace(
@@ -363,7 +452,13 @@ export async function provisionTaskGitWorkspace(
 		}
 		throw error;
 	});
-	return initializeTaskGitWorkspace(provisioned, options);
+	const initialized = await initializeTaskGitWorkspace(provisioned, options);
+	if (!["ready", "active"].includes(initialized.status)) return initialized;
+	const attested = await attestTaskWorkspaceForRun({
+		taskId: initialized.taskId,
+		requireClean: true,
+	});
+	return attested.workspace;
 }
 
 export async function releaseProvisionedTaskWorkspace(input: {
@@ -381,6 +476,17 @@ export async function releaseProvisionedTaskWorkspace(input: {
 				"workspace_not_ready",
 				"Dedicated workspace is not ready",
 			);
+		if (
+			!workspace.lastAttestationId ||
+			!workspace.lastAttestationDigest ||
+			workspace.attestationRevision < 1
+		) {
+			throw new AppError(
+				409,
+				"workspace_attestation_required",
+				"Dedicated workspace attestation is required",
+			);
+		}
 		const [entry] = await tx
 			.update(implementationQueueEntries)
 			.set({

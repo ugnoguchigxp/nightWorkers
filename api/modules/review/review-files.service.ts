@@ -9,6 +9,7 @@ import type {
 } from "../../services/run-events/types";
 import { digestText } from "../../services/text-digest";
 import { gitDiffTool } from "../../services/worker-tools/git";
+import { getLatestFinalResponseEvidence } from "../evidenceLedger";
 import * as repo from "../nightworkers/nightworkers.repository";
 import { readReviewTargetManifest } from "./review-target-manifest";
 import {
@@ -97,11 +98,21 @@ async function buildManifestReviewEvidencePack(input: {
 	const sources = [];
 	for (const source of input.manifest.sourceRuns) {
 		const sourceRun = await repo.getTaskRun(source.runId);
+		const finalResponseEvidence = await getLatestFinalResponseEvidence(
+			source.runId,
+		);
 		if (
 			!sourceRun ||
 			sourceRun.taskId !== input.run.taskId ||
 			digestText(sourceRun.diffPatch ?? "") !== source.diffDigest ||
-			digestText(sourceRun.finalReport ?? "") !== source.finalReportDigest
+			digestText(sourceRun.finalReport ?? "") !== source.finalReportDigest ||
+			sourceRun.taskRevisionSnapshotId !== source.taskRevisionSnapshotId ||
+			sourceRun.taskRevision !== source.taskRevision ||
+			sourceRun.taskDigest !== source.taskDigest ||
+			(finalResponseEvidence?.id ?? null) !== source.finalResponseEvidenceId ||
+			(finalResponseEvidence?.contentDigest ?? null) !==
+				source.finalResponseEvidenceDigest ||
+			(finalResponseEvidence?.subjectId ?? null) !== source.subjectId
 		) {
 			throw new AppError(
 				409,

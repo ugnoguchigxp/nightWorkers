@@ -9,11 +9,9 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { z } from "zod";
 import { config } from "./config";
-import { isPublicApiPath } from "./lib/api-auth-boundary";
 import { logEvent, logHttpEvent } from "./lib/logger";
 import { createOpenApiRouter } from "./lib/openapi";
 import { handleNightWorkersCodexMcpRequest } from "./mcp/nightworkers-codex-mcp";
-import { authMiddleware } from "./middleware/auth";
 import { errorHandler } from "./middleware/error-handler";
 import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
@@ -50,11 +48,9 @@ import { taskGenerationRouter } from "./modules/taskGeneration/task-generation.r
 import { buildTaskGenerationEvidence } from "./modules/taskGeneration/task-generation-evidence.service";
 import { taskOperatorRouter } from "./modules/taskOperator";
 import { techStackRouter } from "./modules/techStack/tech-stack.routes";
-import { authRouter } from "./routes/auth";
 import { healthRouter } from "./routes/health";
 import { hooksSettingsRouter } from "./routes/hooks-settings";
 import { mcpSettingsRouter } from "./routes/mcp-settings";
-import { oauthRouter } from "./routes/oauth";
 import { settingsRouter } from "./routes/settings";
 import { getResourceRoot } from "./runtime/paths";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
@@ -65,8 +61,6 @@ initializeCodingAgentRunHandlers();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)
-	.route("/auth/oauth", oauthRouter)
-	.route("/auth", authRouter)
 	.route("/settings", settingsRouter)
 	.route("/settings", mcpSettingsRouter)
 	.route("/settings", hooksSettingsRouter)
@@ -105,12 +99,10 @@ const apiRateLimit = isE2e ? 10_000 : isProduction ? 100 : 1_000;
 const apiLimiter = rateLimiter({
 	windowMs: 60 * 1000,
 	limit: apiRateLimit,
-	trustProxy: config.TRUST_PROXY,
 });
 const wsLimiter = rateLimiter({
 	windowMs: 60 * 1000,
 	limit: isE2e ? 10_000 : 120,
-	trustProxy: config.TRUST_PROXY,
 });
 const connectSrcOrigins = [
 	...config.CORS_ORIGINS,
@@ -128,7 +120,6 @@ const connectSrcOrigins = [
 ];
 export const nodeWebSocket = createNodeWebSocket({ app });
 const { upgradeWebSocket } = nodeWebSocket;
-const requireApiAuth = authMiddleware();
 
 const wsClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({
@@ -155,9 +146,8 @@ app.use(
 			if (origin && config.CORS_ORIGINS.includes(origin)) return origin;
 			return null;
 		},
-		credentials: true,
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-		allowHeaders: ["Content-Type", "Authorization"],
+		allowHeaders: ["Content-Type"],
 	}),
 );
 
@@ -199,38 +189,11 @@ app.use("/api/*", async (c, next) => {
 	return apiLimiter(c, next);
 });
 app.use(
-	"/api/auth/login",
-	rateLimiter({
-		windowMs: 60 * 1000,
-		limit: 5,
-		trustProxy: config.TRUST_PROXY,
-	}),
-);
-app.use(
-	"/api/auth/register",
-	rateLimiter({
-		windowMs: 60 * 1000,
-		limit: 5,
-		trustProxy: config.TRUST_PROXY,
-	}),
-);
-
-app.use(
 	"/api/*",
 	csrf({
 		origin: config.CORS_ORIGINS,
 	}),
 );
-
-app.use("/api/*", async (c, next) => {
-	if (!config.API_AUTH_REQUIRED || isPublicApiPath(c.req.path)) {
-		return next();
-	}
-	if (!isProduction && c.req.header("x-nightworkers-e2e") === "1") {
-		return next();
-	}
-	return requireApiAuth(c, next);
-});
 
 // Documentation
 app.doc("/api/doc", {
@@ -272,7 +235,7 @@ app.route("/api", apiRoutes);
 
 app.get(
 	"/api/ws/nightworkers",
-	upgradeWebSocket((c) => {
+	upgradeWebSocket((_c) => {
 		const requestId = crypto.randomUUID();
 		logHttpEvent({
 			channel: "ws",
@@ -280,7 +243,7 @@ app.get(
 			path: "/api/ws/nightworkers",
 			level: "info",
 			message: "upgrade requested",
-			meta: { requestId, ip: c.req.header("x-forwarded-for") || "unknown" },
+			meta: { requestId },
 		});
 		return {
 			onOpen(_event, ws) {

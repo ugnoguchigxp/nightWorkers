@@ -111,13 +111,6 @@ function inferRouteHints(pathname: string): string[] {
 			"src/modules/nightworkers/components/NightWorkersShell.tsx",
 		];
 	}
-	if (pathname.startsWith("/login")) {
-		return [
-			"src/routes/__root.tsx",
-			"src/routes/login.tsx",
-			"src/lib/auth.tsx",
-		];
-	}
 	if (pathname.startsWith("/repositories")) {
 		return ["src/routes/__root.tsx", "src/routes/repositories.tsx"];
 	}
@@ -129,9 +122,6 @@ function inferRouteHints(pathname: string): string[] {
 	}
 	if (pathname.startsWith("/blueprint-showcase")) {
 		return ["src/routes/__root.tsx", "src/routes/blueprint-showcase.tsx"];
-	}
-	if (pathname.startsWith("/oauth/callback")) {
-		return ["src/routes/__root.tsx", "src/routes/oauth.callback.tsx"];
 	}
 	return ["src/routes/__root.tsx"];
 }

@@ -4,16 +4,13 @@ import { config } from "../api/config";
 import { runStartupPreflight } from "../api/services/preflight/preflight";
 
 describe("startup preflight", () => {
-	const originalJwtSecret = config.JWT_SECRET;
 	const originalDatabaseUrl = config.DATABASE_URL;
 
 	beforeEach(() => {
-		config.JWT_SECRET = "a".repeat(32);
 		config.DATABASE_URL = "file:sqlite.db";
 	});
 
 	afterEach(() => {
-		config.JWT_SECRET = originalJwtSecret;
 		config.DATABASE_URL = originalDatabaseUrl;
 		vi.restoreAllMocks();
 	});
@@ -23,7 +20,7 @@ describe("startup preflight", () => {
 		expect(result.mode).toBe("development");
 		expect(result.runtimeRoot).toBeTruthy();
 		expect(result.resourceRoot).toBeTruthy();
-		expect(result.checks.find((c) => c.id === "jwt-secret")?.status).toBe(
+		expect(result.checks.find((c) => c.id === "listen-security")?.status).toBe(
 			"pass",
 		);
 		expect(result.checks.find((c) => c.id === "database-url")?.status).toBe(
@@ -35,14 +32,6 @@ describe("startup preflight", () => {
 		vi.stubEnv("NIGHTWORKERS_DESKTOP", "1");
 		const result = runStartupPreflight();
 		expect(result.mode).toBe("desktop");
-	});
-
-	it("returns fail status if JWT secret is too short", () => {
-		config.JWT_SECRET = "short";
-		const result = runStartupPreflight();
-		const jwtCheck = result.checks.find((check) => check.id === "jwt-secret");
-		expect(jwtCheck?.status).toBe("fail");
-		expect(jwtCheck?.detail).toBe("JWT_SECRET must be at least 32 characters.");
 	});
 
 	it("returns fail status if DATABASE_URL is empty", () => {

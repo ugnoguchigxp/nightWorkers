@@ -95,9 +95,11 @@ function createRepoRoot() {
 }
 
 async function createRepository() {
+	const localPath = createRepoRoot();
+	await initializeRepositoryGitHead(localPath);
 	return nightworkersRepo.createRepository({
 		name: `TEST: Mission Planner ${crypto.randomUUID()}`,
-		localPath: createRepoRoot(),
+		localPath,
 		branch: "main",
 		queueEnabled: true,
 	});
@@ -872,7 +874,6 @@ describe("Mission Planner service and routes", () => {
 describe("Mission Planner queue handoff", () => {
 	it("prefers Mission proposal scheduling metadata when creating queue entries", async () => {
 		const repository = await createRepository();
-		await initializeRepositoryGitHead(repository.localPath);
 		const task = await nightworkersRepo.createTask({
 			repositoryId: repository.id,
 			title: `TEST: Mission queue handoff ${crypto.randomUUID()}`,
@@ -923,7 +924,6 @@ describe("Mission Planner queue handoff", () => {
 
 	it("blocks approval-required Mission proposal tasks until explicit approval metadata exists", async () => {
 		const repository = await createRepository();
-		await initializeRepositoryGitHead(repository.localPath);
 		const proposalId = crypto.randomUUID();
 		const task = await nightworkersRepo.createTask({
 			repositoryId: repository.id,

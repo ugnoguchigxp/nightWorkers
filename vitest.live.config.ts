@@ -6,9 +6,6 @@ export default defineConfig({
     environment: 'node',
     env: {
       NODE_ENV: 'test',
-      AUTH_MODE: 'local',
-      API_AUTH_REQUIRED: 'false',
-      JWT_SECRET: 'nightworkers-live-test-jwt-secret-000000000000',
       NIGHTWORKERS_DESKTOP: '0',
     },
     fileParallelism: false,

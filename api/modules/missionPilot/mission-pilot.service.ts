@@ -79,7 +79,7 @@ export function initializeMissionPilotRunSync() {
 						? "task_run.terminal"
 						: "task_run.started",
 				sourceEventId: `task-run:${run.id}:${run.status}`,
-				taskRevision: task.updatedAt.getTime(),
+				taskRevision: task.revision,
 				payload: terminal
 					? { runId: run.id, status: run.status }
 					: { runId: run.id, status: run.status },
@@ -110,7 +110,7 @@ export function initializeMissionPilotTerminalRunEvents() {
 					? "task_run.failed"
 					: "task_run.terminal",
 				sourceEventId: event.eventId,
-				taskRevision: task.updatedAt.getTime(),
+				taskRevision: task.revision,
 				payload: { runId: event.runId, status: event.status },
 			});
 			scheduleMissionPilotAgentWake({ sessionId: session.id });
@@ -145,7 +145,7 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 			taskId: message.taskId,
 			type: "task.user_message_added",
 			sourceEventId: `task-message:${message.id}`,
-			taskRevision: task.updatedAt.getTime(),
+			taskRevision: task.revision,
 			payload: { messageId: message.id },
 		});
 	});

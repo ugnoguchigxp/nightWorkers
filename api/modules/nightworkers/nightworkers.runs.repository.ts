@@ -9,6 +9,8 @@ import {
 	tasks,
 } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
+import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
+import { appendFinalResponseEvidence } from "../evidenceLedger";
 
 export * from "./nightworkers.runs-event.repository";
 export * from "./nightworkers.runs-support";
@@ -19,11 +21,22 @@ export async function createTaskRun(
 	data: {
 		taskId: string;
 		repositoryId?: string | null;
+		taskRevisionSnapshotId?: string | null;
+		taskRevision?: number | null;
+		taskDigest?: string | null;
+		admissionSubjectId?: string | null;
 		agentModeSessionId?: string | null;
 		status?: TaskRunStatus;
 		workerKind?: string;
 		baseRef?: string | null;
 		worktreePath?: string | null;
+		workspaceAuthorityKind?: string | null;
+		workspaceId?: string | null;
+		workspaceAllocationVersion?: number | null;
+		repositoryIdentityRevision?: number | null;
+		admissionAttestationId?: string | null;
+		admissionAttestationDigest?: string | null;
+		admittedHeadSha?: string | null;
 		timeoutSeconds?: number;
 		contextSnapshot?: unknown;
 		summary?: string | null;
@@ -32,11 +45,29 @@ export async function createTaskRun(
 		startedAt?: Date;
 		endedAt?: Date;
 		finishedAt?: Date;
+		detailsPurgedAt?: Date | null;
+		purgedDetailCount?: number;
+		purgedDetailBytes?: number;
+		purgedManifestDigest?: string | null;
 	},
 	database: typeof db | DbTransaction = db,
 ) {
-	const [run] = await database.insert(taskRuns).values(data).returning();
-	return run;
+	const sanitized = sanitizePersistenceValue(data);
+	const create = async (target: typeof db | DbTransaction) => {
+		const [run] = await target.insert(taskRuns).values(sanitized).returning();
+		if (run && sanitized.finalReport) {
+			await appendFinalResponseEvidence(
+				{
+					taskId: run.taskId,
+					runId: run.id,
+					content: sanitized.finalReport,
+				},
+				target,
+			);
+		}
+		return run;
+	};
+	return database === db ? db.transaction(create) : create(database);
 }
 
 export async function getTaskRun(id: string) {
@@ -298,11 +329,29 @@ export async function publishTaskRunUpdate(run: typeof taskRuns.$inferSelect) {
 }
 
 export async function updateTaskRun(id: string, data: TaskRunUpdateData) {
-	const [run] = await db
-		.update(taskRuns)
-		.set({ ...data, updatedAt: new Date() })
-		.where(eq(taskRuns.id, id))
-		.returning();
+	data = sanitizePersistenceValue(data);
+	const run = await db.transaction(async (tx) => {
+		const [updated] = await tx
+			.update(taskRuns)
+			.set({ ...data, updatedAt: new Date() })
+			.where(eq(taskRuns.id, id))
+			.returning();
+		if (
+			updated &&
+			data.finalReport !== undefined &&
+			data.finalReport !== null
+		) {
+			await appendFinalResponseEvidence(
+				{
+					taskId: updated.taskId,
+					runId: updated.id,
+					content: data.finalReport,
+				},
+				tx,
+			);
+		}
+		return updated;
+	});
 	if (run) await publishTaskRunUpdate(run);
 	return run;
 }
@@ -312,14 +361,34 @@ export async function updateTaskRunIfStatus(
 	expectedStatus: TaskRunStatus | readonly TaskRunStatus[],
 	data: TaskRunUpdateData,
 ) {
+	data = sanitizePersistenceValue(data);
 	const expectedStatuses = Array.isArray(expectedStatus)
 		? [...expectedStatus]
 		: [expectedStatus];
-	const [run] = await db
-		.update(taskRuns)
-		.set({ ...data, updatedAt: new Date() })
-		.where(and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)))
-		.returning();
+	const run = await db.transaction(async (tx) => {
+		const [updated] = await tx
+			.update(taskRuns)
+			.set({ ...data, updatedAt: new Date() })
+			.where(
+				and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)),
+			)
+			.returning();
+		if (
+			updated &&
+			data.finalReport !== undefined &&
+			data.finalReport !== null
+		) {
+			await appendFinalResponseEvidence(
+				{
+					taskId: updated.taskId,
+					runId: updated.id,
+					content: data.finalReport,
+				},
+				tx,
+			);
+		}
+		return updated;
+	});
 	if (run) await publishTaskRunUpdate(run);
 	return run;
 }
@@ -332,28 +401,46 @@ export async function updateTaskRunIfStatusAndTodoRevision(input: {
 	expectedTodoRevision: number;
 	data: TaskRunUpdateData;
 }) {
-	const matchingTodo = db
-		.select({ id: taskRunTodos.id })
-		.from(taskRunTodos)
-		.where(
-			and(
-				eq(taskRunTodos.runId, input.runId),
-				eq(taskRunTodos.id, input.todoId),
-				eq(taskRunTodos.status, input.expectedTodoStatus),
-				eq(taskRunTodos.revision, input.expectedTodoRevision),
-			),
-		);
-	const [run] = await db
-		.update(taskRuns)
-		.set({ ...input.data, updatedAt: new Date() })
-		.where(
-			and(
-				eq(taskRuns.id, input.runId),
-				eq(taskRuns.status, input.expectedStatus),
-				exists(matchingTodo),
-			),
-		)
-		.returning();
+	input.data = sanitizePersistenceValue(input.data);
+	const run = await db.transaction(async (tx) => {
+		const matchingTodo = tx
+			.select({ id: taskRunTodos.id })
+			.from(taskRunTodos)
+			.where(
+				and(
+					eq(taskRunTodos.runId, input.runId),
+					eq(taskRunTodos.id, input.todoId),
+					eq(taskRunTodos.status, input.expectedTodoStatus),
+					eq(taskRunTodos.revision, input.expectedTodoRevision),
+				),
+			);
+		const [updated] = await tx
+			.update(taskRuns)
+			.set({ ...input.data, updatedAt: new Date() })
+			.where(
+				and(
+					eq(taskRuns.id, input.runId),
+					eq(taskRuns.status, input.expectedStatus),
+					exists(matchingTodo),
+				),
+			)
+			.returning();
+		if (
+			updated &&
+			input.data.finalReport !== undefined &&
+			input.data.finalReport !== null
+		) {
+			await appendFinalResponseEvidence(
+				{
+					taskId: updated.taskId,
+					runId: updated.id,
+					content: input.data.finalReport,
+				},
+				tx,
+			);
+		}
+		return updated;
+	});
 	if (run) await publishTaskRunUpdate(run);
 	return run ?? null;
 }
@@ -363,15 +450,30 @@ export async function updateTaskRunIfStatusWithoutPublish(
 	expectedStatus: TaskRunStatus | readonly TaskRunStatus[],
 	data: TaskRunUpdateData,
 ) {
+	data = sanitizePersistenceValue(data);
 	const expectedStatuses = Array.isArray(expectedStatus)
 		? [...expectedStatus]
 		: [expectedStatus];
-	const [run] = await db
-		.update(taskRuns)
-		.set({ ...data, updatedAt: new Date() })
-		.where(and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)))
-		.returning();
-	return run;
+	return db.transaction(async (tx) => {
+		const [run] = await tx
+			.update(taskRuns)
+			.set({ ...data, updatedAt: new Date() })
+			.where(
+				and(eq(taskRuns.id, id), inArray(taskRuns.status, expectedStatuses)),
+			)
+			.returning();
+		if (run && data.finalReport !== undefined && data.finalReport !== null) {
+			await appendFinalResponseEvidence(
+				{
+					taskId: run.taskId,
+					runId: run.id,
+					content: data.finalReport,
+				},
+				tx,
+			);
+		}
+		return run;
+	});
 }
 
 export async function heartbeatActiveTaskRun(id: string) {

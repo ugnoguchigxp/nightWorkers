@@ -102,6 +102,7 @@ export async function evaluateCodingAgentCompletionReadiness(
 
 	const result = await dependencies.runCompletionCheck({
 		taskId: input.taskId,
+		runId: input.runId,
 		verificationDocumentId: document.id,
 		repoRoot: input.repositoryRoot,
 	});

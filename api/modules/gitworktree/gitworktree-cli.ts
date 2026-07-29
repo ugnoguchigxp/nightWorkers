@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { buildChildProcessEnvironment } from "../../services/execution/child-process-environment";
 
 export type GitCliFailureReason =
 	| "git_not_found"
@@ -49,6 +50,9 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 				cwd: options.cwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
+				env: buildChildProcessEnvironment({
+					purpose: "workspace_bootstrap",
+				}),
 			},
 		);
 		const stdout: Buffer[] = [];

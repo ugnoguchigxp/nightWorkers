@@ -1,11 +1,21 @@
 import { execFile } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("../api/modules/gitCloseout/closeout-admission.service", () => ({
+	admitCloseout: async (runId: string) => ({
+		id: `admission-${runId}`,
+		admissionDigest: `digest-${runId}`,
+		status: "admitted",
+	}),
+	consumeCloseoutAdmission: async () => null,
+}));
+
 import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
@@ -219,6 +229,21 @@ describe("Plan-time Git workspace and Review merge", () => {
 		expect(secondReady.worktreePath).toBeTruthy();
 		expect(firstReady.worktreePath).not.toBe(secondReady.worktreePath);
 		expect(firstReady.sourceBranch).not.toBe(secondReady.sourceBranch);
+	}, 20_000);
+
+	it("does not copy an untracked base-worktree .env into the Task worktree", async () => {
+		const { root, task } = await fixture();
+		await writeFile(path.join(root, ".env"), "PROJECT_SECRET=base-only\n");
+		await ensureTaskGitWorkspace({
+			taskId: task.id,
+			planReviewId: crypto.randomUUID(),
+			admissionKey: `env-boundary:${task.id}`,
+		});
+		const ready = await provisionTaskGitWorkspace(task.id);
+		expect(ready.worktreePath).toBeTruthy();
+		await expect(
+			access(path.join(ready.worktreePath ?? "", ".env")),
+		).rejects.toThrow();
 	}, 20_000);
 
 	it("provisions a dedicated workspace and merges only the reviewed SHA", async () => {

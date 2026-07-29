@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { getRuntimePaths } from "../../../runtime/paths";
+import { buildChildProcessEnvironment } from "../../../services/execution/child-process-environment";
 import {
 	adapterVersionCommand,
 	buildWorkspaceBootstrapCommands,
@@ -156,7 +157,9 @@ async function bootstrapComponent(input: {
 			tmpDir,
 			cacheDir,
 			environmentDir,
-			baseEnv: process.env,
+			baseEnv: buildChildProcessEnvironment({
+				purpose: "workspace_bootstrap",
+			}),
 		});
 		if (input.component.adapterId === "yarn" && /^1\./.test(version)) {
 			commands = commands.map((command) => ({
@@ -239,11 +242,9 @@ async function readToolVersion(
 	const result = await runWorkspaceBootstrapCommand({
 		command: {
 			...versionCommand,
-			env: Object.fromEntries(
-				Object.entries(process.env).filter(
-					(entry): entry is [string, string] => typeof entry[1] === "string",
-				),
-			),
+			env: buildChildProcessEnvironment({
+				purpose: "workspace_bootstrap",
+			}) as Record<string, string>,
 		},
 		cwd: componentRoot,
 		signal,

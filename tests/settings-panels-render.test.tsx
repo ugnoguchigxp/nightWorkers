@@ -63,6 +63,19 @@ const generalSettings: GeneralSettings = {
 	llmUsage: {
 		promptPartObservabilityEnabled: true,
 	},
+	dataRetention: {
+		apiLogDays: 7,
+		llmRawLogDays: 3,
+		codingAgentFullRecordDays: 7,
+		usageDataDays: 30,
+		auditEventDays: 90,
+		apiLogMaxBytes: 16 * 1024 * 1024,
+		llmRawLogsMaxBytes: 64 * 1024 * 1024,
+		runtimeLogsMaxBytes: 80 * 1024 * 1024,
+		apiSegmentMaxBytes: 4 * 1024 * 1024,
+		llmSegmentMaxBytes: 8 * 1024 * 1024,
+		sweepIntervalMinutes: 60,
+	},
 };
 
 const llmSettings: LlmSettings = {
@@ -275,6 +288,7 @@ describe("settings panels", () => {
 		expect(generalMarkup).toContain("基準通貨: EUR");
 		expect(generalMarkup).toContain("1.17 USD");
 		expect(generalMarkup).toContain("172.50 JPY");
+		expect(generalMarkup).toContain("coding-agent-full-record-days");
 		expect(planModeMarkup).toContain('type="checkbox"');
 	});
 

@@ -47,8 +47,12 @@ export async function createCodexRuntimeThread(input: {
 }): Promise<CodexRuntimeThread> {
 	if (input.threadFactory) return input.threadFactory(input.context);
 	const providerEndpointId = readCodexProviderEndpointId(input.context);
+	if (resolveCodexEndpointAccessToken(providerEndpointId)) {
+		throw new Error(
+			"CODEX_CHILD_PROVIDER_CREDENTIAL_BLOCKED: NightWorkersのprovider credentialをCodex SDK child processへ渡すruntime laneは無効です。",
+		);
+	}
 	const codexOptions = buildCodexRuntimeSdkOptions({
-		accessToken: resolveCodexEndpointAccessToken(providerEndpointId),
 		env: process.env,
 		context: input.context,
 		developerInstructions: input.developerInstructions,

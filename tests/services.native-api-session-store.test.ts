@@ -39,7 +39,7 @@ describe("NativeApiSessionStore", () => {
 			toolCall: {
 				id: "call-1",
 				name: "read_current_specification",
-				arguments: {},
+				arguments: { apiKey: "must-not-persist" },
 			},
 			todoSeq: 1,
 		});
@@ -92,6 +92,9 @@ describe("NativeApiSessionStore", () => {
 		expect(reusableToolCall?.resultJson).toMatchObject({
 			ok: true,
 			content: '{"ok":true}',
+		});
+		expect(reusableToolCall?.argumentsJson).toEqual({
+			apiKey: "[REDACTED]",
 		});
 	});
 

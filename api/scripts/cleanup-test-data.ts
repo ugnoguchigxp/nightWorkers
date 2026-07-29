@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { config } from "../config";
@@ -7,6 +8,7 @@ import {
 	artifacts,
 	repositories,
 	taskEvents,
+	taskGitWorkspaces,
 	taskMessages,
 	taskRuns,
 	tasks,
@@ -269,6 +271,7 @@ export async function buildPlan(
 export async function deleteRepositories(repositoryIds: string[]) {
 	if (repositoryIds.length === 0) return 0;
 	const chunkSize = 100;
+	await removeDedicatedTestWorktrees(repositoryIds);
 
 	const taskIds = (
 		await db
@@ -331,6 +334,45 @@ export async function deleteRepositories(repositoryIds: string[]) {
 	}
 	runSqliteCleanup(statements);
 	return repositoryIds.length;
+}
+
+async function removeDedicatedTestWorktrees(repositoryIds: string[]) {
+	const workspaces = await db
+		.select({
+			worktreePath: taskGitWorkspaces.worktreePath,
+			repositoryRoot: repositories.registeredRootCanonical,
+			repositoryLocalPath: repositories.localPath,
+		})
+		.from(taskGitWorkspaces)
+		.innerJoin(
+			repositories,
+			eq(taskGitWorkspaces.repositoryId, repositories.id),
+		)
+		.where(inArray(taskGitWorkspaces.repositoryId, repositoryIds));
+	for (const workspace of workspaces) {
+		if (!workspace.worktreePath) continue;
+		const repositoryRoot =
+			workspace.repositoryRoot ?? workspace.repositoryLocalPath;
+		try {
+			const canonicalRoot = fs.realpathSync(repositoryRoot);
+			const canonicalWorktree = fs.realpathSync(workspace.worktreePath);
+			if (canonicalRoot === canonicalWorktree) continue;
+			execFileSync(
+				"git",
+				[
+					"-C",
+					canonicalRoot,
+					"worktree",
+					"remove",
+					"--force",
+					canonicalWorktree,
+				],
+				{ stdio: "ignore", timeout: 30_000 },
+			);
+		} catch {
+			// DB cleanup remains possible when a test worktree was already removed.
+		}
+	}
 }
 
 export async function cleanupNightWorkersTestData(

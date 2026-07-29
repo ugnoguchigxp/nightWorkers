@@ -34,6 +34,8 @@ export const enProjectDetail = {
 	"projectDetail.worktrees.upstream": "Upstream",
 	"projectDetail.worktrees.sync": "Sync",
 	"projectDetail.worktrees.aheadBehind": "ahead {{ahead}} / behind {{behind}}",
+	"projectDetail.worktrees.comparisonObservedAt":
+		"Local ref observed at {{value}}",
 	"projectDetail.worktrees.changes": "Changes",
 	"projectDetail.worktrees.changeCounts":
 		"staged {{staged}} / modified {{modified}} / untracked {{untracked}} / conflicts {{conflicted}}",

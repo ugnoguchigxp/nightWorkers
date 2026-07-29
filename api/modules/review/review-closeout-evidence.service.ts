@@ -183,8 +183,8 @@ async function findCompletionCheck(input: {
 }
 
 async function resolveVerificationEvidence(input: {
+	runId: string;
 	taskId: string;
-	implementationFinishedAt: Date;
 	artifacts: Awaited<ReturnType<typeof reviewRepo.listReviewArtifacts>>;
 }): Promise<ReviewCloseoutEvidence["verification"]> {
 	const reviewRunArtifact = input.artifacts.find(
@@ -192,12 +192,10 @@ async function resolveVerificationEvidence(input: {
 	);
 	const reviewRunPayload = artifactPayload(reviewRunArtifact);
 	const requiresPostReviewRetest = reviewRunPayload.fixesApplied === true;
-	const evidenceFreshnessFloor =
-		requiresPostReviewRetest &&
-		reviewRunArtifact &&
-		reviewRunArtifact.updatedAt > input.implementationFinishedAt
+	const postReviewFreshnessFloor =
+		requiresPostReviewRetest && reviewRunArtifact
 			? reviewRunArtifact.updatedAt
-			: input.implementationFinishedAt;
+			: null;
 	const [missionSession] = await db
 		.select()
 		.from(missionPilotSessions)
@@ -266,18 +264,7 @@ async function resolveVerificationEvidence(input: {
 		input.taskId,
 	);
 	if (document?.status === "active") {
-		const taskRuns = await nightworkersRepo.listTaskRunsForTask(input.taskId);
-		const completedVerificationRuns = taskRuns.filter((run) => {
-			const snapshot = record(run.contextSnapshot);
-			return (
-				run.status === "completed" &&
-				snapshot.executionMode === "implementation"
-			);
-		});
-		const verificationRuns = completedVerificationRuns.filter(
-			(run) => run.startedAt >= evidenceFreshnessFloor,
-		);
-		const verificationRunIds = new Set(verificationRuns.map((run) => run.id));
+		const implementationRun = await nightworkersRepo.getTaskRun(input.runId);
 		const items = await verificationRepo.listVerificationChecklistItems(
 			document.id,
 		);
@@ -293,25 +280,14 @@ async function resolveVerificationEvidence(input: {
 				}),
 			),
 		];
-		if (
-			requiresPostReviewRetest &&
-			completedVerificationRuns.length > 0 &&
-			verificationRuns.length === 0
-		) {
-			return {
-				source: "verification_checklist",
-				status: "stale",
-				verificationDocumentId: document.id,
-				evidenceRunIds,
-				completionCheckEventId: null,
-				reason: "Review Run が修正を適用した後の実装Run証跡がありません。",
-			};
-		}
 		const evidenceRuns =
 			await verificationRepo.listVerificationEvidenceRuns(evidenceRunIds);
 		const linkedEvidenceRequired = required.filter(
 			(item) => !["manual", "not_applicable"].includes(item.status),
 		);
+		const stalePostReviewEvidence =
+			postReviewFreshnessFloor !== null &&
+			evidenceRuns.some((run) => run.finishedAt < postReviewFreshnessFloor);
 		const missingLinkedEvidence =
 			evidenceRunIds.length === 0 ||
 			linkedEvidenceRequired.some((item) => !item.evidenceIds.at(-1)) ||
@@ -320,27 +296,19 @@ async function resolveVerificationEvidence(input: {
 				(run) =>
 					run.taskId !== input.taskId ||
 					run.verificationDocumentId !== document.id ||
-					!run.runId ||
-					!verificationRunIds.has(run.runId) ||
-					run.finishedAt < evidenceFreshnessFloor,
+					run.runId !== input.runId,
 			);
 		const failedEvidence = evidenceRuns.some((run) => run.exitCode !== 0);
 		const latestEvidenceFinishedAt = evidenceRuns.reduce(
 			(latest, run) => (run.finishedAt > latest ? run.finishedAt : latest),
-			evidenceFreshnessFloor,
-		);
-		const minimumCompletedAt = [
 			document.generatedAt,
-			evidenceFreshnessFloor,
-			latestEvidenceFinishedAt,
-		].reduce((latest, date) => (date > latest ? date : latest));
+		);
+		const minimumCompletedAt = [document.generatedAt, latestEvidenceFinishedAt]
+			.concat(postReviewFreshnessFloor ? [postReviewFreshnessFloor] : [])
+			.reduce((latest, date) => (date > latest ? date : latest));
 		const completion = await findCompletionCheck({
-			verificationRuns,
-			allowedRunIds: new Set(
-				evidenceRuns
-					.map((run) => run.runId)
-					.filter((runId): runId is string => Boolean(runId)),
-			),
+			verificationRuns: implementationRun ? [implementationRun] : [],
+			allowedRunIds: new Set([input.runId]),
 			verificationDocumentId: document.id,
 			minimumCompletedAt,
 		});
@@ -352,17 +320,25 @@ async function resolveVerificationEvidence(input: {
 			Boolean(completion);
 		return {
 			source: "verification_checklist",
-			status: failedEvidence ? "failed" : passed ? "passed" : "incomplete",
+			status: stalePostReviewEvidence
+				? "stale"
+				: failedEvidence
+					? "failed"
+					: passed
+						? "passed"
+						: "incomplete",
 			verificationDocumentId: document.id,
 			evidenceRunIds,
 			completionCheckEventId: completion?.id ?? null,
-			reason: passed
-				? null
-				: failedEvidence
-					? "Test evidence に失敗した実行があります。"
-					: missingLinkedEvidence
-						? "Verification checklist から managed evidence run への参照が不足しています。"
-						: "Verification checklist または completion_check が未完了です。",
+			reason: stalePostReviewEvidence
+				? "Review Run が修正を適用した後の再検証証跡がありません。"
+				: passed
+					? null
+					: failedEvidence
+						? "Test evidence に失敗した実行があります。"
+						: missingLinkedEvidence
+							? "Verification checklist から managed evidence run への参照が不足しています。"
+							: "Verification checklist または completion_check が未完了です。",
 		};
 	}
 
@@ -473,8 +449,8 @@ export async function resolveReviewCloseoutEvidence(input: {
 	const [review, verification] = await Promise.all([
 		resolveReviewEvidence({ runId: input.runId, artifacts, events }),
 		resolveVerificationEvidence({
+			runId: input.runId,
 			taskId: input.taskId,
-			implementationFinishedAt: input.implementationFinishedAt,
 			artifacts,
 		}),
 	]);

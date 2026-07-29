@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isProjectSecretPath } from "../security/project-secret-paths";
 import { formatFileSystemToolError } from "./fs-error";
 import {
 	buildReadCacheMarker,
@@ -58,6 +59,26 @@ export async function readFileTool(
 	const targetPath = path.isAbsolute(filePath)
 		? filePath
 		: path.resolve(absoluteRepoRoot, filePath);
+	if (isProjectSecretPath(targetPath, absoluteRepoRoot)) {
+		return {
+			ok: false,
+			toolName: "read_file",
+			startedAt,
+			finishedAt: new Date().toISOString(),
+			payload: {
+				content: "",
+				totalLines: 0,
+				linesReturned: 0,
+				startLine: 0,
+				endLine: 0,
+				truncated: false,
+			},
+			error: {
+				code: "ACCESS_DENIED",
+				message: "Project secret fileはread_fileで取得できません。",
+			},
+		};
+	}
 
 	const pathDecision = enforcePathPolicy(targetPath, {
 		repoRoot,

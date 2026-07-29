@@ -1,10 +1,13 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
+import type { WorkspaceArtifactRef } from "../../../shared/schemas/workspace-authority.schema";
 import { db } from "../../db/client";
 import { withSqliteBusyRetry } from "../../db/retry";
 import { artifacts, taskEvents, taskRuns } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import { normalizeRunEventToLegacy } from "../../services/run-events/normalizer";
 import type { RunEventBase } from "../../services/run-events/types";
+import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
+import { validateWorkspaceArtifactRef } from "../../services/workspace/workspace-artifact-provenance";
 import {
 	enqueueActivityEvent,
 	runEventToActivityKind,
@@ -30,6 +33,7 @@ export async function createTaskEvent(data: {
 	payloadJson?: unknown;
 	timestamp?: Date;
 }) {
+	data = sanitizePersistenceValue(data);
 	const maxAttempts = data.seq === undefined ? 5 : 1;
 	let lastError: unknown;
 	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -67,6 +71,8 @@ export async function createRunEvent(
 	options?: { legacyPayload?: unknown; payloadJson?: Record<string, unknown> },
 ) {
 	if (event.type === "model.response_delta") return null;
+	event = sanitizePersistenceValue(event);
+	options = sanitizePersistenceValue(options);
 
 	const normalized = normalizeRunEventToLegacy({
 		event,
@@ -92,7 +98,7 @@ export async function createRunEvent(
 	);
 	if (!currentRunEvent) return created;
 
-	const patchedPayload = {
+	const patchedPayload = sanitizePersistenceValue({
 		...payload,
 		...(options?.payloadJson || {}),
 		runEvent: {
@@ -101,7 +107,7 @@ export async function createRunEvent(
 			seq: created.seq,
 			runId: currentRunEvent.runId || created.taskRunId,
 		},
-	};
+	});
 
 	const [updated] = await withSqliteBusyRetry(() =>
 		db
@@ -216,8 +222,42 @@ export async function createArtifact(data: {
 	kind: string;
 	path: string;
 	metadataJson?: unknown;
+	workspaceArtifactRef?: WorkspaceArtifactRef;
 }) {
-	const [artifact] = await db.insert(artifacts).values(data).returning();
+	if (
+		["workspace_file", "workspace_diff", "verification_projection"].includes(
+			data.kind,
+		) &&
+		!data.workspaceArtifactRef
+	) {
+		throw new Error("WORKSPACE_ARTIFACT_PROVENANCE_REQUIRED");
+	}
+	const workspaceProvenance = data.workspaceArtifactRef
+		? await validateWorkspaceArtifactRef({
+				runId: data.runId,
+				ref: data.workspaceArtifactRef,
+			})
+		: null;
+	const [artifact] = await db
+		.insert(artifacts)
+		.values(
+			sanitizePersistenceValue({
+				runId: data.runId,
+				kind: data.kind,
+				path: data.path,
+				metadataJson: workspaceProvenance
+					? {
+							...(data.metadataJson &&
+							typeof data.metadataJson === "object" &&
+							!Array.isArray(data.metadataJson)
+								? data.metadataJson
+								: {}),
+							workspaceProvenance,
+						}
+					: data.metadataJson,
+			}),
+		)
+		.returning();
 	return artifact;
 }
 

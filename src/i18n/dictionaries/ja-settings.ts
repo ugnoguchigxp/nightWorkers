@@ -47,6 +47,16 @@ export const jaSettings = {
 	"settings.general.promptPartObservability": "プロンプト構成要素の使用量推定",
 	"settings.general.promptPartObservabilityHelp":
 		"provider usage と別に、system prompt / user prompt / State Card の NightWorkers 推定 token を保存します。",
+	"settings.general.retention.title": "Coding Agent 記録の保持",
+	"settings.general.retention.description":
+		"完全な実行記録は指定期間だけ保持し、Task・Run・Evidence・Review・Git結果の基幹記録は残します。設定の保存だけでは削除しません。",
+	"settings.general.retention.days": "完全記録の保持日数（1〜365日）",
+	"settings.general.retention.preview": "削除対象を確認",
+	"settings.general.retention.cleanupNow": "期限切れ記録を今すぐ削除",
+	"settings.general.retention.previewSummary":
+		"削除候補 {{rows}} 件（推定 {{bytes}} bytes）、保護中 {{protected}} Run",
+	"settings.general.retention.cleanupSucceeded":
+		"{{runsPurged}} Run、{{detailRowsDeleted}} 件の詳細記録を削除しました。",
 	"settings.planMode.title": "プランモード",
 	"settings.planMode.description":
 		"プランモードの各生成経路をオン・オフします。オフにした項目はUIだけでなくAPI生成も停止します。既存の成果物は閲覧できます。",

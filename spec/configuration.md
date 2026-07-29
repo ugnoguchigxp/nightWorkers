@@ -2,13 +2,13 @@
 
 ## Bootstrap Variables
 
-Server、認証、OAuth、LLM provider、runtime設定はSettings画面から変更し、
+Server、LLM provider、runtime設定はSettings画面から変更し、
 通常開発では`.nightworkers/sqlite.db`へ保存します。環境変数はdesktop packagingや
 isolated testなど、SQLiteを開く前に必要なbootstrap値だけに限定します。
 
 - `NIGHTWORKERS_DESKTOP`: set by the Tauri shell for desktop sidecar mode
 - `NIGHTWORKERS_RUNTIME_DIR`: writable desktop runtime root for DB, settings,
-  logs, secrets, and artifacts
+  logs, and artifacts
 - `NIGHTWORKERS_RESOURCE_DIR`: readonly bundled resource root for built assets
   and builtin supervisor/procedure documents
 - `NIGHTWORKERS_API_ORIGIN`: selected loopback API origin passed from Tauri to
@@ -21,8 +21,7 @@ isolated testなど、SQLiteを開く前に必要なbootstrap値だけに限定�
 `DATABASE_URL`の指定は不要です。desktop modeではTauriが上記のdesktop変数を注入し、
 backendは`${NIGHTWORKERS_RUNTIME_DIR}/sqlite.db`を使用します。
 When `NIGHTWORKERS_RUNTIME_DIR` is not explicitly set, it defaults to
-`${NIGHTWORKERS_RESOURCE_DIR}/.nightworkers`. If `JWT_SECRET` is not set, the backend
-generates and stores one at `${NIGHTWORKERS_RUNTIME_DIR}/secrets/jwt-secret`.
+`${NIGHTWORKERS_RESOURCE_DIR}/.nightworkers`.
 
 Desktop settings are stored under `${NIGHTWORKERS_RUNTIME_DIR}/settings`.
 Desktop logs are stored under `${NIGHTWORKERS_RUNTIME_DIR}/logs`.
@@ -54,10 +53,12 @@ GET /api/settings/preflight/startup
 This endpoint separates app startup problems from Project execution environment
 problems.
 
-## OAuth Settings
+## Local-only Product Boundary
 
-Google/GitHub OAuthのclient IDとsecretはSettings画面から登録し、SQLiteの公開設定と
-秘密設定へ分離して保存します。
+NightWorkersはproduct account、user profile、login session、product OAuthを持ちません。
+`HOST`は`127.0.0.0/8`、`localhost`、`::1`のいずれかに限定されます。外部LLMや
+integration providerのcredentialはこの境界とは別で、各provider設定としてローカルに
+保存されます。
 
 ## Optional Integration
 
@@ -182,7 +183,6 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 ```bash
 cp .env.example .env
 bun run db:migrate
-bun run db:seed
 bun run dev
 ```
 
@@ -243,3 +243,13 @@ creation can fail on local mount/Finder state. `bun run desktop:sign` requires
 verified. In a packaged release, runtime data is stored in Tauri
 `app_data_dir`, while development and test runs may override it with
 `NIGHTWORKERS_RUNTIME_DIR`.
+
+## Project workspaceとsecret
+
+- Project登録pathはGit top-levelのprimary worktreeを指定する。subdirectory、symlink alias、secondary worktreeはProject rootとして登録できない。
+- Task実行は専用worktreeへ割り当てられ、Project identityやHEADが変化した古いRunは再開できない。既存Projectのidentity差分は起動時にread-only previewされ、明示的なrevision付きbackfillだけが正本を更新する。
+- `.env`をTask worktreeへ自動copyする設定はない。Task commandで必要なら、ユーザーが対象Task worktreeへ配置する。
+- provider secretはSettings APIからmasked valueだけが返る。永続化先はOS secret storeであり、利用できないplatform/sessionでは再起動後に再入力が必要になる。
+- `NIGHTWORKERS_SECRET_STORE=session`は明示的にsession-onlyへ切り替える。SQLiteへのsecret保存を有効にする互換設定はない。
+- Coding Agent runtimeは既定でAPI process内に置き、provider呼び出しをparent-owned boundaryに保つ。`NIGHTWORKERS_EXECUTOR_MODE=process`を明示したisolated workerはOS secret storeを参照できず、NightWorkers管理のprovider credentialを必要とするlaneはfail-closeする。
+- stdio MCPへ渡せるcredentialは、そのMCP server設定に明示されたintegration-owned envだけである。NightWorkers parent processのambient provider envは継承しない。

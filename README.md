@@ -372,7 +372,6 @@ the managed subdirectories; development services create the paths they use:
 .nightworkers/
   sqlite.db
   settings/    # integration settings and compatibility files when used
-  secrets/     # desktop-managed secrets when used
   logs/        # managed runtime logs
   artifacts/   # persisted attachment files and runtime artifacts when used
 ```
@@ -406,25 +405,21 @@ The default retention settings are:
 Closed log segments can be deleted before their time limit when the configured
 capacity limit is reached.
 
-The server binds to loopback by default. A non-loopback production bind requires
-API authentication. Local account authentication is implemented; Google and
-GitHub OAuth are available only when their matching credentials and application
-URL are configured.
+The server is local-only and accepts loopback listen addresses only. NightWorkers
+does not maintain product accounts, user profiles, login sessions, or product
+OAuth. Credentials for external LLM and integration providers remain separate
+local settings and are sent only to those providers.
 
 ## Runtime Configuration
 
-Server, authentication, provider, routing, integration, and general application
-settings are managed from the Settings UI and persisted locally. Environment
-variables remain available for bootstrap and explicit runtime overrides.
+Server, provider, routing, integration, and general application settings are
+managed from the Settings UI and persisted locally. Environment variables
+remain available for bootstrap and explicit runtime overrides.
 
 | Variable | Current role |
 | --- | --- |
 | `NIGHTWORKERS_RUNTIME_DIR` | Override the managed runtime root. |
-| `HOST` / `PORT` | API listen address and port; the default API bind is `127.0.0.1:39173`. |
-| `API_AUTH_REQUIRED` | Require authentication for protected product APIs and the NightWorkers WebSocket. |
-| `AUTH_MODE` | Select `local`, `oauth`, or `both`; OAuth still requires configured providers. |
-| `APP_URL` | Required for OAuth callback and secure application URL handling. |
-| `TRUST_PROXY` | Trust reverse-proxy forwarding only when explicitly enabled. |
+| `HOST` / `PORT` | API listen address and port. `HOST` must be loopback; the default bind is `127.0.0.1:39173`. |
 | `CONVERSATION_CONTEXT_ENABLED` | Master switch for derived conversation context; enabled by default. |
 | `CONVERSATION_CONTEXT_STATE_CARD_ENABLED` | Inject the latest compact StateCard into the runtime request. |
 | `CONVERSATION_CONTEXT_BUILD_ON_IDLE` | Refresh derived context after intake and run completion. |
@@ -453,8 +448,8 @@ bun run setup
 bun run dev
 ```
 
-`setup` installs dependencies, creates `.env` only when it does not exist,
-applies migrations, and seeds the database. Open:
+`setup` installs dependencies, creates `.env` only when it does not exist, and
+applies migrations. Open:
 
 ```text
 http://localhost:39174
@@ -599,7 +594,6 @@ are present.
 | `bun run start` | Start the production backend bundle after `build`. |
 | `bun run db:generate` | Generate Drizzle migration files after a schema change. |
 | `bun run db:migrate` | Apply Drizzle migrations to the active runtime database. |
-| `bun run db:seed` | Seed the active development database. |
 | `bun run db:studio` | Open Drizzle Studio. |
 | `bun run cleanup:test-data:dry-run` | Preview deletion of local TEST-prefixed data. |
 | `bun run cleanup:test-data` | Execute the scoped TEST-data cleanup. |

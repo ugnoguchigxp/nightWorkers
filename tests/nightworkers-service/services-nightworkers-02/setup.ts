@@ -1,3 +1,4 @@
+import path from "node:path";
 import { beforeEach, vi } from "vitest";
 export const repoRoot = "/Users/y.noguchi/Code/nightWorkers";
 export const implementationPhasePreamble = [
@@ -11,6 +12,7 @@ vi.doMock("../../../api/modules/nightworkers/nightworkers.repository", () => {
 	const updateTaskRun = vi.fn();
 	return {
 		getTask: vi.fn(),
+		getTaskRevisionSnapshot: vi.fn(),
 		updateRepository: vi.fn(),
 		updateRepositoryProjectMeta: vi.fn(),
 		countActiveTaskRuns: vi.fn(),
@@ -113,6 +115,33 @@ vi.doMock("../../../api/modules/codingAgent/runtime/registry", () => {
 		),
 	};
 });
+
+vi.doMock(
+	"../../../api/modules/gitworktree/gitworktree.service",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../../../api/modules/gitworktree/gitworktree.service")
+		>()),
+		resolveTaskExecutionRoot: vi.fn(async (input: { worktreePath?: string }) =>
+			path.resolve(input.worktreePath || repoRoot),
+		),
+	}),
+);
+
+vi.doMock(
+	"../../../api/modules/gitworktree/task-git-workspace.repository",
+	() => ({
+		getTaskGitWorkspace: vi.fn(),
+		updateTaskGitWorkspace: vi.fn(),
+	}),
+);
+
+vi.doMock(
+	"../../../api/modules/gitworktree/workspace-attestation.service",
+	() => ({
+		attestTaskWorkspaceForRun: vi.fn(),
+	}),
+);
 
 vi.doMock("../../../api/services/conversation-context", () => ({
 	buildPromptWithStateCard: vi.fn(

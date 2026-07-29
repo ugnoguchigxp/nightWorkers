@@ -176,13 +176,13 @@ export async function saveDesignQuestionnaireAnswers(
 	if (!task) throw new NotFoundError("Task not found");
 	if (
 		options.expectedTaskRevision !== undefined &&
-		task.updatedAt.getTime() !== options.expectedTaskRevision
+		task.revision !== options.expectedTaskRevision
 	)
 		throw new AppError(
 			409,
 			"TASK_REVISION_CONFLICT",
 			"Task revision changed; re-read the Task Operator view.",
-			{ currentTaskRevision: task.updatedAt.getTime() },
+			{ currentTaskRevision: task.revision },
 		);
 	assertPlanModeCapabilityEnabled("questionnaire");
 	assertPlanModeMutable(task);

@@ -58,6 +58,33 @@ export function GitworktreeDetail({
 				<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
 					<dt style={mutedTextStyle}>HEAD</dt>
 					<dd className="break-all font-mono">{selected.head || "—"}</dd>
+					{selected.usage.workspaceBinding ? (
+						<>
+							<dt style={mutedTextStyle}>Workspace binding</dt>
+							<dd className="space-y-1 break-all font-mono">
+								<div>
+									{selected.usage.workspaceBinding.workspaceId} / allocation v
+									{selected.usage.workspaceBinding.allocationVersion}
+								</div>
+								<div>
+									base {selected.usage.workspaceBinding.targetBaseSha || "—"}
+								</div>
+								<div>
+									expected HEAD{" "}
+									{selected.usage.workspaceBinding.expectedHeadSha || "—"}
+								</div>
+								<div>
+									merge target {selected.usage.workspaceBinding.targetBranch}
+								</div>
+								<div>
+									identity v
+									{selected.usage.workspaceBinding.repositoryIdentityRevision ??
+										"—"}{" "}
+									/ {selected.usage.workspaceBinding.status}
+								</div>
+							</dd>
+						</>
+					) : null}
 					<dt style={mutedTextStyle}>
 						{t("projectDetail.worktrees.latestCommit")}
 					</dt>
@@ -72,6 +99,14 @@ export function GitworktreeDetail({
 							ahead: selected.ahead,
 							behind: selected.behind,
 						})}
+						<div className="mt-1 break-all font-mono" style={mutedTextStyle}>
+							{selected.comparisonRef || "—"} @ {selected.comparisonSha || "—"}
+						</div>
+						<div className="mt-1" style={mutedTextStyle}>
+							{t("projectDetail.worktrees.comparisonObservedAt", {
+								value: new Date(selected.comparisonObservedAt).toLocaleString(),
+							})}
+						</div>
 					</dd>
 					<dt style={mutedTextStyle}>{t("projectDetail.worktrees.changes")}</dt>
 					<dd>

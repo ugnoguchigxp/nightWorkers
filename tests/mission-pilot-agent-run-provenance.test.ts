@@ -28,6 +28,7 @@ describe("Coding Agent requester provenance", () => {
 		});
 		const command = {
 			taskId: "task-1",
+			taskRef: { id: "task-1", revision: 2 },
 			instruction: "確定済み設計を実装して検証する",
 			artifactRefs: [
 				{

@@ -29,6 +29,8 @@ function RepositoriesPage() {
 	);
 	const [maxCommandSeconds, setMaxCommandSeconds] = useState(60);
 	const [requireReadBeforeEdit, setRequireReadBeforeEdit] = useState(true);
+	const [trackedSecretFilesAcknowledged, setTrackedSecretFilesAcknowledged] =
+		useState(false);
 
 	// Fetch Repositories
 	const { data: repos = [], isLoading } = useQuery({
@@ -57,6 +59,7 @@ function RepositoriesPage() {
 			setBlockedCommands("rm -rf,npm publish,git push");
 			setMaxCommandSeconds(60);
 			setRequireReadBeforeEdit(true);
+			setTrackedSecretFilesAcknowledged(false);
 		},
 	});
 
@@ -88,6 +91,7 @@ function RepositoriesPage() {
 				: [],
 			maxCommandSeconds: Number(maxCommandSeconds),
 			requireReadBeforeEdit,
+			trackedSecretFilesAcknowledged,
 		};
 
 		createRepoMutation.mutate({ name, localPath, branch, safetyPolicy });
@@ -231,6 +235,20 @@ function RepositoriesPage() {
 									</label>
 								</div>
 							</div>
+							<label className="flex items-start gap-2 text-xs text-muted-foreground">
+								<input
+									type="checkbox"
+									checked={trackedSecretFilesAcknowledged}
+									onChange={(event) =>
+										setTrackedSecretFilesAcknowledged(event.target.checked)
+									}
+									className="mt-0.5 rounded bg-background border-border text-primary focus:ring-primary h-4 w-4"
+								/>
+								<span>
+									trackedされた.env・credential
+									fileがある場合、その存在を確認済みとしてRunを許可する（内容はNightWorkersへ保存しません）
+								</span>
+							</label>
 						</div>
 
 						<Button
@@ -285,6 +303,13 @@ function RepositoriesPage() {
 												<span className="text-border">|</span>
 												<Shield className="h-3.5 w-3.5 text-muted-foreground/60" />
 												<span>Sandbox execution active</span>
+											</div>
+											<div className="font-mono text-xs">
+												identity {repo.repositoryIdentityStatus ?? "unknown"} v
+												{repo.repositoryIdentityRevision ?? 0} / base{" "}
+												{repo.baseWorktreeBranch || "—"} @{" "}
+												{repo.baseWorktreeHeadSha || "—"} /{" "}
+												{repo.baseWorktreeDirty ? "dirty" : "clean"}
 											</div>
 										</div>
 									</div>

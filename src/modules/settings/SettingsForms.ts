@@ -48,6 +48,7 @@ export const defaultGeneralSettings: GeneralSettings = {
 	dataRetention: {
 		apiLogDays: 7,
 		llmRawLogDays: 3,
+		codingAgentFullRecordDays: 7,
 		usageDataDays: 30,
 		auditEventDays: 90,
 		apiLogMaxBytes: 16 * 1024 * 1024,

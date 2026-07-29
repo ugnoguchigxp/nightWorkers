@@ -15,6 +15,7 @@ export type CodingAgentRequestProvenance = {
 
 export type StartCodingAgentRunCommand = {
 	taskId: string;
+	taskRef: { id: string; revision: number };
 	instruction: string;
 	artifactRefs: CodingAgentArtifactRef[];
 	repositoryRef: { id: string; revision: number };

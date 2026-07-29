@@ -3,12 +3,9 @@ import { describe, expect, it } from "vitest";
 import { rateLimiter } from "../api/middleware/rate-limiter";
 
 describe("rateLimiter", () => {
-	it("uses a single global bucket when trustProxy is disabled", async () => {
+	it("uses a single global bucket when the direct socket is unavailable", async () => {
 		const app = new Hono();
-		app.use(
-			"/limited/*",
-			rateLimiter({ windowMs: 60_000, limit: 1, trustProxy: false }),
-		);
+		app.use("/limited/*", rateLimiter({ windowMs: 60_000, limit: 1 }));
 		app.get("/limited/ping", (c) => c.json({ ok: true }));
 
 		const first = await app.request("/limited/ping", {
@@ -26,12 +23,9 @@ describe("rateLimiter", () => {
 		expect(second.status).toBe(429);
 	});
 
-	it("separates buckets by forwarded client IP when trustProxy is enabled", async () => {
+	it("ignores forwarded client IP headers", async () => {
 		const app = new Hono();
-		app.use(
-			"/limited/*",
-			rateLimiter({ windowMs: 60_000, limit: 1, trustProxy: true }),
-		);
+		app.use("/limited/*", rateLimiter({ windowMs: 60_000, limit: 1 }));
 		app.get("/limited/ping", (c) => c.json({ ok: true }));
 
 		const first = await app.request("/limited/ping", {
@@ -46,6 +40,6 @@ describe("rateLimiter", () => {
 				"x-forwarded-for": "198.51.100.25",
 			},
 		});
-		expect(second.status).toBe(200);
+		expect(second.status).toBe(429);
 	});
 });

@@ -25,12 +25,12 @@ export async function stopTaskRun(
 				"Run does not belong to the requested Task.",
 			);
 		const task = await repo.getTask(run.taskId);
-		if (task?.updatedAt.getTime() !== precondition.expectedTaskRevision)
+		if (task?.revision !== precondition.expectedTaskRevision)
 			throw new AppError(
 				409,
 				"TASK_REVISION_CONFLICT",
 				"Task revision changed; re-read the Task Operator view.",
-				{ currentTaskRevision: task?.updatedAt.getTime() ?? null },
+				{ currentTaskRevision: task?.revision ?? null },
 			);
 	}
 	if (

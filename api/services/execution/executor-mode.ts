@@ -9,8 +9,7 @@ export function readTaskExecutorMode(
 		return "in_process";
 	}
 	if (configured === "process") return "process";
-	if (env.NODE_ENV === "test") return "in_process";
-	return "process";
+	return "in_process";
 }
 
 export function shouldUseIsolatedTaskExecutor(

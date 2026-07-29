@@ -1,5 +1,7 @@
 const SECRET_KEY_PATTERN =
 	/(authorization|cookie|token|secret|api[-_]?key|password|passwd|credential|_auth)/i;
+const SECRET_RECORD_KEY_PATTERN =
+	/^(?:.*(?:api[-_]?key|password|passwd|secret|credential)|authorization|cookie|(?:access|refresh|auth|bearer|id)[-_]?token|token|_auth)$/i;
 
 const FALLBACK_PATTERNS: Array<[RegExp, string]> = [
 	[
@@ -13,12 +15,20 @@ const FALLBACK_PATTERNS: Array<[RegExp, string]> = [
 		/((?:^|[\s"'`{,])(?:(?:\/\/)?[^\s=:#]+(?::\d+)?\/?:)?(?:_authToken|npmAuthToken|npmAuthIdent|_auth|password|passwd|token|api[-_]?key)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}\r\n]+)/gim,
 		"$1[REDACTED]",
 	],
+	[
+		/(\b[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|API_KEY|PASSWORD|PASSWD|CREDENTIAL|_AUTH)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}\r\n]+)/gim,
+		"$1[REDACTED]",
+	],
 	[/(https?:\/\/)[^/@\s:]+:[^/@\s]+@/gi, "$1[REDACTED]@"],
 	[/\b(npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})\b/g, "[REDACTED]"],
 ];
 
 export function isSecretEnvironmentKey(key: string) {
 	return SECRET_KEY_PATTERN.test(key);
+}
+
+export function isSecretRecordKey(key: string) {
+	return SECRET_RECORD_KEY_PATTERN.test(key);
 }
 
 export function isRegistryCredentialEnvironmentKey(
@@ -68,7 +78,11 @@ export function redactSecretText(
 	const secrets = [...(options.secretValues ?? [])]
 		.flatMap((secret) => {
 			const trimmed = secret.trim();
-			return [trimmed, encodeURIComponent(trimmed)];
+			return [
+				trimmed,
+				encodeURIComponent(trimmed),
+				Buffer.from(trimmed).toString("base64"),
+			];
 		})
 		.filter((secret) => secret.length >= 6)
 		.filter((secret, index, values) => values.indexOf(secret) === index)
@@ -107,7 +121,7 @@ function redactSecretValue(
 	return Object.fromEntries(
 		Object.entries(value).map(([key, item]) => [
 			key,
-			SECRET_KEY_PATTERN.test(key)
+			SECRET_RECORD_KEY_PATTERN.test(key)
 				? "[REDACTED]"
 				: redactSecretValue(item, options, seen),
 		]),

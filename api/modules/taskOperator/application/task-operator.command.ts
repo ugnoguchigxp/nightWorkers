@@ -304,6 +304,10 @@ async function executeTaskOperatorCommandOnce(
 		case "run.implementation.start":
 			return startCodingAgentRun({
 				taskId: input.taskId,
+				taskRef: {
+					id: projection.task.id,
+					revision: projection.task.revision,
+				},
 				instruction: requiredText(args.request),
 				artifactRefs: projection.artifactIndex.latestByKind,
 				repositoryRef: {

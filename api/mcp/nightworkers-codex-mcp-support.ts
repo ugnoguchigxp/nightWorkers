@@ -14,6 +14,10 @@ import {
 import * as repo from "../modules/nightworkers/nightworkers.repository";
 import type { WorkerToolResult } from "../services/worker-tools/types";
 import {
+	assertRequestedRunWorkspaceRoot,
+	resolveRunWorkspaceAuthority,
+} from "../services/workspace/run-workspace-authority.service";
+import {
 	createNightWorkersCodexMcpServer,
 	type NightWorkersMcpRequestContext,
 } from "./nightworkers-codex-mcp";
@@ -175,11 +179,12 @@ export async function resolveTaskRepository(input: {
 		? await repo.getRepository(repositoryId)
 		: null;
 	const registeredRepoRoot = repository?.localPath ?? null;
-	const executionRoot = firstNonEmpty(
-		run?.worktreePath,
-		task.worktreePath,
-		registeredRepoRoot,
-	);
+	const authority = run ? await resolveRunWorkspaceAuthority(run.id) : null;
+	const executionRoot = authority?.ok
+		? authority.executionRoot
+		: run
+			? null
+			: firstNonEmpty(task.worktreePath, registeredRepoRoot);
 	return {
 		task,
 		run: run ?? null,
@@ -338,6 +343,30 @@ export async function controlledToolResult(input: {
 }) {
 	const todoContext = await loadCodingAgentContextPacket(input.runId);
 	if (input.toolName !== "todo_list") {
+		const resolved = await resolveTaskRepository({
+			taskId: firstNonEmpty(input.context.taskId),
+			runId: input.runId,
+		});
+		const authority = resolved.executionRoot
+			? await assertRequestedRunWorkspaceRoot({
+					runId: input.runId,
+					taskId: resolved.task?.id,
+					requestedRoot: resolved.executionRoot,
+				})
+			: await resolveRunWorkspaceAuthority(input.runId);
+		if (!authority.ok) {
+			return toolResultToMcp({
+				ok: false,
+				toolName: input.toolName,
+				startedAt: new Date().toISOString(),
+				finishedAt: new Date().toISOString(),
+				payload: {},
+				error: {
+					code: authority.code,
+					message: authority.message,
+				},
+			});
+		}
 		if (requiresCurrentTodo(todoContext)) {
 			return toolResultToMcp({
 				ok: false,

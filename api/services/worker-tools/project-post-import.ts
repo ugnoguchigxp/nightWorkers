@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getDeepRecordString } from "../../../shared/json-record";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
 
 const INSTALL_TIMEOUT_MS = 180_000;
 const INSTALL_MAX_BUFFER = 10 * 1024 * 1024;
@@ -370,6 +371,7 @@ function runInstallCommand(command: string[], cwd: string) {
 			args,
 			{
 				cwd,
+				env: buildChildProcessEnvironment({ purpose: "workspace_bootstrap" }),
 				timeout: INSTALL_TIMEOUT_MS,
 				maxBuffer: INSTALL_MAX_BUFFER,
 			},
@@ -409,6 +411,7 @@ function runGitInitCommand(command: string[], cwd: string) {
 			args,
 			{
 				cwd,
+				env: buildChildProcessEnvironment({ purpose: "git" }),
 				timeout: GIT_INIT_TIMEOUT_MS,
 				maxBuffer: GIT_INIT_MAX_BUFFER,
 			},
@@ -555,6 +558,7 @@ function runGitCommand(command: string[], cwd: string) {
 			args,
 			{
 				cwd,
+				env: buildChildProcessEnvironment({ purpose: "git" }),
 				timeout: command.includes("commit")
 					? GIT_COMMIT_TIMEOUT_MS
 					: GIT_INIT_TIMEOUT_MS,

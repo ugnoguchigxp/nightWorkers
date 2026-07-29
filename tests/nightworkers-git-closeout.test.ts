@@ -44,6 +44,23 @@ vi.mock("../api/services/structured-llm", async (importOriginal) => {
 	};
 });
 
+const closeoutAdmissionMocks = vi.hoisted(() => ({
+	admitCloseout: vi.fn(async () => ({
+		id: "test-closeout-admission",
+		status: "admitted",
+	})),
+	consumeCloseoutAdmission: vi.fn(async () => ({ status: "consumed" })),
+	evaluateCloseoutAdmission: vi.fn(async () => ({
+		passed: true,
+		reasons: [],
+	})),
+}));
+
+vi.mock(
+	"../api/modules/gitCloseout/closeout-admission.service",
+	() => closeoutAdmissionMocks,
+);
+
 const execFileAsync = promisify(execFile);
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
 const tempRoots: string[] = [];
@@ -53,6 +70,9 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+	closeoutAdmissionMocks.admitCloseout.mockClear();
+	closeoutAdmissionMocks.consumeCloseoutAdmission.mockClear();
+	closeoutAdmissionMocks.evaluateCloseoutAdmission.mockClear();
 	vi.mocked(structuredLlm.callStructuredJsonLLM).mockReset();
 	vi.mocked(structuredLlm.callStructuredJsonLLM).mockResolvedValue(
 		JSON.stringify({ message: "Update owned closeout file" }),
@@ -276,7 +296,8 @@ async function createCloseoutFixture(
 		});
 		await repo.createRunEvent({
 			version: 1,
-			runId: testRun.id,
+			runId:
+				input.managedEvidenceRunMode === "implementation" ? run.id : testRun.id,
 			taskId: task.id,
 			timestamp: testStartedAt.toISOString(),
 			type: "tool.call_finished",
@@ -401,6 +422,25 @@ async function createCloseoutFixture(
 }
 
 describe("NightWorkers Git closeout API", () => {
+	it("projects stale Evidence as a commit blocker", async () => {
+		const fixture = await createCloseoutFixture();
+		closeoutAdmissionMocks.evaluateCloseoutAdmission.mockResolvedValueOnce({
+			passed: false,
+			reasons: ["source_or_diff_stale"],
+		});
+
+		const response = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
+			{ headers: sameOriginHeaders },
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			canCommit: false,
+			state: "review_required",
+			blockingCode: "CLOSEOUT_EVIDENCE_STALE",
+		});
+	});
+
 	it("reports commit readiness and commits only stageable owned paths", async () => {
 		const fixture = await createCloseoutFixture();
 
@@ -441,6 +481,12 @@ describe("NightWorkers Git closeout API", () => {
 		expect(committed.state).toBe("committed");
 		expect(committed.commitRecord.commitMessage).toBe("Commit owned closeout");
 		expect(committed.commitRecord.commitSha).toBeTruthy();
+		expect(closeoutAdmissionMocks.admitCloseout).toHaveBeenCalledWith(
+			fixture.run.id,
+		);
+		expect(
+			closeoutAdmissionMocks.consumeCloseoutAdmission,
+		).toHaveBeenCalledTimes(1);
 
 		const committedOwned = await git(fixture.gitRepo.root, [
 			"show",
@@ -456,6 +502,26 @@ describe("NightWorkers Git closeout API", () => {
 		expect(unownedStatus).toBe("");
 		const entry = await queueRepo.getImplementationQueueEntry(fixture.entry.id);
 		expect(entry?.status).toBe("execution_completed");
+	});
+
+	it("does not relabel a successful Git commit as failed when receipt persistence fails", async () => {
+		const fixture = await createCloseoutFixture();
+		closeoutAdmissionMocks.consumeCloseoutAdmission.mockRejectedValueOnce(
+			new Error("receipt unavailable"),
+		);
+
+		const response = await app.request(
+			`http://localhost/api/runs/${fixture.run.id}/git/commit`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ message: "Commit before receipt failure" }),
+			},
+		);
+		expect(response.status).toBe(500);
+		expect((await repo.getTaskRunCommitRecord(fixture.run.id))?.status).toBe(
+			"committed",
+		);
 	});
 
 	it("commits in the run worktree without moving the registered repository HEAD", async () => {
@@ -639,7 +705,7 @@ describe("NightWorkers Git closeout API", () => {
 		expect(await stateRes.json()).toMatchObject({
 			canCommit: true,
 			blockingCode: null,
-			evidence: { verification: { status: "incomplete" } },
+			evidence: { verification: { status: "passed" } },
 		});
 	});
 
@@ -649,6 +715,7 @@ describe("NightWorkers Git closeout API", () => {
 			reviewRunStatus: "done",
 			withManagedVerificationEvidence: true,
 			withHistoricalFailedEvidence: true,
+			managedEvidenceRunMode: "implementation",
 		});
 		const stateRes = await app.request(
 			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
@@ -661,20 +728,25 @@ describe("NightWorkers Git closeout API", () => {
 		});
 	});
 
-	it("reports stale verification evidence without blocking Git commit", async () => {
+	it("blocks Git commit when post-Review verification evidence is stale", async () => {
 		const fixture = await createCloseoutFixture({
 			withReviewRun: true,
 			reviewRunStatus: "done",
 			reviewFixesApplied: true,
 			withManagedVerificationEvidence: true,
+			managedEvidenceRunMode: "implementation",
+		});
+		closeoutAdmissionMocks.evaluateCloseoutAdmission.mockResolvedValueOnce({
+			passed: false,
+			reasons: ["verification_incomplete"],
 		});
 		const stateRes = await app.request(
 			`http://localhost/api/runs/${fixture.run.id}/git/closeout`,
 			{ headers: sameOriginHeaders },
 		);
 		expect(await stateRes.json()).toMatchObject({
-			canCommit: true,
-			blockingCode: null,
+			canCommit: false,
+			blockingCode: "CLOSEOUT_EVIDENCE_STALE",
 			evidence: { verification: { status: "stale" } },
 		});
 	});

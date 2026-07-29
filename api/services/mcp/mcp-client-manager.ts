@@ -1,11 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-	getDefaultEnvironment,
-	StdioClientTransport,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { buildChildProcessEnvironment } from "../execution/child-process-environment";
 import type { McpServerConfig } from "./mcp-config-schema";
 import {
 	getEffectiveMcpServer,
@@ -43,10 +41,11 @@ function createTransport(server: McpServerConfig): Transport {
 			command: server.command || "",
 			args: server.args,
 			cwd: server.cwd,
-			env:
-				Object.keys(server.env).length > 0
-					? { ...getDefaultEnvironment(), ...server.env }
-					: undefined,
+			env: buildChildProcessEnvironment({
+				purpose: "mcp_stdio",
+				overrides: server.env,
+				credentialOverrides: server.env,
+			}),
 			stderr: "pipe",
 		});
 	}

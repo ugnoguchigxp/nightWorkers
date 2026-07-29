@@ -9,6 +9,11 @@ import {
 	upsertPricingRow,
 } from "../services/pricing";
 import {
+	executeRuntimeRecordCleanup,
+	notifyRuntimeRetentionSettingsChanged,
+	previewRuntimeRecordCleanup,
+} from "../services/runtime-retention/runtime-retention.service";
+import {
 	type GeneralSettings,
 	readFxRateCache,
 	readGeneralSettings,
@@ -19,6 +24,7 @@ import { callSupervisorLLM } from "../services/structured-llm";
 import { checkStructuredLlmProviderHealth } from "../services/structured-llm/provider-health";
 import { buildRound1JobTypePrompt } from "../services/supervisor/prompt";
 import {
+	executeDataRetentionCleanupRoute,
 	getCodexSdkStatusRoute,
 	getFxRatesRoute,
 	getGeneralSettingsRoute,
@@ -27,6 +33,7 @@ import {
 	getStartupPreflightRoute,
 	importPublicPricingRoute,
 	listPricingRoute,
+	previewDataRetentionCleanupRoute,
 	refreshFxRatesRoute,
 	saveGeneralSettingsRoute,
 	saveLlmSettingsRoute,
@@ -92,7 +99,14 @@ export const settingsRouter = createOpenApiRouter()
 			c.req.valid("json") as GeneralSettings,
 		);
 		configureRuntimeLogRetention(settings.dataRetention);
+		notifyRuntimeRetentionSettingsChanged();
 		return c.json(settings, 200);
+	})
+	.openapi(previewDataRetentionCleanupRoute, async (c) => {
+		return c.json(await previewRuntimeRecordCleanup(), 200);
+	})
+	.openapi(executeDataRetentionCleanupRoute, async (c) => {
+		return c.json(await executeRuntimeRecordCleanup(c.req.valid("json")), 200);
 	})
 	.openapi(getFxRatesRoute, (c) => {
 		return c.json(readFxRateCache(), 200);

@@ -62,22 +62,16 @@ describe("startTaskRun workspace preparation", () => {
 		expect(startTaskRunInWorker).not.toHaveBeenCalled();
 	});
 
-	it("does not move a legacy task with prior runs into a new worktree", async () => {
+	it("requires explicit migration for a legacy task with prior runs", async () => {
 		vi.mocked(nightworkersRepo.listTaskRunsForTask).mockResolvedValue([
 			{ id: "legacy-run" },
 		] as never);
 
-		await startTaskRun(task.id);
+		await expect(startTaskRun(task.id)).rejects.toMatchObject({
+			code: "workspace_migration_required",
+		});
 
 		expect(prepareImplementationQueueRepository).not.toHaveBeenCalled();
-		expect(startTaskRunInProcess).toHaveBeenCalled();
-	});
-
-	it("preserves explicitly authorized unassigned repository bootstrap runs", async () => {
-		await startTaskRun(task.id, { allowUnassignedWorkspace: true });
-
-		expect(nightworkersRepo.getTask).not.toHaveBeenCalled();
-		expect(prepareImplementationQueueRepository).not.toHaveBeenCalled();
-		expect(startTaskRunInProcess).toHaveBeenCalled();
+		expect(startTaskRunInProcess).not.toHaveBeenCalled();
 	});
 });

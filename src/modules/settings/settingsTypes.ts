@@ -31,6 +31,7 @@ export type LlmUsageSettings = {
 export type DataRetentionSettings = {
 	apiLogDays: number;
 	llmRawLogDays: number;
+	codingAgentFullRecordDays: number;
 	usageDataDays: number;
 	auditEventDays: number;
 	apiLogMaxBytes: number;

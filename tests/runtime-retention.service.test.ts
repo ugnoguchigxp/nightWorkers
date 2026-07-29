@@ -3,9 +3,17 @@ import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { client, db } from "../api/db/client";
-import { llmUsageRecords, runtimeRetentionAuditEvents } from "../api/db/schema";
+import {
+	llmUsageRecords,
+	runtimeRetentionAuditEvents,
+	taskRuns,
+} from "../api/db/schema";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import { runRuntimeRetentionSweep } from "../api/services/runtime-retention/runtime-retention.service";
+import {
+	executeRuntimeRecordCleanup,
+	previewRuntimeRecordCleanup,
+	runRuntimeRetentionSweep,
+} from "../api/services/runtime-retention/runtime-retention.service";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
@@ -99,5 +107,71 @@ describe("runtime retention service", () => {
 				.from(runtimeRetentionAuditEvents)
 				.where(eq(runtimeRetentionAuditEvents.id, oldAuditId)),
 		).toHaveLength(0);
+	});
+
+	it("purges only expired full-fidelity details while retaining the Run receipt", async () => {
+		const repository = await repo.createRepository({
+			name: `TEST: detail retention ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await repo.createTask({
+			repositoryId: repository.id,
+			title: "TEST: detail retention",
+			status: "draft",
+		});
+		const old = new Date("2026-01-01T00:00:00.000Z");
+		const run = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "failed",
+			logContent: undefined,
+			contextSnapshot: { raw: "large context" },
+			finalReport: "失敗理由の基幹receipt",
+			finishedAt: old,
+			endedAt: old,
+		});
+		await db
+			.update(taskRuns)
+			.set({
+				logContent: "large log",
+				diffPatch: "large diff",
+				testResults: { raw: "large tests" },
+				updatedAt: old,
+			})
+			.where(eq(taskRuns.id, run.id));
+
+		const preview = await previewRuntimeRecordCleanup(
+			new Date("2026-07-29T00:00:00.000Z"),
+		);
+		expect(preview.deletable.detailRows).toBeGreaterThanOrEqual(1);
+		const idempotencyKey = `test-${crypto.randomUUID()}`;
+		const cleanupRequest = {
+			previewId: preview.previewId,
+			expectedSettingsRevision: preview.settingsRevision,
+			idempotencyKey,
+			reclaimDiskSpace: "skip",
+			now: new Date("2026-07-29T00:00:00.000Z"),
+		} as const;
+		const result = await executeRuntimeRecordCleanup(cleanupRequest);
+		expect(result.runsPurged).toBeGreaterThanOrEqual(1);
+		expect(await executeRuntimeRecordCleanup(cleanupRequest)).toEqual(result);
+		await expect(
+			executeRuntimeRecordCleanup({
+				...cleanupRequest,
+				previewId: crypto.randomUUID(),
+			}),
+		).rejects.toMatchObject({ code: "cleanup_idempotency_conflict" });
+		const retained = await repo.getTaskRun(run.id);
+		expect(retained).toMatchObject({
+			id: run.id,
+			status: "failed",
+			finalReport: "失敗理由の基幹receipt",
+			logContent: null,
+			diffPatch: null,
+			testResults: null,
+			contextSnapshot: null,
+		});
+		expect(retained?.detailsPurgedAt).toBeInstanceOf(Date);
 	});
 });

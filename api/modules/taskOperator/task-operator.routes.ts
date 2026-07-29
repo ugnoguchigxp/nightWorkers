@@ -26,7 +26,7 @@ export const taskOperatorRouter = createOpenApiRouter().openapi(
 		c.json(
 			await readTaskOperatorProjection(
 				c.req.param("taskId"),
-				humanTaskOperatorQueryContext(c.get("user")?.userId),
+				humanTaskOperatorQueryContext(),
 			),
 			200,
 		),

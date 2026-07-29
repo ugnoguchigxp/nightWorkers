@@ -9,6 +9,7 @@ import {
 	summarizeChecklist,
 } from "../../services/verification/checklist-matcher";
 import { evaluateQualityGate, type QualityGateResult } from "../codingAgent";
+import { bindEvidenceSubject } from "../evidenceLedger";
 import * as repository from "./nightworkers.verification.repository";
 
 export type CompletionCheckResult = {
@@ -61,7 +62,19 @@ export async function recordVerificationEvidence(input: {
 	fullGate?: boolean;
 	evidence: NormalizedVerificationEvidence;
 }) {
-	const evidenceRun = await repository.createVerificationEvidenceRun(input);
+	const subject =
+		input.runId && input.evidence.sourceSnapshot
+			? await bindEvidenceSubject({
+					taskId: input.taskId,
+					runId: input.runId,
+					sourceStateHash: input.evidence.sourceSnapshot.sourceStateHash,
+					verificationDocumentId: input.verificationDocumentId,
+				})
+			: null;
+	const evidenceRun = await repository.createVerificationEvidenceRun({
+		...input,
+		subjectId: subject?.id ?? null,
+	});
 	if (input.verificationDocumentId) {
 		const items = await repository.listVerificationChecklistItems(
 			input.verificationDocumentId,
@@ -85,6 +98,7 @@ export async function recordVerificationEvidence(input: {
 
 export async function runCompletionCheck(input: {
 	taskId: string;
+	runId: string;
 	verificationDocumentId?: string | null;
 	repoRoot?: string;
 }): Promise<CompletionCheckResult> {
@@ -131,6 +145,7 @@ export async function runCompletionCheck(input: {
 	).length;
 	const qualityGate = await evaluateQualityGate({
 		taskId: input.taskId,
+		runId: input.runId,
 		verificationDocumentId: document.id,
 		repoRoot: input.repoRoot,
 	});

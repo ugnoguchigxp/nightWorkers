@@ -27,7 +27,7 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 	session: DesignQuestionnaireSession,
 ) {
 	const [task] = await db
-		.select({ updatedAt: tasks.updatedAt })
+		.select({ revision: tasks.revision })
 		.from(tasks)
 		.where(eq(tasks.id, session.taskId));
 	if (!task) return null;
@@ -64,7 +64,7 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 		taskId: session.taskId,
 		type: "questionnaire.state_changed",
 		sourceEventId: `questionnaire-state:${session.id}:${session.status}:${session.questionSets.length}:${stateDigest}`,
-		taskRevision: task.updatedAt.getTime(),
+		taskRevision: task.revision,
 		payload: {
 			questionnaireSessionId: session.id,
 			status: session.status,

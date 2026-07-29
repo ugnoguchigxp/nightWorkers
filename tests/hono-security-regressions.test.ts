@@ -6,7 +6,6 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { afterEach, describe, expect, it } from "vitest";
-import { setAuthCookies } from "../api/lib/auth-cookies";
 
 const temporaryDirectories: string[] = [];
 
@@ -62,26 +61,6 @@ describe("Hono security dependency regressions", () => {
 		const response = await app.fetch(request);
 
 		expect(response.status).toBe(413);
-	});
-
-	it("keeps authentication cookies HttpOnly and scoped", async () => {
-		const app = new Hono();
-		app.get("/", (context) => {
-			setAuthCookies(context, {
-				accessToken: "access-token",
-				refreshToken: "refresh-token",
-			});
-			return context.text("ok");
-		});
-
-		const response = await app.request("/");
-		const cookies = response.headers.getSetCookie().join("\n");
-
-		expect(cookies).toContain("access_token=access-token");
-		expect(cookies).toContain("refresh_token=refresh-token");
-		expect(cookies).toContain("HttpOnly");
-		expect(cookies).toContain("SameSite=Lax");
-		expect(cookies).toContain("Path=/api/auth");
 	});
 
 	it("serves normal assets but rejects encoded Windows traversal paths", async () => {

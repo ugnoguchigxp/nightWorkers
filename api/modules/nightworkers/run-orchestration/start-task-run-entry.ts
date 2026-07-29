@@ -28,7 +28,7 @@ async function prepareImplementationWorkspaceForStart(
 	taskId: string,
 	options: import("./start-task-run-types").StartTaskRunOptions,
 ) {
-	if (options.allowUnassignedWorkspace || options.resumeRunId) return;
+	if (options.resumeRunId) return;
 	const task = await repo.getTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
 	if (task.worktreePath) return;
@@ -40,9 +40,13 @@ async function prepareImplementationWorkspaceForStart(
 		);
 	}
 	const previousRuns = await repo.listTaskRunsForTask(taskId);
-	// A legacy run may have uncommitted work in the registered repository root.
-	// Moving a continuation to a newly-created worktree would silently lose it.
-	if (previousRuns.length > 0) return;
+	if (previousRuns.length > 0) {
+		throw new AppError(
+			409,
+			"workspace_migration_required",
+			"過去Runが登録Project rootを使用したTaskは、明示的なworkspace移行が完了するまで再実行できません。",
+		);
+	}
 	await prepareImplementationQueueRepository({
 		task: { id: task.id, repositoryId: task.repositoryId },
 		messages: await repo.listTaskMessages(taskId),

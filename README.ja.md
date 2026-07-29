@@ -270,7 +270,6 @@ Runtime pathは必要に応じてこのroot配下へ割り当てられます。d
 .nightworkers/
   sqlite.db
   settings/    # 使用時のintegration setting／compatibility file
-  secrets/     # 使用時のdesktop-managed secret
   logs/        # managed runtime log
   artifacts/   # 使用時のattachment file／runtime artifact
 ```
@@ -293,20 +292,16 @@ Provider requestには、user request、Supervisor instruction、derived StateCa
 
 設定された容量上限に達した場合、保持期間内でもclosed log segmentが削除されることがあります。
 
-serverは既定でloopbackへbindします。productionでnon-loopbackへbindする場合はAPI authenticationが必要です。local account authenticationは実装済みです。Google／GitHub OAuthは、対応するcredentialとapplication URLが設定されている場合だけ利用できます。
+serverはlocal-onlyで、loopback addressだけへbindできます。NightWorkers自体はaccount、user profile、login session、product OAuthを保持しません。外部LLM／integration providerのcredentialは別のlocal settingとして扱い、各providerへの接続にだけ使用します。
 
 ## Runtime設定
 
-Server、authentication、provider、routing、integration、general application settingはSettings UIで管理し、ローカルに保存します。Environment variableはbootstrapと明示的runtime overrideに使用できます。
+Server、provider、routing、integration、general application settingはSettings UIで管理し、ローカルに保存します。Environment variableはbootstrapと明示的runtime overrideに使用できます。
 
 | Variable | 現在の役割 |
 | --- | --- |
 | `NIGHTWORKERS_RUNTIME_DIR` | managed runtime rootを上書き。 |
-| `HOST` / `PORT` | API listen address／port。既定API bindは`127.0.0.1:39173`。 |
-| `API_AUTH_REQUIRED` | protected product APIとNightWorkers WebSocketへauthenticationを要求。 |
-| `AUTH_MODE` | `local`、`oauth`、`both`を選択。OAuthにはprovider設定も必要。 |
-| `APP_URL` | OAuth callbackとsecure application URL処理に必要。 |
-| `TRUST_PROXY` | 明示的に有効化した場合だけreverse-proxy forwardingを信頼。 |
+| `HOST` / `PORT` | API listen address／port。`HOST`はloopback限定で、既定bindは`127.0.0.1:39173`。 |
 | `CONVERSATION_CONTEXT_ENABLED` | derived conversation contextのmaster switch。既定は有効。 |
 | `CONVERSATION_CONTEXT_STATE_CARD_ENABLED` | 最新compact StateCardをruntime requestへ注入。 |
 | `CONVERSATION_CONTEXT_BUILD_ON_IDLE` | intake／run completion後にderived contextを更新。 |
@@ -333,7 +328,7 @@ bun run setup
 bun run dev
 ```
 
-`setup`はdependencyをinstallし、`.env`が存在しない場合だけ作成し、migrationとdatabase seedを実行します。次を開いてください。
+`setup`はdependencyをinstallし、`.env`が存在しない場合だけ作成し、migrationを実行します。次を開いてください。
 
 ```text
 http://localhost:39174
@@ -456,7 +451,6 @@ live-provider testは通常のdeterministic gateに含まれません。`verify:
 | `bun run start` | `build`後のproduction backend bundleを起動。 |
 | `bun run db:generate` | schema変更後にDrizzle migration fileを生成。 |
 | `bun run db:migrate` | active runtime databaseへDrizzle migrationを適用。 |
-| `bun run db:seed` | active development databaseへseedを投入。 |
 | `bun run db:studio` | Drizzle Studioを起動。 |
 | `bun run cleanup:test-data:dry-run` | ローカルのTEST-prefix data削除をpreview。 |
 | `bun run cleanup:test-data` | 対象を限定したTEST-data cleanupを実行。 |

@@ -111,64 +111,29 @@ export type ImplementationQueueEntryStatus =
 	| "failed"
 	| "cancelled";
 
-export const users = sqliteTable("users", {
-	...commonColumns,
-	email: text("email").notNull().unique(),
-	passwordHash: text("password_hash"),
-	name: text("name").notNull(),
-	isActive: integer("is_active", { mode: "boolean" }).default(true).notNull(),
-});
-
-export const refreshTokens = sqliteTable(
-	"refresh_tokens",
-	{
-		id: text("id")
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		token: text("token").notNull().unique(),
-		userId: text("user_id")
-			.notNull()
-			.references(() => users.id, { onDelete: "cascade" }),
-		expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-		createdAt: integer("created_at", { mode: "timestamp" })
-			.$defaultFn(() => new Date())
-			.notNull(),
-	},
-	(table) => ({
-		userIdIdx: index("rt_user_id_idx").on(table.userId),
-	}),
-);
-
-export const userExternalAccounts = sqliteTable(
-	"user_external_accounts",
-	{
-		id: text("id")
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		userId: text("user_id")
-			.notNull()
-			.references(() => users.id, { onDelete: "cascade" }),
-		provider: text("provider").notNull(), // 'google', 'github'
-		externalId: text("external_id").notNull(),
-		email: text("email"),
-		createdAt: integer("created_at", { mode: "timestamp" })
-			.$defaultFn(() => new Date())
-			.notNull(),
-	},
-	(table) => ({
-		providerExternalIdUniqueIdx: uniqueIndex("uex_provider_ext_uidx").on(
-			table.provider,
-			table.externalId,
-		),
-		userIdIdx: index("uex_user_id_idx").on(table.userId),
-	}),
-);
-
 export const repositories = sqliteTable("repositories", {
 	...commonColumns,
 	name: text("name").notNull(),
 	localPath: text("local_path").notNull(),
 	branch: text("branch").default("main").notNull(),
+	repositoryKind: text("repository_kind").default("non_git").notNull(),
+	repositoryIdentityStatus: text("repository_identity_status")
+		.default("materialization_pending")
+		.notNull(),
+	registeredRootCanonical: text("registered_root_canonical"),
+	gitCommonDirCanonical: text("git_common_dir_canonical"),
+	baseWorktreePathCanonical: text("base_worktree_path_canonical"),
+	baseWorktreeId: text("base_worktree_id"),
+	baseWorktreeBranch: text("base_worktree_branch"),
+	baseWorktreeHeadSha: text("base_worktree_head_sha"),
+	baseWorktreeDirty: integer("base_worktree_dirty", { mode: "boolean" }),
+	repositoryIdentityDigest: text("repository_identity_digest"),
+	repositoryIdentityRevision: integer("repository_identity_revision")
+		.default(0)
+		.notNull(),
+	repositoryIdentityVerifiedAt: integer("repository_identity_verified_at", {
+		mode: "timestamp",
+	}),
 	gitIntegrationPolicyJson: text("git_integration_policy_json", {
 		mode: "json",
 	}).$type<ProjectGitIntegrationPolicy | null>(),
@@ -190,6 +155,7 @@ export const repositories = sqliteTable("repositories", {
 		maxCommandSeconds?: number;
 		requireReadBeforeEdit?: boolean;
 		maxTimeSeconds?: number;
+		trackedSecretFilesAcknowledged?: boolean;
 	}>(),
 	projectMeta: text("project_meta", { mode: "json" }).$type<Record<
 		string,
@@ -212,6 +178,8 @@ export const tasks = sqliteTable(
 		description: text("description"),
 		objective: text("objective"),
 		acceptanceCriteria: text("acceptance_criteria"),
+		revision: integer("revision").default(1).notNull(),
+		currentRevisionSnapshotId: text("current_revision_snapshot_id"),
 		worktreePath: text("worktree_path"),
 		status: text("status").$type<TaskStatus>().default("draft").notNull(), // draft | ready | context_compiling | queued | running | verifying | needs_review | completed | blocked | failed | timed_out | cancelled | needs_human
 		completedAt: integer("completed_at", { mode: "timestamp" }),
@@ -223,5 +191,38 @@ export const tasks = sqliteTable(
 	},
 	(table) => ({
 		repositoryIdIdx: index("tasks_repository_id_idx").on(table.repositoryId),
+	}),
+);
+
+export const taskRevisionSnapshots = sqliteTable(
+	"task_revision_snapshots",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		revision: integer("revision").notNull(),
+		digest: text("digest").notNull(),
+		title: text("title").notNull(),
+		description: text("description"),
+		objective: text("objective"),
+		acceptanceCriteria: text("acceptance_criteria"),
+		specificationRefsJson: text("specification_refs_json", {
+			mode: "json",
+		})
+			.$type<string[]>()
+			.default([])
+			.notNull(),
+		sourceKind: text("source_kind").default("canonical").notNull(),
+		createdBy: text("created_by"),
+	},
+	(table) => ({
+		taskRevisionUidx: uniqueIndex(
+			"task_revision_snapshots_task_revision_uidx",
+		).on(table.taskId, table.revision),
+		taskDigestIdx: index("task_revision_snapshots_task_digest_idx").on(
+			table.taskId,
+			table.digest,
+		),
 	}),
 );

@@ -63,16 +63,12 @@ copyRequired(path.join(repoRoot, 'dist'), path.join(stagedRoot, 'dist'));
 
 fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(stagedRoot, 'package.json'));
 copyPackage(sidecarTarget.libsqlPackage);
-copyPackage('argon2');
 copyPackage('better-sqlite3');
 const betterSqliteBinding = path.join(
   path.dirname(resolvePackageJson('better-sqlite3')),
   'build/Release/better_sqlite3.node',
 );
 copyRequired(betterSqliteBinding, path.join(stagedRoot, 'build/Release/better_sqlite3.node'));
-copyPackage('@phc/format');
-copyPackage('node-addon-api');
-copyPackage('node-gyp-build');
 copyPackage('@openai/codex-sdk');
 copyPackage('@openai/codex');
 copyPackage(sidecarTarget.codexPackage);

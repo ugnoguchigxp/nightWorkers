@@ -46,7 +46,6 @@ export async function runVerificationTool(
 			cwd: result.payload.cwd,
 			repositoryRoot: result.payload.repositoryRoot,
 			truncated: true,
-			logArtifactPath: result.payload.rawStdoutArtifactId,
 			compression: result.payload.compression,
 			reason,
 			verified,

@@ -6,6 +6,8 @@ import type {
 	ProjectQualityRun,
 } from "../../../shared/schemas/quality.schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
+import { buildChildProcessEnvironment } from "../../services/execution/child-process-environment";
+import { redactSecretText } from "../../services/security/secret-redaction";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./quality.repository";
@@ -22,6 +24,13 @@ export { getCoverageFileReport } from "./quality-coverage-report.service";
 const MAX_OUTPUT_CHARS = 120_000;
 const RECENT_QUALITY_RUN_LIMIT = 10;
 const activeQualityProcesses = new Map<string, ReturnType<typeof spawn>>();
+
+function repositoryExecutionRoot(
+	repository: Awaited<ReturnType<typeof nightworkersRepo.getRepository>>,
+) {
+	if (!repository) throw new NotFoundError("Repository not found");
+	return repository.registeredRootCanonical ?? repository.localPath;
+}
 
 async function requireRepository(repositoryId: string) {
 	const repository = await nightworkersRepo.getRepository(repositoryId);
@@ -83,7 +92,10 @@ async function runShellCommand(input: {
 			cwd: input.cwd,
 			shell: true,
 			detached: process.platform !== "win32",
-			env: { ...process.env, CI: process.env.CI ?? "1" },
+			env: buildChildProcessEnvironment({
+				purpose: "workspace_command",
+				overrides: { CI: process.env.CI ?? "1" },
+			}),
 		});
 		input.onSpawn?.(child);
 		let output = "";
@@ -100,7 +112,7 @@ async function runShellCommand(input: {
 			resolve(result);
 		};
 		const append = (chunk: Buffer) => {
-			output += chunk.toString("utf8");
+			output += redactSecretText(chunk.toString("utf8"));
 			if (output.length > MAX_OUTPUT_CHARS)
 				output = output.slice(-MAX_OUTPUT_CHARS);
 		};
@@ -160,7 +172,9 @@ export async function getProjectQuality(repositoryId: string) {
 			repo.listProjectQualityRuns(repositoryId),
 		]);
 	return {
-		capabilities: detectQualityCapabilities(repository.localPath),
+		capabilities: detectQualityCapabilities(
+			repositoryExecutionRoot(repository),
+		),
 		latestUnitRun,
 		latestE2eRun,
 		latestCoverageRun: selectLatestQualityRunWithArtifact(allRuns, "coverage"),
@@ -192,7 +206,8 @@ export async function createProjectQualityRun(input: {
 	runType: "unit" | "e2e" | "all";
 }) {
 	const repository = await requireRepository(input.repositoryId);
-	const capabilities = detectQualityCapabilities(repository.localPath);
+	const executionRoot = repositoryExecutionRoot(repository);
+	const capabilities = detectQualityCapabilities(executionRoot);
 	const command = commandForQualityRun(capabilities, input.runType);
 	const run = await repo.createProjectQualityRun({
 		repositoryId: repository.id,
@@ -202,7 +217,7 @@ export async function createProjectQualityRun(input: {
 	const timeoutSeconds = repository.safetyPolicy?.maxCommandSeconds ?? 600;
 	const commandResult = await runShellCommand({
 		command,
-		cwd: repository.localPath,
+		cwd: executionRoot,
 		timeoutSeconds,
 		onSpawn: (child) => activeQualityProcesses.set(run.id, child),
 	});
@@ -212,10 +227,10 @@ export async function createProjectQualityRun(input: {
 	const needsCoverage = input.runType === "unit" || input.runType === "all";
 	const needsE2e = input.runType === "e2e" || input.runType === "all";
 	const coverage = needsCoverage
-		? readCoverageArtifacts(repository.localPath)
+		? readCoverageArtifacts(executionRoot)
 		: { coverageSummary: null, error: null };
 	const e2e = needsE2e
-		? readE2eArtifacts(repository.localPath, commandResult.exitCode)
+		? readE2eArtifacts(executionRoot, commandResult.exitCode)
 		: { e2eSummary: null, error: null };
 	const errorMessage = [
 		commandResult.timedOut
@@ -408,7 +423,7 @@ export async function createCoverageImprovementTask(input: {
 	const entries = selectedCoverageEntries({
 		summary: run.coverageSummary,
 		fileKeys: input.request.fileKeys,
-		projectRoot: repository.localPath,
+		projectRoot: repositoryExecutionRoot(repository),
 	});
 	const task = await createTaskWithMissionPilot({
 		repositoryId: repository.id,

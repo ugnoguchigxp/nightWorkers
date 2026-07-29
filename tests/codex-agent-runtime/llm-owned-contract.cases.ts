@@ -213,6 +213,19 @@ describe("Codex SDK thin runtime adapter", () => {
 		});
 	});
 
+	it("never projects a NightWorkers provider credential into the Codex child environment", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				PATH: "/usr/bin",
+				CODEX_ACCESS_TOKEN: "parent-provider-secret",
+			},
+			context: context(),
+			...({ accessToken: "parent-provider-secret" } as Record<string, unknown>),
+		});
+
+		expect(options.env).toEqual({ PATH: "/usr/bin" });
+	});
+
 	it("preserves a configured MCP endpoint while overriding Run identity", () => {
 		const options = buildCodexRuntimeSdkOptions({
 			env: {

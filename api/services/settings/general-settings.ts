@@ -34,6 +34,7 @@ export type LlmUsageSettings = {
 };
 
 export type DataRetentionSettings = RuntimeLogRetentionConfig & {
+	codingAgentFullRecordDays: number;
 	usageDataDays: number;
 	auditEventDays: number;
 	sweepIntervalMinutes: number;
@@ -109,6 +110,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
 	},
 	dataRetention: {
 		...DEFAULT_RUNTIME_LOG_RETENTION,
+		codingAgentFullRecordDays: 7,
 		usageDataDays: 30,
 		auditEventDays: 90,
 		sweepIntervalMinutes: 60,
@@ -315,6 +317,7 @@ export function normalizeDataRetentionSettings(
 	const result: DataRetentionSettings = {
 		apiLogDays: positiveInt("apiLogDays", 7),
 		llmRawLogDays: positiveInt("llmRawLogDays", 3),
+		codingAgentFullRecordDays: positiveInt("codingAgentFullRecordDays", 365),
 		usageDataDays: positiveInt("usageDataDays", 30),
 		auditEventDays: positiveInt("auditEventDays", 90),
 		apiLogMaxBytes: positiveInt("apiLogMaxBytes", 128 * 1024 * 1024),

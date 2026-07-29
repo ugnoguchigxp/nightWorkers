@@ -27,17 +27,13 @@ export function runStartupPreflight(): StartupPreflightResult {
 	const paths = getRuntimePaths();
 	const resourceRoot = getResourceRoot();
 	const listenSecurity = assessListenSecurity({
-		nodeEnv: config.NODE_ENV,
 		host: config.HOST,
-		authRequired: config.API_AUTH_REQUIRED,
 		corsOrigins: config.CORS_ORIGINS,
-		trustProxy: config.TRUST_PROXY,
-		allowInsecureNonLoopback: config.ALLOW_INSECURE_NON_LOOPBACK,
 	});
 	const checks: PreflightCheck[] = [
 		{
 			id: "listen-security",
-			label: "Listen host and API authentication are safe",
+			label: "Listen host is loopback-only",
 			status: listenSecurity.status,
 			detail: listenSecurity.detail,
 		},
@@ -49,14 +45,6 @@ export function runStartupPreflight(): StartupPreflightResult {
 					? "pass"
 					: "fail",
 			detail: config.CORS_ORIGINS.join(", ") || "No CORS origin configured.",
-		},
-		{
-			id: "proxy-trust",
-			label: "Proxy header trust is explicit",
-			status: config.TRUST_PROXY ? "warn" : "pass",
-			detail: config.TRUST_PROXY
-				? "TRUST_PROXY=true; ensure only the trusted reverse proxy can reach this listener."
-				: "Proxy forwarding headers are not trusted.",
 		},
 		checkDirectory(
 			"runtime-root",
@@ -82,15 +70,6 @@ export function runStartupPreflight(): StartupPreflightResult {
 			detail: config.DATABASE_URL
 				? redactFileUrl(config.DATABASE_URL)
 				: "DATABASE_URL is empty.",
-		},
-		{
-			id: "jwt-secret",
-			label: "JWT secret is configured",
-			status: config.JWT_SECRET.length >= 32 ? "pass" : "fail",
-			detail:
-				config.JWT_SECRET.length >= 32
-					? "JWT secret is present and long enough."
-					: "JWT_SECRET must be at least 32 characters.",
 		},
 	];
 

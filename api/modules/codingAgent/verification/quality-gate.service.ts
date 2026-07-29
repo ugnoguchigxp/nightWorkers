@@ -9,6 +9,7 @@ import {
 	verificationDocuments,
 	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
+import { bindEvidenceSubject } from "../../evidenceLedger";
 import { captureWorkspaceSourceSnapshot } from "./workspace-source-snapshot";
 
 export type QualityGateResult = {
@@ -31,11 +32,19 @@ export type QualityGateResult = {
 
 export async function evaluateQualityGate(input: {
 	taskId: string;
+	runId: string;
 	verificationDocumentId: string;
 	repoRoot?: string;
 }): Promise<QualityGateResult> {
 	if (!input.repoRoot) return unknownGate("missing_repository_context");
 	const current = await captureWorkspaceSourceSnapshot(input.repoRoot);
+	const currentSubject = await bindEvidenceSubject({
+		taskId: input.taskId,
+		runId: input.runId,
+		sourceStateHash: current.sourceStateHash,
+		verificationDocumentId: input.verificationDocumentId,
+	});
+	if (!currentSubject) return unknownGate("evidence_subject_unavailable");
 	const [document, inventories, evidence, checklist] = await Promise.all([
 		db
 			.select()
@@ -45,7 +54,12 @@ export async function evaluateQualityGate(input: {
 		db
 			.select()
 			.from(codingAgentTestInventoryRuns)
-			.where(eq(codingAgentTestInventoryRuns.taskId, input.taskId))
+			.where(
+				and(
+					eq(codingAgentTestInventoryRuns.taskId, input.taskId),
+					eq(codingAgentTestInventoryRuns.runId, input.runId),
+				),
+			)
 			.orderBy(desc(codingAgentTestInventoryRuns.createdAt)),
 		db
 			.select()
@@ -53,6 +67,7 @@ export async function evaluateQualityGate(input: {
 			.where(
 				and(
 					eq(verificationEvidenceRuns.taskId, input.taskId),
+					eq(verificationEvidenceRuns.runId, input.runId),
 					eq(
 						verificationEvidenceRuns.verificationDocumentId,
 						input.verificationDocumentId,
@@ -87,6 +102,7 @@ export async function evaluateQualityGate(input: {
 	);
 	const matchingEvidence = evidence.filter(
 		(item) =>
+			item.subjectId === currentSubject.id &&
 			snapshotHash(item.sourceSnapshotJson) === current.sourceStateHash &&
 			!item.sourceMutatedDuringCheck,
 	);

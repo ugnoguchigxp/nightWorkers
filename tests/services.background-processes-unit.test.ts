@@ -201,6 +201,27 @@ describe("background-processes service unit tests", () => {
 			if (!stopped) throw new Error("Expected stopped background process.");
 			expect(stopped.status).toBe("stopped");
 			expect(stopped.stopReason).toBe("user_requested");
+			expect(stopped.outputArtifactId).toBeNull();
+		});
+
+		it("redacts secret-shaped output before persisting it", async () => {
+			await fs.writeFile(
+				path.join(dummyRepoDir, "server.log"),
+				"PROJECT_TOKEN=project-secret-value\n",
+				"utf-8",
+			);
+			const processRecord = await startBackgroundCommand({
+				runId: run.id,
+				command: "tail -f server.log",
+				repoRoot: dummyRepoDir,
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			const current = await getBackgroundProcess(processRecord.id);
+			expect(current?.latestOutput).toContain("[REDACTED]");
+			expect(current?.latestOutput).not.toContain("project-secret-value");
+
+			await stopBackgroundProcess(processRecord.id);
 		});
 	});
 

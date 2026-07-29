@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { client, db } from "../../../../db/client";
 import { nativeApiToolCalls, nativeApiTurns } from "../../../../db/schema";
 import { compactModelVisibleText } from "../../../../services/model-visible-payload";
+import { sanitizePersistenceValue } from "../../../../services/security/secret-persistence-firewall";
 import type { ProviderToolCall } from "../../../../services/structured-llm/tool-calls";
 import type { NativeApiExecutionMode } from "./native-api-mode";
 import type {
@@ -47,7 +48,7 @@ export class NativeApiSessionStore {
 				provider: input.provider ?? null,
 				model: input.model ?? null,
 				executionMode: input.executionMode ?? null,
-				historyJson: [...input.history],
+				historyJson: sanitizePersistenceValue([...input.history]),
 				startedAt: now,
 			})
 			.returning();
@@ -68,11 +69,17 @@ export class NativeApiSessionStore {
 			.update(nativeApiTurns)
 			.set({
 				status: input.status,
-				...(input.history ? { historyJson: [...input.history] } : {}),
-				...(input.providerDebug
-					? { providerDebugJson: input.providerDebug }
+				...(input.history
+					? { historyJson: sanitizePersistenceValue([...input.history]) }
 					: {}),
-				...(input.error !== undefined ? { errorJson: input.error } : {}),
+				...(input.providerDebug
+					? {
+							providerDebugJson: sanitizePersistenceValue(input.providerDebug),
+						}
+					: {}),
+				...(input.error !== undefined
+					? { errorJson: sanitizePersistenceValue(input.error) }
+					: {}),
 				...(input.model !== undefined ? { model: input.model } : {}),
 				finishedAt: new Date(),
 				updatedAt: new Date(),
@@ -100,7 +107,7 @@ export class NativeApiSessionStore {
 				toolCallId: input.toolCall.id,
 				toolName: input.toolCall.name,
 				status: "pending",
-				argumentsJson: input.toolCall.arguments,
+				argumentsJson: sanitizePersistenceValue(input.toolCall.arguments),
 				todoSeq: input.todoSeq ?? null,
 				source: input.source ?? "provider_native",
 			})
@@ -134,9 +141,9 @@ export class NativeApiSessionStore {
 			.update(nativeApiToolCalls)
 			.set({
 				status: input.status,
-				resultJson: input.result ?? null,
-				errorJson: input.error ?? null,
-				modelVisibleOutput,
+				resultJson: sanitizePersistenceValue(input.result ?? null),
+				errorJson: sanitizePersistenceValue(input.error ?? null),
+				modelVisibleOutput: sanitizePersistenceValue(modelVisibleOutput),
 				finishedAt: new Date(),
 				updatedAt: new Date(),
 			})

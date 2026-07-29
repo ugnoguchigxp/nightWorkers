@@ -282,7 +282,7 @@ const router = createOpenApiRouter()
 		});
 		const projection = await readTaskOperatorProjection(
 			id,
-			humanTaskOperatorQueryContext(c.get("user")?.userId),
+			humanTaskOperatorQueryContext(),
 		);
 		const task = await executeTaskOperatorCommand({
 			taskId: id,
@@ -290,7 +290,6 @@ const router = createOpenApiRouter()
 			expectedTaskRevision: projection.task.revision,
 			arguments: { fields: data },
 			context: humanTaskOperatorCommandContext({
-				userId: c.get("user")?.userId,
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
@@ -342,7 +341,7 @@ const router = createOpenApiRouter()
 				c.req.valid("query").discardPendingCloseouts === "true";
 			const projection = await readTaskOperatorProjection(
 				taskId,
-				humanTaskOperatorQueryContext(c.get("user")?.userId),
+				humanTaskOperatorQueryContext(),
 			);
 			const task = await executeTaskOperatorCommand({
 				taskId,
@@ -350,7 +349,6 @@ const router = createOpenApiRouter()
 				expectedTaskRevision: projection.task.revision,
 				arguments: { discardPendingCloseouts },
 				context: humanTaskOperatorCommandContext({
-					userId: c.get("user")?.userId,
 					idempotencyKey: c.req.header("Idempotency-Key"),
 				}),
 			});
@@ -363,7 +361,7 @@ const router = createOpenApiRouter()
 			const taskId = c.req.param("id");
 			const projection = await readTaskOperatorProjection(
 				taskId,
-				humanTaskOperatorQueryContext(c.get("user")?.userId),
+				humanTaskOperatorQueryContext(),
 			);
 			return c.json(
 				await executeTaskOperatorCommand({
@@ -372,7 +370,6 @@ const router = createOpenApiRouter()
 					expectedTaskRevision: projection.task.revision,
 					arguments: {},
 					context: humanTaskOperatorCommandContext({
-						userId: c.get("user")?.userId,
 						idempotencyKey: c.req.header("Idempotency-Key"),
 					}),
 				}),

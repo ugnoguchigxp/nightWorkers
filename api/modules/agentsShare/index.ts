@@ -22,6 +22,16 @@ export {
 	type TaskRunTerminalPublicationResult,
 } from "./events/task-run-events";
 export {
+	buildEvidenceBindingDigest,
+	canonicalDigest,
+	canonicalJson,
+	compareEvidenceSubject,
+	type EvidenceBindingStatus,
+	type EvidenceFreshness,
+	type EvidenceSubjectBinding,
+	type EvidenceSubjectComparable,
+} from "./evidence-binding";
+export {
 	findLatestFeaturePlanMaterialization,
 	readFeaturePlanImplementationPlan,
 	readFeaturePlanMaterializationIntent,

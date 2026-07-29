@@ -4,7 +4,7 @@
 	"description": "Local-first autonomous development control plane with native supervisor-worker runtime and contextStill.",
 	"main": "index.js",
 	"scripts": {
-		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate && bun run db:seed",
+		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate",
 		"s11tnext:lint": "s11tnext lint --release-profile development --config api/systemContexts/s11tnext.config.toml",
 		"s11tnext:build": "s11tnext build --release-profile development --config api/systemContexts/s11tnext.config.toml",
 		"s11tnext:check": "s11tnext build --check --release-profile development --config api/systemContexts/s11tnext.config.toml",
@@ -63,7 +63,6 @@
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
 		"db:push": "drizzle-kit push",
-		"db:seed": "bun drizzle/seed.ts",
 		"run-control:compare": "node scripts/run-control-db-comparison.mjs",
 		"db:dump:current": "bun api/scripts/dump-current-state.ts",
 		"db:seed:current": "bun api/scripts/seed-current-state.ts",
@@ -86,7 +85,7 @@
 		"db:reset": "bun api/scripts/reset-db.ts",
 		"db:init": "bun run db:reset && bun run db:seed:current",
 		"seed:dev": "bun run db:init",
-		"db:init:empty": "bun run db:reset && bun run db:seed",
+		"db:init:empty": "bun run db:reset",
 		"db:cond1": "bun run db:reset && bun run db:seed:cond1",
 		"db:cond2": "bun run db:reset && bun run db:seed:cond2",
 		"db:cond3": "bun run db:reset && bun run db:seed:cond3",
@@ -144,7 +143,6 @@
 		"@tanstack/react-table": "8.21.3",
 		"@tauri-apps/api": "2.11.1",
 		"@types/ws": "8.18.1",
-		"argon2": "0.44.0",
 		"better-sqlite3": "12.11.1",
 		"clsx": "2.1.1",
 		"dotenv": "17.4.2",
@@ -152,7 +150,6 @@
 		"hono": "4.12.30",
 		"html-to-image": "^1.11.13",
 		"i18next": "26.3.6",
-		"jose": "6.2.3",
 		"jsonrepair": "3.15.0",
 		"lucide-react": "1.24.0",
 		"mermaid": "^11.16.0",
@@ -188,12 +185,12 @@
 		"@typescript/native": "npm:typescript@7.0.2",
 		"@vitejs/plugin-react": "6.0.3",
 		"@vitest/coverage-v8": "4.1.10",
-		"concurrently": "10.0.3",
+		"concurrently": "10.0.4",
 		"cross-env": "10.1.0",
 		"drizzle-kit": "0.31.10",
 		"esbuild": "0.28.1",
 		"husky": "9.1.7",
-		"postcss": "8.5.19",
+		"postcss": "8.5.24",
 		"s11tnext-cli": "0.1.2",
 		"tailwindcss": "4.3.2",
 		"typescript": "7.0.2",
@@ -201,8 +198,10 @@
 		"vitest": "4.1.10"
 	},
 	"overrides": {
-		"fast-uri": "3.1.2",
+		"fast-uri": "3.1.4",
 		"hono": "4.12.30",
+		"minimatch": "10.2.6",
+		"postcss": "8.5.24",
 		"vite": "8.1.4"
 	}
 }
