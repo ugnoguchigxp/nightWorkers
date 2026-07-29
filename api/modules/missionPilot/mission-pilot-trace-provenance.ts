@@ -1,8 +1,4 @@
-import { eq } from "drizzle-orm";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
-import { db } from "../../db/client";
-import { missionPilotPhaseRuns } from "../../db/mission-pilot-schema";
-import { registerRunOrchestrationRefResolver } from "../agentsShare";
 
 type MissionPilotArtifactRef = {
 	sessionId: string;
@@ -29,19 +25,46 @@ export function missionPilotArtifactTrace(
 	};
 }
 
-registerRunOrchestrationRefResolver(async (runId) => {
-	const [phaseRun] = await db
-		.select()
-		.from(missionPilotPhaseRuns)
-		.where(eq(missionPilotPhaseRuns.runId, runId))
-		.limit(1);
-	if (!phaseRun) return null;
+export function missionPilotThoughtTrace(
+	input: MissionPilotArtifactRef & { role?: string; callId?: string },
+): TraceProvenance {
 	return {
-		kind: "mission_pilot",
-		sessionId: phaseRun.sessionId,
-		phaseRunId: phaseRun.id,
-		phase: phaseRun.phase,
-		cycle: phaseRun.cycle,
-		attempt: phaseRun.attempt,
+		owner: "mission_pilot",
+		channel: "pilot_thought",
+		producer: {
+			kind: "structured_llm",
+			role: input.role ?? "mission_pilot",
+			...(input.callId ? { callId: input.callId } : {}),
+		},
+		orchestrationRef: {
+			kind: "mission_pilot",
+			sessionId: input.sessionId,
+			...(input.phaseRunId ? { phaseRunId: input.phaseRunId } : {}),
+			...(input.phase ? { phase: input.phase } : {}),
+			...(input.cycle !== undefined ? { cycle: input.cycle } : {}),
+			...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
+		},
 	};
-});
+}
+
+export function missionPilotInitialPromptTrace(
+	sessionId: string,
+	controlVersion: number,
+) {
+	const trace: TraceProvenance = {
+		owner: "user",
+		channel: "chat",
+		producer: { kind: "user" },
+		orchestrationRef: { kind: "mission_pilot", sessionId },
+	};
+	return {
+		trace,
+		metadataJson: {
+			source: "mission_pilot",
+			intent: "initial_prompt",
+			controlVersion,
+			missionPilotSessionId: sessionId,
+			traceProvenance: trace,
+		},
+	};
+}

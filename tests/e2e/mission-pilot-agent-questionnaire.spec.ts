@@ -7,7 +7,7 @@ const headers = {
 	"x-nightworkers-e2e": "1",
 };
 
-test("Play posts the initial prompt and preserves the 20-second Questionnaire auto-answer UI", {
+test("Play shows the canonical Task Goal and preserves the 20-second Questionnaire auto-answer UI", {
 	tag: [
 		"@deterministic",
 		"@p0",

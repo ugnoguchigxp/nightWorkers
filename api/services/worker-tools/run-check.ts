@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { captureWorkspaceSourceSnapshot } from "../../modules/codingAgent";
 import { getLatestVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
 import {
 	recordVerificationEvidence,
@@ -67,7 +66,7 @@ export async function runCheckTool(
 	const startedAt = new Date().toISOString();
 	const sourceSnapshotBefore =
 		input.taskId && input.runId
-			? await captureWorkspaceSourceSnapshot(input.repoRoot)
+			? await captureWorkspaceSnapshot(input.repoRoot)
 			: undefined;
 	const command = await resolveRunCheckCommand(input);
 	const commandResult = await runCommandTool({
@@ -120,9 +119,7 @@ export async function runCheckTool(
 				})
 			: null;
 	if (evidence && sourceSnapshotBefore) {
-		const sourceSnapshotAfter = await captureWorkspaceSourceSnapshot(
-			input.repoRoot,
-		);
+		const sourceSnapshotAfter = await captureWorkspaceSnapshot(input.repoRoot);
 		evidence.sourceSnapshot = sourceSnapshotBefore;
 		evidence.sourceMutatedDuringCheck =
 			sourceSnapshotBefore.sourceStateHash !==
@@ -179,6 +176,13 @@ export async function runCheckTool(
 		error: commandResult.error,
 		artifactIds: [],
 	};
+}
+
+async function captureWorkspaceSnapshot(repoRoot: string) {
+	const { captureWorkspaceSourceSnapshot } = await import(
+		"../../modules/codingAgent"
+	);
+	return captureWorkspaceSourceSnapshot(repoRoot);
 }
 
 export async function completionCheckTool(input: {

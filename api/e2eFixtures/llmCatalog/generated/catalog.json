@@ -1,0 +1,1545 @@
+{
+  "format": "s11tnext.catalog",
+  "artifactVersion": 2,
+  "compilerVersion": "0.1.2",
+  "releaseProfile": "e2e",
+  "policyDigest": "sha256:aaa47aa11093cf2c15fe8d19b5e9c31cb8397cb468e0920d171dbeafd07341ce",
+  "createdFrom": {
+    "configPath": "s11tnext.config.toml",
+    "sourceFiles": [
+      "contexts/codingAgent/directRun/complete-todo.context.toml",
+      "contexts/codingAgent/directRun/complete.context.toml",
+      "contexts/codingAgent/directRun/create-todo.context.toml",
+      "contexts/codingAgent/directRun/edit-file.context.toml",
+      "contexts/codingAgent/directRun/inspect-diff.context.toml",
+      "contexts/codingAgent/directRun/inspect-repository.context.toml",
+      "contexts/codingAgent/directRun/verify.context.toml",
+      "contexts/missionPilot/autopilot/complete-retry.context.toml",
+      "contexts/missionPilot/autopilot/complete.context.toml",
+      "contexts/missionPilot/autopilot/finish-retry.context.toml",
+      "contexts/missionPilot/autopilot/finish-wait.context.toml",
+      "contexts/missionPilot/autopilot/finish.context.toml",
+      "contexts/missionPilot/autopilot/read-outcome.context.toml",
+      "contexts/missionPilot/autopilot/read-task.context.toml",
+      "contexts/missionPilot/autopilot/start-run.context.toml",
+      "contexts/missionPilot/autopilot/wait-run.context.toml",
+      "contexts/missionPilot/questionnaire/confirmed.context.toml",
+      "contexts/missionPilot/questionnaire/read-current.context.toml",
+      "contexts/missionPilot/questionnaire/save-draft.context.toml",
+      "contexts/missionPilot/repair/read-final-outcome.context.toml",
+      "contexts/missionPilot/repair/read-first-outcome.context.toml",
+      "contexts/missionPilot/repair/read-second-outcome.context.toml",
+      "contexts/missionPilot/repair/read-task.context.toml",
+      "contexts/missionPilot/repair/start-first-repair.context.toml",
+      "contexts/missionPilot/repair/start-first-run.context.toml",
+      "contexts/missionPilot/repair/start-second-repair.context.toml",
+      "contexts/missionPilot/repair/wait-first-repair.context.toml",
+      "contexts/missionPilot/repair/wait-first-run.context.toml",
+      "contexts/missionPilot/repair/wait-second-repair.context.toml",
+      "contexts/missionPilot/restart/checkpoint.context.toml",
+      "contexts/missionPilot/restart/read-outcome.context.toml",
+      "contexts/missionPilot/restart/restore-context.context.toml",
+      "contexts/missionPilot/restart/start-run.context.toml",
+      "contexts/missionPilot/restart/wait-run.context.toml",
+      "contexts/missionPilot/userInterruption/acknowledge-retry.context.toml",
+      "contexts/missionPilot/userInterruption/acknowledge.context.toml",
+      "contexts/missionPilot/userInterruption/read-message.context.toml",
+      "contexts/missionPilot/userInterruption/read-task.context.toml",
+      "contexts/missionPilot/userInterruption/send-question.context.toml",
+      "contexts/missionPilot/userInterruption/wait-user.context.toml",
+      "contexts/structured/malformed-json.context.toml",
+      "contexts/structured/plain-text.context.toml",
+      "contexts/structured/schema-invalid-json.context.toml",
+      "contexts/structured/truncated-json.context.toml",
+      "contexts/structured/valid-json.context.toml"
+    ]
+  },
+  "contexts": {
+    "codingAgent.directRun.complete": {
+      "key": "codingAgent.directRun.complete",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "実装と検証を完了しました。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:e65aa356c2d70f584701d2bf2318aff32f3ba8e8fbc5f13122697ac8c9e53d94"
+        }
+      },
+      "definitionHash": "sha256:5d1098124a829256154aee9f54e972c6a8c1eb50e637a0b6706ca3c67ca762eb",
+      "releaseDigest": "sha256:cedc5384c0d9d027c18d5b2088d9451748f813fb809d514cf8c156359f8a67e1"
+    },
+    "codingAgent.directRun.complete-todo": {
+      "key": "codingAgent.directRun.complete-todo",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "実装と検証が成功したためTodoを完了します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:344999586d760e0415dd1d2730af680d8a90479a4d7f4740c0b147082641f491"
+        }
+      },
+      "definitionHash": "sha256:1edc6b02ff8f784a4818249de9bd47deef1ab85d9eaffe2260954b83fa2c8d8c",
+      "releaseDigest": "sha256:35de67f347e203042b1f49aa8a62384562cc2888cc676c950f9f4659ebc54c64"
+    },
+    "codingAgent.directRun.create-todo": {
+      "key": "codingAgent.directRun.create-todo",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "実装と検証のTodo計画を作成します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:85e40544e422e0605cbcc2308692b246bcb57182f2bddefa63de486dbe41dcbb"
+        }
+      },
+      "definitionHash": "sha256:5aa11f31c46b652100dfe07f53f8a4a536fc0cd56be396c5474c051d7ab1fc40",
+      "releaseDigest": "sha256:8e44d107b63f28fb1bcd774a4b022ef98b6eb331dbf881a5a66b30bc955ec324"
+    },
+    "codingAgent.directRun.edit-file": {
+      "key": "codingAgent.directRun.edit-file",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Task Goalに合わせて対象ファイルを更新します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:c863807baf26bdfa3d5e83387b357f71c0ab909b283922dfc996ffacc8ecf340"
+        }
+      },
+      "definitionHash": "sha256:75fb0175d8023a0575f0a01befeeda0bbbe9892d227996169c8c8135f9b05d10",
+      "releaseDigest": "sha256:85635454ef60126939e08608d151f3e81c212896b6e246d25497c7d6af532394"
+    },
+    "codingAgent.directRun.inspect-diff": {
+      "key": "codingAgent.directRun.inspect-diff",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "変更差分を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:4383edeebd8a2bdc50043a76ba97a08a4d1426399ada8a716217252b825baa6e"
+        }
+      },
+      "definitionHash": "sha256:cae5aad9ce2f211db7afcc18e475772083e85531e7e0edb88cc1265a6a59ca09",
+      "releaseDigest": "sha256:7901cc77885e622c1f5d312c94301167672814fb64607d50e6c2206c1120b44c"
+    },
+    "codingAgent.directRun.inspect-repository": {
+      "key": "codingAgent.directRun.inspect-repository",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "現在の対象ファイルを確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:1160e7c104e42ff0d401ae001101d37c858e256cca6ae3fa1062d0120a56daeb"
+        }
+      },
+      "definitionHash": "sha256:a1a645791c7bb5952b9fc0df93b2a68f1dea69217188ea6474554e05f0ed55a8",
+      "releaseDigest": "sha256:e5749938e94dec69c1f04c2b3cc0fb232ad2c1fdf28f7846b431f46495dd2f51"
+    },
+    "codingAgent.directRun.verify": {
+      "key": "codingAgent.directRun.verify",
+      "owner": "coding-agent-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "変更結果をcommandで検証します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:6f2c4077f190bb6ce7041bfc20553c242bbf7a4f6327af4bad9598dfdf5e88e7"
+        }
+      },
+      "definitionHash": "sha256:6c4014454a22a6ff2b110cf01002ce34221cb6a5454d6d58e6c8850fe89484dd",
+      "releaseDigest": "sha256:588cd880dda5e64e993bdf3f911f213b777e07b348d9b1999f73ad3e09ed8842"
+    },
+    "missionPilot.autopilot.complete": {
+      "key": "missionPilot.autopilot.complete",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "terminal outcomeを確認したのでTaskを完了します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:5e30a9279766e4645a0885f60013744155dceb1725d9c3d7e7ae74b9dbf2376d"
+        }
+      },
+      "definitionHash": "sha256:51229a9dbbf07b3853c4aca975731f0e858e699873148a09fb3af1fd82403f1f",
+      "releaseDigest": "sha256:24369c80a6fd4f66d16318c9e22e161b17a918abbd7a70a46464886561c435e2"
+    },
+    "missionPilot.autopilot.complete-retry": {
+      "key": "missionPilot.autopilot.complete-retry",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "完了条件を再確認してTaskを完了します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:fa3a6a6509debf65b23b6edbf2f2a7385b447ad205dc0764620ca8449475d32b"
+        }
+      },
+      "definitionHash": "sha256:d0ee0e154a8b5c78aca1da7a1e252841e8f894ad36859cb0ba85bddcdc934ab4",
+      "releaseDigest": "sha256:ccb205f4fbfbd6ef569e43fde648c2878e52434632f4fba05e4f94d485e73fb8"
+    },
+    "missionPilot.autopilot.finish": {
+      "key": "missionPilot.autopilot.finish",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "完了結果を確認し、Agent sessionを終了します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:4ab6267b868d953d4b8937f1817e7a39b05a01289ef0a7d1709bf6a1a9a699e3"
+        }
+      },
+      "definitionHash": "sha256:9b1950c753cc5609990238627c8ca76ee647f18390aeab91660c6856cd8509e5",
+      "releaseDigest": "sha256:364ad2f4d707b14db195a1e5ab9138b4d09701f16b5bb552fdafd85f47c5b22b"
+    },
+    "missionPilot.autopilot.finish-retry": {
+      "key": "missionPilot.autopilot.finish-retry",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "未読eventを確認したのでAgent sessionの終了を再評価します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:09da43fbd8140d858a866e08a679f5c509214c1225cae413f8729a6d290d824f"
+        }
+      },
+      "definitionHash": "sha256:b10e33b1ec9571fa28cf9ff24e9c830580b4c9ee9e0617c523bd5bde380e6944",
+      "releaseDigest": "sha256:07c95cff282f7b9bfaec97eece99f208bd2c191a50e0127b904014d707ef06a9"
+    },
+    "missionPilot.autopilot.finish-wait": {
+      "key": "missionPilot.autopilot.finish-wait",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Task完了後に到着した未読eventを次のturnで確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:c4392d98b2702b861a31bac9a83ec30d01642e6675261be10b94a3cc090d95b6"
+        }
+      },
+      "definitionHash": "sha256:9ca6f6da0542bc7a979cdd0c816f838c561f2efaa68a63c7925fe2399a5178de",
+      "releaseDigest": "sha256:53961d34473dab4b961d884ae3cf6ba3c90b36787ef7d2b77e4f888c16de659a"
+    },
+    "missionPilot.autopilot.read-outcome": {
+      "key": "missionPilot.autopilot.read-outcome",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Runの結果とTaskの現在状態を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:6ebb6ad9e9c581cbf6562146593134d1691e711bacbd3c6bd6363471e44ecef5"
+        }
+      },
+      "definitionHash": "sha256:bf8d3498949880782f3b91b3e142d7729bbbc01e7301588b058d40a428868907",
+      "releaseDigest": "sha256:a09ed33b36d0fbb1a02a48b968340eec903eee86b8b0b6dd5a326276efdb95bf"
+    },
+    "missionPilot.autopilot.read-task": {
+      "key": "missionPilot.autopilot.read-task",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Task Goalと現在のFactを確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:d44bea4d498892ed97e2d44de1e574c3002b831fb30e613bdc18b4380ff877f7"
+        }
+      },
+      "definitionHash": "sha256:57dcd6680c8dedb76298868ccf5fb25841824b6ef0d85cff146276641c8c48d9",
+      "releaseDigest": "sha256:61344f5cf28a0dae9d4eb700d1e994676b10078f91e34eab03f3197dcef2ad8b"
+    },
+    "missionPilot.autopilot.start-run": {
+      "key": "missionPilot.autopilot.start-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "必要な実装をCoding Agentへ依頼します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:938dd0a4df68e7333611de7f47ebc7aa91d62ceb6ebc13f1d4534ab0de5ce74d"
+        }
+      },
+      "definitionHash": "sha256:380cd7ce914c29b2106f3383400d091ddeeae9122fb7e0d6beb5a8cc864194a7",
+      "releaseDigest": "sha256:2dfea66b92cb0faff652739de53dd9db151ed27874bfd40c4d2db88a69f13805"
+    },
+    "missionPilot.autopilot.wait-run": {
+      "key": "missionPilot.autopilot.wait-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Runの完了イベントを待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:329b4cd42553276412823f5cdab30e1910f717f23fce0c4d399900e1b09effc8"
+        }
+      },
+      "definitionHash": "sha256:4ba53e88eb3d1d8e5a53e9782845a72fb1b1a97ef38768c08209e9f29810a74d",
+      "releaseDigest": "sha256:6bf6e49b062185d58cbdaa33efcd38c7fbf82722a878f1bc01a7ec1dd2ca0ce8"
+    },
+    "missionPilot.questionnaire.confirmed": {
+      "key": "missionPilot.questionnaire.confirmed",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Questionnaire回答の自動確定を確認しました。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:f8ee849ec5155ad6a6d7739d16857ddabb89eaaaf0712ca5dddfcfcdccb26b24"
+        }
+      },
+      "definitionHash": "sha256:74d74caa26b1d7c56de0c8e325afcdb0b8da520b73cddb1c8782e7acf0a63e20",
+      "releaseDigest": "sha256:3f252f493780e36e53cae32624d40a4cf0267d19383627125f2b417250192259"
+    },
+    "missionPilot.questionnaire.read-current": {
+      "key": "missionPilot.questionnaire.read-current",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "現在のTaskとQuestionnaireを確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:e008d08673279e8c44beb2892b35e7d5e22af736af924fb86d06a949b615f52c"
+        }
+      },
+      "definitionHash": "sha256:67b60ecb34c476f16c6478ef4514f10828b14d4cc773a965dbdc95a079c13b7b",
+      "releaseDigest": "sha256:a0921a3c2030563965ff817ce71cf17d31c90167b84de5f60b7fa148fdba44f4"
+    },
+    "missionPilot.questionnaire.save-draft": {
+      "key": "missionPilot.questionnaire.save-draft",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "既存規約に合うRESTを回答案として保存します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:29c76218501b64ed3bd97a050a9859f62fca425e33365850944193816c6d9e70"
+        }
+      },
+      "definitionHash": "sha256:03f413ccdb24092435956c80230335908667bdb51feb715c9422aff81463e40c",
+      "releaseDigest": "sha256:9723c5f7f5156199c6819823aef950c37925c17c37f8b8ec1c2505ee42e928d8"
+    },
+    "missionPilot.repair.read-final-outcome": {
+      "key": "missionPilot.repair.read-final-outcome",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "二回目の修正Runのterminal outcomeを確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:2c072ef1d9aa30d9db939e6e50836c62afec44de113ddbf3b6376717026bae7d"
+        }
+      },
+      "definitionHash": "sha256:aafec9e75c894a2339705cf5d81536600ee396c63d848c8aa95b104925a57ac2",
+      "releaseDigest": "sha256:04ba05f54f19b84934e21d3fd8b3a07afab91e88e2a299f3d30ac1e34af201fc"
+    },
+    "missionPilot.repair.read-first-outcome": {
+      "key": "missionPilot.repair.read-first-outcome",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "失敗したRunの結果を読み、原因を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:6c4d1bb1cb37b2ff2821a28d2856e8d9909a2594d295a1ecb6c6da587a366697"
+        }
+      },
+      "definitionHash": "sha256:bc25b9b65a56d88291c7d8e7a95e80185dc2d8e06a8352e4fc760c3cfdebe371",
+      "releaseDigest": "sha256:41a25f6a65a61761fc2af5f226ae8f8a9ad16ea5500b245cb424f41645c93c22"
+    },
+    "missionPilot.repair.read-second-outcome": {
+      "key": "missionPilot.repair.read-second-outcome",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "一回目の修正が失敗した原因を再調査します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:ed420362bd7052537988a98b4588b67cae103d803dfddeac74b411b30a3219bf"
+        }
+      },
+      "definitionHash": "sha256:5bab5fafc99041889bdc4f2711b6381b8a287a09039ea306fc8c3820e4288e13",
+      "releaseDigest": "sha256:239339bd504c7629bf3d47ab59e323a726443e2c272c244b46bbb30b2f00db36"
+    },
+    "missionPilot.repair.read-task": {
+      "key": "missionPilot.repair.read-task",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Taskと実行可能な操作を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:555e131e74ba3ffd332a4965e632b90deda65d3b0a9be51fec54341caacf337d"
+        }
+      },
+      "definitionHash": "sha256:8e9220ef48a2b82d70915adce030a12062e84beb069c9638964cbdf441e7a08a",
+      "releaseDigest": "sha256:a3fabc938e5690900c62e98acea0df4c4172267f2ec04187bc3d6da7d35e200a"
+    },
+    "missionPilot.repair.start-first-repair": {
+      "key": "missionPilot.repair.start-first-repair",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "失敗結果を踏まえた一回目の修正依頼を送ります。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:7caf6a0d55c03a48aa47f69a09290b0d1f91aa364b127376635a652cd73c941f"
+        }
+      },
+      "definitionHash": "sha256:07d1241bb09d6a71747025eeaadf3adadca8453a221ff34b0ad81f1634bd2ba6",
+      "releaseDigest": "sha256:e92e29263e56c9b4342b88fcc38556ee92f798ea2a3df5901d08933d0bc772b6"
+    },
+    "missionPilot.repair.start-first-run": {
+      "key": "missionPilot.repair.start-first-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "最初の実装依頼を送ります。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:702eb755db770b699218327e8989652ac8ff382d6ede5f3b1e8daeb8e22547ac"
+        }
+      },
+      "definitionHash": "sha256:13e389fc9678cdd1852c5d95975c5b810e84905ddf1f896b8a8bff06e58460ce",
+      "releaseDigest": "sha256:c99f6027df51633c5693face14474720e59263a833ab4bae67633b39c69f385b"
+    },
+    "missionPilot.repair.start-second-repair": {
+      "key": "missionPilot.repair.start-second-repair",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再調査結果を踏まえた二回目の修正依頼を送ります。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:c9bf863b1b0505c3c6816c61dcd7ae1fcf8fdea35546cbd56559160b95c5e34c"
+        }
+      },
+      "definitionHash": "sha256:0e79577f6434bee75d7c06a2545bc58032b45c06c792dccf9144434d5f4dea0c",
+      "releaseDigest": "sha256:722fe20e2aea2940031605be2d7710a0c33a8280be0b10d1d5bb6f3814d65142"
+    },
+    "missionPilot.repair.wait-first-repair": {
+      "key": "missionPilot.repair.wait-first-repair",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "一回目の修正Runの完了イベントを待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:4992bdff6c29de1fd718a6c7859155d51a3e7308cca36ae905425c9bfa26b93c"
+        }
+      },
+      "definitionHash": "sha256:903bcb270293ba3ae73e15875e1b183e5de6dcf453614ad2bb374b1db2a4663f",
+      "releaseDigest": "sha256:16d68ef1fd91ac3e3c729bae15c05fc516b78d3cea7ac040334cda01c21cf9be"
+    },
+    "missionPilot.repair.wait-first-run": {
+      "key": "missionPilot.repair.wait-first-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "失敗したRunの完了イベントを待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:d0e58d5d5fd87a42ce84f073e5ac3bc131d87f36531353dfb912d5f116e54425"
+        }
+      },
+      "definitionHash": "sha256:7b5d7b0c43cbe25ecfa1b8077f83c36655b8a377c8aa0357bf825541fe0fb497",
+      "releaseDigest": "sha256:ba0aaa90a6f60bdbc0ae05eb1a359f24153d687c597bcd81a4316cd391f62124"
+    },
+    "missionPilot.repair.wait-second-repair": {
+      "key": "missionPilot.repair.wait-second-repair",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "二回目の修正Runの完了イベントを待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:2a336662cebcf57738d1d3a2962accf1eabb41e82bf72a572956ab38b8b22ebf"
+        }
+      },
+      "definitionHash": "sha256:9b003630b44569e89f9aad56b3958182329f9ee59cc6e8d9a5ae974a1c149cd3",
+      "releaseDigest": "sha256:d19ad60f53deb71a4303c4aea65a8094639d7554f8899a7ceb0b0fa8fbbe073f"
+    },
+    "missionPilot.restart.checkpoint": {
+      "key": "missionPilot.restart.checkpoint",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再起動前のconversation checkpointを保存しました。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:a544fd3905181ab5fed68f83ca95a61131ed81bb50925763a15653ac5b0c7d86"
+        }
+      },
+      "definitionHash": "sha256:872517ff7ddc94a1455a90538d96106666aeffc16e9f95e2c5361e4bed1bd695",
+      "releaseDigest": "sha256:9cf7204f5549878010b9c0e10a3d6fece3f1b9d12492d3dc09c3ebf15c044c74"
+    },
+    "missionPilot.restart.read-outcome": {
+      "key": "missionPilot.restart.read-outcome",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再起動後のRun結果を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:4e8d1778b93af79b5aa37d06b99756fd5d3e9a01d6dc82ae4dc1595ebff08f9b"
+        }
+      },
+      "definitionHash": "sha256:1d2e9b0c4270bff400f9fb953f73278d3ff94bdb4e32a4c075f39fe28b42266c",
+      "releaseDigest": "sha256:1d58a91caa7eec0547358ad29aeba53715935fadc7a0ea0c7c58c81736f97d55"
+    },
+    "missionPilot.restart.restore-context": {
+      "key": "missionPilot.restart.restore-context",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再起動後にTask Goalと現在のFactを再取得します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:15af5f4e73677d1717f9f0791d3938eec8cc8e427b8760ac99e56afe58a052a2"
+        }
+      },
+      "definitionHash": "sha256:52f0f2ce951ca9b9cf218f5bf671d225a6b52a99cae478e0f01431aebd2ce663",
+      "releaseDigest": "sha256:4d0cb7fa87838cb2539b59ce14772a62feb058e79de6a6185729e1a202463f78"
+    },
+    "missionPilot.restart.start-run": {
+      "key": "missionPilot.restart.start-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再構成したsessionから実装を依頼します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:3d3b9c0fa502c9e6e96cdcfed32045e190952485e4cb165807f8e0ef0d141d5c"
+        }
+      },
+      "definitionHash": "sha256:65b364440f2e65c2efade274d810b1114429a465a8741ec87d6c414cee652378",
+      "releaseDigest": "sha256:36ddd02a5be2e64bec6a67d8184d629f25c05b31dd5783d77b2e351a9d11e7b8"
+    },
+    "missionPilot.restart.wait-run": {
+      "key": "missionPilot.restart.wait-run",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "再起動後に開始したRunの終了を待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:7a6d4cf99a50c07f88f229e1e665385dcbc32d744e32b53e726bcedf56a24d0b"
+        }
+      },
+      "definitionHash": "sha256:69b091aa379e9bf78534e104f12ec034a2307e6b3ba18f889fcf4068f95ce181",
+      "releaseDigest": "sha256:0306e7a4f2424d79162e701f3210898a81ba83375940457860a6c652c569ba6f"
+    },
+    "missionPilot.userInterruption.acknowledge": {
+      "key": "missionPilot.userInterruption.acknowledge",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "追加指示を反映しました。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:2e0498d70b1109e7cfb87fc44c0da0595ab28736ca6bd8557aa5e1fd2ddac82f"
+        }
+      },
+      "definitionHash": "sha256:c58efe630db1b8ea68dac91d3a9f508829ada9d7469988e7e437578c3d36c318",
+      "releaseDigest": "sha256:9990370e445cf4d80e31392b5fb54fbdfb00d99b13ba2bb772f435167f45f88d"
+    },
+    "missionPilot.userInterruption.acknowledge-retry": {
+      "key": "missionPilot.userInterruption.acknowledge-retry",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "最新のTask revisionを再確認して追加指示を反映しました。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:bd0f7cc82d79f26f70aedb3e1a5d5b26e871400795290950d123e8ade73bb3e3"
+        }
+      },
+      "definitionHash": "sha256:6a15e0023183037907b2f7990dc5f1a7e0dd752be4ac244fc78ce22bdb163d6d",
+      "releaseDigest": "sha256:b14a502b5429199a8b7841a174db5c457f7ed7c483cf516fd2057111e1617fc0"
+    },
+    "missionPilot.userInterruption.read-message": {
+      "key": "missionPilot.userInterruption.read-message",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "追加指示を読み直します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:cd88baaf8eb1904aff233c98c4ef10c42b4d02a256561621b7f2ba5f3411b721"
+        }
+      },
+      "definitionHash": "sha256:947caad3c53b6e263aa8c935be5692f59fdfba343c81f13e1ea323b796b56e6e",
+      "releaseDigest": "sha256:bf4994851588293e72692ba40d52ab4e20875f4f0d8d676c66c1043a3594a500"
+    },
+    "missionPilot.userInterruption.read-task": {
+      "key": "missionPilot.userInterruption.read-task",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "Taskの現在状態を確認します。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:7221218735ef7f357704c00a9343e4e10562cefe8e721567218331719d33b597"
+        }
+      },
+      "definitionHash": "sha256:a24b156943f0cd10f77a401200008a9fe9cb137507deb50d4f6b4611215b3335",
+      "releaseDigest": "sha256:5f2adf76b9ffec302a3456bb311fe3e023d60ad583db6f967d31316c19c4f957"
+    },
+    "missionPilot.userInterruption.send-question": {
+      "key": "missionPilot.userInterruption.send-question",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "ユーザーへ確認事項を送ります。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:d2dc4d2592272202a6790f18ea62f84d8ea43210022ede64c8b0a99892171966"
+        }
+      },
+      "definitionHash": "sha256:e58ab639b2da2d1b26facb354361b79ea7bc0f7c661c3498de0be089b88c6534",
+      "releaseDigest": "sha256:e7a99a267588270a17ddb76eae7295b46bbbc4bf5dfaa4f16843716515d939e7"
+    },
+    "missionPilot.userInterruption.wait-user": {
+      "key": "missionPilot.userInterruption.wait-user",
+      "owner": "mission-pilot-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "ユーザーからの追加指示を待ちます。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:d0d5b23e2790a75bc3d5143e6823844255d9e7fc14e684b9c6920e5ab0bae8f3"
+        }
+      },
+      "definitionHash": "sha256:ce2c5bde685995008c7f4aae665e8322c81473811cad699d98bddc9f27320041",
+      "releaseDigest": "sha256:7567061ff1a6cdb27882f7229b4c5a403e162b94f9203827da6c3503535bab41"
+    },
+    "structured.malformed-json": {
+      "key": "structured.malformed-json",
+      "owner": "structured-llm-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "{\"answer\":\"ok\""
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:d9cfdc15ac81747da0c10529e57cb2b4e5dfc61aafbe9fc5593a0de9975ffd8f"
+        }
+      },
+      "definitionHash": "sha256:9d533a7cfe7cb9e1030f27cc9e2709c4382cfcfd61720082183829124e04dc53",
+      "releaseDigest": "sha256:ebf5c06042f34656cb169798bbd359e985d1570aab9b61e967c770528cc68720"
+    },
+    "structured.plain-text": {
+      "key": "structured.plain-text",
+      "owner": "structured-llm-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "plain fixture text"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:2ae75d29dec3a9082edf080bd31c5bafa580d196c9a03291446b56dc29ebfd00"
+        }
+      },
+      "definitionHash": "sha256:2fed01c23271f9ba2d2fb890ed34ddd3dad6856b0870d5687fb7ae8d5e6d0bc5",
+      "releaseDigest": "sha256:6d59e90b15df16dd840b2518306f19caea2cd562b060a5e96e496d9c7ccfd6ca"
+    },
+    "structured.schema-invalid-json": {
+      "key": "structured.schema-invalid-json",
+      "owner": "structured-llm-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "{\"answer\":42}"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:8fc6e69673ae6791ad1abac3e8c3002a521ff299c7201e03d293c09f7ddcc95a"
+        }
+      },
+      "definitionHash": "sha256:a0d4c01a52ef4211a6c91c03635868fe6550e3d589b488ad0390cf43305fd6f5",
+      "releaseDigest": "sha256:f197f49ef59501648abe14236029e85bec556c0986c7f9f0f45fb37e5776879c"
+    },
+    "structured.truncated-json": {
+      "key": "structured.truncated-json",
+      "owner": "structured-llm-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "{\"title\":\"repairable\",\"items\":[\"one\"]"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:062b4c31d80b041957f1746fe12dd8ca18e014eb146a868a9512954eaee82771"
+        }
+      },
+      "definitionHash": "sha256:7526ab05490a560a3f8412594be1d130724b94cdbf96b72ee6e40a97262bd542",
+      "releaseDigest": "sha256:90f7188bd8ac23b7ad2487922bd8b6a9cfddbaa12be88a667872ba536bfe8482"
+    },
+    "structured.valid-json": {
+      "key": "structured.valid-json",
+      "owner": "structured-llm-e2e-fixture",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "{\n  \"title\": \"Catalog fixture output\",\n  \"items\": [\"one\"]\n}"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:a2146035b2d90c55c5d9b2b2ac872e3dc963a61d4fdaa3d29cc1f6e176142216"
+        }
+      },
+      "definitionHash": "sha256:368a6545ffc0784a41453801bb7c66d56736ea5c0697a6b8209e071d5a53dd93",
+      "releaseDigest": "sha256:a673483f288c32e351e9e0ac4d4aba33443f468306fe4bcfc61883ee4705e41c"
+    }
+  },
+  "catalogDigest": "sha256:025b48e17991b53c98bd9a7dd07e5d1433c22d76ec0756595569ab9a208366b2"
+}

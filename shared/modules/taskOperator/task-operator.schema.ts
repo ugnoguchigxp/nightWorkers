@@ -4,6 +4,7 @@ import { taskStatusSchema } from "../../schemas/nightworkers/repository-task.sch
 export const TASK_OPERATOR_PROJECTION_VERSION = 1 as const;
 export const TASK_OPERATOR_HEAD_TOKEN_BUDGET = 3_000;
 export const TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET = 4_000;
+export const TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET = 12_000;
 export const TASK_OPERATOR_MAX_LATEST_ARTIFACT_KINDS = 32;
 
 const identifierSchema = z.string().min(1).max(160);
@@ -149,13 +150,35 @@ export const taskOperatorAvailableCommandSchema = z
 	})
 	.strict();
 
-export const taskOperatorPrincipalSchema = z
+const taskOperatorDirectPrincipalSchema = z
 	.object({
 		kind: z.enum(["human", "automation"]),
 		actorId: identifierSchema,
 		authorizationRef: identifierSchema,
 	})
 	.strict();
+
+const delegatedTaskOperatorPrincipalSchema = z
+	.object({
+		kind: z.literal("delegated_user"),
+		actorId: identifierSchema,
+		authorizationRef: identifierSchema,
+		subjectUserId: identifierSchema,
+		delegationRef: z
+			.object({
+				sessionId: identifierSchema,
+				taskId: identifierSchema,
+				grantedAt: z.string().datetime(),
+				capabilityDigest: digestSchema,
+			})
+			.strict(),
+	})
+	.strict();
+
+export const taskOperatorPrincipalSchema = z.discriminatedUnion("kind", [
+	taskOperatorDirectPrincipalSchema,
+	delegatedTaskOperatorPrincipalSchema,
+]);
 
 export const taskOperatorQueryContextSchema = z
 	.object({
@@ -192,6 +215,17 @@ export const taskOperatorFailureSchema = z
 	})
 	.strict();
 
+export const taskOperatorCommandReceiptSchema = z
+	.object({
+		commandId: identifierSchema,
+		idempotencyKey: z.string().min(1).max(256),
+		actionId: identifierSchema,
+		operationRef: taskOperatorResourceRefSchema.nullable(),
+		resourceRefs: z.array(taskOperatorResourceRefSchema).max(32),
+		replayed: z.boolean(),
+	})
+	.strict();
+
 export function taskOperatorContentPageSchema<ContentSchema extends z.ZodType>(
 	contentSchema: ContentSchema,
 ) {
@@ -217,7 +251,13 @@ export function taskOperatorCommandResultSchema<DataSchema extends z.ZodType>(
 	dataSchema: DataSchema,
 ) {
 	return z.discriminatedUnion("ok", [
-		z.object({ ok: z.literal(true), data: dataSchema }).strict(),
+		z
+			.object({
+				ok: z.literal(true),
+				receipt: taskOperatorCommandReceiptSchema,
+				data: dataSchema,
+			})
+			.strict(),
 		z
 			.object({ ok: z.literal(false), error: taskOperatorFailureSchema })
 			.strict(),
@@ -245,6 +285,9 @@ export type TaskOperatorCommandContext = z.infer<
 	typeof taskOperatorCommandContextSchema
 >;
 export type TaskOperatorFailure = z.infer<typeof taskOperatorFailureSchema>;
+export type TaskOperatorCommandReceipt = z.infer<
+	typeof taskOperatorCommandReceiptSchema
+>;
 export type TaskOperatorContentPage<Content> = {
 	sourceRef: TaskOperatorSourceRef;
 	sourceRevision: number;
@@ -256,5 +299,5 @@ export type TaskOperatorContentPage<Content> = {
 	content: Content;
 };
 export type TaskOperatorCommandResult<Data> =
-	| { ok: true; data: Data }
+	| { ok: true; receipt: TaskOperatorCommandReceipt; data: Data }
 	| { ok: false; error: TaskOperatorFailure };

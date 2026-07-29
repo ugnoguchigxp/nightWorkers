@@ -25,8 +25,10 @@ test("Agent can read a failed Run, request repair, and complete the Task", {
 		await playAgentScenario(request, fixture);
 		await waitForTaskStatus(request, fixture.taskId, "completed");
 		let execution: {
+			version: 2;
+			executionModel: "task_operator_v1";
 			agent?: { visibleItems?: Array<{ kind: string; content?: string }> };
-			phaseRuns: unknown[];
+			legacyPostQueueState: { status: "retired" };
 		} | null = null;
 		await expect
 			.poll(
@@ -42,8 +44,27 @@ test("Agent can read a failed Run, request repair, and complete the Task", {
 				{ timeout: 20_000 },
 			)
 			.toContain("修正");
-		expect(execution?.agent?.visibleItems?.at(-1)?.kind).toBe("finish");
-		expect(execution?.phaseRuns).toHaveLength(0);
+		try {
+			await expect
+				.poll(
+					async () => {
+						execution = await readAgentExecution(request, fixture.taskId);
+						return execution?.agent?.visibleItems?.at(-1)?.kind ?? null;
+					},
+					{ timeout: 20_000 },
+				)
+				.toBe("finish");
+		} catch (error) {
+			throw new Error(
+				`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(execution)}`,
+			);
+		}
+		expect(execution).toMatchObject({
+			version: 2,
+			executionModel: "task_operator_v1",
+			legacyPostQueueState: { status: "retired" },
+		});
+		expect(execution).not.toHaveProperty("phaseRuns");
 		const runsResponse = await request.get(
 			`/api/tasks/${fixture.taskId}/runs`,
 			{

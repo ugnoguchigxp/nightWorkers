@@ -1,4 +1,5 @@
 export {
+	TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET,
 	TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET,
 	TASK_OPERATOR_HEAD_TOKEN_BUDGET,
 	TASK_OPERATOR_MAX_LATEST_ARTIFACT_KINDS,
@@ -6,6 +7,7 @@ export {
 	type TaskOperatorAvailableCommand,
 	type TaskOperatorBoundedTextRef,
 	type TaskOperatorCommandContext,
+	type TaskOperatorCommandReceipt,
 	type TaskOperatorCommandResult,
 	type TaskOperatorContentPage,
 	type TaskOperatorFailure,
@@ -17,6 +19,7 @@ export {
 	taskOperatorAvailableCommandSchema,
 	taskOperatorBoundedTextRefSchema,
 	taskOperatorCommandContextSchema,
+	taskOperatorCommandReceiptSchema,
 	taskOperatorCommandResultSchema,
 	taskOperatorContentPageSchema,
 	taskOperatorFailureSchema,

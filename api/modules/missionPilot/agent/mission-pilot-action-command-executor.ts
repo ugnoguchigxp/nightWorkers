@@ -1,3 +1,4 @@
+import type { TaskOperatorPrincipal } from "../../../../shared/modules/taskOperator";
 import { executeTaskOperatorCommand } from "../../taskOperator";
 import { buildMissionPilotTaskOperatorRuntime } from "./mission-pilot-task-operator-runtime.adapter";
 
@@ -6,7 +7,7 @@ export type MissionPilotActionCommandContext = {
 	toolCallId: string;
 	idempotencyKey: string;
 	expectedTaskRevision: number;
-	sourceRunId: string | null;
+	principal: Extract<TaskOperatorPrincipal, { kind: "delegated_user" }>;
 	signal?: AbortSignal;
 };
 
@@ -23,11 +24,7 @@ export async function executeMissionPilotAction(
 		expectedTaskRevision: context.expectedTaskRevision,
 		arguments: args,
 		context: {
-			principal: {
-				kind: "automation",
-				actorId: context.sessionId,
-				authorizationRef: context.sessionId,
-			},
+			principal: context.principal,
 			requestId: context.toolCallId,
 			idempotencyKey: context.idempotencyKey,
 		},

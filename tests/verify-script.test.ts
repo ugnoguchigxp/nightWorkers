@@ -15,6 +15,7 @@ describe("release verification plan", () => {
 		expect(taskIds).toEqual([
 			"tracked-artifacts",
 			"architecture",
+			"llm-fixture-catalog",
 			"typecheck",
 			"lint",
 			"supervisor-regression",
@@ -31,7 +32,7 @@ describe("release verification plan", () => {
 		);
 	});
 
-	it("keeps slow, full E2E, and desktop checks deterministic in the full gate", () => {
+	it("keeps E2E in the full deterministic gate", () => {
 		const taskIds = taskSets.full.flatMap((phase) =>
 			phase.tasks.map((task) => task.id),
 		);
@@ -53,7 +54,15 @@ describe("release verification plan", () => {
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining(["live-llm", "live-agent-e2e"]),
 		);
+		expect(taskSets.full.map((phase) => phase.id)).toContain("e2e-coverage");
 		expect(taskIds).not.toContain("e2e-accessibility");
+	});
+
+	it("runs the E2E target without an environment opt-in", () => {
+		expect(taskSets.e2e).toHaveLength(1);
+		expect(taskSets.e2e[0]?.tasks.map((task) => task.id)).toEqual([
+			"e2e-coverage",
+		]);
 	});
 
 	it("isolates external LLM canaries to the live target", () => {
@@ -123,11 +132,12 @@ describe("release verification plan", () => {
 			stdout: "",
 			stderr: task.id === "e2e-coverage" ? "failed" : "",
 		}));
-		const phases = taskSets.release.filter((phase) =>
-			["e2e-coverage", "dependency-audit", "desktop-build-smoke"].includes(
-				phase.id,
+		const phases = [
+			...(taskSets.e2e ?? []),
+			...taskSets.release.filter((phase) =>
+				["dependency-audit", "desktop-build-smoke"].includes(phase.id),
 			),
-		);
+		];
 
 		const result = await executeVerificationPhases(phases, runner);
 

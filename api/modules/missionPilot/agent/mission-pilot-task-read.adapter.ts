@@ -1,31 +1,38 @@
 import {
+	getTaskOperatorActionDefinition,
 	readTaskOperatorProjection,
 	readTaskOperatorResource,
 } from "../../taskOperator";
+import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
-import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";
+import { getMissionPilotActionUnavailableReason } from "./mission-pilot-task-action.registry";
 
 export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
-	readTaskOperatorView(input) {
+	async readTaskOperatorView(input) {
+		const access = await createMissionPilotTaskOperatorAccess(input);
 		return readTaskOperatorProjection(
 			input.taskId,
-			automationContext(input.sessionId),
+			access.context,
+			access.delegatedAuthorization,
 		);
 	},
-	readTaskResource(input) {
+	async readTaskResource(input) {
+		const access = await createMissionPilotTaskOperatorAccess(input);
 		return readTaskOperatorResource({
 			taskId: input.taskId,
 			resourceKind: input.resourceKind,
 			resourceId: input.resourceId,
 			cursor: input.cursor,
 			limit: input.limit,
-			context: automationContext(input.sessionId),
+			context: access.context,
+			delegatedAuthorization: access.delegatedAuthorization,
 		});
 	},
 	async listAvailableTaskActions(input) {
 		const projection = await this.readTaskOperatorView(input);
-		return projection.commandCatalog.availableIds.map((id) => {
-			const definition = getMissionPilotActionDefinition(id);
+		return projection.commandCatalog.availableIds.flatMap((id) => {
+			if (getMissionPilotActionUnavailableReason(id)) return [];
+			const definition = getTaskOperatorActionDefinition(id);
 			return {
 				id,
 				title: definition?.title ?? id,
@@ -39,7 +46,9 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		const projection = await this.readTaskOperatorView(input);
 		if (!projection.commandCatalog.availableIds.includes(input.actionId))
 			throw new Error("Task action is not currently available");
-		const definition = getMissionPilotActionDefinition(input.actionId);
+		if (getMissionPilotActionUnavailableReason(input.actionId))
+			throw new Error("Task action is not delegated to Mission Pilot");
+		const definition = getTaskOperatorActionDefinition(input.actionId);
 		if (!definition) throw new Error("Task action contract not found");
 		return {
 			id: definition.actionId,
@@ -50,13 +59,3 @@ export const missionPilotTaskReadPort: MissionPilotTaskReadPort = {
 		};
 	},
 };
-
-function automationContext(sessionId: string) {
-	return {
-		principal: {
-			kind: "automation" as const,
-			actorId: sessionId,
-			authorizationRef: `mission-pilot-session:${sessionId}`,
-		},
-	};
-}

@@ -29,7 +29,7 @@ export type PlanArtifactSourceSelection = {
 	blueprintMessageId: string | null;
 	dataModelMessageId: string | null;
 	dedicatedViewMessageIds: string[];
-	policy: "mission_pilot_step" | "explicit_request";
+	policy: "orchestrated_step" | "explicit_request";
 };
 
 export type PlanArtifactCanonicalInput = {
@@ -72,7 +72,6 @@ export type PlanArtifactCanonicalInput = {
 	}>;
 	regenerationRequest: string | null;
 	provenance: {
-		missionPilotSessionId: string | null;
 		contextRevision: number | null;
 		contextDigest: string | null;
 		routingRevision: number;

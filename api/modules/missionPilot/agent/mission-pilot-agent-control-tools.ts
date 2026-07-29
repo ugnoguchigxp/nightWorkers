@@ -16,7 +16,6 @@ import {
 	missionPilotToolCalls,
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
-import { taskRuns, tasks } from "../../../db/schema";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 
 const waitInputSchema = z.object({
@@ -50,7 +49,7 @@ export const MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS = [
 	{
 		name: "agent.finish",
 		description:
-			"Taskがterminalになり、未完了action・未確定receipt・未処理eventがないことを確認してMission Pilotを完了する。",
+			"現在のTask目的が達成されたと判断し、未確定receipt・未処理event・未完了tool callがないときにMission Pilotを完了する。",
 		inputSchema: {
 			type: "object",
 			properties: { summary: { type: "string", minLength: 1 } },
@@ -162,28 +161,6 @@ export async function executeMissionPilotAgentControlTool(input: {
 			)
 			.limit(1);
 		if (!session) return "現在のAgent turnのleaseが有効ではありません。";
-		const [task] = await tx
-			.select({ id: tasks.id, status: tasks.status })
-			.from(tasks)
-			.where(eq(tasks.id, input.taskId))
-			.limit(1);
-		if (!task) return "Taskが見つかりません。";
-		if (task.status !== "completed" && task.status !== "archived")
-			return "Taskの完了状態が記録されていません。";
-		const [activeRun] = await tx
-			.select({ id: taskRuns.id })
-			.from(taskRuns)
-			.where(
-				and(
-					eq(taskRuns.taskId, input.taskId),
-					inArray(taskRuns.status, [
-						"running",
-						"context_compiling",
-						"finalizing",
-					]),
-				),
-			)
-			.limit(1);
 		const [receipt] = await tx
 			.select({ id: missionPilotActionExecutions.id })
 			.from(missionPilotActionExecutions)
@@ -219,7 +196,7 @@ export async function executeMissionPilotAgentControlTool(input: {
 				),
 			)
 			.limit(1);
-		return activeRun || receipt || unreadEvent || pendingToolCall
+		return receipt || unreadEvent || pendingToolCall
 			? "Mission Pilotに未解決の作業があります。"
 			: null;
 	});

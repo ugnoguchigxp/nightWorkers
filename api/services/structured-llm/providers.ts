@@ -103,7 +103,10 @@ export async function callProviderToolTurn(input: {
 	await authorizeStructuredProviderCall(input.options);
 	if (
 		input.options.taskId &&
-		hasFixtureProviderToolTurns(input.options.taskId)
+		hasFixtureProviderToolTurns(
+			input.options.taskId,
+			input.options.role === "implementation" ? "implementation" : "default",
+		)
 	) {
 		return callFixtureProviderToolTurn({
 			taskId: input.options.taskId,
@@ -111,6 +114,8 @@ export async function callProviderToolTurn(input: {
 			userPrompt: input.userPrompt,
 			messages: input.messages,
 			setProviderDebug: input.setProviderDebug,
+			scope:
+				input.options.role === "implementation" ? "implementation" : "default",
 		});
 	}
 	const settings = readStructuredLlmProviderSettings();

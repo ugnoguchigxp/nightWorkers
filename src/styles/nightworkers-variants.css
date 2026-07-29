@@ -125,3 +125,6 @@
 	transition-duration: 0ms;
 	animation-duration: 0ms;
 }
+.nightworkers-shell .nightworkers-warning-text {
+	color: color-mix(in srgb, var(--nw-warning) 55%, var(--nw-text));
+}

@@ -3,9 +3,10 @@
 ## Status
 
 - Concept status: `locked`
-- Plan status: `implementation-ready`
-- Implementation status: `not started`
+- Plan status: `completed`
+- Implementation status: `completed`
 - Review baseline: `2026-07-29`
+- Implementation verified: `2026-07-30`
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Primary scope: Mission Pilot、Task Operator、Mission Pilotが利用するAgent非依存application boundary
 - Explicitly excluded scope: Coding Agent production implementation
@@ -21,6 +22,26 @@
 Mission Pilotは管理者、特権Supervisor、Coding Agentの内部coordinatorではない。
 Mission Pilotに許される能力の上限は、現在の人間ユーザーに許された能力である。
 Play時の委任はユーザー権限を拡張せず、必ずその部分集合として扱う。
+
+### Implementation result
+
+本計画はM0からM8まで完了した。実装結果は次のとおり。
+
+- Mission PilotのmutationはTask Operatorの公開commandへ統一した。
+- Action definition、input schema、completion metadataはTask Operatorの正本registryから生成する。
+- Mission PilotはDelegated User Principalを使い、各commandでcurrent user capabilityを再評価する。
+- Run、Queue、Questionnaire、Artifactの正本tableをMission Pilot repositoryから直接読まない。
+- Runの関連付けと復旧はTask Operator receipt / resource refを正本にした。
+- `questionnaire.submit`はMission Pilotへ公開せず、20秒のユーザー介入契約を維持した。
+- `plan.artifact.regenerate`はorphan actionとして残さず、型別の共通Artifact commandへ統一した。
+- 旧plan coordinator、phase continuation、queue handoff、post-queue review、closeout経路をproductionから削除した。
+- Mission Pilot thoughtとCoding Agent chatはowner / channel別のread modelで分離した。
+- Coding Agent production implementationは変更していない。
+- 決定論E2E 7件、Mission Pilot / Task Operator契約157件、Coding Agent回帰131件、実Codex provider canaryが成功した。
+
+実装中に、provider fixtureが`implementation` scope未登録時にMission Pilot用`default`
+scopeへfallbackする問題を検出した。scopeは完全一致へ変更し、異なるroleのturnを消費しない。
+また、Bun SQLiteとlibSQLの同一DB併用によるwrite lockを検出し、同期queryもlibSQLへ統一した。
 
 ---
 
@@ -1036,7 +1057,10 @@ release用の明示環境でのみ実行する。
 
 ```bash
 NIGHTWORKERS_LIVE_MISSION_PILOT=1 \
+NIGHTWORKERS_LIVE_MISSION_PILOT_PROVIDER=codex \
+NIGHTWORKERS_LIVE_MISSION_PILOT_MODEL=gpt-5.6-sol \
   node scripts/run-vitest.mjs run \
+  --config vitest.live.config.ts \
   tests/live/mission-pilot-persistent-agent-live.test.ts
 ```
 
@@ -1165,15 +1189,15 @@ Coding Agent側の追加差分、未実行live test、legacy production経路、
 
 | Checkpoint | Status | Commit | Verification | Evidence / Remaining risk |
 | --- | --- | --- | --- | --- |
-| M0 Baseline / ledger | pending |  |  |  |
-| M1 Boundary guardrails | pending |  |  |  |
-| M2 Canonical action contract | pending |  |  |  |
-| M3 Delegated user authorization | pending |  |  |  |
-| M4 Run receipt / outcome boundary | pending |  |  |  |
-| M5 Runtime lifecycle / realtime | pending |  |  |  |
-| M6 Legacy isolation | pending |  |  |  |
-| M7 Integration / live | pending |  |  |  |
-| M8 Cleanup / canary | pending |  |  |  |
+| M0 Baseline / ledger | passed | uncommitted | baseline、activation graph、Coding Agent digestを記録 | baseline failureをM2からM5で解消 |
+| M1 Boundary guardrails | passed | uncommitted | architecture、user-equivalent boundary test | 新規role境界違反0件 |
+| M2 Canonical action contract | passed | uncommitted | catalog / executor / fixture catalog test | orphan action 0件、submit非公開 |
+| M3 Delegated user authorization | passed | uncommitted | delegated authorization test、live permission revocation | user capabilityとの積集合をcommandごとに検証 |
+| M4 Run receipt / outcome boundary | passed | uncommitted | Task Operator contract / regression、repair E2E | Run / Queue scanとCoding Agent event本文parseを除去 |
+| M5 Runtime lifecycle / realtime | passed | uncommitted | runtime / completion / action trace、全E2E | provider preflight、version publish、finish retryを検証 |
+| M6 Legacy isolation | passed | uncommitted | legacy ownership firewall、activation graph、source boundary | 旧coordinator production consumer 0件 |
+| M7 Integration / live | passed | uncommitted | Mission Pilot E2E 7/7、実Codex provider 1/1 | normal、repair、restart、interrupt、permission failureを通過 |
+| M8 Cleanup / canary | passed | uncommitted | `verify:base`、Coding Agent 20 files / 131 tests | production deployは未実施。隔離canaryとrelease gateは通過 |
 
 各Checkpointで、Coding Agent untouched gate、変更file、実行test、未解決riskを必ず更新する。
 時間やtokenの都合だけで、未検証のCheckpointを`passed`にしない。

@@ -81,7 +81,7 @@ export function ArtifactModeNavigation({
 						title={item.title}
 						disabled={disabled || busyKind !== null || !available[item.kind]}
 						onClick={onOpen[item.kind]}
-						className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded border px-2 text-[11px] font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-35 ${
+						className={`nightworkers-artifact-mode-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded border px-2 text-[11px] font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:shadow-none ${
 							active
 								? "border-cyan-400/80 bg-cyan-950/60 text-cyan-100 shadow-inner"
 								: "border-slate-700 bg-slate-900/70 text-slate-300 shadow-sm hover:border-slate-500 hover:bg-slate-800 hover:text-slate-100"

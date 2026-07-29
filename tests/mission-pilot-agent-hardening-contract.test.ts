@@ -3,7 +3,6 @@ import { MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS } from "../api/modules/mis
 import {
 	getMissionPilotActionDefinition,
 	getMissionPilotActionUnavailableReason,
-	missionPilotActionToolDefinitions,
 } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
 import { missionPilotToolDefinitions } from "../api/modules/missionPilot/agent/mission-pilot-tools";
 import { projectMissionPilotAgentVisibleItems } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
@@ -34,6 +33,9 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 	});
 
 	it("uses registry execution metadata instead of runtime action-name wait lists", () => {
+		expect(
+			getMissionPilotActionDefinition("task.update")?.inputSchema.properties,
+		).not.toHaveProperty("expectedTaskRevision");
 		expect(
 			getMissionPilotActionDefinition("run.implementation.start"),
 		).toMatchObject({
@@ -83,10 +85,7 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 	});
 
 	it("exposes explicit wait and finish controls alongside registered actions", () => {
-		const names = [
-			...missionPilotActionToolDefinitions().map((tool) => tool.name),
-			...MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS.map((tool) => tool.name),
-		];
+		const names = missionPilotToolDefinitions().map((tool) => tool.name);
 		expect(names).toContain("agent.wait_for_event");
 		expect(names).toContain("agent.finish");
 		const waitTool = MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS.find(
@@ -97,24 +96,10 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		);
 	});
 
-	it("exposes Questionnaire submission with the same operator contract", () => {
-		const actionNames = missionPilotActionToolDefinitions().map(
-			(tool) => tool.name,
-		);
-		expect(actionNames).toContain("questionnaire_draft_save");
-		expect(actionNames).toContain("questionnaire_draft_update");
-		expect(actionNames).toContain("questionnaire_create");
-		expect(actionNames).toContain("questionnaire_submit");
-		expect(actionNames).toContain("questionnaire_follow_up_generate");
-		expect(actionNames).toContain("questionnaire_review_generate");
-		expect(actionNames).toContain("questionnaire_review_accept");
+	it("keeps Questionnaire submission on the existing user intervention path", () => {
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
-		).toBeNull();
-		expect(actionNames.some((name) => name.startsWith("plan_artifact_"))).toBe(
-			true,
-		);
-		expect(actionNames).toContain("plan_routing_update");
+		).toContain("user intervention");
 		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toEqual([
 			"read_task_operator_view",
 			"read_task_resource",
@@ -124,6 +109,21 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 			"agent.wait_for_event",
 			"agent.finish",
 		]);
+		const executeTool = missionPilotToolDefinitions().find(
+			(tool) => tool.name === "execute_task_action",
+		);
+		expect(executeTool?.inputSchema.properties).toHaveProperty(
+			"expectedTaskRevision",
+		);
+		expect(executeTool?.inputSchema.properties).not.toHaveProperty(
+			"expectedResourceRevision",
+		);
+		const resourceTool = missionPilotToolDefinitions().find(
+			(tool) => tool.name === "read_task_resource",
+		);
+		expect(resourceTool?.inputSchema.properties.resourceKind.enum).toEqual(
+			expect.arrayContaining(["task_text", "task_message", "run_outcome"]),
+		);
 	});
 
 	it("projects visible assistant messages, requested actions, and control states", () => {
@@ -138,8 +138,13 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 						toolCalls: [
 							{
 								id: "call-1",
-								name: "task_update",
-								arguments: { title: "hidden from projection" },
+								name: "execute_task_action",
+								arguments: {
+									actionId: "task.update",
+									arguments: {
+										fields: { title: "hidden from projection" },
+									},
+								},
 							},
 						],
 					},
@@ -168,7 +173,7 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 			{
 				kind: "action_requested",
 				sequence: 1,
-				actionId: "task_update",
+				actionId: "task.update",
 			},
 			{
 				kind: "wait",

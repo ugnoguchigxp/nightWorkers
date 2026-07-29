@@ -24,7 +24,7 @@ export const designQuestionnaireSessions = sqliteTable(
 			},
 		),
 		status: text("status").default("draft").notNull(),
-		missionPilotActionKey: text("mission_pilot_action_key"),
+		commandIdempotencyKey: text("mission_pilot_action_key"),
 	},
 	(table) => ({
 		taskIdx: index("design_questionnaire_sessions_task_idx").on(table.taskId),

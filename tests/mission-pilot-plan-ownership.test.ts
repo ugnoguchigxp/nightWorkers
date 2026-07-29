@@ -1,27 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { missionPilotActionToolDefinitions } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
+import { getMissionPilotActionUnavailableReason } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
+import { TASK_OPERATOR_ACTION_DEFINITIONS } from "../api/modules/taskOperator";
 
 describe("Mission Pilot Plan ownership contract", () => {
-	it("publishes Questionnaire, routing, and typed Artifact actions", () => {
-		const names = missionPilotActionToolDefinitions().map((tool) => tool.name);
-		expect(names).toEqual(
+	it("uses the canonical Task Operator contract for Questionnaire, routing, and typed Artifact actions", () => {
+		const ids = TASK_OPERATOR_ACTION_DEFINITIONS.map(
+			(definition) => definition.actionId,
+		);
+		expect(ids).toEqual(
 			expect.arrayContaining([
-				"questionnaire_create",
-				"questionnaire_follow_up_generate",
-				"questionnaire_review_generate",
-				"questionnaire_review_accept",
-				"plan_routing_update",
-				"plan_artifact_feature_plan_generate",
-				"plan_artifact_blueprint_generate",
-				"plan_artifact_data_model_generate",
-				"plan_artifact_view_generate",
-				"plan_artifact_regenerate",
+				"questionnaire.create",
+				"questionnaire.follow_up.generate",
+				"questionnaire.review.generate",
+				"questionnaire.review.accept",
+				"plan.routing.update",
+				"plan.artifact.feature_plan.generate",
+				"plan.artifact.blueprint.generate",
+				"plan.artifact.data_model.generate",
+				"plan.artifact.view.generate",
 			]),
 		);
+		expect(ids).not.toContain("plan.artifact.regenerate");
 	});
 
-	it("allows final Questionnaire submission through the shared operator command", () => {
-		const names = missionPilotActionToolDefinitions().map((tool) => tool.name);
-		expect(names).toContain("questionnaire_submit");
+	it("does not delegate final Questionnaire submission to Mission Pilot", () => {
+		expect(
+			getMissionPilotActionUnavailableReason("questionnaire.submit"),
+		).toContain("user intervention");
 	});
 });

@@ -7,8 +7,11 @@ import {
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import { AppError } from "../../../lib/errors";
-import { readRunOperatorOutcome } from "../../run";
-import { readTaskOperatorProjection } from "../../taskOperator";
+import {
+	getTaskOperatorActionDefinition,
+	readTaskOperatorProjection,
+} from "../../taskOperator";
+import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
 import { executeMissionPilotAction } from "./mission-pilot-action-command-executor";
 import {
 	claimMissionPilotActionExecution,
@@ -20,7 +23,6 @@ import type {
 	MissionPilotTaskActionPort,
 } from "./mission-pilot-agent.ports";
 import {
-	getMissionPilotActionDefinition,
 	getMissionPilotActionUnavailableReason,
 	validateMissionPilotActionArguments,
 } from "./mission-pilot-task-action.registry";
@@ -35,7 +37,7 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"domain_precondition",
 				"Mission Pilot was stopped before the Task action started.",
 			);
-		const definition = getMissionPilotActionDefinition(input.actionId);
+		const definition = getTaskOperatorActionDefinition(input.actionId);
 		if (!definition)
 			return failed(
 				input.actionId,
@@ -64,19 +66,12 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"schema_validation",
 				validated.message,
 			);
-		const [session, projection, toolCall, agent] = await Promise.all([
+		const [session, toolCall, agent] = await Promise.all([
 			db.query.missionPilotSessions.findFirst({
 				where: and(
 					eq(missionPilotSessions.id, input.sessionId),
 					eq(missionPilotSessions.taskId, input.taskId),
 				),
-			}),
-			readTaskOperatorProjection(input.taskId, {
-				principal: {
-					kind: "automation",
-					actorId: input.sessionId,
-					authorizationRef: input.sessionId,
-				},
 			}),
 			db
 				.select()
@@ -103,21 +98,28 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"domain_precondition",
 				"Task or Mission Pilot session not found",
 			);
-		const authorization = session.authorizationJson;
-		if (
-			authorization?.version !== 3 ||
-			authorization.sessionId !== session.id ||
-			authorization.taskId !== projection.task.id ||
-			authorization.taskRef.source !== "task" ||
-			authorization.taskRef.id !== projection.task.id ||
-			!authorization.scopes[definition.authorizationScope]
-		)
+		let access: Awaited<
+			ReturnType<typeof createMissionPilotTaskOperatorAccess>
+		>;
+		let projection: Awaited<ReturnType<typeof readTaskOperatorProjection>>;
+		try {
+			access = await createMissionPilotTaskOperatorAccess({
+				sessionId: input.sessionId,
+				taskId: input.taskId,
+			});
+			projection = await readTaskOperatorProjection(
+				input.taskId,
+				access.context,
+				access.delegatedAuthorization,
+			);
+		} catch (error) {
 			return failed(
 				input.actionId,
 				input.idempotencyKey,
 				"permission",
-				`authorization scope ${definition.authorizationScope} is not granted`,
+				error instanceof Error ? error.message : String(error),
 			);
+		}
 		if (
 			session.desiredState !== "playing" ||
 			agent?.runtimeState !== "running" ||
@@ -139,14 +141,10 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 			);
 		if (
 			!isDeepStrictEqual(
-				normalizePersistedActionArguments(
-					toolCall.argumentsJson,
-					input.expectedTaskRevision,
-				),
+				normalizePersistedActionArguments(toolCall.argumentsJson),
 				input.arguments,
 			) ||
-			toolCall.expectedTaskRevision !== input.expectedTaskRevision ||
-			validated.data.expectedTaskRevision !== input.expectedTaskRevision
+			toolCall.expectedTaskRevision !== input.expectedTaskRevision
 		)
 			return failed(
 				input.actionId,
@@ -162,11 +160,6 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"Task revision changed; re-read the Task workspace.",
 				{ currentTaskRevision: projection.task.revision },
 			);
-		if (input.actionId === "task.complete")
-			await assertTaskCompletionEvidence({
-				taskId: input.taskId,
-				sourceRunId: requiredText(validated.data.sourceRunId),
-			});
 		let receipt: Awaited<
 			ReturnType<typeof createMissionPilotActionExecutionIntent>
 		>;
@@ -241,7 +234,7 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 					toolCallId: input.toolCallId,
 					idempotencyKey: input.idempotencyKey,
 					expectedTaskRevision: input.expectedTaskRevision,
-					sourceRunId: readRepairSourceRunId(validated.data),
+					principal: access.context.principal,
 					signal,
 				},
 			);
@@ -296,14 +289,11 @@ function stoppedBeforeAction(actionId: string, idempotencyKey: string) {
 	);
 }
 
-function normalizePersistedActionArguments(
-	value: unknown,
-	expectedTaskRevision: number,
-) {
+function normalizePersistedActionArguments(value: unknown) {
 	const record = readRecord(value);
 	const nested = readRecord(record.arguments);
 	return Object.keys(nested).length > 0 || "arguments" in record
-		? { ...nested, expectedTaskRevision }
+		? nested
 		: record;
 }
 
@@ -316,51 +306,18 @@ function stoppedDuringAction(actionId: string, idempotencyKey: string) {
 	);
 }
 
-async function assertTaskCompletionEvidence(input: {
-	taskId: string;
-	sourceRunId: string;
-}) {
-	const run = await readRunOperatorOutcome({
-		taskId: input.taskId,
-		runId: input.sourceRunId,
-	});
-	if (!run)
-		throw new Error("Task completion requires a Run owned by this Task.");
-	if (
-		![
-			"completed",
-			"failed",
-			"cancelled",
-			"needs_review",
-			"blocked",
-			"timed_out",
-			"needs_human",
-		].includes(run.status)
-	)
-		throw new Error("Task completion requires a terminal Run.");
-	if (
-		![run.finalReport, run.summary].some(
-			(value) => typeof value === "string" && value.trim().length > 0,
-		)
-	)
-		throw new Error("Task completion requires terminal verification evidence.");
-}
-
-function requiredText(value: unknown) {
-	if (typeof value !== "string" || value.length === 0)
-		throw new AppError(
-			422,
-			"MISSION_PILOT_ARGUMENT_REQUIRED",
-			"A non-empty string is required.",
-		);
-	return value;
-}
 function resourceId(value: unknown) {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? typeof (value as Record<string, unknown>).id === "string"
-			? ((value as Record<string, unknown>).id as string)
-			: null
-		: null;
+	const result = readRecord(value);
+	const receipt = readRecord(result.receipt);
+	const operationRef = readRecord(receipt.operationRef);
+	const operationId = readText(operationRef.id);
+	if (operationId) return operationId;
+	const data = readRecord(result.data);
+	for (const key of ["runId", "id", "taskId"]) {
+		const id = readText(data[key]) ?? readText(result[key]);
+		if (id) return id;
+	}
+	return null;
 }
 function readRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -369,11 +326,6 @@ function readRecord(value: unknown): Record<string, unknown> {
 }
 function readText(value: unknown) {
 	return typeof value === "string" ? value : null;
-}
-function readRepairSourceRunId(args: Record<string, unknown>) {
-	const repair = readRecord(args.repairRequest);
-	const failure = readRecord(repair.failure);
-	return readText(failure.sourceRunId);
 }
 function failed(
 	actionId: string,
@@ -414,7 +366,7 @@ function failedFromAppError(
 		actionId,
 		failure: {
 			kind:
-				error.code === "TASK_REVISION_CONFLICT"
+				typeof currentTaskRevision === "number"
 					? "revision_conflict"
 					: error.statusCode === 401 || error.statusCode === 403
 						? "permission"

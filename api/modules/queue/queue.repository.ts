@@ -12,7 +12,7 @@ export {
 	updateImplementationQueueEntry,
 } from "./queue-repository-commands";
 export {
-	getImplementationQueueEntryByMissionPilotAdmissionKey,
+	getImplementationQueueEntryBySourceCommandKey,
 	getImplementationQueueSettings,
 	getTodoWorkflowSettings,
 	hasActiveImplementationQueueEntry,

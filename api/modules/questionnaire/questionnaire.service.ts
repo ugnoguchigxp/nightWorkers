@@ -75,7 +75,7 @@ export async function createDesignQuestionnaire(
 		role?: StructuredLlmRole;
 		executionPolicy?: StructuredProviderExecutionPolicy;
 		usageTrace?: TraceProvenance;
-		missionPilotActionKey?: string | null;
+		commandIdempotencyKey?: string | null;
 		signal?: AbortSignal;
 	} = {},
 ) {
@@ -131,7 +131,7 @@ export async function createDesignQuestionnaire(
 		repositoryId: task.repositoryId,
 		sourceBlueprintMessageId: sourceBlueprintMessageId || null,
 		status: "draft",
-		missionPilotActionKey: options.missionPilotActionKey ?? null,
+		commandIdempotencyKey: options.commandIdempotencyKey ?? null,
 	});
 	if (parsed.ok) {
 		await repo.createDesignQuestionnaireQuestionSet({
@@ -446,12 +446,6 @@ export async function generateDesignQuestionnaireReview(
 export async function acceptDesignQuestionnaireReview(
 	taskId: string,
 	sessionId: string,
-	options: {
-		missionPilotAction?: {
-			idempotencyKey: string;
-			toolCallId: string;
-		};
-	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
 	if (!task) throw new NotFoundError("Task not found");
@@ -480,9 +474,6 @@ export async function acceptDesignQuestionnaireReview(
 			source: "design-questionnaire",
 			sourceBlueprintMessageId: session.sourceBlueprintMessageId,
 			questionnaireSessionId: session.id,
-			...(options.missionPilotAction
-				? { missionPilotAction: options.missionPilotAction }
-				: {}),
 		},
 	});
 	await repo.updateDesignQuestionnaireReview(latestDraft.id, {

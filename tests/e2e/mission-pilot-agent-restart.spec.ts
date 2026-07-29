@@ -52,7 +52,12 @@ test("Agent ownership survives an execution reconciliation without legacy phase 
 		});
 		expect((await task.json()).status).toBe("completed");
 		const execution = await readAgentExecution(request, fixture.taskId);
-		expect(execution.phaseRuns).toHaveLength(0);
+		expect(execution).toMatchObject({
+			version: 2,
+			executionModel: "task_operator_v1",
+			legacyPostQueueState: { status: "retired" },
+		});
+		expect(execution).not.toHaveProperty("phaseRuns");
 		expect(execution.agent.visibleItems.at(-1).kind).toBe("finish");
 	} finally {
 		await cleanupAgentScenario(request, fixture);

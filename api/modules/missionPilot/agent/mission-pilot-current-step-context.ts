@@ -5,12 +5,13 @@ import {
 	missionPilotAgentSessions,
 	missionPilotTaskEventInbox,
 } from "../../../db/mission-pilot-agent-schema";
+import { AppError } from "../../../lib/errors";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
 
 export type MissionPilotCurrentStepContext = {
 	version: 1;
-	taskRef: { id: string; revision: number; status: string };
-	sourceDigest: string;
+	taskRef: { id: string; revision: number | null; status: string };
+	sourceDigest: string | null;
 	changedSincePreviousTurn: {
 		eventTypes: string[];
 		resourceRefs: Array<{ kind: string; id: string; revision: number }>;
@@ -24,6 +25,7 @@ export type MissionPilotCurrentStepContext = {
 	} | null;
 	availableActionIds: string[];
 	unreadEventRange: { from: number | null; through: number | null };
+	readFailure?: { code: string; message: string };
 	headProjection?: TaskOperatorProjectionV1;
 };
 
@@ -31,8 +33,9 @@ export async function buildMissionPilotCurrentStepContext(input: {
 	sessionId: string;
 	taskId: string;
 	readPort: MissionPilotTaskReadPort;
+	triggerEvents?: ReadonlyArray<{ sequence: number; eventType: string }>;
 }): Promise<MissionPilotCurrentStepContext> {
-	const [agent, events, projection] = await Promise.all([
+	const [agent, unreadEvents] = await Promise.all([
 		db.query.missionPilotAgentSessions.findFirst({
 			where: eq(missionPilotAgentSessions.sessionId, input.sessionId),
 		}),
@@ -49,12 +52,39 @@ export async function buildMissionPilotCurrentStepContext(input: {
 				),
 			)
 			.orderBy(asc(missionPilotTaskEventInbox.sequence)),
-		input.readPort.readTaskOperatorView({
+	]);
+	const events = input.triggerEvents ?? unreadEvents;
+	if (!agent) throw new Error("Mission Pilot agent session not found");
+	let projection: TaskOperatorProjectionV1;
+	try {
+		projection = await input.readPort.readTaskOperatorView({
 			taskId: input.taskId,
 			sessionId: input.sessionId,
-		}),
-	]);
-	if (!agent) throw new Error("Mission Pilot agent session not found");
+		});
+	} catch (error) {
+		if (
+			!(error instanceof AppError) ||
+			error.code !== "TASK_OPERATOR_PERMISSION_DENIED"
+		)
+			throw error;
+		return {
+			version: 1,
+			taskRef: { id: input.taskId, revision: null, status: "unavailable" },
+			sourceDigest: null,
+			changedSincePreviousTurn: {
+				eventTypes: [...new Set(events.map((event) => event.eventType))],
+				resourceRefs: [],
+			},
+			activeRunRef: null,
+			currentTodoRef: null,
+			availableActionIds: [],
+			unreadEventRange: {
+				from: events[0]?.sequence ?? null,
+				through: events.at(-1)?.sequence ?? null,
+			},
+			readFailure: { code: error.code, message: error.message },
+		};
+	}
 	const resourceRefs = [
 		{
 			kind: "task",

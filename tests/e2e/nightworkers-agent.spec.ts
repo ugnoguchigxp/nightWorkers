@@ -9,6 +9,7 @@ import {
 
 const sameOriginHeaders = {
 	Origin: `http://localhost:${process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274}`,
+	"x-nightworkers-e2e": "1",
 };
 
 async function createDisposableGitWorkspace(): Promise<string> {
@@ -94,6 +95,8 @@ async function waitForTerminalRun(request: APIRequestContext, taskId: string) {
 		id: string;
 		status: string;
 		diffPatch?: string | null;
+		finalReport?: string | null;
+		worktreePath?: string | null;
 	}> = [];
 	while (Date.now() - startedAt < timeoutMs) {
 		const runsRes = await request.get(`/api/tasks/${taskId}/runs`, {
@@ -104,6 +107,8 @@ async function waitForTerminalRun(request: APIRequestContext, taskId: string) {
 			id: string;
 			status: string;
 			diffPatch?: string | null;
+			finalReport?: string | null;
+			worktreePath?: string | null;
 		}>;
 		const latestRun = latestRuns[0];
 		if (
@@ -415,6 +420,16 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 			});
 			expect(taskRes.status(), await taskRes.text()).toBe(201);
 			taskId = ((await taskRes.json()) as { id: string }).id;
+			const codingFixtureRes = await request.post(
+				"/api/e2e/fixtures/coding-agent-scenario",
+				{
+					headers: sameOriginHeaders,
+					data: { taskId, scenario: "direct-run" },
+				},
+			);
+			expect(codingFixtureRes.status(), await codingFixtureRes.text()).toBe(
+				201,
+			);
 			const readyRes = await request.patch(`/api/tasks/${taskId}`, {
 				headers: sameOriginHeaders,
 				data: { status: "ready" },
@@ -428,22 +443,27 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 			expect(queueRes.status(), await queueRes.text()).toBe(200);
 			const terminal = await waitForTerminalRun(request, taskId);
 			const run = terminal;
-			expect(terminal.status).toBe("completed");
-			expect(gitDiff(workspaceDir)).toContain("Hello from NightWorkers E2E");
-
 			const detailRes = await request.get(`/api/runs/${run.id}`, {
 				headers: sameOriginHeaders,
 			});
 			expect(detailRes.status(), await detailRes.text()).toBe(200);
 			const detail = (await detailRes.json()) as {
 				todos: Array<{ status: string }>;
-				events: Array<{ type: string }>;
-				testResults?: unknown;
+				events: unknown[];
 			};
+			const evidenceJson = JSON.stringify(detail.events);
+			expect(terminal.status).toBe("completed");
+			expect(terminal.worktreePath).toBeTruthy();
+			expect(gitDiff(terminal.worktreePath ?? "")).toContain(
+				"Hello from NightWorkers E2E",
+			);
+			expect(gitDiff(workspaceDir)).toBe("");
 			expect(detail.todos.length).toBeGreaterThan(0);
 			expect(detail.todos.every((todo) => todo.status === "passed")).toBe(true);
-			expect(JSON.stringify(detail.events)).toContain("git.diff_collected");
-			expect(JSON.stringify(detail.testResults)).toContain("fixture verify");
+			expect(evidenceJson).toContain('"toolName":"git_diff"');
+			expect(evidenceJson).toContain("Hello from NightWorkers E2E");
+			expect(evidenceJson).toContain('"toolName":"run_verification"');
+			expect(evidenceJson).toContain('"verified":true');
 
 			const reviewRes = await request.post(`/api/runs/${run.id}/reviews`, {
 				headers: sameOriginHeaders,
@@ -456,7 +476,9 @@ test.describe("NightWorkers deterministic core workflow @regression", () => {
 
 			await page.goto(`/sessions/${taskId}`);
 			await expect(
-				page.getByText("Deterministic E2E implementation").first(),
+				page
+					.getByText(terminal.finalReport ?? "実装と検証を完了しました。")
+					.first(),
 			).toBeVisible();
 
 			const archiveRes = await request.patch(

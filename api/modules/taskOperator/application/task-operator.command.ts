@@ -1,4 +1,7 @@
-import type { TaskOperatorCommandContext } from "../../../../shared/modules/taskOperator";
+import type {
+	TaskOperatorCommandContext,
+	TaskOperatorCommandReceipt,
+} from "../../../../shared/modules/taskOperator";
 import { AppError } from "../../../lib/errors";
 import {
 	type CodingAgentRunCommandResult,
@@ -36,8 +39,8 @@ import {
 } from "../../questionnaire";
 import {
 	archiveImplementationQueueEntry,
+	createImplementationQueueEntry,
 	patchImplementationQueueEntry,
-	queueTask,
 	recoverImplementationQueueEntry,
 	requeueImplementationQueueEntry,
 } from "../../queue";
@@ -54,7 +57,16 @@ import {
 	sendTaskOperatorMessage,
 	updateTaskCommand,
 } from "../../task";
+import { getTaskOperatorActionDefinition } from "../policies/task-operator-action.registry";
+import { assertTaskOperatorActiveRunResource } from "../policies/task-operator-active-run-policy";
+import {
+	permissionDenied,
+	resolveTaskOperatorPrincipalCapabilities,
+	type TaskOperatorDelegatedAuthorizationPort,
+} from "../policies/task-operator-authorization";
+import { validateTaskOperatorJsonSchema } from "../policies/task-operator-json-schema";
 import { readTaskOperatorProjection } from "./task-operator.query";
+import { describeTaskOperatorCommandResult } from "./task-operator-command-result";
 
 export type ExecuteTaskOperatorCommandInput = {
 	taskId: string;
@@ -73,6 +85,7 @@ export type TaskOperatorCommandRuntime = {
 	artifactTrace?: unknown;
 	messageTrace?: unknown;
 	messageMetadata?: Record<string, unknown>;
+	delegatedAuthorization?: TaskOperatorDelegatedAuthorizationPort;
 	executeQuestionnaireDraft?: (input: {
 		taskId: string;
 		arguments: Record<string, unknown>;
@@ -87,34 +100,59 @@ export type TaskOperatorCommandRuntime = {
 type ActionInput<ActionId extends string> = ExecuteTaskOperatorCommandInput & {
 	actionId: ActionId;
 };
+type Delivered<T> = { receipt: TaskOperatorCommandReceipt; data: T };
 
 export function executeTaskOperatorCommand(
 	input: ActionInput<"run.implementation.start" | "run.todo.resume">,
-): Promise<CodingAgentRunCommandResult>;
+): Promise<Delivered<CodingAgentRunCommandResult>>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"questionnaire.submit">,
-): ReturnType<typeof saveDesignQuestionnaireAnswers>;
+): Promise<
+	Delivered<Awaited<ReturnType<typeof saveDesignQuestionnaireAnswers>>>
+>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"task.update">,
-): ReturnType<typeof updateTaskCommand>;
+): Promise<Delivered<Awaited<ReturnType<typeof updateTaskCommand>>>>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"task.archive">,
-): ReturnType<typeof archiveTaskCommand>;
+): Promise<Delivered<Awaited<ReturnType<typeof archiveTaskCommand>>>>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"task.archive.restore">,
-): ReturnType<typeof restoreTaskArchiveCommand>;
+): Promise<Delivered<Awaited<ReturnType<typeof restoreTaskArchiveCommand>>>>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"task.complete">,
-): ReturnType<typeof completeTaskFromRunCommand>;
+): Promise<Delivered<Awaited<ReturnType<typeof completeTaskFromRunCommand>>>>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"run.stop">,
-): ReturnType<typeof stopTaskRun>;
+): Promise<Delivered<Awaited<ReturnType<typeof stopTaskRun>>>>;
 export function executeTaskOperatorCommand(
 	input: ExecuteTaskOperatorCommandInput,
-): Promise<unknown>;
+): Promise<Delivered<unknown>>;
 export async function executeTaskOperatorCommand(
 	input: ExecuteTaskOperatorCommandInput,
 ) {
+	const definition = getTaskOperatorActionDefinition(input.actionId);
+	if (!definition)
+		throw new AppError(
+			422,
+			"TASK_OPERATOR_ACTION_UNKNOWN",
+			`Unknown Task Operator action: ${input.actionId}`,
+		);
+	const capabilities = await resolveTaskOperatorPrincipalCapabilities({
+		principal: input.context.principal,
+		taskId: input.taskId,
+		delegatedAuthorization: input.runtime?.delegatedAuthorization,
+	});
+	if (!capabilities.includes(definition.capability))
+		throw permissionDenied(
+			`The current user delegation does not grant ${definition.capability}.`,
+		);
+	const validationError = validateTaskOperatorJsonSchema(
+		definition.inputSchema,
+		input.arguments,
+	);
+	if (validationError)
+		throw new AppError(422, "TASK_OPERATOR_SCHEMA_VALIDATION", validationError);
 	return executeIdempotentTaskOperatorCommand({
 		taskId: input.taskId,
 		actionId: input.actionId,
@@ -122,15 +160,21 @@ export async function executeTaskOperatorCommand(
 		arguments: input.arguments,
 		context: input.context,
 		execute: () => executeTaskOperatorCommandOnce(input),
+		describeResult: (result) =>
+			describeTaskOperatorCommandResult(input.actionId, result),
 	});
 }
 
 async function executeTaskOperatorCommandOnce(
 	input: ExecuteTaskOperatorCommandInput,
 ) {
-	const projection = await readTaskOperatorProjection(input.taskId, {
-		principal: input.context.principal,
-	});
+	const projection = await readTaskOperatorProjection(
+		input.taskId,
+		{
+			principal: input.context.principal,
+		},
+		input.runtime?.delegatedAuthorization,
+	);
 	if (projection.task.revision !== input.expectedTaskRevision)
 		throw new AppError(
 			409,
@@ -196,7 +240,6 @@ async function executeTaskOperatorCommandOnce(
 				requiredText(args.prompt),
 				providerOptions(input),
 			);
-		case "questionnaire.draft.update":
 		case "questionnaire.draft.save":
 			if (!input.runtime?.executeQuestionnaireDraft)
 				throw unsupportedRuntime(input.actionId);
@@ -234,12 +277,6 @@ async function executeTaskOperatorCommandOnce(
 			return acceptDesignQuestionnaireReview(
 				input.taskId,
 				requiredText(args.questionnaireSessionId),
-				{
-					missionPilotAction: {
-						idempotencyKey: input.context.idempotencyKey,
-						toolCallId: input.context.requestId,
-					},
-				},
 			);
 		case "questionnaire.review.leave_unadopted":
 			return leaveDesignQuestionnaireReviewUnadopted(
@@ -268,7 +305,7 @@ async function executeTaskOperatorCommandOnce(
 				arguments: args,
 			});
 		case "task.queue.enqueue":
-			return queueTask(input.taskId);
+			return createImplementationQueueEntry(input.taskId);
 		case "task.queue.update":
 			return patchImplementationQueueEntry(requiredText(args.entryId), {
 				action:
@@ -317,7 +354,7 @@ async function executeTaskOperatorCommandOnce(
 				requestProvenance: provenance(input.context),
 			});
 		case "run.todo.resume":
-			assertActiveRunResource(
+			assertTaskOperatorActiveRunResource(
 				projection.activeRun,
 				requiredText(args.runId),
 				requiredText(args.todoId),
@@ -330,7 +367,10 @@ async function executeTaskOperatorCommandOnce(
 				requestProvenance: provenance(input.context),
 			});
 		case "run.stop":
-			assertActiveRunResource(projection.activeRun, requiredText(args.runId));
+			assertTaskOperatorActiveRunResource(
+				projection.activeRun,
+				requiredText(args.runId),
+			);
 			return stopTaskRun(requiredText(args.runId), {
 				expectedTaskId: input.taskId,
 				expectedTaskRevision: input.expectedTaskRevision,
@@ -423,7 +463,10 @@ async function submitQuestionnaireAnswers(
 function provenance(context: TaskOperatorCommandContext) {
 	return {
 		requestedBy: {
-			kind: context.principal.kind,
+			kind:
+				context.principal.kind === "delegated_user"
+					? ("automation" as const)
+					: context.principal.kind,
 			actorId: context.principal.actorId,
 		},
 		orchestrationRef: {
@@ -465,7 +508,7 @@ function providerOptions(input: ExecuteTaskOperatorCommandInput) {
 		role: input.runtime?.structuredLlmRole as never,
 		executionPolicy: input.runtime?.providerExecutionPolicy,
 		usageTrace: input.runtime?.usageTrace as never,
-		missionPilotActionKey: input.context.idempotencyKey,
+		commandIdempotencyKey: input.context.idempotencyKey,
 	};
 }
 
@@ -547,24 +590,5 @@ function ownershipMismatch() {
 		403,
 		"TASK_RESOURCE_OWNERSHIP_MISMATCH",
 		"The requested resource does not belong to this Task.",
-	);
-}
-
-function assertActiveRunResource(
-	activeRun: Awaited<
-		ReturnType<typeof readTaskOperatorProjection>
-	>["activeRun"],
-	runId: string,
-	todoId?: string,
-) {
-	if (
-		activeRun?.id === runId &&
-		(todoId === undefined || activeRun.currentTodoRef?.id === todoId)
-	)
-		return;
-	throw new AppError(
-		403,
-		"TASK_RESOURCE_OWNERSHIP_MISMATCH",
-		"Run or Todo does not belong to the requested Task.",
 	);
 }

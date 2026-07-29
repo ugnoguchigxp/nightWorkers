@@ -16,6 +16,14 @@ import * as questionnaireService from "./mission-pilot-questionnaire.service";
 
 const taskParams = z.object({ taskId: z.string().uuid() });
 const sessionParams = z.object({ id: z.string().uuid() });
+const retiredLegacyExecutionResponseSchema = z.object({
+	error: z.string(),
+	code: z.literal("MISSION_PILOT_LEGACY_ENDPOINT_RETIRED"),
+	replacement: z.object({
+		execution: z.literal("task_operator_v1"),
+		resourceKind: z.string(),
+	}),
+});
 const getExecutionRoute = createRoute({
 	method: "get",
 	path: "/mission-pilot/sessions/:id/execution",
@@ -43,9 +51,12 @@ const getVerificationSnapshotRoute = createRoute({
 	path: "/mission-pilot/sessions/:id/verification-snapshot",
 	request: { params: sessionParams },
 	responses: {
-		200: {
-			content: { "application/json": { schema: z.unknown() } },
-			description: "Latest frozen verification snapshot",
+		410: {
+			content: {
+				"application/json": { schema: retiredLegacyExecutionResponseSchema },
+			},
+			description:
+				"Legacy verification snapshot retired; use Task Operator run_outcome",
 		},
 	},
 });
@@ -54,9 +65,12 @@ const getReviewDecisionRoute = createRoute({
 	path: "/mission-pilot/sessions/:id/review-decision",
 	request: { params: sessionParams },
 	responses: {
-		200: {
-			content: { "application/json": { schema: z.unknown() } },
-			description: "Latest structured Review decision",
+		410: {
+			content: {
+				"application/json": { schema: retiredLegacyExecutionResponseSchema },
+			},
+			description:
+				"Legacy Review decision retired; use Task Operator run_outcome",
 		},
 	},
 });
@@ -65,9 +79,11 @@ const getCloseoutRoute = createRoute({
 	path: "/mission-pilot/sessions/:id/closeout",
 	request: { params: sessionParams },
 	responses: {
-		200: {
-			content: { "application/json": { schema: z.unknown() } },
-			description: "Latest aggregate Git closeout",
+		410: {
+			content: {
+				"application/json": { schema: retiredLegacyExecutionResponseSchema },
+			},
+			description: "Legacy closeout retired; use Task Operator run_outcome",
 		},
 	},
 });
@@ -224,36 +240,30 @@ export const missionPilotRouter = createOpenApiRouter()
 	)
 	.openapi(
 		getVerificationSnapshotRoute,
-		withOpenApiRouteError(getVerificationSnapshotRoute, async (c) =>
-			c.json(
-				await executionQueryService.getLatestMissionPilotVerificationSnapshot(
-					c.req.param("id"),
-				),
-				200,
-			),
-		),
+		withOpenApiRouteError(getVerificationSnapshotRoute, async (c) => {
+			await executionQueryService.getLatestMissionPilotVerificationSnapshot(
+				c.req.param("id"),
+			);
+			throw new Error("Retired Mission Pilot endpoint returned unexpectedly");
+		}),
 	)
 	.openapi(
 		getReviewDecisionRoute,
-		withOpenApiRouteError(getReviewDecisionRoute, async (c) =>
-			c.json(
-				await executionQueryService.getLatestMissionPilotReviewDecision(
-					c.req.param("id"),
-				),
-				200,
-			),
-		),
+		withOpenApiRouteError(getReviewDecisionRoute, async (c) => {
+			await executionQueryService.getLatestMissionPilotReviewDecision(
+				c.req.param("id"),
+			);
+			throw new Error("Retired Mission Pilot endpoint returned unexpectedly");
+		}),
 	)
 	.openapi(
 		getCloseoutRoute,
-		withOpenApiRouteError(getCloseoutRoute, async (c) =>
-			c.json(
-				await executionQueryService.getLatestMissionPilotCloseout(
-					c.req.param("id"),
-				),
-				200,
-			),
-		),
+		withOpenApiRouteError(getCloseoutRoute, async (c) => {
+			await executionQueryService.getLatestMissionPilotCloseout(
+				c.req.param("id"),
+			);
+			throw new Error("Retired Mission Pilot endpoint returned unexpectedly");
+		}),
 	)
 	.openapi(
 		reconcileExecutionRoute,

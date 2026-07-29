@@ -11,13 +11,9 @@ import {
 	missionPilotToolCalls,
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
-import { taskMessages } from "../../../db/schema";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 import { MISSION_PILOT_AGENT_LEASE_MS } from "./mission-pilot-agent.constants";
-import {
-	getMissionPilotActionByToolName,
-	getMissionPilotActionDefinition,
-} from "./mission-pilot-task-action.registry";
+import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";
 
 export {
 	finishMissionPilotAgentTurn,
@@ -135,28 +131,19 @@ export async function claimMissionPilotAgentTurn(input: {
 						: {};
 				if (
 					event.eventType !== "task.user_message_added" ||
-					typeof payload.messageId !== "string"
+					typeof payload.messageId !== "string" ||
+					typeof payload.content !== "string"
 				)
 					continue;
-				const [message] = await tx
-					.select({ id: taskMessages.id, content: taskMessages.content })
-					.from(taskMessages)
-					.where(
-						and(
-							eq(taskMessages.id, payload.messageId),
-							eq(taskMessages.taskId, base.taskId),
-						),
-					);
-				if (!message) continue;
 				projectedItems.push({
 					id: crypto.randomUUID(),
 					sessionId: base.id,
 					sequence: conversationSequence++,
 					kind: "user" as const,
 					turnId,
-					bodyJson: { content: message.content },
+					bodyJson: { content: payload.content },
 					sourceKind: "task_message",
-					sourceId: message.id,
+					sourceId: payload.messageId,
 					createdAt: now,
 				});
 			}
@@ -186,6 +173,24 @@ export async function claimMissionPilotAgentTurn(input: {
 			session: { ...base, ...claimedAgent, id: base.id },
 			turnId,
 			turnIndex,
+			triggerEvents: events.map((event) => ({
+				sequence: event.sequence,
+				eventType: event.eventType,
+			})),
+			providerRetryAttempt: events.reduce((latest, event) => {
+				if (event.eventType !== "mission_pilot.retry_timer_elapsed")
+					return latest;
+				const payload =
+					event.payloadJson &&
+					typeof event.payloadJson === "object" &&
+					!Array.isArray(event.payloadJson)
+						? (event.payloadJson as Record<string, unknown>)
+						: {};
+				return typeof payload.nextAttempt === "number" &&
+					Number.isInteger(payload.nextAttempt)
+					? Math.max(latest, payload.nextAttempt)
+					: latest;
+			}, 1),
 		};
 	});
 }
@@ -261,7 +266,7 @@ export async function persistMissionPilotProviderTurn(input: {
 					: null;
 			const action = selectedActionId
 				? getMissionPilotActionDefinition(selectedActionId)
-				: getMissionPilotActionByToolName(call.name);
+				: null;
 			const actionId = action?.actionId ?? call.name;
 			const idempotencyKey =
 				typeof call.arguments.idempotencyKey === "string" &&

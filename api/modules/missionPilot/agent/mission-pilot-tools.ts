@@ -1,8 +1,10 @@
 import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
+import { AppError } from "../../../lib/errors";
 import type {
 	ProviderToolCall,
 	ProviderToolDefinition,
 } from "../../../services/structured-llm/public";
+import { TASK_OPERATOR_RESOURCE_KINDS } from "../../taskOperator";
 import type {
 	MissionPilotTaskActionPort,
 	MissionPilotTaskReadPort,
@@ -33,7 +35,10 @@ const taskOperatorTools: ProviderToolDefinition[] = [
 		inputSchema: {
 			type: "object",
 			properties: {
-				resourceKind: { type: "string" },
+				resourceKind: {
+					type: "string",
+					enum: TASK_OPERATOR_RESOURCE_KINDS,
+				},
 				resourceId: { type: "string" },
 				cursor: { type: "integer", minimum: 0 },
 				limit: { type: "integer", minimum: 1, maximum: 100 },
@@ -68,15 +73,13 @@ const taskOperatorTools: ProviderToolDefinition[] = [
 			type: "object",
 			properties: {
 				actionId: { type: "string" },
-				expectedResourceRevision: {
-					anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }],
-				},
+				expectedTaskRevision: { type: "integer", minimum: 0 },
 				idempotencyKey: { type: "string", minLength: 1 },
 				arguments: { type: "object", additionalProperties: true },
 			},
 			required: [
 				"actionId",
-				"expectedResourceRevision",
+				"expectedTaskRevision",
 				"idempotencyKey",
 				"arguments",
 			],
@@ -85,9 +88,7 @@ const taskOperatorTools: ProviderToolDefinition[] = [
 	},
 ];
 
-export function missionPilotToolDefinitions(_input?: {
-	availableActionIds?: ReadonlySet<string>;
-}) {
+export function missionPilotToolDefinitions() {
 	return [
 		...taskOperatorTools,
 		...MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
@@ -126,19 +127,19 @@ export async function executeMissionPilotToolCall(input: {
 		if (!definition)
 			return failureResult(actionId, "invalid_request", "Unknown Task action");
 		const revision = nullableRevision(
-			input.call.arguments.expectedResourceRevision,
+			input.call.arguments.expectedTaskRevision,
 		);
 		if (revision === undefined)
 			return failureResult(
 				actionId,
 				"schema_validation",
-				"expectedResourceRevision must be a non-negative integer or null",
+				"expectedTaskRevision must be a non-negative integer",
 			);
 		if (revision === null)
 			return failureResult(
 				actionId,
 				"schema_validation",
-				"This action requires the current Task revision",
+				"expectedTaskRevision must not be null",
 			);
 		const argumentsJson = recordArg(input.call, "arguments");
 		const result = await input.actionPort.execute({
@@ -147,7 +148,7 @@ export async function executeMissionPilotToolCall(input: {
 			taskId: input.taskId,
 			sessionId: input.sessionId,
 			actionId,
-			arguments: { ...argumentsJson, expectedTaskRevision: revision },
+			arguments: argumentsJson,
 			expectedTaskRevision: revision,
 			idempotencyKey: textArg(input.call, "idempotencyKey"),
 			signal: input.signal,
@@ -161,6 +162,23 @@ export async function executeMissionPilotToolCall(input: {
 				}
 			: { ok: false, failure: result.failure, directive: "continue" };
 	} catch (error) {
+		if (error instanceof AppError)
+			return {
+				ok: false,
+				directive: "continue",
+				failure: {
+					...toolFailure(
+						input.call.name,
+						error.statusCode === 401 || error.statusCode === 403
+							? "permission"
+							: "domain_precondition",
+						error.message,
+					),
+					providerCode: error.code,
+					httpStatus: error.statusCode,
+					details: error.details ?? null,
+				},
+			};
 		return failureResult(
 			input.call.name,
 			"domain_precondition",

@@ -9,6 +9,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { z } from "zod";
 import { config } from "./config";
+import { implementationProviderFixtureRouter } from "./e2eFixtures/implementation-provider-fixture.routes";
 import { logEvent, logHttpEvent } from "./lib/logger";
 import { createOpenApiRouter } from "./lib/openapi";
 import { handleNightWorkersCodexMcpRequest } from "./mcp/nightworkers-codex-mcp";
@@ -25,7 +26,6 @@ import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
 import {
 	missionPilotAgentFixtureRouter,
-	missionPilotFixtureRouter,
 	missionPilotRouter,
 } from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
@@ -84,9 +84,9 @@ const apiRoutes = createOpenApiRouter()
 	.route("/", nightworkersRouter);
 
 if (process.env.NIGHTWORKERS_E2E_ISOLATED === "1") {
+	apiRoutes.route("/", implementationProviderFixtureRouter);
 	apiRoutes.route("/", e2eFixtureRouter);
 	apiRoutes.route("/", missionPilotAgentFixtureRouter);
-	apiRoutes.route("/", missionPilotFixtureRouter);
 	apiRoutes.route("/", missionCandidatesFixtureRouter);
 }
 

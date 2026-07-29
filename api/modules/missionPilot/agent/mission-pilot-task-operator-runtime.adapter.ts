@@ -1,8 +1,11 @@
 import { missionPilotPlanRoutingToolCallSchema } from "../../../../shared/schemas/plan-mode-routing.schema";
-import { missionPilotThoughtTrace } from "../../nightworkers/nightworkers.trace-provenance";
 import type { TaskOperatorCommandRuntime } from "../../taskOperator";
 import { missionPilotArtifactProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
-import { missionPilotArtifactTrace } from "../mission-pilot-trace-provenance";
+import { missionPilotDelegatedAuthorizationPort } from "../mission-pilot-delegation";
+import {
+	missionPilotArtifactTrace,
+	missionPilotThoughtTrace,
+} from "../mission-pilot-trace-provenance";
 
 export function buildMissionPilotTaskOperatorRuntime(input: {
 	sessionId: string;
@@ -17,13 +20,14 @@ export function buildMissionPilotTaskOperatorRuntime(input: {
 		usageTrace: missionPilotThoughtTrace({ sessionId: input.sessionId }),
 		artifactTrace: missionPilotArtifactTrace({ sessionId: input.sessionId }),
 		messageTrace: missionPilotThoughtTrace({ sessionId: input.sessionId }),
+		delegatedAuthorization: missionPilotDelegatedAuthorizationPort,
 		messageMetadata: {
 			source: "mission_pilot",
 			missionPilotSessionId: input.sessionId,
 			intent: "chat",
-			missionPilotAction: {
+			commandProvenance: {
 				idempotencyKey: input.idempotencyKey,
-				toolCallId: input.toolCallId,
+				requestId: input.toolCallId,
 			},
 		},
 		executeQuestionnaireDraft: async ({

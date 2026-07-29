@@ -44,7 +44,9 @@ describe("LLM semantic freedom architecture boundary", () => {
 
 	it("does not restore removed semantic mutation helpers", () => {
 		const sources = [
-			read("api/modules/missionPilot/mission-pilot-plan-review.service.ts"),
+			read(
+				"api/modules/taskOperator/policies/task-operator-action.registry.ts",
+			),
 			read("api/modules/questionnaire/questionnaire-parser.service.ts"),
 			read("api/modules/taskGeneration/task-candidate-semantics.ts"),
 			read("api/services/blueprints/llm-draft.ts"),

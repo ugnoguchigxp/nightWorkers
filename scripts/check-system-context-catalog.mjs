@@ -7,8 +7,11 @@ const repoRoot = process.cwd();
 const errors = [];
 const sourceExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const catalogModulePath = "api/systemContexts/catalog.ts";
+const fixtureCatalogModulePath = "api/e2eFixtures/llmCatalog/catalog.ts";
+const fixtureCatalogTestPath = "tests/llm-fixture-catalog.test.ts";
 const textBindingAllowedPaths = new Set([
 	catalogModulePath,
+	fixtureCatalogModulePath,
 	"api/modules/codingAgent/context/context-packet.ts",
 	"api/modules/nightworkers/run-orchestration/run-system-context.ts",
 ]);
@@ -64,7 +67,11 @@ for (const absolutePath of ["api", "tests"].flatMap((directory) =>
 )) {
 	if (!sourceExtensions.has(path.extname(absolutePath))) continue;
 	const relativePath = path.relative(repoRoot, absolutePath).replaceAll(path.sep, "/");
-	if (relativePath.startsWith("api/systemContexts/generated/")) continue;
+	if (
+		relativePath.startsWith("api/systemContexts/generated/") ||
+		relativePath.startsWith("api/e2eFixtures/llmCatalog/generated/")
+	)
+		continue;
 	const source = fs.readFileSync(absolutePath, "utf8");
 	const sourceFile = ts.createSourceFile(
 		relativePath,
@@ -88,6 +95,8 @@ for (const absolutePath of ["api", "tests"].flatMap((directory) =>
 		}
 		if (
 			relativePath !== catalogModulePath &&
+			relativePath !== fixtureCatalogModulePath &&
+			relativePath !== fixtureCatalogTestPath &&
 			ts.isCallExpression(node) &&
 			ts.isPropertyAccessExpression(node.expression) &&
 			(isExplicitLocaleBindingCall(node, sourceFile) ||
@@ -132,12 +141,28 @@ for (const absolutePath of ["api", "tests"].flatMap((directory) =>
 	) {
 		errors.push(`${relativePath}: role-local S11t catalog import is forbidden`);
 	}
+	if (
+		source.includes("e2eFixtures/llmCatalog") &&
+		!new Set([
+			fixtureCatalogModulePath,
+			"api/modules/missionPilot/routes/mission-pilot-agent-fixture-scenarios.ts",
+			"api/modules/codingAgent/runtime/e2e-fixture-turns.ts",
+			fixtureCatalogTestPath,
+		]).has(relativePath)
+	) {
+		errors.push(
+			`${relativePath}: test-only LLM fixture catalog import is outside an isolated role-owned fixture builder`,
+		);
+	}
 }
 
 for (const absolutePath of walk(repoRoot)) {
 	const relativePath = path.relative(repoRoot, absolutePath).replaceAll(path.sep, "/");
 	if (!absolutePath.endsWith(".context.toml")) continue;
-	if (!relativePath.startsWith("api/systemContexts/contexts/")) {
+	if (
+		!relativePath.startsWith("api/systemContexts/contexts/") &&
+		!relativePath.startsWith("api/e2eFixtures/llmCatalog/contexts/")
+	) {
 		errors.push(`${relativePath}: SystemContext source must live in api/systemContexts/contexts`);
 	}
 }
@@ -161,4 +186,6 @@ if (errors.length > 0) {
 	process.exit(1);
 }
 
-console.log("[architecture] all SystemContext sources resolve through api/systemContexts");
+console.log(
+	"[architecture] SystemContext and test-only LLM fixture catalog boundaries are valid",
+);

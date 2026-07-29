@@ -8,6 +8,8 @@ import {
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 
+class MissionPilotEventSequenceConflictError extends Error {}
+
 export async function appendMissionPilotTaskEvent(input: {
 	taskId: string;
 	eventType: MissionPilotTaskEventType;
@@ -16,7 +18,29 @@ export async function appendMissionPilotTaskEvent(input: {
 	payload: unknown;
 	availableAt?: Date;
 }) {
-	const created = await db.transaction(async (tx) => {
+	for (let attempt = 1; attempt <= 5; attempt += 1) {
+		try {
+			return await appendMissionPilotTaskEventOnce(input);
+		} catch (error) {
+			if (
+				!(error instanceof MissionPilotEventSequenceConflictError) ||
+				attempt === 5
+			)
+				throw error;
+		}
+	}
+	return null;
+}
+
+async function appendMissionPilotTaskEventOnce(input: {
+	taskId: string;
+	eventType: MissionPilotTaskEventType;
+	sourceEventId: string;
+	taskRevision: number;
+	payload: unknown;
+	availableAt?: Date;
+}) {
+	return db.transaction(async (tx) => {
 		const [session] = await tx
 			.select()
 			.from(missionPilotSessions)
@@ -55,7 +79,7 @@ export async function appendMissionPilotTaskEvent(input: {
 				),
 			)
 			.returning({ sessionId: missionPilotAgentSessions.sessionId });
-		if (!advanced) throw new Error("Mission Pilot event sequence conflict");
+		if (!advanced) throw new MissionPilotEventSequenceConflictError();
 		const [created] = await tx
 			.insert(missionPilotTaskEventInbox)
 			.values({
@@ -73,7 +97,30 @@ export async function appendMissionPilotTaskEvent(input: {
 			.returning();
 		return created ?? null;
 	});
-	return created;
+}
+
+export async function projectMissionPilotExecutionEvent(input: {
+	taskId: string;
+	type: "task.run.started" | "task.run.terminal" | "task.run.failed";
+	runId: string;
+}) {
+	const terminal =
+		input.type === "task.run.terminal" || input.type === "task.run.failed";
+	const [updated] = await db
+		.update(missionPilotSessions)
+		.set({
+			activeRunId: terminal ? null : input.runId,
+			phase: terminal ? "review" : "implementation",
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(missionPilotSessions.taskId, input.taskId),
+				eq(missionPilotSessions.desiredState, "playing"),
+			),
+		)
+		.returning();
+	return updated ?? null;
 }
 
 export async function listPendingMissionPilotTaskEvents(

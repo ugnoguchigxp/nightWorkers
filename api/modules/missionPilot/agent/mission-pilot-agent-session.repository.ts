@@ -1,14 +1,22 @@
 import crypto from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { MissionPilotAuthorizationV3 } from "../../../../shared/modules/missionPilot";
+import type { MissionPilotAuthorizationV4 } from "../../../../shared/modules/missionPilot";
 import type { DbTransaction } from "../../../db/client";
 import { db } from "../../../db/client";
-import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";
+import {
+	missionPilotAgentSessions,
+	missionPilotConversationItems,
+	missionPilotTaskEventInbox,
+} from "../../../db/mission-pilot-agent-schema";
 import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../../../db/mission-pilot-schema";
-import { tasks } from "../../../db/schema";
+import {
+	humanTaskOperatorPrincipal,
+	readTaskOperatorProjection,
+} from "../../taskOperator";
+import { createMissionPilotAuthorization } from "../mission-pilot-delegation";
 import {
 	clearMissionPilotAgentTaskActive,
 	markMissionPilotAgentTaskActive,
@@ -110,7 +118,27 @@ export async function getMissionPilotAgentSessionById(sessionId: string) {
 	return row ?? null;
 }
 
-export async function claimAgentPlay(taskId: string, expectedVersion: number) {
+export async function claimAgentPlay(
+	taskId: string,
+	expectedVersion: number,
+	principal: {
+		kind: "human";
+		actorId: string;
+		authorizationRef: string;
+	} = humanTaskOperatorPrincipal(),
+	activation?: {
+		systemContext: (authorization: MissionPilotAuthorizationV4) => string;
+		initialPrompt: string;
+		acceptanceCriteria: string | null;
+		taskRevision: number;
+		sourceEventId: string;
+	},
+) {
+	const taskProjection = await readTaskOperatorProjection(taskId, {
+		principal,
+	});
+	if (activation && taskProjection.task.revision !== activation.taskRevision)
+		return null;
 	const claimed = await db.transaction(async (tx) => {
 		const [session] = await tx
 			.select()
@@ -122,11 +150,9 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 					.from(missionPilotAgentSessions)
 					.where(eq(missionPilotAgentSessions.sessionId, session.id))
 			: [];
-		const [task] = await tx.select().from(tasks).where(eq(tasks.id, taskId));
 		if (
 			!session ||
 			!agent ||
-			!task ||
 			agent.engineMode !== "agent" ||
 			session.version !== expectedVersion ||
 			session.desiredState !== "stopped" ||
@@ -143,33 +169,45 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 					eq(missionPilotContextSnapshots.revision, session.contextRevision),
 				),
 			);
-		const context = {
-			...(currentContext?.contextJson &&
+		const previousContext =
+			currentContext?.contextJson &&
 			typeof currentContext.contextJson === "object" &&
 			!Array.isArray(currentContext.contextJson)
 				? currentContext.contextJson
-				: {}),
+				: {};
+		const previousTask =
+			previousContext.task &&
+			typeof previousContext.task === "object" &&
+			!Array.isArray(previousContext.task)
+				? (previousContext.task as Record<string, unknown>)
+				: {};
+		const objective =
+			activation?.initialPrompt ?? taskProjection.task.objective?.text ?? "";
+		const context = {
+			...previousContext,
 			version: 1,
 			session: {
 				id: session.id,
 				taskId,
-				repositoryId: task.repositoryId,
+				repositoryId: taskProjection.project.id,
 				sourceRef: { source: session.sourceKind, id: session.sourceId },
 			},
 			task: {
-				title: task.title,
-				initialPrompt: task.objective ?? "",
-				description: task.description,
-				acceptanceCriteria: task.acceptanceCriteria,
-				worktreePath: task.worktreePath,
-				repositoryId: task.repositoryId,
+				...previousTask,
+				title: taskProjection.task.title,
+				initialPrompt: objective,
+				acceptanceCriteria:
+					activation?.acceptanceCriteria ??
+					taskProjection.task.acceptanceCriteria?.text ??
+					null,
+				repositoryId: taskProjection.project.id,
 			},
 		};
 		const serialized = JSON.stringify(context);
 		const digest = crypto.createHash("sha256").update(serialized).digest("hex");
 		const currentAuthorization = session.authorizationJson;
 		const reuse =
-			currentAuthorization?.version === 3 &&
+			currentAuthorization?.version === 4 &&
 			currentAuthorization.activationContextDigest === digest;
 		const revision = reuse
 			? currentAuthorization.activationContextRevision
@@ -186,36 +224,47 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 				tokenEstimate: Math.ceil(serialized.length / 4),
 				createdAt: now,
 			});
-		const authorization: MissionPilotAuthorizationV3 = {
-			version: 3,
+		const authorization = createMissionPilotAuthorization({
 			sessionId: session.id,
 			taskId,
-			taskRef: { source: "task", id: taskId },
 			activationContextRevision: revision,
 			activationContextDigest: digest,
-			grantedByAction: "mission_pilot_play",
 			grantedAt: now.toISOString(),
-			scopes: {
-				plan: true,
-				queue: true,
-				implementation: true,
-				testMutation: true,
-				review: true,
-				localCommit: true,
-				taskComplete: true,
-				taskArchive: true,
-				push: false,
-			},
-			pushPolicy: "never",
-		};
+			principal,
+		});
+		const [existingConversation] = activation
+			? await tx
+					.select({ id: missionPilotConversationItems.id })
+					.from(missionPilotConversationItems)
+					.where(eq(missionPilotConversationItems.sessionId, session.id))
+					.limit(1)
+			: [];
+		const [existingResumeEvent] = activation
+			? await tx
+					.select({ id: missionPilotTaskEventInbox.id })
+					.from(missionPilotTaskEventInbox)
+					.where(
+						and(
+							eq(missionPilotTaskEventInbox.sessionId, session.id),
+							eq(
+								missionPilotTaskEventInbox.sourceEventId,
+								activation.sourceEventId,
+							),
+						),
+					)
+					.limit(1)
+			: [];
+		const shouldSeedConversation = Boolean(activation && !existingConversation);
+		const shouldAppendResumeEvent = Boolean(activation && !existingResumeEvent);
 		const [claimed] = await tx
 			.update(missionPilotSessions)
 			.set({
 				desiredState: "playing",
 				phase: "starting",
-				authorizationVersion: 3,
+				authorizationVersion: 4,
 				authorizationJson: authorization,
-				initialPromptSnapshot: task.objective ?? "",
+				initialPromptSnapshot: objective,
+				...(activation ? { initialPromptState: "sent" as const } : {}),
 				contextRevision: revision,
 				contextDigest: digest,
 				startedAt: now,
@@ -245,6 +294,15 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 				currentTurnId: null,
 				leaseOwner: null,
 				leaseExpiresAt: null,
+				nextConversationSequence: shouldSeedConversation
+					? agent.nextConversationSequence + 2
+					: agent.nextConversationSequence,
+				conversationRevision: shouldSeedConversation
+					? agent.conversationRevision + 1
+					: agent.conversationRevision,
+				nextEventSequence: shouldAppendResumeEvent
+					? agent.nextEventSequence + 1
+					: agent.nextEventSequence,
 				updatedAt: now,
 			})
 			.where(
@@ -254,6 +312,45 @@ export async function claimAgentPlay(taskId: string, expectedVersion: number) {
 				),
 			)
 			.returning();
+		if (claimedAgent && activation && shouldSeedConversation) {
+			await tx.insert(missionPilotConversationItems).values([
+				{
+					id: crypto.randomUUID(),
+					sessionId: session.id,
+					sequence: agent.nextConversationSequence,
+					kind: "system_context",
+					bodyJson: {
+						version: agent.systemContextVersion,
+						content: activation.systemContext(authorization),
+					},
+					createdAt: now,
+				},
+				{
+					id: crypto.randomUUID(),
+					sessionId: session.id,
+					sequence: agent.nextConversationSequence + 1,
+					kind: "user",
+					bodyJson: { content: activation.initialPrompt },
+					sourceKind: "task",
+					sourceId: taskId,
+					createdAt: now,
+				},
+			]);
+		}
+		if (claimedAgent && activation && shouldAppendResumeEvent) {
+			await tx.insert(missionPilotTaskEventInbox).values({
+				id: crypto.randomUUID(),
+				sessionId: session.id,
+				taskId,
+				sequence: agent.nextEventSequence,
+				eventType: "mission_pilot.resume_requested",
+				sourceEventId: activation.sourceEventId,
+				taskRevision: activation.taskRevision,
+				payloadJson: { reason: "play" },
+				availableAt: now,
+				createdAt: now,
+			});
+		}
 		return claimedAgent
 			? { ...claimed, ...claimedAgent, id: claimed.id }
 			: null;

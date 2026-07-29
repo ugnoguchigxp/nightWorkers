@@ -15,7 +15,6 @@ import {
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../../../db/mission-pilot-schema";
-import { tasks } from "../../../db/schema";
 import { AppError, NotFoundError } from "../../../lib/errors";
 import { readGeneralSettings } from "../../../services/settings/general-settings";
 import {
@@ -26,6 +25,10 @@ import {
 	registerPlanModeRoutingUserWriter,
 } from "../../agentsShare";
 import { listPlanModeTaskMessages } from "../../nightworkers/nightworkers.plan-mode-core.port";
+import {
+	humanTaskOperatorQueryContext,
+	readTaskOperatorProjection,
+} from "../../taskOperator";
 import {
 	planModeRoutingTerminalReason,
 	readPlanModeRoutingLockedReason,
@@ -44,7 +47,6 @@ export async function getPlanModeRouting(
 	options: {
 		messages?: TaskMessage[];
 		taskStatus?: string;
-		allowTaskRuns?: boolean;
 	} = {},
 ): Promise<PlanModeRoutingSnapshot> {
 	const capabilities = readGeneralSettings().planMode.capabilities;
@@ -70,9 +72,7 @@ export async function getPlanModeRouting(
 			updatedAt: null,
 		};
 	}
-	const lockedReason = await readPlanModeRoutingLockedReason(taskId, {
-		allowTaskRuns: options.allowTaskRuns,
-	});
+	const lockedReason = await readPlanModeRoutingLockedReason(taskId);
 	const revision = session.planRoutingRevision;
 	const persisted = revision
 		? await db.query.missionPilotPlanRoutingRevisions.findFirst({
@@ -158,6 +158,10 @@ async function persistRoutingRevision(input: {
 	actor: PlanModeRoutingActor;
 	reason: string;
 }) {
+	const taskProjection = await readTaskOperatorProjection(
+		input.taskId,
+		humanTaskOperatorQueryContext(),
+	);
 	return db.transaction(async (tx) => {
 		const session = await tx.query.missionPilotSessions.findFirst({
 			where: eq(missionPilotSessions.taskId, input.taskId),
@@ -183,15 +187,15 @@ async function persistRoutingRevision(input: {
 				"Plan Artifact routing が別の操作で更新されました。再読み込みしてください。",
 			);
 		}
-		const [task, latestContext] = await Promise.all([
-			tx.query.tasks.findFirst({ where: eq(tasks.id, input.taskId) }),
-			tx.query.missionPilotContextSnapshots.findFirst({
+		const latestContext = await tx.query.missionPilotContextSnapshots.findFirst(
+			{
 				where: eq(missionPilotContextSnapshots.sessionId, session.id),
 				orderBy: (row, { desc }) => [desc(row.revision)],
-			}),
-		]);
-		if (!task) throw new NotFoundError("Task not found");
-		const terminalReason = planModeRoutingTerminalReason(task.status);
+			},
+		);
+		const terminalReason = planModeRoutingTerminalReason(
+			taskProjection.task.status,
+		);
 		if (terminalReason) {
 			throw new AppError(409, "PLAN_MODE_ROUTING_LOCKED", terminalReason);
 		}
@@ -342,13 +346,9 @@ async function updatePlanModeRouting(input: {
 			requestHash,
 		})
 	) {
-		return getPlanModeRouting(input.taskId, {
-			allowTaskRuns: input.actor === "coding_agent",
-		});
+		return getPlanModeRouting(input.taskId);
 	}
-	const current = await getPlanModeRouting(input.taskId, {
-		allowTaskRuns: input.actor === "coding_agent",
-	});
+	const current = await getPlanModeRouting(input.taskId);
 	if (!current.editable) {
 		throw new AppError(
 			409,
@@ -388,9 +388,7 @@ async function updatePlanModeRouting(input: {
 			change.reason?.trim() ||
 			(input.actor === "user"
 				? `ユーザーが ${change.decision === "include" ? "ON" : "OFF"} に変更しました。`
-				: input.actor === "coding_agent"
-					? `Coding Agentが ${change.decision === "include" ? "必要" : "不要"} と判断しました。`
-					: previous.reason);
+				: previous.reason);
 		if (previous.decision === change.decision && previous.reason === reason) {
 			continue;
 		}
@@ -417,13 +415,9 @@ async function updatePlanModeRouting(input: {
 		reason:
 			input.actor === "mission_pilot"
 				? "Mission Pilot review requested additional Plan Artifacts."
-				: input.actor === "coding_agent"
-					? "Coding Agent selected the Plan Artifacts required for this task."
-					: "User updated Plan Artifact routing.",
+				: "User updated Plan Artifact routing.",
 	});
-	return getPlanModeRouting(input.taskId, {
-		allowTaskRuns: input.actor === "coding_agent",
-	});
+	return getPlanModeRouting(input.taskId);
 }
 
 export function updatePlanModeRoutingForUser(
@@ -431,13 +425,6 @@ export function updatePlanModeRoutingForUser(
 	request: UpdatePlanModeRoutingRequest,
 ) {
 	return updatePlanModeRouting({ taskId, request, actor: "user" });
-}
-
-export function updatePlanModeRoutingForCodingAgent(
-	taskId: string,
-	request: UpdatePlanModeRoutingRequest,
-) {
-	return updatePlanModeRouting({ taskId, request, actor: "coding_agent" });
 }
 
 export function executeMissionPilotPlanRoutingTool(

@@ -1,5 +1,6 @@
 export {
 	archiveImplementationQueueEntry,
+	createImplementationQueueEntry,
 	patchImplementationQueueEntry,
 	queueTask,
 	recoverImplementationQueueEntry,

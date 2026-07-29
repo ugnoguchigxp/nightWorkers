@@ -11,7 +11,6 @@ import { triggerConfiguredQueueDrain } from "./queue-scheduler-port";
 export type QueueSideEffectOptions = {
 	autoDrain?: boolean;
 	approveMissionProposal?: boolean;
-	missionPilotAgent?: import("../../../shared/modules/missionPilot").MissionPilotAgentRunProvenance;
 };
 
 export type QueueRecoveryAction =

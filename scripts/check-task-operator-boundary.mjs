@@ -32,6 +32,36 @@ for (const file of walk(path.join(root, "api/modules/codingAgent"))) {
 		errors.push(`${relative}: Coding Agent must not reference Mission Pilot`);
 }
 
+for (const file of walk(path.join(root, "api/modules/missionPilot"))) {
+	const relative = path.relative(root, file);
+	if (relative.includes(`${path.sep}routes${path.sep}`) && relative.includes("fixture"))
+		continue;
+	const value = fs.readFileSync(file, "utf8");
+	if (/from\s+["'][^"']*(?:modules\/)?codingAgent(?:\/|["'])/.test(value))
+		errors.push(`${relative}: Mission Pilot must not import Coding Agent`);
+	if (
+		/from\s+["'][^"']*agentsShare\/(?:contracts|ports)\/coding-agent-run/.test(
+			value,
+		)
+	)
+		errors.push(
+			`${relative}: Mission Pilot must not import a Coding Agent role contract`,
+		);
+	if (/coding_agent\.requested/.test(value))
+		errors.push(
+			`${relative}: Mission Pilot must not parse Coding Agent event payloads`,
+		);
+	if (
+		/from\s+["'][^"']*db\/(?:schema(?:-task[^"']*)?|design-questionnaire-schema)["']/.test(
+			value,
+		) &&
+		!relative.endsWith("mission-pilot-thought-projection.ts")
+	)
+		errors.push(
+			`${relative}: Mission Pilot must read Task, Run, Queue, Questionnaire, and Artifact facts through Task Operator`,
+		);
+}
+
 for (const file of [
 	...walk(path.join(root, "api")),
 	...walk(path.join(root, "shared")),
@@ -63,6 +93,22 @@ for (const file of walk(path.join(root, "api/modules/taskOperator"))) {
 	const value = fs.readFileSync(file, "utf8");
 	if (/from\s+["'][^"']*(?:db\/|\.repository|repository\.)/.test(value))
 		errors.push(`${relative}: Task Operator must compose domain public APIs only`);
+	if (
+		/missionPilotAction|missionPilotAdmission|missionPilotAgent|MissionPilotAgent/.test(
+			value,
+		)
+	)
+		errors.push(`${relative}: Task Operator must remain role-neutral`);
+}
+for (const file of walk(path.join(root, "api/modules/queue"))) {
+	const relative = path.relative(root, file);
+	const value = fs.readFileSync(file, "utf8");
+	if (
+		/missionPilotAction|missionPilotAdmission|missionPilotAgent|MissionPilotAgent/.test(
+			value,
+		)
+	)
+		errors.push(`${relative}: Queue must remain role-neutral`);
 }
 for (const file of walk(path.join(root, "shared/modules/taskOperator"))) {
 	const relative = path.relative(root, file);

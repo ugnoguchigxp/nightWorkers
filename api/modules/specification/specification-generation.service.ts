@@ -26,10 +26,6 @@ import {
 } from "../agentsShare";
 import { repositoryHasGitHead } from "../gitworktree/repository-state.service";
 import {
-	getMissionPilotPlanSystemContext,
-	resolvePlanArtifactCanonicalInput,
-} from "../missionPilot";
-import {
 	createPlanModeTaskMessage,
 	getPlanModeRepository,
 	getPlanModeTask,
@@ -48,6 +44,7 @@ import {
 	readFeaturePlanTitle,
 } from "./feature-plan-content";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -76,12 +73,6 @@ export async function generateFeaturePlanArtifact(
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
 		signal?: AbortSignal;
-		expectedState?: {
-			missionPilotSessionId: string;
-			contextRevision: number;
-			contextDigest: string;
-			routingRevision: number;
-		};
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -123,7 +114,6 @@ export async function generateFeaturePlanArtifact(
 			input.sourceSelection ??
 			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
 		regenerationRequest: input.prompt ?? null,
-		expectedState: input.expectedState,
 	});
 	const projection = projectPlanArtifactInput(canonical);
 	const renderedInput = renderPlanArtifactInput(projection);
@@ -363,10 +353,7 @@ async function generateSpecificationDesignDocument(
 			: null;
 		const systemPrompt = buildSpecificationDocumentSystemPrompt(
 			{
-				additionalSystemContext: [
-					role === "mission_pilot" ? getMissionPilotPlanSystemContext(p) : null,
-					materializationSystemContext,
-				]
+				additionalSystemContext: [materializationSystemContext]
 					.filter((value): value is string => Boolean(value))
 					.join("\n"),
 			},

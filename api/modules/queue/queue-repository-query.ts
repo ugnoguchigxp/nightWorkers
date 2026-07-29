@@ -197,16 +197,14 @@ export async function listActiveImplementationQueueEntriesForTask(
 		);
 }
 
-export async function getImplementationQueueEntryByMissionPilotAdmissionKey(
-	admissionKey: string,
+export async function getImplementationQueueEntryBySourceCommandKey(
+	sourceCommandKey: string,
 	database: QueueDb = db,
 ) {
 	const [entry] = await database
 		.select()
 		.from(implementationQueueEntries)
-		.where(
-			eq(implementationQueueEntries.missionPilotAdmissionKey, admissionKey),
-		)
+		.where(eq(implementationQueueEntries.sourceCommandKey, sourceCommandKey))
 		.limit(1);
 	return entry ?? null;
 }

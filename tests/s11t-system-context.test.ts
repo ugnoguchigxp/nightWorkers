@@ -521,9 +521,9 @@ describe("S11t SystemContext catalog", () => {
 			codingAgent:
 				"d055d5df5594c310c04cfcb4eeabe1af83ebf70aa447d72ba06f34acc04ae5cd",
 			missionPilotPushAllowed:
-				"a46747840adc5b71e34029f82414f7430468b6989be46fbfc54757d5b61bb189",
+				"e3c9a664e273d4ad3f4414798039d18aeef45162349ca4ddddd7863cbcea68b0",
 			missionPilotPushDenied:
-				"13917a6f3be36bf87e3d1221f008badbcac5c57232573b75da4842989876295c",
+				"37147856c660b33f327428cc59ab0bb94d482eae2532dabbd0ca95c507914a87",
 		});
 	});
 

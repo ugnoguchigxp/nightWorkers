@@ -14,6 +14,9 @@ import type { MissionPilotCurrentStepContext } from "./mission-pilot-current-ste
 export type MissionPilotProviderPort = {
 	nextTurn(input: {
 		sessionId: string;
+		turnId: string;
+		providerCallIndex: number;
+		retryAttempt?: number;
 		systemContext: string;
 		systemContextBinding: SystemContextBindingSnapshot;
 		messages: ProviderToolMessage[];

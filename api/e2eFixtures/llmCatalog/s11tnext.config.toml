@@ -1,0 +1,20 @@
+source_dir = "contexts"
+out_dir = "generated"
+
+[authoring]
+source_locale = "ja-JP"
+
+[governance]
+require_owner = true
+
+[keyspaces."missionPilot"]
+owner = "mission-pilot-e2e-fixture"
+
+[keyspaces."codingAgent"]
+owner = "coding-agent-e2e-fixture"
+
+[keyspaces."structured"]
+owner = "structured-llm-e2e-fixture"
+
+[release_profiles.e2e]
+required_locales = ["ja-JP"]

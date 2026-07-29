@@ -1,4 +1,9 @@
+import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
+	LOCAL_TASK_OPERATOR_USER_ID,
+} from "../api/modules/taskOperator/policies/task-operator-authorization";
 
 const mocks = vi.hoisted(() => ({
 	executeIdempotentTaskOperatorCommand: vi.fn(),
@@ -32,8 +37,9 @@ const { executeTaskOperatorCommand } = await import(
 	"../api/modules/taskOperator/application/task-operator.command"
 );
 
+const questionnaireId = crypto.randomUUID();
 const completedQuestionnaire = {
-	id: "questionnaire-1",
+	id: questionnaireId,
 	status: "review_ready",
 	answers: [],
 };
@@ -44,14 +50,14 @@ function command(kind: "human" | "automation") {
 		actionId: "questionnaire.submit",
 		expectedTaskRevision: 7,
 		arguments: {
-			questionnaireSessionId: "questionnaire-1",
+			questionnaireSessionId: questionnaireId,
 			answers: [],
 		},
 		context: {
 			principal: {
 				kind,
-				actorId: `${kind}-1`,
-				authorizationRef: `${kind}-authorization`,
+				actorId: LOCAL_TASK_OPERATOR_USER_ID,
+				authorizationRef: LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
 			},
 			requestId: `${kind}-request`,
 			idempotencyKey: `${kind}-delivery`,
@@ -66,7 +72,7 @@ beforeEach(() => {
 	);
 	mocks.readTaskOperatorProjection.mockResolvedValue({
 		task: { revision: 7, status: "ready" },
-		questionnaire: { id: "questionnaire-1" },
+		questionnaire: { id: questionnaireId },
 		commandCatalog: { availableIds: ["questionnaire.submit"] },
 	});
 	mocks.questionnaireSessionBelongsToTask.mockResolvedValue(true);
@@ -80,6 +86,54 @@ beforeEach(() => {
 });
 
 describe("Task Operator Questionnaire artifact routing", () => {
+	it("rejects a forged direct principal instead of granting user capabilities", async () => {
+		await expect(
+			executeTaskOperatorCommand({
+				taskId: "task-1",
+				actionId: "questionnaire.submit",
+				expectedTaskRevision: 7,
+				arguments: {
+					questionnaireSessionId: questionnaireId,
+					answers: [],
+				},
+				context: {
+					principal: {
+						kind: "human",
+						actorId: "forged-user",
+						authorizationRef: "forged-authorization",
+					},
+					requestId: "forged-request",
+					idempotencyKey: "forged-delivery",
+				},
+			}),
+		).rejects.toMatchObject({ code: "TASK_OPERATOR_PERMISSION_DENIED" });
+		expect(mocks.executeIdempotentTaskOperatorCommand).not.toHaveBeenCalled();
+	});
+
+	it("enforces the canonical action schema before command delivery", async () => {
+		await expect(
+			executeTaskOperatorCommand({
+				taskId: "task-1",
+				actionId: "questionnaire.submit",
+				expectedTaskRevision: 7,
+				arguments: {
+					questionnaireSessionId: "not-a-uuid",
+					answers: [],
+				},
+				context: {
+					principal: {
+						kind: "human",
+						actorId: LOCAL_TASK_OPERATOR_USER_ID,
+						authorizationRef: LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
+					},
+					requestId: "invalid-schema-request",
+					idempotencyKey: "invalid-schema-delivery",
+				},
+			}),
+		).rejects.toMatchObject({ code: "TASK_OPERATOR_SCHEMA_VALIDATION" });
+		expect(mocks.executeIdempotentTaskOperatorCommand).not.toHaveBeenCalled();
+	});
+
 	it("selects artifacts from confirmed human answers before completing submit", async () => {
 		await expect(command("human")).resolves.toBe(completedQuestionnaire);
 

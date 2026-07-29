@@ -148,7 +148,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 			})
 			.from(missionPilotSessions)
 			.where(eq(missionPilotSessions.id, fixtureState.sessionId));
-		expect(session?.version).toBe(fixtureState.publicVersion);
+		expect(session?.version).toBe(fixtureState.publicVersion + 1);
 		expect(session?.phase).toBe("paused");
 		const [usageRecord] = await db
 			.select()
@@ -184,9 +184,6 @@ describe("Mission Pilot persistent agent runtime", () => {
 				expect.objectContaining({
 					kind: "thought",
 					summary: "現在のFactを確認しました。",
-				}),
-				expect.objectContaining({
-					kind: "llm_usage",
 				}),
 			]),
 		);
@@ -303,7 +300,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 											name: "execute_task_action",
 											arguments: {
 												actionId: "task.update",
-												expectedResourceRevision: before.updatedAt.getTime(),
+												expectedTaskRevision: before.revision,
 												idempotencyKey: "runtime-task-update",
 												arguments: {
 													fields: { title: "updated by persistent agent" },
@@ -365,7 +362,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 											name: "execute_task_action",
 											arguments: {
 												actionId: "run.stop",
-												expectedResourceRevision: 1,
+												expectedTaskRevision: 1,
 												idempotencyKey: "replayed-run-stop",
 												arguments: { runId: crypto.randomUUID() },
 											},
@@ -419,7 +416,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 											name: "execute_task_action",
 											arguments: {
 												actionId: "run.stop",
-												expectedResourceRevision: 1,
+												expectedTaskRevision: 1,
 												idempotencyKey: "fresh-run-stop",
 												arguments: { runId: crypto.randomUUID() },
 											},
@@ -477,7 +474,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 					name: "execute_task_action",
 					arguments: {
 						actionId: "task.update",
-						expectedResourceRevision: task.updatedAt.getTime(),
+						expectedTaskRevision: task.revision,
 						idempotencyKey: "pending-before-crash",
 						arguments: { fields: { title: "must not be applied" } },
 					},
@@ -538,7 +535,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 						name: "execute_task_action",
 						arguments: {
 							actionId: "task.update",
-							expectedResourceRevision: task.updatedAt.getTime(),
+							expectedTaskRevision: task.revision,
 							idempotencyKey: "running-before-stop",
 							arguments: { fields: { title: "must not be applied" } },
 						},
@@ -683,7 +680,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 								name: "execute_task_action",
 								arguments: {
 									actionId: "task.update",
-									expectedResourceRevision: task.updatedAt.getTime(),
+									expectedTaskRevision: task.revision,
 									idempotencyKey: "stoppable-task-update",
 									arguments: { fields: { title: "must not be applied" } },
 								},

@@ -1,12 +1,13 @@
-import type { TaskRunStatus } from "../../db/schema";
-import {
-	isFailureLikeTaskRunStatus,
-	registerTaskRunTerminalListener,
-} from "../agentsShare";
-import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import { registerTaskMessageCreatedListener } from "../nightworkers/nightworkers.task-message-events";
 import { registerQuestionnaireStateChangedListener } from "../questionnaire/questionnaire-events";
-import { readTaskOperatorProjection } from "../taskOperator";
+import { registerTaskMessageCreatedListener } from "../task";
+import {
+	humanTaskOperatorPrincipal,
+	humanTaskOperatorQueryContext,
+	initializeTaskOperatorExecutionEvents,
+	readTaskOperatorProjection,
+	readTaskOperatorResource,
+	registerTaskOperatorExecutionEventListener,
+} from "../taskOperator";
 import { markMissionPilotAgentTaskActive } from "./agent/mission-pilot-agent-active-registry";
 import {
 	cancelPendingMissionPilotToolCalls,
@@ -29,96 +30,66 @@ import {
 	cancelScheduledMissionPilotAgentWake,
 	scheduleMissionPilotAgentWake,
 } from "./agent/mission-pilot-agent-wake.service";
-import { seedMissionPilotConversation } from "./agent/mission-pilot-conversation.repository";
+import { preflightMissionPilotProviderToolTurn } from "./agent/mission-pilot-provider.port";
 import {
 	recordMissionPilotQuestionnaireStateChanged,
 	recordMissionPilotTaskEvent,
 } from "./agent/mission-pilot-task-event.adapter";
-import { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
+import {
+	appendMissionPilotTaskEvent,
+	projectMissionPilotExecutionEvent,
+} from "./agent/mission-pilot-task-event.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
+import { createMissionPilotTaskOperatorAccess } from "./mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
-import { registerTaskRunUpdatedListener } from "./mission-pilot-workbench.port";
 import { buildMissionPilotSystemContext } from "./prompts/mission-pilot-system-context";
-
-const terminalRunStatuses = new Set<TaskRunStatus>([
-	"completed",
-	"failed",
-	"cancelled",
-	"needs_review",
-	"blocked",
-	"timed_out",
-	"needs_human",
-]);
 
 let runSyncRegistered = false;
 
 export function initializeMissionPilotRunSync() {
 	if (runSyncRegistered) return;
 	runSyncRegistered = true;
-	registerTaskRunUpdatedListener(async (run) => {
-		const session = await repo.getSessionByTaskId(run.taskId);
-		if (session && (await isMissionPilotAgentSession(session.id))) {
-			if (session.desiredState !== "playing") return;
-			const terminal = terminalRunStatuses.has(run.status);
-			if (terminal || run.status !== "running") return;
-			const task = await nightworkersRepo.getTask(run.taskId);
-			if (!task) return;
-			const failed = [
-				"failed",
-				"timed_out",
-				"cancelled",
-				"blocked",
-				"needs_human",
-			].includes(run.status);
-			await appendMissionPilotTaskEvent({
-				taskId: run.taskId,
-				eventType: failed
+	initializeTaskOperatorExecutionEvents();
+	registerTaskOperatorExecutionEventListener(async (event) => {
+		const session = await repo.getSessionByTaskId(event.taskRef.id);
+		if (
+			session?.desiredState !== "playing" ||
+			!(await isMissionPilotAgentSession(session.id))
+		)
+			return;
+		const projected = await projectMissionPilotExecutionEvent({
+			taskId: event.taskRef.id,
+			type: event.type,
+			runId: event.resourceRef.id,
+		});
+		await appendMissionPilotTaskEvent({
+			taskId: event.taskRef.id,
+			eventType:
+				event.type === "task.run.failed"
 					? "task_run.failed"
-					: terminal
+					: event.type === "task.run.terminal"
 						? "task_run.terminal"
 						: "task_run.started",
-				sourceEventId: `task-run:${run.id}:${run.status}`,
-				taskRevision: task.revision,
-				payload: terminal
-					? { runId: run.id, status: run.status }
-					: { runId: run.id, status: run.status },
-			});
-			scheduleMissionPilotAgentWake({ sessionId: session.id });
-			return;
-		}
+			sourceEventId: event.eventId,
+			taskRevision: event.taskRef.revision,
+			payload: {
+				runId: event.resourceRef.id,
+				runRevision: event.resourceRef.revision,
+				status: event.status,
+				occurredAt: event.occurredAt,
+			},
+		});
+		if (projected)
+			publishMissionPilotUpdated(
+				event.taskRef.id,
+				repo.toControlSummary(projected),
+			);
+		scheduleMissionPilotAgentWake({ sessionId: session.id });
 	});
 }
 
 initializeMissionPilotRunSync();
-
-let terminalRunEventsRegistered = false;
-export function initializeMissionPilotTerminalRunEvents() {
-	if (terminalRunEventsRegistered) return;
-	terminalRunEventsRegistered = true;
-	registerTaskRunTerminalListener(async (event) => {
-		const run = await nightworkersRepo.getTaskRun(event.runId);
-		if (!run) return;
-		const session = await repo.getSessionByTaskId(event.taskId);
-		if (session && (await isMissionPilotAgentSession(session.id))) {
-			if (session.desiredState !== "playing") return;
-			const task = await nightworkersRepo.getTask(event.taskId);
-			if (!task) return;
-			await appendMissionPilotTaskEvent({
-				taskId: event.taskId,
-				eventType: isFailureLikeTaskRunStatus(event.status)
-					? "task_run.failed"
-					: "task_run.terminal",
-				sourceEventId: event.eventId,
-				taskRevision: task.revision,
-				payload: { runId: event.runId, status: event.status },
-			});
-			scheduleMissionPilotAgentWake({ sessionId: session.id });
-			return;
-		}
-	});
-}
-initializeMissionPilotTerminalRunEvents();
 
 let agentTaskMessageCreatedRegistered = false;
 function initializeMissionPilotAgentTaskMessageEvents() {
@@ -139,14 +110,21 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 			!(await isMissionPilotAgentSession(session.id))
 		)
 			return;
-		const task = await nightworkersRepo.getTask(message.taskId);
-		if (!task) return;
+		const access = await createMissionPilotTaskOperatorAccess({
+			sessionId: session.id,
+			taskId: message.taskId,
+		});
+		const projection = await readTaskOperatorProjection(
+			message.taskId,
+			access.context,
+			access.delegatedAuthorization,
+		);
 		await recordMissionPilotTaskEvent({
 			taskId: message.taskId,
 			type: "task.user_message_added",
 			sourceEventId: `task-message:${message.id}`,
-			taskRevision: task.revision,
-			payload: { messageId: message.id },
+			taskRevision: projection.task.revision,
+			payload: { messageId: message.id, content: message.content },
 		});
 	});
 }
@@ -163,7 +141,6 @@ export function initializeMissionPilotAgentQuestionnaireEvents() {
 initializeMissionPilotAgentQuestionnaireEvents();
 
 export async function reconcileMissionPilotStartup() {
-	const provisioned = await repo.backfillMissingTaskSessions();
 	const migrated = await backfillStoppedMissionPilotAgentSessions();
 	const interruptedAgentSessions =
 		await reconcileInterruptedMissionPilotAgentSessions();
@@ -183,10 +160,16 @@ export async function reconcileMissionPilotStartup() {
 		markMissionPilotAgentTaskActive(session.taskId);
 		scheduleMissionPilotAgentWake({ sessionId: session.id });
 	}
-	return provisioned + migrated + interruptedAgentSessions.length;
+	return migrated + interruptedAgentSessions.length;
 }
 
-export async function play(taskId: string, expectedVersion: number) {
+export async function play(
+	taskId: string,
+	expectedVersion: number,
+	options: {
+		providerPreflight?: typeof preflightMissionPilotProviderToolTurn;
+	} = {},
+) {
 	const session = await repo.getSessionByTaskId(taskId);
 	if (!session)
 		throw new MissionPilotError(
@@ -200,25 +183,91 @@ export async function play(taskId: string, expectedVersion: number) {
 			"MISSION_PILOT_AGENT_MIGRATION_REQUIRED",
 			"Mission Pilot agent migration has not completed",
 		);
-	const projection = await readTaskOperatorProjection(taskId, {
-		principal: {
-			kind: "human",
-			actorId: "mission-pilot-control",
-			authorizationRef: "task-owner",
-		},
-	});
-	if (!(projection.task.objective?.text ?? "").trim())
+	const projection = await readTaskOperatorProjection(
+		taskId,
+		humanTaskOperatorQueryContext(),
+	);
+	const [taskGoal, acceptanceCriteria] = await Promise.all([
+		readCompleteTaskText(taskId, "objective"),
+		readCompleteTaskText(taskId, "acceptance_criteria"),
+	]);
+	if (
+		taskGoal.sourceRevision !== projection.task.revision ||
+		acceptanceCriteria.sourceRevision !== projection.task.revision
+	)
+		throw new MissionPilotError(
+			409,
+			"MISSION_PILOT_VERSION_CONFLICT",
+			"Task changed while Mission Pilot was reading the Task Goal; refresh and retry",
+		);
+	if (!taskGoal.text.trim())
 		throw new MissionPilotError(
 			400,
 			"MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
 			"Mission Pilot requires a non-empty Task Goal",
+		);
+	const providerPreflight = (
+		options.providerPreflight ?? preflightMissionPilotProviderToolTurn
+	)();
+	if (!providerPreflight.ok)
+		throw new MissionPilotError(
+			422,
+			providerPreflight.code,
+			providerPreflight.message,
 		);
 	return playAgentSession(
 		session.id,
 		taskId,
 		expectedVersion,
 		projection.task.revision,
-		projection.sourceDigest,
+		taskGoal.text,
+		acceptanceCriteria.text || null,
+	);
+}
+
+async function readCompleteTaskText(
+	taskId: string,
+	field: "objective" | "acceptance_criteria",
+) {
+	let cursor: number | undefined;
+	let sourceDigest: string | null = null;
+	let sourceRevision: number | null = null;
+	let text = "";
+	for (let pageCount = 0; pageCount < 64; pageCount += 1) {
+		const page = await readTaskOperatorResource({
+			taskId,
+			resourceKind: "task_text",
+			resourceId: field,
+			cursor,
+			context: humanTaskOperatorQueryContext(),
+		});
+		if (
+			(sourceDigest !== null && page.sourceDigest !== sourceDigest) ||
+			(sourceRevision !== null && page.sourceRevision !== sourceRevision)
+		)
+			throw new MissionPilotError(
+				409,
+				"MISSION_PILOT_TASK_TEXT_CHANGED",
+				"Task text changed while it was being paged; refresh and retry",
+			);
+		sourceDigest = page.sourceDigest;
+		sourceRevision = page.sourceRevision;
+		const content = page.content as { text?: unknown };
+		if (typeof content.text !== "string")
+			throw new MissionPilotError(
+				500,
+				"MISSION_PILOT_TASK_TEXT_INVALID",
+				"Task Operator returned an invalid task text page",
+			);
+		text += content.text;
+		if (page.nextCursor === null)
+			return { text, sourceRevision: sourceRevision ?? 0 };
+		cursor = page.nextCursor;
+	}
+	throw new MissionPilotError(
+		413,
+		"MISSION_PILOT_TASK_TEXT_TOO_LARGE",
+		"Task text exceeds the Mission Pilot activation paging limit",
 	);
 }
 
@@ -285,34 +334,31 @@ async function playAgentSession(
 	taskId: string,
 	expectedVersion: number,
 	taskRevision: number,
-	taskSourceDigest: string,
+	taskGoal: string,
+	acceptanceCriteria: string | null,
 ) {
-	const claimed = await claimAgentPlay(taskId, expectedVersion);
+	const claimed = await claimAgentPlay(
+		taskId,
+		expectedVersion,
+		humanTaskOperatorPrincipal(),
+		{
+			systemContext: (authorization) =>
+				buildMissionPilotSystemContext({
+					authorization,
+					pushPolicy: authorization.pushPolicy,
+				}),
+			initialPrompt: taskGoal,
+			acceptanceCriteria,
+			taskRevision,
+			sourceEventId: `play:${sessionId}:${expectedVersion + 1}`,
+		},
+	);
 	if (!claimed)
 		throw new MissionPilotError(
 			409,
 			"MISSION_PILOT_VERSION_CONFLICT",
 			"Mission Pilot state changed; refresh and retry",
 		);
-	await seedMissionPilotConversation({
-		sessionId,
-		systemContext: buildMissionPilotSystemContext({
-			authorization: claimed.authorizationJson,
-			pushPolicy: claimed.authorizationJson?.pushPolicy ?? null,
-		}),
-		initialPrompt: JSON.stringify({
-			type: "task_operator_activation",
-			taskRef: { id: taskId, revision: taskRevision },
-			sourceDigest: taskSourceDigest,
-		}),
-	});
-	await appendMissionPilotTaskEvent({
-		taskId,
-		eventType: "mission_pilot.resume_requested",
-		sourceEventId: `play:${claimed.id}:${claimed.version}`,
-		taskRevision,
-		payload: { reason: "play" },
-	});
 	scheduleMissionPilotAgentWake({ sessionId: claimed.id });
 	const current = (await getMissionPilotSessionById(claimed.id)) ?? claimed;
 	const missionPilot = repo.toControlSummary(current);
@@ -320,8 +366,9 @@ async function playAgentSession(
 	return { missionPilot, run: null, messages: [] };
 }
 
-export async function listTasksWithMissionPilot() {
-	const tasks = await nightworkersRepo.listTasks();
+export async function listTasksWithMissionPilot<T extends { id: string }>(
+	tasks: readonly T[],
+) {
 	const summaries = await repo.listSessionSummariesByTaskIds(
 		tasks.map((task) => task.id),
 	);

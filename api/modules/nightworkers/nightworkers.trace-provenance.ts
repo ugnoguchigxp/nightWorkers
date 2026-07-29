@@ -62,53 +62,6 @@ export function structuredLlmChatTrace(input?: {
 	};
 }
 
-export function missionPilotThoughtTrace(
-	input: MissionPilotRefInput & { role?: string; callId?: string },
-): TraceProvenance {
-	const orchestrationRef = {
-		kind: "mission_pilot" as const,
-		sessionId: input.sessionId,
-		...(input.phaseRunId ? { phaseRunId: input.phaseRunId } : {}),
-		...(input.phase ? { phase: input.phase } : {}),
-		...(input.cycle !== undefined ? { cycle: input.cycle } : {}),
-		...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
-	};
-	return {
-		owner: "mission_pilot",
-		channel: "pilot_thought",
-		producer: {
-			kind: "structured_llm",
-			role: input.role ?? "mission_pilot",
-			...(input.callId ? { callId: input.callId } : {}),
-		},
-		orchestrationRef,
-	};
-}
-
-export function missionPilotInitialPromptTrace(
-	sessionId: string,
-	controlVersion: number,
-) {
-	const trace: TraceProvenance = {
-		owner: "user",
-		channel: "chat",
-		producer: { kind: "user" },
-		orchestrationRef: { kind: "mission_pilot", sessionId },
-	};
-	return {
-		trace,
-		metadataJson: withTraceProvenance(
-			{
-				source: "mission_pilot",
-				intent: "initial_prompt",
-				controlVersion,
-				missionPilotSessionId: sessionId,
-			},
-			trace,
-		),
-	};
-}
-
 export function systemInternalTrace(): TraceProvenance {
 	return {
 		owner: "system",
@@ -153,17 +106,6 @@ export function resolveActivityTrace(input: {
 }): TraceProvenance {
 	if (input.runId) return codingAgentRunTrace(input.runId, input.trace);
 	if (input.trace) return input.trace;
-	const payload =
-		input.payloadJson && typeof input.payloadJson === "object"
-			? (input.payloadJson as Record<string, unknown>)
-			: {};
-	if (input.source === "mission_pilot") {
-		const sessionId =
-			typeof payload.missionPilotSessionId === "string"
-				? payload.missionPilotSessionId
-				: "legacy";
-		return missionPilotThoughtTrace({ sessionId });
-	}
 	if (input.source === "user") return userChatTrace();
 	if (
 		input.source === "assistant" ||
@@ -184,15 +126,6 @@ export function resolveLlmUsageTrace(input: {
 }): TraceProvenance {
 	if (input.runId) return codingAgentRunTrace(input.runId, input.trace);
 	if (input.trace) return input.trace;
-	if (input.metadata?.role === "mission_pilot") {
-		return missionPilotThoughtTrace({
-			sessionId:
-				typeof input.metadata.missionPilotSessionId === "string"
-					? input.metadata.missionPilotSessionId
-					: "legacy",
-			callId: input.callId,
-		});
-	}
 	return structuredLlmChatTrace({
 		role: typeof input.metadata?.role === "string" ? input.metadata.role : null,
 		callId: input.callId,

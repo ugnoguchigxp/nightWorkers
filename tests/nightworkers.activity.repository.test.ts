@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
-import { missionPilotArtifactTrace } from "../api/modules/missionPilot";
+import {
+	missionPilotArtifactTrace,
+	missionPilotThoughtTrace,
+} from "../api/modules/missionPilot";
 import {
 	enqueueActivityEvent,
 	flushActivityEventQueue,
@@ -9,10 +12,7 @@ import {
 	runEventToActivityText,
 } from "../api/modules/nightworkers/nightworkers.activity.repository";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
-import {
-	codingAgentChatTrace,
-	missionPilotThoughtTrace,
-} from "../api/modules/nightworkers/nightworkers.trace-provenance";
+import { codingAgentChatTrace } from "../api/modules/nightworkers/nightworkers.trace-provenance";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();

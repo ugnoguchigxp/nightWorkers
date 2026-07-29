@@ -5,10 +5,7 @@ import * as missionPilotRepo from "../../missionPilot";
 import * as queueRepo from "../../queue/queue-repository-commands";
 import { appendActivityEvent } from "../nightworkers.activity-persistence.repository";
 import * as repo from "../nightworkers.repository";
-import {
-	codingAgentChatTrace,
-	missionPilotThoughtTrace,
-} from "../nightworkers.trace-provenance";
+import { codingAgentChatTrace } from "../nightworkers.trace-provenance";
 import * as verificationRepo from "../nightworkers.verification.repository";
 
 const createTaskMarkdownFixtureRoute = createRoute({
@@ -312,7 +309,9 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			text: "MISSION_PILOT_THOUGHT_ONLY",
 			payloadJson: { missionPilotSessionId: session.id },
 			dedupeKey: `e2e:pilot:${taskId}`,
-			trace: missionPilotThoughtTrace({ sessionId: session.id }),
+			trace: missionPilotRepo.missionPilotThoughtTrace({
+				sessionId: session.id,
+			}),
 		});
 		await appendActivityEvent({
 			taskId,

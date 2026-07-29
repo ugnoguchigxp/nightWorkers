@@ -6,6 +6,10 @@ import {
 	taskOperatorProjectionV1Schema,
 } from "../../../../shared/modules/taskOperator";
 import type { OperatorArtifactRef } from "../../specification";
+import {
+	getTaskOperatorActionDefinition,
+	type TaskOperatorCapability,
+} from "../policies/task-operator-action.registry";
 import { composeTaskOperatorCommandCatalog } from "../policies/task-operator-command-catalog";
 
 const MAX_BOUNDED_TEXT_CHARS = 1_000;
@@ -40,6 +44,7 @@ export type TaskOperatorHeadFacts = {
 
 export function projectTaskOperatorHead(
 	facts: TaskOperatorHeadFacts,
+	allowedCapabilities?: ReadonlySet<TaskOperatorCapability>,
 ): TaskOperatorProjectionV1 {
 	const commands = composeTaskOperatorCommandCatalog({
 		taskRevision: facts.task.revision,
@@ -48,6 +53,16 @@ export function projectTaskOperatorHead(
 		hasActiveRun: Boolean(facts.run.active),
 		hasTerminalRun: Boolean(facts.run.terminal),
 		currentTodoStatus: facts.run.active?.currentTodoRef?.status ?? null,
+	}).map((command) => {
+		const capability = getTaskOperatorActionDefinition(command.id)?.capability;
+		return allowedCapabilities &&
+			(!capability || !allowedCapabilities.has(capability))
+			? {
+					...command,
+					availability: "unavailable" as const,
+					unavailableReasonCode: "permission_denied",
+				}
+			: command;
 	});
 	const sourceRevision = Math.max(
 		facts.task.revision,

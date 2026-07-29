@@ -77,6 +77,7 @@ import {
 	startBackgroundProcessRoute,
 	stopBackgroundProcessRoute,
 	stopTaskRunRoute,
+	submitRunReviewRoute,
 } from "./routes/run-routes";
 import {
 	appendTaskMessageRoute,
@@ -293,8 +294,8 @@ const router = createOpenApiRouter()
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
-		if (!task) return c.json({ error: "Task not found" }, 404);
-		return c.json(task, 200);
+		if (!task.data) return c.json({ error: "Task not found" }, 404);
+		return c.json(task.data, 200);
 	})
 	.openapi(
 		appendTaskMessageRoute,
@@ -317,6 +318,32 @@ const router = createOpenApiRouter()
 			const body = c.req.valid("json");
 			const result = await service.appendWorkbenchMessage(id, body);
 			return c.json(result, 200);
+		}),
+	)
+	.openapi(
+		submitRunReviewRoute,
+		withOpenApiRouteError(submitRunReviewRoute, async (c) => {
+			const run = await service.getTaskRun(c.req.param("id"));
+			if (!run) return c.json({ error: "Run not found" }, 404);
+			const projection = await readTaskOperatorProjection(
+				run.taskId,
+				humanTaskOperatorQueryContext(),
+			);
+			const input = c.req.valid("json");
+			const reviewed = await executeTaskOperatorCommand({
+				taskId: run.taskId,
+				actionId: "run.review.submit",
+				expectedTaskRevision: projection.task.revision,
+				arguments: {
+					runId: run.id,
+					action: input.action,
+					...(input.note ? { note: input.note } : {}),
+				},
+				context: humanTaskOperatorCommandContext({
+					idempotencyKey: c.req.header("Idempotency-Key"),
+				}),
+			});
+			return c.json(reviewed.data, 200);
 		}),
 	)
 	.openapi(
@@ -352,7 +379,7 @@ const router = createOpenApiRouter()
 					idempotencyKey: c.req.header("Idempotency-Key"),
 				}),
 			});
-			return c.json(task, 200);
+			return c.json(task.data, 200);
 		}),
 	)
 	.openapi(
@@ -363,18 +390,16 @@ const router = createOpenApiRouter()
 				taskId,
 				humanTaskOperatorQueryContext(),
 			);
-			return c.json(
-				await executeTaskOperatorCommand({
-					taskId,
-					actionId: "task.archive.restore",
-					expectedTaskRevision: projection.task.revision,
-					arguments: {},
-					context: humanTaskOperatorCommandContext({
-						idempotencyKey: c.req.header("Idempotency-Key"),
-					}),
+			const restored = await executeTaskOperatorCommand({
+				taskId,
+				actionId: "task.archive.restore",
+				expectedTaskRevision: projection.task.revision,
+				arguments: {},
+				context: humanTaskOperatorCommandContext({
+					idempotencyKey: c.req.header("Idempotency-Key"),
 				}),
-				200,
-			);
+			});
+			return c.json(restored.data, 200);
 		}),
 	)
 	.openapi(

@@ -10,14 +10,6 @@ export const missionPilotRuntimeStateSchema = z.enum([
 	"attention",
 	"completed",
 ]);
-export const missionPilotAgentRunProvenanceSchema = z.object({
-	kind: z.literal("agent"),
-	sessionId: z.string().min(1),
-	toolCallId: z.string().min(1),
-	idempotencyKey: z.string().min(1),
-	completionOwner: z.literal("mission_pilot"),
-	sourceRunId: z.string().min(1).nullable(),
-});
 export const missionPilotConversationItemKindSchema = z.enum([
 	"system_context",
 	"user",
@@ -106,27 +98,6 @@ export const missionPilotTaskActionDescriptorSchema = z.object({
 	unavailableReason: z.string().nullable(),
 	expectedTaskRevision: z.number().int().nonnegative(),
 });
-export const missionPilotRepairRequestSchema = z.object({
-	goal: z.string().min(1),
-	observedProblem: z.string().min(1),
-	failure: z.object({
-		kind: z.string().nullable(),
-		message: z.string(),
-		sourceRunId: z.string().nullable(),
-	}),
-	canonicalRefs: z.array(
-		z.object({
-			kind: z.string(),
-			id: z.string(),
-			revision: z.number().int().optional(),
-			digest: z.string().optional(),
-		}),
-	),
-	requestedOutcome: z.string().min(1),
-	preserve: z.array(z.string()),
-	verification: z.array(z.string()),
-	priorAttemptRefs: z.array(z.string()),
-});
 export const missionPilotTaskReadModelSchema = z.object({
 	task: z.object({
 		id: z.string(),
@@ -172,9 +143,6 @@ export type MissionPilotAgentEngineMode = z.infer<
 export type MissionPilotRuntimeState = z.infer<
 	typeof missionPilotRuntimeStateSchema
 >;
-export type MissionPilotAgentRunProvenance = z.infer<
-	typeof missionPilotAgentRunProvenanceSchema
->;
 export type MissionPilotConversationItemKind = z.infer<
 	typeof missionPilotConversationItemKindSchema
 >;
@@ -189,9 +157,6 @@ export type MissionPilotActionExecutionStatus = z.infer<
 >;
 export type MissionPilotActionFailure = z.infer<
 	typeof missionPilotActionFailureSchema
->;
-export type MissionPilotRepairRequest = z.infer<
-	typeof missionPilotRepairRequestSchema
 >;
 export type MissionPilotTaskActionDescriptor = z.infer<
 	typeof missionPilotTaskActionDescriptorSchema

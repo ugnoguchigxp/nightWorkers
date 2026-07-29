@@ -33,6 +33,10 @@ function wrapTransactionWithBusyRetry(
 						return await withSqliteBusyRetry(() =>
 							Reflect.apply(target[prop as "commit" | "rollback"], target, []),
 						);
+					} catch (error) {
+						if (prop === "rollback" && isClosedTransactionError(error))
+							return undefined;
+						throw error;
 					} finally {
 						releaseWriteLock();
 					}
@@ -51,6 +55,15 @@ function wrapTransactionWithBusyRetry(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
+}
+
+function isClosedTransactionError(error: unknown) {
+	return (
+		error instanceof Error &&
+		("code" in error
+			? error.code === "TRANSACTION_CLOSED"
+			: error.message.includes("transaction is closed"))
+	);
 }
 
 export function wrapClientWithBusyRetry(baseClient: Client): Client {

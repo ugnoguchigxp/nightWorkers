@@ -37,29 +37,31 @@ export async function createDesignQuestionnaireSession(data: {
 	repositoryId: string;
 	sourceBlueprintMessageId?: string | null;
 	status?: string;
-	missionPilotActionKey?: string | null;
+	commandIdempotencyKey?: string | null;
 }) {
-	const [session] = await db
+	const { commandIdempotencyKey, ...sessionValues } = data;
+	const [created] = await db
 		.insert(designQuestionnaireSessions)
 		.values({
-			...data,
+			...sessionValues,
+			commandIdempotencyKey: commandIdempotencyKey ?? null,
 			status: data.status ?? "draft",
 		})
 		.returning();
-	return session;
+	return created;
 }
 
 export async function updateDesignQuestionnaireSessionStatus(
 	id: string,
 	status: string,
-	missionPilotActionKey?: string | null,
+	commandIdempotencyKey?: string | null,
 ) {
 	const [session] = await db
 		.update(designQuestionnaireSessions)
 		.set({
 			status,
 			updatedAt: new Date(),
-			...(missionPilotActionKey ? { missionPilotActionKey } : {}),
+			...(commandIdempotencyKey ? { commandIdempotencyKey } : {}),
 		})
 		.where(eq(designQuestionnaireSessions.id, id))
 		.returning();

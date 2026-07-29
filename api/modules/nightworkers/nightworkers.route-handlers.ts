@@ -4,6 +4,7 @@ import {
 	getOntologyRunDebugReport,
 	type getOntologyRunDebugReportRoute,
 } from "../ontology";
+import { readTaskOperatorTask } from "../task";
 import {
 	executeTaskOperatorCommand,
 	humanTaskOperatorCommandContext,
@@ -56,24 +57,24 @@ export const startTaskRunHandler = withOpenApiRouteError(
 	startTaskRunRoute,
 	async (c) => {
 		const id = c.req.param("id");
-		const projection = await readTaskOperatorProjection(
-			id,
-			humanTaskOperatorQueryContext(),
-		);
+		const [projection, task] = await Promise.all([
+			readTaskOperatorProjection(id, humanTaskOperatorQueryContext()),
+			readTaskOperatorTask(id),
+		]);
 		const result = await executeTaskOperatorCommand({
 			taskId: id,
 			actionId: "run.implementation.start",
 			expectedTaskRevision: projection.task.revision,
 			arguments: {
 				request:
-					projection.task.objective?.text ??
+					task.objective ??
 					`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
 			},
 			context: humanTaskOperatorCommandContext({
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
-		const run = await service.getTaskRun(result.runId);
+		const run = await service.getTaskRun(result.data.runId);
 		if (!run) return routeNotFound(c, "Run not found after start");
 		return c.json(run, 201);
 	},
@@ -116,7 +117,7 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
-		return c.json(run, 200);
+		return c.json(run.data, 200);
 	},
 );
 
@@ -144,7 +145,7 @@ export const resumeTaskRunTodoHandler = withOpenApiRouteError(
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
-		const run = await service.getTaskRun(result.runId);
+		const run = await service.getTaskRun(result.data.runId);
 		if (!run) return routeNotFound(c, "Run not found after resume");
 		return c.json(run, 200);
 	},

@@ -37,7 +37,29 @@ test("Agent reads facts, completes the Task explicitly, and finishes the session
 		expect(
 			execution.agent?.visibleItems?.some((item) => item.kind === "assistant"),
 		).toBe(true);
-		expect(execution.phaseRuns).toHaveLength(0);
+		expect(execution).toMatchObject({
+			version: 2,
+			executionModel: "task_operator_v1",
+			legacyPostQueueState: { status: "retired" },
+		});
+		expect(execution).not.toHaveProperty("phaseRuns");
+		for (const endpoint of [
+			"verification-snapshot",
+			"review-decision",
+			"closeout",
+		]) {
+			const retired = await request.get(
+				`/api/mission-pilot/sessions/${fixture.sessionId}/${endpoint}`,
+			);
+			expect(retired.status(), await retired.text()).toBe(410);
+			expect(await retired.json()).toMatchObject({
+				code: "MISSION_PILOT_LEGACY_ENDPOINT_RETIRED",
+				replacement: {
+					execution: "task_operator_v1",
+					resourceKind: "run_outcome",
+				},
+			});
+		}
 	} finally {
 		await cleanupAgentScenario(request, fixture);
 	}

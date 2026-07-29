@@ -14,6 +14,11 @@ const architectureTask = task('architecture', 'architecture boundary checks', [
   'run',
   'check:architecture',
 ]);
+const fixtureCatalogTask = task(
+  'llm-fixture-catalog',
+  'LLM fixture catalog stale check',
+  ['--silent', 'run', 's11tnext:fixtures:check'],
+);
 const typecheckTask = task('typecheck', 'typecheck', ['--silent', 'run', 'typecheck']);
 const lintTask = task('lint', 'lint', ['--silent', 'run', 'lint']);
 const supervisorRegressionTask = task(
@@ -103,7 +108,13 @@ const basePhases = [
     id: 'base-static',
     label: 'base static checks',
     mode: 'parallel',
-    tasks: [trackedArtifactTask, architectureTask, typecheckTask, lintTask],
+    tasks: [
+      trackedArtifactTask,
+      architectureTask,
+      fixtureCatalogTask,
+      typecheckTask,
+      lintTask,
+    ],
   },
   {
     id: 'base-supervisor',

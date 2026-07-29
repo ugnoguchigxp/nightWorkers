@@ -1,13 +1,13 @@
-import { reviewTaskRun } from "../../nightworkers/nightworkers.service";
+import { reviewTaskRunCommand } from "./run-review.command";
 
-export function submitRunReviewCommand(input: {
+export async function submitRunReviewCommand(input: {
 	runId: string;
 	action: "complete" | "cancel";
 	note?: string;
 	expectedTaskId: string;
 	expectedTaskRevision: number;
 }) {
-	return reviewTaskRun(
+	return reviewTaskRunCommand(
 		input.runId,
 		{ action: input.action, note: input.note },
 		{

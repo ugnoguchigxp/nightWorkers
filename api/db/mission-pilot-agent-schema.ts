@@ -10,7 +10,6 @@ import type {
 	MissionPilotActionFailure,
 	MissionPilotAgentEngineMode,
 	MissionPilotConversationItemKind,
-	MissionPilotRepairRequest,
 	MissionPilotRuntimeState,
 	MissionPilotTaskEventType,
 	MissionPilotToolCallStatus,
@@ -250,31 +249,6 @@ export const missionPilotTaskEventInbox = sqliteTable(
 			table.sessionId,
 			table.consumedAt,
 			table.availableAt,
-		),
-	}),
-);
-
-export const missionPilotRepairRequests = sqliteTable(
-	"mission_pilot_repair_requests",
-	{
-		id: text("id").primaryKey(),
-		sessionId: text("session_id")
-			.notNull()
-			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
-		sourceRunId: text("source_run_id"),
-		requestJson: text("request_json", { mode: "json" })
-			.$type<MissionPilotRepairRequest>()
-			.notNull(),
-		sourceRevision: integer("source_revision").notNull(),
-		sourceDigest: text("source_digest").notNull(),
-		status: text("status").notNull().default("requested"),
-		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-	},
-	(table) => ({
-		sessionIdx: index("mission_pilot_repair_requests_session_idx").on(
-			table.sessionId,
-			table.createdAt,
 		),
 	}),
 );

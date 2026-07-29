@@ -22,13 +22,13 @@ import type {
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
-import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
@@ -51,12 +51,6 @@ export type DataModelGenerationInput = {
 	trace?: TraceProvenance;
 	llmUsageTrace?: TraceProvenance;
 	signal?: AbortSignal;
-	expectedState?: {
-		missionPilotSessionId: string;
-		contextRevision: number;
-		contextDigest: string;
-		routingRevision: number;
-	};
 };
 
 export class DataModelGenerationError extends Error {
@@ -86,7 +80,6 @@ export async function generateDataModelArtifact(
 			input.sourceSelection ??
 			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
 		regenerationRequest: input.prompt ?? null,
-		expectedState: input.expectedState,
 	});
 	const projection = projectPlanArtifactInput(canonical);
 	const renderedInput = renderPlanArtifactInput(projection);

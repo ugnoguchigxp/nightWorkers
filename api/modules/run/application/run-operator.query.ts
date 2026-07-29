@@ -1,7 +1,12 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../../../db/client";
-import { taskRuns } from "../../../db/schema";
+import {
+	activityArtifacts,
+	taskRunCommitRecords,
+	taskRuns,
+} from "../../../db/schema";
 import { taskRunTodos } from "../../../db/schema-task-execution";
+import { verificationEvidenceRuns } from "../../../db/verification-schema";
 import { digestText } from "../../../services/text-digest";
 
 const activeStatuses = ["running", "context_compiling", "finalizing"] as const;
@@ -99,17 +104,119 @@ export async function readRunOperatorOutcome(input: {
 			updatedAt: taskRuns.updatedAt,
 			summary: taskRuns.summary,
 			finalReport: taskRuns.finalReport,
+			finalJudgment: taskRuns.finalJudgment,
 		})
 		.from(taskRuns)
 		.where(and(eq(taskRuns.id, input.runId), eq(taskRuns.taskId, input.taskId)))
 		.limit(1);
-	return run
-		? {
-				id: run.id,
-				revision: run.updatedAt.getTime(),
-				status: run.status,
-				summary: run.summary,
-				finalReport: run.finalReport,
-			}
-		: null;
+	if (!run) return null;
+	const [todos, commitRecords, verification, artifacts] = await Promise.all([
+		db
+			.select({
+				id: taskRunTodos.id,
+				status: taskRunTodos.status,
+				statusReason: taskRunTodos.statusReason,
+				lastFailure: taskRunTodos.lastFailure,
+				revision: taskRunTodos.revision,
+			})
+			.from(taskRunTodos)
+			.where(eq(taskRunTodos.runId, run.id))
+			.orderBy(desc(taskRunTodos.updatedAt))
+			.limit(1),
+		db
+			.select({
+				ownedCandidatePaths: taskRunCommitRecords.ownedCandidatePathsJson,
+				stageableOwnedPaths: taskRunCommitRecords.stageableOwnedPathsJson,
+				excludedPaths: taskRunCommitRecords.excludedPathsJson,
+				verificationStatus: taskRunCommitRecords.verificationStatus,
+				statusReason: taskRunCommitRecords.statusReason,
+				commitSha: taskRunCommitRecords.commitSha,
+			})
+			.from(taskRunCommitRecords)
+			.where(eq(taskRunCommitRecords.runId, run.id))
+			.limit(1),
+		db
+			.select({
+				id: verificationEvidenceRuns.id,
+				checkKind: verificationEvidenceRuns.checkKind,
+				exitCode: verificationEvidenceRuns.exitCode,
+				runner: verificationEvidenceRuns.runner,
+				summary: verificationEvidenceRuns.summaryJson,
+				testExecutionObserved: verificationEvidenceRuns.testExecutionObserved,
+				sourceMutatedDuringCheck:
+					verificationEvidenceRuns.sourceMutatedDuringCheck,
+				startedAt: verificationEvidenceRuns.startedAt,
+				finishedAt: verificationEvidenceRuns.finishedAt,
+			})
+			.from(verificationEvidenceRuns)
+			.where(
+				and(
+					eq(verificationEvidenceRuns.taskId, input.taskId),
+					eq(verificationEvidenceRuns.runId, run.id),
+				),
+			)
+			.orderBy(desc(verificationEvidenceRuns.finishedAt))
+			.limit(20),
+		db
+			.select({
+				id: activityArtifacts.id,
+				kind: activityArtifacts.kind,
+				path: activityArtifacts.path,
+				createdAt: activityArtifacts.createdAt,
+			})
+			.from(activityArtifacts)
+			.where(
+				and(
+					eq(activityArtifacts.taskId, input.taskId),
+					eq(activityArtifacts.runId, run.id),
+				),
+			)
+			.orderBy(desc(activityArtifacts.createdAt))
+			.limit(50),
+	]);
+	const todo = todos[0] ?? null;
+	const commit = commitRecords[0] ?? null;
+	return {
+		id: run.id,
+		revision: run.updatedAt.getTime(),
+		status: run.status,
+		summary: run.summary,
+		finalReport: run.finalReport,
+		finalJudgment: run.finalJudgment,
+		blocker:
+			todo &&
+			(todo.status === "needs_human" ||
+				todo.lastFailure !== null ||
+				todo.statusReason !== null)
+				? {
+						todoId: todo.id,
+						revision: todo.revision,
+						status: todo.status,
+						reason: todo.lastFailure ?? todo.statusReason,
+					}
+				: null,
+		verification: {
+			status: commit?.verificationStatus ?? "not_recorded",
+			statusReason: commit?.statusReason ?? null,
+			checks: verification.map((check) => ({
+				...check,
+				startedAt: check.startedAt.toISOString(),
+				finishedAt: check.finishedAt.toISOString(),
+			})),
+		},
+		changedPaths: Array.from(
+			new Set([
+				...(commit?.ownedCandidatePaths ?? []),
+				...(commit?.stageableOwnedPaths ?? []),
+			]),
+		),
+		excludedPaths: commit?.excludedPaths ?? [],
+		commitSha: commit?.commitSha ?? null,
+		artifactRefs: artifacts.map((artifact) => ({
+			id: artifact.id,
+			kind: artifact.kind,
+			path: artifact.path,
+			createdAt: artifact.createdAt.toISOString(),
+		})),
+	};
 }

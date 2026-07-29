@@ -1,80 +1,32 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import {
-	afterEach,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-	vi,
-} from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
+import {
+	missionPilotAgentSessions,
+	missionPilotConversationItems,
+} from "../api/db/mission-pilot-agent-schema";
 import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
-import { MissionPilotError } from "../api/modules/missionPilot/mission-pilot.errors";
 import {
 	createSession,
 	getSessionByTaskId,
 } from "../api/modules/missionPilot/mission-pilot.repository";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
-const workbenchMocks = vi.hoisted(() => ({
-	startRun: vi.fn(),
-	stopRun: vi.fn(),
-	register: vi.fn(),
-}));
-const queueRecoveryMocks = vi.hoisted(() => ({
-	release: vi.fn(),
-}));
-
-vi.mock("../api/modules/missionPilot/mission-pilot-workbench.port", () => ({
-	startTaskRun: workbenchMocks.startRun,
-	stopTaskRun: workbenchMocks.stopRun,
-	registerTaskRunUpdatedListener: workbenchMocks.register,
-}));
-vi.mock(
-	"../api/modules/missionPilot/mission-pilot-post-queue-coordinator.service",
-	async (importOriginal) => ({
-		...(await importOriginal<
-			typeof import("../api/modules/missionPilot/mission-pilot-post-queue-coordinator.service")
-		>()),
-		releaseMissionPilotQueueHandoff: queueRecoveryMocks.release,
-	}),
-);
 const service = await import(
 	"../api/modules/missionPilot/mission-pilot.service"
 );
 const repositoryIds: string[] = [];
+const providerReady = {
+	providerPreflight: () => ({ ok: true as const, candidateCount: 1 }),
+};
 
 beforeAll(() => ensureNightWorkersSchema());
-beforeEach(() => {
-	workbenchMocks.startRun.mockReset();
-	workbenchMocks.startRun.mockImplementation(async (taskId: string) => {
-		const task = await db.query.tasks.findFirst({
-			where: eq(tasks.id, taskId),
-		});
-		if (!task) throw new Error("Task not found");
-		const [run] = await db
-			.insert(taskRuns)
-			.values({
-				id: crypto.randomUUID(),
-				taskId,
-				repositoryId: task.repositoryId,
-				status: "running",
-			})
-			.returning();
-		return run;
-	});
-	workbenchMocks.stopRun.mockReset();
-	queueRecoveryMocks.release.mockReset();
-	queueRecoveryMocks.release.mockResolvedValue("queue-entry");
-});
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) {
 		await db.delete(repositories).where(eq(repositories.id, id));
@@ -125,21 +77,22 @@ describe("Mission Pilot service", () => {
 			.set({ objective: "Play時点の最新プロンプト" })
 			.where(eq(tasks.id, fixture.taskId));
 
-		const played = await service.play(fixture.taskId, 0);
+		const played = await service.play(fixture.taskId, 0, providerReady);
 		expect(played.missionPilot).toMatchObject({
 			desiredState: "playing",
-			authorizationVersion: 3,
-			initialPromptState: "pending",
+			authorizationVersion: 4,
+			initialPromptState: "sent",
 			activeRunId: null,
 			phase: "starting",
 		});
-		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
 		const activated = await getSessionByTaskId(fixture.taskId);
 		expect(activated?.authorizationJson).toMatchObject({
-			version: 3,
+			version: 4,
 			taskRef: { source: "task", id: fixture.taskId },
 			activationContextRevision: 2,
 			activationContextDigest: activated?.contextDigest,
+			subjectUserId: "local-task-operator-user",
+			userAuthorizationRef: "local-user",
 		});
 		expect(
 			await db
@@ -161,9 +114,68 @@ describe("Mission Pilot service", () => {
 		publishSpy.mockRestore();
 	});
 
+	it("rejects unsupported provider capability before Play is committed", async () => {
+		const fixture = await createPilotFixture();
+		await expect(
+			service.play(fixture.taskId, 0, {
+				providerPreflight: () => ({
+					ok: false,
+					code: "MISSION_PILOT_PROVIDER_TOOL_TURN_UNSUPPORTED",
+					message: "tool turn is unsupported",
+				}),
+			}),
+		).rejects.toMatchObject({
+			code: "MISSION_PILOT_PROVIDER_TOOL_TURN_UNSUPPORTED",
+		});
+		const session = await getSessionByTaskId(fixture.taskId);
+		expect(session).toMatchObject({
+			desiredState: "stopped",
+			authorizationJson: null,
+			version: 0,
+		});
+	});
+
+	it("activates from the complete paged Task Goal without truncating canonical text", async () => {
+		const fixture = await createPilotFixture();
+		const objective = "完全なTask Goal。".repeat(2_000);
+		const acceptanceCriteria = "完全な受入条件。".repeat(1_500);
+		await db
+			.update(tasks)
+			.set({ objective, acceptanceCriteria })
+			.where(eq(tasks.id, fixture.taskId));
+		await service.play(fixture.taskId, 0, providerReady);
+		const session = await getSessionByTaskId(fixture.taskId);
+		expect(session?.initialPromptSnapshot).toBe(objective);
+		const contexts = await db
+			.select()
+			.from(missionPilotContextSnapshots)
+			.where(eq(missionPilotContextSnapshots.sessionId, session?.id ?? ""))
+			.orderBy(missionPilotContextSnapshots.revision);
+		const latestContext = contexts.at(-1)?.contextJson as
+			| { task?: { initialPrompt?: string; acceptanceCriteria?: string } }
+			| undefined;
+		expect(contexts).not.toHaveLength(0);
+		expect(latestContext?.task).toMatchObject({
+			initialPrompt: objective,
+			acceptanceCriteria,
+		});
+		const conversation = await db
+			.select()
+			.from(missionPilotConversationItems)
+			.where(eq(missionPilotConversationItems.sessionId, session?.id ?? ""))
+			.orderBy(missionPilotConversationItems.sequence);
+		expect(conversation.find((item) => item.kind === "user")?.bodyJson).toEqual(
+			{ content: objective },
+		);
+	});
+
 	it("never creates a pseudo initial user message during Play", async () => {
 		const fixture = await createPilotFixture();
-		await service.play(fixture.taskId, 0);
+		const played = await service.play(fixture.taskId, 0, providerReady);
+		expect(played.missionPilot).toMatchObject({
+			initialPromptState: "sent",
+			initialPromptMessageId: null,
+		});
 		expect(
 			await db
 				.select()
@@ -177,93 +189,9 @@ describe("Mission Pilot service", () => {
 		).toHaveLength(0);
 	});
 
-	it("resumes a held Queue handoff without regenerating Plan context", async () => {
-		const fixture = await createPilotFixture();
-		const current = await getSessionByTaskId(fixture.taskId);
-		if (!current) throw new Error("missing Mission Pilot session");
-		const featurePlanMessageId = crypto.randomUUID();
-		await db
-			.update(missionPilotSessions)
-			.set({
-				desiredState: "stopped",
-				phase: "attention",
-				queueHandoffJson: {
-					sessionId: current.id,
-					taskId: fixture.taskId,
-					admissionKey: `mission-pilot:${current.id}:digest:review`,
-					queueEntryId: crypto.randomUUID(),
-					queueEntryStatus: "queued",
-					queueClaimReady: false,
-					reviewedContextRevision: current.contextRevision,
-					reviewedContextDigest: current.contextDigest,
-					featurePlanMessageId,
-					featurePlanContentDigest: `sha256:${"1".repeat(64)}`,
-					implementationTodoProjectionVersion: 1,
-					implementationPlanSourceMessageId: featurePlanMessageId,
-					implementationPlanDigest: `sha256:${"2".repeat(64)}`,
-					verificationDocumentId: crypto.randomUUID(),
-					planReviewId: crypto.randomUUID(),
-					planReviewVerdict: "pass",
-					queuedAt: new Date().toISOString(),
-				},
-				version: current.version + 1,
-				updatedAt: new Date(),
-			})
-			.where(eq(missionPilotSessions.id, current.id));
-		const before = await getSessionByTaskId(fixture.taskId);
-		const played = await service.play(fixture.taskId, before?.version ?? -1);
-		expect(queueRecoveryMocks.release).not.toHaveBeenCalled();
-		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
-		expect(played.missionPilot).toMatchObject({
-			desiredState: "playing",
-			phase: "starting",
-		});
-	});
-
-	it("resumes the interrupted implementation phase without legacy recovery", async () => {
-		const fixture = await createPilotFixture();
-		const current = await getSessionByTaskId(fixture.taskId);
-		if (!current) throw new Error("missing Mission Pilot session");
-		await db
-			.update(missionPilotSessions)
-			.set({
-				desiredState: "stopped",
-				phase: "paused",
-				resumePhase: "implementing",
-				version: current.version + 1,
-				updatedAt: new Date(),
-			})
-			.where(eq(missionPilotSessions.id, current.id));
-		const before = await getSessionByTaskId(fixture.taskId);
-
-		const played = await service.play(fixture.taskId, before?.version ?? -1);
-
-		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
-		expect(played.missionPilot).toMatchObject({
-			desiredState: "playing",
-			phase: "starting",
-		});
-	});
-
-	it("does not couple Play to Coding Agent start conflicts", async () => {
-		const fixture = await createPilotFixture();
-		workbenchMocks.startRun.mockRejectedValueOnce(
-			new MissionPilotError(
-				409,
-				"MISSION_PILOT_RUN_START_CONFLICT",
-				"Coding Agent run is already active",
-			),
-		);
-		await expect(service.play(fixture.taskId, 0)).resolves.toMatchObject({
-			run: null,
-			missionPilot: { phase: "starting" },
-		});
-		expect(workbenchMocks.startRun).not.toHaveBeenCalled();
-	});
-
 	it("does not create or answer a Questionnaire during Mission Pilot Play", async () => {
 		const fixture = await createPilotFixture();
-		const played = await service.play(fixture.taskId, 0);
+		const played = await service.play(fixture.taskId, 0, providerReady);
 		expect(played.missionPilot).toMatchObject({
 			desiredState: "playing",
 			phase: "starting",
@@ -292,7 +220,7 @@ describe("Mission Pilot service", () => {
 				status: "running",
 			})
 			.returning();
-		const played = await service.play(fixture.taskId, 0);
+		const played = await service.play(fixture.taskId, 0, providerReady);
 		const [associated] = await db
 			.update(missionPilotSessions)
 			.set({
@@ -310,55 +238,6 @@ describe("Mission Pilot service", () => {
 			activityState: "idle",
 			activeRunId: null,
 		});
-		expect(workbenchMocks.stopRun).not.toHaveBeenCalled();
-		expect(
-			await db.query.taskRuns.findFirst({ where: eq(taskRuns.id, run.id) }),
-		).toMatchObject({ status: "running" });
-	});
-
-	it("ignores historical requester provenance when stopping Mission Pilot", async () => {
-		const fixture = await createPilotFixture({ runtimeKind: "agent" });
-		const agentSession = await getSessionByTaskId(fixture.taskId);
-		if (!agentSession) throw new Error("missing agent session");
-		const [run] = await db
-			.insert(taskRuns)
-			.values({
-				id: fixture.runId,
-				taskId: fixture.taskId,
-				repositoryId: fixture.repositoryId,
-				status: "running",
-				contextSnapshot: {
-					missionPilotAgent: {
-						kind: "agent",
-						sessionId: agentSession.id,
-						toolCallId: crypto.randomUUID(),
-						idempotencyKey: crypto.randomUUID(),
-						completionOwner: "mission_pilot",
-						sourceRunId: null,
-					},
-				},
-			})
-			.returning();
-		const [playing] = await db
-			.update(missionPilotSessions)
-			.set({
-				desiredState: "playing",
-				phase: "implementation",
-				activeRunId: fixture.runId,
-				version: 1,
-				updatedAt: new Date(),
-			})
-			.where(eq(missionPilotSessions.taskId, fixture.taskId))
-			.returning();
-		if (!playing) throw new Error("failed to prepare agent session");
-
-		const stopped = await service.stop(fixture.taskId, playing.version);
-		expect(stopped.missionPilot).toMatchObject({
-			desiredState: "stopped",
-			activityState: "idle",
-			activeRunId: null,
-		});
-		expect(workbenchMocks.stopRun).not.toHaveBeenCalled();
 		expect(
 			await db.query.taskRuns.findFirst({ where: eq(taskRuns.id, run.id) }),
 		).toMatchObject({ status: "running" });
@@ -389,7 +268,6 @@ describe("Mission Pilot service", () => {
 
 		const stopped = await service.stop(fixture.taskId, playing.version);
 
-		expect(workbenchMocks.stopRun).not.toHaveBeenCalled();
 		expect(stopped.missionPilot).toMatchObject({
 			desiredState: "stopped",
 			phase: "paused",
@@ -419,7 +297,7 @@ describe("Mission Pilot service", () => {
 		if (!timedOut) throw new Error("failed to prepare timeout state");
 
 		await expect(
-			service.play(fixture.taskId, timedOut.version),
+			service.play(fixture.taskId, timedOut.version, providerReady),
 		).rejects.toMatchObject({
 			code: "MISSION_PILOT_VERSION_CONFLICT",
 		});

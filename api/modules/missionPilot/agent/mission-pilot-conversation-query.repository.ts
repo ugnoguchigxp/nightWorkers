@@ -9,12 +9,14 @@ import {
 	missionPilotToolCalls,
 } from "../../../db/mission-pilot-agent-schema";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
-import { implementationQueueEntries, taskRuns } from "../../../db/schema";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
+import { toControlSummary } from "../mission-pilot.repository";
+import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
 import { reconcileMissionPilotActionExecutionReceipts } from "./mission-pilot-action-execution.repository";
+import { clearMissionPilotAgentTaskActive } from "./mission-pilot-agent-active-registry";
 import { sliceMissionPilotUtf8Page } from "./mission-pilot-content-page";
 
 export async function finishMissionPilotAgentTurn(input: {
@@ -25,7 +27,7 @@ export async function finishMissionPilotAgentTurn(input: {
 	error?: unknown;
 }) {
 	const now = new Date();
-	await db.transaction(async (tx) => {
+	const updated = await db.transaction(async (tx) => {
 		const [base] = await tx
 			.select()
 			.from(missionPilotSessions)
@@ -66,39 +68,7 @@ export async function finishMissionPilotAgentTurn(input: {
 					eq(missionPilotAgentSessions.leaseOwner, input.leaseOwner),
 				),
 			);
-		if (!base || input.state === "stopped") return;
-		const [activeRun] = await tx
-			.select({ id: taskRuns.id })
-			.from(taskRuns)
-			.where(
-				and(
-					eq(taskRuns.taskId, base.taskId),
-					inArray(taskRuns.status, [
-						"running",
-						"context_compiling",
-						"finalizing",
-					]),
-				),
-			)
-			.orderBy(desc(taskRuns.startedAt))
-			.limit(1);
-		const [activeQueueEntry] = activeRun
-			? []
-			: await tx
-					.select({ id: implementationQueueEntries.id })
-					.from(implementationQueueEntries)
-					.where(
-						and(
-							eq(implementationQueueEntries.taskId, base.taskId),
-							inArray(implementationQueueEntries.status, [
-								"queued",
-								"claimed",
-								"processing",
-								"awaiting_commit_decision",
-							]),
-						),
-					)
-					.limit(1);
+		if (!base || input.state === "stopped") return null;
 		const phase =
 			input.state === "attention"
 				? "attention"
@@ -106,31 +76,40 @@ export async function finishMissionPilotAgentTurn(input: {
 					? "completed"
 					: base.nextWakeAt
 						? "waiting_intervention"
-						: activeRun
-							? "implementation"
-							: activeQueueEntry || base.phase === "queued"
-								? "queued"
-								: "paused";
-		await tx
+						: "paused";
+		const [updated] = await tx
 			.update(missionPilotSessions)
 			.set({
 				phase,
-				activeRunId: activeRun?.id ?? null,
+				desiredState:
+					input.state === "completed" ? "stopped" : base.desiredState,
+				nextWakeAt: input.state === "completed" ? null : base.nextWakeAt,
+				stoppedAt: input.state === "completed" ? now : base.stoppedAt,
 				lastErrorCode: input.error
 					? (input.error as MissionPilotActionFailure).kind
 					: null,
 				lastErrorMessage: input.error
 					? (input.error as MissionPilotActionFailure).message
 					: null,
+				version: base.version + 1,
 				updatedAt: now,
 			})
 			.where(
 				and(
 					eq(missionPilotSessions.id, input.sessionId),
 					eq(missionPilotSessions.desiredState, "playing"),
+					eq(missionPilotSessions.version, base.version),
 				),
-			);
+			)
+			.returning();
+		return updated ?? null;
 	});
+	if (updated) {
+		if (input.state === "completed")
+			clearMissionPilotAgentTaskActive(updated.taskId);
+		publishMissionPilotUpdated(updated.taskId, toControlSummary(updated));
+	}
+	return updated;
 }
 
 export async function loadMissionPilotProviderMessages(

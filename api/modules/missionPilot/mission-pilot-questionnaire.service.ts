@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { and, desc, eq, lte, or } from "drizzle-orm";
 import { missionPilotQuestionnaireDraftSchema } from "../../../shared/modules/missionPilot";
 import {
@@ -11,19 +10,18 @@ import {
 	missionPilotQuestionnaireDrafts,
 	missionPilotSessions,
 } from "../../db/mission-pilot-schema";
-import { enqueueActivityEvent } from "../nightworkers/nightworkers.activity.repository";
-import { missionPilotThoughtTrace } from "../nightworkers/nightworkers.trace-provenance";
-import { saveDesignQuestionnaireAnswers } from "../questionnaire/questionnaire.service";
-import { registerQuestionnaireReadyListener } from "../questionnaire/questionnaire-events";
-import { missionPilotArtifactProviderExecutionPolicy } from "./adapters/mission-pilot-provider.adapter";
-import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./agent/mission-pilot-agent.constants";
+import { enqueueTaskActivityEvent } from "../task";
+import {
+	executeTaskOperatorCommand,
+	humanTaskOperatorCommandContext,
+	humanTaskOperatorQueryContext,
+	readTaskOperatorProjection,
+} from "../taskOperator";
 import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as missionPilotRepo from "./mission-pilot.repository";
-import { buildMissionPilotQuestionnaireDraft } from "./mission-pilot-questionnaire-draft";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
-
-let listenerRegistered = false;
+import { missionPilotThoughtTrace } from "./mission-pilot-trace-provenance";
 
 type DraftRow = typeof missionPilotQuestionnaireDrafts.$inferSelect;
 
@@ -36,7 +34,7 @@ function recordPilotActivity(input: {
 	payloadJson?: Record<string, unknown>;
 	dedupeKey: string;
 }) {
-	enqueueActivityEvent({
+	enqueueTaskActivityEvent({
 		taskId: input.taskId,
 		kind: input.kind,
 		source: "mission_pilot",
@@ -65,117 +63,6 @@ function toView(row: DraftRow, taskId: string) {
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
 	});
-}
-
-async function onQuestionnaireReady(session: DesignQuestionnaireSession) {
-	if (session.status !== "answering") return;
-	const pilot = await missionPilotRepo.getSessionByTaskId(session.taskId);
-	if (
-		pilot?.desiredState !== "playing" ||
-		(await isMissionPilotAgentSession(pilot.id)) ||
-		!missionPilotRepo.hasValidAuthorization(pilot)
-	)
-		return;
-	const [existing] = await db
-		.select()
-		.from(missionPilotQuestionnaireDrafts)
-		.where(
-			eq(missionPilotQuestionnaireDrafts.questionnaireSessionId, session.id),
-		);
-	if (existing?.state === "submitted") return;
-	const now = new Date();
-	const deadlineAt = new Date(
-		now.getTime() + MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS,
-	);
-	const generated = buildMissionPilotQuestionnaireDraft(session, now);
-	if (
-		existing?.state === "waiting_user" &&
-		existing.answersJson.length === generated.answers.length &&
-		generated.answers.every((answer) =>
-			existing.answersJson.some(
-				(existingAnswer) => existingAnswer.questionId === answer.questionId,
-			),
-		)
-	)
-		return;
-	if (existing) {
-		const existingAnswers = new Map(
-			existing.answersJson.map((answer) => [answer.questionId, answer]),
-		);
-		await db
-			.update(missionPilotQuestionnaireDrafts)
-			.set({
-				answersJson: generated.answers.map(
-					(answer) => existingAnswers.get(answer.questionId) ?? answer,
-				),
-				answerEvidenceJson: {
-					...generated.answerEvidence,
-					...existing.answerEvidenceJson,
-				},
-				state: "waiting_user",
-				deadlineAt,
-				version: existing.version + 1,
-				updatedAt: now,
-			})
-			.where(
-				and(
-					eq(missionPilotQuestionnaireDrafts.id, existing.id),
-					eq(missionPilotQuestionnaireDrafts.version, existing.version),
-				),
-			);
-	} else {
-		await db.insert(missionPilotQuestionnaireDrafts).values({
-			id: crypto.randomUUID(),
-			sessionId: pilot.id,
-			questionnaireSessionId: session.id,
-			answersJson: generated.answers,
-			answerEvidenceJson: generated.answerEvidence,
-			deadlineAt,
-			createdAt: now,
-			updatedAt: now,
-		});
-	}
-	const [updated] = await db
-		.update(missionPilotSessions)
-		.set({
-			phase: "waiting_intervention",
-			resumePhase: pilot.phase,
-			nextWakeAt: deadlineAt,
-			version: pilot.version + 1,
-			updatedAt: now,
-		})
-		.where(
-			and(
-				eq(missionPilotSessions.id, pilot.id),
-				eq(missionPilotSessions.version, pilot.version),
-			),
-		)
-		.returning();
-	if (updated)
-		publishMissionPilotUpdated(
-			session.taskId,
-			missionPilotRepo.toControlSummary(updated),
-		);
-	recordPilotActivity({
-		taskId: session.taskId,
-		sessionId: pilot.id,
-		kind: "runtime.decision",
-		status: "waiting",
-		text: `${generated.answers.length}件のQuestionnaire回答案を作成しました。20秒間、ユーザーの変更を待ちます。`,
-		payloadJson: {
-			questionnaireSessionId: session.id,
-			answerCount: generated.answers.length,
-			deadlineAt: deadlineAt.toISOString(),
-			decision: "wait_for_user_or_auto_submit",
-		},
-		dedupeKey: `mission-pilot:questionnaire:draft:${session.id}:${existing?.version ?? 0}`,
-	});
-}
-
-export function initializeMissionPilotQuestionnaireAutonomy() {
-	if (listenerRegistered) return;
-	listenerRegistered = true;
-	registerQuestionnaireReadyListener(onQuestionnaireReady);
 }
 
 export async function getQuestionnaireDraft(taskId: string) {
@@ -318,17 +205,23 @@ async function submitDraftRow(
 		dedupeKey: `mission-pilot:questionnaire:submitting:${claimed.id}:${claimed.version}`,
 	});
 	try {
-		const questionnaire = await saveDesignQuestionnaireAnswers(
+		const projection = await readTaskOperatorProjection(
 			taskId,
-			claimed.questionnaireSessionId,
-			claimed.answersJson,
-			{
-				completionPolicy: "finalize_current_questions",
-				role: "mission_pilot",
-				executionPolicy: missionPilotArtifactProviderExecutionPolicy,
-				usageTrace: missionPilotThoughtTrace({ sessionId: row.sessionId }),
-			},
+			humanTaskOperatorQueryContext(),
 		);
+		const delivery = await executeTaskOperatorCommand({
+			taskId,
+			actionId: "questionnaire.submit",
+			expectedTaskRevision: projection.task.revision,
+			arguments: {
+				questionnaireSessionId: claimed.questionnaireSessionId,
+				answers: claimed.answersJson,
+			},
+			context: humanTaskOperatorCommandContext({
+				idempotencyKey: `questionnaire-draft:${claimed.id}:${claimed.version}`,
+			}),
+		});
+		const questionnaire = delivery.data as DesignQuestionnaireSession;
 		if (!["review_ready", "accepted"].includes(questionnaire.status)) {
 			throw new Error("Mission Pilot Questionnaire remained incomplete");
 		}

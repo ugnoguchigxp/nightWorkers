@@ -534,3 +534,12 @@
 		font-size: 0.75rem;
 	}
 }
+.nightworkers-shell .nightworkers-artifact-mode-button[aria-pressed="false"] {
+	border-color: var(--nw-border);
+	background: var(--nw-panel);
+	color: var(--nw-text);
+}
+
+.nightworkers-shell .nightworkers-artifact-mode-button:disabled {
+	opacity: 1;
+}

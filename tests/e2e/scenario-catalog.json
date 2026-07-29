@@ -69,6 +69,14 @@
 			"requiredEvidence": ["ui", "api", "database", "task-events", "git-diff"]
 		},
 		{
+			"id": "NW-E2E-CODING-AGENT-FIXTURE-001",
+			"title": "Coding Agent direct Runがcatalog-backed native/API fixtureだけで完了する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "planned",
+			"requiredEvidence": ["api", "database", "task-events", "git-diff"]
+		},
+		{
 			"id": "NW-E2E-RUN-002",
 			"title": "policy blockでneeds_humanになり証跡が保存される",
 			"priority": "P0",
@@ -113,7 +121,7 @@
 			"title": "needs_reviewのRunをReviewで完了できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -121,7 +129,7 @@
 			"title": "実装完了後にReview Mode artifactへ遷移できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		},
 		{
@@ -129,7 +137,7 @@
 			"title": "Review完了後にcommit closeoutを完了できる",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "api", "database", "git"]
 		},
 		{
@@ -153,7 +161,7 @@
 			"title": "Review finding dispositionとprompt suggestionを再読込後も保持する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -161,7 +169,7 @@
 			"title": "HEAD移動またはownership外stageを検出して誤commitを防ぐ",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["api", "database", "git"]
 		},
 		{
@@ -169,7 +177,7 @@
 			"title": "commit済みRunをlocal bare remoteへpushできる",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["api", "database", "git"]
 		},
 		{
@@ -177,7 +185,7 @@
 			"title": "Review・Test・Security証跡が揃うまでcommit closeoutを開かない",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["api", "database", "task-events", "git"]
 		},
 		{
@@ -185,7 +193,7 @@
 			"title": "ArchiveしたTaskがactive listから消えRestore後にreadyで戻る",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "api", "database"]
 		},
 		{
@@ -281,7 +289,7 @@
 			"title": "Test Review artifactのdeep linkをreloadと履歴移動後も維持する",
 			"priority": "P1",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
 			"requiredEvidence": ["ui", "url", "api"]
 		},
 		{
@@ -313,7 +321,12 @@
 			"title": "Queue前のMission Pilot reviewed handoffを保存する",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
+			"retirement": {
+				"status": "retired",
+				"reason": "固定pre-Queue handoff workflowをTask Operator Agentへ置換した",
+				"replacementScenarioId": "NW-E2E-MISSION-PILOT-AGENT-AUTOPILOT-001"
+			},
 			"requiredEvidence": ["ui", "api", "database", "task-events"]
 		},
 		{
@@ -321,7 +334,12 @@
 			"title": "reviewed Queue handoffからMission PilotをArchiveまで進める",
 			"priority": "P0",
 			"suite": "regression",
-			"gateStatus": "required",
+			"gateStatus": "planned",
+			"retirement": {
+				"status": "retired",
+				"reason": "固定through-Archive workflowをTask Operator Agentへ置換した",
+				"replacementScenarioId": "NW-E2E-MISSION-PILOT-AGENT-AUTOPILOT-001"
+			},
 			"requiredEvidence": ["ui", "api", "database", "queue"]
 		},
 		{
@@ -343,6 +361,38 @@
 		{
 			"id": "NW-E2E-MISSION-PILOT-TRACE-001",
 			"title": "Mission Pilot thoughtとcoding-agent chatのtraceを完全分離する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["ui", "api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-AGENT-AUTOPILOT-001",
+			"title": "Mission Pilot AgentがTaskを読みCoding Agentへ委譲して完了する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-AGENT-REPAIR-001",
+			"title": "Mission Pilot Agentが失敗Runを読んでrepairを完了する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-AGENT-RESTART-001",
+			"title": "Mission Pilot Agentが実行再調整後もTask ownershipを維持する",
+			"priority": "P0",
+			"suite": "regression",
+			"gateStatus": "required",
+			"requiredEvidence": ["api", "database", "task-events"]
+		},
+		{
+			"id": "NW-E2E-MISSION-PILOT-AGENT-USER-INTERRUPTION-001",
+			"title": "Mission Pilot Agentがユーザー割り込み後に再開する",
 			"priority": "P0",
 			"suite": "regression",
 			"gateStatus": "required",

@@ -3,45 +3,10 @@
   "lineLimit": 600,
 	"entries": [
 		{
-			"id": "NW-LF-02",
-			"path": "api/modules/missionPilot/mission-pilot-closeout.service.ts",
-			"maxLines": 630,
-			"targetModule": "mission-pilot-closeout",
-			"phase": 7
-		},
-		{
-			"id": "NW-LF-03",
-			"path": "api/modules/missionPilot/mission-pilot-plan-coordinator.service.ts",
-			"maxLines": 664,
-			"targetModule": "mission-pilot-plan-coordinator",
-			"phase": 7
-		},
-		{
-			"id": "NW-LF-06",
-			"path": "api/modules/review/review-run.service.ts",
-			"maxLines": 697,
-			"targetModule": "review-run-service",
-			"phase": 7
-		},
-		{
-			"id": "NW-LF-09",
-			"path": "api/modules/missionPilot/mission-pilot-questionnaire.service.ts",
-			"maxLines": 630,
-			"targetModule": "mission-pilot-questionnaire-service",
-			"phase": 7
-		},
-		{
 			"id": "NW-LF-10",
 			"path": "api/services/llm-usage/summary.ts",
 			"maxLines": 602,
 			"targetModule": "llm-usage-summary",
-			"phase": 8
-		},
-		{
-			"id": "NW-LF-11",
-			"path": "src/modules/planMode/PlanModeWorkspaceViewer.tsx",
-			"maxLines": 601,
-			"targetModule": "plan-mode-workspace-viewer",
 			"phase": 8
 		},
 		{

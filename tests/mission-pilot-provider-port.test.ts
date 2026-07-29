@@ -13,12 +13,16 @@ import {
 	cancelScheduledMissionPilotAgentWake,
 	scheduleMissionPilotAgentWakeAtNextEvent,
 } from "../api/modules/missionPilot/agent/mission-pilot-agent-wake.service";
+import { claimMissionPilotAgentTurn } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import {
 	callMissionPilotProviderCandidates,
 	MissionPilotProviderRetryScheduledError,
 	retryMissionPilotProviderCall,
 } from "../api/modules/missionPilot/agent/mission-pilot-provider.port";
-import { listPendingMissionPilotTaskEvents } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
+import {
+	appendMissionPilotTaskEvent,
+	listPendingMissionPilotTaskEvents,
+} from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
@@ -125,6 +129,24 @@ function providerCandidates() {
 }
 
 describe("Mission Pilot provider route fallback", () => {
+	it("preserves every concurrently delivered Task event with a unique sequence", async () => {
+		const fixture = await retryFixture();
+		await Promise.all(
+			Array.from({ length: 4 }, (_, index) =>
+				appendMissionPilotTaskEvent({
+					taskId: fixture.taskId,
+					eventType: "task.state_changed",
+					sourceEventId: `concurrent-event:${index}`,
+					taskRevision: index + 1,
+					payload: { index },
+				}),
+			),
+		);
+		const events = await listPendingMissionPilotTaskEvents(fixture.sessionId);
+		expect(events).toHaveLength(4);
+		expect(new Set(events.map((event) => event.sequence)).size).toBe(4);
+	});
+
 	it("rejects every provider call until Mission Pilot is explicitly playing", async () => {
 		const fixture = await stoppedFixture();
 		const [normalizedRequest] = providerCandidates();
@@ -204,6 +226,8 @@ describe("Mission Pilot provider route fallback", () => {
 			retryContext: {
 				sessionId: fixture.sessionId,
 				taskId: fixture.taskId,
+				turnId: "turn-1",
+				providerCallIndex: 1,
 				taskRevision: 1,
 			},
 			callCandidate: vi.fn(async (candidate) => {
@@ -262,11 +286,23 @@ describe("Mission Pilot provider route fallback", () => {
 			retryMissionPilotProviderCall(operation, new AbortController().signal, {
 				sessionId: fixture.sessionId,
 				taskId: fixture.taskId,
+				turnId: "turn-1",
+				providerCallIndex: 1,
 				taskRevision: 1,
 				attempt: 1,
 			}),
 		).rejects.toBeInstanceOf(MissionPilotProviderRetryScheduledError);
-		expect(operation).toHaveBeenCalledTimes(1);
+		await expect(
+			retryMissionPilotProviderCall(operation, new AbortController().signal, {
+				sessionId: fixture.sessionId,
+				taskId: fixture.taskId,
+				turnId: "turn-1",
+				providerCallIndex: 1,
+				taskRevision: 1,
+				attempt: 1,
+			}),
+		).rejects.toBeInstanceOf(MissionPilotProviderRetryScheduledError);
+		expect(operation).toHaveBeenCalledTimes(2);
 		const events = await listPendingMissionPilotTaskEvents(
 			fixture.sessionId,
 			new Date(Date.now() + 2_000),
@@ -281,6 +317,31 @@ describe("Mission Pilot provider route fallback", () => {
 				new Date(Date.now() + 2_000),
 			),
 		).toHaveLength(0);
+	});
+
+	it("carries the persisted retry attempt into the claimed agent turn", async () => {
+		const fixture = await retryFixture();
+		await appendMissionPilotTaskEvent({
+			taskId: fixture.taskId,
+			eventType: "mission_pilot.retry_timer_elapsed",
+			sourceEventId: "provider-retry:turn-1:1:2",
+			taskRevision: 1,
+			payload: { nextAttempt: 2 },
+		});
+
+		const claimed = await claimMissionPilotAgentTurn({
+			sessionId: fixture.sessionId,
+			leaseOwner: "provider-retry-test",
+		});
+
+		expect(claimed).toMatchObject({
+			providerRetryAttempt: 2,
+			triggerEvents: [
+				expect.objectContaining({
+					eventType: "mission_pilot.retry_timer_elapsed",
+				}),
+			],
+		});
 	});
 
 	it("reserves one future wake while its event lookup is still in flight", async () => {
@@ -305,6 +366,8 @@ describe("Mission Pilot provider route fallback", () => {
 			retryMissionPilotProviderCall(operation, new AbortController().signal, {
 				sessionId: fixture.sessionId,
 				taskId: fixture.taskId,
+				turnId: "turn-1",
+				providerCallIndex: 1,
 				taskRevision: 1,
 				attempt: 3,
 			}),

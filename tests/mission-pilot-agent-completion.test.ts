@@ -55,32 +55,8 @@ async function fixture() {
 }
 
 describe("Mission Pilot explicit completion", () => {
-	it("rejects finish before Task completion is recorded", async () => {
+	it("lets the LLM finish without a host-owned Task status rule", async () => {
 		const fixtureState = await fixture();
-		const result = await executeMissionPilotAgentControlTool({
-			call: {
-				id: crypto.randomUUID(),
-				name: "agent.finish",
-				arguments: { summary: "done" },
-			},
-			toolCallId: crypto.randomUUID(),
-			turnId: fixtureState.turnId,
-			leaseOwner: fixtureState.leaseOwner,
-			taskId: fixtureState.taskId,
-			sessionId: fixtureState.sessionId,
-		});
-		expect(result).toMatchObject({
-			ok: false,
-			failure: { kind: "domain_precondition" },
-		});
-	});
-
-	it("allows finish after the Task is explicitly terminal", async () => {
-		const fixtureState = await fixture();
-		await db
-			.update(tasks)
-			.set({ status: "completed" })
-			.where(eq(tasks.id, fixtureState.taskId));
 		const result = await executeMissionPilotAgentControlTool({
 			call: {
 				id: crypto.randomUUID(),
@@ -94,5 +70,25 @@ describe("Mission Pilot explicit completion", () => {
 			sessionId: fixtureState.sessionId,
 		});
 		expect(result).toMatchObject({ ok: true, data: { kind: "finish" } });
+	});
+
+	it("rejects finish when the current turn lease is invalid", async () => {
+		const fixtureState = await fixture();
+		const result = await executeMissionPilotAgentControlTool({
+			call: {
+				id: crypto.randomUUID(),
+				name: "agent.finish",
+				arguments: { summary: "done" },
+			},
+			toolCallId: crypto.randomUUID(),
+			turnId: fixtureState.turnId,
+			leaseOwner: "invalid-lease",
+			taskId: fixtureState.taskId,
+			sessionId: fixtureState.sessionId,
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			failure: { kind: "domain_precondition" },
+		});
 	});
 });

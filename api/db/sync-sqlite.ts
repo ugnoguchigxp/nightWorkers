@@ -31,7 +31,7 @@ type SqliteModule = {
 	default?: DatabaseConstructor;
 };
 const runtimeRequire = createRequire(import.meta.url);
-const sqliteSpecifier = process.versions.bun ? "bun:sqlite" : "better-sqlite3";
+const sqliteSpecifier = "libsql";
 const sqliteModule = runtimeRequire(sqliteSpecifier) as SqliteModule;
 const DatabaseConstructor = (
 	typeof sqliteModule === "function"
@@ -43,14 +43,7 @@ export function openSyncSqlite(
 	databasePath: string,
 	options: { readonly?: boolean; timeout?: number } = {},
 ): SyncSqliteDatabase {
-	const database = new DatabaseConstructor(
-		databasePath,
-		process.versions.bun
-			? options.readonly
-				? { readonly: true }
-				: undefined
-			: options,
-	);
+	const database = new DatabaseConstructor(databasePath, options);
 	const query = (sql: string): Query => {
 		if (database.query) return database.query(sql);
 		if (database.prepare) return database.prepare(sql);

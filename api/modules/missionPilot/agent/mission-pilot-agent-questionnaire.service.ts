@@ -1,27 +1,19 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { missionPilotAnswerEvidenceSchema } from "../../../../shared/modules/missionPilot";
-import {
-	type DesignQuestionnaireAnswer,
-	designQuestionnaireAnswerSchema,
-} from "../../../../shared/schemas/design-questionnaire.schema";
+import type { DesignQuestionnaireAnswer } from "../../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../../db/client";
 import {
 	missionPilotQuestionnaireDrafts,
 	missionPilotSessions,
 } from "../../../db/mission-pilot-schema";
 import { AppError } from "../../../lib/errors";
-import { enqueueActivityEvent } from "../../nightworkers/nightworkers.activity.repository";
-import { missionPilotThoughtTrace } from "../../nightworkers/nightworkers.trace-provenance";
-import { getDesignQuestionnaireSession } from "../../questionnaire/questionnaire.service";
-import { getSessionQuestions } from "../../questionnaire/questionnaire-parser.service";
-import {
-	areQuestionnaireAnswersComplete,
-	validateDesignQuestionnaireAnswerForQuestion,
-} from "../../questionnaire/questionnaire-validation";
+import { enqueueTaskActivityEvent } from "../../task";
+import { validateTaskOperatorQuestionnaireDraft } from "../../taskOperator";
 import * as missionPilotRepo from "../mission-pilot.repository";
+import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
-import { ensureMissionPilotAgentQuestionnaireReadyMessage } from "../mission-pilot-workbench.port";
+import { missionPilotThoughtTrace } from "../mission-pilot-trace-provenance";
 import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./mission-pilot-agent.constants";
 import { isMissionPilotAgentSession } from "./mission-pilot-agent-session.repository";
 
@@ -43,54 +35,18 @@ export async function saveAgentQuestionnaireDraft(input: {
 			"MISSION_PILOT_AGENT_NOT_PLAYING",
 			"Mission Pilot agent is not playing.",
 		);
-	const questionnaire = await getDesignQuestionnaireSession(
-		input.taskId,
-		input.questionnaireSessionId,
-	);
-	if (questionnaire.status !== "answering")
-		throw new AppError(
-			409,
-			"QUESTIONNAIRE_NOT_ANSWERING",
-			"Questionnaire is not accepting a draft.",
-		);
-	const questionById = new Map(
-		getSessionQuestions(questionnaire).map((question) => [
-			String(question.id),
-			question,
-		]),
-	);
-	const parsedAnswers = input.answers.map((answer) => {
-		const parsed = designQuestionnaireAnswerSchema.parse(answer);
-		const question = questionById.get(parsed.questionId);
-		if (!question)
-			throw new AppError(
-				422,
-				"UNKNOWN_QUESTION",
-				`Unknown question id: ${parsed.questionId}`,
-			);
-		validateDesignQuestionnaireAnswerForQuestion(parsed, question);
-		return parsed;
+	const access = await createMissionPilotTaskOperatorAccess({
+		sessionId: pilot.id,
+		taskId: input.taskId,
 	});
-	if (
-		new Set(parsedAnswers.map((answer) => answer.questionId)).size !==
-		parsedAnswers.length
-	)
-		throw new AppError(
-			422,
-			"DUPLICATE_QUESTIONNAIRE_ANSWER",
-			"Questionnaire draft contains duplicate question ids.",
-		);
-	if (
-		!areQuestionnaireAnswersComplete(
-			questionnaire,
-			new Map(parsedAnswers.map((answer) => [answer.questionId, answer])),
-		)
-	)
-		throw new AppError(
-			422,
-			"QUESTIONNAIRE_DRAFT_INCOMPLETE",
-			"Questionnaire draft must answer every currently answerable question.",
-		);
+	const { answers: parsedAnswers } =
+		await validateTaskOperatorQuestionnaireDraft({
+			taskId: input.taskId,
+			questionnaireSessionId: input.questionnaireSessionId,
+			answers: input.answers,
+			context: access.context,
+			delegatedAuthorization: access.delegatedAuthorization,
+		});
 	const reasonByQuestionId = new Map(
 		input.answerEvidence.map((evidence) => [
 			evidence.questionId,
@@ -216,12 +172,7 @@ export async function saveAgentQuestionnaireDraft(input: {
 		input.taskId,
 		missionPilotRepo.toControlSummary(result.updatedPilot),
 	);
-	await ensureMissionPilotAgentQuestionnaireReadyMessage({
-		taskId: input.taskId,
-		missionPilotSessionId: pilot.id,
-		questionnaireSession: questionnaire,
-	});
-	enqueueActivityEvent({
+	enqueueTaskActivityEvent({
 		taskId: input.taskId,
 		kind: "runtime.decision",
 		source: "mission_pilot",

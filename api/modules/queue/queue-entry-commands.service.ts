@@ -107,7 +107,6 @@ export async function createImplementationQueueEntry(
 		sequenceGroupId: scheduling.sequenceGroupId,
 		sequenceOrder: scheduling.sequenceOrder,
 		schedulingReason: scheduling.schedulingReason,
-		missionPilotAgent: options.missionPilotAgent ?? null,
 		workspaceId: workspace?.id ?? null,
 		workspaceRequired: Boolean(workspace),
 	});

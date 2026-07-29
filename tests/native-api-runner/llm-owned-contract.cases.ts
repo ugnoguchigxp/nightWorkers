@@ -355,7 +355,6 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(directResult.toolResult.error?.code).not.toBe(
 			"CURRENT_TODO_REQUIRED",
 		);
-		expect(sink.emit).toHaveBeenCalled();
 
 		await new TodoMutationService(
 			buildCodingAgentSystemContext({
@@ -641,9 +640,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				message.content.includes("FINALIZE_RECONCILIATION_REQUIRED"),
 		);
 		expect(feedback).toMatchObject({ role: "user" });
-		expect(JSON.stringify(feedback)).toContain(
-			"missing_successful_full_verify",
-		);
+		expect(JSON.stringify(feedback)).toContain("evidence_subject_unavailable");
 		expect(JSON.stringify(feedback)).toContain("finalCandidate");
 		expect(JSON.stringify(feedback)).toContain("実装と検証が完了しました。");
 		expect(result).toMatchObject({

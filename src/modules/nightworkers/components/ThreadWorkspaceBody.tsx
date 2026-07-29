@@ -7,7 +7,10 @@ import {
 	useState,
 } from "react";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
-import { MissionPilotComposerControls } from "../../missionPilot";
+import {
+	MissionPilotComposerControls,
+	MissionPilotTaskGoalMessage,
+} from "../../missionPilot";
 import type {
 	ActivityArtifact,
 	ActivityEvent,
@@ -284,6 +287,13 @@ export function ThreadBody({
 							onOpenEvidenceCheckArtifact={onOpenEvidenceCheckArtifact}
 							onOpenReviewModeArtifact={onOpenReviewModeArtifact}
 							onGrantExternalPath={onGrantExternalPath}
+							leadingContent={
+								<MissionPilotTaskGoalMessage
+									objective={activeSession.objective}
+									summary={activeSession.missionPilot}
+									taskMessages={taskMessages}
+								/>
+							}
 						/>
 					</>
 				) : isAgentThinking ? (

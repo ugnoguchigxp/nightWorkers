@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import { AppError } from "../../lib/errors";
-import { getPlanModeRouting } from "../missionPilot";
 import {
 	getPlanModeTask,
 	getPlanModeTaskMessage,
@@ -10,6 +9,7 @@ import type {
 	PlanArtifactSourceSelection,
 } from "./plan-artifact-input.types";
 import { PLAN_ARTIFACT_SOURCE_SUMMARY_MAX_BYTES } from "./plan-artifact-input-renderer";
+import { resolvePlanModeRoutingSnapshot } from "./plan-mode-routing-query";
 import { renderMessageReferenceSummary } from "./specification-plan-reference-renderer";
 
 type SourceKind =
@@ -37,7 +37,7 @@ export async function resolvePlanArtifactSources(input: {
 }) {
 	const task = await getPlanModeTask(input.taskId);
 	if (!task) throw new AppError(404, "TASK_NOT_FOUND", "Task not found.");
-	const routing = await getPlanModeRouting(task.id);
+	const routing = await resolvePlanModeRoutingSnapshot(task);
 	const requested = [
 		input.selection.previousTargetMessageId
 			? {

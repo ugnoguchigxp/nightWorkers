@@ -16,11 +16,7 @@ import {
 	claimAgentPlay,
 	claimAgentStop,
 } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import { backfillMissingTaskSessions } from "../api/modules/missionPilot/mission-pilot.repository";
-import {
-	play,
-	reconcileMissionPilotStartup,
-} from "../api/modules/missionPilot/mission-pilot.service";
+import { play } from "../api/modules/missionPilot/mission-pilot.service";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { createTaskWithMissionPilot } from "../api/modules/nightworkers/nightworkers.task-creation.service";
 import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
@@ -84,46 +80,6 @@ describe("Universal Task creation", () => {
 			statusCode: 400,
 			code: "MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
 		});
-	});
-
-	it("idempotently backfills an existing Task without activating it", async () => {
-		const repositoryId = crypto.randomUUID();
-		const taskId = crypto.randomUUID();
-		repositoryIds.push(repositoryId);
-		await db.insert(repositories).values({
-			id: repositoryId,
-			name: "Universal Task backfill",
-			localPath: `/tmp/${repositoryId}`,
-			branch: "main",
-		});
-		await db.insert(tasks).values({
-			id: taskId,
-			repositoryId,
-			title: "Existing Task without Mission Pilot",
-			objective: "",
-			status: "completed",
-		});
-
-		await backfillMissingTaskSessions();
-		const firstSession = await db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.taskId, taskId),
-		});
-		await backfillMissingTaskSessions();
-		await reconcileMissionPilotStartup();
-		const secondSession = await db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.taskId, taskId),
-		});
-		expect(secondSession?.id).toBe(firstSession?.id);
-		expect(secondSession).toMatchObject({
-			desiredState: "stopped",
-			phase: "created",
-			authorizationVersion: null,
-			sourceKind: "task",
-			sourceId: taskId,
-		});
-		expect(
-			await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) }),
-		).toMatchObject({ status: "completed" });
 	});
 
 	it("keeps normal user messages out of the Mission Pilot inbox while stopped", async () => {
@@ -208,7 +164,7 @@ describe("Universal Task creation", () => {
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({
 			eventType: "task.user_message_added",
-			taskRevision: updated.updatedAt.getTime(),
+			taskRevision: updated.revision,
 		});
 		const current = await db.query.missionPilotSessions.findFirst({
 			where: eq(missionPilotSessions.id, session?.id ?? ""),

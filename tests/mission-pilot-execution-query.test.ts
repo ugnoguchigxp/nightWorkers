@@ -70,8 +70,13 @@ describe("Mission Pilot execution query", () => {
 						toolCalls: [
 							{
 								id: "provider-call-1",
-								name: "task_update",
-								arguments: { secret: "not-for-presentation" },
+								name: "execute_task_action",
+								arguments: {
+									actionId: "task.update",
+									arguments: {
+										secret: "not-for-presentation",
+									},
+								},
 							},
 						],
 					},

@@ -268,8 +268,9 @@ export async function getTask(id: string) {
 }
 
 export async function listTasks() {
+	const tasks = await repo.listTasks();
 	const { listTasksWithMissionPilot } = await import("../missionPilot");
-	return listTasksWithMissionPilot();
+	return listTasksWithMissionPilot(tasks);
 }
 
 export async function listTaskMessages(

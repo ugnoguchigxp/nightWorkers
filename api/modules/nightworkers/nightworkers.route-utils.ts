@@ -2,6 +2,7 @@ import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Context, Input } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import type { AppEnv } from "../../lib/types";
 
 export type NightWorkersRouteContext<
@@ -22,6 +23,7 @@ export function queueRouteError<ContextType extends NightWorkersRouteContext>(
 			err.statusCode as ContentfulStatusCode,
 		);
 	}
+	logger.error(err, "Unhandled route error");
 	const message = err instanceof Error ? err.message : String(err);
 	return c.json({ error: message }, 500);
 }

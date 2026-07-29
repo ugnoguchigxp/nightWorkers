@@ -45,11 +45,17 @@ export function projectMissionPilotAgentVisibleItems(
 				? body.toolCalls
 				: []) {
 				const call = asRecord(toolCall);
+				const argumentsJson = asRecord(call.arguments);
 				projected.push({
 					kind: "action_requested",
 					sequence: item.sequence,
 					actionId:
-						typeof call.name === "string" ? call.name : "unknown_action",
+						call.name === "execute_task_action" &&
+						typeof argumentsJson.actionId === "string"
+							? argumentsJson.actionId
+							: typeof call.name === "string"
+								? call.name
+								: "unknown_action",
 				});
 			}
 			continue;

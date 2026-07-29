@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
 	MissionGoal,
@@ -160,7 +161,8 @@ export async function buildTaskGenerationEvidence(input: {
 
 async function resolveRepositoryIdByPath(repoPath?: string | null) {
 	if (!repoPath?.trim()) return null;
-	const targetPath = path.resolve(repoPath);
+	const resolvedPath = path.resolve(repoPath);
+	const targetPath = await fs.realpath(resolvedPath).catch(() => resolvedPath);
 	const repositories = await nightworkersRepo.listRepositories();
 	return (
 		repositories.find(

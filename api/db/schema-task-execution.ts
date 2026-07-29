@@ -57,13 +57,10 @@ export const implementationQueueEntries = sqliteTable(
 		sequenceOrder: integer("sequence_order"),
 		sequenceDependsOnEntryId: text("sequence_depends_on_entry_id"),
 		schedulingReason: text("scheduling_reason"),
-		missionPilotAdmissionKey: text("mission_pilot_admission_key"),
-		missionPilotAgentJson: text("mission_pilot_agent_json", {
+		sourceCommandKey: text("mission_pilot_admission_key"),
+		requestProvenanceJson: text("mission_pilot_agent_json", {
 			mode: "json",
-		}).$type<
-			| import("../../shared/modules/missionPilot").MissionPilotAgentRunProvenance
-			| null
-		>(),
+		}).$type<Record<string, unknown> | null>(),
 		claimReady: integer("claim_ready", { mode: "boolean" })
 			.default(true)
 			.notNull(),
@@ -108,9 +105,9 @@ export const implementationQueueEntries = sqliteTable(
 			table.sequenceGroupId,
 			table.sequenceOrder,
 		),
-		missionPilotAdmissionUidx: uniqueIndex(
+		sourceCommandKeyUidx: uniqueIndex(
 			"implementation_queue_entries_mission_pilot_admission_uidx",
-		).on(table.missionPilotAdmissionKey),
+		).on(table.sourceCommandKey),
 	}),
 );
 

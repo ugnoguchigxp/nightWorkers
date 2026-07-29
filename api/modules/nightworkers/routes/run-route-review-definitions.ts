@@ -3,6 +3,34 @@ import { reviewSessionDetailSchema } from "../../../../shared/schemas/nightworke
 
 // Legacy Review data remains readable, but this module intentionally exposes no
 // route that can create a Review session or start a Review runtime.
+// A human outcome decision is a Run command, not a legacy Review runtime.
+export const submitRunReviewRoute = createRoute({
+	method: "post",
+	path: "/runs/:id/reviews",
+	request: {
+		params: z.object({
+			id: z.string().uuid().openapi({ example: "run-uuid" }),
+		}),
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						action: z.enum(["complete", "cancel"]),
+						note: z.string().optional(),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: { "application/json": { schema: z.unknown() } },
+			description: "Human Run outcome decision recorded",
+		},
+		404: { description: "Run not found" },
+	},
+});
+
 export const getLatestTaskReviewSessionRoute = createRoute({
 	method: "get",
 	path: "/tasks/:id/review-session",

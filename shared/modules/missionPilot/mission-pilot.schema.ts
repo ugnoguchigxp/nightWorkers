@@ -58,9 +58,36 @@ export const missionPilotAuthorizationV3Schema = z.object({
 	scopes: missionPilotAuthorizationV2Schema.shape.scopes,
 	pushPolicy: missionPilotPushPolicySchema,
 });
+const missionPilotDelegatedScopesSchema = z.object({
+	plan: z.boolean(),
+	queue: z.boolean(),
+	implementation: z.boolean(),
+	testMutation: z.boolean(),
+	review: z.boolean(),
+	localCommit: z.boolean(),
+	taskComplete: z.boolean(),
+	taskArchive: z.boolean(),
+	push: z.boolean(),
+});
+export const missionPilotAuthorizationV4Schema = z.object({
+	version: z.literal(4),
+	sessionId: z.string().uuid(),
+	taskId: z.string().uuid(),
+	taskRef: taskSourceRefSchema,
+	activationContextRevision: z.number().int().positive(),
+	activationContextDigest: z.string().min(1),
+	grantedByAction: z.literal("mission_pilot_play"),
+	grantedAt: z.string().datetime(),
+	subjectUserId: z.string().min(1),
+	userAuthorizationRef: z.string().min(1),
+	capabilityDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+	scopes: missionPilotDelegatedScopesSchema,
+	pushPolicy: missionPilotPushPolicySchema,
+});
 export const missionPilotAuthorizationSchema = z.discriminatedUnion("version", [
 	missionPilotAuthorizationV2Schema,
 	missionPilotAuthorizationV3Schema,
+	missionPilotAuthorizationV4Schema,
 ]);
 export const missionPilotDesiredStateSchema = z.enum(["stopped", "playing"]);
 export const missionPilotActivityStateSchema = z.enum([
@@ -222,6 +249,9 @@ export type MissionPilotAuthorizationV2 = z.infer<
 >;
 export type MissionPilotAuthorizationV3 = z.infer<
 	typeof missionPilotAuthorizationV3Schema
+>;
+export type MissionPilotAuthorizationV4 = z.infer<
+	typeof missionPilotAuthorizationV4Schema
 >;
 export type MissionPilotAuthorization = z.infer<
 	typeof missionPilotAuthorizationSchema

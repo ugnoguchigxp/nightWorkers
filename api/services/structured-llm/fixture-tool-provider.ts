@@ -8,22 +8,28 @@ import type {
 type FixturePlaceholder = {
 	$fixture: "taskRevision" | "latestRunId";
 };
-type FixtureTurn = {
+export type FixtureTurn = {
 	content: string;
 	toolCalls: ProviderToolCall[];
 	condition?: "previous_tool_failed";
 };
 const turnsByTaskId = new Map<string, FixtureTurn[]>();
+export type FixtureToolTurnScope = "default" | "implementation";
 
-export function hasFixtureProviderToolTurns(taskId: string) {
+export function hasFixtureProviderToolTurns(
+	taskId: string,
+	scope: FixtureToolTurnScope = "default",
+) {
 	return (
-		process.env.NIGHTWORKERS_E2E_ISOLATED === "1" && turnsByTaskId.has(taskId)
+		process.env.NIGHTWORKERS_E2E_ISOLATED === "1" &&
+		turnsByTaskId.has(scopedTaskId(taskId, scope))
 	);
 }
 
 export function registerFixtureProviderToolTurns(
 	taskId: string,
 	turns: FixtureTurn[],
+	scope: FixtureToolTurnScope = "default",
 ) {
 	if (
 		process.env.NODE_ENV === "production" ||
@@ -31,7 +37,12 @@ export function registerFixtureProviderToolTurns(
 	) {
 		throw new Error("Fixture tool turns are available only in isolated E2E.");
 	}
-	turnsByTaskId.set(taskId, structuredClone(turns));
+	turnsByTaskId.set(scopedTaskId(taskId, scope), structuredClone(turns));
+}
+
+export function clearFixtureProviderToolTurns(taskId: string) {
+	turnsByTaskId.delete(scopedTaskId(taskId, "default"));
+	turnsByTaskId.delete(scopedTaskId(taskId, "implementation"));
 }
 
 export function callFixtureProviderToolTurn(input: {
@@ -40,6 +51,7 @@ export function callFixtureProviderToolTurn(input: {
 	userPrompt: string;
 	messages: ProviderToolMessage[];
 	setProviderDebug: (value: Record<string, unknown>) => void;
+	scope?: FixtureToolTurnScope;
 }): ProviderToolTurnResult {
 	if (
 		process.env.NODE_ENV === "production" ||
@@ -47,7 +59,9 @@ export function callFixtureProviderToolTurn(input: {
 	) {
 		throw new Error("Fixture tool provider is available only in isolated E2E.");
 	}
-	const turns = turnsByTaskId.get(input.taskId) ?? [];
+	const scope = input.scope ?? "default";
+	const mapKey = scopedTaskId(input.taskId, scope);
+	const turns = turnsByTaskId.get(mapKey) ?? [];
 	let turn = turns.shift() ?? {
 		content: "Fixture provider has no remaining scripted turn.",
 		toolCalls: [],
@@ -60,7 +74,7 @@ export function callFixtureProviderToolTurn(input: {
 			content: "Fixture provider has no remaining scripted turn.",
 			toolCalls: [],
 		};
-	turnsByTaskId.set(input.taskId, turns);
+	turnsByTaskId.set(mapKey, turns);
 	const toolCalls = turn.toolCalls.map((call) => ({
 		...call,
 		arguments: resolveFixtureArguments(
@@ -88,6 +102,10 @@ export function callFixtureProviderToolTurn(input: {
 		model: "fixture-native-tools",
 		providerDebug,
 	};
+}
+
+function scopedTaskId(taskId: string, scope: FixtureToolTurnScope) {
+	return `${scope}:${taskId}`;
 }
 
 function hasPreviousToolFailure(messages: ProviderToolMessage[]) {
@@ -220,6 +238,8 @@ function findRunId(value: unknown): string | null {
 	const record = asRecord(value);
 	const activeRun = asRecord(record.activeRun);
 	if (typeof activeRun.id === "string") return activeRun.id;
+	const latestTerminalRun = asRecord(record.latestTerminalRun);
+	if (typeof latestTerminalRun.id === "string") return latestTerminalRun.id;
 	if (Array.isArray(record.terminalRuns)) {
 		const terminalRun = record.terminalRuns.find(
 			(run) =>

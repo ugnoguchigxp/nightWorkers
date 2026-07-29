@@ -96,4 +96,8 @@ export {
 	type CodingAgentRecoveryObservation,
 	type CodingAgentRecoveryRef,
 } from "./recovery-guidance";
-export { contentDigest, sliceUtf8ContentPage } from "./utf8-content-page";
+export {
+	contentDigest,
+	sliceUtf8ContentPage,
+	sliceUtf8ContentPageToJsonBudget,
+} from "./utf8-content-page";

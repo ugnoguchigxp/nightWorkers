@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { missionPilotArtifactTrace } from "../api/modules/missionPilot";
 import {
-	codingAgentChatTrace,
+	missionPilotArtifactTrace,
 	missionPilotInitialPromptTrace,
 	missionPilotThoughtTrace,
+} from "../api/modules/missionPilot";
+import {
+	codingAgentChatTrace,
 	resolveActivityTrace,
 	resolveLlmUsageTrace,
 	resolveTaskMessageTrace,
@@ -113,7 +115,7 @@ describe("NightWorkers trace provenance", () => {
 					missionPilotSessionId: "pilot-session",
 				},
 			}),
-		).toMatchObject({ owner: "mission_pilot", channel: "pilot_thought" });
+		).toMatchObject({ owner: "coding_agent", channel: "chat" });
 	});
 
 	it("keeps the initial user prompt in chat", () => {

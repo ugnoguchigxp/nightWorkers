@@ -1,15 +1,11 @@
 import crypto from "node:crypto";
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
-import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
 import {
 	createSystemContextBindingSnapshot,
 	p,
 	runWithSystemContextBinding,
+	type SystemContextBindingSnapshot,
 } from "../../../systemContexts/catalog";
-import {
-	applyCurrentMissionPilotSystemContext,
-	buildMissionPilotSystemContext,
-} from "../prompts/mission-pilot-system-context";
+import { applyCurrentMissionPilotSystemContext } from "../prompts/mission-pilot-system-context";
 import {
 	MISSION_PILOT_AGENT_LEASE_MS,
 	MISSION_PILOT_CONTEXT_HARD_TOKENS,
@@ -23,6 +19,11 @@ import type {
 	MissionPilotAgentRuntimeDependencies,
 	MissionPilotAgentWakeInput,
 } from "./mission-pilot-agent-runtime.types";
+import {
+	missionPilotProviderFailure,
+	missionPilotResourceFailure,
+	readMissionPilotRuntimeSystemContext,
+} from "./mission-pilot-agent-runtime-failures";
 import { missionPilotDigest } from "./mission-pilot-content-page";
 import {
 	buildMissionPilotCompactionRequest,
@@ -69,7 +70,12 @@ export function runMissionPilotAgentWake(
 ) {
 	const systemContextBinding = createSystemContextBindingSnapshot();
 	return runWithSystemContextBinding(
-		() => runMissionPilotAgentWakeInScope(input, dependencies),
+		() =>
+			runMissionPilotAgentWakeInScope(
+				input,
+				dependencies,
+				systemContextBinding,
+			),
 		systemContextBinding,
 	);
 }
@@ -77,8 +83,8 @@ export function runMissionPilotAgentWake(
 async function runMissionPilotAgentWakeInScope(
 	input: MissionPilotAgentWakeInput,
 	dependencies: MissionPilotAgentRuntimeDependencies,
+	systemContextBinding: SystemContextBindingSnapshot,
 ) {
-	const systemContextBinding = createSystemContextBindingSnapshot();
 	if (activeControllers.has(input.sessionId))
 		return { kind: "already_running" } as const;
 	const controller = new AbortController();
@@ -156,7 +162,7 @@ async function runMissionPilotAgentWakeInScope(
 			)
 				return finishAndReturn("stopped");
 			if (providerCalls >= providerLimit || toolCalls >= toolLimit) {
-				const failure = resourceFailure(
+				const failure = missionPilotResourceFailure(
 					providerCalls >= providerLimit
 						? "maxProviderCallsPerWake"
 						: "maxToolCallsPerWake",
@@ -190,9 +196,10 @@ async function runMissionPilotAgentWakeInScope(
 				sessionId: input.sessionId,
 				taskId: claimed.session.taskId,
 				readPort,
+				triggerEvents: claimed.triggerEvents,
 			});
 			const baseSystemContext = applyCurrentMissionPilotSystemContext(
-				readSystemContext(providerMessages),
+				readMissionPilotRuntimeSystemContext(providerMessages),
 				p,
 			);
 			const systemContext = p("missionPilot.current-step", {
@@ -200,9 +207,7 @@ async function runMissionPilotAgentWakeInScope(
 				currentStepContext,
 			});
 			const messages = projectMissionPilotProviderMessages(providerMessages);
-			const tools = missionPilotToolDefinitions({
-				availableActionIds: new Set(currentStepContext.availableActionIds),
-			});
+			const tools = missionPilotToolDefinitions();
 			if (
 				shouldCompactMissionPilotContext({
 					systemContext,
@@ -214,7 +219,9 @@ async function runMissionPilotAgentWakeInScope(
 				})
 			) {
 				if (providerCalls >= providerLimit) {
-					const failure = resourceFailure("maxProviderCallsPerWake");
+					const failure = missionPilotResourceFailure(
+						"maxProviderCallsPerWake",
+					);
 					await appendMissionPilotRuntimeFailure({
 						sessionId: input.sessionId,
 						failure,
@@ -236,6 +243,10 @@ async function runMissionPilotAgentWakeInScope(
 				const providerStartedAt = Date.now();
 				const compacted = await provider.nextTurn({
 					sessionId: input.sessionId,
+					turnId: claimed.turnId,
+					providerCallIndex,
+					retryAttempt:
+						providerCallIndex === 1 ? claimed.providerRetryAttempt : 1,
 					systemContext: compactionSystemContext,
 					systemContextBinding,
 					messages: buildMissionPilotCompactionRequest(messages),
@@ -261,7 +272,7 @@ async function runMissionPilotAgentWakeInScope(
 						durationMs: Date.now() - providerStartedAt,
 					}).catch(() => false);
 				if (compacted.type !== "supported" || !compacted.content.trim()) {
-					const failure = providerFailure(
+					const failure = missionPilotProviderFailure(
 						compacted.type === "unsupported"
 							? compacted.reason
 							: "Provider returned an empty context compaction summary",
@@ -300,7 +311,9 @@ async function runMissionPilotAgentWakeInScope(
 					tools,
 				}) > tokenBudget
 			) {
-				const failure = resourceFailure("providerContextHardTokenBudget");
+				const failure = missionPilotResourceFailure(
+					"providerContextHardTokenBudget",
+				);
 				await appendMissionPilotRuntimeFailure({
 					sessionId: input.sessionId,
 					failure,
@@ -320,6 +333,10 @@ async function runMissionPilotAgentWakeInScope(
 			const providerStartedAt = Date.now();
 			const response = await provider.nextTurn({
 				sessionId: input.sessionId,
+				turnId: claimed.turnId,
+				providerCallIndex,
+				retryAttempt:
+					providerCallIndex === 1 ? claimed.providerRetryAttempt : 1,
 				systemContext,
 				systemContextBinding,
 				messages,
@@ -345,7 +362,7 @@ async function runMissionPilotAgentWakeInScope(
 					durationMs: Date.now() - providerStartedAt,
 				}).catch(() => false);
 			if (response.type === "unsupported") {
-				const failure = providerFailure(response.reason);
+				const failure = missionPilotProviderFailure(response.reason);
 				await appendMissionPilotRuntimeFailure({
 					sessionId: input.sessionId,
 					failure,
@@ -473,8 +490,8 @@ async function runMissionPilotAgentWakeInScope(
 			} as const;
 		}
 		const failure = elapsedLimitReached
-			? resourceFailure("maxElapsedMsPerWake")
-			: providerFailure(error);
+			? missionPilotResourceFailure("maxElapsedMsPerWake")
+			: missionPilotProviderFailure(error);
 		if (claimed && (!controller.signal.aborted || elapsedLimitReached))
 			await appendMissionPilotRuntimeFailure({
 				sessionId: input.sessionId,
@@ -515,7 +532,7 @@ async function runMissionPilotAgentWakeInScope(
 
 	async function finishAfterAbort() {
 		if (!elapsedLimitReached) return finishAndReturn("stopped");
-		const failure = resourceFailure("maxElapsedMsPerWake");
+		const failure = missionPilotResourceFailure("maxElapsedMsPerWake");
 		await appendMissionPilotRuntimeFailure({
 			sessionId: input.sessionId,
 			failure,
@@ -562,38 +579,3 @@ export function isMissionPilotAgentRuntimeActive(sessionId: string) {
 	return activeControllers.has(sessionId);
 }
 export { reconcileInterruptedMissionPilotAgentSessions };
-
-function readSystemContext(
-	messages: Awaited<ReturnType<typeof loadMissionPilotProviderMessages>>,
-) {
-	const system = messages.find((message) => message.role === "system");
-	return system?.content ?? buildMissionPilotSystemContext();
-}
-function providerFailure(error: unknown): MissionPilotActionFailure {
-	const normalized = error instanceof Error ? error.message : String(error);
-	const typed = normalizeStructuredProviderError(error);
-	return {
-		kind: typed.kind,
-		retryable: typed.retryable,
-		providerCode: typed.code ?? null,
-		httpStatus: typed.httpStatus ?? null,
-		message: normalized,
-		retryAfterMs: typed.retryAfterMs ?? null,
-		attempt: typed.attempt ?? 1,
-		actionId: "provider.next_turn",
-		idempotencyKey: null,
-	};
-}
-function resourceFailure(limit: string): MissionPilotActionFailure {
-	return {
-		kind: "resource_limit",
-		retryable: false,
-		providerCode: null,
-		httpStatus: null,
-		message: `Mission Pilot wake resource limit reached: ${limit}`,
-		retryAfterMs: null,
-		attempt: 1,
-		actionId: "runtime.continue",
-		idempotencyKey: null,
-	};
-}

@@ -336,9 +336,7 @@ describe("Run completion preconditions", () => {
 		expect(result.snapshot?.readiness?.discrepancies).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ code: "required_conditions_incomplete" }),
-				expect.objectContaining({ code: "missing_active_test_discovery" }),
-				expect.objectContaining({ code: "missing_successful_test_execution" }),
-				expect.objectContaining({ code: "missing_successful_full_verify" }),
+				expect.objectContaining({ code: "evidence_subject_unavailable" }),
 			]),
 		);
 	});

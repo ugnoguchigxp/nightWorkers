@@ -1,24 +1,9 @@
 import crypto from "node:crypto";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
-import {
-	designQuestionnaireReviews,
-	designQuestionnaireSessions,
-} from "../../../db/design-questionnaire-schema";
-import {
-	missionPilotActionExecutions,
-	missionPilotToolCalls,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotQuestionnaireDrafts } from "../../../db/mission-pilot-schema";
-import {
-	implementationQueueEntries,
-	taskEvents,
-	taskMessages,
-	taskRunCommitRecords,
-	taskRuns,
-	tasks,
-} from "../../../db/schema";
+import { missionPilotActionExecutions } from "../../../db/mission-pilot-agent-schema";
+import { readTaskOperatorCommandReceipt } from "../../commandDelivery";
 
 export class MissionPilotActionExecutionConflictError extends Error {
 	readonly code = "MISSION_PILOT_ACTION_IDEMPOTENCY_CONFLICT";
@@ -40,7 +25,10 @@ export async function createMissionPilotActionExecutionIntent(input: {
 	arguments: unknown;
 	expectedTaskRevision: number | null;
 }) {
-	const argumentsDigest = digestArguments(input.arguments);
+	const argumentsDigest = digestArguments({
+		arguments: input.arguments,
+		expectedTaskRevision: input.expectedTaskRevision,
+	});
 	return db.transaction(async (tx) => {
 		const [existing] = await tx
 			.select()
@@ -166,6 +154,30 @@ export async function completeMissionPilotActionExecution(input: {
 	return row ?? null;
 }
 
+async function resetMissionPilotActionExecutionPending(id: string) {
+	const [row] = await db
+		.update(missionPilotActionExecutions)
+		.set({
+			status: "pending",
+			resultJson: null,
+			failureJson: null,
+			startedAt: null,
+			finishedAt: null,
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(missionPilotActionExecutions.id, id),
+				inArray(missionPilotActionExecutions.status, [
+					"executing",
+					"outcome_unknown",
+				]),
+			),
+		)
+		.returning();
+	return row ?? null;
+}
+
 export async function listMissionPilotActionExecutionReceipts(
 	sessionId: string,
 ) {
@@ -191,14 +203,41 @@ export async function reconcileMissionPilotActionExecutionReceipts(
 			),
 		);
 	for (const receipt of receipts) {
-		const resource = await reconcileMissionPilotActionResource(receipt);
-		if (resource) {
+		const delivery = await readTaskOperatorCommandReceipt({
+			actorKind: "delegated_user",
+			actorId: receipt.sessionId,
+			idempotencyKey: receipt.idempotencyKey,
+		});
+		if (
+			delivery &&
+			delivery.taskId === receipt.taskId &&
+			delivery.actionId === receipt.actionId &&
+			delivery.status === "succeeded"
+		) {
+			const result = normalizeTaskOperatorDeliveryResult(delivery);
 			await completeMissionPilotActionExecution({
 				id: receipt.id,
-				result: resource.result,
-				sourceResourceType: resource.type,
-				sourceResourceId: resource.id,
+				result,
+				sourceResourceType: resourceTypeForAction(receipt.actionId),
+				sourceResourceId: resultResourceId(result),
 			});
+			continue;
+		}
+		if (
+			delivery &&
+			delivery.taskId === receipt.taskId &&
+			delivery.actionId === receipt.actionId &&
+			delivery.status === "failed"
+		) {
+			await completeMissionPilotActionExecution({
+				id: receipt.id,
+				status: "failed",
+				failure: failureFromTaskOperatorReceipt(receipt, delivery.failure),
+			});
+			continue;
+		}
+		if (!delivery || delivery.status === "pending") {
+			await resetMissionPilotActionExecutionPending(receipt.id);
 			continue;
 		}
 		if (receipt.status === "outcome_unknown") continue;
@@ -211,268 +250,124 @@ export async function reconcileMissionPilotActionExecutionReceipts(
 	return listMissionPilotActionExecutionReceipts(sessionId);
 }
 
-async function reconcileMissionPilotActionResource(
-	receipt: typeof missionPilotActionExecutions.$inferSelect,
-) {
-	const [toolCall] = await db
-		.select({ argumentsJson: missionPilotToolCalls.argumentsJson })
-		.from(missionPilotToolCalls)
-		.where(eq(missionPilotToolCalls.id, receipt.toolCallId))
-		.limit(1);
-	const args = readRecord(toolCall?.argumentsJson);
-	if (receipt.actionId === "run.implementation.start") {
-		const runs = await db
-			.select({
-				id: taskRuns.id,
-				status: taskRuns.status,
-				contextSnapshot: taskRuns.contextSnapshot,
-			})
-			.from(taskRuns)
-			.where(eq(taskRuns.taskId, receipt.taskId));
-		let run = runs.find((candidate) => {
-			const provenance = readRecord(
-				candidate.contextSnapshot,
-			).missionPilotAgent;
-			return (
-				readText(readRecord(provenance).sessionId) === receipt.sessionId &&
-				readText(readRecord(provenance).idempotencyKey) ===
-					receipt.idempotencyKey
-			);
-		});
-		if (!run && runs.length > 0) {
-			const events = await db
-				.select({
-					runId: taskEvents.taskRunId,
-					payloadJson: taskEvents.payloadJson,
-				})
-				.from(taskEvents)
-				.where(
-					inArray(
-						taskEvents.taskRunId,
-						runs.map((candidate) => candidate.id),
-					),
-				);
-			const associatedRunId = events.find((event) => {
-				const payload = readRecord(event.payloadJson);
-				const runEvent = readRecord(payload.runEvent);
-				const data = readRecord(runEvent.data);
-				const provenance = readRecord(data.requestProvenance);
-				const requestedBy = readRecord(provenance.requestedBy);
-				const orchestrationRef = readRecord(provenance.orchestrationRef);
-				return (
-					data.action === "coding_agent.requested" &&
-					requestedBy.actorId === receipt.sessionId &&
-					orchestrationRef.id === receipt.idempotencyKey
-				);
-			})?.runId;
-			run = runs.find((candidate) => candidate.id === associatedRunId);
-		}
-		if (run) return resource("task_run", run.id, run);
-	}
-	if (receipt.actionId === "task.queue.enqueue") {
-		const entries = await db
-			.select()
-			.from(implementationQueueEntries)
-			.where(eq(implementationQueueEntries.taskId, receipt.taskId));
-		const entry = entries.find(
-			(candidate) =>
-				readText(readRecord(candidate.missionPilotAgentJson).idempotencyKey) ===
-				receipt.idempotencyKey,
-		);
-		if (entry) return resource("implementation_queue_entry", entry.id, entry);
-	}
-	if (receipt.actionId === "task.message.send") {
-		const messages = await db
-			.select()
-			.from(taskMessages)
-			.where(eq(taskMessages.taskId, receipt.taskId));
-		const message = messages.find(
-			(candidate) =>
-				readText(
-					readRecord(readRecord(candidate.metadataJson).missionPilotAction)
-						.idempotencyKey,
-				) === receipt.idempotencyKey,
-		);
-		if (message) return resource("task_message", message.id, message);
-	}
-	if (receipt.actionId === "questionnaire.create") {
-		const [questionnaire] = await db
-			.select()
-			.from(designQuestionnaireSessions)
-			.where(
-				and(
-					eq(designQuestionnaireSessions.taskId, receipt.taskId),
-					eq(
-						designQuestionnaireSessions.missionPilotActionKey,
-						receipt.idempotencyKey,
-					),
-				),
-			)
-			.limit(1);
-		if (questionnaire)
-			return resource("questionnaire_session", questionnaire.id, questionnaire);
-	}
-	if (
-		["questionnaire.draft.update", "questionnaire.draft.save"].includes(
-			receipt.actionId,
-		)
-	) {
-		const [draft] = await db
-			.select()
-			.from(missionPilotQuestionnaireDrafts)
-			.where(
-				and(
-					eq(missionPilotQuestionnaireDrafts.sessionId, receipt.sessionId),
-					eq(
-						missionPilotQuestionnaireDrafts.lastActionIdempotencyKey,
-						receipt.idempotencyKey,
-					),
-				),
-			)
-			.limit(1);
-		if (draft) return resource("questionnaire_draft", draft.id, draft);
-	}
-	if (
-		[
-			"questionnaire.review.accept",
-			"questionnaire.review.leave_unadopted",
-		].includes(receipt.actionId)
-	) {
-		const questionnaireSessionId = readText(args.questionnaireSessionId);
-		const actionStartedAt = receipt.startedAt ?? receipt.createdAt;
-		const [questionnaire] = questionnaireSessionId
-			? await db
-					.select()
-					.from(designQuestionnaireSessions)
-					.where(
-						and(
-							eq(designQuestionnaireSessions.id, questionnaireSessionId),
-							eq(designQuestionnaireSessions.taskId, receipt.taskId),
-							gte(designQuestionnaireSessions.updatedAt, actionStartedAt),
-						),
-					)
-					.limit(1)
-			: [];
-		const expectedReviewStatus =
-			receipt.actionId === "questionnaire.review.accept"
-				? "accepted"
-				: "left_unadopted";
-		const expectedSessionStatus =
-			receipt.actionId === "questionnaire.review.accept"
-				? "accepted"
-				: "needs_edit";
-		const [review] = questionnaire
-			? await db
-					.select()
-					.from(designQuestionnaireReviews)
-					.where(
-						and(
-							eq(designQuestionnaireReviews.sessionId, questionnaire.id),
-							eq(designQuestionnaireReviews.status, expectedReviewStatus),
-							gte(designQuestionnaireReviews.updatedAt, actionStartedAt),
-						),
-					)
-					.orderBy(desc(designQuestionnaireReviews.updatedAt))
-					.limit(1)
-			: [];
-		const [publishedMessage] =
-			receipt.actionId === "questionnaire.review.accept" &&
-			review?.publishedMessageId
-				? await db
-						.select()
-						.from(taskMessages)
-						.where(
-							and(
-								eq(taskMessages.id, review.publishedMessageId),
-								eq(taskMessages.taskId, receipt.taskId),
-							),
-						)
-						.limit(1)
-				: [];
-		const publishedAction = readRecord(
-			readRecord(publishedMessage?.metadataJson).missionPilotAction,
-		);
-		const actionMatches =
-			receipt.actionId === "questionnaire.review.accept"
-				? readText(publishedAction.idempotencyKey) === receipt.idempotencyKey &&
-					readText(publishedAction.toolCallId) === receipt.toolCallId
-				: Boolean(review);
-		if (
-			questionnaire?.status === expectedSessionStatus &&
-			review &&
-			actionMatches
-		)
-			return resource("questionnaire_session", questionnaire.id, questionnaire);
-	}
-	if (
-		[
-			"task.complete",
-			"task.archive",
-			"task.archive.restore",
-			"task.update",
-		].includes(receipt.actionId)
-	) {
-		const [task] = await db
-			.select()
-			.from(tasks)
-			.where(eq(tasks.id, receipt.taskId))
-			.limit(1);
-		if (!task) return null;
-		if (receipt.actionId === "task.complete" && task.status === "completed")
-			return resource("task", task.id, task);
-		if (receipt.actionId === "task.archive" && task.status === "archived")
-			return resource("task", task.id, task);
-		if (
-			receipt.actionId === "task.archive.restore" &&
-			task.status !== "archived"
-		)
-			return resource("task", task.id, task);
-		if (
-			receipt.actionId === "task.update" &&
-			recordContains(task, readRecord(args.fields))
-		)
-			return resource("task", task.id, task);
-	}
-	if (["git.commit", "git.push"].includes(receipt.actionId)) {
-		const runId = readText(args.sourceRunId);
-		if (!runId) return null;
-		const [record] = await db
-			.select()
-			.from(taskRunCommitRecords)
-			.where(eq(taskRunCommitRecords.runId, runId))
-			.limit(1);
-		if (
-			record &&
-			((receipt.actionId === "git.commit" && record.status === "committed") ||
-				(receipt.actionId === "git.push" && record.pushStatus === "pushed"))
-		)
-			return resource("task_run_commit_record", record.id, record);
-	}
-	if (receipt.actionId === "run.stop") {
-		const runId = readText(args.runId);
-		const [run] = runId
-			? await db.select().from(taskRuns).where(eq(taskRuns.id, runId)).limit(1)
-			: [];
-		if (
-			run &&
-			!["running", "context_compiling", "finalizing"].includes(run.status)
-		)
-			return resource("task_run", run.id, run);
+function resourceTypeForAction(actionId: string) {
+	if (actionId.startsWith("run.")) return "task_run";
+	if (actionId.startsWith("task.queue.")) return "implementation_queue_entry";
+	if (actionId === "task.message.send") return "task_message";
+	if (actionId.startsWith("questionnaire.")) return "questionnaire";
+	if (actionId.startsWith("plan.artifact.")) return "artifact";
+	if (actionId.startsWith("git.")) return "git_operation";
+	if (actionId.startsWith("task.")) return "task";
+	return "task_operator_resource";
+}
+
+function resultResourceId(value: unknown) {
+	const result = readRecord(value);
+	const operationRef = readRecord(readRecord(result.receipt).operationRef);
+	const operationId = readText(operationRef.id);
+	if (operationId) return operationId;
+	const data = readRecord(result.data);
+	for (const key of ["runId", "id", "taskId"]) {
+		const id = readText(data[key]) ?? readText(result[key]);
+		if (id) return id;
 	}
 	return null;
 }
 
-function resource(type: string, id: string, result: unknown) {
-	return { type, id, result };
+function normalizeTaskOperatorDeliveryResult(
+	receipt: NonNullable<
+		Awaited<ReturnType<typeof readTaskOperatorCommandReceipt>>
+	>,
+) {
+	const stored = readRecord(receipt.result);
+	const storedReceipt = readRecord(stored.receipt);
+	if (
+		typeof storedReceipt.commandId === "string" &&
+		typeof storedReceipt.actionId === "string" &&
+		"data" in stored
+	)
+		return {
+			...stored,
+			receipt: { ...storedReceipt, replayed: true },
+		};
+	const id = resultResourceId(receipt.result);
+	const resourceRef = id
+		? {
+				kind: resourceKindForAction(receipt.actionId),
+				id,
+				revision: revisionFromResult(receipt.result),
+			}
+		: null;
+	return {
+		receipt: {
+			commandId: receipt.id,
+			idempotencyKey: receipt.idempotencyKey,
+			actionId: receipt.actionId,
+			operationRef: resourceRef,
+			resourceRefs: resourceRef ? [resourceRef] : [],
+			replayed: true,
+		},
+		data: receipt.result,
+	};
 }
 
-function recordContains(
-	actual: Record<string, unknown>,
-	expected: Record<string, unknown>,
-) {
-	return Object.entries(expected).every(
-		([key, value]) => JSON.stringify(actual[key]) === JSON.stringify(value),
-	);
+function resourceKindForAction(actionId: string) {
+	if (actionId.startsWith("run.")) return "run";
+	if (actionId.startsWith("task.queue.")) return "queue";
+	if (actionId === "task.message.send") return "task_message";
+	if (actionId.startsWith("questionnaire.")) return "questionnaire";
+	if (actionId.startsWith("plan.artifact.")) return "artifact";
+	if (actionId.startsWith("git.")) return "git_operation";
+	return "task";
+}
+
+function revisionFromResult(value: unknown) {
+	const revision = readRecord(value).revision;
+	return typeof revision === "number" && revision >= 0
+		? Math.trunc(revision)
+		: 0;
+}
+
+function failureFromTaskOperatorReceipt(
+	receipt: typeof missionPilotActionExecutions.$inferSelect,
+	value: unknown,
+): MissionPilotActionFailure {
+	const failure = readRecord(value);
+	const code = readText(failure.code);
+	const taskOperatorKind = readText(failure.kind);
+	const kind =
+		taskOperatorKind === "revision_conflict"
+			? "revision_conflict"
+			: taskOperatorKind === "permission_denied"
+				? "permission"
+				: taskOperatorKind === "schema_validation"
+					? "schema_validation"
+					: taskOperatorKind === "internal"
+						? "outcome_unknown"
+						: "domain_precondition";
+	return {
+		kind,
+		retryable: false,
+		providerCode: code,
+		httpStatus:
+			typeof failure.statusCode === "number" ? failure.statusCode : null,
+		message:
+			readText(failure.message) ?? "Task Operator command delivery failed.",
+		retryAfterMs: null,
+		attempt: 1,
+		actionId: receipt.actionId,
+		idempotencyKey: receipt.idempotencyKey,
+		currentTaskRevision:
+			typeof failure.currentRevision === "number"
+				? failure.currentRevision
+				: null,
+		details:
+			failure.details &&
+			typeof failure.details === "object" &&
+			!Array.isArray(failure.details)
+				? readRecord(failure.details)
+				: null,
+	};
 }
 
 export function digestArguments(value: unknown) {

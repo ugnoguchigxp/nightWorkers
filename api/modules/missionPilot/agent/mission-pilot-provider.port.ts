@@ -7,13 +7,14 @@ import {
 	withStructuredProviderAttempt,
 } from "../../../services/structured-llm/public";
 import type { StructuredLlmThinkingDepth } from "../../../services/structured-llm/settings";
+import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
 import {
 	bindSystemContextCatalogSnapshot,
+	p,
 	systemContextPromptAudit,
 } from "../../../systemContexts/catalog";
 import { missionPilotToolTurnProviderExecutionPolicy } from "../adapters/mission-pilot-provider.adapter";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
-import { missionPilotDigest } from "./mission-pilot-content-page";
 import { appendMissionPilotTaskEvent } from "./mission-pilot-task-event.repository";
 
 export class MissionPilotProviderRetryScheduledError extends Error {
@@ -24,6 +25,63 @@ export class MissionPilotProviderRetryScheduledError extends Error {
 		super("Mission Pilot provider retry was scheduled.");
 		this.name = "MissionPilotProviderRetryScheduledError";
 	}
+}
+
+export function preflightMissionPilotProviderToolTurn() {
+	const preflightInstruction =
+		"Mission Pilotで使用するproviderがtool turnに対応しているか事前確認する。";
+	const candidates = buildNormalizedSupervisorLlmRequestCandidates({
+		systemPrompt: p("providerExecution.system-prompt", {
+			systemPrompt: preflightInstruction,
+		}),
+		userPrompt: "Task Operator tool turnへの対応可否を確認してください。",
+		label: "mission_pilot_provider_preflight",
+		role: "mission_pilot",
+	});
+	const supportedAdapters = new Set([
+		"azure",
+		"openai",
+		"bedrock",
+		"codex",
+		"fixture",
+	]);
+	const settings = readStructuredLlmProviderSettings();
+	const supported = candidates.filter((candidate) =>
+		isConfiguredToolTurnCandidate(candidate, supportedAdapters, settings),
+	);
+	return supported.length > 0
+		? {
+				ok: true as const,
+				candidateCount: supported.length,
+			}
+		: {
+				ok: false as const,
+				code: "MISSION_PILOT_PROVIDER_TOOL_TURN_UNSUPPORTED",
+				message:
+					"Mission Pilotで使用できるprovider tool-turn routeが設定されていません。",
+			};
+}
+
+function isConfiguredToolTurnCandidate(
+	candidate: ReturnType<
+		typeof buildNormalizedSupervisorLlmRequestCandidates
+	>[number],
+	supportedAdapters: ReadonlySet<string>,
+	settings: ReturnType<typeof readStructuredLlmProviderSettings>,
+) {
+	const adapter = providerAdapterKey(candidate.providerId);
+	if (!supportedAdapters.has(adapter)) return false;
+	if (adapter === "fixture")
+		return process.env.NIGHTWORKERS_E2E_ISOLATED === "1";
+	const endpoint = settings.providerEndpoints?.find(
+		(item) => item.id === candidate.providerEndpointId,
+	);
+	if (endpoint?.enabled) return true;
+	if (adapter === "azure") return settings.AZURE_OPENAI_ENABLED === true;
+	if (adapter === "openai") return settings.OPENAI_ENABLED === true;
+	if (adapter === "bedrock") return settings.AWS_BEDROCK_ENABLED === true;
+	if (adapter === "codex") return settings.CODEX_ENABLED === true;
+	return false;
 }
 
 function latestUserPrompt(
@@ -95,8 +153,10 @@ export const missionPilotProviderPort: MissionPilotProviderPort = {
 			retryContext: {
 				sessionId: input.sessionId,
 				taskId: input.taskId,
+				turnId: input.turnId,
+				providerCallIndex: input.providerCallIndex,
 				taskRevision: input.currentStepContext?.taskRef.revision ?? 0,
-				attempt: latestProviderRetryAttempt(input.messages),
+				attempt: input.retryAttempt ?? 1,
 			},
 			callCandidate: (normalizedRequest) =>
 				callAuditedMissionPilotProviderTurn({
@@ -159,6 +219,8 @@ export async function callMissionPilotProviderCandidates(input: {
 	retryContext?: {
 		sessionId: string;
 		taskId: string;
+		turnId: string;
+		providerCallIndex: number;
 		taskRevision: number;
 		attempt?: number;
 	};
@@ -214,6 +276,8 @@ export async function retryMissionPilotProviderCall<T>(
 	retryContext?: {
 		sessionId: string;
 		taskId: string;
+		turnId: string;
+		providerCallIndex: number;
 		taskRevision: number;
 		attempt?: number;
 	},
@@ -233,7 +297,13 @@ export async function retryMissionPilotProviderCall<T>(
 				? 0
 				: Math.min(10_000, failure.retryAfterMs ?? 250 * 2 ** (attempt - 1));
 		const availableAt = new Date(Date.now() + delay);
-		const sourceEventId = `provider-retry:${retryContext.sessionId}:${attempt + 1}:${missionPilotDigest(`${Date.now()}:${attempt}`)}`;
+		const sourceEventId = [
+			"provider-retry",
+			retryContext.sessionId,
+			retryContext.turnId,
+			retryContext.providerCallIndex,
+			attempt + 1,
+		].join(":");
 		await appendMissionPilotTaskEvent({
 			taskId: retryContext.taskId,
 			eventType: "mission_pilot.retry_timer_elapsed",
@@ -249,34 +319,4 @@ export async function retryMissionPilotProviderCall<T>(
 		});
 		throw new MissionPilotProviderRetryScheduledError(failure, availableAt);
 	}
-}
-
-function latestProviderRetryAttempt(
-	messages: Parameters<MissionPilotProviderPort["nextTurn"]>[0]["messages"],
-) {
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const content = messages[index]?.content;
-		if (
-			typeof content !== "string" ||
-			!content.includes("mission_pilot.retry_timer_elapsed")
-		)
-			continue;
-		try {
-			const parsed = JSON.parse(content) as Record<string, unknown>;
-			const events = Array.isArray(parsed.events) ? parsed.events : [];
-			for (const event of [...events].reverse()) {
-				const record =
-					event && typeof event === "object"
-						? (event as Record<string, unknown>)
-						: {};
-				if (record.eventType !== "mission_pilot.retry_timer_elapsed") continue;
-				const payload =
-					record.payload && typeof record.payload === "object"
-						? (record.payload as Record<string, unknown>)
-						: {};
-				if (typeof payload.nextAttempt === "number") return payload.nextAttempt;
-			}
-		} catch {}
-	}
-	return 1;
 }

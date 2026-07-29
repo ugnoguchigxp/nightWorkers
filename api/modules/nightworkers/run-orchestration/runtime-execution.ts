@@ -1,5 +1,6 @@
 import type { TaskRunStatus } from "../../../db/schema";
 import { logger } from "../../../lib/logger";
+import { hasFixtureProviderToolTurns } from "../../../services/structured-llm/fixture-tool-provider";
 import {
 	continueAfterTaskRun,
 	projectTaskRunParentStatus,
@@ -94,7 +95,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =
 		process.env.NIGHTWORKERS_E2E === "1" &&
-		process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE === "1";
+		process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE === "1" &&
+		!hasFixtureProviderToolTurns(taskId, "implementation");
 	let effectiveRuntimeContextSnapshot = runtimeContextSnapshot;
 
 	void (async () => {

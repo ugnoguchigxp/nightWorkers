@@ -47,8 +47,8 @@ export async function createImplementationQueueEntry(
 					? (data.sequenceDependsOnEntryId ?? null)
 					: null,
 			schedulingReason: data.schedulingReason ?? null,
-			missionPilotAdmissionKey: data.missionPilotAdmissionKey ?? null,
-			missionPilotAgentJson: data.missionPilotAgent ?? null,
+			sourceCommandKey: data.sourceCommandKey ?? null,
+			requestProvenanceJson: data.requestProvenance ?? null,
 			claimReady: data.claimReady ?? true,
 			workspaceId: data.workspaceId ?? null,
 			workspaceRequired: data.workspaceRequired ?? false,

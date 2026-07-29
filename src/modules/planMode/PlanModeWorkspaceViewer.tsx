@@ -1,22 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import {
-	fetchMissionPilotQuestionnaireDraft,
 	missionPilotPlanProgressQueryOptions,
-	updateMissionPilotQuestionnaireDraft,
+	useMissionPilotQuestionnaireDraft,
 } from "../missionPilot";
-import type { ArtifactExportDescriptor } from "../nightworkers/artifactExport";
 import type {
-	ActivityArtifact,
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,
-	GeneralSettings,
 	TaskMessage,
-	WorkbenchArtifactContext,
 } from "../nightworkers/types";
 import { fetchDesignQuestionnaireSessions } from "../questionnaire";
-import { fetchGeneralSettings } from "../settings";
 import {
 	getPlanModeCapabilities,
 	type PlanWorkspaceTab,
@@ -45,7 +38,9 @@ import {
 	shouldOpenQuestionnaireForEmptyBlueprint,
 	shouldShowQuestionnaireStartAction,
 } from "./PlanModeWorkspaceViewer.model";
+import type { PlanModeWorkspaceViewerProps } from "./PlanModeWorkspaceViewer.types";
 import { usePlanModeArtifactGenerationForWorkspace } from "./usePlanModeArtifactGeneration";
+import { usePlanModeGeneralSettings } from "./usePlanModeGeneralSettings";
 import { usePlanModeQuestionnaireActions } from "./usePlanModeQuestionnaireActions";
 import { usePlanModeRoutingEditor } from "./usePlanModeRoutingEditor";
 import { usePlanModeWorkspaceOutputs } from "./usePlanModeWorkspaceOutputs";
@@ -61,20 +56,7 @@ export function PlanModeWorkspaceViewer({
 	onQueueSession,
 	onAddToQueue,
 	isImplementationLocked = false,
-}: {
-	sessionId: string | null;
-	taskMessages: TaskMessage[];
-	activityArtifacts?: ActivityArtifact[];
-	initialTab?: PlanWorkspaceTab;
-	onTabChange?: (tab: PlanWorkspaceTab) => void;
-	onArtifactContextChange?: (context: WorkbenchArtifactContext | null) => void;
-	onExportDescriptorChange?: (
-		descriptor: ArtifactExportDescriptor | null,
-	) => void;
-	onQueueSession?: () => Promise<void>;
-	onAddToQueue?: () => Promise<void>;
-	isImplementationLocked?: boolean;
-}) {
+}: PlanModeWorkspaceViewerProps) {
 	const queryClient = useQueryClient();
 	const { data: workspace = null, refetch: refetchWorkspace } = useQuery(
 		planModeWorkspaceQueryOptions(sessionId),
@@ -93,17 +75,34 @@ export function PlanModeWorkspaceViewer({
 	const [busyAction, setBusyAction] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [actionNotice, setActionNotice] = useState<string | null>(null);
-	const [generalSettings, setGeneralSettings] =
-		useState<GeneralSettings | null>(null);
+	const generalSettings = usePlanModeGeneralSettings();
 	const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
 	const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
-	const [missionPilotDraft, setMissionPilotDraft] =
-		useState<MissionPilotQuestionnaireDraft | null>(null);
-	const [countdownNow, setCountdownNow] = useState(() => Date.now());
-	const missionPilotDraftRef = useRef<MissionPilotQuestionnaireDraft | null>(
-		null,
+	const activeQuestionnaireSession =
+		sessions.find((session) => session.id === activeSessionId) ||
+		sessions[0] ||
+		null;
+	const missionPilotSubmittedHandlerRef = useRef<() => void>(() => undefined);
+	const handleMissionPilotDraftSubmitted = useCallback(
+		() => missionPilotSubmittedHandlerRef.current(),
+		[],
 	);
-	const draftUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const {
+		draft: missionPilotDraft,
+		setDraft: setMissionPilotDraft,
+		draftRef: missionPilotDraftRef,
+		updateQueueRef: draftUpdateQueueRef,
+		secondsRemaining: missionPilotSecondsRemaining,
+		updateAnswers: handleQuestionnaireAnswersChange,
+		projectAnswers: projectMissionPilotAnswers,
+	} = useMissionPilotQuestionnaireDraft({
+		taskId: sessionId,
+		questionnaireSessionId: activeQuestionnaireSession?.id ?? null,
+		setQuestionnaireSessionId: setActiveSessionId,
+		setAnswers,
+		setError: setActionError,
+		onSubmitted: handleMissionPilotDraftSubmitted,
+	});
 	const workspaceMessages = useMemo(
 		() =>
 			selectPlanModeWorkspaceMessages({
@@ -227,11 +226,7 @@ export function PlanModeWorkspaceViewer({
 					nextSessions[0];
 				if (selected) {
 					setActiveSessionId(selected.id);
-					setAnswers(
-						Object.fromEntries(
-							selected.answers.map((item) => [item.questionId, item.answer]),
-						),
-					);
+					setAnswers(projectMissionPilotAnswers(selected));
 				}
 			}
 		},
@@ -239,10 +234,12 @@ export function PlanModeWorkspaceViewer({
 			activeSessionId,
 			blueprintMessages.length,
 			refetchWorkspace,
+			projectMissionPilotAnswers,
 			selectActiveTab,
 			sessionId,
 		],
 	);
+	missionPilotSubmittedHandlerRef.current = () => void refresh();
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
@@ -257,22 +254,6 @@ export function PlanModeWorkspaceViewer({
 			questionnaireGeneration.messageId;
 		void refresh();
 	}, [questionnaireGeneration, refresh]);
-	useEffect(() => {
-		const controller = new AbortController();
-		fetchGeneralSettings({ signal: controller.signal })
-			.then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as GeneralSettings;
-			})
-			.then((settings) => {
-				if (!controller.signal.aborted) setGeneralSettings(settings);
-			})
-			.catch((error) => {
-				if (error?.name !== "AbortError")
-					console.warn("Failed to load Plan Mode settings", error);
-			});
-		return () => controller.abort();
-	}, []);
 	useEffect(() => {
 		const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab);
 		if (nextTab) selectActiveTab(nextTab);
@@ -298,119 +279,6 @@ export function PlanModeWorkspaceViewer({
 		}
 		if (!visibleTabs.includes(activeTab)) selectActiveTab("status");
 	}, [activeTab, initialTab, selectActiveTab, visibleTabs]);
-	const activeQuestionnaireSession =
-		sessions.find((session) => session.id === activeSessionId) ||
-		sessions[0] ||
-		null;
-	useEffect(() => {
-		missionPilotDraftRef.current = missionPilotDraft;
-	}, [missionPilotDraft]);
-	useEffect(() => {
-		if (!sessionId || !activeQuestionnaireSession?.id) {
-			setMissionPilotDraft(null);
-			return;
-		}
-		const controller = new AbortController();
-		void fetchMissionPilotQuestionnaireDraft(sessionId)
-			.then(async (response) => {
-				if (!response.ok) return null;
-				return (await response.json()) as MissionPilotQuestionnaireDraft | null;
-			})
-			.then((draft) => {
-				if (controller.signal.aborted) return;
-				if (
-					draft &&
-					draft.questionnaireSessionId !== activeQuestionnaireSession.id
-				) {
-					setActiveSessionId(draft.questionnaireSessionId);
-					return;
-				}
-				if (!draft) {
-					setMissionPilotDraft(null);
-					return;
-				}
-				setMissionPilotDraft(draft);
-				setAnswers(
-					Object.fromEntries(
-						draft.answers.map((answer) => [answer.questionId, answer]),
-					),
-				);
-			})
-			.catch(() => undefined);
-		return () => controller.abort();
-	}, [activeQuestionnaireSession?.id, sessionId]);
-	useEffect(() => {
-		if (missionPilotDraft?.state !== "waiting_user") return;
-		const timer = window.setInterval(() => setCountdownNow(Date.now()), 250);
-		return () => window.clearInterval(timer);
-	}, [missionPilotDraft?.state]);
-
-	const missionPilotSecondsRemaining = missionPilotDraft
-		? Math.max(
-				0,
-				Math.ceil(
-					(new Date(missionPilotDraft.deadlineAt).getTime() - countdownNow) /
-						1000,
-				),
-			)
-		: null;
-	const missionPilotDraftState = missionPilotDraft?.state;
-
-	useEffect(() => {
-		if (
-			!sessionId ||
-			(missionPilotDraftState !== "waiting_user" &&
-				missionPilotDraftState !== "submitting") ||
-			missionPilotSecondsRemaining !== 0
-		)
-			return;
-		const poll = () => {
-			void fetchMissionPilotQuestionnaireDraft(sessionId)
-				.then(async (response) =>
-					response.ok
-						? ((await response.json()) as MissionPilotQuestionnaireDraft | null)
-						: null,
-				)
-				.then((draft) => {
-					if (draft) setMissionPilotDraft(draft);
-					if (draft?.state === "submitted") void refresh();
-				});
-		};
-		const timer = window.setInterval(poll, 1_000);
-		poll();
-		return () => window.clearInterval(timer);
-	}, [
-		missionPilotDraftState,
-		missionPilotSecondsRemaining,
-		refresh,
-		sessionId,
-	]);
-
-	const handleQuestionnaireAnswersChange = useCallback(
-		(nextAnswers: Record<string, DesignQuestionnaireAnswer>) => {
-			setAnswers(nextAnswers);
-			if (!sessionId || missionPilotDraftRef.current?.state !== "waiting_user")
-				return;
-			const snapshot = Object.values(nextAnswers);
-			draftUpdateQueueRef.current = draftUpdateQueueRef.current.then(
-				async () => {
-					const current = missionPilotDraftRef.current;
-					if (current?.state !== "waiting_user") return;
-					const response = await updateMissionPilotQuestionnaireDraft(
-						sessionId,
-						current.version,
-						snapshot,
-					);
-					if (!response.ok) return;
-					const updated =
-						(await response.json()) as MissionPilotQuestionnaireDraft;
-					missionPilotDraftRef.current = updated;
-					setMissionPilotDraft(updated);
-				},
-			);
-		},
-		[sessionId],
-	);
 	const activeQuestionnaireSummary =
 		workspace?.questionnaireSessions.find(
 			(session) => session.id === activeQuestionnaireSession?.id,
@@ -460,7 +328,6 @@ export function PlanModeWorkspaceViewer({
 		routing: workspace?.routing,
 		runAction,
 	});
-
 	const planModeDisabledReason =
 		"Plan Mode capability is disabled in Settings.";
 	const {
@@ -489,7 +356,6 @@ export function PlanModeWorkspaceViewer({
 		setAssemblyReadySessionIds,
 		setActionNotice,
 	});
-
 	const {
 		activeDedicatedView,
 		activeDedicatedArtifact,

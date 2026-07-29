@@ -1,5 +1,9 @@
 import { estimateLlmUsage } from "../llm-usage";
 import { readSchemaFirstFixtureOutput } from "./fixture";
+import {
+	hasFixtureProviderTextOutputs,
+	takeFixtureProviderTextOutput,
+} from "./fixture-text-provider";
 import type { RawLlmCallOptions } from "./providers";
 import type { ProviderCallResult } from "./types";
 
@@ -22,6 +26,14 @@ export function callFixtureProvider(
 		round: input.options.round ?? null,
 	};
 	input.setProviderDebug(providerDebug);
+	const taskId = input.options.taskId;
+	if (taskId && hasFixtureProviderTextOutputs(taskId)) {
+		return buildFixtureProviderResult(
+			takeFixtureProviderTextOutput(taskId),
+			input,
+			providerDebug,
+		);
+	}
 	if (input.options.schemaFirst) {
 		return buildFixtureProviderResult(
 			readSchemaFirstFixtureOutput(input.options.round),

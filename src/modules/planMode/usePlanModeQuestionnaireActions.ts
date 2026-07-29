@@ -104,6 +104,7 @@ export function usePlanModeQuestionnaireActions(input: {
 						draft: MissionPilotQuestionnaireDraft | null;
 						questionnaire: DesignQuestionnaireSession;
 					};
+					missionPilotDraftRef.current = payload.draft;
 					setMissionPilotDraft(payload.draft);
 					setSessions((prev) =>
 						prev.map((item) =>

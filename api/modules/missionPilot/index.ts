@@ -14,8 +14,6 @@ export * from "./agent/mission-pilot-conversation.repository";
 export * from "./agent/mission-pilot-task-event.adapter";
 export * from "./agent/mission-pilot-task-event.repository";
 export { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
-export { resolvePlanArtifactCanonicalInput } from "./artifacts/plan-artifact-input-context.service";
-export { executePlanModeArtifactCorrection } from "./artifacts/plan-mode-artifact-correction.service";
 export * from "./mission-pilot.repository";
 export { missionPilotRouter } from "./mission-pilot.routes";
 export {
@@ -37,12 +35,13 @@ export {
 	updateQuestionnaireDraft,
 } from "./mission-pilot-questionnaire.service";
 export * from "./mission-pilot-questionnaire-projection";
-export * from "./mission-pilot-rework";
-export { missionPilotArtifactTrace } from "./mission-pilot-trace-provenance";
-export { selectQuestionnaireArtifactsForTask } from "./planning/mission-pilot-questionnaire-artifact-routing.service";
+export {
+	missionPilotArtifactTrace,
+	missionPilotInitialPromptTrace,
+	missionPilotThoughtTrace,
+} from "./mission-pilot-trace-provenance";
 export {
 	getPlanModeRouting,
-	updatePlanModeRoutingForCodingAgent,
 	updatePlanModeRoutingForUser,
 } from "./planning/plan-mode-routing.service";
 export {
@@ -53,4 +52,3 @@ export {
 	getMissionPilotSystemContext,
 } from "./prompts/mission-pilot-system-context";
 export { missionPilotAgentFixtureRouter } from "./routes/mission-pilot-agent-fixture-routes";
-export { missionPilotFixtureRouter } from "./routes/mission-pilot-fixture-routes";

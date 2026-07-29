@@ -10,10 +10,19 @@ export const agentScenarioHeaders = {
 };
 
 export type AgentExecution = {
+	version: 2;
+	executionModel: "task_operator_v1";
 	agent?: {
 		visibleItems?: Array<{ kind: string; content?: string }>;
 	};
-	phaseRuns: unknown[];
+	legacyPostQueueState: {
+		status: "retired";
+		retiredFields: string[];
+		replacement: {
+			execution: "task_operator_v1";
+			resources: string[];
+		};
+	};
 };
 
 type TaskResponse = {
@@ -68,6 +77,19 @@ export async function createAgentScenario(
 		},
 	);
 	expect(fixtureResponse.status(), await fixtureResponse.text()).toBe(201);
+	if (scenario === "autopilot" || scenario === "restart") {
+		const codingFixtureResponse = await request.post(
+			"/api/e2e/fixtures/coding-agent-scenario",
+			{
+				headers: agentScenarioHeaders,
+				data: { taskId: task.id, scenario: "direct-run" },
+			},
+		);
+		expect(
+			codingFixtureResponse.status(),
+			await codingFixtureResponse.text(),
+		).toBe(201);
+	}
 	return {
 		workspace,
 		repositoryId,
@@ -121,11 +143,17 @@ export async function waitForTaskStatus(
 			)
 			.toBe(status);
 	} catch (error) {
-		const execution = await readAgentExecution(request, taskId).catch(
-			() => null,
-		);
+		const [execution, runs] = await Promise.all([
+			readAgentExecution(request, taskId).catch(() => null),
+			request
+				.get(`/api/tasks/${taskId}/runs`, { headers: agentScenarioHeaders })
+				.then(async (response) =>
+					response.ok() ? ((await response.json()) as unknown) : null,
+				)
+				.catch(() => null),
+		]);
 		throw new Error(
-			`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify({ execution })}`,
+			`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify({ execution, runs })}`,
 		);
 	}
 	return task;

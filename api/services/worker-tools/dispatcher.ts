@@ -1,9 +1,5 @@
 import type { TestEvidenceSet } from "../../../shared/schemas/verification-checklist.schema";
-import {
-	type AgentSafetyPolicy,
-	collectTestInventoryTool,
-	recordTestConditionMappingTool,
-} from "../../modules/codingAgent";
+import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 import {
 	projectExplorationCatalogTool,
 	projectExplorationCatalogUnavailableResult,
@@ -24,7 +20,6 @@ import type { WorkerToolExecutionContext } from "./output-compression";
 import { readFileTool } from "./read-file";
 import { replaceContentTool } from "./replace-content";
 import { runBackgroundCommandTool } from "./run-background-command";
-import { completionCheckTool, runCheckTool } from "./run-check";
 import { runCommandTool } from "./run-command";
 import { runVerificationTool } from "./run-verification";
 import { searchFilesTool } from "./search-files";
@@ -361,6 +356,7 @@ export async function executeWorkerTool(
 	}
 
 	if (toolName === "run_check") {
+		const { runCheckTool } = await import("./run-check");
 		return {
 			result: await runCheckTool({
 				command: args.command as string,
@@ -388,6 +384,7 @@ export async function executeWorkerTool(
 	}
 
 	if (toolName === "completion_check") {
+		const { completionCheckTool } = await import("./run-check");
 		return {
 			result: await completionCheckTool({
 				taskId: (args.taskId as string | undefined) || input.taskId || "",
@@ -401,6 +398,9 @@ export async function executeWorkerTool(
 	}
 
 	if (toolName === "collect_test_inventory") {
+		const { collectTestInventoryTool } = await import(
+			"../../modules/codingAgent"
+		);
 		return {
 			result: await collectTestInventoryTool({
 				taskId: input.taskId || "",
@@ -416,6 +416,9 @@ export async function executeWorkerTool(
 	}
 
 	if (toolName === "record_test_condition_mapping") {
+		const { recordTestConditionMappingTool } = await import(
+			"../../modules/codingAgent"
+		);
 		return {
 			result: await recordTestConditionMappingTool({
 				taskId: input.taskId || "",

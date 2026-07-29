@@ -1,4 +1,3 @@
-import type { MissionPilotAgentRunProvenance } from "../../../shared/modules/missionPilot";
 import type { TaskExecutionType } from "./queue-repository-row-mapper";
 
 export type CreateImplementationQueueEntryData = {
@@ -12,8 +11,8 @@ export type CreateImplementationQueueEntryData = {
 	sequenceOrder?: number | null;
 	sequenceDependsOnEntryId?: string | null;
 	schedulingReason?: string | null;
-	missionPilotAdmissionKey?: string | null;
-	missionPilotAgent?: MissionPilotAgentRunProvenance | null;
+	sourceCommandKey?: string | null;
+	requestProvenance?: Record<string, unknown> | null;
 	claimReady?: boolean;
 	workspaceId?: string | null;
 	workspaceRequired?: boolean;

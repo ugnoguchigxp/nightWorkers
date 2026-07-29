@@ -11,6 +11,7 @@
 		"includes": [
 			"api/**",
 			"!api/.runtime",
+			"!api/e2eFixtures/llmCatalog/generated",
 			"!api/systemContexts/generated",
 			"src/**",
 			"!**/src/routeTree.gen.ts",

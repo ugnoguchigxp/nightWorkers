@@ -174,6 +174,8 @@ describe("Codex Mission Pilot tool turns", () => {
 
 		const result = await missionPilotProviderPort.nextTurn({
 			sessionId: "mission-session-1",
+			turnId: "mission-turn-1",
+			providerCallIndex: 1,
 			taskId: "task-mission-codex",
 			systemContext: "Mission Pilot system context",
 			systemContextBinding: {

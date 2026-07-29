@@ -104,7 +104,9 @@ for (const file of [
 	"api/modules/nightworkers/run-orchestration/start-task-run-types.ts",
 	"api/modules/missionPilot/mission-pilot-runtime-continuation.service.ts",
 ]) {
-	const source = fs.readFileSync(path.join(root, file), "utf8");
+	const absolutePath = path.join(root, file);
+	if (!fs.existsSync(absolutePath)) continue;
+	const source = fs.readFileSync(absolutePath, "utf8");
 	if (source.includes("resumeTodosFromRunId")) {
 		errors.push(`${file}: legacy cross-Run Todo migration option`);
 	}

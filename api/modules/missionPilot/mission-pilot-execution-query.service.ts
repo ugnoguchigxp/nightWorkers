@@ -1,20 +1,12 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotConversationItems,
 	missionPilotToolCalls,
 } from "../../db/mission-pilot-agent-schema";
-import {
-	missionPilotArtifactCorrectionRuns,
-	missionPilotCloseouts,
-	missionPilotEvents,
-	missionPilotPhaseRuns,
-	missionPilotReviewDecisions,
-	missionPilotSessions,
-	missionPilotVerificationSnapshots,
-} from "../../db/mission-pilot-schema";
-import { activityEvents, taskMessages } from "../../db/schema";
+import { missionPilotSessions } from "../../db/mission-pilot-schema";
+import { readTaskActivityEvents } from "../task";
 import { MissionPilotError } from "./mission-pilot.errors";
 import {
 	buildMissionPilotThoughtEntries,
@@ -70,139 +62,71 @@ export async function getMissionPilotExecution(sessionId: string) {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.id, sessionId))
 		.limit(1);
-	if (!session)
-		throw new MissionPilotError(
-			404,
-			"MISSION_PILOT_NOT_FOUND",
-			"Mission Pilot session not found",
-		);
-	const [
-		phaseRuns,
-		verificationSnapshots,
-		reviewDecisions,
-		closeouts,
-		events,
-		artifactCorrectionRuns,
-	] = await Promise.all([
-		db
-			.select()
-			.from(missionPilotPhaseRuns)
-			.where(eq(missionPilotPhaseRuns.sessionId, sessionId))
-			.orderBy(desc(missionPilotPhaseRuns.startedAt)),
-		db
-			.select()
-			.from(missionPilotVerificationSnapshots)
-			.where(eq(missionPilotVerificationSnapshots.sessionId, sessionId))
-			.orderBy(desc(missionPilotVerificationSnapshots.createdAt)),
-		db
-			.select()
-			.from(missionPilotReviewDecisions)
-			.where(eq(missionPilotReviewDecisions.sessionId, sessionId))
-			.orderBy(desc(missionPilotReviewDecisions.createdAt)),
-		db
-			.select()
-			.from(missionPilotCloseouts)
-			.where(eq(missionPilotCloseouts.sessionId, sessionId))
-			.orderBy(desc(missionPilotCloseouts.attempt)),
-		db
-			.select()
-			.from(missionPilotEvents)
-			.where(eq(missionPilotEvents.sessionId, sessionId))
-			.orderBy(asc(missionPilotEvents.createdAt), asc(missionPilotEvents.id)),
-		db
-			.select({
-				id: missionPilotArtifactCorrectionRuns.id,
-				target: missionPilotArtifactCorrectionRuns.target,
-				focusJson: missionPilotArtifactCorrectionRuns.focusJson,
-				instruction: missionPilotArtifactCorrectionRuns.instruction,
-				preserveUnfocusedContent:
-					missionPilotArtifactCorrectionRuns.preserveUnfocusedContent,
-			})
-			.from(missionPilotArtifactCorrectionRuns)
-			.where(eq(missionPilotArtifactCorrectionRuns.sessionId, sessionId)),
-	]);
-	const [pilotActivityEvents, pilotMessages, agentRows] = await Promise.all([
-		db
-			.select()
-			.from(activityEvents)
-			.where(
-				and(
-					eq(activityEvents.taskId, session.taskId),
-					eq(activityEvents.traceOwner, "mission_pilot"),
-					eq(activityEvents.traceChannel, "pilot_thought"),
+	if (!session) throw notFound();
+	const [agentRows, conversationItems, toolCalls, activityEvents] =
+		await Promise.all([
+			db
+				.select({
+					sessionId: missionPilotAgentSessions.sessionId,
+					conversationRevision: missionPilotAgentSessions.conversationRevision,
+				})
+				.from(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, sessionId))
+				.limit(1),
+			db
+				.select()
+				.from(missionPilotConversationItems)
+				.where(eq(missionPilotConversationItems.sessionId, sessionId))
+				.orderBy(asc(missionPilotConversationItems.sequence)),
+			db
+				.select()
+				.from(missionPilotToolCalls)
+				.where(eq(missionPilotToolCalls.sessionId, sessionId))
+				.orderBy(
+					asc(missionPilotToolCalls.createdAt),
+					asc(missionPilotToolCalls.id),
 				),
-			)
-			.orderBy(
-				asc(activityEvents.seq),
-				asc(activityEvents.createdAt),
-				asc(activityEvents.id),
-			),
-		db
-			.select()
-			.from(taskMessages)
-			.where(
-				and(
-					eq(taskMessages.taskId, session.taskId),
-					eq(taskMessages.traceOwner, "mission_pilot"),
-					eq(taskMessages.traceChannel, "pilot_thought"),
-				),
-			)
-			.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id)),
-		db
-			.select({
-				sessionId: missionPilotAgentSessions.sessionId,
-				conversationRevision: missionPilotAgentSessions.conversationRevision,
-			})
-			.from(missionPilotAgentSessions)
-			.where(eq(missionPilotAgentSessions.sessionId, sessionId))
-			.limit(1),
-	]);
+			readTaskActivityEvents(session.taskId, {
+				traceOwner: "mission_pilot",
+				traceChannel: "pilot_thought",
+			}),
+		]);
 	const agent = agentRows[0] ?? null;
-	const [agentItems, toolCalls] = agent
-		? await Promise.all([
-				db
-					.select()
-					.from(missionPilotConversationItems)
-					.where(eq(missionPilotConversationItems.sessionId, sessionId))
-					.orderBy(asc(missionPilotConversationItems.sequence)),
-				db
-					.select()
-					.from(missionPilotToolCalls)
-					.where(eq(missionPilotToolCalls.sessionId, sessionId))
-					.orderBy(
-						asc(missionPilotToolCalls.createdAt),
-						asc(missionPilotToolCalls.id),
-					),
-			])
-		: [[], []];
-	const projectedActivityEvents = attachArtifactCorrectionRequests(
-		pilotActivityEvents,
-		artifactCorrectionRuns,
-	);
 	return {
+		version: 2 as const,
+		executionModel: "task_operator_v1" as const,
 		session,
-		phaseRuns,
-		verificationSnapshots,
-		reviewDecisions,
-		closeouts,
-		events,
-		activityEvents: projectedActivityEvents,
-		messages: pilotMessages,
+		activityEvents,
 		entries: buildMissionPilotThoughtEntries({
 			sessionId,
-			events,
-			activityEvents: projectedActivityEvents,
-			messages: pilotMessages,
-			conversationItems: agentItems,
+			events: [],
+			activityEvents,
+			messages: [],
+			conversationItems,
 			toolCalls,
 		}),
 		agent: agent
 			? {
 					sessionId: agent.sessionId,
 					conversationRevision: agent.conversationRevision,
-					visibleItems: projectMissionPilotAgentVisibleItems(agentItems),
+					visibleItems: projectMissionPilotAgentVisibleItems(conversationItems),
 				}
 			: null,
+		legacyPostQueueState: {
+			status: "retired" as const,
+			retiredFields: [
+				"phaseRuns",
+				"verificationSnapshots",
+				"reviewDecisions",
+				"closeouts",
+				"events",
+				"messages",
+			],
+			replacement: {
+				execution: "task_operator_v1",
+				resources: ["run_outcome", "task_timeline", "task_message"],
+			},
+		},
 	};
 }
 
@@ -212,47 +136,57 @@ export async function getMissionPilotExecutionForTask(taskId: string) {
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.taskId, taskId))
 		.limit(1);
-	if (!session)
-		throw new MissionPilotError(
-			404,
-			"MISSION_PILOT_NOT_FOUND",
-			"Mission Pilot session not found",
-		);
+	if (!session) throw notFound();
 	return getMissionPilotExecution(session.id);
 }
 
 export async function getLatestMissionPilotVerificationSnapshot(
 	sessionId: string,
 ) {
-	const [row] = await db
-		.select()
-		.from(missionPilotVerificationSnapshots)
-		.where(eq(missionPilotVerificationSnapshots.sessionId, sessionId))
-		.orderBy(desc(missionPilotVerificationSnapshots.createdAt))
-		.limit(1);
-	return row ?? null;
+	await assertSession(sessionId);
+	throw legacyEndpointRetired("run_outcome");
 }
 
 export async function getLatestMissionPilotReviewDecision(sessionId: string) {
-	const [row] = await db
-		.select()
-		.from(missionPilotReviewDecisions)
-		.where(eq(missionPilotReviewDecisions.sessionId, sessionId))
-		.orderBy(desc(missionPilotReviewDecisions.createdAt))
-		.limit(1);
-	return row ?? null;
+	await assertSession(sessionId);
+	throw legacyEndpointRetired("run_outcome");
 }
 
 export async function getLatestMissionPilotCloseout(sessionId: string) {
-	const [row] = await db
-		.select()
-		.from(missionPilotCloseouts)
-		.where(eq(missionPilotCloseouts.sessionId, sessionId))
-		.orderBy(desc(missionPilotCloseouts.attempt))
-		.limit(1);
-	return row ?? null;
+	await assertSession(sessionId);
+	throw legacyEndpointRetired("run_outcome");
 }
 
 export async function reconcileMissionPilotExecution(sessionId: string) {
 	return getMissionPilotExecution(sessionId);
+}
+
+async function assertSession(sessionId: string) {
+	const [session] = await db
+		.select({ id: missionPilotSessions.id })
+		.from(missionPilotSessions)
+		.where(eq(missionPilotSessions.id, sessionId));
+	if (!session) throw notFound();
+}
+
+function notFound() {
+	return new MissionPilotError(
+		404,
+		"MISSION_PILOT_NOT_FOUND",
+		"Mission Pilot session not found",
+	);
+}
+
+function legacyEndpointRetired(replacementResourceKind: string) {
+	return new MissionPilotError(
+		410,
+		"MISSION_PILOT_LEGACY_ENDPOINT_RETIRED",
+		"Legacy Mission Pilot post-Queue state has been retired.",
+		{
+			replacement: {
+				execution: "task_operator_v1",
+				resourceKind: replacementResourceKind,
+			},
+		},
+	);
 }

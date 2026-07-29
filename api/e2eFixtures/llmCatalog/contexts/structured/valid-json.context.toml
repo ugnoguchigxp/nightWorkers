@@ -1,0 +1,6 @@
+text = '''
+{
+  "title": "Catalog fixture output",
+  "items": ["one"]
+}
+'''

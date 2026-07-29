@@ -7,7 +7,6 @@ import type {
 	StructuredLlmRole,
 } from "../../services/structured-llm/settings";
 import type { StructuredProviderExecutionPolicy } from "../agentsShare";
-import { resolvePlanArtifactCanonicalInput } from "../missionPilot";
 import {
 	createPlanModeMockBlueprintActivityArtifact,
 	createPlanModeTaskMessage,
@@ -16,6 +15,7 @@ import {
 } from "../nightworkers/nightworkers.plan-mode-core.port";
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
+import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
 import { renderPlanArtifactInput } from "../specification/plan-artifact-input-renderer";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
@@ -38,12 +38,6 @@ export async function generateBlueprintArtifact(
 		trace?: TraceProvenance;
 		llmUsageTrace?: TraceProvenance;
 		signal?: AbortSignal;
-		expectedState?: {
-			missionPilotSessionId: string;
-			contextRevision: number;
-			contextDigest: string;
-			routingRevision: number;
-		};
 	} = {},
 ) {
 	const task = await getPlanModeTask(taskId);
@@ -58,7 +52,6 @@ export async function generateBlueprintArtifact(
 			input.sourceSelection ??
 			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
 		regenerationRequest: input.prompt ?? null,
-		expectedState: input.expectedState,
 	});
 	const projection = projectPlanArtifactInput(canonical);
 	const renderedInput = renderPlanArtifactInput(projection);

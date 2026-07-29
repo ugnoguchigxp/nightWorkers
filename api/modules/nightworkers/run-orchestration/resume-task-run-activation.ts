@@ -1,10 +1,4 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
-import {
-	buildCodingAgentSystemContext,
-	buildCodingAgentTaskGoal,
-	readCodingAgentPlanModeRequested,
-	TodoMutationService,
-} from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 
@@ -73,6 +67,12 @@ export async function activateTaskRunResume(input: {
 		return resumedRun;
 	}
 
+	const {
+		buildCodingAgentSystemContext,
+		buildCodingAgentTaskGoal,
+		readCodingAgentPlanModeRequested,
+		TodoMutationService,
+	} = await import("../../codingAgent");
 	const systemContext = buildCodingAgentSystemContext({
 		taskGoal: buildCodingAgentTaskGoal(task),
 		registeredRepositoryRoot: repository.localPath,

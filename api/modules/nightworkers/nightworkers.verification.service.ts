@@ -8,7 +8,7 @@ import {
 	applyEvidenceToChecklist,
 	summarizeChecklist,
 } from "../../services/verification/checklist-matcher";
-import { evaluateQualityGate, type QualityGateResult } from "../codingAgent";
+import type { QualityGateResult } from "../codingAgent";
 import { bindEvidenceSubject } from "../evidenceLedger";
 import * as repository from "./nightworkers.verification.repository";
 
@@ -143,6 +143,7 @@ export async function runCompletionCheck(input: {
 	const completeCount = items.filter(
 		isVerificationChecklistItemComplete,
 	).length;
+	const { evaluateQualityGate } = await import("../codingAgent");
 	const qualityGate = await evaluateQualityGate({
 		taskId: input.taskId,
 		runId: input.runId,

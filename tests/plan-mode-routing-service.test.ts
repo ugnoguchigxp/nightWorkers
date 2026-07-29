@@ -8,12 +8,11 @@ import {
 	missionPilotSessions,
 	missionPilotSteps,
 } from "../api/db/mission-pilot-schema";
-import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
+import { repositories, taskMessages, tasks } from "../api/db/schema";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	executeMissionPilotPlanRoutingTool,
 	getPlanModeRouting,
-	updatePlanModeRoutingForCodingAgent,
 	updatePlanModeRoutingForUser,
 } from "../api/modules/missionPilot/planning/plan-mode-routing.service";
 import * as generalSettings from "../api/services/settings/general-settings";
@@ -116,16 +115,9 @@ describe("Plan Mode routing service", () => {
 		).toBeUndefined();
 	});
 
-	it("lets Coding Agent and user update routing after a run exists", async () => {
+	it("lets the user update routing through the public user command", async () => {
 		const { task } = await createFixture();
-		await db.insert(taskRuns).values({
-			id: crypto.randomUUID(),
-			taskId: task.id,
-			repositoryId: task.repositoryId,
-			status: "running",
-		});
-
-		const updated = await updatePlanModeRoutingForCodingAgent(task.id, {
+		const updated = await updatePlanModeRoutingForUser(task.id, {
 			expectedRevision: 0,
 			idempotencyKey: crypto.randomUUID(),
 			changes: [
@@ -137,7 +129,7 @@ describe("Plan Mode routing service", () => {
 			],
 		});
 
-		expect(updated.updatedBy).toBe("coding_agent");
+		expect(updated.updatedBy).toBe("user");
 		expect(updated.editable).toBe(true);
 		expect(
 			updated.entries.find((entry) => entry.view === "questionnaire"),

@@ -1,5 +1,10 @@
 import { z } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
+import {
+	TASK_OPERATOR_ACTION_DEFINITIONS,
+	TASK_OPERATOR_COMMAND_IDS,
+	validateTaskOperatorJsonSchema,
+} from "../api/modules/taskOperator";
 import { composeTaskOperatorCommandCatalog } from "../api/modules/taskOperator/policies/task-operator-command-catalog";
 import {
 	humanTaskOperatorCommandContext,
@@ -14,6 +19,7 @@ import {
 	taskOperatorProjectionV1Schema,
 	taskOperatorQueryContextSchema,
 } from "../shared/modules/taskOperator";
+import { taskStatusSchema } from "../shared/schemas/nightworkers/repository-task.schema";
 
 function projectionFixture() {
 	return {
@@ -98,6 +104,77 @@ function projectionFixture() {
 }
 
 describe("Task Operator contracts", () => {
+	it("derives every advertised command ID from the canonical action definitions", () => {
+		expect(TASK_OPERATOR_COMMAND_IDS).toEqual(
+			TASK_OPERATOR_ACTION_DEFINITIONS.map((definition) => definition.actionId),
+		);
+		expect(new Set(TASK_OPERATOR_COMMAND_IDS).size).toBe(
+			TASK_OPERATOR_COMMAND_IDS.length,
+		);
+		expect(TASK_OPERATOR_COMMAND_IDS).not.toContain(
+			"questionnaire.draft.update",
+		);
+	});
+
+	it("keeps every status accepted by the public Task patch route in task.update", () => {
+		const definition = TASK_OPERATOR_ACTION_DEFINITIONS.find(
+			(candidate) => candidate.actionId === "task.update",
+		);
+		expect(definition).toBeDefined();
+		for (const status of taskStatusSchema.options) {
+			expect(
+				validateTaskOperatorJsonSchema(definition?.inputSchema ?? {}, {
+					fields: { status },
+				}),
+			).toBeNull();
+		}
+		expect(
+			validateTaskOperatorJsonSchema(definition?.inputSchema ?? {}, {
+				fields: { status: "unknown" },
+			}),
+		).toContain("allowed values");
+	});
+
+	it("accepts an optional human note and keeps terminal Run review available", () => {
+		const definition = TASK_OPERATOR_ACTION_DEFINITIONS.find(
+			(candidate) => candidate.actionId === "run.review.submit",
+		);
+		expect(
+			validateTaskOperatorJsonSchema(definition?.inputSchema ?? {}, {
+				runId: "00000000-0000-4000-8000-000000000001",
+				action: "complete",
+				note: "Verified by the local operator.",
+			}),
+		).toBeNull();
+		const catalog = composeTaskOperatorCommandCatalog({
+			taskRevision: 2,
+			taskStatus: "completed",
+			repositoryAvailable: true,
+			hasActiveRun: false,
+			hasTerminalRun: true,
+			currentTodoStatus: null,
+		});
+		expect(
+			catalog.find((command) => command.id === "run.review.submit"),
+		).toMatchObject({ availability: "available" });
+	});
+
+	it("accepts the public archive route's closeout-discard flag", () => {
+		const definition = TASK_OPERATOR_ACTION_DEFINITIONS.find(
+			(candidate) => candidate.actionId === "task.archive",
+		);
+		expect(
+			validateTaskOperatorJsonSchema(definition?.inputSchema ?? {}, {
+				discardPendingCloseouts: false,
+			}),
+		).toBeNull();
+		expect(
+			validateTaskOperatorJsonSchema(definition?.inputSchema ?? {}, {
+				discardPendingCloseouts: "false",
+			}),
+		).toContain("boolean");
+	});
+
 	it("uses the stable local operator identity for HTTP command delivery", () => {
 		const first = humanTaskOperatorCommandContext({
 			idempotencyKey: "delivery-1",
@@ -203,8 +280,23 @@ describe("Task Operator contracts", () => {
 		const resultSchema = taskOperatorCommandResultSchema(
 			z.object({ revision: z.number().int().nonnegative() }).strict(),
 		);
-		expect(resultSchema.parse({ ok: true, data: { revision: 13 } })).toEqual({
+		const receipt = {
+			commandId: "command-1",
+			idempotencyKey: "key-1",
+			actionId: "task.update",
+			operationRef: { kind: "task", id: "task-1", revision: 13 },
+			resourceRefs: [{ kind: "task", id: "task-1", revision: 13 }],
+			replayed: false,
+		};
+		expect(
+			resultSchema.parse({
+				ok: true,
+				receipt,
+				data: { revision: 13 },
+			}),
+		).toEqual({
 			ok: true,
+			receipt,
 			data: { revision: 13 },
 		});
 		expect(() =>

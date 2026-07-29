@@ -30,11 +30,7 @@ export const editablePlanModeRoutingViewSchema = z.enum(
 	EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 );
 export const planModeRoutingDecisionSchema = z.enum(["include", "omit"]);
-export const planModeRoutingActorSchema = z.enum([
-	"user",
-	"mission_pilot",
-	"coding_agent",
-]);
+export const planModeRoutingActorSchema = z.enum(["user", "mission_pilot"]);
 
 export const planModeRoutingEntrySchema = z
 	.object({

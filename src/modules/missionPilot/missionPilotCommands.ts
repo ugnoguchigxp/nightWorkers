@@ -13,8 +13,13 @@ export function stopMissionPilotTask(taskId: string, expectedVersion: number) {
 		jsonRequest("POST", { expectedVersion }),
 	);
 }
-export function fetchMissionPilotQuestionnaireDraft(taskId: string) {
-	return apiFetch(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`);
+export function fetchMissionPilotQuestionnaireDraft(
+	taskId: string,
+	signal?: AbortSignal,
+) {
+	return apiFetch(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`, {
+		signal,
+	});
 }
 export function fetchMissionPilotPlanProgress(taskId: string) {
 	return apiFetch(`/api/mission-pilot/tasks/${taskId}/plan-progress`);

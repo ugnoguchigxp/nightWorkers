@@ -2,7 +2,10 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../../db/client";
-import { tasks } from "../../../db/schema";
+import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+import { readTaskOperatorProjection } from "../../taskOperator";
+import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
+import { isMissionPilotAgentSession } from "./mission-pilot-agent-session.repository";
 import { appendMissionPilotTaskEvent } from "./mission-pilot-task-event.repository";
 
 export async function recordMissionPilotTaskEvent(
@@ -26,11 +29,27 @@ export async function recordMissionPilotTaskEvent(
 export async function recordMissionPilotQuestionnaireStateChanged(
 	session: DesignQuestionnaireSession,
 ) {
-	const [task] = await db
-		.select({ revision: tasks.revision })
-		.from(tasks)
-		.where(eq(tasks.id, session.taskId));
-	if (!task) return null;
+	const [pilot] = await db
+		.select({
+			id: missionPilotSessions.id,
+			desiredState: missionPilotSessions.desiredState,
+		})
+		.from(missionPilotSessions)
+		.where(eq(missionPilotSessions.taskId, session.taskId));
+	if (
+		pilot?.desiredState !== "playing" ||
+		!(await isMissionPilotAgentSession(pilot.id))
+	)
+		return null;
+	const access = await createMissionPilotTaskOperatorAccess({
+		sessionId: pilot.id,
+		taskId: session.taskId,
+	});
+	const projection = await readTaskOperatorProjection(
+		session.taskId,
+		access.context,
+		access.delegatedAuthorization,
+	);
 	const sourceRevision =
 		session.updatedAt instanceof Date
 			? session.updatedAt.getTime()
@@ -64,7 +83,7 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 		taskId: session.taskId,
 		type: "questionnaire.state_changed",
 		sourceEventId: `questionnaire-state:${session.id}:${session.status}:${session.questionSets.length}:${stateDigest}`,
-		taskRevision: task.revision,
+		taskRevision: projection.task.revision,
 		payload: {
 			questionnaireSessionId: session.id,
 			status: session.status,

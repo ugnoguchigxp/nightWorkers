@@ -1,7 +1,7 @@
 import { logEvent } from "../../../lib/logger";
 import { estimateTokens } from "../../../services/conversation-context/token-budget";
 import { recordLlmUsage } from "../../../services/llm-usage";
-import { missionPilotThoughtTrace } from "../../nightworkers/nightworkers.trace-provenance";
+import { missionPilotThoughtTrace } from "../mission-pilot-trace-provenance";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
 
 export async function recordMissionPilotProviderTurnUsage(input: {

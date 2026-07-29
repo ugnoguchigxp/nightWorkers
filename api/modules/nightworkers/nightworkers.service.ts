@@ -146,6 +146,10 @@ export async function reopenTask(id: string) {
 export async function deleteTask(id: string) {
 	const deleted = await repo.deleteTask(id);
 	if (deleted) {
+		const { clearFixtureProviderTask } = await import(
+			"../../services/structured-llm/fixture-provider-task"
+		);
+		clearFixtureProviderTask(id);
 		await deletePromptImageAttachments(id).catch((error) => {
 			logger.warn(
 				{ taskId: id, error },

@@ -1,18 +1,32 @@
 import { createHash } from "node:crypto";
 import { z } from "@hono/zod-openapi";
 import {
+	TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET,
+	TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET,
 	type TaskOperatorQueryContext,
 	taskOperatorContentPageSchema,
 } from "../../../../shared/modules/taskOperator";
-import { sliceUtf8ContentPage } from "../../agentsShare";
+import { AppError } from "../../../lib/errors";
+import { sliceUtf8ContentPageToJsonBudget } from "../../agentsShare";
 import { listDesignQuestionnaires } from "../../questionnaire";
 import { readQueueOperatorState } from "../../queue";
-import { readRunOperatorOutcome, readRunOperatorState } from "../../run";
+import {
+	readRunOperatorOutcome,
+	readRunOperatorState,
+} from "../../run/application/run-operator.query";
 import {
 	readArtifactOperatorContent,
 	readArtifactOperatorIndex,
 } from "../../specification";
-import { readTaskOperatorTask, readTaskTimelineFacts } from "../../task";
+import {
+	readTaskMessageFact,
+	readTaskOperatorTask,
+	readTaskTimelineFacts,
+} from "../../task";
+import {
+	resolveTaskOperatorPrincipalCapabilities,
+	type TaskOperatorDelegatedAuthorizationPort,
+} from "../policies/task-operator-authorization";
 
 const timelineContentSchema = z
 	.object({
@@ -22,12 +36,24 @@ const timelineContentSchema = z
 					id: z.string(),
 					role: z.string(),
 					content: z.string().max(12_000),
+					contentDigest: z.string(),
+					contentTruncated: z.boolean(),
 					messageType: z.string().nullable(),
 					createdAt: z.string(),
 					revision: z.number().int().nonnegative(),
 				})
 				.strict(),
 		),
+	})
+	.strict();
+const taskMessageContentSchema = z
+	.object({
+		id: z.string(),
+		role: z.string(),
+		messageType: z.string().nullable(),
+		text: z.string().max(12_000),
+		truncated: z.boolean(),
+		createdAt: z.string(),
 	})
 	.strict();
 const artifactIndexContentSchema = z
@@ -67,6 +93,18 @@ const jsonPageContentSchema = z
 	.object({ json: z.string().max(12_000) })
 	.strict();
 
+export const TASK_OPERATOR_RESOURCE_KINDS = [
+	"task_text",
+	"task_timeline",
+	"task_message",
+	"artifact_index",
+	"artifact",
+	"questionnaire_decisions",
+	"run_outcome",
+	"current_todo",
+	"queue",
+] as const;
+
 export async function readTaskOperatorResource(input: {
 	taskId: string;
 	resourceKind: string;
@@ -74,15 +112,22 @@ export async function readTaskOperatorResource(input: {
 	cursor?: number;
 	limit?: number;
 	context: TaskOperatorQueryContext;
+	delegatedAuthorization?: TaskOperatorDelegatedAuthorizationPort;
 }) {
-	void input.context;
+	await resolveTaskOperatorPrincipalCapabilities({
+		principal: input.context.principal,
+		taskId: input.taskId,
+		delegatedAuthorization: input.delegatedAuthorization,
+	});
 	switch (input.resourceKind) {
 		case "task_text": {
 			if (
 				input.resourceId !== "objective" &&
 				input.resourceId !== "acceptance_criteria"
 			)
-				throw new Error(
+				throw new AppError(
+					422,
+					"TASK_OPERATOR_RESOURCE_ARGUMENT_INVALID",
 					"task_text resourceId must be objective or acceptance_criteria",
 				);
 			const task = await readTaskOperatorTask(input.taskId);
@@ -90,10 +135,14 @@ export async function readTaskOperatorResource(input: {
 				input.resourceId === "objective"
 					? (task.objective ?? "")
 					: (task.acceptanceCriteria ?? "");
-			const page = sliceUtf8ContentPage(value, {
+			const page = boundedTextPage(value, {
 				cursor: input.cursor,
-				maxBytes: 12_000,
 				maxChars: 4_000,
+				buildContent: (text, truncated) => ({
+					field: input.resourceId,
+					text,
+					truncated,
+				}),
 			});
 			return pageResult(
 				taskTextContentSchema,
@@ -111,22 +160,57 @@ export async function readTaskOperatorResource(input: {
 			);
 		}
 		case "task_timeline": {
-			const [task, page] = await Promise.all([
-				readTaskOperatorTask(input.taskId),
-				readTaskTimelineFacts({
-					taskId: input.taskId,
-					cursor: input.cursor,
-					limit: input.limit,
-				}),
-			]);
+			const page = await readTaskTimelineFacts({
+				taskId: input.taskId,
+				cursor: input.cursor,
+				limit: input.limit,
+			});
 			return pageResult(
 				timelineContentSchema,
 				{ kind: "task_timeline", id: input.taskId },
-				task.revision,
+				page.sourceRevision,
 				page.cursor,
 				page.nextCursor,
 				page.hasMore,
 				{ entries: page.entries },
+				page.sourceDigest,
+			);
+		}
+		case "task_message": {
+			if (!input.resourceId) throw resourceIdRequired("task_message");
+			const message = await readTaskMessageFact({
+				taskId: input.taskId,
+				messageId: input.resourceId,
+			});
+			if (!message) throw resourceNotFound("Task message");
+			const page = boundedTextPage(message.content, {
+				cursor: input.cursor,
+				maxChars: 4_000,
+				buildContent: (text, truncated) => ({
+					id: message.id,
+					role: message.role,
+					messageType: message.messageType,
+					text,
+					truncated,
+					createdAt: message.createdAt,
+				}),
+			});
+			return pageResult(
+				taskMessageContentSchema,
+				{ kind: "task_message", id: message.id },
+				message.revision,
+				page.page.cursor,
+				page.page.nextCursor,
+				page.page.truncated,
+				{
+					id: message.id,
+					role: message.role,
+					messageType: message.messageType,
+					text: page.content,
+					truncated: page.page.truncated,
+					createdAt: message.createdAt,
+				},
+				message.contentDigest,
 			);
 		}
 		case "artifact_index": {
@@ -143,19 +227,33 @@ export async function readTaskOperatorResource(input: {
 				page.nextCursor,
 				page.nextCursor !== null,
 				{ artifacts: page.page },
+				digest(
+					JSON.stringify({
+						revision: page.revision,
+						totalCount: page.totalCount,
+					}),
+				),
 			);
 		}
 		case "artifact": {
-			if (!input.resourceId) throw new Error("artifact resourceId is required");
+			if (!input.resourceId) throw resourceIdRequired("artifact");
 			const artifact = await readArtifactOperatorContent({
 				taskId: input.taskId,
 				artifactId: input.resourceId,
 			});
-			if (!artifact) throw new Error("Artifact not found");
-			const page = sliceUtf8ContentPage(artifact.content, {
+			if (!artifact) throw resourceNotFound("Artifact");
+			const page = boundedTextPage(artifact.content, {
 				cursor: input.cursor,
-				maxBytes: 12_000,
 				maxChars: 12_000,
+				buildContent: (text, truncated) => ({
+					id: artifact.id,
+					kind: artifact.kind,
+					revision: artifact.revision,
+					digest: artifact.digest,
+					status: artifact.status,
+					text,
+					truncated,
+				}),
 			});
 			return pageResult(
 				artifactContentSchema,
@@ -173,6 +271,7 @@ export async function readTaskOperatorResource(input: {
 					text: page.content,
 					truncated: page.page.truncated,
 				},
+				artifact.digest,
 			);
 		}
 		case "questionnaire_decisions": {
@@ -198,12 +297,12 @@ export async function readTaskOperatorResource(input: {
 			);
 		}
 		case "run_outcome": {
-			if (!input.resourceId) throw new Error("run resourceId is required");
+			if (!input.resourceId) throw resourceIdRequired("run_outcome");
 			const outcome = await readRunOperatorOutcome({
 				taskId: input.taskId,
 				runId: input.resourceId,
 			});
-			if (!outcome) throw new Error("Run not found");
+			if (!outcome) throw resourceNotFound("Run");
 			return boundedObjectPage(
 				{ kind: "run_outcome", id: outcome.id },
 				outcome.revision,
@@ -233,10 +332,28 @@ export async function readTaskOperatorResource(input: {
 			);
 		}
 		default:
-			throw new Error(
+			throw new AppError(
+				422,
+				"TASK_OPERATOR_RESOURCE_UNSUPPORTED",
 				`Unsupported Task Operator resource: ${input.resourceKind}`,
 			);
 	}
+}
+
+function resourceIdRequired(kind: string) {
+	return new AppError(
+		422,
+		"TASK_OPERATOR_RESOURCE_ARGUMENT_INVALID",
+		`${kind} resourceId is required`,
+	);
+}
+
+function resourceNotFound(label: string) {
+	return new AppError(
+		404,
+		"TASK_OPERATOR_RESOURCE_NOT_FOUND",
+		`${label} not found`,
+	);
 }
 
 function pageResult<T extends z.ZodType>(
@@ -250,16 +367,30 @@ function pageResult<T extends z.ZodType>(
 	stableSourceDigest?: string,
 ) {
 	const sourceDigest = stableSourceDigest ?? digest(JSON.stringify(content));
-	const tokenEstimate = estimateTokens(content);
-	return taskOperatorContentPageSchema(contentSchema).parse({
+	const basePage = {
 		sourceRef,
 		sourceRevision,
 		sourceDigest,
 		cursor,
 		nextCursor,
 		hasMore,
-		tokenEstimate,
+		tokenEstimate: 0,
 		content,
+	};
+	const tokenEstimate = estimateTokens({
+		...basePage,
+		tokenEstimate: TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET,
+	});
+	if (tokenEstimate > TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET) {
+		throw new AppError(
+			500,
+			"TASK_OPERATOR_CONTENT_PAGE_BUDGET_EXCEEDED",
+			"Task Operator content page exceeds its serialized response budget.",
+		);
+	}
+	return taskOperatorContentPageSchema(contentSchema).parse({
+		...basePage,
+		tokenEstimate,
 	});
 }
 
@@ -270,22 +401,40 @@ function boundedObjectPage(
 	requestedCursor?: number,
 ) {
 	const serialized = JSON.stringify(content);
-	const page = sliceUtf8ContentPage(serialized, {
+	const page = boundedTextPage(serialized, {
 		cursor: requestedCursor,
-		maxBytes: 12_000,
 		maxChars: 12_000,
+		buildContent: (json) => ({ json }),
 	});
-	return taskOperatorContentPageSchema(jsonPageContentSchema).parse({
+	return pageResult(
+		jsonPageContentSchema,
 		sourceRef,
 		sourceRevision,
-		sourceDigest: digest(serialized),
-		cursor: page.page.cursor,
-		nextCursor: page.page.nextCursor,
-		hasMore: page.page.truncated,
-		tokenEstimate: estimateTokens({ json: page.content }),
-		content: { json: page.content },
+		page.page.cursor,
+		page.page.nextCursor,
+		page.page.truncated,
+		{ json: page.content },
+		digest(serialized),
+	);
+}
+
+function boundedTextPage<T>(
+	content: string,
+	options: {
+		cursor?: number;
+		maxChars: number;
+		buildContent: (text: string, truncated: boolean) => T;
+	},
+) {
+	return sliceUtf8ContentPageToJsonBudget(content, {
+		cursor: options.cursor,
+		maxChars: options.maxChars,
+		maxSerializedBytes:
+			TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET,
+		buildSerializedValue: options.buildContent,
 	});
 }
+
 function estimateTokens(value: unknown) {
 	return Math.ceil(Buffer.byteLength(JSON.stringify(value), "utf8") / 4);
 }

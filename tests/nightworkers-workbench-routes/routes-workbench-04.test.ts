@@ -1,4 +1,8 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import {
 	afterEach,
@@ -16,8 +20,9 @@ import { missionPilotTaskEventInbox } from "../../api/db/mission-pilot-agent-sch
 import { missionPilotSessions } from "../../api/db/mission-pilot-schema";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import * as service from "../../api/modules/nightworkers/nightworkers.service";
-import { registerTaskMessageCreatedListener } from "../../api/modules/nightworkers/nightworkers.task-message-events";
+import { registerTaskMessageCreatedListener } from "../../api/modules/task";
 import * as llm from "../../api/services/structured-llm";
+import { initializeE2eGitRepository } from "../e2e/helpers";
 import { representativeAppBlueprint } from "../fixtures/app-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
 
@@ -131,6 +136,7 @@ vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 });
 
 const sameOriginHeaders = { Origin: "http://localhost:39174" };
+const disposableRepositoryRoots: string[] = [];
 
 function mockPlanModeGate(
 	shouldStartPlanMode: boolean,
@@ -192,6 +198,14 @@ beforeEach(() => {
 afterEach(async () => {
 	await flushPendingWorkbenchTasks();
 	vi.clearAllMocks();
+	await Promise.all(
+		disposableRepositoryRoots.splice(0).map((root) =>
+			rm(root, {
+				recursive: true,
+				force: true,
+			}),
+		),
+	);
 });
 
 describe("NightWorkers workbench routes", () => {
@@ -480,8 +494,10 @@ describe("NightWorkers workbench routes", () => {
 		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
 			mockPlanModeGate(false, "requirements are already implementable"),
 		);
+		const repositoryPath = await createDisposableRepository();
 		const { task } = await createWorkbenchTask({
 			createdBy: "project-evaluation",
+			repositoryPath,
 		});
 
 		const res = await app.request(
@@ -501,7 +517,7 @@ describe("NightWorkers workbench routes", () => {
 		expect(body.run?.contextSnapshot).toMatchObject({
 			planModeRequested: false,
 		});
-	});
+	}, 60_000);
 
 	it("prefers adopted Blueprint artifacts over newer generated Blueprint messages for planning", async () => {
 		const { task } = await createWorkbenchTask({ status: "ready" });
@@ -601,11 +617,12 @@ async function createWorkbenchTask(
 		status?: string;
 		objective?: string;
 		createdBy?: "project-evaluation";
+		repositoryPath?: string;
 	} = {},
 ) {
 	const project = await repo.createRepository({
 		name: `TEST: Workbench Project ${crypto.randomUUID()}`,
-		localPath: "/Users/y.noguchi/Code/nightWorkers",
+		localPath: input.repositoryPath ?? "/Users/y.noguchi/Code/nightWorkers",
 		branch: "main",
 	});
 	const task = await repo.createTask({
@@ -618,4 +635,32 @@ async function createWorkbenchTask(
 		createdBy: input.createdBy,
 	});
 	return { project, task };
+}
+
+async function createDisposableRepository() {
+	const root = await mkdtemp(
+		path.join(os.tmpdir(), "nightworkers-workbench-route-"),
+	);
+	disposableRepositoryRoots.push(root);
+	await writeFile(
+		path.join(root, "README.md"),
+		"# Workbench fixture\n",
+		"utf8",
+	);
+	initializeE2eGitRepository(root);
+	execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
+	execFileSync(
+		"git",
+		[
+			"-c",
+			"user.email=workbench@example.test",
+			"-c",
+			"user.name=NightWorkers Test",
+			"commit",
+			"-m",
+			"initial fixture",
+		],
+		{ cwd: root, stdio: "ignore" },
+	);
+	return root;
 }

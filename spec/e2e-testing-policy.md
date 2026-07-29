@@ -83,6 +83,23 @@ E2E の網羅性はコード行ではなく、`tests/e2e/scenario-catalog.json` 
 
 Playwright が失敗した場合も `test-results/e2e-coverage.json` を可能な限り残す。未登録 scenario ID、priority tag 不一致、P0 未自動化、閾値未達、required scenario の skip / failure はゲート失敗とする。
 
+## Mission Pilot E2E
+
+Mission PilotのTask Operator migrationは完了している。対応するdeterministic specは
+通常のPlaywright実行と`verify:e2e`へ含め、実装済みscenarioをcatalogの`required`
+として扱う。`verify:e2e`、`verify:full`、`verify:release`でE2Eを空実行へ
+置き換えてはならない。
+
+旧pre-Queue handoffと旧through-Archive固定workflowはTask Operator Agentへ
+置き換えられたため、対応scenarioはcatalogにretired migration recordとして残す。
+この2件を再実装して旧workflowを復活させてはならない。
+
+Legacy Review sessionの作成・実行routeも現在はproduction APIから削除済みのため、
+`git-closeout.spec.ts`と`test-review-workflow.spec.ts`を同様に通常gateから除外し、
+対応scenarioを`planned`として追跡する。診断目的で旧契約を実行する場合だけ
+`NIGHTWORKERS_E2E_LEGACY_REVIEW=1`を指定する。新しいTask Operator Review契約へ
+テストを移行した後は、この除外と環境変数を削除して`required`へ戻す。
+
 ## 実行成果物
 
 - `test-results/e2e-results.json`: Playwright JSON reporter の生結果
@@ -91,3 +108,26 @@ Playwright が失敗した場合も `test-results/e2e-coverage.json` を可能�
 - failure 時の screenshot / trace
 
 成果物は生成物として扱い、Git へ追加しない。
+
+## LLM fixture catalog
+
+Mission PilotとCoding Agentのdeterministic E2Eで使用するassistant本文は、
+`api/e2eFixtures/llmCatalog/contexts/`のTOMLを正本とする。tool call、arguments、
+condition、turn順序はrole moduleのfixture builderが所有し、catalogへJSON scenario
+として格納しない。
+
+fixture本文を追加・変更した場合は、次を同じ変更単位で実行し、TOML、catalog JSON、
+generated TypeScriptを同時に更新する。
+
+```bash
+bun run s11tnext:fixtures:lint
+bun run s11tnext:fixtures:build
+bun run s11tnext:fixtures:check
+```
+
+E2Eは`/api/e2e/fixtures/mission-pilot-agent-scenario`または
+`/api/e2e/fixtures/coding-agent-scenario`へ明示的なscenario enumを登録してから実行する。
+fixture選択にTask本文、prompt keyword、正規表現、provider error本文を使わない。
+Task-scoped fixture stateはprocess memoryだけに保持し、Task cleanup時に破棄する。
+このE2Eはagent/application control planeを検証するものであり、OpenAI、Azure、
+Bedrock、Codex SDKのtransport互換性を保証しない。

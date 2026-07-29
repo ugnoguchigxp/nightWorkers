@@ -3,11 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { NotFoundError } from "../../lib/errors";
 import type { ImplementationTodoInput } from "../../services/todo-runtime";
-import {
-	formatMissionPilotReworkPacket,
-	hasMissionPilotReworkPacket,
-	missionPilotReworkPaths,
-} from "../missionPilot";
 import * as repo from "../nightworkers/nightworkers.repository";
 import { startTaskRun } from "../nightworkers/run-orchestration/start-task-run";
 import { getProjectSecurityIntelligenceSettings } from "../ontology";
@@ -64,7 +59,6 @@ export function buildReviewRunTodos(input: {
 	options: ReviewRunOptions;
 	target: ReviewTarget;
 	planSpec: ReviewPlanSpec;
-	missionPilotReworkPacket?: unknown;
 }): ImplementationTodoInput[] {
 	const todos: ImplementationTodoInput[] = [];
 	const appendTodo = (
@@ -76,50 +70,6 @@ export function buildReviewRunTodos(input: {
 			...(previousSeq > 0 ? { dependsOn: [previousSeq] } : {}),
 		});
 	};
-	if (hasMissionPilotReworkPacket(input.missionPilotReworkPacket)) {
-		appendTodo({
-			title: "前回Reviewのblocking指摘だけを再確認する",
-			description: formatMissionPilotReworkPacket(
-				input.missionPilotReworkPacket,
-			),
-			taskType: "focused_verification",
-			procedureId: "review.rework_findings",
-		});
-		appendTodo({
-			title: "指摘対象の修正diffと関連テストだけを確認する",
-			description:
-				"前回Reviewのblocking指摘、修正対象パス、修正後の関連テストに限定して再Reviewする。対象外の全体レビューやsecurity診断は再実行しない。",
-			taskType: "focused_verification",
-			procedureId: "review.rework_diff",
-		});
-		appendTodo({
-			title: "再作業指摘の解消結果を保存する",
-			description:
-				"各blocking指摘が解消したかを判定し、未解消ならblocking findingとして報告する。",
-			taskType: "documentation",
-			procedureId: "review.rework_consolidate",
-		});
-		if (input.options.applyFixes) {
-			appendTodo({
-				title: "未解消指摘を次のImplementation correctionへ引き渡す",
-				description:
-					"Review Run自身は編集せず、未解消のblocking finding/evidenceだけを次のcorrection Sessionへ送る。",
-				taskType: "documentation",
-				procedureId: "review.correction_request",
-			});
-		}
-		if (input.options.commitChanges) {
-			appendTodo({
-				title: "focused correction loop後のcloseout権限を記録する",
-				description:
-					"focused Reviewがpassした場合だけ、correction Implementation -> Test -> Review後のcloseout権限を有効にする。",
-				taskType: "documentation",
-				procedureId: "review.correction_closeout_permission",
-			});
-		}
-		return todos;
-	}
-
 	if (input.options.codeReview) {
 		appendTodo({
 			title: "Review Plan 仕様書を読む",
@@ -199,7 +149,6 @@ export async function startReviewRunForSession(
 	let session = await reviewRepo.getReviewSession(reviewSessionId);
 	if (!session) throw new NotFoundError("Review session not found");
 	const options = normalizeReviewRunOptions(optionsInput);
-	const missionPilotReworkPacket = missionInput?.missionPilot?.reworkPacket;
 	const target = await buildReviewTarget({
 		runId: session.runId,
 		runIds: resolveReviewTargetRunIds(missionInput),
@@ -213,7 +162,6 @@ export async function startReviewRunForSession(
 		options,
 		target,
 		planSpec,
-		missionPilotReworkPacket,
 	});
 	const existing = await findExistingReviewTaskRun(session);
 	if (existing) {
@@ -333,8 +281,6 @@ export async function startReviewRunForSession(
 		planSpec,
 		todos,
 		initialFindings,
-		missionPilot: Boolean(missionInput?.missionPilot),
-		missionPilotReworkPacket,
 	});
 	await repo.createTaskMessage({
 		taskId: session.taskId,
@@ -358,16 +304,12 @@ export async function startReviewRunForSession(
 			...(missionInput?.reviewCorrection
 				? { reviewCorrection: missionInput.reviewCorrection }
 				: {}),
-			...(hasMissionPilotReworkPacket(missionPilotReworkPacket)
-				? { missionPilotReworkPacket }
-				: {}),
 			reviewRun: {
 				reviewSessionId,
 				reviewedRunId: session.runId,
 				options,
 				targetSummary: summarizeTarget(target),
 				targetManifest,
-				focusedReview: hasMissionPilotReworkPacket(missionPilotReworkPacket),
 			},
 		},
 	});
@@ -567,19 +509,8 @@ export function buildReviewRunPrompt(input: {
 		title: string;
 		body: string | null;
 	}>;
-	missionPilot?: boolean;
-	missionPilotReworkPacket?: unknown;
 }) {
-	const focusedReview = hasMissionPilotReworkPacket(
-		input.missionPilotReworkPacket,
-	);
-	const focusedPaths = missionPilotReworkPaths(input.missionPilotReworkPacket);
-	const targetFiles = focusedReview
-		? input.target.targetFiles.filter((file) =>
-				focusedPaths.includes(file.path),
-			)
-		: input.target.targetFiles;
-	const targetLines = targetFiles
+	const targetLines = input.target.targetFiles
 		.map((file) => `- ${file.path} (${file.status}, ${file.diffBytes} bytes)`)
 		.join("\n");
 	const warningLines = input.target.warnings
@@ -596,27 +527,18 @@ export function buildReviewRunPrompt(input: {
 			].join("\n"),
 		)
 		.join("\n\n");
-	const planSpecification =
-		input.options.codeReview && !focusedReview
-			? input.planSpec.body || "(missing)"
-			: focusedReview
-				? "(focused rework Reviewのため、Plan全体の再読は省略)"
-				: "(codeReview=false のため、コードレビュー用 Plan 本文は省略)";
-	const acceptanceCriteria =
-		input.options.codeReview && !focusedReview
-			? input.planSpec.acceptanceCriteria
-					.map((item) => `- ${item}`)
-					.join("\n") || "(none)"
-			: focusedReview
-				? "(focused rework packetの受け入れ条件だけを使用)"
-				: "(codeReview=false のため省略)";
-	const codeReviewRule = focusedReview
-		? "- focused rework Review。前回Reviewのblocking指摘と修正対象だけを再確認し、全体コードレビューを行わない。"
-		: input.options.codeReview
-			? "- codeReview=true。レビュー主対象は Review target files に限定し、Plan と対象 diff を根拠にコードレビューする。"
-			: input.options.applyFixes
-				? "- codeReview=false。機能・仕様の一般コードレビューや全体 diff 取得は行わない。applyFixes=true は accepted finding を correction Implementation へ送るだけで、Review Run自身は編集しない。"
-				: "- codeReview=false。Review target boundary はスコープ表示専用であり、機能・仕様のコードレビューを行わない。git diff を取得せず、source / test / schema / migration の内容を個別に読まない。事前取得済み Review evidence だけを使用する。";
+	const planSpecification = input.options.codeReview
+		? input.planSpec.body || "(missing)"
+		: "(codeReview=false のため、コードレビュー用 Plan 本文は省略)";
+	const acceptanceCriteria = input.options.codeReview
+		? input.planSpec.acceptanceCriteria.map((item) => `- ${item}`).join("\n") ||
+			"(none)"
+		: "(codeReview=false のため省略)";
+	const codeReviewRule = input.options.codeReview
+		? "- codeReview=true。レビュー主対象は Review target files に限定し、Plan と対象 diff を根拠にコードレビューする。"
+		: input.options.applyFixes
+			? "- codeReview=false。機能・仕様の一般コードレビューや全体 diff 取得は行わない。applyFixes=true は accepted finding を correction Implementation へ送るだけで、Review Run自身は編集しない。"
+			: "- codeReview=false。Review target boundary はスコープ表示専用であり、機能・仕様のコードレビューを行わない。git diff を取得せず、source / test / schema / migration の内容を個別に読まない。事前取得済み Review evidence だけを使用する。";
 	return [
 		"Review Run を開始してください。",
 		"",
@@ -633,10 +555,7 @@ export function buildReviewRunPrompt(input: {
 		input.options.codeReview
 			? "Review target files:"
 			: "Review target boundary (metadata only):",
-		targetLines ||
-			(focusedPaths.length
-				? focusedPaths.map((path) => `- ${path}`).join("\n")
-				: "(none)"),
+		targetLines || "(none)",
 		"",
 		"Excluded dirty files:",
 		input.target.excludedDirtyFiles.map((file) => `- ${file}`).join("\n") ||
@@ -654,12 +573,6 @@ export function buildReviewRunPrompt(input: {
 		"Rules:",
 		"- Required Review Run TODOs は TodoList pane の進捗 source of truth です。各段階が終わったら todo_list operation=done で次へ進み、未完了なら block/fail で理由を残す。",
 		codeReviewRule,
-		...(focusedReview
-			? [
-					"- focused rework Review: 前回Reviewのblocking指摘と、その修正diff・関連テストだけを再確認する。対象外の全体レビュー、Plan全体の再読、vulnWorkbenchの再実行は行わない。",
-					`- focused rework scope:\n${formatMissionPilotReworkPacket(input.missionPilotReworkPacket)}`,
-				]
-			: []),
 		"- Findings は重大度、file/line、根拠、推奨アクションを分けて報告する。",
 		"- findings 保存用の別ファイルを作成しない。final report には repoRoot 外のローカルファイルパスや /tmp /private/tmp への Markdown link を書かず、指摘は final report と Review Status artifact に残す。",
 		input.options.securityReview
@@ -671,14 +584,5 @@ export function buildReviewRunPrompt(input: {
 		input.options.commitChanges
 			? "- commitChanges=true は correction Implementation -> Test -> Review pass 後のcloseout権限であり、Review Run内ではcommitしない。"
 			: "- commitChanges=false のため、commit しない。",
-		...(input.missionPilot
-			? [
-					"- Mission Pilot Review の最終回答は説明文ではなく、次の構造だけを持つJSON objectにする: verdict(pass|rework|attention), summary, findings。",
-					"- findingsの各要素は severity(blocking|warning|info), category, file, line, evidence, recommendedAction, blockingReason を持つ。指摘がなければ空配列にする。",
-					"- file、line、blockingReason に該当値がない場合もキーを省略せず null を設定する。",
-					"- correction Session の起動はReview Run完了後にシステムが行うため、summaryでは起動・引き渡し完了を断定せず、修正要求が必要であることだけを述べる。",
-					"- blocking findingが1件でもあればverdict=passにしない。",
-				]
-			: []),
 	].join("\n");
 }

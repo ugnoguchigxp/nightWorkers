@@ -3,11 +3,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import { TodoMutationService } from "../../api/modules/codingAgent/todo";
+import { missionPilotThoughtTrace } from "../../api/modules/missionPilot";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
-import {
-	codingAgentChatTrace,
-	missionPilotThoughtTrace,
-} from "../../api/modules/nightworkers/nightworkers.trace-provenance";
+import { codingAgentChatTrace } from "../../api/modules/nightworkers/nightworkers.trace-provenance";
 import { recordLlmUsage } from "../../api/services/llm-usage";
 import * as generalSettings from "../../api/services/settings/general-settings";
 

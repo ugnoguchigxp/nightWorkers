@@ -128,11 +128,7 @@ describe("Task Operator token regression", () => {
 
 	it("keeps the generic tool surface constant and pages requested detail", () => {
 		const fixture = historyFixture();
-		const tools = missionPilotToolDefinitions({
-			availableActionIds: new Set(
-				Array.from({ length: 1_000 }, (_, index) => `action.${index}`),
-			),
-		});
+		const tools = missionPilotToolDefinitions();
 		expect(tools).toHaveLength(7);
 		expect(tools.map((tool) => tool.name)).toEqual([
 			"read_task_operator_view",

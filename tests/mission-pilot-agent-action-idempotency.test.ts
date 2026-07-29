@@ -12,7 +12,12 @@ import {
 	missionPilotAgentTurns,
 	missionPilotToolCalls,
 } from "../api/db/mission-pilot-agent-schema";
-import { repositories, taskMessages, tasks } from "../api/db/schema";
+import {
+	repositories,
+	taskMessages,
+	taskOperatorCommandReceipts,
+	tasks,
+} from "../api/db/schema";
 import {
 	claimMissionPilotActionExecution,
 	completeMissionPilotActionExecution,
@@ -119,6 +124,33 @@ describe("Mission Pilot durable action receipts", () => {
 		).rejects.toBeInstanceOf(MissionPilotActionExecutionConflictError);
 	});
 
+	it("does not deduplicate the same action arguments across Task revisions", async () => {
+		const { taskId, sessionId } = await fixture();
+		const firstToolCallId = crypto.randomUUID();
+		const secondToolCallId = crypto.randomUUID();
+		await addToolCall(sessionId, firstToolCallId);
+		await addToolCall(sessionId, secondToolCallId);
+		const first = await createMissionPilotActionExecutionIntent({
+			sessionId,
+			taskId,
+			toolCallId: firstToolCallId,
+			actionId: "task.message.send",
+			idempotencyKey: `${sessionId}:revision-1`,
+			arguments: { content: "same arguments" },
+			expectedTaskRevision: 1,
+		});
+		const second = await createMissionPilotActionExecutionIntent({
+			sessionId,
+			taskId,
+			toolCallId: secondToolCallId,
+			actionId: "task.message.send",
+			idempotencyKey: `${sessionId}:revision-2`,
+			arguments: { content: "same arguments" },
+			expectedTaskRevision: 2,
+		});
+		expect(second.id).not.toBe(first.id);
+	});
+
 	it("uses a CAS transition and stores the terminal result", async () => {
 		const { taskId, sessionId } = await fixture();
 		const toolCallId = crypto.randomUUID();
@@ -170,6 +202,16 @@ describe("Mission Pilot durable action receipts", () => {
 				},
 			})
 			.returning();
+		await db.insert(taskOperatorCommandReceipts).values({
+			actorKind: "delegated_user",
+			actorId: sessionId,
+			taskId,
+			actionId: "task.message.send",
+			idempotencyKey,
+			argumentsDigest: "test-command-digest",
+			status: "succeeded",
+			resultJson: message,
+		});
 
 		const [reconciled] =
 			await reconcileMissionPilotActionExecutionReceipts(sessionId);
@@ -198,6 +240,7 @@ describe("Mission Pilot durable action receipts", () => {
 		const { taskId, sessionId } = await fixture();
 		const questionnaireSessionId = crypto.randomUUID();
 		const toolCallId = crypto.randomUUID();
+		const idempotencyKey = `${sessionId}:questionnaire-review-accept`;
 		const argumentsJson = { questionnaireSessionId };
 		await addToolCall(sessionId, toolCallId, {
 			actionId: "questionnaire.review.accept",
@@ -208,7 +251,7 @@ describe("Mission Pilot durable action receipts", () => {
 			taskId,
 			toolCallId,
 			actionId: "questionnaire.review.accept",
-			idempotencyKey: `${sessionId}:questionnaire-review-accept`,
+			idempotencyKey,
 			arguments: argumentsJson,
 			expectedTaskRevision: 1,
 		});
@@ -230,7 +273,7 @@ describe("Mission Pilot durable action receipts", () => {
 				messageType: "markdown_document",
 				metadataJson: {
 					missionPilotAction: {
-						idempotencyKey: `${sessionId}:questionnaire-review-accept`,
+						idempotencyKey,
 						toolCallId,
 					},
 				},
@@ -242,14 +285,52 @@ describe("Mission Pilot durable action receipts", () => {
 			status: "accepted",
 			publishedMessageId: message?.id ?? null,
 		});
+		await db.insert(taskOperatorCommandReceipts).values({
+			actorKind: "delegated_user",
+			actorId: sessionId,
+			taskId,
+			actionId: "questionnaire.review.accept",
+			idempotencyKey,
+			argumentsDigest: "test-command-digest",
+			status: "succeeded",
+			resultJson: {
+				id: questionnaireSessionId,
+				status: "accepted",
+			},
+		});
 
 		const [reconciled] =
 			await reconcileMissionPilotActionExecutionReceipts(sessionId);
 		expect(reconciled).toMatchObject({
 			id: receipt.id,
 			status: "succeeded",
-			sourceResourceType: "questionnaire_session",
+			sourceResourceType: "questionnaire",
 			sourceResourceId: questionnaireSessionId,
+		});
+	});
+
+	it("returns an interrupted Mission Pilot receipt to pending when delivery never started", async () => {
+		const { taskId, sessionId } = await fixture();
+		const toolCallId = crypto.randomUUID();
+		await addToolCall(sessionId, toolCallId);
+		const receipt = await createMissionPilotActionExecutionIntent({
+			sessionId,
+			taskId,
+			toolCallId,
+			actionId: "task.message.send",
+			idempotencyKey: `${sessionId}:not-delivered`,
+			arguments: { content: "safe to retry" },
+			expectedTaskRevision: 1,
+		});
+		await claimMissionPilotActionExecution(receipt.id);
+
+		const [reconciled] =
+			await reconcileMissionPilotActionExecutionReceipts(sessionId);
+		expect(reconciled).toMatchObject({
+			id: receipt.id,
+			status: "pending",
+			startedAt: null,
+			failureJson: null,
 		});
 	});
 
@@ -268,9 +349,7 @@ describe("Mission Pilot durable action receipts", () => {
 			.from(tasks)
 			.where(eq(tasks.id, state.taskId));
 		if (!task) throw new Error("task fixture is missing");
-		const argumentsJson = {
-			expectedTaskRevision: task.updatedAt.getTime(),
-		};
+		const argumentsJson = {};
 		const [call] =
 			(await persistMissionPilotProviderTurn({
 				sessionId: state.sessionId,
@@ -280,8 +359,13 @@ describe("Mission Pilot durable action receipts", () => {
 				toolCalls: [
 					{
 						id: "archive-before-complete",
-						name: "task_archive",
-						arguments: argumentsJson,
+						name: "execute_task_action",
+						arguments: {
+							actionId: "task.archive",
+							expectedTaskRevision: task.revision,
+							idempotencyKey: `${state.sessionId}:archive-before-complete`,
+							arguments: {},
+						},
 					},
 				],
 			})) ?? [];
@@ -299,7 +383,7 @@ describe("Mission Pilot durable action receipts", () => {
 			sessionId: state.sessionId,
 			actionId: running.actionId,
 			arguments: argumentsJson,
-			expectedTaskRevision: argumentsJson.expectedTaskRevision,
+			expectedTaskRevision: task.revision,
 			idempotencyKey: running.idempotencyKey,
 			signal: new AbortController().signal,
 		});
@@ -338,7 +422,6 @@ describe("Mission Pilot durable action receipts", () => {
 		if (!task) throw new Error("task fixture is missing");
 		const argumentsJson = {
 			content: "ユーザーへ確認したいことがあります。",
-			expectedTaskRevision: task.updatedAt.getTime(),
 		};
 		const [call] =
 			(await persistMissionPilotProviderTurn({
@@ -349,8 +432,15 @@ describe("Mission Pilot durable action receipts", () => {
 				toolCalls: [
 					{
 						id: "visible-message",
-						name: "task_message_send",
-						arguments: argumentsJson,
+						name: "execute_task_action",
+						arguments: {
+							actionId: "task.message.send",
+							expectedTaskRevision: task.revision,
+							idempotencyKey: `${state.sessionId}:visible-message`,
+							arguments: {
+								content: argumentsJson.content,
+							},
+						},
 					},
 				],
 			})) ?? [];
@@ -368,7 +458,7 @@ describe("Mission Pilot durable action receipts", () => {
 			sessionId: state.sessionId,
 			actionId: running.actionId,
 			arguments: argumentsJson,
-			expectedTaskRevision: argumentsJson.expectedTaskRevision,
+			expectedTaskRevision: task.revision,
 			idempotencyKey: running.idempotencyKey,
 			signal: new AbortController().signal,
 		});
@@ -395,14 +485,17 @@ describe("Mission Pilot durable action receipts", () => {
 		if (!before) throw new Error("task fixture is missing");
 		await db
 			.update(tasks)
-			.set({ updatedAt: new Date(before.updatedAt.getTime() + 1_000) })
+			.set({
+				revision: before.revision + 1,
+				updatedAt: new Date(before.updatedAt.getTime() + 1_000),
+			})
 			.where(eq(tasks.id, state.taskId));
 
 		await expect(
 			nightworkersService.updateTask(
 				state.taskId,
 				{ title: "must not overwrite a newer Task" },
-				{ expectedRevision: before.updatedAt.getTime() },
+				{ expectedRevision: before.revision },
 			),
 		).rejects.toMatchObject({
 			code: "TASK_REVISION_CONFLICT",

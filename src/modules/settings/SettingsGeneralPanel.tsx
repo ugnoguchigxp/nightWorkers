@@ -252,7 +252,7 @@ export function GeneralSettingsPanel({
 							</dl>
 						</div>
 					) : (
-						<p className="mt-3 text-xs text-amber-300">
+						<p className="nightworkers-warning-text mt-3 text-xs">
 							{t("settings.general.fxMissing")}
 						</p>
 					)}

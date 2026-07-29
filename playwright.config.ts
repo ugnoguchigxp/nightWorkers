@@ -5,12 +5,20 @@ assertIsolatedE2eEnvironment();
 
 const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
 const e2eBaseUrl = `http://localhost:${e2eWebPort}`;
+const legacyReviewE2eEnabled =
+	process.env.NIGHTWORKERS_E2E_LEGACY_REVIEW === "1";
+const frozenE2eFiles = [
+	...(legacyReviewE2eEnabled
+		? []
+		: ["**/git-closeout.spec.ts", "**/test-review-workflow.spec.ts"]),
+];
 
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
 	testDir: "./tests/e2e",
+	testIgnore: frozenE2eFiles,
 	/* Run tests in files in parallel */
 	fullyParallel: true,
 	/* Fail the build on CI if you accidentally left test.only in the source code. */

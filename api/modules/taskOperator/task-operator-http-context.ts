@@ -2,16 +2,22 @@ import type {
 	TaskOperatorCommandContext,
 	TaskOperatorQueryContext,
 } from "../../../shared/modules/taskOperator";
+import {
+	LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
+	LOCAL_TASK_OPERATOR_USER_ID,
+} from "./policies/task-operator-authorization";
 
-const LOCAL_TASK_OPERATOR_ACTOR_ID = "local-task-operator-user";
+export function humanTaskOperatorPrincipal() {
+	return {
+		kind: "human" as const,
+		actorId: LOCAL_TASK_OPERATOR_USER_ID,
+		authorizationRef: LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
+	};
+}
 
 export function humanTaskOperatorQueryContext(): TaskOperatorQueryContext {
 	return {
-		principal: {
-			kind: "human",
-			actorId: LOCAL_TASK_OPERATOR_ACTOR_ID,
-			authorizationRef: "local-user",
-		},
+		principal: humanTaskOperatorPrincipal(),
 	};
 }
 

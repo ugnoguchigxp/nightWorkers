@@ -9,14 +9,14 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
-import { executePlanModeArtifactCorrection } from "../missionPilot";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
+import { executePlanModeArtifactCorrection } from "../specification/plan-mode-artifact-correction.service";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
+import { publishTaskMessageCreated } from "../task/events/task-message-events";
 import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import { queueTask } from "./nightworkers.queue-management.service";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
-import { publishTaskMessageCreated } from "./nightworkers.task-message-events";
 import { createVerificationDocumentFromSpec } from "./nightworkers.verification.service";
 import {
 	handleWorkbenchIntakeMessage,

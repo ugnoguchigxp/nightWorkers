@@ -7,7 +7,7 @@ import {
 	type Page,
 	test,
 } from "@playwright/test";
-import { createE2eWorkspaceDirectory } from "./helpers";
+import { createDisposableGitWorkspace } from "./helpers";
 
 const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
 const sameOriginHeaders = { Origin: `http://localhost:${e2eWebPort}` };
@@ -28,7 +28,9 @@ async function createWorkspaceFixture(request: APIRequestContext) {
 			timeout: 10_000,
 		})
 		.toBe(200);
-	const workspace = await createE2eWorkspaceDirectory("accessibility-");
+	const { workspace } = await createDisposableGitWorkspace({
+		prefix: "accessibility-",
+	});
 	await fs.writeFile(
 		path.join(workspace, "README.md"),
 		"# Accessibility fixture\n",
