@@ -1,4 +1,5 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import { NotFoundError } from "../../lib/errors";
 import type { AppEnv } from "../../lib/types";
 import {
 	getOntologyRunDebugReport,
@@ -56,29 +57,39 @@ function routeNotFound<Route extends RouteConfig>(
 export const startTaskRunHandler = withOpenApiRouteError(
 	startTaskRunRoute,
 	async (c) => {
-		const id = c.req.param("id");
-		const [projection, task] = await Promise.all([
-			readTaskOperatorProjection(id, humanTaskOperatorQueryContext()),
-			readTaskOperatorTask(id),
-		]);
-		const result = await executeTaskOperatorCommand({
-			taskId: id,
-			actionId: "run.implementation.start",
-			expectedTaskRevision: projection.task.revision,
-			arguments: {
-				request:
-					task.objective ??
-					`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
-			},
-			context: humanTaskOperatorCommandContext({
-				idempotencyKey: c.req.header("Idempotency-Key"),
-			}),
-		});
-		const run = await service.getTaskRun(result.data.runId);
-		if (!run) return routeNotFound(c, "Run not found after start");
-		return c.json(run, 201);
+		return c.json(
+			await startHumanTaskImplementation(
+				c.req.param("id"),
+				c.req.header("Idempotency-Key"),
+			),
+			201,
+		);
 	},
 );
+
+export async function startHumanTaskImplementation(
+	taskId: string,
+	idempotencyKey?: string,
+) {
+	const [projection, task] = await Promise.all([
+		readTaskOperatorProjection(taskId, humanTaskOperatorQueryContext()),
+		readTaskOperatorTask(taskId),
+	]);
+	const result = await executeTaskOperatorCommand({
+		taskId,
+		actionId: "run.implementation.start",
+		expectedTaskRevision: projection.task.revision,
+		arguments: {
+			request:
+				task.objective ??
+				`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
+		},
+		context: humanTaskOperatorCommandContext({ idempotencyKey }),
+	});
+	const run = await service.getTaskRun(result.data.runId);
+	if (!run) throw new NotFoundError("Run not found after start");
+	return run;
+}
 
 export const getTaskRunHandler: NightWorkersRouteHandler<
 	typeof getTaskRunRoute

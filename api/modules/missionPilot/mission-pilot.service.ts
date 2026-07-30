@@ -22,6 +22,7 @@ import {
 	backfillStoppedMissionPilotAgentSessions,
 	claimAgentPlay,
 	claimAgentStop,
+	completeAgentInitialPromptDispatch,
 	getMissionPilotSessionById,
 	isMissionPilotAgentSession,
 	listPlayingAgentSessions,
@@ -42,6 +43,7 @@ import {
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as repo from "./mission-pilot.repository";
 import { createMissionPilotTaskOperatorAccess } from "./mission-pilot-delegation";
+import { dispatchMissionPilotInitialPrompt } from "./mission-pilot-initial-prompt.service";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 import { buildMissionPilotSystemContext } from "./prompts/mission-pilot-system-context";
 
@@ -63,14 +65,18 @@ export function initializeMissionPilotRunSync() {
 			type: event.type,
 			runId: event.resourceRef.id,
 		});
+		if (projected)
+			publishMissionPilotUpdated(
+				event.taskRef.id,
+				repo.toControlSummary(projected),
+			);
+		if (event.type === "task.run.started") return;
 		await appendMissionPilotTaskEvent({
 			taskId: event.taskRef.id,
 			eventType:
 				event.type === "task.run.failed"
 					? "task_run.failed"
-					: event.type === "task.run.terminal"
-						? "task_run.terminal"
-						: "task_run.started",
+					: "task_run.terminal",
 			sourceEventId: event.eventId,
 			taskRevision: event.taskRef.revision,
 			payload: {
@@ -80,11 +86,6 @@ export function initializeMissionPilotRunSync() {
 				occurredAt: event.occurredAt,
 			},
 		});
-		if (projected)
-			publishMissionPilotUpdated(
-				event.taskRef.id,
-				repo.toControlSummary(projected),
-			);
 		scheduleMissionPilotAgentWake({ sessionId: session.id });
 	});
 }
@@ -103,11 +104,15 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 			!Array.isArray(message.metadataJson)
 				? (message.metadataJson as Record<string, unknown>)
 				: {};
-		if (metadata.source === "mission_pilot") return;
 		const session = await repo.getSessionByTaskId(message.taskId);
 		if (
 			session?.desiredState !== "playing" ||
 			!(await isMissionPilotAgentSession(session.id))
+		)
+			return;
+		if (
+			metadata.source === "mission_pilot" ||
+			isDelegatedUserMessageFromSession(metadata, session.id)
 		)
 			return;
 		const access = await createMissionPilotTaskOperatorAccess({
@@ -129,6 +134,19 @@ function initializeMissionPilotAgentTaskMessageEvents() {
 	});
 }
 initializeMissionPilotAgentTaskMessageEvents();
+
+function isDelegatedUserMessageFromSession(
+	metadata: Record<string, unknown>,
+	sessionId: string,
+) {
+	const actor =
+		metadata.actor &&
+		typeof metadata.actor === "object" &&
+		!Array.isArray(metadata.actor)
+			? (metadata.actor as Record<string, unknown>)
+			: {};
+	return actor.kind === "delegated_user" && actor.actorId === sessionId;
+}
 
 let agentQuestionnaireEventsRegistered = false;
 export function initializeMissionPilotAgentQuestionnaireEvents() {
@@ -359,7 +377,55 @@ async function playAgentSession(
 			"MISSION_PILOT_VERSION_CONFLICT",
 			"Mission Pilot state changed; refresh and retry",
 		);
-	scheduleMissionPilotAgentWake({ sessionId: claimed.id });
+	let initialPromptDispatch: Awaited<
+		ReturnType<typeof dispatchMissionPilotInitialPrompt>
+	> | null = null;
+	if (claimed.initialPromptState === "dispatching") {
+		try {
+			initialPromptDispatch = await dispatchMissionPilotInitialPrompt({
+				sessionId,
+				taskId,
+				taskRevision,
+				initialPrompt: taskGoal,
+			});
+			const completed = await completeAgentInitialPromptDispatch({
+				taskId,
+				expectedVersion: claimed.version,
+				messageId: initialPromptDispatch.initialPromptMessageId,
+				activeRunId: null,
+				phase: "initial_intake",
+			});
+			if (!completed)
+				throw new MissionPilotError(
+					409,
+					"MISSION_PILOT_VERSION_CONFLICT",
+					"Mission Pilot state changed while dispatching the initial prompt",
+				);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const stopped = await claimAgentStop(taskId, claimed.version);
+			if (stopped)
+				await repo.finishStop(
+					taskId,
+					stopped.version,
+					message,
+					null,
+					"MISSION_PILOT_INITIAL_PROMPT_DISPATCH_FAILED",
+					"failed",
+				);
+			const current = await repo.getSessionByTaskId(taskId);
+			if (current)
+				publishMissionPilotUpdated(taskId, repo.toControlSummary(current));
+			if (error instanceof MissionPilotError) throw error;
+			throw new MissionPilotError(
+				502,
+				"MISSION_PILOT_INITIAL_PROMPT_DISPATCH_FAILED",
+				message,
+			);
+		}
+	}
+	if (claimed.initialPromptState !== "dispatching")
+		scheduleMissionPilotAgentWake({ sessionId: claimed.id });
 	const current = (await getMissionPilotSessionById(claimed.id)) ?? claimed;
 	const missionPilot = repo.toControlSummary(current);
 	publishMissionPilotUpdated(taskId, missionPilot);

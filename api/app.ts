@@ -30,6 +30,7 @@ import {
 } from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
+import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
 import { e2eFixtureRouter } from "./modules/nightworkers/routes/e2e-fixture-routes";
 import { missionCandidatesFixtureRouter } from "./modules/nightworkers/routes/mission-candidates-fixture-route";
 import {
@@ -43,6 +44,7 @@ import { projectEvaluationRouter } from "./modules/project-evaluation/project-ev
 import { qualityRouter } from "./modules/quality";
 import { questionnaireRouter } from "./modules/questionnaire/questionnaire.routes";
 import { queueRouter } from "./modules/queue/queue.routes";
+import { securityScanRouter } from "./modules/securityScan/security-scan.routes";
 import { specificationRouter } from "./modules/specification/specification.routes";
 import { taskGenerationRouter } from "./modules/taskGeneration/task-generation.routes";
 import { buildTaskGenerationEvidence } from "./modules/taskGeneration/task-generation-evidence.service";
@@ -58,6 +60,7 @@ import { runWithSystemContextBinding } from "./systemContexts/catalog";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
 initializeCodingAgentRunHandlers();
+initializeTaskUserIntakeHandler();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)
@@ -81,6 +84,7 @@ const apiRoutes = createOpenApiRouter()
 	.route("/", ontologyRouter)
 	.route("/", techStackRouter)
 	.route("/", overviewRouter)
+	.route("/", securityScanRouter)
 	.route("/", nightworkersRouter);
 
 if (process.env.NIGHTWORKERS_E2E_ISOLATED === "1") {

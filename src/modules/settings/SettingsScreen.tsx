@@ -23,6 +23,7 @@ import {
 	SettingsOntologyPanel,
 	SettingsProjectExplorationPanel,
 } from "../ontology";
+import { SettingsVulnerabilityScanProviderPanel } from "../securityScan";
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
 import { SettingsLlmPanel } from "./SettingsLlmPanel";
 import { SettingsPlanModePanel } from "./SettingsPlanModePanel";
@@ -430,6 +431,9 @@ export function SettingsScreen({
 
 					{activeSection === "security-intelligence" ? (
 						<>
+							<SettingsVulnerabilityScanProviderPanel
+								activeProject={activeProject}
+							/>
 							<SettingsOntologyPanel
 								activeProject={activeProject}
 								value={securityIntelligence}

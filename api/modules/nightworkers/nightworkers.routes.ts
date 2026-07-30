@@ -29,6 +29,7 @@ import {
 	resumeTaskRunTodoHandler,
 	reworkRunGitMergeHandler,
 	startBackgroundProcessHandler,
+	startHumanTaskImplementation,
 	startTaskRunHandler,
 	stopBackgroundProcessHandler,
 	stopTaskRunHandler,
@@ -356,7 +357,10 @@ const router = createOpenApiRouter()
 	.openapi(
 		runWorkbenchSessionRoute,
 		withOpenApiRouteError(runWorkbenchSessionRoute, async (c) => {
-			const run = await service.startWorkbenchTaskRun(c.req.param("id"));
+			const run = await startHumanTaskImplementation(
+				c.req.param("id"),
+				c.req.header("Idempotency-Key"),
+			);
 			return c.json(run, 201);
 		}),
 	)

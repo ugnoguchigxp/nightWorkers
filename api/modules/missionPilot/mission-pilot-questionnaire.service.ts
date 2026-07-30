@@ -20,6 +20,7 @@ import {
 import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
 import * as missionPilotRepo from "./mission-pilot.repository";
+import { createMissionPilotTaskOperatorAccess } from "./mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 import { missionPilotThoughtTrace } from "./mission-pilot-trace-provenance";
 
@@ -168,7 +169,7 @@ export async function updateQuestionnaireDraft(
 async function submitDraftRow(
 	row: DraftRow,
 	taskId: string,
-	trigger: "timeout" | "user" | "resume",
+	trigger: "timeout" | "user" | "resume" | "mission_pilot",
 ) {
 	const [claimed] = await db
 		.update(missionPilotQuestionnaireDrafts)
@@ -194,9 +195,11 @@ async function submitDraftRow(
 		text:
 			trigger === "timeout"
 				? "20秒の介入時間が終了したため、Questionnaire回答を自動確定しています。"
-				: trigger === "resume"
-					? "Mission Pilotの再生操作を受け、現在の回答案を確定しています。"
-					: "ユーザー操作によりQuestionnaire回答を確定しています。",
+				: trigger === "mission_pilot"
+					? "20秒の待機後、Mission Pilotがユーザーの代わりにQuestionnaire回答を確定しています。"
+					: trigger === "resume"
+						? "Mission Pilotの再生操作を受け、現在の回答案を確定しています。"
+						: "ユーザー操作によりQuestionnaire回答を確定しています。",
 		payloadJson: {
 			questionnaireSessionId: claimed.questionnaireSessionId,
 			answerCount: claimed.answersJson.length,
@@ -205,9 +208,19 @@ async function submitDraftRow(
 		dedupeKey: `mission-pilot:questionnaire:submitting:${claimed.id}:${claimed.version}`,
 	});
 	try {
+		const delegatedAccess =
+			trigger === "mission_pilot"
+				? await createMissionPilotTaskOperatorAccess({
+						sessionId: row.sessionId,
+						taskId,
+					})
+				: null;
+		const queryContext =
+			delegatedAccess?.context ?? humanTaskOperatorQueryContext();
 		const projection = await readTaskOperatorProjection(
 			taskId,
-			humanTaskOperatorQueryContext(),
+			queryContext,
+			delegatedAccess?.delegatedAuthorization,
 		);
 		const delivery = await executeTaskOperatorCommand({
 			taskId,
@@ -217,9 +230,20 @@ async function submitDraftRow(
 				questionnaireSessionId: claimed.questionnaireSessionId,
 				answers: claimed.answersJson,
 			},
-			context: humanTaskOperatorCommandContext({
-				idempotencyKey: `questionnaire-draft:${claimed.id}:${claimed.version}`,
-			}),
+			context: delegatedAccess
+				? {
+						...delegatedAccess.context,
+						requestId: `questionnaire-draft:${claimed.id}`,
+						idempotencyKey: `questionnaire-draft:${claimed.id}:${claimed.version}`,
+					}
+				: humanTaskOperatorCommandContext({
+						idempotencyKey: `questionnaire-draft:${claimed.id}:${claimed.version}`,
+					}),
+			runtime: delegatedAccess
+				? {
+						delegatedAuthorization: delegatedAccess.delegatedAuthorization,
+					}
+				: undefined,
 		});
 		const questionnaire = delivery.data as DesignQuestionnaireSession;
 		if (!["review_ready", "accepted"].includes(questionnaire.status)) {
@@ -351,6 +375,13 @@ async function submitDraftRow(
 		});
 		throw error;
 	}
+}
+
+export function submitMissionPilotQuestionnaireDraftRow(
+	row: DraftRow,
+	taskId: string,
+) {
+	return submitDraftRow(row, taskId, "mission_pilot");
 }
 
 export async function submitQuestionnaireDraft(

@@ -120,6 +120,30 @@ export const jaSettings = {
 	"settings.securityIntelligence.standard": "標準ツールセット",
 	"settings.securityIntelligence.ontologyExtended":
 		"オントロジー拡張ツールセット",
+	"settings.vulnerabilityScanProvider.title":
+		"vulnWorkbench 脆弱性スキャン連携",
+	"settings.vulnerabilityScanProvider.description":
+		"Project詳細画面からスキャンとLLMレポート生成を実行するための接続です。",
+	"settings.vulnerabilityScanProvider.configured": "設定済み",
+	"settings.vulnerabilityScanProvider.notConfigured": "未設定",
+	"settings.vulnerabilityScanProvider.enabled": "連携を有効にする",
+	"settings.vulnerabilityScanProvider.enabledHelp":
+		"NightWorkers backendだけがservice tokenを使用します。ブラウザには公開しません。",
+	"settings.vulnerabilityScanProvider.baseUrl": "vulnWorkbench Base URL",
+	"settings.vulnerabilityScanProvider.token": "Service token",
+	"settings.vulnerabilityScanProvider.tokenStored":
+		"保存済み（変更する場合だけ入力）",
+	"settings.vulnerabilityScanProvider.tokenPlaceholder": "tokenを入力",
+	"settings.vulnerabilityScanProvider.setupTitle": "vulnWorkbench側の事前設定",
+	"settings.vulnerabilityScanProvider.setupHelp":
+		"NIGHTWORKERS_INTEGRATION_ENABLED=true とPROJECT_ALLOWED_ROOTSを設定し、vulnWorkbench repositoryで次のCLIを実行してください。tokenは一度だけ表示されます。",
+	"settings.vulnerabilityScanProvider.save": "接続設定を保存",
+	"settings.vulnerabilityScanProvider.saved": "接続設定を保存しました。",
+	"settings.vulnerabilityScanProvider.test": "選択中Projectで接続確認",
+	"settings.vulnerabilityScanProvider.testNeedsProject":
+		"接続確認にはProjectを選択してください。",
+	"settings.vulnerabilityScanProvider.testSucceeded":
+		"接続できました（provider {{version}} / {{project}}）。",
 	"settings.field.apiKey": "API Key",
 	"settings.field.endpointUrl": "Endpoint URL",
 	"settings.field.deploymentName": "Deployment Name",

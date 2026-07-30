@@ -9,7 +9,12 @@ import { taskRunTodos } from "../../../db/schema-task-execution";
 import { verificationEvidenceRuns } from "../../../db/verification-schema";
 import { digestText } from "../../../services/text-digest";
 
-const activeStatuses = ["running", "context_compiling", "finalizing"] as const;
+const activeStatuses = [
+	"running",
+	"context_compiling",
+	"finalizing",
+	"needs_human",
+] as const;
 const terminalStatuses = [
 	"completed",
 	"failed",
@@ -17,7 +22,6 @@ const terminalStatuses = [
 	"needs_review",
 	"blocked",
 	"timed_out",
-	"needs_human",
 ] as const;
 
 export async function readRunOperatorState(taskId: string) {

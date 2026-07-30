@@ -119,6 +119,31 @@ export const enSettings = {
 	"settings.securityIntelligence.standard": "Standard tool set",
 	"settings.securityIntelligence.ontologyExtended":
 		"Extended ontology tool set",
+	"settings.vulnerabilityScanProvider.title":
+		"vulnWorkbench vulnerability scan connection",
+	"settings.vulnerabilityScanProvider.description":
+		"Connect the Project detail screen to vulnWorkbench scans and LLM reports.",
+	"settings.vulnerabilityScanProvider.configured": "Configured",
+	"settings.vulnerabilityScanProvider.notConfigured": "Not configured",
+	"settings.vulnerabilityScanProvider.enabled": "Enable integration",
+	"settings.vulnerabilityScanProvider.enabledHelp":
+		"Only the NightWorkers backend uses the service token. It is never exposed to the browser.",
+	"settings.vulnerabilityScanProvider.baseUrl": "vulnWorkbench Base URL",
+	"settings.vulnerabilityScanProvider.token": "Service token",
+	"settings.vulnerabilityScanProvider.tokenStored":
+		"Stored (enter a value only to replace it)",
+	"settings.vulnerabilityScanProvider.tokenPlaceholder": "Enter token",
+	"settings.vulnerabilityScanProvider.setupTitle":
+		"Required vulnWorkbench setup",
+	"settings.vulnerabilityScanProvider.setupHelp":
+		"Set NIGHTWORKERS_INTEGRATION_ENABLED=true and PROJECT_ALLOWED_ROOTS, then run this CLI in the vulnWorkbench repository. The token is shown only once.",
+	"settings.vulnerabilityScanProvider.save": "Save connection",
+	"settings.vulnerabilityScanProvider.saved": "Connection settings saved.",
+	"settings.vulnerabilityScanProvider.test": "Test with selected Project",
+	"settings.vulnerabilityScanProvider.testNeedsProject":
+		"Select a Project to test the connection.",
+	"settings.vulnerabilityScanProvider.testSucceeded":
+		"Connected (provider {{version}} / {{project}}).",
 	"settings.field.apiKey": "API Key",
 	"settings.field.endpointUrl": "Endpoint URL",
 	"settings.field.deploymentName": "Deployment Name",

@@ -42,6 +42,7 @@ const projectDetailTabs = [
 	"mission",
 	"evaluation",
 	"quality",
+	"security",
 	"stack",
 	"worktrees",
 ] as const;

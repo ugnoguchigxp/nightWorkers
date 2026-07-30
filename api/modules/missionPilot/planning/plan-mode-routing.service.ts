@@ -29,6 +29,7 @@ import {
 	humanTaskOperatorQueryContext,
 	readTaskOperatorProjection,
 } from "../../taskOperator";
+import { sanitizeMissionPilotContext } from "../mission-pilot-context";
 import {
 	planModeRoutingTerminalReason,
 	readPlanModeRoutingLockedReason,
@@ -221,7 +222,9 @@ async function persistRoutingRevision(input: {
 			);
 		}
 		const nextRoutingRevision = session.planRoutingRevision + 1;
-		const currentContext = record(latestContext.contextJson) ?? {};
+		const currentContext = sanitizeMissionPilotContext(
+			record(latestContext.contextJson) ?? {},
+		);
 		const currentPlan = record(currentContext.plan) ?? {};
 		const routing = {
 			revision: nextRoutingRevision,

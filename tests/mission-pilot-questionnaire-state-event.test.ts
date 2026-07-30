@@ -6,6 +6,7 @@ import { db } from "../api/db/client";
 import { missionPilotTaskEventInbox } from "../api/db/mission-pilot-agent-schema";
 import { repositories, tasks } from "../api/db/schema";
 import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
+import { listPendingMissionPilotTaskEvents } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import { initializeMissionPilotAgentQuestionnaireEvents } from "../api/modules/missionPilot/mission-pilot.service";
 import { publishQuestionnaireTransition } from "../api/modules/questionnaire/questionnaire-events";
@@ -36,7 +37,7 @@ afterEach(async () => {
 });
 
 describe("Mission Pilot Questionnaire state events", () => {
-	it("records answering and accepted as wakeable state change events", async () => {
+	it("exposes answering only after 20 seconds and cancels it when the user answers first", async () => {
 		const repositoryId = crypto.randomUUID();
 		const taskId = crypto.randomUUID();
 		repositoryIds.push(repositoryId);
@@ -95,8 +96,28 @@ describe("Mission Pilot Questionnaire state events", () => {
 				status: "answering",
 				questionSetCount: 0,
 				stateDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+				responseDelayMs: 20_000,
 			},
 		});
+		const timing = event?.payloadJson as
+			| { detectedAt?: string; availableAt?: string }
+			| undefined;
+		expect(
+			new Date(timing?.availableAt ?? 0).getTime() -
+				new Date(timing?.detectedAt ?? 0).getTime(),
+		).toBe(20_000);
+		expect(
+			await listPendingMissionPilotTaskEvents(
+				claimed.id,
+				new Date((event?.availableAt.getTime() ?? 0) - 1),
+			),
+		).toHaveLength(0);
+		expect(
+			await listPendingMissionPilotTaskEvents(
+				claimed.id,
+				event?.availableAt ?? new Date(0),
+			),
+		).toHaveLength(1);
 		expect(event?.sourceEventId).toContain(
 			`questionnaire-state:${questionnaireId}:answering:0:`,
 		);
@@ -137,5 +158,11 @@ describe("Mission Pilot Questionnaire state events", () => {
 
 		expect(changedEvent?.id).not.toBe(event?.id);
 		expect(changedEvent?.sourceEventId).not.toBe(event?.sourceEventId);
+		const [consumedAnswering] = await db
+			.select()
+			.from(missionPilotTaskEventInbox)
+			.where(eq(missionPilotTaskEventInbox.id, event?.id ?? ""));
+		expect(consumedAnswering?.consumedAt).not.toBeNull();
+		expect(changedEvent?.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
 	});
 });

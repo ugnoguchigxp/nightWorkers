@@ -1,6 +1,7 @@
 import { BarChart3, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import type { ProjectDetailTab } from "../../nightworkers/components/project-detail/types";
 import { handleWorkbenchAnchorClick } from "../../nightworkers/routing/workbench-link-click";
 import {
 	type OverviewRange,
@@ -32,9 +33,7 @@ export function OverviewHeader({
 	isLoading: boolean;
 	onRangeChange: (range: OverviewRange) => void;
 	onProjectFilterChange: (projectId: string | null) => void;
-	onOpenProjectDetailTab: (
-		tab: "mission" | "evaluation" | "quality" | "stack" | "worktrees",
-	) => void;
+	onOpenProjectDetailTab: (tab: Exclude<ProjectDetailTab, "overview">) => void;
 	onRefresh: () => void;
 }) {
 	const { t } = useTranslation();

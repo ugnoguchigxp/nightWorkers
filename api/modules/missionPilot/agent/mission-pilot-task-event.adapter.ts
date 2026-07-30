@@ -5,8 +5,12 @@ import { db } from "../../../db/client";
 import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import { readTaskOperatorProjection } from "../../taskOperator";
 import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
+import { MISSION_PILOT_QUESTIONNAIRE_RESPONSE_DELAY_MS } from "./mission-pilot-agent.constants";
 import { isMissionPilotAgentSession } from "./mission-pilot-agent-session.repository";
-import { appendMissionPilotTaskEvent } from "./mission-pilot-task-event.repository";
+import {
+	appendMissionPilotTaskEvent,
+	consumePendingMissionPilotQuestionnaireEvents,
+} from "./mission-pilot-task-event.repository";
 
 export async function recordMissionPilotTaskEvent(
 	input: Omit<
@@ -41,6 +45,12 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 		!(await isMissionPilotAgentSession(pilot.id))
 	)
 		return null;
+	if (session.status !== "answering")
+		await consumePendingMissionPilotQuestionnaireEvents({
+			sessionId: pilot.id,
+			questionnaireSessionId: session.id,
+			status: "answering",
+		});
 	const access = await createMissionPilotTaskOperatorAccess({
 		sessionId: pilot.id,
 		taskId: session.taskId,
@@ -79,6 +89,13 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 			}),
 		)
 		.digest("hex");
+	const detectedAt = new Date();
+	const availableAt =
+		session.status === "answering"
+			? new Date(
+					detectedAt.getTime() + MISSION_PILOT_QUESTIONNAIRE_RESPONSE_DELAY_MS,
+				)
+			: detectedAt;
 	return recordMissionPilotTaskEvent({
 		taskId: session.taskId,
 		type: "questionnaire.state_changed",
@@ -90,6 +107,13 @@ export async function recordMissionPilotQuestionnaireStateChanged(
 			questionSetCount: session.questionSets.length,
 			sourceRevision,
 			stateDigest,
+			detectedAt: detectedAt.toISOString(),
+			availableAt: availableAt.toISOString(),
+			responseDelayMs:
+				session.status === "answering"
+					? MISSION_PILOT_QUESTIONNAIRE_RESPONSE_DELAY_MS
+					: 0,
 		},
+		availableAt,
 	});
 }

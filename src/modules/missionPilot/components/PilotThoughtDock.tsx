@@ -46,9 +46,9 @@ export type MissionPilotStoredEvent = {
 };
 
 export type MissionPilotExecutionTrace = {
-	events: MissionPilotStoredEvent[];
+	events?: MissionPilotStoredEvent[];
 	activityEvents: ActivityEvent[];
-	messages: TaskMessage[];
+	messages?: TaskMessage[];
 	entries?: PilotThoughtEntry[];
 };
 
@@ -211,11 +211,11 @@ export function missionPilotTraceItems(
 }
 
 function mergePersistedRows<T extends { id: string }>(
-	current: readonly T[],
-	incoming: readonly T[],
+	current: readonly T[] | undefined,
+	incoming: readonly T[] | undefined,
 ) {
-	const rowsById = new Map(current.map((row) => [row.id, row]));
-	for (const row of incoming) rowsById.set(row.id, row);
+	const rowsById = new Map((current ?? []).map((row) => [row.id, row]));
+	for (const row of incoming ?? []) rowsById.set(row.id, row);
 	return [...rowsById.values()];
 }
 

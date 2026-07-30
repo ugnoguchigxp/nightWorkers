@@ -16,6 +16,7 @@ import {
 	humanTaskOperatorPrincipal,
 	readTaskOperatorProjection,
 } from "../../taskOperator";
+import { sanitizeMissionPilotContext } from "../mission-pilot-context";
 import { createMissionPilotAuthorization } from "../mission-pilot-delegation";
 import {
 	clearMissionPilotAgentTaskActive,
@@ -169,12 +170,13 @@ export async function claimAgentPlay(
 					eq(missionPilotContextSnapshots.revision, session.contextRevision),
 				),
 			);
-		const previousContext =
+		const previousContext = sanitizeMissionPilotContext(
 			currentContext?.contextJson &&
-			typeof currentContext.contextJson === "object" &&
-			!Array.isArray(currentContext.contextJson)
+				typeof currentContext.contextJson === "object" &&
+				!Array.isArray(currentContext.contextJson)
 				? currentContext.contextJson
-				: {};
+				: {},
+		);
 		const previousTask =
 			previousContext.task &&
 			typeof previousContext.task === "object" &&
@@ -189,7 +191,6 @@ export async function claimAgentPlay(
 			session: {
 				id: session.id,
 				taskId,
-				repositoryId: taskProjection.project.id,
 				sourceRef: { source: session.sourceKind, id: session.sourceId },
 			},
 			task: {
@@ -200,7 +201,6 @@ export async function claimAgentPlay(
 					activation?.acceptanceCriteria ??
 					taskProjection.task.acceptanceCriteria?.text ??
 					null,
-				repositoryId: taskProjection.project.id,
 			},
 		};
 		const serialized = JSON.stringify(context);
@@ -254,8 +254,12 @@ export async function claimAgentPlay(
 					)
 					.limit(1)
 			: [];
+		const shouldDispatchInitialPrompt =
+			Boolean(activation) && session.initialPromptState !== "sent";
 		const shouldSeedConversation = Boolean(activation && !existingConversation);
-		const shouldAppendResumeEvent = Boolean(activation && !existingResumeEvent);
+		const shouldAppendResumeEvent = Boolean(
+			activation && !existingResumeEvent && !shouldDispatchInitialPrompt,
+		);
 		const [claimed] = await tx
 			.update(missionPilotSessions)
 			.set({
@@ -264,7 +268,9 @@ export async function claimAgentPlay(
 				authorizationVersion: 4,
 				authorizationJson: authorization,
 				initialPromptSnapshot: objective,
-				...(activation ? { initialPromptState: "sent" as const } : {}),
+				...(shouldDispatchInitialPrompt
+					? { initialPromptState: "dispatching" as const }
+					: {}),
 				contextRevision: revision,
 				contextDigest: digest,
 				startedAt: now,
@@ -357,6 +363,35 @@ export async function claimAgentPlay(
 	});
 	if (claimed) markMissionPilotAgentTaskActive(taskId);
 	return claimed;
+}
+
+export async function completeAgentInitialPromptDispatch(input: {
+	taskId: string;
+	expectedVersion: number;
+	messageId: string | null;
+	activeRunId: string | null;
+	phase: "initial_intake" | "implementation" | "review";
+}) {
+	const [completed] = await db
+		.update(missionPilotSessions)
+		.set({
+			initialPromptState: "sent",
+			initialPromptMessageId: input.messageId,
+			activeRunId: input.activeRunId,
+			phase: input.phase,
+			version: input.expectedVersion + 1,
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(missionPilotSessions.taskId, input.taskId),
+				eq(missionPilotSessions.version, input.expectedVersion),
+				eq(missionPilotSessions.desiredState, "playing"),
+				eq(missionPilotSessions.initialPromptState, "dispatching"),
+			),
+		)
+		.returning();
+	return completed ?? null;
 }
 
 export async function claimAgentStop(taskId: string, expectedVersion: number) {

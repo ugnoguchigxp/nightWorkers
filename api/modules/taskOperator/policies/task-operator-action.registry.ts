@@ -158,7 +158,7 @@ const definitions: TaskOperatorActionDefinition[] = (
 		[
 			"questionnaire.draft.save",
 			"Questionnaire回答案を保存",
-			"LLMが作成した回答案と根拠を既存draft UIへ保存し、20秒のユーザー介入時間を開始する。",
+			"LLMが作成した回答案と根拠を、呼び出し側が管理する既存Questionnaire回答経路へ渡す。",
 			"plan",
 			questionnaireDraftActionInputSchema,
 		],
@@ -370,7 +370,7 @@ const definitions: TaskOperatorActionDefinition[] = (
 		[
 			"run.todo.resume",
 			"Coding Agent Todoを再開",
-			"needs_humanのTodoをUIと同じcommand contractで再開する。",
+			"userContextをユーザーメッセージとして送信し、needs_humanのTodoをUIと同じcommand contractで再開する。",
 			"implementation",
 			object(
 				{

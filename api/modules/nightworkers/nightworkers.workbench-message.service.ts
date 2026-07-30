@@ -275,6 +275,15 @@ export type WorkbenchChatIntent =
 	| "design_component"
 	| "design_blueprint_data";
 
+export type WorkbenchMessageCommandContext = {
+	requestId: string;
+	idempotencyKey: string;
+	actor: {
+		kind: "human" | "delegated_user";
+		actorId: string;
+	};
+};
+
 export async function appendWorkbenchMessage(
 	id: string,
 	input: {
@@ -287,6 +296,7 @@ export async function appendWorkbenchMessage(
 		thinkingDepth?: "low" | "medium" | "high" | "very_high";
 		images?: PromptImageInput[];
 		source?: "workbench" | "mission_pilot";
+		commandContext?: WorkbenchMessageCommandContext;
 	},
 ) {
 	const intent = input.intent || "intake";
@@ -306,6 +316,32 @@ export async function appendWorkbenchMessage(
 			: null;
 	const llmRouteOverride = normalizeStructuredLlmModelTarget(llmSelection);
 	const existingMessages = await repo.listTaskMessages(id);
+	const existingDeliveredMessage = input.commandContext
+		? existingMessages.find((message) => {
+				const metadata =
+					message.metadataJson &&
+					typeof message.metadataJson === "object" &&
+					!Array.isArray(message.metadataJson)
+						? (message.metadataJson as Record<string, unknown>)
+						: {};
+				const provenance =
+					metadata.commandProvenance &&
+					typeof metadata.commandProvenance === "object" &&
+					!Array.isArray(metadata.commandProvenance)
+						? (metadata.commandProvenance as Record<string, unknown>)
+						: {};
+				return (
+					message.role === "user" &&
+					provenance.idempotencyKey === input.commandContext?.idempotencyKey
+				);
+			})
+		: null;
+	if (existingDeliveredMessage && existingDeliveredMessage.content !== prompt)
+		throw new AppError(
+			409,
+			"TASK_MESSAGE_REQUEST_CONFLICT",
+			"The message request identity was already used with different content.",
+		);
 	if (intent === "run_task") {
 		assertRunnableWorkbenchTask(task, existingMessages);
 	}
@@ -317,7 +353,8 @@ export async function appendWorkbenchMessage(
 		input.source ||
 		artifactContext ||
 		llmSelection ||
-		imageAttachments.length > 0
+		imageAttachments.length > 0 ||
+		input.commandContext
 			? {
 					...(artifactContext
 						? { intent: "artifact_context_instruction", artifactContext }
@@ -325,9 +362,19 @@ export async function appendWorkbenchMessage(
 					source: input.source ?? "workbench",
 					...(llmSelection ? { llmSelection } : {}),
 					...(imageAttachments.length > 0 ? { imageAttachments } : {}),
+					...(input.commandContext
+						? {
+								actor: input.commandContext.actor,
+								commandProvenance: {
+									requestId: input.commandContext.requestId,
+									idempotencyKey: input.commandContext.idempotencyKey,
+								},
+							}
+						: {}),
 				}
 			: undefined;
 	const appendWorkbenchTaskMessage = async () => {
+		if (existingDeliveredMessage) return;
 		try {
 			await appendTaskMessage(id, prompt, messageMetadata);
 		} catch (error) {

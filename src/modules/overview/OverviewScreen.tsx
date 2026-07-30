@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { OverviewDashboard as OverviewDashboardData } from "../../../shared/schemas/overview.schema";
+import type { ProjectDetailTab } from "../nightworkers/components/project-detail/types";
 import type { OverviewRange } from "../nightworkers/routing/workbench-route-state";
 import type { Repository } from "../nightworkers/types";
 import {
@@ -28,7 +29,7 @@ type OverviewScreenProps = {
 	onProjectFilterChange: (projectId: string | null) => void;
 	onOpenProjectDetailTab: (
 		projectId: string,
-		tab: "mission" | "evaluation" | "quality" | "stack" | "worktrees",
+		tab: Exclude<ProjectDetailTab, "overview">,
 	) => void;
 	onOpenSession: (sessionId: string) => void;
 	onOpenFxSettings: () => void;

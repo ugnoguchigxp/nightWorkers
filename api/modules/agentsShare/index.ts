@@ -15,6 +15,11 @@ export type {
 	TaskRunExecutionPort,
 } from "./contracts/task-run-execution";
 export { isFailureLikeTaskRunStatus } from "./contracts/task-run-execution";
+export type {
+	SubmitTaskUserIntakeCommand,
+	SubmitTaskUserIntakeResult,
+	TaskUserIntakeActor,
+} from "./contracts/task-user-intake";
 export {
 	publishTaskRunTerminal,
 	registerTaskRunTerminalListener,
@@ -90,6 +95,11 @@ export {
 	type TaskRunCloseoutInput,
 	type TaskRunParentStatusProjection,
 } from "./ports/task-run-closeout";
+export {
+	registerTaskUserIntakeHandler,
+	type SubmitTaskUserIntakeHandler,
+	submitTaskUserIntake,
+} from "./ports/task-user-intake";
 export {
 	buildCodingAgentRecoveryGuidance,
 	type CodingAgentRecoveryGuidance,

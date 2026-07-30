@@ -6,7 +6,10 @@ export {
 	restoreTaskArchiveCommand,
 	updateTaskCommand,
 } from "./application/task-commands";
-export { sendTaskOperatorMessage } from "./application/task-message-command";
+export {
+	sendTaskOperatorMessage,
+	sendTaskOperatorUserMessage,
+} from "./application/task-message-command";
 export {
 	readTaskMessageFact,
 	readTaskOperatorTask,

@@ -3,19 +3,16 @@ import { and, eq } from "drizzle-orm";
 import { missionPilotAnswerEvidenceSchema } from "../../../../shared/modules/missionPilot";
 import type { DesignQuestionnaireAnswer } from "../../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../../db/client";
-import {
-	missionPilotQuestionnaireDrafts,
-	missionPilotSessions,
-} from "../../../db/mission-pilot-schema";
+import { missionPilotQuestionnaireDrafts } from "../../../db/mission-pilot-schema";
 import { AppError } from "../../../lib/errors";
 import { enqueueTaskActivityEvent } from "../../task";
 import { validateTaskOperatorQuestionnaireDraft } from "../../taskOperator";
 import * as missionPilotRepo from "../mission-pilot.repository";
 import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
-import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
+import { submitMissionPilotQuestionnaireDraftRow } from "../mission-pilot-questionnaire.service";
 import { missionPilotThoughtTrace } from "../mission-pilot-trace-provenance";
-import { MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS } from "./mission-pilot-agent.constants";
 import { isMissionPilotAgentSession } from "./mission-pilot-agent-session.repository";
+import { hasConsumedMissionPilotQuestionnaireAnsweringEvent } from "./mission-pilot-task-event.repository";
 
 export async function saveAgentQuestionnaireDraft(input: {
 	taskId: string;
@@ -34,6 +31,17 @@ export async function saveAgentQuestionnaireDraft(input: {
 			409,
 			"MISSION_PILOT_AGENT_NOT_PLAYING",
 			"Mission Pilot agent is not playing.",
+		);
+	if (
+		!(await hasConsumedMissionPilotQuestionnaireAnsweringEvent({
+			sessionId: pilot.id,
+			questionnaireSessionId: input.questionnaireSessionId,
+		}))
+	)
+		throw new AppError(
+			409,
+			"MISSION_PILOT_QUESTIONNAIRE_RESPONSE_WAIT_REQUIRED",
+			"Questionnaireへの代理回答は、ユーザー待機時間が終了したanswering eventを受信した後にだけ実行できます。",
 		);
 	const access = await createMissionPilotTaskOperatorAccess({
 		sessionId: pilot.id,
@@ -89,9 +97,7 @@ export async function saveAgentQuestionnaireDraft(input: {
 			];
 		}),
 	);
-	const deadlineAt = new Date(
-		now.getTime() + MISSION_PILOT_QUESTIONNAIRE_INTERVENTION_MS,
-	);
+	const deadlineAt = now;
 	const result = await db.transaction(async (tx) => {
 		const [existing] = await tx
 			.select()
@@ -141,53 +147,28 @@ export async function saveAgentQuestionnaireDraft(input: {
 				"MISSION_PILOT_DRAFT_VERSION_CONFLICT",
 				"Questionnaire draft changed; refresh and retry",
 			);
-		const [updatedPilot] = await tx
-			.update(missionPilotSessions)
-			.set({
-				phase: "waiting_intervention",
-				resumePhase:
-					pilot.phase === "waiting_intervention"
-						? pilot.resumePhase
-						: pilot.phase,
-				nextWakeAt: deadlineAt,
-				version: pilot.version + 1,
-				updatedAt: now,
-			})
-			.where(
-				and(
-					eq(missionPilotSessions.id, pilot.id),
-					eq(missionPilotSessions.version, pilot.version),
-				),
-			)
-			.returning();
-		if (!updatedPilot)
-			throw new AppError(
-				409,
-				"MISSION_PILOT_VERSION_CONFLICT",
-				"Mission Pilot state changed; re-read the Task workspace.",
-			);
-		return { draft, updatedPilot };
+		return { draft };
 	});
-	publishMissionPilotUpdated(
-		input.taskId,
-		missionPilotRepo.toControlSummary(result.updatedPilot),
-	);
 	enqueueTaskActivityEvent({
 		taskId: input.taskId,
 		kind: "runtime.decision",
 		source: "mission_pilot",
-		status: "waiting",
-		text: `${parsedAnswers.length}件のQuestionnaire回答案を作成しました。20秒間、ユーザーの変更を待ちます。`,
+		status: "running",
+		text: `Questionnaire表示から20秒待機したため、${parsedAnswers.length}件をユーザーの代わりに回答します。`,
 		payloadJson: {
 			source: "mission_pilot",
 			missionPilotSessionId: pilot.id,
 			questionnaireSessionId: input.questionnaireSessionId,
 			answerCount: parsedAnswers.length,
 			deadlineAt: deadlineAt.toISOString(),
-			decision: "wait_for_user_or_auto_submit",
+			decision: "answer_after_user_wait",
 		},
 		dedupeKey: `mission-pilot:questionnaire:agent-draft:${result.draft.id}:${result.draft.version}`,
 		trace: missionPilotThoughtTrace({ sessionId: pilot.id }),
 	});
-	return result.draft;
+	const submitted = await submitMissionPilotQuestionnaireDraftRow(
+		result.draft,
+		input.taskId,
+	);
+	return submitted?.draft ?? result.draft;
 }

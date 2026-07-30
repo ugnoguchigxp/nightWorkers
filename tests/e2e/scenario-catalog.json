@@ -344,7 +344,7 @@
 		},
 		{
 			"id": "NW-E2E-MISSION-PILOT-QUESTIONNAIRE-001",
-			"title": "Mission Pilotが初期投稿後にQuestionnaire回答案を20秒表示して自動確定する",
+			"title": "Coding AgentのQuestionnaireを20秒ユーザーに委ねた後でMission Pilotが代理回答する",
 			"priority": "P0",
 			"suite": "regression",
 			"gateStatus": "required",

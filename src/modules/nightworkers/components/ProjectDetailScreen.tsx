@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ProjectScopeNavigation } from "@/modules/overview";
 import { ProjectEvaluationScreen } from "@/modules/project-evaluation";
 import { QualityScreen, useProjectQualityController } from "@/modules/quality";
+import { ProjectSecurityScanScreen } from "@/modules/securityScan";
 import { TaskGenerationPanel } from "@/modules/taskGeneration";
 import {
 	measureProjectCodeSize,
@@ -225,6 +226,10 @@ export function ProjectDetailScreen({
 
 				{activeTab === "quality" ? (
 					<QualityScreen controller={qualityController} />
+				) : null}
+
+				{activeTab === "security" ? (
+					<ProjectSecurityScanScreen repositoryId={project.id} />
 				) : null}
 
 				{activeTab === "stack" ? (

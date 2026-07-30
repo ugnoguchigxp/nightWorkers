@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import type { MissionPilotTaskEventType } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
@@ -171,6 +171,83 @@ export async function consumeMissionPilotTaskEventBySource(
 		)
 		.returning({ id: missionPilotTaskEventInbox.id });
 	return Boolean(updated);
+}
+
+export async function consumePendingMissionPilotQuestionnaireEvents(input: {
+	sessionId: string;
+	questionnaireSessionId: string;
+	status: string;
+}) {
+	const events = await db
+		.select({
+			id: missionPilotTaskEventInbox.id,
+			payloadJson: missionPilotTaskEventInbox.payloadJson,
+		})
+		.from(missionPilotTaskEventInbox)
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, input.sessionId),
+				eq(missionPilotTaskEventInbox.eventType, "questionnaire.state_changed"),
+				isNull(missionPilotTaskEventInbox.consumedAt),
+			),
+		);
+	const ids = events
+		.filter((event) => {
+			const payload =
+				event.payloadJson &&
+				typeof event.payloadJson === "object" &&
+				!Array.isArray(event.payloadJson)
+					? (event.payloadJson as Record<string, unknown>)
+					: {};
+			return (
+				payload.questionnaireSessionId === input.questionnaireSessionId &&
+				payload.status === input.status
+			);
+		})
+		.map((event) => event.id);
+	if (ids.length === 0) return 0;
+	const consumed = await db
+		.update(missionPilotTaskEventInbox)
+		.set({ consumedAt: new Date() })
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, input.sessionId),
+				inArray(missionPilotTaskEventInbox.id, ids),
+				isNull(missionPilotTaskEventInbox.consumedAt),
+			),
+		)
+		.returning({ id: missionPilotTaskEventInbox.id });
+	return consumed.length;
+}
+
+export async function hasConsumedMissionPilotQuestionnaireAnsweringEvent(input: {
+	sessionId: string;
+	questionnaireSessionId: string;
+	now?: Date;
+}) {
+	const events = await db
+		.select({ payloadJson: missionPilotTaskEventInbox.payloadJson })
+		.from(missionPilotTaskEventInbox)
+		.where(
+			and(
+				eq(missionPilotTaskEventInbox.sessionId, input.sessionId),
+				eq(missionPilotTaskEventInbox.eventType, "questionnaire.state_changed"),
+				isNotNull(missionPilotTaskEventInbox.consumedAt),
+				lte(missionPilotTaskEventInbox.availableAt, input.now ?? new Date()),
+			),
+		);
+	return events.some((event) => {
+		const payload =
+			event.payloadJson &&
+			typeof event.payloadJson === "object" &&
+			!Array.isArray(event.payloadJson)
+				? (event.payloadJson as Record<string, unknown>)
+				: {};
+		return (
+			payload.questionnaireSessionId === input.questionnaireSessionId &&
+			payload.status === "answering"
+		);
+	});
 }
 
 export async function cancelMissionPilotProviderRetryEvents(sessionId: string) {

@@ -14,6 +14,7 @@ import {
 	submitDueQuestionnaireDrafts,
 } from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
+import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
 import { createRuntimeDatabaseBackup } from "./runtime/bootstrap";
 import { isLoopbackHost } from "./security/listen-security";
@@ -53,6 +54,7 @@ const fxRefreshIntervalMs = 60 * 60 * 1000;
 const implementationQueueReconcileIntervalMs = 60 * 1000;
 
 initializeCodingAgentRunHandlers();
+initializeTaskUserIntakeHandler();
 
 type ServerWithCloseAllConnections = ReturnType<typeof serve> & {
 	closeAllConnections?: () => void;

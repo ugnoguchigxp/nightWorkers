@@ -584,7 +584,7 @@ describe("Mission Pilot persistent agent runtime", () => {
 			{ sessionId: fixtureState.sessionId },
 			{
 				readPort,
-				compactionTokenBudget: 4_000,
+				compactionTokenBudget: 5_000,
 				maxProviderCallsPerWake: 4,
 				provider: {
 					nextTurn: async ({ tools }) => {

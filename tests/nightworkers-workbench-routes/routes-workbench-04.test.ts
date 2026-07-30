@@ -519,6 +519,52 @@ describe("NightWorkers workbench routes", () => {
 		});
 	}, 60_000);
 
+	it("lets a human start Coding Agent through the shared implementation command", async () => {
+		const repositoryPath = await createDisposableRepository();
+		const { task } = await createWorkbenchTask({
+			createdBy: "project-evaluation",
+			repositoryPath,
+		});
+		const idempotencyKey = `human-implementation-start:${crypto.randomUUID()}`;
+
+		await repo.updateTask(task.id, {
+			objective: "確定済みの改善内容を実装して",
+		});
+		const response = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/run`,
+			{
+				method: "POST",
+				headers: { ...sameOriginHeaders, "Idempotency-Key": idempotencyKey },
+			},
+		);
+		expect(response.status, await response.clone().text()).toBe(201);
+		const result = await response.json();
+
+		expect(result).toMatchObject({
+			taskId: task.id,
+			id: expect.any(String),
+		});
+		expect(
+			(await service.listTaskMessages(task.id)).find(
+				(message) =>
+					message.role === "user" &&
+					message.content === "確定済みの改善内容を実装して",
+			)?.metadataJson,
+		).toMatchObject({
+			source: "task_operator",
+			intent: "implementation_request",
+			actor: {
+				kind: "human",
+				actorId: "local-task-operator-user",
+				authorizationRef: "local-user",
+			},
+		});
+		expect(await repo.listTaskRunsForTask(task.id)).toContainEqual(
+			expect.objectContaining({ id: result.id }),
+		);
+		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
+	}, 60_000);
+
 	it("prefers adopted Blueprint artifacts over newer generated Blueprint messages for planning", async () => {
 		const { task } = await createWorkbenchTask({ status: "ready" });
 		const adoptedMessage = await repo.createTaskMessage({

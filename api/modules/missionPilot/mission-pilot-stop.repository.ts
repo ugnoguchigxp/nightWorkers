@@ -32,6 +32,7 @@ export async function finishStop(
 	error?: string,
 	remainingActiveRunId?: string | null,
 	errorCode?: string,
+	initialPromptState?: "failed",
 ) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
@@ -48,6 +49,7 @@ export async function finishStop(
 				? (errorCode ?? "MISSION_PILOT_RUN_STOP_FAILED")
 				: null,
 			lastErrorMessage: error ?? null,
+			...(initialPromptState ? { initialPromptState } : {}),
 			stoppedAt: new Date(),
 			version: row.version + 1,
 			updatedAt: new Date(),

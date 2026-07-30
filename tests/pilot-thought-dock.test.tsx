@@ -268,6 +268,23 @@ describe("PilotThoughtDock", () => {
 		).toBeDefined();
 	});
 
+	it("merges repeated v2 snapshots without retired legacy row fields", () => {
+		const v2Trace = {
+			activityEvents: [],
+			entries: [],
+		};
+
+		const firstSnapshot = mergeMissionPilotExecutionTrace(null, v2Trace);
+		const merged = mergeMissionPilotExecutionTrace(firstSnapshot, v2Trace);
+
+		expect(merged).toMatchObject({
+			events: [],
+			activityEvents: [],
+			messages: [],
+			entries: [],
+		});
+	});
+
 	it("renders Pilot decisions without task execution or screen generation logs", () => {
 		const markup = renderToStaticMarkup(
 			<PilotThoughtDock

@@ -475,6 +475,7 @@ describe("frontend utility components", () => {
 			"mission",
 			"evaluation",
 			"quality",
+			"security",
 			"stack",
 		].map((activeTab) =>
 			renderToStaticMarkup(
@@ -501,6 +502,7 @@ describe("frontend utility components", () => {
 								| "mission"
 								| "evaluation"
 								| "quality"
+								| "security"
 								| "stack"
 						}
 						onActiveTabChange={vi.fn()}
@@ -515,6 +517,7 @@ describe("frontend utility components", () => {
 		expect(combinedMarkup).toContain('aria-label="プロジェクト画面"');
 		expect(combinedMarkup).toContain("タスク生成");
 		expect(combinedMarkup).toContain("品質");
+		expect(combinedMarkup).toContain("脆弱性スキャン");
 		expect(combinedMarkup).toContain("Project Evaluation");
 		expect(combinedMarkup).toContain("未検出");
 		queryClient.clear();

@@ -75,6 +75,13 @@ describe("workbench route state", () => {
 		).toBe("/projects/project-1/detail/mission");
 		expect(
 			serializeWorkbenchRoute({
+				kind: "project_detail",
+				projectId: "project-1",
+				tab: "security",
+			}),
+		).toBe("/projects/project-1/detail/security");
+		expect(
+			serializeWorkbenchRoute({
 				kind: "session",
 				sessionId: "session-1",
 				artifact: { kind: "plan_mode_workspace", tab: "data-model" },
@@ -143,6 +150,9 @@ describe("workbench route state", () => {
 		expect(
 			sanitizeStoredWorkbenchRoute("/projects/project-1/detail/mission"),
 		).toBe("/projects/project-1/detail/mission");
+		expect(
+			sanitizeStoredWorkbenchRoute("/projects/project-1/detail/security"),
+		).toBe("/projects/project-1/detail/security");
 	});
 
 	it("splits serialized URLs into router pathname and search objects", () => {

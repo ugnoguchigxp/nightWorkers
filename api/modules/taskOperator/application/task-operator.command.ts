@@ -3,11 +3,9 @@ import type {
 	TaskOperatorCommandReceipt,
 } from "../../../../shared/modules/taskOperator";
 import { AppError } from "../../../lib/errors";
-import {
-	type CodingAgentRunCommandResult,
-	resumeCodingAgentRunTodo,
-	type StructuredProviderExecutionPolicy,
-	startCodingAgentRun,
+import type {
+	CodingAgentRunCommandResult,
+	StructuredProviderExecutionPolicy,
 } from "../../agentsShare";
 import {
 	backgroundProcessBelongsToTask,
@@ -67,6 +65,8 @@ import {
 import { validateTaskOperatorJsonSchema } from "../policies/task-operator-json-schema";
 import { readTaskOperatorProjection } from "./task-operator.query";
 import { describeTaskOperatorCommandResult } from "./task-operator-command-result";
+import { executeTaskOperatorImplementationStart } from "./task-operator-implementation-start";
+import { executeTaskOperatorTodoResume } from "./task-operator-todo-resume";
 
 export type ExecuteTaskOperatorCommandInput = {
 	taskId: string;
@@ -103,8 +103,15 @@ type ActionInput<ActionId extends string> = ExecuteTaskOperatorCommandInput & {
 type Delivered<T> = { receipt: TaskOperatorCommandReceipt; data: T };
 
 export function executeTaskOperatorCommand(
-	input: ActionInput<"run.implementation.start" | "run.todo.resume">,
-): Promise<Delivered<CodingAgentRunCommandResult>>;
+	input: ActionInput<"run.implementation.start">,
+): Promise<
+	Delivered<CodingAgentRunCommandResult & { messageId: string | null }>
+>;
+export function executeTaskOperatorCommand(
+	input: ActionInput<"run.todo.resume">,
+): Promise<
+	Delivered<CodingAgentRunCommandResult & { messageId: string | null }>
+>;
 export function executeTaskOperatorCommand(
 	input: ActionInput<"questionnaire.submit">,
 ): Promise<
@@ -339,19 +346,11 @@ async function executeTaskOperatorCommandOnce(
 		case "task.queue.archive":
 			return archiveImplementationQueueEntry(requiredText(args.entryId));
 		case "run.implementation.start":
-			return startCodingAgentRun({
+			return executeTaskOperatorImplementationStart({
 				taskId: input.taskId,
-				taskRef: {
-					id: projection.task.id,
-					revision: projection.task.revision,
-				},
-				instruction: requiredText(args.request),
-				artifactRefs: projection.artifactIndex.latestByKind,
-				repositoryRef: {
-					id: projection.project.id,
-					revision: projection.project.revision,
-				},
-				requestProvenance: provenance(input.context),
+				request: requiredText(args.request),
+				projection,
+				context: input.context,
 			});
 		case "run.todo.resume":
 			assertTaskOperatorActiveRunResource(
@@ -359,12 +358,13 @@ async function executeTaskOperatorCommandOnce(
 				requiredText(args.runId),
 				requiredText(args.todoId),
 			);
-			return resumeCodingAgentRunTodo({
+			return executeTaskOperatorTodoResume({
+				taskId: input.taskId,
 				runId: requiredText(args.runId),
 				todoId: requiredText(args.todoId),
 				expectedTodoRevision: requiredInteger(args.expectedTodoRevision),
 				userContext: requiredText(args.userContext),
-				requestProvenance: provenance(input.context),
+				context: input.context,
 			});
 		case "run.stop":
 			assertTaskOperatorActiveRunResource(
@@ -460,21 +460,6 @@ async function submitQuestionnaireAnswers(
 	return session;
 }
 
-function provenance(context: TaskOperatorCommandContext) {
-	return {
-		requestedBy: {
-			kind:
-				context.principal.kind === "delegated_user"
-					? ("automation" as const)
-					: context.principal.kind,
-			actorId: context.principal.actorId,
-		},
-		orchestrationRef: {
-			kind: "task_operator_command",
-			id: context.idempotencyKey,
-		},
-	};
-}
 function requiredText(value: unknown) {
 	if (typeof value !== "string" || value.length === 0)
 		throw new AppError(

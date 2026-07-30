@@ -43,6 +43,10 @@ describe("Overview components", () => {
 		);
 
 		expect(markup).toContain("タスク生成");
+		expect(markup).toContain("脆弱性スキャン");
+		expect(markup).toContain(
+			"/projects/23d6c7d1-9780-4906-a074-0ea8a066f774/detail/security",
+		);
 		expect(markup).not.toContain("todolist の概要");
 		expect(markup).not.toContain("border-bottom");
 	});

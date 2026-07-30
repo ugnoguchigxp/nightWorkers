@@ -35,6 +35,7 @@ export function scheduleMissionPilotAgentWake(input: {
 		void getNextMissionPilotTaskEventAt(input.sessionId)
 			.then((availableAt) => {
 				if (!isCurrentImmediateWake(input.sessionId, state)) return null;
+				if (!availableAt) return null;
 				if (availableAt && availableAt.getTime() > Date.now()) {
 					immediateWakeStates.delete(input.sessionId);
 					scheduleMissionPilotAgentWakeAtNextEvent(input);

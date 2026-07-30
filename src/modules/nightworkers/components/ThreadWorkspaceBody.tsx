@@ -167,9 +167,9 @@ export function projectEvaluationComposerDraftState(
 		activeSession?.createdBy === "project-evaluation" ||
 		activeSession?.createdBy === "mission-task-candidate" ||
 		activeSession?.createdBy === "mission-task-proposal";
-	const hasSentUserPrompt = taskMessages.some(
-		(message) => message.role === "user",
-	);
+	const hasSentUserPrompt =
+		activeSession?.missionPilot?.initialPromptState === "sent" ||
+		taskMessages.some((message) => message.role === "user");
 	return {
 		discardStoredDraft: usesGeneratedInitialPrompt && hasSentUserPrompt,
 		initialPrompt:

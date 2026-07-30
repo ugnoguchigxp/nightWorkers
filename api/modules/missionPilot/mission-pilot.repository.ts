@@ -79,7 +79,6 @@ export async function createSession(
 			description: string | null;
 			objective: string | null;
 			acceptanceCriteria: string | null;
-			worktreePath?: string | null;
 		};
 		sourceKind: MissionPilotSourceRef["source"];
 		sourceId: string;
@@ -93,7 +92,6 @@ export async function createSession(
 		session: {
 			id,
 			taskId: input.task.id,
-			repositoryId: input.task.repositoryId,
 			sourceRef: { source: input.sourceKind, id: input.sourceId },
 		},
 		task: {
@@ -101,8 +99,6 @@ export async function createSession(
 			initialPrompt: objective,
 			description: input.task.description,
 			acceptanceCriteria: input.task.acceptanceCriteria,
-			worktreePath: input.task.worktreePath ?? null,
-			repositoryId: input.task.repositoryId,
 		},
 	};
 	const serialized = JSON.stringify(context);

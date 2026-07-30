@@ -499,6 +499,28 @@ describe("S11t SystemContext catalog", () => {
 		expect(p("missionPilot.compaction", {})).toMatch(/\n$/);
 	});
 
+	it("instructs Mission Pilot to resume an unfinished stopped Coding Agent", () => {
+		const context = buildMissionPilotSystemContext();
+		expect(context).toContain(
+			"run.implementation.startのrequestに「continue」を指定して再開してください。",
+		);
+		expect(context).toContain(
+			"run.todo.resumeのuserContextに「continue」を指定して同じRunを再開してください。",
+		);
+		expect(context).toContain(
+			"Goal達成が確認できる場合はcontinueを送らずReviewまたは完了判断へ進んでください。",
+		);
+		expect(context).toContain(
+			"Mission Pilotはfolder、filesystem、Git HEAD、worktreeを観測せず",
+		);
+		expect(context).toContain(
+			"初期Promptは人間ユーザーと同じTask intake commandで一度だけ送信し",
+		);
+		expect(context).toContain(
+			"Questionnaireのanswering eventはユーザーが自分で回答できる20秒の待機後に渡されます。",
+		);
+	});
+
 	it("keeps deterministic baselines after moving final rendering into S11t", () => {
 		const codingAgent = buildCodingAgentSystemContext({
 			taskGoal: "認証を実装",
@@ -521,9 +543,9 @@ describe("S11t SystemContext catalog", () => {
 			codingAgent:
 				"d055d5df5594c310c04cfcb4eeabe1af83ebf70aa447d72ba06f34acc04ae5cd",
 			missionPilotPushAllowed:
-				"e3c9a664e273d4ad3f4414798039d18aeef45162349ca4ddddd7863cbcea68b0",
+				"4bd34ec826a5dd6c98a3475748bb091e3e72466ed23a5a459cc792b343d74b78",
 			missionPilotPushDenied:
-				"37147856c660b33f327428cc59ab0bb94d482eae2532dabbd0ca95c507914a87",
+				"2baa913add8c593c3292e9b1156a761b206128ca711ad68ec66fb76b6079c093",
 		});
 	});
 

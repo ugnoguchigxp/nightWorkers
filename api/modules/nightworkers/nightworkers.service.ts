@@ -7,7 +7,6 @@ import { buildReviewResult } from "../review/results/build-review-result";
 import { collectDefaultReviewEvidence } from "../review/results/evidence-collector";
 import type { ReviewRunRequest } from "../review/results/types";
 import { createTask } from "./nightworkers.basic.service";
-import { assertRunnableWorkbenchTask } from "./nightworkers.planning-helpers.service";
 import * as repo from "./nightworkers.repository";
 import {
 	archiveImplementationQueueEntryForRun,
@@ -15,7 +14,6 @@ import {
 	runImplementationQueue,
 	runSessionQueueForRepository,
 	shouldContinueSessionQueue,
-	startTaskRun,
 } from "./nightworkers.run-orchestration.service";
 import { deletePromptImageAttachments } from "./prompt-image-attachments";
 import {
@@ -23,6 +21,8 @@ import {
 	reopenCompletedTask,
 	restoreArchivedTask,
 } from "./task-archive.service";
+
+export { initializeTaskUserIntakeHandler } from "./nightworkers.user-intake.handler";
 
 configureQueueDrainRunner(runImplementationQueue);
 
@@ -85,15 +85,6 @@ export {
 	appendWorkbenchMessage,
 	createPlanningArtifactMessageIfNeeded,
 } from "./nightworkers.workbench.service";
-export async function startWorkbenchTaskRun(taskId: string) {
-	const task = await repo.getTask(taskId);
-	const messages = await repo.listTaskMessages(taskId);
-	assertRunnableWorkbenchTask(task, messages);
-	return startTaskRun(taskId, {
-		executionMode: "implementation",
-		executionModeSource: "workbench_run",
-	});
-}
 
 export async function createWorkbenchSession(data: {
 	repositoryId: string;

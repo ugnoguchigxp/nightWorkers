@@ -113,4 +113,30 @@ describe("project evaluation task prompt drafts", () => {
 			initialPrompt: "",
 		});
 	});
+
+	it("clears a generated prompt after Mission Pilot dispatches it", () => {
+		const createdTask = {
+			...task("task-created", "Coding Agentを開始する"),
+			objective: "生成済みの初期プロンプト",
+			missionPilot: {
+				taskId: "task-created",
+				desiredState: "playing" as const,
+				activityState: "running" as const,
+				phase: "implementation",
+				authorizationVersion: 4,
+				initialPromptState: "sent" as const,
+				initialPromptMessageId: null,
+				activeRunId: "run-1",
+				nextWakeAt: null,
+				version: 2,
+				lastError: null,
+				updatedAt: "2026-07-30T00:00:00.000Z",
+			},
+		};
+
+		expect(projectEvaluationComposerDraftState(createdTask, [])).toEqual({
+			discardStoredDraft: true,
+			initialPrompt: "",
+		});
+	});
 });
