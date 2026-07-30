@@ -23,10 +23,10 @@ export function buildQuestionnaireFixtureTurns(input: {
 		turn("missionPilot.questionnaire.read-current", [
 			readTask("agent-questionnaire-read"),
 		]),
-		turn("missionPilot.questionnaire.save-draft", [
+		turn("missionPilot.questionnaire.submit", [
 			taskAction(
-				"agent-questionnaire-draft",
-				"questionnaire.draft.save",
+				"agent-questionnaire-submit",
+				"questionnaire.submit",
 				input.taskRevision,
 				{
 					questionnaireSessionId: input.questionnaireSessionId,
@@ -36,12 +36,6 @@ export function buildQuestionnaireFixtureTurns(input: {
 							selectedOptionIds: ["rest"],
 							rankedOptionIds: [],
 							deferred: false,
-						},
-					],
-					answerEvidence: [
-						{
-							questionId: "api-style",
-							reason: "Projectの既存規約とHTTP APIに合うためRESTを選択します。",
 						},
 					],
 				},

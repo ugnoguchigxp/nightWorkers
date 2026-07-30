@@ -3,17 +3,12 @@ import {
 	planModeArtifactKindSchema,
 } from "../../../shared/schemas/plan-mode-artifact.schema";
 import { NotFoundError } from "../../lib/errors";
-import { readGeneralSettings } from "../../services/settings/general-settings";
-import {
-	buildInitialPlanModeRoutingEntries,
-	planModeRoutingTerminalReason,
-	readBlueprintArtifactAdoption,
-	readPlanModeRouting,
-} from "../agentsShare";
+import { readBlueprintArtifactAdoption } from "../agentsShare";
 import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
+import { getPlanModeRouting } from "../planMode";
 import { getAnswerableSessionQuestions } from "../questionnaire/questionnaire-parser.service";
 import { listDesignQuestionnaires } from "../questionnaire/questionnaire-query.service";
 import {
@@ -221,12 +216,10 @@ export async function getPlanModeWorkspace(
 		taskId,
 		task.repositoryId,
 	);
-	const routing = await readPlanModeRouting({
-		taskId,
+	const effectiveRouting = await getPlanModeRouting(taskId, {
+		messages,
 		taskStatus: task.status,
 	});
-	const effectiveRouting =
-		routing ?? buildStandalonePlanModeRouting(messages, task.status);
 	return {
 		...workspace,
 		viewDecisions: effectiveRouting.entries.map(
@@ -237,24 +230,6 @@ export async function getPlanModeWorkspace(
 			}),
 		),
 		routing: effectiveRouting,
-	};
-}
-
-function buildStandalonePlanModeRouting(
-	messages: Awaited<ReturnType<typeof listPlanModeTaskMessages>>,
-	taskStatus: string,
-) {
-	const lockedReason = planModeRoutingTerminalReason(taskStatus);
-	return {
-		revision: 0,
-		entries: buildInitialPlanModeRoutingEntries(
-			messages,
-			readGeneralSettings().planMode.capabilities,
-		),
-		editable: !lockedReason,
-		lockedReason,
-		updatedBy: null,
-		updatedAt: null,
 	};
 }
 

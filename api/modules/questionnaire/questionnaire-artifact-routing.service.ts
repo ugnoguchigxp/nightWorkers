@@ -3,12 +3,15 @@ import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-
 import { AppError, NotFoundError } from "../../lib/errors";
 import { readGeneralSettings } from "../../services/settings/general-settings";
 import { StructuredLlmResponseError } from "../../services/structured-llm/contract";
-import { writePlanModeRoutingForUser } from "../agentsShare";
 import {
 	createPlanModeTaskMessage,
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 } from "../nightworkers/nightworkers.plan-mode-core.port";
+import {
+	getPlanModeRouting,
+	updatePlanModeRoutingFromQuestionnaire,
+} from "../planMode";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
 import { selectQuestionnaireArtifactRouting } from "./questionnaire-artifact-selection.service";
 
@@ -123,24 +126,26 @@ export async function recommendQuestionnaireArtifactRouting(
 	}
 	if (decisions.length === 0) return workspace.routing;
 
-	if (workspace.routing.revision > 0) {
+	let routing = workspace.routing;
+	for (let attempt = 1; attempt <= 2; attempt += 1) {
 		try {
-			await writePlanModeRoutingForUser({
-				taskId,
-				request: {
-					expectedRevision: workspace.routing.revision,
-					idempotencyKey: idempotencyKeyFromDigest(digest),
-					changes: decisions,
-				},
+			routing = await updatePlanModeRoutingFromQuestionnaire(taskId, {
+				expectedRevision: routing.revision,
+				idempotencyKey: idempotencyKeyFromDigest(digest),
+				changes: decisions,
 			});
+			break;
 		} catch (error) {
 			if (
-				error instanceof AppError &&
-				error.code === "PLAN_MODE_ROUTING_REBUILD_IN_PROGRESS"
+				!(
+					error instanceof AppError &&
+					error.code === "PLAN_MODE_ROUTING_REVISION_CONFLICT"
+				) ||
+				attempt === 2
 			) {
-				return null;
+				throw error;
 			}
-			throw error;
+			routing = await getPlanModeRouting(taskId);
 		}
 	}
 
@@ -159,5 +164,5 @@ export async function recommendQuestionnaireArtifactRouting(
 			viewDecisions: decisions,
 		},
 	});
-	return (await getPlanModeWorkspace(taskId)).routing;
+	return routing;
 }

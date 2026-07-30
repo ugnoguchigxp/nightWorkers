@@ -113,6 +113,28 @@ export function getQuestionCount(session: DesignQuestionnaireSession) {
 	}, 0);
 }
 
+export function getQuestionnaireSessionProjectionKey(
+	session: DesignQuestionnaireSession | null,
+) {
+	if (!session) return null;
+	return JSON.stringify({
+		id: session.id,
+		status: session.status,
+		updatedAt: session.updatedAt,
+		questionSets: (session.questionSets ?? []).map((set) => ({
+			id: set.id,
+			sequence: set.sequence,
+			createdAt: set.createdAt,
+		})),
+		answers: session.answers ?? [],
+		reviews: (session.reviews ?? []).map((review) => ({
+			id: review.id,
+			status: review.status,
+			updatedAt: review.updatedAt,
+		})),
+	});
+}
+
 export function isQuestionDependencySatisfied(
 	question: DesignQuestion,
 	answers: Record<string, DesignQuestionnaireAnswer>,

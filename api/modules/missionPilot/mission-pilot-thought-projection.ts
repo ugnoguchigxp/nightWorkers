@@ -358,12 +358,18 @@ function projectToolCallLifecycle(
 				occurredAt: call.finishedAt,
 				kind: toolCompletionKind(call.actionId, call.status, result),
 				status: call.status,
-				summary: toolCompletionSummary(title, call.status, result, failure),
+				summary: toolCompletionSummary(
+					call.actionId,
+					title,
+					call.status,
+					result,
+					failure,
+				),
 				details: compactDetails({
 					actionId: call.actionId,
 					turnId: call.turnId,
 					expectedTaskRevision: call.expectedTaskRevision,
-					result: safeControlResult(result),
+					result: safeControlResult(call.actionId, result),
 					failure: safeFailure(failure),
 				}),
 				orderHint:
@@ -408,6 +414,7 @@ function toolCompletionKind(
 }
 
 function toolCompletionSummary(
+	actionId: string,
 	title: string,
 	status: string,
 	result: Record<string, unknown>,
@@ -426,15 +433,77 @@ function toolCompletionSummary(
 		return typeof result.summary === "string" && result.summary.trim()
 			? result.summary
 			: "Mission Pilotが処理を完了しました。";
+	const questionnaireSummary = questionnaireCompletionSummary(actionId, result);
+	if (questionnaireSummary) return questionnaireSummary;
 	return `完了しました: ${title}`;
 }
 
-function safeControlResult(result: Record<string, unknown>) {
+function questionnaireCompletionSummary(
+	actionId: string,
+	result: Record<string, unknown>,
+) {
+	if (actionId === "read_task_resource") {
+		const sourceRef = asRecord(result.sourceRef);
+		const content = asRecord(result.content);
+		if (sourceRef.kind !== "questionnaire") return null;
+		const cursor =
+			typeof result.cursor === "number" && Number.isInteger(result.cursor)
+				? result.cursor
+				: 0;
+		const questionCount = Array.isArray(content.questions)
+			? content.questions.length
+			: 0;
+		const totalQuestionCount =
+			typeof content.totalQuestionCount === "number"
+				? content.totalQuestionCount
+				: questionCount;
+		const range =
+			questionCount > 0 ? `${cursor + 1}〜${cursor + questionCount}` : "0";
+		const continuation =
+			typeof result.nextCursor === "number"
+				? `、続きはcursor ${result.nextCursor}`
+				: "、全件取得済み";
+		return `Questionnaireを取得しました: ${range} / ${totalQuestionCount}件${continuation}`;
+	}
+	if (actionId === "questionnaire.submit") {
+		const data = asRecord(result.data);
+		const answerCount = Array.isArray(data.answers) ? data.answers.length : 0;
+		const status =
+			typeof data.status === "string" ? `（状態: ${data.status}）` : "";
+		return `Questionnaire回答${answerCount}件を送信しました${status}`;
+	}
+	return null;
+}
+
+function safeControlResult(actionId: string, result: Record<string, unknown>) {
+	const sourceRef = asRecord(result.sourceRef);
+	const content = asRecord(result.content);
+	const data = asRecord(result.data);
 	return compactDetails({
 		kind: result.kind,
 		reason: result.reason,
 		summary: result.summary,
 		eventTypes: result.eventTypes,
+		...(actionId === "read_task_resource" && sourceRef.kind === "questionnaire"
+			? {
+					resourceKind: sourceRef.kind,
+					resourceId: sourceRef.id,
+					cursor: result.cursor,
+					nextCursor: result.nextCursor,
+					hasMore: result.hasMore,
+					questionCount: Array.isArray(content.questions)
+						? content.questions.length
+						: 0,
+					totalQuestionCount: content.totalQuestionCount,
+				}
+			: {}),
+		...(actionId === "questionnaire.submit"
+			? {
+					questionnaireSessionId: data.id,
+					questionnaireStatus: data.status,
+					answerCount: Array.isArray(data.answers) ? data.answers.length : 0,
+				}
+			: {}),
 	});
 }
 

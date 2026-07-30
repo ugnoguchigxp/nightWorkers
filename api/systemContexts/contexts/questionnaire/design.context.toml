@@ -28,7 +28,7 @@ type は単一選択なら radio、本当に複数の選択肢を同時に採用
 実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。
 checkbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。
 選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。
-JSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。
+[[optionOutputContract]]
 回答は JSON のみで返してください。
 '''
 
@@ -36,4 +36,7 @@ JSON root は {title, questions} のみです。各questionは {text, kind, type
 profile = "trusted.inline"
 
 [variables.completionVerificationGuidance]
+profile = "trusted.inline"
+
+[variables.optionOutputContract]
 profile = "trusted.inline"

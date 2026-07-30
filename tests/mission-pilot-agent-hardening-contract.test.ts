@@ -96,10 +96,10 @@ describe("Mission Pilot autonomous agent hardening contract", () => {
 		);
 	});
 
-	it("keeps Questionnaire submission on the existing user intervention path", () => {
+	it("exposes Questionnaire submission through the same Task action contract as the user", () => {
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
-		).toContain("user intervention");
+		).toBeNull();
 		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toEqual([
 			"read_task_operator_view",
 			"read_task_resource",

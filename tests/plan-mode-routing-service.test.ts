@@ -3,23 +3,15 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import {
-	missionPilotContextSnapshots,
-	missionPilotSessions,
-	missionPilotSteps,
-} from "../api/db/mission-pilot-schema";
+import { planModeRoutingRevisions } from "../api/db/plan-mode-schema";
 import { repositories, taskMessages, tasks } from "../api/db/schema";
-import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
-	executeMissionPilotPlanRoutingTool,
 	getPlanModeRouting,
+	updatePlanModeRoutingForDelegatedUser,
 	updatePlanModeRoutingForUser,
-} from "../api/modules/missionPilot/planning/plan-mode-routing.service";
+} from "../api/modules/planMode";
 import * as generalSettings from "../api/services/settings/general-settings";
-import {
-	missionPilotPlanRoutingToolCallSchema,
-	updatePlanModeRoutingRequestSchema,
-} from "../shared/schemas/plan-mode-routing.schema";
+import { updatePlanModeRoutingRequestSchema } from "../shared/schemas/plan-mode-routing.schema";
 
 const repositoryIds: string[] = [];
 
@@ -34,41 +26,34 @@ async function createFixture() {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	repositoryIds.push(repositoryId);
-	return db.transaction(async (tx) => {
-		await tx.insert(repositories).values({
-			id: repositoryId,
-			name: "Plan routing fixture",
-			localPath: "/tmp/plan-routing-fixture",
-			branch: "main",
-		});
-		const [task] = await tx
-			.insert(tasks)
-			.values({
-				id: taskId,
-				repositoryId,
-				title: "Edit Plan Artifact routing",
-				objective: "Keep required artifacts and edit optional routing",
-				status: "ready",
-			})
-			.returning();
-		const session = await createSession(
-			{
-				task,
-				sourceKind: "task",
-				sourceId: task.id,
-			},
-			tx,
-		);
-		return { task, session };
+	await db.insert(repositories).values({
+		id: repositoryId,
+		name: "Plan routing fixture",
+		localPath: "/tmp/plan-routing-fixture",
+		branch: "main",
 	});
+	const [task] = await db
+		.insert(tasks)
+		.values({
+			id: taskId,
+			repositoryId,
+			title: "Edit Plan Artifact routing",
+			objective: "Keep required artifacts and edit optional routing",
+			status: "ready",
+		})
+		.returning();
+	if (!task) throw new Error("Task fixture was not created.");
+	return { task };
 }
 
 describe("Plan Mode routing service", () => {
-	it("keeps feature plan and questionnaire required in the initial snapshot", async () => {
+	it("owns a complete initial snapshot without a Mission Pilot session", async () => {
 		const { task } = await createFixture();
 		const routing = await getPlanModeRouting(task.id);
 
 		expect(routing.revision).toBe(0);
+		expect(routing.entries).toHaveLength(9);
+		expect(routing.entries.every((entry) => Boolean(entry.reason))).toBe(true);
 		expect(routing.entries.filter((entry) => entry.required)).toEqual([
 			expect.objectContaining({
 				view: "feature_plan",
@@ -79,43 +64,47 @@ describe("Plan Mode routing service", () => {
 				decision: "include",
 			}),
 		]);
-		expect(
-			routing.entries.find((entry) => entry.view === "questionnaire"),
-		).toMatchObject({
-			required: true,
-			capabilityEnabled: true,
-		});
-		expect(
-			routing.entries.find((entry) => entry.view === "blueprint")?.reason,
-		).toBeUndefined();
 	});
 
-	it("drops the legacy fixed omit reason so Mission Pilot can replace it", async () => {
+	it("keeps explicit include and omit reasons from canonical Plan Mode messages", async () => {
 		const { task } = await createFixture();
 		await db.insert(taskMessages).values({
 			taskId: task.id,
 			role: "system",
-			content: "Legacy routing",
+			content: "Questionnaire artifact routing",
 			messageType: "text",
 			metadataJson: {
 				viewDecisions: [
 					{
+						view: "api_io_contract",
+						decision: "include",
+						reason: "外部APIの入出力境界を確定する必要があります。",
+					},
+					{
 						view: "blueprint",
 						decision: "omit",
-						reason: "初期 routing では省略されています。",
+						reason: "画面変更を伴わないため対象外です。",
 					},
 				],
 			},
 		});
 
 		const routing = await getPlanModeRouting(task.id);
-
 		expect(
-			routing.entries.find((entry) => entry.view === "blueprint")?.reason,
-		).toBeUndefined();
+			routing.entries.find((entry) => entry.view === "api_io_contract"),
+		).toMatchObject({
+			decision: "include",
+			reason: "外部APIの入出力境界を確定する必要があります。",
+		});
+		expect(
+			routing.entries.find((entry) => entry.view === "blueprint"),
+		).toMatchObject({
+			decision: "omit",
+			reason: "画面変更を伴わないため対象外です。",
+		});
 	});
 
-	it("lets the user update routing through the public user command", async () => {
+	it("persists user routing by Task rather than by Mission Pilot session", async () => {
 		const { task } = await createFixture();
 		const updated = await updatePlanModeRoutingForUser(task.id, {
 			expectedRevision: 0,
@@ -129,163 +118,52 @@ describe("Plan Mode routing service", () => {
 			],
 		});
 
-		expect(updated.updatedBy).toBe("user");
-		expect(updated.editable).toBe(true);
-		expect(
-			updated.entries.find((entry) => entry.view === "questionnaire"),
-		).toMatchObject({ decision: "include", required: true });
-		const userUpdated = await updatePlanModeRoutingForUser(task.id, {
-			expectedRevision: updated.revision,
-			idempotencyKey: crypto.randomUUID(),
-			changes: [{ view: "data_model", decision: "include" }],
+		expect(updated).toMatchObject({ revision: 1, updatedBy: "user" });
+		const persisted = await db.query.planModeRoutingRevisions.findFirst({
+			where: eq(planModeRoutingRevisions.taskId, task.id),
 		});
-		expect(userUpdated.updatedBy).toBe("user");
-		expect(
-			userUpdated.entries.find((entry) => entry.view === "data_model"),
-		).toMatchObject({ decision: "include" });
-	});
-
-	it("includes questionnaire after a Questionnaire-ready message is present", async () => {
-		const { task } = await createFixture();
-		await db.insert(taskMessages).values({
+		expect(persisted).toMatchObject({
 			taskId: task.id,
-			role: "system",
-			content: "Questionnaire ready",
-			messageType: "text",
-			metadataJson: {
-				intent: "design_questionnaire_ready",
-				questionnaireSessionId: crypto.randomUUID(),
-			},
-		});
-
-		const routing = await getPlanModeRouting(task.id);
-
-		expect(
-			routing.entries.find((entry) => entry.view === "questionnaire"),
-		).toMatchObject({
-			decision: "include",
-			required: true,
+			revision: 1,
+			updatedBy: "user",
 		});
 	});
 
-	it("updates routing and Context atomically while invalidating affected steps", async () => {
-		const { task, session } = await createFixture();
-		const now = new Date();
-		for (const [stepKey, decision] of [
-			["view:api_io_contract", "omit"],
-			["feature_plan", "include"],
-		] as const) {
-			await db.insert(missionPilotSteps).values({
-				id: crypto.randomUUID(),
-				sessionId: session.id,
-				stepKey,
-				ordinal: stepKey === "feature_plan" ? 2 : 1,
-				status: decision === "omit" ? "skipped" : "completed",
-				contextRevision: session.contextRevision,
-				contextDigest: session.contextDigest,
-				evidenceJson: { decision },
-				createdAt: now,
-				updatedAt: now,
-			});
-		}
-
-		const updated = await updatePlanModeRoutingForUser(task.id, {
-			expectedRevision: 0,
-			idempotencyKey: crypto.randomUUID(),
-			changes: [
-				{
-					view: "api_io_contract",
-					decision: "include",
-					reason: "The API boundary is part of the accepted scope.",
-				},
-			],
-		});
-
-		expect(updated.revision).toBe(1);
-		expect(
-			updated.entries.find((entry) => entry.view === "api_io_contract")
-				?.decision,
-		).toBe("include");
-		const persistedSession = await db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.id, session.id),
-		});
-		expect(persistedSession?.planRoutingRevision).toBe(1);
-		expect(persistedSession?.contextRevision).toBe(2);
-		const context = await db.query.missionPilotContextSnapshots.findFirst({
-			where: eq(missionPilotContextSnapshots.sessionId, session.id),
-			orderBy: (row, { desc }) => [desc(row.revision)],
-		});
-		expect(
-			(context?.contextJson.plan as Record<string, unknown>)?.routing,
-		).toEqual(expect.objectContaining({ revision: 1, updatedBy: "user" }));
-		const steps = await db
-			.select()
-			.from(missionPilotSteps)
-			.where(eq(missionPilotSteps.sessionId, session.id));
-		expect(
-			steps.find((step) => step.stepKey === "view:api_io_contract")?.status,
-		).toBe("pending");
-		expect(steps.find((step) => step.stepKey === "feature_plan")?.status).toBe(
-			"pending",
-		);
-	});
-
-	it("lets Mission Pilot save omit reasons but not revisit included artifacts", async () => {
+	it("gives a delegated user the same routing decisions as a human user", async () => {
 		const { task } = await createFixture();
-		const routed = await executeMissionPilotPlanRoutingTool(task.id, {
-			tool: "edit_plan_artifact_routing",
+		const included = await updatePlanModeRoutingForDelegatedUser(task.id, {
 			expectedRevision: 0,
 			idempotencyKey: crypto.randomUUID(),
 			changes: [
 				{
-					view: "blueprint",
-					decision: "omit",
-					reason: "画面変更を伴わないため、Blueprintは作成しません。",
-				},
-				{
 					view: "api_io_contract",
 					decision: "include",
-					reason: "外部APIとの入出力境界を確定するため。",
+					reason: "外部API境界を明示します。",
 				},
 			],
 		});
-		expect(
-			routed.entries.find((entry) => entry.view === "blueprint")?.reason,
-		).toBe("画面変更を伴わないため、Blueprintは作成しません。");
+		const omitted = await updatePlanModeRoutingForDelegatedUser(task.id, {
+			expectedRevision: included.revision,
+			idempotencyKey: crypto.randomUUID(),
+			changes: [
+				{
+					view: "api_io_contract",
+					decision: "omit",
+					reason: "既存契約を変更しない方針に確定しました。",
+				},
+			],
+		});
 
-		await expect(
-			executeMissionPilotPlanRoutingTool(task.id, {
-				tool: "edit_plan_artifact_routing",
-				expectedRevision: 1,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [
-					{
-						view: "api_io_contract",
-						decision: "include",
-						reason: "Already included",
-					},
-				],
-			}),
-		).rejects.toMatchObject({
-			code: "MISSION_PILOT_ROUTING_TOOL_SCOPE_VIOLATION",
+		expect(omitted.updatedBy).toBe("delegated_user");
+		expect(
+			omitted.entries.find((entry) => entry.view === "api_io_contract"),
+		).toMatchObject({
+			decision: "omit",
+			reason: "既存契約を変更しない方針に確定しました。",
 		});
 	});
 
-	it("rejects duplicate views in user and Mission Pilot changes", () => {
-		expect(
-			missionPilotPlanRoutingToolCallSchema.safeParse({
-				tool: "edit_plan_artifact_routing",
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [
-					{
-						view: "blueprint",
-						decision: "omit",
-						reason: "画面構成の変更がないため。",
-					},
-				],
-			}).success,
-		).toBe(true);
+	it("rejects duplicate views in a routing request", () => {
 		expect(
 			updatePlanModeRoutingRequestSchema.safeParse({
 				expectedRevision: 0,
@@ -296,28 +174,9 @@ describe("Plan Mode routing service", () => {
 				],
 			}).success,
 		).toBe(false);
-		expect(
-			missionPilotPlanRoutingToolCallSchema.safeParse({
-				tool: "edit_plan_artifact_routing",
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [
-					{
-						view: "api_io_contract",
-						decision: "include",
-						reason: "API contract is required.",
-					},
-					{
-						view: "api_io_contract",
-						decision: "include",
-						reason: "Duplicate request.",
-					},
-				],
-			}).success,
-		).toBe(false);
 	});
 
-	it("projects Settings capability separately and rejects unavailable includes", async () => {
+	it("projects Settings capability and rejects unavailable includes", async () => {
 		const { task } = await createFixture();
 		const currentSettings = generalSettings.readGeneralSettings();
 		const settingsSpy = vi
@@ -355,10 +214,9 @@ describe("Plan Mode routing service", () => {
 
 	it("converges idempotent retries and rejects key reuse with different content", async () => {
 		const { task } = await createFixture();
-		const idempotencyKey = crypto.randomUUID();
 		const request = {
 			expectedRevision: 0,
-			idempotencyKey,
+			idempotencyKey: crypto.randomUUID(),
 			changes: [
 				{
 					view: "sequence_flow" as const,
@@ -385,57 +243,6 @@ describe("Plan Mode routing service", () => {
 			}),
 		).rejects.toMatchObject({
 			code: "PLAN_MODE_ROUTING_IDEMPOTENCY_CONFLICT",
-		});
-	});
-
-	it("allows edits after the Mission Pilot reaches Queue state", async () => {
-		const { task, session } = await createFixture();
-		await db
-			.update(missionPilotSessions)
-			.set({ phase: "queued", queueHandoffJson: { queued: true } })
-			.where(eq(missionPilotSessions.id, session.id));
-
-		const updated = await updatePlanModeRoutingForUser(task.id, {
-			expectedRevision: 0,
-			idempotencyKey: crypto.randomUUID(),
-			changes: [{ view: "data_model", decision: "include" }],
-		});
-		expect(updated.editable).toBe(true);
-		expect(updated.updatedBy).toBe("user");
-	});
-
-	it("keeps routing editable after the Task reaches a terminal state", async () => {
-		const { task } = await createFixture();
-		await db
-			.update(tasks)
-			.set({ status: "completed" })
-			.where(eq(tasks.id, task.id));
-
-		const current = await getPlanModeRouting(task.id);
-		expect(current.editable).toBe(true);
-		const updated = await updatePlanModeRoutingForUser(task.id, {
-			expectedRevision: current.revision,
-			idempotencyKey: crypto.randomUUID(),
-			changes: [{ view: "data_model", decision: "include" }],
-		});
-		expect(updated.updatedBy).toBe("user");
-	});
-
-	it("rejects user edits while Mission Pilot is rebuilding the plan", async () => {
-		const { task, session } = await createFixture();
-		await db
-			.update(missionPilotSessions)
-			.set({ desiredState: "playing", leaseOwner: "test-owner" })
-			.where(eq(missionPilotSessions.id, session.id));
-
-		await expect(
-			updatePlanModeRoutingForUser(task.id, {
-				expectedRevision: 0,
-				idempotencyKey: crypto.randomUUID(),
-				changes: [{ view: "data_model", decision: "include" }],
-			}),
-		).rejects.toMatchObject({
-			code: "PLAN_MODE_ROUTING_REBUILD_IN_PROGRESS",
 		});
 	});
 });

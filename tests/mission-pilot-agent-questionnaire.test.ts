@@ -1,96 +1,152 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { missionPilotTaskEventInbox } from "../api/db/mission-pilot-agent-schema";
-import {
-	missionPilotQuestionnaireDrafts,
-	missionPilotSessions,
-} from "../api/db/mission-pilot-schema";
 import { repositories, tasks } from "../api/db/schema";
-import { saveAgentQuestionnaireDraft } from "../api/modules/missionPilot/agent/mission-pilot-agent-questionnaire.service";
+import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
-	claimAgentPlay,
-	claimAgentStop,
-} from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
+	claimMissionPilotAgentTurn,
+	claimMissionPilotToolCall,
+	persistMissionPilotProviderTurn,
+} from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
+import { missionPilotTaskActionPort } from "../api/modules/missionPilot/agent/mission-pilot-task-action.adapter";
 import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
-import { getQuestionnaireDraft } from "../api/modules/missionPilot/mission-pilot-questionnaire.service";
-import { projectMissionPilotQuestionnaireDraftAnswers } from "../api/modules/missionPilot/mission-pilot-questionnaire-projection";
 import {
 	createDesignQuestionnaireQuestionSet,
 	createDesignQuestionnaireSession,
 	updateDesignQuestionnaireSessionStatus,
 } from "../api/modules/questionnaire/questionnaire.repository";
 import { getDesignQuestionnaireSession } from "../api/modules/questionnaire/questionnaire.service";
+import { initializeQuestionnaireRealtime } from "../api/modules/questionnaire/questionnaire-realtime";
+import {
+	humanTaskOperatorQueryContext,
+	readTaskOperatorResource,
+} from "../api/modules/taskOperator";
+import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
+import { questionnaireStateChangedRealtimeEventSchema } from "../shared/schemas/design-questionnaire.schema";
 
 const repositoryIds: string[] = [];
 
-beforeAll(() => ensureNightWorkersSchema());
+beforeAll(() => {
+	ensureNightWorkersSchema();
+	initializeQuestionnaireRealtime();
+});
 afterEach(async () => {
+	vi.restoreAllMocks();
 	for (const repositoryId of repositoryIds.splice(0))
 		await db.delete(repositories).where(eq(repositories.id, repositoryId));
 });
 
 describe("Mission Pilot agent Questionnaire compatibility", () => {
-	it("submits proxy answers immediately after the 20 second event delay", async () => {
-		const fixture = await createFixture();
-		const draft = await saveAgentQuestionnaireDraft({
-			taskId: fixture.taskId,
-			questionnaireSessionId: fixture.questionnaireSessionId,
-			answers: [
-				{
-					questionId: "api-style",
-					selectedOptionIds: ["rest"],
-					rankedOptionIds: [],
-					deferred: false,
-				},
-			],
-			answerEvidence: [
-				{
-					questionId: "api-style",
-					reason: "Taskの既存HTTP API規約と整合するためRESTを選択します。",
-				},
-			],
-		});
-		expect(draft).toMatchObject({
-			state: "submitted",
-			answers: [{ questionId: "api-style", selectedOptionIds: ["rest"] }],
-			answerEvidence: {
-				"api-style": {
-					source: "mission_pilot",
-					reason: "Taskの既存HTTP API規約と整合するためRESTを選択します。",
-				},
-			},
-		});
-		expect(await readPilot(fixture.sessionId)).toMatchObject({
-			desiredState: "playing",
-			nextWakeAt: null,
-		});
+	it("reads the same answering Questionnaire session that the UI renders", async () => {
+		const fixture = await createFixture(false);
 		const canonical = await getDesignQuestionnaireSession(
 			fixture.taskId,
 			fixture.questionnaireSessionId,
 		);
-		expect(
-			await projectMissionPilotQuestionnaireDraftAnswers(fixture.taskId, [
-				canonical,
-			]),
-		).toMatchObject([
+		const canonicalQuestions = canonical.questionSets.flatMap((questionSet) =>
+			(questionSet.questionnaire?.questionSets ?? []).flatMap((group) =>
+				group.questions.map((question) => ({
+					id: question.id,
+					question: question.question,
+					why: question.why,
+					answerType: question.answerType,
+					recommendedAnswerId: question.recommendedAnswerId,
+					options: question.options,
+					allowsCustomAnswer: question.allowsCustomAnswer,
+					dependsOn: question.dependsOn,
+				})),
+			),
+		);
+		const questions: Array<Record<string, unknown>> = [];
+		const pages: unknown[] = [];
+		let cursor: number | null = 0;
+		while (cursor !== null) {
+			const page = await readTaskOperatorResource({
+				taskId: fixture.taskId,
+				resourceKind: "questionnaire",
+				resourceId: fixture.questionnaireSessionId,
+				cursor,
+				context: humanTaskOperatorQueryContext(),
+			});
+			const content = page.content as {
+				status: string;
+				totalQuestionCount: number;
+				questions: Array<Record<string, unknown>>;
+				answers: unknown[];
+			};
+			pages.push(content);
+			questions.push(...content.questions);
+			expect(content.status).toBe(canonical.status);
+			expect(content.totalQuestionCount).toBe(canonicalQuestions.length);
+			expect(content.answers).toEqual([]);
+			cursor = page.nextCursor;
+		}
+		expect(pages).toHaveLength(1);
+		expect(questions).toMatchObject([
 			{
-				answers: [
-					{
-						questionId: "api-style",
-						answer: { selectedOptionIds: ["rest"] },
-					},
+				id: "api-style",
+				question: "どの方式にしますか",
+				options: [
+					{ id: "rest", label: "REST" },
+					{ id: "rpc", label: "RPC" },
 				],
 			},
 		]);
-		const [submitted] = await db
-			.select()
-			.from(missionPilotQuestionnaireDrafts)
-			.where(eq(missionPilotQuestionnaireDrafts.id, draft.id));
-		expect(submitted).toMatchObject({ state: "submitted" });
+		expect(questions).toEqual(canonicalQuestions);
+	});
+
+	it("pages Questionnaire questions as valid structured content", async () => {
+		const fixture = await createFixture(false, 12);
+		const cursors: Array<number | null> = [];
+		const questionIds: string[] = [];
+		let cursor: number | null = 0;
+		while (cursor !== null) {
+			const page = await readTaskOperatorResource({
+				taskId: fixture.taskId,
+				resourceKind: "questionnaire",
+				resourceId: fixture.questionnaireSessionId,
+				cursor,
+				limit: 5,
+				context: humanTaskOperatorQueryContext(),
+			});
+			const content = page.content as {
+				totalQuestionCount: number;
+				questions: Array<{ id: string }>;
+			};
+			expect(content.totalQuestionCount).toBe(12);
+			expect(content.questions.length).toBeGreaterThan(0);
+			questionIds.push(...content.questions.map((question) => question.id));
+			cursors.push(page.nextCursor);
+			cursor = page.nextCursor;
+		}
+
+		expect(cursors).toEqual([5, 10, null]);
+		expect(new Set(questionIds).size).toBe(12);
+		await expect(
+			readTaskOperatorResource({
+				taskId: fixture.taskId,
+				resourceKind: "questionnaire",
+				resourceId: fixture.questionnaireSessionId,
+				cursor: 5_516,
+				context: humanTaskOperatorQueryContext(),
+			}),
+		).rejects.toMatchObject({
+			code: "TASK_OPERATOR_RESOURCE_CURSOR_INVALID",
+		});
+	});
+
+	it("submits answers through the same questionnaire.submit action as the UI after the 20 second delay", async () => {
+		const fixture = await createFixture();
+		const realtimePublish = vi.spyOn(nightWorkersRealtimeBroker, "publish");
+		const result = await executeQuestionnaireSubmit(fixture);
+
+		expect(result).toMatchObject({
+			ok: true,
+		});
 		expect(
 			await getDesignQuestionnaireSession(
 				fixture.taskId,
@@ -105,77 +161,72 @@ describe("Mission Pilot agent Questionnaire compatibility", () => {
 				},
 			],
 		});
-		expect(await readPilot(fixture.sessionId)).toMatchObject({
-			nextWakeAt: null,
-		});
-	});
-
-	it("keeps submitted proxy answers canonical while Mission Pilot is stopped", async () => {
-		const fixture = await createFixture();
-		await saveAgentQuestionnaireDraft({
-			taskId: fixture.taskId,
-			questionnaireSessionId: fixture.questionnaireSessionId,
-			answers: [
-				{
-					questionId: "api-style",
-					selectedOptionIds: ["rest"],
-					rankedOptionIds: [],
-					deferred: false,
-				},
-			],
-			answerEvidence: [
-				{
-					questionId: "api-style",
-					reason: "既存API規約と整合するためです。",
-				},
-			],
-		});
-		expect(await getQuestionnaireDraft(fixture.taskId)).not.toBeNull();
-		const playing = await readPilot(fixture.sessionId);
-		const stopped = await claimAgentStop(
-			fixture.taskId,
-			playing?.version ?? -1,
+		const realtimeSubmission = realtimePublish.mock.calls.find(
+			([publishedTaskId, message]) =>
+				publishedTaskId === fixture.taskId &&
+				message.type === "questionnaire.state_changed",
 		);
-		expect(stopped).not.toBeNull();
-		const canonical = await getDesignQuestionnaireSession(
-			fixture.taskId,
-			fixture.questionnaireSessionId,
-		);
-
-		expect(await getQuestionnaireDraft(fixture.taskId)).toBeNull();
 		expect(
-			await projectMissionPilotQuestionnaireDraftAnswers(fixture.taskId, [
-				canonical,
-			]),
-		).toEqual([canonical]);
-		expect(canonical.answers).toHaveLength(1);
+			questionnaireStateChangedRealtimeEventSchema.safeParse({
+				...realtimeSubmission?.[1],
+				taskId: realtimeSubmission?.[0],
+			}).success,
+		).toBe(true);
+		realtimePublish.mockRestore();
 	});
 
-	it("rejects proxy answers until the delayed answering event was delivered", async () => {
+	it("rejects questionnaire.submit until the delayed answering event was delivered", async () => {
 		const fixture = await createFixture(false);
-		await expect(
-			saveAgentQuestionnaireDraft({
-				taskId: fixture.taskId,
+		const result = await executeQuestionnaireSubmit(fixture);
+
+		expect(result).toMatchObject({
+			ok: false,
+			failure: {
+				kind: "domain_precondition",
+				message: expect.stringContaining("ユーザー待機時間"),
+			},
+		});
+		expect(
+			await getDesignQuestionnaireSession(
+				fixture.taskId,
+				fixture.questionnaireSessionId,
+			),
+		).toMatchObject({
+			status: "answering",
+			answers: [],
+		});
+	});
+
+	it("does not reuse an older consumed event for a newer Questionnaire page", async () => {
+		const fixture = await createFixture();
+		const event = await appendMissionPilotTaskEvent({
+			taskId: fixture.taskId,
+			eventType: "questionnaire.state_changed",
+			sourceEventId: `questionnaire-answering-pending:${fixture.questionnaireSessionId}`,
+			taskRevision: 0,
+			payload: {
 				questionnaireSessionId: fixture.questionnaireSessionId,
-				answers: [
-					{
-						questionId: "api-style",
-						selectedOptionIds: ["rest"],
-						rankedOptionIds: [],
-						deferred: false,
-					},
-				],
-				answerEvidence: [
-					{ questionId: "api-style", reason: "既存API規約と整合します。" },
-				],
-			}),
-		).rejects.toMatchObject({
-			code: "MISSION_PILOT_QUESTIONNAIRE_RESPONSE_WAIT_REQUIRED",
+				status: "answering",
+			},
+			availableAt: new Date(Date.now() + 20_000),
+		});
+		if (!event)
+			throw new Error("New Questionnaire answering event was not recorded");
+
+		expect(await executeQuestionnaireSubmit(fixture)).toMatchObject({
+			ok: false,
+			failure: {
+				kind: "domain_precondition",
+				message: expect.stringContaining("ユーザー待機時間"),
+			},
 		});
 	});
 });
 
-async function createFixture(answeringEventDelivered = true) {
+async function createFixture(
+	answeringEventDelivered = true,
+	questionCount = 1,
+) {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	repositoryIds.push(repositoryId);
@@ -224,21 +275,47 @@ async function createFixture(answeringEventDelivered = true) {
 					title: "構成",
 					category: "architecture",
 					purpose: "API契約を決める",
-					questions: [
-						{
-							id: "api-style",
-							topic: "API",
-							question: "どの方式にしますか",
-							why: "実装契約を固定するため",
-							answerType: "single_choice",
-							options: [
-								{ id: "rest", label: "REST", tradeoff: "既存規約に合う" },
-								{ id: "rpc", label: "RPC", tradeoff: "密結合になる" },
-							],
-							blocks: ["implementation"],
-							outputSection: "API",
-						},
-					],
+					questions: Array.from({ length: questionCount }, (_, index) =>
+						index === 0
+							? {
+									id: "api-style",
+									topic: "API",
+									question: "どの方式にしますか",
+									why: "実装契約を固定するため",
+									answerType: "single_choice",
+									options: [
+										{
+											id: "rest",
+											label: "REST",
+											tradeoff: "既存規約に合う",
+										},
+										{ id: "rpc", label: "RPC", tradeoff: "密結合になる" },
+									],
+									blocks: ["implementation"],
+									outputSection: "API",
+								}
+							: {
+									id: `api-style-${index + 1}`,
+									topic: `API ${index + 1}`,
+									question: `どの方式にしますか ${index + 1}`,
+									why: "実装契約を固定するため",
+									answerType: "single_choice" as const,
+									options: [
+										{
+											id: `rest-${index + 1}`,
+											label: "REST",
+											tradeoff: "既存規約に合う",
+										},
+										{
+											id: `rpc-${index + 1}`,
+											label: "RPC",
+											tradeoff: "密結合になる",
+										},
+									],
+									blocks: ["implementation"],
+									outputSection: `API ${index + 1}`,
+								},
+					),
 				},
 			],
 			openQuestions: [],
@@ -273,10 +350,67 @@ async function createFixture(answeringEventDelivered = true) {
 	};
 }
 
-async function readPilot(sessionId: string) {
-	const [pilot] = await db
+async function executeQuestionnaireSubmit(fixture: {
+	taskId: string;
+	sessionId: string;
+	questionnaireSessionId: string;
+}) {
+	const leaseOwner = `questionnaire-submit:${crypto.randomUUID()}`;
+	const turn = await claimMissionPilotAgentTurn({
+		sessionId: fixture.sessionId,
+		leaseOwner,
+	});
+	if (!turn) throw new Error("Mission Pilot turn was not claimed");
+	const [task] = await db
 		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.id, sessionId));
-	return pilot;
+		.from(tasks)
+		.where(eq(tasks.id, fixture.taskId));
+	if (!task) throw new Error("Task was not found");
+	const argumentsJson = {
+		questionnaireSessionId: fixture.questionnaireSessionId,
+		answers: [
+			{
+				questionId: "api-style",
+				selectedOptionIds: ["rest"],
+				rankedOptionIds: [],
+				deferred: false,
+			},
+		],
+	};
+	const [toolCall] =
+		(await persistMissionPilotProviderTurn({
+			sessionId: fixture.sessionId,
+			turnId: turn.turnId,
+			leaseOwner,
+			content: "UIと同じQuestionnaire回答commandへ回答を送信します。",
+			toolCalls: [
+				{
+					id: `questionnaire-submit-${crypto.randomUUID()}`,
+					name: "execute_task_action",
+					arguments: {
+						actionId: "questionnaire.submit",
+						expectedTaskRevision: task.revision,
+						idempotencyKey: `${fixture.sessionId}:questionnaire-submit`,
+						arguments: argumentsJson,
+					},
+				},
+			],
+		})) ?? [];
+	if (!toolCall) throw new Error("Mission Pilot tool call was not persisted");
+	const running = await claimMissionPilotToolCall({
+		id: toolCall.id,
+		leaseOwner,
+	});
+	if (!running) throw new Error("Mission Pilot tool call was not claimed");
+	return missionPilotTaskActionPort.execute({
+		toolCallId: running.id,
+		leaseOwner,
+		taskId: fixture.taskId,
+		sessionId: fixture.sessionId,
+		actionId: running.actionId,
+		arguments: argumentsJson,
+		expectedTaskRevision: task.revision,
+		idempotencyKey: running.idempotencyKey,
+		signal: new AbortController().signal,
+	});
 }

@@ -31,7 +31,7 @@ const taskOperatorTools: ProviderToolDefinition[] = [
 	{
 		name: "read_task_resource",
 		description:
-			"Task Operator viewから選んだresource detailをpagingして読む。",
+			"Task Operator viewから選んだresource detailをpagingして読む。最初はcursorを省略し、続きは直前のresultが返したnextCursorだけを指定する。",
 		inputSchema: {
 			type: "object",
 			properties: {

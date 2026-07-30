@@ -61,6 +61,26 @@ export function buildDesignQuestionnaireSystemPrompt(
 			"questionnaire.completion-verification-guidance",
 			{},
 		),
+		optionOutputContract: defaultP("questionnaire.choice-option-output", {}),
+		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
+			repositoryPolicy,
+			defaultP,
+		),
+	});
+}
+
+export function buildDesignQuestionnaireInitialSystemPrompt(
+	repositoryPolicy: PlanModeQuestionnaireRepositoryPolicy = "starter_selection_required",
+) {
+	return defaultP("questionnaire.design", {
+		completionVerificationGuidance: defaultP(
+			"questionnaire.completion-verification-guidance",
+			{},
+		),
+		optionOutputContract: defaultP(
+			"questionnaire.initial-recommended-option-output",
+			{},
+		),
 		repositorySelectionGuidance: questionnaireRepositorySelectionGuidance(
 			repositoryPolicy,
 			defaultP,

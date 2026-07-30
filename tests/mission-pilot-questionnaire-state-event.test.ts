@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { missionPilotTaskEventInbox } from "../api/db/mission-pilot-agent-schema";
+import { missionPilotSessions } from "../api/db/mission-pilot-schema";
 import { repositories, tasks } from "../api/db/schema";
 import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import { listPendingMissionPilotTaskEvents } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
@@ -121,6 +122,13 @@ describe("Mission Pilot Questionnaire state events", () => {
 		expect(event?.sourceEventId).toContain(
 			`questionnaire-state:${questionnaireId}:answering:0:`,
 		);
+		const [waitingPilot] = await db
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, claimed.id));
+		expect(waitingPilot?.nextWakeAt?.getTime()).toBe(
+			event?.availableAt.getTime(),
+		);
 		expect(mocks.scheduleWake).toHaveBeenCalledWith({
 			sessionId: claimed.id,
 		});
@@ -164,5 +172,10 @@ describe("Mission Pilot Questionnaire state events", () => {
 			.where(eq(missionPilotTaskEventInbox.id, event?.id ?? ""));
 		expect(consumedAnswering?.consumedAt).not.toBeNull();
 		expect(changedEvent?.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
+		const [resumedPilot] = await db
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, claimed.id));
+		expect(resumedPilot?.nextWakeAt).toBeNull();
 	});
 });

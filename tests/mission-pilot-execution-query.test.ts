@@ -134,6 +134,104 @@ describe("Mission Pilot execution query", () => {
 		expect(entries.at(-1)?.summary).toBe("revision conflict");
 	});
 
+	it("shows concrete Questionnaire read and submit progress", () => {
+		const now = new Date("2026-07-30T06:24:19Z");
+		const baseToolCall = {
+			sessionId: "pilot-session",
+			turnId: "turn-1",
+			status: "succeeded",
+			expectedTaskRevision: 1,
+			failureJson: null,
+			startedAt: now,
+			finishedAt: now,
+			createdAt: now,
+			updatedAt: now,
+		} as const;
+		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
+			sessionId: "pilot-session",
+			events: [],
+			activityEvents: [],
+			messages: [],
+			conversationItems: [],
+			toolCalls: [
+				{
+					...baseToolCall,
+					id: "read-questionnaire",
+					providerCallId: "provider-read-questionnaire",
+					actionId: "read_task_resource",
+					argumentsJson: {
+						resourceKind: "questionnaire",
+						resourceId: "questionnaire-1",
+					},
+					idempotencyKey: "read-questionnaire",
+					resultJson: {
+						sourceRef: { kind: "questionnaire", id: "questionnaire-1" },
+						cursor: 0,
+						nextCursor: 14,
+						hasMore: true,
+						content: {
+							totalQuestionCount: 15,
+							questions: Array.from({ length: 14 }, (_, index) => ({
+								id: `q${index + 1}`,
+							})),
+						},
+					},
+				},
+				{
+					...baseToolCall,
+					id: "submit-questionnaire",
+					providerCallId: "provider-submit-questionnaire",
+					actionId: "questionnaire.submit",
+					argumentsJson: {
+						questionnaireSessionId: "questionnaire-1",
+						answers: [],
+					},
+					idempotencyKey: "submit-questionnaire",
+					resultJson: {
+						data: {
+							id: "questionnaire-1",
+							status: "review_ready",
+							answers: Array.from({ length: 15 }, (_, index) => ({
+								questionId: `q${index + 1}`,
+							})),
+						},
+					},
+				},
+			],
+		};
+
+		const completions = buildMissionPilotThoughtEntries(input).filter(
+			(entry) => entry.kind === "action_completed",
+		);
+
+		expect(completions).toEqual([
+			expect.objectContaining({
+				summary: "Questionnaireを取得しました: 1〜14 / 15件、続きはcursor 14",
+				details: expect.objectContaining({
+					result: {
+						resourceKind: "questionnaire",
+						resourceId: "questionnaire-1",
+						cursor: 0,
+						nextCursor: 14,
+						hasMore: true,
+						questionCount: 14,
+						totalQuestionCount: 15,
+					},
+				}),
+			}),
+			expect.objectContaining({
+				summary: "Questionnaire回答15件を送信しました（状態: review_ready）",
+				details: expect.objectContaining({
+					result: {
+						questionnaireSessionId: "questionnaire-1",
+						questionnaireStatus: "review_ready",
+						answerCount: 15,
+					},
+				}),
+			}),
+		]);
+	});
+
 	it("classifies persisted Mission Pilot assistant messages as thoughts", () => {
 		const now = new Date("2026-07-16T00:00:00Z");
 		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {

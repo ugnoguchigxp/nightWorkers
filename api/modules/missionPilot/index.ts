@@ -41,10 +41,6 @@ export {
 	missionPilotThoughtTrace,
 } from "./mission-pilot-trace-provenance";
 export {
-	getPlanModeRouting,
-	updatePlanModeRoutingForUser,
-} from "./planning/plan-mode-routing.service";
-export {
 	buildMissionPilotSystemContext,
 	getMissionPilotPlanEntryContext,
 	getMissionPilotPlanReviewThresholdContext,

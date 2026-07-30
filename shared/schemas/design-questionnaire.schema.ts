@@ -18,10 +18,31 @@ export const questionnaireChoiceQuestionSchema = z.object({
 	options: z.array(z.string().min(1)).min(2).max(10),
 });
 
+export const generatedQuestionnaireChoiceOptionSchema = z
+	.object({
+		label: z.string().min(1),
+		recommended: z.boolean(),
+	})
+	.strict();
+
 export const generatedQuestionnaireChoiceQuestionSchema =
-	questionnaireChoiceQuestionSchema.extend({
-		kind: questionnaireChoiceQuestionKindSchema,
-	});
+	questionnaireChoiceQuestionSchema
+		.extend({
+			kind: questionnaireChoiceQuestionKindSchema,
+			options: z.array(generatedQuestionnaireChoiceOptionSchema).min(2).max(10),
+		})
+		.superRefine((question, ctx) => {
+			if (
+				question.type === "radio" &&
+				question.options.filter((option) => option.recommended).length > 1
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["options"],
+					message: "Radio questions may recommend at most one option.",
+				});
+			}
+		});
 
 export const questionnaireChoiceFormSchema = z.object({
 	title: z.string().min(1).default("実装前に決めたいこと"),
@@ -287,6 +308,20 @@ export const designQuestionnaireSessionSchema = z.object({
 	),
 });
 
+export const questionnaireStateChangedRealtimePayloadSchema = z.object({
+	taskId: z.string().uuid(),
+	questionnaireSessionId: z.string().uuid(),
+	status: designQuestionnaireSessionStatusSchema,
+	revision: z.number().int().nonnegative(),
+	stateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const questionnaireStateChangedRealtimeEventSchema = z.object({
+	type: z.literal("questionnaire.state_changed"),
+	taskId: z.string().uuid(),
+	payload: questionnaireStateChangedRealtimePayloadSchema,
+});
+
 export type DesignQuestionnaire = z.infer<typeof designQuestionnaireSchema>;
 export type DesignQuestion = z.infer<typeof designQuestionSchema>;
 export type DesignQuestionDependency = z.infer<
@@ -306,6 +341,9 @@ export type QuestionnaireQuestionSetMetadata = z.infer<
 export type QuestionnaireChoiceForm = z.infer<
 	typeof questionnaireChoiceFormSchema
 >;
+export type GeneratedQuestionnaireChoiceForm = z.infer<
+	typeof generatedQuestionnaireChoiceFormSchema
+>;
 export type AdditionalQuestionnaireDraft = z.infer<
 	typeof additionalQuestionnaireDraftSchema
 >;
@@ -318,4 +356,7 @@ export type DesignQuestionnaireAnswer = z.infer<
 export type DesignDecisionReview = z.infer<typeof designDecisionReviewSchema>;
 export type DesignQuestionnaireSession = z.infer<
 	typeof designQuestionnaireSessionSchema
+>;
+export type QuestionnaireStateChangedRealtimePayload = z.infer<
+	typeof questionnaireStateChangedRealtimePayloadSchema
 >;

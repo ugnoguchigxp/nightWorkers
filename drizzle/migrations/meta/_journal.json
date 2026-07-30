@@ -414,6 +414,13 @@
       "when": 1785344400000,
       "tag": "0058_base_worktree_observation",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1785430800000,
+      "tag": "0059_plan_mode_routing_ownership",
+      "breakpoints": true
     }
   ]
 }

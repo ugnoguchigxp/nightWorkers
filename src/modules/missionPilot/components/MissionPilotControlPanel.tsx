@@ -61,15 +61,13 @@ export function MissionPilotControlPanel({
 					<Play className="h-6 w-6" />
 				)}
 			</button>
-			{placement === "composer" ? (
-				<MissionPilotCountdown
-					nextWakeAt={
-						summary.desiredState === "playing" ? summary.nextWakeAt : null
-					}
-					disabled={stopping}
-					onPause={() => controls.stop()}
-				/>
-			) : null}
+			<MissionPilotCountdown
+				nextWakeAt={
+					summary.desiredState === "playing" ? summary.nextWakeAt : null
+				}
+				disabled={stopping}
+				onPause={() => controls.stop()}
+			/>
 			{controls.error ? (
 				<span className="sr-only" role="status">
 					{controls.error}

@@ -82,6 +82,9 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
   const agentSharedModuleRoots = new Set(
 		policy.agentSharedModuleRoots ?? [],
 	);
+	const agentIndependentModuleRoots = new Set(
+		policy.agentIndependentModuleRoots ?? [],
+	);
   const roleOwnedPathRules = policy.roleOwnedPathRules ?? [];
   const forbiddenProductionPathPrefixes =
 		policy.forbiddenProductionPathPrefixes ?? [];
@@ -162,6 +165,10 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
 				relativePath,
 				agentSharedModuleRoots,
 			);
+			const sourceAgentIndependentRoot = containingConfiguredRoot(
+				relativePath,
+				agentIndependentModuleRoots,
+			);
 			if (
 				sourceRoleRoot &&
 				targetRoleRoot &&
@@ -174,6 +181,11 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
 			if (sourceAgentSharedRoot && targetRoleRoot) {
 				errors.push(
 					`${relativePath}: agentsShare must not depend on a role module (${sourceAgentSharedRoot} -> ${targetRoleRoot}: ${specifier})`,
+				);
+			}
+			if (sourceAgentIndependentRoot && targetRoleRoot) {
+				errors.push(
+					`${relativePath}: Agent-independent module must not depend on a role module (${sourceAgentIndependentRoot} -> ${targetRoleRoot}: ${specifier})`,
 				);
 			}
       if (!target || !enforcedRoots.has(target.root)) continue;

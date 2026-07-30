@@ -88,29 +88,6 @@ const questionnaireAnswer = {
 	required: ["questionId"],
 	additionalProperties: false,
 };
-const questionnaireAnswerEvidence = {
-	type: "object",
-	properties: {
-		questionId: questionnaireId,
-		reason: { type: "string", minLength: 1 },
-	},
-	required: ["questionId", "reason"],
-	additionalProperties: false,
-};
-const questionnaireDraftActionInputSchema = {
-	type: "object",
-	properties: {
-		questionnaireSessionId: uuid,
-		answers: { type: "array", items: questionnaireAnswer, minItems: 1 },
-		answerEvidence: {
-			type: "array",
-			items: questionnaireAnswerEvidence,
-			minItems: 1,
-		},
-	},
-	required: ["questionnaireSessionId", "answers", "answerEvidence"],
-	additionalProperties: false,
-};
 type DefinitionTuple = [
 	string,
 	string,
@@ -154,13 +131,6 @@ const definitions: TaskOperatorActionDefinition[] = (
 			"明示したsourceからQuestionnaireを作成する。",
 			"plan",
 			object({ prompt: string, sourceBlueprintMessageId: uuid }, ["prompt"]),
-		],
-		[
-			"questionnaire.draft.save",
-			"Questionnaire回答案を保存",
-			"LLMが作成した回答案と根拠を、呼び出し側が管理する既存Questionnaire回答経路へ渡す。",
-			"plan",
-			questionnaireDraftActionInputSchema,
 		],
 		[
 			"questionnaire.submit",
@@ -500,7 +470,6 @@ export function taskOperatorActionExecutionMetadata(
 	actionId: string,
 ): TaskOperatorActionExecutionMetadata {
 	const eventDrivenActions = new Set([
-		"questionnaire.draft.save",
 		"questionnaire.follow_up.generate",
 		"questionnaire.review.generate",
 		"questionnaire.review.accept",

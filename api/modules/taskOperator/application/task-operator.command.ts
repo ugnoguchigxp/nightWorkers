@@ -2,6 +2,7 @@ import type {
 	TaskOperatorCommandContext,
 	TaskOperatorCommandReceipt,
 } from "../../../../shared/modules/taskOperator";
+import { updatePlanModeRoutingRequestSchema } from "../../../../shared/schemas/plan-mode-routing.schema";
 import { AppError } from "../../../lib/errors";
 import type {
 	CodingAgentRunCommandResult,
@@ -23,6 +24,10 @@ import {
 	pushRunGitCloseout,
 	requestTaskRunRework,
 } from "../../gitCloseout";
+import {
+	updatePlanModeRoutingForDelegatedUser,
+	updatePlanModeRoutingForUser,
+} from "../../planMode";
 import { generatePlanViewArtifact } from "../../planViews";
 import {
 	acceptDesignQuestionnaireReview,
@@ -86,15 +91,6 @@ export type TaskOperatorCommandRuntime = {
 	messageTrace?: unknown;
 	messageMetadata?: Record<string, unknown>;
 	delegatedAuthorization?: TaskOperatorDelegatedAuthorizationPort;
-	executeQuestionnaireDraft?: (input: {
-		taskId: string;
-		arguments: Record<string, unknown>;
-		idempotencyKey: string;
-	}) => Promise<unknown>;
-	executePlanRouting?: (input: {
-		taskId: string;
-		arguments: Record<string, unknown>;
-	}) => Promise<unknown>;
 };
 
 type ActionInput<ActionId extends string> = ExecuteTaskOperatorCommandInput & {
@@ -137,7 +133,7 @@ export function executeTaskOperatorCommand(
 ): Promise<Delivered<unknown>>;
 export async function executeTaskOperatorCommand(
 	input: ExecuteTaskOperatorCommandInput,
-) {
+): Promise<Delivered<unknown>> {
 	const definition = getTaskOperatorActionDefinition(input.actionId);
 	if (!definition)
 		throw new AppError(
@@ -247,14 +243,6 @@ async function executeTaskOperatorCommandOnce(
 				requiredText(args.prompt),
 				providerOptions(input),
 			);
-		case "questionnaire.draft.save":
-			if (!input.runtime?.executeQuestionnaireDraft)
-				throw unsupportedRuntime(input.actionId);
-			return input.runtime.executeQuestionnaireDraft({
-				taskId: input.taskId,
-				arguments: args,
-				idempotencyKey: input.context.idempotencyKey,
-			});
 		case "questionnaire.submit":
 			return submitQuestionnaireAnswers(input, args);
 		case "questionnaire.follow_up.generate":
@@ -305,12 +293,15 @@ async function executeTaskOperatorCommandOnce(
 				artifactOptions(input),
 			);
 		case "plan.routing.update":
-			if (!input.runtime?.executePlanRouting)
-				throw unsupportedRuntime(input.actionId);
-			return input.runtime.executePlanRouting({
-				taskId: input.taskId,
-				arguments: args,
-			});
+			return input.context.principal.kind === "delegated_user"
+				? updatePlanModeRoutingForDelegatedUser(
+						input.taskId,
+						updatePlanModeRoutingRequestSchema.parse(args),
+					)
+				: updatePlanModeRoutingForUser(
+						input.taskId,
+						updatePlanModeRoutingRequestSchema.parse(args),
+					);
 		case "task.queue.enqueue":
 			return createImplementationQueueEntry(input.taskId);
 		case "task.queue.update":
@@ -454,9 +445,7 @@ async function submitQuestionnaireAnswers(
 		>[2],
 		{ expectedTaskRevision: input.expectedTaskRevision },
 	);
-	if (input.context.principal.kind === "human") {
-		await recommendQuestionnaireArtifactRouting(input.taskId, session);
-	}
+	await recommendQuestionnaireArtifactRouting(input.taskId, session);
 	return session;
 }
 
@@ -509,14 +498,6 @@ function artifactOptions(input: ExecuteTaskOperatorCommandInput) {
 		llmUsageTrace: input.runtime?.usageTrace as never,
 		signal: input.runtime?.signal,
 	};
-}
-
-function unsupportedRuntime(actionId: string) {
-	return new AppError(
-		500,
-		"TASK_OPERATOR_RUNTIME_PORT_MISSING",
-		`Task Operator runtime port is missing for ${actionId}.`,
-	);
 }
 
 async function assertActionResourceOwnership(

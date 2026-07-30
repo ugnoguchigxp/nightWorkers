@@ -3,9 +3,11 @@ import {
 	COMPLETION_VERIFICATION_QUESTION_ID,
 	resolveCompletionVerificationScope,
 } from "../api/modules/questionnaire/questionnaire-completion-verification";
+import { parseDesignQuestionnaireRaw } from "../api/modules/questionnaire/questionnaire-parser.service";
 import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
 	buildDesignQuestionnaireFollowUpDecisionUserPrompt,
+	buildDesignQuestionnaireInitialSystemPrompt,
 	buildDesignQuestionnaireInitialUserPrompt,
 	buildDesignQuestionnaireReviewSystemPrompt,
 	buildDesignQuestionnaireSystemPrompt,
@@ -95,6 +97,22 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("追加質問は最大10件");
 		expect(prompt).not.toContain("最大4ページ");
 		expect(prompt).not.toContain("必要な 1 ページ分");
+	});
+
+	it("requires explicit recommendation decisions only for the initial questionnaire", () => {
+		const initialPrompt =
+			buildDesignQuestionnaireInitialSystemPrompt("repository_fixed");
+		const followUpPrompt =
+			buildDesignQuestionnaireSystemPrompt("repository_fixed");
+
+		expect(initialPrompt).toContain("{label, recommended}");
+		expect(initialPrompt).toContain(
+			"推奨できない場合は、全optionをrecommended=false",
+		);
+		expect(initialPrompt).toContain("radioではrecommended=trueを最大1件");
+		expect(initialPrompt).toContain("位置や文言だけを理由に機械的に推奨せず");
+		expect(followUpPrompt).toContain("options は文字列の配列");
+		expect(followUpPrompt).not.toContain("{label, recommended}");
 	});
 
 	it("allows repository selection only for an empty unmaterialized project", () => {
@@ -239,6 +257,80 @@ describe("design questionnaire prompts", () => {
 		expect(
 			generatedQuestionnaireChoiceFormSchema.safeParse(legacyQuestionnaire)
 				.success,
+		).toBe(false);
+	});
+
+	it("maps initial recommendations into the canonical questionnaire contract", () => {
+		const parsed = parseDesignQuestionnaireRaw(
+			JSON.stringify({
+				title: "実装前確認",
+				questions: [
+					{
+						text: "公開範囲はどれですか？",
+						kind: "design_decision",
+						type: "radio",
+						options: [
+							{ label: "認証済みユーザーのみ", recommended: true },
+							{ label: "一般公開", recommended: false },
+						],
+					},
+					{
+						text: "追加する運用機能はどれですか？",
+						kind: "design_decision",
+						type: "checkbox",
+						options: [
+							{ label: "監査ログ", recommended: true },
+							{ label: "通知", recommended: true },
+							{ label: "どれも不要", recommended: false },
+						],
+					},
+				],
+			}),
+			{
+				taskId: "00000000-0000-0000-0000-000000000001",
+				repositoryId: "00000000-0000-0000-0000-000000000002",
+				sourceKind: "plan_mode_intake",
+			},
+		);
+
+		expect(parsed.ok).toBe(true);
+		if (!parsed.ok) return;
+		expect(parsed.value.questionSets[0]?.questions).toMatchObject([
+			{
+				id: "q1",
+				recommendedAnswerId: "q1-o1",
+				options: [{ id: "q1-o1", recommended: true }, { id: "q1-o2" }],
+			},
+			{
+				id: "q2",
+				options: [
+					{ id: "q2-o1", recommended: true },
+					{ id: "q2-o2", recommended: true },
+					{ id: "q2-o3" },
+				],
+			},
+		]);
+		expect(
+			parsed.value.questionSets[0]?.questions[1]?.recommendedAnswerId,
+		).toBeUndefined();
+	});
+
+	it("rejects multiple recommendations for a generated radio question", () => {
+		expect(
+			generatedQuestionnaireChoiceFormSchema.safeParse({
+				title: "実装前確認",
+				questions: [
+					{
+						text: "公開範囲はどれですか？",
+						kind: "design_decision",
+						type: "radio",
+						options: [
+							{ label: "認証済みユーザーのみ", recommended: true },
+							{ label: "一般公開", recommended: true },
+						],
+					},
+				],
+			}).success,
 		).toBe(false);
 	});
 

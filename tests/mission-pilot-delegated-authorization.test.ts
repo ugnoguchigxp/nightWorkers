@@ -98,7 +98,7 @@ describe("Mission Pilot delegated user authorization", () => {
 			),
 		).toBe(true);
 		expect(delegated.commandCatalog.availableIds).not.toContain("git.push");
-		expect(missionPilotActions.map((action) => action.id)).not.toContain(
+		expect(missionPilotActions.map((action) => action.id)).toContain(
 			"questionnaire.submit",
 		);
 	});

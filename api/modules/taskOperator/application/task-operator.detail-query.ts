@@ -6,9 +6,17 @@ import {
 	type TaskOperatorQueryContext,
 	taskOperatorContentPageSchema,
 } from "../../../../shared/modules/taskOperator";
+import {
+	designQuestionDependencySchema,
+	designQuestionnaireAnswerSchema,
+	designQuestionOptionSchema,
+} from "../../../../shared/schemas/design-questionnaire.schema";
 import { AppError } from "../../../lib/errors";
 import { sliceUtf8ContentPageToJsonBudget } from "../../agentsShare";
-import { listDesignQuestionnaires } from "../../questionnaire";
+import {
+	getDesignQuestionnaireSession,
+	listDesignQuestionnaires,
+} from "../../questionnaire";
 import { readQueueOperatorState } from "../../queue";
 import {
 	readRunOperatorOutcome,
@@ -92,6 +100,43 @@ const taskTextContentSchema = z
 const jsonPageContentSchema = z
 	.object({ json: z.string().max(12_000) })
 	.strict();
+const questionnairePageContentSchema = z
+	.object({
+		id: z.string().uuid(),
+		taskId: z.string().uuid(),
+		repositoryId: z.string().uuid(),
+		status: z.string(),
+		totalQuestionCount: z.number().int().nonnegative(),
+		questions: z.array(
+			z
+				.object({
+					id: z.string(),
+					question: z.string(),
+					why: z.string(),
+					answerType: z.enum([
+						"single_choice",
+						"multi_choice",
+						"boolean",
+						"free_text",
+						"ranked",
+					]),
+					recommendedAnswerId: z.string().optional(),
+					options: z.array(designQuestionOptionSchema).optional(),
+					allowsCustomAnswer: z.boolean().optional(),
+					dependsOn: z.array(designQuestionDependencySchema).optional(),
+				})
+				.strict(),
+		),
+		answers: z.array(
+			z
+				.object({
+					questionId: z.string(),
+					answer: designQuestionnaireAnswerSchema,
+				})
+				.strict(),
+		),
+	})
+	.strict();
 
 export const TASK_OPERATOR_RESOURCE_KINDS = [
 	"task_text",
@@ -99,6 +144,7 @@ export const TASK_OPERATOR_RESOURCE_KINDS = [
 	"task_message",
 	"artifact_index",
 	"artifact",
+	"questionnaire",
 	"questionnaire_decisions",
 	"run_outcome",
 	"current_todo",
@@ -274,6 +320,20 @@ export async function readTaskOperatorResource(input: {
 				artifact.digest,
 			);
 		}
+		case "questionnaire": {
+			if (!input.resourceId) throw resourceIdRequired("questionnaire");
+			const questionnaire = await getDesignQuestionnaireSession(
+				input.taskId,
+				input.resourceId,
+			);
+			return questionnaireContentPage(
+				{ kind: "questionnaire", id: questionnaire.id },
+				new Date(questionnaire.updatedAt).getTime(),
+				questionnaire,
+				input.cursor,
+				input.limit,
+			);
+		}
 		case "questionnaire_decisions": {
 			const sessions = await listDesignQuestionnaires(input.taskId);
 			const current = sessions.find((session) =>
@@ -415,6 +475,91 @@ function boundedObjectPage(
 		page.page.truncated,
 		{ json: page.content },
 		digest(serialized),
+	);
+}
+
+function questionnaireContentPage(
+	sourceRef: { kind: string; id: string },
+	sourceRevision: number,
+	questionnaire: Awaited<ReturnType<typeof getDesignQuestionnaireSession>>,
+	requestedCursor?: number,
+	requestedLimit?: number,
+) {
+	const questions = questionnaire.questionSets.flatMap((questionSet) =>
+		(questionSet.questionnaire?.questionSets ?? []).flatMap((group) =>
+			group.questions.map((question) => ({
+				id: question.id,
+				question: question.question,
+				why: question.why,
+				answerType: question.answerType,
+				recommendedAnswerId: question.recommendedAnswerId,
+				options: question.options,
+				allowsCustomAnswer: question.allowsCustomAnswer,
+				dependsOn: question.dependsOn,
+			})),
+		),
+	);
+	const cursor = Math.max(0, requestedCursor ?? 0);
+	if (cursor > questions.length)
+		throw new AppError(
+			422,
+			"TASK_OPERATOR_RESOURCE_CURSOR_INVALID",
+			"questionnaire cursor must be 0 or a nextCursor returned by the preceding page.",
+		);
+	const limit = Math.min(100, Math.max(1, requestedLimit ?? 100));
+	const stableSourceDigest = digest(JSON.stringify(questionnaire));
+	const answers = questionnaire.answers.map((answer) => ({
+		questionId: answer.questionId,
+		answer: answer.answer,
+	}));
+	const minimumEnd = cursor < questions.length ? cursor + 1 : cursor;
+	for (
+		let end = Math.min(questions.length, cursor + limit);
+		end >= minimumEnd;
+		end -= 1
+	) {
+		const nextCursor = end < questions.length ? end : null;
+		const content = {
+			id: questionnaire.id,
+			taskId: questionnaire.taskId,
+			repositoryId: questionnaire.repositoryId,
+			status: questionnaire.status,
+			totalQuestionCount: questions.length,
+			questions: questions.slice(cursor, end),
+			answers,
+		};
+		if (
+			Buffer.byteLength(
+				JSON.stringify({
+					sourceRef,
+					sourceRevision,
+					sourceDigest: stableSourceDigest,
+					cursor,
+					nextCursor,
+					hasMore: nextCursor !== null,
+					tokenEstimate: TASK_OPERATOR_CONTENT_PAGE_TOKEN_BUDGET,
+					content,
+				}),
+				"utf8",
+			) > TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET
+		)
+			continue;
+		const page = pageResult(
+			questionnairePageContentSchema,
+			sourceRef,
+			sourceRevision,
+			cursor,
+			nextCursor,
+			nextCursor !== null,
+			content,
+			stableSourceDigest,
+		);
+		return page;
+	}
+	throw new AppError(
+		413,
+		"TASK_OPERATOR_CONTENT_PAGE_BUDGET_EXCEEDED",
+		"A single Questionnaire question exceeds the Task Operator response budget.",
 	);
 }
 

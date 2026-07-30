@@ -30,7 +30,11 @@ export const editablePlanModeRoutingViewSchema = z.enum(
 	EDITABLE_PLAN_MODE_ROUTING_VIEWS,
 );
 export const planModeRoutingDecisionSchema = z.enum(["include", "omit"]);
-export const planModeRoutingActorSchema = z.enum(["user", "mission_pilot"]);
+export const planModeRoutingActorSchema = z.enum([
+	"user",
+	"delegated_user",
+	"questionnaire_recommender",
+]);
 
 export const planModeRoutingEntrySchema = z
 	.object({
@@ -38,7 +42,7 @@ export const planModeRoutingEntrySchema = z
 		decision: planModeRoutingDecisionSchema,
 		required: z.boolean(),
 		capabilityEnabled: z.boolean(),
-		reason: z.string().min(1).optional(),
+		reason: z.string().min(1),
 	})
 	.strict();
 
@@ -113,36 +117,11 @@ export const updatePlanModeRoutingRequestSchema = z
 	})
 	.strict();
 
-export const missionPilotPlanRoutingToolCallSchema = z
+export const planModeRoutingChangedRealtimePayloadSchema = z
 	.object({
-		tool: z.literal("edit_plan_artifact_routing"),
-		expectedRevision: z.number().int().nonnegative(),
-		idempotencyKey: z.string().uuid(),
-		changes: z
-			.array(
-				z
-					.object({
-						view: editablePlanModeRoutingViewSchema,
-						decision: planModeRoutingDecisionSchema,
-						reason: z.string().min(1).max(1_000),
-					})
-					.strict(),
-			)
-			.min(1)
-			.superRefine((changes, context) => {
-				const seen = new Set<string>();
-				for (const [index, change] of changes.entries()) {
-					if (!seen.has(change.view)) {
-						seen.add(change.view);
-						continue;
-					}
-					context.addIssue({
-						code: "custom",
-						path: [index, "view"],
-						message: "同じ Artifact を1回のtool callで重複指定できません。",
-					});
-				}
-			}),
+		taskId: z.string().uuid(),
+		revision: z.number().int().nonnegative(),
+		updatedBy: planModeRoutingActorSchema,
 	})
 	.strict();
 
@@ -161,6 +140,6 @@ export type PlanModeRoutingSnapshot = z.infer<
 export type UpdatePlanModeRoutingRequest = z.infer<
 	typeof updatePlanModeRoutingRequestSchema
 >;
-export type MissionPilotPlanRoutingToolCall = z.infer<
-	typeof missionPilotPlanRoutingToolCallSchema
+export type PlanModeRoutingChangedRealtimePayload = z.infer<
+	typeof planModeRoutingChangedRealtimePayloadSchema
 >;

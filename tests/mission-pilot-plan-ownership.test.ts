@@ -10,6 +10,7 @@ describe("Mission Pilot Plan ownership contract", () => {
 		expect(ids).toEqual(
 			expect.arrayContaining([
 				"questionnaire.create",
+				"questionnaire.submit",
 				"questionnaire.follow_up.generate",
 				"questionnaire.review.generate",
 				"questionnaire.review.accept",
@@ -20,12 +21,13 @@ describe("Mission Pilot Plan ownership contract", () => {
 				"plan.artifact.view.generate",
 			]),
 		);
+		expect(ids).not.toContain("questionnaire.draft.save");
 		expect(ids).not.toContain("plan.artifact.regenerate");
 	});
 
-	it("does not delegate final Questionnaire submission to Mission Pilot", () => {
+	it("allows Mission Pilot to submit Questionnaire answers as the user", () => {
 		expect(
 			getMissionPilotActionUnavailableReason("questionnaire.submit"),
-		).toContain("user intervention");
+		).toBeNull();
 	});
 });

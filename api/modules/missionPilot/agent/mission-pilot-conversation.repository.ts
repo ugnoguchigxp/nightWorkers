@@ -160,6 +160,28 @@ export async function claimMissionPilotAgentTurn(input: {
 						),
 					),
 				);
+			const [nextEvent] = await tx
+				.select({ availableAt: missionPilotTaskEventInbox.availableAt })
+				.from(missionPilotTaskEventInbox)
+				.where(
+					and(
+						eq(missionPilotTaskEventInbox.sessionId, base.id),
+						isNull(missionPilotTaskEventInbox.consumedAt),
+					),
+				)
+				.orderBy(asc(missionPilotTaskEventInbox.availableAt))
+				.limit(1);
+			const nextWakeAt =
+				nextEvent?.availableAt &&
+				nextEvent.availableAt.getTime() > now.getTime()
+					? nextEvent.availableAt
+					: null;
+			await tx
+				.update(missionPilotSessions)
+				.set({ nextWakeAt, updatedAt: now })
+				.where(eq(missionPilotSessions.id, base.id));
+			base.nextWakeAt = nextWakeAt;
+			base.updatedAt = now;
 			await tx
 				.update(missionPilotAgentSessions)
 				.set({

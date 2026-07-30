@@ -42,6 +42,7 @@ import { planViewRouter } from "./modules/planViews/planView.routes";
 import { projectDetailRouter } from "./modules/project-detail/project-detail.routes";
 import { projectEvaluationRouter } from "./modules/project-evaluation/project-evaluation.routes";
 import { qualityRouter } from "./modules/quality";
+import { initializeQuestionnaireRealtime } from "./modules/questionnaire";
 import { questionnaireRouter } from "./modules/questionnaire/questionnaire.routes";
 import { queueRouter } from "./modules/queue/queue.routes";
 import { securityScanRouter } from "./modules/securityScan/security-scan.routes";
@@ -61,6 +62,7 @@ import { runWithSystemContextBinding } from "./systemContexts/catalog";
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
 initializeCodingAgentRunHandlers();
 initializeTaskUserIntakeHandler();
+initializeQuestionnaireRealtime();
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)

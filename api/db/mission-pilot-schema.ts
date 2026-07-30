@@ -18,10 +18,6 @@ import type {
 	MissionPilotArtifactCorrectionStatus,
 	PlanModeArtifactFocus,
 } from "../../shared/schemas/plan-mode-artifact-correction.schema";
-import type {
-	PlanModeRoutingActor,
-	PlanModeRoutingEntry,
-} from "../../shared/schemas/plan-mode-routing.schema";
 import { designQuestionnaireSessions } from "./design-questionnaire-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "./schema";
 
@@ -67,7 +63,6 @@ export const missionPilotSessions = sqliteTable(
 		version: integer("version").notNull().default(0),
 		contextRevision: integer("context_revision").notNull().default(1),
 		contextDigest: text("context_digest").notNull(),
-		planRoutingRevision: integer("plan_routing_revision").notNull().default(0),
 		nextWakeAt: integer("next_wake_at", { mode: "timestamp" }),
 		leaseOwner: text("lease_owner"),
 		leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
@@ -98,33 +93,6 @@ export const missionPilotSessions = sqliteTable(
 		leaseIdx: index("mission_pilot_sessions_lease_idx").on(
 			table.leaseExpiresAt,
 		),
-	}),
-);
-
-export const missionPilotPlanRoutingRevisions = sqliteTable(
-	"mission_pilot_plan_routing_revisions",
-	{
-		id: text("id").primaryKey(),
-		sessionId: text("session_id")
-			.notNull()
-			.references(() => missionPilotSessions.id, { onDelete: "cascade" }),
-		revision: integer("revision").notNull(),
-		entriesJson: text("entries_json", { mode: "json" })
-			.$type<PlanModeRoutingEntry[]>()
-			.notNull(),
-		updatedBy: text("updated_by").$type<PlanModeRoutingActor>().notNull(),
-		reason: text("reason").notNull(),
-		idempotencyKey: text("idempotency_key"),
-		requestHash: text("request_hash"),
-		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-	},
-	(table) => ({
-		revisionUidx: uniqueIndex(
-			"mission_pilot_plan_routing_revisions_revision_uidx",
-		).on(table.sessionId, table.revision),
-		idempotencyUidx: uniqueIndex(
-			"mission_pilot_plan_routing_revisions_idempotency_uidx",
-		).on(table.sessionId, table.idempotencyKey),
 	}),
 );
 

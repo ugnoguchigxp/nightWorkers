@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { MissionPilotTaskEventType } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
 import {
@@ -20,7 +20,9 @@ export async function appendMissionPilotTaskEvent(input: {
 }) {
 	for (let attempt = 1; attempt <= 5; attempt += 1) {
 		try {
-			return await appendMissionPilotTaskEventOnce(input);
+			const event = await appendMissionPilotTaskEventOnce(input);
+			if (event) await projectMissionPilotNextWakeAt(event.sessionId);
+			return event;
 		} catch (error) {
 			if (
 				!(error instanceof MissionPilotEventSequenceConflictError) ||
@@ -30,6 +32,54 @@ export async function appendMissionPilotTaskEvent(input: {
 		}
 	}
 	return null;
+}
+
+export async function projectMissionPilotNextWakeAt(
+	sessionId: string,
+	now = new Date(),
+) {
+	return db.transaction(async (tx) => {
+		const [session] = await tx
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, sessionId));
+		if (session?.desiredState !== "playing") return session ?? null;
+		const [event] = await tx
+			.select({ availableAt: missionPilotTaskEventInbox.availableAt })
+			.from(missionPilotTaskEventInbox)
+			.where(
+				and(
+					eq(missionPilotTaskEventInbox.sessionId, sessionId),
+					isNull(missionPilotTaskEventInbox.consumedAt),
+				),
+			)
+			.orderBy(asc(missionPilotTaskEventInbox.availableAt))
+			.limit(1);
+		const nextWakeAt =
+			event?.availableAt && event.availableAt.getTime() > now.getTime()
+				? event.availableAt
+				: null;
+		if (
+			(session.nextWakeAt?.getTime() ?? null) ===
+			(nextWakeAt?.getTime() ?? null)
+		)
+			return session;
+		const [updated] = await tx
+			.update(missionPilotSessions)
+			.set({
+				nextWakeAt,
+				version: sql`${missionPilotSessions.version} + 1`,
+				updatedAt: now,
+			})
+			.where(
+				and(
+					eq(missionPilotSessions.id, sessionId),
+					eq(missionPilotSessions.desiredState, "playing"),
+				),
+			)
+			.returning();
+		return updated ?? session;
+	});
 }
 
 async function appendMissionPilotTaskEventOnce(input: {
@@ -170,6 +220,7 @@ export async function consumeMissionPilotTaskEventBySource(
 			),
 		)
 		.returning({ id: missionPilotTaskEventInbox.id });
+	if (updated) await projectMissionPilotNextWakeAt(sessionId);
 	return Boolean(updated);
 }
 
@@ -217,6 +268,7 @@ export async function consumePendingMissionPilotQuestionnaireEvents(input: {
 			),
 		)
 		.returning({ id: missionPilotTaskEventInbox.id });
+	if (consumed.length > 0) await projectMissionPilotNextWakeAt(input.sessionId);
 	return consumed.length;
 }
 
@@ -226,17 +278,20 @@ export async function hasConsumedMissionPilotQuestionnaireAnsweringEvent(input: 
 	now?: Date;
 }) {
 	const events = await db
-		.select({ payloadJson: missionPilotTaskEventInbox.payloadJson })
+		.select({
+			payloadJson: missionPilotTaskEventInbox.payloadJson,
+			availableAt: missionPilotTaskEventInbox.availableAt,
+			consumedAt: missionPilotTaskEventInbox.consumedAt,
+		})
 		.from(missionPilotTaskEventInbox)
 		.where(
 			and(
 				eq(missionPilotTaskEventInbox.sessionId, input.sessionId),
 				eq(missionPilotTaskEventInbox.eventType, "questionnaire.state_changed"),
-				isNotNull(missionPilotTaskEventInbox.consumedAt),
-				lte(missionPilotTaskEventInbox.availableAt, input.now ?? new Date()),
 			),
-		);
-	return events.some((event) => {
+		)
+		.orderBy(desc(missionPilotTaskEventInbox.sequence));
+	const latestAnsweringEvent = events.find((event) => {
 		const payload =
 			event.payloadJson &&
 			typeof event.payloadJson === "object" &&
@@ -248,10 +303,15 @@ export async function hasConsumedMissionPilotQuestionnaireAnsweringEvent(input: 
 			payload.status === "answering"
 		);
 	});
+	return Boolean(
+		latestAnsweringEvent?.consumedAt &&
+			latestAnsweringEvent.availableAt.getTime() <=
+				(input.now ?? new Date()).getTime(),
+	);
 }
 
 export async function cancelMissionPilotProviderRetryEvents(sessionId: string) {
-	return db
+	const consumed = await db
 		.update(missionPilotTaskEventInbox)
 		.set({ consumedAt: new Date() })
 		.where(
@@ -264,4 +324,6 @@ export async function cancelMissionPilotProviderRetryEvents(sessionId: string) {
 				isNull(missionPilotTaskEventInbox.consumedAt),
 			),
 		);
+	await projectMissionPilotNextWakeAt(sessionId);
+	return consumed;
 }

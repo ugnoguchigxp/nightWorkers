@@ -1,5 +1,4 @@
 import { LoaderCircle } from "lucide-react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import type {
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,
@@ -39,8 +38,6 @@ export function PlanModeQuestionnairePanel({
 	answers,
 	onAnswersChange,
 	questionnaireSubmissionState,
-	missionPilotDraft,
-	missionPilotSecondsRemaining,
 	onSubmitAnswers,
 	answerProgress,
 	unansweredQuestions,
@@ -61,8 +58,6 @@ export function PlanModeQuestionnairePanel({
 	answers: Record<string, DesignQuestionnaireAnswer>;
 	onAnswersChange: (answers: Record<string, DesignQuestionnaireAnswer>) => void;
 	questionnaireSubmissionState: QuestionnaireSubmissionState;
-	missionPilotDraft: MissionPilotQuestionnaireDraft | null;
-	missionPilotSecondsRemaining: number | null;
 	onSubmitAnswers: () => void | Promise<void>;
 	answerProgress: { answeredCount: number; totalCount: number };
 	unansweredQuestions: Array<{ question?: unknown }>;
@@ -143,37 +138,7 @@ export function PlanModeQuestionnairePanel({
 						answers={answers}
 						onChange={onAnswersChange}
 						readOnly={questionnaireSubmissionState.readOnly}
-						answerEvidence={missionPilotDraft?.answerEvidence}
 					/>
-					{missionPilotDraft?.state === "waiting_user" ? (
-						<div
-							className="flex items-center gap-2 rounded bg-slate-800/55 px-3 py-2 text-xs text-slate-300"
-							data-mission-pilot-questionnaire-countdown
-						>
-							<span>Mission Pilotの回答案を表示中</span>
-							<span className="font-mono font-semibold text-slate-100">
-								{missionPilotSecondsRemaining}秒
-							</span>
-							<span className="text-slate-500">
-								未操作ならこの内容で自動確定します
-							</span>
-						</div>
-					) : null}
-					{missionPilotDraft?.state === "failed" ? (
-						<div className="rounded bg-red-950/35 px-3 py-2 text-xs text-red-200">
-							自動確定に失敗しました。回答案は保持されています。Mission
-							Pilotを再開して再試行してください。
-						</div>
-					) : null}
-					{missionPilotDraft?.state === "submitted" ? (
-						<div
-							className="rounded bg-emerald-950/35 px-3 py-2 text-xs text-emerald-200"
-							data-mission-pilot-questionnaire-submitted
-						>
-							Mission Pilotが{missionPilotDraft.answers.length}
-							件の回答を確定しました。選択内容と根拠はこの画面に証跡として保持されています。
-						</div>
-					) : null}
 					<div className="flex flex-wrap items-center gap-2">
 						<ActionButton
 							label={questionnaireSubmissionState.label}

@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import app from "../../../api/app";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { registerQuestionnaireStateChangedListener } from "../../../api/modules/questionnaire/questionnaire-events";
+import { nightWorkersRealtimeBroker } from "../../../api/services/realtime/nightworkers-ws";
 import * as generalSettings from "../../../api/services/settings/general-settings";
+import { questionnaireStateChangedRealtimeEventSchema } from "../../../shared/schemas/design-questionnaire.schema";
 import {
 	completionVerificationAnswer,
 	representativeDataModelArtifact,
@@ -18,6 +20,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 		const originalSettingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
 		process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = `/tmp/nightworkers-test-llm-settings-${crypto.randomUUID()}.json`;
 		process.env.ACTIVE_LLM_PROVIDER = "fixture";
+		const realtimePublish = vi.spyOn(nightWorkersRealtimeBroker, "publish");
 		const questionnaireTransitions: Array<{
 			id: string;
 			status: string;
@@ -217,6 +220,20 @@ describe("NightWorkers task routes questionnaire core", () => {
 			);
 			expect(answersRes.status, await answersRes.clone().text()).toBe(200);
 			expect((await answersRes.json()).status).toBe("review_ready");
+			const realtimeSubmission = realtimePublish.mock.calls.find(
+				([publishedTaskId, message]) =>
+					publishedTaskId === task.id &&
+					message.type === "questionnaire.state_changed" &&
+					(message.payload as { questionnaireSessionId?: string })
+						.questionnaireSessionId === session.id &&
+					(message.payload as { status?: string }).status === "review_ready",
+			);
+			expect(
+				questionnaireStateChangedRealtimeEventSchema.safeParse({
+					...realtimeSubmission?.[1],
+					taskId: realtimeSubmission?.[0],
+				}).success,
+			).toBe(true);
 
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				version: 1,
@@ -360,6 +377,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 				]),
 			);
 		} finally {
+			realtimePublish.mockRestore();
 			unregisterQuestionnaireTransition();
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

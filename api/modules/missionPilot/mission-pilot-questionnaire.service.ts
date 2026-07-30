@@ -377,13 +377,6 @@ async function submitDraftRow(
 	}
 }
 
-export function submitMissionPilotQuestionnaireDraftRow(
-	row: DraftRow,
-	taskId: string,
-) {
-	return submitDraftRow(row, taskId, "mission_pilot");
-}
-
 export async function submitQuestionnaireDraft(
 	taskId: string,
 	expectedVersion: number,

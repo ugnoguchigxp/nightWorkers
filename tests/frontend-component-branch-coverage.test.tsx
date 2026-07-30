@@ -148,12 +148,19 @@ function stubPlanModeCommands() {
 		}),
 		useQuery: () => {
 			queryIndex += 1;
-			return queryIndex === 1
-				? {
-						data: createPlanWorkspace(),
-						refetch: vi.fn(async () => ({ data: createPlanWorkspace() })),
-					}
-				: { data: null, refetch: vi.fn(async () => ({ data: null })) };
+			if (queryIndex === 1)
+				return {
+					data: createPlanWorkspace(),
+					refetch: vi.fn(async () => ({ data: createPlanWorkspace() })),
+				};
+			if (queryIndex === 2)
+				return {
+					data: [createQuestionnaireSession()],
+					refetch: vi.fn(async () => ({
+						data: [createQuestionnaireSession()],
+					})),
+				};
+			return { data: null, refetch: vi.fn(async () => ({ data: null })) };
 		},
 	}));
 	const generatedMessage = buildTaskMessage({
@@ -717,7 +724,7 @@ describe("frontend component branch coverage", () => {
 		];
 
 		for (const tab of tabs) {
-			resetHookMocks(planViewerStateValues(tab).slice(1));
+			resetHookMocks(planViewerStateValues(tab).slice(2));
 			stubPlanModeCommands();
 			const { PlanModeWorkspaceViewer } = await import(
 				"../src/modules/planMode/PlanModeWorkspaceViewer"

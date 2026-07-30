@@ -23,6 +23,21 @@ function record(value: unknown) {
 		: null;
 }
 
+function defaultRoutingReason(input: {
+	required: boolean;
+	generated: boolean;
+	capabilityEnabled: boolean;
+	decision: "include" | "omit";
+}) {
+	if (input.required) return "Plan Mode の必須 Artifact です。";
+	if (!input.capabilityEnabled)
+		return "Settingsで無効なため、今回のPlan Artifact対象外です。";
+	if (input.generated) return "既存 Artifact を初期 routing に引き継ぎました。";
+	return input.decision === "include"
+		? "現在のPlan Mode判断で必要なArtifactとして選択されています。"
+		: "Questionnaire確定後に、このTaskで必要かを判断します。";
+}
+
 export function planModeRoutingTerminalReason(_status: string) {
 	// Routing is revisioned configuration. Task lifecycle state must not make it
 	// read-only; concurrent generation and revision checks protect active writes.
@@ -66,11 +81,19 @@ export function buildInitialPlanModeRoutingEntries(
 					required: REQUIRED_VIEWS.has(typedView),
 					capabilityEnabled:
 						REQUIRED_VIEWS.has(typedView) || capabilities[typedView] === true,
-					reason: REQUIRED_VIEWS.has(typedView)
-						? "Plan Mode の必須 Artifact です。"
-						: typeof value.reason === "string" && value.reason.trim()
+					reason:
+						typeof value.reason === "string" && value.reason.trim()
 							? value.reason.trim()
-							: undefined,
+							: defaultRoutingReason({
+									required: REQUIRED_VIEWS.has(typedView),
+									generated: false,
+									capabilityEnabled:
+										REQUIRED_VIEWS.has(typedView) ||
+										capabilities[typedView] === true,
+									decision: REQUIRED_VIEWS.has(typedView)
+										? "include"
+										: decision,
+								}),
 				});
 			}
 		}
@@ -97,22 +120,27 @@ export function buildInitialPlanModeRoutingEntries(
 				generated.add(view as PlanModeRoutingView);
 		}
 	}
-	return ALL_PLAN_MODE_ROUTING_VIEWS.map(
-		(view): PlanModeRoutingEntry =>
+	return ALL_PLAN_MODE_ROUTING_VIEWS.map((view): PlanModeRoutingEntry => {
+		const required = REQUIRED_VIEWS.has(view);
+		const generatedArtifact = generated.has(view);
+		const capabilityEnabled = required || capabilities[view] === true;
+		const decision =
+			required || generatedArtifact ? ("include" as const) : ("omit" as const);
+		return (
 			explicit.get(view) ?? {
 				view,
-				decision:
-					REQUIRED_VIEWS.has(view) || generated.has(view) ? "include" : "omit",
-				required: REQUIRED_VIEWS.has(view),
-				capabilityEnabled:
-					REQUIRED_VIEWS.has(view) || capabilities[view] === true,
-				...(REQUIRED_VIEWS.has(view)
-					? { reason: "Plan Mode の必須 Artifact です。" }
-					: generated.has(view)
-						? { reason: "既存 Artifact を初期 routing に引き継ぎました。" }
-						: {}),
-			},
-	);
+				decision,
+				required,
+				capabilityEnabled,
+				reason: defaultRoutingReason({
+					required,
+					generated: generatedArtifact,
+					capabilityEnabled,
+					decision,
+				}),
+			}
+		);
+	});
 }
 
 export function normalizePlanModeRoutingEntries(
@@ -128,11 +156,15 @@ export function normalizePlanModeRoutingEntries(
 			decision: required ? "include" : (entry?.decision ?? "omit"),
 			required,
 			capabilityEnabled: required || capabilities[view] === true,
-			...(required
-				? { reason: "Plan Mode の必須 Artifact です。" }
-				: entry?.reason && entry.reason !== LEGACY_INITIAL_OMIT_REASON
-					? { reason: entry.reason }
-					: {}),
+			reason:
+				entry?.reason && entry.reason !== LEGACY_INITIAL_OMIT_REASON
+					? entry.reason
+					: defaultRoutingReason({
+							required,
+							generated: false,
+							capabilityEnabled: required || capabilities[view] === true,
+							decision: required ? "include" : (entry?.decision ?? "omit"),
+						}),
 		};
 	});
 }

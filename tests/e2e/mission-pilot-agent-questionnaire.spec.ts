@@ -7,7 +7,7 @@ const headers = {
 	"x-nightworkers-e2e": "1",
 };
 
-test("Play shows the canonical Task Goal and preserves the 20-second Questionnaire auto-answer UI", {
+test("Play shows the canonical Task Goal and submits Questionnaire answers after the 20-second timer", {
 	tag: [
 		"@deterministic",
 		"@p0",
@@ -49,15 +49,6 @@ test("Play shows the canonical Task Goal and preserves the 20-second Questionnai
 		});
 		expect(taskResponse.status(), await taskResponse.text()).toBe(201);
 		taskId = ((await taskResponse.json()) as { id: string }).id;
-		const fixtureResponse = await request.post(
-			"/api/e2e/fixtures/mission-pilot-agent-questionnaire",
-			{ headers, data: { taskId } },
-		);
-		expect(fixtureResponse.status(), await fixtureResponse.text()).toBe(201);
-		const { questionnaireSessionId } = (await fixtureResponse.json()) as {
-			questionnaireSessionId: string;
-		};
-
 		await page.goto(`/sessions/${taskId}`);
 		await page
 			.locator(".mission-pilot-composer-controls")
@@ -68,63 +59,47 @@ test("Play shows the canonical Task Goal and preserves the 20-second Questionnai
 				exact: true,
 			}),
 		).toBeVisible();
+		const fixtureResponse = await request.post(
+			"/api/e2e/fixtures/mission-pilot-agent-questionnaire",
+			{ headers, data: { taskId } },
+		);
+		expect(fixtureResponse.status(), await fixtureResponse.text()).toBe(201);
+		const { questionnaireSessionId } = (await fixtureResponse.json()) as {
+			questionnaireSessionId: string;
+		};
 
-		let draft: QuestionnaireDraft | null = null;
+		const legacyDraftResponse = await request.get(
+			`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
+			{ headers },
+		);
+		expect(legacyDraftResponse.status(), await legacyDraftResponse.text()).toBe(
+			200,
+		);
+		expect(await legacyDraftResponse.json()).toBeNull();
+
+		await expect(page.locator(".mission-pilot-countdown")).toContainText(
+			/00:\d{2}/,
+			{ timeout: 10_000 },
+		);
+		let questionnaire: {
+			id: string;
+			status: string;
+			answers: Array<{ questionId: string; answer: QuestionnaireAnswer }>;
+		} | null = null;
 		await expect
 			.poll(
 				async () => {
 					const response = await request.get(
-						`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
+						`/api/tasks/${taskId}/design-questionnaire/${questionnaireSessionId}`,
 						{ headers },
 					);
 					expect(response.status(), await response.text()).toBe(200);
-					draft = (await response.json()) as QuestionnaireDraft | null;
-					return draft?.state;
+					questionnaire = (await response.json()) as typeof questionnaire;
+					return questionnaire?.status;
 				},
-				{ timeout: 15_000 },
+				{ timeout: 45_000 },
 			)
-			.toBe("waiting_user");
-		expect(draft).toMatchObject({
-			questionnaireSessionId,
-			answers: [{ questionId: "api-style", selectedOptionIds: ["rest"] }],
-			answerEvidence: {
-				"api-style": { source: "mission_pilot" },
-			},
-		});
-		const remainingMs = new Date(draft?.deadlineAt ?? 0).getTime() - Date.now();
-		expect(remainingMs).toBeGreaterThan(15_000);
-		expect(remainingMs).toBeLessThanOrEqual(20_000);
-
-		const countdown = page.locator(
-			"[data-mission-pilot-questionnaire-countdown]",
-		);
-		await expect(countdown).toContainText("Mission Pilotの回答案を表示中");
-		await expect(countdown).toContainText("自動確定します");
-		await expect(countdown).toContainText(/\d+秒/);
-		await expect(page.locator(".mission-pilot-countdown")).toContainText(
-			/00:\d{2}/,
-		);
-		await expect(page.getByRole("radio", { name: /REST/ })).toBeChecked();
-		await expect(
-			page.locator('[data-answer-evidence="mission_pilot"]'),
-		).toContainText("RESTを選択します");
-
-		await expect
-			.poll(
-				async () => {
-					const response = await request.get(
-						`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
-						{ headers },
-					);
-					draft = (await response.json()) as QuestionnaireDraft | null;
-					return draft?.state;
-				},
-				{ timeout: 30_000 },
-			)
-			.toBe("submitted");
-		await expect(
-			page.locator("[data-mission-pilot-questionnaire-submitted]"),
-		).toBeVisible({ timeout: 10_000 });
+			.toBe("review_ready");
 
 		const questionnairesResponse = await request.get(
 			`/api/tasks/${taskId}/design-questionnaire`,
@@ -150,6 +125,16 @@ test("Play shows the canonical Task Goal and preserves the 20-second Questionnai
 				},
 			],
 		});
+		expect(questionnaire).toMatchObject({
+			status: "review_ready",
+			answers: [
+				{
+					questionId: "api-style",
+					answer: { selectedOptionIds: ["rest"] },
+				},
+			],
+		});
+		await expect(page.locator(".mission-pilot-countdown")).toHaveCount(0);
 		const currentTask = await request.get(`/api/tasks/${taskId}`, { headers });
 		expect(currentTask.status(), await currentTask.text()).toBe(200);
 		expect((await currentTask.json()) as object).toMatchObject({
@@ -192,12 +177,4 @@ test("Play shows the canonical Task Goal and preserves the 20-second Questionnai
 type QuestionnaireAnswer = {
 	questionId: string;
 	selectedOptionIds: string[];
-};
-
-type QuestionnaireDraft = {
-	questionnaireSessionId: string;
-	state: string;
-	deadlineAt: string;
-	answers: QuestionnaireAnswer[];
-	answerEvidence: Record<string, { source: string; reason: string }>;
 };

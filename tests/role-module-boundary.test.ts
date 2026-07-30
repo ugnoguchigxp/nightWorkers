@@ -79,6 +79,27 @@ describe("Mission Pilot and Coding Agent role boundaries", () => {
 		);
 	});
 
+	it("forbids Agent-independent Plan Mode modules from importing either role", () => {
+		const root = createFixture();
+		write(
+			root,
+			"api/modules/planMode/plan-mode.service.ts",
+			'import { missionPilot } from "../missionPilot/mission-pilot.service";\nexport const planMode = missionPilot;\n',
+		);
+		write(
+			root,
+			"api/modules/missionPilot/mission-pilot.service.ts",
+			"export const missionPilot = true;\n",
+		);
+
+		const result = evaluateModuleBoundaries(root);
+
+		expect(result.ok).toBe(false);
+		expect(result.errors).toContain(
+			"api/modules/planMode/plan-mode.service.ts: Agent-independent module must not depend on a role module (api/modules/planMode -> api/modules/missionPilot: ../missionPilot/mission-pilot.service)",
+		);
+	});
+
 	it("forbids role-owned production files outside the role module", () => {
 		const root = createFixture();
 		write(
@@ -131,6 +152,7 @@ function createFixture() {
 			enforcedPublicApiRoots: [],
 			roleModuleRoots: ["api/modules/missionPilot", "api/modules/codingAgent"],
 			agentSharedModuleRoots: ["api/modules/agentsShare"],
+			agentIndependentModuleRoots: ["api/modules/planMode"],
 			roleOwnedPathRules: [
 				{
 					role: "Mission Pilot",

@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
-import { toDeepRecord } from "../../../../shared/json-record";
 import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
 import { isCodingAgentChatTrace } from "../../codingAgent";
@@ -9,15 +8,21 @@ import {
 	mergeTaskPreservingMissionPilot,
 	missionPilotPlanProgressQueryKey,
 } from "../../missionPilot";
+import {
+	applyQuestionnaireStateChangedRealtimeMessage,
+	invalidateQuestionnaireSessions,
+} from "../../questionnaire";
 import { planModeWorkspaceQueryKey } from "../../specification";
 import { dedupeAndSortActivityEvents } from "../activityTranscript";
 import { shouldCompletePendingChat } from "../realtimeChatCompletion";
 import {
 	dedupeAndSortRunEvents,
 	getRealtimeMessageDedupeKey,
+	isTerminalRunStatus,
 	mergeRealtimeRunDetails,
 	mergeRealtimeRunList,
 	mergeRealtimeTodoIntoRunDetails,
+	readReviewRunSnapshot,
 } from "../realtimeEvents";
 import type {
 	ActivityEvent,
@@ -66,39 +71,6 @@ type UseNightWorkersRealtimeInput = {
 	>;
 };
 
-function isTerminalRunStatus(status: string | undefined): boolean {
-	return (
-		status === "completed" ||
-		status === "needs_review" ||
-		status === "needs_human" ||
-		status === "failed" ||
-		status === "blocked" ||
-		status === "timed_out" ||
-		status === "cancelled"
-	);
-}
-
-function readReviewRunSnapshot(contextSnapshot: unknown): {
-	reviewSessionId?: string;
-	reviewedRunId?: string;
-} | null {
-	const reviewRun = toDeepRecord(contextSnapshot).reviewRun;
-	if (!reviewRun || typeof reviewRun !== "object" || Array.isArray(reviewRun)) {
-		return null;
-	}
-	const record = reviewRun as Record<string, unknown>;
-	return {
-		reviewSessionId:
-			typeof record.reviewSessionId === "string"
-				? record.reviewSessionId
-				: undefined,
-		reviewedRunId:
-			typeof record.reviewedRunId === "string"
-				? record.reviewedRunId
-				: undefined,
-	};
-}
-
 export function useNightWorkersRealtime({
 	activeSessionId,
 	queryClient,
@@ -135,6 +107,10 @@ export function useNightWorkersRealtime({
 		let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 		let usingFallback = false;
 		let suppressNextReconnect = false;
+		const latestQuestionnaireRevisionBySession = new Map<
+			string,
+			{ revision: number; stateDigest: string }
+		>();
 
 		const connect = (url: string) => {
 			if (reconnectTimer) {
@@ -158,6 +134,7 @@ export function useNightWorkersRealtime({
 					void queryClient.invalidateQueries({
 						queryKey: missionPilotPlanProgressQueryKey(activeSessionId),
 					});
+					void invalidateQuestionnaireSessions(queryClient, activeSessionId);
 					const subscription = latestRunSubscriptionRef.current;
 					ws?.send(
 						JSON.stringify({
@@ -217,6 +194,20 @@ export function useNightWorkersRealtime({
 							timestamp?: unknown;
 						};
 					};
+					applyQuestionnaireStateChangedRealtimeMessage({
+						message: msg,
+						activeTaskId: activeSessionId,
+						latestRevisionBySession: latestQuestionnaireRevisionBySession,
+						queryClient,
+					});
+					if (msg.type === "plan_mode.routing_changed") {
+						const routingTaskId = msg.taskId ?? msg.payload?.taskId;
+						if (routingTaskId && routingTaskId === activeSessionId) {
+							void queryClient.invalidateQueries({
+								queryKey: planModeWorkspaceQueryKey(routingTaskId),
+							});
+						}
+					}
 					if (msg.type === "activity_event_created" && msg.payload?.event) {
 						const incoming = msg.payload.event;
 						if (activeSessionId && incoming.taskId !== activeSessionId) return;

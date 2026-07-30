@@ -66,16 +66,6 @@ export {
 	startCodingAgentRun,
 } from "./ports/coding-agent-run";
 export {
-	type PlanModeRoutingReader,
-	readPlanModeRouting,
-	registerPlanModeRoutingReader,
-} from "./ports/plan-mode-routing-reader";
-export {
-	type PlanModeRoutingUserWriter,
-	registerPlanModeRoutingUserWriter,
-	writePlanModeRoutingForUser,
-} from "./ports/plan-mode-routing-writer";
-export {
 	type RunOrchestrationRef,
 	type RunOrchestrationRefResolver,
 	registerRunOrchestrationRefResolver,

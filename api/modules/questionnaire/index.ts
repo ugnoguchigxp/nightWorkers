@@ -22,3 +22,5 @@ export {
 	questionnaireSessionBelongsToTask,
 	readQuestionnaireOperatorState,
 } from "./questionnaire-operator.query";
+export { initializeQuestionnaireRealtime } from "./questionnaire-realtime";
+export { buildQuestionnaireStateChange } from "./questionnaire-state-change";

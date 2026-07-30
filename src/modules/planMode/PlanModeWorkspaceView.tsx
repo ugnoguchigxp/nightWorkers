@@ -44,13 +44,10 @@ export function PlanModeWorkspaceView({
 	handleQuestionnaireAnswersChange,
 	onSelectSession,
 	questionnaireSubmissionState,
-	missionPilotDraft,
-	missionPilotSecondsRemaining,
 	submitAnswersForNextStep,
 	answerProgress,
 	unansweredQuestions,
 	workspace,
-	missionPilotPlanProgress,
 	activeQuestionnaireSummary,
 	canGenerateDataModel,
 	hasFeaturePlan,
@@ -103,15 +100,10 @@ export function PlanModeWorkspaceView({
 	questionnaireSubmissionState: Parameters<
 		typeof PlanModeQuestionnairePanel
 	>[0]["questionnaireSubmissionState"];
-	missionPilotDraft: Parameters<
-		typeof PlanModeQuestionnairePanel
-	>[0]["missionPilotDraft"];
-	missionPilotSecondsRemaining: number | null;
 	submitAnswersForNextStep: () => void | Promise<void>;
 	answerProgress: { answeredCount: number; totalCount: number };
 	unansweredQuestions: Array<{ question?: unknown }>;
 	workspace: PlanModeWorkspace | null;
-	missionPilotPlanProgress: StatusProps["missionPilotPlanProgress"];
 	activeQuestionnaireSummary: StatusProps["questionnaireSummary"];
 	canGenerateDataModel: boolean;
 	hasFeaturePlan: boolean;
@@ -209,8 +201,6 @@ export function PlanModeWorkspaceView({
 						answers={answers}
 						onAnswersChange={handleQuestionnaireAnswersChange}
 						questionnaireSubmissionState={questionnaireSubmissionState}
-						missionPilotDraft={missionPilotDraft}
-						missionPilotSecondsRemaining={missionPilotSecondsRemaining}
 						onSubmitAnswers={submitAnswersForNextStep}
 						answerProgress={answerProgress}
 						unansweredQuestions={unansweredQuestions}
@@ -218,7 +208,6 @@ export function PlanModeWorkspaceView({
 				) : activeTab === "status" ? (
 					<PlanWorkspaceStatusView
 						workspace={workspace}
-						missionPilotPlanProgress={missionPilotPlanProgress}
 						questionnaireSession={activeQuestionnaireSession}
 						questionnaireSummary={activeQuestionnaireSummary}
 						busyAction={busyAction}

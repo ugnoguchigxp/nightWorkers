@@ -10,6 +10,7 @@ import {
 import { createOpenApiRouter } from "../../../lib/openapi";
 import { registerFixtureProviderToolTurns } from "../../../services/structured-llm/fixture-tool-provider";
 import * as repo from "../../nightworkers/nightworkers.repository";
+import { getDesignQuestionnaireSession } from "../../questionnaire";
 import {
 	createDesignQuestionnaireQuestionSet,
 	createDesignQuestionnaireSession,
@@ -18,6 +19,7 @@ import {
 import { reconcileInterruptedMissionPilotAgentSessions } from "../agent/mission-pilot-agent-runtime";
 import { isMissionPilotAgentSession } from "../agent/mission-pilot-agent-session.repository";
 import { scheduleMissionPilotAgentWake } from "../agent/mission-pilot-agent-wake.service";
+import { recordMissionPilotQuestionnaireStateChanged } from "../agent/mission-pilot-task-event.adapter";
 import { appendMissionPilotTaskEvent } from "../agent/mission-pilot-task-event.repository";
 import * as missionPilotRepo from "../mission-pilot.repository";
 import {
@@ -117,12 +119,7 @@ export const missionPilotAgentFixtureRouter = createOpenApiRouter().openapi(
 			repo.getTask(taskId),
 			missionPilotRepo.getSessionByTaskId(taskId),
 		]);
-		if (
-			!task ||
-			!pilot ||
-			pilot.desiredState !== "stopped" ||
-			!(await isMissionPilotAgentSession(pilot.id))
-		)
+		if (!task || !pilot || !(await isMissionPilotAgentSession(pilot.id)))
 			return c.json({ error: "Agent Mission Pilot not found" }, 404);
 
 		const questionnaire = await createDesignQuestionnaireSession({
@@ -138,6 +135,13 @@ export const missionPilotAgentFixtureRouter = createOpenApiRouter().openapi(
 			questionnaireJson: buildQuestionnaire(taskId, task.repositoryId),
 		});
 		await updateDesignQuestionnaireSessionStatus(questionnaire.id, "answering");
+		if (pilot.desiredState === "playing") {
+			const current = await getDesignQuestionnaireSession(
+				taskId,
+				questionnaire.id,
+			);
+			await recordMissionPilotQuestionnaireStateChanged(current);
+		}
 		registerFixtureProviderToolTurns(
 			taskId,
 			buildQuestionnaireFixtureTurns({

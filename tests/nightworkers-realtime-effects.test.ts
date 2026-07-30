@@ -285,6 +285,19 @@ describe("useNightWorkersRealtime effect", () => {
 		vi.runOnlyPendingTimers();
 		const socket = FakeWebSocket.instances[0];
 		socket.emit("open");
+		const invalidationCountBeforeRouting = invalidateSpy.mock.calls.length;
+		socket.emit("message", {
+			type: "plan_mode.routing_changed",
+			taskId: "task-1",
+			payload: {
+				taskId: "task-1",
+				revision: 1,
+				updatedBy: "questionnaire_recommender",
+			},
+		});
+		expect(
+			invalidateSpy.mock.calls.slice(invalidationCountBeforeRouting),
+		).toContainEqual([{ queryKey: ["planModeWorkspace", "task-1"] }]);
 		socket.emit("message", {
 			type: "activity_event_created",
 			payload: {
@@ -493,6 +506,9 @@ describe("useNightWorkersRealtime effect", () => {
 		});
 		expect(invalidateSpy).toHaveBeenCalledWith({
 			queryKey: ["planModeWorkspace", "task-1"],
+		});
+		expect(invalidateSpy).toHaveBeenCalledWith({
+			queryKey: ["designQuestionnaireSessions", "task-1"],
 		});
 		expect(
 			queryClient.getQueryData(["missionPilotPlanProgress", "task-1"]),

@@ -1,0 +1,5 @@
+text = '''JSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。
+初回Questionnaireの各optionは文字列ではなく、{label, recommended} のobjectで返してください。labelは選択肢本文、recommendedはbooleanで必ず指定してください。
+Task、Project Stack Context、Plan Mode Context、各選択肢の実装上のtradeoffから合理的に推奨できる選択肢だけrecommended=trueにしてください。ユーザーの価値判断が必要、情報不足、または複数案が同程度で推奨できない場合は、全optionをrecommended=falseにしてください。
+radioではrecommended=trueを最大1件にしてください。checkboxでは同時採用を合理的に推奨できるoptionを複数recommended=trueにできます。
+先頭、デフォルト、最小構成という位置や文言だけを理由に機械的に推奨せず、推奨判断は入力contextの意味から行ってください。'''

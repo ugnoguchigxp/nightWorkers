@@ -1,6 +1,5 @@
 import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { useState } from "react";
-import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { buildPlanModeExecutionSteps } from "../../../../shared/plan-mode-execution";
 import type {
 	EditablePlanModeRoutingView,
@@ -23,7 +22,6 @@ import { formatViewLabel, isAdditionalView } from "./types";
 
 export function PlanWorkspaceStatusView({
 	workspace,
-	missionPilotPlanProgress,
 	questionnaireSession,
 	questionnaireSummary,
 	busyAction,
@@ -43,7 +41,6 @@ export function PlanWorkspaceStatusView({
 	onAddToQueue,
 }: {
 	workspace: PlanModeWorkspace | null;
-	missionPilotPlanProgress?: MissionPilotPlanProgress | null;
 	questionnaireSession: DesignQuestionnaireSession | null;
 	questionnaireSummary?:
 		| PlanModeWorkspace["questionnaireSessions"][number]
@@ -255,32 +252,9 @@ export function PlanWorkspaceStatusView({
 			autoGenerateKey: "feature-plan",
 		},
 	];
-	const persistedStepByKey = new Map(
-		(missionPilotPlanProgress?.steps || []).map((step) => [step.key, step]),
+	const steps = rawSteps.filter(
+		(step): step is PlanWorkspaceStatusStep => step !== null,
 	);
-	const missionPilotIsRunning =
-		missionPilotPlanProgress?.desiredState === "playing";
-	const steps = rawSteps
-		.filter((step): step is PlanWorkspaceStatusStep => step !== null)
-		.map((step) => {
-			const persisted = persistedStepByKey.get(step.progressKey);
-			if (!persisted) return step;
-			const running = persisted.status === "running";
-			const failed = persisted.status === "failed";
-			return {
-				...step,
-				done: persisted.status === "completed",
-				busy: running || step.busy,
-				disabled: step.disabled || Boolean(missionPilotIsRunning),
-				detail: running
-					? `${formatViewLabel(persisted.view || persisted.kind)}を生成中です。`
-					: failed
-						? persisted.lastError || "生成に失敗しました。"
-						: step.detail,
-				progressStatus: persisted.status,
-				progressError: persisted.lastError,
-			};
-		});
 	const allIncludedArtifactsCreated = rawSteps
 		.filter((step): step is PlanWorkspaceStatusStep => step !== null)
 		.every((step) => step.done);
@@ -311,9 +285,6 @@ export function PlanWorkspaceStatusView({
 			<h2 className="nightworkers-structured-artifact-text text-base font-semibold">
 				設計アーティファクト
 			</h2>
-			{missionPilotPlanProgress ? (
-				<MissionPilotPlanPhase progress={missionPilotPlanProgress} />
-			) : null}
 			<div className="nightworkers-plan-artifact-list">
 				{artifactItems.map((item) => (
 					<PlanArtifactStatusCard
@@ -321,9 +292,7 @@ export function PlanWorkspaceStatusView({
 						item={item}
 						busyAction={busyAction}
 						routing={workspace?.routing ?? null}
-						routingDisabled={
-							isImplementationLocked || Boolean(missionPilotIsRunning)
-						}
+						routingDisabled={isImplementationLocked}
 						onUpdateRouting={onUpdateRouting}
 					/>
 				))}
@@ -667,64 +636,6 @@ function PlanArtifactStatusCard({
 				</div>
 			) : null}
 		</article>
-	);
-}
-
-function MissionPilotPlanPhase({
-	progress,
-}: {
-	progress: MissionPilotPlanProgress;
-}) {
-	const labels: Record<string, string> = {
-		repository_bootstrapping:
-			"Projectを確認し、必要なStarter templateを取り込んでいます",
-		generating_artifacts: "Plan Artifactを生成しています",
-		reviewing_plan: "実装計画をレビューしています",
-		revising_plan: "レビュー指摘を反映しています",
-		awaiting_artifact_correction: "Artifact修正の準備をしています",
-		correcting_artifact: "Plan Mode agentがArtifactを修正しています",
-		validating_artifact: "Artifact修正結果を確認しています",
-		revising_dependencies: "依存Artifactを最新状態へ揃えています",
-		attention: "確認が必要です",
-		queued: "Implementation Queueへ追加済みです",
-	};
-	const label = labels[progress.phase];
-	if (!label && !progress.lastError) return null;
-	return (
-		<div
-			className={`nightworkers-structured-artifact-card rounded border p-3 ${
-				progress.phase === "attention"
-					? "nightworkers-structured-artifact-warning"
-					: "nightworkers-structured-artifact-muted"
-			}`}
-		>
-			<div className="font-semibold">{label || progress.phase}</div>
-			{progress.lastError ? (
-				<div className="mt-1">{progress.lastError}</div>
-			) : null}
-			{progress.activeCorrection ? (
-				<div className="mt-1">
-					対象: {formatViewLabel(progress.activeCorrection.target)} /{" "}
-					{progress.activeCorrection.status}
-				</div>
-			) : null}
-			{progress.review && progress.review.status !== "pending" ? (
-				<div className="mt-1">
-					Self-review: {progress.review.status}（{progress.review.attempt}回目）
-				</div>
-			) : null}
-			{(progress.review?.advisories?.length ?? 0) > 0 ? (
-				<div className="mt-2 grid gap-1 text-xs">
-					<div>概念Artifactの参考評価（Queue投入を妨げません）</div>
-					{progress.review?.advisories?.map((advisory) => (
-						<div key={`${advisory.artifactKind}-${advisory.score}`}>
-							{formatViewLabel(advisory.artifactKind)}: {advisory.score}/100 —{" "}
-							{advisory.rationale}
-						</div>
-					))}
-				</div>
-			) : null}
-		</div>
 	);
 }
 

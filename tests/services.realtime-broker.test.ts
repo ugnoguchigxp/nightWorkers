@@ -80,4 +80,29 @@ describe("NightWorkersRealtimeBroker", () => {
 		});
 		expect(typeof sent[0].timestamp).toBe("string");
 	});
+
+	it("replays Questionnaire state changes after reconnect", () => {
+		const broker = new NightWorkersRealtimeBroker();
+		const taskId = "00000000-0000-4000-8000-000000000004";
+		const { socket, sent } = createSocket();
+
+		broker.publish(taskId, {
+			type: "questionnaire.state_changed",
+			payload: {
+				taskId,
+				questionnaireSessionId: "00000000-0000-4000-8000-000000000104",
+				status: "review_ready",
+				revision: 2,
+				stateDigest: "a".repeat(64),
+			},
+		});
+		broker.subscribe(taskId, socket);
+
+		expect(broker.replayRecent(taskId, socket)).toBe(1);
+		expect(sent[0]).toMatchObject({
+			type: "questionnaire.state_changed",
+			taskId,
+			replayed: true,
+		});
+	});
 });

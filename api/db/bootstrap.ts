@@ -6,6 +6,7 @@ import { client } from "./client";
 import { ensureCloseoutAdmissionTables } from "./closeout-admission-schema-bootstrap";
 import { ensureEvidenceLedgerTables } from "./evidence-ledger-schema-bootstrap";
 import { ensureFinalResponseEvidenceTables } from "./final-response-evidence-schema-bootstrap";
+import { ensurePlanModeTables } from "./plan-mode-schema-bootstrap";
 import {
 	ensureMissionPlannerTables,
 	ensureProjectDetailTables,
@@ -155,6 +156,7 @@ export async function ensureNightWorkersSchema(
 	await ensureBaseNightWorkersTables();
 	await ensureTaskGenerationTables();
 	await ensureNullableDesignQuestionnaireBlueprintSource();
+	await ensurePlanModeTables();
 	await ensureProjectEvaluationTables();
 	await ensureProjectDetailTables();
 	await ensureTechStackTables();

@@ -1,0 +1,1 @@
+text = '''JSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。options は文字列の配列で返してください。'''

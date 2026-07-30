@@ -1,3 +1,4 @@
+import { toDeepRecord } from "../../../shared/json-record";
 import type {
 	RunDetails,
 	TaskEvent,
@@ -33,6 +34,31 @@ const OPEN_TODOS_INVALID_TERMINAL_RUN_STATUSES = new Set([
 	"failed",
 	"timed_out",
 ]);
+
+export function isTerminalRunStatus(status: string | undefined): boolean {
+	return Boolean(status && TERMINAL_RUN_STATUSES.has(status));
+}
+
+export function readReviewRunSnapshot(contextSnapshot: unknown): {
+	reviewSessionId?: string;
+	reviewedRunId?: string;
+} | null {
+	const reviewRun = toDeepRecord(contextSnapshot).reviewRun;
+	if (!reviewRun || typeof reviewRun !== "object" || Array.isArray(reviewRun)) {
+		return null;
+	}
+	const record = reviewRun as Record<string, unknown>;
+	return {
+		reviewSessionId:
+			typeof record.reviewSessionId === "string"
+				? record.reviewSessionId
+				: undefined,
+		reviewedRunId:
+			typeof record.reviewedRunId === "string"
+				? record.reviewedRunId
+				: undefined,
+	};
+}
 
 export function dedupeAndSortRunEvents(events: TaskEvent[]): TaskEvent[] {
 	const uniq = new Map<string, TaskEvent>();

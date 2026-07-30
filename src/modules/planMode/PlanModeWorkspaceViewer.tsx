@@ -1,15 +1,22 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-	missionPilotPlanProgressQueryOptions,
-	useMissionPilotQuestionnaireDraft,
-} from "../missionPilot";
+	type SetStateAction,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import type {
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,
 	TaskMessage,
 } from "../nightworkers/types";
-import { fetchDesignQuestionnaireSessions } from "../questionnaire";
+import {
+	designQuestionnaireSessionsQueryKey,
+	designQuestionnaireSessionsQueryOptions,
+	getQuestionnaireSessionProjectionKey,
+} from "../questionnaire";
 import {
 	getPlanModeCapabilities,
 	type PlanWorkspaceTab,
@@ -31,7 +38,6 @@ import {
 } from "./PlanModeWorkspaceViewer.helpers";
 import {
 	buildVisiblePlanWorkspaceTabs,
-	correctionTargetTabs,
 	resetPlanWorkspaceScrollToTop,
 	resolveInitialPlanWorkspaceTabUpdate,
 	resolveQuestionnaireGenerationState,
@@ -61,10 +67,9 @@ export function PlanModeWorkspaceViewer({
 	const { data: workspace = null, refetch: refetchWorkspace } = useQuery(
 		planModeWorkspaceQueryOptions(sessionId),
 	);
-	const { data: missionPilotPlanProgress = null } = useQuery(
-		missionPilotPlanProgressQueryOptions(sessionId),
-	);
-	const [sessions, setSessions] = useState<DesignQuestionnaireSession[]>([]);
+	const { data: questionnaireSessions, refetch: refetchQuestionnaireSessions } =
+		useQuery(designQuestionnaireSessionsQueryOptions(sessionId));
+	const sessions = questionnaireSessions ?? [];
 	const [activeTab, setActiveTab] = useState<PlanWorkspaceTab>(
 		initialTab || "questionnaire",
 	);
@@ -78,31 +83,23 @@ export function PlanModeWorkspaceViewer({
 	const generalSettings = usePlanModeGeneralSettings();
 	const [, setAssemblyReadySessionIds] = useState<Set<string>>(new Set());
 	const [generatedMessages, setGeneratedMessages] = useState<TaskMessage[]>([]);
+	const setSessions = useCallback(
+		(update: SetStateAction<DesignQuestionnaireSession[]>) => {
+			queryClient.setQueryData<DesignQuestionnaireSession[]>(
+				designQuestionnaireSessionsQueryKey(sessionId),
+				(previous = []) =>
+					typeof update === "function" ? update(previous) : update,
+			);
+		},
+		[queryClient, sessionId],
+	);
 	const activeQuestionnaireSession =
 		sessions.find((session) => session.id === activeSessionId) ||
 		sessions[0] ||
 		null;
-	const missionPilotSubmittedHandlerRef = useRef<() => void>(() => undefined);
-	const handleMissionPilotDraftSubmitted = useCallback(
-		() => missionPilotSubmittedHandlerRef.current(),
-		[],
+	const activeQuestionnaireProjectionKey = getQuestionnaireSessionProjectionKey(
+		activeQuestionnaireSession,
 	);
-	const {
-		draft: missionPilotDraft,
-		setDraft: setMissionPilotDraft,
-		draftRef: missionPilotDraftRef,
-		updateQueueRef: draftUpdateQueueRef,
-		secondsRemaining: missionPilotSecondsRemaining,
-		updateAnswers: handleQuestionnaireAnswersChange,
-		projectAnswers: projectMissionPilotAnswers,
-	} = useMissionPilotQuestionnaireDraft({
-		taskId: sessionId,
-		questionnaireSessionId: activeQuestionnaireSession?.id ?? null,
-		setQuestionnaireSessionId: setActiveSessionId,
-		setAnswers,
-		setError: setActionError,
-		onSubmitted: handleMissionPilotDraftSubmitted,
-	});
 	const workspaceMessages = useMemo(
 		() =>
 			selectPlanModeWorkspaceMessages({
@@ -164,8 +161,8 @@ export function PlanModeWorkspaceViewer({
 			),
 		);
 	const didSelectUnlockedDefaultTab = useRef(false);
+	const projectedQuestionnaireKeyRef = useRef<string | null>(null);
 	const refreshedQuestionnaireReadyMessageIdRef = useRef<string | null>(null);
-	const focusedCorrectionIdRef = useRef<string | null>(null);
 	const attemptedMermaidRenderRepairs = useRef(new Set<string>());
 	const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
 	const activeTabRef = useRef(activeTab);
@@ -202,44 +199,59 @@ export function PlanModeWorkspaceViewer({
 	const refresh = useCallback(
 		async (options?: { preserveGeneratedBlueprintFocus?: boolean }) => {
 			if (!sessionId) return;
-			const nextWorkspace = (await refetchWorkspace()).data ?? null;
-			const sessionsRes = await fetchDesignQuestionnaireSessions(sessionId);
-			if (sessionsRes.ok) {
-				const nextSessions =
-					(await sessionsRes.json()) as DesignQuestionnaireSession[];
-				setSessions(nextSessions);
-				if (
-					shouldOpenQuestionnaireForEmptyBlueprint({
-						hasQuestionnaireSessions: nextSessions.length > 0,
-						hasBlueprintMessages:
-							blueprintMessages.length > 0 ||
-							Boolean(nextWorkspace?.blueprintArtifacts.length),
-						activeTab: activeTabRef.current,
-						preserveGeneratedBlueprintFocus:
-							options?.preserveGeneratedBlueprintFocus,
-					})
-				) {
-					selectActiveTab("questionnaire");
-				}
-				const selected =
-					nextSessions.find((item) => item.id === activeSessionId) ||
-					nextSessions[0];
-				if (selected) {
-					setActiveSessionId(selected.id);
-					setAnswers(projectMissionPilotAnswers(selected));
-				}
+			const [workspaceResult, questionnaireResult] = await Promise.all([
+				refetchWorkspace(),
+				refetchQuestionnaireSessions(),
+			]);
+			const nextWorkspace = workspaceResult.data ?? null;
+			const nextSessions = questionnaireResult.data ?? [];
+			if (
+				shouldOpenQuestionnaireForEmptyBlueprint({
+					hasQuestionnaireSessions: nextSessions.length > 0,
+					hasBlueprintMessages:
+						blueprintMessages.length > 0 ||
+						Boolean(nextWorkspace?.blueprintArtifacts.length),
+					activeTab: activeTabRef.current,
+					preserveGeneratedBlueprintFocus:
+						options?.preserveGeneratedBlueprintFocus,
+				})
+			) {
+				selectActiveTab("questionnaire");
 			}
 		},
 		[
-			activeSessionId,
 			blueprintMessages.length,
+			refetchQuestionnaireSessions,
 			refetchWorkspace,
-			projectMissionPilotAnswers,
 			selectActiveTab,
 			sessionId,
 		],
 	);
-	missionPilotSubmittedHandlerRef.current = () => void refresh();
+	useEffect(() => {
+		const selected = activeQuestionnaireSession;
+		const selectionChanged = (selected?.id ?? null) !== activeSessionId;
+		if (
+			!selectionChanged &&
+			projectedQuestionnaireKeyRef.current === activeQuestionnaireProjectionKey
+		)
+			return;
+		projectedQuestionnaireKeyRef.current = activeQuestionnaireProjectionKey;
+		if (!selected) {
+			setActiveSessionId(null);
+			setAnswers({});
+			return;
+		}
+		if (selected.id !== activeSessionId) setActiveSessionId(selected.id);
+		setAnswers(
+			Object.fromEntries(
+				selected.answers.map((item) => [item.questionId, item.answer]),
+			),
+		);
+	}, [
+		activeQuestionnaireProjectionKey,
+		activeQuestionnaireSession,
+		activeSessionId,
+	]);
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
@@ -258,18 +270,6 @@ export function PlanModeWorkspaceViewer({
 		const nextTab = resolveInitialPlanWorkspaceTabUpdate(initialTab);
 		if (nextTab) selectActiveTab(nextTab);
 	}, [initialTab, selectActiveTab]);
-	useEffect(() => {
-		const correction = missionPilotPlanProgress?.activeCorrection;
-		if (!correction || focusedCorrectionIdRef.current === correction.id) return;
-		const targetTab = correctionTargetTabs[correction.target];
-		if (!visibleTabs.includes(targetTab)) return;
-		focusedCorrectionIdRef.current = correction.id;
-		selectActiveTab(targetTab);
-	}, [
-		missionPilotPlanProgress?.activeCorrection,
-		selectActiveTab,
-		visibleTabs,
-	]);
 	useEffect(() => {
 		if (initialTab) return;
 		if (!didSelectUnlockedDefaultTab.current && activeTab === "questionnaire") {
@@ -341,18 +341,13 @@ export function PlanModeWorkspaceViewer({
 		activeBlueprintMessage,
 		activeQuestionnaireSession,
 		unansweredQuestions,
-		missionPilotDraft,
-		missionPilotDraftRef,
-		draftUpdateQueueRef,
 		questionGroups,
 		answers,
 		runAction,
 		selectActiveTab,
-		refresh,
 		setActiveSessionId,
 		setAnswers,
 		setSessions,
-		setMissionPilotDraft,
 		setAssemblyReadySessionIds,
 		setActionNotice,
 	});
@@ -426,7 +421,7 @@ export function PlanModeWorkspaceViewer({
 			activeQuestionnaireSession={activeQuestionnaireSession}
 			questionGroups={questionGroups}
 			answers={answers}
-			handleQuestionnaireAnswersChange={handleQuestionnaireAnswersChange}
+			handleQuestionnaireAnswersChange={setAnswers}
 			onSelectSession={(session) => {
 				setActiveSessionId(session.id);
 				setAnswers(
@@ -436,13 +431,10 @@ export function PlanModeWorkspaceViewer({
 				);
 			}}
 			questionnaireSubmissionState={questionnaireSubmissionState}
-			missionPilotDraft={missionPilotDraft}
-			missionPilotSecondsRemaining={missionPilotSecondsRemaining}
 			submitAnswersForNextStep={submitAnswersForNextStep}
 			answerProgress={answerProgress}
 			unansweredQuestions={unansweredQuestions}
 			workspace={workspace}
-			missionPilotPlanProgress={missionPilotPlanProgress}
 			activeQuestionnaireSummary={activeQuestionnaireSummary}
 			canGenerateDataModel={canGenerateDataModel}
 			hasFeaturePlan={hasFeaturePlan}

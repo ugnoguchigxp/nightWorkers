@@ -1,3 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
 	missionPilotAuthorizationV2Schema,
@@ -6,7 +9,10 @@ import {
 	missionPilotSourceRefSchema,
 } from "../shared/modules/missionPilot/mission-pilot.schema";
 import { missionPilotPlanProgressSchema } from "../shared/modules/missionPilot/mission-pilot-plan-progress.schema";
-import { formatCountdown } from "../src/modules/missionPilot/components/MissionPilotControlPanel";
+import {
+	formatCountdown,
+	MissionPilotControlPanel,
+} from "../src/modules/missionPilot/components/MissionPilotControlPanel";
 import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
 import {
 	mergeMissionPilotSummary,
@@ -224,5 +230,26 @@ describe("Mission Pilot contract", () => {
 		expect(formatCountdown(65_000)).toBe("01:05");
 		expect(formatCountdown(3_661_000)).toBe("1:01:01");
 		expect(formatCountdown(0)).toBe("00:00");
+	});
+
+	it("renders the projected wake countdown beside both Mission Pilot controls", () => {
+		const queryClient = new QueryClient();
+		for (const placement of ["composer", "sidebar"] as const) {
+			const markup = renderToStaticMarkup(
+				createElement(
+					QueryClientProvider,
+					{ client: queryClient },
+					createElement(MissionPilotControlPanel, {
+						taskId,
+						summary: {
+							...summary(1, "playing"),
+							nextWakeAt: new Date(Date.now() + 20_000),
+						},
+						placement,
+					}),
+				),
+			);
+			expect(markup).toContain("mission-pilot-countdown");
+		}
 	});
 });

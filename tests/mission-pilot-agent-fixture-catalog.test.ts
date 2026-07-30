@@ -12,16 +12,16 @@ describe("Mission Pilot fixture catalog migration", () => {
 		});
 		expect(turns.map((turn) => turn.content)).toEqual([
 			"現在のTaskとQuestionnaireを確認します。",
-			"既存規約に合うRESTを回答案として保存します。",
+			"既存規約に合うRESTを回答として送信します。",
 			"Questionnaire回答の自動確定を確認しました。",
 		]);
 		expect(turns.map((turn) => turn.toolCalls.map((call) => call.id))).toEqual([
 			["agent-questionnaire-read"],
-			["agent-questionnaire-draft"],
+			["agent-questionnaire-submit"],
 			[],
 		]);
 		expect(turns[1]?.toolCalls[0]?.arguments).toMatchObject({
-			actionId: "questionnaire.draft.save",
+			actionId: "questionnaire.submit",
 			expectedTaskRevision: 7,
 			arguments: { questionnaireSessionId: "questionnaire-1" },
 		});

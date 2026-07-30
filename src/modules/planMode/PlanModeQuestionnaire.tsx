@@ -1,5 +1,4 @@
 import { ChevronDown, ChevronUp, LoaderCircle, Send } from "lucide-react";
-import type { MissionPilotAnswerEvidence } from "../../../shared/modules/missionPilot";
 import type {
 	DesignQuestion,
 	DesignQuestionOption,
@@ -27,13 +26,11 @@ export function QuestionnaireForm({
 	answers,
 	onChange,
 	readOnly = false,
-	answerEvidence,
 }: {
 	questionGroups: DesignQuestionSet[];
 	answers: Record<string, DesignQuestionnaireAnswer>;
 	onChange: (answers: Record<string, DesignQuestionnaireAnswer>) => void;
 	readOnly?: boolean;
-	answerEvidence?: Record<string, MissionPilotAnswerEvidence>;
 }) {
 	if (questionGroups.length === 0)
 		return <p className="text-xs text-slate-500">No valid question set.</p>;
@@ -77,7 +74,6 @@ export function QuestionnaireForm({
 								}
 								onChange={(patch) => updateAnswer(question.id, patch)}
 								readOnly={readOnly}
-								evidence={answerEvidence?.[question.id]}
 							/>
 						))}
 					</section>
@@ -92,13 +88,11 @@ function QuestionCard({
 	answer,
 	onChange,
 	readOnly = false,
-	evidence,
 }: {
 	question: DesignQuestion;
 	answer: DesignQuestionnaireAnswer;
 	onChange: (patch: Partial<DesignQuestionnaireAnswer>) => void;
 	readOnly?: boolean;
-	evidence?: MissionPilotAnswerEvidence;
 }) {
 	const options = Array.isArray(question.options) ? question.options : [];
 	const isMultiChoice = question.answerType === "multi_choice";
@@ -127,21 +121,6 @@ function QuestionCard({
 					Later
 				</label>
 			</div>
-			{evidence ? (
-				<div
-					className="nightworkers-questionnaire-evidence mt-2 flex items-start gap-2 rounded px-2.5 py-2 text-[11px]"
-					data-answer-evidence={evidence.source}
-				>
-					<span className="nightworkers-questionnaire-evidence-label shrink-0 rounded px-1.5 py-0.5 font-semibold">
-						{evidence.source === "user"
-							? "ユーザー変更"
-							: evidence.source === "user_confirmed"
-								? "ユーザー確認"
-								: "AI提案"}
-					</span>
-					<span>{evidence.reason}</span>
-				</div>
-			) : null}
 			{isChoice && options.length > 0 ? (
 				<div className="mt-3 grid gap-2">
 					{options.map((option: DesignQuestionOption) => {

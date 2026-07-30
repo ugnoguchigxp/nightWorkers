@@ -10,6 +10,7 @@ import {
 	buildDesignQuestionnaireFollowUpDecisionSystemPrompt,
 	buildDesignQuestionnaireFollowUpDecisionUserPrompt,
 	buildDesignQuestionnaireFollowUpUserPrompt,
+	buildDesignQuestionnaireInitialSystemPrompt,
 	buildDesignQuestionnaireInitialUserPrompt,
 	buildDesignQuestionnaireReviewSystemPrompt,
 	buildDesignQuestionnaireReviewUserPrompt,
@@ -53,7 +54,7 @@ export async function generateDesignQuestionnaireRawOutput(input: {
 	signal?: AbortSignal;
 }) {
 	return generateQuestionnaireRawOutput(
-		buildDesignQuestionnaireSystemPrompt(input.repositoryPolicy),
+		buildDesignQuestionnaireInitialSystemPrompt(input.repositoryPolicy),
 		buildDesignQuestionnaireInitialUserPrompt(input),
 		{
 			name: "design_questionnaire",

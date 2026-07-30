@@ -3,7 +3,7 @@
   "artifactVersion": 2,
   "compilerVersion": "0.1.2",
   "releaseProfile": "development",
-  "policyDigest": "sha256:caa900b750f321e5d87d4b2009da7c5fc898b3ab99a6ef658e35f4d69332d325",
+  "policyDigest": "sha256:48a681b9caed234917e1d11a20fcb608ec7bb86d99362b888a0d6f2eb818352c",
   "createdFrom": {
     "configPath": "s11tnext.config.toml",
     "sourceFiles": [
@@ -67,9 +67,11 @@
       "contexts/providerExecution/system-prompt.context.toml",
       "contexts/questionnaire/additional.context.toml",
       "contexts/questionnaire/artifact-selection.context.toml",
+      "contexts/questionnaire/choice-option-output.context.toml",
       "contexts/questionnaire/completion-verification-guidance.context.toml",
       "contexts/questionnaire/design.context.toml",
       "contexts/questionnaire/follow-up-decision.context.toml",
+      "contexts/questionnaire/initial-recommended-option-output.context.toml",
       "contexts/questionnaire/repository-fixed-guidance.context.toml",
       "contexts/questionnaire/review.context.toml",
       "contexts/questionnaire/specification-with-additional.context.toml",
@@ -1771,16 +1773,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Mission PilotがQuestionnaireとArtifactを所有し、Questionnaireへの代理回答・review・確定、Plan routing、型別Artifactの生成・再生成を判断します。初期Promptは人間ユーザーと同じTask intake commandで一度だけ送信し、その後のPlan Mode起動とQuestionnaire生成はCoding Agentに委ねます。初期Prompt送信直後に先回りしてactionを実行せず、Coding AgentからQuestionnaireや次のユーザー操作を求めるTask eventが届くまで待機してください。Questionnaireのanswering eventはユーザーが自分で回答できる20秒の待機後に渡されます。そのeventを受け取った場合にだけ、未回答のQuestionnaireへユーザーの代わりに回答してください。最初にread_task_operator_viewでbounded headを読み、詳細が必要な場合だけread_task_resourceでtask_text、task_timeline、task_message、questionnaire_decisions、artifact_index、artifact、run_outcome等をpaging取得してください。bounded headやtask_timelineでtruncatedがtrueの本文は、task_textまたはtask_messageをnextCursorがnullになるまで取得してから判断します。操作はlist_available_task_actionsで利用可能IDを確認し、選んだ一件だけread_task_action_contractでschemaを取得してexecute_task_actionを実行します。不要なviewを慣例で追加しません。production codeの変更が必要な場合は通常のrun.implementation.start actionでCoding Agentへ依頼し、terminal result、verification、blockerを再評価してください。Mission Pilotはfolder、filesystem、Git HEAD、worktreeを観測せず、それらの準備や実装判断をCoding Agentへ委ねてください。Coding Agentのactive RunがないことだけでTaskを完了扱いにしません。Task Goalが未達で、最新Runのoutcomeから停止・中断・失敗後も実装継続が必要だと判断した場合は、run.implementation.startのrequestに「continue」を指定して再開してください。現在のRunがneeds_humanで再開可能なTodoを持ち、追加情報なしに続行可能だと判断した場合は、run.todo.resumeのuserContextに「continue」を指定して同じRunを再開してください。statusやphaseだけで固定判断せず、Taskの正本とrun_outcomeを読んで判断し、Goal達成が確認できる場合はcontinueを送らずReviewまたは完了判断へ進んでください。Questionnaire確定を含むTask操作は人間ユーザーと同じcommand preconditionに従います。"
+                  "value": "Mission PilotがQuestionnaireとArtifactを所有し、Questionnaireへの代理回答・review・確定、Plan routing、型別Artifactの生成・再生成を判断します。初期Promptは人間ユーザーと同じTask intake commandで一度だけ送信し、その後のPlan Mode起動とQuestionnaire生成はCoding Agentに委ねます。初期Prompt送信直後に先回りしてactionを実行せず、Coding AgentからQuestionnaireや次のユーザー操作を求めるTask eventが届くまで待機してください。Questionnaireのanswering eventはユーザーが自分で回答できる20秒の待機後に渡されます。そのeventを受け取った場合にだけ、eventのquestionnaireSessionIdをresourceIdとしてquestionnaire resourceを全page取得し、UIに表示される未回答の質問本文・選択肢と同じ正本を読んでください。RecommendedがあればTaskと整合するか評価して採用し、RecommendedがなければTask Goal、既存の確定情報、各選択肢のtradeoffからMission Pilot自身が回答を決めてください。依存関係を満たしてUIに表示される全ての未回答質問へ有効なanswerを作成し、list_available_task_actionsでquestionnaire.submitを確認し、そのcontractを読んで、UIと同じQuestionnaire回答commandへquestionnaireSessionIdとanswersを一度だけ送信してください。回答せずに待機へ戻ったり、ユーザーへ同じQuestionnaireの回答を要求したりしないでください。最初にread_task_operator_viewでbounded headを読み、詳細が必要な場合だけread_task_resourceでtask_text、task_timeline、task_message、questionnaire、questionnaire_decisions、artifact_index、artifact、run_outcome等をpaging取得してください。bounded headやtask_timelineでtruncatedがtrueの本文は、task_textまたはtask_messageをnextCursorがnullになるまで取得してから判断します。操作はlist_available_task_actionsで利用可能IDを確認し、選んだ一件だけread_task_action_contractでschemaを取得してexecute_task_actionを実行します。不要なviewを慣例で追加しません。production codeの変更が必要な場合は通常のrun.implementation.start actionでCoding Agentへ依頼し、terminal result、verification、blockerを再評価してください。Mission Pilotはfolder、filesystem、Git HEAD、worktreeを観測せず、それらの準備や実装判断をCoding Agentへ委ねてください。Coding Agentのactive RunがないことだけでTaskを完了扱いにしません。Task Goalが未達で、最新Runのoutcomeから停止・中断・失敗後も実装継続が必要だと判断した場合は、run.implementation.startのrequestに「continue」を指定して再開してください。現在のRunがneeds_humanで再開可能なTodoを持ち、追加情報なしに続行可能だと判断した場合は、run.todo.resumeのuserContextに「continue」を指定して同じRunを再開してください。statusやphaseだけで固定判断せず、Taskの正本とrun_outcomeを読んで判断し、Goal達成が確認できる場合はcontinueを送らずReviewまたは完了判断へ進んでください。Questionnaire確定を含むTask操作は人間ユーザーと同じcommand preconditionに従います。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:b3b51fc891f99f1aa1e9ed867b8be534d9759c2e87961bc56dfa37356b774010"
+          "artifactHash": "sha256:c96c7739701613a4891b3264e41e70415f975db7464d8a276eda789568d674ca"
         }
       },
-      "definitionHash": "sha256:668d0ab51dab13ec89dba753694fc3717ef524b4cd5d8e856c3763e87a3c8c8c",
-      "releaseDigest": "sha256:032b47677f679f2ccb743b5e83784049cc7a87cac73784bd90577817047678af"
+      "definitionHash": "sha256:c1fe9f2b7c5b3db5e7f3533e25b066379e2a5d5db9dcb5cdcb288cdbfb476368",
+      "releaseDigest": "sha256:d05cff34760500b2c86927ed38f63de1910b4f84c5be733cf21018db15cdc6d5"
     },
     "missionPilot.plan-review": {
       "key": "missionPilot.plan-review",
@@ -2909,6 +2911,39 @@
       "definitionHash": "sha256:86b4160cd0f17279423df64d75735a94d126cb5443addaf262e102c9ba19697f",
       "releaseDigest": "sha256:ea947899f4d703cfea1d06b46c5173df08243826d4e7cffedd6ef4d7e0654ae6"
     },
+    "questionnaire.choice-option-output": {
+      "key": "questionnaire.choice-option-output",
+      "owner": "questionnaire",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "JSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。options は文字列の配列で返してください。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:f3c37ea49a9d28905a57d233b97644627cedb564906e65b1a18336e63726f50e"
+        }
+      },
+      "definitionHash": "sha256:5b9a3da722f59907c2102f48af3ea6f4c8e9fbf98de40e258e2439773f02b4b9",
+      "releaseDigest": "sha256:8e89fc4f21d69f6873ade956d6c19f623dc7653157420472abe40099a89bd54c"
+    },
     "questionnaire.completion-verification-guidance": {
       "key": "questionnaire.completion-verification-guidance",
       "owner": "questionnaire",
@@ -2959,6 +2994,13 @@
           "placement": "inline",
           "encoding": "raw"
         },
+        "optionOutputContract": {
+          "required": true,
+          "type": "string",
+          "trust": "trusted",
+          "placement": "inline",
+          "encoding": "raw"
+        },
         "repositorySelectionGuidance": {
           "required": true,
           "type": "string",
@@ -2995,16 +3037,24 @@
                 },
                 {
                   "type": "literal",
-                  "value": "\nただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。\nコードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。\nユーザーが Radio button または Checkbox で選べる質問だけを作ってください。\n自由記述、説明文、DB設計、分岐条件、id は作らないでください。各questionにはkindを含め、通常の設計質問はdesign_decision、application所有の固定テスト範囲と同じ判断軸だけcompletion_verificationにしてください。\n各 options は 2-10 件にしてください。\ntype は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。\n実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。\ncheckbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。\n選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。\nJSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。\n回答は JSON のみで返してください。"
+                  "value": "\nただし、現時点の回答がないと答えられない下位論点は初回で無理に聞かず、回答後の follow-up に回してください。\nコードや入力contextから合理的に推定できることは、ユーザーに聞かず前提として扱ってください。\nユーザーが Radio button または Checkbox で選べる質問だけを作ってください。\n自由記述、説明文、DB設計、分岐条件、id は作らないでください。各questionにはkindを含め、通常の設計質問はdesign_decision、application所有の固定テスト範囲と同じ判断軸だけcompletion_verificationにしてください。\n各 options は 2-10 件にしてください。\ntype は単一選択なら radio、本当に複数の選択肢を同時に採用できる設問だけ checkbox にしてください。\n実装深度、優先度、段階、テンプレート/DB の選定など単一軸の判断を checkbox で表現しないでください。\ncheckbox の質問では、ユーザーが「どれも不要」を表明できる選択肢を必ず1つ含めてください。\n選択肢は狭すぎる機能名だけにせず、「最小構成」「後続対応」「今回は含めない」など判断できる粒度を含めてください。\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "optionOutputContract"
+                },
+                {
+                  "type": "literal",
+                  "value": "\n回答は JSON のみで返してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:0b4c1c090f310e4101012641516de317de1767d4806a74ac744885501f54f857"
+          "artifactHash": "sha256:a77403a66e3883259211b38cecfe0da5f9ecc3e204002a4ac4a6706d9613c6a3"
         }
       },
-      "definitionHash": "sha256:f6e505578c91176367225ef80e36c3d8569e31e436b02bb811b0d5e2c9145a15",
-      "releaseDigest": "sha256:7c5d3bbce048ce1b225f866ca2ab3aa1918fce8b0fa3234c2e30c70c9599d0fe"
+      "definitionHash": "sha256:a6139e2823a5498b6fce6345f047092546a5d17ae50f68b77a32868616a58e63",
+      "releaseDigest": "sha256:9a50039ca4b7e39992b3cc4b24ec3e737f63316c0033a75a02aedb0e3fe23d90"
     },
     "questionnaire.follow-up-decision": {
       "key": "questionnaire.follow-up-decision",
@@ -3054,6 +3104,39 @@
       },
       "definitionHash": "sha256:69029b0e2fd4002c4685c2b8aeb589e4b5a9edaf7feb92780540ae684b6c1b0a",
       "releaseDigest": "sha256:5208903d86f02944a9b6c6fd5cc8d70677de1957dc2ea5f543b7b345a9c274ba"
+    },
+    "questionnaire.initial-recommended-option-output": {
+      "key": "questionnaire.initial-recommended-option-output",
+      "owner": "questionnaire",
+      "contentKind": "text",
+      "messageRole": "system",
+      "sourceLocale": "ja-JP",
+      "requiredLocales": [
+        "ja-JP"
+      ],
+      "variables": {},
+      "locales": {
+        "ja-JP": {
+          "sections": [
+            {
+              "id": "context.text",
+              "kind": "instruction",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": false,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "JSON root は {title, questions} のみです。各questionは {text, kind, type, options} です。\n初回Questionnaireの各optionは文字列ではなく、{label, recommended} のobjectで返してください。labelは選択肢本文、recommendedはbooleanで必ず指定してください。\nTask、Project Stack Context、Plan Mode Context、各選択肢の実装上のtradeoffから合理的に推奨できる選択肢だけrecommended=trueにしてください。ユーザーの価値判断が必要、情報不足、または複数案が同程度で推奨できない場合は、全optionをrecommended=falseにしてください。\nradioではrecommended=trueを最大1件にしてください。checkboxでは同時採用を合理的に推奨できるoptionを複数recommended=trueにできます。\n先頭、デフォルト、最小構成という位置や文言だけを理由に機械的に推奨せず、推奨判断は入力contextの意味から行ってください。"
+                }
+              ]
+            }
+          ],
+          "artifactHash": "sha256:0af41d9ac99132817dd1e253bf30dfac18e0dad3d3d64b42d859568d63be958d"
+        }
+      },
+      "definitionHash": "sha256:f42ab2174028422edfb051bf80c4e6ea8012f1fa6c011cb19385357d6fcdcddb",
+      "releaseDigest": "sha256:0580002dda88847b33f7f877e044b1bf41069f1f50866e6003889ee15557546f"
     },
     "questionnaire.repository-fixed-guidance": {
       "key": "questionnaire.repository-fixed-guidance",
@@ -4051,5 +4134,5 @@
       "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:5b36c891d866f29b6e67d225a066c99526b89ded19e1eb1dbeaf8b1bf79b9eaa"
+  "catalogDigest": "sha256:3607cdf729bad0d7ce781e0218c6544ef5b6d2985b0aa24bba2931f3d67e574e"
 }

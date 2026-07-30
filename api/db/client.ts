@@ -6,6 +6,7 @@ import * as designQuestionnaireSchema from "./design-questionnaire-schema";
 import * as missionPilotAgentSchema from "./mission-pilot-agent-schema";
 import * as missionPilotSchema from "./mission-pilot-schema";
 import * as missionPlannerSchema from "./mission-planner-schema";
+import * as planModeSchema from "./plan-mode-schema";
 import * as projectDetailSchema from "./project-detail-schema";
 import * as projectEvaluationSchema from "./project-evaluation-schema";
 import * as reviewModeSchema from "./review-mode-schema";
@@ -33,6 +34,7 @@ export const db = drizzle(client, {
 		...baseSchema,
 		...designQuestionnaireSchema,
 		...missionPlannerSchema,
+		...planModeSchema,
 		...missionPilotSchema,
 		...missionPilotAgentSchema,
 		...projectDetailSchema,

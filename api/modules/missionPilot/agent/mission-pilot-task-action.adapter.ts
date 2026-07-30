@@ -26,6 +26,7 @@ import {
 	getMissionPilotActionUnavailableReason,
 	validateMissionPilotActionArguments,
 } from "./mission-pilot-task-action.registry";
+import { hasConsumedMissionPilotQuestionnaireAnsweringEvent } from "./mission-pilot-task-event.repository";
 
 export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 	async execute(input) {
@@ -160,6 +161,24 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"Task revision changed; re-read the Task workspace.",
 				{ currentTaskRevision: projection.task.revision },
 			);
+		if (input.actionId === "questionnaire.submit") {
+			const questionnaireSessionId = readText(
+				validated.data.questionnaireSessionId,
+			);
+			if (
+				!questionnaireSessionId ||
+				!(await hasConsumedMissionPilotQuestionnaireAnsweringEvent({
+					sessionId: input.sessionId,
+					questionnaireSessionId,
+				}))
+			)
+				return failed(
+					input.actionId,
+					input.idempotencyKey,
+					"domain_precondition",
+					"Questionnaireへの代理回答は、ユーザー待機時間が終了したanswering eventを受信した後にだけ実行できます。",
+				);
+		}
 		let receipt: Awaited<
 			ReturnType<typeof createMissionPilotActionExecutionIntent>
 		>;

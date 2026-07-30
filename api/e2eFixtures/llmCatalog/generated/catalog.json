@@ -3,7 +3,7 @@
   "artifactVersion": 2,
   "compilerVersion": "0.1.2",
   "releaseProfile": "e2e",
-  "policyDigest": "sha256:aaa47aa11093cf2c15fe8d19b5e9c31cb8397cb468e0920d171dbeafd07341ce",
+  "policyDigest": "sha256:904f41c6bb33d5b4b4ced7fef4b701dad3c8c071367cd955e30eefea0170befb",
   "createdFrom": {
     "configPath": "s11tnext.config.toml",
     "sourceFiles": [
@@ -25,7 +25,7 @@
       "contexts/missionPilot/autopilot/wait-run.context.toml",
       "contexts/missionPilot/questionnaire/confirmed.context.toml",
       "contexts/missionPilot/questionnaire/read-current.context.toml",
-      "contexts/missionPilot/questionnaire/save-draft.context.toml",
+      "contexts/missionPilot/questionnaire/submit.context.toml",
       "contexts/missionPilot/repair/read-final-outcome.context.toml",
       "contexts/missionPilot/repair/read-first-outcome.context.toml",
       "contexts/missionPilot/repair/read-second-outcome.context.toml",
@@ -649,8 +649,8 @@
       "definitionHash": "sha256:67b60ecb34c476f16c6478ef4514f10828b14d4cc773a965dbdc95a079c13b7b",
       "releaseDigest": "sha256:a0921a3c2030563965ff817ce71cf17d31c90167b84de5f60b7fa148fdba44f4"
     },
-    "missionPilot.questionnaire.save-draft": {
-      "key": "missionPilot.questionnaire.save-draft",
+    "missionPilot.questionnaire.submit": {
+      "key": "missionPilot.questionnaire.submit",
       "owner": "mission-pilot-e2e-fixture",
       "contentKind": "text",
       "messageRole": "system",
@@ -671,16 +671,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "既存規約に合うRESTを回答案として保存します。"
+                  "value": "既存規約に合うRESTを回答として送信します。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:29c76218501b64ed3bd97a050a9859f62fca425e33365850944193816c6d9e70"
+          "artifactHash": "sha256:3f879213d5699fabea69ee97329f40a793e7b7eab687913ba971de22f1a44f82"
         }
       },
-      "definitionHash": "sha256:03f413ccdb24092435956c80230335908667bdb51feb715c9422aff81463e40c",
-      "releaseDigest": "sha256:9723c5f7f5156199c6819823aef950c37925c17c37f8b8ec1c2505ee42e928d8"
+      "definitionHash": "sha256:4c1b9ee8978d5dbf2fc456b5d57eb25c7aac12a11a4b90d9400d6fa6bc1f70da",
+      "releaseDigest": "sha256:7619f27e7f336a496520e3b3181ae8a751fdcd579303c53a310d1ca61cd1bffd"
     },
     "missionPilot.repair.read-final-outcome": {
       "key": "missionPilot.repair.read-final-outcome",
@@ -1541,5 +1541,5 @@
       "releaseDigest": "sha256:a673483f288c32e351e9e0ac4d4aba33443f468306fe4bcfc61883ee4705e41c"
     }
   },
-  "catalogDigest": "sha256:025b48e17991b53c98bd9a7dd07e5d1433c22d76ec0756595569ab9a208366b2"
+  "catalogDigest": "sha256:fd19b9f76392f601e22e62d81764efd6df76ab960937de5564a75ca0dfbdf74f"
 }

@@ -11,6 +11,8 @@ import {
 	designQuestionnaireFollowUpDecisionSchema,
 	designQuestionnaireSchema,
 	designQuestionnaireSessionStatusSchema,
+	type GeneratedQuestionnaireChoiceForm,
+	generatedQuestionnaireChoiceFormSchema,
 	type QuestionnaireChoiceForm,
 	questionnaireChoiceFormSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
@@ -55,6 +57,24 @@ export function parseDesignQuestionnaireRaw(
 		appendCompletionVerificationQuestion?: boolean;
 	},
 ): { ok: true; value: DesignQuestionnaire } | { ok: false; error: unknown } {
+	const generatedChoiceForm = parseRepairedJsonWithSchema(
+		rawOutput,
+		generatedQuestionnaireChoiceFormSchema,
+	);
+	if (generatedChoiceForm.ok) {
+		const questionnaire = adaptQuestionnaireChoiceForm(
+			generatedChoiceForm.value,
+			fallbackSource,
+			choiceFormOptions,
+		);
+		return {
+			ok: true,
+			value: choiceFormOptions?.appendCompletionVerificationQuestion
+				? appendCompletionVerificationQuestion(questionnaire)
+				: questionnaire,
+		};
+	}
+
 	const choiceForm = parseRepairedJsonWithSchema(
 		rawOutput,
 		questionnaireChoiceFormSchema,
@@ -81,11 +101,14 @@ export function parseDesignQuestionnaireRaw(
 				? appendCompletionVerificationQuestion(v1.value)
 				: v1.value,
 		};
-	return { ok: false, error: v1.error ?? choiceForm.error };
+	return {
+		ok: false,
+		error: v1.error ?? choiceForm.error ?? generatedChoiceForm.error,
+	};
 }
 
 function adaptQuestionnaireChoiceForm(
-	form: QuestionnaireChoiceForm,
+	form: QuestionnaireChoiceForm | GeneratedQuestionnaireChoiceForm,
 	fallbackSource?: DesignQuestionnaireSourceFallback,
 	options?: {
 		questionSetId?: string;
@@ -129,6 +152,24 @@ function adaptQuestionnaireChoiceForm(
 							questionIdPrefix === "q"
 								? `q${questionIndex + 1}`
 								: `${questionIdPrefix}-q${questionIndex + 1}`;
+						const sourceOptions = question.options as Array<
+							| string
+							| GeneratedQuestionnaireChoiceForm["questions"][number]["options"][number]
+						>;
+						const normalizedOptions = sourceOptions.map(
+							(option, optionIndex) => ({
+								id: `${questionId}-o${optionIndex + 1}`,
+								label: typeof option === "string" ? option : option.label,
+								tradeoff: "選択後に設計判断として整理します。",
+								...(typeof option === "object" && option.recommended
+									? { recommended: true as const }
+									: {}),
+							}),
+						);
+						const recommendedAnswerId =
+							question.type === "radio"
+								? normalizedOptions.find((option) => option.recommended)?.id
+								: undefined;
 						return {
 							id: questionId,
 							topic: `Question ${questionIndex + 1}`,
@@ -136,11 +177,8 @@ function adaptQuestionnaireChoiceForm(
 							why: "実装前に仕様判断が必要です。",
 							answerType:
 								question.type === "checkbox" ? "multi_choice" : "single_choice",
-							options: question.options.map((label, optionIndex) => ({
-								id: `${questionId}-o${optionIndex + 1}`,
-								label,
-								tradeoff: "選択後に設計判断として整理します。",
-							})),
+							...(recommendedAnswerId ? { recommendedAnswerId } : {}),
+							options: normalizedOptions,
 							blocks: ["実装前の仕様判断"],
 							outputSection: `question-${questionIndex + 1}`,
 						};

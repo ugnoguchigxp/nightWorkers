@@ -1,6 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
-import { submitMissionPilotQuestionnaireDraft } from "../missionPilot";
+import type { Dispatch, SetStateAction } from "react";
 import type {
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,
@@ -22,9 +20,6 @@ export function usePlanModeQuestionnaireActions(input: {
 	activeBlueprintMessage: Pick<TaskMessage, "id"> | null;
 	activeQuestionnaireSession: DesignQuestionnaireSession | null;
 	unansweredQuestions: unknown[];
-	missionPilotDraft: MissionPilotQuestionnaireDraft | null;
-	missionPilotDraftRef: MutableRefObject<MissionPilotQuestionnaireDraft | null>;
-	draftUpdateQueueRef: MutableRefObject<Promise<void>>;
 	questionGroups: Parameters<typeof buildSubmittableQuestionnaireAnswers>[0];
 	answers: Record<string, DesignQuestionnaireAnswer>;
 	runAction: (
@@ -32,15 +27,11 @@ export function usePlanModeQuestionnaireActions(input: {
 		fn: () => Promise<{ focusTab?: PlanWorkspaceTab | null } | undefined>,
 	) => Promise<void>;
 	selectActiveTab: (tab: PlanWorkspaceTab) => void;
-	refresh: () => Promise<void>;
 	setActiveSessionId: Dispatch<SetStateAction<string | null>>;
 	setAnswers: Dispatch<
 		SetStateAction<Record<string, DesignQuestionnaireAnswer>>
 	>;
 	setSessions: Dispatch<SetStateAction<DesignQuestionnaireSession[]>>;
-	setMissionPilotDraft: Dispatch<
-		SetStateAction<MissionPilotQuestionnaireDraft | null>
-	>;
 	setAssemblyReadySessionIds: Dispatch<SetStateAction<Set<string>>>;
 	setActionNotice: Dispatch<SetStateAction<string | null>>;
 }) {
@@ -51,18 +42,13 @@ export function usePlanModeQuestionnaireActions(input: {
 		activeBlueprintMessage,
 		activeQuestionnaireSession,
 		unansweredQuestions,
-		missionPilotDraft,
-		missionPilotDraftRef,
-		draftUpdateQueueRef,
 		questionGroups,
 		answers,
 		runAction,
 		selectActiveTab,
-		refresh,
 		setActiveSessionId,
 		setAnswers,
 		setSessions,
-		setMissionPilotDraft,
 		setAssemblyReadySessionIds,
 		setActionNotice,
 	} = input;
@@ -90,33 +76,6 @@ export function usePlanModeQuestionnaireActions(input: {
 		if (unansweredQuestions.length > 0) return;
 		if (isImplementationLocked) return;
 		await runAction("submit-answers", async () => {
-			if (missionPilotDraft?.state === "waiting_user") {
-				await draftUpdateQueueRef.current;
-				const current = missionPilotDraftRef.current;
-				if (current?.state === "waiting_user") {
-					const response = await submitMissionPilotQuestionnaireDraft(
-						sessionId,
-						current.version,
-						buildSubmittableQuestionnaireAnswers(questionGroups, answers),
-					);
-					if (!response.ok) throw new Error(await response.text());
-					const payload = (await response.json()) as {
-						draft: MissionPilotQuestionnaireDraft | null;
-						questionnaire: DesignQuestionnaireSession;
-					};
-					missionPilotDraftRef.current = payload.draft;
-					setMissionPilotDraft(payload.draft);
-					setSessions((prev) =>
-						prev.map((item) =>
-							item.id === payload.questionnaire.id
-								? payload.questionnaire
-								: item,
-						),
-					);
-					await refresh();
-					return;
-				}
-			}
 			const answersRes = await submitDesignQuestionnaireAnswers(
 				sessionId,
 				activeQuestionnaireSession.id,
