@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
+import { useMissionPilotArtifactAutoFocus } from "../../../composition/mission-pilot";
 import { buildEvidenceCheckArtifact } from "../../codingAgent";
-import { useMissionPilotArtifactAutoFocus } from "../../missionPilot";
 import { useImplementationQueue } from "../../queue";
 import { useReviewModeArtifactAutoFocus } from "../../review";
 import { markArtifactOpenStart } from "../artifactPerformance";

@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
+import type { MissionPilotControlSummary } from "../contracts";
 export function missionPilotPresentation(summary: MissionPilotControlSummary) {
 	const busy =
 		summary.activityState === "starting" ||

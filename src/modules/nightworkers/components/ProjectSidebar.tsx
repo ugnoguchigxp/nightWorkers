@@ -12,7 +12,7 @@ import {
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
-import { MissionPilotTaskControl } from "../../missionPilot";
+import { MissionPilotTaskControl } from "../../../composition/mission-pilot";
 import type { ProjectSessionGroups } from "../hooks/useNightWorkersWorkspace";
 import { handleWorkbenchAnchorClick } from "../routing/workbench-link-click";
 import { serializeWorkbenchRoute } from "../routing/workbench-route-state";

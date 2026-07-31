@@ -1,7 +1,7 @@
-import type { MissionPilotControlSummary } from "./session";
+import type { MissionPilotControlSummary } from "./mission-pilot.schema";
 
 export type MissionPilotFrontendClient = {
-	getControl(taskId: string): Promise<MissionPilotControlSummary>;
+	getControl(taskId: string): Promise<MissionPilotControlSummary | null>;
 	play(
 		taskId: string,
 		expectedVersion: number,

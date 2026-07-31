@@ -164,10 +164,13 @@ describe("NightWorkersShellThreadPanel component", () => {
 
 	it("renders successfully and forwards workspace actions", async () => {
 		const markup = renderToStaticMarkup(
-			<NightWorkersShellThreadPanel {...defaultProps} />,
+			<QueryClientProvider client={new QueryClient()}>
+				<NightWorkersShellThreadPanel {...defaultProps} />
+			</QueryClientProvider>,
 		);
 		expect(markup).toContain("composer.placeholder");
 		expect(markup).toContain("modelControls.model");
 		expect(mockWorkspace.sendWorkbenchMessage).not.toHaveBeenCalled();
 	});
 });
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

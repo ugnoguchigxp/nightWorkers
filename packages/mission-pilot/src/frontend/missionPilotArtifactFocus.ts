@@ -1,15 +1,11 @@
-import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
-import type { WorkbenchRouteState } from "../nightworkers/routing/workbench-route-state";
+import type { MissionPilotControlSummary } from "../contracts";
 import type {
-	PlanModeWorkspace,
-	Task,
-	TaskRun,
-	WorkbenchArtifactRef,
-} from "../nightworkers/types";
-import {
-	resolveLatestPlanWorkspaceArtifact,
-	resolveLatestPlanWorkspaceTab,
-} from "../specification";
+	MissionPilotPlanModeWorkspace,
+	MissionPilotTask,
+	MissionPilotTaskRun,
+	MissionPilotWorkbenchArtifactRef,
+	MissionPilotWorkbenchRouteState,
+} from "./host";
 
 export type MissionPilotArtifactFocusTarget =
 	| {
@@ -48,7 +44,10 @@ const ACTIVE_RUN_STATUSES = new Set([
 	"finalizing",
 ]);
 
-function activeRunExecutionMode(run: TaskRun | undefined, taskId: string) {
+function activeRunExecutionMode(
+	run: MissionPilotTaskRun | undefined,
+	taskId: string,
+) {
 	if (!run || run.taskId !== taskId || !ACTIVE_RUN_STATUSES.has(run.status))
 		return null;
 	const mode = (run.contextSnapshot as Record<string, unknown> | null)
@@ -57,15 +56,17 @@ function activeRunExecutionMode(run: TaskRun | undefined, taskId: string) {
 }
 
 function planModeWorkspaceFromArtifact(
-	artifact: WorkbenchArtifactRef | undefined,
-): PlanModeWorkspace | null {
+	artifact: MissionPilotWorkbenchArtifactRef | undefined,
+): MissionPilotPlanModeWorkspace | null {
 	const workspace = artifact?.metadata?.planModeWorkspace;
 	if (!workspace || typeof workspace !== "object" || Array.isArray(workspace))
 		return null;
-	return workspace as PlanModeWorkspace;
+	return workspace as MissionPilotPlanModeWorkspace;
 }
 
-function latestQuestionnaireNeedsAttention(workspace: PlanModeWorkspace) {
+function latestQuestionnaireNeedsAttention(
+	workspace: MissionPilotPlanModeWorkspace,
+) {
 	const latest = workspace.questionnaireSessions.at(-1);
 	return latest &&
 		latest.status !== "review_ready" &&
@@ -75,11 +76,11 @@ function latestQuestionnaireNeedsAttention(workspace: PlanModeWorkspace) {
 }
 
 export function resolveMissionPilotArtifactFocus(input: {
-	activeSession: Task | null;
+	activeSession: MissionPilotTask | null;
 	missionPilot: MissionPilotControlSummary | null;
-	activeArtifactRefs: WorkbenchArtifactRef[];
-	latestRun?: TaskRun;
-	routeState: WorkbenchRouteState;
+	activeArtifactRefs: MissionPilotWorkbenchArtifactRef[];
+	latestRun?: MissionPilotTaskRun;
+	routeState: MissionPilotWorkbenchRouteState;
 }): MissionPilotArtifactFocusTarget | null {
 	const task = input.activeSession;
 	const missionPilot = input.missionPilot;
@@ -121,16 +122,51 @@ export function resolveMissionPilotArtifactFocus(input: {
 
 	const latestArtifact = resolveLatestPlanWorkspaceArtifact(workspace);
 	const latestTab = resolveLatestPlanWorkspaceTab(workspace);
-	if (
-		!latestArtifact ||
-		!latestTab ||
-		latestTab === "status" ||
-		latestTab === "questionnaire"
-	)
-		return null;
+	if (!latestArtifact || !latestTab) return null;
 	return {
 		key: `${task.id}:plan-artifact:${latestArtifact.id}`,
 		kind: "plan_mode_workspace",
 		tab: latestTab,
 	};
+}
+
+const artifactKindToTab = {
+	feature_plan: "feature-plan",
+	blueprint: "blueprint",
+	data_model: "data-model",
+	user_flow: "user-flow",
+	api_io_contract: "api-io-contract",
+	activity_flow: "activity-flow",
+	sequence_flow: "sequence-flow",
+	zod_schema_design: "zod-schema-design",
+} as const;
+
+function resolveLatestPlanWorkspaceArtifact(
+	workspace: MissionPilotPlanModeWorkspace,
+) {
+	const artifacts = [
+		...workspace.featurePlanArtifacts,
+		...workspace.blueprintArtifacts,
+		...workspace.dataModelArtifacts,
+		...workspace.dedicatedViewArtifacts,
+	].filter((artifact) => artifact.kind in artifactKindToTab);
+	return artifacts.reduce<(typeof artifacts)[number] | null>(
+		(latest, artifact) =>
+			!latest ||
+			new Date(artifact.createdAt as string | number | Date).getTime() >
+				new Date(latest.createdAt as string | number | Date).getTime()
+				? artifact
+				: latest,
+		null,
+	);
+}
+
+function resolveLatestPlanWorkspaceTab(
+	workspace: MissionPilotPlanModeWorkspace,
+) {
+	const artifact = resolveLatestPlanWorkspaceArtifact(workspace);
+	return artifact
+		? (artifactKindToTab[artifact.kind as keyof typeof artifactKindToTab] ??
+				null)
+		: null;
 }

@@ -1,5 +1,5 @@
-import type { MissionPilotPlanProgress } from "@nightworkers/mission-pilot/contracts";
 import { queryOptions } from "@tanstack/react-query";
+import type { MissionPilotPlanProgress } from "../contracts";
 import { fetchMissionPilotPlanProgress } from "./missionPilotCommands";
 
 export const missionPilotPlanProgressQueryKey = (taskId: string | null) =>

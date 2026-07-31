@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
+import { applyMissionPilotRealtimeExtension } from "../../../composition/mission-pilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
 import { isCodingAgentChatTrace } from "../../codingAgent";
 import {
@@ -184,6 +185,7 @@ export function useNightWorkersRealtime({
 							timestamp?: unknown;
 						};
 					};
+					if (applyMissionPilotRealtimeExtension(msg, queryClient)) return;
 					applyQuestionnaireStateChangedRealtimeMessage({
 						message: msg,
 						activeTaskId: activeSessionId,

@@ -6,7 +6,7 @@ import {
 	missionPilotStopThoughtItem,
 	missionPilotTraceItems,
 	PilotThoughtDock,
-} from "../src/modules/missionPilot/components/PilotThoughtDock";
+} from "../src/composition/mission-pilot";
 import { AgentDebugEventCard } from "../src/modules/nightworkers/components/ThreadTimelineAgentCards";
 
 describe("PilotThoughtDock", () => {

@@ -6,7 +6,7 @@ import type {
 } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { OverviewScreen } from "@/modules/overview";
-import { PilotThoughtDock } from "../../missionPilot";
+import { PilotThoughtDock } from "../../../composition/mission-pilot";
 import {
 	ImplementationQueueScreen,
 	ProjectQueueScreen,

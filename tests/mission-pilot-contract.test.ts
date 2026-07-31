@@ -5,19 +5,17 @@ import {
 	missionPilotPlanProgressSchema,
 	missionPilotSourceRefSchema,
 } from "@nightworkers/mission-pilot/contracts";
+import {
+	formatCountdown,
+	MissionPilotControlPanel,
+	mergeMissionPilotControl,
+	missionPilotPresentation,
+	optimisticMissionPilotSummary,
+} from "@nightworkers/mission-pilot/frontend";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-	formatCountdown,
-	MissionPilotControlPanel,
-} from "../src/modules/missionPilot/components/MissionPilotControlPanel";
-import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
-import {
-	mergeMissionPilotControl,
-	optimisticMissionPilotSummary,
-} from "../src/modules/missionPilot/missionPilotQueries";
 
 const taskId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";

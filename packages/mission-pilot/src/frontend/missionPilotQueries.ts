@@ -1,5 +1,5 @@
-import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import type { MissionPilotControlSummary } from "../contracts";
 import { fetchMissionPilotControl } from "./missionPilotCommands";
 
 export const missionPilotControlQueryKey = (taskId: string | null) =>

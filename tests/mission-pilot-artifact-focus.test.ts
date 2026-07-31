@@ -1,5 +1,5 @@
+import { resolveMissionPilotArtifactFocus as resolveMissionPilotArtifactFocusForRoute } from "@nightworkers/mission-pilot/frontend";
 import { describe, expect, it } from "vitest";
-import { resolveMissionPilotArtifactFocus as resolveMissionPilotArtifactFocusForRoute } from "../src/modules/missionPilot";
 import type { WorkbenchRouteState } from "../src/modules/nightworkers/routing/workbench-route-state";
 import type {
 	PlanModeWorkspace,

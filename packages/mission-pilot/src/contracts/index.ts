@@ -13,3 +13,7 @@ export type {
 	MissionPilotRealtimeEvent,
 	MissionPilotRealtimeExtensionHandler,
 } from "./realtime";
+export {
+	missionPilotPlanProgressRealtimeEventSchema,
+	missionPilotRealtimeEventSchema,
+} from "./realtime";

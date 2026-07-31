@@ -1,41 +1,53 @@
-import type { DesignQuestionnaireAnswer } from "../../../shared/schemas/design-questionnaire.schema";
-import { apiFetch } from "../../lib/api-base";
-import { jsonRequest } from "../../lib/api-request";
+import type { DesignQuestionnaireAnswer } from "../contracts";
+import { getMissionPilotFrontendHost } from "./host";
+
+function request(input: string, init?: RequestInit) {
+	return getMissionPilotFrontendHost().request(input, init);
+}
+
+function jsonRequest(method: "PATCH" | "POST", body: unknown): RequestInit {
+	return {
+		method,
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	};
+}
+
 export function playMissionPilotTask(taskId: string, expectedVersion: number) {
-	return apiFetch(
+	return request(
 		`/api/mission-pilot/tasks/${taskId}/play`,
 		jsonRequest("POST", { expectedVersion }),
 	);
 }
 export function stopMissionPilotTask(taskId: string, expectedVersion: number) {
-	return apiFetch(
+	return request(
 		`/api/mission-pilot/tasks/${taskId}/stop`,
 		jsonRequest("POST", { expectedVersion }),
 	);
 }
 export function fetchMissionPilotControl(taskId: string, signal?: AbortSignal) {
-	return apiFetch(`/api/mission-pilot/tasks/${taskId}`, { signal });
+	return request(`/api/mission-pilot/tasks/${taskId}`, { signal });
 }
 export function fetchMissionPilotQuestionnaireDraft(
 	taskId: string,
 	signal?: AbortSignal,
 ) {
-	return apiFetch(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`, {
+	return request(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`, {
 		signal,
 	});
 }
 export function fetchMissionPilotPlanProgress(taskId: string) {
-	return apiFetch(`/api/mission-pilot/tasks/${taskId}/plan-progress`);
+	return request(`/api/mission-pilot/tasks/${taskId}/plan-progress`);
 }
 export function fetchMissionPilotExecutionTrace(taskId: string) {
-	return apiFetch(`/api/mission-pilot/tasks/${taskId}/execution`);
+	return request(`/api/mission-pilot/tasks/${taskId}/execution`);
 }
 export function updateMissionPilotQuestionnaireDraft(
 	taskId: string,
 	expectedVersion: number,
 	answers: DesignQuestionnaireAnswer[],
 ) {
-	return apiFetch(
+	return request(
 		`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
 		jsonRequest("PATCH", { expectedVersion, answers }),
 	);
@@ -45,7 +57,7 @@ export function submitMissionPilotQuestionnaireDraft(
 	expectedVersion: number,
 	answers: DesignQuestionnaireAnswer[],
 ) {
-	return apiFetch(
+	return request(
 		`/api/mission-pilot/tasks/${taskId}/questionnaire-draft/submit`,
 		jsonRequest("POST", { expectedVersion, answers }),
 	);

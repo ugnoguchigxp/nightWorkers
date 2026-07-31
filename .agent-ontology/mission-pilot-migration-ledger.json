@@ -1,25 +1,6 @@
 {
   "version": 1,
   "backend": [],
-  "frontend": [
-    "src/modules/missionPilot/components/MissionPilotComposerControls.tsx",
-    "src/modules/missionPilot/components/MissionPilotControlPanel.tsx",
-    "src/modules/missionPilot/components/MissionPilotTaskControl.tsx",
-    "src/modules/missionPilot/components/MissionPilotTaskGoalMessage.tsx",
-    "src/modules/missionPilot/components/PilotThoughtDock.tsx",
-    "src/modules/missionPilot/i18n/en.ts",
-    "src/modules/missionPilot/i18n/ja.ts",
-    "src/modules/missionPilot/index.ts",
-    "src/modules/missionPilot/mission-pilot.css",
-    "src/modules/missionPilot/missionPilotArtifactFocus.ts",
-    "src/modules/missionPilot/missionPilotCommands.ts",
-    "src/modules/missionPilot/missionPilotPlanProgressQuery.ts",
-    "src/modules/missionPilot/missionPilotPresentation.ts",
-    "src/modules/missionPilot/missionPilotQueries.ts",
-    "src/modules/missionPilot/missionPilotQuestionnaireProjection.ts",
-    "src/modules/missionPilot/useMissionPilotArtifactAutoFocus.ts",
-    "src/modules/missionPilot/useMissionPilotControls.ts",
-    "src/modules/missionPilot/useMissionPilotQuestionnaireDraft.ts"
-  ],
+  "frontend": [],
   "shared": []
 }

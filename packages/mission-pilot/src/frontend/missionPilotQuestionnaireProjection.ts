@@ -1,5 +1,7 @@
-import type { MissionPilotQuestionnaireDraft } from "@nightworkers/mission-pilot/contracts";
-import type { DesignQuestionnaireAnswer } from "../../../shared/schemas/design-questionnaire.schema";
+import type {
+	DesignQuestionnaireAnswer,
+	MissionPilotQuestionnaireDraft,
+} from "../contracts";
 
 export function projectMissionPilotQuestionnaireAnswers(
 	session: {

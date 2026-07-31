@@ -78,7 +78,7 @@ function task(id: string, status = "draft"): Task {
 function run(id: string, status = "running"): TaskRun {
 	return {
 		id,
-		taskId: "task-1",
+		taskId: "11111111-1111-4111-8111-111111111111",
 		repositoryId: "repo-1",
 		status,
 		workerKind: "codex",
@@ -95,7 +95,7 @@ function run(id: string, status = "running"): TaskRun {
 function todo(id: string, status: TaskRunTodo["status"]): TaskRunTodo {
 	return {
 		id,
-		taskId: "task-1",
+		taskId: "11111111-1111-4111-8111-111111111111",
 		runId: "run-1",
 		seq: 1,
 		title: "Todo",
@@ -119,7 +119,7 @@ describe("useNightWorkersRealtime effect", () => {
 			await import("../src/modules/nightworkers/realtimeChatCompletion");
 		const intakeFailure: TaskMessage = {
 			id: "failed",
-			taskId: "task-1",
+			taskId: "11111111-1111-4111-8111-111111111111",
 			role: "system",
 			content: "failed",
 			metadataJson: { source: "workbench", intent: "intake_failed" },
@@ -139,7 +139,7 @@ describe("useNightWorkersRealtime effect", () => {
 		expect(
 			shouldCompletePendingChat({
 				message: intakeFailure,
-				pendingTaskId: "task-1",
+				pendingTaskId: "11111111-1111-4111-8111-111111111111",
 				pendingRunId: "not-started",
 			}),
 		).toBe(true);
@@ -153,7 +153,7 @@ describe("useNightWorkersRealtime effect", () => {
 						intent: "intake_failed",
 					},
 				},
-				pendingTaskId: "task-1",
+				pendingTaskId: "11111111-1111-4111-8111-111111111111",
 				pendingRunId: null,
 			}),
 		).toBe(false);
@@ -185,11 +185,18 @@ describe("useNightWorkersRealtime effect", () => {
 			current: { runId: "run-1", afterSeq: 3 },
 		};
 		const pendingChatQueueRef = {
-			current: [{ taskId: "task-1", prompt: "queued prompt" }],
+			current: [
+				{
+					taskId: "11111111-1111-4111-8111-111111111111",
+					prompt: "queued prompt",
+				},
+			],
 		};
 		const processedRealtimeMessageKeysRef = { current: new Set<string>() };
 		const pendingChatRunIdRef = { current: "run-1" as string | null };
-		const pendingAssistantTaskIdRef = { current: "task-1" as string | null };
+		const pendingAssistantTaskIdRef = {
+			current: "11111111-1111-4111-8111-111111111111" as string | null,
+		};
 		const chatSubmitStartedAtRef = { current: Date.now() as number | null };
 		let realtimeConnected = false;
 		let realtimeStatus = "initializing";
@@ -197,15 +204,16 @@ describe("useNightWorkersRealtime effect", () => {
 		let streamingTextByTask: Record<string, string> = {};
 		let isChatSubmitting = true;
 		let pendingChatRunId: string | null = "run-1";
-		let pendingAssistantTaskId: string | null = "task-1";
+		let pendingAssistantTaskId: string | null =
+			"11111111-1111-4111-8111-111111111111";
 		let projectFileEntriesByDirectory = { src: [] as never[] };
 
 		queryClient.setQueryData<TaskMessage[]>(
-			["taskMessages", "task-1"],
+			["taskMessages", "11111111-1111-4111-8111-111111111111"],
 			[
 				{
 					id: "optimistic-user-1",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					role: "user",
 					content: "hello",
 					messageType: "text",
@@ -214,7 +222,7 @@ describe("useNightWorkersRealtime effect", () => {
 			],
 		);
 		queryClient.setQueryData<TaskRun[]>(
-			["sessionRuns", "task-1"],
+			["sessionRuns", "11111111-1111-4111-8111-111111111111"],
 			[run("run-1", "running")],
 		);
 		queryClient.setQueryData<RunDetails | null>(["runDetails", "run-1"], {
@@ -223,21 +231,30 @@ describe("useNightWorkersRealtime effect", () => {
 			todos: [todo("todo-1", "running")],
 			reviews: [],
 		} as RunDetails);
-		queryClient.setQueryData<Task[]>(["sessions"], [task("task-1")]);
-		queryClient.setQueryData<ActivityReplay>(["activityReplay", "task-1"], {
-			events: [],
-			artifacts: [],
-		});
+		queryClient.setQueryData<Task[]>(
+			["sessions"],
+			[task("11111111-1111-4111-8111-111111111111")],
+		);
+		queryClient.setQueryData<ActivityReplay>(
+			["activityReplay", "11111111-1111-4111-8111-111111111111"],
+			{
+				events: [],
+				artifacts: [],
+			},
+		);
 		queryClient.setQueryData<BackgroundProcess[]>(
-			["backgroundProcesses", "task-1"],
+			["backgroundProcesses", "11111111-1111-4111-8111-111111111111"],
 			[],
 		);
-		queryClient.setQueryData(["planModeWorkspace", "task-1"], {
-			taskId: "task-1",
-		});
+		queryClient.setQueryData(
+			["planModeWorkspace", "11111111-1111-4111-8111-111111111111"],
+			{
+				taskId: "11111111-1111-4111-8111-111111111111",
+			},
+		);
 
 		useNightWorkersRealtime({
-			activeSessionId: "task-1",
+			activeSessionId: "11111111-1111-4111-8111-111111111111",
 			queryClient,
 			wsRef,
 			latestRunSubscriptionRef,
@@ -288,22 +305,26 @@ describe("useNightWorkersRealtime effect", () => {
 		const invalidationCountBeforeRouting = invalidateSpy.mock.calls.length;
 		socket.emit("message", {
 			type: "plan_mode.routing_changed",
-			taskId: "task-1",
+			taskId: "11111111-1111-4111-8111-111111111111",
 			payload: {
-				taskId: "task-1",
+				taskId: "11111111-1111-4111-8111-111111111111",
 				revision: 1,
 				updatedBy: "questionnaire_recommender",
 			},
 		});
 		expect(
 			invalidateSpy.mock.calls.slice(invalidationCountBeforeRouting),
-		).toContainEqual([{ queryKey: ["planModeWorkspace", "task-1"] }]);
+		).toContainEqual([
+			{
+				queryKey: ["planModeWorkspace", "11111111-1111-4111-8111-111111111111"],
+			},
+		]);
 		socket.emit("message", {
 			type: "activity_event_created",
 			payload: {
 				event: {
 					id: "activity-1",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					kind: "llm.usage",
 					traceOwner: "coding_agent",
 					traceChannel: "chat",
@@ -314,7 +335,7 @@ describe("useNightWorkersRealtime effect", () => {
 		});
 		socket.emit("message", {
 			type: "task_llm_delta",
-			taskId: "task-1",
+			taskId: "11111111-1111-4111-8111-111111111111",
 			seq: 1,
 			timestamp: now,
 			payload: { text: "partial " },
@@ -324,7 +345,7 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: {
 				event: {
 					id: "pilot-activity",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					kind: "llm.usage",
 					traceOwner: "mission_pilot",
 					traceChannel: "chat",
@@ -338,7 +359,7 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: {
 				message: {
 					id: "pilot-message",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					runId: null,
 					role: "assistant",
 					content: "pilot should not finish coding chat",
@@ -349,14 +370,21 @@ describe("useNightWorkersRealtime effect", () => {
 				},
 			},
 		});
-		expect(streamingTextByTask).toEqual({ "task-1": "partial " });
+		expect(streamingTextByTask).toEqual({
+			"11111111-1111-4111-8111-111111111111": "partial ",
+		});
 		expect(isChatSubmitting).toBe(true);
 		expect(
-			queryClient.getQueryData<ActivityReplay>(["activityReplay", "task-1"])
-				?.events,
+			queryClient.getQueryData<ActivityReplay>([
+				"activityReplay",
+				"11111111-1111-4111-8111-111111111111",
+			])?.events,
 		).toHaveLength(1);
 		expect(
-			queryClient.getQueryData<TaskMessage[]>(["taskMessages", "task-1"]),
+			queryClient.getQueryData<TaskMessage[]>([
+				"taskMessages",
+				"11111111-1111-4111-8111-111111111111",
+			]),
 		).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ id: "pilot-message" }),
@@ -378,7 +406,7 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: {
 				message: {
 					id: "message-user",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					runId: "run-1",
 					role: "user",
 					content: "hello",
@@ -391,11 +419,12 @@ describe("useNightWorkersRealtime effect", () => {
 		});
 		socket.emit("message", {
 			type: "mission_pilot.plan_progress_updated",
+			taskId: "11111111-1111-4111-8111-111111111111",
 			payload: {
-				taskId: "task-1",
+				taskId: "11111111-1111-4111-8111-111111111111",
 				progress: {
-					taskId: "task-1",
-					sessionId: "session-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
+					sessionId: "22222222-2222-4222-8222-222222222222",
 					phase: "generating_artifacts",
 					desiredState: "playing",
 					version: 1,
@@ -412,7 +441,7 @@ describe("useNightWorkersRealtime effect", () => {
 			payload: {
 				message: {
 					id: "message-assistant",
-					taskId: "task-1",
+					taskId: "11111111-1111-4111-8111-111111111111",
 					runId: "run-1",
 					role: "assistant",
 					content: "done",
@@ -438,7 +467,7 @@ describe("useNightWorkersRealtime effect", () => {
 					...run("run-1", "completed"),
 					contextSnapshot: {
 						reviewRun: {
-							reviewSessionId: "review-session-1",
+							reviewSessionId: "review-22222222-2222-4222-8222-222222222222",
 							reviewedRunId: "reviewed-run-1",
 						},
 					},
@@ -452,7 +481,7 @@ describe("useNightWorkersRealtime effect", () => {
 		});
 		socket.emit("message", {
 			type: "task_status_updated",
-			payload: { task: task("task-1", "ready") },
+			payload: { task: task("11111111-1111-4111-8111-111111111111", "ready") },
 		});
 		socket.emit("message", {
 			type: "error",
@@ -465,22 +494,31 @@ describe("useNightWorkersRealtime effect", () => {
 		expect(socket.sent.map((item) => JSON.parse(item))).toEqual([
 			{
 				type: "subscribe_task",
-				taskId: "task-1",
+				taskId: "11111111-1111-4111-8111-111111111111",
 				runId: "run-1",
 				afterSeq: 3,
 			},
-			{ type: "chat_submit", taskId: "task-1", prompt: "queued prompt" },
+			{
+				type: "chat_submit",
+				taskId: "11111111-1111-4111-8111-111111111111",
+				prompt: "queued prompt",
+			},
 		]);
 		expect(
-			queryClient.getQueryData<ActivityReplay>(["activityReplay", "task-1"])
-				?.events,
+			queryClient.getQueryData<ActivityReplay>([
+				"activityReplay",
+				"11111111-1111-4111-8111-111111111111",
+			])?.events,
 		).toHaveLength(1);
 		expect(streamingTextByTask).toEqual({});
 		expect(bufferedEventsByRun["run-1"]).toEqual([
 			expect.objectContaining({ id: "event-1", seq: 4 }),
 		]);
 		expect(
-			queryClient.getQueryData<TaskMessage[]>(["taskMessages", "task-1"]),
+			queryClient.getQueryData<TaskMessage[]>([
+				"taskMessages",
+				"11111111-1111-4111-8111-111111111111",
+			]),
 		).toEqual([
 			expect.objectContaining({ id: "pilot-message" }),
 			expect.objectContaining({ id: "message-user" }),
@@ -488,30 +526,39 @@ describe("useNightWorkersRealtime effect", () => {
 			expect.objectContaining({ content: "socket failed" }),
 		]);
 		expect(
-			queryClient.getQueryData<TaskRun[]>(["sessionRuns", "task-1"])?.[0],
+			queryClient.getQueryData<TaskRun[]>([
+				"sessionRuns",
+				"11111111-1111-4111-8111-111111111111",
+			])?.[0],
 		).toMatchObject({ id: "run-1", status: "completed" });
 		expect(
 			queryClient.getQueryData<RunDetails | null>(["runDetails", "run-1"])
 				?.todos[0],
 		).toMatchObject({ id: "todo-1", status: "passed" });
 		expect(queryClient.getQueryData<Task[]>(["sessions"])?.[0]).toMatchObject({
-			id: "task-1",
+			id: "11111111-1111-4111-8111-111111111111",
 			status: "ready",
 		});
 		expect(invalidateSpy).toHaveBeenCalledWith({
-			queryKey: ["reviewSession", "task-1"],
+			queryKey: ["reviewSession", "11111111-1111-4111-8111-111111111111"],
 		});
 		expect(invalidateSpy).toHaveBeenCalledWith({
 			queryKey: ["gitCloseout", "reviewed-run-1"],
 		});
 		expect(invalidateSpy).toHaveBeenCalledWith({
-			queryKey: ["planModeWorkspace", "task-1"],
+			queryKey: ["planModeWorkspace", "11111111-1111-4111-8111-111111111111"],
 		});
 		expect(invalidateSpy).toHaveBeenCalledWith({
-			queryKey: ["designQuestionnaireSessions", "task-1"],
+			queryKey: [
+				"designQuestionnaireSessions",
+				"11111111-1111-4111-8111-111111111111",
+			],
 		});
 		expect(
-			queryClient.getQueryData(["missionPilotPlanProgress", "task-1"]),
+			queryClient.getQueryData([
+				"missionPilotPlanProgress",
+				"11111111-1111-4111-8111-111111111111",
+			]),
 		).toMatchObject({ currentStepKey: "view:user_flow" });
 		expect(projectFileEntriesByDirectory).toEqual({});
 		expect(isChatSubmitting).toBe(false);

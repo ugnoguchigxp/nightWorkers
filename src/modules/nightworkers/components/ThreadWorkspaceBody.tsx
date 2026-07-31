@@ -10,7 +10,7 @@ import type { PromptImageInput } from "../../../../shared/prompt-image";
 import {
 	MissionPilotComposerControls,
 	MissionPilotTaskGoalMessage,
-} from "../../missionPilot";
+} from "../../../composition/mission-pilot";
 import type {
 	ActivityArtifact,
 	ActivityEvent,

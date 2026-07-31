@@ -1,7 +1,7 @@
-import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
 import { Loader2, Pause, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { MissionPilotControlSummary } from "../../contracts";
 import { missionPilotPresentation } from "../missionPilotPresentation";
 import { useMissionPilotControl } from "../missionPilotQueries";
 import { useMissionPilotControls } from "../useMissionPilotControls";

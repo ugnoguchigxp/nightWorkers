@@ -1,17 +1,16 @@
+import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type {
 	MissionPilotControlSummary,
 	PilotThoughtEntry,
-} from "@nightworkers/mission-pilot/contracts";
-import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
+} from "../../contracts";
 import type {
-	ActivityEvent,
-	Task,
-	TaskEvent,
-	TaskMessage,
-} from "../../nightworkers/types";
-import { getRelativeTimestamp } from "../../nightworkers/utils/time";
+	MissionPilotActivityEvent,
+	MissionPilotTask,
+	MissionPilotTaskEvent,
+	MissionPilotTaskMessage,
+} from "../host";
+import { getMissionPilotFrontendHost } from "../host";
 import { fetchMissionPilotExecutionTrace } from "../missionPilotCommands";
 import { useMissionPilotControl } from "../missionPilotQueries";
 
@@ -28,7 +27,7 @@ export type PilotThoughtItem = {
 	sourceId: string;
 	sequence?: number;
 	createdAt: unknown;
-	event: TaskEvent;
+	event: MissionPilotTaskEvent;
 };
 
 export type MissionPilotStoredEvent = {
@@ -48,19 +47,19 @@ export type MissionPilotStoredEvent = {
 
 export type MissionPilotExecutionTrace = {
 	events?: MissionPilotStoredEvent[];
-	activityEvents: ActivityEvent[];
-	messages?: TaskMessage[];
+	activityEvents: MissionPilotActivityEvent[];
+	messages?: MissionPilotTaskMessage[];
 	entries?: PilotThoughtEntry[];
 };
 
-export function isMissionPilotActivityEvent(event: ActivityEvent) {
+export function isMissionPilotActivityEvent(event: MissionPilotActivityEvent) {
 	return (
 		event.traceOwner === "mission_pilot" &&
 		event.traceChannel === "pilot_thought"
 	);
 }
 
-export function isMissionPilotTaskMessage(message: TaskMessage) {
+export function isMissionPilotTaskMessage(message: MissionPilotTaskMessage) {
 	return (
 		message.traceOwner === "mission_pilot" &&
 		message.traceChannel === "pilot_thought"
@@ -97,7 +96,9 @@ export function comparePilotThoughtItems(
 	return a.sourceId.localeCompare(b.sourceId);
 }
 
-function activityToTaskEvent(event: ActivityEvent): TaskEvent {
+function activityToTaskEvent(
+	event: MissionPilotActivityEvent,
+): MissionPilotTaskEvent {
 	return {
 		id: event.id,
 		runId: event.runId ?? undefined,
@@ -108,7 +109,7 @@ function activityToTaskEvent(event: ActivityEvent): TaskEvent {
 		message: event.text?.trim() || event.kind,
 		payloadJson:
 			event.payloadJson && typeof event.payloadJson === "object"
-				? (event.payloadJson as TaskEvent["payloadJson"])
+				? (event.payloadJson as MissionPilotTaskEvent["payloadJson"])
 				: undefined,
 		createdAt: event.createdAt,
 	};
@@ -116,7 +117,7 @@ function activityToTaskEvent(event: ActivityEvent): TaskEvent {
 
 function missionPilotEventToTaskEvent(
 	event: MissionPilotStoredEvent,
-): TaskEvent {
+): MissionPilotTaskEvent {
 	return {
 		id: event.id,
 		eventType: event.eventType,
@@ -137,7 +138,9 @@ function missionPilotEventToTaskEvent(
 	};
 }
 
-function pilotThoughtEntryToTaskEvent(entry: PilotThoughtEntry): TaskEvent {
+function pilotThoughtEntryToTaskEvent(
+	entry: PilotThoughtEntry,
+): MissionPilotTaskEvent {
 	return {
 		id: entry.id,
 		seq: entry.sequence,
@@ -307,9 +310,11 @@ export function PilotThoughtDock({
 	session,
 	onClose,
 }: {
-	session: Task | null;
+	session: MissionPilotTask | null;
 	onClose: () => void;
 }) {
+	const { AgentDebugEventCard, formatRelativeTimestamp } =
+		getMissionPilotFrontendHost();
 	const { summary } = useMissionPilotControl(session?.id ?? "");
 	const [executionTraceState, setExecutionTraceState] = useState<{
 		taskId: string;
@@ -395,7 +400,7 @@ export function PilotThoughtDock({
 					<AgentDebugEventCard
 						event={currentStateItem.event}
 						variant="dock"
-						timestamp={getRelativeTimestamp(currentStateItem.createdAt)}
+						timestamp={formatRelativeTimestamp(currentStateItem.createdAt)}
 					/>
 				</section>
 			) : null}
@@ -411,7 +416,7 @@ export function PilotThoughtDock({
 							key={item.id}
 							event={item.event}
 							variant="dock"
-							timestamp={getRelativeTimestamp(item.createdAt)}
+							timestamp={formatRelativeTimestamp(item.createdAt)}
 						/>
 					))
 				)}

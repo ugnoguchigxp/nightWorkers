@@ -1,4 +1,4 @@
-import { jaMissionPilot } from "../../modules/missionPilot";
+import { jaMissionPilot } from "../../composition/mission-pilot";
 import { jaArtifact } from "./ja-artifact";
 import { jaBlueprint } from "./ja-blueprint";
 import { jaComposer } from "./ja-composer";
