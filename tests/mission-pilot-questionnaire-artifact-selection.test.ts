@@ -64,10 +64,7 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 		);
 	});
 
-	it.skip("passes rendered Questionnaire answers to the semantic selector", async () => {
-		const { selectQuestionnaireArtifacts } = await import(
-			"@nightworkers/mission-pilot/testing"
-		);
+	it("passes rendered Questionnaire answers to the shared semantic selector", async () => {
 		callStructuredOutputWithRepair.mockResolvedValue({
 			value: {
 				decisions: [
@@ -118,9 +115,8 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 			},
 		});
 
-		const result = await selectQuestionnaireArtifacts({
+		const result = await selectQuestionnaireArtifactRouting({
 			taskId: "task-1",
-			sessionId: "session-1",
 			task: {
 				title: "API task",
 				objective: "APIを追加する",
@@ -190,7 +186,7 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 			expect.objectContaining({
 				systemPrompt: expect.stringContaining("通常は0〜2件"),
 				userPrompt: expect.stringContaining("公開する"),
-				options: expect.objectContaining({ role: "mission_pilot" }),
+				options: expect.objectContaining({ role: "plan" }),
 			}),
 		);
 	});

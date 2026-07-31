@@ -44,7 +44,10 @@ const completedQuestionnaire = {
 	answers: [],
 };
 
-function command(kind: "human" | "automation") {
+function command(kind: "human" | "delegated_user") {
+	const delegatedAuthorization = {
+		authorize: vi.fn().mockResolvedValue({ capabilities: ["plan"] }),
+	};
 	return executeTaskOperatorCommand({
 		taskId: "task-1",
 		actionId: "questionnaire.submit",
@@ -54,14 +57,30 @@ function command(kind: "human" | "automation") {
 			answers: [],
 		},
 		context: {
-			principal: {
-				kind,
-				actorId: LOCAL_TASK_OPERATOR_USER_ID,
-				authorizationRef: LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
-			},
+			principal:
+				kind === "human"
+					? {
+							kind,
+							actorId: LOCAL_TASK_OPERATOR_USER_ID,
+							authorizationRef: LOCAL_TASK_OPERATOR_USER_AUTHORIZATION_REF,
+						}
+					: {
+							kind,
+							actorId: "mission-pilot-session",
+							authorizationRef: "delegated-local-user",
+							subjectUserId: LOCAL_TASK_OPERATOR_USER_ID,
+							delegationRef: {
+								sessionId: "mission-pilot-session",
+								taskId: "task-1",
+								grantedAt: new Date(0).toISOString(),
+								capabilityDigest: `sha256:${"0".repeat(64)}`,
+							},
+						},
 			requestId: `${kind}-request`,
 			idempotencyKey: `${kind}-delivery`,
 		},
+		runtime:
+			kind === "delegated_user" ? { delegatedAuthorization } : undefined,
 	});
 }
 
@@ -148,10 +167,15 @@ describe("Task Operator Questionnaire artifact routing", () => {
 		);
 	});
 
-	it("leaves Mission Pilot automation selection to its own plan pipeline", async () => {
-		await expect(command("automation")).resolves.toBe(completedQuestionnaire);
+	it("uses the same artifact recommendation for delegated Mission Pilot answers", async () => {
+		await expect(command("delegated_user")).resolves.toBe(
+			completedQuestionnaire,
+		);
 
 		expect(mocks.saveDesignQuestionnaireAnswers).toHaveBeenCalledOnce();
-		expect(mocks.recommendQuestionnaireArtifactRouting).not.toHaveBeenCalled();
+		expect(mocks.recommendQuestionnaireArtifactRouting).toHaveBeenCalledWith(
+			"task-1",
+			completedQuestionnaire,
+		);
 	});
 });
