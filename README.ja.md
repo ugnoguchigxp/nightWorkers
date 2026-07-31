@@ -515,12 +515,13 @@ READMEの記述を検証する場合は、次が起点になります。
 
 | 記述対象 | 実行可能なsource |
 | --- | --- |
-| TaskとMission Pilotのatomic creation | `api/modules/nightworkers/nightworkers.task-creation.service.ts` |
-| Mission Pilot state／authorization | `shared/schemas/mission-pilot.schema.ts`、`api/modules/missionPilot/` |
-| Plan step／review progress | `shared/plan-mode-execution.ts`、`shared/schemas/mission-pilot-plan-progress.schema.ts` |
-| Queue handoff／claim readiness | `api/modules/missionPilot/mission-pilot-queue-handoff.service.ts`、`api/modules/queue/` |
+| Task lifecycle／Mission Pilotのlazy activation | `api/modules/nightworkers/nightworkers.basic.service.ts`、`packages/mission-pilot/src/backend/runtime/mission-pilot.service.ts` |
+| Mission Pilot state／authorization | `packages/mission-pilot/src/contracts/mission-pilot.schema.ts`、`packages/mission-pilot/src/backend/runtime/mission-pilot-delegation.ts` |
+| Mission Pilot SQLite ownership／package専用persistence capability | `api/modules/missionPilot/persistence/`、`api/composition/mission-pilot/mission-pilot-runtime-bindings.ts`、`packages/mission-pilot/src/backend/persistence-port.ts` |
+| Plan step／review progress | `shared/plan-mode-execution.ts`、`packages/mission-pilot/src/contracts/mission-pilot-plan-progress.schema.ts` |
+| Queue handoff／claim readiness | `api/modules/taskOperator/`、`api/modules/queue/` |
 | Task Git workspace／merge policy | `shared/schemas/git-integration.schema.ts`、`api/modules/gitworktree/`、`api/modules/nightworkers/nightworkers.git-merge.service.ts` |
-| Test／Review／closeout evidence | `api/modules/review/`、`api/modules/missionPilot/mission-pilot-closeout.service.ts` |
+| Test／Review／closeout evidence | `api/modules/review/`、`api/modules/taskOperator/`、`api/modules/gitCloseout/` |
 | Project Evaluation／Quality | `api/modules/project-evaluation/`、`api/modules/quality/` |
 | Overview usage／cost | `shared/schemas/overview.schema.ts`、`api/modules/overview/` |
 | Runtime storage path | `api/runtime/paths.ts` |

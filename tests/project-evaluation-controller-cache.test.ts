@@ -114,7 +114,7 @@ describe("project evaluation task prompt drafts", () => {
 		});
 	});
 
-	it("clears a generated prompt after Mission Pilot dispatches it", () => {
+	it("does not infer generated-prompt ownership from an embedded Pilot payload", () => {
 		const createdTask = {
 			...task("task-created", "Coding Agentを開始する"),
 			objective: "生成済みの初期プロンプト",
@@ -135,7 +135,7 @@ describe("project evaluation task prompt drafts", () => {
 		};
 
 		expect(projectEvaluationComposerDraftState(createdTask, [])).toEqual({
-			discardStoredDraft: true,
+			discardStoredDraft: false,
 			initialPrompt: "",
 		});
 	});

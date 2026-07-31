@@ -2,10 +2,12 @@ import type { MissionPilotRuntimeHostBindings } from "@nightworkers/mission-pilo
 import { logEvent } from "../../lib/logger";
 import {
 	contentDigest,
+	registerTaskRunTerminalListener,
 	sliceUtf8ContentPage,
 	submitTaskUserIntake,
 } from "../../modules/agentsShare";
 import { readTaskOperatorCommandReceipt } from "../../modules/commandDelivery";
+import { createMissionPilotPersistenceCapability } from "../../modules/missionPilot/persistence/capability";
 import { appendActivityEvent } from "../../modules/nightworkers/nightworkers.activity-persistence.repository";
 import * as nightworkersRepository from "../../modules/nightworkers/nightworkers.repository";
 import {
@@ -58,10 +60,13 @@ import {
 import { createMissionPilotFixtureBindings } from "./mission-pilot-fixture-bindings";
 
 export function createMissionPilotRuntimeBindings(): MissionPilotRuntimeHostBindings {
+	const persistence = createMissionPilotPersistenceCapability();
 	return {
+		executeMissionPilotPersistence: persistence.execute,
 		contentDigest,
 		sliceUtf8ContentPage,
 		submitTaskUserIntake,
+		registerTaskRunTerminalListener,
 		readTaskOperatorCommandReceipt,
 		getTask: nightworkersRepository.getTask,
 		appendActivityEvent,

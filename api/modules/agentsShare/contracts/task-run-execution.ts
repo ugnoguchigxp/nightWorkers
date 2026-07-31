@@ -7,6 +7,7 @@
 export type RunTerminalOutcome = {
 	eventId: string;
 	taskId: string;
+	taskRevision: number;
 	runId: string;
 	status: string;
 	sourceRef: { kind: string; id: string } | null;

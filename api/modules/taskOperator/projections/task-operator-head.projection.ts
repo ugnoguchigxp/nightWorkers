@@ -51,6 +51,7 @@ export function projectTaskOperatorHead(
 		taskStatus: facts.task.status,
 		repositoryAvailable: facts.task.repository.state === "registered",
 		hasActiveRun: Boolean(facts.run.active),
+		activeRunStatus: facts.run.active?.status ?? null,
 		hasTerminalRun: Boolean(facts.run.terminal),
 		currentTodoStatus: facts.run.active?.currentTodoRef?.status ?? null,
 	}).map((command) => {

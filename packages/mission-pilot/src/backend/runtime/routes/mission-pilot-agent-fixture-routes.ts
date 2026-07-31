@@ -1,11 +1,9 @@
-import crypto from "node:crypto";
 import { createRoute } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "../../../db/client";
 import { createOpenApiRouter } from "../../../lib/openapi";
 import { registerFixtureProviderToolTurns } from "../../../services/structured-llm/fixture-tool-provider";
 import * as repo from "../../nightworkers/nightworkers.repository";
+import { callMissionPilotPersistence } from "../../persistence-port";
 import { getDesignQuestionnaireSession } from "../../questionnaire";
 import {
 	createDesignQuestionnaireQuestionSet,
@@ -13,10 +11,6 @@ import {
 	updateDesignQuestionnaireSessionStatus,
 } from "../../questionnaire/questionnaire.repository";
 import * as missionPilotRepo from "../../storage";
-import {
-	missionPilotAgentSessions,
-	missionPilotAgentTurns,
-} from "../../storage";
 import { reconcileInterruptedMissionPilotAgentSessions } from "../agent/mission-pilot-agent-runtime";
 import { isMissionPilotAgentSession } from "../agent/mission-pilot-agent-session.repository";
 import { scheduleMissionPilotAgentWake } from "../agent/mission-pilot-agent-wake.service";
@@ -139,10 +133,15 @@ export const missionPilotAgentFixtureRouter = createOpenApiRouter().openapi(
 		)
 			return c.json({ error: "Not found" }, 404);
 		const { taskId } = c.req.valid("json");
-		const [task, pilot] = await Promise.all([
-			repo.getTask(taskId),
-			missionPilotRepo.getSessionByTaskId(taskId),
-		]);
+		const task = await repo.getTask(taskId);
+		const pilot = task
+			? ((await missionPilotRepo.getSessionByTaskId(taskId)) ??
+				(await missionPilotRepo.getOrCreateSession({
+					task,
+					sourceKind: "task",
+					sourceId: task.id,
+				})))
+			: null;
 		if (!task || !pilot || !(await isMissionPilotAgentSession(pilot.id)))
 			return c.json({ error: "Agent Mission Pilot not found" }, 404);
 
@@ -186,10 +185,15 @@ missionPilotAgentFixtureRouter.openapi(
 		)
 			return c.json({ error: "Not found" }, 404);
 		const { taskId, scenario } = c.req.valid("json");
-		const [task, pilot] = await Promise.all([
-			repo.getTask(taskId),
-			missionPilotRepo.getSessionByTaskId(taskId),
-		]);
+		const task = await repo.getTask(taskId);
+		const pilot = task
+			? ((await missionPilotRepo.getSessionByTaskId(taskId)) ??
+				(await missionPilotRepo.getOrCreateSession({
+					task,
+					sourceKind: "task",
+					sourceId: task.id,
+				})))
+			: null;
 		if (
 			!task ||
 			!pilot ||
@@ -217,34 +221,14 @@ missionPilotAgentFixtureRouter.openapi(
 			!(await isMissionPilotAgentSession(pilot.id))
 		)
 			return c.json({ error: "Agent Mission Pilot not found" }, 404);
-		const [agent] = await db
-			.select()
-			.from(missionPilotAgentSessions)
-			.where(eq(missionPilotAgentSessions.sessionId, pilot.id));
-		if (!agent || agent.runtimeState === "completed")
-			return c.json({ error: "Agent runtime cannot be restarted" }, 404);
-		const turnId = crypto.randomUUID();
 		const now = new Date();
-		await db.transaction(async (tx) => {
-			await tx.insert(missionPilotAgentTurns).values({
-				id: turnId,
-				sessionId: pilot.id,
-				turnIndex: agent.nextTurnIndex,
-				status: "running",
-				startedAt: new Date(now.getTime() - 10_000),
-			});
-			await tx
-				.update(missionPilotAgentSessions)
-				.set({
-					runtimeState: "running",
-					currentTurnId: turnId,
-					leaseOwner: "expired-e2e-runtime",
-					leaseExpiresAt: new Date(0),
-					nextTurnIndex: agent.nextTurnIndex + 1,
-					updatedAt: now,
-				})
-				.where(eq(missionPilotAgentSessions.sessionId, pilot.id));
-		});
+		const prepared = await callMissionPilotPersistence(
+			"prepareExpiredMissionPilotRuntimeFixture",
+			{ sessionId: pilot.id, now },
+		);
+		if (!prepared)
+			return c.json({ error: "Agent runtime cannot be restarted" }, 404);
+		const { turnId } = prepared;
 		await reconcileInterruptedMissionPilotAgentSessions(now);
 		await appendMissionPilotTaskEvent({
 			taskId,
@@ -265,8 +249,16 @@ missionPilotAgentFixtureRouter.openapi(createTraceFixtureRoute, async (c) => {
 	)
 		return c.json({ error: "Not found" }, 404);
 	const { taskId } = c.req.valid("json");
-	const session = await missionPilotRepo.getSessionByTaskId(taskId);
-	if (!session)
+	const task = await repo.getTask(taskId);
+	const session = task
+		? ((await missionPilotRepo.getSessionByTaskId(taskId)) ??
+			(await missionPilotRepo.getOrCreateSession({
+				task,
+				sourceKind: "task",
+				sourceId: task.id,
+			})))
+		: null;
+	if (!task || !session)
 		return c.json({ error: "Mission Pilot session not found" }, 404);
 	await repo.appendActivityEvent({
 		taskId,

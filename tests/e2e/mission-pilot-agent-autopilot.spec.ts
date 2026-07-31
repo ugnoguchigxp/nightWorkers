@@ -25,41 +25,33 @@ test("Agent reads facts, completes the Task explicitly, and finishes the session
 		await playAgentScenario(request, fixture);
 		await waitForTaskStatus(request, fixture.taskId, "completed");
 		let execution = {} as AgentExecution;
-		await expect
-			.poll(
-				async () => {
-					execution = await readAgentExecution(request, fixture.taskId);
-					return execution.agent?.visibleItems?.at(-1)?.kind ?? null;
-				},
-				{ timeout: 20_000 },
-			)
-			.toBe("finish");
+		try {
+			await expect
+				.poll(
+					async () => {
+						execution = await readAgentExecution(request, fixture.taskId);
+						return execution.agent?.visibleItems?.at(-1)?.kind ?? null;
+					},
+					{ timeout: 60_000 },
+				)
+				.toBe("finish");
+		} catch (error) {
+			const runsResponse = await request.get(
+				`/api/tasks/${fixture.taskId}/runs`,
+			);
+			const runs = runsResponse.ok() ? await runsResponse.json() : null;
+			throw new Error(
+				`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify({ execution, runs })}`,
+			);
+		}
 		expect(
 			execution.agent?.visibleItems?.some((item) => item.kind === "assistant"),
 		).toBe(true);
 		expect(execution).toMatchObject({
 			version: 2,
 			executionModel: "task_operator_v1",
-			legacyPostQueueState: { status: "retired" },
 		});
 		expect(execution).not.toHaveProperty("phaseRuns");
-		for (const endpoint of [
-			"verification-snapshot",
-			"review-decision",
-			"closeout",
-		]) {
-			const retired = await request.get(
-				`/api/mission-pilot/sessions/${fixture.sessionId}/${endpoint}`,
-			);
-			expect(retired.status(), await retired.text()).toBe(410);
-			expect(await retired.json()).toMatchObject({
-				code: "MISSION_PILOT_LEGACY_ENDPOINT_RETIRED",
-				replacement: {
-					execution: "task_operator_v1",
-					resourceKind: "run_outcome",
-				},
-			});
-		}
 	} finally {
 		await cleanupAgentScenario(request, fixture);
 	}

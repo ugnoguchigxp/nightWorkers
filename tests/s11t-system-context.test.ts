@@ -25,7 +25,10 @@ vi.mock("../api/services/settings/general-settings", async (importOriginal) => {
 	};
 });
 
-import { buildMissionPilotSystemContext } from "@nightworkers/mission-pilot/testing";
+import {
+	buildMissionPilotSystemContext,
+	configureMissionPilotRuntimeHost,
+} from "@nightworkers/mission-pilot/testing";
 import { buildCodingAgentSystemContext } from "../api/modules/codingAgent/context/system-context";
 import { renderCodingAgentRuntimeSystemContext } from "../api/modules/codingAgent/context/todo-prompt-context";
 import { buildCodexRuntimePromptParts } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
@@ -53,6 +56,13 @@ describe("S11t SystemContext catalog", () => {
 	beforeEach(() => {
 		settingsMock.language = "ja";
 		settingsMock.readCount = 0;
+		configureMissionPilotRuntimeHost({
+			bindSystemContextCatalogSnapshot,
+			createSystemContextBindingSnapshot,
+			renderSystemContext: p,
+			runWithSystemContextBinding,
+			systemContextPromptAudit,
+		});
 	});
 
 	it("keeps every role in one generated catalog", () => {
@@ -100,7 +110,7 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(83);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(85);
 		expect("aliases" in catalogArtifact).toBe(false);
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
@@ -543,9 +553,9 @@ describe("S11t SystemContext catalog", () => {
 			codingAgent:
 				"d055d5df5594c310c04cfcb4eeabe1af83ebf70aa447d72ba06f34acc04ae5cd",
 			missionPilotPushAllowed:
-				"4bd34ec826a5dd6c98a3475748bb091e3e72466ed23a5a459cc792b343d74b78",
+				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:
-				"2baa913add8c593c3292e9b1156a761b206128ca711ad68ec66fb76b6079c093",
+				"1e73592c64a0ffebc9d1652da8faeaaa2a4caa7f2f1443bdf954880fab6ff2e5",
 		});
 	});
 

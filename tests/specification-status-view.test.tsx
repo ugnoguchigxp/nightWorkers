@@ -576,7 +576,7 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup.match(/<input[^>]*disabled=""[^>]*>/g)).toHaveLength(3);
 	});
 
-	it("uses persisted Mission Pilot progress for running and completed steps", () => {
+	it("uses canonical artifacts and the active command for status", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={
@@ -588,47 +588,8 @@ describe("PlanWorkspaceStatusView", () => {
 						],
 					} as never
 				}
-				missionPilotPlanProgress={
-					{
-						taskId: "11111111-1111-4111-8111-111111111111",
-						sessionId: "22222222-2222-4222-8222-222222222222",
-						phase: "generating_artifacts",
-						desiredState: "playing",
-						version: 4,
-						contextRevision: 3,
-						currentStepKey: "data_model",
-						steps: [
-							{
-								key: "blueprint",
-								ordinal: 2,
-								kind: "blueprint",
-								view: "blueprint",
-								status: "completed",
-								attempt: 1,
-								artifactMessageId: "33333333-3333-4333-8333-333333333333",
-								lastError: null,
-								startedAt: "2026-07-11T13:00:00.000Z",
-								finishedAt: "2026-07-11T13:01:00.000Z",
-							},
-							{
-								key: "data_model",
-								ordinal: 3,
-								kind: "data_model",
-								view: "data_model",
-								status: "running",
-								attempt: 1,
-								artifactMessageId: null,
-								lastError: null,
-								startedAt: "2026-07-11T13:01:00.000Z",
-								finishedAt: null,
-							},
-						],
-						lastError: null,
-						updatedAt: "2026-07-11T13:01:00.000Z",
-					} as never
-				}
 				questionnaireSession={null}
-				busyAction={null}
+				busyAction="data-model"
 				canGenerateDataModel={true}
 				hasFeaturePlan={false}
 				viewDecisions={[
@@ -643,8 +604,8 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("Plan Artifactを生成しています");
-		expect(markup).toContain("Data Modelを生成中です。");
+		expect(markup).toContain('data-status="running"');
+		expect(markup).toContain(">生成中</span>");
 		expect(markup).toContain("animate-spin");
 		expect(markup).toContain("Blueprintを再生成");
 	});
@@ -765,18 +726,6 @@ describe("PlanWorkspaceStatusView", () => {
 						dataModelArtifacts: [{ id: "data-model-1", title: "Data Model" }],
 					} as never
 				}
-				missionPilotPlanProgress={
-					{
-						desiredState: "stopped",
-						steps: [
-							{ key: "questionnaire", status: "completed" },
-							{ key: "blueprint", status: "completed" },
-							{ key: "data_model", status: "pending" },
-							{ key: "feature_plan", status: "completed" },
-						],
-						review: { status: "revision_required" },
-					} as never
-				}
 				questionnaireSession={
 					{
 						id: "questionnaire-1",
@@ -855,30 +804,10 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).not.toContain("キューに追加");
 	});
 
-	it("renders conceptual Artifact scores as non-blocking reference information", () => {
+	it("does not render the retired Mission Pilot review projection", () => {
 		const markup = renderToStaticMarkup(
 			<PlanWorkspaceStatusView
 				workspace={null}
-				missionPilotPlanProgress={
-					{
-						phase: "queued",
-						desiredState: "playing",
-						lastError: null,
-						activeCorrection: null,
-						review: {
-							status: "passed",
-							attempt: 1,
-							advisories: [
-								{
-									artifactKind: "blueprint",
-									score: 58,
-									threshold: 70,
-									rationale: "概念確認用の参考情報です。",
-								},
-							],
-						},
-					} as never
-				}
 				questionnaireSession={null}
 				busyAction={null}
 				canGenerateDataModel={true}
@@ -891,9 +820,8 @@ describe("PlanWorkspaceStatusView", () => {
 			/>,
 		);
 
-		expect(markup).toContain("概念Artifactの参考評価");
-		expect(markup).toContain("Blueprint: 58/100");
-		expect(markup).toContain("Queue投入を妨げません");
+		expect(markup).not.toContain("概念Artifactの参考評価");
+		expect(markup).not.toContain("missionPilotPlanProgress");
 	});
 
 	it("disables regeneration and implementation actions for implemented tasks", () => {

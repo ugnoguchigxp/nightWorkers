@@ -20,24 +20,12 @@ export {
 	initializeMissionPilotAgentQuestionnaireEvents,
 	initializeMissionPilotAgentTaskMessageEvents,
 	initializeMissionPilotRunSync,
-	listTasksWithMissionPilot,
+	reconcileMissionPilotRunOutcomes,
 	reconcileMissionPilotStartup,
+	stopMissionPilotRuntimeEventListeners,
 } from "./mission-pilot.service";
-export {
-	getLatestMissionPilotCloseout,
-	getLatestMissionPilotReviewDecision,
-	getLatestMissionPilotVerificationSnapshot,
-	getMissionPilotExecution,
-	reconcileMissionPilotExecution,
-} from "./mission-pilot-execution-query.service";
+export { getMissionPilotExecution } from "./mission-pilot-execution-query.service";
 export { getMissionPilotPlanProgress } from "./mission-pilot-plan-progress.service";
-export {
-	getQuestionnaireDraft,
-	submitDueQuestionnaireDrafts,
-	submitQuestionnaireDraft,
-	updateQuestionnaireDraft,
-} from "./mission-pilot-questionnaire.service";
-export * from "./mission-pilot-questionnaire-projection";
 export {
 	missionPilotArtifactTrace,
 	missionPilotInitialPromptTrace,

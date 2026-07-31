@@ -24,7 +24,7 @@ export type StructuredProviderExecutionPolicy = {
 };
 
 export function contentDigest(content: string) {
-	return createHash("sha256").update(content).digest("hex");
+	return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
 export function sliceUtf8ContentPage(
@@ -61,3 +61,17 @@ export function sliceUtf8ContentPage(
 
 export const submitTaskUserIntake = (...args: unknown[]) =>
 	callMissionPilotHost("submitTaskUserIntake", ...args);
+
+export function registerTaskRunTerminalListener(
+	listener: (event: {
+		type: "task_run.terminal";
+		eventId: string;
+		taskId: string;
+		taskRevision: number;
+		runId: string;
+		status: string;
+		occurredAt: string;
+	}) => void | Promise<void>,
+) {
+	return callMissionPilotHost("registerTaskRunTerminalListener", listener);
+}

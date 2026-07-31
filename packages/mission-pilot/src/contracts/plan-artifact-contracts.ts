@@ -24,40 +24,7 @@ export const planModeArtifactFocusSchema = z.discriminatedUnion("kind", [
 	}),
 ]);
 
-export const planModeArtifactCorrectionTargetSchema = z
-	.object({
-		target: planModeRegenerationTargetSchema,
-		sourceMessageId: z.string().uuid(),
-		focus: planModeArtifactFocusSchema,
-		instruction: z.string().min(1),
-		preserveUnfocusedContent: z.boolean().default(true),
-	})
-	.superRefine((value, context) => {
-		if (value.focus.kind !== "artifact" && value.target !== "blueprint") {
-			context.addIssue({
-				code: "custom",
-				path: ["focus"],
-				message: "screen and section focus are only supported for blueprint",
-			});
-		}
-	});
-
-export const missionPilotArtifactCorrectionStatusSchema = z.enum([
-	"pending",
-	"dispatching",
-	"running",
-	"result_received",
-	"validating",
-	"applied",
-	"failed",
-	"superseded",
-	"cancelled",
-]);
-
 export type PlanModeRegenerationTarget = z.infer<
 	typeof planModeRegenerationTargetSchema
 >;
 export type PlanModeArtifactFocus = z.infer<typeof planModeArtifactFocusSchema>;
-export type MissionPilotArtifactCorrectionStatus = z.infer<
-	typeof missionPilotArtifactCorrectionStatusSchema
->;

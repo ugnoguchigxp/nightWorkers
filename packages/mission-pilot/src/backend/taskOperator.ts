@@ -38,6 +38,11 @@ export type TaskOperatorProjectionV1 = {
 			blockerDigest: string | null;
 		} | null;
 	} | null;
+	latestTerminalRun: {
+		id: string;
+		revision: number;
+		status: string;
+	} | null;
 	commandCatalog: { availableIds: string[] };
 	[key: string]: unknown;
 };

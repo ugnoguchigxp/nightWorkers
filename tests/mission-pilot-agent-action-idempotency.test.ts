@@ -1,12 +1,6 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
 import {
-	createSession,
-	missionPilotActionExecutions,
-	missionPilotAgentTurns,
-	missionPilotToolCalls,
-} from "@nightworkers/mission-pilot/backend";
-import {
 	claimAgentPlay,
 	claimMissionPilotActionExecution,
 	claimMissionPilotAgentTurn,
@@ -32,6 +26,12 @@ import {
 	taskOperatorCommandReceipts,
 	tasks,
 } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotActionExecutions,
+	missionPilotAgentTurns,
+	missionPilotToolCalls,
+} from "../api/modules/missionPilot/persistence";
 import * as nightworkersService from "../api/modules/nightworkers/nightworkers.service";
 
 const repositoryIds: string[] = [];
@@ -63,10 +63,7 @@ async function fixture() {
 				objective: "receipt",
 			})
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	return { taskId, sessionId: session.id, sessionVersion: session.version };
 }

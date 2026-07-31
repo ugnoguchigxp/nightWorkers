@@ -1,8 +1,6 @@
-import { eq } from "drizzle-orm";
 import type { DesignQuestionnaireSession } from "../../../contracts";
-import { db } from "../../../db/client";
 import { buildQuestionnaireStateChange } from "../../questionnaire";
-import { missionPilotSessions, toControlSummary } from "../../storage";
+import { getSessionByTaskId, toControlSummary } from "../../storage";
 import { readTaskOperatorProjection } from "../../taskOperator";
 import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
@@ -40,13 +38,7 @@ export async function recordMissionPilotTaskEvent(
 export async function recordMissionPilotQuestionnaireStateChanged(
 	session: DesignQuestionnaireSession,
 ) {
-	const [pilot] = await db
-		.select({
-			id: missionPilotSessions.id,
-			desiredState: missionPilotSessions.desiredState,
-		})
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.taskId, session.taskId));
+	const pilot = await getSessionByTaskId(session.taskId);
 	if (
 		pilot?.desiredState !== "playing" ||
 		!(await isMissionPilotAgentSession(pilot.id))

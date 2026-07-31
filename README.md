@@ -678,12 +678,13 @@ These are useful starting points when validating README claims:
 
 | Claim area | Executable source |
 | --- | --- |
-| Task + Mission Pilot atomic creation | `api/modules/nightworkers/nightworkers.task-creation.service.ts` |
-| Mission Pilot state and authorization | `shared/schemas/mission-pilot.schema.ts`, `api/modules/missionPilot/` |
-| Plan steps and review progress | `shared/plan-mode-execution.ts`, `shared/schemas/mission-pilot-plan-progress.schema.ts` |
-| Queue handoff and claim readiness | `api/modules/missionPilot/mission-pilot-queue-handoff.service.ts`, `api/modules/queue/` |
+| Task lifecycle and lazy Mission Pilot activation | `api/modules/nightworkers/nightworkers.basic.service.ts`, `packages/mission-pilot/src/backend/runtime/mission-pilot.service.ts` |
+| Mission Pilot state and authorization | `packages/mission-pilot/src/contracts/mission-pilot.schema.ts`, `packages/mission-pilot/src/backend/runtime/mission-pilot-delegation.ts` |
+| Mission Pilot SQLite ownership and package-only persistence capability | `api/modules/missionPilot/persistence/`, `api/composition/mission-pilot/mission-pilot-runtime-bindings.ts`, `packages/mission-pilot/src/backend/persistence-port.ts` |
+| Plan steps and review progress | `shared/plan-mode-execution.ts`, `packages/mission-pilot/src/contracts/mission-pilot-plan-progress.schema.ts` |
+| Queue handoff and claim readiness | `api/modules/taskOperator/`, `api/modules/queue/` |
 | Task Git workspace and merge policy | `shared/schemas/git-integration.schema.ts`, `api/modules/gitworktree/`, `api/modules/nightworkers/nightworkers.git-merge.service.ts` |
-| Test, Review, and closeout evidence | `api/modules/review/`, `api/modules/missionPilot/mission-pilot-closeout.service.ts` |
+| Test, Review, and closeout evidence | `api/modules/review/`, `api/modules/taskOperator/`, `api/modules/gitCloseout/` |
 | Project Evaluation and Quality | `api/modules/project-evaluation/`, `api/modules/quality/` |
 | Overview usage and cost | `shared/schemas/overview.schema.ts`, `api/modules/overview/` |
 | Runtime storage paths | `api/runtime/paths.ts` |

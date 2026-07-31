@@ -1,3 +1,4 @@
+import { registerTaskRunTerminalListener } from "../agentsShare";
 import { registerQuestionnaireStateChangedListener } from "../questionnaire/questionnaire-events";
 import * as repo from "../storage";
 import { registerTaskMessageCreatedListener } from "../task";
@@ -9,6 +10,7 @@ import {
 	readTaskOperatorResource,
 	registerTaskOperatorExecutionEventListener,
 } from "../taskOperator";
+import { getLatestSucceededMissionPilotImplementationRunId } from "./agent/mission-pilot-action-execution.repository";
 import { markMissionPilotAgentTaskActive } from "./agent/mission-pilot-agent-active-registry";
 import {
 	cancelPendingMissionPilotToolCalls,
@@ -47,89 +49,116 @@ import { dispatchMissionPilotInitialPrompt } from "./mission-pilot-initial-promp
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 import { buildMissionPilotSystemContext } from "./prompts/mission-pilot-system-context";
 
-let runSyncRegistered = false;
+let runSyncUnregisters: Array<() => void> | null = null;
 
 export function initializeMissionPilotRunSync() {
-	if (runSyncRegistered) return;
-	runSyncRegistered = true;
+	if (runSyncUnregisters) return;
 	initializeTaskOperatorExecutionEvents();
-	registerTaskOperatorExecutionEventListener(async (event) => {
-		const session = await repo.getSessionByTaskId(event.taskRef.id);
-		if (
-			session?.desiredState !== "playing" ||
-			!(await isMissionPilotAgentSession(session.id))
-		)
-			return;
-		const projected = await projectMissionPilotExecutionEvent({
-			taskId: event.taskRef.id,
-			type: event.type,
-			runId: event.resourceRef.id,
-		});
-		if (projected)
-			publishMissionPilotUpdated(
-				event.taskRef.id,
-				repo.toControlSummary(projected),
-			);
-		if (event.type === "task.run.started") return;
-		await appendMissionPilotTaskEvent({
-			taskId: event.taskRef.id,
-			eventType:
-				event.type === "task.run.failed"
-					? "task_run.failed"
-					: "task_run.terminal",
-			sourceEventId: event.eventId,
-			taskRevision: event.taskRef.revision,
-			payload: {
+	const unregisterTaskOperator = registerTaskOperatorExecutionEventListener(
+		async (event) => {
+			if (event.type !== "task.run.started") return;
+			const session = await repo.getSessionByTaskId(event.taskRef.id);
+			if (
+				session?.desiredState !== "playing" ||
+				!(await isMissionPilotAgentSession(session.id))
+			)
+				return;
+			const projected = await projectMissionPilotExecutionEvent({
+				taskId: event.taskRef.id,
+				type: event.type,
 				runId: event.resourceRef.id,
-				runRevision: event.resourceRef.revision,
-				status: event.status,
-				occurredAt: event.occurredAt,
-			},
-		});
-		scheduleMissionPilotAgentWake({ sessionId: session.id });
-	});
+			});
+			if (projected)
+				publishMissionPilotUpdated(
+					event.taskRef.id,
+					repo.toControlSummary(projected),
+				);
+		},
+	);
+	const unregisterTerminalRun = registerTaskRunTerminalListener(
+		async (event) => {
+			const session = await repo.getSessionByTaskId(event.taskId);
+			if (
+				session?.desiredState !== "playing" ||
+				!(await isMissionPilotAgentSession(session.id))
+			)
+				return;
+			const failed = [
+				"failed",
+				"cancelled",
+				"blocked",
+				"timed_out",
+				"needs_human",
+			].includes(event.status);
+			const appended = await appendMissionPilotTaskEvent({
+				taskId: event.taskId,
+				eventType: failed ? "task_run.failed" : "task_run.terminal",
+				sourceEventId: event.eventId,
+				taskRevision: event.taskRevision,
+				payload: {
+					runId: event.runId,
+					status: event.status,
+					occurredAt: event.occurredAt,
+				},
+			});
+			if (!appended) return;
+			const projected = await projectMissionPilotExecutionEvent({
+				taskId: event.taskId,
+				type: failed ? "task.run.failed" : "task.run.terminal",
+				runId: event.runId,
+			});
+			if (projected)
+				publishMissionPilotUpdated(
+					event.taskId,
+					repo.toControlSummary(projected),
+				);
+			scheduleMissionPilotAgentWake({ sessionId: session.id });
+		},
+	);
+	runSyncUnregisters = [unregisterTaskOperator, unregisterTerminalRun];
 }
 
-let agentTaskMessageCreatedRegistered = false;
+let unregisterAgentTaskMessageCreated: (() => void) | null = null;
 export function initializeMissionPilotAgentTaskMessageEvents() {
-	if (agentTaskMessageCreatedRegistered) return;
-	agentTaskMessageCreatedRegistered = true;
-	registerTaskMessageCreatedListener(async (message) => {
-		if (message.role !== "user") return;
-		const metadata =
-			message.metadataJson &&
-			typeof message.metadataJson === "object" &&
-			!Array.isArray(message.metadataJson)
-				? (message.metadataJson as Record<string, unknown>)
-				: {};
-		const session = await repo.getSessionByTaskId(message.taskId);
-		if (
-			session?.desiredState !== "playing" ||
-			!(await isMissionPilotAgentSession(session.id))
-		)
-			return;
-		if (
-			metadata.source === "mission_pilot" ||
-			isDelegatedUserMessageFromSession(metadata, session.id)
-		)
-			return;
-		const access = await createMissionPilotTaskOperatorAccess({
-			sessionId: session.id,
-			taskId: message.taskId,
-		});
-		const projection = await readTaskOperatorProjection(
-			message.taskId,
-			access.context,
-			access.delegatedAuthorization,
-		);
-		await recordMissionPilotTaskEvent({
-			taskId: message.taskId,
-			type: "task.user_message_added",
-			sourceEventId: `task-message:${message.id}`,
-			taskRevision: projection.task.revision,
-			payload: { messageId: message.id, content: message.content },
-		});
-	});
+	if (unregisterAgentTaskMessageCreated) return;
+	unregisterAgentTaskMessageCreated = registerTaskMessageCreatedListener(
+		async (message) => {
+			if (message.role !== "user") return;
+			const metadata =
+				message.metadataJson &&
+				typeof message.metadataJson === "object" &&
+				!Array.isArray(message.metadataJson)
+					? (message.metadataJson as Record<string, unknown>)
+					: {};
+			const session = await repo.getSessionByTaskId(message.taskId);
+			if (
+				session?.desiredState !== "playing" ||
+				!(await isMissionPilotAgentSession(session.id))
+			)
+				return;
+			if (
+				metadata.source === "mission_pilot" ||
+				isDelegatedUserMessageFromSession(metadata, session.id)
+			)
+				return;
+			const access = await createMissionPilotTaskOperatorAccess({
+				sessionId: session.id,
+				taskId: message.taskId,
+			});
+			const projection = await readTaskOperatorProjection(
+				message.taskId,
+				access.context,
+				access.delegatedAuthorization,
+			);
+			await recordMissionPilotTaskEvent({
+				taskId: message.taskId,
+				type: "task.user_message_added",
+				sourceEventId: `task-message:${message.id}`,
+				taskRevision: projection.task.revision,
+				payload: { messageId: message.id, content: message.content },
+			});
+		},
+	);
 }
 function isDelegatedUserMessageFromSession(
 	metadata: Record<string, unknown>,
@@ -144,13 +173,22 @@ function isDelegatedUserMessageFromSession(
 	return actor.kind === "delegated_user" && actor.actorId === sessionId;
 }
 
-let agentQuestionnaireEventsRegistered = false;
+let unregisterAgentQuestionnaireEvents: (() => void) | null = null;
 export function initializeMissionPilotAgentQuestionnaireEvents() {
-	if (agentQuestionnaireEventsRegistered) return;
-	agentQuestionnaireEventsRegistered = true;
-	registerQuestionnaireStateChangedListener(async (questionnaire) => {
-		await recordMissionPilotQuestionnaireStateChanged(questionnaire);
-	});
+	if (unregisterAgentQuestionnaireEvents) return;
+	unregisterAgentQuestionnaireEvents =
+		registerQuestionnaireStateChangedListener(async (questionnaire) => {
+			await recordMissionPilotQuestionnaireStateChanged(questionnaire);
+		});
+}
+
+export function stopMissionPilotRuntimeEventListeners() {
+	for (const unregister of runSyncUnregisters ?? []) unregister();
+	runSyncUnregisters = null;
+	unregisterAgentTaskMessageCreated?.();
+	unregisterAgentTaskMessageCreated = null;
+	unregisterAgentQuestionnaireEvents?.();
+	unregisterAgentQuestionnaireEvents = null;
 }
 export async function reconcileMissionPilotStartup() {
 	const migrated = await backfillStoppedMissionPilotAgentSessions();
@@ -175,6 +213,58 @@ export async function reconcileMissionPilotStartup() {
 	return migrated + interruptedAgentSessions.length;
 }
 
+export async function reconcileMissionPilotRunOutcomes() {
+	let reconciled = 0;
+	for (const { session } of await listPlayingAgentSessions()) {
+		scheduleMissionPilotAgentWake({ sessionId: session.id });
+		const expectedRunId =
+			session.activeRunId ??
+			(await getLatestSucceededMissionPilotImplementationRunId(session.id));
+		if (!expectedRunId) continue;
+		const access = await createMissionPilotTaskOperatorAccess({
+			sessionId: session.id,
+			taskId: session.taskId,
+		});
+		const projection = await readTaskOperatorProjection(
+			session.taskId,
+			access.context,
+			access.delegatedAuthorization,
+		);
+		const terminal = projection.latestTerminalRun;
+		if (!terminal || terminal.id !== expectedRunId) continue;
+		const failed = [
+			"failed",
+			"cancelled",
+			"blocked",
+			"timed_out",
+			"needs_human",
+		].includes(terminal.status);
+		const appended = await appendMissionPilotTaskEvent({
+			taskId: session.taskId,
+			eventType: failed ? "task_run.failed" : "task_run.terminal",
+			sourceEventId: `task-run-terminal:${terminal.id}:${terminal.status}`,
+			taskRevision: projection.task.revision,
+			payload: {
+				runId: terminal.id,
+				runRevision: terminal.revision,
+				status: terminal.status,
+				occurredAt: new Date(terminal.revision).toISOString(),
+			},
+		});
+		if (!appended) continue;
+		const updated = await projectMissionPilotExecutionEvent({
+			taskId: session.taskId,
+			type: failed ? "task.run.failed" : "task.run.terminal",
+			runId: terminal.id,
+		});
+		if (!updated) continue;
+		publishMissionPilotUpdated(session.taskId, repo.toControlSummary(updated));
+		scheduleMissionPilotAgentWake({ sessionId: session.id });
+		reconciled += 1;
+	}
+	return reconciled;
+}
+
 export async function play(
 	taskId: string,
 	expectedVersion: number,
@@ -182,6 +272,9 @@ export async function play(
 		providerPreflight?: typeof preflightMissionPilotProviderToolTurn;
 	} = {},
 ) {
+	initializeMissionPilotRunSync();
+	initializeMissionPilotAgentTaskMessageEvents();
+	initializeMissionPilotAgentQuestionnaireEvents();
 	const projection = await readTaskOperatorProjection(
 		taskId,
 		humanTaskOperatorQueryContext(),
@@ -430,29 +523,9 @@ async function playAgentSession(
 			);
 		}
 	}
-	if (claimed.initialPromptState !== "dispatching")
-		scheduleMissionPilotAgentWake({ sessionId: claimed.id });
+	scheduleMissionPilotAgentWake({ sessionId: claimed.id });
 	const current = (await getMissionPilotSessionById(claimed.id)) ?? claimed;
 	const missionPilot = repo.toControlSummary(current);
 	publishMissionPilotUpdated(taskId, missionPilot);
 	return { missionPilot, run: null, messages: [] };
-}
-
-export async function listTasksWithMissionPilot<T extends { id: string }>(
-	tasks: readonly T[],
-) {
-	const summaries = await repo.listSessionSummariesByTaskIds(
-		tasks.map((task) => task.id),
-	);
-	return tasks.map((task) => {
-		const missionPilot = summaries.get(task.id);
-		if (!missionPilot) {
-			throw new MissionPilotError(
-				500,
-				"MISSION_PILOT_INTEGRITY_ERROR",
-				`Task ${task.id} is missing its Mission Pilot session`,
-			);
-		}
-		return { ...task, missionPilot };
-	});
 }

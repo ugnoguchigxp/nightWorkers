@@ -1,8 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import type { missionPilotAuthorizationSchema } from "./mission-pilot.schema";
 
-export const missionPilotRuntimeKindSchema = z.enum(["legacy", "agent"]);
-export const missionPilotAgentEngineModeSchema = z.enum(["shadow", "agent"]);
+export const missionPilotAgentEngineModeSchema = z.literal("agent");
 export const missionPilotRuntimeStateSchema = z.enum([
 	"stopped",
 	"running",
@@ -134,9 +133,6 @@ export const missionPilotTaskReadModelSchema = z.object({
 	observedAt: z.string().optional(),
 });
 
-export type MissionPilotRuntimeKind = z.infer<
-	typeof missionPilotRuntimeKindSchema
->;
 export type MissionPilotAgentEngineMode = z.infer<
 	typeof missionPilotAgentEngineModeSchema
 >;

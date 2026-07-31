@@ -1,5 +1,9 @@
 import type { MissionPilotHostPorts } from "../contracts";
 
+export {
+	clearMissionPilotRuntimeHost,
+	configureMissionPilotRuntimeHost,
+} from "../backend/host-bindings";
 export * from "../backend/runtime/adapters/mission-pilot-provider.adapter";
 export * from "../backend/runtime/agent/mission-pilot-action-command-executor";
 export * from "../backend/runtime/agent/mission-pilot-action-execution.repository";
@@ -25,9 +29,10 @@ export * from "../backend/runtime/mission-pilot.service";
 export * from "../backend/runtime/mission-pilot-context";
 export * from "../backend/runtime/mission-pilot-delegation";
 export * from "../backend/runtime/mission-pilot-execution-query.service";
+export * from "../backend/runtime/mission-pilot-trace-provenance";
 export * from "../backend/runtime/prompts/mission-pilot-system-context";
 export * from "../backend/runtime/routes/mission-pilot-agent-fixture-scenarios";
-export { backfillMissionPilotTraceProvenance } from "../backend/storage/provenance-backfill";
+export * from "../backend/storage/repository";
 
 export function createMissionPilotHostPortsFake(
 	overrides: Partial<MissionPilotHostPorts> = {},

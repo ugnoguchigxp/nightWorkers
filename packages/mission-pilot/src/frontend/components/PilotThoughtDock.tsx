@@ -250,9 +250,7 @@ export function missionPilotStopThoughtItem(
 ): PilotThoughtItem | null {
 	if (summary?.desiredState !== "stopped" || summary.phase === "created")
 		return null;
-	const diagnostic = summary.preQueueDiagnostic;
 	const reasonCode =
-		diagnostic?.code ??
 		summary.lastErrorCode ??
 		(summary.phase === "paused"
 			? "MISSION_PILOT_USER_STOPPED"
@@ -261,15 +259,12 @@ export function missionPilotStopThoughtItem(
 				: "MISSION_PILOT_STOPPED");
 	const reason =
 		summary.lastError?.trim() ||
-		(diagnostic
-			? diagnostic.code
-			: summary.phase === "paused"
-				? "ユーザーの停止操作を受け付けました。"
-				: summary.phase === "archived"
-					? "タスクの完了・アーカイブ処理が完了しました。"
-					: `phase=${summary.phase} で停止状態へ遷移しました。`);
+		(summary.phase === "paused"
+			? "ユーザーの停止操作を受け付けました。"
+			: summary.phase === "archived"
+				? "タスクの完了・アーカイブ処理が完了しました。"
+				: `phase=${summary.phase} で停止状態へ遷移しました。`);
 	const createdAt =
-		diagnostic?.detectedAt ??
 		(summary.phase === "paused" ? summary.stoppedAt : null) ??
 		summary.updatedAt;
 	const attention = summary.activityState === "attention";
@@ -292,14 +287,6 @@ export function missionPilotStopThoughtItem(
 				lastErrorCode: summary.lastErrorCode ?? null,
 				lastError: summary.lastError,
 				stoppedAt: summary.stoppedAt ?? null,
-				...(diagnostic
-					? {
-							taskStatus: diagnostic.taskStatus,
-							runIds: diagnostic.runIds,
-							queueEntryIds: diagnostic.queueEntryIds,
-							detectedAt: diagnostic.detectedAt,
-						}
-					: {}),
 			},
 			createdAt,
 		},

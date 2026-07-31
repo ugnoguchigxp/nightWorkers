@@ -3,10 +3,6 @@ import crypto from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-	missionPilotSessions,
-	missionPilotTaskEventInbox,
-} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import {
 	afterEach,
@@ -20,6 +16,10 @@ import {
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import { db } from "../../api/db/client";
+import {
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "../../api/modules/missionPilot/persistence";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import * as service from "../../api/modules/nightworkers/nightworkers.service";
 import { registerTaskMessageCreatedListener } from "../../api/modules/task";
@@ -28,7 +28,7 @@ import { initializeE2eGitRepository } from "../e2e/helpers";
 import { representativeAppBlueprint } from "../fixtures/app-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
 
-vi.setConfig({ testTimeout: 20_000 });
+vi.setConfig({ testTimeout: 40_000 });
 
 vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<

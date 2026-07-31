@@ -4,7 +4,6 @@ export type {
 	MissionPilotPublicActionCommand,
 	MissionPilotPublicResourceQuery,
 } from "./host-ports";
-export * from "./legacy-index";
 export * from "./plan-artifact-contracts";
 export type { MissionPilotPrincipal } from "./principal";
 export type { MissionPilotProvenance } from "./provenance";
@@ -17,3 +16,4 @@ export {
 	missionPilotPlanProgressRealtimeEventSchema,
 	missionPilotRealtimeEventSchema,
 } from "./realtime";
+export * from "./schemas";

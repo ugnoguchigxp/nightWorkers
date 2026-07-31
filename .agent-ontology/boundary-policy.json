@@ -8,13 +8,10 @@
     "api/modules/llm-gateway",
 	"src/modules/settings",
     "src/modules/quality",
-    "api/modules/missionPilot",
     "api/modules/codingAgent",
     "api/modules/agentsShare",
-    "src/modules/missionPilot",
     "src/modules/codingAgent",
     "src/modules/agentsShare",
-    "shared/modules/missionPilot",
     "shared/modules/codingAgent",
     "shared/modules/agentsShare",
 		"shared/modules/taskOperator",
@@ -22,12 +19,10 @@
 		"src/modules/taskOperator"
   ],
 	"roleModuleRoots": [
-	    "api/modules/missionPilot",
-	    "api/modules/codingAgent",
-	    "src/modules/missionPilot",
-	    "src/modules/codingAgent",
-	    "shared/modules/missionPilot",
-	    "shared/modules/codingAgent"
+    "api/modules/codingAgent",
+    "src/modules/codingAgent",
+    "shared/modules/codingAgent",
+    "api/modules/missionPilot"
 	],
 	"agentSharedModuleRoots": [
 	    "api/modules/agentsShare",
@@ -42,11 +37,9 @@
 		{
 			"role": "Mission Pilot",
 			"markers": ["mission-pilot", "missionPilot"],
-			"allowedRoots": [
-				"packages/mission-pilot",
-				"api/modules/missionPilot",
-				"src/modules/missionPilot",
-				"shared/modules/missionPilot"
+      "allowedRoots": [
+        "packages/mission-pilot",
+        "api/modules/missionPilot"
 			],
 			"exemptPrefixes": [
 				"api/db/",

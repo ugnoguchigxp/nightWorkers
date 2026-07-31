@@ -1,4 +1,5 @@
-import { getMissionPilotPlanSystemContext } from "@nightworkers/mission-pilot/backend";
+import "./helpers/mission-pilot-runtime";
+import { getMissionPilotPlanSystemContext } from "@nightworkers/mission-pilot/testing";
 import { describe, expect, it } from "vitest";
 import {
 	buildSpecificationDocumentContext,

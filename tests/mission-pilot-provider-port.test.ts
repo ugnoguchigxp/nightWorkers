@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
-import { createSession } from "@nightworkers/mission-pilot/backend";
 import {
 	appendMissionPilotTaskEvent,
 	authorizeMissionPilotProviderCall,
@@ -19,6 +18,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import { createSession } from "../api/modules/missionPilot/persistence";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,
@@ -47,10 +47,7 @@ async function retryFixture() {
 			.insert(tasks)
 			.values({ id: taskId, repositoryId, title: "provider retry" })
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	const playing = await claimAgentPlay(taskId, session.version);
 	if (!playing) throw new Error("provider retry fixture did not start");
@@ -72,10 +69,7 @@ async function stoppedFixture() {
 			.insert(tasks)
 			.values({ id: taskId, repositoryId, title: "stopped provider" })
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	return { taskId, session };
 }

@@ -1,5 +1,4 @@
 import { z } from "@hono/zod-openapi";
-import { designQuestionnaireAnswerSchema } from "./questionnaire-contracts";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
@@ -102,83 +101,6 @@ export const missionPilotInitialPromptStateSchema = z.enum([
 	"sent",
 	"failed",
 ]);
-export const missionPilotQueueHandoffSchema = z
-	.object({
-		sessionId: z.string().uuid(),
-		taskId: z.string().uuid(),
-		admissionKey: z.string().min(1),
-		queueEntryId: z.string().uuid(),
-		queueEntryStatus: z.literal("queued"),
-		queueClaimReady: z.literal(false),
-		reviewedContextRevision: z.number().int().positive(),
-		reviewedContextDigest: z.string().min(1),
-		routingRevision: z.number().int().nonnegative().default(0),
-		featurePlanMessageId: z.string().uuid(),
-		featurePlanContentDigest: z
-			.string()
-			.regex(/^sha256:[a-f0-9]{64}$/)
-			.optional(),
-		implementationTodoProjectionVersion: z.literal(1).optional(),
-		implementationPlanSourceMessageId: z.string().uuid().optional(),
-		implementationPlanDigest: z
-			.string()
-			.regex(/^sha256:[a-f0-9]{64}$/)
-			.optional(),
-		verificationDocumentId: z.string().uuid(),
-		planReviewId: z.string().uuid(),
-		planReviewVerdict: z.literal("pass"),
-		queuedAt: dateLikeSchema,
-	})
-	.superRefine((handoff, context) => {
-		if (!handoff.featurePlanContentDigest) {
-			context.addIssue({
-				code: "custom",
-				path: ["featurePlanContentDigest"],
-				message: "Queue handoff requires a Feature Plan content digest.",
-			});
-		}
-		if (
-			handoff.implementationTodoProjectionVersion !== 1 ||
-			handoff.implementationPlanSourceMessageId !==
-				handoff.featurePlanMessageId ||
-			!handoff.implementationPlanDigest
-		) {
-			context.addIssue({
-				code: "custom",
-				path: ["implementationPlanDigest"],
-				message:
-					"Queue handoff requires provenance for the adopted structured implementation plan.",
-			});
-		}
-	});
-export const missionPilotPreQueueDiagnosticCodeSchema = z.enum([
-	"MISSION_PILOT_PRE_QUEUE_TASK_TERMINAL",
-	"MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",
-	"MISSION_PILOT_QUEUE_HANDOFF_STALE_CONTEXT",
-	"MISSION_PILOT_QUEUE_HANDOFF_EVIDENCE_MISSING",
-	"MISSION_PILOT_QUEUE_HANDOFF_DUPLICATE",
-]);
-export const missionPilotPreQueueDiagnosticSchema = z.object({
-	code: missionPilotPreQueueDiagnosticCodeSchema,
-	detectedAt: dateLikeSchema,
-	taskStatus: z.string(),
-	sessionPhase: z.string(),
-	queueEntryIds: z.array(z.string().uuid()),
-	runIds: z.array(z.string().uuid()),
-	runSourceRefs: z.array(
-		z.object({
-			runId: z.string().uuid(),
-			executionMode: z.string().nullable(),
-			executionModeSource: z.string().nullable(),
-		}),
-	),
-	commitRecordIds: z.array(z.string().uuid()),
-	diffEventIds: z.array(z.string().uuid()),
-	contextRevision: z.number().int().positive(),
-	contextDigest: z.string().min(1),
-	reviewedContextRevision: z.number().int().positive().nullable(),
-	reviewedContextDigest: z.string().min(1).nullable(),
-});
 export const missionPilotControlSummarySchema = z.object({
 	taskId: z.string().uuid(),
 	desiredState: missionPilotDesiredStateSchema,
@@ -193,41 +115,8 @@ export const missionPilotControlSummarySchema = z.object({
 	lastErrorCode: z.string().nullable().optional(),
 	lastError: z.string().nullable(),
 	stoppedAt: dateLikeSchema.nullable().optional(),
-	queueHandoff: missionPilotQueueHandoffSchema.nullable().default(null),
-	preQueueDiagnostic: missionPilotPreQueueDiagnosticSchema
-		.nullable()
-		.default(null),
 	updatedAt: dateLikeSchema,
 });
-export const missionPilotAnswerEvidenceSchema = z.object({
-	source: z.enum(["mission_pilot", "user", "user_confirmed"]),
-	reason: z.string().min(1),
-	updatedAt: dateLikeSchema,
-});
-export const missionPilotQuestionnaireDraftStateSchema = z.enum([
-	"waiting_user",
-	"submitting",
-	"submitted",
-	"failed",
-]);
-export const missionPilotQuestionnaireDraftSchema = z.object({
-	id: z.string().uuid(),
-	taskId: z.string().uuid(),
-	questionnaireSessionId: z.string().uuid(),
-	answers: z.array(designQuestionnaireAnswerSchema),
-	answerEvidence: z.record(z.string(), missionPilotAnswerEvidenceSchema),
-	state: missionPilotQuestionnaireDraftStateSchema,
-	deadlineAt: dateLikeSchema,
-	version: z.number().int().nonnegative(),
-	createdAt: dateLikeSchema,
-	updatedAt: dateLikeSchema,
-});
-export const updateMissionPilotQuestionnaireDraftSchema = z.object({
-	expectedVersion: z.number().int().nonnegative(),
-	answers: z.array(designQuestionnaireAnswerSchema).min(1),
-});
-export const submitMissionPilotQuestionnaireDraftSchema =
-	updateMissionPilotQuestionnaireDraftSchema;
 export const missionPilotCommandRequestSchema = z.object({
 	expectedVersion: z.number().int().nonnegative(),
 });
@@ -254,19 +143,4 @@ export type MissionPilotAuthorization = z.infer<
 >;
 export type MissionPilotControlSummary = z.infer<
 	typeof missionPilotControlSummarySchema
->;
-export type MissionPilotQueueHandoff = z.infer<
-	typeof missionPilotQueueHandoffSchema
->;
-export type MissionPilotPreQueueDiagnosticCode = z.infer<
-	typeof missionPilotPreQueueDiagnosticCodeSchema
->;
-export type MissionPilotPreQueueDiagnostic = z.infer<
-	typeof missionPilotPreQueueDiagnosticSchema
->;
-export type MissionPilotAnswerEvidence = z.infer<
-	typeof missionPilotAnswerEvidenceSchema
->;
-export type MissionPilotQuestionnaireDraft = z.infer<
-	typeof missionPilotQuestionnaireDraftSchema
 >;

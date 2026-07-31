@@ -221,27 +221,15 @@ function completionTurns(
 			}),
 		]),
 		turn(
-			"missionPilot.autopilot.finish-wait",
+			"missionPilot.autopilot.finish-retry",
 			[
-				control(`${prefix}-finish-wait`, "agent.wait_for_event", {
-					eventTypes: [
-						"task.state_changed",
-						"task_run.started",
-						"task_run.terminal",
-						"task_run.failed",
-					],
-					reason:
-						"Task完了操作と同時に到着した未読eventを消費してから終了を再評価します。",
+				control(`${prefix}-finish-retry`, "agent.finish", {
+					summary:
+						"直前の完了判定を再評価し、Task Goalの達成とTask完了を再確認しました。",
 				}),
 			],
 			"previous_tool_failed",
 		),
-		turn("missionPilot.autopilot.finish-retry", [
-			control(`${prefix}-finish-retry`, "agent.finish", {
-				summary:
-					"未読eventを確認し、Task Goalの達成とTask完了を再確認しました。",
-			}),
-		]),
 	];
 }
 

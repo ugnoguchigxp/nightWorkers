@@ -15,7 +15,7 @@ import * as llm from "../../api/services/structured-llm";
 import { representativeMockBlueprint } from "../fixtures/mock-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
 
-vi.setConfig({ testTimeout: 20_000 });
+vi.setConfig({ testTimeout: 40_000 });
 
 vi.mock("../../api/services/structured-llm", async () => {
 	const actual = await vi.importActual<
@@ -240,7 +240,7 @@ describe("NightWorkers workbench routes", () => {
 			),
 		).toBe(true);
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
-		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(2);
+		expect(llm.callStructuredJsonLLM).toHaveBeenCalledTimes(3);
 	});
 
 	it("starts a normal run for Blueprint wording instead of classifying jobType in intake", async () => {

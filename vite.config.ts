@@ -45,6 +45,18 @@ export default defineConfig({
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
 			"@api": path.resolve(__dirname, "./api"),
+			"@nightworkers/mission-pilot/contracts": path.resolve(
+				__dirname,
+				"./packages/mission-pilot/src/contracts/index.ts",
+			),
+			"@nightworkers/mission-pilot/frontend": path.resolve(
+				__dirname,
+				"./packages/mission-pilot/src/frontend/index.ts",
+			),
+			"@nightworkers/mission-pilot/frontend.css": path.resolve(
+				__dirname,
+				"./packages/mission-pilot/src/frontend/styles.css",
+			),
 		},
 	},
 	server: {

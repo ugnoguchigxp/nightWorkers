@@ -300,22 +300,8 @@ describe("PilotThoughtDock", () => {
 			activeRunId: "33333333-3333-4333-8333-333333333333",
 			nextWakeAt: null,
 			version: 1,
-			lastError: null,
-			preQueueDiagnostic: {
-				code: "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",
-				detectedAt: new Date("2026-07-11T10:00:03Z"),
-				taskStatus: "queued",
-				sessionPhase: "queueing",
-				queueEntryIds: [],
-				runIds: ["44444444-4444-4444-8444-444444444444"],
-				runSourceRefs: [],
-				commitRecordIds: [],
-				diffEventIds: [],
-				contextRevision: 1,
-				contextDigest: "context-digest",
-				reviewedContextRevision: null,
-				reviewedContextDigest: null,
-			},
+			lastErrorCode: "MISSION_PILOT_TASK_REQUIRES_ATTENTION",
+			lastError: "Task state changed and requires a new decision.",
 			updatedAt: new Date(),
 		});
 		const markup = renderToStaticMarkup(
@@ -348,8 +334,8 @@ describe("PilotThoughtDock", () => {
 		expect(markup).toContain(
 			"Mission Pilotを停止しました。自動再開されません。",
 		);
-		expect(markup).toContain("MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN");
-		expect(markup).toContain("44444444-4444-4444-8444-444444444444");
+		expect(markup).toContain("MISSION_PILOT_TASK_REQUIRES_ATTENTION");
+		expect(markup).toContain("requires a new decision");
 		expect(markup).not.toContain("repositoryを確認しています");
 		expect(markup).not.toContain("exec_command");
 		expect(markup).not.toContain("User Flowを生成しています。");
@@ -359,7 +345,7 @@ describe("PilotThoughtDock", () => {
 		);
 	});
 
-	it("shows the persisted stop reason even without a pre-Queue diagnostic", () => {
+	it("shows the persisted stop reason", () => {
 		const item = missionPilotStopThoughtItem({
 			taskId: "11111111-1111-4111-8111-111111111111",
 			desiredState: "stopped",
@@ -375,8 +361,6 @@ describe("PilotThoughtDock", () => {
 			lastError:
 				"Mission Pilot automatic Artifact regeneration limit reached: feature_plan",
 			stoppedAt: null,
-			queueHandoff: null,
-			preQueueDiagnostic: null,
 			updatedAt: new Date("2026-07-13T10:23:49Z"),
 		});
 
@@ -404,8 +388,6 @@ describe("PilotThoughtDock", () => {
 			lastErrorCode: null,
 			lastError: null,
 			stoppedAt: new Date("2026-07-13T10:24:00Z"),
-			queueHandoff: null,
-			preQueueDiagnostic: null,
 			updatedAt: new Date("2026-07-13T10:24:00Z"),
 		});
 

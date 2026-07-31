@@ -15,19 +15,10 @@ export type AgentExecution = {
 	agent?: {
 		visibleItems?: Array<{ kind: string; content?: string }>;
 	};
-	legacyPostQueueState: {
-		status: "retired";
-		retiredFields: string[];
-		replacement: {
-			execution: "task_operator_v1";
-			resources: string[];
-		};
-	};
 };
 
 type TaskResponse = {
 	status: string;
-	missionPilot?: { version: number };
 };
 
 export async function createAgentScenario(
@@ -65,10 +56,7 @@ export async function createAgentScenario(
 		},
 	});
 	expect(taskResponse.status(), await taskResponse.text()).toBe(201);
-	const task = (await taskResponse.json()) as {
-		id: string;
-		missionPilot: { version: number };
-	};
+	const task = (await taskResponse.json()) as { id: string };
 	const fixtureResponse = await request.post(
 		"/api/e2e/fixtures/mission-pilot-agent-scenario",
 		{
@@ -90,13 +78,19 @@ export async function createAgentScenario(
 			await codingFixtureResponse.text(),
 		).toBe(201);
 	}
+	const controlResponse = await request.get(
+		`/api/mission-pilot/tasks/${task.id}`,
+		{ headers: agentScenarioHeaders },
+	);
+	expect(controlResponse.status(), await controlResponse.text()).toBe(200);
+	const control = (await controlResponse.json()) as { version: number };
 	return {
 		workspace,
 		repositoryId,
 		taskId: task.id,
 		sessionId: ((await fixtureResponse.json()) as { sessionId: string })
 			.sessionId,
-		version: task.missionPilot.version,
+		version: control.version,
 	};
 }
 
@@ -104,18 +98,25 @@ export async function playAgentScenario(
 	request: APIRequestContext,
 	fixture: { taskId: string },
 ) {
+	const controlResponse = await request.get(
+		`/api/mission-pilot/tasks/${fixture.taskId}`,
+		{
+			headers: agentScenarioHeaders,
+		},
+	);
+	expect(controlResponse.status(), await controlResponse.text()).toBe(200);
+	const control = (await controlResponse.json()) as {
+		version: number;
+	};
 	const taskResponse = await request.get(`/api/tasks/${fixture.taskId}`, {
 		headers: agentScenarioHeaders,
 	});
 	expect(taskResponse.status(), await taskResponse.text()).toBe(200);
-	const task = (await taskResponse.json()) as {
-		missionPilot: { version: number };
-	};
 	const response = await request.post(
 		`/api/mission-pilot/tasks/${fixture.taskId}/play`,
 		{
 			headers: agentScenarioHeaders,
-			data: { expectedVersion: task.missionPilot.version },
+			data: { expectedVersion: control.version },
 		},
 	);
 	expect(response.status(), await response.text()).toBe(200);

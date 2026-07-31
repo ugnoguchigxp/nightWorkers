@@ -9,7 +9,6 @@ export function missionPilotPresentation(summary: MissionPilotControlSummary) {
 	return {
 		busy,
 		attention: summary.activityState === "attention",
-		diagnostic: summary.preQueueDiagnostic,
 		playing: summary.desiredState === "playing",
 		canPlay:
 			!busy &&

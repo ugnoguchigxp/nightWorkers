@@ -1,5 +1,8 @@
 import fs from "node:fs";
-import { missionPilotArtifactProviderExecutionPolicy } from "@nightworkers/mission-pilot/testing";
+import {
+	configureMissionPilotRuntimeHost,
+	missionPilotArtifactProviderExecutionPolicy,
+} from "@nightworkers/mission-pilot/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type {
@@ -10,6 +13,13 @@ import {
 	callStructuredLlmResult,
 	createStructuredOutputContract,
 } from "../../api/services/structured-llm";
+import {
+	bindSystemContextCatalogSnapshot,
+	createSystemContextBindingSnapshot,
+	p,
+	runWithSystemContextBinding,
+	systemContextPromptAudit,
+} from "../../api/systemContexts/catalog";
 import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
 
 const codexMock = vi.hoisted(() => {
@@ -101,6 +111,13 @@ installStructuredLlmEnvHooks();
 describe("Codex structured provider isolation", () => {
 	beforeEach(() => {
 		codexMock.reset();
+		configureMissionPilotRuntimeHost({
+			bindSystemContextCatalogSnapshot,
+			createSystemContextBindingSnapshot,
+			renderSystemContext: p,
+			runWithSystemContextBinding,
+			systemContextPromptAudit,
+		});
 	});
 
 	it("runs provider authorization before creating a provider client", async () => {

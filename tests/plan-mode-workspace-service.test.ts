@@ -4,6 +4,7 @@ import {
 	getPlanModeTask,
 	listPlanModeTaskMessages,
 } from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
+import { getPlanModeRouting } from "../api/modules/planMode/plan-mode-routing.service";
 import { getPlanModeWorkspace } from "../api/modules/specification/plan-mode-workspace.service";
 
 vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
@@ -13,6 +14,10 @@ vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 
 vi.mock("../api/modules/questionnaire/questionnaire-query.service", () => ({
 	listDesignQuestionnaires: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../api/modules/planMode/plan-mode-routing.service", () => ({
+	getPlanModeRouting: vi.fn(),
 }));
 
 describe("plan-mode-workspace.service", () => {
@@ -80,6 +85,14 @@ describe("plan-mode-workspace.service", () => {
 		] as Awaited<ReturnType<typeof listPlanModeTaskMessages>>;
 
 		vi.mocked(listPlanModeTaskMessages).mockResolvedValueOnce(messages);
+		vi.mocked(getPlanModeRouting).mockResolvedValueOnce({
+			revision: 0,
+			entries: [],
+			editable: true,
+			lockedReason: null,
+			updatedBy: null,
+			updatedAt: null,
+		});
 		const unregister = registerBlueprintArtifactAdoptionReader(async () => ({
 			adopted: true,
 		}));

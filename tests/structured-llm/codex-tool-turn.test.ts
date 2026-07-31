@@ -1,20 +1,29 @@
 import fs from "node:fs";
 import path from "node:path";
-import { missionPilotProviderPort } from "@nightworkers/mission-pilot/testing";
+import {
+	configureMissionPilotRuntimeHost,
+	missionPilotProviderPort,
+} from "@nightworkers/mission-pilot/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	buildCodexToolTurnJsonSchema,
 	parseCodexToolTurnResponse,
 } from "../../api/services/structured-llm/codex-tool-turn";
+import {
+	buildNormalizedSupervisorLlmRequestCandidates,
+	callProviderToolTurn,
+	normalizeStructuredProviderError,
+	providerAdapterKey,
+	withStructuredProviderAttempt,
+} from "../../api/services/structured-llm/public";
+import {
+	bindSystemContextCatalogSnapshot,
+	createSystemContextBindingSnapshot,
+	p,
+	runWithSystemContextBinding,
+	systemContextPromptAudit,
+} from "../../api/systemContexts/catalog";
 import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
-
-vi.mock("@nightworkers/mission-pilot/backend", async (importOriginal) => ({
-	...(await importOriginal<
-		typeof import("@nightworkers/mission-pilot/backend")
-	>()),
-	getSessionByTaskId: vi.fn(async () => ({ desiredState: "playing" })),
-	hasValidAuthorization: vi.fn(() => true),
-}));
 
 const codexMock = vi.hoisted(() => {
 	const runInputs: unknown[] = [];
@@ -94,7 +103,39 @@ vi.mock("@openai/codex-sdk", () => ({ Codex: codexMock.MockCodex }));
 installStructuredLlmEnvHooks();
 
 describe("Codex Mission Pilot tool turns", () => {
-	beforeEach(() => codexMock.reset());
+	beforeEach(() => {
+		codexMock.reset();
+		configureMissionPilotRuntimeHost({
+			bindSystemContextCatalogSnapshot,
+			createSystemContextBindingSnapshot,
+			renderSystemContext: p,
+			runWithSystemContextBinding,
+			systemContextPromptAudit,
+			buildNormalizedSupervisorLlmRequestCandidates,
+			callProviderToolTurn: (
+				input: Parameters<typeof callProviderToolTurn>[0],
+			) => {
+				const options = input.options as Record<string, unknown>;
+				const executionPolicy = options.executionPolicy as Record<
+					string,
+					unknown
+				>;
+				return callProviderToolTurn({
+					...input,
+					options: {
+						...options,
+						executionPolicy: {
+							...executionPolicy,
+							authorizeProviderCall: async () => undefined,
+						},
+					},
+				});
+			},
+			normalizeStructuredProviderError,
+			providerAdapterKey,
+			withStructuredProviderAttempt,
+		});
+	});
 
 	it("keeps assistant text and malformed tool arguments losslessly available", () => {
 		const parsed = parseCodexToolTurnResponse(

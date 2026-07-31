@@ -37,11 +37,8 @@ export {
 	fetchMissionPilotControl,
 	fetchMissionPilotExecutionTrace,
 	fetchMissionPilotPlanProgress,
-	fetchMissionPilotQuestionnaireDraft,
 	playMissionPilotTask,
 	stopMissionPilotTask,
-	submitMissionPilotQuestionnaireDraft,
-	updateMissionPilotQuestionnaireDraft,
 } from "./missionPilotCommands";
 export * from "./missionPilotPlanProgressQuery";
 export { missionPilotPresentation } from "./missionPilotPresentation";
@@ -53,11 +50,9 @@ export {
 	unstartedMissionPilotControl,
 	useMissionPilotControl,
 } from "./missionPilotQueries";
-export { projectMissionPilotQuestionnaireAnswers } from "./missionPilotQuestionnaireProjection";
 export {
 	handleMissionPilotRealtimeEvent,
 	type MissionPilotRealtimeCache,
 } from "./realtime";
 export { useMissionPilotArtifactAutoFocus } from "./useMissionPilotArtifactAutoFocus";
 export { useMissionPilotControls } from "./useMissionPilotControls";
-export { useMissionPilotQuestionnaireDraft } from "./useMissionPilotQuestionnaireDraft";

@@ -93,7 +93,7 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).toContain("Questionnaire");
 	});
 
-	it("renders persisted Mission Pilot completion consistently in Status and tabs", () => {
+	it("renders persisted workspace artifacts consistently in Status and tabs", () => {
 		const workspace = createDummyWorkspace();
 		workspace.blueprintArtifacts = [
 			{ id: "blueprint-1", kind: "blueprint", title: "Blueprint" } as never,
@@ -119,36 +119,6 @@ describe("PlanModeWorkspaceViewer", () => {
 		];
 		const queryClient = new QueryClient();
 		queryClient.setQueryData(["planModeWorkspace", "task-1"], workspace);
-		queryClient.setQueryData(["missionPilotPlanProgress", "task-1"], {
-			taskId: "11111111-1111-4111-8111-111111111111",
-			sessionId: "22222222-2222-4222-8222-222222222222",
-			phase: "attention",
-			desiredState: "stopped",
-			version: 8,
-			contextRevision: 7,
-			currentStepKey: null,
-			steps: [
-				["blueprint", "blueprint", "blueprint", 2],
-				["data_model", "data_model", "data_model", 3],
-				["view:user_flow", "dedicated_view", "user_flow", 4],
-				["view:api_io_contract", "dedicated_view", "api_io_contract", 5],
-				["feature_plan", "feature_plan", "feature_plan", 6],
-			].map(([key, kind, view, ordinal]) => ({
-				key,
-				kind,
-				view,
-				ordinal,
-				status: "completed",
-				attempt: 1,
-				artifactMessageId: null,
-				lastError: null,
-				startedAt: null,
-				finishedAt: null,
-			})),
-			lastError: "Plan review did not pass within three attempts",
-			updatedAt: "2026-07-11T13:48:35.000Z",
-		});
-
 		const markup = renderToStaticMarkup(
 			<QueryClientProvider client={queryClient}>
 				<PlanModeWorkspaceViewer
@@ -165,6 +135,6 @@ describe("PlanModeWorkspaceViewer", () => {
 		expect(markup).toContain("Data Modelを再生成");
 		expect(markup).toContain("User Flowを再生成");
 		expect(markup).toContain("API Contractを再生成");
-		expect(markup).toContain("Plan review did not pass within three attempts");
+		expect(markup).not.toContain("missionPilotPlanProgress");
 	});
 });

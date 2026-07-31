@@ -2,9 +2,6 @@
 	"name": "nightworkers",
 	"version": "0.1.0",
 	"description": "Local-first autonomous development control plane with native supervisor-worker runtime and contextStill.",
-	"workspaces": [
-		"packages/*"
-	],
 	"main": "index.js",
 	"scripts": {
 		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate",
@@ -143,7 +140,6 @@
 		"@hono/zod-openapi": "1.5.0",
 		"@libsql/client": "0.17.4",
 		"@modelcontextprotocol/sdk": "1.29.0",
-		"@nightworkers/mission-pilot": "workspace:*",
 		"@openai/codex-sdk": "0.144.4",
 		"@tanstack/react-query": "5.101.2",
 		"@tanstack/react-router": "1.170.18",

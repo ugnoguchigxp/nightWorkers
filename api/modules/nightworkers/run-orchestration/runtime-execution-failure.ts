@@ -86,6 +86,7 @@ export async function handleRuntimeExecutionFailure(input: {
 			type: "task_run.terminal",
 			eventId: `task-run-terminal:${run.id}:failed`,
 			taskId,
+			taskRevision: task.revision,
 			runId: run.id,
 			status: "failed",
 			sourceRef: null,

@@ -454,9 +454,17 @@ async function runMissionPilotAgentWakeInScope(
 					const metadata = getMissionPilotActionDefinition(
 						callRow.actionId,
 					)?.execution;
+					const requestedWaitAlreadySatisfied =
+						result.directive === "wait" &&
+						claimed.triggerEvents.some((event) =>
+							result.waitFor.includes(
+								event.eventType as (typeof result.waitFor)[number],
+							),
+						);
 					if (
-						result.directive === "wait" ||
-						metadata?.completion === "wait_for_event"
+						!requestedWaitAlreadySatisfied &&
+						(result.directive === "wait" ||
+							metadata?.completion === "wait_for_event")
 					)
 						shouldWaitForEvent = true;
 				}

@@ -1,4 +1,3 @@
-import type { DesignQuestionnaireAnswer } from "../contracts";
 import { getMissionPilotFrontendHost } from "./host";
 
 function request(input: string, init?: RequestInit) {
@@ -28,37 +27,9 @@ export function stopMissionPilotTask(taskId: string, expectedVersion: number) {
 export function fetchMissionPilotControl(taskId: string, signal?: AbortSignal) {
 	return request(`/api/mission-pilot/tasks/${taskId}`, { signal });
 }
-export function fetchMissionPilotQuestionnaireDraft(
-	taskId: string,
-	signal?: AbortSignal,
-) {
-	return request(`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`, {
-		signal,
-	});
-}
 export function fetchMissionPilotPlanProgress(taskId: string) {
 	return request(`/api/mission-pilot/tasks/${taskId}/plan-progress`);
 }
 export function fetchMissionPilotExecutionTrace(taskId: string) {
 	return request(`/api/mission-pilot/tasks/${taskId}/execution`);
-}
-export function updateMissionPilotQuestionnaireDraft(
-	taskId: string,
-	expectedVersion: number,
-	answers: DesignQuestionnaireAnswer[],
-) {
-	return request(
-		`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
-		jsonRequest("PATCH", { expectedVersion, answers }),
-	);
-}
-export function submitMissionPilotQuestionnaireDraft(
-	taskId: string,
-	expectedVersion: number,
-	answers: DesignQuestionnaireAnswer[],
-) {
-	return request(
-		`/api/mission-pilot/tasks/${taskId}/questionnaire-draft/submit`,
-		jsonRequest("POST", { expectedVersion, answers }),
-	);
 }

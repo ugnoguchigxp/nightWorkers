@@ -52,8 +52,6 @@ export function unstartedMissionPilotControl(
 		lastErrorCode: null,
 		lastError: null,
 		stoppedAt: null,
-		queueHandoff: null,
-		preQueueDiagnostic: null,
 		updatedAt: new Date(0).toISOString(),
 	};
 }

@@ -1,11 +1,6 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
 import {
-	createSession,
-	missionPilotSessions,
-	missionPilotTaskEventInbox,
-} from "@nightworkers/mission-pilot/backend";
-import {
 	claimAgentPlay,
 	initializeMissionPilotAgentQuestionnaireEvents,
 	listPendingMissionPilotTaskEvents,
@@ -16,6 +11,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "../api/modules/missionPilot/persistence";
 import { publishQuestionnaireTransition } from "../api/modules/questionnaire/questionnaire-events";
 import type { DesignQuestionnaireSession } from "../shared/schemas/design-questionnaire.schema";
 
@@ -63,7 +63,6 @@ describe("Mission Pilot Questionnaire state events", () => {
 					task,
 					sourceKind: "task",
 					sourceId: task.id,
-					runtimeKind: "agent",
 				},
 				tx,
 			);

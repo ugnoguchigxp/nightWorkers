@@ -67,6 +67,12 @@ function resetHookMocks(values: unknown[] = [], mode: "skip" | "run" = "skip") {
 }
 
 function stubQueueModule() {
+	vi.doMock("../src/composition/mission-pilot", async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../src/composition/mission-pilot")
+		>()),
+		useMissionPilotArtifactAutoFocus: () => undefined,
+	}));
 	vi.doMock("../src/modules/queue", () => ({
 		ImplementationQueueScreen: () => null,
 		ProjectQueueScreen: () => null,

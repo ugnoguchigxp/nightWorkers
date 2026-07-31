@@ -15,16 +15,11 @@ const publicExports = new Set([
 	"@nightworkers/mission-pilot/testing",
 	"@nightworkers/mission-pilot/frontend.css",
 ]);
-const oldRoots = [
-	"api/modules/missionPilot",
-	"src/modules/missionPilot",
-	"shared/modules/missionPilot",
-];
+const retiredRoots = ["src/modules/missionPilot", "shared/modules/missionPilot"];
 const productionPackageImportAllowlist = [
 	"api/composition/mission-pilot/",
+	"api/modules/missionPilot/persistence/",
 	"src/composition/mission-pilot/",
-	"api/app.ts",
-	"api/server.ts",
 ];
 
 function walk(relativeDirectory) {
@@ -60,6 +55,25 @@ function resolvesOutsidePackage(relativePath, specifier) {
 }
 
 const packageFiles = walk(packageSourceRoot);
+for (const forbiddenBoundaryFile of [
+	`${packageRoot}/package.json`,
+	`${packageRoot}/tsconfig.json`,
+]) {
+	if (fs.existsSync(path.join(root, forbiddenBoundaryFile)))
+		errors.push(
+			`${forbiddenBoundaryFile}: Mission Pilot is a Pure TypeScript boundary and must not own an npm project manifest`,
+		);
+}
+const backendIndexPath = `${packageSourceRoot}/backend/index.ts`;
+const backendIndexSource = fs.readFileSync(
+	path.join(root, backendIndexPath),
+	"utf8",
+);
+if (/\bexport\s+\*\s+from\b/.test(backendIndexSource)) {
+	errors.push(
+		`${backendIndexPath}: backend public API must use explicit factory and dependency exports`,
+	);
+}
 for (const relativePath of packageFiles) {
 	for (const specifier of importedSpecifiers(relativePath)) {
 		if (resolvesOutsidePackage(relativePath, specifier)) {
@@ -80,6 +94,10 @@ for (const relativePath of packageFiles) {
 		}
 		if (
 			[
+				"@libsql/client",
+				"drizzle-orm",
+				"drizzle-orm/libsql",
+				"drizzle-orm/sqlite-core",
 				"node:child_process",
 				"node:fs",
 				"node:fs/promises",
@@ -88,7 +106,7 @@ for (const relativePath of packageFiles) {
 			].includes(specifier)
 		) {
 			errors.push(
-				`${relativePath}: package must not access filesystem, Git, or shell (${specifier})`,
+				`${relativePath}: package must not access persistence, filesystem, Git, or shell (${specifier})`,
 			);
 		}
 	}
@@ -132,6 +150,14 @@ for (const relativePath of [
 			);
 		}
 		if (
+			relativePath.startsWith("api/modules/missionPilot/persistence/") &&
+			specifier.startsWith("@nightworkers/mission-pilot/") &&
+			specifier !== "@nightworkers/mission-pilot/contracts"
+		)
+			errors.push(
+				`${relativePath}: core persistence may import only Mission Pilot public contracts`,
+			);
+		if (
 			specifier.startsWith("@nightworkers/mission-pilot/") &&
 			!publicExports.has(specifier)
 		) {
@@ -147,25 +173,44 @@ for (const relativePath of [
 	}
 }
 
-const ledger = JSON.parse(
-	fs.readFileSync(
-		path.join(root, ".agent-ontology/mission-pilot-migration-ledger.json"),
-		"utf8",
-	),
-);
-const baseline = new Set([
-	...(ledger.backend ?? []),
-	...(ledger.frontend ?? []),
-	...(ledger.shared ?? []),
-]);
-const currentOldFiles = oldRoots.flatMap(walk);
-for (const relativePath of currentOldFiles) {
-	if (!baseline.has(relativePath)) {
-		errors.push(
-			`${relativePath}: old Mission Pilot production path is shrink-only during migration`,
-		);
-	}
+const currentRetiredFiles = retiredRoots.flatMap(walk);
+for (const relativePath of currentRetiredFiles) {
+	errors.push(`${relativePath}: retired Mission Pilot production path is forbidden`);
 }
+
+for (const relativePath of walk("api/modules/missionPilot")) {
+	if (!relativePath.startsWith("api/modules/missionPilot/persistence/"))
+		errors.push(
+			`${relativePath}: NightWorkers Mission Pilot core code is limited to the persistence capability`,
+		);
+}
+
+const capabilityImporters = [...walk("api"), ...walk("src")].filter(
+	(relativePath) =>
+		importedSpecifiers(relativePath).some((specifier) =>
+			specifier.endsWith("modules/missionPilot/persistence/capability"),
+		),
+);
+const allowedCapabilityImporter =
+	"api/composition/mission-pilot/mission-pilot-runtime-bindings.ts";
+for (const relativePath of capabilityImporters) {
+	if (relativePath !== allowedCapabilityImporter)
+		errors.push(
+			`${relativePath}: only the Mission Pilot runtime composition may acquire the persistence capability`,
+		);
+}
+
+const rootPackage = JSON.parse(
+	fs.readFileSync(path.join(root, "package.json"), "utf8"),
+);
+if (rootPackage.workspaces)
+	errors.push(
+		"package.json: Mission Pilot Pure TypeScript boundary must not be configured as a workspace",
+	);
+if (rootPackage.dependencies?.["@nightworkers/mission-pilot"])
+	errors.push(
+		"package.json: Mission Pilot Pure TypeScript boundary must not be a package dependency",
+	);
 
 if (errors.length > 0) {
 	console.error("[architecture] Mission Pilot package boundary check failed");
@@ -174,5 +219,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-	`[architecture] Mission Pilot package boundary checked across ${packageFiles.length} package files; ${currentOldFiles.length} legacy files remain`,
+	`[architecture] Mission Pilot Pure TypeScript boundary checked across ${packageFiles.length} files; persistence is capability-injected from NightWorkers core`,
 );

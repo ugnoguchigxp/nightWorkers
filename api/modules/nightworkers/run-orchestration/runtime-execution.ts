@@ -535,18 +535,12 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				await repo.updateTaskStatus(taskId, parentTaskStatus);
 			await completeImplementationQueueEntryForRun(run.id, finalStatus);
 			await repo.publishTaskRunUpdate(finalizedRun);
-			const closeoutFailures = await continueAfterTaskRun(closeoutInput);
-			for (const error of closeoutFailures) {
-				logger.error(
-					{ error: toErrorMessage(error), runId: run.id },
-					"Task run closeout subscriber failed after the run was finalized",
-				);
-			}
 			if (terminalTransitionApplied) {
 				const publication = await publishTaskRunTerminal({
 					type: "task_run.terminal",
 					eventId: `task-run-terminal:${run.id}:${finalStatus}`,
 					taskId,
+					taskRevision: task.revision,
 					runId: run.id,
 					status: finalStatus,
 					sourceRef: null,
@@ -579,6 +573,13 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						})
 						.catch(() => undefined);
 				}
+			}
+			const closeoutFailures = await continueAfterTaskRun(closeoutInput);
+			for (const error of closeoutFailures) {
+				logger.error(
+					{ error: toErrorMessage(error), runId: run.id },
+					"Task run closeout subscriber failed after the run was finalized",
+				);
 			}
 			if (shouldContinueSessionQueue(finalStatus)) {
 				void runSessionQueueForRepository(task.repositoryId);

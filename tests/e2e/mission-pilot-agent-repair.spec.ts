@@ -28,7 +28,6 @@ test("Agent can read a failed Run, request repair, and complete the Task", {
 			version: 2;
 			executionModel: "task_operator_v1";
 			agent?: { visibleItems?: Array<{ kind: string; content?: string }> };
-			legacyPostQueueState: { status: "retired" };
 		} | null = null;
 		await expect
 			.poll(
@@ -62,7 +61,6 @@ test("Agent can read a failed Run, request repair, and complete the Task", {
 		expect(execution).toMatchObject({
 			version: 2,
 			executionModel: "task_operator_v1",
-			legacyPostQueueState: { status: "retired" },
 		});
 		expect(execution).not.toHaveProperty("phaseRuns");
 		const runsResponse = await request.get(

@@ -10,6 +10,7 @@ export function composeTaskOperatorCommandCatalog(input: {
 	taskStatus: string;
 	repositoryAvailable: boolean;
 	hasActiveRun: boolean;
+	activeRunStatus?: string | null;
 	hasTerminalRun: boolean;
 	currentTodoStatus: string | null;
 }) {
@@ -33,7 +34,12 @@ export function composeTaskOperatorCommandCatalog(input: {
 		} else if (id === "run.implementation.start") {
 			if (!input.repositoryAvailable)
 				unavailableReasonCode = "repository_unavailable";
-			else if (input.hasActiveRun) unavailableReasonCode = "active_run_exists";
+			else if (
+				input.hasActiveRun &&
+				(input.activeRunStatus !== "needs_human" ||
+					input.currentTodoStatus === "needs_human")
+			)
+				unavailableReasonCode = "active_run_exists";
 			else if (terminalTask && input.taskStatus !== "failed")
 				unavailableReasonCode = "task_terminal";
 		} else if (id === "run.todo.resume") {

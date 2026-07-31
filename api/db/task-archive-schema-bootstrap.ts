@@ -19,7 +19,9 @@ const createTaskArchiveTableSql = (tableName: string) => `CREATE TABLE ${
 )`;
 
 export async function ensureTaskArchiveTables() {
-	const columns = await client.execute("PRAGMA table_info(task_archive_records)");
+	const columns = await client.execute(
+		"PRAGMA table_info(task_archive_records)",
+	);
 	const hasLegacyColumn = columns.rows.some(
 		(row) => row.name === "mission_pilot_session_id",
 	);

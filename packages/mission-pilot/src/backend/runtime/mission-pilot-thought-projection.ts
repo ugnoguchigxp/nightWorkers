@@ -3,13 +3,45 @@ import {
 	type PilotThoughtEntryKind,
 	pilotThoughtEntriesSchema,
 } from "../../contracts";
-import type { activityEvents, taskMessages } from "../../db/schema";
-import type {
-	missionPilotConversationItems,
-	missionPilotEvents,
-	missionPilotToolCalls,
-} from "../storage";
 import { getMissionPilotActionDefinition } from "./agent/mission-pilot-task-action.registry";
+
+type ActivityEventRecord = {
+	id: string;
+	seq: number;
+	kind: string;
+	status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+	text: string | null;
+	payloadJson: unknown;
+	externalId: string | null;
+	createdAt: Date;
+};
+type TaskMessageRecord = {
+	id: string;
+	content: string;
+	messageType: string;
+	metadataJson: unknown;
+	createdAt: Date;
+};
+type ConversationItemRecord = {
+	id: string;
+	kind: string;
+	sequence: number;
+	bodyJson: unknown;
+	turnId: string | null;
+	createdAt: Date;
+};
+type ToolCallRecord = {
+	id: string;
+	actionId: string;
+	turnId: string;
+	expectedTaskRevision: number | null;
+	status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+	resultJson: unknown;
+	failureJson: unknown;
+	createdAt: Date;
+	startedAt: Date | null;
+	finishedAt: Date | null;
+};
 
 export type MissionPilotAgentVisibleItem =
 	| { kind: "assistant"; sequence: number; content: string }
@@ -136,13 +168,10 @@ function projectVisibleToolResult(
 
 type ThoughtProjectionInput = {
 	sessionId: string;
-	events: ReadonlyArray<typeof missionPilotEvents.$inferSelect>;
-	activityEvents: ReadonlyArray<typeof activityEvents.$inferSelect>;
-	messages: ReadonlyArray<typeof taskMessages.$inferSelect>;
-	conversationItems: ReadonlyArray<
-		typeof missionPilotConversationItems.$inferSelect
-	>;
-	toolCalls: ReadonlyArray<typeof missionPilotToolCalls.$inferSelect>;
+	activityEvents: ReadonlyArray<ActivityEventRecord>;
+	messages: ReadonlyArray<TaskMessageRecord>;
+	conversationItems: ReadonlyArray<ConversationItemRecord>;
+	toolCalls: ReadonlyArray<ToolCallRecord>;
 };
 
 type OrderedPilotThoughtEntry = PilotThoughtEntry & { orderHint: number };
@@ -151,9 +180,6 @@ export function buildMissionPilotThoughtEntries(
 	input: ThoughtProjectionInput,
 ): PilotThoughtEntry[] {
 	const entries = [
-		...input.events
-			.filter((event) => event.sourceKind !== "task_run")
-			.map((event) => projectCoordinatorEvent(input.sessionId, event)),
 		...input.activityEvents.map((event) =>
 			projectActivityEvent(input.sessionId, event),
 		),
@@ -176,36 +202,9 @@ export function buildMissionPilotThoughtEntries(
 	);
 }
 
-function projectCoordinatorEvent(
-	sessionId: string,
-	event: typeof missionPilotEvents.$inferSelect,
-): OrderedPilotThoughtEntry {
-	return {
-		id: `mission-pilot-event:${event.id}`,
-		sessionId,
-		sequence: 0,
-		occurredAt: event.createdAt,
-		kind: "state_changed",
-		summary: event.eventType,
-		details: compactDetails({
-			phase: event.phase,
-			cycle: event.cycle,
-			contextRevision: event.contextRevision,
-			sourceKind: event.sourceKind,
-			sourceId: event.sourceId,
-			processStatus: event.processStatus,
-			attemptCount: event.attemptCount,
-			lastError: event.lastError,
-			payload: event.payloadJson,
-		}),
-		sourceRef: { kind: "mission_pilot_event", id: event.id },
-		orderHint: 100,
-	};
-}
-
 function projectActivityEvent(
 	sessionId: string,
-	event: typeof activityEvents.$inferSelect,
+	event: ActivityEventRecord,
 ): OrderedPilotThoughtEntry {
 	return {
 		id: `activity-event:${event.id}`,
@@ -252,7 +251,7 @@ function projectUnmirroredMessages(
 
 function projectConversationItem(
 	sessionId: string,
-	item: typeof missionPilotConversationItems.$inferSelect,
+	item: ConversationItemRecord,
 ): OrderedPilotThoughtEntry | null {
 	const body = asRecord(item.bodyJson);
 	if (item.kind === "assistant") {
@@ -300,7 +299,7 @@ function projectConversationItem(
 
 function conversationEntry(
 	sessionId: string,
-	item: typeof missionPilotConversationItems.$inferSelect,
+	item: ConversationItemRecord,
 	kind: PilotThoughtEntryKind,
 	summary: string,
 	details: Record<string, unknown>,
@@ -320,7 +319,7 @@ function conversationEntry(
 
 function projectToolCallLifecycle(
 	sessionId: string,
-	call: typeof missionPilotToolCalls.$inferSelect,
+	call: ToolCallRecord,
 ): OrderedPilotThoughtEntry[] {
 	const title =
 		getMissionPilotActionDefinition(call.actionId)?.title ?? call.actionId;
@@ -383,7 +382,7 @@ function projectToolCallLifecycle(
 }
 
 function toolEntry(
-	call: typeof missionPilotToolCalls.$inferSelect,
+	call: ToolCallRecord,
 	sessionId: string,
 	stage: string,
 	input: Omit<

@@ -1,12 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
-import { and, eq } from "drizzle-orm";
-import { db } from "../../../db/client";
 import { type AppError, isAppError } from "../../../lib/errors";
-import {
-	missionPilotAgentSessions,
-	missionPilotSessions,
-	missionPilotToolCalls,
-} from "../../storage";
+import { callMissionPilotPersistence } from "../../persistence-port";
 import {
 	getTaskOperatorActionDefinition,
 	readTaskOperatorProjection,
@@ -26,7 +20,10 @@ import {
 	getMissionPilotActionUnavailableReason,
 	validateMissionPilotActionArguments,
 } from "./mission-pilot-task-action.registry";
-import { hasConsumedMissionPilotQuestionnaireAnsweringEvent } from "./mission-pilot-task-event.repository";
+import {
+	hasConsumedMissionPilotQuestionnaireAnsweringEvent,
+	projectMissionPilotExecutionEvent,
+} from "./mission-pilot-task-event.repository";
 
 export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 	async execute(input) {
@@ -67,36 +64,16 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"schema_validation",
 				validated.message,
 			);
-		const [session, toolCall, agent] = await Promise.all([
-			db
-				.select()
-				.from(missionPilotSessions)
-				.where(
-					and(
-						eq(missionPilotSessions.id, input.sessionId),
-						eq(missionPilotSessions.taskId, input.taskId),
-					),
-				)
-				.limit(1)
-				.then((rows) => rows[0]),
-			db
-				.select()
-				.from(missionPilotToolCalls)
-				.where(
-					and(
-						eq(missionPilotToolCalls.id, input.toolCallId),
-						eq(missionPilotToolCalls.sessionId, input.sessionId),
-						eq(missionPilotToolCalls.actionId, input.actionId),
-						eq(missionPilotToolCalls.idempotencyKey, input.idempotencyKey),
-					),
-				)
-				.then((rows) => rows[0] ?? null),
-			db
-				.select()
-				.from(missionPilotAgentSessions)
-				.where(eq(missionPilotAgentSessions.sessionId, input.sessionId))
-				.then((rows) => rows[0] ?? null),
-		]);
+		const { session, toolCall, agent } = await callMissionPilotPersistence(
+			"readMissionPilotTaskActionState",
+			{
+				sessionId: input.sessionId,
+				taskId: input.taskId,
+				toolCallId: input.toolCallId,
+				actionId: input.actionId,
+				idempotencyKey: input.idempotencyKey,
+			},
+		);
 		if (!session)
 			return failed(
 				input.actionId,
@@ -268,6 +245,14 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				sourceResourceType: input.actionId,
 				sourceResourceId: resourceId(data),
 			});
+			const startedRunId =
+				input.actionId === "run.implementation.start" ? resourceId(data) : null;
+			if (startedRunId)
+				await projectMissionPilotExecutionEvent({
+					taskId: input.taskId,
+					type: "task.run.started",
+					runId: startedRunId,
+				});
 			return { ok: true, actionId: input.actionId, data, replayed: false };
 		} catch (error) {
 			if (signal.aborted) {

@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
-import { backfillMissionPilotTraceProvenance } from "@nightworkers/mission-pilot/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { client } from "../api/db/client";
+import { backfillMissionPilotTraceProvenance } from "../api/modules/missionPilot/persistence";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import { codingAgentChatTrace } from "../api/modules/nightworkers/nightworkers.trace-provenance";
 import {

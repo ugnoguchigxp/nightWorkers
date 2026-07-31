@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
-import {
-	createSession,
-	missionPilotAgentSessions,
-	missionPilotSessions,
-} from "@nightworkers/mission-pilot/backend";
 import { executeMissionPilotAgentControlTool } from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotAgentSessions,
+	missionPilotSessions,
+} from "../api/modules/missionPilot/persistence";
 
 const repositoryIds: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());
@@ -39,10 +39,7 @@ async function fixture() {
 				objective: "completion",
 			})
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	const turnId = crypto.randomUUID();
 	const leaseOwner = `completion-fixture:${crypto.randomUUID()}`;

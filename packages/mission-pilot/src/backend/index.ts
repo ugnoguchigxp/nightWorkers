@@ -10,36 +10,16 @@ import {
 	initializeMissionPilotRunSync,
 	missionPilotAgentFixtureRouter,
 	missionPilotRouter,
+	reconcileMissionPilotRunOutcomes,
 	reconcileMissionPilotStartup,
-	submitDueQuestionnaireDrafts,
+	stopMissionPilotRuntimeEventListeners,
 } from "./runtime";
-import {
-	bootstrapMissionPilotTables,
-	type MissionPilotSqlClient,
-} from "./storage/bootstrap";
-import { configureMissionPilotDatabase } from "./storage/database";
 
 export type { MissionPilotRuntimeHostBindings } from "./host-bindings";
-export * from "./runtime";
-export * from "./storage/agent-schema";
-export {
-	configureMissionPilotDatabase,
-	createMissionPilotDatabase,
-	getMissionPilotDatabase,
-	type MissionPilotDatabase,
-	type MissionPilotTransaction,
-} from "./storage/database";
-export * from "./storage/repository";
-export * from "./storage/schema";
 
 export type MissionPilotBackendDependencies = {
 	host: MissionPilotHostPorts;
 	bindings: MissionPilotRuntimeHostBindings;
-};
-
-export type MissionPilotStorageDependencies = {
-	client: MissionPilotSqlClient;
-	logger: MissionPilotHostPorts["logger"];
 };
 
 export type MissionPilotRuntimeDependencies = MissionPilotBackendDependencies;
@@ -58,13 +38,6 @@ export function createMissionPilotFixtureRouter(
 	return missionPilotAgentFixtureRouter;
 }
 
-export async function bootstrapMissionPilotStorage(
-	dependencies: MissionPilotStorageDependencies,
-): Promise<void> {
-	await bootstrapMissionPilotTables(dependencies.client);
-	configureMissionPilotDatabase(dependencies.client as never);
-}
-
 export async function startMissionPilotRuntime(
 	dependencies: MissionPilotRuntimeDependencies,
 ): Promise<{ stop(): Promise<void> }> {
@@ -72,31 +45,45 @@ export async function startMissionPilotRuntime(
 	initializeMissionPilotRunSync();
 	initializeMissionPilotAgentTaskMessageEvents();
 	initializeMissionPilotAgentQuestionnaireEvents();
-	await reconcileMissionPilotStartup();
+	try {
+		await reconcileMissionPilotStartup();
+	} catch (error) {
+		stopMissionPilotRuntimeEventListeners();
+		clearMissionPilotRuntimeHost();
+		throw error;
+	}
 	let stopped = false;
-	let timer: ReturnType<typeof setTimeout> | null = null;
-	const tick = () => {
+	let timer: unknown = null;
+	let reconciliationInFlight: Promise<void> | null = null;
+	const scheduleReconciliation = () => {
 		if (stopped) return;
-		timer = setTimeout(() => {
-			void submitDueQuestionnaireDrafts()
+		timer = dependencies.host.clock.setTimeout(() => {
+			const reconciliation = reconcileMissionPilotRunOutcomes()
 				.catch((error) =>
 					dependencies.host.logger.error(
-						"mission pilot questionnaire scheduler failed",
+						"mission pilot run outcome reconciliation failed",
 						{
 							errorMessage:
 								error instanceof Error ? error.message : String(error),
 						},
 					),
 				)
-				.finally(tick);
+				.then(() => undefined);
+			reconciliationInFlight = reconciliation;
+			void reconciliation.finally(() => {
+				if (reconciliationInFlight === reconciliation)
+					reconciliationInFlight = null;
+				scheduleReconciliation();
+			});
 		}, 1_000);
-		timer.unref?.();
 	};
-	tick();
+	scheduleReconciliation();
 	return {
 		async stop() {
 			stopped = true;
-			if (timer) clearTimeout(timer);
+			if (timer !== null) dependencies.host.clock.clearTimeout(timer);
+			await reconciliationInFlight;
+			stopMissionPilotRuntimeEventListeners();
 			clearMissionPilotRuntimeHost();
 		},
 	};

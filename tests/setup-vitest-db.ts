@@ -1,8 +1,8 @@
-import { bootstrapMissionPilotStorage } from "@nightworkers/mission-pilot/backend";
 import { afterEach } from "vitest";
 import { config } from "../api/config";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { client } from "../api/db/client";
+import { bootstrapMissionPilotTables } from "../api/modules/missionPilot/persistence/bootstrap";
 import {
 	applyVitestDatabaseEnv,
 	assertVitestDatabaseIsolation,
@@ -12,13 +12,7 @@ applyVitestDatabaseEnv();
 assertVitestDatabaseIsolation(config.DATABASE_URL);
 installRegularVitestLlmFetchGuard();
 await ensureNightWorkersSchema();
-await bootstrapMissionPilotStorage({
-	client,
-	logger: {
-		info() {},
-		error() {},
-	},
-});
+await bootstrapMissionPilotTables(client);
 
 afterEach(async () => {
 	assertVitestDatabaseIsolation(config.DATABASE_URL);

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import {
@@ -43,49 +44,44 @@ async function createDisposableGitWorkspace(): Promise<string> {
 	return workspaceDir;
 }
 
-async function createDisposableLiveWorkspace(): Promise<string> {
-	const workspaceDir = await createE2eWorkspaceDirectory("live-");
-	await fs.mkdir(path.join(workspaceDir, "src"), { recursive: true });
-	await fs.writeFile(
-		path.join(workspaceDir, "README.md"),
-		"# Live coding fixture\n",
-		"utf-8",
-	);
-	await fs.writeFile(
-		path.join(workspaceDir, "package.json"),
-		JSON.stringify(
-			{
-				type: "module",
-				scripts: {
-					test: "node -e \"import('./src/greeting.mjs').then(m=>{if(m.greet('NightWorkers')!=='Hello, NightWorkers!') process.exit(1)})\"",
-				},
-			},
-			null,
-			2,
-		),
-		"utf-8",
-	);
-	await fs.writeFile(
-		path.join(workspaceDir, "src/greeting.mjs"),
-		"export function greet(name) {\n  return 'TODO';\n}\n",
-		"utf-8",
-	);
-	initializeE2eGitRepository(workspaceDir);
-	execFileSync("git", ["add", "."], { cwd: workspaceDir, stdio: "ignore" });
-	execFileSync(
-		"git",
-		[
-			"-c",
-			"user.email=e2e@example.test",
-			"-c",
-			"user.name=NightWorkers E2E",
-			"commit",
-			"-m",
-			"initial live fixture",
-		],
-		{ cwd: workspaceDir, stdio: "ignore" },
-	);
-	return workspaceDir;
+async function resolveLiveCanaryRepositoryRoot(): Promise<string> {
+	const configured =
+		process.env.NIGHTWORKERS_LIVE_CODING_AGENT_REPOSITORY_PATH?.trim();
+	if (!configured)
+		throw new Error(
+			"NIGHTWORKERS_LIVE_CODING_AGENT_REPOSITORY_PATH must identify a dedicated real canary repository.",
+		);
+	const repositoryRoot = await fs.realpath(configured);
+	const temporaryRoot = await fs.realpath(os.tmpdir());
+	const temporaryRelative = path.relative(temporaryRoot, repositoryRoot);
+	if (
+		temporaryRelative === "" ||
+		(!temporaryRelative.startsWith("..") && !path.isAbsolute(temporaryRelative))
+	)
+		throw new Error(
+			"Coding Agent live canary repository must not be a temporary directory.",
+		);
+	const gitRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+		cwd: repositoryRoot,
+		encoding: "utf8",
+	}).trim();
+	if ((await fs.realpath(gitRoot)) !== repositoryRoot)
+		throw new Error(
+			"NIGHTWORKERS_LIVE_CODING_AGENT_REPOSITORY_PATH must be the Git repository root.",
+		);
+	const status = execFileSync("git", ["status", "--porcelain"], {
+		cwd: repositoryRoot,
+		encoding: "utf8",
+	});
+	if (status.trim())
+		throw new Error(
+			"Coding Agent live canary repository must be clean before the worker creates its isolated worktree.",
+		);
+	await Promise.all([
+		fs.access(path.join(repositoryRoot, "package.json")),
+		fs.access(path.join(repositoryRoot, "src/greeting.mjs")),
+	]);
+	return repositoryRoot;
 }
 
 async function waitForTerminalRun(request: APIRequestContext, taskId: string) {
@@ -275,6 +271,8 @@ test.describe("NightWorkers Agent Debug @regression", () => {
 });
 
 test.describe("NightWorkers Agent Live @agent-live", () => {
+	test.describe.configure({ mode: "serial" });
+
 	test("agent live run produces run, workspace, Todo, and verification evidence", {
 		tag: ["@live", "@p1", "@scenario:NW-E2E-LIVE-001"],
 	}, async ({ request }) => {
@@ -289,17 +287,21 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 			"Provider credentials are not configured in this environment.",
 		);
 
-		const workspaceDir = await createDisposableLiveWorkspace();
+		const repositoryRoot = await resolveLiveCanaryRepositoryRoot();
 		let repositoryId: string | null = null;
 		let taskId: string | null = null;
 
 		try {
+			const branch = execFileSync("git", ["branch", "--show-current"], {
+				cwd: repositoryRoot,
+				encoding: "utf8",
+			}).trim();
 			const repositoryRes = await request.post("/api/repositories", {
 				headers: sameOriginHeaders,
 				data: {
 					name: `E2E live fixture ${Date.now()}`,
-					localPath: workspaceDir,
-					branch: "main",
+					localPath: repositoryRoot,
+					branch,
 					allowed: true,
 				},
 			});
@@ -345,10 +347,12 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 			expect(terminalRun.id).toBe(startedRun.id);
 			expect(["completed", "needs_review"]).toContain(terminalRun.status);
 
-			const diff = gitDiff(workspaceDir);
+			expect(terminalRun.worktreePath).toBeTruthy();
+			const diff = gitDiff(terminalRun.worktreePath ?? "");
 			expect(diff).toContain("src/greeting.mjs");
 			expect(diff).toContain("Hello,");
 			expect(diff).not.toContain("/tmp/");
+			expect(gitDiff(repositoryRoot)).toBe("");
 
 			const eventsRes = await request.get(
 				`/api/runs/${terminalRun.id}/events`,
@@ -377,7 +381,103 @@ test.describe("NightWorkers Agent Live @agent-live", () => {
 				await request.delete(`/api/repositories/${repositoryId}`, {
 					headers: sameOriginHeaders,
 				});
-			await fs.rm(workspaceDir, { recursive: true, force: true });
+		}
+	});
+
+	test("standalone live Plan Mode creates a Questionnaire without Mission Pilot", {
+		tag: ["@live", "@p1", "@scenario:NW-E2E-LIVE-PLAN-MODE-001"],
+	}, async ({ request }) => {
+		test.setTimeout(8 * 60_000);
+		test.skip(
+			process.env.NIGHTWORKERS_LIVE_LLM_E2E !== "1",
+			"Set NIGHTWORKERS_LIVE_LLM_E2E=1 to run live LLM evidence E2E.",
+		);
+		test.skip(
+			!process.env.OPENAI_API_KEY &&
+				!process.env.AZURE_OPENAI_API_KEY &&
+				!process.env.CODEX_ACCESS_TOKEN,
+			"Provider credentials are not configured in this environment.",
+		);
+
+		const repositoryRoot = await resolveLiveCanaryRepositoryRoot();
+		let repositoryId: string | null = null;
+		let taskId: string | null = null;
+		try {
+			const branch = execFileSync("git", ["branch", "--show-current"], {
+				cwd: repositoryRoot,
+				encoding: "utf8",
+			}).trim();
+			const repositoryRes = await request.post("/api/repositories", {
+				headers: sameOriginHeaders,
+				data: {
+					name: `E2E standalone live Plan Mode ${Date.now()}`,
+					localPath: repositoryRoot,
+					branch,
+					allowed: true,
+				},
+			});
+			expect(repositoryRes.status(), await repositoryRes.text()).toBe(201);
+			repositoryId = ((await repositoryRes.json()) as { id: string }).id;
+			const taskRes = await request.post("/api/tasks", {
+				headers: sameOriginHeaders,
+				data: {
+					repositoryId,
+					title: "Standalone live Plan Mode",
+					description:
+						"Mission Pilotを起動せず、通常のPlan Modeでgreet(name)変更の実装計画を作成してください。最初にQuestionnaireを作成してください。",
+					objective:
+						"Create a normal Plan Mode Questionnaire without Mission Pilot.",
+					acceptanceCriteria:
+						"A Questionnaire is available and no Coding Agent implementation Run starts.",
+					timeoutSeconds: 480,
+				},
+			});
+			expect(taskRes.status(), await taskRes.text()).toBe(201);
+			const task = (await taskRes.json()) as {
+				id: string;
+				missionPilot?: unknown;
+			};
+			taskId = task.id;
+			expect(task).not.toHaveProperty("missionPilot");
+
+			const intakeResponse = await request.post(
+				`/api/workbench/sessions/${taskId}/messages`,
+				{
+					headers: sameOriginHeaders,
+					data: {
+						prompt:
+							"通常のPlan Modeでgreet(name)変更の実装計画を作成してください。最初にQuestionnaireを作成してください。",
+						waitForIntake: true,
+					},
+					timeout: 7 * 60_000,
+				},
+			);
+			expect(intakeResponse.status(), await intakeResponse.text()).toBe(200);
+			const intake = (await intakeResponse.json()) as {
+				run: unknown;
+				messages: Array<{ metadataJson?: { intent?: string } }>;
+			};
+			expect(intake.run).toBeNull();
+			expect(
+				intake.messages.some(
+					(message) =>
+						message.metadataJson?.intent === "design_questionnaire_ready",
+				),
+			).toBe(true);
+			const runsResponse = await request.get(`/api/tasks/${taskId}/runs`, {
+				headers: sameOriginHeaders,
+			});
+			expect(runsResponse.status(), await runsResponse.text()).toBe(200);
+			expect(await runsResponse.json()).toEqual([]);
+		} finally {
+			if (taskId)
+				await request.delete(`/api/tasks/${taskId}`, {
+					headers: sameOriginHeaders,
+				});
+			if (repositoryId)
+				await request.delete(`/api/repositories/${repositoryId}`, {
+					headers: sameOriginHeaders,
+				});
 		}
 	});
 });

@@ -71,6 +71,17 @@ vi.mock("../api/modules/specification/specification-mutability", () => ({
 	assertPlanModeMutable: vi.fn(),
 }));
 
+vi.mock("../api/modules/specification/plan-mode-routing-query", () => ({
+	resolvePlanModeRoutingSnapshot: vi.fn(async () => ({
+		revision: 0,
+		entries: [],
+		editable: true,
+		lockedReason: null,
+		updatedBy: null,
+		updatedAt: null,
+	})),
+}));
+
 vi.mock(
 	"../api/modules/specification/specification-questionnaire-session",
 	() => ({

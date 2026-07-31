@@ -1,7 +1,4 @@
-import { eq } from "drizzle-orm";
 import type { MissionPilotAuthorizationV4 } from "../../contracts";
-import { db } from "../../db/client";
-import { missionPilotSessions } from "../storage";
 import {
 	digestTaskOperatorCapabilityGrant,
 	readCurrentTaskOperatorUserCapabilities,
@@ -9,6 +6,7 @@ import {
 	type TaskOperatorDelegatedAuthorizationPort,
 	taskOperatorPermissionDenied,
 } from "../taskOperator";
+import { getMissionPilotSessionById } from "./agent/mission-pilot-agent-session.repository";
 
 type HumanPrincipal = {
 	kind: "human";
@@ -196,9 +194,5 @@ function delegationAuthorizationRef(sessionId: string) {
 }
 
 async function readMissionPilotDelegationSession(sessionId: string) {
-	const [session] = await db
-		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.id, sessionId));
-	return session ?? null;
+	return getMissionPilotSessionById(sessionId);
 }

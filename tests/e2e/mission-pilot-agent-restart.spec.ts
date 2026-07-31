@@ -55,7 +55,6 @@ test("Agent ownership survives an execution reconciliation without legacy phase 
 		expect(execution).toMatchObject({
 			version: 2,
 			executionModel: "task_operator_v1",
-			legacyPostQueueState: { status: "retired" },
 		});
 		expect(execution).not.toHaveProperty("phaseRuns");
 		expect(execution.agent.visibleItems.at(-1).kind).toBe("finish");

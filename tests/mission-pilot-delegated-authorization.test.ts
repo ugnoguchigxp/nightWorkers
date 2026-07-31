@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
 import {
-	createSession,
-	missionPilotSessions,
-} from "@nightworkers/mission-pilot/backend";
-import {
 	buildMissionPilotCurrentStepContext,
 	claimAgentPlay,
 	createMissionPilotTaskOperatorAccess,
@@ -15,6 +11,10 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotSessions,
+} from "../api/modules/missionPilot/persistence";
 import {
 	executeTaskOperatorCommand,
 	humanTaskOperatorQueryContext,

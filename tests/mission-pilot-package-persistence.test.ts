@@ -1,9 +1,8 @@
 import { createClient } from "@libsql/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { bootstrapMissionPilotStorage } from "@nightworkers/mission-pilot/backend";
+import { bootstrapMissionPilotTables } from "../api/modules/missionPilot/persistence/bootstrap";
 
 const clients: ReturnType<typeof createClient>[] = [];
-const logger = { info() {}, error() {} };
 
 afterEach(() => {
 	for (const client of clients.splice(0)) client.close();
@@ -28,10 +27,10 @@ async function createCoreReferences() {
 	return client;
 }
 
-describe("Mission Pilot package persistence", () => {
-	it("recognizes existing package rows and preserves session history on restart", async () => {
+describe("NightWorkers-owned Mission Pilot persistence", () => {
+	it("recognizes existing rows and preserves session history on restart", async () => {
 		const client = await createCoreReferences();
-		await bootstrapMissionPilotStorage({ client, logger });
+		await bootstrapMissionPilotTables(client);
 		await client.execute({
 			sql: `INSERT INTO mission_pilot_sessions (
 				id, task_id, repository_id, source_kind, source_id,
@@ -59,7 +58,7 @@ describe("Mission Pilot package persistence", () => {
 			"INSERT INTO mission_pilot_task_event_inbox (id, session_id, task_id, sequence, event_type, source_event_id, task_revision, payload_json, available_at, created_at) VALUES ('event-1', 'session-1', 'task-1', 1, 'mission_pilot.play_requested', 'source-1', 1, '{}', 1, 1)",
 		);
 
-		await bootstrapMissionPilotStorage({ client, logger });
+		await bootstrapMissionPilotTables(client);
 
 		const session = await client.execute(
 			"SELECT initial_prompt_snapshot FROM mission_pilot_sessions WHERE id = 'session-1'",
@@ -75,18 +74,15 @@ describe("Mission Pilot package persistence", () => {
 		expect(Number(inbox.rows[0]?.count)).toBe(1);
 	});
 
-	it("reports package bootstrap failure without mutating the host client", async () => {
+	it("reports core bootstrap failure without replacing the supplied client", async () => {
 		const calls: unknown[] = [];
 		const failure = new Error("package storage unavailable");
 		await expect(
-			bootstrapMissionPilotStorage({
-				client: {
-					execute(input) {
-						calls.push(input);
-						throw failure;
-					},
+			bootstrapMissionPilotTables({
+				execute(input) {
+					calls.push(input);
+					throw failure;
 				},
-				logger,
 			}),
 		).rejects.toBe(failure);
 		expect(calls).toHaveLength(1);

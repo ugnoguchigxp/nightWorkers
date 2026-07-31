@@ -16,7 +16,6 @@
         "@hono/zod-openapi": "1.5.0",
         "@libsql/client": "0.17.4",
         "@modelcontextprotocol/sdk": "1.29.0",
-        "@nightworkers/mission-pilot": "workspace:*",
         "@openai/codex-sdk": "0.144.4",
         "@tanstack/react-query": "5.101.2",
         "@tanstack/react-router": "1.170.18",
@@ -77,19 +76,6 @@
         "typescript": "7.0.2",
         "vite": "8.1.4",
         "vitest": "4.1.10",
-      },
-    },
-    "packages/mission-pilot": {
-      "name": "@nightworkers/mission-pilot",
-      "dependencies": {
-        "@libsql/client": "0.17.4",
-        "@tanstack/react-query": "5.101.2",
-        "drizzle-orm": "0.45.2",
-        "hono": "4.12.30",
-        "lucide-react": "1.24.0",
-        "react": "19.2.7",
-        "react-i18next": "17.0.9",
-        "zod": "4.4.3",
       },
     },
   },
@@ -350,8 +336,6 @@
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1" } }, "sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg=="],
 
     "@neon-rs/load": ["@neon-rs/load@0.0.4", "", {}, "sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw=="],
-
-    "@nightworkers/mission-pilot": ["@nightworkers/mission-pilot@workspace:packages/mission-pilot"],
 
     "@noble/hashes": ["@noble/hashes@2.2.0", "", {}, "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg=="],
 

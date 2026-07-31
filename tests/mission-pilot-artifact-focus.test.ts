@@ -10,30 +10,25 @@ import type {
 function resolveMissionPilotArtifactFocus(
 	input: Omit<
 		Parameters<typeof resolveMissionPilotArtifactFocusForRoute>[0],
-		"routeState"
-	>,
+		"routeState" | "missionPilot"
+	> & {
+		missionPilot: Parameters<
+			typeof resolveMissionPilotArtifactFocusForRoute
+		>[0]["missionPilot"];
+	},
 	routeState: WorkbenchRouteState = {
 		kind: "session",
 		sessionId: input.activeSession?.id || "task-1",
 		artifact: null,
 	},
 ) {
-	const activeSession = input.activeSession as
-		| (Task & {
-				missionPilot?: Parameters<
-					typeof resolveMissionPilotArtifactFocusForRoute
-				>[0]["missionPilot"];
-		  })
-		| null;
 	return resolveMissionPilotArtifactFocusForRoute({
 		...input,
-		activeSession,
-		missionPilot: activeSession?.missionPilot ?? null,
 		routeState,
 	});
 }
 
-function task(phase: string, desiredState: "playing" | "stopped" = "playing") {
+function task() {
 	return {
 		id: "task-1",
 		repositoryId: "repo-1",
@@ -43,23 +38,27 @@ function task(phase: string, desiredState: "playing" | "stopped" = "playing") {
 		priority: 0,
 		createdAt: "2026-07-13T00:00:00.000Z",
 		updatedAt: "2026-07-13T00:00:00.000Z",
-		missionPilot: {
-			taskId: "00000000-0000-4000-8000-000000000001",
-			desiredState,
-			activityState: desiredState === "playing" ? "running" : "idle",
-			phase,
-			authorizationVersion: 3,
-			initialPromptState: "sent",
-			initialPromptMessageId: null,
-			activeRunId: null,
-			nextWakeAt: null,
-			version: 1,
-			lastError: null,
-			queueHandoff: null,
-			preQueueDiagnostic: null,
-			updatedAt: "2026-07-13T00:00:00.000Z",
-		},
 	} satisfies Task;
+}
+
+function control(
+	phase: string,
+	desiredState: "playing" | "stopped" = "playing",
+) {
+	return {
+		taskId: "00000000-0000-4000-8000-000000000001",
+		desiredState,
+		activityState: desiredState === "playing" ? "running" : "idle",
+		phase,
+		authorizationVersion: 3,
+		initialPromptState: "sent",
+		initialPromptMessageId: null,
+		activeRunId: null,
+		nextWakeAt: null,
+		version: 1,
+		lastError: null,
+		updatedAt: "2026-07-13T00:00:00.000Z",
+	} as const;
 }
 
 function planArtifact(workspace: PlanModeWorkspace): WorkbenchArtifactRef {
@@ -112,7 +111,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task("waiting_intervention"),
+				activeSession: task(),
+				missionPilot: control("waiting_intervention"),
 				activeArtifactRefs: [artifact],
 			}),
 		).toMatchObject({ kind: "plan_mode_workspace", tab: "questionnaire" });
@@ -153,7 +153,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task("plan_running"),
+				activeSession: task(),
+				missionPilot: control("plan_running"),
 				activeArtifactRefs: [artifact],
 			}),
 		).toEqual({
@@ -171,7 +172,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 	] as const)("maps %s to %s", (phase, kind) => {
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task(phase),
+				activeSession: task(),
+				missionPilot: control(phase),
 				activeArtifactRefs: [],
 			}),
 		).toMatchObject({ kind });
@@ -183,7 +185,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 	] as const)("focuses %s from the live Run when the Mission Pilot phase is stale", (executionMode, kind, keySuffix) => {
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task("queued"),
+				activeSession: task(),
+				missionPilot: control("queued"),
 				activeArtifactRefs: [],
 				latestRun: {
 					id: `run-${executionMode}-1`,
@@ -203,7 +206,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 	it("does not use a terminal implementation Run as the current focus", () => {
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task("queued"),
+				activeSession: task(),
+				missionPilot: control("queued"),
 				activeArtifactRefs: [],
 				latestRun: {
 					id: "run-implementation-1",
@@ -223,7 +227,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 	it("does not take focus while Mission Pilot is stopped", () => {
 		expect(
 			resolveMissionPilotArtifactFocus({
-				activeSession: task("testing", "stopped"),
+				activeSession: task(),
+				missionPilot: control("testing", "stopped"),
 				activeArtifactRefs: [],
 			}),
 		).toBeNull();
@@ -244,7 +249,8 @@ describe("resolveMissionPilotArtifactFocus", () => {
 		expect(
 			resolveMissionPilotArtifactFocus(
 				{
-					activeSession: task("reviewing"),
+					activeSession: task(),
+					missionPilot: control("reviewing"),
 					activeArtifactRefs: [],
 				},
 				routeState,

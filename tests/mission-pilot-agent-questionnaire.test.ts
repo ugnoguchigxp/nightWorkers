@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
 import {
-	createSession,
-	missionPilotTaskEventInbox,
-} from "@nightworkers/mission-pilot/backend";
-import {
 	appendMissionPilotTaskEvent,
 	claimAgentPlay,
 	claimMissionPilotAgentTurn,
@@ -17,6 +13,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotTaskEventInbox,
+} from "../api/modules/missionPilot/persistence";
 import {
 	createDesignQuestionnaireQuestionSet,
 	createDesignQuestionnaireSession,
@@ -249,10 +249,7 @@ async function createFixture(
 				objective: "Questionnaireに自動回答する",
 			})
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	const claimed = await claimAgentPlay(taskId, session.version);
 	if (!claimed) throw new Error("Mission Pilot was not played");

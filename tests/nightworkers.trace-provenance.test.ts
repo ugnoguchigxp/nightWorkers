@@ -2,7 +2,7 @@ import {
 	missionPilotArtifactTrace,
 	missionPilotInitialPromptTrace,
 	missionPilotThoughtTrace,
-} from "@nightworkers/mission-pilot/backend";
+} from "@nightworkers/mission-pilot/testing";
 import { describe, expect, it } from "vitest";
 import {
 	codingAgentChatTrace,

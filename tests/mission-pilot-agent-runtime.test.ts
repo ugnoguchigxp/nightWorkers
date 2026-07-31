@@ -1,11 +1,5 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
-import {
-	createSession,
-	missionPilotAgentSessions,
-	missionPilotSessions,
-	missionPilotToolCalls,
-} from "@nightworkers/mission-pilot/backend";
 import type { MissionPilotTaskReadPort } from "@nightworkers/mission-pilot/testing";
 import {
 	appendMissionPilotTaskEvent,
@@ -34,6 +28,12 @@ import {
 	repositories,
 	tasks,
 } from "../api/db/schema";
+import {
+	createSession,
+	missionPilotAgentSessions,
+	missionPilotSessions,
+	missionPilotToolCalls,
+} from "../api/modules/missionPilot/persistence";
 import {
 	bindSystemContextCatalogSnapshot,
 	systemContextPromptAudit,
@@ -66,10 +66,7 @@ async function fixture() {
 				objective: "永続sessionを検証する",
 			})
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind: "agent" },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	const claimed = await claimAgentPlay(taskId, session.version);
 	if (!claimed) throw new Error("agent session was not claimed");
@@ -260,6 +257,57 @@ describe("Mission Pilot persistent agent runtime", () => {
 		expect(items.some((item) => item.kind === "tool_result")).toBe(true);
 		expect(bindings).toHaveLength(2);
 		expect(bindings[1]).toBe(bindings[0]);
+	});
+
+	it("continues when a requested wait event already triggered the current turn", async () => {
+		const fixtureState = await fixture();
+		await appendMissionPilotTaskEvent({
+			taskId: fixtureState.taskId,
+			eventType: "task_run.terminal",
+			sourceEventId: "already-arrived-terminal",
+			taskRevision: 1,
+			payload: { runId: crypto.randomUUID(), status: "completed" },
+		});
+		let providerCalls = 0;
+		const result = await runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => {
+						providerCalls += 1;
+						return providerCalls === 1
+							? {
+									type: "supported",
+									content: "Runの完了イベントを待ちます。",
+									toolCalls: [
+										{
+											id: "already-arrived-wait",
+											name: "agent.wait_for_event",
+											arguments: {
+												eventTypes: ["task_run.terminal"],
+												reason: "terminal outcomeを確認します。",
+											},
+										},
+									],
+									usage: usage(),
+								}
+							: {
+									type: "supported",
+									content: "既着のterminal outcomeを確認しました。",
+									toolCalls: [],
+									usage: usage(),
+								};
+					},
+				},
+			},
+		);
+
+		expect(providerCalls).toBe(2);
+		expect(result).toMatchObject({
+			kind: "waiting",
+			content: "既着のterminal outcomeを確認しました。",
+		});
 	});
 
 	it("executes a claimed Task action once and never reclaims its terminal call", async () => {

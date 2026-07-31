@@ -1,6 +1,8 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { config } from "../config";
+import * as missionPilotAgentSchema from "../modules/missionPilot/persistence/agent-schema";
+import * as missionPilotSchema from "../modules/missionPilot/persistence/schema";
 import { createPersistenceOwnerIpcClient } from "../services/execution/persistence-owner-ipc-client";
 import * as designQuestionnaireSchema from "./design-questionnaire-schema";
 import * as missionPlannerSchema from "./mission-planner-schema";
@@ -33,6 +35,8 @@ export const db = drizzle(client, {
 		...baseSchema,
 		...designQuestionnaireSchema,
 		...missionPlannerSchema,
+		...missionPilotSchema,
+		...missionPilotAgentSchema,
 		...planModeSchema,
 		...projectDetailSchema,
 		...projectEvaluationSchema,

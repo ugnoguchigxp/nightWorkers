@@ -87,7 +87,15 @@ describe("Mission Pilot user-equivalent boundary", () => {
 			),
 			"utf8",
 		);
-		expect(source).toContain('if (event.type === "task.run.started") return;');
+		const listenerStart = source.indexOf("const unregisterTaskOperator");
+		const startedListener = source.slice(
+			listenerStart,
+			source.indexOf("const unregisterTerminalRun", listenerStart),
+		);
+		expect(startedListener).toContain(
+			'if (event.type !== "task.run.started") return;',
+		);
+		expect(startedListener).not.toContain("scheduleMissionPilotAgentWake");
 	});
 
 	it("removes legacy repository inspection fields from private context", async () => {

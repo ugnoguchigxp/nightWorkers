@@ -365,12 +365,19 @@ export async function reconcileImplementationQueue(
 						action: "timeout",
 						reason: "run_deadline_exceeded",
 					});
+					const terminalTask = await nightworkersRepo.getTask(
+						recovered.run.taskId,
+					);
+					if (!terminalTask)
+						throw new Error(
+							"Task disappeared while publishing a timed-out run outcome.",
+						);
 					await nightworkersRepo.publishTaskRunUpdate(recovered.run);
-					await continueAfterTaskRun(closeoutInput);
 					await publishTaskRunTerminal({
 						type: "task_run.terminal",
 						eventId: `task-run-terminal:${recovered.run.id}:timed_out`,
 						taskId: recovered.run.taskId,
+						taskRevision: terminalTask.revision,
 						runId: recovered.run.id,
 						status: "timed_out",
 						sourceRef: {
@@ -379,6 +386,7 @@ export async function reconcileImplementationQueue(
 						},
 						occurredAt: now.toISOString(),
 					});
+					await continueAfterTaskRun(closeoutInput);
 				}
 				continue;
 			}

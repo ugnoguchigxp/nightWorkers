@@ -1,23 +1,24 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
-import {
-	createSession,
-	getSessionByTaskId,
-	missionPilotAgentSessions,
-	missionPilotContextSnapshots,
-	missionPilotConversationItems,
-	missionPilotSessions,
-	missionPilotTaskEventInbox,
-} from "@nightworkers/mission-pilot/backend";
+import { getSessionByTaskId } from "@nightworkers/mission-pilot/testing";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
 import {
+	publishTaskRunTerminal,
 	registerTaskUserIntakeHandler,
 	type SubmitTaskUserIntakeCommand,
 } from "../api/modules/agentsShare";
+import {
+	createSession,
+	missionPilotAgentSessions,
+	missionPilotContextSnapshots,
+	missionPilotConversationItems,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "../api/modules/missionPilot/persistence";
 import { sendTaskOperatorUserMessage } from "../api/modules/task";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
@@ -37,7 +38,7 @@ afterEach(async () => {
 	}
 });
 
-async function createPilotFixture(options: { runtimeKind?: "agent" } = {}) {
+async function createPilotFixture() {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	const runId = crypto.randomUUID();
@@ -64,7 +65,6 @@ async function createPilotFixture(options: { runtimeKind?: "agent" } = {}) {
 				task,
 				sourceKind: "mission_task_candidate",
 				sourceId: crypto.randomUUID(),
-				...(options.runtimeKind ? { runtimeKind: options.runtimeKind } : {}),
 			},
 			tx,
 		);
@@ -167,7 +167,12 @@ describe("Mission Pilot service", () => {
 				.where(
 					eq(missionPilotTaskEventInbox.sessionId, activated?.id ?? "missing"),
 				),
-		).toHaveLength(0);
+		).toEqual([
+			expect.objectContaining({
+				eventType: "mission_pilot.resume_requested",
+				payloadJson: { reason: "play" },
+			}),
+		]);
 		const [agent] = await db
 			.select()
 			.from(missionPilotAgentSessions)
@@ -296,6 +301,55 @@ describe("Mission Pilot service", () => {
 				.from(taskMessages)
 				.where(eq(taskMessages.taskId, fixture.taskId)),
 		).toHaveLength(1);
+	});
+
+	it("projects terminal Coding Agent updates into the agent event inbox", async () => {
+		const fixture = await createPilotFixture();
+		const session = await getSessionByTaskId(fixture.taskId);
+		if (!session) throw new Error("Mission Pilot session was not found");
+		await db
+			.update(missionPilotSessions)
+			.set({ desiredState: "playing" })
+			.where(eq(missionPilotSessions.id, session.id));
+		await db
+			.update(tasks)
+			.set({ status: "completed" })
+			.where(eq(tasks.id, fixture.taskId));
+		service.initializeMissionPilotRunSync();
+		await db
+			.insert(taskRuns)
+			.values({
+				id: fixture.runId,
+				taskId: fixture.taskId,
+				repositoryId: fixture.repositoryId,
+				status: "completed",
+			})
+			.returning();
+		await publishTaskRunTerminal({
+			type: "task_run.terminal",
+			eventId: `test-terminal:${fixture.runId}`,
+			taskId: fixture.taskId,
+			taskRevision: 1,
+			runId: fixture.runId,
+			status: "completed",
+			sourceRef: null,
+			occurredAt: new Date().toISOString(),
+		});
+
+		expect(
+			await db
+				.select()
+				.from(missionPilotTaskEventInbox)
+				.where(eq(missionPilotTaskEventInbox.sessionId, session.id)),
+		).toEqual([
+			expect.objectContaining({
+				eventType: "task_run.terminal",
+				payloadJson: expect.objectContaining({
+					runId: fixture.runId,
+					status: "completed",
+				}),
+			}),
+		]);
 	});
 
 	it("allows a previously-dispatched Mission Pilot session to resume monitoring", async () => {
@@ -467,7 +521,7 @@ describe("Mission Pilot service", () => {
 	});
 
 	it("does not stop an active Run that is not owned by Mission Pilot", async () => {
-		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const fixture = await createPilotFixture();
 		const [manualRun] = await db
 			.insert(taskRuns)
 			.values({
@@ -504,7 +558,7 @@ describe("Mission Pilot service", () => {
 	});
 
 	it("requires a Stop retry before replay after a runtime stop timeout", async () => {
-		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const fixture = await createPilotFixture();
 		const [timedOut] = await db
 			.update(missionPilotSessions)
 			.set({
@@ -527,7 +581,7 @@ describe("Mission Pilot service", () => {
 	});
 
 	it("stops an agent session that is waiting in attention", async () => {
-		const fixture = await createPilotFixture({ runtimeKind: "agent" });
+		const fixture = await createPilotFixture();
 		const [playing] = await db
 			.update(missionPilotSessions)
 			.set({

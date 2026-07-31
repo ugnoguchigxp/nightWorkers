@@ -1,12 +1,6 @@
 import crypto from "node:crypto";
 import "./helpers/mission-pilot-runtime";
-import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
-import {
-	missionPilotAgentSessions,
-	missionPilotContextSnapshots,
-	missionPilotSessions,
-	missionPilotTaskEventInbox,
-} from "@nightworkers/mission-pilot/backend";
+import * as missionPilotRepo from "@nightworkers/mission-pilot/testing";
 import {
 	claimAgentPlay,
 	claimAgentStop,
@@ -18,6 +12,12 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories } from "../api/db/schema";
+import {
+	missionPilotAgentSessions,
+	missionPilotContextSnapshots,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "../api/modules/missionPilot/persistence";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
 

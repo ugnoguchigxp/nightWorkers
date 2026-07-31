@@ -173,4 +173,5 @@ describe("NightWorkersShellThreadPanel component", () => {
 		expect(mockWorkspace.sendWorkbenchMessage).not.toHaveBeenCalled();
 	});
 });
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

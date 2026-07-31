@@ -7,7 +7,7 @@ const headers = {
 	"x-nightworkers-e2e": "1",
 };
 
-test("creates every Task with a stopped Mission Pilot without a variant action", {
+test("creates a Task without a Mission Pilot session and offers one Play action", {
 	tag: ["@deterministic", "@p1", "@scenario:NW-E2E-MISSION-PILOT-001"],
 }, async ({ page, request }) => {
 	const { workspace } = await createDisposableGitWorkspace({
@@ -90,18 +90,16 @@ test("creates every Task with a stopped Mission Pilot without a variant action",
 			(await tasksResponse.json()) as Array<{
 				id: string;
 				title: string;
-				missionPilot: {
-					version: number;
-					desiredState: string;
-					phase: string;
-				};
 			}>
 		).find((item) => item.title === "Mission Pilot browser task");
-		expect(task?.missionPilot).toMatchObject({
-			desiredState: "stopped",
-			phase: "created",
-		});
 		if (!task) throw new Error("Mission Pilot task was not created");
+		expect(task).not.toHaveProperty("missionPilot");
+		const controlResponse = await request.get(
+			`/api/mission-pilot/tasks/${task.id}`,
+			{ headers },
+		);
+		expect(controlResponse.status(), await controlResponse.text()).toBe(200);
+		expect(await controlResponse.json()).toBeNull();
 
 		await taskLink.click({ position: { x: 20, y: 10 } });
 		await expect(page).toHaveURL(`/sessions/${task.id}`);

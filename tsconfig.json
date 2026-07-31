@@ -11,10 +11,30 @@
 		"forceConsistentCasingInFileNames": true,
 		"paths": {
 			"@/*": ["./src/*"],
-			"@api/*": ["./api/*"]
+			"@api/*": ["./api/*"],
+			"@nightworkers/mission-pilot/backend": [
+				"./packages/mission-pilot/src/backend/index.ts"
+			],
+			"@nightworkers/mission-pilot/contracts": [
+				"./packages/mission-pilot/src/contracts/index.ts"
+			],
+			"@nightworkers/mission-pilot/frontend": [
+				"./packages/mission-pilot/src/frontend/index.ts"
+			],
+			"@nightworkers/mission-pilot/testing": [
+				"./packages/mission-pilot/src/testing/index.ts"
+			],
+			"@nightworkers/mission-pilot/frontend.css": [
+				"./packages/mission-pilot/src/frontend/styles.css"
+			]
 		},
 		"types": ["node", "vite/client"]
 	},
-	"include": ["src/**/*", "api/**/*", "shared/**/*", "packages/mission-pilot/src/**/*"],
+	"include": [
+		"src/**/*",
+		"api/**/*",
+		"shared/**/*",
+		"packages/mission-pilot/src/**/*"
+	],
 	"exclude": ["node_modules", "dist", "drizzle"]
 }

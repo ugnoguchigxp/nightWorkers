@@ -23,16 +23,6 @@ export async function backfillMissionPilotTraceProvenance(
   `);
 	await client.execute(`
     UPDATE task_messages
-	    SET trace_owner = 'mission_pilot', trace_channel = 'artifact'
-	    WHERE id IN (
-      SELECT artifact_message_id FROM mission_pilot_steps WHERE artifact_message_id IS NOT NULL
-      UNION SELECT feature_plan_message_id FROM mission_pilot_plan_reviews
-      UNION SELECT source_message_id FROM mission_pilot_artifact_correction_runs
-      UNION SELECT result_message_id FROM mission_pilot_artifact_correction_runs WHERE result_message_id IS NOT NULL
-    )
-  `);
-	await client.execute(`
-    UPDATE task_messages
 	    SET trace_owner = 'mission_pilot', trace_channel = 'pilot_thought'
 	    WHERE trace_channel = 'internal' AND (
         json_valid(metadata_json) = 1

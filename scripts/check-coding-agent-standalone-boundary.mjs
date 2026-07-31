@@ -17,6 +17,10 @@ const forbiddenRuntimeDependencies = [
 	"api/modules/missionPilot/",
 	"api/db/mission-pilot-schema-bootstrap.ts",
 ];
+const sharedDatabaseSchemaDeclarations = new Set([
+	"api/modules/missionPilot/persistence/schema.ts",
+	"api/modules/missionPilot/persistence/agent-schema.ts",
+]);
 
 function resolveLocalImport(fromFile, specifier) {
 	if (!specifier.startsWith(".")) return null;
@@ -62,6 +66,7 @@ function findForbiddenChains(entrypoint) {
 		for (const dependency of listStaticRuntimeDependencies(file)) {
 			const relative = path.relative(repositoryRoot, dependency);
 			const nextChain = [...chain, relative];
+			if (sharedDatabaseSchemaDeclarations.has(relative)) continue;
 			if (
 				forbiddenRuntimeDependencies.some((forbidden) =>
 					relative.includes(forbidden),

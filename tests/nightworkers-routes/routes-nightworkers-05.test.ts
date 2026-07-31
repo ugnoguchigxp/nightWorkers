@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { missionPilotThoughtTrace } from "@nightworkers/mission-pilot/backend";
+import { missionPilotThoughtTrace } from "@nightworkers/mission-pilot/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";

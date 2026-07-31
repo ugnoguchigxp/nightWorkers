@@ -1,3 +1,7 @@
+export {
+	getMissionPilotAvailability,
+	type MissionPilotAvailability,
+} from "./mission-pilot-availability";
 export { createMissionPilotDependencies } from "./mission-pilot-dependencies";
 export {
 	createMissionPilotHostPorts,

@@ -79,8 +79,7 @@ function command(kind: "human" | "delegated_user") {
 			requestId: `${kind}-request`,
 			idempotencyKey: `${kind}-delivery`,
 		},
-		runtime:
-			kind === "delegated_user" ? { delegatedAuthorization } : undefined,
+		runtime: kind === "delegated_user" ? { delegatedAuthorization } : undefined,
 	});
 }
 

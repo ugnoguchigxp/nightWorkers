@@ -68,19 +68,9 @@ test("Play shows the canonical Task Goal and submits Questionnaire answers after
 			questionnaireSessionId: string;
 		};
 
-		const legacyDraftResponse = await request.get(
-			`/api/mission-pilot/tasks/${taskId}/questionnaire-draft`,
-			{ headers },
-		);
-		expect(legacyDraftResponse.status(), await legacyDraftResponse.text()).toBe(
-			200,
-		);
-		expect(await legacyDraftResponse.json()).toBeNull();
-
-		await expect(page.locator(".mission-pilot-countdown")).toContainText(
-			/00:\d{2}/,
-			{ timeout: 10_000 },
-		);
+		await expect(
+			page.locator(".mission-pilot-countdown").first(),
+		).toContainText(/00:\d{2}/, { timeout: 10_000 });
 		let questionnaire: {
 			id: string;
 			status: string;
@@ -135,10 +125,14 @@ test("Play shows the canonical Task Goal and submits Questionnaire answers after
 			],
 		});
 		await expect(page.locator(".mission-pilot-countdown")).toHaveCount(0);
-		const currentTask = await request.get(`/api/tasks/${taskId}`, { headers });
-		expect(currentTask.status(), await currentTask.text()).toBe(200);
-		expect((await currentTask.json()) as object).toMatchObject({
-			missionPilot: { initialPromptState: "sent", nextWakeAt: null },
+		const currentControl = await request.get(
+			`/api/mission-pilot/tasks/${taskId}`,
+			{ headers },
+		);
+		expect(currentControl.status(), await currentControl.text()).toBe(200);
+		expect((await currentControl.json()) as object).toMatchObject({
+			initialPromptState: "sent",
+			nextWakeAt: null,
 		});
 
 		const composerControls = page.locator(".mission-pilot-composer-controls");
@@ -155,14 +149,15 @@ test("Play shows the canonical Task Goal and submits Questionnaire answers after
 			}),
 		).toBeVisible({ timeout: 10_000 });
 		await expect(composerControls.locator(".animate-spin")).toHaveCount(0);
-		const stoppedTask = await request.get(`/api/tasks/${taskId}`, { headers });
-		expect(stoppedTask.status(), await stoppedTask.text()).toBe(200);
-		expect((await stoppedTask.json()) as object).toMatchObject({
-			missionPilot: {
-				desiredState: "stopped",
-				activityState: "idle",
-				activeRunId: null,
-			},
+		const stoppedControl = await request.get(
+			`/api/mission-pilot/tasks/${taskId}`,
+			{ headers },
+		);
+		expect(stoppedControl.status(), await stoppedControl.text()).toBe(200);
+		expect((await stoppedControl.json()) as object).toMatchObject({
+			desiredState: "stopped",
+			activityState: "idle",
+			activeRunId: null,
 		});
 	} finally {
 		await Promise.allSettled([

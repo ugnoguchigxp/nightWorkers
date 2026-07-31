@@ -159,6 +159,21 @@ describe("Task Operator contracts", () => {
 		).toMatchObject({ availability: "available" });
 	});
 
+	it("allows a fresh implementation Run after a needs_human Run stops executing", () => {
+		const catalog = composeTaskOperatorCommandCatalog({
+			taskRevision: 4,
+			taskStatus: "ready",
+			repositoryAvailable: true,
+			hasActiveRun: true,
+			activeRunStatus: "needs_human",
+			hasTerminalRun: false,
+			currentTodoStatus: null,
+		});
+		expect(
+			catalog.find((command) => command.id === "run.implementation.start"),
+		).toMatchObject({ availability: "available" });
+	});
+
 	it("accepts the public archive route's closeout-discard flag", () => {
 		const definition = TASK_OPERATOR_ACTION_DEFINITIONS.find(
 			(candidate) => candidate.actionId === "task.archive",

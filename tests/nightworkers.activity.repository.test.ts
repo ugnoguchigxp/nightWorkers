@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import {
 	missionPilotArtifactTrace,
 	missionPilotThoughtTrace,
-} from "@nightworkers/mission-pilot/backend";
+} from "@nightworkers/mission-pilot/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {

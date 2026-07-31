@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,14 @@ import {
 } from "../src/modules/nightworkers/components/ThreadWorkspace";
 
 type ThreadWorkspaceProps = Parameters<typeof ThreadWorkspace>[0];
+
+function renderWorkspace(props: ThreadWorkspaceProps) {
+	return renderToStaticMarkup(
+		<QueryClientProvider client={new QueryClient()}>
+			<ThreadWorkspace {...props} />
+		</QueryClientProvider>,
+	);
+}
 
 // Mock i18next
 vi.mock("react-i18next", () => ({
@@ -143,7 +152,7 @@ describe("ThreadWorkspace component & helpers", () => {
 	});
 
 	it("renders empty prompt when activeSession is null", () => {
-		const markup = renderToStaticMarkup(<ThreadWorkspace {...defaultProps} />);
+		const markup = renderWorkspace(defaultProps);
 		expect(markup).toContain("thread.emptyPrompt");
 		expect(markup).toContain('id="nightworkers-artifact"');
 		expect(markup).toContain('data-min-size="0%"');
@@ -158,7 +167,7 @@ describe("ThreadWorkspace component & helpers", () => {
 			artifactRefs: [{ id: "art-1", kind: "plan_mode_workspace" }],
 		};
 
-		const markup = renderToStaticMarkup(<ThreadWorkspace {...props} />);
+		const markup = renderWorkspace(props);
 		expect(markup).toContain("My Project");
 		expect(markup).toContain("Active Task Title");
 		expect(markup).toContain("CA i:0 cr:0 o:0 | MP i:0 cr:0 o:0");
@@ -171,7 +180,7 @@ describe("ThreadWorkspace component & helpers", () => {
 			splitPanel: <div className="split-content">Split</div>,
 		};
 
-		const markup = renderToStaticMarkup(<ThreadWorkspace {...props} />);
+		const markup = renderWorkspace(props);
 		expect(markup).toContain("mock-resizable-group");
 		expect(markup).toContain('id="nightworkers-thread-main"');
 		expect(markup).toContain('id="nightworkers-artifact"');

@@ -1,10 +1,3 @@
-import {
-	index,
-	integer,
-	sqliteTable,
-	text,
-	uniqueIndex,
-} from "drizzle-orm/sqlite-core";
 import type {
 	MissionPilotActionExecutionStatus,
 	MissionPilotActionFailure,
@@ -13,8 +6,15 @@ import type {
 	MissionPilotRuntimeState,
 	MissionPilotTaskEventType,
 	MissionPilotToolCallStatus,
-} from "../../contracts";
-import { tasks } from "./core-reference-schema";
+} from "@nightworkers/mission-pilot/contracts";
+import {
+	index,
+	integer,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+import { tasks } from "../../../db/schema";
 import { missionPilotSessions } from "./schema";
 
 export const missionPilotAgentSessions = sqliteTable(

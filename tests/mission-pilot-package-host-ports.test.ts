@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
 import type {
 	MissionPilotPrincipal,
 	MissionPilotRealtimeEvent,
 } from "@nightworkers/mission-pilot/contracts";
 import { createMissionPilotHostPortsFake } from "@nightworkers/mission-pilot/testing";
+import { describe, expect, it, vi } from "vitest";
 import {
 	createMissionPilotHostPorts,
 	type MissionPilotHostPortAdapters,

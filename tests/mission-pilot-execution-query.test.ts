@@ -1,61 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "./helpers/mission-pilot-runtime";
-import {
-	attachArtifactCorrectionRequests,
-	buildMissionPilotThoughtEntries,
-} from "@nightworkers/mission-pilot/testing";
+import { buildMissionPilotThoughtEntries } from "@nightworkers/mission-pilot/testing";
 
 describe("Mission Pilot execution query", () => {
-	it("backfills persisted correction instructions into existing activity events", () => {
-		const [event] = attachArtifactCorrectionRequests(
-			[
-				{
-					id: "activity-1",
-					payloadJson: {
-						correctionRunId: "correction-run-1",
-						target: "feature_plan",
-					},
-				},
-			],
-			[
-				{
-					id: "correction-run-1",
-					target: "feature_plan",
-					focusJson: { kind: "artifact" },
-					instruction:
-						"HTTP APIの入力・出力・エラー検証はapi_io_contractを正本として扱ってください。",
-					preserveUnfocusedContent: true,
-				},
-			],
-		);
-
-		expect(event?.payloadJson).toMatchObject({
-			correctionRunId: "correction-run-1",
-			correctionRequest: {
-				target: "feature_plan",
-				focus: { kind: "artifact" },
-				instruction:
-					"HTTP APIの入力・出力・エラー検証はapi_io_contractを正本として扱ってください。",
-				preserveUnfocusedContent: true,
-			},
-		});
-	});
-
-	it("keeps an event payload unchanged when no correction run matches", () => {
-		const original = {
-			id: "activity-2",
-			payloadJson: { correctionRunId: "missing-run" },
-		};
-		const [event] = attachArtifactCorrectionRequests([original], []);
-
-		expect(event).toBe(original);
-	});
-
 	it("projects agent decisions and the complete tool lifecycle into one timeline", () => {
 		const now = new Date("2026-07-16T00:00:00Z");
 		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
 			sessionId: "pilot-session",
-			events: [],
 			activityEvents: [],
 			messages: [],
 			conversationItems: [
@@ -150,7 +101,6 @@ describe("Mission Pilot execution query", () => {
 		} as const;
 		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
 			sessionId: "pilot-session",
-			events: [],
 			activityEvents: [],
 			messages: [],
 			conversationItems: [],
@@ -237,7 +187,6 @@ describe("Mission Pilot execution query", () => {
 		const now = new Date("2026-07-16T00:00:00Z");
 		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
 			sessionId: "pilot-session",
-			events: [],
 			messages: [],
 			conversationItems: [],
 			toolCalls: [],
@@ -276,30 +225,10 @@ describe("Mission Pilot execution query", () => {
 		]);
 	});
 
-	it("does not re-project Coding Agent run events or consumed run input", () => {
+	it("does not re-project consumed Coding Agent run input", () => {
 		const now = new Date("2026-07-16T00:00:00Z");
 		const input: Parameters<typeof buildMissionPilotThoughtEntries>[0] = {
 			sessionId: "pilot-session",
-			events: [
-				{
-					id: "run-event",
-					sessionId: "pilot-session",
-					eventType: "implementation.completed",
-					phase: "review_preparing",
-					cycle: 1,
-					contextRevision: 2,
-					sourceKind: "task_run",
-					sourceId: "run-1",
-					payloadJson: { finalReport: "Coding Agent output" },
-					processStatus: "processed",
-					attemptCount: 0,
-					lastError: null,
-					nextAttemptAt: null,
-					processedAt: now,
-					createdAt: now,
-					updatedAt: now,
-				},
-			],
 			activityEvents: [],
 			messages: [],
 			conversationItems: [

@@ -42,7 +42,6 @@
       "icons/icon.png"
     ],
     "resources": [
-      "../api/services/supervisor/skills",
       "../scripts/desktop/staged"
     ],
     "macOS": {

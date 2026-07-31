@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
-import { createSession } from "@nightworkers/mission-pilot/backend";
+import "./helpers/mission-pilot-runtime";
 import { resolveMissionPilotRuntimeOwnership } from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
+import { createSession } from "../api/modules/missionPilot/persistence";
 
 const repositoryIds: string[] = [];
 
@@ -15,7 +16,7 @@ afterEach(async () => {
 		await db.delete(repositories).where(eq(repositories.id, repositoryId));
 });
 
-async function createFixture(runtimeKind?: "agent") {
+async function createFixture() {
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	repositoryIds.push(repositoryId);
@@ -35,17 +36,14 @@ async function createFixture(runtimeKind?: "agent") {
 				objective: "ownership",
 			})
 			.returning();
-		return createSession(
-			{ task, sourceKind: "task", sourceId: task.id, runtimeKind },
-			tx,
-		);
+		return createSession({ task, sourceKind: "task", sourceId: task.id }, tx);
 	});
 	return { taskId, sessionId: session.id };
 }
 
 describe("Mission Pilot runtime ownership", () => {
 	it("uses the agent session row as the sole ownership source", async () => {
-		const fixture = await createFixture("agent");
+		const fixture = await createFixture();
 		expect(
 			await resolveMissionPilotRuntimeOwnership({ taskId: fixture.taskId }),
 		).toEqual({ kind: "agent", sessionId: fixture.sessionId });

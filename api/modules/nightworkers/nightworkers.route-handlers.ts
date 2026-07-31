@@ -71,18 +71,29 @@ export async function startHumanTaskImplementation(
 	taskId: string,
 	idempotencyKey?: string,
 ) {
-	const [projection, task] = await Promise.all([
+	const [projection, task, messages, runs] = await Promise.all([
 		readTaskOperatorProjection(taskId, humanTaskOperatorQueryContext()),
 		readTaskOperatorTask(taskId),
+		service.listTaskMessages(taskId),
+		service.getTaskRunsForTask(taskId),
 	]);
+	const latestRun = runs[0];
+	const retryRequest = latestRun
+		? messages.findLast(
+				(message) =>
+					message.role === "user" &&
+					message.createdAt.getTime() >= latestRun.updatedAt.getTime(),
+			)?.content
+		: null;
 	const result = await executeTaskOperatorCommand({
 		taskId,
 		actionId: "run.implementation.start",
 		expectedTaskRevision: projection.task.revision,
 		arguments: {
 			request:
-				task.objective ??
-				`Task「${projection.task.title}」を実装し、検証まで完了してください。`,
+				retryRequest?.trim() ||
+				(task.objective ??
+					`Task「${projection.task.title}」を実装し、検証まで完了してください。`),
 		},
 		context: humanTaskOperatorCommandContext({ idempotencyKey }),
 	});
