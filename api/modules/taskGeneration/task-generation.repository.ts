@@ -13,7 +13,7 @@ import {
 	missionTaskCandidateBatches,
 	missionTaskCandidates,
 } from "../../db/task-generation-schema";
-import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
+import { createTask } from "../nightworkers/nightworkers.repository";
 import { buildMissionCandidateTaskObjective } from "./mission-task-objective";
 
 type Db = typeof db | DbTransaction;
@@ -473,7 +473,7 @@ export async function createTaskFromMissionCandidate(
 	status: "draft" | "ready",
 	database: DbTransaction,
 ) {
-	return createTaskWithMissionPilot(
+	return createTask(
 		{
 			repositoryId: candidate.repositoryId,
 			title: candidate.title,
@@ -490,10 +490,6 @@ export async function createTaskFromMissionCandidate(
 			acceptanceCriteria: `${candidate.acceptanceCriteria}\n\nVerification:\n${candidate.verificationPlan}`,
 			status,
 			createdBy: "mission-task-candidate",
-			missionPilotSourceRef: {
-				source: "mission_task_candidate",
-				id: candidate.id,
-			},
 		},
 		database,
 	);

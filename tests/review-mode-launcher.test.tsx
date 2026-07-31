@@ -136,26 +136,13 @@ describe("Review Mode launcher", () => {
 		).toBeNull();
 	});
 
-	it("does not open Review Mode before closeout or while Mission Pilot owns the workflow", () => {
+	it("does not open Review Mode before closeout", () => {
 		const todos = [todo(), todo({ id: "todo-2", seq: 2, status: "running" })];
 		expect(
 			buildPostImplementationReviewArtifact({
 				task: buildTask(),
 				run: completedImplementationRun,
 				todos,
-			}),
-		).toBeNull();
-
-		expect(
-			buildPostImplementationReviewArtifact({
-				task: buildTask({
-					missionPilot: {
-						desiredState: "playing",
-						phase: "testing",
-					} as ReturnType<typeof buildTask>["missionPilot"],
-				}),
-				run: completedImplementationRun,
-				todos: [todo()],
 			}),
 		).toBeNull();
 	});

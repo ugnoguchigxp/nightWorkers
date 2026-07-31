@@ -11,14 +11,14 @@ import {
 	missionPilotContextSnapshots,
 	missionPilotSessions,
 } from "../api/db/mission-pilot-schema";
-import { repositories, tasks } from "../api/db/schema";
+import { repositories } from "../api/db/schema";
 import {
 	claimAgentPlay,
 	claimAgentStop,
 } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
+import * as missionPilotRepo from "../api/modules/missionPilot/mission-pilot.repository";
 import { play } from "../api/modules/missionPilot/mission-pilot.service";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
-import { createTaskWithMissionPilot } from "../api/modules/nightworkers/nightworkers.task-creation.service";
 import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
 
 const repositoryIds: string[] = [];
@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 describe("Universal Task creation", () => {
-	it("atomically provisions a stopped Mission Pilot Session for a new Task", async () => {
+	it("creates a neutral Task without provisioning a Mission Pilot session", async () => {
 		const repositoryId = crypto.randomUUID();
 		repositoryIds.push(repositoryId);
 		await db.insert(repositories).values({
@@ -49,37 +49,23 @@ describe("Universal Task creation", () => {
 			acceptanceCriteria: "",
 		});
 
-		expect(task.missionPilot).toMatchObject({
-			taskId: task.id,
-			desiredState: "stopped",
-			phase: "created",
-			authorizationVersion: null,
-			initialPromptState: "pending",
-		});
-		const session = await db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.taskId, task.id),
-		});
-		expect(session).toMatchObject({
-			taskId: task.id,
-			repositoryId,
-			sourceKind: "task",
-			sourceId: task.id,
-			desiredState: "stopped",
-			phase: "created",
-			initialPromptSnapshot: "",
+		expect(task).not.toHaveProperty("missionPilot");
+		expect(
+			await db
+				.select()
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(0);
+		await expect(play(task.id, 0)).rejects.toMatchObject({
+			statusCode: 400,
+			code: "MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
 		});
 		expect(
 			await db
 				.select()
-				.from(missionPilotContextSnapshots)
-				.where(eq(missionPilotContextSnapshots.sessionId, session?.id ?? "")),
-		).toHaveLength(1);
-		await expect(
-			play(task.id, task.missionPilot.version),
-		).rejects.toMatchObject({
-			statusCode: 400,
-			code: "MISSION_PILOT_INITIAL_PROMPT_REQUIRED",
-		});
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(0);
 	});
 
 	it("keeps normal user messages out of the Mission Pilot inbox while stopped", async () => {
@@ -96,15 +82,6 @@ describe("Universal Task creation", () => {
 			title: "New Session",
 			objective: "",
 		});
-		const [session] = await db
-			.select()
-			.from(missionPilotSessions)
-			.where(eq(missionPilotSessions.taskId, task.id));
-		const [agentBefore] = await db
-			.select()
-			.from(missionPilotAgentSessions)
-			.where(eq(missionPilotAgentSessions.sessionId, session?.id ?? ""));
-
 		const updated = await appendTaskMessage(
 			task.id,
 			"通常のPlan Modeで実装計画を作成してください",
@@ -116,13 +93,14 @@ describe("Universal Task creation", () => {
 			await db
 				.select()
 				.from(missionPilotTaskEventInbox)
-				.where(eq(missionPilotTaskEventInbox.sessionId, session?.id ?? "")),
+				.where(eq(missionPilotTaskEventInbox.taskId, task.id)),
 		).toHaveLength(0);
-		const [agentAfter] = await db
-			.select()
-			.from(missionPilotAgentSessions)
-			.where(eq(missionPilotAgentSessions.sessionId, session?.id ?? ""));
-		expect(agentAfter?.nextEventSequence).toBe(agentBefore?.nextEventSequence);
+		expect(
+			await db
+				.select()
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(0);
 	});
 
 	it("publishes user messages only to an active Mission Pilot agent", async () => {
@@ -139,11 +117,19 @@ describe("Universal Task creation", () => {
 			title: "New Session",
 			objective: "Active Mission Pilot event test",
 		});
-		const [session] = await db
-			.select()
-			.from(missionPilotSessions)
-			.where(eq(missionPilotSessions.taskId, task.id));
-		const claimed = await claimAgentPlay(task.id, session?.version ?? -1);
+		const session = await missionPilotRepo.getOrCreateSession({
+			task: {
+				id: task.id,
+				repositoryId,
+				title: task.title,
+				description: task.description ?? null,
+				objective: task.objective ?? null,
+				acceptanceCriteria: task.acceptanceCriteria ?? null,
+			},
+			sourceKind: "task",
+			sourceId: task.id,
+		});
+		const claimed = await claimAgentPlay(task.id, session.version);
 		expect(claimed).not.toBeNull();
 		await db
 			.update(missionPilotAgentSessions)
@@ -174,9 +160,8 @@ describe("Universal Task creation", () => {
 		).not.toBeNull();
 	});
 
-	it("rolls back Task insertion when Session provisioning conflicts", async () => {
+	it("converges concurrent lazy session creation without duplicating state", async () => {
 		const repositoryId = crypto.randomUUID();
-		const sourceId = crypto.randomUUID();
 		repositoryIds.push(repositoryId);
 		await db.insert(repositories).values({
 			id: repositoryId,
@@ -184,37 +169,45 @@ describe("Universal Task creation", () => {
 			localPath: `/tmp/${repositoryId}`,
 			branch: "main",
 		});
-		await createTaskWithMissionPilot({
+		const task = await createTask({
 			repositoryId,
-			title: "First source task",
-			status: "draft",
-			missionPilotSourceRef: {
-				source: "mission_task_candidate",
-				id: sourceId,
-			},
+			title: "Concurrent Play Task",
+			objective: "Run Mission Pilot",
 		});
-		const before = await db
-			.select()
-			.from(tasks)
-			.where(eq(tasks.repositoryId, repositoryId));
-		await expect(
-			createTaskWithMissionPilot({
+		const input = {
+			task: {
+				id: task.id,
 				repositoryId,
-				title: "Conflicting source task",
-				status: "draft",
-				missionPilotSourceRef: {
-					source: "mission_task_candidate",
-					id: sourceId,
-				},
-			}),
-		).rejects.toBeTruthy();
-		const after = await db
-			.select()
-			.from(tasks)
-			.where(eq(tasks.repositoryId, repositoryId));
-		expect(after).toHaveLength(before.length);
-		expect(after.some((task) => task.title === "Conflicting source task")).toBe(
-			false,
-		);
+				title: task.title,
+				description: task.description ?? null,
+				objective: task.objective ?? null,
+				acceptanceCriteria: task.acceptanceCriteria ?? null,
+			},
+			sourceKind: "task" as const,
+			sourceId: task.id,
+		};
+		const [first, second] = await Promise.all([
+			missionPilotRepo.getOrCreateSession(input),
+			missionPilotRepo.getOrCreateSession(input),
+		]);
+		expect(second.id).toBe(first.id);
+		expect(
+			await db
+				.select()
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(1);
+		expect(
+			await db
+				.select()
+				.from(missionPilotContextSnapshots)
+				.where(eq(missionPilotContextSnapshots.sessionId, first.id)),
+		).toHaveLength(1);
+		expect(
+			await db
+				.select()
+				.from(missionPilotAgentSessions)
+				.where(eq(missionPilotAgentSessions.sessionId, first.id)),
+		).toHaveLength(1);
 	});
 });

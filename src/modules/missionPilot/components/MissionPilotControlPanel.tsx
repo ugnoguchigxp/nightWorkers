@@ -3,20 +3,22 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
 import { missionPilotPresentation } from "../missionPilotPresentation";
+import { useMissionPilotControl } from "../missionPilotQueries";
 import { useMissionPilotControls } from "../useMissionPilotControls";
 
 export function MissionPilotControlPanel({
 	taskId,
-	summary,
+	summary: initialSummary,
 	initialPrompt,
 	placement,
 }: {
 	taskId: string;
-	summary: MissionPilotControlSummary;
+	summary?: MissionPilotControlSummary | null;
 	initialPrompt?: string;
 	placement: "sidebar" | "composer";
 }) {
 	const { t } = useTranslation();
+	const { summary } = useMissionPilotControl(taskId, initialSummary);
 	const controls = useMissionPilotControls(taskId, summary, initialPrompt);
 	const state = missionPilotPresentation(summary);
 	const stopping =

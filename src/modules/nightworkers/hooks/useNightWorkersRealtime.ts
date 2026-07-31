@@ -1,13 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
-import type { MissionPilotPlanProgress } from "../../../../shared/modules/missionPilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
 import { isCodingAgentChatTrace } from "../../codingAgent";
-import {
-	mergeTaskPreservingMissionPilot,
-	missionPilotPlanProgressQueryKey,
-} from "../../missionPilot";
 import {
 	applyQuestionnaireStateChangedRealtimeMessage,
 	invalidateQuestionnaireSessions,
@@ -131,9 +126,6 @@ export function useNightWorkersRealtime({
 					void queryClient.invalidateQueries({
 						queryKey: planModeWorkspaceQueryKey(activeSessionId),
 					});
-					void queryClient.invalidateQueries({
-						queryKey: missionPilotPlanProgressQueryKey(activeSessionId),
-					});
 					void invalidateQuestionnaireSessions(queryClient, activeSessionId);
 					const subscription = latestRunSubscriptionRef.current;
 					ws?.send(
@@ -181,8 +173,6 @@ export function useNightWorkersRealtime({
 							text?: string;
 							todo?: TaskRunTodo;
 							taskId?: string;
-							missionPilot?: NonNullable<Task["missionPilot"]>;
-							progress?: MissionPilotPlanProgress;
 						};
 						event?: {
 							id: string;
@@ -447,10 +437,7 @@ export function useNightWorkersRealtime({
 							const next = [...prev];
 							const idx = next.findIndex((t) => t.id === incomingTask.id);
 							if (idx >= 0) {
-								next[idx] = mergeTaskPreservingMissionPilot(
-									next[idx],
-									incomingTask,
-								);
+								next[idx] = incomingTask;
 							} else {
 								next.unshift(incomingTask);
 							}
@@ -458,37 +445,6 @@ export function useNightWorkersRealtime({
 						});
 						queryClient.invalidateQueries({
 							queryKey: ["implementationQueue"],
-						});
-					}
-					if (
-						msg.type === "mission_pilot.plan_progress_updated" &&
-						msg.payload?.progress &&
-						typeof msg.payload.taskId === "string"
-					) {
-						queryClient.setQueryData(
-							missionPilotPlanProgressQueryKey(msg.payload.taskId),
-							msg.payload.progress,
-						);
-					}
-					if (
-						msg.type === "mission_pilot.updated" &&
-						msg.payload?.missionPilot &&
-						typeof msg.payload.taskId === "string"
-					) {
-						const incoming = msg.payload.missionPilot as Task["missionPilot"];
-						const missionPilotTaskId = msg.payload.taskId;
-						if (incoming)
-							queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-								prev.map((task) =>
-									task.id !== missionPilotTaskId ||
-									(task.missionPilot &&
-										task.missionPilot.version > incoming.version)
-										? task
-										: { ...task, missionPilot: incoming },
-								),
-							);
-						void queryClient.invalidateQueries({
-							queryKey: missionPilotPlanProgressQueryKey(missionPilotTaskId),
 						});
 					}
 				} catch {

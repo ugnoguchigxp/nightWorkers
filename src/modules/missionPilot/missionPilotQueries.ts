@@ -1,24 +1,68 @@
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
-import type { Task } from "../nightworkers/types";
-export function mergeMissionPilotSummary(
-	tasks: Task[],
-	taskId: string,
-	incoming: MissionPilotControlSummary,
-) {
-	return tasks.map((task) =>
-		task.id !== taskId ||
-		(task.missionPilot && task.missionPilot.version > incoming.version)
-			? task
-			: { ...task, missionPilot: incoming },
-	);
+import { fetchMissionPilotControl } from "./missionPilotCommands";
+
+export const missionPilotControlQueryKey = (taskId: string | null) =>
+	["missionPilotControl", taskId] as const;
+
+export function missionPilotControlQueryOptions(taskId: string | null) {
+	return queryOptions({
+		queryKey: missionPilotControlQueryKey(taskId),
+		queryFn: async ({ signal }) => {
+			if (!taskId) return null;
+			const response = await fetchMissionPilotControl(taskId, signal);
+			if (!response.ok)
+				throw new Error("Failed to fetch Mission Pilot control state");
+			return (await response.json()) as MissionPilotControlSummary | null;
+		},
+		enabled: Boolean(taskId),
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: true,
+	});
 }
 
-export function mergeTaskPreservingMissionPilot(
-	current: Task | undefined,
-	incoming: Task,
+export function useMissionPilotControl(
+	taskId: string,
+	initialSummary?: MissionPilotControlSummary | null,
 ) {
-	if (!current?.missionPilot || incoming.missionPilot) return incoming;
-	return { ...incoming, missionPilot: current.missionPilot };
+	const query = useQuery({
+		...missionPilotControlQueryOptions(taskId),
+		...(initialSummary ? { initialData: initialSummary } : {}),
+	});
+	return {
+		...query,
+		summary: query.data ?? unstartedMissionPilotControl(taskId),
+	};
+}
+
+export function unstartedMissionPilotControl(
+	taskId: string,
+): MissionPilotControlSummary {
+	return {
+		taskId,
+		desiredState: "stopped",
+		activityState: "idle",
+		phase: "not_started",
+		authorizationVersion: null,
+		initialPromptState: "pending",
+		initialPromptMessageId: null,
+		activeRunId: null,
+		nextWakeAt: null,
+		version: 0,
+		lastErrorCode: null,
+		lastError: null,
+		stoppedAt: null,
+		queueHandoff: null,
+		preQueueDiagnostic: null,
+		updatedAt: new Date(0).toISOString(),
+	};
+}
+
+export function mergeMissionPilotControl(
+	current: MissionPilotControlSummary | null | undefined,
+	incoming: MissionPilotControlSummary,
+) {
+	return current && current.version > incoming.version ? current : incoming;
 }
 
 export function optimisticMissionPilotSummary(

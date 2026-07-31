@@ -8,7 +8,6 @@ import { db } from "../../db/client";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./project-evaluation.repository";
 import { buildProjectEvaluationBundle } from "./project-evaluation-bundle.service";
 import {
@@ -409,7 +408,7 @@ export async function createTasksFromProjectImprovements(input: {
 			...idea.scoreImpacts.map((impact) => impact.expectedScoreGain),
 		);
 		const task = await db.transaction(async (tx) => {
-			const createdTask = await createTaskWithMissionPilot(
+			const createdTask = await nightworkersRepo.createTask(
 				{
 					repositoryId: evaluation.repositoryId,
 					title: idea.title,

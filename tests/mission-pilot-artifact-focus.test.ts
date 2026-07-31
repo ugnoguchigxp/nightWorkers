@@ -18,7 +18,19 @@ function resolveMissionPilotArtifactFocus(
 		artifact: null,
 	},
 ) {
-	return resolveMissionPilotArtifactFocusForRoute({ ...input, routeState });
+	const activeSession = input.activeSession as
+		| (Task & {
+				missionPilot?: Parameters<
+					typeof resolveMissionPilotArtifactFocusForRoute
+				>[0]["missionPilot"];
+		  })
+		| null;
+	return resolveMissionPilotArtifactFocusForRoute({
+		...input,
+		activeSession,
+		missionPilot: activeSession?.missionPilot ?? null,
+		routeState,
+	});
 }
 
 function task(phase: string, desiredState: "playing" | "stopped" = "playing") {

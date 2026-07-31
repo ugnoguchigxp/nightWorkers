@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
 	missionPilotCommandRequestSchema,
 	missionPilotCommandResponseSchema,
+	missionPilotControlSummarySchema,
 	missionPilotPlanProgressSchema,
 	missionPilotQuestionnaireDraftSchema,
 	submitMissionPilotQuestionnaireDraftSchema,
@@ -138,6 +139,21 @@ const stopRoute = createRoute({
 		},
 	},
 });
+const getControlRoute = createRoute({
+	method: "get",
+	path: "/mission-pilot/tasks/:taskId",
+	request: { params: taskParams },
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: missionPilotControlSummarySchema.nullable(),
+				},
+			},
+			description: "Mission Pilot control state for a task",
+		},
+	},
+});
 const getQuestionnaireDraftRoute = createRoute({
 	method: "get",
 	path: "/mission-pilot/tasks/:taskId/questionnaire-draft",
@@ -218,6 +234,12 @@ const submitQuestionnaireDraftRoute = createRoute({
 	},
 });
 export const missionPilotRouter = createOpenApiRouter()
+	.openapi(
+		getControlRoute,
+		withOpenApiRouteError(getControlRoute, async (c) =>
+			c.json(await service.getControl(c.req.param("taskId")), 200),
+		),
+	)
 	.openapi(
 		getTaskExecutionRoute,
 		withOpenApiRouteError(getTaskExecutionRoute, async (c) =>

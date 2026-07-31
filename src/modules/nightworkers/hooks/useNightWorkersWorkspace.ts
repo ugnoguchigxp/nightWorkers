@@ -48,15 +48,11 @@ import {
 	emptyActivityReplay,
 	isActiveRunStatus,
 	isActiveTaskStatus,
-	isMissionPilotChatPending,
 	normalizeActivityReplay,
 	resolveNextActiveSessionId,
 } from "./useNightWorkersWorkspaceModel";
 
-export {
-	isMissionPilotChatPending,
-	resolveNextActiveSessionId,
-} from "./useNightWorkersWorkspaceModel";
+export { resolveNextActiveSessionId } from "./useNightWorkersWorkspaceModel";
 
 export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const queryClient = useQueryClient();
@@ -349,7 +345,6 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const isAgentThinking =
 		isInitialSessionCreating ||
 		isChatSubmitting ||
-		isMissionPilotChatPending(activeSession) ||
 		startRunMutation.isPending ||
 		Boolean(pendingChatRunId) ||
 		Boolean(activeSessionId && pendingAssistantTaskId === activeSessionId) ||

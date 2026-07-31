@@ -14,8 +14,12 @@ export {
 } from "./missionPilotCommands";
 export * from "./missionPilotPlanProgressQuery";
 export {
-	mergeTaskPreservingMissionPilot,
+	mergeMissionPilotControl,
+	missionPilotControlQueryKey,
+	missionPilotControlQueryOptions,
 	optimisticMissionPilotSummary,
+	unstartedMissionPilotControl,
+	useMissionPilotControl,
 } from "./missionPilotQueries";
 export { projectMissionPilotQuestionnaireAnswers } from "./missionPilotQuestionnaireProjection";
 export { useMissionPilotArtifactAutoFocus } from "./useMissionPilotArtifactAutoFocus";

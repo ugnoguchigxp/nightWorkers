@@ -209,7 +209,7 @@ afterEach(async () => {
 });
 
 describe("NightWorkers workbench routes", () => {
-	it("starts the standalone Plan Mode Artifact while Mission Pilot is stopped", async () => {
+	it("starts the standalone Plan Mode Artifact without a Mission Pilot session", async () => {
 		vi.mocked(llm.callStructuredJsonLLM)
 			.mockResolvedValueOnce(
 				mockPlanModeGate(true, "explicit planning request"),
@@ -247,10 +247,13 @@ describe("NightWorkers workbench routes", () => {
 			201,
 		);
 		const task = await createResponse.json();
-		expect(task.missionPilot).toMatchObject({
-			desiredState: "stopped",
-			phase: "created",
-		});
+		expect(task).not.toHaveProperty("missionPilot");
+		expect(
+			await db
+				.select({ id: missionPilotSessions.id })
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(0);
 		const unregister = registerTaskMessageCreatedListener((message) => {
 			if (message.role === "user")
 				throw new Error("sidecar listener must not fail normal intake");

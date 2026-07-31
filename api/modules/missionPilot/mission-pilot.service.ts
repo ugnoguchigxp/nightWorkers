@@ -188,19 +188,6 @@ export async function play(
 		providerPreflight?: typeof preflightMissionPilotProviderToolTurn;
 	} = {},
 ) {
-	const session = await repo.getSessionByTaskId(taskId);
-	if (!session)
-		throw new MissionPilotError(
-			404,
-			"MISSION_PILOT_NOT_FOUND",
-			"Mission Pilot session not found",
-		);
-	if (!(await isMissionPilotAgentSession(session.id)))
-		throw new MissionPilotError(
-			409,
-			"MISSION_PILOT_AGENT_MIGRATION_REQUIRED",
-			"Mission Pilot agent migration has not completed",
-		);
 	const projection = await readTaskOperatorProjection(
 		taskId,
 		humanTaskOperatorQueryContext(),
@@ -233,6 +220,26 @@ export async function play(
 			providerPreflight.code,
 			providerPreflight.message,
 		);
+	const session =
+		(await repo.getSessionByTaskId(taskId)) ??
+		(await repo.getOrCreateSession({
+			task: {
+				id: taskId,
+				repositoryId: projection.project.id,
+				title: projection.task.title,
+				description: null,
+				objective: taskGoal.text,
+				acceptanceCriteria: acceptanceCriteria.text || null,
+			},
+			sourceKind: "task",
+			sourceId: taskId,
+		}));
+	if (!(await isMissionPilotAgentSession(session.id)))
+		throw new MissionPilotError(
+			409,
+			"MISSION_PILOT_AGENT_MIGRATION_REQUIRED",
+			"Mission Pilot agent migration has not completed",
+		);
 	return playAgentSession(
 		session.id,
 		taskId,
@@ -241,6 +248,11 @@ export async function play(
 		taskGoal.text,
 		acceptanceCriteria.text || null,
 	);
+}
+
+export async function getControl(taskId: string) {
+	const session = await repo.getSessionByTaskId(taskId);
+	return session ? repo.toControlSummary(session) : null;
 }
 
 async function readCompleteTaskText(

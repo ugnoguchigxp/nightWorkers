@@ -13,6 +13,7 @@ import type {
 } from "../../nightworkers/types";
 import { getRelativeTimestamp } from "../../nightworkers/utils/time";
 import { fetchMissionPilotExecutionTrace } from "../missionPilotCommands";
+import { useMissionPilotControl } from "../missionPilotQueries";
 
 type PilotThoughtSource =
 	| "unified_entry"
@@ -309,6 +310,7 @@ export function PilotThoughtDock({
 	session: Task | null;
 	onClose: () => void;
 }) {
+	const { summary } = useMissionPilotControl(session?.id ?? "");
 	const [executionTraceState, setExecutionTraceState] = useState<{
 		taskId: string;
 		trace: MissionPilotExecutionTrace;
@@ -350,8 +352,8 @@ export function PilotThoughtDock({
 		};
 	}, [session?.id]);
 	const currentStateItem = useMemo(
-		() => missionPilotStopThoughtItem(session?.missionPilot),
-		[session?.missionPilot],
+		() => missionPilotStopThoughtItem(session ? summary : null),
+		[session, summary],
 	);
 	const items = useMemo(
 		() =>

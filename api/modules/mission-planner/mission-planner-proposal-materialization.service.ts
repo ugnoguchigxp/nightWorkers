@@ -9,7 +9,6 @@ import { missionProposalTaskMetadataSchema } from "../../../shared/schemas/missi
 import { type DbTransaction, db } from "../../db/client";
 import { NotFoundError, ValidationError } from "../../lib/errors";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./mission-planner.repository";
 
 function workPackageForProposal(
@@ -111,7 +110,7 @@ async function persistMissionProposalTasks(input: {
 		const planningResult = input.planningResults.get(proposal.planningResultId);
 		const mission = input.missions.get(proposal.missionId);
 		if (!planningResult || !mission) continue;
-		const task = await createTaskWithMissionPilot(
+		const task = await nightworkersRepo.createTask(
 			{
 				repositoryId: proposal.repositoryId,
 				title: proposal.title,
@@ -125,10 +124,6 @@ async function persistMissionProposalTasks(input: {
 				status: input.mode,
 				priority: input.proposals.length - index,
 				createdBy: "mission-task-proposal",
-				missionPilotSourceRef: {
-					source: "mission_task_proposal",
-					id: proposal.id,
-				},
 			},
 			input.transaction,
 		);

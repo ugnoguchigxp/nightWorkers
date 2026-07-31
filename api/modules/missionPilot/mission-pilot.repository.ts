@@ -117,7 +117,17 @@ export async function createSession(
 			createdAt: now,
 			updatedAt: now,
 		})
+		.onConflictDoNothing({ target: missionPilotSessions.taskId })
 		.returning();
+	if (!row) {
+		const [existing] = await tx
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.taskId, input.task.id));
+		if (!existing)
+			throw new Error("Mission Pilot session creation did not converge");
+		return existing;
+	}
 	await createMissionPilotAgentSession(tx, {
 		sessionId: id,
 		contextDigest: digest,
@@ -134,6 +144,10 @@ export async function createSession(
 		createdAt: now,
 	});
 	return row;
+}
+
+export function getOrCreateSession(input: Parameters<typeof createSession>[0]) {
+	return db.transaction((tx) => createSession(input, tx));
 }
 
 export async function getSessionByTaskId(taskId: string, database: Db = db) {

@@ -90,8 +90,7 @@ export function ThreadWorkspaceHeader({
 							>
 								<Bug className="h-3.5 w-3.5" />
 							</button>
-							{props.activeSession.missionPilot &&
-							props.onTogglePilotThoughtDock ? (
+							{props.onTogglePilotThoughtDock ? (
 								<button
 									type="button"
 									className={`inline-flex h-7 w-7 items-center justify-center rounded border ${

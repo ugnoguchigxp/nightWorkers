@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
-import { mergeTaskPreservingMissionPilot } from "../../missionPilot";
 import { appendWorkbenchMessage } from "../nightWorkersCommands";
 import type {
 	Task,
@@ -246,11 +245,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 					queryClient.setQueryData<Task[]>(["sessions"], (prev = []) => {
 						const next = [...prev];
 						const idx = next.findIndex((task) => task.id === result.task?.id);
-						if (idx >= 0 && result.task)
-							next[idx] = mergeTaskPreservingMissionPilot(
-								next[idx],
-								result.task,
-							);
+						if (idx >= 0 && result.task) next[idx] = result.task;
 						else if (result.task) next.unshift(result.task);
 						return next;
 					});

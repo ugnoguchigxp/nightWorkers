@@ -6,6 +6,7 @@ import type {
 	WorkbenchArtifactRef,
 } from "../nightworkers/types";
 import { resolveMissionPilotArtifactFocus } from "./missionPilotArtifactFocus";
+import { useMissionPilotControl } from "./missionPilotQueries";
 
 export function useMissionPilotArtifactAutoFocus(input: {
 	activeSession: Task | null;
@@ -15,7 +16,13 @@ export function useMissionPilotArtifactAutoFocus(input: {
 	onNavigate: (routeState: WorkbenchRouteState) => void;
 }) {
 	const lastAutoFocusKeyRef = useRef<string | null>(null);
-	const target = resolveMissionPilotArtifactFocus(input);
+	const { data: missionPilot } = useMissionPilotControl(
+		input.activeSession?.id ?? "",
+	);
+	const target = resolveMissionPilotArtifactFocus({
+		...input,
+		missionPilot: missionPilot ?? null,
+	});
 
 	useEffect(() => {
 		const sessionId = input.activeSession?.id;

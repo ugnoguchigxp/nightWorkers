@@ -13,6 +13,9 @@ export function stopMissionPilotTask(taskId: string, expectedVersion: number) {
 		jsonRequest("POST", { expectedVersion }),
 	);
 }
+export function fetchMissionPilotControl(taskId: string, signal?: AbortSignal) {
+	return apiFetch(`/api/mission-pilot/tasks/${taskId}`, { signal });
+}
 export function fetchMissionPilotQuestionnaireDraft(
 	taskId: string,
 	signal?: AbortSignal,

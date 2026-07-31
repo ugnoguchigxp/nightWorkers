@@ -5,10 +5,8 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { summarizeLlmUsageForTask } from "../../services/llm-usage";
 import { resolveWorktreePath } from "../gitworktree/gitworktree.service";
 import { runGitCommand } from "../gitworktree/gitworktree-cli";
-import { getSessionByTaskId, toControlSummary } from "../missionPilot";
 import * as repo from "./nightworkers.repository";
 import { runSessionQueueForRepository } from "./nightworkers.run-orchestration.service";
-import { createTaskWithMissionPilot } from "./nightworkers.task-creation.service";
 
 type RepositorySafetyPolicy = Parameters<
 	typeof repo.createRepository
@@ -235,7 +233,7 @@ export async function createTask(data: {
 		? await resolveWorktreePath(data.repositoryId, worktreeId)
 		: null;
 	return db.transaction(async (tx) => {
-		const task = await createTaskWithMissionPilot(
+		const task = await repo.createTask(
 			{
 				...taskData,
 				worktreePath,
@@ -259,18 +257,11 @@ export async function createTask(data: {
 }
 
 export async function getTask(id: string) {
-	const task = await repo.getTask(id);
-	if (!task) return task;
-	const session = await getSessionByTaskId(id);
-	if (!session)
-		throw new Error(`Task ${id} is missing its Mission Pilot session`);
-	return { ...task, missionPilot: toControlSummary(session) };
+	return repo.getTask(id);
 }
 
 export async function listTasks() {
-	const tasks = await repo.listTasks();
-	const { listTasksWithMissionPilot } = await import("../missionPilot");
-	return listTasksWithMissionPilot(tasks);
+	return repo.listTasks();
 }
 
 export async function listTaskMessages(
@@ -343,9 +334,5 @@ export async function updateTask(
 	if (updated?.status === "ready") {
 		void runSessionQueueForRepository(updated.repositoryId);
 	}
-	if (!updated) return updated;
-	const session = await getSessionByTaskId(id);
-	if (!session)
-		throw new Error(`Task ${id} is missing its Mission Pilot session`);
-	return { ...updated, missionPilot: toControlSummary(session) };
+	return updated;
 }

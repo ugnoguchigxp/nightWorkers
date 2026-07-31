@@ -60,7 +60,6 @@ export function isPostImplementationReviewReady(input: {
 }) {
 	const { task, run, todos } = input;
 	if (!run || run.taskId !== task.id) return false;
-	if (task.missionPilot?.desiredState === "playing") return false;
 	if (run.status !== "completed") return false;
 	if (runExecutionMode(run) !== "implementation") return false;
 	if (!run.finalReport?.trim() || todos.length === 0) return false;

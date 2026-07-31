@@ -163,13 +163,12 @@ export function projectEvaluationComposerDraftState(
 	taskMessages: TaskMessage[],
 ) {
 	const usesGeneratedInitialPrompt =
-		Boolean(activeSession?.missionPilot) ||
 		activeSession?.createdBy === "project-evaluation" ||
 		activeSession?.createdBy === "mission-task-candidate" ||
 		activeSession?.createdBy === "mission-task-proposal";
-	const hasSentUserPrompt =
-		activeSession?.missionPilot?.initialPromptState === "sent" ||
-		taskMessages.some((message) => message.role === "user");
+	const hasSentUserPrompt = taskMessages.some(
+		(message) => message.role === "user",
+	);
 	return {
 		discardStoredDraft: usesGeneratedInitialPrompt && hasSentUserPrompt,
 		initialPrompt:
@@ -289,8 +288,8 @@ export function ThreadBody({
 							onGrantExternalPath={onGrantExternalPath}
 							leadingContent={
 								<MissionPilotTaskGoalMessage
+									taskId={activeSession.id}
 									objective={activeSession.objective}
-									summary={activeSession.missionPilot}
 									taskMessages={taskMessages}
 								/>
 							}
@@ -331,10 +330,9 @@ export function ThreadBody({
 						onClearArtifactContext={onClearArtifactContext}
 						onStop={onStopActiveRun}
 						connectionControls={
-							activeSession?.missionPilot ? (
+							activeSession ? (
 								<MissionPilotComposerControls
 									taskId={activeSession.id}
-									summary={activeSession.missionPilot}
 									initialPrompt={activeSession.objective ?? undefined}
 								/>
 							) : undefined

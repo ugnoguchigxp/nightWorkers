@@ -105,8 +105,7 @@ export function NightWorkersShellLayout(props: ShellLayoutProps) {
 					minSize="18%"
 					maxSize="42%"
 				>
-					{props.isPilotThoughtDockOpen &&
-					workspace.activeSession?.missionPilot ? (
+					{props.isPilotThoughtDockOpen && workspace.activeSession ? (
 						<PilotThoughtDock
 							session={workspace.activeSession}
 							onClose={() => props.setPilotThoughtDockSessionId(null)}

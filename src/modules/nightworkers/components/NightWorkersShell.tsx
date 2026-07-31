@@ -2,10 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
 import { buildEvidenceCheckArtifact } from "../../codingAgent";
-import {
-	playMissionPilotTask,
-	useMissionPilotArtifactAutoFocus,
-} from "../../missionPilot";
+import { useMissionPilotArtifactAutoFocus } from "../../missionPilot";
 import { useImplementationQueue } from "../../queue";
 import { useReviewModeArtifactAutoFocus } from "../../review";
 import { markArtifactOpenStart } from "../artifactPerformance";
@@ -414,21 +411,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				current.activeSession;
 			if (isImplementationLockedStatus(targetSession?.status)) return;
 			current.setActiveSessionId(sessionId);
-			const missionPilot = targetSession?.missionPilot;
-			if (
-				missionPilot?.desiredState === "stopped" &&
-				missionPilot.phase === "attention" &&
-				missionPilot.queueHandoff
-			) {
-				const response = await playMissionPilotTask(
-					sessionId,
-					missionPilot.version,
-				);
-				if (!response.ok) throw new Error(await response.text());
-				await current.refreshProjectList();
-			} else {
-				await createImplementationQueueEntryWithMissionApproval(sessionId);
-			}
+			await createImplementationQueueEntryWithMissionApproval(sessionId);
 			setClearedArtifactContextId(null);
 			setArtifactFocus({ type: "todo" });
 			props.onNavigate({

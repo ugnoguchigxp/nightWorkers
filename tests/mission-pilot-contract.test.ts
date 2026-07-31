@@ -15,8 +15,7 @@ import {
 } from "../src/modules/missionPilot/components/MissionPilotControlPanel";
 import { missionPilotPresentation } from "../src/modules/missionPilot/missionPilotPresentation";
 import {
-	mergeMissionPilotSummary,
-	mergeTaskPreservingMissionPilot,
+	mergeMissionPilotControl,
 	optimisticMissionPilotSummary,
 } from "../src/modules/missionPilot/missionPilotQueries";
 
@@ -144,7 +143,7 @@ describe("Mission Pilot contract", () => {
 		expect(authorization.activationContextRevision).toBe(2);
 	});
 
-	it("maps stopped and playing states and ignores stale cache updates", () => {
+	it("maps stopped and playing states and ignores stale control-cache updates", () => {
 		expect(missionPilotPresentation(summary())).toMatchObject({
 			playing: false,
 			canPlay: true,
@@ -155,45 +154,19 @@ describe("Mission Pilot contract", () => {
 			canPlay: false,
 			canStop: true,
 		});
-		const task = {
-			id: taskId,
-			repositoryId: sourceId,
-			title: "Pilot",
-			status: "draft",
-			timeoutSeconds: 3600,
-			priority: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			missionPilot: summary(2, "playing"),
-		};
 		expect(
-			mergeMissionPilotSummary([task], taskId, summary(1))[0]?.missionPilot
-				?.version,
+			mergeMissionPilotControl(summary(2, "playing"), summary(1)).version,
 		).toBe(2);
 	});
 
-	it("shares optimistic busy state and preserves the projection across plain Task updates", () => {
+	it("shares optimistic busy state in the independent control cache", () => {
 		const stopped = summary(2);
 		expect(optimisticMissionPilotSummary(stopped, "play")).toMatchObject({
 			desiredState: "playing",
 			activityState: "starting",
 			version: 3,
 		});
-		const current = {
-			id: taskId,
-			repositoryId: sourceId,
-			title: "Pilot",
-			status: "draft",
-			timeoutSeconds: 3600,
-			priority: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			missionPilot: stopped,
-		};
-		const incoming = { ...current, status: "running", missionPilot: undefined };
-		expect(
-			mergeTaskPreservingMissionPilot(current, incoming).missionPilot,
-		).toEqual(stopped);
+		expect(mergeMissionPilotControl(undefined, stopped)).toEqual(stopped);
 	});
 
 	it("blocks Play and offers Stop retry while an attention state still owns a run", () => {

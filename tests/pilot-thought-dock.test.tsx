@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -286,49 +287,53 @@ describe("PilotThoughtDock", () => {
 	});
 
 	it("renders Pilot decisions without task execution or screen generation logs", () => {
+		const taskId = "11111111-1111-4111-8111-111111111111";
+		const queryClient = new QueryClient();
+		queryClient.setQueryData(["missionPilotControl", taskId], {
+			taskId,
+			desiredState: "stopped",
+			activityState: "attention",
+			phase: "attention",
+			authorizationVersion: 2,
+			initialPromptState: "sent",
+			initialPromptMessageId: null,
+			activeRunId: "33333333-3333-4333-8333-333333333333",
+			nextWakeAt: null,
+			version: 1,
+			lastError: null,
+			preQueueDiagnostic: {
+				code: "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",
+				detectedAt: new Date("2026-07-11T10:00:03Z"),
+				taskStatus: "queued",
+				sessionPhase: "queueing",
+				queueEntryIds: [],
+				runIds: ["44444444-4444-4444-8444-444444444444"],
+				runSourceRefs: [],
+				commitRecordIds: [],
+				diffEventIds: [],
+				contextRevision: 1,
+				contextDigest: "context-digest",
+				reviewedContextRevision: null,
+				reviewedContextDigest: null,
+			},
+			updatedAt: new Date(),
+		});
 		const markup = renderToStaticMarkup(
-			<PilotThoughtDock
-				session={{
-					id: "11111111-1111-4111-8111-111111111111",
-					repositoryId: "22222222-2222-4222-8222-222222222222",
-					title: "Mission Pilot task",
-					status: "running",
-					timeoutSeconds: 3600,
-					priority: 0,
-					createdAt: new Date(),
-					updatedAt: new Date(),
-					missionPilot: {
-						taskId: "11111111-1111-4111-8111-111111111111",
-						desiredState: "stopped",
-						activityState: "attention",
-						phase: "attention",
-						authorizationVersion: 2,
-						initialPromptState: "sent",
-						initialPromptMessageId: null,
-						activeRunId: "33333333-3333-4333-8333-333333333333",
-						nextWakeAt: null,
-						version: 1,
-						lastError: null,
-						preQueueDiagnostic: {
-							code: "MISSION_PILOT_PRE_QUEUE_UNEXPECTED_RUN",
-							detectedAt: new Date("2026-07-11T10:00:03Z"),
-							taskStatus: "queued",
-							sessionPhase: "queueing",
-							queueEntryIds: [],
-							runIds: ["44444444-4444-4444-8444-444444444444"],
-							runSourceRefs: [],
-							commitRecordIds: [],
-							diffEventIds: [],
-							contextRevision: 1,
-							contextDigest: "context-digest",
-							reviewedContextRevision: null,
-							reviewedContextDigest: null,
-						},
+			<QueryClientProvider client={queryClient}>
+				<PilotThoughtDock
+					session={{
+						id: taskId,
+						repositoryId: "22222222-2222-4222-8222-222222222222",
+						title: "Mission Pilot task",
+						status: "running",
+						timeoutSeconds: 3600,
+						priority: 0,
+						createdAt: new Date(),
 						updatedAt: new Date(),
-					},
-				}}
-				onClose={vi.fn()}
-			/>,
+					}}
+					onClose={vi.fn()}
+				/>
+			</QueryClientProvider>,
 		);
 
 		expect(markup).toContain("nightworkers-chat-dock");

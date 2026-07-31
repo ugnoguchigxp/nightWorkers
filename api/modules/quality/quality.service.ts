@@ -9,7 +9,6 @@ import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import { buildChildProcessEnvironment } from "../../services/execution/child-process-environment";
 import { redactSecretText } from "../../services/security/secret-redaction";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
-import { createTaskWithMissionPilot } from "../nightworkers/nightworkers.task-creation.service";
 import * as repo from "./quality.repository";
 import {
 	coverageCommandWithSummaryReporter,
@@ -425,7 +424,7 @@ export async function createCoverageImprovementTask(input: {
 		fileKeys: input.request.fileKeys,
 		projectRoot: repositoryExecutionRoot(repository),
 	});
-	const task = await createTaskWithMissionPilot({
+	const task = await nightworkersRepo.createTask({
 		repositoryId: repository.id,
 		title:
 			entries.length === 1

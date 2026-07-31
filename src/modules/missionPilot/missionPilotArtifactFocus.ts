@@ -1,3 +1,4 @@
+import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
 import type { WorkbenchRouteState } from "../nightworkers/routing/workbench-route-state";
 import type {
 	PlanModeWorkspace,
@@ -75,12 +76,13 @@ function latestQuestionnaireNeedsAttention(workspace: PlanModeWorkspace) {
 
 export function resolveMissionPilotArtifactFocus(input: {
 	activeSession: Task | null;
+	missionPilot: MissionPilotControlSummary | null;
 	activeArtifactRefs: WorkbenchArtifactRef[];
 	latestRun?: TaskRun;
 	routeState: WorkbenchRouteState;
 }): MissionPilotArtifactFocusTarget | null {
 	const task = input.activeSession;
-	const missionPilot = task?.missionPilot;
+	const missionPilot = input.missionPilot;
 	if (!task || missionPilot?.desiredState !== "playing") return null;
 	if (
 		input.routeState.kind !== "session" ||

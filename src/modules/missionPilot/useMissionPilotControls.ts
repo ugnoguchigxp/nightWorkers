@@ -1,13 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
-import type { Task } from "../nightworkers/types";
 import {
 	playMissionPilotTask,
 	stopMissionPilotTask,
 } from "./missionPilotCommands";
 import {
-	mergeMissionPilotSummary,
+	mergeMissionPilotControl,
+	missionPilotControlQueryKey,
 	optimisticMissionPilotSummary,
 } from "./missionPilotQueries";
 export function useMissionPilotControls(
@@ -25,21 +25,19 @@ export function useMissionPilotControls(
 					queryKey: ["sessions"],
 					type: "active",
 				});
-			const cachedSummary = queryClient
-				.getQueryData<Task[]>(["sessions"])
-				?.find((task) => task.id === taskId)?.missionPilot;
+			const cachedSummary =
+				queryClient.getQueryData<MissionPilotControlSummary | null>(
+					missionPilotControlQueryKey(taskId),
+				);
 			const commandSummary =
 				cachedSummary && cachedSummary.version >= summary.version
 					? cachedSummary
 					: summary;
 			setPending(action);
 			setError(null);
-			queryClient.setQueryData<Task[]>(["sessions"], (current = []) =>
-				mergeMissionPilotSummary(
-					current,
-					taskId,
-					optimisticMissionPilotSummary(commandSummary, action),
-				),
+			queryClient.setQueryData<MissionPilotControlSummary | null>(
+				missionPilotControlQueryKey(taskId),
+				optimisticMissionPilotSummary(commandSummary, action),
 			);
 			try {
 				const response = await (action === "play"
@@ -57,18 +55,23 @@ export function useMissionPilotControls(
 							`Mission Pilot ${action} failed`,
 					);
 				const missionPilot = payload.missionPilot;
-				queryClient.setQueryData<Task[]>(["sessions"], (current = []) =>
-					mergeMissionPilotSummary(current, taskId, missionPilot),
+				queryClient.setQueryData<MissionPilotControlSummary | null>(
+					missionPilotControlQueryKey(taskId),
+					(current) => mergeMissionPilotControl(current, missionPilot),
 				);
 				await Promise.all([
-					queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+					queryClient.invalidateQueries({
+						queryKey: missionPilotControlQueryKey(taskId),
+					}),
 					queryClient.invalidateQueries({ queryKey: ["taskMessages", taskId] }),
 					queryClient.invalidateQueries({ queryKey: ["sessionRuns", taskId] }),
 				]);
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : String(cause));
 				await Promise.all([
-					queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+					queryClient.invalidateQueries({
+						queryKey: missionPilotControlQueryKey(taskId),
+					}),
 					queryClient.invalidateQueries({
 						queryKey: ["taskMessages", taskId],
 					}),

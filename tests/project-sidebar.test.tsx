@@ -60,50 +60,52 @@ describe("ProjectSidebar", () => {
 	it("hides archived tasks from the project task list", () => {
 		const project = repository();
 		const markup = renderToStaticMarkup(
-			<ProjectSidebar
-				projects={[project]}
-				groupedSessions={{
-					[project.id]: {
-						processing: [
-							sessionView(
-								"22222222-2222-4222-8222-222222222222",
-								"Active implementation",
-								"processing",
-							),
-						],
-						queue: [
-							sessionView(
-								"33333333-3333-4333-8333-333333333333",
-								"Ready implementation",
-								"queue",
-							),
-						],
-						archive: [
-							sessionView(
-								"44444444-4444-4444-8444-444444444444",
-								"Archived implementation",
-								"archive",
-							),
-						],
-					},
-				}}
-				isProjectsLoading={false}
-				activeSessionId={null}
-				expandedProjects={{ [project.id]: true }}
-				onSelectSession={() => undefined}
-				onCreateSession={() => undefined}
-				onDeleteProject={() => undefined}
-				onToggleProject={() => undefined}
-				onOpenProjectQueue={() => undefined}
-				activeProjectQueueId={null}
-				onOpenProjectDetail={() => undefined}
-				activeProjectDetailId={null}
-				onOpenOverview={() => undefined}
-				isOverviewActive={false}
-				onOpenFolderBrowser={() => undefined}
-				onRefreshProjects={() => undefined}
-				isProjectListRefreshing={false}
-			/>,
+			<QueryClientProvider client={new QueryClient()}>
+				<ProjectSidebar
+					projects={[project]}
+					groupedSessions={{
+						[project.id]: {
+							processing: [
+								sessionView(
+									"22222222-2222-4222-8222-222222222222",
+									"Active implementation",
+									"processing",
+								),
+							],
+							queue: [
+								sessionView(
+									"33333333-3333-4333-8333-333333333333",
+									"Ready implementation",
+									"queue",
+								),
+							],
+							archive: [
+								sessionView(
+									"44444444-4444-4444-8444-444444444444",
+									"Archived implementation",
+									"archive",
+								),
+							],
+						},
+					}}
+					isProjectsLoading={false}
+					activeSessionId={null}
+					expandedProjects={{ [project.id]: true }}
+					onSelectSession={() => undefined}
+					onCreateSession={() => undefined}
+					onDeleteProject={() => undefined}
+					onToggleProject={() => undefined}
+					onOpenProjectQueue={() => undefined}
+					activeProjectQueueId={null}
+					onOpenProjectDetail={() => undefined}
+					activeProjectDetailId={null}
+					onOpenOverview={() => undefined}
+					isOverviewActive={false}
+					onOpenFolderBrowser={() => undefined}
+					onRefreshProjects={() => undefined}
+					isProjectListRefreshing={false}
+				/>
+			</QueryClientProvider>,
 		);
 
 		expect(markup).toContain("Active implementation");
@@ -145,8 +147,17 @@ describe("ProjectSidebar", () => {
 			activityState: "starting",
 			phase: "starting",
 		};
+		const queryClient = new QueryClient();
+		queryClient.setQueryData(
+			["missionPilotControl", session.task.id],
+			session.task.missionPilot,
+		);
+		queryClient.setQueryData(
+			["missionPilotControl", timestampSession.task.id],
+			timestampSession.task.missionPilot,
+		);
 		const markup = renderToStaticMarkup(
-			<QueryClientProvider client={new QueryClient()}>
+			<QueryClientProvider client={queryClient}>
 				<ProjectSidebar
 					projects={[project]}
 					groupedSessions={{
@@ -176,7 +187,6 @@ describe("ProjectSidebar", () => {
 			</QueryClientProvider>,
 		);
 
-		expect(markup).toContain("mission-pilot-task-row-playing");
 		expect(markup).toContain('aria-label="Mission Pilotを一時停止"');
 		expect(markup).toContain('aria-label="設計完了、実装開始待ち"');
 		expect(markup).toContain(

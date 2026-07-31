@@ -1,5 +1,4 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { taskWithMissionPilotSchema } from "../../../../shared/modules/missionPilot";
 import {
 	PROMPT_IMAGE_MAX_COUNT,
 	PROMPT_IMAGE_MEDIA_TYPES,
@@ -19,7 +18,7 @@ export const listTasksRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: z.array(taskWithMissionPilotSchema),
+					schema: z.array(taskSchema),
 				},
 			},
 			description: "List of all tasks",
@@ -42,7 +41,7 @@ export const createTaskRoute = createRoute({
 		201: {
 			content: {
 				"application/json": {
-					schema: taskWithMissionPilotSchema,
+					schema: taskSchema,
 				},
 			},
 			description: "Task created successfully",
@@ -61,7 +60,7 @@ export const getTaskRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: taskWithMissionPilotSchema,
+					schema: taskSchema,
 				},
 			},
 			description: "Task detail",
@@ -119,7 +118,7 @@ export const updateTaskRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: taskWithMissionPilotSchema,
+					schema: taskSchema,
 				},
 			},
 			description: "Task updated successfully",
@@ -295,7 +294,7 @@ export const createWorkbenchSessionRoute = createRoute({
 	responses: {
 		201: {
 			content: {
-				"application/json": { schema: taskWithMissionPilotSchema },
+				"application/json": { schema: taskSchema },
 			},
 			description: "Workbench session created",
 		},

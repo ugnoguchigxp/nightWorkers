@@ -1,16 +1,20 @@
 import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
 import { ThreadMessage } from "../../nightworkers/components/ThreadMessage";
 import type { TaskMessage } from "../../nightworkers/types";
+import { useMissionPilotControl } from "../missionPilotQueries";
 
 export function MissionPilotTaskGoalMessage({
 	objective,
-	summary,
+	taskId,
+	summary: initialSummary,
 	taskMessages,
 }: {
+	taskId: string;
 	objective?: string | null;
 	summary?: MissionPilotControlSummary | null;
 	taskMessages: readonly TaskMessage[];
 }) {
+	const { summary } = useMissionPilotControl(taskId, initialSummary);
 	const taskGoal = objective?.trim() ?? "";
 	if (
 		!taskGoal ||

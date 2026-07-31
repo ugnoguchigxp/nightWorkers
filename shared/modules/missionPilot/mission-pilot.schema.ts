@@ -229,9 +229,6 @@ export const updateMissionPilotQuestionnaireDraftSchema = z.object({
 });
 export const submitMissionPilotQuestionnaireDraftSchema =
 	updateMissionPilotQuestionnaireDraftSchema;
-export const taskWithMissionPilotSchema = taskSchema.extend({
-	missionPilot: missionPilotControlSummarySchema,
-});
 export const missionPilotCommandRequestSchema = z.object({
 	expectedVersion: z.number().int().nonnegative(),
 });
