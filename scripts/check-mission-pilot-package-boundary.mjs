@@ -20,6 +20,12 @@ const oldRoots = [
 	"src/modules/missionPilot",
 	"shared/modules/missionPilot",
 ];
+const productionPackageImportAllowlist = [
+	"api/composition/mission-pilot/",
+	"src/composition/mission-pilot/",
+	"api/app.ts",
+	"api/server.ts",
+];
 
 function walk(relativeDirectory) {
 	const directory = path.join(root, relativeDirectory);
@@ -112,6 +118,19 @@ for (const relativePath of [
 	...walk("tests"),
 ]) {
 	for (const specifier of importedSpecifiers(relativePath)) {
+		if (
+			!relativePath.startsWith("tests/") &&
+			specifier.startsWith("@nightworkers/mission-pilot/") &&
+			!productionPackageImportAllowlist.some(
+				(prefix) =>
+					relativePath === prefix ||
+					relativePath.startsWith(prefix),
+			)
+		) {
+			errors.push(
+				`${relativePath}: only Mission Pilot composition roots may import the package`,
+			);
+		}
 		if (
 			specifier.startsWith("@nightworkers/mission-pilot/") &&
 			!publicExports.has(specifier)

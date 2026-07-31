@@ -1,15 +1,22 @@
 import type { MissionPilotRealtimeEvent } from "./realtime";
+import type { MissionPilotPrincipal } from "./principal";
 
 export type MissionPilotPublicResourceQuery = {
 	taskId: string;
 	resource: string;
-	input?: Record<string, unknown>;
+	resourceId?: string;
+	cursor?: number;
+	limit?: number;
+	principal: MissionPilotPrincipal;
 };
 
 export type MissionPilotPublicActionCommand = {
 	taskId: string;
 	action: string;
-	input: Record<string, unknown>;
+	expectedTaskRevision: number;
+	arguments: Record<string, unknown>;
+	principal: MissionPilotPrincipal;
+	requestId: string;
 	idempotencyKey: string;
 };
 
@@ -21,7 +28,9 @@ export type MissionPilotHostPorts = {
 	taskIntake: {
 		submitUserMessage(input: {
 			taskId: string;
-			message: string;
+			prompt: string;
+			principal: MissionPilotPrincipal;
+			requestId: string;
 			idempotencyKey: string;
 		}): Promise<unknown>;
 	};
@@ -32,7 +41,11 @@ export type MissionPilotHostPorts = {
 		publish(event: MissionPilotRealtimeEvent): Promise<void>;
 	};
 	systemContext: {
-		resolve(input: { bindingId: string }): Promise<unknown>;
+		resolve(input: {
+			binding: unknown;
+			promptKey: string;
+			values: Record<string, unknown>;
+		}): Promise<unknown>;
 	};
 	structuredLlm: {
 		generate(input: Record<string, unknown>): Promise<unknown>;
@@ -40,7 +53,7 @@ export type MissionPilotHostPorts = {
 	authorization: {
 		assertTaskAction(input: {
 			taskId: string;
-			userId: string;
+			principal: MissionPilotPrincipal;
 			action: string;
 		}): Promise<void>;
 	};
