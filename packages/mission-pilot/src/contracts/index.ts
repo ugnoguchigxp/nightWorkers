@@ -4,6 +4,12 @@ export type {
 	MissionPilotPublicActionCommand,
 	MissionPilotPublicResourceQuery,
 } from "./host-ports";
+export {
+	isMissionPilotPersistenceRequest,
+	MISSION_PILOT_PERSISTENCE_OPERATIONS,
+	type MissionPilotPersistenceOperation,
+	type MissionPilotPersistenceRequest,
+} from "./mission-pilot-persistence";
 export * from "./plan-artifact-contracts";
 export type { MissionPilotPrincipal } from "./principal";
 export type { MissionPilotProvenance } from "./provenance";

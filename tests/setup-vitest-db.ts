@@ -12,7 +12,7 @@ applyVitestDatabaseEnv();
 assertVitestDatabaseIsolation(config.DATABASE_URL);
 installRegularVitestLlmFetchGuard();
 await ensureNightWorkersSchema();
-await bootstrapMissionPilotTables(client);
+await bootstrapMissionPilotTables();
 
 afterEach(async () => {
 	assertVitestDatabaseIsolation(config.DATABASE_URL);

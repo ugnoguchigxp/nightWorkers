@@ -1,21 +1,17 @@
 import type { Client } from "@libsql/client";
+import { client as nightWorkersSqlClient } from "../../../db/client";
 import { backfillMissionPilotTraceProvenance } from "./provenance-backfill";
 
 export type MissionPilotSqlClient = Pick<Client, "execute">;
 
-let activeBootstrapClient: MissionPilotSqlClient | null = null;
+let productionBootstrapTail: Promise<void> = Promise.resolve();
 
-const client = {
-	execute(input: string | { sql: string; args: unknown[] }) {
-		if (!activeBootstrapClient)
-			throw new Error(
-				"Mission Pilot storage bootstrap client is not configured",
-			);
-		return activeBootstrapClient.execute(input as never);
-	},
-};
-
-async function ensureColumn(table: string, column: string, definition: string) {
+async function ensureColumn(
+	client: MissionPilotSqlClient,
+	table: string,
+	column: string,
+	definition: string,
+) {
 	const columns = await client.execute(`PRAGMA table_info(${table})`);
 	if (
 		columns.rows.length > 0 &&
@@ -120,7 +116,7 @@ const canonicalSchemaStatements = [
 	"CREATE INDEX IF NOT EXISTS mission_pilot_repair_requests_session_idx ON mission_pilot_repair_requests (session_id, created_at)",
 ] as const;
 
-async function ensureMissionPilotTables() {
+async function ensureMissionPilotTables(client: MissionPilotSqlClient) {
 	for (const statement of canonicalSchemaStatements)
 		await client.execute(statement);
 	await client.execute(
@@ -146,19 +142,33 @@ async function ensureMissionPilotTables() {
 		["started_at", "started_at integer"],
 		["stopped_at", "stopped_at integer"],
 	] as const)
-		await ensureColumn("mission_pilot_sessions", column, definition);
+		await ensureColumn(client, "mission_pilot_sessions", column, definition);
 }
 
-export async function bootstrapMissionPilotTables(
+async function bootstrapMissionPilotTablesWithClient(
 	sqlClient: MissionPilotSqlClient,
 ) {
-	if (activeBootstrapClient)
-		throw new Error("Mission Pilot storage bootstrap is already running");
-	activeBootstrapClient = sqlClient;
-	try {
-		await ensureMissionPilotTables();
-		await backfillMissionPilotTraceProvenance(sqlClient);
-	} finally {
-		activeBootstrapClient = null;
-	}
+	await ensureMissionPilotTables(sqlClient);
+	await backfillMissionPilotTraceProvenance(sqlClient);
+}
+
+/** Uses the process-wide NightWorkers persistence owner and write gate. */
+export function bootstrapMissionPilotTables() {
+	const bootstrap = productionBootstrapTail.then(() =>
+		bootstrapMissionPilotTablesWithClient(nightWorkersSqlClient),
+	);
+	productionBootstrapTail = bootstrap.catch(() => undefined);
+	return bootstrap;
+}
+
+/** Isolated-schema helper; unavailable to production callers. */
+export function bootstrapMissionPilotTablesForTest(
+	sqlClient: MissionPilotSqlClient,
+) {
+	if (
+		process.env.NODE_ENV !== "test" &&
+		process.env.NIGHTWORKERS_E2E_ISOLATED !== "1"
+	)
+		throw new Error("Mission Pilot test bootstrap is disabled.");
+	return bootstrapMissionPilotTablesWithClient(sqlClient);
 }

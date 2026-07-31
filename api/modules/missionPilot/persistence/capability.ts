@@ -1,4 +1,9 @@
 import {
+	isMissionPilotPersistenceRequest,
+	type MissionPilotPersistenceOperation,
+	type MissionPilotPersistenceRequest,
+} from "@nightworkers/mission-pilot/contracts";
+import {
 	claimMissionPilotActionExecution,
 	completeMissionPilotActionExecution,
 	createMissionPilotActionExecutionIntent,
@@ -124,22 +129,14 @@ const operationHandlers = {
 	readMissionPilotTaskActionState,
 	listMissionPilotToolCalls,
 	prepareExpiredMissionPilotRuntimeFixture,
-} as const;
-
-export type MissionPilotPersistenceOperation = keyof typeof operationHandlers;
-
-export type MissionPilotPersistenceRequest = {
-	operation: MissionPilotPersistenceOperation;
-	args: readonly unknown[];
-};
+} as const satisfies Record<
+	MissionPilotPersistenceOperation,
+	(...args: never[]) => unknown
+>;
 
 export type MissionPilotPersistenceCapability = Readonly<{
 	execute(request: MissionPilotPersistenceRequest): Promise<unknown>;
 }>;
-
-function isOperation(value: string): value is MissionPilotPersistenceOperation {
-	return Object.hasOwn(operationHandlers, value);
-}
 
 /**
  * Creates the in-process capability injected only into the Mission Pilot
@@ -149,13 +146,7 @@ function isOperation(value: string): value is MissionPilotPersistenceOperation {
 export function createMissionPilotPersistenceCapability(): MissionPilotPersistenceCapability {
 	return Object.freeze({
 		async execute(request: MissionPilotPersistenceRequest) {
-			if (
-				!request ||
-				typeof request !== "object" ||
-				typeof request.operation !== "string" ||
-				!Array.isArray(request.args) ||
-				!isOperation(request.operation)
-			)
+			if (!isMissionPilotPersistenceRequest(request))
 				throw new Error("Invalid Mission Pilot persistence operation.");
 			const handler = operationHandlers[request.operation] as (
 				...args: readonly unknown[]

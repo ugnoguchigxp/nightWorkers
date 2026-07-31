@@ -1,5 +1,7 @@
 import type { MissionPilotTaskEventType } from "../../../contracts";
 import { callMissionPilotPersistence } from "../../persistence-port";
+import type { MissionPilotTaskEventRecord } from "../../persistence-records";
+import type { MissionPilotSessionRecord } from "../../storage/repository";
 
 export function appendMissionPilotTaskEvent(input: {
 	taskId: string;
@@ -9,14 +11,17 @@ export function appendMissionPilotTaskEvent(input: {
 	payload: unknown;
 	availableAt?: Date;
 }) {
-	return callMissionPilotPersistence("appendMissionPilotTaskEvent", input);
+	return callMissionPilotPersistence<MissionPilotTaskEventRecord | null>(
+		"appendMissionPilotTaskEvent",
+		input,
+	);
 }
 
 export function projectMissionPilotNextWakeAt(
 	sessionId: string,
 	now = new Date(),
 ) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotSessionRecord | null>(
 		"projectMissionPilotNextWakeAt",
 		sessionId,
 		now,
@@ -28,7 +33,7 @@ export function projectMissionPilotExecutionEvent(input: {
 	type: "task.run.started" | "task.run.terminal" | "task.run.failed";
 	runId: string;
 }) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotSessionRecord | null>(
 		"projectMissionPilotExecutionEvent",
 		input,
 	);
@@ -38,13 +43,11 @@ export function listPendingMissionPilotTaskEvents(
 	sessionId: string,
 	now = new Date(),
 ) {
-	return callMissionPilotPersistence<
-		Array<{
-			sequence: number;
-			eventType: MissionPilotTaskEventType;
-			[key: string]: unknown;
-		}>
-	>("listPendingMissionPilotTaskEvents", sessionId, now);
+	return callMissionPilotPersistence<MissionPilotTaskEventRecord[]>(
+		"listPendingMissionPilotTaskEvents",
+		sessionId,
+		now,
+	);
 }
 
 export function getNextMissionPilotTaskEventAt(sessionId: string) {

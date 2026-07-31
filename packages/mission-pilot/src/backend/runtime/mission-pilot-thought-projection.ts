@@ -3,6 +3,10 @@ import {
 	type PilotThoughtEntryKind,
 	pilotThoughtEntriesSchema,
 } from "../../contracts";
+import type {
+	MissionPilotConversationItemRecord as ConversationItemRecord,
+	MissionPilotToolCallRecord as ToolCallRecord,
+} from "../persistence-records";
 import { getMissionPilotActionDefinition } from "./agent/mission-pilot-task-action.registry";
 
 type ActivityEventRecord = {
@@ -22,27 +26,6 @@ type TaskMessageRecord = {
 	metadataJson: unknown;
 	createdAt: Date;
 };
-type ConversationItemRecord = {
-	id: string;
-	kind: string;
-	sequence: number;
-	bodyJson: unknown;
-	turnId: string | null;
-	createdAt: Date;
-};
-type ToolCallRecord = {
-	id: string;
-	actionId: string;
-	turnId: string;
-	expectedTaskRevision: number | null;
-	status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
-	resultJson: unknown;
-	failureJson: unknown;
-	createdAt: Date;
-	startedAt: Date | null;
-	finishedAt: Date | null;
-};
-
 export type MissionPilotAgentVisibleItem =
 	| { kind: "assistant"; sequence: number; content: string }
 	| { kind: "action_requested"; sequence: number; actionId: string }

@@ -1,4 +1,5 @@
 import { callMissionPilotPersistence } from "../persistence-port";
+import type { MissionPilotToolCallRecord } from "../persistence-records";
 import { readTaskActivityEvents } from "../task";
 import {
 	getMissionPilotAgentSessionById,
@@ -23,7 +24,10 @@ export async function getMissionPilotExecution(sessionId: string) {
 		await Promise.all([
 			getMissionPilotAgentSessionById(sessionId),
 			listMissionPilotConversation(sessionId),
-			callMissionPilotPersistence("listMissionPilotToolCalls", sessionId),
+			callMissionPilotPersistence<MissionPilotToolCallRecord[]>(
+				"listMissionPilotToolCalls",
+				sessionId,
+			),
 			readTaskActivityEvents(session.taskId, {
 				traceOwner: "mission_pilot",
 				traceChannel: "pilot_thought",

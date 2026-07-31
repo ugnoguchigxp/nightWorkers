@@ -2,6 +2,7 @@ import type { MissionPilotHostPorts } from "../contracts";
 import {
 	clearMissionPilotRuntimeHost,
 	configureMissionPilotRuntimeHost,
+	type MissionPilotPersistenceHostBinding,
 	type MissionPilotRuntimeHostBindings,
 } from "./host-bindings";
 import {
@@ -15,11 +16,15 @@ import {
 	stopMissionPilotRuntimeEventListeners,
 } from "./runtime";
 
-export type { MissionPilotRuntimeHostBindings } from "./host-bindings";
+export type {
+	MissionPilotPersistenceHostBinding,
+	MissionPilotRuntimeHostBindings,
+} from "./host-bindings";
 
 export type MissionPilotBackendDependencies = {
 	host: MissionPilotHostPorts;
-	bindings: MissionPilotRuntimeHostBindings;
+	bindings: MissionPilotRuntimeHostBindings &
+		MissionPilotPersistenceHostBinding;
 };
 
 export type MissionPilotRuntimeDependencies = MissionPilotBackendDependencies;

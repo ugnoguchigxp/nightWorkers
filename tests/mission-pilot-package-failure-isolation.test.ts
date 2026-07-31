@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	bootstrapComposedMissionPilotStorage,
 	createComposedMissionPilotRouter,
@@ -19,20 +19,15 @@ beforeAll(() => ensureNightWorkersSchema());
 afterEach(async () => {
 	for (const repositoryId of repositoryIds.splice(0))
 		await db.delete(repositories).where(eq(repositories.id, repositoryId));
-	await bootstrapComposedMissionPilotStorage({ client, logger });
+	await bootstrapComposedMissionPilotStorage({ logger });
 });
 
 describe("Mission Pilot package failure isolation", () => {
 	it("keeps core Task writes available and returns a typed 503 only from Mission Pilot routes", async () => {
 		const failure = new Error("isolated package storage failure");
-		const bootstrap = await bootstrapComposedMissionPilotStorage({
-			client: {
-				execute() {
-					throw failure;
-				},
-			} as never,
-			logger,
-		});
+		const execute = vi.spyOn(client, "execute").mockRejectedValueOnce(failure);
+		const bootstrap = await bootstrapComposedMissionPilotStorage({ logger });
+		execute.mockRestore();
 		expect(bootstrap).toMatchObject({
 			status: "unavailable",
 			stage: "storage",

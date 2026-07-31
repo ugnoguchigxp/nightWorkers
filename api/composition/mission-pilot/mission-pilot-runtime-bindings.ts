@@ -1,4 +1,7 @@
-import type { MissionPilotRuntimeHostBindings } from "@nightworkers/mission-pilot/backend";
+import type {
+	MissionPilotPersistenceHostBinding,
+	MissionPilotRuntimeHostBindings,
+} from "@nightworkers/mission-pilot/backend";
 import { logEvent } from "../../lib/logger";
 import {
 	contentDigest,
@@ -59,7 +62,8 @@ import {
 } from "../../systemContexts/catalog";
 import { createMissionPilotFixtureBindings } from "./mission-pilot-fixture-bindings";
 
-export function createMissionPilotRuntimeBindings(): MissionPilotRuntimeHostBindings {
+export function createMissionPilotRuntimeBindings(): MissionPilotRuntimeHostBindings &
+	MissionPilotPersistenceHostBinding {
 	const persistence = createMissionPilotPersistenceCapability();
 	return {
 		executeMissionPilotPersistence: persistence.execute,

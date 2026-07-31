@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { MissionPilotActionFailure } from "../../../contracts";
 import { callMissionPilotPersistence } from "../../persistence-port";
+import type { MissionPilotActionExecutionRecord } from "../../persistence-records";
 
 export class MissionPilotActionExecutionConflictError extends Error {
 	readonly code = "MISSION_PILOT_ACTION_IDEMPOTENCY_CONFLICT";
@@ -23,7 +24,7 @@ export async function createMissionPilotActionExecutionIntent(input: {
 	expectedTaskRevision: number | null;
 }) {
 	try {
-		return await callMissionPilotPersistence(
+		return await callMissionPilotPersistence<MissionPilotActionExecutionRecord>(
 			"createMissionPilotActionExecutionIntent",
 			input,
 		);
@@ -45,7 +46,7 @@ export function getMissionPilotActionExecutionByToolCall(
 	sessionId: string,
 	toolCallId: string,
 ) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotActionExecutionRecord | null>(
 		"getMissionPilotActionExecutionByToolCall",
 		sessionId,
 		toolCallId,
@@ -62,7 +63,10 @@ export function getLatestSucceededMissionPilotImplementationRunId(
 }
 
 export function claimMissionPilotActionExecution(id: string) {
-	return callMissionPilotPersistence("claimMissionPilotActionExecution", id);
+	return callMissionPilotPersistence<MissionPilotActionExecutionRecord | null>(
+		"claimMissionPilotActionExecution",
+		id,
+	);
 }
 
 export function completeMissionPilotActionExecution(input: {
@@ -73,14 +77,14 @@ export function completeMissionPilotActionExecution(input: {
 	sourceResourceType?: string | null;
 	sourceResourceId?: string | null;
 }) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotActionExecutionRecord | null>(
 		"completeMissionPilotActionExecution",
 		input,
 	);
 }
 
 export function listMissionPilotActionExecutionReceipts(sessionId: string) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotActionExecutionRecord[]>(
 		"listMissionPilotActionExecutionReceipts",
 		sessionId,
 	);
@@ -89,7 +93,7 @@ export function listMissionPilotActionExecutionReceipts(sessionId: string) {
 export function reconcileMissionPilotActionExecutionReceipts(
 	sessionId: string,
 ) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotActionExecutionRecord[]>(
 		"reconcileMissionPilotActionExecutionReceipts",
 		sessionId,
 	);

@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { type AppError, isAppError } from "../../../lib/errors";
 import { callMissionPilotPersistence } from "../../persistence-port";
+import type { MissionPilotTaskActionState } from "../../persistence-records";
 import {
 	getTaskOperatorActionDefinition,
 	readTaskOperatorProjection,
@@ -64,16 +65,17 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				"schema_validation",
 				validated.message,
 			);
-		const { session, toolCall, agent } = await callMissionPilotPersistence(
-			"readMissionPilotTaskActionState",
-			{
-				sessionId: input.sessionId,
-				taskId: input.taskId,
-				toolCallId: input.toolCallId,
-				actionId: input.actionId,
-				idempotencyKey: input.idempotencyKey,
-			},
-		);
+		const { session, toolCall, agent } =
+			await callMissionPilotPersistence<MissionPilotTaskActionState>(
+				"readMissionPilotTaskActionState",
+				{
+					sessionId: input.sessionId,
+					taskId: input.taskId,
+					toolCallId: input.toolCallId,
+					actionId: input.actionId,
+					idempotencyKey: input.idempotencyKey,
+				},
+			);
 		if (!session)
 			return failed(
 				input.actionId,

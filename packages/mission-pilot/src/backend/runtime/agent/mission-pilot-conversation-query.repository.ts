@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import type { ProviderToolMessage } from "../../../services/structured-llm/public";
 import { callMissionPilotPersistence } from "../../persistence-port";
-import { toControlSummary } from "../../storage/repository";
+import type {
+	MissionPilotConversationCheckpoint,
+	MissionPilotConversationItemRecord,
+} from "../../persistence-records";
+import {
+	type MissionPilotSessionRecord,
+	toControlSummary,
+} from "../../storage/repository";
 import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
 import { clearMissionPilotAgentTaskActive } from "./mission-pilot-agent-active-registry";
 import { sliceMissionPilotUtf8Page } from "./mission-pilot-content-page";
@@ -13,10 +20,11 @@ export async function finishMissionPilotAgentTurn(input: {
 	state: "waiting" | "attention" | "completed" | "stopped";
 	error?: unknown;
 }) {
-	const updated = await callMissionPilotPersistence(
-		"finishMissionPilotAgentTurn",
-		input,
-	);
+	const updated =
+		await callMissionPilotPersistence<MissionPilotSessionRecord | null>(
+			"finishMissionPilotAgentTurn",
+			input,
+		);
 	if (updated) {
 		if (input.state === "completed")
 			clearMissionPilotAgentTaskActive(updated.taskId);
@@ -82,20 +90,23 @@ function digest(value: string) {
 }
 
 export function getMissionPilotConversationCheckpoint(sessionId: string) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotConversationCheckpoint | null>(
 		"getMissionPilotConversationCheckpoint",
 		sessionId,
 	);
 }
 
 export function listMissionPilotConversation(sessionId: string) {
-	return callMissionPilotPersistence("listMissionPilotConversation", sessionId);
+	return callMissionPilotPersistence<MissionPilotConversationItemRecord[]>(
+		"listMissionPilotConversation",
+		sessionId,
+	);
 }
 
 export function reconcileInterruptedMissionPilotAgentSessions(
 	now = new Date(),
 ) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotSessionRecord[]>(
 		"reconcileInterruptedMissionPilotAgentSessions",
 		now,
 	);

@@ -222,10 +222,12 @@ missionPilotAgentFixtureRouter.openapi(
 		)
 			return c.json({ error: "Agent Mission Pilot not found" }, 404);
 		const now = new Date();
-		const prepared = await callMissionPilotPersistence(
-			"prepareExpiredMissionPilotRuntimeFixture",
-			{ sessionId: pilot.id, now },
-		);
+		const prepared = await callMissionPilotPersistence<{
+			turnId: string;
+		} | null>("prepareExpiredMissionPilotRuntimeFixture", {
+			sessionId: pilot.id,
+			now,
+		});
 		if (!prepared)
 			return c.json({ error: "Agent runtime cannot be restarted" }, 404);
 		const { turnId } = prepared;

@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { bootstrapMissionPilotTables } from "../api/modules/missionPilot/persistence/bootstrap";
+import { bootstrapMissionPilotTablesForTest } from "../api/modules/missionPilot/persistence/bootstrap";
 
 const clients: ReturnType<typeof createClient>[] = [];
 
@@ -28,9 +28,29 @@ async function createCoreReferences() {
 }
 
 describe("NightWorkers-owned Mission Pilot persistence", () => {
+	it("rejects an alternate SQL client outside an isolated test runtime", () => {
+		const previousNodeEnv = process.env.NODE_ENV;
+		const previousE2eIsolation = process.env.NIGHTWORKERS_E2E_ISOLATED;
+		process.env.NODE_ENV = "production";
+		delete process.env.NIGHTWORKERS_E2E_ISOLATED;
+		try {
+			expect(() =>
+				bootstrapMissionPilotTablesForTest({
+					execute: async () => ({ rows: [] }) as never,
+				}),
+			).toThrow("Mission Pilot test bootstrap is disabled.");
+		} finally {
+			if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+			else process.env.NODE_ENV = previousNodeEnv;
+			if (previousE2eIsolation === undefined)
+				delete process.env.NIGHTWORKERS_E2E_ISOLATED;
+			else process.env.NIGHTWORKERS_E2E_ISOLATED = previousE2eIsolation;
+		}
+	});
+
 	it("recognizes existing rows and preserves session history on restart", async () => {
 		const client = await createCoreReferences();
-		await bootstrapMissionPilotTables(client);
+		await bootstrapMissionPilotTablesForTest(client);
 		await client.execute({
 			sql: `INSERT INTO mission_pilot_sessions (
 				id, task_id, repository_id, source_kind, source_id,
@@ -58,7 +78,7 @@ describe("NightWorkers-owned Mission Pilot persistence", () => {
 			"INSERT INTO mission_pilot_task_event_inbox (id, session_id, task_id, sequence, event_type, source_event_id, task_revision, payload_json, available_at, created_at) VALUES ('event-1', 'session-1', 'task-1', 1, 'mission_pilot.play_requested', 'source-1', 1, '{}', 1, 1)",
 		);
 
-		await bootstrapMissionPilotTables(client);
+		await bootstrapMissionPilotTablesForTest(client);
 
 		const session = await client.execute(
 			"SELECT initial_prompt_snapshot FROM mission_pilot_sessions WHERE id = 'session-1'",
@@ -78,7 +98,7 @@ describe("NightWorkers-owned Mission Pilot persistence", () => {
 		const calls: unknown[] = [];
 		const failure = new Error("package storage unavailable");
 		await expect(
-			bootstrapMissionPilotTables({
+			bootstrapMissionPilotTablesForTest({
 				execute(input) {
 					calls.push(input);
 					throw failure;

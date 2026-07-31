@@ -4,6 +4,7 @@ import type {
 } from "../../../contracts";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 import { callMissionPilotPersistence } from "../../persistence-port";
+import type { MissionPilotToolCallRecord } from "../../persistence-records";
 import type { MissionPilotSessionRecord } from "../../storage/repository";
 
 export {
@@ -57,14 +58,20 @@ export function persistMissionPilotProviderTurn(input: {
 	provider?: string | null;
 	model?: string | null;
 }) {
-	return callMissionPilotPersistence("persistMissionPilotProviderTurn", input);
+	return callMissionPilotPersistence<MissionPilotToolCallRecord[] | null>(
+		"persistMissionPilotProviderTurn",
+		input,
+	);
 }
 
 export function claimMissionPilotToolCall(input: {
 	id: string;
 	leaseOwner: string;
 }) {
-	return callMissionPilotPersistence("claimMissionPilotToolCall", input);
+	return callMissionPilotPersistence<MissionPilotToolCallRecord | null>(
+		"claimMissionPilotToolCall",
+		input,
+	);
 }
 
 export function completeMissionPilotToolCall(input: {
@@ -73,7 +80,10 @@ export function completeMissionPilotToolCall(input: {
 	failure?: MissionPilotActionFailure;
 	cancelled?: boolean;
 }) {
-	return callMissionPilotPersistence("completeMissionPilotToolCall", input);
+	return callMissionPilotPersistence<MissionPilotToolCallRecord | null>(
+		"completeMissionPilotToolCall",
+		input,
+	);
 }
 
 export function reprojectMissionPilotTerminalToolCall(input: {

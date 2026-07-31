@@ -1,5 +1,6 @@
 import type { MissionPilotAuthorizationV4 } from "../../../contracts";
 import { callMissionPilotPersistence } from "../../persistence-port";
+import type { MissionPilotAgentRecord } from "../../persistence-records";
 import type { MissionPilotSessionRecord } from "../../storage/repository";
 import {
 	clearMissionPilotAgentTaskActive,
@@ -20,7 +21,7 @@ export function isMissionPilotAgentSession(sessionId: string) {
 }
 
 export function getMissionPilotAgentSessionById(sessionId: string) {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotAgentRecord | null>(
 		"getMissionPilotAgentSessionById",
 		sessionId,
 	);

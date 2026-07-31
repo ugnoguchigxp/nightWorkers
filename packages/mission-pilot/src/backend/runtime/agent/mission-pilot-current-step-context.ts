@@ -29,7 +29,7 @@ export function buildMissionPilotCurrentStepContext(input: {
 	readPort: MissionPilotTaskReadPort;
 	triggerEvents?: ReadonlyArray<{ sequence: number; eventType: string }>;
 }): Promise<MissionPilotCurrentStepContext> {
-	return callMissionPilotPersistence(
+	return callMissionPilotPersistence<MissionPilotCurrentStepContext>(
 		"buildMissionPilotCurrentStepContext",
 		input,
 	);

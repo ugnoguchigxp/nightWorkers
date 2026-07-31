@@ -160,7 +160,6 @@ export async function createNightWorkersServer(
 	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
 	await bootstrapComposedMissionPilotStorage({
-		client,
 		logger: {
 			info(message, context) {
 				logEvent({
