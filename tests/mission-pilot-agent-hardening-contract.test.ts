@@ -1,3 +1,4 @@
+import { MISSION_PILOT_TASK_EVENT_TYPES } from "@nightworkers/mission-pilot/contracts";
 import { describe, expect, it } from "vitest";
 import { MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS } from "../api/modules/missionPilot/agent/mission-pilot-agent-control-tools";
 import {
@@ -11,7 +12,6 @@ import {
 	getMissionPilotPlanEntryContext,
 	getMissionPilotSystemContext,
 } from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
-import { MISSION_PILOT_TASK_EVENT_TYPES } from "../shared/modules/missionPilot/mission-pilot-agent.schema";
 
 describe("Mission Pilot autonomous agent hardening contract", () => {
 	it("owns Questionnaire, routing, and Artifact decisions", () => {

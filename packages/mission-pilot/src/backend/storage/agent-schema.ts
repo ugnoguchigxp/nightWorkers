@@ -13,9 +13,9 @@ import type {
 	MissionPilotRuntimeState,
 	MissionPilotTaskEventType,
 	MissionPilotToolCallStatus,
-} from "../../shared/modules/missionPilot";
-import { missionPilotSessions } from "./mission-pilot-schema";
-import { tasks } from "./schema";
+} from "../../contracts";
+import { tasks } from "./core-reference-schema";
+import { missionPilotSessions } from "./schema";
 
 export const missionPilotAgentSessions = sqliteTable(
 	"mission_pilot_agent_sessions",

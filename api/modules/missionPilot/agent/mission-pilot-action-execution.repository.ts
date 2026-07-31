@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
+import { missionPilotActionExecutions } from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
 import { and, eq, inArray } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
 import { db } from "../../../db/client";
-import { missionPilotActionExecutions } from "../../../db/mission-pilot-agent-schema";
 import { readTaskOperatorCommandReceipt } from "../../commandDelivery";
 
 export class MissionPilotActionExecutionConflictError extends Error {

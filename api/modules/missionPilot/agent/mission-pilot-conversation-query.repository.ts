@@ -1,19 +1,19 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotAgentTurns,
 	missionPilotConversationItems,
+	missionPilotSessions,
 	missionPilotToolCalls,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+	toControlSummary,
+} from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
+import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { db } from "../../../db/client";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
 } from "../../../services/structured-llm/public";
-import { toControlSummary } from "../mission-pilot.repository";
 import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
 import { reconcileMissionPilotActionExecutionReceipts } from "./mission-pilot-action-execution.repository";
 import { clearMissionPilotAgentTaskActive } from "./mission-pilot-agent-active-registry";

@@ -1,4 +1,4 @@
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
 import { AppError } from "../../../lib/errors";
 import type {
 	ProviderToolCall,

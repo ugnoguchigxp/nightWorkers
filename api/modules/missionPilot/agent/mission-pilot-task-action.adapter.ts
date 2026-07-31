@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
-import { and, eq } from "drizzle-orm";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
+	missionPilotSessions,
 	missionPilotToolCalls,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import { and, eq } from "drizzle-orm";
+import { db } from "../../../db/client";
 import { AppError } from "../../../lib/errors";
 import {
 	getTaskOperatorActionDefinition,
@@ -68,12 +68,17 @@ export const missionPilotTaskActionPort: MissionPilotTaskActionPort = {
 				validated.message,
 			);
 		const [session, toolCall, agent] = await Promise.all([
-			db.query.missionPilotSessions.findFirst({
-				where: and(
-					eq(missionPilotSessions.id, input.sessionId),
-					eq(missionPilotSessions.taskId, input.taskId),
-				),
-			}),
+			db
+				.select()
+				.from(missionPilotSessions)
+				.where(
+					and(
+						eq(missionPilotSessions.id, input.sessionId),
+						eq(missionPilotSessions.taskId, input.taskId),
+					),
+				)
+				.limit(1)
+				.then((rows) => rows[0]),
 			db
 				.select()
 				.from(missionPilotToolCalls)

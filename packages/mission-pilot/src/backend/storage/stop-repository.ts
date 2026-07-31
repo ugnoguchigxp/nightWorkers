@@ -1,12 +1,12 @@
 import { and, eq } from "drizzle-orm";
-import { db } from "../../db/client";
-import { missionPilotSessions } from "../../db/mission-pilot-schema";
+import { getMissionPilotDatabase } from "./database";
+import { missionPilotSessions } from "./schema";
 
 export async function claimStop(taskId: string, expectedVersion: number) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
 	if (row.desiredState === "stopped") return row;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			desiredState: "stopped",
@@ -36,7 +36,7 @@ export async function finishStop(
 ) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			phase: error ? "attention" : "paused",
@@ -66,7 +66,7 @@ export async function finishStop(
 }
 
 async function getSessionByTaskId(taskId: string) {
-	const [row] = await db
+	const [row] = await getMissionPilotDatabase()
 		.select()
 		.from(missionPilotSessions)
 		.where(eq(missionPilotSessions.taskId, taskId));

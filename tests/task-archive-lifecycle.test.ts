@@ -3,13 +3,13 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { taskArchiveRecords } from "../api/db/mission-pilot-schema";
 import {
 	repositories,
 	taskRunCommitRecords,
 	taskRuns,
 	tasks,
 } from "../api/db/schema";
+import { taskArchiveRecords } from "../api/db/task-archive-schema";
 import { readUsage } from "../api/modules/gitworktree/gitworktree.repository";
 import {
 	archiveCompletedTask,

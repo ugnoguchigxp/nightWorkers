@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createSession } from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -23,7 +24,6 @@ import {
 	appendMissionPilotTaskEvent,
 	listPendingMissionPilotTaskEvents,
 } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
-import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,

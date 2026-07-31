@@ -1,10 +1,10 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
-import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotTaskEventInbox,
-} from "../../../db/mission-pilot-agent-schema";
+} from "@nightworkers/mission-pilot/backend";
+import { and, asc, eq, isNull } from "drizzle-orm";
+import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
+import { db } from "../../../db/client";
 import { AppError } from "../../../lib/errors";
 import type { MissionPilotTaskReadPort } from "./mission-pilot-agent.ports";
 
@@ -36,9 +36,12 @@ export async function buildMissionPilotCurrentStepContext(input: {
 	triggerEvents?: ReadonlyArray<{ sequence: number; eventType: string }>;
 }): Promise<MissionPilotCurrentStepContext> {
 	const [agent, unreadEvents] = await Promise.all([
-		db.query.missionPilotAgentSessions.findFirst({
-			where: eq(missionPilotAgentSessions.sessionId, input.sessionId),
-		}),
+		db
+			.select()
+			.from(missionPilotAgentSessions)
+			.where(eq(missionPilotAgentSessions.sessionId, input.sessionId))
+			.limit(1)
+			.then((rows) => rows[0]),
 		db
 			.select({
 				sequence: missionPilotTaskEventInbox.sequence,

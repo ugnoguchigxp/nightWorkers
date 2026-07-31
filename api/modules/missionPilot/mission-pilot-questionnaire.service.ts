@@ -1,15 +1,16 @@
+import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
+import {
+	missionPilotQuestionnaireDrafts,
+	missionPilotSessions,
+} from "@nightworkers/mission-pilot/backend";
+import { missionPilotQuestionnaireDraftSchema } from "@nightworkers/mission-pilot/contracts";
 import { and, desc, eq, lte, or } from "drizzle-orm";
-import { missionPilotQuestionnaireDraftSchema } from "../../../shared/modules/missionPilot";
 import {
 	type DesignQuestionnaireAnswer,
 	type DesignQuestionnaireSession,
 	designQuestionnaireAnswerSchema,
 } from "../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../db/client";
-import {
-	missionPilotQuestionnaireDrafts,
-	missionPilotSessions,
-} from "../../db/mission-pilot-schema";
 import { enqueueTaskActivityEvent } from "../task";
 import {
 	executeTaskOperatorCommand,
@@ -19,7 +20,6 @@ import {
 } from "../taskOperator";
 import { isMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
-import * as missionPilotRepo from "./mission-pilot.repository";
 import { createMissionPilotTaskOperatorAccess } from "./mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";
 import { missionPilotThoughtTrace } from "./mission-pilot-trace-provenance";

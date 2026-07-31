@@ -1,6 +1,8 @@
-import { client } from "./client";
+import type { MissionPilotSqlClient } from "./bootstrap";
 
-export async function backfillTraceProvenance() {
+export async function backfillMissionPilotTraceProvenance(
+	client: MissionPilotSqlClient,
+) {
 	await client.execute(`
     UPDATE llm_usage_records
     SET trace_owner = 'coding_agent', trace_channel = 'chat'

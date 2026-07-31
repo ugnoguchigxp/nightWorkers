@@ -3,18 +3,18 @@ import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
 	type MissionPilotSourceRef,
 	missionPilotControlSummarySchema,
-} from "../../../shared/modules/missionPilot";
-import { type DbTransaction, db } from "../../db/client";
+} from "../../contracts";
+import { missionPilotAgentSessions } from "./agent-schema";
 import {
-	missionPilotContextSnapshots,
-	missionPilotSessions,
-} from "../../db/mission-pilot-schema";
-import { createMissionPilotAgentSession } from "./agent/mission-pilot-agent-session.repository";
-import { resolvePostQueueResumePhase } from "./mission-pilot-post-queue-resume";
+	getMissionPilotDatabase,
+	type MissionPilotDatabase,
+	type MissionPilotTransaction,
+} from "./database";
+import { missionPilotContextSnapshots, missionPilotSessions } from "./schema";
 
-export { claimStop, finishStop } from "./mission-pilot-stop.repository";
+export { claimStop, finishStop } from "./stop-repository";
 
-type Db = typeof db | DbTransaction;
+type Db = MissionPilotDatabase | MissionPilotTransaction;
 type SessionRow = typeof missionPilotSessions.$inferSelect;
 
 export class MissionPilotStateConflictError extends Error {}
@@ -83,7 +83,7 @@ export async function createSession(
 		sourceKind: MissionPilotSourceRef["source"];
 		sourceId: string;
 	},
-	tx: DbTransaction,
+	tx: MissionPilotTransaction,
 ) {
 	const objective = input.task.objective ?? "";
 	const id = crypto.randomUUID();
@@ -128,10 +128,12 @@ export async function createSession(
 			throw new Error("Mission Pilot session creation did not converge");
 		return existing;
 	}
-	await createMissionPilotAgentSession(tx, {
+	await tx.insert(missionPilotAgentSessions).values({
 		sessionId: id,
+		engineMode: "agent",
 		contextDigest: digest,
-		now,
+		createdAt: now,
+		updatedAt: now,
 	});
 	await tx.insert(missionPilotContextSnapshots).values({
 		id: crypto.randomUUID(),
@@ -147,10 +149,15 @@ export async function createSession(
 }
 
 export function getOrCreateSession(input: Parameters<typeof createSession>[0]) {
-	return db.transaction((tx) => createSession(input, tx));
+	return getMissionPilotDatabase().transaction((tx) =>
+		createSession(input, tx),
+	);
 }
 
-export async function getSessionByTaskId(taskId: string, database: Db = db) {
+export async function getSessionByTaskId(
+	taskId: string,
+	database: Db = getMissionPilotDatabase(),
+) {
 	const [row] = await database
 		.select()
 		.from(missionPilotSessions)
@@ -159,7 +166,7 @@ export async function getSessionByTaskId(taskId: string, database: Db = db) {
 }
 
 export async function listPlayingSessionsWithActiveRuns() {
-	return db
+	return getMissionPilotDatabase()
 		.select()
 		.from(missionPilotSessions)
 		.where(
@@ -172,7 +179,7 @@ export async function listPlayingSessionsWithActiveRuns() {
 
 export async function listSessionSummariesByTaskIds(taskIds: string[]) {
 	if (!taskIds.length) return new Map();
-	const rows = await db
+	const rows = await getMissionPilotDatabase()
 		.select()
 		.from(missionPilotSessions)
 		.where(inArray(missionPilotSessions.taskId, taskIds));
@@ -192,11 +199,15 @@ export async function claimPostQueueResume(
 		!resumePhase
 	)
 		return null;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			desiredState: "playing",
-			phase: resolvePostQueueResumePhase({ ...row, resumePhase }),
+			phase: row.activeVerificationSnapshotId
+				? "review_preparing"
+				: row.activePhaseRunId
+					? "attention"
+					: resumePhase,
 			resumePhase: null,
 			startedAt: new Date(),
 			stoppedAt: null,
@@ -221,7 +232,7 @@ export async function claimPostQueueResume(
 export async function finishPlay(taskId: string, activeRunId: string | null) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			phase: row.nextWakeAt
@@ -252,7 +263,7 @@ export async function markAttention(
 ) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row) return null;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			desiredState: "stopped",
@@ -276,7 +287,7 @@ export async function syncCompletedRun(taskId: string, runId: string) {
 	const row = await getSessionByTaskId(taskId);
 	if (!row || row.activeRunId !== runId || row.desiredState !== "playing")
 		return null;
-	const [updated] = await db
+	const [updated] = await getMissionPilotDatabase()
 		.update(missionPilotSessions)
 		.set({
 			activeRunId: null,

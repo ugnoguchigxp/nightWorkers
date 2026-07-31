@@ -1,4 +1,4 @@
-import type { MissionPilotAuthorization } from "../../../../shared/modules/missionPilot";
+import type { MissionPilotAuthorization } from "@nightworkers/mission-pilot/contracts";
 import {
 	p as defaultP,
 	type SystemContextP,

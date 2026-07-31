@@ -1,26 +1,22 @@
 import crypto from "node:crypto";
+import {
+	createSession,
+	getSessionByTaskId,
+	missionPilotAgentSessions,
+	missionPilotContextSnapshots,
+	missionPilotConversationItems,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "@nightworkers/mission-pilot/backend";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import {
-	missionPilotAgentSessions,
-	missionPilotConversationItems,
-	missionPilotTaskEventInbox,
-} from "../api/db/mission-pilot-agent-schema";
-import {
-	missionPilotContextSnapshots,
-	missionPilotSessions,
-} from "../api/db/mission-pilot-schema";
 import { repositories, taskMessages, taskRuns, tasks } from "../api/db/schema";
 import {
 	registerTaskUserIntakeHandler,
 	type SubmitTaskUserIntakeCommand,
 } from "../api/modules/agentsShare";
-import {
-	createSession,
-	getSessionByTaskId,
-} from "../api/modules/missionPilot/mission-pilot.repository";
 import { sendTaskOperatorUserMessage } from "../api/modules/task";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 

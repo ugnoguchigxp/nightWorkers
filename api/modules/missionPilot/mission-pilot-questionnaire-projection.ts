@@ -1,10 +1,10 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
-import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
-import { db } from "../../db/client";
 import {
 	missionPilotQuestionnaireDrafts,
 	missionPilotSessions,
-} from "../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import type { DesignQuestionnaireSession } from "../../../shared/schemas/design-questionnaire.schema";
+import { db } from "../../db/client";
 
 export async function projectMissionPilotQuestionnaireDraftAnswers(
 	taskId: string,

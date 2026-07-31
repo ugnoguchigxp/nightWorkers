@@ -1,9 +1,9 @@
-import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import type {
 	MissionPilotControlSummary,
 	PilotThoughtEntry,
-} from "../../../../shared/modules/missionPilot";
+} from "@nightworkers/mission-pilot/contracts";
+import { BrainCircuit, MessageCircleMore, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { AgentDebugEventCard } from "../../nightworkers/components/ThreadTimelineAgentCards";
 import type {
 	ActivityEvent,

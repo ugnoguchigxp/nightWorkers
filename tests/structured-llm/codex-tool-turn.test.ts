@@ -8,7 +8,10 @@ import {
 } from "../../api/services/structured-llm/codex-tool-turn";
 import { installStructuredLlmEnvHooks } from "./structured-llm-test-env";
 
-vi.mock("../../api/modules/missionPilot/mission-pilot.repository", () => ({
+vi.mock("@nightworkers/mission-pilot/backend", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("@nightworkers/mission-pilot/backend")
+	>()),
 	getSessionByTaskId: vi.fn(async () => ({ desiredState: "playing" })),
 	hasValidAuthorization: vi.fn(() => true),
 }));

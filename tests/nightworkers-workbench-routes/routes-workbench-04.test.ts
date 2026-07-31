@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import {
 	afterEach,
@@ -16,8 +20,6 @@ import {
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import { db } from "../../api/db/client";
-import { missionPilotTaskEventInbox } from "../../api/db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../api/db/mission-pilot-schema";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import * as service from "../../api/modules/nightworkers/nightworkers.service";
 import { registerTaskMessageCreatedListener } from "../../api/modules/task";

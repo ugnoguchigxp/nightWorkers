@@ -26,6 +26,7 @@ const productionPackageImportAllowlist = [
 	"api/app.ts",
 	"api/server.ts",
 ];
+const migrationPackageImportAllowlist = oldRoots.map((root) => `${root}/`);
 
 function walk(relativeDirectory) {
 	const directory = path.join(root, relativeDirectory);
@@ -125,6 +126,9 @@ for (const relativePath of [
 				(prefix) =>
 					relativePath === prefix ||
 					relativePath.startsWith(prefix),
+			) &&
+			!migrationPackageImportAllowlist.some((prefix) =>
+				relativePath.startsWith(prefix),
 			)
 		) {
 			errors.push(

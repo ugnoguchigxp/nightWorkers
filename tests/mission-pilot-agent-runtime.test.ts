@@ -1,13 +1,14 @@
 import crypto from "node:crypto";
+import {
+	createSession,
+	missionPilotAgentSessions,
+	missionPilotSessions,
+	missionPilotToolCalls,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import {
-	missionPilotAgentSessions,
-	missionPilotToolCalls,
-} from "../api/db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../api/db/mission-pilot-schema";
 import {
 	activityEvents,
 	llmUsageRecords,
@@ -35,7 +36,6 @@ import {
 } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import { missionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-task-read.adapter";
-import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import { getMissionPilotExecution } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 import {
 	bindSystemContextCatalogSnapshot,

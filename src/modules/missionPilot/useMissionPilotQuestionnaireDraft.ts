@@ -1,3 +1,4 @@
+import type { MissionPilotQuestionnaireDraft } from "@nightworkers/mission-pilot/contracts";
 import {
 	type Dispatch,
 	type SetStateAction,
@@ -6,7 +7,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import type { MissionPilotQuestionnaireDraft } from "../../../shared/modules/missionPilot";
 import type { DesignQuestionnaireAnswer } from "../../../shared/schemas/design-questionnaire.schema";
 import {
 	fetchMissionPilotQuestionnaireDraft,

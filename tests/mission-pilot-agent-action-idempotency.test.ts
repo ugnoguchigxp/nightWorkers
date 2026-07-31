@@ -1,4 +1,10 @@
 import crypto from "node:crypto";
+import {
+	createSession,
+	missionPilotActionExecutions,
+	missionPilotAgentTurns,
+	missionPilotToolCalls,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -7,11 +13,6 @@ import {
 	designQuestionnaireReviews,
 	designQuestionnaireSessions,
 } from "../api/db/design-questionnaire-schema";
-import {
-	missionPilotActionExecutions,
-	missionPilotAgentTurns,
-	missionPilotToolCalls,
-} from "../api/db/mission-pilot-agent-schema";
 import {
 	repositories,
 	taskMessages,
@@ -32,7 +33,6 @@ import {
 	persistMissionPilotProviderTurn,
 } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
 import { missionPilotTaskActionPort } from "../api/modules/missionPilot/agent/mission-pilot-task-action.adapter";
-import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 import * as nightworkersService from "../api/modules/nightworkers/nightworkers.service";
 
 const repositoryIds: string[] = [];

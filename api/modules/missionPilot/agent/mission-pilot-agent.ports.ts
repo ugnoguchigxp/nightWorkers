@@ -1,7 +1,7 @@
 import type {
 	MissionPilotActionFailure,
 	MissionPilotTaskEventType,
-} from "../../../../shared/modules/missionPilot";
+} from "@nightworkers/mission-pilot/contracts";
 import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
 import type {
 	ProviderToolDefinition,

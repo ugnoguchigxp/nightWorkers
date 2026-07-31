@@ -1,4 +1,4 @@
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
 import { normalizeStructuredProviderError } from "../../../services/structured-llm/public";
 import { buildMissionPilotSystemContext } from "../prompts/mission-pilot-system-context";
 import type { loadMissionPilotProviderMessages } from "./mission-pilot-conversation.repository";

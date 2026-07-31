@@ -1,10 +1,12 @@
+import {
+	missionPilotSessions,
+	toControlSummary,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import type { DesignQuestionnaireSession } from "../../../../shared/schemas/design-questionnaire.schema";
 import { db } from "../../../db/client";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 import { buildQuestionnaireStateChange } from "../../questionnaire";
 import { readTaskOperatorProjection } from "../../taskOperator";
-import { toControlSummary } from "../mission-pilot.repository";
 import { createMissionPilotTaskOperatorAccess } from "../mission-pilot-delegation";
 import { publishMissionPilotUpdated } from "../mission-pilot-realtime";
 import { MISSION_PILOT_QUESTIONNAIRE_RESPONSE_DELAY_MS } from "./mission-pilot-agent.constants";

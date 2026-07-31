@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotConversationItems,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+	missionPilotSessions,
+} from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
+import { and, eq } from "drizzle-orm";
+import { db } from "../../../db/client";
 
 export async function seedMissionPilotConversation(input: {
 	sessionId: string;

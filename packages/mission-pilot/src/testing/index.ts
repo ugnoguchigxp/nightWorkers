@@ -1,4 +1,5 @@
 import type { MissionPilotHostPorts } from "../contracts";
+export { backfillMissionPilotTraceProvenance } from "../backend/storage/provenance-backfill";
 
 export function createMissionPilotHostPortsFake(
 	overrides: Partial<MissionPilotHostPorts> = {},

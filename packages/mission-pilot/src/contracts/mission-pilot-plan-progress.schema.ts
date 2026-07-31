@@ -1,6 +1,8 @@
 import { z } from "@hono/zod-openapi";
-import { planModeRegenerationTargetSchema } from "../../schemas/plan-mode-artifact.schema";
-import { planModeArtifactFocusSchema } from "../../schemas/plan-mode-artifact-correction.schema";
+import {
+	planModeArtifactFocusSchema,
+	planModeRegenerationTargetSchema,
+} from "./plan-artifact-contracts";
 
 export const missionPilotPlanStepProgressSchema = z.object({
 	key: z.string().min(1),

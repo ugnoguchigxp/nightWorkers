@@ -1,21 +1,21 @@
 import { z } from "@hono/zod-openapi";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
-import type {
-	MissionPilotActionFailure,
-	MissionPilotTaskEventType,
-} from "../../../../shared/modules/missionPilot";
-import {
-	MISSION_PILOT_TASK_EVENT_TYPES,
-	missionPilotTaskEventTypeSchema,
-} from "../../../../shared/modules/missionPilot";
-import { db } from "../../../db/client";
 import {
 	missionPilotActionExecutions,
 	missionPilotAgentSessions,
+	missionPilotSessions,
 	missionPilotTaskEventInbox,
 	missionPilotToolCalls,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import type {
+	MissionPilotActionFailure,
+	MissionPilotTaskEventType,
+} from "@nightworkers/mission-pilot/contracts";
+import {
+	MISSION_PILOT_TASK_EVENT_TYPES,
+	missionPilotTaskEventTypeSchema,
+} from "@nightworkers/mission-pilot/contracts";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { db } from "../../../db/client";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 
 const waitInputSchema = z.object({

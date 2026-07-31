@@ -1,7 +1,6 @@
 import { ensureBaseNightWorkersTables } from "./base-schema-bootstrap";
 import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
-import { backfillTraceProvenance } from "./bootstrap-trace-provenance";
 import { client } from "./client";
 import { ensureCloseoutAdmissionTables } from "./closeout-admission-schema-bootstrap";
 import { ensureEvidenceLedgerTables } from "./evidence-ledger-schema-bootstrap";
@@ -14,6 +13,7 @@ import {
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
 import { ensureColumn } from "./schema-bootstrap-utils";
+import { ensureTaskArchiveTables } from "./task-archive-schema-bootstrap";
 import { ensureTaskGenerationTables } from "./task-generation-schema-bootstrap";
 import { ensureTechStackTables } from "./tech-stack-schema-bootstrap";
 import { ensureVerificationTables } from "./verification-schema-bootstrap";
@@ -92,9 +92,8 @@ async function removeLegacyProductAuthenticationState() {
 }
 
 export async function ensureNightWorkersSchema(
-	options: { includeMissionPilot?: boolean } = {},
+	_options: { includeMissionPilot?: boolean } = {},
 ) {
-	const includeMissionPilot = options.includeMissionPilot !== false;
 	await client.execute("PRAGMA foreign_keys = ON");
 	await client.execute("PRAGMA busy_timeout = 10000");
 	await client.execute("PRAGMA journal_mode = WAL");
@@ -154,6 +153,7 @@ export async function ensureNightWorkersSchema(
 	await removeLegacyProductAuthenticationState();
 
 	await ensureBaseNightWorkersTables();
+	await ensureTaskArchiveTables();
 	await ensureTaskGenerationTables();
 	await ensureNullableDesignQuestionnaireBlueprintSource();
 	await ensurePlanModeTables();
@@ -161,12 +161,6 @@ export async function ensureNightWorkersSchema(
 	await ensureProjectDetailTables();
 	await ensureTechStackTables();
 	await ensureMissionPlannerTables();
-	if (includeMissionPilot) {
-		const { ensureMissionPilotTables } = await import(
-			"./mission-pilot-schema-bootstrap"
-		);
-		await ensureMissionPilotTables();
-	}
 	await ensureReviewModeTables();
 	await ensureVerificationTables();
 
@@ -282,12 +276,22 @@ export async function ensureNightWorkersSchema(
 	await ensureEvidenceLedgerTables();
 	await ensureFinalResponseEvidenceTables();
 	await ensureCloseoutAdmissionTables();
+	const queueColumns = await client.execute(
+		"PRAGMA table_info(implementation_queue_entries)",
+	);
+	if (
+		queueColumns.rows.some((row) => row.name === "mission_pilot_agent_json") &&
+		!queueColumns.rows.some((row) => row.name === "request_provenance_json")
+	) {
+		await client.execute(
+			"ALTER TABLE implementation_queue_entries RENAME COLUMN mission_pilot_agent_json TO request_provenance_json",
+		);
+	}
 	await ensureColumn(
 		"implementation_queue_entries",
-		"mission_pilot_agent_json",
-		"mission_pilot_agent_json text",
+		"request_provenance_json",
+		"request_provenance_json text",
 	);
-	if (includeMissionPilot) await backfillTraceProvenance();
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS blueprint_design_settings (

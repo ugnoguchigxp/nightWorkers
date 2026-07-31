@@ -1,3 +1,4 @@
+import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
 import { AppError } from "../../../lib/errors";
 import {
 	bindSystemContextCatalogSnapshot,
@@ -8,7 +9,6 @@ import type {
 	StructuredProviderCallAuthorizationContext,
 	StructuredProviderExecutionPolicy,
 } from "../../agentsShare";
-import * as missionPilotRepo from "../mission-pilot.repository";
 
 export async function authorizeMissionPilotProviderCall(
 	context: StructuredProviderCallAuthorizationContext,

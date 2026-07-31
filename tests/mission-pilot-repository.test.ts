@@ -1,23 +1,21 @@
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ensureNightWorkersSchema } from "../api/db/bootstrap";
-import { db } from "../api/db/client";
-import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
-import {
-	missionPilotContextSnapshots,
-	missionPilotPhaseRuns,
-	missionPilotSessions,
-} from "../api/db/mission-pilot-schema";
-import { repositories, taskRuns, tasks } from "../api/db/schema";
-import { backfillStoppedMissionPilotAgentSessions } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import {
 	claimPostQueueResume,
 	claimStop,
 	createSession,
 	finishStop,
 	getSessionByTaskId,
-} from "../api/modules/missionPilot/mission-pilot.repository";
+	missionPilotAgentSessions,
+	missionPilotContextSnapshots,
+	missionPilotPhaseRuns,
+	missionPilotSessions,
+} from "@nightworkers/mission-pilot/backend";
+import { eq } from "drizzle-orm";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { db } from "../api/db/client";
+import { repositories, taskRuns, tasks } from "../api/db/schema";
+import { backfillStoppedMissionPilotAgentSessions } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import { updateTaskRun } from "../api/modules/nightworkers/nightworkers.runs.repository";
 
 const repositoryIds: string[] = [];

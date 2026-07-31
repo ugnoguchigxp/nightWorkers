@@ -6,20 +6,23 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type {
+	DesignQuestionnaireAnswer,
 	MissionPilotAnswerEvidence,
 	MissionPilotAuthorization,
+	MissionPilotArtifactCorrectionStatus,
 	MissionPilotPlanReview,
 	MissionPilotPreQueueDiagnostic,
 	MissionPilotQueueHandoff,
-} from "../../shared/modules/missionPilot";
-import type { DesignQuestionnaireAnswer } from "../../shared/schemas/design-questionnaire.schema";
-import type { PlanModeRegenerationTarget } from "../../shared/schemas/plan-mode-artifact.schema";
-import type {
-	MissionPilotArtifactCorrectionStatus,
 	PlanModeArtifactFocus,
-} from "../../shared/schemas/plan-mode-artifact-correction.schema";
-import { designQuestionnaireSessions } from "./design-questionnaire-schema";
-import { repositories, taskMessages, taskRuns, tasks } from "./schema";
+	PlanModeRegenerationTarget,
+} from "../../contracts";
+import {
+	designQuestionnaireSessions,
+	repositories,
+	taskMessages,
+	taskRuns,
+	tasks,
+} from "./core-reference-schema";
 
 export const missionPilotSessions = sqliteTable(
 	"mission_pilot_sessions",
@@ -486,38 +489,6 @@ export const missionPilotEvents = sqliteTable(
 		pendingIdx: index("mission_pilot_events_pending_idx").on(
 			table.processStatus,
 			table.availableAt,
-		),
-	}),
-);
-
-export const taskArchiveRecords = sqliteTable(
-	"task_archive_records",
-	{
-		id: text("id").primaryKey(),
-		taskId: text("task_id")
-			.notNull()
-			.references(() => tasks.id, { onDelete: "cascade" }),
-		missionPilotSessionId: text("mission_pilot_session_id").references(
-			() => missionPilotSessions.id,
-			{ onDelete: "set null" },
-		),
-		sourceRunId: text("source_run_id").references(() => taskRuns.id, {
-			onDelete: "set null",
-		}),
-		previousStatus: text("previous_status").notNull(),
-		reason: text("reason").notNull(),
-		evidenceJson: text("evidence_json", { mode: "json" })
-			.$type<Record<string, unknown>>()
-			.notNull(),
-		archivedAt: integer("archived_at", { mode: "timestamp" }).notNull(),
-		restoredAt: integer("restored_at", { mode: "timestamp" }),
-		restoredToStatus: text("restored_to_status"),
-		restoredBy: text("restored_by"),
-	},
-	(table) => ({
-		taskIdx: index("task_archive_records_task_idx").on(
-			table.taskId,
-			table.archivedAt,
 		),
 	}),
 );

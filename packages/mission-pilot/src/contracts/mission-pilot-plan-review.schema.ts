@@ -1,6 +1,8 @@
 import { z } from "@hono/zod-openapi";
-import { planModeRegenerationTargetSchema } from "../../schemas/plan-mode-artifact.schema";
-import { planModeArtifactCorrectionTargetSchema } from "../../schemas/plan-mode-artifact-correction.schema";
+import {
+	planModeArtifactCorrectionTargetSchema,
+	planModeRegenerationTargetSchema,
+} from "./plan-artifact-contracts";
 
 export const MISSION_PILOT_IMPLEMENTATION_ARTIFACT_SCORE_THRESHOLD = 80;
 export const MISSION_PILOT_CONCEPT_ARTIFACT_SCORE_THRESHOLD = 70;

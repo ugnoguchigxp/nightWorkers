@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
-import type { MissionPilotActionFailure } from "../../../../shared/modules/missionPilot";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotAgentTurns,
 	missionPilotConversationItems,
+	missionPilotSessions,
 	missionPilotTaskEventInbox,
 	missionPilotToolCalls,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
+import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
+import { db } from "../../../db/client";
 import type { ProviderToolCall } from "../../../services/structured-llm/public";
 import { MISSION_PILOT_AGENT_LEASE_MS } from "./mission-pilot-agent.constants";
 import { getMissionPilotActionDefinition } from "./mission-pilot-task-action.registry";

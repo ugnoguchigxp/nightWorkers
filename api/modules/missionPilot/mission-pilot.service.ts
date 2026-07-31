@@ -1,3 +1,4 @@
+import * as repo from "@nightworkers/mission-pilot/backend";
 import { registerQuestionnaireStateChangedListener } from "../questionnaire/questionnaire-events";
 import { registerTaskMessageCreatedListener } from "../task";
 import {
@@ -41,7 +42,6 @@ import {
 	projectMissionPilotExecutionEvent,
 } from "./agent/mission-pilot-task-event.repository";
 import { MissionPilotError } from "./mission-pilot.errors";
-import * as repo from "./mission-pilot.repository";
 import { createMissionPilotTaskOperatorAccess } from "./mission-pilot-delegation";
 import { dispatchMissionPilotInitialPrompt } from "./mission-pilot-initial-prompt.service";
 import { publishMissionPilotUpdated } from "./mission-pilot-realtime";

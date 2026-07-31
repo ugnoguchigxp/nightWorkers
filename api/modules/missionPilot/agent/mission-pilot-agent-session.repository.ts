@@ -1,17 +1,15 @@
 import crypto from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { MissionPilotAuthorizationV4 } from "../../../../shared/modules/missionPilot";
-import type { DbTransaction } from "../../../db/client";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
-	missionPilotConversationItems,
-	missionPilotTaskEventInbox,
-} from "../../../db/mission-pilot-agent-schema";
-import {
 	missionPilotContextSnapshots,
+	missionPilotConversationItems,
 	missionPilotSessions,
-} from "../../../db/mission-pilot-schema";
+	missionPilotTaskEventInbox,
+} from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotAuthorizationV4 } from "@nightworkers/mission-pilot/contracts";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import type { DbTransaction } from "../../../db/client";
+import { db } from "../../../db/client";
 import {
 	humanTaskOperatorPrincipal,
 	readTaskOperatorProjection,

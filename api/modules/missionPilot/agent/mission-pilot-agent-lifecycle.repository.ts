@@ -1,6 +1,6 @@
+import { missionPilotToolCalls } from "@nightworkers/mission-pilot/backend";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../../db/client";
-import { missionPilotToolCalls } from "../../../db/mission-pilot-agent-schema";
 import {
 	completeMissionPilotToolCall,
 	finishMissionPilotAgentTurn,

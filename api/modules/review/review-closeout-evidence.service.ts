@@ -1,11 +1,4 @@
-import { eq } from "drizzle-orm";
 import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
-import { db } from "../../db/client";
-import {
-	missionPilotReviewDecisions,
-	missionPilotSessions,
-	missionPilotVerificationSnapshots,
-} from "../../db/mission-pilot-schema";
 import {
 	completionCheckMatchesVerificationDocument,
 	readCompletionCheckResult,
@@ -28,11 +21,7 @@ export type ReviewCloseoutEvidence = {
 		completedAt: string | null;
 	};
 	verification: {
-		source:
-			| "mission_pilot_snapshot"
-			| "verification_checklist"
-			| "legacy_test_coverage"
-			| "missing";
+		source: "verification_checklist" | "legacy_test_coverage" | "missing";
 		status: "passed" | "missing" | "incomplete" | "failed" | "stale";
 		verificationDocumentId: string | null;
 		evidenceRunIds: string[];
@@ -196,70 +185,6 @@ async function resolveVerificationEvidence(input: {
 		requiresPostReviewRetest && reviewRunArtifact
 			? reviewRunArtifact.updatedAt
 			: null;
-	const [missionSession] = await db
-		.select()
-		.from(missionPilotSessions)
-		.where(eq(missionPilotSessions.taskId, input.taskId));
-	const missionManaged = Boolean(
-		missionSession &&
-			(missionSession.desiredState === "playing" ||
-				missionSession.activeVerificationSnapshotId ||
-				missionSession.activeReviewDecisionId),
-	);
-	if (missionSession && missionManaged) {
-		const snapshotId = missionSession.activeVerificationSnapshotId;
-		const [snapshot] = snapshotId
-			? await db
-					.select()
-					.from(missionPilotVerificationSnapshots)
-					.where(eq(missionPilotVerificationSnapshots.id, snapshotId))
-			: [];
-		if (!snapshot) {
-			return {
-				source: "mission_pilot_snapshot",
-				status: "missing",
-				verificationDocumentId: null,
-				evidenceRunIds: [],
-				completionCheckEventId: null,
-				reason: "Mission Pilot の active verification snapshot がありません。",
-			};
-		}
-		const passed =
-			snapshot.verdict === "pass" &&
-			snapshot.requiredTotal > 0 &&
-			snapshot.requiredComplete === snapshot.requiredTotal &&
-			snapshot.failedRequired === 0 &&
-			snapshot.unknownRequired === 0 &&
-			snapshot.evidenceRunIdsJson.length > 0 &&
-			Boolean(snapshot.completionCheckEventId);
-		const [reviewDecision] = missionSession.activeReviewDecisionId
-			? await db
-					.select()
-					.from(missionPilotReviewDecisions)
-					.where(
-						eq(
-							missionPilotReviewDecisions.id,
-							missionSession.activeReviewDecisionId,
-						),
-					)
-			: [];
-		const stale = Boolean(
-			reviewDecision && reviewDecision.verificationSnapshotId !== snapshot.id,
-		);
-		return {
-			source: "mission_pilot_snapshot",
-			status: stale ? "stale" : passed ? "passed" : "failed",
-			verificationDocumentId: snapshot.verificationDocumentId,
-			evidenceRunIds: snapshot.evidenceRunIdsJson,
-			completionCheckEventId: snapshot.completionCheckEventId,
-			reason: stale
-				? "Mission Pilot の Review decision が active verification snapshot を参照していません。"
-				: passed
-					? null
-					: "Mission Pilot の verification snapshot が pass ではありません。",
-		};
-	}
-
 	const document = await verificationRepo.getLatestVerificationDocumentForTask(
 		input.taskId,
 	);

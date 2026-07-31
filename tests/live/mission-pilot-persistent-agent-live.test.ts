@@ -1,17 +1,17 @@
 import crypto from "node:crypto";
+import {
+	missionPilotActionExecutions,
+	missionPilotAgentSessions,
+	missionPilotConversationItems,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+	missionPilotToolCalls,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
 import { db } from "../../api/db/client";
-import {
-	missionPilotActionExecutions,
-	missionPilotAgentSessions,
-	missionPilotConversationItems,
-	missionPilotTaskEventInbox,
-	missionPilotToolCalls,
-} from "../../api/db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../api/db/mission-pilot-schema";
 import { repositories } from "../../api/db/schema";
 import { createTask } from "../../api/modules/nightworkers/nightworkers.basic.service";
 import { appendTaskMessage } from "../../api/modules/nightworkers/nightworkers.workbench-message.service";

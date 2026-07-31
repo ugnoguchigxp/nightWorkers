@@ -1,14 +1,14 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
 import {
 	missionPilotAuthorizationV2Schema,
 	missionPilotAuthorizationV3Schema,
 	missionPilotControlSummarySchema,
+	missionPilotPlanProgressSchema,
 	missionPilotSourceRefSchema,
-} from "../shared/modules/missionPilot/mission-pilot.schema";
-import { missionPilotPlanProgressSchema } from "../shared/modules/missionPilot/mission-pilot-plan-progress.schema";
+} from "@nightworkers/mission-pilot/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
 import {
 	formatCountdown,
 	MissionPilotControlPanel,

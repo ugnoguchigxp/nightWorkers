@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
-import type { MissionPilotTaskEventType } from "../../../../shared/modules/missionPilot";
-import { db } from "../../../db/client";
 import {
 	missionPilotAgentSessions,
+	missionPilotSessions,
 	missionPilotTaskEventInbox,
-} from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotTaskEventType } from "@nightworkers/mission-pilot/contracts";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { db } from "../../../db/client";
 
 class MissionPilotEventSequenceConflictError extends Error {}
 

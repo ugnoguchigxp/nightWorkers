@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
+import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
 import type { WorkbenchRouteState } from "../nightworkers/routing/workbench-route-state";
 import type {
 	PlanModeWorkspace,

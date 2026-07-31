@@ -7,7 +7,7 @@ import {
 	missionPilotQuestionnaireDraftSchema,
 	submitMissionPilotQuestionnaireDraftSchema,
 	updateMissionPilotQuestionnaireDraftSchema,
-} from "../../../shared/modules/missionPilot";
+} from "@nightworkers/mission-pilot/contracts";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
 import * as service from "./mission-pilot.service";

@@ -1,11 +1,11 @@
-import { asc, eq } from "drizzle-orm";
-import { db } from "../../db/client";
 import {
 	missionPilotAgentSessions,
 	missionPilotConversationItems,
+	missionPilotSessions,
 	missionPilotToolCalls,
-} from "../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/backend";
+import { asc, eq } from "drizzle-orm";
+import { db } from "../../db/client";
 import { readTaskActivityEvents } from "../task";
 import { MissionPilotError } from "./mission-pilot.errors";
 import {

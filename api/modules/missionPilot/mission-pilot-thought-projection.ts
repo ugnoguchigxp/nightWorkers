@@ -1,13 +1,13 @@
+import type {
+	missionPilotConversationItems,
+	missionPilotEvents,
+	missionPilotToolCalls,
+} from "@nightworkers/mission-pilot/backend";
 import {
 	type PilotThoughtEntry,
 	type PilotThoughtEntryKind,
 	pilotThoughtEntriesSchema,
-} from "../../../shared/modules/missionPilot";
-import type {
-	missionPilotConversationItems,
-	missionPilotToolCalls,
-} from "../../db/mission-pilot-agent-schema";
-import type { missionPilotEvents } from "../../db/mission-pilot-schema";
+} from "@nightworkers/mission-pilot/contracts";
 import type { activityEvents, taskMessages } from "../../db/schema";
 import { getMissionPilotActionDefinition } from "./agent/mission-pilot-task-action.registry";
 

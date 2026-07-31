@@ -1,7 +1,7 @@
+import { missionPilotSessions } from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotAuthorizationV4 } from "@nightworkers/mission-pilot/contracts";
 import { eq } from "drizzle-orm";
-import type { MissionPilotAuthorizationV4 } from "../../../shared/modules/missionPilot";
 import { db } from "../../db/client";
-import { missionPilotSessions } from "../../db/mission-pilot-schema";
 import {
 	digestTaskOperatorCapabilityGrant,
 	readCurrentTaskOperatorUserCapabilities,

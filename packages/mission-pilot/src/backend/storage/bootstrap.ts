@@ -1,5 +1,30 @@
-import { client } from "./client";
-import { ensureColumn } from "./schema-bootstrap-utils";
+import type { Client } from "@libsql/client";
+import { backfillMissionPilotTraceProvenance } from "./provenance-backfill";
+
+export type MissionPilotSqlClient = Pick<Client, "execute">;
+
+let activeBootstrapClient: MissionPilotSqlClient | null = null;
+
+const client = {
+	execute(input: string | { sql: string; args: unknown[] }) {
+		if (!activeBootstrapClient) {
+			throw new Error("Mission Pilot storage bootstrap client is not configured");
+		}
+		return activeBootstrapClient.execute(input as never);
+	},
+};
+
+async function ensureColumn(
+	table: string,
+	column: string,
+	definition: string,
+) {
+	const columns = await client.execute(`PRAGMA table_info(${table})`);
+	const exists = columns.rows.some((row) => row.name === column);
+	if (columns.rows.length > 0 && !exists) {
+		await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+	}
+}
 
 async function tableExists(name: string) {
 	const result = await client.execute({
@@ -122,7 +147,7 @@ async function migrateMissionPilotVerificationSnapshotSchema() {
 	}
 }
 
-export async function ensureMissionPilotTables() {
+async function ensureMissionPilotTables() {
 	await client.execute(
 		`CREATE TABLE IF NOT EXISTS mission_pilot_sessions (id text PRIMARY KEY NOT NULL, task_id text NOT NULL, repository_id text NOT NULL, source_kind text NOT NULL, source_id text NOT NULL, authorization_version integer, authorization_json text, desired_state text DEFAULT 'stopped' NOT NULL, phase text DEFAULT 'created' NOT NULL, resume_phase text, initial_prompt_snapshot text NOT NULL, initial_prompt_state text DEFAULT 'pending' NOT NULL, initial_prompt_message_id text, active_run_id text, version integer DEFAULT 0 NOT NULL, context_revision integer DEFAULT 1 NOT NULL, context_digest text NOT NULL, next_wake_at integer, lease_owner text, lease_expires_at integer, last_error_code text, last_error_message text, queue_handoff_json text, pre_queue_diagnostic_json text, started_at integer, stopped_at integer, created_at integer NOT NULL, updated_at integer NOT NULL, FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade, FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade, FOREIGN KEY (initial_prompt_message_id) REFERENCES task_messages(id) ON DELETE set null, FOREIGN KEY (active_run_id) REFERENCES task_runs(id) ON DELETE set null)`,
 	);
@@ -415,14 +440,17 @@ export async function ensureMissionPilotTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS mission_pilot_repair_requests_session_idx ON mission_pilot_repair_requests (session_id, created_at)",
 	);
-	await client.execute(`CREATE TABLE IF NOT EXISTS task_archive_records (
-		id text PRIMARY KEY NOT NULL, task_id text NOT NULL, mission_pilot_session_id text, source_run_id text,
-		previous_status text NOT NULL, reason text NOT NULL, evidence_json text NOT NULL, archived_at integer NOT NULL,
-		restored_at integer, restored_to_status text, restored_by text,
-		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
-		FOREIGN KEY (mission_pilot_session_id) REFERENCES mission_pilot_sessions(id) ON DELETE set null,
-		FOREIGN KEY (source_run_id) REFERENCES task_runs(id) ON DELETE set null)`);
-	await client.execute(
-		"CREATE INDEX IF NOT EXISTS task_archive_records_task_idx ON task_archive_records (task_id, archived_at)",
-	);
+}
+
+export async function bootstrapMissionPilotTables(client: MissionPilotSqlClient) {
+	if (activeBootstrapClient) {
+		throw new Error("Mission Pilot storage bootstrap is already running");
+	}
+	activeBootstrapClient = client;
+	try {
+		await ensureMissionPilotTables();
+		await backfillMissionPilotTraceProvenance(client);
+	} finally {
+		activeBootstrapClient = null;
+	}
 }

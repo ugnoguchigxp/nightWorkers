@@ -1,4 +1,4 @@
-import type { MissionPilotControlSummary } from "../../../../shared/modules/missionPilot";
+import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
 import { ThreadMessage } from "../../nightworkers/components/ThreadMessage";
 import type { TaskMessage } from "../../nightworkers/types";
 import { useMissionPilotControl } from "../missionPilotQueries";

@@ -58,7 +58,7 @@ export const implementationQueueEntries = sqliteTable(
 		sequenceDependsOnEntryId: text("sequence_depends_on_entry_id"),
 		schedulingReason: text("scheduling_reason"),
 		sourceCommandKey: text("mission_pilot_admission_key"),
-		requestProvenanceJson: text("mission_pilot_agent_json", {
+		requestProvenanceJson: text("request_provenance_json", {
 			mode: "json",
 		}).$type<Record<string, unknown> | null>(),
 		claimReady: integer("claim_ready", { mode: "boolean" })

@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
+import { backfillMissionPilotTraceProvenance } from "@nightworkers/mission-pilot/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
-import { backfillTraceProvenance } from "../api/db/bootstrap-trace-provenance";
+import { client } from "../api/db/client";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import { codingAgentChatTrace } from "../api/modules/nightworkers/nightworkers.trace-provenance";
 import {
@@ -48,7 +49,7 @@ describe("trace provenance bootstrap repair", () => {
 			trace: codingAgentChatTrace(),
 		});
 
-		await backfillTraceProvenance();
+		await backfillMissionPilotTraceProvenance(client);
 
 		await expect(summarizeLlmUsageForTask(task.id)).resolves.toMatchObject({
 			byOwner: {
@@ -94,8 +95,8 @@ describe("trace provenance bootstrap repair", () => {
 			},
 		});
 
-		await backfillTraceProvenance();
-		await backfillTraceProvenance();
+		await backfillMissionPilotTraceProvenance(client);
+		await backfillMissionPilotTraceProvenance(client);
 
 		const messages = await repo.listTaskMessages(task.id);
 		expect(

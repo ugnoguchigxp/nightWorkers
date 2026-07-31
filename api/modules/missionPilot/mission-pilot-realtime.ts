@@ -1,7 +1,7 @@
 import type {
 	MissionPilotControlSummary,
 	MissionPilotPlanProgress,
-} from "../../../shared/modules/missionPilot";
+} from "@nightworkers/mission-pilot/contracts";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 
 export function publishMissionPilotUpdated(

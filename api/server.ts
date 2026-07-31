@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import app, { nodeWebSocket } from "./app";
+import { bootstrapComposedMissionPilotStorage } from "./composition/mission-pilot";
 import { config, persistBootstrapSettings } from "./config";
 import { ensureNightWorkersSchema } from "./db/bootstrap";
 import { client } from "./db/client";
@@ -158,6 +159,27 @@ export async function createNightWorkersServer(
 
 	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
+	await bootstrapComposedMissionPilotStorage({
+		client,
+		logger: {
+			info(message, context) {
+				logEvent({
+					channel: "api",
+					level: "info",
+					message,
+					meta: context,
+				});
+			},
+			error(message, context) {
+				logEvent({
+					channel: "api",
+					level: "error",
+					message,
+					meta: context,
+				});
+			},
+		},
+	});
 	migrateLegacyApplicationSettingSecrets();
 	await persistBootstrapSettings();
 	const repositoryIdentityPreview =

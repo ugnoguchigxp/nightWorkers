@@ -1,7 +1,9 @@
+import {
+	missionPilotAgentSessions,
+	missionPilotSessions,
+} from "@nightworkers/mission-pilot/backend";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../../db/client";
-import { missionPilotAgentSessions } from "../../../db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../../../db/mission-pilot-schema";
 
 /**
  * Runtime ownership is deliberately derived from the durable agent-session

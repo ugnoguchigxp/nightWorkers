@@ -1,12 +1,12 @@
+import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
 import {
 	type MissionPilotPlanProgress,
 	missionPilotPlanProgressSchema,
-} from "../../../shared/modules/missionPilot";
+} from "@nightworkers/mission-pilot/contracts";
 import {
 	humanTaskOperatorQueryContext,
 	readTaskOperatorProjection,
 } from "../taskOperator";
-import * as missionPilotRepo from "./mission-pilot.repository";
 
 export async function getMissionPilotPlanProgress(
 	taskId: string,

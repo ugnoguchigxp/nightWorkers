@@ -1,6 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { designQuestionnaireAnswerSchema } from "../../schemas/design-questionnaire.schema";
-import { taskSchema } from "../../schemas/nightworkers/repository-task.schema";
+import { designQuestionnaireAnswerSchema } from "./questionnaire-contracts";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
 
@@ -234,7 +233,7 @@ export const missionPilotCommandRequestSchema = z.object({
 });
 export const missionPilotCommandResponseSchema = z.object({
 	missionPilot: missionPilotControlSummarySchema,
-	task: taskSchema.optional(),
+	task: z.unknown().optional(),
 	run: z.unknown().nullable().optional(),
 	messages: z.array(z.unknown()).optional(),
 	stoppedRun: z.unknown().nullable().optional(),

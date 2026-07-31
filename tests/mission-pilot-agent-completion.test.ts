@@ -1,13 +1,15 @@
 import crypto from "node:crypto";
+import {
+	createSession,
+	missionPilotAgentSessions,
+	missionPilotSessions,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { missionPilotAgentSessions } from "../api/db/mission-pilot-agent-schema";
-import { missionPilotSessions } from "../api/db/mission-pilot-schema";
 import { repositories, tasks } from "../api/db/schema";
 import { executeMissionPilotAgentControlTool } from "../api/modules/missionPilot/agent/mission-pilot-agent-control-tools";
-import { createSession } from "../api/modules/missionPilot/mission-pilot.repository";
 
 const repositoryIds: string[] = [];
 beforeAll(() => ensureNightWorkersSchema());

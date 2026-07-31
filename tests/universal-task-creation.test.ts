@@ -1,22 +1,20 @@
 import crypto from "node:crypto";
+import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
+import {
+	missionPilotAgentSessions,
+	missionPilotContextSnapshots,
+	missionPilotSessions,
+	missionPilotTaskEventInbox,
+} from "@nightworkers/mission-pilot/backend";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import {
-	missionPilotAgentSessions,
-	missionPilotTaskEventInbox,
-} from "../api/db/mission-pilot-agent-schema";
-import {
-	missionPilotContextSnapshots,
-	missionPilotSessions,
-} from "../api/db/mission-pilot-schema";
 import { repositories } from "../api/db/schema";
 import {
 	claimAgentPlay,
 	claimAgentStop,
 } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import * as missionPilotRepo from "../api/modules/missionPilot/mission-pilot.repository";
 import { play } from "../api/modules/missionPilot/mission-pilot.service";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
@@ -152,9 +150,11 @@ describe("Universal Task creation", () => {
 			eventType: "task.user_message_added",
 			taskRevision: updated.revision,
 		});
-		const current = await db.query.missionPilotSessions.findFirst({
-			where: eq(missionPilotSessions.id, session?.id ?? ""),
-		});
+		const [current] = await db
+			.select()
+			.from(missionPilotSessions)
+			.where(eq(missionPilotSessions.id, session?.id ?? ""))
+			.limit(1);
 		expect(
 			await claimAgentStop(task.id, current?.version ?? -1),
 		).not.toBeNull();

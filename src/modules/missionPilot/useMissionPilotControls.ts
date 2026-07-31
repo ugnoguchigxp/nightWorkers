@@ -1,6 +1,6 @@
+import type { MissionPilotControlSummary } from "@nightworkers/mission-pilot/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import type { MissionPilotControlSummary } from "../../../shared/modules/missionPilot";
 import {
 	playMissionPilotTask,
 	stopMissionPilotTask,

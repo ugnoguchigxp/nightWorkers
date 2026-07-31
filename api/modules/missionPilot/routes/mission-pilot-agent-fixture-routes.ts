@@ -1,12 +1,13 @@
 import crypto from "node:crypto";
 import { createRoute } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { db } from "../../../db/client";
+import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
 import {
 	missionPilotAgentSessions,
 	missionPilotAgentTurns,
-} from "../../../db/mission-pilot-agent-schema";
+} from "@nightworkers/mission-pilot/backend";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "../../../db/client";
 import { createOpenApiRouter } from "../../../lib/openapi";
 import { registerFixtureProviderToolTurns } from "../../../services/structured-llm/fixture-tool-provider";
 import * as repo from "../../nightworkers/nightworkers.repository";
@@ -21,7 +22,6 @@ import { isMissionPilotAgentSession } from "../agent/mission-pilot-agent-session
 import { scheduleMissionPilotAgentWake } from "../agent/mission-pilot-agent-wake.service";
 import { recordMissionPilotQuestionnaireStateChanged } from "../agent/mission-pilot-task-event.adapter";
 import { appendMissionPilotTaskEvent } from "../agent/mission-pilot-task-event.repository";
-import * as missionPilotRepo from "../mission-pilot.repository";
 import {
 	buildAgentScenarioTurns,
 	buildQuestionnaireFixtureTurns,

@@ -1,3 +1,4 @@
+export { getSessionByTaskId } from "@nightworkers/mission-pilot/backend";
 export {
 	missionPilotArtifactProviderExecutionPolicy,
 	missionPilotToolTurnProviderExecutionPolicy,
@@ -14,7 +15,6 @@ export * from "./agent/mission-pilot-conversation.repository";
 export * from "./agent/mission-pilot-task-event.adapter";
 export * from "./agent/mission-pilot-task-event.repository";
 export { appendMissionPilotTaskEvent } from "./agent/mission-pilot-task-event.repository";
-export * from "./mission-pilot.repository";
 export { missionPilotRouter } from "./mission-pilot.routes";
 export {
 	listTasksWithMissionPilot,

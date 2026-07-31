@@ -2,22 +2,19 @@ import crypto from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
-	missionPilotSessions,
-	taskArchiveRecords,
-} from "../../db/mission-pilot-schema";
-import {
 	agentModeSessions,
 	implementationQueueEntries,
 	taskRunCommitRecords,
 	taskRuns,
 	tasks,
 } from "../../db/schema";
+import { taskArchiveRecords } from "../../db/task-archive-schema";
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 
 type ArchiveInput = {
 	taskId: string;
 	reason?: "mission_pilot_completed" | "manual" | "retention";
-	missionPilotSessionId?: string | null;
+	automationSessionId?: string | null;
 	sourceRunId?: string | null;
 	evidence?: Record<string, unknown>;
 	expectedTaskRevision?: number;
@@ -102,7 +99,7 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 		await tx.insert(taskArchiveRecords).values({
 			id,
 			taskId: task.id,
-			missionPilotSessionId: input.missionPilotSessionId ?? null,
+			automationSessionId: input.automationSessionId ?? null,
 			sourceRunId: input.sourceRunId ?? null,
 			previousStatus: "completed",
 			reason: input.reason ?? "manual",
@@ -147,19 +144,6 @@ export async function archiveCompletedTask(input: ArchiveInput) {
 			.update(implementationQueueEntries)
 			.set({ status: "execution_archived", archivedAt: now, updatedAt: now })
 			.where(eq(implementationQueueEntries.taskId, task.id));
-		if (input.missionPilotSessionId) {
-			await tx
-				.update(missionPilotSessions)
-				.set({
-					phase: "archived",
-					desiredState: "stopped",
-					activeRunId: null,
-					activePhaseRunId: null,
-					stoppedAt: now,
-					updatedAt: now,
-				})
-				.where(eq(missionPilotSessions.id, input.missionPilotSessionId));
-		}
 		const [archiveRecord] = await tx
 			.select()
 			.from(taskArchiveRecords)
