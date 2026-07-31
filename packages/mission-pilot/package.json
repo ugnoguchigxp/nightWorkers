@@ -1,0 +1,17 @@
+{
+	"name": "@nightworkers/mission-pilot",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./contracts": "./src/contracts/index.ts",
+		"./backend": "./src/backend/index.ts",
+		"./frontend": "./src/frontend/index.ts",
+		"./testing": "./src/testing/index.ts",
+		"./frontend.css": "./src/frontend/styles.css"
+	},
+	"dependencies": {
+		"hono": "4.12.30",
+		"react": "19.2.7",
+		"zod": "4.4.3"
+	}
+}

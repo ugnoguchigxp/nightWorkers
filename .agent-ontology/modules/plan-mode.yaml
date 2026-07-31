@@ -6,7 +6,7 @@
   "ubiquitousLanguage": [{ "name": "PlanArtifact", "meaning": "A reviewable design artifact produced or revised during Plan Mode." }],
   "responsibilities": ["Collect and apply Questionnaire decisions.", "Generate and render Plan artifacts.", "Project Plan Mode workspace status and views."],
   "ownedPaths": ["api/modules/planMode/**", "api/modules/planViews/**", "api/modules/specification/**", "api/modules/questionnaire/**", "src/modules/planMode/**", "src/modules/specification/**", "src/modules/questionnaire/**"],
-  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.plan-mode-core.port.ts", "api/modules/missionPilot/**"],
+  "readMostlyPaths": ["api/modules/nightworkers/nightworkers.plan-mode-core.port.ts"],
   "ownedData": { "tables": ["design_questionnaire_sessions"], "files": [] },
   "invariants": [{ "id": "plan-artifact-not-source-edit", "statement": "Plan Mode updates design artifacts and does not treat temporary generation directories as repository workspaces.", "check": "Plan Mode and Artifact workspace tests cover generation and projection." }],
   "allowedMutations": ["Questionnaire lifecycle", "Plan artifact generation", "Plan workspace projection"],

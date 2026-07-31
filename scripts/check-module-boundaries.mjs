@@ -93,6 +93,7 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
     ...walk(path.join(repoRoot, 'api')),
     ...walk(path.join(repoRoot, 'src')),
     ...walk(path.join(repoRoot, 'shared')),
+    ...walk(path.join(repoRoot, 'packages')),
   ];
 
   if (policy.version !== 1) errors.push('boundary policy version must be 1');

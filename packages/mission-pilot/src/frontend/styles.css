@@ -1,0 +1,3 @@
+:root {
+	--mission-pilot-status-accent: var(--color-primary, currentColor);
+}

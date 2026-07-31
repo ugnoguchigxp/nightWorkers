@@ -43,11 +43,17 @@
 			"role": "Mission Pilot",
 			"markers": ["mission-pilot", "missionPilot"],
 			"allowedRoots": [
+				"packages/mission-pilot",
 				"api/modules/missionPilot",
 				"src/modules/missionPilot",
 				"shared/modules/missionPilot"
 			],
-			"exemptPrefixes": ["api/db/"]
+			"exemptPrefixes": [
+				"api/db/",
+				"api/composition/mission-pilot/",
+				"src/composition/mission-pilot/",
+				"api/systemContexts/"
+			]
 		},
 		{
 			"role": "Coding Agent",

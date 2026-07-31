@@ -2,6 +2,9 @@
 	"name": "nightworkers",
 	"version": "0.1.0",
 	"description": "Local-first autonomous development control plane with native supervisor-worker runtime and contextStill.",
+	"workspaces": [
+		"packages/*"
+	],
 	"main": "index.js",
 	"scripts": {
 		"setup": "bun install && (test -f .env || cp .env.example .env) && bun run db:migrate",
@@ -57,7 +60,7 @@
 		"test:desktop-runtime": "node scripts/run-vitest.mjs run tests/runtime-paths.test.ts tests/runtime-bootstrap.test.ts tests/api-base.test.ts tests/preflight.test.ts tests/routes.security-hardening.test.ts tests/hono-security-regressions.test.ts tests/config-listen-security.test.ts tests/desktop-matrix-workflow.test.ts tests/desktop-diagnostics.test.ts",
 		"audit:dependencies": "node scripts/audit-dependencies.mjs",
 		"check:tracked-artifacts": "bun scripts/check-tracked-artifacts.mjs",
-		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-system-context-catalog.mjs && node scripts/check-coding-agent-semantic-control.mjs && node scripts/check-coding-agent-standalone-boundary.mjs && node scripts/check-task-operator-boundary.mjs && node scripts/agent-ontology/validate-manifests.mjs",
+		"check:architecture": "node scripts/check-large-source-files.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-mission-pilot-package-boundary.mjs && node scripts/check-system-context-catalog.mjs && node scripts/check-coding-agent-semantic-control.mjs && node scripts/check-coding-agent-standalone-boundary.mjs && node scripts/check-task-operator-boundary.mjs && node scripts/agent-ontology/validate-manifests.mjs",
 		"check:docs": "node scripts/check-docs-consistency.mjs",
 		"typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit --singleThreaded",
 		"lint": "biome check .",
@@ -154,6 +157,7 @@
 		"html-to-image": "^1.11.13",
 		"i18next": "26.3.6",
 		"jsonrepair": "3.15.0",
+		"libsql": "0.5.29",
 		"lucide-react": "1.24.0",
 		"mermaid": "^11.16.0",
 		"pino": "10.3.1",

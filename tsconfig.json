@@ -15,6 +15,6 @@
 		},
 		"types": ["node", "vite/client"]
 	},
-	"include": ["src/**/*", "api/**/*", "shared/**/*"],
+	"include": ["src/**/*", "api/**/*", "shared/**/*", "packages/mission-pilot/src/**/*"],
 	"exclude": ["node_modules", "dist", "drizzle"]
 }
