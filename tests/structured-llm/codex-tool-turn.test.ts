@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { missionPilotProviderPort } from "@nightworkers/mission-pilot/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { missionPilotProviderPort } from "../../api/modules/missionPilot/agent/mission-pilot-provider.port";
 import {
 	buildCodexToolTurnJsonSchema,
 	parseCodexToolTurnResponse,

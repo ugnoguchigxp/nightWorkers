@@ -8,17 +8,15 @@ let activeBootstrapClient: MissionPilotSqlClient | null = null;
 const client = {
 	execute(input: string | { sql: string; args: unknown[] }) {
 		if (!activeBootstrapClient) {
-			throw new Error("Mission Pilot storage bootstrap client is not configured");
+			throw new Error(
+				"Mission Pilot storage bootstrap client is not configured",
+			);
 		}
 		return activeBootstrapClient.execute(input as never);
 	},
 };
 
-async function ensureColumn(
-	table: string,
-	column: string,
-	definition: string,
-) {
+async function ensureColumn(table: string, column: string, definition: string) {
 	const columns = await client.execute(`PRAGMA table_info(${table})`);
 	const exists = columns.rows.some((row) => row.name === column);
 	if (columns.rows.length > 0 && !exists) {
@@ -442,7 +440,9 @@ async function ensureMissionPilotTables() {
 	);
 }
 
-export async function bootstrapMissionPilotTables(client: MissionPilotSqlClient) {
+export async function bootstrapMissionPilotTables(
+	client: MissionPilotSqlClient,
+) {
 	if (activeBootstrapClient) {
 		throw new Error("Mission Pilot storage bootstrap is already running");
 	}

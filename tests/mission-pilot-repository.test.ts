@@ -10,12 +10,12 @@ import {
 	missionPilotPhaseRuns,
 	missionPilotSessions,
 } from "@nightworkers/mission-pilot/backend";
+import { backfillStoppedMissionPilotAgentSessions } from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, taskRuns, tasks } from "../api/db/schema";
-import { backfillStoppedMissionPilotAgentSessions } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
 import { updateTaskRun } from "../api/modules/nightworkers/nightworkers.runs.repository";
 
 const repositoryIds: string[] = [];

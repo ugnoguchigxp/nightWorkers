@@ -1,10 +1,29 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import {
 	createSession,
 	missionPilotAgentSessions,
 	missionPilotSessions,
 	missionPilotToolCalls,
 } from "@nightworkers/mission-pilot/backend";
+import type { MissionPilotTaskReadPort } from "@nightworkers/mission-pilot/testing";
+import {
+	appendMissionPilotTaskEvent,
+	appendMissionPilotUserMessage,
+	cancelPendingMissionPilotToolCalls,
+	cancelRunningMissionPilotToolCalls,
+	claimAgentPlay,
+	claimMissionPilotAgentTurn,
+	claimMissionPilotToolCall,
+	getMissionPilotExecution,
+	listMissionPilotConversation,
+	missionPilotTaskReadPort,
+	persistMissionPilotProviderTurn,
+	reconcileInterruptedMissionPilotAgentSessions,
+	runMissionPilotAgentWake,
+	seedMissionPilotConversation,
+	stopMissionPilotAgentRuntime,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -15,28 +34,6 @@ import {
 	repositories,
 	tasks,
 } from "../api/db/schema";
-import type { MissionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-agent.ports";
-import {
-	cancelPendingMissionPilotToolCalls,
-	cancelRunningMissionPilotToolCalls,
-} from "../api/modules/missionPilot/agent/mission-pilot-agent-lifecycle.repository";
-import {
-	runMissionPilotAgentWake,
-	stopMissionPilotAgentRuntime,
-} from "../api/modules/missionPilot/agent/mission-pilot-agent-runtime";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import {
-	appendMissionPilotUserMessage,
-	claimMissionPilotAgentTurn,
-	claimMissionPilotToolCall,
-	listMissionPilotConversation,
-	persistMissionPilotProviderTurn,
-	reconcileInterruptedMissionPilotAgentSessions,
-	seedMissionPilotConversation,
-} from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
-import { appendMissionPilotTaskEvent } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
-import { missionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-task-read.adapter";
-import { getMissionPilotExecution } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
 import {
 	bindSystemContextCatalogSnapshot,
 	systemContextPromptAudit,
@@ -128,10 +125,8 @@ describe("Mission Pilot persistent agent runtime", () => {
 			kind: "waiting",
 			content: "現在のFactを確認しました。",
 		});
-		const items = await import(
-			"../api/modules/missionPilot/agent/mission-pilot-conversation.repository"
-		).then((module) =>
-			module.listMissionPilotConversation(fixtureState.sessionId),
+		const items = await import("@nightworkers/mission-pilot/testing").then(
+			(module) => module.listMissionPilotConversation(fixtureState.sessionId),
 		);
 		expect(items.map((item) => item.kind)).toEqual(
 			expect.arrayContaining([
@@ -257,10 +252,8 @@ describe("Mission Pilot persistent agent runtime", () => {
 			},
 		);
 		expect(result).toMatchObject({ kind: "waiting" });
-		const items = await import(
-			"../api/modules/missionPilot/agent/mission-pilot-conversation.repository"
-		).then((module) =>
-			module.listMissionPilotConversation(fixtureState.sessionId),
+		const items = await import("@nightworkers/mission-pilot/testing").then(
+			(module) => module.listMissionPilotConversation(fixtureState.sessionId),
 		);
 		const serialized = JSON.stringify(items);
 		expect(serialized).not.toContain("nativeApiTurns");

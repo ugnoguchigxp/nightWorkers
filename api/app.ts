@@ -8,6 +8,11 @@ import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { z } from "zod";
+import {
+	createComposedMissionPilotFixtureRouter,
+	createComposedMissionPilotRouter,
+	createMissionPilotDependencies,
+} from "./composition/mission-pilot";
 import { config } from "./config";
 import { implementationProviderFixtureRouter } from "./e2eFixtures/implementation-provider-fixture.routes";
 import { logEvent, logHttpEvent } from "./lib/logger";
@@ -24,10 +29,6 @@ import {
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";
-import {
-	missionPilotAgentFixtureRouter,
-	missionPilotRouter,
-} from "./modules/missionPilot";
 import { nightworkersRouter } from "./modules/nightworkers/nightworkers.routes";
 import * as nightworkersService from "./modules/nightworkers/nightworkers.service";
 import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
@@ -63,6 +64,13 @@ configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
 initializeCodingAgentRunHandlers();
 initializeTaskUserIntakeHandler();
 initializeQuestionnaireRealtime();
+const missionPilotDependencies = createMissionPilotDependencies();
+const missionPilotRouter = createComposedMissionPilotRouter(
+	missionPilotDependencies,
+);
+const missionPilotAgentFixtureRouter = createComposedMissionPilotFixtureRouter(
+	missionPilotDependencies,
+);
 
 const apiRoutes = createOpenApiRouter()
 	.route("/health", healthRouter)

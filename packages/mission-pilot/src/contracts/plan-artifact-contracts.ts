@@ -57,9 +57,7 @@ export const missionPilotArtifactCorrectionStatusSchema = z.enum([
 export type PlanModeRegenerationTarget = z.infer<
 	typeof planModeRegenerationTargetSchema
 >;
-export type PlanModeArtifactFocus = z.infer<
-	typeof planModeArtifactFocusSchema
->;
+export type PlanModeArtifactFocus = z.infer<typeof planModeArtifactFocusSchema>;
 export type MissionPilotArtifactCorrectionStatus = z.infer<
 	typeof missionPilotArtifactCorrectionStatusSchema
 >;

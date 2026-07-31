@@ -8,9 +8,10 @@ const productionEntrypoints = [
 	"api/server.ts",
 	"api/workers/queue-worker.ts",
 	"api/workers/task-run-worker.ts",
-	"api/modules/missionPilot/index.ts",
-	"api/modules/missionPilot/mission-pilot.service.ts",
-	"api/modules/missionPilot/mission-pilot-execution-query.service.ts",
+	"packages/mission-pilot/src/backend/index.ts",
+	"packages/mission-pilot/src/backend/runtime/index.ts",
+	"packages/mission-pilot/src/backend/runtime/mission-pilot.service.ts",
+	"packages/mission-pilot/src/backend/runtime/mission-pilot-execution-query.service.ts",
 ];
 const retiredRuntimeNames = [
 	"mission-pilot-plan-coordinator",
@@ -37,7 +38,7 @@ describe("Mission Pilot legacy runtime removal", () => {
 		const source = fs.readFileSync(
 			path.join(
 				root,
-				"api/modules/missionPilot/agent/mission-pilot-runtime-ownership.service.ts",
+				"packages/mission-pilot/src/backend/runtime/agent/mission-pilot-runtime-ownership.service.ts",
 			),
 			"utf8",
 		);

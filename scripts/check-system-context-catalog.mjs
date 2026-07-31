@@ -145,7 +145,7 @@ for (const absolutePath of ["api", "tests"].flatMap((directory) =>
 		source.includes("e2eFixtures/llmCatalog") &&
 		!new Set([
 			fixtureCatalogModulePath,
-			"api/modules/missionPilot/routes/mission-pilot-agent-fixture-scenarios.ts",
+			"api/composition/mission-pilot/mission-pilot-fixture-bindings.ts",
 			"api/modules/codingAgent/runtime/e2e-fixture-turns.ts",
 			fixtureCatalogTestPath,
 		]).has(relativePath)

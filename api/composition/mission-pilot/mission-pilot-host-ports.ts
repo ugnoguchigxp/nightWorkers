@@ -9,7 +9,9 @@ export type MissionPilotHostPortAdapters = {
 	query(input: MissionPilotPublicResourceQuery): Promise<unknown>;
 	execute(input: MissionPilotPublicActionCommand): Promise<unknown>;
 	submitUserMessage(
-		input: Parameters<MissionPilotHostPorts["taskIntake"]["submitUserMessage"]>[0],
+		input: Parameters<
+			MissionPilotHostPorts["taskIntake"]["submitUserMessage"]
+		>[0],
 	): Promise<unknown>;
 	subscribe(listener: (event: unknown) => void): () => void;
 	publish(event: MissionPilotRealtimeEvent): Promise<void>;
@@ -18,7 +20,9 @@ export type MissionPilotHostPortAdapters = {
 	): Promise<unknown>;
 	generateStructured(input: Record<string, unknown>): Promise<unknown>;
 	assertTaskAction(
-		input: Parameters<MissionPilotHostPorts["authorization"]["assertTaskAction"]>[0],
+		input: Parameters<
+			MissionPilotHostPorts["authorization"]["assertTaskAction"]
+		>[0],
 	): Promise<void>;
 	now(): Date;
 	setTimeout(callback: () => void, delayMs: number): unknown;
@@ -56,8 +60,7 @@ export function createMissionPilotHostPorts(
 		},
 		clock: {
 			now: () => adapters.now(),
-			setTimeout: (callback, delayMs) =>
-				adapters.setTimeout(callback, delayMs),
+			setTimeout: (callback, delayMs) => adapters.setTimeout(callback, delayMs),
 			clearTimeout: (handle) => adapters.clearTimeout(handle),
 		},
 		ids: {

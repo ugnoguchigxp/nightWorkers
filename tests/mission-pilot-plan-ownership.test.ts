@@ -1,5 +1,5 @@
+import { getMissionPilotActionUnavailableReason } from "@nightworkers/mission-pilot/testing";
 import { describe, expect, it } from "vitest";
-import { getMissionPilotActionUnavailableReason } from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
 import { TASK_OPERATOR_ACTION_DEFINITIONS } from "../api/modules/taskOperator";
 
 describe("Mission Pilot Plan ownership contract", () => {

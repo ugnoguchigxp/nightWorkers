@@ -1,17 +1,21 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import {
 	createSession,
 	missionPilotSessions,
 	missionPilotTaskEventInbox,
 } from "@nightworkers/mission-pilot/backend";
+import {
+	claimAgentPlay,
+	initializeMissionPilotAgentQuestionnaireEvents,
+	listPendingMissionPilotTaskEvents,
+	setMissionPilotScheduleWakeForTesting,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import { listPendingMissionPilotTaskEvents } from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
-import { initializeMissionPilotAgentQuestionnaireEvents } from "../api/modules/missionPilot/mission-pilot.service";
 import { publishQuestionnaireTransition } from "../api/modules/questionnaire/questionnaire-events";
 import type { DesignQuestionnaireSession } from "../shared/schemas/design-questionnaire.schema";
 
@@ -19,17 +23,11 @@ const mocks = vi.hoisted(() => ({
 	scheduleWake: vi.fn(),
 }));
 
-vi.mock(
-	"../api/modules/missionPilot/agent/mission-pilot-agent-wake.service",
-	() => ({
-		scheduleMissionPilotAgentWake: mocks.scheduleWake,
-	}),
-);
-
 const repositoryIds: string[] = [];
 
 beforeAll(() => {
 	ensureNightWorkersSchema();
+	setMissionPilotScheduleWakeForTesting(mocks.scheduleWake);
 	initializeMissionPilotAgentQuestionnaireEvents();
 });
 

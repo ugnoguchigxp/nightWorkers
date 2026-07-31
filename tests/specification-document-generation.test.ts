@@ -1,5 +1,5 @@
+import { getMissionPilotPlanSystemContext } from "@nightworkers/mission-pilot/backend";
 import { describe, expect, it } from "vitest";
-import { getMissionPilotPlanSystemContext } from "../api/modules/missionPilot";
 import {
 	buildSpecificationDocumentContext,
 	FEATURE_PLAN_TRACEABILITY_STATEMENT,

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import "./helpers/mission-pilot-runtime";
 import {
 	buildAgentScenarioTurns,
 	buildQuestionnaireFixtureTurns,
-} from "../api/modules/missionPilot/routes/mission-pilot-agent-fixture-scenarios";
+} from "@nightworkers/mission-pilot/testing";
 
 describe("Mission Pilot fixture catalog migration", () => {
 	it("preserves Questionnaire assistant bytes and tool structure", () => {

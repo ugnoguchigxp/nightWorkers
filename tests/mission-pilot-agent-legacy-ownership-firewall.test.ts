@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { createSession } from "@nightworkers/mission-pilot/backend";
+import { resolveMissionPilotRuntimeOwnership } from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
-import { resolveMissionPilotRuntimeOwnership } from "../api/modules/missionPilot/agent/mission-pilot-runtime-ownership.service";
 
 const repositoryIds: string[] = [];
 

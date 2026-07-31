@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY } from "../../api/modules/agentsShare/contracts/provider-execution";
-import { codingAgentProviderExecutionPolicy } from "../../api/modules/codingAgent/adapters/coding-agent-provider.adapter";
 import {
 	missionPilotArtifactProviderExecutionPolicy,
 	missionPilotToolTurnProviderExecutionPolicy,
-} from "../../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
+} from "@nightworkers/mission-pilot/testing";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_STRUCTURED_PROVIDER_EXECUTION_POLICY } from "../../api/modules/agentsShare/contracts/provider-execution";
+import { codingAgentProviderExecutionPolicy } from "../../api/modules/codingAgent/adapters/coding-agent-provider.adapter";
 import { buildCodexStructuredExecutionMode } from "../../api/services/structured-llm/codex-provider";
 import { createSystemContextBindingSnapshot } from "../../api/systemContexts/catalog";
 

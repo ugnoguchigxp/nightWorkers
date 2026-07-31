@@ -1,11 +1,9 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
 import { createOpenApiRouter } from "../../../lib/openapi";
-import * as missionPilotRepo from "../../missionPilot";
 import * as queueRepo from "../../queue/queue-repository-commands";
 import { appendActivityEvent } from "../nightworkers.activity-persistence.repository";
 import * as repo from "../nightworkers.repository";
-import { codingAgentChatTrace } from "../nightworkers.trace-provenance";
 import * as verificationRepo from "../nightworkers.verification.repository";
 
 const createTaskMarkdownFixtureRoute = createRoute({
@@ -151,31 +149,6 @@ const createActivityFixtureRoute = createRoute({
 	},
 });
 
-const createTraceFixtureRoute = createRoute({
-	method: "post",
-	path: "/e2e/fixtures/trace-events",
-	request: {
-		body: {
-			content: {
-				"application/json": {
-					schema: z.object({ taskId: z.string().uuid() }),
-				},
-			},
-		},
-	},
-	responses: {
-		201: {
-			content: {
-				"application/json": {
-					schema: z.object({ sessionId: z.string().uuid() }),
-				},
-			},
-			description: "Create isolated Mission Pilot trace fixtures.",
-		},
-		404: { description: "Route unavailable" },
-	},
-});
-
 export const e2eFixtureRouter = createOpenApiRouter()
 	.openapi(createTaskMarkdownFixtureRoute, async (c) => {
 		if (
@@ -288,51 +261,4 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			});
 		}
 		return c.json({ count: input.sequences.length }, 201);
-	})
-	.openapi(createTraceFixtureRoute, async (c) => {
-		if (
-			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
-			c.req.header("x-nightworkers-e2e") !== "1"
-		) {
-			return c.json({ error: "Not found" }, 404);
-		}
-		const { taskId } = c.req.valid("json");
-		const session = await missionPilotRepo.getSessionByTaskId(taskId);
-		if (!session)
-			return c.json({ error: "Mission Pilot session not found" }, 404);
-		await appendActivityEvent({
-			taskId,
-			turnId: "pilot-turn",
-			kind: "runtime.decision",
-			source: "e2e",
-			status: "completed",
-			text: "MISSION_PILOT_THOUGHT_ONLY",
-			payloadJson: { missionPilotSessionId: session.id },
-			dedupeKey: `e2e:pilot:${taskId}`,
-			trace: missionPilotRepo.missionPilotThoughtTrace({
-				sessionId: session.id,
-			}),
-		});
-		await appendActivityEvent({
-			taskId,
-			turnId: "coding-turn",
-			kind: "assistant.message",
-			source: "worker",
-			status: "completed",
-			text: "CODING_AGENT_CHAT_ONLY",
-			payloadJson: {},
-			dedupeKey: `e2e:coding:${taskId}`,
-			trace: codingAgentChatTrace(),
-		});
-		await repo.createTaskMessage({
-			taskId,
-			role: "assistant",
-			content: "MISSION_PILOT_ARTIFACT_BODY",
-			messageType: "markdown_document",
-			payloadJson: { intent: "feature_plan" },
-			trace: missionPilotRepo.missionPilotArtifactTrace({
-				sessionId: session.id,
-			}),
-		});
-		return c.json({ sessionId: session.id }, 201);
 	});

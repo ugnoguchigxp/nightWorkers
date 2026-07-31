@@ -8,8 +8,8 @@ import {
 import type {
 	DesignQuestionnaireAnswer,
 	MissionPilotAnswerEvidence,
-	MissionPilotAuthorization,
 	MissionPilotArtifactCorrectionStatus,
+	MissionPilotAuthorization,
 	MissionPilotPlanReview,
 	MissionPilotPreQueueDiagnostic,
 	MissionPilotQueueHandoff,

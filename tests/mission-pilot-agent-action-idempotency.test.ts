@@ -1,10 +1,23 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import {
 	createSession,
 	missionPilotActionExecutions,
 	missionPilotAgentTurns,
 	missionPilotToolCalls,
 } from "@nightworkers/mission-pilot/backend";
+import {
+	claimAgentPlay,
+	claimMissionPilotActionExecution,
+	claimMissionPilotAgentTurn,
+	claimMissionPilotToolCall,
+	completeMissionPilotActionExecution,
+	createMissionPilotActionExecutionIntent,
+	MissionPilotActionExecutionConflictError,
+	missionPilotTaskActionPort,
+	persistMissionPilotProviderTurn,
+	reconcileMissionPilotActionExecutionReceipts,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -19,20 +32,6 @@ import {
 	taskOperatorCommandReceipts,
 	tasks,
 } from "../api/db/schema";
-import {
-	claimMissionPilotActionExecution,
-	completeMissionPilotActionExecution,
-	createMissionPilotActionExecutionIntent,
-	MissionPilotActionExecutionConflictError,
-	reconcileMissionPilotActionExecutionReceipts,
-} from "../api/modules/missionPilot/agent/mission-pilot-action-execution.repository";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import {
-	claimMissionPilotAgentTurn,
-	claimMissionPilotToolCall,
-	persistMissionPilotProviderTurn,
-} from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
-import { missionPilotTaskActionPort } from "../api/modules/missionPilot/agent/mission-pilot-task-action.adapter";
 import * as nightworkersService from "../api/modules/nightworkers/nightworkers.service";
 
 const repositoryIds: string[] = [];

@@ -1,12 +1,12 @@
+import {
+	boundMissionPilotCompactionInput,
+	boundMissionPilotProviderConversation,
+	missionPilotDigest,
+	missionPilotToolDefinitions,
+	sliceMissionPilotUtf8Page,
+} from "@nightworkers/mission-pilot/testing";
 import { describe, expect, it } from "vitest";
 import { sliceUtf8ContentPage } from "../api/modules/agentsShare";
-import {
-	missionPilotDigest,
-	sliceMissionPilotUtf8Page,
-} from "../api/modules/missionPilot/agent/mission-pilot-content-page";
-import { boundMissionPilotCompactionInput } from "../api/modules/missionPilot/agent/mission-pilot-context-envelope";
-import { boundMissionPilotProviderConversation } from "../api/modules/missionPilot/agent/mission-pilot-conversation-query.repository";
-import { missionPilotToolDefinitions } from "../api/modules/missionPilot/agent/mission-pilot-tools";
 import { projectTaskOperatorHead } from "../api/modules/taskOperator/projections/task-operator-head.projection";
 import type { ProviderToolMessage } from "../api/services/structured-llm/public";
 import {

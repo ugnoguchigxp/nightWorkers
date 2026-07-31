@@ -1,7 +1,7 @@
 import fs from "node:fs";
+import { missionPilotArtifactProviderExecutionPolicy } from "@nightworkers/mission-pilot/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { missionPilotArtifactProviderExecutionPolicy } from "../../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
 import type {
 	RuntimeSessionStateLookup,
 	RuntimeSessionStateStore,

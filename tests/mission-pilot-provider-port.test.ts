@@ -1,29 +1,24 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import { createSession } from "@nightworkers/mission-pilot/backend";
+import {
+	appendMissionPilotTaskEvent,
+	authorizeMissionPilotProviderCall,
+	callMissionPilotProviderCandidates,
+	cancelScheduledMissionPilotAgentWake,
+	claimAgentPlay,
+	claimMissionPilotAgentTurn,
+	listPendingMissionPilotTaskEvents,
+	MissionPilotProviderRetryScheduledError,
+	missionPilotToolTurnProviderExecutionPolicy,
+	retryMissionPilotProviderCall,
+	scheduleMissionPilotAgentWakeAtNextEvent,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
-import {
-	authorizeMissionPilotProviderCall,
-	missionPilotToolTurnProviderExecutionPolicy,
-} from "../api/modules/missionPilot/adapters/mission-pilot-provider.adapter";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import {
-	cancelScheduledMissionPilotAgentWake,
-	scheduleMissionPilotAgentWakeAtNextEvent,
-} from "../api/modules/missionPilot/agent/mission-pilot-agent-wake.service";
-import { claimMissionPilotAgentTurn } from "../api/modules/missionPilot/agent/mission-pilot-conversation.repository";
-import {
-	callMissionPilotProviderCandidates,
-	MissionPilotProviderRetryScheduledError,
-	retryMissionPilotProviderCall,
-} from "../api/modules/missionPilot/agent/mission-pilot-provider.port";
-import {
-	appendMissionPilotTaskEvent,
-	listPendingMissionPilotTaskEvents,
-} from "../api/modules/missionPilot/agent/mission-pilot-task-event.repository";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	callProviderToolTurn,

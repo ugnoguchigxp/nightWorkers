@@ -25,6 +25,7 @@ vi.mock("../api/services/settings/general-settings", async (importOriginal) => {
 	};
 });
 
+import { buildMissionPilotSystemContext } from "@nightworkers/mission-pilot/testing";
 import { buildCodingAgentSystemContext } from "../api/modules/codingAgent/context/system-context";
 import { renderCodingAgentRuntimeSystemContext } from "../api/modules/codingAgent/context/todo-prompt-context";
 import { buildCodexRuntimePromptParts } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
@@ -32,7 +33,6 @@ import {
 	buildInitialNativeApiHistory,
 	extractNativeApiSystemContextAudit,
 } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-history";
-import { buildMissionPilotSystemContext } from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
 import {
 	bindSystemContextCatalog,
 	bindSystemContextCatalogSnapshot,
@@ -564,19 +564,19 @@ describe("S11t SystemContext catalog", () => {
 				"ユーザー直結のCoding Agentを開始する前に",
 			],
 			[
-				"../api/modules/missionPilot/prompts/mission-pilot-system-context.ts",
+				"../packages/mission-pilot/src/backend/runtime/prompts/mission-pilot-system-context.ts",
 				"Playでpush",
 			],
 			[
-				"../api/modules/missionPilot/prompts/mission-pilot-plan-review.ts",
+				"../packages/mission-pilot/src/backend/runtime/prompts/mission-pilot-plan-review.ts",
 				"Queue投入前",
 			],
 			[
-				"../api/modules/missionPilot/agent/mission-pilot-agent-runtime.ts",
+				"../packages/mission-pilot/src/backend/runtime/agent/mission-pilot-agent-runtime.ts",
 				"[Mission Pilot 現在のStep文脈]",
 			],
 			[
-				"../api/modules/missionPilot/adapters/mission-pilot-provider.adapter.ts",
+				"../packages/mission-pilot/src/backend/runtime/adapters/mission-pilot-provider.adapter.ts",
 				"Mission Pilotのtool判断専用レーンです。",
 			],
 			[

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import "./helpers/mission-pilot-runtime";
 import {
 	attachArtifactCorrectionRequests,
 	buildMissionPilotThoughtEntries,
-} from "../api/modules/missionPilot/mission-pilot-execution-query.service";
+} from "@nightworkers/mission-pilot/testing";
 
 describe("Mission Pilot execution query", () => {
 	it("backfills persisted correction instructions into existing activity events", () => {

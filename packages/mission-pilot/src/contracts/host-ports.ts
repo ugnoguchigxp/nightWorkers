@@ -1,5 +1,5 @@
-import type { MissionPilotRealtimeEvent } from "./realtime";
 import type { MissionPilotPrincipal } from "./principal";
+import type { MissionPilotRealtimeEvent } from "./realtime";
 
 export type MissionPilotPublicResourceQuery = {
 	taskId: string;

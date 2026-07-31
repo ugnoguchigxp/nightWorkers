@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
-import { beforeAll, describe, expect, it } from "vitest";
-import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {
 	missionPilotArtifactTrace,
 	missionPilotThoughtTrace,
-} from "../api/modules/missionPilot";
+} from "@nightworkers/mission-pilot/backend";
+import { beforeAll, describe, expect, it } from "vitest";
+import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import {
 	enqueueActivityEvent,
 	flushActivityEventQueue,

@@ -32,7 +32,9 @@ for (const file of walk(path.join(root, "api/modules/codingAgent"))) {
 		errors.push(`${relative}: Coding Agent must not reference Mission Pilot`);
 }
 
-for (const file of walk(path.join(root, "api/modules/missionPilot"))) {
+for (const file of walk(
+	path.join(root, "packages/mission-pilot/src/backend/runtime"),
+)) {
 	const relative = path.relative(root, file);
 	if (relative.includes(`${path.sep}routes${path.sep}`) && relative.includes("fixture"))
 		continue;
@@ -72,13 +74,13 @@ for (const file of [
 		errors.push(`${relative}: requester provenance must not select Coding Agent behavior`);
 }
 
-forbid("api/modules/missionPilot/agent/mission-pilot-task-read.adapter.ts", [
+forbid("packages/mission-pilot/src/backend/runtime/agent/mission-pilot-task-read.adapter.ts", [
 	[/db\/(?:schema|client)/, "Task read adapter must use Task Operator public queries"],
 ]);
-forbid("api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts", [
+forbid("packages/mission-pilot/src/backend/runtime/agent/mission-pilot-task-action.adapter.ts", [
 	[/db\/schema(?:-task-execution)?/, "Task action adapter must not read domain tables"],
 ]);
-forbid("api/modules/missionPilot/agent/mission-pilot-action-command-executor.ts", [
+forbid("packages/mission-pilot/src/backend/runtime/agent/mission-pilot-action-command-executor.ts", [
 	[/start-task-run|startTaskRun\(/, "Mission Pilot must use StartCodingAgentRun through Task Operator"],
 ]);
 forbid("api/workers/task-run-worker.ts", [

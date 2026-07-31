@@ -1,6 +1,10 @@
 import { serve } from "@hono/node-server";
 import app, { nodeWebSocket } from "./app";
-import { bootstrapComposedMissionPilotStorage } from "./composition/mission-pilot";
+import {
+	bootstrapComposedMissionPilotStorage,
+	createMissionPilotDependencies,
+	startComposedMissionPilotRuntime,
+} from "./composition/mission-pilot";
 import { config, persistBootstrapSettings } from "./config";
 import { ensureNightWorkersSchema } from "./db/bootstrap";
 import { client } from "./db/client";
@@ -10,10 +14,6 @@ import {
 	logEvent,
 } from "./lib/logger";
 import { initializeCodingAgentRunHandlers } from "./modules/codingAgent";
-import {
-	reconcileMissionPilotStartup,
-	submitDueQuestionnaireDrafts,
-} from "./modules/missionPilot";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
@@ -180,6 +180,9 @@ export async function createNightWorkersServer(
 			},
 		},
 	});
+	const missionPilotRuntime = await startComposedMissionPilotRuntime(
+		createMissionPilotDependencies(),
+	);
 	migrateLegacyApplicationSettingSecrets();
 	await persistBootstrapSettings();
 	const repositoryIdentityPreview =
@@ -221,7 +224,6 @@ export async function createNightWorkersServer(
 			},
 		});
 	});
-	await reconcileMissionPilotStartup();
 	let queueReconcileInFlight: Promise<void> | null = null;
 	const reconcileQueue = (reason: "startup" | "scheduled") => {
 		if (queueReconcileInFlight) return queueReconcileInFlight;
@@ -298,19 +300,6 @@ export async function createNightWorkersServer(
 		fxRefreshIntervalMs,
 	);
 	fxRefreshTimer.unref?.();
-	const missionPilotQuestionnaireTimer = setInterval(() => {
-		void submitDueQuestionnaireDrafts().catch((error) => {
-			logEvent({
-				channel: "api",
-				level: "error",
-				message: "mission pilot questionnaire scheduler failed",
-				meta: {
-					errorMessage: error instanceof Error ? error.message : String(error),
-				},
-			});
-		});
-	}, 1_000);
-	missionPilotQuestionnaireTimer.unref?.();
 	let closed = false;
 	let retentionTimer: NodeJS.Timeout | null = null;
 	const scheduleRetentionSweep = () => {
@@ -350,7 +339,7 @@ export async function createNightWorkersServer(
 	const close = async (signal: NodeJS.Signals | "manual" = "manual") => {
 		if (closed) return;
 		closed = true;
-		clearInterval(missionPilotQuestionnaireTimer);
+		await missionPilotRuntime.stop();
 		if (retentionTimer) clearTimeout(retentionTimer);
 		unsubscribeRetentionReload();
 		clearInterval(fxRefreshTimer);

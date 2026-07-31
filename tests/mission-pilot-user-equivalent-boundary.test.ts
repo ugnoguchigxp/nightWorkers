@@ -16,7 +16,7 @@ function files(directory: string): string[] {
 }
 
 function activeMissionPilotSources() {
-	return files(path.join(root, "api/modules/missionPilot"))
+	return files(path.join(root, "packages/mission-pilot/src/backend/runtime"))
 		.filter(
 			(file) =>
 				!(
@@ -69,7 +69,7 @@ describe("Mission Pilot user-equivalent boundary", () => {
 		const source = fs.readFileSync(
 			path.join(
 				root,
-				"api/modules/missionPilot/mission-pilot-initial-prompt.service.ts",
+				"packages/mission-pilot/src/backend/runtime/mission-pilot-initial-prompt.service.ts",
 			),
 			"utf8",
 		);
@@ -81,7 +81,10 @@ describe("Mission Pilot user-equivalent boundary", () => {
 
 	it("does not wake the agent merely because a Coding Agent Run started", () => {
 		const source = fs.readFileSync(
-			path.join(root, "api/modules/missionPilot/mission-pilot.service.ts"),
+			path.join(
+				root,
+				"packages/mission-pilot/src/backend/runtime/mission-pilot.service.ts",
+			),
 			"utf8",
 		);
 		expect(source).toContain('if (event.type === "task.run.started") return;');
@@ -89,7 +92,7 @@ describe("Mission Pilot user-equivalent boundary", () => {
 
 	it("removes legacy repository inspection fields from private context", async () => {
 		const { sanitizeMissionPilotContext } = await import(
-			"../api/modules/missionPilot/mission-pilot-context"
+			"@nightworkers/mission-pilot/testing"
 		);
 		expect(
 			sanitizeMissionPilotContext({
@@ -145,7 +148,7 @@ describe("Mission Pilot user-equivalent boundary", () => {
 
 	it("exposes only the seven generic Mission Pilot tools", async () => {
 		const { missionPilotToolDefinitions } = await import(
-			"../api/modules/missionPilot/agent/mission-pilot-tools"
+			"@nightworkers/mission-pilot/testing"
 		);
 		expect(missionPilotToolDefinitions().map((tool) => tool.name)).toEqual([
 			"read_task_operator_view",

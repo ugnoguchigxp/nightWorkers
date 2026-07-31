@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { executeMissionPilotAction } from "../api/modules/missionPilot/agent/mission-pilot-action-command-executor";
+import "./helpers/mission-pilot-runtime";
+import {
+	executeMissionPilotAction,
+	setMissionPilotDelegatedAuthorizationForTesting,
+} from "@nightworkers/mission-pilot/testing";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	appendMessage: vi.fn(),
@@ -19,18 +23,6 @@ vi.mock("../api/modules/questionnaire", async (importOriginal) => ({
 	questionnaireSessionBelongsToTask: mocks.questionnaireBelongsToTask,
 }));
 
-vi.mock(
-	"../api/modules/missionPilot/mission-pilot-delegation",
-	async (importOriginal) => ({
-		...(await importOriginal<
-			typeof import("../api/modules/missionPilot/mission-pilot-delegation")
-		>()),
-		missionPilotDelegatedAuthorizationPort: {
-			authorize: vi.fn(async () => ({ capabilities: ["plan"] })),
-		},
-	}),
-);
-
 vi.mock("../api/modules/taskOperator/application/task-operator.query", () => ({
 	readTaskOperatorProjection: vi.fn(async () => ({
 		task: { revision: 1, status: "planning" },
@@ -42,12 +34,17 @@ vi.mock("../api/modules/taskOperator/application/task-operator.query", () => ({
 }));
 
 beforeEach(() => {
+	setMissionPilotDelegatedAuthorizationForTesting({
+		authorize: vi.fn(async () => ({ capabilities: ["plan"] })),
+	});
 	mocks.appendMessage.mockReset().mockResolvedValue({ id: "message-1" });
 	mocks.generateFollowUp
 		.mockReset()
 		.mockResolvedValue({ id: "questionnaire-session" });
 	mocks.questionnaireBelongsToTask.mockReset().mockResolvedValue(true);
 });
+
+afterEach(() => setMissionPilotDelegatedAuthorizationForTesting(null));
 
 function delegatedPrincipal() {
 	return {

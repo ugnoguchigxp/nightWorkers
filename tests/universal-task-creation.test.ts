@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import * as missionPilotRepo from "@nightworkers/mission-pilot/backend";
 import {
 	missionPilotAgentSessions,
@@ -6,22 +7,26 @@ import {
 	missionPilotSessions,
 	missionPilotTaskEventInbox,
 } from "@nightworkers/mission-pilot/backend";
+import {
+	claimAgentPlay,
+	claimAgentStop,
+	initializeMissionPilotAgentTaskMessageEvents,
+	play,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories } from "../api/db/schema";
-import {
-	claimAgentPlay,
-	claimAgentStop,
-} from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import { play } from "../api/modules/missionPilot/mission-pilot.service";
 import { createTask } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { appendTaskMessage } from "../api/modules/nightworkers/nightworkers.workbench-message.service";
 
 const repositoryIds: string[] = [];
 
-beforeAll(() => ensureNightWorkersSchema());
+beforeAll(() => {
+	ensureNightWorkersSchema();
+	initializeMissionPilotAgentTaskMessageEvents();
+});
 afterEach(async () => {
 	for (const repositoryId of repositoryIds.splice(0)) {
 		await db.delete(repositories).where(eq(repositories.id, repositoryId));

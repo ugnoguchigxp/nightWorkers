@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
 import {
 	missionPilotArtifactTrace,
 	missionPilotInitialPromptTrace,
 	missionPilotThoughtTrace,
-} from "../api/modules/missionPilot";
+} from "@nightworkers/mission-pilot/backend";
+import { describe, expect, it } from "vitest";
 import {
 	codingAgentChatTrace,
 	resolveActivityTrace,

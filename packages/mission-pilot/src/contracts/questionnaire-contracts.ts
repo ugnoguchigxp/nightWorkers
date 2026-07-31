@@ -17,3 +17,6 @@ export const designQuestionnaireAnswerSchema = z.object({
 export type DesignQuestionnaireAnswer = z.infer<
 	typeof designQuestionnaireAnswerSchema
 >;
+
+// biome-ignore lint/suspicious/noExplicitAny: opaque Task Operator questionnaire projection
+export type DesignQuestionnaireSession = any;

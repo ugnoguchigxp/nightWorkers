@@ -66,7 +66,7 @@ describe("Mission Pilot Questionnaire artifact selection", () => {
 
 	it.skip("passes rendered Questionnaire answers to the semantic selector", async () => {
 		const { selectQuestionnaireArtifacts } = await import(
-			"../api/modules/missionPilot/planning/mission-pilot-questionnaire-artifact-selection.service"
+			"@nightworkers/mission-pilot/testing"
 		);
 		callStructuredOutputWithRepair.mockResolvedValue({
 			value: {

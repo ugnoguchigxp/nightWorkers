@@ -1,17 +1,16 @@
 import { MISSION_PILOT_TASK_EVENT_TYPES } from "@nightworkers/mission-pilot/contracts";
-import { describe, expect, it } from "vitest";
-import { MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS } from "../api/modules/missionPilot/agent/mission-pilot-agent-control-tools";
-import {
-	getMissionPilotActionDefinition,
-	getMissionPilotActionUnavailableReason,
-} from "../api/modules/missionPilot/agent/mission-pilot-task-action.registry";
-import { missionPilotToolDefinitions } from "../api/modules/missionPilot/agent/mission-pilot-tools";
-import { projectMissionPilotAgentVisibleItems } from "../api/modules/missionPilot/mission-pilot-execution-query.service";
+import "./helpers/mission-pilot-runtime";
 import {
 	applyCurrentMissionPilotSystemContext,
+	getMissionPilotActionDefinition,
+	getMissionPilotActionUnavailableReason,
 	getMissionPilotPlanEntryContext,
 	getMissionPilotSystemContext,
-} from "../api/modules/missionPilot/prompts/mission-pilot-system-context";
+	MISSION_PILOT_AGENT_CONTROL_TOOL_DEFINITIONS,
+	missionPilotToolDefinitions,
+	projectMissionPilotAgentVisibleItems,
+} from "@nightworkers/mission-pilot/testing";
+import { describe, expect, it } from "vitest";
 
 describe("Mission Pilot autonomous agent hardening contract", () => {
 	it("owns Questionnaire, routing, and Artifact decisions", () => {

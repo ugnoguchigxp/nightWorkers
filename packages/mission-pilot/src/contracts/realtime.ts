@@ -6,6 +6,4 @@ export type MissionPilotRealtimeEvent = {
 	payload: MissionPilotControlSummary;
 };
 
-export type MissionPilotRealtimeExtensionHandler = (
-	event: unknown,
-) => boolean;
+export type MissionPilotRealtimeExtensionHandler = (event: unknown) => boolean;

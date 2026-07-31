@@ -1,17 +1,20 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import {
 	createSession,
 	missionPilotSessions,
 } from "@nightworkers/mission-pilot/backend";
+import {
+	buildMissionPilotCurrentStepContext,
+	claimAgentPlay,
+	createMissionPilotTaskOperatorAccess,
+	missionPilotTaskReadPort,
+} from "@nightworkers/mission-pilot/testing";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
-import { claimAgentPlay } from "../api/modules/missionPilot/agent/mission-pilot-agent-session.repository";
-import { buildMissionPilotCurrentStepContext } from "../api/modules/missionPilot/agent/mission-pilot-current-step-context";
-import { missionPilotTaskReadPort } from "../api/modules/missionPilot/agent/mission-pilot-task-read.adapter";
-import { createMissionPilotTaskOperatorAccess } from "../api/modules/missionPilot/mission-pilot-delegation";
 import {
 	executeTaskOperatorCommand,
 	humanTaskOperatorQueryContext,

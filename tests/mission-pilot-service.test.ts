@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import "./helpers/mission-pilot-runtime";
 import {
 	createSession,
 	getSessionByTaskId,
@@ -20,9 +21,7 @@ import {
 import { sendTaskOperatorUserMessage } from "../api/modules/task";
 import { nightWorkersRealtimeBroker } from "../api/services/realtime/nightworkers-ws";
 
-const service = await import(
-	"../api/modules/missionPilot/mission-pilot.service"
-);
+const service = await import("@nightworkers/mission-pilot/testing");
 const repositoryIds: string[] = [];
 let unregisterIntakeHandler: (() => void) | null = null;
 const providerReady = {
