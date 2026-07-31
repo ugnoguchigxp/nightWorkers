@@ -222,7 +222,10 @@ describe("NightWorkers workbench routes", () => {
 							text: "Which boundary should be fixed first?",
 							kind: "design_decision",
 							type: "radio",
-							options: ["API", "UI"],
+							options: [
+								{ label: "API", recommended: true },
+								{ label: "UI", recommended: false },
+							],
 						},
 					],
 				}),
@@ -303,22 +306,25 @@ describe("NightWorkers workbench routes", () => {
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(0);
 	});
 
-	it("starts the normal Coding Agent without a Mission Pilot envelope while stopped", async () => {
+	it("starts the normal Coding Agent without a Mission Pilot session or envelope", async () => {
 		const project = await repo.createRepository({
 			name: `TEST: Normal Coding Agent ${crypto.randomUUID()}`,
 			localPath: "/Users/y.noguchi/Code/nightWorkers",
 			branch: "main",
 		});
-		const createResponse = await app.request(
-			"http://localhost/api/workbench/sessions",
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
-				body: JSON.stringify({ repositoryId: project.id }),
-			},
-		);
-		expect(createResponse.status).toBe(201);
-		const task = await createResponse.json();
+		const task = await repo.createTask({
+			repositoryId: project.id,
+			title: "Standalone Coding Agent",
+			objective: "通常の Coding Agent で変更を実装する",
+			acceptanceCriteria: "Mission Pilot session なしで Run が開始する",
+			status: "draft",
+		});
+		expect(
+			await db
+				.select({ id: missionPilotSessions.id })
+				.from(missionPilotSessions)
+				.where(eq(missionPilotSessions.taskId, task.id)),
+		).toHaveLength(0);
 
 		const response = await app.request(
 			`http://localhost/api/workbench/sessions/${task.id}/messages`,
@@ -354,15 +360,11 @@ describe("NightWorkers workbench routes", () => {
 			role: "evaluation",
 		});
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		const [pilot] = await db
-			.select({ id: missionPilotSessions.id })
-			.from(missionPilotSessions)
-			.where(eq(missionPilotSessions.taskId, task.id));
 		expect(
 			await db
 				.select()
 				.from(missionPilotTaskEventInbox)
-				.where(eq(missionPilotTaskEventInbox.sessionId, pilot?.id ?? "")),
+				.where(eq(missionPilotTaskEventInbox.taskId, task.id)),
 		).toHaveLength(0);
 	});
 
