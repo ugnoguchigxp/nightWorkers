@@ -30,8 +30,7 @@ export {
 	configureMissionPilotFrontendHost,
 	type MissionPilotFrontendHost,
 } from "./host";
-export { enMissionPilot } from "./i18n/en";
-export { jaMissionPilot } from "./i18n/ja";
+export { enMissionPilot, jaMissionPilot } from "./i18n";
 export { resolveMissionPilotArtifactFocus } from "./missionPilotArtifactFocus";
 export {
 	fetchMissionPilotControl,

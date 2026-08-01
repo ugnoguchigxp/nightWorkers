@@ -7,7 +7,7 @@ import {
 import vitestConfig from "../vitest.config";
 
 describe("release verification plan", () => {
-	it("keeps the default verify gate free of expensive and live checks", () => {
+	it("adds the weekly dependency audit without expensive and live checks", () => {
 		const taskIds = taskSets.verify.flatMap((phase) =>
 			phase.tasks.map((task) => task.id),
 		);
@@ -19,6 +19,7 @@ describe("release verification plan", () => {
 			"typecheck",
 			"lint",
 			"supervisor-regression",
+			"weekly-dependency-audit",
 		]);
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining([
@@ -28,8 +29,19 @@ describe("release verification plan", () => {
 				"desktop-build",
 				"desktop-sidecar-smoke",
 				"desktop-packaged-smoke",
+				"dependency-audit",
 			]),
 		);
+	});
+
+	it("keeps the weekly audit out of unconditional full and release gates", () => {
+		for (const target of ["full", "release"] as const) {
+			const taskIds = taskSets[target].flatMap((phase) =>
+				phase.tasks.map((task) => task.id),
+			);
+			expect(taskIds).toContain("dependency-audit");
+			expect(taskIds).not.toContain("weekly-dependency-audit");
+		}
 	});
 
 	it("keeps E2E in the full deterministic gate", () => {

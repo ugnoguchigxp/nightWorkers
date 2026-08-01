@@ -44,7 +44,7 @@ jobs:
           retention-days: 7
 
   dependency-audit:
-    name: High Critical dependency audit
+    name: Moderate+ dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

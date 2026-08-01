@@ -1,5 +1,14 @@
 {
   "schemaVersion": 1,
-  "minimumSeverity": "high",
-  "exceptions": []
+  "minimumSeverity": "moderate",
+  "exceptions": [
+    {
+      "advisoryId": 1102341,
+      "package": "esbuild",
+      "owner": "nightworkers-maintainers",
+      "expiresAt": "2026-11-01T00:00:00.000Z",
+      "reason": "最新の drizzle-kit 0.31.10 が @esbuild-kit/esm-loader 経由で esbuild 0.18.20 を固定しており、安全に更新できる上流版がまだないため。",
+      "mitigation": "対象は開発専用の migration CLI に限定し、脆弱な esbuild serve 機能を外部公開しない。週次 audit で上流更新を再確認する。"
+    }
+  ]
 }

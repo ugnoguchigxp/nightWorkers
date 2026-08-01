@@ -34,6 +34,15 @@ export function useArtifactPaneExportActions(input: {
 			setExportError(translate("artifact.exportMarkdownFailed"));
 		}
 	};
+	const handleDownloadCsv = () => {
+		if (descriptor.csv === undefined) return;
+		try {
+			saveTextFile(descriptor.csv, `${descriptor.fileStem}.csv`);
+			setExportError(null);
+		} catch {
+			setExportError(translate("artifact.exportCsvFailed"));
+		}
+	};
 	const handleDownloadImage = async () => {
 		if (!artifactCaptureRef.current || isExportingImage) return;
 		setIsExportingImage(true);
@@ -59,6 +68,7 @@ export function useArtifactPaneExportActions(input: {
 		artifactCaptureRef,
 		handleCopyMarkdown,
 		handleDownloadMarkdown,
+		handleDownloadCsv,
 		handleDownloadImage,
 	};
 }

@@ -43,6 +43,10 @@ export default defineConfig({
 				__dirname,
 				"./packages/mission-pilot/src/frontend/index.ts",
 			),
+			"@nightworkers/mission-pilot/i18n": path.resolve(
+				__dirname,
+				"./packages/mission-pilot/src/frontend/i18n/index.ts",
+			),
 			"@nightworkers/mission-pilot/testing": path.resolve(
 				__dirname,
 				"./packages/mission-pilot/src/testing/index.ts",

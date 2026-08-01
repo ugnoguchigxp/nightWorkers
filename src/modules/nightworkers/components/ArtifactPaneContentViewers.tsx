@@ -1,11 +1,19 @@
+import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	BlueprintArtifactViewer,
-	ComponentDesignArtifactViewer,
-	mockBlueprintToPreviewBlueprintSafely,
-} from "../../blueprint-preview";
+import { mockBlueprintToPreviewBlueprintSafely } from "../../blueprint-preview";
 import type { ProjectFileEntry } from "../types";
 import { DiffViewer, MarkdownViewer, ProjectTree } from "./ArtifactFileViewers";
+
+const BlueprintArtifactViewer = lazy(() =>
+	import("../../blueprint-preview").then((module) => ({
+		default: module.BlueprintArtifactViewer,
+	})),
+);
+const ComponentDesignArtifactViewer = lazy(() =>
+	import("../../blueprint-preview").then((module) => ({
+		default: module.ComponentDesignArtifactViewer,
+	})),
+);
 
 export function FilesOutline({
 	isFilesLoading,
@@ -115,13 +123,17 @@ export function BlueprintViewer({
 		);
 	}
 	return (
-		<BlueprintArtifactViewer
-			sessionId={sessionId}
-			messageId={messageId}
-			blueprint={previewBlueprint}
-			validation={validation}
-			generation={generation}
-		/>
+		<Suspense
+			fallback={<ArtifactViewerLoading label={t("artifact.loading")} />}
+		>
+			<BlueprintArtifactViewer
+				sessionId={sessionId}
+				messageId={messageId}
+				blueprint={previewBlueprint}
+				validation={validation}
+				generation={generation}
+			/>
+		</Suspense>
 	);
 }
 
@@ -143,7 +155,24 @@ export function ComponentDesignViewer({
 				onOpenProjectFile={onOpenProjectFile}
 			/>
 		);
-	return <ComponentDesignArtifactViewer artifact={artifact} />;
+	return (
+		<Suspense
+			fallback={<ArtifactViewerLoading label={t("artifact.loading")} />}
+		>
+			<ComponentDesignArtifactViewer artifact={artifact} />
+		</Suspense>
+	);
+}
+
+function ArtifactViewerLoading({ label }: { label: string }) {
+	return (
+		<div
+			className="flex h-full items-center justify-center text-xs text-slate-500"
+			role="status"
+		>
+			{label}
+		</div>
+	);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

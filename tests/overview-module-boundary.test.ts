@@ -44,7 +44,7 @@ describe("Overview module boundary", () => {
 		expect(exists("src/modules/nightworkers/types/overview.ts")).toBe(false);
 		expect(
 			read("src/modules/nightworkers/components/NightWorkersShellLayout.tsx"),
-		).toContain('from "@/modules/overview"');
+		).toContain('import("@/modules/overview")');
 		expect(
 			read("src/modules/nightworkers/nightWorkersCommands.ts"),
 		).not.toContain("fetchOverview");

@@ -1,7 +1,9 @@
 import {
 	type Dispatch,
+	lazy,
 	type MutableRefObject,
 	type SetStateAction,
+	Suspense,
 	useCallback,
 	useState,
 } from "react";
@@ -23,7 +25,6 @@ import type {
 	WorkbenchChatIntent,
 } from "../types";
 import type { buildArtifactContext } from "../workbenchSelectors";
-import { ArtifactPane } from "./ArtifactPane";
 import type { ArtifactPaneFocus } from "./nightworkers-shell-route-effects";
 import {
 	asProjectSafetyPolicy,
@@ -32,6 +33,10 @@ import {
 } from "./nightworkers-shell-utils";
 import { ThreadWorkspace } from "./ThreadWorkspace";
 import { TodoListPane } from "./TodoListPane";
+
+const ArtifactPane = lazy(() =>
+	import("./ArtifactPane").then((module) => ({ default: module.ArtifactPane })),
+);
 
 type ComposerModelOption = {
 	value: string;
@@ -362,90 +367,103 @@ export function NightWorkersShellThreadPanel(
 						/>
 					)
 				) : artifactPaneOpen ? (
-					<ArtifactPane
-						activeProject={workspace.activeProject}
-						activeSessionId={workspace.activeSessionId}
-						focusType={
-							artifactFocus.type === "project_tree"
-								? "project_tree"
-								: "artifact"
-						}
-						selectedArtifact={selectedArtifact}
-						taskMessages={workspace.taskMessages}
-						activityArtifacts={workspace.activityArtifacts}
-						latestRun={workspace.latestRun}
-						latestRunEvents={workspace.latestRunEvents}
-						fileEntries={workspace.projectFileEntries}
-						fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
-						expandedDirectories={workspace.expandedProjectDirectories}
-						loadingDirectories={workspace.loadingProjectDirectories}
-						selectedFile={workspace.selectedProjectFile}
-						selectedFilePath={workspace.selectedProjectFilePath}
-						isFilesLoading={workspace.isProjectFilesLoading}
-						isFileLoading={workspace.isProjectFileLoading}
-						projectDiff={workspace.projectDiff}
-						isDiffLoading={workspace.isProjectDiffLoading}
-						projectArtifactMode={
-							routeState.kind === "session" &&
-							routeState.artifact?.kind === "project_tree"
-								? routeState.artifact.mode
-								: "tree"
-						}
-						onProjectArtifactModeChange={(mode) => {
-							if (!workspace.activeSessionId) return;
-							onNavigate({
-								kind: "session",
-								sessionId: workspace.activeSessionId,
-								artifact: {
-									kind: "project_tree",
-									mode,
-									filePath: workspace.selectedProjectFilePath,
-								},
-							});
-						}}
-						onPlanWorkspaceTabChange={(tab) => {
-							if (!workspace.activeSessionId) return;
-							if (
-								routeState.kind === "session" &&
-								routeState.sessionId === workspace.activeSessionId &&
-								routeState.artifact?.kind === "plan_mode_workspace" &&
-								routeState.artifact.tab === tab
-							) {
-								return;
+					<Suspense fallback={<ArtifactPaneLoading />}>
+						<ArtifactPane
+							activeProject={workspace.activeProject}
+							activeSessionId={workspace.activeSessionId}
+							focusType={
+								artifactFocus.type === "project_tree"
+									? "project_tree"
+									: "artifact"
 							}
-							onNavigate({
-								kind: "session",
-								sessionId: workspace.activeSessionId,
-								artifact: { kind: "plan_mode_workspace", tab },
-							});
-						}}
-						onPlanWorkspaceArtifactContextChange={setPlanModeArtifactContext}
-						onToggleDirectory={workspace.toggleProjectDirectory}
-						onOpenFile={handleOpenProjectFile}
-						onRefreshFiles={workspace.refreshProjectFiles}
-						onRefreshDiff={workspace.refreshProjectDiff}
-						onQueueSession={async () => {
-							await props.queueActiveSessionAndFocusTodo();
-						}}
-						onAddToQueue={props.addActiveSessionToQueue}
-						activeReviewSession={workspace.activeReviewSession}
-						gitCloseout={workspace.activeGitCloseout}
-						onCommitGitCloseout={workspace.commitRunGitCloseout}
-						onPushGitCloseout={workspace.pushRunGitCloseout}
-						activeTaskStatus={workspace.activeSession?.status ?? null}
-						onCompleteAndArchiveTask={(taskId, options) =>
-							workspace.archiveCompletedSession(taskId, options)
-						}
-						onRestoreArchivedTask={(taskId) =>
-							workspace.restoreArchivedSession(taskId)
-						}
-						isImplementationLocked={isActiveImplementationLocked}
-						onSubmitReviewPrompt={submitReviewPrompt}
-						isReviewPromptDisabled={workspace.isAgentThinking}
-					/>
+							selectedArtifact={selectedArtifact}
+							taskMessages={workspace.taskMessages}
+							activityArtifacts={workspace.activityArtifacts}
+							latestRun={workspace.latestRun}
+							latestRunEvents={workspace.latestRunEvents}
+							fileEntries={workspace.projectFileEntries}
+							fileEntriesByDirectory={workspace.projectFileEntriesByDirectory}
+							expandedDirectories={workspace.expandedProjectDirectories}
+							loadingDirectories={workspace.loadingProjectDirectories}
+							selectedFile={workspace.selectedProjectFile}
+							selectedFilePath={workspace.selectedProjectFilePath}
+							isFilesLoading={workspace.isProjectFilesLoading}
+							isFileLoading={workspace.isProjectFileLoading}
+							projectDiff={workspace.projectDiff}
+							isDiffLoading={workspace.isProjectDiffLoading}
+							projectArtifactMode={
+								routeState.kind === "session" &&
+								routeState.artifact?.kind === "project_tree"
+									? routeState.artifact.mode
+									: "tree"
+							}
+							onProjectArtifactModeChange={(mode) => {
+								if (!workspace.activeSessionId) return;
+								onNavigate({
+									kind: "session",
+									sessionId: workspace.activeSessionId,
+									artifact: {
+										kind: "project_tree",
+										mode,
+										filePath: workspace.selectedProjectFilePath,
+									},
+								});
+							}}
+							onPlanWorkspaceTabChange={(tab) => {
+								if (!workspace.activeSessionId) return;
+								if (
+									routeState.kind === "session" &&
+									routeState.sessionId === workspace.activeSessionId &&
+									routeState.artifact?.kind === "plan_mode_workspace" &&
+									routeState.artifact.tab === tab
+								) {
+									return;
+								}
+								onNavigate({
+									kind: "session",
+									sessionId: workspace.activeSessionId,
+									artifact: { kind: "plan_mode_workspace", tab },
+								});
+							}}
+							onPlanWorkspaceArtifactContextChange={setPlanModeArtifactContext}
+							onToggleDirectory={workspace.toggleProjectDirectory}
+							onOpenFile={handleOpenProjectFile}
+							onRefreshFiles={workspace.refreshProjectFiles}
+							onRefreshDiff={workspace.refreshProjectDiff}
+							onQueueSession={async () => {
+								await props.queueActiveSessionAndFocusTodo();
+							}}
+							onAddToQueue={props.addActiveSessionToQueue}
+							activeReviewSession={workspace.activeReviewSession}
+							gitCloseout={workspace.activeGitCloseout}
+							onCommitGitCloseout={workspace.commitRunGitCloseout}
+							onPushGitCloseout={workspace.pushRunGitCloseout}
+							activeTaskStatus={workspace.activeSession?.status ?? null}
+							onCompleteAndArchiveTask={(taskId, options) =>
+								workspace.archiveCompletedSession(taskId, options)
+							}
+							onRestoreArchivedTask={(taskId) =>
+								workspace.restoreArchivedSession(taskId)
+							}
+							isImplementationLocked={isActiveImplementationLocked}
+							onSubmitReviewPrompt={submitReviewPrompt}
+							isReviewPromptDisabled={workspace.isAgentThinking}
+						/>
+					</Suspense>
 				) : undefined
 			}
 		/>
+	);
+}
+
+function ArtifactPaneLoading() {
+	return (
+		<div
+			className="grid h-full min-h-40 place-items-center bg-[#0f1115] text-muted-foreground text-sm"
+			role="status"
+		>
+			Loading artifact…
+		</div>
 	);
 }
 

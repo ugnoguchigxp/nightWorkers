@@ -13,6 +13,7 @@ const publicExports = new Set([
 	"@nightworkers/mission-pilot/backend",
 	"@nightworkers/mission-pilot/contracts",
 	"@nightworkers/mission-pilot/frontend",
+	"@nightworkers/mission-pilot/i18n",
 	"@nightworkers/mission-pilot/testing",
 	"@nightworkers/mission-pilot/frontend.css",
 ]);

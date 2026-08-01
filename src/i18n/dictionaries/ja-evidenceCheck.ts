@@ -7,6 +7,49 @@ export const jaEvidenceCheck = {
 		"Spec に紐づく検証ドキュメントが見つかりません。",
 	"evidenceCheck.loading": "最新の証跡を読み込んでいます。",
 	"evidenceCheck.loadFailed": "最新の証跡を読み込めませんでした。",
+	"evidenceCheck.assurance.title": "テスト安全性",
+	"evidenceCheck.assurance.summary":
+		"安全にPass {{safePass}}/{{automated}} · 失敗 {{failed}} · 要確認 {{attention}}",
+	"evidenceCheck.assurance.evaluatedAt": "判定日時",
+	"evidenceCheck.assurance.source": "ソース",
+	"evidenceCheck.assurance.unavailable": "取得不可",
+	"evidenceCheck.assurance.yes": "はい",
+	"evidenceCheck.assurance.no": "いいえ",
+	"evidenceCheck.gateStatus.passed": "Pass",
+	"evidenceCheck.gateStatus.failed": "失敗",
+	"evidenceCheck.gateStatus.unknown": "未確認",
+	"evidenceCheck.assuranceStatus.safe_pass": "安全にPass",
+	"evidenceCheck.assuranceStatus.failed": "失敗",
+	"evidenceCheck.assuranceStatus.stale": "再実行が必要",
+	"evidenceCheck.assuranceStatus.not_run": "未実行",
+	"evidenceCheck.assuranceStatus.unmapped": "テスト未紐付け",
+	"evidenceCheck.assuranceStatus.details_missing": "詳細不足",
+	"evidenceCheck.assuranceStatus.manual": "手動確認",
+	"evidenceCheck.assuranceStatus.not_applicable": "対象外",
+	"evidenceCheck.assuranceStatus.pending": "判定待ち",
+	"evidenceCheck.assuranceReason.missing_test_definition_mapping":
+		"この条件に対応するテスト定義が見つかりません。",
+	"evidenceCheck.assuranceReason.test_execution_failed":
+		"対応するテストが失敗しています。",
+	"evidenceCheck.assuranceReason.source_snapshot_changed":
+		"テスト後にソースが変更されています。",
+	"evidenceCheck.assuranceReason.missing_successful_test_execution":
+		"成功したテスト実行を確認できません。",
+	"evidenceCheck.assuranceReason.missing_exact_test_case_result":
+		"このテストケース自身の成功結果を確認できません。",
+	"evidenceCheck.assuranceReason.full_verify_failed":
+		"全体検証ゲートが失敗しています。",
+	"evidenceCheck.assuranceReason.missing_successful_full_verify":
+		"成功した全体検証ゲートを確認できません。",
+	"evidenceCheck.assuranceReason.assurance_not_evaluated":
+		"安全性はまだ判定されていません。",
+	"evidenceCheck.test.execution": "実行結果",
+	"evidenceCheck.test.currentSource": "現在のソース",
+	"evidenceCheck.testStatus.passed": "Pass",
+	"evidenceCheck.testStatus.failed": "失敗",
+	"evidenceCheck.testStatus.skipped": "スキップ",
+	"evidenceCheck.testStatus.unknown": "不明",
+	"evidenceCheck.testStatus.not_run": "未実行",
 	"evidenceCheck.plan.title": "実装計画トレーサビリティ",
 	"evidenceCheck.plan.exactMatch":
 		"確定済み実装計画と Run Todo は完全一致しています。",

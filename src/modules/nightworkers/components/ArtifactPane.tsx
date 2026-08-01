@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	buildEvidenceCheckExportMarkdown,
 	buildEvidenceCheckPanelModel,
 	EvidenceCheckArtifactViewer,
 } from "../../codingAgent";
-import { PlanModeWorkspaceViewer } from "../../planMode";
-import {
-	ReviewStatusViewer,
-	resolveReviewImplementationCompletionReport,
-} from "../../review";
+import { resolveReviewImplementationCompletionReport } from "../../review";
 import type { PlanWorkspaceTab } from "../../specification";
 import {
 	type ArtifactExportDescriptor,
@@ -50,6 +46,17 @@ import {
 import { useArtifactPaneExportActions } from "./ArtifactPaneExportActions";
 import { useArtifactPaneSelection } from "./ArtifactPaneSelection";
 import { buildExportedArtifactContent } from "./ArtifactPaneVersions";
+
+const PlanModeWorkspaceViewer = lazy(() =>
+	import("../../planMode").then((module) => ({
+		default: module.PlanModeWorkspaceViewer,
+	})),
+);
+const ReviewStatusViewer = lazy(() =>
+	import("../../review").then((module) => ({
+		default: module.ReviewStatusViewer,
+	})),
+);
 
 type ArtifactPaneProps = {
 	activeProject: Repository | null;
@@ -358,103 +365,114 @@ export function ArtifactPane({
 					className="min-w-0 flex-1 overflow-hidden bg-[#1e1e2e]"
 					data-artifact-export-expand
 				>
-					{showProjectDiff ? (
-						<ProjectDiffContent
-							diff={projectDiff?.diff || ""}
-							isLoading={
-								isDiffLoading || Boolean(activeProject && !projectDiff)
-							}
-							onOpenProjectFile={onOpenFile}
-						/>
-					) : showDiff ? (
-						<DiffViewer
-							diff={latestRun?.diffPatch || ""}
-							onOpenProjectFile={onOpenFile}
-						/>
-					) : showBlueprintWorkspace ? (
-						<PlanModeWorkspaceViewer
-							sessionId={activeSessionId}
-							taskMessages={taskMessages}
-							activityArtifacts={activityArtifacts}
-							initialTab={resolveArtifactWorkspaceInitialTab(
-								displayArtifact?.metadata?.initialTab,
-							)}
-							onTabChange={onPlanWorkspaceTabChange}
-							onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
-							onExportDescriptorChange={setPlanModeExportDescriptor}
-							onQueueSession={onQueueSession}
-							onAddToQueue={onAddToQueue}
-							isImplementationLocked={isImplementationLocked}
-						/>
-					) : showReviewStatus ? (
-						<ReviewStatusViewer
-							detail={activeReviewDetail}
-							loading={isReviewSessionLoading}
-							activeTaskId={activeSessionId}
-							latestRun={latestRun}
-							implementationCompletionReport={implementationCompletionReport}
-							gitCloseout={gitCloseout}
-							onCommitGitCloseout={onCommitGitCloseout}
-							onPushGitCloseout={onPushGitCloseout}
-							activeTaskStatus={activeTaskStatus}
-							onCompleteAndArchiveTask={onCompleteAndArchiveTask}
-							onRestoreArchivedTask={onRestoreArchivedTask}
-							onSubmitReviewPrompt={onSubmitReviewPrompt}
-							isReviewPromptDisabled={isReviewPromptDisabled}
-						/>
-					) : showEvidenceCheck ? (
-						<EvidenceCheckArtifactViewer model={evidenceCheckPanel} />
-					) : showBlueprint ? (
-						<BlueprintViewer
-							sessionId={activeSessionId}
-							messageId={taskMessageId}
-							blueprint={
-								artifactBlueprint || displayArtifact?.metadata?.appBlueprint
-							}
-							mockBlueprint={
-								artifactMockBlueprint ||
-								displayArtifact?.metadata?.mockBlueprint
-							}
-							validation={
-								artifactValidation || displayArtifact?.metadata?.validation
-							}
-							generation={artifactGeneration}
-							markdown={
-								selectedMessage?.content ||
-								selectedActivityArtifact?.contentText ||
-								undefined
-							}
-							onOpenProjectFile={onOpenFile}
-						/>
-					) : showComponentDesign ? (
-						<ComponentDesignViewer
-							artifact={
-								displayArtifact?.metadata?.componentDesign ||
-								displayArtifact?.metadata?.designDelta
-							}
-							markdown={selectedMessage?.content}
-							onOpenProjectFile={onOpenFile}
-						/>
-					) : showDocument ? (
-						<MarkdownViewer
-							content={selectedMessage?.content || ""}
-							onOpenProjectFile={onOpenFile}
-						/>
-					) : showProjectTree && selectedFile ? (
-						<FileViewer file={selectedFile} onOpenProjectFile={onOpenFile} />
-					) : showProjectTree && isFileLoading ? (
-						<p className="text-xs text-slate-400">
-							{t("artifact.loadingFile")}
-						</p>
-					) : showProjectTree ? (
-						<div className="flex h-full items-center justify-center text-xs text-slate-500">
-							{t("artifact.selectFileOrDiff")}
-						</div>
-					) : (
-						<div className="flex h-full items-center justify-center text-xs text-slate-500">
-							Artifact target is not available.
-						</div>
-					)}
+					<Suspense
+						fallback={
+							<div
+								className="flex h-full items-center justify-center text-xs text-slate-500"
+								role="status"
+							>
+								{t("artifact.loading")}
+							</div>
+						}
+					>
+						{showProjectDiff ? (
+							<ProjectDiffContent
+								diff={projectDiff?.diff || ""}
+								isLoading={
+									isDiffLoading || Boolean(activeProject && !projectDiff)
+								}
+								onOpenProjectFile={onOpenFile}
+							/>
+						) : showDiff ? (
+							<DiffViewer
+								diff={latestRun?.diffPatch || ""}
+								onOpenProjectFile={onOpenFile}
+							/>
+						) : showBlueprintWorkspace ? (
+							<PlanModeWorkspaceViewer
+								sessionId={activeSessionId}
+								taskMessages={taskMessages}
+								activityArtifacts={activityArtifacts}
+								initialTab={resolveArtifactWorkspaceInitialTab(
+									displayArtifact?.metadata?.initialTab,
+								)}
+								onTabChange={onPlanWorkspaceTabChange}
+								onArtifactContextChange={onPlanWorkspaceArtifactContextChange}
+								onExportDescriptorChange={setPlanModeExportDescriptor}
+								onQueueSession={onQueueSession}
+								onAddToQueue={onAddToQueue}
+								isImplementationLocked={isImplementationLocked}
+							/>
+						) : showReviewStatus ? (
+							<ReviewStatusViewer
+								detail={activeReviewDetail}
+								loading={isReviewSessionLoading}
+								activeTaskId={activeSessionId}
+								latestRun={latestRun}
+								implementationCompletionReport={implementationCompletionReport}
+								gitCloseout={gitCloseout}
+								onCommitGitCloseout={onCommitGitCloseout}
+								onPushGitCloseout={onPushGitCloseout}
+								activeTaskStatus={activeTaskStatus}
+								onCompleteAndArchiveTask={onCompleteAndArchiveTask}
+								onRestoreArchivedTask={onRestoreArchivedTask}
+								onSubmitReviewPrompt={onSubmitReviewPrompt}
+								isReviewPromptDisabled={isReviewPromptDisabled}
+							/>
+						) : showEvidenceCheck ? (
+							<EvidenceCheckArtifactViewer model={evidenceCheckPanel} />
+						) : showBlueprint ? (
+							<BlueprintViewer
+								sessionId={activeSessionId}
+								messageId={taskMessageId}
+								blueprint={
+									artifactBlueprint || displayArtifact?.metadata?.appBlueprint
+								}
+								mockBlueprint={
+									artifactMockBlueprint ||
+									displayArtifact?.metadata?.mockBlueprint
+								}
+								validation={
+									artifactValidation || displayArtifact?.metadata?.validation
+								}
+								generation={artifactGeneration}
+								markdown={
+									selectedMessage?.content ||
+									selectedActivityArtifact?.contentText ||
+									undefined
+								}
+								onOpenProjectFile={onOpenFile}
+							/>
+						) : showComponentDesign ? (
+							<ComponentDesignViewer
+								artifact={
+									displayArtifact?.metadata?.componentDesign ||
+									displayArtifact?.metadata?.designDelta
+								}
+								markdown={selectedMessage?.content}
+								onOpenProjectFile={onOpenFile}
+							/>
+						) : showDocument ? (
+							<MarkdownViewer
+								content={selectedMessage?.content || ""}
+								onOpenProjectFile={onOpenFile}
+							/>
+						) : showProjectTree && selectedFile ? (
+							<FileViewer file={selectedFile} onOpenProjectFile={onOpenFile} />
+						) : showProjectTree && isFileLoading ? (
+							<p className="text-xs text-slate-400">
+								{t("artifact.loadingFile")}
+							</p>
+						) : showProjectTree ? (
+							<div className="flex h-full items-center justify-center text-xs text-slate-500">
+								{t("artifact.selectFileOrDiff")}
+							</div>
+						) : (
+							<div className="flex h-full items-center justify-center text-xs text-slate-500">
+								Artifact target is not available.
+							</div>
+						)}
+					</Suspense>
 				</div>
 			</div>
 		</aside>

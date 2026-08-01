@@ -21,6 +21,9 @@
 			"@nightworkers/mission-pilot/frontend": [
 				"./packages/mission-pilot/src/frontend/index.ts"
 			],
+			"@nightworkers/mission-pilot/i18n": [
+				"./packages/mission-pilot/src/frontend/i18n/index.ts"
+			],
 			"@nightworkers/mission-pilot/testing": [
 				"./packages/mission-pilot/src/testing/index.ts"
 			],

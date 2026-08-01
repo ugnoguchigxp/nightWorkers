@@ -2,6 +2,7 @@ export type ArtifactExportDescriptor = {
 	title: string;
 	fileStem: string;
 	markdown: string;
+	csv?: string;
 	scopeId?: string;
 };
 

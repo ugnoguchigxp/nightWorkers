@@ -72,7 +72,10 @@ try {
     await expectStatus(`http://127.0.0.1:${port}/api/health/ready`, 200);
     await expectStatus(`http://127.0.0.1:${port}/api/overview`, 200);
     await expectStatus(`http://127.0.0.1:${port}/api/implementation-queue`, 200);
-    await expectWebSocketOpen(`ws://127.0.0.1:${port}/api/ws/nightworkers`);
+    await expectWebSocketOpen(
+      `ws://127.0.0.1:${port}/api/ws/nightworkers`,
+      'http://tauri.localhost'
+    );
 
     console.log(`Packaged app smoke passed at http://127.0.0.1:${port}`);
   } finally {
@@ -173,9 +176,9 @@ function expectStatus(url, expectedStatus) {
   });
 }
 
-function expectWebSocketOpen(url) {
+function expectWebSocketOpen(url, origin) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { origin });
     const timeout = setTimeout(() => {
       ws.close();
       reject(new Error(`WebSocket did not open: ${url}`));

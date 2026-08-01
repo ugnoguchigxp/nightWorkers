@@ -7,7 +7,6 @@ import { cors } from "hono/cors";
 import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
-import { z } from "zod";
 import {
 	createComposedMissionPilotFixtureRouter,
 	createComposedMissionPilotRouter,
@@ -57,6 +56,12 @@ import { hooksSettingsRouter } from "./routes/hooks-settings";
 import { mcpSettingsRouter } from "./routes/mcp-settings";
 import { settingsRouter } from "./routes/settings";
 import { getResourceRoot } from "./runtime/paths";
+import {
+	isAllowedNightWorkersWebSocketOrigin,
+	NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE,
+	NIGHTWORKERS_WS_MAX_MESSAGE_BYTES,
+	parseNightWorkersWsClientMessage,
+} from "./security/nightworkers-websocket-policy";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 import { runWithSystemContextBinding } from "./systemContexts/catalog";
 
@@ -133,22 +138,10 @@ const connectSrcOrigins = [
 	...(isProduction ? [] : ["ws:", "wss:"]),
 ];
 export const nodeWebSocket = createNodeWebSocket({ app });
+// @hono/node-ws does not expose WebSocketServer constructor options. This
+// public ws option is read when each connection's receiver is created.
+nodeWebSocket.wss.options.maxPayload = NIGHTWORKERS_WS_MAX_MESSAGE_BYTES;
 const { upgradeWebSocket } = nodeWebSocket;
-
-const wsClientMessageSchema = z.discriminatedUnion("type", [
-	z.object({
-		type: z.literal("subscribe_task"),
-		taskId: z.string().uuid(),
-		runId: z.string().uuid().optional(),
-		afterSeq: z.number().int().min(0).optional(),
-	}),
-	z.object({ type: z.literal("unsubscribe_task"), taskId: z.string().uuid() }),
-	z.object({
-		type: z.literal("chat_submit"),
-		taskId: z.string().uuid(),
-		prompt: z.string().min(1),
-	}),
-]);
 
 // Middleware
 app.use("*", (_context, next) => runWithSystemContextBinding(next));
@@ -192,6 +185,24 @@ app.use("/api/ws/nightworkers", async (c, next) => {
 		return next();
 	}
 	return wsLimiter(c, next);
+});
+app.use("/api/ws/nightworkers", async (c, next) => {
+	if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
+		return next();
+	}
+	const origin = c.req.header("origin");
+	if (isAllowedNightWorkersWebSocketOrigin(origin, config.CORS_ORIGINS)) {
+		return next();
+	}
+	logHttpEvent({
+		channel: "ws",
+		method: "GET",
+		path: "/api/ws/nightworkers",
+		level: "warn",
+		message: "upgrade rejected: origin not allowed",
+		meta: { origin: origin ?? null },
+	});
+	return c.text("Forbidden", 403);
 });
 app.use("/api/*", async (c, next) => {
 	if (!isProduction && c.req.header("x-nightworkers-e2e") === "1") {
@@ -277,7 +288,28 @@ app.get(
 			onMessage(event, ws) {
 				void (async () => {
 					try {
-						const raw = String(event.data);
+						if (typeof event.data !== "string") {
+							logEvent({
+								channel: "ws",
+								level: "warn",
+								message: "message rejected: binary payload",
+								meta: { requestId },
+							});
+							ws.close(1003, "Text messages only");
+							return;
+						}
+						const raw = event.data;
+						const rawBytes = Buffer.byteLength(raw, "utf8");
+						if (rawBytes > NIGHTWORKERS_WS_MAX_MESSAGE_BYTES) {
+							logEvent({
+								channel: "ws",
+								level: "warn",
+								message: "message rejected: payload too large",
+								meta: { requestId, rawBytes },
+							});
+							ws.close(1009, "Message too large");
+							return;
+						}
 						logEvent({
 							channel: "ws",
 							level: "debug",
@@ -285,10 +317,11 @@ app.get(
 							meta: {
 								requestId,
 								rawLength: raw.length,
+								rawBytes,
 								rawPreview: raw.slice(0, 240),
 							},
 						});
-						const parsed = wsClientMessageSchema.parse(JSON.parse(raw));
+						const parsed = parseNightWorkersWsClientMessage(raw);
 						logEvent({
 							channel: "ws",
 							level: "info",
@@ -427,7 +460,7 @@ app.get(
 								? err.message
 								: typeof errorRecord.message === "string"
 									? errorRecord.message
-									: "Invalid websocket payload";
+									: NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE;
 						const errorCode =
 							typeof errorRecord.code === "string"
 								? errorRecord.code

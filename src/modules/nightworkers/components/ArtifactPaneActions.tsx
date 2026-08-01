@@ -4,6 +4,7 @@ import {
 	Copy,
 	Download,
 	FileText,
+	FileSpreadsheet,
 	FolderTree,
 	GitCompare,
 	Image as ImageIcon,
@@ -23,8 +24,10 @@ export function ArtifactHeaderActions({
 	onNext,
 	onCopyMarkdown,
 	onDownloadMarkdown,
+	onDownloadCsv,
 	onDownloadImage,
 	isExportingImage,
+	exportDisabled,
 	exportError,
 	onToggleFullscreen,
 }: {
@@ -35,8 +38,10 @@ export function ArtifactHeaderActions({
 	onNext: () => void;
 	onCopyMarkdown: () => void;
 	onDownloadMarkdown: () => void;
+	onDownloadCsv?: () => void;
 	onDownloadImage: () => void;
 	isExportingImage: boolean;
+	exportDisabled?: boolean;
 	exportError: string | null;
 	onToggleFullscreen: () => void;
 }) {
@@ -75,8 +80,10 @@ export function ArtifactHeaderActions({
 			<ArtifactExportMenu
 				onCopyMarkdown={onCopyMarkdown}
 				onDownloadMarkdown={onDownloadMarkdown}
+				onDownloadCsv={onDownloadCsv}
 				onDownloadImage={onDownloadImage}
 				isExportingImage={isExportingImage}
+				disabled={exportDisabled}
 				exportError={exportError}
 			/>
 			<button
@@ -103,15 +110,19 @@ export function ArtifactHeaderActions({
 export function ArtifactExportMenu({
 	onCopyMarkdown,
 	onDownloadMarkdown,
+	onDownloadCsv,
 	onDownloadImage,
 	isExportingImage,
 	exportError,
+	disabled = false,
 }: {
 	onCopyMarkdown: () => void;
 	onDownloadMarkdown: () => void;
+	onDownloadCsv?: () => void;
 	onDownloadImage: () => void;
 	isExportingImage: boolean;
 	exportError: string | null;
+	disabled?: boolean;
 }) {
 	const { t } = useTranslation();
 	const [isOpen, setIsOpen] = useState(false);
@@ -154,6 +165,7 @@ export function ArtifactExportMenu({
 					exportError ? "nightworkers-artifact-export-trigger-error" : ""
 				}`}
 				onClick={() => setIsOpen((value) => !value)}
+				disabled={disabled}
 				aria-label={t("artifact.exportMenu")}
 				aria-haspopup="menu"
 				aria-expanded={isOpen}
@@ -213,6 +225,13 @@ export function ArtifactExportMenu({
 						label={t("artifact.downloadMarkdown")}
 						onSelect={() => select(onDownloadMarkdown)}
 					/>
+					{onDownloadCsv ? (
+						<ArtifactExportMenuItem
+							icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
+							label={t("artifact.downloadCsv")}
+							onSelect={() => select(onDownloadCsv)}
+						/>
+					) : null}
 					<ArtifactExportMenuItem
 						icon={<Copy className="h-3.5 w-3.5" />}
 						label={t("artifact.copyMarkdown")}

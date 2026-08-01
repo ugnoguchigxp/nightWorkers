@@ -66,6 +66,20 @@ describe("workbench nested route outlet contract", () => {
 		expect(projectQueueSource).toContain('data-view-toggle="project-queue"');
 	});
 
+	it("loads workbench screens only when their route becomes active", () => {
+		const source = readRoute(
+			"src/modules/nightworkers/components/NightWorkersShellLayout.tsx",
+		);
+
+		expect(source).toContain("lazy(() =>");
+		expect(source).toContain("<Suspense");
+		expect(source).toContain('import("@/modules/overview")');
+		expect(source).toContain('import("../../queue")');
+		expect(source).toContain('import("./ProjectDetailScreen")');
+		expect(source).toContain('import("./SettingsScreen")');
+		expect(source).toContain('import("./NightWorkersShellThreadPanel")');
+	});
+
 	it("omits redundant headers from project detail tab surfaces", () => {
 		const projectNavigationSource = readRoute(
 			"src/modules/overview/components/ProjectScopeNavigation.tsx",

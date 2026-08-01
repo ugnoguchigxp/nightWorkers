@@ -1,4 +1,4 @@
-import { enMissionPilot } from "../../composition/mission-pilot";
+import { enMissionPilot } from "../../composition/mission-pilot/i18n";
 import { enArtifact } from "./en-artifact";
 import { enBlueprint } from "./en-blueprint";
 import { enComposer } from "./en-composer";

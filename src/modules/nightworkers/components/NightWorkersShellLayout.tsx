@@ -4,14 +4,10 @@ import type {
 	MutableRefObject,
 	SetStateAction,
 } from "react";
+import { lazy, Suspense } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { OverviewScreen } from "@/modules/overview";
 import { PilotThoughtDock } from "../../../composition/mission-pilot";
-import {
-	ImplementationQueueScreen,
-	ProjectQueueScreen,
-	type useImplementationQueue,
-} from "../../queue";
+import type { useImplementationQueue } from "../../queue";
 import type { WorkspaceAppearanceAttributes } from "../contexts/WorkspaceAppearanceContext";
 import { buildOverviewRoute } from "../routing/workbench-route-state";
 import type { Task } from "../types";
@@ -20,12 +16,54 @@ import {
 	NightWorkersFolderBrowser,
 	NightWorkersRouteNotFoundScreen,
 } from "./NightWorkersShellAuxiliary";
-import { NightWorkersShellThreadPanel } from "./NightWorkersShellThreadPanel";
 import type { resolveNightWorkersShellRouteModel } from "./nightworkers-shell-route-model";
-import { ProjectDetailScreen } from "./ProjectDetailScreen";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { BlueprintShowcaseButton, SettingsButton } from "./SettingsButton";
-import { SettingsScreen } from "./SettingsScreen";
+
+const OverviewScreen = lazy(() =>
+	import("@/modules/overview").then(({ OverviewScreen }) => ({
+		default: OverviewScreen,
+	})),
+);
+const ImplementationQueueScreen = lazy(() =>
+	import("../../queue").then(({ ImplementationQueueScreen }) => ({
+		default: ImplementationQueueScreen,
+	})),
+);
+const ProjectQueueScreen = lazy(() =>
+	import("../../queue").then(({ ProjectQueueScreen }) => ({
+		default: ProjectQueueScreen,
+	})),
+);
+const NightWorkersShellThreadPanel = lazy(() =>
+	import("./NightWorkersShellThreadPanel").then(
+		({ NightWorkersShellThreadPanel }) => ({
+			default: NightWorkersShellThreadPanel,
+		}),
+	),
+);
+const ProjectDetailScreen = lazy(() =>
+	import("./ProjectDetailScreen").then(({ ProjectDetailScreen }) => ({
+		default: ProjectDetailScreen,
+	})),
+);
+const SettingsScreen = lazy(() =>
+	import("./SettingsScreen").then(({ SettingsScreen }) => ({
+		default: SettingsScreen,
+	})),
+);
+
+function WorkbenchScreenLoading() {
+	return (
+		<div
+			className="flex h-full min-h-0 items-center justify-center text-sm text-slate-400"
+			data-workbench-screen-loading
+			role="status"
+		>
+			画面を読み込み中…
+		</div>
+	);
+}
 
 type ShellLayoutProps = {
 	shellProps: NightWorkersShellProps;
@@ -140,147 +178,160 @@ export function NightWorkersShellLayout(props: ShellLayoutProps) {
 					defaultSize={`${props.initialPanelSizes.current[1]}%`}
 					minSize="58%"
 				>
-					{showSettings ? (
-						<SettingsScreen
-							activeProject={workspace.activeProject}
-							activeSection={
-								routeState.kind === "settings" ? routeState.section : "general"
-							}
-							onSectionChange={(section) =>
-								shellProps.onNavigate({ kind: "settings", section })
-							}
-							onClose={() => shellProps.onNavigate(buildOverviewRoute())}
-						/>
-					) : isOverviewActive ? (
-						<OverviewScreen
-							projects={workspace.projects}
-							range={routeState.kind === "overview" ? routeState.range : "30d"}
-							projectFilterId={
-								routeState.kind === "overview" ? routeState.projectId : null
-							}
-							onRangeChange={(range) =>
-								shellProps.onNavigate({
-									kind: "overview",
-									range,
-									projectId:
-										routeState.kind === "overview"
-											? routeState.projectId
-											: null,
-								})
-							}
-							onProjectFilterChange={(projectId) =>
-								shellProps.onNavigate({
-									kind: "overview",
-									range:
-										routeState.kind === "overview" ? routeState.range : "30d",
-									projectId,
-								})
-							}
-							onOpenProjectDetailTab={(projectId, tab) =>
-								shellProps.onNavigate({
-									kind: "project_detail",
-									projectId,
-									tab,
-								})
-							}
-							onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
-							onOpenFxSettings={() =>
-								shellProps.onNavigate({ kind: "settings", section: "general" })
-							}
-						/>
-					) : missingProjectRoute ? (
-						<NightWorkersRouteNotFoundScreen
-							title="Project not found"
-							detail={
-								routeState.kind === "project_queue" ||
-								routeState.kind === "project_detail"
-									? routeState.projectId
-									: ""
-							}
-							onOpenOverview={props.onOpenOverview}
-						/>
-					) : projectQueueProject ? (
-						<ProjectQueueScreen
-							implementationQueue={queueState.implementationQueue}
-							isLoading={
-								queueState.isImplementationQueueLoading ||
-								workspace.isSessionsLoading
-							}
-							viewMode={
-								routeState.kind === "project_queue" ? routeState.view : "board"
-							}
-							onViewModeChange={(view) =>
-								shellProps.onNavigate({
-									kind: "project_queue",
-									projectId: projectQueueProject.id,
-									view,
-								})
-							}
-							onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
-							onQueueSession={props.onQueueSession}
-							onRequeueEntry={queueState.requeueImplementationQueueEntry}
-							onUpdateQueueEntry={queueState.updateImplementationQueueEntry}
-							project={projectQueueProject}
-							sessionViews={projectQueueSessionViews}
-							sessions={workspace.sessions}
-						/>
-					) : projectDetailProject ? (
-						<ProjectDetailScreen
-							project={projectDetailProject}
-							sessionViews={projectDetailSessionViews}
-							activeTab={
-								routeState.kind === "project_detail"
-									? routeState.tab
-									: "overview"
-							}
-							onActiveTabChange={(tab) =>
-								shellProps.onNavigate({
-									kind: "project_detail",
-									projectId: projectDetailProject.id,
-									tab,
-								})
-							}
-							onOpenProjectOverview={() =>
-								shellProps.onNavigate(
-									buildOverviewRoute("30d", projectDetailProject.id),
-								)
-							}
-							onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
-							onEvaluationTasksCreated={props.onEvaluationTasksCreated}
-							onMissionTaskCandidatesCreated={
-								props.onMissionTaskCandidatesCreated
-							}
-						/>
-					) : showQueueScreen ? (
-						<ImplementationQueueScreen
-							dashboard={queueState.implementationQueue}
-							health={queueState.implementationQueueHealth}
-							projects={workspace.projects}
-							activeProjectFilterId={queueProjectFilterId}
-							isLoading={
-								queueState.isImplementationQueueLoading ||
-								queueState.isImplementationQueueHealthLoading
-							}
-							onSetProjectFilter={(projectId) =>
-								shellProps.onNavigate({ kind: "global_queue", projectId })
-							}
-							onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
-							onQueueSession={props.onQueueSessionAndFocusTodo}
-							onArchiveEntry={queueState.archiveImplementationQueueEntry}
-							onRecoverEntry={queueState.recoverImplementationQueueEntry}
-							onUpdateProcessorCount={
-								queueState.updateImplementationQueueProcessorCount
-							}
-						/>
-					) : missingSessionRoute ? (
-						<NightWorkersRouteNotFoundScreen
-							title="Session not found"
-							detail={routeState.kind === "session" ? routeState.sessionId : ""}
-							onOpenOverview={props.onOpenOverview}
-						/>
-					) : (
-						<NightWorkersShellThreadPanel {...props.threadPanelProps} />
-					)}
+					<Suspense fallback={<WorkbenchScreenLoading />}>
+						{showSettings ? (
+							<SettingsScreen
+								activeProject={workspace.activeProject}
+								activeSection={
+									routeState.kind === "settings"
+										? routeState.section
+										: "general"
+								}
+								onSectionChange={(section) =>
+									shellProps.onNavigate({ kind: "settings", section })
+								}
+								onClose={() => shellProps.onNavigate(buildOverviewRoute())}
+							/>
+						) : isOverviewActive ? (
+							<OverviewScreen
+								projects={workspace.projects}
+								range={
+									routeState.kind === "overview" ? routeState.range : "30d"
+								}
+								projectFilterId={
+									routeState.kind === "overview" ? routeState.projectId : null
+								}
+								onRangeChange={(range) =>
+									shellProps.onNavigate({
+										kind: "overview",
+										range,
+										projectId:
+											routeState.kind === "overview"
+												? routeState.projectId
+												: null,
+									})
+								}
+								onProjectFilterChange={(projectId) =>
+									shellProps.onNavigate({
+										kind: "overview",
+										range:
+											routeState.kind === "overview" ? routeState.range : "30d",
+										projectId,
+									})
+								}
+								onOpenProjectDetailTab={(projectId, tab) =>
+									shellProps.onNavigate({
+										kind: "project_detail",
+										projectId,
+										tab,
+									})
+								}
+								onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
+								onOpenFxSettings={() =>
+									shellProps.onNavigate({
+										kind: "settings",
+										section: "general",
+									})
+								}
+							/>
+						) : missingProjectRoute ? (
+							<NightWorkersRouteNotFoundScreen
+								title="Project not found"
+								detail={
+									routeState.kind === "project_queue" ||
+									routeState.kind === "project_detail"
+										? routeState.projectId
+										: ""
+								}
+								onOpenOverview={props.onOpenOverview}
+							/>
+						) : projectQueueProject ? (
+							<ProjectQueueScreen
+								implementationQueue={queueState.implementationQueue}
+								isLoading={
+									queueState.isImplementationQueueLoading ||
+									workspace.isSessionsLoading
+								}
+								viewMode={
+									routeState.kind === "project_queue"
+										? routeState.view
+										: "board"
+								}
+								onViewModeChange={(view) =>
+									shellProps.onNavigate({
+										kind: "project_queue",
+										projectId: projectQueueProject.id,
+										view,
+									})
+								}
+								onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
+								onQueueSession={props.onQueueSession}
+								onRequeueEntry={queueState.requeueImplementationQueueEntry}
+								onUpdateQueueEntry={queueState.updateImplementationQueueEntry}
+								project={projectQueueProject}
+								sessionViews={projectQueueSessionViews}
+								sessions={workspace.sessions}
+							/>
+						) : projectDetailProject ? (
+							<ProjectDetailScreen
+								project={projectDetailProject}
+								sessionViews={projectDetailSessionViews}
+								activeTab={
+									routeState.kind === "project_detail"
+										? routeState.tab
+										: "overview"
+								}
+								onActiveTabChange={(tab) =>
+									shellProps.onNavigate({
+										kind: "project_detail",
+										projectId: projectDetailProject.id,
+										tab,
+									})
+								}
+								onOpenProjectOverview={() =>
+									shellProps.onNavigate(
+										buildOverviewRoute("30d", projectDetailProject.id),
+									)
+								}
+								onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
+								onEvaluationTasksCreated={props.onEvaluationTasksCreated}
+								onMissionTaskCandidatesCreated={
+									props.onMissionTaskCandidatesCreated
+								}
+							/>
+						) : showQueueScreen ? (
+							<ImplementationQueueScreen
+								dashboard={queueState.implementationQueue}
+								health={queueState.implementationQueueHealth}
+								projects={workspace.projects}
+								activeProjectFilterId={queueProjectFilterId}
+								isLoading={
+									queueState.isImplementationQueueLoading ||
+									queueState.isImplementationQueueHealthLoading
+								}
+								onSetProjectFilter={(projectId) =>
+									shellProps.onNavigate({ kind: "global_queue", projectId })
+								}
+								onOpenSession={(sessionId) => props.onSelectSession(sessionId)}
+								onQueueSession={props.onQueueSessionAndFocusTodo}
+								onArchiveEntry={queueState.archiveImplementationQueueEntry}
+								onRecoverEntry={queueState.recoverImplementationQueueEntry}
+								onUpdateProcessorCount={
+									queueState.updateImplementationQueueProcessorCount
+								}
+							/>
+						) : missingSessionRoute ? (
+							<NightWorkersRouteNotFoundScreen
+								title="Session not found"
+								detail={
+									routeState.kind === "session" ? routeState.sessionId : ""
+								}
+								onOpenOverview={props.onOpenOverview}
+							/>
+						) : (
+							<NightWorkersShellThreadPanel {...props.threadPanelProps} />
+						)}
+					</Suspense>
 				</Panel>
 			</Group>
 			{!showSettings ? (

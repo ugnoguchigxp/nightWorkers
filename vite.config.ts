@@ -38,6 +38,7 @@ export default defineConfig({
 		TanStackRouterVite({
 			routesDirectory: "./src/routes",
 			generatedRouteTree: "./src/routeTree.gen.ts",
+			autoCodeSplitting: true,
 		}),
 		react(),
 	],
@@ -52,6 +53,10 @@ export default defineConfig({
 			"@nightworkers/mission-pilot/frontend": path.resolve(
 				__dirname,
 				"./packages/mission-pilot/src/frontend/index.ts",
+			),
+			"@nightworkers/mission-pilot/i18n": path.resolve(
+				__dirname,
+				"./packages/mission-pilot/src/frontend/i18n/index.ts",
 			),
 			"@nightworkers/mission-pilot/frontend.css": path.resolve(
 				__dirname,
@@ -75,76 +80,9 @@ export default defineConfig({
 		},
 	},
 	build: {
-		chunkSizeWarningLimit: 550,
-		rollupOptions: {
-			output: {
-				manualChunks(id) {
-					if (!id.includes("node_modules")) {
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/ArtifactPane.tsx",
-							)
-						) {
-							return "nightworkers-artifacts";
-						}
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/ThreadTimeline.tsx",
-							)
-						) {
-							return "nightworkers-timeline";
-						}
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/ThreadWorkspace.tsx",
-							)
-						) {
-							return "nightworkers-workspace";
-						}
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/SettingsScreen.tsx",
-							)
-						) {
-							return "nightworkers-settings";
-						}
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/OverviewScreen.tsx",
-							)
-						) {
-							return "nightworkers-overview";
-						}
-						if (
-							id.includes(
-								"/src/modules/nightworkers/components/blueprint-preview/",
-							)
-						) {
-							return "nightworkers-blueprint-preview";
-						}
-						return undefined;
-					}
-					if (id.includes("/react/") || id.includes("/react-dom/"))
-						return "vendor-react";
-					if (id.includes("/@tanstack/")) return "vendor-tanstack";
-					if (id.includes("/radix-ui/") || id.includes("/lucide-react/"))
-						return "vendor-ui";
-					if (id.includes("/recharts/") || id.includes("/d3-"))
-						return "vendor-charts";
-					if (
-						id.includes("/react-markdown/") ||
-						id.includes("/remark-gfm/") ||
-						id.includes("/micromark") ||
-						id.includes("/mdast") ||
-						id.includes("/hast") ||
-						id.includes("/unified/") ||
-						id.includes("/unist-")
-					) {
-						return "vendor-markdown";
-					}
-					return undefined;
-				},
-			},
-		},
+		// Mermaid's parser is distributed as one ~647 KiB minified module.
+		// Keep the warning above that immutable vendor chunk while the explicit
+		// post-build budget check guards against application chunk regressions.
+		chunkSizeWarningLimit: 700,
 	},
 });

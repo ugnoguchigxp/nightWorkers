@@ -79,7 +79,7 @@ export function ArtifactModeNavigation({
 						aria-pressed={active}
 						aria-label={item.title}
 						title={item.title}
-						disabled={disabled || busyKind !== null || !available[item.kind]}
+					disabled={disabled || busy || !available[item.kind]}
 						onClick={onOpen[item.kind]}
 						className={`nightworkers-artifact-mode-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded border px-2 text-[11px] font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:shadow-none ${
 							active

@@ -82,11 +82,16 @@ const accessibilityE2eTask = task('e2e-accessibility', 'Playwright accessibility
   'run',
   'test:e2e:a11y',
 ]);
-const dependencyAuditTask = task('dependency-audit', 'High/Critical dependency audit', [
+const dependencyAuditTask = task('dependency-audit', 'Moderate+ dependency audit', [
   '--silent',
   'run',
   'audit:dependencies',
 ]);
+const weeklyDependencyAuditTask = task(
+  'weekly-dependency-audit',
+  'weekly Moderate+ dependency audit',
+  ['scripts/audit-dependencies-weekly.mjs'],
+);
 const releaseMetadataTask = task('release-metadata', 'release metadata', [
   '--silent',
   'run',
@@ -147,6 +152,12 @@ const auditPhase = {
   mode: 'serial',
   tasks: [dependencyAuditTask],
 };
+const weeklyAuditPhase = {
+  id: 'weekly-dependency-audit',
+  label: 'weekly dependency policy',
+  mode: 'serial',
+  tasks: [weeklyDependencyAuditTask],
+};
 const releaseMetadataPhase = {
   id: 'release-metadata',
   label: 'release metadata and documentation',
@@ -196,7 +207,7 @@ const deterministicFullPhases = [
 export const taskSets = {
   base: basePhases,
   desktop: desktopPhases,
-  verify: basePhases,
+  verify: [...basePhases, weeklyAuditPhase],
   full: deterministicFullPhases,
   e2e: [e2ePhase],
   accessibility: [accessibilityPhase],

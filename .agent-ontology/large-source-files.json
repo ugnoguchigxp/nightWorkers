@@ -10,13 +10,6 @@
 			"phase": 8
 		},
 		{
-			"id": "NW-LF-12",
-			"path": "src/modules/planMode/workspace-panels/PlanWorkspaceStatusView.tsx",
-			"maxLines": 791,
-			"targetModule": "plan-workspace-status-view",
-			"phase": 8
-		},
-		{
 			"id": "NW-LF-13",
 			"path": "src/styles/nightworkers-utility-overrides.css",
 			"maxLines": 713,

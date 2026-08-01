@@ -12,6 +12,10 @@ import {
 	missionPilotPresentation,
 	optimisticMissionPilotSummary,
 } from "@nightworkers/mission-pilot/frontend";
+import {
+	enMissionPilot,
+	jaMissionPilot,
+} from "@nightworkers/mission-pilot/i18n";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -39,6 +43,11 @@ function summary(version = 0, desiredState: "stopped" | "playing" = "stopped") {
 }
 
 describe("Mission Pilot contract", () => {
+	it("exposes translation dictionaries without loading the frontend runtime barrel", () => {
+		expect(Object.keys(jaMissionPilot).length).toBeGreaterThan(0);
+		expect(Object.keys(enMissionPilot).length).toBeGreaterThan(0);
+	});
+
 	it("parses typed Plan Mode progress updates", () => {
 		expect(
 			missionPilotPlanProgressSchema.parse({

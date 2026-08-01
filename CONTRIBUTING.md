@@ -20,13 +20,11 @@ build/smoke, all without provider credentials. External-provider canaries run
 only through explicit `bun run verify:live`. Release changes must pass
 `bun run verify:release`.
 
-Dependabot groups Bun runtime and development updates separately from Tauri/Rust
-and GitHub Actions. Patch/minor groups may be merged after required CI passes;
-major updates always require an explicit compatibility review. JavaScript changes
+Dependency updates require an explicit compatibility review. JavaScript changes
 must update and commit `bun.lock`; Rust changes must update and commit
 `src-tauri/Cargo.lock`.
 
-High/Critical audit exceptions are temporary. Every entry in
+Moderate+ audit exceptions are temporary. Every entry in
 `config/dependency-audit-allowlist.json` must include `advisoryId`, `package`,
 `owner`, `reason`, `mitigation`, and a future ISO `expiresAt`. Expired or invalid
 entries fail the audit again.

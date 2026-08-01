@@ -268,7 +268,8 @@ describe("NightWorkersShell Smoke Test", () => {
 			</QueryClientProvider>,
 		);
 
-		expect(markup).toContain("設定をロード中");
+		expect(markup).toContain('data-workbench-screen-loading="true"');
+		expect(markup).toContain("画面を読み込み中…");
 	});
 
 	it("renders main shell with session routing", () => {
