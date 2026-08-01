@@ -142,7 +142,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			);
 			for (
 				let completionAttempt = 0;
-				completionAttempt < 3;
+				completionAttempt < 2;
 				completionAttempt += 1
 			) {
 				finalReport = "";
@@ -359,7 +359,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 						testResults: { completionReadiness: completion.snapshot },
 					});
 				}
-				if (completionAttempt === 2) {
+				if (completionAttempt === 1) {
 					await sink.emit({
 						type: "runtime_warning",
 						message:

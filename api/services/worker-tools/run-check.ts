@@ -91,6 +91,7 @@ export async function runCheckTool(
 			verificationDocumentId,
 			conditionIds: input.conditionIds ?? [],
 			evidenceKinds,
+			checkKind: input.checkKind,
 		});
 	}
 	const sourceSnapshotBefore =
@@ -249,20 +250,25 @@ export async function completionCheckTool(input: {
 	repoRoot?: string;
 }): Promise<WorkerToolResult<CompletionCheckOutput>> {
 	const startedAt = new Date().toISOString();
-	const result = await runCompletionCheck(input);
+	const result = await runCompletionCheck({
+		...input,
+		confirmEvidenceCheck: true,
+	});
 	const llmSummary = result.ok
-		? "OK completion_check"
+		? [
+				"OK completion_check",
+				`mapping=${result.mapping.status}`,
+				`verify=${result.verify.status}`,
+				`confirmation=${result.confirmation.status}`,
+				"next=write_final_report",
+			].join("\n")
 		: [
 				"ERROR completion_check",
 				`reason=${result.reason || "unknown"}`,
-				`failedRequired=${result.summary.failedRequired}`,
-				`unknownRequired=${result.summary.unknownRequired}`,
-				...result.failedRequired.map(
-					(item) => `failed ${item.conditionId}: ${item.reason || item.text}`,
-				),
-				...result.unknownRequired.map(
-					(item) => `unknown ${item.conditionId}: ${item.reason || item.text}`,
-				),
+				`mapping=${result.mapping.status} (${result.mapping.matched}/${result.mapping.total})`,
+				`verify=${result.verify.status}`,
+				`confirmation=${result.confirmation.status}`,
+				`next=${result.suggestedAction}`,
 			].join("\n");
 	return {
 		ok: result.ok,

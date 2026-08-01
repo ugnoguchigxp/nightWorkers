@@ -1,2 +1,2 @@
 export const TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA =
-	"Schemaで渡されたテスト証跡セットをPure TypeScriptで技術スタック別に探索し、identity一致率90%以上のテストだけを完了条件へ一括mappingします。未発見または複数候補はtyped errorを返し、inventoryとmappingを成功時だけ原子的に保存します。";
+	"Schemaで渡された証跡項目を現在のtest定義へ一括mappingします。未発見または複数候補はtyped errorを返し、同じtest定義digestでは保存結果を再利用します。test実行やTodo更新は行いません。";

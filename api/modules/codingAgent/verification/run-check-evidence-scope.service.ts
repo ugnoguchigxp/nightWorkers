@@ -1,5 +1,9 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { ExpectedEvidence } from "../../../../shared/schemas/verification-checklist.schema";
+import {
+	type ExpectedEvidence,
+	isExpectedEvidenceAllowedByCompletionScope,
+	specificationVerificationDocumentSchema,
+} from "../../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../../db/client";
 import { taskRuns } from "../../../db/schema";
 import {
@@ -15,10 +19,14 @@ export async function validateRunCheckEvidenceScope(input: {
 	verificationDocumentId: string;
 	conditionIds: string[];
 	evidenceKinds: ExpectedEvidence[];
+	checkKind?: string;
 }) {
 	const [document, run] = await Promise.all([
 		db
-			.select({ id: verificationDocuments.id })
+			.select({
+				id: verificationDocuments.id,
+				documentJson: verificationDocuments.documentJson,
+			})
 			.from(verificationDocuments)
 			.where(
 				and(
@@ -46,6 +54,29 @@ export async function validateRunCheckEvidenceScope(input: {
 			409,
 			"verification_evidence_scope_mismatch",
 			"Managed evidence requires an active Verification Document and a Run belonging to the requested Task.",
+		);
+	}
+	const parsedDocument = specificationVerificationDocumentSchema.safeParse(
+		document.documentJson,
+	);
+	const testScope = parsedDocument.success
+		? parsedDocument.data.testScope
+		: undefined;
+	if (testScope && input.evidenceKinds.length === 0) {
+		throw new AppError(
+			400,
+			"verification_scope_declaration_required",
+			"Questionnaireで選択したtest範囲を守るため、run_checkにはevidenceKindsが必要です。",
+		);
+	}
+	const disallowedKinds = input.evidenceKinds.filter(
+		(kind) => !isExpectedEvidenceAllowedByCompletionScope(kind, testScope),
+	);
+	if (disallowedKinds.length > 0) {
+		throw new AppError(
+			403,
+			"verification_scope_denied",
+			`Questionnaireで選択されていないtest証跡は実行できません: ${disallowedKinds.join(", ")}`,
 		);
 	}
 	if (input.conditionIds.length === 0) return;

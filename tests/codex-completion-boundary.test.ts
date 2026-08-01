@@ -20,38 +20,22 @@ function input() {
 }
 
 describe("Codex completion boundary", () => {
-	it("requires review when any structured verification command fails", async () => {
+	it("requires review when Evidence Readiness is not ready", async () => {
 		const result = await reconcileCodexCompletionBoundary(input(), {
 			executeVerificationCloseout: async () => ({
 				applicability: "active",
 				verificationDocumentId: "verification-1",
-				completionCheck: { ok: false },
-				inventoryId: "inventory-1",
-				activeCaseCount: 1,
-				requiresAutomatedTests: true,
-				requiredConditionIds: ["AC-001"],
-				successfulConditionIds: [],
-				missingRequiredConditionIds: ["AC-001"],
-				sourceStateHashBefore: "before",
-				sourceStateHashAfter: "after",
-				sourceMutatedDuringCloseout: false,
-				commands: [
-					{
-						id: "verify",
-						label: "Verify",
-						conditionIds: ["AC-001"],
-						exitCode: 1,
-						ok: false,
-						managedEvidence: true,
-						llmSummary: "failed",
-					},
-				],
+				completionCheck: completionCheck(false),
+				commands: [],
+				mapping: completionCheck(false).mapping,
+				verify: completionCheck(false).verify,
+				sourceStateHash: "source",
 			}),
 		});
 
 		expect(result.terminalState).toBe("needs_review");
 		expect(result.testResults).toMatchObject({
-			verificationCommandsPassed: false,
+			completionReady: false,
 		});
 	});
 
@@ -65,45 +49,61 @@ describe("Codex completion boundary", () => {
 
 		expect(result.terminalState).toBe("completed");
 		expect(result.testResults).toMatchObject({
-			verificationCommandsPassed: true,
+			completionReady: true,
 		});
 	});
 
-	it("keeps completion when structured commands cover every required condition", async () => {
+	it("keeps completion when Evidence Check is settled even if mapping is missing", async () => {
 		const result = await reconcileCodexCompletionBoundary(input(), {
 			executeVerificationCloseout: async () => ({
 				applicability: "active",
 				verificationDocumentId: "verification-1",
-				completionCheck: { ok: true },
-				inventoryId: "inventory-1",
-				activeCaseCount: 1,
-				requiresAutomatedTests: true,
-				requiredConditionIds: ["AC-001"],
-				successfulConditionIds: ["AC-001"],
-				missingRequiredConditionIds: [],
-				sourceStateHashBefore: "stable",
-				sourceStateHashAfter: "stable",
-				sourceMutatedDuringCloseout: false,
-				commands: [
-					{
-						id: "verify",
-						label: "Verify",
-						conditionIds: ["AC-001"],
-						exitCode: 0,
-						ok: true,
-						managedEvidence: true,
-						llmSummary: "passed",
-					},
-				],
+				completionCheck: completionCheck(true),
+				commands: [],
+				mapping: completionCheck(true).mapping,
+				verify: completionCheck(true).verify,
+				sourceStateHash: "source",
 			}),
 		});
 
 		expect(result.terminalState).toBe("completed");
 		expect(result.testResults).toMatchObject({
-			verificationCommandsPassed: true,
-			conditionsCovered: true,
-			testInventoryReady: true,
-			sourceStable: true,
+			completionReady: true,
 		});
 	});
 });
+
+function completionCheck(ok: boolean) {
+	return {
+		ok,
+		verificationDocumentId: "verification-1",
+		runId: "run-1",
+		sourceStateHash: "source",
+		mapping: {
+			status: "missing" as const,
+			definitionDigest: "definition",
+			total: 1,
+			matched: 0,
+			items: [],
+		},
+		verify: {
+			status: ok ? ("passed" as const) : ("not_run" as const),
+			command: ok ? "bun run verify" : null,
+			cwd: "/repo",
+			exitCode: ok ? 0 : null,
+			sourceStateHash: ok ? "source" : null,
+			finishedAt: ok ? "2026-08-01T00:00:00.000Z" : null,
+			logRefs: [],
+		},
+		confirmation: {
+			status: ok ? ("settled" as const) : ("awaiting_initial_verify" as const),
+			initialEvidenceRunId: ok ? "evidence-run-1" : null,
+			confirmedAt: ok ? "2026-08-01T00:00:00.000Z" : null,
+		},
+		suggestedAction: ok
+			? ("write_final_report" as const)
+			: ("run_verify" as const),
+		readinessDigest: ok ? "ready" : "missing",
+		...(ok ? {} : { reason: "project_verify_not_run" }),
+	};
+}

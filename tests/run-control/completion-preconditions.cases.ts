@@ -335,7 +335,7 @@ describe("Run completion preconditions", () => {
 		});
 		expect(result.snapshot?.readiness?.discrepancies).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ code: "quality_gate_incomplete" }),
+				expect.objectContaining({ code: "project_verify_not_run" }),
 			]),
 		);
 	});

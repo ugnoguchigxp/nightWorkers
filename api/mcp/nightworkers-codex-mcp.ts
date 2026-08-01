@@ -3,6 +3,7 @@ import {
 	collectTestInventoryTool,
 	getCodingAgentNightworkersMcpInstructions,
 	recordTestConditionMappingTool,
+	resolveTestConditionMappingRevision,
 	todoListTool,
 } from "../modules/codingAgent";
 import {
@@ -153,6 +154,8 @@ export function createNightWorkersCodexMcpServer(
 			cwd,
 			checkKind,
 			conditionIds,
+			evidenceKinds,
+			runnerHint,
 			timeoutSeconds,
 			displayMode,
 		}) => {
@@ -173,6 +176,8 @@ export function createNightWorkersCodexMcpServer(
 						cwd,
 						checkKind,
 						conditionIds,
+						evidenceKinds,
+						runnerHint,
 						timeoutSeconds,
 						displayMode,
 					},
@@ -205,6 +210,8 @@ export function createNightWorkersCodexMcpServer(
 				cwd,
 				checkKind,
 				conditionIds,
+				evidenceKinds,
+				runnerHint,
 				timeoutSeconds,
 				displayMode,
 				repoRoot: executionRoot,
@@ -253,6 +260,7 @@ export function createNightWorkersCodexMcpServer(
 				toolName: "completion_check",
 				arguments: args,
 				evidenceKind: "completion-check",
+				idempotentSideEffect: true,
 				execute: () => completionCheckTool(args),
 			});
 		},
@@ -355,11 +363,12 @@ export function createNightWorkersCodexMcpServer(
 				blockedCommands: resolved.repository.safetyPolicy?.blockedCommands,
 				maxCommandSeconds: resolved.repository.safetyPolicy?.maxCommandSeconds,
 			};
+			const mappingRevision = await resolveTestConditionMappingRevision(args);
 			return controlledToolResult({
 				context,
 				runId,
 				toolName: "record_test_condition_mapping",
-				arguments: args,
+				arguments: { ...args, mappingRevision },
 				workspaceIdentity: resolved.executionRoot,
 				evidenceKind: "test-condition-mapping",
 				idempotentSideEffect: true,

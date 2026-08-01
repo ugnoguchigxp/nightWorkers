@@ -377,7 +377,11 @@ async function listCleanupCandidates(
 				(SELECT count(*) FROM verification_evidence_cases vec
 				 WHERE vec.evidence_run_id IN (
 					SELECT ver.id FROM verification_evidence_runs ver WHERE ver.run_id = tr.id
-				 )) +
+					 )) +
+				(SELECT count(*) FROM coding_agent_evidence_check_confirmations caecc
+				 WHERE caecc.run_id = tr.id) +
+				(SELECT count(*) FROM coding_agent_evidence_readiness_settlements caers
+				 WHERE caers.run_id = tr.id) +
 				(SELECT count(*) FROM coding_agent_test_condition_mappings catcm
 				 WHERE catcm.inventory_id IN (
 					SELECT cair.id FROM coding_agent_test_inventory_runs cair WHERE cair.run_id = tr.id

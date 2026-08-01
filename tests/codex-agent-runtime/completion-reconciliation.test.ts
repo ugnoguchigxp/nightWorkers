@@ -99,6 +99,47 @@ describe("Codex completion reconciliation", () => {
 			]),
 		);
 	});
+
+	it("allows only one recovery turn while Evidence Readiness stays unresolved", async () => {
+		const runStreamed = vi.fn(async () => ({ events: events("完了候補") }));
+		const unchanged = {
+			allowFinalize: false,
+			code: "FINALIZE_RECONCILIATION_REQUIRED" as const,
+			message: "mapping is missing",
+			missingConditions: ["evidence_mapping_missing"],
+			snapshot: {
+				planRevision: 0,
+				todos: [],
+				readiness: {
+					verification: {
+						result: { readinessDigest: "sha256:unchanged" },
+					},
+				},
+			},
+			idempotent: false,
+		};
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			evaluateCompletionCandidate: vi.fn().mockResolvedValue(unchanged),
+		});
+		const emitted: Array<{ payload?: { code?: string } }> = [];
+
+		const result = await runtime.start(context(), {
+			emit: async (event) => emitted.push(event as never),
+		});
+
+		expect(result.terminalState).toBe("needs_review");
+		expect(runStreamed).toHaveBeenCalledTimes(2);
+		expect(emitted).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					payload: expect.objectContaining({
+						code: "CODEX_COMPLETION_RECONCILIATION_LIMIT_REACHED",
+					}),
+				}),
+			]),
+		);
+	});
 });
 
 async function* events(finalText: string) {

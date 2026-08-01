@@ -10,6 +10,7 @@ import {
 	verificationChecklistItems,
 	verificationDocuments,
 } from "../../../db/verification-schema";
+import { digestTestDefinitionInventory } from "./test-definition-digest";
 import {
 	matchTestEvidenceReferences,
 	TEST_EVIDENCE_MATCH_THRESHOLD,
@@ -61,6 +62,7 @@ export async function recordTestEvidenceSetMappings(
 		);
 	}
 	const sourceDigest = inventory.sourceSnapshot.sourceStateHash;
+	const definitionDigest = digestTestDefinitionInventory(inventory.cases);
 	const mappings = buildMappings({
 		input,
 		inventoryId: inventory.id,
@@ -71,6 +73,7 @@ export async function recordTestEvidenceSetMappings(
 	return {
 		inventoryId: inventory.id,
 		sourceDigest,
+		definitionDigest,
 		matchThreshold: TEST_EVIDENCE_MATCH_THRESHOLD,
 		referenceCount: input.evidenceSet.references.length,
 		mappingCount: mappings.length,

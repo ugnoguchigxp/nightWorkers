@@ -1,24 +1,10 @@
-import {
-	AlertTriangle,
-	CheckCircle2,
-	Circle,
-	LoaderCircle,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { EvidenceCheckSnapshot } from "../../../shared/modules/codingAgent";
 import {
 	type EvidenceCheckPanelModel,
 	useEvidenceCheckSnapshot,
 } from "./EvidenceCheckArtifactModel";
-
-const TODO_COMPLETE_STATUSES = new Set([
-	"passed",
-	"completed",
-	"done",
-	"covered",
-	"manual",
-	"not_applicable",
-]);
 
 export function EvidenceCheckArtifactViewer({
 	model,
@@ -38,25 +24,6 @@ export function EvidenceCheckArtifactViewer({
 	const resolvedSnapshot = snapshot ?? query.data ?? null;
 	const resolvedIsLoading = isLoading ?? query.isLoading;
 	const resolvedIsError = isError ?? query.isError;
-	const conditions = resolvedSnapshot?.conditions ?? model?.conditions ?? [];
-	const traceability = resolvedSnapshot?.implementationPlanTraceability ?? null;
-	const conditionSummary = resolvedSnapshot?.summary ?? {
-		total: conditions.length,
-		confirmed: conditions.filter(
-			(condition) =>
-				condition.assuranceStatus === "safe_pass" ||
-				condition.assuranceStatus === "not_applicable",
-		).length,
-		failed: conditions.filter(
-			(condition) => condition.assuranceStatus === "failed",
-		).length,
-		pending: conditions.filter(
-			(condition) =>
-				condition.assuranceStatus !== "safe_pass" &&
-				condition.assuranceStatus !== "not_applicable" &&
-				condition.assuranceStatus !== "failed",
-		).length,
-	};
 	if (!model) {
 		return (
 			<div className="nightworkers-structured-artifact h-full p-5">
@@ -83,375 +50,219 @@ export function EvidenceCheckArtifactViewer({
 					</div>
 				) : null}
 				{resolvedSnapshot ? (
-					<section
-						className="nightworkers-structured-artifact-card grid gap-3 rounded-md border p-3"
-						data-evidence-assurance-summary
-					>
-						<div className="flex flex-wrap items-start justify-between gap-3">
-							<div>
-								<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
-									{t("evidenceCheck.assurance.title")}
-								</h2>
-								<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
-									{t("evidenceCheck.assurance.summary", {
-										...resolvedSnapshot.assuranceSummary,
-									})}
-								</p>
-							</div>
-							<AssuranceStatusBadge
-								status={resolveOverallAssuranceStatus(resolvedSnapshot)}
-							/>
-						</div>
-						<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px]">
-							<span>
-								{t("evidenceCheck.assurance.evaluatedAt")}:{" "}
-								{formatTimestamp(resolvedSnapshot.evaluatedAt)}
-							</span>
-							<span>
-								{t("evidenceCheck.assurance.source")}:{" "}
-								{resolvedSnapshot.sourceStateHash?.slice(0, 12) ??
-									t("evidenceCheck.assurance.unavailable")}
-							</span>
-							<span>
-								{t("evidenceCheck.test.fullVerify")}:{" "}
-								{t(
-									`evidenceCheck.gateStatus.${resolvedSnapshot.assuranceSummary.fullVerifyStatus}`,
-								)}
-							</span>
-							{resolvedSnapshot.assuranceSummary.required !== undefined ? (
-								<span>
-									{t("evidenceCheck.assurance.conditionMetrics", {
-										required: resolvedSnapshot.assuranceSummary.required,
-										safePass:
-											resolvedSnapshot.assuranceSummary.requiredSafePass ?? 0,
-										unmapped: resolvedSnapshot.assuranceSummary.unmapped ?? 0,
-										detailsMissing:
-											resolvedSnapshot.assuranceSummary.detailsMissing ?? 0,
-										stale: resolvedSnapshot.assuranceSummary.stale ?? 0,
-									})}
-								</span>
-							) : null}
-						</div>
-					</section>
-				) : null}
-				{traceability ? (
-					<section className="grid gap-2" data-evidence-plan-traceability>
-						<div className="flex flex-wrap items-start justify-between gap-3">
-							<div>
-								<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
-									{t("evidenceCheck.plan.title")}
-								</h2>
-								<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
-									{planTraceabilityMessage(t, traceability)}
-								</p>
-							</div>
-							<span className="nightworkers-structured-artifact-muted rounded border px-2 py-1 font-mono text-[10px]">
-								{traceability.digest.slice(0, 20)}…
-							</span>
-						</div>
-						<div className="nightworkers-structured-artifact-muted text-xs">
-							{t("evidenceCheck.plan.summary", traceability.summary)}
-						</div>
-						<div className="grid gap-1.5">
-							{traceability.steps.map((step) => (
-								<div
-									key={step.seq}
-									className="nightworkers-structured-artifact-row grid grid-cols-[2.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-2 text-xs"
-									data-evidence-plan-step={step.seq}
-									data-plan-aligned={step.aligned}
-								>
-									<span className="nightworkers-structured-artifact-muted font-mono leading-5">
-										{step.seq}
-									</span>
-									<span className="flex h-5 items-center">
-										<EvidenceConditionStatusIcon
-											status={
-												step.aligned ? (step.todoStatus ?? "missing") : "failed"
-											}
-										/>
-									</span>
-									<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
-										{t(
-											`evidenceCheck.conditionStatus.${step.todoStatus ?? "missing"}`,
-											{ defaultValue: step.todoStatus ?? "missing" },
-										)}
-									</span>
-									<div className="min-w-0">
-										<div className="nightworkers-structured-artifact-text break-words font-medium leading-5">
-											{step.title}
-										</div>
-										<div className="nightworkers-structured-artifact-muted mt-1 whitespace-normal break-words leading-5">
-											{step.systemContext}
-										</div>
-									</div>
-								</div>
-							))}
-						</div>
-					</section>
-				) : null}
-				<section className="grid gap-2" data-evidence-spec-conditions>
-					<div>
-						<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
-							{t("evidenceCheck.conditions.title")}
-						</h2>
-						<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
-							{t("evidenceCheck.conditions.summary", conditionSummary)}
-						</p>
-					</div>
-					<div className="grid gap-1.5">
-						{conditions.map((condition) => (
-							<div
-								key={condition.id}
-								className="nightworkers-structured-artifact-row grid gap-2 rounded-md border px-3 py-2.5 text-xs"
-								data-evidence-assurance-status={condition.assuranceStatus}
-							>
-								<div className="flex flex-wrap items-start justify-between gap-2">
-									<div className="flex min-w-0 items-start gap-2">
-										<span className="nightworkers-structured-artifact-muted shrink-0 font-mono leading-5">
-											{condition.id}
-										</span>
-										<div className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words leading-5">
-											{condition.text}
-										</div>
-									</div>
-									<AssuranceStatusBadge status={condition.assuranceStatus} />
-								</div>
-								<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-4">
-									<span>
-										{t("evidenceCheck.conditionVerificationKind")}:{" "}
-										{condition.verificationKind ?? "unknown"}
-									</span>
-									<span>
-										{t("evidenceCheck.conditionExpectedEvidence")}:{" "}
-										{condition.expectedEvidence.join(", ") || "none"}
-									</span>
-									<span>
-										{t("evidenceCheck.conditionRecordedStatus")}:{" "}
-										{t(`evidenceCheck.conditionStatus.${condition.status}`, {
-											defaultValue: condition.status,
+					<>
+						<section
+							className="nightworkers-structured-artifact-card grid gap-3 rounded-md border p-3"
+							data-evidence-readiness
+						>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+										{t("evidenceCheck.readiness.title")}
+									</h2>
+									<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
+										{t("evidenceCheck.readiness.summary", {
+											matched: resolvedSnapshot.mapping.matched,
+											total: resolvedSnapshot.mapping.total,
+											verify: t(
+												`evidenceCheck.verifyStatus.${resolvedSnapshot.verify.status}`,
+											),
 										})}
-									</span>
-									{condition.evidenceIds.length > 0 ? (
-										<span>
-											{t("evidenceCheck.conditionEvidence", {
-												count: condition.evidenceIds.length,
-											})}
-										</span>
-									) : null}
-									{condition.assuranceReason ? (
-										<span>
-											{t(
-												`evidenceCheck.assuranceReason.${condition.assuranceReason}`,
-												{ defaultValue: condition.assuranceReason },
-											)}
-										</span>
-									) : condition.reason ? (
-										<span>{condition.reason}</span>
-									) : null}
+									</p>
 								</div>
-								{condition.evidenceIds.length > 0 ? (
-									<div className="nightworkers-structured-artifact-muted break-all font-mono text-[10px] leading-4">
-										{t("evidenceCheck.evidenceReferences")}:{" "}
-										{condition.evidenceIds.join(", ")}
-									</div>
-								) : null}
-								{condition.tests.length > 0 ? (
-									<div className="grid gap-1.5 border-t border-slate-700/60 pt-2">
-										{condition.tests.map((test) => (
+								<StatusBadge
+									status={resolvedSnapshot.ready ? "ready" : "action_required"}
+								/>
+							</div>
+							<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px]">
+								<span>
+									{t("evidenceCheck.readiness.evaluatedAt")}:{" "}
+									{formatTimestamp(resolvedSnapshot.evaluatedAt)}
+								</span>
+								<span>
+									{t("evidenceCheck.readiness.source")}:{" "}
+									{resolvedSnapshot.sourceStateHash?.slice(0, 12) ??
+										t("evidenceCheck.unavailable")}
+								</span>
+							</div>
+						</section>
+
+						<section className="grid gap-2" data-evidence-scope>
+							<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+								{t("evidenceCheck.scope.title")}
+							</h2>
+							<div className="flex flex-wrap gap-2 text-xs">
+								<span className="nightworkers-structured-artifact-card rounded border px-2.5 py-1.5">
+									{t(`evidenceCheck.scope.${resolvedSnapshot.scope.testScope}`)}
+								</span>
+								<span
+									className="nightworkers-structured-artifact-card rounded border px-2.5 py-1.5"
+									data-e2e-allowed={resolvedSnapshot.scope.e2eAllowed}
+								>
+									{resolvedSnapshot.scope.e2eAllowed
+										? t("evidenceCheck.scope.e2eIncluded")
+										: t("evidenceCheck.scope.e2eExcluded")}
+								</span>
+							</div>
+						</section>
+
+						<section className="grid gap-2" data-evidence-mapping>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+										{t("evidenceCheck.mapping.title")}
+									</h2>
+									<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
+										{t(
+											"evidenceCheck.mapping.summary",
+											resolvedSnapshot.mapping,
+										)}
+									</p>
+								</div>
+								<StatusBadge status={resolvedSnapshot.mapping.status} />
+							</div>
+							<div className="grid gap-1.5">
+								{resolvedSnapshot.mapping.items.map((item) => (
+									<div
+										key={item.id}
+										className="nightworkers-structured-artifact-row grid gap-2 rounded-md border px-3 py-2.5 text-xs"
+										data-evidence-mapping-status={item.status}
+									>
+										<div className="flex min-w-0 items-start gap-2">
+											<span className="nightworkers-structured-artifact-muted shrink-0 font-mono leading-5">
+												{item.id}
+											</span>
+											<span className="nightworkers-structured-artifact-text break-words leading-5">
+												{item.text}
+											</span>
+										</div>
+										{item.matches.map((match) => (
 											<div
-												key={test.caseKey}
-												className="nightworkers-structured-artifact-card grid gap-1 rounded border px-2.5 py-2"
+												key={match.caseKey}
+												className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 text-[10px]"
 											>
-												<div className="flex flex-wrap items-center justify-between gap-2">
-													<span className="nightworkers-structured-artifact-text break-words font-medium">
-														{test.name}
-													</span>
-													<span className="nightworkers-structured-artifact-muted font-mono text-[10px]">
-														{test.runner}
-													</span>
-												</div>
-												<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
-													{test.filePath ? <span>{test.filePath}</span> : null}
-													<span>
-														{t("evidenceCheck.test.mappingSource")}:{" "}
-														{test.mappingSource}
-													</span>
-													<span>
-														{t("evidenceCheck.test.execution")}:{" "}
-														{t(
-															`evidenceCheck.testStatus.${test.execution.status}`,
-														)}
-													</span>
-													{test.execution.evidenceKind ? (
-														<span>
-															{t("evidenceCheck.test.evidenceKind")}:{" "}
-															{test.execution.evidenceKind}
-														</span>
-													) : null}
-													{test.execution.durationMs !== null ? (
-														<span>
-															{formatDuration(test.execution.durationMs)}
-														</span>
-													) : null}
-													<span>
-														{t("evidenceCheck.test.currentSource")}:{" "}
-														{yesNo(t, test.guards.currentSource)}
-													</span>
-													<span>
-														{t("evidenceCheck.test.sourceStable")}:{" "}
-														{nullableYesNo(
-															t,
-															test.guards.sourceStableDuringExecution,
-														)}
-													</span>
-													<span>
-														{t("evidenceCheck.test.executionObserved")}:{" "}
-														{yesNo(t, test.guards.testExecutionObserved)}
-													</span>
-													<span>
-														{t("evidenceCheck.test.fullVerify")}:{" "}
-														{yesNo(t, test.guards.fullVerifyPassed)}
-													</span>
-												</div>
+												<span className="nightworkers-structured-artifact-text font-medium">
+													{match.name}
+												</span>
+												<span>{match.filePath}</span>
+												<span>{match.runner}</span>
 											</div>
 										))}
 									</div>
-								) : null}
+								))}
 							</div>
-						))}
-					</div>
-				</section>
+						</section>
+
+						<section
+							className="nightworkers-structured-artifact-card grid gap-2 rounded-md border p-3"
+							data-evidence-confirmation={
+								resolvedSnapshot.confirmation?.status ??
+								(resolvedSnapshot.ready ? "settled" : "awaiting_initial_verify")
+							}
+						>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+									{t("evidenceCheck.confirmation.title")}
+								</h2>
+								<StatusBadge
+									status={
+										resolvedSnapshot.confirmation?.status ??
+										(resolvedSnapshot.ready
+											? "settled"
+											: "awaiting_initial_verify")
+									}
+								/>
+							</div>
+							<div className="nightworkers-structured-artifact-muted font-mono text-[10px]">
+								{t("evidenceCheck.confirmation.confirmedAt")}:{" "}
+								{resolvedSnapshot.confirmation?.confirmedAt
+									? formatTimestamp(resolvedSnapshot.confirmation.confirmedAt)
+									: "-"}
+							</div>
+						</section>
+
+						<section
+							className="nightworkers-structured-artifact-card grid gap-2 rounded-md border p-3"
+							data-evidence-verify
+						>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+									{t("evidenceCheck.verify.title")}
+								</h2>
+								<StatusBadge status={resolvedSnapshot.verify.status} />
+							</div>
+							<div className="nightworkers-structured-artifact-muted grid gap-1 font-mono text-[10px]">
+								<span>
+									{t("evidenceCheck.verify.command")}:{" "}
+									{resolvedSnapshot.verify.command ??
+										resolvedSnapshot.scope.authorizedVerifyCommand?.command ??
+										t("evidenceCheck.verify.notSelected")}
+								</span>
+								<span>
+									{t("evidenceCheck.verify.exitCode")}:{" "}
+									{resolvedSnapshot.verify.exitCode ?? "-"}
+								</span>
+								<span>
+									{t("evidenceCheck.verify.finishedAt")}:{" "}
+									{resolvedSnapshot.verify.finishedAt
+										? formatTimestamp(resolvedSnapshot.verify.finishedAt)
+										: "-"}
+								</span>
+							</div>
+						</section>
+
+						<section
+							className="rounded-md border border-sky-800/70 bg-sky-950/20 px-3 py-2.5 text-xs"
+							data-evidence-next-action={resolvedSnapshot.suggestedAction}
+						>
+							<span className="nightworkers-structured-artifact-text font-semibold">
+								{t("evidenceCheck.nextAction.title")}:{" "}
+								{t(
+									`evidenceCheck.nextAction.${resolvedSnapshot.suggestedAction}`,
+								)}
+							</span>
+						</section>
+					</>
+				) : null}
 			</div>
 		</div>
 	);
 }
 
-function AssuranceStatusBadge({
-	status,
-}: {
-	status: EvidenceCheckSnapshot["conditions"][number]["assuranceStatus"];
-}) {
+function StatusBadge({ status }: { status: string }) {
 	const { t } = useTranslation();
-	const safe = status === "safe_pass";
-	const failed = status === "failed";
+	const passed = [
+		"ready",
+		"matched",
+		"passed",
+		"not_required",
+		"confirmed",
+		"settled",
+	].includes(status);
+	const failed = status === "failed" || status === "ambiguous";
 	return (
 		<span
 			className={`inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold ${
-				safe
+				passed
 					? "border-emerald-700/70 bg-emerald-950/40 text-emerald-200"
 					: failed
 						? "border-rose-700/70 bg-rose-950/40 text-rose-200"
 						: "border-amber-700/70 bg-amber-950/30 text-amber-100"
 			}`}
 		>
-			{safe ? (
+			{passed ? (
 				<CheckCircle2 className="h-3.5 w-3.5" />
 			) : failed ? (
 				<AlertTriangle className="h-3.5 w-3.5" />
 			) : (
 				<Circle className="h-3.5 w-3.5" />
 			)}
-			{t(`evidenceCheck.assuranceStatus.${status}`)}
+			{t(`evidenceCheck.status.${status}`, { defaultValue: status })}
 		</span>
 	);
-}
-
-function resolveOverallAssuranceStatus(
-	snapshot: EvidenceCheckSnapshot,
-): EvidenceCheckSnapshot["conditions"][number]["assuranceStatus"] {
-	if (
-		snapshot.assuranceSummary.fullVerifyStatus === "failed" ||
-		snapshot.conditions.some(
-			(condition) => condition.assuranceStatus === "failed",
-		)
-	) {
-		return "failed";
-	}
-	if (snapshot.assuranceSummary.fullVerifyStatus !== "passed") return "pending";
-	const required = snapshot.conditions.filter(
-		(condition) => condition.required,
-	);
-	if (
-		required.length > 0 &&
-		required.every((condition) => condition.assuranceStatus === "safe_pass")
-	) {
-		return "safe_pass";
-	}
-	if (
-		required.length === 0 &&
-		snapshot.conditions.length > 0 &&
-		snapshot.conditions.every(
-			(condition) => condition.assuranceStatus === "not_applicable",
-		)
-	) {
-		return "not_applicable";
-	}
-	return "pending";
-}
-
-function yesNo(t: ReturnType<typeof useTranslation>["t"], value: boolean) {
-	return t(
-		value ? "evidenceCheck.assurance.yes" : "evidenceCheck.assurance.no",
-	);
-}
-
-function nullableYesNo(
-	t: ReturnType<typeof useTranslation>["t"],
-	value: boolean | null,
-) {
-	return value === null
-		? t("evidenceCheck.gateStatus.unknown")
-		: yesNo(t, value);
 }
 
 function formatTimestamp(value: string) {
 	const date = new Date(value);
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function formatDuration(durationMs: number | null) {
-	if (durationMs === null) return "";
-	return durationMs >= 1_000
-		? `${(durationMs / 1_000).toFixed(2)}s`
-		: `${Math.round(durationMs)}ms`;
-}
-
-function planTraceabilityMessage(
-	t: ReturnType<typeof useTranslation>["t"],
-	traceability: NonNullable<
-		EvidenceCheckSnapshot["implementationPlanTraceability"]
-	>,
-) {
-	if (traceability.provenanceStatus === "matched") {
-		return t("evidenceCheck.plan.exactMatch");
-	}
-	if (traceability.provenanceStatus === "legacy_inferred") {
-		return t("evidenceCheck.plan.legacyInferred");
-	}
-	if (traceability.provenanceStatus === "provenance_mismatch") {
-		return t("evidenceCheck.plan.provenanceMismatch");
-	}
-	if (traceability.provenanceStatus === "missing") {
-		return t("evidenceCheck.plan.provenanceMissing");
-	}
-	return t("evidenceCheck.plan.mismatch");
-}
-
-function EvidenceConditionStatusIcon({ status }: { status: string }) {
-	if (TODO_COMPLETE_STATUSES.has(status)) {
-		return (
-			<CheckCircle2 className="nightworkers-structured-artifact-success h-4 w-4" />
-		);
-	}
-	if (status === "failed" || status === "missing" || status === "unknown") {
-		return (
-			<AlertTriangle className="nightworkers-structured-artifact-warning h-4 w-4" />
-		);
-	}
-	if (status === "running") {
-		return (
-			<LoaderCircle className="nightworkers-structured-artifact-accent h-4 w-4 animate-spin" />
-		);
-	}
-	return <Circle className="nightworkers-structured-artifact-muted h-4 w-4" />;
 }

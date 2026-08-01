@@ -100,6 +100,10 @@ function buildMacSandboxProfile(input: {
 		input.gitCommonDir,
 		...input.runtimePaths,
 	]);
+	// Bun resolves cwd by reading every ancestor directory. Keep that traversal
+	// limited to the workspace, Git common directory, and isolated runtime paths;
+	// descendants outside the explicitly allowed roots remain denied.
+	const readableAncestors = ancestorDirectories(writePaths);
 	return [
 		"(version 1)",
 		"(allow default)",
@@ -107,10 +111,30 @@ function buildMacSandboxProfile(input: {
 			(value) => `(deny file-read* (subpath "${escapeSandboxString(value)}"))`,
 		),
 		"(deny file-write*)",
+		...Array.from(readableAncestors, (value) =>
+			sandboxLiteralRule("file-read-metadata", value),
+		),
+		...Array.from(readableAncestors, (value) =>
+			sandboxLiteralRule("file-read-data", value),
+		),
 		...Array.from(readPaths, (value) => sandboxRule("file-read*", value)),
 		...Array.from(writePaths, (value) => sandboxRule("file-write*", value)),
 		'(allow file-write* (literal "/dev/null"))',
 	].join("\n");
+}
+
+function ancestorDirectories(paths: Iterable<string>) {
+	const ancestors = new Set<string>();
+	for (const targetPath of paths) {
+		let current = path.resolve(targetPath);
+		while (true) {
+			const parent = path.dirname(current);
+			if (parent === current) break;
+			ancestors.add(parent);
+			current = parent;
+		}
+	}
+	return ancestors;
 }
 
 function sensitiveReadRoots() {
@@ -165,13 +189,28 @@ function writableRuntimePaths(environment: NodeJS.ProcessEnv) {
 				environment.TEMP,
 				environment.XDG_CONFIG_HOME,
 				environment.XDG_CACHE_HOME,
-			].filter((value): value is string => Boolean(value)),
+			]
+				.filter((value): value is string => Boolean(value))
+				.flatMap(pathAliases),
 		),
 	);
 }
 
+function pathAliases(value: string) {
+	const resolved = path.resolve(value);
+	try {
+		return [resolved, realpathSync(resolved)];
+	} catch {
+		return [resolved];
+	}
+}
+
 function sandboxRule(operation: string, targetPath: string) {
 	return `(allow ${operation} (subpath "${escapeSandboxString(targetPath)}"))`;
+}
+
+function sandboxLiteralRule(operation: string, targetPath: string) {
+	return `(allow ${operation} (literal "${escapeSandboxString(targetPath)}"))`;
 }
 
 function escapeSandboxString(value: string) {

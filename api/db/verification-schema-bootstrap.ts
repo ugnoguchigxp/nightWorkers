@@ -122,6 +122,53 @@ export async function ensureVerificationTables() {
 	);
 
 	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_evidence_readiness_settlements (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      run_id text NOT NULL,
+      verification_document_id text NOT NULL,
+      evidence_run_id text NOT NULL,
+      snapshot_json text NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
+      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE cascade,
+      FOREIGN KEY (evidence_run_id) REFERENCES verification_evidence_runs(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_evidence_readiness_settlement_run_document_uidx ON coding_agent_evidence_readiness_settlements (run_id, verification_document_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS coding_agent_evidence_readiness_settlement_task_idx ON coding_agent_evidence_readiness_settlements (task_id, created_at)",
+	);
+
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_evidence_check_confirmations (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      run_id text NOT NULL,
+      verification_document_id text NOT NULL,
+      initial_evidence_run_id text NOT NULL,
+      observed_evidence_run_ids_json text NOT NULL,
+      snapshot_json text NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
+      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE cascade,
+      FOREIGN KEY (initial_evidence_run_id) REFERENCES verification_evidence_runs(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_evidence_check_confirmation_run_document_uidx ON coding_agent_evidence_check_confirmations (run_id, verification_document_id)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS coding_agent_evidence_check_confirmation_task_idx ON coding_agent_evidence_check_confirmations (task_id, created_at)",
+	);
+
+	await client.execute(`
     CREATE TABLE IF NOT EXISTS verification_evidence_cases (
       id text PRIMARY KEY NOT NULL,
       created_at integer NOT NULL,

@@ -50,6 +50,7 @@ describe("run_check managed evidence scope", () => {
 					sourceMessageIds: [],
 					workspaceArtifactIds: [],
 				},
+				testScope: "unit",
 				conditions: [
 					{
 						id: "AC-001",
@@ -111,7 +112,35 @@ describe("run_check managed evidence scope", () => {
 				conditionIds: ["AC-001"],
 				evidenceKinds: ["e2e_test"],
 			}),
-		).rejects.toMatchObject({ code: "verification_evidence_kind_mismatch" });
+		).rejects.toMatchObject({ code: "verification_scope_denied" });
+		await expect(
+			validateRunCheckEvidenceScope({
+				...scope,
+				conditionIds: [],
+				evidenceKinds: ["e2e_test"],
+				checkKind: "verify",
+			}),
+		).rejects.toMatchObject({ code: "verification_scope_denied" });
+		await expect(
+			validateRunCheckEvidenceScope({
+				...scope,
+				conditionIds: [],
+				evidenceKinds: [],
+				checkKind: "verify",
+			}),
+		).rejects.toMatchObject({
+			code: "verification_scope_declaration_required",
+		});
+		await expect(
+			validateRunCheckEvidenceScope({
+				...scope,
+				conditionIds: [],
+				evidenceKinds: [],
+				checkKind: "other",
+			}),
+		).rejects.toMatchObject({
+			code: "verification_scope_declaration_required",
+		});
 		await expect(
 			validateRunCheckEvidenceScope({
 				...scope,

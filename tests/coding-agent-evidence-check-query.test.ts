@@ -1,21 +1,33 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
-import { repositories, taskRunTodos } from "../api/db/schema";
+import { repositories } from "../api/db/schema";
 import {
+	codingAgentEvidenceCheckConfirmations,
+	codingAgentEvidenceReadinessSettlements,
+	codingAgentTestConditionMappings,
+	codingAgentTestInventoryCases,
+	codingAgentTestInventoryRuns,
 	verificationChecklistItems,
 	verificationDocuments,
+	verificationEvidenceRuns,
 } from "../api/db/verification-schema";
-import { digestImplementationPlan } from "../api/modules/agentsShare";
 import {
 	getEvidenceCheckSnapshot,
 	getLatestEvidenceCheckDescriptor,
 } from "../api/modules/codingAgent/verification/evidence-check-query.service";
+import { evaluateEvidenceReadiness } from "../api/modules/codingAgent/verification/evidence-readiness.service";
+import { captureWorkspaceSourceSnapshot } from "../api/modules/codingAgent/verification/workspace-source-snapshot";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
+import { completionCheckTool } from "../api/services/worker-tools/run-check";
 
 const repositoryIds: string[] = [];
+const temporaryDirectories: string[] = [];
 
 beforeAll(() => ensureNightWorkersSchema());
 
@@ -23,13 +35,29 @@ afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) {
 		await db.delete(repositories).where(eq(repositories.id, id));
 	}
+	for (const directory of temporaryDirectories.splice(0)) {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
 });
 
 describe("Coding Agent Evidence Check query", () => {
-	it("returns only the requested Task's active Spec checklist", async () => {
+	it("settles only after initial verify, one confirmation, and follow-up verify", async () => {
+		const repositoryPath = await fs.mkdtemp(
+			path.join(os.tmpdir(), "evidence-readiness-"),
+		);
+		temporaryDirectories.push(repositoryPath);
+		await fs.mkdir(path.join(repositoryPath, "tests"));
+		await fs.writeFile(
+			path.join(repositoryPath, "package.json"),
+			JSON.stringify({ devDependencies: { vitest: "latest" } }),
+		);
+		await fs.writeFile(
+			path.join(repositoryPath, "tests", "todo.test.ts"),
+			'import { it } from "vitest";\nit("creates a todo", () => {});\n',
+		);
 		const repository = await repo.createRepository({
 			name: `evidence-check-${crypto.randomUUID()}`,
-			localPath: "/tmp/evidence-check",
+			localPath: repositoryPath,
 			branch: "main",
 		});
 		repositoryIds.push(repository.id);
@@ -38,162 +66,323 @@ describe("Coding Agent Evidence Check query", () => {
 			title: "Evidence check",
 			status: "ready",
 		});
-		const verificationDocumentId = crypto.randomUUID();
-		const implementationPlan = {
-			steps: [
-				{
-					title: "APIを実装する",
-					systemContext: "確定済みAPI契約に従って実装する。",
-				},
-				{
-					title: "品質ゲートを通す",
-					systemContext: "対象Projectの品質ゲートを実行してPassさせる。",
-				},
-			],
-		};
-		const implementationPlanDigest =
-			digestImplementationPlan(implementationPlan);
-		const specMessage = await repo.createTaskMessage({
-			taskId: task.id,
-			role: "assistant",
-			content: "# Feature Plan",
-			messageType: "markdown_document",
-			payloadJson: {
-				intent: "feature_plan",
-				implementationPlan,
-				implementationPlanProvenance: {
-					version: 1,
-					digest: implementationPlanDigest,
-				},
-			},
-		});
-		const specMessageId = specMessage.id;
-		const implementationRun = await repo.createTaskRun({
+		const run = await repo.createTaskRun({
 			taskId: task.id,
 			repositoryId: repository.id,
-			status: "needs_review",
+			status: "running",
 			workerKind: "codex-agent",
-			contextSnapshot: {
-				executionMode: "implementation",
-				implementationHandoff: {
-					version: 1,
-					sourceMessageId: specMessageId,
-					implementationPlan,
-				},
-				implementationPlanProvenance: {
-					version: 1,
-					sourceMessageId: specMessageId,
-					digest: implementationPlanDigest,
-				},
-			},
+			contextSnapshot: { executionMode: "implementation" },
 		});
-		await db.insert(taskRunTodos).values(
-			implementationPlan.steps.map((step, index) => ({
-				runId: implementationRun.id,
-				todoKey: `step-${index + 1}`,
-				seq: index + 1,
-				title: step.title,
-				context: step.systemContext,
-				nextAction: step.systemContext,
-				taskType: "code_change",
-				status: "passed",
-				createdBy: "agent",
-			})),
-		);
+		const verificationDocumentId = crypto.randomUUID();
 		await db.insert(verificationDocuments).values({
 			id: verificationDocumentId,
 			taskId: task.id,
-			specMessageId,
-			specArtifactId: `feature-plan-${specMessageId}`,
+			runId: run.id,
 			sourceSpecPath: "spec/feature-plan.md",
 			status: "active",
-			documentJson: {},
+			documentJson: {
+				version: 2,
+				specId: "feature-plan",
+				specPath: "spec/feature-plan.md",
+				generatedAt: "2026-07-24T00:00:00.000Z",
+				source: {
+					taskId: task.id,
+					sourceMessageIds: [],
+					workspaceArtifactIds: [],
+				},
+				testScope: "unit",
+				conditions: [],
+				commands: [],
+			},
 			generatedAt: new Date("2026-07-24T00:00:00.000Z"),
 		});
-		await db.insert(verificationChecklistItems).values([
-			{
-				id: crypto.randomUUID(),
-				verificationDocumentId,
-				taskId: task.id,
-				conditionId: "AC-001",
-				text: "API evidence is present",
-				required: true,
-				expectedEvidenceJson: ["unit_test"],
-				status: "passed",
-				evidenceIdsJson: ["evidence-1"],
-			},
-			{
-				id: crypto.randomUUID(),
-				verificationDocumentId,
-				taskId: task.id,
-				conditionId: "AC-002",
-				text: "UI evidence is present",
-				required: true,
-				status: "pending",
-				evidenceIdsJson: [],
-			},
-		]);
-		await expect(getLatestEvidenceCheckDescriptor(task.id)).resolves.toEqual({
+		await db.insert(verificationChecklistItems).values({
+			id: crypto.randomUUID(),
+			verificationDocumentId,
+			taskId: task.id,
+			conditionId: "AC-001",
+			text: "Todoを作成できる",
+			required: true,
+			verificationKind: "automated_test",
+			expectedEvidenceJson: ["unit_test"],
+			status: "pending",
+			evidenceIdsJson: [],
+		});
+		const snapshot = await captureWorkspaceSourceSnapshot(repositoryPath);
+		const inventoryId = crypto.randomUUID();
+		const caseKey = "static:vitest:tests/todo.test.ts:creates a todo";
+		await db.insert(codingAgentTestInventoryRuns).values({
+			id: inventoryId,
+			taskId: task.id,
+			runId: run.id,
+			cwd: repositoryPath,
+			sourceSnapshotJson: snapshot,
+			warningsJson: [],
+		});
+		await db.insert(codingAgentTestInventoryCases).values({
+			id: crypto.randomUUID(),
+			inventoryId,
+			caseKey,
+			name: "creates a todo",
+			filePath: "tests/todo.test.ts",
+			runner: "vitest",
+			discoveryLevel: "active",
+			declaredConditionIdsJson: [],
+		});
+		await db.insert(codingAgentTestConditionMappings).values({
+			id: crypto.randomUUID(),
 			taskId: task.id,
 			verificationDocumentId,
-			specMessageId,
-			specArtifactId: `feature-plan-${specMessageId}`,
-			generatedAt: "2026-07-24T00:00:00.000Z",
+			inventoryId,
+			caseKey,
+			conditionId: "AC-001",
+			source: "schema_evidence_set",
+			sourceDigest: snapshot.sourceStateHash,
+		});
+		await expect(
+			completionCheckTool({
+				taskId: task.id,
+				runId: run.id,
+				verificationDocumentId,
+				repoRoot: repositoryPath,
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			payload: {
+				result: {
+					verify: { status: "not_run" },
+					confirmation: { status: "awaiting_initial_verify" },
+					suggestedAction: "run_verify",
+				},
+			},
+		});
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceCheckConfirmations)
+				.where(eq(codingAgentEvidenceCheckConfirmations.runId, run.id)),
+		).toHaveLength(0);
+		await db.insert(verificationEvidenceRuns).values({
+			id: crypto.randomUUID(),
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			checkKind: "verify",
+			command: "bun run verify",
+			cwd: repositoryPath,
+			exitCode: 0,
+			runner: "vitest",
+			rawStdoutArtifactId: "stdout",
+			rawStderrArtifactId: "stderr",
+			summaryJson: {},
+			evidenceKindsJson: ["unit_test"],
+			commandLevelConditionIdsJson: [],
+			sourceSnapshotJson: snapshot,
+			testExecutionObserved: false,
+			sourceMutatedDuringCheck: false,
+			startedAt: new Date("2026-07-24T00:01:00.000Z"),
+			finishedAt: new Date("2026-07-24T00:02:00.000Z"),
+		});
+		await db.insert(verificationEvidenceRuns).values({
+			id: crypto.randomUUID(),
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			checkKind: "verify",
+			command: "bun run e2e",
+			cwd: repositoryPath,
+			exitCode: 0,
+			runner: "playwright",
+			rawStdoutArtifactId: "e2e-stdout",
+			rawStderrArtifactId: "e2e-stderr",
+			summaryJson: {},
+			evidenceKindsJson: ["e2e_test"],
+			commandLevelConditionIdsJson: [],
+			sourceSnapshotJson: snapshot,
+			testExecutionObserved: true,
+			sourceMutatedDuringCheck: false,
+			startedAt: new Date("2026-07-24T00:02:00.000Z"),
+			finishedAt: new Date("2026-07-24T00:03:00.000Z"),
 		});
 
 		await expect(
-			getEvidenceCheckSnapshot({
-				taskId: task.id,
-				verificationDocumentId,
-			}),
+			getLatestEvidenceCheckDescriptor(task.id),
 		).resolves.toMatchObject({
 			taskId: task.id,
 			verificationDocumentId,
-			specMessageId,
-			conditions: [
-				{
-					id: "AC-001",
-					status: "passed",
-					evidenceIds: ["evidence-1"],
-					verificationKind: "automated_test",
-					expectedEvidence: ["unit_test"],
-					assuranceStatus: "pending",
-				},
-				{
-					id: "AC-002",
-					status: "pending",
-					evidenceIds: [],
-					verificationKind: "automated_test",
-					assuranceStatus: "pending",
-				},
-			],
-			implementationPlanTraceability: {
-				sourceMessageId: specMessageId,
-				digest: implementationPlanDigest,
-				runId: implementationRun.id,
-				runStatus: "needs_review",
-				provenanceStatus: "matched",
-				exactTodoMatch: true,
-				steps: [
-					{ seq: 1, title: "APIを実装する", todoStatus: "passed" },
-					{ seq: 2, title: "品質ゲートを通す", todoStatus: "passed" },
-				],
-				summary: {
-					total: 2,
-					passed: 2,
-					incomplete: 0,
-					unaligned: 0,
-					extraTodos: 0,
+		});
+		const awaitingConfirmation = await getEvidenceCheckSnapshot({
+			taskId: task.id,
+			verificationDocumentId,
+		});
+		expect(awaitingConfirmation).toMatchObject({
+			version: 2,
+			taskId: task.id,
+			runId: run.id,
+			scope: { testScope: "unit", e2eAllowed: false },
+			mapping: { status: "missing" },
+			verify: { status: "passed", command: "bun run verify", exitCode: 0 },
+			confirmation: { status: "awaiting_confirmation" },
+			ready: false,
+			suggestedAction: "confirm_evidence_check",
+		});
+		await expect(
+			completionCheckTool({
+				taskId: task.id,
+				runId: run.id,
+				verificationDocumentId,
+				repoRoot: repositoryPath,
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			payload: {
+				result: {
+					mapping: {
+						status: "matched",
+						total: 1,
+						matched: 1,
+						items: [{ id: "AC-001", status: "matched" }],
+					},
+					verify: {
+						status: "passed",
+						command: "bun run verify",
+						exitCode: 0,
+					},
+					confirmation: { status: "confirmed" },
+					suggestedAction: "run_verify",
 				},
 			},
-			summary: { total: 2, confirmed: 0, failed: 0, pending: 2 },
-			assuranceSummary: {
-				automated: 2,
-				safePass: 0,
-				failed: 0,
-				attention: 2,
-				fullVerifyStatus: "unknown",
+		});
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceCheckConfirmations)
+				.where(eq(codingAgentEvidenceCheckConfirmations.runId, run.id)),
+		).toHaveLength(1);
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceReadinessSettlements)
+				.where(eq(codingAgentEvidenceReadinessSettlements.runId, run.id)),
+		).toHaveLength(0);
+		await fs.writeFile(
+			path.join(repositoryPath, "implementation.ts"),
+			"export {};\n",
+		);
+		await expect(
+			getEvidenceCheckSnapshot({ taskId: task.id, verificationDocumentId }),
+		).resolves.toMatchObject({
+			confirmation: { status: "confirmed" },
+			ready: false,
+			suggestedAction: "run_verify",
+		});
+		await fs.writeFile(
+			path.join(repositoryPath, "tests", "todo.test.ts"),
+			'import { it } from "vitest";\nit("renamed todo test", () => {});\n',
+		);
+		const remappedSource = await captureWorkspaceSourceSnapshot(repositoryPath);
+		await db.insert(verificationEvidenceRuns).values({
+			id: crypto.randomUUID(),
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			checkKind: "verify",
+			command: "bun run verify",
+			cwd: repositoryPath,
+			exitCode: 0,
+			runner: "vitest",
+			rawStdoutArtifactId: "remapped-stdout",
+			rawStderrArtifactId: "remapped-stderr",
+			summaryJson: {},
+			evidenceKindsJson: ["unit_test"],
+			commandLevelConditionIdsJson: [],
+			sourceSnapshotJson: remappedSource,
+			testExecutionObserved: false,
+			sourceMutatedDuringCheck: false,
+			startedAt: new Date("2026-07-24T00:04:00.000Z"),
+			finishedAt: new Date("2026-07-24T00:05:00.000Z"),
+		});
+		const settledSnapshot = await getEvidenceCheckSnapshot({
+			taskId: task.id,
+			verificationDocumentId,
+		});
+		expect(settledSnapshot).toMatchObject({
+			mapping: { status: "matched" },
+			verify: { status: "passed", command: "bun run verify", exitCode: 0 },
+			confirmation: { status: "settled" },
+			ready: true,
+			suggestedAction: "write_final_report",
+		});
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceReadinessSettlements)
+				.where(eq(codingAgentEvidenceReadinessSettlements.runId, run.id)),
+		).toHaveLength(1);
+		await fs.writeFile(
+			path.join(repositoryPath, "after-settlement.ts"),
+			"export {};\n",
+		);
+		await expect(
+			getEvidenceCheckSnapshot({ taskId: task.id, verificationDocumentId }),
+		).resolves.toEqual(settledSnapshot);
+
+		const nextVerificationDocumentId = crypto.randomUUID();
+		await db.insert(verificationDocuments).values({
+			id: nextVerificationDocumentId,
+			taskId: task.id,
+			runId: run.id,
+			sourceSpecPath: "spec/additional-feature.md",
+			status: "active",
+			documentJson: {
+				version: 2,
+				specId: "additional-feature",
+				specPath: "spec/additional-feature.md",
+				generatedAt: "2026-07-24T00:06:00.000Z",
+				source: {
+					taskId: task.id,
+					sourceMessageIds: [],
+					workspaceArtifactIds: [],
+				},
+				testScope: "unit",
+				conditions: [],
+				commands: [],
 			},
+			generatedAt: new Date("2026-07-24T00:06:00.000Z"),
+		});
+		await expect(
+			evaluateEvidenceReadiness({
+				taskId: task.id,
+				runId: run.id,
+				verificationDocumentId: nextVerificationDocumentId,
+				repoRoot: repositoryPath,
+			}),
+		).resolves.toMatchObject({
+			runId: run.id,
+			verify: { status: "not_run" },
+			ready: false,
+			suggestedAction: "run_verify",
+		});
+
+		const nextRun = await repo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "running",
+			workerKind: "codex-agent",
+			contextSnapshot: { executionMode: "implementation" },
+		});
+		await expect(
+			evaluateEvidenceReadiness({
+				taskId: task.id,
+				runId: nextRun.id,
+				verificationDocumentId,
+				repoRoot: repositoryPath,
+			}),
+		).resolves.toMatchObject({
+			runId: nextRun.id,
+			verify: { status: "not_run" },
+			ready: false,
+			suggestedAction: "run_verify",
 		});
 		await expect(
 			getEvidenceCheckSnapshot({

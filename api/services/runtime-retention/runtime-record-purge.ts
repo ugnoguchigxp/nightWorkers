@@ -66,6 +66,14 @@ export async function purgeRuntimeRecordDetails(input: {
 			return { purged: false, rows: 0, bytes: 0, byTable };
 		}
 		await executeStatement(
+			"coding_agent_evidence_check_confirmations",
+			"DELETE FROM coding_agent_evidence_check_confirmations WHERE run_id = ?",
+		);
+		await executeStatement(
+			"coding_agent_evidence_readiness_settlements",
+			"DELETE FROM coding_agent_evidence_readiness_settlements WHERE run_id = ?",
+		);
+		await executeStatement(
 			"verification_evidence_cases",
 			"DELETE FROM verification_evidence_cases WHERE evidence_run_id IN (SELECT id FROM verification_evidence_runs WHERE run_id = ?)",
 		);

@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe("manual condition evidence", () => {
-	it("[AC-009] requires a current human-review confirmation", async () => {
+	it("keeps manual review outside Evidence Readiness", async () => {
 		const repository = await nightworkersRepository.createRepository({
 			name: `TEST: manual condition ${crypto.randomUUID()}`,
 			localPath: process.cwd(),
@@ -76,12 +76,9 @@ describe("manual condition evidence", () => {
 		});
 		expect(beforeReview).toMatchObject({
 			ok: false,
-			unknownRequired: [
-				expect.objectContaining({
-					conditionId: "AC-001",
-					reason: "MANUAL_CONFIRMATION_MISSING",
-				}),
-			],
+			mapping: { status: "not_required" },
+			verify: { status: "not_run" },
+			suggestedAction: "run_verify",
 		});
 
 		await expect(
@@ -127,13 +124,9 @@ describe("manual condition evidence", () => {
 			repoRoot: process.cwd(),
 		});
 		expect(afterReview).toMatchObject({
-			ok: true,
-			conditions: [
-				expect.objectContaining({
-					conditionId: "AC-001",
-					status: "safe_pass",
-				}),
-			],
+			ok: false,
+			mapping: { status: "not_required" },
+			verify: { status: "not_run" },
 		});
 	});
 });

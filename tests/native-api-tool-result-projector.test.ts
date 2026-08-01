@@ -171,4 +171,60 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 			"nonGoals",
 		);
 	});
+
+	it("projects only Evidence Readiness statuses for completion_check", () => {
+		const result = projectWorkerResultToNativeApiToolResult({
+			ok: false,
+			toolName: "completion_check",
+			startedAt: "2026-07-19T00:00:00.000Z",
+			finishedAt: "2026-07-19T00:00:00.001Z",
+			payload: {
+				llmSummary: "Evidence mapping is missing.",
+				result: {
+					ok: false,
+					verificationDocumentId: "verification-1",
+					sourceStateHash: "source-1",
+					mapping: {
+						status: "missing",
+						matched: 1,
+						total: 2,
+						definitionDigest: "definitions-1",
+						items: [{ text: "must not reach the model" }],
+					},
+					verify: {
+						status: "not_run",
+						command: null,
+						exitCode: null,
+						sourceStateHash: null,
+						logRefs: ["stdout-with-large-test-output"],
+					},
+					confirmation: {
+						status: "confirmed",
+						initialEvidenceRunId: "evidence-run-1",
+						confirmedAt: "2026-07-19T00:00:00.000Z",
+					},
+					suggestedAction: "record_mapping",
+					readinessDigest: "readiness-1",
+					reason: "evidence_mapping_missing",
+				},
+			},
+		});
+		const modelVisible = JSON.parse(result.content) as {
+			payload: { result: Record<string, unknown> };
+		};
+
+		expect(modelVisible.payload.result).toMatchObject({
+			mapping: { status: "missing", matched: 1, total: 2 },
+			verify: { status: "not_run" },
+			confirmation: { status: "confirmed" },
+			suggestedAction: "record_mapping",
+			readinessDigest: "readiness-1",
+		});
+		expect(JSON.stringify(modelVisible.payload)).not.toContain(
+			"must not reach the model",
+		);
+		expect(JSON.stringify(modelVisible.payload)).not.toContain(
+			"stdout-with-large-test-output",
+		);
+	});
 });

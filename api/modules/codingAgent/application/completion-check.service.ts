@@ -1,39 +1,19 @@
 import { and, desc, eq } from "drizzle-orm";
+import type { EvidenceCheckSnapshot } from "../../../../shared/modules/codingAgent";
 import { db } from "../../../db/client";
 import { verificationDocuments } from "../../../db/verification-schema";
-import { evaluateAcceptanceConditionAssurance } from "../verification/acceptance-condition-assurance.service";
-import type { QualityGateResult } from "../verification/quality-gate.service";
+import { evaluateEvidenceReadiness } from "../verification/evidence-readiness.service";
 
 export type CompletionCheckResult = {
 	ok: boolean;
 	verificationDocumentId: string | null;
-	summary: {
-		total: number;
-		complete: number;
-		failedRequired: number;
-		unknownRequired: number;
-	};
-	failedRequired: Array<{ conditionId: string; text: string; reason?: string }>;
-	unknownRequired: Array<{
-		conditionId: string;
-		text: string;
-		reason?: string;
-	}>;
-	conditions: Array<{
-		conditionId: string;
-		text: string;
-		required: boolean;
-		status: string;
-		reason?: string;
-	}>;
-	qualityGate: QualityGateResult;
-	observability?: {
-		requiredConditions: number;
-		safePassConditions: number;
-		unmappedConditions: number;
-		detailsMissingConditions: number;
-		staleConditions: number;
-	};
+	runId: string | null;
+	sourceStateHash: string | null;
+	mapping: EvidenceCheckSnapshot["mapping"];
+	verify: EvidenceCheckSnapshot["verify"];
+	confirmation: EvidenceCheckSnapshot["confirmation"];
+	suggestedAction: EvidenceCheckSnapshot["suggestedAction"];
+	readinessDigest: string;
 	reason?: string;
 };
 
@@ -42,6 +22,7 @@ export async function runCompletionCheck(input: {
 	runId: string;
 	verificationDocumentId?: string | null;
 	repoRoot?: string;
+	confirmEvidenceCheck?: boolean;
 }): Promise<CompletionCheckResult> {
 	const document = input.verificationDocumentId
 		? await db
@@ -67,142 +48,81 @@ export async function runCompletionCheck(input: {
 				.orderBy(desc(verificationDocuments.generatedAt))
 				.limit(1)
 				.then((rows) => rows[0]);
-	if (!document) return missingDocumentResult();
+	if (!document) return unavailable("missing_verification_document");
 	if (!input.repoRoot) {
 		return {
-			...missingDocumentResult("missing_repository_context"),
+			...unavailable("missing_repository_context"),
 			verificationDocumentId: document.id,
+			runId: input.runId,
 		};
 	}
 
-	const evaluation = await evaluateAcceptanceConditionAssurance({
-		taskId: input.taskId,
+	const readiness = await evaluateEvidenceReadiness(
+		{
+			taskId: input.taskId,
+			runId: input.runId,
+			verificationDocumentId: document.id,
+			repoRoot: input.repoRoot,
+		},
+		{ confirmEvidenceCheck: input.confirmEvidenceCheck },
+	);
+	return {
+		ok: readiness.ready,
+		verificationDocumentId: document.id,
 		runId: input.runId,
-		verificationDocumentId: document.id,
-		repoRoot: input.repoRoot,
-	});
-	const failedRequired = evaluation.conditions.filter(
-		(condition) => condition.required && condition.assuranceStatus === "failed",
-	);
-	const unknownRequired = evaluation.conditions.filter(
-		(condition) =>
-			condition.required &&
-			condition.assuranceStatus !== "safe_pass" &&
-			condition.assuranceStatus !== "failed",
-	);
-	const complete = evaluation.conditions.filter(
-		(condition) =>
-			!condition.required || condition.assuranceStatus === "safe_pass",
-	).length;
-	const qualityGate: QualityGateResult = {
-		passed: evaluation.qualityGate.passed,
-		sourceStateHash: evaluation.sourceStateHash,
-		inventory: evaluation.qualityGate.inventory,
-		testExecution: evaluation.qualityGate.testExecution,
-		fullVerify: {
-			status: evaluation.qualityGate.fullVerify.status,
-			...(evaluation.qualityGate.fullVerify.reason
-				? { reason: evaluation.qualityGate.fullVerify.reason }
-				: {}),
-		},
-		conditions: evaluation.conditions.map((condition) => ({
-			conditionId: condition.conditionId,
-			required: condition.required,
-			status: !condition.required
-				? "not_required"
-				: condition.assuranceStatus === "safe_pass"
-					? "passed"
-					: "failed",
-			...(condition.reasonCode ? { reason: condition.reasonCode } : {}),
-		})),
-	};
-	return {
-		ok: evaluation.passed,
-		verificationDocumentId: document.id,
-		summary: {
-			total: evaluation.conditions.length,
-			complete,
-			failedRequired: failedRequired.length,
-			unknownRequired: unknownRequired.length,
-		},
-		failedRequired: failedRequired.map(toConditionResult),
-		unknownRequired: unknownRequired.map(toConditionResult),
-		conditions: evaluation.conditions.map((condition) => ({
-			conditionId: condition.conditionId,
-			text: condition.text,
-			required: condition.required,
-			status: condition.assuranceStatus,
-			...(condition.reasonCode ? { reason: condition.reasonCode } : {}),
-		})),
-		qualityGate,
-		observability: {
-			requiredConditions: evaluation.conditions.filter(
-				(condition) => condition.required,
-			).length,
-			safePassConditions: evaluation.conditions.filter(
-				(condition) =>
-					condition.required && condition.assuranceStatus === "safe_pass",
-			).length,
-			unmappedConditions: evaluation.conditions.filter(
-				(condition) => condition.assuranceStatus === "unmapped",
-			).length,
-			detailsMissingConditions: evaluation.conditions.filter(
-				(condition) => condition.assuranceStatus === "details_missing",
-			).length,
-			staleConditions: evaluation.conditions.filter(
-				(condition) => condition.assuranceStatus === "stale",
-			).length,
-		},
-		reason:
-			failedRequired.length || unknownRequired.length
-				? "required_conditions_incomplete"
-				: evaluation.qualityGate.passed
-					? undefined
-					: "quality_gate_incomplete",
+		sourceStateHash: readiness.sourceStateHash,
+		mapping: readiness.mapping,
+		verify: readiness.verify,
+		confirmation: readiness.confirmation,
+		suggestedAction: readiness.suggestedAction,
+		readinessDigest: readiness.readinessDigest,
+		...(readiness.ready ? {} : { reason: readinessReason(readiness) }),
 	};
 }
 
-function toConditionResult(input: {
-	conditionId: string;
-	text: string;
-	reasonCode: string | null;
-}) {
-	return {
-		conditionId: input.conditionId,
-		text: input.text,
-		...(input.reasonCode ? { reason: input.reasonCode } : {}),
-	};
+function readinessReason(
+	readiness: Awaited<ReturnType<typeof evaluateEvidenceReadiness>>,
+) {
+	if (readiness.confirmation.status === "awaiting_confirmation") {
+		return "evidence_check_confirmation_required";
+	}
+	if (readiness.confirmation.status === "confirmed") {
+		return readiness.verify.status === "failed"
+			? "evidence_check_followup_verify_failed"
+			: "evidence_check_followup_verify_required";
+	}
+	return `project_verify_${readiness.verify.status}`;
 }
 
-function missingDocumentResult(
-	reason = "missing_verification_document",
-): CompletionCheckResult {
+function unavailable(reason: string): CompletionCheckResult {
 	return {
 		ok: false,
 		verificationDocumentId: null,
-		summary: {
+		runId: null,
+		sourceStateHash: null,
+		mapping: {
+			status: "missing",
+			definitionDigest: null,
 			total: 0,
-			complete: 0,
-			failedRequired: 0,
-			unknownRequired: 0,
+			matched: 0,
+			items: [],
 		},
-		failedRequired: [],
-		unknownRequired: [],
-		conditions: [],
-		qualityGate: {
-			passed: false,
-			inventory: { status: "unknown", activeCaseCount: 0, reason },
-			testExecution: { status: "unknown", reason },
-			fullVerify: { status: "unknown", reason },
-			conditions: [],
+		verify: {
+			status: "not_run",
+			command: null,
+			cwd: null,
+			exitCode: null,
+			sourceStateHash: null,
+			finishedAt: null,
+			logRefs: [],
 		},
-		observability: {
-			requiredConditions: 0,
-			safePassConditions: 0,
-			unmappedConditions: 0,
-			detailsMissingConditions: 0,
-			staleConditions: 0,
+		confirmation: {
+			status: "awaiting_initial_verify",
+			initialEvidenceRunId: null,
+			confirmedAt: null,
 		},
+		suggestedAction: "run_verify",
+		readinessDigest: `unavailable:${reason}`,
 		reason,
 	};
 }

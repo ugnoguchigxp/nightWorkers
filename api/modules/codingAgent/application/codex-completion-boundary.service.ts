@@ -44,30 +44,10 @@ export async function reconcileCodexCompletionBoundary(
 				safetyPolicy: input.safetyPolicy,
 			},
 		);
-		const verificationCommandsPassed =
-			verificationCloseout.applicability !== "active" ||
-			verificationCloseout.commands.every(
-				(command) =>
-					command.ok &&
-					command.exitCode === 0 &&
-					command.managedEvidence === true,
-			);
 		const completionReady =
 			verificationCloseout.applicability !== "active" ||
 			verificationCloseout.completionCheck?.ok === true;
-		const conditionsCovered = completionReady;
-		const testInventoryReady =
-			verificationCloseout.applicability !== "active" ||
-			!verificationCloseout.requiresAutomatedTests ||
-			verificationCloseout.activeCaseCount > 0;
-		const sourceStable =
-			verificationCloseout.applicability !== "active" ||
-			!verificationCloseout.sourceMutatedDuringCloseout;
-		const ready =
-			verificationCommandsPassed &&
-			completionReady &&
-			testInventoryReady &&
-			sourceStable;
+		const ready = completionReady;
 		await input.sink.emit({
 			type: "verification_finished",
 			message: ready
@@ -76,10 +56,7 @@ export async function reconcileCodexCompletionBoundary(
 			payload: {
 				provider: "codex",
 				verificationCloseout,
-				verificationCommandsPassed,
-				conditionsCovered,
-				testInventoryReady,
-				sourceStable,
+				completionReady,
 			},
 		});
 		return {
@@ -92,10 +69,7 @@ export async function reconcileCodexCompletionBoundary(
 					}),
 			testResults: {
 				verificationCloseout,
-				verificationCommandsPassed,
-				conditionsCovered,
-				testInventoryReady,
-				sourceStable,
+				completionReady,
 			},
 		};
 	} catch (error) {

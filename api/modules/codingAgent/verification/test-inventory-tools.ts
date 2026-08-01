@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { testEvidenceSetMappingWriteSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
+import {
+	digestTestDefinitionInventory,
+	digestTestEvidenceMappingRevision,
+} from "./test-definition-digest";
 import { recordTestEvidenceSetMappings } from "./test-evidence-mapping.service";
 import { collectTestInventory } from "./test-inventory.service";
 import {
@@ -59,6 +63,32 @@ export async function recordTestConditionMappingTool(
 	} catch (error) {
 		return mappingToolFailure(startedAt, error);
 	}
+}
+
+export async function resolveTestConditionMappingRevision(input: {
+	taskId: string;
+	runId?: string;
+	repoRoot: string;
+	cwd?: string;
+	verificationDocumentId: string;
+	evidenceSet: Parameters<
+		typeof digestTestEvidenceMappingRevision
+	>[0]["evidenceSet"];
+	blockedCommands?: string[];
+	allowedPaths?: string[];
+	externalAllowedPaths?: string[];
+	deniedPaths?: string[];
+	maxCommandSeconds?: number;
+}) {
+	const inventory = await collectTestInventory(input, {
+		activeDiscovery: false,
+		persist: false,
+	});
+	return digestTestEvidenceMappingRevision({
+		verificationDocumentId: input.verificationDocumentId,
+		inventoryDigest: digestTestDefinitionInventory(inventory.cases),
+		evidenceSet: input.evidenceSet,
+	});
 }
 
 function mappingToolFailure(

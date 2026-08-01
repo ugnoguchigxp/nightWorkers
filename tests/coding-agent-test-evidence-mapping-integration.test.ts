@@ -229,6 +229,40 @@ describe("schema test evidence mapping integration", () => {
 			evidence: verifyEvidence,
 		});
 
+		const confirmation = await runCompletionCheck({
+			taskId: task.id,
+			runId: run?.id ?? "",
+			verificationDocumentId: document.id,
+			repoRoot,
+			confirmEvidenceCheck: true,
+		});
+		expect(confirmation).toMatchObject({
+			ok: false,
+			mapping: { status: "matched" },
+			confirmation: { status: "confirmed" },
+			suggestedAction: "run_verify",
+		});
+		const followupVerifyEvidence = buildCommandLevelEvidence({
+			runId: run?.id ?? "",
+			taskId: task.id,
+			command: "bun run verify",
+			cwd: repoRoot,
+			startedAt: "2026-08-01T00:00:04.000Z",
+			finishedAt: "2026-08-01T00:00:05.000Z",
+			exitCode: 0,
+			runner: "unknown",
+			rawStdoutArtifactId: "followup-verify-stdout",
+			rawStderrArtifactId: "followup-verify-stderr",
+		});
+		followupVerifyEvidence.sourceSnapshot = sourceSnapshot;
+		followupVerifyEvidence.sourceMutatedDuringCheck = false;
+		await recordVerificationEvidence({
+			taskId: task.id,
+			runId: run?.id,
+			verificationDocumentId: document.id,
+			checkKind: "verify",
+			evidence: followupVerifyEvidence,
+		});
 		const completion = await runCompletionCheck({
 			taskId: task.id,
 			runId: run?.id ?? "",
@@ -237,12 +271,10 @@ describe("schema test evidence mapping integration", () => {
 		});
 		expect(completion).toMatchObject({
 			ok: true,
-			conditions: [
-				expect.objectContaining({
-					conditionId: "AC-001",
-					status: "safe_pass",
-				}),
-			],
+			mapping: { status: "matched" },
+			verify: { status: "passed" },
+			confirmation: { status: "settled" },
+			suggestedAction: "write_final_report",
 		});
 		expect(
 			await nightworkersRepository.getTaskRun(run?.id ?? ""),

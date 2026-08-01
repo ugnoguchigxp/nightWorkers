@@ -60,22 +60,15 @@ export * from "./runtime";
 export * from "./todo";
 export { codingAgentForbiddenPlanTools, todoListTool } from "./tools";
 export {
-	type AcceptanceConditionAssuranceEvaluation,
-	type AcceptanceConditionAssuranceTest,
-	type EvaluatedAcceptanceCondition,
-	evaluateAcceptanceConditionAssurance,
-	evaluateAcceptanceConditionAssuranceDataset,
-} from "./verification/acceptance-condition-assurance.service";
-export {
 	isAutomatedEvidenceKind,
 	isCompatibleEvidenceKind,
 } from "./verification/evidence-kind-compatibility";
+export { evaluateEvidenceReadiness } from "./verification/evidence-readiness.service";
 export { resolveExecutionCaseIdentities } from "./verification/execution-case-identity";
-export type { QualityGateResult } from "./verification/quality-gate.service";
-export { evaluateQualityGate } from "./verification/quality-gate.service";
 export { validateRunCheckEvidenceScope } from "./verification/run-check-evidence-scope.service";
 export {
 	collectTestInventoryTool,
 	recordTestConditionMappingTool,
+	resolveTestConditionMappingRevision,
 } from "./verification/test-inventory-tools";
 export { captureWorkspaceSourceSnapshot } from "./verification/workspace-source-snapshot";

@@ -76,7 +76,7 @@ export const nightWorkersCodexToolManifest = {
 		title: "Completion Check",
 		description: COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
 		annotations: {
-			readOnlyHint: true,
+			readOnlyHint: false,
 			destructiveHint: false,
 			openWorldHint: false,
 		},

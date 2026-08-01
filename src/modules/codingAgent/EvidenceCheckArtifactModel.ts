@@ -13,8 +13,8 @@ export type EvidenceCheckPanelModel = {
 	specMessageId: string | null;
 	verificationDocumentId: string;
 	verificationSidecarMessageId: string | null;
-	conditions: EvidenceCheckSnapshot["conditions"];
 };
+
 export function findLatestEvidenceCheckSource(taskMessages: TaskMessage[]): {
 	specMessageId: string;
 	verificationDocumentId: string;
@@ -98,41 +98,7 @@ export function buildEvidenceCheckPanelModel(input: {
 	if (artifact?.kind !== "evidence_check") return null;
 	const source = findEvidenceSourceForArtifact(artifact, input.taskMessages);
 	if (!source) return null;
-	const sidecarMessage = source.verificationSidecarMessageId
-		? input.taskMessages.find(
-				(message) => message.id === source.verificationSidecarMessageId,
-			)
-		: null;
-	const sidecarMetadata = toDeepRecord(sidecarMessage?.metadataJson);
-	const document = toDeepRecord(sidecarMetadata.verificationDocument);
-	const conditions = Array.isArray(document.conditions)
-		? document.conditions
-				.map((condition) => toDeepRecord(condition))
-				.map((condition) => ({
-					id: readString(condition.id) || "",
-					text: readString(condition.text) || "",
-					status: readString(condition.status) || "pending",
-					required: (condition.required as unknown) !== false,
-					verificationKind: readString(condition.verificationKind),
-					expectedEvidence: Array.isArray(condition.expectedEvidence)
-						? condition.expectedEvidence
-								.map(readString)
-								.filter((value): value is string => value !== null)
-						: [],
-					evidenceIds: [] as string[],
-					reason: null,
-					lastCheckedAt: null,
-					assuranceStatus: "pending" as const,
-					assuranceReason: "assurance_not_evaluated",
-					tests: [],
-				}))
-				.filter((condition) => condition.id && condition.text)
-		: [];
-	return {
-		taskId: artifact.taskId,
-		...source,
-		conditions,
-	};
+	return { taskId: artifact.taskId, ...source };
 }
 
 function findEvidenceSourceForArtifact(
@@ -140,22 +106,19 @@ function findEvidenceSourceForArtifact(
 	taskMessages: TaskMessage[],
 ) {
 	const metadata = toDeepRecord(artifact.metadata);
-	const specMessageId = readString(metadata.specMessageId);
 	const verificationDocumentId =
 		readString(metadata.verificationDocumentId) ||
 		(artifact.source.type === "verification_document"
 			? artifact.source.verificationDocumentId
 			: null);
-	const verificationSidecarMessageId = readString(
-		metadata.verificationSidecarMessageId,
-	);
-	const specArtifactId = readString(metadata.specArtifactId);
 	if (verificationDocumentId) {
 		return {
-			specMessageId: specMessageId ?? null,
+			specMessageId: readString(metadata.specMessageId),
 			verificationDocumentId,
-			verificationSidecarMessageId: verificationSidecarMessageId ?? null,
-			specArtifactId: specArtifactId ?? null,
+			verificationSidecarMessageId: readString(
+				metadata.verificationSidecarMessageId,
+			),
+			specArtifactId: readString(metadata.specArtifactId),
 		};
 	}
 	return findLatestEvidenceCheckSource(taskMessages);
@@ -173,9 +136,8 @@ export function useLatestEvidenceCheckDescriptor(
 				`/api/coding-agent/tasks/${encodeURIComponent(taskId)}/evidence-check/latest`,
 			);
 			if (response.status === 204) return null;
-			if (!response.ok) {
+			if (!response.ok)
 				throw new Error("Failed to fetch the latest Evidence Check");
-			}
 			return (await response.json()) as EvidenceCheckDescriptor;
 		},
 		enabled: Boolean(taskId),
@@ -196,9 +158,7 @@ export function useEvidenceCheckSnapshot(
 			const response = await apiFetch(
 				`/api/coding-agent/tasks/${encodeURIComponent(model.taskId)}/evidence-check/${encodeURIComponent(model.verificationDocumentId)}`,
 			);
-			if (!response.ok) {
-				throw new Error("Failed to fetch evidence checklist");
-			}
+			if (!response.ok) throw new Error("Failed to fetch evidence readiness");
 			return (await response.json()) as EvidenceCheckSnapshot;
 		},
 		enabled: Boolean(model) && options?.enabled !== false,
@@ -213,70 +173,35 @@ export function buildEvidenceCheckExportMarkdown(input: {
 	model: EvidenceCheckPanelModel | null;
 	snapshot?: EvidenceCheckSnapshot | null;
 }) {
-	const traceability = input.snapshot?.implementationPlanTraceability;
-	const planRows = traceability
-		? [
-				"## Implementation Plan Traceability",
-				`- Provenance: ${traceability.provenanceStatus}`,
-				`- Exact Todo match: ${traceability.exactTodoMatch ? "yes" : "no"}`,
-				...traceability.steps.map((step) => {
-					const checked = ["passed", "skipped"].includes(step.todoStatus ?? "")
-						? "x"
-						: " ";
-					return `- [${checked}] ${step.seq}. ${step.title} (${step.todoStatus ?? "missing"}; ${step.aligned ? "aligned" : "mismatched"})`;
-				}),
-			]
-		: [];
-	const conditions =
-		input.snapshot?.conditions ?? input.model?.conditions ?? [];
-	const rows = conditions.flatMap((condition) => {
-		const checked = ["safe_pass", "not_applicable"].includes(
-			condition.assuranceStatus,
-		)
-			? "x"
-			: " ";
-		return [
-			`- [${checked}] \`${condition.id}\` ${condition.text} (${condition.assuranceStatus})`,
-			`  - Required evidence: ${condition.expectedEvidence.join(", ") || "none"}`,
-			`  - Evidence refs: ${condition.evidenceIds.join(", ") || "none"}`,
-			...(condition.assuranceReason
-				? [`  - Reason: ${condition.assuranceReason}`]
-				: []),
-			...condition.tests.map(
-				(test) =>
-					`  - ${test.name} — ${test.execution.status}; ${test.execution.evidenceKind ?? "evidence kind unknown"}; ${test.runner}; ${test.filePath ?? "file unknown"}; mapping=${test.mappingSource}; currentSource=${test.guards.currentSource}; sourceStable=${test.guards.sourceStableDuringExecution ?? "unknown"}; executionObserved=${test.guards.testExecutionObserved}; fullVerify=${test.guards.fullVerifyPassed}`,
-			),
-		];
-	});
-	const safety = input.snapshot
-		? [
-				"## Evidence Snapshot",
-				`- Task: ${input.snapshot.taskId}`,
-				`- Verification Document: ${input.snapshot.verificationDocumentId}`,
-				`- Generated at: ${input.snapshot.generatedAt}`,
-				"## Test Assurance",
-				`- Evaluated at: ${input.snapshot.evaluatedAt}`,
-				`- Source state: ${input.snapshot.sourceStateHash ?? "unavailable"}`,
-				`- Safe Pass: ${input.snapshot.assuranceSummary.safePass}/${input.snapshot.assuranceSummary.automated}`,
-				`- Failed: ${input.snapshot.assuranceSummary.failed}`,
-				`- Needs attention: ${input.snapshot.assuranceSummary.attention}`,
-				...(input.snapshot.assuranceSummary.required !== undefined
-					? [
-							`- Required Safe Pass: ${input.snapshot.assuranceSummary.requiredSafePass ?? 0}/${input.snapshot.assuranceSummary.required}`,
-							`- Unmapped: ${input.snapshot.assuranceSummary.unmapped ?? 0}`,
-							`- Details missing: ${input.snapshot.assuranceSummary.detailsMissing ?? 0}`,
-							`- Stale: ${input.snapshot.assuranceSummary.stale ?? 0}`,
-						]
-					: []),
-				`- Full Verify: ${input.snapshot.assuranceSummary.fullVerifyStatus}`,
-			]
-		: [];
+	const snapshot = input.snapshot;
+	if (!snapshot)
+		return `# ${input.title}\n\nEvidence readiness is unavailable.`;
 	return [
 		`# ${input.title}`,
-		...safety,
-		...planRows,
-		"## Completion Conditions",
-		...rows,
+		"## Scope",
+		`- Verification Document: ${snapshot.verificationDocumentId}`,
+		`- Test scope: ${snapshot.scope.testScope}`,
+		`- E2E allowed: ${snapshot.scope.e2eAllowed ? "yes" : "no"}`,
+		"## Evidence Mapping",
+		`- Status: ${snapshot.mapping.status}`,
+		`- Matched: ${snapshot.mapping.matched}/${snapshot.mapping.total}`,
+		...snapshot.mapping.items.flatMap((item) => [
+			`- ${item.id} ${item.text} (${item.status})`,
+			...item.matches.map(
+				(match) =>
+					`  - ${match.name}; ${match.runner}; ${match.filePath ?? "file unknown"}`,
+			),
+		]),
+		"## Project Verify",
+		`- Status: ${snapshot.verify.status}`,
+		`- Command: ${snapshot.verify.command ?? "not selected"}`,
+		`- Exit code: ${snapshot.verify.exitCode ?? "not run"}`,
+		`- Source state: ${snapshot.sourceStateHash ?? "unavailable"}`,
+		"## Evidence Check Confirmation",
+		`- Status: ${snapshot.confirmation.status}`,
+		`- Confirmed at: ${snapshot.confirmation.confirmedAt ?? "not confirmed"}`,
+		"## Next Action",
+		`- ${snapshot.suggestedAction}`,
 	].join("\n\n");
 }
 
@@ -284,58 +209,40 @@ export function buildEvidenceCheckExportCsv(snapshot: EvidenceCheckSnapshot) {
 	const headers = [
 		"task_id",
 		"verification_document_id",
-		"generated_at",
-		"condition_id",
-		"condition",
-		"required",
-		"verification_kind",
-		"assurance_status",
-		"assurance_reason",
-		"expected_evidence",
-		"condition_evidence_ids",
+		"test_scope",
+		"mapping_status",
+		"evidence_item_id",
+		"evidence_item",
+		"item_status",
 		"test_name",
 		"test_file",
 		"runner",
-		"mapping_source",
-		"execution_status",
-		"evidence_kind",
-		"duration_ms",
-		"finished_at",
-		"current_source",
-		"source_stable",
-		"test_execution_observed",
-		"full_verify_passed",
-		"evidence_run_id",
+		"verify_status",
+		"verify_command",
+		"verify_exit_code",
+		"confirmation_status",
+		"confirmation_confirmed_at",
 		"source_state_hash",
 		"evaluated_at",
 	];
-	const rows = snapshot.conditions.flatMap((condition) => {
-		const tests = condition.tests.length ? condition.tests : [null];
-		return tests.map((test) => [
+	const rows = snapshot.mapping.items.flatMap((item) => {
+		const matches = item.matches.length ? item.matches : [null];
+		return matches.map((match) => [
 			snapshot.taskId,
 			snapshot.verificationDocumentId,
-			snapshot.generatedAt,
-			condition.id,
-			condition.text,
-			condition.required,
-			condition.verificationKind ?? "",
-			condition.assuranceStatus,
-			condition.assuranceReason ?? "",
-			condition.expectedEvidence.join("|"),
-			condition.evidenceIds.join("|"),
-			test?.name ?? "",
-			test?.filePath ?? "",
-			test?.runner ?? "",
-			test?.mappingSource ?? "",
-			test?.execution.status ?? "",
-			test?.execution.evidenceKind ?? "",
-			test?.execution.durationMs ?? "",
-			test?.execution.finishedAt ?? "",
-			test?.guards.currentSource ?? "",
-			test?.guards.sourceStableDuringExecution ?? "",
-			test?.guards.testExecutionObserved ?? "",
-			test?.guards.fullVerifyPassed ?? "",
-			test?.execution.evidenceRunId ?? "",
+			snapshot.scope.testScope,
+			snapshot.mapping.status,
+			item.id,
+			item.text,
+			item.status,
+			match?.name ?? "",
+			match?.filePath ?? "",
+			match?.runner ?? "",
+			snapshot.verify.status,
+			snapshot.verify.command ?? "",
+			snapshot.verify.exitCode ?? "",
+			snapshot.confirmation.status,
+			snapshot.confirmation.confirmedAt ?? "",
 			snapshot.sourceStateHash ?? "",
 			snapshot.evaluatedAt,
 		]);

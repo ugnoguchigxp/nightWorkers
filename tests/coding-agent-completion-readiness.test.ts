@@ -5,30 +5,31 @@ import { evaluateCodingAgentCompletionReadiness } from "../api/modules/codingAge
 const greenCompletion: CompletionCheckResult = {
 	ok: true,
 	verificationDocumentId: "verification-document",
-	summary: {
+	runId: "run-1",
+	sourceStateHash: "a".repeat(64),
+	mapping: {
+		status: "missing",
+		definitionDigest: "b".repeat(64),
 		total: 1,
-		complete: 1,
-		failedRequired: 0,
-		unknownRequired: 0,
+		matched: 0,
+		items: [],
 	},
-	failedRequired: [],
-	unknownRequired: [],
-	conditions: [
-		{
-			conditionId: "AC-001",
-			text: "実装結果を確認する",
-			required: true,
-			status: "passed",
-		},
-	],
-	qualityGate: {
-		passed: true,
+	verify: {
+		status: "passed",
+		command: "bun run verify",
+		cwd: "/repo",
+		exitCode: 0,
 		sourceStateHash: "a".repeat(64),
-		inventory: { status: "passed", activeCaseCount: 1 },
-		testExecution: { status: "passed" },
-		fullVerify: { status: "passed" },
-		conditions: [{ conditionId: "AC-001", required: true, status: "passed" }],
+		finishedAt: "2026-08-01T00:00:00.000Z",
+		logRefs: [],
 	},
+	confirmation: {
+		status: "settled",
+		initialEvidenceRunId: "evidence-run-1",
+		confirmedAt: "2026-08-01T00:00:00.000Z",
+	},
+	suggestedAction: "write_final_report",
+	readinessDigest: "sha256:ready",
 };
 
 function dependencies() {
@@ -69,7 +70,7 @@ describe("Coding Agent completion readiness", () => {
 		);
 	});
 
-	it("is ready when verification and the current candidate are both present", async () => {
+	it("is ready when Evidence Check is settled and the current candidate is present even without mapping", async () => {
 		const result = await evaluateCodingAgentCompletionReadiness(
 			{
 				taskId: "task-1",

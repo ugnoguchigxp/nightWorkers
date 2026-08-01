@@ -20,6 +20,80 @@ afterEach(async () => {
 
 describe("workspace process confinement", () => {
 	it.runIf(process.platform === "darwin")(
+		"allows Bun to resolve a workspace current directory below the home directory",
+		async () => {
+			const worktreeRoot = await fs.mkdtemp(
+				path.join(os.homedir(), ".nw-sandbox-bun-"),
+			);
+			temporaryRoots.push(worktreeRoot);
+			await execFileAsync("git", ["init", worktreeRoot]);
+			await fs.writeFile(
+				path.join(worktreeRoot, "package.json"),
+				JSON.stringify({
+					scripts: { verify: "bun -e \"console.log('verified')\"" },
+				}),
+			);
+			const environment = buildChildProcessEnvironment({
+				purpose: "workspace_command",
+				overrides: {
+					HOME: path.join(worktreeRoot, ".nightworkers-home"),
+					TMPDIR: path.join(worktreeRoot, ".nightworkers-tmp"),
+				},
+			});
+			await fs.mkdir(environment.HOME ?? "", { recursive: true });
+			await fs.mkdir(environment.TMPDIR ?? "", { recursive: true });
+			const constrained = await prepareWorkspaceConstrainedShell({
+				command: "bun run verify",
+				workspaceRoot: worktreeRoot,
+				environment,
+			});
+
+			const result = await execFileAsync(
+				constrained.executable,
+				constrained.args,
+				{ cwd: worktreeRoot, env: environment },
+			);
+
+			expect(result.stdout).toContain("verified");
+		},
+	);
+
+	it.runIf(process.platform === "darwin")(
+		"allows Bun subprocesses to create files below a realpath-aliased temporary directory",
+		async () => {
+			const root = await fs.mkdtemp(
+				path.join(os.tmpdir(), "nw-sandbox-bun-tmp-"),
+			);
+			temporaryRoots.push(root);
+			const worktreeRoot = path.join(root, "repository");
+			const runtimeRoot = await fs.mkdtemp(
+				path.join(os.tmpdir(), "nw-sandbox-runtime-"),
+			);
+			temporaryRoots.push(runtimeRoot);
+			await fs.mkdir(worktreeRoot);
+			await execFileAsync("git", ["init", worktreeRoot]);
+			const environment = buildChildProcessEnvironment({
+				purpose: "workspace_command",
+				overrides: { TMPDIR: runtimeRoot },
+			});
+			const constrained = await prepareWorkspaceConstrainedShell({
+				command:
+					"bun -e \"import { mkdtemp } from 'node:fs/promises'; import path from 'node:path'; import os from 'node:os'; await mkdtemp(path.join(os.tmpdir(), 'child-'));\"",
+				workspaceRoot: worktreeRoot,
+				environment,
+			});
+
+			const result = await execFileAsync(
+				constrained.executable,
+				constrained.args,
+				{ cwd: worktreeRoot, env: environment },
+			);
+
+			expect(result.stderr).toBe("");
+		},
+	);
+
+	it.runIf(process.platform === "darwin")(
 		"allows Task worktree writes but blocks reads from an unrelated temporary directory",
 		async () => {
 			const root = await fs.mkdtemp(path.join(os.tmpdir(), "nw-sandbox-"));

@@ -7,7 +7,7 @@ import { ArtifactPane } from "../src/modules/nightworkers/components/ArtifactPan
 import { buildTaskMessage } from "./helpers/nightworkers-fixtures";
 
 describe("ArtifactPane", () => {
-	it("shows whether the adopted implementation plan matches the Run Todos", () => {
+	it("shows only mapping, selected scope, and Project verify readiness", () => {
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
 		});
@@ -21,65 +21,74 @@ describe("ArtifactPane", () => {
 						verificationDocumentId: "33333333-3333-4333-8333-333333333333",
 						verificationSidecarMessageId:
 							"44444444-4444-4444-8444-444444444444",
-						conditions: [],
 					}}
 					snapshot={{
+						version: 2,
 						taskId: "11111111-1111-4111-8111-111111111111",
+						runId: "55555555-5555-4555-8555-555555555555",
 						verificationDocumentId: "33333333-3333-4333-8333-333333333333",
 						specMessageId: "22222222-2222-4222-8222-222222222222",
 						specArtifactId: "feature-plan-message-1",
 						generatedAt: "2026-07-31T00:00:00.000Z",
 						evaluatedAt: "2026-07-31T00:01:00.000Z",
-						sourceStateHash: null,
-						implementationPlanTraceability: {
-							sourceMessageId: "22222222-2222-4222-8222-222222222222",
-							digest: `sha256:${"a".repeat(64)}`,
-							runId: "55555555-5555-4555-8555-555555555555",
-							runStatus: "needs_review",
-							provenanceStatus: "matched",
-							exactTodoMatch: true,
-							steps: [
+						sourceStateHash: "a".repeat(64),
+						scope: {
+							testScope: "unit",
+							e2eAllowed: false,
+							authorizedVerifyCommand: null,
+						},
+						mapping: {
+							status: "matched",
+							definitionDigest: "b".repeat(64),
+							total: 1,
+							matched: 1,
+							items: [
 								{
-									seq: 1,
-									title: "APIを実装する",
-									systemContext: "確定済みAPI契約に従う。",
-									todoId: "66666666-6666-4666-8666-666666666666",
-									todoStatus: "passed",
-									aligned: true,
-									evidenceIds: [],
-									completionGateRecorded: false,
+									id: "AC-001",
+									text: "APIを実装できる",
+									required: true,
+									status: "matched",
+									matches: [
+										{
+											caseKey: "case-1",
+											name: "APIを実装する",
+											filePath: "tests/api.test.ts",
+											runner: "vitest",
+										},
+									],
 								},
 							],
-							summary: {
-								total: 1,
-								passed: 1,
-								incomplete: 0,
-								unaligned: 0,
-								extraTodos: 0,
-								evidenceLinked: 0,
-							},
 						},
-						conditions: [],
-						summary: { total: 0, confirmed: 0, failed: 0, pending: 0 },
-						assuranceSummary: {
-							automated: 0,
-							safePass: 0,
-							failed: 0,
-							attention: 0,
-							fullVerifyStatus: "unknown",
+						verify: {
+							status: "passed",
+							command: "bun run verify",
+							cwd: null,
+							exitCode: 0,
+							sourceStateHash: "a".repeat(64),
+							finishedAt: "2026-07-31T00:00:59.000Z",
+							logRefs: [],
 						},
+						confirmation: {
+							status: "settled",
+							initialEvidenceRunId: "44444444-4444-4444-8444-444444444444",
+							confirmedAt: "2026-07-31T00:00:50.000Z",
+						},
+						ready: true,
+						suggestedAction: "write_final_report",
+						readinessDigest: "sha256:ready",
 					}}
 				/>
 			</QueryClientProvider>,
 		);
 
-		expect(markup).toContain("data-evidence-plan-traceability");
-		expect(markup).toContain('data-plan-aligned="true"');
-		expect(markup).toContain("実装計画トレーサビリティ");
+		expect(markup).toContain("data-evidence-readiness");
+		expect(markup).toContain('data-e2e-allowed="false"');
+		expect(markup).toContain("E2E: 対象外");
 		expect(markup).toContain("APIを実装する");
-		expect(markup).toContain(
-			"確定済み実装計画と Run Todo は完全一致しています。",
-		);
+		expect(markup).toContain("bun run verify");
+		expect(markup).toContain("確定済み");
+		expect(markup).toContain("追加テストは不要です");
+		expect(markup).not.toContain("実装計画トレーサビリティ");
 	});
 
 	it("renders files outline tree when project tree focus is selected", () => {
@@ -195,7 +204,7 @@ describe("ArtifactPane", () => {
 		expect(markup).not.toContain('aria-label="表示中の版を保存"');
 	});
 
-	it("renders only Spec completion conditions in Evidence Check", () => {
+	it("does not project Spec conditions before Evidence Readiness is loaded", () => {
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
 		});
@@ -281,8 +290,8 @@ describe("ArtifactPane", () => {
 			</QueryClientProvider>,
 		);
 		expect(markup).toContain("証跡チェック");
-		expect(markup).toContain("AC-005");
-		expect(markup).toContain("未確認");
+		expect(markup).toContain("最新の証跡を読み込んでいます");
+		expect(markup).not.toContain("AC-005");
 		expect(markup).not.toContain("ユニットテスト実行");
 		expect(markup).not.toContain("ワークフロー");
 	});

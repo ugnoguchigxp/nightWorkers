@@ -1,2 +1,2 @@
-text = '''完了報告はimplementationPlanとTodo planの最後に独立Todoとして置き、品質ゲートTodoがPassした後だけ実行してください。必須・任意の検証結果、未解決・回復済み・scope外の失敗、最終差分、commit・merge状態、Todo・verification・Run・commitの各証跡を確認し、最終回答候補とcompletion readinessを照合します。
-E2E失敗を開示するだけで終わらせず、未commit・未mergeを含む実際の状態と証跡に矛盾があれば、矛盾そのものを明示してください。解消できる不一致は解消し、解消できない不一致は完了報告へ明示してください。報告候補を組み立てて矛盾を解消した後にこのTodoを完了し、同じ内容を最終回答として返してください。'''
+text = '''完了報告はimplementationPlanとTodo planの最後に独立Todoとして置き、初回Project正本verifyのPass、Evidence Checkの一度だけの確認、確認後のProject正本verifyのPassが揃った後だけ実行してください。mappingは任意のトレーサビリティ情報であり、missing、stale、ambiguousでも完了報告を止めず、それ以上のtest証跡を要求しません。
+Questionnaire対象外のtestは実行せず、完了報告にはverify commandとPass、最終差分、commit・merge状態、未解決事項だけを実際の状態どおり記載してください。mappingへ言及する場合は参考情報として区別してください。報告候補を組み立てた後にこのTodoを完了し、同じ内容を最終回答として返してください。'''

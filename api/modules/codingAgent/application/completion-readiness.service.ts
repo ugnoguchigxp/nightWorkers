@@ -108,7 +108,7 @@ export async function evaluateCodingAgentCompletionReadiness(
 		verificationDocumentId: document.id,
 		repoRoot: input.repositoryRoot,
 	});
-	const sourceStateHash = result.qualityGate.sourceStateHash ?? null;
+	const sourceStateHash = result.sourceStateHash;
 	const discrepancies = buildVerificationDiscrepancies(result);
 	const hasFinalCandidate =
 		candidate.revision !== null && candidate.digest !== null;
@@ -161,48 +161,11 @@ function buildVerificationDiscrepancies(result: CompletionCheckResult) {
 		`completion check: ${result.reason ?? "not ready"}`,
 		"verification.completionCheck",
 	);
-	for (const condition of result.failedRequired) {
+	if (result.verify.status !== "passed") {
 		add(
-			condition.reason ?? "required_condition_failed",
-			`${condition.conditionId}: ${condition.reason ?? condition.text}`,
-			`verification.condition:${condition.conditionId}`,
-		);
-	}
-	for (const condition of result.unknownRequired) {
-		add(
-			condition.reason ?? "required_condition_unknown",
-			`${condition.conditionId}: ${condition.reason ?? condition.text}`,
-			`verification.condition:${condition.conditionId}`,
-		);
-	}
-	const qualityGate = result.qualityGate;
-	if (qualityGate.inventory.status !== "passed") {
-		add(
-			qualityGate.inventory.reason ?? "test_inventory_not_ready",
-			`test inventory: ${qualityGate.inventory.reason ?? qualityGate.inventory.status}`,
-			"verification.qualityGate.inventory",
-		);
-	}
-	if (qualityGate.testExecution.status !== "passed") {
-		add(
-			qualityGate.testExecution.reason ?? "test_execution_not_ready",
-			`test execution: ${qualityGate.testExecution.reason ?? qualityGate.testExecution.status}`,
-			"verification.qualityGate.testExecution",
-		);
-	}
-	if (qualityGate.fullVerify.status !== "passed") {
-		add(
-			qualityGate.fullVerify.reason ?? "full_verify_not_ready",
-			`full verify: ${qualityGate.fullVerify.reason ?? qualityGate.fullVerify.status}`,
-			"verification.qualityGate.fullVerify",
-		);
-	}
-	for (const condition of qualityGate.conditions) {
-		if (condition.status !== "failed") continue;
-		add(
-			condition.reason ?? "condition_quality_gate_failed",
-			`${condition.conditionId}: ${condition.reason ?? "quality gate failed"}`,
-			`verification.qualityGate.condition:${condition.conditionId}`,
+			`project_verify_${result.verify.status}`,
+			`project verify: ${result.verify.status}`,
+			"verification.verify",
 		);
 	}
 	return [...grouped.entries()].map(([code, item]) => ({
@@ -214,29 +177,15 @@ function buildVerificationDiscrepancies(result: CompletionCheckResult) {
 
 function buildSatisfactionConditions(result: CompletionCheckResult) {
 	if (result.ok) return [];
+	if (result.confirmation.status === "awaiting_confirmation") {
+		return ["初回verifyのPass後にEvidence Checkを一度だけ確認する。"];
+	}
+	if (result.confirmation.status === "confirmed") {
+		return ["Evidence Check確認後のProject正本verifyを一度実行する。"];
+	}
 	return [
-		...(result.failedRequired.length
-			? [
-					`失敗したrequired conditionを再検証する: ${result.failedRequired
-						.map((item) => item.conditionId)
-						.join(", ")}`,
-				]
-			: []),
-		...(result.unknownRequired.length
-			? [
-					`未確認のrequired conditionに対応する証跡を確認する: ${result.unknownRequired
-						.map((item) => item.conditionId)
-						.join(", ")}`,
-				]
-			: []),
-		...(result.qualityGate.inventory.status === "passed"
+		...(result.verify.status === "passed"
 			? []
-			: ["現在のsourceに対するactive test inventoryを確認する。"]),
-		...(result.qualityGate.testExecution.status === "passed"
-			? []
-			: ["現在のsourceに対するtest実行結果を確認する。"]),
-		...(result.qualityGate.fullVerify.status === "passed"
-			? []
-			: ["現在のsourceに対するfull verify結果を確認する。"]),
+			: ["Questionnaireの範囲内でProject正本verifyを一度実行する。"]),
 	];
 }

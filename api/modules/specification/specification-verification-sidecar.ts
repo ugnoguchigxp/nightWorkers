@@ -54,6 +54,9 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 				sourceMessageIds: input.sourceMessageIds,
 				workspaceArtifactIds: collectWorkspaceArtifactIds(input.workspace),
 			},
+			...(input.completionVerificationScope
+				? { testScope: input.completionVerificationScope }
+				: {}),
 			conditions,
 			commands,
 		},

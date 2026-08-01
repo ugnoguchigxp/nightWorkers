@@ -57,7 +57,73 @@ function compactWorkerPayload(toolName: string, payload: unknown): unknown {
 	if (toolName === "git_diff") return compactGitDiffPayload(payload);
 	if (toolName === "project_exploration_catalog")
 		return compactProjectExplorationCatalogPayload(payload);
+	if (toolName === "run_check") return compactRunCheckPayload(payload);
+	if (toolName === "completion_check")
+		return compactCompletionCheckPayload(payload);
+	if (toolName === "record_test_condition_mapping")
+		return compactTestMappingPayload(payload);
 	return payload;
+}
+
+function compactRunCheckPayload(payload: unknown) {
+	const value = toRecord(payload);
+	return {
+		llmSummary: value.llmSummary,
+		checkKind: value.checkKind,
+		exitCode: value.exitCode,
+		managedEvidence: value.managedEvidence,
+		evidenceRunId: value.evidenceRunId,
+		evidenceKinds: value.evidenceKinds,
+		rawStdoutArtifactId: value.rawStdoutArtifactId,
+		rawStderrArtifactId: value.rawStderrArtifactId,
+	};
+}
+
+function compactCompletionCheckPayload(payload: unknown) {
+	const value = toRecord(payload);
+	const result = toRecord(value.result);
+	const mapping = toRecord(result.mapping);
+	const verify = toRecord(result.verify);
+	const confirmation = toRecord(result.confirmation);
+	return {
+		llmSummary: value.llmSummary,
+		result: {
+			ok: result.ok,
+			verificationDocumentId: result.verificationDocumentId,
+			sourceStateHash: result.sourceStateHash,
+			mapping: {
+				status: mapping.status,
+				matched: mapping.matched,
+				total: mapping.total,
+				definitionDigest: mapping.definitionDigest,
+			},
+			verify: {
+				status: verify.status,
+				command: verify.command,
+				exitCode: verify.exitCode,
+				sourceStateHash: verify.sourceStateHash,
+			},
+			confirmation: {
+				status: confirmation.status,
+				initialEvidenceRunId: confirmation.initialEvidenceRunId,
+				confirmedAt: confirmation.confirmedAt,
+			},
+			suggestedAction: result.suggestedAction,
+			readinessDigest: result.readinessDigest,
+			reason: result.reason,
+		},
+	};
+}
+
+function compactTestMappingPayload(payload: unknown) {
+	const value = toRecord(payload);
+	return {
+		inventoryId: value.inventoryId,
+		definitionDigest: value.definitionDigest,
+		referenceCount: value.referenceCount,
+		mappingCount: value.mappingCount,
+		matches: value.matches,
+	};
 }
 
 function compactProjectExplorationCatalogPayload(payload: unknown) {

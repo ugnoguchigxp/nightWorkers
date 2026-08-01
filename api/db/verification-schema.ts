@@ -146,6 +146,73 @@ export const verificationEvidenceRuns = sqliteTable(
 	}),
 );
 
+export const codingAgentEvidenceReadinessSettlements = sqliteTable(
+	"coding_agent_evidence_readiness_settlements",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		runId: text("run_id")
+			.notNull()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		verificationDocumentId: text("verification_document_id")
+			.notNull()
+			.references(() => verificationDocuments.id, { onDelete: "cascade" }),
+		evidenceRunId: text("evidence_run_id")
+			.notNull()
+			.references(() => verificationEvidenceRuns.id, { onDelete: "cascade" }),
+		snapshotJson: text("snapshot_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+	},
+	(table) => ({
+		runDocumentIdx: uniqueIndex(
+			"coding_agent_evidence_readiness_settlement_run_document_uidx",
+		).on(table.runId, table.verificationDocumentId),
+		taskIdx: index("coding_agent_evidence_readiness_settlement_task_idx").on(
+			table.taskId,
+			table.createdAt,
+		),
+	}),
+);
+
+export const codingAgentEvidenceCheckConfirmations = sqliteTable(
+	"coding_agent_evidence_check_confirmations",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		runId: text("run_id")
+			.notNull()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		verificationDocumentId: text("verification_document_id")
+			.notNull()
+			.references(() => verificationDocuments.id, { onDelete: "cascade" }),
+		initialEvidenceRunId: text("initial_evidence_run_id")
+			.notNull()
+			.references(() => verificationEvidenceRuns.id, { onDelete: "cascade" }),
+		observedEvidenceRunIdsJson: text("observed_evidence_run_ids_json", {
+			mode: "json",
+		})
+			.$type<string[]>()
+			.notNull(),
+		snapshotJson: text("snapshot_json", { mode: "json" })
+			.$type<Record<string, unknown>>()
+			.notNull(),
+	},
+	(table) => ({
+		runDocumentIdx: uniqueIndex(
+			"coding_agent_evidence_check_confirmation_run_document_uidx",
+		).on(table.runId, table.verificationDocumentId),
+		taskIdx: index("coding_agent_evidence_check_confirmation_task_idx").on(
+			table.taskId,
+			table.createdAt,
+		),
+	}),
+);
+
 export const codingAgentTestInventoryRuns = sqliteTable(
 	"coding_agent_test_inventory_runs",
 	{

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { nightWorkersRecordTestConditionMappingInputSchema } from "../api/mcp/nightworkers-tool-schemas";
 import { workerToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
+import {
+	digestTestDefinitionInventory,
+	digestTestEvidenceMappingRevision,
+} from "../api/modules/codingAgent/verification/test-definition-digest";
 import { TestConditionMappingFailure } from "../api/modules/codingAgent/verification/test-inventory-errors";
 import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
 import {
@@ -35,6 +39,38 @@ const evidenceSetInput = {
 };
 
 describe("Coding Agent test condition mapping contract", () => {
+	it("changes the mapping revision only when test identities or evidence references change", () => {
+		const cases = [
+			{
+				caseKey: "vitest:test.ts:maps a condition",
+				name: "maps a condition",
+				filePath: "test.ts",
+				runner: "vitest",
+				discoveryLevel: "active",
+			},
+		];
+		const inventoryDigest = digestTestDefinitionInventory(cases);
+		const revision = digestTestEvidenceMappingRevision({
+			verificationDocumentId: "verification-1",
+			inventoryDigest,
+			evidenceSet: evidenceSetInput.evidenceSet,
+		});
+
+		expect(digestTestDefinitionInventory([...cases])).toBe(inventoryDigest);
+		expect(
+			digestTestEvidenceMappingRevision({
+				verificationDocumentId: "verification-1",
+				inventoryDigest,
+				evidenceSet: evidenceSetInput.evidenceSet,
+			}),
+		).toBe(revision);
+		expect(
+			digestTestDefinitionInventory([
+				{ ...cases[0], name: "renamed condition test" },
+			]),
+		).not.toBe(inventoryDigest);
+	});
+
 	it("keeps the persisted mapping schema and replaces the public tool input with an evidence set", () => {
 		expect(
 			testConditionMappingSchema.parse({

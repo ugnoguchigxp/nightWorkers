@@ -75,6 +75,13 @@ export const automatedTestEvidenceKindSchema = z.enum([
 	"e2e_test",
 ]);
 
+export const completionVerificationScopeSchema = z.enum([
+	"none",
+	"unit",
+	"e2e_if_ui",
+	"unit_and_e2e_if_ui",
+]);
+
 export const verificationRunnerSchema = z.enum([
 	"vitest",
 	"jest",
@@ -255,6 +262,7 @@ export const verificationCommandPlanSchema = z
 		command: z.string().trim().min(1),
 		cwd: z.string().trim().min(1).optional(),
 		conditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
+		evidenceKinds: z.array(expectedEvidenceSchema).optional(),
 	})
 	.strict();
 
@@ -271,6 +279,7 @@ export const specificationVerificationDocumentSchema = z
 				workspaceArtifactIds: z.array(z.string().trim().min(1)),
 			})
 			.strict(),
+		testScope: completionVerificationScopeSchema.optional(),
 		conditions: z.array(verificationConditionSchema),
 		commands: z.array(verificationCommandPlanSchema),
 	})
@@ -381,6 +390,9 @@ export type SpecificationVerificationDocument = z.infer<
 >;
 export type VerificationCondition = z.infer<typeof verificationConditionSchema>;
 export type ExpectedEvidence = z.infer<typeof expectedEvidenceSchema>;
+export type CompletionVerificationScope = z.infer<
+	typeof completionVerificationScopeSchema
+>;
 export type VerificationRunner = z.infer<typeof verificationRunnerSchema>;
 export type SpecificationAcceptanceCriterion = z.infer<
 	typeof specificationAcceptanceCriterionSchema
@@ -414,6 +426,26 @@ export type TestEvidenceSetMappingToolInput = z.infer<
 export type TestEvidenceSetMappingWrite = z.infer<
 	typeof testEvidenceSetMappingWriteSchema
 >;
+
+export function isExpectedEvidenceAllowedByCompletionScope(
+	kind: ExpectedEvidence,
+	scope: CompletionVerificationScope | undefined,
+): boolean {
+	if (!scope || !isTestEvidenceKind(kind)) return true;
+	if (scope === "none") return false;
+	if (scope === "unit") return kind !== "e2e_test";
+	if (scope === "e2e_if_ui") return kind === "e2e_test";
+	return true;
+}
+
+function isTestEvidenceKind(kind: ExpectedEvidence): boolean {
+	return (
+		kind === "automated_test" ||
+		kind === "unit_test" ||
+		kind === "integration_test" ||
+		kind === "e2e_test"
+	);
+}
 
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([
 	"passed",

@@ -1,4 +1,5 @@
 import type { DesignQuestionnaire } from "../../../shared/schemas/design-questionnaire.schema";
+import type { CompletionVerificationScope } from "../../../shared/schemas/verification-checklist.schema";
 
 export const COMPLETION_VERIFICATION_QUESTION_ID = "completion-verification";
 export const COMPLETION_VERIFICATION_DECISION_KEY =
@@ -10,11 +11,7 @@ export const COMPLETION_VERIFICATION_OPTION_IDS = {
 	unitAndE2eIfUi: "completion-verification-unit-e2e",
 } as const;
 
-export type CompletionVerificationScope =
-	| "none"
-	| "unit"
-	| "e2e_if_ui"
-	| "unit_and_e2e_if_ui";
+export type { CompletionVerificationScope };
 
 const completionVerificationQuestion: DesignQuestionnaire["questionSets"][number]["questions"][number] =
 	{
