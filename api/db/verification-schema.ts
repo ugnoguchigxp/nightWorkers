@@ -162,6 +162,8 @@ export const codingAgentEvidenceReadinessSettlements = sqliteTable(
 		evidenceRunId: text("evidence_run_id")
 			.notNull()
 			.references(() => verificationEvidenceRuns.id, { onDelete: "cascade" }),
+		confirmationId: text("confirmation_id"),
+		receiptDigest: text("receipt_digest"),
 		snapshotJson: text("snapshot_json", { mode: "json" })
 			.$type<Record<string, unknown>>()
 			.notNull(),
@@ -198,6 +200,11 @@ export const codingAgentEvidenceCheckConfirmations = sqliteTable(
 		})
 			.$type<string[]>()
 			.notNull(),
+		policyVersion: text("policy_version"),
+		sourceStateHash: text("source_state_hash"),
+		verificationDocumentDigest: text("verification_document_digest"),
+		authorizedVerifyDigest: text("authorized_verify_digest"),
+		receiptDigest: text("receipt_digest"),
 		snapshotJson: text("snapshot_json", { mode: "json" })
 			.$type<Record<string, unknown>>()
 			.notNull(),

@@ -66,6 +66,7 @@ async function buildPlanModeWorkspaceReferenceContext(
 				title: String(metadata.title || "Feature Plan"),
 				sourceMessageId: message.id,
 				createdAt: message.createdAt,
+				routingRevision: readArtifactRoutingRevision(metadata),
 			});
 		}
 		if (isBlueprintMetadata(metadata)) {
@@ -94,6 +95,7 @@ async function buildPlanModeWorkspaceReferenceContext(
 					typeof metadata.sourceBlueprintMessageId === "string"
 						? metadata.sourceBlueprintMessageId
 						: undefined,
+				routingRevision: readArtifactRoutingRevision(metadata),
 			};
 			blueprintArtifacts.push(artifact);
 			dedicatedViewArtifacts.push(artifact);
@@ -124,6 +126,7 @@ async function buildPlanModeWorkspaceReferenceContext(
 					typeof metadata.sourceDataModelMessageId === "string"
 						? metadata.sourceDataModelMessageId
 						: undefined,
+				routingRevision: readArtifactRoutingRevision(metadata),
 			};
 			if (view === "data_model") dataModelArtifacts.push(artifact);
 			dedicatedViewArtifacts.push(artifact);
@@ -250,6 +253,24 @@ function findLatestAdditionalQuestionSetId(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function readArtifactRoutingRevision(metadata: Record<string, unknown>) {
+	const generation = isRecord(metadata.generation) ? metadata.generation : null;
+	const context = isRecord(generation?.context) ? generation.context : null;
+	const inputProjection = isRecord(generation?.inputProjection)
+		? generation.inputProjection
+		: isRecord(context?.inputProjection)
+			? context.inputProjection
+			: isRecord(metadata.inputProjection)
+				? metadata.inputProjection
+				: null;
+	const revision = inputProjection?.routingRevision;
+	return typeof revision === "number" &&
+		Number.isInteger(revision) &&
+		revision >= 0
+		? revision
+		: undefined;
 }
 
 function isBlueprintMetadata(metadata: Record<string, unknown>) {

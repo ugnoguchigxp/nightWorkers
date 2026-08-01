@@ -43,6 +43,7 @@ import {
 	digestFeaturePlanContent,
 	readFeaturePlanTitle,
 } from "./feature-plan-content";
+import { resolveFeaturePlanUpstreamArtifacts } from "./feature-plan-upstream-artifacts";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
 import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
 import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
@@ -51,7 +52,6 @@ import {
 	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
 	renderPlanArtifactInput,
 } from "./plan-artifact-input-renderer";
-import { createPlanArtifactSourceSelection } from "./plan-artifact-source-selection";
 import { getPlanModeWorkspace } from "./plan-mode-workspace.service";
 import { sanitizeSpecificationTargetNaming } from "./specification-document-renderer";
 import { assertPlanModeMutable } from "./specification-mutability";
@@ -106,18 +106,20 @@ export async function generateFeaturePlanArtifact(
 	const requiresRepositoryMaterialization = !(await repositoryHasGitHead(
 		repository.localPath,
 	));
+	const workspace = await getPlanModeWorkspace(taskId);
+	const sourceSelection = resolveFeaturePlanUpstreamArtifacts({
+		workspace,
+		requestedSourceSelection: input.sourceSelection,
+	});
 	const canonical = await resolvePlanArtifactCanonicalInput({
 		taskId,
 		target: "feature_plan",
 		questionnaireSessionId: input.questionnaireSessionId ?? null,
-		sourceSelection:
-			input.sourceSelection ??
-			createPlanArtifactSourceSelection({ policy: "explicit_request" }),
+		sourceSelection,
 		regenerationRequest: input.prompt ?? null,
 	});
 	const projection = projectPlanArtifactInput(canonical);
 	const renderedInput = renderPlanArtifactInput(projection);
-	const workspace = await getPlanModeWorkspace(taskId);
 	const context: Parameters<typeof buildSpecificationDocumentUserPrompt>[0] = {
 		task: renderedInput.task,
 		projectStackContext: renderedInput.projectContext,

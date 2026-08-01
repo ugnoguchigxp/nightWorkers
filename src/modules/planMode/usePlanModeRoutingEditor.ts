@@ -12,7 +12,7 @@ export function usePlanModeRoutingEditor(input: {
 	runAction: (
 		action: string,
 		fn: () => Promise<PlanWorkspaceActionResult>,
-	) => Promise<void>;
+	) => Promise<boolean>;
 }) {
 	return useCallback(
 		async (view: EditablePlanModeRoutingView, decision: "include" | "omit") => {

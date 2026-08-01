@@ -222,16 +222,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "完了報告はimplementationPlanとTodo planの最後に独立Todoとして置き、初回Project正本verifyのPass、Evidence Checkの一度だけの確認、確認後のProject正本verifyのPassが揃った後だけ実行してください。mappingは任意のトレーサビリティ情報であり、missing、stale、ambiguousでも完了報告を止めず、それ以上のtest証跡を要求しません。\nQuestionnaire対象外のtestは実行せず、完了報告にはverify commandとPass、最終差分、commit・merge状態、未解決事項だけを実際の状態どおり記載してください。mappingへ言及する場合は参考情報として区別してください。報告候補を組み立てた後にこのTodoを完了し、同じ内容を最終回答として返してください。"
+                  "value": "完了報告はimplementationPlanとTodo planの最後に独立Todoとして置き、required conditionのmanaged evidence、Project正本verifyのPass、不変Evidence Check Receiptの一度だけの確認、同一sourceに対する確認後のProject正本verifyのPassが揃った後だけ実行してください。required automated conditionのmapping、同一testcaseのstructured execution、expectedEvidenceのいずれかがmissing、stale、failed、ambiguousなら完了報告へ進まないでください。\nQuestionnaire対象外のtestは実行せず、完了報告にはcondition別証跡、verify commandとPass、Receipt digest、最終差分、commit・merge状態、未解決事項を実際の状態どおり記載してください。報告候補を組み立てた後にこのTodoを完了し、同じ内容を最終回答として返してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:a5174e5ebe77487c1f83a1f63a35921676a1fec49183ff40a69720553f713d83"
+          "artifactHash": "sha256:80875d374ea49c7e2c2cfd8fc9c92e1cf6ee8a46605361f9323b20f16d5aa945"
         }
       },
-      "definitionHash": "sha256:57f4224a988bb25f2a41834c122ca05bc7187093671b9d619336fc5f66f822fb",
-      "releaseDigest": "sha256:77794070bb2858d80fe239432e49bb8fe343d1aa7b5173e0a7e68e3f47874b50"
+      "definitionHash": "sha256:46688679ace2697fdb876e08165cd8c162cfd20682462e8b8a5b5753cd5a07f2",
+      "releaseDigest": "sha256:f249fdf921f0f344e41f2e6ba6749be79e2bcee101217e934828bad76847ab2d"
     },
     "codingAgent.completion-rule": {
       "key": "codingAgent.completion-rule",
@@ -263,7 +263,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Task、変更内容、Todo ContextからProject正本verifyを選んでください。最初はcompletion_checkを呼ばず、run_checkで現在sourceに対するProject正本verifyを実行してください。初回verifyがPassしなければEvidence Checkを実行せず、失敗原因の修正を優先してください。\n初回verifyがPassした後にだけcompletion_checkを一度呼び、Evidence Checkを確認済みとして保存してください。その応答がfollow-up verifyを要求したら、同じ確認を繰り返さずrun_checkでProject正本verifyをもう一度実行してください。確認後のverifyがPassしたらチェック確定であり、completion_checkを再実行せず完了報告へ進んでください。testcaseごとのstructured executionやtest定義mappingは完了条件にしません。\nトレーサビリティ目的でrecord_test_condition_mappingを使う場合も初回verifyのPass後に限り、mapping失敗を完了阻害条件にしないでください。\nQuestionnaireのtest範囲を必ず守り、選択されていないtest種別を実行しないでください。特にE2Eが対象外ならE2E commandを選択・実行しないでください。run_checkには実行が生成するevidenceKindsを明示してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness snapshotが返された場合はconfirmation.status、verify.status、suggestedActionを次の判断に使い、mapping.statusは参考情報としてだけ扱ってください。awaiting_initial_verifyではcompletion_checkを実行せず、awaiting_confirmationで一度だけ実行し、confirmedではfollow-up verifyだけを実行してください。同じreadinessDigestのまま検証を繰り返さないでください。\n完了報告形式:\n"
+                  "value": "Task、変更内容、Todo Context、Verification Documentから必要なmanaged evidenceを判断してください。required automated conditionはcurrent sourceのactive testcaseとの明示mappingと、その同一testcaseのstructured execution成功を必要とします。mappingだけ、別testの成功、raw shellのexit 0、assistant本文の完了申告はmanaged evidenceになりません。expectedEvidenceが複数ある場合は各種別を確認してください。\nProject正本verifyもcurrent sourceでPassしている必要があります。具体的なtool順序は固定せず、completion_checkのtyped reasonからmapping記録、structured test、source修正、Project正本verifyのどれが必要かを判断してください。証跡が不足しているcompletion_checkはConfirmation Receiptを保存しません。\nrequired conditionとProject正本verifyがすべてsafe_passの場合だけ、completion_checkは同一Run・Verification Documentにつき不変のConfirmation Receiptを一度保存します。confirmed後は同じ確認を繰り返さず、sourceを変更しないまま同じProject正本verifyをfollow-upとして実行してください。sourceまたはVerification Documentを変更する必要が生じた場合は既存Receiptを上書きせず、新しいimplementation Runで再検証してください。\nQuestionnaireのtest範囲を必ず守り、選択されていないtest種別を実行しないでください。特にE2Eが対象外ならE2E commandを選択・実行しないでください。run_checkには実行が生成するevidenceKindsを明示してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness snapshotが返された場合はassurance.status、assurance.reasonCodes、mapping、verify、confirmation、suggestedActionを次の判断に使ってください。awaiting_confirmationでは一度だけConfirmation Receiptを保存し、confirmedではfollow-up verifyだけを実行してください。同じreadinessDigestのまま同じ操作を繰り返さないでください。\n完了報告形式:\n"
                 },
                 {
                   "type": "variable",
@@ -272,11 +272,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:ad1a9d11e98cc849431e57001e89238914787f91d5dc7e24499480fb7a452564"
+          "artifactHash": "sha256:0ddf6dd12d92151df840fac20e5271c10405219d33c72832505c8ab0200d4db7"
         }
       },
-      "definitionHash": "sha256:01c0e83a8715237f46ada99667ee78f99b12abd0b794caa4b271c7d48efdf619",
-      "releaseDigest": "sha256:ccafa0641fd90fe55f1ec3ae7ac0155f0ef72962fe9f3df17e69da0c7880ad4e"
+      "definitionHash": "sha256:5982b08a1b5ce604a1987ef4dd8d696394bde46f1c0b2db7967a977dbdc94e3c",
+      "releaseDigest": "sha256:8fa5cdb392a3e89ca466562eed5c58eba22dc2c9102cd7260a5cf474bbc182b5"
     },
     "codingAgent.current-todo": {
       "key": "codingAgent.current-todo",
@@ -664,16 +664,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "NightWorkers MCPはCoding Agentのrequest-scoped Runに紐付くtoolを提供します。採用済みimplementationPlanがあれば既存Todoを使い、直接Runでworkspaceを変更する場合は変更前にtitleとsystemContextだけのplanを作成してください。\ncurrent Todoの完了はcomplete_current、ユーザー判断待ちはblock_current、残工程の変更はreplace_remainingで明示します。hostはTodoを暗黙生成・更新しません。\nEvidence Artifactは、初回Project正本verifyのPass、Evidence Checkの一度だけの確認、その確認後のProject正本verifyのPassを完了条件とします。初回verifyがPassする前にcompletion_checkを呼ばないでください。Pass後にcompletion_checkを一度だけ呼び、その後は同じ確認を繰り返さずfollow-up verifyを実行してください。test定義mappingは任意のトレーサビリティ情報です。Questionnaire対象外のtestは実行しないでください。completion checkはmapping、verify、confirmation、suggestedActionを返し、次actionはCoding Agentが選びます。"
+                  "value": "NightWorkers MCPはCoding Agentのrequest-scoped Runに紐付くtoolを提供します。採用済みimplementationPlanがあれば既存Todoを使い、直接Runでworkspaceを変更する場合は変更前にtitleとsystemContextだけのplanを作成してください。\ncurrent Todoの完了はcomplete_current、ユーザー判断待ちはblock_current、残工程の変更はreplace_remainingで明示します。hostはTodoを暗黙生成・更新しません。\nEvidence Artifactは、required conditionのmanaged evidence、current sourceのProject正本verify、同一Run・Verification Documentにつき一度だけ保存される不変Confirmation Receipt、その確認後の同一sourceに対するfollow-up verifyを完了条件とします。required automated conditionにはactive testcaseの明示mappingと同一testcaseのstructured execution成功が必要です。Questionnaire対象外のtestは実行しないでください。completion_checkはassurance、mapping、verify、confirmation、suggestedActionを返し、不足時はReceiptを保存しません。confirmed後は同じ確認を繰り返さずfollow-up verifyを実行し、sourceを変更する必要があれば新しいimplementation Runへ移行してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:6fdd8322b4865c6f48ffe38293da679a3da131f6b44039b242ce898d06dd2f48"
+          "artifactHash": "sha256:78f4f7132768a6a5c53e37a6493ce0e6543900a12c02716a0d91c8e672c6ee88"
         }
       },
-      "definitionHash": "sha256:c80362e1b77084cc32f6d1798f24e5675fbb0f58ed4ee3d385353f354244e12b",
-      "releaseDigest": "sha256:1a09b00a9cfb1d27cc6a870026869615d6d4d5944498bf79527816e7ce871ecd"
+      "definitionHash": "sha256:eb885d904d1ae5125658b4c7de226caff9bb02e5bf7481559c15bec986e7fccf",
+      "releaseDigest": "sha256:08741871e2d9a349040d8591846f79f7378acfdc74334b28901fb9f37f56b387"
     },
     "codingAgent.plan-mode-gate": {
       "key": "codingAgent.plan-mode-gate",
@@ -3128,16 +3128,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "implementationPlanは実行順のsteps配列にし、各stepはtitleとsystemContextだけを持たせてください。titleは80文字以内の短い工程名、systemContextは600文字以内かつ通常1〜3文の具体的な局所指示です。key、id、covers、constraints、doneWhen、taskType、objective、nextAction、acceptanceCriteria、dependsOn、status、revisionは生成しないでください。\nrepositoryMaterializationIntentがstarter_templateまたはgit_importの場合、implementationPlanの先頭にはrepository materialization専用Todoを必ず1件置いてください。starter_templateでは、Questionnaireで確定した技術スタックとDB/永続化から選んだstackとvariantのtemplate projectを登録済みProject rootへimportする工程だとtitleで明示し、titleは「Hono/sqlite template projectをimportする」のように選択対象とimport操作を識別できる表現にしてください。曖昧な「構成を作成する」へ言い換えないでください。git_importでは、確定したrepo URLとrefからProjectをimportする工程だと明示してください。先頭TodoのsystemContextにはrepositoryMaterializationIntentを正本としてimportし、Git HEAD、Project root、期待するstarter構成またはimport元との一致を確認してから完了することを書いてください。機能実装、DB差し替え、migration、API、UIをこのTodoへ混在させず、後続Todoはmaterialization完了後に開始する順序にしてください。\nrepositoryMaterializationIntentがnullまたはexisting_gitの場合はmaterialization Todoを追加しないでください。repositoryMaterializationIntentと先頭Todoは同じQuestionnaire Decisionsから導出し、intentがあるのに先頭Todoがない、先頭Todoのstack・variant・import元がintentと異なる、またはimportを後続の機能実装Todoへ埋め込む計画を生成しないでください。\nproduction変更の工程を先に並べ、その後にProject品質ゲートと完了報告をそれぞれ独立したTodo stepとして必ず1件ずつ置いてください。最後から2番目は品質ゲートTodo、最後は完了報告Todoとし、production実装、品質ゲート、完了報告を同じstepへまとめたり、順序を入れ替えたり、省略したりしないでください。\n品質ゲートTodoのsystemContextには、全production工程と必要な修正の後に実体Projectを観測し、Projectが定義する正本の品質ゲートを実行してPassさせることを書いてください。starter templateまたはその他のtemplateを基にmaterializeする場合は、そのtemplateが提供するverify scriptまたはverify commandを必ず実行対象に含めてください。失敗時は原因を修正して影響範囲を再検証し、Passまたはユーザー判断が必要な明示blockerを確認するまでTodoを完了扱いにしないでください。Questionnaireで選択されたtest種別は要件検証の範囲として維持し、選択外のtest種別を独立追加しないでください。ただしtemplate自身のverify commandの実行は省略しないでください。\n完了報告TodoのsystemContextには、品質ゲートTodoの結果を確認した後で、最終差分、実行した検証と成否、未解決・回復済み・scope外の失敗、Todo・verification・Run・commit・merge状態を実観測と照合し、ユーザー向け完了報告を組み立てることを書いてください。未確認の変更や失敗を成功として報告せず、報告候補とcompletion readinessの矛盾を解消してからTodoを完了し、同じ内容を最終回答として返してください。"
+                  "value": "implementationPlanは実行順のsteps配列にし、各stepはtitleとsystemContextだけを持たせてください。titleは80文字以内の短い工程名、systemContextは600文字以内かつ通常1〜3文の具体的な局所指示です。key、id、covers、constraints、doneWhen、taskType、objective、nextAction、acceptanceCriteria、dependsOn、status、revisionは生成しないでください。\nrepositoryMaterializationIntentがstarter_templateまたはgit_importの場合、implementationPlanの先頭にはrepository materialization専用Todoを必ず1件置いてください。starter_templateでは、Questionnaireで確定した技術スタックとDB/永続化から選んだstackとvariantのtemplate projectを登録済みProject rootへimportする工程だとtitleで明示し、titleは「Hono/sqlite template projectをimportする」のように選択対象とimport操作を識別できる表現にしてください。曖昧な「構成を作成する」へ言い換えないでください。git_importでは、確定したrepo URLとrefからProjectをimportする工程だと明示してください。先頭TodoのsystemContextにはrepositoryMaterializationIntentを正本としてimportし、Git HEAD、Project root、期待するstarter構成またはimport元との一致を確認してから完了することを書いてください。機能実装、DB差し替え、migration、API、UIをこのTodoへ混在させず、後続Todoはmaterialization完了後に開始する順序にしてください。\nrepositoryMaterializationIntentがnullまたはexisting_gitの場合はmaterialization Todoを追加しないでください。repositoryMaterializationIntentと先頭Todoは同じQuestionnaire Decisionsから導出し、intentがあるのに先頭Todoがない、先頭Todoのstack・variant・import元がintentと異なる、またはimportを後続の機能実装Todoへ埋め込む計画を生成しないでください。\nproduction変更の工程を先に並べ、その後にProject品質ゲートと完了報告をそれぞれ独立したTodo stepとして必ず1件ずつ置いてください。最後から2番目は品質ゲートTodo、最後は完了報告Todoとし、production実装、品質ゲート、完了報告を同じstepへまとめたり、順序を入れ替えたり、省略したりしないでください。\n自動テストを採用した場合、production変更と同じ責務・粒度のfocused test（Unit / component / API / repositoryなど）は対応するproduction stepのsystemContextに含め、test作成だけのstepへ機械的に分離しないでください。複数工程を横断する検証、test基盤・fixtureの変更、既存test群の移行などが独立成果となる場合だけ別stepにできます。testを追加・更新するstepのsystemContextには、frameworkとProjectの構造上の制約を守り、人間可読なtest name/titleへ対応する`## 完了条件`（Verification Condition）と同じ日本語の振る舞い表現を使うことを短く書いてください。\n品質ゲートTodoのsystemContextには、全production工程と必要な修正の後に実体Projectを観測し、Projectが定義する正本の品質ゲートを実行してPassさせることを書いてください。starter templateまたはその他のtemplateを基にmaterializeする場合は、そのtemplateが提供するverify scriptまたはverify commandを必ず実行対象に含めてください。失敗時は原因を修正して影響範囲を再検証し、Passまたはユーザー判断が必要な明示blockerを確認するまでTodoを完了扱いにしないでください。Questionnaireで選択されたtest種別は要件検証の範囲として維持し、選択外のtest種別を独立追加しないでください。ただしtemplate自身のverify commandの実行は省略しないでください。\n完了報告TodoのsystemContextには、品質ゲートTodoの結果を確認した後で、最終差分、実行した検証と成否、未解決・回復済み・scope外の失敗、Todo・verification・Run・commit・merge状態を実観測と照合し、ユーザー向け完了報告を組み立てることを書いてください。未確認の変更や失敗を成功として報告せず、報告候補とcompletion readinessの矛盾を解消してからTodoを完了し、同じ内容を最終回答として返してください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:7f833a4ecad71470649833e7e10316e5512187094feace24854e191cd5497df5"
+          "artifactHash": "sha256:388ace65686c946cb788a91663eccb1fe289372cdf0ac1a6de7bc80425c10866"
         }
       },
-      "definitionHash": "sha256:9623196699022d215b331ece118e3c223211f6c91d03feffbf4bb0d07b672bfe",
-      "releaseDigest": "sha256:25fba257d058e15732e74f6a61e9c3902ef25f82ff6a12058c2d06dc5af6db83"
+      "definitionHash": "sha256:c903144de1492bc42e6588171ce4c9080d8c49f3638960ef3f1f4d838e090db2",
+      "releaseDigest": "sha256:5dbf2027e713f5643d8e931febecbb36f29201228e7d07fdc34d4a5d0261ae6c"
     },
     "questionnaire.initial-recommended-option-output": {
       "key": "questionnaire.initial-recommended-option-output",
@@ -4199,5 +4199,5 @@
       "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:f0a21c5265b51520d198f7f5fe6483d41b750099e486608e4865ce81418225bf"
+  "catalogDigest": "sha256:fcaa8136bb2c4aee87448efc07ce84d155b2c06834afddd37edef504f323673c"
 }

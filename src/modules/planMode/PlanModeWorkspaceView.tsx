@@ -113,8 +113,8 @@ export function PlanModeWorkspaceView({
 	generatePlanModeArtifact: (
 		action: "blueprint" | "data-model" | "feature-plan",
 		tab: PlanWorkspaceTab,
-	) => Promise<void>;
-	generateDedicatedViews: (views: string[]) => Promise<void>;
+	) => Promise<boolean>;
+	generateDedicatedViews: (views: string[]) => Promise<boolean>;
 	onQueueSession?: () => Promise<void>;
 	onAddToQueue?: () => Promise<void>;
 	runSessionAction: (action: string, fn?: () => Promise<void>) => Promise<void>;

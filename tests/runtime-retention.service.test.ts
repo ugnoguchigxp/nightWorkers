@@ -8,6 +8,12 @@ import {
 	runtimeRetentionAuditEvents,
 	taskRuns,
 } from "../api/db/schema";
+import {
+	codingAgentEvidenceCheckConfirmations,
+	codingAgentEvidenceReadinessSettlements,
+	verificationDocuments,
+	verificationEvidenceRuns,
+} from "../api/db/verification-schema";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import {
 	executeRuntimeRecordCleanup,
@@ -140,6 +146,56 @@ describe("runtime retention service", () => {
 				updatedAt: old,
 			})
 			.where(eq(taskRuns.id, run.id));
+		const verificationDocumentId = crypto.randomUUID();
+		const evidenceRunId = crypto.randomUUID();
+		const confirmationId = crypto.randomUUID();
+		await db.insert(verificationDocuments).values({
+			id: verificationDocumentId,
+			taskId: task.id,
+			runId: run.id,
+			sourceSpecPath: "spec/retention.md",
+			documentJson: {},
+			generatedAt: old,
+		});
+		await db.insert(verificationEvidenceRuns).values({
+			id: evidenceRunId,
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			checkKind: "verify",
+			command: "bun run verify",
+			cwd: "/repo",
+			exitCode: 0,
+			rawStdoutArtifactId: "stdout",
+			rawStderrArtifactId: "stderr",
+			summaryJson: {},
+			commandLevelConditionIdsJson: [],
+			startedAt: old,
+			finishedAt: old,
+		});
+		await db.insert(codingAgentEvidenceCheckConfirmations).values({
+			id: confirmationId,
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			initialEvidenceRunId: evidenceRunId,
+			observedEvidenceRunIdsJson: [evidenceRunId],
+			policyVersion: "strict_v1",
+			sourceStateHash: "a".repeat(64),
+			verificationDocumentDigest: "sha256:document",
+			authorizedVerifyDigest: "sha256:command",
+			receiptDigest: "sha256:receipt",
+			snapshotJson: { receipt: "core" },
+		});
+		await db.insert(codingAgentEvidenceReadinessSettlements).values({
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			evidenceRunId,
+			confirmationId,
+			receiptDigest: "sha256:receipt",
+			snapshotJson: { settlement: "core" },
+		});
 
 		const preview = await previewRuntimeRecordCleanup(
 			new Date("2026-07-29T00:00:00.000Z"),
@@ -173,5 +229,17 @@ describe("runtime retention service", () => {
 			contextSnapshot: null,
 		});
 		expect(retained?.detailsPurgedAt).toBeInstanceOf(Date);
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceCheckConfirmations)
+				.where(eq(codingAgentEvidenceCheckConfirmations.runId, run.id)),
+		).toHaveLength(1);
+		expect(
+			await db
+				.select()
+				.from(codingAgentEvidenceReadinessSettlements)
+				.where(eq(codingAgentEvidenceReadinessSettlements.runId, run.id)),
+		).toHaveLength(1);
 	});
 });

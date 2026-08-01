@@ -34,6 +34,8 @@ export function buildChatVerificationEvidenceHistory(
 					verification: {
 						state: card.verification.state,
 						full: card.verification.checkKind === "verify",
+						affectsFreshness:
+							card.verification.checkKind !== "completion_check",
 					},
 				},
 			];

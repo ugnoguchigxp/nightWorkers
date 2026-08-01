@@ -40,8 +40,10 @@ export function usePlanWorkspaceActions(input: {
 					selectActiveTab(focusTab);
 					resetWorkspaceScrollTop();
 				}
+				return true;
 			} catch (error) {
 				setActionError(error instanceof Error ? error.message : String(error));
+				return false;
 			} finally {
 				setBusyAction(null);
 			}

@@ -201,6 +201,8 @@ describe("frontend command wrappers", () => {
 		await fetchPlanModeWorkspace("task-3", init);
 		await generateFeaturePlanArtifact("task-3", {
 			prompt: "Write the import plan",
+			sourceDataModelMessageId: "33333333-3333-4333-8333-333333333333",
+			sourceDedicatedViewMessageIds: ["44444444-4444-4444-8444-444444444444"],
 			proceedWithUnansweredBlocking: true,
 		});
 
@@ -212,7 +214,17 @@ describe("frontend command wrappers", () => {
 		expect(fetchMock).toHaveBeenNthCalledWith(
 			2,
 			"/api/tasks/task-3/plan-mode/feature-plan",
-			expect.objectContaining({ method: "POST" }),
+			expect.objectContaining({
+				method: "POST",
+				body: JSON.stringify({
+					prompt: "Write the import plan",
+					sourceDataModelMessageId: "33333333-3333-4333-8333-333333333333",
+					sourceDedicatedViewMessageIds: [
+						"44444444-4444-4444-8444-444444444444",
+					],
+					proceedWithUnansweredBlocking: true,
+				}),
+			}),
 		);
 	});
 

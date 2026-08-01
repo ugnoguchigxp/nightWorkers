@@ -19,6 +19,10 @@ export const jaEvidenceCheck = {
 	"evidenceCheck.scope.unspecified": "Coding Agentが選択",
 	"evidenceCheck.scope.e2eIncluded": "E2E: 対象",
 	"evidenceCheck.scope.e2eExcluded": "E2E: 対象外",
+	"evidenceCheck.assurance.title": "条件別Evidence Assurance",
+	"evidenceCheck.assurance.policy": "Policy",
+	"evidenceCheck.assurance.documentDigest": "Verification Document digest",
+	"evidenceCheck.assurance.receiptDigest": "Receipt digest",
 	"evidenceCheck.mapping.title": "証跡とテスト項目の対応",
 	"evidenceCheck.mapping.summary": "{{matched}}/{{total}} 項目を対応済み",
 	"evidenceCheck.confirmation.title": "Evidence Checkの確認",
@@ -34,13 +38,19 @@ export const jaEvidenceCheck = {
 	"evidenceCheck.verifyStatus.stale": "source変更後は未実行",
 	"evidenceCheck.nextAction.title": "次の確認",
 	"evidenceCheck.nextAction.record_mapping":
-		"不足しているmappingだけを更新してください",
+		"current sourceの不足しているmappingを記録してください",
+	"evidenceCheck.nextAction.run_structured_tests":
+		"mappingされた同一testcaseをstructured result付きで実行してください",
+	"evidenceCheck.nextAction.request_human_confirmation":
+		"required manual conditionの人間による確認が必要です",
 	"evidenceCheck.nextAction.run_verify":
 		"Project正本verifyを一度実行してください",
 	"evidenceCheck.nextAction.fix_verify":
 		"verifyの失敗を修正して再実行してください",
 	"evidenceCheck.nextAction.confirm_evidence_check":
-		"初回verifyはPass済みです。Evidence Checkを一度確認してください",
+		"必須証跡は揃っています。Evidence Check Receiptを一度確認してください",
+	"evidenceCheck.nextAction.start_new_run":
+		"確認時のsourceまたは文書が変わったため、新しいRunで再検証してください",
 	"evidenceCheck.nextAction.write_final_report":
 		"追加テストは不要です。完了報告を作成できます",
 	"evidenceCheck.status.ready": "Ready",
@@ -57,4 +67,9 @@ export const jaEvidenceCheck = {
 	"evidenceCheck.status.awaiting_confirmation": "確認待ち",
 	"evidenceCheck.status.confirmed": "確認済み・再verify待ち",
 	"evidenceCheck.status.settled": "確定済み",
+	"evidenceCheck.status.safe_pass": "証跡確認済み",
+	"evidenceCheck.status.unmapped": "mapping未確認",
+	"evidenceCheck.status.details_missing": "詳細証跡不足",
+	"evidenceCheck.status.manual": "人間の確認待ち",
+	"evidenceCheck.status.legacy": "旧方式",
 } as const;

@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { EvidenceCheckSnapshot } from "../../../shared/modules/codingAgent";
+import { legacyEvidenceAssuranceSnapshot } from "../../../shared/modules/codingAgent";
 import {
 	type EvidenceCheckPanelModel,
 	useEvidenceCheckSnapshot,
@@ -22,6 +23,8 @@ export function EvidenceCheckArtifactViewer({
 	const { t } = useTranslation();
 	const query = useEvidenceCheckSnapshot(model, { enabled: fetchSnapshot });
 	const resolvedSnapshot = snapshot ?? query.data ?? null;
+	const resolvedAssurance =
+		resolvedSnapshot?.assurance ?? legacyEvidenceAssuranceSnapshot;
 	const resolvedIsLoading = isLoading ?? query.isLoading;
 	const resolvedIsError = isError ?? query.isError;
 	if (!model) {
@@ -102,6 +105,62 @@ export function EvidenceCheckArtifactViewer({
 									{resolvedSnapshot.scope.e2eAllowed
 										? t("evidenceCheck.scope.e2eIncluded")
 										: t("evidenceCheck.scope.e2eExcluded")}
+								</span>
+							</div>
+						</section>
+
+						<section
+							className="nightworkers-structured-artifact-card grid gap-2 rounded-md border p-3"
+							data-evidence-assurance={resolvedAssurance.status}
+						>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+										{t("evidenceCheck.assurance.title")}
+									</h2>
+									<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
+										{t("evidenceCheck.assurance.policy")}:{" "}
+										{resolvedAssurance.policyVersion}
+									</p>
+								</div>
+								<StatusBadge status={resolvedAssurance.status} />
+							</div>
+							{resolvedAssurance.conditions.length ? (
+								<div className="grid gap-1.5">
+									{resolvedAssurance.conditions.map((condition) => (
+										<div
+											key={condition.conditionId}
+											className="nightworkers-structured-artifact-row rounded border px-3 py-2 text-xs"
+											data-evidence-assurance-condition={
+												condition.assuranceStatus
+											}
+										>
+											<div className="flex flex-wrap items-center justify-between gap-2">
+												<span className="nightworkers-structured-artifact-text">
+													<span className="mr-2 font-mono text-[10px]">
+														{condition.conditionId}
+													</span>
+													{condition.text}
+												</span>
+												<StatusBadge status={condition.assuranceStatus} />
+											</div>
+											{condition.reasonCode ? (
+												<div className="nightworkers-structured-artifact-muted mt-1 font-mono text-[10px]">
+													{condition.reasonCode}
+												</div>
+											) : null}
+										</div>
+									))}
+								</div>
+							) : null}
+							<div className="nightworkers-structured-artifact-muted grid gap-1 font-mono text-[10px]">
+								<span>
+									{t("evidenceCheck.assurance.documentDigest")}:{" "}
+									{resolvedAssurance.verificationDocumentDigest ?? "-"}
+								</span>
+								<span>
+									{t("evidenceCheck.assurance.receiptDigest")}:{" "}
+									{resolvedAssurance.receiptDigest ?? "-"}
 								</span>
 							</div>
 						</section>
@@ -238,6 +297,7 @@ function StatusBadge({ status }: { status: string }) {
 		"not_required",
 		"confirmed",
 		"settled",
+		"safe_pass",
 	].includes(status);
 	const failed = status === "failed" || status === "ambiguous";
 	return (

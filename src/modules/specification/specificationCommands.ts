@@ -6,6 +6,8 @@ type SpecificationGenerationInput = {
 	prompt?: string;
 	questionnaireSessionId?: string | null;
 	sourceBlueprintMessageId?: string | null;
+	sourceDataModelMessageId?: string | null;
+	sourceDedicatedViewMessageIds?: string[];
 	proceedWithUnansweredBlocking?: boolean;
 };
 

@@ -25,7 +25,7 @@ export function usePlanModeQuestionnaireActions(input: {
 	runAction: (
 		action: string,
 		fn: () => Promise<{ focusTab?: PlanWorkspaceTab | null } | undefined>,
-	) => Promise<void>;
+	) => Promise<boolean>;
 	selectActiveTab: (tab: PlanWorkspaceTab) => void;
 	setActiveSessionId: Dispatch<SetStateAction<string | null>>;
 	setAnswers: Dispatch<

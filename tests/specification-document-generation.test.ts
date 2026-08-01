@@ -291,6 +291,19 @@ describe("Specification document generation", () => {
 			"最後から2番目は品質ゲートTodo、最後は完了報告Todo",
 		);
 		expect(systemPrompt).toContain(
+			"対応するproduction stepのsystemContextに含め",
+		);
+		expect(systemPrompt).toContain(
+			"test作成だけのstepへ機械的に分離しない",
+		);
+		expect(systemPrompt).toContain(
+			"独立成果となる場合だけ別step",
+		);
+		expect(systemPrompt).toContain("人間可読なtest name/title");
+		expect(systemPrompt).toContain(
+			"対応する`## 完了条件`（Verification Condition）と同じ日本語の振る舞い表現",
+		);
+		expect(systemPrompt).toContain(
 			"implementationPlanの先頭にはrepository materialization専用Todoを必ず1件",
 		);
 		expect(systemPrompt).toContain(

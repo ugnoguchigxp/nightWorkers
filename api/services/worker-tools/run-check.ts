@@ -257,6 +257,7 @@ export async function completionCheckTool(input: {
 	const llmSummary = result.ok
 		? [
 				"OK completion_check",
+				`assurance=${result.assurance.status}`,
 				`mapping=${result.mapping.status}`,
 				`verify=${result.verify.status}`,
 				`confirmation=${result.confirmation.status}`,
@@ -265,6 +266,7 @@ export async function completionCheckTool(input: {
 		: [
 				"ERROR completion_check",
 				`reason=${result.reason || "unknown"}`,
+				`assurance=${result.assurance.status}`,
 				`mapping=${result.mapping.status} (${result.mapping.matched}/${result.mapping.total})`,
 				`verify=${result.verify.status}`,
 				`confirmation=${result.confirmation.status}`,

@@ -43,6 +43,9 @@ describe("plan-mode-workspace.service", () => {
 				metadataJson: {
 					intent: "feature_plan",
 					title: "Feature Plan",
+					generation: {
+						context: { inputProjection: { routingRevision: 3 } },
+					},
 				},
 			},
 			{
@@ -53,6 +56,7 @@ describe("plan-mode-workspace.service", () => {
 					intent: "app_blueprint",
 					title: "App Blueprint",
 					appBlueprint: { name: "app" },
+					generation: { inputProjection: { routingRevision: 3 } },
 				},
 			},
 			{
@@ -63,6 +67,7 @@ describe("plan-mode-workspace.service", () => {
 					artifactKind: "plan_mode_dedicated_view",
 					view: "data_model",
 					title: "Data Model",
+					generation: { inputProjection: { routingRevision: 3 } },
 				},
 			},
 			{
@@ -103,9 +108,12 @@ describe("plan-mode-workspace.service", () => {
 		expect(result.taskId).toBe("task-1");
 		expect(result.repositoryId).toBe("repo-1");
 		expect(result.featurePlanArtifacts).toHaveLength(1);
+		expect(result.featurePlanArtifacts[0].routingRevision).toBe(3);
 		expect(result.blueprintArtifacts).toHaveLength(1);
 		expect(result.blueprintArtifacts[0].adoptionState).toBe("adopted");
+		expect(result.blueprintArtifacts[0].routingRevision).toBe(3);
 		expect(result.dataModelArtifacts).toHaveLength(1);
+		expect(result.dataModelArtifacts[0].routingRevision).toBe(3);
 		expect(result.decisionReviews).toHaveLength(1);
 		expect(result.implementationReferences).toHaveLength(1);
 	});

@@ -44,6 +44,8 @@ const featurePlanGenerateRequestSchema = z.object({
 	prompt: z.string().optional(),
 	questionnaireSessionId: z.string().uuid().nullable().optional(),
 	sourceBlueprintMessageId: z.string().uuid().nullable().optional(),
+	sourceDataModelMessageId: z.string().uuid().nullable().optional(),
+	sourceDedicatedViewMessageIds: z.array(z.string().uuid()).optional(),
 	proceedWithUnansweredBlocking: z.boolean().optional(),
 });
 

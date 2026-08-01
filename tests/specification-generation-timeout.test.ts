@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppError } from "../api/lib/errors";
-import { createPlanModeTaskMessage } from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
+import {
+	createPlanModeTaskMessage,
+	getPlanModeTaskMessage,
+} from "../api/modules/nightworkers/nightworkers.plan-mode-core.port";
 import { createVerificationDocument } from "../api/modules/nightworkers/nightworkers.verification.repository";
 import { digestFeaturePlanContent } from "../api/modules/specification/feature-plan-content";
+import { resolvePlanModeRoutingSnapshot } from "../api/modules/specification/plan-mode-routing-query";
+import { getPlanModeWorkspace } from "../api/modules/specification/plan-mode-workspace.service";
 import {
 	FEATURE_PLAN_LLM_TIMEOUT_MS,
 	generateFeaturePlanArtifact,
@@ -41,6 +46,7 @@ vi.mock("../api/modules/nightworkers/nightworkers.plan-mode-core.port", () => ({
 		status: "draft",
 	})),
 	listPlanModeTaskMessages: vi.fn(async () => []),
+	getPlanModeTaskMessage: vi.fn(),
 	createPlanModeTaskMessage: vi.fn(async (input) => ({
 		id: "message-1",
 		taskId: input.taskId,
@@ -117,8 +123,164 @@ describe("Feature Plan generation timeout handling", () => {
 		vi.mocked(createVerificationDocument).mockClear();
 	});
 
+	it("rejects generation before calling the LLM when a routed upstream Artifact is missing or stale", async () => {
+		vi.mocked(getPlanModeWorkspace).mockResolvedValueOnce({
+			blueprintArtifacts: [],
+			dataModelArtifacts: [],
+			dedicatedViewArtifacts: [{ kind: "api_io_contract", routingRevision: 2 }],
+			featurePlanArtifacts: [],
+			viewDecisions: [],
+			routing: {
+				revision: 3,
+				entries: [
+					{
+						view: "api_io_contract",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+				],
+			},
+		} as never);
+
+		await expect(generateFeaturePlanArtifact("task-1")).rejects.toMatchObject({
+			statusCode: 409,
+			code: "PLAN_MODE_UPSTREAM_ARTIFACTS_REQUIRED",
+			details: { missingViews: ["api_io_contract"] },
+		});
+		expect(callStructuredOutputWithRepair).not.toHaveBeenCalled();
+	});
+
+	it("rejects stale source ids instead of silently ignoring them", async () => {
+		vi.mocked(getPlanModeWorkspace).mockResolvedValueOnce({
+			blueprintArtifacts: [],
+			dataModelArtifacts: [],
+			dedicatedViewArtifacts: [
+				{
+					kind: "api_io_contract",
+					sourceMessageId: "44444444-4444-4444-8444-444444444444",
+					createdAt: "2026-08-01T00:00:00Z",
+					routingRevision: 3,
+				},
+			],
+			featurePlanArtifacts: [],
+			viewDecisions: [],
+			routing: {
+				revision: 3,
+				entries: [
+					{
+						view: "api_io_contract",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+				],
+			},
+		} as never);
+
+		await expect(
+			generateFeaturePlanArtifact("task-1", {
+				sourceSelection: {
+					previousTargetMessageId: null,
+					featurePlanMessageId: null,
+					blueprintMessageId: null,
+					dataModelMessageId: null,
+					dedicatedViewMessageIds: ["55555555-5555-4555-8555-555555555555"],
+					policy: "explicit_request",
+				},
+			}),
+		).rejects.toMatchObject({
+			statusCode: 409,
+			code: "PLAN_ARTIFACT_CONTEXT_STALE",
+		});
+		expect(callStructuredOutputWithRepair).not.toHaveBeenCalled();
+	});
+
+	it("uses every current routed upstream Artifact even when the request omits source ids", async () => {
+		const apiContractMessageId = "44444444-4444-4444-8444-444444444444";
+		vi.mocked(getPlanModeWorkspace).mockResolvedValueOnce({
+			blueprintArtifacts: [],
+			dataModelArtifacts: [],
+			dedicatedViewArtifacts: [
+				{
+					id: `api-io-contract-${apiContractMessageId}`,
+					kind: "api_io_contract",
+					title: "Todo API Contract",
+					sourceMessageId: apiContractMessageId,
+					createdAt: "2026-08-01T00:00:00Z",
+					routingRevision: 3,
+				},
+			],
+			featurePlanArtifacts: [],
+			viewDecisions: [],
+			routing: {
+				revision: 3,
+				entries: [
+					{
+						view: "api_io_contract",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+				],
+			},
+		} as never);
+		vi.mocked(resolvePlanModeRoutingSnapshot).mockResolvedValueOnce({
+			revision: 3,
+			entries: [
+				{
+					view: "api_io_contract",
+					decision: "include",
+					capabilityEnabled: true,
+				},
+			],
+		} as never);
+		vi.mocked(getPlanModeTaskMessage).mockResolvedValueOnce({
+			id: apiContractMessageId,
+			taskId: "task-1",
+			content: '{"openapi":"3.1.0","paths":{"/api/todos":{}}}',
+			metadataJson: {
+				artifactKind: "plan_mode_api_contract",
+				view: "api_io_contract",
+				generation: { inputProjection: { routingRevision: 3 } },
+			},
+		} as never);
+		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
+			value: {
+				markdown:
+					"# Todo API Feature Plan\n\n## 完了条件\n\n- [AC-001][api] Todo APIを利用できる",
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todo APIを実装する",
+							systemContext: "API Contractに従って実装する。",
+						},
+					],
+				},
+				repositoryMaterializationIntent: null,
+			},
+			attempts: [],
+		});
+
+		await generateFeaturePlanArtifact("task-1");
+
+		const request = vi.mocked(callStructuredOutputWithRepair).mock
+			.calls[0]?.[0];
+		expect(request?.userPrompt).toContain('"/api/todos"');
+		expect(createPlanModeTaskMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				payloadJson: expect.objectContaining({
+					generation: expect.objectContaining({
+						context: expect.objectContaining({
+							inputProjection: expect.objectContaining({
+								sourceMessageIds: [apiContractMessageId],
+							}),
+						}),
+					}),
+				}),
+			}),
+		);
+	});
+
 	it("uses an extended timeout for specification document generation", async () => {
-		expect(FEATURE_PLAN_LLM_TIMEOUT_MS).toBe(180_000);
+		expect(FEATURE_PLAN_LLM_TIMEOUT_MS).toBe(300_000);
 		const validDraft = {
 			markdown:
 				"# Todo List Feature Plan\n\n## 実装計画\n\n1. Todo APIを実装する\n\n## 検証計画\n\n- Run tests\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
@@ -255,7 +417,7 @@ describe("Feature Plan generation timeout handling", () => {
 			details: {
 				failureKind: "provider_timeout",
 				retryable: true,
-				timeoutMs: 180_000,
+				timeoutMs: 300_000,
 			},
 		} satisfies Partial<AppError>);
 	});

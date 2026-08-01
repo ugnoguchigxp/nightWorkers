@@ -97,6 +97,7 @@ export const planModeWorkspaceArtifactSchema = z.object({
 	sourceArtifactMessageId: z.string().uuid().optional(),
 	sourceBlueprintMessageId: z.string().uuid().optional(),
 	sourceDataModelMessageId: z.string().uuid().optional(),
+	routingRevision: z.number().int().nonnegative().optional(),
 });
 
 export const planModeWorkspaceQuestionnaireSchema = z.object({

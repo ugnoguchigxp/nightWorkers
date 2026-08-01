@@ -1,3 +1,4 @@
+import type { PlanModeStepAction } from "../../../../shared/plan-mode-execution";
 import type { PlanModeRoutingView } from "../../../../shared/schemas/plan-mode-routing.schema";
 import type {
 	PlanModeCapability,
@@ -27,11 +28,12 @@ export type PlanWorkspaceStatusStep = {
 	detail: string;
 	badges?: string[];
 	done: boolean;
+	stale?: boolean;
 	buttonLabel: string;
 	busy: boolean;
 	disabled: boolean;
 	disabledReason?: string | null;
-	onClick: () => void | Promise<void>;
+	onClick: PlanModeStepAction;
 	secondaryAction?: {
 		label: string;
 		busy: boolean;

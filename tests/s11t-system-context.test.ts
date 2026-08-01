@@ -191,15 +191,12 @@ describe("S11t SystemContext catalog", () => {
 			"品質ゲートと完了報告もLLMまたは人間が明示したTodoとしてだけ更新",
 		);
 		expect(rendered).toContain("commit・merge状態");
-		expect(rendered).toContain(
-			"初回verifyがPassしなければEvidence Checkを実行せず",
-		);
-		expect(rendered).toContain("mapping失敗を完了阻害条件にしない");
-		expect(rendered).toContain("completion_checkを一度呼び");
-		expect(rendered).toContain("Project正本verifyをもう一度実行");
-		expect(rendered).toContain("completion_checkを再実行せず完了報告");
+		expect(rendered).toContain("同一testcaseのstructured execution成功");
+		expect(rendered).toContain("Confirmation Receiptを一度保存");
+		expect(rendered).toContain("既存Receiptを上書きせず");
+		expect(rendered).toContain("assurance.reasonCodes");
 		expect(rendered).toContain("E2Eが対象外ならE2E commandを選択・実行しない");
-		expect(rendered).not.toContain("structured execution成功");
+		expect(rendered).not.toContain("mapping失敗を完了阻害条件にしない");
 		expect(rendered).toContain("## 実装結果");
 		expect(rendered).toContain("## 主な変更");
 		expect(rendered).toContain("## 検証結果");
@@ -604,7 +601,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"493cbb6068950f3d93413f4490f07036168ff0cc053829ad21fbdf4082daf70b",
+				"b178e75194aa5a97cc629e27f401495a8b46018c22cd219a506a8b8b460cef0b",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:

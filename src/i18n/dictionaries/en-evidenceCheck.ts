@@ -20,6 +20,10 @@ export const enEvidenceCheck = {
 	"evidenceCheck.scope.unspecified": "Selected by the Coding Agent",
 	"evidenceCheck.scope.e2eIncluded": "E2E: included",
 	"evidenceCheck.scope.e2eExcluded": "E2E: excluded",
+	"evidenceCheck.assurance.title": "Acceptance-condition assurance",
+	"evidenceCheck.assurance.policy": "Policy",
+	"evidenceCheck.assurance.documentDigest": "Verification Document digest",
+	"evidenceCheck.assurance.receiptDigest": "Receipt digest",
 	"evidenceCheck.mapping.title": "Evidence-to-test mapping",
 	"evidenceCheck.mapping.summary": "{{matched}}/{{total}} items mapped",
 	"evidenceCheck.confirmation.title": "Evidence Check confirmation",
@@ -34,13 +38,20 @@ export const enEvidenceCheck = {
 	"evidenceCheck.verifyStatus.not_run": "Not run",
 	"evidenceCheck.verifyStatus.stale": "Not run for the current source",
 	"evidenceCheck.nextAction.title": "Next check",
-	"evidenceCheck.nextAction.record_mapping": "Update only the missing mappings",
+	"evidenceCheck.nextAction.record_mapping":
+		"Record the missing mappings for the current source",
+	"evidenceCheck.nextAction.run_structured_tests":
+		"Run the mapped testcase with structured results",
+	"evidenceCheck.nextAction.request_human_confirmation":
+		"A human must confirm the required manual condition",
 	"evidenceCheck.nextAction.run_verify":
 		"Run the canonical Project verify once",
 	"evidenceCheck.nextAction.fix_verify":
 		"Fix the verify failure and run it again",
 	"evidenceCheck.nextAction.confirm_evidence_check":
-		"The initial verify passed; confirm Evidence Check once",
+		"Required evidence is ready; confirm the Evidence Check Receipt once",
+	"evidenceCheck.nextAction.start_new_run":
+		"The confirmed source or document changed; verify it in a new Run",
 	"evidenceCheck.nextAction.write_final_report":
 		"No more tests are needed; write the final report",
 	"evidenceCheck.status.ready": "Ready",
@@ -57,4 +68,9 @@ export const enEvidenceCheck = {
 	"evidenceCheck.status.awaiting_confirmation": "Waiting for confirmation",
 	"evidenceCheck.status.confirmed": "Confirmed; re-verify required",
 	"evidenceCheck.status.settled": "Settled",
+	"evidenceCheck.status.safe_pass": "Evidence confirmed",
+	"evidenceCheck.status.unmapped": "Mapping missing",
+	"evidenceCheck.status.details_missing": "Evidence details missing",
+	"evidenceCheck.status.manual": "Human confirmation required",
+	"evidenceCheck.status.legacy": "Legacy policy",
 } as const;

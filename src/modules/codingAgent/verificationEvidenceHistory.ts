@@ -9,8 +9,9 @@ export type VerificationEvidenceObservation = {
 	occurredAt?: unknown;
 	kind: "code_change" | "verification";
 	verification?: {
-		state: "running" | "passed" | "failed" | "unknown";
+		state: "running" | "passed" | "failed" | "needs_action" | "unknown";
 		full: boolean;
+		affectsFreshness?: boolean;
 	};
 };
 
@@ -45,7 +46,11 @@ export function buildVerificationEvidenceHistory(
 				occurredAt: observation.occurredAt,
 			};
 			staleReason = null;
-		} else if (lastFullPass && verification.state === "failed") {
+		} else if (
+			lastFullPass &&
+			verification.affectsFreshness !== false &&
+			verification.state === "failed"
+		) {
 			staleReason = "later_verification_failed";
 		}
 

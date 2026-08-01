@@ -1,5 +1,5 @@
 export const RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA =
-	"登録済みrepositoryで選択したcheck commandを実行し、current source snapshot、evidence kind、exit code、出力参照をmanaged evidenceとして保存します。Questionnaireで選択されていないtest種別は実行前に拒否します。TodoやRun statusは更新しません。";
+	"登録済みrepositoryで選択したcheck commandを実行し、current source snapshot、evidence kind、condition scope、exit code、取得できたstructured testcaseをmanaged evidenceとして保存します。required automated conditionにはmappingされた同一testcaseのstructured resultが必要です。Questionnaireで選択されていないtest種別は実行前に拒否します。TodoやRun statusは更新しません。";
 
 export const COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA =
-	"現在sourceに対する初回Project正本verifyのPass後に、Evidence Checkを一度だけ確認済みとして保存します。確認後に実行されたProject正本verifyがPassすると完了可能です。初回verifyのPass前にはEvidence Check処理を行いません。TodoやRun statusは更新しません。";
+	"現在sourceのrequired conditionをtest inventory、明示mapping、同一testcaseのstructured execution、command gate、Project正本verifyから評価します。すべてsafe_passの場合だけ同一Run・Verification Documentにつき不変のEvidence Check Receiptを一度保存し、確認後の同一sourceに対するfollow-up verifyがPassすると完了可能です。不足時はtyped reasonを返し、Receipt、Todo、Run statusを更新しません。";

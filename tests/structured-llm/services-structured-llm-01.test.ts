@@ -104,14 +104,14 @@ describe("structured LLM JSON helpers", () => {
 		handle.dispose();
 	});
 
-	it("uses 180 seconds as the default structured LLM timeout", () => {
+	it("uses 300 seconds as the default structured LLM timeout", () => {
 		vi.useFakeTimers();
 		const originalTimeout = process.env.SUPERVISOR_LLM_TIMEOUT_MS;
 		delete process.env.SUPERVISOR_LLM_TIMEOUT_MS;
 		try {
 			const handle = createStructuredLlmAbortSignal({});
 
-			vi.advanceTimersByTime(179_999);
+			vi.advanceTimersByTime(299_999);
 			expect(handle.signal.aborted).toBe(false);
 			vi.advanceTimersByTime(1);
 			expect(handle.signal.aborted).toBe(true);

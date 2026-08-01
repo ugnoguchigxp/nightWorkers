@@ -1,4 +1,8 @@
 import { Check, CircleAlert, LoaderCircle } from "lucide-react";
+import {
+	PLAN_MODE_EXECUTION_VIEW_ORDER,
+	type PlanModeStepAction,
+} from "../../../../shared/plan-mode-execution";
 import type {
 	EditablePlanModeRoutingView,
 	PlanModeRoutingEntry,
@@ -32,6 +36,11 @@ const PLAN_MODE_ROUTING_VIEWS: readonly PlanModeRoutingView[] = [
 	"sequence_flow",
 	"zod_schema_design",
 	"feature_plan",
+];
+
+const PLAN_MODE_STATUS_VIEW_ORDER: readonly PlanModeRoutingView[] = [
+	"feature_plan",
+	...PLAN_MODE_EXECUTION_VIEW_ORDER.filter((view) => view !== "feature_plan"),
 ];
 
 const PLAN_ARTIFACT_DESCRIPTIONS: Record<PlanModeRoutingView, string> = {
@@ -70,14 +79,17 @@ export function buildPlanArtifactStatusItems({
 			.filter((decision) => isPlanModeRoutingView(decision.view))
 			.map((decision) => [decision.view, decision]),
 	);
-	const orderedViews = new Set<PlanModeRoutingView>();
-	for (const entry of routingEntries) orderedViews.add(entry.view);
-	for (const step of steps) orderedViews.add(step.view);
+	const availableViews = new Set<PlanModeRoutingView>();
+	for (const entry of routingEntries) availableViews.add(entry.view);
+	for (const step of steps) availableViews.add(step.view);
 	for (const decision of viewDecisions) {
-		if (isPlanModeRoutingView(decision.view)) orderedViews.add(decision.view);
+		if (isPlanModeRoutingView(decision.view)) availableViews.add(decision.view);
 	}
+	const orderedViews = PLAN_MODE_STATUS_VIEW_ORDER.filter((view) =>
+		availableViews.has(view),
+	);
 
-	return [...orderedViews].map((view) => {
+	return orderedViews.map((view) => {
 		const routingEntry = routingEntryByView.get(view);
 		const decision = decisionByView.get(view);
 		const step = stepByView.get(view);
@@ -146,20 +158,23 @@ export function PlanArtifactStatusCard({
 			? "failed"
 			: step?.progressStatus === "running" || step?.busy
 				? "running"
-				: step?.done
-					? "done"
-					: "pending";
+				: step?.stale
+					? "stale"
+					: step?.done
+						? "done"
+						: "pending";
 	const statusLabel = {
 		omitted: "対象外",
 		failed: "生成失敗",
 		running: "生成中",
+		stale: "要更新",
 		done: "作成済み",
 		pending: "未作成",
 	}[status];
 	const statusPillClass =
 		status === "done"
 			? "nightworkers-structured-artifact-success-pill"
-			: status === "failed"
+			: status === "failed" || status === "stale"
 				? "nightworkers-structured-artifact-warning-pill"
 				: "nightworkers-structured-artifact-neutral-pill";
 	const showQuestionnaireProgress =
@@ -167,7 +182,9 @@ export function PlanArtifactStatusCard({
 	const showProgressMessage =
 		item.included &&
 		step &&
-		(step.progressStatus === "running" || step.progressStatus === "failed");
+		(step.progressStatus === "running" ||
+			step.progressStatus === "failed" ||
+			step.stale);
 
 	return (
 		<article
@@ -294,7 +311,7 @@ export function PlanArtifactStatusCard({
 							ariaLabel={
 								item.view === "questionnaire"
 									? step.buttonLabel
-									: `${item.label}${step.done ? "を再生成" : "を生成"}`
+									: `${item.label}を${step.buttonLabel}`
 							}
 							busy={step.busy}
 							disabled={step.disabled}
@@ -351,7 +368,7 @@ export function StatusActionButton({
 	ariaLabel?: string;
 	busy: boolean;
 	disabled?: boolean;
-	onClick: () => void | Promise<void>;
+	onClick: PlanModeStepAction;
 	size?: "sm" | "lg";
 	primary?: boolean;
 }) {

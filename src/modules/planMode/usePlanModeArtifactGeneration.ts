@@ -7,6 +7,7 @@ import type { PlanWorkspaceTab } from "../specification";
 import {
 	generateFeaturePlanArtifact,
 	planModeWorkspaceQueryKey,
+	resolveLatestPlanArtifactSourceMessageIds,
 } from "../specification";
 import type { MermaidRenderFailure } from "./PlanModeWorkspacePanels";
 import {
@@ -35,7 +36,7 @@ export function usePlanModeArtifactGeneration(input: {
 	runAction: (
 		action: string,
 		fn: () => Promise<{ focusTab?: PlanWorkspaceTab | null } | undefined>,
-	) => Promise<void>;
+	) => Promise<boolean>;
 	selectActiveTab: (tab: PlanWorkspaceTab) => void;
 }) {
 	const {
@@ -59,16 +60,16 @@ export function usePlanModeArtifactGeneration(input: {
 		action: "blueprint" | "data-model" | "feature-plan",
 		nextTab: PlanWorkspaceTab,
 	) {
-		if (!sessionId) return;
-		if (isImplementationLocked) return;
+		if (!sessionId) return false;
+		if (isImplementationLocked) return false;
 		const capability =
 			action === "blueprint"
 				? "blueprint"
 				: action === "data-model"
 					? "data_model"
 					: "feature_plan";
-		if (!planModeCapabilities[capability]) return;
-		await runAction(action, async () => {
+		if (!planModeCapabilities[capability]) return false;
+		return runAction(action, async () => {
 			let proceedWithUnansweredBlocking = false;
 			if (
 				action === "feature-plan" &&
@@ -83,6 +84,11 @@ export function usePlanModeArtifactGeneration(input: {
 				}
 				proceedWithUnansweredBlocking = true;
 			}
+			const latestSources = resolveLatestPlanArtifactSourceMessageIds(
+				queryClient.getQueryData<PlanModeWorkspace>(
+					planModeWorkspaceQueryKey(sessionId),
+				) ?? null,
+			);
 			const res =
 				action === "blueprint"
 					? await generateBlueprintArtifact(sessionId, {
@@ -92,14 +98,24 @@ export function usePlanModeArtifactGeneration(input: {
 					: action === "data-model"
 						? await generateDataModelArtifact(sessionId, {
 								questionnaireSessionId: readyQuestionnaireSession?.id ?? null,
-								featurePlanMessageId: featurePlanMessage?.id ?? null,
+								featurePlanMessageId:
+									latestSources.featurePlanMessageId ??
+									featurePlanMessage?.id ??
+									null,
 								sourceBlueprintMessageId:
-									activeBlueprintSourceMessageId || null,
+									latestSources.blueprintMessageId ??
+									activeBlueprintSourceMessageId ??
+									null,
 							})
 						: await generateFeaturePlanArtifact(sessionId, {
 								questionnaireSessionId: readyQuestionnaireSession?.id ?? null,
 								sourceBlueprintMessageId:
-									activeBlueprintSourceMessageId || null,
+									latestSources.blueprintMessageId ??
+									activeBlueprintSourceMessageId ??
+									null,
+								sourceDataModelMessageId: latestSources.dataModelMessageId,
+								sourceDedicatedViewMessageIds:
+									latestSources.dedicatedViewMessageIds,
 								proceedWithUnansweredBlocking,
 							});
 			if (!res.ok) {
@@ -140,20 +156,36 @@ export function usePlanModeArtifactGeneration(input: {
 	}
 
 	async function generateDedicatedViews(views: string[]) {
-		if (!sessionId || isImplementationLocked) return;
+		if (!sessionId || isImplementationLocked) return false;
 		const targetViews = views
 			.filter(isGenericPlanView)
 			.filter((view) => planModeCapabilities[view]);
-		if (targetViews.length === 0) return;
-		await runAction(`view:${targetViews[0]}`, async () => {
+		if (targetViews.length === 0) return false;
+		return runAction(`view:${targetViews[0]}`, async () => {
 			const generated: TaskMessage[] = [];
 			let latestWorkspace: PlanModeWorkspace | null = null;
 			for (const view of targetViews) {
+				const latestSources = resolveLatestPlanArtifactSourceMessageIds(
+					latestWorkspace ??
+						queryClient.getQueryData<PlanModeWorkspace>(
+							planModeWorkspaceQueryKey(sessionId),
+						) ??
+						null,
+				);
 				const res = await generatePlanViewArtifact(sessionId, view, {
 					questionnaireSessionId: readyQuestionnaireSession?.id ?? null,
-					featurePlanMessageId: featurePlanMessage?.id ?? null,
-					sourceBlueprintMessageId: activeBlueprintSourceMessageId || null,
-					sourceDataModelMessageId: activeDataModelMessage?.id ?? null,
+					featurePlanMessageId:
+						latestSources.featurePlanMessageId ??
+						featurePlanMessage?.id ??
+						null,
+					sourceBlueprintMessageId:
+						latestSources.blueprintMessageId ??
+						activeBlueprintSourceMessageId ??
+						null,
+					sourceDataModelMessageId:
+						latestSources.dataModelMessageId ??
+						activeDataModelMessage?.id ??
+						null,
 				});
 				if (!res.ok) throw new Error(await res.text());
 				const result = (await res.json()) as {

@@ -31,7 +31,12 @@ export const specificationRouter = createOpenApiRouter()
 		generateFeaturePlanRoute,
 		withOpenApiRouteError(generateFeaturePlanRoute, async (c) => {
 			const body = c.req.valid("json");
-			const { sourceBlueprintMessageId, ...generationInput } = body;
+			const {
+				sourceBlueprintMessageId,
+				sourceDataModelMessageId,
+				sourceDedicatedViewMessageIds,
+				...generationInput
+			} = body;
 			const result = await service.generateFeaturePlanArtifact(
 				c.req.param("id"),
 				{
@@ -39,6 +44,8 @@ export const specificationRouter = createOpenApiRouter()
 					sourceSelection: createPlanArtifactSourceSelection({
 						policy: "explicit_request",
 						blueprintMessageId: sourceBlueprintMessageId,
+						dataModelMessageId: sourceDataModelMessageId,
+						dedicatedViewMessageIds: sourceDedicatedViewMessageIds,
 					}),
 				},
 			);

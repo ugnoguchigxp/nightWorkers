@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+	evidenceAssuranceSnapshotSchema,
+	legacyEvidenceAssuranceSnapshot,
+} from "./evidence-assurance-contract";
 
 export const evidenceCheckDescriptorSchema = z.object({
 	taskId: z.string().uuid(),
@@ -88,12 +92,18 @@ export const evidenceCheckReadinessSnapshotSchema = z.object({
 		initialEvidenceRunId: z.string().min(1).nullable(),
 		confirmedAt: z.string().nullable(),
 	}),
+	assurance: evidenceAssuranceSnapshotSchema.default(
+		legacyEvidenceAssuranceSnapshot,
+	),
 	ready: z.boolean(),
 	suggestedAction: z.enum([
 		"record_mapping",
+		"run_structured_tests",
+		"request_human_confirmation",
 		"run_verify",
 		"fix_verify",
 		"confirm_evidence_check",
+		"start_new_run",
 		"write_final_report",
 	]),
 	readinessDigest: z.string().min(1),

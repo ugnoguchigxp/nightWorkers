@@ -19,6 +19,10 @@ import {
 import { DiffCodeBlock } from "./ThreadTimelineDiffView";
 import { NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
+type VerificationSummary = NonNullable<CodexToolCardModel["verification"]>;
+type EvidenceCheckSummary = NonNullable<VerificationSummary["evidenceCheck"]>;
+type EvidenceCheckMapping = NonNullable<EvidenceCheckSummary["mapping"]>;
+
 export {
 	getCodexToolCardModel,
 	hasCodexToolCard,
@@ -272,6 +276,7 @@ function VerificationCardHeader({
 	verification: NonNullable<CodexToolCardModel["verification"]>;
 	history?: VerificationEvidenceHistoryContext;
 }) {
+	const evidenceCheck = verification.evidenceCheck;
 	return (
 		<>
 			<div className="flex items-center justify-between gap-4">
@@ -282,14 +287,21 @@ function VerificationCardHeader({
 					</span>
 				</div>
 				<span className="nightworkers-chat-card-meta shrink-0 whitespace-nowrap text-right">
-					検証
+					{evidenceCheck ? "Evidence Check" : "検証"}
 				</span>
 			</div>
 			<div className="nightworkers-chat-card-meta mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
 				{verification.command ? (
 					<span className="min-w-0 truncate">{verification.command}</span>
 				) : null}
-				<span>{verificationEvidenceLabel(verification.evidence)}</span>
+				{evidenceCheck ? (
+					<>
+						<span>{evidenceCheckConfirmationLabel(evidenceCheck)}</span>
+						<span>{evidenceCheckNextActionLabel(evidenceCheck)}</span>
+					</>
+				) : (
+					<span>{verificationEvidenceLabel(verification.evidence)}</span>
+				)}
 				{verification.conditionIds.length > 0 ? (
 					<span>完了条件 {verification.conditionIds.join(", ")}</span>
 				) : null}
@@ -306,6 +318,11 @@ function VerificationCardDetails({
 	verification: NonNullable<CodexToolCardModel["verification"]>;
 	history?: VerificationEvidenceHistoryContext;
 }) {
+	if (verification.evidenceCheck) {
+		return (
+			<EvidenceCheckCardDetails verification={verification} history={history} />
+		);
+	}
 	return (
 		<div className="grid gap-2 text-xs sm:grid-cols-2">
 			<VerificationDetailItem
@@ -351,6 +368,102 @@ function VerificationCardDetails({
 			) : null}
 		</div>
 	);
+}
+
+function EvidenceCheckCardDetails({
+	verification,
+	history,
+}: {
+	verification: NonNullable<CodexToolCardModel["verification"]>;
+	history?: VerificationEvidenceHistoryContext;
+}) {
+	const evidenceCheck = verification.evidenceCheck;
+	if (!evidenceCheck) return null;
+	return (
+		<div className="grid gap-2 text-xs sm:grid-cols-2">
+			<VerificationDetailItem
+				icon={<VerificationStateIcon state={verification.state} />}
+				value={verification.headline}
+			/>
+			<VerificationDetailItem
+				icon={<ShieldCheck className="h-3.5 w-3.5" />}
+				value={evidenceCheckConfirmationLabel(evidenceCheck)}
+			/>
+			<VerificationDetailItem value={evidenceCheckVerifyLabel(evidenceCheck)} />
+			<VerificationDetailItem
+				value={evidenceCheckNextActionLabel(evidenceCheck)}
+			/>
+			{evidenceCheck.mapping ? (
+				<VerificationDetailItem
+					value={evidenceCheckMappingLabel(evidenceCheck.mapping)}
+				/>
+			) : null}
+			{history ? (
+				<VerificationDetailItem value={verificationHistoryDetail(history)} />
+			) : null}
+		</div>
+	);
+}
+
+function evidenceCheckConfirmationLabel(input: EvidenceCheckSummary) {
+	if (input.confirmation === "settled") return "Evidence Check: 確定済み";
+	if (input.confirmation === "confirmed") return "Evidence Check: 確認済み";
+	if (input.confirmation === "awaiting_confirmation") {
+		return "Evidence Check: 確認待ち";
+	}
+	if (input.confirmation === "awaiting_initial_verify") {
+		return "Evidence Check: 初回Verify待ち";
+	}
+	if (input.confirmation === "checking") return "Evidence Check: 確認中";
+	return "Evidence Check: 状態未確定";
+}
+
+function evidenceCheckVerifyLabel(input: EvidenceCheckSummary) {
+	const stage =
+		input.confirmation === "settled" ||
+		(input.confirmation === "confirmed" && input.verify !== "passed")
+			? "Follow-up Verify"
+			: "初回Verify";
+	const status =
+		input.verify === "passed"
+			? "成功"
+			: input.verify === "failed"
+				? "失敗"
+				: input.verify === "stale"
+					? "要再実行"
+					: input.verify === "not_run"
+						? "未実行"
+						: "状態未確定";
+	return `${stage}: ${status}`;
+}
+
+function evidenceCheckNextActionLabel(input: EvidenceCheckSummary) {
+	if (input.suggestedAction === "write_final_report") {
+		return "次の操作: 完了報告";
+	}
+	if (input.suggestedAction === "confirm_evidence_check") {
+		return "次の操作: Evidence Checkを確認";
+	}
+	if (input.suggestedAction === "record_mapping") {
+		return "次の操作: テスト対応を記録（任意）";
+	}
+	if (input.suggestedAction === "fix_verify") {
+		return "次の操作: Verify失敗を修正";
+	}
+	if (input.suggestedAction === "run_verify") {
+		return input.confirmation === "confirmed"
+			? "次の操作: Follow-up Verifyを実行"
+			: "次の操作: Project Verifyを実行";
+	}
+	if (input.suggestedAction === "wait") return "次の操作: 確認結果を待機";
+	return "次の操作: 状態を確認";
+}
+
+function evidenceCheckMappingLabel(input: EvidenceCheckMapping) {
+	if (input.status === "not_required") {
+		return "テスト対応: 対象外（参考情報）";
+	}
+	return `テスト対応: ${input.matched}/${input.total}（参考情報・完了判定には不使用）`;
 }
 
 function formatQualityGateSummary(input: {

@@ -574,6 +574,9 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).toContain("Settings で無効です。");
 		expect(markup).toContain("Routing revision: 3");
 		expect(markup.match(/<input[^>]*disabled=""[^>]*>/g)).toHaveLength(3);
+		expect(markup.indexOf(">仕様書</h3>")).toBeLessThan(
+			markup.indexOf(">Questionnaire</h3>"),
+		);
 	});
 
 	it("uses canonical artifacts and the active command for status", () => {
@@ -802,6 +805,57 @@ describe("PlanWorkspaceStatusView", () => {
 		expect(markup).toContain('aria-label="API Contractを生成"');
 		expect(markup).not.toContain("今すぐ実装開始");
 		expect(markup).not.toContain("キューに追加");
+	});
+
+	it("marks an existing specification stale when an upstream Artifact is newer", () => {
+		const markup = renderToStaticMarkup(
+			<PlanWorkspaceStatusView
+				workspace={
+					{
+						featurePlanArtifacts: [
+							{
+								id: "feature-plan-1",
+								kind: "feature_plan",
+								title: "Feature Plan",
+								sourceMessageId: "11111111-1111-4111-8111-111111111111",
+								createdAt: "2026-07-08T00:00:00Z",
+							},
+						],
+						blueprintArtifacts: [],
+						dataModelArtifacts: [
+							{
+								id: "data-model-1",
+								kind: "data_model",
+								title: "Data Model",
+								sourceMessageId: "22222222-2222-4222-8222-222222222222",
+								createdAt: "2026-07-08T00:00:01Z",
+							},
+						],
+						dedicatedViewArtifacts: [],
+						viewDecisions: [
+							{ view: "data_model", decision: "include" },
+							{ view: "feature_plan", decision: "include" },
+						],
+					} as never
+				}
+				questionnaireSession={null}
+				busyAction={null}
+				canGenerateDataModel={true}
+				hasFeaturePlan={true}
+				onOpenQuestionnaire={vi.fn()}
+				onGenerateBlueprint={vi.fn()}
+				onGenerateDataModel={vi.fn()}
+				onGenerateFeaturePlan={vi.fn()}
+				onGenerateDedicatedViews={vi.fn()}
+			/>,
+		);
+
+		expect(markup).toContain(
+			"先行Artifactが更新されたため、最後に仕様書を再生成します。",
+		);
+		expect(markup).toContain('aria-label="仕様書を再生成"');
+		expect(markup).toContain("未作成をまとめて生成");
+		expect(markup).not.toContain("今すぐ実装開始");
 	});
 
 	it("does not render the retired Mission Pilot review projection", () => {

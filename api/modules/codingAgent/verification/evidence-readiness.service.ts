@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
+	EVIDENCE_ASSURANCE_POLICY_STRICT_V1,
+	type EvidenceAssuranceSnapshot,
 	type EvidenceCheckReadinessSnapshot,
 	type EvidenceCheckSnapshot,
-	evidenceCheckReadinessSnapshotSchema,
 } from "../../../../shared/modules/codingAgent";
 import {
 	type CompletionVerificationScope,
@@ -14,32 +15,31 @@ import {
 } from "../../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../../db/client";
 import {
-	codingAgentEvidenceCheckConfirmations,
-	codingAgentEvidenceReadinessSettlements,
-	codingAgentTestConditionMappings,
-	codingAgentTestInventoryCases,
 	codingAgentTestInventoryRuns,
 	verificationChecklistItems,
 	verificationDocuments,
 	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
-import { digestTestDefinitionInventory } from "./test-definition-digest";
-import { collectTestInventory } from "./test-inventory.service";
+import { canonicalDigest } from "../../agentsShare";
+import { evaluateAcceptanceConditionAssurance } from "./acceptance-condition-assurance.service";
+import {
+	evaluateEvidenceMappingReadiness,
+	resolveEvidenceTestScope,
+	unresolvedEvidenceMapping,
+} from "./evidence-mapping-readiness.service";
+import {
+	type EvidenceConfirmationRecord,
+	persistEvidenceConfirmation,
+	persistEvidenceSettlement,
+	readEvidenceConfirmation,
+	readEvidenceSettlement,
+} from "./evidence-receipt.repository";
 import { captureWorkspaceSourceSnapshot } from "./workspace-source-snapshot";
 
 type SnapshotCore = EvidenceCheckReadinessSnapshot;
 
-type TestScope = EvidenceCheckSnapshot["scope"]["testScope"];
 type InventoryRow = typeof codingAgentTestInventoryRuns.$inferSelect;
 type VerifyRunRow = typeof verificationEvidenceRuns.$inferSelect;
-
-const definitionCache = new Map<
-	string,
-	{
-		digest: string;
-		cases: Awaited<ReturnType<typeof collectTestInventory>>["cases"];
-	}
->();
 
 export async function evaluateEvidenceReadiness(
 	input: {
@@ -62,13 +62,17 @@ export async function evaluateEvidenceReadiness(
 		)
 		.then((rows) => rows[0]);
 	if (!document) throw new Error("active_verification_document_not_found");
-	const settled = await readSettlement(input);
+	const verificationDocumentDigest = canonicalDigest({
+		schemaVersion: document.schemaVersion,
+		document: document.documentJson,
+	});
+	const settled = await readEvidenceSettlement(input);
 	if (settled) return settled;
 
 	const [current, confirmation, checklist, inventories, verifyRuns] =
 		await Promise.all([
 			captureWorkspaceSourceSnapshot(input.repoRoot),
-			readConfirmation(input),
+			readEvidenceConfirmation(input),
 			db
 				.select()
 				.from(verificationChecklistItems)
@@ -120,7 +124,7 @@ export async function evaluateEvidenceReadiness(
 	const parsedDocument = specificationVerificationDocumentSchema.safeParse(
 		document.documentJson,
 	);
-	const testScope = resolveTestScope(
+	const testScope = resolveEvidenceTestScope(
 		parsedDocument.success ? parsedDocument.data.testScope : undefined,
 		checklist,
 	);
@@ -148,25 +152,53 @@ export async function evaluateEvidenceReadiness(
 		: null;
 
 	if (confirmation) {
+		const strictConfirmation =
+			confirmation.policyVersion === EVIDENCE_ASSURANCE_POLICY_STRICT_V1;
+		if (
+			strictConfirmation &&
+			(confirmation.sourceStateHash !== current.sourceStateHash ||
+				confirmation.verificationDocumentDigest !== verificationDocumentDigest)
+		) {
+			const reason =
+				confirmation.verificationDocumentDigest !== verificationDocumentDigest
+					? "VERIFICATION_DOCUMENT_CHANGED"
+					: "EVIDENCE_CONFIRMATION_SOURCE_CHANGED";
+			return {
+				...confirmation.snapshot,
+				sourceStateHash: current.sourceStateHash,
+				verify: {
+					...confirmation.snapshot.verify,
+					status: "stale",
+				},
+				assurance: {
+					...confirmation.snapshot.assurance,
+					status: "stale",
+					reasonCodes: Array.from(
+						new Set([...confirmation.snapshot.assurance.reasonCodes, reason]),
+					),
+				},
+				ready: false,
+				suggestedAction: "start_new_run",
+				readinessDigest: digest({
+					confirmationDigest: confirmation.snapshot.readinessDigest,
+					reason,
+					currentSourceStateHash: current.sourceStateHash,
+					verificationDocumentDigest,
+				}),
+			};
+		}
 		const observedIds = new Set(confirmation.observedEvidenceRunIds);
-		const followupRuns = eligibleVerifyRuns.filter(
-			(run) => !observedIds.has(run.id),
-		);
+		const followupRuns = eligibleVerifyRuns.filter((run) => {
+			if (observedIds.has(run.id)) return false;
+			if (!strictConfirmation) return true;
+			return followupMatchesStrictConfirmation(run, confirmation);
+		});
 		const passedFollowup = followupRuns.find(isStablePassedVerify);
 		if (passedFollowup && input.runId) {
 			const verify = verifySnapshot(passedFollowup, "passed");
 			const result: SnapshotCore = {
 				...confirmation.snapshot,
-				sourceStateHash:
-					verify.sourceStateHash ?? confirmation.snapshot.sourceStateHash,
-				scope: {
-					...confirmation.snapshot.scope,
-					authorizedVerifyCommand: {
-						id: null,
-						command: passedFollowup.command,
-						cwd: passedFollowup.cwd,
-					},
-				},
+				sourceStateHash: confirmation.snapshot.sourceStateHash,
 				verify,
 				confirmation: {
 					...confirmation.snapshot.confirmation,
@@ -180,11 +212,13 @@ export async function evaluateEvidenceReadiness(
 					sourceStateHash: verify.sourceStateHash,
 				}),
 			};
-			return persistSettlement({
+			return persistEvidenceSettlement({
 				taskId: input.taskId,
 				runId: input.runId,
 				verificationDocumentId: input.verificationDocumentId,
 				evidenceRunId: passedFollowup.id,
+				confirmationId: confirmation.id,
+				receiptDigest: confirmation.receiptDigest,
 				result,
 			});
 		}
@@ -211,13 +245,17 @@ export async function evaluateEvidenceReadiness(
 		};
 	}
 
-	const initialPassedVerify = eligibleVerifyRuns.find(
-		(run) =>
-			isStablePassedVerify(run) &&
-			snapshotHash(run.sourceSnapshotJson) === current.sourceStateHash,
+	const currentVerifyRuns = eligibleVerifyRuns.filter(
+		(run) => snapshotHash(run.sourceSnapshotJson) === current.sourceStateHash,
 	);
+	const latestCurrentVerify =
+		currentVerifyRuns[currentVerifyRuns.length - 1] ?? null;
+	const initialPassedVerify =
+		latestCurrentVerify && isStablePassedVerify(latestCurrentVerify)
+			? latestCurrentVerify
+			: null;
 	const latestVerify =
-		initialPassedVerify ??
+		latestCurrentVerify ??
 		eligibleVerifyRuns[eligibleVerifyRuns.length - 1] ??
 		null;
 	const verifyStatus = verifyAttemptStatus(
@@ -225,8 +263,32 @@ export async function evaluateEvidenceReadiness(
 		current.sourceStateHash,
 	);
 	const verify = verifySnapshot(latestVerify, verifyStatus);
-	const mapping = unresolvedOptionalMapping(checklist, testScope);
-	const awaitingConfirmation = verifyStatus === "passed";
+	const [mapping, assuranceEvaluation] = await Promise.all([
+		input.runId
+			? evaluateEvidenceMappingReadiness({
+					...input,
+					checklist,
+					inventories,
+					sourceStateHash: current.sourceStateHash,
+					testScope,
+					settledEvidence: true,
+				})
+			: Promise.resolve(unresolvedEvidenceMapping(checklist, testScope)),
+		input.runId
+			? evaluateAcceptanceConditionAssurance({
+					taskId: input.taskId,
+					runId: input.runId,
+					verificationDocumentId: input.verificationDocumentId,
+					repoRoot: input.repoRoot,
+				})
+			: Promise.resolve(null),
+	]);
+	const assurance = strictAssuranceSnapshot({
+		evaluation: assuranceEvaluation,
+		verificationDocumentDigest,
+	});
+	const awaitingConfirmation =
+		verifyStatus === "passed" && assurance.status === "passed";
 	const result: SnapshotCore = {
 		runId: input.runId ?? null,
 		sourceStateHash: current.sourceStateHash,
@@ -247,12 +309,11 @@ export async function evaluateEvidenceReadiness(
 			initialEvidenceRunId: initialPassedVerify?.id ?? null,
 			confirmedAt: null,
 		},
+		assurance,
 		ready: false,
 		suggestedAction: awaitingConfirmation
 			? "confirm_evidence_check"
-			: verifyStatus === "failed"
-				? "fix_verify"
-				: "run_verify",
+			: strictSuggestedAction({ assurance, mapping, verifyStatus }),
 		readinessDigest: digest({
 			phase: awaitingConfirmation
 				? "awaiting_confirmation"
@@ -261,46 +322,163 @@ export async function evaluateEvidenceReadiness(
 			testScope,
 			verifyStatus,
 			verifyEvidenceId: latestVerify?.id ?? null,
+			assuranceStatus: assurance.status,
+			assuranceReasons: assurance.reasonCodes,
 		}),
 	};
-	if (!options.confirmEvidenceCheck || !initialPassedVerify || !input.runId) {
+	if (
+		!options.confirmEvidenceCheck ||
+		!initialPassedVerify ||
+		!input.runId ||
+		assurance.status !== "passed"
+	) {
 		return result;
 	}
 
+	const confirmationSource = await captureWorkspaceSourceSnapshot(
+		input.repoRoot,
+	);
+	if (confirmationSource.sourceStateHash !== current.sourceStateHash) {
+		return {
+			...result,
+			assurance: {
+				...result.assurance,
+				status: "stale",
+				reasonCodes: ["EVIDENCE_CONFIRMATION_SOURCE_CHANGED"],
+			},
+			suggestedAction: "start_new_run",
+			readinessDigest: digest({
+				phase: "confirmation_source_changed",
+				expected: current.sourceStateHash,
+				actual: confirmationSource.sourceStateHash,
+			}),
+		};
+	}
 	const confirmedAt = new Date().toISOString();
-	const confirmedMapping = await evaluateOptionalMapping({
-		...input,
-		checklist,
-		inventories,
+	const authorizedVerifyDigest = canonicalDigest({
+		command: initialPassedVerify.command,
+		cwd: initialPassedVerify.cwd,
+	});
+	const receiptDigest = canonicalDigest({
+		policyVersion: EVIDENCE_ASSURANCE_POLICY_STRICT_V1,
+		taskId: input.taskId,
+		runId: input.runId,
+		verificationDocumentId: input.verificationDocumentId,
+		verificationDocumentDigest,
 		sourceStateHash: current.sourceStateHash,
-		testScope,
-		settledEvidence: true,
+		initialEvidenceRunId: initialPassedVerify.id,
+		authorizedVerifyDigest,
+		mapping,
+		conditions: assurance.conditions,
 	});
 	const confirmedResult: SnapshotCore = {
 		...result,
-		mapping: confirmedMapping,
 		confirmation: {
 			status: "confirmed",
 			initialEvidenceRunId: initialPassedVerify.id,
 			confirmedAt,
+		},
+		assurance: {
+			...assurance,
+			receiptDigest,
 		},
 		suggestedAction: "run_verify",
 		readinessDigest: digest({
 			phase: "confirmed",
 			initialEvidenceRunId: initialPassedVerify.id,
 			confirmedAt,
-			mappingStatus: confirmedMapping.status,
-			definitionDigest: confirmedMapping.definitionDigest,
+			receiptDigest,
 		}),
 	};
-	return persistConfirmation({
+	return persistEvidenceConfirmation({
 		taskId: input.taskId,
 		runId: input.runId,
 		verificationDocumentId: input.verificationDocumentId,
 		initialEvidenceRunId: initialPassedVerify.id,
 		observedEvidenceRunIds: eligibleVerifyRuns.map((run) => run.id),
+		policyVersion: EVIDENCE_ASSURANCE_POLICY_STRICT_V1,
+		sourceStateHash: current.sourceStateHash,
+		verificationDocumentDigest,
+		authorizedVerifyDigest,
+		receiptDigest,
 		result: confirmedResult,
 	});
+}
+
+function strictAssuranceSnapshot(input: {
+	evaluation: Awaited<
+		ReturnType<typeof evaluateAcceptanceConditionAssurance>
+	> | null;
+	verificationDocumentDigest: string;
+}): EvidenceAssuranceSnapshot {
+	const reasonCodes = Array.from(
+		new Set(
+			input.evaluation
+				? [
+						...input.evaluation.conditions.flatMap((condition) =>
+							condition.reasonCode ? [condition.reasonCode] : [],
+						),
+						...(input.evaluation.qualityGate.fullVerify.reason
+							? [input.evaluation.qualityGate.fullVerify.reason]
+							: []),
+					]
+				: (["FULL_VERIFY_MISSING"] as const),
+		),
+	);
+	return {
+		policyVersion: EVIDENCE_ASSURANCE_POLICY_STRICT_V1,
+		status: input.evaluation?.passed ? "passed" : "failed",
+		verificationDocumentDigest: input.verificationDocumentDigest,
+		receiptDigest: null,
+		conditions: input.evaluation?.conditions ?? [],
+		reasonCodes,
+	};
+}
+
+function strictSuggestedAction(input: {
+	assurance: EvidenceAssuranceSnapshot;
+	mapping: EvidenceCheckSnapshot["mapping"];
+	verifyStatus: EvidenceCheckSnapshot["verify"]["status"];
+}): EvidenceCheckSnapshot["suggestedAction"] {
+	if (input.verifyStatus === "failed") return "fix_verify";
+	if (input.verifyStatus !== "passed") return "run_verify";
+	if (
+		input.mapping.status === "missing" ||
+		input.mapping.status === "stale" ||
+		input.mapping.status === "ambiguous" ||
+		input.assurance.reasonCodes.includes("TEST_INVENTORY_MISSING") ||
+		input.assurance.reasonCodes.includes("CONDITION_MAPPING_MISSING")
+	) {
+		return "record_mapping";
+	}
+	if (input.assurance.reasonCodes.includes("MANUAL_CONFIRMATION_MISSING")) {
+		return "request_human_confirmation";
+	}
+	return "run_structured_tests";
+}
+
+function followupMatchesStrictConfirmation(
+	run: VerifyRunRow,
+	confirmation: EvidenceConfirmationRecord,
+) {
+	const authorized = confirmation.snapshot.scope.authorizedVerifyCommand;
+	const confirmedAt = confirmation.snapshot.confirmation.confirmedAt;
+	if (
+		!authorized ||
+		!confirmedAt ||
+		!confirmation.sourceStateHash ||
+		run.command !== authorized.command ||
+		run.cwd !== authorized.cwd ||
+		run.finishedAt.getTime() <= Date.parse(confirmedAt) ||
+		snapshotHash(run.sourceSnapshotJson) !== confirmation.sourceStateHash
+	) {
+		return false;
+	}
+	return (
+		!confirmation.authorizedVerifyDigest ||
+		confirmation.authorizedVerifyDigest ===
+			canonicalDigest({ command: run.command, cwd: run.cwd })
+	);
 }
 
 function verifyEvidenceIsAllowedByScope(
@@ -317,118 +495,6 @@ function verifyEvidenceIsAllowedByScope(
 			isExpectedEvidenceAllowedByCompletionScope(parsed.data, testScope)
 		);
 	});
-}
-
-async function evaluateOptionalMapping(input: {
-	taskId: string;
-	runId?: string | null;
-	verificationDocumentId: string;
-	repoRoot: string;
-	checklist: Array<typeof verificationChecklistItems.$inferSelect>;
-	inventories: InventoryRow[];
-	sourceStateHash: string;
-	testScope: TestScope;
-	settledEvidence: boolean;
-}): Promise<EvidenceCheckSnapshot["mapping"]> {
-	const requiredItems = input.checklist.filter((item) =>
-		mappingRequired(item, input.testScope),
-	);
-	if (requiredItems.length === 0) {
-		return {
-			status: "not_required",
-			definitionDigest: null,
-			total: 0,
-			matched: 0,
-			items: [],
-		};
-	}
-
-	try {
-		const selected = await selectInventoryWithMappings({
-			verificationDocumentId: input.verificationDocumentId,
-			inventories: input.settledEvidence
-				? input.inventories.filter(
-						(inventory) =>
-							snapshotHash(inventory.sourceSnapshotJson) ===
-							input.sourceStateHash,
-					)
-				: input.inventories,
-		});
-		const persistedCases = selected.inventory
-			? await db
-					.select()
-					.from(codingAgentTestInventoryCases)
-					.where(
-						eq(
-							codingAgentTestInventoryCases.inventoryId,
-							selected.inventory.id,
-						),
-					)
-			: [];
-		const scopedPersistedCases = persistedCases.filter((testCase) =>
-			caseIsInScope(testCase.runner, input.testScope),
-		);
-		const persistedDefinitionDigest = selected.inventory
-			? digestTestDefinitionInventory(scopedPersistedCases)
-			: null;
-		const items = requiredItems.map((item) => {
-			const matches = selected.mappings
-				.filter((mapping) => mapping.conditionId === item.conditionId)
-				.flatMap((mapping) => {
-					const testCase = scopedPersistedCases.find(
-						(candidate) => candidate.caseKey === mapping.caseKey,
-					);
-					return testCase
-						? [
-								{
-									caseKey: testCase.caseKey,
-									name: testCase.name,
-									filePath: testCase.filePath,
-									runner: testCase.runner,
-								},
-							]
-						: [];
-				});
-			return {
-				id: item.conditionId,
-				text: item.text,
-				required: item.required,
-				status:
-					matches.length > 0 ? ("matched" as const) : ("missing" as const),
-				matches,
-			};
-		});
-		const matched = items.filter((item) => item.status === "matched").length;
-		if (input.settledEvidence) {
-			return {
-				status: matched === items.length ? "matched" : "missing",
-				definitionDigest: persistedDefinitionDigest,
-				total: items.length,
-				matched,
-				items,
-			};
-		}
-		const currentDefinitions = await currentTestDefinitions({
-			...input,
-			sourceStateHash: input.sourceStateHash,
-			testScope: input.testScope,
-		});
-		return {
-			status:
-				selected.inventory &&
-				persistedDefinitionDigest !== currentDefinitions.digest
-					? "stale"
-					: matched === items.length
-						? "matched"
-						: "missing",
-			definitionDigest: currentDefinitions.digest,
-			total: items.length,
-			matched,
-			items,
-		};
-	} catch {
-		return unresolvedOptionalMapping(input.checklist, input.testScope);
-	}
 }
 
 function isStablePassedVerify(run: VerifyRunRow) {
@@ -468,230 +534,6 @@ function verifySnapshot(
 		finishedAt: run?.finishedAt.toISOString() ?? null,
 		logRefs: run ? [run.rawStdoutArtifactId, run.rawStderrArtifactId] : [],
 	};
-}
-
-async function readConfirmation(input: {
-	taskId: string;
-	runId?: string | null;
-	verificationDocumentId: string;
-}) {
-	if (!input.runId) return null;
-	const row = await db
-		.select({
-			observedEvidenceRunIdsJson:
-				codingAgentEvidenceCheckConfirmations.observedEvidenceRunIdsJson,
-			snapshotJson: codingAgentEvidenceCheckConfirmations.snapshotJson,
-		})
-		.from(codingAgentEvidenceCheckConfirmations)
-		.where(
-			and(
-				eq(codingAgentEvidenceCheckConfirmations.taskId, input.taskId),
-				eq(codingAgentEvidenceCheckConfirmations.runId, input.runId),
-				eq(
-					codingAgentEvidenceCheckConfirmations.verificationDocumentId,
-					input.verificationDocumentId,
-				),
-			),
-		)
-		.limit(1)
-		.then((rows) => rows[0]);
-	if (!row) return null;
-	const parsed = evidenceCheckReadinessSnapshotSchema.safeParse(
-		row.snapshotJson,
-	);
-	if (!parsed.success) throw new Error("invalid_evidence_check_confirmation");
-	return {
-		observedEvidenceRunIds: row.observedEvidenceRunIdsJson,
-		snapshot: parsed.data,
-	};
-}
-
-async function persistConfirmation(input: {
-	taskId: string;
-	runId: string;
-	verificationDocumentId: string;
-	initialEvidenceRunId: string;
-	observedEvidenceRunIds: string[];
-	result: SnapshotCore;
-}) {
-	await db
-		.insert(codingAgentEvidenceCheckConfirmations)
-		.values({
-			taskId: input.taskId,
-			runId: input.runId,
-			verificationDocumentId: input.verificationDocumentId,
-			initialEvidenceRunId: input.initialEvidenceRunId,
-			observedEvidenceRunIdsJson: input.observedEvidenceRunIds,
-			snapshotJson: { ...input.result },
-		})
-		.onConflictDoNothing();
-	return (await readConfirmation(input))?.snapshot ?? input.result;
-}
-
-async function readSettlement(input: {
-	taskId: string;
-	runId?: string | null;
-	verificationDocumentId: string;
-}) {
-	if (!input.runId) return null;
-	const row = await db
-		.select({
-			snapshotJson: codingAgentEvidenceReadinessSettlements.snapshotJson,
-		})
-		.from(codingAgentEvidenceReadinessSettlements)
-		.where(
-			and(
-				eq(codingAgentEvidenceReadinessSettlements.taskId, input.taskId),
-				eq(codingAgentEvidenceReadinessSettlements.runId, input.runId),
-				eq(
-					codingAgentEvidenceReadinessSettlements.verificationDocumentId,
-					input.verificationDocumentId,
-				),
-			),
-		)
-		.limit(1)
-		.then((rows) => rows[0]);
-	if (!row) return null;
-	const parsed = evidenceCheckReadinessSnapshotSchema.safeParse(
-		row.snapshotJson,
-	);
-	return parsed.success ? parsed.data : null;
-}
-
-async function persistSettlement(input: {
-	taskId: string;
-	runId: string;
-	verificationDocumentId: string;
-	evidenceRunId: string;
-	result: SnapshotCore;
-}) {
-	await db
-		.insert(codingAgentEvidenceReadinessSettlements)
-		.values({
-			taskId: input.taskId,
-			runId: input.runId,
-			verificationDocumentId: input.verificationDocumentId,
-			evidenceRunId: input.evidenceRunId,
-			snapshotJson: { ...input.result },
-		})
-		.onConflictDoNothing();
-	return (await readSettlement(input)) ?? input.result;
-}
-
-function unresolvedOptionalMapping(
-	checklist: Array<typeof verificationChecklistItems.$inferSelect>,
-	testScope: TestScope,
-): EvidenceCheckSnapshot["mapping"] {
-	const items = checklist
-		.filter((item) => mappingRequired(item, testScope))
-		.map((item) => ({
-			id: item.conditionId,
-			text: item.text,
-			required: item.required,
-			status: "missing" as const,
-			matches: [],
-		}));
-	return {
-		status: items.length === 0 ? "not_required" : "missing",
-		definitionDigest: null,
-		total: items.length,
-		matched: 0,
-		items,
-	};
-}
-
-async function currentTestDefinitions(input: {
-	taskId: string;
-	runId?: string | null;
-	repoRoot: string;
-	sourceStateHash: string;
-	testScope: TestScope;
-}) {
-	const cacheKey = `${input.repoRoot}\u0000${input.sourceStateHash}\u0000${input.testScope}`;
-	const cached = definitionCache.get(cacheKey);
-	if (cached) return cached;
-	const inventory = await collectTestInventory(
-		{
-			taskId: input.taskId,
-			runId: input.runId ?? undefined,
-			repoRoot: input.repoRoot,
-		},
-		{ activeDiscovery: false, persist: false },
-	);
-	const cases = inventory.cases.filter((testCase) =>
-		caseIsInScope(testCase.runner, input.testScope),
-	);
-	const result = { digest: digestTestDefinitionInventory(cases), cases };
-	definitionCache.set(cacheKey, result);
-	if (definitionCache.size > 32) {
-		const oldest = definitionCache.keys().next().value;
-		if (oldest) definitionCache.delete(oldest);
-	}
-	return result;
-}
-
-async function selectInventoryWithMappings(input: {
-	verificationDocumentId: string;
-	inventories: InventoryRow[];
-}) {
-	for (const inventory of input.inventories) {
-		const mappings = await db
-			.select()
-			.from(codingAgentTestConditionMappings)
-			.where(
-				and(
-					eq(
-						codingAgentTestConditionMappings.verificationDocumentId,
-						input.verificationDocumentId,
-					),
-					eq(codingAgentTestConditionMappings.inventoryId, inventory.id),
-				),
-			);
-		if (mappings.length > 0) return { inventory, mappings };
-	}
-	return { inventory: null, mappings: [] };
-}
-
-function resolveTestScope(
-	explicit: "none" | "unit" | "e2e_if_ui" | "unit_and_e2e_if_ui" | undefined,
-	checklist: Array<typeof verificationChecklistItems.$inferSelect>,
-): TestScope {
-	if (explicit) return explicit;
-	const expected = new Set(
-		checklist.flatMap((item) => item.expectedEvidenceJson),
-	);
-	const unit = expected.has("unit_test") || expected.has("integration_test");
-	const e2e = expected.has("e2e_test");
-	if (unit && e2e) return "unit_and_e2e_if_ui";
-	if (unit) return "unit";
-	if (e2e) return "e2e_if_ui";
-	if (
-		checklist.every(
-			(item) =>
-				!item.required ||
-				item.verificationKind === "manual" ||
-				item.verificationKind === "not_applicable",
-		)
-	) {
-		return "none";
-	}
-	return "unspecified";
-}
-
-function mappingRequired(
-	item: typeof verificationChecklistItems.$inferSelect,
-	testScope: TestScope,
-) {
-	if (!item.required || testScope === "none") return false;
-	return (item.verificationKind ?? "automated_test") === "automated_test";
-}
-
-function caseIsInScope(runner: string, testScope: TestScope) {
-	if (testScope === "none") return false;
-	const e2e = runner === "playwright";
-	if (testScope === "unit") return !e2e;
-	if (testScope === "e2e_if_ui") return e2e;
-	return true;
 }
 
 function snapshotHash(value: unknown) {

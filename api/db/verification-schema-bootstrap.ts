@@ -143,6 +143,14 @@ export async function ensureVerificationTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS coding_agent_evidence_readiness_settlement_task_idx ON coding_agent_evidence_readiness_settlements (task_id, created_at)",
 	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_readiness_settlements",
+		"confirmation_id text",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_readiness_settlements",
+		"receipt_digest text",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS coding_agent_evidence_check_confirmations (
@@ -166,6 +174,26 @@ export async function ensureVerificationTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS coding_agent_evidence_check_confirmation_task_idx ON coding_agent_evidence_check_confirmations (task_id, created_at)",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_check_confirmations",
+		"policy_version text",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_check_confirmations",
+		"source_state_hash text",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_check_confirmations",
+		"verification_document_digest text",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_check_confirmations",
+		"authorized_verify_digest text",
+	);
+	await addColumnIfMissing(
+		"coding_agent_evidence_check_confirmations",
+		"receipt_digest text",
 	);
 
 	await client.execute(`

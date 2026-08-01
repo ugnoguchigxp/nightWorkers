@@ -177,8 +177,28 @@ function buildVerificationDiscrepancies(result: CompletionCheckResult) {
 
 function buildSatisfactionConditions(result: CompletionCheckResult) {
 	if (result.ok) return [];
+	if (result.suggestedAction === "start_new_run") {
+		return [
+			"Evidence Check確認時のsourceまたはVerification Documentが変わったため、既存Receiptを保持したまま新しいimplementation Runで再検証する。",
+		];
+	}
+	if (result.suggestedAction === "record_mapping") {
+		return [
+			"current sourceのrequired automated conditionとactive testcaseの明示mappingを記録する。",
+		];
+	}
+	if (result.suggestedAction === "run_structured_tests") {
+		return [
+			"mappingされた同一testcaseをstructured resultが保存されるmanaged checkで実行する。",
+		];
+	}
+	if (result.suggestedAction === "request_human_confirmation") {
+		return ["required manual conditionにhuman reviewerの確認証跡を追加する。"];
+	}
 	if (result.confirmation.status === "awaiting_confirmation") {
-		return ["初回verifyのPass後にEvidence Checkを一度だけ確認する。"];
+		return [
+			"required conditionのmanaged evidenceとProject正本verifyが揃った状態でEvidence Checkを一度だけ確認する。",
+		];
 	}
 	if (result.confirmation.status === "confirmed") {
 		return ["Evidence Check確認後のProject正本verifyを一度実行する。"];

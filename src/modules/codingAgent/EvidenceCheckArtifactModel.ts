@@ -4,6 +4,7 @@ import type {
 	EvidenceCheckDescriptor,
 	EvidenceCheckSnapshot,
 } from "../../../shared/modules/codingAgent";
+import { legacyEvidenceAssuranceSnapshot } from "../../../shared/modules/codingAgent";
 import { apiFetch } from "../../lib/api-base";
 import type { TaskMessage, WorkbenchArtifactRef } from "../nightworkers/types";
 
@@ -176,6 +177,7 @@ export function buildEvidenceCheckExportMarkdown(input: {
 	const snapshot = input.snapshot;
 	if (!snapshot)
 		return `# ${input.title}\n\nEvidence readiness is unavailable.`;
+	const assurance = snapshot.assurance ?? legacyEvidenceAssuranceSnapshot;
 	return [
 		`# ${input.title}`,
 		"## Scope",
@@ -197,6 +199,15 @@ export function buildEvidenceCheckExportMarkdown(input: {
 		`- Command: ${snapshot.verify.command ?? "not selected"}`,
 		`- Exit code: ${snapshot.verify.exitCode ?? "not run"}`,
 		`- Source state: ${snapshot.sourceStateHash ?? "unavailable"}`,
+		"## Acceptance-condition Assurance",
+		`- Policy: ${assurance.policyVersion}`,
+		`- Status: ${assurance.status}`,
+		`- Verification Document digest: ${assurance.verificationDocumentDigest ?? "unavailable"}`,
+		`- Receipt digest: ${assurance.receiptDigest ?? "not confirmed"}`,
+		...assurance.conditions.map(
+			(condition) =>
+				`- ${condition.conditionId} ${condition.text} (${condition.assuranceStatus}${condition.reasonCode ? `; ${condition.reasonCode}` : ""})`,
+		),
 		"## Evidence Check Confirmation",
 		`- Status: ${snapshot.confirmation.status}`,
 		`- Confirmed at: ${snapshot.confirmation.confirmedAt ?? "not confirmed"}`,
@@ -206,11 +217,17 @@ export function buildEvidenceCheckExportMarkdown(input: {
 }
 
 export function buildEvidenceCheckExportCsv(snapshot: EvidenceCheckSnapshot) {
+	const assuranceSnapshot =
+		snapshot.assurance ?? legacyEvidenceAssuranceSnapshot;
 	const headers = [
 		"task_id",
 		"verification_document_id",
 		"test_scope",
 		"mapping_status",
+		"assurance_policy",
+		"assurance_status",
+		"condition_assurance_status",
+		"condition_assurance_reason",
 		"evidence_item_id",
 		"evidence_item",
 		"item_status",
@@ -226,12 +243,19 @@ export function buildEvidenceCheckExportCsv(snapshot: EvidenceCheckSnapshot) {
 		"evaluated_at",
 	];
 	const rows = snapshot.mapping.items.flatMap((item) => {
+		const assurance = assuranceSnapshot.conditions.find(
+			(condition) => condition.conditionId === item.id,
+		);
 		const matches = item.matches.length ? item.matches : [null];
 		return matches.map((match) => [
 			snapshot.taskId,
 			snapshot.verificationDocumentId,
 			snapshot.scope.testScope,
 			snapshot.mapping.status,
+			assuranceSnapshot.policyVersion,
+			assuranceSnapshot.status,
+			assurance?.assuranceStatus ?? "",
+			assurance?.reasonCode ?? "",
 			item.id,
 			item.text,
 			item.status,

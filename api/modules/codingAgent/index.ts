@@ -60,6 +60,10 @@ export * from "./runtime";
 export * from "./todo";
 export { codingAgentForbiddenPlanTools, todoListTool } from "./tools";
 export {
+	evaluateAcceptanceConditionAssurance,
+	evaluateAcceptanceConditionAssuranceDataset,
+} from "./verification/acceptance-condition-assurance.service";
+export {
 	isAutomatedEvidenceKind,
 	isCompatibleEvidenceKind,
 } from "./verification/evidence-kind-compatibility";

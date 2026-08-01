@@ -12,6 +12,7 @@ export type CompletionCheckResult = {
 	mapping: EvidenceCheckSnapshot["mapping"];
 	verify: EvidenceCheckSnapshot["verify"];
 	confirmation: EvidenceCheckSnapshot["confirmation"];
+	assurance: EvidenceCheckSnapshot["assurance"];
 	suggestedAction: EvidenceCheckSnapshot["suggestedAction"];
 	readinessDigest: string;
 	reason?: string;
@@ -74,6 +75,7 @@ export async function runCompletionCheck(input: {
 		mapping: readiness.mapping,
 		verify: readiness.verify,
 		confirmation: readiness.confirmation,
+		assurance: readiness.assurance,
 		suggestedAction: readiness.suggestedAction,
 		readinessDigest: readiness.readinessDigest,
 		...(readiness.ready ? {} : { reason: readinessReason(readiness) }),
@@ -83,6 +85,15 @@ export async function runCompletionCheck(input: {
 function readinessReason(
 	readiness: Awaited<ReturnType<typeof evaluateEvidenceReadiness>>,
 ) {
+	if (readiness.assurance.status === "stale") {
+		return (
+			readiness.assurance.reasonCodes[0] ??
+			"EVIDENCE_CONFIRMATION_SOURCE_CHANGED"
+		);
+	}
+	if (readiness.assurance.status === "failed") {
+		return readiness.assurance.reasonCodes[0] ?? "EVIDENCE_ASSURANCE_FAILED";
+	}
 	if (readiness.confirmation.status === "awaiting_confirmation") {
 		return "evidence_check_confirmation_required";
 	}
@@ -120,6 +131,14 @@ function unavailable(reason: string): CompletionCheckResult {
 			status: "awaiting_initial_verify",
 			initialEvidenceRunId: null,
 			confirmedAt: null,
+		},
+		assurance: {
+			policyVersion: "strict_v1",
+			status: "failed",
+			verificationDocumentDigest: null,
+			receiptDigest: null,
+			conditions: [],
+			reasonCodes: ["FULL_VERIFY_MISSING"],
 		},
 		suggestedAction: "run_verify",
 		readinessDigest: `unavailable:${reason}`,

@@ -11,7 +11,7 @@ import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
 
 export const PLAN_ARTIFACT_SOURCE_SUMMARY_MAX_BYTES = 12_000;
 export const PLAN_ARTIFACT_PACKAGE_SCRIPT_SUMMARY_MAX_BYTES = 2_000;
-export const PLAN_ARTIFACT_GENERATION_TIMEOUT_MS = 180_000;
+export const PLAN_ARTIFACT_GENERATION_TIMEOUT_MS = 300_000;
 
 export function buildPlanArtifactPromptBudgetMetadata(input: {
 	projection: PlanArtifactInputProjection;

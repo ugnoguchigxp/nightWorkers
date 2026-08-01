@@ -106,6 +106,12 @@ export function getCodexToolCardModel(
 			errorMessage,
 		});
 		if (card.verification?.state === "failed") card.status = "failed";
+		else if (
+			card.verification?.checkKind === "completion_check" &&
+			isCompletedVerificationEvidence(card.lifecycle)
+		) {
+			card.status = "ok";
+		}
 		return card;
 	}
 
@@ -197,7 +203,12 @@ function buildMcpCard(input: {
 		providerItemId: input.providerItemId || undefined,
 		toolName: input.toolName,
 		codexKind: "mcp",
-		title: verification ? "検証" : "Codex MCP",
+		title:
+			verification?.checkKind === "completion_check"
+				? "Evidence Check"
+				: verification
+					? "検証"
+					: "Codex MCP",
 		summary: verification?.headline ?? summaryParts.join(" | "),
 		metadata: compactMetadata([
 			["server", server],

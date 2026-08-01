@@ -157,6 +157,7 @@ function stubPlanModeCommands() {
 		)),
 		useQueryClient: () => ({
 			invalidateQueries: vi.fn(async () => undefined),
+			getQueryData: vi.fn(() => createPlanWorkspace()),
 			setQueryData: vi.fn(),
 		}),
 		useQuery: () => {

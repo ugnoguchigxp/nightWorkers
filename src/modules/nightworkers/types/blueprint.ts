@@ -139,6 +139,7 @@ export type PlanModeWorkspaceArtifact = {
 	createdAt: unknown;
 	adoptionState?: "adopted" | "not_adopted" | "unknown";
 	sourceArtifactMessageId?: string;
+	routingRevision?: number;
 };
 
 export type PlanModeViewDecision = {

@@ -8,6 +8,9 @@ import type {
 import {
 	getPlanModeCapabilities,
 	isDesignAssemblyReady,
+	isPlanModeFeaturePlanCurrent,
+	resolveCurrentPlanModeArtifactKinds,
+	resolveLatestPlanArtifactSourceMessageIds,
 	resolveLatestPlanWorkspaceTab,
 	resolvePlanWorkspaceViewDecisions,
 	selectPlanModeWorkspaceMessages,
@@ -87,6 +90,119 @@ describe("planModeWorkspaceModel", () => {
 		} as unknown as PlanModeWorkspace;
 
 		expect(resolveLatestPlanWorkspaceTab(workspace)).toBe("data-model");
+	});
+
+	it("selects the latest routed Artifact messages for downstream generation", () => {
+		const workspace = {
+			featurePlanArtifacts: [
+				{
+					sourceMessageId: "11111111-1111-4111-8111-111111111111",
+					createdAt: "2026-07-08T00:00:00Z",
+					routingRevision: 4,
+				},
+			],
+			blueprintArtifacts: [
+				{
+					sourceMessageId: "22222222-2222-4222-8222-222222222222",
+					createdAt: "2026-07-08T00:00:01Z",
+					routingRevision: 4,
+				},
+			],
+			dataModelArtifacts: [
+				{
+					sourceMessageId: "33333333-3333-4333-8333-333333333333",
+					createdAt: "2026-07-08T00:00:02Z",
+					routingRevision: 3,
+				},
+				{
+					sourceMessageId: "33333333-3333-4333-8333-333333333334",
+					createdAt: "2026-07-08T00:00:03Z",
+					routingRevision: 4,
+				},
+			],
+			dedicatedViewArtifacts: [
+				{
+					kind: "api_io_contract",
+					sourceMessageId: "44444444-4444-4444-8444-444444444444",
+					createdAt: "2026-07-08T00:00:04Z",
+					routingRevision: 4,
+				},
+				{
+					kind: "api_io_contract",
+					sourceMessageId: "44444444-4444-4444-8444-444444444445",
+					createdAt: "2026-07-08T00:00:05Z",
+					routingRevision: 3,
+				},
+				{
+					kind: "zod_schema_design",
+					sourceMessageId: "55555555-5555-4555-8555-555555555555",
+					createdAt: "2026-07-08T00:00:06Z",
+					routingRevision: 4,
+				},
+			],
+			routing: {
+				revision: 4,
+				entries: [
+					{
+						view: "feature_plan",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+					{
+						view: "blueprint",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+					{
+						view: "data_model",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+					{
+						view: "api_io_contract",
+						decision: "include",
+						capabilityEnabled: true,
+					},
+					{
+						view: "zod_schema_design",
+						decision: "omit",
+						capabilityEnabled: true,
+					},
+				],
+			},
+		} as unknown as PlanModeWorkspace;
+
+		expect(resolveLatestPlanArtifactSourceMessageIds(workspace)).toEqual({
+			featurePlanMessageId: "11111111-1111-4111-8111-111111111111",
+			blueprintMessageId: "22222222-2222-4222-8222-222222222222",
+			dataModelMessageId: "33333333-3333-4333-8333-333333333334",
+			dedicatedViewMessageIds: ["44444444-4444-4444-8444-444444444444"],
+		});
+		expect(resolveCurrentPlanModeArtifactKinds(workspace)).toEqual(
+			new Set([
+				"feature_plan",
+				"blueprint",
+				"data_model",
+				"api_io_contract",
+				"zod_schema_design",
+			]),
+		);
+		expect(isPlanModeFeaturePlanCurrent(workspace)).toBe(false);
+		const [featurePlan] = workspace.featurePlanArtifacts;
+		if (!featurePlan) throw new Error("Feature Plan fixture is missing.");
+		featurePlan.createdAt = "2026-07-08T00:00:07Z";
+		expect(isPlanModeFeaturePlanCurrent(workspace)).toBe(true);
+		workspace.routing.revision = 5;
+		expect(isPlanModeFeaturePlanCurrent(workspace)).toBe(false);
+		expect(resolveLatestPlanArtifactSourceMessageIds(workspace)).toEqual({
+			featurePlanMessageId: null,
+			blueprintMessageId: null,
+			dataModelMessageId: null,
+			dedicatedViewMessageIds: [],
+		});
+		workspace.routing.revision = 4;
+		workspace.dedicatedViewArtifacts = [];
+		expect(isPlanModeFeaturePlanCurrent(workspace)).toBe(false);
 	});
 
 	it("prefers persisted workspace view decisions over message-derived decisions", () => {

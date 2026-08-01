@@ -151,7 +151,7 @@ export class StructuredLlmTimeoutError extends Error {
 	}
 }
 
-const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS = 180_000;
+const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS = 300_000;
 
 export function createStructuredLlmAbortSignal(
 	options: CallSupervisorOptions,

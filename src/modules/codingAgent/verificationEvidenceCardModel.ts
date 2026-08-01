@@ -1,4 +1,29 @@
+import {
+	type EvidenceCheckReadinessSnapshot,
+	evidenceCheckConfirmationStatusSchema,
+	evidenceCheckMappingStatusSchema,
+	evidenceCheckReadinessSnapshotSchema,
+	evidenceCheckVerifyStatusSchema,
+} from "../../../shared/modules/codingAgent";
 import { sanitizeTerminalText } from "../agentsShare";
+
+type EvidenceCheckCardSummary = {
+	confirmation:
+		| EvidenceCheckReadinessSnapshot["confirmation"]["status"]
+		| "checking"
+		| "unknown";
+	verify: EvidenceCheckReadinessSnapshot["verify"]["status"] | "unknown";
+	suggestedAction:
+		| EvidenceCheckReadinessSnapshot["suggestedAction"]
+		| "wait"
+		| "unknown";
+	reason?: string;
+	mapping?: {
+		status: EvidenceCheckReadinessSnapshot["mapping"]["status"];
+		matched: number;
+		total: number;
+	};
+};
 
 export type VerificationToolLifecycle =
 	| "started"
@@ -10,7 +35,7 @@ export type VerificationEvidenceSummary = {
 	checkKind: string;
 	label: string;
 	headline: string;
-	state: "running" | "passed" | "failed" | "unknown";
+	state: "running" | "passed" | "failed" | "needs_action" | "unknown";
 	command?: string;
 	resultText?: string;
 	exitCode?: number | null;
@@ -27,6 +52,7 @@ export type VerificationEvidenceSummary = {
 		testExecution: string;
 		fullVerify: string;
 	};
+	evidenceCheck?: EvidenceCheckCardSummary;
 };
 
 export function isCompletedVerificationEvidence(
@@ -50,11 +76,20 @@ export function buildManagedVerificationEvidenceSummary(input: {
 		input.defaultCheckKind ||
 		"other";
 	const exitCode = numberOrNull(payload.exitCode);
-	const state = resolveVerificationState({
-		lifecycle: input.lifecycle,
-		ok: resultView.ok,
-		exitCode,
-	});
+	const evidenceCheck =
+		checkKind === "completion_check"
+			? parseEvidenceCheckSummary({
+					completionResult,
+					lifecycle: input.lifecycle,
+				})
+			: undefined;
+	const state = evidenceCheck
+		? evidenceCheckState(evidenceCheck, input.lifecycle)
+		: resolveVerificationState({
+				lifecycle: input.lifecycle,
+				ok: resultView.ok,
+				exitCode,
+			});
 	const checklist = record(payload.checklist);
 	const qualityGate = record(completionResult.qualityGate);
 	return buildSummary({
@@ -66,7 +101,10 @@ export function buildManagedVerificationEvidenceSummary(input: {
 			undefined,
 		exitCode,
 		evidence:
-			payload.managedEvidence === true || stringValue(payload.evidenceRunId)
+			evidenceCheck?.confirmation === "confirmed" ||
+			evidenceCheck?.confirmation === "settled" ||
+			payload.managedEvidence === true ||
+			stringValue(payload.evidenceRunId)
 				? "saved"
 				: payload.managedEvidence === false
 					? "not_saved"
@@ -93,6 +131,10 @@ export function buildManagedVerificationEvidenceSummary(input: {
 							stringValue(record(qualityGate.fullVerify).status) || "unknown",
 					}
 				: undefined,
+		evidenceCheck,
+		headline: evidenceCheck
+			? evidenceCheckHeadline(evidenceCheck, state)
+			: undefined,
 		llmSummary: stringValue(payload.llmSummary),
 		stdout: stringValue(payload.stdout),
 		stderr: stringValue(payload.stderr),
@@ -142,6 +184,8 @@ function buildSummary(input: {
 	conditionIds: string[];
 	checklist: VerificationEvidenceSummary["checklist"];
 	qualityGate?: VerificationEvidenceSummary["qualityGate"];
+	evidenceCheck?: VerificationEvidenceSummary["evidenceCheck"];
+	headline?: string;
 	llmSummary: string;
 	stdout: string;
 	stderr: string;
@@ -150,7 +194,7 @@ function buildSummary(input: {
 	return {
 		checkKind: input.checkKind,
 		label,
-		headline: `${label}が${stateLabel(input.state)}`,
+		headline: input.headline ?? `${label}が${stateLabel(input.state)}`,
 		state: input.state,
 		command: input.command,
 		resultText: buildVerificationResultText(input),
@@ -159,7 +203,101 @@ function buildSummary(input: {
 		conditionIds: input.conditionIds,
 		checklist: input.checklist,
 		qualityGate: input.qualityGate,
+		evidenceCheck: input.evidenceCheck,
 	};
+}
+
+function parseEvidenceCheckSummary(input: {
+	completionResult: Record<string, unknown>;
+	lifecycle: VerificationToolLifecycle;
+}): VerificationEvidenceSummary["evidenceCheck"] | undefined {
+	if (input.lifecycle === "started" || input.lifecycle === "progress") {
+		return {
+			confirmation: "checking",
+			verify: "unknown",
+			suggestedAction: "wait",
+		};
+	}
+	const parsedConfirmation = evidenceCheckConfirmationStatusSchema.safeParse(
+		record(input.completionResult.confirmation).status,
+	);
+	const parsedVerify = evidenceCheckVerifyStatusSchema.safeParse(
+		record(input.completionResult.verify).status,
+	);
+	const parsedSuggestedAction =
+		evidenceCheckReadinessSnapshotSchema.shape.suggestedAction.safeParse(
+			input.completionResult.suggestedAction,
+		);
+	const confirmation = parsedConfirmation.success
+		? parsedConfirmation.data
+		: "";
+	const verify = parsedVerify.success ? parsedVerify.data : "";
+	const suggestedAction = parsedSuggestedAction.success
+		? parsedSuggestedAction.data
+		: "";
+	if (!confirmation && !verify && !suggestedAction) return undefined;
+	const mapping = record(input.completionResult.mapping);
+	const parsedMappingStatus = evidenceCheckMappingStatusSchema.safeParse(
+		mapping.status,
+	);
+	const mappingStatus = parsedMappingStatus.success
+		? parsedMappingStatus.data
+		: "";
+	const matched = numberValue(mapping.matched);
+	const total = numberValue(mapping.total);
+	return {
+		confirmation: confirmation || "unknown",
+		verify: verify || "unknown",
+		suggestedAction: suggestedAction || "unknown",
+		...(stringValue(input.completionResult.reason)
+			? { reason: stringValue(input.completionResult.reason) }
+			: {}),
+		...(mappingStatus && matched !== null && total !== null
+			? {
+					mapping: {
+						status: mappingStatus,
+						matched,
+						total,
+					},
+				}
+			: {}),
+	};
+}
+
+function evidenceCheckState(
+	evidenceCheck: NonNullable<VerificationEvidenceSummary["evidenceCheck"]>,
+	lifecycle: VerificationToolLifecycle,
+): VerificationEvidenceSummary["state"] {
+	if (lifecycle === "started" || lifecycle === "progress") return "running";
+	if (
+		evidenceCheck.confirmation === "settled" ||
+		evidenceCheck.suggestedAction === "write_final_report"
+	) {
+		return "passed";
+	}
+	if (evidenceCheck.suggestedAction === "fix_verify") return "failed";
+	return "needs_action";
+}
+
+function evidenceCheckHeadline(
+	evidenceCheck: NonNullable<VerificationEvidenceSummary["evidenceCheck"]>,
+	state: VerificationEvidenceSummary["state"],
+) {
+	if (state === "running") return "Evidence Checkを確認しています";
+	if (state === "passed") return "Evidence Checkが完了しました";
+	if (evidenceCheck.suggestedAction === "fix_verify") {
+		return "Follow-up Verifyの修正が必要です";
+	}
+	if (evidenceCheck.confirmation === "confirmed") {
+		return "Evidence Checkを確認しました";
+	}
+	if (evidenceCheck.confirmation === "awaiting_confirmation") {
+		return "Evidence Checkの確認が必要です";
+	}
+	if (evidenceCheck.confirmation === "awaiting_initial_verify") {
+		return "初回Verifyが必要です";
+	}
+	return "Evidence Checkの確認結果を受け取りました";
 }
 
 function buildVerificationResultText(input: {
@@ -219,6 +357,7 @@ function stateLabel(state: VerificationEvidenceSummary["state"]) {
 	if (state === "passed") return "完了しました";
 	if (state === "failed") return "失敗しました";
 	if (state === "running") return "実行中です";
+	if (state === "needs_action") return "次の操作が必要です";
 	return "結果を受け取りました";
 }
 

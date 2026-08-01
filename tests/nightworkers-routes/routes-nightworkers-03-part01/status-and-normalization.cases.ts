@@ -201,7 +201,7 @@ describe("NightWorkers task routes status and normalization", () => {
 			expect(docBody.message.metadataJson.generation).toMatchObject({
 				source: "llm",
 				context: {
-					blueprintSummaryIncluded: false,
+					blueprintSummaryIncluded: true,
 					planViewReferencesIncluded: false,
 				},
 			});

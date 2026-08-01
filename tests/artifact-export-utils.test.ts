@@ -74,6 +74,33 @@ describe("artifact export utilities", () => {
 				initialEvidenceRunId: "44444444-4444-4444-8444-444444444444",
 				confirmedAt: "2026-08-01T00:00:40.000Z",
 			},
+			assurance: {
+				policyVersion: "strict_v1",
+				status: "passed",
+				verificationDocumentDigest: "sha256:document",
+				receiptDigest: "sha256:receipt",
+				reasonCodes: [],
+				conditions: [
+					{
+						conditionId: "AC-001",
+						text: "safe spreadsheet text",
+						required: true,
+						verificationKind: "automated_test",
+						expectedEvidence: ["unit_test"],
+						assuranceStatus: "safe_pass",
+						reasonCode: null,
+						evidenceRefs: [
+							{
+								evidenceRunId: "test-evidence-1",
+								caseKey: "case-1",
+								evidenceKind: "unit_test",
+								sourceStateHash: "a".repeat(64),
+							},
+						],
+						tests: [],
+					},
+				],
+			},
 			ready: true,
 			suggestedAction: "write_final_report",
 			readinessDigest: "sha256:ready",
@@ -95,6 +122,9 @@ describe("artifact export utilities", () => {
 		expect(markdown).toContain("current-source-hash");
 		expect(markdown).toContain("Command: bun run verify");
 		expect(markdown).toContain("Status: settled");
+		expect(markdown).toContain("Policy: strict_v1");
+		expect(markdown).toContain("Receipt digest: sha256:receipt");
+		expect(csv).toContain('"strict_v1"');
 		expect(csv).toContain('"settled"');
 		expect(markdown).toContain(
 			"Verification Document: 22222222-2222-4222-8222-222222222222",

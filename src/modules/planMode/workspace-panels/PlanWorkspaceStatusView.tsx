@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { buildPlanModeExecutionSteps } from "../../../../shared/plan-mode-execution";
+import {
+	buildPlanModeBatchGenerationSteps,
+	buildPlanModeExecutionSteps,
+	executePlanModeBatchGenerationSteps,
+} from "../../../../shared/plan-mode-execution";
 import type { EditablePlanModeRoutingView } from "../../../../shared/schemas/plan-mode-routing.schema";
 import { Button } from "../../../components/ui/Button";
 import type {
@@ -7,6 +11,10 @@ import type {
 	PlanModeSettings,
 	PlanModeWorkspace,
 } from "../../nightworkers/types";
+import {
+	isPlanModeFeaturePlanCurrent,
+	resolveCurrentPlanModeArtifactKinds,
+} from "../../specification";
 import { getQuestionCount } from "../PlanModeQuestionnaire";
 import {
 	buildPlanArtifactStatusItems,
@@ -59,10 +67,10 @@ export function PlanWorkspaceStatusView({
 	) => void | Promise<void>;
 	onOpenQuestionnaire: () => void | Promise<void>;
 	onGenerateAdditionalQuestions?: () => void | Promise<void>;
-	onGenerateBlueprint: () => void | Promise<void>;
-	onGenerateDataModel: () => void | Promise<void>;
-	onGenerateFeaturePlan: () => void | Promise<void>;
-	onGenerateDedicatedViews: (views: string[]) => void | Promise<void>;
+	onGenerateBlueprint: () => Promise<boolean>;
+	onGenerateDataModel: () => Promise<boolean>;
+	onGenerateFeaturePlan: () => Promise<boolean>;
+	onGenerateDedicatedViews: (views: string[]) => Promise<boolean>;
 	onQueueSession?: () => void | Promise<void>;
 	onAddToQueue?: () => void | Promise<void>;
 }) {
@@ -82,8 +90,16 @@ export function PlanWorkspaceStatusView({
 		questionnaireSummary?.blockingUnansweredCount ?? 0;
 	const nonBlockingUnansweredCount =
 		questionnaireSummary?.nonBlockingUnansweredCount ?? 0;
-	const hasBlueprint = Boolean(workspace?.blueprintArtifacts.length);
-	const hasDataModel = Boolean(workspace?.dataModelArtifacts.length);
+	const currentArtifactKinds = resolveCurrentPlanModeArtifactKinds(workspace);
+	const hasBlueprintArtifact = Boolean(workspace?.blueprintArtifacts?.length);
+	const hasDataModelArtifact = Boolean(workspace?.dataModelArtifacts?.length);
+	const hasFeaturePlanArtifact =
+		Boolean(workspace?.featurePlanArtifacts?.length) || hasFeaturePlan;
+	const hasBlueprint = currentArtifactKinds.has("blueprint");
+	const hasDataModel = currentArtifactKinds.has("data_model");
+	const featurePlanDone = workspace?.featurePlanArtifacts
+		? isPlanModeFeaturePlanCurrent(workspace)
+		: hasFeaturePlan;
 	const capabilities = planModeSettings?.capabilities ?? {
 		feature_plan: true,
 		questionnaire: true,
@@ -106,10 +122,13 @@ export function PlanWorkspaceStatusView({
 		(item): item is PlanViewDecision & { view: AdditionalPlanView } =>
 			item.decision === "include" && isAdditionalView(item.view),
 	);
-	const generatedAdditionalViews = new Set<AdditionalPlanView>(
+	const existingAdditionalViews = new Set<AdditionalPlanView>(
 		(workspace?.dedicatedViewArtifacts || [])
 			.map((artifact) => artifact.kind)
 			.filter(isAdditionalView),
+	);
+	const generatedAdditionalViews = new Set<AdditionalPlanView>(
+		[...currentArtifactKinds].filter(isAdditionalView),
 	);
 	const disabledReason = "Settings で無効です。";
 	const questionnaireDone = Boolean(
@@ -126,7 +145,7 @@ export function PlanWorkspaceStatusView({
 			...(hasBlueprint ? (["blueprint"] as const) : []),
 			...(hasDataModel ? (["data_model"] as const) : []),
 			...generatedAdditionalViews,
-			...(hasFeaturePlan ? (["feature_plan"] as const) : []),
+			...(featurePlanDone ? (["feature_plan"] as const) : []),
 		],
 	});
 	const executionStepByKey = new Map(
@@ -178,9 +197,12 @@ export function PlanWorkspaceStatusView({
 					title: "Blueprint",
 					detail: hasBlueprint
 						? `${workspace?.blueprintArtifacts.length || 0}件のBlueprintがあります。`
-						: "画面構成と主要UIセクションを生成します。",
+						: hasBlueprintArtifact
+							? "Routingが更新されたため、Blueprintを再生成します。"
+							: "画面構成と主要UIセクションを生成します。",
 					done: hasBlueprint,
-					buttonLabel: hasBlueprint ? "再生成" : "生成",
+					stale: hasBlueprintArtifact && !hasBlueprint,
+					buttonLabel: hasBlueprintArtifact ? "再生成" : "生成",
 					busy: busyAction === "blueprint",
 					disabled: isImplementationLocked || !capabilities.blueprint,
 					disabledReason: !capabilities.blueprint ? disabledReason : null,
@@ -197,9 +219,12 @@ export function PlanWorkspaceStatusView({
 					title: "Data Model",
 					detail: hasDataModel
 						? `${workspace?.dataModelArtifacts.length || 0}件のData Modelがあります。`
-						: "Data Modelでテーブル、カラム、リレーションを確認します。",
+						: hasDataModelArtifact
+							? "Routingが更新されたため、Data Modelを再生成します。"
+							: "Data Modelでテーブル、カラム、リレーションを確認します。",
 					done: hasDataModel,
-					buttonLabel: hasDataModel ? "再生成" : "生成",
+					stale: hasDataModelArtifact && !hasDataModel,
+					buttonLabel: hasDataModelArtifact ? "再生成" : "生成",
 					busy: busyAction === "data-model",
 					disabled:
 						!canGenerateDataModel ||
@@ -217,6 +242,7 @@ export function PlanWorkspaceStatusView({
 				const view = item.view;
 				const label = formatViewLabel(view);
 				const generated = generatedAdditionalViews.has(view);
+				const existing = existingAdditionalViews.has(view);
 				const enabled = capabilities[view];
 				return {
 					view,
@@ -225,9 +251,12 @@ export function PlanWorkspaceStatusView({
 					title: label,
 					detail: generated
 						? `${label}が作成済みです。`
-						: item.reason || `${label}をPlan Mode Artifactとして作成します。`,
+						: existing
+							? `Routingが更新されたため、${label}を再生成します。`
+							: item.reason || `${label}をPlan Mode Artifactとして作成します。`,
 					done: generated,
-					buttonLabel: generated ? "再生成" : "生成",
+					stale: existing && !generated,
+					buttonLabel: existing ? "再生成" : "生成",
 					busy: busyAction === `view:${view}`,
 					disabled: isImplementationLocked || !enabled,
 					disabledReason: enabled ? null : disabledReason,
@@ -241,11 +270,14 @@ export function PlanWorkspaceStatusView({
 			progressKey: "feature_plan",
 			number: 5,
 			title: "仕様書",
-			detail: hasFeaturePlan
+			detail: featurePlanDone
 				? "仕様書が作成済みです。"
-				: "利用可能なPlan Mode Artifactを要約して仕様書を生成します。",
-			done: hasFeaturePlan,
-			buttonLabel: hasFeaturePlan ? "再生成" : "生成",
+				: hasFeaturePlanArtifact
+					? "先行Artifactが更新されたため、最後に仕様書を再生成します。"
+					: "利用可能なPlan Mode Artifactを要約して仕様書を生成します。",
+			done: featurePlanDone,
+			stale: hasFeaturePlanArtifact && !featurePlanDone,
+			buttonLabel: hasFeaturePlanArtifact ? "再生成" : "生成",
 			busy: busyAction === "feature-plan",
 			disabled: isImplementationLocked || !capabilities.feature_plan,
 			disabledReason: !capabilities.feature_plan ? disabledReason : null,
@@ -260,9 +292,7 @@ export function PlanWorkspaceStatusView({
 	const allIncludedArtifactsCreated = rawSteps
 		.filter((step): step is PlanWorkspaceStatusStep => step !== null)
 		.every((step) => step.done);
-	const pendingGenerationSteps = steps.filter(
-		(step) => step.autoGenerate && !step.done && !step.disabled,
-	);
+	const pendingGenerationSteps = buildPlanModeBatchGenerationSteps(steps);
 	const artifactItems = buildPlanArtifactStatusItems({
 		steps,
 		routingEntries: workspace?.routing?.entries ?? [],
@@ -274,9 +304,7 @@ export function PlanWorkspaceStatusView({
 		if (isBatchGenerating || pendingGenerationSteps.length === 0) return;
 		setIsBatchGenerating(true);
 		try {
-			for (const step of pendingGenerationSteps) {
-				await step.onClick();
-			}
+			await executePlanModeBatchGenerationSteps(pendingGenerationSteps);
 		} finally {
 			setIsBatchGenerating(false);
 		}

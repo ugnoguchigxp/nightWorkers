@@ -7,7 +7,7 @@ import { ArtifactPane } from "../src/modules/nightworkers/components/ArtifactPan
 import { buildTaskMessage } from "./helpers/nightworkers-fixtures";
 
 describe("ArtifactPane", () => {
-	it("shows only mapping, selected scope, and Project verify readiness", () => {
+	it("shows strict assurance, mapping, selected scope, and Project verify readiness", () => {
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
 		});
@@ -73,6 +73,26 @@ describe("ArtifactPane", () => {
 							initialEvidenceRunId: "44444444-4444-4444-8444-444444444444",
 							confirmedAt: "2026-07-31T00:00:50.000Z",
 						},
+						assurance: {
+							policyVersion: "strict_v1",
+							status: "passed",
+							verificationDocumentDigest: "sha256:document",
+							receiptDigest: "sha256:receipt",
+							reasonCodes: [],
+							conditions: [
+								{
+									conditionId: "AC-001",
+									text: "APIを実装できる",
+									required: true,
+									verificationKind: "automated_test",
+									expectedEvidence: ["unit_test"],
+									assuranceStatus: "safe_pass",
+									reasonCode: null,
+									evidenceRefs: [],
+									tests: [],
+								},
+							],
+						},
 						ready: true,
 						suggestedAction: "write_final_report",
 						readinessDigest: "sha256:ready",
@@ -85,6 +105,8 @@ describe("ArtifactPane", () => {
 		expect(markup).toContain('data-e2e-allowed="false"');
 		expect(markup).toContain("E2E: 対象外");
 		expect(markup).toContain("APIを実装する");
+		expect(markup).toContain("条件別Evidence Assurance");
+		expect(markup).toContain("sha256:receipt");
 		expect(markup).toContain("bun run verify");
 		expect(markup).toContain("確定済み");
 		expect(markup).toContain("追加テストは不要です");
