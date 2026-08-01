@@ -1,5 +1,6 @@
 import type { CodexOptions, ThreadOptions } from "@openai/codex-sdk";
 import { buildNightWorkersCodexToolApprovalConfig } from "../../../../mcp/nightworkers-tool-manifest";
+import { getCodexGlobalHome } from "../../../../services/codex-global-config/paths";
 import { buildChildProcessEnvironment } from "../../../../services/execution/child-process-environment";
 import { isRegistryCredentialEnvironmentKey } from "../../../../services/security/secret-redaction";
 import type { AgentRunContext } from "../types";
@@ -55,6 +56,7 @@ export function buildCodexRuntimeSdkOptions(
 	sdkOptions.env = {
 		...sanitizedEnv,
 		...workspaceEnv,
+		CODEX_HOME: getCodexGlobalHome(env),
 	};
 	if (input.context) {
 		sdkOptions.config = {

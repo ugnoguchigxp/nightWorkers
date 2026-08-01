@@ -35,7 +35,10 @@ export const implementationPlanSchema = z
 		steps: z
 			.array(implementationPlanStepSchema)
 			.min(1)
-			.max(IMPLEMENTATION_PLAN_LIMITS.maxSteps),
+			.max(IMPLEMENTATION_PLAN_LIMITS.maxSteps)
+			.describe(
+				"実行順のTodo。repository materializationが必要ならProject importを先頭に置き、production工程の後、最後から2番目にProject品質ゲート、最後に結果に基づく完了報告を独立stepとして置く。",
+			),
 	})
 	.strict();
 

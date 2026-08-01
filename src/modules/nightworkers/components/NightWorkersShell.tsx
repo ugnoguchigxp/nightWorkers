@@ -127,7 +127,10 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 	const evidenceCheckTitle = t("evidenceCheck.title");
 	const evidenceCheckArtifactSummary = t("evidenceCheck.artifact.summary");
 	const evidenceCheckArtifact = workspace.activeSession
-		? buildEvidenceCheckArtifact({
+		? workspace.activeArtifactRefs.find(
+				(artifact) => artifact.kind === "evidence_check",
+			) ||
+			buildEvidenceCheckArtifact({
 				taskId: workspace.activeSession.id,
 				updatedAt: String(
 					workspace.activeSession.updatedAt ||
@@ -343,12 +346,16 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			title: evidenceCheckTitle,
 			summary: evidenceCheckArtifactSummary,
 		});
-		if (!artifact) return;
+		const existing = workspaceRef.current.activeArtifactRefs.find(
+			(candidate) => candidate.kind === "evidence_check",
+		);
+		const resolvedArtifact = existing || artifact;
+		if (!resolvedArtifact) return;
 		setClearedArtifactContextId(null);
-		markArtifactOpenStart(artifact);
+		markArtifactOpenStart(resolvedArtifact);
 		setArtifactFocus({
 			type: "artifact",
-			artifact,
+			artifact: resolvedArtifact,
 		});
 		props.onNavigate({
 			kind: "session",

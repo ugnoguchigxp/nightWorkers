@@ -110,7 +110,7 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(85);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(86);
 		expect("aliases" in catalogArtifact).toBe(false);
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,
@@ -167,7 +167,7 @@ describe("S11t SystemContext catalog", () => {
 		);
 	});
 
-	it("keeps Todo planning minimal while retaining fixed completion reporting", () => {
+	it("keeps Todo planning minimal while making quality gate and reporting explicit Todos", () => {
 		const context = buildCodingAgentSystemContext({
 			taskGoal: "Todo CRUDを実装する",
 			registeredRepositoryRoot: "/repo",
@@ -180,16 +180,61 @@ describe("S11t SystemContext catalog", () => {
 		expect(rendered).toContain("titleと600文字以内");
 		expect(rendered).toContain("complete_current");
 		expect(rendered).toContain(
-			"品質ゲートと完了報告は固定項目であり、Todo stepとして追加しない",
+			"最後から2番目にProject品質ゲート、最後に結果に基づく完了報告を独立stepとして必ず追加",
+		);
+		expect(rendered).toContain("templateのverify scriptまたはverify command");
+		expect(rendered).toContain(
+			"workspaceがhostにより事前materialize済みでもTodoを削除・飛び越し・機能実装へ統合せず",
+		);
+		expect(rendered).toContain("実体化完了前に後続実装を開始しない");
+		expect(rendered).toContain(
+			"品質ゲートと完了報告もLLMまたは人間が明示したTodoとしてだけ更新",
 		);
 		expect(rendered).toContain("commit・merge状態");
-		expect(rendered).toContain("品質ゲートがPassした証跡を持つ");
+		expect(rendered).toContain("Passした証跡を持つことを完了条件");
 		expect(rendered).toContain("## 実装結果");
 		expect(rendered).toContain("## 主な変更");
 		expect(rendered).toContain("## 検証結果");
 		expect(rendered).toContain("## 状態");
 		expect(rendered).toContain("[Todo API](api/modules/todos/routing.ts)");
 		expect(rendered).toContain("変更説明をリンクだけで代替しない");
+
+		const planReview = p("missionPilot.plan-review", {
+			planSystem: "plan system",
+			planReviewThreshold: "review threshold",
+			domainBoundaryReview: "domain boundary",
+			outputRequirements: "output requirements",
+		});
+		expect(planReview).toContain(
+			"最後から2番目が品質ゲート、最後が完了報告でない場合",
+		);
+		expect(planReview).toContain(
+			"templateのverify scriptまたはverify commandを必須対象",
+		);
+		expect(planReview).toContain(
+			"implementationPlanの先頭がそのintentと一致するProject import専用Todo",
+		);
+		expect(planReview).toContain(
+			"metadataがReview Artifact Referencesへ表示されていなくても",
+		);
+		expect(planReview).toContain(
+			"materializationが後続Todoへ埋め込まれている場合",
+		);
+		expect(planReview).toContain("blocking findingとしてFeature Planをrevise");
+		expect(p("missionPilot.plan-review-threshold", {})).toContain(
+			"intentと先頭Todoの欠落・不一致、または機能実装を先に開始する順序",
+		);
+
+		const materializationRequired = p(
+			"specification.repository-materialization-required",
+			{},
+		);
+		expect(materializationRequired).toContain(
+			"implementationPlanの先頭Todoは、このintentと同じtemplate projectまたはGit repository",
+		);
+		expect(materializationRequired).toContain(
+			"importを後続工程へ埋め込んだりしない",
+		);
 	});
 
 	it("renders task-generation implementation context without embedding the full output schema", () => {
@@ -551,7 +596,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"d055d5df5594c310c04cfcb4eeabe1af83ebf70aa447d72ba06f34acc04ae5cd",
+				"e98c5db0fc08737605b940ec58e2ce9b50073879af0651769f52de4681375698",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { verifyRenderedHash } from "s11tnext";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
@@ -11,6 +14,10 @@ import {
 	buildCodexRuntimePromptParts,
 } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
 import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
+import {
+	assertCodexAuthJsonAvailable,
+	inspectCodexAuthJson,
+} from "../../api/services/codex-global-config/status";
 
 afterEach(() => vi.useRealTimers());
 
@@ -163,7 +170,10 @@ describe("Codex SDK thin runtime adapter", () => {
 			context(),
 		).developerInstructions;
 		const options = buildCodexRuntimeSdkOptions({
-			env: { PORT: "41234" },
+			env: {
+				PORT: "41234",
+				NIGHTWORKERS_CODEX_HOME: "/host/codex-home",
+			},
 			context: context(),
 			developerInstructions,
 		});
@@ -181,13 +191,65 @@ describe("Codex SDK thin runtime adapter", () => {
 				},
 			},
 		});
-		expect(options.env).toEqual({});
+		expect(options.env).toEqual({ CODEX_HOME: "/host/codex-home" });
+	});
+
+	it("keeps workspace HOME isolated while pointing Codex at the host auth home", () => {
+		const options = buildCodexRuntimeSdkOptions({
+			env: {
+				PATH: "/usr/bin",
+				NIGHTWORKERS_CODEX_HOME: "/host/codex-home",
+			},
+			context: {
+				...context(),
+				runtimeOptions: {
+					workspaceRuntimeEnvironment: {
+						HOME: "/workspace/agent-home",
+					},
+				},
+			},
+		});
+
+		expect(options.env).toMatchObject({
+			HOME: "/workspace/agent-home",
+			CODEX_HOME: "/host/codex-home",
+		});
+	});
+
+	it("fails Codex auth preflight before provider startup when auth.json is missing", () => {
+		const codexHome = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-codex-auth-preflight-"),
+		);
+		try {
+			expect(inspectCodexAuthJson(codexHome)).toMatchObject({
+				available: false,
+				reason: "missing",
+			});
+			expect(() => assertCodexAuthJsonAvailable(codexHome)).toThrow(
+				/CODEX_AUTH_UNAVAILABLE/,
+			);
+			fs.writeFileSync(
+				path.join(codexHome, "auth.json"),
+				JSON.stringify({
+					auth_mode: "chatgpt",
+					tokens: { access_token: "test" },
+				}),
+				{ mode: 0o600 },
+			);
+			expect(assertCodexAuthJsonAvailable(codexHome)).toMatchObject({
+				available: true,
+				reason: "available",
+			});
+		} finally {
+			fs.rmSync(codexHome, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps registry credentials available to bootstrap but out of the Coding Agent environment", () => {
 		const options = buildCodexRuntimeSdkOptions({
 			env: {
 				PATH: "/usr/bin",
+				NIGHTWORKERS_CODEX_HOME: "/host/codex-home",
 				JAVA_HOME: "/opt/jdk",
 				CARGO_HOME: "/home/user/.cargo",
 				NPM_TOKEN: "registry-secret",
@@ -210,6 +272,7 @@ describe("Codex SDK thin runtime adapter", () => {
 			PATH: "/usr/bin",
 			JAVA_HOME: "/opt/jdk",
 			TMPDIR: "/tmp/nightworkers-workspace",
+			CODEX_HOME: "/host/codex-home",
 		});
 	});
 
@@ -217,13 +280,17 @@ describe("Codex SDK thin runtime adapter", () => {
 		const options = buildCodexRuntimeSdkOptions({
 			env: {
 				PATH: "/usr/bin",
+				NIGHTWORKERS_CODEX_HOME: "/host/codex-home",
 				CODEX_ACCESS_TOKEN: "parent-provider-secret",
 			},
 			context: context(),
 			...({ accessToken: "parent-provider-secret" } as Record<string, unknown>),
 		});
 
-		expect(options.env).toEqual({ PATH: "/usr/bin" });
+		expect(options.env).toEqual({
+			PATH: "/usr/bin",
+			CODEX_HOME: "/host/codex-home",
+		});
 	});
 
 	it("preserves a configured MCP endpoint while overriding Run identity", () => {
@@ -597,6 +664,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		expect(result).toMatchObject({
 			terminalState: "failed",
 			stoppedBy: "llm_error",
+			finalReport: "[Codex] Turn failed: Selected model is at capacity",
 		});
 	});
 

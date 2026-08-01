@@ -230,11 +230,18 @@ export function buildSpecificationDocumentSystemPrompt(
 	input?: { additionalSystemContext?: string | null },
 	p: SystemContextP = defaultP,
 ) {
+	const implementationPlanTodoRequirements = p(
+		"questionnaire.implementation-plan-todo-requirements",
+		{},
+	).trimEnd();
 	return input?.additionalSystemContext
 		? p("questionnaire.specification-with-additional", {
 				additionalSystemContext: input.additionalSystemContext,
+				implementationPlanTodoRequirements,
 			})
-		: p("questionnaire.specification", {});
+		: p("questionnaire.specification", {
+				implementationPlanTodoRequirements,
+			});
 }
 
 export function buildSpecificationDocumentUserPrompt(

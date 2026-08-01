@@ -4,7 +4,7 @@ import {
 } from "../../../systemContexts/catalog";
 import type { CodingAgentSystemContext } from "./types";
 
-export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 15;
+export const CODING_AGENT_SYSTEM_CONTEXT_VERSION = 16;
 
 export function getCodingAgentRoleInstructions(p: SystemContextP = defaultP) {
 	return p("codingAgent.role-instructions", {});

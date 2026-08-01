@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import { AppError } from "../../../lib/errors";
 import { listTrackedProjectSecretPaths } from "../../../services/security/project-secret-paths";
-import { readFeaturePlanImplementationPlan } from "../../agentsShare";
+import {
+	digestImplementationPlan,
+	readFeaturePlanImplementationPlan,
+} from "../../agentsShare";
 import { buildCodingAgentImplementationHandoffSnapshot } from "../../codingAgent";
 import { resolveTaskExecutionRoot } from "../../gitworktree/gitworktree.service";
 import { runGitCommand } from "../../gitworktree/gitworktree-cli";
@@ -179,6 +182,11 @@ export async function prepareTaskRunStart(input: {
 		messages,
 		implementationHandoffMessage,
 	);
+	const implementationPlan = implementationHandoffMessage
+		? readFeaturePlanImplementationPlan(
+				implementationHandoffMessage.metadataJson,
+			)
+		: null;
 	const implementationHandoffSnapshot = implementationHandoffMessage
 		? buildCodingAgentImplementationHandoffSnapshot({
 				sourceMessageId: implementationHandoffMessage.id,
@@ -195,8 +203,17 @@ export async function prepareTaskRunStart(input: {
 						content: message.content,
 					}),
 				),
+				implementationPlan,
 			})
 		: null;
+	const implementationPlanProvenance =
+		implementationHandoffMessage && implementationPlan
+			? {
+					version: 1 as const,
+					sourceMessageId: implementationHandoffMessage.id,
+					digest: digestImplementationPlan(implementationPlan),
+				}
+			: null;
 	const compiledPromptText = buildCompiledPromptText({
 		task: input.task,
 		lastUserMessage,
@@ -226,11 +243,8 @@ export async function prepareTaskRunStart(input: {
 		executionModeSource,
 		implementationHandoffMessage,
 		implementationHandoffSnapshot,
-		implementationPlan: implementationHandoffMessage
-			? readFeaturePlanImplementationPlan(
-					implementationHandoffMessage.metadataJson,
-				)
-			: null,
+		implementationPlan,
+		implementationPlanProvenance,
 		repositoryMaterializationSnapshot,
 		workspaceAdmission,
 		workspaceRuntimeEnvironment,

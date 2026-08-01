@@ -287,7 +287,25 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"具体的なcommandと品質ゲートの構成は固定せず",
 		);
-		expect(systemPrompt).not.toContain("`verify` または `verify:base`");
+		expect(systemPrompt).toContain(
+			"最後から2番目は品質ゲートTodo、最後は完了報告Todo",
+		);
+		expect(systemPrompt).toContain(
+			"implementationPlanの先頭にはrepository materialization専用Todoを必ず1件",
+		);
+		expect(systemPrompt).toContain(
+			"template projectを登録済みProject rootへimportする工程だとtitleで明示",
+		);
+		expect(systemPrompt).toContain("曖昧な「構成を作成する」へ言い換えない");
+		expect(systemPrompt).toContain(
+			"後続Todoはmaterialization完了後に開始する順序",
+		);
+		expect(systemPrompt).toContain(
+			"templateが提供するverify scriptまたはverify commandを必ず実行対象",
+		);
+		expect(systemPrompt).toContain(
+			"template自身のverify commandの実行は省略しない",
+		);
 		expect(systemPrompt).toContain("Questionnaireで採用されたテスト観点");
 		expect(systemPrompt).toContain(
 			"テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かない",
@@ -636,12 +654,14 @@ describe("Specification document generation", () => {
 		expect(userPrompt).toContain(
 			"具体的な入力、操作、アサーションはCoding Agent",
 		);
-		expect(userPrompt).toContain("品質ゲートがPassした証跡を持つ");
 		expect(userPrompt).toContain(
-			"具体的なcommandと品質ゲートの構成はProjectを観測したCoding Agentが判断する",
+			"独立した品質ゲートTodoでProjectの正本gateをPassさせる",
 		);
-		expect(userPrompt).not.toContain(
-			"verify / verify:base がある場合は代表 gate",
+		expect(userPrompt).toContain(
+			"templateを基にする場合はtemplateのverify scriptまたはverify commandを必ず実行",
+		);
+		expect(userPrompt).toContain(
+			"それ以外のcommand構成はProjectを観測したCoding Agentが判断する",
 		);
 		const systemPrompt = buildSpecificationDocumentSystemPrompt();
 		expect(systemPrompt).toContain("最終文書に全件列挙せず");

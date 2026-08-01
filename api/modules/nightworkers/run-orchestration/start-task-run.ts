@@ -107,6 +107,7 @@ export async function prepareTaskRunInProcess(
 		implementationHandoffMessage,
 		implementationHandoffSnapshot,
 		implementationPlan,
+		implementationPlanProvenance,
 		repositoryMaterializationSnapshot,
 		workspaceAdmission,
 		workspaceRuntimeEnvironment,
@@ -369,6 +370,7 @@ export async function prepareTaskRunInProcess(
 					implementationHandoff: implementationHandoffSnapshot,
 				}
 			: {}),
+		...(implementationPlanProvenance ? { implementationPlanProvenance } : {}),
 		repositoryMaterialization: repositoryMaterializationSnapshot,
 		workspaceRuntimeEnvironment: Object.keys(workspaceRuntimeEnvironment),
 		result: {

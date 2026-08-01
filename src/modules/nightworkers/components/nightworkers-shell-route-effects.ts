@@ -173,13 +173,17 @@ export function useNightWorkersRouteArtifactSync(input: {
 				);
 				return;
 			}
-			const artifactRef = buildEvidenceCheckArtifact({
-				taskId: task.id,
-				updatedAt: String(task.updatedAt || task.createdAt),
-				taskMessages: workspace.taskMessages,
-				title: evidenceCheckTitle,
-				summary: evidenceCheckArtifactSummary,
-			});
+			const artifactRef =
+				workspace.activeArtifactRefs.find(
+					(item) => item.kind === "evidence_check",
+				) ||
+				buildEvidenceCheckArtifact({
+					taskId: task.id,
+					updatedAt: String(task.updatedAt || task.createdAt),
+					taskMessages: workspace.taskMessages,
+					title: evidenceCheckTitle,
+					summary: evidenceCheckArtifactSummary,
+				});
 			if (!artifactRef) {
 				setArtifactFocus((current) =>
 					current.type === "closed" ? current : { type: "closed" },

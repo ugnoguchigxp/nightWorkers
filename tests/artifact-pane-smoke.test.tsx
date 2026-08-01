@@ -2,10 +2,77 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import "../src/i18n/setup";
+import { EvidenceCheckArtifactViewer } from "../src/modules/codingAgent";
 import { ArtifactPane } from "../src/modules/nightworkers/components/ArtifactPane";
 import { buildTaskMessage } from "./helpers/nightworkers-fixtures";
 
 describe("ArtifactPane", () => {
+	it("shows whether the adopted implementation plan matches the Run Todos", () => {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		const markup = renderToStaticMarkup(
+			<QueryClientProvider client={queryClient}>
+				<EvidenceCheckArtifactViewer
+					model={{
+						taskId: "11111111-1111-4111-8111-111111111111",
+						specArtifactId: "feature-plan-message-1",
+						specMessageId: "22222222-2222-4222-8222-222222222222",
+						verificationDocumentId: "33333333-3333-4333-8333-333333333333",
+						verificationSidecarMessageId:
+							"44444444-4444-4444-8444-444444444444",
+						conditions: [],
+					}}
+					snapshot={{
+						taskId: "11111111-1111-4111-8111-111111111111",
+						verificationDocumentId: "33333333-3333-4333-8333-333333333333",
+						specMessageId: "22222222-2222-4222-8222-222222222222",
+						specArtifactId: "feature-plan-message-1",
+						generatedAt: "2026-07-31T00:00:00.000Z",
+						implementationPlanTraceability: {
+							sourceMessageId: "22222222-2222-4222-8222-222222222222",
+							digest: `sha256:${"a".repeat(64)}`,
+							runId: "55555555-5555-4555-8555-555555555555",
+							runStatus: "needs_review",
+							provenanceStatus: "matched",
+							exactTodoMatch: true,
+							steps: [
+								{
+									seq: 1,
+									title: "APIを実装する",
+									systemContext: "確定済みAPI契約に従う。",
+									todoId: "66666666-6666-4666-8666-666666666666",
+									todoStatus: "passed",
+									aligned: true,
+									evidenceIds: [],
+									completionGateRecorded: false,
+								},
+							],
+							summary: {
+								total: 1,
+								passed: 1,
+								incomplete: 0,
+								unaligned: 0,
+								extraTodos: 0,
+								evidenceLinked: 0,
+							},
+						},
+						conditions: [],
+						summary: { total: 0, confirmed: 0, failed: 0, pending: 0 },
+					}}
+				/>
+			</QueryClientProvider>,
+		);
+
+		expect(markup).toContain("data-evidence-plan-traceability");
+		expect(markup).toContain('data-plan-aligned="true"');
+		expect(markup).toContain("実装計画トレーサビリティ");
+		expect(markup).toContain("APIを実装する");
+		expect(markup).toContain(
+			"確定済み実装計画と Run Todo は完全一致しています。",
+		);
+	});
+
 	it("renders files outline tree when project tree focus is selected", () => {
 		const markup = renderToStaticMarkup(
 			<ArtifactPane

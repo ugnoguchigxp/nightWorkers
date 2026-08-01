@@ -1,5 +1,6 @@
 import type { Input } from "@openai/codex-sdk";
 import { Codex } from "@openai/codex-sdk";
+import { assertCodexAuthJsonAvailable } from "../../../../services/codex-global-config/status";
 import { resolveCodexEndpointAccessToken } from "../../../../services/structured-llm/codex-auth-scope";
 import type { AgentRunContext } from "../types";
 import {
@@ -57,6 +58,9 @@ export async function createCodexRuntimeThread(input: {
 		context: input.context,
 		developerInstructions: input.developerInstructions,
 	});
+	if (!input.codexClient) {
+		assertCodexAuthJsonAvailable(codexOptions.env?.CODEX_HOME ?? "");
+	}
 	const codex = input.codexClient ?? new Codex(codexOptions);
 	const threadOptions = buildCodexRuntimeThreadOptions(input.context);
 	const resumeState = readCodexResumeState(input.context);

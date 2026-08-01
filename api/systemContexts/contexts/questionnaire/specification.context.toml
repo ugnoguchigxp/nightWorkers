@@ -35,7 +35,7 @@ markdown はテンプレートではなく、プレースホルダーを含ま�
 `## スコープ` は対象 / 非対象を短い箇条書きにしてください。
 `## タスク分類` は分類と理由を 2-3 行で書いてください。
 production変更はimplementationPlanにだけ書いてください。DB / API / UI / domain logic / configuration を実装者が順番に完了判定できる粒度にし、API / UI / DB / validation の詳細は、それぞれ API Contract / Blueprint / Data Model / Zod Schema artifact を正として参照してください。
-implementationPlanは実装順のsteps配列にし、各stepはtitleとsystemContextだけを持たせてください。titleは80文字以内の短い工程名、systemContextは600文字以内かつ通常1〜3文の具体的な局所指示です。key、id、covers、constraints、doneWhen、taskType、objective、nextAction、acceptanceCriteria、dependsOn、status、revisionは生成しないでください。test、verification、review、closeout、品質ゲート、完了報告をstepsへ入れないでください。
+[[implementationPlanTodoRequirements]]
 実装計画を作るたびに、計画したproduction変更と現在のDB/schemaを照合してdata migrationの要否を判断してください。DB schema変更、既存データの変換・backfill、または既存環境へ適用するmigrationが必要な場合だけ、migration fileの作成、既存toolingによる適用、対象schemaと関連機能の確認を行う項目を含めてください。migrationが不要な場合はmigration作業を追加しないでください。
 `## 検証計画` はQuestionnaireで採用されたテスト観点を、どのテスト層または既存commandで検証するかだけを短く書いてください。テストを完了条件にしない場合は、選択外のテスト層やtest commandを書かないでください。具体的なテストケースはrepository調査後にCoding Agentが決めます。自動テストを採用した場合はunit / component / API / repository のfocused testを優先し、aggregate gateは補助的な最終確認としてだけ扱ってください。
 `## 検証計画` には、品質ゲートがPassした証跡を持つことを記載してください。具体的なcommandと品質ゲートの構成は固定せず、Projectを観測したCoding Agentに判断させてください。
@@ -48,6 +48,9 @@ title には、利用者から見た主要動作、重要なvalidation・error�
 機能の期待挙動を `## 完了条件` に整理し、Questionnaireで採用した場合だけ対応するUnit testまたはE2E証跡を要求してください。
 `## トレーサビリティ` は次の固定文だけを書いてください: Artifact 詳細は Plan Mode context / assembled design context を正とする。この Feature Plan は実装順序、検証条件、完了条件の正本として扱う。
 画面仕様、機能要件、データ設計方針、参考情報、Evidence などの追加見出しは、重複になる場合は作らないでください。
-出力はJSON objectのみで、完成済みFeature Plan本文を格納したmarkdown、実装工程の単一正本であるimplementationPlan、repositoryMaterializationIntentの3フィールドを返してください。implementationPlanは`{"steps":[{"title":"...","systemContext":"..."}]}`だけとし、通常2〜6件、最大12件にしてください。markdownへ実装計画を複製しないでください。
+出力はJSON objectのみで、完成済みFeature Plan本文を格納したmarkdown、実装から品質ゲートと完了報告までの工程の単一正本であるimplementationPlan、repositoryMaterializationIntentの3フィールドを返してください。implementationPlanは`{"steps":[{"title":"...","systemContext":"..."}]}`だけとし、production工程は通常1〜6件、品質ゲートと完了報告を含む全体は通常3〜8件、最大12件にしてください。markdownへ実装計画を複製しないでください。
 既存Git HEADがあるProjectでは repositoryMaterializationIntent を null にしてください。空のProjectで、確定済み設計から登録済みstarterを一意に選べる場合だけ starter_template intentを構造化して返してください。stackは hono / python / java / rust のいずれか、variantは Hono: sqlite/baseline/postgres/pgvector/rag/turso/cloudflare. Python: sqlite/baseline/postgres/pgvector/turso/cloudflare/api-only. Java: java8-sqlite/java8-postgres/java25-sqlite/java25-postgres. Rust: sqlite/pgsql に列挙した正確な値、sourceは starter、initializeは true とします。stackやvariantを確定できない場合は推測せず null にしてください。git_importは、入力にrepo URLが明示されている場合だけ使用してください。
 '''
+
+[variables.implementationPlanTodoRequirements]
+profile = "trusted.inline"

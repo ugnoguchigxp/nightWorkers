@@ -56,7 +56,9 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("既存またはtemplate導入済みProject");
 		expect(prompt).toContain("選択質問を生成してはいけません");
 		expect(prompt).toContain("一般的なstack候補やDB製品候補からの再選択");
-		expect(prompt).not.toContain("どの技術スタックで実装しますか？");
+		expect(prompt).not.toContain(
+			"どの技術スタックのtemplate projectをimportしますか？",
+		);
 		expect(prompt).not.toContain("第1問を技術スタック");
 		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
 		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
@@ -81,7 +83,9 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("既存またはtemplate導入済みProject");
 		expect(prompt).toContain("選択質問を生成してはいけません");
 		expect(prompt).toContain("移行または置換をTaskで明示した場合だけ");
-		expect(prompt).not.toContain("どの技術スタックで実装しますか？");
+		expect(prompt).not.toContain(
+			"どの技術スタックのtemplate projectをimportしますか？",
+		);
 		expect(prompt).not.toContain("Hono + React/Vite (デフォルト)");
 		expect(prompt).not.toContain("PostgreSQL、pgvector、Turso/libSQL");
 		expect(prompt).toContain("各 options は 2-10 件");
@@ -121,6 +125,15 @@ describe("design questionnaire prompts", () => {
 		);
 
 		expect(prompt).toContain("空の未materialized Project");
+		expect(prompt).toContain(
+			"登録済みProject folderを確認した結果、Git HEADもProject指示contextもない",
+		);
+		expect(prompt).toContain(
+			"登録済みProject rootへimportするstarter templateのfamilyとvariantを確定",
+		);
+		expect(prompt).toContain(
+			"repositoryMaterializationIntentとimplementationPlanの先頭Project import Todo",
+		);
 		expect(prompt).toContain("一意に選べない場合に限り");
 		expect(prompt).toContain("技術スタックとDB/永続化を確認");
 		expect(prompt).toContain("第1問を技術スタック、第2問をDB/永続化");
@@ -128,7 +141,9 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("先頭設問を指定する場合は、その質問順を最優先");
 		expect(prompt).toContain("本当に必要な未決定事項を漏れなく質問");
 		expect(prompt).toContain("現時点で回答可能な必要論点が14件以内なら");
-		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain(
+			"どの技術スタックのtemplate projectをimportしますか？",
+		);
 		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
 		expect(prompt).toContain("RAG (Hono + React/Vite)");
 		expect(prompt).toContain("Python/FastAPI + React/Vite");
@@ -137,6 +152,9 @@ describe("design questionnaire prompts", () => {
 		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");
 		expect(prompt).toContain("Rust + Axum + React/Vite");
 		expect(prompt).toContain("DB/永続化は必ず別の質問で選び");
+		expect(prompt).toContain(
+			"importするtemplate projectのDB/永続化構成はどれにしますか？",
+		);
 		expect(prompt).toContain("SQLite、PostgreSQL、pgvector、Turso/libSQL");
 		expect(prompt).toContain("DBなし/後続決定");
 		expect(prompt).toContain(
@@ -149,7 +167,9 @@ describe("design questionnaire prompts", () => {
 			"starter_selection_required",
 		);
 
-		expect(prompt).toContain("どの技術スタックで実装しますか？");
+		expect(prompt).toContain(
+			"どの技術スタックのtemplate projectをimportしますか？",
+		);
 		expect(prompt).toContain("Hono + React/Vite (デフォルト)");
 		expect(prompt).toContain("Java 8 + Spring Boot 2.7 + React/Vite");
 		expect(prompt).toContain("Java 25 + Spring Boot 4 + React/Vite");

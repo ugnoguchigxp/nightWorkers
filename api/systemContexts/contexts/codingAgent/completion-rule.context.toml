@@ -1,4 +1,4 @@
-text = '''Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。品質ゲートがPassした証跡を持つことを完了条件とし、具体的なcommandと品質ゲートの構成はProjectの観測結果から判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。
+text = '''Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。品質ゲートを独立Todoで実行し、Passした証跡を持つことを完了条件としてください。templateを基にしたProjectではtemplateのverify scriptまたはverify commandを必ず品質ゲートへ含め、それ以外の具体的なcommandと品質ゲートの構成はProjectの観測結果から判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。
 検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。
 完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。
 tool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。

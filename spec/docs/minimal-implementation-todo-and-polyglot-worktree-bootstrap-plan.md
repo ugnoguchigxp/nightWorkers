@@ -122,16 +122,21 @@ field追加ではなくPlan Reviewで見落としを防ぐ。
 4. hostは件数、文字数、型、digest、revisionだけを検証し、Task文言のkeywordや正規表現で工程を追加しない。
 5. 採用済みplanだけをCoding Agentへ渡し、Coding Agent起動時に同じ計画を再生成させない。
 
+`repositoryMaterializationIntent`が`starter_template`または`git_import`の場合は、同じstructured outputの先頭stepをProject import専用Todoにする。starterの場合はQuestionnaireで確定したstackとDBから選んだvariant、Git importの場合はrepo URLとrefをintentと一致させる。曖昧な構成作成へ言い換えたり、機能実装と同じstepへ埋め込んだりしない。
+
+repository materializationはprovider起動前のhost処理であるため、Coding Agentが先頭Todoを受け取る時点で実体化済みの場合がある。その場合もTodoを削除せず、bootstrap evidence、Git HEAD、Project root、選択済みstarterまたはimport元との一致を確認して明示完了し、次のproduction Todoへ進む。これにより、Questionnaireの選択、hostの副作用、ユーザーへ表示する実行順を一つのplanで追跡できる。
+
 ### 2.4 品質ゲートと完了報告
 
-品質ゲートと完了報告は実装計画stepに含めない。
+品質ゲートと完了報告は実装計画の最後に独立stepとして含める。
 
-- 品質ゲートは全Run共通の固定progress itemとしてTodo一覧の外側に表示する。
-- 完了報告も固定progress itemとし、全実装Todoと品質ゲートの後に表示する。
+- production工程の後、最後から2番目を品質ゲートTodo、最後を完了報告Todoとする。
+- 品質ゲートTodoはProjectの正本gateを実行し、templateを基にする場合はtemplateのverify commandを必ず含める。
+- 完了報告Todoは品質ゲートの結果、最終差分、未解決事項、commit・merge状態を照合してから完了する。
 - Coding Agentは必要な調査、実装、検証を各`systemContext`に従って実行し、完了候補を明示的に提出する。
 - hostの品質ゲートはopen Todo、未解決approval、workspace初期化状態、設定済みの決定論的checkなど構造的preconditionを評価する。
 - 品質ゲートが失敗してもhostはTodoを暗黙に追加、再開、完了しない。typed resultをLLMへ返し、LLMが明示的に残りstepsを再計画する。
-- 完了報告は保存済みのTask、Todo status、verification result、変更file、既知の未解決事項から固定formatで組み立て、modelへ同じ内容を再生成させない。
+- 完了報告は保存済みのTask、Todo status、verification result、変更file、既知の未解決事項からmodelが固定formatで組み立て、completion readinessとの矛盾を解消してから最終回答として返す。
 
 ### 2.5 Todo operational state
 
@@ -405,18 +410,18 @@ flowchart TD
     B --> D["Mission Pilotが不足を意味的review"]
     D -->|"adopted"| E["Digest付きhandoff"]
     D -->|"revision requested"| A
-    E --> F["Git worktree provisioning"]
+    E --> F0["repositoryMaterializationIntentに従いProjectをimport"]
+    F0 --> F["Git worktree provisioning"]
     F --> G["Manifest / lockfileを構造検出"]
     G --> H["全bootstrap adapterを実行・検証"]
     H -->|"success / not_required"| I["Workspace ready"]
     H -->|"typed failure"| J["環境初期化失敗・model未起動"]
-    I --> K["同じplanからTodoをtransaction生成"]
+    I --> K["同じplanから先頭Project import確認Todoを含めてtransaction生成"]
     K --> L["current TodoのsystemContextだけをLLMへ注入"]
     L --> M["LLMの明示Todo操作"]
     M --> L
-    M -->|"all terminal"| N["固定品質ゲート"]
-    N -->|"passed"| O["固定完了報告"]
-    N -->|"failed"| P["LLMが残りstepsを明示再計画"]
+    M -->|"品質ゲート失敗"| P["LLMが残りstepsを明示再計画"]
+    M -->|"all terminal"| O["completion readinessを照合"]
     P --> L
 ```
 
@@ -451,9 +456,9 @@ flowchart TD
 - `api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt.ts`
   - current `systemContext` capsuleだけを注入する。
 - `src/modules/todo/TodoListPane.tsx`
-  - `passed + skipped`を完了数に含め、固定品質ゲート/完了報告を別表示する。
+  - `passed + skipped`を完了数に含め、品質ゲートTodoと完了報告Todoを同じ工程一覧に表示する。
 - `api/systemContexts/contexts/codingAgent/`
-  - 最小tool contractへ更新し、初期準備Todoと完了報告Todoをactive compositionから外す。
+  - 最小tool contractへ更新し、品質ゲートTodoと完了報告Todoの実行・完了条件をcurrent Todo Contextへ反映する。
 - `api/systemContexts/generated/`
   - TOMLと同じ変更でcatalog JSON/TypeScriptを再生成する。
 
@@ -531,7 +536,7 @@ Exit criteria:
 5. tool resultをprogress/current/nextへ縮小する。
 6. Codex SDKとNative APIへ同じcurrent Todo Contextを注入する。
 7. Codex SDK laneだけopen Todo completion guardを除外する例外を削除する。
-8. UIでskippedをterminalとして数え、固定品質ゲートと完了報告を別rail itemにする。
+8. UIでskippedをterminalとして数え、品質ゲートTodoと完了報告Todoを通常の工程として同じrailに表示する。
 
 Exit criteria:
 
@@ -545,8 +550,8 @@ Exit criteria:
 実施:
 
 1. Todo requirement、current Todo、tool contractを最小contractへ更新する。
-2. 初期準備Todoと完了報告Todoをactive System Context compositionから外す。
-3. 固定品質ゲート/完了報告をTodo外のcompletion contractへ移す。
+2. 初期準備Todoをactive System Context compositionから外し、品質ゲートTodoと完了報告Todoの局所指示をTodo Contextで扱う。
+3. completion contractは品質ゲートTodoの証跡と完了報告Todoの候補を照合し、Todoを暗黙更新しない。
 4. LLM生成`systemContext`をruntime inputとしてdelimiter付き注入する。
 5. TOML、catalog JSON、generated TypeScriptを一括再生成する。
 6. legacy `ImplementationTodoInput`のPlan Mode write経路を削除し、必要なread-only互換だけを明示する。
@@ -818,23 +823,24 @@ cache入力はprovider課金・速度上の意味が非cache入力と異なる�
 6. 通常Todo操作にID、seq、revisionが不要である。
 7. modelへcurrent中心の小さいTodo resultだけを返す。
 8. UIが現在工程、terminal工程数、品質ゲート、完了報告を正しく表示する。
-9. 品質ゲートと完了報告がmodel生成Todoに含まれない。
-10. repositoryのmanifest/lockfileに応じた全bootstrap componentがRun開始前に処理される。
-11. Bun以外の主要ecosystemも同じadapter contractで初期化できる。
-12. dev dependencyを除外するoptionを使わない。
-13. 親checkoutや別worktreeのdependency rootをsymlinkしない。
-14. tmp/cache/environmentの配置とruntime envがNightWorkers管理pathへ固定される。
-15. exact stampとvalidationが一致する場合だけbootstrapをskipする。
-16. timeout、cancel、process cleanup、structured errorが全adapterで共通に働く。
-17. registry credentialとsecretがlog、DB、event、API、UIへ漏れない。
-18. bootstrap失敗時にworkspaceが`ready`にならず、model callが0回である。
-19. Coding Agentが環境初期化失敗をTodoとして解決させられない。
-20. role module境界とS11t生成物更新規則を守る。
-21. focused test、architecture/docs check、`bun run verify`がgreenである。
+9. materialization intentがある場合、選択済みtemplateまたはGit importが先頭Todoとして独立し、後続実装より前に含まれる。
+10. 品質ゲートと完了報告がmodel生成Todoの最後から2件として独立し、この順で含まれる。
+11. repositoryのmanifest/lockfileに応じた全bootstrap componentがRun開始前に処理される。
+12. Bun以外の主要ecosystemも同じadapter contractで初期化できる。
+13. dev dependencyを除外するoptionを使わない。
+14. 親checkoutや別worktreeのdependency rootをsymlinkしない。
+15. tmp/cache/environmentの配置とruntime envがNightWorkers管理pathへ固定される。
+16. exact stampとvalidationが一致する場合だけbootstrapをskipする。
+17. timeout、cancel、process cleanup、structured errorが全adapterで共通に働く。
+18. registry credentialとsecretがlog、DB、event、API、UIへ漏れない。
+19. bootstrap失敗時にworkspaceが`ready`にならず、model callが0回である。
+20. Coding Agentが環境初期化失敗をTodoとして解決させられない。
+21. role module境界とS11t生成物更新規則を守る。
+22. focused test、architecture/docs check、`bun run verify`がgreenである。
 
 ## 12. Canonical Implementation Todo
 
-本計画自身を実装へhandoffする際のmodel生成部分は、次の最小JSONだけとする。品質ゲートと完了報告は固定項目なので含めない。
+本計画自身を実装へhandoffする際のmodel生成部分は、次の最小JSONだけとする。production工程の後に品質ゲートと完了報告を独立stepとして含める。
 
 ```json
 {
@@ -862,6 +868,14 @@ cache入力はprovider課金・速度上の意味が非cache入力と異なる�
     {
       "title": "migrationとcanaryを完了する",
       "systemContext": "legacy Todo/workspaceを混在させないmigrationを実施し、単一stackとpolyglot repositoryでE2Eとcanaryを行う。token、bootstrap時間、stamp skip、失敗時model未起動、secret leakゼロを計測して旧経路を削除する。"
+    },
+    {
+      "title": "Project品質ゲートを実行する",
+      "systemContext": "全production工程後にProjectの正本品質ゲートを実行し、templateを基にする場合はtemplateのverify commandを必ず通す。失敗は修正して影響範囲を再検証し、Passまたは明示blockerを確認するまで完了しない。"
+    },
+    {
+      "title": "実装結果を完了報告する",
+      "systemContext": "品質ゲート結果、最終差分、未解決事項、Todo・verification・Run・commit・merge状態を実観測と照合する。completion readinessとの矛盾を解消してからTodoを完了し、同じ内容を最終回答として返す。"
     }
   ]
 }

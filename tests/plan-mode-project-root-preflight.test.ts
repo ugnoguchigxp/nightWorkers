@@ -80,6 +80,18 @@ describe("Plan Mode project root preflight", () => {
 					hasProjectInstructionContext: false,
 				}),
 			).toBe("starter_selection_required");
+			const emptyProjectPolicy = renderPlanModeQuestionnaireRepositoryPolicy(
+				"starter_selection_required",
+			);
+			expect(emptyProjectPolicy).toContain(
+				"登録済みProject folderの確認結果、Git HEADもProject指示contextもない",
+			);
+			expect(emptyProjectPolicy).toContain(
+				"登録済みProject rootへimportするtemplate familyとvariantを選ぶための質問",
+			);
+			expect(emptyProjectPolicy).toContain(
+				"implementationPlanの先頭Project import Todo",
+			);
 		} finally {
 			fs.rmSync(repoRoot, { recursive: true, force: true });
 		}

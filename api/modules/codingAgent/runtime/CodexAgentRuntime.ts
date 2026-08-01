@@ -105,6 +105,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		}, Math.max(1, context.timeoutSeconds) * 1000);
 		const logs: string[] = [];
 		let finalReport = "";
+		let runtimeErrorReport = "";
 
 		try {
 			if (this.isCancelled(context, signal))
@@ -212,7 +213,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 							});
 						}
 					}
-					if (event.type === "runtime_error") runtimeFailed = true;
+					if (event.type === "runtime_error") {
+						runtimeFailed = true;
+						if (!runtimeErrorReport) runtimeErrorReport = event.message;
+					}
 				}
 				if (turnCompleted || runtimeFailed) {
 					clearTimeout(timeout);
@@ -252,7 +256,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 				}
 				return this.finish(context, sink, logs, {
 					terminalState: "failed",
-					finalReport,
+					finalReport: runtimeFailed
+						? runtimeErrorReport || finalReport
+						: finalReport,
 					stoppedBy: "llm_error",
 					riskLevel: "high",
 				});

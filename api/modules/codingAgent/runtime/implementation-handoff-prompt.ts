@@ -1,3 +1,5 @@
+import type { ImplementationPlan } from "../../../../shared/modules/agentsShare";
+
 export const CODING_AGENT_IMPLEMENTATION_HANDOFF_INSTRUCTIONS_JA = [
 	"以下の IMPLEMENTATION_HANDOFF は、確定済みの実装計画です。",
 	"確定済みの技術選定、実装範囲、受け入れ条件を、補助資料や既定構成より優先してください。",
@@ -34,6 +36,7 @@ export function buildCodingAgentImplementationHandoffSnapshot(input: {
 	sourceMessageId: string;
 	userRequest: string;
 	adoptedPlan: string;
+	implementationPlan?: ImplementationPlan | null;
 	designArtifacts: Array<{
 		kind: string;
 		sourceMessageId: string;
@@ -46,6 +49,9 @@ export function buildCodingAgentImplementationHandoffSnapshot(input: {
 		instructions: CODING_AGENT_IMPLEMENTATION_HANDOFF_INSTRUCTIONS_JA,
 		userRequest: input.userRequest,
 		adoptedPlan: input.adoptedPlan,
+		...(input.implementationPlan
+			? { implementationPlan: input.implementationPlan }
+			: {}),
 		designArtifacts: input.designArtifacts,
 	};
 }

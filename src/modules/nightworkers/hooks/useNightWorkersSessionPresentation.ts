@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { buildEvidenceCheckArtifact } from "../../codingAgent";
 import {
 	resolveLatestPlanWorkspaceArtifact,
 	resolveLatestPlanWorkspaceTab,
@@ -112,6 +113,31 @@ export function restorePlanModeWorkspaceArtifactRefs(input: {
 	return refs.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
 }
 
+export function restoreEvidenceCheckArtifactRef(input: {
+	refs: WorkbenchArtifactRef[];
+	activeSession: Task;
+	taskMessages: TaskMessage[];
+}) {
+	if (input.refs.some((artifact) => artifact.kind === "evidence_check")) {
+		return input.refs;
+	}
+	const evidence = buildEvidenceCheckArtifact({
+		taskId: input.activeSession.id,
+		updatedAt: String(
+			input.activeSession.updatedAt || input.activeSession.createdAt,
+		),
+		taskMessages: input.taskMessages,
+		title: "Evidence Check",
+		summary:
+			"Implementation plan traceability and current verification evidence",
+	});
+	return evidence
+		? [...input.refs, evidence].sort(
+				(left, right) => toMs(right.createdAt) - toMs(left.createdAt),
+			)
+		: input.refs;
+}
+
 type UseNightWorkersSessionPresentationInput = {
 	activeSession: Task | null;
 	activePlanModeWorkspace: PlanModeWorkspace | null;
@@ -154,7 +180,11 @@ export function useNightWorkersSessionPresentation({
 			activityArtifacts,
 		});
 		return restorePlanModeWorkspaceArtifactRefs({
-			refs,
+			refs: restoreEvidenceCheckArtifactRef({
+				refs,
+				activeSession,
+				taskMessages,
+			}),
 			activeSession,
 			activePlanModeWorkspace,
 		});

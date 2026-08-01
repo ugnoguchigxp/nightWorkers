@@ -14,6 +14,12 @@ export type CodexAuthSource =
 	| "missing";
 export type CodexModelSource = "codex-models-cache" | "settings" | "fallback";
 
+export type CodexAuthJsonInspection = {
+	available: boolean;
+	authPath: string;
+	reason: "available" | "missing" | "not_file" | "empty" | "invalid";
+};
+
 const DEFAULT_CODEX_MODEL_OPTIONS: CodexModelOption[] = [
 	{ value: "gpt-5.5", label: "GPT-5.5" },
 	{ value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
@@ -102,23 +108,43 @@ function resolveCodexAuthSource(
 ): CodexAuthSource {
 	if (accessToken?.trim()) return "settings-token";
 	if (process.env.CODEX_ACCESS_TOKEN?.trim()) return "environment-token";
-	if (hasCodexAuthJson(codexHome)) return "codex-auth-json";
+	if (inspectCodexAuthJson(codexHome).available) return "codex-auth-json";
 	return "missing";
 }
 
-function hasCodexAuthJson(codexHome: string) {
+export function inspectCodexAuthJson(
+	codexHome: string,
+): CodexAuthJsonInspection {
+	const authPath = path.join(codexHome, "auth.json");
 	try {
-		const authPath = path.join(codexHome, "auth.json");
-		if (!fs.existsSync(authPath)) return false;
+		if (!fs.existsSync(authPath)) {
+			return { available: false, authPath, reason: "missing" };
+		}
+		if (!fs.statSync(authPath).isFile()) {
+			return { available: false, authPath, reason: "not_file" };
+		}
 		const text = fs.readFileSync(authPath, "utf-8").trim();
-		if (!text) return false;
+		if (!text) return { available: false, authPath, reason: "empty" };
 		const parsed = JSON.parse(text);
-		return Boolean(
+		const available = Boolean(
 			parsed && typeof parsed === "object" && Object.keys(parsed).length,
 		);
+		return {
+			available,
+			authPath,
+			reason: available ? "available" : "invalid",
+		};
 	} catch {
-		return false;
+		return { available: false, authPath, reason: "invalid" };
 	}
+}
+
+export function assertCodexAuthJsonAvailable(codexHome: string) {
+	const inspection = inspectCodexAuthJson(codexHome);
+	if (inspection.available) return inspection;
+	throw new Error(
+		`CODEX_AUTH_UNAVAILABLE: Codex authentication is unavailable at ${inspection.authPath} (${inspection.reason}).`,
+	);
 }
 
 function readCodexModelCache(codexHome: string): CodexModelOption[] {

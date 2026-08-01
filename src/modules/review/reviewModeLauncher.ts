@@ -44,6 +44,10 @@ export const REVIEW_MODE_PROMPT_ACTIONS: ReviewModePromptAction[] = [
 ];
 
 const CLOSED_TODO_STATUSES = new Set(["passed", "skipped"]);
+const REVIEWABLE_IMPLEMENTATION_RUN_STATUSES = new Set([
+	"completed",
+	"needs_review",
+]);
 
 function runExecutionMode(run: TaskRun) {
 	const snapshot = run.contextSnapshot;
@@ -60,7 +64,7 @@ export function isPostImplementationReviewReady(input: {
 }) {
 	const { task, run, todos } = input;
 	if (!run || run.taskId !== task.id) return false;
-	if (run.status !== "completed") return false;
+	if (!REVIEWABLE_IMPLEMENTATION_RUN_STATUSES.has(run.status)) return false;
 	if (runExecutionMode(run) !== "implementation") return false;
 	if (!run.finalReport?.trim() || todos.length === 0) return false;
 	if (!todos.every((todo) => CLOSED_TODO_STATUSES.has(todo.status)))

@@ -60,7 +60,13 @@ describe("Coding Agent Plan ownership negative contract", () => {
 			"Plan Modeで採用済みimplementationPlanがあるRunでは",
 		);
 		expect(getCodingAgentTodoRequirement()).toContain(
-			"品質ゲートと完了報告は固定項目であり、Todo stepとして追加しない",
+			"最後から2番目にProject品質ゲート、最後に結果に基づく完了報告を独立stepとして必ず追加",
+		);
+		expect(getCodingAgentTodoRequirement()).toContain(
+			"templateのverify scriptまたはverify commandを必ず通して",
+		);
+		expect(getCodingAgentTodoRequirement()).toContain(
+			"品質ゲートと完了報告もLLMまたは人間が明示したTodoとしてだけ更新",
 		);
 		expect(getCodingAgentTodoRequirement()).toContain(
 			"key、id、covers、constraints、doneWhen",

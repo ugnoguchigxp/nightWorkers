@@ -171,13 +171,32 @@ export function buildEvidenceCheckExportMarkdown(input: {
 	model: EvidenceCheckPanelModel | null;
 	snapshot?: EvidenceCheckSnapshot | null;
 }) {
+	const traceability = input.snapshot?.implementationPlanTraceability;
+	const planRows = traceability
+		? [
+				"## Implementation Plan Traceability",
+				`- Provenance: ${traceability.provenanceStatus}`,
+				`- Exact Todo match: ${traceability.exactTodoMatch ? "yes" : "no"}`,
+				...traceability.steps.map((step) => {
+					const checked = ["passed", "skipped"].includes(step.todoStatus ?? "")
+						? "x"
+						: " ";
+					return `- [${checked}] ${step.seq}. ${step.title} (${step.todoStatus ?? "missing"}; ${step.aligned ? "aligned" : "mismatched"})`;
+				}),
+			]
+		: [];
 	const conditions =
 		input.snapshot?.conditions ?? input.model?.conditions ?? [];
 	const rows = conditions.map((condition) => {
 		const checked = COMPLETE_STATUSES.has(condition.status) ? "x" : " ";
 		return `- [${checked}] \`${condition.id}\` ${condition.text} (${condition.status})`;
 	});
-	return [`# ${input.title}`, "## Completion Conditions", ...rows].join("\n\n");
+	return [
+		`# ${input.title}`,
+		...planRows,
+		"## Completion Conditions",
+		...rows,
+	].join("\n\n");
 }
 
 export function EvidenceCheckArtifactViewer({
@@ -189,8 +208,22 @@ export function EvidenceCheckArtifactViewer({
 }) {
 	const { t } = useTranslation();
 	const query = useEvidenceCheckSnapshot(model);
-	const conditions =
-		snapshot?.conditions ?? query.data?.conditions ?? model?.conditions ?? [];
+	const resolvedSnapshot = snapshot ?? query.data ?? null;
+	const conditions = resolvedSnapshot?.conditions ?? model?.conditions ?? [];
+	const traceability = resolvedSnapshot?.implementationPlanTraceability ?? null;
+	const conditionSummary = resolvedSnapshot?.summary ?? {
+		total: conditions.length,
+		confirmed: conditions.filter((condition) =>
+			COMPLETE_STATUSES.has(condition.status),
+		).length,
+		failed: conditions.filter((condition) => condition.status === "failed")
+			.length,
+		pending: conditions.filter(
+			(condition) =>
+				!COMPLETE_STATUSES.has(condition.status) &&
+				condition.status !== "failed",
+		).length,
+	};
 	if (!model) {
 		return (
 			<div className="nightworkers-structured-artifact h-full p-5">
@@ -205,31 +238,145 @@ export function EvidenceCheckArtifactViewer({
 			className="nightworkers-structured-artifact h-full overflow-auto p-5"
 			data-artifact-export-expand
 		>
-			<div className="mx-auto grid max-w-5xl gap-1.5">
-				{conditions.map((condition) => (
-					<div
-						key={condition.id}
-						className="nightworkers-structured-artifact-row grid grid-cols-[4.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs"
-					>
-						<span className="nightworkers-structured-artifact-muted font-mono leading-5">
-							{condition.id}
-						</span>
-						<span className="flex h-5 items-center">
-							<EvidenceConditionStatusIcon status={condition.status} />
-						</span>
-						<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
-							{t(`evidenceCheck.conditionStatus.${condition.status}`, {
-								defaultValue: condition.status,
-							})}
-						</span>
-						<span className="nightworkers-structured-artifact-text min-w-0 whitespace-normal break-words leading-5">
-							{condition.text}
-						</span>
+			<div className="mx-auto grid max-w-5xl gap-5">
+				{query.isLoading && !resolvedSnapshot ? (
+					<div className="nightworkers-structured-artifact-muted rounded border px-3 py-2 text-xs">
+						{t("evidenceCheck.loading")}
 					</div>
-				))}
+				) : null}
+				{query.isError ? (
+					<div className="rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
+						{t("evidenceCheck.loadFailed")}
+					</div>
+				) : null}
+				{traceability ? (
+					<section className="grid gap-2" data-evidence-plan-traceability>
+						<div className="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+									{t("evidenceCheck.plan.title")}
+								</h2>
+								<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
+									{planTraceabilityMessage(t, traceability)}
+								</p>
+							</div>
+							<span className="nightworkers-structured-artifact-muted rounded border px-2 py-1 font-mono text-[10px]">
+								{traceability.digest.slice(0, 20)}…
+							</span>
+						</div>
+						<div className="nightworkers-structured-artifact-muted text-xs">
+							{t("evidenceCheck.plan.summary", traceability.summary)}
+						</div>
+						<div className="grid gap-1.5">
+							{traceability.steps.map((step) => (
+								<div
+									key={step.seq}
+									className="nightworkers-structured-artifact-row grid grid-cols-[2.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-2 text-xs"
+									data-evidence-plan-step={step.seq}
+									data-plan-aligned={step.aligned}
+								>
+									<span className="nightworkers-structured-artifact-muted font-mono leading-5">
+										{step.seq}
+									</span>
+									<span className="flex h-5 items-center">
+										<EvidenceConditionStatusIcon
+											status={
+												step.aligned ? (step.todoStatus ?? "missing") : "failed"
+											}
+										/>
+									</span>
+									<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
+										{t(
+											`evidenceCheck.conditionStatus.${step.todoStatus ?? "missing"}`,
+											{ defaultValue: step.todoStatus ?? "missing" },
+										)}
+									</span>
+									<div className="min-w-0">
+										<div className="nightworkers-structured-artifact-text break-words font-medium leading-5">
+											{step.title}
+										</div>
+										<div className="nightworkers-structured-artifact-muted mt-1 whitespace-normal break-words leading-5">
+											{step.systemContext}
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					</section>
+				) : null}
+				<section className="grid gap-2" data-evidence-spec-conditions>
+					<div>
+						<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
+							{t("evidenceCheck.conditions.title")}
+						</h2>
+						<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
+							{t("evidenceCheck.conditions.summary", conditionSummary)}
+						</p>
+					</div>
+					<div className="grid gap-1.5">
+						{conditions.map((condition) => (
+							<div
+								key={condition.id}
+								className="nightworkers-structured-artifact-row grid grid-cols-[4.5rem_1.25rem_7rem_minmax(0,1fr)] items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs"
+							>
+								<span className="nightworkers-structured-artifact-muted font-mono leading-5">
+									{condition.id}
+								</span>
+								<span className="flex h-5 items-center">
+									<EvidenceConditionStatusIcon status={condition.status} />
+								</span>
+								<span className="nightworkers-structured-artifact-muted whitespace-nowrap leading-5">
+									{t(`evidenceCheck.conditionStatus.${condition.status}`, {
+										defaultValue: condition.status,
+									})}
+								</span>
+								<div className="min-w-0">
+									<div className="nightworkers-structured-artifact-text whitespace-normal break-words leading-5">
+										{condition.text}
+									</div>
+									{condition.evidenceIds.length > 0 || condition.reason ? (
+										<div className="nightworkers-structured-artifact-muted mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-4">
+											{condition.evidenceIds.length > 0 ? (
+												<span>
+													{t("evidenceCheck.conditionEvidence", {
+														count: condition.evidenceIds.length,
+													})}
+												</span>
+											) : null}
+											{condition.reason ? (
+												<span>{condition.reason}</span>
+											) : null}
+										</div>
+									) : null}
+								</div>
+							</div>
+						))}
+					</div>
+				</section>
 			</div>
 		</div>
 	);
+}
+
+function planTraceabilityMessage(
+	t: ReturnType<typeof useTranslation>["t"],
+	traceability: NonNullable<
+		EvidenceCheckSnapshot["implementationPlanTraceability"]
+	>,
+) {
+	if (traceability.provenanceStatus === "matched") {
+		return t("evidenceCheck.plan.exactMatch");
+	}
+	if (traceability.provenanceStatus === "legacy_inferred") {
+		return t("evidenceCheck.plan.legacyInferred");
+	}
+	if (traceability.provenanceStatus === "provenance_mismatch") {
+		return t("evidenceCheck.plan.provenanceMismatch");
+	}
+	if (traceability.provenanceStatus === "missing") {
+		return t("evidenceCheck.plan.provenanceMissing");
+	}
+	return t("evidenceCheck.plan.mismatch");
 }
 
 function EvidenceConditionStatusIcon({ status }: { status: string }) {

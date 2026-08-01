@@ -125,7 +125,9 @@ export function renderPlanModeQuestionnaireRepositoryPolicy(
 		: [
 				"Questionnaire repository policy:",
 				"- state: empty_unmaterialized_project",
-				"- 実装前にstarter templateを一意に選べない場合だけ、技術スタックとDB/永続化をQuestionnaireで確認できます。",
+				"- 登録済みProject folderの確認結果、Git HEADもProject指示contextもないため、starter templateのimportが必要です。",
+				"- 技術スタックとDB/永続化のQuestionnaireは、登録済みProject rootへimportするtemplate familyとvariantを選ぶための質問です。",
+				"- 回答はrepositoryMaterializationIntentとimplementationPlanの先頭Project import Todoへ同じ確定事実として引き継いでください。",
 			].join("\n");
 }
 

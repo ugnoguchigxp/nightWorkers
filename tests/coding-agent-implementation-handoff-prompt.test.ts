@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildCodingAgentImplementationHandoffPrompt,
+	buildCodingAgentImplementationHandoffSnapshot,
 	CODING_AGENT_IMPLEMENTATION_HANDOFF_INSTRUCTIONS_JA,
 } from "../api/modules/codingAgent";
 import { buildCodexRuntimePromptParts } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
@@ -8,6 +9,30 @@ import type { AgentRunContext } from "../api/modules/codingAgent/runtime/types";
 import { findLatestImplementationDesignArtifacts } from "../api/modules/nightworkers/run-orchestration/runtime-routing";
 
 describe("Coding Agent implementation handoff prompt", () => {
+	it("keeps the adopted structured implementation plan in the Run handoff snapshot", () => {
+		const implementationPlan = {
+			steps: [
+				{
+					title: "APIを実装する",
+					systemContext: "確定済みAPI契約に従う。",
+				},
+			],
+		};
+
+		expect(
+			buildCodingAgentImplementationHandoffSnapshot({
+				sourceMessageId: "feature-plan-1",
+				userRequest: "実装してください。",
+				adoptedPlan: "# Feature Plan",
+				implementationPlan,
+				designArtifacts: [],
+			}),
+		).toMatchObject({
+			sourceMessageId: "feature-plan-1",
+			implementationPlan,
+		});
+	});
+
 	it("leaves a direct implementation request unchanged without a handoff", () => {
 		expect(
 			buildCodingAgentImplementationHandoffPrompt({

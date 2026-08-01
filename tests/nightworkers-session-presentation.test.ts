@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { restorePlanModeWorkspaceArtifactRefs } from "../src/modules/nightworkers/hooks/useNightWorkersSessionPresentation";
+import {
+	restoreEvidenceCheckArtifactRef,
+	restorePlanModeWorkspaceArtifactRefs,
+} from "../src/modules/nightworkers/hooks/useNightWorkersSessionPresentation";
 import type {
 	PlanModeWorkspace,
 	WorkbenchArtifactRef,
@@ -13,6 +16,37 @@ const task = buildTask({
 });
 
 describe("useNightWorkersSessionPresentation helpers", () => {
+	it("restores Evidence Check as a first-class artifact ref", () => {
+		const refs = restoreEvidenceCheckArtifactRef({
+			refs: [],
+			activeSession: task,
+			taskMessages: [
+				{
+					id: "33333333-3333-4333-8333-333333333333",
+					taskId: task.id,
+					runId: null,
+					role: "assistant",
+					content: "# Feature Plan",
+					messageType: "markdown_document",
+					metadataJson: {
+						intent: "feature_plan",
+						verificationDocumentId: "44444444-4444-4444-8444-444444444444",
+						verificationSidecarMessageId:
+							"55555555-5555-4555-8555-555555555555",
+					},
+					createdAt: "2026-07-08T00:00:00.000Z",
+				},
+			],
+		});
+
+		expect(refs).toContainEqual(
+			expect.objectContaining({
+				id: "evidence-check-44444444-4444-4444-8444-444444444444",
+				kind: "evidence_check",
+			}),
+		);
+	});
+
 	it("restores the Plan Mode Workspace ref from persisted workspace state", () => {
 		const refs: WorkbenchArtifactRef[] = [
 			{

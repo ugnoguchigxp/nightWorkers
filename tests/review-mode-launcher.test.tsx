@@ -93,6 +93,25 @@ describe("Review Mode launcher", () => {
 		).toBe(`${task.id}:${completedImplementationRun.id}:review-mode`);
 	});
 
+	it("opens Review Mode for the normal needs_review implementation handoff", () => {
+		const task = buildTask({ status: "needs_review" });
+		const run = {
+			...completedImplementationRun,
+			status: "needs_review",
+		};
+
+		expect(
+			buildPostImplementationReviewArtifact({
+				task,
+				run,
+				todos: [todo()],
+			}),
+		).toMatchObject({
+			id: `review-mode-${run.id}`,
+			kind: "review_status",
+		});
+	});
+
 	it("focuses Review Mode from any other artifact route", () => {
 		const task = buildTask();
 		const input = {
@@ -148,7 +167,6 @@ describe("Review Mode launcher", () => {
 	});
 
 	it.each([
-		"needs_review",
 		"needs_human",
 		"cancelled",
 		"failed",
