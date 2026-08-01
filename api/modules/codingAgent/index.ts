@@ -1,9 +1,17 @@
+export { handleCodingAgentWebSocketCommand } from "./adapters/coding-agent-command-websocket.adapter";
 export { codingAgentProviderExecutionPolicy } from "./adapters/coding-agent-provider.adapter";
 export {
 	ActionExecutionJournal,
 	actionExecutionJournal,
 } from "./application/action-execution-journal";
 export { reconcileCodexCompletionBoundary } from "./application/codex-completion-boundary.service";
+export {
+	type CodingAgentCommandExecution,
+	type DirectTaskOperatorPrincipal,
+	executeCodingAgentCommand,
+	executeCodingAgentTransportCommand,
+	resolveCodingAgentImplementationRequest,
+} from "./application/coding-agent-command.service";
 export {
 	handleResumeCodingAgentRunTodo,
 	handleStartCodingAgentRun,

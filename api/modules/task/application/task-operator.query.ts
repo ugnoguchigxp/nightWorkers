@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, count, eq, isNull, max } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, max } from "drizzle-orm";
 import { TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET } from "../../../../shared/modules/taskOperator";
 import { db } from "../../../db/client";
 import { repositories, taskMessages, tasks } from "../../../db/schema";
@@ -126,6 +126,29 @@ export async function readTaskTimelineFacts(input: {
 		hasMore: pageHasMore,
 		entries,
 	};
+}
+
+export async function readLatestTaskUserMessageAfter(input: {
+	taskId: string;
+	after: Date;
+}) {
+	const [message] = await db
+		.select({
+			id: taskMessages.id,
+			content: taskMessages.content,
+			createdAt: taskMessages.createdAt,
+		})
+		.from(taskMessages)
+		.where(
+			and(
+				eq(taskMessages.taskId, input.taskId),
+				eq(taskMessages.role, "user"),
+				gte(taskMessages.createdAt, input.after),
+			),
+		)
+		.orderBy(desc(taskMessages.createdAt), desc(taskMessages.id))
+		.limit(1);
+	return message ?? null;
 }
 
 export async function readTaskMessageFact(input: {

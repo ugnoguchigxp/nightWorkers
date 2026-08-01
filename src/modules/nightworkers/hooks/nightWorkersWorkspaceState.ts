@@ -128,7 +128,6 @@ export type NightWorkersWorkspaceState = {
 		queueIds: string[];
 		archiveIds: string[];
 	}) => Promise<void>;
-	sendChatMessage: (sessionId: string, prompt: string) => Promise<void>;
 	sendWorkbenchMessage: (
 		sessionId: string,
 		prompt: string,

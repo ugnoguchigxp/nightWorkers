@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../../../lib/api";
+import { CodingAgentCommandClient } from "../../codingAgent";
 import { planModeWorkspaceQueryOptions } from "../../specification";
-import { fetchTaskOperatorProjection } from "../../taskOperator";
+import { taskOperatorProjectionQueryOptions } from "../../taskOperator";
 import {
 	fetchBackgroundProcessesForTask,
 	fetchImplementationQueue,
@@ -12,6 +13,7 @@ import {
 	fetchTaskLlmUsage,
 	fetchTaskMessages,
 } from "../nightWorkersCommands";
+import type { NightWorkersRealtimeConnection } from "../realtime/nightWorkersRealtimeConnection";
 import { mergeRunEvents } from "../realtimeEvents";
 import type {
 	BackgroundProcess,
@@ -68,18 +70,24 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const [pendingAssistantTaskId, setPendingAssistantTaskId] = useState<
 		string | null
 	>(null);
-	const wsRef = useRef<WebSocket | null>(null);
+	const realtimeConnectionRef = useRef<NightWorkersRealtimeConnection | null>(
+		null,
+	);
+	const codingAgentCommandClientRef = useRef<CodingAgentCommandClient | null>(
+		null,
+	);
+	if (!codingAgentCommandClientRef.current) {
+		codingAgentCommandClientRef.current = new CodingAgentCommandClient({
+			getConnection: () => realtimeConnectionRef.current,
+		});
+	}
 	const lastSubmitRef = useRef<{
 		taskId: string;
 		prompt: string;
 		contextKey: string;
 		at: number;
 	} | null>(null);
-	const pendingChatQueueRef = useRef<Array<{ taskId: string; prompt: string }>>(
-		[],
-	);
 	const chatSubmitStartedAtRef = useRef<number | null>(null);
-	const chatSubmitTransportRef = useRef<"http" | "websocket" | null>(null);
 	const pendingChatRunIdRef = useRef<string | null>(null);
 	const pendingAssistantTaskIdRef = useRef<string | null>(null);
 	const pendingChatAbortControllerRef = useRef<AbortController | null>(null);
@@ -182,16 +190,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
-	const { data: activeTaskOperatorView = null } = useQuery({
-		queryKey: ["taskOperatorView", activeSessionId],
-		queryFn: async () =>
-			activeSessionId
-				? fetchTaskOperatorProjection(activeSessionId)
-				: Promise.resolve(null),
-		enabled: !!activeSessionId,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-	});
+	const { data: activeTaskOperatorView = null } = useQuery(
+		taskOperatorProjectionQueryOptions(activeSessionId),
+	);
 
 	const { data: activePlanModeWorkspace = null } = useQuery(
 		planModeWorkspaceQueryOptions(activeSessionId),
@@ -255,11 +256,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const settingsState = useNightWorkersSettings();
 	const chatActions = createNightWorkersChatActions({
 		queryClient,
-		wsRef,
 		lastSubmitRef,
-		pendingChatQueueRef,
 		chatSubmitStartedAtRef,
-		chatSubmitTransportRef,
 		pendingChatRunIdRef,
 		pendingAssistantTaskIdRef,
 		pendingChatAbortControllerRef,
@@ -299,6 +297,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		activeSessionId,
 		queryClient,
 		setActiveSessionId,
+		codingAgentCommandClient: codingAgentCommandClientRef.current,
 	});
 
 	const activeSession = useMemo(() => {
@@ -382,58 +381,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		sessionViews,
 	} = sessionPresentation;
 
-	useEffect(() => {
-		// サーバーダウンやWS切断時に入力が永久ロックされるのを防ぐ
-		if (realtimeStatus !== "disconnected") return;
-		setIsChatSubmitting(false);
-		chatSubmitStartedAtRef.current = null;
-		chatSubmitTransportRef.current = null;
-		pendingChatRunIdRef.current = null;
-		setPendingChatRunId(null);
-		pendingAssistantTaskIdRef.current = null;
-		setPendingAssistantTaskId(null);
-		pendingChatAbortControllerRef.current?.abort();
-		pendingChatAbortControllerRef.current = null;
-		pendingChatQueueRef.current = [];
-	}, [realtimeStatus]);
-
-	useEffect(() => {
-		if (!activeSessionId) return;
-		const timer = setInterval(() => {
-			if (!isChatSubmitting) return;
-			const startedAt = chatSubmitStartedAtRef.current;
-			if (!startedAt) return;
-			if (chatSubmitTransportRef.current === "http") return;
-			const elapsed = Date.now() - startedAt;
-			// 接続が生きて見えても応答が詰まるケース向けのフェイルセーフ
-			if (elapsed < 20000) return;
-
-			const hasAcceptedOrActiveRun =
-				Boolean(pendingChatRunIdRef.current || pendingChatRunId) ||
-				isActiveRunStatus(latestRun?.status) ||
-				isActiveTaskStatus(activeSession?.status);
-
-			if (!hasAcceptedOrActiveRun) {
-				setIsChatSubmitting(false);
-				chatSubmitStartedAtRef.current = null;
-				chatSubmitTransportRef.current = null;
-				pendingChatRunIdRef.current = null;
-				setPendingChatRunId(null);
-				pendingAssistantTaskIdRef.current = null;
-				setPendingAssistantTaskId(null);
-				pendingChatAbortControllerRef.current?.abort();
-				pendingChatAbortControllerRef.current = null;
-				pendingChatQueueRef.current = [];
-			}
-		}, 2000);
-		return () => clearInterval(timer);
-	}, [
-		activeSession?.status,
-		activeSessionId,
-		isChatSubmitting,
-		latestRun?.status,
-		pendingChatRunId,
-	]);
+	useEffect(() => () => codingAgentCommandClientRef.current?.dispose(), []);
 
 	useEffect(() => {
 		const runId = latestRun?.id;
@@ -458,9 +406,8 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	useNightWorkersRealtime({
 		activeSessionId,
 		queryClient,
-		wsRef,
+		connectionRef: realtimeConnectionRef,
 		latestRunSubscriptionRef,
-		pendingChatQueueRef,
 		processedRealtimeMessageKeysRef,
 		pendingChatRunIdRef,
 		pendingAssistantTaskIdRef,
@@ -474,6 +421,19 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		setPendingAssistantTaskId,
 		setProjectFileEntriesByDirectory,
 	});
+	const commandRevision = async (taskId: string, actionId: string) => {
+		const view =
+			activeTaskOperatorView?.task.id === taskId
+				? activeTaskOperatorView
+				: await queryClient.fetchQuery(
+						taskOperatorProjectionQueryOptions(taskId),
+					);
+		if (!view?.commandCatalog.availableIds.includes(actionId))
+			throw new Error(
+				"Task Operator view is not ready for this Coding Agent action.",
+			);
+		return view.task.revision;
+	};
 
 	return {
 		projects,
@@ -529,9 +489,38 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		deleteProject: (id) => deleteProjectMutation.mutate(id),
 		deleteSession: (id) => deleteSessionMutation.mutate(id),
 		createSession: (input) => createSessionMutation.mutateAsync(input),
-		startRun: (sessionId) => startRunMutation.mutateAsync(sessionId),
-		stopRun: (runId) => stopRunMutation.mutateAsync(runId),
-		resumeTodo: (input) => resumeTodoMutation.mutateAsync(input),
+		startRun: async (sessionId) =>
+			startRunMutation.mutateAsync({
+				taskId: sessionId,
+				expectedTaskRevision: await commandRevision(
+					sessionId,
+					"run.implementation.start",
+				),
+			}),
+		stopRun: async (runId) => {
+			if (!activeSessionId)
+				throw new Error("No active Task is available for this run.");
+			return stopRunMutation.mutateAsync({
+				taskId: activeSessionId,
+				runId,
+				expectedTaskRevision: await commandRevision(
+					activeSessionId,
+					"run.stop",
+				),
+			});
+		},
+		resumeTodo: async (input) => {
+			if (!activeSessionId)
+				throw new Error("No active Task is available for this Todo.");
+			return resumeTodoMutation.mutateAsync({
+				...input,
+				taskId: activeSessionId,
+				expectedTaskRevision: await commandRevision(
+					activeSessionId,
+					"run.todo.resume",
+				),
+			});
+		},
 		isResumingTodo: resumeTodoMutation.isPending,
 		stopBackgroundProcess: (processId) =>
 			stopBackgroundProcessMutation.mutateAsync(processId),

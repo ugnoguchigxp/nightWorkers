@@ -13,10 +13,23 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { sanitizeTerminalText } from "@/modules/nightworkers/components/terminalText";
 import { client } from "../../../lib/api";
-import { apiPath, startWorkbenchRun } from "../nightWorkersCommands";
-import { isRecord } from "./task-console-model";
+import {
+	useCodingAgentCommandClient,
+	useCodingAgentCommandMutations,
+} from "../../codingAgent";
+import { taskOperatorProjectionQueryOptions } from "../../taskOperator";
+import { apiPath } from "../nightWorkersCommands";
+import { getActiveNightWorkersRealtimeConnection } from "../realtime/nightWorkersRealtimeConnection";
+import {
+	getTaskConsoleStatusColor,
+	getTaskConsoleStatusLabel,
+	isRecord,
+} from "./task-console-model";
 export function TaskConsolePage({ id }: { id: string }) {
 	const queryClient = useQueryClient();
+	const codingAgentCommandClient = useCodingAgentCommandClient(
+		getActiveNightWorkersRealtimeConnection,
+	);
 	const [activeTab, setActiveTab] = useState<"log" | "diff">("log");
 	const { data: task, isLoading: isTaskLoading } = useQuery({
 		queryKey: ["task", id],
@@ -48,6 +61,9 @@ export function TaskConsolePage({ id }: { id: string }) {
 		},
 		refetchInterval: 3000,
 	});
+	const { data: taskOperatorView = null } = useQuery(
+		taskOperatorProjectionQueryOptions(id),
+	);
 
 	const activeRun = runs[0];
 
@@ -65,13 +81,16 @@ export function TaskConsolePage({ id }: { id: string }) {
 		refetchInterval: 1500,
 	});
 
-	const startRunMutation = useMutation({
-		mutationFn: async () => {
-			const res = await startWorkbenchRun(id);
-			if (!res.ok) throw new Error("Failed to start run");
-			return res.json();
-		},
-		onSuccess: () => {
+	const { startRunMutation } = useCodingAgentCommandMutations({
+		client: codingAgentCommandClient,
+		onFailure: () =>
+			Promise.all([
+				queryClient.invalidateQueries({
+					queryKey: ["taskOperatorView", id],
+				}),
+				queryClient.invalidateQueries({ queryKey: ["taskRuns", id] }),
+			]),
+		onStartSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["task", id] });
 			queryClient.invalidateQueries({ queryKey: ["taskRuns", id] });
 		},
@@ -96,28 +115,6 @@ export function TaskConsolePage({ id }: { id: string }) {
 		},
 	});
 
-	const getStatusColor = (status?: string) => {
-		switch (status) {
-			case "completed":
-				return "text-emerald-400 bg-emerald-400/10 border border-emerald-400/20";
-			case "failed":
-				return "text-rose-400 bg-rose-400/10 border border-rose-400/20";
-			case "running":
-			case "compiling_context":
-			case "context_compiling":
-			case "finalizing":
-				return "text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 animate-pulse";
-			case "needs_review":
-				return "text-amber-400 bg-amber-400/10 border border-amber-400/20";
-			default:
-				return "text-muted-foreground bg-muted/20 border border-border";
-		}
-	};
-	const getStatusLabel = (status?: string) =>
-		status === "context_compiling" || status === "compiling_context"
-			? "prompt_preparing"
-			: status;
-
 	if (isTaskLoading || !task) {
 		return (
 			<div className="flex items-center justify-center min-h-[50vh]">
@@ -128,14 +125,13 @@ export function TaskConsolePage({ id }: { id: string }) {
 
 	return (
 		<div className="max-w-7xl mx-auto px-6 py-8">
-			{/* Header */}
 			<div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6 mb-8">
 				<div>
 					<div className="flex items-center gap-3 mb-1">
 						<span
-							className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${getStatusColor(task.status)}`}
+							className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${getTaskConsoleStatusColor(task.status)}`}
 						>
-							{getStatusLabel(task.status)}
+							{getTaskConsoleStatusLabel(task.status)}
 						</span>
 						<span className="text-xs text-muted-foreground font-mono">
 							ID: {task.id.slice(0, 8)}
@@ -162,8 +158,19 @@ export function TaskConsolePage({ id }: { id: string }) {
 						"finalizing",
 					].includes(task.status) && (
 						<Button
-							onClick={() => startRunMutation.mutate()}
-							disabled={startRunMutation.isPending}
+							onClick={() => {
+								if (!taskOperatorView) return;
+								startRunMutation.mutate({
+									taskId: id,
+									expectedTaskRevision: taskOperatorView.task.revision,
+								});
+							}}
+							disabled={
+								startRunMutation.isPending ||
+								!taskOperatorView?.commandCatalog.availableIds.includes(
+									"run.implementation.start",
+								)
+							}
 							className="gap-1.5"
 						>
 							<Play className="h-4 w-4 fill-current" />
@@ -174,9 +181,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 			</div>
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-				{/* Left Column: Context & Task details */}
 				<div className="space-y-6 lg:col-span-1">
-					{/* Instructions Box */}
 					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
 						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
 							<GitPullRequest className="h-5 w-5 text-primary" />
@@ -187,7 +192,6 @@ export function TaskConsolePage({ id }: { id: string }) {
 						</div>
 					</div>
 
-					{/* Runtime Prompt Snapshot Box */}
 					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
 						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
 							<MessageSquare className="h-5 w-5 text-cyan-400" />
@@ -202,7 +206,6 @@ export function TaskConsolePage({ id }: { id: string }) {
 						</div>
 					</div>
 
-					{/* Safety & Policy Box */}
 					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
 						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
 							<ShieldAlert className="h-5 w-5 text-amber-400" />
@@ -227,9 +230,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 					</div>
 				</div>
 
-				{/* Right Column: Console Terminal / Diff */}
 				<div className="lg:col-span-2 flex flex-col min-h-[500px]">
-					{/* Tabs */}
 					<div className="flex items-center justify-between border-b border-border mb-4">
 						<div className="flex gap-2">
 							<button
@@ -262,7 +263,6 @@ export function TaskConsolePage({ id }: { id: string }) {
 						)}
 					</div>
 
-					{/* Console View */}
 					{activeTab === "log" && (
 						<div className="flex-1 bg-black border border-zinc-800 rounded-xl p-5 shadow-2xl font-mono text-xs text-zinc-300 overflow-y-auto max-h-[500px] flex flex-col justify-between">
 							<div className="space-y-4">

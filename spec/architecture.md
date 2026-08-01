@@ -31,6 +31,16 @@ event sequence cursor so page navigation or WebSocket reconnect can replay
 missed events from the database instead of relying only on in-memory broker
 history.
 
+Coding Agent の `run.implementation.start`、`run.stop`、`run.todo.resume` は
+version付きの共通command契約を使う。UIはWebSocketの
+`coding_agent.command.v1` capabilityを確認できた場合にWebSocketを優先し、
+切断または10秒の応答timeout時は同じ`requestId`と`idempotencyKey`のrequestを
+`POST /api/coding-agent/commands`へ送る。RESTとWebSocketは同じCoding Agent
+application serviceからTask Operatorへ接続し、認可、availability、revision、
+resource ownership、idempotencyをtransport側へ複製しない。Workbenchのユーザー入力、
+Project Detail操作、Mission Pilot UI操作はRESTを維持し、Mission Pilot runtimeからの
+Coding Agent依頼はpackage-owned Host Portを使う。
+
 Blueprint review lives inside the same Workbench lifecycle. The current read
 model prefers persisted artifact rows and `artifactRef` projections, then falls
 back to legacy `markdown_document` messages with structured
@@ -83,6 +93,7 @@ WebSocket URLs. Browser development keeps the existing Vite `/api` proxy path.
 - `/api/tasks/:id/plan-mode/views/:view`: additional dedicated design view generation
 - `/api/runs/:id`: run detail and event timeline
 - `/api/runs/:id/events`: run events after an optional `afterSeq` cursor
+- `/api/coding-agent/commands`: versioned Coding Agent lifecycle command transport and REST fallback
 - `/api/workbench/*`: chat-first workbench read/write model
 - `/api/implementation-queue/*`: explicit implementation Queue dashboard, admission, Processor settings, drain, and archive
 - `/api/todo-workflow/settings`: Processor Todo Workflow gate settings

@@ -32,11 +32,8 @@ describe("createNightWorkersChatActions", () => {
 
 		const actions = createNightWorkersChatActions({
 			queryClient: new QueryClient(),
-			wsRef: { current: null },
 			lastSubmitRef: { current: null },
-			pendingChatQueueRef: { current: [] },
 			chatSubmitStartedAtRef: { current: null },
-			chatSubmitTransportRef: { current: null },
 			pendingChatRunIdRef: { current: null },
 			pendingAssistantTaskIdRef: { current: null },
 			pendingChatAbortControllerRef: { current: null },
@@ -118,11 +115,8 @@ describe("createNightWorkersChatActions", () => {
 
 		const actions = createNightWorkersChatActions({
 			queryClient,
-			wsRef: { current: null },
 			lastSubmitRef: { current: null },
-			pendingChatQueueRef: { current: [] },
 			chatSubmitStartedAtRef: { current: null },
-			chatSubmitTransportRef: { current: null },
 			pendingChatRunIdRef: { current: null },
 			pendingAssistantTaskIdRef: { current: null },
 			pendingChatAbortControllerRef: { current: null },

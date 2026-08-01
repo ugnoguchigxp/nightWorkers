@@ -1,14 +1,13 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import { NotFoundError } from "../../lib/errors";
 import type { AppEnv } from "../../lib/types";
+import { executeCodingAgentCommand } from "../codingAgent";
 import {
 	getOntologyRunDebugReport,
 	type getOntologyRunDebugReportRoute,
 } from "../ontology";
-import { readTaskOperatorTask } from "../task";
 import {
-	executeTaskOperatorCommand,
-	humanTaskOperatorCommandContext,
+	humanTaskOperatorPrincipal,
 	humanTaskOperatorQueryContext,
 	readTaskOperatorProjection,
 } from "../taskOperator";
@@ -71,32 +70,21 @@ export async function startHumanTaskImplementation(
 	taskId: string,
 	idempotencyKey?: string,
 ) {
-	const [projection, task, messages, runs] = await Promise.all([
-		readTaskOperatorProjection(taskId, humanTaskOperatorQueryContext()),
-		readTaskOperatorTask(taskId),
-		service.listTaskMessages(taskId),
-		service.getTaskRunsForTask(taskId),
-	]);
-	const latestRun = runs[0];
-	const retryRequest = latestRun
-		? messages.findLast(
-				(message) =>
-					message.role === "user" &&
-					message.createdAt.getTime() >= latestRun.updatedAt.getTime(),
-			)?.content
-		: null;
-	const result = await executeTaskOperatorCommand({
+	const projection = await readTaskOperatorProjection(
 		taskId,
-		actionId: "run.implementation.start",
-		expectedTaskRevision: projection.task.revision,
-		arguments: {
-			request:
-				retryRequest?.trim() ||
-				(task.objective ??
-					`Task「${projection.task.title}」を実装し、検証まで完了してください。`),
+		humanTaskOperatorQueryContext(),
+	);
+	const envelope = compatibilityCommandEnvelope(idempotencyKey);
+	const result = await executeCodingAgentCommand(
+		{
+			...envelope,
+			taskId,
+			actionId: "run.implementation.start",
+			expectedTaskRevision: projection.task.revision,
+			arguments: {},
 		},
-		context: humanTaskOperatorCommandContext({ idempotencyKey }),
-	});
+		humanTaskOperatorPrincipal(),
+	);
 	const run = await service.getTaskRun(result.data.runId);
 	if (!run) throw new NotFoundError("Run not found after start");
 	return run;
@@ -130,16 +118,19 @@ export const stopTaskRunHandler = withOpenApiRouteError(
 			currentRun.taskId,
 			humanTaskOperatorQueryContext(),
 		);
-		const run = await executeTaskOperatorCommand({
-			taskId: currentRun.taskId,
-			actionId: "run.stop",
-			expectedTaskRevision: projection.task.revision,
-			arguments: { runId: id },
-			context: humanTaskOperatorCommandContext({
-				idempotencyKey: c.req.header("Idempotency-Key"),
-			}),
-		});
-		return c.json(run.data, 200);
+		const result = await executeCodingAgentCommand(
+			{
+				...compatibilityCommandEnvelope(c.req.header("Idempotency-Key")),
+				taskId: currentRun.taskId,
+				actionId: "run.stop",
+				expectedTaskRevision: projection.task.revision,
+				arguments: { runId: id },
+			},
+			humanTaskOperatorPrincipal(),
+		);
+		const run = await service.getTaskRun(result.data.runId);
+		if (!run) return routeNotFound(c, "Run not found after stop");
+		return c.json(run, 200);
 	},
 );
 
@@ -153,25 +144,36 @@ export const resumeTaskRunTodoHandler = withOpenApiRouteError(
 			currentRun.taskId,
 			humanTaskOperatorQueryContext(),
 		);
-		const result = await executeTaskOperatorCommand({
-			taskId: currentRun.taskId,
-			actionId: "run.todo.resume",
-			expectedTaskRevision: projection.task.revision,
-			arguments: {
-				runId: c.req.param("id"),
-				todoId: c.req.param("todoId"),
-				expectedTodoRevision: input.expectedTodoRevision,
-				userContext: input.userContext,
+		const result = await executeCodingAgentCommand(
+			{
+				...compatibilityCommandEnvelope(c.req.header("Idempotency-Key")),
+				taskId: currentRun.taskId,
+				actionId: "run.todo.resume",
+				expectedTaskRevision: projection.task.revision,
+				arguments: {
+					runId: c.req.param("id"),
+					todoId: c.req.param("todoId"),
+					expectedTodoRevision: input.expectedTodoRevision,
+					userContext: input.userContext,
+				},
 			},
-			context: humanTaskOperatorCommandContext({
-				idempotencyKey: c.req.header("Idempotency-Key"),
-			}),
-		});
+			humanTaskOperatorPrincipal(),
+		);
 		const run = await service.getTaskRun(result.data.runId);
 		if (!run) return routeNotFound(c, "Run not found after resume");
 		return c.json(run, 200);
 	},
 );
+
+function compatibilityCommandEnvelope(idempotencyKey?: string) {
+	const requestId = crypto.randomUUID();
+	return {
+		version: 1 as const,
+		type: "coding_agent.command.execute" as const,
+		requestId,
+		idempotencyKey: idempotencyKey || requestId,
+	};
+}
 
 export const getRunGitCloseoutHandler = withOpenApiRouteError(
 	getRunGitCloseoutRoute,

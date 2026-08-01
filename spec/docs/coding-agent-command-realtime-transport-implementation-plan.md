@@ -1,703 +1,581 @@
-# Coding Agent Command / Realtime Transport 統合実装計画
+# Coding Agent Command / Realtime Transport 実装計画
 
 ## Status
 
-- 種別: 実装計画
-- 対象: NightWorkers UI、Task Operator、Coding Agent、Mission Pilot、WebSocket realtime
-- 作成日: 2026-08-02
+- 対象: Coding Agent の start / stop / Todo resume と NightWorkers realtime
 - 基準コミット: `b580bd93`
-- 実装状態: 未着手
-- この文書の目的: 現在の REST / WebSocket 利用実態を再検証し、Coding Agent 操作を安全に両 transport へ公開する段階的な実装計画を固定する
+- 作成日: 2026-08-02
+- 実装状態: 完了（release canary の実操作確認だけを配備時に実施）
+- 実装単位: PR 1〜5相当を適用済み
 
-## 1. 結論
+## 1. 目的
 
-通信方式を全面的に WebSocket へ統一しない。
+Coding Agent の lifecycle command を、同じ業務契約・認可・revision・idempotency で REST と WebSocket の両方から実行できるようにする。
 
-採用する構成は次のとおりとする。
+最終構成は次のとおりとする。
 
-| 対象 | command 入力 | state / event 出力 | 正本 |
-| --- | --- | --- | --- |
-| ProjectDetail の通常操作・query | REST | 必要な場合のみ WS invalidation | REST query / repository |
-| Workbench のユーザー入力・Mission Pilot の計画操作 | REST を基本とする | WS notification + REST refetch | user-intake application command / repository |
-| Coding Agent の明示的 lifecycle 操作（start / stop / Todo resume） | 同一 Task Operator command を REST と WS の両方から実行可能にする | WS progress/event + REST snapshot/cursor fallback | Task Operator command receipt / Task / Run |
-| Coding Agent の進捗・delta・run event | command に使用しない | WS を主経路とし、再接続時は永続 event cursor または REST snapshot を使用する | `task_events` と各 projection |
-| Mission Pilot UI の Play / Stop | REST | WS notification + REST refetch | Mission Pilot application service / repository |
-| Mission Pilot runtime から Coding Agent への依頼 | REST/WS を経由しない | application event / Host Port | Task Operator Host Port と構造的 provenance |
+| 対象 | command | realtime / state |
+| --- | --- | --- |
+| Coding Agent start / stop / Todo resume | WebSocket を優先し、同一 request を REST へ fallback 可能にする | WebSocket で通知し、REST query で正本へ収束する |
+| Coding Agent run event / delta / progress | command には使わない | WebSocket を主経路とし、persisted run cursor で再生する |
+| Workbench のユーザー入力 | 既存 REST を維持する | 既存 WebSocket notification を維持する |
+| ProjectDetail の query / mutation | 既存 REST を維持する | 必要な既存 notification だけを利用する |
+| Mission Pilot UI の Play / Stop | 既存 REST を維持する | package-owned WebSocket notification を維持する |
+| Mission Pilot runtime からの Coding Agent 依頼 | Task Operator Host Port を維持する | REST / WebSocket を経由させない |
 
-したがって統一対象は transport そのものではなく、次の3点である。
+## 2. 固定する実装方針
 
-1. Coding Agent lifecycle command の意味、認可、revision、idempotency、receipt
-2. REST と WS が呼び出す server-side command dispatcher
-3. WS event の schema、cursor、再接続後の収束規則
+### 2.1 対象 command
 
-REST は互換経路・fallback・snapshot query として残す。WS は低遅延な command adapter と realtime notification に限定し、独自の business logic を持たせない。
+この計画で transport を追加する action は次の3つだけとする。
 
-## 2. 再調査した現在の実態
+| actionId | 入力 | Task Operator capability |
+| --- | --- | --- |
+| `run.implementation.start` | `request?: string` | `implementation` |
+| `run.stop` | `runId: UUID` | `implementation` |
+| `run.todo.resume` | `runId`, `todoId`, `expectedTodoRevision`, `userContext` | `implementation` |
 
-### 2.1 現行データフロー
+action の availability、JSON schema、resource ownership、Task revision、delegated authorization は既存 Task Operator を正本とする。transport adapter に同じ判定を複製しない。
+
+### 2.2 REST と WebSocket の関係
+
+- REST と WebSocket は同じ command request schema と同じ application service を使う。
+- WebSocket handler は decode、接続 principal の付与、application service 呼び出し、response encode だけを行う。
+- WebSocket 接続の有無で Coding Agent runtime の mode や workflow を変えない。
+- client は1回のユーザー操作に対して1組の `requestId` と `idempotencyKey` を生成する。
+- WebSocket timeout、disconnect、REST fallback では同じ request を再送する。
+- ユーザーが改めて操作した場合だけ新しい `requestId` と `idempotencyKey` を生成する。
+- reconnect を理由に未完了 command を自動再送しない。
+
+### 2.3 principal と revision
+
+- wire payload に principal、capability、delegation を含めない。
+- REST は HTTP context、WebSocket は upgrade 済み connection context から human principal を構築する。
+- `expectedTaskRevision` は UI が表示した Task Operator projection の `task.revision` を送る。
+- server は stale revision を最新値へ置き換えず、既存の typed revision conflict を返す。
+- Todo resume は `expectedTaskRevision` に加えて `expectedTodoRevision` も検証する。
+
+### 2.4 state の正本
+
+- command response は command の成否と receipt を表す。
+- run の最新状態は Run query、Task の最新状態は Task Operator projection を正本とする。
+- `task_event_created` の再生 cursor は `runId + persisted seq` とする。
+- broker の memory replay と自動採番 `seq` は persisted run cursor として扱わない。
+- notification 受信後は既存 React Query cache を更新または invalidate し、正本 query へ収束させる。
+
+### 2.5 互換性
+
+次の既存 REST route は削除しない。
+
+- `POST /api/tasks/:id/run`
+- `POST /api/workbench/sessions/:id/run`
+- `POST /api/runs/:id/stop`
+- `POST /api/runs/:id/todos/:todoId/resume`
+
+これらは既存 response shape を維持し、新しい Coding Agent command application service へ委譲する compatibility adapter に変更する。
+
+## 3. 目標フロー
 
 ```mermaid
 flowchart LR
-    UI["NightWorkers UI"]
-    REST["REST routes"]
-    WS["WebSocket handler"]
-    UIAction["Current Workbench action"]
-    Legacy["Legacy chat_submit"]
+    UI["Coding Agent UI action"]
+    Client["CodingAgentCommandClient"]
+    WS["WebSocket adapter"]
+    REST["POST /api/coding-agent/commands"]
+    Service["Coding Agent command application service"]
     TO["Task Operator"]
-    Intake["Workbench intake"]
-    CA["Coding Agent runtime"]
-    Broker["Realtime broker"]
-    Ledger["Persisted task_events"]
-    Snapshot["REST snapshots / projections"]
+    Delivery["Command receipt repository"]
+    Runtime["Coding Agent runtime"]
+    Events["Persisted run events + realtime broker"]
+    Query["Run / Task Operator REST query"]
 
-    UIAction -->|"POST message / start / stop / resume"| REST
-    REST --> Intake
-    REST --> TO
-    TO --> CA
-    UI -. "production UI call siteなし" .-> Legacy
-    Legacy -->|"直接 append + start"| CA
-    CA --> Ledger
-    CA --> Broker
-    Ledger --> Broker
-    Broker -->|"event / delta / invalidation"| UI
-    Snapshot -->|"reconnect時の再取得"| UI
+    UI --> Client
+    Client -->|"WS ready"| WS
+    Client -->|"unavailable / timeout: same request"| REST
+    WS --> Service
+    REST --> Service
+    Service --> TO
+    TO --> Delivery
+    TO --> Runtime
+    Runtime --> Events
+    Events --> UI
+    UI -->|"refetch canonical state"| Query
 ```
 
-### 2.2 UI からの command 入力
+## 4. 公開 contract
 
-- 現在の Workbench のメッセージ送信は `sendWorkbenchMessage` から `POST /api/workbench/sessions/:id/messages` を呼んでいる。入力経路は REST である。
-- Coding Agent の start / stop / Todo resume も REST route を呼んでいる。
-- `sendChatMessage` は WebSocket の `chat_submit` を送信できるが、production UI に call site がない。現行の主経路ではない。
-- Composer の intent は現在 `intake` に固定されており、通常のユーザー入力と Coding Agent lifecycle command は意味的に別経路である。
+### 4.1 配置
 
-主な確認箇所:
+次のファイルを新規作成する。
 
-- `src/modules/nightworkers/components/Composer.tsx`
-- `src/modules/nightworkers/components/NightWorkersShellThreadPanel.tsx`
-- `src/modules/nightworkers/hooks/nightWorkersChatActions.ts`
-- `src/modules/nightworkers/nightWorkersCommands.ts`
+- `shared/modules/codingAgent/coding-agent-command-contract.ts`
 
-### 2.3 REST の Coding Agent lifecycle
+次のファイルから公開する。
 
-REST の start / stop / Todo resume は単に runtime を直接操作しているわけではない。`nightworkers.route-handlers.ts` から Task Operator projection を読み、`executeTaskOperatorCommand` を経由している。
+- `shared/modules/codingAgent/index.ts`
 
-Task Operator は現在も次を検証している。
+contract 名は以下で固定する。
 
-- principal の capability
-- action registry と JSON schema
-- current Task revision
-- action availability
-- resource ownership
-- idempotency receipt と input digest
-- delegated Mission Pilot provenance
+- `CODING_AGENT_COMMAND_PROTOCOL_VERSION`
+- `CODING_AGENT_COMMAND_WS_CAPABILITY`
+- `codingAgentCommandRequestV1Schema`
+- `codingAgentCommandResponseV1Schema`
+- `CodingAgentCommandRequestV1`
+- `CodingAgentCommandResponseV1`
 
-さらに Coding Agent の start handler は Task、repository、artifact revision/digest を再検証してから runtime を起動する。このため「REST 経路は Task Operator を迂回している」という仮説は誤りである。
-
-一方、REST route は server が取得した最新 Task revision をそのまま command に渡しており、ユーザーが画面を見て判断した時点の revision を wire boundary で検証できていない。これは transport 統合時に是正すべき gap である。
-
-主な確認箇所:
-
-- `api/modules/nightworkers/nightworkers.route-handlers.ts`
-- `api/modules/taskOperator/application/task-operator.command.ts`
-- `api/modules/taskOperator/application/task-operator-implementation-start.ts`
-- `api/modules/commandDelivery/command-delivery.repository.ts`
-- `api/modules/codingAgent/application/coding-agent-run.handler.ts`
-- `api/modules/agentsShare/contracts/coding-agent-run.ts`
-
-### 2.4 WebSocket の command 入力
-
-現行 inbound schema は `subscribe_task`、`unsubscribe_task`、`chat_submit` を受け付ける。
-
-`chat_submit` は次を直接実行している。
-
-1. stale run recovery
-2. Task message append
-3. `startTaskRun`
-4. `chat_submit_enqueued` 応答
-
-この経路には Task Operator command と同等の以下の契約がない。
-
-- action registry / capability 検証
-- client decision 時点の expected Task revision
-- durable idempotency receipt
-- 同一 key・異なる引数の conflict
-- artifact / repository reference の明示
-- user-direct / Mission Pilot handoff の構造的 provenance
-- ack 消失後の command status 照会
-
-したがって `chat_submit` を Coding Agent command の正規経路として拡張してはならない。新しい WS adapter は Task Operator と command-delivery repository を再利用し、`api/app.ts` に business logic を追加しない。
-
-主な確認箇所:
-
-- `api/security/nightworkers-websocket-policy.ts`
-- `api/app.ts`
-- `api/services/realtime/nightworkers-ws.ts`
-
-### 2.5 WebSocket の realtime 出力と再接続
-
-frontend は単一 WebSocket を開き、active session と最新 run cursor を購読する。run event は永続化された `task_events` を `afterSeq` で再取得できる。
-
-ただし、すべての realtime message が同じ耐久性を持つわけではない。
-
-- run event: persisted cursor replay がある
-- 一部の UI notification: broker memory replay のみ
-- projection update: notification を契機に REST query を invalidate/refetch する
-- broker の fallback task sequence: process memory 上の順序であり、永続 run sequence と同一ではない
-- frontend inbound type: versioned discriminated union ではなく optional field の集合
-- malformed/unknown payload: 現状は catch で黙って破棄される箇所がある
-
-よって「WS に流れる state はすべて durable で、1本の sequence で厳密に replay できる」という仮説も誤りである。run stream と projection invalidation を区別する必要がある。
-
-主な確認箇所:
-
-- `api/services/realtime/nightworkers-ws.ts`
-- `src/modules/nightworkers/hooks/useNightWorkersRealtime.ts`
-- `src/modules/nightworkers/hooks/useLatestRunSubscription.ts`
-- `spec/configuration.md`
-
-### 2.6 Mission Pilot
-
-Mission Pilot UI の Play / Stop は REST、state update は `mission_pilot.updated` 等の WS notification で処理している。この構成は目標と一致しており、WS-only に変更する必要はない。
-
-Mission Pilot runtime の action execution は production 経路では delegated principal を付与して Task Operator を呼び、Coding Agent へ handoff している。これは HTTP や WS に依存しない正しい application boundary である。
-
-ただし composition には次の潜在的な不整合がある。
-
-- structured `MissionPilotHostPorts` と runtime `bindings` が併存している
-- `mission-pilot-dependencies.ts` の `taskOperator.execute` adapter は input principal を使用せず human context を組み立てる
-- 同 adapter の `events.subscribe` が no-op である
-- 現在の production runtime は主として別の runtime bindings を使用しているため、上記の不整合は顕在化していない
-
-この二重経路は transport 改修とは別フェーズで正本を一つにする。Mission Pilot package から NightWorkers private source を import したり、内部実行を REST/WS 化したりしない。
-
-主な確認箇所:
-
-- `packages/mission-pilot/src/frontend/missionPilotCommands.ts`
-- `packages/mission-pilot/src/contracts/realtime.ts`
-- `packages/mission-pilot/src/frontend/realtime.ts`
-- `packages/mission-pilot/src/backend/runtime/agent/mission-pilot-action-command-executor.ts`
-- `api/composition/mission-pilot/mission-pilot-dependencies.ts`
-- `api/composition/mission-pilot/mission-pilot-runtime-bindings.ts`
-
-## 3. 仮説の判定
-
-| ID | 仮説 | 判定 | 根拠と計画への反映 |
-| --- | --- | --- | --- |
-| H1 | 現在の主要な Workbench chat 入力は WS ベースである | 棄却 | production UI は REST message route を使用し、WS は主として出力通知に使用している |
-| H2 | REST の Coding Agent start / stop / resume は Task Operator を迂回している | 棄却 | 3操作とも Task Operator command を経由する |
-| H3 | `chat_submit` は現行 UI の主 command 経路である | 棄却 | production UI に call site がない |
-| H4 | `chat_submit` は REST lifecycle と同じ安全性を持つ | 棄却 | revision、receipt、capability、provenance 等が同等ではない |
-| H5 | Coding Agent 操作は WS-only に統一すべきである | 修正採用 | 同一 command を WS-first + REST fallback にする。WS 固有の副作用処理は持たせない |
-| H6 | ProjectDetail のボタン操作は REST のままでよい | 採用 | request/response と snapshot query に適し、低遅延 stream の利点が小さい |
-| H7 | Mission Pilot は REST と WS の両方を持つべきである | 条件付き採用 | UI は REST command + WS notification。runtime 内部は Host Port / application command とし、transport を経由しない |
-| H8 | 現行 WS event はすべて durable replay 可能である | 棄却 | persisted run cursor、memory replay、REST refetch が混在する |
-| H9 | REST/WS 共通の公開 command envelope が既にある | 部分採用 | server 内部の Task Operator input/receipt は存在するが、transport 共通 wire contract はない |
-| H10 | Mission Pilot Host Port は現在1系統に統一されている | 棄却 | structured host と bindings が併存し、一部 adapter は不完全である |
-| H11 | ただちに全 event 用 durable outbox が必要である | 保留 | 現行の persisted run ledger + snapshot refetch で要件を満たせる可能性が高い。厳密な no-loss 要件と観測結果を導入条件にする |
-| H12 | Workbench intake もすべて Task Operator action に変えるべきである | 棄却 | intake/plan routing と実装 lifecycle は所有権が異なる。intake は専用 application command の idempotency を強化する |
-
-## 4. 解決すべき gap
-
-### G1. transport 共通 command contract がない
-
-Task Operator の server-side command は存在するが、REST と WS が同じ wire envelope、result、failure、receipt を共有していない。
-
-### G2. retry 単位の idempotency が client に保持されない
-
-frontend は lifecycle REST call ごとに新しい `Idempotency-Key` を生成する。通信結果が不明な retry で同じユーザー操作を識別できない。
-
-### G3. expected revision がユーザー判断と結び付いていない
-
-REST route が current revision を再取得して command に渡すため、古い projection を見たユーザー操作を server が stale decision として拒否できない。
-
-### G4. WS handler が business logic を持つ
-
-`chat_submit` が `api/app.ts` で message append と runtime start を直接行う。transport adapter と application command の境界が崩れている。
-
-### G5. WS ack 消失時の収束方法がない
-
-server commit 後、client ack 前に切断した場合、client が command receipt を照会して同じ操作へ収束する標準手順がない。
-
-### G6. realtime contract と再生意味論が曖昧
-
-run sequence、broker memory sequence、projection revision が同じ optional `seq` の形で扱われる。frontend の parse failure も可観測でない。
-
-### G7. frontend realtime hook の責務が集中している
-
-connection、subscription、inbound parse、React Query invalidation、chat command pending state、replay が1つの hook に集約されている。
-
-### G8. Mission Pilot composition の正本が二重化している
-
-production で利用する runtime bindings と、未完成の structured Host Port adapter が併存し、将来誤った adapter が利用される危険がある。
-
-## 5. 固定する設計契約
-
-### 5.1 command plane と event plane を分離する
-
-- command は明示的な1回の intent であり、idempotency と receipt を持つ。
-- event は確定済み state の通知または persisted run stream である。
-- WS 接続の有無で command の業務意味を変えない。
-- WS notification を command 成功の唯一の証拠にしない。
-- UI は notification 受信後、必要に応じて正本 query を refetch する。
-
-### 5.2 Coding Agent lifecycle の正本は Task Operator とする
-
-- start / stop / Todo resume は既存 action registry と availability を使う。
-- REST adapter と WS adapter は同じ application dispatcher を呼ぶ。
-- transport ごとの action allowlist、mode、固定 workflow を追加しない。
-- Coding Agent runtime 自体に WS mode / REST mode を追加しない。
-- Todo は LLM または人間の明示 command だけで更新する。
-
-### 5.3 principal は server が接続情報から決定する
-
-- wire payload に実行 principal を持たせない。
-- REST は既存 HTTP context、WS は upgrade 済み session/auth context から principal を構築する。
-- Mission Pilot delegated principal は runtime Host Port の構造的 provenance からのみ構築する。
-- human と Mission Pilot の区別を prompt 文言や keyword から推定しない。
-
-### 5.4 idempotency key は transport をまたいで同じ intent に再利用する
-
-- key の生成単位は「クリック1回」または「送信1回」とする。
-- timeout、disconnect、REST fallback では同じ key を使う。
-- ユーザーが明示的に再実行した場合だけ新しい key を生成する。
-- 同じ principal + key + 同じ input digest は既存 receipt を返す。
-- 同じ principal + key + 異なる input digest は conflict を返す。
-
-### 5.5 expected Task revision は client projection に由来する
-
-- command envelope は、ユーザーが見た Task Operator projection の revision を必須とする。
-- server は command 開始時に current revision と比較する。
-- stale の場合は自動的に最新 revision へ置換せず、typed conflict と最新 projection 取得方法を返す。
-
-### 5.6 realtime stream の順序を偽装しない
-
-- run event は `runId + persisted seq` を cursor とする。
-- projection notification は `resourceRef + revision` または digest を持たせる。
-- memory-only notification に durable sequence を装わない。
-- 異種 stream 全体へ単一 task sequence を割り当てない。
-- duplicate delivery は許容し、client は event identity / revision で冪等に処理する。
-
-### 5.7 Workbench intake は lifecycle command と分離する
-
-- user message intake は `SubmitTaskUserIntakeCommand` 相当の application port を正本にする。
-- prompt、requestId、idempotencyKey、actor/provenance を保持する。
-- intake を Task Operator の lifecycle action へ見せかけない。
-- Workbench intake は REST 基本のままでよいが、retry 時に同一 key を使用する。
-
-### 5.8 Mission Pilot の内部実行は transport 非依存とする
-
-- UI control は REST + WS でよい。
-- runtime から Task Operator への依頼は Host Port / application command を使う。
-- Mission Pilot package は NightWorkers private route/service/repository を import しない。
-- Mission Pilot と Coding Agent の role ownership を移動しない。
-
-## 6. 目標アーキテクチャ
-
-```mermaid
-flowchart TB
-    UI["UI intent"]
-    RESTAdapter["REST command adapter"]
-    WSAdapter["WS command adapter"]
-    ReceiptQuery["Receipt query"]
-    Dispatcher["Transport-neutral Task Operator dispatcher"]
-    Delivery["Durable command delivery / receipt"]
-    TaskOperator["Task Operator policy + action registry"]
-    CAContract["Coding Agent neutral run contract"]
-    CARuntime["Coding Agent runtime"]
-    RunLedger["Persisted run event ledger"]
-    StateRepo["Canonical repositories / projections"]
-    Broker["WS event broker"]
-    Projector["Typed frontend projector"]
-    MP["Mission Pilot runtime"]
-
-    UI -->|"same envelope + same idempotency key"| WSAdapter
-    UI -->|"fallback"| RESTAdapter
-    UI --> ReceiptQuery
-    WSAdapter --> Dispatcher
-    RESTAdapter --> Dispatcher
-    Dispatcher --> Delivery
-    Delivery --> TaskOperator
-    TaskOperator --> CAContract
-    CAContract --> CARuntime
-    MP -->|"delegated Host Port"| Dispatcher
-    CARuntime --> RunLedger
-    CARuntime --> StateRepo
-    RunLedger --> Broker
-    StateRepo --> Broker
-    Broker --> Projector
-    Projector -->|"invalidate/refetch"| StateRepo
-```
-
-## 7. Wire contract 案
-
-実装時は既存 `shared/modules/taskOperator` schema と command receipt を拡張し、定数・schema・parse function を REST/WS で再利用する。
-
-### 7.1 Command execute
+### 4.2 Command request
 
 ```ts
-type TaskOperatorCommandEnvelopeV1 = {
-  version: 1;
-  type: "task_operator.command.execute";
-  requestId: string;
-  idempotencyKey: string;
-  taskId: string;
-  actionId: string;
-  expectedTaskRevision: number;
-  arguments: unknown;
-};
-```
-
-設計上の注意:
-
-- `principal`、capability、transport 名を payload に含めない。
-- `requestId` と `idempotencyKey` は client が retry 間で保持する。正本の重複排除は principal + idempotency key + digest で行う。
-- `commandId` は client input にせず、server が durable receipt 作成時に発行する。
-- `actionId` は既存 Task Operator catalog から取得する。Coding Agent 専用 allowlist を wire 層へ複製しない。
-- `arguments` は action registry の既存 JSON schema で検証する。
-- version 不一致は typed unsupported-version failure を返し、接続自体を壊さない。
-
-### 7.2 Command response
-
-```ts
-type TaskOperatorCommandResponseV1 =
+type CodingAgentCommandRequestV1 =
   | {
       version: 1;
-      type: "task_operator.command.accepted";
+      type: "coding_agent.command.execute";
       requestId: string;
-      commandId: string;
-      replayed: boolean;
-      resourceRefs: readonly ResourceRef[];
+      idempotencyKey: string;
+      taskId: string;
+      actionId: "run.implementation.start";
+      expectedTaskRevision: number;
+      arguments: { request?: string };
     }
   | {
       version: 1;
-      type: "task_operator.command.rejected";
+      type: "coding_agent.command.execute";
       requestId: string;
-      commandId?: string;
-      failure: TaskOperatorCommandFailure;
+      idempotencyKey: string;
+      taskId: string;
+      actionId: "run.stop";
+      expectedTaskRevision: number;
+      arguments: { runId: string };
+    }
+  | {
+      version: 1;
+      type: "coding_agent.command.execute";
+      requestId: string;
+      idempotencyKey: string;
+      taskId: string;
+      actionId: "run.todo.resume";
+      expectedTaskRevision: number;
+      arguments: {
+        runId: string;
+        todoId: string;
+        expectedTodoRevision: number;
+        userContext: string;
+      };
     };
 ```
 
-`accepted` は runtime 完了を意味しない。command が durable receipt とともに受理・実行済みであることを意味する。長時間の Coding Agent 実行結果は run event / snapshot で追跡する。
+Zod schema では次を制約する。
 
-### 7.3 Receipt query
+- `requestId`: UUID
+- `idempotencyKey`: 1〜256文字
+- `taskId`、`runId`、`todoId`: UUID
+- revision: 0以上の整数
+- `request`: trim 後1〜20,000文字
+- `userContext`: trim 後1〜20,000文字
+- 各 `arguments`: `.strict()`
+- union 全体: `.strict()`
 
-- `commandId` または idempotency identity で status を取得できる read API を追加する。
-- actor ownership を必ず検証する。
-- status は少なくとも `executing`、`succeeded`、`failed`、`outcome_unknown` を表せる既存 model に合わせる。
-- WS ack を失った client は receipt query を先に行い、未確定の場合のみ同じ idempotency key で REST fallback を実行する。
+`run.implementation.start` の `request` を省略した場合は、server が現在の `startHumanTaskImplementation` と同じ規則で request を解決する。
 
-### 7.4 Realtime event
+1. 最新 Run 更新後の最後の user message
+2. Task objective
+3. `Task「<title>」を実装し、検証まで完了してください。`
+
+この解決処理は1つの application function に移し、REST と WebSocket から共用する。
+
+### 4.3 Command response
 
 ```ts
-type RealtimeEventEnvelopeV1 = {
+type CodingAgentCommandResponseV1 = {
   version: 1;
-  eventId: string;
-  type: string;
-  occurredAt: string;
-  stream:
-    | { kind: "run"; taskId: string; runId: string; seq: number }
-    | { kind: "projection"; resourceType: string; resourceId: string; revision?: number };
-  payload: unknown;
+  type: "coding_agent.command.result";
+  requestId: string;
+  result:
+    | {
+        ok: true;
+        receipt: TaskOperatorCommandReceipt;
+        data: {
+          taskId: string;
+          runId: string;
+        };
+      }
+    | {
+        ok: false;
+        error: TaskOperatorFailure;
+      };
 };
 ```
 
-実装では `type` ごとの discriminated union と Zod schema を定義する。上記は envelope の説明用であり、`payload: unknown` のまま frontend へ公開しない。
+- `receipt.commandId` は server が既存 command receipt 作成時に発行する。
+- `receipt.replayed` は同一 idempotency delivery の再取得時に `true` とする。
+- REST と WebSocket は同じ response encoder を使う。
+- REST は PR 1 で共通化する `TaskOperatorFailure` の status mapping で HTTP status を返す。
+- WebSocket は接続を閉じず、`coding_agent.command.result` の `result.ok: false` を返す。
+- command response に TaskRun 全体を埋め込まない。client は `runId` で Run query を再取得する。
+- 新 REST endpoint の success は HTTP 200、failure は共通 converter の status code を使用する。legacy start route の HTTP 201 は維持する。
 
-## 8. 実装フェーズ
+### 4.4 WebSocket capability
 
-各フェーズは個別にレビュー可能とし、前フェーズの acceptance を満たしてから次へ進む。
+既存 `connected` response に次を追加する。
 
-### Phase 0: baseline と契約の固定
+```ts
+{
+  type: "connected";
+  timestamp: string;
+  capabilities: ["coding_agent.command.v1"];
+}
+```
 
-目的: behavior を変えず、移行前の証拠と採用契約を固定する。
+- client は capability がある場合だけ WebSocket command を使う。
+- capability がない server では同じ command request を REST へ送る。
+- server-first、client-second の配備順で旧 client / 新 client の双方を維持する。
 
-実施内容:
+## 5. Client fallback 契約
 
-1. 本文書の仮説判定と非目標を ADR または architecture 文書へ反映する。
-2. 現行 REST route、WS inbound/outbound type、Task Operator action、Mission Pilot Host Port の対応表をテスト fixture から生成または定数化する。
-3. 現行の focused test を baseline として記録する。
-4. browser / packaged desktop / Tauri dev の3環境で現在の接続 URL、Origin、再接続挙動を確認する。
-5. command latency、disconnect、receipt replay、malformed event を記録できる構造化 log 項目を定義する。prompt 本文は log しない。
+`CodingAgentCommandClient.execute` は次の順序を固定する。
 
-Acceptance:
+1. UI intent 開始時に request を1回だけ構築する。
+2. 画面の action availability 判定に使用した Task Operator projection から `expectedTaskRevision` を設定する。command 直前に revision だけを裏で再取得しない。
+3. `requestId` と `idempotencyKey` を生成し、request object を pending map に保存する。
+4. WebSocket が open かつ `coding_agent.command.v1` を advertise している場合は WebSocket へ送る。
+5. WebSocket response を10秒待つ。
+6. capability なし、接続なし、disconnect、10秒 timeout の場合は、保存した同一 request を `POST /api/coding-agent/commands` へ送る。
+7. success 時は `data.runId` で Run query を取得し、既存 mutation の cache update を実行する。
+8. `TASK_OPERATOR_COMMAND_IN_PROGRESS` または `TASK_OPERATOR_COMMAND_OUTCOME_UNKNOWN` の場合は新しい key で再実行せず、Task Operator projection と Run list を invalidate する。
+9. revision conflict の場合は projection を refetch し、ユーザーの再操作を待つ。自動的に新 revision で再実行しない。
+10. component unmount 後は response を cache mutationへ適用しないが、server command を取り消した扱いにはしない。
 
-- behavior diff がない。
-- 既存 focused test 47件が成功する。
-- action 名、route、event type が複数箇所へ手書きで複製されない方針がレビュー承認される。
+pending map の key は `requestId` とし、response 受信、REST fallback の `finally`、client dispose のいずれかで必ず削除する。command cancellation はこの client の責務に含めない。
 
-失敗時:
+## 6. 実装順序
 
-- 現行挙動と文書が一致しない場合は実装へ進まず、仮説表を更新する。
+### PR 1: 共通 contract、application service、REST endpoint
 
-### Phase 1: transport-neutral command contract と REST parity
+#### 変更ファイル
 
-目的: WS を追加する前に、REST 経路だけで共通 contract と retry safety を成立させる。
+新規:
 
-実施内容:
+- `shared/modules/codingAgent/coding-agent-command-contract.ts`
+- `api/modules/codingAgent/application/coding-agent-command.service.ts`
+- `api/modules/commandDelivery/task-operator-command-failure.ts`
+- `tests/coding-agent-command-contract.test.ts`
+- `tests/coding-agent-command-http.test.ts`
 
-1. `shared/modules/taskOperator` に versioned command envelope、response、failure schema と parse function を追加する。
-2. `api/modules/taskOperator/application` に REST/WS 共通 dispatcher を追加するか、既存 `executeTaskOperatorCommand` の直前に単一 adapter function を置く。
-3. principal 構築を adapter の責務にし、dispatcher input へ server-side principal を渡す。
-4. versioned envelope をそのまま受ける共通 REST endpoint `POST /api/task-operator/commands` を追加する。principal は HTTP context から補い、body からは受け取らない。
-5. 既存 start / stop / Todo resume REST route も共通 dispatcher へ接続する。互換性のため既存 path と response shape は維持し、旧 client の server-current-revision 補完は compatibility adapter 内に隔離する。
-6. frontend の REST 経路を共通 endpoint へ切り替え、Task Operator projection の revision と、ユーザー intent ごとに固定した requestId / idempotency key を送る。受理後は server 発行の commandId を保持する。
-7. `commandDelivery` に actor-scoped receipt query を追加する。
-8. Workbench message route は専用 user-intake command へ接続し、retry 時に同じ idempotency key を使用する。Task Operator action へ統合しない。
+更新:
 
-候補ファイル:
-
-- `shared/modules/taskOperator/task-operator.schema.ts`
-- `shared/modules/taskOperator/index.ts`
-- `api/modules/taskOperator/application/task-operator.command.ts`
-- `api/modules/taskOperator/task-operator.routes.ts`
-- `api/modules/nightworkers/nightworkers.route-handlers.ts`
+- `shared/modules/codingAgent/index.ts`
+- `api/modules/codingAgent/coding-agent.routes.ts`
+- `api/modules/codingAgent/index.ts`
+- `api/modules/taskOperator/task-operator-http-context.ts`
 - `api/modules/commandDelivery/command-delivery.repository.ts`
+- `api/modules/commandDelivery/index.ts`
+- `api/modules/task/application/task-operator.query.ts`
+- `api/modules/task/index.ts`
+- `api/modules/run/application/run-operator.query.ts`
+- `api/modules/run/index.ts`
+- `api/modules/nightworkers/nightworkers.route-handlers.ts`
+- `api/modules/nightworkers/nightworkers.routes.ts`
+
+#### 作業
+
+1. Section 4 の shared schema と型を追加する。
+2. `humanTaskOperatorCommandContext` の input を `{ requestId?: string; idempotencyKey?: string }` に変更する。`requestId` は `input.requestId ?? crypto.randomUUID()`、`idempotencyKey` は `input.idempotencyKey ?? requestId` で決定する。
+3. Task module に `readLatestTaskUserMessageAfter({ taskId, after })` を追加し、該当する最後の user message の完全な canonical content を返す。
+4. Run module に `readLatestTaskRunReference(taskId)` を追加し、`{ runId, updatedAt } | null` を返す。
+5. `task-operator-command-failure.ts` に AppError から `{ failure: TaskOperatorFailure, statusCode }` への変換を抽出し、command receipt 保存と REST/WS response encoder から共用する。少なくとも次の code mapping を固定する。
+   - `TASK_OPERATOR_PERMISSION_DENIED` -> `permission_denied`
+   - `TASK_REVISION_CONFLICT` -> `revision_conflict`
+   - `TASK_RESOURCE_OWNERSHIP_MISMATCH` -> `ownership_mismatch`
+   - `TASK_OPERATOR_IDEMPOTENCY_CONFLICT` -> `idempotency_conflict`
+   - `TASK_OPERATOR_SCHEMA_VALIDATION` / `TASK_OPERATOR_ARGUMENT_REQUIRED` -> `schema_validation`
+   - HTTP 404 -> `not_found`
+   - HTTP 429 -> `resource_limit`
+   - その他の既知4xx -> `domain_precondition`
+   - 5xx / unknown error -> `internal`
+6. `coding-agent-command.service.ts` に次を実装する。
+   - request schema parse 後の action dispatch
+   - server-side human principal / command context の受け取り
+   - start request の既存規則による解決
+   - 3 action から既存 `executeTaskOperatorCommand` への変換
+   - `{ taskId, runId }` への結果正規化
+   - PR 1 step 5 の共通 converter を使った failure response 生成
+7. `POST /coding-agent/commands` を `codingAgentRouter` に追加する。app の `/api` mount により公開 path は `POST /api/coding-agent/commands` とする。
+8. 既存4 REST handler を application service へ委譲する。
+   - 既存 handler は path parameter と body を新 contract へ変換する。
+   - compatibility request の `requestId` は毎回 `crypto.randomUUID()`、`idempotencyKey` は `Idempotency-Key` header、header がない場合は同じ `requestId` を使用する。
+   - legacy handler は current Task revision を取得して compatibility request に設定する。
+   - legacy handler は `runId` から既存 TaskRun を再取得し、現在の HTTP response shape/status を維持する。
+9. `startHumanTaskImplementation` にある request 解決ロジックを application service へ移し、重複実装を残さない。
+
+#### Test
+
+`tests/coding-agent-command-contract.test.ts`:
+
+- 3 action の valid/invalid schema
+- principal field と未知 field の拒否
+- UUID、revision、文字数上限
+- response の success/failure schema
+
+`tests/coding-agent-command-http.test.ts`:
+
+- start / stop / Todo resume の success
+- start request 省略時の3段階解決規則
+- stale Task revision
+- stale Todo revision
+- unavailable action
+- resource ownership mismatch
+- same key + same input の replay
+- same key + different input の idempotency conflict
+- legacy 4 route の response compatibility
+
+#### 完了条件
+
+- 新 REST endpoint と legacy 4 route が同じ application service と Task Operator command を通る。
+- 同一 delivery から Run/message が重複生成されない。
+- frontend はまだ変更せず、既存 UI がそのまま動作する。
+- DB migration は発生しない。
+
+### PR 2: WebSocket command adapter
+
+#### 変更ファイル
+
+新規:
+
+- `api/modules/codingAgent/adapters/coding-agent-command-websocket.adapter.ts`
+
+更新:
+
+- `api/modules/codingAgent/index.ts`
+- `api/security/nightworkers-websocket-policy.ts`
+- `api/app.ts`
+- `tests/websocket-security.test.ts`
+
+#### 作業
+
+1. `nightWorkersWsClientMessageSchema` に shared `codingAgentCommandRequestV1Schema` を追加する。
+2. WebSocket adapter に次だけを実装する。
+   - connection 由来の human principal 構築
+   - Section 4 request の application service 呼び出し
+   - Section 4 response の encode
+3. `api/app.ts` の `onMessage` から adapter を呼ぶ。Task Operator、Run service、message repository を `api/app.ts` から直接呼ばない。
+4. `connected.capabilities` に `coding_agent.command.v1` を追加する。
+5. binary payload、128 KiB 上限、Origin allowlist、invalid JSON の既存 policy を維持する。
+6. `api/app.ts` の parse 前 log から `rawPreview` を削除し、`rawBytes` だけを記録する。parse 後の command log は `requestId`、`actionId`、`taskId`、result code、latency に限定し、`request` と `userContext` を記録しない。
+7. このPRでは `chat_submit` を残し、frontend 切替前の挙動を変えない。
+
+#### Test
+
+`tests/websocket-security.test.ts`:
+
+- connected capability advertisement
+- 3 action の success response
+- REST と WebSocket の receipt/failure parity
+- same key を WS -> REST の順で送った場合の replay
+- server commit 後、WebSocket response 前に切断してREST再送した場合の副作用1回
+- malformed / oversized / binary payload
+- Task / Run ownership mismatch
+- connection が command failure で閉じないこと
+
+#### 完了条件
+
+- WebSocket adapter に business rule がない。
+- REST と WebSocket の parity test がすべて成功する。
+- production frontend はまだ REST を使用する。
+
+### PR 3: frontend command client と WS-first 切替
+
+#### 変更ファイル
+
+新規:
+
+- `src/modules/codingAgent/codingAgentCommandClient.ts`
+- `src/modules/codingAgent/codingAgentCommandMutations.ts`
+- `src/modules/codingAgent/useCodingAgentCommandClient.ts`
+- `src/modules/nightworkers/realtime/nightWorkersRealtimeConnection.ts`
+- `src/modules/nightworkers/hooks/nightWorkersMutationHelpers.ts`
+- `tests/coding-agent-command-client.test.ts`
+
+更新:
+
+- `src/modules/codingAgent/index.ts`
 - `src/modules/taskOperator/taskOperatorQueries.ts`
-- `src/modules/nightworkers/nightWorkersCommands.ts`
-- `api/modules/agentsShare/contracts/task-user-intake.ts`
-- `api/modules/nightworkers/nightworkers.user-intake.handler.ts`
-
-Acceptance:
-
-- REST の同一 key・同一 input retry が同じ receipt を返し、run/message を重複生成しない。
-- 同一 key・異なる input が `TASK_OPERATOR_IDEMPOTENCY_CONFLICT` 相当で拒否される。
-- stale expected revision が typed conflict になる。
-- 共通 REST endpoint と既存3 route が同じ dispatcher、authorization、receipt を使用する。
-- existing route consumer に破壊的変更がない。
-- user-intake と lifecycle action の ownership が混在しない。
-
-失敗時:
-
-- REST の互換 route を維持したまま frontend の共通 endpoint 利用だけを戻せること。
-- receipt schema の migration が必要な場合、旧 receipt を読み取り可能な additive migration に限定する。
-
-### Phase 2: WebSocket command adapter
-
-目的: REST と同じ Task Operator command を WS から安全に実行可能にする。
-
-実施内容:
-
-1. WS inbound schema に `task_operator.command.execute` を追加する。
-2. WS session から human principal を構築し、Phase 1 の共通 dispatcher を呼ぶ薄い adapter を実装する。
-3. accepted / rejected response を `requestId` へ相関させ、accepted receipt の `commandId` を保存する。
-4. server commit 後の ack 消失を再現する test hook を設け、receipt query と同一-key retry を検証する。
-5. byte limit、origin allowlist、rate/connection policy、task ownership を既存 security boundary で維持する。
-6. WS handler から application business logic を分離し、`api/app.ts` は decode、auth context、dispatch、encode に限定する。
-7. legacy `chat_submit` は互換期間中のみ残し、新規 UI では使用しない。利用計測がゼロであることを確認して Phase 6 で削除する。
-
-配置ルール:
-
-- Task Operator 固有 adapter は `api/modules/taskOperator` 配下に置く。
-- Agent 固有 business logic を `api/services` や `api/app.ts` に置かない。
-- shared 側には wire contract と純粋 utility だけを置き、route/repository を置かない。
-
-Acceptance:
-
-- 同一 envelope を REST と WS のどちらで送っても、同一 authorization、revision、schema、idempotency 結果になる。
-- WS -> disconnect -> REST retry でも副作用が1回だけである。
-- forbidden action、別 Task resource、別 actor receipt の参照が拒否される。
-- malformed payload が接続全体を crash させず typed rejection になる。
-
-失敗時:
-
-- frontend はまだ REST のみを使用するため、WS adapter を無効化または revert しても利用者影響がない。
-
-### Phase 3: frontend transport client の分割と WS-first 導入
-
-目的: 明示的 Coding Agent lifecycle command だけを WS-first にし、確実な REST fallback を提供する。
-
-実施内容:
-
-1. `useNightWorkersRealtime` から connection lifecycle、subscription、protocol parse、query projection、command pending 管理を分離する。
-2. versioned schema で inbound message を parse する transport client を作る。
-3. requestId ごとの pending promise と timeout を実装し、受理後は commandId で receipt を追跡する。
-4. start / stop / Todo resume は次の順序で実行する。
-   1. intent ごとに requestId と idempotency key を生成・保持し、accepted 後は server 発行の commandId も保持する。
-   2. current Task Operator projection revision を envelope に設定する。
-   3. WS が ready なら送信する。
-   4. timeout/disconnect 時は receipt query を行う。
-   5. 未確定時だけ同じ key で REST fallback を行う。
-5. ProjectDetail の通常操作、Workbench intake、Mission Pilot UI control はこの切替対象にしない。
-6. frontend 上の transport 表示は診断情報に限定し、business state として扱わない。
-
-候補ファイル:
-
 - `src/modules/nightworkers/hooks/useNightWorkersRealtime.ts`
-- `src/modules/nightworkers/hooks/useLatestRunSubscription.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersMutations.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts`
+- `src/modules/nightworkers/components/TaskConsolePage.tsx`
+
+#### 作業
+
+1. `taskOperatorQueries.ts` に React Query options factory を追加する。action button は同 query の projection から availability と revision を表示し、click 時はその表示済み revision を request に使う。cache に projection がない場合は action を送らず query を取得してから button を有効化する。
+2. `nightWorkersRealtimeConnection.ts` に次を移す。
+   - WebSocket open/close/reconnect
+   - server capability の保持
+   - requestId ごとの response listener
+   - subscribe/unsubscribe の送信
+3. `codingAgentCommandClient.ts` に Section 5 の fallback algorithm を実装する。
+4. REST sender は WebSocket と同じ request object を `POST /api/coding-agent/commands` へ送る。
+5. `useNightWorkersMutations` の start / stop / resume を command client 経由へ変更する。
+6. Coding Agent mutation hook が success response の `runId` で `GET /api/runs/:id` を呼び、現在の mutation success handler へ TaskRun を渡す。
+7. `TaskConsolePage` も Task Operator projection を読み、表示済み revision で command client を使用する。共有 WebSocket connection がない場合は自動的に REST を使用する。
+8. connection reconnect 時に pending command を再送する既定動作を追加しない。
+9. command 実行中の button disable は `requestId` 単位とし、realtime Run status だけから暗黙解除しない。
+
+#### Test
+
+`tests/coding-agent-command-client.test.ts`:
+
+- capability ありの WebSocket success
+- capability なしの REST 実行
+- WebSocket disconnected の REST 実行
+- WebSocket timeout 後の同一-request REST fallback
+- late WebSocket response と REST response の二重 cache update 防止
+- in-progress / outcome-unknown 時の query invalidation
+- revision conflict 時に自動再実行しないこと
+- reconnect 時に pending command を再送しないこと
+- component dispose 後の response 無視と pending cleanup
+
+#### 完了条件
+
+- Workbench と TaskConsole の Coding Agent 3操作が共通 client を使う。
+- WebSocket ready 時は WebSocket、利用不能時は REST で同じ結果になる。
+- retry のたびに新しい idempotency key を生成するコードが残らない。
+
+### PR 4: legacy chat command 削除と realtime 型付け
+
+#### 変更ファイル
+
+新規:
+
+- `shared/schemas/nightworkers/realtime.schema.ts`
+- `src/modules/nightworkers/realtime/nightWorkersRealtimeProjector.ts`
+- `tests/nightworkers-realtime-contract.test.ts`
+
+更新:
+
+- `api/security/nightworkers-websocket-policy.ts`
+- `api/app.ts`
+- `packages/mission-pilot/src/frontend/index.ts`
+- `src/composition/mission-pilot/index.ts`
 - `src/modules/nightworkers/hooks/nightWorkersChatActions.ts`
-- `src/modules/nightworkers/nightWorkersCommands.ts`
-- `src/modules/nightworkers/realtime/connection.ts`（新規候補）
-- `src/modules/nightworkers/realtime/protocol.ts`（新規候補）
-- `src/modules/nightworkers/realtime/taskOperatorCommandClient.ts`（新規候補）
+- `src/modules/nightworkers/hooks/nightWorkersWorkspaceState.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersRealtime.ts`
+- `src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts`
+- `tests/nightworkers-realtime-effects.test.ts`
 
-Acceptance:
+#### 作業
 
-- WS ready 時は lifecycle command が WS で受理される。
-- WS unavailable、timeout、ack lost の全ケースで REST fallback が重複副作用なく完了する。
-- ユーザーが別 intent として再実行した場合のみ新規 command になる。
-- reconnect により pending command が勝手に再実行されない。
-- Workbench message の prompt queue と Task Operator command receipt を混同しない。
+1. 次の legacy contract と実装を削除する。
+   - inbound `chat_submit`
+   - outbound `chat_submit_enqueued`
+   - `sendChatMessage`
+   - `pendingChatQueueRef`
+   - reconnect 時の chat command replay
+2. `pendingChatRunIdRef`、`pendingAssistantTaskIdRef`、`pendingChatAbortControllerRef` は REST の `sendWorkbenchMessage` と assistant response 追跡で使用しているため削除しない。`ChatActionsInput.wsRef` だけを削除し、`chatSubmitTransportRef` から `"websocket"` 分岐を削除する。
+3. Workbench の `sendWorkbenchMessage` は既存 REST route のまま維持する。
+4. host-owned server message の discriminated union を `shared/schemas/nightworkers/realtime.schema.ts` に定義する。
+   - `connected`
+   - `subscribed`
+   - `error`
+   - `activity_event_created`
+   - `task_llm_delta`
+   - `task_event_created`
+   - `task_message_created`
+   - `task_run_updated`
+   - `task_status_updated`
+   - `questionnaire.state_changed`
+   - `plan_mode.routing_changed`
+   payload は現行 wire shape を変更せず、`activityEventSchema`、`taskEventSchema`、`taskMessageSchema`、`taskRunSchema`、`taskRunTodoSchema`、`taskSchema`、`questionnaireStateChangedRealtimeEventSchema`、`planModeRoutingChangedRealtimePayloadSchema` を再利用する。`task_llm_delta.payload.event` だけは既存 provider debug event が共通 schema を持たないため `z.record(z.unknown())` とし、UI が使用する `text` は必須 string とする。
+5. Coding Agent command response は `shared/modules/codingAgent/coding-agent-command-contract.ts`、Mission Pilot event は `packages/mission-pilot/src/contracts/realtime.ts` を正本として維持し、host-owned schema へ複製しない。frontend composition で host、Coding Agent、Mission Pilot の3 schema を順に parse する。
+6. `nightWorkersRealtimeProjector.ts` に message type ごとの React Query update/invalidation を移す。
+7. `useNightWorkersRealtime.ts` は connection と projector の結合だけに縮小する。
+8. parse failure と未知 message type は黙って破棄せず、payload 本文を含めずに type と byte size を `console.warn` へ記録し、active Task の次を invalidate する。既存 host / Mission Pilot event に新しい version field は追加しない。
+   - Task Operator projection
+   - Task messages
+   - Run list / active Run details
+   - questionnaire / plan routing / Mission Pilot queries
+9. `task_event_created` だけが persisted `seq` を run cursor として更新する。
+10. memory replay の duplicate は既存 message identity、Run event identity、resource revision で無害化する。
 
-失敗時:
+#### Test
 
-- client の transport selection を REST に戻すだけで復旧できる。
-- server の共通 dispatcher、receipt、REST route はそのまま利用可能である。
+`tests/nightworkers-realtime-contract.test.ts`:
 
-### Phase 4: typed realtime contract と再接続収束
+- 全 host-owned message の parse
+- host、Coding Agent、Mission Pilot schema の composition
+- unknown type / malformed payload
+- `task_event_created` の persisted cursor 更新
+- notification の seq を run cursor に使わないこと
+- duplicate / out-of-order event の冪等適用
+- reconnect open 時の canonical query invalidation
 
-目的: WS を正本 state ではなく、型付き run stream / projection invalidation として一貫させる。
+#### 完了条件
 
-実施内容:
+- production code と型から `chat_submit` と `chat_submit_enqueued` が消える。
+- `useNightWorkersRealtime.ts` に message type ごとの cache mutation が残らない。
+- malformed realtime payload が UI crash や無限 reconnect を起こさない。
 
-1. outbound event を versioned discriminated union として定義する。
-2. run event には persisted `runId + seq` を付け、既存 `/api/runs/:id/events?afterSeq=` と意味を合わせる。
-3. task/message/questionnaire/plan/Mission Pilot state の notification は canonical resource revision/digest を付け、frontend が query invalidate/refetch する。
-4. memory replay だけの event はその性質を schema/test で明示する。
-5. frontend は unknown version / parse failure を構造化 log し、影響する query を安全側に refetch する。黙って破棄しない。
-6. duplicate/out-of-order event を eventId、run seq、resource revision で冪等処理する。
-7. reconnect 時は subscription ack、persisted replay、snapshot refetch の順序を固定する。
-8. `mission_pilot.plan_progress.updated`、task message、questionnaire、plan routing の再接続収束 test を追加する。
+### PR 5: 配備確認と文書更新
 
-Acceptance:
+#### 変更ファイル
 
-- run event は任意の既知 `afterSeq` から欠落なく再取得でき、duplicate が UI を壊さない。
-- projection notification が失われても reconnect 時の REST refetch で正本へ収束する。
-- unknown event version と malformed event が観測可能である。
-- 異種 stream を1つの task seq で比較するコードがない。
+- `spec/architecture.md`
+- `spec/configuration.md`
+- `tests/coding-agent-command-http.test.ts`
 
-Durable outbox 導入 gate:
+#### 作業
 
-次のいずれかが実測または明示要件として成立した場合に限り、別 ADR で outbox を計画する。
+1. architecture 文書へ command plane と event plane の分離を記載する。
+2. configuration 文書へ WebSocket capability、10秒 timeout、REST fallback、persisted run cursor を記載する。
+3. `tests/coding-agent-command-http.test.ts` で `codingAgentRouter` の OpenAPI document を生成し、`POST /coding-agent/commands` の request、success response、error response schema を検証する。
+4. browser、Tauri dev、packaged desktop で次を実行する。
+   - start
+   - stop
+   - needs_human Todo resume
+   - WebSocket を切断した状態で同じ3操作
+   - command 送信直後の切断と再接続
+5. server log で同じ idempotency key に command receipt が1件だけ存在することを確認する。
+6. 旧 client から legacy REST 4 route が動作することを確認する。
 
-- snapshot refetch では復元できない event がある
-- process crash 直前の notification loss を許容できない
-- subscriber が全 event の監査 replay を必要とする
-- persisted mutation と broker publish の atomicity が product requirement になる
+#### 完了条件
 
-### Phase 5: Mission Pilot Host Port の一本化
+- 3環境で WS-first と REST fallback が成功する。
+- duplicate Run / user message が0件である。
+- documentation と OpenAPI が実装と一致する。
 
-目的: transport 改修後に dormant な誤経路が利用されないよう、Mission Pilot composition の正本を一つにする。
+## 7. Mission Pilot の扱い
 
-実施内容:
+この計画では Mission Pilot の transport と Host Port 構成を変更しない。
 
-1. `MissionPilotBackendDependencies.host` と `bindings` の利用箇所を列挙し、production runtime が必要とする単一 Host Port contract を決める。
-2. structured `taskOperator.execute` を正本にする場合は input principal/provenance を保持し、human context への置換をやめる。
-3. `events.subscribe` を実配線するか、不要なら contract と adapter を削除する。no-op 実装を残さない。
-4. package-owned Host Port と `api/composition/mission-pilot` adapter の contract test を追加する。
-5. delegated Mission Pilot action と user-direct action が同じ Task Operator policy を通り、provenance で区別されることを検証する。
-6. Mission Pilot 内部 runtime から REST route または WS message を呼ばないことを architecture check に追加する。
+- UI の Play / Stop は既存 REST command を使う。
+- `mission_pilot.updated` と `mission_pilot.plan_progress_updated` は package-owned WebSocket schema を使う。
+- runtime action は `mission-pilot-action-command-executor.ts` から delegated Task Operator command を実行する。
+- Mission Pilot runtime から `POST /api/coding-agent/commands` や `coding_agent.command.execute` を呼ばない。
+- `tests/mission-pilot-package-host-ports.test.ts` と `tests/mission-pilot-delegated-authorization.test.ts` を全PRで regression test として実行する。
 
-候補ファイル:
+これにより、ユーザー向け Coding Agent transport の追加が Mission Pilot / Coding Agent の role ownership を変更しないことを保証する。
 
-- `packages/mission-pilot/src/contracts/host-ports.ts`
-- `packages/mission-pilot/src/backend/host-bindings.ts`
-- `packages/mission-pilot/src/backend/runtime/agent/mission-pilot-action-command-executor.ts`
-- `api/composition/mission-pilot/mission-pilot-dependencies.ts`
-- `api/composition/mission-pilot/mission-pilot-host-ports.ts`
-- `api/composition/mission-pilot/mission-pilot-runtime-bindings.ts`
-
-Acceptance:
-
-- production で使う Host Port implementation が一意である。
-- delegated principal が adapter 境界で失われない。
-- event subscription に no-op production implementation がない。
-- Mission Pilot package boundary test と delegated authorization test が成功する。
-
-失敗時:
-
-- runtime bindings の現行 production 経路を維持し、structured adapter の利用開始を止める。
-- このフェーズを理由に REST/WS command adapter の rollout を止める必要はない。ただし dormant adapter を新規利用してはならない。
-
-### Phase 6: canary、既存経路削除、文書更新
-
-目的: REST fallback を維持したまま WS-first を段階投入し、使われない危険経路を削除する。
-
-実施内容:
-
-1. 開発環境で WS command を有効化し、command result と receipt parity を観測する。
-2. browser、Tauri dev、packaged desktop の順に canary を行う。
-3. ack latency、timeout、fallback rate、idempotency replay、conflict、duplicate run/message を計測する。
-4. legacy `chat_submit` の利用がないことを確認する。
-5. `chat_submit` inbound schema、server handler、`sendChatMessage`、pending chat replay queue を削除する。
-6. architecture/configuration/API 文書を最終構成へ更新する。
-7. REST lifecycle route は fallback と automation 用に残し、deprecation しない。
-
-Canary promotion 条件:
-
-- duplicate Coding Agent run/message が0件
-- WS と REST の typed failure parity が一致
-- ack lost test が receipt/fallback で収束
-- WS unavailable 時の操作成功率が REST-only baseline を下回らない
-- reconnect 後に active Task / Run / Mission Pilot projection が正本へ収束
-
-Rollback:
-
-- frontend の lifecycle transport selection を REST-only へ戻す。
-- REST route、dispatcher、receipt repository は削除しないため、server rollback を伴わず復旧できる。
-- wire version は additive に追加し、旧 client を破壊する置換をしない。
-- DB migration がある場合は additive column/table のみとし、rollback 中も旧 reader が動作する形にする。
-
-## 9. File disposition
-
-| 領域 | 方針 |
-| --- | --- |
-| `shared/modules/taskOperator` | versioned wire schema、共通 failure/result、純粋 parse utility を所有する |
-| `api/modules/taskOperator` | command dispatcher、policy、action registry、WS adapter を所有する |
-| `api/modules/commandDelivery` | idempotency receipt と actor-scoped status query を所有する |
-| `api/modules/nightworkers` | HTTP route mapping と user-intake application adapter を所有する。Coding Agent 固有 logic は置かない |
-| `api/modules/codingAgent` | neutral run contract の handler、runtime orchestration を維持する。transport 分岐を置かない |
-| `api/services/realtime` | connection/broker の Agent 非依存 infrastructure に限定する |
-| `api/app.ts` | WS upgrade、接続 context、transport adapter 呼び出しに縮小する |
-| `src/modules/taskOperator` | projection と command client の Task Operator 側 entry point を所有する |
-| `src/modules/nightworkers/realtime` | connection、subscription、protocol、projector を分離して所有する |
-| `packages/mission-pilot` | package-owned contracts/runtime/frontend を維持し、NightWorkers private source を参照しない |
-| `api/composition/mission-pilot` | package Host Port と NightWorkers application command/event の配線だけを所有する |
-
-## 10. 検証計画
-
-### 10.1 Contract / command parity matrix
-
-| Scenario | REST | WS | 期待結果 |
-| --- | --- | --- | --- |
-| valid start | 実行 | 実行 | 同じ receipt shape、Task/Run mutation |
-| valid stop | 実行 | 実行 | 同じ authorization と terminal state |
-| valid Todo resume | 実行 | 実行 | 同じ Todo revision rule |
-| stale Task revision | 拒否 | 拒否 | 同じ typed conflict |
-| schema invalid | 拒否 | 拒否 | 同じ validation failure |
-| capability missing | 拒否 | 拒否 | 同じ authorization failure |
-| resource ownership mismatch | 拒否 | 拒否 | 情報漏えいなし |
-| same key + same input | replay | replay | 副作用1回、`replayed: true` |
-| same key + different input | conflict | conflict | 副作用なし |
-| WS commit 後 ack loss -> REST retry | fallback | 最初の実行 | 既存 receipt を返し、副作用1回 |
-| delegated Mission Pilot | Host Port | 対象外 | provenance 保持、human と同じ policy |
-
-### 10.2 Realtime / reconnect matrix
+## 8. 検証マトリクス
 
 | Scenario | 期待結果 |
 | --- | --- |
-| known run cursor から reconnect | persisted event を `afterSeq` 以降 replay |
-| duplicate run event | frontend state が二重適用されない |
-| projection notification loss | reconnect 時の REST refetch で収束 |
-| broker process restart | memory-only replay に依存せず snapshot で収束 |
-| unknown wire version | log + typed handling + 必要な refetch |
-| malformed event | UI crash なし、観測可能、正本再取得 |
-| active Task 切替 | 旧 subscription を解除し、新 Task/run cursor だけを購読 |
-| Mission Pilot plan progress 中の reconnect | progress query で最新 revision/digest へ収束 |
+| REST start | receipt 1件、message 1件、Run 1件 |
+| WS start | REST と同じ receipt/data/failure contract |
+| WS start 成功後に同じ request を REST 送信 | `replayed: true`、追加副作用なし |
+| WS commit 後、response 前に切断 | 同一-request REST fallback で追加副作用なし |
+| same key + different arguments | idempotency conflict、追加副作用なし |
+| stale Task revision | revision conflict、最新 revision へ自動実行しない |
+| stale Todo revision | Todo resume 拒否、message/run mutationなし |
+| Run ownership mismatch | ownership failure、対象外Runの情報を返さない |
+| WebSocket capability なし | 最初から REST を使用 |
+| reconnect | subscription と query refetchだけを行い、commandは再送しない |
+| persisted run replay | `afterSeq` より後の event を順に復元 |
+| notification loss | reconnect 時の REST refetch で正本へ収束 |
+| malformed server message | UI crashなし、警告、関連query invalidate |
+| Mission Pilot delegated action | Host Port経由のまま、delegated principalを保持 |
 
-### 10.3 Security
+## 9. Verification commands
 
-- WS Origin allowlist と browser/Tauri の許可 origin
-- max message bytes と schema depth/size
-- unauthenticated / expired session
-- actor が所有しない Task、Run、receipt
-- commandId と idempotency key の推測攻撃
-- same key conflict による input 情報漏えい
-- connection flood、pending command 上限、timeout cleanup
-- prompt、artifact 内容、secret を構造化 log に記録しないこと
-
-### 10.4 Verification commands
-
-変更フェーズごとに最低限次を実行する。
+各PRで実行する。
 
 ```bash
 node scripts/run-vitest.mjs run \
@@ -715,108 +593,66 @@ bun run lint
 bun run verify:fast
 ```
 
-追加する focused test の候補:
+該当PRで作成済みの新規 test も同じ command に追加する。
 
-- `tests/task-operator-transport-parity.test.ts`
-- `tests/task-operator-command-receipt.test.ts`
-- `tests/websocket-command-reconnect.test.ts`
-- `tests/nightworkers-realtime-contract.test.ts`
-- `tests/mission-pilot-host-port-composition.test.ts`
-
-実際のファイル名は既存 test naming に合わせて確定する。
-
-### 10.5 変更前 baseline
-
-2026-08-02 に上記 focused 7 suites を再実行した結果:
+変更前 baseline:
 
 - Test Files: 7 passed
 - Tests: 47 passed
-- Duration: 11.09s
+- 実行日: 2026-08-02
 
-この baseline が崩れた状態で transport rollout を開始しない。
+## 10. 配備と rollback
 
-## 11. Observability
+### 配備順
 
-command ごとに次を記録する。
+1. PR 1: REST endpoint と compatibility adapter
+2. PR 2: WebSocket adapter と capability advertisement
+3. PR 3: capability-aware frontend
+4. PR 4: legacy `chat_submit` 削除
+5. PR 5: packaged desktop canary と文書確定
 
-- protocol version
-- requestId / commandId
-- actionId
-- actor kind と非機密 actor reference
-- transport (`rest` / `websocket`)
-- accepted / rejected / replayed / outcome_unknown
-- expected revision と observed revision
-- latency、ack latency、fallback reason
-- resource reference
+### Rollback
 
-記録しないもの:
+- 新 frontend + 旧 server: capability がないため REST を使用する。
+- 旧 frontend + 新 server: legacy REST route を使用する。
+- WebSocket command 障害: server の capability advertisement を外すと frontend は REST を使用する。
+- realtime projector 障害: PR 4 を revert し、PR 1〜3 の command contract と REST fallback は維持する。
+- command contract は version 1 を additive に追加し、既存 REST route を置換しない。
+- command receipt の既存 table/schema を再利用するため、DB rollback は不要とする。
 
-- prompt 本文
-- artifact 本文
-- credential、cookie、authorization header
-- provider の secret response
+次の場合は rollout を停止し、WebSocket capability を無効化する。
 
-dashboard/判定指標:
+- 同一 idempotency key から複数の Run または user message が作成された
+- REST と WebSocket で authorization、revision、failure code が一致しない
+- ack 消失 test が同一 receipt へ収束しない
+- reconnect が command を自動再送した
+- Mission Pilot delegated provenance が失われた
+- packaged desktop で REST fallback が動作しない
 
-- WS command acceptance rate
-- REST fallback rate
-- receipt replay rate
-- idempotency conflict rate
-- ack timeout rate
-- duplicate run/message count
-- realtime parse failure / unknown version count
-- reconnect 後の snapshot refetch failure
+## 11. Definition of Done
 
-## 12. 非目標
+- [x] `run.implementation.start`、`run.stop`、`run.todo.resume` の shared request/response schema がある
+- [x] REST と WebSocket が同じ Coding Agent application service を呼ぶ
+- [x] application service が既存 Task Operator の認可、availability、revision、ownership、idempotency を使用する
+- [x] start request 省略時の現行解決規則が維持される
+- [x] client が同一 intent の requestId/idempotencyKey を WS/REST 間で再利用する
+- [x] WebSocket timeout または切断後の REST fallback が副作用1回へ収束する
+- [x] stale revision と outcome unknown を自動再実行しない
+- [x] Workbench と TaskConsole の3操作が共通 client を使用する
+- [x] ProjectDetail、Workbench intake、Mission Pilot UI command の transport を変更していない
+- [x] Mission Pilot runtime が REST/WSを経由せず delegated Task Operator command を維持している
+- [x] `chat_submit`、`chat_submit_enqueued`、関連 pending/replay state が削除されている
+- [x] host-owned realtime message が shared schema で parse される
+- [x] Mission Pilot realtime schema が package-owned のまま維持される
+- [x] persisted run cursor と memory notification の seq を混同していない
+- [x] focused test、全体test、typecheck、architecture check、lint、fast verification が成功する
+- [x] browser smoke、Tauri build、sidecar smoke、packaged desktop smoke が成功する
+- [ ] release canary で start / stop / Todo resume の WS-first と強制切断時の REST fallback を実操作確認する
 
-- 全 REST API の WebSocket 化
-- ProjectDetail query/mutation の一括置換
-- Mission Pilot runtime 内部通信の HTTP/WS 化
-- Coding Agent への新しい mode、固定 workflow、tool allowlist の追加
-- user prompt keyword による role/action 判定
-- Task Operator を迂回する WS 専用 command
-- broker memory sequence を durable global order とみなすこと
-- 要件・計測なしの global durable outbox 導入
-- transport 改修を理由に Mission Pilot と Coding Agent の ownership を統合すること
+自動検証結果（2026-08-02）:
 
-## 13. Stop conditions
-
-次のいずれかが起きた場合は rollout を停止し、REST-only へ戻す。
-
-- 同一 idempotency key から複数の Coding Agent run または message が作られる
-- WS と REST で authorization / revision / schema の判定が異なる
-- Mission Pilot delegated principal または provenance が失われる
-- reconnect 後に persisted run cursor から欠落を復元できない
-- stale command が最新 revision に暗黙昇格して実行される
-- unknown/malformed event が UI crash または無限 reconnect を引き起こす
-- packaged desktop の Origin / proxy 条件で REST fallback も利用不能になる
-- module boundary check を回避するために Agent 固有 logic を shared/services/app へ移す必要が生じる
-
-## 14. Definition of Done
-
-- [ ] Coding Agent start / stop / Todo resume が同じ Task Operator command contract を REST と WS で実行できる
-- [ ] REST/WS の authorization、revision、schema、idempotency、failure が parity test で一致する
-- [ ] client が1 intent の requestId/idempotency key と、受理後の commandId を ack・retry・fallback 間で保持する
-- [ ] WS ack 消失後も receipt query または同一-key REST fallback で副作用1回へ収束する
-- [ ] ProjectDetail と Workbench intake の REST 基本方針が維持される
-- [ ] Workbench intake が専用 application command と idempotency を使用する
-- [ ] Coding Agent progress/event は typed WS contract と persisted cursor / snapshot fallback を持つ
-- [ ] run seq、projection revision、memory replay の意味が schema と test で区別される
-- [ ] `useNightWorkersRealtime` の connection / protocol / projection / command pending 責務が分離される
-- [ ] legacy `chat_submit` と production call site のない client API が削除される
-- [ ] Mission Pilot UI は REST command + WS notification、runtime は Host Port の境界を維持する
-- [ ] Mission Pilot production Host Port が一意で、principal を失う adapter と no-op subscription が残らない
-- [ ] architecture、typecheck、lint、focused、fast verification が成功する
-- [ ] browser、Tauri dev、packaged desktop の canary と REST-only rollback が確認される
-
-## 15. 推奨着手順
-
-最初の実装 PR は Phase 1 のうち、次だけに限定する。
-
-1. 共通 command envelope/result schema
-2. REST lifecycle route の共通 dispatcher 接続
-3. expected Task revision の client 送信
-4. intent 単位の idempotency key 保持
-5. receipt query と REST retry test
-
-この PR では WS command を UI から使用しない。REST 単独で parity と retry safety を成立させた後、Phase 2 の WS adapter を別 PR として追加する。これにより transport 変更と command semantics 変更を同時に行わず、各段階で安全に rollback できる。
+- Vitest: 382 files / 2,349 tests passed
+- Playwright browser smoke: 2 tests passed
+- `bun run verify:base`: passed
+- `bun run verify:desktop`: Tauri build、sidecar smoke、packaged desktop smoke を含め passed
+- frontend/backend production build と bundle budget: passed

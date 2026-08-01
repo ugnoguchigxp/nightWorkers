@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CodingAgentCommandClient } from "../src/modules/codingAgent";
 import { useNightWorkersMutations } from "../src/modules/nightworkers/hooks/useNightWorkersMutations";
 import type {
 	BackgroundProcess,
@@ -11,6 +12,11 @@ import type {
 } from "../src/modules/nightworkers/types";
 
 const now = "2026-07-08T00:00:00.000Z";
+const commandTaskId = "11111111-1111-4111-8111-111111111111";
+const commandRunId = "22222222-2222-4222-8222-222222222222";
+const commandRepositoryId = "33333333-3333-4333-8333-333333333333";
+const commandTodoId = "44444444-4444-4444-8444-444444444444";
+let commandRunStatus = "running";
 
 function repository(id: string, name = id): Repository {
 	return {
@@ -42,11 +48,16 @@ function task(id: string, status = "draft", priority = 1): Task {
 	};
 }
 
-function run(id: string, taskId = "task-1", status = "running"): TaskRun {
+function run(
+	id: string,
+	taskId = "task-1",
+	status = "running",
+	repositoryId = "repo-1",
+): TaskRun {
 	return {
 		id,
 		taskId,
-		repositoryId: "repo-1",
+		repositoryId,
 		status,
 		workerKind: "codex",
 		timeoutSeconds: 3600,
@@ -80,6 +91,7 @@ function requestBody(init?: RequestInit): Record<string, unknown> {
 }
 
 function stubMutationFetch() {
+	commandRunStatus = "running";
 	const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
 		const url = requestUrl(input);
 		const method = (init?.method ?? "GET").toUpperCase();
@@ -105,6 +117,14 @@ function stubMutationFetch() {
 		}
 		if (url.endsWith("/api/workbench/sessions/task-1/run")) {
 			return jsonResponse(run("run-started", "task-1", "running"));
+		}
+		if (url.endsWith("/api/runs/run-started") && method === "GET") {
+			return jsonResponse(run("run-started", "task-1", commandRunStatus));
+		}
+		if (url.endsWith(`/api/runs/${commandRunId}`) && method === "GET") {
+			return jsonResponse(
+				run(commandRunId, commandTaskId, commandRunStatus, commandRepositoryId),
+			);
 		}
 		if (url.endsWith("/api/runs/run-started/stop")) {
 			return jsonResponse(run("run-started", "task-1", "cancelled"));
@@ -151,6 +171,30 @@ function stubMutationFetch() {
 				requiredReview: {},
 			});
 		}
+		if (url.endsWith(`/api/runs/${commandRunId}/git/commit`)) {
+			return jsonResponse({
+				runId: commandRunId,
+				repositoryId: commandRepositoryId,
+				canCommit: false,
+				canPush: true,
+				state: "committed",
+				blockingCode: null,
+				commitRecord: null,
+				requiredReview: {},
+			});
+		}
+		if (url.endsWith(`/api/runs/${commandRunId}/git/push`)) {
+			return jsonResponse({
+				runId: commandRunId,
+				repositoryId: commandRepositoryId,
+				canCommit: false,
+				canPush: false,
+				state: "pushed",
+				blockingCode: null,
+				commitRecord: { status: "committed", pushStatus: "pushed" },
+				requiredReview: {},
+			});
+		}
 		if (url.endsWith("/api/workbench/sessions/task-2/archive")) {
 			return jsonResponse(task("task-2", "cancelled", 1));
 		}
@@ -165,7 +209,10 @@ function stubMutationFetch() {
 	return fetchMock;
 }
 
-function renderMutations(activeSessionId = "task-1") {
+function renderMutations(
+	activeSessionId = "task-1",
+	commandResult = { taskId: "task-1", runId: "run-started" },
+) {
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: { retry: false },
@@ -179,12 +226,37 @@ function renderMutations(activeSessionId = "task-1") {
 		},
 	);
 	let mutations!: ReturnType<typeof useNightWorkersMutations>;
+	const codingAgentCommandClient = new CodingAgentCommandClient({
+		getConnection: () => null,
+		restSender: async (request) => {
+			commandRunStatus =
+				request.actionId === "run.stop" ? "cancelled" : "running";
+			return {
+				version: 1,
+				type: "coding_agent.command.result",
+				requestId: request.requestId,
+				result: {
+					ok: true,
+					receipt: {
+						commandId: "command-1",
+						idempotencyKey: request.idempotencyKey,
+						actionId: request.actionId,
+						operationRef: null,
+						resourceRefs: [],
+						replayed: false,
+					},
+					data: commandResult,
+				},
+			};
+		},
+	});
 
 	function CaptureMutations() {
 		mutations = useNightWorkersMutations({
 			activeSessionId: active,
 			queryClient,
 			setActiveSessionId,
+			codingAgentCommandClient,
 		});
 		return null;
 	}
@@ -261,43 +333,55 @@ describe("useNightWorkersMutations", () => {
 
 	it("keeps run, background-process, and git closeout caches in sync", async () => {
 		stubMutationFetch();
-		const { mutations, queryClient } = renderMutations();
+		const { mutations, queryClient } = renderMutations(commandTaskId, {
+			taskId: commandTaskId,
+			runId: commandRunId,
+		});
 		const processRecord = {
 			id: "process-1",
-			taskId: "task-1",
+			taskId: commandTaskId,
 			status: "running",
 			createdAt: now,
 			updatedAt: now,
 		} as BackgroundProcess;
 
-		queryClient.setQueryData<Task[]>(["sessions"], [task("task-1")]);
-		queryClient.setQueryData<TaskRun[]>(["sessionRuns", "task-1"], []);
+		queryClient.setQueryData<Task[]>(["sessions"], [task(commandTaskId)]);
+		queryClient.setQueryData<TaskRun[]>(["sessionRuns", commandTaskId], []);
 		queryClient.setQueryData<BackgroundProcess[]>(
-			["backgroundProcesses", "task-1"],
+			["backgroundProcesses", commandTaskId],
 			[processRecord],
 		);
 
-		await mutations.startRunMutation.mutateAsync("task-1");
+		await mutations.startRunMutation.mutateAsync({
+			taskId: commandTaskId,
+			expectedTaskRevision: 1,
+		});
 		await mutations.resumeTodoMutation.mutateAsync({
-			runId: "run-started",
-			todoId: "todo-1",
+			taskId: commandTaskId,
+			runId: commandRunId,
+			todoId: commandTodoId,
+			expectedTaskRevision: 1,
 			expectedTodoRevision: 2,
 			userContext: "staging環境を使用する",
 		});
-		await mutations.stopRunMutation.mutateAsync("run-started");
+		await mutations.stopRunMutation.mutateAsync({
+			taskId: commandTaskId,
+			runId: commandRunId,
+			expectedTaskRevision: 1,
+		});
 		await mutations.stopBackgroundProcessMutation.mutateAsync("process-1");
-		await mutations.commitRunGitCloseoutMutation.mutateAsync("run-started");
-		await mutations.pushRunGitCloseoutMutation.mutateAsync("run-started");
+		await mutations.commitRunGitCloseoutMutation.mutateAsync(commandRunId);
+		await mutations.pushRunGitCloseoutMutation.mutateAsync(commandRunId);
 
 		expect(
-			queryClient.getQueryData<TaskRun[]>(["sessionRuns", "task-1"]),
+			queryClient.getQueryData<TaskRun[]>(["sessionRuns", commandTaskId]),
 		).toEqual([
-			expect.objectContaining({ id: "run-started", status: "cancelled" }),
+			expect.objectContaining({ id: commandRunId, status: "cancelled" }),
 		]);
 		expect(
 			queryClient.getQueryData<BackgroundProcess[]>([
 				"backgroundProcesses",
-				"task-1",
+				commandTaskId,
 			]),
 		).toEqual([
 			expect.objectContaining({ id: "process-1", status: "stopped" }),
@@ -305,7 +389,7 @@ describe("useNightWorkersMutations", () => {
 		expect(
 			queryClient.getQueryData<GitCloseoutState | null>([
 				"gitCloseout",
-				"run-started",
+				commandRunId,
 			]),
 		).toEqual(expect.objectContaining({ state: "pushed" }));
 	});

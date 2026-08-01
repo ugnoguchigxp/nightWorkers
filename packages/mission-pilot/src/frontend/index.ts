@@ -4,6 +4,10 @@ export type {
 	MissionPilotPlanProgress,
 	MissionPilotRealtimeExtensionHandler,
 } from "../contracts";
+export {
+	missionPilotPlanProgressRealtimeEventSchema,
+	missionPilotRealtimeEventSchema,
+} from "../contracts";
 export { createMissionPilotFrontendClient } from "./client";
 export { MissionPilotComposerControls } from "./components/MissionPilotComposerControls";
 export {

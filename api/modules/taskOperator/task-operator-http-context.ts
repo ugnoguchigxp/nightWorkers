@@ -22,12 +22,13 @@ export function humanTaskOperatorQueryContext(): TaskOperatorQueryContext {
 }
 
 export function humanTaskOperatorCommandContext(input: {
+	requestId?: string;
 	idempotencyKey?: string;
 }): TaskOperatorCommandContext {
-	const requestId = input.idempotencyKey || crypto.randomUUID();
+	const requestId = input.requestId || crypto.randomUUID();
 	return {
 		...humanTaskOperatorQueryContext(),
 		requestId,
-		idempotencyKey: requestId,
+		idempotencyKey: input.idempotencyKey || requestId,
 	};
 }

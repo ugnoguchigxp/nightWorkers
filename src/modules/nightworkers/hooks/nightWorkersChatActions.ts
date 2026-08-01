@@ -16,18 +16,13 @@ import type {
 
 type ChatActionsInput = {
 	queryClient: QueryClient;
-	wsRef: MutableRefObject<WebSocket | null>;
 	lastSubmitRef: MutableRefObject<{
 		taskId: string;
 		prompt: string;
 		contextKey: string;
 		at: number;
 	} | null>;
-	pendingChatQueueRef: MutableRefObject<
-		Array<{ taskId: string; prompt: string }>
-	>;
 	chatSubmitStartedAtRef: MutableRefObject<number | null>;
-	chatSubmitTransportRef: MutableRefObject<"http" | "websocket" | null>;
 	pendingChatRunIdRef: MutableRefObject<string | null>;
 	pendingAssistantTaskIdRef: MutableRefObject<string | null>;
 	pendingChatAbortControllerRef: MutableRefObject<AbortController | null>;
@@ -105,11 +100,8 @@ function appendOptimisticUserMessage(
 export function createNightWorkersChatActions(input: ChatActionsInput) {
 	const {
 		queryClient,
-		wsRef,
 		lastSubmitRef,
-		pendingChatQueueRef,
 		chatSubmitStartedAtRef,
-		chatSubmitTransportRef,
 		pendingChatRunIdRef,
 		pendingAssistantTaskIdRef,
 		pendingChatAbortControllerRef,
@@ -120,7 +112,6 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 	const resetPendingChatState = () => {
 		setIsChatSubmitting(false);
 		chatSubmitStartedAtRef.current = null;
-		chatSubmitTransportRef.current = null;
 		pendingChatRunIdRef.current = null;
 		setPendingChatRunId(null);
 		pendingAssistantTaskIdRef.current = null;
@@ -133,43 +124,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 			pendingChatAbortControllerRef.current?.abort(
 				new DOMException("Chat submit cancelled.", "AbortError"),
 			);
-			pendingChatQueueRef.current = [];
 			resetPendingChatState();
-		},
-		sendChatMessage: async (sessionId: string, prompt: string) => {
-			const content = prompt.trim();
-			if (!content) return;
-			if (
-				!appendOptimisticUserMessage(
-					sessionId,
-					content,
-					lastSubmitRef,
-					queryClient,
-				)
-			)
-				return;
-			setIsChatSubmitting(true);
-			chatSubmitStartedAtRef.current = Date.now();
-			chatSubmitTransportRef.current = "websocket";
-			pendingChatRunIdRef.current = null;
-			setPendingChatRunId(null);
-			pendingAssistantTaskIdRef.current = sessionId;
-			setPendingAssistantTaskId(sessionId);
-			const ws = wsRef.current;
-			if (!ws || ws.readyState !== WebSocket.OPEN) {
-				pendingChatQueueRef.current.push({
-					taskId: sessionId,
-					prompt: content,
-				});
-				return;
-			}
-			ws.send(
-				JSON.stringify({
-					type: "chat_submit",
-					taskId: sessionId,
-					prompt: content,
-				}),
-			);
 		},
 		sendWorkbenchMessage: async (
 			sessionId: string,
@@ -194,7 +149,6 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 				return;
 			setIsChatSubmitting(true);
 			chatSubmitStartedAtRef.current = Date.now();
-			chatSubmitTransportRef.current = "http";
 			pendingChatRunIdRef.current = null;
 			setPendingChatRunId(null);
 			const expectsAssistantResponse =
@@ -281,7 +235,6 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 			} finally {
 				setIsChatSubmitting(false);
 				chatSubmitStartedAtRef.current = null;
-				chatSubmitTransportRef.current = null;
 				if (!pendingChatRunIdRef.current) {
 					pendingChatRunIdRef.current = null;
 					setPendingChatRunId(null);

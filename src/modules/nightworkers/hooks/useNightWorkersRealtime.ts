@@ -1,56 +1,27 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useEffect } from "react";
-import { applyMissionPilotRealtimeExtension } from "../../../composition/mission-pilot";
 import { devWsFallbackPath, wsPath } from "../../../lib/api-base";
-import { isCodingAgentChatTrace } from "../../codingAgent";
-import {
-	applyQuestionnaireStateChangedRealtimeMessage,
-	invalidateQuestionnaireSessions,
-} from "../../questionnaire";
+import { invalidateQuestionnaireSessions } from "../../questionnaire";
 import { planModeWorkspaceQueryKey } from "../../specification";
-import { dedupeAndSortActivityEvents } from "../activityTranscript";
-import { shouldCompletePendingChat } from "../realtimeChatCompletion";
-import {
-	dedupeAndSortRunEvents,
-	getRealtimeMessageDedupeKey,
-	isTerminalRunStatus,
-	mergeRealtimeRunDetails,
-	mergeRealtimeRunList,
-	mergeRealtimeTodoIntoRunDetails,
-	readReviewRunSnapshot,
-} from "../realtimeEvents";
-import type {
-	ActivityEvent,
-	ActivityReplay,
-	ProjectFileEntry,
-	RunDetails,
-	Task,
-	TaskEvent,
-	TaskMessage,
-	TaskRun,
-	TaskRunTodo,
-} from "../types";
-import { isPlanModeWorkspaceMessage } from "./nightWorkersRealtimeModel";
+import { NightWorkersRealtimeConnection } from "../realtime/nightWorkersRealtimeConnection";
+import { createNightWorkersRealtimeProjector } from "../realtime/nightWorkersRealtimeProjector";
+import type { ProjectFileEntry, TaskEvent } from "../types";
 
 type RealtimeStatus =
 	| "initializing"
 	| "connecting"
 	| "connected"
 	| "disconnected";
-const emptyActivityReplay: ActivityReplay = { events: [], artifacts: [] };
 
 type UseNightWorkersRealtimeInput = {
 	activeSessionId: string | null;
 	queryClient: QueryClient;
-	wsRef: MutableRefObject<WebSocket | null>;
+	connectionRef: MutableRefObject<NightWorkersRealtimeConnection | null>;
 	latestRunSubscriptionRef: MutableRefObject<{
 		runId: string | null;
 		afterSeq?: number;
 	}>;
-	pendingChatQueueRef: MutableRefObject<
-		Array<{ taskId: string; prompt: string }>
-	>;
 	processedRealtimeMessageKeysRef: MutableRefObject<Set<string>>;
 	pendingChatRunIdRef: MutableRefObject<string | null>;
 	pendingAssistantTaskIdRef: MutableRefObject<string | null>;
@@ -67,473 +38,103 @@ type UseNightWorkersRealtimeInput = {
 	>;
 };
 
-export function useNightWorkersRealtime({
-	activeSessionId,
-	queryClient,
-	wsRef,
-	latestRunSubscriptionRef,
-	pendingChatQueueRef,
-	processedRealtimeMessageKeysRef,
-	pendingChatRunIdRef,
-	pendingAssistantTaskIdRef,
-	chatSubmitStartedAtRef,
-	setIsRealtimeConnected,
-	setRealtimeStatus,
-	setBufferedEventsByRun,
-	setStreamingTextByTask,
-	setIsChatSubmitting,
-	setPendingChatRunId,
-	setPendingAssistantTaskId,
-	setProjectFileEntriesByDirectory,
-}: UseNightWorkersRealtimeInput) {
+export function useNightWorkersRealtime(input: UseNightWorkersRealtimeInput) {
+	const {
+		activeSessionId,
+		queryClient,
+		connectionRef,
+		latestRunSubscriptionRef,
+		processedRealtimeMessageKeysRef,
+		pendingChatRunIdRef,
+		pendingAssistantTaskIdRef,
+		chatSubmitStartedAtRef,
+		setIsRealtimeConnected,
+		setRealtimeStatus,
+		setBufferedEventsByRun,
+		setStreamingTextByTask,
+		setIsChatSubmitting,
+		setPendingChatRunId,
+		setPendingAssistantTaskId,
+		setProjectFileEntriesByDirectory,
+	} = input;
 	useEffect(() => {
 		setRealtimeStatus("connecting");
 		const proxyUrl = wsPath("/api/ws/nightworkers");
 		const devDirectUrl = devWsFallbackPath("/api/ws/nightworkers");
-		const primaryUrl = devDirectUrl ?? proxyUrl;
-		const fallbackUrl =
-			devDirectUrl && devDirectUrl !== proxyUrl ? proxyUrl : null;
-
-		let ws: WebSocket | null = null;
-		let closedManually = false;
-		let reconnectAttempts = 0;
-		const maxReconnectAttempts = 8;
-		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-		let initialConnectTimer: ReturnType<typeof setTimeout> | null = null;
-		let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-		let usingFallback = false;
-		let suppressNextReconnect = false;
-		const latestQuestionnaireRevisionBySession = new Map<
-			string,
-			{ revision: number; stateDigest: string }
-		>();
-
-		const connect = (url: string) => {
-			if (reconnectTimer) {
-				clearTimeout(reconnectTimer);
-				reconnectTimer = null;
-			}
-			ws = new WebSocket(url);
-			wsRef.current = ws;
-
-			ws.addEventListener("open", () => {
-				reconnectAttempts = 0;
-				setIsRealtimeConnected(true);
-				setRealtimeStatus("connected");
-				if (activeSessionId) {
-					void queryClient.invalidateQueries({
-						queryKey: ["taskMessages", activeSessionId],
-					});
-					void queryClient.invalidateQueries({
-						queryKey: planModeWorkspaceQueryKey(activeSessionId),
-					});
-					void invalidateQuestionnaireSessions(queryClient, activeSessionId);
-					const subscription = latestRunSubscriptionRef.current;
-					ws?.send(
-						JSON.stringify({
-							type: "subscribe_task",
-							taskId: activeSessionId,
-							...(subscription.runId ? { runId: subscription.runId } : {}),
-							...(typeof subscription.afterSeq === "number"
-								? { afterSeq: subscription.afterSeq }
-								: {}),
-						}),
-					);
-				}
-				if (pendingChatQueueRef.current.length > 0) {
-					const queued = [...pendingChatQueueRef.current];
-					pendingChatQueueRef.current = [];
-					for (const item of queued) {
-						ws?.send(
-							JSON.stringify({
-								type: "chat_submit",
-								taskId: item.taskId,
-								prompt: item.prompt,
-							}),
-						);
-					}
-				}
-			});
-
-			ws.addEventListener("message", (event) => {
-				try {
-					const msg = JSON.parse(String(event.data)) as {
-						type?: string;
-						taskId?: string;
-						runId?: string;
-						seq?: number;
-						message?: string;
-						timestamp?: string;
-						replayed?: boolean;
-						payload?: {
-							event?: ActivityEvent;
-							message?: TaskMessage;
-							run?: TaskRun;
-							status?: string;
-							task?: Task;
-							text?: string;
-							todo?: TaskRunTodo;
-							taskId?: string;
-						};
-						event?: {
-							id: string;
-							actor?: string;
-							type?: string;
-							eventType?: string | null;
-							payloadJson?: unknown;
-							message: string;
-							timestamp?: unknown;
-						};
-					};
-					if (applyMissionPilotRealtimeExtension(msg, queryClient)) return;
-					applyQuestionnaireStateChangedRealtimeMessage({
-						message: msg,
-						activeTaskId: activeSessionId,
-						latestRevisionBySession: latestQuestionnaireRevisionBySession,
-						queryClient,
-					});
-					if (msg.type === "plan_mode.routing_changed") {
-						const routingTaskId = msg.taskId ?? msg.payload?.taskId;
-						if (routingTaskId && routingTaskId === activeSessionId) {
-							void queryClient.invalidateQueries({
-								queryKey: planModeWorkspaceQueryKey(routingTaskId),
-							});
-						}
-					}
-					if (msg.type === "activity_event_created" && msg.payload?.event) {
-						const incoming = msg.payload.event;
-						if (activeSessionId && incoming.taskId !== activeSessionId) return;
-						if (!isCodingAgentChatTrace(incoming)) {
-							if (incoming.kind === "llm.usage") {
-								void queryClient.invalidateQueries({
-									queryKey: ["llmUsage", incoming.taskId],
-								});
-							}
-							return;
-						}
-						queryClient.setQueryData<ActivityReplay>(
-							["activityReplay", incoming.taskId],
-							(prev = emptyActivityReplay) => ({
-								...prev,
-								events: dedupeAndSortActivityEvents([...prev.events, incoming]),
-							}),
-						);
-						if (incoming.artifactId) {
-							void queryClient.invalidateQueries({
-								queryKey: ["activityReplay", incoming.taskId],
-							});
-						}
-						if (incoming.kind === "llm.usage") {
-							void queryClient.invalidateQueries({
-								queryKey: ["llmUsage", incoming.taskId],
-							});
-						}
-					}
-					if (msg.type === "task_llm_delta" && activeSessionId) {
-						const taskId = msg.taskId || activeSessionId;
-						if (taskId !== activeSessionId) return;
-						const messageKey = getRealtimeMessageDedupeKey({ ...msg, taskId });
-						if (messageKey) {
-							if (processedRealtimeMessageKeysRef.current.has(messageKey))
-								return;
-							processedRealtimeMessageKeysRef.current.add(messageKey);
-							if (processedRealtimeMessageKeysRef.current.size > 5000) {
-								processedRealtimeMessageKeysRef.current.clear();
-								processedRealtimeMessageKeysRef.current.add(messageKey);
-							}
-						}
-						const text =
-							typeof msg.payload?.text === "string"
-								? msg.payload.text
-								: typeof msg.message === "string"
-									? msg.message
-									: "";
-						if (text) {
-							setStreamingTextByTask((prev) => ({
-								...prev,
-								[taskId]: `${prev[taskId] || ""}${text}`,
-							}));
-						}
-					}
-					if (msg.type === "task_event_created" && msg.runId && msg.event) {
-						const eventPayload = {
-							...(msg.event as TaskEvent),
-							runId: msg.runId,
-							seq: (msg.event as TaskEvent).seq ?? msg.seq,
-						} as TaskEvent;
-						setBufferedEventsByRun((prev) => {
-							const next = { ...prev };
-							const current = next[msg.runId as string] || [];
-							next[msg.runId as string] = dedupeAndSortRunEvents([
-								...current,
-								eventPayload,
-							]);
-							return next;
-						});
-						queryClient.invalidateQueries({
-							queryKey: ["runDetails", msg.runId],
-						});
-						const eventType = String(
-							eventPayload.type || eventPayload.eventType || "",
-						);
-						const eventTaskId =
-							(eventPayload as { taskId?: string }).taskId || activeSessionId;
-						if (eventType.startsWith("review.") && eventTaskId) {
-							void queryClient.invalidateQueries({
-								queryKey: ["reviewSession", eventTaskId],
-							});
-							void queryClient.invalidateQueries({
-								queryKey: ["gitCloseout", msg.runId],
-							});
-						}
-						if (eventType.startsWith("git.closeout")) {
-							void queryClient.invalidateQueries({
-								queryKey: ["gitCloseout", msg.runId],
-							});
-							void queryClient.invalidateQueries({
-								queryKey: ["implementationQueue"],
-							});
-							if (eventTaskId) {
-								void queryClient.invalidateQueries({
-									queryKey: ["sessionRuns", eventTaskId],
-								});
-							}
-						}
-					}
-					if (msg.type === "task_message_created" && msg.payload?.message) {
-						const incoming = msg.payload.message;
-						void queryClient.invalidateQueries({
-							queryKey: ["evidenceCheck", "latest", incoming.taskId],
-						});
-						void queryClient.invalidateQueries({
-							queryKey: ["llmUsage", incoming.taskId],
-						});
-						if (isPlanModeWorkspaceMessage(incoming)) {
-							void queryClient.invalidateQueries({
-								queryKey: planModeWorkspaceQueryKey(incoming.taskId),
-							});
-						}
-						queryClient.setQueryData<TaskMessage[]>(
-							["taskMessages", activeSessionId],
-							(prev = []) => {
-								const next = [...prev];
-								if (incoming.role === "user") {
-									const optimisticIndex = next.findIndex(
-										(m) =>
-											m.id.startsWith("optimistic-") &&
-											m.role === "user" &&
-											m.content === incoming.content,
-									);
-									if (optimisticIndex >= 0) next.splice(optimisticIndex, 1);
-								}
-								next.push(incoming);
-								return next;
-							},
-						);
-						if (
-							shouldCompletePendingChat({
-								message: incoming,
-								pendingTaskId: pendingAssistantTaskIdRef.current,
-								pendingRunId: pendingChatRunIdRef.current,
-							})
-						) {
-							setStreamingTextByTask((prev) => {
-								const next = { ...prev };
-								delete next[incoming.taskId];
-								return next;
-							});
-							setIsChatSubmitting(false);
-							chatSubmitStartedAtRef.current = null;
-							pendingChatRunIdRef.current = null;
-							setPendingChatRunId(null);
-							pendingAssistantTaskIdRef.current = null;
-							setPendingAssistantTaskId(null);
-						}
-					}
-					if (msg.type === "chat_submit_enqueued") {
-						pendingChatRunIdRef.current = msg.runId || null;
-						setPendingChatRunId(msg.runId || null);
-					}
-					if (msg.type === "error") {
-						setIsChatSubmitting(false);
-						chatSubmitStartedAtRef.current = null;
-						pendingChatRunIdRef.current = null;
-						setPendingChatRunId(null);
-						pendingAssistantTaskIdRef.current = null;
-						setPendingAssistantTaskId(null);
-						if (!activeSessionId) return;
-						const errorMessage: TaskMessage = {
-							id: `chat-error-${Date.now()}`,
-							taskId: activeSessionId,
-							role: "system",
-							content:
-								msg.message ||
-								"送信に失敗しました。接続状態を確認してください。",
-							messageType: "text",
-							traceOwner: "system",
-							traceChannel: "chat",
-							createdAt: new Date().toISOString(),
-						};
-						queryClient.setQueryData<TaskMessage[]>(
-							["taskMessages", activeSessionId],
-							(prev = []) => [...prev, errorMessage],
-						);
-					}
-					if (msg.type === "task_run_updated" && msg.payload?.run) {
-						const incomingRun = msg.payload.run as TaskRun;
-						void queryClient.invalidateQueries({
-							queryKey: ["evidenceCheck"],
-						});
-						void queryClient.invalidateQueries({
-							queryKey: ["llmUsage", incomingRun.taskId],
-						});
-						queryClient.setQueryData<TaskRun[]>(
-							["sessionRuns", activeSessionId],
-							(prev = []) => {
-								return mergeRealtimeRunList(prev, incomingRun);
-							},
-						);
-						queryClient.setQueryData<RunDetails | null>(
-							["runDetails", incomingRun.id],
-							(prev) => mergeRealtimeRunDetails(prev, incomingRun) ?? prev,
-						);
-						queryClient.invalidateQueries({
-							queryKey: ["runDetails", incomingRun.id],
-						});
-						queryClient.invalidateQueries({
-							queryKey: ["implementationQueue"],
-						});
-						if (
-							isTerminalRunStatus(incomingRun.status) &&
-							incomingRun.repositoryId
-						) {
-							setProjectFileEntriesByDirectory({});
-							queryClient.invalidateQueries({
-								queryKey: ["projectFiles", incomingRun.repositoryId],
-							});
-							queryClient.removeQueries({
-								queryKey: ["projectFile", incomingRun.repositoryId],
-							});
-						}
-						if (isTerminalRunStatus(incomingRun.status)) {
-							const reviewRun = readReviewRunSnapshot(
-								incomingRun.contextSnapshot,
-							);
-							if (reviewRun?.reviewSessionId) {
-								void queryClient.invalidateQueries({
-									queryKey: ["reviewSession", incomingRun.taskId],
-								});
-							}
-							if (reviewRun?.reviewedRunId) {
-								void queryClient.invalidateQueries({
-									queryKey: ["gitCloseout", reviewRun.reviewedRunId],
-								});
-							}
-						}
-					}
-					if (msg.type === "task_run_updated" && msg.payload?.todo) {
-						const incomingTodo = msg.payload.todo as TaskRunTodo;
-						queryClient.setQueryData<RunDetails | null>(
-							["runDetails", incomingTodo.runId],
-							(prev) =>
-								mergeRealtimeTodoIntoRunDetails(prev, incomingTodo) ?? prev,
-						);
-					}
-					if (msg.type === "task_status_updated" && msg.payload?.task) {
-						const incomingTask = msg.payload.task as Task;
-						queryClient.setQueryData<Task[]>(["sessions"], (prev = []) => {
-							const next = [...prev];
-							const idx = next.findIndex((t) => t.id === incomingTask.id);
-							if (idx >= 0) {
-								next[idx] = incomingTask;
-							} else {
-								next.unshift(incomingTask);
-							}
-							return next;
-						});
-						queryClient.invalidateQueries({
-							queryKey: ["implementationQueue"],
-						});
-					}
-				} catch {
-					// ignore malformed payload
-				}
-			});
-
-			ws.addEventListener("close", () => {
-				setIsRealtimeConnected(false);
-				setRealtimeStatus("disconnected");
-				if (closedManually) return;
-				if (suppressNextReconnect) {
-					suppressNextReconnect = false;
-					return;
-				}
-				if (reconnectAttempts >= maxReconnectAttempts) {
-					setIsChatSubmitting(false);
-					return;
-				}
-				const backoffMs = Math.min(2000 * 2 ** reconnectAttempts, 30000);
-				reconnectAttempts += 1;
-				reconnectTimer = setTimeout(() => {
-					const nextUrl = usingFallback && fallbackUrl ? fallbackUrl : url;
-					connect(nextUrl);
-				}, backoffMs);
-			});
-			ws.addEventListener("error", () => {
-				setIsRealtimeConnected(false);
-				setRealtimeStatus("disconnected");
-			});
-		};
-
-		initialConnectTimer = setTimeout(() => connect(primaryUrl), 0);
-
-		fallbackTimer = setTimeout(() => {
-			const notConnected = !ws || ws.readyState !== WebSocket.OPEN;
-			if (
-				notConnected &&
-				!closedManually &&
-				fallbackUrl &&
-				fallbackUrl !== primaryUrl
-			) {
-				try {
-					suppressNextReconnect = true;
-					ws?.close();
-				} catch {
-					// noop
-				}
-				usingFallback = true;
-				connect(fallbackUrl);
-			}
-		}, 1500);
+		const projector = createNightWorkersRealtimeProjector({
+			activeSessionId,
+			queryClient,
+			latestRunSubscriptionRef,
+			processedRealtimeMessageKeysRef,
+			pendingChatRunIdRef,
+			pendingAssistantTaskIdRef,
+			chatSubmitStartedAtRef,
+			setBufferedEventsByRun,
+			setStreamingTextByTask,
+			setIsChatSubmitting,
+			setPendingChatRunId,
+			setPendingAssistantTaskId,
+			setProjectFileEntriesByDirectory,
+		});
+		const connection = new NightWorkersRealtimeConnection({
+			primaryUrl: devDirectUrl ?? proxyUrl,
+			fallbackUrl: devDirectUrl && devDirectUrl !== proxyUrl ? proxyUrl : null,
+			onConnectionStateChange: (connected) => {
+				setIsRealtimeConnected(connected);
+				setRealtimeStatus(connected ? "connected" : "disconnected");
+			},
+			onReconnectExhausted: () => setIsChatSubmitting(false),
+			onOpen: () => {
+				const taskId = activeSessionId;
+				if (!taskId) return;
+				void queryClient.invalidateQueries({
+					queryKey: ["taskMessages", taskId],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: ["taskOperatorView", taskId],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: ["sessionRuns", taskId],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: planModeWorkspaceQueryKey(taskId),
+				});
+				void invalidateQuestionnaireSessions(queryClient, taskId);
+				void queryClient.invalidateQueries({
+					queryKey: ["missionPilotControl", taskId],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: ["missionPilotPlanProgress", taskId],
+				});
+				const subscription = latestRunSubscriptionRef.current;
+				connection.send({
+					type: "subscribe_task",
+					taskId,
+					...(subscription.runId ? { runId: subscription.runId } : {}),
+					...(typeof subscription.afterSeq === "number"
+						? { afterSeq: subscription.afterSeq }
+						: {}),
+				});
+			},
+			onMessage: projector,
+		});
+		connectionRef.current = connection;
+		connection.start();
 
 		return () => {
-			closedManually = true;
-			if (initialConnectTimer) clearTimeout(initialConnectTimer);
-			if (fallbackTimer) clearTimeout(fallbackTimer);
-			if (reconnectTimer) clearTimeout(reconnectTimer);
-			try {
-				if (activeSessionId) {
-					ws?.send(
-						JSON.stringify({
-							type: "unsubscribe_task",
-							taskId: activeSessionId,
-						}),
-					);
-				}
-			} catch {
-				// noop
-			}
-			ws?.close();
-			wsRef.current = null;
-			setIsRealtimeConnected(false);
-			setRealtimeStatus("disconnected");
+			if (activeSessionId)
+				connection.send({
+					type: "unsubscribe_task",
+					taskId: activeSessionId,
+				});
+			connection.dispose();
+			if (connectionRef.current === connection) connectionRef.current = null;
 		};
 	}, [
 		activeSessionId,
 		queryClient,
-		wsRef,
+		connectionRef,
 		latestRunSubscriptionRef,
-		pendingChatQueueRef,
 		processedRealtimeMessageKeysRef,
 		pendingChatRunIdRef,
 		pendingAssistantTaskIdRef,

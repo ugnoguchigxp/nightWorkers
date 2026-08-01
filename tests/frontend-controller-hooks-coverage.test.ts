@@ -188,6 +188,23 @@ describe("frontend controller hook coverage", () => {
 						statusArtifact: { sections: [] },
 					},
 					backgroundProcesses: [{ id: "process-1", taskId: task.id }],
+					taskOperatorView: {
+						task: {
+							id: task.id,
+							revision: 7,
+							status: task.status,
+							title: task.title,
+							objective: null,
+							acceptanceCriteria: null,
+						},
+						commandCatalog: {
+							availableIds: [
+								"run.implementation.start",
+								"run.stop",
+								"run.todo.resume",
+							],
+						},
+					},
 					runDetails: {
 						events: [],
 						todos: [{ id: "todo-1", status: "pending" }],

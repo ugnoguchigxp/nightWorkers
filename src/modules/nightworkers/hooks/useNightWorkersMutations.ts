@@ -1,20 +1,19 @@
 import { type QueryClient, useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
-import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
 import { client } from "../../../lib/api";
+import {
+	type CodingAgentCommandClient,
+	useCodingAgentCommandMutations,
+} from "../../codingAgent";
 import {
 	archiveWorkbenchSession,
 	commitRunGitCloseout,
 	createWorkbenchSession,
 	deleteTask,
-	patchTask as patchTaskCommand,
 	pushRunGitCloseout,
 	queueWorkbenchSession,
 	restoreWorkbenchSessionArchive,
-	resumeTaskRunTodo,
-	startWorkbenchRun,
 	stopBackgroundProcess,
-	stopRun,
 } from "../nightWorkersCommands";
 import {
 	mergeRealtimeRunDetails,
@@ -33,91 +32,27 @@ import type {
 	WorkbenchMovableSessionGroup,
 } from "../types";
 import { syncGitCloseoutMutationCache } from "./gitCloseoutMutationCache";
-
-type TaskPatchInput = {
-	title?: string;
-	description?: string;
-	objective?: string;
-	acceptanceCriteria?: string;
-	status?: string;
-	priority?: number;
-};
+import {
+	buildPriorityUpdates,
+	invalidateCommandFailure,
+	patchTask,
+	refreshTaskNavigationQueries,
+	resolveNextActiveSessionId,
+	syncTaskNavigationCaches,
+} from "./nightWorkersMutationHelpers";
 
 type UseNightWorkersMutationsInput = {
 	activeSessionId: string | null;
 	queryClient: QueryClient;
 	setActiveSessionId: Dispatch<SetStateAction<string | null>>;
+	codingAgentCommandClient: CodingAgentCommandClient;
 };
-
-async function patchTask(sessionId: string, input: TaskPatchInput) {
-	const res = await patchTaskCommand(sessionId, input);
-	if (!res.ok) throw new Error(await res.text());
-	return (await res.json()) as Task;
-}
-
-function resolveNextActiveSessionId(
-	currentId: string | null,
-	sessions: Pick<Task, "id">[],
-) {
-	if (currentId && sessions.some((session) => session.id === currentId))
-		return currentId;
-	return sessions[0]?.id ?? null;
-}
-
-function syncTaskNavigationCaches(queryClient: QueryClient, task: Task) {
-	queryClient.setQueryData<Task[]>(["sessions"], (previous = []) =>
-		previous.map((session) => (session.id === task.id ? task : session)),
-	);
-	queryClient.setQueryData<TaskOperatorProjectionV1 | null>(
-		["taskOperatorView", task.id],
-		(previous) =>
-			previous
-				? {
-						...previous,
-						task: {
-							...previous.task,
-							status: task.status as TaskOperatorProjectionV1["task"]["status"],
-						},
-					}
-				: previous,
-	);
-}
-
-async function refreshTaskNavigationQueries(
-	queryClient: QueryClient,
-	taskId: string,
-) {
-	await Promise.all([
-		queryClient.invalidateQueries({
-			queryKey: ["sessions"],
-			exact: true,
-		}),
-		queryClient.invalidateQueries({
-			queryKey: ["taskOperatorView", taskId],
-			exact: true,
-		}),
-	]);
-}
-
-function buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
-	const currentPriorityById = new Map(
-		sessions.map((session) => [session.id, session.priority]),
-	);
-	return sessionIds
-		.map((sessionId, index) => ({
-			sessionId,
-			priority: sessionIds.length - index,
-		}))
-		.filter(
-			({ sessionId, priority }) =>
-				currentPriorityById.get(sessionId) !== priority,
-		);
-}
 
 export function useNightWorkersMutations({
 	activeSessionId,
 	queryClient,
 	setActiveSessionId,
+	codingAgentCommandClient,
 }: UseNightWorkersMutationsInput) {
 	const createProjectMutation = useMutation({
 		mutationFn: async (data: CreateProjectInput) => {
@@ -218,95 +153,78 @@ export function useNightWorkersMutations({
 		},
 	});
 
-	const startRunMutation = useMutation({
-		mutationFn: async (sessionId: string) => {
-			const res = await startWorkbenchRun(sessionId);
-			if (!res.ok) throw new Error("Failed to start run");
-			return (await res.json()) as TaskRun;
-		},
-		onSuccess: (run) => {
-			queryClient.setQueryData<TaskRun[]>(
-				["sessionRuns", run.taskId],
-				(prev = []) => {
-					return mergeRealtimeRunList(prev, run);
-				},
-			);
-			queryClient.setQueryData<RunDetails | null>(
-				["runDetails", run.id],
-				(prev) => {
-					return mergeRealtimeRunDetails(prev, run) ?? prev;
-				},
-			);
-			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-				prev.map((session) =>
-					session.id === run.taskId
-						? { ...session, status: "running" }
-						: session,
-				),
-			);
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-			queryClient.invalidateQueries({ queryKey: ["sessionRuns", run.taskId] });
-		},
-	});
-
-	const stopRunMutation = useMutation({
-		mutationFn: async (runId: string) => {
-			const res = await stopRun(runId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as TaskRun;
-		},
-		onSuccess: (run) => {
-			queryClient.setQueryData<TaskRun[]>(
-				["sessionRuns", run.taskId],
-				(prev = []) => {
-					const next = [...prev];
-					const idx = next.findIndex((candidate) => candidate.id === run.id);
-					if (idx >= 0) next[idx] = run;
-					else next.unshift(run);
-					return next;
-				},
-			);
-			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-				prev.map((session) =>
-					session.id === run.taskId ? { ...session, status: "ready" } : session,
-				),
-			);
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-			queryClient.invalidateQueries({ queryKey: ["implementationQueue"] });
-			queryClient.invalidateQueries({ queryKey: ["sessionRuns", run.taskId] });
-			queryClient.invalidateQueries({ queryKey: ["runDetails", run.id] });
-		},
-	});
-
-	const resumeTodoMutation = useMutation({
-		mutationFn: async (input: {
-			runId: string;
-			todoId: string;
-			expectedTodoRevision: number;
-			userContext: string;
-		}) => {
-			const res = await resumeTaskRunTodo(input.runId, input.todoId, {
-				expectedTodoRevision: input.expectedTodoRevision,
-				userContext: input.userContext,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as TaskRun;
-		},
-		onSuccess: (run) => {
-			queryClient.setQueryData<TaskRun[]>(
-				["sessionRuns", run.taskId],
-				(prev = []) => mergeRealtimeRunList(prev, run),
-			);
-			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
-				prev.map((task) =>
-					task.id === run.taskId ? { ...task, status: "running" } : task,
-				),
-			);
-			queryClient.invalidateQueries({ queryKey: ["runDetails", run.id] });
-			queryClient.invalidateQueries({ queryKey: ["sessionRuns", run.taskId] });
-			queryClient.invalidateQueries({ queryKey: ["sessions"] });
-		},
-	});
+	const { startRunMutation, stopRunMutation, resumeTodoMutation } =
+		useCodingAgentCommandMutations({
+			client: codingAgentCommandClient,
+			onFailure: (taskId, error) =>
+				invalidateCommandFailure(queryClient, taskId, error),
+			onStartSuccess: (run) => {
+				queryClient.setQueryData<TaskRun[]>(
+					["sessionRuns", run.taskId],
+					(prev = []) => {
+						return mergeRealtimeRunList(prev, run);
+					},
+				);
+				queryClient.setQueryData<RunDetails | null>(
+					["runDetails", run.id],
+					(prev) => {
+						return mergeRealtimeRunDetails(prev, run) ?? prev;
+					},
+				);
+				queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+					prev.map((session) =>
+						session.id === run.taskId
+							? { ...session, status: "running" }
+							: session,
+					),
+				);
+				queryClient.invalidateQueries({ queryKey: ["sessions"] });
+				queryClient.invalidateQueries({
+					queryKey: ["sessionRuns", run.taskId],
+				});
+			},
+			onStopSuccess: (run) => {
+				queryClient.setQueryData<TaskRun[]>(
+					["sessionRuns", run.taskId],
+					(prev = []) => {
+						const next = [...prev];
+						const idx = next.findIndex((candidate) => candidate.id === run.id);
+						if (idx >= 0) next[idx] = run;
+						else next.unshift(run);
+						return next;
+					},
+				);
+				queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+					prev.map((session) =>
+						session.id === run.taskId
+							? { ...session, status: "ready" }
+							: session,
+					),
+				);
+				queryClient.invalidateQueries({ queryKey: ["sessions"] });
+				queryClient.invalidateQueries({ queryKey: ["implementationQueue"] });
+				queryClient.invalidateQueries({
+					queryKey: ["sessionRuns", run.taskId],
+				});
+				queryClient.invalidateQueries({ queryKey: ["runDetails", run.id] });
+			},
+			onResumeSuccess: (run) => {
+				queryClient.setQueryData<TaskRun[]>(
+					["sessionRuns", run.taskId],
+					(prev = []) => mergeRealtimeRunList(prev, run),
+				);
+				queryClient.setQueryData<Task[]>(["sessions"], (prev = []) =>
+					prev.map((task) =>
+						task.id === run.taskId ? { ...task, status: "running" } : task,
+					),
+				);
+				queryClient.invalidateQueries({ queryKey: ["runDetails", run.id] });
+				queryClient.invalidateQueries({
+					queryKey: ["sessionRuns", run.taskId],
+				});
+				queryClient.invalidateQueries({ queryKey: ["sessions"] });
+			},
+		});
 
 	const stopBackgroundProcessMutation = useMutation({
 		mutationFn: async (processId: string) => {

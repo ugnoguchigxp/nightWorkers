@@ -169,6 +169,14 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
 - Commit and push are explicit and commit does not start a new security scan.
 
 ## Run Event Reattach
+- WebSocket接続時の`connected.capabilities`に
+  `coding_agent.command.v1`が含まれる場合、frontendはCoding Agentのstart / stop /
+  Todo resumeをWebSocketで送る。capabilityなし、未接続、切断、または10秒timeoutでは、
+  同じrequestを`POST /api/coding-agent/commands`へ送る。reconnectだけを理由にpending
+  commandを自動再送しない。
+- Coding Agent commandの`requestId`と`idempotencyKey`は1回のUI操作につき1組で、
+  WebSocketからRESTへfallbackしても変更しない。command responseはreceiptと
+  `taskId` / `runId`だけを返し、最新状態はTask Operator projectionとRun queryから読む。
 - Workbench WebSocket `subscribe_task` accepts optional `runId` and `afterSeq`
   fields. When present, the API verifies the run belongs to the task and
   replays persisted events after the cursor before normal live updates.
@@ -178,6 +186,8 @@ Use these inputs to demonstrate rejected or recoverable extension paths without 
   as a partial event cursor API.
 - In-memory WebSocket replay is a fast path only; persisted `task_events`
   remain the durable recovery source.
+- Workbenchのユーザー入力はRESTのままであり、旧`chat_submit` WebSocket commandは
+  使用しない。
 
 ## Local Startup Baseline
 ```bash

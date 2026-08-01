@@ -4,6 +4,8 @@ import {
 	type MissionPilotControlSummary,
 	type MissionPilotFrontendHost,
 	type MissionPilotPlanProgress,
+	missionPilotPlanProgressRealtimeEventSchema,
+	missionPilotRealtimeEventSchema,
 } from "@nightworkers/mission-pilot/frontend";
 import type { QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api-base";
@@ -20,6 +22,13 @@ configureMissionPilotFrontendHost({
 });
 
 export * from "@nightworkers/mission-pilot/frontend";
+
+export function parseMissionPilotRealtimeExtension(event: unknown) {
+	const progress = missionPilotPlanProgressRealtimeEventSchema.safeParse(event);
+	if (progress.success) return progress.data;
+	const control = missionPilotRealtimeEventSchema.safeParse(event);
+	return control.success ? control.data : null;
+}
 
 export function applyMissionPilotRealtimeExtension(
 	event: unknown,

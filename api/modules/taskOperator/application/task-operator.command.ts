@@ -78,6 +78,7 @@ export type ExecuteTaskOperatorCommandInput = {
 	actionId: string;
 	expectedTaskRevision: number;
 	arguments: Record<string, unknown>;
+	resolveArgumentsForExecution?: () => Promise<Record<string, unknown>>;
 	context: TaskOperatorCommandContext;
 	runtime?: TaskOperatorCommandRuntime;
 };
@@ -150,22 +151,43 @@ export async function executeTaskOperatorCommand(
 		throw permissionDenied(
 			`The current user delegation does not grant ${definition.capability}.`,
 		);
-	const validationError = validateTaskOperatorJsonSchema(
-		definition.inputSchema,
-		input.arguments,
-	);
-	if (validationError)
-		throw new AppError(422, "TASK_OPERATOR_SCHEMA_VALIDATION", validationError);
+	if (!input.resolveArgumentsForExecution)
+		assertTaskOperatorCommandArguments(definition.inputSchema, input.arguments);
 	return executeIdempotentTaskOperatorCommand({
 		taskId: input.taskId,
 		actionId: input.actionId,
 		expectedTaskRevision: input.expectedTaskRevision,
 		arguments: input.arguments,
 		context: input.context,
-		execute: () => executeTaskOperatorCommandOnce(input),
+		execute: async () => {
+			if (!input.resolveArgumentsForExecution)
+				return executeTaskOperatorCommandOnce(input);
+			const executionArguments = await input.resolveArgumentsForExecution();
+			assertTaskOperatorCommandArguments(
+				definition.inputSchema,
+				executionArguments,
+			);
+			return executeTaskOperatorCommandOnce({
+				...input,
+				arguments: executionArguments,
+				resolveArgumentsForExecution: undefined,
+			});
+		},
 		describeResult: (result) =>
 			describeTaskOperatorCommandResult(input.actionId, result),
 	});
+}
+
+function assertTaskOperatorCommandArguments(
+	schema: Parameters<typeof validateTaskOperatorJsonSchema>[0],
+	argumentsValue: Record<string, unknown>,
+) {
+	const validationError = validateTaskOperatorJsonSchema(
+		schema,
+		argumentsValue,
+	);
+	if (validationError)
+		throw new AppError(422, "TASK_OPERATOR_SCHEMA_VALIDATION", validationError);
 }
 
 async function executeTaskOperatorCommandOnce(

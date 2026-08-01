@@ -7,7 +7,6 @@ import {
 	isAllowedNightWorkersWebSocketOrigin,
 	NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
 	NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE,
-	NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH,
 	NIGHTWORKERS_WS_MAX_MESSAGE_BYTES,
 	nightWorkersWsClientMessageSchema,
 	parseNightWorkersWsClientMessage,
@@ -64,8 +63,15 @@ afterAll(async () => {
 describe("NightWorkers WebSocket security", () => {
 	it("accepts an explicitly allowed Origin", async () => {
 		const socket = connect(allowedOrigin);
+		const connected = new Promise<Record<string, unknown>>((resolve) => {
+			socket.once("message", (data) => resolve(JSON.parse(data.toString())));
+		});
 		await waitForOpen(socket);
 		expect(socket.readyState).toBe(WebSocket.OPEN);
+		await expect(connected).resolves.toMatchObject({
+			type: "connected",
+			capabilities: ["coding_agent.command.v1"],
+		});
 		socket.close();
 	});
 
@@ -141,22 +147,66 @@ describe("NightWorkers WebSocket security", () => {
 		await expect(closed).resolves.toBe(1003);
 	});
 
-	it("limits chat_submit.prompt length in the client message contract", () => {
+	it("accepts the versioned Coding Agent command contract", () => {
 		const taskId = "00000000-0000-4000-8000-000000000000";
 		expect(
 			nightWorkersWsClientMessageSchema.safeParse({
-				type: "chat_submit",
+				version: 1,
+				type: "coding_agent.command.execute",
+				requestId: "00000000-0000-4000-8000-000000000001",
+				idempotencyKey: "delivery-1",
 				taskId,
-				prompt: "x".repeat(NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH),
+				actionId: "run.implementation.start",
+				expectedTaskRevision: 1,
+				arguments: {},
 			}).success,
 		).toBe(true);
 		expect(
 			nightWorkersWsClientMessageSchema.safeParse({
-				type: "chat_submit",
+				version: 1,
+				type: "coding_agent.command.execute",
+				requestId: "not-a-uuid",
+				idempotencyKey: "delivery-1",
 				taskId,
-				prompt: "x".repeat(NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH + 1),
+				actionId: "run.implementation.start",
+				expectedTaskRevision: 1,
+				arguments: {},
 			}).success,
 		).toBe(false);
+	});
+
+	it("returns the same typed command failure over WebSocket and REST", async () => {
+		const request = {
+			version: 1,
+			type: "coding_agent.command.execute",
+			requestId: "00000000-0000-4000-8000-000000000011",
+			idempotencyKey: "delivery-missing-task",
+			taskId: "00000000-0000-4000-8000-000000000012",
+			actionId: "run.implementation.start",
+			expectedTaskRevision: 1,
+			arguments: {},
+		};
+		const socket = connect(allowedOrigin);
+		await waitForOpen(socket);
+		const websocketResult = new Promise<Record<string, unknown>>((resolve) => {
+			socket.on("message", (data) => {
+				const message = JSON.parse(data.toString()) as Record<string, unknown>;
+				if (message.type === "coding_agent.command.result") resolve(message);
+			});
+		});
+		socket.send(JSON.stringify(request));
+		const restResponse = await app.request("/api/coding-agent/commands", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: allowedOrigin,
+				"x-nightworkers-e2e": "1",
+			},
+			body: JSON.stringify(request),
+		});
+		expect(restResponse.status).toBe(404);
+		expect(await websocketResult).toEqual(await restResponse.json());
+		socket.close();
 	});
 
 	it("normalizes malformed JSON and schema failures to one typed error", () => {
@@ -169,51 +219,6 @@ describe("NightWorkers WebSocket security", () => {
 				}),
 			);
 		}
-	});
-
-	it("keeps a maximum-length prompt within the message byte budget", () => {
-		const payload = JSON.stringify({
-			type: "chat_submit",
-			taskId: "00000000-0000-4000-8000-000000000000",
-			prompt: "\ud800".repeat(NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH),
-		});
-
-		expect(Buffer.byteLength(payload, "utf8")).toBeLessThanOrEqual(
-			NIGHTWORKERS_WS_MAX_MESSAGE_BYTES,
-		);
-	});
-
-	it("rejects an oversized chat_submit.prompt without processing it", async () => {
-		const socket = connect(allowedOrigin);
-		await waitForOpen(socket);
-		const response = new Promise<{
-			type?: string;
-			code?: string;
-			message?: string;
-		}>((resolve) => {
-			socket.on("message", (data) => {
-				const parsed = JSON.parse(data.toString()) as {
-					type?: string;
-					code?: string;
-					message?: string;
-				};
-				if (parsed.type === "error") resolve(parsed);
-			});
-		});
-		socket.send(
-			JSON.stringify({
-				type: "chat_submit",
-				taskId: "00000000-0000-4000-8000-000000000000",
-				prompt: "x".repeat(NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH + 1),
-			}),
-		);
-
-		await expect(response).resolves.toMatchObject({
-			type: "error",
-			code: NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
-			message: NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE,
-		});
-		socket.close();
 	});
 
 	it("matches origins exactly instead of trusting localhost-like strings", () => {

@@ -1,1 +1,5 @@
-export { fetchTaskOperatorProjection } from "./taskOperatorQueries";
+export {
+	fetchTaskOperatorProjection,
+	taskOperatorProjectionQueryKey,
+	taskOperatorProjectionQueryOptions,
+} from "./taskOperatorQueries";

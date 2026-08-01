@@ -36,6 +36,7 @@ export async function activateTaskRunResume(input: {
 				409,
 				"TODO_REVISION_CONFLICT",
 				"Todo revision is stale; reload the latest run details",
+				{ currentTodoRevision: target.revision },
 			);
 		}
 		const resumedRun = await repo.updateTaskRunIfStatusAndTodoRevision({
@@ -88,7 +89,17 @@ export async function activateTaskRunResume(input: {
 		userContext: input.userContext,
 	});
 	if (!mutation.ok) {
-		throw new AppError(409, mutation.error.code, mutation.error.message);
+		const currentTodo = mutation.todos.find(
+			(todo) => todo.id === input.todoId || todo.todoKey === input.todoId,
+		);
+		throw new AppError(
+			409,
+			mutation.error.code,
+			mutation.error.message,
+			mutation.error.code === "TODO_REVISION_CONFLICT" && currentTodo
+				? { currentTodoRevision: currentTodo.revision }
+				: undefined,
+		);
 	}
 
 	await finishResumeActivation({

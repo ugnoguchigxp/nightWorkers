@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { codingAgentCommandRequestV1Schema } from "../../shared/modules/codingAgent";
 
 export const NIGHTWORKERS_WS_MAX_MESSAGE_BYTES = 128 * 1024;
-export const NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH = 16_000;
 export const NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE = "INVALID_WEBSOCKET_PAYLOAD";
 export const NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE =
 	"Invalid websocket payload";
@@ -21,11 +21,7 @@ export const nightWorkersWsClientMessageSchema = z.discriminatedUnion("type", [
 		afterSeq: z.number().int().min(0).optional(),
 	}),
 	z.object({ type: z.literal("unsubscribe_task"), taskId: z.string().uuid() }),
-	z.object({
-		type: z.literal("chat_submit"),
-		taskId: z.string().uuid(),
-		prompt: z.string().min(1).max(NIGHTWORKERS_WS_MAX_CHAT_PROMPT_LENGTH),
-	}),
+	codingAgentCommandRequestV1Schema,
 ]);
 
 export class NightWorkersWsInvalidPayloadError extends Error {

@@ -3,17 +3,12 @@ import { and, desc, eq } from "drizzle-orm";
 import type {
 	TaskOperatorCommandContext,
 	TaskOperatorCommandReceipt as TaskOperatorCommandReceiptContract,
-	TaskOperatorFailure,
 	TaskOperatorResourceRef,
 } from "../../../shared/modules/taskOperator";
 import { db } from "../../db/client";
 import { taskOperatorCommandReceipts } from "../../db/schema";
 import { AppError } from "../../lib/errors";
-
-type ReceiptFailure = TaskOperatorFailure & {
-	statusCode: number;
-	details?: unknown;
-};
+import { normalizeTaskOperatorCommandFailure } from "./task-operator-command-failure";
 
 export type TaskOperatorCommandReceipt = {
 	id: string;
@@ -138,7 +133,7 @@ export async function executeIdempotentTaskOperatorCommand<T>(input: {
 			.update(taskOperatorCommandReceipts)
 			.set({
 				status: known ? "failed" : "outcome_unknown",
-				failureJson: failure(error),
+				failureJson: normalizeTaskOperatorCommandFailure(error),
 				updatedAt: new Date(),
 			})
 			.where(eq(taskOperatorCommandReceipts.id, receipt.id));
@@ -260,43 +255,6 @@ function replayFailure(value: unknown) {
 		typeof entry.message === "string" ? entry.message : "Command failed.",
 		optionalRecord(entry.details),
 	);
-}
-function failure(error: unknown): ReceiptFailure {
-	if (!(error instanceof AppError))
-		return {
-			kind: "internal",
-			statusCode: 500,
-			code: "TASK_OPERATOR_COMMAND_FAILED",
-			message: error instanceof Error ? error.message : String(error),
-			retryable: false,
-			currentRevision: null,
-		};
-	const currentRevision =
-		typeof error.details?.currentTaskRevision === "number"
-			? error.details.currentTaskRevision
-			: null;
-	return {
-		kind:
-			error.statusCode === 401 || error.statusCode === 403
-				? "permission_denied"
-				: error.statusCode === 404
-					? "not_found"
-					: error.statusCode === 409 && currentRevision !== null
-						? "revision_conflict"
-						: error.statusCode === 422
-							? "schema_validation"
-							: error.statusCode === 429
-								? "resource_limit"
-								: error.statusCode >= 500
-									? "internal"
-									: "domain_precondition",
-		statusCode: error.statusCode,
-		code: error.code,
-		message: error.message,
-		retryable: false,
-		currentRevision,
-		details: error.details,
-	};
 }
 function digest(value: string) {
 	return createHash("sha256").update(value).digest("hex");

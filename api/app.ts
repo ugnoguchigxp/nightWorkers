@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
+import { CODING_AGENT_COMMAND_WS_CAPABILITY } from "../shared/modules/codingAgent";
 import {
 	createComposedMissionPilotFixtureRouter,
 	createComposedMissionPilotRouter,
@@ -23,6 +24,7 @@ import { rateLimiter } from "./middleware/rate-limiter";
 import { blueprintRouter } from "./modules/blueprint";
 import {
 	codingAgentRouter,
+	handleCodingAgentWebSocketCommand,
 	initializeCodingAgentRunHandlers,
 } from "./modules/codingAgent";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
@@ -282,6 +284,7 @@ app.get(
 					JSON.stringify({
 						type: "connected",
 						timestamp: new Date().toISOString(),
+						capabilities: [CODING_AGENT_COMMAND_WS_CAPABILITY],
 					}),
 				);
 			},
@@ -318,7 +321,6 @@ app.get(
 								requestId,
 								rawLength: raw.length,
 								rawBytes,
-								rawPreview: raw.slice(0, 240),
 							},
 						});
 						const parsed = parseNightWorkersWsClientMessage(raw);
@@ -328,7 +330,25 @@ app.get(
 							message: "message parsed",
 							meta: { requestId, type: parsed.type, taskId: parsed.taskId },
 						});
-						if (parsed.type === "subscribe_task") {
+						if (parsed.type === "coding_agent.command.execute") {
+							const startedAt = Date.now();
+							const response = await handleCodingAgentWebSocketCommand(parsed);
+							ws.send(JSON.stringify(response));
+							logEvent({
+								channel: "ws",
+								level: response.result.ok ? "info" : "warn",
+								message: "coding agent command handled",
+								meta: {
+									requestId: parsed.requestId,
+									actionId: parsed.actionId,
+									taskId: parsed.taskId,
+									resultCode: response.result.ok
+										? "OK"
+										: response.result.error.code,
+									latencyMs: Date.now() - startedAt,
+								},
+							});
+						} else if (parsed.type === "subscribe_task") {
 							if (!ws.raw) return;
 							const replayEvents = parsed.runId
 								? await nightworkersService.listTaskRunEventsForReplay({
@@ -378,77 +398,6 @@ app.get(
 						} else if (parsed.type === "unsubscribe_task") {
 							if (!ws.raw) return;
 							nightWorkersRealtimeBroker.unsubscribe(parsed.taskId, ws.raw);
-						} else if (parsed.type === "chat_submit") {
-							logEvent({
-								channel: "ws",
-								level: "info",
-								message: "chat_submit accepted",
-								meta: {
-									requestId,
-									taskId: parsed.taskId,
-									promptLength: parsed.prompt.length,
-								},
-							});
-							const recovered =
-								await nightworkersService.recoverStaleActiveRuns(parsed.taskId);
-							if (recovered.recoveredRunIds.length > 0) {
-								logEvent({
-									channel: "ws",
-									level: "info",
-									message: "stale active runs recovered",
-									meta: {
-										requestId,
-										taskId: parsed.taskId,
-										recoveredRunIds: recovered.recoveredRunIds,
-									},
-								});
-							}
-							if (recovered.hasRunning) {
-								const activeRun = await nightworkersService.getActiveTaskRun(
-									parsed.taskId,
-								);
-								const activeRunId = activeRun?.id || null;
-								logEvent({
-									channel: "ws",
-									level: "info",
-									message: "chat_submit rejected: active run exists",
-									meta: {
-										requestId,
-										taskId: parsed.taskId,
-										runId: activeRunId,
-									},
-								});
-								ws.send(
-									JSON.stringify({
-										type: "error",
-										code: "RUN_ALREADY_ACTIVE",
-										message:
-											"現在このタスクは実行中です。完了後に再送してください。",
-										timestamp: new Date().toISOString(),
-									}),
-								);
-								return;
-							}
-
-							await nightworkersService.appendTaskMessage(
-								parsed.taskId,
-								parsed.prompt,
-							);
-							const run = await nightworkersService.startTaskRun(parsed.taskId);
-							logEvent({
-								channel: "ws",
-								level: "info",
-								message: "chat_submit enqueued",
-								meta: { requestId, taskId: parsed.taskId, runId: run.id },
-							});
-							ws.send(
-								JSON.stringify({
-									type: "chat_submit_enqueued",
-									taskId: parsed.taskId,
-									runId: run.id,
-									timestamp: new Date().toISOString(),
-								}),
-							);
 						}
 					} catch (err) {
 						const errorRecord =

@@ -96,6 +96,16 @@ export async function readRunOperatorState(taskId: string) {
 	};
 }
 
+export async function readLatestTaskRunReference(taskId: string) {
+	const [run] = await db
+		.select({ runId: taskRuns.id, updatedAt: taskRuns.updatedAt })
+		.from(taskRuns)
+		.where(eq(taskRuns.taskId, taskId))
+		.orderBy(desc(taskRuns.startedAt))
+		.limit(1);
+	return run ?? null;
+}
+
 export async function readRunOperatorOutcome(input: {
 	taskId: string;
 	runId: string;

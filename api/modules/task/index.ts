@@ -11,6 +11,7 @@ export {
 	sendTaskOperatorUserMessage,
 } from "./application/task-message-command";
 export {
+	readLatestTaskUserMessageAfter,
 	readTaskMessageFact,
 	readTaskOperatorTask,
 	readTaskTimelineFacts,
