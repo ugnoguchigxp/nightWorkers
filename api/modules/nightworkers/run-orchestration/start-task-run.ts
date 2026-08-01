@@ -42,6 +42,7 @@ import {
 } from "./start-task-run-launch";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
 import {
+	buildRuntimeConversationContextSnapshot,
 	prepareTaskRunRuntimeContext,
 	resolveRunProjectExplorationCatalogPin,
 } from "./start-task-run-runtime-context";
@@ -49,7 +50,10 @@ import {
 	createTaskRunInAgentModeSession,
 	recordCreatedAgentModeSessionTransition,
 } from "./start-task-run-session";
-import type { StartTaskRunOptions } from "./start-task-run-types";
+import {
+	isCurrentWorktreeReviewStart,
+	type StartTaskRunOptions,
+} from "./start-task-run-types";
 
 export { startTaskRun };
 export async function startTaskRunInProcess(
@@ -85,6 +89,7 @@ export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
+	const currentWorktreeReview = isCurrentWorktreeReviewStart(options);
 	const resumable = options.resumeRunId
 		? await prepareResumableTaskRun(taskId, options.resumeRunId)
 		: null;
@@ -131,7 +136,9 @@ export async function prepareTaskRunInProcess(
 		planModeRequested: Boolean(options.planModeRequested),
 	});
 	const intakeRuntimeResume = resolveCodexIntakeRuntimeHandoff({
-		handoff: options.intakeRuntimeThreadHandoff,
+		handoff: currentWorktreeReview
+			? undefined
+			: options.intakeRuntimeThreadHandoff,
 		executionMode,
 		runtimeRoute: runtimeLlmRoute,
 	});
@@ -145,12 +152,15 @@ export async function prepareTaskRunInProcess(
 			settings: projectExplorationCatalogSettings,
 			runtimeLane: runtimeLaneResolution.lane,
 		});
-	const routeIdentity = buildContinuationRouteIdentity({
+	const continuationRouteIdentity = buildContinuationRouteIdentity({
 		executionMode,
 		llmRole: runtimeRole,
 		runtimeLane: runtimeLaneResolution.lane,
 		runtimeLlmRoute,
 	});
+	const routeIdentity = currentWorktreeReview
+		? { ...continuationRouteIdentity, continuationEligible: false }
+		: continuationRouteIdentity;
 	const taskRevisionSnapshot = await resolveTaskRunRevisionBinding({
 		task,
 		resuming: Boolean(resumable),
@@ -207,6 +217,7 @@ export async function prepareTaskRunInProcess(
 			});
 	const run = resumable?.run ?? created?.run;
 	if (!run) throw new Error("Failed to resolve task run.");
+	if (created) await repo.updateTaskStatus(taskId, "running");
 	assertResumedRunBindings({
 		resuming: Boolean(resumable),
 		task,
@@ -234,7 +245,9 @@ export async function prepareTaskRunInProcess(
 			status: gitBaseline.status,
 			baselineHead: gitBaseline.baselineHead,
 			baselineStatusJson: gitBaseline.baselineStatusJson,
-			preExistingDirtyPaths: gitBaseline.preExistingDirtyPaths,
+			preExistingDirtyPaths: currentWorktreeReview
+				? []
+				: gitBaseline.preExistingDirtyPaths,
 			statusReason: gitBaseline.statusReason,
 		});
 	}
@@ -389,10 +402,9 @@ export async function prepareTaskRunInProcess(
 			lastUserMessage,
 			implementationHandoffMessage,
 		});
-	const conversationContext = await maybeLoadConversationStateCard(
-		taskId,
-		lastUserMessage?.id,
-	);
+	const conversationContext = currentWorktreeReview
+		? null
+		: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
 		role: "implementation",
@@ -418,6 +430,17 @@ export async function prepareTaskRunInProcess(
 		stateCardText: runtimeStateCardText,
 	});
 	const runtimeLatestUserMessage = runtimePromptParts.promptText;
+	const conversationContextSnapshot = buildRuntimeConversationContextSnapshot({
+		snapshot: conversationContext,
+		stateCardText: runtimeStateCardText,
+		projection: projectedStateCard.projection,
+		usage: {
+			latestUserMessageTokens:
+				runtimePromptParts.estimates.latestUserMessageTokens,
+			stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
+			runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
+		},
+	});
 	let runtimeContextSnapshot: RuntimePromptSnapshot = {
 		...contextSnapshot,
 		executionPhase: executionMode,
@@ -431,37 +454,9 @@ export async function prepareTaskRunInProcess(
 			request: rawLatestUserMessage,
 			stateCardText: projectedStateCard.stateCardText,
 		}),
-		conversationContext: conversationContext
-			? {
-					snapshotId: conversationContext.id,
-					version: conversationContext.version,
-					tokenEstimate: conversationContext.tokenEstimate,
-					stateCardIncluded: Boolean(runtimeStateCardText),
-					...(runtimeStateCardText
-						? { stateCardText: runtimeStateCardText }
-						: {}),
-					snapshotJson: conversationContext.snapshotJson,
-					projection: projectedStateCard.projection,
-					usage: {
-						latestUserMessageTokens:
-							runtimePromptParts.estimates.latestUserMessageTokens,
-						stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
-						runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
-					},
-				}
-			: {
-					stateCardIncluded: Boolean(runtimeStateCardText),
-					...(runtimeStateCardText
-						? { stateCardText: runtimeStateCardText }
-						: {}),
-					projection: projectedStateCard.projection,
-					usage: {
-						latestUserMessageTokens:
-							runtimePromptParts.estimates.latestUserMessageTokens,
-						stateCardTokens: runtimePromptParts.estimates.stateCardTokens,
-						runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
-					},
-				},
+		...(currentWorktreeReview
+			? {}
+			: { conversationContext: conversationContextSnapshot }),
 	};
 	const ontologyContext = ontologyMcpEnabled
 		? await buildOntologyRuntimeContextSnapshot({

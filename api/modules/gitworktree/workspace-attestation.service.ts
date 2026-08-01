@@ -15,6 +15,7 @@ export async function attestTaskWorkspaceForRun(input: {
 	taskId: string;
 	requireClean: boolean;
 	allowedDirtyPaths?: string[];
+	allowCurrentDirtyState?: boolean;
 }) {
 	const [workspace] = await db
 		.select()
@@ -123,6 +124,7 @@ export async function attestTaskWorkspaceForRun(input: {
 		conflicted,
 		requireClean: input.requireClean,
 		allowedDirtyPaths: input.allowedDirtyPaths,
+		allowCurrentDirtyState: input.allowCurrentDirtyState,
 		dirtyPaths: statusPaths.all,
 		expected: {
 			commonDirCanonical: repository.gitCommonDirCanonical,
@@ -233,6 +235,7 @@ function assertObservedWorkspace(input: {
 	conflicted: boolean;
 	requireClean: boolean;
 	allowedDirtyPaths?: string[];
+	allowCurrentDirtyState?: boolean;
 	dirtyPaths: string[];
 	expected: {
 		commonDirCanonical: string;
@@ -247,8 +250,9 @@ function assertObservedWorkspace(input: {
 		(Boolean(input.expected.expectedHeadSha) &&
 			input.headSha !== input.expected.expectedHeadSha) ||
 		input.conflicted ||
-		(input.requireClean && input.dirty) ||
-		(!input.requireClean &&
+		(!input.allowCurrentDirtyState && input.requireClean && input.dirty) ||
+		(!input.allowCurrentDirtyState &&
+			!input.requireClean &&
 			input.dirtyPaths.some(
 				(value) => !new Set(input.allowedDirtyPaths ?? []).has(value),
 			));

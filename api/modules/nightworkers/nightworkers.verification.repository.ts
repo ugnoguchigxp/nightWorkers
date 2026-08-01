@@ -25,9 +25,7 @@ export async function createVerificationDocument(input: {
 	sourceSpecPath: string;
 	document: SpecificationVerificationDocument;
 }) {
-	const checklistRows = input.document.conditions.map((condition) => ({
-		condition,
-	}));
+	const conditions = input.document.conditions;
 	return db.transaction(async (tx) => {
 		await tx
 			.update(verificationDocuments)
@@ -54,9 +52,9 @@ export async function createVerificationDocument(input: {
 			})
 			.returning();
 		if (!document) throw new Error("Failed to create verification document");
-		if (checklistRows.length > 0) {
+		if (conditions.length > 0) {
 			await tx.insert(verificationChecklistItems).values(
-				checklistRows.map(({ condition }) => ({
+				conditions.map((condition) => ({
 					verificationDocumentId: document.id,
 					taskId: input.taskId,
 					conditionId: condition.id,
@@ -159,28 +157,30 @@ export async function updateVerificationChecklistItems(
 	verificationDocumentId: string,
 	items: VerificationChecklistItem[],
 ) {
-	for (const item of items) {
-		await db
-			.update(verificationChecklistItems)
-			.set({
-				status: item.status,
-				evidenceIdsJson: item.evidenceIds,
-				reason: item.reason ?? null,
-				lastCheckedAt: item.lastCheckedAt
-					? new Date(item.lastCheckedAt)
-					: new Date(),
-				updatedAt: new Date(),
-			})
-			.where(
-				and(
-					eq(
-						verificationChecklistItems.verificationDocumentId,
-						verificationDocumentId,
+	await db.transaction(async (tx) => {
+		for (const item of items) {
+			await tx
+				.update(verificationChecklistItems)
+				.set({
+					status: item.status,
+					evidenceIdsJson: item.evidenceIds,
+					reason: item.reason ?? null,
+					lastCheckedAt: item.lastCheckedAt
+						? new Date(item.lastCheckedAt)
+						: new Date(),
+					updatedAt: new Date(),
+				})
+				.where(
+					and(
+						eq(
+							verificationChecklistItems.verificationDocumentId,
+							verificationDocumentId,
+						),
+						eq(verificationChecklistItems.conditionId, item.conditionId),
 					),
-					eq(verificationChecklistItems.conditionId, item.conditionId),
-				),
-			);
-	}
+				);
+		}
+	});
 }
 
 export async function createVerificationEvidenceRun(input: {

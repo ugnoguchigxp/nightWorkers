@@ -99,23 +99,7 @@ export function EvidenceCheckArtifactViewer({
 								</p>
 							</div>
 							<AssuranceStatusBadge
-								status={
-									resolvedSnapshot.assuranceSummary.fullVerifyStatus ===
-										"passed" &&
-									(resolvedSnapshot.assuranceSummary.required !== undefined
-										? resolvedSnapshot.assuranceSummary.required > 0 &&
-											resolvedSnapshot.assuranceSummary.requiredSafePass ===
-												resolvedSnapshot.assuranceSummary.required
-										: resolvedSnapshot.assuranceSummary.automated > 0 &&
-											resolvedSnapshot.assuranceSummary.safePass ===
-												resolvedSnapshot.assuranceSummary.automated)
-										? "safe_pass"
-										: resolvedSnapshot.assuranceSummary.failed > 0 ||
-												resolvedSnapshot.assuranceSummary.fullVerifyStatus ===
-													"failed"
-											? "failed"
-											: "pending"
-								}
+								status={resolveOverallAssuranceStatus(resolvedSnapshot)}
 							/>
 						</div>
 						<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px]">
@@ -370,6 +354,39 @@ function AssuranceStatusBadge({
 			{t(`evidenceCheck.assuranceStatus.${status}`)}
 		</span>
 	);
+}
+
+function resolveOverallAssuranceStatus(
+	snapshot: EvidenceCheckSnapshot,
+): EvidenceCheckSnapshot["conditions"][number]["assuranceStatus"] {
+	if (
+		snapshot.assuranceSummary.fullVerifyStatus === "failed" ||
+		snapshot.conditions.some(
+			(condition) => condition.assuranceStatus === "failed",
+		)
+	) {
+		return "failed";
+	}
+	if (snapshot.assuranceSummary.fullVerifyStatus !== "passed") return "pending";
+	const required = snapshot.conditions.filter(
+		(condition) => condition.required,
+	);
+	if (
+		required.length > 0 &&
+		required.every((condition) => condition.assuranceStatus === "safe_pass")
+	) {
+		return "safe_pass";
+	}
+	if (
+		required.length === 0 &&
+		snapshot.conditions.length > 0 &&
+		snapshot.conditions.every(
+			(condition) => condition.assuranceStatus === "not_applicable",
+		)
+	) {
+		return "not_applicable";
+	}
+	return "pending";
 }
 
 function yesNo(t: ReturnType<typeof useTranslation>["t"], value: boolean) {

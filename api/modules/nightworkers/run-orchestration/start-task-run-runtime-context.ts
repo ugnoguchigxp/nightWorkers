@@ -3,12 +3,15 @@ import type {
 	ProjectExplorationCatalogRunPin,
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 import { getCurrentSettings } from "../../../routes/settings";
+import type { StateCardProjection } from "../../../services/conversation-context/state-card-projection";
+import type { ConversationContextSnapshotRecord } from "../../../services/conversation-context/types";
 import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
 import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
 import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
+import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import {
 	readRuntimeLaneConfigFromEnv,
 	resolveCodingAgentRuntimeRole,
@@ -22,6 +25,31 @@ import {
 	resolveRuntimeLaneForRoleRoute,
 } from "./runtime-routing";
 import type { StartTaskRunOptions } from "./start-task-run-types";
+
+export function buildRuntimeConversationContextSnapshot(input: {
+	snapshot: ConversationContextSnapshotRecord | null;
+	stateCardText: string;
+	projection: StateCardProjection;
+	usage: NonNullable<
+		NonNullable<RuntimePromptSnapshot["conversationContext"]>["usage"]
+	>;
+}): NonNullable<RuntimePromptSnapshot["conversationContext"]> {
+	const common = {
+		stateCardIncluded: Boolean(input.stateCardText),
+		...(input.stateCardText ? { stateCardText: input.stateCardText } : {}),
+		projection: input.projection,
+		usage: input.usage,
+	};
+	return input.snapshot
+		? {
+				...common,
+				snapshotId: input.snapshot.id,
+				version: input.snapshot.version,
+				tokenEstimate: input.snapshot.tokenEstimate,
+				snapshotJson: input.snapshot.snapshotJson,
+			}
+		: common;
+}
 
 export async function prepareTaskRunRuntimeContext(input: {
 	taskId: string;

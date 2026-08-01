@@ -11,11 +11,19 @@ export type ImplementationPlanConstraint = {
 	digest: string;
 };
 
+export const CURRENT_WORKTREE_REVIEW_START_KIND =
+	"current_worktree_review" as const;
+
+export type CurrentWorktreeReviewStart = {
+	kind: typeof CURRENT_WORKTREE_REVIEW_START_KIND;
+};
+
 export type StartTaskRunOptions = {
 	executionMode?: NativeApiExecutionMode;
 	executionModeSource?:
 		| "message_history"
 		| "workbench_intake"
+		| "workbench_review_followup"
 		| "workbench_run"
 		| "workbench_run_task"
 		| "implementation_queue"
@@ -26,6 +34,8 @@ export type StartTaskRunOptions = {
 	planModeRequested?: boolean;
 	/** 直前のintake gateで初期化済みのCodex threadを、最初のCoding Agent Runへ一度だけ渡す。 */
 	intakeRuntimeThreadHandoff?: CodingAgentPlanModeRuntimeThreadHandoff;
+	/** 同じTask専用worktreeの現在差分を、fresh sessionが自発的にレビューする開始契約。 */
+	currentWorktreeReview?: CurrentWorktreeReviewStart;
 	initialTodos?: ImplementationTodoInput[];
 	implementationPlanConstraint?: ImplementationPlanConstraint;
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */
@@ -42,3 +52,11 @@ export type StartTaskRunOptions = {
 	/** 起動元roleがRunを関連付けるための、agentsShare経由の中立request。 */
 	runAssociation?: TaskRunAssociationRequest;
 };
+
+export function isCurrentWorktreeReviewStart(
+	options: Pick<StartTaskRunOptions, "currentWorktreeReview">,
+) {
+	return (
+		options.currentWorktreeReview?.kind === CURRENT_WORKTREE_REVIEW_START_KIND
+	);
+}

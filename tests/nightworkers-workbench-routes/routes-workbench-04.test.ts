@@ -375,6 +375,9 @@ describe("NightWorkers workbench routes", () => {
 
 	it("starts a Coding Agent run for a Review Mode follow-up", async () => {
 		const { task } = await createWorkbenchTask({ status: "ready" });
+		vi.mocked(llm.callStructuredJsonLLM).mockClear();
+		const prompt =
+			"現在のTask専用worktreeでgit statusとgit diffを自分で確認し、未追跡ファイルも含めてレビュー対象を判断してコードレビューをしてください。指摘事項があれば修正して検証してください。";
 
 		const response = await app.request(
 			`http://localhost/api/workbench/sessions/${task.id}/messages`,
@@ -382,10 +385,8 @@ describe("NightWorkers workbench routes", () => {
 				method: "POST",
 				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
 				body: JSON.stringify({
-					prompt:
-						"コードレビューをしてください。指摘事項があれば修正してください。",
+					prompt,
 					intent: "review_followup",
-					waitForIntake: true,
 				}),
 			},
 		);
@@ -399,6 +400,12 @@ describe("NightWorkers workbench routes", () => {
 				planModeRequested: false,
 			},
 		});
+		expect(body.run.contextSnapshot.compiledPrompt).toBe(prompt);
+		expect(body.run.contextSnapshot).not.toHaveProperty(
+			"implementationHandoff",
+		);
+		expect(body.run.contextSnapshot).not.toHaveProperty("conversationContext");
+		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
 		expect(
 			body.messages.some(
 				(message: unknown) =>
@@ -406,6 +413,109 @@ describe("NightWorkers workbench routes", () => {
 					message.metadataJson?.executionMode === "implementation",
 			),
 		).toBe(true);
+	});
+
+	it("starts a fresh Review Run in the same dirty Task worktree", async () => {
+		const repositoryPath = await createDisposableRepository();
+		const { task } = await createWorkbenchTask({
+			status: "ready",
+			repositoryPath,
+		});
+		const initialResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: "fixtureを実装してください。",
+					intent: "intake",
+					waitForIntake: true,
+				}),
+			},
+		);
+		expect(initialResponse.status, await initialResponse.clone().text()).toBe(
+			200,
+		);
+		const initialBody = await initialResponse.json();
+		const initialRun = await waitForTerminalRun(initialBody.run.id);
+		const preparedTask = await repo.getTask(task.id);
+		expect(preparedTask?.worktreePath).toBeTruthy();
+		const worktreePath = preparedTask?.worktreePath as string;
+		disposableRepositoryRoots.push(worktreePath);
+		await writeFile(
+			path.join(worktreePath, "review-target.ts"),
+			"export const reviewTarget = true;\n",
+			"utf8",
+		);
+		await repo.createTaskMessage({
+			taskId: task.id,
+			role: "assistant",
+			content: "# SHOULD_NOT_ENTER_REVIEW_CONTEXT",
+			messageType: "markdown_document",
+			payloadJson: { intent: "implementation_plan" },
+		});
+		vi.mocked(llm.callStructuredJsonLLM).mockClear();
+		const reviewPrompt =
+			"現在のTask専用worktreeでgit statusとgit diffを自分で確認してコードレビューしてください。";
+
+		const response = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: reviewPrompt,
+					intent: "review_followup",
+				}),
+			},
+		);
+
+		expect(response.status, await response.clone().text()).toBe(200);
+		const body = await response.json();
+		expect(body.run).toMatchObject({
+			taskId: task.id,
+			worktreePath,
+			contextSnapshot: {
+				compiledPrompt: reviewPrompt,
+				executionModeSource: "workbench_review_followup",
+			},
+		});
+		expect(body.run.id).not.toBe(initialRun.id);
+		expect(body.run.agentModeSessionId).not.toBe(initialRun.agentModeSessionId);
+		expect(JSON.stringify(body.run.contextSnapshot)).not.toContain(
+			"SHOULD_NOT_ENTER_REVIEW_CONTEXT",
+		);
+		expect(body.run.contextSnapshot).not.toHaveProperty("conversationContext");
+		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
+		await waitForTerminalRun(body.run.id);
+		const commitRecord = await repo.getTaskRunCommitRecord(body.run.id);
+		expect(commitRecord?.preExistingDirtyPathsJson).toEqual([]);
+
+		const statusBeforeRejectedReview = (await repo.getTask(task.id))?.status;
+		execFileSync(
+			"git",
+			["checkout", "-b", `unexpected-${crypto.randomUUID()}`],
+			{
+				cwd: worktreePath,
+				stdio: "ignore",
+			},
+		);
+		const rejectedResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: reviewPrompt,
+					intent: "review_followup",
+				}),
+			},
+		);
+		expect(rejectedResponse.status).toBe(409);
+		expect((await repo.getTask(task.id))?.status).toBe(
+			statusBeforeRejectedReview,
+		);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(2);
 	});
 
 	it("keeps plan-mode AI responses available for queued sessions without starting a run", async () => {
@@ -716,4 +826,21 @@ async function createDisposableRepository() {
 		{ cwd: root, stdio: "ignore" },
 	);
 	return root;
+}
+
+async function waitForTerminalRun(runId: string) {
+	const terminalStatuses = new Set([
+		"completed",
+		"failed",
+		"cancelled",
+		"timed_out",
+		"needs_review",
+		"needs_human",
+	]);
+	for (let attempt = 0; attempt < 200; attempt += 1) {
+		const run = await repo.getTaskRun(runId);
+		if (run && terminalStatuses.has(run.status)) return run;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error(`Run ${runId} did not reach a terminal status.`);
 }

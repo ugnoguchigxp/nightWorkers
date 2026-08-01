@@ -62,6 +62,11 @@ const allTestsTask = task('all-tests', 'all vitest tests', [
   'test',
   'run',
 ]);
+const unitCoverageTask = task('unit-coverage', 'unit coverage policy', [
+  '--silent',
+  'run',
+  'test:coverage',
+]);
 const liveLlmTask = task('live-llm', 'live LLM provider tests', [
   '--silent',
   'run',
@@ -134,6 +139,12 @@ const fullTestPhase = {
   mode: 'serial',
   tasks: [allTestsTask],
 };
+const unitCoveragePhase = {
+  id: 'unit-coverage',
+  label: 'unit coverage policy',
+  mode: 'serial',
+  tasks: [unitCoverageTask],
+};
 const e2ePhase = {
   id: 'e2e-coverage',
   label: 'E2E scenario coverage',
@@ -198,6 +209,7 @@ const desktopPhases = [
 const deterministicFullPhases = [
   ...basePhases,
   fullTestPhase,
+  unitCoveragePhase,
   e2ePhase,
   demoPhase,
   auditPhase,

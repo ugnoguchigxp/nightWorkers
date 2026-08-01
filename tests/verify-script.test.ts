@@ -24,6 +24,7 @@ describe("release verification plan", () => {
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining([
 				"all-tests",
+				"unit-coverage",
 				"e2e-coverage",
 				"live-llm",
 				"desktop-build",
@@ -52,6 +53,7 @@ describe("release verification plan", () => {
 		expect(taskIds).toEqual(
 			expect.arrayContaining([
 				"all-tests",
+				"unit-coverage",
 				"e2e-coverage",
 				"demo-smoke",
 				"dependency-audit",
@@ -66,7 +68,15 @@ describe("release verification plan", () => {
 		expect(taskIds).not.toEqual(
 			expect.arrayContaining(["live-llm", "live-agent-e2e"]),
 		);
-		expect(taskSets.full.map((phase) => phase.id)).toContain("e2e-coverage");
+		expect(taskSets.full.map((phase) => phase.id)).toEqual(
+			expect.arrayContaining(["unit-coverage", "e2e-coverage"]),
+		);
+		expect(taskIds.indexOf("unit-coverage")).toBeGreaterThan(
+			taskIds.indexOf("all-tests"),
+		);
+		expect(taskIds.indexOf("unit-coverage")).toBeLessThan(
+			taskIds.indexOf("e2e-coverage"),
+		);
 		expect(taskIds).not.toContain("e2e-accessibility");
 	});
 
@@ -118,6 +128,7 @@ describe("release verification plan", () => {
 			"lint",
 			"supervisor-regression",
 			"all-tests",
+			"unit-coverage",
 			"e2e-coverage",
 			"dependency-audit",
 			"desktop-runtime",

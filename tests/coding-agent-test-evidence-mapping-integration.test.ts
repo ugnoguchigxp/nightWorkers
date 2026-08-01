@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../api/db/client";
@@ -20,14 +23,19 @@ import {
 import { buildCommandLevelEvidence } from "../api/services/verification/normalized-evidence";
 
 const repositoryIds: string[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
 	for (const repositoryId of repositoryIds.splice(0)) {
 		await db.delete(repositories).where(eq(repositories.id, repositoryId));
 	}
+	for (const directory of temporaryDirectories.splice(0)) {
+		await fs.rm(directory, { recursive: true, force: true });
+	}
 });
 
 async function createVerificationFixture(conditionIds: string[]) {
+	const repoRoot = await createTestRepository();
 	const repositoryId = crypto.randomUUID();
 	const taskId = crypto.randomUUID();
 	const verificationDocumentId = crypto.randomUUID();
@@ -35,7 +43,7 @@ async function createVerificationFixture(conditionIds: string[]) {
 	await db.insert(repositories).values({
 		id: repositoryId,
 		name: "test-evidence-set-fixture",
-		localPath: process.cwd(),
+		localPath: repoRoot,
 		branch: "main",
 	});
 	await db.insert(tasks).values({
@@ -65,14 +73,37 @@ async function createVerificationFixture(conditionIds: string[]) {
 			evidenceIdsJson: [],
 		})),
 	);
-	return { taskId, verificationDocumentId };
+	return { taskId, verificationDocumentId, repoRoot };
+}
+
+async function createTestRepository() {
+	const repoRoot = await fs.mkdtemp(
+		path.join(os.tmpdir(), "nightworkers-evidence-mapping-"),
+	);
+	temporaryDirectories.push(repoRoot);
+	await fs.mkdir(path.join(repoRoot, "tests"), { recursive: true });
+	await fs.writeFile(
+		path.join(repoRoot, "package.json"),
+		JSON.stringify({ devDependencies: { vitest: "test" } }),
+	);
+	await fs.writeFile(
+		path.join(repoRoot, "tests/coding-agent-test-evidence-matcher.test.ts"),
+		[
+			'import { expect, it } from "vitest";',
+			'it("accepts a name at exactly 90% similarity", () => {',
+			"  expect(true).toBe(true);",
+			"});",
+		].join("\n"),
+	);
+	return repoRoot;
 }
 
 describe("schema test evidence mapping integration", () => {
 	it("[AC-001][AC-013] records mapped current evidence without changing Run status", async () => {
+		const repoRoot = await createTestRepository();
 		const repository = await nightworkersRepository.createRepository({
 			name: `TEST: strict acceptance evidence ${crypto.randomUUID()}`,
-			localPath: process.cwd(),
+			localPath: repoRoot,
 			branch: "main",
 		});
 		repositoryIds.push(repository.id);
@@ -124,7 +155,7 @@ describe("schema test evidence mapping integration", () => {
 			taskId: task.id,
 			runId: run?.id,
 			verificationDocumentId: document.id,
-			repoRoot: process.cwd(),
+			repoRoot,
 			evidenceSet: {
 				version: 1,
 				references: [
@@ -140,12 +171,12 @@ describe("schema test evidence mapping integration", () => {
 		expect(mapping.ok).toBe(true);
 		const caseKey = mapping.payload?.matches[0]?.caseKey;
 		expect(caseKey).toBeTruthy();
-		const sourceSnapshot = await captureWorkspaceSourceSnapshot(process.cwd());
+		const sourceSnapshot = await captureWorkspaceSourceSnapshot(repoRoot);
 		const testEvidence = buildCommandLevelEvidence({
 			runId: run?.id ?? "",
 			taskId: task.id,
 			command: "vitest --reporter=json",
-			cwd: process.cwd(),
+			cwd: repoRoot,
 			startedAt: "2026-08-01T00:00:00.000Z",
 			finishedAt: "2026-08-01T00:00:01.000Z",
 			exitCode: 0,
@@ -180,7 +211,7 @@ describe("schema test evidence mapping integration", () => {
 			runId: run?.id ?? "",
 			taskId: task.id,
 			command: "bun run verify",
-			cwd: process.cwd(),
+			cwd: repoRoot,
 			startedAt: "2026-08-01T00:00:02.000Z",
 			finishedAt: "2026-08-01T00:00:03.000Z",
 			exitCode: 0,
@@ -202,7 +233,7 @@ describe("schema test evidence mapping integration", () => {
 			taskId: task.id,
 			runId: run?.id ?? "",
 			verificationDocumentId: document.id,
-			repoRoot: process.cwd(),
+			repoRoot,
 		});
 		expect(completion).toMatchObject({
 			ok: true,
@@ -224,7 +255,6 @@ describe("schema test evidence mapping integration", () => {
 		const fixture = await createVerificationFixture(["AC-001", "AC-002"]);
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			repoRoot: process.cwd(),
 			evidenceSet: {
 				version: 1,
 				references: [
@@ -281,7 +311,6 @@ describe("schema test evidence mapping integration", () => {
 			.where(eq(codingAgentTestInventoryRuns.taskId, fixture.taskId));
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			repoRoot: process.cwd(),
 			evidenceSet: {
 				version: 1,
 				references: [
@@ -327,7 +356,6 @@ describe("schema test evidence mapping integration", () => {
 		const fixture = await createVerificationFixture(["AC-001"]);
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			repoRoot: process.cwd(),
 			cwd: "/tmp",
 			evidenceSet: {
 				version: 1,

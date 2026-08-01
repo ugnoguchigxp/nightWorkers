@@ -88,7 +88,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: release-desktop-diagnostics
-          path: artifacts/**
+          path: |
+            artifacts/**
+            coverage/coverage-summary.json
+            coverage/global-thresholds.json
+            coverage/critical-branches.json
           if-no-files-found: error
           retention-days: 14
 

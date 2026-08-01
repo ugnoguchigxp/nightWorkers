@@ -19,7 +19,8 @@ export const REVIEW_MODE_PROMPT_ACTIONS: ReviewModePromptAction[] = [
 		id: "code_review",
 		label: "コードレビュー",
 		description: "実装をレビューし、見つかった指摘事項まで修正します。",
-		prompt: "コードレビューをしてください。指摘事項があれば修正してください。",
+		prompt:
+			"現在のTask専用worktreeでgit statusとgit diffを自分で確認し、未追跡ファイルも含めてレビュー対象を判断してコードレビューをしてください。指摘事項があれば修正して検証してください。",
 	},
 	{
 		id: "security_scan",

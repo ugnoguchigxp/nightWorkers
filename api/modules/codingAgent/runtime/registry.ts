@@ -11,12 +11,22 @@ import type {
 } from "./runtime-lane";
 import type { AgentRuntime, AgentRuntimeKind } from "./types";
 
-const nativeRuntime = new NativeAgentRuntime();
-const codexRuntime = new CodexAgentRuntime();
+let nativeRuntime: NativeAgentRuntime | null = null;
+let codexRuntime: CodexAgentRuntime | null = null;
+
+function getNativeRuntime() {
+	nativeRuntime ??= new NativeAgentRuntime();
+	return nativeRuntime;
+}
+
+function getCodexRuntime() {
+	codexRuntime ??= new CodexAgentRuntime();
+	return codexRuntime;
+}
 
 export function resolveAgentRuntime(kind: AgentRuntimeKind): AgentRuntime {
-	if (kind === "native-local") return nativeRuntime;
-	if (kind === "codex-agent") return codexRuntime;
+	if (kind === "native-local") return getNativeRuntime();
+	if (kind === "codex-agent") return getCodexRuntime();
 	throw new AppError(
 		501,
 		"RUNTIME_KIND_NOT_SUPPORTED",
@@ -46,13 +56,13 @@ const runtimeLaneDefinitions = {
 		kind: "native-api-runner",
 		aliases: ["native-api-runner", "native-supervisor", "native-local"],
 		buildRuntimeOptions: buildRuntimeLaneOptions,
-		createAdapter: () => nativeRuntime,
+		createAdapter: getNativeRuntime,
 	},
 	"codex-sdk": {
 		kind: "codex-sdk",
 		aliases: ["codex-sdk", "codex-agent"],
 		buildRuntimeOptions: buildRuntimeLaneOptions,
-		createAdapter: () => codexRuntime,
+		createAdapter: getCodexRuntime,
 	},
 } as const satisfies Record<RuntimeLane, RuntimeLaneDefinition>;
 

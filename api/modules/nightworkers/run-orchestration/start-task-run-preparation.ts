@@ -26,12 +26,16 @@ import {
 	findLatestImplementationHandoffMessage,
 	resolveLatestJobTypeFromMessages,
 } from "./runtime-routing";
-import type { StartTaskRunOptions } from "./start-task-run-types";
+import {
+	isCurrentWorktreeReviewStart,
+	type StartTaskRunOptions,
+} from "./start-task-run-types";
 
 export async function prepareTaskRunStart(input: {
 	task: NonNullable<Awaited<ReturnType<typeof repo.getTask>>>;
 	options: StartTaskRunOptions;
 }) {
+	const currentWorktreeReview = isCurrentWorktreeReviewStart(input.options);
 	const repoInfo = await repo.getRepository(input.task.repositoryId);
 	if (!repoInfo?.localPath) {
 		throw new AppError(
@@ -87,7 +91,9 @@ export async function prepareTaskRunStart(input: {
 	const lastUserMessage = [...messages]
 		.reverse()
 		.find((message) => message.role === "user");
-	const jobType = resolveLatestJobTypeFromMessages(messages);
+	const jobType = currentWorktreeReview
+		? null
+		: resolveLatestJobTypeFromMessages(messages);
 	const executionMode = "implementation" as const;
 	const taskGitWorkspace = await getTaskGitWorkspace(input.task.id);
 	const repositoryMaterializationSnapshot = taskGitWorkspace
@@ -150,10 +156,11 @@ export async function prepareTaskRunStart(input: {
 		: null;
 	const workspaceAdmission = await attestTaskWorkspaceForRun({
 		taskId: input.task.id,
-		requireClean: !input.options.resumeRunId,
+		requireClean: !input.options.resumeRunId && !currentWorktreeReview,
 		allowedDirtyPaths: input.options.resumeRunId
 			? (resumeCommitRecord?.ownedCandidatePathsJson ?? [])
 			: undefined,
+		allowCurrentDirtyState: currentWorktreeReview,
 	});
 	const executionModeSource = input.options.executionModeSource ?? "explicit";
 	const dependencyBootstrap = taskGitWorkspace
@@ -176,8 +183,9 @@ export async function prepareTaskRunStart(input: {
 		if (!directory) continue;
 		await fs.mkdir(directory, { recursive: true, mode: 0o700 });
 	}
-	const implementationHandoffMessage =
-		findLatestImplementationHandoffMessage(messages);
+	const implementationHandoffMessage = currentWorktreeReview
+		? undefined
+		: findLatestImplementationHandoffMessage(messages);
 	const implementationDesignArtifacts = findLatestImplementationDesignArtifacts(
 		messages,
 		implementationHandoffMessage,

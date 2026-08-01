@@ -596,7 +596,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"e98c5db0fc08737605b940ec58e2ce9b50073879af0651769f52de4681375698",
+				"e004a640bee1be624e05a38a5a22c62d8a73c9c142e037cd1d40655ef3a36bf7",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:

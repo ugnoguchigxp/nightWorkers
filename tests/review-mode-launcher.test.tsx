@@ -260,7 +260,7 @@ describe("Review Mode launcher", () => {
 		);
 
 		expect(REVIEW_MODE_PROMPT_ACTIONS.map((action) => action.prompt)).toEqual([
-			"コードレビューをしてください。指摘事項があれば修正してください。",
+			"現在のTask専用worktreeでgit statusとgit diffを自分で確認し、未追跡ファイルも含めてレビュー対象を判断してコードレビューをしてください。指摘事項があれば修正して検証してください。",
 			"vulnWorkbenchでセキュリティスキャンをしてください。指摘結果があれば修正してください。",
 			"コミットしてください。",
 			"プッシュしてください。",
@@ -391,6 +391,39 @@ describe("Review Mode launcher", () => {
 		}
 		expect(markup).toContain("nightworkers-scrollbar-hidden");
 		expect(markup).toContain('data-artifact-mode="review" aria-pressed="true"');
+	});
+
+	it("keeps Evidence clickable while a different artifact action is busy", () => {
+		const noop = () => undefined;
+		const markup = renderToStaticMarkup(
+			createElement(ArtifactModeNavigation, {
+				current: null,
+				busyKind: "plan",
+				available: {
+					project_files: true,
+					plan: true,
+					todo: true,
+					evidence: true,
+					review: true,
+				},
+				onOpen: {
+					project_files: noop,
+					plan: noop,
+					todo: noop,
+					evidence: noop,
+					review: noop,
+				},
+			}),
+		);
+		const planButton = markup.match(
+			/<button[^>]*data-artifact-mode="plan"[^>]*>/,
+		)?.[0];
+		const evidenceButton = markup.match(
+			/<button[^>]*data-artifact-mode="evidence"[^>]*>/,
+		)?.[0];
+
+		expect(planButton).toContain('disabled=""');
+		expect(evidenceButton).not.toContain('disabled=""');
 	});
 
 	it("does not duplicate the shared artifact navigation inside the artifact pane", () => {

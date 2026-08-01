@@ -135,6 +135,8 @@ export async function handleWorkbenchIntakeMessage(
 		failureMode: "throw",
 	},
 ) {
+	const intent = options.intent || "intake";
+	const currentWorktreeReview = intent === "review_followup";
 	const title =
 		task.title === "New Session"
 			? prompt.replace(/\s+/g, " ").slice(0, 60)
@@ -143,37 +145,41 @@ export async function handleWorkbenchIntakeMessage(
 	const projectRoot = repository?.localPath || process.cwd();
 	const emitWorkbenchLlmDebugEvent =
 		createWorkbenchLlmDebugEventEmitter(taskId);
-	const llmPrompt = renderArtifactContextualPrompt(
-		prompt,
-		options.artifactContext || null,
-	);
+	const llmPrompt = currentWorktreeReview
+		? prompt
+		: renderArtifactContextualPrompt(prompt, options.artifactContext || null);
 
 	try {
 		const messages = await repo.listTaskMessages(taskId);
-		const planModeGateResult =
-			(await codingAgent.loadPersistedCodingAgentPlanModeGateResult({
-				taskId,
-				repositoryId: task.repositoryId,
-				prompt: llmPrompt,
-			})) ??
-			(await decideWorkbenchPlanModeGate({
-				projectRoot,
-				prompt: llmPrompt,
-				task,
-				messages,
-				runs: await repo.listTaskRunsForTask(taskId),
-				routeOverride: options.llmRouteOverride || null,
-				emitEvent: emitWorkbenchLlmDebugEvent,
-				taskId,
-				repositoryId: task.repositoryId,
-			}));
+		const planModeGateResult: WorkbenchPlanModeGate = currentWorktreeReview
+			? {
+					shouldStartPlanMode: false,
+					action: "coding_agent",
+					reason:
+						"Review Artifactから明示された操作のため、同じTask専用worktreeでfresh Coding Agent Runを開始する。",
+				}
+			: ((await codingAgent.loadPersistedCodingAgentPlanModeGateResult({
+					taskId,
+					repositoryId: task.repositoryId,
+					prompt: llmPrompt,
+				})) ??
+				(await decideWorkbenchPlanModeGate({
+					projectRoot,
+					prompt: llmPrompt,
+					task,
+					messages,
+					runs: await repo.listTaskRunsForTask(taskId),
+					routeOverride: options.llmRouteOverride || null,
+					emitEvent: emitWorkbenchLlmDebugEvent,
+					taskId,
+					repositoryId: task.repositoryId,
+				})));
 		const { runtimeThreadHandoff, ...planModeGate } = planModeGateResult;
 		const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(
 			readGeneralSettings(),
 		);
 		const shouldStartPlanMode =
 			planModeGate.shouldStartPlanMode || planModeGate.action === "plan_mode";
-		const intent = options.intent || "intake";
 		const shouldStartCodingAgentRun =
 			shouldStartPlanMode || CODING_AGENT_RUN_INTENTS.has(intent);
 		if (task.status === "queued" && shouldStartCodingAgentRun) {
@@ -220,11 +226,26 @@ export async function handleWorkbenchIntakeMessage(
 			};
 		} else if (CODING_AGENT_RUN_INTENTS.has(intent)) {
 			const executionMode = "implementation";
-			const runnable = await repo.updateTask(taskId, {
-				title,
-				objective: task.objective || prompt,
-				acceptanceCriteria: task.acceptanceCriteria || prompt,
-				status: "ready",
+			const runnable = currentWorktreeReview
+				? task
+				: await repo.updateTask(taskId, {
+						title,
+						objective: task.objective || prompt,
+						acceptanceCriteria: task.acceptanceCriteria || prompt,
+						status: "ready",
+					});
+			const run = await startTaskRun(taskId, {
+				executionModeSource: currentWorktreeReview
+					? "workbench_review_followup"
+					: "workbench_intake",
+				planModeRequested: false,
+				intakeRuntimeThreadHandoff: currentWorktreeReview
+					? undefined
+					: runtimeThreadHandoff,
+				currentWorktreeReview: currentWorktreeReview
+					? { kind: "current_worktree_review" }
+					: undefined,
+				routeOverride: options.llmRouteOverride || null,
 			});
 			await repo.createTaskMessage({
 				taskId,
@@ -238,12 +259,6 @@ export async function handleWorkbenchIntakeMessage(
 					planModeGate,
 					planModeSettingsSnapshot,
 				},
-			});
-			const run = await startTaskRun(taskId, {
-				executionModeSource: "workbench_intake",
-				planModeRequested: false,
-				intakeRuntimeThreadHandoff: runtimeThreadHandoff,
-				routeOverride: options.llmRouteOverride || null,
 			});
 			return {
 				task: (await repo.getTask(taskId)) || runnable,
@@ -264,10 +279,12 @@ export async function handleWorkbenchIntakeMessage(
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		const updated = await repo.updateTask(taskId, {
-			title,
-			objective: task.objective || prompt,
-		});
+		const updated = currentWorktreeReview
+			? ((await repo.getTask(taskId)) ?? task)
+			: await repo.updateTask(taskId, {
+					title,
+					objective: task.objective || prompt,
+				});
 		if (options.failureMode === "record") {
 			await repo.createTaskMessage({
 				taskId,

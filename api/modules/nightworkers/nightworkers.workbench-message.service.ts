@@ -459,7 +459,8 @@ export async function appendWorkbenchMessage(
 	}
 
 	const waitForIntake =
-		input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
+		intent === "review_followup" ||
+		(input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests());
 	if (waitForIntake) {
 		return handleWorkbenchIntakeMessage(id, task, prompt, {
 			failureMode: "throw",

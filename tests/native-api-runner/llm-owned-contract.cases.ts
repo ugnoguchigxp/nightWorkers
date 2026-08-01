@@ -640,7 +640,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				message.content.includes("FINALIZE_RECONCILIATION_REQUIRED"),
 		);
 		expect(feedback).toMatchObject({ role: "user" });
-		expect(JSON.stringify(feedback)).toContain("evidence_subject_unavailable");
+		expect(JSON.stringify(feedback)).toContain("quality_gate_incomplete");
 		expect(JSON.stringify(feedback)).toContain("finalCandidate");
 		expect(JSON.stringify(feedback)).toContain("実装と検証が完了しました。");
 		expect(result).toMatchObject({

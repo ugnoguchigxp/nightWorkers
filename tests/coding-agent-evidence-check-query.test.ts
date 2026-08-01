@@ -118,6 +118,7 @@ describe("Coding Agent Evidence Check query", () => {
 				conditionId: "AC-001",
 				text: "API evidence is present",
 				required: true,
+				expectedEvidenceJson: ["unit_test"],
 				status: "passed",
 				evidenceIdsJson: ["evidence-1"],
 			},
@@ -155,6 +156,7 @@ describe("Coding Agent Evidence Check query", () => {
 					status: "passed",
 					evidenceIds: ["evidence-1"],
 					verificationKind: "automated_test",
+					expectedEvidence: ["unit_test"],
 					assuranceStatus: "pending",
 				},
 				{

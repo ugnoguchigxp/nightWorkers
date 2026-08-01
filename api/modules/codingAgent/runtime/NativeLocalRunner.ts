@@ -8,7 +8,7 @@ import { gitDiffTool } from "../../../services/worker-tools/git";
 import { NativeAgentRuntime } from "./NativeAgentRuntime";
 
 export class NativeLocalRunner implements IRunner {
-	private runtime = new NativeAgentRuntime();
+	private runtime: NativeAgentRuntime | null = null;
 	private logCallbacks = new Map<string, Array<(log: string) => void>>();
 	private statuses = new Map<string, RunnerStatus>();
 
@@ -21,7 +21,7 @@ export class NativeLocalRunner implements IRunner {
 		this.statuses.set(runId, { status: "running" });
 		(async () => {
 			try {
-				const result = await this.runtime.start(
+				const result = await this.getRuntime().start(
 					{
 						runId,
 						taskId: "",
@@ -60,7 +60,7 @@ export class NativeLocalRunner implements IRunner {
 	}
 
 	async stop(runId: string): Promise<void> {
-		await this.runtime.stop(runId);
+		await this.getRuntime().stop(runId);
 		this.statuses.set(runId, { status: "cancelled" });
 		this.emitLog(runId, "[System] Native Local Worker execution stopped.");
 	}
@@ -92,6 +92,11 @@ export class NativeLocalRunner implements IRunner {
 				cb(log);
 			}
 		}
+	}
+
+	private getRuntime() {
+		this.runtime ??= new NativeAgentRuntime();
+		return this.runtime;
 	}
 }
 

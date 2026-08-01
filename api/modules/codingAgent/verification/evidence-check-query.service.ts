@@ -1,5 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { EvidenceCheckSnapshot } from "../../../../shared/modules/codingAgent";
+import { expectedEvidenceSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../../db/client";
 import {
 	repositories,
@@ -348,7 +349,10 @@ function fallbackCondition(
 		text: row.text,
 		required: row.required,
 		verificationKind,
-		expectedEvidence: [],
+		expectedEvidence: row.expectedEvidenceJson.flatMap((value) => {
+			const parsed = expectedEvidenceSchema.safeParse(value);
+			return parsed.success ? [parsed.data] : [];
+		}),
 		assuranceStatus:
 			!row.required || verificationKind === "not_applicable"
 				? "not_applicable"

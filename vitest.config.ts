@@ -1,7 +1,7 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 import { testDatabasePath } from "./tests/vitest-db-env";
-import { coverageExcludes } from "./vitest.coverage";
+import { coverageExcludes, coverageReportPaths } from "./vitest.coverage";
 
 process.env.NIGHTWORKERS_VITEST_DB_PATH ??= testDatabasePath;
 
@@ -24,7 +24,7 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "html", "lcov", "json-summary"],
-			reportsDirectory: "./coverage",
+			reportsDirectory: `./${coverageReportPaths.root}`,
 			include: ["api/**/*.ts", "shared/**/*.ts", "src/**/*.ts", "src/**/*.tsx"],
 			exclude: coverageExcludes,
 		},

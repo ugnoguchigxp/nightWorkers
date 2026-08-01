@@ -132,6 +132,27 @@ describe("workspace attestation", () => {
 		).rejects.toMatchObject({ code: "workspace_attestation_failed" });
 	});
 
+	it("allows the current Task worktree diff for an explicit fresh review Run", async () => {
+		await fs.writeFile(
+			path.join(worktreeRoot, "review-target.txt"),
+			"review\n",
+		);
+
+		const reviewed = await attestTaskWorkspaceForRun({
+			taskId,
+			requireClean: false,
+			allowCurrentDirtyState: true,
+		});
+
+		expect(reviewed.attestation).toMatchObject({
+			canonicalPath: await fs.realpath(worktreeRoot),
+			branchRef: "refs/heads/codex/task",
+			dirty: true,
+			conflicted: false,
+			untrackedPathsJson: ["review-target.txt"],
+		});
+	});
+
 	it("records both sides of a staged rename as owned dirty paths", async () => {
 		git(worktreeRoot, ["mv", "README.md", "RENAMED.md"]);
 

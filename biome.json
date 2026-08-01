@@ -17,10 +17,12 @@
 			"packages/**",
 			"!**/src/routeTree.gen.ts",
 			"shared/**",
+			"scripts/coverage/**",
 			"tests/**",
 			"package.json",
 			"tsconfig.json",
 			"vite.config.ts",
+			"vitest.coverage.ts",
 			"vitest.config.ts",
 			"playwright.config.ts"
 		]

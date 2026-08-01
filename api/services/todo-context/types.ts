@@ -49,6 +49,7 @@ export type RuntimePromptSnapshot = {
 	executionModeSource?:
 		| "message_history"
 		| "workbench_intake"
+		| "workbench_review_followup"
 		| "workbench_run"
 		| "workbench_run_task"
 		| "implementation_queue"

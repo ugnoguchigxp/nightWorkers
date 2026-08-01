@@ -186,7 +186,7 @@ export function NightWorkersShellThreadPanel(
 				llmSelection,
 			);
 			if (llmSelection && result) props.onComposerLlmSelectionSubmitted();
-			return Boolean(result);
+			return Boolean(result?.run);
 		},
 		[
 			buildComposerLlmSelection,

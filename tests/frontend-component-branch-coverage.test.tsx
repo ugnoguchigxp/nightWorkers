@@ -67,6 +67,13 @@ function resetHookMocks(values: unknown[] = [], mode: "skip" | "run" = "skip") {
 }
 
 function stubQueueModule() {
+	vi.doMock("../src/modules/codingAgent", async (importOriginal) => ({
+		...(await importOriginal<typeof import("../src/modules/codingAgent")>()),
+		useLatestEvidenceCheckDescriptor: () => ({
+			data: null,
+			refetch: vi.fn(async () => ({ data: null })),
+		}),
+	}));
 	vi.doMock("../src/composition/mission-pilot", async (importOriginal) => ({
 		...(await importOriginal<
 			typeof import("../src/composition/mission-pilot")

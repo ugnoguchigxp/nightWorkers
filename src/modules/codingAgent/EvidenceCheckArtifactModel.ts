@@ -114,7 +114,11 @@ export function buildEvidenceCheckPanelModel(input: {
 					status: readString(condition.status) || "pending",
 					required: (condition.required as unknown) !== false,
 					verificationKind: readString(condition.verificationKind),
-					expectedEvidence: [] as string[],
+					expectedEvidence: Array.isArray(condition.expectedEvidence)
+						? condition.expectedEvidence
+								.map(readString)
+								.filter((value): value is string => value !== null)
+						: [],
 					evidenceIds: [] as string[],
 					reason: null,
 					lastCheckedAt: null,

@@ -64,7 +64,6 @@ export async function prepareStartableTask(taskId: string) {
 			"Another run is already active for this task",
 		);
 	}
-	await repo.updateTaskStatus(taskId, "running");
 	return task;
 }
 

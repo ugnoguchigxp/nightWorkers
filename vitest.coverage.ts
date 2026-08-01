@@ -21,14 +21,20 @@ export const coverageExclusionReasons = {
 
 export const coverageExcludes = Object.values(coverageExclusionReasons).flat();
 
+export const coverageReportPaths = {
+	root: "coverage",
+	backend: "coverage/backend",
+	frontend: "coverage/frontend",
+} as const;
+
 export const backendCoverage = {
 	include: ["api/**/*.ts", "shared/**/*.ts"],
 	exclude: coverageExcludes,
-	reportsDirectory: "./coverage-backend",
+	reportsDirectory: `./${coverageReportPaths.backend}`,
 };
 
 export const frontendCoverage = {
 	include: ["src/**/*.ts", "src/**/*.tsx"],
 	exclude: coverageExcludes,
-	reportsDirectory: "./coverage-frontend",
+	reportsDirectory: `./${coverageReportPaths.frontend}`,
 };
