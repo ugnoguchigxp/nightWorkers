@@ -41,7 +41,7 @@ export function buildSpecificationVerificationSidecar(input: BuildInput): {
 				input.completionVerificationScope ?? null,
 			);
 	const { content, conditions } = annotated;
-	const commands = extractVerificationCommands(content, conditions);
+	const commands = extractVerificationCommands(content);
 	return {
 		content,
 		document: {
@@ -291,7 +291,6 @@ function inferExpectedEvidence(
 
 function extractVerificationCommands(
 	markdown: string,
-	conditions: VerificationCondition[],
 ): VerificationCommandPlan[] {
 	const section = extractSection(markdown, /検証|verification/i);
 	const commands: VerificationCommandPlan[] = [];
@@ -304,7 +303,7 @@ function extractVerificationCommands(
 			id: `CMD-${String(commands.length + 1).padStart(3, "0")}`,
 			label: command,
 			command,
-			conditionIds: conditions.map((condition) => condition.id),
+			conditionIds: [],
 		});
 	}
 	return commands;

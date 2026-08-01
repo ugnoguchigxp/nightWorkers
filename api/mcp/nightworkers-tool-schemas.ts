@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { codingAgentTodoListCommandSchema } from "../../shared/modules/codingAgent";
-import { testEvidenceSetMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
+import {
+	expectedEvidenceSchema,
+	testEvidenceSetMappingToolInputSchema,
+} from "../../shared/schemas/verification-checklist.schema";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
@@ -82,7 +85,20 @@ export const nightWorkersRunCheckInputSchema = z.object({
 		)
 		.optional()
 		.describe(
-			"Optional condition IDs associated with this check result for display and later inspection.",
+			"Optional condition IDs explicitly scoped to this managed check. Command-gate evidence cannot satisfy a condition without this scope.",
+		),
+	evidenceKinds: z
+		.array(expectedEvidenceSchema)
+		.min(1)
+		.optional()
+		.describe(
+			"Evidence kinds produced by this check. Specify unit_test, integration_test, or e2e_test when a structured test result must satisfy that exact requirement.",
+		),
+	runnerHint: z
+		.enum(["vitest", "jest", "playwright", "pytest", "junit", "unknown"])
+		.optional()
+		.describe(
+			"Structured test-result runner when it cannot be inferred from the command or package script.",
 		),
 	timeoutSeconds: z.number().int().positive().optional(),
 	displayMode: z.enum(["summary", "error_excerpt", "full"]).optional(),

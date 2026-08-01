@@ -39,6 +39,17 @@ function context(executionMode = "implementation"): AgentRunContext {
 	};
 }
 
+async function completionAllowed() {
+	return {
+		allowFinalize: true,
+		code: "FINALIZE_ALLOWED" as const,
+		message: "ready",
+		missingConditions: [],
+		snapshot: { planRevision: 0, todos: [] },
+		idempotent: false,
+	};
+}
+
 function completedTextEvents(text: string): AsyncIterable<unknown> {
 	return (async function* () {
 		yield {
@@ -447,6 +458,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(
 			{
 				...context(),
@@ -507,6 +519,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(context(), { emit });
 		expect(emit).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -538,6 +551,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(context(), { emit: vi.fn(async () => {}) });
 		expect(runStreamed).toHaveBeenCalledOnce();
 		expect(result.terminalState).toBe("completed");
@@ -612,6 +626,7 @@ describe("Codex SDK thin runtime adapter", () => {
 			usageRecorder: async () => {
 				throw new Error("usage database unavailable");
 			},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(context(), { emit });
 		expect(result).toMatchObject({
 			terminalState: "completed",
@@ -637,6 +652,7 @@ describe("Codex SDK thin runtime adapter", () => {
 			}),
 			collectWorkspaceDiff: true,
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start({ ...context(), repoRoot: "/dev/null" }, { emit });
 		expect(result).toMatchObject({
 			terminalState: "completed",
@@ -705,6 +721,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed }),
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(context(), { emit });
 		expect(result.terminalState).toBe("completed");
 		expect(emit).toHaveBeenCalledWith(
@@ -834,6 +851,7 @@ describe("Codex SDK thin runtime adapter", () => {
 		const result = await new CodexAgentRuntime({
 			threadFactory: () => ({ runStreamed: async () => ({ events }) }),
 			usageRecorder: async () => {},
+			evaluateCompletionCandidate: completionAllowed,
 		}).start(context(), { emit: vi.fn(async () => {}) });
 
 		expect(result).toMatchObject({

@@ -10,6 +10,8 @@ export const jaEvidenceCheck = {
 	"evidenceCheck.assurance.title": "テスト安全性",
 	"evidenceCheck.assurance.summary":
 		"安全にPass {{safePass}}/{{automated}} · 失敗 {{failed}} · 要確認 {{attention}}",
+	"evidenceCheck.assurance.conditionMetrics":
+		"必須 {{safePass}}/{{required}} · 未紐付け {{unmapped}} · 詳細不足 {{detailsMissing}} · stale {{stale}}",
 	"evidenceCheck.assurance.evaluatedAt": "判定日時",
 	"evidenceCheck.assurance.source": "ソース",
 	"evidenceCheck.assurance.unavailable": "取得不可",
@@ -43,8 +45,39 @@ export const jaEvidenceCheck = {
 		"成功した全体検証ゲートを確認できません。",
 	"evidenceCheck.assuranceReason.assurance_not_evaluated":
 		"安全性はまだ判定されていません。",
+	"evidenceCheck.assuranceReason.ASSURANCE_NOT_EVALUATED":
+		"安全性はまだ判定されていません。",
+	"evidenceCheck.assuranceReason.CONDITION_MAPPING_MISSING":
+		"この条件に対応するテスト定義が見つかりません。",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_EXECUTION_MISSING":
+		"このテストケースの実行結果が見つかりません。",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_DETAILS_MISSING":
+		"テストケース単位の結果が不足しています。",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_FAILED":
+		"対応するテストが失敗しています。",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_SKIPPED":
+		"必須のテストがスキップされています。",
+	"evidenceCheck.assuranceReason.CONDITION_EVIDENCE_KIND_MISMATCH":
+		"要求された種類のテスト証跡が不足しています。",
+	"evidenceCheck.assuranceReason.CONDITION_EVIDENCE_STALE":
+		"テスト後にソースが変更されています。",
+	"evidenceCheck.assuranceReason.CONDITION_SOURCE_MUTATED":
+		"テスト実行中にソースが変更されました。",
+	"evidenceCheck.assuranceReason.CONDITION_COMMAND_SCOPE_MISSING":
+		"この条件を対象にしたコマンド実行が見つかりません。",
+	"evidenceCheck.assuranceReason.MANUAL_CONFIRMATION_MISSING":
+		"手動確認の証跡が不足しています。",
+	"evidenceCheck.assuranceReason.FULL_VERIFY_MISSING":
+		"成功した全体検証ゲートを確認できません。",
+	"evidenceCheck.assuranceReason.FULL_VERIFY_FAILED":
+		"全体検証ゲートが失敗しています。",
+	"evidenceCheck.assuranceReason.TEST_INVENTORY_MISSING":
+		"有効なテスト一覧が見つかりません。",
 	"evidenceCheck.test.execution": "実行結果",
 	"evidenceCheck.test.currentSource": "現在のソース",
+	"evidenceCheck.test.sourceStable": "実行中のソース固定",
+	"evidenceCheck.test.executionObserved": "テスト実行を確認",
+	"evidenceCheck.test.fullVerify": "全体検証",
 	"evidenceCheck.testStatus.passed": "Pass",
 	"evidenceCheck.testStatus.failed": "失敗",
 	"evidenceCheck.testStatus.skipped": "スキップ",
@@ -67,6 +100,12 @@ export const jaEvidenceCheck = {
 	"evidenceCheck.conditions.summary":
 		"{{confirmed}}/{{total}} 条件確認済み · 失敗 {{failed}} · 未確認 {{pending}}",
 	"evidenceCheck.conditionEvidence": "証跡 {{count}}件",
+	"evidenceCheck.conditionVerificationKind": "検証種別",
+	"evidenceCheck.conditionExpectedEvidence": "要求証跡",
+	"evidenceCheck.evidenceReferences": "証跡参照",
+	"evidenceCheck.test.mappingSource": "紐付け元",
+	"evidenceCheck.test.evidenceKind": "証跡種別",
+	"evidenceCheck.conditionRecordedStatus": "記録状態",
 	"evidenceCheck.conditionStatus.pending": "未確認",
 	"evidenceCheck.conditionStatus.running": "確認中",
 	"evidenceCheck.conditionStatus.passed": "確認済み",

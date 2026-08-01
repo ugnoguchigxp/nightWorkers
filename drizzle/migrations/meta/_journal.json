@@ -421,6 +421,13 @@
       "when": 1785430800000,
       "tag": "0059_plan_mode_routing_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1785553200000,
+      "tag": "0060_acceptance_condition_assurance",
+      "breakpoints": true
     }
   ]
 }

@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import { getLatestVerificationDocumentForTask } from "../../nightworkers/nightworkers.verification.repository";
-import { runCompletionCheck } from "../../nightworkers/nightworkers.verification.service";
 import { createReviewerEvaluation } from "../../review/review-files.service";
+import { runCompletionCheck } from "../application/completion-check.service";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,

@@ -10,9 +10,14 @@ export {
 	initializeCodingAgentRunHandlers,
 } from "./application/coding-agent-run.handler";
 export {
+	type CompletionCheckResult,
+	runCompletionCheck,
+} from "./application/completion-check.service";
+export {
 	type CodingAgentCompletionReadiness,
 	evaluateCodingAgentCompletionReadiness,
 } from "./application/completion-readiness.service";
+export { recordManualConditionConfirmationsForReview } from "./application/manual-condition-confirmation.service";
 export {
 	type FinalizeGuardResult,
 	type RunCompletionSnapshot,
@@ -54,8 +59,21 @@ export * from "./intake";
 export * from "./runtime";
 export * from "./todo";
 export { codingAgentForbiddenPlanTools, todoListTool } from "./tools";
+export {
+	type AcceptanceConditionAssuranceEvaluation,
+	type AcceptanceConditionAssuranceTest,
+	type EvaluatedAcceptanceCondition,
+	evaluateAcceptanceConditionAssurance,
+	evaluateAcceptanceConditionAssuranceDataset,
+} from "./verification/acceptance-condition-assurance.service";
+export {
+	isAutomatedEvidenceKind,
+	isCompatibleEvidenceKind,
+} from "./verification/evidence-kind-compatibility";
+export { resolveExecutionCaseIdentities } from "./verification/execution-case-identity";
 export type { QualityGateResult } from "./verification/quality-gate.service";
 export { evaluateQualityGate } from "./verification/quality-gate.service";
+export { validateRunCheckEvidenceScope } from "./verification/run-check-evidence-scope.service";
 export {
 	collectTestInventoryTool,
 	recordTestConditionMappingTool,

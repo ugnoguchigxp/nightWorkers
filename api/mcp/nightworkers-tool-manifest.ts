@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA } from "../../shared/modules/codingAgent";
+import {
+	COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
+	RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
+	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
+} from "../../shared/modules/codingAgent";
 
 export * from "./nightworkers-tool-schemas";
 
@@ -59,8 +63,7 @@ export const nightWorkersCodexToolManifest = {
 	},
 	run_check: {
 		title: "Run Check",
-		description:
-			"Run a check command in the registered repository and return a typed result with raw stdout/stderr. Stored verification data is an observable fact, not an automatic Todo or Run completion gate.",
+		description: RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
@@ -71,8 +74,7 @@ export const nightWorkersCodexToolManifest = {
 	},
 	completion_check: {
 		title: "Completion Check",
-		description:
-			"Read the current verification checklist projection and return a typed status. The Coding Agent decides how to use the result.",
+		description: COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
 		annotations: {
 			readOnlyHint: true,
 			destructiveHint: false,

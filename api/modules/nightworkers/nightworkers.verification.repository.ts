@@ -6,6 +6,7 @@ import type {
 	VerificationChecklistItem,
 } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
+import { taskMessages } from "../../db/schema";
 import {
 	verificationChecklistItems,
 	verificationDocuments,
@@ -24,48 +25,69 @@ export async function createVerificationDocument(input: {
 	sourceSpecPath: string;
 	document: SpecificationVerificationDocument;
 }) {
-	const [document] = await db
-		.insert(verificationDocuments)
-		.values({
-			taskId: input.taskId,
-			runId: input.runId ?? null,
-			specMessageId: input.specMessageId ?? null,
-			specArtifactId: input.specArtifactId ?? null,
-			verificationArtifactId: input.verificationArtifactId ?? null,
-			sourceSpecPath: input.sourceSpecPath,
-			schemaVersion: input.document.version,
-			status: "active",
-			documentJson: input.document as unknown as Record<string, unknown>,
-			generatedAt: new Date(input.document.generatedAt),
-		})
-		.returning();
-	if (!document) throw new Error("Failed to create verification document");
 	const checklistRows = input.document.conditions.map((condition) => ({
-		verificationDocumentId: document.id,
-		taskId: input.taskId,
-		conditionId: condition.id,
-		text: condition.text,
-		required: condition.required,
-		verificationKind: condition.verificationKind,
-		expectedEvidenceJson: condition.expectedEvidence,
-		status:
-			condition.verificationKind === "manual"
-				? "manual"
-				: condition.verificationKind === "not_applicable"
-					? "not_applicable"
-					: "pending",
-		evidenceIdsJson: [],
-		reason:
-			condition.verificationKind === "manual"
-				? "manual verification が必要です。"
-				: condition.verificationKind === "not_applicable"
-					? "自動検証対象外です。"
-					: null,
+		condition,
 	}));
-	if (checklistRows.length > 0) {
-		await db.insert(verificationChecklistItems).values(checklistRows);
-	}
-	return document;
+	return db.transaction(async (tx) => {
+		await tx
+			.update(verificationDocuments)
+			.set({ status: "superseded", updatedAt: new Date() })
+			.where(
+				and(
+					eq(verificationDocuments.taskId, input.taskId),
+					eq(verificationDocuments.status, "active"),
+				),
+			);
+		const [document] = await tx
+			.insert(verificationDocuments)
+			.values({
+				taskId: input.taskId,
+				runId: input.runId ?? null,
+				specMessageId: input.specMessageId ?? null,
+				specArtifactId: input.specArtifactId ?? null,
+				verificationArtifactId: input.verificationArtifactId ?? null,
+				sourceSpecPath: input.sourceSpecPath,
+				schemaVersion: input.document.version,
+				status: "active",
+				documentJson: input.document as unknown as Record<string, unknown>,
+				generatedAt: new Date(input.document.generatedAt),
+			})
+			.returning();
+		if (!document) throw new Error("Failed to create verification document");
+		if (checklistRows.length > 0) {
+			await tx.insert(verificationChecklistItems).values(
+				checklistRows.map(({ condition }) => ({
+					verificationDocumentId: document.id,
+					taskId: input.taskId,
+					conditionId: condition.id,
+					text: condition.text,
+					required: condition.required,
+					verificationKind: condition.verificationKind,
+					expectedEvidenceJson: condition.expectedEvidence,
+					status:
+						condition.verificationKind === "not_applicable"
+							? "not_applicable"
+							: "pending",
+					evidenceIdsJson: [],
+					reason:
+						condition.verificationKind === "manual"
+							? "manual verification の確認証跡が必要です。"
+							: condition.verificationKind === "not_applicable"
+								? "自動検証対象外です。"
+								: null,
+				})),
+			);
+		}
+		return document;
+	});
+}
+
+export async function getVerificationSourceMessage(id: string) {
+	const [message] = await db
+		.select({ id: taskMessages.id, taskId: taskMessages.taskId })
+		.from(taskMessages)
+		.where(eq(taskMessages.id, id));
+	return message ?? null;
 }
 
 export async function getLatestVerificationDocumentForTask(taskId: string) {
@@ -184,6 +206,7 @@ export async function createVerificationEvidenceRun(input: {
 		rawStderrArtifactId: input.evidence.rawStderrArtifactId,
 		parsedArtifactId: input.evidence.parsedArtifactId ?? null,
 		summaryJson: input.evidence.summary,
+		evidenceKindsJson: input.evidence.evidenceKinds ?? [],
 		commandLevelConditionIdsJson: input.evidence.commandLevelConditionIds,
 		sourceSnapshotJson: input.evidence.sourceSnapshot ?? null,
 		testExecutionObserved: input.evidence.testExecutionObserved ?? false,
@@ -222,8 +245,11 @@ export async function createVerificationEvidenceRun(input: {
 					evidenceRunId: created.id,
 					verificationDocumentId: input.verificationDocumentId ?? null,
 					conditionIdsJson: testCase.conditionIds,
+					caseKey: testCase.caseKey ?? null,
 					name: testCase.name,
 					filePath: testCase.filePath ?? null,
+					runner: testCase.runner ?? input.evidence.runner,
+					evidenceKind: testCase.evidenceKind ?? null,
 					status: testCase.status,
 					durationMs: testCase.durationMs ?? null,
 					failureMessage: testCase.failureMessage ?? null,
@@ -251,6 +277,7 @@ function verificationEvidenceIdentity(
 		| "rawStderrArtifactId"
 		| "parsedArtifactId"
 		| "summaryJson"
+		| "evidenceKindsJson"
 		| "commandLevelConditionIdsJson"
 		| "sourceSnapshotJson"
 		| "testExecutionObserved"
@@ -274,6 +301,7 @@ function verificationEvidenceIdentity(
 		rawStderrArtifactId: value.rawStderrArtifactId,
 		parsedArtifactId: value.parsedArtifactId,
 		summaryJson: value.summaryJson,
+		evidenceKindsJson: value.evidenceKindsJson,
 		commandLevelConditionIdsJson: value.commandLevelConditionIdsJson,
 		sourceSnapshotJson: value.sourceSnapshotJson,
 		testExecutionObserved: value.testExecutionObserved,

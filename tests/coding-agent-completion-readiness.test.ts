@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { CompletionCheckResult } from "../api/modules/codingAgent/application/completion-check.service";
 import { evaluateCodingAgentCompletionReadiness } from "../api/modules/codingAgent/application/completion-readiness.service";
-import type { CompletionCheckResult } from "../api/modules/nightworkers/nightworkers.verification.service";
 
 const greenCompletion: CompletionCheckResult = {
 	ok: true,

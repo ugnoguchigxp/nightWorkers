@@ -84,6 +84,7 @@ export async function ensureVerificationTables() {
       raw_stderr_artifact_id text NOT NULL,
       parsed_artifact_id text,
       summary_json text NOT NULL,
+      evidence_kinds_json text NOT NULL DEFAULT '[]',
       command_level_condition_ids_json text NOT NULL,
       started_at integer NOT NULL,
       finished_at integer NOT NULL,
@@ -115,6 +116,10 @@ export async function ensureVerificationTables() {
 		"verification_evidence_runs",
 		"source_mutated_during_check integer NOT NULL DEFAULT 0",
 	);
+	await addColumnIfMissing(
+		"verification_evidence_runs",
+		"evidence_kinds_json text NOT NULL DEFAULT '[]'",
+	);
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS verification_evidence_cases (
@@ -124,8 +129,11 @@ export async function ensureVerificationTables() {
       evidence_run_id text NOT NULL,
       verification_document_id text,
       condition_ids_json text NOT NULL,
+      case_key text,
       name text NOT NULL,
       file_path text,
+      runner text,
+      evidence_kind text,
       status text NOT NULL,
       duration_ms integer,
       failure_message text,
@@ -139,6 +147,9 @@ export async function ensureVerificationTables() {
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS verification_evidence_cases_document_idx ON verification_evidence_cases (verification_document_id)",
 	);
+	await addColumnIfMissing("verification_evidence_cases", "case_key text");
+	await addColumnIfMissing("verification_evidence_cases", "runner text");
+	await addColumnIfMissing("verification_evidence_cases", "evidence_kind text");
 
 	await client.execute(`
     CREATE TABLE IF NOT EXISTS coding_agent_test_inventory_runs (
@@ -195,6 +206,31 @@ export async function ensureVerificationTables() {
   `);
 	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_test_condition_mapping_uidx ON coding_agent_test_condition_mappings (verification_document_id, inventory_id, case_key, condition_id)",
+	);
+
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS coding_agent_condition_confirmations (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      task_id text NOT NULL,
+      run_id text NOT NULL,
+      verification_document_id text NOT NULL,
+      condition_id text NOT NULL,
+      actor_kind text NOT NULL,
+      actor_id text NOT NULL,
+      source_state_hash text NOT NULL,
+      evidence_ref text NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
+      FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE cascade,
+      FOREIGN KEY (verification_document_id) REFERENCES verification_documents(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS coding_agent_condition_confirmation_uidx ON coding_agent_condition_confirmations (verification_document_id, run_id, condition_id, source_state_hash, evidence_ref)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS coding_agent_condition_confirmation_run_idx ON coding_agent_condition_confirmations (task_id, run_id)",
 	);
 }
 

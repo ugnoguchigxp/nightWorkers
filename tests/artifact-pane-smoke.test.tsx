@@ -29,6 +29,8 @@ describe("ArtifactPane", () => {
 						specMessageId: "22222222-2222-4222-8222-222222222222",
 						specArtifactId: "feature-plan-message-1",
 						generatedAt: "2026-07-31T00:00:00.000Z",
+						evaluatedAt: "2026-07-31T00:01:00.000Z",
+						sourceStateHash: null,
 						implementationPlanTraceability: {
 							sourceMessageId: "22222222-2222-4222-8222-222222222222",
 							digest: `sha256:${"a".repeat(64)}`,
@@ -59,6 +61,13 @@ describe("ArtifactPane", () => {
 						},
 						conditions: [],
 						summary: { total: 0, confirmed: 0, failed: 0, pending: 0 },
+						assuranceSummary: {
+							automated: 0,
+							safePass: 0,
+							failed: 0,
+							attention: 0,
+							fullVerifyStatus: "unknown",
+						},
 					}}
 				/>
 			</QueryClientProvider>,
@@ -74,47 +83,52 @@ describe("ArtifactPane", () => {
 	});
 
 	it("renders files outline tree when project tree focus is selected", () => {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
 		const markup = renderToStaticMarkup(
-			<ArtifactPane
-				activeProject={{
-					id: "repo-1",
-					name: "todolist",
-					localPath: "/Users/y.noguchi/Code/nightWorkers",
-					branch: "main",
-					allowed: true,
-					queueEnabled: true,
-					maxConcurrentSessions: 1,
-					createdAt: "2026-07-08T00:00:00Z",
-					updatedAt: "2026-07-08T00:00:00Z",
-				}}
-				activeSessionId="session-1"
-				focusType="project_tree"
-				selectedArtifact={null}
-				taskMessages={[]}
-				activityArtifacts={[]}
-				fileEntries={[
-					{
-						path: "src/main.tsx",
-						name: "main.tsx",
-						type: "file",
-						size: 100,
+			<QueryClientProvider client={queryClient}>
+				<ArtifactPane
+					activeProject={{
+						id: "repo-1",
+						name: "todolist",
+						localPath: "/Users/y.noguchi/Code/nightWorkers",
+						branch: "main",
+						allowed: true,
+						queueEnabled: true,
+						maxConcurrentSessions: 1,
+						createdAt: "2026-07-08T00:00:00Z",
 						updatedAt: "2026-07-08T00:00:00Z",
-					},
-				]}
-				fileEntriesByDirectory={{}}
-				expandedDirectories={{}}
-				loadingDirectories={{}}
-				selectedFile={null}
-				selectedFilePath={null}
-				isFilesLoading={false}
-				isFileLoading={false}
-				projectDiff={null}
-				isDiffLoading={false}
-				onToggleDirectory={async () => undefined}
-				onOpenFile={() => undefined}
-				onRefreshFiles={async () => undefined}
-				onRefreshDiff={async () => undefined}
-			/>,
+					}}
+					activeSessionId="session-1"
+					focusType="project_tree"
+					selectedArtifact={null}
+					taskMessages={[]}
+					activityArtifacts={[]}
+					fileEntries={[
+						{
+							path: "src/main.tsx",
+							name: "main.tsx",
+							type: "file",
+							size: 100,
+							updatedAt: "2026-07-08T00:00:00Z",
+						},
+					]}
+					fileEntriesByDirectory={{}}
+					expandedDirectories={{}}
+					loadingDirectories={{}}
+					selectedFile={null}
+					selectedFilePath={null}
+					isFilesLoading={false}
+					isFileLoading={false}
+					projectDiff={null}
+					isDiffLoading={false}
+					onToggleDirectory={async () => undefined}
+					onOpenFile={() => undefined}
+					onRefreshFiles={async () => undefined}
+					onRefreshDiff={async () => undefined}
+				/>
+			</QueryClientProvider>,
 		);
 
 		expect(markup).toContain("プロジェクトツリー");

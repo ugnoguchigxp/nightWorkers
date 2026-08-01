@@ -1,5 +1,6 @@
 import { AppError } from "../../../lib/errors";
 import { decideRunOutcome } from "../../../services/run-control/run-outcome-gate";
+import { recordManualConditionConfirmationsForReview } from "../../codingAgent";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import {
 	archiveImplementationQueueEntryForRun,
@@ -83,6 +84,15 @@ export async function reviewTaskRunCommand(
 		},
 		{ payloadJson: { reviewResult } },
 	);
+	if (outcome.status === "completed") {
+		await recordManualConditionConfirmationsForReview({
+			taskId: run.taskId,
+			runId,
+			actorKind: "human_reviewer",
+			actorId: reviewResult.id,
+			evidenceRef: `review-result:${reviewResult.id}`,
+		});
+	}
 	await repo.updateTaskRun(runId, {
 		status: outcome.status,
 		summary: request.note || outcome.summary,

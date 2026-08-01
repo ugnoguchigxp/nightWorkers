@@ -20,6 +20,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 	formatReviewStatusSummary: (level: string, sectionCount: number) => string;
 	evidenceCheckTitle: string;
 	evidenceCheckArtifactSummary: string;
+	evidenceCheckArtifact?: WorkbenchArtifactRef | null;
 }) {
 	const {
 		routeState,
@@ -30,6 +31,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 		formatReviewStatusSummary,
 		evidenceCheckTitle,
 		evidenceCheckArtifactSummary,
+		evidenceCheckArtifact = null,
 	} = input;
 	const routeSessionId =
 		routeState.kind === "session" ? routeState.sessionId : null;
@@ -174,6 +176,9 @@ export function useNightWorkersRouteArtifactSync(input: {
 				return;
 			}
 			const artifactRef =
+				(evidenceCheckArtifact?.taskId === task.id
+					? evidenceCheckArtifact
+					: null) ||
 				workspace.activeArtifactRefs.find(
 					(item) => item.kind === "evidence_check",
 				) ||
@@ -225,6 +230,7 @@ export function useNightWorkersRouteArtifactSync(input: {
 		setArtifactFocus,
 		setClearedArtifactContextId,
 		evidenceCheckArtifactSummary,
+		evidenceCheckArtifact,
 		evidenceCheckTitle,
 		workspace,
 	]);

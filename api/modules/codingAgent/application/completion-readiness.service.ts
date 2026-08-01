@@ -1,8 +1,10 @@
 import { contentDigest } from "../../agentsShare";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import * as verificationRepository from "../../nightworkers/nightworkers.verification.repository";
-import type { CompletionCheckResult } from "../../nightworkers/nightworkers.verification.service";
-import { runCompletionCheck } from "../../nightworkers/nightworkers.verification.service";
+import {
+	type CompletionCheckResult,
+	runCompletionCheck,
+} from "./completion-check.service";
 
 export type CodingAgentCompletionReadiness = {
 	ready: boolean;

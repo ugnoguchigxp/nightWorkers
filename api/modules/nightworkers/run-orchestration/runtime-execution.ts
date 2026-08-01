@@ -17,7 +17,6 @@ import {
 	prepareCodexRepositoryRuntimeContext,
 	projectCodingAgentTaskStatusAfterRun,
 	readCodingAgentPlanModeRequested,
-	reconcileCodexCompletionBoundary,
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
@@ -178,19 +177,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 							},
 							sink,
 						);
-				if (
-					runtimeLaneResolution.lane === "codex-sdk" &&
-					runtimeResult.terminalState === "completed"
-				) {
-					runtimeResult = await reconcileCodexCompletionBoundary({
-						result: runtimeResult,
-						taskId,
-						runId: run.id,
-						repositoryRoot: repoInfo.localPath,
-						safetyPolicy: repoInfo.safetyPolicy || undefined,
-						sink,
-					});
-				}
 			} finally {
 				clearInterval(heartbeatTimer);
 			}

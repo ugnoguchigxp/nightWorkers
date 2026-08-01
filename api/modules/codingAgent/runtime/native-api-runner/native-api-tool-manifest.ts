@@ -1,4 +1,8 @@
-import { TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA } from "../../../../../shared/modules/codingAgent";
+import {
+	COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
+	RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
+	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
+} from "../../../../../shared/modules/codingAgent";
 import { testEvidenceSetMappingJsonSchema } from "../../../../../shared/schemas/verification-checklist.schema";
 import type { ProviderToolDefinition } from "../../../../services/structured-llm/tool-calls";
 import type { WorkerToolName } from "../../../../services/tool-policy/types";
@@ -191,8 +195,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		workerToolName: "run_check",
 		definition: {
 			name: "run_check",
-			description:
-				"Run a check command in the registered repository and return its typed result and raw stdout/stderr. The result does not update Todo or Run status automatically.",
+			description: RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
 			inputSchema: objectSchema(
 				{
 					command: { type: "string" },
@@ -212,6 +215,36 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 					},
 					cwd: { type: "string" },
 					conditionIds: { type: "array", items: { type: "string" } },
+					evidenceKinds: {
+						type: "array",
+						items: {
+							type: "string",
+							enum: [
+								"automated_test",
+								"unit_test",
+								"integration_test",
+								"e2e_test",
+								"typecheck",
+								"lint",
+								"format_check",
+								"build",
+								"coverage",
+								"migration_check",
+								"manual_evidence",
+							],
+						},
+					},
+					runnerHint: {
+						type: "string",
+						enum: [
+							"vitest",
+							"jest",
+							"playwright",
+							"pytest",
+							"junit",
+							"unknown",
+						],
+					},
 					verificationDocumentId: { type: "string" },
 					timeoutSeconds: { type: "number" },
 					displayMode: {
@@ -248,8 +281,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		workerToolName: "completion_check",
 		definition: {
 			name: "completion_check",
-			description:
-				"Read the current verification checklist projection and return a typed status without changing Todo or Run state.",
+			description: COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
 			inputSchema: objectSchema({
 				taskId: { type: "string" },
 				verificationDocumentId: { type: "string" },

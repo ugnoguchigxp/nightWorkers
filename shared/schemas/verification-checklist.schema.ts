@@ -68,6 +68,13 @@ export const expectedEvidenceSchema = z.enum([
 	"manual_evidence",
 ]);
 
+export const automatedTestEvidenceKindSchema = z.enum([
+	"automated_test",
+	"unit_test",
+	"integration_test",
+	"e2e_test",
+]);
+
 export const verificationRunnerSchema = z.enum([
 	"vitest",
 	"jest",
@@ -325,8 +332,11 @@ export const verificationChecklistItemSchema = z
 export const normalizedTestCaseEvidenceSchema = z
 	.object({
 		id: z.string().trim().min(1),
+		caseKey: z.string().trim().min(1).optional(),
 		name: z.string().trim().min(1),
 		filePath: z.string().trim().min(1).optional(),
+		runner: verificationRunnerSchema.optional(),
+		evidenceKind: automatedTestEvidenceKindSchema.optional(),
 		status: z.enum(["passed", "failed", "skipped", "unknown"]),
 		durationMs: z.number().nonnegative().optional(),
 		conditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
@@ -358,6 +368,7 @@ export const normalizedVerificationEvidenceSchema = z
 			})
 			.strict(),
 		cases: z.array(normalizedTestCaseEvidenceSchema),
+		evidenceKinds: z.array(expectedEvidenceSchema).optional(),
 		commandLevelConditionIds: z.array(z.string().regex(/^AC-\d{3}$/)),
 		sourceSnapshot: workspaceSourceSnapshotSchema.optional(),
 		testExecutionObserved: z.boolean().optional(),
@@ -370,6 +381,7 @@ export type SpecificationVerificationDocument = z.infer<
 >;
 export type VerificationCondition = z.infer<typeof verificationConditionSchema>;
 export type ExpectedEvidence = z.infer<typeof expectedEvidenceSchema>;
+export type VerificationRunner = z.infer<typeof verificationRunnerSchema>;
 export type SpecificationAcceptanceCriterion = z.infer<
 	typeof specificationAcceptanceCriterionSchema
 >;
@@ -404,9 +416,7 @@ export type TestEvidenceSetMappingWrite = z.infer<
 >;
 
 const COMPLETE_STATUSES = new Set<VerificationChecklistItemStatus>([
-	"covered",
 	"passed",
-	"manual",
 	"not_applicable",
 ]);
 

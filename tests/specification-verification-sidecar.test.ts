@@ -87,13 +87,13 @@ describe("Specification Verification Sidecar", () => {
 			id: "CMD-001",
 			label: "bun test",
 			command: "bun test",
-			conditionIds: ["AC-001"],
+			conditionIds: [],
 		});
 		expect(result.document.commands[1]).toEqual({
 			id: "CMD-002",
 			label: "npm run test:api",
 			command: "npm run test:api",
-			conditionIds: ["AC-001"],
+			conditionIds: [],
 		});
 		expect(result.document).not.toHaveProperty("nonGoals");
 	});

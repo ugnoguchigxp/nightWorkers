@@ -10,6 +10,8 @@ export const enEvidenceCheck = {
 	"evidenceCheck.assurance.title": "Test assurance",
 	"evidenceCheck.assurance.summary":
 		"Safe Pass {{safePass}}/{{automated}} · {{failed}} failed · {{attention}} need attention",
+	"evidenceCheck.assurance.conditionMetrics":
+		"Required {{safePass}}/{{required}} · {{unmapped}} unmapped · {{detailsMissing}} details missing · {{stale}} stale",
 	"evidenceCheck.assurance.evaluatedAt": "Evaluated",
 	"evidenceCheck.assurance.source": "Source",
 	"evidenceCheck.assurance.unavailable": "Unavailable",
@@ -43,8 +45,39 @@ export const enEvidenceCheck = {
 		"No successful full verification gate was observed.",
 	"evidenceCheck.assuranceReason.assurance_not_evaluated":
 		"Test assurance has not been evaluated yet.",
+	"evidenceCheck.assuranceReason.ASSURANCE_NOT_EVALUATED":
+		"Test assurance has not been evaluated yet.",
+	"evidenceCheck.assuranceReason.CONDITION_MAPPING_MISSING":
+		"No test definition is mapped to this condition.",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_EXECUTION_MISSING":
+		"No execution result was found for this test case.",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_DETAILS_MISSING":
+		"Test-case-level results are incomplete.",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_FAILED":
+		"A mapped test failed.",
+	"evidenceCheck.assuranceReason.CONDITION_CASE_SKIPPED":
+		"A required test was skipped.",
+	"evidenceCheck.assuranceReason.CONDITION_EVIDENCE_KIND_MISMATCH":
+		"The required type of test evidence is missing.",
+	"evidenceCheck.assuranceReason.CONDITION_EVIDENCE_STALE":
+		"The source changed after the test run.",
+	"evidenceCheck.assuranceReason.CONDITION_SOURCE_MUTATED":
+		"The source changed while the test was running.",
+	"evidenceCheck.assuranceReason.CONDITION_COMMAND_SCOPE_MISSING":
+		"No command execution scoped to this condition was found.",
+	"evidenceCheck.assuranceReason.MANUAL_CONFIRMATION_MISSING":
+		"Manual confirmation evidence is missing.",
+	"evidenceCheck.assuranceReason.FULL_VERIFY_MISSING":
+		"No successful full verification gate was observed.",
+	"evidenceCheck.assuranceReason.FULL_VERIFY_FAILED":
+		"The full verification gate failed.",
+	"evidenceCheck.assuranceReason.TEST_INVENTORY_MISSING":
+		"No active test inventory was found.",
 	"evidenceCheck.test.execution": "Execution",
 	"evidenceCheck.test.currentSource": "Current source",
+	"evidenceCheck.test.sourceStable": "Source stable during execution",
+	"evidenceCheck.test.executionObserved": "Test execution observed",
+	"evidenceCheck.test.fullVerify": "Full Verify",
 	"evidenceCheck.testStatus.passed": "Passed",
 	"evidenceCheck.testStatus.failed": "Failed",
 	"evidenceCheck.testStatus.skipped": "Skipped",
@@ -67,6 +100,12 @@ export const enEvidenceCheck = {
 	"evidenceCheck.conditions.summary":
 		"{{confirmed}}/{{total}} confirmed · {{failed}} failed · {{pending}} pending",
 	"evidenceCheck.conditionEvidence": "{{count}} evidence refs",
+	"evidenceCheck.conditionVerificationKind": "Verification kind",
+	"evidenceCheck.conditionExpectedEvidence": "Required evidence",
+	"evidenceCheck.evidenceReferences": "Evidence references",
+	"evidenceCheck.test.mappingSource": "Mapping source",
+	"evidenceCheck.test.evidenceKind": "Evidence kind",
+	"evidenceCheck.conditionRecordedStatus": "Recorded status",
 	"evidenceCheck.conditionStatus.pending": "Pending",
 	"evidenceCheck.conditionStatus.running": "Checking",
 	"evidenceCheck.conditionStatus.passed": "Verified",

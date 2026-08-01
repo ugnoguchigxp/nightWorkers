@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type {
+	ExpectedEvidence,
 	NormalizedTestCaseEvidence,
 	NormalizedVerificationEvidence,
 } from "../../../shared/schemas/verification-checklist.schema";
@@ -36,6 +37,7 @@ export function buildCommandLevelEvidence(input: {
 	rawStderrArtifactId: string;
 	conditionIds?: string[];
 	cases?: NormalizedTestCaseEvidence[];
+	evidenceKinds?: ExpectedEvidence[];
 	parsedArtifactId?: string;
 }): NormalizedVerificationEvidence {
 	const cases = input.cases ?? [];
@@ -75,6 +77,7 @@ export function buildCommandLevelEvidence(input: {
 						total: null,
 					},
 		cases,
+		evidenceKinds: Array.from(new Set(input.evidenceKinds ?? [])),
 		commandLevelConditionIds: Array.from(new Set(input.conditionIds ?? [])),
 	};
 }

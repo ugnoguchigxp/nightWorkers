@@ -47,7 +47,7 @@ describe("verification checklist matcher", () => {
 		]);
 	});
 
-	it("completes conditions explicitly mapped to a successful command", () => {
+	it("keeps command-level coverage as a non-terminal projection", () => {
 		const updated = applyEvidenceToChecklist({
 			items: [item("AC-001")],
 			evidence: evidence({
@@ -58,7 +58,7 @@ describe("verification checklist matcher", () => {
 		});
 
 		expect(updated[0]?.status).toBe("covered");
-		expect(summarizeChecklist(updated).complete).toBe(true);
+		expect(summarizeChecklist(updated).complete).toBe(false);
 	});
 
 	it("keeps unknown required items incomplete", () => {

@@ -107,6 +107,10 @@ export const verificationEvidenceRuns = sqliteTable(
 		summaryJson: text("summary_json", { mode: "json" })
 			.$type<Record<string, unknown>>()
 			.notNull(),
+		evidenceKindsJson: text("evidence_kinds_json", { mode: "json" })
+			.$type<string[]>()
+			.notNull()
+			.default([]),
 		commandLevelConditionIdsJson: text("command_level_condition_ids_json", {
 			mode: "json",
 		})
@@ -241,8 +245,11 @@ export const verificationEvidenceCases = sqliteTable(
 		conditionIdsJson: text("condition_ids_json", { mode: "json" })
 			.$type<string[]>()
 			.notNull(),
+		caseKey: text("case_key"),
 		name: text("name").notNull(),
 		filePath: text("file_path"),
+		runner: text("runner"),
+		evidenceKind: text("evidence_kind"),
 		status: text("status").notNull(),
 		durationMs: integer("duration_ms"),
 		failureMessage: text("failure_message"),
@@ -253,6 +260,40 @@ export const verificationEvidenceCases = sqliteTable(
 		),
 		documentIdx: index("verification_evidence_cases_document_idx").on(
 			table.verificationDocumentId,
+		),
+	}),
+);
+
+export const codingAgentConditionConfirmations = sqliteTable(
+	"coding_agent_condition_confirmations",
+	{
+		...commonColumns,
+		taskId: text("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		runId: text("run_id")
+			.notNull()
+			.references(() => taskRuns.id, { onDelete: "cascade" }),
+		verificationDocumentId: text("verification_document_id")
+			.notNull()
+			.references(() => verificationDocuments.id, { onDelete: "cascade" }),
+		conditionId: text("condition_id").notNull(),
+		actorKind: text("actor_kind").notNull(),
+		actorId: text("actor_id").notNull(),
+		sourceStateHash: text("source_state_hash").notNull(),
+		evidenceRef: text("evidence_ref").notNull(),
+	},
+	(table) => ({
+		confirmationIdx: uniqueIndex("coding_agent_condition_confirmation_uidx").on(
+			table.verificationDocumentId,
+			table.runId,
+			table.conditionId,
+			table.sourceStateHash,
+			table.evidenceRef,
+		),
+		runIdx: index("coding_agent_condition_confirmation_run_idx").on(
+			table.taskId,
+			table.runId,
 		),
 	}),
 );

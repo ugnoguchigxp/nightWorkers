@@ -123,6 +123,12 @@ export function usePlanModeArtifactGeneration(input: {
 			const generatedMessage = result.message;
 			if (generatedMessage) {
 				setGeneratedMessages((prev) => [...prev, generatedMessage]);
+				void queryClient.invalidateQueries({
+					queryKey: ["taskMessages", sessionId],
+				});
+				void queryClient.invalidateQueries({
+					queryKey: ["evidenceCheck", "latest", sessionId],
+				});
 			}
 			if (result.workspace)
 				queryClient.setQueryData(

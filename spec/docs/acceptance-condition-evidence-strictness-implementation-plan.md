@@ -348,14 +348,14 @@ metric/eventには少なくとも次を残す。
 
 | AC | test file | 主なassertion |
 | --- | --- | --- |
-| AC-001, AC-002 | `tests/codex-completion-boundary.test.ts` | empty command plan + managed evidenceはpass、raw shell onlyはreconciliation required |
-| AC-003, AC-004, AC-005 | `tests/coding-agent-acceptance-condition-assurance.test.ts`（新規） | mapping、case identity、status、0件、unrelated executionのmatrix |
-| AC-006 | `tests/coding-agent-quality-gate.test.ts`（新規） | source hash変更とexecution中mutationでstale |
-| AC-007, AC-008, AC-010 | `tests/coding-agent-acceptance-condition-assurance.test.ts`（新規） | evidence kind AND評価、command scope、Full Verify独立性 |
-| AC-009 | `tests/coding-agent-manual-condition-evidence.test.ts`（新規） | initial pending、actor authority、revision/source binding |
+| AC-001, AC-002 | `tests/coding-agent-acceptance-condition-assurance.test.ts`、`tests/coding-agent-test-evidence-mapping-integration.test.ts` | `commands: []`相当でもcurrent managed evidenceはpassし、raw shell参照や保存済みprojectionだけではpassしない |
+| AC-003, AC-004, AC-005 | `tests/coding-agent-acceptance-condition-assurance.test.ts` | mapping、case identity、status、unrelated executionのmatrix |
+| AC-006 | `tests/coding-agent-acceptance-condition-assurance.test.ts` | source hash変更とexecution中mutationでstale |
+| AC-007, AC-008, AC-010 | `tests/coding-agent-acceptance-condition-assurance.test.ts`、`tests/coding-agent-run-check-evidence-scope.test.ts` | evidence kind AND評価、command scope、入力scope検証、Full Verify独立性 |
+| AC-009 | `tests/coding-agent-manual-condition-evidence.test.ts`、`tests/coding-agent-run-check-evidence-scope.test.ts` | initial pending、actor authority、Run/source binding、`run_check`からのmanual証跡拒否 |
 | AC-011 | `tests/coding-agent-completion-readiness.test.ts`、`tests/coding-agent-evidence-check-query.test.ts` | service間でassurance/reasonが一致 |
-| AC-012 | `tests/codex-agent-runtime/completion-reconciliation.cases.ts`（新規） | candidate保持、discrepancy返却、追加turn後の完了、上限時needs_review |
-| AC-013 | `tests/services.verification-checklist.test.ts` | evidence評価でTodo/Runが更新されない |
+| AC-012 | `tests/codex-agent-runtime/completion-reconciliation.test.ts` | candidate保持、discrepancy返却、追加turn後の完了、Run不在時のfail-closed |
+| AC-013 | `tests/coding-agent-test-evidence-mapping-integration.test.ts`、`tests/services.verification-checklist.test.ts` | evidence評価でTodo/Runが更新されない |
 | AC-014 | `tests/coding-agent-test-evidence-mapping-integration.test.ts` | 未指定の意味mappingをhostが補完しない |
 | AC-015 | architecture scripts | forbidden import、role固有実装の配置を検査 |
 | AC-016 | SystemContext catalog tests | 日本語context、catalog同期、固定workflowなし |
@@ -365,12 +365,15 @@ focused verification:
 
 ```bash
 bun run test -- tests/coding-agent-acceptance-condition-assurance.test.ts
-bun run test -- tests/coding-agent-quality-gate.test.ts
+bun run test -- tests/coding-agent-run-check-evidence-scope.test.ts
+bun run test -- tests/coding-agent-evidence-scope.test.ts
 bun run test -- tests/coding-agent-manual-condition-evidence.test.ts
 bun run test -- tests/coding-agent-completion-readiness.test.ts
 bun run test -- tests/codex-completion-boundary.test.ts
 bun run test -- tests/coding-agent-test-evidence-mapping-integration.test.ts
 bun run test -- tests/coding-agent-evidence-check-query.test.ts
+bun run test -- tests/codex-agent-runtime/completion-reconciliation.test.ts
+bun run test -- tests/verification-adapters/vitest-json.test.ts
 ```
 
 full verification:
@@ -417,3 +420,22 @@ rollback時はadmission接続だけを戻し、migration済みcolumnと新規eve
 7. UI、observability、canary、full verificationを完了する。
 
 最初のvertical sliceは、`commands: []`、Vitest testcase mapping、current structured execution、completion reconciliationを1本のintegration testで通す。これにより、toolやschemaだけを追加して実Runから利用されない状態を先に防ぐ。
+
+## 14. 実装結果
+
+2026-08-01時点で、Phase 1からPhase 7のproduction接続と受け入れtestを実装した。
+
+- condition assurance contract、reason code、evidence kind compatibilityを`shared/modules/codingAgent`と`api/modules/codingAgent`へ集約した。
+- migration `0060_acceptance_condition_assurance.sql`でcase identity、evidence kind、manual confirmationを追加し、legacy rowを保持した。
+- `run_check`は実行前のTask/Run/Document/condition/evidence kind検証、Vitest/JUnit structured result、current source snapshotをmanaged evidenceとして保存する。
+- completion check、quality gate、Evidence Check、Native finalize、Codex SDK finalizeは同じcondition assurance evaluatorを利用する。
+- Codex SDKはterminal前に同じthreadへdiscrepancyを返し、再調整回数と解消有無をeventへ残す。
+- Evidence Checkは要求証跡、mapping元、case実行、freshness、Full Verify、condition assurance、evidence referenceを別表示し、required/safe-pass/unmapped/details-missing/stale件数を返す。
+- SystemContextとtool descriptionは日本語のまま更新し、固定tool順序や意味別modeは追加していない。
+
+local verification結果:
+
+- focused acceptance matrix: 14 test files、58 tests pass。
+- `s11tnext:lint`、`s11tnext:check`、`check:architecture`、`typecheck`、`build:backend`、`bun run verify`: pass。
+
+canary配備と本番metricの集計はrollout工程であり、このlocal implementationの外部副作用には含めない。

@@ -9,7 +9,10 @@ import {
 	verificationDocuments,
 } from "../api/db/verification-schema";
 import { digestImplementationPlan } from "../api/modules/agentsShare";
-import { getEvidenceCheckSnapshot } from "../api/modules/codingAgent/verification/evidence-check-query.service";
+import {
+	getEvidenceCheckSnapshot,
+	getLatestEvidenceCheckDescriptor,
+} from "../api/modules/codingAgent/verification/evidence-check-query.service";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 
 const repositoryIds: string[] = [];
@@ -129,6 +132,13 @@ describe("Coding Agent Evidence Check query", () => {
 				evidenceIdsJson: [],
 			},
 		]);
+		await expect(getLatestEvidenceCheckDescriptor(task.id)).resolves.toEqual({
+			taskId: task.id,
+			verificationDocumentId,
+			specMessageId,
+			specArtifactId: `feature-plan-${specMessageId}`,
+			generatedAt: "2026-07-24T00:00:00.000Z",
+		});
 
 		await expect(
 			getEvidenceCheckSnapshot({
@@ -140,8 +150,20 @@ describe("Coding Agent Evidence Check query", () => {
 			verificationDocumentId,
 			specMessageId,
 			conditions: [
-				{ id: "AC-001", status: "passed", evidenceIds: ["evidence-1"] },
-				{ id: "AC-002", status: "pending", evidenceIds: [] },
+				{
+					id: "AC-001",
+					status: "passed",
+					evidenceIds: ["evidence-1"],
+					verificationKind: "automated_test",
+					assuranceStatus: "pending",
+				},
+				{
+					id: "AC-002",
+					status: "pending",
+					evidenceIds: [],
+					verificationKind: "automated_test",
+					assuranceStatus: "pending",
+				},
 			],
 			implementationPlanTraceability: {
 				sourceMessageId: specMessageId,
@@ -162,7 +184,14 @@ describe("Coding Agent Evidence Check query", () => {
 					extraTodos: 0,
 				},
 			},
-			summary: { total: 2, confirmed: 1, failed: 0, pending: 1 },
+			summary: { total: 2, confirmed: 0, failed: 0, pending: 2 },
+			assuranceSummary: {
+				automated: 2,
+				safePass: 0,
+				failed: 0,
+				attention: 2,
+				fullVerifyStatus: "unknown",
+			},
 		});
 		await expect(
 			getEvidenceCheckSnapshot({

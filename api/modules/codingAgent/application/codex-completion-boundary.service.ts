@@ -52,9 +52,10 @@ export async function reconcileCodexCompletionBoundary(
 					command.exitCode === 0 &&
 					command.managedEvidence === true,
 			);
-		const conditionsCovered =
+		const completionReady =
 			verificationCloseout.applicability !== "active" ||
-			verificationCloseout.missingRequiredConditionIds.length === 0;
+			verificationCloseout.completionCheck?.ok === true;
+		const conditionsCovered = completionReady;
 		const testInventoryReady =
 			verificationCloseout.applicability !== "active" ||
 			!verificationCloseout.requiresAutomatedTests ||
@@ -64,7 +65,7 @@ export async function reconcileCodexCompletionBoundary(
 			!verificationCloseout.sourceMutatedDuringCloseout;
 		const ready =
 			verificationCommandsPassed &&
-			conditionsCovered &&
+			completionReady &&
 			testInventoryReady &&
 			sourceStable;
 		await input.sink.emit({

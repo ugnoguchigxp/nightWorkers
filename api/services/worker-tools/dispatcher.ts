@@ -370,6 +370,10 @@ export async function executeWorkerTool(
 				conditionIds: Array.isArray(args.conditionIds)
 					? args.conditionIds.map(String)
 					: undefined,
+				evidenceKinds: Array.isArray(args.evidenceKinds)
+					? (args.evidenceKinds.map(String) as never)
+					: undefined,
+				runnerHint: args.runnerHint as never,
 				displayMode: args.displayMode as never,
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,

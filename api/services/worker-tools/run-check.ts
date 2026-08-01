@@ -1,12 +1,20 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getLatestVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
+import type {
+	ExpectedEvidence,
+	VerificationRunner,
+} from "../../../shared/schemas/verification-checklist.schema";
 import {
-	recordVerificationEvidence,
+	isAutomatedEvidenceKind,
+	resolveExecutionCaseIdentities,
 	runCompletionCheck,
-} from "../../modules/nightworkers/nightworkers.verification.service";
+	validateRunCheckEvidenceScope,
+} from "../../modules/codingAgent";
+import { getLatestActiveVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
+import { recordVerificationEvidence } from "../../modules/nightworkers/nightworkers.verification.service";
 import { parseJUnitXmlCases } from "../verification/adapters/junit";
+import { parseVitestJsonCases } from "../verification/adapters/vitest-json";
 import {
 	buildCommandLevelEvidence,
 	inferVerificationRunner,
@@ -35,9 +43,10 @@ export interface RunCheckInput extends RunCommandInput {
 	verificationDocumentId?: string;
 	checkKind: RunCheckKind;
 	conditionIds?: string[];
+	evidenceKinds?: ExpectedEvidence[];
 	displayMode?: "summary" | "error_excerpt" | "full";
 	captureMode?: "full";
-	runnerHint?: string;
+	runnerHint?: VerificationRunner;
 }
 
 export interface RunCheckOutput extends RunCommandOutput {
@@ -48,6 +57,9 @@ export interface RunCheckOutput extends RunCommandOutput {
 	rawStderrArtifactId: string;
 	verificationDocumentId?: string | null;
 	evidenceRunId?: string;
+	evidenceKinds: ExpectedEvidence[];
+	structuredCaseCount: number;
+	resolvedCaseCount: number;
 	checklist?: {
 		complete: boolean;
 		failedRequired: number;
@@ -64,11 +76,27 @@ export async function runCheckTool(
 	input: RunCheckInput,
 ): Promise<WorkerToolResult<RunCheckOutput>> {
 	const startedAt = new Date().toISOString();
+	const verificationDocumentId =
+		input.verificationDocumentId ||
+		(input.taskId
+			? (await getLatestActiveVerificationDocumentForTask(input.taskId))?.id
+			: null);
+	const command = await resolveRunCheckCommand(input);
+	let runner = await resolveRunCheckRunner(input, command);
+	const evidenceKinds = normalizeRunCheckEvidenceKinds(input, runner);
+	if (input.taskId && verificationDocumentId) {
+		await validateRunCheckEvidenceScope({
+			taskId: input.taskId,
+			runId: input.runId,
+			verificationDocumentId,
+			conditionIds: input.conditionIds ?? [],
+			evidenceKinds,
+		});
+	}
 	const sourceSnapshotBefore =
 		input.taskId && input.runId
 			? await captureWorkspaceSnapshot(input.repoRoot)
 			: undefined;
-	const command = await resolveRunCheckCommand(input);
 	const commandResult = await runCommandTool({
 		...input,
 		command,
@@ -86,11 +114,6 @@ export async function runCheckTool(
 		command,
 		content: payload.stderr,
 	});
-	const verificationDocumentId =
-		input.verificationDocumentId ||
-		(input.taskId
-			? (await getLatestVerificationDocumentForTask(input.taskId))?.id
-			: null);
 	const junitCases =
 		/<testsuites?\b/i.test(payload.stdout) ||
 		/<testsuites?\b/i.test(payload.stderr)
@@ -98,6 +121,37 @@ export async function runCheckTool(
 			: [];
 	const resolvedCwd = path.resolve(input.repoRoot, input.cwd || "");
 	const evidenceCwd = await fs.realpath(resolvedCwd).catch(() => resolvedCwd);
+	const automatedEvidenceKind = evidenceKinds.find(isAutomatedEvidenceKind);
+	const vitestCases =
+		junitCases.length === 0
+			? parseVitestJsonCases({
+					text: payload.stdout,
+					evidenceKind: automatedEvidenceKind,
+				})
+			: [];
+	if (vitestCases.length > 0 && runner === "unknown") runner = "vitest";
+	const parsedCases =
+		junitCases.length > 0
+			? junitCases.map((testCase) => ({
+					...testCase,
+					runner,
+					...(automatedEvidenceKind
+						? { evidenceKind: automatedEvidenceKind }
+						: {}),
+				}))
+			: vitestCases;
+	const resolvedCases =
+		input.taskId && input.runId && sourceSnapshotBefore
+			? await resolveExecutionCaseIdentities({
+					taskId: input.taskId,
+					runId: input.runId,
+					sourceStateHash: sourceSnapshotBefore.sourceStateHash,
+					evidenceCwd,
+					runner,
+					evidenceKinds,
+					cases: parsedCases,
+				})
+			: parsedCases;
 	const evidence =
 		input.taskId && input.runId && shouldRecordRunCheckEvidence(commandResult)
 			? buildCommandLevelEvidence({
@@ -108,14 +162,12 @@ export async function runCheckTool(
 					startedAt,
 					finishedAt,
 					exitCode: payload.exitCode,
-					runner: inferVerificationRunner({
-						command: input.command,
-						runnerHint: input.runnerHint,
-					}),
+					runner,
 					rawStdoutArtifactId,
 					rawStderrArtifactId,
 					conditionIds: input.conditionIds,
-					cases: junitCases,
+					cases: resolvedCases,
+					evidenceKinds,
 				})
 			: null;
 	if (evidence && sourceSnapshotBefore) {
@@ -125,8 +177,9 @@ export async function runCheckTool(
 			sourceSnapshotBefore.sourceStateHash !==
 			sourceSnapshotAfter.sourceStateHash;
 		evidence.testExecutionObserved =
-			payload.classification === "build_test" &&
-			(input.checkKind === "test" || input.checkKind === "coverage");
+			resolvedCases.length > 0 ||
+			(payload.classification === "build_test" &&
+				(input.checkKind === "test" || input.checkKind === "coverage"));
 	}
 	const recorded =
 		evidence && input.taskId
@@ -165,6 +218,10 @@ export async function runCheckTool(
 			rawStderrArtifactId,
 			verificationDocumentId,
 			evidenceRunId: recorded?.evidenceRun.id,
+			evidenceKinds,
+			structuredCaseCount: parsedCases.length,
+			resolvedCaseCount: resolvedCases.filter((testCase) => testCase.caseKey)
+				.length,
 			checklist: recorded?.checklist
 				? {
 						complete: recorded.checklist.complete,
@@ -287,6 +344,24 @@ function createCheckStreamDigest(input: {
 		.digest("hex")}`;
 }
 
+function normalizeRunCheckEvidenceKinds(
+	input: RunCheckInput,
+	runner: ReturnType<typeof inferVerificationRunner>,
+): ExpectedEvidence[] {
+	if (input.evidenceKinds?.length) {
+		return Array.from(new Set(input.evidenceKinds));
+	}
+	if (input.checkKind === "lint") return ["lint"];
+	if (input.checkKind === "format_check") return ["format_check"];
+	if (input.checkKind === "typecheck") return ["typecheck"];
+	if (input.checkKind === "coverage") return ["coverage"];
+	if (input.checkKind === "build") return ["build"];
+	if (input.checkKind === "test") {
+		return runner === "playwright" ? ["e2e_test"] : ["automated_test"];
+	}
+	return [];
+}
+
 async function resolveRunCheckCommand(input: RunCheckInput) {
 	const command = input.command.trim();
 	const scriptName = resolveRunCheckScriptName(command, input.checkKind);
@@ -295,6 +370,26 @@ async function resolveRunCheckCommand(input: RunCheckInput) {
 	if (!packageJson?.scripts?.[scriptName]) return command;
 	const packageManager = await detectPackageManager(input.repoRoot, input.cwd);
 	return `${packageManager} run ${scriptName}`;
+}
+
+export async function resolveRunCheckRunner(
+	input: RunCheckInput,
+	resolvedCommand: string,
+) {
+	const scriptName = resolveRunCheckScriptName(
+		input.command.trim(),
+		input.checkKind,
+	);
+	const packageJson = scriptName
+		? await readPackageJson(input.repoRoot, input.cwd)
+		: null;
+	const scriptCommand = scriptName ? packageJson?.scripts?.[scriptName] : null;
+	return inferVerificationRunner({
+		command: [input.command, resolvedCommand, scriptCommand]
+			.filter((value): value is string => Boolean(value))
+			.join("\n"),
+		runnerHint: input.runnerHint,
+	});
 }
 
 function resolveRunCheckScriptName(command: string, checkKind: RunCheckKind) {

@@ -303,6 +303,9 @@ export function useNightWorkersRealtime({
 					if (msg.type === "task_message_created" && msg.payload?.message) {
 						const incoming = msg.payload.message;
 						void queryClient.invalidateQueries({
+							queryKey: ["evidenceCheck", "latest", incoming.taskId],
+						});
+						void queryClient.invalidateQueries({
 							queryKey: ["llmUsage", incoming.taskId],
 						});
 						if (isPlanModeWorkspaceMessage(incoming)) {
@@ -378,6 +381,9 @@ export function useNightWorkersRealtime({
 					}
 					if (msg.type === "task_run_updated" && msg.payload?.run) {
 						const incomingRun = msg.payload.run as TaskRun;
+						void queryClient.invalidateQueries({
+							queryKey: ["evidenceCheck"],
+						});
 						void queryClient.invalidateQueries({
 							queryKey: ["llmUsage", incomingRun.taskId],
 						});

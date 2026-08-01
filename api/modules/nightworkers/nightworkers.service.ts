@@ -1,7 +1,10 @@
 import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { decideRunOutcome } from "../../services/run-control/run-outcome-gate";
-import type { RuntimeLaneResult } from "../codingAgent";
+import {
+	type RuntimeLaneResult,
+	recordManualConditionConfirmationsForReview,
+} from "../codingAgent";
 import { configureQueueDrainRunner } from "../queue/queue-scheduler-port";
 import { buildReviewResult } from "../review/results/build-review-result";
 import { collectDefaultReviewEvidence } from "../review/results/evidence-collector";
@@ -253,6 +256,15 @@ export async function reviewTaskRun(
 		},
 		{ payloadJson: { reviewResult } },
 	);
+	if (finalTaskStatus === "completed") {
+		await recordManualConditionConfirmationsForReview({
+			taskId: run.taskId,
+			runId,
+			actorKind: "human_reviewer",
+			actorId: reviewResult.id,
+			evidenceRef: `review-result:${reviewResult.id}`,
+		});
+	}
 
 	await repo.updateTaskRun(runId, {
 		status: outcome.status,

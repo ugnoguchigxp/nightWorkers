@@ -1,10 +1,6 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import {
-	isVerificationChecklistItemComplete,
-	workspaceSourceSnapshotSchema,
-} from "../../../../shared/schemas/verification-checklist.schema";
+import { and, asc, desc, eq } from "drizzle-orm";
+import type { EvidenceCheckSnapshot } from "../../../../shared/modules/codingAgent";
 import { db } from "../../../db/client";
-import { evidenceSubjectSnapshots } from "../../../db/evidence-ledger-schema";
 import {
 	repositories,
 	taskMessages,
@@ -13,19 +9,17 @@ import {
 	tasks,
 } from "../../../db/schema";
 import {
-	codingAgentTestConditionMappings,
-	codingAgentTestInventoryCases,
-	codingAgentTestInventoryRuns,
 	verificationChecklistItems,
 	verificationDocuments,
-	verificationEvidenceCases,
-	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
 import {
 	digestImplementationPlan,
 	readFeaturePlanImplementationPlan,
 } from "../../agentsShare";
-import { captureWorkspaceSourceSnapshot } from "./workspace-source-snapshot";
+import {
+	type EvaluatedAcceptanceCondition,
+	evaluateAcceptanceConditionAssurance,
+} from "./acceptance-condition-assurance.service";
 
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -63,10 +57,7 @@ async function buildImplementationPlanTraceability(input: {
 	const sourceMessageId = input.document.specMessageId;
 	if (!sourceMessageId) return null;
 	const [sourceMessage] = await db
-		.select({
-			id: taskMessages.id,
-			metadataJson: taskMessages.metadataJson,
-		})
+		.select({ id: taskMessages.id, metadataJson: taskMessages.metadataJson })
 		.from(taskMessages)
 		.where(
 			and(
@@ -184,508 +175,10 @@ export async function getLatestEvidenceCheckDescriptor(taskId: string) {
 	};
 }
 
-type ChecklistRow = typeof verificationChecklistItems.$inferSelect;
-type EvidenceRunRow = typeof verificationEvidenceRuns.$inferSelect;
-type EvidenceCaseRow = typeof verificationEvidenceCases.$inferSelect;
-type InventoryCaseRow = typeof codingAgentTestInventoryCases.$inferSelect;
-
-type AssuranceTest = {
-	caseKey: string;
-	name: string;
-	filePath: string | null;
-	runner: string;
-	mappingSource: string;
-	execution: {
-		status: "passed" | "failed" | "skipped" | "unknown" | "not_run";
-		evidenceRunId: string | null;
-		durationMs: number | null;
-		finishedAt: string | null;
-	};
-	guards: {
-		currentSource: boolean;
-		sourceStableDuringExecution: boolean | null;
-		testExecutionObserved: boolean;
-		fullVerifyPassed: boolean;
-	};
-};
-
-type AssuranceCondition = {
-	assuranceStatus:
-		| "safe_pass"
-		| "failed"
-		| "stale"
-		| "not_run"
-		| "unmapped"
-		| "details_missing"
-		| "manual"
-		| "not_applicable"
-		| "pending";
-	assuranceReason: string | null;
-	tests: AssuranceTest[];
-};
-
-async function buildEvidenceAssurance(input: {
-	taskId: string;
-	runId: string | null;
-	verificationDocumentId: string;
-	checklist: ChecklistRow[];
-}) {
-	const evaluatedAt = new Date().toISOString();
-	const base = new Map<string, AssuranceCondition>(
-		input.checklist.map((item) => [
-			item.conditionId,
-			defaultAssuranceForChecklistItem(item),
-		]),
-	);
-	if (!input.runId) {
-		return summarizeAssurance(base, input.checklist, {
-			evaluatedAt,
-			sourceStateHash: null,
-			fullVerifyStatus: "unknown",
-		});
-	}
-
-	const [scope] = await db
-		.select({
-			worktreePath: tasks.worktreePath,
-			repositoryPath: repositories.localPath,
-		})
-		.from(tasks)
-		.innerJoin(repositories, eq(repositories.id, tasks.repositoryId))
-		.where(eq(tasks.id, input.taskId))
-		.limit(1);
-	const repoRoot = scope?.worktreePath || scope?.repositoryPath || null;
-	const currentSnapshot = repoRoot
-		? await captureWorkspaceSourceSnapshot(repoRoot).catch(() => null)
-		: null;
-	if (!currentSnapshot) {
-		return summarizeAssurance(base, input.checklist, {
-			evaluatedAt,
-			sourceStateHash: null,
-			fullVerifyStatus: "unknown",
-		});
-	}
-
-	const [inventories, evidence, subjects] = await Promise.all([
-		db
-			.select()
-			.from(codingAgentTestInventoryRuns)
-			.where(
-				and(
-					eq(codingAgentTestInventoryRuns.taskId, input.taskId),
-					eq(codingAgentTestInventoryRuns.runId, input.runId),
-				),
-			)
-			.orderBy(desc(codingAgentTestInventoryRuns.createdAt)),
-		db
-			.select()
-			.from(verificationEvidenceRuns)
-			.where(
-				and(
-					eq(verificationEvidenceRuns.taskId, input.taskId),
-					eq(verificationEvidenceRuns.runId, input.runId),
-					eq(
-					verificationEvidenceRuns.verificationDocumentId,
-					input.verificationDocumentId,
-				),
-				),
-			)
-			.orderBy(desc(verificationEvidenceRuns.finishedAt)),
-		db
-			.select()
-			.from(evidenceSubjectSnapshots)
-			.where(
-				and(
-					eq(evidenceSubjectSnapshots.taskId, input.taskId),
-					eq(evidenceSubjectSnapshots.implementationRunId, input.runId),
-					eq(
-					evidenceSubjectSnapshots.verificationDocumentId,
-					input.verificationDocumentId,
-				),
-				),
-			),
-	]);
-	const currentSubjectIds = new Set(
-		subjects
-			.filter(
-				(subject) =>
-					subject.sourceStateHash === currentSnapshot.sourceStateHash,
-			)
-			.map((subject) => subject.id),
-	);
-	const currentEvidence = evidence.filter(
-		(item) =>
-			Boolean(item.subjectId && currentSubjectIds.has(item.subjectId)) &&
-			snapshotHash(item.sourceSnapshotJson) === currentSnapshot.sourceStateHash &&
-			!item.sourceMutatedDuringCheck,
-	);
-	const currentFullVerify = currentEvidence.filter(
-		(item) => item.checkKind === "verify",
-	);
-	const fullVerifyStatus = currentFullVerify.some((item) => item.exitCode === 0)
-		? ("passed" as const)
-		: currentFullVerify.some((item) => item.exitCode !== 0)
-			? ("failed" as const)
-			: ("unknown" as const);
-	const currentTestExecutionPassed = currentEvidence.some(
-		(item) => item.testExecutionObserved && item.exitCode === 0,
-	);
-	const currentTestExecutionFailed = currentEvidence.some(
-		(item) => item.testExecutionObserved && item.exitCode !== 0,
-	);
-	const currentInventory = inventories.find(
-		(inventory) =>
-			snapshotHash(inventory.sourceSnapshotJson) === currentSnapshot.sourceStateHash,
-	);
-	const selectedInventory = currentInventory ?? inventories[0] ?? null;
-	const inventoryCases = selectedInventory
-		? await db
-				.select()
-				.from(codingAgentTestInventoryCases)
-				.where(
-					eq(codingAgentTestInventoryCases.inventoryId, selectedInventory.id),
-				)
-		: [];
-	const mappings = selectedInventory
-		? await db
-				.select()
-				.from(codingAgentTestConditionMappings)
-				.where(
-					and(
-						eq(
-							codingAgentTestConditionMappings.verificationDocumentId,
-							input.verificationDocumentId,
-						),
-						eq(
-							codingAgentTestConditionMappings.inventoryId,
-							selectedInventory.id,
-						),
-					),
-				)
-		: [];
-	const evidenceCases = evidence.length
-		? await db
-				.select()
-				.from(verificationEvidenceCases)
-				.where(
-					inArray(
-						verificationEvidenceCases.evidenceRunId,
-						evidence.map((item) => item.id),
-					),
-				)
-		: [];
-	const evidenceById = new Map(evidence.map((item) => [item.id, item]));
-	const inventoryIsCurrent = Boolean(currentInventory);
-	const fullVerifyPassed = fullVerifyStatus === "passed";
-
-	for (const item of input.checklist) {
-		if (!item.required || item.verificationKind === "not_applicable") {
-			base.set(item.conditionId, {
-				assuranceStatus: "not_applicable",
-				assuranceReason: null,
-				tests: [],
-			});
-			continue;
-		}
-		if (item.verificationKind === "manual") {
-			base.set(item.conditionId, {
-				assuranceStatus: "manual",
-				assuranceReason: item.reason,
-				tests: [],
-			});
-			continue;
-		}
-		if (item.verificationKind !== "automated_test") continue;
-
-		const definitions = activeDefinitionsForCondition({
-			conditionId: item.conditionId,
-			inventoryCases,
-			mappings,
-		});
-		if (definitions.length === 0) {
-			base.set(item.conditionId, {
-				assuranceStatus: "unmapped",
-				assuranceReason: "missing_test_definition_mapping",
-				tests: [],
-			});
-			continue;
-		}
-		const tests = definitions.map((definition) =>
-			buildAssuranceTest({
-				conditionId: item.conditionId,
-				definition,
-				evidenceCases,
-				evidenceById,
-				currentEvidenceIds: new Set(currentEvidence.map((entry) => entry.id)),
-				inventoryIsCurrent,
-				fullVerifyPassed,
-			}),
-		);
-		const hasCurrentFailure =
-			item.status === "failed" ||
-			currentTestExecutionFailed ||
-			tests.some(
-				(test) =>
-					test.guards.currentSource && test.execution.status === "failed",
-			);
-		const everyExactTestPassed = tests.every(
-			(test) =>
-				test.guards.currentSource &&
-				test.guards.sourceStableDuringExecution === true &&
-				test.guards.testExecutionObserved &&
-				test.execution.status === "passed",
-		);
-		const condition = hasCurrentFailure
-			? ({
-					assuranceStatus: "failed",
-					assuranceReason: "test_execution_failed",
-					tests,
-				} satisfies AssuranceCondition)
-			: !inventoryIsCurrent
-				? ({
-						assuranceStatus: "stale",
-						assuranceReason: "source_snapshot_changed",
-						tests,
-					} satisfies AssuranceCondition)
-				: !currentTestExecutionPassed
-					? ({
-							assuranceStatus: "not_run",
-							assuranceReason: "missing_successful_test_execution",
-							tests,
-						} satisfies AssuranceCondition)
-					: !everyExactTestPassed
-						? ({
-								assuranceStatus: "details_missing",
-								assuranceReason: "missing_exact_test_case_result",
-								tests,
-							} satisfies AssuranceCondition)
-						: fullVerifyStatus === "failed"
-							? ({
-									assuranceStatus: "failed",
-									assuranceReason: "full_verify_failed",
-									tests,
-								} satisfies AssuranceCondition)
-							: !fullVerifyPassed
-								? ({
-										assuranceStatus: "pending",
-										assuranceReason: "missing_successful_full_verify",
-										tests,
-									} satisfies AssuranceCondition)
-								: ({
-										assuranceStatus: "safe_pass",
-										assuranceReason: null,
-										tests,
-									} satisfies AssuranceCondition);
-		base.set(item.conditionId, condition);
-	}
-
-	return summarizeAssurance(base, input.checklist, {
-		evaluatedAt,
-		sourceStateHash: currentSnapshot.sourceStateHash,
-		fullVerifyStatus,
-	});
-}
-
-function defaultAssuranceForChecklistItem(
-	item: ChecklistRow,
-): AssuranceCondition {
-	if (!item.required || item.verificationKind === "not_applicable") {
-		return {
-			assuranceStatus: "not_applicable",
-			assuranceReason: null,
-			tests: [],
-		};
-	}
-	if (item.verificationKind === "manual") {
-		return {
-			assuranceStatus: "manual",
-			assuranceReason: item.reason,
-			tests: [],
-		};
-	}
-	return {
-		assuranceStatus: item.status === "failed" ? "failed" : "pending",
-		assuranceReason:
-			item.status === "failed" ? item.reason : "assurance_not_evaluated",
-		tests: [],
-	};
-}
-
-function activeDefinitionsForCondition(input: {
-	conditionId: string;
-	inventoryCases: InventoryCaseRow[];
-	mappings: Array<typeof codingAgentTestConditionMappings.$inferSelect>;
-}) {
-	const mappingByCaseKey = new Map(
-		input.mappings
-			.filter((mapping) => mapping.conditionId === input.conditionId)
-			.map((mapping) => [mapping.caseKey, mapping.source]),
-	);
-	return input.inventoryCases
-		.filter((testCase) => testCase.discoveryLevel === "active")
-		.flatMap((testCase) => {
-			const mappingSource = mappingByCaseKey.get(testCase.caseKey);
-			const declared = testCase.declaredConditionIdsJson.includes(
-				input.conditionId,
-			);
-			if (!mappingSource && !declared) return [];
-			return [
-				{
-					...testCase,
-					mappingSource: mappingSource || "declared_in_test",
-				},
-			];
-		});
-}
-
-function buildAssuranceTest(input: {
-	conditionId: string;
-	definition: InventoryCaseRow & { mappingSource: string };
-	evidenceCases: EvidenceCaseRow[];
-	evidenceById: Map<string, EvidenceRunRow>;
-	currentEvidenceIds: Set<string>;
-	inventoryIsCurrent: boolean;
-	fullVerifyPassed: boolean;
-}): AssuranceTest {
-	const execution = input.evidenceCases
-		.filter((testCase) =>
-			matchesInventoryDefinition(
-				testCase,
-				input.definition,
-				input.conditionId,
-			),
-		)
-		.sort((left, right) => {
-			const leftRun = input.evidenceById.get(left.evidenceRunId);
-			const rightRun = input.evidenceById.get(right.evidenceRunId);
-			return (
-				(rightRun?.finishedAt.getTime() ?? 0) -
-				(leftRun?.finishedAt.getTime() ?? 0)
-			);
-		})[0];
-	const evidenceRun = execution
-		? input.evidenceById.get(execution.evidenceRunId)
-		: undefined;
-	const currentSource = Boolean(
-		input.inventoryIsCurrent &&
-			execution &&
-			input.currentEvidenceIds.has(execution.evidenceRunId),
-	);
-	return {
-		caseKey: input.definition.caseKey,
-		name: input.definition.name,
-		filePath: input.definition.filePath,
-		runner: input.definition.runner,
-		mappingSource: input.definition.mappingSource,
-		execution: {
-			status: execution
-				? normalizeExecutionStatus(execution.status)
-				: "not_run",
-			evidenceRunId: execution?.evidenceRunId ?? null,
-			durationMs: execution?.durationMs ?? null,
-			finishedAt: evidenceRun?.finishedAt.toISOString() ?? null,
-		},
-		guards: {
-			currentSource,
-			sourceStableDuringExecution: evidenceRun
-				? !evidenceRun.sourceMutatedDuringCheck
-				: null,
-			testExecutionObserved: Boolean(evidenceRun?.testExecutionObserved),
-			fullVerifyPassed: input.fullVerifyPassed,
-		},
-	};
-}
-
-function matchesInventoryDefinition(
-	testCase: EvidenceCaseRow,
-	definition: InventoryCaseRow,
-	conditionId: string,
-) {
-	const expectedName = normalizeTestIdentity(definition.name);
-	const actualName = normalizeTestIdentity(testCase.name);
-	const nameMatches =
-		actualName === expectedName || actualName.endsWith(` ${expectedName}`);
-	const fileMatches =
-		!testCase.filePath ||
-		normalizeTestIdentity(testCase.filePath) ===
-			normalizeTestIdentity(definition.filePath);
-	return (
-		nameMatches &&
-		fileMatches &&
-		(testCase.conditionIdsJson.length === 0 ||
-			testCase.conditionIdsJson.includes(conditionId))
-	);
-}
-
-function normalizeTestIdentity(value: string) {
-	return value
-		.normalize("NFKC")
-		.toLocaleLowerCase("en-US")
-		.replaceAll("\\", "/")
-		.replace(/\s+/g, " ")
-		.trim();
-}
-
-function normalizeExecutionStatus(
-	status: string,
-): AssuranceTest["execution"]["status"] {
-	if (
-		status === "passed" ||
-		status === "failed" ||
-		status === "skipped" ||
-		status === "unknown"
-	) {
-		return status;
-	}
-	return "unknown";
-}
-
-function summarizeAssurance(
-	conditions: Map<string, AssuranceCondition>,
-	checklist: ChecklistRow[],
-	context: {
-		evaluatedAt: string;
-		sourceStateHash: string | null;
-		fullVerifyStatus: "passed" | "failed" | "unknown";
-	},
-) {
-	const automated = checklist.filter(
-		(item) => item.required && item.verificationKind === "automated_test",
-	);
-	const automatedResults = automated.map(
-		(item) =>
-			conditions.get(item.conditionId) ??
-			defaultAssuranceForChecklistItem(item),
-	);
-	const safePass = automatedResults.filter(
-		(item) => item.assuranceStatus === "safe_pass",
-	).length;
-	const failed = automatedResults.filter(
-		(item) => item.assuranceStatus === "failed",
-	).length;
-	return {
-		conditions,
-		evaluatedAt: context.evaluatedAt,
-		sourceStateHash: context.sourceStateHash,
-		assuranceSummary: {
-			automated: automated.length,
-			safePass,
-			failed,
-			attention: Math.max(0, automated.length - safePass - failed),
-			fullVerifyStatus: context.fullVerifyStatus,
-		},
-	};
-}
-
-function snapshotHash(value: unknown): string | undefined {
-	const parsed = workspaceSourceSnapshotSchema.safeParse(value);
-	return parsed.success ? parsed.data.sourceStateHash : undefined;
-}
-
 export async function getEvidenceCheckSnapshot(input: {
 	taskId: string;
 	verificationDocumentId: string;
-}) {
+}): Promise<EvidenceCheckSnapshot | null> {
 	const [document] = await db
 		.select()
 		.from(verificationDocuments)
@@ -698,53 +191,112 @@ export async function getEvidenceCheckSnapshot(input: {
 		)
 		.limit(1);
 	if (!document) return null;
-	const rows = await db
-		.select()
-		.from(verificationChecklistItems)
-		.where(eq(verificationChecklistItems.verificationDocumentId, document.id))
-		.orderBy(verificationChecklistItems.conditionId);
-	const confirmed = rows.filter((row) =>
-		isVerificationChecklistItemComplete({
-			required: row.required,
-			status: row.status,
-		}),
-	).length;
-	const failed = rows.filter((row) => row.status === "failed").length;
-	const implementationPlanTraceability =
-		await buildImplementationPlanTraceability({
-			taskId: input.taskId,
-			document,
-		});
-	const assurance = await buildEvidenceAssurance({
-		taskId: input.taskId,
-		runId: implementationPlanTraceability?.runId ?? document.runId,
-		verificationDocumentId: document.id,
-		checklist: rows,
-	});
+	const [rows, implementationPlanTraceability, scope] = await Promise.all([
+		db
+			.select()
+			.from(verificationChecklistItems)
+			.where(eq(verificationChecklistItems.verificationDocumentId, document.id))
+			.orderBy(verificationChecklistItems.conditionId),
+		buildImplementationPlanTraceability({ taskId: input.taskId, document }),
+		db
+			.select({
+				worktreePath: tasks.worktreePath,
+				repositoryPath: repositories.localPath,
+			})
+			.from(tasks)
+			.innerJoin(repositories, eq(repositories.id, tasks.repositoryId))
+			.where(eq(tasks.id, input.taskId))
+			.limit(1)
+			.then((entries) => entries[0]),
+	]);
+	const runId = implementationPlanTraceability?.runId ?? document.runId;
+	const repoRoot = scope?.worktreePath || scope?.repositoryPath || null;
+	const evaluation =
+		runId && repoRoot
+			? await evaluateAcceptanceConditionAssurance({
+					taskId: input.taskId,
+					runId,
+					verificationDocumentId: document.id,
+					repoRoot,
+				}).catch(() => null)
+			: null;
+	const evaluatedById = new Map(
+		(evaluation?.conditions ?? []).map((condition) => [
+			condition.conditionId,
+			condition,
+		]),
+	);
+	const fullVerifyPassed =
+		evaluation?.qualityGate.fullVerify.status === "passed";
 	const conditions = rows.map((row) => {
-		const conditionAssurance = assurance.conditions.get(row.conditionId) ??
-			defaultAssuranceForChecklistItem(row);
+		const evaluated =
+			evaluatedById.get(row.conditionId) ?? fallbackCondition(row);
 		return {
 			id: row.conditionId,
 			text: row.text,
 			status: row.status,
 			required: row.required,
-			verificationKind: row.verificationKind,
-			expectedEvidence: row.expectedEvidenceJson,
-			evidenceIds: row.evidenceIdsJson,
+			verificationKind: evaluated.verificationKind,
+			expectedEvidence: evaluated.expectedEvidence,
+			evidenceIds: Array.from(
+				new Set([
+					...row.evidenceIdsJson,
+					...evaluated.evidenceRefs.map((reference) => reference.evidenceRunId),
+				]),
+			),
 			reason: row.reason,
 			lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
-			...conditionAssurance,
+			assuranceStatus: evaluated.assuranceStatus,
+			assuranceReason: evaluated.reasonCode,
+			tests: evaluated.tests.map((test) => ({
+				caseKey: test.caseKey,
+				name: test.name,
+				filePath: test.filePath,
+				runner: test.runner,
+				mappingSource: test.mappingSource,
+				execution: {
+					status: test.execution.status,
+					evidenceRunId: test.execution.evidenceRunId,
+					evidenceKind: test.execution.evidenceKind,
+					durationMs: test.execution.durationMs,
+					finishedAt: test.execution.finishedAt,
+				},
+				guards: {
+					currentSource: test.guards.currentSource,
+					sourceStableDuringExecution: test.guards.sourceStableDuringExecution,
+					testExecutionObserved: test.guards.testExecutionObserved,
+					fullVerifyPassed,
+				},
+			})),
 		};
 	});
+	const confirmed = conditions.filter(
+		(condition) =>
+			condition.assuranceStatus === "safe_pass" ||
+			condition.assuranceStatus === "not_applicable",
+	).length;
+	const failed = conditions.filter(
+		(condition) => condition.assuranceStatus === "failed",
+	).length;
+	const automated = conditions.filter(
+		(condition) =>
+			condition.required && condition.verificationKind === "automated_test",
+	);
+	const automatedSafePass = automated.filter(
+		(condition) => condition.assuranceStatus === "safe_pass",
+	).length;
+	const automatedFailed = automated.filter(
+		(condition) => condition.assuranceStatus === "failed",
+	).length;
+
 	return {
 		taskId: input.taskId,
 		verificationDocumentId: document.id,
 		specMessageId: document.specMessageId,
 		specArtifactId: document.specArtifactId,
 		generatedAt: document.generatedAt.toISOString(),
-		evaluatedAt: assurance.evaluatedAt,
-		sourceStateHash: assurance.sourceStateHash,
+		evaluatedAt: new Date().toISOString(),
+		sourceStateHash: evaluation?.sourceStateHash ?? null,
 		conditions,
 		implementationPlanTraceability,
 		summary: {
@@ -753,6 +305,65 @@ export async function getEvidenceCheckSnapshot(input: {
 			failed,
 			pending: Math.max(0, rows.length - confirmed - failed),
 		},
-		assuranceSummary: assurance.assuranceSummary,
+		assuranceSummary: {
+			automated: automated.length,
+			safePass: automatedSafePass,
+			failed: automatedFailed,
+			attention: Math.max(
+				0,
+				automated.length - automatedSafePass - automatedFailed,
+			),
+			required: conditions.filter((condition) => condition.required).length,
+			requiredSafePass: conditions.filter(
+				(condition) =>
+					condition.required && condition.assuranceStatus === "safe_pass",
+			).length,
+			unmapped: conditions.filter(
+				(condition) => condition.assuranceStatus === "unmapped",
+			).length,
+			detailsMissing: conditions.filter(
+				(condition) => condition.assuranceStatus === "details_missing",
+			).length,
+			stale: conditions.filter(
+				(condition) => condition.assuranceStatus === "stale",
+			).length,
+			fullVerifyStatus: evaluation
+				? evaluation.qualityGate.fullVerify.status
+				: "unknown",
+		},
+	};
+}
+
+function fallbackCondition(
+	row: typeof verificationChecklistItems.$inferSelect,
+): EvaluatedAcceptanceCondition {
+	const verificationKind =
+		row.verificationKind === "command_gate" ||
+		row.verificationKind === "manual" ||
+		row.verificationKind === "not_applicable"
+			? row.verificationKind
+			: "automated_test";
+	return {
+		conditionId: row.conditionId,
+		text: row.text,
+		required: row.required,
+		verificationKind,
+		expectedEvidence: [],
+		assuranceStatus:
+			!row.required || verificationKind === "not_applicable"
+				? "not_applicable"
+				: verificationKind === "manual"
+					? "manual"
+					: "pending",
+		reasonCode:
+			verificationKind === "manual"
+				? "MANUAL_CONFIRMATION_MISSING"
+				: verificationKind === "command_gate"
+					? "CONDITION_COMMAND_SCOPE_MISSING"
+					: verificationKind === "automated_test"
+						? "TEST_INVENTORY_MISSING"
+						: null,
+		evidenceRefs: [],
+		tests: [],
 	};
 }

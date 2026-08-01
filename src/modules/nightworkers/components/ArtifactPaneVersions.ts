@@ -110,8 +110,12 @@ export async function copyText(content: string) {
 	}
 }
 
-export function saveTextFile(content: string, filename: string) {
-	const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+export function saveTextFile(
+	content: string,
+	filename: string,
+	mimeType = "text/plain;charset=utf-8",
+) {
+	const blob = new Blob([content], { type: mimeType });
 	downloadBlob(blob, filename);
 }
 

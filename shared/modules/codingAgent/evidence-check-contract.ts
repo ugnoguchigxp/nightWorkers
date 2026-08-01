@@ -29,6 +29,7 @@ export const evidenceCheckTestSchema = z.object({
 	execution: z.object({
 		status: z.enum(["passed", "failed", "skipped", "unknown", "not_run"]),
 		evidenceRunId: z.string().nullable(),
+		evidenceKind: z.string().nullable().optional(),
 		durationMs: z.number().nonnegative().nullable(),
 		finishedAt: z.string().nullable(),
 	}),
@@ -101,7 +102,7 @@ export const evidenceCheckSnapshotSchema = z.object({
 	conditions: z.array(evidenceCheckConditionSchema),
 	implementationPlanTraceability:
 		evidenceCheckImplementationPlanTraceabilitySchema.nullable(),
-		summary: z.object({
+	summary: z.object({
 		total: z.number().int().nonnegative(),
 		confirmed: z.number().int().nonnegative(),
 		failed: z.number().int().nonnegative(),
@@ -112,6 +113,11 @@ export const evidenceCheckSnapshotSchema = z.object({
 		safePass: z.number().int().nonnegative(),
 		failed: z.number().int().nonnegative(),
 		attention: z.number().int().nonnegative(),
+		required: z.number().int().nonnegative().optional(),
+		requiredSafePass: z.number().int().nonnegative().optional(),
+		unmapped: z.number().int().nonnegative().optional(),
+		detailsMissing: z.number().int().nonnegative().optional(),
+		stale: z.number().int().nonnegative().optional(),
 		fullVerifyStatus: z.enum(["passed", "failed", "unknown"]),
 	}),
 });

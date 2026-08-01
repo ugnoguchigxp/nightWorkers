@@ -1,42 +1,16 @@
 import {
-	isVerificationChecklistItemComplete,
 	type NormalizedVerificationEvidence,
 	type SpecificationVerificationDocument,
 	specificationVerificationDocumentSchema,
 } from "../../../shared/schemas/verification-checklist.schema";
+import { AppError } from "../../lib/errors";
 import {
 	applyEvidenceToChecklist,
 	summarizeChecklist,
 } from "../../services/verification/checklist-matcher";
-import type { QualityGateResult } from "../codingAgent";
 import { bindEvidenceSubject } from "../evidenceLedger";
+import { getTaskRun } from "./nightworkers.runs.repository";
 import * as repository from "./nightworkers.verification.repository";
-
-export type CompletionCheckResult = {
-	ok: boolean;
-	verificationDocumentId: string | null;
-	summary: {
-		total: number;
-		complete: number;
-		failedRequired: number;
-		unknownRequired: number;
-	};
-	failedRequired: Array<{ conditionId: string; text: string; reason?: string }>;
-	unknownRequired: Array<{
-		conditionId: string;
-		text: string;
-		reason?: string;
-	}>;
-	conditions: Array<{
-		conditionId: string;
-		text: string;
-		required: boolean;
-		status: string;
-		reason?: string;
-	}>;
-	qualityGate: QualityGateResult;
-	reason?: string;
-};
 
 export async function createVerificationDocumentFromSpec(input: {
 	taskId: string;
@@ -48,6 +22,35 @@ export async function createVerificationDocumentFromSpec(input: {
 	document: SpecificationVerificationDocument;
 }) {
 	const parsed = specificationVerificationDocumentSchema.parse(input.document);
+	if (parsed.source.taskId !== input.taskId) {
+		throw new AppError(
+			409,
+			"verification_document_task_mismatch",
+			"Verification Document source does not match the requested Task.",
+		);
+	}
+	if (input.runId) {
+		const run = await getTaskRun(input.runId);
+		if (!run || run.taskId !== input.taskId) {
+			throw new AppError(
+				409,
+				"verification_document_run_mismatch",
+				"Verification Document Run does not belong to the requested Task.",
+			);
+		}
+	}
+	if (input.specMessageId) {
+		const message = await repository.getVerificationSourceMessage(
+			input.specMessageId,
+		);
+		if (!message || message.taskId !== input.taskId) {
+			throw new AppError(
+				409,
+				"verification_document_message_mismatch",
+				"Verification Document source message does not belong to the requested Task.",
+			);
+		}
+	}
 	return repository.createVerificationDocument({
 		...input,
 		document: parsed,
@@ -62,6 +65,7 @@ export async function recordVerificationEvidence(input: {
 	fullGate?: boolean;
 	evidence: NormalizedVerificationEvidence;
 }) {
+	await assertVerificationEvidenceScope(input);
 	const subject =
 		input.runId && input.evidence.sourceSnapshot
 			? await bindEvidenceSubject({
@@ -96,95 +100,47 @@ export async function recordVerificationEvidence(input: {
 	return { evidenceRun, checklist: null };
 }
 
-export async function runCompletionCheck(input: {
+async function assertVerificationEvidenceScope(input: {
 	taskId: string;
-	runId: string;
+	runId?: string | null;
 	verificationDocumentId?: string | null;
-	repoRoot?: string;
-}): Promise<CompletionCheckResult> {
-	const document = input.verificationDocumentId
-		? await repository.getVerificationDocument(input.verificationDocumentId)
-		: await repository.getLatestVerificationDocumentForTask(input.taskId);
-	if (!document) {
-		return {
-			ok: false,
-			verificationDocumentId: null,
-			summary: {
-				total: 0,
-				complete: 0,
-				failedRequired: 0,
-				unknownRequired: 0,
-			},
-			failedRequired: [],
-			unknownRequired: [],
-			conditions: [],
-			qualityGate: {
-				passed: false,
-				inventory: {
-					status: "unknown",
-					activeCaseCount: 0,
-					reason: "missing_verification_document",
-				},
-				testExecution: {
-					status: "unknown",
-					reason: "missing_verification_document",
-				},
-				fullVerify: {
-					status: "unknown",
-					reason: "missing_verification_document",
-				},
-				conditions: [],
-			},
-			reason: "missing_verification_document",
-		};
-	}
-	const items = await repository.listVerificationChecklistItems(document.id);
-	const summary = summarizeChecklist(items);
-	const completeCount = items.filter(
-		isVerificationChecklistItemComplete,
-	).length;
-	const { evaluateQualityGate } = await import("../codingAgent");
-	const qualityGate = await evaluateQualityGate({
-		taskId: input.taskId,
-		runId: input.runId,
-		verificationDocumentId: document.id,
-		repoRoot: input.repoRoot,
-	});
-	return {
-		ok: summary.complete && qualityGate.passed,
-		verificationDocumentId: document.id,
-		summary: {
-			total: items.length,
-			complete: completeCount,
-			failedRequired: summary.failedRequired.length,
-			unknownRequired: summary.unknownRequired.length,
-		},
-		failedRequired: summary.failedRequired.map(formatCondition),
-		unknownRequired: summary.unknownRequired.map(formatCondition),
-		conditions: items.map((item) => ({
-			conditionId: item.conditionId,
-			text: item.text,
-			required: item.required,
-			status: item.status,
-			reason: item.reason,
-		})),
-		qualityGate,
-		reason: !summary.complete
-			? "required_conditions_incomplete"
-			: qualityGate.passed
-				? undefined
-				: "quality_gate_incomplete",
-	};
-}
-
-function formatCondition(input: {
-	conditionId: string;
-	text: string;
-	reason?: string;
+	evidence: NormalizedVerificationEvidence;
 }) {
-	return {
-		conditionId: input.conditionId,
-		text: input.text,
-		reason: input.reason,
-	};
+	if (
+		input.evidence.taskId !== input.taskId ||
+		!input.runId ||
+		input.evidence.runId !== input.runId
+	) {
+		throw new AppError(
+			409,
+			"verification_evidence_scope_mismatch",
+			"Verification evidence must match the requested Task and Run.",
+		);
+	}
+	const run = await getTaskRun(input.runId);
+	if (!run || run.taskId !== input.taskId) {
+		throw new AppError(
+			409,
+			"verification_evidence_run_mismatch",
+			"Verification evidence Run does not belong to the requested Task.",
+		);
+	}
+	if (!input.verificationDocumentId) return;
+	const document = await repository.getVerificationDocument(
+		input.verificationDocumentId,
+	);
+	if (!document || document.taskId !== input.taskId) {
+		throw new AppError(
+			409,
+			"verification_evidence_document_mismatch",
+			"Verification Document does not belong to the requested Task.",
+		);
+	}
+	if (document.status !== "active") {
+		throw new AppError(
+			409,
+			"verification_evidence_document_inactive",
+			"Verification evidence can only be recorded against an active document.",
+		);
+	}
 }

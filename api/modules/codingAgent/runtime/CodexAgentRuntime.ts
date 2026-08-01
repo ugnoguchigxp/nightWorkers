@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { RuntimeSessionStateStore } from "../../../services/runtime-session-state";
 import { digestText } from "../../../services/text-digest";
+import type { FinalizeGuardResult } from "../application/run-finalize-controller";
+import { runFinalizeController } from "../application/run-finalize-controller";
+import { loadCodingAgentContextPacket } from "../context";
+import { buildCodingAgentCompletionRecoveryFeedback } from "../context/recovery-guidance";
+import {
+	buildCompletionAssurancePassedEvent,
+	buildCompletionReconciliationTestResults,
+} from "./codex-completion-reconciliation";
 import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
 	persistCodexProviderThreadIfPresent,
@@ -55,6 +63,12 @@ export class CodexAgentRuntime implements AgentRuntime {
 	private readonly collectWorkspaceDiff: boolean;
 	private readonly persistRuntimeUsage: boolean;
 	private readonly usageRecorder: RuntimeUsageRecorder;
+	private readonly evaluateCompletionCandidate: (input: {
+		runId: string;
+		repositoryRoot: string;
+		candidateRevision?: number;
+		finalCandidate?: string;
+	}) => Promise<FinalizeGuardResult>;
 
 	constructor(
 		input: {
@@ -64,6 +78,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			collectWorkspaceDiff?: boolean;
 			persistRuntimeUsage?: boolean;
 			usageRecorder?: RuntimeUsageRecorder;
+			evaluateCompletionCandidate?: CodexAgentRuntime["evaluateCompletionCandidate"];
 		} = {},
 	) {
 		this.threadFactory = input.threadFactory;
@@ -76,6 +91,9 @@ export class CodexAgentRuntime implements AgentRuntime {
 		this.persistRuntimeUsage =
 			input.persistRuntimeUsage ?? !input.threadFactory;
 		this.usageRecorder = input.usageRecorder ?? recordCodexLlmUsage;
+		this.evaluateCompletionCandidate =
+			input.evaluateCompletionCandidate ??
+			((candidate) => runFinalizeController.evaluateCandidate(candidate));
 	}
 
 	async start(
@@ -111,185 +129,295 @@ export class CodexAgentRuntime implements AgentRuntime {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
 			const promptParts = buildCodexRuntimePromptParts(context);
-			const requestId = randomUUID();
 			const thread = await createThread(
 				this.closeoutHost(),
 				context,
 				sink,
 				promptParts.developerInstructions,
 			);
-			const turnInput = buildCodexRuntimeTurnInput(
+			let turnInput = buildCodexRuntimeTurnInput(
 				context,
 				promptParts.prompt,
 				false,
 			);
-			await sink.emit({
-				type: "model_response_started",
-				message: "[Codex] Provider request started.",
-				payload: {
-					requestId,
-					provider: "codex",
-					systemContextAudit: promptParts.systemContextAudit,
-					developerInstructionsRenderedHash:
-						promptParts.systemContextAudit[0]?.manifest.renderedHash ?? null,
-					userPromptSha256: digestText(promptParts.prompt),
-				},
-			});
-			const turnStartedAt = Date.now();
-			const streamedTurn = await Promise.race([
-				thread.runStreamed(turnInput, { signal: controller.signal }),
-				streamDeadline,
-			]);
-			if (streamedTurn === STREAM_DEADLINE_REACHED) {
-				await this.emitRuntimeError(sink, logs, {
-					code: "CODEX_STREAM_DEADLINE_EXCEEDED",
-					message:
-						"Codex stream did not start before the host execution deadline.",
-				});
-				return this.finish(context, sink, logs, {
-					terminalState: "timed_out",
-					finalReport,
-					stoppedBy: "budget",
-					riskLevel: "high",
-				});
-			}
-			const { events } = streamedTurn;
-			const mapperState = createCodexEventMapperState({
-				repoRoot: context.repoRoot,
-			});
-			let providerSessionKey: string | null = null;
-			let turnCompleted = false;
-			let runtimeFailed = false;
-			const openProviderItems = new Map<string, OpenProviderItem>();
-			const eventIterator = events[Symbol.asyncIterator]();
-
-			while (true) {
-				const nextEvent = await Promise.race([
-					eventIterator.next(),
-					streamDeadline,
-				]);
-				if (nextEvent === STREAM_DEADLINE_REACHED) break;
-				if (nextEvent.done) break;
-				const providerEvent = nextEvent.value;
-				updateOpenProviderItems(openProviderItems, providerEvent);
-				for (const event of mapCodexThreadEvent(providerEvent, mapperState)) {
-					providerSessionKey = updateCodexSessionKey(providerSessionKey, event);
-					logs.push(event.message);
-					await sink.emit(event);
-					if (this.persistRuntimeSessionState) {
-						try {
-							await persistCodexProviderThreadIfPresent(
-								this.runtimeSessionStore,
-								context,
-								event,
-							);
-						} catch (error) {
-							await this.emitSupportWarning(sink, logs, {
-								code: "CODEX_SESSION_STATE_PERSIST_FAILED",
-								message: "Codex session state could not be persisted.",
-								error,
-							});
-						}
-					}
-					if (event.type === "model_response_finished") {
-						const payload = event.payload as { text?: unknown } | undefined;
-						if (typeof payload?.text === "string") finalReport = payload.text;
-					}
-					if (event.type === "turn_finished") {
-						turnCompleted = true;
-						try {
-							await this.recordUsage({
-								context,
-								payload: event.payload,
-								durationMs: Date.now() - turnStartedAt,
-								promptParts,
-								providerSessionKey,
-							});
-						} catch (error) {
-							await this.emitSupportWarning(sink, logs, {
-								code: "CODEX_USAGE_PERSIST_FAILED",
-								message: "Codex usage could not be persisted.",
-								error,
-							});
-						}
-					}
-					if (event.type === "runtime_error") {
-						runtimeFailed = true;
-						if (!runtimeErrorReport) runtimeErrorReport = event.message;
-					}
-				}
-				if (turnCompleted || runtimeFailed) {
-					clearTimeout(timeout);
-					closeProviderIteratorWithoutWaiting(eventIterator);
-					break;
-				}
-			}
-
-			if (timedOut) {
-				await this.emitRuntimeError(sink, logs, {
-					code: "CODEX_STREAM_DEADLINE_EXCEEDED",
-					message:
-						"Codex event stream did not reach a terminal event before the host execution deadline.",
-				});
-				closeProviderIteratorWithoutWaiting(eventIterator);
-				return this.finish(context, sink, logs, {
-					terminalState: "timed_out",
-					finalReport,
-					stoppedBy: "budget",
-					riskLevel: "high",
-				});
-			}
-			if (this.isCancelled(context, signal))
-				return toCancelled(logs.join("\n"));
-			if (runtimeFailed || !turnCompleted || !finalReport.trim()) {
-				if (!runtimeFailed && !turnCompleted) {
-					await this.emitRuntimeError(sink, logs, {
-						code: "PROVIDER_TURN_TERMINAL_EVENT_MISSING",
-						message: "Codex event stream ended without a terminal turn event.",
-					});
-				}
-				if (!runtimeFailed && turnCompleted && !finalReport.trim()) {
-					await this.emitRuntimeError(sink, logs, {
-						code: "PROVIDER_FINAL_RESPONSE_MISSING",
-						message: "Codex turn completed without a final assistant message.",
-					});
-				}
-				return this.finish(context, sink, logs, {
-					terminalState: "failed",
-					finalReport: runtimeFailed
-						? runtimeErrorReport || finalReport
-						: finalReport,
-					stoppedBy: "llm_error",
-					riskLevel: "high",
-				});
-			}
-			if (openProviderItems.size > 0) {
-				const items = [...openProviderItems.values()];
-				const message =
-					"Codex turn completed while provider items were still open; manual review is required.";
-				logs.push(`[Codex] ${message}`);
+			for (
+				let completionAttempt = 0;
+				completionAttempt < 3;
+				completionAttempt += 1
+			) {
+				finalReport = "";
+				runtimeErrorReport = "";
+				const requestId = randomUUID();
 				await sink.emit({
-					type: "runtime_warning",
-					message: `[Codex] ${message}`,
+					type: "model_response_started",
+					message: "[Codex] Provider request started.",
 					payload: {
-						code: "PROVIDER_TERMINAL_WITH_OPEN_ITEMS",
+						requestId,
 						provider: "codex",
-						severity: "warning",
-						openItems: items,
+						systemContextAudit: promptParts.systemContextAudit,
+						developerInstructionsRenderedHash:
+							promptParts.systemContextAudit[0]?.manifest.renderedHash ?? null,
+						userPromptSha256: digestText(
+							typeof turnInput === "string"
+								? turnInput
+								: JSON.stringify(turnInput),
+						),
 					},
 				});
-				return this.finish(context, sink, logs, {
-					terminalState: "needs_review",
-					finalReport,
-					stoppedBy: "tool_failure",
-					riskLevel: "high",
+				const turnStartedAt = Date.now();
+				const streamedTurn = await Promise.race([
+					thread.runStreamed(turnInput, { signal: controller.signal }),
+					streamDeadline,
+				]);
+				if (streamedTurn === STREAM_DEADLINE_REACHED) {
+					await this.emitRuntimeError(sink, logs, {
+						code: "CODEX_STREAM_DEADLINE_EXCEEDED",
+						message:
+							"Codex stream did not start before the host execution deadline.",
+					});
+					return this.finish(context, sink, logs, {
+						terminalState: "timed_out",
+						finalReport,
+						stoppedBy: "budget",
+						riskLevel: "high",
+					});
+				}
+				const { events } = streamedTurn;
+				const mapperState = createCodexEventMapperState({
+					repoRoot: context.repoRoot,
+				});
+				let providerSessionKey: string | null = null;
+				let turnCompleted = false;
+				let runtimeFailed = false;
+				const openProviderItems = new Map<string, OpenProviderItem>();
+				const eventIterator = events[Symbol.asyncIterator]();
+
+				while (true) {
+					const nextEvent = await Promise.race([
+						eventIterator.next(),
+						streamDeadline,
+					]);
+					if (nextEvent === STREAM_DEADLINE_REACHED) break;
+					if (nextEvent.done) break;
+					const providerEvent = nextEvent.value;
+					updateOpenProviderItems(openProviderItems, providerEvent);
+					for (const event of mapCodexThreadEvent(providerEvent, mapperState)) {
+						providerSessionKey = updateCodexSessionKey(
+							providerSessionKey,
+							event,
+						);
+						logs.push(event.message);
+						await sink.emit(event);
+						if (this.persistRuntimeSessionState) {
+							try {
+								await persistCodexProviderThreadIfPresent(
+									this.runtimeSessionStore,
+									context,
+									event,
+								);
+							} catch (error) {
+								await this.emitSupportWarning(sink, logs, {
+									code: "CODEX_SESSION_STATE_PERSIST_FAILED",
+									message: "Codex session state could not be persisted.",
+									error,
+								});
+							}
+						}
+						if (event.type === "model_response_finished") {
+							const payload = event.payload as { text?: unknown } | undefined;
+							if (typeof payload?.text === "string") finalReport = payload.text;
+						}
+						if (event.type === "turn_finished") {
+							turnCompleted = true;
+							try {
+								await this.recordUsage({
+									context,
+									payload: event.payload,
+									durationMs: Date.now() - turnStartedAt,
+									promptParts,
+									providerSessionKey,
+									sourceSequence: completionAttempt + 1,
+								});
+							} catch (error) {
+								await this.emitSupportWarning(sink, logs, {
+									code: "CODEX_USAGE_PERSIST_FAILED",
+									message: "Codex usage could not be persisted.",
+									error,
+								});
+							}
+						}
+						if (event.type === "runtime_error") {
+							runtimeFailed = true;
+							if (!runtimeErrorReport) runtimeErrorReport = event.message;
+						}
+					}
+					if (turnCompleted || runtimeFailed) {
+						closeProviderIteratorWithoutWaiting(eventIterator);
+						break;
+					}
+				}
+
+				if (timedOut) {
+					await this.emitRuntimeError(sink, logs, {
+						code: "CODEX_STREAM_DEADLINE_EXCEEDED",
+						message:
+							"Codex event stream did not reach a terminal event before the host execution deadline.",
+					});
+					closeProviderIteratorWithoutWaiting(eventIterator);
+					return this.finish(context, sink, logs, {
+						terminalState: "timed_out",
+						finalReport,
+						stoppedBy: "budget",
+						riskLevel: "high",
+					});
+				}
+				if (this.isCancelled(context, signal))
+					return toCancelled(logs.join("\n"));
+				if (runtimeFailed || !turnCompleted || !finalReport.trim()) {
+					if (!runtimeFailed && !turnCompleted) {
+						await this.emitRuntimeError(sink, logs, {
+							code: "PROVIDER_TURN_TERMINAL_EVENT_MISSING",
+							message:
+								"Codex event stream ended without a terminal turn event.",
+						});
+					}
+					if (!runtimeFailed && turnCompleted && !finalReport.trim()) {
+						await this.emitRuntimeError(sink, logs, {
+							code: "PROVIDER_FINAL_RESPONSE_MISSING",
+							message:
+								"Codex turn completed without a final assistant message.",
+						});
+					}
+					return this.finish(context, sink, logs, {
+						terminalState: "failed",
+						finalReport: runtimeFailed
+							? runtimeErrorReport || finalReport
+							: finalReport,
+						stoppedBy: "llm_error",
+						riskLevel: "high",
+					});
+				}
+				if (openProviderItems.size > 0) {
+					const items = [...openProviderItems.values()];
+					const message =
+						"Codex turn completed while provider items were still open; manual review is required.";
+					logs.push(`[Codex] ${message}`);
+					await sink.emit({
+						type: "runtime_warning",
+						message: `[Codex] ${message}`,
+						payload: {
+							code: "PROVIDER_TERMINAL_WITH_OPEN_ITEMS",
+							provider: "codex",
+							severity: "warning",
+							openItems: items,
+						},
+					});
+					return this.finish(context, sink, logs, {
+						terminalState: "needs_review",
+						finalReport,
+						stoppedBy: "tool_failure",
+						riskLevel: "high",
+					});
+				}
+				const completion = await this.evaluateCompletionCandidate({
+					runId: context.runId,
+					repositoryRoot: context.repoRoot,
+					candidateRevision: completionAttempt + 1,
+					finalCandidate: finalReport,
+				});
+				if (completion.allowFinalize) {
+					await sink.emit(
+						buildCompletionAssurancePassedEvent(completion, completionAttempt),
+					);
+					return this.finish(context, sink, logs, {
+						terminalState: "completed",
+						finalReport,
+						stoppedBy: "decision",
+						riskLevel: "medium",
+						testResults: buildCompletionReconciliationTestResults(
+							completion,
+							completionAttempt,
+							true,
+						),
+					});
+				}
+				if (completion.code === "RUN_NOT_FOUND") {
+					return this.finish(context, sink, logs, {
+						terminalState: "needs_review",
+						finalReport,
+						stoppedBy: "decision",
+						riskLevel: "high",
+						testResults: { completionReadiness: completion.snapshot },
+					});
+				}
+				if (completion.code === "RUN_NEEDS_HUMAN") {
+					return this.finish(context, sink, logs, {
+						terminalState: "needs_human",
+						finalReport,
+						stoppedBy: "decision",
+						riskLevel: "medium",
+						testResults: { completionReadiness: completion.snapshot },
+					});
+				}
+				if (completionAttempt === 2) {
+					await sink.emit({
+						type: "runtime_warning",
+						message:
+							"[Codex] Completion reconciliation limit reached; manual review is required.",
+						payload: {
+							code: "CODEX_COMPLETION_RECONCILIATION_LIMIT_REACHED",
+							provider: "codex",
+							severity: "warning",
+							reconciliationCount: completionAttempt + 1,
+							completion,
+						},
+					});
+					return this.finish(context, sink, logs, {
+						terminalState: "needs_review",
+						finalReport,
+						stoppedBy: "decision",
+						riskLevel: "high",
+						testResults: buildCompletionReconciliationTestResults(
+							completion,
+							completionAttempt + 1,
+							false,
+						),
+					});
+				}
+				const recoveryPacket = await loadCodingAgentContextPacket(
+					context.runId,
+				);
+				turnInput = buildCodingAgentCompletionRecoveryFeedback({
+					taskId: context.taskId,
+					runId: context.runId,
+					repositoryRoot: context.repoRoot,
+					latestUserMessage: context.latestUserMessage,
+					packet: recoveryPacket,
+					finalCandidate: finalReport,
+					precondition: {
+						code: completion.code,
+						message: completion.message,
+					},
+					currentSnapshot: completion.snapshot,
+				});
+				await sink.emit({
+					type: "runtime_warning",
+					message:
+						"[Codex] Completion readiness has unresolved discrepancies; continuing the same thread.",
+					payload: {
+						code: "CODEX_COMPLETION_RECONCILIATION_REQUIRED",
+						provider: "codex",
+						severity: "warning",
+						reconciliationCount: completionAttempt + 1,
+						completion,
+					},
 				});
 			}
 			return this.finish(context, sink, logs, {
-				terminalState: "completed",
+				terminalState: "needs_review",
 				finalReport,
 				stoppedBy: "decision",
-				riskLevel: "medium",
+				riskLevel: "high",
 			});
 		} catch (error) {
 			if (timedOut) {
@@ -373,6 +501,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		durationMs: number;
 		promptParts: ReturnType<typeof buildCodexRuntimePromptParts>;
 		providerSessionKey: string | null;
+		sourceSequence: number;
 	}) {
 		const enabled = readPromptPartObservabilityEnabled(input.context);
 		await recordCodexRuntimeUsageIfPresent({
@@ -390,7 +519,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 					}
 				: undefined,
 			providerSessionKey: input.providerSessionKey,
-			sourceSequence: 1,
+			sourceSequence: input.sourceSequence,
 		});
 	}
 
@@ -403,6 +532,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			finalReport: string;
 			stoppedBy: AgentRuntimeResult["stoppedBy"];
 			riskLevel: AgentRuntimeResult["riskLevel"];
+			testResults?: unknown;
 		},
 	) {
 		return finishRun(this.closeoutHost(), context, sink, logs, input);

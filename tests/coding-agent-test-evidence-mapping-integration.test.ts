@@ -9,7 +9,15 @@ import {
 	verificationChecklistItems,
 	verificationDocuments,
 } from "../api/db/verification-schema";
+import { runCompletionCheck } from "../api/modules/codingAgent/application/completion-check.service";
 import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
+import { captureWorkspaceSourceSnapshot } from "../api/modules/codingAgent/verification/workspace-source-snapshot";
+import * as nightworkersRepository from "../api/modules/nightworkers/nightworkers.repository";
+import {
+	createVerificationDocumentFromSpec,
+	recordVerificationEvidence,
+} from "../api/modules/nightworkers/nightworkers.verification.service";
+import { buildCommandLevelEvidence } from "../api/services/verification/normalized-evidence";
 
 const repositoryIds: string[] = [];
 
@@ -61,6 +69,157 @@ async function createVerificationFixture(conditionIds: string[]) {
 }
 
 describe("schema test evidence mapping integration", () => {
+	it("[AC-001][AC-013] records mapped current evidence without changing Run status", async () => {
+		const repository = await nightworkersRepository.createRepository({
+			name: `TEST: strict acceptance evidence ${crypto.randomUUID()}`,
+			localPath: process.cwd(),
+			branch: "main",
+		});
+		repositoryIds.push(repository.id);
+		const task = await nightworkersRepository.createTask({
+			repositoryId: repository.id,
+			title: "TEST: strict acceptance evidence",
+		});
+		const revision =
+			await nightworkersRepository.getCurrentTaskRevisionSnapshot(task.id);
+		expect(revision).toBeTruthy();
+		const run = await nightworkersRepository.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			taskRevisionSnapshotId: revision?.id,
+			taskRevision: revision?.revision,
+			taskDigest: revision?.digest,
+		});
+		const document = await createVerificationDocumentFromSpec({
+			taskId: task.id,
+			runId: run?.id,
+			sourceSpecPath: "spec/strict-acceptance-evidence.md",
+			document: {
+				version: 2,
+				specId: "strict-acceptance-evidence",
+				specPath: "spec/strict-acceptance-evidence.md",
+				generatedAt: new Date().toISOString(),
+				source: {
+					taskId: task.id,
+					sourceMessageIds: [],
+					workspaceArtifactIds: [],
+				},
+				conditions: [
+					{
+						id: "AC-001",
+						text: "accepts a name at exactly 90% similarity",
+						category: "validation",
+						verificationKind: "automated_test",
+						expectedEvidence: ["unit_test"],
+						expectedResult: "the mapped matcher test passes",
+						failureMeaning: "the condition is not verified",
+						required: true,
+						status: "pending",
+					},
+				],
+				commands: [],
+			},
+		});
+		const mapping = await recordTestConditionMappingTool({
+			taskId: task.id,
+			runId: run?.id,
+			verificationDocumentId: document.id,
+			repoRoot: process.cwd(),
+			evidenceSet: {
+				version: 1,
+				references: [
+					{
+						testName: "accepts a name at exactly 90% similarity",
+						filePath: "tests/coding-agent-test-evidence-matcher.test.ts",
+						runner: "vitest",
+						conditionIds: ["AC-001"],
+					},
+				],
+			},
+		});
+		expect(mapping.ok).toBe(true);
+		const caseKey = mapping.payload?.matches[0]?.caseKey;
+		expect(caseKey).toBeTruthy();
+		const sourceSnapshot = await captureWorkspaceSourceSnapshot(process.cwd());
+		const testEvidence = buildCommandLevelEvidence({
+			runId: run?.id ?? "",
+			taskId: task.id,
+			command: "vitest --reporter=json",
+			cwd: process.cwd(),
+			startedAt: "2026-08-01T00:00:00.000Z",
+			finishedAt: "2026-08-01T00:00:01.000Z",
+			exitCode: 0,
+			runner: "vitest",
+			rawStdoutArtifactId: "test-stdout",
+			rawStderrArtifactId: "test-stderr",
+			evidenceKinds: ["unit_test"],
+			cases: [
+				{
+					id: "case-result-1",
+					caseKey,
+					name: "accepts a name at exactly 90% similarity",
+					filePath: "tests/coding-agent-test-evidence-matcher.test.ts",
+					runner: "vitest",
+					evidenceKind: "unit_test",
+					status: "passed",
+					conditionIds: [],
+				},
+			],
+		});
+		testEvidence.sourceSnapshot = sourceSnapshot;
+		testEvidence.testExecutionObserved = true;
+		testEvidence.sourceMutatedDuringCheck = false;
+		await recordVerificationEvidence({
+			taskId: task.id,
+			runId: run?.id,
+			verificationDocumentId: document.id,
+			checkKind: "test",
+			evidence: testEvidence,
+		});
+		const verifyEvidence = buildCommandLevelEvidence({
+			runId: run?.id ?? "",
+			taskId: task.id,
+			command: "bun run verify",
+			cwd: process.cwd(),
+			startedAt: "2026-08-01T00:00:02.000Z",
+			finishedAt: "2026-08-01T00:00:03.000Z",
+			exitCode: 0,
+			runner: "unknown",
+			rawStdoutArtifactId: "verify-stdout",
+			rawStderrArtifactId: "verify-stderr",
+		});
+		verifyEvidence.sourceSnapshot = sourceSnapshot;
+		verifyEvidence.sourceMutatedDuringCheck = false;
+		await recordVerificationEvidence({
+			taskId: task.id,
+			runId: run?.id,
+			verificationDocumentId: document.id,
+			checkKind: "verify",
+			evidence: verifyEvidence,
+		});
+
+		const completion = await runCompletionCheck({
+			taskId: task.id,
+			runId: run?.id ?? "",
+			verificationDocumentId: document.id,
+			repoRoot: process.cwd(),
+		});
+		expect(completion).toMatchObject({
+			ok: true,
+			conditions: [
+				expect.objectContaining({
+					conditionId: "AC-001",
+					status: "safe_pass",
+				}),
+			],
+		});
+		expect(
+			await nightworkersRepository.getTaskRun(run?.id ?? ""),
+		).toMatchObject({
+			status: run?.status,
+		});
+	}, 15_000);
+
 	it("discovers once and atomically records every condition relation", async () => {
 		const fixture = await createVerificationFixture(["AC-001", "AC-002"]);
 		const result = await recordTestConditionMappingTool({
@@ -114,7 +273,7 @@ describe("schema test evidence mapping integration", () => {
 		).toBe(true);
 	});
 
-	it("returns missing evidence and does not persist any mapping", async () => {
+	it("[AC-014] returns missing evidence and does not invent a semantic mapping", async () => {
 		const fixture = await createVerificationFixture(["AC-001"]);
 		const inventoriesBefore = await db
 			.select({ id: codingAgentTestInventoryRuns.id })

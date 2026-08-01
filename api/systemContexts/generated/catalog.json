@@ -263,7 +263,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。品質ゲートを独立Todoで実行し、Passした証跡を持つことを完了条件としてください。templateを基にしたProjectではtemplateのverify scriptまたはverify commandを必ず品質ゲートへ含め、それ以外の具体的なcommandと品質ゲートの構成はProjectの観測結果から判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness snapshotが返された場合は、Task、現在のsourceStateHash、verification discrepancy、直前候補を同時に読み、特定toolの呼び出し自体ではなく、未解決条件に対応する観測証跡が現在sourceで確認できる状態へ更新してください。\n完了報告形式:\n"
+                  "value": "Task、変更内容、Todo Contextから検証方法と期待結果を決め、実観測と変更差分をReviewして完了可否を判断してください。品質ゲートを独立Todoで実行し、Passした証跡を持つことを完了条件としてください。templateを基にしたProjectではtemplateのverify scriptまたはverify commandを必ず品質ゲートへ含め、それ以外の具体的なcommandと品質ゲートの構成はProjectの観測結果から判断してください。問題を見つけた場合は修正後の影響範囲を再検証してください。\nrequired conditionが自動test証跡を要求する場合は、current sourceのactive testcaseとconditionの明示mapping、および対応testcase自身のstructured execution成功を確認してください。mappingだけ、別testの成功、raw shellのexit 0、assistant本文の完了申告はconditionのmanaged evidenceになりません。expectedEvidenceが複数ある場合は各種別を確認してください。\nFeature Planの検証commandが空でも、repository調査後に必要なmanaged checkを選べます。具体的なtool順序を固定せず、current sourceに対応する証跡が揃ったかで判断してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness snapshotが返された場合は、Task、現在のsourceStateHash、verification discrepancy、直前候補を同時に読み、特定toolの呼び出し自体ではなく、未解決条件に対応するmanaged evidenceが現在sourceで確認できる状態へ更新してください。missing、stale、failed、details missingの理由から、mapping、structured check、source修正、Todo更新、回答再生成のどれが必要かを判断してください。\n完了報告形式:\n"
                 },
                 {
                   "type": "variable",
@@ -272,11 +272,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:a7d525b984a2485622e754d54f5a5eac2eae80bb709e27c9bb5490975af618d1"
+          "artifactHash": "sha256:4043a22cc0ed3c3c274f66386c4a5f1caa408cd35cafc9fd47e2dc8f61018912"
         }
       },
-      "definitionHash": "sha256:da9ae9e036602172b5d6d29c1bedd81c9c049b732ed645b7f438c53054200005",
-      "releaseDigest": "sha256:cfa558178969665c402978ca1b6ed019fdec32babe85d860e7d50fc0d362278b"
+      "definitionHash": "sha256:6725b310daeda69fa0e77a8ed6187ecb3f85475a83bab83968d0b4fd49ca8e2a",
+      "releaseDigest": "sha256:e315a7a55bc2de2ec295667a4e08a99b5c676f2959af94e6d96657346524aa58"
     },
     "codingAgent.current-todo": {
       "key": "codingAgent.current-todo",
@@ -664,16 +664,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "NightWorkers MCPはCoding Agentのrequest-scoped Runに紐付くtoolを提供します。採用済みimplementationPlanがあれば既存Todoを使い、直接Runでworkspaceを変更する場合は変更前にtitleとsystemContextだけのplanを作成してください。\ncurrent Todoの完了はcomplete_current、ユーザー判断待ちはblock_current、残工程の変更はreplace_remainingで明示します。hostはTodoを暗黙生成・更新しません。"
+                  "value": "NightWorkers MCPはCoding Agentのrequest-scoped Runに紐付くtoolを提供します。採用済みimplementationPlanがあれば既存Todoを使い、直接Runでworkspaceを変更する場合は変更前にtitleとsystemContextだけのplanを作成してください。\ncurrent Todoの完了はcomplete_current、ユーザー判断待ちはblock_current、残工程の変更はreplace_remainingで明示します。hostはTodoを暗黙生成・更新しません。\n自動testを受け入れ条件へ対応付ける場合は、current inventory上のtest参照をschema evidence setとして明示mappingできます。managed checkではcondition scopeとevidence kindを明示でき、structured testcaseが得られた場合だけ個別testの実行証跡になります。completion checkはcurrent sourceに対する条件別のmissing、stale、failed、details missingを返します。利用するcapabilityと次actionはTask、Todo、repositoryの観測から選んでください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:c1e8d5318b87454a49ea2c4a3b17aa57755bc623835d10e577d96dea3a8628f1"
+          "artifactHash": "sha256:ad9086a09578fe327aa631a143acfc75ea02b377e4e6a220edb8efbb4f6e0366"
         }
       },
-      "definitionHash": "sha256:7de67ea31fbc78ed46c9b1f0562b1a8a543d2ae76382e53f9168ad91f390db99",
-      "releaseDigest": "sha256:2843a730c67f3692edd9bf7de55c27deb88dbdce143ef4ffd25ed63218f75053"
+      "definitionHash": "sha256:cb39b2e23fa960f52388849b89dd5a34546ebb4d47370e5a118ae679083161fb",
+      "releaseDigest": "sha256:27016195c326ba574400a47dd569de1401cea2417b22c629c32a9ab315a6409f"
     },
     "codingAgent.plan-mode-gate": {
       "key": "codingAgent.plan-mode-gate",
@@ -4199,5 +4199,5 @@
       "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:c7034d647d28349dcd297db52c92a53a10e5773583ffe7f3dd9f8531e0f29126"
+  "catalogDigest": "sha256:c5fed54937be9161441c905982f93e03651d3692307e46ef13387736397e1b00"
 }

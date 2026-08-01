@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+	buildEvidenceCheckExportCsv,
 	buildEvidenceCheckExportMarkdown,
 	buildEvidenceCheckPanelModel,
 	EvidenceCheckArtifactViewer,
+	useEvidenceCheckSnapshot,
 } from "../../codingAgent";
 import { resolveReviewImplementationCompletionReport } from "../../review";
 import type { PlanWorkspaceTab } from "../../specification";
@@ -200,6 +202,20 @@ export function ArtifactPane({
 			}),
 		[displayArtifact, showEvidenceCheck, taskMessages],
 	);
+	const evidenceSnapshotQuery = useEvidenceCheckSnapshot(evidenceCheckPanel, {
+		refetchInterval:
+			showEvidenceCheck &&
+			latestRun &&
+			[
+				"running",
+				"context_compiling",
+				"compiling_context",
+				"finalizing",
+			].includes(latestRun.status)
+				? 1_500
+				: false,
+	});
+	const evidenceSnapshot = evidenceSnapshotQuery.data ?? null;
 	const showDocument =
 		Boolean(selectedArtifact) &&
 		!showDiff &&
@@ -273,12 +289,18 @@ export function ArtifactPane({
 							? buildEvidenceCheckExportMarkdown({
 									title: artifactTitle,
 									model: evidenceCheckPanel,
+									snapshot: evidenceSnapshot,
 								})
 							: defaultExportedMarkdown,
+					csv:
+						showEvidenceCheck && evidenceSnapshot
+							? buildEvidenceCheckExportCsv(evidenceSnapshot)
+							: undefined,
 				};
 	const {
 		artifactCaptureRef,
 		handleCopyMarkdown,
+		handleDownloadCsv,
 		handleDownloadMarkdown,
 		handleDownloadImage,
 	} = useArtifactPaneExportActions({
@@ -339,8 +361,14 @@ export function ArtifactPane({
 						}
 						onCopyMarkdown={() => void handleCopyMarkdown()}
 						onDownloadMarkdown={handleDownloadMarkdown}
+						onDownloadCsv={
+							currentExportDescriptor.csv === undefined
+								? undefined
+								: handleDownloadCsv
+						}
 						onDownloadImage={() => void handleDownloadImage()}
 						isExportingImage={isExportingImage}
+						exportDisabled={showEvidenceCheck && !evidenceSnapshot}
 						exportError={exportError}
 						onToggleFullscreen={() => setIsFullscreen((value) => !value)}
 					/>
@@ -420,7 +448,13 @@ export function ArtifactPane({
 								isReviewPromptDisabled={isReviewPromptDisabled}
 							/>
 						) : showEvidenceCheck ? (
-							<EvidenceCheckArtifactViewer model={evidenceCheckPanel} />
+							<EvidenceCheckArtifactViewer
+								model={evidenceCheckPanel}
+								snapshot={evidenceSnapshot}
+								isLoading={evidenceSnapshotQuery.isLoading}
+								isError={evidenceSnapshotQuery.isError}
+								fetchSnapshot={false}
+							/>
 						) : showBlueprint ? (
 							<BlueprintViewer
 								sessionId={activeSessionId}

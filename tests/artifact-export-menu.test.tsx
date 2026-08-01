@@ -70,6 +70,43 @@ describe("ArtifactExportMenu", () => {
 		);
 	});
 
+	it("adds CSV download when the artifact supplies CSV data", async () => {
+		vi.resetModules();
+		vi.doMock("react", async () => {
+			const actual = await vi.importActual<typeof import("react")>("react");
+			return {
+				...actual,
+				useEffect: vi.fn(),
+				useRef: <T,>(initial: T) => ({ current: initial }),
+				useState: () => [true, vi.fn()] as const,
+			};
+		});
+		vi.doMock("react-i18next", async () => ({
+			...(await vi.importActual<typeof import("react-i18next")>(
+				"react-i18next",
+			)),
+			useTranslation: () => ({ t: (key: string) => key }),
+		}));
+		const { ArtifactExportMenu } = await import(
+			"../src/modules/nightworkers/components/ArtifactPaneActions"
+		);
+		const element = ArtifactExportMenu({
+			onCopyMarkdown: vi.fn(),
+			onDownloadMarkdown: vi.fn(),
+			onDownloadCsv: vi.fn(),
+			onDownloadImage: vi.fn(),
+			isExportingImage: false,
+			exportError: null,
+		});
+
+		expect(collectPropValues(element, "label")).toEqual([
+			"artifact.downloadImage",
+			"artifact.downloadMarkdown",
+			"artifact.downloadCsv",
+			"artifact.copyMarkdown",
+		]);
+	});
+
 	it("styles the complete menu through NightWorkers design tokens", () => {
 		for (const className of [
 			"nightworkers-artifact-export-trigger",

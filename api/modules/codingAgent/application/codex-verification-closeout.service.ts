@@ -3,6 +3,7 @@ import { runCheckTool } from "../../../services/worker-tools/run-check";
 import * as verificationRepository from "../../nightworkers/nightworkers.verification.repository";
 import { collectTestInventory } from "../verification/test-inventory.service";
 import { captureWorkspaceSourceSnapshot } from "../verification/workspace-source-snapshot";
+import { runCompletionCheck } from "./completion-check.service";
 
 export async function executeCodexVerificationCloseout(input: {
 	taskId: string;
@@ -35,6 +36,13 @@ export async function executeCodexVerificationCloseout(input: {
 	});
 	const commands = [];
 	for (const command of plan.commands) {
+		const evidenceKinds = Array.from(
+			new Set(
+				plan.conditions
+					.filter((condition) => command.conditionIds.includes(condition.id))
+					.flatMap((condition) => condition.expectedEvidence),
+			),
+		);
 		const result = await runCheckTool({
 			taskId: input.taskId,
 			runId: input.runId,
@@ -44,6 +52,7 @@ export async function executeCodexVerificationCloseout(input: {
 			command: command.command,
 			checkKind: "verify",
 			conditionIds: command.conditionIds,
+			evidenceKinds,
 			displayMode: "error_excerpt",
 			...policy,
 		});
@@ -60,10 +69,16 @@ export async function executeCodexVerificationCloseout(input: {
 	const sourceSnapshotAfter = await captureWorkspaceSourceSnapshot(
 		input.repositoryRoot,
 	);
+	const completionCheck = await runCompletionCheck({
+		taskId: input.taskId,
+		runId: input.runId,
+		verificationDocumentId: document.id,
+		repoRoot: input.repositoryRoot,
+	});
 	const successfulConditionIds = new Set(
-		commands
-			.filter((command) => command.ok && command.exitCode === 0)
-			.flatMap((command) => command.conditionIds),
+		completionCheck.conditions
+			.filter((condition) => condition.status === "safe_pass")
+			.map((condition) => condition.conditionId),
 	);
 	const requiredConditionIds = plan.conditions
 		.filter((condition) => condition.required)
@@ -71,6 +86,7 @@ export async function executeCodexVerificationCloseout(input: {
 	return {
 		applicability: "active" as const,
 		verificationDocumentId: document.id,
+		completionCheck,
 		inventoryId: inventory.id,
 		activeCaseCount: inventory.cases.filter(
 			(testCase) => testCase.discoveryLevel === "active",

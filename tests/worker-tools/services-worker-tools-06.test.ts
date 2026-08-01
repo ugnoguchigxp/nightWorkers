@@ -211,6 +211,45 @@ describe("Worker Tools Unit Tests", () => {
 		expect(result.payload.llmSummary).not.toContain("stderrArtifact=");
 	});
 
+	it("parses Vitest JSON even when the bare package script hides the runner", async () => {
+		const report = {
+			testResults: [
+				{
+					name: "tests/example.test.ts",
+					assertionResults: [
+						{
+							fullName: "example passes",
+							status: "passed",
+						},
+					],
+				},
+			],
+		};
+		await fs.writeFile(
+			path.join(dummyRepoDir, "package.json"),
+			JSON.stringify({
+				type: "module",
+				scripts: {
+					test: `node -e 'console.log(JSON.stringify(${JSON.stringify(report)}))'`,
+				},
+			}),
+			"utf-8",
+		);
+
+		const result = await runCheckTool({
+			command: "test",
+			checkKind: "test",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.payload).toMatchObject({
+			evidenceKinds: ["automated_test"],
+			structuredCaseCount: 1,
+			resolvedCaseCount: 0,
+		});
+	});
+
 	it("reports policy rejections directly instead of artifact paths", async () => {
 		const result = await runCheckTool({
 			command: "unknown-quality-command",

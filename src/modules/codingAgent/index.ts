@@ -1,4 +1,5 @@
 export type { AgentReference } from "../agentsShare";
+export * from "./EvidenceCheckArtifactModel";
 export * from "./EvidenceCheckArtifactViewer";
 export {
 	type CodingAgentRunMode,

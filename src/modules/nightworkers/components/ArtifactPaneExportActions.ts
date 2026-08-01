@@ -28,7 +28,11 @@ export function useArtifactPaneExportActions(input: {
 	};
 	const handleDownloadMarkdown = () => {
 		try {
-			saveTextFile(descriptor.markdown, `${descriptor.fileStem}.md`);
+			saveTextFile(
+				descriptor.markdown,
+				`${descriptor.fileStem}.md`,
+				"text/markdown;charset=utf-8",
+			);
 			setExportError(null);
 		} catch {
 			setExportError(translate("artifact.exportMarkdownFailed"));
@@ -37,7 +41,11 @@ export function useArtifactPaneExportActions(input: {
 	const handleDownloadCsv = () => {
 		if (descriptor.csv === undefined) return;
 		try {
-			saveTextFile(descriptor.csv, `${descriptor.fileStem}.csv`);
+			saveTextFile(
+				descriptor.csv,
+				`${descriptor.fileStem}.csv`,
+				"text/csv;charset=utf-8",
+			);
 			setExportError(null);
 		} catch {
 			setExportError(translate("artifact.exportCsvFailed"));

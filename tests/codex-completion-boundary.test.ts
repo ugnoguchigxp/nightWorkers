@@ -25,6 +25,7 @@ describe("Codex completion boundary", () => {
 			executeVerificationCloseout: async () => ({
 				applicability: "active",
 				verificationDocumentId: "verification-1",
+				completionCheck: { ok: false },
 				inventoryId: "inventory-1",
 				activeCaseCount: 1,
 				requiresAutomatedTests: true,
@@ -73,6 +74,7 @@ describe("Codex completion boundary", () => {
 			executeVerificationCloseout: async () => ({
 				applicability: "active",
 				verificationDocumentId: "verification-1",
+				completionCheck: { ok: true },
 				inventoryId: "inventory-1",
 				activeCaseCount: 1,
 				requiresAutomatedTests: true,

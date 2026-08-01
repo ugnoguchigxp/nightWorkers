@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	CheckCircle2,
@@ -6,24 +5,13 @@ import {
 	LoaderCircle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { toDeepRecord } from "../../../shared/json-record";
-import type {
-	EvidenceCheckDescriptor,
-	EvidenceCheckSnapshot,
-} from "../../../shared/modules/codingAgent";
-import { apiFetch } from "../../lib/api-base";
-import type { TaskMessage, WorkbenchArtifactRef } from "../nightworkers/types";
+import type { EvidenceCheckSnapshot } from "../../../shared/modules/codingAgent";
+import {
+	type EvidenceCheckPanelModel,
+	useEvidenceCheckSnapshot,
+} from "./EvidenceCheckArtifactModel";
 
-export type EvidenceCheckPanelModel = {
-	taskId: string;
-	specArtifactId: string | null;
-	specMessageId: string | null;
-	verificationDocumentId: string;
-	verificationSidecarMessageId: string | null;
-	conditions: EvidenceCheckSnapshot["conditions"];
-};
-
-const COMPLETE_STATUSES = new Set([
+const TODO_COMPLETE_STATUSES = new Set([
 	"passed",
 	"completed",
 	"done",
@@ -31,310 +19,6 @@ const COMPLETE_STATUSES = new Set([
 	"manual",
 	"not_applicable",
 ]);
-
-export function findLatestEvidenceCheckSource(taskMessages: TaskMessage[]): {
-	specMessageId: string;
-	verificationDocumentId: string;
-	verificationSidecarMessageId: string;
-	specArtifactId: string;
-} | null {
-	for (let index = taskMessages.length - 1; index >= 0; index -= 1) {
-		const message = taskMessages[index];
-		if (message?.messageType !== "markdown_document") continue;
-		const metadata = toDeepRecord(message.metadataJson);
-		const intent = readString(metadata.intent);
-		if (intent !== "feature_plan" && intent !== "implementation_plan") continue;
-		const verificationDocumentId = readString(metadata.verificationDocumentId);
-		const verificationSidecarMessageId = readString(
-			metadata.verificationSidecarMessageId,
-		);
-		if (!verificationDocumentId || !verificationSidecarMessageId) continue;
-		return {
-			specMessageId: message.id,
-			verificationDocumentId,
-			verificationSidecarMessageId,
-			specArtifactId: `${intent === "implementation_plan" ? "implementation-plan" : "feature-plan"}-${message.id}`,
-		};
-	}
-	return null;
-}
-
-export function buildEvidenceCheckArtifact(input: {
-	taskId: string;
-	updatedAt: string;
-	taskMessages: TaskMessage[];
-	title: string;
-	summary: string;
-}): WorkbenchArtifactRef | null {
-	const source = findLatestEvidenceCheckSource(input.taskMessages);
-	if (!source) return null;
-	return {
-		id: `evidence-check-${source.verificationDocumentId}`,
-		taskId: input.taskId,
-		kind: "evidence_check",
-		title: input.title,
-		summary: input.summary,
-		source: {
-			type: "verification_document",
-			verificationDocumentId: source.verificationDocumentId,
-		},
-		createdAt: input.updatedAt,
-		metadata: source,
-	};
-}
-
-export function buildEvidenceCheckArtifactFromDescriptor(input: {
-	descriptor: EvidenceCheckDescriptor;
-	title: string;
-	summary: string;
-}): WorkbenchArtifactRef {
-	return {
-		id: `evidence-check-${input.descriptor.verificationDocumentId}`,
-		taskId: input.descriptor.taskId,
-		kind: "evidence_check",
-		title: input.title,
-		summary: input.summary,
-		source: {
-			type: "verification_document",
-			verificationDocumentId: input.descriptor.verificationDocumentId,
-		},
-		createdAt: input.descriptor.generatedAt,
-		metadata: {
-			verificationDocumentId: input.descriptor.verificationDocumentId,
-			specMessageId: input.descriptor.specMessageId,
-			specArtifactId: input.descriptor.specArtifactId,
-		},
-	};
-}
-
-export function buildEvidenceCheckPanelModel(input: {
-	artifact: WorkbenchArtifactRef | null;
-	taskMessages: TaskMessage[];
-}): EvidenceCheckPanelModel | null {
-	const artifact = input.artifact;
-	if (artifact?.kind !== "evidence_check") return null;
-	const source = findEvidenceSourceForArtifact(artifact, input.taskMessages);
-	if (!source) return null;
-	const sidecarMessage = source.verificationSidecarMessageId
-		? input.taskMessages.find(
-				(message) => message.id === source.verificationSidecarMessageId,
-			)
-		: null;
-	const sidecarMetadata = toDeepRecord(sidecarMessage?.metadataJson);
-	const document = toDeepRecord(sidecarMetadata.verificationDocument);
-	const conditions = Array.isArray(document.conditions)
-		? document.conditions
-				.map((condition) => toDeepRecord(condition))
-				.map((condition) => ({
-					id: readString(condition.id) || "",
-					text: readString(condition.text) || "",
-					status: readString(condition.status) || "pending",
-					required: (condition.required as unknown) !== false,
-					verificationKind: readString(condition.verificationKind),
-					expectedEvidence: [] as string[],
-					evidenceIds: [] as string[],
-					reason: null,
-					lastCheckedAt: null,
-					assuranceStatus: "pending" as const,
-					assuranceReason: "assurance_not_evaluated",
-					tests: [],
-				}))
-				.filter((condition) => condition.id && condition.text)
-		: [];
-	return {
-		taskId: artifact.taskId,
-		...source,
-		conditions,
-	};
-}
-
-function findEvidenceSourceForArtifact(
-	artifact: WorkbenchArtifactRef,
-	taskMessages: TaskMessage[],
-) {
-	const metadata = toDeepRecord(artifact.metadata);
-	const specMessageId = readString(metadata.specMessageId);
-	const verificationDocumentId =
-		readString(metadata.verificationDocumentId) ||
-		(artifact.source.type === "verification_document"
-			? artifact.source.verificationDocumentId
-			: null);
-	const verificationSidecarMessageId = readString(
-		metadata.verificationSidecarMessageId,
-	);
-	const specArtifactId = readString(metadata.specArtifactId);
-	if (verificationDocumentId) {
-		return {
-			specMessageId: specMessageId ?? null,
-			verificationDocumentId,
-			verificationSidecarMessageId: verificationSidecarMessageId ?? null,
-			specArtifactId: specArtifactId ?? null,
-		};
-	}
-	return findLatestEvidenceCheckSource(taskMessages);
-}
-
-export function useLatestEvidenceCheckDescriptor(
-	taskId: string | null,
-	refreshWhileActive = false,
-) {
-	return useQuery({
-		queryKey: ["evidenceCheck", "latest", taskId],
-		queryFn: async () => {
-			if (!taskId) return null;
-			const response = await apiFetch(
-				`/api/coding-agent/tasks/${encodeURIComponent(taskId)}/evidence-check/latest`,
-			);
-			if (response.status === 204) return null;
-			if (!response.ok) {
-				throw new Error("Failed to fetch the latest Evidence Check");
-			}
-			return (await response.json()) as EvidenceCheckDescriptor;
-		},
-		enabled: Boolean(taskId),
-		refetchInterval: refreshWhileActive ? 1_500 : false,
-		refetchOnMount: "always",
-		refetchOnWindowFocus: true,
-	});
-}
-
-export function useEvidenceCheckSnapshot(
-	model: EvidenceCheckPanelModel | null,
-	options?: { enabled?: boolean; refetchInterval?: number | false },
-) {
-	return useQuery({
-		queryKey: ["evidenceCheck", model?.taskId, model?.verificationDocumentId],
-		queryFn: async () => {
-			if (!model) return null;
-			const response = await apiFetch(
-				`/api/coding-agent/tasks/${encodeURIComponent(model.taskId)}/evidence-check/${encodeURIComponent(model.verificationDocumentId)}`,
-			);
-			if (!response.ok) {
-				throw new Error("Failed to fetch evidence checklist");
-			}
-			return (await response.json()) as EvidenceCheckSnapshot;
-		},
-		enabled: Boolean(model) && options?.enabled !== false,
-		refetchInterval: options?.refetchInterval ?? false,
-		refetchOnMount: "always",
-		refetchOnWindowFocus: true,
-	});
-}
-
-export function buildEvidenceCheckExportMarkdown(input: {
-	title: string;
-	model: EvidenceCheckPanelModel | null;
-	snapshot?: EvidenceCheckSnapshot | null;
-}) {
-	const traceability = input.snapshot?.implementationPlanTraceability;
-	const planRows = traceability
-		? [
-				"## Implementation Plan Traceability",
-				`- Provenance: ${traceability.provenanceStatus}`,
-				`- Exact Todo match: ${traceability.exactTodoMatch ? "yes" : "no"}`,
-				...traceability.steps.map((step) => {
-					const checked = ["passed", "skipped"].includes(step.todoStatus ?? "")
-						? "x"
-						: " ";
-					return `- [${checked}] ${step.seq}. ${step.title} (${step.todoStatus ?? "missing"}; ${step.aligned ? "aligned" : "mismatched"})`;
-				}),
-			]
-		: [];
-	const conditions =
-		input.snapshot?.conditions ?? input.model?.conditions ?? [];
-	const rows = conditions.flatMap((condition) => {
-		const checked = condition.assuranceStatus === "safe_pass" ? "x" : " ";
-		return [
-			`- [${checked}] \`${condition.id}\` ${condition.text} (${condition.assuranceStatus})`,
-			...(condition.assuranceReason
-				? [`  - Reason: ${condition.assuranceReason}`]
-				: []),
-			...condition.tests.map(
-				(test) =>
-					`  - ${test.name} — ${test.execution.status}; ${test.runner}; ${test.filePath ?? "file unknown"}; currentSource=${test.guards.currentSource}; sourceStable=${test.guards.sourceStableDuringExecution ?? "unknown"}; fullVerify=${test.guards.fullVerifyPassed}`,
-			),
-		];
-	});
-	const safety = input.snapshot
-		? [
-				"## Test Assurance",
-				`- Evaluated at: ${input.snapshot.evaluatedAt}`,
-				`- Source state: ${input.snapshot.sourceStateHash ?? "unavailable"}`,
-				`- Safe Pass: ${input.snapshot.assuranceSummary.safePass}/${input.snapshot.assuranceSummary.automated}`,
-				`- Failed: ${input.snapshot.assuranceSummary.failed}`,
-				`- Needs attention: ${input.snapshot.assuranceSummary.attention}`,
-				`- Full Verify: ${input.snapshot.assuranceSummary.fullVerifyStatus}`,
-			]
-		: [];
-	return [
-		`# ${input.title}`,
-		...safety,
-		...planRows,
-		"## Completion Conditions",
-		...rows,
-	].join("\n\n");
-}
-
-export function buildEvidenceCheckExportCsv(
-	snapshot: EvidenceCheckSnapshot,
-) {
-	const headers = [
-		"condition_id",
-		"condition",
-		"required",
-		"verification_kind",
-		"assurance_status",
-		"assurance_reason",
-		"test_name",
-		"test_file",
-		"runner",
-		"mapping_source",
-		"execution_status",
-		"duration_ms",
-		"finished_at",
-		"current_source",
-		"source_stable",
-		"test_execution_observed",
-		"full_verify_passed",
-		"evidence_run_id",
-		"source_state_hash",
-		"evaluated_at",
-	];
-	const rows = snapshot.conditions.flatMap((condition) => {
-		const tests = condition.tests.length ? condition.tests : [null];
-		return tests.map((test) => [
-			condition.id,
-			condition.text,
-			condition.required,
-			condition.verificationKind ?? "",
-			condition.assuranceStatus,
-			condition.assuranceReason ?? "",
-			test?.name ?? "",
-			test?.filePath ?? "",
-			test?.runner ?? "",
-			test?.mappingSource ?? "",
-			test?.execution.status ?? "",
-			test?.execution.durationMs ?? "",
-			test?.execution.finishedAt ?? "",
-			test?.guards.currentSource ?? "",
-			test?.guards.sourceStableDuringExecution ?? "",
-			test?.guards.testExecutionObserved ?? "",
-			test?.guards.fullVerifyPassed ?? "",
-			test?.execution.evidenceRunId ?? "",
-			snapshot.sourceStateHash ?? "",
-			snapshot.evaluatedAt,
-		]);
-	});
-	return `\uFEFF${[headers, ...rows]
-		.map((row) => row.map(csvCell).join(","))
-		.join("\r\n")}\r\n`;
-}
-
-function csvCell(value: unknown) {
-	let text = String(value ?? "");
-	if (/^[=+\-@]/.test(text)) text = `'${text}`;
-	return `"${text.replaceAll('"', '""')}"`;
-}
 
 export function EvidenceCheckArtifactViewer({
 	model,
@@ -358,15 +42,19 @@ export function EvidenceCheckArtifactViewer({
 	const traceability = resolvedSnapshot?.implementationPlanTraceability ?? null;
 	const conditionSummary = resolvedSnapshot?.summary ?? {
 		total: conditions.length,
-		confirmed: conditions.filter((condition) =>
-			COMPLETE_STATUSES.has(condition.status),
+		confirmed: conditions.filter(
+			(condition) =>
+				condition.assuranceStatus === "safe_pass" ||
+				condition.assuranceStatus === "not_applicable",
 		).length,
-		failed: conditions.filter((condition) => condition.status === "failed")
-			.length,
+		failed: conditions.filter(
+			(condition) => condition.assuranceStatus === "failed",
+		).length,
 		pending: conditions.filter(
 			(condition) =>
-				!COMPLETE_STATUSES.has(condition.status) &&
-				condition.status !== "failed",
+				condition.assuranceStatus !== "safe_pass" &&
+				condition.assuranceStatus !== "not_applicable" &&
+				condition.assuranceStatus !== "failed",
 		).length,
 	};
 	if (!model) {
@@ -412,11 +100,19 @@ export function EvidenceCheckArtifactViewer({
 							</div>
 							<AssuranceStatusBadge
 								status={
-									resolvedSnapshot.assuranceSummary.automated > 0 &&
-									resolvedSnapshot.assuranceSummary.safePass ===
-										resolvedSnapshot.assuranceSummary.automated
+									resolvedSnapshot.assuranceSummary.fullVerifyStatus ===
+										"passed" &&
+									(resolvedSnapshot.assuranceSummary.required !== undefined
+										? resolvedSnapshot.assuranceSummary.required > 0 &&
+											resolvedSnapshot.assuranceSummary.requiredSafePass ===
+												resolvedSnapshot.assuranceSummary.required
+										: resolvedSnapshot.assuranceSummary.automated > 0 &&
+											resolvedSnapshot.assuranceSummary.safePass ===
+												resolvedSnapshot.assuranceSummary.automated)
 										? "safe_pass"
-										: resolvedSnapshot.assuranceSummary.failed > 0
+										: resolvedSnapshot.assuranceSummary.failed > 0 ||
+												resolvedSnapshot.assuranceSummary.fullVerifyStatus ===
+													"failed"
 											? "failed"
 											: "pending"
 								}
@@ -424,14 +120,33 @@ export function EvidenceCheckArtifactViewer({
 						</div>
 						<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px]">
 							<span>
-								{t("evidenceCheck.assurance.evaluatedAt")}: {formatTimestamp(resolvedSnapshot.evaluatedAt)}
+								{t("evidenceCheck.assurance.evaluatedAt")}:{" "}
+								{formatTimestamp(resolvedSnapshot.evaluatedAt)}
 							</span>
 							<span>
-								{t("evidenceCheck.assurance.source")}: {resolvedSnapshot.sourceStateHash?.slice(0, 12) ?? t("evidenceCheck.assurance.unavailable")}
+								{t("evidenceCheck.assurance.source")}:{" "}
+								{resolvedSnapshot.sourceStateHash?.slice(0, 12) ??
+									t("evidenceCheck.assurance.unavailable")}
 							</span>
 							<span>
-								Full Verify: {t(`evidenceCheck.gateStatus.${resolvedSnapshot.assuranceSummary.fullVerifyStatus}`)}
+								{t("evidenceCheck.test.fullVerify")}:{" "}
+								{t(
+									`evidenceCheck.gateStatus.${resolvedSnapshot.assuranceSummary.fullVerifyStatus}`,
+								)}
 							</span>
+							{resolvedSnapshot.assuranceSummary.required !== undefined ? (
+								<span>
+									{t("evidenceCheck.assurance.conditionMetrics", {
+										required: resolvedSnapshot.assuranceSummary.required,
+										safePass:
+											resolvedSnapshot.assuranceSummary.requiredSafePass ?? 0,
+										unmapped: resolvedSnapshot.assuranceSummary.unmapped ?? 0,
+										detailsMissing:
+											resolvedSnapshot.assuranceSummary.detailsMissing ?? 0,
+										stale: resolvedSnapshot.assuranceSummary.stale ?? 0,
+									})}
+								</span>
+							) : null}
 						</div>
 					</section>
 				) : null}
@@ -519,6 +234,15 @@ export function EvidenceCheckArtifactViewer({
 								</div>
 								<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-4">
 									<span>
+										{t("evidenceCheck.conditionVerificationKind")}:{" "}
+										{condition.verificationKind ?? "unknown"}
+									</span>
+									<span>
+										{t("evidenceCheck.conditionExpectedEvidence")}:{" "}
+										{condition.expectedEvidence.join(", ") || "none"}
+									</span>
+									<span>
+										{t("evidenceCheck.conditionRecordedStatus")}:{" "}
 										{t(`evidenceCheck.conditionStatus.${condition.status}`, {
 											defaultValue: condition.status,
 										})}
@@ -541,6 +265,12 @@ export function EvidenceCheckArtifactViewer({
 										<span>{condition.reason}</span>
 									) : null}
 								</div>
+								{condition.evidenceIds.length > 0 ? (
+									<div className="nightworkers-structured-artifact-muted break-all font-mono text-[10px] leading-4">
+										{t("evidenceCheck.evidenceReferences")}:{" "}
+										{condition.evidenceIds.join(", ")}
+									</div>
+								) : null}
 								{condition.tests.length > 0 ? (
 									<div className="grid gap-1.5 border-t border-slate-700/60 pt-2">
 										{condition.tests.map((test) => (
@@ -559,16 +289,44 @@ export function EvidenceCheckArtifactViewer({
 												<div className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
 													{test.filePath ? <span>{test.filePath}</span> : null}
 													<span>
-														{t("evidenceCheck.test.execution")}: {t(`evidenceCheck.testStatus.${test.execution.status}`)}
-													</span>
-											{test.execution.durationMs !== null ? (
-												<span>{formatDuration(test.execution.durationMs)}</span>
-											) : null}
-													<span>
-														{t("evidenceCheck.test.currentSource")}: {yesNo(t, test.guards.currentSource)}
+														{t("evidenceCheck.test.mappingSource")}:{" "}
+														{test.mappingSource}
 													</span>
 													<span>
-														Full Verify: {yesNo(t, test.guards.fullVerifyPassed)}
+														{t("evidenceCheck.test.execution")}:{" "}
+														{t(
+															`evidenceCheck.testStatus.${test.execution.status}`,
+														)}
+													</span>
+													{test.execution.evidenceKind ? (
+														<span>
+															{t("evidenceCheck.test.evidenceKind")}:{" "}
+															{test.execution.evidenceKind}
+														</span>
+													) : null}
+													{test.execution.durationMs !== null ? (
+														<span>
+															{formatDuration(test.execution.durationMs)}
+														</span>
+													) : null}
+													<span>
+														{t("evidenceCheck.test.currentSource")}:{" "}
+														{yesNo(t, test.guards.currentSource)}
+													</span>
+													<span>
+														{t("evidenceCheck.test.sourceStable")}:{" "}
+														{nullableYesNo(
+															t,
+															test.guards.sourceStableDuringExecution,
+														)}
+													</span>
+													<span>
+														{t("evidenceCheck.test.executionObserved")}:{" "}
+														{yesNo(t, test.guards.testExecutionObserved)}
+													</span>
+													<span>
+														{t("evidenceCheck.test.fullVerify")}:{" "}
+														{yesNo(t, test.guards.fullVerifyPassed)}
 													</span>
 												</div>
 											</div>
@@ -614,13 +372,19 @@ function AssuranceStatusBadge({
 	);
 }
 
-function yesNo(
-	t: ReturnType<typeof useTranslation>["t"],
-	value: boolean,
-) {
+function yesNo(t: ReturnType<typeof useTranslation>["t"], value: boolean) {
 	return t(
 		value ? "evidenceCheck.assurance.yes" : "evidenceCheck.assurance.no",
 	);
+}
+
+function nullableYesNo(
+	t: ReturnType<typeof useTranslation>["t"],
+	value: boolean | null,
+) {
+	return value === null
+		? t("evidenceCheck.gateStatus.unknown")
+		: yesNo(t, value);
 }
 
 function formatTimestamp(value: string) {
@@ -657,7 +421,7 @@ function planTraceabilityMessage(
 }
 
 function EvidenceConditionStatusIcon({ status }: { status: string }) {
-	if (COMPLETE_STATUSES.has(status)) {
+	if (TODO_COMPLETE_STATUSES.has(status)) {
 		return (
 			<CheckCircle2 className="nightworkers-structured-artifact-success h-4 w-4" />
 		);
@@ -673,8 +437,4 @@ function EvidenceConditionStatusIcon({ status }: { status: string }) {
 		);
 	}
 	return <Circle className="nightworkers-structured-artifact-muted h-4 w-4" />;
-}
-
-function readString(value: unknown) {
-	return typeof value === "string" && value.trim() ? value : null;
 }
