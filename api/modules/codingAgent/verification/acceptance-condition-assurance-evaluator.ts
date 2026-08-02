@@ -16,6 +16,11 @@ import type {
 	verificationEvidenceCases,
 	verificationEvidenceRuns,
 } from "../../../db/verification-schema";
+import {
+	buildAssuranceTest,
+	latestEvidenceRun,
+	normalizeExpectedEvidenceKind,
+} from "./acceptance-condition-test-evidence";
 import { isCompatibleEvidenceKind } from "./evidence-kind-compatibility";
 
 type ChecklistRow = typeof verificationChecklistItems.$inferSelect;
@@ -130,7 +135,7 @@ export function evaluateAcceptanceConditionAssuranceDataset(
 			(condition.verificationKind === "automated_test" ||
 				condition.verificationKind === "command_gate"),
 	);
-	const latestVerify = latestRun(
+	const latestVerify = latestEvidenceRun(
 		sourceCurrentRuns.filter((run) => run.checkKind === "verify"),
 	);
 	const fullVerifyPassed =
@@ -281,22 +286,45 @@ function evaluateCondition(input: {
 				test.execution.status === "unknown",
 		)
 	) {
-		const hasUnresolvedCase = input.evidenceCases.some(
-			(testCase) => !testCase.caseKey,
-		);
-		const evidenceRunIdsWithCases = new Set(
-			input.evidenceCases.map((testCase) => testCase.evidenceRunId),
-		);
-		const hasCaseLessExecution = input.currentRuns.some(
+		const scopedTestRuns = input.currentRuns.filter(
 			(run) =>
-				run.testExecutionObserved && !evidenceRunIdsWithCases.has(run.id),
+				run.checkKind === "test" &&
+				run.commandLevelConditionIdsJson.includes(input.item.conditionId),
+		);
+		const latestScopedTestRun = latestEvidenceRun(scopedTestRuns);
+		const unresolvedForCondition = input.evidenceCases.filter(
+			(testCase) =>
+				!testCase.caseKey &&
+				testCase.conditionIdsJson.includes(input.item.conditionId) &&
+				(!latestScopedTestRun ||
+					testCase.evidenceRunId === latestScopedTestRun.id),
+		);
+		const hasAmbiguousIdentity = unresolvedForCondition.some(
+			(testCase) => testCase.failureMessage === "TEST_IDENTITY_AMBIGUOUS",
+		);
+		const hasIdentityMismatch = unresolvedForCondition.some(
+			(testCase) => testCase.failureMessage === "TEST_EVIDENCE_CAPTURE_FAILED",
+		);
+		const hasFailedExecution = (latestScopedTestRun?.exitCode ?? 0) !== 0;
+		const hasCaptureFailure = Boolean(
+			latestScopedTestRun &&
+				latestScopedTestRun.exitCode === 0 &&
+				!latestScopedTestRun.parsedArtifactId,
 		);
 		return result(
 			base,
-			hasUnresolvedCase || hasCaseLessExecution ? "details_missing" : "not_run",
-			hasUnresolvedCase || hasCaseLessExecution
-				? "CONDITION_CASE_DETAILS_MISSING"
-				: "CONDITION_CASE_EXECUTION_MISSING",
+			hasFailedExecution
+				? "failed"
+				: hasAmbiguousIdentity || hasIdentityMismatch || hasCaptureFailure
+					? "details_missing"
+					: "not_run",
+			hasFailedExecution
+				? "MAPPED_TEST_FAILED"
+				: hasAmbiguousIdentity
+					? "TEST_IDENTITY_AMBIGUOUS"
+					: hasIdentityMismatch || hasCaptureFailure
+						? "TEST_EVIDENCE_CAPTURE_FAILED"
+						: "MAPPED_TEST_NOT_RUN",
 			[],
 			tests,
 		);
@@ -305,22 +333,22 @@ function evaluateCondition(input: {
 		return result(base, "stale", "CONDITION_SOURCE_MUTATED", [], tests);
 	}
 	if (tests.some((test) => !test.guards.currentSource)) {
-		return result(base, "stale", "CONDITION_EVIDENCE_STALE", [], tests);
+		return result(base, "stale", "TEST_EVIDENCE_STALE", [], tests);
 	}
 	if (tests.some((test) => !test.guards.testExecutionObserved)) {
 		return result(
 			base,
 			"details_missing",
-			"CONDITION_CASE_DETAILS_MISSING",
+			"TEST_EVIDENCE_CAPTURE_FAILED",
 			[],
 			tests,
 		);
 	}
 	if (tests.some((test) => test.execution.status === "failed")) {
-		return result(base, "failed", "CONDITION_CASE_FAILED", [], tests);
+		return result(base, "failed", "MAPPED_TEST_FAILED", [], tests);
 	}
 	if (tests.some((test) => test.execution.status === "skipped")) {
-		return result(base, "failed", "CONDITION_CASE_SKIPPED", [], tests);
+		return result(base, "failed", "MAPPED_TEST_FAILED", [], tests);
 	}
 	const missingKind = expectedEvidence.find(
 		(expected) =>
@@ -384,7 +412,7 @@ function evaluateCommandGate(
 	}
 	const evidenceRefs: EvidenceAssuranceCondition["evidenceRefs"] = [];
 	for (const expected of input.base.expectedEvidence) {
-		const latest = latestRun(
+		const latest = latestEvidenceRun(
 			scoped.filter((run) =>
 				run.evidenceKindsJson.some((actual) => {
 					const normalized = normalizeExpectedEvidenceKind(actual);
@@ -415,49 +443,6 @@ function evaluateCommandGate(
 		});
 	}
 	return result(input.base, "safe_pass", null, evidenceRefs);
-}
-
-function buildAssuranceTest(input: {
-	definition: InventoryCaseRow;
-	mappingSource: string;
-	evidenceCases: EvidenceCaseRow[];
-	currentRunIds: Set<string>;
-	runsById: Map<string, EvidenceRunRow>;
-}): EvidenceAssuranceCondition["tests"][number] {
-	const execution = input.evidenceCases
-		.filter((testCase) => testCase.caseKey === input.definition.caseKey)
-		.sort((left, right) => {
-			const leftRun = input.runsById.get(left.evidenceRunId);
-			const rightRun = input.runsById.get(right.evidenceRunId);
-			return (
-				(rightRun?.finishedAt.getTime() ?? 0) -
-				(leftRun?.finishedAt.getTime() ?? 0)
-			);
-		})[0];
-	const run = execution ? input.runsById.get(execution.evidenceRunId) : null;
-	return {
-		caseKey: input.definition.caseKey,
-		name: input.definition.name,
-		filePath: input.definition.filePath,
-		runner: input.definition.runner,
-		mappingSource: input.mappingSource,
-		execution: {
-			status: execution
-				? normalizeExecutionStatus(execution.status)
-				: "not_run",
-			evidenceRunId: execution?.evidenceRunId ?? null,
-			evidenceKind: normalizeExpectedEvidenceKind(execution?.evidenceKind),
-			durationMs: execution?.durationMs ?? null,
-			finishedAt: run?.finishedAt.toISOString() ?? null,
-		},
-		guards: {
-			currentSource: Boolean(
-				execution && input.currentRunIds.has(execution.evidenceRunId),
-			),
-			sourceStableDuringExecution: run ? !run.sourceMutatedDuringCheck : null,
-			testExecutionObserved: Boolean(run?.testExecutionObserved),
-		},
-	};
 }
 
 function result(
@@ -498,56 +483,15 @@ function normalizeExpectedEvidence(values: string[]): ExpectedEvidence[] {
 	});
 }
 
-function normalizeExpectedEvidenceKind(
-	value: unknown,
-): ExpectedEvidence | null {
-	if (
-		value === "automated_test" ||
-		value === "unit_test" ||
-		value === "integration_test" ||
-		value === "e2e_test" ||
-		value === "typecheck" ||
-		value === "lint" ||
-		value === "format_check" ||
-		value === "build" ||
-		value === "coverage" ||
-		value === "migration_check" ||
-		value === "manual_evidence"
-	) {
-		return value;
-	}
-	return null;
-}
-
-function normalizeExecutionStatus(
-	status: string,
-): EvidenceAssuranceCondition["tests"][number]["execution"]["status"] {
-	if (
-		status === "passed" ||
-		status === "failed" ||
-		status === "skipped" ||
-		status === "unknown"
-	) {
-		return status;
-	}
-	return "unknown";
-}
-
 function snapshotHash(value: unknown) {
 	const parsed = workspaceSourceSnapshotSchema.safeParse(value);
 	return parsed.success ? parsed.data.sourceStateHash : null;
 }
 
-function latestRun<T extends Pick<EvidenceRunRow, "finishedAt">>(runs: T[]) {
-	return [...runs].sort(
-		(left, right) => right.finishedAt.getTime() - left.finishedAt.getTime(),
-	)[0];
-}
-
 function firstConditionReason(conditions: EvaluatedAcceptanceCondition[]) {
 	return (
 		conditions.find((condition) => condition.reasonCode)?.reasonCode ??
-		("CONDITION_CASE_EXECUTION_MISSING" as const)
+		("MAPPED_TEST_NOT_RUN" as const)
 	);
 }
 

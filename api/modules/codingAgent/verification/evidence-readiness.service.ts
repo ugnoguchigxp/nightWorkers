@@ -96,7 +96,10 @@ export async function evaluateEvidenceReadiness(
 								eq(codingAgentTestInventoryRuns.runId, input.runId),
 							),
 						)
-						.orderBy(desc(codingAgentTestInventoryRuns.createdAt))
+						.orderBy(
+							desc(codingAgentTestInventoryRuns.createdAt),
+							desc(codingAgentTestInventoryRuns.id),
+						)
 				: Promise.resolve([] as InventoryRow[]),
 			input.runId
 				? db
@@ -440,8 +443,6 @@ function strictSuggestedAction(input: {
 	mapping: EvidenceCheckSnapshot["mapping"];
 	verifyStatus: EvidenceCheckSnapshot["verify"]["status"];
 }): EvidenceCheckSnapshot["suggestedAction"] {
-	if (input.verifyStatus === "failed") return "fix_verify";
-	if (input.verifyStatus !== "passed") return "run_verify";
 	if (
 		input.mapping.status === "missing" ||
 		input.mapping.status === "stale" ||
@@ -451,10 +452,29 @@ function strictSuggestedAction(input: {
 	) {
 		return "record_mapping";
 	}
+	if (
+		input.assurance.reasonCodes.includes("TEST_EVIDENCE_CAPTURE_FAILED") ||
+		input.assurance.reasonCodes.includes("TEST_IDENTITY_AMBIGUOUS") ||
+		input.assurance.reasonCodes.includes("COMMAND_GATE_PLAN_MISSING")
+	) {
+		return "report_test_evidence_failure";
+	}
+	if (input.assurance.reasonCodes.includes("MAPPED_TEST_FAILED")) {
+		return "fix_test_failure";
+	}
+	if (
+		input.assurance.reasonCodes.includes("MAPPED_TEST_NOT_RUN") ||
+		input.assurance.reasonCodes.includes("TEST_EVIDENCE_STALE") ||
+		input.assurance.reasonCodes.includes("CONDITION_CASE_EXECUTION_MISSING")
+	) {
+		return "run_check";
+	}
+	if (input.verifyStatus === "failed") return "fix_verify";
+	if (input.verifyStatus !== "passed") return "run_verify";
 	if (input.assurance.reasonCodes.includes("MANUAL_CONFIRMATION_MISSING")) {
 		return "request_human_confirmation";
 	}
-	return "run_structured_tests";
+	return "run_check";
 }
 
 function followupMatchesStrictConfirmation(

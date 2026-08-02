@@ -1,9 +1,12 @@
 import {
 	COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
+	codingAgentCollectTestInventoryJsonSchema,
+	codingAgentRunCheckJsonSchema,
 	RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
 	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
+	TEST_INVENTORY_TOOL_DESCRIPTION_JA,
 } from "../../../../../shared/modules/codingAgent";
-import { testEvidenceSetMappingJsonSchema } from "../../../../../shared/schemas/verification-checklist.schema";
+import { testConditionMappingJsonSchema } from "../../../../../shared/schemas/verification-checklist.schema";
 import type { ProviderToolDefinition } from "../../../../services/structured-llm/tool-calls";
 import type { WorkerToolName } from "../../../../services/tool-policy/types";
 import { todoCommandJsonSchema } from "./native-api-todo-tool";
@@ -196,64 +199,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "run_check",
 			description: RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
-			inputSchema: objectSchema(
-				{
-					command: { type: "string" },
-					checkKind: {
-						type: "string",
-						enum: [
-							"lint",
-							"format_check",
-							"typecheck",
-							"test",
-							"coverage",
-							"build",
-							"verify",
-							"completion_check",
-							"other",
-						],
-					},
-					cwd: { type: "string" },
-					conditionIds: { type: "array", items: { type: "string" } },
-					evidenceKinds: {
-						type: "array",
-						items: {
-							type: "string",
-							enum: [
-								"automated_test",
-								"unit_test",
-								"integration_test",
-								"e2e_test",
-								"typecheck",
-								"lint",
-								"format_check",
-								"build",
-								"coverage",
-								"migration_check",
-								"manual_evidence",
-							],
-						},
-					},
-					runnerHint: {
-						type: "string",
-						enum: [
-							"vitest",
-							"jest",
-							"playwright",
-							"pytest",
-							"junit",
-							"unknown",
-						],
-					},
-					verificationDocumentId: { type: "string" },
-					timeoutSeconds: { type: "number" },
-					displayMode: {
-						type: "string",
-						enum: ["summary", "error_excerpt", "full"],
-					},
-				},
-				["command", "checkKind"],
-			),
+			inputSchema: codingAgentRunCheckJsonSchema,
 		},
 	},
 	{
@@ -294,11 +240,8 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		workerToolName: "collect_test_inventory",
 		definition: {
 			name: "collect_test_inventory",
-			description:
-				"Discover test definitions in the registered repository without running tests. It reports active discovery separately from filename candidates and does not update Todo state.",
-			inputSchema: objectSchema({
-				cwd: { type: "string" },
-			}),
+			description: TEST_INVENTORY_TOOL_DESCRIPTION_JA,
+			inputSchema: codingAgentCollectTestInventoryJsonSchema,
 		},
 	},
 	{
@@ -308,7 +251,7 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "record_test_condition_mapping",
 			description: TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
-			inputSchema: testEvidenceSetMappingJsonSchema,
+			inputSchema: testConditionMappingJsonSchema,
 		},
 	},
 	{

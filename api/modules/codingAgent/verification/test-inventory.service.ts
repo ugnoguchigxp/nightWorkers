@@ -11,6 +11,10 @@ import { codingAgentTestInventoryRuns } from "../../../db/verification-schema";
 import { runCommandTool } from "../../../services/worker-tools/run-command";
 import { enforcePathPolicy } from "../../../services/worker-tools/tool-policy-enforcer";
 import { extractStaticTestNames } from "./static-test-case-discovery";
+import {
+	assignShortTestCaseKeys,
+	resolveInventoryRelativeTestCasePath,
+} from "./test-case-identity";
 import { classifyTestFile } from "./test-file-discovery";
 import { TestInventoryFailure } from "./test-inventory-errors";
 import { insertTestInventory } from "./test-inventory-persistence";
@@ -26,6 +30,7 @@ export type CollectTestInventoryInput = {
 	externalAllowedPaths?: string[];
 	deniedPaths?: string[];
 	maxCommandSeconds?: number;
+	confinementRequired?: boolean;
 };
 
 export async function collectTestInventory(
@@ -46,10 +51,19 @@ export async function collectTestInventory(
 					discoverCargoCases(input, cwd),
 					discoverGoCases(input, cwd),
 				]);
-	const cases = mergeCases(
+	const mergedCases = mergeCases(
 		candidates,
 		discoveries.flatMap((discovery) => discovery.cases),
 	);
+	const failedDiscovery = discoveries.find((discovery) => discovery.failure);
+	if (failedDiscovery?.failure) {
+		throw new TestInventoryFailure(
+			"TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED",
+			failedDiscovery.failure,
+			"fix_test_inventory_discovery",
+		);
+	}
+	const cases = assignShortTestCaseKeys(mergedCases);
 	const warnings = discoveries.flatMap((discovery) =>
 		discovery.warning ? [discovery.warning] : [],
 	);
@@ -79,7 +93,10 @@ export async function getLatestTestInventory(taskId: string) {
 		.select()
 		.from(codingAgentTestInventoryRuns)
 		.where(eq(codingAgentTestInventoryRuns.taskId, taskId))
-		.orderBy(desc(codingAgentTestInventoryRuns.createdAt))
+		.orderBy(
+			desc(codingAgentTestInventoryRuns.createdAt),
+			desc(codingAgentTestInventoryRuns.id),
+		)
 		.limit(1);
 	return inventory ?? null;
 }
@@ -250,7 +267,11 @@ function countNames(names: string[]) {
 async function discoverVitestCases(
 	input: Parameters<typeof collectTestInventory>[0],
 	cwd: string,
-): Promise<{ cases: TestInventoryCase[]; warning?: string }> {
+): Promise<{
+	cases: TestInventoryCase[];
+	warning?: string;
+	failure?: string;
+}> {
 	if (!(await hasPackage(cwd, "vitest"))) return { cases: [] };
 	const result = await runCommandTool({
 		command: "bunx --no-install vitest list --json --static-parse",
@@ -263,11 +284,12 @@ async function discoverVitestCases(
 		maxCommandSeconds: input.maxCommandSeconds,
 		timeoutSeconds: 60,
 		compressionMode: "off",
+		confinementRequired: input.confinementRequired,
 	});
 	if (!result.ok || result.payload.exitCode !== 0) {
 		return {
 			cases: [],
-			warning: "Vitest active discovery could not be completed.",
+			failure: "Vitest active discovery could not be completed.",
 		};
 	}
 	try {
@@ -279,11 +301,10 @@ async function discoverVitestCases(
 			cases: entries
 				.filter((entry) => entry.name && entry.file)
 				.map((entry) => {
-					const absoluteFile = path.resolve(String(entry.file));
-					const filePath = path
-						.relative(cwd, absoluteFile)
-						.split(path.sep)
-						.join("/");
+					const filePath = resolveInventoryRelativeTestCasePath({
+						filePath: String(entry.file),
+						cwd,
+					});
 					return {
 						caseKey: `vitest:${filePath}:${entry.name}`,
 						name: String(entry.name),
@@ -297,7 +318,7 @@ async function discoverVitestCases(
 	} catch {
 		return {
 			cases: [],
-			warning: "Vitest active discovery returned invalid JSON.",
+			failure: "Vitest active discovery returned invalid JSON.",
 		};
 	}
 }
@@ -305,7 +326,11 @@ async function discoverVitestCases(
 async function discoverCargoCases(
 	input: Parameters<typeof collectTestInventory>[0],
 	cwd: string,
-): Promise<{ cases: TestInventoryCase[]; warning?: string }> {
+): Promise<{
+	cases: TestInventoryCase[];
+	warning?: string;
+	failure?: string;
+}> {
 	if (!(await exists(path.join(cwd, "Cargo.toml")))) return { cases: [] };
 	const result = await runCommandTool({
 		command: "cargo test -- --list",
@@ -318,11 +343,12 @@ async function discoverCargoCases(
 		maxCommandSeconds: input.maxCommandSeconds,
 		timeoutSeconds: 60,
 		compressionMode: "off",
+		confinementRequired: input.confinementRequired,
 	});
 	if (!result.ok || result.payload.exitCode !== 0)
 		return {
 			cases: [],
-			warning: "Cargo active discovery could not be completed.",
+			failure: "Cargo active discovery could not be completed.",
 		};
 	const names = Array.from(
 		result.payload.stdout.matchAll(/^([\w:.-]+):\s+test$/gm),
@@ -343,7 +369,11 @@ async function discoverCargoCases(
 async function discoverGoCases(
 	input: Parameters<typeof collectTestInventory>[0],
 	cwd: string,
-): Promise<{ cases: TestInventoryCase[]; warning?: string }> {
+): Promise<{
+	cases: TestInventoryCase[];
+	warning?: string;
+	failure?: string;
+}> {
 	if (!(await exists(path.join(cwd, "go.mod")))) return { cases: [] };
 	const result = await runCommandTool({
 		command: "go test -json -list . ./...",
@@ -356,11 +386,12 @@ async function discoverGoCases(
 		maxCommandSeconds: input.maxCommandSeconds,
 		timeoutSeconds: 60,
 		compressionMode: "off",
+		confinementRequired: input.confinementRequired,
 	});
 	if (!result.ok || result.payload.exitCode !== 0)
 		return {
 			cases: [],
-			warning: "Go active discovery could not be completed.",
+			failure: "Go active discovery could not be completed.",
 		};
 	const names = new Set<string>();
 	for (const line of result.payload.stdout.split("\n")) {

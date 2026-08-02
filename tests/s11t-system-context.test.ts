@@ -194,7 +194,10 @@ describe("S11t SystemContext catalog", () => {
 		expect(rendered).toContain("同一testcaseのstructured execution成功");
 		expect(rendered).toContain("Confirmation Receiptを一度保存");
 		expect(rendered).toContain("既存Receiptを上書きせず");
-		expect(rendered).toContain("assurance.reasonCodes");
+		expect(rendered).toContain(
+			"ready、reason、suggestedAction、readinessDigest",
+		);
+		expect(rendered).toContain("TEST_EVIDENCE_CAPTURE_FAILED");
 		expect(rendered).toContain("E2Eが対象外ならE2E commandを選択・実行しない");
 		expect(rendered).not.toContain("mapping失敗を完了阻害条件にしない");
 		expect(rendered).toContain("## 実装結果");
@@ -601,7 +604,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"b178e75194aa5a97cc629e27f401495a8b46018c22cd219a506a8b8b460cef0b",
+				"b2ec99227486086c25c06bd93144007fdbf263c7a5a769f5b9ebe2eada909392",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:

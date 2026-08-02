@@ -154,7 +154,7 @@ describe("Coding Agent Evidence Check query", () => {
 					ok: false,
 					verify: { status: "not_run" },
 					confirmation: { status: "awaiting_initial_verify" },
-					suggestedAction: "run_verify",
+					suggestedAction: "run_check",
 				},
 			},
 		});
@@ -199,9 +199,9 @@ describe("Coding Agent Evidence Check query", () => {
 					ok: false,
 					assurance: {
 						status: "failed",
-						reasonCodes: ["CONDITION_CASE_EXECUTION_MISSING"],
+						reasonCodes: ["MAPPED_TEST_NOT_RUN"],
 					},
-					suggestedAction: "run_structured_tests",
+					suggestedAction: "run_check",
 				},
 			},
 		});
@@ -557,7 +557,7 @@ describe("Coding Agent Evidence Check query", () => {
 			runId: nextRun.id,
 			verify: { status: "not_run" },
 			ready: false,
-			suggestedAction: "run_verify",
+			suggestedAction: "record_mapping",
 		});
 		await expect(
 			getEvidenceCheckSnapshot({

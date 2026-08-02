@@ -17,6 +17,7 @@ export function buildPlanArtifactPromptBudgetMetadata(input: {
 	projection: PlanArtifactInputProjection;
 	systemPrompt: string;
 	userPrompt: string;
+	providerJsonSchema?: unknown;
 	role?: StructuredLlmRole;
 	routeOverride?: StructuredLlmModelTarget | null;
 }): StructuredLlmPromptBudgetMetadata {
@@ -29,6 +30,15 @@ export function buildPlanArtifactPromptBudgetMetadata(input: {
 	});
 	const estimatedPromptTokensBefore =
 		estimateTokens(input.systemPrompt) + estimateTokens(input.userPrompt);
+	const serializedProviderSchema =
+		input.providerJsonSchema === undefined
+			? ""
+			: (JSON.stringify(input.providerJsonSchema) ?? "");
+	const estimatedProviderSchemaTokens = serializedProviderSchema
+		? estimateTokens(serializedProviderSchema)
+		: 0;
+	const estimatedVisibleInputTokens =
+		estimatedPromptTokensBefore + estimatedProviderSchemaTokens;
 	// safe prompt budget は観測用のしきい値として扱い、超過だけでは生成を停止しない。
 	// if (estimatedPromptTokensBefore > capability.safePromptBudgetTokens) {
 	// 	throw new AppError(
@@ -55,20 +65,27 @@ export function buildPlanArtifactPromptBudgetMetadata(input: {
 		systemPromptLengthAfter: input.systemPrompt.length,
 		userPromptLengthBefore: input.userPrompt.length,
 		userPromptLengthAfter: input.userPrompt.length,
+		providerSchemaBytes: Buffer.byteLength(serializedProviderSchema, "utf8"),
+		estimatedProviderSchemaTokens,
+		estimatedVisibleInputTokens,
 		compressedSections: [
 			...(input.projection.sourceArtifacts.some(
 				(source) => source.contentMode === "canonical_summary",
 			)
 				? ["sourceArtifacts"]
 				: []),
-			...(packageScriptsNeedSummary(input.projection)
+			...(input.projection.target !== "api_io_contract" &&
+			packageScriptsNeedSummary(input.projection)
 				? ["packageScripts"]
 				: []),
 		],
-		droppedFields: [],
-		compressionProfile: `plan-artifact-input-v${input.projection.version}-source-summary`,
+		droppedFields: apiContractDroppedFields(input.projection),
+		compressionProfile:
+			input.projection.target === "api_io_contract"
+				? `plan-artifact-input-v${input.projection.version}-target-structural`
+				: `plan-artifact-input-v${input.projection.version}-source-summary`,
 		budgetExceeded:
-			estimatedPromptTokensBefore > capability.safePromptBudgetTokens,
+			estimatedVisibleInputTokens > capability.safePromptBudgetTokens,
 		criticalEvidencePreserved: 1,
 		criticalEvidenceDropped: 0,
 		artifactProjection: {
@@ -151,15 +168,25 @@ export function renderPlanArtifactInputFromCanonical(
 }
 
 function renderTask(projection: PlanArtifactInputProjection) {
+	const initialPrompt = projection.task.initialPrompt;
+	const normalizedInitialPrompt = initialPrompt.trim();
+	const description = distinctTaskValue(
+		projection.task.description,
+		new Set([normalizedInitialPrompt]),
+	);
+	const acceptanceCriteria = distinctTaskValue(
+		projection.task.acceptanceCriteria,
+		new Set(
+			description
+				? [normalizedInitialPrompt, description.trim()]
+				: [normalizedInitialPrompt],
+		),
+	);
 	return [
 		`Title: ${projection.task.title}`,
-		projection.task.description
-			? `Description: ${projection.task.description}`
-			: "",
-		`Initial prompt: ${projection.task.initialPrompt}`,
-		projection.task.acceptanceCriteria
-			? `Acceptance criteria: ${projection.task.acceptanceCriteria}`
-			: "",
+		`Initial prompt: ${initialPrompt}`,
+		description ? `Description: ${description}` : "",
+		acceptanceCriteria ? `Acceptance criteria: ${acceptanceCriteria}` : "",
 	]
 		.filter(Boolean)
 		.join("\n");
@@ -168,6 +195,19 @@ function renderTask(projection: PlanArtifactInputProjection) {
 function renderQuestionnaire(projection: PlanArtifactInputProjection) {
 	if (projection.questionnaireDecisions.length === 0)
 		return "回答済みのQuestionnaire decisionはありません。";
+	if (projection.target === "api_io_contract") {
+		return projection.questionnaireDecisions
+			.map((decision) =>
+				[
+					`- ${decision.question}`,
+					`  - Answer: ${decision.answer}`,
+					decision.deferred ? "  - Deferred: yes" : "",
+				]
+					.filter(Boolean)
+					.join("\n"),
+			)
+			.join("\n");
+	}
 	return projection.questionnaireDecisions
 		.map((decision) =>
 			[
@@ -189,6 +229,19 @@ function renderProject(projection: PlanArtifactInputProjection) {
 	const technologies = profile?.technologies
 		.map((item) => `${item.name}${item.version ? `@${item.version}` : ""}`)
 		.join(", ");
+	if (projection.target === "api_io_contract") {
+		return [
+			`Repository: ${projection.projectContext.name}`,
+			`Materialization state: ${projection.projectContext.materializationState}`,
+			profile?.summary
+				? `Detected stack: ${profile.summary}`
+				: "Detected stack: 未検出",
+			technologies ? `Detected technologies: ${technologies}` : "",
+			"計画上の制約はQuestionnaire Decisionsを正とします。",
+		]
+			.filter(Boolean)
+			.join("\n");
+	}
 	const packageScripts = packageScriptsNeedSummary(projection)
 		? projection.projectContext.packageScripts
 				.map((script) => script.name)
@@ -213,6 +266,38 @@ function renderProject(projection: PlanArtifactInputProjection) {
 		.join("\n");
 }
 
+function distinctTaskValue(
+	value: string | null,
+	seen: Set<string>,
+): string | null {
+	const source = value ?? "";
+	const normalized = source.trim();
+	return normalized && !seen.has(normalized) ? source : null;
+}
+
+function apiContractDroppedFields(projection: PlanArtifactInputProjection) {
+	if (projection.target !== "api_io_contract") return [];
+	const decisions = projection.questionnaireDecisions;
+	return [
+		decisions.some((decision) => Boolean(decision.decisionKey))
+			? "questionnaire.decisionKey"
+			: "",
+		decisions.some((decision) => Boolean(decision.why))
+			? "questionnaire.why"
+			: "",
+		decisions.some((decision) => Boolean(decision.outputSection))
+			? "questionnaire.outputSection"
+			: "",
+		decisions.some((decision) => !decision.deferred)
+			? "questionnaire.deferred=false"
+			: "",
+		projection.projectContext.root ? "project.root" : "",
+		projection.projectContext.packageScripts.length > 0
+			? "project.packageScripts"
+			: "",
+	].filter(Boolean);
+}
+
 function packageScriptsNeedSummary(projection: PlanArtifactInputProjection) {
 	return (
 		Buffer.byteLength(
@@ -227,7 +312,13 @@ function packageScriptsNeedSummary(projection: PlanArtifactInputProjection) {
 function renderSources(projection: PlanArtifactInputProjection) {
 	return projection.sourceArtifacts
 		.map((source) =>
-			[`### ${source.kind}`, source.renderedContent.trim()]
+			[
+				`### ${source.kind}`,
+				source.contentMode === "canonical_summary"
+					? `[Source reference: messageId=${source.messageId}; digest=${source.digest}; originalBytes=${source.originalBytes ?? "unknown"}]`
+					: "",
+				source.renderedContent.trim(),
+			]
 				.filter(Boolean)
 				.join("\n"),
 		)

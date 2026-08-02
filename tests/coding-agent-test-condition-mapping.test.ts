@@ -8,10 +8,10 @@ import {
 import { TestConditionMappingFailure } from "../api/modules/codingAgent/verification/test-inventory-errors";
 import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
 import {
+	testConditionMappingJsonSchema,
 	testConditionMappingSchema,
-	testEvidenceSetMappingJsonSchema,
-	testEvidenceSetMappingToolInputSchema,
-	testEvidenceSetMappingWriteSchema,
+	testConditionMappingToolInputSchema,
+	testConditionMappingWriteSchema,
 } from "../shared/schemas/verification-checklist.schema";
 
 const sourceDigest = "a".repeat(64);
@@ -23,23 +23,19 @@ const mappingInput = {
 	source: "declared_in_test" as const,
 	sourceDigest,
 };
-const evidenceSetInput = {
+const selectionInput = {
 	verificationDocumentId: "verification-1",
-	evidenceSet: {
-		version: 1 as const,
-		references: [
-			{
-				testName: "maps a condition",
-				filePath: "test.ts",
-				runner: "vitest" as const,
-				conditionIds: ["AC-001"],
-			},
-		],
-	},
+	inventoryId: "inventory-1",
+	mappings: [
+		{
+			caseKey: "vitest:test.ts:maps a condition",
+			conditionIds: ["AC-001"],
+		},
+	],
 };
 
 describe("Coding Agent test condition mapping contract", () => {
-	it("changes the mapping revision only when test identities or evidence references change", () => {
+	it("changes the mapping revision only when source or exact selections change", () => {
 		const cases = [
 			{
 				caseKey: "vitest:test.ts:maps a condition",
@@ -52,18 +48,28 @@ describe("Coding Agent test condition mapping contract", () => {
 		const inventoryDigest = digestTestDefinitionInventory(cases);
 		const revision = digestTestEvidenceMappingRevision({
 			verificationDocumentId: "verification-1",
-			inventoryDigest,
-			evidenceSet: evidenceSetInput.evidenceSet,
+			inventoryId: "inventory-1",
+			currentSourceStateHash: "a".repeat(64),
+			mappings: selectionInput.mappings,
 		});
 
 		expect(digestTestDefinitionInventory([...cases])).toBe(inventoryDigest);
 		expect(
 			digestTestEvidenceMappingRevision({
 				verificationDocumentId: "verification-1",
-				inventoryDigest,
-				evidenceSet: evidenceSetInput.evidenceSet,
+				inventoryId: "inventory-1",
+				currentSourceStateHash: "a".repeat(64),
+				mappings: selectionInput.mappings,
 			}),
 		).toBe(revision);
+		expect(
+			digestTestEvidenceMappingRevision({
+				verificationDocumentId: "verification-1",
+				inventoryId: "inventory-1",
+				currentSourceStateHash: "b".repeat(64),
+				mappings: selectionInput.mappings,
+			}),
+		).not.toBe(revision);
 		expect(
 			digestTestDefinitionInventory([
 				{ ...cases[0], name: "renamed condition test" },
@@ -71,7 +77,7 @@ describe("Coding Agent test condition mapping contract", () => {
 		).not.toBe(inventoryDigest);
 	});
 
-	it("keeps the persisted mapping schema and replaces the public tool input with an evidence set", () => {
+	it("keeps the persisted schema and accepts exact inventory case selections", () => {
 		expect(
 			testConditionMappingSchema.parse({
 				id: "mapping-1",
@@ -80,25 +86,25 @@ describe("Coding Agent test condition mapping contract", () => {
 				createdAt: "2026-07-22T00:00:00.000Z",
 			}),
 		).toMatchObject({ id: "mapping-1", taskId: "task-1", ...mappingInput });
+		expect(testConditionMappingToolInputSchema.parse(selectionInput)).toEqual(
+			selectionInput,
+		);
 		expect(
-			testEvidenceSetMappingToolInputSchema.parse(evidenceSetInput),
-		).toEqual(evidenceSetInput);
-		expect(
-			testEvidenceSetMappingWriteSchema.parse({
+			testConditionMappingWriteSchema.parse({
 				taskId: "task-1",
 				runId: "run-1",
 				repoRoot: "/tmp/repo",
-				...evidenceSetInput,
+				...selectionInput,
 			}),
-		).toMatchObject({ taskId: "task-1", ...evidenceSetInput });
+		).toMatchObject({ taskId: "task-1", ...selectionInput });
 		expect(nightWorkersRecordTestConditionMappingInputSchema).toBe(
-			testEvidenceSetMappingToolInputSchema,
+			testConditionMappingToolInputSchema,
 		);
 		expect(
 			workerToolDefinitions.find(
 				(tool) => tool.name === "record_test_condition_mapping",
 			)?.definition.inputSchema,
-		).toBe(testEvidenceSetMappingJsonSchema);
+		).toBe(testConditionMappingJsonSchema);
 	});
 
 	it("does not accept the removed one-mapping public contract", () => {
@@ -108,21 +114,19 @@ describe("Coding Agent test condition mapping contract", () => {
 		).toBe(false);
 	});
 
-	it("returns a non-retryable typed input failure for an invalid evidence set", async () => {
+	it("returns a non-retryable typed input failure for duplicate conditions", async () => {
 		const result = await recordTestConditionMappingTool({
 			taskId: "task-1",
 			runId: "run-1",
 			repoRoot: "/tmp/repo",
 			verificationDocumentId: "verification-1",
-			evidenceSet: {
-				version: 1,
-				references: [
-					{
-						testName: "maps a condition",
-						conditionIds: ["AC-001", "AC-001"],
-					},
-				],
-			},
+			inventoryId: "inventory-1",
+			mappings: [
+				{
+					caseKey: "vitest:test.ts:maps a condition",
+					conditionIds: ["AC-001", "AC-001"],
+				},
+			],
 		});
 
 		expect(result).toMatchObject({
@@ -132,7 +136,7 @@ describe("Coding Agent test condition mapping contract", () => {
 				retryable: false,
 				issues: [
 					{
-						path: ["evidenceSet", "references", 0, "conditionIds"],
+						path: ["mappings", 0, "conditionIds"],
 						message: "conditionIds must be unique",
 					},
 				],
@@ -140,24 +144,24 @@ describe("Coding Agent test condition mapping contract", () => {
 		});
 	});
 
-	it("returns missing schema evidence as a typed error", async () => {
+	it("returns a missing exact caseKey as a typed error", async () => {
 		const result = await recordTestConditionMappingTool(
 			{
 				taskId: "task-1",
 				runId: "run-1",
 				repoRoot: "/tmp/repo",
-				...evidenceSetInput,
+				...selectionInput,
 			},
 			{
-				recordTestEvidenceSetMappings: async () => {
+				recordTestConditionMappings: async () => {
 					throw new TestConditionMappingFailure(
-						"TEST_EVIDENCE_NOT_FOUND",
-						"Schema evidence was not found.",
-						"review_test_evidence_set",
+						"TEST_CASE_NOT_FOUND",
+						"Inventory case was not found.",
+						"collect_test_inventory",
 						[
 							{
-								path: ["evidenceSet", "references", 0],
-								message: "Best candidate similarity was 89%.",
+								path: ["mappings", 0, "caseKey"],
+								message: "caseKey is absent from this inventory.",
 							},
 						],
 					);
@@ -168,13 +172,13 @@ describe("Coding Agent test condition mapping contract", () => {
 		expect(result).toMatchObject({
 			ok: false,
 			error: {
-				code: "TEST_EVIDENCE_NOT_FOUND",
+				code: "TEST_CASE_NOT_FOUND",
 				retryable: false,
-				recoveryAction: "review_test_evidence_set",
+				recoveryAction: "collect_test_inventory",
 				issues: [
 					{
-						path: ["evidenceSet", "references", 0],
-						message: "Best candidate similarity was 89%.",
+						path: ["mappings", 0, "caseKey"],
+						message: "caseKey is absent from this inventory.",
 					},
 				],
 			},

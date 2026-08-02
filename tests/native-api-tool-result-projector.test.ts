@@ -172,7 +172,7 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 		);
 	});
 
-	it("projects only Evidence Readiness statuses for completion_check", () => {
+	it("projects only the compact completion decision contract", () => {
 		const result = projectWorkerResultToNativeApiToolResult({
 			ok: true,
 			toolName: "completion_check",
@@ -211,24 +211,109 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 		});
 		const modelVisible = JSON.parse(result.content) as {
 			ok: boolean;
-			payload: { result: Record<string, unknown> };
+			payload: Record<string, unknown>;
 		};
 
 		expect(modelVisible.ok).toBe(true);
-		expect(modelVisible.payload.result).toMatchObject({
+		expect(modelVisible.payload).toEqual({
 			ready: false,
-			mapping: { status: "missing", matched: 1, total: 2 },
-			verify: { status: "not_run" },
-			confirmation: { status: "confirmed" },
+			reason: "evidence_mapping_missing",
 			suggestedAction: "record_mapping",
 			readinessDigest: "readiness-1",
 		});
-		expect(modelVisible.payload.result).not.toHaveProperty("ok");
 		expect(JSON.stringify(modelVisible.payload)).not.toContain(
 			"must not reach the model",
 		);
 		expect(JSON.stringify(modelVisible.payload)).not.toContain(
 			"stdout-with-large-test-output",
 		);
+	});
+
+	it("projects only active inventory cases with the three model fields", () => {
+		const result = projectWorkerResultToNativeApiToolResult({
+			ok: true,
+			toolName: "collect_test_inventory",
+			startedAt: "2026-08-02T00:00:00.000Z",
+			finishedAt: "2026-08-02T00:00:01.000Z",
+			payload: {
+				id: "inventory-1",
+				taskId: "task-1",
+				runId: "run-1",
+				cwd: "/repo",
+				sourceSnapshot: { sourceStateHash: "hidden" },
+				cases: [
+					{
+						caseKey: "T1",
+						name: "creates a todo",
+						filePath: "tests/todo.test.ts",
+						runner: "vitest",
+						discoveryLevel: "active",
+						declaredConditionIds: ["AC-001"],
+					},
+					{
+						caseKey: "T2",
+						name: "candidate",
+						filePath: "tests/candidate.test.ts",
+						runner: "unknown",
+						discoveryLevel: "candidate",
+						declaredConditionIds: [],
+					},
+				],
+			},
+		});
+		const modelVisible = JSON.parse(result.content) as {
+			payload: Record<string, unknown>;
+		};
+		expect(modelVisible.payload).toEqual({
+			inventoryId: "inventory-1",
+			cases: [
+				{
+					caseKey: "T1",
+					name: "creates a todo",
+					file: "tests/todo.test.ts",
+				},
+			],
+		});
+	});
+
+	it("projects compact structured-test success and capture failure", () => {
+		for (const [payload, expected] of [
+			[
+				{
+					checkKind: "test",
+					status: "passed",
+					structuredCaseCount: 171,
+					resolvedCaseCount: 171,
+				},
+				{ status: "passed", parsed: 171, resolved: 171 },
+			],
+			[
+				{
+					checkKind: "test",
+					status: "evidence_error",
+					reason: "TEST_EVIDENCE_CAPTURE_FAILED",
+					retryable: false,
+					structuredCaseCount: 171,
+					resolvedCaseCount: 0,
+				},
+				{
+					status: "evidence_error",
+					reason: "TEST_EVIDENCE_CAPTURE_FAILED",
+					parsed: 171,
+					resolved: 0,
+					retryable: false,
+				},
+			],
+		] as const) {
+			const result = projectWorkerResultToNativeApiToolResult({
+				ok: payload.status === "passed",
+				toolName: "run_check",
+				startedAt: "2026-08-02T00:00:00.000Z",
+				finishedAt: "2026-08-02T00:00:01.000Z",
+				payload,
+			});
+			const modelVisible = JSON.parse(result.content) as { payload: unknown };
+			expect(modelVisible.payload).toEqual(expected);
+		}
 	});
 });

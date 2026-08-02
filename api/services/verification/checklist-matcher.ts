@@ -36,12 +36,19 @@ export function applyEvidenceToChecklist(input: {
 			} else if (failedInCurrentEvidence.has(conditionId)) {
 				continue;
 			}
-			const status = statusForTestCase(testCase.status);
+			const identityUnresolved =
+				!testCase.caseKey &&
+				(testCase.failureMessage === "TEST_EVIDENCE_CAPTURE_FAILED" ||
+					testCase.failureMessage === "TEST_IDENTITY_AMBIGUOUS");
+			const status = identityUnresolved
+				? "unknown"
+				: statusForTestCase(testCase.status);
 			updateItem(item, {
 				status,
 				evidenceId,
-				reason:
-					testCase.status === "failed"
+				reason: identityUnresolved
+					? "対応するtest caseのidentityを一意に解決できませんでした。"
+					: testCase.status === "failed"
 						? testCase.failureMessage || "対応する test case が失敗しました。"
 						: testCase.status === "passed"
 							? "対応する test case が成功しました。"
@@ -57,6 +64,13 @@ export function applyEvidenceToChecklist(input: {
 		const mutable = nextByCondition.get(conditionId);
 		if (!mutable) continue;
 		touched.add(conditionId);
+		if (
+			input.evidence.exitCode === 0 &&
+			mutable.verificationKind === "automated_test" &&
+			input.evidence.evidenceKinds?.some(isAutomatedEvidenceKind)
+		) {
+			continue;
+		}
 		if (
 			failedInCurrentEvidence.has(conditionId) &&
 			input.evidence.exitCode === 0
@@ -106,6 +120,15 @@ export function applyEvidenceToChecklist(input: {
 	}
 
 	return next;
+}
+
+function isAutomatedEvidenceKind(value: string) {
+	return (
+		value === "automated_test" ||
+		value === "unit_test" ||
+		value === "integration_test" ||
+		value === "e2e_test"
+	);
 }
 
 export function summarizeChecklist(items: VerificationChecklistItem[]) {

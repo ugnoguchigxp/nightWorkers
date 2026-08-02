@@ -60,6 +60,8 @@ function compactWorkerPayload(toolName: string, payload: unknown): unknown {
 	if (toolName === "run_check") return compactRunCheckPayload(payload);
 	if (toolName === "completion_check")
 		return compactCompletionCheckPayload(payload);
+	if (toolName === "collect_test_inventory")
+		return compactTestInventoryPayload(payload);
 	if (toolName === "record_test_condition_mapping")
 		return compactTestMappingPayload(payload);
 	return payload;
@@ -67,51 +69,50 @@ function compactWorkerPayload(toolName: string, payload: unknown): unknown {
 
 function compactRunCheckPayload(payload: unknown) {
 	const value = toRecord(payload);
+	if (value.checkKind === "test") {
+		return {
+			status: value.status,
+			...(value.reason ? { reason: value.reason } : {}),
+			parsed: value.structuredCaseCount,
+			resolved: value.resolvedCaseCount,
+			...(value.status === "evidence_error"
+				? { retryable: value.retryable === true }
+				: {}),
+		};
+	}
 	return {
-		llmSummary: value.llmSummary,
-		checkKind: value.checkKind,
-		exitCode: value.exitCode,
-		managedEvidence: value.managedEvidence,
-		evidenceRunId: value.evidenceRunId,
-		evidenceKinds: value.evidenceKinds,
-		rawStdoutArtifactId: value.rawStdoutArtifactId,
-		rawStderrArtifactId: value.rawStderrArtifactId,
+		status: value.status,
+		...(value.reason ? { reason: value.reason } : {}),
 	};
 }
 
 function compactCompletionCheckPayload(payload: unknown) {
 	const value = toRecord(payload);
 	const result = toRecord(value.result);
-	const mapping = toRecord(result.mapping);
-	const verify = toRecord(result.verify);
-	const confirmation = toRecord(result.confirmation);
+	const assurance = toRecord(result.assurance);
 	return {
-		llmSummary: value.llmSummary,
-		result: {
-			ready: result.ok,
-			verificationDocumentId: result.verificationDocumentId,
-			sourceStateHash: result.sourceStateHash,
-			mapping: {
-				status: mapping.status,
-				matched: mapping.matched,
-				total: mapping.total,
-				definitionDigest: mapping.definitionDigest,
-			},
-			verify: {
-				status: verify.status,
-				command: verify.command,
-				exitCode: verify.exitCode,
-				sourceStateHash: verify.sourceStateHash,
-			},
-			confirmation: {
-				status: confirmation.status,
-				initialEvidenceRunId: confirmation.initialEvidenceRunId,
-				confirmedAt: confirmation.confirmedAt,
-			},
-			suggestedAction: result.suggestedAction,
-			readinessDigest: result.readinessDigest,
-			reason: result.reason,
-		},
+		ready: result.ok,
+		reason: result.reason ?? null,
+		suggestedAction: result.suggestedAction,
+		readinessDigest: result.readinessDigest,
+		...(assurance.receiptDigest
+			? { receiptDigest: assurance.receiptDigest }
+			: {}),
+	};
+}
+
+function compactTestInventoryPayload(payload: unknown) {
+	const value = toRecord(payload);
+	return {
+		inventoryId: value.id,
+		cases: toArray(value.cases)
+			.map(toRecord)
+			.filter((testCase) => testCase.discoveryLevel === "active")
+			.map((testCase) => ({
+				caseKey: testCase.caseKey,
+				name: testCase.name,
+				file: testCase.filePath,
+			})),
 	};
 }
 
@@ -120,9 +121,9 @@ function compactTestMappingPayload(payload: unknown) {
 	return {
 		inventoryId: value.inventoryId,
 		definitionDigest: value.definitionDigest,
-		referenceCount: value.referenceCount,
+		selectionCount: value.selectionCount,
 		mappingCount: value.mappingCount,
-		matches: value.matches,
+		selections: value.selections,
 	};
 }
 

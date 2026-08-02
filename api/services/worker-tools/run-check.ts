@@ -8,24 +8,30 @@ import type {
 import { AppError } from "../../lib/errors";
 import {
 	isAutomatedEvidenceKind,
-	resolveExecutionCaseIdentities,
-	runCompletionCheck,
-	validateRunCheckEvidenceScope,
+	resolveExecutionCaseIdentityDetails,
+	resolveRunCheckEvidenceScope,
 } from "../../modules/codingAgent";
 import { getLatestActiveVerificationDocumentForTask } from "../../modules/nightworkers/nightworkers.verification.repository";
 import { recordVerificationEvidence } from "../../modules/nightworkers/nightworkers.verification.service";
-import { parseJUnitXmlCases } from "../verification/adapters/junit";
-import { parseVitestJsonCases } from "../verification/adapters/vitest-json";
 import {
 	buildCommandLevelEvidence,
 	inferVerificationRunner,
 } from "../verification/normalized-evidence";
+import {
+	addStructuredReporter,
+	createParsedArtifactDigest,
+	evaluateStructuredTestCapture,
+	parseStructuredTestArtifact,
+	resolveManagedTestRunner,
+} from "./run-check-structured-capture";
 import {
 	type RunCommandInput,
 	type RunCommandOutput,
 	runCommandTool,
 } from "./run-command";
 import type { WorkerToolResult } from "./types";
+
+export { addStructuredReporter } from "./run-check-structured-capture";
 
 export type RunCheckKind =
 	| "lint"
@@ -61,6 +67,9 @@ export interface RunCheckOutput extends RunCommandOutput {
 	evidenceKinds: ExpectedEvidence[];
 	structuredCaseCount: number;
 	resolvedCaseCount: number;
+	status: "passed" | "failed" | "evidence_error";
+	reason?: string;
+	retryable?: boolean;
 	checklist?: {
 		complete: boolean;
 		failedRequired: number;
@@ -68,37 +77,141 @@ export interface RunCheckOutput extends RunCommandOutput {
 	} | null;
 }
 
-export type CompletionCheckOutput = {
-	llmSummary: string;
-	result: Awaited<ReturnType<typeof runCompletionCheck>>;
-};
+export {
+	type CompletionCheckOutput,
+	completionCheckTool,
+} from "./completion-check";
 
 export async function runCheckTool(
 	input: RunCheckInput,
 ): Promise<WorkerToolResult<RunCheckOutput>> {
 	const startedAt = new Date().toISOString();
+	try {
+		return await runCheckToolInternal(input, startedAt);
+	} catch (error) {
+		if (!(error instanceof AppError)) throw error;
+		const finishedAt = new Date().toISOString();
+		const resolvedCwd = path.resolve(input.repoRoot, input.cwd || "");
+		const retryable = error.details?.retryable === true;
+		const status =
+			error.code === "TEST_EVIDENCE_CAPTURE_FAILED" ||
+			error.code === "TEST_IDENTITY_AMBIGUOUS"
+				? "evidence_error"
+				: "failed";
+		return {
+			ok: false,
+			toolName: "run_check",
+			startedAt,
+			finishedAt,
+			payload: {
+				command: input.command,
+				exitCode: -1,
+				signal: null,
+				timedOut: false,
+				stdout: "",
+				stderr: "",
+				stdoutDigest: createCheckStreamDigest({
+					stream: "stdout",
+					command: input.command,
+					content: "",
+				}),
+				stderrDigest: createCheckStreamDigest({
+					stream: "stderr",
+					command: input.command,
+					content: "",
+				}),
+				classification: "precondition_rejected",
+				cwd: resolvedCwd,
+				repositoryRoot: path.resolve(input.repoRoot),
+				truncated: false,
+				checkKind: input.checkKind,
+				managedEvidence: false,
+				llmSummary: `ERROR ${input.checkKind}\nerrorCode=${error.code}`,
+				rawStdoutArtifactId: createCheckStreamDigest({
+					stream: "stdout",
+					command: input.command,
+					content: "",
+				}),
+				rawStderrArtifactId: createCheckStreamDigest({
+					stream: "stderr",
+					command: input.command,
+					content: "",
+				}),
+				verificationDocumentId: input.verificationDocumentId ?? null,
+				evidenceKinds: [],
+				structuredCaseCount: 0,
+				resolvedCaseCount: 0,
+				checklist: null,
+				status,
+				reason: error.code,
+				retryable,
+			},
+			error: {
+				code: error.code,
+				message: error.message,
+				retryable,
+				...(typeof error.details?.suggestedAction === "string"
+					? { recoveryAction: error.details.suggestedAction }
+					: {}),
+			},
+		};
+	}
+}
+
+async function runCheckToolInternal(
+	input: RunCheckInput,
+	startedAt: string,
+): Promise<WorkerToolResult<RunCheckOutput>> {
 	const verificationDocumentId =
 		input.verificationDocumentId ||
 		(input.taskId
 			? (await getLatestActiveVerificationDocumentForTask(input.taskId))?.id
 			: null);
-	const command = await resolveRunCheckCommand(input);
-	let runner = await resolveRunCheckRunner(input, command);
-	const evidenceKinds = normalizeRunCheckEvidenceKinds(input, runner);
-	if (input.taskId && verificationDocumentId) {
-		await validateRunCheckEvidenceScope({
+	const requestedCommand = await resolveRunCheckCommand(input);
+	const sourceSnapshotBefore =
+		input.taskId && (input.runId || verificationDocumentId)
+			? await captureWorkspaceSnapshot(input.repoRoot)
+			: undefined;
+	let runner = await resolveRunCheckRunner(input, requestedCommand);
+	let evidenceKinds = normalizeRunCheckEvidenceKinds(input, runner);
+	let conditionIds = input.conditionIds ?? [];
+	let caseScopes: Record<
+		string,
+		{
+			conditionIds: string[];
+			evidenceKind?:
+				| "automated_test"
+				| "unit_test"
+				| "integration_test"
+				| "e2e_test";
+		}
+	> = {};
+	let mappedCaseKeys: string[] = [];
+	let inventoryId: string | undefined;
+	if (input.taskId && verificationDocumentId && sourceSnapshotBefore) {
+		const scope = await resolveRunCheckEvidenceScope({
 			taskId: input.taskId,
 			runId: input.runId,
 			verificationDocumentId,
-			conditionIds: input.conditionIds ?? [],
-			evidenceKinds,
+			command: requestedCommand,
+			declaredCommand: input.command.trim(),
+			cwd: input.cwd,
 			checkKind: input.checkKind,
+			sourceStateHash: sourceSnapshotBefore.sourceStateHash,
 		});
+		conditionIds = scope.conditionIds;
+		evidenceKinds = scope.evidenceKinds;
+		caseScopes = scope.caseScopes;
+		mappedCaseKeys = scope.mappedCaseKeys;
+		inventoryId = scope.inventoryId ?? undefined;
+		if (input.checkKind === "test") {
+			runner = resolveManagedTestRunner(runner, scope.runner);
+		}
 	}
-	const sourceSnapshotBefore =
-		input.taskId && input.runId
-			? await captureWorkspaceSnapshot(input.repoRoot)
-			: undefined;
+	const command =
+		input.checkKind === "test" && mappedCaseKeys.length > 0
+			? addStructuredReporter(requestedCommand, runner)
+			: requestedCommand;
 	const commandResult = await runCommandTool({
 		...input,
 		command,
@@ -116,35 +229,21 @@ export async function runCheckTool(
 		command,
 		content: payload.stderr,
 	});
-	const junitCases =
-		/<testsuites?\b/i.test(payload.stdout) ||
-		/<testsuites?\b/i.test(payload.stderr)
-			? parseJUnitXmlCases(`${payload.stdout}\n${payload.stderr}`)
-			: [];
 	const resolvedCwd = path.resolve(input.repoRoot, input.cwd || "");
 	const evidenceCwd = await fs.realpath(resolvedCwd).catch(() => resolvedCwd);
 	const automatedEvidenceKind = evidenceKinds.find(isAutomatedEvidenceKind);
-	const vitestCases =
-		junitCases.length === 0
-			? parseVitestJsonCases({
-					text: payload.stdout,
-					evidenceKind: automatedEvidenceKind,
-				})
-			: [];
-	if (vitestCases.length > 0 && runner === "unknown") runner = "vitest";
-	const parsedCases =
-		junitCases.length > 0
-			? junitCases.map((testCase) => ({
-					...testCase,
-					runner,
-					...(automatedEvidenceKind
-						? { evidenceKind: automatedEvidenceKind }
-						: {}),
-				}))
-			: vitestCases;
-	const resolvedCases =
+	const structuredArtifact = parseStructuredTestArtifact({
+		command,
+		runner,
+		stdout: payload.stdout,
+		stderr: payload.stderr,
+		evidenceKind: automatedEvidenceKind,
+	});
+	runner = structuredArtifact.runner;
+	const parsedCases = structuredArtifact.cases;
+	const identityResolution =
 		input.taskId && input.runId && sourceSnapshotBefore
-			? await resolveExecutionCaseIdentities({
+			? await resolveExecutionCaseIdentityDetails({
 					taskId: input.taskId,
 					runId: input.runId,
 					sourceStateHash: sourceSnapshotBefore.sourceStateHash,
@@ -152,8 +251,24 @@ export async function runCheckTool(
 					runner,
 					evidenceKinds,
 					cases: parsedCases,
+					caseScopes,
+					inventoryId,
 				})
-			: parsedCases;
+			: {
+					cases: parsedCases,
+					inventoryId: null,
+					ambiguousMappedCaseKeys: [],
+					mismatchedMappedCaseKeys: [],
+				};
+	const resolvedCases = identityResolution.cases;
+	const parsedArtifactId = structuredArtifact.recognized
+		? createParsedArtifactDigest({
+				command,
+				format: structuredArtifact.format ?? "vitest-json",
+				stdout: payload.stdout,
+				stderr: payload.stderr,
+			})
+		: undefined;
 	const evidence =
 		input.taskId && input.runId && shouldRecordRunCheckEvidence(commandResult)
 			? buildCommandLevelEvidence({
@@ -167,9 +282,10 @@ export async function runCheckTool(
 					runner,
 					rawStdoutArtifactId,
 					rawStderrArtifactId,
-					conditionIds: input.conditionIds,
+					conditionIds,
 					cases: resolvedCases,
 					evidenceKinds,
+					parsedArtifactId,
 				})
 			: null;
 	if (evidence && sourceSnapshotBefore) {
@@ -178,11 +294,20 @@ export async function runCheckTool(
 		evidence.sourceMutatedDuringCheck =
 			sourceSnapshotBefore.sourceStateHash !==
 			sourceSnapshotAfter.sourceStateHash;
-		evidence.testExecutionObserved =
-			resolvedCases.length > 0 ||
-			(payload.classification === "build_test" &&
-				(input.checkKind === "test" || input.checkKind === "coverage"));
+		evidence.testExecutionObserved = parsedCases.length > 0;
 	}
+	const captureFailure = evaluateStructuredTestCapture({
+		managedTest:
+			input.checkKind === "test" &&
+			mappedCaseKeys.length > 0 &&
+			shouldRecordRunCheckEvidence(commandResult),
+		commandExitCode: payload.exitCode,
+		recognized: structuredArtifact.recognized,
+		mappedCaseKeys,
+		resolvedCases,
+		ambiguousMappedCaseKeys: identityResolution.ambiguousMappedCaseKeys,
+		mismatchedMappedCaseKeys: identityResolution.mismatchedMappedCaseKeys,
+	});
 	const recorded =
 		evidence && input.taskId
 			? await recordVerificationEvidence({
@@ -204,8 +329,16 @@ export async function runCheckTool(
 		stderr: payload.stderr,
 		error: commandResult.error,
 	});
+	const error = captureFailure
+		? {
+				code: captureFailure.reason,
+				message: captureFailure.message,
+				retryable: false,
+				recoveryAction: captureFailure.suggestedAction,
+			}
+		: commandResult.error;
 	return {
-		ok: commandResult.ok,
+		ok: commandResult.ok && !captureFailure,
 		toolName: "run_check",
 		startedAt,
 		finishedAt,
@@ -231,8 +364,16 @@ export async function runCheckTool(
 						unknownRequired: recorded.checklist.unknownRequired.length,
 					}
 				: null,
+			status: captureFailure
+				? captureFailure.status
+				: payload.exitCode === 0
+					? "passed"
+					: "failed",
+			...(captureFailure
+				? { reason: captureFailure.reason, retryable: false }
+				: {}),
 		},
-		error: commandResult.error,
+		error,
 		artifactIds: [],
 	};
 }
@@ -242,77 +383,6 @@ async function captureWorkspaceSnapshot(repoRoot: string) {
 		"../../modules/codingAgent"
 	);
 	return captureWorkspaceSourceSnapshot(repoRoot);
-}
-
-export async function completionCheckTool(
-	input: {
-		taskId: string;
-		runId: string;
-		verificationDocumentId?: string;
-		repoRoot?: string;
-	},
-	dependencies: { runCompletionCheck: typeof runCompletionCheck } = {
-		runCompletionCheck,
-	},
-): Promise<WorkerToolResult<CompletionCheckOutput | null>> {
-	const startedAt = new Date().toISOString();
-	let result: Awaited<ReturnType<typeof runCompletionCheck>>;
-	try {
-		result = await dependencies.runCompletionCheck({
-			...input,
-			confirmEvidenceCheck: true,
-		});
-	} catch (error) {
-		return completionCheckFailure(startedAt, error);
-	}
-	const llmSummary = result.ok
-		? [
-				"READY completion_check",
-				`assurance=${result.assurance.status}`,
-				`mapping=${result.mapping.status}`,
-				`verify=${result.verify.status}`,
-				`confirmation=${result.confirmation.status}`,
-				"next=write_final_report",
-			].join("\n")
-		: [
-				"NOT_READY completion_check",
-				`reason=${result.reason || "unknown"}`,
-				`assurance=${result.assurance.status}`,
-				`mapping=${result.mapping.status} (${result.mapping.matched}/${result.mapping.total})`,
-				`verify=${result.verify.status}`,
-				`confirmation=${result.confirmation.status}`,
-				`next=${result.suggestedAction}`,
-			].join("\n");
-	return {
-		ok: true,
-		toolName: "completion_check",
-		startedAt,
-		finishedAt: new Date().toISOString(),
-		payload: { llmSummary, result },
-	};
-}
-
-function completionCheckFailure(
-	startedAt: string,
-	error: unknown,
-): WorkerToolResult<null> {
-	const appError = error instanceof AppError ? error : null;
-	const retryable = appError?.details?.retryable === true;
-	return {
-		ok: false,
-		toolName: "completion_check",
-		startedAt,
-		finishedAt: new Date().toISOString(),
-		payload: null,
-		error: {
-			code: appError?.code ?? "COMPLETION_CHECK_EXECUTION_FAILED",
-			message: error instanceof Error ? error.message : String(error),
-			retryable,
-			...(retryable
-				? { recoveryAction: "同じcompletion_checkを再実行してください。" }
-				: {}),
-		},
-	};
 }
 
 function formatRunCheckSummary(input: {
@@ -385,7 +455,22 @@ function normalizeRunCheckEvidenceKinds(
 	runner: ReturnType<typeof inferVerificationRunner>,
 ): ExpectedEvidence[] {
 	if (input.evidenceKinds?.length) {
-		return Array.from(new Set(input.evidenceKinds));
+		const uniqueKinds = Array.from(new Set(input.evidenceKinds));
+		const specificAutomatedKinds = uniqueKinds.filter(
+			(kind) => isAutomatedEvidenceKind(kind) && kind !== "automated_test",
+		);
+		if (specificAutomatedKinds.length > 1) {
+			throw new AppError(
+				400,
+				"AMBIGUOUS_AUTOMATED_EVIDENCE_KIND",
+				"1回のrun_checkにはunit_test、integration_test、e2e_testのいずれか1種だけを指定してください。",
+				{ evidenceKinds: uniqueKinds },
+			);
+		}
+		if (specificAutomatedKinds.length === 1) {
+			return uniqueKinds.filter((kind) => kind !== "automated_test");
+		}
+		return uniqueKinds;
 	}
 	if (input.checkKind === "lint") return ["lint"];
 	if (input.checkKind === "format_check") return ["format_check"];

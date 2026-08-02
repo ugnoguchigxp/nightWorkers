@@ -71,6 +71,9 @@ export type StructuredLlmPromptBudgetMetadata = {
 	systemPromptLengthAfter: number;
 	userPromptLengthBefore: number;
 	userPromptLengthAfter: number;
+	providerSchemaBytes?: number;
+	estimatedProviderSchemaTokens?: number;
+	estimatedVisibleInputTokens?: number;
 	compressedSections: string[];
 	droppedFields: string[];
 	compressionProfile: string;

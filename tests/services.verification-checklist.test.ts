@@ -61,6 +61,62 @@ describe("verification checklist matcher", () => {
 		expect(summarizeChecklist(updated).complete).toBe(false);
 	});
 
+	it("does not cover managed automated conditions without resolved case evidence", () => {
+		const managedItem = {
+			...item("AC-001"),
+			verificationKind: "automated_test" as const,
+			expectedEvidence: ["unit_test" as const],
+		};
+		const empty = applyEvidenceToChecklist({
+			items: [managedItem],
+			evidence: evidence({
+				exitCode: 0,
+				cases: [],
+				conditionIds: ["AC-001"],
+				evidenceKinds: ["unit_test"],
+			}),
+		});
+		expect(empty[0]?.status).toBe("pending");
+
+		const unresolved = applyEvidenceToChecklist({
+			items: [managedItem],
+			evidence: evidence({
+				exitCode: 0,
+				conditionIds: ["AC-001"],
+				evidenceKinds: ["unit_test"],
+				cases: [
+					{
+						id: "case-unresolved",
+						name: "ambiguous case",
+						status: "passed",
+						conditionIds: ["AC-001"],
+						failureMessage: "TEST_IDENTITY_AMBIGUOUS",
+					},
+				],
+			}),
+		});
+		expect(unresolved[0]?.status).toBe("unknown");
+
+		const commandFailed = applyEvidenceToChecklist({
+			items: [managedItem],
+			evidence: evidence({
+				exitCode: 1,
+				conditionIds: ["AC-001"],
+				evidenceKinds: ["unit_test"],
+				cases: [
+					{
+						id: "case-resolved",
+						caseKey: "T1",
+						name: "resolved case",
+						status: "passed",
+						conditionIds: ["AC-001"],
+					},
+				],
+			}),
+		});
+		expect(commandFailed[0]?.status).toBe("failed");
+	});
+
 	it("keeps unknown required items incomplete", () => {
 		const updated = applyEvidenceToChecklist({
 			items: [item("AC-001")],
@@ -151,6 +207,7 @@ function evidence(input: {
 	exitCode: number;
 	cases: NormalizedVerificationEvidence["cases"];
 	conditionIds?: string[];
+	evidenceKinds?: NormalizedVerificationEvidence["evidenceKinds"];
 }): NormalizedVerificationEvidence {
 	return {
 		id: input.id ?? "evidence-1",
@@ -167,6 +224,7 @@ function evidence(input: {
 		rawStderrArtifactId: "stderr.log",
 		summary: { passed: null, failed: null, skipped: null, total: null },
 		cases: input.cases,
+		evidenceKinds: input.evidenceKinds,
 		commandLevelConditionIds: input.conditionIds ?? [],
 	};
 }

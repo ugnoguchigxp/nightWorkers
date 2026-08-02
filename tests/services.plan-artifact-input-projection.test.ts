@@ -22,6 +22,12 @@ describe("plan artifact input projection", () => {
 		expect(rendered.prompt).toContain(
 			"計画上の制約はQuestionnaire Decisionsを正とします。",
 		);
+		expect(rendered.prompt).not.toContain("Decision key:");
+		expect(rendered.prompt).not.toContain("Why:");
+		expect(rendered.prompt).not.toContain("Section:");
+		expect(rendered.prompt).not.toContain("Deferred: no");
+		expect(rendered.prompt).not.toContain("Root:");
+		expect(rendered.prompt).not.toContain("Package scripts:");
 		expect(rendered.prompt).not.toContain("questionnaireSessionId");
 		expect(rendered.prompt).not.toContain("unselected");
 		expect(projection.provenance.sourceMessageIds).toEqual([
@@ -47,6 +53,36 @@ describe("plan artifact input projection", () => {
 		expect(projection.sourceArtifacts).toHaveLength(3);
 		expect(projection.diagnostics.deduplicatedSourceCount).toBe(3);
 		expect(projection.diagnostics.initialPromptOccurrences).toBe(1);
+	});
+
+	it("deduplicates exact task baseline values without semantic rewriting", () => {
+		const canonical = createTodoListPlanArtifactCanonicalInput();
+		canonical.task.description = canonical.task.initialPrompt;
+		canonical.task.acceptanceCriteria = canonical.task.initialPrompt;
+		const rendered = renderPlanArtifactInput(
+			projectPlanArtifactInput(canonical),
+		);
+
+		expect(
+			rendered.prompt.match(new RegExp(canonical.task.initialPrompt, "g")),
+		).toHaveLength(1);
+		expect(rendered.prompt).not.toContain("Description:");
+		expect(rendered.prompt).not.toContain("Acceptance criteria:");
+	});
+
+	it("preserves the canonical initial prompt while deduplicating by trimmed value", () => {
+		const canonical = createTodoListPlanArtifactCanonicalInput();
+		canonical.task.initialPrompt = "  Todo一覧に期限を追加する  ";
+		canonical.task.description = "Todo一覧に期限を追加する";
+		const rendered = renderPlanArtifactInput(
+			projectPlanArtifactInput(canonical),
+		);
+
+		expect(rendered.prompt).toContain(
+			"Initial prompt:   Todo一覧に期限を追加する  ",
+		);
+		expect(rendered.prompt).not.toContain("Description:");
+		expect(rendered.diagnostics.initialPromptOccurrences).toBe(1);
 	});
 
 	it("removes initial prompt copies from source artifacts", () => {
@@ -84,11 +120,24 @@ describe("plan artifact input projection", () => {
 
 		expect(projection.questionnaireDecisions).toHaveLength(10);
 		expect(projection.projectContext.detectedStack).toBeNull();
+		const metadata = buildPlanArtifactPromptBudgetMetadata({
+			projection,
+			systemPrompt: "system",
+			userPrompt: "user",
+		});
+		expect(metadata.compressionProfile).toBe(
+			"plan-artifact-input-v1-source-summary",
+		);
 	});
 
 	it("records projection diagnostics without rejecting an over-budget prompt", () => {
+		const baseline = createTodoListPlanArtifactCanonicalInput();
 		const projection = projectPlanArtifactInput(
 			createTodoListPlanArtifactCanonicalInput({
+				project: {
+					...baseline.project,
+					packageScripts: [{ name: "test", command: "vitest run" }],
+				},
 				sources: [
 					{
 						kind: "blueprint",
@@ -104,6 +153,11 @@ describe("plan artifact input projection", () => {
 			projection,
 			systemPrompt: "system",
 			userPrompt: "small",
+			providerJsonSchema: {
+				type: "object",
+				additionalProperties: false,
+				properties: {},
+			},
 		});
 
 		expect(metadata.artifactProjection).toMatchObject({
@@ -115,6 +169,19 @@ describe("plan artifact input projection", () => {
 			initialPromptOccurrences: 0,
 			staleSourceRejectedCount: 0,
 		});
+		expect(metadata.droppedFields).toEqual(
+			expect.arrayContaining([
+				"questionnaire.decisionKey",
+				"questionnaire.why",
+				"project.root",
+				"project.packageScripts",
+			]),
+		);
+		expect(metadata.providerSchemaBytes).toBeGreaterThan(0);
+		expect(metadata.estimatedVisibleInputTokens).toBe(
+			metadata.estimatedPromptTokensBefore +
+				(metadata.estimatedProviderSchemaTokens ?? 0),
+		);
 		const overBudgetPrompt = "x".repeat(
 			(metadata.safePromptBudgetTokens + 1) * 4,
 		);
@@ -128,6 +195,17 @@ describe("plan artifact input projection", () => {
 		expect(overBudgetMetadata.estimatedPromptTokensBefore).toBeGreaterThan(
 			overBudgetMetadata.safePromptBudgetTokens,
 		);
+		const schemaOverBudgetMetadata = buildPlanArtifactPromptBudgetMetadata({
+			projection,
+			systemPrompt: "system",
+			userPrompt: "small",
+			providerJsonSchema: { description: "x".repeat(1_000_000) },
+		});
+
+		expect(schemaOverBudgetMetadata.estimatedPromptTokensBefore).toBeLessThan(
+			schemaOverBudgetMetadata.safePromptBudgetTokens,
+		);
+		expect(schemaOverBudgetMetadata.budgetExceeded).toBe(true);
 	});
 
 	it("does not silently truncate oversized source bodies before the budget gate", () => {
@@ -183,9 +261,24 @@ describe("plan artifact input projection", () => {
 		expect(selected.renderedContent).toContain("Artifact canonical summary");
 		expect(selected.renderedContent).toContain("Todo App");
 		expect(selected.renderedContent).not.toContain("raw blueprint body");
+		expect(selected.renderedContent).not.toContain("Artifact original bytes");
 		expect(Buffer.byteLength(selected.renderedContent, "utf8")).toBeLessThan(
 			selected.originalBytes,
 		);
+	});
+
+	it("preserves an oversized API Contract source without a canonical summary", () => {
+		const content = "unstructured source\n".repeat(2_000);
+		const selected = selectPlanArtifactSourceContent({
+			content,
+			metadataJson: null,
+			kind: "feature_plan",
+			target: "api_io_contract",
+		});
+
+		expect(selected.contentMode).toBe("raw");
+		expect(selected.renderedContent).toContain("unstructured source");
+		expect(selected.originalBytes).toBe(Buffer.byteLength(content, "utf8"));
 	});
 
 	it("reports rendered prompt section sizes after source compression", () => {
@@ -211,5 +304,7 @@ describe("plan artifact input projection", () => {
 		expect(
 			metadata.artifactProjection?.sectionBytes.sourceArtifacts,
 		).toBeLessThan(projection.diagnostics.sectionBytes.sourceArtifacts);
+		expect(rendered.prompt).toContain("messageId=");
+		expect(rendered.prompt).toContain("digest=");
 	});
 });

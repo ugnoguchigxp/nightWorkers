@@ -28,6 +28,14 @@ const greenCompletion: CompletionCheckResult = {
 		initialEvidenceRunId: "evidence-run-1",
 		confirmedAt: "2026-08-01T00:00:00.000Z",
 	},
+	assurance: {
+		policyVersion: "strict_v1",
+		status: "passed",
+		verificationDocumentDigest: "document-digest",
+		receiptDigest: "receipt-digest",
+		conditions: [],
+		reasonCodes: [],
+	},
 	suggestedAction: "write_final_report",
 	readinessDigest: "sha256:ready",
 };
@@ -84,5 +92,41 @@ describe("Coding Agent completion readiness", () => {
 
 		expect(result.ready).toBe(true);
 		expect(result.candidate).toMatchObject({ revision: 3 });
+	});
+
+	it("reports capture failures without suggesting a structured-test retry", async () => {
+		const captureFailure: CompletionCheckResult = {
+			...greenCompletion,
+			ok: false,
+			reason: "TEST_EVIDENCE_CAPTURE_FAILED",
+			suggestedAction: "report_test_evidence_failure",
+			assurance: {
+				...greenCompletion.assurance,
+				status: "failed",
+				receiptDigest: null,
+				reasonCodes: ["TEST_EVIDENCE_CAPTURE_FAILED"],
+			},
+		};
+		const result = await evaluateCodingAgentCompletionReadiness(
+			{
+				taskId: "task-1",
+				runId: "run-1",
+				repositoryRoot: "/repo",
+				candidateRevision: 4,
+				finalCandidate: "capture failureを報告します。",
+			},
+			{
+				...dependencies(),
+				runCompletionCheck: async () => captureFailure,
+			},
+		);
+
+		expect(result.ready).toBe(false);
+		expect(result.satisfactionConditions).toEqual([
+			"test evidenceのcaptureまたはidentityに関するnon-retryableなhost障害を、typed reasonとともに報告する。",
+		]);
+		expect(result.satisfactionConditions.join(" ")).not.toContain(
+			"structured result",
+		);
 	});
 });

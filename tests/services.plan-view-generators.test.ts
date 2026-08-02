@@ -18,6 +18,61 @@ import {
 } from "../api/services/structured-generation/prompts/plan-dedicated-view";
 import { planZodSchemaStructuredOutputSchema } from "../api/services/structured-generation/prompts/plan-zod-schema";
 
+function createMinimalApiContractDraft() {
+	return {
+		title: "Task API Contract",
+		summary: "Task retrieval contract.",
+		operations: [
+			{
+				path: "/api/tasks/{taskId}",
+				method: "get",
+				operationId: "getTask",
+				summary: "Get task",
+				description: "",
+				tags: ["tasks"],
+				parameters: [
+					{
+						name: "taskId",
+						in: "path",
+						required: true,
+						description: "Task identifier",
+						schemaJson: JSON.stringify({ type: "string", format: "uuid" }),
+					},
+				],
+				requestBody: { description: "", schemaName: "", required: false },
+				responses: [{ status: 200, description: "", schemaName: "Task" }],
+			},
+		],
+		schemas: [
+			{
+				name: "Task",
+				schemaJson: JSON.stringify({
+					type: "object",
+					additionalProperties: false,
+					required: ["id"],
+					properties: { id: { type: "string", format: "uuid" } },
+				}),
+			},
+		],
+		stateTransitions: [],
+		validation: [
+			{
+				schemaName: "Task",
+				owner: "response",
+				examples: [
+					{
+						name: "task",
+						valid: true,
+						payloadJson: '{"id":"550e8400-e29b-41d4-a716-446655440000"}',
+						expectedIssues: [],
+					},
+				],
+			},
+		],
+		openQuestions: [],
+	};
+}
+
 describe("Plan View generation helpers", () => {
 	it("lists every strict object property in required for structured output compatibility", () => {
 		expectStrictRequiredProperties(genericDedicatedViewSchema);
@@ -225,13 +280,11 @@ describe("Plan View generation helpers", () => {
 	it("normalizes strict API Contract draft output into OpenAPI-compatible artifacts", () => {
 		const artifact = parsePlanApiContractOutput(
 			JSON.stringify({
-				artifactKind: "plan_mode_api_contract",
-				view: "api_io_contract",
 				title: "Task API Contract",
 				summary: "Task creation contract.",
 				operations: [
 					{
-						path: "/api/tasks",
+						path: "/api/repositories/{repositoryId}/tasks",
 						method: "post",
 						operationId: "createTask",
 						summary: "Create task",
@@ -241,9 +294,12 @@ describe("Plan View generation helpers", () => {
 							{
 								name: "repositoryId",
 								in: "path",
-								type: "string",
 								required: true,
 								description: "Repository that owns the task",
+								schemaJson: JSON.stringify({
+									type: "string",
+									format: "uuid",
+								}),
 							},
 						],
 						requestBody: {
@@ -275,9 +331,12 @@ describe("Plan View generation helpers", () => {
 							{
 								name: "status",
 								in: "query",
-								type: "string",
 								required: false,
 								description: "Optional task status filter",
+								schemaJson: JSON.stringify({
+									type: "string",
+									enum: ["queued", "complete"],
+								}),
 							},
 						],
 						requestBody: {
@@ -294,42 +353,51 @@ describe("Plan View generation helpers", () => {
 						],
 					},
 				],
-				componentSchemas: [
+				schemas: [
 					{
 						name: "CreateTaskRequest",
-						description: "Request payload",
-						fields: [
-							{
-								name: "title",
-								type: "string",
-								required: true,
-								description: "Task title",
+						schemaJson: JSON.stringify({
+							type: "object",
+							additionalProperties: false,
+							required: ["title"],
+							properties: {
+								title: { type: "string", minLength: 1 },
 							},
-						],
+						}),
 					},
 					{
 						name: "TaskResponse",
-						description: "Task state response",
-						fields: [
-							{
-								name: "status",
-								type: "string",
-								required: true,
-								description: "HTTP-visible state",
+						schemaJson: JSON.stringify({
+							type: "object",
+							additionalProperties: false,
+							required: ["status"],
+							properties: {
+								status: { type: "string", enum: ["queued", "complete"] },
 							},
-						],
+						}),
 					},
 					{
 						name: "TaskListResponse",
-						description: "Task list response",
-						fields: [
-							{
-								name: "items",
-								type: "array",
-								required: true,
-								description: "Tasks matching the query filter",
+						schemaJson: JSON.stringify({
+							type: "object",
+							additionalProperties: false,
+							required: ["items"],
+							properties: {
+								items: {
+									type: "array",
+									items: { $ref: "#/components/schemas/TaskResponse" },
+								},
 							},
-						],
+						}),
+					},
+					{
+						name: "TaskConflictError",
+						schemaJson: JSON.stringify({
+							type: "object",
+							additionalProperties: false,
+							required: ["code"],
+							properties: { code: { const: "TASK_CONFLICT" } },
+						}),
 					},
 				],
 				stateTransitions: [
@@ -347,8 +415,6 @@ describe("Plan View generation helpers", () => {
 					{
 						schemaName: "CreateTaskRequest",
 						owner: "request",
-						zodOwnerFile: "",
-						strictness: "strict",
 						examples: [
 							{
 								name: "missing title",
@@ -363,7 +429,8 @@ describe("Plan View generation helpers", () => {
 			}),
 		);
 
-		const operation = artifact.openapi.paths["/api/tasks"]?.post;
+		const operation =
+			artifact.openapi.paths["/api/repositories/{repositoryId}/tasks"]?.post;
 		const getOperation = artifact.openapi.paths["/api/tasks"]?.get;
 		expect(operation?.parameters).toEqual([
 			{
@@ -371,7 +438,7 @@ describe("Plan View generation helpers", () => {
 				in: "path",
 				required: true,
 				description: "Repository that owns the task",
-				schema: { type: "string" },
+				schema: { type: "string", format: "uuid" },
 			},
 		]);
 		expect(getOperation?.parameters).toEqual([
@@ -380,7 +447,7 @@ describe("Plan View generation helpers", () => {
 				in: "query",
 				required: false,
 				description: "Optional task status filter",
-				schema: { type: "string" },
+				schema: { type: "string", enum: ["queued", "complete"] },
 			},
 		]);
 		expect(getOperation?.requestBody).toBeUndefined();
@@ -410,6 +477,144 @@ describe("Plan View generation helpers", () => {
 		expect(artifact.stateTransitions[0]?.fromState).toBeNull();
 		expect(artifact.validation[0]?.zodOwnerFile).toBeNull();
 		expect(artifact.validation[0]?.examples[0]?.payload).toEqual({});
+	});
+
+	it("rejects invalid or unresolved JSON Schema draft references", () => {
+		const baseDraft = {
+			title: "Task API Contract",
+			summary: "Task creation contract.",
+			operations: [
+				{
+					path: "/api/tasks",
+					method: "post",
+					operationId: "createTask",
+					summary: "Create task",
+					description: "Create task.",
+					tags: [],
+					parameters: [],
+					requestBody: {
+						description: "",
+						schemaName: "MissingRequest",
+						required: true,
+					},
+					responses: [{ status: 202, description: "Accepted", schemaName: "" }],
+				},
+			],
+			schemas: [{ name: "Known", schemaJson: "not-json" }],
+			stateTransitions: [],
+			validation: [],
+			openQuestions: [],
+		};
+
+		expect(() => parsePlanApiContractOutput(JSON.stringify(baseDraft))).toThrow(
+			"valid JSON Schema JSON",
+		);
+		expect(() =>
+			parsePlanApiContractOutput(
+				JSON.stringify({
+					...baseDraft,
+					schemas: [{ name: "Known", schemaJson: '{"type":"object"}' }],
+				}),
+			),
+		).toThrow("references unknown schema");
+	});
+
+	it("preserves response text and accepts local JSON Pointer subpaths", () => {
+		const draft = createMinimalApiContractDraft();
+		draft.schemas.push({
+			name: "TaskId",
+			schemaJson: JSON.stringify({
+				$ref: "#/components/schemas/Task/properties/id",
+			}),
+		});
+		draft.operations[0].responses[0].schemaName = "TaskId";
+		const artifact = parsePlanApiContractOutput(JSON.stringify(draft));
+
+		expect(
+			artifact.openapi.paths["/api/tasks/{taskId}"]?.get?.responses["200"],
+		).toMatchObject({ description: "" });
+		expect(artifact.openapi.components.schemas.TaskId).toEqual({
+			$ref: "#/components/schemas/Task/properties/id",
+		});
+	});
+
+	it("rejects contradictory API draft invariants instead of silently normalizing", () => {
+		const optionalPathParameter = createMinimalApiContractDraft();
+		optionalPathParameter.operations[0].parameters[0].required = false;
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(optionalPathParameter)),
+		).toThrow("path parameter must be required");
+
+		const requiredBodyWithoutSchema = createMinimalApiContractDraft();
+		requiredBodyWithoutSchema.operations[0].requestBody.required = true;
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(requiredBodyWithoutSchema)),
+		).toThrow("requires a request body without a schema");
+
+		const describedBodyWithoutSchema = createMinimalApiContractDraft();
+		describedBodyWithoutSchema.operations[0].requestBody.description =
+			"Body is not actually supported";
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(describedBodyWithoutSchema)),
+		).toThrow("describes a request body without a schema");
+
+		const missingTransitionStatus = {
+			...createMinimalApiContractDraft(),
+			stateTransitions: [
+				{
+					operationId: "getTask",
+					fromState: "",
+					toState: "ready",
+					successStatus: 201,
+					conflictStatuses: [],
+					stateField: "status",
+					notes: [],
+				},
+			],
+		};
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(missingTransitionStatus)),
+		).toThrow("references missing success status");
+
+		const overlappingStatuses = {
+			...createMinimalApiContractDraft(),
+			stateTransitions: [
+				{
+					operationId: "getTask",
+					fromState: "",
+					toState: "ready",
+					successStatus: 200,
+					conflictStatuses: [200],
+					stateField: "status",
+					notes: [],
+				},
+			],
+		};
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(overlappingStatuses)),
+		).toThrow("uses success status as a conflict status");
+	});
+
+	it("rejects malformed embedded JSON instead of degrading artifact semantics", () => {
+		const invalidSchemaType = createMinimalApiContractDraft();
+		invalidSchemaType.schemas[0].schemaJson = '{"type":"strng"}';
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(invalidSchemaType)),
+		).toThrow("not a valid JSON Schema type");
+
+		const invalidPayload = createMinimalApiContractDraft();
+		invalidPayload.validation[0].examples[0].payloadJson = "not-json";
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(invalidPayload)),
+		).toThrow("did not contain valid payload JSON");
+
+		const extraDraftField = {
+			...createMinimalApiContractDraft(),
+			unexpected: true,
+		};
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(extraDraftField)),
+		).toThrow("did not contain valid JSON");
 	});
 
 	it("rejects API Contract state transitions that reference unknown operations", () => {

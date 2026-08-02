@@ -98,7 +98,10 @@ export const evidenceCheckReadinessSnapshotSchema = z.object({
 	ready: z.boolean(),
 	suggestedAction: z.enum([
 		"record_mapping",
+		"run_check",
 		"run_structured_tests",
+		"fix_test_failure",
+		"report_test_evidence_failure",
 		"request_human_confirmation",
 		"run_verify",
 		"fix_verify",

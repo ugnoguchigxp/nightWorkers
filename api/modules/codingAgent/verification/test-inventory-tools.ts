@@ -1,16 +1,14 @@
 import { z } from "zod";
-import { testEvidenceSetMappingWriteSchema } from "../../../../shared/schemas/verification-checklist.schema";
+import { testConditionMappingWriteSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
-import {
-	digestTestDefinitionInventory,
-	digestTestEvidenceMappingRevision,
-} from "./test-definition-digest";
-import { recordTestEvidenceSetMappings } from "./test-evidence-mapping.service";
+import { digestTestEvidenceMappingRevision } from "./test-definition-digest";
+import { recordTestConditionMappings } from "./test-evidence-mapping.service";
 import { collectTestInventory } from "./test-inventory.service";
 import {
 	TestConditionMappingFailure,
 	TestInventoryFailure,
 } from "./test-inventory-errors";
+import { captureWorkspaceSourceSnapshot } from "./workspace-source-snapshot";
 
 export async function collectTestInventoryTool(
 	input: Parameters<typeof collectTestInventory>[0],
@@ -40,19 +38,19 @@ export async function collectTestInventoryTool(
 }
 
 export async function recordTestConditionMappingTool(
-	input: Parameters<typeof recordTestEvidenceSetMappings>[0],
+	input: Parameters<typeof recordTestConditionMappings>[0],
 	dependencies: {
-		recordTestEvidenceSetMappings: typeof recordTestEvidenceSetMappings;
-	} = { recordTestEvidenceSetMappings },
+		recordTestConditionMappings: typeof recordTestConditionMappings;
+	} = { recordTestConditionMappings },
 ): Promise<
 	WorkerToolResult<Awaited<
-		ReturnType<typeof recordTestEvidenceSetMappings>
+		ReturnType<typeof recordTestConditionMappings>
 	> | null>
 > {
 	const startedAt = new Date().toISOString();
 	try {
-		const parsed = testEvidenceSetMappingWriteSchema.parse(input);
-		const mapping = await dependencies.recordTestEvidenceSetMappings(parsed);
+		const parsed = testConditionMappingWriteSchema.parse(input);
+		const mapping = await dependencies.recordTestConditionMappings(parsed);
 		return {
 			ok: true,
 			toolName: "record_test_condition_mapping",
@@ -69,25 +67,18 @@ export async function resolveTestConditionMappingRevision(input: {
 	taskId: string;
 	runId?: string;
 	repoRoot: string;
-	cwd?: string;
 	verificationDocumentId: string;
-	evidenceSet: Parameters<
-		typeof digestTestEvidenceMappingRevision
-	>[0]["evidenceSet"];
-	blockedCommands?: string[];
-	allowedPaths?: string[];
-	externalAllowedPaths?: string[];
-	deniedPaths?: string[];
-	maxCommandSeconds?: number;
+	inventoryId: string;
+	mappings: Parameters<typeof digestTestEvidenceMappingRevision>[0]["mappings"];
 }) {
-	const inventory = await collectTestInventory(input, {
-		activeDiscovery: false,
-		persist: false,
-	});
+	const currentSourceStateHash = (
+		await captureWorkspaceSourceSnapshot(input.repoRoot)
+	).sourceStateHash;
 	return digestTestEvidenceMappingRevision({
 		verificationDocumentId: input.verificationDocumentId,
-		inventoryDigest: digestTestDefinitionInventory(inventory.cases),
-		evidenceSet: input.evidenceSet,
+		inventoryId: input.inventoryId,
+		currentSourceStateHash,
+		mappings: input.mappings,
 	});
 }
 

@@ -469,6 +469,7 @@ async function generateApiContractArtifactFromLlm(input: {
 					projection: input.projection,
 					systemPrompt,
 					userPrompt,
+					providerJsonSchema: planApiContractStructuredOutputSchema,
 					role: input.role,
 					routeOverride: input.routeOverride,
 				}),

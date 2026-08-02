@@ -3,6 +3,7 @@ import {
 	COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
 	RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
 	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
+	TEST_INVENTORY_TOOL_DESCRIPTION_JA,
 } from "../../shared/modules/codingAgent";
 
 export * from "./nightworkers-tool-schemas";
@@ -86,8 +87,7 @@ export const nightWorkersCodexToolManifest = {
 	},
 	collect_test_inventory: {
 		title: "Collect Test Inventory",
-		description:
-			"Discover test definitions in the registered repository. Active discovery and filename candidates are reported separately; this does not execute tests or update Todo state.",
+		description: TEST_INVENTORY_TOOL_DESCRIPTION_JA,
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
@@ -102,6 +102,7 @@ export const nightWorkersCodexToolManifest = {
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
+			idempotentHint: true,
 			openWorldHint: false,
 		},
 		approvalMode: "approve",

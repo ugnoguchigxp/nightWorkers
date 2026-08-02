@@ -19,6 +19,7 @@ export function createTodoListPlanArtifactCanonicalInput(
 			status: "accepted",
 			decisions: Array.from({ length: 10 }, (_, index) => ({
 				questionId: `q${index + 1}`,
+				decisionKey: `decision_${index + 1}`,
 				question: `Question ${index + 1}`,
 				answer: `Answer ${index + 1}`,
 				why: `Why ${index + 1}`,

@@ -274,6 +274,7 @@ function testCase() {
 	return {
 		id: "case-result",
 		name: "passes safely",
+		filePath: "tests/example.test.ts",
 		status: "passed" as const,
 		conditionIds: [],
 	};

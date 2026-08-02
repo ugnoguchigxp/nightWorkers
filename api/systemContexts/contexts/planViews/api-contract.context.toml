@@ -1,21 +1,14 @@
 text = '''[SystemContext]
-OpenAPI 3.1.0 互換に正規化できる API contract JSON を生成してください。
-Feature Plan、Questionnaire、Blueprint、Data Model は入力 context として扱い、正本の責務を混ぜないでください。
-API 経由で観測・変更できる state は、OpenAPI responses、status code、response body の state/status/phase field、error schema に統合してください。
-HTTP API の request / response / error validation は、独立した zod_schema_design ではなく components.schemas と validation に統合してください。
-UI local state、worker lease、LLM JSON、MCP tool input のような non-HTTP contract は、この view に無理に含めず openQuestions または別 view の必要性として残してください。
+入力されたTask、採用済みQuestionnaire Decisions、選択済みArtifactを根拠に、実装予定または変更対象のHTTP endpointだけを設計してください。
+Feature Plan、Blueprint、Data Modelは入力contextとして扱い、それぞれの正本の責務をAPI contractへ混ぜないでください。
 
-[Output Contract]
-JSON object だけを返してください。Markdown は返さないでください。
-artifactKind は "plan_mode_api_contract"、view は "api_io_contract" にしてください。
-operations には実装予定または変更対象の endpoint だけを書いてください。
-各 operation は operationId と responses を必ず持たせてください。
-path parameter と GET/HEAD/DELETE の query parameter は operations[].parameters に必ず書いてください。
-POST/PUT/PATCH の JSON body は requestBody.schemaName と componentSchemas.fields に必ず書いてください。body field を parameters に混ぜないでください。
-query/path/header/cookie parameter は name、in、type、required、description を具体化してください。該当しない場合は空配列にしてください。
-requestBody.schemaName、response.schemaName、zodOwnerFile、state field が該当しない場合は null ではなく空文字にしてください。
-validation.examples の payloadJson は JSON.stringify 済みの文字列にしてください。
-status code は success / validation / conflict / auth / not found / server error のうち実装判断に必要なものだけを具体化してください。
-componentSchemas.fields には request / response / error body の主要 field、required、type、enum 相当の判断を必ず反映してください。型名だけで終わらせないでください。
-DELETE response、toggle semantics、sort direction、id generation が未確定で project convention から決められない場合は、推測せず openQuestions に残してください。
+schemas[].schemaJson と parameters[].schemaJson には、JSON.stringify済みのOpenAPI 3.1互換JSON Schema 2020-12 objectを書いてください。objectのrequired、additionalProperties、nested object、array items、enum、format、制約を説明文ではなくschema keywordで表現してください。
+requestBody.schemaNameとresponses[].schemaNameはschemas[].nameを参照し、JSON bodyがない場合だけ空文字にしてください。body fieldをparametersへ混ぜないでください。
+path templateの各fieldは同名のpath parameterを持たせ、requiredをtrueにしてください。requestBody.schemaNameが空文字の場合はrequestBody.requiredをfalse、descriptionも空文字にしてください。
+success、validation、conflict、auth、not foundのstatus codeは、実装判断に必要なものだけを具体化してください。
+
+API経由で観測・変更できるstateはresponses、status code、response bodyのstate/status/phase field、error schema、stateTransitionsで一貫させてください。
+validation.examples[].payloadJsonはJSON.stringify済みのpayloadにしてください。zodOwnerFileやstrictnessは生成しません。
+UI local state、worker lease、LLM JSON、MCP tool inputのようなnon-HTTP contractは含めないでください。
+未確定事項を推測で埋めず、openQuestionsへ残してください。summaryとdescriptionは重複を避けて簡潔にしてください。
 '''

@@ -1,4 +1,4 @@
-import type { TestEvidenceSet } from "../../../shared/schemas/verification-checklist.schema";
+import type { TestInventoryCaseSelection } from "../../../shared/schemas/verification-checklist.schema";
 import type { AgentSafetyPolicy } from "../../modules/codingAgent";
 import {
 	projectExplorationCatalogTool,
@@ -362,18 +362,8 @@ export async function executeWorkerTool(
 				command: args.command as string,
 				repoRoot,
 				taskId: input.taskId,
-				runId: (args.runId as string | undefined) || input.runId,
-				verificationDocumentId: args.verificationDocumentId as
-					| string
-					| undefined,
+				runId: input.runId,
 				checkKind: (args.checkKind as never) || "other",
-				conditionIds: Array.isArray(args.conditionIds)
-					? args.conditionIds.map(String)
-					: undefined,
-				evidenceKinds: Array.isArray(args.evidenceKinds)
-					? (args.evidenceKinds.map(String) as never)
-					: undefined,
-				runnerHint: args.runnerHint as never,
 				displayMode: args.displayMode as never,
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
@@ -408,13 +398,15 @@ export async function executeWorkerTool(
 		return {
 			result: await collectTestInventoryTool({
 				taskId: input.taskId || "",
-				runId: (args.runId as string | undefined) || input.runId,
+				runId: input.runId,
 				repoRoot,
 				cwd: args.cwd as string | undefined,
 				blockedCommands: safetyPolicy?.blockedCommands,
 				allowedPaths: safetyPolicy?.allowedPaths,
+				externalAllowedPaths: safetyPolicy?.externalAllowedPaths,
 				deniedPaths: safetyPolicy?.deniedPaths,
 				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+				confinementRequired,
 			}),
 		};
 	}
@@ -429,12 +421,8 @@ export async function executeWorkerTool(
 				runId: input.runId,
 				repoRoot,
 				verificationDocumentId: args.verificationDocumentId as string,
-				cwd: args.cwd as string | undefined,
-				evidenceSet: args.evidenceSet as TestEvidenceSet,
-				blockedCommands: safetyPolicy?.blockedCommands,
-				allowedPaths: safetyPolicy?.allowedPaths,
-				deniedPaths: safetyPolicy?.deniedPaths,
-				maxCommandSeconds: safetyPolicy?.maxCommandSeconds,
+				inventoryId: args.inventoryId as string,
+				mappings: args.mappings as TestInventoryCaseSelection[],
 			}),
 		};
 	}

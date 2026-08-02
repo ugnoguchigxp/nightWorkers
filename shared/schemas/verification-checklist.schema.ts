@@ -108,6 +108,7 @@ export const testDefinitionSourceSchema = z.enum([
 	"declared_in_test",
 	"coding_agent_assessment",
 	"schema_evidence_set",
+	"inventory_case_selection",
 ]);
 
 export const workspaceSourceSnapshotSchema = z
@@ -201,35 +202,59 @@ export const testEvidenceSetSchema = z
 	})
 	.strict();
 
-export const testEvidenceSetMappingToolInputSchema = z
+export const testInventoryCaseSelectionSchema = z
 	.object({
-		verificationDocumentId: z.string().trim().min(1),
-		cwd: z.string().trim().min(1).max(2_000).optional(),
-		evidenceSet: testEvidenceSetSchema,
+		caseKey: z
+			.string()
+			.trim()
+			.min(1)
+			.max(4_000)
+			.describe(
+				"collect_test_inventoryの同じinventory内にあるactive caseのcaseKey。nameへ書き換えず、そのまま指定する。",
+			),
+		conditionIds: z
+			.array(z.string().regex(/^AC-\d{3}$/))
+			.min(1)
+			.max(100)
+			.refine((values) => new Set(values).size === values.length, {
+				message: "conditionIds must be unique",
+			})
+			.describe("このcaseKeyで検証するVerification Condition ID。"),
 	})
 	.strict();
 
-export const testEvidenceSetMappingWriteSchema =
-	testEvidenceSetMappingToolInputSchema
+export const testConditionMappingToolInputSchema = z
+	.object({
+		verificationDocumentId: z.string().trim().min(1),
+		inventoryId: z
+			.string()
+			.trim()
+			.min(1)
+			.describe("collect_test_inventory応答のinventoryId。"),
+		mappings: z
+			.array(testInventoryCaseSelectionSchema)
+			.min(1)
+			.max(500)
+			.describe("inventory内のcaseKeyとVerification Conditionの対応。"),
+	})
+	.strict();
+
+export const testConditionMappingWriteSchema =
+	testConditionMappingToolInputSchema
 		.extend({
 			taskId: z.string().trim().min(1),
 			runId: z.string().trim().min(1).optional(),
 			repoRoot: z.string().trim().min(1),
-			blockedCommands: z.array(z.string()).optional(),
-			allowedPaths: z.array(z.string()).optional(),
-			externalAllowedPaths: z.array(z.string()).optional(),
-			deniedPaths: z.array(z.string()).optional(),
-			maxCommandSeconds: z.number().int().positive().optional(),
 		})
 		.strict();
 
 const {
-	$schema: _testEvidenceSetMappingMetaSchema,
-	...testEvidenceSetMappingProviderSchema
-} = z.toJSONSchema(testEvidenceSetMappingToolInputSchema);
+	$schema: _testConditionMappingMetaSchema,
+	...testConditionMappingProviderSchema
+} = z.toJSONSchema(testConditionMappingToolInputSchema);
 
-export const testEvidenceSetMappingJsonSchema =
-	testEvidenceSetMappingProviderSchema as Record<string, unknown>;
+export const testConditionMappingJsonSchema =
+	testConditionMappingProviderSchema as Record<string, unknown>;
 
 export const verificationConditionSchema = z
 	.object({
@@ -420,11 +445,14 @@ export type TestInventory = z.infer<typeof testInventorySchema>;
 export type TestConditionMapping = z.infer<typeof testConditionMappingSchema>;
 export type TestEvidenceReference = z.infer<typeof testEvidenceReferenceSchema>;
 export type TestEvidenceSet = z.infer<typeof testEvidenceSetSchema>;
-export type TestEvidenceSetMappingToolInput = z.infer<
-	typeof testEvidenceSetMappingToolInputSchema
+export type TestInventoryCaseSelection = z.infer<
+	typeof testInventoryCaseSelectionSchema
 >;
-export type TestEvidenceSetMappingWrite = z.infer<
-	typeof testEvidenceSetMappingWriteSchema
+export type TestConditionMappingToolInput = z.infer<
+	typeof testConditionMappingToolInputSchema
+>;
+export type TestConditionMappingWrite = z.infer<
+	typeof testConditionMappingWriteSchema
 >;
 
 export function isExpectedEvidenceAllowedByCompletionScope(

@@ -187,9 +187,22 @@ function buildSatisfactionConditions(result: CompletionCheckResult) {
 			"current sourceのrequired automated conditionとactive testcaseの明示mappingを記録する。",
 		];
 	}
-	if (result.suggestedAction === "run_structured_tests") {
+	if (
+		result.suggestedAction === "run_check" ||
+		result.suggestedAction === "run_structured_tests"
+	) {
 		return [
 			"mappingされた同一testcaseをstructured resultが保存されるmanaged checkで実行する。",
+		];
+	}
+	if (result.suggestedAction === "fix_test_failure") {
+		return [
+			"失敗したmapping対象testcaseまたはproduction実装を修正し、current sourceでmanaged checkを再実行する。",
+		];
+	}
+	if (result.suggestedAction === "report_test_evidence_failure") {
+		return [
+			"test evidenceのcaptureまたはidentityに関するnon-retryableなhost障害を、typed reasonとともに報告する。",
 		];
 	}
 	if (result.suggestedAction === "request_human_confirmation") {

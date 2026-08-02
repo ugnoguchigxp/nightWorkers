@@ -11,6 +11,12 @@ import type {
 import { PLAN_ARTIFACT_SOURCE_SUMMARY_MAX_BYTES } from "./plan-artifact-input-renderer";
 import { resolvePlanModeRoutingSnapshot } from "./plan-mode-routing-query";
 import { renderMessageReferenceSummary } from "./specification-plan-reference-renderer";
+import {
+	getMessageApiContract,
+	getMessageBlueprint,
+	getMessageDataModelArtifact,
+	isRecord,
+} from "./specification-schema-reference-renderer";
 
 type SourceKind =
 	| "feature_plan"
@@ -137,8 +143,8 @@ export function selectPlanArtifactSourceContent(input: {
 	kind: SourceKind;
 	target: PlanArtifactGenerationTarget;
 }) {
+	const originalBytes = Buffer.byteLength(input.content, "utf8");
 	const content = input.content.trim();
-	const originalBytes = Buffer.byteLength(content, "utf8");
 	if (originalBytes <= PLAN_ARTIFACT_SOURCE_SUMMARY_MAX_BYTES) {
 		return {
 			renderedContent: content,
@@ -147,10 +153,14 @@ export function selectPlanArtifactSourceContent(input: {
 		};
 	}
 	const mode = sourceSummaryMode(input.kind, input.target);
-	const summary = renderMessageReferenceSummary(
-		{ id: "source", content, metadataJson: input.metadataJson },
-		mode,
-	).trim();
+	const sourceMessage = {
+		id: "source",
+		content,
+		metadataJson: input.metadataJson,
+	};
+	const summary = hasCanonicalSummarySource(input)
+		? renderMessageReferenceSummary(sourceMessage, mode).trim()
+		: "";
 	const summaryBytes = Buffer.byteLength(summary, "utf8");
 	if (
 		summary &&
@@ -161,7 +171,6 @@ export function selectPlanArtifactSourceContent(input: {
 			renderedContent: [
 				"[Artifact canonical summary: 型別rendererにより圧縮済みです。]",
 				summary,
-				`[Artifact original bytes: ${originalBytes}]`,
 			].join("\n"),
 			contentMode: "canonical_summary" as const,
 			originalBytes,
@@ -172,6 +181,37 @@ export function selectPlanArtifactSourceContent(input: {
 		contentMode: "raw" as const,
 		originalBytes,
 	};
+}
+
+function hasCanonicalSummarySource(input: {
+	metadataJson: unknown;
+	kind: SourceKind;
+	target: PlanArtifactGenerationTarget;
+}) {
+	const message = {
+		id: "source",
+		content: "",
+		metadataJson: input.metadataJson,
+	};
+	if (input.kind === "blueprint") return Boolean(getMessageBlueprint(message));
+	if (input.kind === "data_model")
+		return Boolean(getMessageDataModelArtifact(message));
+	if (input.kind === "feature_plan") {
+		if (!isRecord(input.metadataJson)) return false;
+		return (
+			isRecord(input.metadataJson.markdownDocumentData) ||
+			typeof input.metadataJson.markdown === "string"
+		);
+	}
+	if (input.kind === "previous_target") {
+		if (input.target === "api_io_contract")
+			return Boolean(getMessageApiContract(message));
+		if (input.target === "data_model")
+			return Boolean(getMessageDataModelArtifact(message));
+		if (input.target === "blueprint")
+			return Boolean(getMessageBlueprint(message));
+	}
+	return isRecord(input.metadataJson);
 }
 
 function sourceSummaryMode(

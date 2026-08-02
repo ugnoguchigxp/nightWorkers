@@ -250,6 +250,45 @@ describe("Worker Tools Unit Tests", () => {
 		});
 	});
 
+	it("normalizes generic and specific automated evidence independent of order", async () => {
+		const report = {
+			testResults: [
+				{
+					name: "tests/example.test.ts",
+					assertionResults: [{ fullName: "example passes", status: "passed" }],
+				},
+			],
+		};
+		await fs.writeFile(
+			path.join(dummyRepoDir, "package.json"),
+			JSON.stringify({
+				type: "module",
+				scripts: {
+					test: `node -e 'console.log(JSON.stringify(${JSON.stringify(report)}))'`,
+				},
+			}),
+			"utf-8",
+		);
+
+		for (const evidenceKinds of [
+			["automated_test", "unit_test"],
+			["unit_test", "automated_test"],
+		] as const) {
+			const result = await runCheckTool({
+				command: "test",
+				checkKind: "test",
+				repoRoot: dummyRepoDir,
+				evidenceKinds: [...evidenceKinds],
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.payload).toMatchObject({
+				evidenceKinds: ["unit_test"],
+				structuredCaseCount: 1,
+			});
+		}
+	});
+
 	it("reports policy rejections directly instead of artifact paths", async () => {
 		const result = await runCheckTool({
 			command: "unknown-quality-command",

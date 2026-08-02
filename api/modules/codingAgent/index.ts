@@ -76,8 +76,14 @@ export {
 	isCompatibleEvidenceKind,
 } from "./verification/evidence-kind-compatibility";
 export { evaluateEvidenceReadiness } from "./verification/evidence-readiness.service";
-export { resolveExecutionCaseIdentities } from "./verification/execution-case-identity";
-export { validateRunCheckEvidenceScope } from "./verification/run-check-evidence-scope.service";
+export {
+	resolveExecutionCaseIdentities,
+	resolveExecutionCaseIdentityDetails,
+} from "./verification/execution-case-identity";
+export {
+	resolveRunCheckEvidenceScope,
+	validateRunCheckEvidenceScope,
+} from "./verification/run-check-evidence-scope.service";
 export {
 	collectTestInventoryTool,
 	recordTestConditionMappingTool,

@@ -90,7 +90,10 @@ export async function evaluateAcceptanceConditionAssurance(input: {
 						eq(codingAgentTestInventoryRuns.runId, input.runId),
 					),
 				)
-				.orderBy(desc(codingAgentTestInventoryRuns.createdAt)),
+				.orderBy(
+					desc(codingAgentTestInventoryRuns.createdAt),
+					desc(codingAgentTestInventoryRuns.id),
+				),
 			db
 				.select()
 				.from(verificationEvidenceRuns)

@@ -23,11 +23,32 @@ export function parseVitestJsonCases(input: {
 	text: string;
 	evidenceKind?: ExpectedEvidence;
 }): NormalizedTestCaseEvidence[] {
+	return parseVitestJsonArtifact(input).cases;
+}
+
+export function parseVitestJsonArtifact(input: {
+	text: string;
+	evidenceKind?: ExpectedEvidence;
+}): { recognized: boolean; cases: NormalizedTestCaseEvidence[] } {
 	const parsed = parseJsonObject(input.text);
-	if (!parsed) return [];
+	if (!parsed) return { recognized: false, cases: [] };
 	const result = parsed as VitestJsonResult;
-	if (!Array.isArray(result.testResults)) return [];
-	return result.testResults.flatMap((fileResult) => {
+	if (!Array.isArray(result.testResults)) {
+		return { recognized: false, cases: [] };
+	}
+	if (
+		result.testResults.some(
+			(fileResult) =>
+				!isRecord(fileResult) ||
+				!Array.isArray(fileResult.assertionResults) ||
+				fileResult.assertionResults.some(
+					(assertion) => !isRecord(assertion) || !readAssertionName(assertion),
+				),
+		)
+	) {
+		return { recognized: false, cases: [] };
+	}
+	const cases = result.testResults.flatMap((fileResult) => {
 		const filePath =
 			typeof fileResult.name === "string" && fileResult.name.trim()
 				? fileResult.name.trim()
@@ -62,6 +83,7 @@ export function parseVitestJsonCases(input: {
 			];
 		});
 	});
+	return { recognized: true, cases };
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -75,6 +97,10 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 	} catch {
 		return null;
 	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function readAssertionName(

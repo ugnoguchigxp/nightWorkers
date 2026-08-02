@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { TestEvidenceSet } from "../../../../shared/schemas/verification-checklist.schema";
+import type { TestInventoryCaseSelection } from "../../../../shared/schemas/verification-checklist.schema";
 
 export function digestTestDefinitionInventory(
 	cases: Array<{
@@ -27,13 +27,22 @@ export function digestTestDefinitionInventory(
 
 export function digestTestEvidenceMappingRevision(input: {
 	verificationDocumentId: string;
-	inventoryDigest: string;
-	evidenceSet: TestEvidenceSet;
+	inventoryId: string;
+	currentSourceStateHash: string;
+	mappings: TestInventoryCaseSelection[];
 }) {
 	return digest({
 		verificationDocumentId: input.verificationDocumentId,
-		inventoryDigest: input.inventoryDigest,
-		evidenceSet: input.evidenceSet,
+		inventoryId: input.inventoryId,
+		currentSourceStateHash: input.currentSourceStateHash,
+		mappings: input.mappings
+			.map((mapping) => ({
+				caseKey: mapping.caseKey,
+				conditionIds: [...mapping.conditionIds].sort(),
+			}))
+			.sort((left, right) =>
+				JSON.stringify(left).localeCompare(JSON.stringify(right)),
+			),
 	});
 }
 

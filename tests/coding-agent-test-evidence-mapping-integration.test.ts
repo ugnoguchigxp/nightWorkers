@@ -8,12 +8,17 @@ import { db } from "../api/db/client";
 import { repositories, tasks } from "../api/db/schema";
 import {
 	codingAgentTestConditionMappings,
+	codingAgentTestInventoryCases,
 	codingAgentTestInventoryRuns,
 	verificationChecklistItems,
 	verificationDocuments,
+	verificationEvidenceRuns,
 } from "../api/db/verification-schema";
 import { runCompletionCheck } from "../api/modules/codingAgent/application/completion-check.service";
-import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
+import {
+	collectTestInventoryTool,
+	recordTestConditionMappingTool,
+} from "../api/modules/codingAgent/verification/test-inventory-tools";
 import { captureWorkspaceSourceSnapshot } from "../api/modules/codingAgent/verification/workspace-source-snapshot";
 import * as nightworkersRepository from "../api/modules/nightworkers/nightworkers.repository";
 import {
@@ -21,6 +26,7 @@ import {
 	recordVerificationEvidence,
 } from "../api/modules/nightworkers/nightworkers.verification.service";
 import { buildCommandLevelEvidence } from "../api/services/verification/normalized-evidence";
+import { runCheckTool } from "../api/services/worker-tools/run-check";
 
 const repositoryIds: string[] = [];
 const temporaryDirectories: string[] = [];
@@ -84,7 +90,12 @@ async function createTestRepository() {
 	await fs.mkdir(path.join(repoRoot, "tests"), { recursive: true });
 	await fs.writeFile(
 		path.join(repoRoot, "package.json"),
-		JSON.stringify({ devDependencies: { vitest: "test" } }),
+		JSON.stringify({
+			scripts: {
+				test: "vitest run tests/coding-agent-test-evidence-matcher.test.ts",
+			},
+			devDependencies: { vitest: "test" },
+		}),
 	);
 	await fs.writeFile(
 		path.join(repoRoot, "tests/coding-agent-test-evidence-matcher.test.ts"),
@@ -141,7 +152,7 @@ describe("schema test evidence mapping integration", () => {
 						text: "accepts a name at exactly 90% similarity",
 						category: "validation",
 						verificationKind: "automated_test",
-						expectedEvidence: ["unit_test"],
+						expectedEvidence: ["automated_test", "unit_test"],
 						expectedResult: "the mapped matcher test passes",
 						failureMeaning: "the condition is not verified",
 						required: true,
@@ -151,62 +162,70 @@ describe("schema test evidence mapping integration", () => {
 				commands: [],
 			},
 		});
+		const inventory = await collectTestInventoryTool({
+			taskId: task.id,
+			runId: run?.id,
+			repoRoot,
+		});
+		expect(inventory.ok).toBe(true);
+		const selectedCase = inventory.payload?.cases.find(
+			(testCase) =>
+				testCase.name === "accepts a name at exactly 90% similarity",
+		);
+		expect(selectedCase).toBeTruthy();
 		const mapping = await recordTestConditionMappingTool({
 			taskId: task.id,
 			runId: run?.id,
 			verificationDocumentId: document.id,
 			repoRoot,
-			evidenceSet: {
-				version: 1,
-				references: [
-					{
-						testName: "accepts a name at exactly 90% similarity",
-						filePath: "tests/coding-agent-test-evidence-matcher.test.ts",
-						runner: "vitest",
-						conditionIds: ["AC-001"],
-					},
-				],
-			},
-		});
-		expect(mapping.ok).toBe(true);
-		const caseKey = mapping.payload?.matches[0]?.caseKey;
-		expect(caseKey).toBeTruthy();
-		const sourceSnapshot = await captureWorkspaceSourceSnapshot(repoRoot);
-		const testEvidence = buildCommandLevelEvidence({
-			runId: run?.id ?? "",
-			taskId: task.id,
-			command: "vitest --reporter=json",
-			cwd: repoRoot,
-			startedAt: "2026-08-01T00:00:00.000Z",
-			finishedAt: "2026-08-01T00:00:01.000Z",
-			exitCode: 0,
-			runner: "vitest",
-			rawStdoutArtifactId: "test-stdout",
-			rawStderrArtifactId: "test-stderr",
-			evidenceKinds: ["unit_test"],
-			cases: [
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [
 				{
-					id: "case-result-1",
-					caseKey,
-					name: "accepts a name at exactly 90% similarity",
-					filePath: "tests/coding-agent-test-evidence-matcher.test.ts",
-					runner: "vitest",
-					evidenceKind: "unit_test",
-					status: "passed",
-					conditionIds: [],
+					caseKey: selectedCase?.caseKey ?? "",
+					conditionIds: ["AC-001"],
 				},
 			],
 		});
-		testEvidence.sourceSnapshot = sourceSnapshot;
-		testEvidence.testExecutionObserved = true;
-		testEvidence.sourceMutatedDuringCheck = false;
-		await recordVerificationEvidence({
+		expect(mapping.ok).toBe(true);
+		const caseKey = mapping.payload?.selections[0]?.caseKey;
+		expect(caseKey).toBeTruthy();
+		const repeatedInventory = await collectTestInventoryTool({
+			taskId: task.id,
+			runId: run?.id,
+			repoRoot,
+		});
+		expect(repeatedInventory).toMatchObject({ ok: true });
+		expect(repeatedInventory.payload?.id).not.toBe(inventory.payload?.id);
+		const testResult = await runCheckTool({
 			taskId: task.id,
 			runId: run?.id,
 			verificationDocumentId: document.id,
+			repoRoot,
+			command: "test",
 			checkKind: "test",
-			evidence: testEvidence,
 		});
+		expect(testResult, JSON.stringify(testResult)).toMatchObject({
+			ok: true,
+			payload: {
+				status: "passed",
+				evidenceKinds: ["unit_test"],
+				structuredCaseCount: 1,
+				resolvedCaseCount: 1,
+			},
+		});
+		expect(testResult.payload.command).toContain("--reporter=json");
+		const [storedTestEvidence] = await db
+			.select()
+			.from(verificationEvidenceRuns)
+			.where(
+				eq(verificationEvidenceRuns.id, testResult.payload.evidenceRunId ?? ""),
+			);
+		expect(storedTestEvidence).toMatchObject({
+			parsedArtifactId: expect.stringMatching(/^sha256:/),
+			testExecutionObserved: true,
+			evidenceKindsJson: ["unit_test"],
+		});
+		const sourceSnapshot = await captureWorkspaceSourceSnapshot(repoRoot);
 		const verifyEvidence = buildCommandLevelEvidence({
 			runId: run?.id ?? "",
 			taskId: task.id,
@@ -287,40 +306,43 @@ describe("schema test evidence mapping integration", () => {
 
 	it("discovers once and atomically records every condition relation", async () => {
 		const fixture = await createVerificationFixture(["AC-001", "AC-002"]);
+		const inventory = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+		});
+		expect(inventory.ok).toBe(true);
+		const selectedCase = inventory.payload?.cases.find(
+			(testCase) =>
+				testCase.name === "accepts a name at exactly 90% similarity",
+		);
+		expect(selectedCase).toBeTruthy();
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			evidenceSet: {
-				version: 1,
-				references: [
-					{
-						testName: "accepts a name at exactly 90% similarity",
-						filePath: "tests/coding-agent-test-evidence-matcher.test.ts",
-						runner: "vitest",
-						conditionIds: ["AC-001", "AC-002"],
-					},
-				],
-			},
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [
+				{
+					caseKey: selectedCase?.caseKey ?? "",
+					conditionIds: ["AC-001", "AC-002"],
+				},
+			],
 		});
 
 		expect(result, JSON.stringify(result)).toMatchObject({
 			ok: true,
 			payload: {
-				matchThreshold: 0.9,
-				referenceCount: 1,
+				selectionCount: 1,
 				mappingCount: 2,
-				matches: [
+				selections: [
 					expect.objectContaining({
-						caseKey: expect.stringMatching(/^static:vitest:/),
-						score: 1,
+						caseKey: selectedCase?.caseKey,
 					}),
 				],
 			},
 		});
 		expect(result.payload).not.toHaveProperty("mappings");
-		expect(result.payload?.matches[0]).toEqual({
-			referenceIndex: 0,
-			caseKey: expect.stringMatching(/^static:vitest:/),
-			score: 1,
+		expect(result.payload?.selections[0]).toEqual({
+			mappingIndex: 0,
+			caseKey: selectedCase?.caseKey,
 		});
 		const mappings = await db
 			.select()
@@ -333,38 +355,42 @@ describe("schema test evidence mapping integration", () => {
 			);
 		expect(mappings).toHaveLength(2);
 		expect(
-			mappings.every((mapping) => mapping.source === "schema_evidence_set"),
+			mappings.every(
+				(mapping) => mapping.source === "inventory_case_selection",
+			),
 		).toBe(true);
 	});
 
-	it("[AC-014] returns missing evidence and does not invent a semantic mapping", async () => {
+	it("[AC-014] rejects an unknown caseKey without inventing a semantic mapping", async () => {
 		const fixture = await createVerificationFixture(["AC-001"]);
+		const inventory = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+		});
+		expect(inventory.ok).toBe(true);
 		const inventoriesBefore = await db
 			.select({ id: codingAgentTestInventoryRuns.id })
 			.from(codingAgentTestInventoryRuns)
 			.where(eq(codingAgentTestInventoryRuns.taskId, fixture.taskId));
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			evidenceSet: {
-				version: 1,
-				references: [
-					{
-						testName: "a test that does not exist anywhere",
-						runner: "vitest",
-						conditionIds: ["AC-001"],
-					},
-				],
-			},
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [
+				{
+					caseKey: "vitest:tests/missing.test.ts:not present",
+					conditionIds: ["AC-001"],
+				},
+			],
 		});
 
 		expect(result).toMatchObject({
 			ok: false,
 			error: {
-				code: "TEST_EVIDENCE_NOT_FOUND",
+				code: "TEST_CASE_NOT_FOUND",
 				retryable: false,
 				issues: [
 					expect.objectContaining({
-						path: ["evidenceSet", "references", 0],
+						path: ["mappings", 0, "caseKey"],
 					}),
 				],
 			},
@@ -386,26 +412,168 @@ describe("schema test evidence mapping integration", () => {
 		expect(inventoriesAfter).toHaveLength(inventoriesBefore.length);
 	});
 
-	it("rejects a cwd outside the registered repository boundary", async () => {
+	it("rejects candidate case keys from exact mapping", async () => {
 		const fixture = await createVerificationFixture(["AC-001"]);
+		const inventory = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+		});
+		expect(inventory.ok).toBe(true);
+		await db.insert(codingAgentTestInventoryCases).values({
+			id: crypto.randomUUID(),
+			inventoryId: inventory.payload?.id ?? "",
+			caseKey: "T999",
+			name: "candidate only",
+			filePath: "tests/candidate.test.ts",
+			runner: "unknown",
+			discoveryLevel: "candidate",
+			declaredConditionIdsJson: [],
+		});
+
 		const result = await recordTestConditionMappingTool({
 			...fixture,
-			cwd: "/tmp",
-			evidenceSet: {
-				version: 1,
-				references: [
-					{
-						testName: "creates a todo",
-						conditionIds: ["AC-001"],
-					},
-				],
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [{ caseKey: "T999", conditionIds: ["AC-001"] }],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "TEST_CASE_NOT_ACTIVE", retryable: false },
+		});
+
+		const legacyCaseKey =
+			"static:vitest:tests/legacy.test.ts:legacy opaque key";
+		await db.insert(codingAgentTestInventoryCases).values({
+			id: crypto.randomUUID(),
+			inventoryId: inventory.payload?.id ?? "",
+			caseKey: legacyCaseKey,
+			name: "legacy opaque key",
+			filePath: "tests/legacy.test.ts",
+			runner: "vitest",
+			discoveryLevel: "active",
+			declaredConditionIdsJson: [],
+		});
+		await expect(
+			recordTestConditionMappingTool({
+				...fixture,
+				inventoryId: inventory.payload?.id ?? "",
+				mappings: [{ caseKey: legacyCaseKey, conditionIds: ["AC-001"] }],
+			}),
+		).resolves.toMatchObject({ ok: true });
+	});
+
+	it("rejects mappings against a superseded Verification Document", async () => {
+		const fixture = await createVerificationFixture(["AC-001"]);
+		const inventory = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+		});
+		const selectedCase = inventory.payload?.cases.find(
+			(testCase) => testCase.discoveryLevel === "active",
+		);
+		expect(selectedCase).toBeTruthy();
+		await db
+			.update(verificationDocuments)
+			.set({ status: "superseded" })
+			.where(eq(verificationDocuments.id, fixture.verificationDocumentId));
+
+		const result = await recordTestConditionMappingTool({
+			...fixture,
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [
+				{
+					caseKey: selectedCase?.caseKey ?? "",
+					conditionIds: ["AC-001"],
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "TEST_MAPPING_AUTHORITY_MISMATCH", retryable: false },
+		});
+	});
+
+	it("rejects an inventory after repository source changes", async () => {
+		const fixture = await createVerificationFixture(["AC-001"]);
+		const inventory = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+		});
+		const selectedCase = inventory.payload?.cases.find(
+			(testCase) =>
+				testCase.name === "accepts a name at exactly 90% similarity",
+		);
+		expect(selectedCase).toBeTruthy();
+		await fs.appendFile(
+			path.join(
+				fixture.repoRoot,
+				"tests/coding-agent-test-evidence-matcher.test.ts",
+			),
+			"\n// source changed after inventory collection\n",
+		);
+
+		const result = await recordTestConditionMappingTool({
+			...fixture,
+			inventoryId: inventory.payload?.id ?? "",
+			mappings: [
+				{
+					caseKey: selectedCase?.caseKey ?? "",
+					conditionIds: ["AC-001"],
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: {
+				code: "TEST_MAPPING_SOURCE_STALE",
+				retryable: false,
+				recoveryAction: "collect_test_inventory",
 			},
+		});
+	});
+
+	it("rejects a cwd outside the registered repository boundary", async () => {
+		const fixture = await createVerificationFixture(["AC-001"]);
+		const result = await collectTestInventoryTool({
+			taskId: fixture.taskId,
+			repoRoot: fixture.repoRoot,
+			cwd: "/tmp",
 		});
 
 		expect(result).toMatchObject({
 			ok: false,
 			error: {
 				code: "TEST_INVENTORY_WORKSPACE_DENIED",
+				retryable: false,
+			},
+		});
+	});
+
+	it("returns a typed failure when supported active discovery fails", async () => {
+		const repoRoot = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nightworkers-evidence-discovery-failure-"),
+		);
+		temporaryDirectories.push(repoRoot);
+		await fs.writeFile(
+			path.join(repoRoot, "package.json"),
+			JSON.stringify({ devDependencies: { vitest: "test" } }),
+		);
+		await fs.writeFile(
+			path.join(repoRoot, "broken.test.ts"),
+			'it("broken", () => {\n',
+		);
+
+		const result = await collectTestInventoryTool({
+			taskId: crypto.randomUUID(),
+			repoRoot,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: {
+				code: "TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED",
 				retryable: false,
 			},
 		});

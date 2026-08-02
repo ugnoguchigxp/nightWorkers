@@ -263,7 +263,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Task、変更内容、Todo Context、Verification Documentから必要なmanaged evidenceを判断してください。required automated conditionはcurrent sourceのactive testcaseとの明示mappingと、その同一testcaseのstructured execution成功を必要とします。mappingだけ、別testの成功、raw shellのexit 0、assistant本文の完了申告はmanaged evidenceになりません。expectedEvidenceが複数ある場合は各種別を確認してください。\nProject正本verifyもcurrent sourceでPassしている必要があります。具体的なtool順序は固定せず、completion_checkのtyped reasonからmapping記録、structured test、source修正、Project正本verifyのどれが必要かを判断してください。証跡が不足しているcompletion_checkはConfirmation Receiptを保存しません。\nrequired conditionとProject正本verifyがすべてsafe_passの場合だけ、completion_checkは同一Run・Verification Documentにつき不変のConfirmation Receiptを一度保存します。confirmed後は同じ確認を繰り返さず、sourceを変更しないまま同じProject正本verifyをfollow-upとして実行してください。sourceまたはVerification Documentを変更する必要が生じた場合は既存Receiptを上書きせず、新しいimplementation Runで再検証してください。\nQuestionnaireのtest範囲を必ず守り、選択されていないtest種別を実行しないでください。特にE2Eが対象外ならE2E commandを選択・実行しないでください。run_checkには実行が生成するevidenceKindsを明示してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness snapshotが返された場合はassurance.status、assurance.reasonCodes、mapping、verify、confirmation、suggestedActionを次の判断に使ってください。awaiting_confirmationでは一度だけConfirmation Receiptを保存し、confirmedではfollow-up verifyだけを実行してください。同じreadinessDigestのまま同じ操作を繰り返さないでください。\n完了報告形式:\n"
+                  "value": "Task、変更内容、Todo Context、Verification Documentから必要なmanaged evidenceを判断してください。required automated conditionはcurrent sourceのactive testcaseとの明示mappingと、その同一testcaseのstructured execution成功を必要とします。mappingだけ、別testの成功、raw shellのexit 0、assistant本文の完了申告はmanaged evidenceになりません。expectedEvidenceが複数ある場合は各種別を確認してください。\nProject正本verifyもcurrent sourceでPassしている必要があります。具体的なtool順序は固定せず、completion_checkのtyped reasonからmapping記録、structured test、source修正、Project正本verifyのどれが必要かを判断してください。証跡が不足しているcompletion_checkはConfirmation Receiptを保存しません。\nrequired conditionとProject正本verifyがすべてsafe_passの場合だけ、completion_checkは同一Run・Verification Documentにつき不変のConfirmation Receiptを一度保存します。confirmed後は同じ確認を繰り返さず、sourceを変更しないまま同じProject正本verifyをfollow-upとして実行してください。sourceまたはVerification Documentを変更する必要が生じた場合は既存Receiptを上書きせず、新しいimplementation Runで再検証してください。\nQuestionnaireのtest範囲を必ず守り、選択されていないtest種別を実行しないでください。特にE2Eが対象外ならE2E commandを選択・実行しないでください。testのrun_checkには通常commandとcheckKindだけを渡し、condition scope、evidence kind、runner、structured reporterはhostの解決結果に従ってください。TEST_EVIDENCE_CAPTURE_FAILEDまたはTEST_IDENTITY_AMBIGUOUSは同じcommandやreporterを変えて反復せず、non-retryableなhost障害として報告してください。\n検証は期待と実観測を照合し、exit status、stdout/stderr、PID・cwd・port・repository rootの差を次の判断材料にしてください。\n完了前にpending、running、needs_humanのTodoを残さないでください。不要なTodoは理由付きでskippedへ遷移してください。\ntool callのないassistant本文は最終回答候補です。completion preconditionとの差分、最新Todo、直前候補、未達条件を同時に読み、Todo更新、追加検証、回答再生成から合理的な次actionを選んでください。\ncompletion readiness projectionが返された場合はready、reason、suggestedAction、readinessDigestを次の判断に使ってください。Receiptが返された後はsourceを変えずにfollow-up verifyを実行してください。同じreadinessDigestのまま同じ操作を繰り返さないでください。\n完了報告形式:\n"
                 },
                 {
                   "type": "variable",
@@ -272,11 +272,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:0ddf6dd12d92151df840fac20e5271c10405219d33c72832505c8ab0200d4db7"
+          "artifactHash": "sha256:e4b5c67f7ba4439ab5cf58b67a2edb7b605213c28e796960873bc36e65fc6ad7"
         }
       },
-      "definitionHash": "sha256:5982b08a1b5ce604a1987ef4dd8d696394bde46f1c0b2db7967a977dbdc94e3c",
-      "releaseDigest": "sha256:8fa5cdb392a3e89ca466562eed5c58eba22dc2c9102cd7260a5cf474bbc182b5"
+      "definitionHash": "sha256:ca9036a38993dd78ec083c1927627ac9c08e1a628f00195f08f1dc88eba4d157",
+      "releaseDigest": "sha256:b88c9713630ad485b0cfd2c9f3685fa397b32d5ea8f8ff840ac803308f264d5e"
     },
     "codingAgent.current-todo": {
       "key": "codingAgent.current-todo",
@@ -2562,16 +2562,16 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "[SystemContext]\nOpenAPI 3.1.0 互換に正規化できる API contract JSON を生成してください。\nFeature Plan、Questionnaire、Blueprint、Data Model は入力 context として扱い、正本の責務を混ぜないでください。\nAPI 経由で観測・変更できる state は、OpenAPI responses、status code、response body の state/status/phase field、error schema に統合してください。\nHTTP API の request / response / error validation は、独立した zod_schema_design ではなく components.schemas と validation に統合してください。\nUI local state、worker lease、LLM JSON、MCP tool input のような non-HTTP contract は、この view に無理に含めず openQuestions または別 view の必要性として残してください。\n\n[Output Contract]\nJSON object だけを返してください。Markdown は返さないでください。\nartifactKind は \"plan_mode_api_contract\"、view は \"api_io_contract\" にしてください。\noperations には実装予定または変更対象の endpoint だけを書いてください。\n各 operation は operationId と responses を必ず持たせてください。\npath parameter と GET/HEAD/DELETE の query parameter は operations[].parameters に必ず書いてください。\nPOST/PUT/PATCH の JSON body は requestBody.schemaName と componentSchemas.fields に必ず書いてください。body field を parameters に混ぜないでください。\nquery/path/header/cookie parameter は name、in、type、required、description を具体化してください。該当しない場合は空配列にしてください。\nrequestBody.schemaName、response.schemaName、zodOwnerFile、state field が該当しない場合は null ではなく空文字にしてください。\nvalidation.examples の payloadJson は JSON.stringify 済みの文字列にしてください。\nstatus code は success / validation / conflict / auth / not found / server error のうち実装判断に必要なものだけを具体化してください。\ncomponentSchemas.fields には request / response / error body の主要 field、required、type、enum 相当の判断を必ず反映してください。型名だけで終わらせないでください。\nDELETE response、toggle semantics、sort direction、id generation が未確定で project convention から決められない場合は、推測せず openQuestions に残してください。"
+                  "value": "[SystemContext]\n入力されたTask、採用済みQuestionnaire Decisions、選択済みArtifactを根拠に、実装予定または変更対象のHTTP endpointだけを設計してください。\nFeature Plan、Blueprint、Data Modelは入力contextとして扱い、それぞれの正本の責務をAPI contractへ混ぜないでください。\n\nschemas[].schemaJson と parameters[].schemaJson には、JSON.stringify済みのOpenAPI 3.1互換JSON Schema 2020-12 objectを書いてください。objectのrequired、additionalProperties、nested object、array items、enum、format、制約を説明文ではなくschema keywordで表現してください。\nrequestBody.schemaNameとresponses[].schemaNameはschemas[].nameを参照し、JSON bodyがない場合だけ空文字にしてください。body fieldをparametersへ混ぜないでください。\npath templateの各fieldは同名のpath parameterを持たせ、requiredをtrueにしてください。requestBody.schemaNameが空文字の場合はrequestBody.requiredをfalse、descriptionも空文字にしてください。\nsuccess、validation、conflict、auth、not foundのstatus codeは、実装判断に必要なものだけを具体化してください。\n\nAPI経由で観測・変更できるstateはresponses、status code、response bodyのstate/status/phase field、error schema、stateTransitionsで一貫させてください。\nvalidation.examples[].payloadJsonはJSON.stringify済みのpayloadにしてください。zodOwnerFileやstrictnessは生成しません。\nUI local state、worker lease、LLM JSON、MCP tool inputのようなnon-HTTP contractは含めないでください。\n未確定事項を推測で埋めず、openQuestionsへ残してください。summaryとdescriptionは重複を避けて簡潔にしてください。"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:0546d080dfa6d0d8288bdbcddba21b522249f2229be638d6ae4ea6e67d17f988"
+          "artifactHash": "sha256:78ce8e4ba026995550b20bbd1b5d0d905cd6ab95c0b4bf15b5c526bd54c61a40"
         }
       },
-      "definitionHash": "sha256:01e53c6b123e7932dbe5dff17e1a85d42da622c3fd13e6bf79643e0ecfd4c5a0",
-      "releaseDigest": "sha256:4b00e9716faf45ce52e963573e668a3aae9bd466438132bf7a611761ba59f472"
+      "definitionHash": "sha256:5ed42afbfa777911ddd2927f119a0d79906d5f62c1a844c284855d916aacabaa",
+      "releaseDigest": "sha256:4ef703a40fb1f76c03e5efa3dd55c22f0ac88894202b66eb65e0b531d5d949a1"
     },
     "planViews.sequence-flow": {
       "key": "planViews.sequence-flow",
@@ -4199,5 +4199,5 @@
       "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:fcaa8136bb2c4aee87448efc07ce84d155b2c06834afddd37edef504f323673c"
+  "catalogDigest": "sha256:953171bce9a72745c35012a094ff7e0d58261e94be5fbca345d07d237bb73ce5"
 }

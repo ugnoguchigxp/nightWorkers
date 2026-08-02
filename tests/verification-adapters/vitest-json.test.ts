@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseVitestJsonCases } from "../../api/services/verification/adapters/vitest-json";
+import {
+	parseVitestJsonArtifact,
+	parseVitestJsonCases,
+} from "../../api/services/verification/adapters/vitest-json";
 
 describe("Vitest JSON verification adapter", () => {
 	it("extracts structured case results and evidence kind", () => {
@@ -42,5 +45,20 @@ describe("Vitest JSON verification adapter", () => {
 				text: `log\n${JSON.stringify({ testResults: [] })}`,
 			}),
 		).toEqual([]);
+	});
+
+	it("distinguishes a recognized empty report from unrecognized output", () => {
+		expect(
+			parseVitestJsonArtifact({ text: JSON.stringify({ testResults: [] }) }),
+		).toEqual({ recognized: true, cases: [] });
+		expect(parseVitestJsonArtifact({ text: "no structured report" })).toEqual({
+			recognized: false,
+			cases: [],
+		});
+		expect(
+			parseVitestJsonArtifact({
+				text: JSON.stringify({ testResults: [{ name: "broken.test.ts" }] }),
+			}),
+		).toEqual({ recognized: false, cases: [] });
 	});
 });

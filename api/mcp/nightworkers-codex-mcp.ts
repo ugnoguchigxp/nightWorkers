@@ -147,21 +147,9 @@ export function createNightWorkersCodexMcpServer(
 		{
 			...nightWorkersCodexToolManifest.run_check,
 		},
-		async ({
-			runId,
-			verificationDocumentId,
-			command,
-			cwd,
-			checkKind,
-			conditionIds,
-			evidenceKinds,
-			runnerHint,
-			timeoutSeconds,
-			displayMode,
-		}) => {
+		async ({ command, cwd, checkKind, timeoutSeconds, displayMode }) => {
 			const identity = resolveRequestScopedIdentity({
 				context,
-				suppliedRunId: runId,
 				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
 				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
 			});
@@ -170,14 +158,9 @@ export function createNightWorkersCodexMcpServer(
 					toolName: "run_check",
 					resolution: identity,
 					retryArguments: {
-						runId: identity.runId,
-						verificationDocumentId,
 						command,
 						cwd,
 						checkKind,
-						conditionIds,
-						evidenceKinds,
-						runnerHint,
 						timeoutSeconds,
 						displayMode,
 					},
@@ -205,13 +188,9 @@ export function createNightWorkersCodexMcpServer(
 			const args = {
 				taskId: task.id,
 				runId: resolvedRunId,
-				verificationDocumentId,
 				command,
 				cwd,
 				checkKind,
-				conditionIds,
-				evidenceKinds,
-				runnerHint,
 				timeoutSeconds,
 				displayMode,
 				repoRoot: executionRoot,
@@ -268,10 +247,9 @@ export function createNightWorkersCodexMcpServer(
 	server.registerTool(
 		"collect_test_inventory",
 		{ ...nightWorkersCodexToolManifest.collect_test_inventory },
-		async ({ runId, cwd }) => {
+		async ({ cwd }) => {
 			const identity = resolveRequestScopedIdentity({
 				context,
-				suppliedRunId: runId,
 				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
 				fallbackRunId: process.env.NIGHTWORKERS_RUN_ID,
 			});
@@ -279,7 +257,7 @@ export function createNightWorkersCodexMcpServer(
 				return requestContextMismatchToMcp({
 					toolName: "collect_test_inventory",
 					resolution: identity,
-					retryArguments: { runId: identity.runId, cwd },
+					retryArguments: { cwd },
 				});
 			}
 			const resolvedRunId = identity.runId;
@@ -306,9 +284,12 @@ export function createNightWorkersCodexMcpServer(
 				repoRoot: resolved.executionRoot,
 				cwd,
 				allowedPaths: resolved.repository.safetyPolicy?.allowedPaths,
+				externalAllowedPaths:
+					resolved.repository.safetyPolicy?.externalAllowedPaths,
 				deniedPaths: resolved.repository.safetyPolicy?.deniedPaths,
 				blockedCommands: resolved.repository.safetyPolicy?.blockedCommands,
 				maxCommandSeconds: resolved.repository.safetyPolicy?.maxCommandSeconds,
+				confinementRequired: true,
 			};
 			return controlledToolResult({
 				context,
@@ -325,7 +306,7 @@ export function createNightWorkersCodexMcpServer(
 	server.registerTool(
 		"record_test_condition_mapping",
 		{ ...nightWorkersCodexToolManifest.record_test_condition_mapping },
-		async ({ verificationDocumentId, cwd, evidenceSet }) => {
+		async ({ verificationDocumentId, inventoryId, mappings }) => {
 			const taskId = firstNonEmpty(
 				context.taskId,
 				process.env.NIGHTWORKERS_TASK_ID,
@@ -353,14 +334,8 @@ export function createNightWorkersCodexMcpServer(
 				runId,
 				repoRoot: resolved.executionRoot,
 				verificationDocumentId,
-				cwd,
-				evidenceSet,
-				allowedPaths: resolved.repository.safetyPolicy?.allowedPaths,
-				externalAllowedPaths:
-					resolved.repository.safetyPolicy?.externalAllowedPaths,
-				deniedPaths: resolved.repository.safetyPolicy?.deniedPaths,
-				blockedCommands: resolved.repository.safetyPolicy?.blockedCommands,
-				maxCommandSeconds: resolved.repository.safetyPolicy?.maxCommandSeconds,
+				inventoryId,
+				mappings,
 			};
 			const mappingRevision = await resolveTestConditionMappingRevision(args);
 			return controlledToolResult({
