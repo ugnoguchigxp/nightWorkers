@@ -1,6 +1,9 @@
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { EvidenceCheckSnapshot } from "../../../shared/modules/codingAgent";
+import type {
+	EvidenceAssuranceCondition,
+	EvidenceCheckSnapshot,
+} from "../../../shared/modules/codingAgent";
 import { legacyEvidenceAssuranceSnapshot } from "../../../shared/modules/codingAgent";
 import {
 	type EvidenceCheckPanelModel,
@@ -25,6 +28,12 @@ export function EvidenceCheckArtifactViewer({
 	const resolvedSnapshot = snapshot ?? query.data ?? null;
 	const resolvedAssurance =
 		resolvedSnapshot?.assurance ?? legacyEvidenceAssuranceSnapshot;
+	const assuranceRows = resolvedSnapshot
+		? mergeAssuranceRows(
+				resolvedSnapshot.mapping.items,
+				resolvedAssurance.conditions,
+			)
+		: [];
 	const resolvedIsLoading = isLoading ?? query.isLoading;
 	const resolvedIsError = isError ?? query.isError;
 	if (!model) {
@@ -125,30 +134,45 @@ export function EvidenceCheckArtifactViewer({
 								</div>
 								<StatusBadge status={resolvedAssurance.status} />
 							</div>
-							{resolvedAssurance.conditions.length ? (
+							{assuranceRows.length ? (
 								<div className="grid gap-1.5">
-									{resolvedAssurance.conditions.map((condition) => (
+									{assuranceRows.map(({ condition, mapping }) => (
 										<div
-											key={condition.conditionId}
-											className="nightworkers-structured-artifact-row rounded border px-3 py-2 text-xs"
+											key={condition?.conditionId ?? mapping?.id}
+											className="nightworkers-structured-artifact-row grid gap-2 rounded border px-3 py-2 text-xs"
 											data-evidence-assurance-condition={
-												condition.assuranceStatus
+												condition?.assuranceStatus ?? mapping?.status
 											}
 										>
-											<div className="flex flex-wrap items-center justify-between gap-2">
-												<span className="nightworkers-structured-artifact-text">
-													<span className="mr-2 font-mono text-[10px]">
-														{condition.conditionId}
-													</span>
-													{condition.text}
+											<div className="flex min-w-0 items-start gap-2">
+												<span className="nightworkers-structured-artifact-muted shrink-0 font-mono text-[10px] leading-5">
+													{condition?.conditionId ?? mapping?.id}
 												</span>
-												<StatusBadge status={condition.assuranceStatus} />
+												<span className="nightworkers-structured-artifact-text">
+													{condition?.text ?? mapping?.text}
+												</span>
 											</div>
-											{condition.reasonCode ? (
-												<div className="nightworkers-structured-artifact-muted mt-1 font-mono text-[10px]">
+											<div className="flex flex-wrap items-center justify-between gap-2">
+												<span className="nightworkers-structured-artifact-muted text-[10px] font-medium">
+													{t("evidenceCheck.assurance.evidence")}
+												</span>
+												<StatusBadge
+													status={
+														condition?.assuranceStatus ??
+														mapping?.status ??
+														"unmapped"
+													}
+												/>
+											</div>
+											{condition?.reasonCode ? (
+												<div className="nightworkers-structured-artifact-muted font-mono text-[10px]">
 													{condition.reasonCode}
 												</div>
 											) : null}
+											<EvidenceTestResults
+												condition={condition}
+												mapping={mapping}
+											/>
 										</div>
 									))}
 								</div>
@@ -162,53 +186,6 @@ export function EvidenceCheckArtifactViewer({
 									{t("evidenceCheck.assurance.receiptDigest")}:{" "}
 									{resolvedAssurance.receiptDigest ?? "-"}
 								</span>
-							</div>
-						</section>
-
-						<section className="grid gap-2" data-evidence-mapping>
-							<div className="flex flex-wrap items-start justify-between gap-3">
-								<div>
-									<h2 className="nightworkers-structured-artifact-text text-sm font-semibold">
-										{t("evidenceCheck.mapping.title")}
-									</h2>
-									<p className="nightworkers-structured-artifact-muted mt-1 text-xs">
-										{t(
-											"evidenceCheck.mapping.summary",
-											resolvedSnapshot.mapping,
-										)}
-									</p>
-								</div>
-								<StatusBadge status={resolvedSnapshot.mapping.status} />
-							</div>
-							<div className="grid gap-1.5">
-								{resolvedSnapshot.mapping.items.map((item) => (
-									<div
-										key={item.id}
-										className="nightworkers-structured-artifact-row grid gap-2 rounded-md border px-3 py-2.5 text-xs"
-										data-evidence-mapping-status={item.status}
-									>
-										<div className="flex min-w-0 items-start gap-2">
-											<span className="nightworkers-structured-artifact-muted shrink-0 font-mono leading-5">
-												{item.id}
-											</span>
-											<span className="nightworkers-structured-artifact-text break-words leading-5">
-												{item.text}
-											</span>
-										</div>
-										{item.matches.map((match) => (
-											<div
-												key={match.caseKey}
-												className="nightworkers-structured-artifact-muted flex flex-wrap gap-x-3 text-[10px]"
-											>
-												<span className="nightworkers-structured-artifact-text font-medium">
-													{match.name}
-												</span>
-												<span>{match.filePath}</span>
-												<span>{match.runner}</span>
-											</div>
-										))}
-									</div>
-								))}
 							</div>
 						</section>
 
@@ -319,6 +296,104 @@ function StatusBadge({ status }: { status: string }) {
 			)}
 			{t(`evidenceCheck.status.${status}`, { defaultValue: status })}
 		</span>
+	);
+}
+
+type EvidenceMappingItem = EvidenceCheckSnapshot["mapping"]["items"][number];
+
+function mergeAssuranceRows(
+	mappingItems: EvidenceMappingItem[],
+	conditions: EvidenceAssuranceCondition[],
+) {
+	const conditionsById = new Map(
+		conditions.map((condition) => [condition.conditionId, condition]),
+	);
+	const mappingIds = new Set(mappingItems.map((item) => item.id));
+	return [
+		...mappingItems.map((mapping) => ({
+			mapping,
+			condition: conditionsById.get(mapping.id),
+		})),
+		...conditions
+			.filter((condition) => !mappingIds.has(condition.conditionId))
+			.map((condition) => ({
+				mapping: undefined,
+				condition,
+			})),
+	];
+}
+
+function EvidenceTestResults({
+	condition,
+	mapping,
+}: {
+	condition?: EvidenceAssuranceCondition;
+	mapping?: EvidenceMappingItem;
+}) {
+	const { t } = useTranslation();
+	const executedCaseKeys = new Set(
+		condition?.tests.map((test) => test.caseKey) ?? [],
+	);
+	const mappingOnlyTests =
+		mapping?.matches.filter((match) => !executedCaseKeys.has(match.caseKey)) ??
+		[];
+	if (!condition?.tests.length && !mappingOnlyTests.length) return null;
+
+	return (
+		<div className="grid gap-1.5 border-t pt-2">
+			<span className="nightworkers-structured-artifact-muted text-[10px] font-medium">
+				{t("evidenceCheck.assurance.tests")}
+			</span>
+			{condition?.tests.map((test) => (
+				<EvidenceTestRow
+					key={test.caseKey}
+					name={test.name}
+					filePath={test.filePath}
+					runner={test.runner}
+					status={test.execution.status}
+				/>
+			))}
+			{mappingOnlyTests.map((test) => (
+				<EvidenceTestRow
+					key={test.caseKey}
+					name={test.name}
+					filePath={test.filePath}
+					runner={test.runner}
+					status={mapping?.status ?? "unmapped"}
+				/>
+			))}
+		</div>
+	);
+}
+
+function EvidenceTestRow({
+	name,
+	filePath,
+	runner,
+	status,
+}: {
+	name: string;
+	filePath: string | null;
+	runner: string;
+	status: string;
+}) {
+	const { t } = useTranslation();
+	return (
+		<div
+			className="flex flex-wrap items-start justify-between gap-2 rounded border px-2.5 py-2"
+			data-evidence-test-status={status}
+		>
+			<div className="min-w-0">
+				<div className="nightworkers-structured-artifact-text break-words font-medium">
+					{name}
+				</div>
+				<div className="nightworkers-structured-artifact-muted mt-1 flex flex-wrap gap-x-3 font-mono text-[10px]">
+					<span>{filePath ?? t("evidenceCheck.unavailable")}</span>
+					<span>{runner}</span>
+				</div>
+			</div>
+			<StatusBadge status={status} />
+		</div>
 	);
 }
 

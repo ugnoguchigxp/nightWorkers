@@ -89,7 +89,27 @@ describe("ArtifactPane", () => {
 									assuranceStatus: "safe_pass",
 									reasonCode: null,
 									evidenceRefs: [],
-									tests: [],
+									tests: [
+										{
+											caseKey: "case-1",
+											name: "APIを実装する",
+											filePath: "tests/api.test.ts",
+											runner: "vitest",
+											mappingSource: "verification_document",
+											execution: {
+												status: "passed",
+												evidenceRunId: "66666666-6666-4666-8666-666666666666",
+												evidenceKind: "unit_test",
+												durationMs: 42,
+												finishedAt: "2026-07-31T00:00:58.000Z",
+											},
+											guards: {
+												currentSource: true,
+												sourceStableDuringExecution: true,
+												testExecutionObserved: true,
+											},
+										},
+									],
 								},
 							],
 						},
@@ -106,6 +126,12 @@ describe("ArtifactPane", () => {
 		expect(markup).toContain("E2E: 対象外");
 		expect(markup).toContain("APIを実装する");
 		expect(markup).toContain("条件別Evidence Assurance");
+		expect(markup).toContain("テスト証跡");
+		expect(markup).toContain("対応テスト");
+		expect(markup).toContain('data-evidence-test-status="passed"');
+		expect(markup).toContain("tests/api.test.ts");
+		expect(markup).not.toContain("証跡とテスト項目の対応");
+		expect(markup).not.toContain("data-evidence-mapping");
 		expect(markup).toContain("sha256:receipt");
 		expect(markup).toContain("bun run verify");
 		expect(markup).toContain("確定済み");
