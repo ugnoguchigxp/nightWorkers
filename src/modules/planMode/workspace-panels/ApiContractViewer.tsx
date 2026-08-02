@@ -22,9 +22,8 @@ export function ApiContractViewer({
 	const paths = firstRecord(openapi?.paths);
 	const components = firstRecord(openapi?.components);
 	const stateTransitions = toRecordArray(apiContract.stateTransitions);
-	const validation = toRecordArray(apiContract.validation);
 	const operations = apiContractOperations(paths);
-	const rawJson = JSON.stringify(apiContract, null, 2);
+	const rawJson = JSON.stringify(openapi, null, 2);
 
 	return (
 		<div className="grid gap-3 text-xs">
@@ -58,55 +57,6 @@ export function ApiContractViewer({
 					</div>
 				)}
 			</div>
-
-			{validation.length > 0 ? (
-				<div className="rounded border border-slate-800 bg-slate-950/20 p-3">
-					<div className="mb-2 text-[11px] font-semibold uppercase text-slate-400">
-						Validation
-					</div>
-					<div className="grid gap-2">
-						{validation.map((item, _index) => (
-							<div
-								key={`${stringValue(item.schemaName)}-${stringValue(item.owner)}-${stringValue(item.zodOwnerFile)}`}
-								className="rounded border border-slate-800 bg-slate-950/30 p-2"
-							>
-								<div className="font-semibold text-slate-100">
-									{stringValue(item.schemaName) || "Schema"}
-								</div>
-								<div className="mt-1 text-slate-500">
-									{[
-										stringValue(item.owner),
-										stringValue(item.strictness),
-										stringValue(item.zodOwnerFile),
-									]
-										.filter(Boolean)
-										.join(" · ")}
-								</div>
-								<div className="mt-2 grid gap-1">
-									{toRecordArray(item.examples).map(
-										(example, _exampleIndex) => (
-											<div
-												key={`${stringValue(example.name)}-${JSON.stringify(example.expectedIssues || [])}`}
-												className="rounded border border-slate-800 bg-slate-950/40 p-2"
-											>
-												<div className="font-medium text-slate-200">
-													{stringValue(example.name) || "Example"}:{" "}
-													{example.valid === true ? "valid" : "invalid"}
-												</div>
-												{toStringArray(example.expectedIssues).length > 0 ? (
-													<div className="mt-1 text-amber-200">
-														{toStringArray(example.expectedIssues).join(" / ")}
-													</div>
-												) : null}
-											</div>
-										),
-									)}
-								</div>
-							</div>
-						))}
-					</div>
-				</div>
-			) : null}
 
 			<details className="rounded border border-slate-800 bg-slate-950/20 p-3">
 				<summary className="cursor-pointer text-[11px] font-semibold uppercase text-slate-300">

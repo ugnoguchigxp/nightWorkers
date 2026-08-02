@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { desc, eq } from "drizzle-orm";
@@ -41,13 +42,19 @@ export async function collectTestInventory(
 	} = {},
 ): Promise<TestInventory> {
 	const cwd = await resolveInventoryCwd(input);
+	const repoRoot = path.resolve(input.repoRoot);
 	const snapshot = await captureWorkspaceSourceSnapshot(input.repoRoot);
-	const candidates = await discoverCandidateCases(cwd);
+	const candidates = await discoverCandidateCases(cwd, repoRoot);
+	const vitestRoot = await findPackageRootWithDependency(
+		cwd,
+		repoRoot,
+		"vitest",
+	);
 	const discoveries =
 		options.activeDiscovery === false
 			? []
 			: await Promise.all([
-					discoverVitestCases(input, cwd),
+					discoverVitestCases(input, cwd, vitestRoot),
 					discoverCargoCases(input, cwd),
 					discoverGoCases(input, cwd),
 				]);
@@ -61,6 +68,7 @@ export async function collectTestInventory(
 			"TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED",
 			failedDiscovery.failure,
 			"fix_test_inventory_discovery",
+			{ retryable: true },
 		);
 	}
 	const cases = assignShortTestCaseKeys(mergedCases);
@@ -103,6 +111,7 @@ export async function getLatestTestInventory(taskId: string) {
 
 async function discoverCandidateCases(
 	cwd: string,
+	repoRoot: string,
 ): Promise<TestInventoryCase[]> {
 	const files = await listPotentialTestFiles(cwd);
 	const result: TestInventoryCase[] = [];
@@ -132,7 +141,7 @@ async function discoverCandidateCases(
 						filePath,
 						await detectJavaScriptRunnerForFile(
 							file,
-							cwd,
+							repoRoot,
 							javascriptRunnerCache,
 						),
 					)
@@ -266,17 +275,20 @@ function countNames(names: string[]) {
 
 async function discoverVitestCases(
 	input: Parameters<typeof collectTestInventory>[0],
-	cwd: string,
+	scopeCwd: string,
+	runnerRoot: string | null,
 ): Promise<{
 	cases: TestInventoryCase[];
 	warning?: string;
 	failure?: string;
 }> {
-	if (!(await hasPackage(cwd, "vitest"))) return { cases: [] };
+	if (!runnerRoot) return { cases: [] };
+	const canonicalScopeCwd = canonicalExistingPath(scopeCwd);
+	const canonicalRunnerRoot = canonicalExistingPath(runnerRoot);
 	const result = await runCommandTool({
 		command: "bunx --no-install vitest list --json --static-parse",
 		repoRoot: input.repoRoot,
-		cwd: path.relative(input.repoRoot, cwd),
+		cwd: path.relative(input.repoRoot, runnerRoot),
 		blockedCommands: input.blockedCommands,
 		allowedPaths: input.allowedPaths,
 		externalAllowedPaths: input.externalAllowedPaths,
@@ -300,10 +312,21 @@ async function discoverVitestCases(
 		return {
 			cases: entries
 				.filter((entry) => entry.name && entry.file)
-				.map((entry) => {
+				.map((entry) => ({
+					entry,
+					absoluteFile: path.isAbsolute(String(entry.file))
+						? canonicalExistingPath(String(entry.file))
+						: canonicalExistingPath(
+								path.resolve(canonicalRunnerRoot, String(entry.file)),
+							),
+				}))
+				.filter(({ absoluteFile }) =>
+					isWithinDirectory(canonicalScopeCwd, absoluteFile),
+				)
+				.map(({ entry, absoluteFile }) => {
 					const filePath = resolveInventoryRelativeTestCasePath({
-						filePath: String(entry.file),
-						cwd,
+						filePath: absoluteFile,
+						cwd: canonicalScopeCwd,
 					});
 					return {
 						caseKey: `vitest:${filePath}:${entry.name}`,
@@ -431,6 +454,41 @@ async function hasPackage(cwd: string, dependency: string) {
 		});
 	} catch {
 		return false;
+	}
+}
+
+async function findPackageRootWithDependency(
+	start: string,
+	repoRoot: string,
+	dependency: string,
+) {
+	let directory = path.resolve(start);
+	const boundary = path.resolve(repoRoot);
+	while (true) {
+		if (await hasPackage(directory, dependency)) return directory;
+		if (directory === boundary) return null;
+		const parent = path.dirname(directory);
+		if (parent === directory || !isWithinDirectory(boundary, parent))
+			return null;
+		directory = parent;
+	}
+}
+
+function isWithinDirectory(root: string, candidate: string) {
+	const relative = path.relative(path.resolve(root), path.resolve(candidate));
+	return (
+		relative === "" ||
+		(relative !== ".." &&
+			!relative.startsWith(`..${path.sep}`) &&
+			!path.isAbsolute(relative))
+	);
+}
+
+function canonicalExistingPath(candidate: string) {
+	try {
+		return realpathSync.native(candidate);
+	} catch {
+		return path.resolve(candidate);
 	}
 }
 

@@ -160,6 +160,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				acceptanceCriteria: [{ title: "画面を利用できる", category: "ui" }],
 				implementationPlan: {
 					steps: [
 						{
@@ -487,6 +488,7 @@ describe("NightWorkers task routes status and normalization", () => {
 					"## 完了条件",
 					"- [AC-001][ui] 画面を利用できる",
 				].join("\n"),
+				acceptanceCriteria: [{ title: "画面を利用できる", category: "ui" }],
 				implementationPlan: {
 					steps: [
 						{

@@ -173,7 +173,7 @@ describe("Coding Agent test condition mapping contract", () => {
 			ok: false,
 			error: {
 				code: "TEST_CASE_NOT_FOUND",
-				retryable: false,
+				retryable: true,
 				recoveryAction: "collect_test_inventory",
 				issues: [
 					{
@@ -183,5 +183,25 @@ describe("Coding Agent test condition mapping contract", () => {
 				],
 			},
 		});
+	});
+
+	it("marks only repository-repairable mapping preconditions as retryable", () => {
+		for (const code of [
+			"TEST_MAPPING_PRECONDITION_MISSING",
+			"TEST_MAPPING_SOURCE_STALE",
+			"TEST_INVENTORY_NOT_FOUND",
+			"TEST_CASE_NOT_FOUND",
+			"TEST_CASE_NOT_ACTIVE",
+		] as const) {
+			expect(new TestConditionMappingFailure(code, code).retryable).toBe(true);
+		}
+		for (const code of [
+			"TEST_MAPPING_AUTHORITY_MISMATCH",
+			"TEST_MAPPING_PERSISTENCE_FAILED",
+			"TEST_EVIDENCE_NOT_FOUND",
+			"TEST_EVIDENCE_AMBIGUOUS",
+		] as const) {
+			expect(new TestConditionMappingFailure(code, code).retryable).toBe(false);
+		}
 	});
 });

@@ -11,6 +11,8 @@ import {
 	selectCaseEvidenceKind,
 	validateRunCheckEvidenceScope,
 } from "../api/modules/codingAgent/verification/run-check-evidence-scope.service";
+import { collectTestInventory } from "../api/modules/codingAgent/verification/test-inventory.service";
+import { recordTestConditionMappingTool } from "../api/modules/codingAgent/verification/test-inventory-tools";
 import * as nightworkersRepository from "../api/modules/nightworkers/nightworkers.repository";
 import { createVerificationDocumentFromSpec } from "../api/modules/nightworkers/nightworkers.verification.service";
 import { runCheckTool } from "../api/services/worker-tools/run-check";
@@ -35,7 +37,13 @@ describe("run_check managed evidence scope", () => {
 		expect(() =>
 			selectCaseEvidenceKind(["unit_test", "integration_test"]),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({
+				code: "TEST_MAPPING_EVIDENCE_KIND_CONFLICT",
+				details: {
+					retryable: true,
+					suggestedAction: "record_test_condition_mapping",
+				},
+			}),
 		);
 	});
 
@@ -257,10 +265,128 @@ describe("run_check managed evidence scope", () => {
 		await expect(
 			resolveRunCheckEvidenceScope({
 				...scope,
+				repoRoot: process.cwd(),
 				command: "bun run lint",
 				checkKind: "lint",
 				sourceStateHash: "a".repeat(64),
 			}),
 		).rejects.toMatchObject({ code: "COMMAND_GATE_PLAN_MISSING" });
+	});
+
+	it("does not authorize a Playwright mapping when the Questionnaire scope is unit", async () => {
+		const repoRoot = await fs.mkdtemp(
+			path.join(os.tmpdir(), "run-check-unit-scope-"),
+		);
+		temporaryDirectories.push(repoRoot);
+		await fs.mkdir(path.join(repoRoot, "e2e"));
+		await fs.writeFile(path.join(repoRoot, "package.json"), "{}");
+		await fs.writeFile(
+			path.join(repoRoot, "e2e", "todos.test.ts"),
+			'it("renders todos", () => {});\n',
+		);
+		const repository = await nightworkersRepository.createRepository({
+			name: `TEST: unit scope excludes Playwright ${crypto.randomUUID()}`,
+			localPath: repoRoot,
+			branch: "main",
+		});
+		repositoryIds.push(repository.id);
+		const task = await nightworkersRepository.createTask({
+			repositoryId: repository.id,
+			title: "TEST: unit scope excludes Playwright",
+		});
+		const revision =
+			await nightworkersRepository.getCurrentTaskRevisionSnapshot(task.id);
+		const run = await nightworkersRepository.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			taskRevisionSnapshotId: revision?.id,
+			taskRevision: revision?.revision,
+			taskDigest: revision?.digest,
+		});
+		const document = await createVerificationDocumentFromSpec({
+			taskId: task.id,
+			runId: run?.id,
+			sourceSpecPath: "spec/unit-only.md",
+			document: {
+				version: 2,
+				specId: "unit-only",
+				specPath: "spec/unit-only.md",
+				generatedAt: new Date().toISOString(),
+				source: {
+					taskId: task.id,
+					sourceMessageIds: [],
+					workspaceArtifactIds: [],
+				},
+				testScope: "unit",
+				conditions: [
+					{
+						id: "AC-001",
+						text: "Todoを表示できる",
+						category: "ui",
+						verificationKind: "automated_test",
+						expectedEvidence: ["unit_test"],
+						expectedResult: "unit test passes",
+						failureMeaning: "unit behavior is unverified",
+						required: true,
+						status: "pending",
+					},
+				],
+				commands: [],
+			},
+		});
+		await expect(
+			resolveRunCheckEvidenceScope({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+				sourceStateHash: "a".repeat(64),
+			}),
+		).rejects.toMatchObject({
+			code: "TEST_INVENTORY_MISSING",
+			details: {
+				retryable: true,
+				suggestedAction: "collect_test_inventory",
+			},
+		});
+		const inventory = await collectTestInventory(
+			{ taskId: task.id, runId: run?.id, repoRoot },
+			{ activeDiscovery: false },
+		);
+		const playwrightCase = inventory.cases.find(
+			(testCase) => testCase.runner === "playwright",
+		);
+		expect(playwrightCase).toBeTruthy();
+		await expect(
+			recordTestConditionMappingTool({
+				taskId: task.id,
+				runId: run?.id,
+				repoRoot,
+				verificationDocumentId: document.id,
+				inventoryId: inventory.id,
+				mappings: [
+					{
+						caseKey: playwrightCase?.caseKey ?? "",
+						conditionIds: ["AC-001"],
+					},
+				],
+			}),
+		).resolves.toMatchObject({ ok: true });
+		await expect(
+			resolveRunCheckEvidenceScope({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+				sourceStateHash: inventory.sourceSnapshot.sourceStateHash,
+			}),
+		).rejects.toMatchObject({
+			code: "CONDITION_MAPPING_MISSING",
+			details: { retryable: true },
+		});
 	});
 });

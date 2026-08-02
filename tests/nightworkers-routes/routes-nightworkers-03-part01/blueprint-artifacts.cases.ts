@@ -110,6 +110,9 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 					"## 完了条件",
 					"- [AC-001][workflow] 初期実装を利用できる",
 				].join("\n"),
+				acceptanceCriteria: [
+					{ title: "初期実装を利用できる", category: "workflow" },
+				],
 				implementationPlan: {
 					steps: [
 						{

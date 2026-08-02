@@ -1,16 +1,14 @@
 import { z } from "zod";
 import type { PlanApiContractArtifact } from "../../../../shared/schemas/plan-mode-artifact.schema";
-import { planApiContractDraftSchema } from "../../../modules/planViews/plan-api-contract-normalizer";
+import { planApiContractOpenApiSchema } from "../../../modules/planViews/plan-api-contract-openapi";
 import { p } from "../../../systemContexts/catalog";
-import { normalizeStructuredOutputJsonSchema } from "../../structured-llm/json-schema";
 
 export const PLAN_API_CONTRACT_PROMPT_VERSION =
-	"plan-mode-api-contract-openapi31-draft";
+	"plan-mode-api-contract-openapi31-minimal";
 
-export const planApiContractStructuredOutputSchema =
-	normalizeStructuredOutputJsonSchema(
-		z.toJSONSchema(planApiContractDraftSchema),
-	);
+export const planApiContractStructuredOutputSchema = z.toJSONSchema(
+	planApiContractOpenApiSchema,
+);
 
 export function buildPlanApiContractSystemPrompt() {
 	return p("planViews.api-contract", {});

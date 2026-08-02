@@ -14,8 +14,16 @@ export type TestConditionMappingFailureIssue = {
 	message: string;
 };
 
+const retryableMappingFailureCodes = new Set<TestConditionMappingFailureCode>([
+	"TEST_MAPPING_PRECONDITION_MISSING",
+	"TEST_MAPPING_SOURCE_STALE",
+	"TEST_INVENTORY_NOT_FOUND",
+	"TEST_CASE_NOT_FOUND",
+	"TEST_CASE_NOT_ACTIVE",
+]);
+
 export class TestConditionMappingFailure extends Error {
-	readonly retryable = false;
+	readonly retryable: boolean;
 
 	constructor(
 		readonly code: TestConditionMappingFailureCode,
@@ -26,6 +34,7 @@ export class TestConditionMappingFailure extends Error {
 	) {
 		super(message, options);
 		this.name = "TestConditionMappingFailure";
+		this.retryable = retryableMappingFailureCodes.has(code);
 	}
 }
 
@@ -37,15 +46,16 @@ export type TestInventoryFailureCode =
 	| "TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED";
 
 export class TestInventoryFailure extends Error {
-	readonly retryable = false;
+	readonly retryable: boolean;
 
 	constructor(
 		readonly code: TestInventoryFailureCode,
 		message: string,
 		readonly recoveryAction?: string,
-		options?: ErrorOptions,
+		options?: ErrorOptions & { retryable?: boolean },
 	) {
 		super(message, options);
 		this.name = "TestInventoryFailure";
+		this.retryable = options?.retryable === true;
 	}
 }

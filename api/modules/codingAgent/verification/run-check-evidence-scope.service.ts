@@ -1,4 +1,5 @@
-import { and, desc, eq } from "drizzle-orm";
+import path from "node:path";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
 	type ExpectedEvidence,
 	isExpectedEvidenceAllowedByCompletionScope,
@@ -18,6 +19,7 @@ import {
 } from "../../../db/verification-schema";
 import { AppError } from "../../../lib/errors";
 import { isCompatibleEvidenceKind } from "./evidence-kind-compatibility";
+import { isTestRunnerInScope } from "./test-scope";
 
 type CaseEvidenceScope = {
 	conditionIds: string[];
@@ -41,6 +43,7 @@ export async function resolveRunCheckEvidenceScope(input: {
 	command: string;
 	declaredCommand?: string;
 	cwd?: string;
+	repoRoot: string;
 	checkKind?: string;
 	sourceStateHash: string;
 }): Promise<ResolvedRunCheckEvidenceScope> {
@@ -112,53 +115,138 @@ export async function resolveRunCheckEvidenceScope(input: {
 			"TEST_INVENTORY_MISSING",
 			"No current active test inventory exists for this Run and source revision.",
 			"collect_test_inventory",
+			true,
 		);
 	}
 	const plannedConditionIds = new Set(
 		plannedCommands.flatMap((command) => command.conditionIds),
 	);
-	let inventory: (typeof currentInventories)[number] | undefined;
-	let mappings: Array<typeof codingAgentTestConditionMappings.$inferSelect> =
-		[];
-	for (const candidate of currentInventories) {
-		const candidateMappings = (
-			await db
-				.select()
-				.from(codingAgentTestConditionMappings)
-				.where(
-					and(
-						eq(
-							codingAgentTestConditionMappings.verificationDocumentId,
-							authority.document.id,
-						),
-						eq(codingAgentTestConditionMappings.inventoryId, candidate.id),
+	const requiredConditionIds = new Set(
+		plannedConditionIds.size > 0
+			? plannedConditionIds
+			: authority.items
+					.filter(
+						(item) =>
+							item.required &&
+							(item.verificationKind ?? "automated_test") === "automated_test",
+					)
+					.map((item) => item.conditionId),
+	);
+	const requestedCwd = path.resolve(input.repoRoot, input.cwd ?? "");
+	const inventoryIds = currentInventories.map((inventory) => inventory.id);
+	const [currentMappings, currentCases] = await Promise.all([
+		db
+			.select()
+			.from(codingAgentTestConditionMappings)
+			.where(
+				and(
+					eq(
+						codingAgentTestConditionMappings.verificationDocumentId,
+						authority.document.id,
 					),
-				)
-		).filter(
+					inArray(codingAgentTestConditionMappings.inventoryId, inventoryIds),
+				),
+			),
+		db
+			.select()
+			.from(codingAgentTestInventoryCases)
+			.where(inArray(codingAgentTestInventoryCases.inventoryId, inventoryIds)),
+	]);
+	let selected:
+		| {
+				inventory: (typeof currentInventories)[number];
+				mappings: Array<typeof codingAgentTestConditionMappings.$inferSelect>;
+				cases: Array<typeof codingAgentTestInventoryCases.$inferSelect>;
+				coverage: number;
+				complete: boolean;
+				exactCwd: boolean;
+				runner: VerificationRunner | null;
+				executable: boolean;
+		  }
+		| undefined;
+	for (const candidate of currentInventories) {
+		const candidateMappings = currentMappings.filter(
 			(mapping) =>
+				mapping.inventoryId === candidate.id &&
 				mapping.sourceDigest === input.sourceStateHash &&
 				(plannedConditionIds.size === 0 ||
 					plannedConditionIds.has(mapping.conditionId)),
 		);
 		if (candidateMappings.length === 0) continue;
-		inventory = candidate;
-		mappings = candidateMappings;
-		break;
+		const candidateCases = currentCases.filter(
+			(testCase) => testCase.inventoryId === candidate.id,
+		);
+		const activeCaseKeys = new Set(
+			candidateCases
+				.filter(
+					(testCase) =>
+						testCase.discoveryLevel === "active" &&
+						isTestRunnerInScope(testCase.runner, document.data.testScope),
+				)
+				.map((testCase) => testCase.caseKey),
+		);
+		const applicableMappings = candidateMappings.filter((mapping) =>
+			activeCaseKeys.has(mapping.caseKey),
+		);
+		const coveredConditionIds = new Set(
+			applicableMappings.map((mapping) => mapping.conditionId),
+		);
+		const coverage = [...requiredConditionIds].filter((conditionId) =>
+			coveredConditionIds.has(conditionId),
+		).length;
+		const complete = coverage === requiredConditionIds.size;
+		const exactCwd = path.resolve(candidate.cwd) === requestedCwd;
+		const runner = resolveMappedRunner(candidateCases, applicableMappings);
+		const executable = complete && runner !== null;
+		if (
+			!selected ||
+			Number(executable) > Number(selected.executable) ||
+			(executable === selected.executable &&
+				Number(complete) > Number(selected.complete)) ||
+			(executable === selected.executable &&
+				complete === selected.complete &&
+				Number(exactCwd) > Number(selected.exactCwd)) ||
+			(executable === selected.executable &&
+				complete === selected.complete &&
+				exactCwd === selected.exactCwd &&
+				coverage > selected.coverage)
+		) {
+			selected = {
+				inventory: candidate,
+				mappings: applicableMappings,
+				cases: candidateCases,
+				coverage,
+				complete,
+				exactCwd,
+				runner,
+				executable,
+			};
+		}
 	}
-	if (!inventory) {
+	if (!selected) {
 		throw evidenceScopeError(
 			"CONDITION_MAPPING_MISSING",
 			"No current active testcase mapping authorizes this test execution.",
 			"record_test_condition_mapping",
+			true,
 		);
 	}
-	const cases = await db
-		.select()
-		.from(codingAgentTestInventoryCases)
-		.where(eq(codingAgentTestInventoryCases.inventoryId, inventory.id));
+	if (!selected.complete) {
+		throw evidenceScopeError(
+			"CONDITION_MAPPING_MISSING",
+			"No single current inventory maps every required automated condition for this test execution.",
+			"record_test_condition_mapping",
+			true,
+		);
+	}
+	const { inventory, mappings, cases } = selected;
 	const activeCases = new Map(
 		cases
-			.filter((testCase) => testCase.discoveryLevel === "active")
+			.filter(
+				(testCase) =>
+					testCase.discoveryLevel === "active" &&
+					isTestRunnerInScope(testCase.runner, document.data.testScope),
+			)
 			.map((testCase) => [testCase.caseKey, testCase]),
 	);
 	const applicableMappings = mappings.filter((mapping) =>
@@ -169,6 +257,7 @@ export async function resolveRunCheckEvidenceScope(input: {
 			"CONDITION_MAPPING_MISSING",
 			"No current active testcase mapping authorizes this test execution.",
 			"record_test_condition_mapping",
+			true,
 		);
 	}
 
@@ -209,21 +298,12 @@ export async function resolveRunCheckEvidenceScope(input: {
 		conditionIds,
 		evidenceKinds,
 	});
-	const runners = new Set(
-		[...grouped.keys()].flatMap((caseKey) => {
-			const runner = activeCases.get(caseKey)?.runner;
-			return runner ? [runner] : [];
-		}),
-	);
-	const concreteRunners = [...runners].filter((runner) => runner !== "junit");
-	if (
-		concreteRunners.length > 1 ||
-		runners.has("unknown") ||
-		(concreteRunners.length === 0 && !runners.has("junit"))
-	) {
+	if (!selected.runner) {
 		throw evidenceScopeError(
-			"TEST_EVIDENCE_CAPTURE_FAILED",
-			"Mapped testcase runner could not be resolved uniquely from the current inventory.",
+			"TEST_INVENTORY_RUNNER_UNRESOLVED",
+			"Mapped testcase runner must be resolved from one current inventory before test execution.",
+			"collect_test_inventory",
+			true,
 		);
 	}
 	return {
@@ -231,7 +311,7 @@ export async function resolveRunCheckEvidenceScope(input: {
 		inventoryId: inventory.id,
 		conditionIds,
 		evidenceKinds,
-		runner: (concreteRunners[0] ?? "junit") as VerificationRunner,
+		runner: selected.runner,
 		caseScopes,
 		mappedCaseKeys: Object.keys(caseScopes).sort(),
 	};
@@ -303,6 +383,7 @@ async function loadEvidenceAuthority(input: {
 		db
 			.select({
 				conditionId: verificationChecklistItems.conditionId,
+				required: verificationChecklistItems.required,
 				verificationKind: verificationChecklistItems.verificationKind,
 				expectedEvidenceJson: verificationChecklistItems.expectedEvidenceJson,
 			})
@@ -412,8 +493,10 @@ export function selectCaseEvidenceKind(
 	];
 	if (specific.length > 1) {
 		throw evidenceScopeError(
-			"TEST_EVIDENCE_CAPTURE_FAILED",
+			"TEST_MAPPING_EVIDENCE_KIND_CONFLICT",
 			`One testcase is mapped to incompatible evidence kinds: ${specific.join(", ")}`,
+			"record_test_condition_mapping",
+			true,
 		);
 	}
 	return (
@@ -463,9 +546,10 @@ function evidenceScopeError(
 	code: string,
 	message: string,
 	suggestedAction = "report_test_evidence_failure",
+	retryable = false,
 ) {
 	return new AppError(409, code, message, {
-		retryable: false,
+		retryable,
 		suggestedAction,
 	});
 }
@@ -478,4 +562,28 @@ function snapshotHash(value: unknown) {
 function normalizeCwd(value?: string) {
 	const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
 	return trimmed === "." ? "" : trimmed;
+}
+
+function resolveMappedRunner(
+	cases: Array<typeof codingAgentTestInventoryCases.$inferSelect>,
+	mappings: Array<typeof codingAgentTestConditionMappings.$inferSelect>,
+): VerificationRunner | null {
+	const mappedCaseKeys = new Set(mappings.map((mapping) => mapping.caseKey));
+	const runners = new Set(
+		cases
+			.filter(
+				(testCase) =>
+					testCase.discoveryLevel === "active" &&
+					mappedCaseKeys.has(testCase.caseKey),
+			)
+			.map((testCase) => testCase.runner),
+	);
+	const concreteRunners = [...runners].filter((runner) => runner !== "junit");
+	if (
+		concreteRunners.length > 1 ||
+		runners.has("unknown") ||
+		(concreteRunners.length === 0 && !runners.has("junit"))
+	)
+		return null;
+	return (concreteRunners[0] ?? "junit") as VerificationRunner;
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { planApiContractOpenApiSchema } from "../api/modules/planViews/plan-api-contract-openapi";
 import {
 	buildClientMermaidRepairPrompt,
 	normalizePlanViewMermaidArtifact,
@@ -17,69 +18,73 @@ import {
 	genericDedicatedViewSchema,
 } from "../api/services/structured-generation/prompts/plan-dedicated-view";
 import { planZodSchemaStructuredOutputSchema } from "../api/services/structured-generation/prompts/plan-zod-schema";
+import { resolveCodexOutputSchemaMode } from "../api/services/structured-llm/codex-output-schema";
+import { planApiContractArtifactSchema } from "../shared/schemas/plan-mode-artifact.schema";
 
-function createMinimalApiContractDraft() {
+function createMinimalOpenApiDocument() {
 	return {
-		title: "Task API Contract",
-		summary: "Task retrieval contract.",
-		operations: [
-			{
-				path: "/api/tasks/{taskId}",
-				method: "get",
-				operationId: "getTask",
-				summary: "Get task",
-				description: "",
-				tags: ["tasks"],
-				parameters: [
-					{
-						name: "taskId",
-						in: "path",
-						required: true,
-						description: "Task identifier",
-						schemaJson: JSON.stringify({ type: "string", format: "uuid" }),
+		openapi: "3.1.0",
+		info: {
+			title: "Task API Contract",
+			version: "0.1.0",
+			summary: "Task retrieval contract.",
+		},
+		paths: {
+			"/api/tasks/{taskId}": {
+				get: {
+					operationId: "getTask",
+					summary: "Get task",
+					tags: ["tasks"],
+					parameters: [
+						{
+							name: "taskId",
+							in: "path",
+							required: true,
+							description: "Task identifier",
+							schema: { type: "string", format: "uuid" },
+						},
+					],
+					responses: {
+						"200": {
+							description: "Task response",
+							content: {
+								"application/json": {
+									schema: { $ref: "#/components/schemas/Task" },
+								},
+							},
+						},
 					},
-				],
-				requestBody: { description: "", schemaName: "", required: false },
-				responses: [{ status: 200, description: "", schemaName: "Task" }],
+				},
 			},
-		],
-		schemas: [
-			{
-				name: "Task",
-				schemaJson: JSON.stringify({
+		},
+		components: {
+			schemas: {
+				Task: {
 					type: "object",
 					additionalProperties: false,
 					required: ["id"],
 					properties: { id: { type: "string", format: "uuid" } },
-				}),
+				},
 			},
-		],
-		stateTransitions: [],
-		validation: [
-			{
-				schemaName: "Task",
-				owner: "response",
-				examples: [
-					{
-						name: "task",
-						valid: true,
-						payloadJson: '{"id":"550e8400-e29b-41d4-a716-446655440000"}',
-						expectedIssues: [],
-					},
-				],
-			},
-		],
-		openQuestions: [],
+		},
 	};
 }
 
 describe("Plan View generation helpers", () => {
-	it("lists every strict object property in required for structured output compatibility", () => {
+	it("uses direct OpenAPI JSON and prompt validation for dynamic endpoint keys", () => {
 		expectStrictRequiredProperties(genericDedicatedViewSchema);
-		expectStrictRequiredProperties(planApiContractStructuredOutputSchema);
 		expectStrictRequiredProperties(planZodSchemaStructuredOutputSchema);
-		expectNoFreeObjects(planApiContractStructuredOutputSchema);
 		expectNoFreeObjects(planZodSchemaStructuredOutputSchema);
+		const serialized = JSON.stringify(planApiContractStructuredOutputSchema);
+		expect(serialized).toContain('"openapi"');
+		expect(serialized).toContain('"paths"');
+		expect(serialized).toContain('"components"');
+		expect(serialized).not.toContain('"operations"');
+		expect(serialized).not.toContain("schemaJson");
+		expect(serialized).not.toContain("stateTransitions");
+		expect(
+			resolveCodexOutputSchemaMode(planApiContractStructuredOutputSchema).mode,
+		).toBe("prompt_validated_json");
 	});
 
 	it("includes project stack context in API Contract input", () => {
@@ -217,440 +222,241 @@ describe("Plan View generation helpers", () => {
 		).toThrow("Mermaid diagram");
 	});
 
-	it("accepts OpenAPI-compatible API Contract artifacts", () => {
+	it("accepts minimal OpenAPI 3.1 JSON and builds the existing artifact", () => {
 		const artifact = parsePlanApiContractOutput(
-			JSON.stringify({
-				artifactKind: "plan_mode_api_contract",
-				view: "api_io_contract",
-				title: "Task API Contract",
-				summary: "Task creation contract.",
-				openapi: {
-					openapi: "3.1.0",
-					info: { title: "Task API", version: "0.1.0" },
-					paths: {
-						"/api/tasks": {
-							post: {
-								operationId: "createTask",
-								summary: "Create task",
-								responses: {
-									"202": { description: "Accepted" },
-									"409": { description: "Conflict" },
-								},
-							},
-						},
-					},
-					components: { schemas: {} },
-				},
-				stateTransitions: [
-					{
-						operationId: "createTask",
-						toState: "queued",
-						successStatus: 202,
-						conflictStatuses: [409],
-						stateField: "status",
-						notes: ["HTTP-visible state belongs to the API Contract."],
-					},
-				],
-				validation: [
-					{
-						schemaName: "CreateTaskRequest",
-						owner: "request",
-						strictness: "strict",
-						examples: [
-							{
-								name: "missing title",
-								valid: false,
-								payload: {},
-								expectedIssues: ["title is required"],
-							},
-						],
-					},
-				],
-				openQuestions: [],
-			}),
+			JSON.stringify(createMinimalOpenApiDocument()),
 		);
 
+		expect(artifact.artifactKind).toBe("plan_mode_api_contract");
 		expect(artifact.view).toBe("api_io_contract");
-		expect(artifact.openapi.paths["/api/tasks"]?.post?.operationId).toBe(
-			"createTask",
-		);
-		expect(artifact.stateTransitions[0]?.successStatus).toBe(202);
+		expect(artifact.title).toBe("Task API Contract");
+		expect(artifact.summary).toBe("Task retrieval contract.");
+		expect(artifact.openapi.openapi).toBe("3.1.0");
+		expect(
+			artifact.openapi.paths["/api/tasks/{taskId}"]?.get?.operationId,
+		).toBe("getTask");
+		expect(artifact.stateTransitions).toEqual([]);
+		expect(artifact.validation).toBeUndefined();
 	});
 
-	it("normalizes strict API Contract draft output into OpenAPI-compatible artifacts", () => {
-		const artifact = parsePlanApiContractOutput(
-			JSON.stringify({
-				title: "Task API Contract",
-				summary: "Task creation contract.",
-				operations: [
-					{
-						path: "/api/repositories/{repositoryId}/tasks",
-						method: "post",
-						operationId: "createTask",
-						summary: "Create task",
-						description: "Create a task and enqueue planning.",
-						tags: ["tasks"],
-						parameters: [
-							{
-								name: "repositoryId",
-								in: "path",
-								required: true,
-								description: "Repository that owns the task",
-								schemaJson: JSON.stringify({
-									type: "string",
-									format: "uuid",
-								}),
-							},
-						],
-						requestBody: {
-							description: "Task creation payload",
-							schemaName: "CreateTaskRequest",
-							required: true,
-						},
-						responses: [
-							{
-								status: 202,
-								description: "Accepted and queued",
-								schemaName: "TaskResponse",
-							},
-							{
-								status: 409,
-								description: "Task already exists",
-								schemaName: "TaskConflictError",
-							},
-						],
-					},
-					{
-						path: "/api/tasks",
-						method: "get",
-						operationId: "listTasks",
-						summary: "List tasks",
-						description: "List tasks for a repository.",
-						tags: ["tasks"],
-						parameters: [
-							{
-								name: "status",
-								in: "query",
-								required: false,
-								description: "Optional task status filter",
-								schemaJson: JSON.stringify({
-									type: "string",
-									enum: ["queued", "complete"],
-								}),
-							},
-						],
-						requestBody: {
-							description: "",
-							schemaName: "",
-							required: false,
-						},
-						responses: [
-							{
-								status: 200,
-								description: "Task list",
-								schemaName: "TaskListResponse",
-							},
-						],
-					},
-				],
-				schemas: [
-					{
-						name: "CreateTaskRequest",
-						schemaJson: JSON.stringify({
-							type: "object",
-							additionalProperties: false,
-							required: ["title"],
-							properties: {
-								title: { type: "string", minLength: 1 },
-							},
-						}),
-					},
-					{
-						name: "TaskResponse",
-						schemaJson: JSON.stringify({
-							type: "object",
-							additionalProperties: false,
-							required: ["status"],
-							properties: {
-								status: { type: "string", enum: ["queued", "complete"] },
-							},
-						}),
-					},
-					{
-						name: "TaskListResponse",
-						schemaJson: JSON.stringify({
-							type: "object",
-							additionalProperties: false,
-							required: ["items"],
-							properties: {
-								items: {
-									type: "array",
-									items: { $ref: "#/components/schemas/TaskResponse" },
-								},
-							},
-						}),
-					},
-					{
-						name: "TaskConflictError",
-						schemaJson: JSON.stringify({
-							type: "object",
-							additionalProperties: false,
-							required: ["code"],
-							properties: { code: { const: "TASK_CONFLICT" } },
-						}),
-					},
-				],
-				stateTransitions: [
-					{
-						operationId: "createTask",
-						fromState: "",
-						toState: "queued",
-						successStatus: 202,
-						conflictStatuses: [409],
-						stateField: "status",
-						notes: ["State is represented by status code and response body."],
-					},
-				],
-				validation: [
-					{
-						schemaName: "CreateTaskRequest",
-						owner: "request",
-						examples: [
-							{
-								name: "missing title",
-								valid: false,
-								payloadJson: "{}",
-								expectedIssues: ["title is required"],
-							},
-						],
-					},
-				],
-				openQuestions: [],
-			}),
-		);
+	it("validates minimal OpenAPI without adding fields that trigger repair", () => {
+		const document = createMinimalOpenApiDocument();
+		const { tags: _tags, ...operationWithoutTags } =
+			document.paths["/api/tasks/{taskId}"].get;
+		const minimalDocument = {
+			...document,
+			paths: {
+				"/api/tasks/{taskId}": { get: operationWithoutTags },
+			},
+		};
+		const parsed = planApiContractOpenApiSchema.safeParse(minimalDocument);
 
-		const operation =
-			artifact.openapi.paths["/api/repositories/{repositoryId}/tasks"]?.post;
-		const getOperation = artifact.openapi.paths["/api/tasks"]?.get;
-		expect(operation?.parameters).toEqual([
-			{
-				name: "repositoryId",
-				in: "path",
-				required: true,
-				description: "Repository that owns the task",
-				schema: { type: "string", format: "uuid" },
-			},
+		expect(parsed.success).toBe(true);
+		if (!parsed.success) return;
+		expect(parsed.data).toEqual(minimalDocument);
+	});
+
+	it("continues to read legacy API Contract validation metadata", () => {
+		const artifact = parsePlanApiContractOutput(
+			JSON.stringify(createMinimalOpenApiDocument()),
+		);
+		const legacyArtifact = planApiContractArtifactSchema.parse({
+			...artifact,
+			validation: [
+				{
+					schemaName: "Task",
+					owner: "response",
+					strictness: "strict",
+					examples: [],
+				},
+			],
+		});
+
+		expect(legacyArtifact.validation).toEqual([
+			expect.objectContaining({ schemaName: "Task", owner: "response" }),
 		]);
-		expect(getOperation?.parameters).toEqual([
-			{
-				name: "status",
-				in: "query",
-				required: false,
-				description: "Optional task status filter",
-				schema: { type: "string", enum: ["queued", "complete"] },
-			},
-		]);
-		expect(getOperation?.requestBody).toBeUndefined();
-		expect(operation?.requestBody).toMatchObject({
+	});
+
+	it("preserves direct OpenAPI request, response, schema, and security objects", () => {
+		const document = createMinimalOpenApiDocument();
+		const getTask = document.paths["/api/tasks/{taskId}"].get;
+		const requestBody = {
 			required: true,
 			content: {
 				"application/json": {
-					schema: { $ref: "#/components/schemas/CreateTaskRequest" },
+					schema: { $ref: "#/components/schemas/TaskRequest" },
 				},
 			},
-		});
-		expect(operation?.responses).toMatchObject({
-			"202": {
-				content: {
-					"application/json": {
-						schema: { $ref: "#/components/schemas/TaskResponse" },
-					},
-				},
-			},
-		});
-		expect(artifact.openapi.components.schemas.CreateTaskRequest).toMatchObject(
-			{
+		};
+		Object.assign(getTask, { requestBody });
+		Object.assign(document.components.schemas, {
+			TaskRequest: {
 				type: "object",
+				additionalProperties: false,
 				required: ["title"],
+				properties: { title: { type: "string", minLength: 1 } },
 			},
-		);
-		expect(artifact.stateTransitions[0]?.fromState).toBeNull();
-		expect(artifact.validation[0]?.zodOwnerFile).toBeNull();
-		expect(artifact.validation[0]?.examples[0]?.payload).toEqual({});
+		});
+		Object.assign(document.components, {
+			securitySchemes: {
+				bearerAuth: { type: "http", scheme: "bearer" },
+			},
+		});
+		const directDocument = {
+			...document,
+			security: [{ bearerAuth: [] }],
+		};
+		const artifact = parsePlanApiContractOutput(JSON.stringify(directDocument));
+
+		expect(
+			artifact.openapi.paths["/api/tasks/{taskId}"]?.get?.requestBody,
+		).toEqual(requestBody);
+		expect(artifact.openapi.components.securitySchemes).toEqual({
+			bearerAuth: { type: "http", scheme: "bearer" },
+		});
+		expect(artifact.openapi.security).toEqual([{ bearerAuth: [] }]);
+		expect(artifact.validation).toBeUndefined();
 	});
 
-	it("rejects invalid or unresolved JSON Schema draft references", () => {
-		const baseDraft = {
-			title: "Task API Contract",
-			summary: "Task creation contract.",
-			operations: [
-				{
-					path: "/api/tasks",
-					method: "post",
-					operationId: "createTask",
-					summary: "Create task",
-					description: "Create task.",
-					tags: [],
-					parameters: [],
-					requestBody: {
-						description: "",
-						schemaName: "MissingRequest",
-						required: true,
-					},
-					responses: [{ status: 202, description: "Accepted", schemaName: "" }],
-				},
-			],
-			schemas: [{ name: "Known", schemaJson: "not-json" }],
-			stateTransitions: [],
-			validation: [],
-			openQuestions: [],
-		};
+	it("rejects invalid and unresolved JSON Schema objects", () => {
+		const invalidType = createMinimalOpenApiDocument();
+		Object.assign(invalidType.components.schemas.Task, { type: "strng" });
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(invalidType)),
+		).toThrow("not a valid JSON Schema type");
 
-		expect(() => parsePlanApiContractOutput(JSON.stringify(baseDraft))).toThrow(
-			"valid JSON Schema JSON",
+		const unresolved = createMinimalOpenApiDocument();
+		Object.assign(
+			unresolved.paths["/api/tasks/{taskId}"].get.responses["200"].content[
+				"application/json"
+			].schema,
+			{ $ref: "#/components/schemas/MissingTask" },
 		);
 		expect(() =>
-			parsePlanApiContractOutput(
-				JSON.stringify({
-					...baseDraft,
-					schemas: [{ name: "Known", schemaJson: '{"type":"object"}' }],
-				}),
-			),
-		).toThrow("references unknown schema");
+			parsePlanApiContractOutput(JSON.stringify(unresolved)),
+		).toThrow("references unknown schema: MissingTask");
 	});
 
 	it("preserves response text and accepts local JSON Pointer subpaths", () => {
-		const draft = createMinimalApiContractDraft();
-		draft.schemas.push({
-			name: "TaskId",
-			schemaJson: JSON.stringify({
-				$ref: "#/components/schemas/Task/properties/id",
-			}),
+		const document = createMinimalOpenApiDocument();
+		Object.assign(document.components.schemas, {
+			TaskId: { $ref: "#/components/schemas/Task/properties/id" },
 		});
-		draft.operations[0].responses[0].schemaName = "TaskId";
-		const artifact = parsePlanApiContractOutput(JSON.stringify(draft));
+		document.paths["/api/tasks/{taskId}"].get.responses["200"] = {
+			description: "Task identifier",
+			content: {
+				"application/json": {
+					schema: { $ref: "#/components/schemas/TaskId" },
+				},
+			},
+		};
+		const artifact = parsePlanApiContractOutput(JSON.stringify(document));
 
 		expect(
 			artifact.openapi.paths["/api/tasks/{taskId}"]?.get?.responses["200"],
-		).toMatchObject({ description: "" });
+		).toMatchObject({ description: "Task identifier" });
 		expect(artifact.openapi.components.schemas.TaskId).toEqual({
 			$ref: "#/components/schemas/Task/properties/id",
 		});
 	});
 
-	it("rejects contradictory API draft invariants instead of silently normalizing", () => {
-		const optionalPathParameter = createMinimalApiContractDraft();
-		optionalPathParameter.operations[0].parameters[0].required = false;
+	it("rejects contradictory OpenAPI path, method, response, and operation invariants", () => {
+		const emptyPathItem = createMinimalOpenApiDocument();
+		emptyPathItem.paths["/api/tasks/{taskId}"] = {} as never;
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(emptyPathItem)),
+		).toThrow("valid OpenAPI 3.1 document");
+
+		const optionalPathParameter = createMinimalOpenApiDocument();
+		optionalPathParameter.paths[
+			"/api/tasks/{taskId}"
+		].get.parameters[0].required = false;
 		expect(() =>
 			parsePlanApiContractOutput(JSON.stringify(optionalPathParameter)),
 		).toThrow("path parameter must be required");
 
-		const requiredBodyWithoutSchema = createMinimalApiContractDraft();
-		requiredBodyWithoutSchema.operations[0].requestBody.required = true;
+		const missingPathParameter = createMinimalOpenApiDocument();
+		missingPathParameter.paths["/api/tasks/{taskId}"].get.parameters = [];
 		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(requiredBodyWithoutSchema)),
-		).toThrow("requires a request body without a schema");
+			parsePlanApiContractOutput(JSON.stringify(missingPathParameter)),
+		).toThrow("is missing path parameter");
 
-		const describedBodyWithoutSchema = createMinimalApiContractDraft();
-		describedBodyWithoutSchema.operations[0].requestBody.description =
-			"Body is not actually supported";
+		const missingParameterSchema = createMinimalOpenApiDocument();
+		Object.assign(
+			missingParameterSchema.paths["/api/tasks/{taskId}"].get.parameters[0],
+			{ schema: undefined },
+		);
 		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(describedBodyWithoutSchema)),
-		).toThrow("describes a request body without a schema");
+			parsePlanApiContractOutput(JSON.stringify(missingParameterSchema)),
+		).toThrow("requires a schema");
 
-		const missingTransitionStatus = {
-			...createMinimalApiContractDraft(),
-			stateTransitions: [
-				{
-					operationId: "getTask",
-					fromState: "",
-					toState: "ready",
-					successStatus: 201,
-					conflictStatuses: [],
-					stateField: "status",
-					notes: [],
-				},
-			],
+		const invalidStatus = createMinimalOpenApiDocument();
+		invalidStatus.paths["/api/tasks/{taskId}"].get.responses = {
+			"20": { description: "Invalid" },
 		};
 		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(missingTransitionStatus)),
-		).toThrow("references missing success status");
+			parsePlanApiContractOutput(JSON.stringify(invalidStatus)),
+		).toThrow("invalid response status");
 
-		const overlappingStatuses = {
-			...createMinimalApiContractDraft(),
-			stateTransitions: [
-				{
+		const invalidResponseContent = createMinimalOpenApiDocument();
+		Object.assign(
+			invalidResponseContent.paths["/api/tasks/{taskId}"].get.responses["200"],
+			{ content: {} },
+		);
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(invalidResponseContent)),
+		).toThrow("requires content.application/json.schema");
+
+		const duplicateOperation = createMinimalOpenApiDocument();
+		Object.assign(duplicateOperation.paths, {
+			"/api/tasks": {
+				get: {
 					operationId: "getTask",
-					fromState: "",
-					toState: "ready",
-					successStatus: 200,
-					conflictStatuses: [200],
-					stateField: "status",
-					notes: [],
+					responses: { "200": { description: "Task list" } },
 				},
-			],
+			},
+		});
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(duplicateOperation)),
+		).toThrow("Duplicate operationId");
+
+		const unsupportedMethod = createMinimalOpenApiDocument();
+		Object.assign(unsupportedMethod.paths["/api/tasks/{taskId}"], {
+			trace: unsupportedMethod.paths["/api/tasks/{taskId}"].get,
+		});
+		expect(() =>
+			parsePlanApiContractOutput(JSON.stringify(unsupportedMethod)),
+		).toThrow("Unsupported OpenAPI operation method");
+
+		const unknownSecurityScheme = createMinimalOpenApiDocument();
+		const securedDocument = {
+			...unknownSecurityScheme,
+			security: [{ missingAuth: [] }],
 		};
 		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(overlappingStatuses)),
-		).toThrow("uses success status as a conflict status");
+			parsePlanApiContractOutput(JSON.stringify(securedDocument)),
+		).toThrow("references unknown security scheme: missingAuth");
 	});
 
-	it("rejects malformed embedded JSON instead of degrading artifact semantics", () => {
-		const invalidSchemaType = createMinimalApiContractDraft();
-		invalidSchemaType.schemas[0].schemaJson = '{"type":"strng"}';
+	it("rejects the removed DSL and artifact wrappers", () => {
 		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(invalidSchemaType)),
-		).toThrow("not a valid JSON Schema type");
-
-		const invalidPayload = createMinimalApiContractDraft();
-		invalidPayload.validation[0].examples[0].payloadJson = "not-json";
-		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(invalidPayload)),
-		).toThrow("did not contain valid payload JSON");
-
-		const extraDraftField = {
-			...createMinimalApiContractDraft(),
-			unexpected: true,
-		};
-		expect(() =>
-			parsePlanApiContractOutput(JSON.stringify(extraDraftField)),
-		).toThrow("did not contain valid JSON");
-	});
-
-	it("rejects API Contract state transitions that reference unknown operations", () => {
+			parsePlanApiContractOutput(
+				JSON.stringify({
+					title: "Task API Contract",
+					operations: [],
+					schemas: [],
+				}),
+			),
+		).toThrow("valid OpenAPI 3.1 document");
 		expect(() =>
 			parsePlanApiContractOutput(
 				JSON.stringify({
 					artifactKind: "plan_mode_api_contract",
 					view: "api_io_contract",
-					title: "Task API Contract",
-					summary: "Task creation contract.",
-					openapi: {
-						openapi: "3.1.0",
-						info: { title: "Task API", version: "0.1.0" },
-						paths: {
-							"/api/tasks": {
-								post: {
-									operationId: "createTask",
-									responses: { "202": { description: "Accepted" } },
-								},
-							},
-						},
-						components: { schemas: {} },
-					},
-					stateTransitions: [
-						{
-							operationId: "missingOperation",
-							successStatus: 202,
-							conflictStatuses: [],
-							notes: [],
-						},
-					],
-					validation: [],
-					openQuestions: [],
+					openapi: createMinimalOpenApiDocument(),
 				}),
 			),
-		).toThrow("unknown operationId");
+		).toThrow("valid OpenAPI 3.1 document");
 	});
 
 	it("rejects unsupported diagrams", () => {

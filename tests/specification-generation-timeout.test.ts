@@ -246,6 +246,9 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				markdown:
 					"# Todo API Feature Plan\n\n## 完了条件\n\n- [AC-001][api] Todo APIを利用できる",
+				acceptanceCriteria: [
+					{ title: "Todo APIを利用できる", category: "api" },
+				],
 				implementationPlan: {
 					steps: [
 						{
@@ -284,6 +287,9 @@ describe("Feature Plan generation timeout handling", () => {
 		const validDraft = {
 			markdown:
 				"# Todo List Feature Plan\n\n## 実装計画\n\n1. Todo APIを実装する\n\n## 検証計画\n\n- Run tests\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+			acceptanceCriteria: [
+				{ title: "Todoを作成できる", category: "api" as const },
+			],
 			implementationPlan: {
 				steps: [
 					{
@@ -316,12 +322,14 @@ describe("Feature Plan generation timeout handling", () => {
 			type: "object",
 			required: [
 				"markdown",
+				"acceptanceCriteria",
 				"implementationPlan",
 				"repositoryMaterializationIntent",
 			],
 			additionalProperties: false,
 			properties: {
 				markdown: expect.objectContaining({ type: "string" }),
+				acceptanceCriteria: expect.any(Object),
 				implementationPlan: expect.any(Object),
 				repositoryMaterializationIntent: expect.any(Object),
 			},
@@ -336,6 +344,7 @@ describe("Feature Plan generation timeout handling", () => {
 			),
 		).toEqual([
 			"markdown",
+			"acceptanceCriteria",
 			"implementationPlan",
 			"repositoryMaterializationIntent",
 		]);
@@ -352,6 +361,7 @@ describe("Feature Plan generation timeout handling", () => {
 			value: {
 				markdown:
 					"# Todo List Feature Plan\n\n## 目的\nNightWorkersへTodoを追加する。\n\n## 実装計画\n\n1. NightWorkers APIを実装する\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+				acceptanceCriteria: [{ title: "Todoを作成できる", category: "api" }],
 				implementationPlan: {
 					steps: [
 						{
@@ -387,9 +397,9 @@ describe("Feature Plan generation timeout handling", () => {
 				},
 			],
 		});
-		expect(featurePlanCall.payloadJson).not.toHaveProperty(
-			"acceptanceCriteria",
-		);
+		expect(featurePlanCall.payloadJson?.acceptanceCriteria).toEqual([
+			{ title: "Todoを作成できる", category: "api" },
+		]);
 		expect(featurePlanCall.payloadJson?.featurePlanContent).toEqual({
 			version: 1,
 			digest: digestFeaturePlanContent(featurePlanCall.content),
@@ -404,6 +414,33 @@ describe("Feature Plan generation timeout handling", () => {
 		});
 		expect(featurePlanCall.content).toContain("対象プロジェクト APIを実装する");
 		expect(featurePlanCall.content).not.toMatch(/NightWorkers?/i);
+	});
+
+	it("rejects a post-sanitization mismatch before persisting the Feature Plan", async () => {
+		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
+			value: {
+				markdown:
+					"# Todo Feature Plan\n\n## 完了条件\n\n- [AC-001][api] Todoを作成できる",
+				acceptanceCriteria: [{ title: "Todoを削除できる", category: "api" }],
+				implementationPlan: {
+					steps: [
+						{
+							title: "Todo APIを実装する",
+							systemContext: "対象ProjectのAPI契約を実装する。",
+						},
+					],
+				},
+				repositoryMaterializationIntent: null,
+			},
+			attempts: [],
+		});
+
+		await expect(generateFeaturePlanArtifact("task-1")).rejects.toMatchObject({
+			statusCode: 422,
+			code: "FEATURE_PLAN_CANONICALIZATION_MISMATCH",
+			details: { retryable: true },
+		});
+		expect(createPlanModeTaskMessage).not.toHaveBeenCalled();
 	});
 
 	it("returns a gateway timeout error when the provider aborts", async () => {
@@ -428,6 +465,9 @@ describe("Feature Plan generation timeout handling", () => {
 		vi.mocked(callStructuredOutputWithRepair).mockResolvedValueOnce({
 			value: {
 				markdown,
+				acceptanceCriteria: [
+					{ title: "Todoを利用できる", category: "workflow" },
+				],
 				implementationPlan: {
 					steps: [
 						{

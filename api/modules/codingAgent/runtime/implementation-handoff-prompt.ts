@@ -3,6 +3,8 @@ import type { ImplementationPlan } from "../../../../shared/modules/agentsShare"
 export const CODING_AGENT_IMPLEMENTATION_HANDOFF_INSTRUCTIONS_JA = [
 	"以下の IMPLEMENTATION_HANDOFF は、確定済みの実装計画です。",
 	"確定済みの技術選定、実装範囲、受け入れ条件を、補助資料や既定構成より優先してください。",
+	"production codeとtest期待値を採用済み設計Artifactへ照合し、testがPassしていても正本と矛盾する場合は実装またはtestを修正してください。",
+	"repository内で解消可能な実装、test、inventory、mapping、runnerの問題をneeds_humanにせず、同じRunで修正と再検証を続けてください。",
 	"未達項目や失敗した必須検証が残る場合は、解決可能な限り調査・実装・検証を続けてください。解決できない場合は完了を表明せず、残件と理由を具体的に報告してください。",
 ].join("\n");
 

@@ -112,6 +112,7 @@ function compactTestInventoryPayload(payload: unknown) {
 				caseKey: testCase.caseKey,
 				name: testCase.name,
 				file: testCase.filePath,
+				runner: testCase.runner,
 			})),
 	};
 }

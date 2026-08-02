@@ -56,6 +56,9 @@ describe("Coding Agent implementation handoff prompt", () => {
 			"<ADOPTED_PLAN>\nHono と React/Vite を使用する。AC-001 を実行可能なテストで検証する。\n</ADOPTED_PLAN>",
 		);
 		expect(prompt).toContain("補助資料や既定構成より優先");
+		expect(prompt).toContain("testがPassしていても正本と矛盾");
+		expect(prompt).toContain("inventory、mapping、runner");
+		expect(prompt).toContain("needs_humanにせず");
 		expect(prompt).toContain("解決可能な限り調査・実装・検証を続けて");
 		expect(prompt).toContain("完了を表明せず");
 		expect(prompt).not.toContain("todo_list");

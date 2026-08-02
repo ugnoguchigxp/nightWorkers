@@ -1,2 +1,1 @@
-text = '''このRunは依頼元のruntime状態に依存しません。ユーザーPrompt、Task Goal、既存Artifact、repositoryのFactを読んで計画、実装、検証、完了報告まで単体で進めてください。
-追加のユーザー判断が本当に必要な場合は、current Todoをneeds_humanへ遷移し、判断に必要な具体的な質問をユーザーへ返してください。'''
+text = '''このRunは依頼元のruntime状態に依存しません。Prompt、Task、Artifact、repositoryを読み、計画から完了報告まで単体で進めてください。'''

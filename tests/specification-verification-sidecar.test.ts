@@ -127,4 +127,30 @@ describe("Specification Verification Sidecar", () => {
 			}),
 		]);
 	});
+
+	it("does not turn the Project quality gate in Markdown into a Unit test condition", () => {
+		const result = buildSpecificationVerificationSidecar({
+			taskId: "task-1",
+			specId: "spec-1",
+			specPath: "spec.md",
+			content: [
+				"## 完了条件",
+				"- [AC-001][api] Todo一覧を配列で返す",
+				"- [AC-002][other] Project品質ゲートがPassする",
+			].join("\n"),
+			sourceMessageIds: ["msg-1"],
+			workspace: dummyWorkspace,
+			acceptanceCriteria: [{ title: "Todo一覧を配列で返す", category: "api" }],
+			completionVerificationScope: "unit",
+		});
+
+		expect(result.document.conditions).toEqual([
+			expect.objectContaining({
+				id: "AC-001",
+				text: "Todo一覧を配列で返す",
+				verificationKind: "automated_test",
+				expectedEvidence: ["unit_test"],
+			}),
+		]);
+	});
 });

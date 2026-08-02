@@ -6,9 +6,16 @@ import {
 } from "../api/modules/specification/feature-plan-content";
 
 describe("Feature Plan Markdown content", () => {
+	const acceptanceCriteria = [
+		{ title: "Todoを利用できる", category: "workflow" as const },
+	];
+	const markdown =
+		"# Todo Feature Plan\n\n## 完了条件\n\n- [AC-001][workflow] Todoを利用できる";
+
 	it("requires one minimal structured implementation plan beside Markdown", () => {
 		const result = featurePlanMarkdownDraftSchema.parse({
-			markdown: "# Todo Feature Plan\n\n## 目的\nTodoを実装する。",
+			markdown,
+			acceptanceCriteria,
 			implementationPlan: {
 				steps: [
 					{
@@ -25,7 +32,8 @@ describe("Feature Plan Markdown content", () => {
 
 	it("rejects unrelated generated fields", () => {
 		const result = featurePlanMarkdownDraftSchema.safeParse({
-			markdown: "# Feature Plan",
+			markdown,
+			acceptanceCriteria,
 			implementationPlan: {
 				steps: [{ title: "実装する", systemContext: "仕様に沿って実装する。" }],
 			},
@@ -40,6 +48,7 @@ describe("Feature Plan Markdown content", () => {
 		expect(
 			featurePlanMarkdownDraftSchema.safeParse({
 				markdown: "   ",
+				acceptanceCriteria,
 				implementationPlan: {
 					steps: [
 						{ title: "実装する", systemContext: "仕様に沿って実装する。" },
@@ -53,7 +62,8 @@ describe("Feature Plan Markdown content", () => {
 	it("rejects line breaks in minimal plan fields", () => {
 		expect(
 			featurePlanMarkdownDraftSchema.safeParse({
-				markdown: "# Feature Plan",
+				markdown,
+				acceptanceCriteria,
 				implementationPlan: {
 					steps: [
 						{
@@ -65,6 +75,60 @@ describe("Feature Plan Markdown content", () => {
 				repositoryMaterializationIntent: null,
 			}).success,
 		).toBe(false);
+	});
+
+	it("requires structured acceptance criteria for the Verification Document", () => {
+		expect(
+			featurePlanMarkdownDraftSchema.safeParse({
+				markdown: "# Feature Plan",
+				implementationPlan: {
+					steps: [
+						{ title: "実装する", systemContext: "仕様に沿って実装する。" },
+					],
+				},
+				repositoryMaterializationIntent: null,
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects structured criteria that diverge from the Markdown authority", () => {
+		expect(
+			featurePlanMarkdownDraftSchema.safeParse({
+				markdown,
+				acceptanceCriteria: [
+					{ title: "Todoを削除できる", category: "workflow" },
+				],
+				implementationPlan: {
+					steps: [
+						{ title: "実装する", systemContext: "仕様に沿って実装する。" },
+					],
+				},
+				repositoryMaterializationIntent: null,
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects malformed or non-sequential completion-condition bullets", () => {
+		for (const completionCondition of [
+			"- Todoを利用できる",
+			"- [AC-002][workflow] Todoを利用できる",
+		]) {
+			expect(
+				featurePlanMarkdownDraftSchema.safeParse({
+					markdown: `# Feature Plan\n\n## 完了条件\n\n${completionCondition}`,
+					acceptanceCriteria,
+					implementationPlan: {
+						steps: [
+							{
+								title: "実装する",
+								systemContext: "仕様に沿って実装する。",
+							},
+						],
+					},
+					repositoryMaterializationIntent: null,
+				}).success,
+			).toBe(false);
+		}
 	});
 
 	it("derives title and content digest from the canonical Markdown", () => {

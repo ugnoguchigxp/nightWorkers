@@ -109,6 +109,9 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
 					"# Feature Plan\n\n## 目的\n未回答 blocking を assumption として進める。\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				acceptanceCriteria: [
+					{ title: "Todo本体を利用できる", category: "workflow" },
+				],
 				implementationPlan: {
 					steps: [
 						{
@@ -157,6 +160,9 @@ describe("Questionnaire decision layer services", () => {
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown:
 					"# Feature Plan\n\n## 目的\nnon-blocking は既存資料から進める。\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる",
+				acceptanceCriteria: [
+					{ title: "Todo本体を利用できる", category: "workflow" },
+				],
 				implementationPlan: {
 					steps: [
 						{
@@ -192,6 +198,9 @@ describe("Questionnaire decision layer services", () => {
 				"# Feature Plan\n\n## 完了条件\n\n- [AC-001][workflow] Todo本体を利用できる";
 			process.env.SUPERVISOR_FIXTURE_OUTPUT = JSON.stringify({
 				markdown,
+				acceptanceCriteria: [
+					{ title: "Todo本体を利用できる", category: "workflow" },
+				],
 				implementationPlan: {
 					steps: [
 						{

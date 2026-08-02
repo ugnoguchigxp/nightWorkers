@@ -229,7 +229,7 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 		);
 	});
 
-	it("projects only active inventory cases with the three model fields", () => {
+	it("projects only active inventory cases with the runner needed for repair", () => {
 		const result = projectWorkerResultToNativeApiToolResult({
 			ok: true,
 			toolName: "collect_test_inventory",
@@ -271,6 +271,7 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 					caseKey: "T1",
 					name: "creates a todo",
 					file: "tests/todo.test.ts",
+					runner: "vitest",
 				},
 			],
 		});

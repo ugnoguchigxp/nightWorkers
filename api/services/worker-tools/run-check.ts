@@ -196,6 +196,7 @@ async function runCheckToolInternal(
 			command: requestedCommand,
 			declaredCommand: input.command.trim(),
 			cwd: input.cwd,
+			repoRoot: input.repoRoot,
 			checkKind: input.checkKind,
 			sourceStateHash: sourceSnapshotBefore.sourceStateHash,
 		});

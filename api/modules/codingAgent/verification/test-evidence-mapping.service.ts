@@ -142,7 +142,7 @@ function assertKnownConditions(
 	throw new TestConditionMappingFailure(
 		"TEST_MAPPING_PRECONDITION_MISSING",
 		"One or more selected verification conditions are unavailable.",
-		undefined,
+		"read_current_specification",
 		issues,
 	);
 }

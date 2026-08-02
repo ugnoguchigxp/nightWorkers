@@ -53,7 +53,7 @@ import {
 	buildZodSchemaSourceEvidence,
 	parsePlanApiContractOutput,
 	parsePlanZodSchemaOutput,
-	planApiContractDraftSchema,
+	planApiContractOpenApiSchema,
 	planZodSchemaDraftSchema,
 } from "./plan-view-contract-parser";
 import {
@@ -456,7 +456,7 @@ async function generateApiContractArtifactFromLlm(input: {
 			options: {
 				contract: createStructuredOutputContract({
 					name: "plan_mode_api_contract",
-					runtimeSchema: planApiContractDraftSchema,
+					runtimeSchema: planApiContractOpenApiSchema,
 					providerJsonSchema: planApiContractStructuredOutputSchema,
 				}),
 				taskId: input.taskId,

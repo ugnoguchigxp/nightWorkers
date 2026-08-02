@@ -15,6 +15,8 @@ import {
 	verificationEvidenceRuns,
 } from "../api/db/verification-schema";
 import { runCompletionCheck } from "../api/modules/codingAgent/application/completion-check.service";
+import { resolveRunCheckEvidenceScope } from "../api/modules/codingAgent/verification/run-check-evidence-scope.service";
+import { collectTestInventory } from "../api/modules/codingAgent/verification/test-inventory.service";
 import {
 	collectTestInventoryTool,
 	recordTestConditionMappingTool,
@@ -97,6 +99,11 @@ async function createTestRepository() {
 			devDependencies: { vitest: "test" },
 		}),
 	);
+	await fs.symlink(
+		path.join(process.cwd(), "node_modules"),
+		path.join(repoRoot, "node_modules"),
+		process.platform === "win32" ? "junction" : "dir",
+	);
 	await fs.writeFile(
 		path.join(repoRoot, "tests/coding-agent-test-evidence-matcher.test.ts"),
 		[
@@ -110,6 +117,220 @@ async function createTestRepository() {
 }
 
 describe("schema test evidence mapping integration", () => {
+	it("prefers one complete inventory and resolves a nested Vitest scope from the Project package root", async () => {
+		const repoRoot = await createTestRepository();
+		const repository = await nightworkersRepository.createRepository({
+			name: `TEST: complete inventory selection ${crypto.randomUUID()}`,
+			localPath: repoRoot,
+			branch: "main",
+		});
+		repositoryIds.push(repository.id);
+		const task = await nightworkersRepository.createTask({
+			repositoryId: repository.id,
+			title: "TEST: complete inventory selection",
+		});
+		const revision =
+			await nightworkersRepository.getCurrentTaskRevisionSnapshot(task.id);
+		const run = await nightworkersRepository.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			taskRevisionSnapshotId: revision?.id,
+			taskRevision: revision?.revision,
+			taskDigest: revision?.digest,
+		});
+		const conditions = [
+			...["AC-001", "AC-002"].map((conditionId) => ({
+				id: conditionId,
+				text: `Verify ${conditionId}`,
+				category: "validation" as const,
+				verificationKind: "automated_test" as const,
+				expectedEvidence: ["unit_test" as const],
+				expectedResult: `${conditionId} passes`,
+				failureMeaning: `${conditionId} is unverified`,
+				required: true,
+				status: "pending" as const,
+			})),
+			{
+				id: "AC-003",
+				text: "Optional diagnostic condition",
+				category: "validation" as const,
+				verificationKind: "automated_test" as const,
+				expectedEvidence: ["unit_test" as const],
+				expectedResult: "optional diagnostic passes",
+				failureMeaning: "optional diagnostic is unverified",
+				required: false,
+				status: "pending" as const,
+			},
+		];
+		const document = await createVerificationDocumentFromSpec({
+			taskId: task.id,
+			runId: run?.id,
+			sourceSpecPath: "spec/complete-inventory.md",
+			document: {
+				version: 2,
+				specId: "complete-inventory",
+				specPath: "spec/complete-inventory.md",
+				generatedAt: new Date().toISOString(),
+				source: {
+					taskId: task.id,
+					sourceMessageIds: [],
+					workspaceArtifactIds: [],
+				},
+				testScope: "unit",
+				conditions,
+				commands: [],
+			},
+		});
+		const rootInventory = await collectTestInventory(
+			{ taskId: task.id, runId: run?.id, repoRoot },
+			{ activeDiscovery: false },
+		);
+		const rootCase = rootInventory.cases.find(
+			(testCase) => testCase.discoveryLevel === "active",
+		);
+		expect(rootCase?.runner).toBe("vitest");
+		await expect(
+			resolveRunCheckEvidenceScope({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+				sourceStateHash: rootInventory.sourceSnapshot.sourceStateHash,
+			}),
+		).rejects.toMatchObject({
+			code: "CONDITION_MAPPING_MISSING",
+			details: {
+				retryable: true,
+				suggestedAction: "record_test_condition_mapping",
+			},
+		});
+		expect(
+			await recordTestConditionMappingTool({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				inventoryId: rootInventory.id,
+				mappings: [
+					{
+						caseKey: rootCase?.caseKey ?? "",
+						conditionIds: ["AC-001", "AC-002"],
+					},
+				],
+			}),
+		).toMatchObject({ ok: true });
+
+		const nestedInventory = await collectTestInventory({
+			taskId: task.id,
+			runId: run?.id,
+			repoRoot,
+			cwd: "tests",
+		});
+		const nestedCase = nestedInventory.cases.find(
+			(testCase) => testCase.discoveryLevel === "active",
+		);
+		expect(nestedCase?.runner).toBe("vitest");
+		expect(
+			await recordTestConditionMappingTool({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				inventoryId: nestedInventory.id,
+				mappings: [
+					{
+						caseKey: nestedCase?.caseKey ?? "",
+						conditionIds: ["AC-001"],
+					},
+				],
+			}),
+		).toMatchObject({ ok: true });
+		const unresolvedInventory = await collectTestInventory(
+			{ taskId: task.id, runId: run?.id, repoRoot },
+			{ activeDiscovery: false },
+		);
+		const unresolvedCase = unresolvedInventory.cases.find(
+			(testCase) => testCase.discoveryLevel === "active",
+		);
+		expect(
+			await recordTestConditionMappingTool({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				inventoryId: unresolvedInventory.id,
+				mappings: [
+					{
+						caseKey: unresolvedCase?.caseKey ?? "",
+						conditionIds: ["AC-001", "AC-002"],
+					},
+				],
+			}),
+		).toMatchObject({ ok: true });
+		await db
+			.update(codingAgentTestInventoryCases)
+			.set({ runner: "unknown" })
+			.where(
+				eq(codingAgentTestInventoryCases.inventoryId, unresolvedInventory.id),
+			);
+
+		await expect(
+			resolveRunCheckEvidenceScope({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+				sourceStateHash: nestedInventory.sourceSnapshot.sourceStateHash,
+			}),
+		).resolves.toMatchObject({
+			inventoryId: rootInventory.id,
+			runner: "vitest",
+			conditionIds: ["AC-001", "AC-002"],
+		});
+		await expect(
+			runCheckTool({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			payload: {
+				status: "passed",
+				resolvedCaseCount: 1,
+			},
+		});
+
+		await db
+			.update(codingAgentTestInventoryCases)
+			.set({ runner: "unknown" })
+			.where(eq(codingAgentTestInventoryCases.inventoryId, rootInventory.id));
+		await expect(
+			resolveRunCheckEvidenceScope({
+				taskId: task.id,
+				runId: run?.id,
+				verificationDocumentId: document.id,
+				repoRoot,
+				command: "test",
+				checkKind: "test",
+				sourceStateHash: nestedInventory.sourceSnapshot.sourceStateHash,
+			}),
+		).rejects.toMatchObject({
+			code: "TEST_INVENTORY_RUNNER_UNRESOLVED",
+			details: {
+				retryable: true,
+				suggestedAction: "collect_test_inventory",
+			},
+		});
+	});
+
 	it("[AC-001][AC-013] records mapped current evidence without changing Run status", async () => {
 		const repoRoot = await createTestRepository();
 		const repository = await nightworkersRepository.createRepository({
@@ -387,7 +608,8 @@ describe("schema test evidence mapping integration", () => {
 			ok: false,
 			error: {
 				code: "TEST_CASE_NOT_FOUND",
-				retryable: false,
+				retryable: true,
+				recoveryAction: "collect_test_inventory",
 				issues: [
 					expect.objectContaining({
 						path: ["mappings", 0, "caseKey"],
@@ -438,7 +660,11 @@ describe("schema test evidence mapping integration", () => {
 
 		expect(result).toMatchObject({
 			ok: false,
-			error: { code: "TEST_CASE_NOT_ACTIVE", retryable: false },
+			error: {
+				code: "TEST_CASE_NOT_ACTIVE",
+				retryable: true,
+				recoveryAction: "collect_test_inventory",
+			},
 		});
 
 		const legacyCaseKey =
@@ -528,7 +754,7 @@ describe("schema test evidence mapping integration", () => {
 			ok: false,
 			error: {
 				code: "TEST_MAPPING_SOURCE_STALE",
-				retryable: false,
+				retryable: true,
 				recoveryAction: "collect_test_inventory",
 			},
 		});
@@ -574,7 +800,8 @@ describe("schema test evidence mapping integration", () => {
 			ok: false,
 			error: {
 				code: "TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED",
-				retryable: false,
+				retryable: true,
+				recoveryAction: "fix_test_inventory_discovery",
 			},
 		});
 	});

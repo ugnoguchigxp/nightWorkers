@@ -238,25 +238,35 @@ export const planApiContractArtifactSchema = z.object({
 	view: z.literal("api_io_contract"),
 	title: z.string().min(1),
 	summary: z.string().min(1),
-	openapi: z.object({
-		openapi: z.literal("3.1.0"),
-		info: z.object({
-			title: z.string().min(1),
-			version: z.string().min(1),
-		}),
-		paths: z
-			.record(z.string(), z.record(z.string(), planApiContractOperationSchema))
-			.refine((paths) => Object.keys(paths).length > 0, {
-				message: "paths must not be empty",
-			}),
-		components: z
-			.object({
-				schemas: z.record(z.string(), z.unknown()).default({}),
-				responses: z.record(z.string(), z.unknown()).optional(),
-				parameters: z.record(z.string(), z.unknown()).optional(),
-			})
-			.default({ schemas: {} }),
-	}),
+	openapi: z
+		.object({
+			openapi: z.literal("3.1.0"),
+			info: z
+				.object({
+					title: z.string().min(1),
+					version: z.string().min(1),
+					summary: z.string().min(1).optional(),
+				})
+				.passthrough(),
+			paths: z
+				.record(
+					z.string(),
+					z.record(z.string(), planApiContractOperationSchema),
+				)
+				.refine((paths) => Object.keys(paths).length > 0, {
+					message: "paths must not be empty",
+				}),
+			components: z
+				.object({
+					schemas: z.record(z.string(), z.unknown()).default({}),
+					responses: z.record(z.string(), z.unknown()).optional(),
+					parameters: z.record(z.string(), z.unknown()).optional(),
+					securitySchemes: z.record(z.string(), z.unknown()).optional(),
+				})
+				.passthrough()
+				.default({ schemas: {} }),
+		})
+		.passthrough(),
 	stateTransitions: z
 		.array(
 			z.object({
@@ -293,7 +303,7 @@ export const planApiContractArtifactSchema = z.object({
 					.default([]),
 			}),
 		)
-		.default([]),
+		.optional(),
 	openQuestions: z.array(z.string()).default([]),
 });
 

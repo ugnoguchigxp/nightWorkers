@@ -200,7 +200,7 @@ describe("DedicatedViewPanel", () => {
 		expect(markup).toContain("step1 --&gt; step2");
 	});
 
-	it("renders API Contract artifacts as endpoint and validation panels", () => {
+	it("renders API Contract artifacts as endpoint panels with pure OpenAPI JSON", () => {
 		const markup = renderToStaticMarkup(
 			<DedicatedViewPanel
 				artifact={
@@ -339,7 +339,8 @@ describe("DedicatedViewPanel", () => {
 		expect(markup).toContain("409");
 		expect(markup).toContain("draft -&gt; generating_tasks");
 		expect(markup).toContain("CreateMissionTasksRequest");
-		expect(markup).toContain("missing mission id");
+		expect(markup).not.toContain("missing mission id");
+		expect(markup).not.toContain("artifactKind");
 		expect(markup).not.toContain("Download OpenAPI JSON");
 	});
 

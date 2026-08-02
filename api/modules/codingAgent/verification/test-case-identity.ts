@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import type { TestInventoryCase } from "../../../../shared/schemas/verification-checklist.schema";
 
@@ -18,11 +19,16 @@ export function resolveAbsoluteTestCasePath(input: {
 	filePath: string;
 	cwd: string;
 }) {
-	return normalizeTestCasePath(
-		path.isAbsolute(input.filePath)
-			? path.resolve(input.filePath)
-			: path.resolve(input.cwd, input.filePath),
-	);
+	const absolutePath = path.isAbsolute(input.filePath)
+		? path.resolve(input.filePath)
+		: path.resolve(input.cwd, input.filePath);
+	let canonicalPath = absolutePath;
+	try {
+		canonicalPath = realpathSync.native(absolutePath);
+	} catch {
+		// Preserve the lexical path when a reporter references a removed file.
+	}
+	return normalizeTestCasePath(canonicalPath);
 }
 
 export function resolveInventoryRelativeTestCasePath(input: {

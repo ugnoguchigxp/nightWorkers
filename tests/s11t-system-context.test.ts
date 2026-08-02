@@ -198,6 +198,13 @@ describe("S11t SystemContext catalog", () => {
 			"ready、reason、suggestedAction、readinessDigest",
 		);
 		expect(rendered).toContain("TEST_EVIDENCE_CAPTURE_FAILED");
+		expect(rendered).toContain("TEST_INVENTORY_RUNNER_UNRESOLVED");
+		expect(rendered).toContain(
+			"repository内では解消できない具体的blockerがある場合だけ",
+		);
+		expect(rendered).toContain(
+			"testがPassしていても期待値が正本と矛盾する場合は未達",
+		);
 		expect(rendered).toContain("E2Eが対象外ならE2E commandを選択・実行しない");
 		expect(rendered).not.toContain("mapping失敗を完了阻害条件にしない");
 		expect(rendered).toContain("## 実装結果");
@@ -218,6 +225,9 @@ describe("S11t SystemContext catalog", () => {
 		);
 		expect(planReview).toContain(
 			"templateのverify scriptまたはverify commandを必須対象",
+		);
+		expect(planReview).toContain(
+			"Project品質ゲート、verify command、lint、typecheck、buildの実行自体がacceptanceCriteriaへ追加",
 		);
 		expect(planReview).toContain(
 			"implementationPlanの先頭がそのintentと一致するProject import専用Todo",
@@ -604,7 +614,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"b2ec99227486086c25c06bd93144007fdbf263c7a5a769f5b9ebe2eada909392",
+				"c82478f23c6681db6cf06c46a04de9e2f00782e69954c8f8adb1d0f4b7f31a2c",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:

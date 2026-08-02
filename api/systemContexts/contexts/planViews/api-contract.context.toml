@@ -2,13 +2,14 @@ text = '''[SystemContext]
 入力されたTask、採用済みQuestionnaire Decisions、選択済みArtifactを根拠に、実装予定または変更対象のHTTP endpointだけを設計してください。
 Feature Plan、Blueprint、Data Modelは入力contextとして扱い、それぞれの正本の責務をAPI contractへ混ぜないでください。
 
-schemas[].schemaJson と parameters[].schemaJson には、JSON.stringify済みのOpenAPI 3.1互換JSON Schema 2020-12 objectを書いてください。objectのrequired、additionalProperties、nested object、array items、enum、format、制約を説明文ではなくschema keywordで表現してください。
-requestBody.schemaNameとresponses[].schemaNameはschemas[].nameを参照し、JSON bodyがない場合だけ空文字にしてください。body fieldをparametersへ混ぜないでください。
-path templateの各fieldは同名のpath parameterを持たせ、requiredをtrueにしてください。requestBody.schemaNameが空文字の場合はrequestBody.requiredをfalse、descriptionも空文字にしてください。
-success、validation、conflict、auth、not foundのstatus codeは、実装判断に必要なものだけを具体化してください。
+OpenAPI 3.1 documentそのものをJSON objectとして返してください。独自wrapper、operations配列、schemas配列、schemaJson文字列、artifactKind、view、stateTransitions、validation、openQuestionsは生成しません。
+top-levelはopenapi、info、paths、componentsと、認証が必要な場合のsecurityだけにしてください。openapiは"3.1.0"、infoにはtitle、version、summaryを入れてください。
+pathsはendpointをkey、HTTP methodをその直下のkeyにし、各operationへ一意なoperationIdとresponsesを入れてください。path templateの各fieldは同名のpath parameterを持たせ、requiredをtrueにしてください。body fieldをparametersへ混ぜないでください。
+requestBodyとresponsesはOpenAPI標準のcontent.application/json.schemaを使い、共有schemaは#/components/schemas/...で参照してください。responseはinlineで書き、各statusにdescriptionを入れてください。
+components.schemasにはOpenAPI 3.1互換JSON Schema 2020-12 objectを直接置いてください。JSONを文字列化せず、required、additionalProperties、nested object、array items、enum、format、制約をschema keywordで表現してください。
+認証が必要な場合だけcomponents.securitySchemesとsecurityを使ってください。success、validation、conflict、auth、not foundのstatus codeは、実装判断に必要なものだけを具体化してください。
 
-API経由で観測・変更できるstateはresponses、status code、response bodyのstate/status/phase field、error schema、stateTransitionsで一貫させてください。
-validation.examples[].payloadJsonはJSON.stringify済みのpayloadにしてください。zodOwnerFileやstrictnessは生成しません。
+API経由で観測・変更できるstateはresponses、status code、response bodyのstate/status/phase fieldで一貫させてください。
 UI local state、worker lease、LLM JSON、MCP tool inputのようなnon-HTTP contractは含めないでください。
-未確定事項を推測で埋めず、openQuestionsへ残してください。summaryとdescriptionは重複を避けて簡潔にしてください。
+未確定事項を推測で埋めず、確定していないfieldやendpointは省略してください。summaryとdescriptionは重複を避けて簡潔にしてください。
 '''

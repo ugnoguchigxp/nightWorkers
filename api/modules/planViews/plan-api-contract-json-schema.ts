@@ -8,21 +8,8 @@ const jsonSchemaTypes = new Set([
 	"integer",
 ]);
 
-export function parseJsonSchemaObject(
-	schemaJson: string,
-	label: string,
-): Record<string, unknown> {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(schemaJson);
-	} catch {
-		throw new Error(`${label} did not contain valid JSON Schema JSON.`);
-	}
-	if (!isRecord(parsed)) {
-		throw new Error(`${label} must be a JSON Schema object.`);
-	}
-	validateJsonSchemaKeywordShapes(parsed, label);
-	return parsed;
+export function validateJsonSchemaValue(value: unknown, label: string) {
+	validateJsonSchemaKeywordShapes(value, label);
 }
 
 export function collectLocalComponentReferences(value: unknown): string[] {
@@ -50,15 +37,6 @@ export function collectLocalComponentReferences(value: unknown): string[] {
 		}
 	}
 	return references;
-}
-
-export function inferJsonSchemaStrictness(
-	schema: unknown,
-): "strict" | "passthrough" | "unknown" {
-	if (!isRecord(schema)) return "unknown";
-	if (schema.additionalProperties === false) return "strict";
-	if (schema.additionalProperties === true) return "passthrough";
-	return "unknown";
 }
 
 const singleSubschemaKeywords = [

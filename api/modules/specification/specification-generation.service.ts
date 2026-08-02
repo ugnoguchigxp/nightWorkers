@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { implementationPlanSchema } from "../../../shared/modules/agentsShare";
 import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.schema";
+import type { SpecificationAcceptanceCriterion } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
 import { AppError, NotFoundError } from "../../lib/errors";
@@ -170,16 +171,52 @@ export async function generateFeaturePlanArtifact(
 		generatedDraft.markdown.trimEnd(),
 		context.projectStackContext,
 	);
+	const sanitizedAcceptanceCriteria: SpecificationAcceptanceCriterion[] =
+		generatedDraft.acceptanceCriteria.map((criterion) => ({
+			...criterion,
+			title: sanitizeSpecificationTargetNaming(
+				criterion.title,
+				context.projectStackContext,
+			).trim(),
+		}));
+	const sanitizedDraftResult = createFeaturePlanMarkdownDraftSchema({
+		requiresRepositoryMaterialization,
+	}).safeParse({
+		markdown: sanitizedMarkdown,
+		acceptanceCriteria: sanitizedAcceptanceCriteria,
+		implementationPlan: sanitizedPlan,
+		repositoryMaterializationIntent:
+			generatedDraft.repositoryMaterializationIntent ?? null,
+	});
+	if (!sanitizedDraftResult.success) {
+		throw new AppError(
+			422,
+			"FEATURE_PLAN_CANONICALIZATION_MISMATCH",
+			"名称正規化後のFeature Plan本文と構造化完了条件が一致しません。",
+			{
+				retryable: true,
+				issues: sanitizedDraftResult.error.issues.map((issue) => ({
+					path: issue.path.map((part) =>
+						typeof part === "number" ? part : String(part),
+					),
+					message: issue.message,
+				})),
+			},
+		);
+	}
+	const sanitizedDraft = sanitizedDraftResult.data;
 	const sanitizedContent = renderSpecificationWithImplementationPlan(
-		sanitizedMarkdown,
-		sanitizedPlan,
+		sanitizedDraft.markdown,
+		sanitizedDraft.implementationPlan,
 	);
 	const title = readFeaturePlanTitle(
 		sanitizedContent,
 		DEFAULT_FEATURE_PLAN_TITLE,
 	);
 	const contentDigest = digestFeaturePlanContent(sanitizedContent);
-	const implementationPlanDigest = digestImplementationPlan(sanitizedPlan);
+	const implementationPlanDigest = digestImplementationPlan(
+		sanitizedDraft.implementationPlan,
+	);
 	const message = await createPlanModeTaskMessage({
 		taskId,
 		role: "assistant",
@@ -190,8 +227,9 @@ export async function generateFeaturePlanArtifact(
 			title,
 			source: "status",
 			repositoryMaterializationIntent:
-				generatedDraft.repositoryMaterializationIntent ?? null,
-			implementationPlan: sanitizedPlan,
+				sanitizedDraft.repositoryMaterializationIntent,
+			implementationPlan: sanitizedDraft.implementationPlan,
+			acceptanceCriteria: sanitizedDraft.acceptanceCriteria,
 			implementationPlanProvenance: {
 				version: 1,
 				digest: implementationPlanDigest,
@@ -232,6 +270,7 @@ export async function generateFeaturePlanArtifact(
 			content: sanitizedContent,
 			sourceMessageIds: [...projection.provenance.sourceMessageIds, message.id],
 			workspace,
+			acceptanceCriteria: sanitizedDraft.acceptanceCriteria,
 			inferConditionSemantics: false,
 			completionVerificationScope: session
 				? resolveCompletionVerificationScope(session)

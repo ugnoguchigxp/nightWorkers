@@ -81,15 +81,6 @@ export function renderApiContractReference(artifact: JsonRecord | null) {
 	if (operations.length > 0) {
 		lines.push("Operations:", ...operations.slice(0, 10));
 	}
-	const validation = toRecordArray(artifact.validation).slice(0, 6);
-	if (validation.length > 0) {
-		lines.push(
-			`Validation: ${validation
-				.map((item) => String(item.schemaName || item.owner || "schema"))
-				.filter(Boolean)
-				.join(" / ")}`,
-		);
-	}
 	return lines.join("\n");
 }
 

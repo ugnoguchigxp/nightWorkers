@@ -343,6 +343,12 @@ describe("Specification document generation", () => {
 		expect(systemPrompt).toContain(
 			"完成済みFeature Plan本文を格納したmarkdown",
 		);
+		expect(systemPrompt).toContain(
+			"Verification Documentの正本となるacceptanceCriteria",
+		);
+		expect(systemPrompt).toContain(
+			"Project品質ゲートやverify commandは含めない",
+		);
 		expect(systemPrompt).toContain("repositoryMaterializationIntent");
 		expect(systemPrompt).toContain("stackは hono / python / java / rust");
 		expect(systemPrompt).toContain("推測せず null");
@@ -619,9 +625,7 @@ describe("Specification document generation", () => {
 		expect(context.planViewReferences).toContain(
 			"PATCH /api/todos/{id} (updateTodo)",
 		);
-		expect(context.planViewReferences).toContain(
-			"Validation: CreateTodoRequest",
-		);
+		expect(context.planViewReferences).not.toContain("Validation:");
 		expect(context.planViewReferences).toContain(
 			"Zod Schema: TodoTaskInputSchema",
 		);

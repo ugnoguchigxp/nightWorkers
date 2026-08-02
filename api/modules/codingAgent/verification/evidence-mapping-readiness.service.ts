@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { EvidenceCheckSnapshot } from "../../../../shared/modules/codingAgent";
 import { workspaceSourceSnapshotSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../../db/client";
@@ -10,6 +10,7 @@ import {
 } from "../../../db/verification-schema";
 import { digestTestDefinitionInventory } from "./test-definition-digest";
 import { collectTestInventory } from "./test-inventory.service";
+import { isTestRunnerInScope } from "./test-scope";
 
 type TestScope = EvidenceCheckSnapshot["scope"]["testScope"];
 type InventoryRow = typeof codingAgentTestInventoryRuns.$inferSelect;
@@ -49,6 +50,8 @@ export async function evaluateEvidenceMappingReadiness(input: {
 	try {
 		const selected = await selectInventoryWithMappings({
 			verificationDocumentId: input.verificationDocumentId,
+			requiredConditionIds: requiredItems.map((item) => item.conditionId),
+			testScope: input.testScope,
 			inventories: input.settledEvidence
 				? input.inventories.filter(
 						(inventory) =>
@@ -69,7 +72,7 @@ export async function evaluateEvidenceMappingReadiness(input: {
 					)
 			: [];
 		const scopedPersistedCases = persistedCases.filter((testCase) =>
-			caseIsInScope(testCase.runner, input.testScope),
+			isTestRunnerInScope(testCase.runner, input.testScope),
 		);
 		const persistedDefinitionDigest = selected.inventory
 			? digestTestDefinitionInventory(scopedPersistedCases)
@@ -197,7 +200,7 @@ async function currentTestDefinitions(input: {
 		{ activeDiscovery: false, persist: false },
 	);
 	const cases = inventory.cases.filter((testCase) =>
-		caseIsInScope(testCase.runner, input.testScope),
+		isTestRunnerInScope(testCase.runner, input.testScope),
 	);
 	const result = { digest: digestTestDefinitionInventory(cases), cases };
 	definitionCache.set(cacheKey, result);
@@ -211,9 +214,13 @@ async function currentTestDefinitions(input: {
 async function selectInventoryWithMappings(input: {
 	verificationDocumentId: string;
 	inventories: InventoryRow[];
+	requiredConditionIds: string[];
+	testScope: TestScope;
 }) {
-	for (const inventory of input.inventories) {
-		const mappings = await db
+	if (input.inventories.length === 0) return { inventory: null, mappings: [] };
+	const inventoryIds = input.inventories.map((inventory) => inventory.id);
+	const [allMappings, allCases] = await Promise.all([
+		db
 			.select()
 			.from(codingAgentTestConditionMappings)
 			.where(
@@ -222,12 +229,54 @@ async function selectInventoryWithMappings(input: {
 						codingAgentTestConditionMappings.verificationDocumentId,
 						input.verificationDocumentId,
 					),
-					eq(codingAgentTestConditionMappings.inventoryId, inventory.id),
+					inArray(codingAgentTestConditionMappings.inventoryId, inventoryIds),
 				),
-			);
-		if (mappings.length > 0) return { inventory, mappings };
+			),
+		db
+			.select()
+			.from(codingAgentTestInventoryCases)
+			.where(inArray(codingAgentTestInventoryCases.inventoryId, inventoryIds)),
+	]);
+	let selected:
+		| {
+				inventory: InventoryRow;
+				mappings: Array<typeof codingAgentTestConditionMappings.$inferSelect>;
+				coverage: number;
+		  }
+		| undefined;
+	for (const inventory of input.inventories) {
+		const mappings = allMappings.filter(
+			(mapping) => mapping.inventoryId === inventory.id,
+		);
+		if (mappings.length === 0) continue;
+		const cases = allCases.filter(
+			(testCase) => testCase.inventoryId === inventory.id,
+		);
+		const activeCaseKeys = new Set(
+			cases
+				.filter(
+					(testCase) =>
+						testCase.discoveryLevel === "active" &&
+						testCase.runner !== "unknown" &&
+						isTestRunnerInScope(testCase.runner, input.testScope),
+				)
+				.map((testCase) => testCase.caseKey),
+		);
+		const applicableMappings = mappings.filter((mapping) =>
+			activeCaseKeys.has(mapping.caseKey),
+		);
+		const covered = new Set(
+			applicableMappings.map((mapping) => mapping.conditionId),
+		);
+		const coverage = input.requiredConditionIds.filter((conditionId) =>
+			covered.has(conditionId),
+		).length;
+		if (!selected || coverage > selected.coverage) {
+			selected = { inventory, mappings: applicableMappings, coverage };
+		}
+		if (coverage === input.requiredConditionIds.length) break;
 	}
-	return { inventory: null, mappings: [] };
+	return selected ?? { inventory: null, mappings: [] };
 }
 
 function mappingRequired(
@@ -236,14 +285,6 @@ function mappingRequired(
 ) {
 	if (!item.required || testScope === "none") return false;
 	return (item.verificationKind ?? "automated_test") === "automated_test";
-}
-
-function caseIsInScope(runner: string, testScope: TestScope) {
-	if (testScope === "none") return false;
-	const e2e = runner === "playwright";
-	if (testScope === "unit") return !e2e;
-	if (testScope === "e2e_if_ui") return e2e;
-	return true;
 }
 
 function snapshotHash(value: unknown) {

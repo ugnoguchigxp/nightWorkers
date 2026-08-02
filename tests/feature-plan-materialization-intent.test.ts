@@ -13,11 +13,17 @@ describe("Feature Plan repository materialization intent", () => {
 	const implementationPlan = {
 		steps: [{ title: "実装する", systemContext: "対象機能を実装する。" }],
 	};
+	const acceptanceCriteria = [
+		{ title: "対象機能を利用できる", category: "workflow" as const },
+	];
+	const markdown =
+		"# Feature Plan\n\n## 完了条件\n\n- [AC-001][workflow] 対象機能を利用できる";
 
 	it("does not invent a starter when the structured selection is absent", () => {
 		expect(
 			featurePlanMarkdownDraftSchema.parse({
-				markdown: "# Feature Plan",
+				markdown,
+				acceptanceCriteria,
 				implementationPlan,
 			}),
 		).toMatchObject({ repositoryMaterializationIntent: null });
@@ -82,18 +88,24 @@ describe("Feature Plan repository materialization intent", () => {
 			requiresRepositoryMaterialization: true,
 		});
 		expect(() =>
-			schema.parse({ markdown: "# Feature Plan", implementationPlan }),
+			schema.parse({
+				markdown,
+				acceptanceCriteria,
+				implementationPlan,
+			}),
 		).toThrow();
 		expect(() =>
 			schema.parse({
-				markdown: "# Feature Plan",
+				markdown,
+				acceptanceCriteria,
 				implementationPlan,
 				repositoryMaterializationIntent: { kind: "existing_git" },
 			}),
 		).toThrow();
 		expect(
 			schema.parse({
-				markdown: "# Feature Plan",
+				markdown,
+				acceptanceCriteria,
 				implementationPlan,
 				repositoryMaterializationIntent: {
 					kind: "starter_template",

@@ -422,7 +422,7 @@ describe("spec-document-renderer", () => {
 			expect(result.planViewReferences).toContain(
 				"response/error: 201 TodoResponse {id:string, title:string, status:enum(todo|done)?} / 400 TodoValidationError {message:string, issues:array?}",
 			);
-			expect(result.planViewReferences).toContain("Validation: TodoRequest");
+			expect(result.planViewReferences).not.toContain("Validation:");
 			expect(result.planViewReferences).toContain(
 				"Zod Schema: TodoInputSchema",
 			);
