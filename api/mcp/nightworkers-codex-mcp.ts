@@ -260,7 +260,6 @@ export function createNightWorkersCodexMcpServer(
 				toolName: "completion_check",
 				arguments: args,
 				evidenceKind: "completion-check",
-				idempotentSideEffect: true,
 				execute: () => completionCheckTool(args),
 			});
 		},

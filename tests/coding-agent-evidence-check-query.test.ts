@@ -148,9 +148,10 @@ describe("Coding Agent Evidence Check query", () => {
 				repoRoot: repositoryPath,
 			}),
 		).resolves.toMatchObject({
-			ok: false,
+			ok: true,
 			payload: {
 				result: {
+					ok: false,
 					verify: { status: "not_run" },
 					confirmation: { status: "awaiting_initial_verify" },
 					suggestedAction: "run_verify",
@@ -192,9 +193,10 @@ describe("Coding Agent Evidence Check query", () => {
 				repoRoot: repositoryPath,
 			}),
 		).resolves.toMatchObject({
-			ok: false,
+			ok: true,
 			payload: {
 				result: {
+					ok: false,
 					assurance: {
 						status: "failed",
 						reasonCodes: ["CONDITION_CASE_EXECUTION_MISSING"],
@@ -287,17 +289,22 @@ describe("Coding Agent Evidence Check query", () => {
 			ready: false,
 			suggestedAction: "confirm_evidence_check",
 		});
-		await expect(
-			completionCheckTool({
-				taskId: task.id,
-				runId: run.id,
-				verificationDocumentId,
-				repoRoot: repositoryPath,
-			}),
-		).resolves.toMatchObject({
-			ok: false,
+		const confirmationInput = {
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			repoRoot: repositoryPath,
+		};
+		const [confirmationToolResult, concurrentConfirmationToolResult] =
+			await Promise.all([
+				completionCheckTool(confirmationInput),
+				completionCheckTool(confirmationInput),
+			]);
+		expect(confirmationToolResult).toMatchObject({
+			ok: true,
 			payload: {
 				result: {
+					ok: false,
 					mapping: {
 						status: "matched",
 						total: 1,
@@ -314,6 +321,20 @@ describe("Coding Agent Evidence Check query", () => {
 				},
 			},
 		});
+		expect(concurrentConfirmationToolResult).toMatchObject({ ok: true });
+		expect(concurrentConfirmationToolResult.payload).toEqual(
+			confirmationToolResult.payload,
+		);
+		if (!confirmationToolResult.payload) {
+			throw new Error("confirmation payload is missing");
+		}
+		const confirmedAt =
+			confirmationToolResult.payload.result.confirmation.confirmedAt;
+		if (!confirmedAt) throw new Error("confirmation timestamp is missing");
+		const followupStartedAt = new Date(Date.parse(confirmedAt) + 1_000);
+		const followupFinishedAt = new Date(Date.parse(confirmedAt) + 2_000);
+		const settledStartedAt = new Date(Date.parse(confirmedAt) + 3_000);
+		const settledFinishedAt = new Date(Date.parse(confirmedAt) + 4_000);
 		expect(
 			await db
 				.select()
@@ -329,12 +350,6 @@ describe("Coding Agent Evidence Check query", () => {
 			sourceStateHash: snapshot.sourceStateHash,
 		});
 		expect(storedConfirmation?.receiptDigest).toMatch(/^sha256:/);
-		await completionCheckTool({
-			taskId: task.id,
-			runId: run.id,
-			verificationDocumentId,
-			repoRoot: repositoryPath,
-		});
 		const confirmationsAfterReplay = await db
 			.select()
 			.from(codingAgentEvidenceCheckConfirmations)
@@ -411,8 +426,8 @@ describe("Coding Agent Evidence Check query", () => {
 			sourceSnapshotJson: remappedSource,
 			testExecutionObserved: false,
 			sourceMutatedDuringCheck: false,
-			startedAt: new Date("2026-08-02T00:02:00.000Z"),
-			finishedAt: new Date("2026-08-02T00:03:00.000Z"),
+			startedAt: followupStartedAt,
+			finishedAt: followupFinishedAt,
 		});
 		await expect(
 			getEvidenceCheckSnapshot({ taskId: task.id, verificationDocumentId }),
@@ -439,19 +454,34 @@ describe("Coding Agent Evidence Check query", () => {
 			sourceSnapshotJson: remappedSource,
 			testExecutionObserved: false,
 			sourceMutatedDuringCheck: false,
-			startedAt: new Date("2026-08-02T00:04:00.000Z"),
-			finishedAt: new Date("2026-08-02T00:05:00.000Z"),
+			startedAt: settledStartedAt,
+			finishedAt: settledFinishedAt,
+		});
+		const settledToolResult = await completionCheckTool({
+			taskId: task.id,
+			runId: run.id,
+			verificationDocumentId,
+			repoRoot: repositoryPath,
+		});
+		expect(settledToolResult).toMatchObject({
+			ok: true,
+			payload: {
+				result: {
+					ok: true,
+					mapping: { status: "matched" },
+					verify: {
+						status: "passed",
+						command: "bun run verify",
+						exitCode: 0,
+					},
+					confirmation: { status: "settled" },
+					suggestedAction: "write_final_report",
+				},
+			},
 		});
 		const settledSnapshot = await getEvidenceCheckSnapshot({
 			taskId: task.id,
 			verificationDocumentId,
-		});
-		expect(settledSnapshot).toMatchObject({
-			mapping: { status: "matched" },
-			verify: { status: "passed", command: "bun run verify", exitCode: 0 },
-			confirmation: { status: "settled" },
-			ready: true,
-			suggestedAction: "write_final_report",
 		});
 		expect(
 			await db

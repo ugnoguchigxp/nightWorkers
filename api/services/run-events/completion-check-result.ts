@@ -81,8 +81,10 @@ export function readCompletionCheckResult(
 		directResult.ok,
 		parsedPayload.ok,
 		parsedResult.ok,
+		parsedResult.ready,
 		structuredPayload.ok,
 		structuredResult.ok,
+		structuredResult.ready,
 	].filter((value): value is boolean => typeof value === "boolean");
 	const verificationDocumentIds = [
 		argumentsPayload.verificationDocumentId,

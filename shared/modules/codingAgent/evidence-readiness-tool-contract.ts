@@ -2,4 +2,4 @@ export const RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA =
 	"登録済みrepositoryで選択したcheck commandを実行し、current source snapshot、evidence kind、condition scope、exit code、取得できたstructured testcaseをmanaged evidenceとして保存します。required automated conditionにはmappingされた同一testcaseのstructured resultが必要です。Questionnaireで選択されていないtest種別は実行前に拒否します。TodoやRun statusは更新しません。";
 
 export const COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA =
-	"現在sourceのrequired conditionをtest inventory、明示mapping、同一testcaseのstructured execution、command gate、Project正本verifyから評価します。すべてsafe_passの場合だけ同一Run・Verification Documentにつき不変のEvidence Check Receiptを一度保存し、確認後の同一sourceに対するfollow-up verifyがPassすると完了可能です。不足時はtyped reasonを返し、Receipt、Todo、Run statusを更新しません。";
+	"現在sourceのrequired conditionをtest inventory、明示mapping、同一testcaseのstructured execution、command gate、Project正本verifyから毎回再評価します。すべてsafe_passの場合だけ同一Run・Verification Documentにつき不変のEvidence Check Receiptを一度保存し、確認後の同一sourceに対するfollow-up verifyがPassすると完了可能です。tool呼び出し自体が成功した場合も、未完了ならresult.ready=falseとtyped reason、suggestedActionを返します。同じ引数で再実行してもReceiptは重複せず、最新のevidenceを反映します。不足時はReceipt、Todo、Run statusを更新しません。";

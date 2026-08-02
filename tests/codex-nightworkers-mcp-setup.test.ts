@@ -33,6 +33,12 @@ describe("Codex NightWorkers MCP setup script", () => {
 			"check_boundary",
 			"get_verification_plan",
 		]);
+		expect(
+			nightWorkersCodexToolManifest.completion_check.annotations,
+		).toMatchObject({
+			readOnlyHint: false,
+			idempotentHint: true,
+		});
 	});
 
 	it("removes only the NightWorkers MCP config sections", async () => {

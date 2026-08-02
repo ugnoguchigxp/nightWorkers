@@ -88,7 +88,7 @@ function compactCompletionCheckPayload(payload: unknown) {
 	return {
 		llmSummary: value.llmSummary,
 		result: {
-			ok: result.ok,
+			ready: result.ok,
 			verificationDocumentId: result.verificationDocumentId,
 			sourceStateHash: result.sourceStateHash,
 			mapping: {

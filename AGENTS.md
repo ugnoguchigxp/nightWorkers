@@ -16,6 +16,7 @@
 - Agent固有のproduction codeは、Mission Pilotでは`packages/mission-pilot`、Coding Agentでは対応する`api/modules`、`src/modules`、`shared/modules`配下にだけ置く。Mission Pilotをhostへ接続するcompositionは`api/composition/mission-pilot`と`src/composition/mission-pilot`に限定する。`services`、`nightworkers`、`planMode`など他moduleへAgent固有のroute、service、repository、tool、continuation、role分岐を放置しない。SystemContextのTOML、生成catalog、bindingはこの制約の例外として`api/systemContexts`へ一元化する。
 - Mission PilotとNightWorkersの連携は、packageが所有するhost portを`api/composition/mission-pilot`または`src/composition/mission-pilot`で実装し、Agent非依存の公開application command、port、event、正本schemaへ接続する。packageからNightWorkers private sourceをimportしない。`agentsShare`には両roleで同じ意味を持つcontract、port、event、純粋utilityだけを置き、route、repository、role固有tool、role判定を置かない。SystemContextは`agentsShare`ではなく`api/systemContexts`へ置き、共有moduleへrole固有実装を移して境界を迂回しない。
 - Mission PilotはTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有する。Coding Agentは渡されたTaskと確定済み設計を基に、登録済みrepositoryで調査、編集、command実行、検証を行う。これらの所有権を相手へ移さない。
+- 実装Runの完了判定および評価では、採用済みFeature Planを完了条件の正本として扱う。Questionnaireでスコープ外と確定した事項や、採用済みFeature Planに含まれない旧Task Candidateの条件を、完了条件として復活させない。
 - Mission Pilot起動中は、Mission PilotがTask解釈、Questionnaire、Plan routing、Artifact操作、Coding Agentへの依頼、結果評価、次action、完了判断を所有し、Coding Agentは明示的にhandoffされた実装と検証を担う。
 - Mission Pilotが停止中または未起動の場合は、ユーザーがCoding Agentを直接開始できる。Coding AgentはMission Pilotの起動やhandoffを待たず、Todoによる計画、repository調査、実装、検証、完了報告まで単体で完結する。
 - ユーザー直結RunとMission Pilot handoff Runは、ユーザー文言ではなくRunに保存した構造的provenanceで区別する。

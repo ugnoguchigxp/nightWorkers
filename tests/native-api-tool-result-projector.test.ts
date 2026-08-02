@@ -174,12 +174,12 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 
 	it("projects only Evidence Readiness statuses for completion_check", () => {
 		const result = projectWorkerResultToNativeApiToolResult({
-			ok: false,
+			ok: true,
 			toolName: "completion_check",
 			startedAt: "2026-07-19T00:00:00.000Z",
 			finishedAt: "2026-07-19T00:00:00.001Z",
 			payload: {
-				llmSummary: "Evidence mapping is missing.",
+				llmSummary: "NOT_READY completion_check",
 				result: {
 					ok: false,
 					verificationDocumentId: "verification-1",
@@ -210,16 +210,20 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 			},
 		});
 		const modelVisible = JSON.parse(result.content) as {
+			ok: boolean;
 			payload: { result: Record<string, unknown> };
 		};
 
+		expect(modelVisible.ok).toBe(true);
 		expect(modelVisible.payload.result).toMatchObject({
+			ready: false,
 			mapping: { status: "missing", matched: 1, total: 2 },
 			verify: { status: "not_run" },
 			confirmation: { status: "confirmed" },
 			suggestedAction: "record_mapping",
 			readinessDigest: "readiness-1",
 		});
+		expect(modelVisible.payload.result).not.toHaveProperty("ok");
 		expect(JSON.stringify(modelVisible.payload)).not.toContain(
 			"must not reach the model",
 		);

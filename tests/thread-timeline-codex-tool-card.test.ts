@@ -980,19 +980,19 @@ function completionCheckEvent(input: {
 					structured_content: {
 						payload: {
 							llmSummary: input.ok
-								? "OK completion_check"
-								: "ERROR completion_check",
+								? "READY completion_check"
+								: "NOT_READY completion_check",
 							result,
 						},
 					},
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify({ ok: input.ok }),
+							text: JSON.stringify({ ok: true }),
 						},
 					],
 				},
-				status: input.ok ? "completed" : "failed",
+				status: "completed",
 			},
 		},
 		createdAt: "2026-08-01T13:15:40.000Z",

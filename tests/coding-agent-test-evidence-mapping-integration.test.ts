@@ -242,13 +242,15 @@ describe("schema test evidence mapping integration", () => {
 			confirmation: { status: "confirmed" },
 			suggestedAction: "run_verify",
 		});
+		const confirmedAt = confirmation.confirmation.confirmedAt;
+		if (!confirmedAt) throw new Error("confirmation timestamp is missing");
 		const followupVerifyEvidence = buildCommandLevelEvidence({
 			runId: run?.id ?? "",
 			taskId: task.id,
 			command: "bun run verify",
 			cwd: repoRoot,
-			startedAt: "2026-08-02T00:00:04.000Z",
-			finishedAt: "2026-08-02T00:00:05.000Z",
+			startedAt: new Date(Date.parse(confirmedAt) + 1_000).toISOString(),
+			finishedAt: new Date(Date.parse(confirmedAt) + 2_000).toISOString(),
 			exitCode: 0,
 			runner: "unknown",
 			rawStdoutArtifactId: "followup-verify-stdout",

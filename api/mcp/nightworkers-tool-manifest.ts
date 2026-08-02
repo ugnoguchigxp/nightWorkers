@@ -78,6 +78,7 @@ export const nightWorkersCodexToolManifest = {
 		annotations: {
 			readOnlyHint: false,
 			destructiveHint: false,
+			idempotentHint: true,
 			openWorldHint: false,
 		},
 		approvalMode: "approve",

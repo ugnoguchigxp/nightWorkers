@@ -5,6 +5,7 @@ import type {
 	ExpectedEvidence,
 	VerificationRunner,
 } from "../../../shared/schemas/verification-checklist.schema";
+import { AppError } from "../../lib/errors";
 import {
 	isAutomatedEvidenceKind,
 	resolveExecutionCaseIdentities,
@@ -243,20 +244,30 @@ async function captureWorkspaceSnapshot(repoRoot: string) {
 	return captureWorkspaceSourceSnapshot(repoRoot);
 }
 
-export async function completionCheckTool(input: {
-	taskId: string;
-	runId: string;
-	verificationDocumentId?: string;
-	repoRoot?: string;
-}): Promise<WorkerToolResult<CompletionCheckOutput>> {
+export async function completionCheckTool(
+	input: {
+		taskId: string;
+		runId: string;
+		verificationDocumentId?: string;
+		repoRoot?: string;
+	},
+	dependencies: { runCompletionCheck: typeof runCompletionCheck } = {
+		runCompletionCheck,
+	},
+): Promise<WorkerToolResult<CompletionCheckOutput | null>> {
 	const startedAt = new Date().toISOString();
-	const result = await runCompletionCheck({
-		...input,
-		confirmEvidenceCheck: true,
-	});
+	let result: Awaited<ReturnType<typeof runCompletionCheck>>;
+	try {
+		result = await dependencies.runCompletionCheck({
+			...input,
+			confirmEvidenceCheck: true,
+		});
+	} catch (error) {
+		return completionCheckFailure(startedAt, error);
+	}
 	const llmSummary = result.ok
 		? [
-				"OK completion_check",
+				"READY completion_check",
 				`assurance=${result.assurance.status}`,
 				`mapping=${result.mapping.status}`,
 				`verify=${result.verify.status}`,
@@ -264,7 +275,7 @@ export async function completionCheckTool(input: {
 				"next=write_final_report",
 			].join("\n")
 		: [
-				"ERROR completion_check",
+				"NOT_READY completion_check",
 				`reason=${result.reason || "unknown"}`,
 				`assurance=${result.assurance.status}`,
 				`mapping=${result.mapping.status} (${result.mapping.matched}/${result.mapping.total})`,
@@ -273,17 +284,34 @@ export async function completionCheckTool(input: {
 				`next=${result.suggestedAction}`,
 			].join("\n");
 	return {
-		ok: result.ok,
+		ok: true,
 		toolName: "completion_check",
 		startedAt,
 		finishedAt: new Date().toISOString(),
 		payload: { llmSummary, result },
-		error: result.ok
-			? undefined
-			: {
-					code: result.reason || "COMPLETION_CHECK_FAILED",
-					message: llmSummary,
-				},
+	};
+}
+
+function completionCheckFailure(
+	startedAt: string,
+	error: unknown,
+): WorkerToolResult<null> {
+	const appError = error instanceof AppError ? error : null;
+	const retryable = appError?.details?.retryable === true;
+	return {
+		ok: false,
+		toolName: "completion_check",
+		startedAt,
+		finishedAt: new Date().toISOString(),
+		payload: null,
+		error: {
+			code: appError?.code ?? "COMPLETION_CHECK_EXECUTION_FAILED",
+			message: error instanceof Error ? error.message : String(error),
+			retryable,
+			...(retryable
+				? { recoveryAction: "同じcompletion_checkを再実行してください。" }
+				: {}),
+		},
 	};
 }
 
