@@ -343,6 +343,42 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 		});
 	});
 
+	it("persists a Review provider thread under the Review execution mode", async () => {
+		const store = {
+			upsertRuntimeSessionState: vi.fn(async () => ({ id: "review-state" })),
+			markRuntimeSessionStateSuperseded: vi.fn(async () => null),
+		} as unknown as RuntimeSessionStateStore;
+		const context = {
+			runId: "run-review",
+			taskId: "task-review",
+			agentModeSessionId: "review-session",
+			repositoryId: "repository-review",
+			repoRoot: "/tmp/review",
+			compiledPrompt: "レビューしてください。",
+			latestUserMessage: "レビューしてください。",
+			timeoutSeconds: 30,
+			contextSnapshot: {
+				compiledPrompt: "レビューしてください。",
+				source: "task_prompt" as const,
+				executionMode: "review",
+			},
+		} satisfies AgentRunContext;
+
+		await persistCodexProviderThreadIfPresent(store, context, {
+			type: "runtime_started",
+			message: "thread started",
+			payload: { providerThreadId: "thread-review" },
+		});
+
+		expect(store.upsertRuntimeSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentModeSessionId: "review-session",
+				providerSessionId: "thread-review",
+				executionMode: "review",
+			}),
+		);
+	});
+
 	it("resumes the gate thread with the selected Role Routing options", async () => {
 		const resumedThread = {
 			runStreamed: vi.fn(async () => ({

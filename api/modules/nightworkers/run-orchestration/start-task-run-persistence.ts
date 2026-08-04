@@ -36,3 +36,46 @@ export async function persistPreparedRuntimePrompt(input: {
 	}
 	return updated;
 }
+
+export async function recordRuntimePromptPrepared(input: {
+	taskId: string;
+	runId: string;
+	source: string;
+	digest: string;
+	charCount: number;
+	runtimeLaneResolution: {
+		lane: string;
+		workerKind: string;
+		[key: string]: unknown;
+	};
+	effectiveLlmRouting: unknown;
+	executionMode: string;
+	executionModeSource: string;
+	runtimeRole: string;
+	systemContextBinding: unknown;
+}) {
+	await repo.createRunEvent({
+		version: 1,
+		runId: input.runId,
+		taskId: input.taskId,
+		timestamp: new Date().toISOString(),
+		type: "run.prompt_prepared",
+		severity: "info",
+		actor: "system",
+		message: "Runtime prompt prepared.",
+		data: {
+			source: input.source,
+			degraded: false,
+			digest: input.digest,
+			charCount: input.charCount,
+			runtimeLane: input.runtimeLaneResolution.lane,
+			workerKind: input.runtimeLaneResolution.workerKind,
+			runtimeLaneResolution: input.runtimeLaneResolution,
+			effectiveLlmRouting: input.effectiveLlmRouting,
+			executionMode: input.executionMode,
+			executionModeSource: input.executionModeSource,
+			runtimeRole: input.runtimeRole,
+			systemContextBinding: input.systemContextBinding,
+		},
+	});
+}

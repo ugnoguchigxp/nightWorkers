@@ -6,7 +6,7 @@ import {
 	LoaderCircle,
 	ShieldAlert,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GitCloseoutState, TaskRun } from "../../nightworkers/types/core";
 import type { ReviewModePromptAction } from "../reviewModeLauncher";
@@ -15,7 +15,6 @@ import type {
 	ReviewRunArtifactPayload,
 	ReviewSessionDetail,
 } from "../types";
-import { ReviewGitIntegrationPanel } from "./ReviewGitIntegrationPanel";
 import { ReviewPromptActions } from "./ReviewPromptActions";
 import { ReviewRunResultPanel } from "./ReviewRunResultPanel";
 
@@ -23,8 +22,6 @@ type ReviewStatusViewerProps = {
 	detail: ReviewSessionDetail | null;
 	loading?: boolean;
 	gitCloseout?: GitCloseoutState | null;
-	onCommitGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
-	onPushGitCloseout?: (runId: string) => Promise<GitCloseoutState>;
 	activeTaskId?: string | null;
 	activeTaskStatus?: string | null;
 	onCompleteAndArchiveTask?: (
@@ -113,8 +110,6 @@ export function ReviewStatusViewer({
 	detail,
 	loading = false,
 	gitCloseout,
-	onCommitGitCloseout,
-	onPushGitCloseout,
 	activeTaskId,
 	activeTaskStatus,
 	onCompleteAndArchiveTask,
@@ -131,11 +126,6 @@ export function ReviewStatusViewer({
 		actionId: ReviewModePromptAction["id"];
 		phase: "submitting" | "waiting";
 	} | null>(null);
-	const handleGitBusyChange = useCallback((busy: boolean) => {
-		setBusySection((current) =>
-			busy ? "git" : current === "git" ? null : current,
-		);
-	}, []);
 	useEffect(() => {
 		if (promptSubmission?.phase !== "waiting" || isReviewPromptDisabled) return;
 		setPromptSubmission(null);
@@ -148,7 +138,7 @@ export function ReviewStatusViewer({
 			const accepted = await onSubmitReviewPrompt(action.prompt);
 			if (!accepted) {
 				throw new Error(
-					"Coding Agentの実行を開始できませんでした。もう一度お試しください。",
+					"Review Codexの実行を開始できませんでした。もう一度お試しください。",
 				);
 			}
 			setPromptSubmission({ actionId: action.id, phase: "waiting" });
@@ -173,7 +163,7 @@ export function ReviewStatusViewer({
 			pendingPhase={promptSubmission?.phase ?? null}
 			disabledStatusMessage={
 				isReviewPromptDisabled
-					? "Coding Agentの結果が確定するまで操作できません。"
+					? "Review Codexの結果が確定するまで操作できません。"
 					: busySection
 						? "別の操作が完了するまで操作できません。"
 						: null
@@ -412,18 +402,6 @@ export function ReviewStatusViewer({
 						securityArtifact={latestSecurityReview}
 					/>
 				</div>
-
-				<ReviewGitIntegrationPanel
-					gitCloseout={gitCloseout ?? null}
-					onCommitGitCloseout={onCommitGitCloseout}
-					onPushGitCloseout={onPushGitCloseout}
-					onError={setError}
-					disabled={
-						isReviewPromptDisabled ||
-						(busySection !== null && busySection !== "git")
-					}
-					onBusyChange={handleGitBusyChange}
-				/>
 
 				{detail.securityHandoffs.length > 0 ? (
 					<div className="grid gap-3">

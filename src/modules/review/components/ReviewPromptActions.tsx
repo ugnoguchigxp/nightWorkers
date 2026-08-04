@@ -43,7 +43,7 @@ export function ReviewPromptActions({
 					実装後のアクション
 				</h2>
 				<p className="mt-1 text-xs leading-5 text-slate-400">
-					選択した定型プロンプトをCoding Agentへそのまま送信します。
+					選択した定型プロンプトをReview Codexへそのまま送信します。
 				</p>
 			</div>
 			{pendingPhase || disabledStatusMessage ? (
@@ -59,7 +59,7 @@ export function ReviewPromptActions({
 					{pendingPhase === "submitting"
 						? "プロンプトを送信しています。"
 						: pendingPhase === "waiting"
-							? "Coding Agentの結果が確定するまで操作できません。"
+							? "Review Codexの結果が確定するまで操作できません。"
 							: disabledStatusMessage}
 				</div>
 			) : null}

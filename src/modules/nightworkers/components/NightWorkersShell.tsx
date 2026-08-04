@@ -114,7 +114,11 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 		artifactPaneOpen && selectedArtifact?.kind === "review_status";
 	const isEvidenceCheckArtifactOpen =
 		artifactPaneOpen && selectedArtifact?.kind === "evidence_check";
-	const hasTodoArtifact = Boolean(workspace.activeSession);
+	const interactiveReviewRun = isInteractiveReviewRun(
+		workspace.latestRun?.contextSnapshot,
+	);
+	const reviewModeActive = isReviewArtifactOpen || interactiveReviewRun;
+	const hasTodoArtifact = Boolean(workspace.activeSession) && !reviewModeActive;
 	const isActiveImplementationLocked = isImplementationLockedStatus(
 		workspace.activeSession?.status,
 	);
@@ -548,6 +552,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				artifactPaneOpen,
 				isTodoArtifactOpen,
 				hasTodoArtifact,
+				hideTodoArtifact: reviewModeActive,
 				hasEvidenceCheckArtifact: Boolean(evidenceCheckArtifact),
 				canStopLatestRun,
 				onOpenBlueprintArtifact: handleOpenBlueprintArtifact,
@@ -570,5 +575,24 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 					),
 			}}
 		/>
+	);
+}
+
+function isInteractiveReviewRun(contextSnapshot: unknown) {
+	if (
+		!contextSnapshot ||
+		typeof contextSnapshot !== "object" ||
+		Array.isArray(contextSnapshot)
+	) {
+		return false;
+	}
+	const snapshot = contextSnapshot as Record<string, unknown>;
+	if (snapshot.executionMode !== "review") return false;
+	const reviewRuntime = snapshot.reviewRuntime;
+	return (
+		Boolean(reviewRuntime) &&
+		typeof reviewRuntime === "object" &&
+		!Array.isArray(reviewRuntime) &&
+		(reviewRuntime as Record<string, unknown>).contextPolicy === "codex_default"
 	);
 }

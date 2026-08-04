@@ -107,6 +107,7 @@ export function ThreadWorkspaceHeader({
 								</button>
 							) : null}
 							<ArtifactModeNavigation
+								hidden={{ todo: props.hideTodoArtifact === true }}
 								current={
 									props.isProjectFilesOpen
 										? "project_files"
@@ -158,6 +159,7 @@ export function ThreadWorkspaceHeader({
 				<div className="flex items-center justify-between gap-4">
 					<p className="text-sm text-slate-300/70">{t("thread.emptyPrompt")}</p>
 					<ArtifactModeNavigation
+						hidden={{ todo: props.hideTodoArtifact === true }}
 						current={props.isProjectFilesOpen ? "project_files" : null}
 						disabled={artifactButtonsCoolingDown}
 						available={{

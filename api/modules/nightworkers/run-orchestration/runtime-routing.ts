@@ -23,7 +23,7 @@ import type {
 } from "../../../services/structured-llm/settings";
 import { type JobType, jobTypes } from "../../../services/supervisor/prompt";
 import type {
-	NativeApiExecutionMode,
+	AgentExecutionMode,
 	RuntimeLaneResolution,
 } from "../../codingAgent";
 import { getOrCreateReviewRecommendation } from "../../review/review-recommendation.service";
@@ -104,7 +104,7 @@ const STRUCTURED_LLM_ROLES: StructuredLlmRole[] = [...LLM_ROLE_ORDER];
 
 export function buildEffectiveLlmRoutingSnapshot(input: {
 	activeRole: StructuredLlmRole;
-	executionMode: NativeApiExecutionMode;
+	executionMode: AgentExecutionMode;
 	settings: StructuredLlmProviderSettings;
 	activeRoute: ResolvedStructuredLlmRoute | null;
 	override: StructuredLlmModelTarget | null;
@@ -418,7 +418,7 @@ export function buildLatestRuntimeUserMessage(input: {
 export async function loadCodexRuntimeResumeState(input: {
 	taskId: string;
 	repositoryId: string;
-	executionMode: NativeApiExecutionMode;
+	executionMode: AgentExecutionMode;
 	agentModeSessionId?: string | null;
 }) {
 	if (!input.agentModeSessionId) {

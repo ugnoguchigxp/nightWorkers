@@ -4,7 +4,10 @@ import { getCodexGlobalHome } from "../../../../services/codex-global-config/pat
 import { buildChildProcessEnvironment } from "../../../../services/execution/child-process-environment";
 import { isRegistryCredentialEnvironmentKey } from "../../../../services/security/secret-redaction";
 import type { AgentRunContext } from "../types";
-import { buildCodexRuntimeDeveloperInstructions } from "./codex-sdk-runtime-prompt";
+import {
+	buildCodexRuntimeDeveloperInstructions,
+	isMinimalReviewRuntime,
+} from "./codex-sdk-runtime-prompt";
 
 type CodexRuntimeConfigInput = {
 	env?: NodeJS.ProcessEnv;
@@ -59,19 +62,32 @@ export function buildCodexRuntimeSdkOptions(
 		CODEX_HOME: getCodexGlobalHome(env),
 	};
 	if (input.context) {
-		sdkOptions.config = {
-			developer_instructions:
-				input.developerInstructions ??
-				buildCodexRuntimeDeveloperInstructions(input.context),
-			mcp_servers: {
-				nightworkers: {
-					url: buildRequestScopedNightWorkersMcpUrl(input.context, env),
-					enabled: true,
-					required: true,
-					tools: buildNightWorkersCodexToolApprovalConfig(),
-				},
-			},
-		};
+		const nightworkersMcpUrl = buildRequestScopedNightWorkersMcpUrl(
+			input.context,
+			env,
+		);
+		sdkOptions.config = isMinimalReviewRuntime(input.context)
+			? {
+					mcp_servers: {
+						nightworkers: {
+							url: nightworkersMcpUrl,
+							enabled: false,
+						},
+					},
+				}
+			: {
+					developer_instructions:
+						input.developerInstructions ??
+						buildCodexRuntimeDeveloperInstructions(input.context),
+					mcp_servers: {
+						nightworkers: {
+							url: nightworkersMcpUrl,
+							enabled: true,
+							required: true,
+							tools: buildNightWorkersCodexToolApprovalConfig(),
+						},
+					},
+				};
 	}
 	return sdkOptions;
 }
@@ -120,9 +136,33 @@ export function buildCodexRuntimeThreadOptions(
 		approvalPolicy: "never",
 		workingDirectory: context.repoRoot,
 		skipGitRepoCheck: true,
+		...readAdditionalDirectories(context),
 		...(modelReasoningEffort ? { modelReasoningEffort } : {}),
 	};
 }
+
+function readAdditionalDirectories(
+	context: AgentRunContext,
+): Pick<ThreadOptions, "additionalDirectories"> {
+	if (!isMinimalReviewRuntime(context)) return {};
+	const reviewRuntime = context.runtimeOptions?.reviewRuntime;
+	if (
+		!reviewRuntime ||
+		typeof reviewRuntime !== "object" ||
+		Array.isArray(reviewRuntime)
+	) {
+		return {};
+	}
+	const value = (reviewRuntime as Record<string, unknown>)
+		.additionalDirectories;
+	if (!Array.isArray(value)) return {};
+	const additionalDirectories = value.filter(
+		(directory): directory is string =>
+			typeof directory === "string" && directory.length > 0,
+	);
+	return additionalDirectories.length > 0 ? { additionalDirectories } : {};
+}
+
 function readWorkspaceRuntimeEnvironment(context?: AgentRunContext) {
 	const candidate = context?.runtimeOptions?.workspaceRuntimeEnvironment;
 	if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {

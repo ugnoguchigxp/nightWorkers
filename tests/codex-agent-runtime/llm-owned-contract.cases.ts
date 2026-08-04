@@ -151,6 +151,66 @@ describe("Codex SDK thin runtime adapter", () => {
 		expect(options.env).toEqual({ CODEX_HOME: "/host/codex-home" });
 	});
 
+	it("keeps interactive Review on the plain Codex prompt and disables only NightWorkers MCP", () => {
+		const reviewContext = {
+			...context("review"),
+			compiledPrompt: "コミットしてください。",
+			latestUserMessage: "コミットしてください。",
+			contextSnapshot: {
+				compiledPrompt: "コミットしてください。",
+				source: "task_prompt" as const,
+				executionMode: "review",
+				codexPrompt: {
+					request: "コミットしてください。",
+					stateCardText: null,
+				},
+				reviewRuntime: {
+					version: 1,
+					contextPolicy: "codex_default",
+					completionPolicy: "provider_turn",
+					nightworkersMcp: "disabled",
+					reviewedRunId: "implementation-run",
+				},
+			},
+			runtimeOptions: {
+				reviewRuntime: {
+					additionalDirectories: ["/repo/.git"],
+				},
+			},
+		};
+
+		const parts = buildCodexRuntimePromptParts(reviewContext);
+		const sdkOptions = buildCodexRuntimeSdkOptions({
+			env: { NIGHTWORKERS_CODEX_HOME: "/host/codex-home" },
+			context: reviewContext,
+		});
+
+		expect(parts).toMatchObject({
+			prompt: "コミットしてください。",
+			request: "コミットしてください。",
+			developerInstructions: "",
+			systemContextAudit: [],
+		});
+		expect(sdkOptions.config).toEqual({
+			mcp_servers: {
+				nightworkers: {
+					url: "http://127.0.0.1:39173/mcp/nightworkers?taskId=task-codex-contract&runId=run-codex-contract",
+					enabled: false,
+				},
+			},
+		});
+		expect(buildCodexRuntimeThreadOptions(reviewContext)).toMatchObject({
+			workingDirectory: "/tmp/codex-llm-owned",
+			additionalDirectories: ["/repo/.git"],
+		});
+		expect(
+			buildCodexRuntimeThreadOptions({
+				...context(),
+				runtimeOptions: reviewContext.runtimeOptions,
+			}),
+		).not.toHaveProperty("additionalDirectories");
+	});
+
 	it("keeps workspace HOME isolated while pointing Codex at the host auth home", () => {
 		const options = buildCodexRuntimeSdkOptions({
 			env: {

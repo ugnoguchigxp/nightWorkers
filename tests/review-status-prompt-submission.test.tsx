@@ -80,7 +80,7 @@ describe("Review Status prompt submission", () => {
 		expect(onSubmitReviewPrompt).toHaveBeenCalledOnce();
 		expect(stateSetters[2]).toHaveBeenLastCalledWith(null);
 		expect(stateSetters[1]).toHaveBeenLastCalledWith(
-			"Coding Agentの実行を開始できませんでした。もう一度お試しください。",
+			"Review Codexの実行を開始できませんでした。もう一度お試しください。",
 		);
 	});
 });

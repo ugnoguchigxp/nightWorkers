@@ -251,6 +251,7 @@ export const appendWorkbenchMessageRoute = createRoute({
 								"queue",
 								"run_task",
 								"adjust_running",
+								"review_prompt",
 								"review_followup",
 								"learning_capture",
 								"design_component",

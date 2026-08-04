@@ -21,16 +21,10 @@ import {
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
-import {
-	boundaryAuditEventSeverity,
-	buildOntologyBoundaryAuditSnapshot,
-} from "../../ontology";
+import { isInteractiveReviewRuntimeSnapshot } from "../../review/review-runtime-profile";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
-import {
-	parseChangedPathsFromDiff,
-	updateCommitOwnershipEvidence,
-} from "./git-ownership";
+import { updateCommitOwnershipEvidence } from "./git-ownership";
 import {
 	completeImplementationQueueEntryForRun,
 	IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
@@ -43,6 +37,7 @@ import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import { acquireRuntimeExecutionLease } from "./runtime-execution-lease";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
+import { createRuntimeOntologyBoundaryAudit } from "./runtime-ontology-closeout";
 import {
 	buildRuntimePauseSnapshot,
 	isRuntimeTerminalStatus,
@@ -78,17 +73,22 @@ export async function launchRuntimeExecution(
 		runtimeLaneResolution,
 		agentModeSessionId,
 	} = input;
+	const interactiveReview = isInteractiveReviewRuntimeSnapshot(
+		runtimeContextSnapshot,
+	);
 	const executionLease = await acquireRuntimeExecutionLease({
 		runId: run.id,
 		taskId,
 		agentModeSessionId: run.agentModeSessionId,
 	});
 	const runtime = runtimeLaneDefinition.createAdapter();
-	const codingAgentSystemContext = buildRunCodingAgentSystemContext({
-		taskGoal: buildCodingAgentTaskGoal(task),
-		registeredRepositoryRoot: repoInfo.localPath,
-		runtimeContextSnapshot,
-	});
+	const codingAgentSystemContext = interactiveReview
+		? undefined
+		: buildRunCodingAgentSystemContext({
+				taskGoal: buildCodingAgentTaskGoal(task),
+				registeredRepositoryRoot: repoInfo.localPath,
+				runtimeContextSnapshot,
+			});
 	const sink = createLedgerSink(run.id);
 	const usesE2eFixture =
 		process.env.NIGHTWORKERS_E2E === "1" &&
@@ -97,7 +97,7 @@ export async function launchRuntimeExecution(
 	let effectiveRuntimeContextSnapshot = runtimeContextSnapshot;
 	void (async () => {
 		try {
-			if (runtimeLaneResolution.lane === "codex-sdk") {
+			if (runtimeLaneResolution.lane === "codex-sdk" && !interactiveReview) {
 				effectiveRuntimeContextSnapshot =
 					await prepareCodexRepositoryRuntimeContext({
 						runId: run.id,
@@ -144,9 +144,13 @@ export async function launchRuntimeExecution(
 								safetyPolicy: repoInfo.safetyPolicy || undefined,
 								contextSnapshot: effectiveRuntimeContextSnapshot,
 								runtimeOptions,
-								todoPlan: runtimeTodosBeforeStart.map(
-									toAgentRuntimeTodoContext,
-								),
+								...(interactiveReview
+									? {}
+									: {
+											todoPlan: runtimeTodosBeforeStart.map(
+												toAgentRuntimeTodoContext,
+											),
+										}),
 								codingAgentSystemContext,
 							},
 							sink,
@@ -165,13 +169,17 @@ export async function launchRuntimeExecution(
 								safetyPolicy: repoInfo.safetyPolicy || undefined,
 								contextSnapshot: effectiveRuntimeContextSnapshot,
 								runtimeOptions,
-								todoPlan: runtimeTodosBeforeStart.map(
-									toAgentRuntimeTodoContext,
-								),
-								currentTodo: runtimeTodosBeforeStart
-									.filter((todo) => todo.status === "running")
-									.sort((a, b) => a.seq - b.seq)
-									.map(toAgentRuntimeTodoContext)[0],
+								...(interactiveReview
+									? {}
+									: {
+											todoPlan: runtimeTodosBeforeStart.map(
+												toAgentRuntimeTodoContext,
+											),
+											currentTodo: runtimeTodosBeforeStart
+												.filter((todo) => todo.status === "running")
+												.sort((a, b) => a.seq - b.seq)
+												.map(toAgentRuntimeTodoContext)[0],
+										}),
 								codingAgentSystemContext,
 							},
 							sink,
@@ -223,19 +231,16 @@ export async function launchRuntimeExecution(
 			});
 			await updateCommitOwnershipEvidence({
 				runId: run.id,
-				diffPatch: runtimeResult.diffPatch,
+				diffPatch: runtimeResult.diffPatch ?? "",
 				testResults: runtimeResult.testResults,
 			});
-			const ontologyBoundaryAudit = await buildOntologyBoundaryAuditSnapshot({
+			const ontologyBoundaryAudit = await createRuntimeOntologyBoundaryAudit({
+				skip: interactiveReview,
 				repoRoot: repoInfo.localPath,
-				ontologyContext:
-					contextSnapshotBeforeFinalize &&
-					typeof contextSnapshotBeforeFinalize === "object" &&
-					!Array.isArray(contextSnapshotBeforeFinalize)
-						? (contextSnapshotBeforeFinalize as Record<string, unknown>)
-								.ontologyContext
-						: null,
-				touchedFiles: parseChangedPathsFromDiff(runtimeResult.diffPatch),
+				contextSnapshot: contextSnapshotBeforeFinalize,
+				diffPatch: runtimeResult.diffPatch ?? "",
+				runId: run.id,
+				taskId,
 			});
 			const contextSnapshotWithBoundaryAudit = {
 				...(contextSnapshotBeforeFinalize &&
@@ -243,25 +248,9 @@ export async function launchRuntimeExecution(
 				!Array.isArray(contextSnapshotBeforeFinalize)
 					? contextSnapshotBeforeFinalize
 					: effectiveRuntimeContextSnapshot),
-				ontologyBoundaryAudit,
+				...(ontologyBoundaryAudit ? { ontologyBoundaryAudit } : {}),
 				runtimePause: buildRuntimePauseSnapshot(runtimeResult),
 			};
-			await repo.createRunEvent({
-				version: 1,
-				runId: run.id,
-				taskId,
-				timestamp: new Date().toISOString(),
-				type: "system.info",
-				severity: boundaryAuditEventSeverity(ontologyBoundaryAudit),
-				actor: "runtime",
-				message: ontologyBoundaryAudit.available
-					? `Ontology boundary audit completed with decision=${ontologyBoundaryAudit.decision}.`
-					: "Ontology boundary audit skipped or unavailable.",
-				data: {
-					action: "ontology.boundary_closeout_audit",
-					ontologyBoundaryAudit,
-				},
-			});
 
 			if (stopWasRequested) {
 				const outcome = outcomeFromRuntimeResult(runtimeResult);
@@ -309,11 +298,13 @@ export async function launchRuntimeExecution(
 						status: "cancelled",
 					},
 				});
-				await refreshConversationContextForRuntimeLane({
-					runtimeLaneResolution,
-					taskId,
-					runId: run.id,
-				});
+				if (!interactiveReview) {
+					await refreshConversationContextForRuntimeLane({
+						runtimeLaneResolution,
+						taskId,
+						runId: run.id,
+					});
+				}
 				await repo.publishTaskRunUpdate(cancelledRun);
 				return;
 			}
@@ -452,11 +443,13 @@ export async function launchRuntimeExecution(
 					status: guardedStatus,
 				},
 			});
-			await refreshConversationContextForRuntimeLane({
-				runtimeLaneResolution,
-				taskId,
-				runId: run.id,
-			});
+			if (!interactiveReview) {
+				await refreshConversationContextForRuntimeLane({
+					runtimeLaneResolution,
+					taskId,
+					runId: run.id,
+				});
+			}
 			// Publish the terminal status only after all closeout writes have
 			// completed. Consumers use a terminal run as a handoff boundary and
 			// must not start the next mode while this run still owns SQLite writes.

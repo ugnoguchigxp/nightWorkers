@@ -50,6 +50,7 @@ export type RuntimePromptSnapshot = {
 		| "message_history"
 		| "workbench_intake"
 		| "workbench_review_followup"
+		| "workbench_review_prompt"
 		| "workbench_run"
 		| "workbench_run_task"
 		| "implementation_queue"
@@ -67,6 +68,13 @@ export type RuntimePromptSnapshot = {
 	planModeSettingsSnapshot?: PlanModeSettingsSnapshot;
 	systemContextBinding?: SystemContextBindingSnapshot;
 	implementationPhasePreamble?: string;
+	reviewRuntime?: {
+		version: 1;
+		contextPolicy: "codex_default";
+		completionPolicy: "provider_turn";
+		nightworkersMcp: "disabled";
+		reviewedRunId: string | null;
+	};
 	implementationHandoff?: {
 		version: 1;
 		sourceMessageId: string;

@@ -10,9 +10,9 @@ import type {
 } from "../src/modules/nightworkers/types";
 import { buildWorkbenchArtifactRefs } from "../src/modules/nightworkers/workbenchArtifactSelectors";
 import { ReviewStatusViewer } from "../src/modules/review";
-import { ReviewGitIntegrationPanel } from "../src/modules/review/components/ReviewGitIntegrationPanel";
 import { ReviewPromptActions } from "../src/modules/review/components/ReviewPromptActions";
 import {
+	buildInteractiveReviewContinuationArtifact,
 	buildPostImplementationReviewArtifact,
 	REVIEW_MODE_PROMPT_ACTIONS,
 	resolveReviewImplementationCompletionReport,
@@ -31,12 +31,6 @@ function collectButtons(node: unknown): Array<{
 	};
 	const own = element.type === "button" && element.props ? [element] : [];
 	return [...own, ...collectButtons(element.props?.children)];
-}
-
-function gitActionButton(markup: string, action: string) {
-	return markup.match(
-		new RegExp(`<button[^>]*data-review-git-action="${action}"[^>]*>`),
-	)?.[0];
 }
 
 function todo(overrides: Partial<TaskRunTodo> = {}): TaskRunTodo {
@@ -197,6 +191,50 @@ describe("Review Mode launcher", () => {
 		);
 	});
 
+	it("restores the same Review Mode artifact after a Review Run becomes latest", () => {
+		const task = buildTask();
+		const reviewRun = buildTaskRun({
+			taskId: task.id,
+			id: "44444444-4444-4444-8444-444444444444",
+			contextSnapshot: {
+				executionMode: "review",
+				reviewRuntime: {
+					contextPolicy: "codex_default",
+					reviewedRunId: completedImplementationRun.id,
+				},
+			},
+			updatedAt: "2026-07-18T00:02:00.000Z",
+		});
+
+		expect(
+			buildInteractiveReviewContinuationArtifact({ task, run: reviewRun }),
+		).toMatchObject({
+			id: `review-mode-${completedImplementationRun.id}`,
+			runId: completedImplementationRun.id,
+			source: {
+				type: "run_field",
+				runId: completedImplementationRun.id,
+				field: "finalReport",
+			},
+			metadata: {
+				reviewModeLauncher: true,
+				reviewContinuationRunId: reviewRun.id,
+			},
+		});
+		expect(
+			buildWorkbenchArtifactRefs({
+				task,
+				latestRun: reviewRun,
+				todos: [],
+			}),
+		).toContainEqual(
+			expect.objectContaining({
+				id: `review-mode-${completedImplementationRun.id}`,
+				kind: "review_status",
+			}),
+		);
+	});
+
 	it("resolves and renders the completion report from the reviewed Implementation Run", () => {
 		const task = buildTask();
 		const artifact = buildPostImplementationReviewArtifact({
@@ -283,7 +321,7 @@ describe("Review Mode launcher", () => {
 		);
 	});
 
-	it("disables every action while a Coding Agent result is pending", () => {
+	it("disables every action while a Review Codex result is pending", () => {
 		const markup = renderToStaticMarkup(
 			createElement(ReviewStatusViewer, {
 				detail: null,
@@ -293,7 +331,7 @@ describe("Review Mode launcher", () => {
 		);
 
 		expect(markup).toContain(
-			"Coding Agentの結果が確定するまで操作できません。",
+			"Review Codexの結果が確定するまで操作できません。",
 		);
 		expect((markup.match(/ disabled=""/g) || []).length).toBe(4);
 	});
@@ -323,39 +361,6 @@ describe("Review Mode launcher", () => {
 		expect(markup).toContain('data-review-task-archive-action="archive"');
 		expect(markup).toContain("未コミット処理を破棄してアーカイブ");
 		expect(markup).toContain("変更ファイルはWorktreeを削除するまで残ります");
-	});
-
-	it("disables Git actions when closeout preconditions or the global lock fail", () => {
-		const state = {
-			runId: "run-1",
-			repositoryId: "repo-1",
-			canCommit: false,
-			canPush: false,
-			state: "review_required",
-			blockingCode: "REQUIRED_REVIEW_NOT_DONE",
-			commitRecord: null,
-			mergeRecord: null,
-			requiredReview: { complete: false },
-			evidence: {},
-			git: { branch: "feature/review", upstream: null },
-		} as Parameters<typeof ReviewGitIntegrationPanel>[0]["gitCloseout"];
-		const renderPanel = (disabled: boolean) =>
-			renderToStaticMarkup(
-				createElement(ReviewGitIntegrationPanel, {
-					gitCloseout: disabled
-						? { ...state, canCommit: true, canPush: true }
-						: state,
-					onCommitGitCloseout: vi.fn(async () => state),
-					onPushGitCloseout: vi.fn(async () => state),
-					onError: vi.fn(),
-					disabled,
-				}),
-			);
-
-		for (const markup of [renderPanel(false), renderPanel(true)]) {
-			expect(gitActionButton(markup, "commit")).toContain('disabled=""');
-			expect(gitActionButton(markup, "push")).toContain('disabled=""');
-		}
 	});
 
 	it("renders all artifact destinations in the shared top navigation", () => {
@@ -391,6 +396,33 @@ describe("Review Mode launcher", () => {
 		}
 		expect(markup).toContain("nightworkers-scrollbar-hidden");
 		expect(markup).toContain('data-artifact-mode="review" aria-pressed="true"');
+	});
+
+	it("removes Todo from the Review Codex artifact choices", () => {
+		const noop = () => undefined;
+		const markup = renderToStaticMarkup(
+			createElement(ArtifactModeNavigation, {
+				current: "review",
+				hidden: { todo: true },
+				available: {
+					project_files: true,
+					plan: true,
+					todo: false,
+					evidence: true,
+					review: true,
+				},
+				onOpen: {
+					project_files: noop,
+					plan: noop,
+					todo: noop,
+					evidence: noop,
+					review: noop,
+				},
+			}),
+		);
+
+		expect(markup).not.toContain('data-artifact-mode="todo"');
+		expect(markup).toContain('data-artifact-mode="review"');
 	});
 
 	it("keeps Evidence clickable while a different artifact action is busy", () => {

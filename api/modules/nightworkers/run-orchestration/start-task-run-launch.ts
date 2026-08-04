@@ -47,8 +47,10 @@ export function buildContinuationRouteIdentity(input: {
 		thinkingDepth: route.thinkingDepth ?? null,
 		fingerprint: buildAgentModeSessionRouteIdentity(route),
 		continuationEligible:
-			Boolean(route.provider && route.model) &&
-			(route.runtimeLane === "codex-sdk" || Boolean(input.runtimeLlmRoute)),
+			route.runtimeLane === "codex-sdk"
+				? route.provider === "codex" &&
+					(input.executionMode === "review" || Boolean(route.model))
+				: Boolean(route.provider && route.model && input.runtimeLlmRoute),
 	};
 }
 

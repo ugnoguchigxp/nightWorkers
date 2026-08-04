@@ -112,6 +112,20 @@ export function buildCodexRuntimePromptParts(
 ): CodexRuntimePromptParts {
 	const latestRequest = readCodexPromptRequest(context);
 	const request = latestRequest || context.compiledPrompt.trim();
+	if (isMinimalReviewRuntime(context)) {
+		const developerInstructions = "";
+		return {
+			prompt: request,
+			request,
+			developerInstructions,
+			estimates: {
+				requestTokens: estimateTokens(request),
+				fullPromptTokens: estimateTokens(request),
+				developerInstructionsTokens: 0,
+			},
+			systemContextAudit: [],
+		};
+	}
 	const prompt = buildAuthoritativeImplementationPrompt(context, request);
 	const developerInstructions =
 		buildCodexRuntimeDeveloperInstructionsInvocation(context);
@@ -128,6 +142,14 @@ export function buildCodexRuntimePromptParts(
 		},
 		systemContextAudit: [developerInstructions.audit],
 	};
+}
+
+export function isMinimalReviewRuntime(context: AgentRunContext) {
+	const reviewRuntime = asRecord(context.contextSnapshot.reviewRuntime);
+	return (
+		context.contextSnapshot.executionMode === "review" &&
+		reviewRuntime?.contextPolicy === "codex_default"
+	);
 }
 
 function buildAuthoritativeImplementationPrompt(

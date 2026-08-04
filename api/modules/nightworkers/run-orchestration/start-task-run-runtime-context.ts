@@ -9,8 +9,15 @@ import {
 	buildPlanModeSettingsSnapshot,
 	readGeneralSettings,
 } from "../../../services/settings/general-settings";
-import { resolveStructuredLlmRoleRoute } from "../../../services/structured-llm/role-routing";
-import { readStructuredLlmProviderSettings } from "../../../services/structured-llm/settings";
+import {
+	resolveStructuredLlmRoleRoute,
+	resolveStructuredLlmRoleRouteCandidates,
+} from "../../../services/structured-llm/role-routing";
+import {
+	readStructuredLlmProviderSettings,
+	type StructuredLlmModelTarget,
+	type StructuredLlmProviderSettings,
+} from "../../../services/structured-llm/settings";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import {
 	readRuntimeLaneConfigFromEnv,
@@ -57,11 +64,24 @@ export async function prepareTaskRunRuntimeContext(input: {
 	llmRouteOverride: Exclude<StartTaskRunOptions["routeOverride"], undefined>;
 	planModeRequested: boolean;
 }) {
-	const runtimeRole = resolveCodingAgentRuntimeRole(input.planModeRequested);
-	const blueprintPlanningSnapshot = {
-		blueprintPlanning: await resolveBlueprintPlanningReadiness(input.taskId),
-	};
-	const runtimeRoleLabel = input.planModeRequested ? "Plan" : "Implementation";
+	const runtimeRole =
+		input.executionMode === "review"
+			? ("review" as const)
+			: resolveCodingAgentRuntimeRole(input.planModeRequested);
+	const blueprintPlanningSnapshot =
+		input.executionMode === "review"
+			? {}
+			: {
+					blueprintPlanning: await resolveBlueprintPlanningReadiness(
+						input.taskId,
+					),
+				};
+	const runtimeRoleLabel =
+		runtimeRole === "review"
+			? "Review"
+			: input.planModeRequested
+				? "Plan"
+				: "Implementation";
 	const settings = getCurrentSettings();
 	const generalSettings = readGeneralSettings();
 	const planModeSettingsSnapshot =
@@ -76,15 +96,37 @@ export async function prepareTaskRunRuntimeContext(input: {
 		...readRuntimeLaneConfigFromEnv(),
 	});
 	const structuredLlmSettings = readStructuredLlmProviderSettings();
-	const runtimeLlmRoute = resolveStructuredLlmRoleRoute({
-		role: runtimeRole,
-		settings: structuredLlmSettings,
-		override: input.llmRouteOverride,
-	});
-	const runtimeLaneResolution = resolveRuntimeLaneForRoleRoute(
-		baseRuntimeLaneResolution,
-		runtimeLlmRoute,
-	);
+	const runtimeLlmRoute =
+		input.executionMode === "review"
+			? resolveReviewCodexRoleRoute({
+					settings: structuredLlmSettings,
+					override: input.llmRouteOverride,
+				})
+			: resolveStructuredLlmRoleRoute({
+					role: runtimeRole,
+					settings: structuredLlmSettings,
+					override: input.llmRouteOverride,
+				});
+	const runtimeLaneResolution =
+		input.executionMode === "review"
+			? {
+					lane: "codex-sdk" as const,
+					workerKind: "codex-agent" as const,
+					source: "role_route" as const,
+					diagnostics: [
+						...baseRuntimeLaneResolution.diagnostics,
+						{
+							level: "info" as const,
+							message: runtimeLlmRoute
+								? `Review role uses Codex SDK route ${runtimeLlmRoute.providerEndpointId}/${runtimeLlmRoute.model}.`
+								: "Review role uses the default Codex SDK configuration.",
+						},
+					],
+				}
+			: resolveRuntimeLaneForRoleRoute(
+					baseRuntimeLaneResolution,
+					runtimeLlmRoute,
+				);
 	const runtimeLaneDefinition = resolveRuntimeLaneDefinition(
 		runtimeLaneResolution.lane,
 	);
@@ -106,6 +148,27 @@ export async function prepareTaskRunRuntimeContext(input: {
 		runtimeLaneDefinition,
 		effectiveLlmRouting,
 	};
+}
+
+export function resolveReviewCodexRoleRoute(input: {
+	settings: StructuredLlmProviderSettings;
+	override?: StructuredLlmModelTarget | null;
+}) {
+	const candidates = resolveStructuredLlmRoleRouteCandidates({
+		role: "review",
+		settings: input.settings,
+		override: input.override,
+	});
+	const codexCandidate = candidates.find(
+		(candidate) => candidate.providerId === "codex",
+	);
+	if (codexCandidate || !input.override) return codexCandidate ?? null;
+	return (
+		resolveStructuredLlmRoleRouteCandidates({
+			role: "review",
+			settings: input.settings,
+		}).find((candidate) => candidate.providerId === "codex") ?? null
+	);
 }
 
 export async function resolveRunProjectExplorationCatalogPin(input: {

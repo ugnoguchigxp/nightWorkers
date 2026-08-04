@@ -1,7 +1,7 @@
 import { resolveCodexAuthScopeFingerprint } from "../../../services/structured-llm/codex-auth-scope";
 import type { ResolvedStructuredLlmRoute } from "../../../services/structured-llm/role-routing";
 import type { CodingAgentPlanModeRuntimeThreadHandoff } from "../intake";
-import type { NativeApiExecutionMode } from "./native-api-runner/native-api-mode";
+import type { AgentExecutionMode } from "./types";
 
 export function resolveCodingAgentRuntimeRole(planModeRequested: boolean) {
 	return planModeRequested ? ("plan" as const) : ("implementation" as const);
@@ -9,7 +9,7 @@ export function resolveCodingAgentRuntimeRole(planModeRequested: boolean) {
 
 export function resolveCodexIntakeRuntimeHandoff(input: {
 	handoff?: CodingAgentPlanModeRuntimeThreadHandoff;
-	executionMode: NativeApiExecutionMode;
+	executionMode: AgentExecutionMode;
 	runtimeRoute: ResolvedStructuredLlmRoute | null;
 	resolveAuthScopeFingerprint?: (providerEndpointId: string | null) => string;
 }) {

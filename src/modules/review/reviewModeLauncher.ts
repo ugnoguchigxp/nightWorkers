@@ -58,6 +58,27 @@ function runExecutionMode(run: TaskRun) {
 	return (snapshot as Record<string, unknown>).executionMode ?? null;
 }
 
+function reviewedImplementationRunId(run: TaskRun) {
+	if (runExecutionMode(run) !== "review") return null;
+	const snapshot = run.contextSnapshot;
+	if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+		return null;
+	}
+	const reviewRuntime = (snapshot as Record<string, unknown>).reviewRuntime;
+	if (
+		!reviewRuntime ||
+		typeof reviewRuntime !== "object" ||
+		Array.isArray(reviewRuntime)
+	) {
+		return null;
+	}
+	const runtime = reviewRuntime as Record<string, unknown>;
+	if (runtime.contextPolicy !== "codex_default") return null;
+	return typeof runtime.reviewedRunId === "string" && runtime.reviewedRunId
+		? runtime.reviewedRunId
+		: null;
+}
+
 export function isPostImplementationReviewReady(input: {
 	task: Task;
 	run?: TaskRun;
@@ -96,6 +117,33 @@ export function buildPostImplementationReviewArtifact(input: {
 			input.run.finishedAt || input.run.endedAt || input.run.updatedAt,
 		),
 		metadata: { reviewModeLauncher: true },
+	};
+}
+
+export function buildInteractiveReviewContinuationArtifact(input: {
+	task: Task;
+	run: TaskRun;
+}): WorkbenchArtifactRef | null {
+	if (input.run.taskId !== input.task.id) return null;
+	const reviewedRunId = reviewedImplementationRunId(input.run);
+	if (!reviewedRunId) return null;
+	return {
+		id: `review-mode-${reviewedRunId}`,
+		taskId: input.task.id,
+		runId: reviewedRunId,
+		kind: "review_status",
+		title: "Review Mode",
+		summary: "実装後のレビュー、セキュリティ確認、Git操作を実行します。",
+		source: {
+			type: "run_field",
+			runId: reviewedRunId,
+			field: "finalReport",
+		},
+		createdAt: String(input.run.updatedAt),
+		metadata: {
+			reviewModeLauncher: true,
+			reviewContinuationRunId: input.run.id,
+		},
 	};
 }
 

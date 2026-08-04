@@ -17,6 +17,7 @@ export type ArtifactModeNavigationProps = {
 	current: ArtifactModeNavigationKind | null;
 	disabled?: boolean;
 	busyKind?: ArtifactModeNavigationKind | null;
+	hidden?: Partial<Record<ArtifactModeNavigationKind, boolean>>;
 	available: Record<ArtifactModeNavigationKind, boolean>;
 	onOpen: Record<ArtifactModeNavigationKind, () => void>;
 };
@@ -58,6 +59,7 @@ export function ArtifactModeNavigation({
 	current,
 	disabled = false,
 	busyKind = null,
+	hidden = {},
 	available,
 	onOpen,
 }: ArtifactModeNavigationProps) {
@@ -68,6 +70,7 @@ export function ArtifactModeNavigation({
 			data-artifact-export-exclude
 		>
 			{navigationItems.map((item) => {
+				if (hidden[item.kind]) return null;
 				const active = current === item.kind;
 				const busy = busyKind === item.kind;
 				const Icon = item.icon;

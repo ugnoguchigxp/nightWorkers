@@ -370,7 +370,7 @@ describe("NightWorkers workbench routes", () => {
 		).toHaveLength(0);
 	});
 
-	it("starts a Coding Agent run for a Review Mode follow-up", async () => {
+	it("requires an assigned Task workspace for a Review Codex prompt", async () => {
 		const { task } = await createWorkbenchTask({ status: "ready" });
 		vi.mocked(llm.callStructuredJsonLLM).mockClear();
 		const prompt =
@@ -383,36 +383,19 @@ describe("NightWorkers workbench routes", () => {
 				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
 				body: JSON.stringify({
 					prompt,
-					intent: "review_followup",
+					intent: "review_prompt",
 				}),
 			},
 		);
 
-		expect(response.status, await response.clone().text()).toBe(200);
-		const body = await response.json();
-		expect(body.run).toMatchObject({
-			taskId: task.id,
-			contextSnapshot: {
-				executionMode: "implementation",
-				planModeRequested: false,
-			},
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			code: "workspace_binding_required",
 		});
-		expect(body.run.contextSnapshot.compiledPrompt).toBe(prompt);
-		expect(body.run.contextSnapshot).not.toHaveProperty(
-			"implementationHandoff",
-		);
-		expect(body.run.contextSnapshot).not.toHaveProperty("conversationContext");
 		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
-		expect(
-			body.messages.some(
-				(message: unknown) =>
-					message.metadataJson?.intent === "run_started" &&
-					message.metadataJson?.executionMode === "implementation",
-			),
-		).toBe(true);
 	});
 
-	it("starts a fresh Review Run in the same dirty Task worktree", async () => {
+	it("starts a minimal Review Codex session and reuses it for later prompts", async () => {
 		const repositoryPath = await createDisposableRepository();
 		const { task } = await createWorkbenchTask({
 			status: "ready",
@@ -462,7 +445,13 @@ describe("NightWorkers workbench routes", () => {
 				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
 				body: JSON.stringify({
 					prompt: reviewPrompt,
-					intent: "review_followup",
+					intent: "review_prompt",
+					artifactContext: {
+						artifactId: `review-mode-${initialRun.id}`,
+						kind: "review_status",
+						title: "Review Mode",
+						source: { type: "run_field", runId: initialRun.id },
+					},
 				}),
 			},
 		);
@@ -474,7 +463,15 @@ describe("NightWorkers workbench routes", () => {
 			worktreePath,
 			contextSnapshot: {
 				compiledPrompt: reviewPrompt,
-				executionModeSource: "workbench_review_followup",
+				executionMode: "review",
+				executionModeSource: "workbench_review_prompt",
+				effectiveLlmRouting: { activeRole: "review" },
+				reviewRuntime: {
+					contextPolicy: "codex_default",
+					completionPolicy: "provider_turn",
+					nightworkersMcp: "disabled",
+					reviewedRunId: initialRun.id,
+				},
 			},
 		});
 		expect(body.run.id).not.toBe(initialRun.id);
@@ -483,10 +480,75 @@ describe("NightWorkers workbench routes", () => {
 			"SHOULD_NOT_ENTER_REVIEW_CONTEXT",
 		);
 		expect(body.run.contextSnapshot).not.toHaveProperty("conversationContext");
+		expect(body.run.contextSnapshot).not.toHaveProperty("systemContextBinding");
+		expect(body.run.contextSnapshot).not.toHaveProperty("planModeRequested");
+		expect(body.run.contextSnapshot).not.toHaveProperty(
+			"implementationPhasePreamble",
+		);
 		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
 		await waitForTerminalRun(body.run.id);
+		expect(await repo.listTaskRunTodosForRun(body.run.id)).toEqual([]);
 		const commitRecord = await repo.getTaskRunCommitRecord(body.run.id);
 		expect(commitRecord?.preExistingDirtyPathsJson).toEqual([]);
+		const commitPrompt = "コミットしてください。";
+		const continuationResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: commitPrompt,
+					intent: "review_prompt",
+					artifactContext: {
+						artifactId: `review-mode-${initialRun.id}`,
+						kind: "review_status",
+						title: "Review Mode",
+						source: { type: "run_field", runId: initialRun.id },
+					},
+				}),
+			},
+		);
+		expect(
+			continuationResponse.status,
+			await continuationResponse.clone().text(),
+		).toBe(200);
+		const continuationBody = await continuationResponse.json();
+		expect(continuationBody.run.id).not.toBe(body.run.id);
+		expect(continuationBody.run.agentModeSessionId).toBe(
+			body.run.agentModeSessionId,
+		);
+		expect(continuationBody.run.contextSnapshot.compiledPrompt).toBe(
+			commitPrompt,
+		);
+		await waitForTerminalRun(continuationBody.run.id);
+		expect(await repo.listTaskRunTodosForRun(continuationBody.run.id)).toEqual(
+			[],
+		);
+		const invalidTargetResponse = await app.request(
+			`http://localhost/api/workbench/sessions/${task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({
+					prompt: reviewPrompt,
+					intent: "review_prompt",
+					artifactContext: {
+						artifactId: `review-mode-${continuationBody.run.id}`,
+						kind: "review_status",
+						title: "Review Mode",
+						source: {
+							type: "run_field",
+							runId: continuationBody.run.id,
+						},
+					},
+				}),
+			},
+		);
+		expect(invalidTargetResponse.status).toBe(409);
+		expect(await invalidTargetResponse.json()).toMatchObject({
+			code: "review_target_invalid",
+		});
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(3);
 
 		const statusBeforeRejectedReview = (await repo.getTask(task.id))?.status;
 		execFileSync(
@@ -504,7 +566,7 @@ describe("NightWorkers workbench routes", () => {
 				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
 				body: JSON.stringify({
 					prompt: reviewPrompt,
-					intent: "review_followup",
+					intent: "review_prompt",
 				}),
 			},
 		);
@@ -512,7 +574,7 @@ describe("NightWorkers workbench routes", () => {
 		expect((await repo.getTask(task.id))?.status).toBe(
 			statusBeforeRejectedReview,
 		);
-		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(2);
+		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(3);
 	});
 
 	it("keeps plan-mode AI responses available for queued sessions without starting a run", async () => {

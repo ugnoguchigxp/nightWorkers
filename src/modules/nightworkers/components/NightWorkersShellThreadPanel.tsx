@@ -77,6 +77,7 @@ type NightWorkersShellThreadPanelProps = {
 	artifactPaneOpen: boolean;
 	isTodoArtifactOpen: boolean;
 	hasTodoArtifact: boolean;
+	hideTodoArtifact: boolean;
 	hasEvidenceCheckArtifact: boolean;
 	canStopLatestRun: boolean;
 	onOpenBlueprintArtifact: () => Promise<void>;
@@ -177,23 +178,15 @@ export function NightWorkersShellThreadPanel(
 			const current = workspaceRef.current;
 			const sessionId = current.activeSession?.id;
 			if (!sessionId) return false;
-			const llmSelection = buildComposerLlmSelection();
 			const result = await current.sendWorkbenchMessage(
 				sessionId,
 				prompt,
-				"review_followup",
+				"review_prompt",
 				effectiveArtifactContext,
-				llmSelection,
 			);
-			if (llmSelection && result) props.onComposerLlmSelectionSubmitted();
 			return Boolean(result?.run);
 		},
-		[
-			buildComposerLlmSelection,
-			effectiveArtifactContext,
-			props.onComposerLlmSelectionSubmitted,
-			workspaceRef,
-		],
+		[effectiveArtifactContext, workspaceRef],
 	);
 
 	return (
@@ -229,11 +222,15 @@ export function NightWorkersShellThreadPanel(
 					const existingQuestionnaireMessageIds = designQuestionnaireMessageIds(
 						workspace.taskMessages,
 					);
-					const llmSelection = buildComposerLlmSelection();
+					const reviewPrompt = selectedArtifact?.kind === "review_status";
+					const effectiveIntent = reviewPrompt ? "review_prompt" : intent;
+					const llmSelection = reviewPrompt
+						? undefined
+						: buildComposerLlmSelection();
 					const result = await workspace.sendWorkbenchMessage(
 						workspace.activeSession.id,
 						prompt,
-						intent,
+						effectiveIntent,
 						effectiveArtifactContext,
 						llmSelection,
 						images,
@@ -281,6 +278,7 @@ export function NightWorkersShellThreadPanel(
 			onOpenTodoArtifact={props.onOpenTodoArtifact}
 			isTodoArtifactOpen={isTodoArtifactOpen}
 			hasTodoArtifact={hasTodoArtifact}
+			hideTodoArtifact={props.hideTodoArtifact}
 			hasEvidenceCheckArtifact={props.hasEvidenceCheckArtifact}
 			onDeleteSession={() => {
 				if (!workspace.activeSession) return;
@@ -436,8 +434,6 @@ export function NightWorkersShellThreadPanel(
 							onAddToQueue={props.addActiveSessionToQueue}
 							activeReviewSession={workspace.activeReviewSession}
 							gitCloseout={workspace.activeGitCloseout}
-							onCommitGitCloseout={workspace.commitRunGitCloseout}
-							onPushGitCloseout={workspace.pushRunGitCloseout}
 							activeTaskStatus={workspace.activeSession?.status ?? null}
 							onCompleteAndArchiveTask={(taskId, options) =>
 								workspace.archiveCompletedSession(taskId, options)

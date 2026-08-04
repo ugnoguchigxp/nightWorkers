@@ -11,9 +11,11 @@ import {
 } from "./codex-completion-reconciliation";
 import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
+	closeProviderIteratorWithoutWaiting,
 	persistCodexProviderThreadIfPresent,
 	readPromptPartObservabilityEnabled,
 	updateCodexSessionKey,
+	updateOpenProviderItems,
 } from "./codex-runtime-support";
 import type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 import {
@@ -23,6 +25,7 @@ import {
 import {
 	buildCodexRuntimePromptParts,
 	buildCodexRuntimeTurnInput,
+	isMinimalReviewRuntime,
 } from "./codex-sdk/codex-sdk-runtime-prompt";
 import {
 	type RuntimeUsageRecorder,
@@ -36,10 +39,6 @@ import type {
 } from "./types";
 
 const STREAM_DEADLINE_REACHED = Symbol("codex-stream-deadline-reached");
-type OpenProviderItem = {
-	id: string;
-	type: string;
-};
 
 export type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 export {
@@ -126,6 +125,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 		try {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
+			const minimalReview = isMinimalReviewRuntime(context);
 			const promptParts = buildCodexRuntimePromptParts(context);
 			const thread = await createThread(
 				this.closeoutHost(),
@@ -187,7 +187,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 				let providerSessionKey: string | null = null;
 				let turnCompleted = false;
 				let runtimeFailed = false;
-				const openProviderItems = new Map<string, OpenProviderItem>();
+				const openProviderItems = new Map<
+					string,
+					{ id: string; type: string }
+				>();
 				const eventIterator = events[Symbol.asyncIterator]();
 
 				while (true) {
@@ -315,6 +318,14 @@ export class CodexAgentRuntime implements AgentRuntime {
 						finalReport,
 						stoppedBy: "tool_failure",
 						riskLevel: "high",
+					});
+				}
+				if (minimalReview) {
+					return this.finish(context, sink, logs, {
+						terminalState: "completed",
+						finalReport,
+						stoppedBy: "decision",
+						riskLevel: "medium",
 					});
 				}
 				const completion = await this.evaluateCompletionCandidate({
@@ -559,36 +570,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 
 	isRunning(runId: string): boolean {
 		return this.activeRunControllers.has(runId);
-	}
-}
-
-function updateOpenProviderItems(
-	openItems: Map<string, OpenProviderItem>,
-	event: unknown,
-) {
-	if (!event || typeof event !== "object") return;
-	const record = event as Record<string, unknown>;
-	if (record.type !== "item.started" && record.type !== "item.completed")
-		return;
-	if (!record.item || typeof record.item !== "object") return;
-	const item = record.item as Record<string, unknown>;
-	if (typeof item.id !== "string") return;
-	if (record.type === "item.completed") {
-		openItems.delete(item.id);
-		return;
-	}
-	openItems.set(item.id, {
-		id: item.id,
-		type: typeof item.type === "string" ? item.type : "unknown",
-	});
-}
-
-function closeProviderIteratorWithoutWaiting(iterator: AsyncIterator<unknown>) {
-	if (!iterator.return) return;
-	try {
-		void Promise.resolve(iterator.return()).catch(() => undefined);
-	} catch {
-		// Provider cleanup is best-effort and must never block Run closeout.
 	}
 }
 

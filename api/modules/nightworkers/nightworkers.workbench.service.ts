@@ -96,10 +96,7 @@ export function isPlanModeArtifactRegenerationContext(
 }
 export type WorkbenchPlanModeGate = codingAgent.CodingAgentPlanModeGate;
 
-const CODING_AGENT_RUN_INTENTS = new Set<WorkbenchChatIntent>([
-	"intake",
-	"review_followup",
-]);
+const CODING_AGENT_RUN_INTENTS = new Set<WorkbenchChatIntent>(["intake"]);
 
 export function decideWorkbenchPlanModeGate(
 	input: Parameters<typeof codingAgent.decideCodingAgentPlanModeGate>[0],
@@ -137,7 +134,6 @@ export async function handleWorkbenchIntakeMessage(
 	},
 ) {
 	const intent = options.intent || "intake";
-	const currentWorktreeReview = intent === "review_followup";
 	const title =
 		task.title === "New Session"
 			? prompt.replace(/\s+/g, " ").slice(0, 60)
@@ -146,9 +142,10 @@ export async function handleWorkbenchIntakeMessage(
 	const projectRoot = repository?.localPath || process.cwd();
 	const emitWorkbenchLlmDebugEvent =
 		createWorkbenchLlmDebugEventEmitter(taskId);
-	const llmPrompt = currentWorktreeReview
-		? prompt
-		: renderArtifactContextualPrompt(prompt, options.artifactContext || null);
+	const llmPrompt = renderArtifactContextualPrompt(
+		prompt,
+		options.artifactContext || null,
+	);
 
 	try {
 		const messages = await repo.listTaskMessages(taskId);
@@ -163,33 +160,26 @@ export async function handleWorkbenchIntakeMessage(
 				runs,
 				resumeCandidate,
 			});
-		const planModeGateResult: WorkbenchPlanModeGate = currentWorktreeReview
-			? {
-					shouldStartPlanMode: false,
-					action: "coding_agent",
-					runDisposition: "start_new_run",
-					reason:
-						"Review Artifactから明示された操作のため、同じTask専用worktreeでfresh Coding Agent Runを開始する。",
-				}
-			: ((await codingAgent.loadPersistedCodingAgentPlanModeGateResult({
-					taskId,
-					repositoryId: task.repositoryId,
-					prompt: llmPrompt,
-					routingSnapshotDigest,
-				})) ??
-				(await decideWorkbenchPlanModeGate({
-					projectRoot,
-					prompt: llmPrompt,
-					task,
-					messages,
-					runs,
-					resumeCandidate,
-					routingSnapshotDigest,
-					routeOverride: options.llmRouteOverride || null,
-					emitEvent: emitWorkbenchLlmDebugEvent,
-					taskId,
-					repositoryId: task.repositoryId,
-				})));
+		const planModeGateResult: WorkbenchPlanModeGate =
+			(await codingAgent.loadPersistedCodingAgentPlanModeGateResult({
+				taskId,
+				repositoryId: task.repositoryId,
+				prompt: llmPrompt,
+				routingSnapshotDigest,
+			})) ??
+			(await decideWorkbenchPlanModeGate({
+				projectRoot,
+				prompt: llmPrompt,
+				task,
+				messages,
+				runs,
+				resumeCandidate,
+				routingSnapshotDigest,
+				routeOverride: options.llmRouteOverride || null,
+				emitEvent: emitWorkbenchLlmDebugEvent,
+				taskId,
+				repositoryId: task.repositoryId,
+			}));
 		const { runtimeThreadHandoff, ...planModeGate } = planModeGateResult;
 		const planModeSettingsSnapshot = buildPlanModeSettingsSnapshot(
 			readGeneralSettings(),
@@ -295,24 +285,15 @@ export async function handleWorkbenchIntakeMessage(
 					"An interrupted Run exists; it was not implicitly cancelled to start a new Run.",
 				);
 			}
-			const runnable = currentWorktreeReview
-				? task
-				: await repo.updateTask(taskId, {
-						title,
-						objective: task.objective || prompt,
-						acceptanceCriteria: task.acceptanceCriteria || prompt,
-					});
+			const runnable = await repo.updateTask(taskId, {
+				title,
+				objective: task.objective || prompt,
+				acceptanceCriteria: task.acceptanceCriteria || prompt,
+			});
 			const run = await startTaskRun(taskId, {
-				executionModeSource: currentWorktreeReview
-					? "workbench_review_followup"
-					: "workbench_intake",
+				executionModeSource: "workbench_intake",
 				planModeRequested: false,
-				intakeRuntimeThreadHandoff: currentWorktreeReview
-					? undefined
-					: runtimeThreadHandoff,
-				currentWorktreeReview: currentWorktreeReview
-					? { kind: "current_worktree_review" }
-					: undefined,
+				intakeRuntimeThreadHandoff: runtimeThreadHandoff,
 				routeOverride: options.llmRouteOverride || null,
 			});
 			await repo.createTaskMessage({

@@ -17,7 +17,7 @@ export async function persistCodexProviderThreadIfPresent(
 		runtimeLane: "codex-sdk",
 		provider: "codex",
 		providerSessionId: providerThreadId,
-		executionMode: "implementation",
+		executionMode: readExecutionMode(context),
 		model: readCodexRuntimeModel(context),
 		metadata: {
 			source: "thread.started",
@@ -50,6 +50,13 @@ function readCodexRuntimeModel(context: AgentRunContext) {
 	return readString(readRecord(context.runtimeOptions?.codex)?.model);
 }
 
+function readExecutionMode(context: AgentRunContext) {
+	const value = context.contextSnapshot.executionMode;
+	return typeof value === "string" && value.length > 0
+		? value
+		: "implementation";
+}
+
 function readEventPayload(event: AgentRuntimeEvent): Record<string, unknown> {
 	return readRecord(event.payload) ?? {};
 }
@@ -71,4 +78,36 @@ export function changedFilesFromDiff(diff: string): string[] {
 		if (match?.[2]) files.add(match[2]);
 	}
 	return [...files];
+}
+
+export function updateOpenProviderItems(
+	openItems: Map<string, { id: string; type: string }>,
+	event: unknown,
+) {
+	if (!event || typeof event !== "object") return;
+	const record = event as Record<string, unknown>;
+	if (record.type !== "item.started" && record.type !== "item.completed")
+		return;
+	if (!record.item || typeof record.item !== "object") return;
+	const item = record.item as Record<string, unknown>;
+	if (typeof item.id !== "string") return;
+	if (record.type === "item.completed") {
+		openItems.delete(item.id);
+		return;
+	}
+	openItems.set(item.id, {
+		id: item.id,
+		type: typeof item.type === "string" ? item.type : "unknown",
+	});
+}
+
+export function closeProviderIteratorWithoutWaiting(
+	iterator: AsyncIterator<unknown>,
+) {
+	if (!iterator.return) return;
+	try {
+		void Promise.resolve(iterator.return()).catch(() => undefined);
+	} catch {
+		// Provider cleanup is best-effort and must never block Run closeout.
+	}
 }

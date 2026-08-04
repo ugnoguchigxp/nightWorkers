@@ -1,6 +1,5 @@
 import { buildPromptWithStateCardParts } from "../../../services/conversation-context";
 import { projectConversationStateCardForRuntime } from "../../../services/conversation-context/state-card-projection";
-import { digestText } from "../../../services/text-digest";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import {
 	buildCodexRuntimePromptSnapshot,
@@ -13,6 +12,10 @@ import {
 	buildOntologyRuntimeContextSnapshot,
 	ontologySnapshotEventSeverity,
 } from "../../ontology";
+import {
+	buildInteractiveReviewPromptSnapshot,
+	buildInteractiveReviewRuntimeOptions,
+} from "../../review/review-runtime-profile";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import {
@@ -43,8 +46,12 @@ import {
 	createPreparedRuntimeLaunch,
 	launchPreparedTaskRun,
 } from "./start-task-run-launch";
-import { persistPreparedRuntimePrompt } from "./start-task-run-persistence";
+import {
+	persistPreparedRuntimePrompt,
+	recordRuntimePromptPrepared,
+} from "./start-task-run-persistence";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
+import { buildStandardTaskRunPromptSnapshot } from "./start-task-run-prompt-snapshot";
 import {
 	buildRuntimeConversationContextSnapshot,
 	prepareTaskRunRuntimeContext,
@@ -55,7 +62,7 @@ import {
 	recordCreatedAgentModeSessionTransition,
 } from "./start-task-run-session";
 import {
-	isCurrentWorktreeReviewStart,
+	isInteractiveReviewStart,
 	type StartTaskRunOptions,
 } from "./start-task-run-types";
 
@@ -89,14 +96,14 @@ export async function prepareTaskRunInProcess(
 	taskId: string,
 	options: StartTaskRunOptions = {},
 ) {
-	const currentWorktreeReview = isCurrentWorktreeReviewStart(options);
+	const interactiveReview = isInteractiveReviewStart(options);
 	const resumable = options.resumeRunId
 		? await prepareResumableTaskRun(taskId, options.resumeRunId)
 		: null;
 	const task = resumable?.task ?? (await prepareStartableTask(taskId));
-	const systemContextBinding = resolveRunSystemContextBinding(
-		resumable?.run.contextSnapshot,
-	);
+	const systemContextBinding = interactiveReview
+		? undefined
+		: resolveRunSystemContextBinding(resumable?.run.contextSnapshot);
 	const {
 		repoInfo,
 		executionRoot,
@@ -118,7 +125,8 @@ export async function prepareTaskRunInProcess(
 		workspaceRuntimeEnvironment,
 		compiledPromptText,
 	} = await prepareTaskRunStart({ task, options });
-	const ontologyMcpEnabled = securityIntelligence.ontology.effectiveEnabled;
+	const ontologyMcpEnabled =
+		!interactiveReview && securityIntelligence.ontology.effectiveEnabled;
 	const {
 		runtimeRole,
 		blueprintPlanningSnapshot,
@@ -136,9 +144,7 @@ export async function prepareTaskRunInProcess(
 		planModeRequested: Boolean(options.planModeRequested),
 	});
 	const intakeRuntimeResume = resolveCodexIntakeRuntimeHandoff({
-		handoff: currentWorktreeReview
-			? undefined
-			: options.intakeRuntimeThreadHandoff,
+		handoff: interactiveReview ? undefined : options.intakeRuntimeThreadHandoff,
 		executionMode,
 		runtimeRoute: runtimeLlmRoute,
 	});
@@ -158,9 +164,7 @@ export async function prepareTaskRunInProcess(
 		runtimeLane: runtimeLaneResolution.lane,
 		runtimeLlmRoute,
 	});
-	const routeIdentity = currentWorktreeReview
-		? { ...continuationRouteIdentity, continuationEligible: false }
-		: continuationRouteIdentity;
+	const routeIdentity = continuationRouteIdentity;
 	const taskRevisionSnapshot = await resolveTaskRunRevisionBinding({
 		task,
 		resuming: Boolean(resumable),
@@ -232,11 +236,13 @@ export async function prepareTaskRunInProcess(
 		llmRole: runtimeRole,
 		routeFingerprint: routeIdentity.fingerprint,
 	});
-	await materializeAdoptedImplementationPlan({
-		runId: run.id,
-		plan: implementationPlan,
-		created: Boolean(created),
-	});
+	if (!interactiveReview) {
+		await materializeAdoptedImplementationPlan({
+			runId: run.id,
+			plan: implementationPlan,
+			created: Boolean(created),
+		});
+	}
 	await activateWorkspace(taskId, gitBaseline.baselineHead);
 	if (!resumable) {
 		await repo.createTaskRunCommitRecord({
@@ -245,7 +251,7 @@ export async function prepareTaskRunInProcess(
 			status: gitBaseline.status,
 			baselineHead: gitBaseline.baselineHead,
 			baselineStatusJson: gitBaseline.baselineStatusJson,
-			preExistingDirtyPaths: currentWorktreeReview
+			preExistingDirtyPaths: interactiveReview
 				? []
 				: gitBaseline.preExistingDirtyPaths,
 			statusReason: gitBaseline.statusReason,
@@ -270,10 +276,19 @@ export async function prepareTaskRunInProcess(
 			ontologyToolProfile: "standard" | "ontology_extended";
 		};
 		reviewRun?: unknown;
+		reviewRuntime?: unknown;
 		runtimeResume?: unknown;
 	} = {
 		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
 		...(options.runtimeOptionsPatch ?? {}),
+		...(interactiveReview
+			? {
+					reviewRuntime: buildInteractiveReviewRuntimeOptions({
+						reviewedRunId: options.interactiveReview?.reviewedRunId ?? null,
+						gitCommonDir: workspaceAdmission.attestation.gitCommonDirCanonical,
+					}),
+				}
+			: {}),
 		workspaceRuntimeEnvironment,
 		securityOracle: {
 			enabled: securityIntelligence.securityOracle.effectiveEnabled,
@@ -329,89 +344,76 @@ export async function prepareTaskRunInProcess(
 			runtimeLaneResolution,
 		},
 	});
-	const contextSnapshot: RuntimePromptSnapshot = {
-		compiledPrompt: compiledPromptText,
-		source: "task_prompt",
-		degraded: false,
-		executionMode,
-		executionPhase: executionMode,
-		executionModeSource,
-		projectExplorationCatalog: projectExplorationCatalogPin,
-		planModeRequested: Boolean(options.planModeRequested),
-		planModeClosed: !options.planModeRequested,
-		planModeSettingsSnapshot,
-		systemContextBinding,
-		...blueprintPlanningSnapshot,
-		runtimeLane: runtimeLaneResolution.lane,
-		runtimeLaneResolution: {
-			workerKind: runtimeLaneResolution.workerKind,
-			source: runtimeLaneResolution.source,
-			diagnostics: runtimeLaneResolution.diagnostics,
-		},
-		effectiveLlmRouting,
-		...(runtimeOptions.reviewRun
-			? { reviewRun: runtimeOptions.reviewRun }
-			: {}),
-		reviewCorrection: runtimeOptions.reviewCorrection,
-		projectMeta,
-		securityOracle: {
-			enabled: securityIntelligence.securityOracle.effectiveEnabled,
-			configured: securityIntelligence.securityOracle.configured,
-			reason: securityIntelligence.securityOracle.reason,
-			measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
-			thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
-		},
-		ontologyMcp: {
-			enabled: ontologyMcpEnabled,
-			source: "project_code_size_tool_profile",
-			fileScale: projectMeta?.fileScale.value ?? null,
-			toolProfile: securityIntelligence.ontology.toolProfile,
-			measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
-			thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
-			reason: securityIntelligence.ontology.reason,
-		},
-		request: {
-			registeredRepositoryPath: repoInfo.localPath,
-			repositoryPath: executionRoot,
-			taskTitle: task.title,
-			taskDescriptionDigest: digestText(
-				lastUserMessage?.content || task.description || task.objective || "",
-			),
-		},
-		...(implementationHandoffSnapshot
-			? {
-					implementationHandoff: implementationHandoffSnapshot,
-				}
-			: {}),
-		...(implementationPlanProvenance ? { implementationPlanProvenance } : {}),
-		repositoryMaterialization: repositoryMaterializationSnapshot,
-		workspaceRuntimeEnvironment: Object.keys(workspaceRuntimeEnvironment),
-		result: {
-			digest: digestText(compiledPromptText),
-			charCount: compiledPromptText.length,
-		},
-	};
-	const rawLatestUserMessage =
-		options.latestUserMessageOverride?.trim() ||
-		buildLatestRuntimeUserMessage({
-			fallback:
-				lastUserMessage?.content ||
-				task.description ||
-				task.objective ||
-				compiledPromptText,
-			lastUserMessage,
-			implementationHandoffMessage,
-		});
-	const conversationContext = currentWorktreeReview
+	const contextSnapshot: RuntimePromptSnapshot = interactiveReview
+		? buildInteractiveReviewPromptSnapshot({
+				compiledPrompt: compiledPromptText,
+				repositoryPath: executionRoot,
+				taskTitle: task.title,
+				reviewedRunId: options.interactiveReview?.reviewedRunId ?? null,
+				runtimeLane: runtimeLaneResolution.lane,
+				runtimeLaneResolution: {
+					workerKind: runtimeLaneResolution.workerKind,
+					source: runtimeLaneResolution.source,
+					diagnostics: runtimeLaneResolution.diagnostics,
+				},
+				effectiveLlmRouting,
+			})
+		: buildStandardTaskRunPromptSnapshot({
+				compiledPrompt: compiledPromptText,
+				executionMode,
+				executionModeSource,
+				projectExplorationCatalog: projectExplorationCatalogPin,
+				planModeRequested: Boolean(options.planModeRequested),
+				planModeSettingsSnapshot,
+				systemContextBinding,
+				blueprintPlanningSnapshot,
+				runtimeLane: runtimeLaneResolution.lane,
+				runtimeLaneResolution: {
+					workerKind: runtimeLaneResolution.workerKind,
+					source: runtimeLaneResolution.source,
+					diagnostics: runtimeLaneResolution.diagnostics,
+				},
+				effectiveLlmRouting,
+				reviewRun: runtimeOptions.reviewRun,
+				reviewCorrection: runtimeOptions.reviewCorrection,
+				projectMeta,
+				securityIntelligence,
+				ontologyMcpEnabled,
+				registeredRepositoryPath: repoInfo.localPath,
+				repositoryPath: executionRoot,
+				taskTitle: task.title,
+				taskDescription:
+					lastUserMessage?.content || task.description || task.objective || "",
+				implementationHandoffSnapshot:
+					implementationHandoffSnapshot ?? undefined,
+				implementationPlanProvenance: implementationPlanProvenance ?? undefined,
+				repositoryMaterialization: repositoryMaterializationSnapshot,
+				workspaceRuntimeEnvironmentKeys: Object.keys(
+					workspaceRuntimeEnvironment,
+				),
+			});
+	const rawLatestUserMessage = interactiveReview
+		? compiledPromptText
+		: options.latestUserMessageOverride?.trim() ||
+			buildLatestRuntimeUserMessage({
+				fallback:
+					lastUserMessage?.content ||
+					task.description ||
+					task.objective ||
+					compiledPromptText,
+				lastUserMessage,
+				implementationHandoffMessage,
+			});
+	const conversationContext = interactiveReview
 		? null
 		: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
-		role: "implementation",
+		role: interactiveReview ? "review" : "implementation",
 		workKind: runtimeRole,
 	});
 	const todoRecoveryStateCard =
-		runtimeLaneResolution.lane === "codex-sdk"
+		runtimeLaneResolution.lane === "codex-sdk" || interactiveReview
 			? ""
 			: renderCodingAgentTodoRecoveryGuidance({
 					taskId,
@@ -428,7 +430,9 @@ export async function prepareTaskRunInProcess(
 		latestUserMessage: rawLatestUserMessage,
 		stateCardText: runtimeStateCardText,
 	});
-	const runtimeLatestUserMessage = runtimePromptParts.promptText;
+	const runtimeLatestUserMessage = interactiveReview
+		? rawLatestUserMessage
+		: runtimePromptParts.promptText;
 	const conversationContextSnapshot = buildRuntimeConversationContextSnapshot({
 		snapshot: conversationContext,
 		stateCardText: runtimeStateCardText,
@@ -440,60 +444,69 @@ export async function prepareTaskRunInProcess(
 			runtimeUserPromptTokens: runtimePromptParts.estimates.promptTokens,
 		},
 	});
-	let runtimeContextSnapshot: RuntimePromptSnapshot = {
-		...contextSnapshot,
-		executionPhase: executionMode,
-		planModeRequested: Boolean(options.planModeRequested),
-		planModeClosed: !options.planModeRequested,
-		...(options.planModeRequested
-			? {}
-			: { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }),
-		codexPrompt: buildCodexRuntimePromptSnapshot({
-			runtimeLane: runtimeLaneResolution.lane,
-			request: rawLatestUserMessage,
-			stateCardText: runtimeStateCardText,
-		}),
-		...(currentWorktreeReview
-			? {}
-			: { conversationContext: conversationContextSnapshot }),
-	};
-	const ontologyContext = ontologyMcpEnabled
-		? await buildOntologyRuntimeContextSnapshot({
-				repoRoot: executionRoot,
-				goal: runtimeLatestUserMessage || compiledPromptText,
-				taskId,
-				runId: run.id,
-				runtimeLane: runtimeLaneResolution.lane,
-			})
-		: buildOntologyRuntimeContextDisabledSnapshot({
-				taskId,
-				runId: run.id,
-				runtimeLane: runtimeLaneResolution.lane,
-				toolProfile: securityIntelligence.ontology.toolProfile,
-				reason: securityIntelligence.ontology.reason,
-				measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
-				thresholdSourceLoc: securityIntelligence.eligibility.thresholdSourceLoc,
-			});
-	runtimeContextSnapshot = {
-		...runtimeContextSnapshot,
-		ontologyContext,
-	};
-	await repo.createRunEvent({
-		version: 1,
-		runId: run.id,
-		taskId,
-		timestamp: new Date().toISOString(),
-		type: "system.info",
-		severity: ontologySnapshotEventSeverity(ontologyContext),
-		actor: "runtime",
-		message: ontologyContext.available
-			? "Ontology runtime context snapshot prepared."
-			: "Ontology runtime context snapshot unavailable; runtime will use MCP fallback guidance.",
-		data: {
-			action: "ontology.runtime_context_snapshot",
+	let runtimeContextSnapshot: RuntimePromptSnapshot = interactiveReview
+		? {
+				...contextSnapshot,
+				codexPrompt: {
+					request: rawLatestUserMessage,
+					stateCardText: null,
+				},
+			}
+		: {
+				...contextSnapshot,
+				executionPhase: executionMode,
+				planModeRequested: Boolean(options.planModeRequested),
+				planModeClosed: !options.planModeRequested,
+				...(options.planModeRequested
+					? {}
+					: { implementationPhasePreamble: IMPLEMENTATION_PHASE_PREAMBLE }),
+				codexPrompt: buildCodexRuntimePromptSnapshot({
+					runtimeLane: runtimeLaneResolution.lane,
+					request: rawLatestUserMessage,
+					stateCardText: runtimeStateCardText,
+				}),
+				conversationContext: conversationContextSnapshot,
+			};
+	if (!interactiveReview) {
+		const ontologyContext = ontologyMcpEnabled
+			? await buildOntologyRuntimeContextSnapshot({
+					repoRoot: executionRoot,
+					goal: runtimeLatestUserMessage || compiledPromptText,
+					taskId,
+					runId: run.id,
+					runtimeLane: runtimeLaneResolution.lane,
+				})
+			: buildOntologyRuntimeContextDisabledSnapshot({
+					taskId,
+					runId: run.id,
+					runtimeLane: runtimeLaneResolution.lane,
+					toolProfile: securityIntelligence.ontology.toolProfile,
+					reason: securityIntelligence.ontology.reason,
+					measuredSourceLoc: securityIntelligence.eligibility.measuredSourceLoc,
+					thresholdSourceLoc:
+						securityIntelligence.eligibility.thresholdSourceLoc,
+				});
+		runtimeContextSnapshot = {
+			...runtimeContextSnapshot,
 			ontologyContext,
-		},
-	});
+		};
+		await repo.createRunEvent({
+			version: 1,
+			runId: run.id,
+			taskId,
+			timestamp: new Date().toISOString(),
+			type: "system.info",
+			severity: ontologySnapshotEventSeverity(ontologyContext),
+			actor: "runtime",
+			message: ontologyContext.available
+				? "Ontology runtime context snapshot prepared."
+				: "Ontology runtime context snapshot unavailable; runtime will use MCP fallback guidance.",
+			data: {
+				action: "ontology.runtime_context_snapshot",
+				ontologyContext,
+			},
+		});
+	}
 	if (runtimeLaneResolution.lane === "codex-sdk") {
 		const runtimeResume =
 			intakeRuntimeResume ??
@@ -546,29 +559,18 @@ export async function prepareTaskRunInProcess(
 		compiledPromptText,
 		runtimeContextSnapshot,
 	});
-	await repo.createRunEvent({
-		version: 1,
-		runId: run.id,
+	await recordRuntimePromptPrepared({
 		taskId,
-		timestamp: new Date().toISOString(),
-		type: "run.prompt_prepared",
-		severity: "info",
-		actor: "system",
-		message: "Runtime prompt prepared.",
-		data: {
-			source: contextSnapshot.source,
-			degraded: false,
-			digest: contextSnapshot.result.digest,
-			charCount: contextSnapshot.result.charCount,
-			runtimeLane: runtimeLaneResolution.lane,
-			workerKind: runtimeLaneResolution.workerKind,
-			runtimeLaneResolution,
-			effectiveLlmRouting,
-			executionMode,
-			executionModeSource,
-			runtimeRole,
-			systemContextBinding,
-		},
+		runId: run.id,
+		source: contextSnapshot.source,
+		digest: contextSnapshot.result.digest,
+		charCount: contextSnapshot.result.charCount,
+		runtimeLaneResolution,
+		effectiveLlmRouting,
+		executionMode,
+		executionModeSource,
+		runtimeRole,
+		systemContextBinding,
 	});
 	return {
 		run: compiledRun ?? run,

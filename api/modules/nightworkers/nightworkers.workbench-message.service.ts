@@ -9,6 +9,7 @@ import { AppError, NotFoundError } from "../../lib/errors";
 import { shouldWaitForWorkbenchIntakeInTests } from "../../services/runtime-env";
 import { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { generateDataModelArtifact } from "../dataModel/dataModel-generation.service";
+import { startInteractiveReviewPrompt } from "../review/review-prompt-session.service";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { executePlanModeArtifactCorrection } from "../specification/plan-mode-artifact-correction.service";
 import { buildSpecificationVerificationSidecar } from "../specification/specification-verification-sidecar";
@@ -270,6 +271,7 @@ export type WorkbenchChatIntent =
 	| "queue"
 	| "run_task"
 	| "adjust_running"
+	| "review_prompt"
 	| "review_followup"
 	| "learning_capture"
 	| "design_component"
@@ -449,6 +451,34 @@ export async function appendWorkbenchMessage(
 
 	await appendWorkbenchTaskMessage();
 
+	if (intent === "review_prompt" || intent === "review_followup") {
+		const run = await startInteractiveReviewPrompt({
+			taskId: id,
+			prompt,
+			reviewedRunId: artifactContext?.source?.runId ?? null,
+			routeOverride: llmRouteOverride,
+		});
+		await repo.createTaskMessage({
+			taskId: id,
+			runId: run.id,
+			role: "system",
+			content: "WorkbenchからReview Codex Runを開始しました。",
+			messageType: "text",
+			payloadJson: {
+				intent: "run_started",
+				source: "workbench",
+				executionMode: "review",
+				llmRole: "review",
+				contextPolicy: "codex_default",
+			},
+		});
+		return {
+			task: (await repo.getTask(id)) || task,
+			run,
+			messages: await repo.listTaskMessages(id),
+		};
+	}
+
 	if (intent === "queue" || intent === "create_task") {
 		const queued = await queueTask(id);
 		return {
@@ -459,8 +489,7 @@ export async function appendWorkbenchMessage(
 	}
 
 	const waitForIntake =
-		intent === "review_followup" ||
-		(input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests());
+		input.waitForIntake ?? shouldWaitForWorkbenchIntakeInTests();
 	if (waitForIntake) {
 		return handleWorkbenchIntakeMessage(id, task, prompt, {
 			failureMode: "throw",

@@ -65,6 +65,48 @@ describe("Codex completion reconciliation", () => {
 		});
 	});
 
+	it("completes a minimal Review turn without Coding Agent completion reconciliation", async () => {
+		const runStreamed = vi.fn(async () => ({
+			events: events("コミットしました。"),
+		}));
+		const evaluateCompletionCandidate = vi.fn();
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			evaluateCompletionCandidate,
+		});
+		const reviewContext: AgentRunContext = {
+			...context(),
+			compiledPrompt: "コミットしてください。",
+			latestUserMessage: "コミットしてください。",
+			contextSnapshot: {
+				compiledPrompt: "コミットしてください。",
+				source: "task_prompt",
+				executionMode: "review",
+				codexPrompt: { request: "コミットしてください。" },
+				reviewRuntime: {
+					version: 1,
+					contextPolicy: "codex_default",
+					completionPolicy: "provider_turn",
+					nightworkersMcp: "disabled",
+					reviewedRunId: null,
+				},
+			},
+		};
+
+		const result = await runtime.start(reviewContext, { emit: async () => {} });
+
+		expect(result).toMatchObject({
+			terminalState: "completed",
+			finalReport: "コミットしました。",
+		});
+		expect(runStreamed).toHaveBeenCalledOnce();
+		expect(runStreamed).toHaveBeenCalledWith(
+			"コミットしてください。",
+			expect.anything(),
+		);
+		expect(evaluateCompletionCandidate).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when the completion Run cannot be found", async () => {
 		const runStreamed = vi.fn(async () => ({ events: events("完了候補") }));
 		const evaluateCompletionCandidate = vi.fn().mockResolvedValue({

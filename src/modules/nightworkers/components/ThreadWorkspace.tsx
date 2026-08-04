@@ -113,6 +113,7 @@ export type ThreadWorkspaceProps = {
 	onOpenTodoArtifact: () => void;
 	isTodoArtifactOpen: boolean;
 	hasTodoArtifact: boolean;
+	hideTodoArtifact?: boolean;
 	hasEvidenceCheckArtifact: boolean;
 	onDeleteSession: () => void;
 	onQueueSession: () => Promise<void> | void;
