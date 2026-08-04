@@ -56,6 +56,7 @@ describe("RuntimeSessionStateStore", () => {
 			providerSessionId: "sess-2",
 			model: "model-2",
 			status: "active",
+			metadata: { rawProviderState: { source: "thread.started" } },
 		});
 		expect(state2).toBeDefined();
 		expect(state2.providerSessionId).toBe("sess-2");
@@ -63,6 +64,12 @@ describe("RuntimeSessionStateStore", () => {
 		// Retrieve should now return state2
 		const retrieved2 = await store.getLatestRuntimeSessionStateForTask(lookup);
 		expect(retrieved2?.id).toBe(state2.id);
+		const touchedAt = new Date("2026-08-03T05:00:00.000Z");
+		const touched = await store.touchRuntimeSessionState({
+			id: state2.id,
+			now: touchedAt,
+		});
+		expect(touched?.lastSeenAt).toEqual(touchedAt);
 
 		// 4. Mark invalid
 		const invalidState = await store.markRuntimeSessionStateInvalid({
@@ -84,11 +91,14 @@ describe("RuntimeSessionStateStore", () => {
 
 		const failedState2 = await store.markRuntimeSessionStateResumeFailed({
 			id: state2.id,
-			error: new Error("Failed to resume"),
+			error: new Error(
+				"Failed to resume; Authorization: Bearer top-secret-token",
+			),
 		});
 		expect(failedState2?.status).toBe("resume_failed");
 		expect(failedState2?.metadataJson).toEqual({
-			resumeError: "Error: Failed to resume",
+			rawProviderState: { source: "thread.started" },
+			resumeError: "Error: Failed to resume; Authorization: [REDACTED]",
 		});
 
 		// 7. Test nullish variants for repositoryId and executionMode in lookup and matchings

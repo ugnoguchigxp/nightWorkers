@@ -11,6 +11,7 @@ import {
 	getTaskRun,
 	updateTaskRun,
 } from "../api/modules/nightworkers/nightworkers.repository";
+import type { TodoMutationCommand } from "../shared/modules/codingAgent";
 
 const repositoryIds: string[] = [];
 
@@ -29,6 +30,14 @@ const systemContext: CodingAgentSystemContextSnapshot = {
 };
 
 const TODO_SYSTEM_CONTEXT = "このTodoの目的と受け入れ条件を優先する。";
+
+function humanDecisionBlocker(question: string) {
+	return {
+		question,
+		requiredInput: "decision" as const,
+		basis: { kind: "task_context" as const },
+	};
+}
 
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
@@ -162,7 +171,7 @@ describe("TodoMutationService", () => {
 		]);
 	});
 
-	it("blocks the current step with a human-readable reason", async () => {
+	it("blocks the current step with a canonical structured human blocker", async () => {
 		const { run } = await createRunFixture();
 		await service().execute(run.id, {
 			op: "plan",
@@ -171,13 +180,43 @@ describe("TodoMutationService", () => {
 
 		const blocked = await service().execute(run.id, {
 			op: "block_current",
-			reason: "配備先の選択が必要。",
+			humanBlocker: humanDecisionBlocker("  配備先の選択が必要。  "),
 		});
 
 		expect(blocked.currentTodo).toBeNull();
 		expect(blocked.todos[0]).toMatchObject({
 			status: "needs_human",
 			statusReason: "配備先の選択が必要。",
+			humanBlockerJson: humanDecisionBlocker("配備先の選択が必要。"),
+		});
+	});
+
+	it("rejects a malformed human blocker without mutating the Todo", async () => {
+		const { run } = await createRunFixture();
+		const planned = await service().execute(run.id, {
+			op: "plan",
+			steps: [{ title: "配備する", systemContext: "対象環境へ配備する。" }],
+		});
+		if (!planned.ok) throw new Error(planned.error.code);
+
+		const result = await service().execute(run.id, {
+			op: "block_current",
+			humanBlocker: {
+				question: "権限を確認してください。",
+				requiredInput: "permission",
+				basis: {
+					kind: "tool_failure",
+					toolName: "run_check",
+					failureCode: "TEST_EVIDENCE_COMMAND_UNSUPPORTED",
+					recoveryDisposition: "agent_action",
+				},
+			},
+		} as unknown as TodoMutationCommand);
+
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: "TODO_HUMAN_BLOCKER_NOT_ESTABLISHED" },
+			todos: [expect.objectContaining({ status: "running" })],
 		});
 	});
 
@@ -435,7 +474,7 @@ describe("TodoMutationService", () => {
 			todoId: target.id,
 			expectedTodoRevision: started.currentTodo.revision,
 			status: "needs_human",
-			reason: "対象environmentが不明。",
+			humanBlocker: humanDecisionBlocker("対象environmentが不明。"),
 		});
 		if (!paused.ok) return;
 		const pausedTodo = paused.todos.find((todo) => todo.id === target.id);
@@ -635,7 +674,7 @@ describe("TodoMutationService", () => {
 		if (!plan.ok) throw new Error(plan.error.code);
 		const blocked = await service().execute(run.id, {
 			op: "block_current",
-			reason: "ユーザー判断が必要。",
+			humanBlocker: humanDecisionBlocker("ユーザー判断が必要。"),
 		});
 		if (!blocked.ok) throw new Error(blocked.error.code);
 

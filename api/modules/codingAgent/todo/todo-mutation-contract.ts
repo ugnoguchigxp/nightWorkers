@@ -1,4 +1,5 @@
 import { implementationPlanSchema } from "../../../../shared/modules/agentsShare";
+import { humanBlockerSchema } from "../../../../shared/modules/codingAgent";
 import type { TodoMutationCommand, TodoMutationErrorCode } from "./types";
 import { TODO_MUTATION_LIMITS } from "./types";
 
@@ -19,9 +20,8 @@ export function validateTodoMutationCommand(
 			: null;
 	}
 	if (command.op === "block_current") {
-		return !command.reason.trim() ||
-			command.reason.length > TODO_MUTATION_LIMITS.maxReasonLength
-			? "INVALID_TODO_COMMAND"
+		return !humanBlockerSchema.safeParse(command.humanBlocker).success
+			? "TODO_HUMAN_BLOCKER_NOT_ESTABLISHED"
 			: null;
 	}
 	if (command.op === "replace_plan") {
@@ -101,15 +101,25 @@ export function validateTodoMutationCommand(
 	) {
 		return "INVALID_TODO_COMMAND";
 	}
-	if (
-		command.op === "transition" &&
-		((command.nextTodoId !== undefined &&
-			(!command.nextTodoId.trim() ||
-				command.nextTodoId.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||
+	if (command.op === "transition") {
+		if (command.status === "needs_human") {
+			if (command.reason !== undefined || command.nextTodoId !== undefined) {
+				return "INVALID_TODO_COMMAND";
+			}
+			return humanBlockerSchema.safeParse(command.humanBlocker).success
+				? null
+				: "TODO_HUMAN_BLOCKER_NOT_ESTABLISHED";
+		}
+		if (
+			(command.nextTodoId !== undefined &&
+				(!command.nextTodoId.trim() ||
+					command.nextTodoId.length > TODO_MUTATION_LIMITS.maxTodoIdLength)) ||
 			!command.reason.trim() ||
-			command.reason.length > TODO_MUTATION_LIMITS.maxReasonLength)
-	) {
-		return "INVALID_TODO_COMMAND";
+			command.reason.length > TODO_MUTATION_LIMITS.maxReasonLength ||
+			command.humanBlocker !== undefined
+		) {
+			return "INVALID_TODO_COMMAND";
+		}
 	}
 	if (
 		command.op === "record_failure" &&
@@ -140,6 +150,8 @@ export function validateTodoMutationCommand(
 export function todoMutationErrorMessage(code: TodoMutationErrorCode) {
 	const messages: Record<TodoMutationErrorCode, string> = {
 		INVALID_TODO_COMMAND: "Todo 更新commandが不正です。",
+		TODO_HUMAN_BLOCKER_NOT_ESTABLISHED:
+			"needs_humanにはユーザー回答で解消する構造化blockerが必要です。",
 		RUN_NOT_FOUND: "対象Runが存在しません。",
 		RUN_NOT_MUTABLE: "対象RunはTodoを更新できる状態ではありません。",
 		TODO_NOT_FOUND: "対象Todoが存在しません。",

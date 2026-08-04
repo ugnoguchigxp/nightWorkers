@@ -33,6 +33,16 @@
 	    "api/modules/planMode",
 	    "src/modules/planMode"
 	],
+	"deepImportExemptions": [
+		{
+			"source": "api/db/bootstrap.ts",
+			"specifier": "../modules/codingAgent/persistence/runtime-execution-bootstrap"
+		},
+		{
+			"source": "api/db/client.ts",
+			"specifier": "../modules/codingAgent/persistence/runtime-execution-schema"
+		}
+	],
 	"roleOwnedPathRules": [
 		{
 			"role": "Mission Pilot",

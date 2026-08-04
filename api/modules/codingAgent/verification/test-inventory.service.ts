@@ -90,7 +90,7 @@ export async function collectTestInventory(
 	return inventory;
 }
 
-async function persistTestInventory(inventory: TestInventory) {
+export async function persistTestInventory(inventory: TestInventory) {
 	await db.transaction(async (tx) => {
 		await insertTestInventory(tx, inventory);
 	});

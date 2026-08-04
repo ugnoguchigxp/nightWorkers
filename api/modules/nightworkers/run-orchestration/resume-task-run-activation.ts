@@ -3,12 +3,38 @@ import * as repo from "../nightworkers.repository";
 import { readRuntimePauseSnapshot } from "./runtime-outcome-guard";
 
 export async function activateTaskRunResume(input: {
-	kind: "todo" | "runtime_pause";
+	kind: "todo" | "runtime_pause" | "process_interruption";
 	runId: string;
-	todoId: string;
-	expectedTodoRevision: number;
+	todoId: string | null;
+	expectedTodoRevision: number | null;
+	expectedInterruptionRevision?: number;
 	userContext: string;
 }) {
+	if (input.kind === "process_interruption") {
+		if (input.expectedInterruptionRevision === undefined) {
+			throw new AppError(
+				409,
+				"RUN_INTERRUPTION_REVISION_REQUIRED",
+				"Process interruption revision is required.",
+			);
+		}
+		const { activateInterruptedCodingAgentRun } = await import(
+			"../../codingAgent"
+		);
+		return activateInterruptedCodingAgentRun({
+			runId: input.runId,
+			expectedInterruptionRevision: input.expectedInterruptionRevision,
+			todoId: input.todoId,
+			expectedTodoRevision: input.expectedTodoRevision,
+		});
+	}
+	if (input.todoId === null || input.expectedTodoRevision === null) {
+		throw new AppError(
+			409,
+			"TODO_REVISION_REQUIRED",
+			"Todo ID and revision are required for this resume kind.",
+		);
+	}
 	const run = await repo.getTaskRun(input.runId);
 	if (!run) throw new NotFoundError("Run not found");
 	const task = await repo.getTask(run.taskId);

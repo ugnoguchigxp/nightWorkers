@@ -39,6 +39,7 @@ export type RuntimeExecutionResult = {
 		| "hook"
 		| "cancelled";
 	riskLevel: "low" | "medium" | "high";
+	humanActionRequired?: boolean;
 };
 
 export type OutcomeGateInput = {

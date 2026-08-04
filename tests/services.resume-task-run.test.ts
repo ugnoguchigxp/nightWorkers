@@ -84,7 +84,11 @@ describe("resumeTaskRunTodo", () => {
 			todoId: started.currentTodo.id,
 			expectedTodoRevision: started.currentTodo.revision,
 			status: "needs_human",
-			reason: "対象環境を確認してください。",
+			humanBlocker: {
+				question: "対象環境を確認してください。",
+				requiredInput: "information",
+				basis: { kind: "task_context" },
+			},
 		});
 		if (!paused.ok) throw new Error(paused.error.code);
 		await updateTaskRun(run.id, {

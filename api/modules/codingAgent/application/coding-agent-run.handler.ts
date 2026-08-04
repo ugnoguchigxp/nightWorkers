@@ -2,6 +2,7 @@ import { AppError, NotFoundError } from "../../../lib/errors";
 import type {
 	CodingAgentRequestProvenance,
 	ResumeCodingAgentRunTodoCommand,
+	ResumeInterruptedCodingAgentRunCommand,
 	StartCodingAgentRunCommand,
 } from "../../agentsShare";
 import {
@@ -12,6 +13,8 @@ import * as repo from "../../nightworkers/nightworkers.repository";
 import { resumeTaskRunTodo } from "../../nightworkers/run-orchestration/resume-task-run";
 import { startTaskRun } from "../../nightworkers/run-orchestration/start-task-run-entry";
 import { readArtifactOperatorContent } from "../../specification";
+import { readCodingAgentPlanModeRequested } from "../context";
+import { findInterruptedCodingAgentRunCandidate } from "./runtime-execution-ownership.service";
 
 export const CODING_AGENT_REQUEST_ASSOCIATION_KIND = "coding_agent_request";
 
@@ -22,6 +25,7 @@ export function initializeCodingAgentRunHandlers() {
 	const unregisterRunHandlers = registerCodingAgentRunHandlers({
 		start: handleStartCodingAgentRun,
 		resume: handleResumeCodingAgentRunTodo,
+		resumeInterrupted: handleResumeInterruptedCodingAgentRun,
 	});
 	const unregisterAssociation = registerTaskRunAssociationHandler(
 		CODING_AGENT_REQUEST_ASSOCIATION_KIND,
@@ -112,11 +116,77 @@ export async function handleResumeCodingAgentRunTodo(
 	return { runId: run.id, taskId: run.taskId, status: run.status };
 }
 
+export async function handleResumeInterruptedCodingAgentRun(
+	command: ResumeInterruptedCodingAgentRunCommand,
+) {
+	const candidate =
+		await findInterruptedCodingAgentRunCandidateForCommand(command);
+	const existingRun = await repo.getTaskRun(candidate.runId);
+	if (!existingRun) throw new NotFoundError("Run not found");
+	await repo.createRunEvent({
+		version: 1,
+		runId: existingRun.id,
+		taskId: existingRun.taskId,
+		timestamp: new Date().toISOString(),
+		type: "run.resume_requested",
+		severity: "info",
+		actor: "human",
+		message: "User requested continuation of an interrupted Coding Agent Run.",
+		data: {
+			interruptionRevision: command.expectedInterruptionRevision,
+			routingSnapshotDigest: command.routingSnapshotDigest,
+			requestProvenance: command.requestProvenance,
+		},
+	});
+	const run = await startTaskRun(existingRun.taskId, {
+		executionMode: "implementation",
+		executionModeSource: "explicit",
+		planModeRequested: readCodingAgentPlanModeRequested(
+			existingRun.contextSnapshot,
+		),
+		resumeRunId: existingRun.id,
+		latestUserMessageOverride: command.userContext,
+		resumeCommand: {
+			kind: "process_interruption",
+			expectedInterruptionRevision: command.expectedInterruptionRevision,
+			todoId: command.todoId,
+			expectedTodoRevision: command.expectedTodoRevision,
+			userContext: command.userContext,
+		},
+	});
+	await recordRequestProvenance(run.id, command.requestProvenance);
+	return { runId: run.id, taskId: run.taskId, status: run.status };
+}
+
+async function findInterruptedCodingAgentRunCandidateForCommand(
+	command: ResumeInterruptedCodingAgentRunCommand,
+) {
+	const run = await repo.getTaskRun(command.runId);
+	if (!run) throw new NotFoundError("Run not found");
+	const candidate = await findInterruptedCodingAgentRunCandidate(run.taskId);
+	if (
+		!candidate ||
+		candidate.runId !== command.runId ||
+		candidate.interruptionRevision !== command.expectedInterruptionRevision ||
+		candidate.todoId !== command.todoId ||
+		candidate.todoRevision !== command.expectedTodoRevision ||
+		candidate.routingSnapshotDigest !== command.routingSnapshotDigest
+	) {
+		throw new AppError(
+			409,
+			"RUN_RESUME_SNAPSHOT_CONFLICT",
+			"Interrupted Run state changed; reload the latest Task state.",
+		);
+	}
+	return candidate;
+}
+
 async function recordRequestProvenance(
 	runId: string,
 	requestProvenance:
 		| StartCodingAgentRunCommand["requestProvenance"]
-		| ResumeCodingAgentRunTodoCommand["requestProvenance"],
+		| ResumeCodingAgentRunTodoCommand["requestProvenance"]
+		| ResumeInterruptedCodingAgentRunCommand["requestProvenance"],
 ) {
 	const run = await repo.getTaskRun(runId);
 	if (!run) return;

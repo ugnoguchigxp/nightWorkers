@@ -5,7 +5,16 @@ export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
 	reason: string;
 	summary: string;
 } {
-	const status = runtimeResult.terminalState;
+	const status =
+		runtimeResult.stoppedBy === "tool_failure"
+			? ("blocked" as const)
+			: runtimeResult.terminalState === "needs_human" &&
+					runtimeResult.stoppedBy !== "policy" &&
+					runtimeResult.stoppedBy !== "hook" &&
+					runtimeResult.stoppedBy !== "budget" &&
+					runtimeResult.humanActionRequired !== true
+				? ("blocked" as const)
+				: runtimeResult.terminalState;
 	const reason =
 		runtimeResult.stoppedBy === "policy"
 			? "policy_violation"

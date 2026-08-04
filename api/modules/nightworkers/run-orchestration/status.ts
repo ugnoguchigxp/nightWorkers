@@ -4,10 +4,25 @@ import { AppError } from "../../../lib/errors";
 export const runStatusTransitionTable = {
 	ready: ["queued", "running"],
 	queued: ["running", "ready", "cancelled"],
-	running: ["finalizing", "needs_human", "failed", "cancelled", "timed_out"],
+	context_compiling: [
+		"running",
+		"needs_human",
+		"failed",
+		"cancelled",
+		"timed_out",
+	],
+	running: [
+		"finalizing",
+		"blocked",
+		"needs_human",
+		"failed",
+		"cancelled",
+		"timed_out",
+	],
 	finalizing: [
 		"needs_review",
 		"completed",
+		"blocked",
 		"failed",
 		"needs_human",
 		"cancelled",
@@ -19,6 +34,7 @@ export const runStatusTransitionTable = {
 	needs_human: ["queued", "running", "failed", "cancelled"],
 	cancelled: ["queued", "running"],
 	timed_out: ["queued", "running", "failed"],
+	blocked: ["queued", "running", "failed", "cancelled"],
 } as const satisfies Record<string, readonly string[]>;
 
 export function assertRunStatusTransition(from: string, to: string) {
@@ -46,5 +62,5 @@ export function resolveGuardedRunOutcomeStatus(input: {
 		)
 	)
 		return input.currentStatus;
-	return input.finalizationBlocked ? "needs_human" : input.outcomeStatus;
+	return input.finalizationBlocked ? "blocked" : input.outcomeStatus;
 }

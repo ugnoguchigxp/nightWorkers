@@ -1,6 +1,7 @@
 import type { Input } from "@openai/codex-sdk";
 import { Codex } from "@openai/codex-sdk";
 import { assertCodexAuthJsonAvailable } from "../../../../services/codex-global-config/status";
+import { redactSecretText } from "../../../../services/security/secret-redaction";
 import { resolveCodexEndpointAccessToken } from "../../../../services/structured-llm/codex-auth-scope";
 import type { AgentRunContext } from "../types";
 import {
@@ -37,6 +38,11 @@ export type CodexThreadResumeEvent =
 			providerThreadId: string;
 			stateId?: string | null;
 			error: string;
+	  }
+	| {
+			status: "fallback_started";
+			providerThreadId: string;
+			stateId?: string | null;
 	  };
 
 export async function createCodexRuntimeThread(input: {
@@ -81,8 +87,9 @@ export async function createCodexRuntimeThread(input: {
 				status: "resume_failed",
 				providerThreadId: resumeState.providerThreadId,
 				stateId: resumeState.stateId,
-				error: error instanceof Error ? error.message : String(error),
+				error: formatResumeError(error),
 			});
+			await reportFallbackStarted(input, resumeState);
 			return codex.startThread(threadOptions);
 		}
 		return wrapResumedThreadWithFreshFallback({
@@ -113,6 +120,7 @@ function wrapResumedThreadWithFreshFallback(input: {
 			} catch (error) {
 				if (options.signal.aborted) throw error;
 				await reportResumeFailure(input, error);
+				await reportFallbackStarted(input, input);
 				const freshThread = await input.startFreshThread();
 				return freshThread.runStreamed(prompt, options);
 			}
@@ -146,6 +154,7 @@ async function* resumeEventsWithFreshFallback(input: {
 	} catch (error) {
 		if (emittedProviderEvent || input.options.signal.aborted) throw error;
 		await reportResumeFailure(input, error);
+		await reportFallbackStarted(input, input);
 		const freshThread = await input.startFreshThread();
 		const freshTurn = await freshThread.runStreamed(
 			input.prompt,
@@ -153,6 +162,19 @@ async function* resumeEventsWithFreshFallback(input: {
 		);
 		for await (const event of freshTurn.events) yield event;
 	}
+}
+
+async function reportFallbackStarted(
+	input: {
+		onResumeEvent?: (event: CodexThreadResumeEvent) => void | Promise<void>;
+	},
+	resume: { providerThreadId: string; stateId?: string | null },
+) {
+	await input.onResumeEvent?.({
+		status: "fallback_started",
+		providerThreadId: resume.providerThreadId,
+		stateId: resume.stateId,
+	});
 }
 
 async function reportResumeFailure(
@@ -167,8 +189,14 @@ async function reportResumeFailure(
 		status: "resume_failed",
 		providerThreadId: input.providerThreadId,
 		stateId: input.stateId,
-		error: error instanceof Error ? error.message : String(error),
+		error: formatResumeError(error),
 	});
+}
+
+function formatResumeError(error: unknown) {
+	return redactSecretText(
+		error instanceof Error ? error.message : String(error),
+	).slice(0, 2_000);
 }
 
 function readCodexProviderEndpointId(context: AgentRunContext) {

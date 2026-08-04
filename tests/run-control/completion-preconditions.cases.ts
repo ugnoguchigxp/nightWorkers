@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../api/db/client";
+import { taskRunTodos } from "../../api/db/schema";
 import { verificationDocuments } from "../../api/db/verification-schema";
 import { ActionExecutionJournal } from "../../api/modules/codingAgent/application/action-execution-journal";
 import { RunFinalizeController } from "../../api/modules/codingAgent/application/run-finalize-controller";
@@ -367,7 +369,11 @@ describe("Run completion preconditions", () => {
 			todoId: started.currentTodo.id,
 			expectedTodoRevision: started.currentTodo.revision,
 			status: "needs_human",
-			reason: "利用者の判断が必要。",
+			humanBlocker: {
+				question: "対象環境を選択してください。",
+				requiredInput: "decision",
+				basis: { kind: "task_context" },
+			},
 		});
 		expect(
 			await controller.evaluateCandidate({
@@ -381,6 +387,54 @@ describe("Run completion preconditions", () => {
 				code: "RUN_NEEDS_HUMAN",
 			},
 		);
+	});
+
+	it("rejects a persisted needs_human Todo without a structured blocker", async () => {
+		const { run, service } = await fixture();
+		const plan = await service.execute(run.id, {
+			op: "replace_plan",
+			expectedPlanRevision: 0,
+			todos: [
+				{
+					title: "確認",
+					systemContext: "対象環境が未確定ならユーザーへ確認する。",
+					nextAction: "対象環境を確認する",
+				},
+			],
+		});
+		if (!plan.ok) throw new Error(plan.error.code);
+		const started = await service.execute(run.id, {
+			op: "start",
+			todoId: plan.todos[0].id,
+			expectedTodoRevision: plan.todos[0].revision,
+		});
+		if (!started.ok || !started.currentTodo) throw new Error("start failed");
+		const paused = await service.execute(run.id, {
+			op: "transition",
+			todoId: started.currentTodo.id,
+			expectedTodoRevision: started.currentTodo.revision,
+			status: "needs_human",
+			humanBlocker: {
+				question: "対象環境を選択してください。",
+				requiredInput: "decision",
+				basis: { kind: "task_context" },
+			},
+		});
+		if (!paused.ok) throw new Error(paused.error.code);
+		await db
+			.update(taskRunTodos)
+			.set({ humanBlockerJson: null })
+			.where(eq(taskRunTodos.id, started.currentTodo.id));
+
+		await expect(
+			new RunFinalizeController().evaluateCandidate({ runId: run.id }),
+		).resolves.toMatchObject({
+			allowFinalize: false,
+			code: "TODO_STATE_INVALID",
+			missingConditions: [
+				`todo:${started.currentTodo.id}:human_blocker_invalid`,
+			],
+		});
 	});
 
 	it("allows completion after Todo closure without a Coding Agent Questionnaire gate", async () => {

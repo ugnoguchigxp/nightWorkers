@@ -454,7 +454,11 @@ describe("Native API LLM-owned Todo contract", () => {
 				toolCalls: [
 					todoCall("pause", {
 						op: "block_current",
-						reason: "仕様の選択が必要です",
+						humanBlocker: {
+							question: "A案とB案のどちらを採用しますか？",
+							requiredInput: "decision",
+							basis: { kind: "task_context" },
+						},
 					}),
 				],
 			},
@@ -479,6 +483,7 @@ describe("Native API LLM-owned Todo contract", () => {
 		expect(result).toMatchObject({
 			terminalState: "needs_human",
 			stoppedBy: "decision",
+			humanActionRequired: true,
 			finalReport: "A案とB案のどちらを採用しますか？",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([

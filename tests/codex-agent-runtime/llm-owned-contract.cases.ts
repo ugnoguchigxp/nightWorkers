@@ -13,73 +13,19 @@ import {
 	buildCodexRuntimeDeveloperInstructions,
 	buildCodexRuntimePromptParts,
 } from "../../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
-import type { AgentRunContext } from "../../api/modules/codingAgent/runtime/types";
 import {
 	assertCodexAuthJsonAvailable,
 	inspectCodexAuthJson,
 } from "../../api/services/codex-global-config/status";
+import {
+	completedTextEvents,
+	completionAllowed,
+	createCodexRuntimeContext as context,
+	failedEvents,
+	rejectedEvents,
+} from "./codex-runtime-test-fixtures";
 
 afterEach(() => vi.useRealTimers());
-
-function context(executionMode = "implementation"): AgentRunContext {
-	return {
-		runId: "run-codex-contract",
-		taskId: "task-codex-contract",
-		repositoryId: "repo-codex-contract",
-		repoRoot: "/tmp/codex-llm-owned",
-		compiledPrompt: "fallback request",
-		latestUserMessage: "ユーザーの実装依頼",
-		timeoutSeconds: 30,
-		contextSnapshot: {
-			compiledPrompt: "fallback request",
-			source: "task_prompt",
-			executionMode,
-		},
-		runtimeOptions: { executionMode },
-	};
-}
-
-async function completionAllowed() {
-	return {
-		allowFinalize: true,
-		code: "FINALIZE_ALLOWED" as const,
-		message: "ready",
-		missingConditions: [],
-		snapshot: { planRevision: 0, todos: [] },
-		idempotent: false,
-	};
-}
-
-function completedTextEvents(text: string): AsyncIterable<unknown> {
-	return (async function* () {
-		yield {
-			type: "item.completed",
-			item: { id: "message-1", type: "agent_message", text },
-		};
-		yield {
-			type: "turn.completed",
-			usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 10 },
-		};
-	})();
-}
-
-function failedEvents(message: string): AsyncIterable<unknown> {
-	return (async function* () {
-		yield { type: "turn.failed", error: { message } };
-	})();
-}
-
-function rejectedEvents(error: Error): AsyncIterable<unknown> {
-	return {
-		[Symbol.asyncIterator]() {
-			return {
-				async next() {
-					throw error;
-				},
-			};
-		},
-	};
-}
 
 describe("Codex SDK thin runtime adapter", () => {
 	it("keeps the request clean and promotes adaptive Todo guidance to developer instructions", () => {
@@ -363,7 +309,9 @@ describe("Codex SDK thin runtime adapter", () => {
 			},
 			codexClient: {
 				resumeThread: () => {
-					throw new Error("resume rejected");
+					throw new Error(
+						"resume rejected; Authorization: Bearer top-secret-token",
+					);
 				},
 				startThread,
 			},
@@ -372,7 +320,10 @@ describe("Codex SDK thin runtime adapter", () => {
 		expect(thread).toBe(freshThread);
 		expect(startThread).toHaveBeenCalledOnce();
 		expect(onResumeEvent).toHaveBeenCalledWith(
-			expect.objectContaining({ status: "resume_failed" }),
+			expect.objectContaining({
+				status: "resume_failed",
+				error: "resume rejected; Authorization: [REDACTED]",
+			}),
 		);
 	});
 
@@ -410,8 +361,11 @@ describe("Codex SDK thin runtime adapter", () => {
 		for await (const event of turn.events) events.push(event);
 		expect(events).toHaveLength(2);
 		expect(startThread).toHaveBeenCalledOnce();
-		expect(onResumeEvent).toHaveBeenLastCalledWith(
+		expect(onResumeEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "resume_failed" }),
+		);
+		expect(onResumeEvent).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "fallback_started" }),
 		);
 	});
 
@@ -778,159 +732,5 @@ describe("Codex SDK thin runtime adapter", () => {
 		await started;
 		await runtime.stop(context().runId);
 		expect((await resultPromise).terminalState).toBe("cancelled");
-	});
-
-	it("returns timed_out when the Codex stream reaches the host time limit", async () => {
-		vi.useFakeTimers();
-		const runtime = new CodexAgentRuntime({
-			threadFactory: () => ({
-				runStreamed: async (_input, options) => ({
-					events: (async function* () {
-						await new Promise<void>((resolve) =>
-							options.signal.addEventListener("abort", () => resolve(), {
-								once: true,
-							}),
-						);
-						yield { type: "turn.failed", error: { message: "aborted" } };
-					})(),
-				}),
-			}),
-			usageRecorder: async () => {},
-		});
-		const resultPromise = runtime.start(
-			{ ...context(), timeoutSeconds: 1 },
-			{ emit: vi.fn(async () => {}) },
-		);
-		await vi.advanceTimersByTimeAsync(1_000);
-		expect(await resultPromise).toMatchObject({
-			terminalState: "timed_out",
-			stoppedBy: "budget",
-		});
-	});
-
-	it("finishes after turn.completed without waiting for the provider stream to close", async () => {
-		let index = 0;
-		const events: AsyncIterable<unknown> = {
-			[Symbol.asyncIterator]() {
-				return {
-					async next() {
-						index += 1;
-						if (index === 1) {
-							return {
-								done: false as const,
-								value: {
-									type: "item.completed",
-									item: {
-										id: "message-1",
-										type: "agent_message",
-										text: "実装完了",
-									},
-								},
-							};
-						}
-						if (index === 2) {
-							return {
-								done: false as const,
-								value: {
-									type: "turn.completed",
-									usage: {
-										input_tokens: 1,
-										cached_input_tokens: 0,
-										output_tokens: 1,
-									},
-								},
-							};
-						}
-						return new Promise<never>(() => {});
-					},
-					return: () => new Promise<never>(() => {}),
-				};
-			},
-		};
-
-		const result = await new CodexAgentRuntime({
-			threadFactory: () => ({ runStreamed: async () => ({ events }) }),
-			usageRecorder: async () => {},
-			evaluateCompletionCandidate: completionAllowed,
-		}).start(context(), { emit: vi.fn(async () => {}) });
-
-		expect(result).toMatchObject({
-			terminalState: "completed",
-			finalReport: "実装完了",
-		});
-	});
-
-	it("enforces the host deadline when the provider iterator ignores abort", async () => {
-		vi.useFakeTimers();
-		const emit = vi.fn(async () => {});
-		const runtime = new CodexAgentRuntime({
-			threadFactory: () => ({
-				runStreamed: async () => ({
-					events: {
-						[Symbol.asyncIterator]() {
-							return {
-								next: () => new Promise<never>(() => {}),
-								return: () => new Promise<never>(() => {}),
-							};
-						},
-					} as AsyncIterable<unknown>,
-				}),
-			}),
-			usageRecorder: async () => {},
-		});
-		const resultPromise = runtime.start(
-			{ ...context(), timeoutSeconds: 1 },
-			{ emit },
-		);
-
-		await vi.advanceTimersByTimeAsync(1_000);
-
-		expect(await resultPromise).toMatchObject({
-			terminalState: "timed_out",
-			stoppedBy: "budget",
-		});
-		expect(emit).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "runtime_error",
-				payload: expect.objectContaining({
-					code: "CODEX_STREAM_DEADLINE_EXCEEDED",
-				}),
-			}),
-		);
-	});
-
-	it("requires review when turn.completed leaves provider items open", async () => {
-		const emit = vi.fn(async () => {});
-		const events = (async function* () {
-			yield {
-				type: "item.started",
-				item: {
-					id: "command-1",
-					type: "command_execution",
-					command: "git status --short",
-					status: "in_progress",
-				},
-			};
-			yield* completedTextEvents("実装は完了しました。");
-		})();
-		const result = await new CodexAgentRuntime({
-			threadFactory: () => ({ runStreamed: async () => ({ events }) }),
-			usageRecorder: async () => {},
-		}).start(context(), { emit });
-
-		expect(result).toMatchObject({
-			terminalState: "needs_review",
-			stoppedBy: "tool_failure",
-			riskLevel: "high",
-		});
-		expect(emit).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "runtime_warning",
-				payload: expect.objectContaining({
-					code: "PROVIDER_TERMINAL_WITH_OPEN_ITEMS",
-					openItems: [{ id: "command-1", type: "command_execution" }],
-				}),
-			}),
-		);
 	});
 });

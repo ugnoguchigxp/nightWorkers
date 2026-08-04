@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { client, db } from "../db/client";
 import { runtimeSessionStates } from "../db/schema";
+import { redactSecretText } from "./security/secret-redaction";
 
 export type RuntimeSessionStateStatus =
 	| "active"
@@ -101,6 +102,16 @@ export class RuntimeSessionStateStore {
 		error?: unknown;
 	}) {
 		await this.ensureTables();
+		const [current] = await db
+			.select({ metadataJson: runtimeSessionStates.metadataJson })
+			.from(runtimeSessionStates)
+			.where(eq(runtimeSessionStates.id, input.id));
+		const metadata =
+			current?.metadataJson &&
+			typeof current.metadataJson === "object" &&
+			!Array.isArray(current.metadataJson)
+				? (current.metadataJson as Record<string, unknown>)
+				: {};
 		const [state] = await db
 			.update(runtimeSessionStates)
 			.set({
@@ -108,10 +119,32 @@ export class RuntimeSessionStateStore {
 				metadataJson:
 					input.error === undefined
 						? undefined
-						: { resumeError: String(input.error) },
+						: {
+								...metadata,
+								resumeError: redactSecretText(String(input.error)).slice(
+									0,
+									2_000,
+								),
+							},
 				updatedAt: new Date(),
 			})
 			.where(eq(runtimeSessionStates.id, input.id))
+			.returning();
+		return state ?? null;
+	}
+
+	async touchRuntimeSessionState(input: { id: string; now?: Date }) {
+		await this.ensureTables();
+		const now = input.now ?? new Date();
+		const [state] = await db
+			.update(runtimeSessionStates)
+			.set({ lastSeenAt: now, updatedAt: now })
+			.where(
+				and(
+					eq(runtimeSessionStates.id, input.id),
+					eq(runtimeSessionStates.status, "active"),
+				),
+			)
 			.returning();
 		return state ?? null;
 	}

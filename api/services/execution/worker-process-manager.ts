@@ -50,8 +50,32 @@ function trackWorker(child: ChildProcess) {
 	child.once("exit", () => {
 		activeWorkers.delete(child);
 		void persistenceOwner.close();
+		const lostRuns: Array<{ runId: string; ownerPid: number }> = [];
 		for (const [runId, owner] of workersByRunId) {
-			if (owner === child) workersByRunId.delete(runId);
+			if (owner === child) {
+				if (child.pid !== undefined) {
+					lostRuns.push({ runId, ownerPid: child.pid });
+				}
+				workersByRunId.delete(runId);
+			}
+		}
+		if (lostRuns.length > 0) {
+			void import("../../modules/codingAgent")
+				.then(({ interruptCodingAgentRunsAfterWorkerExit }) =>
+					interruptCodingAgentRunsAfterWorkerExit(lostRuns),
+				)
+				.catch((error) => {
+					logEvent({
+						channel: "worker",
+						level: "error",
+						message: "failed to reconcile exited Coding Agent worker",
+						meta: {
+							runIds: lostRuns.map((run) => run.runId),
+							errorMessage:
+								error instanceof Error ? error.message : String(error),
+						},
+					});
+				});
 		}
 	});
 	child.stdout?.on("data", (chunk) => {

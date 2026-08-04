@@ -11,9 +11,44 @@ describe("RunControl", () => {
 					summary: "manual step required",
 					stoppedBy: "decision",
 					riskLevel: "high",
+					humanActionRequired: true,
 				},
 			});
 			expect(outcome.status).toBe("needs_human");
+		});
+
+		it("does not accept needs_human without a structured human blocker", () => {
+			const outcome = decideRunOutcome({
+				runtime: {
+					finalReport: "Need help",
+					terminalState: "needs_human",
+					summary: "tool input can be changed",
+					stoppedBy: "decision",
+					riskLevel: "medium",
+				},
+			});
+			expect(outcome.status).toBe("blocked");
+		});
+
+		it("maps tool and verification failures to blocked", () => {
+			const runtime = {
+				finalReport: "Tool failed",
+				terminalState: "needs_human" as const,
+				summary: "recoverable tool failure",
+				stoppedBy: "tool_failure" as const,
+				riskLevel: "medium" as const,
+			};
+			expect(decideRunOutcome({ runtime }).status).toBe("blocked");
+			expect(
+				decideRunOutcome({
+					runtime: {
+						...runtime,
+						terminalState: "completed",
+						stoppedBy: "decision",
+					},
+					verificationPassed: false,
+				}).status,
+			).toBe("blocked");
 		});
 
 		it("maps completed supervisor result to needs_review by default", () => {

@@ -3,6 +3,7 @@ import {
 	projectTaskRunParentStatus,
 	publishTaskRunTerminal,
 } from "../../agentsShare";
+import { readProcessInterruptionSnapshot } from "../../codingAgent";
 import * as repo from "../nightworkers.repository";
 import {
 	completeImplementationQueueEntryForRun,
@@ -30,6 +31,11 @@ export async function handleRuntimeExecutionFailure(input: {
 	);
 	const finalReport = `実行に失敗しました: ${errorMessage}`;
 	const latestRunBeforeFailure = await repo.getTaskRun(run.id);
+	if (
+		readProcessInterruptionSnapshot(latestRunBeforeFailure?.contextSnapshot)
+	) {
+		return;
+	}
 	const currentStatus = latestRunBeforeFailure?.status ?? "running";
 	const transitions: Record<string, readonly string[]> =
 		runStatusTransitionTable;

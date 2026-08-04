@@ -1,3 +1,5 @@
+import type { WorkerToolRecovery } from "../../../services/worker-tools/types";
+
 export type TestConditionMappingFailureCode =
 	| "TEST_MAPPING_AUTHORITY_MISMATCH"
 	| "TEST_MAPPING_PRECONDITION_MISSING"
@@ -42,20 +44,28 @@ export type TestInventoryFailureCode =
 	| "TEST_INVENTORY_WORKSPACE_DENIED"
 	| "TEST_INVENTORY_CWD_NOT_FOUND"
 	| "TEST_INVENTORY_CWD_NOT_DIRECTORY"
+	| "TEST_INVENTORY_CURSOR_INVALID"
+	| "TEST_INVENTORY_CURSOR_STALE"
+	| "TEST_INVENTORY_FILE_SCOPE_INVALID"
 	| "TEST_INVENTORY_FILE_READ_FAILED"
 	| "TEST_INVENTORY_ACTIVE_DISCOVERY_FAILED";
 
 export class TestInventoryFailure extends Error {
 	readonly retryable: boolean;
+	readonly recovery?: WorkerToolRecovery;
 
 	constructor(
 		readonly code: TestInventoryFailureCode,
 		message: string,
 		readonly recoveryAction?: string,
-		options?: ErrorOptions & { retryable?: boolean },
+		options?: ErrorOptions & {
+			retryable?: boolean;
+			recovery?: WorkerToolRecovery;
+		},
 	) {
 		super(message, options);
 		this.name = "TestInventoryFailure";
 		this.retryable = options?.retryable === true;
+		this.recovery = options?.recovery;
 	}
 }

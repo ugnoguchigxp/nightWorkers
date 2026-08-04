@@ -263,7 +263,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "Task、Todo、採用済みFeature Plan・設計Artifact、Verification Document、変更内容から完了を判断してください。required automated conditionにはcurrent sourceのactive testcaseとの明示mappingと同一testcaseのstructured execution成功が必要です。mapping、別test、raw shellのexit 0、本文申告だけでは証跡になりません。\nproduction codeとtest期待値をAPI Contract、Zod Schema、Data Model、Blueprint、Feature Planへ照合してください。testがPassしていても期待値が正本と矛盾する場合は未達です。repository内で直せる不一致はTodoを完了せず修正し、必要ならremaining Todoを更新して同じRunで完遂してください。\nProject正本verifyもcurrent sourceでPassさせます。completion_checkのtyped reasonからmapping、structured test、source修正、verifyを選び、証跡不足時はConfirmation Receiptを保存しません。required conditionとverifyがsafe_passの場合だけ同一Run・Verification Documentへ不変のConfirmation Receiptを一度保存します。confirmed後はsourceを変えずfollow-up verifyを行い、sourceまたは文書を変える場合は既存Receiptを上書きせず新しいimplementation Runで再検証してください。\nQuestionnaireのtest範囲を守り、E2Eが対象外ならE2E commandを選択・実行しないでください。testのrun_checkには通常commandとcheckKindだけを渡します。TEST_INVENTORY_RUNNER_UNRESOLVEDまたはretryable=trueの実行前失敗はsuggestedActionでinventory・mappingを修復し、inventory変更後に元のcommandを再実行してください。実行後のTEST_EVIDENCE_CAPTURE_FAILEDまたはTEST_IDENTITY_AMBIGUOUSだけは反復せずnon-retryable host障害として報告してください。\n結果は期待とexit status、stdout/stderr、PID・cwd・port・repository rootの実観測で照合してください。完了前にpending、running、needs_humanのTodoを残さず、不要なら理由付きskippedにしてください。\nneeds_humanは追加のユーザー判断、権限、認証情報、外部system変更などrepository内では解消できない具体的blockerがある場合だけ使用します。実装・test期待値・inventory・mapping・runner・品質ゲートの問題は、toolで直せる限り修正と再検証を続けてください。\ntool callのない本文は最終回答候補です。未達条件とTodoを読み、Todo更新、追加検証、再生成を選んでください。completion readinessのready、reason、suggestedAction、readinessDigestを使い、同じdigestで同じ操作を繰り返さないでください。\n完了報告形式:\n"
+                  "value": "Task、Todo、採用済みFeature Plan・設計Artifact、Verification Document、変更内容から完了を判断してください。required automated conditionにはcurrent sourceのactive testcaseとの明示mappingと同一testcaseのstructured execution成功が必要です。mapping、別test、raw shellのexit 0、本文申告だけでは証跡になりません。\nproduction codeとtest期待値をAPI Contract、Zod Schema、Data Model、Blueprint、Feature Planへ照合してください。testがPassしていても期待値が正本と矛盾する場合は未達です。repository内で直せる不一致はTodoを完了せず修正し、必要ならremaining Todoを更新して同じRunで完遂してください。\nProject正本verifyもcurrent sourceでPassさせます。completion_checkのtyped reasonからmapping、structured test、source修正、verifyを選び、証跡不足時はConfirmation Receiptを保存しません。required conditionとverifyがsafe_passの場合だけ同一Run・Verification Documentへ不変のConfirmation Receiptを一度保存します。confirmed後はsourceを変えずfollow-up verifyを行い、sourceまたは文書を変える場合は既存Receiptを上書きせず新しいimplementation Runで再検証してください。\nQuestionnaireのtest範囲を守り、E2Eが対象外ならE2E commandを選択・実行しないでください。run_checkにはcommandとcheckKindだけを渡します。retryableは同一入力の再試行可否で、retryable=falseを人間対応必須と解釈しないでください。recovery dispositionとcandidateに従い、retry_with_inputまたはagent_actionならcommand、inventory、mapping、runnerを修復して同じRunで再実行します。human_inputだけがユーザー回答待ちで、host_defectは実行基盤blockerです。\n結果は期待とexit status、stdout/stderr、PID・cwd・port・repository rootの実観測で照合してください。完了前にpending、running、needs_humanのTodoを残さず、不要なら理由付きskippedにしてください。\nneeds_humanはユーザー回答で解消する具体的blockerがある場合だけ使います（追加情報・判断・権限・認証情報・外部変更）。block_currentへquestion、requiredInput、basisを持つhumanBlockerを渡します。repository内で直せる実装・test・inventory・mapping・runner・品質ゲートは修正・再検証し、host defectやbudget停止をユーザー質問にしないでください。\ntool callのない本文は最終回答候補です。未達条件とTodoを読み、Todo更新、追加検証、再生成を選んでください。completion readinessのready、reason、suggestedAction、readinessDigestを使い、同じdigestで同じ操作を繰り返さないでください。\n完了報告形式:\n"
                 },
                 {
                   "type": "variable",
@@ -272,11 +272,11 @@
               ]
             }
           ],
-          "artifactHash": "sha256:3dde40bbb76e8f4bef729558813234106eac9c7818ff2649cfedc6bc451956b8"
+          "artifactHash": "sha256:821d3d580bb63aa020bba56f6832b641a8ab4f22c3e725eb3e6ad0e3a2966e23"
         }
       },
-      "definitionHash": "sha256:590bc7c5284036f2f605032b1a388d61fea8ca2caf89481b31ef26a5d13d73dc",
-      "releaseDigest": "sha256:a7b1bab2fee02735daae8d6638f000f3d81b1418f6493a1411efd260d19e9d2f"
+      "definitionHash": "sha256:4cf27d375e01081420e97c294fb45e6ae48282c20009c22bbb1163f003bbbbc1",
+      "releaseDigest": "sha256:cc19ff6757103418af105ff905a33bcbc3e6f67ef773461b11bf67eafbced443"
     },
     "codingAgent.current-todo": {
       "key": "codingAgent.current-todo",
@@ -705,7 +705,7 @@
               "segments": [
                 {
                   "type": "literal",
-                  "value": "ユーザー直結のCoding Agentを開始する前に、Plan Modeを先に1回実行すべきか判断してください。\nこれは作業種別の分類ではありません。同じCoding Agent runtimeを直ちに開始できるか、repositoryを変更する前に実装計画を確定すべきかの2択です。\nCurrent User Messageだけでなく、Task Context、Recent Conversation、Latest Runsを一つの依頼履歴として読み、現在の依頼に対して判断してください。\nCurrent User Messageは現在の依頼範囲を示す最新の正本です。Current User Messageが過去のTask Contextや会話より対象を縮小・単純化している場合、矛盾する過去の広い計画指示を優先してPlan Modeを選ばないでください。過去の情報は、現在の依頼と矛盾しない制約や既に確定した判断の補助として使ってください。\nユーザーが実装前の計画作成を求めている場合はPlan Modeを選んでください。また、実装依頼であっても、目的・対象範囲・非対象・責務境界・互換性・移行・データ・権限・失敗時の扱い・受け入れ条件・検証方針などに、実装開始前に整合させるべき重要な判断が残る場合はPlan Modeを選んでください。\n複数の実現方法があり、その選択が公開契約、既存利用者、データ、運用、ロールバック、または完了条件を実質的に変える場合もPlan Modeを選べます。reasonには、先に確定すべき具体的な判断を記載してください。\n依頼文に『修正』『実装』『リファクタ』『調査』『テスト』『レビュー』等が含まれることを理由にPlan Modeを除外しないでください。反対に、『大規模』『複雑』等の表現、想定ファイル数、作業量だけを理由にPlan Modeを選ばないでください。keywordや固定の規模閾値ではなく、提示されたcontextの意味から判断してください。\n対象、期待動作、重要な制約、完了条件が実装を安全に開始できる程度に確定している場合はaction=coding_agentにしてください。Coding Agentは同じrun内でTodo作成、repository調査、編集、command実行、検証、回答を行えます。通常のrepository調査で解消できる未知だけなら、Plan Modeを挟む必要はありません。\n現在の依頼が最小構成や限定的な変更を求めており、repositoryの既存規約や既定値に沿った可逆的な実装で満たせる場合はaction=coding_agentにしてください。UIの細部、任意機能の追加範囲、一般的な保存方法などを完全なプロダクト仕様として先に確定できるという理由だけでPlan Modeを選ばないでください。\n不確実さが重要な設計判断に関するもので、計画を先に作ることで実装の手戻りや契約破壊を避けられるならPlan Modeを選んでください。単なる情報不足で現在の依頼が質問・説明・状態確認に留まる場合も、Coding Agentがそのまま回答できます。\n既存のimplementation_planまたはfeature_planが現在の依頼を十分に覆う場合は再利用し、Plan Modeを再起動しないでください。ただし、対象範囲や前提が実質的に変わり、既存計画が適用できない場合は新しいPlan Modeを選べます。\nこのgateはPlan Modeへ入るかだけを判断します。Questionnaire、Blueprint、Data Model、Dedicated Viewの必要性やArtifact routingは判断せず、出力にも含めないでください。\nshouldStartPlanMode=trueならaction=plan_mode、falseならaction=coding_agentにしてください。reasonは依頼文の言い換えではなく、この依頼を今すぐ安全に開始できるかの根拠を短く示してください。\nJSONのみを返してください。\n\nプロジェクトルート: "
+                  "value": "ユーザー直結のCoding Agentを開始する前に、Plan Modeを先に1回実行すべきか判断してください。\nこれは作業種別の分類ではありません。同じCoding Agent runtimeを直ちに開始できるか、repositoryを変更する前に実装計画を確定すべきかの2択です。\nCurrent User Messageだけでなく、Task Context、Recent Conversation、Latest Runsを一つの依頼履歴として読み、現在の依頼に対して判断してください。\nCurrent User Messageは現在の依頼範囲を示す最新の正本です。Current User Messageが過去のTask Contextや会話より対象を縮小・単純化している場合、矛盾する過去の広い計画指示を優先してPlan Modeを選ばないでください。過去の情報は、現在の依頼と矛盾しない制約や既に確定した判断の補助として使ってください。\nユーザーが実装前の計画作成を求めている場合はPlan Modeを選んでください。また、実装依頼であっても、目的・対象範囲・非対象・責務境界・互換性・移行・データ・権限・失敗時の扱い・受け入れ条件・検証方針などに、実装開始前に整合させるべき重要な判断が残る場合はPlan Modeを選んでください。\n複数の実現方法があり、その選択が公開契約、既存利用者、データ、運用、ロールバック、または完了条件を実質的に変える場合もPlan Modeを選べます。reasonには、先に確定すべき具体的な判断を記載してください。\n依頼文に『修正』『実装』『リファクタ』『調査』『テスト』『レビュー』等が含まれることを理由にPlan Modeを除外しないでください。反対に、『大規模』『複雑』等の表現、想定ファイル数、作業量だけを理由にPlan Modeを選ばないでください。keywordや固定の規模閾値ではなく、提示されたcontextの意味から判断してください。\n対象、期待動作、重要な制約、完了条件が実装を安全に開始できる程度に確定している場合はaction=coding_agentにしてください。Coding Agentは同じrun内でTodo作成、repository調査、編集、command実行、検証、回答を行えます。通常のrepository調査で解消できる未知だけなら、Plan Modeを挟む必要はありません。\n現在の依頼が最小構成や限定的な変更を求めており、repositoryの既存規約や既定値に沿った可逆的な実装で満たせる場合はaction=coding_agentにしてください。UIの細部、任意機能の追加範囲、一般的な保存方法などを完全なプロダクト仕様として先に確定できるという理由だけでPlan Modeを選ばないでください。\n不確実さが重要な設計判断に関するもので、計画を先に作ることで実装の手戻りや契約破壊を避けられるならPlan Modeを選んでください。単なる情報不足で現在の依頼が質問・説明・状態確認に留まる場合も、Coding Agentがそのまま回答できます。\n既存のimplementation_planまたはfeature_planが現在の依頼を十分に覆う場合は再利用し、Plan Modeを再起動しないでください。ただし、対象範囲や前提が実質的に変わり、既存計画が適用できない場合は新しいPlan Modeを選べます。\nこのgateはPlan Modeへ入るかと、Coding Agentへ進む場合に新規Runを開始するか保存済みRunを再開するかを判断します。Questionnaire、Blueprint、Data Model、Dedicated Viewの必要性やArtifact routingは判断せず、出力にも含めないでください。\nshouldStartPlanMode=trueならaction=plan_modeかつrunDisposition=nullにしてください。falseならaction=coding_agentにし、Structurally Validated Resumable Run Candidateが存在して現在の依頼をその作業の継続として扱う場合はrunDisposition=resume_existing_run、別の新規実装Runを開始すべき場合はrunDisposition=start_new_runにしてください。candidateが存在しない場合はresume_existing_runを選ばないでください。Run IDはhostが管理するため出力に生成・複製しないでください。既存Runを暗黙にcancelする判断はしないでください。reasonは依頼文の言い換えではなく、この依頼を今すぐ安全に開始または再開できるかの根拠を短く示してください。\nJSONのみを返してください。\n\nプロジェクトルート: "
                 },
                 {
                   "type": "variable",
@@ -713,16 +713,16 @@
                 },
                 {
                   "type": "literal",
-                  "value": "\n\n[Output Schema]\n{ \"shouldStartPlanMode\": boolean, \"action\": \"plan_mode\" | \"coding_agent\", \"reason\": \"short concrete reason\" }"
+                  "value": "\n\n[Output Schema]\n{ \"shouldStartPlanMode\": boolean, \"action\": \"plan_mode\" | \"coding_agent\", \"runDisposition\": \"start_new_run\" | \"resume_existing_run\" | null, \"reason\": \"short concrete reason\" }"
                 }
               ]
             }
           ],
-          "artifactHash": "sha256:a0f274707265e7f7594bdbfa5905a297d4d490598a97f117b7206fbe1a83588a"
+          "artifactHash": "sha256:ff43a50fe6b5a9d7d6991788d2afabfcd221fff01328d12501c6fda3a6591b28"
         }
       },
-      "definitionHash": "sha256:f473a5a5e58db497881d4623776af3596b8bfae7ff69abc017f9f35ca5c39c0a",
-      "releaseDigest": "sha256:4f55d9d81c13f5ea94d222e5041949c1b4ad5b3abf579106fbce0a40f06d5358"
+      "definitionHash": "sha256:1e9e9f431bdea9ec5a158bb2bdc001c36e8d25e77cb8918568a18b2daa5c9c58",
+      "releaseDigest": "sha256:3b78982699dd22a564f53677fcd807eb5beb96d106a84366b9ba634319930742"
     },
     "codingAgent.project-exploration-available": {
       "key": "codingAgent.project-exploration-available",
@@ -4199,5 +4199,5 @@
       "releaseDigest": "sha256:051a7aa79c845e70a9809c1b6cbb57de75fb812a96ac7630c5dde0f759438235"
     }
   },
-  "catalogDigest": "sha256:eed0cc2b5c6476b61e051e7bdd20558860f28caf44cddbffc599e42445c388db"
+  "catalogDigest": "sha256:636e6bc9f2001a726f1a54693fcc6cd278f7a9df2176245378492b97d91ceedc"
 }

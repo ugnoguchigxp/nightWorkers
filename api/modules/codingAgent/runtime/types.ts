@@ -144,4 +144,5 @@ export interface AgentRuntime {
 		signal?: AbortSignal,
 	): Promise<AgentRuntimeResult>;
 	stop(runId: string): Promise<void>;
+	suspendForHostShutdown(runId: string): Promise<void>;
 }

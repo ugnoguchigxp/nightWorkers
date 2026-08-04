@@ -11,6 +11,8 @@ import type { normalizeStructuredLlmModelTarget } from "../../../services/struct
 import type { StructuredLlmRole } from "../../../services/structured-llm/settings";
 import { digestText } from "../../../services/text-digest";
 import { p } from "../../../systemContexts/catalog";
+import { canonicalDigest } from "../../agentsShare";
+import type { CodingAgentInterruptedRunCandidate } from "../application/runtime-execution-ownership.service";
 
 const INTAKE_GATE_RUNTIME_LANE = "codex-sdk-intake";
 const INTAKE_GATE_EXECUTION_MODE = "plan_mode_gate";
@@ -19,17 +21,33 @@ const codingAgentPlanModeGateSchema = z
 	.object({
 		shouldStartPlanMode: z.boolean(),
 		action: z.enum(["plan_mode", "coding_agent"]),
+		runDisposition: z.enum(["start_new_run", "resume_existing_run"]).nullable(),
 		reason: z.string().min(1),
 	})
 	.strict()
 	.superRefine((value, context) => {
-		if (value.shouldStartPlanMode === (value.action === "plan_mode")) return;
-		context.addIssue({
-			code: "custom",
-			path: ["action"],
-			message:
-				"shouldStartPlanMode and action must describe the same decision.",
-		});
+		if (value.shouldStartPlanMode !== (value.action === "plan_mode")) {
+			context.addIssue({
+				code: "custom",
+				path: ["action"],
+				message:
+					"shouldStartPlanMode and action must describe the same decision.",
+			});
+		}
+		if (value.action === "plan_mode" && value.runDisposition !== null) {
+			context.addIssue({
+				code: "custom",
+				path: ["runDisposition"],
+				message: "plan_mode requires runDisposition=null.",
+			});
+		}
+		if (value.action === "coding_agent" && value.runDisposition === null) {
+			context.addIssue({
+				code: "custom",
+				path: ["runDisposition"],
+				message: "coding_agent requires a run disposition.",
+			});
+		}
 	});
 
 export type CodingAgentPlanModeRuntimeThreadHandoff = {
@@ -65,7 +83,9 @@ export type CodingAgentPlanModeGateMessage = {
 };
 
 export type CodingAgentPlanModeGateRun = {
+	id?: string;
 	status: string;
+	updatedAt?: Date | string | null;
 	summary?: string | null;
 	contextSnapshot?: unknown;
 };
@@ -76,6 +96,8 @@ export async function decideCodingAgentPlanModeGate(input: {
 	task: CodingAgentPlanModeGateTask;
 	messages: CodingAgentPlanModeGateMessage[];
 	runs: CodingAgentPlanModeGateRun[];
+	resumeCandidate: CodingAgentInterruptedRunCandidate | null;
+	routingSnapshotDigest: string;
 	routeOverride: ReturnType<typeof normalizeStructuredLlmModelTarget> | null;
 	emitEvent: (event: SupervisorLlmDebugEvent) => void | Promise<void>;
 	taskId: string;
@@ -118,6 +140,7 @@ export async function decideCodingAgentPlanModeGate(input: {
 				taskId: input.taskId,
 				repositoryId: input.repositoryId,
 				prompt: input.prompt,
+				routingSnapshotDigest: input.routingSnapshotDigest,
 				result,
 			})
 		: result;
@@ -162,6 +185,7 @@ export async function loadPersistedCodingAgentPlanModeGateResult(input: {
 	taskId: string;
 	repositoryId: string;
 	prompt: string;
+	routingSnapshotDigest: string;
 	store?: RuntimeSessionStateStore;
 }): Promise<CodingAgentPlanModeGate | null> {
 	const store = input.store ?? new RuntimeSessionStateStore();
@@ -176,6 +200,8 @@ export async function loadPersistedCodingAgentPlanModeGateResult(input: {
 	if (!state?.providerSessionId) return null;
 	const metadata = toRecord(state.metadataJson);
 	if (metadata?.promptDigest !== digestText(input.prompt)) return null;
+	if (metadata?.routingSnapshotDigest !== input.routingSnapshotDigest)
+		return null;
 	if (metadata?.handoffResumable !== true) return null;
 	const decision = codingAgentPlanModeGateSchema.safeParse(metadata.decision);
 	const providerEndpointId = readNonEmptyString(metadata.providerEndpointId);
@@ -202,6 +228,7 @@ async function persistCodingAgentPlanModeGateResult(input: {
 	taskId: string;
 	repositoryId: string;
 	prompt: string;
+	routingSnapshotDigest: string;
 	result: CodingAgentPlanModeGate;
 	store?: RuntimeSessionStateStore;
 }): Promise<CodingAgentPlanModeGate> {
@@ -218,12 +245,14 @@ async function persistCodingAgentPlanModeGateResult(input: {
 		executionMode: INTAKE_GATE_EXECUTION_MODE,
 		model: handoff.model,
 		metadata: {
-			version: 2,
+			version: 3,
 			handoffResumable: true,
 			promptDigest: digestText(input.prompt),
+			routingSnapshotDigest: input.routingSnapshotDigest,
 			decision: {
 				shouldStartPlanMode: input.result.shouldStartPlanMode,
 				action: input.result.action,
+				runDisposition: input.result.runDisposition,
 				reason: input.result.reason,
 			},
 			providerEndpointId: handoff.providerEndpointId,
@@ -247,6 +276,7 @@ export function buildCodingAgentPlanModeGateUserPrompt(input: {
 	task: CodingAgentPlanModeGateTask;
 	messages: CodingAgentPlanModeGateMessage[];
 	runs: CodingAgentPlanModeGateRun[];
+	resumeCandidate?: CodingAgentInterruptedRunCandidate | null;
 }) {
 	const existingPlans = input.messages
 		.filter((message) => {
@@ -275,6 +305,15 @@ export function buildCodingAgentPlanModeGateUserPrompt(input: {
 			.filter((value): value is string => Boolean(value))
 			.join(" ");
 	});
+	const resumeCandidate = input.resumeCandidate
+		? [
+				"- structurally resumable=true",
+				`- interruptionRevision=${input.resumeCandidate.interruptionRevision}`,
+				`- currentTodo=${input.resumeCandidate.todoKey ?? "none"}`,
+				`- currentTodoRevision=${input.resumeCandidate.todoRevision ?? "none"}`,
+				`- workspaceBound=${Boolean(input.resumeCandidate.workspaceId)}`,
+			].join("\n")
+		: "- none";
 
 	return [
 		"[Task Context]",
@@ -297,6 +336,9 @@ export function buildCodingAgentPlanModeGateUserPrompt(input: {
 		"[Latest Runs]",
 		latestRuns.length ? latestRuns.join("\n") : "- none",
 		"",
+		"[Structurally Validated Resumable Run Candidate]",
+		resumeCandidate,
+		"",
 		"[Recent Conversation]",
 		recentMessages.length ? recentMessages.join("\n") : "- none",
 		"",
@@ -305,6 +347,32 @@ export function buildCodingAgentPlanModeGateUserPrompt(input: {
 	]
 		.filter((line): line is string => line !== null)
 		.join("\n");
+}
+
+export function buildCodingAgentIntakeRoutingSnapshotDigest(input: {
+	taskId: string;
+	taskRevision: number;
+	taskStatus: string;
+	runs: CodingAgentPlanModeGateRun[];
+	resumeCandidate: CodingAgentInterruptedRunCandidate | null;
+}) {
+	if (input.resumeCandidate) {
+		return input.resumeCandidate.routingSnapshotDigest;
+	}
+	return canonicalDigest({
+		taskId: input.taskId,
+		taskRevision: input.taskRevision,
+		taskStatus: input.taskStatus,
+		latestRuns: input.runs.slice(0, 3).map((run) => ({
+			id: run.id ?? null,
+			status: run.status,
+			updatedAt:
+				run.updatedAt instanceof Date
+					? run.updatedAt.toISOString()
+					: (run.updatedAt ?? null),
+		})),
+		resumeCandidate: null,
+	});
 }
 
 function compactForGatePrompt(value: string, maxLength: number) {

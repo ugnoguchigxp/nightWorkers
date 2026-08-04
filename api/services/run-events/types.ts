@@ -5,6 +5,15 @@ export const RUN_EVENT_TYPES = [
 	"run.runtime_finished",
 	"run.watchdog_timed_out",
 	"run.stop_requested",
+	"run.execution_owner_claimed",
+	"run.execution_owner_released",
+	"run.process_interrupted",
+	"run.resume_requested",
+	"run.resume_claimed",
+	"run.provider_thread_resumed",
+	"run.provider_thread_resume_failed",
+	"run.provider_thread_fallback_started",
+	"run.unresolved_tool_call_detected",
 	"run.outcome_decided",
 	"run.finalizing_started",
 	"run.final_judgment_created",
@@ -137,6 +146,7 @@ export type RunSummaryJsonlLine = {
 		status: string;
 		procedureId?: string | null;
 		statusReason?: string | null;
+		humanBlocker?: unknown;
 		completionGateResult?: unknown;
 	}>;
 	diffBytes: number;

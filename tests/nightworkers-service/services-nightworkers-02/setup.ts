@@ -117,6 +117,16 @@ vi.doMock("../../../api/modules/codingAgent/runtime/registry", () => {
 });
 
 vi.doMock(
+	"../../../api/modules/nightworkers/run-orchestration/runtime-execution-lease",
+	() => ({
+		acquireRuntimeExecutionLease: vi.fn(async () => ({
+			heartbeat: vi.fn(async () => null),
+			release: vi.fn(async () => undefined),
+		})),
+	}),
+);
+
+vi.doMock(
 	"../../../api/modules/gitworktree/gitworktree.service",
 	async (importOriginal) => ({
 		...(await importOriginal<

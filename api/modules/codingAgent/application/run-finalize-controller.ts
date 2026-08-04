@@ -1,3 +1,4 @@
+import { humanBlockerSchema } from "../../../../shared/modules/codingAgent";
 import * as repo from "../../nightworkers/nightworkers.repository";
 import {
 	type CodingAgentCompletionReadiness,
@@ -11,6 +12,7 @@ export type RunCompletionSnapshot = {
 		revision: number;
 		status: string;
 		title: string;
+		humanBlocker: unknown | null;
 	}>;
 	readiness?: CodingAgentCompletionReadiness;
 };
@@ -72,6 +74,7 @@ export class RunFinalizeController {
 				revision: todo.revision,
 				status: todo.status,
 				title: todo.title,
+				humanBlocker: todo.humanBlockerJson,
 			})),
 		};
 		if (
@@ -123,6 +126,19 @@ export class RunFinalizeController {
 			);
 		}
 		const needsHuman = todos.filter((todo) => todo.status === "needs_human");
+		const invalidHumanBlockers = needsHuman.filter(
+			(todo) => !humanBlockerSchema.safeParse(todo.humanBlockerJson).success,
+		);
+		if (invalidHumanBlockers.length > 0) {
+			return blocked(
+				"TODO_STATE_INVALID",
+				"needs_human Todoに構造化されたユーザー回答待ちblockerがありません。",
+				invalidHumanBlockers.map(
+					(todo) => `todo:${todo.id}:human_blocker_invalid`,
+				),
+				snapshot,
+			);
+		}
 		if (needsHuman.length > 0) {
 			return blocked(
 				"RUN_NEEDS_HUMAN",

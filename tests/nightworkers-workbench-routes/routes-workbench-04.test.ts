@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import {
@@ -24,9 +23,16 @@ import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import * as service from "../../api/modules/nightworkers/nightworkers.service";
 import { registerTaskMessageCreatedListener } from "../../api/modules/task";
 import * as llm from "../../api/services/structured-llm";
-import { initializeE2eGitRepository } from "../e2e/helpers";
 import { representativeAppBlueprint } from "../fixtures/app-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
+import {
+	cleanupDisposableRepositories,
+	createDisposableRepository,
+	createWorkbenchTask,
+	sameOriginHeaders,
+	trackDisposableRepositoryRoot,
+	waitForTerminalRun,
+} from "./workbench-route-test-support";
 
 vi.setConfig({ testTimeout: 40_000 });
 
@@ -137,9 +143,6 @@ vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 	};
 });
 
-const sameOriginHeaders = { Origin: "http://localhost:39174" };
-const disposableRepositoryRoots: string[] = [];
-
 function mockPlanModeGate(
 	shouldStartPlanMode: boolean,
 	reason = "test gate",
@@ -150,6 +153,7 @@ function mockPlanModeGate(
 	return JSON.stringify({
 		shouldStartPlanMode,
 		action,
+		runDisposition: shouldStartPlanMode ? null : "start_new_run",
 		reason,
 	});
 }
@@ -200,14 +204,7 @@ beforeEach(() => {
 afterEach(async () => {
 	await flushPendingWorkbenchTasks();
 	vi.clearAllMocks();
-	await Promise.all(
-		disposableRepositoryRoots.splice(0).map((root) =>
-			rm(root, {
-				recursive: true,
-				force: true,
-			}),
-		),
-	);
+	await cleanupDisposableRepositories();
 });
 
 describe("NightWorkers workbench routes", () => {
@@ -441,7 +438,7 @@ describe("NightWorkers workbench routes", () => {
 		const preparedTask = await repo.getTask(task.id);
 		expect(preparedTask?.worktreePath).toBeTruthy();
 		const worktreePath = preparedTask?.worktreePath as string;
-		disposableRepositoryRoots.push(worktreePath);
+		trackDisposableRepositoryRoot(worktreePath);
 		await writeFile(
 			path.join(worktreePath, "review-target.ts"),
 			"export const reviewTarget = true;\n",
@@ -773,74 +770,3 @@ describe("NightWorkers workbench routes", () => {
 		expect(readiness.summary).toContain("No adopted Blueprint artifact");
 	});
 });
-
-async function createWorkbenchTask(
-	input: {
-		title?: string;
-		status?: string;
-		objective?: string;
-		createdBy?: "project-evaluation";
-		repositoryPath?: string;
-	} = {},
-) {
-	const project = await repo.createRepository({
-		name: `TEST: Workbench Project ${crypto.randomUUID()}`,
-		localPath: input.repositoryPath ?? "/Users/y.noguchi/Code/nightWorkers",
-		branch: "main",
-	});
-	const task = await repo.createTask({
-		repositoryId: project.id,
-		title: input.title || "Workbench task",
-		objective: input.objective ?? "Implement chat-first workbench",
-		acceptanceCriteria:
-			"Draft conversation, queue, and run are separate task-queue steps",
-		status: input.status || "draft",
-		createdBy: input.createdBy,
-	});
-	return { project, task };
-}
-
-async function createDisposableRepository() {
-	const root = await mkdtemp(
-		path.join(os.tmpdir(), "nightworkers-workbench-route-"),
-	);
-	disposableRepositoryRoots.push(root);
-	await writeFile(
-		path.join(root, "README.md"),
-		"# Workbench fixture\n",
-		"utf8",
-	);
-	initializeE2eGitRepository(root);
-	execFileSync("git", ["add", "."], { cwd: root, stdio: "ignore" });
-	execFileSync(
-		"git",
-		[
-			"-c",
-			"user.email=workbench@example.test",
-			"-c",
-			"user.name=NightWorkers Test",
-			"commit",
-			"-m",
-			"initial fixture",
-		],
-		{ cwd: root, stdio: "ignore" },
-	);
-	return root;
-}
-
-async function waitForTerminalRun(runId: string) {
-	const terminalStatuses = new Set([
-		"completed",
-		"failed",
-		"cancelled",
-		"timed_out",
-		"needs_review",
-		"needs_human",
-	]);
-	for (let attempt = 0; attempt < 200; attempt += 1) {
-		const run = await repo.getTaskRun(runId);
-		if (run && terminalStatuses.has(run.status)) return run;
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-	throw new Error(`Run ${runId} did not reach a terminal status.`);
-}

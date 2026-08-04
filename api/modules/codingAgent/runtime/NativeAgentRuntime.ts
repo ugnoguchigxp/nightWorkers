@@ -23,7 +23,10 @@ const DEFAULT_RESULT: AgentRuntimeResult = {
 	riskLevel: "high",
 };
 
-type NativeApiRunnerLike = Pick<NativeApiRunner, "run" | "stop">;
+type NativeApiRunnerLike = Pick<
+	NativeApiRunner,
+	"run" | "stop" | "suspendForHostShutdown"
+>;
 
 export class NativeAgentRuntime implements AgentRuntime {
 	readonly kind = "native-local" as const;
@@ -187,6 +190,10 @@ export class NativeAgentRuntime implements AgentRuntime {
 
 	async stop(runId: string): Promise<void> {
 		await this.runner.stop(runId);
+	}
+
+	async suspendForHostShutdown(runId: string): Promise<void> {
+		await this.runner.suspendForHostShutdown(runId);
 	}
 
 	private toCancelled(logContent: string): AgentRuntimeResult {

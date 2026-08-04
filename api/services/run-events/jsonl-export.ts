@@ -86,6 +86,7 @@ export function buildRunJsonlSummary(
 						status: todo.status,
 						procedureId: todo.procedureId,
 						statusReason: todo.statusReason,
+						humanBlocker: todo.humanBlockerJson,
 						completionGateResult: todo.completionGateResult,
 					})),
 				}

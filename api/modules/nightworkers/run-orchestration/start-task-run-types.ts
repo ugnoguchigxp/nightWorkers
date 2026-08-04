@@ -40,12 +40,20 @@ export type StartTaskRunOptions = {
 	implementationPlanConstraint?: ImplementationPlanConstraint;
 	/** 同じ needs_human Run を同じ provider session / Todo で再開する。 */
 	resumeRunId?: string;
-	resumeCommand?: {
-		kind: "todo" | "runtime_pause";
-		todoId: string;
-		expectedTodoRevision: number;
-		userContext: string;
-	};
+	resumeCommand?:
+		| {
+				kind: "todo" | "runtime_pause";
+				todoId: string;
+				expectedTodoRevision: number;
+				userContext: string;
+		  }
+		| {
+				kind: "process_interruption";
+				expectedInterruptionRevision: number;
+				todoId: string | null;
+				expectedTodoRevision: number | null;
+				userContext: string;
+		  };
 	latestUserMessageOverride?: string;
 	runtimeOptionsPatch?: Record<string, unknown>;
 	routeOverride?: StructuredLlmModelTarget | null;

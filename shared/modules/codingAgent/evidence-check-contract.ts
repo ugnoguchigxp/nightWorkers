@@ -100,6 +100,7 @@ export const evidenceCheckReadinessSnapshotSchema = z.object({
 		"record_mapping",
 		"run_check",
 		"run_structured_tests",
+		"recover_test_evidence",
 		"fix_test_failure",
 		"report_test_evidence_failure",
 		"request_human_confirmation",

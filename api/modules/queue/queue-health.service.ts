@@ -3,6 +3,7 @@ import {
 	projectTaskRunParentStatus,
 	publishTaskRunTerminal,
 } from "../agentsShare";
+import { interruptCodingAgentRun } from "../codingAgent";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
 import * as repo from "./queue.repository";
 import { runImplementationQueueWhenEnabled } from "./queue-admission.service";
@@ -389,6 +390,26 @@ export async function reconcileImplementationQueue(
 					await continueAfterTaskRun(closeoutInput);
 				}
 				continue;
+			}
+			if (
+				item.classification === "stale_processing" &&
+				item.run &&
+				isRunningRunStatus(item.run.status)
+			) {
+				const interrupted = await interruptCodingAgentRun({
+					runId: item.run.id,
+					reason: "worker_lost",
+					requireExpiredExecutionLease: true,
+					now,
+				});
+				if (interrupted) {
+					actions.push({
+						entryId: entry.id,
+						action: "needs_human",
+						status: "needs_human",
+					});
+					continue;
+				}
 			}
 			const activeRunIsTerminal =
 				item.run && !isRunningRunStatus(item.run.status);

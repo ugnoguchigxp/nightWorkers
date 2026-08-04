@@ -85,6 +85,7 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
 	const agentIndependentModuleRoots = new Set(
 		policy.agentIndependentModuleRoots ?? [],
 	);
+	const deepImportExemptions = policy.deepImportExemptions ?? [];
   const roleOwnedPathRules = policy.roleOwnedPathRules ?? [];
   const forbiddenProductionPathPrefixes =
 		policy.forbiddenProductionPathPrefixes ?? [];
@@ -193,6 +194,11 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
       if (relativePath === `${target.root}/index.ts`) continue;
       if (relativePath.startsWith(`${target.root}/`)) continue;
       if (target.remainder) {
+				const exempt = deepImportExemptions.some(
+					(item) =>
+						item.source === relativePath && item.specifier === specifier,
+				);
+				if (exempt) continue;
         errors.push(
           `${relativePath}: deep import into ${target.root} is forbidden (${specifier})`,
         );

@@ -52,6 +52,36 @@ export const TODO_DRAFT_FIELD_GUIDANCE_JA = {
 export type AgentTodoStatus = (typeof AGENT_TODO_STATUSES)[number];
 export type TodoCreatedBy = "agent" | "human" | "migration";
 
+export const humanBlockerSchema = z
+	.object({
+		question: z
+			.string()
+			.trim()
+			.min(1)
+			.max(TODO_MUTATION_LIMITS.maxReasonLength),
+		requiredInput: z.enum([
+			"information",
+			"decision",
+			"credential",
+			"permission",
+			"external_change",
+		]),
+		basis: z.discriminatedUnion("kind", [
+			z.object({ kind: z.literal("task_context") }).strict(),
+			z
+				.object({
+					kind: z.literal("tool_failure"),
+					toolName: z.string().trim().min(1).max(128),
+					failureCode: z.string().trim().min(1).max(128),
+					recoveryDisposition: z.literal("human_input"),
+				})
+				.strict(),
+		]),
+	})
+	.strict();
+
+export type HumanBlocker = z.infer<typeof humanBlockerSchema>;
+
 export type CodingAgentSystemContextSnapshot = {
 	version: number;
 	planModeRequested: boolean;
@@ -109,11 +139,7 @@ export const codingAgentTodoListCommandSchema = z.discriminatedUnion("op", [
 	z
 		.object({
 			op: z.literal("block_current"),
-			reason: z
-				.string()
-				.trim()
-				.min(1)
-				.max(TODO_MUTATION_LIMITS.maxReasonLength),
+			humanBlocker: humanBlockerSchema,
 		})
 		.strict(),
 	z
@@ -142,7 +168,7 @@ export type TodoMutationCommand =
 	  }
 	| {
 			op: "block_current";
-			reason: string;
+			humanBlocker: HumanBlocker;
 	  }
 	| {
 			op: "replace_remaining";
@@ -164,9 +190,19 @@ export type TodoMutationCommand =
 			op: "transition";
 			todoId: string;
 			expectedTodoRevision: number;
-			status: "passed" | "needs_human" | "skipped";
+			status: "passed" | "skipped";
 			reason: string;
+			humanBlocker?: never;
 			nextTodoId?: string;
+	  }
+	| {
+			op: "transition";
+			todoId: string;
+			expectedTodoRevision: number;
+			status: "needs_human";
+			humanBlocker: HumanBlocker;
+			reason?: never;
+			nextTodoId?: never;
 	  }
 	| {
 			op: "record_failure";
@@ -187,6 +223,7 @@ export type TodoMutationCommand =
 
 export type TodoMutationErrorCode =
 	| "INVALID_TODO_COMMAND"
+	| "TODO_HUMAN_BLOCKER_NOT_ESTABLISHED"
 	| "RUN_NOT_FOUND"
 	| "RUN_NOT_MUTABLE"
 	| "TODO_NOT_FOUND"

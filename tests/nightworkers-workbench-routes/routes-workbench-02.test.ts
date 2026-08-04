@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { eq } from "drizzle-orm";
 import {
 	afterEach,
 	beforeAll,
@@ -10,7 +11,23 @@ import {
 } from "vitest";
 import app from "../../api/app";
 import { ensureNightWorkersSchema } from "../../api/db/bootstrap";
+import { db } from "../../api/db/client";
+import {
+	agentModeSessions,
+	implementationQueueEntries,
+	taskGitWorkspaces,
+	taskRunTodos,
+	tasks,
+} from "../../api/db/schema";
+import {
+	claimCodingAgentRunExecution,
+	reconcileCodingAgentProcessInterruptions,
+} from "../../api/modules/codingAgent";
+import { runGitCommand } from "../../api/modules/gitworktree/gitworktree-cli";
+import { ensureTaskGitWorkspace } from "../../api/modules/gitworktree/task-git-workspace.service";
+import { attestTaskWorkspaceForRun } from "../../api/modules/gitworktree/workspace-attestation.service";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
+import * as queueRepo from "../../api/modules/queue/queue.repository";
 import * as llm from "../../api/services/structured-llm";
 import { representativeMockBlueprint } from "../fixtures/mock-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
@@ -64,6 +81,7 @@ vi.mock("../../api/modules/codingAgent/runtime/registry", () => {
 			logContent: "",
 		})),
 		stop: vi.fn(),
+		suspendForHostShutdown: vi.fn(),
 	};
 	const resolveAgentRuntime = vi.fn(() => runtime);
 	const buildRuntimeLaneInitialTodos = vi.fn(
@@ -136,6 +154,7 @@ function mockPlanModeGate(
 	return JSON.stringify({
 		shouldStartPlanMode,
 		action,
+		runDisposition: shouldStartPlanMode ? null : "start_new_run",
 		reason,
 	});
 }
@@ -278,6 +297,47 @@ describe("NightWorkers workbench routes", () => {
 				(message: unknown) => message.metadataJson?.intent === "intake",
 			),
 		).toBe(false);
+	});
+
+	it("routes a continuation request to the same interrupted Run and Todo", async () => {
+		const fixture = await createInterruptedWorkbenchRun();
+		vi.mocked(llm.callStructuredJsonLLM).mockResolvedValueOnce(
+			JSON.stringify({
+				shouldStartPlanMode: false,
+				action: "coding_agent",
+				runDisposition: "resume_existing_run",
+				reason: "保存済みの中断Runと同じ作業を継続する依頼です。",
+			}),
+		);
+
+		const res = await app.request(
+			`http://localhost/api/workbench/sessions/${fixture.task.id}/messages`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...sameOriginHeaders },
+				body: JSON.stringify({ prompt: "再開してください" }),
+			},
+		);
+
+		expect(res.status, await res.clone().text()).toBe(200);
+		const body = await res.json();
+		expect(body.run).toMatchObject({
+			id: fixture.run.id,
+			taskId: fixture.task.id,
+			agentModeSessionId: fixture.session.id,
+		});
+		const runs = await repo.listTaskRunsForTask(fixture.task.id);
+		expect(runs.map((run) => run.id)).toEqual([fixture.run.id]);
+		const gatePrompt = vi.mocked(llm.callStructuredJsonLLM).mock
+			.calls[0]?.[1] as string;
+		expect(gatePrompt).toContain("structurally resumable=true");
+		expect(gatePrompt).toContain("currentTodo=resume-route-todo");
+		expect(gatePrompt).not.toContain(fixture.run.id);
+		expect(
+			body.messages.some(
+				(message: unknown) => message.metadataJson?.intent === "run_resumed",
+			),
+		).toBe(true);
 	});
 
 	it("does not auto-generate Blueprint artifacts from active Blueprint workspace instructions", async () => {
@@ -544,4 +604,150 @@ async function createWorkbenchTask(
 		status: input.status || "draft",
 	});
 	return { project, task };
+}
+
+async function createInterruptedWorkbenchRun() {
+	const { project, task } = await createWorkbenchTask({
+		title: "TEST: restart route",
+		status: "running",
+	});
+	const allocated = await ensureTaskGitWorkspace({
+		taskId: task.id,
+		planReviewId: null,
+		admissionKey: `test:restart-route:${task.id}`,
+	});
+	const head = await runGitCommand([
+		"-C",
+		project.localPath,
+		"rev-parse",
+		"HEAD",
+	]);
+	await db
+		.update(taskGitWorkspaces)
+		.set({
+			status: "active",
+			sourceBranch: "main",
+			sourceRef: "refs/heads/main",
+			worktreePath: project.localPath,
+			taskWorktreePathCanonical: project.localPath,
+			expectedHeadSha: head.stdout.trim(),
+			lastVerifiedHead: head.stdout.trim(),
+			initializedAt: new Date(),
+		})
+		.where(eq(taskGitWorkspaces.id, allocated.id));
+	await db
+		.update(tasks)
+		.set({ worktreePath: project.localPath, updatedAt: new Date() })
+		.where(eq(tasks.id, task.id));
+	const workspaceAdmission = await attestTaskWorkspaceForRun({
+		taskId: task.id,
+		requireClean: false,
+		allowCurrentDirtyState: true,
+	});
+	const [session] = await db
+		.insert(agentModeSessions)
+		.values({
+			taskId: task.id,
+			repositoryId: project.id,
+			epoch: 1,
+			executionMode: "implementation",
+			llmRole: "implementation",
+			runtimeLane: "codex-sdk",
+			provider: "codex",
+			model: "gpt-test",
+			routeFingerprint: "workbench-restart-route",
+			status: "active",
+			openedAt: new Date(),
+		})
+		.returning();
+	if (!session) throw new Error("Agent Mode Session fixture was not created.");
+	const run = await repo.createTaskRun({
+		taskId: task.id,
+		repositoryId: project.id,
+		taskRevisionSnapshotId: task.currentRevisionSnapshotId,
+		taskRevision: task.revision,
+		agentModeSessionId: session.id,
+		status: "running",
+		workerKind: "codex-agent",
+		worktreePath: project.localPath,
+		workspaceAuthorityKind: "task_workspace",
+		workspaceId: workspaceAdmission.workspace.id,
+		workspaceAllocationVersion: workspaceAdmission.workspace.allocationVersion,
+		repositoryIdentityRevision:
+			workspaceAdmission.workspace.repositoryIdentityRevision,
+		admissionAttestationId: workspaceAdmission.attestation.id,
+		admissionAttestationDigest: workspaceAdmission.attestation.digest,
+		admittedHeadSha: workspaceAdmission.attestation.headSha,
+		contextSnapshot: { executionMode: "implementation" },
+	});
+	if (!run) throw new Error("Run fixture was not created.");
+	const currentStatus = await runGitCommand([
+		"-C",
+		project.localPath,
+		"status",
+		"--porcelain=v1",
+		"--untracked-files=normal",
+	]);
+	const ownedCandidatePaths = currentStatus.stdout
+		.split("\n")
+		.map((value) => value.slice(3).trim())
+		.filter(Boolean);
+	await repo.createTaskRunCommitRecord({
+		runId: run.id,
+		repositoryId: project.id,
+		status: "pending",
+		baselineHead: head.stdout.trim(),
+		ownedCandidatePaths,
+	});
+	const [todo] = await db
+		.insert(taskRunTodos)
+		.values({
+			runId: run.id,
+			todoKey: "resume-route-todo",
+			seq: 1,
+			title: "中断箇所から検証を続ける",
+			nextAction: "保存済み状態を確認する",
+			taskType: "verification",
+			status: "running",
+			createdBy: "agent",
+			revision: 2,
+			startedAt: new Date(),
+		})
+		.returning();
+	if (!todo) throw new Error("Todo fixture was not created.");
+	const queue = await queueRepo.createImplementationQueueEntry({
+		taskId: task.id,
+		repositoryId: project.id,
+	});
+	await db
+		.update(implementationQueueEntries)
+		.set({
+			status: "processing",
+			activeRunId: run.id,
+			workspaceId: workspaceAdmission.workspace.id,
+			workspaceRequired: true,
+			claimReady: true,
+			processorSlot: 1,
+			leaseOwnerId: "api-process:old",
+			leaseAcquiredAt: new Date(),
+			leaseExpiresAt: new Date(Date.now() + 60_000),
+		})
+		.where(eq(implementationQueueEntries.id, queue.id));
+	await claimCodingAgentRunExecution({
+		runId: run.id,
+		agentModeSessionId: session.id,
+		owner: {
+			kind: "api_process",
+			instanceId: "api_process:workbench-old-boot",
+			pid: 101,
+		},
+	});
+	await reconcileCodingAgentProcessInterruptions({
+		owner: {
+			kind: "api_process",
+			instanceId: "api_process:workbench-new-boot",
+			pid: 202,
+		},
+	});
+	return { project, task, session, run, todo, queue };
 }

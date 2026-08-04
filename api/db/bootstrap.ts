@@ -1,3 +1,4 @@
+import { ensureCodingAgentRuntimeExecutionTables } from "../modules/codingAgent/persistence/runtime-execution-bootstrap";
 import { ensureBaseNightWorkersTables } from "./base-schema-bootstrap";
 import { ensureRuntimeAndUsageTables } from "./bootstrap-runtime-tables";
 import { ensureTaskWorkflowTables } from "./bootstrap-task-workflow-tables";
@@ -271,6 +272,7 @@ export async function ensureNightWorkersSchema(
 	);
 
 	await ensureRuntimeAndUsageTables();
+	await ensureCodingAgentRuntimeExecutionTables();
 
 	await ensureTaskWorkflowTables();
 	await ensureEvidenceLedgerTables();

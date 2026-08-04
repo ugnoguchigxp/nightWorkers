@@ -247,10 +247,12 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				model: "plan-model",
 				metadataJson: {
 					promptDigest: digestText("same prompt"),
+					routingSnapshotDigest: "routing-snapshot",
 					handoffResumable: true,
 					decision: {
 						shouldStartPlanMode: true,
 						action: "plan_mode",
+						runDisposition: null,
 						reason: "plan first",
 					},
 					providerEndpointId: "plan-endpoint",
@@ -264,6 +266,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				taskId: "task-intake",
 				repositoryId: "repository-intake",
 				prompt: "same prompt",
+				routingSnapshotDigest: "routing-snapshot",
 				store,
 			}),
 		).resolves.toEqual(
@@ -301,6 +304,7 @@ describe("Coding Agent Plan Mode Codex thread handoff", () => {
 				taskId: "task-intake",
 				repositoryId: "repository-intake",
 				prompt: "same prompt",
+				routingSnapshotDigest: "routing-snapshot",
 				store,
 			}),
 		).resolves.toBeNull();

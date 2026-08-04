@@ -12,6 +12,33 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"run.runtime_finished": { eventType: "state_change", type: "checkpoint" },
 	"run.watchdog_timed_out": { eventType: "error", type: "error" },
 	"run.stop_requested": { eventType: "state_change", type: "warning" },
+	"run.execution_owner_claimed": {
+		eventType: "state_change",
+		type: "info",
+	},
+	"run.execution_owner_released": {
+		eventType: "state_change",
+		type: "info",
+	},
+	"run.process_interrupted": { eventType: "state_change", type: "warning" },
+	"run.resume_requested": { eventType: "state_change", type: "info" },
+	"run.resume_claimed": { eventType: "state_change", type: "info" },
+	"run.provider_thread_resumed": {
+		eventType: "state_change",
+		type: "info",
+	},
+	"run.provider_thread_resume_failed": {
+		eventType: "warning",
+		type: "warning",
+	},
+	"run.provider_thread_fallback_started": {
+		eventType: "state_change",
+		type: "warning",
+	},
+	"run.unresolved_tool_call_detected": {
+		eventType: "warning",
+		type: "warning",
+	},
 	"run.finalizing_started": { eventType: "state_change", type: "info" },
 	"run.final_judgment_created": { eventType: "final_report", type: "info" },
 	"run.outcome_decided": { eventType: "run_outcome_decided", type: "info" },

@@ -457,7 +457,7 @@ function strictSuggestedAction(input: {
 		input.assurance.reasonCodes.includes("TEST_IDENTITY_AMBIGUOUS") ||
 		input.assurance.reasonCodes.includes("COMMAND_GATE_PLAN_MISSING")
 	) {
-		return "report_test_evidence_failure";
+		return "recover_test_evidence";
 	}
 	if (input.assurance.reasonCodes.includes("MAPPED_TEST_FAILED")) {
 		return "fix_test_failure";

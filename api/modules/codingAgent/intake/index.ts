@@ -1,4 +1,5 @@
 export {
+	buildCodingAgentIntakeRoutingSnapshotDigest,
 	buildCodingAgentPlanModeGatePrompt,
 	buildCodingAgentPlanModeGateUserPrompt,
 	type CodingAgentPlanModeGate,

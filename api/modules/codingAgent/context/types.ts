@@ -1,4 +1,7 @@
-import type { CodingAgentSystemContextSnapshot } from "../../../../shared/modules/codingAgent";
+import type {
+	CodingAgentSystemContextSnapshot,
+	HumanBlocker,
+} from "../../../../shared/modules/codingAgent";
 
 export type CodingAgentSystemContext = CodingAgentSystemContextSnapshot;
 
@@ -9,6 +12,7 @@ export type CodingAgentPlanSummaryItem = {
 	title: string;
 	status: string;
 	revision: number;
+	humanBlocker: HumanBlocker | null;
 };
 
 export type CodingAgentPlanSummary = {

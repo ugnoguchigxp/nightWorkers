@@ -309,6 +309,9 @@ export const taskRunTodos = sqliteTable(
 			Array<string | number>
 		>(),
 		statusReason: text("status_reason"),
+		humanBlockerJson: text("human_blocker_json", { mode: "json" }).$type<
+			Record<string, unknown>
+		>(),
 		lastFailure: text("last_failure"),
 		attemptCount: integer("attempt_count").default(0).notNull(),
 		systemContextVersion: integer("system_context_version")

@@ -117,6 +117,116 @@ async function createTestRepository() {
 }
 
 describe("schema test evidence mapping integration", () => {
+	it("pages active inventory cases and preserves a source digest for refetch", async () => {
+		const { taskId, repoRoot } = await createVerificationFixture(["AC-001"]);
+		await fs.appendFile(
+			path.join(repoRoot, "tests/coding-agent-test-evidence-matcher.test.ts"),
+			[
+				"",
+				'it("exposes the second inventory page", () => {',
+				"  expect(true).toBe(true);",
+				"});",
+			].join("\n"),
+		);
+		const invalidScope = await collectTestInventoryTool({
+			taskId,
+			repoRoot,
+			filePaths: ["../tests"],
+		});
+		expect(invalidScope).toMatchObject({
+			ok: false,
+			error: {
+				code: "TEST_INVENTORY_FILE_SCOPE_INVALID",
+				recovery: {
+					disposition: "retry_with_input",
+					candidates: [
+						{
+							toolName: "collect_test_inventory",
+							actionCode: "USE_REPOSITORY_RELATIVE_TEST_SCOPE",
+						},
+					],
+				},
+			},
+		});
+
+		const first = await collectTestInventoryTool({
+			taskId,
+			repoRoot,
+			limit: 1,
+			filePaths: ["tests"],
+		});
+		expect(first.ok).toBe(true);
+		if (!first.ok || !first.payload) return;
+		expect(first.payload).toMatchObject({
+			total: 2,
+			cursor: "0",
+			filePaths: ["tests"],
+		});
+		expect(first.payload.nextCursor).toEqual(expect.any(String));
+		expect(first.payload.cases).toHaveLength(1);
+
+		const changedFilter = await collectTestInventoryTool({
+			taskId,
+			repoRoot,
+			cursor: first.payload.nextCursor ?? undefined,
+			limit: 1,
+			filePaths: ["src"],
+		});
+		expect(changedFilter).toMatchObject({
+			ok: false,
+			error: {
+				code: "TEST_INVENTORY_CURSOR_STALE",
+				recovery: { disposition: "retry_with_input" },
+			},
+		});
+
+		const second = await collectTestInventoryTool({
+			taskId,
+			repoRoot,
+			cursor: first.payload.nextCursor ?? undefined,
+			limit: 1,
+			filePaths: ["tests"],
+		});
+		expect(second.ok).toBe(true);
+		if (!second.ok || !second.payload) return;
+		expect(second.payload).toMatchObject({
+			total: 2,
+			cursor: "1",
+			nextCursor: null,
+			sourceDigest: first.payload.sourceDigest,
+			filePaths: ["tests"],
+		});
+		expect(second.payload.cases[0]?.caseKey).not.toBe(
+			first.payload.cases[0]?.caseKey,
+		);
+		const latestInventoryCases = await db
+			.select({ caseKey: codingAgentTestInventoryCases.caseKey })
+			.from(codingAgentTestInventoryCases)
+			.where(eq(codingAgentTestInventoryCases.inventoryId, second.payload.id));
+		expect(latestInventoryCases.map(({ caseKey }) => caseKey)).toEqual(
+			expect.arrayContaining([
+				first.payload.cases[0]?.caseKey,
+				second.payload.cases[0]?.caseKey,
+			]),
+		);
+
+		await fs.appendFile(
+			path.join(repoRoot, "tests/coding-agent-test-evidence-matcher.test.ts"),
+			"\n// source changed after the first page\n",
+		);
+		const changedSource = await collectTestInventoryTool({
+			taskId,
+			repoRoot,
+			cursor: first.payload.nextCursor ?? undefined,
+			limit: 1,
+			filePaths: ["tests"],
+		});
+		expect(changedSource).toMatchObject({
+			ok: false,
+			error: { code: "TEST_INVENTORY_CURSOR_STALE" },
+		});
+	});
+
 	it("prefers one complete inventory and resolves a nested Vitest scope from the Project package root", async () => {
 		const repoRoot = await createTestRepository();
 		const repository = await nightworkersRepository.createRepository({

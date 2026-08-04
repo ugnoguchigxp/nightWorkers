@@ -116,12 +116,13 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 	return {
 		async emit(event: AgentRuntimeEvent) {
 			const mapped = EVENT_MAPPING[event.type];
+			const canonicalType = resolveCanonicalEventType(event, mapped);
 			try {
 				await repo.createRunEvent({
 					version: 1,
 					runId: taskRunId,
 					timestamp: new Date().toISOString(),
-					type: mapped.canonicalType,
+					type: canonicalType,
 					severity: resolveEventSeverity(event, mapped),
 					actor: mapped.actor,
 					message: event.message.slice(0, 1000),
@@ -142,6 +143,36 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 			}
 		},
 	};
+}
+
+function resolveCanonicalEventType(
+	event: AgentRuntimeEvent,
+	mapped: EventMapping,
+): import("../../../services/run-events/types").RunEventType {
+	const payload =
+		event.payload && typeof event.payload === "object"
+			? (event.payload as Record<string, unknown>)
+			: {};
+	if (
+		event.type === "runtime_started" &&
+		payload.provider === "codex" &&
+		payload.action === "runtime.resume_state_reused"
+	) {
+		return "run.provider_thread_resumed";
+	}
+	if (
+		event.type === "runtime_started" &&
+		payload.action === "runtime.provider_thread_fallback_started"
+	) {
+		return "run.provider_thread_fallback_started";
+	}
+	if (
+		event.type === "runtime_warning" &&
+		payload.code === "codex_runtime_resume_failed"
+	) {
+		return "run.provider_thread_resume_failed";
+	}
+	return mapped.canonicalType;
 }
 
 function resolveEventSeverity(event: AgentRuntimeEvent, mapped: EventMapping) {

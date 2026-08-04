@@ -29,6 +29,42 @@ const stepsSchema = {
 	items: todoStepSchema,
 };
 
+const humanBlockerSchema = objectSchema(
+	{
+		question: {
+			type: "string",
+			minLength: 1,
+			maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
+			description: "ユーザーが回答・実施すべき具体的な問い。",
+		},
+		requiredInput: {
+			type: "string",
+			enum: [
+				"information",
+				"decision",
+				"credential",
+				"permission",
+				"external_change",
+			],
+		},
+		basis: {
+			oneOf: [
+				objectSchema({ kind: { const: "task_context" } }, ["kind"]),
+				objectSchema(
+					{
+						kind: { const: "tool_failure" },
+						toolName: { type: "string", minLength: 1, maxLength: 128 },
+						failureCode: { type: "string", minLength: 1, maxLength: 128 },
+						recoveryDisposition: { const: "human_input" },
+					},
+					["kind", "toolName", "failureCode", "recoveryDisposition"],
+				),
+			],
+		},
+	},
+	["question", "requiredInput", "basis"],
+);
+
 export const todoCommandJsonSchema = {
 	oneOf: [
 		objectSchema({ op: { const: "list" } }, ["op"]),
@@ -53,13 +89,9 @@ export const todoCommandJsonSchema = {
 		objectSchema(
 			{
 				op: { const: "block_current" },
-				reason: {
-					type: "string",
-					minLength: 1,
-					maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
-				},
+				humanBlocker: humanBlockerSchema,
 			},
-			["op", "reason"],
+			["op", "humanBlocker"],
 		),
 		objectSchema(
 			{

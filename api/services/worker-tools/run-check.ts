@@ -29,7 +29,11 @@ import {
 	type RunCommandOutput,
 	runCommandTool,
 } from "./run-command";
-import type { WorkerToolResult } from "./types";
+import {
+	isWorkerToolRecovery,
+	type WorkerToolRecovery,
+	type WorkerToolResult,
+} from "./types";
 
 export { addStructuredReporter } from "./run-check-structured-capture";
 
@@ -70,6 +74,7 @@ export interface RunCheckOutput extends RunCommandOutput {
 	status: "passed" | "failed" | "evidence_error";
 	reason?: string;
 	retryable?: boolean;
+	recovery?: WorkerToolRecovery;
 	checklist?: {
 		complete: boolean;
 		failedRequired: number;
@@ -93,9 +98,15 @@ export async function runCheckTool(
 		const finishedAt = new Date().toISOString();
 		const resolvedCwd = path.resolve(input.repoRoot, input.cwd || "");
 		const retryable = error.details?.retryable === true;
+		const recovery = isWorkerToolRecovery(error.details?.recovery)
+			? error.details.recovery
+			: undefined;
 		const status =
 			error.code === "TEST_EVIDENCE_CAPTURE_FAILED" ||
-			error.code === "TEST_IDENTITY_AMBIGUOUS"
+			error.code === "TEST_EVIDENCE_COMMAND_UNSUPPORTED" ||
+			error.code === "TEST_EVIDENCE_ARTIFACT_UNRECOGNIZED" ||
+			error.code === "TEST_IDENTITY_AMBIGUOUS" ||
+			error.code === "TEST_IDENTITY_MISMATCH"
 				? "evidence_error"
 				: "failed";
 		return {
@@ -150,6 +161,7 @@ export async function runCheckTool(
 				code: error.code,
 				message: error.message,
 				retryable,
+				...(recovery ? { recovery } : {}),
 				...(typeof error.details?.suggestedAction === "string"
 					? { recoveryAction: error.details.suggestedAction }
 					: {}),
@@ -336,6 +348,7 @@ async function runCheckToolInternal(
 				message: captureFailure.message,
 				retryable: false,
 				recoveryAction: captureFailure.suggestedAction,
+				recovery: captureFailure.recovery,
 			}
 		: commandResult.error;
 	return {
@@ -371,7 +384,11 @@ async function runCheckToolInternal(
 					? "passed"
 					: "failed",
 			...(captureFailure
-				? { reason: captureFailure.reason, retryable: false }
+				? {
+						reason: captureFailure.reason,
+						retryable: false,
+						recovery: captureFailure.recovery,
+					}
 				: {}),
 		},
 		error,

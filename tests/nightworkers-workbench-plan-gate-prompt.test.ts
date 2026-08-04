@@ -75,6 +75,21 @@ describe("Coding Agent Plan Mode gate prompt", () => {
 					contextSnapshot: { planModeRequested: true },
 				},
 			],
+			resumeCandidate: {
+				runId: "run-interrupted-private",
+				taskId: "task-private",
+				agentModeSessionId: "session-private",
+				interruptionRevision: 4,
+				executionLeaseVersion: 8,
+				todoId: "todo-private",
+				todoKey: "verify-restart",
+				todoRevision: 3,
+				workspaceId: "workspace-private",
+				workspaceAllocationVersion: 2,
+				repositoryIdentityRevision: 5,
+				attestationDigest: "sha256:private",
+				routingSnapshotDigest: "sha256:routing",
+			},
 		});
 
 		expect(prompt).toContain("[Task Context]");
@@ -86,5 +101,13 @@ describe("Coding Agent Plan Mode gate prompt", () => {
 		expect(prompt).toContain("[Recent Conversation]");
 		expect(prompt).toContain("[Current User Message]");
 		expect(prompt).toContain("Mission PilotとCoding Agentを分離");
+		expect(prompt).toContain(
+			"[Structurally Validated Resumable Run Candidate]",
+		);
+		expect(prompt).toContain("structurally resumable=true");
+		expect(prompt).toContain("interruptionRevision=4");
+		expect(prompt).toContain("currentTodo=verify-restart");
+		expect(prompt).not.toContain("run-interrupted-private");
+		expect(prompt).not.toContain("session-private");
 	});
 });

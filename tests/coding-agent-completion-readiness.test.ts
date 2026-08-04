@@ -94,12 +94,12 @@ describe("Coding Agent completion readiness", () => {
 		expect(result.candidate).toMatchObject({ revision: 3 });
 	});
 
-	it("reports capture failures without suggesting a structured-test retry", async () => {
+	it("keeps capture failures agent-recoverable", async () => {
 		const captureFailure: CompletionCheckResult = {
 			...greenCompletion,
 			ok: false,
 			reason: "TEST_EVIDENCE_CAPTURE_FAILED",
-			suggestedAction: "report_test_evidence_failure",
+			suggestedAction: "recover_test_evidence",
 			assurance: {
 				...greenCompletion.assurance,
 				status: "failed",
@@ -113,7 +113,7 @@ describe("Coding Agent completion readiness", () => {
 				runId: "run-1",
 				repositoryRoot: "/repo",
 				candidateRevision: 4,
-				finalCandidate: "capture failureを報告します。",
+				finalCandidate: "capture failureを修復します。",
 			},
 			{
 				...dependencies(),
@@ -123,10 +123,8 @@ describe("Coding Agent completion readiness", () => {
 
 		expect(result.ready).toBe(false);
 		expect(result.satisfactionConditions).toEqual([
-			"test evidenceのcaptureまたはidentityに関するnon-retryableなhost障害を、typed reasonとともに報告する。",
+			"typed recoveryに従ってtest command、inventory、mapping、runnerのいずれかを修正し、同じRunでmanaged checkを再実行する。",
 		]);
-		expect(result.satisfactionConditions.join(" ")).not.toContain(
-			"structured result",
-		);
+		expect(result.satisfactionConditions.join(" ")).toContain("managed check");
 	});
 });

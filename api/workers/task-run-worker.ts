@@ -1,6 +1,6 @@
+import { suspendCodingAgentRunForHostShutdown } from "../modules/codingAgent";
 import { startTaskRunInProcess } from "../modules/nightworkers/run-orchestration/start-task-run";
 import type { StartTaskRunOptions } from "../modules/nightworkers/run-orchestration/start-task-run-types";
-import { stopTaskRun } from "../modules/nightworkers/run-orchestration/stop-task-run";
 import { consumeApplicationSettingsWorkerSnapshot } from "../services/settings/application-settings-store";
 import { runWithSystemContextBinding } from "../systemContexts/catalog";
 import {
@@ -18,7 +18,9 @@ async function shutdown() {
 	if (shuttingDown) return;
 	shuttingDown = true;
 	if (activeRunId) {
-		await stopTaskRun(activeRunId).catch(() => undefined);
+		await suspendCodingAgentRunForHostShutdown(activeRunId).catch(
+			() => undefined,
+		);
 	}
 	await closeWorkerResources().catch(() => undefined);
 	process.exit(0);

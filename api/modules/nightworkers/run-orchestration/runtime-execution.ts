@@ -17,6 +17,7 @@ import {
 	prepareCodexRepositoryRuntimeContext,
 	projectCodingAgentTaskStatusAfterRun,
 	readCodingAgentPlanModeRequested,
+	readProcessInterruptionSnapshot,
 	runE2eFixtureRuntime,
 	summarizeRuntimeContractWarnings,
 } from "../../codingAgent";
@@ -39,25 +40,15 @@ import {
 import { buildRunCodingAgentSystemContext } from "./run-system-context";
 import { refreshConversationContextForRuntimeLane } from "./runtime-conversation-closeout";
 import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
+import { acquireRuntimeExecutionLease } from "./runtime-execution-lease";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
 import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
 import {
 	buildRuntimePauseSnapshot,
+	isRuntimeTerminalStatus,
 	recordPreservedNeedsHumanOutcome,
 	resolveRuntimeOutcomeGuard,
 } from "./runtime-outcome-guard";
-
-function isRuntimeTerminalStatus(status: TaskRunStatus) {
-	return [
-		"blocked",
-		"cancelled",
-		"completed",
-		"failed",
-		"needs_human",
-		"needs_review",
-		"timed_out",
-	].includes(status);
-}
 
 import {
 	assertRunStatusTransition,
@@ -70,7 +61,9 @@ import {
 } from "./todo-closeout";
 import { toErrorMessage } from "./utils";
 
-export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
+export async function launchRuntimeExecution(
+	input: LaunchRuntimeExecutionInput,
+) {
 	const {
 		taskId,
 		task,
@@ -85,6 +78,11 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 		runtimeLaneResolution,
 		agentModeSessionId,
 	} = input;
+	const executionLease = await acquireRuntimeExecutionLease({
+		runId: run.id,
+		taskId,
+		agentModeSessionId: run.agentModeSessionId,
+	});
 	const runtime = runtimeLaneDefinition.createAdapter();
 	const codingAgentSystemContext = buildRunCodingAgentSystemContext({
 		taskGoal: buildCodingAgentTaskGoal(task),
@@ -97,7 +95,6 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 		process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE === "1" &&
 		!hasFixtureProviderToolTurns(taskId, "implementation");
 	let effectiveRuntimeContextSnapshot = runtimeContextSnapshot;
-
 	void (async () => {
 		try {
 			if (runtimeLaneResolution.lane === "codex-sdk") {
@@ -118,6 +115,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 					}),
 					repo.heartbeatActiveTaskRun(run.id),
+					executionLease.heartbeat(),
 				]);
 			}, ACTIVE_RUN_HEARTBEAT_INTERVAL_MS);
 			heartbeatTimer.unref?.();
@@ -129,6 +127,7 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 						leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 					}),
 					repo.heartbeatActiveTaskRun(run.id),
+					executionLease.heartbeat(),
 				]);
 				runtimeResult = usesE2eFixture
 					? await runE2eFixtureRuntime(
@@ -185,6 +184,13 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
 			});
 			const latestRunBeforeFinalize = await repo.getTaskRun(run.id);
+			if (
+				readProcessInterruptionSnapshot(
+					latestRunBeforeFinalize?.contextSnapshot,
+				)
+			) {
+				return;
+			}
 			const stopWasRequested =
 				latestRunBeforeFinalize?.status === "cancelled" ||
 				runtimeResult.terminalState === "cancelled";
@@ -579,6 +585,8 @@ export function launchRuntimeExecution(input: LaunchRuntimeExecutionInput) {
 				runtimeLaneResolution,
 				runtimeContextSnapshot: effectiveRuntimeContextSnapshot,
 			});
+		} finally {
+			await executionLease.release();
 		}
 	})();
 }

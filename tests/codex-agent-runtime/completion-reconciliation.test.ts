@@ -1,11 +1,70 @@
 import { describe, expect, it, vi } from "vitest";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
+import { finishRun } from "../../api/modules/codingAgent/runtime/codex-runtime-closeout";
 import type {
 	AgentRunContext,
 	AgentRuntimeSink,
 } from "../../api/modules/codingAgent/runtime/types";
 
 describe("Codex completion reconciliation", () => {
+	it("does not infer human action from terminal labels alone", async () => {
+		const result = await finishRun(
+			{
+				runtimeSessionStore: {} as never,
+				collectWorkspaceDiff: false,
+			},
+			context(),
+			{ emit: async () => {} },
+			[],
+			{
+				terminalState: "needs_human",
+				finalReport: "停止候補",
+				stoppedBy: "decision",
+				riskLevel: "medium",
+				collectDiff: false,
+			},
+		);
+
+		expect(result.humanActionRequired).toBeUndefined();
+	});
+
+	it("marks a validated needs_human completion as requiring user action", async () => {
+		const runStreamed = vi.fn(async () => ({ events: events("選択待ち") }));
+		const runtime = new CodexAgentRuntime({
+			threadFactory: () => ({ runStreamed }),
+			evaluateCompletionCandidate: vi.fn().mockResolvedValue({
+				allowFinalize: false,
+				code: "RUN_NEEDS_HUMAN",
+				message: "user decision required",
+				missingConditions: ["todo:todo-1:needs_human"],
+				snapshot: {
+					planRevision: 1,
+					todos: [
+						{
+							id: "todo-1",
+							revision: 1,
+							status: "needs_human",
+							title: "配備先を確認する",
+							humanBlocker: {
+								question: "配備先を選択してください。",
+								requiredInput: "decision",
+								basis: { kind: "task_context" },
+							},
+						},
+					],
+				},
+				idempotent: false,
+			}),
+		});
+
+		const result = await runtime.start(context(), { emit: async () => {} });
+
+		expect(result).toMatchObject({
+			terminalState: "needs_human",
+			humanActionRequired: true,
+		});
+	});
+
 	it("fails closed when the completion Run cannot be found", async () => {
 		const runStreamed = vi.fn(async () => ({ events: events("完了候補") }));
 		const evaluateCompletionCandidate = vi.fn().mockResolvedValue({

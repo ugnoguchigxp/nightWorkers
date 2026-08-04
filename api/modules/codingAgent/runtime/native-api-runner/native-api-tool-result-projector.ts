@@ -20,6 +20,12 @@ export function projectWorkerResultToNativeApiToolResult(
 						error: {
 							code: result.error.code,
 							message: result.error.message,
+							...(result.error.retryable !== undefined
+								? { retryable: result.error.retryable }
+								: {}),
+							...(result.error.recovery
+								? { recovery: result.error.recovery }
+								: {}),
 						},
 					}
 				: {}),
@@ -78,6 +84,7 @@ function compactRunCheckPayload(payload: unknown) {
 			...(value.status === "evidence_error"
 				? { retryable: value.retryable === true }
 				: {}),
+			...(value.recovery ? { recovery: value.recovery } : {}),
 		};
 	}
 	return {
@@ -105,6 +112,11 @@ function compactTestInventoryPayload(payload: unknown) {
 	const value = toRecord(payload);
 	return {
 		inventoryId: value.id,
+		total: value.total,
+		cursor: value.cursor,
+		nextCursor: value.nextCursor ?? null,
+		sourceDigest: value.sourceDigest,
+		filePaths: value.filePaths,
 		cases: toArray(value.cases)
 			.map(toRecord)
 			.filter((testCase) => testCase.discoveryLevel === "active")
@@ -149,11 +161,13 @@ function compactTodoPayload(payload: unknown) {
 	const command = toRecord(record.command);
 	const operation = typeof command.op === "string" ? command.op : undefined;
 	const next = todos.find((todo) => todo.status === "pending") ?? null;
+	const blocked = todos.find((todo) => todo.status === "needs_human") ?? null;
 	return {
 		operation,
 		progress: countTodos(todos),
 		currentTodo: compactCurrentTodo(record.currentTodo),
 		nextTodo: compactTodo(next),
+		humanBlocker: blocked?.humanBlockerJson ?? null,
 	};
 }
 

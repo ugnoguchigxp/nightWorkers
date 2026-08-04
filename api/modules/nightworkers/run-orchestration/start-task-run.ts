@@ -15,9 +15,11 @@ import {
 } from "../../ontology";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
-import { activateTaskRunResume } from "./resume-task-run-activation";
+import {
+	carryResumableRuntimeContext,
+	composeResumableRuntimeStateCards,
+} from "./resumable-runtime-context";
 import { resolveRunSystemContextBinding } from "./run-system-context";
-import { carryRuntimePauseSnapshot } from "./runtime-outcome-guard";
 import {
 	buildLatestRuntimeUserMessage,
 	IMPLEMENTATION_PHASE_PREAMBLE,
@@ -34,12 +36,14 @@ import {
 	materializeAdoptedImplementationPlan,
 	resolveTaskRunRevisionBinding,
 } from "./start-task-run-evidence";
-import { failPreparedRunBeforeLaunch } from "./start-task-run-failure";
 import {
+	activatePreparedTaskRun,
 	buildContinuationRouteIdentity,
 	createPreparedRunAssociation,
 	createPreparedRuntimeLaunch,
+	launchPreparedTaskRun,
 } from "./start-task-run-launch";
+import { persistPreparedRuntimePrompt } from "./start-task-run-persistence";
 import { prepareTaskRunStart } from "./start-task-run-preparation";
 import {
 	buildRuntimeConversationContextSnapshot,
@@ -64,25 +68,21 @@ export async function startTaskRunInProcess(
 		throw new Error("resumeRunId and resumeCommand must be provided together.");
 	}
 	const prepared = await prepareTaskRunInProcess(taskId, options);
-	let resultRun = prepared.run;
-	try {
-		await prepared.associate?.();
-		if (options.resumeRunId && options.resumeCommand) {
-			resultRun = await activateTaskRunResume({
-				runId: options.resumeRunId,
-				...options.resumeCommand,
-			});
-		}
-	} catch (error) {
-		await failPreparedRunBeforeLaunch({
-			runId: prepared.run.id,
-			taskId,
-			executionMode: options.executionMode ?? "implementation",
-			error,
-		});
-		throw error;
-	}
-	await prepared.launch?.();
+	const resultRun = await activatePreparedTaskRun({
+		run: prepared.run,
+		associate: prepared.associate,
+		resumeRunId: options.resumeRunId,
+		resumeCommand: options.resumeCommand,
+		taskId,
+		executionMode: options.executionMode ?? "implementation",
+	});
+	await launchPreparedTaskRun({
+		launch: prepared.launch,
+		runId: prepared.run.id,
+		taskId,
+		executionMode: options.executionMode ?? "implementation",
+		resumeCommand: options.resumeCommand,
+	});
 	return resultRun;
 }
 export async function prepareTaskRunInProcess(
@@ -419,12 +419,11 @@ export async function prepareTaskRunInProcess(
 					repositoryRoot: executionRoot,
 					packet: await loadCodingAgentContextPacket(run.id),
 				});
-	const runtimeStateCardText = [
-		projectedStateCard.stateCardText,
+	const runtimeStateCardText = composeResumableRuntimeStateCards({
+		conversationStateCard: projectedStateCard.stateCardText,
 		todoRecoveryStateCard,
-	]
-		.filter((value): value is string => Boolean(value?.trim()))
-		.join("\n\n");
+		previousContext: resumable ? run.contextSnapshot : null,
+	});
 	const runtimePromptParts = buildPromptWithStateCardParts({
 		latestUserMessage: rawLatestUserMessage,
 		stateCardText: runtimeStateCardText,
@@ -452,7 +451,7 @@ export async function prepareTaskRunInProcess(
 		codexPrompt: buildCodexRuntimePromptSnapshot({
 			runtimeLane: runtimeLaneResolution.lane,
 			request: rawLatestUserMessage,
-			stateCardText: projectedStateCard.stateCardText,
+			stateCardText: runtimeStateCardText,
 		}),
 		...(currentWorktreeReview
 			? {}
@@ -533,16 +532,19 @@ export async function prepareTaskRunInProcess(
 			},
 		});
 	}
-	if (resumable && options.resumeCommand?.kind === "runtime_pause") {
-		runtimeContextSnapshot = carryRuntimePauseSnapshot(
-			runtimeContextSnapshot as Record<string, unknown>,
-			run.contextSnapshot,
-		) as RuntimePromptSnapshot;
+	if (resumable) {
+		runtimeContextSnapshot = carryResumableRuntimeContext({
+			context: runtimeContextSnapshot,
+			previousContext: run.contextSnapshot,
+			resumeKind: options.resumeCommand?.kind,
+		});
 	}
-	await repo.updateTaskCompiledPrompt(taskId, compiledPromptText);
-	const compiledRun = await repo.updateTaskRun(run.id, {
-		status: resumable ? run.status : "running",
-		contextSnapshot: runtimeContextSnapshot,
+	const compiledRun = await persistPreparedRuntimePrompt({
+		taskId,
+		run,
+		resuming: Boolean(resumable),
+		compiledPromptText,
+		runtimeContextSnapshot,
 	});
 	await repo.createRunEvent({
 		version: 1,

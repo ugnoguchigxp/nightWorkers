@@ -241,6 +241,11 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 				runId: "run-1",
 				cwd: "/repo",
 				sourceSnapshot: { sourceStateHash: "hidden" },
+				total: 1,
+				cursor: "0",
+				nextCursor: null,
+				sourceDigest: "source-1",
+				filePaths: ["tests"],
 				cases: [
 					{
 						caseKey: "T1",
@@ -266,6 +271,11 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 		};
 		expect(modelVisible.payload).toEqual({
 			inventoryId: "inventory-1",
+			total: 1,
+			cursor: "0",
+			nextCursor: null,
+			sourceDigest: "source-1",
+			filePaths: ["tests"],
 			cases: [
 				{
 					caseKey: "T1",
@@ -292,17 +302,37 @@ ${"Use the imported template context before extra file reads.\n".repeat(500)}`;
 				{
 					checkKind: "test",
 					status: "evidence_error",
-					reason: "TEST_EVIDENCE_CAPTURE_FAILED",
+					reason: "TEST_EVIDENCE_ARTIFACT_UNRECOGNIZED",
 					retryable: false,
+					recovery: {
+						disposition: "retry_with_input",
+						candidates: [
+							{
+								toolName: "run_check",
+								actionCode: "USE_PROJECT_TEST_SCRIPT",
+								argsPatch: { command: "test", checkKind: "test" },
+							},
+						],
+					},
 					structuredCaseCount: 171,
 					resolvedCaseCount: 0,
 				},
 				{
 					status: "evidence_error",
-					reason: "TEST_EVIDENCE_CAPTURE_FAILED",
+					reason: "TEST_EVIDENCE_ARTIFACT_UNRECOGNIZED",
 					parsed: 171,
 					resolved: 0,
 					retryable: false,
+					recovery: {
+						disposition: "retry_with_input",
+						candidates: [
+							{
+								toolName: "run_check",
+								actionCode: "USE_PROJECT_TEST_SCRIPT",
+								argsPatch: { command: "test", checkKind: "test" },
+							},
+						],
+					},
 				},
 			],
 		] as const) {

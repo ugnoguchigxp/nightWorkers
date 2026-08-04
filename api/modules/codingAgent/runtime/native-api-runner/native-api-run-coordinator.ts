@@ -398,6 +398,7 @@ export async function runNativeApiRunner(
 						finalReport: finalText,
 						stoppedBy: "decision",
 						riskLevel: "medium",
+						humanActionRequired: true,
 					};
 				}
 				const recoveryPacket = await loadCodingAgentContextPacket(

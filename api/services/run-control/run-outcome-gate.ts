@@ -66,13 +66,22 @@ export function decideRunOutcome(input: OutcomeGateInput): OutcomeGateResult {
 
 	if (runtime.stoppedBy === "tool_failure") {
 		return {
-			status: "needs_human",
+			status: "blocked",
 			reason: "tool_failure_limit",
 			summary: runtime.summary,
 		};
 	}
 
 	if (runtime.terminalState === "needs_human") {
+		if (runtime.humanActionRequired !== true) {
+			return {
+				status: "blocked",
+				reason: "supervisor_needs_human",
+				summary:
+					runtime.summary ||
+					"Runtime requested needs_human without a structured human blocker.",
+			};
+		}
 		return {
 			status: "needs_human",
 			reason: "supervisor_needs_human",
@@ -98,7 +107,7 @@ export function decideRunOutcome(input: OutcomeGateInput): OutcomeGateResult {
 
 	if (verificationPassed === false) {
 		return {
-			status: "needs_human",
+			status: "blocked",
 			reason: "verification_failed",
 			summary: "Verification failed.",
 		};

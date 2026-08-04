@@ -13,6 +13,7 @@ import {
 	resolveManagedTestRunner,
 	selectStructuredTestArtifactFormat,
 } from "../api/services/worker-tools/run-check-structured-capture";
+import { isWorkerToolRecovery } from "../api/services/worker-tools/types";
 
 const temporaryDirectories: string[] = [];
 
@@ -23,6 +24,30 @@ afterEach(async () => {
 });
 
 describe("run_check runner resolution", () => {
+	it("rejects incomplete recovery instructions at the tool boundary", () => {
+		expect(isWorkerToolRecovery({ disposition: "retry_with_input" })).toBe(
+			false,
+		);
+		expect(
+			isWorkerToolRecovery({
+				disposition: "agent_action",
+				candidates: [{ toolName: "", actionCode: "REPAIR" }],
+			}),
+		).toBe(false);
+		expect(
+			isWorkerToolRecovery({
+				disposition: "retry_with_input",
+				candidates: [
+					{
+						toolName: "run_check",
+						actionCode: "USE_PROJECT_TEST_SCRIPT",
+						argsPatch: { command: "test" },
+					},
+				],
+			}),
+		).toBe(true);
+	});
+
 	it("infers Vitest from a symbolic package script command", async () => {
 		const repoRoot = await fs.mkdtemp(
 			path.join(os.tmpdir(), "run-check-runner-"),
@@ -59,6 +84,14 @@ describe("run_check runner resolution", () => {
 		expect(addStructuredReporter("bun run test", "vitest")).toBe(
 			"bun run test --reporter=json",
 		);
+		expect(
+			addStructuredReporter(
+				"bun vitest run api/modules/todos web/src/modules/todos",
+				"vitest",
+			),
+		).toBe(
+			"bun vitest run api/modules/todos web/src/modules/todos --reporter=json",
+		);
 		expect(addStructuredReporter("vitest run --reporter=json", "vitest")).toBe(
 			"vitest run --reporter=json",
 		);
@@ -68,12 +101,12 @@ describe("run_check runner resolution", () => {
 		expect(() =>
 			addStructuredReporter("custom-wrapper test", "vitest"),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 		expect(() =>
 			addStructuredReporter("vitest run --reporter=verbose", "vitest"),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 		expect(() =>
 			addStructuredReporter(
@@ -81,7 +114,7 @@ describe("run_check runner resolution", () => {
 				"vitest",
 			),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 		expect(() =>
 			addStructuredReporter(
@@ -89,7 +122,7 @@ describe("run_check runner resolution", () => {
 				"vitest",
 			),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 		expect(() =>
 			addStructuredReporter(
@@ -97,7 +130,7 @@ describe("run_check runner resolution", () => {
 				"vitest",
 			),
 		).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 	});
 
@@ -121,7 +154,7 @@ describe("run_check runner resolution", () => {
 	it("keeps JUnit as a legacy format and resolves the actual evidence runner", () => {
 		expect(resolveManagedTestRunner("vitest", "junit")).toBe("vitest");
 		expect(() => resolveManagedTestRunner("unknown", "junit")).toThrowError(
-			expect.objectContaining({ code: "TEST_EVIDENCE_CAPTURE_FAILED" }),
+			expect.objectContaining({ code: "TEST_EVIDENCE_COMMAND_UNSUPPORTED" }),
 		);
 	});
 

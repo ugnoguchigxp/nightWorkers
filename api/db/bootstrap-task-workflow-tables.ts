@@ -212,6 +212,7 @@ export async function ensureTaskWorkflowTables() {
   evidence_refs_json text,
       depends_on text,
       status_reason text,
+	  human_blocker_json text,
 	  last_failure text,
 	  attempt_count integer DEFAULT 0 NOT NULL,
 	  system_context_version integer DEFAULT 0 NOT NULL,
@@ -247,6 +248,11 @@ export async function ensureTaskWorkflowTables() {
 		"acceptance_criteria_json text DEFAULT '[]' NOT NULL",
 	);
 	await ensureColumn("task_run_todos", "last_failure", "last_failure text");
+	await ensureColumn(
+		"task_run_todos",
+		"human_blocker_json",
+		"human_blocker_json text",
+	);
 	await ensureColumn(
 		"task_run_todos",
 		"attempt_count",

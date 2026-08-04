@@ -200,6 +200,11 @@ function buildSatisfactionConditions(result: CompletionCheckResult) {
 			"失敗したmapping対象testcaseまたはproduction実装を修正し、current sourceでmanaged checkを再実行する。",
 		];
 	}
+	if (result.suggestedAction === "recover_test_evidence") {
+		return [
+			"typed recoveryに従ってtest command、inventory、mapping、runnerのいずれかを修正し、同じRunでmanaged checkを再実行する。",
+		];
+	}
 	if (result.suggestedAction === "report_test_evidence_failure") {
 		return [
 			"test evidenceのcaptureまたはidentityに関するnon-retryableなhost障害を、typed reasonとともに報告する。",

@@ -130,6 +130,7 @@ export async function readRunOperatorOutcome(input: {
 				id: taskRunTodos.id,
 				status: taskRunTodos.status,
 				statusReason: taskRunTodos.statusReason,
+				humanBlocker: taskRunTodos.humanBlockerJson,
 				lastFailure: taskRunTodos.lastFailure,
 				revision: taskRunTodos.revision,
 			})

@@ -15,6 +15,7 @@ import {
 import { uniqueCurrentTodo } from "./todo-state";
 import type {
 	CodingAgentSystemContextSnapshot,
+	HumanBlocker,
 	TodoCreatedBy,
 	TodoMutationErrorCode,
 	TodoMutationResult,
@@ -139,6 +140,7 @@ export async function completeCurrent(
 	await updateTodoCas(tx, current, {
 		status: "passed",
 		statusReason: note?.trim() || null,
+		humanBlockerJson: null,
 		completedAt: now,
 	});
 	if (next) {
@@ -155,7 +157,7 @@ export async function blockCurrent(
 	tx: DbTransaction,
 	run: RunRow,
 	todos: TodoRow[],
-	reason: string,
+	humanBlocker: HumanBlocker,
 ): Promise<TodoMutationResult<TodoRow>> {
 	const current = uniqueCurrentTodo(todos);
 	if (current?.status !== "running") {
@@ -163,7 +165,8 @@ export async function blockCurrent(
 	}
 	await updateTodoCas(tx, current, {
 		status: "needs_human",
-		statusReason: reason.trim(),
+		statusReason: humanBlocker.question.trim(),
+		humanBlockerJson: humanBlocker,
 		completedAt: null,
 	});
 	return success(run.todoPlanRevision, await listTodos(tx, run.id));

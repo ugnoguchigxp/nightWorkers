@@ -247,7 +247,7 @@ export function createNightWorkersCodexMcpServer(
 	server.registerTool(
 		"collect_test_inventory",
 		{ ...nightWorkersCodexToolManifest.collect_test_inventory },
-		async ({ cwd }) => {
+		async ({ cwd, cursor, limit, filePaths }) => {
 			const identity = resolveRequestScopedIdentity({
 				context,
 				fallbackTaskId: process.env.NIGHTWORKERS_TASK_ID,
@@ -257,7 +257,7 @@ export function createNightWorkersCodexMcpServer(
 				return requestContextMismatchToMcp({
 					toolName: "collect_test_inventory",
 					resolution: identity,
-					retryArguments: { cwd },
+					retryArguments: { cwd, cursor, limit, filePaths },
 				});
 			}
 			const resolvedRunId = identity.runId;
@@ -283,6 +283,9 @@ export function createNightWorkersCodexMcpServer(
 				runId: resolvedRunId,
 				repoRoot: resolved.executionRoot,
 				cwd,
+				cursor,
+				limit,
+				filePaths,
 				allowedPaths: resolved.repository.safetyPolicy?.allowedPaths,
 				externalAllowedPaths:
 					resolved.repository.safetyPolicy?.externalAllowedPaths,

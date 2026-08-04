@@ -129,6 +129,7 @@ export interface RuntimeLaneResult {
 		| "hook"
 		| "cancelled";
 	riskLevel: "low" | "medium" | "high";
+	humanActionRequired?: boolean;
 	logContent?: string;
 	diffPatch?: string;
 	testResults?: unknown;

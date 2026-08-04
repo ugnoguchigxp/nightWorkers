@@ -21,7 +21,12 @@ export const codingAgentRunCheckInputSchema = z
 	.strict();
 
 export const codingAgentCollectTestInventoryInputSchema = z
-	.object({ cwd: z.string().trim().optional() })
+	.object({
+		cwd: z.string().trim().optional(),
+		cursor: z.string().trim().min(1).max(1_000).optional(),
+		limit: z.number().int().min(1).max(100).optional(),
+		filePaths: z.array(z.string().trim().min(1).max(1_000)).max(50).optional(),
+	})
 	.strict();
 
 export const codingAgentRunCheckJsonSchema = toProviderJsonSchema(

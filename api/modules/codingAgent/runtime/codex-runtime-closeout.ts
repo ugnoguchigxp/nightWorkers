@@ -27,6 +27,11 @@ export async function createThread(
 		threadFactory: runtime.threadFactory,
 		onResumeEvent: async (event) => {
 			if (event.status === "reused") {
+				if (event.stateId) {
+					await runtime.runtimeSessionStore.touchRuntimeSessionState({
+						id: event.stateId,
+					});
+				}
 				await sink.emit({
 					type: "runtime_started",
 					message: "[Codex] Runtime session resume state reused.",
@@ -34,6 +39,20 @@ export async function createThread(
 						provider: "codex",
 						action: "runtime.resume_state_reused",
 						resumeState: "reused",
+						providerThreadId: event.providerThreadId,
+						stateId: event.stateId ?? null,
+					},
+				});
+				return;
+			}
+			if (event.status === "fallback_started") {
+				await sink.emit({
+					type: "runtime_started",
+					message:
+						"[Codex] Starting a fresh provider thread inside the same NightWorkers Run.",
+					payload: {
+						provider: "codex",
+						action: "runtime.provider_thread_fallback_started",
 						providerThreadId: event.providerThreadId,
 						stateId: event.stateId ?? null,
 					},
@@ -98,6 +117,7 @@ export async function finishRun(
 		finalReport: string;
 		stoppedBy: AgentRuntimeResult["stoppedBy"];
 		riskLevel: AgentRuntimeResult["riskLevel"];
+		humanActionRequired?: boolean;
 		collectDiff?: boolean;
 		testResults?: unknown;
 	},
@@ -116,6 +136,7 @@ export async function finishRun(
 		finalReport: input.finalReport,
 		stoppedBy: input.stoppedBy,
 		riskLevel: input.riskLevel,
+		humanActionRequired: input.humanActionRequired,
 		logContent: logs.join("\n"),
 		diffPatch,
 		testResults: input.testResults,

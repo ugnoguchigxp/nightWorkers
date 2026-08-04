@@ -10,6 +10,18 @@ export type RuntimePauseSnapshot = {
 	resumableRunningTodo: true;
 };
 
+export function isRuntimeTerminalStatus(status: TaskRunStatus) {
+	return [
+		"blocked",
+		"cancelled",
+		"completed",
+		"failed",
+		"needs_human",
+		"needs_review",
+		"timed_out",
+	].includes(status);
+}
+
 export function buildRuntimePauseSnapshot(
 	result: AgentRuntimeResult,
 ): RuntimePauseSnapshot | null {

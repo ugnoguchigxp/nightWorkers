@@ -3,6 +3,7 @@ export type {
 	CodingAgentRequestProvenance,
 	CodingAgentRunCommandResult,
 	ResumeCodingAgentRunTodoCommand,
+	ResumeInterruptedCodingAgentRunCommand,
 	StartCodingAgentRunCommand,
 } from "./contracts/coding-agent-run";
 export {
@@ -60,8 +61,10 @@ export {
 } from "./ports/blueprint-adoption-reader";
 export {
 	type ResumeCodingAgentRunTodoHandler,
+	type ResumeInterruptedCodingAgentRunHandler,
 	registerCodingAgentRunHandlers,
 	resumeCodingAgentRunTodo,
+	resumeInterruptedCodingAgentRun,
 	type StartCodingAgentRunHandler,
 	startCodingAgentRun,
 } from "./ports/coding-agent-run";

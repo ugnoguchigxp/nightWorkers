@@ -14,6 +14,7 @@ export {
 } from "./application/coding-agent-command.service";
 export {
 	handleResumeCodingAgentRunTodo,
+	handleResumeInterruptedCodingAgentRun,
 	handleStartCodingAgentRun,
 	initializeCodingAgentRunHandlers,
 } from "./application/coding-agent-run.handler";
@@ -33,6 +34,22 @@ export {
 	type RunFinalizeControllerDependencies,
 	runFinalizeController,
 } from "./application/run-finalize-controller";
+export {
+	activateInterruptedCodingAgentRun,
+	CODING_AGENT_EXECUTION_LEASE_TTL_MS,
+	CODING_AGENT_INTERRUPTIBLE_RUN_STATUSES,
+	type CodingAgentInterruptedRunCandidate,
+	claimCodingAgentRunExecution,
+	findInterruptedCodingAgentRunCandidate,
+	heartbeatCodingAgentRunExecution,
+	interruptCodingAgentRun,
+	interruptCodingAgentRunsAfterWorkerExit,
+	reconcileCodingAgentProcessInterruptions,
+	releaseCodingAgentRunExecution,
+	restoreInterruptedCodingAgentRunAfterLaunchFailure,
+	suspendActiveCodingAgentRunsForHostShutdown,
+	suspendCodingAgentRunForHostShutdown,
+} from "./application/runtime-execution-ownership.service";
 export { codingAgentRouter } from "./coding-agent.routes";
 export type {
 	CodingAgentContextPacket,
@@ -63,6 +80,13 @@ export {
 	renderCodingAgentTodoSystemContext,
 	requiresCurrentTodo,
 } from "./context";
+export {
+	type CodingAgentProcessInterruptionSnapshot,
+	type CodingAgentUnknownToolCall,
+	projectUnknownOutcomeToolCalls,
+	readProcessInterruptionSnapshot,
+	renderProcessInterruptionRecoveryGuidance,
+} from "./context/process-interruption-snapshot";
 export * from "./intake";
 export * from "./runtime";
 export * from "./todo";

@@ -32,11 +32,13 @@ import {
 } from "./todo-state";
 import type {
 	CodingAgentSystemContextSnapshot,
+	HumanBlocker,
 	TodoCreatedBy,
 	TodoMutationCommand,
 	TodoMutationErrorCode,
 	TodoMutationResult,
 } from "./types";
+import { humanBlockerSchema } from "./types";
 
 const NEW_RUNTIME_TERMINAL_STATUSES = ["passed", "skipped"] as const;
 const REPLACEABLE_TODO_STATUSES = ["pending", "running"] as const;
@@ -60,6 +62,11 @@ export class TodoMutationService {
 		if (inputError) {
 			return this.loadFailure(normalizedRunId, inputError);
 		}
+		const normalizedHumanBlocker =
+			command.op === "block_current" ||
+			(command.op === "transition" && command.status === "needs_human")
+				? humanBlockerSchema.parse(command.humanBlocker)
+				: null;
 
 		try {
 			const result = await withSqliteBusyRetry(() =>
@@ -98,7 +105,14 @@ export class TodoMutationService {
 						return completeCurrent(tx, run, todos, command.note);
 					}
 					if (command.op === "block_current") {
-						return blockCurrent(tx, run, todos, command.reason);
+						if (!normalizedHumanBlocker) {
+							return this.failure(
+								"TODO_HUMAN_BLOCKER_NOT_ESTABLISHED",
+								run.todoPlanRevision,
+								todos,
+							);
+						}
+						return blockCurrent(tx, run, todos, normalizedHumanBlocker);
 					}
 					const target = findTodoByReference(todos, command.todoId);
 					if (!target) {
@@ -118,7 +132,14 @@ export class TodoMutationService {
 						case "resume":
 							return this.resume(tx, run, todos, target, command.userContext);
 						case "transition":
-							return this.transition(tx, run, todos, target, command);
+							return this.transition(
+								tx,
+								run,
+								todos,
+								target,
+								command,
+								normalizedHumanBlocker,
+							);
 						case "record_failure":
 							return this.recordFailure(tx, run, todos, target, command);
 						case "update_context":
@@ -318,6 +339,7 @@ export class TodoMutationService {
 			startedAt: new Date(),
 			completedAt: null,
 			statusReason: null,
+			humanBlockerJson: null,
 		});
 		return this.success(run.todoPlanRevision, await listTodos(tx, run.id));
 	}
@@ -345,6 +367,7 @@ export class TodoMutationService {
 			status: "running",
 			context: appendedContext,
 			statusReason: null,
+			humanBlockerJson: null,
 			completedAt: null,
 			startedAt: target.startedAt ?? new Date(),
 		});
@@ -373,6 +396,7 @@ export class TodoMutationService {
 		todos: TodoRow[],
 		target: TodoRow,
 		command: Extract<TodoMutationCommand, { op: "transition" }>,
+		normalizedHumanBlocker: HumanBlocker | null,
 	) {
 		const maySkip = command.status === "skipped" && target.status === "pending";
 		if (target.status !== "running" && !maySkip) {
@@ -407,9 +431,15 @@ export class TodoMutationService {
 		}
 
 		const now = new Date();
+		const humanBlocker =
+			command.status === "needs_human" ? normalizedHumanBlocker : null;
 		await updateTodoCas(tx, target, {
 			status: command.status,
-			statusReason: command.reason.trim(),
+			statusReason:
+				command.status === "needs_human"
+					? humanBlocker?.question
+					: command.reason.trim(),
+			humanBlockerJson: command.status === "needs_human" ? humanBlocker : null,
 			completedAt: command.status === "needs_human" ? null : now,
 			startedAt: target.startedAt ?? now,
 		});

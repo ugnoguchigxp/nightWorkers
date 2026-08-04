@@ -393,6 +393,54 @@ export async function updateTaskRunIfStatus(
 	return run;
 }
 
+export async function updateTaskRunResumePreparation(input: {
+	runId: string;
+	taskId: string;
+	expectedUpdatedAt: Date;
+	expectedContextSnapshot: unknown;
+	compiledPromptText: string;
+	contextSnapshot: unknown;
+}) {
+	input.expectedContextSnapshot = sanitizePersistenceValue(
+		input.expectedContextSnapshot,
+	);
+	input.contextSnapshot = sanitizePersistenceValue(input.contextSnapshot);
+	const run = await db.transaction(async (tx) => {
+		const [updated] = await tx
+			.update(taskRuns)
+			.set({
+				status: "needs_human",
+				contextSnapshot: input.contextSnapshot,
+				updatedAt: new Date(),
+			})
+			.where(
+				and(
+					eq(taskRuns.id, input.runId),
+					eq(taskRuns.status, "needs_human"),
+					eq(taskRuns.updatedAt, input.expectedUpdatedAt),
+					eq(taskRuns.contextSnapshot, input.expectedContextSnapshot),
+				),
+			)
+			.returning();
+		if (!updated) return null;
+		if (updated.taskId !== input.taskId) {
+			throw new Error("Resume Run does not belong to the requested Task.");
+		}
+		const [task] = await tx
+			.update(tasks)
+			.set({
+				compiledPrompt: input.compiledPromptText,
+				updatedAt: new Date(),
+			})
+			.where(eq(tasks.id, input.taskId))
+			.returning({ id: tasks.id });
+		if (!task) throw new Error("Resume Task disappeared during preparation.");
+		return updated;
+	});
+	if (run) await publishTaskRunUpdate(run);
+	return run ?? null;
+}
+
 export async function updateTaskRunIfStatusAndTodoRevision(input: {
 	runId: string;
 	expectedStatus: TaskRunStatus;

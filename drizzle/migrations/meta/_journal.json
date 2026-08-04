@@ -435,6 +435,20 @@
       "when": 1785592800000,
       "tag": "0061_strict_evidence_confirmation_receipt",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1785736800000,
+      "tag": "0062_coding_agent_runtime_execution_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1785830211000,
+      "tag": "0063_coding_agent_human_blocker",
+      "breakpoints": true
     }
   ]
 }

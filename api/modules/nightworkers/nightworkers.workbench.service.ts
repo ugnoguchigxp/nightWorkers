@@ -7,6 +7,7 @@ import {
 } from "../../services/settings/general-settings";
 import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import type { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
+import { resumeInterruptedCodingAgentRun } from "../agentsShare";
 import * as codingAgent from "../codingAgent";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
@@ -151,10 +152,22 @@ export async function handleWorkbenchIntakeMessage(
 
 	try {
 		const messages = await repo.listTaskMessages(taskId);
+		const runs = await repo.listTaskRunsForTask(taskId);
+		const resumeCandidate =
+			await codingAgent.findInterruptedCodingAgentRunCandidate(taskId);
+		const routingSnapshotDigest =
+			codingAgent.buildCodingAgentIntakeRoutingSnapshotDigest({
+				taskId,
+				taskRevision: task.revision,
+				taskStatus: task.status,
+				runs,
+				resumeCandidate,
+			});
 		const planModeGateResult: WorkbenchPlanModeGate = currentWorktreeReview
 			? {
 					shouldStartPlanMode: false,
 					action: "coding_agent",
+					runDisposition: "start_new_run",
 					reason:
 						"Review Artifactから明示された操作のため、同じTask専用worktreeでfresh Coding Agent Runを開始する。",
 				}
@@ -162,13 +175,16 @@ export async function handleWorkbenchIntakeMessage(
 					taskId,
 					repositoryId: task.repositoryId,
 					prompt: llmPrompt,
+					routingSnapshotDigest,
 				})) ??
 				(await decideWorkbenchPlanModeGate({
 					projectRoot,
 					prompt: llmPrompt,
 					task,
 					messages,
-					runs: await repo.listTaskRunsForTask(taskId),
+					runs,
+					resumeCandidate,
+					routingSnapshotDigest,
 					routeOverride: options.llmRouteOverride || null,
 					emitEvent: emitWorkbenchLlmDebugEvent,
 					taskId,
@@ -182,6 +198,9 @@ export async function handleWorkbenchIntakeMessage(
 			planModeGate.shouldStartPlanMode || planModeGate.action === "plan_mode";
 		const shouldStartCodingAgentRun =
 			shouldStartPlanMode || CODING_AGENT_RUN_INTENTS.has(intent);
+		const shouldResumeCodingAgentRun =
+			planModeGate.action === "coding_agent" &&
+			planModeGate.runDisposition === "resume_existing_run";
 		if (task.status === "queued" && shouldStartCodingAgentRun) {
 			await repo.createTaskMessage({
 				taskId,
@@ -226,13 +245,62 @@ export async function handleWorkbenchIntakeMessage(
 			};
 		} else if (CODING_AGENT_RUN_INTENTS.has(intent)) {
 			const executionMode = "implementation";
+			if (shouldResumeCodingAgentRun) {
+				if (!resumeCandidate) {
+					throw new AppError(
+						409,
+						"RUN_RESUME_CANDIDATE_REQUIRED",
+						"The LLM selected resume, but no structurally valid Run candidate exists.",
+					);
+				}
+				const resumed = await resumeInterruptedCodingAgentRun({
+					runId: resumeCandidate.runId,
+					expectedInterruptionRevision: resumeCandidate.interruptionRevision,
+					todoId: resumeCandidate.todoId,
+					expectedTodoRevision: resumeCandidate.todoRevision,
+					routingSnapshotDigest,
+					userContext: llmPrompt,
+					requestProvenance: {
+						requestedBy: { kind: "human", actorId: "workbench" },
+						orchestrationRef: null,
+					},
+				});
+				const run = await repo.getTaskRun(resumed.runId);
+				if (!run) throw new Error("Resumed Run disappeared after activation.");
+				await repo.createTaskMessage({
+					taskId,
+					runId: run.id,
+					role: "system",
+					content: "保存済みの同じCoding Agent Runを再開しました。",
+					messageType: "text",
+					payloadJson: {
+						intent: "run_resumed",
+						source: "workbench",
+						executionMode,
+						planModeGate,
+						planModeSettingsSnapshot,
+						interruptionRevision: resumeCandidate.interruptionRevision,
+					},
+				});
+				return {
+					task: (await repo.getTask(taskId)) || task,
+					run,
+					messages: await repo.listTaskMessages(taskId),
+				};
+			}
+			if (resumeCandidate) {
+				throw new AppError(
+					409,
+					"INTERRUPTED_RUN_REQUIRES_EXPLICIT_RESOLUTION",
+					"An interrupted Run exists; it was not implicitly cancelled to start a new Run.",
+				);
+			}
 			const runnable = currentWorktreeReview
 				? task
 				: await repo.updateTask(taskId, {
 						title,
 						objective: task.objective || prompt,
 						acceptanceCriteria: task.acceptanceCriteria || prompt,
-						status: "ready",
 					});
 			const run = await startTaskRun(taskId, {
 				executionModeSource: currentWorktreeReview
@@ -279,12 +347,7 @@ export async function handleWorkbenchIntakeMessage(
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		const updated = currentWorktreeReview
-			? ((await repo.getTask(taskId)) ?? task)
-			: await repo.updateTask(taskId, {
-					title,
-					objective: task.objective || prompt,
-				});
+		const updated = (await repo.getTask(taskId)) ?? task;
 		if (options.failureMode === "record") {
 			await repo.createTaskMessage({
 				taskId,

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	readArtifactOperatorContent: vi.fn(),
 	startTaskRun: vi.fn(),
 	resumeTaskRunTodo: vi.fn(),
+	findInterruptedCodingAgentRunCandidate: vi.fn(),
 }));
 
 vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
@@ -27,10 +28,18 @@ vi.mock(
 	"../api/modules/nightworkers/run-orchestration/resume-task-run",
 	() => ({ resumeTaskRunTodo: mocks.resumeTaskRunTodo }),
 );
-
-const { handleStartCodingAgentRun } = await import(
-	"../api/modules/codingAgent/application/coding-agent-run.handler"
+vi.mock(
+	"../api/modules/codingAgent/application/runtime-execution-ownership.service",
+	() => ({
+		findInterruptedCodingAgentRunCandidate:
+			mocks.findInterruptedCodingAgentRunCandidate,
+	}),
 );
+
+const { handleResumeInterruptedCodingAgentRun, handleStartCodingAgentRun } =
+	await import(
+		"../api/modules/codingAgent/application/coding-agent-run.handler"
+	);
 
 const repositoryUpdatedAt = new Date("2026-07-17T00:00:00.000Z");
 const command = {
@@ -118,6 +127,102 @@ describe("Coding Agent run handler", () => {
 		await expect(handleStartCodingAgentRun(command)).rejects.toMatchObject({
 			code: "ARTIFACT_REVISION_CONFLICT",
 		});
+		expect(mocks.startTaskRun).not.toHaveBeenCalled();
+	});
+
+	it("resumes the structurally selected interrupted Run without allocating a new Run", async () => {
+		const resumeCommand = {
+			runId: "run-interrupted",
+			expectedInterruptionRevision: 2,
+			todoId: "todo-running",
+			expectedTodoRevision: 7,
+			routingSnapshotDigest: "sha256:routing-snapshot",
+			userContext: "再開してください",
+			requestProvenance: {
+				requestedBy: { kind: "human" as const, actorId: "workbench" },
+				orchestrationRef: null,
+			},
+		};
+		mocks.getTaskRun.mockResolvedValue({
+			id: resumeCommand.runId,
+			taskId: "task-1",
+			status: "needs_human",
+			contextSnapshot: { planModeRequested: false },
+		});
+		mocks.findInterruptedCodingAgentRunCandidate.mockResolvedValue({
+			runId: resumeCommand.runId,
+			taskId: "task-1",
+			agentModeSessionId: "session-existing",
+			interruptionRevision: resumeCommand.expectedInterruptionRevision,
+			executionLeaseVersion: 3,
+			todoId: resumeCommand.todoId,
+			todoKey: "todo-key",
+			todoRevision: resumeCommand.expectedTodoRevision,
+			workspaceId: null,
+			workspaceAllocationVersion: null,
+			repositoryIdentityRevision: null,
+			attestationDigest: null,
+			routingSnapshotDigest: resumeCommand.routingSnapshotDigest,
+		});
+		mocks.startTaskRun.mockResolvedValue({
+			id: resumeCommand.runId,
+			taskId: "task-1",
+			status: "running",
+		});
+
+		await expect(
+			handleResumeInterruptedCodingAgentRun(resumeCommand),
+		).resolves.toEqual({
+			runId: resumeCommand.runId,
+			taskId: "task-1",
+			status: "running",
+		});
+		expect(mocks.startTaskRun).toHaveBeenCalledTimes(1);
+		expect(mocks.startTaskRun).toHaveBeenCalledWith("task-1", {
+			executionMode: "implementation",
+			executionModeSource: "explicit",
+			planModeRequested: false,
+			resumeRunId: resumeCommand.runId,
+			latestUserMessageOverride: resumeCommand.userContext,
+			resumeCommand: {
+				kind: "process_interruption",
+				expectedInterruptionRevision:
+					resumeCommand.expectedInterruptionRevision,
+				todoId: resumeCommand.todoId,
+				expectedTodoRevision: resumeCommand.expectedTodoRevision,
+				userContext: resumeCommand.userContext,
+			},
+		});
+	});
+
+	it("rejects a stale interrupted Run routing snapshot before launch", async () => {
+		mocks.getTaskRun.mockResolvedValue({
+			id: "run-interrupted",
+			taskId: "task-1",
+			status: "needs_human",
+		});
+		mocks.findInterruptedCodingAgentRunCandidate.mockResolvedValue({
+			runId: "run-interrupted",
+			interruptionRevision: 2,
+			todoId: "todo-running",
+			todoRevision: 7,
+			routingSnapshotDigest: "sha256:new-snapshot",
+		});
+
+		await expect(
+			handleResumeInterruptedCodingAgentRun({
+				runId: "run-interrupted",
+				expectedInterruptionRevision: 2,
+				todoId: "todo-running",
+				expectedTodoRevision: 7,
+				routingSnapshotDigest: "sha256:stale-snapshot",
+				userContext: "再開してください",
+				requestProvenance: {
+					requestedBy: { kind: "human", actorId: "workbench" },
+					orchestrationRef: null,
+				},
+			}),
+		).rejects.toMatchObject({ code: "RUN_RESUME_SNAPSHOT_CONFLICT" });
 		expect(mocks.startTaskRun).not.toHaveBeenCalled();
 	});
 });

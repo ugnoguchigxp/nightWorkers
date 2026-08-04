@@ -9,14 +9,14 @@ Current User Messageは現在の依頼範囲を示す最新の正本です。Cur
 現在の依頼が最小構成や限定的な変更を求めており、repositoryの既存規約や既定値に沿った可逆的な実装で満たせる場合はaction=coding_agentにしてください。UIの細部、任意機能の追加範囲、一般的な保存方法などを完全なプロダクト仕様として先に確定できるという理由だけでPlan Modeを選ばないでください。
 不確実さが重要な設計判断に関するもので、計画を先に作ることで実装の手戻りや契約破壊を避けられるならPlan Modeを選んでください。単なる情報不足で現在の依頼が質問・説明・状態確認に留まる場合も、Coding Agentがそのまま回答できます。
 既存のimplementation_planまたはfeature_planが現在の依頼を十分に覆う場合は再利用し、Plan Modeを再起動しないでください。ただし、対象範囲や前提が実質的に変わり、既存計画が適用できない場合は新しいPlan Modeを選べます。
-このgateはPlan Modeへ入るかだけを判断します。Questionnaire、Blueprint、Data Model、Dedicated Viewの必要性やArtifact routingは判断せず、出力にも含めないでください。
-shouldStartPlanMode=trueならaction=plan_mode、falseならaction=coding_agentにしてください。reasonは依頼文の言い換えではなく、この依頼を今すぐ安全に開始できるかの根拠を短く示してください。
+このgateはPlan Modeへ入るかと、Coding Agentへ進む場合に新規Runを開始するか保存済みRunを再開するかを判断します。Questionnaire、Blueprint、Data Model、Dedicated Viewの必要性やArtifact routingは判断せず、出力にも含めないでください。
+shouldStartPlanMode=trueならaction=plan_modeかつrunDisposition=nullにしてください。falseならaction=coding_agentにし、Structurally Validated Resumable Run Candidateが存在して現在の依頼をその作業の継続として扱う場合はrunDisposition=resume_existing_run、別の新規実装Runを開始すべき場合はrunDisposition=start_new_runにしてください。candidateが存在しない場合はresume_existing_runを選ばないでください。Run IDはhostが管理するため出力に生成・複製しないでください。既存Runを暗黙にcancelする判断はしないでください。reasonは依頼文の言い換えではなく、この依頼を今すぐ安全に開始または再開できるかの根拠を短く示してください。
 JSONのみを返してください。
 
 プロジェクトルート: [[projectRoot]]
 
 [Output Schema]
-{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "coding_agent", "reason": "short concrete reason" }'''
+{ "shouldStartPlanMode": boolean, "action": "plan_mode" | "coding_agent", "runDisposition": "start_new_run" | "resume_existing_run" | null, "reason": "short concrete reason" }'''
 
 [variables.projectRoot]
 profile = "untrusted.text"

@@ -13,7 +13,11 @@ import {
 	flushRuntimeLogs,
 	logEvent,
 } from "./lib/logger";
-import { initializeCodingAgentRunHandlers } from "./modules/codingAgent";
+import {
+	initializeCodingAgentRunHandlers,
+	reconcileCodingAgentProcessInterruptions,
+	suspendActiveCodingAgentRunsForHostShutdown,
+} from "./modules/codingAgent";
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
@@ -159,6 +163,7 @@ export async function createNightWorkersServer(
 
 	createRuntimeDatabaseBackup();
 	await ensureNightWorkersSchema();
+	await reconcileCodingAgentProcessInterruptions();
 	await bootstrapComposedMissionPilotStorage({
 		logger: {
 			info(message, context) {
@@ -248,7 +253,7 @@ export async function createNightWorkersServer(
 			});
 		return queueReconcileInFlight;
 	};
-	void reconcileQueue("startup");
+	await reconcileQueue("startup");
 	const implementationQueueReconcileTimer = setInterval(
 		() => void reconcileQueue("scheduled"),
 		implementationQueueReconcileIntervalMs,
@@ -338,6 +343,7 @@ export async function createNightWorkersServer(
 	const close = async (signal: NodeJS.Signals | "manual" = "manual") => {
 		if (closed) return;
 		closed = true;
+		await suspendActiveCodingAgentRunsForHostShutdown();
 		await missionPilotRuntime.stop();
 		if (retentionTimer) clearTimeout(retentionTimer);
 		unsubscribeRetentionReload();

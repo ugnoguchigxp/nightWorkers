@@ -117,7 +117,7 @@ describe("worker process isolation", () => {
 			);
 			const terminal = await waitForTerminalRun(run.id);
 
-			expect(terminal?.status).toBe("failed");
+			expect(terminal?.status).toBe("blocked");
 			await expect(fs.stat(workerDatabasePath)).rejects.toMatchObject({
 				code: "ENOENT",
 			});
@@ -135,7 +135,9 @@ async function waitForTerminalRun(runId: string) {
 		const run = await repo.getTaskRun(runId);
 		if (
 			run &&
-			["completed", "cancelled", "failed", "needs_human"].includes(run.status)
+			["blocked", "completed", "cancelled", "failed", "needs_human"].includes(
+				run.status,
+			)
 		)
 			return run;
 		await new Promise((resolve) => setTimeout(resolve, 50));

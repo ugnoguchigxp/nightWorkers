@@ -6,6 +6,7 @@ import type {
 import { AppError } from "../../lib/errors";
 import { parseJUnitXmlArtifact } from "../verification/adapters/junit";
 import { parseVitestJsonArtifact } from "../verification/adapters/vitest-json";
+import type { WorkerToolRecovery } from "./types";
 
 export function createParsedArtifactDigest(input: {
 	command: string;
@@ -55,7 +56,7 @@ export function addStructuredReporter(
 		return `${command} --reporter=json`;
 	}
 	if (
-		/^(?:(?:bunx|npx)\s+(?:--no-install\s+)?vitest|vitest)(?:\s|$)/i.test(
+		/^(?:bun\s+vitest|(?:bunx|npx)\s+(?:--no-install\s+)?vitest|vitest)(?:\s|$)/i.test(
 			command,
 		)
 	) {
@@ -176,6 +177,7 @@ export function evaluateStructuredTestCapture(input: {
 			reason: string;
 			message: string;
 			suggestedAction: string;
+			recovery: WorkerToolRecovery;
 	  }
 	| undefined {
 	if (!input.managedTest) return undefined;
@@ -184,30 +186,35 @@ export function evaluateStructuredTestCapture(input: {
 			"MAPPED_TEST_FAILED",
 			"The managed test command failed.",
 			"fix_test_failure",
+			"failed",
+			agentAction("FIX_MAPPED_TEST_FAILURE"),
 		);
 	}
 	if (!input.recognized) {
 		return failedCapture(
-			"TEST_EVIDENCE_CAPTURE_FAILED",
+			"TEST_EVIDENCE_ARTIFACT_UNRECOGNIZED",
 			"The test command completed without a recognized structured test artifact.",
-			"report_test_evidence_failure",
+			"recover_test_evidence",
 			"evidence_error",
+			retryWithInput(),
 		);
 	}
 	if (input.ambiguousMappedCaseKeys.length > 0) {
 		return failedCapture(
 			"TEST_IDENTITY_AMBIGUOUS",
 			"Structured test identity matched more than one current inventory case.",
-			"report_test_evidence_failure",
+			"recover_test_evidence",
 			"evidence_error",
+			agentAction("REFRESH_TEST_IDENTITY"),
 		);
 	}
 	if (input.mismatchedMappedCaseKeys.length > 0) {
 		return failedCapture(
-			"TEST_EVIDENCE_CAPTURE_FAILED",
+			"TEST_IDENTITY_MISMATCH",
 			"Structured test identity did not match the mapped testcase file identity.",
-			"report_test_evidence_failure",
+			"recover_test_evidence",
 			"evidence_error",
+			agentAction("REPAIR_TEST_IDENTITY_MAPPING"),
 		);
 	}
 	const casesByKey = new Map<
@@ -225,6 +232,8 @@ export function evaluateStructuredTestCapture(input: {
 			"MAPPED_TEST_NOT_RUN",
 			"One or more mapped testcases were not present in the structured execution.",
 			"run_check",
+			"failed",
+			retryWithInput(),
 		);
 	}
 	if (
@@ -236,15 +245,18 @@ export function evaluateStructuredTestCapture(input: {
 			"MAPPED_TEST_FAILED",
 			"One or more mapped testcases failed or did not pass.",
 			"fix_test_failure",
+			"failed",
+			agentAction("FIX_MAPPED_TEST_FAILURE"),
 		);
 	}
 	return undefined;
 }
 
 function captureFailure(message: string) {
-	return new AppError(409, "TEST_EVIDENCE_CAPTURE_FAILED", message, {
+	return new AppError(409, "TEST_EVIDENCE_COMMAND_UNSUPPORTED", message, {
 		retryable: false,
-		suggestedAction: "report_test_evidence_failure",
+		suggestedAction: "recover_test_evidence",
+		recovery: retryWithInput(),
 	});
 }
 
@@ -253,6 +265,27 @@ function failedCapture(
 	message: string,
 	suggestedAction: string,
 	status: "failed" | "evidence_error" = "failed",
+	recovery: WorkerToolRecovery = agentAction("REPAIR_TEST_EVIDENCE"),
 ) {
-	return { status, reason, message, suggestedAction };
+	return { status, reason, message, suggestedAction, recovery };
+}
+
+function retryWithInput(): WorkerToolRecovery {
+	return {
+		disposition: "retry_with_input",
+		candidates: [
+			{
+				toolName: "run_check",
+				actionCode: "USE_PROJECT_TEST_SCRIPT",
+				argsPatch: { command: "test", checkKind: "test" },
+			},
+		],
+	};
+}
+
+function agentAction(actionCode: string): WorkerToolRecovery {
+	return {
+		disposition: "agent_action",
+		candidates: [{ toolName: "run_check", actionCode }],
+	};
 }

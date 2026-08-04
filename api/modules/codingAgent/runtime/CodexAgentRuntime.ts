@@ -36,7 +36,6 @@ import type {
 } from "./types";
 
 const STREAM_DEADLINE_REACHED = Symbol("codex-stream-deadline-reached");
-
 type OpenProviderItem = {
 	id: string;
 	type: string;
@@ -124,7 +123,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 		const logs: string[] = [];
 		let finalReport = "";
 		let runtimeErrorReport = "";
-
 		try {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
@@ -356,6 +354,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 						finalReport,
 						stoppedBy: "decision",
 						riskLevel: "medium",
+						humanActionRequired: true,
 						testResults: { completionReadiness: completion.snapshot },
 					});
 				}
@@ -532,6 +531,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			finalReport: string;
 			stoppedBy: AgentRuntimeResult["stoppedBy"];
 			riskLevel: AgentRuntimeResult["riskLevel"];
+			humanActionRequired?: boolean;
 			testResults?: unknown;
 		},
 	) {
@@ -551,6 +551,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 		this.activeRunControllers
 			.get(runId)
 			?.abort(new Error("CodexAgentRuntime stop requested."));
+	}
+
+	suspendForHostShutdown(runId: string) {
+		return this.stop(runId);
 	}
 
 	isRunning(runId: string): boolean {

@@ -119,6 +119,12 @@ export class NativeApiRunner {
 			?.abort(new Error("NativeApiRunner stop requested."));
 	}
 
+	async suspendForHostShutdown(runId: string): Promise<void> {
+		this.activeRunControllers
+			.get(runId)
+			?.abort(new Error("NativeApiRunner host shutdown requested."));
+	}
+
 	private toCancelled(): AgentRuntimeResult {
 		return {
 			terminalState: "cancelled",

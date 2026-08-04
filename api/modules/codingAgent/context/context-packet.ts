@@ -1,3 +1,4 @@
+import { humanBlockerSchema } from "../../../../shared/modules/codingAgent";
 import {
 	bindSystemContextTextCatalog,
 	readSystemContextBindingSnapshot,
@@ -57,10 +58,16 @@ export async function loadCodingAgentContextPacket(
 				title: todo.title,
 				status: todo.status,
 				revision: todo.revision,
+				humanBlocker: parseHumanBlocker(todo.humanBlockerJson),
 			})),
 		},
 		currentTodo: current.length === 1 ? toCurrentTodoContext(current[0]) : null,
 	};
+}
+
+function parseHumanBlocker(value: unknown) {
+	const parsed = humanBlockerSchema.safeParse(value);
+	return parsed.success ? parsed.data : null;
 }
 
 export function renderCodingAgentContextPacket(

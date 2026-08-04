@@ -30,6 +30,16 @@ export type ResumeCodingAgentRunTodoCommand = {
 	requestProvenance: CodingAgentRequestProvenance;
 };
 
+export type ResumeInterruptedCodingAgentRunCommand = {
+	runId: string;
+	expectedInterruptionRevision: number;
+	todoId: string | null;
+	expectedTodoRevision: number | null;
+	routingSnapshotDigest: string;
+	userContext: string;
+	requestProvenance: CodingAgentRequestProvenance;
+};
+
 export type CodingAgentRunCommandResult = {
 	runId: string;
 	taskId: string;

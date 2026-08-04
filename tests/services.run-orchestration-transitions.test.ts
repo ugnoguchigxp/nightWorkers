@@ -12,6 +12,7 @@ describe("run orchestration status transitions", () => {
 			queued: ["running", "ready", "cancelled"],
 			running: [
 				"finalizing",
+				"blocked",
 				"needs_human",
 				"failed",
 				"cancelled",
@@ -20,6 +21,7 @@ describe("run orchestration status transitions", () => {
 			finalizing: [
 				"needs_review",
 				"completed",
+				"blocked",
 				"failed",
 				"needs_human",
 				"cancelled",
@@ -31,6 +33,7 @@ describe("run orchestration status transitions", () => {
 			needs_human: ["queued", "running", "failed", "cancelled"],
 			cancelled: ["queued", "running"],
 			timed_out: ["queued", "running", "failed"],
+			blocked: ["queued", "running", "failed", "cancelled"],
 		});
 	});
 
@@ -81,5 +84,12 @@ describe("run orchestration status transitions", () => {
 				finalizationBlocked: false,
 			}),
 		).toBe("cancelled");
+		expect(
+			resolveGuardedRunOutcomeStatus({
+				currentStatus: "finalizing",
+				outcomeStatus: "completed",
+				finalizationBlocked: true,
+			}),
+		).toBe("blocked");
 	});
 });

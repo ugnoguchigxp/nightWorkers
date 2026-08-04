@@ -32,7 +32,13 @@ export type NativeApiToolResult = {
 	content: string;
 	payload?: unknown;
 	modelVisibleSummary?: ModelVisiblePayloadSummary;
-	error?: { code?: string; message: string; details?: unknown };
+	error?: {
+		code?: string;
+		message: string;
+		details?: unknown;
+		retryable?: boolean;
+		recovery?: unknown;
+	};
 };
 
 export type NativeApiHistoryItem =

@@ -197,10 +197,13 @@ describe("S11t SystemContext catalog", () => {
 		expect(rendered).toContain(
 			"ready、reason、suggestedAction、readinessDigest",
 		);
-		expect(rendered).toContain("TEST_EVIDENCE_CAPTURE_FAILED");
-		expect(rendered).toContain("TEST_INVENTORY_RUNNER_UNRESOLVED");
+		expect(rendered).toContain("recovery dispositionとcandidate");
+		expect(rendered).toContain("retryable=falseを人間対応必須と解釈しない");
 		expect(rendered).toContain(
-			"repository内では解消できない具体的blockerがある場合だけ",
+			"ユーザー回答で解消する具体的blockerがある場合だけ",
+		);
+		expect(rendered).toContain(
+			"question、requiredInput、basisを持つhumanBlocker",
 		);
 		expect(rendered).toContain(
 			"testがPassしていても期待値が正本と矛盾する場合は未達",
@@ -614,7 +617,7 @@ describe("S11t SystemContext catalog", () => {
 
 		expect(outputHashes).toEqual({
 			codingAgent:
-				"c82478f23c6681db6cf06c46a04de9e2f00782e69954c8f8adb1d0f4b7f31a2c",
+				"b5bf268c4e76cfc9fe4c6746b7674b04f5c63dee7353e26c934f800232c6e366",
 			missionPilotPushAllowed:
 				"edaad05d44c040c149c94e2054286fab1e1b41e25ba9019a8c11a912a7b3881f",
 			missionPilotPushDenied:
