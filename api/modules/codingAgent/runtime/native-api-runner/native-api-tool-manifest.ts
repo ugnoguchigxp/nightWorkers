@@ -261,29 +261,27 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 		definition: {
 			name: "project_exploration_catalog",
 			description:
-				"現在のProjectに対する変更候補file・関連test・検証commandのbounded catalogを取得します。利用可否と呼び出す順序はsystem promptのProject Static Intelligence Workflowに従い、projectPathやMCP内部IDは入力せず、Task/Todoから分かるfocusだけを指定してください。",
-			inputSchema: objectSchema(
-				{
-					focus: objectSchema({
-						paths: {
-							type: "array",
-							items: { type: "string" },
-							maxItems: 10,
-						},
-						modules: {
-							type: "array",
-							items: { type: "string" },
-							maxItems: 5,
-						},
-						terms: {
-							type: "array",
-							items: { type: "string" },
-							maxItems: 10,
-						},
-					}),
+				"現在のProjectに対する変更候補file・関連test・検証commandのbounded catalogを取得します。利用可否と呼び出す順序はsystem promptのProject Static Intelligence Workflowに従い、projectPathやMCP内部IDは入力せず、Task/Todoから分かるpaths、modules、termsの少なくとも一つを指定してください。",
+			// Keep model-facing arguments flat. Some OpenAI-compatible native tool
+			// parsers cannot serialize a nested object parameter and reject the
+			// entire request before NightWorkers can apply its fail-open behavior.
+			inputSchema: objectSchema({
+				paths: {
+					type: "array",
+					items: { type: "string" },
+					maxItems: 10,
 				},
-				["focus"],
-			),
+				modules: {
+					type: "array",
+					items: { type: "string" },
+					maxItems: 5,
+				},
+				terms: {
+					type: "array",
+					items: { type: "string" },
+					maxItems: 10,
+				},
+			}),
 		},
 	},
 	{

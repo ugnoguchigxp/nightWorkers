@@ -596,7 +596,7 @@ describe("executeWorkerTool routing", () => {
 
 		await dispatch(
 			"project_exploration_catalog",
-			{ focus: { paths: ["api/index.ts"] } },
+			{ paths: ["api/index.ts"], terms: ["worker"] },
 			{
 				projectExplorationCatalogAccess: {
 					serverId: "server",
@@ -610,7 +610,26 @@ describe("executeWorkerTool routing", () => {
 			projectPath: "/registered",
 			executionPath: "/repo",
 			expectedHead: "abc123",
-			focus: { paths: ["api/index.ts"] },
+			focus: { paths: ["api/index.ts"], terms: ["worker"] },
+		});
+
+		await dispatch(
+			"project_exploration_catalog",
+			{ focus: { modules: ["legacy"] } },
+			{
+				projectExplorationCatalogAccess: {
+					serverId: "server",
+					projectPath: "/registered",
+					expectedHead: "abc123",
+				},
+			},
+		);
+		expect(mocks.catalog).toHaveBeenLastCalledWith({
+			serverId: "server",
+			projectPath: "/registered",
+			executionPath: "/repo",
+			expectedHead: "abc123",
+			focus: { modules: ["legacy"] },
 		});
 	});
 

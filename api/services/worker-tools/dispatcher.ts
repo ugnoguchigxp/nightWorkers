@@ -440,7 +440,7 @@ export async function executeWorkerTool(
 				projectPath: input.projectExplorationCatalogAccess.projectPath,
 				executionPath: repoRoot,
 				expectedHead: input.projectExplorationCatalogAccess.expectedHead,
-				focus: args.focus,
+				focus: projectExplorationFocus(args),
 			}),
 		};
 	}
@@ -461,6 +461,22 @@ export async function executeWorkerTool(
 		return { result: await gitDiffTool({ repoRoot }) };
 
 	throw new Error(`Unsupported tool name: ${toolName}`);
+}
+
+function projectExplorationFocus(args: Record<string, unknown>) {
+	const legacyFocus = args.focus;
+	if (
+		legacyFocus &&
+		typeof legacyFocus === "object" &&
+		!Array.isArray(legacyFocus)
+	) {
+		return legacyFocus;
+	}
+	return {
+		...(args.paths !== undefined ? { paths: args.paths } : {}),
+		...(args.modules !== undefined ? { modules: args.modules } : {}),
+		...(args.terms !== undefined ? { terms: args.terms } : {}),
+	};
 }
 
 const WORKSPACE_SIDE_EFFECT_TOOLS = new Set<WorkerToolName>([
