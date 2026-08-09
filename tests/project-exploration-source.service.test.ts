@@ -53,8 +53,10 @@ describe("projectPath-first project exploration preparation", () => {
 		expect(access.callTool).not.toHaveBeenCalled();
 	});
 
-	it("prepares by canonical projectPath and returns an ID-free v2 availability", async () => {
-		const access = fixture({ statuses: [status("ready", true)] });
+	it("prepares by canonical projectPath and pins the validated Git HEAD", async () => {
+		const access = fixture({
+			statuses: [status("ready", true, { value: "source-state-hash" })],
+		});
 		const result = await resolve(access.value);
 		expect(result).toMatchObject({
 			version: 2,
@@ -309,6 +311,7 @@ function status(
 	reused = false,
 	capability: {
 		head?: string;
+		value?: string;
 		usability?: "usable" | "degraded_usable" | "unusable";
 	} = {},
 ) {
@@ -327,7 +330,7 @@ function status(
 						revision: {
 							kind: "git",
 							head: capability.head ?? HEAD,
-							value: capability.head ?? HEAD,
+							value: capability.value ?? capability.head ?? HEAD,
 						},
 					},
 					readiness: {

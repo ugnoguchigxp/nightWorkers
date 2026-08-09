@@ -324,7 +324,10 @@ function available(input: {
 		freshness: {
 			status: "current",
 			sourceRevisionKind: input.status.source.revision.kind,
-			sourceRevisionValue: input.status.source.revision.value,
+			// The consumer revalidates this value with `git rev-parse HEAD` before
+			// every catalog read. The producer's generic revision `value` is its
+			// source-state hash, not necessarily the Git commit.
+			sourceRevisionValue: input.status.source.revision.head,
 		},
 		readiness: {
 			codeStructure:
