@@ -23,5 +23,21 @@ describe("native API Project Exploration tool profile", () => {
 			},
 		});
 		expect(catalog?.inputSchema).not.toHaveProperty("properties.focus");
+
+		const defaultTodo = getNativeApiToolDefinitions().find(
+			(tool) => tool.name === "todo_list",
+		);
+		const compatibleTodo = getNativeApiToolDefinitions({
+			flatToolArguments: true,
+		}).find((tool) => tool.name === "todo_list");
+		expect(defaultTodo?.inputSchema).toHaveProperty("properties.command");
+		expect(compatibleTodo?.inputSchema).not.toHaveProperty(
+			"properties.command",
+		);
+		expect(compatibleTodo?.inputSchema).not.toHaveProperty("oneOf");
+		expect(compatibleTodo?.inputSchema).toHaveProperty("required", ["op"]);
+		expect(JSON.stringify(compatibleTodo?.inputSchema)).not.toContain(
+			'"steps"',
+		);
 	});
 });

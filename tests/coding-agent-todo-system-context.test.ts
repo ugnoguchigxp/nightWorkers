@@ -3,7 +3,10 @@ import { z } from "zod";
 import { nightWorkersTodoListInputSchema } from "../api/mcp/nightworkers-tool-schemas";
 import { requiresCurrentTodo } from "../api/modules/codingAgent/context/context-packet";
 import { renderCodingAgentTodoPlanSummary } from "../api/modules/codingAgent/context/todo-prompt-context";
-import { todoCommandJsonSchema } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
+import {
+	todoCommandJsonSchema,
+	todoToolInputJsonSchema,
+} from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 
 describe("Coding Agent Todo local SystemContext contract", () => {
 	it("gives both runtime lanes the same minimal Todo step contract", () => {
@@ -11,6 +14,7 @@ describe("Coding Agent Todo local SystemContext contract", () => {
 			z.toJSONSchema(nightWorkersTodoListInputSchema),
 		);
 		const nativeSchema = JSON.stringify(todoCommandJsonSchema);
+		const nativeToolSchema = JSON.stringify(todoToolInputJsonSchema);
 		expect(mcpSchema).toContain(
 			"stepで生成するfieldはtitleとsystemContextだけ",
 		);
@@ -19,6 +23,10 @@ describe("Coding Agent Todo local SystemContext contract", () => {
 		expect(nativeSchema).toContain('"required":["title","systemContext"]');
 		expect(mcpSchema).toContain('"maxItems":12');
 		expect(nativeSchema).toContain('"maxItems":12');
+		expect(nativeToolSchema).not.toContain('"command"');
+		expect(nativeToolSchema).not.toContain('"steps"');
+		expect(nativeToolSchema).toContain('"title"');
+		expect(nativeToolSchema).toContain('"systemContext"');
 		for (const removedField of [
 			"nextAction",
 			"acceptanceCriteria",

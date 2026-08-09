@@ -204,11 +204,11 @@ async function dispatchTodoTool(input: {
 	sink: AgentRuntimeSink;
 	state: NativeApiDispatchState;
 }) {
-	const command = input.toolCall.arguments.command;
+	const command = normalizeTodoToolCommand(input.toolCall.arguments);
 	if (!command || typeof command !== "object" || Array.isArray(command)) {
 		return failedToolResult(
 			"INVALID_TOOL_ARGS",
-			"todo_list requires a command object.",
+			"todo_list requires command fields.",
 		);
 	}
 	const result = await todoListTool({
@@ -216,6 +216,58 @@ async function dispatchTodoTool(input: {
 		command,
 	});
 	return projectWorkerResultToNativeApiToolResult(result);
+}
+
+function normalizeTodoToolCommand(args: Record<string, unknown>) {
+	const legacyCommand = args.command;
+	if (
+		legacyCommand &&
+		typeof legacyCommand === "object" &&
+		!Array.isArray(legacyCommand)
+	) {
+		return legacyCommand;
+	}
+	if (args.op === "plan" || args.op === "replace_remaining") {
+		if (Array.isArray(args.steps)) return args;
+		if (args.title !== undefined || args.systemContext !== undefined) {
+			return {
+				op: args.op,
+				steps: [
+					{
+						title: args.title,
+						systemContext: args.systemContext,
+					},
+				],
+			};
+		}
+	}
+	if (args.op === "block_current") {
+		if (
+			args.humanBlocker &&
+			typeof args.humanBlocker === "object" &&
+			!Array.isArray(args.humanBlocker)
+		) {
+			return args;
+		}
+		const basis =
+			args.basisKind === "tool_failure"
+				? {
+						kind: "tool_failure",
+						toolName: args.toolName,
+						failureCode: args.failureCode,
+						recoveryDisposition: "human_input",
+					}
+				: { kind: "task_context" };
+		return {
+			op: args.op,
+			humanBlocker: {
+				question: args.question,
+				requiredInput: args.requiredInput,
+				basis,
+			},
+		};
+	}
+	return args;
 }
 
 async function dispatchTodoToolWithLedger(input: {

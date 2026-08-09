@@ -43,6 +43,7 @@ export async function prepareNativeApiRunRoute(input: {
 		projectExplorationCatalogEnabled:
 			readProjectExplorationCatalogPin(input.context)?.version === 2 &&
 			readProjectExplorationCatalogPin(input.context)?.available === true,
+		flatToolArguments: requiresFlatToolArguments(input.context),
 	});
 	const providerRequests = buildNativeApiProviderRequests({
 		context: input.context,
@@ -117,4 +118,20 @@ export async function prepareNativeApiRunRoute(input: {
 		routeOverride,
 		routePolicy,
 	};
+}
+
+function requiresFlatToolArguments(context: AgentRunContext) {
+	const snapshot = context.contextSnapshot as Record<string, unknown>;
+	const routing = record(snapshot.effectiveLlmRouting);
+	const active = record(routing?.active);
+	return (
+		active?.endpointKind === "local" ||
+		active?.endpointKind === "openai-compatible"
+	);
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }

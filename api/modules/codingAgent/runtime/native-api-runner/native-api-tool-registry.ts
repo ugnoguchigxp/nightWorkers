@@ -6,6 +6,7 @@ import {
 	type NativeApiToolProfileInput,
 	type NativeApiToolRegistration,
 	nativeApiToolRegistrations,
+	todoToolInputJsonSchema,
 } from "./native-api-tool-manifest";
 
 export function getNativeApiToolDefinitions(
@@ -17,7 +18,16 @@ export function getNativeApiToolDefinitions(
 				registration.name !== "project_exploration_catalog" ||
 				input.projectExplorationCatalogEnabled === true,
 		)
-		.map((registration) => registration.definition);
+		.map((registration) =>
+			registration.name === "todo_list" && input.flatToolArguments === true
+				? {
+						...registration.definition,
+						description:
+							"Todoが品質を上げるRunでだけ使います。planとreplace_remainingは、local/openai-compatible parser向けに1件のtitleとsystemContextを指定します。hostは次Todoを推測しません。",
+						inputSchema: todoToolInputJsonSchema,
+					}
+				: registration.definition,
+		);
 }
 
 export function getNativeApiToolRegistration(

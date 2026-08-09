@@ -12,7 +12,10 @@ import type { WorkerToolName } from "../../../../services/tool-policy/types";
 import { todoCommandJsonSchema } from "./native-api-todo-tool";
 import { objectSchema } from "./native-api-tool-schema";
 
-export { todoCommandJsonSchema } from "./native-api-todo-tool";
+export {
+	todoCommandJsonSchema,
+	todoToolInputJsonSchema,
+} from "./native-api-todo-tool";
 export { objectSchema } from "./native-api-tool-schema";
 
 export type NativeApiRuntimeToolName =
@@ -41,6 +44,7 @@ export type NativeApiToolRegistration = {
 export type NativeApiToolProfileInput = {
 	ontologyMcpEnabled?: boolean;
 	projectExplorationCatalogEnabled?: boolean;
+	flatToolArguments?: boolean;
 };
 
 export const workerToolDefinitions: NativeApiToolRegistration[] = [

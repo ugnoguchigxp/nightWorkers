@@ -102,3 +102,51 @@ export const todoCommandJsonSchema = {
 		),
 	],
 };
+
+// Native model-facing schema for local/OpenAI-compatible routes. Keep a single
+// flat object because some compatible parsers cannot compile oneOf branches or
+// nested objects into their tool-call grammar. The dispatcher restores and the
+// Todo service validates the canonical command contract.
+export const todoToolInputJsonSchema = objectSchema(
+	{
+		op: {
+			type: "string",
+			enum: [
+				"list",
+				"plan",
+				"complete_current",
+				"block_current",
+				"replace_remaining",
+			],
+		},
+		title: todoStepSchema.properties.title,
+		systemContext: todoStepSchema.properties.systemContext,
+		note: {
+			type: "string",
+			minLength: 1,
+			maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
+		},
+		question: {
+			type: "string",
+			minLength: 1,
+			maxLength: TODO_MUTATION_LIMITS.maxReasonLength,
+		},
+		requiredInput: {
+			type: "string",
+			enum: [
+				"information",
+				"decision",
+				"credential",
+				"permission",
+				"external_change",
+			],
+		},
+		basisKind: {
+			type: "string",
+			enum: ["task_context", "tool_failure"],
+		},
+		toolName: { type: "string", minLength: 1, maxLength: 128 },
+		failureCode: { type: "string", minLength: 1, maxLength: 128 },
+	},
+	["op"],
+);

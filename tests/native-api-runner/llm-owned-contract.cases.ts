@@ -398,15 +398,15 @@ describe("Native API LLM-owned Todo contract", () => {
 		const { repository, task, run } = await createRuntimeRun("todo-ledger");
 		const sink = { emit: vi.fn(async () => {}) };
 		const result = await dispatchNativeApiToolCall({
-			toolCall: todoCall("todo-ledger-call", {
-				op: "plan",
-				steps: [
-					{
-						title: "実装する",
-						systemContext: "対象を確認して実装する。",
-					},
-				],
-			}),
+			toolCall: {
+				id: "todo-ledger-call",
+				name: "todo_list",
+				arguments: {
+					op: "plan",
+					title: "実装する",
+					systemContext: "対象を確認して実装する。",
+				},
+			},
 			context: context({
 				runId: run.id,
 				taskId: task.id,
@@ -423,9 +423,7 @@ describe("Native API LLM-owned Todo contract", () => {
 				payload: expect.objectContaining({
 					toolName: "todo_list",
 					ok: true,
-					arguments: expect.objectContaining({
-						command: expect.objectContaining({ op: "plan" }),
-					}),
+					arguments: expect.objectContaining({ op: "plan" }),
 				}),
 			}),
 		);
