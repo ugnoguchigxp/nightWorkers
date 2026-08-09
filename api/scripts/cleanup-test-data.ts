@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { config } from "../config";
@@ -13,6 +12,7 @@ import {
 	taskRuns,
 	tasks,
 } from "../db/schema";
+import { removeDedicatedTestWorkspace } from "./test-worktree-cleanup";
 
 type CleanupMode = "dry-run" | "execute";
 
@@ -342,6 +342,9 @@ async function removeDedicatedTestWorktrees(repositoryIds: string[]) {
 			worktreePath: taskGitWorkspaces.worktreePath,
 			repositoryRoot: repositories.registeredRootCanonical,
 			repositoryLocalPath: repositories.localPath,
+			sourceBranch: taskGitWorkspaces.sourceBranch,
+			sourceRef: taskGitWorkspaces.sourceRef,
+			targetBranch: taskGitWorkspaces.targetBranch,
 		})
 		.from(taskGitWorkspaces)
 		.innerJoin(
@@ -349,30 +352,35 @@ async function removeDedicatedTestWorktrees(repositoryIds: string[]) {
 			eq(taskGitWorkspaces.repositoryId, repositories.id),
 		)
 		.where(inArray(taskGitWorkspaces.repositoryId, repositoryIds));
+	const failures: string[] = [];
+	const authorizedRoot =
+		process.env.NIGHTWORKERS_VITEST_WORKSPACE_ROOT?.trim() ||
+		process.env.NIGHTWORKERS_E2E_WORKSPACE_ROOT?.trim() ||
+		null;
 	for (const workspace of workspaces) {
 		if (!workspace.worktreePath) continue;
-		const repositoryRoot =
-			workspace.repositoryRoot ?? workspace.repositoryLocalPath;
 		try {
-			const canonicalRoot = fs.realpathSync(repositoryRoot);
-			const canonicalWorktree = fs.realpathSync(workspace.worktreePath);
-			if (canonicalRoot === canonicalWorktree) continue;
-			execFileSync(
-				"git",
-				[
-					"-C",
-					canonicalRoot,
-					"worktree",
-					"remove",
-					"--force",
-					canonicalWorktree,
-				],
-				{ stdio: "ignore", timeout: 30_000 },
+			removeDedicatedTestWorkspace(
+				{
+					...workspace,
+					worktreePath: workspace.worktreePath,
+				},
+				{ authorizedRoot },
 			);
-		} catch {
-			// DB cleanup remains possible when a test worktree was already removed.
+		} catch (error) {
+			failures.push(cleanupFailure(workspace.worktreePath, error));
 		}
 	}
+	if (failures.length > 0) {
+		throw new Error(
+			`Failed to remove ${failures.length} dedicated test worktree(s):\n${failures.join("\n")}`,
+		);
+	}
+}
+
+function cleanupFailure(worktreePath: string, error: unknown) {
+	const message = error instanceof Error ? error.message : String(error);
+	return `${worktreePath}: ${message}`;
 }
 
 export async function cleanupNightWorkersTestData(

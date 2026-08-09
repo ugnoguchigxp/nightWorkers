@@ -17,6 +17,7 @@ export function createIsolatedE2eEnvironment(options?: {
 	webPort?: number;
 	apiPort?: number;
 	env?: NodeJS.ProcessEnv;
+	reservePort?: () => Promise<number>;
 }): Promise<E2eEnvironment>;
 
 export function cleanupIsolatedE2eEnvironment(

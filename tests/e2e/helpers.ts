@@ -80,6 +80,8 @@ export async function createDisposableGitWorkspace(options: {
 		"git",
 		[
 			"-c",
+			"core.hooksPath=/dev/null",
+			"-c",
 			"user.email=e2e@example.test",
 			"-c",
 			"user.name=NightWorkers E2E",

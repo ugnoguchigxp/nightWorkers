@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import * as repo from "../../api/modules/nightworkers/nightworkers.repository";
 import { initializeE2eGitRepository } from "../e2e/helpers";
+import { requireVitestWorkspaceRoot } from "../vitest-db-env";
 
 export const sameOriginHeaders = { Origin: "http://localhost:39174" };
 
@@ -34,9 +34,11 @@ export async function createWorkbenchTask(
 		repositoryPath?: string;
 	} = {},
 ) {
+	const repositoryPath =
+		input.repositoryPath ?? (await createDisposableRepository());
 	const project = await repo.createRepository({
 		name: `TEST: Workbench Project ${crypto.randomUUID()}`,
-		localPath: input.repositoryPath ?? "/Users/y.noguchi/Code/nightWorkers",
+		localPath: repositoryPath,
 		branch: "main",
 	});
 	const task = await repo.createTask({
@@ -52,10 +54,12 @@ export async function createWorkbenchTask(
 }
 
 export async function createDisposableRepository() {
+	const workspaceRoot = requireVitestWorkspaceRoot();
 	const root = await mkdtemp(
-		path.join(os.tmpdir(), "nightworkers-workbench-route-"),
+		path.join(workspaceRoot, "nightworkers-workbench-route-"),
 	);
 	trackDisposableRepositoryRoot(root);
+	trackDisposableRepositoryRoot(`${root}-worktrees`);
 	await writeFile(
 		path.join(root, "README.md"),
 		"# Workbench fixture\n",
@@ -66,6 +70,8 @@ export async function createDisposableRepository() {
 	execFileSync(
 		"git",
 		[
+			"-c",
+			"core.hooksPath=/dev/null",
 			"-c",
 			"user.email=workbench@example.test",
 			"-c",

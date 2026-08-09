@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	assertIsolatedE2eEnvironment,
 	cleanupIsolatedE2eEnvironment,
@@ -12,6 +12,7 @@ import {
 const sandboxes: string[] = [];
 
 afterEach(() => {
+	vi.unstubAllEnvs();
 	for (const sandbox of sandboxes.splice(0)) {
 		fs.rmSync(sandbox, { recursive: true, force: true });
 	}
@@ -79,6 +80,56 @@ describe("isolated E2E environment", () => {
 		} finally {
 			cleanupIsolatedE2eEnvironment(environment);
 		}
+	});
+
+	it("reads live E2E opt-in from the inherited process environment", async () => {
+		vi.stubEnv("NIGHTWORKERS_LIVE_LLM_E2E", "1");
+		vi.stubEnv("OPENAI_API_KEY", "inherited-live-key");
+		const environment = await createIsolatedE2eEnvironment({
+			repositoryRoot: createRepositorySandbox(),
+			runId: "inherited-live-run",
+			webPort: 41_007,
+			apiPort: 41_008,
+		});
+		try {
+			expect(environment.env.OPENAI_API_KEY).toBe("inherited-live-key");
+			expect(environment.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE).toBe("0");
+		} finally {
+			cleanupIsolatedE2eEnvironment(environment);
+		}
+	});
+
+	it("rolls back the isolated run when port reservation fails", async () => {
+		const repositoryRoot = createRepositorySandbox();
+		const runId = "port-reservation-failure";
+		const runRoot = path.join(repositoryRoot, ".nightworkers-e2e", runId);
+
+		await expect(
+			createIsolatedE2eEnvironment({
+				repositoryRoot,
+				runId,
+				reservePort: async () => {
+					throw new Error("port reservation failed");
+				},
+			}),
+		).rejects.toThrow("port reservation failed");
+		expect(fs.existsSync(runRoot)).toBe(false);
+	});
+
+	it("bounds repeated port collisions and rolls back the run", async () => {
+		const repositoryRoot = createRepositorySandbox();
+		const runId = "port-collision";
+		const runRoot = path.join(repositoryRoot, ".nightworkers-e2e", runId);
+
+		await expect(
+			createIsolatedE2eEnvironment({
+				repositoryRoot,
+				runId,
+				webPort: 41_001,
+				reservePort: async () => 41_001,
+			}),
+		).rejects.toThrow("ports must be different");
+		expect(fs.existsSync(runRoot)).toBe(false);
 	});
 
 	it("rejects a database outside the isolated run root", () => {

@@ -31,6 +31,10 @@ import * as queueRepo from "../../api/modules/queue/queue.repository";
 import * as llm from "../../api/services/structured-llm";
 import { representativeMockBlueprint } from "../fixtures/mock-blueprint";
 import { flushPendingWorkbenchTasks } from "../helpers/nightworkers-test-controls";
+import {
+	cleanupDisposableRepositories,
+	createWorkbenchTask,
+} from "./workbench-route-test-support";
 
 vi.setConfig({ testTimeout: 40_000 });
 
@@ -172,6 +176,7 @@ beforeEach(() => {
 afterEach(async () => {
 	await flushPendingWorkbenchTasks();
 	vi.clearAllMocks();
+	await cleanupDisposableRepositories();
 });
 
 describe("NightWorkers workbench routes", () => {
@@ -586,25 +591,6 @@ describe("NightWorkers workbench routes", () => {
 		expect((await duplicateRes.json()).code).toBe("QUEUE_ENTRY_EXISTS");
 	});
 });
-
-async function createWorkbenchTask(
-	input: { title?: string; status?: string; objective?: string } = {},
-) {
-	const project = await repo.createRepository({
-		name: `TEST: Workbench Project ${crypto.randomUUID()}`,
-		localPath: "/Users/y.noguchi/Code/nightWorkers",
-		branch: "main",
-	});
-	const task = await repo.createTask({
-		repositoryId: project.id,
-		title: input.title || "Workbench task",
-		objective: input.objective ?? "Implement chat-first workbench",
-		acceptanceCriteria:
-			"Draft conversation, queue, and run are separate task-queue steps",
-		status: input.status || "draft",
-	});
-	return { project, task };
-}
 
 async function createInterruptedWorkbenchRun() {
 	const { project, task } = await createWorkbenchTask({

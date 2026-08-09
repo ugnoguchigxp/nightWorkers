@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -69,6 +68,7 @@ import {
 	missionDecompositionEvaluationSchema,
 	missionDecompositionPlanningResultSchema,
 } from "../shared/schemas/mission-planner.schema";
+import { requireVitestWorkspaceRoot } from "./vitest-db-env";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
@@ -80,7 +80,7 @@ beforeEach(() => {
 
 function createRepoRoot() {
 	const repoRoot = fs.mkdtempSync(
-		path.join(os.tmpdir(), "nightworkers-mission-"),
+		path.join(requireVitestWorkspaceRoot(), "nightworkers-mission-"),
 	);
 	fs.writeFileSync(
 		path.join(repoRoot, "package.json"),
@@ -111,6 +111,8 @@ async function initializeRepositoryGitHead(repositoryPath: string) {
 	await runGitCommand([
 		"-C",
 		repositoryPath,
+		"-c",
+		"core.hooksPath=/dev/null",
 		"-c",
 		"user.name=NightWorkers Test",
 		"-c",

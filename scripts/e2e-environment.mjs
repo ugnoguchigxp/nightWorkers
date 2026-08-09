@@ -27,7 +27,12 @@ const providerCredentialKeys = [
 
 function isPathInside(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return (
+    relative.length > 0 &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
 }
 
 function requireEnvironmentValue(env, name) {
@@ -92,8 +97,15 @@ function reservePort() {
   });
 }
 
+function assertValidPort(port, label) {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`E2E ${label} port must be an integer between 1 and 65535.`);
+  }
+}
+
 export async function createIsolatedE2eEnvironment(options = {}) {
   const repositoryRoot = path.resolve(options.repositoryRoot ?? process.cwd());
+  const sourceEnvironment = options.env ?? process.env;
   const isolated = createIsolatedRuntimeEnvironment({
     repositoryRoot,
     scope: DATABASE_ACCESS_SCOPES.isolatedTest,
@@ -101,7 +113,7 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     runId: options.runId,
     databaseName: 'e2e.sqlite',
     purpose: 'playwright_e2e',
-    env: options.env ?? process.env,
+    env: sourceEnvironment,
   });
   const {
     runId,
@@ -111,36 +123,56 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     workspaceRoot,
   } = isolated;
 
-  const webPort = options.webPort ?? (await reservePort());
-  let apiPort = options.apiPort ?? (await reservePort());
-  while (apiPort === webPort) apiPort = await reservePort();
-  const liveLlmEnabled = options.env?.NIGHTWORKERS_LIVE_LLM_E2E === '1';
-  const env = {
-    ...isolated.env,
-    NIGHTWORKERS_E2E: '1',
-    NIGHTWORKERS_E2E_ISOLATED: '1',
-    NIGHTWORKERS_E2E_RUN_ROOT: runRoot,
-    NIGHTWORKERS_E2E_DATABASE_PATH: databasePath,
-    NIGHTWORKERS_E2E_WORKSPACE_ROOT: workspaceRoot,
-    NIGHTWORKERS_E2E_RUNTIME_FIXTURE: liveLlmEnabled ? '0' : '1',
-    NIGHTWORKERS_E2E_WEB_PORT: String(webPort),
-    NIGHTWORKERS_E2E_API_PORT: String(apiPort),
-    NIGHTWORKERS_WEB_PORT: String(webPort),
-    NIGHTWORKERS_API_PORT: String(apiPort),
-    NIGHTWORKERS_DESKTOP: '0',
-    NIGHTWORKERS_EXECUTOR_MODE: 'in_process',
-    NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: 'coverage',
-    HOST: '127.0.0.1',
-    PORT: String(apiPort),
-    CORS_ORIGIN: `http://localhost:${webPort}`,
-    AWS_EC2_METADATA_DISABLED: 'true',
-  };
-  if (!liveLlmEnabled) {
-    env.ACTIVE_LLM_PROVIDER = 'fixture';
-    for (const key of providerCredentialKeys) env[key] = '';
+  try {
+    const reserve = options.reservePort ?? reservePort;
+    const webPort = options.webPort ?? (await reserve());
+    let apiPort = options.apiPort ?? (await reserve());
+    for (let attempt = 0; apiPort === webPort && attempt < 20; attempt += 1) {
+      apiPort = await reserve();
+    }
+    assertValidPort(webPort, 'web');
+    assertValidPort(apiPort, 'API');
+    if (apiPort === webPort) {
+      throw new Error('E2E web and API ports must be different.');
+    }
+    const liveLlmEnabled = sourceEnvironment.NIGHTWORKERS_LIVE_LLM_E2E === '1';
+    const env = {
+      ...isolated.env,
+      NIGHTWORKERS_E2E: '1',
+      NIGHTWORKERS_E2E_ISOLATED: '1',
+      NIGHTWORKERS_E2E_RUN_ROOT: runRoot,
+      NIGHTWORKERS_E2E_DATABASE_PATH: databasePath,
+      NIGHTWORKERS_E2E_WORKSPACE_ROOT: workspaceRoot,
+      NIGHTWORKERS_E2E_RUNTIME_FIXTURE: liveLlmEnabled ? '0' : '1',
+      NIGHTWORKERS_E2E_WEB_PORT: String(webPort),
+      NIGHTWORKERS_E2E_API_PORT: String(apiPort),
+      NIGHTWORKERS_WEB_PORT: String(webPort),
+      NIGHTWORKERS_API_PORT: String(apiPort),
+      NIGHTWORKERS_DESKTOP: '0',
+      NIGHTWORKERS_EXECUTOR_MODE: 'in_process',
+      NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: 'coverage',
+      HOST: '127.0.0.1',
+      PORT: String(apiPort),
+      CORS_ORIGIN: `http://localhost:${webPort}`,
+      AWS_EC2_METADATA_DISABLED: 'true',
+    };
+    if (!liveLlmEnabled) {
+      env.ACTIVE_LLM_PROVIDER = 'fixture';
+      for (const key of providerCredentialKeys) env[key] = '';
+    }
+    assertIsolatedE2eEnvironment(env);
+    return { ...isolated, runId, runRoot, databasePath, workspaceRoot, env };
+  } catch (error) {
+    try {
+      cleanupIsolatedRuntimeEnvironment(isolated);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'E2E environment creation and rollback both failed.',
+      );
+    }
+    throw error;
   }
-  assertIsolatedE2eEnvironment(env);
-  return { ...isolated, runId, runRoot, databasePath, workspaceRoot, env };
 }
 
 export function cleanupIsolatedE2eEnvironment(environment) {

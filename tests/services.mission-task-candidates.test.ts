@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
@@ -22,6 +21,7 @@ import {
 	type MissionGoalInterpretation,
 	missionTaskCandidatesResultSchema,
 } from "../shared/schemas/task-generation.schema";
+import { requireVitestWorkspaceRoot } from "./vitest-db-env";
 
 beforeAll(async () => {
 	await ensureNightWorkersSchema();
@@ -249,7 +249,7 @@ describe("Mission task candidate generation helpers", () => {
 
 	it("adds compact repository implementation context to mission signals", async () => {
 		const repoRoot = fs.mkdtempSync(
-			path.join(os.tmpdir(), "nightworkers-mission-signal-"),
+			path.join(requireVitestWorkspaceRoot(), "nightworkers-mission-signal-"),
 		);
 		try {
 			fs.mkdirSync(path.join(repoRoot, "web/src/routes"), { recursive: true });
@@ -392,7 +392,7 @@ describe("Mission task candidate generation helpers", () => {
 
 	it("adds recent non-initial commit diffs only when LLM context is absent", async () => {
 		const repoRoot = fs.mkdtempSync(
-			path.join(os.tmpdir(), "nightworkers-mission-diff-"),
+			path.join(requireVitestWorkspaceRoot(), "nightworkers-mission-diff-"),
 		);
 		try {
 			fs.mkdirSync(path.join(repoRoot, "web/src/routes"), { recursive: true });

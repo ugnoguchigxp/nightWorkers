@@ -229,9 +229,10 @@ describe("NightWorkers workbench routes", () => {
 					],
 				}),
 			);
+		const repositoryPath = await createDisposableRepository();
 		const project = await repo.createRepository({
 			name: `TEST: Stopped Mission Pilot ${crypto.randomUUID()}`,
-			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			localPath: repositoryPath,
 			branch: "main",
 		});
 		const createResponse = await app.request(
@@ -309,9 +310,10 @@ describe("NightWorkers workbench routes", () => {
 	});
 
 	it("starts the normal Coding Agent without a Mission Pilot session or envelope", async () => {
+		const repositoryPath = await createDisposableRepository();
 		const project = await repo.createRepository({
 			name: `TEST: Normal Coding Agent ${crypto.randomUUID()}`,
-			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			localPath: repositoryPath,
 			branch: "main",
 		});
 		const task = await repo.createTask({
