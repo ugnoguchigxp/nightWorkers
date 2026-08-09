@@ -8,6 +8,7 @@ import {
 } from "../../context";
 import { todoListTool } from "../../tools";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
+import { normalizeCompatibleEditToolArguments } from "./native-api-compatible-tool-profile";
 import { dispatchContextStillTool } from "./native-api-context-still";
 import { continueWith, failedToolResult } from "./native-api-dispatch-results";
 import type {
@@ -87,18 +88,32 @@ export async function dispatchNativeApiToolCall(input: {
 			input.state,
 		);
 	}
+	const normalizedArguments = normalizeCompatibleEditToolArguments(
+		workerToolName,
+		input.toolCall.arguments,
+	);
+	if (!normalizedArguments.ok) {
+		return continueWith(
+			failedToolResult("INVALID_TOOL_ARGS", normalizedArguments.message),
+			input.state,
+		);
+	}
+	const toolCall = {
+		...input.toolCall,
+		arguments: normalizedArguments.arguments,
+	};
 	await input.sink.emit({
 		type: "tool_call_started",
 		message: `[NativeApiRunner] ${workerToolName} started.`,
 		payload: {
-			callId: input.toolCall.id,
+			callId: toolCall.id,
 			toolName: workerToolName,
-			arguments: input.toolCall.arguments,
+			arguments: toolCall.arguments,
 		},
 	});
 	const dispatch = await executeWorkerTool({
 		toolName: workerToolName,
-		args: input.toolCall.arguments,
+		args: toolCall.arguments,
 		repoRoot: input.context.repoRoot,
 		taskId: input.context.taskId,
 		runId: input.context.runId,
@@ -115,9 +130,9 @@ export async function dispatchNativeApiToolCall(input: {
 		type: "tool_call_finished",
 		message: `[NativeApiRunner] ${workerToolName} ${dispatch.result.ok ? "finished" : "failed"}.`,
 		payload: {
-			callId: input.toolCall.id,
+			callId: toolCall.id,
 			toolName: workerToolName,
-			arguments: input.toolCall.arguments,
+			arguments: toolCall.arguments,
 			ok: dispatch.result.ok,
 			result: dispatch.result.payload,
 			error: dispatch.result.error,
@@ -125,7 +140,7 @@ export async function dispatchNativeApiToolCall(input: {
 	});
 	const nextState = updateDispatchStateAfterWorkerTool({
 		state: input.state,
-		toolCall: input.toolCall,
+		toolCall,
 		workerToolName,
 		dispatch,
 	});
