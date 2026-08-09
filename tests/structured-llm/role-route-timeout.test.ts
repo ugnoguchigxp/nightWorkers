@@ -113,4 +113,26 @@ describe("structured LLM role route request timeout", () => {
 			),
 		).toEqual({ timeoutMs: 300_000, timeoutSource: "call_option" });
 	});
+
+	it("keeps routes without timeout stable across persistence round trips", () => {
+		const normalized = normalizeRawLlmSettings(
+			llmSettingsSchema.parse({
+				providerEndpoints,
+				roleRoutes: roleRoutes(),
+			}),
+		);
+		const persisted = JSON.parse(JSON.stringify(normalized));
+		const normalizedAgain = normalizeRawLlmSettings(
+			llmSettingsSchema.parse(persisted),
+		);
+
+		expect(normalized.roleRoutes).toStrictEqual(persisted.roleRoutes);
+		expect(normalizedAgain.roleRoutes).toStrictEqual(persisted.roleRoutes);
+		expect(normalizedAgain.roleRoutes[0]?.primary).not.toHaveProperty(
+			"requestTimeoutSeconds",
+		);
+		expect(normalizedAgain.roleRoutes[0]?.fallbacks[0]).not.toHaveProperty(
+			"requestTimeoutSeconds",
+		);
+	});
 });

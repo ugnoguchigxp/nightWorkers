@@ -427,7 +427,9 @@ function normalizeModelTarget(input: unknown): LlmModelTarget | null {
 		providerEndpointId,
 		model,
 		thinkingDepth: parsed.data.thinkingDepth || "",
-		requestTimeoutSeconds: parsed.data.requestTimeoutSeconds,
+		...(parsed.data.requestTimeoutSeconds === undefined
+			? {}
+			: { requestTimeoutSeconds: parsed.data.requestTimeoutSeconds }),
 	};
 }
 
