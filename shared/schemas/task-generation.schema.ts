@@ -4,6 +4,11 @@ import {
 	missionTaskProposalSchema,
 } from "./mission-planner.schema";
 import { taskSchema } from "./nightworkers/repository-task.schema";
+import {
+	SECURITY_SCAN_TASK_GENERATION_MAX_FINDINGS,
+	securityScanResourceRefSchema,
+	securityScanSourceRevisionSchema,
+} from "./security-scan.schema";
 import { projectStackProfileSchema } from "./tech-stack.schema";
 
 const dateLikeSchema = z.union([z.string(), z.date()]);
@@ -40,6 +45,8 @@ export const missionTaskCandidateKindSchema = z.enum([
 	"constraint_enablement",
 	"constraint_verification",
 	"investigation",
+	"security_remediation",
+	"security_investigation",
 ]);
 export const missionTaskCandidateBatchStatusSchema = z.enum([
 	"running",
@@ -67,6 +74,7 @@ export const candidateEvidenceSchema = z.object({
 		"quality",
 		"llm_usage",
 		"recent_runs",
+		"security_scan",
 	]),
 	label: z.string().min(1),
 	value: z.string().min(1),
@@ -247,6 +255,83 @@ export const projectSignalSnapshotSchema = z.object({
 });
 export type ProjectSignalSnapshot = z.infer<typeof projectSignalSnapshotSchema>;
 
+const securityScanFindingReferenceSchema = z.object({
+	ref: securityScanResourceRefSchema,
+	fingerprintHash: z.string().regex(/^[0-9a-f]{64}$/),
+	severity: z.enum(["critical", "high", "medium", "low", "info", "unknown"]),
+	title: z.string().min(1).max(1024),
+});
+
+export const missionTaskCandidateSourceSchema = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("mission_goals") }),
+	z.object({
+		kind: z.literal("security_scan"),
+		scanRunRef: securityScanResourceRefSchema,
+		targetDigest: z.string().regex(/^[0-9a-f]{64}$/),
+		sourceRevision: securityScanSourceRevisionSchema.nullable(),
+		findings: z
+			.array(securityScanFindingReferenceSchema)
+			.min(1)
+			.max(SECURITY_SCAN_TASK_GENERATION_MAX_FINDINGS),
+	}),
+]);
+export type MissionTaskCandidateSource = z.infer<
+	typeof missionTaskCandidateSourceSchema
+>;
+
+export const securityScanTaskGenerationSnapshotSchema = z.object({
+	schemaVersion: z.literal("nightworkers.security-task-generation-snapshot/v1"),
+	repository: z.object({
+		id: z.string().uuid(),
+		name: z.string().min(1).max(256),
+	}),
+	scan: z.object({
+		scanRunRef: securityScanResourceRefSchema,
+		target: z.object({
+			kind: z.enum(["working_tree", "full"]),
+			digest: z.string().regex(/^[0-9a-f]{64}$/),
+			sourceRevision: securityScanSourceRevisionSchema.nullable(),
+		}),
+		coverage: z.object({
+			completed: z.number().int().nonnegative(),
+			skipped: z.number().int().nonnegative(),
+			failed: z.number().int().nonnegative(),
+			gaps: z.array(
+				z.object({
+					code: z.string().min(1).max(64),
+					message: z.string().min(1).max(512),
+				}),
+			),
+		}),
+	}),
+	findings: z
+		.array(
+			securityScanFindingReferenceSchema.extend({
+				category: z.string().max(256).nullable(),
+				tool: z.string().min(1).max(128),
+				ruleId: z.string().max(512).nullable(),
+				location: z.object({
+					path: z.string().max(4096).nullable(),
+					startLine: z.number().int().positive().nullable(),
+					endLine: z.number().int().positive().nullable(),
+				}),
+				description: z.string().max(2_000).nullable(),
+				recommendation: z.string().max(2_000).nullable(),
+				references: z.array(z.string().url().max(512)).max(8),
+			}),
+		)
+		.min(1)
+		.max(SECURITY_SCAN_TASK_GENERATION_MAX_FINDINGS),
+});
+export type SecurityScanTaskGenerationSnapshot = z.infer<
+	typeof securityScanTaskGenerationSnapshotSchema
+>;
+
+export const taskCandidateBatchSignalSnapshotSchema = z.union([
+	projectSignalSnapshotSchema,
+	securityScanTaskGenerationSnapshotSchema,
+]);
+
 export const taskGenerationLlmUsageSchema = z.object({
 	stage: z.enum(["estimate", "task_candidates", "mission_plans"]),
 	provider: z.string().nullable(),
@@ -270,6 +355,9 @@ export const missionTaskCandidateSchema = z
 		repositoryId: z.string().uuid(),
 		goalId: z.string().uuid().nullable(),
 		goalTitle: z.string().nullable().optional(),
+		source: missionTaskCandidateSourceSchema.default({
+			kind: "mission_goals",
+		}),
 		candidateKind: missionTaskCandidateKindSchema,
 		moduleRouting: z.object({
 			primaryModule: z.string().nullable(),
@@ -304,7 +392,7 @@ export const missionTaskCandidateBatchSchema = z.object({
 	repositoryId: z.string().uuid(),
 	status: missionTaskCandidateBatchStatusSchema,
 	requestedGoalIds: z.array(z.string().uuid()),
-	signalSnapshot: projectSignalSnapshotSchema,
+	signalSnapshot: taskCandidateBatchSignalSnapshotSchema,
 	selectedModel: jsonValueSchema.nullable(),
 	rawOutput: jsonValueSchema.nullable(),
 	errorMessage: z.string().nullable(),

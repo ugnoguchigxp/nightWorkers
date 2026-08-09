@@ -30,6 +30,11 @@ const EVENT_MAPPING: Record<AgentRuntimeEvent["type"], EventMapping> = {
 		severity: "info",
 		canonicalType: "model.request_started",
 	},
+	model_response_failed: {
+		actor: "supervisor",
+		severity: "error",
+		canonicalType: "model.request_failed",
+	},
 	model_response_delta: {
 		actor: "supervisor",
 		severity: "debug",

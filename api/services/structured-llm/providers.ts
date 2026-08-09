@@ -26,6 +26,7 @@ import { dispatchStructuredLlmProvider } from "./provider-dispatch";
 import {
 	normalizeStructuredProviderError,
 	providerHttpError,
+	providerInvalidResponseError,
 	StructuredProviderError,
 } from "./provider-failure";
 import { providerAdapterKey } from "./request";
@@ -75,19 +76,33 @@ export async function callProvider(input: {
 		input.options.normalizedRequest?.providerId ?? input.provider,
 	);
 
-	return dispatchStructuredLlmProvider({
-		provider,
-		adapters: {
-			azure: () => callAzureProvider(input, isEnabled, settings),
-			openai: () => callOpenAIProvider(input, isEnabled, settings),
-			bedrock: () => callBedrockProvider(input, isEnabled, settings),
-			codex: () => callCodexProvider(input, isEnabled, settings),
-			fixture: async () => callFixtureProvider(input),
-		},
-		onUnsupported: () => {
-			throw new Error(`Unsupported LLM provider: ${input.provider}`);
-		},
-	});
+	try {
+		return await dispatchStructuredLlmProvider({
+			provider,
+			adapters: {
+				azure: () => callAzureProvider(input, isEnabled, settings),
+				openai: () => callOpenAIProvider(input, isEnabled, settings),
+				bedrock: () => callBedrockProvider(input, isEnabled, settings),
+				codex: () => callCodexProvider(input, isEnabled, settings),
+				fixture: async () => callFixtureProvider(input),
+			},
+			onUnsupported: () => {
+				throw new StructuredProviderError({
+					kind: "invalid_request",
+					retryable: false,
+					message: `Unsupported LLM provider: ${input.provider}`,
+				});
+			},
+		});
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.name === "ProviderActivityRejectedError"
+		) {
+			throw error;
+		}
+		throw normalizeStructuredProviderError(error);
+	}
 }
 
 export async function callProviderToolTurn(input: {
@@ -239,7 +254,10 @@ async function callAzureProviderToolTurn(
 		});
 	}
 
-	const responseData = (await response.json()) as OpenAIChatCompletionResponse;
+	const responseData = await readOpenAIToolTurnResponseJson(
+		response,
+		"Azure OpenAI",
+	);
 	const message = responseData.choices?.[0]?.message;
 	const content = typeof message?.content === "string" ? message.content : "";
 	const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
@@ -344,7 +362,7 @@ async function callOpenAIProviderToolTurn(
 		});
 	}
 
-	const responseData = (await response.json()) as OpenAIChatCompletionResponse;
+	const responseData = await readOpenAIToolTurnResponseJson(response, "OpenAI");
 	const message = responseData.choices?.[0]?.message;
 	const content = typeof message?.content === "string" ? message.content : "";
 	const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
@@ -391,7 +409,7 @@ export async function retryOpenAITransientUnavailableOnce(input: {
 	stream: boolean;
 }): Promise<Response> {
 	const errorText = await input.response.text();
-	if (!isOpenAITransientUnavailable(input.response.status, errorText)) {
+	if (!isOpenAITransientUnavailable(input.response.status)) {
 		return new Response(errorText, {
 			status: input.response.status,
 			statusText: input.response.statusText,
@@ -414,6 +432,18 @@ export async function retryOpenAITransientUnavailableOnce(input: {
 		stream: input.stream,
 		reason: "transient_unavailable_retry",
 	});
+}
+
+async function readOpenAIToolTurnResponseJson(
+	response: Response,
+	provider: string,
+): Promise<OpenAIChatCompletionResponse> {
+	const body = await response.text();
+	try {
+		return JSON.parse(body) as OpenAIChatCompletionResponse;
+	} catch (error) {
+		throw providerInvalidResponseError({ provider, body, cause: error });
+	}
 }
 
 export function buildOpenAICompatibleHeaders(
@@ -467,9 +497,8 @@ export function readProviderUsage(value: unknown): unknown {
 		: null;
 }
 
-function isOpenAITransientUnavailable(status: number, errorText: string) {
-	if (status !== 503) return false;
-	return /loading model|unavailable_error/i.test(errorText);
+function isOpenAITransientUnavailable(status: number) {
+	return status === 503;
 }
 
 function truncateProviderErrorText(value: string) {
@@ -491,25 +520,6 @@ async function sleep(ms: number, signal: AbortSignal) {
 			},
 			{ once: true },
 		);
-	});
-}
-
-export async function emitSchemaRetryEvents(
-	options: CallSupervisorOptions,
-	providerLabel: string,
-	status: number,
-) {
-	await emitSupervisorLlmDebugEvent(options, {
-		type: "model.retry_scheduled",
-		severity: "warning",
-		message: `${providerLabel} json_schema request failed with 400; retrying with json_object.`,
-		data: { round: options.round ?? null, status },
-	});
-	await emitSupervisorLlmDebugEvent(options, {
-		type: "model.retry_started",
-		severity: "info",
-		message: `${providerLabel} json_object retry started.`,
-		data: { round: options.round ?? null },
 	});
 }
 

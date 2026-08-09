@@ -36,6 +36,11 @@ export type RuntimeLaneEvent =
 			payload?: RuntimeEventPayload;
 	  }
 	| {
+			type: "model_response_failed";
+			message: string;
+			payload?: RuntimeEventPayload;
+	  }
+	| {
 			type: "model_response_delta";
 			message: string;
 			payload?: RuntimeEventPayload;

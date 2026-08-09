@@ -1,14 +1,13 @@
 import { StructuredProviderError } from "../../../../services/structured-llm/provider-failure";
-import { getCachedStructuredLlmProviderHealth } from "../../../../services/structured-llm/provider-health";
 import { normalizeStructuredLlmModelTarget } from "../../../../services/structured-llm/selection";
-import {
-	readStructuredLlmProviderSettings,
-	type StructuredLlmProviderEndpoint,
-} from "../../../../services/structured-llm/settings";
+import { readStructuredLlmProviderSettings } from "../../../../services/structured-llm/settings";
 import type { ProviderToolTurnResult } from "../../../../services/structured-llm/tool-calls";
-import type { StructuredLlmRoutePolicy } from "../../../../services/structured-llm/types";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
 import type { NativeApiProviderRequest } from "./native-api-request-adapter";
+import {
+	readNativeApiConfiguredActiveRole,
+	readNativeApiEffectiveRoutingSnapshot,
+} from "./native-api-route-context";
 
 export async function emitNativeApiRouteFallback(input: {
 	sink: AgentRuntimeSink;
@@ -41,8 +40,17 @@ export function summarizeNativeApiRoute(request: NativeApiProviderRequest) {
 		providerId: request.options.normalizedRequest.providerId,
 		providerEndpointId:
 			request.options.normalizedRequest.providerEndpointId ?? null,
+		...(request.options.normalizedRequest.diagnostics?.providerEndpointName
+			? {
+					providerEndpointName:
+						request.options.normalizedRequest.diagnostics.providerEndpointName,
+				}
+			: {}),
 		routeSource: request.options.normalizedRequest.routeSource ?? null,
 		model: request.options.normalizedRequest.modelOrDeployment ?? null,
+		...(request.options.normalizedRequest.targetDigest
+			? { targetDigest: request.options.normalizedRequest.targetDigest }
+			: {}),
 		thinkingDepth: request.options.normalizedRequest.thinkingDepth ?? null,
 	};
 }
@@ -62,13 +70,25 @@ export function validateNativeApiRouteSnapshot(
 	context: AgentRunContext,
 ):
 	| { ok: true }
-	| { ok: false; route: ReturnType<typeof summarizeNativeApiRoute> } {
+	| {
+			ok: false;
+			reason: "route_candidate_outside_snapshot" | "settings_revision_mismatch";
+			route?: ReturnType<typeof summarizeNativeApiRoute>;
+			expectedSettingsRevision?: string;
+			actualSettingsRevision?: string | null;
+	  } {
+	const revisionGuard = validateNativeApiSettingsRevision(context);
+	if (!revisionGuard.ok) return revisionGuard;
 	const allowedRouteKeys = readAllowedRouteKeysFromSnapshot(context);
 	if (!allowedRouteKeys || requests.length === 0) return { ok: true };
 	for (const request of requests) {
 		const routeKey = nativeApiRequestRouteKey(request);
 		if (!allowedRouteKeys.has(routeKey)) {
-			return { ok: false, route: summarizeNativeApiRoute(request) };
+			return {
+				ok: false,
+				reason: "route_candidate_outside_snapshot",
+				route: summarizeNativeApiRoute(request),
+			};
 		}
 	}
 	return { ok: true };
@@ -77,32 +97,76 @@ export function validateNativeApiRouteSnapshot(
 function readAllowedRouteKeysFromSnapshot(
 	context: AgentRunContext,
 ): Set<string> | null {
-	const snapshot = context.contextSnapshot as
-		| Record<string, unknown>
-		| undefined;
-	const effectiveLlmRouting = snapshot?.effectiveLlmRouting as
-		| Record<string, unknown>
-		| undefined;
+	const effectiveLlmRouting = readNativeApiEffectiveRoutingSnapshot(context);
 	const roles = effectiveLlmRouting?.roles as
 		| Record<string, unknown>
 		| undefined;
-	if (!roles) return null;
+	const activeRole = readNativeApiConfiguredActiveRole(context);
+	if (!roles) {
+		return readString(effectiveLlmRouting?.activeRole) ? new Set() : null;
+	}
+	if (!activeRole) return readLegacyAllowedRouteKeys(roles);
+	const rolePlan = roles[activeRole];
+	if (!rolePlan || typeof rolePlan !== "object") return new Set();
+	const routeKeys = new Set<string>();
+	const record = rolePlan as Record<string, unknown>;
+	collectSnapshotRouteKey(routeKeys, record.primary);
+	collectSnapshotRouteKey(routeKeys, record.override);
+	const fallbacks = Array.isArray(record.fallbacks) ? record.fallbacks : [];
+	for (const fallback of fallbacks)
+		collectSnapshotRouteKey(routeKeys, fallback);
+	const candidates = Array.isArray(record.candidates) ? record.candidates : [];
+	for (const candidate of candidates)
+		collectSnapshotRouteKey(routeKeys, candidate);
+	return routeKeys;
+}
+
+function readLegacyAllowedRouteKeys(
+	roles: Record<string, unknown>,
+): Set<string> | null {
 	const routeKeys = new Set<string>();
 	for (const rolePlan of Object.values(roles)) {
 		if (!rolePlan || typeof rolePlan !== "object") continue;
 		const record = rolePlan as Record<string, unknown>;
 		collectSnapshotRouteKey(routeKeys, record.primary);
 		collectSnapshotRouteKey(routeKeys, record.override);
-		const fallbacks = Array.isArray(record.fallbacks) ? record.fallbacks : [];
-		for (const fallback of fallbacks)
+		for (const fallback of Array.isArray(record.fallbacks)
+			? record.fallbacks
+			: []) {
 			collectSnapshotRouteKey(routeKeys, fallback);
-		const candidates = Array.isArray(record.candidates)
+		}
+		for (const candidate of Array.isArray(record.candidates)
 			? record.candidates
-			: [];
-		for (const candidate of candidates)
+			: []) {
 			collectSnapshotRouteKey(routeKeys, candidate);
+		}
 	}
 	return routeKeys.size > 0 ? routeKeys : null;
+}
+
+function validateNativeApiSettingsRevision(context: AgentRunContext):
+	| { ok: true }
+	| {
+			ok: false;
+			reason: "settings_revision_mismatch";
+			expectedSettingsRevision: string;
+			actualSettingsRevision: string | null;
+	  } {
+	const routing = readNativeApiEffectiveRoutingSnapshot(context);
+	const expectedSettingsRevision = readString(routing?.settingsRevision);
+	if (!expectedSettingsRevision) return { ok: true };
+	const actualSettingsRevision = readString(
+		readStructuredLlmProviderSettings().settingsRevision,
+	);
+	if (expectedSettingsRevision === actualSettingsRevision) {
+		return { ok: true };
+	}
+	return {
+		ok: false,
+		reason: "settings_revision_mismatch",
+		expectedSettingsRevision,
+		actualSettingsRevision,
+	};
 }
 
 function collectSnapshotRouteKey(routeKeys: Set<string>, value: unknown) {
@@ -133,71 +197,6 @@ function nativeApiRequestRouteKey(request: NativeApiProviderRequest) {
 	].join("::");
 }
 
-export async function buildNativeApiRoutePolicy(input: {
-	sink: AgentRuntimeSink;
-	runId: string;
-	taskId: string;
-	basePolicy: StructuredLlmRoutePolicy;
-}): Promise<StructuredLlmRoutePolicy> {
-	if (
-		process.env.NODE_ENV === "test" &&
-		process.env.NIGHTWORKERS_NATIVE_API_READINESS_PROBE !== "1"
-	) {
-		return input.basePolicy;
-	}
-	const settings = readStructuredLlmProviderSettings();
-	const endpoints = settings.providerEndpoints ?? [];
-	const endpointReadiness: NonNullable<
-		StructuredLlmRoutePolicy["endpointReadiness"]
-	> = {};
-	await Promise.all(
-		endpoints
-			.filter(shouldProbeNativeApiEndpointReadiness)
-			.map(async (endpoint) => {
-				const result = await getCachedStructuredLlmProviderHealth(endpoint, {
-					timeoutMs: 1000,
-					cacheTtlMs: 30_000,
-				});
-				endpointReadiness[endpoint.id] = {
-					reachable: result.reachable,
-					ok: result.ok,
-					checkedAt: result.checkedAt,
-					message: result.message,
-				};
-				if (result.reachable === false) {
-					await input.sink.emit({
-						type: "tool_call_progress",
-						message: `[NativeApiRunner] provider endpoint skipped by readiness: ${endpoint.id}.`,
-						payload: {
-							runtime: "native_api_runner",
-							action: "provider_readiness_skip",
-							runId: input.runId,
-							taskId: input.taskId,
-							providerEndpointId: endpoint.id,
-							providerKind: endpoint.kind,
-							message: result.message,
-						},
-					});
-				}
-			}),
-	);
-	return {
-		...input.basePolicy,
-		skipUnreachableEndpoints: true,
-		endpointReadiness,
-	};
-}
-
-function shouldProbeNativeApiEndpointReadiness(
-	endpoint: StructuredLlmProviderEndpoint,
-) {
-	return (
-		endpoint.enabled &&
-		(endpoint.kind === "local" || endpoint.kind === "openai-compatible") &&
-		Boolean(endpoint.baseUrl?.trim())
-	);
-}
-
 export function classifyNativeApiProviderError(
 	error: unknown,
 	input: { attemptTimedOut: boolean; attemptTimeoutMs?: number },
@@ -225,13 +224,16 @@ export function classifyNativeApiProviderError(
 }
 
 export function readRuntimeLlmRouteOverride(context: AgentRunContext) {
-	const routing =
+	const persistedRouting = readNativeApiEffectiveRoutingSnapshot(context);
+	const runtimeRouting =
 		context.runtimeOptions?.llmRouting &&
 		typeof context.runtimeOptions.llmRouting === "object" &&
 		!Array.isArray(context.runtimeOptions.llmRouting)
 			? (context.runtimeOptions.llmRouting as Record<string, unknown>)
 			: {};
-	return normalizeStructuredLlmModelTarget(routing.override);
+	return normalizeStructuredLlmModelTarget(
+		persistedRouting?.override ?? runtimeRouting.override,
+	);
 }
 
 export function toRecord(value: unknown): Record<string, unknown> | null {

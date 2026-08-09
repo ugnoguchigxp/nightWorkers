@@ -62,6 +62,16 @@ export function generateTaskCandidates(
 	);
 }
 
+export function generateSecurityScanTaskCandidates(
+	repositoryId: string,
+	input: unknown,
+) {
+	return apiFetch(
+		`/api/repositories/${repositoryId}/task-candidates/generate-from-security-scan`,
+		jsonRequest("POST", input),
+	);
+}
+
 export function updateMissionTaskCandidate(
 	candidateId: string,
 	input: unknown,

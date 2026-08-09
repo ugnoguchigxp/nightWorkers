@@ -41,6 +41,7 @@ blob-report/
 artifacts/
 .tanstack/tmp/
 .nightworkers-e2e/
+.nightworkers-evaluations/
 .nightworkers/
 
 # TypeScript

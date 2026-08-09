@@ -10,6 +10,9 @@ export type StructuredProviderFailureKind =
 	| "authentication"
 	| "permission"
 	| "invalid_request"
+	| "invalid_response"
+	| "schema_invalid"
+	| "cancelled"
 	| "unknown";
 
 export class StructuredProviderError extends Error {
@@ -19,6 +22,7 @@ export class StructuredProviderError extends Error {
 	readonly retryable: boolean;
 	readonly retryAfterMs: number | null;
 	readonly attempt: number;
+	readonly providerBody: string | null;
 
 	constructor(input: {
 		kind: StructuredProviderFailureKind;
@@ -28,6 +32,7 @@ export class StructuredProviderError extends Error {
 		retryable: boolean;
 		retryAfterMs?: number | null;
 		attempt?: number;
+		providerBody?: string | null;
 		cause?: unknown;
 	}) {
 		super(input.message, { cause: input.cause });
@@ -38,6 +43,7 @@ export class StructuredProviderError extends Error {
 		this.retryable = input.retryable;
 		this.retryAfterMs = input.retryAfterMs ?? null;
 		this.attempt = input.attempt ?? 1;
+		this.providerBody = input.providerBody ?? null;
 	}
 }
 
@@ -51,11 +57,28 @@ export function providerHttpError(input: {
 	const body = boundedProviderErrorBody(input.body);
 	return new StructuredProviderError({
 		kind,
-		message: `${input.provider} native tool call failed with status ${input.status}: ${body}`,
+		message: `${input.provider} request failed with status ${input.status}.`,
 		code: `HTTP_${input.status}`,
 		httpStatus: input.status,
 		retryable: isRetryableHttpStatus(input.status),
 		retryAfterMs: parseRetryAfter(input.retryAfter),
+		providerBody: body,
+	});
+}
+
+export function providerInvalidResponseError(input: {
+	provider: string;
+	body: string;
+	cause?: unknown;
+}) {
+	const body = boundedProviderErrorBody(input.body);
+	return new StructuredProviderError({
+		kind: "invalid_response",
+		message: `${input.provider} returned an invalid JSON response.`,
+		code: "INVALID_PROVIDER_RESPONSE",
+		retryable: false,
+		providerBody: body,
+		cause: input.cause,
 	});
 }
 
@@ -102,6 +125,15 @@ export function normalizeStructuredProviderError(error: unknown) {
 	}
 	const name = typeof record.name === "string" ? record.name : null;
 	const code = typeof record.code === "string" ? record.code : null;
+	if (name === "AbortError") {
+		return new StructuredProviderError({
+			kind: "cancelled",
+			message: error instanceof Error ? error.message : String(error),
+			code,
+			retryable: false,
+			cause: error,
+		});
+	}
 	const timeout =
 		name === "TimeoutError" ||
 		code === "ETIMEDOUT" ||
@@ -112,7 +144,13 @@ export function normalizeStructuredProviderError(error: unknown) {
 		code === "ECONNREFUSED" ||
 		code === "EAI_AGAIN";
 	return new StructuredProviderError({
-		kind: timeout ? "timeout" : transport ? "transport" : "unknown",
+		kind: timeout
+			? "timeout"
+			: transport
+				? "transport"
+				: error instanceof SyntaxError
+					? "invalid_response"
+					: "unknown",
 		message: error instanceof Error ? error.message : String(error),
 		code,
 		retryable: timeout || transport,
@@ -132,6 +170,7 @@ export function withStructuredProviderAttempt(
 		retryable: error.retryable,
 		retryAfterMs: error.retryAfterMs,
 		attempt,
+		providerBody: error.providerBody,
 		cause: error,
 	});
 }
@@ -159,6 +198,7 @@ function isRetryableHttpStatus(status: number) {
 
 function readStatus(record: Record<string, unknown>) {
 	if (typeof record.httpStatus === "number") return record.httpStatus;
+	if (typeof record.status === "number") return record.status;
 	if (typeof record.statusCode === "number") return record.statusCode;
 	const metadata = record.$metadata;
 	if (metadata && typeof metadata === "object") {

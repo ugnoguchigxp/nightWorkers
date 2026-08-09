@@ -1,5 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
+	generateSecurityScanTaskCandidatesRequestSchema,
+	generateSecurityScanTaskCandidatesResponseSchema,
+} from "../../../shared/schemas/security-task-generation.schema";
+import {
 	createMissionGoalFromPresetRequestSchema,
 	createMissionGoalRequestSchema,
 	createTasksFromMissionCandidatesRequestSchema,
@@ -16,6 +20,7 @@ import {
 } from "../../../shared/schemas/task-generation.schema";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { withOpenApiRouteError } from "../nightworkers/nightworkers.route-utils";
+import { generateSecurityScanTaskCandidates } from "./security-task-candidate.service";
 import * as service from "./task-generation.service";
 import * as orchestrator from "./task-generation-orchestrator.service";
 
@@ -186,6 +191,31 @@ const generateTaskCandidatesRoute = createRoute({
 	},
 });
 
+const generateSecurityScanTaskCandidatesRoute = createRoute({
+	method: "post",
+	path: "/repositories/:id/task-candidates/generate-from-security-scan",
+	request: {
+		params: repositoryParams,
+		body: {
+			content: {
+				"application/json": {
+					schema: generateSecurityScanTaskCandidatesRequestSchema,
+				},
+			},
+		},
+	},
+	responses: {
+		201: {
+			content: {
+				"application/json": {
+					schema: generateSecurityScanTaskCandidatesResponseSchema,
+				},
+			},
+			description: "Task candidates generated from security scan findings",
+		},
+	},
+});
+
 const getMissionTaskCandidateRoute = createRoute({
 	method: "get",
 	path: "/mission-task-candidates/:candidateId",
@@ -318,6 +348,18 @@ export const taskGenerationRouter = createOpenApiRouter()
 		withOpenApiRouteError(generateTaskCandidatesRoute, async (c) =>
 			c.json(
 				await orchestrator.generateTaskCandidates({
+					repositoryId: c.req.param("id"),
+					...c.req.valid("json"),
+				}),
+				201,
+			),
+		),
+	)
+	.openapi(
+		generateSecurityScanTaskCandidatesRoute,
+		withOpenApiRouteError(generateSecurityScanTaskCandidatesRoute, async (c) =>
+			c.json(
+				await generateSecurityScanTaskCandidates({
 					repositoryId: c.req.param("id"),
 					...c.req.valid("json"),
 				}),

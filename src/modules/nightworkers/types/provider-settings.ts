@@ -76,12 +76,16 @@ export type LlmProviderHealthResult = {
 	durationMs: number;
 	checkedAt: string;
 	message: string;
+	probeKind?: "connectivity" | "execution_readiness";
+	model?: string | null;
+	targetDigest?: string | null;
 };
 
 export type LlmModelTarget = {
 	providerEndpointId: string;
 	model: string;
 	thinkingDepth?: ThinkingDepth | "";
+	requestTimeoutSeconds?: number;
 };
 
 export type LlmRoleRoute = {

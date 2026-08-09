@@ -75,6 +75,7 @@ export function ensureRuntimeDatabasePath(
 	if (
 		env.NODE_ENV === "test" ||
 		env.NIGHTWORKERS_E2E_ISOLATED === "1" ||
+		env.NIGHTWORKERS_DATABASE_ACCESS_SCOPE === "isolated_evaluation" ||
 		env.NIGHTWORKERS_VITEST_DB_PATH?.trim()
 	) {
 		return;

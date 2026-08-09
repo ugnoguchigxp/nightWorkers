@@ -1,6 +1,9 @@
 import { AppError } from "../../../lib/errors";
 import type { ResolvedStructuredLlmRoute } from "../../../services/structured-llm/role-routing";
-import type { StructuredLlmModelTarget } from "../../../services/structured-llm/settings";
+import type {
+	StructuredLlmModelTarget,
+	StructuredLlmRole,
+} from "../../../services/structured-llm/settings";
 import type { JobType } from "../../../services/supervisor/prompt";
 import { CodexAgentRuntime } from "./CodexAgentRuntime";
 import { NativeAgentRuntime } from "./NativeAgentRuntime";
@@ -37,7 +40,8 @@ export function resolveAgentRuntime(kind: AgentRuntimeKind): AgentRuntime {
 export type RuntimeLaneSetupInput = {
 	compiledPromptText: string;
 	runtimeLaneResolution?: RuntimeLaneResolution;
-	implementationLlmRoute?: ResolvedStructuredLlmRoute | null;
+	activeRole?: StructuredLlmRole;
+	activeLlmRoute?: ResolvedStructuredLlmRoute | null;
 	llmRouteOverride?: StructuredLlmModelTarget | null;
 	jobType?: JobType | null;
 	planModeSettingsSnapshot?: unknown;
@@ -79,7 +83,7 @@ export function createRuntimeLaneAdapter(lane: RuntimeLane): AgentRuntime {
 export function buildRuntimeLaneOptions(
 	input: RuntimeLaneSetupInput,
 ): Record<string, unknown> {
-	const activeRoute = input.implementationLlmRoute ?? null;
+	const activeRoute = input.activeLlmRoute ?? null;
 	const nativeApiRoute =
 		input.runtimeLaneResolution?.lane === "native-api-runner" &&
 		activeRoute !== null &&
@@ -93,7 +97,7 @@ export function buildRuntimeLaneOptions(
 			? { structuredLlmRoutePolicy: { disallowedProviderIds: ["codex"] } }
 			: {}),
 		llmRouting: {
-			activeRole: activeRoute?.role ?? "implementation",
+			activeRole: input.activeRole ?? activeRoute?.role ?? "implementation",
 			active: activeRoute ? summarizeResolvedRoute(activeRoute) : null,
 			override: input.llmRouteOverride ?? null,
 		},

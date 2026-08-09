@@ -1,10 +1,7 @@
-export type E2eEnvironment = {
-	runId: string;
-	runRoot: string;
-	parentRoot: string;
-	databasePath: string;
-	workspaceRoot: string;
-	env: NodeJS.ProcessEnv;
+import type { IsolatedRuntimeEnvironment } from "./isolated-runtime-environment.mjs";
+
+export type E2eEnvironment = IsolatedRuntimeEnvironment & {
+	env: NodeJS.ProcessEnv & Record<string, string>;
 };
 
 export function assertIsolatedE2eEnvironment(env?: NodeJS.ProcessEnv): {

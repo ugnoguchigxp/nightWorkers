@@ -1,8 +1,14 @@
-import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import {
+  DATABASE_ACCESS_SCOPES,
+  assertIsolatedRuntimeEnvironment,
+} from '../shared/runtime-database-access.mjs';
+import {
+  cleanupIsolatedRuntimeEnvironment,
+  createIsolatedRuntimeEnvironment,
+} from './isolated-runtime-environment.mjs';
 
 const isolatedRootName = '.nightworkers-e2e';
 const providerCredentialKeys = [
@@ -51,6 +57,12 @@ export function assertIsolatedE2eEnvironment(env = process.env) {
   if (path.resolve(fileURLToPath(databaseUrl)) !== databasePath) {
     throw new Error('E2E DATABASE_URL and NIGHTWORKERS_E2E_DATABASE_PATH do not match.');
   }
+  const isolated = assertIsolatedRuntimeEnvironment(env, [
+    DATABASE_ACCESS_SCOPES.isolatedTest,
+  ]);
+  if (path.resolve(isolated.manifest.databasePath) !== databasePath) {
+    throw new Error('E2E manifest database path does not match NIGHTWORKERS_E2E_DATABASE_PATH.');
+  }
   for (const [label, candidate] of [
     ['database', databasePath],
     ['workspace', workspaceRoot],
@@ -82,31 +94,29 @@ function reservePort() {
 
 export async function createIsolatedE2eEnvironment(options = {}) {
   const repositoryRoot = path.resolve(options.repositoryRoot ?? process.cwd());
-  const parentRoot = path.join(repositoryRoot, isolatedRootName);
-  const runId = options.runId ?? `${Date.now()}-${process.pid}-${randomUUID()}`;
-  const runRoot = path.join(parentRoot, runId);
-  const databasePath = path.join(runRoot, 'database', 'e2e.sqlite');
-  const runtimeRoot = path.join(runRoot, 'runtime');
-  const settingsRoot = path.join(runRoot, 'settings');
-  const workspaceRoot = path.join(runRoot, 'workspaces');
-  const codexHome = path.join(runRoot, 'codex-home');
-  for (const directory of [
-    path.dirname(databasePath),
+  const isolated = createIsolatedRuntimeEnvironment({
+    repositoryRoot,
+    scope: DATABASE_ACCESS_SCOPES.isolatedTest,
+    rootName: isolatedRootName,
+    runId: options.runId,
+    databaseName: 'e2e.sqlite',
+    purpose: 'playwright_e2e',
+    env: options.env ?? process.env,
+  });
+  const {
+    runId,
+    runRoot,
+    databasePath,
     runtimeRoot,
-    settingsRoot,
     workspaceRoot,
-    codexHome,
-  ]) {
-    fs.mkdirSync(directory, { recursive: true });
-  }
-  fs.writeFileSync(databasePath, '');
+  } = isolated;
 
   const webPort = options.webPort ?? (await reservePort());
   let apiPort = options.apiPort ?? (await reservePort());
   while (apiPort === webPort) apiPort = await reservePort();
   const liveLlmEnabled = options.env?.NIGHTWORKERS_LIVE_LLM_E2E === '1';
   const env = {
-    ...(options.env ?? process.env),
+    ...isolated.env,
     NIGHTWORKERS_E2E: '1',
     NIGHTWORKERS_E2E_ISOLATED: '1',
     NIGHTWORKERS_E2E_RUN_ROOT: runRoot,
@@ -117,16 +127,9 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     NIGHTWORKERS_E2E_API_PORT: String(apiPort),
     NIGHTWORKERS_WEB_PORT: String(webPort),
     NIGHTWORKERS_API_PORT: String(apiPort),
-    NIGHTWORKERS_RUNTIME_DIR: runtimeRoot,
-    NIGHTWORKERS_LLM_SETTINGS_PATH: path.join(settingsRoot, 'llm.json'),
-    NIGHTWORKERS_GENERAL_SETTINGS_PATH: path.join(settingsRoot, 'general.json'),
-    NIGHTWORKERS_MCP_SETTINGS_PATH: path.join(settingsRoot, 'mcp.json'),
-    NIGHTWORKERS_HOOKS_SETTINGS_PATH: path.join(settingsRoot, 'hooks.json'),
-    NIGHTWORKERS_CODEX_HOME: codexHome,
     NIGHTWORKERS_DESKTOP: '0',
     NIGHTWORKERS_EXECUTOR_MODE: 'in_process',
     NIGHTWORKERS_SQLITE_BUSY_RETRY_PROFILE: 'coverage',
-    DATABASE_URL: pathToFileURL(databasePath).href,
     HOST: '127.0.0.1',
     PORT: String(apiPort),
     CORS_ORIGIN: `http://localhost:${webPort}`,
@@ -137,23 +140,9 @@ export async function createIsolatedE2eEnvironment(options = {}) {
     for (const key of providerCredentialKeys) env[key] = '';
   }
   assertIsolatedE2eEnvironment(env);
-  return { runId, runRoot, parentRoot, databasePath, workspaceRoot, env };
+  return { ...isolated, runId, runRoot, databasePath, workspaceRoot, env };
 }
 
 export function cleanupIsolatedE2eEnvironment(environment) {
-  if (!environment?.runRoot || !environment?.databasePath) return;
-  const runRoot = path.resolve(environment.runRoot);
-  const databasePath = path.resolve(environment.databasePath);
-  if (!isPathInside(runRoot, databasePath)) {
-    throw new Error('Refusing to clean an E2E database outside its run root.');
-  }
-  for (const suffix of ['', '-wal', '-shm']) {
-    fs.rmSync(`${databasePath}${suffix}`, { force: true });
-  }
-  fs.rmSync(runRoot, { recursive: true, force: true });
-  try {
-    fs.rmdirSync(environment.parentRoot);
-  } catch (error) {
-    if (!['ENOENT', 'ENOTEMPTY'].includes(error?.code)) throw error;
-  }
+  cleanupIsolatedRuntimeEnvironment(environment);
 }

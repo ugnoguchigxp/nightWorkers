@@ -191,6 +191,25 @@ describe("MCP worker tool bridge", () => {
 		});
 	});
 
+	it("blocks dedicated Project Intelligence tools in the generic MCP bridge", async () => {
+		for (const toolName of [
+			"vuln_prepare_project_intelligence",
+			"vuln_get_project_intelligence_status",
+			"vuln_get_project_exploration_catalog",
+		]) {
+			const dispatch = await executeWorkerTool({
+				toolName: "mcp_call_tool",
+				args: { serverId: "any-server", toolName, arguments: {} },
+				repoRoot: process.cwd(),
+				readFiles: [],
+			});
+			expect(dispatch.result).toMatchObject({
+				ok: false,
+				error: { code: "MCP_DEDICATED_TOOL_BLOCKED" },
+			});
+		}
+	});
+
 	it("maps MCP isError tool results to failed worker tool results", async () => {
 		const serverPath = writeFakeMcpServer();
 		const server = await createMcpServer({

@@ -127,7 +127,16 @@ export const enSettings = {
 	"settings.vulnerabilityScanProvider.notConfigured": "Not configured",
 	"settings.vulnerabilityScanProvider.enabled": "Enable integration",
 	"settings.vulnerabilityScanProvider.enabledHelp":
-		"Only the NightWorkers backend uses the service token. It is never exposed to the browser.",
+		"Run scans through the local CLI or an HTTP provider.",
+	"settings.vulnerabilityScanProvider.transport": "Connection method",
+	"settings.vulnerabilityScanProvider.transportLocalCli":
+		"Local CLI (serverless, recommended)",
+	"settings.vulnerabilityScanProvider.transportHttp":
+		"HTTP provider (service token)",
+	"settings.vulnerabilityScanProvider.localCliHelp":
+		"Pass the Project folder registered in NightWorkers directly to the vulnWorkbench CLI. No server or service token is required, but the vulnWorkbench checkout must be set up and migrated once.",
+	"settings.vulnerabilityScanProvider.httpHelp":
+		"Connect to a separately running vulnWorkbench provider API.",
 	"settings.vulnerabilityScanProvider.baseUrl": "vulnWorkbench Base URL",
 	"settings.vulnerabilityScanProvider.token": "Service token",
 	"settings.vulnerabilityScanProvider.tokenStored":
@@ -255,6 +264,9 @@ export const enSettings = {
 	"settings.llm.thinking.medium": "Medium",
 	"settings.llm.thinking.high": "High",
 	"settings.llm.thinking.very_high": "Very high",
+	"settings.llm.requestTimeout": "Request timeout (seconds)",
+	"settings.llm.requestTimeoutHelp":
+		"Applies to one provider call. Allowed range is 30–1200 seconds; the default is 300 seconds. Values are clamped after the field loses focus, not while typing.",
 	"settings.llm.fallback.add": "Add fallback",
 	"settings.llm.fallback.item": "Fallback {{index}}",
 	"settings.llm.fallback.moveUp": "Up",
@@ -265,7 +277,9 @@ export const enSettings = {
 		"Configure LLM provider endpoints and credentials. Role Routing selects from these endpoints.",
 	"settings.llm.endpoint.add": "Add",
 	"settings.llm.endpoint.enabled": "Enabled",
-	"settings.llm.endpoint.health": "Health",
+	"settings.llm.endpoint.health": "Execution check",
+	"settings.llm.endpoint.healthHint":
+		"Sends a minimal request to the configured model and may incur provider charges.",
 	"settings.llm.endpoint.remove": "Remove endpoint",
 	"settings.llm.endpoint.reachable": "Reachable",
 	"settings.llm.endpoint.unreachable": "Unreachable",

@@ -249,6 +249,7 @@ export const appendWorkbenchMessageRoute = createRoute({
 								"feature_plan",
 								"create_task",
 								"queue",
+								"plan_task",
 								"run_task",
 								"adjust_running",
 								"review_prompt",

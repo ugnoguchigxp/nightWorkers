@@ -49,6 +49,16 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 async function main() {
+	logEvent({
+		channel: "api",
+		level: "info",
+		message: "database access resolved",
+		meta: {
+			scope: config.DATABASE_ACCESS.scope,
+			runId: config.DATABASE_ACCESS.runId,
+			databasePath: config.DATABASE_ACCESS.databasePath,
+		},
+	});
 	server = await createNightWorkersServer({
 		port: config.PORT,
 		shutdownTimeoutMs,

@@ -11,6 +11,7 @@ import {
 	writeApplicationSetting,
 	writeApplicationSettingBundle,
 } from "../../services/settings/application-settings-store";
+import { isVulnWorkbenchCliConfigured } from "../../services/vulnworkbench-cli-runtime";
 
 const DEFAULT_PROVIDER_BASE_URL = "http://127.0.0.1:29831";
 const MAX_BINDINGS_PER_REPOSITORY = 20;
@@ -18,6 +19,7 @@ const MAX_BINDINGS_PER_REPOSITORY = 20;
 type IntegrationPublicSettings = Record<string, unknown> & {
 	securityScanProvider?: {
 		enabled?: boolean;
+		transport?: "local_cli" | "http";
 		baseUrl?: string;
 		bindings?: Record<string, SecurityScanBinding[]>;
 	};
@@ -31,8 +33,10 @@ type IntegrationSecretSettings = Record<string, unknown> & {
 
 export type SecurityScanProviderConnection = {
 	enabled: boolean;
+	transport: "local_cli" | "http";
 	baseUrl: string;
 	token: string;
+	localCliConfigured: boolean;
 };
 
 let settingsWriteQueue: Promise<void> = Promise.resolve();
@@ -90,20 +94,31 @@ export function normalizeProviderBaseUrl(value: string): string {
 
 export function getSecurityScanProviderSettings(): SecurityScanProviderSettings {
 	const publicSettings = readPublicSettings().securityScanProvider;
-	const secretSettings = readSecretSettings().securityScanProvider;
+	const transport = publicSettings?.transport === "http" ? "http" : "local_cli";
 	return {
 		enabled: publicSettings?.enabled === true,
-		baseUrl: normalizeProviderBaseUrl(
-			publicSettings?.baseUrl ?? DEFAULT_PROVIDER_BASE_URL,
+		transport,
+		baseUrl: providerBaseUrl(
+			typeof publicSettings?.baseUrl === "string"
+				? publicSettings.baseUrl
+				: undefined,
+			transport,
 		),
-		tokenConfigured: Boolean(secretSettings?.token?.trim()),
+		tokenConfigured: Boolean(readConfiguredToken()),
+		localCliConfigured: isVulnWorkbenchCliConfigured(),
 	};
 }
 
 export function getSecurityScanProviderConnection(): SecurityScanProviderConnection {
 	const settings = getSecurityScanProviderSettings();
-	const token = readSecretSettings().securityScanProvider?.token?.trim() ?? "";
-	return { enabled: settings.enabled, baseUrl: settings.baseUrl, token };
+	const token = readConfiguredToken();
+	return {
+		enabled: settings.enabled,
+		transport: settings.transport,
+		baseUrl: settings.baseUrl,
+		token,
+		localCliConfigured: settings.localCliConfigured,
+	};
 }
 
 export async function saveSecurityScanProviderSettings(
@@ -115,14 +130,19 @@ export async function saveSecurityScanProviderSettings(
 			issues: parsed.error.issues,
 		});
 	}
-	const baseUrl = normalizeProviderBaseUrl(parsed.data.baseUrl);
 	return serializeSettingsWrite(async () => {
 		const currentPublic = readPublicSettings();
 		const currentSecrets = readSecretSettings();
+		const currentBaseUrl = currentPublic.securityScanProvider?.baseUrl;
+		const baseUrl = providerBaseUrl(
+			parsed.data.baseUrl ??
+				(typeof currentBaseUrl === "string" ? currentBaseUrl : undefined),
+			parsed.data.transport,
+		);
+		const currentToken = currentSecrets.securityScanProvider?.token;
 		const token =
 			parsed.data.token?.trim() ??
-			currentSecrets.securityScanProvider?.token?.trim() ??
-			"";
+			(typeof currentToken === "string" ? currentToken.trim() : "");
 		await writeApplicationSettingBundle(
 			"integrations",
 			{
@@ -130,6 +150,7 @@ export async function saveSecurityScanProviderSettings(
 				securityScanProvider: {
 					...currentPublic.securityScanProvider,
 					enabled: parsed.data.enabled,
+					transport: parsed.data.transport,
 					baseUrl,
 				},
 			},
@@ -143,10 +164,30 @@ export async function saveSecurityScanProviderSettings(
 		);
 		return {
 			enabled: parsed.data.enabled,
+			transport: parsed.data.transport,
 			baseUrl,
 			tokenConfigured: Boolean(token),
+			localCliConfigured: isVulnWorkbenchCliConfigured(),
 		};
 	});
+}
+
+function readConfiguredToken() {
+	const value = readSecretSettings().securityScanProvider?.token;
+	return typeof value === "string" ? value.trim() : "";
+}
+
+function providerBaseUrl(
+	value: string | undefined,
+	transport: "local_cli" | "http",
+) {
+	const candidate = value ?? DEFAULT_PROVIDER_BASE_URL;
+	if (transport === "http") return normalizeProviderBaseUrl(candidate);
+	try {
+		return normalizeProviderBaseUrl(candidate);
+	} catch {
+		return DEFAULT_PROVIDER_BASE_URL;
+	}
 }
 
 export function listSecurityScanBindings(

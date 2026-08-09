@@ -10,8 +10,13 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { apiPath } from "../../lib/api-base";
+import type { Task } from "../nightworkers/types";
+import { SecurityScanFindingsSection } from "./SecurityScanFindingsSection";
+import { SecurityScanProfileSelector } from "./SecurityScanProfileSelector";
+import { SecurityTaskCandidateDialog } from "./SecurityTaskCandidateDialog";
 import { securityScanReportContentPath } from "./securityScanCommands";
 import { useSecurityScanController } from "./useSecurityScanController";
+import { useSecurityTaskCandidateController } from "./useSecurityTaskCandidateController";
 
 const severityColors: Record<string, string> = {
 	critical: "#fb7185",
@@ -29,14 +34,23 @@ function formatDate(value: string) {
 
 export function ProjectSecurityScanScreen({
 	repositoryId,
+	onTasksCreated,
 }: {
 	repositoryId: string;
+	onTasksCreated?: (tasks: Task[]) => Promise<void> | void;
 }) {
 	const { t } = useTranslation();
 	const controller = useSecurityScanController(repositoryId);
+	const taskCandidates = useSecurityTaskCandidateController({
+		repositoryId,
+		scanRunRef: controller.activeScan?.scanRunRef ?? null,
+		onTasksCreated,
+	});
 	const configured =
 		controller.providerSettings?.enabled &&
-		controller.providerSettings.tokenConfigured;
+		(controller.providerSettings.transport === "local_cli"
+			? controller.providerSettings.localCliConfigured
+			: controller.providerSettings.tokenConfigured);
 	const customProfileRef =
 		controller.selection.mode === "custom"
 			? controller.selection.profileRef
@@ -58,9 +72,31 @@ export function ProjectSecurityScanScreen({
 	const activeReport = controller.reports.some(
 		(report) => report.status === "queued" || report.status === "running",
 	);
-
+	const createReport = async () => {
+		const report = await controller.createReport();
+		if (report?.status !== "completed") return;
+		window.location.assign(
+			apiPath(
+				securityScanReportContentPath(
+					repositoryId,
+					report.scanRunRef,
+					report.reportRef,
+				),
+			),
+		);
+	};
 	return (
 		<div className="space-y-4">
+			{taskCandidates.result ? (
+				<SecurityTaskCandidateDialog
+					result={taskCandidates.result}
+					busy={taskCandidates.action === "create"}
+					onClose={taskCandidates.closeDialog}
+					onCreateTasks={(candidateIds) =>
+						void taskCandidates.createDraftTasks(candidateIds)
+					}
+				/>
+			) : null}
 			<section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
@@ -128,6 +164,12 @@ export function ProjectSecurityScanScreen({
 						<span>{controller.error}</span>
 					</div>
 				) : null}
+				{taskCandidates.error ? (
+					<div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-300">
+						<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+						<span>{taskCandidates.error}</span>
+					</div>
+				) : null}
 			</section>
 
 			{controller.capabilities ? (
@@ -189,42 +231,21 @@ export function ProjectSecurityScanScreen({
 					</div>
 
 					{controller.capabilities.selectableProfiles.length > 0 ? (
-						<label className="mt-4 block text-xs text-zinc-300">
-							<span className="mb-1.5 block font-semibold">
-								{t("securityScan.customProfile")}
-							</span>
-							<select
-								value={
-									controller.selection.mode === "custom"
-										? controller.selection.profileRef
-										: ""
+						<SecurityScanProfileSelector
+							profiles={controller.capabilities.selectableProfiles}
+							selectedProfileRef={customProfileRef}
+							onSelect={(profile) => {
+								controller.updateSelection({
+									mode: "custom",
+									profileRef: profile.ref,
+								});
+								if (
+									!profile.supportedTargets.includes(controller.target.kind)
+								) {
+									controller.updateTarget(profile.supportedTargets[0]);
 								}
-								onChange={(event) => {
-									const profile =
-										controller.capabilities?.selectableProfiles.find(
-											(item) => item.ref === event.target.value,
-										);
-									if (!profile) return;
-									controller.updateSelection({
-										mode: "custom",
-										profileRef: profile.ref,
-									});
-									if (
-										!profile.supportedTargets.includes(controller.target.kind)
-									) {
-										controller.updateTarget(profile.supportedTargets[0]);
-									}
-								}}
-								className="h-9 w-full max-w-xl rounded-md border border-zinc-700 bg-zinc-950 px-3 text-xs text-zinc-100"
-							>
-								<option value="">{t("securityScan.customNotSelected")}</option>
-								{controller.capabilities.selectableProfiles.map((profile) => (
-									<option key={profile.ref} value={profile.ref}>
-										{profile.name}
-									</option>
-								))}
-							</select>
-						</label>
+							}}
+						/>
 					) : null}
 
 					<fieldset className="mt-4">
@@ -431,56 +452,20 @@ export function ProjectSecurityScanScreen({
 						</section>
 					) : null}
 
-					{controller.findings.length > 0 ? (
-						<section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/40">
-							<div className="border-b border-zinc-800 px-5 py-4">
-								<h3 className="text-sm font-semibold text-zinc-100">
-									{t("securityScan.findings")}
-								</h3>
-							</div>
-							<div className="divide-y divide-zinc-800">
-								{controller.findings.map((finding) => (
-									<article key={finding.ref} className="p-5">
-										<div className="flex flex-wrap items-start justify-between gap-2">
-											<div>
-												<div className="flex items-center gap-2">
-													<span
-														className="text-[10px] font-bold uppercase"
-														style={{ color: severityColors[finding.severity] }}
-													>
-														{finding.severity}
-													</span>
-													<h4 className="text-xs font-semibold text-zinc-100">
-														{finding.title}
-													</h4>
-												</div>
-												<p className="mt-1 font-mono text-[10px] text-zinc-500">
-													{finding.location.path ?? "—"}
-													{finding.location.startLine
-														? `:${finding.location.startLine}`
-														: ""}{" "}
-													· {finding.tool}
-												</p>
-											</div>
-										</div>
-										{finding.description ? (
-											<p className="mt-3 whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-400">
-												{finding.description}
-											</p>
-										) : null}
-										{finding.recommendation ? (
-											<div className="mt-3 rounded border border-emerald-500/20 bg-emerald-500/5 p-3 text-[11px] text-emerald-200">
-												<span className="font-semibold">
-													{t("securityScan.recommendation")}:{" "}
-												</span>
-												{finding.recommendation}
-											</div>
-										) : null}
-									</article>
-								))}
-							</div>
-						</section>
-					) : null}
+					<SecurityScanFindingsSection
+						findings={controller.findings}
+						activeScan={controller.activeScan}
+						selectedFindingRefs={taskCandidates.selectedFindingRefs}
+						generating={taskCandidates.action === "generate"}
+						onSelectAll={() =>
+							taskCandidates.selectAll(
+								controller.findings.map((finding) => finding.ref),
+							)
+						}
+						onClearSelection={taskCandidates.clearSelection}
+						onToggleFinding={taskCandidates.toggleFinding}
+						onGenerate={() => void taskCandidates.requestCandidates()}
+					/>
 
 					{controller.activeScan?.status === "completed" ? (
 						<section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
@@ -497,7 +482,7 @@ export function ProjectSecurityScanScreen({
 									size="sm"
 									loading={controller.action === "report" || activeReport}
 									disabled={activeReport}
-									onClick={() => void controller.createReport()}
+									onClick={() => void createReport()}
 									maxLabelLength={30}
 								>
 									{t("securityScan.generateReport")}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const SECURITY_SCAN_CONTRACT_VERSION = 1 as const;
+export const SECURITY_SCAN_TASK_GENERATION_MAX_FINDINGS = 25;
 export const SECURITY_SCAN_PROVIDER_BASE_PATH =
 	"/api/integrations/nightworkers/v1";
 
@@ -36,7 +37,8 @@ export type SecurityScanTarget = z.infer<typeof securityScanTargetSchema>;
 export const securityScanProviderSettingsInputSchema = z
 	.object({
 		enabled: z.boolean(),
-		baseUrl: z.string().trim().url().max(2048),
+		transport: z.enum(["local_cli", "http"]).default("local_cli"),
+		baseUrl: z.string().trim().url().max(2048).optional(),
 		token: z.string().trim().min(1).max(4096).optional(),
 	})
 	.strict();
@@ -47,18 +49,37 @@ export type SecurityScanProviderSettingsInput = z.infer<
 export const securityScanProviderSettingsSchema = z
 	.object({
 		enabled: z.boolean(),
+		transport: z.enum(["local_cli", "http"]),
 		baseUrl: z.string().url(),
 		tokenConfigured: z.boolean(),
+		localCliConfigured: z.boolean(),
 	})
 	.strict();
 export type SecurityScanProviderSettings = z.infer<
 	typeof securityScanProviderSettingsSchema
 >;
 
-const opaqueRefSchema = z.string().min(1).max(256);
+export const securityScanResourceRefSchema = z
+	.string()
+	.min(1)
+	.max(256)
+	.regex(/^[A-Za-z0-9._~:-]+$/);
+const opaqueRefSchema = securityScanResourceRefSchema;
 const timestampSchema = z.string().datetime();
 const nullableTimestampSchema = timestampSchema.nullable();
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+export const securityScanSourceRevisionSchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.refine(
+		(value) =>
+			[...value].every((character) => {
+				const codePoint = character.codePointAt(0) ?? 0;
+				return codePoint > 31 && !(codePoint >= 127 && codePoint <= 159);
+			}),
+		{ message: "sourceRevision must not contain control characters" },
+	);
 
 export const securityScanProviderEnvelopeSchema = <T extends z.ZodType>(
 	dataSchema: T,
@@ -145,7 +166,7 @@ export const securityScanPreviewSchema = z
 			.object({
 				kind: securityScanTargetKindSchema,
 				digest: sha256Schema,
-				sourceRevision: z.string().min(1).max(128).nullable(),
+				sourceRevision: securityScanSourceRevisionSchema.nullable(),
 				fileCount: z.number().int().nonnegative().nullable(),
 			})
 			.strict(),
@@ -182,7 +203,7 @@ export const securityScanStartResponseSchema = z
 			.object({
 				kind: securityScanTargetKindSchema,
 				digest: sha256Schema,
-				sourceRevision: z.string().min(1).max(128).nullable(),
+				sourceRevision: securityScanSourceRevisionSchema.nullable(),
 			})
 			.strict(),
 		createdAt: timestampSchema,
@@ -217,7 +238,7 @@ export const securityScanRunDetailSchema = z
 			.object({
 				kind: securityScanTargetKindSchema,
 				digest: sha256Schema,
-				sourceRevision: z.string().min(1).max(128).nullable(),
+				sourceRevision: securityScanSourceRevisionSchema.nullable(),
 			})
 			.strict(),
 		progress: z
@@ -353,6 +374,9 @@ export const securityScanStartReportResponseSchema = z
 		replayed: z.boolean(),
 	})
 	.strict();
+export type SecurityScanStartReportResponse = z.infer<
+	typeof securityScanStartReportResponseSchema
+>;
 
 export const securityScanBindingSchema = z
 	.object({

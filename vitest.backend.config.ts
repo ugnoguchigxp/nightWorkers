@@ -12,6 +12,7 @@ export default defineConfig({
 		setupFiles: ["./tests/setup-vitest-db.ts"],
 		env: {
 			NODE_ENV: "test",
+			NIGHTWORKERS_DATABASE_ACCESS_SCOPE: "isolated_test",
 			DATABASE_URL: `file:${testDatabasePath}`,
 			CORS_ORIGIN: "http://localhost:39174",
 			NIGHTWORKERS_DESKTOP: "0",

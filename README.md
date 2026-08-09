@@ -296,6 +296,15 @@ configured or is ineligible, NightWorkers records the unavailable or
 policy-skip state instead of presenting an LLM-only concern as a confirmed
 vulnerability.
 
+The Project-detail vulnerability scan uses the local CLI connection by default.
+NightWorkers passes the registered `localPath` directly to the vulnWorkbench
+CLI, so no vulnWorkbench HTTP server or service token is required. The screen
+discovers the `quick`, `standard`, and `deep` presets, working-tree/full targets,
+and allowlisted source, dependency-manifest, artifact, and detailed profiles
+from that CLI. Select the HTTP provider connection in Settings only when using
+a separate process or host. Before the first local scan, run `bun install` and
+`bun run db:migrate` once in the vulnWorkbench checkout.
+
 ### Providers, Routing, MCP, and Hooks
 
 Structured reasoning and repository execution are separate runtime concerns.

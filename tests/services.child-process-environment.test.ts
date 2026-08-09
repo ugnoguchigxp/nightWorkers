@@ -145,6 +145,7 @@ describe("child process environment boundary", () => {
 	it("does not let an isolated task worker resolve the parent secret store", () => {
 		clearSessionSecretStoreForTests();
 		writeSecretStoreValue("test/provider", "parent-only-secret");
+		expect(readSecretStoreValue("test/provider")).toBe("parent-only-secret");
 		const previousRole = process.env.NIGHTWORKERS_EXECUTION_ROLE;
 		process.env.NIGHTWORKERS_EXECUTION_ROLE = "worker";
 		try {
@@ -175,5 +176,6 @@ describe("child process environment boundary", () => {
 		expect(invocation.input).toContain(
 			Buffer.from(secret, "utf-8").toString("hex"),
 		);
+		expect(invocation.input.endsWith("\n")).toBe(true);
 	});
 });

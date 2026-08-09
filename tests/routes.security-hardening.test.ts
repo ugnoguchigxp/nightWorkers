@@ -411,6 +411,17 @@ describe("LLM settings secret hardening", () => {
 			CODEX_ACCESS_TOKEN: "existing-codex-secret",
 			CODEX_MODEL: "gpt-5.3-codex",
 			SESSION_QUEUE_MAX_CONCURRENCY: 2,
+			providerEndpoints: [
+				{
+					id: "local-endpoint",
+					name: "Local LLM",
+					kind: "local" as const,
+					enabled: true,
+					apiKey: "existing-local-secret",
+					baseUrl: "http://localhost:8080/v1",
+					models: ["local-model"],
+				},
+			],
 		};
 
 		const merged = mergeMaskedSecrets(
@@ -421,6 +432,10 @@ describe("LLM settings secret hardening", () => {
 				AWS_SECRET_ACCESS_KEY: "********",
 				OPENAI_API_KEY: "new-openai-secret",
 				CODEX_ACCESS_TOKEN: "********",
+				providerEndpoints: current.providerEndpoints.map((endpoint) => ({
+					...endpoint,
+					apiKey: "********",
+				})),
 			},
 			current,
 		);
@@ -430,6 +445,7 @@ describe("LLM settings secret hardening", () => {
 		expect(merged.OPENAI_API_KEY).toBe("new-openai-secret");
 		expect(merged.CODEX_ACCESS_TOKEN).toBe("existing-codex-secret");
 		expect(merged.OPENAI_MODEL).toBe("gpt-5.4-mini");
+		expect(merged.providerEndpoints[0]?.apiKey).toBe("existing-local-secret");
 	});
 });
 
@@ -439,6 +455,7 @@ describe("Desktop security configuration", () => {
 			path.join(os.tmpdir(), "nightworkers-desktop-security-"),
 		);
 		vi.stubEnv("NODE_ENV", "production");
+		vi.stubEnv("NIGHTWORKERS_DATABASE_ACCESS_SCOPE", "operational");
 		vi.stubEnv("NIGHTWORKERS_DESKTOP", "1");
 		vi.stubEnv("NIGHTWORKERS_RUNTIME_DIR", runtimeDir);
 		vi.stubEnv("NIGHTWORKERS_API_ORIGIN", "http://127.0.0.1:41234");

@@ -21,7 +21,7 @@ import {
 	writeGeneralSettings,
 } from "../services/settings/general-settings";
 import { callSupervisorLLM } from "../services/structured-llm";
-import { checkStructuredLlmProviderHealth } from "../services/structured-llm/provider-health";
+import { checkStructuredLlmProviderExecutionReadiness } from "../services/structured-llm/provider-health";
 import { buildRound1JobTypePrompt } from "../services/supervisor/prompt";
 import {
 	executeDataRetentionCleanupRoute,
@@ -60,10 +60,10 @@ export const settingsRouter = createOpenApiRouter()
 		return c.json(maskLlmSettings(getCurrentSettings()));
 	})
 	.openapi(saveLlmSettingsRoute, async (c) => {
-		const settings = mergeMaskedSecrets(
-			c.req.valid("json"),
-			getCurrentSettings(),
-		);
+		const settings = {
+			...mergeMaskedSecrets(c.req.valid("json"), getCurrentSettings()),
+			settingsRevision: new Date().toISOString(),
+		};
 		await writeRuntimeSettings(settings);
 
 		// Update in-memory environment variables instantly!
@@ -199,6 +199,6 @@ export const settingsRouter = createOpenApiRouter()
 				},
 				404,
 			);
-		const result = await checkStructuredLlmProviderHealth(endpoint);
+		const result = await checkStructuredLlmProviderExecutionReadiness(endpoint);
 		return c.json(result, 200);
 	});

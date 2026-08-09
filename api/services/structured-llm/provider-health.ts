@@ -1,3 +1,8 @@
+import {
+	buildStructuredLlmTargetDigest,
+	canonicalizeStructuredLlmEndpoint,
+	resolveStructuredLlmProviderBaseUrl,
+} from "./endpoint-target";
 import type { StructuredLlmProviderEndpoint } from "./settings";
 
 export type StructuredLlmProviderHealthResult = {
@@ -10,11 +15,13 @@ export type StructuredLlmProviderHealthResult = {
 	durationMs: number;
 	checkedAt: string;
 	message: string;
+	probeKind?: "connectivity" | "execution_readiness";
+	model?: string | null;
+	targetDigest?: string | null;
 };
 
 const DEFAULT_TIMEOUT_MS = 3000;
-const DEFAULT_CACHE_TTL_MS = 30_000;
-const healthCache = new Map<string, StructuredLlmProviderHealthResult>();
+const DEFAULT_EXECUTION_READINESS_TIMEOUT_MS = 30_000;
 
 export async function checkStructuredLlmProviderHealth(
 	endpoint: StructuredLlmProviderEndpoint,
@@ -22,6 +29,7 @@ export async function checkStructuredLlmProviderHealth(
 ): Promise<StructuredLlmProviderHealthResult> {
 	const started = Date.now();
 	const checkedAt = new Date().toISOString();
+	const targetMetadata = buildStructuredLlmProviderTargetMetadata(endpoint);
 	const urlResult = buildProviderHealthUrl(endpoint);
 	if (!urlResult.ok) {
 		return {
@@ -34,6 +42,8 @@ export async function checkStructuredLlmProviderHealth(
 			durationMs: Date.now() - started,
 			checkedAt,
 			message: urlResult.message,
+			probeKind: "connectivity",
+			...targetMetadata,
 		};
 	}
 
@@ -56,13 +66,15 @@ export async function checkStructuredLlmProviderHealth(
 			reachable: true,
 			providerEndpointId: endpoint.id,
 			providerKind: endpoint.kind,
-			url: urlResult.url,
+			url: redactStructuredLlmProbeUrl(urlResult.url),
 			status: res.status,
 			durationMs,
 			checkedAt,
 			message: res.ok
 				? `HTTP ${res.status}`
 				: `HTTP ${res.status}: ${res.statusText}`,
+			probeKind: "connectivity",
+			...targetMetadata,
 		};
 	} catch (err) {
 		const durationMs = Date.now() - started;
@@ -71,38 +83,113 @@ export async function checkStructuredLlmProviderHealth(
 			reachable: false,
 			providerEndpointId: endpoint.id,
 			providerKind: endpoint.kind,
-			url: urlResult.url,
+			url: redactStructuredLlmProbeUrl(urlResult.url),
 			status: null,
 			durationMs,
 			checkedAt,
 			message: err instanceof Error ? err.message : String(err),
+			probeKind: "connectivity",
+			...targetMetadata,
 		};
 	} finally {
 		clearTimeout(timeout);
 	}
 }
 
-export async function getCachedStructuredLlmProviderHealth(
+/**
+ * Explicit Settings action only. This calls the same Chat Completions path required by the
+ * configured API lane and may incur provider usage.
+ */
+export async function checkStructuredLlmProviderExecutionReadiness(
 	endpoint: StructuredLlmProviderEndpoint,
-	options: {
-		timeoutMs?: number;
-		cacheTtlMs?: number;
-		fetchImpl?: typeof fetch;
-	} = {},
+	options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<StructuredLlmProviderHealthResult> {
-	const cacheKey = buildProviderHealthCacheKey(endpoint);
-	const cached = healthCache.get(cacheKey);
-	const ttlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-	if (cached && Date.now() - Date.parse(cached.checkedAt) < ttlMs) {
-		return cached;
+	if (endpoint.kind === "bedrock" || endpoint.kind === "codex") {
+		const started = Date.now();
+		return {
+			ok: false,
+			reachable: false,
+			providerEndpointId: endpoint.id,
+			providerKind: endpoint.kind,
+			url: null,
+			status: null,
+			durationMs: Date.now() - started,
+			checkedAt: new Date().toISOString(),
+			message: `${endpoint.kind} does not support the OpenAI-compatible execution readiness probe.`,
+			probeKind: "execution_readiness",
+			...buildStructuredLlmProviderTargetMetadata(endpoint),
+		};
 	}
-	const result = await checkStructuredLlmProviderHealth(endpoint, options);
-	healthCache.set(cacheKey, result);
-	return result;
-}
+	const started = Date.now();
+	const checkedAt = new Date().toISOString();
+	const targetMetadata = buildStructuredLlmProviderTargetMetadata(endpoint);
+	const urlResult = buildProviderExecutionReadinessUrl(endpoint);
+	if (!urlResult.ok) {
+		return {
+			ok: false,
+			reachable: false,
+			providerEndpointId: endpoint.id,
+			providerKind: endpoint.kind,
+			url: null,
+			status: null,
+			durationMs: Date.now() - started,
+			checkedAt,
+			message: urlResult.message,
+			probeKind: "execution_readiness",
+			...targetMetadata,
+		};
+	}
 
-export function clearStructuredLlmProviderHealthCache() {
-	healthCache.clear();
+	const controller = new AbortController();
+	const timeout = setTimeout(
+		() => controller.abort(),
+		options.timeoutMs ?? DEFAULT_EXECUTION_READINESS_TIMEOUT_MS,
+	);
+	try {
+		const response = await (options.fetchImpl ?? fetch)(urlResult.url, {
+			method: "POST",
+			signal: controller.signal,
+			headers: buildExecutionReadinessHeaders(endpoint),
+			body: JSON.stringify(buildExecutionReadinessBody(endpoint)),
+		});
+		const responseReadiness = response.ok
+			? await readExecutionReadinessResponse(response)
+			: null;
+		return {
+			ok: response.ok && responseReadiness?.ok === true,
+			reachable: true,
+			providerEndpointId: endpoint.id,
+			providerKind: endpoint.kind,
+			url: redactStructuredLlmProbeUrl(urlResult.url),
+			status: response.status,
+			durationMs: Date.now() - started,
+			checkedAt,
+			message: response.ok
+				? responseReadiness?.ok
+					? `Execution ready (HTTP ${response.status})`
+					: (responseReadiness?.message ??
+						"Execution probe response could not be validated.")
+				: `Execution probe failed (HTTP ${response.status}: ${response.statusText})`,
+			probeKind: "execution_readiness",
+			...targetMetadata,
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			reachable: false,
+			providerEndpointId: endpoint.id,
+			providerKind: endpoint.kind,
+			url: redactStructuredLlmProbeUrl(urlResult.url),
+			status: null,
+			durationMs: Date.now() - started,
+			checkedAt,
+			message: error instanceof Error ? error.message : String(error),
+			probeKind: "execution_readiness",
+			...targetMetadata,
+		};
+	} finally {
+		clearTimeout(timeout);
+	}
 }
 
 export function buildProviderHealthUrl(
@@ -131,10 +218,7 @@ export function buildProviderHealthUrl(
 		};
 	}
 
-	const rawBase =
-		endpoint.kind === "azure"
-			? endpoint.endpoint?.trim()
-			: endpoint.baseUrl?.trim();
+	const rawBase = resolveStructuredLlmProviderBaseUrl(endpoint);
 	if (!rawBase) {
 		return { ok: false, message: "Endpoint URL or Base URL is required." };
 	}
@@ -179,6 +263,176 @@ export function buildProviderHealthUrl(
 	return { ok: true, url: url.toString() };
 }
 
+export function buildProviderExecutionReadinessUrl(
+	endpoint: Pick<
+		StructuredLlmProviderEndpoint,
+		"kind" | "baseUrl" | "endpoint" | "region" | "apiVersion" | "models"
+	>,
+): { ok: true; url: string } | { ok: false; message: string } {
+	if (endpoint.kind === "azure") return buildProviderHealthUrl(endpoint);
+	if (
+		endpoint.kind !== "openai" &&
+		endpoint.kind !== "openai-compatible" &&
+		endpoint.kind !== "local"
+	) {
+		return {
+			ok: false,
+			message: `${endpoint.kind} does not expose an OpenAI-compatible execution probe.`,
+		};
+	}
+	if (!endpoint.models?.[0]?.trim()) {
+		return {
+			ok: false,
+			message: "A model is required for the execution readiness probe.",
+		};
+	}
+	const rawBase = resolveStructuredLlmProviderBaseUrl(endpoint);
+	if (!rawBase) return { ok: false, message: "Base URL is required." };
+	let url: URL;
+	try {
+		url = new URL(rawBase);
+	} catch {
+		return { ok: false, message: "Base URL is invalid." };
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		return {
+			ok: false,
+			message: "Only http and https execution URLs are supported.",
+		};
+	}
+	const pathname = url.pathname.replace(/\/+$/, "");
+	url.pathname = pathname.endsWith("/chat/completions")
+		? pathname
+		: `${pathname}/chat/completions`.replace(/\/{2,}/g, "/");
+	url.search = "";
+	url.hash = "";
+	return { ok: true, url: url.toString() };
+}
+
+export function buildStructuredLlmProviderTargetMetadata(
+	endpoint: StructuredLlmProviderEndpoint,
+): { model: string | null; targetDigest: string } {
+	const canonical = canonicalizeStructuredLlmEndpoint(endpoint);
+	const model = canonical.models[0]?.trim() || null;
+	return {
+		model,
+		targetDigest: buildStructuredLlmTargetDigest({
+			providerEndpointId: canonical.id,
+			providerKind: canonical.kind,
+			endpoint: resolveStructuredLlmProviderBaseUrl(canonical),
+			apiVersion: canonical.apiVersion,
+			region: canonical.region,
+			model,
+		}),
+	};
+}
+
+function buildExecutionReadinessHeaders(
+	endpoint: StructuredLlmProviderEndpoint,
+): Record<string, string> {
+	if (endpoint.kind === "azure") {
+		return {
+			"Content-Type": "application/json",
+			...(endpoint.apiKey?.trim() ? { "api-key": endpoint.apiKey.trim() } : {}),
+		};
+	}
+	return {
+		"Content-Type": "application/json",
+		...(endpoint.apiKey?.trim()
+			? { Authorization: `Bearer ${endpoint.apiKey.trim()}` }
+			: {}),
+	};
+}
+
+function buildExecutionReadinessBody(endpoint: StructuredLlmProviderEndpoint) {
+	const tools = [
+		{
+			type: "function",
+			function: {
+				name: "nightworkers_readiness_probe",
+				description: "Capability probe; do not call this tool.",
+				parameters: { type: "object", properties: {} },
+			},
+		},
+	];
+	const common = {
+		messages: [
+			{
+				role: "user",
+				content: "Reply with OK. Do not call a tool.",
+			},
+		],
+		stream: false,
+		tools,
+		tool_choice: "auto",
+	};
+	if (endpoint.kind === "azure") {
+		return { ...common, max_completion_tokens: 16 };
+	}
+	return {
+		...common,
+		model: endpoint.models[0]?.trim() || "",
+	};
+}
+
+async function readExecutionReadinessResponse(response: Response): Promise<{
+	ok: boolean;
+	message: string;
+}> {
+	let body: string;
+	try {
+		body = await response.text();
+	} catch {
+		return {
+			ok: false,
+			message: "Execution probe response body could not be read.",
+		};
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(body);
+	} catch {
+		return {
+			ok: false,
+			message: "Execution probe did not return valid JSON.",
+		};
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return {
+			ok: false,
+			message: "Execution probe did not return a message choice.",
+		};
+	}
+	const choices = (parsed as Record<string, unknown>).choices;
+	const firstChoice = Array.isArray(choices) ? choices[0] : null;
+	if (!firstChoice || typeof firstChoice !== "object") {
+		return {
+			ok: false,
+			message: "Execution probe did not return a message choice.",
+		};
+	}
+	const message = (firstChoice as Record<string, unknown>).message;
+	if (!message || typeof message !== "object" || Array.isArray(message)) {
+		return {
+			ok: false,
+			message: "Execution probe did not return a message choice.",
+		};
+	}
+	const messageRecord = message as Record<string, unknown>;
+	const hasContent =
+		typeof messageRecord.content === "string" &&
+		messageRecord.content.trim().length > 0;
+	const hasToolCall =
+		Array.isArray(messageRecord.tool_calls) &&
+		messageRecord.tool_calls.length > 0;
+	return hasContent || hasToolCall
+		? { ok: true, message: "Execution probe returned a message choice." }
+		: {
+				ok: false,
+				message: "Execution probe returned an empty message choice.",
+			};
+}
+
 function buildHealthHeaders(
 	endpoint: StructuredLlmProviderEndpoint,
 ): HeadersInit {
@@ -213,13 +467,11 @@ function stripKnownApiSuffix(pathname: string) {
 	return normalized;
 }
 
-function buildProviderHealthCacheKey(endpoint: StructuredLlmProviderEndpoint) {
-	return [
-		endpoint.id,
-		endpoint.kind,
-		endpoint.baseUrl ?? "",
-		endpoint.endpoint ?? "",
-		endpoint.apiVersion ?? "",
-		endpoint.models.join(","),
-	].join("|");
+function redactStructuredLlmProbeUrl(value: string) {
+	const url = new URL(value);
+	url.username = "";
+	url.password = "";
+	url.search = "";
+	url.hash = "";
+	return url.toString();
 }

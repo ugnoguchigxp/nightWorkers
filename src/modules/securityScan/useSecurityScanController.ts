@@ -23,6 +23,7 @@ import {
 	startSecurityScan,
 	startSecurityScanReport,
 } from "./securityScanCommands";
+import { preferredSecurityScanSelection } from "./securityScanSelection";
 
 type ScanAction =
 	| "initial"
@@ -53,9 +54,36 @@ async function readResponse<T>(
 	return payload as T;
 }
 
+async function fetchFindingPages(repositoryId: string, scanRunRef: string) {
+	const items = new Map<string, SecurityScanFindingPage["items"][number]>();
+	let cursor: string | null = null;
+	const seenCursors = new Set<string>();
+	while (items.size < 1_000) {
+		if (cursor) {
+			if (seenCursors.has(cursor)) {
+				throw new Error("Findingページングが循環しています。");
+			}
+			seenCursors.add(cursor);
+		}
+		const page: SecurityScanFindingPage = await readResponse(
+			fetchSecurityScanFindings(repositoryId, scanRunRef, cursor ?? undefined),
+		);
+		for (const finding of page.items) {
+			if (items.size >= 1_000) break;
+			items.set(finding.ref, finding);
+		}
+		if (!page.nextCursor) break;
+		cursor = page.nextCursor;
+	}
+	return [...items.values()];
+}
+
 export function useSecurityScanController(repositoryId: string) {
 	const repositoryIdRef = useRef(repositoryId);
+	const activeScanRunRefRef = useRef<string | null>(null);
 	const pollInFlightRef = useRef(false);
+	const previewRequestIdRef = useRef(0);
+	const startInFlightRef = useRef<string | null>(null);
 	repositoryIdRef.current = repositoryId;
 	const [providerSettings, setProviderSettings] =
 		useState<SecurityScanProviderSettings | null>(null);
@@ -79,6 +107,15 @@ export function useSecurityScanController(repositoryId: string) {
 	const [reports, setReports] = useState<SecurityScanReportDetail[]>([]);
 	const [action, setAction] = useState<ScanAction | null>("initial");
 	const [error, setError] = useState("");
+	const applyCapabilities = useCallback((value: SecurityScanCapabilities) => {
+		previewRequestIdRef.current += 1;
+		setCapabilities(value);
+		setPreview(null);
+		const preferred = preferredSecurityScanSelection(value);
+		if (!preferred) return;
+		setSelection(preferred.selection);
+		setTarget(preferred.target);
+	}, []);
 
 	const loadScanArtifacts = useCallback(
 		async (scan: SecurityScanRunDetail) => {
@@ -90,19 +127,34 @@ export function useSecurityScanController(repositoryId: string) {
 				return;
 			}
 			const [findingResult, reportResult] = await Promise.allSettled([
-				readResponse<SecurityScanFindingPage>(
-					fetchSecurityScanFindings(repositoryId, scan.scanRunRef),
-				),
+				fetchFindingPages(repositoryId, scan.scanRunRef),
 				readResponse<{ items: SecurityScanReportDetail[] }>(
 					fetchSecurityScanReports(repositoryId, scan.scanRunRef),
 				),
 			]);
-			if (repositoryIdRef.current !== repositoryId) return;
+			if (
+				repositoryIdRef.current !== repositoryId ||
+				activeScanRunRefRef.current !== scan.scanRunRef
+			) {
+				return;
+			}
 			if (findingResult.status === "fulfilled") {
-				setFindings(findingResult.value.items);
+				setFindings(findingResult.value);
 			}
 			if (reportResult.status === "fulfilled") {
 				setReports(reportResult.value.items);
+			}
+			const failures = [findingResult, reportResult].flatMap((result) =>
+				result.status === "rejected" ? [result.reason] : [],
+			);
+			if (failures.length > 0) {
+				throw new Error(
+					failures
+						.map((cause) =>
+							cause instanceof Error ? cause.message : String(cause),
+						)
+						.join(" / "),
+				);
 			}
 		},
 		[repositoryId],
@@ -113,7 +165,12 @@ export function useSecurityScanController(repositoryId: string) {
 			const scan = await readResponse<SecurityScanRunDetail>(
 				await fetchSecurityScan(repositoryId, scanRunRef),
 			);
-			if (repositoryIdRef.current !== repositoryId) return scan;
+			if (
+				repositoryIdRef.current !== repositoryId ||
+				activeScanRunRefRef.current !== scanRunRef
+			) {
+				return scan;
+			}
 			setActiveScan(scan);
 			await loadScanArtifacts(scan);
 			return scan;
@@ -128,26 +185,22 @@ export function useSecurityScanController(repositoryId: string) {
 			const value = await readResponse<SecurityScanCapabilities>(
 				await fetchSecurityScanCapabilities(repositoryId),
 			);
-			setCapabilities(value);
-			const recommended =
-				value.presets.find((preset) => preset.recommended) ?? value.presets[0];
-			if (recommended) {
-				setSelection({ mode: "preset", presetId: recommended.id });
-				const supportedTarget =
-					recommended.targets.find((item) => item.kind === "working_tree") ??
-					recommended.targets[0];
-				if (supportedTarget) setTarget({ kind: supportedTarget.kind });
-			}
+			if (repositoryIdRef.current !== repositoryId) return;
+			applyCapabilities(value);
 		} catch (cause) {
+			if (repositoryIdRef.current !== repositoryId) return;
 			setCapabilities(null);
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setAction(null);
+			if (repositoryIdRef.current === repositoryId) setAction(null);
 		}
-	}, [repositoryId]);
+	}, [applyCapabilities, repositoryId]);
 
 	useEffect(() => {
 		let cancelled = false;
+		activeScanRunRefRef.current = null;
+		previewRequestIdRef.current += 1;
+		startInFlightRef.current = null;
 		setAction("initial");
 		setError("");
 		setCapabilities(null);
@@ -169,17 +222,23 @@ export function useSecurityScanController(repositoryId: string) {
 				setProviderSettings(settings);
 				setHistory(scanHistory.items);
 				if (scanHistory.items[0]) {
+					activeScanRunRefRef.current = scanHistory.items[0].scanRunRef;
 					await loadScan(scanHistory.items[0].scanRunRef).catch((cause) => {
 						if (!cancelled) {
 							setError(cause instanceof Error ? cause.message : String(cause));
 						}
 					});
 				}
-				if (settings.enabled && settings.tokenConfigured) {
+				const configured =
+					settings.enabled &&
+					(settings.transport === "local_cli"
+						? settings.localCliConfigured
+						: settings.tokenConfigured);
+				if (configured) {
 					const value = await readResponse<SecurityScanCapabilities>(
 						await fetchSecurityScanCapabilities(repositoryId),
 					);
-					if (!cancelled) setCapabilities(value);
+					if (!cancelled) applyCapabilities(value);
 				}
 			})
 			.catch((cause) => {
@@ -193,7 +252,7 @@ export function useSecurityScanController(repositoryId: string) {
 		return () => {
 			cancelled = true;
 		};
-	}, [loadScan, repositoryId]);
+	}, [applyCapabilities, loadScan, repositoryId]);
 
 	const reportsNeedPolling = reports.some(
 		(report) => report.status === "queued" || report.status === "running",
@@ -207,7 +266,9 @@ export function useSecurityScanController(repositoryId: string) {
 			pollInFlightRef.current = true;
 			void loadScan(activeScan.scanRunRef)
 				.catch((cause) => {
-					setError(cause instanceof Error ? cause.message : String(cause));
+					if (activeScanRunRefRef.current === activeScan.scanRunRef) {
+						setError(cause instanceof Error ? cause.message : String(cause));
+					}
 				})
 				.finally(() => {
 					pollInFlightRef.current = false;
@@ -217,32 +278,53 @@ export function useSecurityScanController(repositoryId: string) {
 	}, [activeScan, loadScan, reportsNeedPolling, scanNeedsPolling]);
 
 	const updateSelection = useCallback((next: SecurityScanSelection) => {
+		previewRequestIdRef.current += 1;
 		setSelection(next);
 		setPreview(null);
+		setAction((current) => (current === "preview" ? null : current));
 	}, []);
 	const updateTarget = useCallback((kind: SecurityScanTargetKind) => {
+		previewRequestIdRef.current += 1;
 		setTarget({ kind });
 		setPreview(null);
+		setAction((current) => (current === "preview" ? null : current));
 	}, []);
 
 	const createPreview = useCallback(async () => {
+		const requestId = ++previewRequestIdRef.current;
 		setAction("preview");
 		setError("");
 		try {
-			setPreview(
-				await readResponse<SecurityScanPreview>(
-					await previewSecurityScan(repositoryId, { selection, target }),
-				),
+			const nextPreview = await readResponse<SecurityScanPreview>(
+				await previewSecurityScan(repositoryId, { selection, target }),
 			);
+			if (
+				repositoryIdRef.current === repositoryId &&
+				previewRequestIdRef.current === requestId
+			) {
+				setPreview(nextPreview);
+			}
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (
+				repositoryIdRef.current === repositoryId &&
+				previewRequestIdRef.current === requestId
+			) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+			}
 		} finally {
-			setAction(null);
+			if (
+				repositoryIdRef.current === repositoryId &&
+				previewRequestIdRef.current === requestId
+			) {
+				setAction(null);
+			}
 		}
 	}, [repositoryId, selection, target]);
 
 	const runScan = useCallback(async () => {
-		if (!preview) return;
+		if (!preview || startInFlightRef.current) return;
+		const requestKey = `${repositoryId}:${preview.previewRef}`;
+		startInFlightRef.current = requestKey;
 		setAction("start");
 		setError("");
 		try {
@@ -257,6 +339,8 @@ export function useSecurityScanController(repositoryId: string) {
 					expectedTargetDigest: preview.target.digest,
 				}),
 			);
+			if (repositoryIdRef.current !== repositoryId) return;
+			activeScanRunRefRef.current = started.scanRunRef;
 			setHistory((current) => [
 				{
 					scanRunRef: started.scanRunRef,
@@ -267,25 +351,36 @@ export function useSecurityScanController(repositoryId: string) {
 				...current.filter((item) => item.scanRunRef !== started.scanRunRef),
 			]);
 			setPreview(null);
+			setActiveScan(null);
 			setFindings([]);
 			setReports([]);
 			await loadScan(started.scanRunRef);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (repositoryIdRef.current === repositoryId) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+			}
 		} finally {
-			setAction(null);
+			if (startInFlightRef.current === requestKey) {
+				startInFlightRef.current = null;
+				if (repositoryIdRef.current === repositoryId) setAction(null);
+			}
 		}
 	}, [loadScan, preview, repositoryId, selection, target]);
 
 	const selectScan = useCallback(
 		async (scanRunRef: string) => {
+			activeScanRunRefRef.current = scanRunRef;
+			setAction(null);
 			setError("");
+			setActiveScan(null);
 			setFindings([]);
 			setReports([]);
 			try {
 				await loadScan(scanRunRef);
 			} catch (cause) {
-				setError(cause instanceof Error ? cause.message : String(cause));
+				if (activeScanRunRefRef.current === scanRunRef) {
+					setError(cause instanceof Error ? cause.message : String(cause));
+				}
 			}
 		},
 		[loadScan],
@@ -293,38 +388,67 @@ export function useSecurityScanController(repositoryId: string) {
 
 	const cancelScan = useCallback(async () => {
 		if (!activeScan) return;
+		const scanRunRef = activeScan.scanRunRef;
 		setAction("cancel");
 		setError("");
 		try {
 			const cancelled = await readResponse<SecurityScanRunDetail>(
-				await cancelSecurityScan(repositoryId, activeScan.scanRunRef),
+				await cancelSecurityScan(repositoryId, scanRunRef),
 			);
-			setActiveScan(cancelled);
+			if (
+				repositoryIdRef.current === repositoryId &&
+				activeScanRunRefRef.current === scanRunRef
+			) {
+				setActiveScan(cancelled);
+			}
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (activeScanRunRefRef.current === scanRunRef) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+			}
 		} finally {
-			setAction(null);
+			if (
+				repositoryIdRef.current === repositoryId &&
+				activeScanRunRefRef.current === scanRunRef
+			) {
+				setAction(null);
+			}
 		}
 	}, [activeScan, repositoryId]);
 
 	const createReport = useCallback(async () => {
-		if (!activeScan) return;
+		if (!activeScan) return null;
+		const scanRunRef = activeScan.scanRunRef;
 		setAction("report");
 		setError("");
 		try {
 			const started = await readResponse<{
 				report: SecurityScanReportDetail;
-			}>(await startSecurityScanReport(repositoryId, activeScan.scanRunRef));
+			}>(await startSecurityScanReport(repositoryId, scanRunRef));
+			if (
+				repositoryIdRef.current !== repositoryId ||
+				activeScanRunRefRef.current !== scanRunRef
+			) {
+				return null;
+			}
 			setReports((current) => [
 				started.report,
 				...current.filter(
 					(report) => report.reportRef !== started.report.reportRef,
 				),
 			]);
+			return started.report;
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (activeScanRunRefRef.current === scanRunRef) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+			}
+			return null;
 		} finally {
-			setAction(null);
+			if (
+				repositoryIdRef.current === repositoryId &&
+				activeScanRunRefRef.current === scanRunRef
+			) {
+				setAction(null);
+			}
 		}
 	}, [activeScan, repositoryId]);
 

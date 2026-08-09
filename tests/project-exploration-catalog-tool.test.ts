@@ -1,9 +1,26 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { projectWorkerResultToMcpStructuredPayload } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector";
 import { projectExplorationCatalogTool } from "../api/modules/ontology/exploration/project-exploration-catalog-tool";
 import { executeWorkerTool } from "../api/services/worker-tools/dispatcher";
+import { projectExplorationPathCatalogResultSchema } from "../shared/schemas/project-exploration-catalog.schema";
 
 describe("project exploration catalog worker adapter", () => {
+	it("parses the producer V2 contract fixture", () => {
+		const fixture = JSON.parse(
+			readFileSync(
+				new URL(
+					"./fixtures/project-exploration-catalog-v2.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
+		expect(projectExplorationPathCatalogResultSchema.parse(fixture)).toEqual(
+			fixture,
+		);
+	});
+
 	it("injects the project path and exposes only bounded model-safe clues", async () => {
 		const callTool = vi.fn(async () =>
 			mcp(
@@ -89,6 +106,101 @@ describe("project exploration catalog worker adapter", () => {
 		expect(
 			JSON.stringify(projectWorkerResultToMcpStructuredPayload(result)),
 		).not.toContain("src/app.ts");
+	});
+
+	it("rejects producer revision mismatches and unusable readiness", async () => {
+		const missingRevision = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: {
+				callTool: async () => mcp(catalog({ source: undefined })),
+			},
+			readSourceState: currentSource,
+		});
+		expect(missingRevision).toMatchObject({
+			ok: false,
+			error: { code: "PROJECT_EXPLORATION_CONTRACT_INVALID" },
+		});
+
+		const mismatched = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: {
+				callTool: async () =>
+					mcp(
+						catalog({
+							source: source("different-head"),
+						}),
+					),
+			},
+			readSourceState: currentSource,
+		});
+		expect(mismatched).toMatchObject({
+			ok: false,
+			error: { code: "PROJECT_EXPLORATION_STALE" },
+			payload: {
+				audit: { failureCategory: "PROJECT_EXPLORATION_STALE" },
+			},
+		});
+
+		const unusable = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: {
+				callTool: async () =>
+					mcp(
+						catalog({
+							readiness: readiness("unusable"),
+						}),
+					),
+			},
+			readSourceState: currentSource,
+		});
+		expect(unusable).toMatchObject({
+			ok: false,
+			error: { code: "PROJECT_EXPLORATION_UNUSABLE" },
+		});
+	});
+
+	it("returns degraded usable clues with readiness reasons intact", async () => {
+		const result = await projectExplorationCatalogTool({
+			serverId: "server-1",
+			projectPath: "/registered/project",
+			executionPath: "/execution/worktree",
+			expectedHead: "abc123",
+			focus: { terms: ["routing"] },
+			mcpAccess: {
+				callTool: async () =>
+					mcp(
+						catalog({
+							status: "degraded",
+							readiness: readiness("degraded_usable"),
+						}),
+					),
+			},
+			readSourceState: currentSource,
+		});
+		expect(result).toMatchObject({
+			ok: true,
+			payload: {
+				status: "degraded",
+				catalog: {
+					readiness: {
+						usability: "degraded_usable",
+						reasonCodes: ["fixture_degraded"],
+					},
+				},
+			},
+		});
 	});
 
 	it("requires a focused query before MCP access", async () => {
@@ -216,7 +328,10 @@ function catalog(overrides: Record<string, unknown> = {}) {
 	return {
 		ok: true,
 		status: "completed",
+		version: "v2",
 		freshness: { status: "fresh" },
+		source: source("abc123"),
+		readiness: readiness("usable"),
 		focusResolution: {
 			matchedPaths: ["src/app.ts"],
 			matchedModuleIds: [],
@@ -248,6 +363,28 @@ function catalog(overrides: Record<string, unknown> = {}) {
 		},
 		degradedReasons: [],
 		...overrides,
+	};
+}
+
+function source(head: string) {
+	return {
+		structureSchemaVersion: "project-structure-v2",
+		snapshotRef: "project_structure:v2:fixture",
+		revision: { kind: "git", head, value: head },
+	};
+}
+
+function readiness(usability: "usable" | "degraded_usable" | "unusable") {
+	return {
+		usability,
+		reasonCodes: usability === "usable" ? [] : ["fixture_degraded"],
+		coverage: {
+			inventoriedFiles: 10,
+			analyzedFiles: 10,
+			resolvedReferences: 4,
+			unresolvedReferences: 0,
+			inferredModules: 2,
+		},
 	};
 }
 

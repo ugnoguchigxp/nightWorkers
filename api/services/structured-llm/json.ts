@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { jsonrepair } from "jsonrepair";
 import type { ZodType } from "zod";
+import { DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS } from "../../../shared/llm-role";
 import type { CallSupervisorOptions } from "./types";
 
 export type JsonFixWrapperResult = {
@@ -139,8 +140,15 @@ export function parseRepairedJsonWithSchema<T>(
 export type StructuredLlmAbortHandle = {
 	signal: AbortSignal;
 	timeoutMs: number;
+	timeoutSource: StructuredLlmTimeoutSource;
 	dispose: () => void;
 };
+
+export type StructuredLlmTimeoutSource =
+	| "role_route"
+	| "call_option"
+	| "environment"
+	| "default";
 
 export class StructuredLlmTimeoutError extends Error {
 	constructor(public readonly timeoutMs: number) {
@@ -151,13 +159,18 @@ export class StructuredLlmTimeoutError extends Error {
 	}
 }
 
-const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS = 300_000;
+const DEFAULT_STRUCTURED_LLM_TIMEOUT_MS =
+	DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS * 1_000;
 
 export function createStructuredLlmAbortSignal(
 	options: CallSupervisorOptions,
+	routeTimeoutMs?: number | null,
 ): StructuredLlmAbortHandle {
 	const controller = new AbortController();
-	const timeoutMs = getStructuredLlmTimeoutMs(options);
+	const { timeoutMs, timeoutSource } = resolveStructuredLlmTimeout(
+		options,
+		routeTimeoutMs,
+	);
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	timer.unref?.();
 	return {
@@ -165,6 +178,7 @@ export function createStructuredLlmAbortSignal(
 			? AbortSignal.any([options.signal, controller.signal])
 			: controller.signal,
 		timeoutMs,
+		timeoutSource,
 		dispose: () => clearTimeout(timer),
 	};
 }
@@ -255,18 +269,36 @@ function balanceJsonCandidate(input: string): string | null {
 	return `${trimmed}${stringSuffix}${stack.reverse().join("")}`;
 }
 
-function getStructuredLlmTimeoutMs(options: CallSupervisorOptions): number {
+export function resolveStructuredLlmTimeout(
+	options: CallSupervisorOptions,
+	routeTimeoutMs?: number | null,
+): { timeoutMs: number; timeoutSource: StructuredLlmTimeoutSource } {
+	if (routeTimeoutMs && Number.isFinite(routeTimeoutMs) && routeTimeoutMs > 0) {
+		return {
+			timeoutMs: Math.floor(routeTimeoutMs),
+			timeoutSource: "role_route",
+		};
+	}
 	if (
 		options.timeoutMs &&
 		Number.isFinite(options.timeoutMs) &&
 		options.timeoutMs > 0
 	) {
-		return Math.floor(options.timeoutMs);
+		return {
+			timeoutMs: Math.floor(options.timeoutMs),
+			timeoutSource: "call_option",
+		};
 	}
-	const configured = Number(
-		process.env.SUPERVISOR_LLM_TIMEOUT_MS || DEFAULT_STRUCTURED_LLM_TIMEOUT_MS,
-	);
-	if (!Number.isFinite(configured) || configured <= 0)
-		return DEFAULT_STRUCTURED_LLM_TIMEOUT_MS;
-	return Math.floor(configured);
+	const rawConfigured = process.env.SUPERVISOR_LLM_TIMEOUT_MS;
+	const configured = Number(rawConfigured);
+	if (rawConfigured && Number.isFinite(configured) && configured > 0) {
+		return {
+			timeoutMs: Math.floor(configured),
+			timeoutSource: "environment",
+		};
+	}
+	return {
+		timeoutMs: DEFAULT_STRUCTURED_LLM_TIMEOUT_MS,
+		timeoutSource: "default",
+	};
 }

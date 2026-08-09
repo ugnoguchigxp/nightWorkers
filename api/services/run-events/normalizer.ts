@@ -49,6 +49,7 @@ const LEGACY_MAPPING: Record<RunEventType, LegacyMapping> = {
 	"turn.started": { eventType: "supervisor_decision", type: "info" },
 	"turn.finished": { eventType: "supervisor_decision", type: "info" },
 	"model.request_started": { eventType: "supervisor_decision", type: "info" },
+	"model.request_failed": { eventType: "error", type: "error" },
 	"model.provider_activity_detected": { eventType: "warning", type: "warning" },
 	"model.provider_tool_call_detected": {
 		eventType: "warning",

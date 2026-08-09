@@ -385,6 +385,7 @@ export function buildCompiledPromptText(input: {
 
 export function buildLatestRuntimeUserMessage(input: {
 	fallback: string;
+	planModeRequested?: boolean;
 	lastUserMessage?: Awaited<ReturnType<typeof repo.listTaskMessages>>[number];
 	implementationHandoffMessage?: Awaited<
 		ReturnType<typeof repo.listTaskMessages>
@@ -394,7 +395,9 @@ export function buildLatestRuntimeUserMessage(input: {
 		input.lastUserMessage?.content?.trim() || input.fallback.trim();
 	const handoff = input.implementationHandoffMessage?.content?.trim();
 	if (!handoff) {
-		return injectImplementationPhaseContext(latestUserText);
+		return input.planModeRequested
+			? latestUserText
+			: injectImplementationPhaseContext(latestUserText);
 	}
 	const hasDistinctUserRequest =
 		Boolean(input.lastUserMessage?.content?.trim()) ||
@@ -402,17 +405,27 @@ export function buildLatestRuntimeUserMessage(input: {
 	const userRequestSection = hasDistinctUserRequest
 		? ["<USER_REQUEST>", latestUserText, "</USER_REQUEST>", ""]
 		: [];
-	return injectImplementationPhaseContext(
-		[
-			...userRequestSection,
-			"<IMPLEMENTATION_HANDOFF>",
-			"直近の Implementation Plan / Draft Spec を主な作業入力として扱ってください。",
-			"計画に不足や矛盾がある場合は、必要な確認・調査 tool を使ってから実装してください。",
-			"",
-			handoff,
-			"</IMPLEMENTATION_HANDOFF>",
-		].join("\n"),
-	);
+	const handoffSection = input.planModeRequested
+		? [
+				"<PLANNING_CONTEXT>",
+				"直近の Implementation Plan / Draft Spec を計画入力として検証してください。",
+				"不足や矛盾がある場合は、必要な確認・調査を行い、更新した計画と検証条件を報告してください。",
+				"",
+				handoff,
+				"</PLANNING_CONTEXT>",
+			]
+		: [
+				"<IMPLEMENTATION_HANDOFF>",
+				"直近の Implementation Plan / Draft Spec を主な作業入力として扱ってください。",
+				"計画に不足や矛盾がある場合は、必要な確認・調査 tool を使ってから実装してください。",
+				"",
+				handoff,
+				"</IMPLEMENTATION_HANDOFF>",
+			];
+	const message = [...userRequestSection, ...handoffSection].join("\n");
+	return input.planModeRequested
+		? message
+		: injectImplementationPhaseContext(message);
 }
 
 export async function loadCodexRuntimeResumeState(input: {

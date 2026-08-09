@@ -27,6 +27,7 @@ const child = spawn(nodeBinary, [backendEntry], {
     ...process.env,
     NODE_ENV: 'production',
     DOTENV_CONFIG_QUIET: 'true',
+    NIGHTWORKERS_DATABASE_ACCESS_SCOPE: 'operational',
     NIGHTWORKERS_DESKTOP: '1',
     NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
     NIGHTWORKERS_RESOURCE_DIR: stagedRoot,

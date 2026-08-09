@@ -9,8 +9,10 @@ import type { SupervisorLlmDebugEvent } from "../../services/structured-llm";
 import type { normalizeStructuredLlmModelTarget } from "../../services/structured-llm/selection";
 import { resumeInterruptedCodingAgentRun } from "../agentsShare";
 import * as codingAgent from "../codingAgent";
+import { enqueueActivityEvent } from "./nightworkers.activity.repository";
 import * as repo from "./nightworkers.repository";
 import { startTaskRun } from "./nightworkers.run-orchestration.service";
+import { structuredLlmChatTrace } from "./nightworkers.trace-provenance";
 import type { WorkbenchArtifactContext } from "./nightworkers.workbench-routing";
 
 export type { WorkbenchChatIntent } from "./nightworkers.workbench-message.service";
@@ -359,18 +361,56 @@ export async function handleWorkbenchIntakeMessage(
 
 export function createWorkbenchLlmDebugEventEmitter(taskId: string) {
 	return async (event: SupervisorLlmDebugEvent) => {
-		if (event.type !== "model.response_delta") return;
-		const text =
-			typeof event.data?.text === "string" ? event.data.text : event.message;
-		if (!text) return;
-		nightWorkersRealtimeBroker.publish(taskId, {
-			type: "task_llm_delta",
-			payload: {
-				text,
-				event,
-			},
+		if (event.type === "model.response_delta") {
+			const text =
+				typeof event.data?.text === "string" ? event.data.text : event.message;
+			if (!text) return;
+			nightWorkersRealtimeBroker.publish(taskId, {
+				type: "task_llm_delta",
+				payload: { text, event },
+			});
+			return;
+		}
+		const projection = workbenchLlmActivityProjection(event);
+		if (!projection) return;
+		enqueueActivityEvent({
+			taskId,
+			kind: projection.kind,
+			source: "supervisor",
+			status: projection.status,
+			text: event.message,
+			payloadJson: { eventType: event.type, ...event.data },
+			trace: structuredLlmChatTrace({
+				role: typeof event.data?.role === "string" ? event.data.role : null,
+				callId:
+					typeof event.data?.requestId === "string"
+						? event.data.requestId
+						: null,
+			}),
 		});
 	};
+}
+
+export function workbenchLlmActivityProjection(event: SupervisorLlmDebugEvent) {
+	if (event.type === "model.request_started") {
+		return { kind: "llm.request", status: "started" } as const;
+	}
+	if (event.type === "model.request_failed") {
+		return { kind: "llm.error", status: "failed" } as const;
+	}
+	if (event.type === "model.response_finished") {
+		return { kind: "llm.response_final", status: "completed" } as const;
+	}
+	if (
+		event.type === "model.retry_scheduled" ||
+		event.type === "model.retry_started" ||
+		event.type === "model.route_fallback_scheduled" ||
+		event.type === "model.route_fallback_started" ||
+		event.type === "model.route_fallback_unavailable"
+	) {
+		return { kind: "runtime.decision", status: "info" } as const;
+	}
+	return null;
 }
 
 export async function prepareWorkbenchIntakeTask(

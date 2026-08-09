@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOpenApiRouter } from "../api/lib/openapi";
 import { errorHandler } from "../api/middleware/error-handler";
 import { securityScanRouter } from "../api/modules/securityScan/security-scan.routes";
+import { providerReportContent } from "../api/modules/securityScan/security-scan-provider.client";
 import { clearSessionSecretStoreForTests } from "../api/services/security/os-secret-store";
 
 const testState = vi.hoisted(() => ({
 	repositoryId: "11111111-1111-4111-8111-111111111111",
-	scanRunRef: "22222222-2222-4222-8222-222222222222",
+	scanRunRef: "provider-scan-ref_2026",
 	localPath: "/registered/project",
 }));
 
@@ -84,12 +85,30 @@ describe("security scan routes", () => {
 		clearSessionSecretStoreForTests();
 	});
 
+	it("saves local CLI settings without requiring an HTTP Base URL", async () => {
+		const response = await app().request(
+			"/settings/vulnerability-scan-provider",
+			{
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ enabled: true, transport: "local_cli" }),
+			},
+		);
+		expect(response.status, await response.clone().text()).toBe(200);
+		expect(await response.json()).toMatchObject({
+			enabled: true,
+			transport: "local_cli",
+			baseUrl: "http://127.0.0.1:29831",
+		});
+	});
+
 	it("stores the token outside the response and forwards the registered path", async () => {
 		const save = await app().request("/settings/vulnerability-scan-provider", {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				enabled: true,
+				transport: "http",
 				baseUrl: "http://127.0.0.1:29831",
 				token: "secret-service-token",
 			}),
@@ -97,8 +116,10 @@ describe("security scan routes", () => {
 		expect(save.status).toBe(200);
 		expect(await save.json()).toEqual({
 			enabled: true,
+			transport: "http",
 			baseUrl: "http://127.0.0.1:29831",
 			tokenConfigured: true,
+			localCliConfigured: expect.any(Boolean),
 		});
 
 		const providerFetch = vi.fn(
@@ -134,6 +155,7 @@ describe("security scan routes", () => {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				enabled: true,
+				transport: "http",
 				baseUrl: "http://127.0.0.1:29831",
 				token: "secret-service-token",
 			}),
@@ -191,6 +213,124 @@ describe("security scan routes", () => {
 				},
 			],
 		});
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				jsonResponse(
+					providerEnvelope({
+						scanRunRef: testState.scanRunRef,
+						status: "completed",
+						outcome: "no_findings",
+						presetId: "standard",
+						profileRef: "diff-basic-security",
+						target: {
+							kind: "working_tree",
+							digest: "a".repeat(64),
+							sourceRevision: "abc123",
+						},
+						progress: { completedSteps: 1, totalSteps: 1, currentStep: null },
+						summary: {
+							findingCount: 0,
+							severityCounts: {
+								critical: 0,
+								high: 0,
+								medium: 0,
+								low: 0,
+								info: 0,
+								unknown: 0,
+							},
+							coverage: { completed: 1, skipped: 0, failed: 0, gaps: [] },
+						},
+						lastEventSeq: 1,
+						createdAt,
+						startedAt: createdAt,
+						completedAt: createdAt,
+						error: null,
+					}),
+				),
+			),
+		);
+		const detail = await app().request(
+			`/repositories/${testState.repositoryId}/security-scans/${testState.scanRunRef}`,
+		);
+		expect(detail.status, await detail.clone().text()).toBe(200);
+		expect(await detail.json()).toMatchObject({
+			scanRunRef: testState.scanRunRef,
+			status: "completed",
+		});
+	});
+
+	it("does not forward provider-controlled report response headers", async () => {
+		await app().request("/settings/vulnerability-scan-provider", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				enabled: true,
+				transport: "http",
+				baseUrl: "http://127.0.0.1:29831",
+				token: "secret-service-token",
+			}),
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response("<script>alert(1)</script>", {
+						status: 200,
+						headers: {
+							"Content-Type": "text/html",
+							"Content-Disposition": "inline; filename=unsafe.html",
+						},
+					}),
+			),
+		);
+		const report = await providerReportContent(
+			"provider-scan-ref_2026",
+			"provider-report-ref_2026",
+		);
+		expect(report.contentType).toBe("text/markdown; charset=utf-8");
+		expect(report.contentDisposition).toMatch(
+			/^attachment; filename="security-report-[0-9a-f]{12}\.md"$/,
+		);
+		expect(report.contentDisposition).not.toContain("unsafe.html");
+	});
+
+	it("stops reading a provider response when the byte limit is exceeded", async () => {
+		await app().request("/settings/vulnerability-scan-provider", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				enabled: true,
+				transport: "http",
+				baseUrl: "http://127.0.0.1:29831",
+				token: "secret-service-token",
+			}),
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						new ReadableStream({
+							start(controller) {
+								controller.enqueue(new Uint8Array(4 * 1024 * 1024));
+								controller.enqueue(new Uint8Array(3 * 1024 * 1024));
+								controller.close();
+							},
+						}),
+						{ status: 200 },
+					),
+			),
+		);
+		await expect(
+			providerReportContent(
+				"provider-scan-ref_2026",
+				"provider-report-ref_2026",
+			),
+		).rejects.toMatchObject({
+			code: "SECURITY_SCAN_PROVIDER_RESPONSE_TOO_LARGE",
+		});
 	});
 
 	it("rejects a non-loopback plaintext provider URL", async () => {
@@ -201,6 +341,7 @@ describe("security scan routes", () => {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					enabled: true,
+					transport: "http",
 					baseUrl: "http://scanner.example.com",
 					token: "secret-service-token",
 				}),

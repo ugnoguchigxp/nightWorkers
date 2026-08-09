@@ -129,7 +129,9 @@ export type NormalizedSupervisorLlmRequest = {
 	role?: StructuredLlmRole | null;
 	routeSource?: StructuredLlmRouteSource | null;
 	modelOrDeployment: string | null;
+	targetDigest?: string | null;
 	thinkingDepth?: "low" | "medium" | "high" | "very_high" | null;
+	requestTimeoutMs?: number | null;
 	endpoint: string | null;
 	region: string | null;
 	apiVersion: string | null;
@@ -146,9 +148,12 @@ export type NormalizedSupervisorLlmRequest = {
 		userPromptLength: number;
 		role?: StructuredLlmRole | null;
 		providerEndpointId?: string | null;
+		providerEndpointName?: string | null;
 		routeSource?: StructuredLlmRouteSource | null;
 		modelOrDeployment?: string | null;
+		targetDigest?: string | null;
 		thinkingDepth?: "low" | "medium" | "high" | "very_high" | null;
+		requestTimeoutMs?: number | null;
 		routeDiagnostics?: string[];
 	};
 };
@@ -163,6 +168,7 @@ export type ProviderCallResult = {
 export type SupervisorLlmDebugEvent = {
 	type:
 		| "model.request_started"
+		| "model.request_failed"
 		| "model.provider_activity_detected"
 		| "model.provider_tool_call_detected"
 		| "model.provider_activity_rejected"

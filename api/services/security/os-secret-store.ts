@@ -51,17 +51,13 @@ export function writeSecretStoreValue(account: string, value: string) {
 	const provider = resolveSecretStoreProvider();
 	if (provider === "session") {
 		sessionSecrets.set(account, value);
-		return;
-	}
-	if (provider === "keychain") {
+	} else if (provider === "keychain") {
 		const invocation = buildMacOsKeychainWriteInvocation(account, value);
 		execFileSync(invocation.command, invocation.args, {
 			input: invocation.input,
 			stdio: ["pipe", "ignore", "ignore"],
 		});
-		return;
-	}
-	if (provider === "libsecret") {
+	} else if (provider === "libsecret") {
 		execFileSync(
 			"secret-tool",
 			[
@@ -75,9 +71,7 @@ export function writeSecretStoreValue(account: string, value: string) {
 			],
 			{ input: value, stdio: ["pipe", "ignore", "ignore"] },
 		);
-		return;
-	}
-	if (provider === "credential_manager") {
+	} else if (provider === "credential_manager") {
 		runWindowsCredentialScript(
 			account,
 			[
@@ -87,9 +81,12 @@ export function writeSecretStoreValue(account: string, value: string) {
 			].join(";"),
 			value,
 		);
-		return;
+	} else {
+		throw new Error("OS secret store is unavailable");
 	}
-	throw new Error("OS secret store is unavailable");
+	if (readSecretStoreValue(account) !== value) {
+		throw new Error("OS_SECRET_STORE_WRITE_VERIFICATION_FAILED");
+	}
 }
 
 export function deleteSecretStoreValue(account: string) {
@@ -170,7 +167,7 @@ export function buildMacOsKeychainWriteInvocation(
 	return {
 		command: "security",
 		args: ["-i"],
-		input: [
+		input: `${[
 			"add-generic-password",
 			"-U",
 			"-s",
@@ -179,7 +176,7 @@ export function buildMacOsKeychainWriteInvocation(
 			quoteSecurityInteractiveArgument(account),
 			"-X",
 			Buffer.from(value, "utf-8").toString("hex"),
-		].join(" "),
+		].join(" ")}\n`,
 	};
 }
 

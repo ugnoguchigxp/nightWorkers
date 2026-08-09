@@ -15,7 +15,7 @@ export const enProjectDetail = {
 	"securityScan.configurationRequired":
 		"A vulnWorkbench connection is required",
 	"securityScan.configurationRequiredHelp":
-		"Configure the Base URL and service token to scan this Project.",
+		"Enable the local CLI to scan the registered Project folder directly.",
 	"securityScan.openSettings": "Open connection settings",
 	"securityScan.newScan": "New scan",
 	"securityScan.providerVersion":
@@ -23,6 +23,7 @@ export const enProjectDetail = {
 	"securityScan.recommended": "Recommended",
 	"securityScan.customProfile": "Detailed scan type (custom)",
 	"securityScan.customNotSelected": "Use a preset",
+	"securityScan.profileRequirements": "Requirements",
 	"securityScan.target": "Scan target",
 	"securityScan.target.working_tree": "Working tree changes",
 	"securityScan.target.full": "Entire Project",
@@ -43,6 +44,39 @@ export const enProjectDetail = {
 	"securityScan.waiting": "Waiting to start",
 	"securityScan.findingCount": "Findings",
 	"securityScan.findings": "Findings",
+	"securityScan.selectAllFindings": "Select all",
+	"securityScan.clearFindingSelection": "Clear selection",
+	"securityScan.selectedFindingCount": "{{count}} selected",
+	"securityScan.findingSelectionLimit":
+		"Up to {{count}} findings can be converted per generation. Run additional batches for the rest.",
+	"securityScan.selectFinding": "Select {{title}}",
+	"securityScan.generateTasksFromFindings":
+		"Generate tasks from {{count}} findings",
+	"securityScan.findingsPartiallyLoaded":
+		"Showing {{loaded}} of {{total}} findings. Only explicitly selected findings will be used for task generation.",
+	"securityScan.taskCandidatesTitle": "Security remediation task candidates",
+	"securityScan.taskCandidatesHelp":
+		"Review the candidates and select which ones to convert. No task has been created yet.",
+	"securityScan.closeTaskCandidates": "Close task candidates",
+	"securityScan.coverageWarning": "The scan coverage has warnings",
+	"securityScan.duplicateFindings":
+		"{{count}} findings are already linked to a task candidate or task.",
+	"securityScan.acceptanceCriteria": "Acceptance criteria",
+	"securityScan.verificationPlan": "Verification plan",
+	"securityScan.taskPrompt": "Coding Agent task prompt",
+	"securityScan.rationale": "Rationale",
+	"securityScan.planModeOpenQuestions": "Questions to resolve during planning",
+	"securityScan.noNewTaskCandidates":
+		"There are no new task candidates. The selected findings are already linked or require human review.",
+	"securityScan.needsHuman": "Findings requiring human review",
+	"securityScan.cancelTaskCreation": "Close",
+	"securityScan.createDraftTasks": "Create draft tasks ({{count}})",
+	"securityScan.taskRefreshFailed":
+		"The tasks were created, but the task list could not be refreshed: {{message}}",
+	"securityScan.taskCreationResponseInvalid":
+		"The tasks were created, but the response could not be verified. Refresh the task list.",
+	"securityScan.taskCandidateResponseInvalid":
+		"The task candidate API returned an invalid response. Try again.",
 	"securityScan.recommendation": "Recommendation",
 	"securityScan.llmReport": "LLM report",
 	"securityScan.llmReportHelp":
@@ -265,6 +299,10 @@ export const enProjectDetail = {
 		"Constraint setup",
 	"projectDetail.mission.candidateKind.constraint_verification": "Verification",
 	"projectDetail.mission.candidateKind.investigation": "Investigation",
+	"projectDetail.mission.candidateKind.security_remediation":
+		"Security remediation",
+	"projectDetail.mission.candidateKind.security_investigation":
+		"Security investigation",
 	"projectDetail.mission.primaryModule": "Primary module",
 	"projectDetail.mission.secondaryModules": "Secondary modules",
 	"projectDetail.mission.constraintGoals": "Constraint Goals",

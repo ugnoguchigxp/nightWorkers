@@ -114,6 +114,7 @@ function setup(
 	vi.doMock("@/components/ui/Button", () => ({ Button: component("Button") }));
 	vi.doMock("../src/modules/settings/SettingsFields", () => ({
 		Field: component("Field"),
+		NumberField: component("NumberField"),
 		SelectField: component("SelectField"),
 	}));
 	vi.doMock("../src/modules/settings/SettingsLlmProviderEndpoints", () => ({
@@ -354,6 +355,22 @@ describe("settings LLM panel coverage", () => {
 				(field) => field.props.id === "coding_agent-fallback-1-thinking-depth",
 			)
 			?.props.onChange("low");
+		const numberFields = named(root, "NumberField");
+		const primaryTimeout = numberFields.find(
+			(field) => field.props.id === "coding_agent-primary-request-timeout",
+		);
+		expect(primaryTimeout?.props).toMatchObject({
+			value: 300,
+			min: 30,
+			max: 1200,
+			clampOnBlur: true,
+		});
+		primaryTimeout?.props.onChange(1200);
+		numberFields
+			.find(
+				(field) => field.props.id === "coding_agent-fallback-0-request-timeout",
+			)
+			?.props.onChange(420);
 
 		const buttons = named(root, "Button");
 		for (const button of buttons) button.props.onClick?.();

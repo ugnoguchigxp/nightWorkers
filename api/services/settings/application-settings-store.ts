@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
+import { assertDatabaseAccessEnvironment } from "../../../shared/runtime-database-access.mjs";
 import type { DbTransaction } from "../../db/client";
 import {
 	applicationSettingMigrations,
@@ -53,6 +54,9 @@ function databasePath() {
 
 function withDatabase<T>(operation: (database: SyncSqliteDatabase) => T): T {
 	const target = databasePath();
+	assertDatabaseAccessEnvironment(process.env, {
+		operationalDatabasePath: getRuntimePaths(process.env).databasePath,
+	});
 	fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
 	const database = openSyncSqlite(target, { timeout: 10_000 });
 	try {

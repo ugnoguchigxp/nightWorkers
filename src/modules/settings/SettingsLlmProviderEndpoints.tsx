@@ -6,6 +6,7 @@ import type {
 	LlmProviderEndpointKind,
 	LlmProviderHealthResult,
 } from "../nightworkers/types";
+import { buildProviderEndpointKindPatch } from "./llmProviderEndpointKind";
 import { Field, SelectField } from "./SettingsFields";
 
 function formatModelDisplayNames(value: Record<string, string> | undefined) {
@@ -122,6 +123,7 @@ export function SettingsLlmProviderEndpoints({
 										variant="secondary"
 										icon={Activity}
 										loading={healthBusy}
+										title={t("settings.llm.endpoint.healthHint")}
 										onClick={() => void checkEndpointHealth(endpoint)}
 									>
 										{t("settings.llm.endpoint.health")}
@@ -158,6 +160,13 @@ export function SettingsLlmProviderEndpoints({
 											{healthResult.url} ({healthResult.durationMs}ms)
 										</div>
 									) : null}
+									{healthResult.targetDigest ? (
+										<div className="truncate font-mono text-[11px] opacity-70">
+											{healthResult.probeKind || "connectivity"} ·{" "}
+											{healthResult.model || "-"} ·{" "}
+											{healthResult.targetDigest.slice(0, 12)}
+										</div>
+									) : null}
 								</div>
 							) : null}
 							<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -175,9 +184,13 @@ export function SettingsLlmProviderEndpoints({
 									value={endpoint.kind}
 									options={endpointKindOptions}
 									onChange={(value) =>
-										updateEndpoint(endpoint.id, {
-											kind: value as LlmProviderEndpointKind,
-										})
+										updateEndpoint(
+											endpoint.id,
+											buildProviderEndpointKindPatch(
+												endpoint,
+												value as LlmProviderEndpointKind,
+											),
+										)
 									}
 								/>
 								{endpoint.kind === "azure" ? (

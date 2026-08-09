@@ -61,12 +61,12 @@ vi.mock("../api/services/structured-llm", () => ({
 }));
 
 const providerHealthMocks = vi.hoisted(() => ({
-	checkStructuredLlmProviderHealth: vi.fn(),
+	checkStructuredLlmProviderExecutionReadiness: vi.fn(),
 }));
 
 vi.mock("../api/services/structured-llm/provider-health", () => ({
-	checkStructuredLlmProviderHealth:
-		providerHealthMocks.checkStructuredLlmProviderHealth,
+	checkStructuredLlmProviderExecutionReadiness:
+		providerHealthMocks.checkStructuredLlmProviderExecutionReadiness,
 }));
 
 const codexStatusMocks = vi.hoisted(() => ({
@@ -128,17 +128,19 @@ describe("general and LLM settings routes", () => {
 		codexStatusMocks.readCodexModelOptions.mockReturnValue([
 			{ value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
 		]);
-		providerHealthMocks.checkStructuredLlmProviderHealth.mockResolvedValue({
-			ok: true,
-			reachable: true,
-			providerEndpointId: "local-qwen",
-			providerKind: "local",
-			url: "http://localhost:11434/health",
-			status: 200,
-			durationMs: 12,
-			checkedAt: "2026-06-16T00:00:00.000Z",
-			message: "HTTP 200",
-		});
+		providerHealthMocks.checkStructuredLlmProviderExecutionReadiness.mockResolvedValue(
+			{
+				ok: true,
+				reachable: true,
+				providerEndpointId: "local-qwen",
+				providerKind: "local",
+				url: "http://localhost:11434/health",
+				status: 200,
+				durationMs: 12,
+				checkedAt: "2026-06-16T00:00:00.000Z",
+				message: "HTTP 200",
+			},
+		);
 	});
 
 	it("GET /api/settings/llm gets masked settings", async () => {
@@ -219,7 +221,17 @@ describe("general and LLM settings routes", () => {
 						},
 					},
 				],
-				roleRoutes: [],
+				roleRoutes: [
+					{
+						role: "plan",
+						primary: {
+							providerEndpointId: "local-qwen",
+							model: "qwen3-coder-176k",
+							requestTimeoutSeconds: 1200,
+						},
+						fallbacks: [],
+					},
+				],
 			}),
 		});
 		expect(res.status).toBe(200);
@@ -243,9 +255,53 @@ describe("general and LLM settings routes", () => {
 						},
 					}),
 				],
+				roleRoutes: [
+					expect.objectContaining({
+						role: "plan",
+						primary: expect.objectContaining({
+							requestTimeoutSeconds: 1200,
+						}),
+					}),
+				],
 			}),
 		);
 		expect(runtimeSettingsMocks.applySettingsToProcessEnv).toHaveBeenCalled();
+	});
+
+	it("rejects role request timeouts above twenty minutes", async () => {
+		const app = new OpenAPIHono<AppEnv>();
+		app.onError(errorHandler);
+		app.route("/api/settings", settingsRouter);
+
+		const res = await app.request("/api/settings/llm", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				providerEndpoints: [
+					{
+						id: "local-qwen",
+						name: "Local Qwen",
+						kind: "local",
+						enabled: true,
+						models: ["qwen3-coder"],
+					},
+				],
+				roleRoutes: [
+					{
+						role: "plan",
+						primary: {
+							providerEndpointId: "local-qwen",
+							model: "qwen3-coder",
+							requestTimeoutSeconds: 1201,
+						},
+						fallbacks: [],
+					},
+				],
+			}),
+		});
+
+		expect(res.status).toBe(400);
+		expect(runtimeSettingsMocks.writeRuntimeSettings).not.toHaveBeenCalled();
 	});
 
 	it("GET /api/settings/llm/models returns provider options", async () => {
@@ -686,7 +742,7 @@ describe("general and LLM settings routes", () => {
 			status: 200,
 		});
 		expect(
-			providerHealthMocks.checkStructuredLlmProviderHealth,
+			providerHealthMocks.checkStructuredLlmProviderExecutionReadiness,
 		).toHaveBeenCalledWith(
 			expect.objectContaining({ id: "local-qwen", kind: "local" }),
 		);
@@ -721,7 +777,7 @@ describe("general and LLM settings routes", () => {
 		);
 		expect(res.status).toBe(200);
 		expect(
-			providerHealthMocks.checkStructuredLlmProviderHealth,
+			providerHealthMocks.checkStructuredLlmProviderExecutionReadiness,
 		).toHaveBeenCalledWith(
 			expect.objectContaining({
 				id: "unsaved-local",
@@ -773,7 +829,7 @@ describe("general and LLM settings routes", () => {
 
 		expect(res.status).toBe(200);
 		expect(
-			providerHealthMocks.checkStructuredLlmProviderHealth,
+			providerHealthMocks.checkStructuredLlmProviderExecutionReadiness,
 		).toHaveBeenCalledWith(
 			expect.objectContaining({
 				id: "azure-default",
@@ -801,7 +857,7 @@ describe("general and LLM settings routes", () => {
 		);
 		expect(res.status).toBe(404);
 		expect(
-			providerHealthMocks.checkStructuredLlmProviderHealth,
+			providerHealthMocks.checkStructuredLlmProviderExecutionReadiness,
 		).not.toHaveBeenCalled();
 	});
 });

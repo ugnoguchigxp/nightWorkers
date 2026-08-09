@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-export const DEFAULT_VULNWORKBENCH_CWD = "/Users/y.noguchi/Code/vulnWorkbench";
+export const DEFAULT_VULNWORKBENCH_CWD = path.resolve(
+	process.cwd(),
+	"../vulnWorkbench",
+);
 
 export function resolveVulnWorkbenchBunExecutable(
 	env: NodeJS.ProcessEnv = process.env,
@@ -40,6 +43,8 @@ export function isVulnWorkbenchCliConfigured(
 	const cwd = env.NIGHTWORKERS_VULNWORKBENCH_CWD || DEFAULT_VULNWORKBENCH_CWD;
 	return (
 		existsSync(path.join(cwd, "package.json")) &&
-		existsSync(path.join(cwd, "api/cli/oracle-security.ts"))
+		existsSync(path.join(cwd, "api/cli/oracle-security.ts")) &&
+		existsSync(path.join(cwd, "api/cli/scan-profile.ts")) &&
+		existsSync(path.join(cwd, "api/cli/nightworkers-security-capabilities.ts"))
 	);
 }

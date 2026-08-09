@@ -2,8 +2,10 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { config as loadEnv } from "dotenv";
+import { requireMaintenanceDatabaseAccess } from "../../shared/runtime-database-access.mjs";
 
 loadEnv({ quiet: true });
+requireMaintenanceDatabaseAccess(process.env);
 
 const DEFAULT_SNAPSHOT_NAME = "current";
 const SQLITE_BUFFER_SIZE = 512 * 1024 * 1024;

@@ -26,6 +26,7 @@ export type StartTaskRunOptions = {
 		| "workbench_review_followup"
 		| "workbench_review_prompt"
 		| "workbench_run"
+		| "workbench_plan_task"
 		| "workbench_run_task"
 		| "implementation_queue"
 		| "session_queue"

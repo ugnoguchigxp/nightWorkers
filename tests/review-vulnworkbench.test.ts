@@ -105,6 +105,17 @@ describe("Review vulnWorkbench diagnostic", () => {
 							profile: "agent-output",
 							findingCount: 2,
 							highOrCriticalCount: 1,
+							coverage: {
+								completed: 2,
+								skipped: 0,
+								failed: 1,
+								gaps: [
+									{
+										code: "failed:osv",
+										message: "OSV did not complete.",
+									},
+								],
+							},
 							findingsTruncated: false,
 							blockingFingerprints: ["fingerprint-1"],
 							findings: [
@@ -144,6 +155,13 @@ describe("Review vulnWorkbench diagnostic", () => {
 		expect(result.scanRunId).toBe("scan-1");
 		expect(result.findingCount).toBe(2);
 		expect(result.highOrCriticalCount).toBe(1);
+		expect(result.coverage).toEqual({
+			completed: 2,
+			skipped: 0,
+			failed: 1,
+			gaps: [{ code: "failed:osv", message: "OSV did not complete." }],
+		});
+		expect(result.reviewStatus).toBe("completed");
 		expect("reportPath" in result).toBe(false);
 		expect(result.topFindings).toHaveLength(1);
 		expect(result.topFindings[0]).toMatchObject({
@@ -175,5 +193,64 @@ describe("Review vulnWorkbench diagnostic", () => {
 		);
 		expect(reviewFinding.body).not.toContain("reportPath");
 		expect(reviewFinding.body).not.toContain("/outside/vulnWorkbench");
+	});
+
+	it("passes an explicit profile, diff target digest, and finding limit to the oracle", async () => {
+		const calls: string[][] = [];
+		const digest = "a".repeat(64);
+		await runVulnWorkbenchSecurityDiagnostic({
+			target: { repoRoot: "/workspace/project", targetFiles: [] },
+			artifactDir: "/tmp/nightworkers-review",
+			settings: {
+				enabled: true,
+				cwd: "/workspace/vulnWorkbench",
+				timeoutSeconds: 960,
+			},
+			profile: "diff-basic-security",
+			scanTarget: "working_tree",
+			expectedTargetDigest: digest,
+			findingLimit: 1_000,
+			runCommand: async (_cwd, args) => {
+				calls.push(args);
+				return {
+					command: { command: "bun", exitCode: 0, summary: "completed" },
+					output: JSON.stringify({
+						ok: true,
+						status: "completed",
+						project: {
+							id: "project-1",
+							repoPath: "/workspace/project",
+							created: false,
+						},
+						scan: {
+							scanRunId: "scan-1",
+							profile: "diff-basic-security",
+							findingCount: 0,
+							highOrCriticalCount: 0,
+							findingsTruncated: false,
+							blockingFingerprints: [],
+							findings: [],
+						},
+						review: { status: "completed", reviewId: "review-1" },
+						nextAction: "none",
+					}),
+					scanRunId: "scan-1",
+				};
+			},
+		});
+		expect(calls[0]).toEqual([
+			"run",
+			"api/cli/oracle-security.ts",
+			"--project-path",
+			"/workspace/project",
+			"--profile",
+			"diff-basic-security",
+			"--target",
+			"working-tree",
+			"--expected-target-digest",
+			digest,
+			"--finding-limit",
+			"1000",
+		]);
 	});
 });

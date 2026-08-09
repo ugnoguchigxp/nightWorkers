@@ -5,6 +5,7 @@ import {
 	securityScanFindingPageSchema,
 	securityScanPreviewSchema,
 	securityScanReportListSchema,
+	securityScanResourceRefSchema,
 	securityScanRunDetailSchema,
 	securityScanSelectionSchema,
 	securityScanStartReportResponseSchema,
@@ -32,7 +33,7 @@ import {
 	saveSecurityScanProviderSettings,
 } from "./security-scan-settings.service";
 
-const resourceRefSchema = z.string().uuid();
+const resourceRefSchema = securityScanResourceRefSchema;
 const idempotencyKeySchema = z.string().uuid();
 const previewRequestSchema = z
 	.object({

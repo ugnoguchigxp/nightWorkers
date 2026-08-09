@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { config as loadEnv } from "dotenv";
+import { requireMaintenanceDatabaseAccess } from "../../shared/runtime-database-access.mjs";
 import { getRuntimePaths } from "../runtime/paths";
 
 loadEnv({ quiet: true });
+requireMaintenanceDatabaseAccess(process.env);
 
 function resolveDatabasePath() {
 	const databaseUrl = process.env.DATABASE_URL?.trim();

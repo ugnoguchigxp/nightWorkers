@@ -7,6 +7,45 @@ import {
 import "./setup";
 
 describe("Supervisor LLM schema-first parsing schema handling", () => {
+	it("emits a typed terminal failure when the provider returns an empty message", async () => {
+		process.env.ACTIVE_LLM_PROVIDER = "openai";
+		process.env.OPENAI_ENABLED = "true";
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.OPENAI_MODEL = "gpt-test";
+		process.env.OPENAI_STREAMING_ENABLED = "false";
+
+		globalThis.fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({ choices: [{ message: { content: "" } }] }),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+		) as unknown as typeof fetch;
+		const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+
+		const error = await callSupervisorLLM("system", "user", {
+			round: 2,
+			schemaFirst: true,
+			emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+		}).catch((caught) => caught);
+
+		expect(error).toMatchObject({
+			name: "StructuredProviderError",
+			kind: "invalid_response",
+			code: "EMPTY_PROVIDER_RESPONSE",
+			retryable: false,
+		});
+		expect(events.map((event) => event.type)).toEqual([
+			"model.request_started",
+			"model.request_failed",
+		]);
+		expect(events[1]?.data).toMatchObject({
+			failureKind: "invalid_response",
+			code: "EMPTY_PROVIDER_RESPONSE",
+			retryable: false,
+		});
+	});
+
 	it("automatically audits raw provider system prompts at the request boundary", async () => {
 		process.env.ACTIVE_LLM_PROVIDER = "openai";
 		process.env.OPENAI_ENABLED = "true";
@@ -64,6 +103,10 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 				],
 			},
 		});
+		expect(
+			events.find((event) => event.type === "model.response_finished")?.data
+				?.requestId,
+		).toBe(events[0]?.data?.requestId);
 	});
 
 	it("repairs truncated schema-first toolCall JSON before schema validation", async () => {
@@ -213,6 +256,7 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 			"model.request_started",
 			"model.provider_tool_call_detected",
 			"model.provider_activity_rejected",
+			"model.request_failed",
 		]);
 		expect(events[0]?.data?.requestId).toMatch(
 			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
@@ -224,7 +268,10 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 				}),
 			}),
 		]);
-		expect(events.at(-1)?.data).toMatchObject({
+		expect(
+			events.find((event) => event.type === "model.provider_activity_rejected")
+				?.data,
+		).toMatchObject({
 			providerId: "openai",
 			providerClass: "chat_completion",
 			activityType: "tool_call",
@@ -343,7 +390,10 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 		expect(
 			events.some((event) => event.type === "model.provider_activity_rejected"),
 		).toBe(true);
-		expect(events.at(-1)?.data).toMatchObject({
+		expect(
+			events.find((event) => event.type === "model.provider_activity_rejected")
+				?.data,
+		).toMatchObject({
 			providerId: "openai",
 			activityType: "tool_call",
 			toolName: "run_command",

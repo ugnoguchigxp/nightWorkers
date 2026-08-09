@@ -46,7 +46,10 @@ describe("Supervisor LLM schema-first parsing fallback and retry", () => {
 				JSON.parse(String(init?.body || "{}")) as Record<string, unknown>,
 			);
 			if (requestBodies.length === 1) {
-				throw new Error("The socket connection was closed unexpectedly.");
+				throw Object.assign(
+					new Error("The socket connection was closed unexpectedly."),
+					{ code: "ECONNRESET" },
+				);
 			}
 			return new Response(
 				JSON.stringify({
@@ -88,8 +91,8 @@ describe("Supervisor LLM schema-first parsing fallback and retry", () => {
 		});
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(requestBodies[0]).toMatchObject({
-			stream: true,
-			response_format: { type: "json_schema" },
+			stream: false,
+			response_format: { type: "json_object" },
 		});
 		expect(requestBodies[1]).toMatchObject({
 			stream: false,
@@ -149,7 +152,9 @@ describe("Supervisor LLM schema-first parsing fallback and retry", () => {
 		const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
 			urls.push(url);
 			if (url.startsWith("http://localhost:11434")) {
-				throw new Error("The operation was aborted.");
+				throw Object.assign(new Error("The operation was aborted."), {
+					code: "ECONNRESET",
+				});
 			}
 			return new Response(
 				JSON.stringify({
@@ -257,7 +262,9 @@ describe("Supervisor LLM schema-first parsing fallback and retry", () => {
 		const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
 			urls.push(url);
 			if (url.startsWith("http://localhost:11434")) {
-				throw new Error("The operation was aborted.");
+				throw Object.assign(new Error("The operation was aborted."), {
+					code: "ECONNRESET",
+				});
 			}
 			return new Response(
 				JSON.stringify({

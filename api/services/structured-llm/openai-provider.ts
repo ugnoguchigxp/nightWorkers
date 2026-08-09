@@ -4,6 +4,12 @@ import {
 	buildOpenAIChatCompletionBody,
 	readOpenAIChatCompletionStream,
 } from "./openai";
+import {
+	normalizeStructuredProviderError,
+	providerHttpError,
+	providerInvalidResponseError,
+	StructuredProviderError,
+} from "./provider-failure";
 import type {
 	OpenAIChatCompletionResponse,
 	OpenAIResponseFormat,
@@ -12,7 +18,6 @@ import type {
 import {
 	buildOpenAICompatibleHeaders,
 	emitOpenAICompatibilityRetryEvents,
-	emitSchemaRetryEvents,
 	getResolvedProviderEndpoint,
 	retryOpenAITransientUnavailableOnce,
 	toOpenAIReasoningEffort,
@@ -42,9 +47,11 @@ export async function callOpenAIProvider(
 ): Promise<ProviderCallResult> {
 	const endpointConfig = getResolvedProviderEndpoint(input, settings);
 	if (!endpointConfig?.enabled && !isEnabled("OPENAI_ENABLED", true)) {
-		throw new Error(
-			"OpenAI provider is inactive. Enable OPENAI_ENABLED first.",
-		);
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message: "OpenAI provider is inactive. Enable OPENAI_ENABLED first.",
+		});
 	}
 	const apiKey =
 		endpointConfig?.apiKey ||
@@ -64,18 +71,21 @@ export async function callOpenAIProvider(
 	const localCompatibleEndpoint =
 		endpointConfig?.kind === "local" ||
 		endpointConfig?.kind === "openai-compatible";
-	const streamResponses =
-		typeof settings.OPENAI_STREAMING_ENABLED === "boolean"
+	const streamResponses = localCompatibleEndpoint
+		? false
+		: typeof settings.OPENAI_STREAMING_ENABLED === "boolean"
 			? settings.OPENAI_STREAMING_ENABLED
-			: !localCompatibleEndpoint && isEnabled("OPENAI_STREAMING_ENABLED", true);
+			: isEnabled("OPENAI_STREAMING_ENABLED", true);
 	const reasoningEffort = toOpenAIReasoningEffort(
 		input.options.normalizedRequest?.thinkingDepth,
 	);
 	const apiKeyRequired = !endpointConfig || endpointConfig.kind === "openai";
 	if (apiKeyRequired && !apiKey) {
-		throw new Error(
-			"OpenAI API key is not configured in environment variables.",
-		);
+		throw new StructuredProviderError({
+			kind: "authentication",
+			retryable: false,
+			message: "OpenAI API key is not configured in environment variables.",
+		});
 	}
 	const headers = buildOpenAICompatibleHeaders(apiKey);
 	const url = `${baseURL.replace(/\/+$/, "")}/chat/completions`;
@@ -110,7 +120,9 @@ export async function callOpenAIProvider(
 		});
 	};
 
-	let responseFormat: OpenAIResponseFormat = "json_schema";
+	let responseFormat: OpenAIResponseFormat = localCompatibleEndpoint
+		? "json_object"
+		: "json_schema";
 	let activeStreamResponses = streamResponses;
 	let response: Response;
 	try {
@@ -120,10 +132,11 @@ export async function callOpenAIProvider(
 			reason: "initial",
 		});
 	} catch (error) {
-		if (!localCompatibleEndpoint) throw error;
+		const failure = normalizeStructuredProviderError(error);
+		if (!localCompatibleEndpoint || !failure.retryable) throw failure;
 		await emitOpenAICompatibilityRetryEvents(input.options, {
 			reason: "transport_error",
-			errorMessage: error instanceof Error ? error.message : String(error),
+			errorMessage: failure.message,
 			fromResponseFormat: responseFormat,
 			fromStream: activeStreamResponses,
 		});
@@ -133,17 +146,6 @@ export async function callOpenAIProvider(
 			responseFormat,
 			stream: activeStreamResponses,
 			reason: "local_transport_compatibility_retry",
-		});
-	}
-
-	if (!response.ok && response.status === 400) {
-		await emitSchemaRetryEvents(input.options, "OpenAI", response.status);
-		responseFormat = "json_object";
-		if (localCompatibleEndpoint) activeStreamResponses = false;
-		response = await fetchCompletion({
-			responseFormat,
-			stream: activeStreamResponses,
-			reason: "schema_400_retry",
 		});
 	}
 
@@ -159,9 +161,12 @@ export async function callOpenAIProvider(
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(
-			`OpenAI call failed with status ${response.status}: ${errorText}`,
-		);
+		throw providerHttpError({
+			provider: "OpenAI",
+			status: response.status,
+			body: errorText,
+			retryAfter: response.headers.get("retry-after"),
+		});
 	}
 	let streamResult: { content: string; usage: unknown | null } | null = null;
 	let responseData: OpenAIChatCompletionResponse | null = null;
@@ -175,10 +180,11 @@ export async function callOpenAIProvider(
 				round: input.options.round,
 			});
 		} catch (error) {
-			if (!localCompatibleEndpoint) throw error;
+			const failure = normalizeStructuredProviderError(error);
+			if (!localCompatibleEndpoint || !failure.retryable) throw failure;
 			await emitOpenAICompatibilityRetryEvents(input.options, {
 				reason: "stream_read_error",
-				errorMessage: error instanceof Error ? error.message : String(error),
+				errorMessage: failure.message,
 				fromResponseFormat: responseFormat,
 				fromStream: activeStreamResponses,
 			});
@@ -200,14 +206,17 @@ export async function callOpenAIProvider(
 			}
 			if (!response.ok) {
 				const errorText = await response.text();
-				throw new Error(
-					`OpenAI call failed with status ${response.status}: ${errorText}`,
-				);
+				throw providerHttpError({
+					provider: "OpenAI",
+					status: response.status,
+					body: errorText,
+					retryAfter: response.headers.get("retry-after"),
+				});
 			}
-			responseData = await response.json();
+			responseData = await readOpenAIProviderJson(response);
 		}
 	} else {
-		responseData = await response.json();
+		responseData = await readOpenAIProviderJson(response);
 	}
 	const message = responseData?.choices?.[0]?.message;
 	if (message?.tool_calls && input.options.normalizedRequest) {
@@ -252,4 +261,19 @@ export async function callOpenAIProvider(
 		model,
 		providerDebug,
 	};
+}
+
+async function readOpenAIProviderJson(
+	response: Response,
+): Promise<OpenAIChatCompletionResponse> {
+	const body = await response.text();
+	try {
+		return JSON.parse(body) as OpenAIChatCompletionResponse;
+	} catch (error) {
+		throw providerInvalidResponseError({
+			provider: "OpenAI",
+			body,
+			cause: error,
+		});
+	}
 }

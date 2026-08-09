@@ -269,6 +269,7 @@ export type WorkbenchChatIntent =
 	| "feature_plan"
 	| "create_task"
 	| "queue"
+	| "plan_task"
 	| "run_task"
 	| "adjust_running"
 	| "review_prompt"
@@ -344,7 +345,7 @@ export async function appendWorkbenchMessage(
 			"TASK_MESSAGE_REQUEST_CONFLICT",
 			"The message request identity was already used with different content.",
 		);
-	if (intent === "run_task") {
+	if (intent === "run_task" || intent === "plan_task") {
 		assertRunnableWorkbenchTask(task, existingMessages);
 	}
 	const imageAttachments = await persistPromptImageAttachments({
@@ -385,11 +386,13 @@ export async function appendWorkbenchMessage(
 		}
 	};
 
-	if (intent === "run_task") {
+	if (intent === "run_task" || intent === "plan_task") {
 		await appendWorkbenchTaskMessage();
 		const run = await startTaskRun(id, {
 			executionMode: "implementation",
-			executionModeSource: "workbench_run_task",
+			executionModeSource:
+				intent === "plan_task" ? "workbench_plan_task" : "workbench_run_task",
+			...(intent === "plan_task" ? { planModeRequested: true } : {}),
 			routeOverride: llmRouteOverride,
 		});
 		return {

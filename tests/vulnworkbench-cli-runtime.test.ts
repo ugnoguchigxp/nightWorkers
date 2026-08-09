@@ -34,6 +34,15 @@ describe("vulnWorkbench CLI runtime", () => {
 			path.join(tempDir, "api/cli/oracle-security.ts"),
 			"export {};\n",
 		);
+		expect(isVulnWorkbenchCliConfigured(env)).toBe(false);
+		await fs.writeFile(
+			path.join(tempDir, "api/cli/scan-profile.ts"),
+			"export {};\n",
+		);
+		await fs.writeFile(
+			path.join(tempDir, "api/cli/nightworkers-security-capabilities.ts"),
+			"export {};\n",
+		);
 		expect(isVulnWorkbenchCliConfigured(env)).toBe(true);
 		expect(
 			isVulnWorkbenchCliConfigured({

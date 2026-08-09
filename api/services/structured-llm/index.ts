@@ -25,11 +25,16 @@ import {
 	StructuredLlmTimeoutError,
 } from "./json";
 import { authorizeStructuredProviderCall } from "./provider-call-authorization";
+import { StructuredProviderError } from "./provider-failure";
 import { callProvider, type RawLlmCallOptions } from "./providers";
 import {
 	buildNormalizedSupervisorLlmRequestCandidates,
 	providerAdapterKey,
 } from "./request";
+import {
+	emitStructuredLlmRequestFailed,
+	structuredLlmRequestPhase,
+} from "./request-lifecycle";
 import {
 	prepareAuditedExecutionPolicy,
 	prepareAuditedSystemPrompt,
@@ -258,7 +263,10 @@ async function callRawJsonLLMAttempt(
 	const provider = providerAdapterKey(normalizedRequest.providerId);
 	const startedAt = Date.now();
 	const callId = randomUUID();
-	const requestAbortHandle = createStructuredLlmAbortSignal(options);
+	const requestAbortHandle = createStructuredLlmAbortSignal(
+		options,
+		normalizedRequest.requestTimeoutMs,
+	);
 	const requestSignal = requestAbortHandle.signal;
 	const providerOptions = { ...options, normalizedRequest };
 	let rawContent = "";
@@ -274,7 +282,10 @@ async function callRawJsonLLMAttempt(
 		role: normalizedRequest.role ?? null,
 		routeSource: normalizedRequest.routeSource ?? null,
 		model: normalizedRequest.modelOrDeployment ?? null,
+		targetDigest: normalizedRequest.targetDigest ?? null,
 		thinkingDepth: normalizedRequest.thinkingDepth ?? null,
+		effectiveTimeoutMs: requestAbortHandle.timeoutMs,
+		timeoutSource: requestAbortHandle.timeoutSource,
 		providerClass: normalizedRequest.providerClass,
 		round: options.round ?? null,
 		label: options.label,
@@ -312,7 +323,10 @@ async function callRawJsonLLMAttempt(
 			role: normalizedRequest.role ?? null,
 			routeSource: normalizedRequest.routeSource ?? null,
 			model: normalizedRequest.modelOrDeployment ?? null,
+			targetDigest: normalizedRequest.targetDigest ?? null,
 			thinkingDepth: normalizedRequest.thinkingDepth ?? null,
+			effectiveTimeoutMs: requestAbortHandle.timeoutMs,
+			timeoutSource: requestAbortHandle.timeoutSource,
 			providerClass: normalizedRequest.providerClass,
 			label: options.label,
 			systemPromptLength: systemPrompt.length,
@@ -325,15 +339,20 @@ async function callRawJsonLLMAttempt(
 	await emitSupervisorLlmDebugEvent(options, {
 		type: "model.request_started",
 		severity: "info",
-		message: `Supervisor LLM request started. provider=${normalizedRequest.providerId} round=${options.round ?? "unknown"}`,
+		message: `Supervisor LLM request started. phase=${structuredLlmRequestPhase(normalizedRequest.role)} role=${normalizedRequest.role ?? "unknown"} provider=${normalizedRequest.providerId} model=${normalizedRequest.modelOrDeployment ?? "unknown"}`,
 		data: {
 			requestId: callId,
+			phase: structuredLlmRequestPhase(normalizedRequest.role),
 			provider: normalizedRequest.providerId,
 			providerEndpointId: normalizedRequest.providerEndpointId ?? null,
+			providerEndpointName:
+				normalizedRequest.diagnostics.providerEndpointName ?? null,
 			role: normalizedRequest.role ?? null,
 			routeSource: normalizedRequest.routeSource ?? null,
 			model: normalizedRequest.modelOrDeployment ?? null,
 			thinkingDepth: normalizedRequest.thinkingDepth ?? null,
+			effectiveTimeoutMs: requestAbortHandle.timeoutMs,
+			timeoutSource: requestAbortHandle.timeoutSource,
 			providerClass: normalizedRequest.providerClass,
 			callKind: normalizedRequest.callKind,
 			round: options.round ?? null,
@@ -398,6 +417,16 @@ async function callRawJsonLLMAttempt(
 				...(rejectedActivity ? { rejectedActivity } : {}),
 			},
 		});
+		await emitStructuredLlmRequestFailed({
+			options,
+			request: normalizedRequest,
+			requestId: callId,
+			startedAt,
+			error: normalizedError,
+			failureKindOverride: rejectedActivity
+				? "provider_activity_rejected"
+				: undefined,
+		});
 		throw normalizedError;
 	} finally {
 		requestAbortHandle.dispose();
@@ -418,7 +447,20 @@ async function callRawJsonLLMAttempt(
 			durationMs: Date.now() - startedAt,
 			providerDebug,
 		});
-		throw new Error("LLM returned an empty message response.");
+		const error = new StructuredProviderError({
+			kind: "invalid_response",
+			message: "LLM returned an empty message response.",
+			code: "EMPTY_PROVIDER_RESPONSE",
+			retryable: false,
+		});
+		await emitStructuredLlmRequestFailed({
+			options,
+			request: normalizedRequest,
+			requestId: callId,
+			startedAt,
+			error,
+		});
+		throw error;
 	}
 
 	if (options.taskId && providerUsage) {
@@ -513,10 +555,14 @@ async function callRawJsonLLMAttempt(
 	await emitSupervisorLlmDebugEvent(options, {
 		type: "model.response_finished",
 		severity: "info",
-		message: `Supervisor LLM response received. provider=${normalizedRequest.providerId} bytes=${Buffer.byteLength(rawContent, "utf8")}`,
+		message: `Supervisor LLM response received. phase=${structuredLlmRequestPhase(normalizedRequest.role)} role=${normalizedRequest.role ?? "unknown"} provider=${normalizedRequest.providerId} bytes=${Buffer.byteLength(rawContent, "utf8")}`,
 		data: {
+			requestId: callId,
+			phase: structuredLlmRequestPhase(normalizedRequest.role),
 			provider: normalizedRequest.providerId,
 			providerEndpointId: normalizedRequest.providerEndpointId ?? null,
+			providerEndpointName:
+				normalizedRequest.diagnostics.providerEndpointName ?? null,
 			role: normalizedRequest.role ?? null,
 			routeSource: normalizedRequest.routeSource ?? null,
 			providerClass: normalizedRequest.providerClass,

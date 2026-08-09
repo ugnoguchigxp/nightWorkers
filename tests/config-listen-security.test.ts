@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 function loadConfig(input: { host: string; nodeEnv?: string }) {
+	const nodeEnv = input.nodeEnv ?? "production";
 	return spawnSync(
 		"bun",
 		[
@@ -13,9 +14,11 @@ function loadConfig(input: { host: string; nodeEnv?: string }) {
 			encoding: "utf8",
 			env: {
 				...process.env,
+				NIGHTWORKERS_DATABASE_ACCESS_SCOPE:
+					nodeEnv === "test" ? "isolated_test" : "operational",
 				NIGHTWORKERS_VITEST_DB_PATH: undefined,
 				NIGHTWORKERS_CONFIG_TEST: "1",
-				NODE_ENV: input.nodeEnv ?? "production",
+				NODE_ENV: nodeEnv,
 				HOST: input.host,
 				PORT: "0",
 				DATABASE_URL: "file:/tmp/nightworkers-config-security.sqlite",

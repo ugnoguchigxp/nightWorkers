@@ -12,6 +12,7 @@ import type { StructuredLlmRoutePolicy } from "../../../../services/structured-l
 import type { SystemContextPromptAudit } from "../../../../systemContexts/catalog";
 import { codingAgentProviderExecutionPolicy } from "../../adapters/coding-agent-provider.adapter";
 import type { AgentRunContext } from "../types";
+import { readNativeApiActiveRole } from "./native-api-route-context";
 import {
 	extractLatestNativeApiUserPrompt,
 	extractNativeApiSystemContextAudit,
@@ -47,7 +48,7 @@ export function buildNativeApiProviderRequests(input: {
 	routeOverride?: StructuredLlmModelTarget | null;
 	routePolicy?: StructuredLlmRoutePolicy;
 }): NativeApiProviderRequest[] {
-	const role = "implementation" as const;
+	const role = readNativeApiActiveRole(input.context);
 	const systemPrompt = extractNativeApiSystemPrompt(input.history);
 	const userPrompt = extractLatestNativeApiUserPrompt(input.history);
 	const systemContextAudit = extractNativeApiSystemContextAudit(input.history);

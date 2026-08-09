@@ -121,6 +121,7 @@ fn start_backend_sidecar(app: tauri::AppHandle) -> Result<(), Box<dyn std::error
     command
         .arg(&backend_entry)
         .env("DOTENV_CONFIG_QUIET", "true")
+        .env("NIGHTWORKERS_DATABASE_ACCESS_SCOPE", "operational")
         .env("NIGHTWORKERS_DESKTOP", "1")
         .env("NIGHTWORKERS_RUNTIME_DIR", &runtime_dir)
         .env("NIGHTWORKERS_RESOURCE_DIR", &resource_root)

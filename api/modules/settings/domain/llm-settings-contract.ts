@@ -1,5 +1,9 @@
 import { z } from "@hono/zod-openapi";
-import { LLM_ROLE_ORDER as SHARED_LLM_ROLE_ORDER } from "../../../../shared/llm-role";
+import {
+	MAX_LLM_REQUEST_TIMEOUT_SECONDS,
+	MIN_LLM_REQUEST_TIMEOUT_SECONDS,
+	LLM_ROLE_ORDER as SHARED_LLM_ROLE_ORDER,
+} from "../../../../shared/llm-role";
 
 const providerEndpointKindSchema = z.enum([
 	"azure",
@@ -42,6 +46,12 @@ export const llmModelTargetSchema = z.object({
 	providerEndpointId: z.string().default(""),
 	model: z.string().default(""),
 	thinkingDepth: thinkingDepthSchema.optional().default(""),
+	requestTimeoutSeconds: z
+		.number()
+		.int()
+		.min(MIN_LLM_REQUEST_TIMEOUT_SECONDS)
+		.max(MAX_LLM_REQUEST_TIMEOUT_SECONDS)
+		.optional(),
 });
 
 export const llmRoleRouteSchema = z.object({
@@ -135,6 +145,7 @@ export type LlmModelTarget = {
 	providerEndpointId: string;
 	model: string;
 	thinkingDepth: z.infer<typeof thinkingDepthSchema>;
+	requestTimeoutSeconds?: number;
 };
 export type LlmRole = z.infer<typeof llmRoleSchema>;
 export type LlmRoleRoute = {

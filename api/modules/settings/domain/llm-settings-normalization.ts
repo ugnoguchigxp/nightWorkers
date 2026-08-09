@@ -6,6 +6,7 @@ import {
 	readCodexModelOptions,
 } from "../../../services/codex-global-config/status";
 import { migrateStructuredLlmEndpointIds } from "../../../services/structured-llm/endpoint-id-migration";
+import { canonicalizeStructuredLlmEndpoint } from "../../../services/structured-llm/endpoint-target";
 import {
 	LLM_ROLE_ORDER,
 	type LlmModelTarget,
@@ -107,14 +108,14 @@ export function normalizeProviderEndpoints(
 		{ configuredModel: legacySettings.CODEX_MODEL },
 	).map((endpoint) => {
 		const models = uniqueNonEmpty(endpoint.models);
-		return {
+		return canonicalizeStructuredLlmEndpoint({
 			...endpoint,
 			models,
 			modelDisplayNames: normalizeModelDisplayNames(
 				endpoint.modelDisplayNames,
 				models,
 			),
-		};
+		});
 	});
 }
 
@@ -426,6 +427,7 @@ function normalizeModelTarget(input: unknown): LlmModelTarget | null {
 		providerEndpointId,
 		model,
 		thinkingDepth: parsed.data.thinkingDepth || "",
+		requestTimeoutSeconds: parsed.data.requestTimeoutSeconds,
 	};
 }
 

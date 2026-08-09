@@ -1,9 +1,24 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import {
 	SECURITY_SCAN_PROVIDER_BASE_PATH,
 	securityScanProviderEnvelopeSchema,
+	securityScanSelectionSchema,
+	securityScanTargetSchema,
 } from "../../../shared/schemas/security-scan.schema";
 import { AppError } from "../../lib/errors";
+import { redactSecretText } from "../../services/security/secret-redaction";
+import {
+	localCliCancel,
+	localCliCapabilities,
+	localCliFindings,
+	localCliPreview,
+	localCliReportContent,
+	localCliReports,
+	localCliScanDetail,
+	localCliStartReport,
+	localCliStartScan,
+} from "./security-scan-local-cli.service";
 import { getSecurityScanProviderConnection } from "./security-scan-settings.service";
 
 const JSON_RESPONSE_LIMIT_BYTES = 6 * 1024 * 1024;
@@ -12,10 +27,13 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const providerErrorSchema = z
 	.object({
 		contractVersion: z.literal(1),
-		requestId: z.string().optional(),
+		requestId: z.string().min(1).max(64).optional(),
 		error: z
 			.object({
-				code: z.string().min(1).max(128),
+				code: z
+					.string()
+					.regex(/^[a-z0-9_]+$/i)
+					.max(128),
 				message: z.string().min(1).max(1024),
 				retryable: z.boolean().optional(),
 				details: z.record(z.string(), z.unknown()).optional(),
@@ -30,6 +48,15 @@ type ProviderRequest = {
 	idempotencyKey?: string;
 };
 
+const localStartInputSchema = z
+	.object({
+		previewRef: z.string().uuid(),
+		selection: securityScanSelectionSchema,
+		target: securityScanTargetSchema,
+		expectedTargetDigest: z.string().regex(/^[0-9a-f]{64}$/),
+	})
+	.strict();
+
 function providerStatus(status: number): number {
 	if (status === 401 || status === 403) return status;
 	if (status === 404 || status === 409 || status === 422 || status === 429) {
@@ -38,7 +65,7 @@ function providerStatus(status: number): number {
 	return status >= 500 ? 503 : 502;
 }
 
-function connectionOrThrow() {
+function selectedConnectionOrThrow() {
 	const connection = getSecurityScanProviderConnection();
 	if (!connection.enabled) {
 		throw new AppError(
@@ -47,11 +74,30 @@ function connectionOrThrow() {
 			"vulnWorkbench 連携が無効です。設定画面で有効にしてください。",
 		);
 	}
-	if (!connection.token) {
+	if (connection.transport === "local_cli" && !connection.localCliConfigured) {
+		throw new AppError(
+			409,
+			"SECURITY_SCAN_LOCAL_CLI_NOT_CONFIGURED",
+			"vulnWorkbench CLIが見つかりません。NIGHTWORKERS_VULNWORKBENCH_CWDを確認してください。",
+		);
+	}
+	if (connection.transport === "http" && !connection.token) {
 		throw new AppError(
 			409,
 			"SECURITY_SCAN_PROVIDER_TOKEN_MISSING",
 			"vulnWorkbench の service token が設定されていません。",
+		);
+	}
+	return connection;
+}
+
+function httpConnectionOrThrow() {
+	const connection = selectedConnectionOrThrow();
+	if (connection.transport !== "http") {
+		throw new AppError(
+			500,
+			"SECURITY_SCAN_TRANSPORT_MISMATCH",
+			"vulnWorkbench HTTP transportが選択されていません。",
 		);
 	}
 	return connection;
@@ -69,15 +115,26 @@ async function readBoundedBody(response: Response): Promise<string> {
 			"vulnWorkbench の応答が許容サイズを超えています。",
 		);
 	}
-	const text = await response.text();
-	if (Buffer.byteLength(text, "utf8") > JSON_RESPONSE_LIMIT_BYTES) {
-		throw new AppError(
-			502,
-			"SECURITY_SCAN_PROVIDER_RESPONSE_TOO_LARGE",
-			"vulnWorkbench の応答が許容サイズを超えています。",
-		);
+	if (!response.body) return "";
+	const reader = response.body.getReader();
+	const chunks: Buffer[] = [];
+	let totalBytes = 0;
+	while (true) {
+		const chunk = await reader.read();
+		if (chunk.done) break;
+		const bytes = Buffer.from(chunk.value);
+		totalBytes += bytes.length;
+		if (totalBytes > JSON_RESPONSE_LIMIT_BYTES) {
+			await reader.cancel().catch(() => undefined);
+			throw new AppError(
+				502,
+				"SECURITY_SCAN_PROVIDER_RESPONSE_TOO_LARGE",
+				"vulnWorkbench の応答が許容サイズを超えています。",
+			);
+		}
+		chunks.push(bytes);
 	}
-	return text;
+	return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
 async function requestProvider<T>(
@@ -85,7 +142,7 @@ async function requestProvider<T>(
 	schema: z.ZodType<T>,
 	input: ProviderRequest = {},
 ): Promise<T> {
-	const connection = connectionOrThrow();
+	const connection = httpConnectionOrThrow();
 	const url = new URL(
 		`${SECURITY_SCAN_PROVIDER_BASE_PATH}${path}`,
 		connection.baseUrl,
@@ -105,6 +162,7 @@ async function requestProvider<T>(
 			method: input.method ?? (input.body === undefined ? "GET" : "POST"),
 			headers,
 			body: input.body === undefined ? undefined : JSON.stringify(input.body),
+			redirect: "error",
 			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
 	} catch (error) {
@@ -135,7 +193,7 @@ async function requestProvider<T>(
 			throw new AppError(
 				providerStatus(response.status),
 				`VULNWORKBENCH_${providerError.data.error.code.toUpperCase()}`,
-				providerError.data.error.message,
+				redactSecretText(providerError.data.error.message),
 				{
 					requestId: providerError.data.requestId,
 					retryable: providerError.data.error.retryable ?? false,
@@ -159,34 +217,52 @@ async function requestProvider<T>(
 	return envelope.data.data;
 }
 
-export function providerCapabilities<T>(
+export async function providerCapabilities<T>(
 	projectPath: string,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliCapabilities(projectPath));
+	}
 	return requestProvider("/capabilities", schema, {
 		method: "POST",
 		body: { projectPath },
 	});
 }
 
-export function providerPreview<T>(
+export async function providerPreview<T>(
 	projectPath: string,
 	selection: unknown,
 	target: unknown,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(
+			await localCliPreview(
+				projectPath,
+				securityScanSelectionSchema.parse(selection),
+				securityScanTargetSchema.parse(target),
+			),
+		);
+	}
 	return requestProvider("/scans/preview", schema, {
 		method: "POST",
 		body: { projectPath, selection, target },
 	});
 }
 
-export function providerStartScan<T>(
+export async function providerStartScan<T>(
 	projectPath: string,
 	body: Record<string, unknown>,
 	idempotencyKey: string,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		const parsed = localStartInputSchema.parse(body);
+		return schema.parse(
+			await localCliStartScan(projectPath, parsed, idempotencyKey),
+		);
+	}
 	return requestProvider("/scans", schema, {
 		method: "POST",
 		body: { ...body, projectPath },
@@ -194,18 +270,24 @@ export function providerStartScan<T>(
 	});
 }
 
-export function providerScanDetail<T>(
+export async function providerScanDetail<T>(
 	scanRunRef: string,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliScanDetail(scanRunRef));
+	}
 	return requestProvider(`/scans/${encodeURIComponent(scanRunRef)}`, schema);
 }
 
-export function providerFindings<T>(
+export async function providerFindings<T>(
 	scanRunRef: string,
 	query: URLSearchParams,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliFindings(scanRunRef, query));
+	}
 	const suffix = query.size > 0 ? `?${query.toString()}` : "";
 	return requestProvider(
 		`/scans/${encodeURIComponent(scanRunRef)}/findings${suffix}`,
@@ -213,7 +295,13 @@ export function providerFindings<T>(
 	);
 }
 
-export function providerCancel<T>(scanRunRef: string, schema: z.ZodType<T>) {
+export async function providerCancel<T>(
+	scanRunRef: string,
+	schema: z.ZodType<T>,
+) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliCancel(scanRunRef));
+	}
 	return requestProvider(
 		`/scans/${encodeURIComponent(scanRunRef)}/cancel`,
 		schema,
@@ -221,18 +309,27 @@ export function providerCancel<T>(scanRunRef: string, schema: z.ZodType<T>) {
 	);
 }
 
-export function providerReports<T>(scanRunRef: string, schema: z.ZodType<T>) {
+export async function providerReports<T>(
+	scanRunRef: string,
+	schema: z.ZodType<T>,
+) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliReports(scanRunRef));
+	}
 	return requestProvider(
 		`/scans/${encodeURIComponent(scanRunRef)}/reports`,
 		schema,
 	);
 }
 
-export function providerStartReport<T>(
+export async function providerStartReport<T>(
 	scanRunRef: string,
 	idempotencyKey: string,
 	schema: z.ZodType<T>,
 ) {
+	if (selectedConnectionOrThrow().transport === "local_cli") {
+		return schema.parse(await localCliStartReport(scanRunRef));
+	}
 	return requestProvider(
 		`/scans/${encodeURIComponent(scanRunRef)}/reports`,
 		schema,
@@ -252,7 +349,11 @@ export async function providerReportContent(
 	contentType: string;
 	contentDisposition: string;
 }> {
-	const connection = connectionOrThrow();
+	const selected = selectedConnectionOrThrow();
+	if (selected.transport === "local_cli") {
+		return await localCliReportContent(scanRunRef, reportRef);
+	}
+	const connection = httpConnectionOrThrow();
 	const url = new URL(
 		`${SECURITY_SCAN_PROVIDER_BASE_PATH}/scans/${encodeURIComponent(
 			scanRunRef,
@@ -266,6 +367,7 @@ export async function providerReportContent(
 				Accept: "text/markdown",
 				Authorization: `Bearer ${connection.token}`,
 			},
+			redirect: "error",
 			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
 	} catch {
@@ -285,10 +387,11 @@ export async function providerReportContent(
 	}
 	return {
 		content,
-		contentType:
-			response.headers.get("content-type") ?? "text/markdown; charset=utf-8",
-		contentDisposition:
-			response.headers.get("content-disposition") ??
-			`attachment; filename="security-report-${reportRef.slice(0, 8)}.md"`,
+		contentType: "text/markdown; charset=utf-8",
+		contentDisposition: `attachment; filename="security-report-${crypto
+			.createHash("sha256")
+			.update(reportRef)
+			.digest("hex")
+			.slice(0, 12)}.md"`,
 	};
 }

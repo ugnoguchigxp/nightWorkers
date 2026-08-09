@@ -1,4 +1,8 @@
 import {
+	buildStructuredLlmTargetDigest,
+	resolveStructuredLlmProviderBaseUrl,
+} from "./endpoint-target";
+import {
 	type ResolvedStructuredLlmRoute,
 	resolveStructuredLlmRoleRoute,
 	resolveStructuredLlmRoleRouteCandidates,
@@ -61,6 +65,33 @@ export function buildNormalizedSupervisorLlmRequest(input: {
 		providerClass,
 		schemaFirst: input.schemaFirst,
 	});
+	const modelOrDeployment =
+		resolvedRoute?.model ?? resolveModelOrDeployment(providerId, settings);
+	const endpoint = resolvedRoute
+		? resolveStructuredLlmProviderBaseUrl(resolvedRoute.endpoint)
+		: resolveEndpoint(providerId, settings);
+	const region =
+		resolvedRoute?.endpoint.region ||
+		(providerId === "bedrock"
+			? getStructuredLlmSetting(settings, "AWS_REGION", "us-east-1")
+			: null);
+	const apiVersion =
+		resolvedRoute?.endpoint.apiVersion ||
+		(providerId === "azure-openai"
+			? getStructuredLlmSetting(
+					settings,
+					"AZURE_OPENAI_API_VERSION",
+					"2024-05-01-preview",
+				)
+			: null);
+	const targetDigest = buildStructuredLlmTargetDigest({
+		providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
+		providerKind: resolvedRoute?.endpoint.kind ?? providerId,
+		endpoint,
+		region,
+		apiVersion,
+		model: modelOrDeployment,
+	});
 
 	return {
 		callKind,
@@ -69,27 +100,15 @@ export function buildNormalizedSupervisorLlmRequest(input: {
 		providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
 		role: input.role ?? null,
 		routeSource: resolvedRoute?.source ?? null,
-		modelOrDeployment:
-			resolvedRoute?.model ?? resolveModelOrDeployment(providerId, settings),
+		modelOrDeployment,
+		targetDigest,
 		thinkingDepth: resolvedRoute?.thinkingDepth || null,
-		endpoint:
-			resolvedRoute?.endpoint.endpoint ||
-			resolvedRoute?.endpoint.baseUrl ||
-			resolveEndpoint(providerId, settings),
-		region:
-			resolvedRoute?.endpoint.region ||
-			(providerId === "bedrock"
-				? getStructuredLlmSetting(settings, "AWS_REGION", "us-east-1")
-				: null),
-		apiVersion:
-			resolvedRoute?.endpoint.apiVersion ||
-			(providerId === "azure-openai"
-				? getStructuredLlmSetting(
-						settings,
-						"AZURE_OPENAI_API_VERSION",
-						"2024-05-01-preview",
-					)
-				: null),
+		requestTimeoutMs: resolvedRoute?.requestTimeoutSeconds
+			? resolvedRoute.requestTimeoutSeconds * 1_000
+			: null,
+		endpoint,
+		region,
+		apiVersion,
 		systemPrompt: input.systemPrompt,
 		userPrompt: input.userPrompt,
 		jsonSchema: input.jsonSchema,
@@ -105,9 +124,14 @@ export function buildNormalizedSupervisorLlmRequest(input: {
 			userPromptLength: input.userPrompt.length,
 			role: input.role ?? null,
 			providerEndpointId: resolvedRoute?.providerEndpointId ?? null,
+			providerEndpointName: resolvedRoute?.endpoint.name ?? null,
 			routeSource: resolvedRoute?.source ?? null,
 			modelOrDeployment: resolvedRoute?.model ?? null,
+			targetDigest,
 			thinkingDepth: resolvedRoute?.thinkingDepth || null,
+			requestTimeoutMs: resolvedRoute?.requestTimeoutSeconds
+				? resolvedRoute.requestTimeoutSeconds * 1_000
+				: null,
 			routeDiagnostics: resolvedRoute?.diagnostics ?? [],
 		},
 	};

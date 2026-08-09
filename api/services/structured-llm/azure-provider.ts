@@ -1,8 +1,15 @@
 import { normalizeProviderUsage } from "../llm-usage";
 import { rejectProviderActivity } from "./events";
-import type { RawLlmCallOptions } from "./providers";
 import {
-	emitSchemaRetryEvents,
+	providerHttpError,
+	providerInvalidResponseError,
+	StructuredProviderError,
+} from "./provider-failure";
+import type {
+	OpenAIChatCompletionResponse,
+	RawLlmCallOptions,
+} from "./providers";
+import {
 	getResolvedProviderEndpoint,
 	toOpenAIReasoningEffort,
 } from "./providers";
@@ -31,9 +38,11 @@ export async function callAzureProvider(
 ): Promise<ProviderCallResult> {
 	const endpointConfig = getResolvedProviderEndpoint(input, settings);
 	if (!endpointConfig?.enabled && !isEnabled("AZURE_OPENAI_ENABLED", false)) {
-		throw new Error(
-			"Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.",
-		);
+		throw new StructuredProviderError({
+			kind: "permission",
+			retryable: false,
+			message: "Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.",
+		});
 	}
 	const apiKey =
 		endpointConfig?.apiKey ||
@@ -59,9 +68,12 @@ export async function callAzureProvider(
 			"2024-05-01-preview",
 		);
 	if (!apiKey || !endpoint) {
-		throw new Error(
-			"Azure OpenAI credentials are not configured in environment variables.",
-		);
+		throw new StructuredProviderError({
+			kind: "authentication",
+			retryable: false,
+			message:
+				"Azure OpenAI credentials are not configured in environment variables.",
+		});
 	}
 	const reasoningEffort = toOpenAIReasoningEffort(
 		input.options.normalizedRequest?.thinkingDepth,
@@ -71,7 +83,7 @@ export async function callAzureProvider(
 		? endpoint.slice(0, -1)
 		: endpoint;
 	const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
-	let response = await fetch(url, {
+	const response = await fetch(url, {
 		method: "POST",
 		signal: input.signal,
 		headers: { "Content-Type": "application/json", "api-key": apiKey },
@@ -88,30 +100,16 @@ export async function callAzureProvider(
 		}),
 	});
 
-	if (!response.ok && response.status === 400) {
-		await emitSchemaRetryEvents(input.options, "Azure OpenAI", response.status);
-		response = await fetch(url, {
-			method: "POST",
-			signal: input.signal,
-			headers: { "Content-Type": "application/json", "api-key": apiKey },
-			body: JSON.stringify({
-				messages: [
-					{ role: "system", content: input.systemPrompt },
-					{ role: "user", content: input.userPrompt },
-				],
-				...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
-				response_format: { type: "json_object" },
-			}),
-		});
-	}
-
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(
-			`Azure OpenAI call failed with status ${response.status}: ${errorText}`,
-		);
+		throw providerHttpError({
+			provider: "Azure OpenAI",
+			status: response.status,
+			body: errorText,
+			retryAfter: response.headers.get("retry-after"),
+		});
 	}
-	const responseData = await response.json();
+	const responseData = await readAzureProviderJson(response);
 	const message = responseData?.choices?.[0]?.message;
 	if (message?.tool_calls && input.options.normalizedRequest) {
 		await rejectProviderActivity({
@@ -147,4 +145,19 @@ export async function callAzureProvider(
 		model: deploymentName,
 		providerDebug,
 	};
+}
+
+async function readAzureProviderJson(
+	response: Response,
+): Promise<OpenAIChatCompletionResponse> {
+	const body = await response.text();
+	try {
+		return JSON.parse(body) as OpenAIChatCompletionResponse;
+	} catch (error) {
+		throw providerInvalidResponseError({
+			provider: "Azure OpenAI",
+			body,
+			cause: error,
+		});
+	}
 }

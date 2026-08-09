@@ -14,7 +14,7 @@ export const jaProjectDetail = {
 	"securityScan.reconnect": "接続を確認",
 	"securityScan.configurationRequired": "vulnWorkbenchの接続設定が必要です",
 	"securityScan.configurationRequiredHelp":
-		"Base URLとservice tokenを設定すると、このProjectを対象にスキャンできます。",
+		"ローカルCLIを有効にすると、登録済みProjectフォルダーをそのままスキャンできます。",
 	"securityScan.openSettings": "接続設定を開く",
 	"securityScan.newScan": "新しいスキャン",
 	"securityScan.providerVersion":
@@ -22,6 +22,7 @@ export const jaProjectDetail = {
 	"securityScan.recommended": "推奨",
 	"securityScan.customProfile": "詳細なスキャン種別（カスタム）",
 	"securityScan.customNotSelected": "presetを使用",
+	"securityScan.profileRequirements": "実行要件",
 	"securityScan.target": "スキャン対象",
 	"securityScan.target.working_tree": "変更差分（Working tree）",
 	"securityScan.target.full": "Project全体",
@@ -41,6 +42,38 @@ export const jaProjectDetail = {
 	"securityScan.waiting": "開始待ち",
 	"securityScan.findingCount": "検出数",
 	"securityScan.findings": "検出項目",
+	"securityScan.selectAllFindings": "すべて選択",
+	"securityScan.clearFindingSelection": "選択解除",
+	"securityScan.selectedFindingCount": "{{count}}件選択",
+	"securityScan.findingSelectionLimit":
+		"1回にTask候補化できるFindingは最大{{count}}件です。超える場合は分けて実行してください。",
+	"securityScan.selectFinding": "{{title}}を選択",
+	"securityScan.generateTasksFromFindings": "選択した{{count}}件からTask生成",
+	"securityScan.findingsPartiallyLoaded":
+		"全{{total}}件のうち{{loaded}}件を表示しています。Task生成には明示的に選択したFindingだけを使用します。",
+	"securityScan.taskCandidatesTitle": "脆弱性対応のTask候補",
+	"securityScan.taskCandidatesHelp":
+		"内容を確認し、Task化する候補を選択してください。この時点ではまだTaskは作成されていません。",
+	"securityScan.closeTaskCandidates": "Task候補を閉じる",
+	"securityScan.coverageWarning": "スキャンcoverageに注意事項があります",
+	"securityScan.duplicateFindings":
+		"{{count}}件は既存のTask候補またはTaskに紐づいています。",
+	"securityScan.acceptanceCriteria": "受け入れ条件",
+	"securityScan.verificationPlan": "検証計画",
+	"securityScan.taskPrompt": "Coding Agentへの依頼文",
+	"securityScan.rationale": "候補化した理由",
+	"securityScan.planModeOpenQuestions": "Planで確認すること",
+	"securityScan.noNewTaskCandidates":
+		"新しいTask候補はありません。選択したFindingは既にTask化済みか、要確認に分類されています。",
+	"securityScan.needsHuman": "人による確認が必要なFinding",
+	"securityScan.cancelTaskCreation": "閉じる",
+	"securityScan.createDraftTasks": "draft Taskを作成（{{count}}）",
+	"securityScan.taskRefreshFailed":
+		"Taskは作成されましたが、一覧の更新に失敗しました: {{message}}",
+	"securityScan.taskCreationResponseInvalid":
+		"Task作成は成功しましたが、応答を確認できませんでした。Task一覧を再読み込みしてください。",
+	"securityScan.taskCandidateResponseInvalid":
+		"Task候補生成APIから不正な応答を受信しました。再実行してください。",
 	"securityScan.recommendation": "推奨対応",
 	"securityScan.llmReport": "LLMレポート",
 	"securityScan.llmReportHelp":
@@ -257,6 +290,8 @@ export const jaProjectDetail = {
 	"projectDetail.mission.candidateKind.constraint_enablement": "制約整備",
 	"projectDetail.mission.candidateKind.constraint_verification": "検証",
 	"projectDetail.mission.candidateKind.investigation": "調査",
+	"projectDetail.mission.candidateKind.security_remediation": "脆弱性対応",
+	"projectDetail.mission.candidateKind.security_investigation": "脆弱性調査",
 	"projectDetail.mission.primaryModule": "Primary module",
 	"projectDetail.mission.secondaryModules": "Secondary modules",
 	"projectDetail.mission.constraintGoals": "制約 Goal",

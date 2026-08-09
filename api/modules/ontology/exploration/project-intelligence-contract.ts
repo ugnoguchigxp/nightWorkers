@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+	projectExplorationCatalogReadinessSchema,
+	projectExplorationCatalogSourceSchema,
+} from "../../../../shared/schemas/project-exploration-catalog.schema";
 
 export const PROJECT_INTELLIGENCE_TOOLS = {
 	prepare: "vuln_prepare_project_intelligence",
@@ -46,6 +50,8 @@ export const projectIntelligenceStatusSchema = z
 		message: z.string().optional(),
 		retryable: z.boolean().optional(),
 		durationMs: z.number().int().nonnegative().optional(),
+		source: projectExplorationCatalogSourceSchema.optional(),
+		readiness: projectExplorationCatalogReadinessSchema.optional(),
 		provenance: z.record(z.string(), z.unknown()).optional(),
 	})
 	.passthrough();

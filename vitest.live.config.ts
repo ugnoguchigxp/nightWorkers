@@ -7,6 +7,7 @@ export default defineConfig({
 		environment: "node",
 		env: {
 			NODE_ENV: "test",
+			NIGHTWORKERS_DATABASE_ACCESS_SCOPE: "isolated_test",
 			NIGHTWORKERS_DESKTOP: "0",
 		},
 		fileParallelism: false,

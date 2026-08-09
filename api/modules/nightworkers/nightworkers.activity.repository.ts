@@ -93,6 +93,7 @@ export function runEventToActivityKind(
 	if (eventType === "model.response_delta") return "assistant.delta";
 	if (eventType === "model.response_finished") return "llm.response_final";
 	if (eventType === "model.request_started") return "llm.request";
+	if (eventType === "model.request_failed") return "llm.error";
 	if (
 		eventType === "model.provider_activity_detected" ||
 		eventType === "model.provider_tool_call_detected" ||
@@ -168,6 +169,7 @@ export function shouldProjectRunEventToActivity(input: {
 	}
 	return (
 		input.eventType === "model.request_started" ||
+		input.eventType === "model.request_failed" ||
 		input.eventType === "model.response_finished" ||
 		input.eventType === "model.response_parse_failed" ||
 		input.eventType === "supervisor.decision" ||
@@ -352,6 +354,8 @@ export function runEventToActivityStatus(input: {
 	legacyType?: string | null;
 	agentEventType?: string | null;
 }) {
+	if (input.eventType === "model.request_started") return "started";
+	if (input.eventType === "model.request_failed") return "failed";
 	if (input.agentEventType?.endsWith(".started")) return "started";
 	if (input.agentEventType?.endsWith(".failed")) return "failed";
 	if (
@@ -372,6 +376,12 @@ export function runEventToActivityTurnId(input: {
 	agentEventType?: string | null;
 }) {
 	if (input.agentEventType) return `assistant:${input.runId}`;
+	if (
+		input.eventType === "model.request_started" ||
+		input.eventType === "model.request_failed"
+	) {
+		return `llm:${input.runId}`;
+	}
 	if (
 		input.eventType === "model.response_delta" ||
 		input.eventType === "model.response_finished"

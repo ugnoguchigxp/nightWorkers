@@ -100,10 +100,11 @@ describe("structured provider failure coverage", () => {
 			body: `${"a".repeat(8_191)}😀tail`,
 			retryAfter: null,
 		});
-		expect(ascii.message).toContain("provider error body truncated");
-		expect(ascii.message).toContain("bytes=9000");
-		expect(unicode.message).toContain("provider error body truncated");
-		expect(unicode.message).not.toContain("�");
+		expect(ascii.message).not.toContain("provider error body truncated");
+		expect(ascii.providerBody).toContain("provider error body truncated");
+		expect(ascii.providerBody).toContain("bytes=9000");
+		expect(unicode.providerBody).toContain("provider error body truncated");
+		expect(unicode.providerBody).not.toContain("�");
 	});
 
 	it("normalizes existing, HTTP-shaped, timeout, transport, and unknown errors", () => {

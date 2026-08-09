@@ -194,8 +194,9 @@ describe("Native API LLM-owned Todo contract", () => {
 		const system = history.find((item) => item.type === "system");
 		expect(system?.content).toContain('"availability":"available"');
 		expect(system?.content).toContain(
-			"広いlist_dirやsearch_filesより先にproject_exploration_catalog",
+			"最初のTodo計画、read_current_specification、list_dir、search_files、read_fileより前にproject_exploration_catalog",
 		);
+		expect(system?.content).toContain("既知の候補fileがあっても");
 		expect(system?.content).toContain("候補fileをread_file等で確認");
 	});
 
@@ -491,7 +492,7 @@ describe("Native API LLM-owned Todo contract", () => {
 		]);
 	});
 
-	it("does not treat an empty assistant turn as completion", async () => {
+	it("stops on an empty assistant turn without retrying it as a new turn", async () => {
 		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-empty");
 		registerFixtureProviderToolTurns(task.id, [
@@ -535,21 +536,30 @@ describe("Native API LLM-owned Todo contract", () => {
 		);
 
 		expect(result).toMatchObject({
-			terminalState: "completed",
-			finalReport: "実装と検証が完了しました。",
+			terminalState: "failed",
+			finalReport: "Provider returned no native tool calls or content.",
+			stoppedBy: "llm_error",
 		});
 		expect(await listTaskRunTodosForRun(run.id)).toMatchObject([
-			{ todoKey: "step-1", status: "passed" },
+			{ todoKey: "step-1", status: "running" },
 		]);
 		expect(emit).toHaveBeenCalledWith(
 			expect.objectContaining({
-				type: "model_response_finished",
+				type: "model_response_failed",
 				payload: expect.objectContaining({
-					candidateRevision: 4,
-					text: "実装と検証が完了しました。",
+					failureKind: "empty_no_tool_calls",
+					retryable: false,
 				}),
 			}),
 		);
+		const terminalTurnEvents = emit.mock.calls.filter(
+			([event]) =>
+				event.type === "turn_finished" && event.payload?.turnIndex === 2,
+		);
+		expect(terminalTurnEvents).toHaveLength(1);
+		expect(terminalTurnEvents[0]?.[0]).toMatchObject({
+			payload: { status: "failed" },
+		});
 	});
 
 	it("returns the same verification readiness differences in the Native loop", async () => {
@@ -818,6 +828,85 @@ describe("Native API LLM-owned Todo contract", () => {
 			terminalState: "failed",
 			finalReport: "調査した結果、変更対象はここまで特定できました。",
 		});
+	});
+
+	it("retries a retryable failure on the same route before failing over", async () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const { repository, task, run } = await createRuntimeRun(
+			"native-same-route-retry",
+		);
+		let callCount = 0;
+		const emit = vi.fn(async () => {});
+		const providerTurn: NativeApiToolTurnProvider = async () => {
+			callCount += 1;
+			if (callCount === 1) {
+				throw new StructuredProviderError({
+					kind: "provider_capacity",
+					retryable: true,
+					message: "provider is temporarily busy",
+				});
+			}
+			if (callCount > 2) {
+				throw new StructuredProviderError({
+					kind: "authentication",
+					retryable: false,
+					message: "stop after retry proof",
+				});
+			}
+			return {
+				type: "supported",
+				content: "同一routeの再試行後に応答しました。",
+				toolCalls: [
+					todoCall("plan-after-retry", {
+						op: "plan",
+						steps: [
+							{
+								title: "変更する",
+								systemContext: "対象を実装する。",
+							},
+						],
+					}),
+				],
+				usage: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cachedInputTokens: 0,
+					reasoningOutputTokens: 0,
+					totalTokens: 20,
+					mode: "measured",
+				},
+				model: "fixture-native-tools",
+			};
+		};
+
+		const result = await new NativeApiRunner({
+			providerTurn,
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			{ emit },
+		);
+
+		expect(callCount).toBe(3);
+		expect(result).toMatchObject({
+			terminalState: "failed",
+			finalReport: "同一routeの再試行後に応答しました。",
+		});
+		expect(emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "tool_call_progress",
+				payload: expect.objectContaining({
+					action: "provider_same_route_retry_started",
+					attemptIndex: 0,
+					sameRouteAttemptIndex: 0,
+					nextSameRouteAttemptIndex: 1,
+				}),
+			}),
+		);
 	});
 
 	it("retries only provider failures explicitly marked retryable", () => {

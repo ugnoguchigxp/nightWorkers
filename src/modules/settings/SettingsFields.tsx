@@ -37,14 +37,23 @@ type NumberFieldProps = {
 	label: string;
 	value: number;
 	min?: number;
+	max?: number;
+	clampOnBlur?: boolean;
 	onChange: (value: number) => void;
 };
+
+function clampNumber(value: number, min: number, max?: number) {
+	const minimumClamped = Math.max(min, value);
+	return max === undefined ? minimumClamped : Math.min(max, minimumClamped);
+}
 
 export function NumberField({
 	id,
 	label,
 	value,
 	min = 1,
+	max,
+	clampOnBlur = false,
 	onChange,
 }: NumberFieldProps) {
 	return (
@@ -59,8 +68,18 @@ export function NumberField({
 				id={id}
 				type="number"
 				min={min}
+				max={max}
 				value={value}
-				onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
+				onChange={(e) => {
+					const parsed = Number(e.target.value);
+					onChange(clampOnBlur ? parsed : clampNumber(parsed || min, min, max));
+				}}
+				onBlur={(e) => {
+					if (!clampOnBlur) return;
+					const parsed = Number(e.currentTarget.value);
+					const clamped = clampNumber(parsed || min, min, max);
+					if (clamped !== value) onChange(clamped);
+				}}
 				className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100"
 			/>
 		</div>

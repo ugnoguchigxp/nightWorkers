@@ -1,3 +1,4 @@
+import type { StructuredLlmRoutePolicy } from "../../../../services/structured-llm/types";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -7,7 +8,6 @@ import type { NativeApiExecutionMode } from "./native-api-mode";
 import { buildNativeApiProviderRequests } from "./native-api-request-adapter";
 import type { NativeApiRuntimeTodoSnapshot } from "./native-api-runner-history-cards";
 import {
-	buildNativeApiRoutePolicy,
 	readRuntimeLlmRouteOverride,
 	validateNativeApiRouteSnapshot,
 } from "./native-api-runner-routing";
@@ -30,17 +30,14 @@ export async function prepareNativeApiRunRoute(input: {
 			providerRequests: ReturnType<typeof buildNativeApiProviderRequests>;
 			tools: ReturnType<typeof getNativeApiToolDefinitions>;
 			routeOverride: ReturnType<typeof readRuntimeLlmRouteOverride>;
-			routePolicy: Awaited<ReturnType<typeof buildNativeApiRoutePolicy>>;
+			routePolicy: StructuredLlmRoutePolicy;
 	  }
 	| { kind: "failed"; result: AgentRuntimeResult }
 > {
 	const routeOverride = readRuntimeLlmRouteOverride(input.context);
-	const routePolicy = await buildNativeApiRoutePolicy({
-		sink: input.sink,
-		runId: input.context.runId,
-		taskId: input.context.taskId,
-		basePolicy: { disallowedProviderIds: ["codex"] },
-	});
+	const routePolicy: StructuredLlmRoutePolicy = {
+		disallowedProviderIds: ["codex"],
+	};
 	const tools = getNativeApiToolDefinitions({
 		ontologyMcpEnabled: readOntologyMcpEnabled(input.context),
 		projectExplorationCatalogEnabled:
@@ -59,24 +56,32 @@ export async function prepareNativeApiRunRoute(input: {
 		input.context,
 	);
 	if (!routeSnapshotGuard.ok) {
+		const revisionMismatch =
+			routeSnapshotGuard.reason === "settings_revision_mismatch";
 		await input.sink.emit({
 			type: "runtime_error",
-			message:
-				"[NativeApiRunner] provider route candidate was outside the run snapshot.",
+			message: revisionMismatch
+				? "[NativeApiRunner] LLM settings changed after this run started."
+				: "[NativeApiRunner] provider route candidate was outside the run snapshot.",
 			payload: {
 				runtime: "native_api_runner",
 				executionMode: input.executionMode,
-				reason: "route_candidate_outside_snapshot",
+				reason: routeSnapshotGuard.reason,
 				route: routeSnapshotGuard.route,
+				expectedSettingsRevision: routeSnapshotGuard.expectedSettingsRevision,
+				actualSettingsRevision: routeSnapshotGuard.actualSettingsRevision,
 			},
 		});
 		return {
 			kind: "failed",
 			result: {
-				terminalState: "failed",
-				summary: "Native API route candidate was outside the run snapshot.",
-				finalReport:
-					"Native API route candidate was outside the run snapshot. Provider call was blocked before execution.",
+				terminalState: revisionMismatch ? "needs_human" : "failed",
+				summary: revisionMismatch
+					? "LLM settings changed after this run started."
+					: "Native API route candidate was outside the run snapshot.",
+				finalReport: revisionMismatch
+					? "LLM settings changed after this run started. The saved route snapshot was preserved and the provider call was blocked before execution."
+					: "Native API route candidate was outside the run snapshot. Provider call was blocked before execution.",
 				stoppedBy: "llm_error",
 				riskLevel: "high",
 			},

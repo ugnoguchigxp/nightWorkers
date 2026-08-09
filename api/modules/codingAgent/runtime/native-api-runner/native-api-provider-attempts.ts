@@ -54,6 +54,9 @@ export type NativeApiProviderAttemptResult = {
 	failureMessage: string | null;
 };
 
+const MAX_SAME_ROUTE_PROVIDER_ATTEMPTS = 3;
+const SAME_ROUTE_RETRY_BACKOFF_MS = [5_000, 15_000] as const;
+
 export async function runNativeApiProviderAttempts(input: {
 	context: AgentRunContext;
 	sink: AgentRuntimeSink;
@@ -169,15 +172,21 @@ export async function runNativeApiProviderAttempts(input: {
 			);
 			if (!rebuiltRouteSnapshotGuard.ok) {
 				const message =
-					"Context compaction rebuilt a provider route candidate outside the run snapshot.";
+					rebuiltRouteSnapshotGuard.reason === "settings_revision_mismatch"
+						? "LLM settings changed while context compaction was running."
+						: "Context compaction rebuilt a provider route candidate outside the run snapshot.";
 				await input.sink.emit({
 					type: "runtime_error",
 					message: `[NativeApiRunner] ${message}`,
 					payload: {
 						runtime: "native_api_runner",
 						executionMode: input.executionMode,
-						reason: "route_candidate_outside_snapshot",
+						reason: rebuiltRouteSnapshotGuard.reason,
 						route: rebuiltRouteSnapshotGuard.route,
+						expectedSettingsRevision:
+							rebuiltRouteSnapshotGuard.expectedSettingsRevision,
+						actualSettingsRevision:
+							rebuiltRouteSnapshotGuard.actualSettingsRevision,
 					},
 				});
 				lastProviderFailure = { message, providerDebug };
@@ -259,87 +268,179 @@ export async function runNativeApiProviderAttempts(input: {
 			};
 		}
 		providerDebug = { ...contextPreflightDebug };
-		startedAt = Date.now();
-		const requestId = `${input.context.runId}:${input.turnId}:${attemptIndex}`;
 		const attemptTimeoutMs = providerRequest.options.attemptTimeoutMs;
-		const attemptSignal = createNativeApiAttemptTimeoutSignal(
-			input.signal,
-			attemptTimeoutMs,
-		);
-		await input.sink.emit({
-			type: "model_response_started",
-			message: "[NativeApiRunner] Provider request started.",
-			payload: {
-				requestId,
-				runtime: "native_api_runner",
-				turnId: input.turnId,
-				turnIndex: input.turnIndex,
-				attemptIndex,
-				provider: providerRequest.provider,
-				systemContextAudit: providerRequest.systemContextAudit,
-				systemPromptSha256: digestText(providerRequest.systemPrompt),
-				userPromptSha256: digestText(providerRequest.userPrompt),
-			},
-		});
-		try {
-			providerResult = await input.providerTurn({
-				provider: providerRequest.provider,
-				messages: providerRequest.messages,
-				tools: providerRequest.tools,
-				systemPrompt: providerRequest.systemPrompt,
-				userPrompt: providerRequest.userPrompt,
-				options: providerRequest.options,
-				signal: attemptSignal.signal,
-				setProviderDebug: (value) => {
-					providerDebug = value;
+		let shouldFallbackToNextRoute = false;
+		for (
+			let sameRouteAttemptIndex = 0;
+			sameRouteAttemptIndex < MAX_SAME_ROUTE_PROVIDER_ATTEMPTS;
+			sameRouteAttemptIndex += 1
+		) {
+			startedAt = Date.now();
+			const requestId = `${input.context.runId}:${input.turnId}:${attemptIndex}:${sameRouteAttemptIndex}`;
+			const attemptSignal = createNativeApiAttemptTimeoutSignal(
+				input.signal,
+				attemptTimeoutMs,
+			);
+			await input.sink.emit({
+				type: "model_response_started",
+				message: "[NativeApiRunner] Provider request started.",
+				payload: {
+					requestId,
+					runtime: "native_api_runner",
+					turnId: input.turnId,
+					turnIndex: input.turnIndex,
+					attemptIndex,
+					sameRouteAttemptIndex,
+					provider: providerRequest.provider,
+					systemContextAudit: providerRequest.systemContextAudit,
+					systemPromptSha256: digestText(providerRequest.systemPrompt),
+					userPromptSha256: digestText(providerRequest.userPrompt),
 				},
 			});
-		} catch (error) {
-			const durationMs = Date.now() - startedAt;
-			const classified = classifyNativeApiProviderError(error, {
-				attemptTimedOut: attemptSignal.didTimeout(),
-				attemptTimeoutMs,
-			});
-			const message = classified.message;
-			lastProviderFailure = { message, providerDebug };
-			routeAttempts.push({
-				attemptIndex,
-				ok: false,
-				reason: classified.reason,
-				message,
-				durationMs,
-				attemptTimeoutMs: attemptTimeoutMs ?? null,
-				route: summarizeNativeApiRoute(providerRequest),
-				providerDebug,
-			});
-			if (
-				input.signal.aborted ||
-				(await input.isCancelled(input.context.runId, input.signal))
-			) {
-				providerResult = null;
+			try {
+				providerResult = await input.providerTurn({
+					provider: providerRequest.provider,
+					messages: providerRequest.messages,
+					tools: providerRequest.tools,
+					systemPrompt: providerRequest.systemPrompt,
+					userPrompt: providerRequest.userPrompt,
+					options: providerRequest.options,
+					signal: attemptSignal.signal,
+					setProviderDebug: (value) => {
+						providerDebug = value;
+					},
+				});
 				break;
-			}
-			if (classified.retryable && attemptIndex < providerRequests.length - 1) {
-				await emitNativeApiRouteFallback({
-					sink: input.sink,
-					turnId: input.turnId,
+			} catch (error) {
+				const durationMs = Date.now() - startedAt;
+				const classified = classifyNativeApiProviderError(error, {
+					attemptTimedOut: attemptSignal.didTimeout(),
+					attemptTimeoutMs,
+				});
+				const message = classified.message;
+				await input.sink.emit({
+					type: "model_response_failed",
+					message: `[NativeApiRunner] Provider request failed: ${message}`,
+					payload: {
+						requestId,
+						runtime: "native_api_runner",
+						turnId: input.turnId,
+						turnIndex: input.turnIndex,
+						attemptIndex,
+						sameRouteAttemptIndex,
+						failureKind: classified.reason,
+						retryable: classified.retryable,
+						durationMs,
+						route: summarizeNativeApiRoute(providerRequest),
+					},
+				});
+				lastProviderFailure = { message, providerDebug };
+				routeAttempts.push({
 					attemptIndex,
-					from: providerRequest,
-					to: providerRequests[attemptIndex + 1],
+					sameRouteAttemptIndex,
+					ok: false,
 					reason: classified.reason,
 					message,
+					durationMs,
+					attemptTimeoutMs: attemptTimeoutMs ?? null,
+					route: summarizeNativeApiRoute(providerRequest),
+					providerDebug,
 				});
-				continue;
+				if (
+					input.signal.aborted ||
+					(await input.isCancelled(input.context.runId, input.signal))
+				) {
+					providerResult = null;
+					break;
+				}
+				if (
+					classified.retryable &&
+					sameRouteAttemptIndex < MAX_SAME_ROUTE_PROVIDER_ATTEMPTS - 1
+				) {
+					const backoffMs =
+						process.env.NODE_ENV === "test"
+							? 0
+							: (SAME_ROUTE_RETRY_BACKOFF_MS[sameRouteAttemptIndex] ?? 15_000);
+					await input.sink.emit({
+						type: "tool_call_progress",
+						message: `[NativeApiRunner] same provider route retry scheduled after ${backoffMs}ms: ${classified.reason}.`,
+						payload: {
+							runtime: "native_api_runner",
+							action: "provider_same_route_retry_started",
+							turnId: input.turnId,
+							attemptIndex,
+							sameRouteAttemptIndex,
+							nextSameRouteAttemptIndex: sameRouteAttemptIndex + 1,
+							backoffMs,
+							reason: classified.reason,
+							message,
+							route: summarizeNativeApiRoute(providerRequest),
+						},
+					});
+					providerResult = null;
+					await waitForProviderRetryBackoff(backoffMs, input.signal);
+					continue;
+				}
+				if (
+					classified.retryable &&
+					attemptIndex < providerRequests.length - 1
+				) {
+					await emitNativeApiRouteFallback({
+						sink: input.sink,
+						turnId: input.turnId,
+						attemptIndex,
+						from: providerRequest,
+						to: providerRequests[attemptIndex + 1],
+						reason: classified.reason,
+						message,
+					});
+					shouldFallbackToNextRoute = true;
+				}
+				providerResult = null;
+				break;
+			} finally {
+				attemptSignal.dispose();
 			}
-			providerResult = null;
-		} finally {
-			attemptSignal.dispose();
 		}
 
-		if (!providerResult) break;
+		if (!providerResult) {
+			if (shouldFallbackToNextRoute) continue;
+			break;
+		}
+		const requestId = `${input.context.runId}:${input.turnId}:${attemptIndex}`;
+		const emptySupportedResponse =
+			providerResult.type === "supported" &&
+			providerResult.toolCalls.length === 0 &&
+			!providerResult.content.trim();
+		if (providerResult.type === "unsupported" || emptySupportedResponse) {
+			const failureKind =
+				providerResult.type === "unsupported"
+					? "unsupported_provider"
+					: "empty_no_tool_calls";
+			await input.sink.emit({
+				type: "model_response_failed",
+				message:
+					providerResult.type === "unsupported"
+						? `[NativeApiRunner] Provider request was unsupported: ${providerResult.reason}`
+						: "[NativeApiRunner] Provider returned no native tool calls or content.",
+				payload: {
+					requestId,
+					runtime: "native_api_runner",
+					turnId: input.turnId,
+					turnIndex: input.turnIndex,
+					attemptIndex,
+					failureKind,
+					retryable:
+						providerResult.type === "unsupported" &&
+						attemptIndex < providerRequests.length - 1,
+					durationMs: Date.now() - startedAt,
+					route: summarizeNativeApiRoute(providerRequest),
+				},
+			});
+		}
 		routeAttempts.push({
 			attemptIndex,
-			ok: providerResult.type === "supported",
+			ok: providerResult.type === "supported" && !emptySupportedResponse,
 			reason:
 				providerResult.type === "unsupported"
 					? "unsupported"
@@ -352,6 +453,12 @@ export async function runNativeApiProviderAttempts(input: {
 			route: summarizeNativeApiRoute(providerRequest),
 			providerDebug,
 		});
+		if (emptySupportedResponse) {
+			const message = "Provider returned no native tool calls or content.";
+			lastProviderFailure = { message, providerDebug };
+			providerResult = null;
+			break;
+		}
 		if (
 			providerResult.type === "supported" &&
 			(providerResult.toolCalls.length > 0 || providerResult.content.trim())
@@ -411,4 +518,20 @@ function importEstimateNativeApiContextBudget(
 	request: NativeApiProviderRequest,
 ) {
 	return estimateNativeApiContextBudget(request);
+}
+
+async function waitForProviderRetryBackoff(
+	durationMs: number,
+	signal: AbortSignal,
+) {
+	if (durationMs <= 0 || signal.aborted) return;
+	await new Promise<void>((resolve) => {
+		const finish = () => {
+			clearTimeout(timeoutId);
+			signal.removeEventListener("abort", finish);
+			resolve();
+		};
+		const timeoutId = setTimeout(finish, durationMs);
+		signal.addEventListener("abort", finish, { once: true });
+	});
 }

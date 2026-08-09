@@ -425,7 +425,11 @@ export async function createTasksFromMissionCandidates(input: {
 
 function validateTaskCreationCandidates(
 	candidates: MissionTaskCandidate[],
-	input: { repositoryId: string; candidateIds: string[] },
+	input: {
+		repositoryId: string;
+		candidateIds: string[];
+		mode: "draft" | "ready";
+	},
 ) {
 	if (candidates.length !== input.candidateIds.length) {
 		throw new NotFoundError("Mission task candidate not found");
@@ -443,6 +447,12 @@ function validateTaskCreationCandidates(
 		if (candidate.status === "dismissed") {
 			throw new ValidationError(
 				"Dismissed candidates cannot be converted to tasks",
+				{ candidateId: candidate.id },
+			);
+		}
+		if (input.mode === "ready" && candidate.source.kind === "security_scan") {
+			throw new ValidationError(
+				"Security scan candidates must be reviewed as draft tasks",
 				{ candidateId: candidate.id },
 			);
 		}

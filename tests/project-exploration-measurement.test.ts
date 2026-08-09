@@ -100,7 +100,13 @@ describe("project exploration measurement", () => {
 					"project_exploration_catalog",
 					false,
 					{},
-					{ status: "unavailable", audit: { responseBytes: 123 } },
+					{
+						status: "unavailable",
+						audit: {
+							responseBytes: 123,
+							failureCategory: "PROJECT_EXPLORATION_STALE",
+						},
+					},
 				),
 				event(2, "apply_patch", true, {}),
 			],
@@ -111,6 +117,7 @@ describe("project exploration measurement", () => {
 			catalogCallCount: 1,
 			catalogFailureCount: 1,
 			catalogResponseBytes: 123,
+			fallbackReason: "PROJECT_EXPLORATION_STALE",
 			warnings: ["catalog_call_failed"],
 		});
 	});

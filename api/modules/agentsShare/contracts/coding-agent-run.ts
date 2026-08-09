@@ -17,6 +17,8 @@ export type StartCodingAgentRunCommand = {
 	taskId: string;
 	taskRef: { id: string; revision: number };
 	instruction: string;
+	/** 単一Coding Agent runtimeをPlan roleの計画Runとして明示開始する。 */
+	planModeRequested?: boolean;
 	artifactRefs: CodingAgentArtifactRef[];
 	repositoryRef: { id: string; revision: number };
 	requestProvenance: CodingAgentRequestProvenance;

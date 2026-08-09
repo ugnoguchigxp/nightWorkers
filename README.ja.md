@@ -223,6 +223,8 @@ final reportは有用なevidenceですが、closeout gateそのものではあ�
 
 任意のvulnWorkbench integrationは、別途設定されたローカルvulnWorkbench checkoutを呼び出してscanner-backed security診断を実行します。未設定またはineligibleの場合、LLM-only concernをconfirmed vulnerabilityとして表示せず、unavailable／policy-skip状態を記録します。
 
+Project詳細の脆弱性スキャンは、既定でローカルCLI接続を使用します。NightWorkersに登録済みの`localPath`を`vulnWorkbench` CLIへ直接渡すため、vulnWorkbench HTTP serverとservice tokenは不要です。CLIから取得した`quick`、`standard`、`deep` preset、Working tree差分／Project全体、allowlist済みの個別profile（source、dependency manifest、artifact、detailed）を選択できます。初回だけvulnWorkbench checkoutで`bun install`と`bun run db:migrate`を完了してください。別processまたは別hostのproviderを使う場合だけ、SettingsでHTTP provider接続へ切り替えます。
+
 ### Provider、Routing、MCP、Hook
 
 structured reasoningとrepository executionは別のruntime concernです。

@@ -1,4 +1,10 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	index,
+	integer,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { commonColumns, repositories, tasks } from "./schema";
 
 export const missionGoals = sqliteTable(
@@ -83,6 +89,8 @@ export const missionTaskCandidates = sqliteTable(
 		goalId: text("goal_id").references(() => missionGoals.id, {
 			onDelete: "set null",
 		}),
+		sourceKind: text("source_kind").default("mission_goals").notNull(),
+		sourceRefJson: text("source_ref_json", { mode: "json" }),
 		candidateKind: text("candidate_kind").default("feature_followup").notNull(),
 		primaryModule: text("primary_module"),
 		secondaryModulesJson: text("secondary_modules_json", { mode: "json" })
@@ -125,5 +133,33 @@ export const missionTaskCandidates = sqliteTable(
 		),
 		batchIdx: index("mission_candidates_batch_idx").on(table.batchId),
 		taskIdx: index("mission_candidates_task_idx").on(table.taskId),
+	}),
+);
+
+export const securityTaskCandidateFindings = sqliteTable(
+	"security_task_candidate_findings",
+	{
+		...commonColumns,
+		candidateId: text("candidate_id")
+			.notNull()
+			.references(() => missionTaskCandidates.id, { onDelete: "cascade" }),
+		repositoryId: text("repository_id")
+			.notNull()
+			.references(() => repositories.id, { onDelete: "cascade" }),
+		scanRunRef: text("scan_run_ref").notNull(),
+		findingRef: text("finding_ref").notNull(),
+		fingerprintHash: text("fingerprint_hash").notNull(),
+	},
+	(table) => ({
+		candidateFindingUid: uniqueIndex(
+			"security_candidate_findings_candidate_finding_uidx",
+		).on(table.candidateId, table.findingRef),
+		repositoryFingerprintIdx: index(
+			"security_candidate_findings_repository_fingerprint_idx",
+		).on(table.repositoryId, table.fingerprintHash),
+		scanFindingIdx: index("security_candidate_findings_scan_finding_idx").on(
+			table.scanRunRef,
+			table.findingRef,
+		),
 	}),
 );

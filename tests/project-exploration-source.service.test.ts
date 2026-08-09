@@ -252,6 +252,28 @@ describe("projectPath-first project exploration preparation", () => {
 		});
 	});
 
+	it("requires producer revision parity and usable readiness before exposing the tool", async () => {
+		const mismatched = fixture({
+			statuses: [status("ready", false, { head: "different-head" })],
+		});
+		await expect(resolve(mismatched.value)).resolves.toMatchObject({
+			available: false,
+			reason: "stale",
+		});
+
+		const unusable = fixture({
+			statuses: [status("ready", false, { usability: "unusable" })],
+		});
+		await expect(resolve(unusable.value)).resolves.toMatchObject({
+			available: false,
+			reason: "degraded_unusable",
+			readiness: {
+				usability: "unusable",
+				reasonCodes: ["fixture_degraded"],
+			},
+		});
+	});
+
 	function baseInput() {
 		return {
 			registeredRepoRoot: projectRoot,
@@ -285,13 +307,42 @@ describe("projectPath-first project exploration preparation", () => {
 function status(
 	value: "queued" | "running" | "ready" | "stale" | "failed",
 	reused = false,
+	capability: {
+		head?: string;
+		usability?: "usable" | "degraded_usable" | "unusable";
+	} = {},
 ) {
+	const usability = capability.usability ?? "usable";
 	return {
 		ok: value !== "failed",
 		status: value,
 		projectPath: "/canonical/project",
 		reused,
 		retryAfterMs: value === "queued" || value === "running" ? 100 : undefined,
+		...(value === "ready"
+			? {
+					source: {
+						structureSchemaVersion: "project-structure-v2",
+						snapshotRef: "project_structure:v2:fixture",
+						revision: {
+							kind: "git",
+							head: capability.head ?? HEAD,
+							value: capability.head ?? HEAD,
+						},
+					},
+					readiness: {
+						usability,
+						reasonCodes: usability === "usable" ? [] : ["fixture_degraded"],
+						coverage: {
+							inventoriedFiles: 10,
+							analyzedFiles: 10,
+							resolvedReferences: 4,
+							unresolvedReferences: 0,
+							inferredModules: 2,
+						},
+					},
+				}
+			: {}),
 		...(value === "failed"
 			? { errorCode: "SCAN_FAILED", retryable: true }
 			: {}),

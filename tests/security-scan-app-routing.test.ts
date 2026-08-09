@@ -9,8 +9,10 @@ describe("security scan app routing", () => {
 		expect(settings.status, await settings.clone().text()).toBe(200);
 		expect(await settings.json()).toEqual({
 			enabled: false,
+			transport: "local_cli",
 			baseUrl: "http://127.0.0.1:29831",
 			tokenConfigured: false,
+			localCliConfigured: true,
 		});
 
 		const missingProject = await app.request(

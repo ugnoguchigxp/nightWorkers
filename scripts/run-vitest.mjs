@@ -11,6 +11,7 @@ const child = spawn(process.execPath, [vitestEntry, ...process.argv.slice(2)], {
   cwd: process.cwd(),
   env: {
     ...process.env,
+    NIGHTWORKERS_DATABASE_ACCESS_SCOPE: 'isolated_test',
     NIGHTWORKERS_VITEST_DB_PATH: database.databasePath,
   },
   stdio: 'inherit',

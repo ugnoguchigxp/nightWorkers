@@ -7,6 +7,7 @@ export const testDatabasePath =
 
 export function applyVitestDatabaseEnv() {
 	process.env.NODE_ENV = "test";
+	process.env.NIGHTWORKERS_DATABASE_ACCESS_SCOPE = "isolated_test";
 	process.env.NIGHTWORKERS_VITEST_DB_PATH = testDatabasePath;
 	process.env.DATABASE_URL = `file:${testDatabasePath}`;
 	process.env.CORS_ORIGIN = "http://localhost:39174";

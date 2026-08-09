@@ -6,6 +6,7 @@ import {
 	missionGoalSchema,
 	missionTaskCandidateBatchSchema,
 	missionTaskCandidateSchema,
+	missionTaskCandidateSourceSchema,
 } from "../../../shared/schemas/task-generation.schema";
 import { type DbTransaction, db } from "../../db/client";
 import {
@@ -58,17 +59,25 @@ function mapBatch(
 	});
 }
 
-function mapCandidate(
+export function mapCandidate(
 	row: typeof missionTaskCandidates.$inferSelect & {
 		goalTitle?: string | null;
 	},
 ): MissionTaskCandidate {
+	const source = (() => {
+		if (row.sourceKind === "mission_goals") return { kind: "mission_goals" };
+		if (row.sourceKind === "security_scan") {
+			return missionTaskCandidateSourceSchema.parse(row.sourceRefJson);
+		}
+		throw new Error(`Unsupported task candidate source: ${row.sourceKind}`);
+	})();
 	return missionTaskCandidateSchema.parse({
 		id: row.id,
 		batchId: row.batchId,
 		repositoryId: row.repositoryId,
 		goalId: row.goalId ?? null,
 		goalTitle: row.goalTitle ?? null,
+		source,
 		candidateKind: row.candidateKind ?? "feature_followup",
 		moduleRouting: {
 			primaryModule: row.primaryModule ?? null,
@@ -267,6 +276,8 @@ export async function listMissionCandidates(input: {
 			repositoryId: missionTaskCandidates.repositoryId,
 			goalId: missionTaskCandidates.goalId,
 			goalTitle: missionGoals.title,
+			sourceKind: missionTaskCandidates.sourceKind,
+			sourceRefJson: missionTaskCandidates.sourceRefJson,
 			candidateKind: missionTaskCandidates.candidateKind,
 			primaryModule: missionTaskCandidates.primaryModule,
 			secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
@@ -307,6 +318,8 @@ export async function getMissionCandidate(candidateId: string) {
 			repositoryId: missionTaskCandidates.repositoryId,
 			goalId: missionTaskCandidates.goalId,
 			goalTitle: missionGoals.title,
+			sourceKind: missionTaskCandidates.sourceKind,
+			sourceRefJson: missionTaskCandidates.sourceRefJson,
 			candidateKind: missionTaskCandidates.candidateKind,
 			primaryModule: missionTaskCandidates.primaryModule,
 			secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
@@ -347,6 +360,8 @@ export async function getMissionCandidateByTaskId(taskId: string) {
 			repositoryId: missionTaskCandidates.repositoryId,
 			goalId: missionTaskCandidates.goalId,
 			goalTitle: missionGoals.title,
+			sourceKind: missionTaskCandidates.sourceKind,
+			sourceRefJson: missionTaskCandidates.sourceRefJson,
 			candidateKind: missionTaskCandidates.candidateKind,
 			primaryModule: missionTaskCandidates.primaryModule,
 			secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
@@ -421,6 +436,8 @@ export async function listMissionCandidatesByIds(
 			repositoryId: missionTaskCandidates.repositoryId,
 			goalId: missionTaskCandidates.goalId,
 			goalTitle: missionGoals.title,
+			sourceKind: missionTaskCandidates.sourceKind,
+			sourceRefJson: missionTaskCandidates.sourceRefJson,
 			candidateKind: missionTaskCandidates.candidateKind,
 			primaryModule: missionTaskCandidates.primaryModule,
 			secondaryModulesJson: missionTaskCandidates.secondaryModulesJson,
@@ -489,7 +506,10 @@ export async function createTaskFromMissionCandidate(
 			objective: buildMissionCandidateTaskObjective(candidate),
 			acceptanceCriteria: `${candidate.acceptanceCriteria}\n\nVerification:\n${candidate.verificationPlan}`,
 			status,
-			createdBy: "mission-task-candidate",
+			createdBy:
+				candidate.source.kind === "security_scan"
+					? "security-scan-task-candidate"
+					: "mission-task-candidate",
 		},
 		database,
 	);

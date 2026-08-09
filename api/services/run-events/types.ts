@@ -24,6 +24,7 @@ export const RUN_EVENT_TYPES = [
 	"turn.started",
 	"turn.finished",
 	"model.request_started",
+	"model.request_failed",
 	"model.provider_activity_detected",
 	"model.provider_tool_call_detected",
 	"model.provider_activity_rejected",

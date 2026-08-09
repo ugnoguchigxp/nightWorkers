@@ -4,13 +4,19 @@ import path from "node:path";
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
 import {
+	assertDatabaseAccessEnvironment,
+	requireDatabaseAccessScope,
+} from "../shared/runtime-database-access.mjs";
+import {
 	ensureDesktopRuntimeBootstrap,
 	ensureRuntimeDatabasePath,
 } from "./runtime/bootstrap";
+import { getRuntimePaths } from "./runtime/paths";
 import { isLoopbackHost } from "./security/listen-security";
 import { readApplicationSetting } from "./services/settings/application-settings-store";
 
 dotenvConfig({ quiet: true }); // ensure env is loaded in Node.js, Bun might auto-load
+requireDatabaseAccessScope(process.env);
 normalizeListenPort(process.env);
 const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
 isolateDirectTestDatabase(process.env);
@@ -21,12 +27,16 @@ ensureDesktopRuntimeBootstrap(process.env, {
 ensureRuntimeDatabasePath(process.env, {
 	legacyDatabaseUrl: configuredDatabaseUrl,
 });
+const databaseAccess = assertDatabaseAccessEnvironment(process.env, {
+	operationalDatabasePath: getRuntimePaths(process.env).databasePath,
+});
 applyPersistedBootstrapSettings(process.env);
 
 function applyPersistedBootstrapSettings(env: NodeJS.ProcessEnv) {
 	if (
 		env.NODE_ENV === "test" ||
 		env.NIGHTWORKERS_E2E_ISOLATED === "1" ||
+		env.NIGHTWORKERS_DATABASE_ACCESS_SCOPE === "isolated_evaluation" ||
 		env.NIGHTWORKERS_CONFIG_TEST === "1" ||
 		env.NIGHTWORKERS_EXECUTION_ROLE === "worker"
 	) {
@@ -116,7 +126,9 @@ function isolateDirectTestDatabase(env: NodeJS.ProcessEnv) {
 	const testRoot = fs.mkdtempSync(
 		path.join(os.tmpdir(), "nightworkers-bun-test-"),
 	);
-	env.DATABASE_URL = `file:${path.join(testRoot, "sqlite.db")}`;
+	const isolatedDatabasePath = path.join(testRoot, "sqlite.db");
+	env.NIGHTWORKERS_VITEST_DB_PATH = isolatedDatabasePath;
+	env.DATABASE_URL = `file:${isolatedDatabasePath}`;
 	process.once("exit", () =>
 		fs.rmSync(testRoot, { recursive: true, force: true }),
 	);
@@ -188,5 +200,6 @@ if (!databaseUrl) {
 export const config = {
 	...result.data,
 	DATABASE_URL: databaseUrl,
+	DATABASE_ACCESS: databaseAccess,
 	CORS_ORIGINS: corsOrigins,
 };

@@ -60,12 +60,16 @@ function taskCandidateKindPriority(
 			return 0;
 		case "investigation":
 			return 1;
-		case "feature_followup":
+		case "security_investigation":
+			return 1;
+		case "security_remediation":
 			return 2;
-		case "constraint_enablement":
+		case "feature_followup":
 			return 3;
-		case "constraint_verification":
+		case "constraint_enablement":
 			return 4;
+		case "constraint_verification":
+			return 5;
 	}
 }
 

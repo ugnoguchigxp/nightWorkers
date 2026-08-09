@@ -1,4 +1,4 @@
-text = '''current Todoが実装箇所、依存関係、関連testの特定を必要とし、候補fileがまだ十分に確定していない場合は、広いlist_dirやsearch_filesより先にproject_exploration_catalogを一度だけ呼んでください。
-focusはTodoとTaskから意味的に選び、既知のpath、module、domain用語を指定してください。候補fileが既に明確なら呼び出しを省略できます。
+text = '''このrunではproject_exploration_catalogが利用可能です。最初のTodo計画、read_current_specification、list_dir、search_files、read_fileより前にproject_exploration_catalogを一度だけ呼び、Task全体の変更候補、依存関係、関連testを確認してください。既知の候補fileがあっても、この最初のcatalog呼び出しは省略しないでください。
+focusはTodoとTaskから意味的に選び、既知のpath、module、domain用語を指定してください。
 catalogは候補情報です。編集前に候補fileをread_file等で確認し、成功したcatalogと同じ目的の広域探索を機械的に繰り返さないでください。
 catalogがunavailable、stale、degraded、または不十分なら、通常のworkspace探索へfail-openしてください。'''

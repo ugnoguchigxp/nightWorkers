@@ -93,6 +93,7 @@ export async function handleStartCodingAgentRun(
 	const run = await startTaskRun(command.taskId, {
 		executionMode: "implementation",
 		executionModeSource: "explicit",
+		planModeRequested: command.planModeRequested === true,
 		latestUserMessageOverride: command.instruction,
 		runAssociation: command.requestProvenance.orchestrationRef
 			? {

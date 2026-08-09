@@ -128,7 +128,16 @@ export const jaSettings = {
 	"settings.vulnerabilityScanProvider.notConfigured": "未設定",
 	"settings.vulnerabilityScanProvider.enabled": "連携を有効にする",
 	"settings.vulnerabilityScanProvider.enabledHelp":
-		"NightWorkers backendだけがservice tokenを使用します。ブラウザには公開しません。",
+		"ローカルCLIまたはHTTP providerを使ってスキャンします。",
+	"settings.vulnerabilityScanProvider.transport": "接続方式",
+	"settings.vulnerabilityScanProvider.transportLocalCli":
+		"ローカルCLI（サーバー不要・推奨）",
+	"settings.vulnerabilityScanProvider.transportHttp":
+		"HTTP provider（service token）",
+	"settings.vulnerabilityScanProvider.localCliHelp":
+		"登録済みProjectフォルダーをvulnWorkbench CLIへ直接渡します。サーバーとservice tokenは不要ですが、vulnWorkbench側で初回setupとDB migrationが必要です。",
+	"settings.vulnerabilityScanProvider.httpHelp":
+		"別プロセスのvulnWorkbench provider APIへ接続します。",
 	"settings.vulnerabilityScanProvider.baseUrl": "vulnWorkbench Base URL",
 	"settings.vulnerabilityScanProvider.token": "Service token",
 	"settings.vulnerabilityScanProvider.tokenStored":
@@ -255,6 +264,9 @@ export const jaSettings = {
 	"settings.llm.thinking.medium": "中",
 	"settings.llm.thinking.high": "高",
 	"settings.llm.thinking.very_high": "非常に高い",
+	"settings.llm.requestTimeout": "リクエストタイムアウト（秒）",
+	"settings.llm.requestTimeoutHelp":
+		"1回のprovider呼び出しに適用します。30〜1200秒、未設定時は300秒です。入力中は範囲外の値も許容し、フォーカスを外すと補正します。",
 	"settings.llm.fallback.add": "フォールバックを追加",
 	"settings.llm.fallback.item": "フォールバック {{index}}",
 	"settings.llm.fallback.moveUp": "上へ",
@@ -265,7 +277,9 @@ export const jaSettings = {
 		"LLMプロバイダーのエンドポイントと認証情報を設定します。ロールルーティングではここで設定したエンドポイントを選択します。",
 	"settings.llm.endpoint.add": "追加",
 	"settings.llm.endpoint.enabled": "有効",
-	"settings.llm.endpoint.health": "接続確認",
+	"settings.llm.endpoint.health": "実行確認",
+	"settings.llm.endpoint.healthHint":
+		"設定モデルへ最小リクエストを送信します。利用料が発生する場合があります。",
 	"settings.llm.endpoint.remove": "エンドポイントを削除",
 	"settings.llm.endpoint.reachable": "接続可能",
 	"settings.llm.endpoint.unreachable": "接続不可",

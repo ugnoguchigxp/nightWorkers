@@ -35,6 +35,7 @@ type ProjectExplorationCatalogPayload = {
 		provenance?: unknown;
 		responseBytes?: number;
 		rawResult?: unknown;
+		failureCategory?: string;
 	};
 };
 
@@ -102,6 +103,25 @@ export async function projectExplorationCatalogTool(input: {
 				audit,
 				"PROJECT_EXPLORATION_STALE",
 				"Project exploration catalog is unavailable for the current source state.",
+			);
+		}
+		if (
+			parsed.data.source.revision.kind !== "git" ||
+			parsed.data.source.revision.head !== input.expectedHead
+		) {
+			return failed(
+				startedAt,
+				audit,
+				"PROJECT_EXPLORATION_STALE",
+				"Project exploration catalog revision did not match the run source revision.",
+			);
+		}
+		if (parsed.data.readiness.usability === "unusable") {
+			return failed(
+				startedAt,
+				audit,
+				"PROJECT_EXPLORATION_UNUSABLE",
+				"Project exploration catalog is not usable for this source state.",
 			);
 		}
 		const sensitive = sensitiveValues(input.projectPath, audit.provenance);
@@ -183,6 +203,7 @@ function projectModelSafeCatalog(
 		ok: true,
 		status: data.status,
 		freshness: { status: "fresh" },
+		readiness: data.readiness,
 		focus: {
 			paths: focus.paths?.filter(keepSafe),
 			modules: focus.modules?.filter(keepSafe),
@@ -302,7 +323,10 @@ function failed(
 		toolName: "project_exploration_catalog",
 		startedAt,
 		finishedAt: new Date().toISOString(),
-		payload: { status: "unavailable", audit },
+		payload: {
+			status: "unavailable",
+			audit: { ...audit, failureCategory: code },
+		},
 		error: { code, message },
 	};
 }

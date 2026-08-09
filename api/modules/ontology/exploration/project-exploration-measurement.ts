@@ -71,6 +71,7 @@ export function measureProjectExplorationRun(input: {
 	let catalogFileCount = 0;
 	let catalogTestCount = 0;
 	let catalogVerificationCount = 0;
+	let catalogFallbackReason: string | null = null;
 	let broadExplorationCallsBeforeCatalog = 0;
 	let firstCatalogParsed = false;
 	let listDirCallsBeforeMutation = 0;
@@ -126,6 +127,7 @@ export function measureProjectExplorationRun(input: {
 				);
 			if (!ok) {
 				catalogFailureCount += 1;
+				catalogFallbackReason ??= stringValue(audit?.failureCategory);
 				warnings.add("catalog_call_failed");
 			} else {
 				let parsedCatalog: ReturnType<
@@ -196,7 +198,7 @@ export function measureProjectExplorationRun(input: {
 			pin?.version === 2 && pin.available ? pin.preparation.reused : null,
 		preparationPollCount:
 			pin?.version === 2 ? (pin.preparation?.pollCount ?? null) : null,
-		fallbackReason: pin && !pin.available ? pin.reason : null,
+		fallbackReason: pin && !pin.available ? pin.reason : catalogFallbackReason,
 		catalogAvailable,
 		catalogCalled: catalogCallCount > 0,
 		catalogCallCount,

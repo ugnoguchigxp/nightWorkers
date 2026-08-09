@@ -90,6 +90,8 @@ export async function ensureTaskGenerationTables() {
       batch_id text NOT NULL,
       repository_id text NOT NULL,
       goal_id text,
+      source_kind text DEFAULT 'mission_goals' NOT NULL,
+      source_ref_json text,
       candidate_kind text DEFAULT 'feature_followup' NOT NULL,
       primary_module text,
       secondary_modules_json text DEFAULT '[]' NOT NULL,
@@ -117,6 +119,16 @@ export async function ensureTaskGenerationTables() {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
     )
   `);
+	await ensureColumn(
+		"mission_task_candidates",
+		"source_kind",
+		"source_kind text DEFAULT 'mission_goals' NOT NULL",
+	);
+	await ensureColumn(
+		"mission_task_candidates",
+		"source_ref_json",
+		"source_ref_json text",
+	);
 	await ensureColumn(
 		"mission_task_candidates",
 		"candidate_kind",
@@ -160,5 +172,29 @@ export async function ensureTaskGenerationTables() {
 	);
 	await client.execute(
 		"CREATE INDEX IF NOT EXISTS mission_candidates_task_idx ON mission_task_candidates (task_id)",
+	);
+
+	await client.execute(`
+    CREATE TABLE IF NOT EXISTS security_task_candidate_findings (
+      id text PRIMARY KEY NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      candidate_id text NOT NULL,
+      repository_id text NOT NULL,
+      scan_run_ref text NOT NULL,
+      finding_ref text NOT NULL,
+      fingerprint_hash text NOT NULL,
+      FOREIGN KEY (candidate_id) REFERENCES mission_task_candidates(id) ON DELETE cascade,
+      FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade
+    )
+  `);
+	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS security_candidate_findings_candidate_finding_uidx ON security_task_candidate_findings (candidate_id, finding_ref)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS security_candidate_findings_repository_fingerprint_idx ON security_task_candidate_findings (repository_id, fingerprint_hash)",
+	);
+	await client.execute(
+		"CREATE INDEX IF NOT EXISTS security_candidate_findings_scan_finding_idx ON security_task_candidate_findings (scan_run_ref, finding_ref)",
 	);
 }

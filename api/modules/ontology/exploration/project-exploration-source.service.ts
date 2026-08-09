@@ -287,6 +287,33 @@ function available(input: {
 	waitedMs: number;
 	pollCount: number;
 }): ProjectExplorationAvailabilityV2 {
+	const preparationDetail = preparation(
+		input.startedAt,
+		input.waitedMs,
+		input.pollCount,
+	);
+	if (!input.status.source || !input.status.readiness) {
+		return unavailable("contract_invalid", {
+			preparation: preparationDetail,
+		});
+	}
+	if (
+		input.status.source.revision.kind !== "git" ||
+		input.status.source.revision.head !== input.expectedHead
+	) {
+		return unavailable("stale", {
+			preparation: preparationDetail,
+			source: input.status.source,
+			readiness: input.status.readiness,
+		});
+	}
+	if (input.status.readiness.usability === "unusable") {
+		return unavailable("degraded_unusable", {
+			preparation: preparationDetail,
+			source: input.status.source,
+			readiness: input.status.readiness,
+		});
+	}
 	return {
 		version: 2,
 		available: true,
@@ -296,13 +323,21 @@ function available(input: {
 		preparationStatus: "ready",
 		freshness: {
 			status: "current",
-			sourceRevisionKind: "git",
-			sourceRevisionValue: input.expectedHead,
+			sourceRevisionKind: input.status.source.revision.kind,
+			sourceRevisionValue: input.status.source.revision.value,
 		},
-		readiness: { codeStructure: "available", reasonCodes: [] },
+		readiness: {
+			codeStructure:
+				input.status.readiness.usability === "usable"
+					? "available"
+					: "degraded",
+			reasonCodes: input.status.readiness.reasonCodes,
+			usability: input.status.readiness.usability,
+			coverage: input.status.readiness.coverage,
+		},
 		preparation: {
 			reused: input.status.reused === true,
-			...preparation(input.startedAt, input.waitedMs, input.pollCount),
+			...preparationDetail,
 		},
 	};
 }

@@ -2,6 +2,43 @@ import { z } from "@hono/zod-openapi";
 
 const sha256HexSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
+export const projectExplorationSourceRevisionSchema = z
+	.object({
+		kind: z.enum(["git", "tree_hash_only"]),
+		head: z.string().min(1).optional(),
+		dirtyHash: sha256HexSchema.optional(),
+		value: z.string().min(1),
+	})
+	.strict()
+	.refine((revision) => revision.kind !== "git" || Boolean(revision.head), {
+		message: "git source revision requires head",
+		path: ["head"],
+	});
+
+export const projectExplorationCatalogSourceSchema = z
+	.object({
+		structureSchemaVersion: z.literal("project-structure-v2"),
+		snapshotRef: z.string().min(1),
+		revision: projectExplorationSourceRevisionSchema,
+	})
+	.strict();
+
+export const projectExplorationCatalogReadinessSchema = z
+	.object({
+		usability: z.enum(["usable", "degraded_usable", "unusable"]),
+		reasonCodes: z.array(z.string().min(1).max(256)).max(100),
+		coverage: z
+			.object({
+				inventoriedFiles: z.number().int().nonnegative(),
+				analyzedFiles: z.number().int().nonnegative(),
+				resolvedReferences: z.number().int().nonnegative(),
+				unresolvedReferences: z.number().int().nonnegative(),
+				inferredModules: z.number().int().nonnegative(),
+			})
+			.strict(),
+	})
+	.strict();
+
 export const projectExplorationCatalogPilotSettingsSchema = z
 	.object({
 		enabled: z.boolean().default(false),
@@ -73,6 +110,9 @@ export const projectExplorationAvailabilityV2Schema = z.discriminatedUnion(
 					.object({
 						codeStructure: z.enum(["available", "degraded"]),
 						reasonCodes: z.array(z.string()),
+						usability: z.enum(["usable", "degraded_usable"]).optional(),
+						coverage:
+							projectExplorationCatalogReadinessSchema.shape.coverage.optional(),
 					})
 					.strict(),
 				preparation: z
@@ -105,6 +145,8 @@ export const projectExplorationAvailabilityV2Schema = z.discriminatedUnion(
 				]),
 				retryable: z.boolean().optional(),
 				errorCode: z.string().min(1).optional(),
+				source: projectExplorationCatalogSourceSchema.optional(),
+				readiness: projectExplorationCatalogReadinessSchema.optional(),
 				preparation: z
 					.object({
 						durationMs: z.number().int().nonnegative(),
@@ -294,7 +336,10 @@ export const projectExplorationPathCatalogResultSchema = z
 	.object({
 		ok: z.literal(true),
 		status: z.enum(["completed", "degraded"]),
+		version: z.literal("v2"),
 		freshness: z.object({ status: z.enum(["fresh", "stale"]) }).passthrough(),
+		source: projectExplorationCatalogSourceSchema,
+		readiness: projectExplorationCatalogReadinessSchema,
 		...projectExplorationCatalogCandidateFields,
 		...projectExplorationCatalogPresentationFields,
 	})
@@ -303,7 +348,19 @@ export type ProjectExplorationPathCatalogResult = z.infer<
 	typeof projectExplorationPathCatalogResultSchema
 >;
 
+export const projectExplorationModelCatalogResultSchema = z
+	.object({
+		ok: z.literal(true),
+		status: z.enum(["completed", "degraded"]),
+		freshness: z.object({ status: z.literal("fresh") }).passthrough(),
+		readiness: projectExplorationCatalogReadinessSchema.optional(),
+		...projectExplorationCatalogCandidateFields,
+		...projectExplorationCatalogPresentationFields,
+	})
+	.passthrough();
+
 export const projectExplorationCatalogResultSchema = z.union([
 	projectExplorationPathCatalogResultSchema,
 	legacyProjectExplorationCatalogResultSchema,
+	projectExplorationModelCatalogResultSchema,
 ]);

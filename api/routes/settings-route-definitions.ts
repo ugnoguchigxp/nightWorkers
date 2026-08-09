@@ -31,6 +31,9 @@ const llmProviderHealthSchema = z.object({
 	durationMs: z.number(),
 	checkedAt: z.string(),
 	message: z.string(),
+	probeKind: z.enum(["connectivity", "execution_readiness"]).optional(),
+	model: z.string().nullable().optional(),
+	targetDigest: z.string().nullable().optional(),
 });
 
 const codexSdkStatusSchema = z.object({
@@ -531,7 +534,8 @@ export const testLlmProviderHealthRoute = createRoute({
 					schema: llmProviderHealthSchema,
 				},
 			},
-			description: "Check provider endpoint /health reachability",
+			description:
+				"Check provider execution readiness using its configured model and API path",
 		},
 		404: {
 			description: "LLM provider endpoint not found",

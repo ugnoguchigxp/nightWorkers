@@ -7,6 +7,12 @@ export type McpCallToolPayload = {
 	result?: unknown;
 };
 
+const DEDICATED_PROJECT_INTELLIGENCE_TOOLS = new Set([
+	"vuln_prepare_project_intelligence",
+	"vuln_get_project_intelligence_status",
+	"vuln_get_project_exploration_catalog",
+]);
+
 function isMcpToolExecutionError(result: unknown): boolean {
 	return Boolean(
 		result &&
@@ -42,6 +48,23 @@ export async function mcpCallTool(input: {
 	try {
 		if (!input.serverId || !input.toolName) {
 			throw new Error("mcp_call_tool requires serverId and toolName.");
+		}
+		if (DEDICATED_PROJECT_INTELLIGENCE_TOOLS.has(input.toolName)) {
+			return {
+				ok: false,
+				toolName: "mcp_call_tool",
+				startedAt,
+				finishedAt: new Date().toISOString(),
+				payload: {
+					serverId: input.serverId,
+					toolName: input.toolName,
+				},
+				error: {
+					code: "MCP_DEDICATED_TOOL_BLOCKED",
+					message:
+						"Project Intelligence tools must be called through the run-scoped dedicated adapter.",
+				},
+			};
 		}
 		const execution = await mcpClientManager.callToolGuarded(
 			input.serverId,

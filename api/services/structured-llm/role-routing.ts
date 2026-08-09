@@ -17,6 +17,7 @@ export type ResolvedStructuredLlmRoute = {
 	endpoint: StructuredLlmProviderEndpoint;
 	model: string;
 	thinkingDepth: StructuredLlmModelTarget["thinkingDepth"] | null;
+	requestTimeoutSeconds: number | null;
 	source: StructuredLlmRouteSource;
 	diagnostics: string[];
 };
@@ -149,6 +150,7 @@ function resolveRouteTarget(
 		endpoint,
 		model: target.model,
 		thinkingDepth: target.thinkingDepth || null,
+		requestTimeoutSeconds: target.requestTimeoutSeconds ?? null,
 		source,
 		diagnostics: [
 			`role=${role}`,
@@ -160,6 +162,9 @@ function resolveRouteTarget(
 			`model=${target.model}`,
 			...(target.thinkingDepth
 				? [`thinkingDepth=${target.thinkingDepth}`]
+				: []),
+			...(target.requestTimeoutSeconds
+				? [`requestTimeoutSeconds=${target.requestTimeoutSeconds}`]
 				: []),
 		],
 	};
@@ -280,6 +285,7 @@ function resolveEnabledEndpointFallbacks(input: {
 			endpoint,
 			model: endpoint.models[0],
 			thinkingDepth: null,
+			requestTimeoutSeconds: null,
 			source: "fallback" as const,
 			diagnostics: [
 				`role=${input.role}`,

@@ -9,11 +9,15 @@ import {
 } from "./native-api-tool-manifest";
 
 export function getNativeApiToolDefinitions(
-	_input: NativeApiToolProfileInput = {},
+	input: NativeApiToolProfileInput = {},
 ): ProviderToolDefinition[] {
-	return nativeApiToolRegistrations.map(
-		(registration) => registration.definition,
-	);
+	return nativeApiToolRegistrations
+		.filter(
+			(registration) =>
+				registration.name !== "project_exploration_catalog" ||
+				input.projectExplorationCatalogEnabled === true,
+		)
+		.map((registration) => registration.definition);
 }
 
 export function getNativeApiToolRegistration(

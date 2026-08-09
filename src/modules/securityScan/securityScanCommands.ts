@@ -72,9 +72,12 @@ export function cancelSecurityScan(repositoryId: string, scanRunRef: string) {
 export function fetchSecurityScanFindings(
 	repositoryId: string,
 	scanRunRef: string,
+	cursor?: string,
 ) {
+	const query = new URLSearchParams({ limit: "100" });
+	if (cursor) query.set("cursor", cursor);
 	return apiFetch(
-		`${basePath(repositoryId)}/${encodeURIComponent(scanRunRef)}/findings?limit=100`,
+		`${basePath(repositoryId)}/${encodeURIComponent(scanRunRef)}/findings?${query.toString()}`,
 	);
 }
 

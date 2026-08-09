@@ -34,6 +34,7 @@ import {
 	type NativeApiHistoryItem,
 } from "./native-api-tool-history";
 import { capNativeApiToolResultContent } from "./native-api-tool-result-projector";
+import { createNativeApiTurnFinisher } from "./native-api-turn-lifecycle";
 
 export type NativeApiToolTurnProvider = typeof callProviderToolTurn;
 
@@ -197,6 +198,13 @@ export async function runNativeApiRunner(
 					toolCount: initialProviderRequest.tools.length,
 				},
 			});
+			const finishTurn = createNativeApiTurnFinisher({
+				store: runtime.store,
+				sink,
+				turnId: turn.id,
+				turnIndex,
+				executionMode,
+			});
 
 			const providerAttempt = await runNativeApiProviderAttempts({
 				context,
@@ -239,7 +247,7 @@ export async function runNativeApiRunner(
 					context.runId,
 					timeout.signal,
 				);
-				await runtime.store.finishTurn({
+				await finishTurn({
 					turnId: turn.id,
 					status: cancelled ? "cancelled" : "failed",
 					history,
@@ -264,7 +272,7 @@ export async function runNativeApiRunner(
 			}
 
 			if (await runtime.isCancelled(context.runId, timeout.signal)) {
-				await runtime.store.finishTurn({
+				await finishTurn({
 					turnId: turn.id,
 					status: "cancelled",
 					history,
@@ -279,7 +287,7 @@ export async function runNativeApiRunner(
 			}
 
 			if (providerResult.type === "unsupported") {
-				await runtime.store.finishTurn({
+				await finishTurn({
 					turnId: turn.id,
 					status: "failed",
 					history,
@@ -352,7 +360,7 @@ export async function runNativeApiRunner(
 							}),
 						},
 					];
-					await runtime.store.finishTurn({
+					await finishTurn({
 						turnId: turn.id,
 						status: "completed",
 						history,
@@ -372,7 +380,7 @@ export async function runNativeApiRunner(
 					expectedPlanRevision: todoSnapshot?.planRevision ?? 0,
 					expectedTodoRevisions: todoSnapshot?.todoRevisions ?? {},
 				});
-				await runtime.store.finishTurn({
+				await finishTurn({
 					turnId: turn.id,
 					status: "completed",
 					history,
@@ -429,7 +437,7 @@ export async function runNativeApiRunner(
 
 			for (const toolCall of providerResult.toolCalls) {
 				if (await runtime.isCancelled(context.runId, timeout.signal)) {
-					await runtime.store.finishTurn({
+					await finishTurn({
 						turnId: turn.id,
 						status: "cancelled",
 						history,
@@ -495,7 +503,7 @@ export async function runNativeApiRunner(
 							},
 						}),
 					});
-					await runtime.store.finishTurn({
+					await finishTurn({
 						turnId: turn.id,
 						status: "cancelled",
 						history,
@@ -516,7 +524,7 @@ export async function runNativeApiRunner(
 							},
 						}),
 					});
-					await runtime.store.finishTurn({
+					await finishTurn({
 						turnId: turn.id,
 						status: "cancelled",
 						history,
@@ -565,7 +573,7 @@ export async function runNativeApiRunner(
 				});
 			}
 
-			await runtime.store.finishTurn({
+			await finishTurn({
 				turnId: turn.id,
 				status: "completed",
 				history,

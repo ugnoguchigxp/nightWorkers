@@ -4,6 +4,7 @@ import {
 	type SecurityOracleResult,
 	securityOracleResultSchema,
 } from "../../../shared/schemas/security-oracle.schema";
+import { redactSecretText } from "../../services/security/secret-redaction";
 import {
 	buildVulnWorkbenchCliEnv,
 	DEFAULT_VULNWORKBENCH_CWD,
@@ -38,6 +39,21 @@ export type VulnWorkbenchSecurityResult = {
 	}>;
 	findingCount: number;
 	highOrCriticalCount: number;
+	severityCounts: {
+		critical: number;
+		high: number;
+		medium: number;
+		low: number;
+		info: number;
+		unknown: number;
+	};
+	coverage: {
+		completed: number;
+		skipped: number;
+		failed: number;
+		gaps: Array<{ code: string; message: string }>;
+	};
+	reviewStatus: SecurityOracleResult["review"]["status"];
 	improvementRequest: string | null;
 	error: string | null;
 };
@@ -68,6 +84,7 @@ export type VulnWorkbenchCommandRunner = (
 	cwd: string,
 	args: string[],
 	timeoutSeconds: number,
+	signal?: AbortSignal,
 ) => Promise<BunCommandResult>;
 
 export { buildVulnWorkbenchCliEnv };
@@ -90,9 +107,14 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 	artifactDir: string;
 	settings?: VulnWorkbenchCliSettings;
 	runCommand?: VulnWorkbenchCommandRunner;
+	profile?: string;
+	scanTarget?: "full" | "working_tree";
+	expectedTargetDigest?: string;
+	findingLimit?: number;
+	signal?: AbortSignal;
 }): Promise<VulnWorkbenchSecurityResult> {
 	const settings = input.settings ?? readVulnWorkbenchCliSettings();
-	const profile = ORACLE_PROFILE;
+	const profile = input.profile?.trim() || ORACLE_PROFILE;
 	const timeoutSeconds = settings.timeoutSeconds;
 	const runCommand = input.runCommand ?? runBunCommand;
 	if (!settings.enabled) {
@@ -117,7 +139,22 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 		"--project-path",
 		input.target.repoRoot,
 	];
-	const oracle = await runCommand(settings.cwd, oracleArgs, timeoutSeconds);
+	if (profile !== ORACLE_PROFILE) oracleArgs.push("--profile", profile);
+	if (input.scanTarget === "working_tree") {
+		oracleArgs.push("--target", "working-tree");
+		if (input.expectedTargetDigest) {
+			oracleArgs.push("--expected-target-digest", input.expectedTargetDigest);
+		}
+	}
+	if (input.findingLimit !== undefined) {
+		oracleArgs.push("--finding-limit", String(input.findingLimit));
+	}
+	const oracle = await runCommand(
+		settings.cwd,
+		oracleArgs,
+		timeoutSeconds,
+		input.signal,
+	);
 	commandsRun.push(oracle.command);
 
 	const payload = parseOracleSecurityPayload(oracle.output);
@@ -135,6 +172,9 @@ export async function runVulnWorkbenchSecurityDiagnostic(input: {
 			commandsRun,
 			findingCount: 0,
 			highOrCriticalCount: 0,
+			severityCounts: emptySeverityCounts(),
+			coverage: emptyCoverage(),
+			reviewStatus: "skipped",
 			improvementRequest: null,
 			error:
 				oracle.command.summary || "vulnWorkbench did not return JSON output.",
@@ -206,6 +246,7 @@ async function runBunCommand(
 	cwd: string,
 	args: string[],
 	timeoutSeconds: number,
+	signal?: AbortSignal,
 ): Promise<BunCommandResult> {
 	const commandText = `bun ${args.join(" ")}`;
 	try {
@@ -217,6 +258,7 @@ async function runBunCommand(
 				env: buildVulnWorkbenchCliEnv(),
 				timeout: Math.max(1, timeoutSeconds) * 1000,
 				maxBuffer: 20 * 1024 * 1024,
+				signal,
 			},
 		);
 		const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
@@ -266,6 +308,9 @@ function unconfiguredResult(
 		commandsRun: [],
 		findingCount: 0,
 		highOrCriticalCount: 0,
+		severityCounts: emptySeverityCounts(),
+		coverage: emptyCoverage(),
+		reviewStatus: "skipped",
 		improvementRequest: null,
 		error,
 	};
@@ -350,9 +395,57 @@ function resultFromOraclePayload(
 		commandsRun: fallbacks.commandsRun,
 		findingCount: scan?.findingCount ?? 0,
 		highOrCriticalCount: scan?.highOrCriticalCount ?? 0,
+		severityCounts:
+			scan?.severityCounts ?? severityCountsFromFindings(scan?.findings),
+		coverage:
+			scan?.coverage ??
+			(scan
+				? {
+						completed: 3,
+						skipped: 0,
+						failed: 0,
+						gaps:
+							status === "inconclusive"
+								? [
+										{
+											code: "coverage_not_reported",
+											message:
+												"vulnWorkbench CLIから詳細なcoverageが返されませんでした。",
+										},
+									]
+								: [],
+					}
+				: emptyCoverage()),
+		reviewStatus: review.status,
 		improvementRequest: review.improvementRequest ?? null,
 		error: errorMessage,
 	};
+}
+
+function emptySeverityCounts() {
+	return { critical: 0, high: 0, medium: 0, low: 0, info: 0, unknown: 0 };
+}
+
+function emptyCoverage() {
+	return { completed: 0, skipped: 0, failed: 0, gaps: [] };
+}
+
+function severityCountsFromFindings(value: unknown) {
+	const counts = emptySeverityCounts();
+	if (!Array.isArray(value)) return counts;
+	for (const item of value) {
+		if (!isRecord(item) || typeof item.severity !== "string") {
+			counts.unknown += 1;
+			continue;
+		}
+		const severity = item.severity.toLowerCase();
+		if (severity in counts) {
+			counts[severity as keyof typeof counts] += 1;
+		} else {
+			counts.unknown += 1;
+		}
+	}
+	return counts;
 }
 
 function parseTopFindings(value: unknown): VulnWorkbenchTopFinding[] {
@@ -384,7 +477,7 @@ function parseTopFindings(value: unknown): VulnWorkbenchTopFinding[] {
 			};
 		})
 		.filter((item): item is VulnWorkbenchTopFinding => item !== null)
-		.slice(0, 10);
+		.slice(0, 1_000);
 }
 
 function formatActionableFindings(result: VulnWorkbenchSecurityResult) {
@@ -412,7 +505,7 @@ function formatActionableFindings(result: VulnWorkbenchSecurityResult) {
 }
 
 function summarizeOutput(output: string) {
-	return output.replace(/\s+/g, " ").trim().slice(0, 500);
+	return redactSecretText(output).replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -83,18 +83,26 @@ describe("isolated E2E environment", () => {
 
 	it("rejects a database outside the isolated run root", () => {
 		const repositoryRoot = createRepositorySandbox();
-		const runRoot = path.join(repositoryRoot, ".nightworkers-e2e", "run");
 		const outsideDatabase = path.join(repositoryRoot, "sqlite.db");
-		expect(() =>
-			assertIsolatedE2eEnvironment({
-				NIGHTWORKERS_E2E_ISOLATED: "1",
-				NIGHTWORKERS_E2E_RUN_ROOT: runRoot,
-				NIGHTWORKERS_E2E_DATABASE_PATH: outsideDatabase,
-				NIGHTWORKERS_E2E_WORKSPACE_ROOT: path.join(runRoot, "workspaces"),
-				NIGHTWORKERS_RUNTIME_DIR: path.join(runRoot, "runtime"),
-				DATABASE_URL: pathToFileURL(outsideDatabase).href,
-			}),
-		).toThrow("E2E database path must stay inside");
+		fs.writeFileSync(outsideDatabase, "outside");
+		return createIsolatedE2eEnvironment({
+			repositoryRoot,
+			runId: "outside-database-run",
+			webPort: 41005,
+			apiPort: 41006,
+		}).then((environment) => {
+			try {
+				expect(() =>
+					assertIsolatedE2eEnvironment({
+						...environment.env,
+						NIGHTWORKERS_E2E_DATABASE_PATH: outsideDatabase,
+						DATABASE_URL: pathToFileURL(outsideDatabase).href,
+					}),
+				).toThrow("isolated database path");
+			} finally {
+				cleanupIsolatedE2eEnvironment(environment);
+			}
+		});
 	});
 
 	it("routes every package E2E command through the isolation wrapper", () => {

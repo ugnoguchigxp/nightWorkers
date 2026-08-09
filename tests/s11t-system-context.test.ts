@@ -110,7 +110,7 @@ describe("S11t SystemContext catalog", () => {
 				"questionnaire.completion-verification-guidance",
 			]),
 		);
-		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(86);
+		expect(Object.keys(catalogArtifact.contexts)).toHaveLength(87);
 		expect("aliases" in catalogArtifact).toBe(false);
 		expect(
 			catalogArtifact.contexts["codingAgent.runtime-system"].variables,

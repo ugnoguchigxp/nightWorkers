@@ -229,7 +229,10 @@ export function ProjectDetailScreen({
 				) : null}
 
 				{activeTab === "security" ? (
-					<ProjectSecurityScanScreen repositoryId={project.id} />
+					<ProjectSecurityScanScreen
+						repositoryId={project.id}
+						onTasksCreated={onMissionTaskCandidatesCreated}
+					/>
 				) : null}
 
 				{activeTab === "stack" ? (

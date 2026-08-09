@@ -12,13 +12,11 @@ import {
 	buildOntologyRuntimeContextSnapshot,
 	ontologySnapshotEventSeverity,
 } from "../../ontology";
-import {
-	buildInteractiveReviewPromptSnapshot,
-	buildInteractiveReviewRuntimeOptions,
-} from "../../review/review-runtime-profile";
+import { buildInteractiveReviewPromptSnapshot } from "../../review/review-runtime-profile";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import {
+	assertResumableLlmRoutingUnchanged,
 	carryResumableRuntimeContext,
 	composeResumableRuntimeStateCards,
 } from "./resumable-runtime-context";
@@ -57,6 +55,7 @@ import {
 	prepareTaskRunRuntimeContext,
 	resolveRunProjectExplorationCatalogPin,
 } from "./start-task-run-runtime-context";
+import { buildTaskRunRuntimeOptions } from "./start-task-run-runtime-options";
 import {
 	createTaskRunInAgentModeSession,
 	recordCreatedAgentModeSessionTransition,
@@ -143,6 +142,13 @@ export async function prepareTaskRunInProcess(
 		llmRouteOverride,
 		planModeRequested: Boolean(options.planModeRequested),
 	});
+	if (resumable) {
+		assertResumableLlmRoutingUnchanged({
+			previousContext: resumable.run.contextSnapshot,
+			currentEffectiveLlmRouting: effectiveLlmRouting,
+			currentRuntimeLane: runtimeLaneResolution.lane,
+		});
+	}
 	const intakeRuntimeResume = resolveCodexIntakeRuntimeHandoff({
 		handoff: interactiveReview ? undefined : options.intakeRuntimeThreadHandoff,
 		executionMode,
@@ -257,47 +263,27 @@ export async function prepareTaskRunInProcess(
 			statusReason: gitBaseline.statusReason,
 		});
 	}
-	const runtimeLaneSetupInput = {
-		compiledPromptText,
-		executionMode,
-		jobType,
-		runtimeLaneResolution,
-		implementationLlmRoute: runtimeLlmRoute,
-		llmRouteOverride,
-		planModeSettingsSnapshot,
-		llmUsageSettingsSnapshot,
-	};
-	const runtimeOptions: Record<string, unknown> & {
-		securityOracle: {
-			enabled: boolean;
-			configured: boolean;
-			reason: string;
-			maxIterations: number;
-			ontologyToolProfile: "standard" | "ontology_extended";
-		};
-		reviewRun?: unknown;
-		reviewRuntime?: unknown;
-		runtimeResume?: unknown;
-	} = {
-		...runtimeLaneDefinition.buildRuntimeOptions(runtimeLaneSetupInput),
-		...(options.runtimeOptionsPatch ?? {}),
-		...(interactiveReview
+	const runtimeOptions = buildTaskRunRuntimeOptions({
+		runtimeLaneOptions: runtimeLaneDefinition.buildRuntimeOptions({
+			compiledPromptText,
+			jobType,
+			runtimeLaneResolution,
+			activeRole: runtimeRole,
+			activeLlmRoute: runtimeLlmRoute,
+			llmRouteOverride,
+			planModeSettingsSnapshot,
+			llmUsageSettingsSnapshot,
+		}),
+		runtimeOptionsPatch: options.runtimeOptionsPatch,
+		interactiveReview: interactiveReview
 			? {
-					reviewRuntime: buildInteractiveReviewRuntimeOptions({
-						reviewedRunId: options.interactiveReview?.reviewedRunId ?? null,
-						gitCommonDir: workspaceAdmission.attestation.gitCommonDirCanonical,
-					}),
+					reviewedRunId: options.interactiveReview?.reviewedRunId ?? null,
+					gitCommonDir: workspaceAdmission.attestation.gitCommonDirCanonical,
 				}
-			: {}),
+			: null,
 		workspaceRuntimeEnvironment,
-		securityOracle: {
-			enabled: securityIntelligence.securityOracle.effectiveEnabled,
-			configured: securityIntelligence.securityOracle.configured,
-			reason: securityIntelligence.securityOracle.reason,
-			maxIterations: securityIntelligence.settings.securityMaxIterations,
-			ontologyToolProfile: securityIntelligence.ontology.toolProfile,
-		},
-	};
+		securityIntelligence,
+	});
 	await repo.createRunEvent({
 		version: 1,
 		runId: run.id,
@@ -396,6 +382,7 @@ export async function prepareTaskRunInProcess(
 		? compiledPromptText
 		: options.latestUserMessageOverride?.trim() ||
 			buildLatestRuntimeUserMessage({
+				planModeRequested: Boolean(options.planModeRequested),
 				fallback:
 					lastUserMessage?.content ||
 					task.description ||
@@ -409,7 +396,7 @@ export async function prepareTaskRunInProcess(
 		: await maybeLoadConversationStateCard(taskId, lastUserMessage?.id);
 	const projectedStateCard = projectConversationStateCardForRuntime({
 		snapshot: conversationContext,
-		role: interactiveReview ? "review" : "implementation",
+		role: runtimeRole,
 		workKind: runtimeRole,
 	});
 	const todoRecoveryStateCard =

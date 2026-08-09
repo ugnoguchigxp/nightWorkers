@@ -67,7 +67,6 @@ import {
 	callProvider,
 	callProviderToolTurn,
 	emitOpenAICompatibilityRetryEvents,
-	emitSchemaRetryEvents,
 	getResolvedProviderEndpoint,
 	readProviderUsage,
 	retryOpenAITransientUnavailableOnce,
@@ -341,6 +340,15 @@ describe("structured LLM providers coverage", () => {
 			httpStatus: 429,
 			retryable: true,
 		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response("provider raw body")),
+		);
+		await expect(callProviderToolTurn(toolInput())).rejects.toMatchObject({
+			kind: "invalid_response",
+			retryable: false,
+			providerBody: "provider raw body",
+		});
 	});
 
 	it("handles sparse OpenAI responses and endpoint override precedence", async () => {
@@ -491,15 +499,14 @@ describe("structured LLM providers coverage", () => {
 		expect(mocks.emit).toHaveBeenCalledTimes(2);
 	});
 
-	it("emits schema and compatibility retry event pairs", async () => {
-		await emitSchemaRetryEvents({ round: 2 } as never, "OpenAI", 400);
+	it("emits a compatibility retry event pair", async () => {
 		await emitOpenAICompatibilityRetryEvents({} as never, {
 			reason: "stream_read_error",
 			errorMessage: "socket",
 			fromResponseFormat: "json_schema",
 			fromStream: true,
 		});
-		expect(mocks.emit).toHaveBeenCalledTimes(4);
+		expect(mocks.emit).toHaveBeenCalledTimes(2);
 		expect(mocks.emit).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ type: "model.retry_scheduled" }),

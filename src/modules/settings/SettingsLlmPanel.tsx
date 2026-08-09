@@ -2,6 +2,11 @@ import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import {
+	DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
+	MAX_LLM_REQUEST_TIMEOUT_SECONDS,
+	MIN_LLM_REQUEST_TIMEOUT_SECONDS,
+} from "../../../shared/llm-role";
 import type {
 	CodexSdkStatus,
 	LlmModelTarget,
@@ -12,7 +17,7 @@ import type {
 	LlmSettings,
 	ThinkingDepth,
 } from "../nightworkers/types";
-import { Field, SelectField } from "./SettingsFields";
+import { Field, NumberField, SelectField } from "./SettingsFields";
 import { SettingsLlmProviderEndpoints } from "./SettingsLlmProviderEndpoints";
 import {
 	codexAuthSourceKey,
@@ -126,6 +131,12 @@ export function SettingsLlmPanel({
 	}, [section, refreshCodexStatus]);
 
 	const updateEndpoint = (id: string, patch: Partial<LlmProviderEndpoint>) => {
+		setHealthResults((current) => {
+			if (!(id in current)) return current;
+			const next = { ...current };
+			delete next[id];
+			return next;
+		});
 		onChange(
 			"providerEndpoints",
 			settings.providerEndpoints.map((endpoint) =>
@@ -254,6 +265,25 @@ export function SettingsLlmPanel({
 		);
 	};
 
+	const updateTargetRequestTimeout = (
+		route: LlmRoleRoute,
+		targetKey: "primary" | "fallback",
+		requestTimeoutSeconds: number,
+		fallbackIndex?: number,
+	) => {
+		if (targetKey === "primary") {
+			updateRoleRoute(route.role, {
+				primary: { ...route.primary, requestTimeoutSeconds },
+			});
+			return;
+		}
+		if (fallbackIndex === undefined) return;
+		updateFallback(route, fallbackIndex, {
+			...route.fallbacks[fallbackIndex],
+			requestTimeoutSeconds,
+		});
+	};
+
 	const moveFallback = (
 		route: LlmRoleRoute,
 		index: number,
@@ -298,6 +328,9 @@ export function SettingsLlmPanel({
 						<p className="mt-1 text-xs text-zinc-500">
 							{t("settings.llm.routing.description")}
 						</p>
+						<p className="mt-1 text-[11px] text-zinc-600">
+							{t("settings.llm.requestTimeoutHelp")}
+						</p>
 					</div>
 					<div className="grid gap-3">
 						{roleRoutes.map((route) => {
@@ -329,7 +362,7 @@ export function SettingsLlmPanel({
 											{t("settings.llm.fallback.add")}
 										</Button>
 									</div>
-									<div className="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)]">
+									<div className="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_minmax(10rem,12rem)]">
 										<SelectField
 											id={`${route.role}-primary-model-target`}
 											label={t("settings.llm.primaryModel")}
@@ -347,7 +380,11 @@ export function SettingsLlmPanel({
 											onChange={(value) =>
 												updateRoleRoute(route.role, {
 													primary: withThinkingDepth(
-														modelTargetFromKey(value),
+														{
+															...modelTargetFromKey(value),
+															requestTimeoutSeconds:
+																route.primary.requestTimeoutSeconds,
+														},
 														route.primary.thinkingDepth || "",
 													),
 												})
@@ -367,14 +404,30 @@ export function SettingsLlmPanel({
 													)
 												}
 											/>
-										) : null}
+										) : (
+											<div className="hidden md:block" />
+										)}
+										<NumberField
+											id={`${route.role}-primary-request-timeout`}
+											label={t("settings.llm.requestTimeout")}
+											value={
+												route.primary.requestTimeoutSeconds ??
+												DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
+											}
+											min={MIN_LLM_REQUEST_TIMEOUT_SECONDS}
+											max={MAX_LLM_REQUEST_TIMEOUT_SECONDS}
+											clampOnBlur
+											onChange={(value) =>
+												updateTargetRequestTimeout(route, "primary", value)
+											}
+										/>
 									</div>
 									{route.fallbacks.length ? (
 										<div className="grid gap-2">
 											{route.fallbacks.map((fallback, index) => (
 												<div
 													key={`${route.role}-fallback-${modelTargetKey(fallback)}-${fallback.thinkingDepth || "auto"}`}
-													className="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_auto_auto_auto]"
+													className="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)_minmax(10rem,12rem)_auto_auto_auto]"
 												>
 													<SelectField
 														id={`${route.role}-fallback-${index}`}
@@ -388,7 +441,11 @@ export function SettingsLlmPanel({
 																route,
 																index,
 																withThinkingDepth(
-																	modelTargetFromKey(value),
+																	{
+																		...modelTargetFromKey(value),
+																		requestTimeoutSeconds:
+																			fallback.requestTimeoutSeconds,
+																	},
 																	fallback.thinkingDepth || "",
 																),
 															)
@@ -412,6 +469,25 @@ export function SettingsLlmPanel({
 													) : (
 														<div className="hidden md:block" />
 													)}
+													<NumberField
+														id={`${route.role}-fallback-${index}-request-timeout`}
+														label={t("settings.llm.requestTimeout")}
+														value={
+															fallback.requestTimeoutSeconds ??
+															DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
+														}
+														min={MIN_LLM_REQUEST_TIMEOUT_SECONDS}
+														max={MAX_LLM_REQUEST_TIMEOUT_SECONDS}
+														clampOnBlur
+														onChange={(value) =>
+															updateTargetRequestTimeout(
+																route,
+																"fallback",
+																value,
+																index,
+															)
+														}
+													/>
 													<Button
 														type="button"
 														size="sm"

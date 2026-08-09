@@ -13,6 +13,7 @@ import {
 	readApplicationSettingSecrets,
 } from "../settings/application-settings-store";
 import { migrateStructuredLlmEndpointIds } from "./endpoint-id-migration";
+import { canonicalizeStructuredLlmEndpoint } from "./endpoint-target";
 import { migrateLegacyProviderEnablement } from "./provider-enablement-migration";
 
 export type StructuredLlmProviderSettings = {
@@ -96,6 +97,7 @@ export type StructuredLlmModelTarget = {
 	providerEndpointId: string;
 	model: string;
 	thinkingDepth?: StructuredLlmThinkingDepth;
+	requestTimeoutSeconds?: number;
 };
 
 export type StructuredLlmRoleRoute = {
@@ -137,7 +139,9 @@ export function readStructuredLlmProviderSettings(): StructuredLlmProviderSettin
 	);
 	const migrated = migrateStructuredLlmEndpointIds(merged).settings;
 	const providerEndpoints = mergeCodexModelOptionsIntoEndpoints(
-		migrated.providerEndpoints || [],
+		(migrated.providerEndpoints || []).map((endpoint) =>
+			canonicalizeStructuredLlmEndpoint(endpoint),
+		),
 		{ configuredModel: migrated.CODEX_MODEL },
 	);
 	return sanitizeStructuredLlmRoleRoutes({
@@ -176,11 +180,8 @@ export function getStructuredLlmBoolSetting(
 
 function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> {
 	try {
-		const testSettingsPath =
-			process.env.NODE_ENV === "test"
-				? process.env.NIGHTWORKERS_LLM_SETTINGS_PATH
-				: undefined;
-		const sqliteSettings = testSettingsPath
+		const isolatedSettingsPath = resolveStructuredLlmSettingsPath(process.env);
+		const sqliteSettings = isolatedSettingsPath
 			? null
 			: readApplicationSetting<StructuredLlmProviderSettings>("llm");
 		if (sqliteSettings) {
@@ -203,7 +204,7 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 			}).settings;
 		}
 		const runtimeSettingsPath =
-			testSettingsPath ||
+			isolatedSettingsPath ||
 			path.join(getRuntimePaths().settingsDir, "llm-settings.json");
 		if (!fs.existsSync(runtimeSettingsPath)) return {};
 		const raw = JSON.parse(fs.readFileSync(runtimeSettingsPath, "utf-8"));
@@ -212,6 +213,18 @@ function readPersistedRuntimeSettings(): Partial<StructuredLlmProviderSettings> 
 	} catch {
 		return {};
 	}
+}
+
+export function resolveStructuredLlmSettingsPath(
+	env: NodeJS.ProcessEnv,
+): string | undefined {
+	const explicitPath = env.NIGHTWORKERS_LLM_SETTINGS_PATH?.trim();
+	if (!explicitPath) return undefined;
+	if (env.NODE_ENV === "test") return explicitPath;
+	return env.NIGHTWORKERS_DATABASE_ACCESS_SCOPE === "isolated_test" ||
+		env.NIGHTWORKERS_DATABASE_ACCESS_SCOPE === "isolated_evaluation"
+		? explicitPath
+		: undefined;
 }
 
 function defaultSettings(): Required<
