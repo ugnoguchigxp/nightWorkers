@@ -13,6 +13,9 @@ describe("native API compatible edit tool profile", () => {
 		const compatibleReplace = compatible.find(
 			(tool) => tool.name === "replace_content",
 		);
+		const compatibleRunCheck = compatible.find(
+			(tool) => tool.name === "run_check",
+		);
 
 		expect(defaultPatch?.inputSchema).toHaveProperty("properties.patchContent");
 		expect(compatiblePatch?.inputSchema).toHaveProperty("properties.patchJson");
@@ -28,6 +31,18 @@ describe("native API compatible edit tool profile", () => {
 		expect(compatibleReplace?.inputSchema).not.toHaveProperty(
 			"properties.replacement",
 		);
+		expect(
+			Object.keys(
+				(compatibleRunCheck?.inputSchema.properties ?? {}) as Record<
+					string,
+					unknown
+				>,
+			),
+		).toEqual(["command", "checkKind", "cwd", "timeoutSeconds", "displayMode"]);
+		expect(compatibleRunCheck?.inputSchema).toHaveProperty("required", [
+			"command",
+			"checkKind",
+		]);
 	});
 
 	it("decodes JSON string literals before worker-tool dispatch", () => {

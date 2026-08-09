@@ -33,6 +33,37 @@ const compatibleEditToolDefinitions: Record<string, ProviderToolDefinition> = {
 			["filePath", "needleJson", "replacementJson"],
 		),
 	},
+	run_check: {
+		name: "run_check",
+		description:
+			"登録済みrepositoryでcheck commandを実行し、managed evidenceを保存します。commandとcheckKindを先に指定し、必要な場合だけcwd、timeoutSeconds、displayModeを追加します。",
+		inputSchema: objectSchema(
+			{
+				command: { type: "string", minLength: 1 },
+				checkKind: {
+					type: "string",
+					enum: [
+						"lint",
+						"format_check",
+						"typecheck",
+						"test",
+						"coverage",
+						"build",
+						"verify",
+						"completion_check",
+						"other",
+					],
+				},
+				cwd: { type: "string" },
+				timeoutSeconds: { type: "number" },
+				displayMode: {
+					type: "string",
+					enum: ["summary", "error_excerpt", "full"],
+				},
+			},
+			["command", "checkKind"],
+		),
+	},
 };
 
 export function getCompatibleEditToolDefinition(name: string) {
