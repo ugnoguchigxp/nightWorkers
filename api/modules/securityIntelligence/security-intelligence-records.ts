@@ -9,6 +9,7 @@ export type SecurityAssessmentAttemptRecord = {
 	status: "completed" | "not_applicable" | "unavailable";
 	reasonCode?: string;
 	retryable: boolean;
+	executionContextJson?: unknown;
 	scanBindingId?: string;
 	assessmentReceiptId?: string;
 };

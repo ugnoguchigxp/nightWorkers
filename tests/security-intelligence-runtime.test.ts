@@ -88,6 +88,14 @@ describe("Security Intelligence runtime contracts", () => {
 		]) {
 			expect(names.has(name)).toBe(true);
 		}
+		const attemptColumns = await client.execute(
+			"pragma table_info(security_assessment_attempts)",
+		);
+		expect(
+			attemptColumns.rows.some(
+				(column) => column.name === "execution_context_json",
+			),
+		).toBe(true);
 	});
 
 	it("requires set-like refs and condition evaluations to be sorted and unique", () => {

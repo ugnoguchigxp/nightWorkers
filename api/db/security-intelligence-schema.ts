@@ -128,6 +128,7 @@ export const securityAssessmentAttempts = sqliteTable(
 		retryable: integer("retryable", { mode: "boolean" })
 			.default(false)
 			.notNull(),
+		executionContextJson: text("execution_context_json", { mode: "json" }),
 		scanBindingId: text("scan_binding_id").references(
 			() => securityScanBindings.id,
 			{ onDelete: "set null" },

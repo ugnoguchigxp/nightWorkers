@@ -3,9 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { db } from "../api/db/client";
 import { securityAssessmentSubjectBindings } from "../api/db/security-intelligence-schema";
+import { AppError } from "../api/lib/errors";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import { mergeSecurityContinuationResult } from "../api/modules/nightworkers/run-orchestration/security-runtime-finalization";
-import { postSecurityAssessmentConfiguration } from "../api/modules/securityIntelligence/post-security-assessment.service";
+import {
+	classifyPostAssessmentFailure,
+	postSecurityAssessmentConfiguration,
+	shouldPropagatePostAssessmentFailure,
+} from "../api/modules/securityIntelligence/post-security-assessment.service";
 import { writeSecurityContract } from "../api/modules/securityIntelligence/security-contract.service";
 import {
 	saveAssessmentReceipt,
@@ -50,7 +55,7 @@ function assessmentBundle(marker: number) {
 	return nightworkersSecurityIntelligenceBundleSchema.parse(raw);
 }
 
-async function createAssessmentReceipt(repositoryId: string, marker: number) {
+function assessmentReceiptFixture(repositoryId: string, marker: number) {
 	const payload = assessmentBundle(marker);
 	const scanRunRef = crypto.randomUUID();
 	const providerProjectRef = crypto.randomUUID();
@@ -71,7 +76,6 @@ async function createAssessmentReceipt(repositoryId: string, marker: number) {
 		},
 		createdAt: new Date().toISOString(),
 	});
-	const savedBinding = await saveProviderScanBinding(binding);
 	const proofDigest = crypto
 		.createHash("sha256")
 		.update(`proof:${marker}:${scanRunRef}`)
@@ -89,10 +93,16 @@ async function createAssessmentReceipt(repositoryId: string, marker: number) {
 		payload,
 		receivedAt: new Date().toISOString(),
 	});
+	return { binding, receipt };
+}
+
+async function createAssessmentReceipt(repositoryId: string, marker: number) {
+	const fixture = assessmentReceiptFixture(repositoryId, marker);
+	const savedBinding = await saveProviderScanBinding(fixture.binding);
 	return {
-		receipt,
+		receipt: fixture.receipt,
 		saved: await saveAssessmentReceipt({
-			receipt,
+			receipt: fixture.receipt,
 			scanBindingId: savedBinding.id,
 		}),
 	};
@@ -137,6 +147,77 @@ describe("Security Intelligence review regressions", () => {
 				NIGHTWORKERS_SECURITY_INTELLIGENCE_POST_ASSESSMENT_ENABLED: "true",
 			}),
 		).toEqual({ enabled: true });
+	});
+
+	it("returns retryable provider conflicts as a durable unavailable result", () => {
+		expect(
+			shouldPropagatePostAssessmentFailure(
+				new AppError(409, "REPORT_NOT_READY", "not ready", {
+					retryable: true,
+				}),
+			),
+		).toBe(false);
+		expect(
+			shouldPropagatePostAssessmentFailure(
+				new AppError(409, "IDENTITY_CONFLICT", "conflict"),
+			),
+		).toBe(true);
+		expect(
+			shouldPropagatePostAssessmentFailure(
+				new AppError(503, "UNAVAILABLE", "unavailable", { retryable: true }),
+			),
+		).toBe(false);
+		expect(
+			classifyPostAssessmentFailure(
+				new AppError(
+					409,
+					"SECURITY_INTELLIGENCE_PROVIDER_PREVIEW_EXPIRED",
+					"expired",
+				),
+				"previewed",
+			),
+		).toMatchObject({
+			resetPreStartCheckpoint: true,
+			retryable: true,
+			propagate: false,
+		});
+		expect(
+			classifyPostAssessmentFailure(
+				new AppError(
+					409,
+					"SECURITY_INTELLIGENCE_PROVIDER_PREVIEW_EXPIRED",
+					"expired",
+				),
+				"started",
+			),
+		).toMatchObject({
+			resetPreStartCheckpoint: false,
+			retryable: false,
+			propagate: true,
+		});
+	});
+
+	it("converges concurrent scan binding and assessment receipt inserts", async () => {
+		const created = await createTaskFixture("assessment receipt concurrency");
+		const fixture = assessmentReceiptFixture(created.repository.id, 9);
+		const bindings = await Promise.all([
+			saveProviderScanBinding(fixture.binding),
+			saveProviderScanBinding(fixture.binding),
+		]);
+		expect(bindings[0].id).toBe(bindings[1].id);
+
+		const receipts = await Promise.all([
+			saveAssessmentReceipt({
+				receipt: fixture.receipt,
+				scanBindingId: bindings[0].id,
+			}),
+			saveAssessmentReceipt({
+				receipt: fixture.receipt,
+				scanBindingId: bindings[0].id,
+			}),
+		]);
+		expect(receipts[0].id).toBe(receipts[1].id);
+		expect(receipts.filter((receipt) => !receipt.replayed)).toHaveLength(1);
 	});
 
 	it("replays one subject binding under concurrent identical requests", async () => {

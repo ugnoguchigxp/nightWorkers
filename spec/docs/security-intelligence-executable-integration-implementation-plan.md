@@ -1354,3 +1354,17 @@ code実装後もrolloutを一括で有効化しない。各packageのmerge gate�
 - NightWorkers: cross-repository fixture、runtime lane parity、Task Operator action schema、bootstrap table、outbox default OFF / strict receipt / retry分類、既存Security Scan routeを含むfocused testを通過した。typecheckとmodule / role boundary checksを通過した。
 - contextStill: fixture / scoped auth test 6件、SQLite candidate / feedback ingress 6件（21 assertions）、TypeScript typecheck、Rust native candidate lifecycle 25件を通過した。
 - repository全体の`check:architecture`は、本変更外で既に作業中の`run-project-exploration-paired-pilot.ts`と`SettingsLlmPanel.tsx`が600行上限を超えているためlarge-file checkだけ未通過である。本変更で上限を超えた既存fileは分割し、Security Intelligence追加fileはすべて600行以下にした。large-file以外のmodule、Mission Pilot、SystemContext、Coding Agent、Task Operator、ontology boundary checkは通過した。
+
+### 17.4 Post-implementation review hardening
+
+実装後の再レビューでは、正常系の追加ではなく、同時実行、再送、境界不整合、運用時の失敗を中心に再検査し、次を補強した。
+
+- NightWorkersのoutbox dispatcherはresponseを512 KiBでstreaming制限し、redirect時にBearer tokenを転送せず、非成功response bodyを解放する。receiptはbatch refだけでなくcandidate / eventの完全な集合、区分の排他性、永続target ref、既存receiptとのcanonical一致まで検証する。
+- assessment attempt、scan binding、subject binding、assessment / outbox receiptはinsert競合後に正本rowを再読し、同時retryで異なる内容を同一idempotency結果として返さない。成功済みoutboxを並行failureが上書きしない。
+- post assessmentはconsumerとは独立したdefault OFF flagを持つ。無変更workspaceは`not_applicable`、provider未到達はtyped `unavailable`とし、設定復旧後の明示rerunを旧unavailable結果へ固定しない。grant作成、preview、scan開始をadditive migrationで永続checkpoint化し、restart後は同じrequest digestとprovider idempotency keyで再開する。checkpointは`grant_created`、`previewed`、`started`の順にだけ進み、同時retryの古い書込みで後退しない。retryableなprovider 409 / 422は固定failureへ変換せず、明示rerun可能な`unavailable`として保持する。
+- Task OperatorはSecurity Intelligence内部repositoryやDBへ直接依存せず、role moduleのpublic application surfaceだけを利用する。
+- contextStillのPostgreSQL / SQLite ingressは同時receipt作成とcandidate fingerprintを直列化する。duplicate candidateでは新しいevidence provenanceをitem rowへappendし、削除済みtargetへのstale refを返さず新しいpipeline targetを作る。
+- contextStill ingressはprincipal、固定scope、endpoint、batch / receipt refを同じtransactionのauditへ保存し、token値やsource本文を保存しない。body size、byte単位top-level制約、rate limit、request timeoutをserver側で強制する。
+- candidate / feedback receipt schemaは成功itemのdurable target ref、candidate ref一意性、feedback event refの区分横断一意性をproducer / consumer双方で強制する。
+
+再レビュー後のfocused verificationでは、NightWorkers Security Intelligence / migration 6 files / 42 tests、contextStill ingress 9 tests（31 assertions）とfixture / auth 10 tests、Rust native candidate 25 tests、SQLite schema migration 7 tests、vulnWorkbench integration 8 files / 46 tests（187 assertions）が通過した。3 repositoryすべてでTypeScript typecheckが通過し、共有fixtureはJSON正規化後に一致する。SI-PILOT-01は引き続きdeployment evidence待ちであり、このcode reviewをpilot完了証跡として扱わない。

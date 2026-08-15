@@ -13,6 +13,7 @@ import {
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import { evaluateSecurityFinalizationGate } from "../api/modules/securityIntelligence/security-finalization-gate.service";
 import {
+	claimPostAssessmentStart,
 	saveAssessmentAttempt,
 	saveCompletionConditionWithCas,
 	saveSecurityContractWithCas,
@@ -201,6 +202,112 @@ describe("Security Final Judgment gate", () => {
 					eq(securityAssessmentAttempts.requestDigest, attempt.requestDigest),
 				),
 		).toHaveLength(1);
+	});
+
+	it("claims one post assessment starter and preserves its restart checkpoint", async () => {
+		const created = await createRun();
+		const identity = {
+			attemptRef: `siat:v1:${"c".repeat(64)}`,
+			requestDigest: `sha256:${"c".repeat(64)}`,
+			phase: "post_implementation" as const,
+			repositoryId: created.repository.id,
+			taskId: created.task.id,
+			taskRevisionSnapshotId: created.snapshot.id,
+			implementationRunId: created.run.id,
+		};
+		const claims = await Promise.all([
+			claimPostAssessmentStart(identity),
+			claimPostAssessmentStart(identity),
+		]);
+		expect(claims.filter((claim) => claim.acquired)).toHaveLength(1);
+
+		const checkpoint = {
+			version: 1,
+			stage: "grant_created",
+			grantRef: "grant:test",
+		};
+		await saveAssessmentAttempt({
+			...identity,
+			status: "unavailable",
+			reasonCode: "SECURITY_POST_ASSESSMENT_GRANT_CREATED",
+			retryable: true,
+			executionContextJson: checkpoint,
+		});
+		const replay = await claimPostAssessmentStart(identity);
+		expect(replay).toMatchObject({
+			acquired: false,
+			attempt: { executionContextJson: checkpoint },
+		});
+		const previewedCheckpoint = {
+			...checkpoint,
+			stage: "previewed",
+			previewRef: "preview:test",
+		};
+		const startedCheckpoint = {
+			...previewedCheckpoint,
+			stage: "started",
+			scanRunRef: "scan:test",
+		};
+		await saveAssessmentAttempt({
+			...identity,
+			status: "unavailable",
+			reasonCode: "SECURITY_POST_ASSESSMENT_PREVIEWED",
+			retryable: true,
+			executionContextJson: previewedCheckpoint,
+		});
+		await saveAssessmentAttempt({
+			...identity,
+			status: "unavailable",
+			reasonCode: "SECURITY_POST_ASSESSMENT_SCAN_STARTED",
+			retryable: true,
+			executionContextJson: startedCheckpoint,
+		});
+		await saveAssessmentAttempt({
+			...identity,
+			status: "unavailable",
+			reasonCode: "SECURITY_POST_ASSESSMENT_GRANT_CREATED",
+			retryable: true,
+			executionContextJson: checkpoint,
+		});
+		const [afterStaleWrite] = await db
+			.select()
+			.from(securityAssessmentAttempts)
+			.where(
+				eq(securityAssessmentAttempts.requestDigest, identity.requestDigest),
+			);
+		expect(afterStaleWrite).toMatchObject({
+			reasonCode: "SECURITY_POST_ASSESSMENT_SCAN_STARTED",
+			executionContextJson: startedCheckpoint,
+		});
+		await expect(
+			saveAssessmentAttempt({
+				...identity,
+				status: "unavailable",
+				reasonCode: "SECURITY_POST_ASSESSMENT_SCAN_STARTED",
+				retryable: true,
+				executionContextJson: {
+					...startedCheckpoint,
+					scanRunRef: "scan:conflict",
+				},
+			}),
+		).rejects.toThrow("assessment_attempt_checkpoint_conflict");
+
+		await saveAssessmentAttempt({
+			...identity,
+			status: "completed",
+			retryable: false,
+			executionContextJson: startedCheckpoint,
+		});
+		const [completed] = await db
+			.select()
+			.from(securityAssessmentAttempts)
+			.where(
+				eq(securityAssessmentAttempts.requestDigest, identity.requestDigest),
+			);
+		expect(completed).toMatchObject({
+			status: "completed",
+			executionContextJson: startedCheckpoint,
+		});
 	});
 
 	it("allows only one initial Contract head under concurrent CAS", async () => {

@@ -34,6 +34,7 @@ function exportEnabled(kind: "candidate" | "feedback") {
 async function boundedJson(response: Response, maxBytes: number) {
 	const contentLength = Number(response.headers.get("content-length") ?? "0");
 	if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+		await response.body?.cancel().catch(() => undefined);
 		throw new NonRetryableDeliveryError("response_too_large");
 	}
 	if (!response.body) throw new NonRetryableDeliveryError("response_empty");

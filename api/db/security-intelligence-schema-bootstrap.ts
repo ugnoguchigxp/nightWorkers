@@ -1,4 +1,5 @@
 import { client } from "./client";
+import { ensureColumn } from "./schema-bootstrap-utils";
 
 const statements = [
 	`CREATE TABLE IF NOT EXISTS security_scan_bindings (
@@ -36,7 +37,7 @@ const statements = [
 		attempt_ref text NOT NULL, request_digest text NOT NULL, phase text NOT NULL,
 		repository_id text NOT NULL, task_id text NOT NULL, task_revision_snapshot_id text NOT NULL,
 		implementation_run_id text, status text NOT NULL, reason_code text,
-		retryable integer DEFAULT false NOT NULL, scan_binding_id text, assessment_receipt_id text,
+		retryable integer DEFAULT false NOT NULL, execution_context_json text, scan_binding_id text, assessment_receipt_id text,
 		FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE cascade,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade,
 		FOREIGN KEY (task_revision_snapshot_id) REFERENCES task_revision_snapshots(id) ON DELETE restrict,
@@ -153,4 +154,9 @@ export async function ensureSecurityIntelligenceTables(): Promise<void> {
 	]) {
 		await client.execute(statement);
 	}
+	await ensureColumn(
+		"security_assessment_attempts",
+		"execution_context_json",
+		"execution_context_json text",
+	);
 }

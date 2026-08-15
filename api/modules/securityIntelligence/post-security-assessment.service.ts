@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
 	deriveProviderScanBindingV2,
@@ -6,7 +5,6 @@ import {
 	parseProviderWorkspaceTargetGrantV1,
 	requestPostSecurityAssessmentCommandV1Schema,
 } from "../../../shared/schemas/security-intelligence-runtime.schema";
-import { canonicalStringifySecurityIntelligenceValue } from "../../../shared/security-intelligence-assessment-contract";
 import { db } from "../../db/client";
 import { taskRevisionSnapshots } from "../../db/schema-base";
 import { taskRuns } from "../../db/schema-task-runs";
@@ -14,6 +12,7 @@ import { taskGitWorkspaces } from "../../db/schema-workspace-authority";
 import {
 	securityAssessmentAttempts,
 	securityAssessmentSubjectBindings,
+	securityScanBindings,
 } from "../../db/security-intelligence-schema";
 import { AppError } from "../../lib/errors";
 import {
@@ -22,6 +21,20 @@ import {
 } from "../../services/workspace/workspace-source-snapshot";
 import { bindEvidenceSubject } from "../evidenceLedger/evidence-ledger.service";
 import {
+	assertPostAssessmentCheckpointIdentity,
+	assertPostAssessmentGrantProject,
+	classifyPostAssessmentFailure,
+	createPostAssessmentExecutionContext,
+	derivePostAssessmentIdempotencyUuid,
+	derivePostAssessmentRequestDigest,
+	type PostAssessmentExecutionContext,
+	parsePostAssessmentExecutionContext,
+	postSecurityAssessmentConfiguration,
+	shouldPropagatePostAssessmentFailure,
+} from "./post-security-assessment-checkpoint";
+import { resolveTerminalPostAssessmentAttempt } from "./post-security-assessment-replay";
+import {
+	claimPostAssessmentStart,
 	getCurrentSecurityContract,
 	saveAssessmentAttempt,
 	saveProviderScanBinding,
@@ -38,33 +51,11 @@ import {
 	startSecurityIntelligenceWorkspaceGrantScan,
 } from "./security-intelligence-provider.client";
 
-function digest(value: unknown) {
-	return `sha256:${createHash("sha256")
-		.update(canonicalStringifySecurityIntelligenceValue(value))
-		.digest("hex")}`;
-}
-
-function uuidFromDigest(value: string) {
-	const hex = value
-		.replace(/^sha256:/, "")
-		.slice(0, 32)
-		.split("");
-	hex[12] = "4";
-	hex[16] = ((Number.parseInt(hex[16] ?? "0", 16) & 0x3) | 0x8).toString(16);
-	const raw = hex.join("");
-	return `${raw.slice(0, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}-${raw.slice(16, 20)}-${raw.slice(20)}`;
-}
-
-export function postSecurityAssessmentConfiguration(
-	env: NodeJS.ProcessEnv = process.env,
-) {
-	return {
-		enabled:
-			env.NIGHTWORKERS_SECURITY_INTELLIGENCE_POST_ASSESSMENT_ENABLED ===
-				"true" ||
-			env.NIGHTWORKERS_SECURITY_INTELLIGENCE_POST_ASSESSMENT_ENABLED === "1",
-	};
-}
+export {
+	classifyPostAssessmentFailure,
+	postSecurityAssessmentConfiguration,
+	shouldPropagatePostAssessmentFailure,
+};
 
 export async function requestPostSecurityAssessment(rawInput: unknown) {
 	const input = requestPostSecurityAssessmentCommandV1Schema.parse(rawInput);
@@ -124,7 +115,7 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 		);
 	}
 	const currentContract = await getCurrentSecurityContract(snapshot.id);
-	const requestDigest = digest({
+	const requestDigest = derivePostAssessmentRequestDigest({
 		version: 1,
 		runId: run.id,
 		taskRevisionSnapshotId: snapshot.id,
@@ -141,40 +132,12 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 		.from(securityAssessmentAttempts)
 		.where(eq(securityAssessmentAttempts.requestDigest, requestDigest))
 		.limit(1);
-	if (existingAttempt?.status === "completed") {
-		const [existingBinding] = await db
-			.select()
-			.from(securityAssessmentSubjectBindings)
-			.where(
-				and(
-					eq(securityAssessmentSubjectBindings.implementationRunId, run.id),
-					eq(
-						securityAssessmentSubjectBindings.assessmentReceiptId,
-						existingAttempt.assessmentReceiptId ?? "",
-					),
-					eq(securityAssessmentSubjectBindings.phase, "post_implementation"),
-				),
-			)
-			.limit(1);
-		if (!existingBinding) {
-			throw new AppError(
-				409,
-				"SECURITY_POST_ASSESSMENT_REPLAY_INTEGRITY_CONFLICT",
-				"completed assessment attemptのsubject bindingが見つかりません。",
-			);
-		}
-		return {
-			status: "completed" as const,
-			assessmentAttemptRef: existingAttempt.attemptRef,
-			assessmentSubjectBindingRef: existingBinding.bindingRef,
-		};
-	}
-	if (existingAttempt?.status === "not_applicable") {
-		return {
-			status: "not_applicable" as const,
-			assessmentAttemptRef: existingAttempt.attemptRef,
-			reasonCode: existingAttempt.reasonCode ?? "workspace_source_unchanged",
-		};
+	if (existingAttempt) {
+		const terminal = await resolveTerminalPostAssessmentAttempt(
+			existingAttempt,
+			run.id,
+		);
+		if (terminal) return terminal;
 	}
 	if (!postSecurityAssessmentConfiguration().enabled) {
 		const reasonCode = "SECURITY_POST_ASSESSMENT_DISABLED";
@@ -243,7 +206,17 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 			reasonCode,
 		};
 	}
-	let scanBindingId: string | undefined;
+	const attemptIdentity = {
+		attemptRef,
+		requestDigest,
+		phase: "post_implementation" as const,
+		repositoryId: run.repositoryId as string,
+		taskId: run.taskId,
+		taskRevisionSnapshotId: snapshot.id,
+		implementationRunId: run.id,
+	};
+	let scanBindingId = existingAttempt?.scanBindingId ?? undefined;
+	let executionContext: PostAssessmentExecutionContext | undefined;
 	try {
 		if (!currentContract) {
 			throw new AppError(
@@ -289,6 +262,28 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 			);
 		}
 		assertSecurityIntelligenceConsumerAvailable(run.repositoryId as string);
+		executionContext = parsePostAssessmentExecutionContext(
+			existingAttempt?.executionContextJson,
+		);
+		if (!executionContext) {
+			const claim = await claimPostAssessmentStart(attemptIdentity);
+			const terminal = await resolveTerminalPostAssessmentAttempt(
+				claim.attempt,
+				run.id,
+			);
+			if (terminal) return terminal;
+			executionContext = parsePostAssessmentExecutionContext(
+				claim.attempt.executionContextJson,
+			);
+			if (!claim.acquired && !executionContext) {
+				return {
+					status: "unavailable" as const,
+					assessmentAttemptRef: attemptRef,
+					reasonCode: "SECURITY_POST_ASSESSMENT_IN_PROGRESS",
+					retryable: true,
+				};
+			}
+		}
 		const evidenceSubject = await bindEvidenceSubject({
 			taskId: run.taskId,
 			runId: run.id,
@@ -301,82 +296,176 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 				"canonical Evidence Subject Snapshotを作成できません。",
 			);
 		}
-		const capabilities = await securityIntelligenceCapabilities();
-		if (!capabilities.workspaceTargetGrant.available) {
-			throw new AppError(
-				503,
-				"SECURITY_POST_ASSESSMENT_GRANT_UNAVAILABLE",
-				"producer workspace target grantが利用できません。",
-			);
-		}
-		const grant = parseProviderWorkspaceTargetGrantV1(
-			await createSecurityIntelligenceWorkspaceGrant({
-				version: 1,
-				providerProjectRef: preReceipt.providerProjectRef,
-				workspaceSubjectRef: `evidence-subject:${evidenceSubject.id}`,
-				workspacePath: workspace.taskWorktreePathCanonical,
-				expectedGitCommonDirDigest: workspace.gitCommonDirDigest,
-				expectedHeadSha: run.admittedHeadSha,
-			}),
-		);
-		const preview = await previewSecurityIntelligenceWorkspaceGrant(
-			grant.grantRef,
-			input.selection,
-		);
-		if (
-			preview.target.providerWorkspaceStateDigest !==
-				grant.providerWorkspaceStateDigest ||
-			preview.target.baseRevision !== run.admittedHeadSha
-		) {
-			throw new AppError(
-				409,
-				"SECURITY_POST_ASSESSMENT_PREVIEW_CONFLICT",
-				"grantとpreviewのworkspace identityが一致しません。",
-			);
-		}
-		const started = await startSecurityIntelligenceWorkspaceGrantScan({
-			grantRef: grant.grantRef,
-			previewRef: preview.previewRef,
-			selection: input.selection,
-			expectedTargetDigest: preview.target.digest,
-			idempotencyKey: uuidFromDigest(requestDigest),
+		assertPostAssessmentCheckpointIdentity({
+			context: executionContext,
+			evidenceSubjectSnapshotId: evidenceSubject.id,
+			providerProjectRef: preReceipt.providerProjectRef,
 		});
-		if (
-			started.grantRef !== grant.grantRef ||
-			started.target.digest !== preview.target.digest ||
-			started.target.sourceRevision !== run.admittedHeadSha ||
-			started.target.providerWorkspaceStateDigest !==
-				grant.providerWorkspaceStateDigest
-		) {
-			throw new AppError(
-				409,
-				"SECURITY_POST_ASSESSMENT_START_CONFLICT",
-				"grant、preview、scan startのidentityが一致しません。",
+		if (!executionContext) {
+			const capabilities = await securityIntelligenceCapabilities();
+			if (!capabilities.workspaceTargetGrant.available) {
+				throw new AppError(
+					503,
+					"SECURITY_POST_ASSESSMENT_GRANT_UNAVAILABLE",
+					"producer workspace target grantが利用できません。",
+				);
+			}
+			const grant = parseProviderWorkspaceTargetGrantV1(
+				await createSecurityIntelligenceWorkspaceGrant({
+					version: 1,
+					providerProjectRef: preReceipt.providerProjectRef,
+					workspaceSubjectRef: `evidence-subject:${evidenceSubject.id}`,
+					workspacePath: workspace.taskWorktreePathCanonical,
+					expectedGitCommonDirDigest: workspace.gitCommonDirDigest,
+					expectedHeadSha: run.admittedHeadSha,
+				}),
 			);
-		}
-		const savedBinding = await saveProviderScanBinding(
-			deriveProviderScanBindingV2({
-				version: 2,
-				repositoryId: run.repositoryId as string,
-				provider: "vulnworkbench",
+			assertPostAssessmentGrantProject(
+				grant.providerProjectRef,
+				preReceipt.providerProjectRef,
+			);
+			executionContext = createPostAssessmentExecutionContext({
+				version: 1,
+				stage: "grant_created",
+				evidenceSubjectSnapshotId: evidenceSubject.id,
 				identityMappingVersion: capabilities.identityMappingVersion,
 				providerProjectRef: grant.providerProjectRef,
-				scanRunRef: started.scanRunRef,
+				providerWorkspaceTargetGrantRef: grant.grantRef,
+				providerWorkspaceTargetGrantDigest: grant.grantDigest,
+				providerWorkspaceStateDigest: grant.providerWorkspaceStateDigest,
+			});
+			await saveAssessmentAttempt({
+				...attemptIdentity,
+				status: "unavailable",
+				reasonCode: "SECURITY_POST_ASSESSMENT_GRANT_CREATED",
+				retryable: true,
+				executionContextJson: executionContext,
+			});
+		}
+		if (executionContext.stage === "grant_created") {
+			const preview = await previewSecurityIntelligenceWorkspaceGrant(
+				executionContext.providerWorkspaceTargetGrantRef,
+				input.selection,
+			);
+			if (
+				preview.target.providerWorkspaceStateDigest !==
+					executionContext.providerWorkspaceStateDigest ||
+				preview.target.baseRevision !== run.admittedHeadSha
+			) {
+				throw new AppError(
+					409,
+					"SECURITY_POST_ASSESSMENT_PREVIEW_CONFLICT",
+					"grantとpreviewのworkspace identityが一致しません。",
+				);
+			}
+			executionContext = createPostAssessmentExecutionContext({
+				...executionContext,
+				stage: "previewed",
+				previewRef: preview.previewRef,
+				targetDigest: preview.target.digest,
+				sourceRevision: preview.target.baseRevision,
+			});
+			await saveAssessmentAttempt({
+				...attemptIdentity,
+				status: "unavailable",
+				reasonCode: "SECURITY_POST_ASSESSMENT_PREVIEWED",
+				retryable: true,
+				executionContextJson: executionContext,
+			});
+		}
+		if (executionContext.stage === "previewed") {
+			const started = await startSecurityIntelligenceWorkspaceGrantScan({
+				grantRef: executionContext.providerWorkspaceTargetGrantRef,
+				previewRef: executionContext.previewRef,
 				selection: input.selection,
-				requestedTarget: { kind: "working_tree" },
-				resolvedTarget: {
-					kind: "working_tree",
-					sourceRevisionRole: "base_revision",
-					sourceRevision: started.target.sourceRevision,
-					targetDigest: started.target.digest,
-				},
-				createdAt: started.createdAt,
-			}),
-		);
-		scanBindingId = savedBinding.id;
+				expectedTargetDigest: executionContext.targetDigest,
+				idempotencyKey: derivePostAssessmentIdempotencyUuid(requestDigest),
+			});
+			if (
+				started.grantRef !== executionContext.providerWorkspaceTargetGrantRef ||
+				started.target.digest !== executionContext.targetDigest ||
+				started.target.sourceRevision !== executionContext.sourceRevision ||
+				started.target.providerWorkspaceStateDigest !==
+					executionContext.providerWorkspaceStateDigest
+			) {
+				throw new AppError(
+					409,
+					"SECURITY_POST_ASSESSMENT_START_CONFLICT",
+					"grant、preview、scan startのidentityが一致しません。",
+				);
+			}
+			const savedBinding = await saveProviderScanBinding(
+				deriveProviderScanBindingV2({
+					version: 2,
+					repositoryId: run.repositoryId as string,
+					provider: "vulnworkbench",
+					identityMappingVersion: executionContext.identityMappingVersion,
+					providerProjectRef: executionContext.providerProjectRef,
+					scanRunRef: started.scanRunRef,
+					selection: input.selection,
+					requestedTarget: { kind: "working_tree" },
+					resolvedTarget: {
+						kind: "working_tree",
+						sourceRevisionRole: "base_revision",
+						sourceRevision: started.target.sourceRevision,
+						targetDigest: started.target.digest,
+					},
+					createdAt: started.createdAt,
+				}),
+			);
+			scanBindingId = savedBinding.id;
+			executionContext = createPostAssessmentExecutionContext({
+				...executionContext,
+				stage: "started",
+				scanRunRef: started.scanRunRef,
+				scanBindingId,
+			});
+			await saveAssessmentAttempt({
+				...attemptIdentity,
+				status: "unavailable",
+				reasonCode: "SECURITY_POST_ASSESSMENT_SCAN_STARTED",
+				retryable: true,
+				executionContextJson: executionContext,
+				scanBindingId,
+			});
+		}
+		if (executionContext.stage !== "started") {
+			throw new AppError(
+				409,
+				"SECURITY_POST_ASSESSMENT_CHECKPOINT_INCOMPLETE",
+				"post assessment checkpointがscan開始まで進んでいません。",
+			);
+		}
+		const startedContext = executionContext;
+		const [persistedScanBinding] = await db
+			.select()
+			.from(securityScanBindings)
+			.where(eq(securityScanBindings.id, startedContext.scanBindingId))
+			.limit(1);
+		if (
+			!persistedScanBinding ||
+			persistedScanBinding.repositoryId !== run.repositoryId ||
+			persistedScanBinding.provider !== "vulnworkbench" ||
+			persistedScanBinding.identityMappingVersion !==
+				startedContext.identityMappingVersion ||
+			persistedScanBinding.providerProjectRef !==
+				startedContext.providerProjectRef ||
+			persistedScanBinding.scanRunRef !== startedContext.scanRunRef ||
+			persistedScanBinding.resolvedTargetKind !== "working_tree" ||
+			persistedScanBinding.sourceRevisionRole !== "base_revision" ||
+			persistedScanBinding.targetDigest !== startedContext.targetDigest ||
+			persistedScanBinding.sourceRevision !== startedContext.sourceRevision
+		) {
+			throw new AppError(
+				409,
+				"SECURITY_POST_ASSESSMENT_SCAN_CHECKPOINT_CONFLICT",
+				"保存済みscan checkpointとscan bindingが一致しません。",
+			);
+		}
+		scanBindingId = startedContext.scanBindingId;
 		const received = await receiveSecurityIntelligenceAssessment({
 			repositoryId: run.repositoryId as string,
-			scanRunRef: started.scanRunRef,
+			scanRunRef: startedContext.scanRunRef,
 		});
 		const after = await captureWorkspaceSourceSnapshot(
 			workspace.taskWorktreePathCanonical,
@@ -428,9 +517,12 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 			taskDigest: snapshot.digest,
 			implementationRunId: run.id,
 			evidenceSubjectSnapshotId: evidenceSubject.id,
-			providerWorkspaceTargetGrantRef: grant.grantRef,
-			providerWorkspaceTargetGrantDigest: grant.grantDigest,
-			providerWorkspaceStateDigest: grant.providerWorkspaceStateDigest,
+			providerWorkspaceTargetGrantRef:
+				executionContext.providerWorkspaceTargetGrantRef,
+			providerWorkspaceTargetGrantDigest:
+				executionContext.providerWorkspaceTargetGrantDigest,
+			providerWorkspaceStateDigest:
+				executionContext.providerWorkspaceStateDigest,
 			workspaceId: workspace.id,
 			workspaceAllocationVersion: workspace.allocationVersion,
 			admittedHeadSha: run.admittedHeadSha,
@@ -452,6 +544,7 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 			implementationRunId: run.id,
 			status: "completed",
 			retryable: false,
+			executionContextJson: executionContext,
 			scanBindingId,
 			assessmentReceiptId: received.id,
 		});
@@ -462,8 +555,14 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 		};
 	} catch (error) {
 		const appError = error instanceof AppError ? error : null;
-		const retryable = appError?.details?.retryable === true;
-		const reasonCode = appError?.code ?? "SECURITY_POST_ASSESSMENT_UNAVAILABLE";
+		const disposition = classifyPostAssessmentFailure(
+			error,
+			executionContext?.stage,
+		);
+		if (disposition.resetPreStartCheckpoint) {
+			executionContext = undefined;
+			scanBindingId = undefined;
+		}
 		await saveAssessmentAttempt({
 			attemptRef,
 			requestDigest,
@@ -473,21 +572,21 @@ export async function requestPostSecurityAssessment(rawInput: unknown) {
 			taskRevisionSnapshotId: snapshot.id,
 			implementationRunId: run.id,
 			status: "unavailable",
-			reasonCode,
-			retryable,
+			reasonCode: disposition.reasonCode,
+			retryable: disposition.retryable,
+			executionContextJson: disposition.resetPreStartCheckpoint
+				? null
+				: executionContext,
 			scanBindingId,
 		});
-		if (
-			appError &&
-			(appError.statusCode === 409 || appError.statusCode === 422)
-		) {
+		if (disposition.propagate) {
 			throw appError;
 		}
 		return {
 			status: "unavailable" as const,
 			assessmentAttemptRef: attemptRef,
-			reasonCode,
-			retryable,
+			reasonCode: disposition.reasonCode,
+			retryable: disposition.retryable,
 		};
 	}
 }

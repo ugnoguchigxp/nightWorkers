@@ -1,10 +1,11 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import type {
 	AdoptedCompletionCondition,
 	ProviderScanBindingV2,
 	SecurityAssessmentReceiptV1,
 	SecurityContractV1,
 } from "../../../shared/schemas/security-intelligence-runtime.schema";
+import { canonicalStringifySecurityIntelligenceValue } from "../../../shared/security-intelligence-assessment-contract";
 import { type DbTransaction, db } from "../../db/client";
 import {
 	securityAssessmentReceipts,
@@ -17,6 +18,7 @@ import {
 import { SecurityIntelligenceIntegrityError } from "./security-intelligence-integrity";
 
 export {
+	claimPostAssessmentStart,
 	saveAssessmentAttempt,
 	saveSubjectBinding,
 } from "./security-assessment.repository";
@@ -68,20 +70,6 @@ export async function listProviderScanBindings(repositoryId: string) {
 
 export async function saveProviderScanBinding(binding: ProviderScanBindingV2) {
 	return db.transaction(async (tx) => {
-		const [existing] = await tx
-			.select()
-			.from(securityScanBindings)
-			.where(eq(securityScanBindings.scanRunRef, binding.scanRunRef))
-			.limit(1);
-		if (existing) {
-			if (existing.bindingDigest !== binding.bindingDigest) {
-				throw new SecurityIntelligenceIntegrityError(
-					"scan_binding_integrity_conflict",
-					existing.bindingRef,
-				);
-			}
-			return providerBindingRow(existing);
-		}
 		const [row] = await tx
 			.insert(securityScanBindings)
 			.values({
@@ -101,8 +89,37 @@ export async function saveProviderScanBinding(binding: ProviderScanBindingV2) {
 				createdAt: new Date(binding.createdAt),
 				updatedAt: new Date(binding.createdAt),
 			})
+			.onConflictDoNothing()
 			.returning();
-		return providerBindingRow(row);
+		if (row) return providerBindingRow(row);
+		const rows = await tx
+			.select()
+			.from(securityScanBindings)
+			.where(
+				or(
+					eq(securityScanBindings.scanRunRef, binding.scanRunRef),
+					eq(securityScanBindings.bindingRef, binding.bindingRef),
+					eq(securityScanBindings.bindingDigest, binding.bindingDigest),
+				),
+			);
+		const [existing] = rows;
+		const persisted = existing
+			? providerBindingRow(existing).binding
+			: undefined;
+		const { createdAt: _persistedAt, ...persistedIdentity } = persisted ?? {};
+		const { createdAt: _incomingAt, ...incomingIdentity } = binding;
+		if (
+			rows.length !== 1 ||
+			!existing ||
+			canonicalStringifySecurityIntelligenceValue(persistedIdentity) !==
+				canonicalStringifySecurityIntelligenceValue(incomingIdentity)
+		) {
+			throw new SecurityIntelligenceIntegrityError(
+				"scan_binding_integrity_conflict",
+				existing?.bindingRef,
+			);
+		}
+		return providerBindingRow(existing);
 	});
 }
 
@@ -176,28 +193,6 @@ export async function saveAssessmentReceipt(input: {
 				binding?.bindingRef,
 			);
 		}
-		const [existing] = await tx
-			.select()
-			.from(securityAssessmentReceipts)
-			.where(eq(securityAssessmentReceipts.bundleRef, input.receipt.bundleRef))
-			.limit(1);
-		if (existing) {
-			if (
-				existing.payloadDigest !== input.receipt.payloadDigest ||
-				existing.providerBindingProofDigest !==
-					input.receipt.providerBindingProofDigest ||
-				existing.scanBindingId !== input.scanBindingId
-			) {
-				throw new SecurityIntelligenceIntegrityError(
-					"assessment_receipt_integrity_conflict",
-					existing.receiptRef,
-				);
-			}
-			return {
-				...assessmentReceiptRow(existing, binding.bindingRef),
-				replayed: true,
-			};
-		}
 		const [row] = await tx
 			.insert(securityAssessmentReceipts)
 			.values({
@@ -220,10 +215,49 @@ export async function saveAssessmentReceipt(input: {
 				createdAt: new Date(input.receipt.receivedAt),
 				updatedAt: new Date(input.receipt.receivedAt),
 			})
+			.onConflictDoNothing()
 			.returning();
+		if (row) {
+			return {
+				...assessmentReceiptRow(row, binding.bindingRef),
+				replayed: false,
+			};
+		}
+		const rows = await tx
+			.select()
+			.from(securityAssessmentReceipts)
+			.where(
+				or(
+					eq(securityAssessmentReceipts.receiptRef, input.receipt.receiptRef),
+					eq(securityAssessmentReceipts.bundleRef, input.receipt.bundleRef),
+					eq(
+						securityAssessmentReceipts.payloadDigest,
+						input.receipt.payloadDigest,
+					),
+				),
+			);
+		const [existing] = rows;
+		const persisted = existing
+			? assessmentReceiptRow(existing, binding.bindingRef)
+			: undefined;
+		const { receivedAt: _persistedAt, ...persistedIdentity } =
+			persisted?.receipt ?? {};
+		const { receivedAt: _incomingAt, ...incomingIdentity } = input.receipt;
+		if (
+			rows.length !== 1 ||
+			!existing ||
+			existing.scanBindingId !== input.scanBindingId ||
+			canonicalStringifySecurityIntelligenceValue(persistedIdentity) !==
+				canonicalStringifySecurityIntelligenceValue(incomingIdentity)
+		) {
+			throw new SecurityIntelligenceIntegrityError(
+				"assessment_receipt_integrity_conflict",
+				existing?.receiptRef,
+			);
+		}
 		return {
-			...assessmentReceiptRow(row, binding.bindingRef),
-			replayed: false,
+			...assessmentReceiptRow(existing, binding.bindingRef),
+			replayed: true,
 		};
 	});
 }

@@ -49,6 +49,7 @@ function requireHttpConnection() {
 async function readBoundedBody(response: Response, limit: number) {
 	const contentLength = Number(response.headers.get("content-length") ?? "0");
 	if (Number.isFinite(contentLength) && contentLength > limit) {
+		await response.body?.cancel().catch(() => undefined);
 		throw new AppError(
 			502,
 			"SECURITY_INTELLIGENCE_RESPONSE_TOO_LARGE",
