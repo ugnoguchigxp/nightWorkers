@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { importProjectTool } from "../../../services/worker-tools/import-project";
 import {
-	collectTestInventoryTool,
-	getCodingAgentNightworkersMcpInstructions,
-	recordTestConditionMappingTool,
-	resolveTestConditionMappingRevision,
-	todoListTool,
-} from "../modules/codingAgent";
+	listRecentSpecificationsTool,
+	readCurrentSpecificationTool,
+} from "../../../services/worker-tools/read-current-specification";
+import {
+	completionCheckTool,
+	runCheckTool,
+} from "../../../services/worker-tools/run-check";
 import {
 	checkOntologyBoundary,
 	classifyOntologyGoal,
@@ -13,17 +15,16 @@ import {
 	getModuleOntology,
 	getOntologyVerificationPlan,
 	listOntologyModules,
-} from "../modules/ontology";
-import { importProjectTool } from "../services/worker-tools/import-project";
+} from "../../ontology";
+import { getCodingAgentNightworkersMcpInstructions } from "../context";
+import { todoListTool } from "../tools/todo-list";
 import {
-	listRecentSpecificationsTool,
-	readCurrentSpecificationTool,
-} from "../services/worker-tools/read-current-specification";
-import {
-	completionCheckTool,
-	runCheckTool,
-} from "../services/worker-tools/run-check";
+	collectTestInventoryTool,
+	recordTestConditionMappingTool,
+	resolveTestConditionMappingRevision,
+} from "../verification/test-inventory-tools";
 import { nightWorkersCodexToolManifest } from "./nightworkers-tool-manifest";
+import { registerSecurityIntelligenceMcpTools } from "./security-intelligence-mcp-tools";
 
 export type NightWorkersMcpRequestContext = {
 	taskId?: string;
@@ -353,6 +354,8 @@ export function createNightWorkersCodexMcpServer(
 			});
 		},
 	);
+
+	registerSecurityIntelligenceMcpTools(server, context);
 
 	server.registerTool(
 		"import_project",

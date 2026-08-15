@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { CODING_AGENT_SYSTEM_CONTEXT_VERSION } from "../api/modules/codingAgent/context";
 import {
 	handleNightWorkersCodexMcpRequest,
 	requestContextMismatchToMcp,
 	resolveRequestScopedIdentity,
-} from "../api/mcp/nightworkers-codex-mcp-support";
-import { CODING_AGENT_SYSTEM_CONTEXT_VERSION } from "../api/modules/codingAgent/context";
+} from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";
 import {
 	createRepository,
 	createTask,

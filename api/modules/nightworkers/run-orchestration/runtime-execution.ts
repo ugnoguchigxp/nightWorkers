@@ -24,7 +24,6 @@ import {
 import { isInteractiveReviewRuntimeSnapshot } from "../../review/review-runtime-profile";
 import * as repo from "../nightworkers.repository";
 import { createPlanningArtifactMessageIfNeeded } from "../nightworkers.workbench.service";
-import { updateCommitOwnershipEvidence } from "./git-ownership";
 import {
 	completeImplementationQueueEntryForRun,
 	IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
@@ -36,6 +35,7 @@ import { refreshConversationContextForRuntimeLane } from "./runtime-conversation
 import { handleRuntimeExecutionFailure } from "./runtime-execution-failure";
 import { acquireRuntimeExecutionLease } from "./runtime-execution-lease";
 import type { LaunchRuntimeExecutionInput } from "./runtime-execution-types";
+import { recordRuntimeFinishedCheckpoint } from "./runtime-finished-checkpoint";
 import { ACTIVE_RUN_HEARTBEAT_INTERVAL_MS } from "./runtime-heartbeat";
 import { createRuntimeOntologyBoundaryAudit } from "./runtime-ontology-closeout";
 import {
@@ -44,6 +44,10 @@ import {
 	recordPreservedNeedsHumanOutcome,
 	resolveRuntimeOutcomeGuard,
 } from "./runtime-outcome-guard";
+import {
+	enforceSecurityRuntimeFinalization,
+	recheckSecurityRuntimeFinalization,
+} from "./security-runtime-finalization";
 
 import {
 	assertRunStatusTransition,
@@ -187,6 +191,19 @@ export async function launchRuntimeExecution(
 			} finally {
 				clearInterval(heartbeatTimer);
 			}
+			if (!interactiveReview) {
+				const securityCloseout = await enforceSecurityRuntimeFinalization({
+					launch: input,
+					runtime,
+					sink,
+					executionLease,
+					runtimeResult,
+					effectiveRuntimeContextSnapshot,
+					codingAgentSystemContext,
+				});
+				runtimeResult = securityCloseout.runtimeResult;
+				if (securityCloseout.blocked) return;
+			}
 			await repo.refreshImplementationQueueLeaseForRun({
 				runId: run.id,
 				leaseTtlMs: IMPLEMENTATION_QUEUE_LEASE_TTL_MS,
@@ -212,27 +229,12 @@ export async function launchRuntimeExecution(
 				latestRunBeforeFinalize?.contextSnapshot ??
 				effectiveRuntimeContextSnapshot;
 
-			await repo.createRunEvent({
-				version: 1,
+			await recordRuntimeFinishedCheckpoint({
 				runId: run.id,
 				taskId,
-				timestamp: new Date().toISOString(),
-				type: "run.runtime_finished",
-				severity: "checkpoint",
-				actor: "runtime",
-				message: `Runtime execution finished with terminal status: ${runtimeResult.terminalState}.`,
-				data: {
-					terminalState: runtimeResult.terminalState,
-					stoppedBy: runtimeResult.stoppedBy,
-					riskLevel: runtimeResult.riskLevel,
-					contractWarningSummary: runtimeContractWarningSummary,
-					contractWarnings: runtimeContractWarnings,
-				},
-			});
-			await updateCommitOwnershipEvidence({
-				runId: run.id,
-				diffPatch: runtimeResult.diffPatch ?? "",
-				testResults: runtimeResult.testResults,
+				runtimeResult,
+				contractWarningSummary: runtimeContractWarningSummary,
+				contractWarnings: runtimeContractWarnings,
 			});
 			const ontologyBoundaryAudit = await createRuntimeOntologyBoundaryAudit({
 				skip: interactiveReview,
@@ -365,6 +367,16 @@ export async function launchRuntimeExecution(
 			});
 
 			const outcome = outcomeFromRuntimeResult(runtimeResult);
+			const finalSecurityGate = interactiveReview
+				? null
+				: await recheckSecurityRuntimeFinalization({
+						runId: run.id,
+						taskId,
+						proposedJudgment: runtimeResult.securityFinalJudgment,
+					});
+			if (finalSecurityGate?.required && !finalSecurityGate.valid) {
+				return;
+			}
 			const finalTodos = await repo.listTaskRunTodosForRun(run.id);
 			const incompleteTodos = listIncompleteTodos(finalTodos);
 			const todoFinalizationBlocked =
@@ -466,7 +478,10 @@ export async function launchRuntimeExecution(
 						{ lane: runtimeLaneResolution.lane },
 					),
 					finalReport,
-					finalJudgment: null,
+					finalJudgment:
+						finalSecurityGate?.required && finalSecurityGate.valid
+							? finalSecurityGate.judgment
+							: null,
 					summary:
 						outcomeGuard.summary || runtimeResult.summary || outcome.summary,
 				},

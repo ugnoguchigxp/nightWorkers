@@ -68,15 +68,25 @@ vi.mock("../api/modules/agentsShare", () => ({
 	buildCodingAgentRecoveryGuidance: mocks.buildCodingAgentRecoveryGuidance,
 	contentDigest: mocks.contentDigest,
 }));
-vi.mock("../api/modules/codingAgent", () => ({
-	actionExecutionJournal: mocks.actionExecutionJournal,
+vi.mock(
+	"../api/modules/codingAgent/application/action-execution-journal",
+	() => ({
+		actionExecutionJournal: mocks.actionExecutionJournal,
+	}),
+);
+vi.mock("../api/modules/codingAgent/context", () => ({
 	loadCodingAgentContextPacket: mocks.loadCodingAgentContextPacket,
-	projectWorkerResultToMcpStructuredPayload:
-		mocks.projectWorkerResultToMcpStructuredPayload,
-	projectWorkerResultToNativeApiToolResult:
-		mocks.projectWorkerResultToNativeApiToolResult,
 	requiresCurrentTodo: mocks.requiresCurrentTodo,
 }));
+vi.mock(
+	"../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector",
+	() => ({
+		projectWorkerResultToMcpStructuredPayload:
+			mocks.projectWorkerResultToMcpStructuredPayload,
+		projectWorkerResultToNativeApiToolResult:
+			mocks.projectWorkerResultToNativeApiToolResult,
+	}),
+);
 vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
 	getRepository: mocks.getRepository,
 	getTask: mocks.getTask,
@@ -86,7 +96,7 @@ vi.mock("../api/services/workspace/run-workspace-authority.service", () => ({
 	assertRequestedRunWorkspaceRoot: mocks.assertRequestedRunWorkspaceRoot,
 	resolveRunWorkspaceAuthority: mocks.resolveRunWorkspaceAuthority,
 }));
-vi.mock("../api/mcp/nightworkers-codex-mcp", () => ({
+vi.mock("../api/modules/codingAgent/mcp/nightworkers-codex-mcp", () => ({
 	createNightWorkersCodexMcpServer: mocks.createNightWorkersCodexMcpServer,
 }));
 
@@ -105,7 +115,7 @@ import {
 	resolveRequestScopedIdentity,
 	resolveTaskRepository,
 	toolResultToMcp,
-} from "../api/mcp/nightworkers-codex-mcp-support";
+} from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";
 
 function successfulToolResult(toolName = "read_file") {
 	return {

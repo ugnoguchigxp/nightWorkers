@@ -17,7 +17,6 @@ import { config } from "./config";
 import { implementationProviderFixtureRouter } from "./e2eFixtures/implementation-provider-fixture.routes";
 import { logEvent, logHttpEvent } from "./lib/logger";
 import { createOpenApiRouter } from "./lib/openapi";
-import { handleNightWorkersCodexMcpRequest } from "./mcp/nightworkers-codex-mcp";
 import { errorHandler } from "./middleware/error-handler";
 import { loggerMiddleware } from "./middleware/logger";
 import { rateLimiter } from "./middleware/rate-limiter";
@@ -27,6 +26,7 @@ import {
 	handleCodingAgentWebSocketCommand,
 	initializeCodingAgentRunHandlers,
 } from "./modules/codingAgent";
+import { handleNightWorkersCodexMcpRequest } from "./modules/codingAgent/mcp/nightworkers-codex-mcp";
 import { dataModelRouter } from "./modules/dataModel/dataModel.routes";
 import { gitworktreeRouter } from "./modules/gitworktree/gitworktree.routes";
 import { missionPlannerRouter } from "./modules/mission-planner/mission-planner.routes";

@@ -27,8 +27,7 @@
     "api/modules/overview/**",
     "src/modules/overview/**",
     "shared/schemas/overview.schema.ts",
-    "tests/overview-*.test.ts",
-    "spec/archive/unified-overview-dashboard-implementation-plan.md"
+    "tests/overview-*.test.ts"
   ],
   "readMostlyPaths": [
     "api/services/pricing/**",

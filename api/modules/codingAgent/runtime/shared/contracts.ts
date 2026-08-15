@@ -1,3 +1,5 @@
+import type { SecurityFinalJudgmentV1 } from "../../../../../shared/schemas/security-intelligence-runtime.schema";
+
 export type RuntimeLaneKind =
 	| "native-local"
 	| "codex-agent"
@@ -140,4 +142,5 @@ export interface RuntimeLaneResult {
 	testResults?: unknown;
 	usage?: unknown;
 	contractWarnings?: RuntimeContractWarning[];
+	securityFinalJudgment?: SecurityFinalJudgmentV1;
 }

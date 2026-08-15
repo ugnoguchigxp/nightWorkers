@@ -1,22 +1,21 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { ensureNightWorkersSchema } from "../db/bootstrap";
-import {
-	buildCodingAgentRecoveryGuidance,
-	contentDigest,
-} from "../modules/agentsShare";
-import {
-	actionExecutionJournal,
-	loadCodingAgentContextPacket,
-	projectWorkerResultToMcpStructuredPayload,
-	projectWorkerResultToNativeApiToolResult,
-	requiresCurrentTodo,
-} from "../modules/codingAgent";
-import * as repo from "../modules/nightworkers/nightworkers.repository";
-import type { WorkerToolResult } from "../services/worker-tools/types";
+import { ensureNightWorkersSchema } from "../../../db/bootstrap";
+import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import {
 	assertRequestedRunWorkspaceRoot,
 	resolveRunWorkspaceAuthority,
-} from "../services/workspace/run-workspace-authority.service";
+} from "../../../services/workspace/run-workspace-authority.service";
+import {
+	buildCodingAgentRecoveryGuidance,
+	contentDigest,
+} from "../../agentsShare";
+import * as repo from "../../nightworkers/nightworkers.repository";
+import { actionExecutionJournal } from "../application/action-execution-journal";
+import { loadCodingAgentContextPacket, requiresCurrentTodo } from "../context";
+import {
+	projectWorkerResultToMcpStructuredPayload,
+	projectWorkerResultToNativeApiToolResult,
+} from "../runtime/native-api-runner/native-api-tool-result-projector";
 import {
 	createNightWorkersCodexMcpServer,
 	type NightWorkersMcpRequestContext,

@@ -239,7 +239,9 @@ describe("runtime database access safety", () => {
 		expect(runId).toBeTruthy();
 		expect(result.stdout).toContain("isolated runtime reset:");
 		expect(
-			fs.existsSync(path.join(path.resolve(".nightworkers-evaluations"), runId!)),
+			fs.existsSync(
+				path.join(path.resolve(".nightworkers-evaluations"), runId!),
+			),
 		).toBe(false);
 	});
 });

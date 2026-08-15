@@ -8,6 +8,7 @@ import {
 import { taskRunTodos } from "../../../db/schema-task-execution";
 import { verificationEvidenceRuns } from "../../../db/verification-schema";
 import { digestText } from "../../../services/text-digest";
+import { buildSecurityRuntimeContextSnapshot } from "../../securityIntelligence/security-runtime-context.service";
 
 const activeStatuses = [
 	"running",
@@ -119,76 +120,82 @@ export async function readRunOperatorOutcome(input: {
 			summary: taskRuns.summary,
 			finalReport: taskRuns.finalReport,
 			finalJudgment: taskRuns.finalJudgment,
+			taskRevisionSnapshotId: taskRuns.taskRevisionSnapshotId,
 		})
 		.from(taskRuns)
 		.where(and(eq(taskRuns.id, input.runId), eq(taskRuns.taskId, input.taskId)))
 		.limit(1);
 	if (!run) return null;
-	const [todos, commitRecords, verification, artifacts] = await Promise.all([
-		db
-			.select({
-				id: taskRunTodos.id,
-				status: taskRunTodos.status,
-				statusReason: taskRunTodos.statusReason,
-				humanBlocker: taskRunTodos.humanBlockerJson,
-				lastFailure: taskRunTodos.lastFailure,
-				revision: taskRunTodos.revision,
-			})
-			.from(taskRunTodos)
-			.where(eq(taskRunTodos.runId, run.id))
-			.orderBy(desc(taskRunTodos.updatedAt))
-			.limit(1),
-		db
-			.select({
-				ownedCandidatePaths: taskRunCommitRecords.ownedCandidatePathsJson,
-				stageableOwnedPaths: taskRunCommitRecords.stageableOwnedPathsJson,
-				excludedPaths: taskRunCommitRecords.excludedPathsJson,
-				verificationStatus: taskRunCommitRecords.verificationStatus,
-				statusReason: taskRunCommitRecords.statusReason,
-				commitSha: taskRunCommitRecords.commitSha,
-			})
-			.from(taskRunCommitRecords)
-			.where(eq(taskRunCommitRecords.runId, run.id))
-			.limit(1),
-		db
-			.select({
-				id: verificationEvidenceRuns.id,
-				checkKind: verificationEvidenceRuns.checkKind,
-				exitCode: verificationEvidenceRuns.exitCode,
-				runner: verificationEvidenceRuns.runner,
-				summary: verificationEvidenceRuns.summaryJson,
-				testExecutionObserved: verificationEvidenceRuns.testExecutionObserved,
-				sourceMutatedDuringCheck:
-					verificationEvidenceRuns.sourceMutatedDuringCheck,
-				startedAt: verificationEvidenceRuns.startedAt,
-				finishedAt: verificationEvidenceRuns.finishedAt,
-			})
-			.from(verificationEvidenceRuns)
-			.where(
-				and(
-					eq(verificationEvidenceRuns.taskId, input.taskId),
-					eq(verificationEvidenceRuns.runId, run.id),
-				),
-			)
-			.orderBy(desc(verificationEvidenceRuns.finishedAt))
-			.limit(20),
-		db
-			.select({
-				id: activityArtifacts.id,
-				kind: activityArtifacts.kind,
-				path: activityArtifacts.path,
-				createdAt: activityArtifacts.createdAt,
-			})
-			.from(activityArtifacts)
-			.where(
-				and(
-					eq(activityArtifacts.taskId, input.taskId),
-					eq(activityArtifacts.runId, run.id),
-				),
-			)
-			.orderBy(desc(activityArtifacts.createdAt))
-			.limit(50),
-	]);
+	const [todos, commitRecords, verification, artifacts, securityIntelligence] =
+		await Promise.all([
+			db
+				.select({
+					id: taskRunTodos.id,
+					status: taskRunTodos.status,
+					statusReason: taskRunTodos.statusReason,
+					humanBlocker: taskRunTodos.humanBlockerJson,
+					lastFailure: taskRunTodos.lastFailure,
+					revision: taskRunTodos.revision,
+				})
+				.from(taskRunTodos)
+				.where(eq(taskRunTodos.runId, run.id))
+				.orderBy(desc(taskRunTodos.updatedAt))
+				.limit(1),
+			db
+				.select({
+					ownedCandidatePaths: taskRunCommitRecords.ownedCandidatePathsJson,
+					stageableOwnedPaths: taskRunCommitRecords.stageableOwnedPathsJson,
+					excludedPaths: taskRunCommitRecords.excludedPathsJson,
+					verificationStatus: taskRunCommitRecords.verificationStatus,
+					statusReason: taskRunCommitRecords.statusReason,
+					commitSha: taskRunCommitRecords.commitSha,
+				})
+				.from(taskRunCommitRecords)
+				.where(eq(taskRunCommitRecords.runId, run.id))
+				.limit(1),
+			db
+				.select({
+					id: verificationEvidenceRuns.id,
+					checkKind: verificationEvidenceRuns.checkKind,
+					exitCode: verificationEvidenceRuns.exitCode,
+					runner: verificationEvidenceRuns.runner,
+					summary: verificationEvidenceRuns.summaryJson,
+					testExecutionObserved: verificationEvidenceRuns.testExecutionObserved,
+					sourceMutatedDuringCheck:
+						verificationEvidenceRuns.sourceMutatedDuringCheck,
+					startedAt: verificationEvidenceRuns.startedAt,
+					finishedAt: verificationEvidenceRuns.finishedAt,
+				})
+				.from(verificationEvidenceRuns)
+				.where(
+					and(
+						eq(verificationEvidenceRuns.taskId, input.taskId),
+						eq(verificationEvidenceRuns.runId, run.id),
+					),
+				)
+				.orderBy(desc(verificationEvidenceRuns.finishedAt))
+				.limit(20),
+			db
+				.select({
+					id: activityArtifacts.id,
+					kind: activityArtifacts.kind,
+					path: activityArtifacts.path,
+					createdAt: activityArtifacts.createdAt,
+				})
+				.from(activityArtifacts)
+				.where(
+					and(
+						eq(activityArtifacts.taskId, input.taskId),
+						eq(activityArtifacts.runId, run.id),
+					),
+				)
+				.orderBy(desc(activityArtifacts.createdAt))
+				.limit(50),
+			buildSecurityRuntimeContextSnapshot({
+				taskRevisionSnapshotId: run.taskRevisionSnapshotId,
+				runId: run.id,
+			}),
+		]);
 	const todo = todos[0] ?? null;
 	const commit = commitRecords[0] ?? null;
 	return {
@@ -198,6 +205,7 @@ export async function readRunOperatorOutcome(input: {
 		summary: run.summary,
 		finalReport: run.finalReport,
 		finalJudgment: run.finalJudgment,
+		securityIntelligence,
 		blocker:
 			todo &&
 			(todo.status === "needs_human" ||

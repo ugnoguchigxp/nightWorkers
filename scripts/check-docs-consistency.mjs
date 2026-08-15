@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,6 +16,9 @@ const baseDocumentPaths = [
 	"spec/configuration.md",
 	"demo/support-ops-crm/README.md",
 ];
+const activeSpecificationDirectory = "spec/docs";
+const archivedSpecificationDirectory = "spec/.archived";
+const legacyArchiveDirectory = "spec/archive";
 
 const exists = async (filePath) => {
 	try {
@@ -45,6 +48,22 @@ function localLinks(markdown) {
 	return [...markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
 		.map((match) => match[1].trim().replace(/^<|>$/g, ""))
 		.filter((target) => !/^(?:https?:|mailto:|app:)/.test(target));
+}
+
+function completedImplementationStatus(markdown) {
+	const statusHeading = /^## Status\s*$/m.exec(markdown);
+	const statusStart = statusHeading
+		? statusHeading.index + statusHeading[0].length
+		: 0;
+	const remaining = markdown.slice(statusStart);
+	const nextHeading = remaining.search(/^##\s+/m);
+	const status = nextHeading >= 0 ? remaining.slice(0, nextHeading) : remaining;
+	return [
+		/^\s*(?:-\s*)?Status:\s*`?(?:completed|complete|implemented)(?=[\s;`/(),-]|$)/im,
+		/^\s*(?:-\s*)?Plan status:\s*`?(?:completed|complete|implemented)(?=[\s;`/(),-]|$)/im,
+		/^\s*(?:-\s*)?Implementation status:\s*`?(?:completed|complete|implemented)(?=[\s;`/(),-]|$)/im,
+		/^\s*(?:-\s*)?実装状態:\s*`?完了(?=[\s`（(]|$)/m,
+	].some((pattern) => pattern.test(status));
 }
 
 export async function checkDocsConsistency(options = {}) {
@@ -102,6 +121,28 @@ export async function checkDocsConsistency(options = {}) {
 				}
 			}
 		}
+	}
+
+	const activeSpecificationRoot = path.join(root, activeSpecificationDirectory);
+	if (await exists(activeSpecificationRoot)) {
+		const entries = await readdir(activeSpecificationRoot, { withFileTypes: true });
+		for (const entry of entries.sort((left, right) =>
+			left.name.localeCompare(right.name),
+		)) {
+			if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+			const relativePath = path.join(activeSpecificationDirectory, entry.name);
+			if (completedImplementationStatus(await read(relativePath))) {
+				errors.push(
+					`${relativePath}: completed implementation document must move to ${archivedSpecificationDirectory}/`,
+				);
+			}
+		}
+	}
+
+	if (await exists(path.join(root, legacyArchiveDirectory))) {
+		errors.push(
+			`${legacyArchiveDirectory}/: legacy archive directory must be renamed to ${archivedSpecificationDirectory}/`,
+		);
 	}
 
 	return errors;

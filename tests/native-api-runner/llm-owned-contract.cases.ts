@@ -1,5 +1,16 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { verifyRenderedHash } from "s11tnext";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import { db } from "../../api/db/client";
 import { verificationDocuments } from "../../api/db/verification-schema";
 import {
@@ -33,21 +44,105 @@ import {
 	carryRuntimePauseSnapshot,
 	readRuntimePauseSnapshot,
 } from "../../api/modules/nightworkers/run-orchestration/runtime-outcome-guard";
-import { registerFixtureProviderToolTurns } from "../../api/services/structured-llm/fixture-tool-provider";
+import {
+	callFixtureProviderToolTurn,
+	type FixtureTurn,
+	registerFixtureProviderToolTurns,
+} from "../../api/services/structured-llm/fixture-tool-provider";
 import { StructuredProviderError } from "../../api/services/structured-llm/provider-failure";
+import { bindSystemContextTextCatalog } from "../../api/systemContexts/catalog";
 
 const repositoryIds: string[] = [];
+let nativeSettingsDirectory = "";
+const testSystemContextP = bindSystemContextTextCatalog({
+	version: 1,
+	instructionLocale: "ja-JP",
+	fallbackLocales: [],
+}).p;
+
+beforeAll(() => {
+	nativeSettingsDirectory = fs.mkdtempSync(
+		path.join(os.tmpdir(), "nightworkers-native-settings-"),
+	);
+	const settingsPath = path.join(nativeSettingsDirectory, "llm-settings.json");
+	fs.writeFileSync(
+		settingsPath,
+		JSON.stringify({
+			settingsRevision: "native-test-settings-v1",
+			providerEndpoints: [
+				{
+					id: "native-test-endpoint",
+					name: "Native Test Endpoint",
+					kind: "openai-compatible",
+					enabled: true,
+					baseUrl: "http://127.0.0.1:1/v1",
+					models: ["native-test-model"],
+				},
+			],
+			roleRoutes: [
+				{
+					role: "implementation",
+					primary: {
+						providerEndpointId: "native-test-endpoint",
+						model: "native-test-model",
+					},
+					fallbacks: [],
+				},
+			],
+		}),
+	);
+	process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
+});
+
+afterAll(() => {
+	delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+	if (nativeSettingsDirectory) {
+		fs.rmSync(nativeSettingsDirectory, { recursive: true, force: true });
+	}
+});
 
 afterEach(async () => {
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
 	delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 });
 
+function registerNativeFixtureTurns(taskId: string, turns: FixtureTurn[]) {
+	const previous = process.env.NIGHTWORKERS_E2E_ISOLATED;
+	process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+	try {
+		registerFixtureProviderToolTurns(taskId, turns, "default");
+		registerFixtureProviderToolTurns(taskId, turns, "implementation");
+	} finally {
+		if (previous === undefined) delete process.env.NIGHTWORKERS_E2E_ISOLATED;
+		else process.env.NIGHTWORKERS_E2E_ISOLATED = previous;
+	}
+}
+
+const nativeFixtureProviderTurn: NativeApiToolTurnProvider = async (input) => {
+	process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+	try {
+		return callFixtureProviderToolTurn({
+			taskId: input.options.taskId ?? "",
+			systemPrompt: input.systemPrompt,
+			userPrompt: input.userPrompt,
+			messages: input.messages,
+			setProviderDebug: input.setProviderDebug,
+			scope:
+				input.options.role === "implementation" ? "implementation" : "default",
+		});
+	} finally {
+		delete process.env.NIGHTWORKERS_E2E_ISOLATED;
+	}
+};
+
 function context(overrides: Partial<AgentRunContext> = {}): AgentRunContext {
-	const systemContext = buildCodingAgentSystemContext({
-		taskGoal: "単一Coding Agentとして実装する。",
-		registeredRepositoryRoot: "/tmp/native-llm-owned",
-	});
+	const systemContext = buildCodingAgentSystemContext(
+		{
+			taskGoal: "単一Coding Agentとして実装する。",
+			registeredRepositoryRoot: "/tmp/native-llm-owned",
+		},
+		testSystemContextP,
+	);
 	return {
 		runId: "run-native-contract",
 		taskId: "task-native-contract",
@@ -59,6 +154,11 @@ function context(overrides: Partial<AgentRunContext> = {}): AgentRunContext {
 		contextSnapshot: {
 			compiledPrompt: systemContext.taskGoal,
 			source: "task_prompt",
+			systemContextBinding: {
+				version: 1,
+				instructionLocale: "ja-JP",
+				fallbackLocales: [],
+			},
 		},
 		codingAgentSystemContext: systemContext,
 		...overrides,
@@ -430,9 +530,8 @@ describe("Native API LLM-owned Todo contract", () => {
 	});
 
 	it("runs the real Native loop and stops when the LLM pauses its Todo", async () => {
-		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-pause");
-		registerFixtureProviderToolTurns(task.id, [
+		registerNativeFixtureTurns(task.id, [
 			{
 				content: "計画を作成します。",
 				toolCalls: [
@@ -469,6 +568,7 @@ describe("Native API LLM-owned Todo contract", () => {
 
 		const emit = vi.fn(async () => {});
 		const result = await new NativeApiRunner({
+			providerTurn: nativeFixtureProviderTurn,
 			usageRecorder: async () => {},
 		}).run(
 			context({
@@ -478,7 +578,6 @@ describe("Native API LLM-owned Todo contract", () => {
 			}),
 			{ emit },
 		);
-
 		expect(result).toMatchObject({
 			terminalState: "needs_human",
 			stoppedBy: "decision",
@@ -491,9 +590,8 @@ describe("Native API LLM-owned Todo contract", () => {
 	});
 
 	it("stops on an empty assistant turn without retrying it as a new turn", async () => {
-		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-empty");
-		registerFixtureProviderToolTurns(task.id, [
+		registerNativeFixtureTurns(task.id, [
 			{
 				content: "",
 				toolCalls: [
@@ -523,6 +621,7 @@ describe("Native API LLM-owned Todo contract", () => {
 
 		const emit = vi.fn(async () => {});
 		const result = await new NativeApiRunner({
+			providerTurn: nativeFixtureProviderTurn,
 			usageRecorder: async () => {},
 		}).run(
 			context({
@@ -561,7 +660,6 @@ describe("Native API LLM-owned Todo contract", () => {
 	});
 
 	it("returns the same verification readiness differences in the Native loop", async () => {
-		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun(
 			"native-readiness-reconciliation",
 		);
@@ -601,6 +699,7 @@ describe("Native API LLM-owned Todo contract", () => {
 			{ content: "実装と検証が完了しました。", toolCalls: [] },
 		];
 		const providerTurn: NativeApiToolTurnProvider = async (input) => {
+			delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 			inputs.push(input);
 			const turn = turns.shift();
 			if (!turn) {
@@ -771,10 +870,10 @@ describe("Native API LLM-owned Todo contract", () => {
 	});
 
 	it("preserves the latest LLM body when a later provider call fails", async () => {
-		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun("native-body");
 		let callCount = 0;
 		const providerTurn: NativeApiToolTurnProvider = async () => {
+			delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 			callCount += 1;
 			if (callCount > 1) {
 				throw new StructuredProviderError({
@@ -829,13 +928,13 @@ describe("Native API LLM-owned Todo contract", () => {
 	});
 
 	it("retries a retryable failure on the same route before failing over", async () => {
-		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
 		const { repository, task, run } = await createRuntimeRun(
 			"native-same-route-retry",
 		);
 		let callCount = 0;
 		const emit = vi.fn(async () => {});
 		const providerTurn: NativeApiToolTurnProvider = async () => {
+			delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 			callCount += 1;
 			if (callCount === 1) {
 				throw new StructuredProviderError({

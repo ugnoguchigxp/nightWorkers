@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { nightWorkersTodoListInputSchema } from "../api/mcp/nightworkers-tool-schemas";
 import { requiresCurrentTodo } from "../api/modules/codingAgent/context/context-packet";
 import { renderCodingAgentTodoPlanSummary } from "../api/modules/codingAgent/context/todo-prompt-context";
+import { nightWorkersTodoListInputSchema } from "../api/modules/codingAgent/mcp/nightworkers-tool-schemas";
 import {
 	todoCommandJsonSchema,
 	todoToolInputJsonSchema,

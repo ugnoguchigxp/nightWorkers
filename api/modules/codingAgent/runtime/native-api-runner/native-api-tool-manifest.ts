@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
 	COMPLETION_CHECK_ASSURANCE_DESCRIPTION_JA,
 	codingAgentCollectTestInventoryJsonSchema,
@@ -6,6 +7,14 @@ import {
 	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
 	TEST_INVENTORY_TOOL_DESCRIPTION_JA,
 } from "../../../../../shared/modules/codingAgent";
+import {
+	requestPostSecurityAssessmentCommandV1Schema,
+	submitSecurityFinalJudgmentToolInputSchema,
+	writeCompletionConditionCommandSchema,
+	writeSecurityContractCommandSchema,
+} from "../../../../../shared/schemas/security-intelligence-runtime.schema";
+import { proposeSecurityKnowledgeCandidateBatchCommandSchema } from "../../../../../shared/schemas/security-knowledge-candidate-batch.schema";
+import { proposeSecurityKnowledgeFeedbackBatchCommandSchema } from "../../../../../shared/schemas/security-knowledge-feedback-batch.schema";
 import { testConditionMappingJsonSchema } from "../../../../../shared/schemas/verification-checklist.schema";
 import type { ProviderToolDefinition } from "../../../../services/structured-llm/tool-calls";
 import type { WorkerToolName } from "../../../../services/tool-policy/types";
@@ -46,6 +55,12 @@ export type NativeApiToolProfileInput = {
 	projectExplorationCatalogEnabled?: boolean;
 	flatToolArguments?: boolean;
 };
+
+function strictJsonSchema(schema: z.ZodType) {
+	const converted = z.toJSONSchema(schema) as Record<string, unknown>;
+	const { $schema: _schema, ...result } = converted;
+	return result;
+}
 
 export const workerToolDefinitions: NativeApiToolRegistration[] = [
 	{
@@ -256,6 +271,78 @@ export const workerToolDefinitions: NativeApiToolRegistration[] = [
 			name: "record_test_condition_mapping",
 			description: TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
 			inputSchema: testConditionMappingJsonSchema,
+		},
+	},
+	{
+		name: "write_security_contract",
+		kind: "worker",
+		workerToolName: "write_security_contract",
+		definition: {
+			name: "write_security_contract",
+			description:
+				"current RunのTask Revision Snapshotへ、pre assessmentにbindingしたSecurity Contractをhead CAS付きで保存します。",
+			inputSchema: strictJsonSchema(writeSecurityContractCommandSchema),
+		},
+	},
+	{
+		name: "write_security_completion_condition",
+		kind: "worker",
+		workerToolName: "write_security_completion_condition",
+		definition: {
+			name: "write_security_completion_condition",
+			description:
+				"明示的なsource revisionとSecurity Contract refを持つcompletion conditionをhead CAS付きで保存します。",
+			inputSchema: strictJsonSchema(writeCompletionConditionCommandSchema),
+		},
+	},
+	{
+		name: "request_post_security_assessment",
+		kind: "worker",
+		workerToolName: "request_post_security_assessment",
+		definition: {
+			name: "request_post_security_assessment",
+			description:
+				"current Runのauthoritative workspaceをserver側で解決し、明示的なpost Security Assessmentを要求します。workspace pathは入力しません。",
+			inputSchema: strictJsonSchema(
+				requestPostSecurityAssessmentCommandV1Schema,
+			),
+		},
+	},
+	{
+		name: "submit_security_final_judgment",
+		kind: "worker",
+		workerToolName: "submit_security_final_judgment",
+		definition: {
+			name: "submit_security_final_judgment",
+			description:
+				"current Security Contractと採用済みconditionに対するstructured Final Judgmentを提出します。本文からhostが結果を補完することはありません。",
+			inputSchema: strictJsonSchema(submitSecurityFinalJudgmentToolInputSchema),
+		},
+	},
+	{
+		name: "propose_security_knowledge_candidate_batch",
+		kind: "worker",
+		workerToolName: "propose_security_knowledge_candidate_batch",
+		definition: {
+			name: "propose_security_knowledge_candidate_batch",
+			description:
+				"保存済みFinal Judgmentとassessment evidenceにbindingしたKnowledge candidateを提案します。digestとidempotencyはserverが導出します。",
+			inputSchema: strictJsonSchema(
+				proposeSecurityKnowledgeCandidateBatchCommandSchema,
+			),
+		},
+	},
+	{
+		name: "propose_security_knowledge_feedback_batch",
+		kind: "worker",
+		workerToolName: "propose_security_knowledge_feedback_batch",
+		definition: {
+			name: "propose_security_knowledge_feedback_batch",
+			description:
+				"retrieval、実利用、検証結果を別eventとしてappend-only feedback outboxへ提案します。",
+			inputSchema: strictJsonSchema(
+				proposeSecurityKnowledgeFeedbackBatchCommandSchema,
+			),
 		},
 	},
 	{

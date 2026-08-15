@@ -21,6 +21,7 @@ import {
 import { flushActivityEventQueue } from "./modules/nightworkers/nightworkers.activity.repository";
 import { initializeTaskUserIntakeHandler } from "./modules/nightworkers/nightworkers.user-intake.handler";
 import { reconcileImplementationQueue } from "./modules/queue/queue-management.service";
+import { dispatchSecurityKnowledgeOutbox } from "./modules/securityIntelligence/security-knowledge-outbox.service";
 import { createRuntimeDatabaseBackup } from "./runtime/bootstrap";
 import { isLoopbackHost } from "./security/listen-security";
 import { shutdownIsolatedTaskWorkers } from "./services/execution/worker-process-manager";
@@ -57,6 +58,7 @@ const serverCloseCallbackGraceMs = 250;
 const webSocketServerCloseGraceMs = 250;
 const fxRefreshIntervalMs = 60 * 60 * 1000;
 const implementationQueueReconcileIntervalMs = 60 * 1000;
+const securityKnowledgeOutboxIntervalMs = 30 * 1000;
 
 initializeCodingAgentRunHandlers();
 initializeTaskUserIntakeHandler();
@@ -259,6 +261,33 @@ export async function createNightWorkersServer(
 		implementationQueueReconcileIntervalMs,
 	);
 	implementationQueueReconcileTimer.unref?.();
+	let securityKnowledgeDispatchInFlight: Promise<unknown> | null = null;
+	const dispatchSecurityKnowledge = () => {
+		if (securityKnowledgeDispatchInFlight)
+			return securityKnowledgeDispatchInFlight;
+		securityKnowledgeDispatchInFlight = dispatchSecurityKnowledgeOutbox()
+			.catch((error) => {
+				logEvent({
+					channel: "api",
+					level: "warn",
+					message: "Security Knowledge outbox dispatch failed",
+					meta: {
+						errorMessage:
+							error instanceof Error ? error.message : String(error),
+					},
+				});
+			})
+			.finally(() => {
+				securityKnowledgeDispatchInFlight = null;
+			});
+		return securityKnowledgeDispatchInFlight;
+	};
+	void dispatchSecurityKnowledge();
+	const securityKnowledgeOutboxTimer = setInterval(
+		() => void dispatchSecurityKnowledge(),
+		securityKnowledgeOutboxIntervalMs,
+	);
+	securityKnowledgeOutboxTimer.unref?.();
 
 	const server = serve({
 		fetch: app.fetch,
@@ -349,6 +378,7 @@ export async function createNightWorkersServer(
 		unsubscribeRetentionReload();
 		clearInterval(fxRefreshTimer);
 		clearInterval(implementationQueueReconcileTimer);
+		clearInterval(securityKnowledgeOutboxTimer);
 		logEvent({
 			channel: "api",
 			level: "info",

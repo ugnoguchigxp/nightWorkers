@@ -658,8 +658,9 @@ runtime truth and update the document.
 - Estimated cost is incomplete when pricing, usage, or FX data is unavailable.
 - A successful final report, successful model response, or existing Queue row
   alone does not prove completion.
-- Documentation plans in `spec/archive/` are historical evidence, not current
-  user contracts.
+- Documentation plans in `spec/.archived/` are historical evidence, not current
+  user contracts. The hidden directory is excluded from ordinary LLM file
+  discovery and is read only for an explicitly requested historical review.
 
 ## Documentation
 
@@ -678,7 +679,7 @@ runtime truth and update the document.
 
 Active specifications live under `spec/docs/` or directly under `spec/` when
 they are still being worked. Completed implementation plans move to
-`spec/archive/`. Neither location automatically makes a document a current
+`spec/.archived/`. Neither location automatically makes a document a current
 product guarantee.
 
 ## Source-of-Truth Map

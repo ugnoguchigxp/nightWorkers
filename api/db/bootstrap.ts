@@ -14,6 +14,7 @@ import {
 import { ensureProjectEvaluationTables } from "./project-evaluation-schema-bootstrap";
 import { ensureReviewModeTables } from "./review-mode-schema-bootstrap";
 import { ensureColumn } from "./schema-bootstrap-utils";
+import { ensureSecurityIntelligenceTables } from "./security-intelligence-schema-bootstrap";
 import { ensureTaskArchiveTables } from "./task-archive-schema-bootstrap";
 import { ensureTaskGenerationTables } from "./task-generation-schema-bootstrap";
 import { ensureTechStackTables } from "./tech-stack-schema-bootstrap";
@@ -278,6 +279,7 @@ export async function ensureNightWorkersSchema(
 	await ensureEvidenceLedgerTables();
 	await ensureFinalResponseEvidenceTables();
 	await ensureCloseoutAdmissionTables();
+	await ensureSecurityIntelligenceTables();
 	const queueColumns = await client.execute(
 		"PRAGMA table_info(implementation_queue_entries)",
 	);

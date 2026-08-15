@@ -121,6 +121,13 @@
           "placement": "inline",
           "encoding": "raw"
         },
+        "securityContractContext": {
+          "required": false,
+          "type": "json",
+          "trust": "trusted",
+          "placement": "delimited-context",
+          "encoding": "json-value"
+        },
         "todoPlanSummary": {
           "required": true,
           "type": "string",
@@ -133,7 +140,7 @@
         "ja-JP": {
           "sections": [
             {
-              "id": "context.text",
+              "id": "runtime-instructions",
               "kind": "instruction",
               "severity": "must",
               "optimizable": false,
@@ -160,13 +167,30 @@
                   "name": "currentTodoSystemContext"
                 }
               ]
+            },
+            {
+              "id": "security-contract-context",
+              "kind": "runtime-fact",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": true,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "[Security Contract Context]\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "securityContractContext"
+                }
+              ]
             }
           ],
-          "artifactHash": "sha256:270443925e59b425f73465772082e8b3a354ff6818f49052eaae5b802cda5e82"
+          "artifactHash": "sha256:c1d41f84fdfc6d1e7c1cbe4d74640c77f6f6d87c4ab0896be979dd24362ec7f9"
         }
       },
-      "definitionHash": "sha256:3dd704d0328db8e00ae21501c88149fa0f1a3fca233e5c25440f5457a63c83f1",
-      "releaseDigest": "sha256:811495d3b9cfe248899cbae636332970cc77bf5ebe79d970b6dc37ce6661f316"
+      "definitionHash": "sha256:76f3ebe6322c1fad478fe30059b49636dc4586f94f5e8cecc7679973e1675219",
+      "releaseDigest": "sha256:1a87c96ae7710278352bcf41dc8ce50fb576db19989e351412ccc61a8cbdeb02"
     },
     "codingAgent.completion-report-format": {
       "key": "codingAgent.completion-report-format",
@@ -573,6 +597,13 @@
           "placement": "inline",
           "encoding": "raw"
         },
+        "securityContractContext": {
+          "required": false,
+          "type": "json",
+          "trust": "trusted",
+          "placement": "delimited-context",
+          "encoding": "json-value"
+        },
         "todoPlanSummary": {
           "required": true,
           "type": "string",
@@ -592,7 +623,7 @@
         "ja-JP": {
           "sections": [
             {
-              "id": "context.text",
+              "id": "runtime-instructions",
               "kind": "instruction",
               "severity": "must",
               "optimizable": false,
@@ -635,13 +666,30 @@
                   "value": "\n採用済みimplementationPlanがあるRunでは既存Todoを使い、同じ計画を再生成しないでください。\n直接Runでworkspaceを変更する場合は、変更前にtitleとsystemContextだけのplanを作成してください。\ncurrent TodoのsystemContextを局所指示として読み、完了時はcomplete_current、ユーザー判断が必要な場合はblock_current、残工程の修正にはreplace_remainingを使ってください。\ntool結果を読んで次の行動を選び、hostの観測からTodoが暗黙更新されると仮定しないでください。\nTestや自己確認の要否はTaskとTodo Contextから判断し、専用modeを前提にしないでください。\ntool callなしの本文は最終回答候補です。current Todoを完了した場合はcomplete_current、ユーザー判断待ちの場合はblock_currentを呼んでから回答してください。"
                 }
               ]
+            },
+            {
+              "id": "security-contract-context",
+              "kind": "runtime-fact",
+              "severity": "must",
+              "optimizable": false,
+              "omitIfEmpty": true,
+              "segments": [
+                {
+                  "type": "literal",
+                  "value": "[Security Contract Context]\n"
+                },
+                {
+                  "type": "variable",
+                  "name": "securityContractContext"
+                }
+              ]
             }
           ],
-          "artifactHash": "sha256:da78dbfc235a14e425f6f3a5c10c9d8700972c0b915146ba0983f816d71b848f"
+          "artifactHash": "sha256:1d3f97dc16cfee40a449c381d72b7f15d99ffdb18556b40e62eeb03bc6b903b6"
         }
       },
-      "definitionHash": "sha256:86be5e5110774dd4adbdb25a6f39f9587f4ee2f756969cad82f218694e4070bb",
-      "releaseDigest": "sha256:e46e0820a3762e2dfaaaa691db2654ae93331963ed5b769a1463852b776a2c99"
+      "definitionHash": "sha256:e0babfb7f8bdd8ed990d5bc96eac5ac1b4aae1d38ed7b5c84cc402b6a079aa86",
+      "releaseDigest": "sha256:2871094f6a14897cddb5da4d5f64c5a5ea9032fd548925c39bb6fcff33435e56"
     },
     "codingAgent.nightworkers-mcp": {
       "key": "codingAgent.nightworkers-mcp",
@@ -4249,5 +4297,5 @@
       "releaseDigest": "sha256:b01ff81760d80c68aebb5e1f63d1c9f45c4d2c159ddcb3d066864781088469a7"
     }
   },
-  "catalogDigest": "sha256:840dfdd8e6a5f84901f63a1d904af668eaf8bfe7ba138d8da11c227c62a31610"
+  "catalogDigest": "sha256:4d3fc4ebbb9ece915e3be2c5a48af1259882bbc9700e43644bad4f08c0506732"
 }

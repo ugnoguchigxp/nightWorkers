@@ -4,7 +4,7 @@ import {
 	RUN_CHECK_MANAGED_EVIDENCE_DESCRIPTION_JA,
 	TEST_EVIDENCE_MAPPING_TOOL_DESCRIPTION_JA,
 	TEST_INVENTORY_TOOL_DESCRIPTION_JA,
-} from "../../shared/modules/codingAgent";
+} from "../../../../shared/modules/codingAgent";
 
 export * from "./nightworkers-tool-schemas";
 
@@ -19,10 +19,16 @@ import {
 	nightWorkersImportProjectInputSchema,
 	nightWorkersListOntologyModulesInputSchema,
 	nightWorkersListRecentSpecificationsInputSchema,
+	nightWorkersProposeSecurityKnowledgeCandidateBatchInputSchema,
+	nightWorkersProposeSecurityKnowledgeFeedbackBatchInputSchema,
 	nightWorkersReadCurrentSpecificationInputSchema,
 	nightWorkersRecordTestConditionMappingInputSchema,
+	nightWorkersRequestPostSecurityAssessmentInputSchema,
 	nightWorkersRunCheckInputSchema,
+	nightWorkersSubmitSecurityFinalJudgmentInputSchema,
 	nightWorkersTodoListInputSchema,
+	nightWorkersWriteSecurityCompletionConditionInputSchema,
+	nightWorkersWriteSecurityContractInputSchema,
 } from "./nightworkers-tool-schemas";
 
 export const nightWorkersCodexToolManifest = {
@@ -107,6 +113,84 @@ export const nightWorkersCodexToolManifest = {
 		},
 		approvalMode: "approve",
 		inputSchema: nightWorkersRecordTestConditionMappingInputSchema,
+	},
+	write_security_contract: {
+		title: "Write Security Contract",
+		description:
+			"current Task Revision Snapshotへpre assessmentにbindingしたSecurity Contractをhead CAS付きで保存します。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersWriteSecurityContractInputSchema,
+	},
+	write_security_completion_condition: {
+		title: "Write Security Completion Condition",
+		description:
+			"明示source revisionを持つSecurity completion conditionをhead CAS付きで保存します。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersWriteSecurityCompletionConditionInputSchema,
+	},
+	request_post_security_assessment: {
+		title: "Request Post Security Assessment",
+		description:
+			"current Runのauthoritative workspaceをserver側で解決してpost Security Assessmentを要求します。pathは受け取りません。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: true,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersRequestPostSecurityAssessmentInputSchema,
+	},
+	submit_security_final_judgment: {
+		title: "Submit Security Final Judgment",
+		description:
+			"current Security Contractとcondition setに対するstrict structured judgmentを保存します。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: false,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersSubmitSecurityFinalJudgmentInputSchema,
+	},
+	propose_security_knowledge_candidate_batch: {
+		title: "Propose Security Knowledge Candidates",
+		description:
+			"Final Judgmentとassessment evidenceにbindingしたcandidate proposalをdurable outboxへ保存します。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: true,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersProposeSecurityKnowledgeCandidateBatchInputSchema,
+	},
+	propose_security_knowledge_feedback_batch: {
+		title: "Propose Security Knowledge Feedback",
+		description:
+			"retrieval、実利用、検証結果を区別したappend-only feedbackをdurable outboxへ保存します。",
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: true,
+		},
+		approvalMode: "approve",
+		inputSchema: nightWorkersProposeSecurityKnowledgeFeedbackBatchInputSchema,
 	},
 	import_project: {
 		title: "Import Project",

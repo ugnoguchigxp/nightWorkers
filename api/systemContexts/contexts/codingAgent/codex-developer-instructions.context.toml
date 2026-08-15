@@ -1,6 +1,20 @@
+[[sections]]
+id = "runtime-instructions"
+kind = "instruction"
+severity = "must"
+optimizable = false
 text = '''[[runtimeSystemContext]]
 [[todoPlanSummary]]
 [[currentTodoSystemContext]]'''
+
+[[sections]]
+id = "security-contract-context"
+kind = "runtime-fact"
+severity = "must"
+optimizable = false
+omit_if_empty = true
+text = '''[Security Contract Context]
+[[securityContractContext]]'''
 
 [variables.currentTodoSystemContext]
 profile = "trusted.inline"
@@ -10,3 +24,7 @@ profile = "trusted.inline"
 
 [variables.todoPlanSummary]
 profile = "trusted.inline"
+
+[variables.securityContractContext]
+profile = "trusted.json"
+required = false

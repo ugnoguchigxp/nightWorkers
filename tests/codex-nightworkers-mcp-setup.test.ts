@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { nightWorkersCodexToolManifest } from "../api/mcp/nightworkers-tool-manifest";
+import { nightWorkersCodexToolManifest } from "../api/modules/codingAgent/mcp/nightworkers-tool-manifest";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,6 +25,12 @@ describe("Codex NightWorkers MCP setup script", () => {
 			"completion_check",
 			"collect_test_inventory",
 			"record_test_condition_mapping",
+			"write_security_contract",
+			"write_security_completion_condition",
+			"request_post_security_assessment",
+			"submit_security_final_judgment",
+			"propose_security_knowledge_candidate_batch",
+			"propose_security_knowledge_feedback_batch",
 			"import_project",
 			"list_modules",
 			"get_module_ontology",

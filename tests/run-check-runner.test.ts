@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { nightWorkersRunCheckInputSchema } from "../api/mcp/nightworkers-tool-schemas";
+import { nightWorkersRunCheckInputSchema } from "../api/modules/codingAgent/mcp/nightworkers-tool-schemas";
 import { workerToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import {
 	addStructuredReporter,

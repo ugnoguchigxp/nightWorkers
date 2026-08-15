@@ -12,3 +12,4 @@ export * from "./schema-llm-usage";
 export * from "./schema-runtime-session-state";
 export * from "./schema-task-execution";
 export * from "./schema-task-runs";
+export * from "./security-intelligence-schema";

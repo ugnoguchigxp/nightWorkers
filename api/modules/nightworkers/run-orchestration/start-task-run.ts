@@ -13,6 +13,7 @@ import {
 	ontologySnapshotEventSeverity,
 } from "../../ontology";
 import { buildInteractiveReviewPromptSnapshot } from "../../review/review-runtime-profile";
+import { buildSecurityRuntimeContextSnapshot } from "../../securityIntelligence/security-runtime-context.service";
 import * as repo from "../nightworkers.repository";
 import { activateWorkspace, readGitBaseline } from "./git-ownership";
 import {
@@ -378,6 +379,13 @@ export async function prepareTaskRunInProcess(
 					workspaceRuntimeEnvironment,
 				),
 			});
+	if (!interactiveReview) {
+		contextSnapshot.securityContractContext =
+			await buildSecurityRuntimeContextSnapshot({
+				taskRevisionSnapshotId: run.taskRevisionSnapshotId,
+				runId: run.id,
+			});
+	}
 	const rawLatestUserMessage = interactiveReview
 		? compiledPromptText
 		: options.latestUserMessageOverride?.trim() ||

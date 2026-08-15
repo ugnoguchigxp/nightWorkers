@@ -356,4 +356,28 @@ describe("P3 deterministic demo and docs", () => {
 	it("keeps documented commands, links, and archived P3 plans consistent", async () => {
 		expect(await checkDocsConsistency()).toEqual([]);
 	});
+
+	it("keeps completed implementation documents out of active spec discovery", async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), "nightworkers-docs-"));
+		temporaryPaths.push(root);
+		await mkdir(path.join(root, "spec/docs"), { recursive: true });
+		await writeFile(path.join(root, "package.json"), '{"version":"1.2.3"}\n');
+		await writeFile(
+			path.join(root, "spec/docs/completed-plan.md"),
+			"# Completed plan\n\n## Status\n\n- Plan status: `implemented`\n",
+		);
+		await writeFile(
+			path.join(root, "spec/docs/active-plan.md"),
+			"# Active plan\n\n## Status\n\n- Plan status: `in_progress`\n",
+		);
+		await writeFile(
+			path.join(root, "spec/docs/completed-inline-plan.md"),
+			"# Completed inline plan\n\nStatus: implemented\n\n## Scope\n",
+		);
+
+		expect(await checkDocsConsistency({ root, documentPaths: [] })).toEqual([
+			"spec/docs/completed-inline-plan.md: completed implementation document must move to spec/.archived/",
+			"spec/docs/completed-plan.md: completed implementation document must move to spec/.archived/",
+		]);
+	});
 });

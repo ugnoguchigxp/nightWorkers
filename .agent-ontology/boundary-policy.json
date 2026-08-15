@@ -41,6 +41,14 @@
 		{
 			"source": "api/db/client.ts",
 			"specifier": "../modules/codingAgent/persistence/runtime-execution-schema"
+		},
+		{
+			"source": "api/app.ts",
+			"specifier": "./modules/codingAgent/mcp/nightworkers-codex-mcp"
+		},
+		{
+			"source": "api/services/supervisor/prompt-tool-registry.ts",
+			"specifier": "../../modules/codingAgent/mcp/nightworkers-tool-manifest"
 		}
 	],
 	"roleOwnedPathRules": [
@@ -72,7 +80,10 @@
 			]
 		}
 	],
-	"forbiddenProductionPathPrefixes": ["api/services/agent-runtime"],
+	"forbiddenProductionPathPrefixes": [
+		"api/services/agent-runtime",
+		"api/mcp/nightworkers-"
+	],
   "domainForbiddenImports": [
     "react",
     "react-dom",

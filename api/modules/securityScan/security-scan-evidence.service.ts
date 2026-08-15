@@ -12,6 +12,7 @@ import type { SecurityScanTaskGenerationSnapshot } from "../../../shared/schemas
 import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import { redactSecretText } from "../../services/security/secret-redaction";
 import * as nightworkersRepository from "../nightworkers/nightworkers.repository";
+import { findProviderScanBinding } from "../securityIntelligence/security-intelligence.repository";
 import {
 	providerFindings,
 	providerScanDetail,
@@ -159,9 +160,12 @@ export async function loadSecurityScanTaskGenerationEvidence(input: {
 		input.repositoryId,
 	);
 	if (!repository?.allowed) throw new NotFoundError("Project not found");
-	const bound = listSecurityScanBindings(input.repositoryId).some(
-		(binding) => binding.scanRunRef === input.scanRunRef,
-	);
+	const durable = await findProviderScanBinding(input.scanRunRef);
+	const bound =
+		durable?.binding.repositoryId === input.repositoryId ||
+		listSecurityScanBindings(input.repositoryId).some(
+			(binding) => binding.scanRunRef === input.scanRunRef,
+		);
 	if (!bound) {
 		throw new AppError(
 			404,

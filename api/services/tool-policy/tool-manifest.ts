@@ -145,6 +145,42 @@ export const TOOL_MANIFEST: Record<WorkerToolName, ToolManifestEntry> = {
 		requiresReadBeforeEdit: false,
 		pathArgs: [],
 	},
+	write_security_contract: {
+		name: "write_security_contract",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
+	write_security_completion_condition: {
+		name: "write_security_completion_condition",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
+	request_post_security_assessment: {
+		name: "request_post_security_assessment",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
+	submit_security_final_judgment: {
+		name: "submit_security_final_judgment",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
+	propose_security_knowledge_candidate_batch: {
+		name: "propose_security_knowledge_candidate_batch",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
+	propose_security_knowledge_feedback_batch: {
+		name: "propose_security_knowledge_feedback_batch",
+		mutatesWorkspace: false,
+		requiresReadBeforeEdit: false,
+		pathArgs: [],
+	},
 	project_exploration_catalog: {
 		name: "project_exploration_catalog",
 		mutatesWorkspace: false,

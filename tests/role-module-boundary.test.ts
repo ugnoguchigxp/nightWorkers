@@ -112,6 +112,11 @@ describe("Mission Pilot and Coding Agent role boundaries", () => {
 			"api/services/agent-runtime/runtime.ts",
 			"export const runtime = true;\n",
 		);
+		write(
+			root,
+			"api/mcp/nightworkers-codex-mcp.ts",
+			"export const codingAgentMcp = true;\n",
+		);
 
 		const result = evaluateModuleBoundaries(root);
 
@@ -121,6 +126,9 @@ describe("Mission Pilot and Coding Agent role boundaries", () => {
 		);
 		expect(result.errors).toContain(
 			"api/services/agent-runtime/runtime.ts: production code is forbidden under a retired path",
+		);
+		expect(result.errors).toContain(
+			"api/mcp/nightworkers-codex-mcp.ts: production code is forbidden under a retired path",
 		);
 	});
 
@@ -167,7 +175,10 @@ function createFixture() {
 					exemptPrefixes: [],
 				},
 			],
-			forbiddenProductionPathPrefixes: ["api/services/agent-runtime"],
+			forbiddenProductionPathPrefixes: [
+				"api/services/agent-runtime",
+				"api/mcp/nightworkers-",
+			],
 			domainForbiddenImports: [],
 		}),
 	);

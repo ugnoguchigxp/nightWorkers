@@ -16,6 +16,7 @@ import {
 	renderCodingAgentTodoSystemContext,
 } from "../../context/todo-prompt-context";
 import { buildCodingAgentImplementationHandoffPrompt } from "../implementation-handoff-prompt";
+import { formatSecurityContractContextForPrompt } from "../security-contract-context";
 import type { AgentRunContext } from "../types";
 
 export type CodexRuntimePromptParts = {
@@ -53,6 +54,8 @@ export function buildCodexRuntimeDeveloperInstructionsInvocation(
 	const snapshot = asRecord(context.contextSnapshot);
 	const handoff = asRecord(snapshot?.implementationHandoff);
 	const userRequest = readString(handoff?.userRequest) || request;
+	const securityContractContext =
+		formatSecurityContractContextForPrompt(context);
 	const systemContext = context.codingAgentSystemContext
 		? rebindCodingAgentSystemContext(context.codingAgentSystemContext, p)
 		: buildCodingAgentSystemContext(
@@ -77,6 +80,9 @@ export function buildCodexRuntimeDeveloperInstructionsInvocation(
 			currentTodoSystemContext: context.currentTodo
 				? renderCodingAgentTodoSystemContext(context.currentTodo, p).trimEnd()
 				: "",
+			...(securityContractContext === undefined
+				? {}
+				: { securityContractContext }),
 		},
 	);
 	return {

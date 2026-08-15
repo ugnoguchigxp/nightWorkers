@@ -23,6 +23,7 @@ import {
 	renderCodingAgentTodoPlanSummary,
 } from "../../context/todo-prompt-context";
 import { formatRuntimeWorkspaceContextForPrompt } from "../runtime-workspace-context";
+import { formatSecurityContractContextForPrompt } from "../security-contract-context";
 import type { AgentRunContext } from "../types";
 
 export type NativeApiUserSource = "user" | "runtime" | "todo" | "state_card";
@@ -287,6 +288,8 @@ function buildNativeApiSystemPrompt(
 	systemContexts: ReturnType<typeof bindSystemContextCatalogSnapshot>,
 ) {
 	const { p } = systemContexts;
+	const securityContractContext =
+		formatSecurityContractContextForPrompt(context);
 	const projectExplorationWorkflow = buildProjectExplorationAgentWorkflow(
 		readProjectExplorationCatalogPin(context),
 		p,
@@ -310,6 +313,9 @@ function buildNativeApiSystemPrompt(
 			renderCodingAgentTodoPlanSummary(context.todoPlan, p)?.trimEnd() ?? "",
 		projectExplorationWorkflow,
 		workspaceContext: formatRuntimeWorkspaceContextForPrompt(context, p),
+		...(securityContractContext === undefined
+			? {}
+			: { securityContractContext }),
 	});
 }
 

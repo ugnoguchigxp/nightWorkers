@@ -2,6 +2,7 @@ import { NotFoundError } from "../../lib/errors";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../codingAgent";
 import type { ReviewResult } from "../review/results/types";
+import { buildSecurityRuntimeContextSnapshot } from "../securityIntelligence/security-runtime-context.service";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
 
@@ -78,6 +79,10 @@ export async function getTaskRun(runId: string) {
 	const events = await repo.listTaskEventsForRun(runId);
 	const commitRecord = await repo.getTaskRunCommitRecord(runId);
 	const runControl = await getRunControlMetrics(runId);
+	const securityIntelligence = await buildSecurityRuntimeContextSnapshot({
+		taskRevisionSnapshotId: run.taskRevisionSnapshotId,
+		runId: run.id,
+	});
 	const reviews = events
 		.map(
 			(event) =>
@@ -94,6 +99,7 @@ export async function getTaskRun(runId: string) {
 		reviews,
 		...(commitRecord ? { commitRecord } : {}),
 		...(runControl ? { runControl } : {}),
+		securityIntelligence,
 	};
 }
 

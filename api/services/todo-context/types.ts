@@ -119,6 +119,7 @@ export type RuntimePromptSnapshot = {
 		reason?: string | null;
 	};
 	ontologyContext?: unknown;
+	securityContractContext?: unknown;
 	ontologyBoundaryAudit?: unknown;
 	projectExplorationCatalog?: unknown;
 	effectiveLlmRouting?: unknown;

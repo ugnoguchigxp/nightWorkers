@@ -3,7 +3,7 @@ import {
 	nightWorkersReadCurrentSpecificationInputSchema,
 	nightWorkersTodoListInputSchema,
 	toNightWorkersJsonSchema,
-} from "../../mcp/nightworkers-tool-manifest";
+} from "../../modules/codingAgent/mcp/nightworkers-tool-manifest";
 import type { WorkerToolName } from "../tool-policy/types";
 
 export const jobTypes = [

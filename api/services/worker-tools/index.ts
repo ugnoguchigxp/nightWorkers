@@ -20,6 +20,7 @@ export * from "./run-command";
 export * from "./run-verification";
 export * from "./search-files";
 export * from "./search-web";
+export * from "./security-intelligence";
 export * from "./structure-inspection";
 export * from "./tool-policy-enforcer";
 export * from "./types";

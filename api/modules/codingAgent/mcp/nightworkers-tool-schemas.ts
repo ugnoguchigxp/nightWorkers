@@ -3,14 +3,22 @@ import {
 	codingAgentCollectTestInventoryInputSchema,
 	codingAgentRunCheckInputSchema,
 	codingAgentTodoListCommandSchema,
-} from "../../shared/modules/codingAgent";
-import { testConditionMappingToolInputSchema } from "../../shared/schemas/verification-checklist.schema";
+} from "../../../../shared/modules/codingAgent";
+import {
+	requestPostSecurityAssessmentCommandV1Schema,
+	submitSecurityFinalJudgmentToolInputSchema,
+	writeCompletionConditionCommandSchema,
+	writeSecurityContractCommandSchema,
+} from "../../../../shared/schemas/security-intelligence-runtime.schema";
+import { proposeSecurityKnowledgeCandidateBatchCommandSchema } from "../../../../shared/schemas/security-knowledge-candidate-batch.schema";
+import { proposeSecurityKnowledgeFeedbackBatchCommandSchema } from "../../../../shared/schemas/security-knowledge-feedback-batch.schema";
+import { testConditionMappingToolInputSchema } from "../../../../shared/schemas/verification-checklist.schema";
 import {
 	isStarterVariantForStack,
 	STARTER_STACKS,
 	STARTER_VARIANT_GUIDANCE,
 	STARTER_VARIANTS,
-} from "../../shared/starter-template-contract";
+} from "../../../../shared/starter-template-contract";
 
 export const nightWorkersReadCurrentSpecificationInputSchema = z.object({
 	taskId: z
@@ -67,6 +75,40 @@ export const nightWorkersCollectTestInventoryInputSchema =
 
 export const nightWorkersRecordTestConditionMappingInputSchema =
 	testConditionMappingToolInputSchema;
+
+export const nightWorkersRequestPostSecurityAssessmentInputSchema =
+	requestPostSecurityAssessmentCommandV1Schema
+		.omit({ runId: true })
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
+
+export const nightWorkersSubmitSecurityFinalJudgmentInputSchema =
+	submitSecurityFinalJudgmentToolInputSchema
+		.omit({ runId: true })
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
+
+export const nightWorkersWriteSecurityContractInputSchema =
+	writeSecurityContractCommandSchema
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
+
+export const nightWorkersWriteSecurityCompletionConditionInputSchema =
+	writeCompletionConditionCommandSchema
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
+
+export const nightWorkersProposeSecurityKnowledgeCandidateBatchInputSchema =
+	proposeSecurityKnowledgeCandidateBatchCommandSchema
+		.omit({ runId: true })
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
+
+export const nightWorkersProposeSecurityKnowledgeFeedbackBatchInputSchema =
+	proposeSecurityKnowledgeFeedbackBatchCommandSchema
+		.omit({ runId: true })
+		.extend({ runId: z.string().trim().optional() })
+		.strict();
 
 export const nightWorkersTodoListInputSchema = z
 	.object({

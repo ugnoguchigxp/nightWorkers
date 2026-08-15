@@ -68,6 +68,7 @@ import {
 	type TaskOperatorDelegatedAuthorizationPort,
 } from "../policies/task-operator-authorization";
 import { validateTaskOperatorJsonSchema } from "../policies/task-operator-json-schema";
+import { executeSecurityIntelligenceTaskOperatorAction } from "./security-intelligence-task-operator.command";
 import { readTaskOperatorProjection } from "./task-operator.query";
 import { describeTaskOperatorCommandResult } from "./task-operator-command-result";
 import { executeTaskOperatorImplementationStart } from "./task-operator-implementation-start";
@@ -226,6 +227,13 @@ async function executeTaskOperatorCommandOnce(
 		);
 	const args = input.arguments;
 	await assertActionResourceOwnership(input, projection, args);
+	const securityAction = await executeSecurityIntelligenceTaskOperatorAction({
+		actionId: input.actionId,
+		taskId: input.taskId,
+		arguments: args,
+		context: input.context,
+	});
+	if (securityAction.handled) return securityAction.value;
 	switch (input.actionId) {
 		case "task.update":
 			return updateTaskCommand({
@@ -528,6 +536,9 @@ async function assertActionResourceOwnership(
 	args: Record<string, unknown>,
 ) {
 	const runArgument = new Map<string, string>([
+		["security.assessment.post.request", "runId"],
+		["security.knowledge.candidates.propose", "runId"],
+		["security.knowledge.feedback.propose", "runId"],
 		["run.review.submit", "runId"],
 		["task.complete", "sourceRunId"],
 		["git.commit", "sourceRunId"],

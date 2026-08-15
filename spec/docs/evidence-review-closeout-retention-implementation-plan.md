@@ -19,11 +19,11 @@
 - Related documents:
   - `spec/trust-model.md`
   - `spec/configuration.md`
-  - `spec/docs/coding-agent-balanced-execution-plan.md`
+  - `spec/.archived/coding-agent-balanced-execution-plan.md`
   - `spec/multi-language-test-evidence-quality-gate-implementation-plan.md`
-  - `spec/docs/coding-agent-runtime-reliability-recovery-plan.md`
-  - `spec/docs/mission-pilot-coding-agent-module-separation-plan.md`
-  - `spec/docs/project-worktree-authority-and-secret-boundary-implementation-plan.md`
+  - `spec/.archived/coding-agent-runtime-reliability-recovery-plan.md`
+  - `spec/.archived/mission-pilot-coding-agent-module-separation-plan.md`
+  - `spec/.archived/project-worktree-authority-and-secret-boundary-implementation-plan.md`
 
 現在のworktreeには本計画と無関係な未コミット変更が存在する。本計画の実装ではそれらを
 ユーザー所有の変更として扱い、復元、上書き、取り込み、再設計を行わない。migration番号と

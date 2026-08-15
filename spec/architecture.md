@@ -1,5 +1,7 @@
 # Architecture and Module Boundaries
 
+Cross-projectのSecurity Intelligence循環と、NightWorkersのTask/Run authorityを含む責務境界は、[Security Intelligence Integration Concept](docs/security-intelligence-integration-concept.md)を参照する。
+
 ## Top-Level Components
 - `api/`: backend API, domain services, integrations, and runners
 - `src/`: frontend routes and feature modules

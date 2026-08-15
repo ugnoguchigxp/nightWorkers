@@ -1,5 +1,6 @@
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { deriveProviderScanBindingV2 } from "../../../shared/schemas/security-intelligence-runtime.schema";
 import {
 	securityScanCapabilitiesSchema,
 	securityScanFindingPageSchema,
@@ -16,6 +17,16 @@ import { AppError, NotFoundError, ValidationError } from "../../lib/errors";
 import { createOpenApiRouter } from "../../lib/openapi";
 import * as nightworkersRepository from "../nightworkers/nightworkers.repository";
 import {
+	findAssessmentReceiptByScanBinding,
+	findProviderScanBinding,
+	listProviderScanBindings,
+	saveProviderScanBinding,
+} from "../securityIntelligence/security-intelligence.repository";
+import {
+	receiveSecurityIntelligenceAssessment,
+	securityIntelligenceConsumerConfiguration,
+} from "../securityIntelligence/security-intelligence-assessment.service";
+import {
 	providerCancel,
 	providerCapabilities,
 	providerFindings,
@@ -27,6 +38,7 @@ import {
 	providerStartScan,
 } from "./security-scan-provider.client";
 import {
+	getSecurityScanProviderConnection,
 	getSecurityScanProviderSettings,
 	listSecurityScanBindings,
 	recordSecurityScanBinding,
@@ -70,7 +82,9 @@ function parseResourceRef(value: string) {
 	return parsed.data;
 }
 
-function requireBoundScan(repositoryId: string, scanRunRef: string) {
+async function requireBoundScan(repositoryId: string, scanRunRef: string) {
+	const durable = await findProviderScanBinding(scanRunRef);
+	if (durable?.binding.repositoryId === repositoryId) return;
 	const bound = listSecurityScanBindings(repositoryId).some(
 		(item) => item.scanRunRef === scanRunRef,
 	);
@@ -126,7 +140,25 @@ export const securityScanRouter = router
 	.get("/repositories/:repositoryId/security-scans", async (c) => {
 		const repositoryId = c.req.param("repositoryId");
 		await requireRepository(repositoryId);
-		return c.json({ items: listSecurityScanBindings(repositoryId) }, 200);
+		const durable = await listProviderScanBindings(repositoryId);
+		const durableRefs = new Set(durable.map((item) => item.binding.scanRunRef));
+		const legacy = listSecurityScanBindings(repositoryId).filter(
+			(item) => !durableRefs.has(item.scanRunRef),
+		);
+		return c.json(
+			{
+				items: [
+					...durable.map((item) => ({
+						scanRunRef: item.binding.scanRunRef,
+						selection: item.binding.selection,
+						target: item.binding.requestedTarget,
+						createdAt: item.binding.createdAt,
+					})),
+					...legacy,
+				],
+			},
+			200,
+		);
 	})
 	.get("/repositories/:repositoryId/security-scans/capabilities", async (c) => {
 		const repository = await requireRepository(c.req.param("repositoryId"));
@@ -155,12 +187,62 @@ export const securityScanRouter = router
 		if (!key.success) {
 			throw new ValidationError("Idempotency-Key header が必要です。");
 		}
+		const connection = getSecurityScanProviderConnection();
+		const securityIntelligence = securityIntelligenceConsumerConfiguration();
+		const capabilities =
+			connection.transport === "http" &&
+			securityIntelligence.enabled &&
+			securityIntelligence.projectAllowlist.has(repositoryId)
+				? await providerCapabilities(
+						repository.localPath,
+						securityScanCapabilitiesSchema,
+					)
+				: null;
 		const started = await providerStartScan(
 			repository.localPath,
 			input,
 			key.data,
 			securityScanStartResponseSchema,
 		);
+		if (
+			started.target.kind !== input.target.kind ||
+			started.target.digest !== input.expectedTargetDigest
+		) {
+			throw new AppError(
+				409,
+				"SECURITY_SCAN_TARGET_IDENTITY_MISMATCH",
+				"スキャン開始時の対象identityがpreviewと一致しません。",
+			);
+		}
+		if (capabilities) {
+			await saveProviderScanBinding(
+				deriveProviderScanBindingV2({
+					version: 2,
+					repositoryId,
+					provider: "vulnworkbench",
+					identityMappingVersion: 1,
+					providerProjectRef: capabilities.project.ref,
+					scanRunRef: started.scanRunRef,
+					selection: input.selection,
+					requestedTarget: input.target,
+					resolvedTarget:
+						started.target.kind === "working_tree"
+							? {
+									kind: "working_tree",
+									sourceRevisionRole: "base_revision",
+									sourceRevision: started.target.sourceRevision,
+									targetDigest: started.target.digest,
+								}
+							: {
+									kind: "full",
+									sourceRevisionRole: "snapshot_revision",
+									sourceRevision: started.target.sourceRevision,
+									targetDigest: started.target.digest,
+								},
+					createdAt: started.createdAt,
+				}),
+			);
+		}
 		await recordSecurityScanBinding(repositoryId, {
 			scanRunRef: started.scanRunRef,
 			selection: input.selection,
@@ -173,19 +255,56 @@ export const securityScanRouter = router
 		const repositoryId = c.req.param("repositoryId");
 		await requireRepository(repositoryId);
 		const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
-		requireBoundScan(repositoryId, scanRunRef);
+		await requireBoundScan(repositoryId, scanRunRef);
 		return c.json(
 			await providerScanDetail(scanRunRef, securityScanRunDetailSchema),
 			200,
 		);
 	})
 	.post(
+		"/repositories/:repositoryId/security-scans/:scanRunRef/security-intelligence/assessment",
+		async (c) => {
+			const repositoryId = c.req.param("repositoryId");
+			await requireRepository(repositoryId);
+			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
+			const result = await receiveSecurityIntelligenceAssessment({
+				repositoryId,
+				scanRunRef,
+			});
+			return c.json(result, result.replayed ? 200 : 201);
+		},
+	)
+	.get(
+		"/repositories/:repositoryId/security-scans/:scanRunRef/security-intelligence",
+		async (c) => {
+			const repositoryId = c.req.param("repositoryId");
+			await requireRepository(repositoryId);
+			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
+			const binding = await findProviderScanBinding(scanRunRef);
+			if (!binding || binding.binding.repositoryId !== repositoryId) {
+				throw new AppError(
+					404,
+					"SECURITY_INTELLIGENCE_DURABLE_BINDING_NOT_FOUND",
+					"Security Intelligence bindingが見つかりません。",
+				);
+			}
+			const receipt = await findAssessmentReceiptByScanBinding(binding.id);
+			return c.json(
+				{
+					binding: binding.binding,
+					receipt: receipt?.receipt ?? null,
+				},
+				200,
+			);
+		},
+	)
+	.post(
 		"/repositories/:repositoryId/security-scans/:scanRunRef/cancel",
 		async (c) => {
 			const repositoryId = c.req.param("repositoryId");
 			await requireRepository(repositoryId);
 			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
-			requireBoundScan(repositoryId, scanRunRef);
+			await requireBoundScan(repositoryId, scanRunRef);
 			return c.json(
 				await providerCancel(scanRunRef, securityScanRunDetailSchema),
 				200,
@@ -198,7 +317,7 @@ export const securityScanRouter = router
 			const repositoryId = c.req.param("repositoryId");
 			await requireRepository(repositoryId);
 			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
-			requireBoundScan(repositoryId, scanRunRef);
+			await requireBoundScan(repositoryId, scanRunRef);
 			const parsed = findingsQuerySchema.safeParse({
 				cursor: c.req.query("cursor"),
 				limit: c.req.query("limit"),
@@ -229,7 +348,7 @@ export const securityScanRouter = router
 			const repositoryId = c.req.param("repositoryId");
 			await requireRepository(repositoryId);
 			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
-			requireBoundScan(repositoryId, scanRunRef);
+			await requireBoundScan(repositoryId, scanRunRef);
 			return c.json(
 				await providerReports(scanRunRef, securityScanReportListSchema),
 				200,
@@ -242,7 +361,7 @@ export const securityScanRouter = router
 			const repositoryId = c.req.param("repositoryId");
 			await requireRepository(repositoryId);
 			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
-			requireBoundScan(repositoryId, scanRunRef);
+			await requireBoundScan(repositoryId, scanRunRef);
 			const key = idempotencyKeySchema.safeParse(
 				c.req.header("idempotency-key"),
 			);
@@ -266,7 +385,7 @@ export const securityScanRouter = router
 			await requireRepository(repositoryId);
 			const scanRunRef = parseResourceRef(c.req.param("scanRunRef"));
 			const reportRef = parseResourceRef(c.req.param("reportRef"));
-			requireBoundScan(repositoryId, scanRunRef);
+			await requireBoundScan(repositoryId, scanRunRef);
 			const report = await providerReportContent(scanRunRef, reportRef);
 			return c.body(report.content, 200, {
 				"Content-Type": report.contentType,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nightWorkersRecordTestConditionMappingInputSchema } from "../api/mcp/nightworkers-tool-schemas";
+import { nightWorkersRecordTestConditionMappingInputSchema } from "../api/modules/codingAgent/mcp/nightworkers-tool-schemas";
 import { workerToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import {
 	digestTestDefinitionInventory,

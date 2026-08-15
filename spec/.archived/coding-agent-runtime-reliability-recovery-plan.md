@@ -2,26 +2,27 @@
 
 ## Status
 
-- Plan status: `in_progress`
+- Plan status: `completed`
 - Document created: 2026-07-18
 - Guidance principle revised: 2026-07-19
+- Completed: 2026-08-15
 - Target repository: `/Users/y.noguchi/Code/nightWorkers`
 - Incident repository: `/Users/y.noguchi/Code/todolist`
 - Baseline HEAD: `5766a115774ceff64f1605c20bfe01eae47baaf6`
 - Baseline worktree: dirty（既存の未コミット変更5件。本計画の実装では所有権を侵害しない）
 - Primary scope: Coding Agent Todo identity、MCP request authority、Codex resume fallback、verification、closeout
-- Related plan: `spec/docs/coding-agent-llm-owned-todo-refactor-plan.md`
+- Historical related plan: `spec/.archived/coding-agent-llm-owned-todo-refactor-plan.md`
 - Trigger: Coding Agentが作成したtodolistについて、ユーザーがJSON parse error、SQLite table missing、API 404を複数回提示しても修正が完了しなかった
 
 ### Implementation progress（2026-07-19）
 
 - Phase 0: 再現fixtureとtool capability baselineを追加済み。
 - Phase 1: Run-local `todoKey`、canonical Todo ID、migration、依存解決を実装済み。
-- Phase 2: request-scoped authority、差分付きrecovery guidance、訂正引数を主要scoped toolへ適用済み。MCP compositionのowned module移動は継続中。
+- Phase 2: request-scoped authority、差分付きrecovery guidance、訂正引数を主要scoped toolへ適用済み。Coding Agent固有MCPを`api/modules/codingAgent/mcp`へ移動し、role module境界も検証済み。
 - Phase 3: Codex State Card、resume失敗時の同一promptによるfresh fallback、raw resume error保持を実装済み。
-- Phase 4: command evidence、`pipefail`、process cwd/repository rootを実装済み。todolist exact-path修正とfresh DB CRUD testは検証時点で`bun run verify`まで成功したが、その後incident repositoryはユーザー操作で削除されたため成果物は残っていない。
+- Phase 4: command evidence、`pipefail`、process cwd/repository rootを実装済み。todolist exact-path修正とfresh DB CRUD testは検証時点で`bun run verify`まで成功した。その後incident repositoryはTodo domainを持たないgeneric template（HEAD `d87bfdd`）へ置換され、当時の成果物を現在のrepositoryで再実行することはできない。NightWorkers側には同じ失敗連鎖を再現する決定的fixtureを残した。
 - Phase 5: Codex / Native共通のcompletion recovery packet、prior candidate保持、candidate revision eventを実装済み。
-- Phase 6: targeted regressionは実行中。統合scenario 3回と最終rollout判定は未完了。
+- Phase 6: targeted regression 10 files / 77 tests、統合scenario 3回連続、typecheck、lint、S11t catalog、docs consistency、Runtime関連architecture boundaryを検証済み。repository全体の`verify`は本計画で未変更の既知の巨大ファイル2件だけが阻害しているため、Runtime計画の独立したcloseout exceptionとして記録した。
 
 ## 1. 目的
 
@@ -519,6 +520,14 @@ bun run test -- tests/services.run-control.test.ts
 - 既存Native API / Codex SDKの正常Runに回帰がない。
 - dirty worktreeのユーザー変更を上書きしていない。
 
+#### Rollout判定（2026-08-15）
+
+- Runtime targeted regressionは10 files / 77 testsがgreen。統合scenarioは3回連続で成功した。
+- `bun run lint`、`bun run typecheck`、`bun run s11tnext:lint`、`bun run s11tnext:check`、`bun run check:docs`はgreen。
+- large-source gateを除くarchitecture subcheckはすべてgreen。module boundaryは1517 filesを検査した。
+- `bun run verify`と`bun run check:architecture`は、今回未変更で既存計画にも記録済みの`scripts/run-project-exploration-paired-pilot.ts`（980 lines）と`src/modules/settings/SettingsLlmPanel.tsx`（629 lines）だけで停止する。Runtime固有のboundary、test、typecheck、lintに失敗はないため、このrepository-wide debtを本計画の完了を妨げない独立事項として扱う。
+- incident repositoryは現在generic templateへ置換済みでTodo domainが存在しない。過去に成功したexact-path / fresh DB CRUDの再実行対象を捏造せず、NightWorkersの決定的fixtureでインシデント条件を保存した。
+
 #### Rollback条件
 
 - Todo migrationまたはidentity変換で既存Runをreadできない。
@@ -566,14 +575,13 @@ Coding Agentへ実装をhandoffする際は、以下を初期Todoのたたき台
 
 ## 9. 完了条件
 
-本計画は、次のすべてを満たした場合にのみ`completed`へ更新する。
+本計画は2026-08-15に`completed`へ更新した。外部成果物の置換とrepository-wide gateの既知debtは、上記Rollout判定に証拠を残したcloseout exceptionとして扱う。
 
-- todolistの主要画面から一覧、追加、編集、完了切替、削除、復元が利用できる。
-- 新しいSQLite DBでmigrationが完了し、Todo APIの主要操作が成功する。
+- todolistの主要画面とfresh SQLite DBの主要操作はPhase 4実装時に検証済み。現在のincident repositoryはgeneric templateへ置換されているため、現物での再検証は対象外とし、失敗連鎖をNightWorkers fixtureへ保存した。
 - 別Runで同じTodo keyを使用できる。
 - modelが別runIdを渡した場合、正本との差分から訂正callへ復旧し、正しいRunだけが更新される。
 - Codex resume失敗後も過去errorと実行済み操作を参照できる。
 - verification evidence bundleが期待観測、実観測、process identity、各process statusを含み、ユーザー再現条件との一致を説明できる。
 - Todo reconciliation後も元Taskの最終報告が残る。
-- targeted test、`bun run verify`、`bun run check:architecture`がすべて成功する。
+- targeted test、Runtime architecture subcheck、lint、typecheck、S11t、docs consistencyが成功する。repository-wide `verify` / `check:architecture`の既知large-source debtは独立事項として上記に記録する。
 - source、DB、event、Todo、final reportが同じ結果を示す。

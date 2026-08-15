@@ -24,6 +24,14 @@ import { runCommandTool } from "./run-command";
 import { runVerificationTool } from "./run-verification";
 import { searchFilesTool } from "./search-files";
 import { searchWebTool } from "./search-web";
+import {
+	proposeSecurityKnowledgeCandidateBatchTool,
+	proposeSecurityKnowledgeFeedbackBatchTool,
+	requestPostSecurityAssessmentTool,
+	submitSecurityFinalJudgmentTool,
+	writeSecurityCompletionConditionTool,
+	writeSecurityContractTool,
+} from "./security-intelligence";
 import { inspectStructureTool } from "./structure-inspection/inspect-structure";
 import type { WorkerToolResult } from "./types";
 
@@ -426,6 +434,57 @@ export async function executeWorkerTool(
 				verificationDocumentId: args.verificationDocumentId as string,
 				inventoryId: args.inventoryId as string,
 				mappings: args.mappings as TestInventoryCaseSelection[],
+			}),
+		};
+	}
+
+	if (toolName === "request_post_security_assessment") {
+		return {
+			result: await requestPostSecurityAssessmentTool({
+				runId: input.runId,
+				args,
+			}),
+		};
+	}
+
+	if (toolName === "write_security_contract") {
+		return {
+			result: await writeSecurityContractTool({ runId: input.runId, args }),
+		};
+	}
+
+	if (toolName === "write_security_completion_condition") {
+		return {
+			result: await writeSecurityCompletionConditionTool({
+				runId: input.runId,
+				args,
+			}),
+		};
+	}
+
+	if (toolName === "submit_security_final_judgment") {
+		return {
+			result: await submitSecurityFinalJudgmentTool({
+				runId: input.runId,
+				args,
+			}),
+		};
+	}
+
+	if (toolName === "propose_security_knowledge_candidate_batch") {
+		return {
+			result: await proposeSecurityKnowledgeCandidateBatchTool({
+				runId: input.runId,
+				args,
+			}),
+		};
+	}
+
+	if (toolName === "propose_security_knowledge_feedback_batch") {
+		return {
+			result: await proposeSecurityKnowledgeFeedbackBatchTool({
+				runId: input.runId,
+				args,
 			}),
 		};
 	}

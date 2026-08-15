@@ -21,7 +21,7 @@ const forbiddenToolNames = ["finalize_answer", "new_context", "reviewer_evaluati
 const catalogFiles = [
 	"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest.ts",
 	"api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry.ts",
-	"api/mcp/nightworkers-tool-manifest.ts",
+	"api/modules/codingAgent/mcp/nightworkers-tool-manifest.ts",
 ];
 const errors = [];
 
