@@ -20,10 +20,24 @@
 - Phase 3 / 6 / 8 のproduction CSP、DevTools無効化、migration前backup、bundle budget、
   third-party notice、SBOM、updater設定とrelease attestationは実装済みで、release regression
   testでも検証した。
-- `bun run test:coverage` はbackend coverage workerが完走結果を返さず停止したため、Phase 7の
-  global coverage再確立は未完了として扱う（既存summaryのbranch 63.12%は目標75%未達）。
+- 旧coverage実行はbackend workerが完走結果を返さず停止していたが、Phase 7で独立runtimeの
+  shard実行とreport統合へ置き換え、global / critical coverage budgetを再確立した。
 - macOS signing / notarization / staple と Windows / Linux のnative installer実行は、対応する
   GitHub Actions runner と release secrets を必要とするため、実release workflowでの証明を残す。
+
+Phase 7実装進捗（2026-08-16）:
+
+- Q7-01を完了した。`scripts/run-project-exploration-paired-pilot.ts`は980行から576行へ、
+  `src/modules/settings/SettingsLlmPanel.tsx`は629行から402行へ削減した。固定pilot task、CLI
+  contract、report集計、LLM settings controllerを独立moduleへ分離し、large-source baselineの
+  例外を増やさず`bun run check:architecture`を通過した。
+- Q7-02を完了した。backend / frontend coverageをそれぞれ3つの独立runtime / SQLite shardで
+  実行し、全shard終了後にGit worktree / branch leakを一括検査してIstanbul coverage mapを
+  統合する。各shardには10分の停止上限があり、失敗やtimeoutを成功結果へ変換しない。
+- 最新のglobal coverageはStatements 82.59%、Branches 76.57%、Functions 81.27%、
+  Lines 84.22%で、80 / 75 / 80 / 80% budgetを満たす。queue mutation、Run status、Todo
+  closeout、Review、Git closeout、secret persistence、desktop bootstrap、tool policyのcritical
+  branch gateも各80%以上を満たす。
 
 この文書を、NightWorkers の現行機能を広げず、品質 gate、Tauri sidecar、
 security、署名、cross-platform packaging、保守性を配布可能な状態へ収束させるための

@@ -14,8 +14,22 @@ import {
 import { buildVitestChildEnvironment } from './vitest-database.mjs';
 
 const repositoryRoot = process.cwd();
-const worktreesBefore = readGitWorktreePaths(repositoryRoot);
-const branchesBefore = readNightWorkersBranchRefs(repositoryRoot);
+const deferredGitGuardOwner = process.env.NIGHTWORKERS_VITEST_GIT_GUARD_OWNER_PID;
+const deferGitLeakGuard = deferredGitGuardOwner !== undefined;
+if (
+  deferGitLeakGuard &&
+  Number(deferredGitGuardOwner) !== process.ppid
+) {
+  throw new Error(
+    'NIGHTWORKERS_VITEST_GIT_GUARD_OWNER_PID must identify the direct coverage orchestrator.',
+  );
+}
+const worktreesBefore = deferGitLeakGuard
+  ? []
+  : readGitWorktreePaths(repositoryRoot);
+const branchesBefore = deferGitLeakGuard
+  ? []
+  : readNightWorkersBranchRefs(repositoryRoot);
 const environment = createIsolatedRuntimeEnvironment({
   repositoryRoot: os.tmpdir(),
   scope: 'isolated_test',
@@ -75,29 +89,31 @@ try {
       resolve(code ?? 1);
     });
   });
-  const worktreesAfter = readGitWorktreePaths(repositoryRoot);
-  const branchesAfter = readNightWorkersBranchRefs(repositoryRoot);
-  const addedWorktrees = findAddedGitEntries(worktreesBefore, worktreesAfter);
-  const addedBranches = findAddedGitEntries(branchesBefore, branchesAfter);
-  const removedWorktrees = findRemovedGitEntries(worktreesBefore, worktreesAfter);
-  const removedBranches = findRemovedGitEntries(branchesBefore, branchesAfter);
-  if (
-    addedWorktrees.length > 0 ||
-    addedBranches.length > 0 ||
-    removedWorktrees.length > 0 ||
-    removedBranches.length > 0
-  ) {
-    console.error(
-      '[vitest] Refusing to hide Git leakage outside the isolated test run:',
-    );
-    for (const worktree of addedWorktrees)
-      console.error(`- worktree: ${worktree}`);
-    for (const branch of addedBranches) console.error(`- branch: ${branch}`);
-    for (const worktree of removedWorktrees)
-      console.error(`- removed worktree: ${worktree}`);
-    for (const branch of removedBranches)
-      console.error(`- removed branch: ${branch}`);
-    exitCode = 1;
+  if (!deferGitLeakGuard) {
+    const worktreesAfter = readGitWorktreePaths(repositoryRoot);
+    const branchesAfter = readNightWorkersBranchRefs(repositoryRoot);
+    const addedWorktrees = findAddedGitEntries(worktreesBefore, worktreesAfter);
+    const addedBranches = findAddedGitEntries(branchesBefore, branchesAfter);
+    const removedWorktrees = findRemovedGitEntries(worktreesBefore, worktreesAfter);
+    const removedBranches = findRemovedGitEntries(branchesBefore, branchesAfter);
+    if (
+      addedWorktrees.length > 0 ||
+      addedBranches.length > 0 ||
+      removedWorktrees.length > 0 ||
+      removedBranches.length > 0
+    ) {
+      console.error(
+        '[vitest] Refusing to hide Git leakage outside the isolated test run:',
+      );
+      for (const worktree of addedWorktrees)
+        console.error(`- worktree: ${worktree}`);
+      for (const branch of addedBranches) console.error(`- branch: ${branch}`);
+      for (const worktree of removedWorktrees)
+        console.error(`- removed worktree: ${worktree}`);
+      for (const branch of removedBranches)
+        console.error(`- removed branch: ${branch}`);
+      exitCode = 1;
+    }
   }
 } finally {
   try {

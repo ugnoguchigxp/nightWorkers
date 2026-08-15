@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { evaluateDeterministicRubric } from "../api/modules/review/rubrics/deterministic-evaluator";
 import { loadRubric } from "../api/modules/review/rubrics/loader";
-import type { ReviewEvidencePack } from "../api/modules/review/rubrics/types";
+import type {
+	ReviewEvidencePack,
+	RubricDefinition,
+} from "../api/modules/review/rubrics/types";
 
 const basePack: ReviewEvidencePack = {
 	version: 1,
@@ -137,5 +140,112 @@ describe("deterministic rubric evaluator", () => {
 		expect(result.findings.map((finding) => finding.title)).toContain(
 			"Human callouts are separated from blocking findings",
 		);
+	});
+
+	it("evaluates event references, failure streaks, limits, and non-deterministic criteria independently", () => {
+		const rubric: RubricDefinition = {
+			version: 1,
+			id: "critical-branches",
+			title: "Critical branches",
+			scope: {},
+			criteria: [
+				{
+					id: "event",
+					title: "Completion event",
+					severity: "warning",
+					evaluationMode: "deterministic",
+					evidenceSelectors: [
+						{ kind: "run_event_type", type: "verification.finished" },
+					],
+				},
+				{
+					id: "tool-failures",
+					title: "Tool failure streak",
+					severity: "blocking",
+					evaluationMode: "deterministic",
+					evidenceSelectors: [{ kind: "tool_failure", maxConsecutive: 2 }],
+				},
+				{
+					id: "diff-budget",
+					title: "Diff budget",
+					severity: "warning",
+					evaluationMode: "deterministic",
+					evidenceSelectors: [{ kind: "diff", maxBytes: 10 }],
+				},
+				{
+					id: "optional-report",
+					title: "Optional report",
+					severity: "warning",
+					evaluationMode: "deterministic",
+					evidenceSelectors: [{ kind: "final_report", required: false }],
+					rule: { required: false, failWhenPresent: true },
+				},
+				{
+					id: "llm-only",
+					title: "LLM criterion",
+					severity: "warning",
+					evaluationMode: "llm",
+					evidenceSelectors: [],
+				},
+			],
+		};
+		const result = evaluateDeterministicRubric(rubric, {
+			...basePack,
+			selectedEvents: [
+				{
+					id: "event-1",
+					seq: 1,
+					type: "verification.finished",
+					severity: "info",
+					message: "done",
+				},
+				{
+					id: "failure-1",
+					seq: 2,
+					type: "tool.call_finished",
+					severity: "error",
+					message: "failed",
+				},
+				{
+					id: "failure-2",
+					seq: 3,
+					type: "tool.call_finished",
+					severity: "error",
+					message: "failed again",
+				},
+				{
+					seq: 4,
+					type: "tool.call_finished",
+					severity: "info",
+					message: "recovered",
+				},
+			],
+			eventTypes: ["verification.finished", "tool.call_finished"],
+		});
+
+		expect(
+			Object.fromEntries(
+				result.criterionResults.map((criterion) => [
+					criterion.criterionId,
+					criterion.passed,
+				]),
+			),
+		).toEqual({
+			event: true,
+			"tool-failures": false,
+			"diff-budget": false,
+			"optional-report": true,
+		});
+		expect(result.findings.map((finding) => finding.title)).toEqual([
+			"Tool failure streak",
+			"Diff budget",
+		]);
+		expect(result.evidenceRefs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ kind: "run_event", eventId: "failure-1" }),
+				expect.objectContaining({ kind: "diff", bytes: 42 }),
+			]),
+		);
+		expect(result.verdict).toBe("changes_requested");
 	});
 });

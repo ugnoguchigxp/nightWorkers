@@ -1,7 +1,12 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 import { testDatabasePath } from "./tests/vitest-db-env";
-import { backendCoverage } from "./vitest.coverage";
+import {
+	backendCoverage,
+	resolveCoverageRuntime,
+} from "./vitest.coverage";
+
+const coverageRuntime = resolveCoverageRuntime(backendCoverage.reportsDirectory);
 
 export default defineConfig({
 	test: {
@@ -24,8 +29,8 @@ export default defineConfig({
 		exclude: ["tests/e2e/**", "tests/live/**"],
 		coverage: {
 			provider: "v8",
-			reporter: ["text", "html", "lcov", "json-summary"],
-			reportsDirectory: backendCoverage.reportsDirectory,
+			reporter: coverageRuntime.reporter,
+			reportsDirectory: coverageRuntime.reportsDirectory,
 			include: backendCoverage.include,
 			exclude: backendCoverage.exclude,
 		},

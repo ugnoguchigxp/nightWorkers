@@ -2,10 +2,11 @@
 
 ## Status
 
+- Archive status: archived on 2026-08-16 after code implementation; remaining deployment evidence is tracked by [Security Intelligence Pilot / Rollout TODO](../docs/security-intelligence-pilot-rollout-todo.md)
 - Plan status: Code implemented; rollout default OFF; pilot evidence pending
 - Last updated: 2026-08-15
 - Applies to: `vulnWorkbench`, `NightWorkers`, `contextStill`
-- Source concept: [Security Intelligence Integration Concept](./security-intelligence-integration-concept.md)
+- Source concept: [Security Intelligence Integration Concept](../docs/security-intelligence-integration-concept.md)
 - Existing producer plan: `vulnWorkbench/spec/security-intelligence-pr4-nightworkers-pilot-plan.md`
 - Scope: Concept Stage 0からStage 3までを実行可能にするためのcross-repository変更
 - Implementation in this change: SI-00からSI-INT-01までのcode pathを3 repositoryへ実装済み。SI-PILOT-01の実環境1-pair / 10-pair pilotとdated GO / ITERATE / STOP decisionは未実施であり、Stage 2 / Stage 3 completeはまだ宣言しない。

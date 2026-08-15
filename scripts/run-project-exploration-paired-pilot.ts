@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, openSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { parseArgs } from "node:util";
 import {
 	createRepository,
 	createTask,
@@ -12,7 +11,6 @@ import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repo
 import {
 	measureProjectExplorationRun,
 	summarizeProjectExplorationPair,
-	type ExplorationReductionMeasurement,
 } from "../api/modules/ontology/exploration/project-exploration-measurement";
 import { saveProjectExplorationCatalogSettings } from "../api/modules/ontology/exploration/project-exploration-settings.service";
 import { startTaskRun } from "../api/modules/nightworkers/run-orchestration/start-task-run";
@@ -32,10 +30,19 @@ import {
 	assertIsolatedRuntimeEnvironment,
 	resolveLocalDatabasePath,
 } from "../shared/runtime-database-access.mjs";
+import {
+	parsePilotOptions,
+	type PilotOptions,
+} from "./project-exploration-pilot/options";
+import {
+	buildPilotReport,
+	pilotPromptDigest,
+} from "./project-exploration-pilot/report";
+import {
+	PILOT_TASKS,
+	type PilotTask,
+} from "./project-exploration-pilot/tasks";
 
-const DEFAULT_PILOT_ID =
-	"project-intelligence-foundation-2026-08-09-isolated-v2";
-const DEFAULT_PAIR_TIMEOUT_SECONDS = 600;
 const POLL_INTERVAL_MS = 2_000;
 
 const TERMINAL_RUN_STATUSES = new Set([
@@ -50,134 +57,12 @@ const TERMINAL_RUN_STATUSES = new Set([
 
 type PilotMode = "baseline" | "catalog";
 
-type PilotTask = {
-	id: string;
-	category: string;
-	title: string;
-	description: string;
-	objective: string;
-	acceptanceCriteria: string;
-};
-
-const PILOT_TASKS: PilotTask[] = [
-	{
-		id: "p01",
-		category: "frontend-routing",
-		title: "Harden local login redirects",
-		description:
-			"Harden login redirect parsing so only safe same-origin absolute-path redirects are accepted. Reject redirects containing backslashes, ASCII control characters, encoded protocol-relative prefixes, or an authority component, while preserving valid local query strings and fragments. Add focused regression tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Prevent browser redirect ambiguity without changing valid local redirect behavior.",
-		acceptanceCriteria:
-			"Unsafe redirect variants are rejected; valid local paths with query/hash remain accepted; focused tests and typecheck pass.",
-	},
-	{
-		id: "p02",
-		category: "backend-configuration",
-		title: "Normalize configured CORS origins",
-		description:
-			"Normalize configured CORS origins by trimming whitespace, ignoring blank entries, and removing duplicates while preserving first-seen order. Ensure the application URL origin appears exactly once. Add focused tests for blanks, duplicates, and ordering. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Make CORS origin configuration deterministic and resistant to harmless formatting differences.",
-		acceptanceCriteria:
-			"Normalized origins are unique and ordered; blank entries are ignored; the application origin is present once; focused tests and typecheck pass.",
-	},
-	{
-		id: "p03",
-		category: "shared-auth-contract",
-		title: "Canonicalize login email input",
-		description:
-			"Canonicalize login email input at the shared validation boundary by trimming and lowercasing the address before backend and frontend consumers use it. Preserve validation errors for malformed addresses and add focused contract tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Give all authentication consumers one canonical email representation.",
-		acceptanceCriteria:
-			"Valid mixed-case padded email input parses to lowercase without padding; malformed email remains rejected; focused tests and typecheck pass.",
-	},
-	{
-		id: "p04",
-		category: "database-runtime",
-		title: "Reject blank SQLite database paths",
-		description:
-			"Harden SQLite database path initialization so empty or whitespace-only database paths are rejected before directory creation or database opening. Keep memory databases and normal relative file paths working. Add focused regression tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Fail early for ambiguous database path configuration.",
-		acceptanceCriteria:
-			"Blank paths throw a clear error; memory and normal file paths retain current behavior; focused tests and typecheck pass.",
-	},
-	{
-		id: "p05",
-		category: "security-policy",
-		title: "Make CSP serialization deterministic",
-		description:
-			"Harden Content Security Policy serialization by omitting directives with no values and deduplicating repeated values while preserving their first-seen order. Preserve current directive ordering and kebab-case conversion. Add focused tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Produce stable CSP headers without empty or repeated policy tokens.",
-		acceptanceCriteria:
-			"Empty directives are absent, duplicate values occur once, existing policy serialization remains stable, and focused tests/typecheck pass.",
-	},
-	{
-		id: "p06",
-		category: "shared-auth-contract",
-		title: "Reject blank authenticated display names",
-		description:
-			"Strengthen the shared authenticated-user response contract so display names containing only whitespace are rejected while meaningful names with surrounding whitespace remain valid without changing their returned value. Add focused schema tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Prevent semantically empty display names at the shared API boundary.",
-		acceptanceCriteria:
-			"Whitespace-only display names fail validation; meaningful padded names retain their original value; focused tests and typecheck pass.",
-	},
-	{
-		id: "p07",
-		category: "frontend-search",
-		title: "Require canonical showcase page sizes",
-		description:
-			"Tighten showcase table query parsing so page-size values are accepted only as supported numbers or canonical decimal strings. Reject padded, exponent, fractional, signed, and leading-zero string forms instead of coercing them. Keep current defaults and add focused tests. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Keep shareable showcase URLs canonical and predictable.",
-		acceptanceCriteria:
-			"Supported numeric and canonical string sizes parse; non-canonical coercible strings fall back; focused tests and typecheck pass.",
-	},
-	{
-		id: "p08",
-		category: "authentication-security",
-		title: "Reject unknown JWT payload fields",
-		description:
-			"Make the JWT payload validation contract reject unknown top-level fields instead of silently stripping them. Preserve all valid access and refresh token behavior, and add focused unit coverage for valid payloads and unexpected claims. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Keep the accepted JWT claim surface explicit.",
-		acceptanceCriteria:
-			"Known payloads still parse; an unexpected top-level claim is rejected; token service tests and typecheck pass.",
-	},
-	{
-		id: "p09",
-		category: "authentication-runtime",
-		title: "Accept padded auth token durations",
-		description:
-			"Allow harmless leading and trailing whitespace in configured authentication token duration strings before converting them to cookie max-age values. Keep invalid, zero, and negative durations omitted. Add focused tests for padded valid and invalid values. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Make cookie duration handling consistent with normalized environment input.",
-		acceptanceCriteria:
-			"Padded valid durations produce max-age; invalid/non-positive durations do not; existing cookie attributes remain unchanged; focused tests and typecheck pass.",
-	},
-	{
-		id: "p10",
-		category: "api-observability",
-		title: "Mark health responses as non-cacheable",
-		description:
-			"Ensure the health endpoint explicitly sends a no-store cache policy so intermediaries cannot serve stale readiness information. Preserve its JSON response contract and add focused route and application-level tests for the header. Run the relevant tests and TypeScript typecheck before finishing.",
-		objective:
-			"Prevent cached health responses without changing the endpoint body.",
-		acceptanceCriteria:
-			"Health responses include Cache-Control: no-store; the existing status/service body is unchanged; focused tests and typecheck pass.",
-	},
-];
-
 async function main() {
 	assertIsolatedRuntimeEnvironment(process.env, [
 		DATABASE_ACCESS_SCOPES.isolatedEvaluation,
 	]);
 	await ensureNightWorkersSchema();
-	const options = parseOptions();
+	const options = parsePilotOptions();
 	if (!options.dedicatedDatabase) {
 		throw new Error(
 			"The paired pilot requires --dedicated-database and the isolated launcher.",
@@ -191,7 +76,7 @@ async function main() {
 	}
 }
 
-async function runPilot(options: ReturnType<typeof parseOptions>) {
+async function runPilot(options: PilotOptions) {
 	let repository = await nightworkersRepo.getRepository(options.repositoryId);
 	if (!repository && options.dedicatedDatabase) {
 		repository = await createRepository({
@@ -325,7 +210,7 @@ async function runPilot(options: ReturnType<typeof parseOptions>) {
 		await mcpClientManager.disconnect(mcpServer.id);
 	}
 
-	const report = buildReport({
+	const report = buildPilotReport({
 		pilotId: options.pilotId,
 		selectedTasks,
 		pairs,
@@ -344,85 +229,6 @@ async function runPilot(options: ReturnType<typeof parseOptions>) {
 		progress({ event: "pilot.report_written", output: options.output });
 	}
 	process.stdout.write(`${JSON.stringify(report)}\n`);
-}
-
-function parseOptions() {
-	const parsed = parseArgs({
-		args: process.argv.slice(2).filter((arg) => arg !== "--"),
-		options: {
-			"pilot-id": { type: "string" },
-			"repository-id": { type: "string" },
-			"repository-root": { type: "string" },
-			"producer-root": { type: "string" },
-			"from-pair": { type: "string" },
-			"pair-count": { type: "string" },
-			"timeout-seconds": { type: "string" },
-			"thinking-depth": { type: "string" },
-			"cooldown-seconds": { type: "string" },
-			"allow-dirty-consumer": { type: "boolean" },
-			"allow-live-api": { type: "boolean" },
-			"dedicated-database": { type: "boolean" },
-			output: { type: "string" },
-		},
-		strict: true,
-		allowPositionals: false,
-	});
-	const fromPair = positiveInteger(parsed.values["from-pair"] ?? "1");
-	const pairCount = positiveInteger(parsed.values["pair-count"] ?? "10");
-	const timeoutSeconds = positiveInteger(
-		parsed.values["timeout-seconds"] ?? String(DEFAULT_PAIR_TIMEOUT_SECONDS),
-	);
-	const thinkingDepth = parsed.values["thinking-depth"] ?? "low";
-	if (!["low", "medium", "high", "very_high"].includes(thinkingDepth)) {
-		throw new Error(`Unsupported thinking depth: ${thinkingDepth}`);
-	}
-	const cooldownSeconds = nonnegativeInteger(
-		parsed.values["cooldown-seconds"] ?? "30",
-	);
-	return {
-		pilotId: parsed.values["pilot-id"]?.trim() || DEFAULT_PILOT_ID,
-		repositoryId: parsed.values["repository-id"] ?? "",
-		repositoryRoot: requiredOption(
-			"--repository-root",
-			parsed.values["repository-root"],
-		),
-		producerRoot: requiredOption(
-			"--producer-root",
-			parsed.values["producer-root"],
-		),
-		fromPair,
-		pairCount,
-		timeoutSeconds,
-		thinkingDepth: thinkingDepth as "low" | "medium" | "high" | "very_high",
-		cooldownSeconds,
-		allowDirtyConsumer: parsed.values["allow-dirty-consumer"] ?? false,
-		allowLiveApi: parsed.values["allow-live-api"] ?? false,
-		dedicatedDatabase: parsed.values["dedicated-database"] ?? false,
-		output: parsed.values.output
-			? path.resolve(parsed.values.output)
-			: null,
-	};
-}
-
-function requiredOption(name: string, value: string | undefined) {
-	if (!value?.trim()) throw new Error(`${name} is required`);
-	return path.resolve(value);
-}
-
-function positiveInteger(value: string) {
-	const parsed = Number(value);
-	if (!Number.isInteger(parsed) || parsed < 1) {
-		throw new Error(`Expected a positive integer, received: ${value}`);
-	}
-	return parsed;
-}
-
-function nonnegativeInteger(value: string) {
-	const parsed = Number(value);
-	if (!Number.isInteger(parsed) || parsed < 0) {
-		throw new Error(`Expected a non-negative integer, received: ${value}`);
-	}
-	return parsed;
 }
 
 async function ensurePilotMcpServer(input: {
@@ -492,7 +298,7 @@ async function runPair(input: {
 		pairId: input.task.id,
 		category: input.task.category,
 		title: input.task.title,
-		promptDigest: promptDigest(input.task),
+		promptDigest: pilotPromptDigest(input.task),
 		baseline: {
 			taskId: baseline.taskId,
 			runId: baselineTerminal.id,
@@ -673,217 +479,7 @@ function catalogPinEvidence(contextSnapshot: unknown) {
 	};
 }
 
-function buildReport(input: {
-	pilotId: string;
-	selectedTasks: PilotTask[];
-	pairs: Awaited<ReturnType<typeof runPair>>[];
-	repositoryId: string;
-	repositoryRoot: string;
-	targetHead: string;
-	consumerHead: string;
-	consumerDirty: boolean;
-	consumerDiffHash: string;
-	mcpServerId: string;
-	dedicatedDatabase: boolean;
-	databasePath: string;
-}) {
-	const measurements = input.pairs.map((pair) => ({
-		baseline: pair.baseline.measurement,
-		catalog: pair.catalog.measurement,
-	}));
-	const baselineExploration = measurements.map(({ baseline }) =>
-		explorationCalls(baseline),
-	);
-	const catalogExploration = measurements.map(({ catalog }) =>
-		explorationCalls(catalog),
-	);
-	const baselineTokens = measurements.flatMap(({ baseline }) =>
-		baseline.totalInputTokens === null ? [] : [baseline.totalInputTokens],
-	);
-	const catalogTokens = measurements.flatMap(({ catalog }) =>
-		catalog.totalInputTokens === null ? [] : [catalog.totalInputTokens],
-	);
-	const baselineCompletionRate = rate(
-		measurements.map(({ baseline }) => baseline.taskCompleted),
-	);
-	const catalogCompletionRate = rate(
-		measurements.map(({ catalog }) => catalog.taskCompleted),
-	);
-	const baselineVerification = measurements.flatMap(({ baseline }) =>
-		baseline.verificationPassed === null ? [] : [baseline.verificationPassed],
-	);
-	const catalogVerification = measurements.flatMap(({ catalog }) =>
-		catalog.verificationPassed === null ? [] : [catalog.verificationPassed],
-	);
-	const unsafeIncidentCount = measurements.reduce(
-		(total, { catalog }) =>
-			total +
-			(catalog.fallbackReason === "PROJECT_EXPLORATION_STALE" ||
-			catalog.fallbackReason === "PROJECT_EXPLORATION_UNSAFE_PATH" ||
-			catalog.fallbackReason === "workspace_mismatch"
-				? 1
-				: 0),
-		0,
-	);
-	const catalogFailurePropagationCount = measurements.filter(
-		({ catalog }) => catalog.catalogFailureCount > 0 && !catalog.taskCompleted,
-	).length;
-	const controlsSatisfied = input.pairs.every(
-		(pair) =>
-			pair.controls.sameBaseRef &&
-			pair.controls.samePrompt &&
-			pair.controls.sameRoute &&
-			pair.controls.independentWorktrees,
-	);
-	const explorationReductionRate = reductionRate(
-		median(baselineExploration),
-		median(catalogExploration),
-	);
-	const tokenReductionRate = reductionRate(
-		median(baselineTokens),
-		median(catalogTokens),
-	);
-	const gates = {
-		minimumTenPairs: input.pairs.length >= 10,
-		pairedControls: controlsSatisfied,
-		consumerSourceClean: !input.consumerDirty,
-		databaseIsolation: input.dedicatedDatabase,
-		explorationReduction:
-			explorationReductionRate !== null && explorationReductionRate >= 0.2,
-		inputTokenReduction:
-			baselineTokens.length === input.pairs.length &&
-			catalogTokens.length === input.pairs.length &&
-			tokenReductionRate !== null &&
-			tokenReductionRate >= 0.15,
-		completionNonRegression:
-			catalogCompletionRate >= baselineCompletionRate,
-		verificationNonRegression:
-			baselineVerification.length === input.pairs.length &&
-			catalogVerification.length === input.pairs.length &&
-			rate(catalogVerification) >= rate(baselineVerification),
-		zeroUnsafeIncidents: unsafeIncidentCount === 0,
-		noReplanIncrease:
-			median(measurements.map(({ catalog }) => catalog.replanCount)) <=
-			median(measurements.map(({ baseline }) => baseline.replanCount)),
-		zeroCatalogFailurePropagation: catalogFailurePropagationCount === 0,
-	};
-	const evidenceComplete =
-		gates.minimumTenPairs &&
-		gates.pairedControls &&
-		gates.consumerSourceClean &&
-		gates.databaseIsolation &&
-		baselineTokens.length === input.pairs.length &&
-		catalogTokens.length === input.pairs.length &&
-		baselineVerification.length === input.pairs.length &&
-		catalogVerification.length === input.pairs.length;
-	const decision = !evidenceComplete
-		? "INSUFFICIENT_EVIDENCE"
-		: Object.values(gates).every(Boolean)
-			? "GO"
-			: "NO-GO";
-
-	return {
-		schemaVersion: "project-intelligence-paired-pilot-v1",
-		pilotId: input.pilotId,
-		generatedAt: new Date().toISOString(),
-		decision,
-		controls: {
-			repositoryId: input.repositoryId,
-			repositoryRoot: input.repositoryRoot,
-			targetHead: input.targetHead,
-			consumerHead: input.consumerHead,
-			consumerDirty: input.consumerDirty,
-			consumerDiffHash: input.consumerDiffHash,
-			mcpServerId: input.mcpServerId,
-			dedicatedDatabase: input.dedicatedDatabase,
-			databasePath: input.databasePath,
-			featureFlagRestoredToOff: true,
-		},
-		taskSet: input.selectedTasks.map((task) => ({
-			...task,
-			promptDigest: promptDigest(task),
-		})),
-		pairs: input.pairs,
-		aggregate: {
-			pairCount: input.pairs.length,
-			baseline: {
-				medianExploratoryToolCalls: median(baselineExploration),
-				medianInputTokens: median(baselineTokens),
-				completionRate: baselineCompletionRate,
-				verificationPassRate: rate(baselineVerification),
-				verificationEvidenceCount: baselineVerification.length,
-			},
-			catalog: {
-				medianExploratoryToolCalls: median(catalogExploration),
-				medianInputTokens: median(catalogTokens),
-				completionRate: catalogCompletionRate,
-				verificationPassRate: rate(catalogVerification),
-				verificationEvidenceCount: catalogVerification.length,
-				catalogBeforeBroadExplorationRate: rate(
-					measurements.map(
-						({ catalog }) =>
-							catalog.catalogCalledBeforeBroadExploration === true,
-					),
-				),
-				catalogCallRate: rate(
-					measurements.map(({ catalog }) => catalog.catalogCalled),
-				),
-			},
-			reductions: {
-				exploratoryToolCalls: explorationReductionRate,
-				inputTokens: tokenReductionRate,
-			},
-			unsafeIncidentCount,
-			catalogFailurePropagationCount,
-			gates,
-		},
-	};
-}
-
-function explorationCalls(measurement: ExplorationReductionMeasurement) {
-	return (
-		measurement.listDirCallsBeforeMutation +
-		measurement.searchCallsBeforeMutation +
-		measurement.readFileCallsBeforeMutation +
-		(measurement.mode === "catalog" ? measurement.catalogCallCount : 0)
-	);
-}
-
-function promptDigest(task: PilotTask) {
-	return createHash("sha256")
-		.update(
-			JSON.stringify({
-				title: task.title,
-				description: task.description,
-				objective: task.objective,
-				acceptanceCriteria: task.acceptanceCriteria,
-			}),
-		)
-		.digest("hex");
-}
-
-function median(values: number[]) {
-	if (values.length === 0) return null;
-	const sorted = [...values].sort((left, right) => left - right);
-	const middle = Math.floor(sorted.length / 2);
-	return sorted.length % 2 === 0
-		? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
-		: (sorted[middle] ?? 0);
-}
-
-function reductionRate(baseline: number | null, catalog: number | null) {
-	if (baseline === null || catalog === null || baseline === 0) return null;
-	return (baseline - catalog) / baseline;
-}
-
-function rate(values: boolean[]) {
-	if (values.length === 0) return 0;
-	return values.filter(Boolean).length / values.length;
-}
-
-function acquirePilotRuntimeLease(
-	options: ReturnType<typeof parseOptions>,
-): () => void {
+function acquirePilotRuntimeLease(options: PilotOptions): () => void {
 	if (!options.dedicatedDatabase) return () => {};
 	const runtimePaths = getRuntimePaths();
 	const databasePath = resolveLocalDatabasePath(process.env.DATABASE_URL);

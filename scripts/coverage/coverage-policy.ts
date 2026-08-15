@@ -21,9 +21,11 @@ export const globalCoverageThresholds = {
 	lines: 80,
 } as const satisfies Record<CoverageMetricName, number>;
 
+// Bind critical gates to executable implementations. Re-export-only facades have
+// no measurable branches and cannot prove the underlying behavior was exercised.
 export const criticalBranchAreas = {
 	queue: {
-		file: "api/modules/queue/queue.repository.ts",
+		file: "api/modules/queue/queue-repository-commands.ts",
 		threshold: 80,
 	},
 	runStatus: {

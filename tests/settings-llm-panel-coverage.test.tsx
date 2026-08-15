@@ -205,7 +205,7 @@ describe("settings LLM panel coverage", () => {
 		expect(stateSetters[0]).not.toHaveBeenCalled();
 		expect(stateSetters[1]).toHaveBeenLastCalledWith(false);
 
-		setup();
+		commands = setup();
 		({ SettingsLlmPanel } = await import(
 			"../src/modules/settings/SettingsLlmPanel"
 		));
@@ -219,7 +219,30 @@ describe("settings LLM panel coverage", () => {
 			handleSave: vi.fn(),
 		});
 		effects[0]();
+		expect(commands.fetchCodexSdkStatus).not.toHaveBeenCalled();
+
+		commands = setup([], {
+			fetchCodexSdkStatus: vi.fn(async () => {
+				throw new Error("offline");
+			}),
+		});
+		({ SettingsLlmPanel } = await import(
+			"../src/modules/settings/SettingsLlmPanel"
+		));
+		SettingsLlmPanel({
+			section: "providers",
+			settings: settings as never,
+			isSaving: false,
+			saveStatus: "idle",
+			saveMessage: "",
+			onChange: vi.fn(),
+			handleSave: vi.fn(),
+		});
+		effects[0]();
+		await flushPromises();
 		expect(commands.fetchCodexSdkStatus).toHaveBeenCalledTimes(1);
+		expect(stateSetters[0]).not.toHaveBeenCalled();
+		expect(stateSetters[1]).toHaveBeenLastCalledWith(false);
 	});
 
 	it("adds, edits, removes, checks, and toggles provider endpoints", async () => {
@@ -252,12 +275,14 @@ describe("settings LLM panel coverage", () => {
 		const checkbox = elements(root).find(
 			(element) =>
 				element.type === "input" && element.props.type === "checkbox",
-		)!;
+		);
+		if (!checkbox) throw new Error("Codex enabled checkbox was not rendered");
 		checkbox.props.onChange({ target: { checked: false } });
 		expect(onChange).toHaveBeenCalledWith("CODEX_ENABLED", false);
 		const codexModel = named(root, "SelectField").find(
 			(element) => element.props.id === "codex-model",
-		)!;
+		);
+		if (!codexModel) throw new Error("Codex model field was not rendered");
 		codexModel.props.onChange("o4-mini");
 		const token = named(root, "Field")[0];
 		token.props.onChange("replacement");
